@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 scripts/check-fmt.sh
+python3 scripts/check-yaml.py
 scripts/check-host.sh
 python3 scripts/check-coverage.py
 mkdir -p reports

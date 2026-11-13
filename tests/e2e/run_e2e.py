@@ -111,6 +111,12 @@ def board_case(profile_name: str) -> Case:
     if not Path("/dev/ttyUSB1").exists():
         c.skipped = "no /dev/ttyUSB1"
         return c
+    flash_args = FW / "idf-bootstrap" / "build" / "flash_args"
+    if not flash_args.is_file():
+        c.failures.append(
+            f"缺少 {flash_args.relative_to(ROOT)}：先在 firmware/idf-bootstrap/ 里执行 "
+            "`idf.py --preview set-target esp32s31 && idf.py build`（gitignore 产物）")
+        return c
     start = time.time()
     flash = run(["flock", "/tmp/s31-board.lock", "sh", "-c", "sh tools/flash.sh /dev/ttyUSB1"], cwd=FW)
     c.check(flash.returncode == 0, f"flash failed: {(flash.stdout + flash.stderr)[-800:]}")

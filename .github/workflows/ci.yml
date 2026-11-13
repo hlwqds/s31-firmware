@@ -24,6 +24,10 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml
+      - name: workflow YAML lint
+        run: python3 scripts/check-yaml.py
       - name: zig fmt --check
         run: scripts/check-fmt.sh
       - name: host test matrix
@@ -84,11 +88,18 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, s31]
     env:
-      ESPTOOL: python -m esptool
+      ESPTOOL: python3 -m esptool
     steps:
       - uses: actions/checkout@v4
       - name: install python deps
-        run: pip install pyserial esptool==5.6.0
+        run: python3 -m pip install pyserial esptool==5.6.0
+      - name: ensure idf-bootstrap build
+        run: |
+          if [ ! -f firmware/idf-bootstrap/build/flash_args ]; then
+            ( cd firmware/idf-bootstrap \
+              && idf.py --preview set-target esp32s31 \
+              && idf.py build )
+          fi
       - name: board e2e (build + flash + capture + assert)
         run: |
           python3 tests/e2e/run_e2e.py --board --profile "${{ github.event.inputs.profile }}" \
