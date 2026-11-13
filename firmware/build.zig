@@ -9,6 +9,7 @@ const all_modules = [_]Mod{
     .{ .name = "net_tcp", .path = "../components/net-tcp/src/selftest.zig", .group = .net },
     .{ .name = "net_congestion", .path = "../components/net-congestion/src/selftest.zig", .group = .net },
     .{ .name = "net_sockets", .path = "../components/net-sockets/src/selftest.zig", .group = .net },
+    .{ .name = "net_ethernet", .path = "../components/net-ethernet/src/selftest.zig", .group = .net },
     .{ .name = "net_tls_http", .path = "../components/net-tls-http/src/selftest.zig", .group = .tls },
     .{ .name = "app_mqtt_ota", .path = "../components/app-mqtt-ota/src/selftest.zig", .group = .apps },
     .{ .name = "wifi_boundary", .path = "../components/wifi-boundary/src/selftest.zig", .group = .wifi },
