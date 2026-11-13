@@ -12,14 +12,14 @@
 
 ## 目录
 
-| 路径 | 内容 |
-| --- | --- |
-| `ch01-board-id/` … `ch28-bootstrap-power-performance/` | 28 个章节工程（`docs`、`src`、`linker/s31.ld`、`idf-bootstrap/`、`tools/flash.sh`） |
-| `logs/` | 板侧串口原始日志（`ch05-boot.log` … `ch28-boot.log`，以及 ch28 修复前的 `ch28a-boot.log`） |
-| `SUITE-README.md` | 套件总览：工程清单、状态、约定（原博客仓库套件 README） |
-| `SPEC.md` | 实现契约（目录约定、构建/烧录规范、日志与入库边界） |
-| `BRINGUP-2026-11-12.md` | 真机 bring-up 报告（十轮实测记录与未闭环项） |
-| `tools/s31-production/` | 生产化组件原型与基线/HIL 工具 |
+| 路径                                                   | 内容                                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `ch01-board-id/` … `ch28-bootstrap-power-performance/` | 28 个章节工程（`docs`、`src`、`linker/s31.ld`、`idf-bootstrap/`、`tools/flash.sh`）        |
+| `logs/`                                                | 板侧串口原始日志（`ch05-boot.log` … `ch28-boot.log`，以及 ch28 修复前的 `ch28a-boot.log`） |
+| `SUITE-README.md`                                      | 套件总览：工程清单、状态、约定（原博客仓库套件 README）                                    |
+| `SPEC.md`                                              | 实现契约（目录约定、构建/烧录规范、日志与入库边界）                                        |
+| `BRINGUP-2026-11-12.md`                                | 真机 bring-up 报告（十轮实测记录与未闭环项）                                               |
+| `tools/s31-production/`                                | 生产化组件原型与基线/HIL 工具                                                              |
 
 ## 快速开始
 

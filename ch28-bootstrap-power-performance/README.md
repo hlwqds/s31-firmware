@@ -45,8 +45,8 @@
 
 ## 文件表
 
-| 路径                 | 角色                                                         | 代码浏览                                                                                                                           |
-| -------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 路径                 | 角色                                                         | 代码浏览                   |
+| -------------------- | ------------------------------------------------------------ | -------------------------- |
 | `build.zig`          | 形态 B 构建入口 + `zig build test`                           | [查看](build.zig)          |
 | `linker/s31.ld`      | 两个 flash 装载段、`.trap_ram`、栈/堆边界                    | [查看](linker/s31.ld)      |
 | `src/bootslot.zig`   | 16 B otadata 条目、CRC32、双扇区选槽、factory 回退           | [查看](src/bootslot.zig)   |
@@ -58,7 +58,7 @@
 | `src/main.zig`       | banner → 自检 → verdict → `wfi`                              | [查看](src/main.zig)       |
 | `src/start.zig`      | `esp_app_desc_t` + naked `_start`                            | [查看](src/start.zig)      |
 | `tools/flash.sh`     | 读 `flash_args` 并烧 bootloader/分区表/应用                  | [查看](tools/flash.sh)     |
-| `idf-bootstrap/`     | 最小 IDF 工程，只产出 bootloader/分区表                      | —                                                                                                                                  |
+| `idf-bootstrap/`     | 最小 IDF 工程，只产出 bootloader/分区表                      | —                          |
 
 ## 环境
 
