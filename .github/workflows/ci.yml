@@ -6,10 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      features:
-        description: 特性开关（如 boot,net,tls,apps,wifi；默认 boot,net）
+      profile:
+        description: E2E profile（min/net/wifi）
         required: false
-        default: boot,net
+        default: net
 
 env:
   ZIG_VERSION: "0.17.1"
@@ -67,7 +67,7 @@ jobs:
           python-version: "3.12"
       - name: Install esptool
         run: pip install esptool==5.6.0
-      - name: Run host e2e (profiles: min/net/wifi, xfail tls)
+      - name: "Run host e2e (profiles: min/net/wifi, xfail tls)"
         run: |
           mkdir -p reports
           ESPTOOL="python -m esptool" python3 tests/e2e/run_e2e.py --host --junit reports/e2e-host.xml
@@ -79,24 +79,17 @@ jobs:
 
   board:
     # 自托管 runner（标签 self-hosted, s31），不参与合并门禁；手动触发。
+    # runner 前置：zig 0.17.1 在 PATH、idf-bootstrap/build 已生成、板子在 /dev/ttyUSB1。
     name: board self-check (manual)
     if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, s31]
+    env:
+      ESPTOOL: python -m esptool
     steps:
       - uses: actions/checkout@v4
-      - name: build firmware with requested features
+      - name: install python deps
+        run: pip install pyserial esptool==5.6.0
+      - name: board e2e (build + flash + capture + assert)
         run: |
-          flags=""
-          IFS=',' read -ra on <<< "${{ github.event.inputs.features }}"
-          for g in boot net tls apps wifi; do
-            if printf '%s\n' "${on[@]}" | grep -qx "$g"; then flags="$flags -D$g=true"; else flags="$flags -D$g=false"; fi
-          done
-          cd firmware
-          zig build -Dtarget=riscv32-freestanding-eabihf             -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall $flags
-          python -m esptool --chip esp32s31 elf2image --flash-mode dio --flash-size 16MB \
-            --flash-freq 80m -o zig-out/bin/app.bin zig-out/bin/app.elf
-          python -m esptool --chip esp32s31 image-info zig-out/bin/app.bin | grep -c 'DROM, IROM' | grep -qx 2
-      - name: board e2e (flash + capture + assert)
-        run: |
-          pip install pyserial
-          python3 tests/e2e/run_e2e.py --board --profile net --junit reports/e2e-board.xml
+          python3 tests/e2e/run_e2e.py --board --profile "${{ github.event.inputs.profile }}" \
+            --junit reports/e2e-board.xml
