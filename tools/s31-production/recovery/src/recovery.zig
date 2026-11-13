@@ -10,7 +10,7 @@
 //!
 //! 这样做的原因：复位原因与连续失败计数是**跨复位**状态，必须落在
 //! bootloader / RTC memory / NVS 这些真正持久的地方；把它们做成注入参数，
-//! 策略才能在主机上被穷举，也避免和 ch28 的 `bootslot.zig`、`ota/` 的
+//! 策略才能在主机上被穷举，也避免和 早期实现 的 `bootslot.zig`、`ota/` 的
 //! 槽位状态机互相复制一份持久化逻辑。
 //!
 //! 优先级固定（SPEC §3.7）：
@@ -31,8 +31,8 @@
 /// 后者在没有任何复位标志时同样落进 `power_on`，由调用方自己判读。
 ///
 /// - `power_on`：区别于欠压的正常上电冷启动；
-/// - `panic`：trap / 非法指令 / 断言失败等软件崩溃（见 ch15 的 `trap.zig`）；
-/// - `watchdog`：硬件或软件看门狗超时（见 ch15 的 `watchdog.zig`、RTC WDT）；
+/// - `panic`：trap / 非法指令 / 断言失败等软件崩溃（见 早期实现 的 `trap.zig`）；
+/// - `watchdog`：硬件或软件看门狗超时（见 早期实现 的 `watchdog.zig`、RTC WDT）；
 /// - `brownout`：欠压复位；
 /// - `ota_rollback`：主 bootloader 因新镜像失败而回滚后复位；
 /// - `software`：正常软件主动复位（重启命令、配置生效等）；

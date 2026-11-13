@@ -78,8 +78,8 @@ fn fail(state: State, event: Event, want_next: State, want_action: Action, got: 
         std.debug.print(
             "netmgr: {s} + {s} -> {s}/{s}，期望 {s}/{s}\n",
             .{
-                @tagName(state),   @tagName(event),
-                @tagName(got.next), @tagName(got.action),
+                @tagName(state),     @tagName(event),
+                @tagName(got.next),  @tagName(got.action),
                 @tagName(want_next), @tagName(want_action),
             },
         );

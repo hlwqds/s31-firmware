@@ -1,0 +1,29 @@
+# Changelog
+
+格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+### Planned
+- P0.2：多段镜像布局，解除两段窗口对 TLS/Wi-Fi 同时开启的限制
+- P1：以太网 ref clock / MDIO 闭环
+
+## [0.2.0] - 2026-11-13
+
+### Changed
+- 重构为生产结构：`firmware/` + `boards/` + `components/`，移除章节目录（历史见 `docs/HISTORY.md`）
+- 新增编译期特性开关与聚合测试（11 个组件，323 项）
+- 新增仓库规范、路线图、CI、脚本与 ADR 模板
+- 默认配置（boot+net）上板：6 个子系统自检全过，`main: verdict=pass`（`logs/firmware-boot.log`）
+
+## [0.1.0] - 2026-11-13
+
+### Added
+- 从 `hl-ljj-quartz@32f10c56` 迁出 28 个章节工程与 `tools/s31-production` 生产化原型
+- 板侧日志（`logs/ch05-boot.log` … `logs/ch28-boot.log`，含 ch28 修复前 `ch28a-boot.log`）
+- 仓库规范：`AGENTS.md`、`docs/REPO-STANDARDS.md`、`ROADMAP.md`
+
+### Fixed（相对迁出来源）
+- Zig 0.17 `[...]T{…} ** n` 数组重复语法（平台迁移到 `@splat`）
+- ch28 首烧 `mstatus.FS=0` 导致浮点指令 illegal instruction
+- provisioning 两条过强不变量测试

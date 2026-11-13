@@ -117,8 +117,8 @@ pub fn encodeEntry(out: []u8, entry: Entry) EntryError!usize {
     if (out.len < entry_len) return error.Short;
     @memcpy(out[0..4], &entry_magic);
     writeU32Le(out[4..8], entry.seq);
-    out[8] = @intFromEnum(entry.slot);
-    out[9] = @intFromEnum(entry.state);
+    out[8] = @backingInt(entry.slot);
+    out[9] = @backingInt(entry.state);
     out[10] = 0;
     out[11] = 0;
     writeU32Le(out[12..16], crc32(out[0..12]));
@@ -131,13 +131,13 @@ pub fn decodeEntry(bytes: []const u8) EntryError!Entry {
     if (bytes.len < entry_len) return error.Short;
     if (!magicIs(bytes[0..4], entry_magic)) return error.BadMagic;
     if (bytes[10] != 0 or bytes[11] != 0) return error.BadReserved;
-    if (bytes[8] > @intFromEnum(Slot.b)) return error.BadSlot;
-    if (bytes[9] > @intFromEnum(SlotState.aborted)) return error.BadState;
+    if (bytes[8] > @backingInt(Slot.b)) return error.BadSlot;
+    if (bytes[9] > @backingInt(SlotState.aborted)) return error.BadState;
     if (readU32Le(bytes[12..16]) != crc32(bytes[0..12])) return error.BadCrc;
     return .{
         .seq = readU32Le(bytes[4..8]),
         .slot = if (bytes[8] == 0) .a else .b,
-        .state = @enumFromInt(bytes[9]),
+        .state = @fromBackingInt(@intCast(bytes[9])),
     };
 }
 

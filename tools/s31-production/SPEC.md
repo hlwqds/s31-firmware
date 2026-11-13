@@ -1,7 +1,7 @@
 # S31 生产化增量 SPEC（v0）
 
 > 状态：**设计/骨架阶段：四个 Zig 切片的宿主测试已跑通（15/15、8/8、18/18、9/9，2026-11-13）；均未上板；HIL CLI 未执行。**本文件只定义生产化第一刀的边界与契约；
-> 不替换 ` SPEC.md` 的章节工程契约，也不改动 ch01–ch28 的既有目录与深链。
+> 不替换 ` SPEC.md` 的章节工程契约，也不改动 早期实现–早期实现 的既有目录与深链。
 
 ## 1. 目标
 
@@ -122,9 +122,9 @@ pub fn classify(reason: ResetReason, consecutive_failures: u8, threshold: u8, ph
 
 ### 3.8 已知跨增量差异（不在本批修复）
 
-`ota/` 与 ch28 的 `bootslot.zig` 共享 16 B `S31B` + CRC32 布局，但状态字节策略不同：
-`ota/` 只接受 `0..4`（`0xFF` = `BadState`），ch28 把 `0xFF` 接受为 `undefined_` 后拒绝启动。
-本批把 `ota/` 标为生产侧候选规范，**不修改 ch28**；迁移任务单列：ch28 bootslot 委托 `ota/`，
+`ota/` 与 早期实现 的 `bootslot.zig` 共享 16 B `S31B` + CRC32 布局，但状态字节策略不同：
+`ota/` 只接受 `0..4`（`0xFF` = `BadState`），早期实现 把 `0xFF` 接受为 `undefined_` 后拒绝启动。
+本批把 `ota/` 标为生产侧候选规范，**不修改 早期实现**；迁移任务单列：早期实现 bootslot 委托 `ota/`，
 共享 KAT 向量，更新两侧 README/SPEC。详见 `ota/README.md` 顶部提示。
 
 ## 4. 验收（主线统一）

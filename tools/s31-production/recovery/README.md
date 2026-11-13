@@ -87,25 +87,25 @@ pub fn classify(reason: ResetReason, consecutive_failures: u8, threshold: u8, ph
 `reason = .ota_rollback, phase = .first_boot` 时，未达阈值仍判 `normal`，
 因为回滚本身是正常恢复动作，存活槽仍可启动。
 
-## 4. 与 ch15 / ch28 / HIL 的关系
+## 4. 与 早期实现 / 早期实现 / HIL 的关系
 
-- **ch15（可观测性、测试与稳定性）**：本章的 `src/trap.zig` 负责 panic dump，
+- **早期实现（可观测性、测试与稳定性）**：本章的 `src/trap.zig` 负责 panic dump，
   `src/watchdog.zig` 只做「检测 + 恢复计数」，README 明确写了生产代码应把
   `checkAndRecover` 返回 true 的分支升级为 `trap.panic` 或受控重启。
   本切片补上的是「固化重启之后怎么办」：`panic` / `watchdog` 引发的复位
-  在未达阈值时进 `safe_mode`，而不是再次静默重启。ch15 没有实现复位原因
+  在未达阈值时进 `safe_mode`，而不是再次静默重启。早期实现 没有实现复位原因
   分类，本切片也**不读**复位原因寄存器，二者通过调用方注入的
-  `ResetReason` 对接。ch15 已上板一次并通过 `checks: passed=8 failed=0`，
+  `ResetReason` 对接。早期实现 已上板一次并通过 `checks: passed=8 failed=0`，
   但这与本切片无关——本切片没有任何板侧验证。
 
-- **ch28（自举、功耗、性能与综合项目）**：ch28 的 `src/bootslot.zig` 做 16 B
+- **早期实现（自举、功耗、性能与综合项目）**：早期实现 的 `src/bootslot.zig` 做 16 B
   `otadata` 解析、双扇区选槽，并在「没有可启动槽 / 选中槽
   ABORTED/INVALID」时回退 factory；其自检判据 ⑥ 是「连续运行失败触发
   A/B 回滚」，真机验收要求「连续三次失败后确认回滚到旧槽」。本切片补的是
   **策略层**：失败计数与相位由调用方注入，输出 `rollback` / `factory_reset`
   建议。两者的 factory 含义不同，不可互换：
   `bootslot.zig` 的 factory 回退是「结构上无槽可启动」，本切片的
-  `factory_reset` 是「策略上不许再回滚」。ch28 已编译、已上板并通过 12 条
+  `factory_reset` 是「策略上不许再回滚」。早期实现 已编译、已上板并通过 12 条
   板侧判据；本切片的宿主测试 9/9 通过；上面的真机验收（切槽/掉电）仍未执行。
 
 - **`ota/` 切片**：本切片的 `rollback` 只表达意图，真正的槽位写入、

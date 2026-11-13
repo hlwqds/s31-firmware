@@ -2,12 +2,12 @@
   "allow_hardware": false,
   "port": "/dev/ttyUSB0",
   "baud": 115200,
-  "firmware": "ch28-bootstrap-power-performance/zig-out/bin/app.bin",
+  "firmware": "firmware/zig-out/bin/app.bin",
   "artifacts_dir": "tools/s31-production/hil/artifacts",
   "build": {
     "enabled": false,
     "command": ["zig", "build"],
-    "cwd": "ch28-bootstrap-power-performance",
+    "cwd": "firmware",
     "timeout_s": 600
   },
   "flash": {
@@ -35,7 +35,7 @@
   "assertions": [
     {
       "name": "boot banner",
-      "pattern": "ch28-bootstrap-power-performance",
+      "pattern": "firmware",
       "timeout_s": 10,
       "required": true
     },

@@ -214,4 +214,4 @@ stdout 只输出一个 JSON 对象；人类可读的计划与错误走 stderr，
 - 入口与 SPEC §3.4 一致：
   `python tools/s31-production/hil/hil.py --config hil.json --suite smoke --dry-run`。
 - `--dry-run` 分离、JSON 四键、缺依赖清晰报错、不执行真实动作，均按 SPEC 实现。
-- 不替换 ` SPEC.md` 的章节契约，也不改动 ch01–ch28。
+- 不替换 ` SPEC.md` 的章节契约，也不改动 早期实现–早期实现。

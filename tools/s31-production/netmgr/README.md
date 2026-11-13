@@ -112,7 +112,7 @@ while (pollEventTimeout(&retry)) |ev| {   // 超时在调用方换算成 dhcp_fa
 ## 7. 与真实 PHY / DHCP / SNTP 的边界
 
 - **PHY/链路层**：本模块只认 `link_up`/`link_down` 两个事件。真实 ESP32-S31 上它们应当来自
-  PHY 驱动的链路状态回调（ch17 的 MAC/PHY 路径尚未上板验证，见
+  PHY 驱动的链路状态回调（早期实现 的 MAC/PHY 路径尚未上板验证，见
   ` BRINGUP-2026-11-12.md`）；本切片**没有**实现任何 PHY 读写。
 - **DHCP**：`start_dhcp` 是给 `esp_netif`（或自研 lwIP DHCP 客户端）的指令，
   租约有效期、续约时机、`dhcp_fail` 的超时阈值都由调用方计时；本切片**没有**报文编解码。
@@ -148,7 +148,7 @@ while (pollEventTimeout(&retry)) |ev| {   // 超时在调用方换算成 dhcp_fa
 ## 9. 未验证边界（必须明说）
 
 1. **已编译**（宿主测试 15/15）：`build.zig` 用的是 0.17.1 的 `b.createModule` / `b.addTest` / `b.graph.host`
-   写法，与 `ch20-tcp-state-machine/build.zig` 同风格；没有跑过 `zig build`。
+   写法，与 `net-tcp/build.zig` 同风格；没有跑过 `zig build`。
 2. **未测试**：`src/host_tests.zig` 没有执行过，测试数量、断言结果都未确认。
 3. **未上板**：没有任何 PHY/DHCP/SNTP 的真实集成，迁移表只表达设计意图。
 4. **未接 IDF**：没有 `esp_netif`/`esp_event` 适配层；将来接入时需要新增一层事件翻译，

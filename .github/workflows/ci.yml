@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      features:
+        description: 特性开关（如 boot,net,tls,apps,wifi；默认 boot,net）
+        required: false
+        default: boot,net
+
+env:
+  ZIG_VERSION: "0.17.1"
+
+jobs:
+  host:
+    name: host tests + fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: zig fmt --check
+        run: scripts/check-fmt.sh
+      - name: host test matrix
+        run: scripts/check-host.sh
+
+  image:
+    name: cross build + two-segment image
+    runs-on: ubuntu-latest
+    needs: host
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install esptool
+        run: pip install esptool==5.6.0
+      - name: Build firmware image and assert two segments
+        run: scripts/build-image.sh firmware
+
+  board:
+    # 自托管 runner（标签 self-hosted, s31），不参与合并门禁；手动触发。
+    name: board self-check (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, s31]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build firmware with requested features
+        run: |
+          flags=""
+          IFS=',' read -ra on <<< "${{ github.event.inputs.features }}"
+          for g in boot net tls apps wifi; do
+            if printf '%s\n' "${on[@]}" | grep -qx "$g"; then flags="$flags -D$g=true"; else flags="$flags -D$g=false"; fi
+          done
+          cd firmware
+          zig build -Dtarget=riscv32-freestanding-eabihf             -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall $flags
+          python -m esptool --chip esp32s31 elf2image --flash-mode dio --flash-size 16MB \
+            --flash-freq 80m -o zig-out/bin/app.bin zig-out/bin/app.elf
+          python -m esptool --chip esp32s31 image-info zig-out/bin/app.bin | grep -c 'DROM, IROM' | grep -qx 2
+      - name: flash + capture + assert
+        run: |
+          cd firmware
+          test -f idf-bootstrap/build/flash_args || {
+            echo "缺少 idf-bootstrap/build/flash_args：请先在 runner 上执行 idf.py build" >&2; exit 1; }
+          flock /tmp/s31-board.lock sh -c 'sh tools/flash.sh /dev/ttyUSB1'
+          python3 ../tools/capture.py /dev/ttyUSB1 ../logs/firmware-ci.log 30
+          grep -q 'main: verdict=pass' ../logs/firmware-ci.log
+          grep -q 'firmware: checks: passed=' ../logs/firmware-ci.log

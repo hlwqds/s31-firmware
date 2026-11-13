@@ -1,6 +1,6 @@
 # S31 生产化架构：OS 与 TCP/IP 的组件拆分
 
-> 状态：**设计文档**；对应的四个 Zig 切片宿主测试已由主线于 2026-11-13 跑通（15/15、8/8、18/18、9/9），均未上板。目标是把 ch01–ch28 的“章节实现”收敛成可复用组件，
+> 状态：**设计文档**；对应的四个 Zig 切片宿主测试已由主线于 2026-11-13 跑通（15/15、8/8、18/18、9/9），均未上板。目标是把 早期实现–早期实现 的“章节实现”收敛成可复用组件，
 > 而不是继续复制第 29、30 个工程。本文只定边界、接口、依赖与编码顺序。
 
 ## 1. 两条主线，一套底座
@@ -109,7 +109,7 @@ pub const Semaphore = struct { count: u32, waiters: WaitQueue };
 pub const Queue = struct { /* ring + waiters */ };
 ```
 
-- mutex 必须实现优先级继承；ch12 的 PI 缺陷先修再冻结 API。
+- mutex 必须实现优先级继承；早期实现 的 PI 缺陷先修再冻结 API。
 - spinlock 只用于极短临界区；禁止在持锁时睡眠。
 - 所有等待都带可选超时，避免永久挂死。
 
@@ -228,7 +228,7 @@ pub const Driver = struct {
 
 1. **接口骨架**：`arch`、`kernel/sched`、`kernel/time`、`net/pktbuf`、`net/netif` 的公共类型与空实现。
 2. **pktbuf + loopback netif**：主机侧用假驱动跑 ARP/IPv4/ICMP/UDP。
-3. **sched + sync + time**：从 ch10–ch14 抽公共 API，先单核。
+3. **sched + sync + time**：从 早期实现–早期实现 抽公共 API，先单核。
 4. **TCP**：在 loopback 上跑状态机/重传/窗口；再接真实 netif。
 5. **socket + 事件循环**：单网络线程模型。
 6. **服务层**：把 `tools/s31-production` 的 ota/provisioning/recovery 迁入。
