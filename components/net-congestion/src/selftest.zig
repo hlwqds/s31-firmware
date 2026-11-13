@@ -29,8 +29,8 @@ const std = @import("std");
 const cong = @import("cong.zig");
 const sim = @import("sim.zig");
 
-const log = @import("log.zig");
 const board = @import("board");
+const log = board.log;
 const trap = board.trap;
 
 var g_passed: u32 = 0;

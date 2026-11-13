@@ -21,8 +21,8 @@ const dhcp = @import("dhcp.zig");
 const dns = @import("dns.zig");
 const udp = @import("udp.zig");
 
-const log = @import("log.zig");
 const board = @import("board");
+const log = board.log;
 const trap = board.trap;
 
 const mac = [_]u8{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x19 };

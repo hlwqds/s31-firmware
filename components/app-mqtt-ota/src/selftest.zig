@@ -37,7 +37,8 @@ const std = @import("std");
 const mqtt = @import("mqtt.zig");
 const session = @import("session.zig");
 const ota = @import("ota.zig");
-const log = @import("log.zig");
+const board = @import("board");
+const log = board.log;
 
 // ---------------------------------------------------------------------------
 // 静态工作区（.bss）

@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | L1 单元 | 11 个组件的 `test` 块（323 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
-| L2 镜像 | 每个 profile 交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
+| L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
 | L4 真链路 | 抓包/吞吐/电流/唤醒 | ROADMAP P1–P4 | 版本发布前 |
 
@@ -31,7 +31,8 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 | `min` | boot | 构建 + 两段镜像 |
 | `net` | boot + net | 构建 + 两段镜像（默认板级 E2E） |
 | `wifi` | boot + net + wifi | 构建 + 两段镜像 |
-| `tls` | boot + net + tls | **xfail**：超出两段窗口，ROADMAP P0.2 跟踪 |
+| `tls` | boot + net + tls | 构建 + 两段镜像 |
+| `full` | boot + net + tls + apps + wifi | 构建 + 两段镜像（11 段自检） |
 
 E2E 断言：
 

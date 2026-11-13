@@ -39,7 +39,8 @@ const aead = @import("aead.zig");
 const cert = @import("cert.zig");
 const http = @import("http.zig");
 
-const log = @import("log.zig");
+const board = @import("board");
+const log = board.log;
 
 // ---------------------------------------------------------------------------
 // 静态工作区（.bss）

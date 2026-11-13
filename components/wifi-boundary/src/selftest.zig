@@ -33,7 +33,8 @@ const std = @import("std");
 const abi = @import("blob_abi.zig");
 const adapter = @import("adapter.zig");
 const blob = @import("stub_blob.zig");
-const log = @import("log.zig");
+const board = @import("board");
+const log = board.log;
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;

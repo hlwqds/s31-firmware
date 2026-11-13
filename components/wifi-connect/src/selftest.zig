@@ -27,7 +27,8 @@
 const std = @import("std");
 
 const conn = @import("conn.zig");
-const log = @import("log.zig");
+const board = @import("board");
+const log = board.log;
 const sae = @import("sae.zig");
 const vectors = @import("vectors.zig");
 const wpa2 = @import("wpa2.zig");

@@ -5,8 +5,11 @@
 ## [Unreleased]
 
 ### Planned
-- P0.2：多段镜像布局，解除两段窗口对 TLS/Wi-Fi 同时开启的限制
 - P1：以太网 ref clock / MDIO 闭环
+
+### Changed
+- P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）
+- 组件内 `hw.zig`/`log.zig` 副本移除，统一引用 `board.hw` / `board.log`
 
 ## [0.3.0] - 2026-11-13
 

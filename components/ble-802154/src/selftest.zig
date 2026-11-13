@@ -32,7 +32,8 @@ const att = @import("att.zig");
 const fifteen4 = @import("fifteen4.zig");
 const gatt = @import("gatt.zig");
 const hci = @import("hci.zig");
-const log = @import("log.zig");
+const board = @import("board");
+const log = board.log;
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;

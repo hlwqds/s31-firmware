@@ -25,8 +25,8 @@ const std = @import("std");
 const checksum = @import("checksum.zig");
 const tcp = @import("tcp.zig");
 
-const log = @import("log.zig");
 const board = @import("board");
+const log = board.log;
 const trap = board.trap;
 
 /// 自造的四元组。地址只用于伪首部，报文不会离开内存。

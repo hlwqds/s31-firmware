@@ -29,8 +29,8 @@ const event = @import("event.zig");
 const netstub = @import("netstub.zig");
 const socket = @import("socket.zig");
 
-const log = @import("log.zig");
 const board = @import("board");
+const log = board.log;
 const trap = board.trap;
 
 /// FD 表 ≈ 10 KiB、就绪集 80 B、超时轮 128 B：全部在 `.bss`，

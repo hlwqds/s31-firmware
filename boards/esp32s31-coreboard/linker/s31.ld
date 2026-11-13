@@ -8,22 +8,23 @@
  *
  * 段布局（三段，两段在 flash）：
  *
- *     irom 0x40000020  .flash.text     esp_app_desc_t(256B) + .text.trap + .text
- *     drom 0x40020020  .flash.rodata   .rodata/.srodata
+ *     irom 0x40000020  .flash.text     esp_app_desc_t(256B) + .text.trap + .text（上限 0x7F000）
+ *     drom 0x40080020  .flash.rodata   .rodata/.srodata（上限 0x7F000）
  *     sram 0x2F000000  .trap_ram       trap 入口（放 flash 会 CPU_LOCKUP_RESET）
  *                      .data           有初值可写数据（LMA == VMA）
  *                      .bss            NOBITS，_start 清零
  *                      [堆]            _heap_start == _bss_end, _heap_end == _stack_bottom
  *                      [栈 16 KiB]     _stack_bottom .. _stack_top，向下增长
  *
- * 三条不变的硬约束（真机实测，见 ../BRINGUP-2026-11-12.md）：
- *   1) bootloader 断言镜像里正好两个落在 0x40000000..0x44000000 的段
- *      （IROM + DROM），且页内偏移同余；
+ * 三条不变的硬约束（真机实测，见 docs/history/BRINGUP-chapter-era.md）：
+ *   1) 镜像里落在 flash 映射窗口的装载段仍只有两个（IROM + DROM），vaddr 按 64 KiB
+ *      页对齐：irom 0x40000020 / drom 0x40080020（页偏移 0x00020 同余）。
+ *      窗口各扩到 0x7F000，使 TLS/Wi-Fi 全特性单镜像可链接（P0.2）；
  *   2) trap 向量必须落在 SRAM（.trap_ram）；
  *   3) 第一个装载段最前面是 256 字节 esp_app_desc_t。
  *
  * 与 ch23 的差异：本章不用 AES（没有 align(64) 的软件查表），.flash.rodata
- * 的起点回到 ORIGIN(drom) = 0x40020020。实际值仍由 LLVM 的输入节对齐决定，
+ * 的起点为 ORIGIN(drom) = 0x40080020（按 64 KiB 页对齐）。实际值仍由 LLVM 的输入节对齐决定，
  * 交付时以 `image-info` 打印的两行 DROM/IROM 为准（见本章 README 与
  * 章节 24.10 的镜像事实）。
  *
@@ -39,8 +40,8 @@ ENTRY(_start)
 
 MEMORY
 {
-    irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0x3F000
-    drom (r)   : ORIGIN = 0x40020020, LENGTH = 0x3F000
+    irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0x7F000
+    drom (r)   : ORIGIN = 0x40080020, LENGTH = 0x7F000
     sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
 }
 
@@ -70,10 +71,9 @@ SECTIONS
 
     /* 第二个 flash 装载段 = DROM：少了它 bootloader 的 rom_index == 2 断言会挂。
      *
-     * 本章的 .rodata 里是错误名表、CRC 常量与日志格式串，没有大表。
-     * 没有 align(64) 的输入节，段起点由 lld 按输入节的对齐决定，
-     * 实测落在 0x40020020（`image-info` 可见）；bootloader 只要求页内偏移
-     * 同余（esp_image_format.c:904），elf2image 会插填充段对齐 paddr。 */
+     * 段起点由 lld 按输入节对齐决定，实测落在 ORIGIN(drom) = 0x40080020；
+     * bootloader 只要求页内偏移同余（esp_image_format.c:904），elf2image
+     * 会插填充段对齐 paddr。drom 与 irom 的页偏移同为 0x20。 */
     .flash.rodata : ALIGN(16)
     {
         _rodata_start = .;
@@ -142,6 +142,8 @@ SECTIONS
     /* 链接期就否决明显错误的布局，免得自检变成唯一的防线。 */
     ASSERT(_image_start == ORIGIN(irom),
         "first flash segment must start at ORIGIN(irom) = 0x40000020")
+    ASSERT(_text_end <= ORIGIN(drom),
+        ".flash.text must not overlap the drom window (expand layout instead)")
     ASSERT(_rodata_start >= ORIGIN(drom) && _rodata_end <= ORIGIN(drom) + LENGTH(drom),
         ".flash.rodata must live inside the drom window")
     ASSERT(_rodata_start % 32 == 0,

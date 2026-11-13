@@ -24,7 +24,8 @@ const bootslot = @import("bootslot.zig");
 const ota = @import("ota.zig");
 const perf = @import("perf.zig");
 const power = @import("power.zig");
-const log = @import("log.zig");
+const board = @import("board");
+const log = board.log;
 
 var g_a: [bootslot.entry_len]u8 = undefined;
 var g_b: [bootslot.entry_len]u8 = undefined;

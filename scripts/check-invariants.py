@@ -41,6 +41,10 @@ def main() -> int:
     if board_starts:
         errors.append(f"boards 下不允许 start.zig（启动路径唯一归 firmware）：{[str(f.relative_to(ROOT)) for f in board_starts]}")
 
+    copies = [f for f in files if f.name in {"hw.zig", "log.zig"} and "components" in f.relative_to(ROOT).parts]
+    if copies:
+        errors.append(f"components 下不允许 hw.zig/log.zig 副本（统一用 board.hw/board.log）：{[str(f.relative_to(ROOT)) for f in copies]}")
+
     cmake = ROOT / "firmware" / "idf-bootstrap" / "CMakeLists.txt"
     if not cmake.is_file() or not re.search(r"project\(zig_s31_firmware\)", cmake.read_text(errors="ignore")):
         errors.append("firmware/idf-bootstrap/CMakeLists.txt 必须声明 project(zig_s31_firmware)")
@@ -49,7 +53,7 @@ def main() -> int:
         print(f"INVARIANT FAIL: {e}", file=sys.stderr)
     if errors:
         return 1
-    print("invariants: OK (identity 唯一、启动路径唯一、idf 工程名一致)")
+    print("invariants: OK (identity 唯一、启动路径唯一、无 hw/log 副本、idf 工程名一致)")
     return 0
 
 

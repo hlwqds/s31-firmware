@@ -22,8 +22,8 @@ const inet = @import("inet.zig");
 const ipv4 = @import("ipv4.zig");
 const route = @import("route.zig");
 
-const log = @import("log.zig");
 const board = @import("board");
+const log = board.log;
 const trap = board.trap;
 
 const our_ip_text = "192.168.1.10";

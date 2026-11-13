@@ -43,7 +43,8 @@
 - [x] E2E：`tests/e2e/run_e2e.py`（profile 构建/两段镜像 + 板级自检，JUnit 输出）
 - [ ] 组件去重：11 份组件内 `hw.zig`/`log.zig` 副本收敛到 `boards/`（配合 `scripts/check-board-sync.sh` 漂移检查）
 - [ ] 分支保护与远端：`main` 只接受 PR；发布用 tag
-- [ ] **P0.2 多段镜像**：解除「恰好两段」限制，使 `-Dtls=true` 与 `-Dwifi=true` 可同时开启
+- [x] **P0.2 镜像窗口扩容**：irom/drom 各 0x7F000，drom 基址移至 `0x40080020`（页偏移仍 0x20），
+  TLS/Wi-Fi 全特性单镜像可链接并在板上跑通 11 段；`image-info` 仍恰好两行
 - **出口**：主分支一次绿色 CI 运行；从零克隆后按 README 能在 10 分钟内跑通主机测试与镜像构建
 
 ### P1：以太网闭环（W1，v0.3.0）
