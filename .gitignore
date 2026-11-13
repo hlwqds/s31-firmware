@@ -1,0 +1,17 @@
+# 构建产物（Zig / IDF）
+**/.zig-cache/
+**/zig-cache/
+**/zig-out/
+**/build*/
+**/managed_components/
+**/sdkconfig
+**/*.bin
+**/*.elf
+**/*.map
+**/qemu_efuse.bin
+**/qemu.pid
+**/.mimosa/
+
+# 编辑器/系统
+.DS_Store
+*.swp
