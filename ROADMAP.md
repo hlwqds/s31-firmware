@@ -12,10 +12,10 @@
 | 能力 | 状态 | 证据 |
 | --- | --- | --- |
 | 启动链 / 链接布局 / 时钟 / UART / 中断 / 定时器 / Flash / 调度 / 堆栈 / 双核 | 基本可用 | `logs/ch04-boot.log` … `logs/ch15-boot.log` |
-| 以太网 MAC/PHY（ch17） | **阻塞**：SWR 超时、无 PHY 应答 | `logs/ch17d-boot.log` |
+| 以太网 MAC/PHY 驱动（历史实现） | **阻塞**：SWR 超时、无 PHY 应答 | `logs/ch17d-boot.log` |
 | IPv4/ARP/ICMP、UDP/DHCP/DNS、TCP、TLS/HTTP、MQTT/OTA、Socket 层 | 离线判定通过，真链路未验 | `logs/ch18-boot.log` … `logs/ch24-boot.log` |
 | Wi-Fi / BLE / 802.15.4 边界 | 符号取证 + ABI/字节路径自检 | `logs/ch25-boot.log` … `logs/ch27-boot.log` |
-| 选槽/回滚/功耗/性能模型（ch28A） | 板侧自检通过；计量与 28B 未做 | `logs/ch28-boot.log`、`logs/ch28a-boot.log` |
+| 选槽/回滚/功耗/性能模型（28A） | 板侧自检通过；计量与 28B 未做 | `logs/ch28-boot.log`、`logs/ch28a-boot.log` |
 | 生产化原型的宿主测试（netmgr/ota/provisioning/recovery） | 通过 | 15/15、8/8、18/18、9/9 |
 | CI / 发布 / 版本标签 | **未建立** | 本路线图 P0 |
 
