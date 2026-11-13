@@ -3,7 +3,7 @@ const board = @import("board");
 const enabled = @import("enabled");
 
 pub export fn main() noreturn {
-    board.log.raw("s31-system firmware\n");
+    board.log.raw("s31-firmware boot\n");
     var n: u32 = 0;
     var failed: u32 = 0;
     inline for (enabled.entries) |e| {

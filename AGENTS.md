@@ -1,4 +1,4 @@
-# s31-zig-system 工程约定
+# s31-firmware 工程约定
 
 本仓库是 ESP32-S31 系统的**唯一开发地**。以下约束来自真机 bring-up 的实测。
 

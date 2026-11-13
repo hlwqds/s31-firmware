@@ -1,5 +1,5 @@
 /*
- * s31-system firmware / idf-bootstrap
+ * s31-firmware boot / idf-bootstrap
  *
  * 这个 app_main 永远不会被执行：idf.py build 产出的应用镜像只是副产品，
  * tools/flash.sh 会把 flash_args 里的应用行换成 Zig 的 zig-out/bin/app.bin，

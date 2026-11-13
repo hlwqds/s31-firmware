@@ -1,4 +1,4 @@
-# s31-system firmware / idf-bootstrap：main 组件只有空 app_main.c。
+# s31-firmware boot / idf-bootstrap：main 组件只有空 app_main.c。
 #
 # 这里不调用 zig、不链接任何 Zig 产物。构建的目的是让 IDF 顺带生成：
 #   build/bootloader/bootloader.bin

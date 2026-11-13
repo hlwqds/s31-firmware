@@ -98,6 +98,9 @@ def build_profile(name: str, profile: dict) -> Case:
     c.check(r.returncode == 0, f"elf2image failed: {(r.stdout + r.stderr)[-800:]}")
     if r.returncode != 0:
         return c
+    # flash.sh 读取 zig-out/bin/app.bin：镜像始终同步到该路径，避免烧到旧产物
+    import shutil
+    shutil.copyfile(outbin, FW / "zig-out" / "bin" / "app.bin")
     r = run([*esptool(), "--chip", "esp32s31", "image-info", str(outbin)])
     rows = [l for l in r.stdout.splitlines() if "DROM, IROM" in l]
     c.check(len(rows) == 2, f"expected exactly 2 DROM/IROM rows, got {len(rows)}")
@@ -128,7 +131,7 @@ def board_case(profile_name: str) -> Case:
     text = log.read_text(errors="replace") if log.exists() else ""
     c.output = text[-4000:]
     c.duration = time.time() - start
-    c.check("s31-system firmware" in text, "merged firmware banner missing")
+    c.check("s31-firmware boot" in text, "merged firmware banner missing")
     for sec in PROFILES[profile_name]["sections"]:
         c.check(f"section: {sec}" in text, f"missing section {sec}")
     c.check("firmware: sections: passed=" in text, "aggregate sections line missing")

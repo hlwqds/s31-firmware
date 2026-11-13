@@ -1,4 +1,4 @@
-# s31-zig-system
+# s31-firmware
 
 ESP32-S31（RISC-V 双核）的**生产固件与板级组件**，用 Zig 0.17.1 编写，
 形态为「纯 Zig ELF + IDF 二级 bootloader」。不包含教程与博客内容。

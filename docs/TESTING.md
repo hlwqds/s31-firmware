@@ -36,7 +36,7 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 E2E 断言：
 
 - `elf2image` 成功，`image-info` 恰好两行 `DROM, IROM`，镜像 ≤ factory 分区（`0x177000`）。
-- 板级：banner `s31-system firmware`、profile 期望的 `section:` 集合、每段
+- 板级：banner `s31-firmware boot`、profile 期望的 `section:` 集合、每段
   `checks: passed=N failed=0`、聚合 `firmware: sections: passed=K failed=0 total=K`、
   `main: verdict=pass`；日志写入 `logs/e2e-<profile>-boot.log`。
 - 结果输出 JUnit XML（`reports/e2e-*.xml`），供 CI 归档。
