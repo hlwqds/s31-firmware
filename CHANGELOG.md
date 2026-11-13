@@ -10,6 +10,10 @@
 
 ## [0.2.0] - 2026-11-13
 
+### Added
+- 测试框架：`docs/TESTING.md`、`scripts/check-all.sh`、单元覆盖率门禁（模块可达性 + 基线）、
+  E2E profile 矩阵与 JUnit 报告（`tests/e2e/run_e2e.py`）
+
 ### Changed
 - 重构为生产结构：`firmware/` + `boards/` + `components/`，移除章节目录（历史见 `docs/HISTORY.md`）
 - 新增编译期特性开关与聚合测试（11 个组件，323 项）

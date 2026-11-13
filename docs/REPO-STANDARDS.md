@@ -42,6 +42,7 @@
 | 级别 | 内容 | 何时必需 |
 | --- | --- | --- |
 | L1 主机单元 | 纯逻辑、向量、状态机、编解码 | 每次提交（CI 强制） |
+| L1 覆盖率 | 模块可达性 100% + 用例数基线（`tests/baselines.json`） | 每次提交（CI 强制） |
 | L2 镜像 | 交叉编译 + 两段镜像 + 段表判据 | 每次提交（CI 强制，至少一个代表工程） |
 | L3 板侧自检 | 烧录后 `check:` 判据全过、`verdict=pass` | 合并前（有板时）；无板时以 L1/L2 通过并标「待真机验证」 |
 | L4 真链路/计量 | 抓包、吞吐、电流、唤醒时间 | 版本发布前，按 ROADMAP 各阶段出口 |
@@ -89,6 +90,8 @@
 1. `scripts/check-fmt.sh` 通过（`zig fmt --check`）。
 2. `scripts/check-host.sh` 通过（固件聚合测试 + `tools/s31-production/*`）。
 3. `scripts/build-image.sh firmware` 通过（两段镜像判据）。
-4. 文档变更需通过 Markdown 链接检查（相对路径必须存在）。
+4. `python3 scripts/check-coverage.py` 通过（逻辑模块 100% 可达，用例数不低于基线）。
+5. `tests/e2e/run_e2e.py --host` 通过（profile 构建 + 两段镜像）。
+6. 文档变更需通过 Markdown 链接检查（相对路径必须存在）。
 
 自托管 runner 上的板级任务（`workflow_dispatch` 触发）不属于合并门禁，但发布前必须跑过一次。
