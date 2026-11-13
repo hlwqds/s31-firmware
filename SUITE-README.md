@@ -54,7 +54,7 @@
 
    `--preview` 是 `idf.py` 的全局选项，必须放在子命令之前；v6.1 正式版转正后可省略。
    本仓已有 S31 实机基线：[[onvif-deep-dive|ONVIF 深度解析系列]]的
-   [[ch11-esp32s31-lab-plan|第十一章]]与 `practice/onvif-labs/SPEC.md`。
+   [[ch11-esp32s31-lab-plan|第十一章]]与博客仓库 `hl-ljj-quartz` 的 `practice/onvif-labs/SPEC.md`。
 
 3. **镜像/分区解析（主机侧）**：进入 `ch03-image-inspect/`，用
    `zig build run -- <app.bin|partition-table.bin>` 读取字段；与 `esptool image-info`

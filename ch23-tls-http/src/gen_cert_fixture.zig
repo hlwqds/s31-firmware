@@ -10,7 +10,7 @@
 //! 固定 noise（全零）。所以重跑这个工具不应产生任何 diff。
 //!
 //! 用法（仓库根或工程根都可以，路径相对工程根）：
-//!   cd practice/zig-esp32-s31/ch23-tls-http && zig build gen-fixture
+//!   cd ch23-tls-http && zig build gen-fixture
 
 const std = @import("std");
 const cert = @import("cert.zig");

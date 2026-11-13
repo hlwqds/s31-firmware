@@ -1,6 +1,6 @@
 # Zig × ESP32-S31 实验套件 · 构建规格 v1.1
 
-本文件是 ` ` 全部实验工程的实现契约，配套系列为 [[zig-esp32-s31]]。
+本文件是本仓库 28 个实验工程（ch01–ch28）的实现契约，配套教程系列为 `zig-esp32-s31`（正文在博客仓库）。
 工程作者动手前必读；章节正文引用的构建产物、镜像字段与串口输出，出处一律是本套件对应
 工程的真实构建记录与 `run.log`，本规格不提供任何"预期输出"。
 
@@ -143,7 +143,7 @@ idf.py --preview set-target esp32s31   # v6.1 preview target；转正后可省�
 
 `esp32s31` 在 IDF v6.1 是 **preview target**，`set-target` / `list-targets` 必须带
 `--preview`（`--preview` 是 `idf.py` 全局选项，放在子命令之前）；本仓
-`practice/onvif-labs` 的 S31 实机基线同样使用该写法。v6.1 正式版转正后可省略。
+博客仓库 `hl-ljj-quartz` 的 `practice/onvif-labs` 的 S31 实机基线同样使用该写法。v6.1 正式版转正后可省略。
 
 根 `CMakeLists.txt` 只声明"这是一个 IDF 工程"，Zig 的查找与集成交给
 `main/CMakeLists.txt`：

@@ -21,7 +21,7 @@ from pathlib import Path
 
 CHAPTER_DIR_RE = re.compile(r"^ch(?P<num>\d{2})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$")
 EXPECTED_CHAPTERS = tuple(range(1, 29))
-DEFAULT_SUITE = Path("practice") / "zig-esp32-s31"
+DEFAULT_SUITE = Path(".")  # 扁平布局：章节工程直接在仓库根（迁出后）
 
 # (JSON/TSV 列名, 相对章节目录的路径, 期望类型)
 MARKERS = (
@@ -36,7 +36,10 @@ TSV_COLUMNS = ("chapter", "path", "present", "build.zig", "README.md", "src/", "
 def default_suite_root() -> Path:
     """仓库根为 inventory.py 的上三级：baseline/ -> s31-production/ -> tools/ -> repo。"""
     repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / DEFAULT_SUITE
+    candidate = repo_root / DEFAULT_SUITE
+    # 兼容两种布局：扁平（本仓库）与 practice/zig-esp32-s31（父仓库）
+    legacy = repo_root / "practice" / "zig-esp32-s31"
+    return candidate if (candidate / "ch01-board-id").exists() else legacy
 
 
 def parse_chapter_selection(raw: str | None) -> tuple[int, ...]:

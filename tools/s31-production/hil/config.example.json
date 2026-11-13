@@ -2,12 +2,12 @@
   "allow_hardware": false,
   "port": "/dev/ttyUSB0",
   "baud": 115200,
-  "firmware": "practice/zig-esp32-s31/ch28-bootstrap-power-performance/zig-out/bin/app.bin",
+  "firmware": "ch28-bootstrap-power-performance/zig-out/bin/app.bin",
   "artifacts_dir": "tools/s31-production/hil/artifacts",
   "build": {
     "enabled": false,
     "command": ["zig", "build"],
-    "cwd": "practice/zig-esp32-s31/ch28-bootstrap-power-performance",
+    "cwd": "ch28-bootstrap-power-performance",
     "timeout_s": 600
   },
   "flash": {

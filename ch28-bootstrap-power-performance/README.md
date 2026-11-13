@@ -47,17 +47,17 @@
 
 | 路径                 | 角色                                                         | 代码浏览                                                                                                                           |
 | -------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `build.zig`          | 形态 B 构建入口 + `zig build test`                           | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/build.zig)          |
-| `linker/s31.ld`      | 两个 flash 装载段、`.trap_ram`、栈/堆边界                    | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/linker/s31.ld)      |
-| `src/bootslot.zig`   | 16 B otadata 条目、CRC32、双扇区选槽、factory 回退           | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/bootslot.zig)   |
-| `src/power.zig`      | light/deep sleep 预算、RTC 32 位上限、电池寿命               | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/power.zig)      |
-| `src/perf.zig`       | min/max/mean、p50/p95、吞吐、周期/频率折算                   | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/perf.zig)       |
-| `src/ota.zig`        | 复用 ch24 的 A/B 状态机（NEW→PENDING→VALID/INVALID/ABORTED） | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/ota.zig)        |
-| `src/selftest.zig`   | 板侧 12 条判据                                               | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/selftest.zig)   |
-| `src/host_tests.zig` | 主机侧测试根                                                 | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/host_tests.zig) |
-| `src/main.zig`       | banner → 自检 → verdict → `wfi`                              | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/main.zig)       |
-| `src/start.zig`      | `esp_app_desc_t` + naked `_start`                            | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/src/start.zig)      |
-| `tools/flash.sh`     | 读 `flash_args` 并烧 bootloader/分区表/应用                  | [查看](https://github.com/hlwqds/hl-ljj-quartz/blob/v4/ ch28-bootstrap-power-performance/tools/flash.sh)     |
+| `build.zig`          | 形态 B 构建入口 + `zig build test`                           | [查看](build.zig)          |
+| `linker/s31.ld`      | 两个 flash 装载段、`.trap_ram`、栈/堆边界                    | [查看](linker/s31.ld)      |
+| `src/bootslot.zig`   | 16 B otadata 条目、CRC32、双扇区选槽、factory 回退           | [查看](src/bootslot.zig)   |
+| `src/power.zig`      | light/deep sleep 预算、RTC 32 位上限、电池寿命               | [查看](src/power.zig)      |
+| `src/perf.zig`       | min/max/mean、p50/p95、吞吐、周期/频率折算                   | [查看](src/perf.zig)       |
+| `src/ota.zig`        | 复用 ch24 的 A/B 状态机（NEW→PENDING→VALID/INVALID/ABORTED） | [查看](src/ota.zig)        |
+| `src/selftest.zig`   | 板侧 12 条判据                                               | [查看](src/selftest.zig)   |
+| `src/host_tests.zig` | 主机侧测试根                                                 | [查看](src/host_tests.zig) |
+| `src/main.zig`       | banner → 自检 → verdict → `wfi`                              | [查看](src/main.zig)       |
+| `src/start.zig`      | `esp_app_desc_t` + naked `_start`                            | [查看](src/start.zig)      |
+| `tools/flash.sh`     | 读 `flash_args` 并烧 bootloader/分区表/应用                  | [查看](tools/flash.sh)     |
 | `idf-bootstrap/`     | 最小 IDF 工程，只产出 bootloader/分区表                      | —                                                                                                                                  |
 
 ## 环境

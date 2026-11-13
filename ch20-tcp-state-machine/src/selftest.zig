@@ -18,7 +18,7 @@
 //!
 //! 输出是判读行（`check: ... ok=1/0`），最后一行 `checks: passed=.. failed=..`。
 //! 这些值来自 2026-11-13 的真机串口
-//! （`practice/zig-esp32-s31/logs/ch20-boot.log`）。
+//! （`logs/ch20-boot.log`）。
 
 const std = @import("std");
 
