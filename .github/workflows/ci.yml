@@ -28,6 +28,8 @@ jobs:
         run: python3 -m pip install pyyaml
       - name: workflow YAML lint
         run: python3 scripts/check-yaml.py
+      - name: repo invariants (single app identity / start path)
+        run: python3 scripts/check-invariants.py
       - name: zig fmt --check
         run: scripts/check-fmt.sh
       - name: host test matrix

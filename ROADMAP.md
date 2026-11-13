@@ -41,6 +41,7 @@
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发
 - [x] 覆盖率门禁：`scripts/check-coverage.py`（逻辑模块 100% 可达 + 用例数基线）
 - [x] E2E：`tests/e2e/run_e2e.py`（profile 构建/两段镜像 + 板级自检，JUnit 输出）
+- [ ] 组件去重：11 份组件内 `hw.zig`/`log.zig` 副本收敛到 `boards/`（配合 `scripts/check-board-sync.sh` 漂移检查）
 - [ ] 分支保护与远端：`main` 只接受 PR；发布用 tag
 - [ ] **P0.2 多段镜像**：解除「恰好两段」限制，使 `-Dtls=true` 与 `-Dwifi=true` 可同时开启
 - **出口**：主分支一次绿色 CI 运行；从零克隆后按 README 能在 10 分钟内跑通主机测试与镜像构建

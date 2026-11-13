@@ -8,6 +8,14 @@
 - P0.2：多段镜像布局，解除两段窗口对 TLS/Wi-Fi 同时开启的限制
 - P1：以太网 ref clock / MDIO 闭环
 
+## [0.3.0] - 2026-11-13
+
+### Changed（破坏性）
+- 项目更名 `s31-zig-system` → `s31-firmware`：仓库/目录、`esp_app_desc_t.project_name`、
+  固件 banner、IDF 工程名（`zig_s31_system_firmware` → `zig_s31_firmware`）全部更新
+- 启动路径唯一化：删除 `boards/.../start.zig`，`_start` 与 app_desc 只归 `firmware/src/start.zig`
+- E2E 板级用例先按 profile 构建、镜像同步到 `zig-out/bin/app.bin`，段集合改为精确相等断言
+
 ## [0.2.0] - 2026-11-13
 
 ### Added

@@ -120,6 +120,13 @@ def board_case(profile_name: str) -> Case:
             f"缺少 {flash_args.relative_to(ROOT)}：先在 firmware/idf-bootstrap/ 里执行 "
             "`idf.py --preview set-target esp32s31 && idf.py build`（gitignore 产物）")
         return c
+    # 先按所选 profile 构建并同步镜像到 zig-out/bin/app.bin；
+    # fresh checkout（CI）没有该产物，必须先构建。
+    build = build_profile(profile_name, PROFILES[profile_name])
+    if build.failures:
+        c.failures.extend(build.failures)
+        c.output = build.output
+        return c
     start = time.time()
     flash = run(["flock", "/tmp/s31-board.lock", "sh", "-c", "sh tools/flash.sh /dev/ttyUSB1"], cwd=FW)
     c.check(flash.returncode == 0, f"flash failed: {(flash.stdout + flash.stderr)[-800:]}")
@@ -132,8 +139,9 @@ def board_case(profile_name: str) -> Case:
     c.output = text[-4000:]
     c.duration = time.time() - start
     c.check("s31-firmware boot" in text, "merged firmware banner missing")
-    for sec in PROFILES[profile_name]["sections"]:
-        c.check(f"section: {sec}" in text, f"missing section {sec}")
+    actual = re.findall(r"^section: (\w+)$", text, re.MULTILINE)
+    expected = PROFILES[profile_name]["sections"]
+    c.check(actual == expected, f"section set mismatch: expected {expected}, got {actual}")
     c.check("firmware: sections: passed=" in text, "aggregate sections line missing")
     c.check("main: verdict=pass" in text, "verdict=pass missing")
     for m in re.finditer(r"checks: passed=(\d+) failed=(\d+)", text):

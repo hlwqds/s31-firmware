@@ -21,6 +21,7 @@
 - 组件内部布局：`src/*.zig` + `src/host_tests.zig`（测试入口）；固件固定布局：`firmware/src/{start,main}.zig`、`firmware/build.zig`、`firmware/idf-bootstrap/`、`firmware/tools/flash.sh`。
 - 新增组件必须更新 `docs/HISTORY.md` 的映射与 `ROADMAP.md` 的能力表；涉及决策的变更写 `docs/adr/ADR-NNN-*.md`。
 - 日志命名 `logs/<case>-boot.log`；同名案例多轮用后缀 `b-`、`c-`；修复前/后各留一份。
+- `logs/e2e-<profile>-boot.log` 是可再生产物（每次 E2E 覆盖）；唯一留档的合并镜像证据用带轮次的 `logs/firmware-boot[-x].log`。
 
 ## 2. 构建与工具链
 
