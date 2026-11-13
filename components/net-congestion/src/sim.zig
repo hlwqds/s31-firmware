@@ -392,7 +392,7 @@ test "仿真稳态吞吐与 Mathis 同量级（4 MiB 传输，1% 与 10%）" {
     const r1 = run(.{ .loss = .{ .periodic = 100 }, .total_bytes = big, .max_ticks = 400_000 });
     const t1 = cong.mathisBytesPerTickMilli(10, 1460, 24);
     // 1% 丢包：仿真比理论低约 20%（周期丢包固定命中 + 单洞恢复更乐观，
-    // 两个方向叠加的净值见章节 21.7.3），仍同量级。
+    // 两个方向叠加的净值见`docs/history/` 的历史说明.3），仍同量级。
     try std.testing.expect(r1.throughputMilli() * 10 >= t1 * 7);
     try std.testing.expect(r1.throughputMilli() <= t1);
 

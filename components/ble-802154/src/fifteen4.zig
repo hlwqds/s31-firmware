@@ -13,7 +13,7 @@
 //!   * IID 推导——RFC 4944 §6 + RFC 2464（EUI-64 → IID 的 U/L 翻转）。
 //!
 //! **不做** Mesh 头、分片头（RFC 4944 §5.3）、上下文表（RFC 6282 §3.1.2）、
-//! MLE（Thread 的 Mesh Link Establishment，见章节 27.7），也不做任何组播
+//! MLE（Thread 的 Mesh Link Establishment，见`docs/history/` 的历史说明），也不做任何组播
 //! 压缩（M=1）。遇到这些，解压器返回 `error.UnsupportedCompression` 并把
 //! `stats.rejected` 加一——判据 ⑫ 就是拿这个拒绝路径当被测对象的。
 //!

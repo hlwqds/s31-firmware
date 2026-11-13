@@ -36,7 +36,7 @@
 //!     :71   BLE_ATT_ERR_INVALID_PDU           0x04
 //!     :111  BLE_ATT_ERR_INSUFFICIENT_RES      0x11
 //!
-//! 本节约定的“最小策略”（章节 27.4 会逐条说明哪些是规范、哪些是本实现的
+//! 本节约定的“最小策略”（`docs/history/` 的历史说明 会逐条说明哪些是规范、哪些是本实现的
 //! 选择）：
 //!   1. 请求 MTU < 23 → 直接拒绝（error.MtuTooSmall），不发 PDU；
 //!   2. 协商结果 = min(client, server_max)，server 端上限是编译期常量；

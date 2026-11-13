@@ -2,7 +2,7 @@
 //!
 //! 本组件板侧**不碰射频**：没有扫描、没有连接、没有读特征值、没有 Thread 入网。
 //! controller 归档（libble_app.a 等）一个字节都没链接（见 `tools/symbols.sh`
-//! 的产物与章节 27.2/27.11）。被测对象是四段纯逻辑：
+//! 的产物与`docs/history/` 的历史说明/27.11）。被测对象是四段纯逻辑：
 //!
 //!   `hci.zig`      —— HCI 分帧（ACL / Command / Event / LE Meta）
 //!   `att.zig`      —— ATT 8 个操作码的字节布局与 MTU 截断

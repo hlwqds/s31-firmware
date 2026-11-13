@@ -21,6 +21,10 @@ ESP32-S31（RISC-V 双核）的**生产固件与板级组件**，用 Zig 0.17.1 
 
 完整判据与未闭环项见 `ROADMAP.md` 与 `docs/history/`。
 
+**范围**：本仓只承载产品固件（`firmware/`）、板级层（`boards/`）、网络/应用/Wi-Fi 组件与生产化工具。
+中断/CLIC、定时器/DMA、Flash/NVS、协作/抢占调度、同步原语、堆栈 caps、双核 SMP/IPI、可观测性等
+实验性实现**不在本仓**（代码随章节树移除，结论与日志见 `docs/history/` 与 `logs/`）。
+
 ## 构建
 
 ```bash

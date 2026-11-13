@@ -50,7 +50,8 @@
 
 - 只有**日志里出现过的字符串**才算实测；其它一律写「待真机验证」并给出判据。
 - 引用日志的文档必须给出路径；日志只增不改，修复前后各留一份。
-- 判据条数在 `build.zig`、`src/main.zig`、`src/selftest.zig`、`linker/s31.ld`、`README.md` 五处一致。
+- 组件的判据条数在其 `selftest.zig` 与 `README.md` 之间一致；`firmware/src/main.zig` 只打印
+  聚合行 `firmware: sections: ...`，各段自身的 `checks: passed=N failed=0 total=N` 才是判据数。
 - 禁止把模型值写成实测值；模型值与实测值必须分列并标注口径。
 
 ## 5. 提交与评审
