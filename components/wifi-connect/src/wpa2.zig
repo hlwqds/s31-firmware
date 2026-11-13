@@ -1,6 +1,6 @@
 //! wifi-connect：WPA2-PSK 与 4-way handshake 的可测部分。
 //!
-//! 本章**不实现 CCMP/AES**、不实现射频、不链接 Wi-Fi blob。这里只有三层
+//! 本组件**不实现 CCMP/AES**、不实现射频、不链接 Wi-Fi blob。这里只有三层
 //! 纯逻辑，全部可以在 x86_64 上跑、也可以在同一块 rv32 上跑：
 //!
 //!   1. 密钥派生：passphrase + SSID → PMK（PBKDF2-HMAC-SHA1，4096 轮，
@@ -33,7 +33,7 @@ pub const kek_len = 16;
 pub const tk_len = 16;
 /// CCMP 的 PTK = KCK(16) + KEK(16) + TK(16)。
 pub const ptk_ccmp_len = kck_len + kek_len + tk_len;
-/// 本章额外算一遍 512 位的 PTK：802.11r/GCMP 用到更长的 PTK，
+/// 本组件额外算一遍 512 位的 PTK：802.11r/GCMP 用到更长的 PTK，
 /// 同一份 PRF 只是取更多块（64 字节 = 4 个 HMAC-SHA1 块）。
 pub const ptk_512_len = 64;
 pub const mic_len = 16;
@@ -47,14 +47,14 @@ pub const ssid_max = 32;
 pub const ptk_label = "Pairwise key expansion";
 
 pub const Wpa2Error = error{
-    /// passphrase 长度不在 [8, 63]（64 位十六进制 PSK 走另一条路径，本章不做）。
+    /// passphrase 长度不在 [8, 63]（64 位十六进制 PSK 走另一条路径，本组件不做）。
     PassphraseLength,
     SsidLength,
     /// PBKDF2 的参数被 std 拒绝（轮数为 0 或输出过长），正常输入不会到这。
     Kdf,
     /// 帧短于固定部分（4 + 95 字节）或 key_data_len 与剩余长度不符。
     BadFrame,
-    /// 不认识的 descriptor type（本章只做 RSN = 2）。
+    /// 不认识的 descriptor type（本组件只做 RSN = 2）。
     BadDescriptor,
 };
 
@@ -256,7 +256,7 @@ pub fn encode(frame: KeyFrame, key_data: []const u8, out: []u8) Wpa2Error!usize 
     return total;
 }
 
-/// 只解固定部分；key data 由调用方按返回的长度自行处理（本章只校验长度）。
+/// 只解固定部分；key data 由调用方按返回的长度自行处理（本组件只校验长度）。
 pub fn decode(buf: []const u8) Wpa2Error!struct { frame: KeyFrame, key_data_len: u16 } {
     if (buf.len < eapol_header_len + key_body_fixed_len) return error.BadFrame;
     if (buf[1] != 3) return error.BadFrame;
@@ -311,7 +311,7 @@ pub fn verifyMic(kck: [kck_len]u8, frame: []const u8) Wpa2Error!bool {
 
 /// 802.11i 的 replay counter 随每一条新的 EAPOL-Key 帧递增；重传帧带同一个
 /// 计数，但重传帧必须逐字节相同（MIC 也相同），否则就是重放攻击。
-/// 本章采用最保守的规则：**严格大于**才接受。重复计数会被判 stale，
+/// 本组件采用最保守的规则：**严格大于**才接受。重复计数会被判 stale，
 /// 这条规则让「同一帧重放」和「乱序」都变成同一个可断言的错误。
 pub fn replayAccept(last: u64, incoming: u64) bool {
     return incoming > last;
@@ -340,7 +340,7 @@ pub const FourWay = struct {
     last_replay: u64 = 0,
     /// 从 msg1 里抄下来的 ANonce，用于派生 PTK。
     anonce: [nonce_len]u8 = @splat(0),
-    /// 自己生成的 SNonce（本章由自检填固定值，真实实现用 TRNG）。
+    /// 自己生成的 SNonce（本组件由自检填固定值，真实实现用 TRNG）。
     snonce: [nonce_len]u8 = @splat(0),
     /// 握手过程中累积的错误计数，便于日志一行打印。
     rejects: u32 = 0,

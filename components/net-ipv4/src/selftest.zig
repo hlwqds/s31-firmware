@@ -1,6 +1,6 @@
 //! net-ipv4：板侧自检（最小骨架）。
 //!
-//! 本章的正餐在主机侧：`zig build test` 跑 inet/ipv4/icmp/arp/route 五个纯逻辑
+//! 本组件的正餐在主机侧：`zig build test` 跑 inet/ipv4/icmp/arp/route 五个纯逻辑
 //! 模块。板侧**只回答一个问题**：同一份代码在 rv32 + 真实 SRAM 布局下能否
 //! 走完一条自洽的闭环——构造 ICMP 回显 → 按 MTU 分片 → 乱序重组 →
 //! 查路由 → ARP 解析/老化 → 从 ICMP frag-needed 学 PMTU。
@@ -12,7 +12,7 @@
 //! 不使用堆：原始数据报（3020 B）、三个 1500 B 分片缓冲、重组缓冲
 //! （2 × 3020 B）、ARP 缓存、路由表、PMTU 表都是静态数组。镜像实测
 //! `.data = 0x180`、`.bss = 0x3810`（≈14.4 KB，`_start` 只清 `.bss`），
-//! 加上 16 KiB 主栈，这就是本章板侧对 SRAM 的真实压力。
+//! 加上 16 KiB 主栈，这就是本组件板侧对 SRAM 的真实压力。
 
 const std = @import("std");
 

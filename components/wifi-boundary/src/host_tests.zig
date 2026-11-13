@@ -3,7 +3,7 @@
 //! 被测的是三个纯逻辑模块：`blob_abi.zig`（ABI 契约）、`adapter.zig`
 //! （垫片）、`stub_blob.zig`（模拟 blob）。它们不 import 硬件、不 import
 //! 串口，所以在 x86_64 上直接跑；板侧 `src/selftest.zig` 用同一批模块把
-//! 同样的场景再走一遍（判据行见 `../logs/早期实现-boot.log`）。
+//! 同样的场景再走一遍（判据行见 `../logs/早期工程-boot.log`）。
 //!
 //! 主机与板侧的**唯一**差别是 `@sizeOf(usize)`：vtable/host api 的长度随
 //! 指针宽度变化，所以断言里用公式，不用手算常数；`Event`/`Handle` 是
@@ -20,7 +20,7 @@ fn fresh() void {
 }
 
 // 每个用例都从“刚上电”开始：模块级全局状态必须显式复位，
-// 否则第二个用例会继承第一个用例的队列——这正是 早期实现 判据 ⑫ 的动机。
+// 否则第二个用例会继承第一个用例的队列——这正是 早期工程 判据 ⑫ 的动机。
 fn resetAll() void {
     fresh();
 }

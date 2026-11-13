@@ -1,6 +1,6 @@
 //! firmware：形态 B 的启动代码 + IDF 应用描述。
 //!
-//! 与 早期工程 的 start.zig 同构，本章只改描述字段与注释：
+//! 与 早期工程 的 start.zig 同构，本工程只改描述字段与注释：
 //!
 //!   1) 关全局中断   —— mstatus.MIE=0、mie=0
 //!   2) 设置 sp / gp —— sp = _stack_top；gp = __global_pointer$
@@ -9,9 +9,9 @@
 //!   5) 安装 mtvec   —— mtvec = trapEntry（4 字节对齐）
 //!   6) 调用 main
 //!
-//! 本章仍是 **28A**：启动链仍是 IDF 二级 bootloader → 本 ELF，尚未替换成
+//! 本工程仍是 **28A**：启动链仍是 IDF 二级 bootloader → 本 ELF，尚未替换成
 //! form C 的 Zig bootloader。`app_desc` 的版本字段故意留成可回滚的初值，
-//! 真实 A/B 选槽由 bootloader 读 `otadata`；本章的选槽模型在
+//! 真实 A/B 选槽由 bootloader 读 `otadata`；本工程的选槽模型在
 //! `src/bootslot.zig` 里离线判定。
 //!
 //! 第 3 步不是“可选的清理”：不做，约 9 s 后 `rst:0x10 CHIP_LP_WDT_RESET`。
@@ -28,9 +28,9 @@ const trap = @import("trap.zig");
 // 字段顺序与 IDF v6.1 components/esp_app_format/include/esp_app_desc.h 一致，
 // 整个结构在镜像里占 256 字节；bootloader 无条件读它。
 //
-// 本章的 OTA 自检把这个结构当成“镜像身份”的一部分：真实 OTA 的第一道
+// 本工程的 OTA 自检把这个结构当成“镜像身份”的一部分：真实 OTA 的第一道
 // 校验就是 `magic_word == 0xABCD5432`（esp_app_desc.h:21）与 `secure_version`
-// 单调不回退（esp_ota_ops.c 的 chip_id/secure_version 比较）。本章只读内存
+// 单调不回退（esp_ota_ops.c 的 chip_id/secure_version 比较）。本工程只读内存
 // 里的同一份布局，不写 flash。
 // ---------------------------------------------------------------------------
 const AppDesc = extern struct {

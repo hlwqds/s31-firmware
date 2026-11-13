@@ -1,7 +1,7 @@
 //! net-udp-dhcp-dns：DHCP 报文编解码与客户端状态机。
 //!
 //! DHCP（RFC 2131）的报文格式继承自 BOOTP：**236 字节固定区 + 4 字节魔数 +
-//! TLV 选项区**。三段的边界是本章最容易写错的地方——
+//! TLV 选项区**。三段的边界是本组件最容易写错的地方——
 //!
 //! ```text
 //! 0 .. 236     op/htype/hlen/hops/xid/secs/flags/ciaddr/yiaddr/siaddr/giaddr/
@@ -24,7 +24,7 @@
 //!
 //! lwIP 把 T1/T2 换算成 60s 的粗定时器 tick 数（`DHCP_COARSE_TIMER_SECS`，
 //! `components/lwip/lwip/src/include/lwip/dhcp.h:64-65`），因此租期小于 1 分钟
-//! 时 T1 与 T2 会同时触发，它索性把 T1 置 0（`dhcp.c:1206-1210`）。本章直接
+//! 时 T1 与 T2 会同时触发，它索性把 T1 置 0（`dhcp.c:1206-1210`）。本组件直接
 //! 用秒，保留同样的“T1 不得晚于 T2”的约束，但不引入粗 tick 的量化误差。
 
 const std = @import("std");
@@ -212,7 +212,7 @@ pub fn parseOptions(packet: []const u8, out: *Options) Error!void {
             Option.server_id => out.server_id = try ipAt(data),
             Option.subnet_mask => out.subnet_mask = try ipAt(data),
             Option.router => {
-                // 路由器列表可以有多项，本章只取第一个（板侧只有一条默认路由）。
+                // 路由器列表可以有多项，本组件只取第一个（板侧只有一条默认路由）。
                 if (l < 4) return error.BadOption;
                 out.router = try ipAt(data[0..4]);
             },

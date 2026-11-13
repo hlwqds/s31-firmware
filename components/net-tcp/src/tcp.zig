@@ -1,7 +1,7 @@
 //! net-tcp：TCP 段编解码 + 序列号算术 + 状态机 + RTO + 重组。
 //!
-//! 这是 早期实现 `headers.zig` 里那个 20 字节 `Tcp` 结构的**超集**：那一版只够
-//! “把首部读出来”，本章要真正跑一个连接，于是把它扩成四层：
+//! 这是 早期工程 `headers.zig` 里那个 20 字节 `Tcp` 结构的**超集**：那一版只够
+//! “把首部读出来”，本组件要真正跑一个连接，于是把它扩成四层：
 //!
 //!   1. `Header` / `Segment`：20 字节固定首部 + 选项（MSS、WS、SACK-permitted，
 //!      后两者只解析不使用）+ 载荷切片；
@@ -20,7 +20,7 @@
 //!
 //! 本模块**不发包、不碰网卡、不开中断**：所有输入都是“已经到达的段”，
 //! 所有输出都是“应该发什么”的描述（`Action`）。把这个描述变成以太网帧
-//! 是 早期工程 的活，把多个连接排进一个事件循环是 早期实现 的活。
+//! 是 早期工程 的活，把多个连接排进一个事件循环是 相关组件的活。
 
 const std = @import("std");
 
@@ -58,7 +58,7 @@ pub const RTO_K: u64 = 4;
 /// 演示取值：MSL = 30 秒 → 2MSL = 60 秒。
 /// RFC 9293 §3.4.2 把规范的 MSL 取为 2 分钟（engineering choice），
 /// lwIP 缺省把 `TCP_MSL` 配成 60000 ms 再乘 2（见 tcp_priv.h:137-138）；
-/// 本章取 30 秒只是为了把 2MSL 压到 60 秒，属于本章自己的演示值。
+/// 本组件取 30 秒只是为了把 2MSL 压到 60 秒，属于本组件自己的演示值。
 pub const MSL_US: u64 = 30_000_000;
 pub const TIME_WAIT_US: u64 = 2 * MSL_US;
 
@@ -66,7 +66,7 @@ pub const TIME_WAIT_US: u64 = 2 * MSL_US;
 // 标志位与首部
 // ---------------------------------------------------------------------------
 
-/// 首部第 13 字节（低 8 位）。LSB 在前，与 早期实现 `headers.TcpFlags` 一致。
+/// 首部第 13 字节（低 8 位）。LSB 在前，与 早期工程 `headers.TcpFlags` 一致。
 pub const Flags = packed struct(u8) {
     fin: bool = false,
     syn: bool = false,
@@ -117,8 +117,8 @@ pub const Flags = packed struct(u8) {
     }
 };
 
-/// 已解析的选项。SACK-permitted 与 WS 只记录、不参与行为（窗口缩放留 早期实现，
-/// SACK 的重传选择也留 早期实现：本章只有“单段 + 累积 ACK”这一种重传）。
+/// 已解析的选项。SACK-permitted 与 WS 只记录、不参与行为（窗口缩放留 早期工程，
+/// SACK 的重传选择也留 早期工程：本组件只有“单段 + 累积 ACK”这一种重传）。
 pub const Options = struct {
     /// kind 2，长度 4。
     mss: ?u16 = null,
@@ -369,7 +369,7 @@ pub fn clampRto(value: u64) u64 {
     return @min(@max(value, MIN_RTO_US), MAX_RTO_US);
 }
 
-/// 单段重传计时器：只有“一个未确认段”的模型（本章刻意不做滑动窗口）。
+/// 单段重传计时器：只有“一个未确认段”的模型（本组件刻意不做滑动窗口）。
 pub const TxTimer = struct {
     active: bool = false,
     deadline_us: u64 = 0,
@@ -462,7 +462,7 @@ pub const Reasm = struct {
 
     /// 插入一段，返回到 `out` 里“新交付”的字节数（0 表示还缺前面的段，
     /// 或这段是重复的老段）。`out` 的容量至少要能装下从 `expect` 起连续的
-    /// 所有数据；本章自检给 512 字节。
+    /// 所有数据；本组件自检给 512 字节。
     pub fn insert(self: *Reasm, seq: u32, data: []const u8, out: []u8) usize {
         if (data.len == 0) return 0;
 
@@ -613,7 +613,7 @@ pub const Conn = struct {
     /// 已发送过的最高序列号（含 SYN/FIN）。`snd_una == snd_max` 即“全部确认”。
     snd_max: u32 = 0,
     rcv_nxt: u32 = 0,
-    /// 对方通告的接收窗口（本章只记录，不做窗口管理）。
+    /// 对方通告的接收窗口（本组件只记录，不做窗口管理）。
     snd_wnd: u16 = 0,
     /// 有效 MSS：取对端 SYN 里的选项，缺省 536。
     mss: u16 = MSS_DEFAULT,

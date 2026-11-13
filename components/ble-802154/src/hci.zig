@@ -1,6 +1,6 @@
 //! ble-802154：HCI 分帧（host ↔ controller 的唯一缝）。
 //!
-//! 本章不链接 BLE controller blob，也不驱动射频；这个文件是**字节级**的
+//! 本组件不链接 BLE controller blob，也不驱动射频；这个文件是**字节级**的
 //! 编解码器，被三处共用：
 //!
 //!   * `src/host_tests.zig` —— x86_64 上的 KAT；
@@ -52,7 +52,7 @@ pub const le_advertising_report: u8 = 0x02;
 /// ACL 头固定 4 字节：Handle(12b)+PB(2b)+BC(2b)，Data_Length(16b)。
 pub const acl_header_len: usize = 4;
 
-/// 本章 ACL 载荷的静态上限。真实 controller 的 ACL MTU 由
+/// 本组件 ACL 载荷的静态上限。真实 controller 的 ACL MTU 由
 /// `HCI_ACL_PKT_LEN` 之类配置决定（LE 数据长度扩展后可达 251+），
 /// 这里取 251 作为“一个 LE 数据 PDU 的上界”，够放下 ATT MTU 247 的值。
 pub const acl_max_payload: usize = 251;
@@ -69,7 +69,7 @@ pub const Error = error{
     NoSpace,
     /// Data_Length 声明超过 `acl_max_payload`。
     Oversize,
-    /// 子事件码不是本章实现的那几种。
+    /// 子事件码不是本组件实现的那几种。
     UnsupportedEvent,
 };
 
@@ -104,7 +104,7 @@ pub const Pb = enum(u2) {
 
 /// BC 标志（ACL 的广播位）。LE 的 ACL 只用 `0b00`（点对点）；另外三个位值在
 /// 不同 Core 版本里被解释成 BR/EDR 的 Active/Piconet Broadcast，或被标为保留，
-/// 本章不编码它们，所以名称保持中性，避免把某一版的解释写死。
+/// 本组件不编码它们，所以名称保持中性，避免把某一版的解释写死。
 pub const Bc = enum(u2) {
     /// 0b00：点对点。LE 唯一合法的取值。
     point_to_point = 0b00,
@@ -410,7 +410,7 @@ pub const kat_acl_header = [4]u8{ 0x42, 0x30, 0x05, 0x00 };
 pub const kat_set_adv_enable = [5]u8{ 0x01, 0x0a, 0x20, 0x01, 0x01 };
 
 /// 一条 ADV_IND 的广播数据：flags + 16-bit UUID 0x180A + Complete Local Name
-/// “早期实现”。逐段：02 01 06 | 03 03 0A 18 | 05 09 63 68 32 37，共 13 字节。
+/// “早期工程”。逐段：02 01 06 | 03 03 0A 18 | 05 09 63 68 32 37，共 13 字节。
 pub const kat_adv_data = [13]u8{
     0x02, 0x01, 0x06,
     0x03, 0x03, 0x0a,

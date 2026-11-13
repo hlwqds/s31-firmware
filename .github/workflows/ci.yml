@@ -74,4 +74,4 @@ jobs:
           flock /tmp/s31-board.lock sh -c 'sh tools/flash.sh /dev/ttyUSB1'
           python3 ../tools/capture.py /dev/ttyUSB1 ../logs/firmware-ci.log 30
           grep -q 'main: verdict=pass' ../logs/firmware-ci.log
-          grep -q 'firmware: checks: passed=' ../logs/firmware-ci.log
+          grep -q 'firmware: sections: passed=' ../logs/firmware-ci.log

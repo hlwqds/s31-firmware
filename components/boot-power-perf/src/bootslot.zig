@@ -1,10 +1,10 @@
-//! 早期实现：二级 bootloader 的“选槽”逻辑（可离线判定）。
+//! boot-power-perf：二级 bootloader 的“选槽”逻辑（可离线判定）。
 //!
-//! 本章不实现 form C 的自举 bootloader，只把 bootloader 必须做对的两件事
+//! 本组件不实现 form C 的自举 bootloader，只把 bootloader 必须做对的两件事
 //! 抽成纯逻辑：
 //!
 //!   1) `otadata` 两个扇区怎么选：CRC 先过、再比 seq，平手取第一个；
-//!   2) 选中的槽连续启动失败怎么回滚：复用 早期实现 的 A/B 状态机
+//!   2) 选中的槽连续启动失败怎么回滚：复用 OTA 组件的 A/B 状态机
 //!      （`ota.Rollback`），bootloader 只负责“读状态 + 计数 + 选槽”。
 //!
 //! 线上格式（16 字节，故意比 IDF 的 `esp_ota_select_entry_t` 简单，
@@ -15,7 +15,7 @@
 //!   | 0    | magic `S31B` | 区分空白 flash（0xFF） |
 //!   | 4    | seq  | 越大越新，回绕按无符号比较 |
 //!   | 8    | slot | 0=A/ota_0，1=B/ota_1 |
-//!   | 9    | state| 早期实现 的 `ota.SlotState` |
+//!   | 9    | state| OTA 组件的 `ota.SlotState` |
 //!   | 10..12 | reserved | 必须为 0 |
 //!   | 12   | crc32 | 覆盖 [0,12) |
 //!

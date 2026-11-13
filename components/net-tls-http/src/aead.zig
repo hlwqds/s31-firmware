@@ -9,7 +9,7 @@
 //!     nonce      = iv XOR (0^… || sequence_number)  ← §5.3，写侧 64 位计数
 //!
 //! 于是「改一个字节的记录头」会直接导致 tag 校验失败——这是把记录层与
-//! AEAD 绑死的设计目的，不是巧合。本章的 `additionalData()` 就按这
+//! AEAD 绑死的设计目的，不是巧合。本组件的 `additionalData()` 就按这
 //! 5 个字节生成，自检第 ⑥ 条专门验证「改 AD 之后 tag 不再通过」。
 //!
 //! 已知答案取 NIST SP 800-38D 的 AES-128-GCM 例（也是 RFC 5116 附录 B
@@ -21,7 +21,7 @@
 //!     → C = 0388dace60b6a392f328c2b971b2fe78
 //!       T = ab6e47d42cec13bdf53a67b21257bddf
 //!
-//! 本章只提供两种形状：
+//! 本组件只提供两种形状：
 //!   - `sealWithNonce` / `openWithNonce`：直接给 nonce（NIST 向量用）；
 //!   - `seal` / `open`：给 iv + sequence_number，按 TLS 1.3 的 XOR 规则
 //!     生成 nonce（真实记录用）。
@@ -79,7 +79,7 @@ pub fn sealWithNonce(
 ///
 /// 注意 `std.crypto.aead.aes_gcm` 的 `decrypt` 是**先校验 tag 再写明文**，
 /// 所以我们这里不需要「写进临时缓冲再回滚」的套路——但 API 层面仍然要
-/// 把错误翻译成本章的 `Error`，不让上层看见 std 的错误集。
+/// 把错误翻译成本组件的 `Error`，不让上层看见 std 的错误集。
 pub fn openWithNonce(
     plaintext: []u8,
     ct: []const u8,

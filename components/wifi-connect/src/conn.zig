@@ -177,7 +177,7 @@ pub const scan_max = 8;
 
 pub const ScanError = error{BufferTooSmall};
 
-/// 选候选：丢掉 open（本章只做 WPA2/WPA3）、同一 BSSID 只留信号最强的、
+/// 选候选：丢掉 open（本组件只做 WPA2/WPA3）、同一 BSSID 只留信号最强的、
 /// 剩下按 rssi 降序（同 rssi 用 channel 升序、再按 bssid 字节序，保证确定性）。
 /// 返回写入 `out` 的条数。
 pub fn selectCandidates(aps: []const Ap, out: []Ap) ScanError!usize {

@@ -3,7 +3,7 @@
 //! 这里**没有任何网络代码**：每个函数只吃“发生了什么”（一个 ACK、一个重复
 //! ACK、一次超时）并回答“窗口该怎么变”。这样同一份实现既能在 x86_64 上被
 //! `zig build test` 逐字节推演，也能在 rv32 上被 `selftest.zig` 用自造事件
-//! 驱动。真正的收发路径在 早期工程/早期实现，本章不碰。
+//! 驱动。真正的收发路径在 早期工程/早期工程，本组件不碰。
 //!
 //! 单位约定（全模块统一，写在每个字段的注释第一行）：
 //!
@@ -30,8 +30,8 @@
 //!
 //! 与 lwIP 的差异（对照实现见 tcp_in.c/tcp.c/tcp_out.c，行号在章节事实来源表）：
 //! RFC 5681 的慢启动按“每 ACK ≤ 2 SMSS”增长，lwIP 另外用 `TF_RTO` 把 RTO 后
-//! 的第一个 RTT 限制到 1 SMSS（RFC 3465 §2.2 的补丁）；本章 `Cwnd` 保留前者的
-//! 简单形态，本章 `sim.zig` 的仿真器也用同一形态，两边数字才可比。
+//! 的第一个 RTT 限制到 1 SMSS（RFC 3465 §2.2 的补丁）；本组件 `Cwnd` 保留前者的
+//! 简单形态，本组件 `sim.zig` 的仿真器也用同一形态，两边数字才可比。
 
 const std = @import("std");
 
@@ -58,11 +58,11 @@ pub const Action = enum { none, retransmit_now };
 
 /// 发送端拥塞窗口状态机（纯逻辑，无 I/O）。
 pub const Cwnd = struct {
-    /// 字节。一个段的大小；取对端通告的 MSS，本章固定 1460。
+    /// 字节。一个段的大小；取对端通告的 MSS，本组件固定 1460。
     mss: u32 = mss_default,
     /// 字节。拥塞窗口。初始 1 SMSS（RFC 5681 §3.1）。
     cwnd: u32 = mss_default,
-    /// 字节。慢启动门限。RFC 5681 建议初值任意大；本章自检用显式值，
+    /// 字节。慢启动门限。RFC 5681 建议初值任意大；本组件自检用显式值，
     /// 免得“慢启动永不结束”把测试变成恒真。
     ssthresh: u32 = 64 * 1024,
     /// 字节。拥塞避免的字节累加器（RFC 3465）：攒够一个 cwnd 才 +1 SMSS。
@@ -133,7 +133,7 @@ pub const Cwnd = struct {
     ///
     /// `rwnd_bytes` 只用在 `ssthresh` 的取值上：RFC 5681 用的是
     /// “FlightSize/2”，lwIP 实现取 `min(cwnd, snd_wnd)/2`；两者在“窗口被
-    /// 接收端卡住”时差别明显，后者更保守。本章跟随 lwIP。
+    /// 接收端卡住”时差别明显，后者更保守。本组件跟随 lwIP。
     pub fn onDupAck(self: *Cwnd, rwnd_bytes: u32) Action {
         self.dupacks_total += 1;
         if (self.dupacks < 255) self.dupacks += 1;

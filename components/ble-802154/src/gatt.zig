@@ -6,7 +6,7 @@
 //!   * `chars`：8 个特征的静态槽（句柄 1、2、4、5、7、8、10、11）；
 //!   * `subs` ：4 个订阅槽（每个 notify 特征占一格）；
 //!   * 每个特征的值最多 20 字节（这是 ATT_MTU=23 时代最保守的长度，
-//!     也是本章刻意选择的“小值”上限；真实栈用 MBUF 池）。
+//!     也是本组件刻意选择的“小值”上限；真实栈用 MBUF 池）。
 //!
 //! 句柄分配规则（Bluetooth Core Specification v5.4, Vol 3, Part G, §3.3）：
 //! 每个特征至少占两个属性——Characteristic Declaration 与 Characteristic
@@ -15,7 +15,7 @@
 //! components/bt/host/nimble/nimble/nimble/host/include/host/ble_gatt.h:69
 //! `BLE_GATT_DSC_CLT_CFG_UUID16 0x2902`）。
 //!
-//! 本章的句柄布局（`add()` 的确定性结果，自检直接断言）：
+//! 本组件的句柄布局（`add()` 的确定性结果，自检直接断言）：
 //!
 //!   特征 #1（读）         声明=0x01 值=0x02
 //!   特征 #2（读+通知）    声明=0x03 值=0x04 CCCD=0x05
@@ -23,7 +23,7 @@
 //!   …
 //!
 //! 权限位与 nimble 的 `BLE_GATT_CHR_F_*` 一一对应
-//! （ble_gatt.h:133 READ、:139 WRITE、:142 NOTIFY），但本章不链接 nimble，
+//! （ble_gatt.h:133 READ、:139 WRITE、:142 NOTIFY），但本组件不链接 nimble，
 //! 只复刻位含义。
 //!
 //! 所有错误都带**确定的错误码**：句柄越界 → ATT 0x01，读无权限 → 0x02，
@@ -278,7 +278,7 @@ pub const Table = struct {
             .cccd => {
                 if (data.len != 2) return .{ .err = .invalid_value };
                 // 只接受 {0x01,0x00}（开启 Notification）与 {0x00,0x00}（关闭）；
-                // 其余位（含 bit1 Indication，本章不支持）一律 invalid_value。
+                // 其余位（含 bit1 Indication，本组件不支持）一律 invalid_value。
                 if (!(data[0] == 0x00 and data[1] == 0x00) and
                     !(data[0] == 0x01 and data[1] == 0x00))
                     return .{ .err = .invalid_value };

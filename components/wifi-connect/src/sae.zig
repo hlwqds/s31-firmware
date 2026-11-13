@@ -1,11 +1,11 @@
 //! wifi-connect：WPA3-SAE（dragonfly）的**可测子集**。
 //!
-//! 这一句话先说清楚本章做到哪：SAE 是「口令认证的椭圆曲线密钥交换」。
+//! 这一句话先说清楚本组件做到哪：SAE 是「口令认证的椭圆曲线密钥交换」。
 //! 它把口令变成曲线上的一个点（PWE），两端各自发一个 commit（标量+元素），
 //! 用 EC 点运算得到一个共享的 x 坐标 k，再用 k 派生出 KCK/PMK 并用 confirm
 //! 互相证明「我们算出的 k 是同一个」。
 //!
-//! 本章实现的是**除 EC 点运算以外的全部字节层**：
+//! 本组件实现的是**除 EC 点运算以外的全部字节层**：
 //!
 //!   ✓ pwd-seed   = HMAC-SHA256(MAX(addr)||MIN(addr), password || LE16(counter))
 //!   ✓ pwd-value  = sha256_prf_bits(pwd-seed, "SAE Hunting and Pecking", p, 256)
@@ -224,7 +224,7 @@ pub fn scalarAddModQ(a: U256, b: U256) U256 {
 // 2) sha256_prf_bits：IEEE 802.11-2012 11.6.1.7.2 的 KDF
 //
 //    HMAC-SHA256(K, LE16(i) || label || data || LE16(bits))，i 从 1 递增。
-//    本章只需要字节对齐的输出，所以 `out.len * 8` 就是 bits。
+//    本组件只需要字节对齐的输出，所以 `out.len * 8` 就是 bits。
 // ---------------------------------------------------------------------------
 
 fn writeU16Le(out: *[2]u8, v: u16) void {
@@ -293,7 +293,7 @@ pub fn pwdSeed(sta: [6]u8, ap: [6]u8, password: []const u8, counter: u16) [hash_
 ///
 /// 得到的是「x 候选」的原始字节；它可能 >= p（此时这一轮作废，counter+1
 /// 重来）。P-256 的 p 与 2^256 只差 2^224 量级，随机值落到 p 之上的概率
-/// 约 2^-32，所以实测 counter 恒为 1——循环存在是为了 FFC 群，本章不实现。
+/// 约 2^-32，所以实测 counter 恒为 1——循环存在是为了 FFC 群，本组件不实现。
 pub fn pwdValue(seed: [hash_len]u8) [hash_len]u8 {
     var out: [hash_len]u8 = undefined;
     kdfHash(&seed, pwd_seed_label, &prime, &out);

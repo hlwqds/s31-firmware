@@ -1,6 +1,6 @@
 //! wifi-boundary：Wi-Fi blob 边界的 ABI 定义。
 //!
-//! 本章不链接任何真实的 Wi-Fi 二进制（`libnet80211.a` / `libpp.a` /
+//! 本组件不链接任何真实的 Wi-Fi 二进制（`libnet80211.a` / `libpp.a` /
 //! `libcore.a`），而是把「一个闭源协议栈需要调用方提供什么」写成一份
 //! 可编译、可断言、可在主机与 rv32 两侧同时校验的接口契约：
 //!
@@ -14,7 +14,7 @@
 //!   Event      —— 上行事件的**值类型**，固定宽度、无指针、无填充歧义，
 //!                 所以可以整块 memcpy、可以进环形队列、可以跨调用约定。
 //!   Handle     —— 不透明句柄：slot + generation + tag，用来做「注销之后
-//!                 旧句柄必须失效」的检查（早期实现 判据 ⑩）。
+//!                 旧句柄必须失效」的检查（早期工程 判据 ⑩）。
 //!
 //! 为什么这些结构一律 `extern struct` + 固定宽度整数：
 //! blob 是别的编译器（GCC/Clang 的 C 代码）、别的年代产出的，
@@ -31,7 +31,7 @@ const builtin = @import("builtin");
 ///
 /// major 不同就是**不兼容**（结构布局可能变了），必须拒绝；
 /// minor 只允许「新增字段到尾部 + struct_size 变大」式的兼容扩展，
-/// 本章的实现要求精确相等，宁可拒绝也不猜。
+/// 本组件的实现要求精确相等，宁可拒绝也不猜。
 pub const abi_version: u32 = 0x0001_0000; // major 1, minor 0
 pub const abi_major: u16 = 1;
 pub const abi_minor: u16 = 0;
@@ -45,12 +45,12 @@ pub const name_len = 16;
 
 /// 事件负载上限（字节）。固定 12 字节：够放 MAC(6) + 通道(1) + RSSI(1)
 /// + 一个 u32 序号，也让整个 `Event` 恰好 20 字节——四个事件正好 80 字节，
-/// 与早期实现的 `TrapFrame` 同宽，便于在日志里对齐。
+/// 与早期工程的 `TrapFrame` 同宽，便于在日志里对齐。
 pub const event_payload_max = 12;
 
 /// 统一的错误码（有符号 32 位，和 `esp_err_t` 的位宽一致）。
 ///
-/// 负值 = 失败，0 = 成功；这是本章的「errno 风格」。
+/// 负值 = 失败，0 = 成功；这是本组件的「errno 风格」。
 /// ESP-IDF 的 `esp_err_t` 是「非 0 即失败、取值多为正数」，映射关系在
 /// `adapter.mapEsp`，判据 ⑦ 逐项对拍。
 pub const Errno = enum(i32) {
@@ -147,7 +147,7 @@ pub const AllocFn = *const fn (bytes: u32) callconv(.c) ?*anyopaque;
 /// blob 归还内存（对应 `_free`）。
 pub const FreeFn = *const fn (ptr: ?*anyopaque) callconv(.c) void;
 /// 逻辑时间（对应 `_timer_arm_us`/`esp_timer_get_time` 那一族）。
-/// 本章刻意不接真实定时器：tick 是单调计数器，章节里不声称任何实时性。
+/// 本组件刻意不接真实定时器：tick 是单调计数器，章节里不声称任何实时性。
 pub const TickFn = *const fn () callconv(.c) u32;
 
 /// ```text
@@ -324,7 +324,7 @@ comptime {
     if (@bitSizeOf(u16) != 16 or @bitSizeOf(u32) != 32) @compileError("整数位宽不对");
     if (ptr_size != 4 and ptr_size != 8) @compileError("只支持 32/64 位指针目标");
 
-    // 目标 ABI：rv32 必须 4 字节指针、eabihf；否则本章的“固定 20 字节事件”
+    // 目标 ABI：rv32 必须 4 字节指针、eabihf；否则本组件的“固定 20 字节事件”
     // 一跨调用约定就可能被对齐规则改掉。
     if (builtin.cpu.arch == .riscv32) {
         if (ptr_size != 4) @compileError("riscv32 上指针必须是 4 字节");

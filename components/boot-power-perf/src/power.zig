@@ -1,15 +1,15 @@
-//! 早期实现：功耗预算模型。
+//! boot-power-perf：功耗预算模型。
 //!
 //! 目标不是“猜出 S31 的真实电流”，而是把**睡眠决策**变成可复算的算术：
 //! RTC 计数器多少位、慢时钟多少 Hz、一次唤醒要花多少 µs、给定电池容量
-//! 能撑多久。真实电流必须用板上的电流表测，本章的 mA 数值全部标成
+//! 能撑多久。真实电流必须用板上的电流表测，本组件的 mA 数值全部标成
 //! `model_*`，只用于比较 light/deep 两种策略的相对量级。
 //!
 //! 真机入口（待 早期工程 真机验证）：
 //!   - `esp_sleep_enable_timer_wakeup(us)` 设 RTC timer；
 //!   - `esp_light_sleep_start()` / `esp_deep_sleep_start()`；
 //!   - 醒来后读 `esp_sleep_get_wakeup_cause()`。
-//! 本章只建模，不调用任何 IDF 函数，也不写 RTC 寄存器。
+//! 本组件只建模，不调用任何 IDF 函数，也不写 RTC 寄存器。
 
 const std = @import("std");
 

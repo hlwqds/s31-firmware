@@ -35,7 +35,7 @@
 
 - [x] 生产结构：`firmware/` + `boards/` + `components/`（章节目录移除，历史见 `docs/HISTORY.md`）
 - [x] 编译期特性开关：`-Dboot/-Dnet/-Dtls/-Dapps/-Dwifi`，未启用组件不参与编译
-- [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: checks: passed=6 failed=0 total=6`、`main: verdict=pass`（`logs/firmware-boot.log`）
+- [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: sections: passed=6 failed=0 total=6`、`main: verdict=pass`（`logs/firmware-boot.log`）
 - [x] 聚合测试：`firmware` 的 `test` step 覆盖 11 个组件（323 项）
 - [x] 脚本：`scripts/check-host.sh`、`scripts/check-fmt.sh`、`scripts/build-image.sh`、`tools/capture.py`
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发

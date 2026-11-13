@@ -6,7 +6,7 @@
 //!
 //! ## 并发假设（写清楚，而不是默认）
 //!
-//! 本章的形态 B 骨架里 `mstatus.MIE = 0`、没有中断、没有调度器、没有堆
+//! 本组件的形态 B 骨架里 `mstatus.MIE = 0`、没有中断、没有调度器、没有堆
 //! （见 `src/start.zig` 第 1 步与 `linker/s31.ld` 的堆区注释）。因此本文件
 //! **完全不设锁**，所有函数都必须在同一个「主循环」上下文里调用。
 //!
@@ -14,7 +14,7 @@
 //! `_is_from_isr` 就是为这个存在的，见 wifi_os_adapter.h:37-38）。所以本文件
 //! 的 `post()` 是唯一一个「会被外部上下文调用」的入口，它的形状刻意做成
 //! 单写者环形队列的 push：只要有中断屏蔽（`csrci mstatus,8` / restore）就能
-//! 直接升级成 ISR-safe，不需要改数据结构。这条假设是本章的**边界**，不是
+//! 直接升级成 ISR-safe，不需要改数据结构。这条假设是本组件的**边界**，不是
 //! 实现细节：判据 ⑥（队列满）与判据 ⑫（一帧处理 tick 数）都建立在它上面。
 //!
 //! ## 分配器
@@ -37,7 +37,7 @@ pub const queue_capacity = 8;
 /// 静态分配池：512 字节，8 字节对齐。
 pub const pool_size = 512;
 
-/// **本章没有链接任何真实 Wi-Fi blob**。
+/// **本组件没有链接任何真实 Wi-Fi blob**。
 ///
 /// 这个常量不是注释，而是判据 ⑨ 的被测对象：它决定了 `callRealBlob()` 的
 /// 返回值。等真实 blob 接进来时，只需把它改成 `true` 并接上 vtable 指针，
@@ -310,7 +310,7 @@ fn activeStartedSlot() ?usize {
     return null;
 }
 
-/// 本章的“真实 blob 入口”。
+/// 本组件的“真实 blob 入口”。
 ///
 /// `linked_real_blob == false` 时它只能返回 `not_linked`——不伪装成功，
 /// 也不返回一个假的事件流。这是判据 ⑨ 的全部内容。
@@ -320,7 +320,7 @@ pub fn callRealBlob() abi.Errno {
 }
 
 // ---------------------------------------------------------------------------
-// 错误码映射：esp_err_t → 本章 Errno
+// 错误码映射：esp_err_t → 本组件 Errno
 // ---------------------------------------------------------------------------
 
 pub const esp_ok: i32 = 0x0;
@@ -332,12 +332,12 @@ pub const esp_err_invalid_size: i32 = 0x104;
 pub const esp_err_not_supported: i32 = 0x106;
 pub const esp_err_timeout: i32 = 0x107;
 /// `ESP_ERR_WIFI_BASE + 1`：Wi-Fi 还没被 `esp_wifi_init` 装起来。
-/// 它在语义上就是本章的 `not_linked`。
+/// 它在语义上就是本组件的 `not_linked`。
 pub const esp_err_wifi_not_init: i32 = 0x3001;
 
-/// blob 入口表返回的是**本章的** errno（负数）；真实 IDF 代码返回的是
+/// blob 入口表返回的是**本组件的** errno（负数）；真实 IDF 代码返回的是
 /// `esp_err_t`（正数或 -1）。两种都认：正数走 ESP 映射，-1..-13 直接就是
-/// 本章的枚举值（`ESP_FAIL == -1` 与 `.fail` 恰好同值，不冲突）。
+/// 本组件的枚举值（`ESP_FAIL == -1` 与 `.fail` 恰好同值，不冲突）。
 pub fn errnoFromInt(rc: i32) abi.Errno {
     if (rc == 0) return .ok;
     if (rc > 0) return mapEsp(rc);

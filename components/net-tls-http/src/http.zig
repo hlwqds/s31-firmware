@@ -1,18 +1,18 @@
 //! net-tls-http：HTTP/1.1 的最小解析与响应构造（RFC 9112）。
 //!
 //! 为什么在 TLS 章节里写 HTTP？因为 TLS 是**用的**：不解出一个请求、
-//! 不造出一个响应，“能加密”就没有可验证的出口。本章把这条链的两端
+//! 不造出一个响应，“能加密”就没有可验证的出口。本组件把这条链的两端
 //! 剥到最小：TLS 侧是记录层 + 密钥派生 + AEAD（都不需要报文），HTTP 侧是
 //! 一条请求的解析与一条响应的拼装（都不需要 socket）。
 //!
 //! 解析器的边界（全部是**故意**的取舍，23.7 逐条展开）：
 //!
-//!   - 只认 `CRLF`（RFC 9112 §2.2 允许服务端接受单独的 `LF`，本章不接）；
+//!   - 只认 `CRLF`（RFC 9112 §2.2 允许服务端接受单独的 `LF`，本组件不接）；
 //!   - 请求行三段：`method SP request-target SP HTTP-version`；
 //!   - 首部最多 16 条、每条最多 256 字节（`.bss` 静态表）；
 //!   - `Content-Length` 与 `Transfer-Encoding: chunked` 同时出现 → 拒绝
 //!     （RFC 9112 §6.1 的请求走私防线）；
-//!   - 不做 URL 解码、不做 query 参数解析、不读请求体（本章不解体，
+//!   - 不做 URL 解码、不做 query 参数解析、不读请求体（本组件不解体，
 //!     只报告长度）；
 //!   - 不处理 obs-fold（行折叠，RFC 9112 §5.2 已废弃）。
 //!
@@ -22,7 +22,7 @@
 //!   HTTP/1.0 默认关闭，除非 `Connection: keep-alive`。
 //!
 //! 响应构造只写状态行 + 三个首部 + body：`Content-Length` 必须与 body
-//! 长度一致（本章用同一个变量算两次），`Connection` 要与请求的判定一致，
+//! 长度一致（本组件用同一个变量算两次），`Connection` 要与请求的判定一致，
 //! 否则代理会按错误的边界拆包。
 
 const std = @import("std");
@@ -102,7 +102,7 @@ fn containsToken(value: []const u8, token: []const u8) bool {
 
 /// 解析一条请求的**首部区**（不含 body）。`data` 必须在 `CRLF CRLF` 处结束。
 pub fn parseRequest(data: []const u8) Error!Request {
-    // 找首部区结束标记：本章不接受裸 LF。
+    // 找首部区结束标记：本组件不接受裸 LF。
     const end = std.mem.indexOf(u8, data, "\r\n\r\n") orelse return Error.Incomplete;
     const head = data[0..end];
 
@@ -133,7 +133,7 @@ pub fn parseRequest(data: []const u8) Error!Request {
         .version = version,
     };
 
-    // request-target 里 '?' 之后是 query。absolute-form（http://host/p）本章
+    // request-target 里 '?' 之后是 query。absolute-form（http://host/p）本组件
     // 只按 '?' 切，不解析 authority——够自检用，不够当代理。
     if (std.mem.indexOfScalar(u8, target, '?')) |qpos| {
         req.path = target[0..qpos];
@@ -185,14 +185,14 @@ pub fn decodeChunked(in: []const u8, out: []u8) Error!usize {
         const line_rel = std.mem.indexOf(u8, in[pos..], "\r\n") orelse return Error.Incomplete;
         const line_end = pos + line_rel;
         const size_text = std.mem.trim(u8, in[pos..line_end], " \t");
-        // 允许 `1a;ext=1` 这种扩展，本章只取 ';' 之前。
+        // 允许 `1a;ext=1` 这种扩展，本组件只取 ';' 之前。
         const size_part = if (std.mem.indexOfScalar(u8, size_text, ';')) |semi| size_text[0..semi] else size_text;
         if (size_part.len == 0) return Error.BadChunkSize;
         const size = std.fmt.parseInt(usize, size_part, 16) catch return Error.BadChunkSize;
         pos = line_end + 2;
 
         if (size == 0) {
-            // 终止块后可能有 trailer；本章要求立刻是 CRLF 或 trailer 结束。
+            // 终止块后可能有 trailer；本组件要求立刻是 CRLF 或 trailer 结束。
             if (pos + 2 > in.len) return Error.Incomplete;
             if (std.mem.eql(u8, in[pos..][0..2], "\r\n")) return written;
             // 有 trailer：必须能找到它自己的结束空行。

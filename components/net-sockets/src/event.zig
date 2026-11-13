@@ -1,7 +1,7 @@
 //! net-sockets：事件循环（poll 语义 + 超时轮 + 连接池）。
 //!
 //! 这一层只有一个问题要回答：**应用怎么在单线程里同时等 N 个 fd。**
-//! 三个部件，全部由显式 tick 驱动（本章 `mstatus.MIE = 0`，没有任何时钟
+//! 三个部件，全部由显式 tick 驱动（本组件 `mstatus.MIE = 0`，没有任何时钟
 //! 中断，见章节 22.5）：
 //!
 //!   1. `poll()`  —— 一次调用 = 一个 tick：扫一遍注册表，把“现在能读/能写”
@@ -93,7 +93,7 @@ pub const ReadySet = struct {
     }
 };
 
-/// 超时种类。板侧只用前两个，`connect_timeout` 留着给 早期实现 的握手超时。
+/// 超时种类。板侧只用前两个，`connect_timeout` 留着给 相关组件的握手超时。
 pub const TimerKind = enum(u8) {
     retransmit = 1,
     idle_close = 2,
@@ -291,7 +291,7 @@ pub const Loop = struct {
     ready_total: u64 = 0,
     truncated: u64 = 0,
 
-    /// listener 的 fd（本章只有一条）。`accept()` 从这里取。
+    /// listener 的 fd（本组件只有一条）。`accept()` 从这里取。
     listen_fd: i8 = socket.no_fd,
     pool: Pool = .{},
     wheel: Wheel = .{},

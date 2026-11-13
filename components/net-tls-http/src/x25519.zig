@@ -1,7 +1,7 @@
 //! net-tls-http：X25519（RFC 7748）—— ECDHE 的已知答案与调用面。
 //!
 //! TLS 1.3 的 (EC)DHE 共享秘密只要求「双方算出同一个 32 字节串」，
-//! 曲线运算本身不参与 key schedule。本章用 X25519 做这一层，因为它
+//! 曲线运算本身不参与 key schedule。本组件用 X25519 做这一层，因为它
 //! 在 RFC 7748 §6.1 里给了两份可以直接抄进代码的已知答案：
 //!
 //!   ┌─────────────────────────────────────────────────────────────┐
@@ -14,7 +14,7 @@
 //! 两条向量都在 `test` 里逐字节比对；板侧自检（`selftest.zig`）用同一份
 //! 常量再跑一遍，证明 rv32 上没有把 64 位 limb 的进位写错。
 //!
-//! **安全边界**（写清楚，免得被当成“完整 DH”）：本章只调用
+//! **安全边界**（写清楚，免得被当成“完整 DH”）：本组件只调用
 //! `std.crypto.dh.X25519`，不做：
 //!   - 私钥的随机生成（板上没有可信熵源；自检用固定 seed）；
 //!   - 低阶点拒绝之外的对端公钥校验（std 在输出全零时返回
@@ -26,7 +26,7 @@
 //! 且 “leading zeros found in this octet string MUST NOT be truncated”，
 //! 并特意加了一句“this construction differs from previous versions of TLS
 //! which removed leading zeros”——去前导零是 TLS 1.2 的旧规则，TLS 1.3 反过来
-//! 要求保留。本章按 TLS 1.3 的做法：`scalarmult()` 的 32 字节输出直接进
+//! 要求保留。本组件按 TLS 1.3 的做法：`scalarmult()` 的 32 字节输出直接进
 //! `tls_keyschedule.buildSchedule()`，长度永远是 32。
 
 const std = @import("std");

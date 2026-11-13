@@ -11,7 +11,7 @@ pub export fn main() noreturn {
         if (!e.run()) failed += 1;
         n += 1;
     }
-    board.log.line("firmware: checks: passed={d} failed={d} total={d}", .{ n - failed, failed, n });
+    board.log.line("firmware: sections: passed={d} failed={d} total={d}", .{ n - failed, failed, n });
     board.log.line("main: verdict={s}", .{if (failed == 0) "pass" else "fail"});
     board.hw.halt();
 }

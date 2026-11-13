@@ -4,7 +4,7 @@
 //! 驱动是 IDF 里的 C 源码；射频层仍是闭源（`libphy.a` + `libbtbb.a`）。
 //! 详见全部 27.2 与 `tools/symbols.sh` 的第 6 节：
 //! `components/ieee802154/` 10 个文件 3571 行、`esp_hal_ieee802154/esp32s31`
-//! 的 `ieee802154_ll.h`）。本章因此把 802.15.4 侧写成“纯字节变换”：
+//! 的 `ieee802154_ll.h`）。本组件因此把 802.15.4 侧写成“纯字节变换”：
 //!
 //!   * MAC 帧头（FCF / 序列号 / 地址模式 / PAN 压缩）——IEEE 802.15.4-2015
 //!     §7.2.1（Frame Control）、§7.2.2（Sequence Number）、§7.2.3（Addressing）；
@@ -44,7 +44,7 @@ pub const Error = error{
     BadAddressMode,
     /// 6LoWPAN dispatch 不是 IPHC（011xxxxx）。
     BadDispatch,
-    /// IPHC/NHC 的某个组合本章不解（状态压缩、组播、分片、非 UDP）。
+    /// IPHC/NHC 的某个组合本组件不解（状态压缩、组播、分片、非 UDP）。
     UnsupportedCompression,
 };
 
@@ -121,7 +121,7 @@ pub const Addr = union(enum) {
     }
 };
 
-/// MAC 头（不含辅助安全头/IE，本章不支持）。
+/// MAC 头（不含辅助安全头/IE，本组件不支持）。
 pub const MacHeader = struct {
     fcf: Fcf,
     seq: u8,
@@ -170,7 +170,7 @@ fn addrLen(m: AddrMode) Error!usize {
 /// 编码 MAC 头。返回头长度。
 ///
 /// 地址顺序（§7.2.3）：Dest PAN → Dest Address → [Src PAN] → Src Address。
-/// `pan_compress` 为真时省略 Src PAN（此时两者必须相同，本章不校验，
+/// `pan_compress` 为真时省略 Src PAN（此时两者必须相同，本组件不校验，
 /// 因为真实栈在 PIB 层保证）。
 pub fn encodeHeader(out: []u8, h: MacHeader, stats: *Stats) Error!usize {
     const dlen = try addrLen(h.dest.mode());
@@ -226,7 +226,7 @@ pub fn decodeHeader(bytes: []const u8, stats: *Stats) Error!Decoded {
     }
     const fcf = Fcf.decode(getU16(bytes[0..2]));
     if (fcf.security or fcf.ie_present or fcf.seq_suppress) {
-        // 辅助安全头、IE、序列号抑制都会改变后续布局，本章不支持。
+        // 辅助安全头、IE、序列号抑制都会改变后续布局，本组件不支持。
         stats.rejected += 1;
         return error.UnsupportedCompression;
     }
@@ -337,7 +337,7 @@ pub const Udp = struct {
 /// 出处是 RFC 6282 §3.1.1（SAM=10 的 16 位内联映射，RFC 6282 §3.2.2 复述）
 /// 与 OpenThread 的实现（`mac_frame.hpp` 的 locator 形式）。注意不要把它
 /// 说成 RFC 4944 §6 的规则：那一节给的是「PAN ID ‖ 0000 ‖ 短地址」的伪
-/// 48 位派生，会把 PAN ID 掺进 IID；本章按 6282 的口径（PAN 不进 IID）。
+/// 48 位派生，会把 PAN ID 掺进 IID；本组件按 6282 的口径（PAN 不进 IID）。
 fn iidFromShort(a: u16, out: *[8]u8) void {
     out.* = .{ 0x00, 0x00, 0x00, 0xff, 0xfe, 0x00, 0x00, 0x00 };
     out[6] = @truncate(a >> 8);
@@ -392,7 +392,7 @@ pub fn decompress(lowpan: []const u8, mac: *const MacHeader, stats: *Stats) Erro
         return error.UnsupportedCompression;
     }
     if (sam == 0x00 or dam == 0x00) {
-        // 128 位内联地址：合法但本章不解（判据 ⑫ 只用 SAC/sam 组合做拒绝用例）。
+        // 128 位内联地址：合法但本组件不解（判据 ⑫ 只用 SAC/sam 组合做拒绝用例）。
         stats.rejected += 1;
         return error.UnsupportedCompression;
     }

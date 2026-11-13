@@ -1,6 +1,6 @@
 //! wifi-boundary：板侧自检（13 条判据）。
 //!
-//! 本章的板侧证据**只有一个来源**：stub blob + 适配层 + ABI 断言在同一块
+//! 本组件的板侧证据**只有一个来源**：stub blob + 适配层 + ABI 断言在同一块
 //! rv32 上跑一遍。没有 Wi-Fi、没有射频、没有 blob 链接、没有 AP——
 //! `adapter.linked_real_blob` 恒为 `false`，判据 ⑩ 直接把它当被测对象。
 //!

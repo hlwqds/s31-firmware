@@ -20,7 +20,7 @@
 //! 于是 label 字段的第 1 个字节是**整个 label 的长度**（含 6 字节前缀），
 //! 而不是用户给的那段文字的长度。这是最容易写错的一处，自检专门钉它。
 //!
-//! 完整链条（本章只实现到 application traffic secret，不实现 Finished 与
+//! 完整链条（本组件只实现到 application traffic secret，不实现 Finished 与
 //! 实际收发）：
 //!
 //!     early_secret      = HKDF-Extract(0, 0)
@@ -34,7 +34,7 @@
 //!     s ap traffic      = Derive-Secret(master_secret, "s ap traffic", …)
 //!     key/iv            = HKDF-Expand-Label(traffic_secret, "key"/"iv", "", len)
 //!
-//! 本章只到 traffic secret：`key`/`iv` 的派生根 RAEAD 参数有关（AES-128-GCM
+//! 本组件只到 traffic secret：`key`/`iv` 的派生根 RAEAD 参数有关（AES-128-GCM
 //! 是 16/12 字节），留到 23.5 里由 `aead.zig` 接过（它只需 32 字节 secret）。
 
 const std = @import("std");

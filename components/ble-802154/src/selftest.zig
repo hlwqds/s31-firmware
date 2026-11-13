@@ -1,6 +1,6 @@
 //! ble-802154：板侧自检（12 条判据）。
 //!
-//! 本章板侧**不碰射频**：没有扫描、没有连接、没有读特征值、没有 Thread 入网。
+//! 本组件板侧**不碰射频**：没有扫描、没有连接、没有读特征值、没有 Thread 入网。
 //! controller 归档（libble_app.a 等）一个字节都没链接（见 `tools/symbols.sh`
 //! 的产物与章节 27.2/27.11）。被测对象是四段纯逻辑：
 //!
@@ -151,7 +151,7 @@ fn checkMtuExchange() void {
     const negotiated = att.negotiate(client, att.max_mtu);
     const rsp_len = att.encodeMtuRsp(&buf, negotiated, &att_stats) catch 0;
 
-    // 22 < 23：**本章更严的自定策略**（规范只规定 23 是默认/最小值，没要求
+    // 22 < 23：**本组件更严的自定策略**（规范只规定 23 是默认/最小值，没要求
     // 拒绝；本机 NimBLE 是夹到 23，见 ble_att.c:494-496）。这里选择显式拒绝，
     // 因为这章的判据要一个可判别的失败，而不是静默钳位。
     const small: [3]u8 = .{ 0x02, 0x16, 0x00 };
@@ -570,7 +570,7 @@ fn checkRejections() void {
     // (a) SAC=1 / SAM=01：需要上下文表。
     var e1: ?fifteen4.Error = null;
     if (fifteen4.decompress(&fifteen4.kat_lowpan_stateful, &hdr, &g4_stats)) |_| {} else |e| e1 = e;
-    // (b) NHC 端口压缩 P=01：本章不解。
+    // (b) NHC 端口压缩 P=01：本组件不解。
     const p_compressed = [8]u8{ 0x7f, 0x22, 0x3c, 0x9a, 0x02, 0x00, 0xf1, 0x35 };
     var e2: ?fifteen4.Error = null;
     if (fifteen4.decompress(&p_compressed, &hdr, &g4_stats)) |_| {} else |e| e2 = e;

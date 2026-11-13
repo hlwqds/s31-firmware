@@ -78,7 +78,7 @@
 ## 8. 文档
 
 - 每个工程 README 必须含：所属章节/来源、验证状态（哪一级证据）、快速开始、文件职责、待验证项。
-- 状态变更必须同步：工程 README、`SUITE-README.md`、`BRINGUP` 三处一致。
+- 状态变更必须同步：组件 README、`docs/HISTORY.md`、`CHANGELOG.md` 三处一致。
 - ADR 模板见 `docs/adr/ADR-000-template.md`；编号递增，状态 `proposed/accepted/superseded`。
 
 ## 9. CI 门禁

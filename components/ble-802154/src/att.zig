@@ -6,7 +6,7 @@
 //!   * 请求/响应（Require/Response）：client 发，server 必须回；
 //!   * 命令/通知（Command/Notification）：单向，不回。
 //!
-//! 本章实现 8 个操作码，刚好够走通“交换 MTU → 读特征值 → 写特征值 →
+//! 本组件实现 8 个操作码，刚好够走通“交换 MTU → 读特征值 → 写特征值 →
 //! 订阅通知 → 收通知 → 越界/无权限报错”这条完整路径。
 //!
 //! 规范出处（Bluetooth Core Specification v5.4）：
@@ -46,7 +46,7 @@
 
 const std = @import("std");
 
-/// ATT 操作码（只列本章实现的 8 个）。Vol 3, Part F, §3.4。
+/// ATT 操作码（只列本组件实现的 8 个）。Vol 3, Part F, §3.4。
 pub const Op = enum(u8) {
     error_rsp = 0x01,
     mtu_req = 0x02,
@@ -79,11 +79,11 @@ pub const Code = enum(u8) {
 
 /// 默认 ATT_MTU（未交换时）。Vol 3, Part F, §3.2.8。
 pub const default_mtu: u16 = 23;
-/// 本章 server 端声明的上限。
+/// 本组件 server 端声明的上限。
 ///
 /// 规范给的 ATT_MTU 上限是 **517**（Vol 3, Part F, §3.2.8）；NimBLE 刻意把它
 /// 扩到 527，理由写在 `ble_att.h:270-273`：一个 527 的 MTU 才能让最大的 ATT
-/// 命令（Signed Write）装下 512 字节属性值。本章跟 NimBLE 取 527，好处是
+/// 命令（Signed Write）装下 512 字节属性值。本组件跟 NimBLE 取 527，好处是
 /// 「MTU 截断」的判据在边界值附近也能测到（判据 ④ 用的是 23，不是 527）。
 pub const max_mtu: u16 = 527;
 
@@ -98,7 +98,7 @@ pub const Error = error{
     MtuTooSmall,
     /// MTU 超过本实现声明的上限。
     MtuTooLarge,
-    /// 操作码不在本章子集里。
+    /// 操作码不在本组件子集里。
     UnsupportedOp,
 };
 
@@ -362,7 +362,7 @@ pub const kat_mtu_rsp = [3]u8{ 0x03, 0xf7, 0x00 };
 /// Read Request：句柄 0x0025 → 0A 25 00。
 pub const kat_read_req = [3]u8{ 0x0a, 0x25, 0x00 };
 
-/// Read Response：值 “早期实现” → 0B 63 68 32 37。
+/// Read Response：值 “ch27” → 0B 63 68 32 37。
 pub const kat_read_rsp = [5]u8{ 0x0b, 'c', 'h', '2', '7' };
 
 /// Write Request：句柄 0x0028、值 {0x01, 0x00}（CCCD 打开通知）

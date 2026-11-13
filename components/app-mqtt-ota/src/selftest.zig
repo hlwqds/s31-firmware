@@ -1,6 +1,6 @@
 //! app-mqtt-ota：板侧自检（13 条判据）。
 //!
-//! 本章没有可用的真实链路（早期实现 的以太网驱动未闭环：DMA 软复位超时、
+//! 本组件没有可用的真实链路（以太网驱动未闭环：DMA 软复位超时、
 //! MDIO 扫不到 PHY），也没有 Wi-Fi 链路，更**不写 flash**。因此板侧的
 //! 唯一证据形态是：把与 MQTT 报文 / 会话时序 / OTA 清单 / A/B 回滚有关的
 //! 确定性部分各走一遍，打印判读行。
@@ -11,7 +11,7 @@
 //!
 //! 13 条判据（每条一行 `check: ... ok=1/0`）：
 //!
-//!   ① CONNECT 的字节级已知答案（client_id=早期实现 / clean / keepalive 60）
+//!   ① CONNECT 的字节级已知答案（client_id=ch24 / clean / keepalive 60）
 //!   ② 剩余长度：0/127/128/16383/16384/268435455 的宽度、上界拒绝、5 字节拒绝
 //!   ③ CONNACK 解码：session present / 返回码 / 保留位拒绝
 //!   ④ PUBLISH QoS1 + PUBACK：packet id 往返

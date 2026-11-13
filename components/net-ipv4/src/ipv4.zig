@@ -1,16 +1,16 @@
 //! net-ipv4：IPv4 首部、分片与重组、PMTU 缓存。
 //!
-//! 与早期实现的 `headers.zig` 的分工：
+//! 与早期工程的 `headers.zig` 的分工：
 //!
-//!   - 早期实现 只做"把 20 字节变成值、把值写成 20 字节"，外加严格校验；
+//!   - 早期工程 只做"把 20 字节变成值、把值写成 20 字节"，外加严格校验；
 //!     它刻意不碰分片、不碰路由、不持有任何状态。
-//!   - 本章再加三件事：**分片**（把超 MTU 的数据报切成合法片）、
+//!   - 本组件再加三件事：**分片**（把超 MTU 的数据报切成合法片）、
 //!     **重组**（把乱序/重复/重叠的片拼回来）、**PMTU**（记住对端路径的
 //!     最小 MTU，避免反复把 DF 包打出去再被 ICMP 打回来）。
 //!
-//! 为什么不 import 早期实现 的 `headers.zig`：`zig build` 的根模块只包含本工程
+//! 为什么不 import 早期首部实现：`zig build` 的根模块只包含本工程
 //! 的 `src/`，跨工程引用要么复制路径（隐式依赖别人的目录布局），要么在
-//! `build.zig` 里挂一个 `../早期实现-...` 的模块（这一章就不能单独拷走）。本章的
+//! `build.zig` 里挂一个 `../早期工程-...` 的模块（本组件就不能单独拷走）。本组件的
 //! 取舍是**每个工程自带一份最小实现**，接口边界写在章节 18.3。
 //!
 //! ## 首部里最容易写错的三个字段
@@ -28,7 +28,7 @@ pub const min_header_len = 20;
 pub const max_header_len = 60;
 pub const min_payload_for_fragment = 8; // RFC 791：除最后一片外，片载荷是 8 字节的倍数
 
-/// 协议号（IP protocol field）。只列本章用到的三个。
+/// 协议号（IP protocol field）。只列本组件用到的三个。
 pub const proto = struct {
     pub const icmp: u8 = 1;
     pub const tcp: u8 = 6;
@@ -87,7 +87,7 @@ pub const Header = struct {
         return self.mf or self.frag_offset != 0;
     }
 
-    /// 写 20 字节固定首部并回填校验和。选项由调用方自行追加（本章不生成）。
+    /// 写 20 字节固定首部并回填校验和。选项由调用方自行追加（本组件不生成）。
     pub fn write(self: *Header, buf: []u8) Error!usize {
         if (buf.len < min_header_len) return error.ShortBuffer;
         self.version = 4;
@@ -539,7 +539,7 @@ pub const Reasm = struct {
 /// 「去往某目的地最多能给多少字节」。
 ///
 /// 真实实现按**下一跳/路由**为键（一条路由下的所有目的地共享 PMTU）；
-/// 本章按目的地址做精确匹配，表容量 8，超时 10 分钟——足够演示
+/// 本组件按目的地址做精确匹配，表容量 8，超时 10 分钟——足够演示
 /// 「学到 → 按 MTU 分片/回 ICMP → 老化重探」的闭环，又不会把表撑爆。
 pub const Pmtu = struct {
     pub const capacity = 8;

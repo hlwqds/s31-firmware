@@ -1,10 +1,10 @@
-//! 早期实现：主机侧单测入口。
+//! boot-power-perf：主机侧单测入口。
 //!
 //! `zig build test` 只跑这个根，不引用 `start.zig`/`hw.zig`/`trap.zig`/
 //! `main.zig`/`selftest.zig`，因此不需要开发板。四个模块全部是纯逻辑：
-//! `bootslot.zig`、`power.zig`、`perf.zig`、复用 早期实现 的 `ota.zig`。
+//! `bootslot.zig`、`power.zig`、`perf.zig`、复用 OTA 组件的 `ota.zig`。
 //!
-//! 本章不验证真实 flash 布局、真实睡眠电流或真实 CPU 频率；这些必须在
+//! 本组件不验证真实 flash 布局、真实睡眠电流或真实 CPU 频率；这些必须在
 //! 28.9 的真机清单里用电流表/示波器/`esp_sleep_get_wakeup_cause()` 取证。
 
 test {

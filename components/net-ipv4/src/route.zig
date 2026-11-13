@@ -25,7 +25,7 @@
 const std = @import("std");
 const inet = @import("inet.zig");
 
-/// 网络接口索引。本章只有一块网卡，但接口是路由表的一等字段：
+/// 网络接口索引。本组件只有一块网卡，但接口是路由表的一等字段：
 /// 多网口时"从哪个口出去"与"下一跳是谁"同等重要。
 pub const Iface = u8;
 pub const eth0: Iface = 0;

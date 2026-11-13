@@ -24,7 +24,7 @@
 //! 边界（章节 23.6/23.11 展开）：
 //!   - 不校验证书链（没有 CA store，也没有信任锚），只验“这一张证书的
 //!     签名与它自己的公钥自洽”；
-//!   - 不检查有效期与当前时间（板上没有可信时钟，早期实现 的时钟章节只管
+//!   - 不检查有效期与当前时间（板上没有可信时钟，相关组件的时钟章节只管
 //!     系统定时器）；
 //!   - 不支持 RSA / Ed25519 / 压缩点 / 多段 RDN / TeletexString；
 //!   - DER 的构造侧只用于**造 fixture**，不是通用编码器。
@@ -38,8 +38,8 @@ const std = @import("std");
 const Ecdsa = std.crypto.sign.ecdsa.EcdsaP256Sha256;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
-/// 本章 fixture 与板侧缓冲的统一上限。真实证书动辄 1–2 KiB；
-/// 本章只需要“能装下一个 P-256 自签证书”。
+/// 本组件 fixture 与板侧缓冲的统一上限。真实证书动辄 1–2 KiB；
+/// 本组件只需要“能装下一个 P-256 自签证书”。
 pub const max_cert_len = 768;
 /// SAN 条目上限（本工程 fixture 有 3 条：两个 DNS + 一个 IP）。
 pub const max_san = 4;
@@ -112,7 +112,7 @@ pub fn nextTlv(der: []const u8, pos: *usize) Error!Tlv {
     p += 1;
     if (len & 0x80 != 0) {
         const n = len & 0x7F;
-        // 本章上限 768 字节，长度最多两字节就够了；三字节也接受。
+        // 本组件上限 768 字节，长度最多两字节就够了；三字节也接受。
         if (n == 0 or n > 3) return Error.BadLength;
         if (p + n > der.len) return Error.Truncated;
         len = 0;
@@ -216,7 +216,7 @@ fn nameCn(name: Tlv) Error![]const u8 {
         const rdn = try expectTag(try nextTlv(name.body, &p), 0x31);
         var q: usize = 0;
         while (q < rdn.body.len) {
-            // SET 里理论上可以有多值；本章只按「每 SET 一个属性」处理。
+            // SET 里理论上可以有多值；本组件只按「每 SET 一个属性」处理。
             const atv = try expectTag(try nextTlv(rdn.body, &q), 0x30);
             var r: usize = 0;
             const oid = try expectTag(try nextTlv(atv.body, &r), 0x06);
@@ -326,7 +326,7 @@ pub const VerifyError = Error || std.crypto.errors.Error;
 /// 用证书自带的公钥验 tbsCertificate 的签名。
 ///
 /// 这是**自洽校验**：证明 DER 里三段（tbs / 公钥 / 签名）互相匹配，
-/// 不证明“这个公钥被谁信任”。信任锚不在本章范围内。
+/// 不证明“这个公钥被谁信任”。信任锚不在本组件范围内。
 pub fn verifySignature(cert: *const Cert) VerifyError!void {
     if (!std.mem.eql(u8, cert.sig_oid, &oid_ecdsa_sha256)) return Error.UnsupportedAlgorithm;
     const sig = try Ecdsa.Signature.fromDer(cert.sig);

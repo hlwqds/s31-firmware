@@ -199,7 +199,7 @@ test "certificate chain: parse → verify → tamper" {
 
 test "our record constants equal std.crypto.tls's" {
     // std 里有一份完整的 TLS 1.3 客户端（`std.crypto.tls.Client`），它的记录层
-    // 常量是独立维护的：两边必须一致，否则本章的“2^14+256 上限”只是自说自话。
+    // 常量是独立维护的：两边必须一致，否则本组件的“2^14+256 上限”只是自说自话。
     const tls = std.crypto.tls;
     try std.testing.expectEqual(tls.record_header_len, record.header_len);
     try std.testing.expectEqual(tls.max_ciphertext_inner_record_len, record.max_plaintext);

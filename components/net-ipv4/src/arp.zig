@@ -10,13 +10,13 @@
 //!
 //! 这套状态机的命名与 Linux 邻居子系统（`NUD_INCOMPLETE/REACHABLE/STALE/
 //! DELAY/PROBE`）一致，方便拿 `ip neigh show` 的输出对照。区别在于 Linux 把
-//! `base_reachable_time` 在 [1/2, 3/2] 区间随机化以避免同步风暴，本章用固定
+//! `base_reachable_time` 在 [1/2, 3/2] 区间随机化以避免同步风暴，本组件用固定
 //! 的 30 s / 5 s / 1 s，便于在主机单测里用假时钟推进。
 //!
 //! ## 为什么 `incomplete` 时不能"先发出去再说"
 //!
 //! 以太网帧必须有目的 MAC。没有解析结果时，唯一能发的是广播 ARP 请求；
-//! 上层数据报必须**排队**（`pending queue`，本章未实现，见 18.11 的边界）
+//! 上层数据报必须**排队**（`pending queue`，本组件未实现，见 18.11 的边界）
 //! 或直接返回"暂时不可达"。很多实现选择"发广播帧试试看"，结果是数据帧
 //! 被所有主机收下又丢弃，还污染了对端的连接状态。
 
@@ -399,7 +399,7 @@ pub const Incoming = struct {
 ///   2. 如果 op=request 且 `target IP` 是本机，构造 reply 写进 `out`；
 ///   3. op=reply 只需学习，不回。
 ///
-/// 广播/多播判定、VLAN 剥离、以太网首部都在调用方（早期实现 的收包路径）完成。
+/// 广播/多播判定、VLAN 剥离、以太网首部都在调用方（网卡的收包路径）完成。
 pub fn receive(
     cache: *Cache,
     frame: []const u8,

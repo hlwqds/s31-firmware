@@ -9,9 +9,9 @@
 //!      应用自检通过就 `markValid`；连续失败次数超预算就标 `invalid`，
 //!      下一次启动回滚到旧槽位。
 //!
-//! 与真机的对应关系（都是 IDF 里的既有语义，本章只建模、不代实现）：
+//! 与真机的对应关系（都是 IDF 里的既有语义，本组件只建模、不代实现）：
 //!
-//!   | 本章模型            | IDF v6.1 真实对应                                             |
+//!   | 本组件模型            | IDF v6.1 真实对应                                             |
 //!   | ------------------- | ------------------------------------------------------------- |
 //!   | `esp_ota_end()` 的  | `ota_verify_partition()` → `esp_image_verify()`                |
 //!   | 镜像校验            | `esp_ota_ops.c:587`、`esp_image_format.c:360`                  |
@@ -20,9 +20,9 @@
 //!   | 连击失败 → 回滚     | `esp_ota_mark_app_invalid_rollback_and_reboot()`（头文件 :382）|
 //!   | 自检通过 → 确认     | `esp_ota_mark_app_valid_cancel_rollback()`（头文件 :358）      |
 //!
-//! **本章不写 flash**：`slots` 是两个内存结结构体，`otadata` 的 CRC 与
-//! 双副本选择规则只作为注释出现。真做 OTA 需要 早期实现（分区表/flash 写入）
-//! 与 早期实现（链路）都闭环，判据见章节 24.11。
+//! **本组件不写 flash**：`slots` 是两个内存结结构体，`otadata` 的 CRC 与
+//! 双副本选择规则只作为注释出现。真做 OTA 需要 分区表与 flash 写入
+//! 与真实链路都闭环，判据见章节 24.11。
 //!
 //! 签名用的是 `std.crypto.sign.Ed25519`：rv32 上没有加速指令，验签走
 //! Edwards25519 的软件标量乘，一次验签在 40 MHz 上约几百毫秒——所以
@@ -263,7 +263,7 @@ pub const Rollback = struct {
     /// 运行期一次失败（自检某条不通过、看门狗复位、关键任务崩）。
     ///
     /// 只有**连续**失败才计入预算：`markValid()` 或在两次失败之间成功
-    /// 完成一轮自检时调用 `noteHealthy()` 会把计数清零。这一点与早期实现的
+    /// 完成一轮自检时调用 `noteHealthy()` 会把计数清零。这一点与早期工程的
     /// 看门狗策略对齐：看门狗只负责“把死循环变成一次复位”，
     /// 计数与决策必须由应用自己做，否则“偶发一次超时”就会把好固件回滚掉。
     pub fn noteFailure(self: *Rollback) void {
@@ -301,7 +301,7 @@ pub const Rollback = struct {
     ///
     /// 真实实现要求另一个槽在 otadata 里是 VALID（否则没有可启动的镜像，
     /// bootloader 会停在 “no bootable app partitions”）。内存模型退一步：
-    /// 只要它不是本次失败的槽，就把它当 VALID——因为本章的槽位从来只由
+    /// 只要它不是本次失败的槽，就把它当 VALID——因为本组件的槽位从来只由
     /// 本状态机写入，`undefined_` 只出现在“B 从未写过”的初始态。
     pub fn rollback(self: *Rollback) void {
         self.active = otherSlot(self.active);
