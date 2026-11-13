@@ -29,7 +29,10 @@ jobs:
       - name: host test matrix
         run: scripts/check-host.sh
       - name: unit coverage gate (module reachability + baselines)
-        run: python3 scripts/check-coverage.py --json | tee reports/coverage.json
+        run: |
+          mkdir -p reports
+          python3 scripts/check-coverage.py            # 人读表 + 门禁退出码直传
+          python3 scripts/check-coverage.py --json > reports/coverage.json
 
   image:
     name: cross build + two-segment image
