@@ -36,6 +36,10 @@
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）
 - 组件内 `hw.zig`/`log.zig` 副本移除，统一引用 `board.hw` / `board.log`
+- net-tcp：`SEND_SLOTS` 8 → 32（每槽只记 `(seq, len)`，代价 256 B `.bss`），
+  让慢启动能把 `cwnd` 长到 30 段上下再做拥塞避免。板级实测（ch21-cwnd-emac-lab）：
+  在途 10.2 KB → 20.3 KB、`srtt` 3.1 → 2.2 ms，但 64 KiB 传输吞吐 1.87 → 1.89 MB/s
+  （噪声内）——**队列深度不是瓶颈**，下一步要用时间戳计数器定位每段 ~770 µs 的开销。
 - net-tcp：`Conn` 从单段模型改成**有界多段在途**——固定 8 槽发送队列（只记
   `(seq, len)`，不复制载荷、不分配），`sendData(len, inflight_cap, now_us)` 一次
   返回一段、由调用方按 `min(cwnd, rwnd)` 门控循环取值；累积 ACK 整段出队、部分

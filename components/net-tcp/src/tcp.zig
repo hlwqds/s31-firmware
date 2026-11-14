@@ -606,9 +606,11 @@ pub const Action = struct {
     to: State = .closed,
 };
 
-/// 发送队列槽数。8 段 × 1460 B ≈ 11.7 KiB 的窗口，够跑慢启动的头几个 RTT；
+/// 发送队列槽数。32 段 × 1460 B ≈ 46.7 KiB 的窗口，让慢启动能把 `cwnd`
+/// 长到 30 段上下再做拥塞避免；每槽只记 `(seq, len)`（rv32 上 8 B），
+/// 32 槽的代价是 256 B `.bss`，不是 46.7 KiB——载荷在调用方的缓冲里。
 /// 满时 `sendData` 只是返回“不发”，不阻塞、不分配。
-pub const SEND_SLOTS: usize = 8;
+pub const SEND_SLOTS: usize = 32;
 
 /// 队列里的一段：只记区间，载荷在应用缓冲里（重传时按 `seq` 回算偏移）。
 pub const SendSeg = struct {
