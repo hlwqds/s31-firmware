@@ -11,7 +11,9 @@
    立刻 RST（保持 profile 短，不走 FIN/TIME_WAIT）。
 
 没有 DHCP 应答时打印 `wire: skipped/no-dhcp-server` 并返回成功（优雅跳过），
-不会拖红默认板级 E2E。
+不会拖红默认板级 E2E。2026-11-15 实测（不放行入站 udp/67）：
+`wire: skipped/no-dhcp-server` → `wire: checks passed=1 failed=0` →
+`main: verdict=pass`，日志 `logs/net-wire-no-dhcp.log`。
 
 ## 主机前置
 
