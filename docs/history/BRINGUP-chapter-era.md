@@ -284,3 +284,9 @@ rst: dma soft reset failed: Timeout (busmode=0x00020101)
   `enableBusClock()` 补 `enableApmForDma()`（`0x205044c4`/`0x205048c4`/`0x20706cbc`）
   后板侧：`tx: done in 15us`、`rx: frames=2 errs=0`（94 B IPv6 组播）。
   此前排除项（描述符格式、PBL/AAL/BLEN、FTF、cache、CNNT 电源等）保持有效。
+- **线上 TX 闭环（2026-11-14 继续）**：DMA 完成后主机仍收不到帧；用官方
+  `examples/ethernet/basic` 的 YT8531-specific init 定位到两个问题：
+  1) PHY 复位后需写 EXT `0xA001` bit8、EXT `0xA003` 低字节 `0xDD`
+  （TX/RX RGMII delay）；2) MDIO 事务顺序必须是“先写 GMIIDATA，再写
+  地址+write+busy”，旧顺序让 `0x1E/0x1F` 扩展寄存器读回假值。修正后
+  读回 `A001=0x8100`、`A003 0x00f1→0x00dd`，主机 `rx_packets` 0→1。
