@@ -17,6 +17,9 @@
   GMIIDATA，再写地址+write+busy）。修正后主机 `rx_packets` 0→1，
   线上 TX 打通。
 
+### Fixed
+- E2E profile 的 section 清单补上 `net_ethernet`（构建一直包含它，断言漏了，board e2e 会误报 section 集合不匹配）。
+
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）
 - 组件内 `hw.zig`/`log.zig` 副本移除，统一引用 `board.hw` / `board.log`
