@@ -262,6 +262,19 @@ pub const Answer = struct {
     cname_hops: u8,
 };
 
+/// 带名字长度的答案。`name` 指向调用方提供的 `out_name` 缓冲；
+/// 旧 API `findAnswer` 只写字节不返回长度，调用方容易把整个数组当字符串。
+pub const NamedAnswer = struct {
+    answer: Answer,
+    name: []const u8,
+};
+
+pub fn findAnswerNamed(packet: []const u8, expect_id: u16, out_name: []u8) Error!NamedAnswer {
+    const answer = try findAnswer(packet, expect_id, out_name);
+    const nr = try decodeName(packet, Header.len, out_name);
+    return .{ .answer = answer, .name = nr.name };
+}
+
 /// 从响应里取第一条 A 记录。
 ///
 /// `expect_id` 为 0 表示“不检查 ID”（只用于抓包回放）。
@@ -574,6 +587,15 @@ test "dns: A 记录解析（TTL/rdata/名字）" {
     try testing.expectEqual(@as(u32, 300), ans.ttl);
     try testing.expectEqual(@as(u8, 0), ans.cname_hops);
     try testing.expectEqualStrings("example.com", name[0.."example.com".len]);
+}
+
+test "dns: findAnswerNamed 返回名字长度" {
+    var buf: [256]u8 = @splat(0);
+    const pkt = try buildResponse(&buf, 0x4242, "example.com", &.{.{ 93, 184, 216, 34 }}, 300);
+    var name: [64]u8 = undefined;
+    const named = try findAnswerNamed(pkt, 0x4242, &name);
+    try testing.expectEqualStrings("example.com", named.name);
+    try testing.expectEqualSlices(u8, &[_]u8{ 93, 184, 216, 34 }, &named.answer.addr);
 }
 
 test "dns: 跳过 CNAME 继续找 A 记录，并统计跳数" {

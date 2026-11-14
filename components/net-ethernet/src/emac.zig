@@ -758,6 +758,45 @@ pub const RxFrame = struct {
     head: [64]u8,
 };
 
+/// 轮询 RX 环一次，把**整帧**拷到 `out`。`rxPoll` 只保留前 64 字节，
+/// 上层要解 IPv4/ARP/TCP 时必须用这个版本。
+///
+/// 返回实际帧长（`RDES0.FL`，APCS=0 时含 4 字节 FCS）；
+/// 调用方按 IPv4 `total_len` 截取载荷，不要直接拿帧长当 IP 长度。
+pub fn rxPollCopy(timeout_us: u32, out: []u8) Error!?usize {
+    const start = hw.nowUs();
+    while (true) {
+        const i = rx_idx;
+        hw.fence();
+        const des0 = @as(*volatile u32, @ptrCast(&rx_ring[i].des0)).*;
+        if ((des0 & descs.rdes0.own) == 0) {
+            const err = descs.rxErrorMask(des0);
+            const len = descs.rxFrameLength(des0);
+            hw.fence();
+            const n = @min(len, out.len);
+            @memcpy(out[0..n], rx_bufs[i][0..n]);
+
+            rx_ring[i].des0 = 0;
+            hw.fence();
+            rx_ring[i].des0 = descs.rdes0.own;
+            hw.fence();
+            rx_idx = descs.nextIndex(i, rx_ring_len);
+
+            if (err != 0) {
+                last_rx_err_des0 = des0;
+                stats.rx_err += 1;
+                return Error.RxError;
+            }
+            stats.rx_frames += 1;
+            return len;
+        }
+        if (hw.elapsedUs(start) > timeout_us) {
+            stats.rx_timeouts += 1;
+            return null;
+        }
+    }
+}
+
 /// 轮询 RX 环一次。
 ///
 /// 返回 null 表示“这一轮没有新帧”（不是错误）；`Error.RxError` 表示

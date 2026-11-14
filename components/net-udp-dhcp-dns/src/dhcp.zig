@@ -39,6 +39,8 @@ pub const options_off = 240;
 pub const magic_cookie: u32 = 0x63825363;
 /// 合法报文的最小长度（固定区 + 魔数 + 至少一个 END）。
 pub const min_len = options_off + 1;
+/// RFC 2131：DHCP 报文最小 300 字节；短包会被 dnsmasq 等服务器丢弃。
+pub const min_wire_len: usize = 300;
 
 pub const Error = error{
     Truncated,
@@ -267,6 +269,11 @@ pub const Builder = struct {
         if (self.len + 1 > self.buf.len) return error.Truncated;
         self.buf[self.len] = Option.end;
         self.len += 1;
+        // RFC 2131 的 300 字节下限：用 PAD(0) 补齐，服务器才愿意收。
+        if (self.len < min_wire_len and self.buf.len >= min_wire_len) {
+            @memset(self.buf[self.len..min_wire_len], Option.pad);
+            self.len = min_wire_len;
+        }
         return self.buf[0..self.len];
     }
 };
@@ -537,7 +544,9 @@ test "dhcp: DISCOVER 的固定字段布局与魔数" {
     try testing.expectEqualSlices(u8, &test_mac, pkt[28..34]);
     // 固定区其余字节必须是 0（sname/file 不参与协商）。
     for (pkt[44..236]) |byte| try testing.expectEqual(@as(u8, 0), byte);
-    try testing.expectEqual(@as(u8, Option.end), pkt[pkt.len - 1]);
+    const end = std.mem.indexOfScalar(u8, pkt, Option.end).?;
+    try testing.expectEqual(@as(usize, min_wire_len), pkt.len);
+    try testing.expectEqual(@as(u8, Option.pad), pkt[end + 1]);
 }
 
 test "dhcp: 魔数不对直接拒绝" {
@@ -598,7 +607,8 @@ test "dhcp: 选项越界 / 缺少 END 都是畸形" {
     try parseOptions(pkt, &opts);
 
     // 去掉 END：解析器必须报错而不是“读到缓冲末尾就收工”。
-    try testing.expectError(error.Truncated, parseOptions(pkt[0 .. pkt.len - 1], &opts));
+    const end = std.mem.indexOfScalar(u8, pkt, Option.end).?;
+    try testing.expectError(error.Truncated, parseOptions(pkt[0..end], &opts));
 
     // 长度字段声称 200 字节，但报文只剩 5 字节。
     var bad = pkt;

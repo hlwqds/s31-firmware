@@ -1,6 +1,6 @@
 {
   "net-ipv4": 70,
-  "net-udp-dhcp-dns": 49,
+  "net-udp-dhcp-dns": 50,
   "net-tcp": 27,
   "net-congestion": 21,
   "net-sockets": 28,

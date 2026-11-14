@@ -17,6 +17,12 @@
 >
 > 静态验收：`zig build test` 全绿（20 个主机侧用例）、`zig build` 退出 0。
 
+## 读帧 API
+
+- `rxPoll()` 只返回 `RxFrame.head[64]`，够看以太网头，**不够解 IP/ARP/TCP**。
+- `rxPollCopy(timeout, out)` 整帧拷到调用方缓冲，返回 `RDES0.FL`（APCS=0 时含 4 字节 FCS）；
+  上层必须按 IPv4 `total_len` 截取，不能拿帧长当 IP 长度。
+
 ## 待真机验证清单
 
 | #   | 待验证项     | 判据（跑起来看什么）                                                   | 对应章节 |

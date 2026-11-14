@@ -18,6 +18,9 @@
   线上 TX 打通。
 
 ### Fixed
+- net-ethernet：新增 `rxPollCopy`（整帧拷贝，含 FCS 长度语义），供 IPv4/ARP/TCP 使用。
+- net-udp-dhcp-dns：DHCP `Builder.finish()` 按 RFC 2131 补到 300 字节；新增
+  `findAnswerNamed()` 返回带长度的 DNS 名字视图。
 - E2E profile 的 section 清单补上 `net_ethernet`（构建一直包含它，断言漏了，board e2e 会误报 section 集合不匹配）。
 
 ### Changed

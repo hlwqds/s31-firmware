@@ -123,10 +123,11 @@ fn runChecks() bool {
         trap.panic("selftest: option 55", .{});
     const discover = b.finish() catch trap.panic("selftest: finish", .{});
 
+    const end = std.mem.indexOfScalar(u8, discover, dhcp.Option.end) orelse discover.len;
     check(
-        discover.len > dhcp.options_off and discover[discover.len - 1] == dhcp.Option.end,
-        "dhcp discover len={d} last=END({d})",
-        .{ discover.len, discover[discover.len - 1] },
+        discover.len >= dhcp.min_wire_len and end < discover.len,
+        "dhcp discover len={d} end={d} (>=300, PAD after END)",
+        .{ discover.len, end },
     );
     check(
         std.mem.readInt(u32, discover[dhcp.fixed_len..dhcp.options_off], .big) == dhcp.magic_cookie,
