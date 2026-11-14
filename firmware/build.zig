@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const Mod = struct { name: []const u8, path: []const u8, group: Group };
-const Group = enum { boot, net, tls, apps, wifi };
+const Group = enum { boot, net, tls, apps, wifi, wire };
 
 const all_modules = [_]Mod{
     .{ .name = "net_ipv4", .path = "../components/net-ipv4/src/selftest.zig", .group = .net },
@@ -10,6 +10,7 @@ const all_modules = [_]Mod{
     .{ .name = "net_congestion", .path = "../components/net-congestion/src/selftest.zig", .group = .net },
     .{ .name = "net_sockets", .path = "../components/net-sockets/src/selftest.zig", .group = .net },
     .{ .name = "net_ethernet", .path = "../components/net-ethernet/src/selftest.zig", .group = .net },
+    .{ .name = "net_wire", .path = "../components/net-wire/src/selftest.zig", .group = .wire },
     .{ .name = "net_tls_http", .path = "../components/net-tls-http/src/selftest.zig", .group = .tls },
     .{ .name = "app_mqtt_ota", .path = "../components/app-mqtt-ota/src/selftest.zig", .group = .apps },
     .{ .name = "wifi_boundary", .path = "../components/wifi-boundary/src/selftest.zig", .group = .wifi },
@@ -27,24 +28,37 @@ pub fn build(b: *std.Build) void {
     const g_tls = b.option(bool, "tls", "TLS/HTTP 子系统") orelse false;
     const g_apps = b.option(bool, "apps", "MQTT/OTA 应用协议") orelse false;
     const g_wifi = b.option(bool, "wifi", "Wi-Fi/BLE/802.15.4 边界") orelse false;
+    const g_wire = b.option(bool, "wire", "真实链路探针（DHCP+TCP，需主机配合）") orelse false;
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
     var src: []const u8 = "pub const entries = .{\n";
     for (all_modules) |m| {
-        if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi)) continue;
+        if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
         src = b.fmt("{s}    .{{ .name = \"{s}\", .run = @import(\"{s}\").run }},\n", .{ src, m.name, m.name });
     }
     src = b.fmt("{s}}};\n", .{src});
+
+    const eth_mod = b.createModule(.{ .root_source_file = b.path("../components/net-ethernet/src/api.zig") });
+    eth_mod.addImport("board", board);
+    const ipv4_mod = b.createModule(.{ .root_source_file = b.path("../components/net-ipv4/src/api.zig") });
+    const udp_mod = b.createModule(.{ .root_source_file = b.path("../components/net-udp-dhcp-dns/src/api.zig") });
+    const tcp_mod = b.createModule(.{ .root_source_file = b.path("../components/net-tcp/src/api.zig") });
 
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
     const enabled_mod = b.createModule(.{ .root_source_file = enabled_file });
 
     for (all_modules) |m| {
-        if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi)) continue;
+        if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
         const mod = b.createModule(.{ .root_source_file = b.path(m.path) });
         mod.addImport("board", board);
+        if (std.mem.eql(u8, m.name, "net_wire")) {
+            mod.addImport("net_ethernet", eth_mod);
+            mod.addImport("net_ipv4", ipv4_mod);
+            mod.addImport("net_udp", udp_mod);
+            mod.addImport("net_tcp", tcp_mod);
+        }
         enabled_mod.addImport(m.name, mod);
     }
 
@@ -62,6 +76,7 @@ pub fn build(b: *std.Build) void {
     // 与章节时代一致——测试入口只 import 纯逻辑模块。
     const test_step = b.step("test", "host-side unit tests (all components)");
     for (all_modules) |m| {
+        if (std.mem.eql(u8, m.name, "net_wire")) continue;
         const host_path = b.fmt("{s}", .{std.mem.replaceOwned(u8, b.allocator, m.path, "selftest.zig", "host_tests.zig") catch @panic("oom")});
         const t = b.addTest(.{
             .root_module = b.createModule(.{
@@ -79,12 +94,13 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(&install.step);
 }
 
-fn enabled(m: Mod, boot: bool, net: bool, tls: bool, apps: bool, wifi: bool) bool {
+fn enabled(m: Mod, boot: bool, net: bool, tls: bool, apps: bool, wifi: bool, wire: bool) bool {
     return switch (m.group) {
         .boot => boot,
         .net => net,
         .tls => tls,
         .apps => apps,
         .wifi => wifi,
+        .wire => wire,
     };
 }

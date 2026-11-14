@@ -33,6 +33,7 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 | `wifi` | boot + net + wifi | 构建 + 两段镜像 |
 | `tls` | boot + net + tls | 构建 + 两段镜像 |
 | `full` | boot + net + tls + apps + wifi | 构建 + 两段镜像（11 段自检） |
+| `net-wire` | boot + wire | 真实链路 DHCP+TCP；需 host dnsmasq、UDP 67/53 与 TCP 9000 放行、TCP 监听器；无 DHCP 时打印 `wire: skipped/no-dhcp-server` 并跳过 |
 
 E2E 断言：
 

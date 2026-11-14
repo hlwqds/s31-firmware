@@ -95,6 +95,17 @@ IDF **v6.1（`esp32s31` 为 preview target）**、esptool **≥ 5.2**，目标�
 > 早期实现 的 README 已明确“除 `clk:`/`rst:` 几行外没有实测输出”。任何 `mdio:`/`tx:`/`rx:` 结果
 > 必须先有本工程真机日志，才能写进章节；不得用其他板卡或 P4 的数据替代。
 
+### 4b. 生产固件 `net-wire`（2026-11-15）
+
+`-Dwire=true` 的可选 profile；生产固件自己跑，日志 `logs/e2e-net-wire-boot.log`。
+
+| #   | 门禁项       | 当前状态                                                                 | 通过判据                                             | 依赖 |
+| --- | ------------ | ------------------------------------------------------------------------ | ---------------------------------------------------- | ---- |
+| W1  | EMAC bring-up | 通过：`emac version` 检查、link 1000M、YT8531 RGMII delay 初始化          | `check: emac version ok=1`、`wire: bring-up`         | 真机 |
+| W2  | DHCP DORA    | 通过：DISCOVER→OFFER→ACK，租约 `10.42.0.139`，网关/DNS `10.42.0.1`        | `check: dhcp bound ... ok=1`                         | host dnsmasq；放行 UDP 67/53 |
+| W3  | TCP 握手     | 通过：SYN→SYN-ACK→ACK→ESTABLISHED，主机 accept `10.42.0.139:40000`，随后 RST | `check: tcp handshake ok=1`；host `accept()` 日志    | host TCP 9000 监听；放行 TCP 9000 |
+| W4  | 无 DHCP 降级 | 未单独实测：代码打印 `wire: skipped/no-dhcp-server` 后返回成功            | 无 dnsmasq/防火墙时 section 不 failed                | 需 host 关闭 DHCP 后补测 |
+
 ## 5. 早期实现 编译 / 上板
 
 | #   | 门禁项     | 当前状态                                                                            | 通过判据                                                                                                               | 依赖                                          |

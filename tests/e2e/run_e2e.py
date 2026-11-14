@@ -42,6 +42,8 @@ PROFILES = {
     "tls": {"flags": {"boot": True, "net": True, "tls": True, "apps": False, "wifi": False},
             "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
                           "net_sockets", "net_ethernet", "net_tls_http", "boot_power_perf"], "expect": "ok"},
+    "net-wire": {"flags": {"boot": True, "net": False, "tls": False, "apps": False, "wifi": False, "wire": True},
+                 "sections": ["net_wire", "boot_power_perf"], "expect": "ok"},
     "full": {"flags": {"boot": True, "net": True, "tls": True, "apps": True, "wifi": True},
              "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
                            "net_sockets", "net_ethernet", "net_tls_http", "app_mqtt_ota", "wifi_boundary",

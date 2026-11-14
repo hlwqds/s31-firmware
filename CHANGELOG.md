@@ -7,6 +7,11 @@
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
+### Added
+- `net-wire` 可选 profile（`-Dwire=true`）：生产固件在真实链路跑 DHCP
+  DORA + TCP 三次握手，host 侧 dnsmasq/socket 监听为前置；无 DHCP 时优雅跳过。
+  板级证据 `logs/e2e-net-wire-boot.log`。
+
 ### Fixed
 - net-ethernet：DMA 不取描述符的根因是 APM 控制过滤器。IDF app 在
   `bootloader_init_mem()` 里关闭 `HP/MEM/LP_APM_FUNC_CTRL`，二级 bootloader
@@ -16,6 +21,11 @@
   EXT `0xA003` 低字节 `0xDD`），并把 MDIO 事务改成 IDF 顺序（先写
   GMIIDATA，再写地址+write+busy）。修正后主机 `rx_packets` 0→1，
   线上 TX 打通。
+
+### Added
+- `net-wire` 可选 profile（`-Dwire=true`）：生产固件在真实链路跑 DHCP
+  DORA + TCP 三次握手，host 侧 dnsmasq/socket 监听为前置；无 DHCP 时优雅跳过。
+  板级证据 `logs/e2e-net-wire-boot.log`。
 
 ### Fixed
 - net-ethernet：新增 `rxPollCopy`（整帧拷贝，含 FCS 长度语义），供 IPv4/ARP/TCP 使用。
