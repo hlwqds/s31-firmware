@@ -63,11 +63,11 @@ DMA 中断使能全 0，收发全靠轮询。
 
 ### 工程不做的事
 
-- **不实现 ARP/ICMP**：本章只保证“能读 PHY、能发一帧、能进一帧”。
-  `ping` 需要 ARP 缓存与 ICMP 回显，属于 18 章。
-- **不配置 PLL**：RGMII 的 125 MHz TXC 来自 CNNT 的 ref clock 分频器，
-  分频值按“源 PLL 500 MHz / 125 MHz - 1 = 3”写死。源 PLL 是 bootloader
-  留下的状态，**待真机验证**。
+- **不实现 ARP/ICMP**：本章保证驱动层“能读 PHY、能发一帧、能进一帧”；
+  线上 TX 尚未观测到帧，`ping` 需要 ARP/ICMP，属于 18 章。
+- **ref clock 用 APLL**：MPLL 的 `CAL_END` 在本板裸机下恒 0，改用 APLL
+  500 MHz / o_div=0 → 125 MHz，CNNT ref 选 2、分频 0（`apll.ensure125`）。
+  TXC 的**实际 pad 频率**尚未用示波器实测。
 - **不开中断**：`DMA.INTRENABLE = 0`、`MAC.INTMASK = 0xFFFFFFFF`。
   中断路径（中断源 98 = `ETS_SBD_INTR_SOURCE`；CLIC 输入由中断矩阵
   路由到 16..47）在 17.8 里作为对照讨论，代码里不启用。
@@ -86,8 +86,8 @@ DMA 中断使能全 0，收发全靠轮询。
 | 控制台          | UART0，GPIO58（TX）/ GPIO59（RX），115200 8N1                            |
 | 下载模式        | BOOT = GPIO61                                                            |
 | RGMII 数据/时钟 | GPIO8–19（IDF `emac_periph.c` 第一组），IO_MUX 功能号 2                  |
-| MDC / MDIO      | **待真机验证**：`src/pins.zig` 顶部常量，默认 GPIO20 / GPIO21            |
-| 观测            | 串口 + （推荐）示波器看 GPIO13 的 125 MHz TXC                            |
+| MDC / MDIO      | 已实测：MDC=GPIO5、MDIO=GPIO6、PHY_RST=GPIO7（原理图 + 读回 YT8531 ID） |
+| 观测            | 串口 + （推荐）示波器测 GPIO13 TXC 实际频率（尚未实测）                  |
 
 `src/pins.zig` 的 RGMII 表：
 
