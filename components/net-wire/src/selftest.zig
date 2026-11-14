@@ -260,6 +260,6 @@ pub fn run() bool {
             check(established, "tcp handshake", .{});
         }
     }
-    log.line("wire: checks passed={d} failed={d}", .{ passed, failed });
+    log.line("checks: passed={d} failed={d} total={d}", .{ passed, failed, passed + failed });
     return failed == 0;
 }
