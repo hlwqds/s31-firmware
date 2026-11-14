@@ -36,6 +36,11 @@
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）
 - 组件内 `hw.zig`/`log.zig` 副本移除，统一引用 `board.hw` / `board.log`
+- net-wire：TCP 握手改由 `net-tcp` 的 `tcp.Conn` 驱动
+  （`activeOpen`/`onSegment`/`tick`），删掉手写的 `syn_seq`/`server_seq`/`established`
+  与 `sendTcp`；ESTABLISHED 后仍立刻 RST。板侧 `wire: tcp ESTABLISHED
+  state=ESTABLISHED snd_una=0x20263112`（= iss+1，SYN 已被确认）、
+  `wire: checks passed=4 failed=0`，`logs/e2e-net-wire-boot.log`。
 
 ## [0.3.0] - 2026-11-13
 

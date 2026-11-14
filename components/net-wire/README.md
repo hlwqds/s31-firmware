@@ -6,7 +6,9 @@
 
 1. 复用 `net-ethernet` 的 EMAC bring-up（APM、YT8531 RGMII delay、APLL）；
 2. 用 `net-udp-dhcp-dns` 发 DHCP DISCOVER/OFFER/REQUEST/ACK；
-3. 用 `net-tcp` 向租约网关的 9000 端口发 SYN，完成三次握手后 RST。
+3. 用 `net-tcp` 的 `tcp.Conn` 向租约网关的 9000 端口主动打开：`activeOpen` 发
+   SYN，收到的段喂 `onSegment`，每轮 `tick` 处理 RTO 重传；进 ESTABLISHED 后
+   立刻 RST（保持 profile 短，不走 FIN/TIME_WAIT）。
 
 没有 DHCP 应答时打印 `wire: skipped/no-dhcp-server` 并返回成功（优雅跳过），
 不会拖红默认板级 E2E。
@@ -32,6 +34,9 @@ ZIG=/nix/store/...-zig-0.17.1/bin/zig env -u LD_LIBRARY_PATH \
 ZIG=... python3 tests/e2e/run_e2e.py --board --profile net-wire
 ```
 
-2026-11-15 实测：DHCP 租约 `10.42.0.139`，TCP 握手 `ESTABLISHED`，
-主机 accept 到 `10.42.0.139:40000`，RST 关闭；日志
-`logs/e2e-net-wire-boot.log`。
+2026-11-15 实测（`tcp.Conn` 版）：DHCP 租约 `10.42.0.139`，板侧
+`wire: tcp SYN sent iss=0x20263111` →
+`wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112 rcv_nxt=0xeeaeab06`
+→ `wire: tcp RST sent`，`wire: checks passed=4 failed=0`；主机 accept 到
+`10.42.0.139:40000`，随后 `Connection reset by peer`（RST，符合预期）。
+日志 `logs/e2e-net-wire-boot.log`。

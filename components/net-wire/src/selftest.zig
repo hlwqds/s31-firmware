@@ -2,7 +2,8 @@
 //!
 //! 只做两件事，且都必须有外部对端：
 //!   1. DHCP DISCOVER → OFFER → REQUEST → ACK，拿到租约；
-//!   2. 向 `租约网关:9000` 发 SYN，完成三次握手后 RST。
+//!   2. 向 `租约网关:9000` 主动打开，握手由 `net-tcp` 的 `tcp.Conn` 驱动
+//!      （含 RTO 重传），进 ESTABLISHED 后立刻 RST，保持 profile 短。
 //!
 //! 依赖 host 侧 dnsmasq + TCP 监听器；默认 CI 不开这个 profile。
 
@@ -31,6 +32,7 @@ const hw = board.hw;
 const local_mac: [6]u8 = .{ 0x02, 0x00, 0x00, 0x00, 0x31, 0x01 };
 const host_port: u16 = 9000;
 const local_port: u16 = 40000;
+const syn_iss: u32 = 0x2026_3111;
 
 var passed: u32 = 0;
 var failed: u32 = 0;
@@ -38,9 +40,8 @@ var board_ip: [4]u8 = .{ 0, 0, 0, 0 };
 var host_ip: [4]u8 = .{ 0, 0, 0, 0 };
 var host_mac: ?[6]u8 = null;
 var dhcp_client: dhcp.Client = .{};
-var syn_seq: u32 = 0x2026_3111;
-var server_seq: u32 = 0;
-var established = false;
+/// 一次 profile 一条连接：状态机、ISS、RTO 全在 `tcp.Conn` 里。
+var conn: tcp.Conn = .{};
 
 fn check(ok: bool, comptime fmt: []const u8, args: anytype) void {
     if (ok) passed += 1 else failed += 1;
@@ -92,9 +93,13 @@ fn answerArp(p: arp.Packet) void {
     sendFrame(p.sha, 0x0806, r);
 }
 
-fn sendTcp(flags: tcp.Flags, seq: u32, ack: u32, opts: tcp.Options) void {
+/// 把 `tcp.Conn` 给出的 `Action` 编成一个段发出去。
+/// 选项只在握手时有：`Conn` 的 Action 不含选项，SYN 固定带 MSS=1460。
+fn sendAction(a: tcp.Action) void {
+    if (!a.send) return;
+    const opts: tcp.Options = if (a.flags.syn) .{ .mss = tcp.MSS_ETHERNET } else .{};
     var seg: [64]u8 = undefined;
-    const hdr = tcp.Header{ .src_port = local_port, .dst_port = host_port, .seq = seq, .ack = ack, .flags = flags, .window = 65535 };
+    const hdr = tcp.Header{ .src_port = local_port, .dst_port = host_port, .seq = a.seq, .ack = a.ack, .flags = a.flags, .window = 65535 };
     const n = tcp.encode(hdr, opts, "", &seg) catch return;
     _ = checksum.fillTcp(board_ip, host_ip, seg[0..n]);
     var pkt: [128]u8 = undefined;
@@ -125,21 +130,17 @@ fn handleDhcp(payload: []const u8, now_s: u64) bool {
     return false;
 }
 
-fn handleTcp(l4: []const u8) void {
+fn handleTcp(l4: []const u8, now_us: u64) void {
     const seg = tcp.parse(l4) catch return;
     if (seg.hdr.dst_port != local_port or seg.hdr.src_port != host_port) return;
-    if (seg.hdr.flags.syn and seg.hdr.flags.ack and !established) {
-        server_seq = seg.hdr.seq;
-        if (seg.hdr.ack != syn_seq +% 1) return;
-        sendTcp(.{ .ack = true }, syn_seq +% 1, server_seq +% 1, .{});
-        established = true;
-        log.raw("wire: tcp ESTABLISHED\n");
-        hw.delayUs(100_000);
-        sendTcp(.{ .rst = true, .ack = true }, syn_seq +% 1, server_seq +% 1, .{});
-    }
+    const a = conn.onSegment(seg, now_us);
+    if (a.retransmit) log.line("wire: tcp retransmit state={s} seq=0x{x:0>8}", .{ conn.state.name(), a.seq });
+    sendAction(a);
 }
 
-fn handleFrame(frame: []const u8, now_s: u64) void {
+/// 收帧总入口。时间单位用微秒：`Conn` 的 RTO/2MSL 都是微秒，
+/// DHCP 只吃秒，所以在 UDP 分支里现算 `now_us / 1_000_000`。
+fn handleFrame(frame: []const u8, now_us: u64) void {
     if (frame.len < 14) return;
     const dst = frame[0..6].*;
     if (!std.mem.eql(u8, dst[0..], local_mac[0..]) and !arp.isBroadcastMac(dst)) return;
@@ -158,14 +159,12 @@ fn handleFrame(frame: []const u8, now_s: u64) void {
     const l4 = h.payload(frame[14..]) catch return;
     if (h.protocol == ipv4.proto.udp) {
         const uh = udp.Header.parse(l4) catch return;
-        if (uh.dst_port == dhcp.client_port) {
-            if (handleDhcp(uh.payload(l4) catch return, now_s)) {}
-        }
+        if (uh.dst_port == dhcp.client_port) _ = handleDhcp(uh.payload(l4) catch return, now_us / 1_000_000);
         return;
     }
-    if (h.protocol == 6 and established == false and host_mac != null) {
+    if (h.protocol == 6 and host_mac != null and conn.state != .closed) {
         if (!checksum.verifyTcp(h.src, h.dst, l4)) return;
-        handleTcp(l4);
+        handleTcp(l4, now_us);
     }
 }
 
@@ -231,7 +230,7 @@ pub fn run() bool {
         }
         const r = emac.rxPollCopy(20_000, &frame) catch continue;
         if (r) |len| {
-            if (len <= frame.len) handleFrame(frame[0..len], now_s);
+            if (len <= frame.len) handleFrame(frame[0..len], hw.nowUs());
             if (dhcp_client.state == .bound) dhcp_ok = true;
         }
     }
@@ -248,18 +247,28 @@ pub fn run() bool {
         const ta = hw.nowUs();
         while (host_mac == null and hw.elapsedUs(ta) < 2_000_000) {
             const r = emac.rxPollCopy(20_000, &frame) catch continue;
-            if (r) |len| if (len <= frame.len) handleFrame(frame[0..len], hw.nowUs() / 1_000_000);
+            if (r) |len| if (len <= frame.len) handleFrame(frame[0..len], hw.nowUs());
         }
         check(host_mac != null, "arp host mac", .{});
         if (host_mac != null) {
-            sendTcp(.{ .syn = true }, syn_seq, 0, .{ .mss = 1460 });
-            log.raw("wire: tcp SYN sent\n");
+            sendAction(conn.activeOpen(syn_iss, hw.nowUs()));
+            log.line("wire: tcp SYN sent iss=0x{x:0>8}", .{syn_iss});
             const tt = hw.nowUs();
-            while (!established and hw.elapsedUs(tt) < 3_000_000) {
+            while (conn.state != .established and hw.elapsedUs(tt) < 3_000_000) {
+                const now_us = hw.nowUs();
+                sendAction(conn.tick(now_us));
                 const r = emac.rxPollCopy(20_000, &frame) catch continue;
-                if (r) |len| if (len <= frame.len) handleFrame(frame[0..len], hw.nowUs() / 1_000_000);
+                if (r) |len| if (len <= frame.len) handleFrame(frame[0..len], now_us);
             }
-            check(established, "tcp handshake", .{});
+            check(conn.state == .established, "tcp handshake", .{});
+            if (conn.state == .established) {
+                log.line("wire: tcp ESTABLISHED state={s} snd_una=0x{x:0>8} rcv_nxt=0x{x:0>8}", .{ conn.state.name(), conn.snd_una, conn.rcv_nxt });
+                hw.delayUs(100_000);
+                // RST 不是 `Conn` 的输出（它只做 FIN）：生产探针用它结束 profile，
+                // 不走 FIN/TIME_WAIT 的 60 s。Action 的 `to` 在这里只是标签。
+                sendAction(.{ .send = true, .seq = conn.snd_nxt, .ack = conn.rcv_nxt, .flags = .{ .rst = true, .ack = true }, .to = .established });
+                log.raw("wire: tcp RST sent\n");
+            }
         }
     }
     log.line("wire: checks passed={d} failed={d}", .{ passed, failed });
