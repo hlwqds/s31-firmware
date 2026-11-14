@@ -2,7 +2,7 @@
 
 > 所属章节：[[ch17-ethernet-mac-phy-driver|第十七章：以太网 MAC/PHY 驱动]] · 系列：[[zig-esp32-s31|Zig × ESP32-S31 全栈开发]]
 
-> [!success] 验证状态：**2026-11-14 已在 CoreBoard-1 上闭环 TX/RX**。
+> [!success] 验证状态：**同源驱动已在 practice 工程上板闭环 TX/RX（2026-11-14）**；本组件尚未单独上板（默认固件未接 `net_ethernet`）。
 > 根因是 **APM 控制过滤器**：IDF app 在 `bootloader_init_mem()` 里把
 > `HP_APM`/`HP_MEM_APM`/`LP_APM` 的 `FUNC_CTRL` 写 0；本组件由二级 bootloader 加载，
 > `bootloader_mem.c` 里这段被 `#if !BOOTLOADER_BUILD` 排除，默认值只放行 TEE master，
