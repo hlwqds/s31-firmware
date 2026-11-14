@@ -10,7 +10,7 @@
 //!   3. `Conn`：11 个状态、三次握手、四次挥手、TIME_WAIT（2MSL 用注入的
 //!      `now_us` 判定，不真睡 60 秒）、重复 ACK 计数、RST 立刻回 CLOSED；
 //!   4. `Rto`：RFC 6298 的 SRTT/RTTVAR（α=1/8、β=1/4、K=4），整数定点实现，
-//!      下限 1 s、上限 60 s，指数退避；`TxTimer` 是单段重传计时器。
+//!      下限 1 s、上限 60 s，指数退避；`TxTimer` 守着队首（最老未确认段）。
 //!
 //! 另外两个附属件：
 //!
@@ -118,7 +118,7 @@ pub const Flags = packed struct(u8) {
 };
 
 /// 已解析的选项。SACK-permitted 与 WS 只记录、不参与行为（窗口缩放留 早期工程，
-/// SACK 的重传选择也留 早期工程：本组件只有“单段 + 累积 ACK”这一种重传）。
+/// SACK 的重传选择也留 早期工程：本组件只有“有界多段在途 + 累积 ACK”这一种重传）。
 pub const Options = struct {
     /// kind 2，长度 4。
     mss: ?u16 = null,
@@ -369,7 +369,8 @@ pub fn clampRto(value: u64) u64 {
     return @min(@max(value, MIN_RTO_US), MAX_RTO_US);
 }
 
-/// 单段重传计时器：只有“一个未确认段”的模型（本组件刻意不做滑动窗口）。
+/// 重传计时器：只守**队首**（最老未确认段），退避按 RFC 6298 §5.5。
+/// 窗口本身由 `Conn` 的有界队列表达（固定 8 槽），这里不做滑动窗口扩容。
 pub const TxTimer = struct {
     active: bool = false,
     deadline_us: u64 = 0,
@@ -605,6 +606,16 @@ pub const Action = struct {
     to: State = .closed,
 };
 
+/// 发送队列槽数。8 段 × 1460 B ≈ 11.7 KiB 的窗口，够跑慢启动的头几个 RTT；
+/// 满时 `sendData` 只是返回“不发”，不阻塞、不分配。
+pub const SEND_SLOTS: usize = 8;
+
+/// 队列里的一段：只记区间，载荷在应用缓冲里（重传时按 `seq` 回算偏移）。
+pub const SendSeg = struct {
+    seq: u32 = 0,
+    len: usize = 0,
+};
+
 pub const Conn = struct {
     state: State = .closed,
     iss: u32 = 0,
@@ -625,8 +636,13 @@ pub const Conn = struct {
     fast_retransmits: u32 = 0,
     /// 是否发生过重传：Karn 算法据此拒绝 RTT 样本。
     retransmit_happened: bool = false,
-    /// 单段模型下“已发出但未确认”的载荷长度。
+    /// 已发出但未确认的**载荷**字节总数（含 SYN/FIN 的序号不算，与 FlightSize 同口径）。
     unacked_len: usize = 0,
+    /// 有界发送队列（环形）：只记每段的 `seq/len`，不复制载荷。
+    /// 满了 `sendData` 就返回“不发”，调用方等 ACK 腾位置——没有动态分配。
+    snd_q: [SEND_SLOTS]SendSeg = @splat(SendSeg{}),
+    q_head: u8 = 0,
+    q_len: u8 = 0,
     /// TIME_WAIT 的到期时刻（注入时钟，不真等）。
     time_wait_until_us: u64 = 0,
     last: Action = .{},
@@ -676,27 +692,108 @@ pub const Conn = struct {
         return self.last;
     }
 
-    /// 应用写入数据（单段模型：一次写完，长度 ≤ MSS）。
-    pub fn sendData(self: *Conn, len: usize, now_us: u64) Action {
+    /// 应用写入数据（多段在途，有界队列）。
+    ///
+    /// `inflight_cap` 是**调用方**允许的在途载荷上限（字节，通常传
+    /// `min(cwnd, rwnd)`）：本组件不做窗口管理，`snd_wnd` 只记录。返回值是
+    /// **一段**（长度 ≤ MSS，且不超过 `inflight_cap - 已在途`）；调用方循环
+    /// 调用直到 `send == false`，队列满或窗口不足时也是这个结果。
+    pub fn sendData(self: *Conn, len: usize, inflight_cap: usize, now_us: u64) Action {
         if (self.state != .established and self.state != .close_wait) {
             self.last = .{ .to = self.state };
             return self.last;
         }
+        if (@as(usize, self.q_len) >= SEND_SLOTS or self.unacked_len >= inflight_cap) {
+            self.last = .{ .to = self.state };
+            return self.last;
+        }
+        const room = inflight_cap - self.unacked_len;
+        const take = @min(@min(len, @as(usize, self.mss)), room);
+        if (take == 0) {
+            self.last = .{ .to = self.state };
+            return self.last;
+        }
+
         const start = self.snd_nxt;
-        self.snd_nxt +%= @intCast(len);
+        self.snd_nxt +%= @intCast(take);
         self.snd_max = self.snd_nxt;
-        self.unacked_len = len;
-        self.retransmit_happened = false;
-        self.timer.start(now_us, self.rto.rto_us);
+        self.queuePush(start, take);
+        // 这里**不**清 `retransmit_happened`：Karn 的粒度是段，不是“这次调用”。
+        // 多段在途时，发新段不代表之前那段没被重传过；标志在整批数据被确认
+        // （flight 清空）时才复位，见 `noteFlightDrained`。
+        // RFC 6298 §5.1：计时器守着**最老**未确认段，已经在跑就不要重起。
+        if (!self.timer.active) self.timer.start(now_us, self.rto.rto_us);
         self.last = .{
             .send = true,
             .seq = start,
             .ack = self.rcv_nxt,
             .flags = .{ .ack = true, .psh = true },
-            .payload_len = len,
+            .payload_len = take,
             .to = self.state,
         };
         return self.last;
+    }
+
+    /// 在途载荷字节数（与 RFC 的 FlightSize 同口径，不含 SYN/FIN）。
+    pub fn flightSize(self: *const Conn) usize {
+        return self.unacked_len;
+    }
+
+    /// 队列里还有几段没被确认。
+    pub fn queuedSegs(self: *const Conn) usize {
+        return self.q_len;
+    }
+
+    fn queuePush(self: *Conn, seq: u32, len: usize) void {
+        const idx = (@as(usize, self.q_head) + @as(usize, self.q_len)) % SEND_SLOTS;
+        self.snd_q[idx] = .{ .seq = seq, .len = len };
+        self.q_len += 1;
+        self.unacked_len += len;
+    }
+
+    fn queuePopFront(self: *Conn) void {
+        self.unacked_len -= self.snd_q[self.q_head].len;
+        self.q_head = @intCast((@as(usize, self.q_head) + 1) % SEND_SLOTS);
+        self.q_len -= 1;
+    }
+
+    /// 队首（最老未确认段）。空队列返回 null。
+    fn queueHead(self: *const Conn) ?SendSeg {
+        if (self.q_len == 0) return null;
+        return self.snd_q[self.q_head];
+    }
+
+    /// 按累积 ACK 出队：整段被确认就弹出，部分确认只裁掉队首前缀。
+    /// 部分 ACK 是常态（对端一个 ACK 可能只覆盖半段），不能当“全部确认”处理。
+    fn queueAckUpTo(self: *Conn, ack: u32) void {
+        while (self.q_len > 0) {
+            const h = self.snd_q[self.q_head];
+            const end = h.seq +% @as(u32, @intCast(h.len));
+            if (seqLeq(end, ack)) {
+                self.queuePopFront();
+                continue;
+            }
+            if (seqLt(h.seq, ack)) {
+                const eaten: usize = @intCast(ack -% h.seq);
+                self.snd_q[self.q_head].seq = ack;
+                self.snd_q[self.q_head].len = h.len - eaten;
+                self.unacked_len -= eaten;
+            }
+            break;
+        }
+    }
+
+    fn queueClear(self: *Conn) void {
+        self.q_head = 0;
+        self.q_len = 0;
+        self.unacked_len = 0;
+    }
+
+    /// Karn：一整个 flight（队列 + 序号）确认完时复位标志。
+    /// 只在“没有任何未确认数据”时复位，这样重传过的段仍在 `retransmit_happened`
+    /// 的保护下，不会被迟到的 ACK 拿去算成 RTT 样本。
+    fn noteFlightDrained(self: *Conn) void {
+        if (self.q_len == 0 and self.snd_una == self.snd_max) self.retransmit_happened = false;
     }
 
     /// 收到一个段，返回应发的段（可能为空）。
@@ -708,7 +805,7 @@ pub const Conn = struct {
         if (h.flags.rst) {
             self.state = .closed;
             self.timer.stop();
-            self.unacked_len = 0;
+            self.queueClear();
             self.last = .{ .to = .closed };
             return self.last;
         }
@@ -768,21 +865,23 @@ pub const Conn = struct {
                     if (self.state == .established) self.state = .close_wait;
                     reply = .{ .send = true, .seq = self.snd_nxt, .ack = self.rcv_nxt, .flags = .{ .ack = true }, .to = self.state };
                 }
-                // 三次重复 ACK：快速重传（不进入慢启动，序号不后退）。
+                // 三次重复 ACK：快速重传队首（洞），不进入慢启动、序号不后退。
                 if (self.dup_acks >= 3 and self.state == .established) {
                     self.dup_acks = 0;
-                    self.fast_retransmits += 1;
-                    self.retransmit_happened = true;
-                    self.timer.start(now_us, self.rto.rto_us);
-                    reply = .{
-                        .send = true,
-                        .retransmit = true,
-                        .seq = self.snd_una,
-                        .ack = self.rcv_nxt,
-                        .flags = .{ .ack = true, .psh = true },
-                        .payload_len = self.unacked_len,
-                        .to = self.state,
-                    };
+                    if (self.queueHead()) |head| {
+                        self.fast_retransmits += 1;
+                        self.retransmit_happened = true;
+                        self.timer.start(now_us, self.rto.rto_us);
+                        reply = .{
+                            .send = true,
+                            .retransmit = true,
+                            .seq = head.seq,
+                            .ack = self.rcv_nxt,
+                            .flags = .{ .ack = true, .psh = true },
+                            .payload_len = head.len,
+                            .to = self.state,
+                        };
+                    }
                 }
                 self.last = reply;
             },
@@ -845,24 +944,27 @@ pub const Conn = struct {
         if (ack == self.snd_max) {
             if (seqLt(self.snd_una, ack)) {
                 self.snd_una = ack;
-                self.unacked_len = 0;
+                self.queueAckUpTo(ack);
                 self.dup_acks = 0;
                 self.timer.stop();
+                self.noteFlightDrained();
             }
             return;
         }
         if (seqLt(self.snd_una, ack)) {
-            // 部分确认：推进 snd_una，计时器按当前 RTO 重起。
-            const acked: u32 = ack -% self.snd_una;
+            // 部分确认：推进 snd_una、按累积 ACK 出队。
+            //
+            // 计时器在这里重启是 RFC 6298 §5.3 的字面要求（“收到确认新数据的
+            // ACK，就按当前 RTO 重启计时器”），不是多段模型引入的偏差：
+            // 本模块只有累积 ACK、没有 SACK，队首之外的段无法单独被确认，
+            // 所以不存在“后段 ACK 反复给最老段续命”的情况——那种 ACK 与
+            // snd_una 相同，走下面的重复 ACK 计数分支。
             self.snd_una = ack;
-            if (@as(usize, acked) <= self.unacked_len) {
-                self.unacked_len -= acked;
-            } else {
-                self.unacked_len = 0;
-            }
+            self.queueAckUpTo(ack);
             self.dup_acks = 0;
             if (self.snd_una == self.snd_max) {
                 self.timer.stop();
+                self.noteFlightDrained();
             } else {
                 self.timer.start(now_us, self.rto.rto_us);
             }
@@ -902,7 +1004,13 @@ pub const Conn = struct {
         const out: Action = switch (self.state) {
             .syn_sent => .{ .send = true, .retransmit = true, .seq = self.iss, .ack = 0, .flags = .{ .syn = true }, .to = .syn_sent },
             .syn_rcvd => .{ .send = true, .retransmit = true, .seq = self.iss, .ack = self.rcv_nxt, .flags = .{ .syn = true, .ack = true }, .to = .syn_rcvd },
-            .established, .close_wait => .{ .send = true, .retransmit = true, .seq = self.snd_una, .ack = self.rcv_nxt, .flags = .{ .ack = true, .psh = true }, .payload_len = self.unacked_len, .to = self.state },
+            // 多段在途：RTO 只重传**最老**未确认的一段（不是 go-back-N 全体）。
+            .established, .close_wait => blk: {
+                if (self.queueHead()) |head| {
+                    break :blk .{ .send = true, .retransmit = true, .seq = head.seq, .ack = self.rcv_nxt, .flags = .{ .ack = true, .psh = true }, .payload_len = head.len, .to = self.state };
+                }
+                break :blk .{ .to = self.state };
+            },
             .fin_wait_1, .last_ack, .closing => .{ .send = true, .retransmit = true, .seq = self.snd_una, .ack = self.rcv_nxt, .flags = .{ .fin = true, .ack = true }, .to = self.state },
             else => .{ .to = self.state },
         };
@@ -1141,7 +1249,7 @@ test "tcp: 重组槽满时丢最老段（有界设计）" {
     try testing.expectEqual(@as(usize, SLOTS), reasm.pendingBytes());
 }
 
-test "tcp: 单段丢失触发 RTO 重传，退避且 Karn 拒绝其样本" {
+test "tcp: 队首丢失触发 RTO 重传，退避且 Karn 拒绝其样本" {
     var conn = Conn{};
     _ = conn.activeOpen(0x100, 0);
     var buf: [64]u8 = undefined;
@@ -1150,7 +1258,7 @@ test "tcp: 单段丢失触发 RTO 重传，退避且 Karn 拒绝其样本" {
     try testing.expectEqual(State.established, conn.state);
 
     const rto_before = conn.rto.rto_us;
-    _ = conn.sendData(100, 1000);
+    _ = conn.sendData(100, 4096, 1000);
     try testing.expectEqual(@as(u32, 0x101 + 100), conn.snd_max);
 
     // 未到点：没有动作。
@@ -1159,7 +1267,7 @@ test "tcp: 单段丢失触发 RTO 重传，退避且 Karn 拒绝其样本" {
 
     act = conn.tick(1000 + rto_before);
     try testing.expect(act.send and act.retransmit);
-    try testing.expectEqual(@as(u32, 0x101), act.seq); // go-back-N：从 snd_una 重发
+    try testing.expectEqual(@as(u32, 0x101), act.seq); // 只重传最老未确认段
     try testing.expectEqual(@as(usize, 100), act.payload_len);
     try testing.expectEqual(rto_before * 2, conn.rto.rto_us);
     try testing.expectEqual(@as(u32, 1), conn.timer.retries);
@@ -1180,7 +1288,7 @@ test "tcp: 三个重复 ACK 触发快速重传" {
     var n = try encode(.{ .src_port = 80, .dst_port = 5000, .seq = 0x9000, .ack = 0x101, .flags = .{ .syn = true, .ack = true } }, .{}, "", &buf);
     _ = conn.activeOpen(0x100, 0);
     _ = conn.onSegment(try parse(buf[0..n]), 1000);
-    _ = conn.sendData(100, 1000);
+    _ = conn.sendData(100, 4096, 1000);
 
     var act = Action{};
     var i: usize = 0;
@@ -1191,6 +1299,100 @@ test "tcp: 三个重复 ACK 触发快速重传" {
     try testing.expectEqual(@as(u32, 1), conn.fast_retransmits);
     try testing.expect(act.send and act.retransmit);
     try testing.expectEqual(@as(u32, 0x101), act.seq);
+}
+
+/// 测试助手：走完主动打开（SYN-ACK 带 MSS=1460、窗口 8192），返回 ESTABLISHED。
+fn testConnect(iss: u32) Conn {
+    var conn = Conn{};
+    _ = conn.activeOpen(iss, 0);
+    var buf: [64]u8 = undefined;
+    const n = encode(.{ .src_port = 80, .dst_port = 5000, .seq = 0x9000, .ack = iss +% 1, .flags = .{ .syn = true, .ack = true }, .window = 8192 }, .{ .mss = 1460 }, "", &buf) catch unreachable;
+    _ = conn.onSegment(parse(buf[0..n]) catch unreachable, 1000);
+    return conn;
+}
+
+test "tcp: 多段在途按 cap 逐段取出，不超过 cap 也不超过 MSS" {
+    var conn = testConnect(0x100);
+    // cap = 3000 B → 1460 + 1460 + 80，第四段没有位置
+    var a = conn.sendData(5000, 3000, 2000);
+    try testing.expect(a.send and a.payload_len == 1460);
+    try testing.expectEqual(@as(u32, 0x101), a.seq);
+    a = conn.sendData(5000, 3000, 2000);
+    try testing.expect(a.send and a.payload_len == 1460);
+    try testing.expectEqual(@as(u32, 0x101 + 1460), a.seq);
+    a = conn.sendData(5000, 3000, 2000);
+    try testing.expect(a.send and a.payload_len == 80);
+    try testing.expectEqual(@as(usize, 3000), conn.flightSize());
+    try testing.expectEqual(@as(usize, 3), conn.queuedSegs());
+    // 窗口已满：不发，序号也不动。
+    a = conn.sendData(5000, 3000, 2000);
+    try testing.expect(!a.send);
+    try testing.expectEqual(@as(u32, 0x101 + 3000), conn.snd_max);
+}
+
+test "tcp: 部分 ACK 只裁掉队首前缀，腾出的位置可再发一段" {
+    var conn = testConnect(0x100);
+    _ = conn.sendData(3000, 3000, 2000);
+    _ = conn.sendData(3000, 3000, 2000);
+    _ = conn.sendData(3000, 3000, 2000);
+    var buf: [64]u8 = undefined;
+    const n = try encode(.{ .src_port = 80, .dst_port = 5000, .seq = 0x9001, .ack = 0x101 + 100, .flags = .{ .ack = true } }, .{}, "", &buf);
+    _ = conn.onSegment(try parse(buf[0..n]), 3000);
+    try testing.expectEqual(@as(u32, 0x101 + 100), conn.snd_una);
+    try testing.expectEqual(@as(usize, 3), conn.queuedSegs()); // 队首还在，只是短了
+    try testing.expectEqual(@as(usize, 2900), conn.flightSize());
+    try testing.expect(conn.timer.active);
+    // 只剩 100 B 的空间：这次只能取 100 B，不能取满 MSS。
+    const a = conn.sendData(500, 3000, 4000);
+    try testing.expect(a.send and a.payload_len == 100);
+    try testing.expectEqual(@as(usize, 3000), conn.flightSize());
+}
+
+test "tcp: 队首丢失时 RTO 只重传队首，不重发整个窗口" {
+    var conn = testConnect(0x100);
+    _ = conn.sendData(3000, 3000, 2000);
+    _ = conn.sendData(3000, 3000, 2000);
+    const rto = conn.rto.rto_us;
+    try testing.expect(!conn.tick(2000 + rto - 1).send);
+    const act = conn.tick(2000 + rto);
+    try testing.expect(act.send and act.retransmit);
+    try testing.expectEqual(@as(u32, 0x101), act.seq);
+    try testing.expectEqual(@as(usize, 1460), act.payload_len); // 只有队首
+    try testing.expectEqual(rto * 2, conn.rto.rto_us); // 退避照旧
+    try testing.expectEqual(@as(usize, 2), conn.queuedSegs()); // 队列不动
+}
+
+test "tcp: 队列满（8 槽）后 sendData 返回不发，没有分配" {
+    var conn = testConnect(0x100);
+    var i: usize = 0;
+    while (i < SEND_SLOTS) : (i += 1) {
+        const a = conn.sendData(1460, 1 << 20, 2000);
+        try testing.expect(a.send and a.payload_len == 1460);
+    }
+    const overflow = conn.sendData(1460, 1 << 20, 2000);
+    try testing.expect(!overflow.send);
+    try testing.expectEqual(@as(usize, SEND_SLOTS), conn.queuedSegs());
+    try testing.expectEqual(@as(usize, SEND_SLOTS * 1460), conn.flightSize());
+}
+
+test "tcp: 累积 ACK 到齐后队列清空、计时器停、Karn 标志复位" {
+    var conn = testConnect(0x100);
+    _ = conn.sendData(2000, 4096, 2000);
+    _ = conn.sendData(2000, 4096, 2000);
+    const total = conn.flightSize();
+    try testing.expect(conn.tick(2000 + conn.rto.rto_us).retransmit);
+    try testing.expect(conn.retransmit_happened);
+
+    var buf: [64]u8 = undefined;
+    const n = try encode(.{ .src_port = 80, .dst_port = 5000, .seq = 0x9001, .ack = 0x101 + @as(u32, @intCast(total)), .flags = .{ .ack = true } }, .{}, "", &buf);
+    _ = conn.onSegment(try parse(buf[0..n]), 99_000);
+    try testing.expectEqual(@as(usize, 0), conn.queuedSegs());
+    try testing.expectEqual(@as(usize, 0), conn.flightSize());
+    try testing.expect(!conn.timer.active);
+    try testing.expect(conn.allAcked());
+    // flight 清空后新的一段可以取 RTT 样本（Karn 只挡重传过的那段）。
+    try testing.expect(!conn.retransmit_happened);
+    try testing.expect(conn.sampleRtt(2500));
 }
 
 test "tcp: 主动关闭走 FIN_WAIT_1 → FIN_WAIT_2 → TIME_WAIT → CLOSED" {
@@ -1274,7 +1476,7 @@ test "tcp: 从 ESTABLISHED 收到 RST 也立刻关闭（丢弃未确认数据）
     var n = try encode(.{ .src_port = 80, .dst_port = 5000, .seq = 0x9000, .ack = 0x101, .flags = .{ .syn = true, .ack = true } }, .{}, "", &buf);
     _ = conn.activeOpen(0x100, 0);
     _ = conn.onSegment(try parse(buf[0..n]), 0);
-    _ = conn.sendData(50, 0);
+    _ = conn.sendData(50, 4096, 0);
     try testing.expect(!conn.allAcked());
 
     n = try encode(.{ .src_port = 80, .dst_port = 5000, .seq = 0x9001, .ack = 0x101, .flags = .{ .rst = true, .ack = true } }, .{}, "", &buf);

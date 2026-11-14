@@ -36,6 +36,12 @@
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）
 - 组件内 `hw.zig`/`log.zig` 副本移除，统一引用 `board.hw` / `board.log`
+- net-tcp：`Conn` 从单段模型改成**有界多段在途**——固定 8 槽发送队列（只记
+  `(seq, len)`，不复制载荷、不分配），`sendData(len, inflight_cap, now_us)` 一次
+  返回一段、由调用方按 `min(cwnd, rwnd)` 门控循环取值；累积 ACK 整段出队、部分
+  ACK 只裁队首前缀；RTO 只重传队首（计时器仍在“未运行”时启动，见 RFC 6298 §5.1）；
+  Karn 标志改为 flight 清空时复位。主机用例 27 → 32（覆盖 cap 门控、部分 ACK、
+  队首 RTO、队列满、flight 清空）。
 - net-wire：TCP 握手改由 `net-tcp` 的 `tcp.Conn` 驱动
   （`activeOpen`/`onSegment`/`tick`），删掉手写的 `syn_seq`/`server_seq`/`established`
   与 `sendTcp`；ESTABLISHED 后仍立刻 RST。板侧 `wire: tcp ESTABLISHED

@@ -185,7 +185,7 @@ pub fn run() bool {
         // 一个 2 s 的 RTT 样本：SRTT=2s、RTTVAR=1s、RTO=6s（K=4）。
         _ = conn.sampleRtt(2_000_000);
         const rto_first = conn.rto.rto_us;
-        _ = conn.sendData(100, 1_000);
+        _ = conn.sendData(100, 4096, 1_000);
         const before = conn.tick(1_000 + rto_first - 1);
         const fire = conn.tick(1_000 + rto_first);
         const ok = before.send == false and fire.send and fire.retransmit and
@@ -220,7 +220,7 @@ pub fn run() bool {
         var n = buildServer(&g_seg, srv_iss, cli_iss + 1, .{ .syn = true, .ack = true }, .{}, "") catch
             trap.panic("selftest: dupack syn-ack", .{});
         _ = conn.onSegment(tcp.parse(g_seg[0..n]) catch trap.panic("selftest: dupack parse", .{}), 0);
-        _ = conn.sendData(200, 0);
+        _ = conn.sendData(200, 4096, 0);
 
         var act = tcp.Action{};
         var i: u32 = 0;
