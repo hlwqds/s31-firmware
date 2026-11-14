@@ -273,10 +273,11 @@ rst: dma soft reset failed: Timeout (busmode=0x00020101)
 - **MDIO/PHY**：`ident=0x4f51e91b`（Motorcomm YT8531，addr 0）、复位后需 ~200 ms。
 - **时钟**：MPLL `CAL_END` 恒 0 → APLL 500 MHz/o_div=0 出 125 MHz，
   ref sel=2 div=0；GPIO13/14 高速翻转；SWR 自清、TX/RX 时钟放行。
-- **仍未闭环**：TX/RX 描述符 OWN 不被 DMA 取走（status `0x00680084`）。
-  已排除：描述符格式（增强/普通）、PBL/AAL/BLEN、FTF、ST 重启+poll demand、
-  预置 OWN 再开 ST、cache 全局写回/失效（`cache_through(ring)=0`）、
-  satp=0（虚拟=物理）、APM 三处 filter 全关、CNNT 电源强制、字节序、
-  绝对地址探针（HP SRAM 返回 0；RTC SRAM 触发 Tx Descriptor Read 总线错
-  `error_bits=0b111`）。DMA 确实在发读事务，问题在 GMAC AXI master 读 DIRAM
-  的路径/地址视图；下一步做 IDF/esp-hal 驱动的寄存器级对照。
+- **已闭环（2026-11-14 补充）**：TX/RX 描述符 OWN 不被 DMA 取走的根因是
+  **APM 控制过滤器**（`FUNC_CTRL`），不是 GMAC 寄存器。IDF app 在
+  `bootloader_init_mem()` 里把 `HP_APM`/`HP_MEM_APM`/`LP_APM` 的 `FUNC_CTRL`
+  写 0；二级 bootloader 的 `bootloader_mem.c` 因 `#if !BOOTLOADER_BUILD` 跳过，
+  默认值只放行 TEE master，GMAC 的 AXI master（REE）读 DIRAM 描述符被静默拒绝。
+  `enableBusClock()` 补 `enableApmForDma()`（`0x205044c4`/`0x205048c4`/`0x20706cbc`）
+  后板侧：`tx: done in 15us`、`rx: frames=2 errs=0`（94 B IPv6 组播）。
+  此前排除项（描述符格式、PBL/AAL/BLEN、FTF、cache、CNNT 电源等）保持有效。
