@@ -101,6 +101,18 @@ pub fn run() bool {
         check(false, "phy scan (all 0x0000/0xffff)", .{});
     }
 
+    // 5a) 自协商必须显式 restart：硬件复位后 BMCR.bit9=0，link 永远起不来。
+    emac.restartAutoneg(0, mdio_timeout_us) catch |e| {
+        log.line("link: restart autoneg failed: {s}", .{@errorName(e)});
+    };
+    if (emac.waitLink(0, 5_000_000)) |ls| {
+        log.line("link: up bmsr=0x{x:0>4} anlpar=0x{x:0>4} ssr=0x{x:0>4} speed={d} dup={d}", .{
+            ls.bmsr, ls.anlpar, ls.ssr, (ls.ssr >> 14) & 0x3, @intFromBool((ls.ssr & (1 << 13)) != 0),
+        });
+    } else {
+        log.raw("link: no partner after 5s (cable/switch dependent)\n");
+    }
+
     // 5b) PHY 状态寄存器（link 由外部对端决定，只打印不判失败）
     {
         const dump = [_]struct { r: u5, name: []const u8 }{

@@ -370,6 +370,31 @@ pub fn readPhy(addr: u5, timeout_us: u32) Error!PhySnapshot {
 }
 
 /// 让 PHY 重新自协商：BMCR.AN_ENABLE | BMCR.RESTART_AUTONEG。
+pub const LinkState = struct {
+    bmsr: u16,
+    anlpar: u16,
+    /// YT8531 的 SSR（寄存器 0x11）：bit10 link、bit13 duplex、[15:14] speed
+    ssr: u16,
+};
+
+/// 轮询 BMSR 直到 link up（BMSR 的状态位是“读时锁存”，每次连读两次取第二次）。
+pub fn waitLink(addr: u5, timeout_us: u32) ?LinkState {
+    const start = hw.nowUs();
+    while (hw.elapsedUs(start) < timeout_us) {
+        _ = mdioRead(addr, phy.reg.bmsr, 2_000) catch 0;
+        const bmsr = mdioRead(addr, phy.reg.bmsr, 2_000) catch 0;
+        if ((bmsr & phy.bmsr.link_up) != 0) {
+            return .{
+                .bmsr = bmsr,
+                .anlpar = mdioRead(addr, phy.reg.anlpar, 2_000) catch 0,
+                .ssr = mdioRead(addr, 0x11, 2_000) catch 0,
+            };
+        }
+        hw.delayUs(100_000);
+    }
+    return null;
+}
+
 pub fn restartAutoneg(addr: u5, timeout_us: u32) Error!void {
     const v = try mdioRead(addr, phy.reg.bmcr, timeout_us);
     try mdioWrite(addr, phy.reg.bmcr, v | phy.bmcr.autoneg_enable | phy.bmcr.restart_autoneg, timeout_us);
