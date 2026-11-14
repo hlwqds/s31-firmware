@@ -2,7 +2,7 @@
 
 UDP 校验与分派、DHCP 状态机与租期、DNS 解析与缓存。
 
-- 主机测试：**49 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
+- 主机测试：**50 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 与 `checks: passed=N`
 - 依赖方向：本组件 → `boards`；不依赖其它组件
 

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `components/boot-power-perf` | 自举/功耗/性能（原 28A） | 14 |
 | `components/net-ipv4` | IPv4/ICMP/ARP/路由 | 70 |
-| `components/net-udp-dhcp-dns` | UDP/DHCP/DNS | 49 |
+| `components/net-udp-dhcp-dns` | UDP/DHCP/DNS | 50 |
 | `components/net-tcp` | TCP 状态机与可靠传输 | 32 |
 | `components/net-congestion` | TCP 拥塞控制 | 21 |
 | `components/net-sockets` | Socket API 与事件循环 | 28 |
