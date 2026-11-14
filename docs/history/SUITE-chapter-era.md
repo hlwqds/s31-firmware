@@ -3,7 +3,7 @@
 对应系列：[[zig-esp32-s31|Zig × ESP32-S31 全栈开发]]
 构建契约：[SPEC.md](SPEC.md)
 
-本目录是系列章节的可构建工程集合。当前第 1–28 章的工程已落地；ch01–ch06、ch09–ch27 已在 ESP32-S31 CoreBoard 上实测（ch07/ch08/ch12/ch17 为部分通过，详见 `BRINGUP-2026-11-12.md`）。ch28 是 28A 收官工程，已在 CoreBoard 上编译、烧录并跑完 12 条板侧判据（"ch28 未验证"的旧说法作废）。
+本目录是系列章节的可构建工程集合。当前第 1–28 章的工程已落地；ch01–ch06、ch09–ch27 已在 ESP32-S31 CoreBoard 上实测（ch07/ch08/ch12/ch17 为部分通过（ch17 第五轮已通 MDIO/PHY/APLL/时钟/link，TX/RX DMA 待续），详见 `BRINGUP-2026-11-12.md`）。ch28 是 28A 收官工程，已在 CoreBoard 上编译、烧录并跑完 12 条板侧判据（"ch28 未验证"的旧说法作废）。
 
 ## 工程清单
 
@@ -25,7 +25,7 @@
 | `ch14-dual-core-smp-ipi`               | [[ch14-dual-core-smp-ipi\|第十四章：双核 SMP 与 IPI]]                           | B（纯 Zig ELF + IDF bootloader） | 真机通过                                                | [README](ch14-dual-core-smp-ipi/README.md)               |
 | `ch15-observability-testing-stability` | [[ch15-observability-testing-stability\|第十五章：可观测性、测试与稳定性]]      | B（纯 Zig ELF + IDF bootloader） | 真机通过（8/8）                                         | [README](ch15-observability-testing-stability/README.md) |
 | `ch16-stack-architecture-zero-copy`    | [[ch16-stack-architecture-zero-copy\|第十六章：协议栈架构、缓冲与零拷贝]]       | B（纯 Zig ELF + IDF bootloader） | 真机通过（主机 55 测试 + 板侧自检）                     | [README](ch16-stack-architecture-zero-copy/README.md)    |
-| `ch17-ethernet-mac-phy-driver`         | [[ch17-ethernet-mac-phy-driver\|第十七章：以太网 MAC/PHY 驱动]]                 | B（纯 Zig ELF + IDF bootloader） | 部分实测（四轮：MAC 读通；DMA 复位超时、MDIO 未通）     | [README](ch17-ethernet-mac-phy-driver/README.md)         |
+| `ch17-ethernet-mac-phy-driver`         | [[ch17-ethernet-mac-phy-driver\|第十七章：以太网 MAC/PHY 驱动]]                 | B（纯 Zig ELF + IDF bootloader） | 部分实测（五轮：MDIO/PHY ID、APLL 125 MHz、link 建立；TX/RX DMA 描述符未闭环）     | [README](ch17-ethernet-mac-phy-driver/README.md)         |
 | `ch18-ipv4-icmp-arp-routing`           | [[ch18-ipv4-icmp-arp-routing\|第十八章：IPv4、ICMP、ARP 与路由]]                | B（纯 Zig ELF + IDF bootloader） | 真机通过（宿主 70 测试 + 板侧 13 项自检）               | [README](ch18-ipv4-icmp-arp-routing/README.md)           |
 | `ch19-udp-dhcp-dns`                    | [[ch19-udp-dhcp-dns\|第十九章：UDP、DHCP 与 DNS]]                               | B（纯 Zig ELF + IDF bootloader） | 真机通过（宿主 49 测试 + 板侧 14 项自检）               | [README](ch19-udp-dhcp-dns/README.md)                    |
 | `ch20-tcp-state-machine`               | [[ch20-tcp-state-machine-reliable-delivery\|第二十章：TCP 状态机与可靠传输]]    | B（纯 Zig ELF + IDF bootloader） | 板侧自检通过（宿主 27 测试 + 板侧 11 项，链路待 ch17）  | [README](ch20-tcp-state-machine/README.md)               |
@@ -83,5 +83,5 @@
 | ch01-board-id      | 命令清单与记录模板已落地；实机输出待回填                                                                                                                                     |
 | ch02-hello         | 模板 A 工程已落地；真机 `hello s31` + 每秒 `tick` 通过                                                                                                                       |
 | ch03-image-inspect | 与 `esptool image-info` 逐字段对拍通过（186 832 B 镜像）                                                                                                                     |
-| ch04–ch28          | 模板 B 工程已落地；状态见上表（部分通过项：ch07 中断、ch08 DMA、ch12 pi 阶段、ch17 DMA/MDIO）                                                                                |
+| ch04–ch28          | 模板 B 工程已落地；状态见上表（部分通过项：ch07 中断、ch08 DMA、ch12 pi 阶段、ch17 TX/RX DMA（MDIO/PHY/link 已通））                                                                                |
 | `run.log`          | 均未生成（不伪造；真机回填）                                                                                                                                                 |

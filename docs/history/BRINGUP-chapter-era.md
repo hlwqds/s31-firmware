@@ -261,3 +261,22 @@ rst: dma soft reset failed: Timeout (busmode=0x00020101)
 4. **首次上板 panic**：`illegal instruction, mtval=0xf0050553`——`mstatus.FS=0` 时硬浮点指令直接非法。在 `_start` 里置 `FS=Initial`（`csrs mstatus, 0x2000`）后 12/12 通过。
 
 28B（Zig 二级 bootloader）与真实电流/计时仍未做，判据见章节 28.9。ch28 按套件约定不进 code-site，章节与 README 用 GitHub 源链。
+
+
+## 第十一轮：ch17 以太网（2026-11-14）
+
+- **link 已建立**：硬件复位释放后 `BMCR=0x1140`（aneg_en=1）但 `restart`(bit9)=0，
+  BMSR 恒 `0x7949`、ANLPAR=0；显式 `restart_autoneg` 后 2.9 s 内
+  `bmsr=0x796d`（link=1、an_done=1）、`anlpar=0xcde1`、YT8531 SSR
+  `0xbc00/0xbc40`（link=1、1000M、full）。主机 USB 网卡 `enp0s13f0u1u1u1`
+  仍 NO-CARRIER，说明对端不是该网卡（板子在另一端口/交换机上）。
+- **MDIO/PHY**：`ident=0x4f51e91b`（Motorcomm YT8531，addr 0）、复位后需 ~200 ms。
+- **时钟**：MPLL `CAL_END` 恒 0 → APLL 500 MHz/o_div=0 出 125 MHz，
+  ref sel=2 div=0；GPIO13/14 高速翻转；SWR 自清、TX/RX 时钟放行。
+- **仍未闭环**：TX/RX 描述符 OWN 不被 DMA 取走（status `0x00680084`）。
+  已排除：描述符格式（增强/普通）、PBL/AAL/BLEN、FTF、ST 重启+poll demand、
+  预置 OWN 再开 ST、cache 全局写回/失效（`cache_through(ring)=0`）、
+  satp=0（虚拟=物理）、APM 三处 filter 全关、CNNT 电源强制、字节序、
+  绝对地址探针（HP SRAM 返回 0；RTC SRAM 触发 Tx Descriptor Read 总线错
+  `error_bits=0b111`）。DMA 确实在发读事务，问题在 GMAC AXI master 读 DIRAM
+  的路径/地址视图；下一步做 IDF/esp-hal 驱动的寄存器级对照。
