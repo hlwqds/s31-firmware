@@ -8,7 +8,10 @@
 > `bootloader_mem.c` 里这段被 `#if !BOOTLOADER_BUILD` 排除，默认值只放行 TEE master，
 > GMAC 的 AXI master 读 DIRAM 描述符被静默拒绝。`enableBusClock()` 现在调用
 > `enableApmForDma()`（`0x205044c4` / `0x205048c4` / `0x20706cbc`）。
-> 板侧读数：`tx: done in 15us`、`rx: frames=2 errs=0`（94 B IPv6 组播）。
+> 另外补了 **YT8531 RGMII 专用初始化**（EXT `0xA001` bit8、EXT `0xA003`
+> 低字节 `0xDD`），并把 MDIO 事务改成 IDF 顺序（先写 GMIIDATA，再写
+> 地址+write+busy）；否则 `0x1e/0x1f` 扩展寄存器读写不生效，线上 TX 无帧。
+> 修正后主机 `rx_packets` 0→1，`tx: done in 16us`、`rx: frames=1 errs=0`。
 > 完整排查与日志见 quartz 仓库 `practice/zig-esp32-s31/ch17-ethernet-mac-phy-driver/README.md`
 > 与 `logs/ch17t-apm.log`。
 >

@@ -12,6 +12,10 @@
   `bootloader_init_mem()` 里关闭 `HP/MEM/LP_APM_FUNC_CTRL`，二级 bootloader
   因 `#if !BOOTLOADER_BUILD` 跳过；`enableBusClock()` 现补 `enableApmForDma()`。
   板侧：TX `done in 15us`、RX 2 帧 94 B IPv6 组播。
+- net-ethernet：补 YT8531 RGMII 专用初始化（EXT `0xA001` bit8、
+  EXT `0xA003` 低字节 `0xDD`），并把 MDIO 事务改成 IDF 顺序（先写
+  GMIIDATA，再写地址+write+busy）。修正后主机 `rx_packets` 0→1，
+  线上 TX 打通。
 
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）

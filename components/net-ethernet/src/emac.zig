@@ -332,19 +332,16 @@ fn waitMdioIdle(timeout_us: u32) Error!void {
 /// 用固定循环次数会在不同主频下得到完全不同的实际超时。
 pub fn mdioRead(phy_addr: u5, reg_addr: u5, timeout_us: u32) Error!u16 {
     try waitMdioIdle(timeout_us);
-    // 先写“地址 + busy=0”，把 dev/reg 摆好（此时不会启动事务）。
-    hw.writeReg(macReg(regs.mac.gmii_addr), regs.gmiiAddrValue(phy_addr, reg_addr, csr_div, false, false));
-    hw.fence();
-    // 再置 busy=1 启动；读操作时 MIIWRITE 保持 0。
+    // IDF 的顺序：一次写入 dev/reg + busy，不预写地址。
     hw.writeReg(macReg(regs.mac.gmii_addr), regs.gmiiAddrValue(phy_addr, reg_addr, csr_div, false, true));
+    hw.fence();
     try waitMdioIdle(timeout_us);
     return @truncate(hw.readReg(macReg(regs.mac.gmii_data)));
 }
 
-/// 一次 MDIO 写。数据必须在置 busy 之前写进 GMIIDATA。
+/// 一次 MDIO 写。IDF 的顺序：先写 GMIIDATA，再写“地址+写+busy”。
 pub fn mdioWrite(phy_addr: u5, reg_addr: u5, value: u16, timeout_us: u32) Error!void {
     try waitMdioIdle(timeout_us);
-    hw.writeReg(macReg(regs.mac.gmii_addr), regs.gmiiAddrValue(phy_addr, reg_addr, csr_div, true, false));
     hw.writeReg(macReg(regs.mac.gmii_data), value);
     hw.fence();
     hw.writeReg(macReg(regs.mac.gmii_addr), regs.gmiiAddrValue(phy_addr, reg_addr, csr_div, true, true));
@@ -620,6 +617,37 @@ pub fn initTxRing() void {
     }
     hw.fence();
     tx_idx = 0;
+}
+
+/// YT8531 的 RGMII 专用初始化（官方 examples/ethernet/basic 的做法）：
+/// EXT 0xA001 bit8 = rxc_dly_en；EXT 0xA003 低字节 = 0xDD（TX delay
+/// 1000M/100M 各 13 步，约 1.95 ns）。复位后还需重新使能自协商（见 selftest）。
+pub const YtInit = struct { a000: u16, chip0: u16, chip1: u16, cfg0: u16, cfg1: u16 };
+
+pub fn yt8531RgmiiInit() YtInit {
+    const mdio_timeout_us: u32 = 2_000;
+    const Ext = struct {
+        fn rd(addr: u16) u16 {
+            mdioWrite(0, 0x1e, addr, mdio_timeout_us) catch return 0;
+            hw.delayUs(20);
+            return mdioRead(0, 0x1f, mdio_timeout_us) catch 0;
+        }
+        fn wr(addr: u16, val: u16) void {
+            mdioWrite(0, 0x1e, addr, mdio_timeout_us) catch return;
+            hw.delayUs(20);
+            mdioWrite(0, 0x1f, val, mdio_timeout_us) catch return;
+            hw.delayUs(20);
+        }
+    };
+    const a000 = Ext.rd(0xA000);
+    Ext.wr(0xA000, a000 & ~@as(u16, 0x0002));
+    const chip0 = Ext.rd(0xA001);
+    Ext.wr(0xA001, chip0 | 0x0100);
+    const chip1 = Ext.rd(0xA001);
+    const cfg0 = Ext.rd(0xA003);
+    Ext.wr(0xA003, (cfg0 & ~@as(u16, 0x00FF)) | 0x00DD);
+    const cfg1 = Ext.rd(0xA003);
+    return .{ .a000 = a000, .chip0 = chip0, .chip1 = chip1, .cfg0 = cfg0, .cfg1 = cfg1 };
 }
 
 /// 启动：TE → ST → SR → RE，逐字照抄 IDF 的 `emac_hal_start`

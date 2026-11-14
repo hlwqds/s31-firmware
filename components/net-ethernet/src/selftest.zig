@@ -86,6 +86,7 @@ pub fn run() bool {
     pins.initMdio(pins.default_mdc, pins.default_mdio);
     emac.setCsrDiv(regs.csr_div_safest);
     const found = emac.scanPhy(mdio_timeout_us);
+    _ = emac.yt8531RgmiiInit();
     if (found) |addr| {
         const snap = emac.readPhy(addr, mdio_timeout_us) catch null;
         if (snap) |s| {
