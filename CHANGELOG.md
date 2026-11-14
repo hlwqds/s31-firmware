@@ -5,7 +5,13 @@
 ## [Unreleased]
 
 ### Planned
-- P1：以太网 ref clock / MDIO 闭环
+- P1：以太网 ARP/ICMP 上层（DMA 已闭环）
+
+### Fixed
+- net-ethernet：DMA 不取描述符的根因是 APM 控制过滤器。IDF app 在
+  `bootloader_init_mem()` 里关闭 `HP/MEM/LP_APM_FUNC_CTRL`，二级 bootloader
+  因 `#if !BOOTLOADER_BUILD` 跳过；`enableBusClock()` 现补 `enableApmForDma()`。
+  板侧：TX `done in 15us`、RX 2 帧 94 B IPv6 组播。
 
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）

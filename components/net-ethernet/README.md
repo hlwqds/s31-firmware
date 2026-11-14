@@ -2,28 +2,17 @@
 
 > 所属章节：[[ch17-ethernet-mac-phy-driver|第十七章：以太网 MAC/PHY 驱动]] · 系列：[[zig-esp32-s31|Zig × ESP32-S31 全栈开发]]
 
-> [!warning] 验证状态：**已上板四轮（2026-11-13）**：EMAC 时钟门控与 `mac_version=0x00001037`（`snps=0x37`）
-> 读通；**DMA 软复位仍超时**（`busmode=0x00020101`），MDIO/PHY ID、RGMII、描述符环与 ping 均未进入。
-> 第二轮按 IDF 顺序把数据接口时钟放到 SWR 之前、补写 `GMAC_MEM_CLK_FORCE_ON`（bit5）并打印
-> 三个只读诊断位：`gmac_ctrl0=0x00000124`（`mem_clk_force_on=1`、`cactive=1`、
-> `rst_clk_tx_n=0`、`rst_clk_rx_n=0`）——时钟域在要时钟，但 TX/RX 复位时钟没放行。
-> 第三轮把 RGMII pad 路由提到时钟阶段之前，读数一字未变（`../logs/ch17c-boot.log`），
-> 排除了 pad 顺序；剩下的最可疑环节是 ref clock 的源（MPLL 未按 500 MHz 运行）。
-> 第四轮验证 GMAC 存储低功耗分支并继续跑完整阶段：`mem_lp_ctrl` 由 `0x6` 写成 `0xb` 后
-> `prdyn` 仍为 0（不是 SWR 的钥匙）；`TXDESC_LIST`/`RXDESC_LIST` 写后读回 0，
-> MDIO 扫不到 PHY，收发全部超时（`../logs/ch17d-boot.log`）。
-> 详见 `../BRINGUP-2026-11-12.md` 第四轮与 `../logs/ch17{,b,c,d}-boot.log`。
-> 已经完成的是可静态验证的部分：
+> [!success] 验证状态：**2026-11-14 已在 CoreBoard-1 上闭环 TX/RX**。
+> 根因是 **APM 控制过滤器**：IDF app 在 `bootloader_init_mem()` 里把
+> `HP_APM`/`HP_MEM_APM`/`LP_APM` 的 `FUNC_CTRL` 写 0；本组件由二级 bootloader 加载，
+> `bootloader_mem.c` 里这段被 `#if !BOOTLOADER_BUILD` 排除，默认值只放行 TEE master，
+> GMAC 的 AXI master 读 DIRAM 描述符被静默拒绝。`enableBusClock()` 现在调用
+> `enableApmForDma()`（`0x205044c4` / `0x205048c4` / `0x20706cbc`）。
+> 板侧读数：`tx: done in 15us`、`rx: frames=2 errs=0`（94 B IPv6 组播）。
+> 完整排查与日志见 quartz 仓库 `practice/zig-esp32-s31/ch17-ethernet-mac-phy-driver/README.md`
+> 与 `logs/ch17t-apm.log`。
 >
-> - `zig build -Dtarget=riscv32-freestanding-eabihf … -Doptimize=ReleaseSmall` 退出 0；
-> - `elf2image` 打印 `Merged 2 ELF sections.`，`image-info` 的段表正好两行 `DROM, IROM`
->   （0x40000020 / 0x40020020，判据是“`DROM, IROM` 行数 == 2”）；
-> - `zig build test` 的 20 个主机侧用例全绿（描述符布局、位域编码、PHY ID 解码、环回绕）；
-> - `bash -n tools/flash.sh` 退出 0。
->
-> **除 `clk:` / `rst:` 这几行外没有实测输出。** MDIO 的 `mdio:`、收发的 `tx:` / `rx:`
-> 结果必须由本工程在板子上跑出来后才有资格写进章节；这些阶段目前还没被走到。
-> 所有尚未验证的硬件行为在代码里都带 `TODO 待真机验证` 或 `待真机验证` 注释。
+> 静态验收：`zig build test` 全绿（20 个主机侧用例）、`zig build` 退出 0。
 
 ## 待真机验证清单
 

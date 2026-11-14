@@ -106,8 +106,28 @@ inline fn addrOf(p: *const anyopaque) u32 {
 // ---------------------------------------------------------------------------
 
 /// 打开 EMAC 的系统时钟门控。
+/// 关闭 APM 的“控制过滤器”（FUNC_CTRL）。这是以太网 DMA 的**必需**步骤：
+///
+/// - IDF app 在 `bootloader_init_mem()`（`esp_system/port/cpu_start.c`）里调用
+///   `apm_hal_enable_ctrl_filter_all(false)`，把 HP_APM / HP_MEM_APM / LP_APM 的
+///   `FUNC_CTRL` 写 0；
+/// - 本组件由 IDF 的**二级 bootloader** 加载，而那段代码在
+///   `bootloader_support/src/bootloader_mem.c` 里被 `#if !BOOTLOADER_BUILD` 排除；
+/// - 默认值（HP=0x7f / MEM=0x3f / LP=0x0f）只允许 TEE master，GMAC 的 AXI master
+///   属 REE，读 DIRAM 描述符被静默拒绝（返回 0、无 bus error），表现为
+///   “CPU 看到 OWN=1，DMA 永远不取描述符”。
+///
+/// 地址见 `esp_hal_security/include/hal/apm_hal.h:499-506`。
+pub fn enableApmForDma() void {
+    hw.writeReg(0x2050_44c4, 0); // HP_APM_FUNC_CTRL
+    hw.writeReg(0x2050_48c4, 0); // HP_MEM_APM_FUNC_CTRL
+    hw.writeReg(0x2070_6cbc, 0); // LP_APM_FUNC_CTRL
+    hw.fence();
+}
+
 pub fn enableBusClock() void {
     hw.setBits(regs.hp_sys_clkrst + regs.clkrst_emac_ctrl0, regs.clkrst_emac_sys_clk_en);
+    enableApmForDma();
 }
 
 /// 读回系统时钟门控位（打印用）。
