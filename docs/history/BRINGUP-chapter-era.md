@@ -210,7 +210,7 @@ rst: dma soft reset failed: Timeout (busmode=0x00020101)
 | ch18 IPv4/ICMP/ARP/路由 | build ✓、两个 flash 段 ✓、宿主 70/70 ✓、835 行章节 ✓ | **通过（板侧自检 13/13）**：ICMP echo 请求/应答、IPv4 3000 B 载荷按 MTU 分 3 片（off 0/1480/2960，MF 1/1/0）、乱序重组一致、路由 LPM（on-link / 默认网关）、ARP miss→request、learn→reachable、+31 s→stale、serve reply（`logs/ch18-boot.log`）                                        |
 | ch19 UDP/DHCP/DNS       | build ✓、两个 flash 段 ✓、宿主 49/49 ✓、861 行章节 ✓ | **通过（板侧自检 14/14）**：DHCP DISCOVER（252 B、cookie 0x63825363、option53=1）、UDP 68→67 校验、selecting→offer→request→bound（ip 192.168.1.42、lease 3600、T1 1800、T2 3150）、T1 到期 renewing、DNS query/answer（93.184.216.34 TTL 300）、缓存命中与过期（`logs/ch19-boot.log`） |
 
-两章的板侧自检都只验证协议逻辑（不含真实网口收发），真实 ARP/ping/DHCP 交互仍属 ch17 的未闭环项（DMA 软复位超时）。
+两章的板侧自检都只验证协议逻辑（不含真实网口收发），真实 ARP/ping/DHCP 交互仍属 ch17 的未闭环项（DMA 软复位超时）。（2026-11-14：DMA 已因 APM ctrl filter 闭环，见第十一轮）
 
 ## 第六轮：ch20 / ch21（章节排期 2026-11-30；上板 2026-11-13）
 
@@ -230,7 +230,7 @@ rst: dma soft reset failed: Timeout (busmode=0x00020101)
 
 两章均为注入路径 / known-answer 自检：真实 socket 连接、完整 TLS 1.3 握手与 HTTPS GET 仍需 ch17（链路）+ ch22（事件循环）就绪后再验。
 
-第五轮末尾那句「真实 ARP/ping/DHCP 交互仍属 ch17 未闭环项」同样覆盖 ch20–ch23：**六章的真链路验收都卡在 ch17 的 ref clock / MDIO 上**。
+第五轮末尾那句「真实 ARP/ping/DHCP 交互仍属 ch17 未闭环项」同样覆盖 ch20–ch23：真链路验收当时卡在 ch17 的 **DMA 描述符获取**上（ref clock/MDIO 已在第十一轮打通）；该问题已于 2026-11-14 因 APM ctrl filter 修复而闭环（见第十一轮）。
 
 ## 第八轮：ch24 / ch25（章节排期 2026-12-01；上板 2026-11-13）
 

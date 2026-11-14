@@ -28,6 +28,8 @@
 | 8   | 收包         | 插网线后 RX 环至少进一个包（ARP / LLDP / 广播）                        | 17.9     |
 | 9   | ping 验收    | 接 18 章的 ARP/ICMP 之后，从 PC `ping` 通 —— **本章不做，留给 18 章**  | 17.11    |
 
+> 注：第 1–8 项已由 practice 工程在 CoreBoard-1 上验证；本组件尚未单独上板（默认固件未接 `net_ethernet`）。
+
 ## 目的
 
 这是形态 B 的第十二个工程，骨架沿用 `ch15-observability-testing-stability`
