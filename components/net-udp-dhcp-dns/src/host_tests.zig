@@ -20,4 +20,5 @@ test {
     _ = @import("udp.zig");
     _ = @import("dhcp.zig");
     _ = @import("dns.zig");
+    _ = @import("api.zig");
 }

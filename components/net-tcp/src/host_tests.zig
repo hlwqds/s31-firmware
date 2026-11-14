@@ -18,4 +18,5 @@
 test {
     _ = @import("tcp.zig");
     _ = @import("checksum.zig");
+    _ = @import("api.zig");
 }

@@ -21,4 +21,5 @@ test {
     _ = @import("board").hw;
     _ = @import("apll.zig");
     _ = @import("emac.zig");
+    _ = @import("api.zig");
 }

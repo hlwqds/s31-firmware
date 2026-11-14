@@ -22,4 +22,5 @@ test {
     _ = @import("icmp.zig");
     _ = @import("arp.zig");
     _ = @import("route.zig");
+    _ = @import("api.zig");
 }
