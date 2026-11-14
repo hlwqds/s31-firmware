@@ -68,6 +68,14 @@ pub const io_mux: usize = 0x2058_2000;
 /// DR_REG_GPIO_BASE。GPIO 矩阵与输出使能。
 pub const gpio: usize = 0x2058_3000;
 
+/// APM 基址与 FUNC_CTRL 偏移（`reg_base.h:55-57,91`；
+/// `hp_apm_reg.h:1950` / `hp_mem_apm_reg.h:1214` / `lp_apm_reg.h:990`）。
+pub const apm_hp: usize = 0x2050_4400;
+pub const apm_hp_mem: usize = 0x2050_4800;
+pub const apm_lp: usize = 0x2070_6c00;
+pub const apm_func_ctrl: usize = 0x0c4;
+pub const apm_lp_func_ctrl: usize = 0x0bc;
+
 // ---------------------------------------------------------------------------
 // MAC 块偏移（gmac + off）
 // ---------------------------------------------------------------------------

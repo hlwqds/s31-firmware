@@ -119,9 +119,9 @@ inline fn addrOf(p: *const anyopaque) u32 {
 ///
 /// 地址见 `esp_hal_security/include/hal/apm_hal.h:499-506`。
 pub fn enableApmForDma() void {
-    hw.writeReg(0x2050_44c4, 0); // HP_APM_FUNC_CTRL
-    hw.writeReg(0x2050_48c4, 0); // HP_MEM_APM_FUNC_CTRL
-    hw.writeReg(0x2070_6cbc, 0); // LP_APM_FUNC_CTRL
+    hw.writeReg(regs.apm_hp + regs.apm_func_ctrl, 0);
+    hw.writeReg(regs.apm_hp_mem + regs.apm_func_ctrl, 0);
+    hw.writeReg(regs.apm_lp + regs.apm_lp_func_ctrl, 0);
     hw.fence();
 }
 
