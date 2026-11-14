@@ -36,14 +36,17 @@
 ### Changed
 - P0.2：flash 窗口扩至各 0x7F000、drom 基址 0x40080020，全特性单镜像可链接（板上 11/11）
 - 组件内 `hw.zig`/`log.zig` 副本移除，统一引用 `board.hw` / `board.log`
-- net-tcp：`checksum.Sum.add` 按 16 位字累加、**把进位折叠推迟到末尾**（RFC 1071 §2
-  允许）。原先每个字都做两次折叠，是 rv32 上校验和的主要开销；一次 `add` 现在只折叠一次，
-  上限为 64 KiB（32768 字 × 0xFFFF ≈ 2.1e9 < 2^32），与 IP 载荷上限一致。
-  板级（ch21-cwnd-emac-lab）：`cksum_us` 6423 → **4778**（126 → 96 µs/帧）。
+- net-tcp：`checksum.Sum.add` **把进位折叠推迟到末尾**（RFC 1071 §2 允许），并按 4096 字
+  做有界折叠以保证任意长度切片都安全。原先每个字都做两次折叠，是 rv32 上校验和的主要开销。
+  该轮板级实测（ch21-cwnd-emac-lab）：`cksum_us` 6423 → **4778**（126 → 96 µs/帧，
+  口径是“走 `fillTcp` 的数据帧”；零拷贝组帧后数据帧的这项已并入 `asm_us`，
+  小帧仍走这条路径）。
 - net-tcp：`SEND_SLOTS` 8 → 32（每槽只记 `(seq, len)`，代价 256 B `.bss`），
-  让慢启动能把 `cwnd` 长到 30 段上下再做拥塞避免。板级实测（ch21-cwnd-emac-lab）：
+  让慢启动能把 `cwnd` 长到 30 段上下再做拥塞避免。该轮板级实测（ch21-cwnd-emac-lab）：
   在途 10.2 KB → 20.3 KB、`srtt` 3.1 → 2.2 ms，但 64 KiB 传输吞吐 1.87 → 1.89 MB/s
-  （噪声内）——**队列深度不是瓶颈**，下一步要用时间戳计数器定位每段 ~770 µs 的开销。
+  （噪声内）——队列深度不是瓶颈。后续归因与优化见 quartz 的
+  `practice/zig-esp32-s31/logs/ch21-cwnd-cost.log` 与 `ch21-cwnd-opt{1,2,3,4}.log`
+  （每帧 CPU 是瓶颈；零拷贝组帧后同一传输 23.4 ms / 2.80 MB/s）。
 - net-tcp：`Conn` 从单段模型改成**有界多段在途**——固定发送队列（只记
   `(seq, len)`，不复制载荷、不分配），`sendData(len, inflight_cap, now_us)` 一次
   返回一段、由调用方按 `min(cwnd, rwnd)` 门控循环取值；累积 ACK 整段出队、部分
