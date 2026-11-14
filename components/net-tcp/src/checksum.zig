@@ -37,17 +37,27 @@ pub const Sum = struct {
         self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
     }
 
+    /// 按 16 位字累加，**进位折叠推迟到末尾**。
+    ///
+    /// RFC 1071 §2 允许把折叠推后：只要累加器不溢出，结果与“逐字折叠”相同。
+    /// 原先每个字都做 `acc = (acc & 0xFFFF) + (acc >> 16)`（两个字都要折叠两次），
+    /// 在 rv32 上是主要开销；现在一次 `add` 只折叠一次。
+    /// 上限：一次 `add` 最多 64 KiB（32768 字 × 0xFFFF ≈ 2.1e9 < 2^32），
+    /// 与 IP 载荷的最大长度一致；超过这个长度请分片调用。
     pub fn add(self: *Sum, bytes: []const u8) void {
         var i: usize = 0;
         if (self.odd) |hi| {
             if (bytes.len == 0) return;
-            self.absorb((@as(u16, hi) << 8) | bytes[0]);
+            self.acc += (@as(u32, hi) << 8) | bytes[0];
             i = 1;
             self.odd = null;
         }
         while (i + 1 < bytes.len) : (i += 2) {
-            self.absorb((@as(u16, bytes[i]) << 8) | bytes[i + 1]);
+            self.acc += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
         }
+        // 一次折叠（含上面 odd 字与可能剩下的单字节）
+        self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
+        if (self.acc > 0xFFFF) self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
         if (i < bytes.len) self.odd = bytes[i];
     }
 
