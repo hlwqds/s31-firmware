@@ -237,6 +237,8 @@ pub fn run() bool {
     }
     if (!dhcp_ok) {
         log.raw("wire: skipped/no-dhcp-server\n");
+        log.line("wire: checks passed={d} failed={d}", .{ passed, failed });
+        log.line("checks: passed={d} failed={d} total={d}", .{ passed, failed, passed + failed });
         return true;
     }
     check(true, "dhcp bound ip={d}.{d}.{d}.{d}", .{ board_ip[0], board_ip[1], board_ip[2], board_ip[3] });
@@ -260,6 +262,7 @@ pub fn run() bool {
             check(established, "tcp handshake", .{});
         }
     }
+    log.line("wire: checks passed={d} failed={d}", .{ passed, failed });
     log.line("checks: passed={d} failed={d} total={d}", .{ passed, failed, passed + failed });
     return failed == 0;
 }

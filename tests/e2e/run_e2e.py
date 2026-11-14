@@ -153,6 +153,10 @@ def board_case(profile_name: str) -> Case:
     c.check("main: verdict=pass" in text, "verdict=pass missing")
     for m in re.finditer(r"checks: passed=(\d+) failed=(\d+)", text):
         c.check(int(m.group(2)) == 0, f"a section reported failures: {m.group(0)}")
+    if profile_name == "net-wire":
+        c.check("wire: checks passed=" in text, "net-wire section did not run")
+        c.check("skipped/no-dhcp-server" not in text,
+                "net-wire skipped: host DHCP/firewall prerequisites missing")
     return c
 
 
