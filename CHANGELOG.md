@@ -46,6 +46,12 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-sockets：`wire.zig` 改成**带基址**的映射。socket 层的 `seq`/`ack` 是从 0 起的
+  **相对偏移**，真实 TCP 的序号从 ISS 起计，所以 RX 做 `seq − peer_iss` / `ack − local_iss`、
+  TX 做 `local_iss + seq` / `peer_iss + ack`（`Bases{ local_iss, peer_iss }`，
+  都是“数据流第一个字节”的序号，SYN 不占该偏移）。原样抄真实 seq 在注入模型下
+  看不出问题，接真链路会立刻错位。另把 `drainTx` 的契约写准：**只在收到 ACK 之后**
+  消费（`tx_buf` 是应用数据的唯一副本，重传还要用）。
 - net-sockets：补上**真实链路的出向出口**——`txPending()` / `txSeqBase()` / `txPeek()`
   （`drainTx()` 原本就有）。注入模型下 `tx_buf` 只是汇、`tx_len` 只进指纹，
   接真链路时 socket 层写进去的字节必须能取出来发。**序号不变量**：`send()` 在

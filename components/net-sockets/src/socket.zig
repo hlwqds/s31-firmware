@@ -219,8 +219,11 @@ pub const Socket = struct {
         return n;
     }
 
-    /// 发送侧被传输层“吃掉” n 字节（等价于收到 ACK）。池/事件循环与自检
-    /// 都用它来推进背压。
+    /// 消费**已被对端确认**的字节（不是“已经发出”的字节）。
+    ///
+    /// `tx_buf` 是这些应用数据的**唯一副本**：丢包重传时必须还能拿到它们，
+    /// 所以驱动只能在收到覆盖这些字节的 ACK 之后调用；`snd_nxt` 保持不动，
+    /// 于是 `txSeqBase()` 的“基址 + 待发长度 = 已接受总量”这条不变量始终成立。
     pub fn drainTx(self: *Socket, n: usize) usize {
         const k = @min(n, self.tx_len);
         self.tx_head = (self.tx_head + k) % tx_cap;
