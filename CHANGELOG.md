@@ -46,6 +46,14 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-tls-http：补上 R2.3 的两个前置件。① `random.zig`——**熵源接缝**：
+  `Reader`（tagged union，将来加 `.hardware` 会在编译期逼着所有调用点处理）+
+  `Deterministic`（SplitMix64，测试用，`cryptographicallySecure()` 恒 false）；
+  本仓仍**没有** TRNG 驱动，`boards/esp32s31-coreboard` 也没有 RNG 寄存器定义，
+  所以生产熵源明确标为未接入，而不是悄悄用固定 seed。② `tls_handshake.zig`——
+  ClientHello 编码：记录/握手/扩展三层长度、SNI、supported_versions、
+  supported_groups、signature_algorithms、key_share；记录层 legacy_version
+  按 RFC 8446 §5.1 用 0x0301。32 → 39 项。
 - net-tcp：新增 `Conn.windowUpdate()`。TCP 的接收窗口**不会**因为应用 `recv` 了数据就
   自动变大——只有下一次出向段带的新窗口才生效。接收缓冲排空后若不补发纯 ACK，
   对端会一直以为窗口为 0（症状：发送方 `send` 秒返回、接收方永远等不到下一字节，

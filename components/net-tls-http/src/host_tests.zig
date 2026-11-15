@@ -16,7 +16,9 @@
 //!                           tag 篡改/AD 篡改的拒绝分支、TLS nonce 的 XOR；
 //!   - `cert.zig`            DER 构造 / 解析 / ECDSA 自洽验签、fixture 对拍；
 //!   - `http.zig`            请求行 + 首部 + `Content-Length`、chunked 解码、
-//!                           keep-alive 判定、响应构造。
+//!                           keep-alive 判定、响应构造；
+//!   - `random.zig`          熵源接缝（`Reader` + 测试用确定性流，标明非密码学安全）；
+//!   - `tls_handshake.zig`   ClientHello 的三层长度与扩展编码（random/key_share/SNI）。
 //!
 //! 板侧那一只自检（`src/selftest.zig`）复用同样的模块，在 rv32 上把十三条
 //! 判据各走一遍；两套测试的边界必须写清楚，不能互相冒充：主机侧负责
@@ -29,6 +31,8 @@ test {
     _ = @import("aead.zig");
     _ = @import("cert.zig");
     _ = @import("http.zig");
+    _ = @import("random.zig");
+    _ = @import("tls_handshake.zig");
 }
 
 // ---------------------------------------------------------------------------
