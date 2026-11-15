@@ -882,3 +882,15 @@ test "client+chain: 过期/主机名不符/错误锚各自在证书这一步失�
     var c3 = Client.init(.{ .server_name = "ch23.local", .trust_anchor_der = "not-a-cert", .now = null }, stream3.reader());
     try std.testing.expectError(Error.CertificateChainFailed, driveToCv(&c3, &srv_tr, &sched, &srv_hs));
 }
+
+test "client+chain: now=null 时链校验通过但 expiry_checked=false（降级必须可见）" {
+    var stream = TestStream{};
+    var client = Client.init(chainOptions(cert.fixture_der, null), stream.reader());
+    var srv_tr: handshake.Transcript = undefined;
+    var sched: ks.Schedule = undefined;
+    var srv_hs: protect.KeyState = undefined;
+    try driveToCv(&client, &srv_tr, &sched, &srv_hs);
+    // 链本身可信，但没有时钟就不许声称验过有效期。
+    try std.testing.expect(client.certificate_trusted);
+    try std.testing.expect(!client.expiry_checked);
+}

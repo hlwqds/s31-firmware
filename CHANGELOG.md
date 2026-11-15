@@ -47,6 +47,8 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：补一条**降级可见性**用例：链模式在 `now == null`（无可信时钟）时校验通过但
+  `expiry_checked == false`，该标志必须被日志引用。67 → 68 项。
 - net-tls-http：`tls_client` 接上**链模式**。`Options.trust_anchor_der` + `Options.now`：
   收到 Certificate 时把叶证书复制到稳定缓冲（重组缓冲会被下一条消息覆盖），用
   `chain.verifyChain` 校验（签发关系/签名/锚/主机名/有效期），CV 改用**叶证书公钥**验；
