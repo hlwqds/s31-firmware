@@ -46,6 +46,11 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-tls-http：握手驱动的前半件——`Transcript`（流式 SHA-256，任意点取快照）与
+  `parseServerHello`（random/套件/key_share/supported_versions，缺 key_share 时字段为
+  null 由调用方判死，错类型/截断/坏扩展显式报错）。用例：手工按线上格式拼一条
+  ServerHello 再解析回来、流式快照与一次性 `hash()` 逐字节一致、两端 ECDHE 交叉
+  算出同一共享秘密后喂 `buildSchedule`。38 → 42 项。
 - net-tls-http：补上 R2.3 的两个前置件。① `random.zig`——**熵源接缝**：
   `Reader`（tagged union，将来加 `.hardware` 会在编译期逼着所有调用点处理）+
   `Deterministic`（SplitMix64，测试用，`cryptographicallySecure()` 恒 false）；

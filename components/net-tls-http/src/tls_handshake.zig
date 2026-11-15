@@ -19,14 +19,21 @@ const std = @import("std");
 const record = @import("tls_record.zig");
 const x25519 = @import("x25519.zig");
 const random = @import("random.zig");
+const tls_keyschedule = @import("tls_keyschedule.zig");
 
 pub const Error = error{
     BufferTooSmall,
+    Truncated,
+    NotServerHello,
+    BadVersion,
+    BadCompression,
+    BadExtension,
     /// server_name 超过 255 字节（TLS 的 SNI 长度是 u16，但本实现只支持常见域名）。
     NameTooLong,
 };
 
 pub const handshake_type_client_hello: u8 = 0x01;
+pub const handshake_type_server_hello: u8 = 0x02;
 
 pub const cipher_tls_aes_128_gcm_sha256: u16 = 0x1301;
 pub const group_x25519: u16 = 0x001d;
@@ -306,4 +313,224 @@ test "handshake: 缓冲不足与过长的 SNI 都显式报错" {
     var long_name: [256]u8 = undefined;
     @memset(&long_name, 'x');
     try std.testing.expectError(Error.NameTooLong, writeClientHello(&big, .{ .server_name = &long_name, .secret = test_secret }, rng.reader()));
+}
+
+// ---------------------------------------------------------------------------
+// 转录（transcript）：握手消息的滚动 SHA-256
+// ---------------------------------------------------------------------------
+
+/// TLS 1.3 的密钥调度要的是“到目前为止所有握手消息”的哈希。这里用流式
+/// `Sha256`，并允许 `snapshot()` 在任意点取当前值（ClientHello…ServerHello
+/// 与 ClientHello…server Finished 是两个快照）。
+pub const Transcript = struct {
+    h: tls_keyschedule.Hash,
+
+    pub fn init() Transcript {
+        return .{ .h = tls_keyschedule.Hash.init(.{}) };
+    }
+
+    /// 只喂**握手消息本体**（含 4 字节 type+length），不含记录头。
+    pub fn add(self: *Transcript, handshake_msg: []const u8) void {
+        self.h.update(handshake_msg);
+    }
+
+    /// 当前转录哈希。`Sha256` 的流式状态可以复制，所以取快照不破坏后续累积。
+    pub fn snapshot(self: Transcript) [tls_keyschedule.hash_length]u8 {
+        var copy = self.h;
+        var out: [tls_keyschedule.hash_length]u8 = undefined;
+        copy.final(&out);
+        return out;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// ServerHello 解析（握手驱动只需这几项：random、套件、key_share）
+// ---------------------------------------------------------------------------
+
+pub const ServerHello = struct {
+    random: [32]u8,
+    cipher_suite: u16,
+    /// 服务端 key_share（x25519）。缺失时握手必须失败：TLS 1.3 的 ServerHello
+    /// 没有 key_share 就意味着退化到不支持的模式。
+    key_share: ?[x25519.key_length]u8 = null,
+    supported_version: ?u16 = null,
+};
+
+/// 解析一条完整的 ServerHello 握手消息（含 type=2 + 3 字节长度）。
+pub fn parseServerHello(msg: []const u8) Error!ServerHello {
+    if (msg.len < 4 + 2 + 32 + 1) return Error.Truncated;
+    if (msg[0] != handshake_type_server_hello) return Error.NotServerHello;
+    const body_len = read24(msg[1..]);
+    if (4 + body_len > msg.len) return Error.Truncated;
+    var i: usize = 4;
+    const end = 4 + body_len;
+
+    const version = read16(msg[i..]);
+    if (version != 0x0303) return Error.BadVersion;
+    i += 2;
+
+    // 带默认值初始化（`= undefined` 会把 `key_share`/`supported_version` 的 null 默认一起抹掉）
+    var sh: ServerHello = .{ .random = undefined, .cipher_suite = 0 };
+    @memcpy(&sh.random, msg[i..][0..32]);
+    i += 32;
+
+    const sid_len = msg[i];
+    i += 1;
+    if (i + sid_len + 2 + 1 > end) return Error.Truncated;
+    i += sid_len;
+
+    sh.cipher_suite = read16(msg[i..]);
+    i += 2;
+
+    const comp_len = msg[i];
+    i += 1;
+    if (comp_len != 1) return Error.BadCompression;
+    i += 1; // 必须是 0（null）
+
+    if (i + 2 > end) return Error.Truncated;
+    const exts_len = read16(msg[i..]);
+    i += 2;
+    if (i + exts_len != end) return Error.Truncated;
+
+    while (i < end) {
+        if (i + 4 > end) return Error.Truncated;
+        const id = read16(msg[i..]);
+        const len = read16(msg[i + 2 ..]);
+        i += 4;
+        if (i + len > end) return Error.Truncated;
+        const body = msg[i..][0..len];
+        switch (id) {
+            ext_supported_versions => {
+                if (len != 2) return Error.BadExtension;
+                sh.supported_version = read16(body);
+            },
+            ext_key_share => {
+                if (len != 2 + 2 + x25519.key_length) return Error.BadExtension;
+                if (read16(body[0..2]) != group_x25519) return Error.BadExtension;
+                if (read16(body[2..4]) != x25519.key_length) return Error.BadExtension;
+                var ks: [x25519.key_length]u8 = undefined;
+                @memcpy(&ks, body[4..][0..x25519.key_length]);
+                sh.key_share = ks;
+            },
+            else => {},
+        }
+        i += len;
+    }
+    return sh;
+}
+
+/// 测试用的 ServerHello 构造器：按线上格式手工拼，供解析器对拍。
+fn buildServerHelloForTest(buf: []u8, random32: [32]u8, suite: u16, ks: [x25519.key_length]u8, with_version: bool) []u8 {
+    var i: usize = 4;
+    put16(buf[i..], 0x0303);
+    i += 2;
+    @memcpy(buf[i..][0..32], &random32);
+    i += 32;
+    buf[i] = 0; // session_id echo 长度
+    i += 1;
+    put16(buf[i..], suite);
+    i += 2;
+    buf[i] = 1; // 压缩方法数量
+    i += 1;
+    buf[i] = 0; // null
+    i += 1;
+
+    const exts_len_off = i;
+    i += 2;
+    const exts_start = i;
+
+    // key_share
+    put16(buf[i..], ext_key_share);
+    put16(buf[i + 2 ..], 2 + 2 + x25519.key_length);
+    i += 4;
+    put16(buf[i..], group_x25519);
+    put16(buf[i + 2 ..], x25519.key_length);
+    i += 4;
+    @memcpy(buf[i..][0..x25519.key_length], &ks);
+    i += x25519.key_length;
+
+    if (with_version) {
+        put16(buf[i..], ext_supported_versions);
+        put16(buf[i + 2 ..], 2);
+        i += 4;
+        put16(buf[i..], 0x0304);
+        i += 2;
+    }
+
+    put16(buf[exts_len_off..], @intCast(i - exts_start));
+    buf[0] = handshake_type_server_hello;
+    put24(buf[1..], @intCast(i - 4));
+    return buf[0..i];
+}
+
+test "handshake: ServerHello 解析出 random/套件/key_share/版本" {
+    var buf: [256]u8 = undefined;
+    var rand: [32]u8 = undefined;
+    for (&rand, 0..) |*b, i| b.* = @intCast(i);
+    const ks: [x25519.key_length]u8 = @splat(0x42);
+    const msg = buildServerHelloForTest(&buf, rand, cipher_tls_aes_128_gcm_sha256, ks, true);
+
+    const sh = try parseServerHello(msg);
+    try std.testing.expectEqualSlices(u8, &rand, &sh.random);
+    try std.testing.expectEqual(cipher_tls_aes_128_gcm_sha256, sh.cipher_suite);
+    try std.testing.expectEqual(@as(?u16, 0x0304), sh.supported_version);
+    try std.testing.expectEqualSlices(u8, &ks, &sh.key_share.?);
+}
+
+test "handshake: ServerHello 缺 key_share 时字段为 null，错类型/截断显式报错" {
+    var buf: [256]u8 = undefined;
+    const rand: [32]u8 = @splat(7);
+    const ks: [x25519.key_length]u8 = @splat(9);
+
+    // 没有 supported_versions（合法但版本未知）
+    const msg = buildServerHelloForTest(&buf, rand, 0x1301, ks, false);
+    const sh = try parseServerHello(msg);
+    try std.testing.expectEqual(@as(?u16, null), sh.supported_version);
+    try std.testing.expect(sh.key_share != null);
+
+    // 错类型（各用独立副本，避免互相污染）
+    var wrong_buf: [256]u8 = undefined;
+    @memcpy(wrong_buf[0..msg.len], msg);
+    wrong_buf[0] = handshake_type_client_hello;
+    try std.testing.expectError(Error.NotServerHello, parseServerHello(wrong_buf[0..msg.len]));
+
+    // 截断：声明比实际长
+    var trunc_buf: [256]u8 = undefined;
+    @memcpy(trunc_buf[0..msg.len], msg);
+    put24(trunc_buf[1..], @intCast(msg.len));
+    try std.testing.expectError(Error.Truncated, parseServerHello(trunc_buf[0 .. msg.len - 1]));
+}
+
+test "handshake: 转录快照等于一次性 SHA-256（流式与整体一致）" {
+    var tr = Transcript.init();
+    const a = "first-handshake-message";
+    const b = "second-handshake-message";
+    tr.add(a);
+    const mid = tr.snapshot();
+    tr.add(b);
+    const done = tr.snapshot();
+
+    try std.testing.expectEqualSlices(u8, &tls_keyschedule.hash(a), &mid);
+    const concat = a ++ b;
+    try std.testing.expectEqualSlices(u8, &tls_keyschedule.hash(concat), &done);
+    try std.testing.expect(!std.mem.eql(u8, &mid, &done));
+}
+
+test "handshake: 从解析出的 key_share 走 ECDHE + buildSchedule 的形状" {
+    // 双方各取一个标量，交叉算出同一个共享秘密；再用转录快照喂 buildSchedule。
+    const client_secret: [32]u8 = @splat(0x11);
+    const server_secret: [32]u8 = @splat(0x22);
+    const server_pub = x25519.publicKey(server_secret);
+    const client_pub = x25519.publicKey(client_secret);
+    const s1 = try x25519.scalarmult(client_secret, server_pub);
+    const s2 = try x25519.scalarmult(server_secret, client_pub);
+    try std.testing.expectEqualSlices(u8, &s1, &s2);
+
+    var tr = Transcript.init();
+    tr.add("CH->SH");
+    const hs_hash = tr.snapshot();
+    const sched = try tls_keyschedule.buildSchedule(&s1, &hs_hash, &hs_hash);
+    // 只验形状：两条 traffic secret 不同、且非零
+    try std.testing.expect(!std.mem.eql(u8, &sched.client_hs_traffic, &sched.server_hs_traffic));
+    try std.testing.expect(!std.mem.allEqual(u8, &sched.client_hs_traffic, 0));
 }
