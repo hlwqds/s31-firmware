@@ -82,6 +82,10 @@ pub const Cert = struct {
     /// uncompressed SEC1 公钥（65 字节，0x04 || X || Y）。
     spki_point: []const u8,
     san: [max_san][]const u8,
+    /// 与 `san` 平行的类型标记：true 表示这条是 iPAddress（0x87），false 是 dNSName（0x82）。
+    /// **主机名匹配只能用 dNSName**（RFC 6125 §6.4.4）：把 IP 当名字比较会让
+    /// "127.0.0.1" 这类字符串被当成合法主机名接受。
+    san_is_ip: [max_san]bool,
     san_len: usize,
 
     /// 只看 DNS 类型 SAN 的便捷视图（与 `san` 同一批切片）。
@@ -166,6 +170,7 @@ pub fn parse(der: []const u8) Error!Cert {
         .spki_curve_oid = undefined,
         .spki_point = undefined,
         .san = @splat(""),
+        .san_is_ip = undefined,
         .san_len = 0,
     };
 
@@ -309,6 +314,7 @@ fn parseSan(octets: []const u8, out: *Cert) Error!void {
                 if (out.san_len == max_san) return Error.TooManySan;
                 if (name.body.len == 0) return Error.BadDer;
                 out.san[out.san_len] = name.body;
+                out.san_is_ip[out.san_len] = (name.tag == 0x87);
                 out.san_len += 1;
             },
             else => continue,

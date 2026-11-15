@@ -4,7 +4,7 @@
   "net-tcp": 33,
   "net-congestion": 21,
   "net-sockets": 38,
-  "net-tls-http": 64,
+  "net-tls-http": 65,
   "app-mqtt-ota": 27,
   "wifi-boundary": 15,
   "wifi-connect": 20,

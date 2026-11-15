@@ -50,8 +50,11 @@ pub fn validityContains(c: *const cert.Cert, now: cert.UtcTime) bool {
 pub fn hostnameMatches(c: *const cert.Cert, hostname: []const u8) bool {
     var i: usize = 0;
     while (i < c.san_len) : (i += 1) {
+        // iPAddress SAN 不是主机名：拿它做字符串比较会让 "127.0.0.1" 被当成合法名字。
+        if (c.san_is_ip[i]) continue;
         if (matchName(c.sanAt(i), hostname)) return true;
     }
+    // RFC 6125：有 SAN 就不再回落到 CN；只有完全没有 SAN 才看 CN。
     if (c.san_len == 0) return matchName(c.subject_cn, hostname);
     return false;
 }
@@ -163,4 +166,11 @@ test "chain: 有效期比较到天，边界日算有效" {
     try std.testing.expect(validityContains(&c, first));
     try std.testing.expect(validityContains(&c, last)); // notAfter 当天仍有效
     try std.testing.expect(!validityContains(&c, beyond));
+}
+
+test "chain: iPAddress SAN 不能当主机名匹配（fixture 里有 127.0.0.1）" {
+    const c = try cert.parse(cert.fixture_der);
+    try std.testing.expect(hostnameMatches(&c, "ch23.local")); // dNSName
+    try std.testing.expect(hostnameMatches(&c, "www.ch23.local")); // dNSName
+    try std.testing.expect(!hostnameMatches(&c, "127.0.0.1")); // iPAddress，不是名字
 }

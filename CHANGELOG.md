@@ -47,6 +47,10 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：`Cert` 给 SAN 条目加了**类型标记** `san_is_ip`，`chain.hostnameMatches`
+  只匹配 dNSName（RFC 6125 §6.4.4），不再把 iPAddress SAN 当主机名比较。回归用例
+  fixture（含 `ch23.local`、`www.ch23.local`、`127.0.0.1`）：DNS 名字匹配、`127.0.0.1`
+  必须不匹配。64 → 65 项。
 - net-tls-http：新增 `chain.zig`——**信任链校验**的最小实现：叶证书的 issuer 必须等于签发者
   subject、签名必须被签发者公钥验过、有效期包含调用方给的 `now`、SAN/CN 覆盖主机名；
   **信任锚由调用方提供**（不采信对端链里的根），链顶不是锚时明确报 `UntrustedAnchor`
