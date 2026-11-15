@@ -261,6 +261,16 @@ pub const Client = struct {
         if (self.flight.state == .done) self.phase = .ready_client_finished;
     }
 
+    /// 用应用密钥封一条记录（HTTP 等上层数据走这里）。
+    /// 只有 `established` 之后才允许：握手阶段误用会把明文当应用数据发出去。
+    pub fn sealApplication(self: *Client, out: []u8, content_type: u8, content: []const u8) Error!usize {
+        if (self.phase != .established) return Error.UnexpectedState;
+        var k = self.client_ap orelse return Error.UnexpectedState;
+        const n = protect.seal(out, &k, content_type, content) catch return Error.BufferTooSmall;
+        self.client_ap = k;
+        return n;
+    }
+
     /// 写客户端 Finished（handshake 记录，client_hs 密钥加密），并切到应用密钥。
     pub fn buildClientFinished(self: *Client, out: []u8) Error!usize {
         if (self.phase != .ready_client_finished) return Error.UnexpectedState;
@@ -628,4 +638,70 @@ test "client: 配了 trust 但叶证书不是钉住的那张 → CertificatePinM
     srv_tr.add(cert_msg);
     // 对端出示的是 fixture，而我们钉的是别的证书：必须在证书这一条就失败。
     try std.testing.expectError(Error.CertificatePinMismatch, client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch()));
+}
+
+test "client: established 后 sealApplication 的记录能被对端的应用密钥解开" {
+    // 复用完整握手：CH → SH → 飞行 → client Finished
+    var stream = TestStream{};
+    var client = Client.init(.{ .server_name = "a.test" }, stream.reader());
+    var ch_rec: [512]u8 = undefined;
+    const ch_n = try client.start(&ch_rec);
+
+    const server_secret: [32]u8 = @splat(0x42);
+    const shared = try x25519.scalarmult(server_secret, client.clientPublic());
+    var srv_tr = handshake.Transcript.init();
+    srv_tr.add(ch_rec[record.header_len..ch_n]);
+    var sh_buf: [256]u8 = undefined;
+    const sh = buildServerHello(&sh_buf, x25519.publicKey(server_secret));
+    srv_tr.add(sh);
+    const hs_th = srv_tr.snapshot();
+    const sched = try ks.buildSchedule(&shared, &hs_th, &hs_th);
+    var srv_hs = protect.KeyState.init(sched.server_hs_traffic);
+
+    var sh_rec: [300]u8 = undefined;
+    try client.onRecord(wrapHandshakeRecord(&sh_rec, sh), undefined_scratch());
+
+    var msgbuf: [512]u8 = undefined;
+    var sealed: [600]u8 = undefined;
+    const ee = hsWrap(&msgbuf, handshake.handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    srv_tr.add(ee);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, ee), undefined_scratch());
+
+    var cert_body: [512]u8 = undefined;
+    cert_body[0] = 0;
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    put24b(cert_body[4..], @intCast(cert.fixture_der.len));
+    @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    var cb2: [512]u8 = undefined;
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    srv_tr.add(cert_msg);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
+
+    const cv = hsWrap(&msgbuf, handshake.handshake_type_certificate_verify, &[_]u8{ 0x04, 0x03, 0x00, 0x01, 0x00 });
+    srv_tr.add(cv);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cv), undefined_scratch());
+
+    const before_fin = srv_tr.snapshot();
+    const fin_v = ks.finishedVerifyData(sched.server_hs_traffic, &before_fin);
+    var fin_body: [ks.hash_length]u8 = undefined;
+    @memcpy(&fin_body, &fin_v);
+    const fin = hsWrap(&msgbuf, handshake.handshake_type_finished, &fin_body);
+    srv_tr.add(fin);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch());
+
+    var fin_rec: [128]u8 = undefined;
+    _ = try client.buildClientFinished(&fin_rec);
+    try std.testing.expectEqual(Phase.established, client.phase);
+
+    // 对端要解**客户端**发出的记录，用的是 client_ap_traffic（读/写方向各自独立）
+    const after_fin = srv_tr.snapshot();
+    const ap_sched = try ks.buildSchedule(&shared, &hs_th, &after_fin);
+    var srv_ap = protect.KeyState.init(ap_sched.client_ap_traffic);
+
+    var app: [256]u8 = undefined;
+    const n = try client.sealApplication(&app, 23, "GET / HTTP/1.1\r\n\r\n");
+    var plain: [256]u8 = undefined;
+    const r = try protect.openFragment(&plain, &srv_ap, app[record.header_len..n]);
+    try std.testing.expectEqual(@as(u8, 23), r.ct);
+    try std.testing.expectEqualStrings("GET / HTTP/1.1\r\n\r\n", plain[0..r.len]);
 }

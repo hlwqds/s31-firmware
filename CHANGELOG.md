@@ -47,6 +47,9 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：新增 `Client.sealApplication()`——用应用密钥封上层记录（HTTP 走这里）。
+  只有 `established` 之后可用；用例用对端的 `client_ap_traffic` 解开并逐字节比对
+  （顺带钉住方向：解客户端记录要用 client_ap，不是 server_ap）。57 → 58 项。
 - net-tls-http：`trust_cert_der` 收紧为**钉住证书**（PIN）语义——此前只用钉住的公钥验
   CertificateVerify，等于"任何持有自己私钥的服务端都能过"（CV 用它的公钥验它自己的
   签名）。现在对端出示的叶证书必须与钉住的 DER **完全相同**，否则 `CertificatePinMismatch`。
