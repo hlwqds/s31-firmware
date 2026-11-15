@@ -334,6 +334,15 @@ pub fn verifySignature(cert: *const Cert) VerifyError!void {
     try sig.verify(cert.tbs, pk);
 }
 
+/// 用证书公钥验证**任意消息**的 ECDSA 签名（CertificateVerify 用）。
+/// 与 `verifySignature` 的区别：那条验的是证书自洽（tbs 被自己的签名覆盖），
+/// 这条验的是“对端确实持有私钥，且签的是我们算出的转录”。
+pub fn verifyMessage(cert: *const Cert, msg: []const u8, sig_der: []const u8) VerifyError!void {
+    const sig = try Ecdsa.Signature.fromDer(sig_der);
+    const pk = try Ecdsa.PublicKey.fromSec1(cert.spki_point);
+    try sig.verify(msg, pk);
+}
+
 /// fixture 的 SHA-256 指纹（用来在自检里打印“验的是哪张证书”）。
 pub fn fingerprint(der: []const u8) [Sha256.digest_length]u8 {
     var out: [Sha256.digest_length]u8 = undefined;

@@ -32,6 +32,11 @@ pub const Error = error{
     BadCipher,
     /// TLS 1.3 的 ServerHello 没有 key_share：意味着 HRR/PSK 等本实现不走的路径。
     MissingKeyShare,
+    NotCertificate,
+    TooManyCerts,
+    NotCertificateVerify,
+    NotFinished,
+    BadFinishedLength,
     /// server_name 超过 255 字节（TLS 的 SNI 长度是 u16，但本实现只支持常见域名）。
     NameTooLong,
 };
@@ -590,4 +595,275 @@ test "handshake: 从解析出的 key_share 走 ECDHE + buildSchedule 的形状" 
     // 只验形状：两条 traffic secret 不同、且非零
     try std.testing.expect(!std.mem.eql(u8, &sched.client_hs_traffic, &sched.server_hs_traffic));
     try std.testing.expect(!std.mem.allEqual(u8, &sched.client_hs_traffic, 0));
+}
+
+// ---------------------------------------------------------------------------
+// ServerHello 之后的三条消息 + Finished
+// ---------------------------------------------------------------------------
+
+pub const handshake_type_encrypted_extensions: u8 = 0x08;
+pub const handshake_type_certificate: u8 = 0x0b;
+pub const handshake_type_certificate_verify: u8 = 0x0f;
+pub const handshake_type_finished: u8 = 0x14;
+
+const cv_context_server = "TLS 1.3, server CertificateVerify";
+
+/// Certificate 消息里的一张证书（DER 切片，指向原缓冲）。
+pub const CertEntry = struct { der: []const u8 };
+
+/// Certificate（type 11）：`certificate_request_context` + 证书列表。
+/// 返回的切片都指向 `msg`，不复制。
+pub fn parseCertificate(msg: []const u8, out: *[max_certs]CertEntry) Error![]CertEntry {
+    if (msg.len < 4) return Error.Truncated;
+    if (msg[0] != handshake_type_certificate) return Error.NotCertificate;
+    const body_len = read24(msg[1..]);
+    if (4 + body_len > msg.len) return Error.Truncated;
+    var i: usize = 4;
+    const end = 4 + body_len;
+
+    if (i + 1 > end) return Error.Truncated;
+    const ctx_len = msg[i];
+    i += 1;
+    if (i + ctx_len > end) return Error.Truncated;
+    i += ctx_len;
+
+    if (i + 3 > end) return Error.Truncated;
+    const list_len = read24(msg[i..]);
+    i += 3;
+    if (i + list_len != end) return Error.Truncated;
+
+    var n: usize = 0;
+    while (i < end) {
+        if (i + 3 > end) return Error.Truncated;
+        const clen = read24(msg[i..]);
+        i += 3;
+        if (i + clen > end) return Error.Truncated;
+        if (n == out.len) return Error.TooManyCerts;
+        out[n] = .{ .der = msg[i..][0..clen] };
+        n += 1;
+        i += clen;
+    }
+    return out[0..n];
+}
+
+pub const max_certs = 4;
+
+/// CertificateVerify（type 15）：签名算法 + 签名。
+pub const CertificateVerify = struct {
+    scheme: u16,
+    signature: []const u8,
+};
+
+pub fn parseCertificateVerify(msg: []const u8) Error!CertificateVerify {
+    if (msg.len < 4 + 2 + 2) return Error.Truncated;
+    if (msg[0] != handshake_type_certificate_verify) return Error.NotCertificateVerify;
+    const body_len = read24(msg[1..]);
+    if (4 + body_len > msg.len) return Error.Truncated;
+    const scheme = read16(msg[4..]);
+    const sig_len = read16(msg[6..]);
+    if (8 + sig_len != 4 + body_len) return Error.Truncated;
+    return .{ .scheme = scheme, .signature = msg[8..][0..sig_len] };
+}
+
+/// CertificateVerify 的签名内容（RFC 8446 §4.4.3）：
+/// 64 个空格 ‖ 上下文串 ‖ 0x00 ‖ 转录哈希。
+pub fn certificateVerifyContent(buf: []u8, transcript_hash: [tls_keyschedule.hash_length]u8) ![]const u8 {
+    const need = 64 + cv_context_server.len + 1 + transcript_hash.len;
+    if (buf.len < need) return Error.BufferTooSmall;
+    @memset(buf[0..64], 0x20);
+    var i: usize = 64;
+    @memcpy(buf[i..][0..cv_context_server.len], cv_context_server);
+    i += cv_context_server.len;
+    buf[i] = 0;
+    i += 1;
+    @memcpy(buf[i..][0..transcript_hash.len], &transcript_hash);
+    i += transcript_hash.len;
+    return buf[0..i];
+}
+
+/// Finished（type 20）：32 字节 verify_data。
+pub fn parseFinished(msg: []const u8) Error![tls_keyschedule.hash_length]u8 {
+    if (msg.len < 4 + tls_keyschedule.hash_length) return Error.Truncated;
+    if (msg[0] != handshake_type_finished) return Error.NotFinished;
+    const body_len = read24(msg[1..]);
+    if (body_len != tls_keyschedule.hash_length) return Error.BadFinishedLength;
+    var out: [tls_keyschedule.hash_length]u8 = undefined;
+    @memcpy(&out, msg[4..][0..tls_keyschedule.hash_length]);
+    return out;
+}
+
+/// 验服务端 Finished：用 `server_hs_traffic` 与**收到 Finished 之前**的转录哈希算期望值。
+pub fn verifyFinished(
+    server_hs_traffic: [tls_keyschedule.hash_length]u8,
+    transcript_hash: [tls_keyschedule.hash_length]u8,
+    received: [tls_keyschedule.hash_length]u8,
+) bool {
+    const expect = tls_keyschedule.finishedVerifyData(server_hs_traffic, &transcript_hash);
+    // 常数时间比较：verify_data 是可被逐字节试探的认证值。
+    var diff: u8 = 0;
+    for (expect, received) |a, b| diff |= a ^ b;
+    return diff == 0;
+}
+
+/// 服务端飞行（ServerHello 之后的消息）的顺序状态机。
+///
+/// TLS 1.3 的顺序是**强制**的：EE → Certificate → CertificateVerify → Finished
+/// （PSK 模式可能跳过 Cert/CV，但本实现不支持，所以按严格顺序推进）。
+/// 顺序错就直接失败——这条消息流是认证链的一部分，顺序被改写等同于攻击。
+pub const Flight = struct {
+    state: State = .expect_encrypted_extensions,
+    transcript: Transcript,
+
+    pub const State = enum {
+        expect_encrypted_extensions,
+        expect_certificate,
+        expect_certificate_verify,
+        expect_finished,
+        done,
+    };
+
+    pub const Error = error{ UnexpectedMessage, BadFinished, NotEncryptedExtensions };
+
+    pub fn init() Flight {
+        return .{ .transcript = Transcript.init() };
+    }
+
+    pub fn expect(self: *Flight, st: State) bool {
+        return self.state == st;
+    }
+};
+
+/// 推进一步飞行状态；`msg` 是完整的握手消息（含 4 字节头）。
+/// 成功时把消息计入转录并前进状态；Finished 由调用方用 `verifyFinished` 校验，
+/// 因为密钥取决于 schedule（本函数不持有密钥）。
+pub fn advanceFlight(f: *Flight, msg: []const u8) Flight.Error!void {
+    const t = msg[0];
+    switch (f.state) {
+        .expect_encrypted_extensions => {
+            if (t != handshake_type_encrypted_extensions) return Flight.Error.UnexpectedMessage;
+            f.transcript.add(msg);
+            f.state = .expect_certificate;
+        },
+        .expect_certificate => {
+            if (t != handshake_type_certificate) return Flight.Error.UnexpectedMessage;
+            f.transcript.add(msg);
+            f.state = .expect_certificate_verify;
+        },
+        .expect_certificate_verify => {
+            if (t != handshake_type_certificate_verify) return Flight.Error.UnexpectedMessage;
+            f.transcript.add(msg);
+            f.state = .expect_finished;
+        },
+        .expect_finished => {
+            if (t != handshake_type_finished) return Flight.Error.UnexpectedMessage;
+            // 注意：Finished 本身要计入转录（客户端 Finished 用它）。
+            f.transcript.add(msg);
+            f.state = .done;
+        },
+        .done => return Flight.Error.UnexpectedMessage,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 飞行状态机的用例（用合成消息，不依赖真实服务器）
+// ---------------------------------------------------------------------------
+
+fn hsMsg(buf: []u8, typ: u8, body: []const u8) []const u8 {
+    buf[0] = typ;
+    put24(buf[1..], @intCast(body.len));
+    @memcpy(buf[4..][0..body.len], body);
+    return buf[0 .. 4 + body.len];
+}
+
+test "flight: 顺序 EE → Certificate → CertificateVerify → Finished，错序即失败" {
+    var a: [512]u8 = undefined;
+    var b: [512]u8 = undefined;
+    var c: [512]u8 = undefined;
+    var d: [256]u8 = undefined;
+
+    const ee = hsMsg(&a, handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    var cert_body: [16]u8 = undefined;
+    cert_body[0] = 0; // request context 长度
+    put24(cert_body[1..], 3 + 2);
+    put24(cert_body[4..], 2);
+    @memcpy(cert_body[7..][0..2], "DE");
+    const cert = hsMsg(&b, handshake_type_certificate, &cert_body);
+    const cv = hsMsg(&c, handshake_type_certificate_verify, &[_]u8{ 0x04, 0x03, 0x00, 0x01, 0xEE });
+    var fin_body: [32]u8 = @splat(0x5A);
+    const fin = hsMsg(&d, handshake_type_finished, &fin_body);
+
+    var f = Flight.init();
+    // 正确顺序
+    try advanceFlight(&f, ee);
+    try std.testing.expect(f.expect(.expect_certificate));
+    try advanceFlight(&f, cert);
+    try std.testing.expect(f.expect(.expect_certificate_verify));
+    try advanceFlight(&f, cv);
+    try std.testing.expect(f.expect(.expect_finished));
+    try advanceFlight(&f, fin);
+    try std.testing.expect(f.expect(.done));
+
+    // 错序：Finished 先到
+    var g = Flight.init();
+    try std.testing.expectError(Flight.Error.UnexpectedMessage, advanceFlight(&g, fin));
+    // 错序：CV 在 Certificate 之前
+    var h = Flight.init();
+    try advanceFlight(&h, ee);
+    try std.testing.expectError(Flight.Error.UnexpectedMessage, advanceFlight(&h, cv));
+}
+
+test "flight: Certificate 列表逐张切出 DER，bin/长度不符即报错" {
+    var buf: [512]u8 = undefined;
+    var body: [32]u8 = undefined;
+    body[0] = 0;
+    put24(body[1..], 11); // 两条目：3+2 + 3+3
+    put24(body[4..], 2);
+    @memcpy(body[7..][0..2], "AA");
+    put24(body[9..], 3);
+    @memcpy(body[12..][0..3], "BBB");
+    const msg = hsMsg(&buf, handshake_type_certificate, body[0..15]);
+
+    var entries: [max_certs]CertEntry = undefined;
+    const list = try parseCertificate(msg, &entries);
+    try std.testing.expectEqual(@as(usize, 2), list.len);
+    try std.testing.expectEqualStrings("AA", list[0].der);
+    try std.testing.expectEqualStrings("BBB", list[1].der);
+
+    // 列表长度与内容不符
+    var bad: [512]u8 = undefined;
+    @memcpy(bad[0..msg.len], msg);
+    put24(bad[5..], 999);
+    try std.testing.expectError(Error.Truncated, parseCertificate(bad[0..msg.len], &entries));
+}
+
+test "flight: CertificateVerify 的签名内容 = 64 空格 + 上下文 + 0x00 + 转录哈希" {
+    var buf: [256]u8 = undefined;
+    const th: [32]u8 = @splat(0xAB);
+    const content = try certificateVerifyContent(&buf, th);
+    try std.testing.expectEqual(@as(usize, 64 + cv_context_server.len + 1 + 32), content.len);
+    try std.testing.expect(std.mem.allEqual(u8, content[0..64], 0x20));
+    try std.testing.expectEqualStrings(cv_context_server, content[64..][0..cv_context_server.len]);
+    try std.testing.expectEqual(@as(u8, 0), content[64 + cv_context_server.len]);
+    try std.testing.expectEqualSlices(u8, &th, content[65 + cv_context_server.len ..]);
+}
+
+test "flight: Finished 长度错误与 verify_data 不匹配" {
+    var buf: [64]u8 = undefined;
+    // 长度字段写 33（≠ 32）：缓冲够长，所以必须报 BadFinishedLength 而不是 Truncated
+    var body: [33]u8 = @splat(1);
+    const wrong_len = hsMsg(&buf, handshake_type_finished, &body);
+    try std.testing.expectError(Error.BadFinishedLength, parseFinished(wrong_len));
+
+    const secret: [32]u8 = @splat(0x11);
+    const th: [32]u8 = @splat(0x22);
+    const good = tls_keyschedule.finishedVerifyData(secret, &th);
+    try std.testing.expect(verifyFinished(secret, th, good));
+
+    var tampered = good;
+    tampered[0] ^= 0x01;
+    try std.testing.expect(!verifyFinished(secret, th, tampered));
+    // 转录变了，旧 verify_data 立刻失效
+    var th2 = th;
+    th2[31] ^= 0x80;
+    try std.testing.expect(!verifyFinished(secret, th2, good));
 }

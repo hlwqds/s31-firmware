@@ -166,6 +166,19 @@ pub fn buildSchedule(
     };
 }
 
+/// Finished 的 verify_data（RFC 8446 §4.4.4）：
+/// `finished_key = HKDF-Expand-Label(base_key, "finished", "", Hash.length)`，
+/// `verify_data = HMAC-SHA256(finished_key, Transcript-Hash)`。
+///
+/// 这一步是握手的**认证核心**：不校验它，中间人可以任意改写前面的消息而不会被发现。
+pub fn finishedVerifyData(base_key: [hash_length]u8, transcript_hash: []const u8) [hash_length]u8 {
+    var finished_key: [hash_length]u8 = undefined;
+    expandLabel(&finished_key, base_key, "finished", "") catch unreachable;
+    var out: [hash_length]u8 = undefined;
+    std.crypto.auth.hmac.sha2.HmacSha256.create(&out, transcript_hash, &finished_key);
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // 自测：RFC 5869 附录 A.1 的已知答案 + HkdfLabel 的结构
 // ---------------------------------------------------------------------------

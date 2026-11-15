@@ -46,6 +46,13 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-tls-http：服务端飞行的其余消息与**认证核心**。`parseCertificate`（列表逐张切 DER）、
+  `parseCertificateVerify`（scheme + 签名）、`parseFinished`（32 字节 verify_data）、
+  `certificateVerifyContent`（64 空格 + 上下文串 + 0x00 + 转录哈希），以及
+  `keyschedule.finishedVerifyData`（HKDF-Expand-Label("finished") + HMAC）与常数时间比较。
+  `Flight` 状态机强制 EE → Certificate → CertificateVerify → Finished 的**顺序**，
+  错序即 `UnexpectedMessage`（顺序是认证链的一部分）。另有 `cert.verifyMessage`
+  用于验 CertificateVerify 的签名。44 → 48 项。
 - net-tls-http：`parseServerHello` 收紧为**硬校验**——套件只接受 `TLS_AES_128_GCM_SHA256`
   （`BadCipher`）、`supported_versions` 必须是 0x0304 且必须存在（`BadVersion`）、
   `key_share` 必须存在（`MissingKeyShare`）。三者都是“能解析但继续会用错密钥”的情形：
