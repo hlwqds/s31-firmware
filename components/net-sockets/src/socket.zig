@@ -7,8 +7,10 @@
 //!   - **固定上限的 FD 表**：`max_fds = 8`，索引即 fd，没有分配器、没有
 //!     句柄表扩容、没有 `malloc` 失败路径。板侧 8 个槽位的表是 `.bss`
 //!     里的静态对象（约 10 KiB），地址恒定。
-//!   - **显式状态**：`closed → listen → syn_rcvd → established → close_wait
-//!     → last_ack → closed`。迁移只由“投递进来的段”和“本地 API 调用”
+//!   - **显式状态**：服务端 `closed → listen → syn_rcvd → established → close_wait
+//!     → last_ack → closed`；客户端 `closed → syn_sent → established → …`
+//!     （`Table.connect()` 进 `syn_sent`，收到 `.syn_ack` 直接进 `established`——
+//!     客户端自己发最后那个 ACK，等对端 ACK 会死锁）。迁移只由“投递进来的段”和“本地 API 调用”
 //!     触发，没有任何隐式推进。
 //!   - **返回值即契约**：`Io{ n, err }`。`err == .again` 是 EAGAIN /
 //!     EWOULDBLOCK 的等价物（非阻塞、现在没数据或没空间），**不是错误**
@@ -402,6 +404,11 @@ pub const Socket = struct {
                 else => {},
             },
             .syn_ack => switch (self.state) {
+                // 客户端收到 SYN-ACK 直接进 established：最后那个 ACK 由本端发。
+                // 注意：SYN-ACK 上捎带的数据不在这里接收——`netstub.Segment` 的
+                // `.syn_ack` 不带载荷，真正的捎带数据会作为随后的 `.data` 到达；
+                // 若它早于 established（驱动尚未投递 SYN-ACK），`.data` 会被丢弃，
+                // 这是驱动的投递顺序责任，不是本层能补救的。
                 .syn_sent => self.state = .established,
                 else => {},
             },
