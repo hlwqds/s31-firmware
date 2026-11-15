@@ -23,8 +23,9 @@
 //!   2. **两套序号之间是“基址 + 偏移”，不是同一个数**。socket 层的 `seq`/`ack` 是
 //!      从 0 起、每字节 +1 的**相对偏移**（见 `socket.zig` 的模块注释），而真实 TCP 的
 //!      序号从各自的 ISS 起计。所以适配层必须带两个基址：
-//!        - RX：真实 `seq` − `local_iss`、真实 `ack` − `peer_iss`；
-//!        - TX：socket 偏移 + `local_iss`、socket ack 偏移 + `peer_iss`。
+//!        - RX：真实 `seq` − `peer_iss`、真实 `ack` − `local_iss`
+//!          （对端发来的是**它的**字节 ⇒ 减对端基址；它 ack 的是**我的**字节 ⇒ 减本端基址）；
+//!        - TX：socket 偏移 + `local_iss`（我的字节）、socket ack 偏移 + `peer_iss`。
 //!      把真实 seq 原样抄进 `netstub.Segment` 在注入模型下看不出问题，接真链路会立刻错位。
 //!      注意两件事：
 //!        - `txSeqBase()` 给的是**偏移基线**（握手时就是 0），**不是** ISS——别把它当 ISS 用；
@@ -65,7 +66,8 @@ pub fn kindOf(flags: tcp.Flags, payload_len: usize) netstub.Kind {
 }
 
 /// RX：真实段 → 组件内段。`payload` 仍指向原缓冲（不复制）。
-/// 序号在这里换算成 socket 层的**相对偏移**（真实 seq − `local_iss`，真实 ack − `peer_iss`）。
+/// 序号在这里换算成 socket 层的**相对偏移**（真实 seq − `peer_iss`，真实 ack − `local_iss`；
+/// 方向搞反不会报错，只会让接收侧“看起来在对端乱确认”，见文件头契约 2）。
 pub fn fromTcp(seg: tcp.Segment, b: Bases) netstub.Segment {
     return .{
         .kind = kindOf(seg.hdr.flags, seg.payload.len),
