@@ -14,6 +14,16 @@
 //!
 //! kind 的判定优先级：`rst` > `syn|ack` > `syn` > `fin` > `data`(有载荷) > `ack`。
 //! 顺序有意义：带载荷的 FIN 是 FIN；`syn|ack` 不是 `syn`。
+//!
+//! 两条契约（接真链路时才会暴露，注入模型下看不出来）：
+//!
+//!   1. **`.data` 必须带载荷**。TCP 首部里没有“这是数据”这个信息，本层靠
+//!      `payload_len > 0` 判定；`netstub.Segment{ .kind = .data, .payload = "" }` 发到线上
+//!      再回来会退化成 `.ack`，接收侧的 seq 记账随之错位。空载荷的数据段不要发。
+//!   2. **序号空间归 socket 层**。`netstub.Segment.seq/ack` 是 socket 层自己的序号，
+//!      真实 TCP 必须与之一致，而不是各走一套再事后映射。接线时把 socket 层的 ISS
+//!      传给 `tcp.Conn.activeOpen(iss, now)`，握手后 `snd_nxt` 与 socket 层的 seq 同源；
+//!      否则两套序号会悄悄分叉（症状是主机侧偶发超时/重传，而 lab 的 socket 自检仍全绿）。
 
 const std = @import("std");
 const tcpmod = @import("net_tcp");
@@ -130,13 +140,25 @@ test "wire: flagsOf 覆盖全部 kind（没有落空的 switch）" {
     try testing.expect(flagsOf(.rst).rst and flagsOf(.rst).ack);
 }
 
-test "wire: 载荷切片不复制（改写原缓冲后视图跟着变）" {
+test "wire: 载荷是视图不是副本（改写原缓冲后 payload 跟着变）" {
     var buf: [64]u8 = undefined;
     const real = encodeParse(.{ .src_port = 1, .dst_port = 2, .seq = 5, .flags = .{ .ack = true, .psh = true } }, "abc", &buf);
     const seg = fromTcp(real);
     try testing.expectEqual(@as(usize, 3), seg.payload.len);
-    // seg.payload 指向调用方的 buf（parse 不复制）
-    const base = @intFromPtr(&buf);
-    const got = @intFromPtr(seg.payload.ptr);
-    try testing.expect(got > base and got < base + buf.len);
+    // 行为式断言：改原缓冲里载荷首字节的地址，再从 seg.payload 读回来
+    const first: *u8 = @constCast(&buf[@intFromPtr(seg.payload.ptr) - @intFromPtr(&buf)]);
+    first.* = 0x5A;
+    try testing.expectEqual(@as(u8, 0x5A), seg.payload[0]);
+}
+
+test "wire: 空载荷的 .data 退化成 .ack（契约：data 必须带载荷）" {
+    // 这是线上不可区分的一对：TCP 首部没有“数据”标志。把它钉成测试，
+    // 免得 R2.2b 里 socket 层真发出空数据段却没人发现。
+    const seg = netstub.Segment{ .kind = .data, .payload = "" };
+    var hdr = toHeader(seg, .{ .src = 1, .dst = 2 });
+    try testing.expect(hdr.flags.psh and hdr.flags.ack);
+    var buf: [64]u8 = undefined;
+    hdr.flags = .{ .ack = true, .psh = true }; // 线上同形（psh 不携带信息）
+    const real = encodeParse(hdr, "", &buf);
+    try testing.expectEqual(netstub.Kind.ack, fromTcp(real).kind);
 }
