@@ -176,6 +176,30 @@ pub fn writeClientHelloRecord(out: []u8, p: Params, rng: random.Reader) Error!us
 
 const test_secret: [x25519.scalar_length]u8 = @splat(0x77);
 
+/// 测试用确定性流（与 `random.zig` 的用例同构；生产模块不导出它）。
+const TestStream = struct {
+    state: u64 = 0,
+    fn fillFn(ctx: ?*anyopaque, out: []u8) void {
+        const self: *TestStream = @ptrCast(@alignCast(ctx.?));
+        var i: usize = 0;
+        while (i < out.len) {
+            self.state +%= 0x9E37_79B9_7F4A_7C15;
+            var z = self.state;
+            z = (z ^ (z >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+            z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+            z ^= z >> 31;
+            var buf: [8]u8 = undefined;
+            std.mem.writeInt(u64, &buf, z, .little);
+            const n = @min(8, out.len - i);
+            @memcpy(out[i..][0..n], buf[0..n]);
+            i += n;
+        }
+    }
+    fn reader(self: *TestStream) random.Reader {
+        return .{ .ctx = self, .fillFn = fillFn, .secure = false };
+    }
+};
+
 fn read16(b: []const u8) u16 {
     return std.mem.readInt(u16, b[0..2], .big);
 }
@@ -197,7 +221,7 @@ fn findExt(buf: []const u8, exts_off: usize, exts_len: usize, want: u16) []const
 }
 
 test "handshake: ClientHello 的三层长度与扩展逐字段自洽" {
-    var rng = random.Deterministic.init(0x2026_0301);
+    var rng = TestStream{ .state = 0x2026_0301 };
     var buf: [512]u8 = undefined;
     const p = Params{ .server_name = "example.test", .secret = test_secret };
     const n = try writeClientHelloRecord(&buf, p, rng.reader());
@@ -246,8 +270,8 @@ test "handshake: ClientHello 的三层长度与扩展逐字段自洽" {
 }
 
 test "handshake: 同一个随机流生成的首包逐字节相同（板侧日志可复现）" {
-    var a = random.Deterministic.init(42);
-    var b = random.Deterministic.init(42);
+    var a = TestStream{ .state = 42 };
+    var b = TestStream{ .state = 42 };
     var x: [512]u8 = undefined;
     var y: [512]u8 = undefined;
     const p = Params{ .server_name = "a.test", .secret = test_secret };
@@ -261,9 +285,9 @@ test "handshake: 随机数确实进了 random 字段（换 seed 变、同 seed �
     const p = Params{ .server_name = "a.test", .secret = test_secret };
     var buf_a: [512]u8 = undefined;
     var buf_b: [512]u8 = undefined;
-    var r1 = random.Deterministic.init(1);
-    var r2 = random.Deterministic.init(1);
-    var r3 = random.Deterministic.init(2);
+    var r1 = TestStream{ .state = 1 };
+    var r2 = TestStream{ .state = 1 };
+    var r3 = TestStream{ .state = 2 };
     const a = try writeClientHelloRecord(&buf_a, p, r1.reader());
     _ = try writeClientHelloRecord(&buf_b, p, r2.reader());
     try std.testing.expectEqualSlices(u8, buf_a[6..38], buf_b[6..38]); // random 相同
@@ -273,7 +297,7 @@ test "handshake: 随机数确实进了 random 字段（换 seed 变、同 seed �
 }
 
 test "handshake: 缓冲不足与过长的 SNI 都显式报错" {
-    var rng = random.Deterministic.init(3);
+    var rng = TestStream{ .state = 3 };
     var small: [64]u8 = undefined;
     const p = Params{ .server_name = "a.test", .secret = test_secret };
     try std.testing.expectError(Error.BufferTooSmall, writeClientHello(&small, p, rng.reader()));

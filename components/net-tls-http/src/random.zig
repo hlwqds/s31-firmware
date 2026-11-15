@@ -5,113 +5,94 @@
 //! （被动攻击者可以直接推出共享密钥）。
 //!
 //! 本组件**不自己产生**随机数，只定义“从哪拿”的接缝：调用方传一个 `Reader` 进来。
-//! 这样：
+//! 这样生产组件里**不携带**任何可被误用的弱随机实现（测试流由测试/实验工程自带），
+//! 而 `secure` 字段让“这一轮用的是不是真熵”在日志里可判读。
 //!
-//!   - 板侧 lab 可以先接确定性来源把**记录层/密钥调度/报文编码**的接线跑通；
-//!   - 生产路径必须加一个硬件 TRNG 的 tag（本仓目前没有那组寄存器地址，
-//!     `boards/esp32s31-coreboard` 也没有 RNG 驱动），加上之后 `switch` 会在
-//!     编译期逼着每个调用点处理它；
-//!   - 谁用了 `Deterministic`，日志与文档里必须写明“随机数是测试用确定性流”，
-//!     否则那轮 TLS 证据只能证明接线，不能证明安全性。
+//! 板侧真熵源已经就位：`boards/esp32s31-coreboard/src/rng.zig`（LP TRNG，
+//! 基址 `0x20814000`、数据寄存器 `+0x48`，使能序列照抄 IDF 的
+//! `components/hal/esp32s31/include/hal/trng_ll.h`，读取节奏照抄
+//! `components/esp_hw_support/hw_random.c`）。接线样例：
 //!
-//! `Deterministic` 用 SplitMix64，**不是**密码学安全的 PRNG：它可预测、无前向保密。
-//! 名字里带 `Deterministic` 而不是 `Prng`，就是为了让调用点读起来像“测试用”。
+//! ```zig
+//! fn boardFill(_: ?*anyopaque, out: []u8) void {
+//!     board.rng.fill(out);
+//! }
+//! const reader = random.Reader{ .fillFn = boardFill, .secure = true };
+//! ```
+//!
+//! 谁传了 `secure == false` 的来源，日志与文档必须写明“随机数是测试用确定性流”，
+//! 否则那轮 TLS 证据只能证明接线，不能证明安全性。
 const std = @import("std");
 
-/// 熵源。用 tagged union 而不是 `anyopaque` 回调：将来加 `.hardware` 时，
-/// 所有 `switch` 会在编译期报“未处理的分支”，不会被悄悄漏掉。
-pub const Reader = union(enum) {
-    deterministic: *Deterministic,
+/// 熵源：一个函数指针 + 一个声明。用函数指针而不是 tagged union，
+/// 是为了让**生产组件不依赖板级驱动**（板侧 `rng.zig` 只需提供 `fill([]u8)`）。
+pub const Reader = struct {
+    ctx: ?*anyopaque = null,
+    fillFn: *const fn (ctx: ?*anyopaque, out: []u8) void,
+    /// 这个来源能否用于生产。硬件 TRNG 为 true；任何测试/确定性流必须为 false。
+    secure: bool = false,
 
-    /// 填满 `out`。调用方保证 `out.len` 是需要的字节数（32 字节起步）。
+    /// 填满 `out`。
     pub fn fill(self: Reader, out: []u8) void {
-        switch (self) {
-            .deterministic => |d| d.fill(out),
-        }
+        self.fillFn(self.ctx, out);
     }
 
-    /// 是否可用于生产路径（目前恒为 false：没有任何硬件来源接入）。
     pub fn cryptographicallySecure(self: Reader) bool {
-        return switch (self) {
-            .deterministic => false,
-        };
+        return self.secure;
     }
 };
 
-/// 测试用确定性字节流（SplitMix64）。
-///
-/// 用途只有一个：让 TLS 的**报文编码/解析/密钥调度接线**可以在没有硬件熵源的
-/// 情况下被逐字节复现。不要用它生成真实会话密钥。
-pub const Deterministic = struct {
-    state: u64,
+// ---------------------------------------------------------------------------
+// 用例：接缝本身的行为（不涉及任何具体实现）
+// ---------------------------------------------------------------------------
 
-    pub fn init(seed: u64) Deterministic {
-        return .{ .state = seed };
-    }
+/// 测试用确定性流（SplitMix64）。**只**用于让报文编码可复现；
+/// 它放在测试里而不是生产模块里，谁想用都得显式写一遍。
+const TestStream = struct {
+    state: u64 = 0,
 
-    pub fn reader(self: *Deterministic) Reader {
-        return .{ .deterministic = self };
-    }
-
-    pub fn next(self: *Deterministic) u64 {
-        self.state +%= 0x9E37_79B9_7F4A_7C15;
-        var z = self.state;
-        z = (z ^ (z >> 30)) *% 0xBF58_476D_1CE4_E5B9;
-        z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
-        return z ^ (z >> 31);
-    }
-
-    pub fn fill(self: *Deterministic, out: []u8) void {
+    fn fillFn(ctx: ?*anyopaque, out: []u8) void {
+        const self: *TestStream = @ptrCast(@alignCast(ctx.?));
         var i: usize = 0;
         while (i < out.len) {
-            const word = self.next();
+            self.state +%= 0x9E37_79B9_7F4A_7C15;
+            var z = self.state;
+            z = (z ^ (z >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+            z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+            z ^= z >> 31;
             var buf: [8]u8 = undefined;
-            std.mem.writeInt(u64, &buf, word, .little);
+            std.mem.writeInt(u64, &buf, z, .little);
             const n = @min(8, out.len - i);
             @memcpy(out[i..][0..n], buf[0..n]);
             i += n;
         }
     }
+
+    fn reader(self: *TestStream) Reader {
+        return .{ .ctx = self, .fillFn = fillFn, .secure = false };
+    }
 };
 
-// ---------------------------------------------------------------------------
-// 用例：接缝本身的行为（不是密码学强度测试）
-// ---------------------------------------------------------------------------
-
 test "random: 同 seed 两条流逐字节一致，不同 seed 不同" {
-    var a = Deterministic.init(0x2026_1111);
-    var b = Deterministic.init(0x2026_1111);
-    var c = Deterministic.init(0x2026_2222);
+    var a = TestStream{ .state = 0x2026_1111 };
+    var b = TestStream{ .state = 0x2026_1111 };
+    var c = TestStream{ .state = 0x2026_2222 };
     var x: [64]u8 = undefined;
     var y: [64]u8 = undefined;
     var z: [64]u8 = undefined;
-    a.fill(&x);
-    b.fill(&y);
-    c.fill(&z);
+    a.reader().fill(&x);
+    b.reader().fill(&y);
+    c.reader().fill(&z);
     try std.testing.expectEqualSlices(u8, &x, &y);
     try std.testing.expect(!std.mem.eql(u8, &x, &z));
 }
 
-test "random: 任意长度都填满，且跨调用不重复整段" {
-    var d = Deterministic.init(1);
-    var one: [32]u8 = undefined;
-    var two: [32]u8 = undefined;
-    d.fill(&one);
-    d.fill(&two);
-    try std.testing.expect(!std.mem.eql(u8, &one, &two));
-
-    // 非 8 的倍数：最后一截也必须填满（不留下未初始化字节）
+test "random: 非 8 的倍数也填满；Reader 声明其安全性" {
+    var d = TestStream{ .state = 1 };
     var odd: [13]u8 = undefined;
     @memset(&odd, 0xAA);
-    d.fill(&odd);
+    d.reader().fill(&odd);
     try std.testing.expect(!std.mem.allEqual(u8, &odd, 0xAA));
-}
-
-test "random: Reader 明确标注为不可用于生产" {
-    var d = Deterministic.init(7);
-    const r = d.reader();
-    try std.testing.expect(!r.cryptographicallySecure());
-    var out: [32]u8 = undefined;
-    r.fill(&out);
-    try std.testing.expect(!std.mem.allEqual(u8, &out, 0));
+    try std.testing.expect(!d.reader().cryptographicallySecure());
+    try std.testing.expect((Reader{ .fillFn = TestStream.fillFn }).cryptographicallySecure() == false);
 }
