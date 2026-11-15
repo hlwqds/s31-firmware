@@ -25,6 +25,9 @@ const udp = udpmod.udp;
 const dhcp = udpmod.dhcp;
 const tcp = tcpmod.tcp;
 const checksum = tcpmod.checksum;
+const socks = @import("net_sockets");
+const socket = socks.socket;
+const wire = socks.wire;
 
 const log = board.log;
 const hw = board.hw;
@@ -42,6 +45,18 @@ var host_mac: ?[6]u8 = null;
 var dhcp_client: dhcp.Client = .{};
 /// 一次 profile 一条连接：状态机、ISS、RTO 全在 `tcp.Conn` 里。
 var conn: tcp.Conn = .{};
+
+// R2.2d：socket 层与真实连接并行驱动。分工见 ch22 的接线说明——
+// 线上真相（seq/flags/RTO/重传）归 `tcp.Conn`，API 表面（fd/tx/rx 缓冲）归 `socket.Table`。
+var tbl: socket.Table = .{};
+var cfd: ?u8 = null;
+var bases: wire.Bases = .{ .local_iss = 0, .peer_iss = 0 };
+/// 客户端的 peer_iss 只能从 SYN-ACK 自己的 seq 学到；学之前不镜像任何段。
+var peer_iss_known = false;
+/// 已镜像给 socket 的字节数（按 socket 偏移）：`.data` 分支不看 seq，重复投递会让字节进两遍。
+var mirrored: u32 = 0;
+/// 已被 ACK 确认、可以 `drainTx` 的字节数（socket 偏移）。
+var drained: u32 = 0;
 
 fn check(ok: bool, comptime fmt: []const u8, args: anytype) void {
     if (ok) passed += 1 else failed += 1;
@@ -95,11 +110,44 @@ fn answerArp(p: arp.Packet) void {
 
 /// 把 `tcp.Conn` 给出的 `Action` 编成一个段发出去。
 /// 选项只在握手时有：`Conn` 的 Action 不含选项，SYN 固定带 MSS=1460。
+fn socketWindow() u16 {
+    const fd = cfd orelse return 65535;
+    const s = &tbl.socks[fd];
+    // socket 层没有接收背压（装不下就丢并计数），通告窗口不能超过它的剩余空间。
+    return @intCast(@min(socket.rx_cap - s.rx_len, 65535));
+}
+
 fn sendAction(a: tcp.Action) void {
     if (!a.send) return;
+    if (host_mac == null) return;
     const opts: tcp.Options = if (a.flags.syn) .{ .mss = tcp.MSS_ETHERNET } else .{};
+    const hdr = tcp.Header{ .src_port = local_port, .dst_port = host_port, .seq = a.seq, .ack = a.ack, .flags = a.flags, .window = socketWindow() };
+
+    if (a.payload_len > 0) {
+        const fd = cfd orelse return;
+        const sk = &tbl.socks[fd];
+        // 环形 tx_buf 折返时中间一段是旧数据：先线性化到栈上暂存区。
+        var scratch: [tcp.MSS_ETHERNET * 2]u8 = undefined;
+        const n = sk.txPeek(&scratch).n;
+        const want: usize = @intCast(a.seq -% bases.local_iss);
+        const base = sk.txSeqBase();
+        if (want < base or want - base + a.payload_len > n) {
+            log.line("wire: tx peek miss want={d} base={d} n={d} len={d}", .{ want, base, n, a.payload_len });
+            return;
+        }
+        const at = want - base;
+        var seg: [tcp.MAX_HEADER + tcp.MSS_ETHERNET]u8 = undefined;
+        const total = tcp.encode(hdr, opts, scratch[at..][0..a.payload_len], &seg) catch return;
+        _ = checksum.fillTcp(board_ip, host_ip, seg[0..total]);
+        var pkt: [20 + tcp.MAX_HEADER + tcp.MSS_ETHERNET]u8 = undefined;
+        var ih = ipv4.Header{ .total_len = @intCast(20 + total), .id = 0x3101, .ttl = 64, .protocol = 6, .src = board_ip, .dst = host_ip };
+        const hlen = ih.write(pkt[0..20]) catch return;
+        @memcpy(pkt[hlen .. hlen + total], seg[0..total]);
+        sendFrame(host_mac.?, 0x0800, pkt[0 .. hlen + total]);
+        return;
+    }
+
     var seg: [64]u8 = undefined;
-    const hdr = tcp.Header{ .src_port = local_port, .dst_port = host_port, .seq = a.seq, .ack = a.ack, .flags = a.flags, .window = 65535 };
     const n = tcp.encode(hdr, opts, "", &seg) catch return;
     _ = checksum.fillTcp(board_ip, host_ip, seg[0..n]);
     var pkt: [128]u8 = undefined;
@@ -133,9 +181,41 @@ fn handleDhcp(payload: []const u8, now_s: u64) bool {
 fn handleTcp(l4: []const u8, now_us: u64) void {
     const seg = tcp.parse(l4) catch return;
     if (seg.hdr.dst_port != local_port or seg.hdr.src_port != host_port) return;
+
+    // 客户端的对端基址只能从 SYN-ACK 学：`peer_iss` = 它的 seq + 1（SYN 不占数据偏移）。
+    if (seg.hdr.flags.syn and seg.hdr.flags.ack and !peer_iss_known) {
+        bases.peer_iss = seg.hdr.seq +% 1;
+        bases.local_iss = syn_iss +% 1;
+        peer_iss_known = true;
+        log.line("wire: socket peer_iss=0x{x:0>8} local_iss=0x{x:0>8}", .{ bases.peer_iss, bases.local_iss });
+    }
+
     const a = conn.onSegment(seg, now_us);
     if (a.retransmit) log.line("wire: tcp retransmit state={s} seq=0x{x:0>8}", .{ conn.state.name(), a.seq });
     sendAction(a);
+
+    // 镜像进 socket 层：学不到基址之前不投，投之前按偏移去重（`.data` 分支不看 seq）。
+    if (peer_iss_known) if (cfd) |fd| {
+        const rs = wire.fromTcp(seg, bases);
+        if (rs.payload.len > 0) {
+            if (rs.seq == mirrored) {
+                tbl.deliver(fd, rs);
+                mirrored +%= @intCast(rs.payload.len);
+            }
+        } else {
+            tbl.deliver(fd, rs);
+        }
+    };
+
+    // ACK 覆盖了多少应用字节就 drainTx 多少（tx_buf 是唯一副本，重传还要用）。
+    if (cfd) |fd| {
+        const acked: u32 = conn.snd_una -% bases.local_iss;
+        if (acked > drained) {
+            const n: usize = @intCast(acked - drained);
+            _ = tbl.socks[fd].drainTx(n);
+            drained = acked;
+        }
+    }
 }
 
 /// 收帧总入口。时间单位用微秒：`Conn` 的 RTO/2MSL 都是微秒，
@@ -251,8 +331,10 @@ pub fn run() bool {
         }
         check(host_mac != null, "arp host mac", .{});
         if (host_mac != null) {
+            // R2.2d：握手由 socket 层的 connect + 真实 Conn 并行驱动。
+            cfd = @intCast(tbl.connect());
             sendAction(conn.activeOpen(syn_iss, hw.nowUs()));
-            log.line("wire: tcp SYN sent iss=0x{x:0>8}", .{syn_iss});
+            log.line("wire: tcp SYN sent iss=0x{x:0>8} fd={d}", .{ syn_iss, cfd.? });
             const tt = hw.nowUs();
             while (conn.state != .established and hw.elapsedUs(tt) < 3_000_000) {
                 const now_us = hw.nowUs();
@@ -263,6 +345,35 @@ pub fn run() bool {
             check(conn.state == .established, "tcp handshake", .{});
             if (conn.state == .established) {
                 log.line("wire: tcp ESTABLISHED state={s} snd_una=0x{x:0>8} rcv_nxt=0x{x:0>8}", .{ conn.state.name(), conn.snd_una, conn.rcv_nxt });
+                const fd = cfd.?;
+                check(tbl.socks[fd].state == .established, "socket layer established", .{});
+                // 走一次应用数据：socket API 写 64 B → Conn 分配序号 → 主机 ACK → drainTx。
+                var payload: [64]u8 = undefined;
+                for (&payload, 0..) |*b, i| b.* = @intCast('a' + (i % 26));
+                const io = tbl.socks[fd].send(&payload);
+                check(io.n == payload.len, "socket send accepted", .{});
+                const ts = hw.nowUs();
+                while (drained < payload.len and hw.elapsedUs(ts) < 2_000_000) {
+                    const now_us = hw.nowUs();
+                    sendAction(conn.tick(now_us));
+                    while (true) {
+                        const sk = &tbl.socks[fd];
+                        const pend = sk.txPending();
+                        if (pend == 0) break;
+                        const want: usize = @intCast(conn.snd_nxt -% bases.local_iss);
+                        const skbase = sk.txSeqBase();
+                        if (want < skbase) break;
+                        const avail = pend - (want - skbase);
+                        if (avail == 0) break;
+                        const a = conn.sendData(@min(avail, conn.mss), conn.snd_wnd, now_us);
+                        if (!a.send) break;
+                        sendAction(a);
+                    }
+                    const r = emac.rxPollCopy(20_000, &frame) catch continue;
+                    if (r) |len| if (len <= frame.len) handleFrame(frame[0..len], now_us);
+                }
+                check(drained == payload.len, "socket tx acked", .{});
+                log.line("wire: socket tx drained={d} state={s}", .{ drained, tbl.socks[fd].state.name() });
                 hw.delayUs(100_000);
                 // RST 不是 `Conn` 的输出（它只做 FIN）：生产探针用它结束 profile，
                 // 不走 FIN/TIME_WAIT 的 60 s。Action 的 `to` 在这里只是标签。

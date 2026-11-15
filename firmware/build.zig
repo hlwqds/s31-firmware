@@ -44,6 +44,9 @@ pub fn build(b: *std.Build) void {
     const ipv4_mod = b.createModule(.{ .root_source_file = b.path("../components/net-ipv4/src/api.zig") });
     const udp_mod = b.createModule(.{ .root_source_file = b.path("../components/net-udp-dhcp-dns/src/api.zig") });
     const tcp_mod = b.createModule(.{ .root_source_file = b.path("../components/net-tcp/src/api.zig") });
+    // socket 层（R2.2d）：net-wire 也要能驱动它，不只是 net 组的自检。
+    const socks_mod = b.createModule(.{ .root_source_file = b.path("../components/net-sockets/src/api.zig") });
+    socks_mod.addImport("net_tcp", tcp_mod);
 
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
@@ -58,6 +61,7 @@ pub fn build(b: *std.Build) void {
             mod.addImport("net_ipv4", ipv4_mod);
             mod.addImport("net_udp", udp_mod);
             mod.addImport("net_tcp", tcp_mod);
+            mod.addImport("net_sockets", socks_mod);
         }
         enabled_mod.addImport(m.name, mod);
     }

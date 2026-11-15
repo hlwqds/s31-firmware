@@ -33,7 +33,7 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 | `wifi` | boot + net + wifi | 构建 + 两段镜像 |
 | `tls` | boot + net + tls | 构建 + 两段镜像 |
 | `full` | boot + net + tls + apps + wifi | 构建 + 两段镜像（11 段自检） |
-| `net-wire` | boot + wire | **发布前板级门禁**：真实链路 DHCP+TCP。前置 `scripts/host-prep-wire.sh up`（接口地址/dnsmasq/防火墙/监听器），门禁 `scripts/gate-board.sh`（skip 视为失败）；无 DHCP 时打印 `wire: skipped/no-dhcp-server` 并跳过 |
+| `net-wire` | boot + wire | **发布前板级门禁**：真实链路 DHCP+TCP，TCP 走 socket 层（`Table.connect` + `tcp.Conn` 并行驱动，应用 64 B 经 `Socket.send` 发出并被 ACK 确认，checks=7）。前置 `scripts/host-prep-wire.sh up`（接口地址/dnsmasq/防火墙/监听器），门禁 `scripts/gate-board.sh`（skip 视为失败）；无 DHCP 时打印 `wire: skipped/no-dhcp-server` 并跳过 |
 
 板级门禁（发布前必跑）：
 

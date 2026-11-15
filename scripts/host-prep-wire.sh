@@ -75,14 +75,29 @@ up() {
     if listener_up; then
         echo "  keep tcp listener :$LISTEN_PORT"
     else
-        # 只 accept 然后关：net-wire 的 profile 以 RST 收尾，监听器不需要回数据。
+        # accept 后必须**读掉**板子发来的字节并保持 2 s 再关：
+        # 带未读数据的 close 会让内核回 RST，板侧 socket 直接变 closed，
+        # 表现成 "socket tx acked ok=0"——看着像驱动 bug，其实是监听器太急。
         nohup python3 -c "
-import socket, sys
+import socket, time
 s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(('0.0.0.0', $LISTEN_PORT)); s.listen(4)
 print('listening $LISTEN_PORT', flush=True)
 while True:
-    c, a = s.accept(); print('accepted', a, flush=True); c.close()
+    c, a = s.accept(); print('accepted', a, flush=True)
+    c.settimeout(2.0)
+    got = 0
+    t0 = time.time()
+    while time.time() - t0 < 2.0:
+        try:
+            b = c.recv(4096)
+        except Exception:
+            break
+        if not b:
+            break
+        got += len(b)
+    print('recv', got, 'bytes', flush=True)
+    c.close()
 " >"$LISTEN_LOG" 2>&1 &
         echo $! >"$LISTEN_PID"
         for _ in $(seq 1 20); do listener_up && break; sleep 0.1; done

@@ -102,6 +102,12 @@ IDF **v6.1（`esp32s31` 为 preview target）**、esptool **≥ 5.2**，目标�
 TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 `onSegment` / `tick`），不再手写 SYN/ACK；ESTABLISHED 后立刻 RST 保持 profile 短。
 
+**2026-11-16（R2.2d）：`net-wire` 的 TCP 改由 socket 层驱动** —— `Table.connect` 建客户端 fd，
+`tcp.Conn` 管线上真相（SYN/ACK/RTO/重传），SYN-ACK 学 `peer_iss` 后按偏移去重镜像进 socket 表，
+应用 64 B 走 `Socket.send` → `txPeek` → 帧，ACK 覆盖后 `drainTx`；profile 仍用 RST 收尾（不引入
+60 s FIN/TIME_WAIT）。板级：`check: socket layer established ok=1`、`socket send accepted ok=1`、
+`socket tx acked ok=1`、`wire: socket tx drained=64`、`wire: checks passed=7 failed=0`。
+
 **2026-11-16：W1–W3 从“可选 profile”提升为发布前板级门禁** —— `scripts/gate-board.sh`
 （前置 `scripts/host-prep-wire.sh up`）跑 `tests/e2e/run_e2e.py --board --profile net-wire`，
 再断言 `wire: tcp SYN sent` / `ESTABLISHED` / `RST sent` / `checks passed=4 failed=0`；
@@ -111,7 +117,7 @@ TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 | --- | ------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
 | W1 | EMAC bring-up | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: bring-up`、`check: emac version ok=1` | `check: emac version ok=1`、`wire: bring-up`                                          | 真机                             |
 | W2 | DHCP DORA | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: dhcp DISCOVER`、`wire: dhcp OFFER ip=10.42.0.139`、`wire: dhcp ACK ip=10.42.0.139 gw=10.42.0.1` | `check: dhcp bound ... ok=1`                                                          | host dnsmasq；放行 UDP 67        |
-| W3 | TCP 握手 | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: tcp SYN sent iss=0x20263111`、`check: tcp handshake ok=1`、`wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112`、`wire: tcp RST sent` | `check: tcp handshake ok=1`；`wire: tcp ESTABLISHED state=ESTABLISHED`；host `accept()` | host TCP 9000 监听；放行 TCP 9000 |
+| W3 | TCP 握手 | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: tcp SYN sent iss=0x20263111 fd=0`、`check: tcp handshake ok=1`、`wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112`、`wire: tcp RST sent` | `check: tcp handshake ok=1`；`wire: tcp ESTABLISHED state=ESTABLISHED`；host `accept()` | host TCP 9000 监听；放行 TCP 9000 |
 | W4  | 无 DHCP 降级  | 已实测：不放行 udp/67 时打印 `wire: skipped/no-dhcp-server`、`wire: checks passed=1 failed=0`，`main: verdict=pass` | 无 DHCP 应答时 section 不 failed（fail-closed，不拖红 e2e）                            | 日志 `logs/net-wire-no-dhcp.log` |
 
 ## 5. 早期实现 编译 / 上板

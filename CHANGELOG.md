@@ -8,6 +8,12 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **`net-wire` 的 TCP 改由 socket 层驱动**（R2.2d）：`components/net-sockets/src/api.zig` 提供
+  统一入口，`firmware/build.zig` 给 wire 组接上 `net_sockets`；探针用 `Table.connect()` 建客户端、
+  `tcp.Conn` 保持线上真相，SYN-ACK 学 `peer_iss` 后按偏移去重镜像，应用 64 B 经
+  `Socket.send` → `txPeek` → 帧发出，ACK 覆盖后 `drainTx`；仍以 RST 收尾。
+  板级 `wire: checks passed=7 failed=0`（新增 `socket layer established` / `socket send accepted` /
+  `socket tx acked` 三项）。
 - **容量门禁 `scripts/check-capacity.py`**（R4.3）：每个 e2e profile 构建一次，断言
   镜像 ≤ factory 分区、每个 DROM/IROM 段的 `load + Length ≤ 窗口末端`（IROM `0x40000020`、
   DROM `0x40080020`，窗口各 `0x7F000`）、以及相对 `tools/s31-production/baseline/capacity.json`
