@@ -109,9 +109,9 @@ TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 
 | #   | 门禁项        | 当前状态                                                                                     | 通过判据                                                                              | 依赖                             |
 | --- | ------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
-| W1  | EMAC bring-up | 通过：`emac version` 检查、link 1000M、YT8531 RGMII delay 初始化                             | `check: emac version ok=1`、`wire: bring-up`                                          | 真机                             |
-| W2  | DHCP DORA     | 通过：DISCOVER→OFFER→ACK，租约 `10.42.0.139`，网关/DNS `10.42.0.1`                           | `check: dhcp bound ... ok=1`                                                          | host dnsmasq；放行 UDP 67        |
-| W3  | TCP 握手      | 通过：`tcp.Conn` 驱动 SYN→SYN-ACK→ACK，`snd_una=iss+1` 证明 SYN 被确认；主机 accept 后 RST    | `check: tcp handshake ok=1`；`wire: tcp ESTABLISHED state=ESTABLISHED`；host `accept()` | host TCP 9000 监听；放行 TCP 9000 |
+| W1 | EMAC bring-up | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: bring-up`、`check: emac version ok=1` | `check: emac version ok=1`、`wire: bring-up`                                          | 真机                             |
+| W2 | DHCP DORA | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: dhcp DISCOVER`、`wire: dhcp OFFER ip=10.42.0.139`、`wire: dhcp ACK ip=10.42.0.139 gw=10.42.0.1` | `check: dhcp bound ... ok=1`                                                          | host dnsmasq；放行 UDP 67        |
+| W3 | TCP 握手 | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: tcp SYN sent iss=0x20263111`、`check: tcp handshake ok=1`、`wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112`、`wire: tcp RST sent` | `check: tcp handshake ok=1`；`wire: tcp ESTABLISHED state=ESTABLISHED`；host `accept()` | host TCP 9000 监听；放行 TCP 9000 |
 | W4  | 无 DHCP 降级  | 已实测：不放行 udp/67 时打印 `wire: skipped/no-dhcp-server`、`wire: checks passed=1 failed=0`，`main: verdict=pass` | 无 DHCP 应答时 section 不 failed（fail-closed，不拖红 e2e）                            | 日志 `logs/net-wire-no-dhcp.log` |
 
 ## 5. 早期实现 编译 / 上板

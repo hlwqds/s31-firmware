@@ -43,6 +43,11 @@ scripts/gate-board.sh                 # 构建 → 烧录 → 抓 30 s → 断�
 scripts/host-prep-wire.sh down        # 收尾：撤销规则与监听器
 ```
 
+门禁通过后自动跑 `tools/s31-production/baseline/update_matrix.py`，把 matrix §4 的 W1–W3
+状态换成**本轮日志的摘录**（对端随机 ISN 这类每跑一次就变的值会被剥掉，避免无意义抖动）；
+`--check` 模式在 `scripts/check-all.sh` 里，matrix 与已提交日志漂移即失败。W4（无 DHCP 降级）
+要的是另一个场景（`logs/net-wire-no-dhcp.log`），故意保持人工维护，不用正常场景的行去填。
+
 `gate-board.sh` 自己会删掉上一轮的 `logs/e2e-net-wire-boot.log`（证据只能来自本轮），
 `skipped/no-dhcp-server` 在门禁里算失败，前置缺失时退出码 2 并打印修复命令。
 NixOS 上需要 `env -u LD_LIBRARY_PATH`（脚本已内置）和带 pyserial 的解释器（`PYTHON=` 指定）。

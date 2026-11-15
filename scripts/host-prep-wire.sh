@@ -107,8 +107,15 @@ down() {
         kill "$(cat "$LISTEN_PID")" 2>/dev/null && echo "  del  tcp listener :$LISTEN_PORT"
         rm -f "$LISTEN_PID"
     fi
-    # 收尾只应剩 NixOS 自带的 refuse 规则。
-    $SUDO $PROBE iptables -S 2>/dev/null | grep '^-A' | grep DROP | grep -v nixos-fw-refuse | head -5
+    # 收尾只应剩 NixOS 自带的 refuse 规则；残留则列出来并以非零退出。
+    local leftover
+    leftover=$($SUDO $PROBE iptables -S 2>/dev/null | grep '^-A' | grep DROP | grep -v nixos-fw-refuse || true)
+    if [ -n "$leftover" ]; then
+        echo "  warn 仍有非 nixos-fw 的 DROP 规则：" >&2
+        printf '%s\n' "$leftover" >&2
+        return 1
+    fi
+    echo "  ok   INPUT 已回到基线（仅 nixos-fw）"
 }
 
 case "${1:-check}" in

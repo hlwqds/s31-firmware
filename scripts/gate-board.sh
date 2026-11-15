@@ -26,12 +26,6 @@ ZIG=${ZIG:-zig}
 echo "gate-board: profile=$PROFILE board=$BOARD"
 
 PYTHON=${PYTHON:-python3}
-# capture.py 需要 pyserial；e2e 用 sys.executable 调它，所以这里就把解释器定死并先验证。
-if ! env -u LD_LIBRARY_PATH "$PYTHON" -c "import serial" >/dev/null 2>&1; then
-    echo "gate-board: FAIL $PYTHON lacks pyserial (capture.py 需要它)" >&2
-    echo "  用 PYTHON=<带 pyserial 的解释器> [PYTHONPATH=<site-packages>] 重跑" >&2
-    exit 2
-fi
 
 [ -e "$BOARD" ] || {
     echo "gate-board: FAIL no board at $BOARD" >&2
@@ -55,6 +49,13 @@ case "$ESPTOOL" in
 */*) export PATH="$(dirname "$ESPTOOL"):$PATH" ;;
 esac
 export ESPTOOL
+# capture.py 需要 pyserial；e2e 用 sys.executable 调它，所以这里把解释器定死并先验证。
+if ! env -u LD_LIBRARY_PATH "$PYTHON" -c "import serial" >/dev/null 2>&1; then
+    echo "gate-board: FAIL $PYTHON lacks pyserial (capture.py 需要它)" >&2
+    echo "  用 PYTHON=<带 pyserial 的解释器> [PYTHONPATH=<site-packages>] 重跑" >&2
+    exit 2
+fi
+
 mkdir -p reports logs
 # 证据只能来自本轮：上一轮的日志会带着同样的行，留着就是自欺。
 rm -f "$LOG"
@@ -95,4 +96,5 @@ if [ "$e2e" -ne 0 ] || [ "$missing" -ne 0 ]; then
     echo "gate-board: FAIL (e2e=$e2e, evidence=$missing); junit=$JUNIT" >&2
     exit 1
 fi
+python3 tools/s31-production/baseline/update_matrix.py
 echo "gate-board: PASS — $(grep -ah "wire: checks passed=" "$LOG" | tail -1)"
