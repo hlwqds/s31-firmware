@@ -46,6 +46,10 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-sockets：把 `onSegment` **不校验什么**写进状态迁移表的注释，并用一条用例钉死：
+  `.data` 不看 `seq`（按序到达假设），重传段再投递一次会把字节**再塞一遍**、`rcv_nxt`
+  多算；`.ack` 不看 `ack` 值（`syn_rcvd` 见 ack 即 `established`）。⇒ 接真链路时
+  **去重是驱动的责任**（按 `rcv_nxt` 只镜像新段），出向 seq 映射仍必须精确。35 → 36。
 - net-sockets：`wire.zig` 改成**带基址**的映射。socket 层的 `seq`/`ack` 是从 0 起的
   **相对偏移**，真实 TCP 的序号从 ISS 起计，所以 RX 做 `seq − peer_iss` / `ack − local_iss`、
   TX 做 `local_iss + seq` / `peer_iss + ack`（`Bases{ local_iss, peer_iss }`，

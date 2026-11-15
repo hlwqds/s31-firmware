@@ -355,6 +355,13 @@ pub const Socket = struct {
     /// | last_ack        | ack   | closed       |
     /// | fin_wait_1      | ack   | closed（简化：不建模 time_wait 停留）|
     /// | 任意（非listener）| rst  | closed + reset_seen |
+    ///
+    /// **不校验什么**（注入模型的假设，接真链路时由驱动负责）：
+    /// - `.data` 分支不看 `seg.seq`：直接 `rxPush` 并推进 `rcv_nxt`。按序到达时正确，
+    ///   但重传段被再投递一次就会把字节**再塞一遍**、`rcv_nxt` 多算。真实驱动必须
+    ///   自己按 `rcv_nxt` 去重（只镜像 socket 还没见过的段）。
+    /// - `.ack` 分支不看 `seg.ack`：`syn_rcvd` 见到任何 ack 就进 `established`。
+    ///   握手宽松无妨，但出向的 seq 映射仍必须精确（`wire.Bases`）。
     pub fn onSegment(self: *Socket, seg: netstub.Segment) void {
         if (self.state == .listen) return; // listener 的 SYN 由 Table 处理
         switch (seg.kind) {
@@ -571,6 +578,26 @@ fn listenAndHandshake(tbl: *Table, seq: u32) u8 {
     const child: u8 = @intCast(tbl.socks[l].backlog[0]);
     tbl.deliver(child, .{ .kind = .ack, .seq = seq +% 1, .ack = 1 });
     return child;
+}
+
+test "onSegment 不校验序号：重复投递的 data 段会被再塞一遍（真实驱动自己按 rcv_nxt 去重）" {
+    var tbl = Table{};
+    const cfd = listenAndHandshake(&tbl, 1000);
+    const s = &tbl.socks[cfd];
+    try std.testing.expectEqual(State.established, s.state);
+    try std.testing.expectEqual(@as(u32, 0), s.rcv_nxt);
+
+    const seg = netstub.Segment{ .kind = .data, .seq = 0, .ack = 1, .payload = "abc" };
+    tbl.deliver(cfd, seg);
+    try std.testing.expectEqual(@as(u32, 3), s.rcv_nxt);
+
+    // 同一个段再来一次（线路上是重传）：本层照单全收 —— 这正是驱动必须去重的原因
+    tbl.deliver(cfd, seg);
+    try std.testing.expectEqual(@as(u32, 6), s.rcv_nxt);
+    var buf: [8]u8 = undefined;
+    const io = s.recv(&buf);
+    try std.testing.expectEqual(@as(usize, 6), io.n);
+    try std.testing.expectEqualStrings("abcabc", buf[0..6]);
 }
 
 test "FD 表：容量 8，listen 之后 alloc 一路到满，第 9 个返回 no_fd 并计数" {
