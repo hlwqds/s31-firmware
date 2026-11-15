@@ -18,3 +18,7 @@
 
 # 测试产物
 reports/
+
+# python 导入 run_e2e 时产生的字节码（scripts/check-capacity.py）
+__pycache__/
+*.pyc

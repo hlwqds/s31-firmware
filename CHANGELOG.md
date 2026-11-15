@@ -8,6 +8,16 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **容量门禁 `scripts/check-capacity.py`**（R4.3）：每个 e2e profile 构建一次，断言
+  镜像 ≤ factory 分区、每个 DROM/IROM 段的 `load + Length ≤ 窗口末端`（IROM `0x40000020`、
+  DROM `0x40080020`，窗口各 `0x7F000`）、以及相对 `tools/s31-production/baseline/capacity.json`
+  的增长 ≤ 8 KiB（`--update` 需在 PR 里说明）。段长按 `image-info` 表头取 **Length 列**——
+  早期版本误取了 File offs 列，断言因此恒真，`CAP_WINDOW=0x40000` 自检现在会报
+  `IROM ends at 0x4004aa40 > window end`。实测 `full`：镜像 398 560 B、IROM 305 696 B
+  （余量 214 496）、DROM 70 768 B（余量 449 424）。
+- **matrix 自动更新 `tools/s31-production/baseline/update_matrix.py`**（R4.2）：只改 W1–W3
+  状态列，摘录来自 `logs/e2e-net-wire-boot.log`，剥掉 `rcv_nxt` 等易变值；`--check` 进
+  `check-all.sh`，`gate-board.sh` 通过后自动刷新。W4 保持人工（需无 DHCP 场景）。
 - **发布前板级门禁 `scripts/gate-board.sh`**（R4.1）：`net-wire` 从可选 profile 提升为必跑门禁。
   `scripts/host-prep-wire.sh up|down|check` 固化主机预置（接口地址、dnsmasq、udp 67/53 与
   tcp 9000 放行、监听器，幂等且可撤销）；门禁先删旧日志（证据只能来自本轮），跑
@@ -19,6 +29,10 @@
 - `net-wire` 可选 profile（`-Dwire=true`）：生产固件在真实链路跑 DHCP
   DORA + TCP 三次握手，host 侧 dnsmasq/socket 监听为前置；无 DHCP 时优雅跳过。
   板级证据 `logs/e2e-net-wire-boot.log`。
+
+### Removed
+- `tests/e2e/run_e2e.py` 的 `expect="overflow"` 死分支：P0.2 扩容后已无 profile 使用，
+  两段窗口容量改由 `scripts/check-capacity.py` 门禁。
 
 ### Fixed
 - net-ethernet：DMA 不取描述符的根因是 APM 控制过滤器。IDF app 在

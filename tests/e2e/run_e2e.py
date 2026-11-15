@@ -6,7 +6,7 @@
   --board       额外烧录默认 profile、抓 30 s 串口、断言段集合/逐段 checks/verdict
   --junit PATH  输出 JUnit XML（CI 用）
 
-profile 定义在 PROFILES；`expect="overflow"` 表示已知超出两段窗口（P0.2 跟踪），
+profile 定义在 PROFILES；两段窗口/分区容量由 scripts/check-capacity.py 单独门禁，
 命中时记为 xfail 而不是失败，避免把已知限制误报成回归。
 """
 
@@ -89,11 +89,6 @@ def build_profile(name: str, profile: dict) -> Case:
              *zig_flags(profile["flags"]), "--cache-dir", cache], cwd=FW)
     c.duration = time.time() - start
     c.output = (r.stdout + r.stderr)[-4000:]
-    if profile["expect"] == "overflow":
-        overflow = "will not fit" in c.output or "overlaps with .flash.rodata" in c.output
-        c.check(overflow, "expected the known two-segment overflow, got a successful/other build")
-        c.skipped = "known limitation: TLS exceeds two-segment window (ROADMAP P0.2)"
-        return c
     c.check(r.returncode == 0, f"zig build failed rc={r.returncode}")
     if r.returncode != 0:
         return c

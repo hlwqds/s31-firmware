@@ -8,5 +8,6 @@ python3 scripts/check-invariants.py
 scripts/check-host.sh
 python3 scripts/check-coverage.py
 python3 tools/s31-production/baseline/update_matrix.py --check
+python3 scripts/check-capacity.py
 mkdir -p reports
 ESPTOOL=${ESPTOOL:-python -m esptool} python3 tests/e2e/run_e2e.py --host --junit reports/e2e-host.xml
