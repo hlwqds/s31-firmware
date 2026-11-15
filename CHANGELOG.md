@@ -101,6 +101,11 @@
   自动变大——只有下一次出向段带的新窗口才生效。接收缓冲排空后若不补发纯 ACK，
   对端会一直以为窗口为 0（症状：发送方 `send` 秒返回、接收方永远等不到下一字节，
   两端日志都"正常"）。只在仍可接收的中间态出段，`seq/ack` 取自当前状态。32 → 33。
+- net-sockets：补上**客户端形状**（此前只有服务端）。新增 `State.syn_sent`、
+  `Socket.enterConnect()`、`Table.connect()`；收到 `.syn_ack` 转 `established`，
+  握手期间 `send`/`recv` 返回 `in_progress`（EINPROGRESS 的等价物，不是 `not_conn`）；
+  RST 回 `closed` 并置 `reset_seen`、槽位可复用。线路上的三次握手仍由 `tcp.Conn` 负责，
+  本层只镜像状态——这正是 TLS 客户端在板侧需要的入口。36 → 38 项。
 - net-sockets：把 `onSegment` **不校验什么**写进状态迁移表的注释，并用一条用例钉死：
   `.data` 不看 `seq`（按序到达假设），重传段再投递一次会把字节**再塞一遍**、`rcv_nxt`
   多算；`.ack` 不看 `ack` 值（`syn_rcvd` 见 ack 即 `established`）。⇒ 接真链路时

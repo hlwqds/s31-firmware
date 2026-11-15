@@ -47,6 +47,9 @@ pub const no_fd: i8 = -1;
 pub const State = enum(u8) {
     closed = 0,
     listen,
+    /// 客户端：三次握手进行中（已发出 SYN，等 SYN-ACK）。生产组件原先只有服务端形状，
+    /// 这一状态是 `Table.connect()` 的落点。
+    syn_sent,
     syn_rcvd,
     established,
     fin_wait_1,
@@ -170,6 +173,13 @@ pub const Socket = struct {
         self.reset_seen = false;
     }
 
+    /// 客户端入口：进入 `syn_sent`。真正的 SYN/SYN-ACK 由 `tcp.Conn` 在线路上完成，
+    /// 本层只镜像状态（`wire.fromTcp` 会把 SYN-ACK 翻成 `.syn_ack` 投递进来）。
+    pub fn enterConnect(self: *Socket) void {
+        self.reset();
+        self.state = .syn_sent;
+    }
+
     pub fn enterListen(self: *Socket) void {
         self.reset();
         self.state = .listen;
@@ -272,6 +282,7 @@ pub const Socket = struct {
     pub fn recv(self: *Socket, dst: []u8) Io {
         if (self.state == .closed and !self.reset_seen) return Io.fail(.bad_fd);
         if (self.reset_seen) return Io.fail(.conn_reset);
+        if (self.state == .syn_sent) return Io.fail(.in_progress);
         if (!self.state.canIo()) return Io.fail(.not_conn);
         if (self.rx_len > 0) {
             const n = self.rxPop(dst);
@@ -292,6 +303,7 @@ pub const Socket = struct {
     pub fn send(self: *Socket, src: []const u8) Io {
         if (self.state == .closed and !self.reset_seen) return Io.fail(.bad_fd);
         if (self.reset_seen) return Io.fail(.conn_reset);
+        if (self.state == .syn_sent) return Io.fail(.in_progress);
         if (!self.state.canIo()) return Io.fail(.not_conn);
         if (src.len == 0) return Io.ok(0);
         if (self.tx_len >= tx_cap) {
@@ -389,7 +401,11 @@ pub const Socket = struct {
                 .fin_wait_1 => self.state = .closed,
                 else => {},
             },
-            .syn, .syn_ack => {},
+            .syn_ack => switch (self.state) {
+                .syn_sent => self.state = .established,
+                else => {},
+            },
+            .syn => {},
         }
     }
 };
@@ -422,6 +438,17 @@ pub const Table = struct {
             if (!s.state.isOpen()) return @intCast(i);
         }
         return null;
+    }
+
+    /// 客户端：分配一个 fd 并进入 `syn_sent`（对应 POSIX `connect()` 的"已发起"）。
+    /// 握手的线路动作由数据面负责；本层在收到 `.syn_ack` 后转 `established`。
+    pub fn connect(self: *Table) i8 {
+        const fd = self.alloc() orelse {
+            self.fd_exhausted += 1;
+            return no_fd;
+        };
+        self.socks[fd].enterConnect();
+        return @intCast(fd);
     }
 
     pub fn listen(self: *Table) i8 {
@@ -840,4 +867,37 @@ test "出向出口：环形折返时 txPeek 仍然按顺序" {
     const peek = s.txPeek(&out);
     try std.testing.expectEqual(@as(usize, 7), peek.n);
     try std.testing.expectEqualStrings("XYZ0123", out[0..7]);
+}
+
+test "connect: 客户端 fd 进入 syn_sent，收到 syn_ack 才 established，期间 I/O 返回 in_progress" {
+    var tbl = Table{};
+    const fd = tbl.connect();
+    try std.testing.expect(fd >= 0);
+    const s = &tbl.socks[@intCast(fd)];
+    try std.testing.expectEqual(State.syn_sent, s.state);
+
+    // 握手完成前不能收发：返回 in_progress（EINPROGRESS 的等价物），不是 not_conn。
+    const io = s.send("abc");
+    try std.testing.expectEqual(Errno.in_progress, io.err);
+    var buf: [4]u8 = undefined;
+    try std.testing.expectEqual(Errno.in_progress, s.recv(&buf).err);
+
+    // SYN-ACK 到达（线路动作由 tcp.Conn 完成，这里只是镜像）
+    s.onSegment(.{ .kind = .syn_ack, .seq = 100, .ack = 1 });
+    try std.testing.expectEqual(State.established, s.state);
+    // 之后正常收发
+    try std.testing.expectEqual(@as(usize, 3), s.send("abc").n);
+    try std.testing.expectEqual(@as(usize, 3), s.txPending());
+}
+
+test "connect: RST 会把 syn_sent 打回 closed 并置 reset_seen；fd 可复用" {
+    var tbl = Table{};
+    const fd = tbl.connect();
+    const s = &tbl.socks[@intCast(fd)];
+    s.onSegment(.{ .kind = .rst });
+    try std.testing.expectEqual(State.closed, s.state);
+    try std.testing.expect(s.reset_seen);
+    try std.testing.expectEqual(@as(usize, 0), tbl.openCount());
+    // 槽位释放后可以再 connect
+    try std.testing.expect(tbl.connect() >= 0);
 }
