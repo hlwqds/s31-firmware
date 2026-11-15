@@ -47,6 +47,8 @@ pub const Error = error{
     CertificatePinMismatch,
     /// 链校验失败：签发关系/签名/锚不对。
     CertificateChainFailed,
+    /// 链里找到了签发者，但它不被注入的锚信任（`chain.Error.UntrustedAnchor`）。
+    CertificateUntrustedAnchor,
     /// 链校验发现证书过期。
     CertificateExpired,
     /// 链校验发现主机名与 SAN 不匹配。
@@ -112,6 +114,8 @@ pub const Client = struct {
     leaf_len: usize = 0,
     /// 有效期是否真的检查过（`now == null` 时为 false，日志必须照实写）。
     expiry_checked: bool = false,
+    /// 链长度（1 = 叶直接由锚签发，2 = 一层中间证书）；0 = 没走链校验。
+    chain_len: u8 = 0,
 
     alert: ?Alert = null,
     /// 最近一次 ServerHello 解析失败的原始错误码（板上没有 stderr，driver 用
@@ -265,10 +269,12 @@ pub const Client = struct {
                         const r = chain.verifyChain(list[0].der, issuers[0..n], anchor, self.opts.now, self.opts.server_name) catch |e| switch (e) {
                             chain.Error.Expired => return Error.CertificateExpired,
                             chain.Error.HostnameMismatch => return Error.CertificateHostnameMismatch,
+                            chain.Error.UntrustedAnchor => return Error.CertificateUntrustedAnchor,
                             else => return Error.CertificateChainFailed,
                         };
                         self.certificate_trusted = true;
                         self.expiry_checked = r.expiry_checked;
+                        self.chain_len = @intCast(r.chain_len);
                     } else if (self.opts.trust_cert_der) |pinned| {
                         // PIN 语义：必须是**同一张**证书；只验 CV 签名不够。
                         if (!std.mem.eql(u8, pinned, list[0].der)) return Error.CertificatePinMismatch;
