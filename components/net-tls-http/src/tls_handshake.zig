@@ -390,10 +390,11 @@ pub fn parseServerHello(msg: []const u8) Error!ServerHello {
     sh.cipher_suite = read16(msg[i..]);
     i += 2;
 
-    const comp_len = msg[i];
+    // RFC 8446 §4.1.3：ServerHello 的 legacy_compression_method 是**单个字节**（必须 0）。
+    // 注意别照 ClientHello 的 compression_methods（length + list）去读——那会多吃一个
+    // 字节，后面所有扩展的偏移都错一位，表现为 BadCompression 或 BadExtension。
+    if (msg[i] != 0) return Error.BadCompression;
     i += 1;
-    if (comp_len != 1) return Error.BadCompression;
-    i += 1; // 必须是 0（null）
 
     if (i + 2 > end) return Error.Truncated;
     const exts_len = read16(msg[i..]);
@@ -445,9 +446,7 @@ fn buildServerHelloForTest(buf: []u8, random32: [32]u8, suite: u16, ks: [x25519.
     i += 1;
     put16(buf[i..], suite);
     i += 2;
-    buf[i] = 1; // 压缩方法数量
-    i += 1;
-    buf[i] = 0; // null
+    buf[i] = 0; // legacy_compression_method（单字节）
     i += 1;
 
     const exts_len_off = i;
@@ -520,9 +519,7 @@ test "handshake: 去掉 key_share 扩展时返回 MissingKeyShare" {
     i += 1;
     put16(buf[i..], cipher_tls_aes_128_gcm_sha256);
     i += 2;
-    buf[i] = 1;
-    i += 1;
-    buf[i] = 0;
+    buf[i] = 0; // legacy_compression_method
     i += 1;
     const exts_len_off = i;
     i += 2;

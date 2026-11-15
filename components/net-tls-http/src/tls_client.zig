@@ -356,9 +356,8 @@ fn buildServerHello(buf: []u8, server_pub: [32]u8) []const u8 {
     buf[i] = 0x13;
     buf[i + 1] = 0x01;
     i += 2;
-    buf[i] = 1;
-    buf[i + 1] = 0;
-    i += 2;
+    buf[i] = 0; // legacy_compression_method（单字节，RFC 8446 §4.1.3）
+    i += 1;
     const exts_len_off = i;
     i += 2;
     const exts_start = i;

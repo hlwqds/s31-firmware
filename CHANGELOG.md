@@ -47,6 +47,11 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：**修 ServerHello 解析的线上格式错误**——`legacy_compression_method` 在
+  ServerHello 里是**单字节**（RFC 8446 §4.1.3），原实现按 ClientHello 的
+  `compression_methods`（长度+列表）读了两字节，导致其后所有扩展偏移错一位。
+  板侧实测症状：`tlS: onRecord BadServerHello … BadCompression`，服务端其实已完整
+  发出飞行（`openssl s_server -state` 显示 write server hello … write finished）。
 - net-tls-http：新增 `Client.sealApplication()`——用应用密钥封上层记录（HTTP 走这里）。
   只有 `established` 之后可用；用例用对端的 `client_ap_traffic` 解开并逐字节比对
   （顺带钉住方向：解客户端记录要用 client_ap，不是 server_ap）。57 → 58 项。
