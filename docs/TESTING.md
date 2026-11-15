@@ -33,7 +33,19 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 | `wifi` | boot + net + wifi | 构建 + 两段镜像 |
 | `tls` | boot + net + tls | 构建 + 两段镜像 |
 | `full` | boot + net + tls + apps + wifi | 构建 + 两段镜像（11 段自检） |
-| `net-wire` | boot + wire | 真实链路 DHCP+TCP；需 host dnsmasq、UDP 67/53 与 TCP 9000 放行、TCP 监听器；无 DHCP 时打印 `wire: skipped/no-dhcp-server` 并跳过 |
+| `net-wire` | boot + wire | **发布前板级门禁**：真实链路 DHCP+TCP。前置 `scripts/host-prep-wire.sh up`（接口地址/dnsmasq/防火墙/监听器），门禁 `scripts/gate-board.sh`（skip 视为失败）；无 DHCP 时打印 `wire: skipped/no-dhcp-server` 并跳过 |
+
+板级门禁（发布前必跑）：
+
+```bash
+scripts/host-prep-wire.sh up          # 幂等：放行 udp 67/53、tcp 9000，起监听器
+scripts/gate-board.sh                 # 构建 → 烧录 → 抓 30 s → 断言握手三段 + checks 计数
+scripts/host-prep-wire.sh down        # 收尾：撤销规则与监听器
+```
+
+`gate-board.sh` 自己会删掉上一轮的 `logs/e2e-net-wire-boot.log`（证据只能来自本轮），
+`skipped/no-dhcp-server` 在门禁里算失败，前置缺失时退出码 2 并打印修复命令。
+NixOS 上需要 `env -u LD_LIBRARY_PATH`（脚本已内置）和带 pyserial 的解释器（`PYTHON=` 指定）。
 
 新增/移动 `all_modules` 里的组件时，必须同步 `PROFILES[*].sections`（board 断言是全等比较）。
 

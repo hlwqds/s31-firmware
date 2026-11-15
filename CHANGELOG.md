@@ -8,6 +8,14 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **发布前板级门禁 `scripts/gate-board.sh`**（R4.1）：`net-wire` 从可选 profile 提升为必跑门禁。
+  `scripts/host-prep-wire.sh up|down|check` 固化主机预置（接口地址、dnsmasq、udp 67/53 与
+  tcp 9000 放行、监听器，幂等且可撤销）；门禁先删旧日志（证据只能来自本轮），跑
+  `run_e2e.py --board --profile net-wire`，再断言 `wire: tcp SYN sent` / `ESTABLISHED` /
+  `RST sent` / `checks passed=4 failed=0`；`skipped/no-dhcp-server` 算失败。
+  退出码 2 = 前置缺失，1 = 证据不符。实测 `gate-board: PASS — wire: checks passed=4 failed=0`。
+  脚本内置 NixOS 的两处坑：剥掉 `LD_LIBRARY_PATH`（否则 esptool/zig 撞 glibc）、
+  显式指定带 pyserial 的解释器。
 - `net-wire` 可选 profile（`-Dwire=true`）：生产固件在真实链路跑 DHCP
   DORA + TCP 三次握手，host 侧 dnsmasq/socket 监听为前置；无 DHCP 时优雅跳过。
   板级证据 `logs/e2e-net-wire-boot.log`。

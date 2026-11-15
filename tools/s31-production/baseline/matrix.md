@@ -102,6 +102,11 @@ IDF **v6.1（`esp32s31` 为 preview target）**、esptool **≥ 5.2**，目标�
 TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 `onSegment` / `tick`），不再手写 SYN/ACK；ESTABLISHED 后立刻 RST 保持 profile 短。
 
+**2026-11-16：W1–W3 从“可选 profile”提升为发布前板级门禁** —— `scripts/gate-board.sh`
+（前置 `scripts/host-prep-wire.sh up`）跑 `tests/e2e/run_e2e.py --board --profile net-wire`，
+再断言 `wire: tcp SYN sent` / `ESTABLISHED` / `RST sent` / `checks passed=4 failed=0`；
+`skipped/no-dhcp-server` 与缺失证据行都算失败（退出码 2 = 前置缺失，1 = 证据不符）。
+
 | #   | 门禁项        | 当前状态                                                                                     | 通过判据                                                                              | 依赖                             |
 | --- | ------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------- |
 | W1  | EMAC bring-up | 通过：`emac version` 检查、link 1000M、YT8531 RGMII delay 初始化                             | `check: emac version ok=1`、`wire: bring-up`                                          | 真机                             |
