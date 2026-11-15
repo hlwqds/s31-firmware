@@ -301,6 +301,35 @@ pub const Socket = struct {
         return Io.ok(n);
     }
 
+    // -- 真实链路的出向出口 -----------------------------------------------
+    //
+    // 注入模型下 `tx_buf` 只是个汇：没有“取出待发段”的必要，`tx_len` 进指纹就够了。
+    // 接真链路（ch22 lab）时必须有出口，否则 socket 层写进去的字节永远发不出去。
+    //
+    // 序号不变量（**关键**）：`send()` 在**缓冲**时就推进 `snd_nxt`，所以待发字节的
+    // 序号区间恰好是 `[snd_nxt - tx_len, snd_nxt)`。真实 `tcp.Conn` 的 ISS 必须与
+    // 这条区间对齐，两套序号才不会分叉（见 `wire.zig` 的契约说明）。
+
+    /// 待发字节数。
+    pub fn txPending(self: *const Socket) usize {
+        return self.tx_len;
+    }
+
+    /// 待发字节的**起始序号**（含）。真实链路发第一段时用它当 `seq`。
+    pub fn txSeqBase(self: *const Socket) u32 {
+        return self.snd_nxt -% @as(u32, @intCast(self.tx_len));
+    }
+
+    /// 窥视待发字节（不消费）。顺序按写入顺序，环形缓冲的折返也处理了。
+    pub fn txPeek(self: *const Socket, dst: []u8) Io {
+        const n = @min(dst.len, self.tx_len);
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            dst[i] = self.tx_buf[(self.tx_head + i) % tx_cap];
+        }
+        return Io.ok(n);
+    }
+
     /// 本地主动关闭。两个分支：
     ///   - `established` → `fin_wait_1`（等对端 ACK）
     ///   - `close_wait`  → `last_ack`（对端已 FIN，我们回 FIN）
@@ -727,4 +756,58 @@ test "deliver/close：未知 fd 计数忽略，listener 上非 SYN 段被忽略"
     try std.testing.expectEqual(@as(u32, 2), tbl.ignores);
     tbl.close(lfd);
     try std.testing.expectEqual(@as(usize, 0), tbl.openCount());
+}
+
+test "出向出口：txPeek 按写入顺序取，drainTx 之后序号基线前移" {
+    var tbl = Table{};
+    const cfd = listenAndHandshake(&tbl, 1);
+    const s = &tbl.socks[cfd];
+    // 握手后先把注入模型留下的待发清零，测的是一个干净的区间
+    _ = s.drainTx(s.txPending());
+    const base0 = s.txSeqBase();
+
+    const msg = "abcdefghij";
+    const io = s.send(msg);
+    try std.testing.expectEqual(Errno.ok, io.err);
+    try std.testing.expectEqual(@as(usize, 10), io.n);
+    try std.testing.expectEqual(@as(usize, 10), s.txPending());
+    // 序号区间是 [snd_nxt - tx_len, snd_nxt)：基线 = base0（清零时 snd_nxt 已同步）
+    try std.testing.expectEqual(base0 +% 10 -% 10, s.txSeqBase() +% 10 -% 10);
+
+    var out: [16]u8 = undefined;
+    const peek = s.txPeek(&out);
+    try std.testing.expectEqual(@as(usize, 10), peek.n);
+    try std.testing.expectEqualStrings(msg, out[0..10]);
+
+    // 消费 4 字节：剩下 6 字节，基线前移 4
+    const before = s.txSeqBase();
+    try std.testing.expectEqual(@as(usize, 4), s.drainTx(4));
+    try std.testing.expectEqual(@as(usize, 6), s.txPending());
+    try std.testing.expectEqual(before +% 4, s.txSeqBase());
+    const peek2 = s.txPeek(&out);
+    try std.testing.expectEqual(@as(usize, 6), peek2.n);
+    try std.testing.expectEqualStrings("efghij", out[0..6]);
+}
+
+test "出向出口：环形折返时 txPeek 仍然按顺序" {
+    var tbl = Table{};
+    const cfd = listenAndHandshake(&tbl, 1);
+    const s = &tbl.socks[cfd];
+    _ = s.drainTx(s.txPending());
+
+    // 把 head 推到距折返点 3 字节处：先发 tx_cap-3 个再全部消费
+    var pad: [tx_cap]u8 = @splat('.');
+    _ = s.send(pad[0 .. tx_cap - 3]);
+    _ = s.drainTx(s.txPending());
+    try std.testing.expectEqual(@as(usize, 0), s.txPending());
+
+    // 3 字节正好填到边界，接着 4 字节折返到缓冲头
+    _ = s.send("XYZ");
+    _ = s.send("0123");
+    try std.testing.expectEqual(@as(usize, 7), s.txPending());
+
+    var out: [8]u8 = undefined;
+    const peek = s.txPeek(&out);
+    try std.testing.expectEqual(@as(usize, 7), peek.n);
+    try std.testing.expectEqualStrings("XYZ0123", out[0..7]);
 }

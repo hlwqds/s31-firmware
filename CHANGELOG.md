@@ -46,6 +46,12 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-sockets：补上**真实链路的出向出口**——`txPending()` / `txSeqBase()` / `txPeek()`
+  （`drainTx()` 原本就有）。注入模型下 `tx_buf` 只是汇、`tx_len` 只进指纹，
+  接真链路时 socket 层写进去的字节必须能取出来发。**序号不变量**：`send()` 在
+  缓冲时就推进 `snd_nxt`，所以待发区间的序号恰好是 `[snd_nxt - tx_len, snd_nxt)`，
+  真实 `tcp.Conn` 的 ISS 要与之对齐，两套序号才不会分叉（见 `socket.zig` 注释）。
+  主机用例 33 → 35（顺序/折返/基线前移）。
 - net-sockets：新增 `src/wire.zig`——真实 `tcp.Segment` ⇄ 组件内 `netstub.Segment`
   的适配层（RX 的 kind 判定优先级 rst > syn|ack > syn > fin > data > ack；TX 的
   kind → flags 与端口/窗口上下文），不复制载荷、不碰网卡。主机用例 28 → 32；

@@ -2,7 +2,7 @@
 
 FD 表、poll 就绪集、超时轮、连接池、部分读写与背压。
 
-- 主机测试：**33 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
+- 主机测试：**35 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 与 `checks: passed=N`
 - 依赖方向：本组件 → `net-tcp`（经 `src/wire.zig` 做真实段适配）、`boards`
 
