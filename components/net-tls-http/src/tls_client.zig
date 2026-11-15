@@ -1,0 +1,507 @@
+//! net-tls-http：TLS 1.3 客户端状态机（握手 + 密钥切换）。
+//!
+//! 这一层把已有的件串起来，**不含任何 I/O**：调用方把收/发的字节交给它，
+//! 它决定"下一步该发什么、收到这条记录意味着什么"。这样主机侧可以用一个
+//! 脚本书做服务端把整条链跑完，板侧只负责把字节搬进搬出 socket。
+//!
+//! 状态推进与安全边界：
+//!
+//! ```text
+//!   start()            → ClientHello（记录层明文，记录版本 0x0301）
+//!   onRecord(0x16 SH)  → ECDHE + 握手密钥（CH..SH 转录）
+//!   onRecord(0x14 CCS) → 跳过（OpenSSL 的中间盒兼容哑记录）
+//!   onRecord(0x17 …)   → 解密：EE → Certificate → CertificateVerify → Finished
+//!                        Finished **在 Flight 里真验**，失败即 BadFinished
+//!   buildClientFinished() → 客户端 Finished（client_hs 密钥加密），随后切应用密钥
+//!   onRecord(0x17 app) → 应用数据 / alert（内层类型 0x15）
+//! ```
+//!
+//! **信任边界**：`Options.trust_cert_der` 为 null 时只做"证书自洽 + CertificateVerify
+//! 签名"（用对端证书里的公钥验），**不判断这张证书是否可信**（无根 CA、无域名匹配）。
+//! 这时 `certificate_trusted` 保持 false，日志/文档必须照此写。
+const std = @import("std");
+const record = @import("tls_record.zig");
+const handshake = @import("tls_handshake.zig");
+const protect = @import("tls_protect.zig");
+const x25519 = @import("x25519.zig");
+const ks = @import("tls_keyschedule.zig");
+const cert = @import("cert.zig");
+const random = @import("random.zig");
+const aead = @import("aead.zig");
+
+pub const Error = error{
+    UnexpectedState,
+    UnexpectedPlaintextHandshake,
+    BufferTooSmall,
+    BadAlert,
+    PeerAlert,
+    /// 配了 trust 证书但 CertificateVerify 验不过（签名或 scheme 不对）。
+    CertificateVerifyFailed,
+    /// 配了 trust 证书但证书本身解析失败。
+    BadCertificate,
+    NoKeyShare,
+    NoServerFinished,
+};
+
+pub const Phase = enum {
+    idle,
+    await_server_hello,
+    await_flight,
+    /// 服务端 Finished 已验，可以发客户端 Finished。
+    ready_client_finished,
+    established,
+};
+
+pub const Alert = struct { level: u8, description: u8 };
+
+pub const Options = struct {
+    server_name: []const u8,
+    /// 调用方提供的信任证书（DER）。null ⇒ 只验证书自洽与 CV 签名，不判信任。
+    trust_cert_der: ?[]const u8 = null,
+};
+
+pub const Client = struct {
+    opts: Options,
+    rng: random.Reader,
+    secret: [x25519.scalar_length]u8 = undefined,
+    /// 转录只有一份，归 Flight 所有：Finished 的校验在 Flight 内部取快照，
+    /// 若这里再存一份（只喂 CH+SH）就会出现"校验用了不含 CH+SH 的哈希"。
+    flight: handshake.Flight,
+    phase: Phase = .idle,
+
+    shared: [32]u8 = undefined,
+    /// CH..ServerHello 的转录哈希（应用密钥派生需要它，不能事后重算）。
+    hs_th: [ks.hash_length]u8 = undefined,
+    schedule: ?ks.Schedule = null,
+    /// Finished 验签用的**流量密钥**（32 B，不是 AEAD key——后者只有 16 B）。
+    server_hs_traffic: [ks.hash_length]u8 = undefined,
+    client_hs_traffic: [ks.hash_length]u8 = undefined,
+    server_hs: ?protect.KeyState = null,
+    client_hs: ?protect.KeyState = null,
+    client_ap: ?protect.KeyState = null,
+    server_ap: ?protect.KeyState = null,
+
+    /// 证书链与信任状态（供日志/上层判读）。
+    certificate_trusted: bool = false,
+    certificate_verified_self_signed: bool = false,
+    leaf_cert: ?cert.Cert = null,
+
+    alert: ?Alert = null,
+    /// 应用数据阶段最近一条记录的内容位置（内容留在调用方的 scratch 里）。
+    last_payload_len: usize = 0,
+    last_payload_type: u8 = 0,
+    /// 握手消息跨记录重组的缓冲：放 .bss（客户端结构体本身也应放 .bss）。
+    msg_buf: [4096]u8 = undefined,
+    /// 跨记录重组时的已收字节数。**不要**在这里存 `MessageReader`：它内部持有
+    /// `&msg_buf`，而 `Client` 会被按值返回/移动，指针会悬空（实测：前几个字节
+    /// 碰巧正确、深层解析报 BadLength）。每次调用时按 (buf,len) 现场构造视图。
+    reader_len: usize = 0,
+
+    pub fn init(opts: Options, rng: random.Reader) Client {
+        return .{ .opts = opts, .rng = rng, .flight = handshake.Flight.init(), .reader_len = 0 };
+    }
+
+    fn level(self: *Client) [ks.hash_length]u8 {
+        return self.flight.transcript.snapshot();
+    }
+
+    /// 本端的 X25519 公钥（`start()` 之后有效）。服务端用它算共享秘密；
+    /// 板侧日志也会打它的指纹，便于与主机侧对拍。
+    pub fn clientPublic(self: *const Client) [32]u8 {
+        return x25519.publicKey(self.secret);
+    }
+
+    /// 写 ClientHello 记录到 `out`，返回整条记录长度。
+    pub fn start(self: *Client, out: []u8) Error!usize {
+        if (self.phase != .idle) return Error.UnexpectedState;
+        self.rng.fill(&self.secret);
+        const p = handshake.Params{ .server_name = self.opts.server_name, .secret = self.secret };
+        const n = handshake.writeClientHelloRecord(out, p, self.rng) catch return Error.BufferTooSmall;
+        // 转录只吃握手消息本体（去掉 5 字节记录头）
+        self.flight.transcript.add(out[record.header_len..n]);
+        self.phase = .await_server_hello;
+        return n;
+    }
+
+    /// 送入一条记录（明文 SH/CCS 或加密飞行都走这里）。
+    /// `scratch` 用于解密明文，至少 `record.max_record_length` 字节。
+    pub fn onRecord(self: *Client, rec: []const u8, scratch: []u8) Error!void {
+        const hdr = record.readHeader(rec[0..@min(rec.len, record.header_len)]) catch return Error.UnexpectedState;
+        if (rec.len < record.header_len + hdr.length) return Error.UnexpectedState;
+        const frag = rec[record.header_len..][0..hdr.length];
+
+        switch (hdr.content_type) {
+            // OpenSSL 默认发一条哑 CCS 做中间盒兼容：握手期间静默跳过。
+            .change_cipher_spec => return,
+            .alert => return self.handlePlaintextAlert(frag),
+            .handshake => return self.handlePlaintextHandshake(frag),
+            .application_data => return self.handleProtected(frag, scratch),
+        }
+    }
+
+    fn handlePlaintextAlert(self: *Client, frag: []const u8) Error!void {
+        if (frag.len < 2) return Error.BadAlert;
+        self.alert = .{ .level = frag[0], .description = frag[1] };
+        return Error.PeerAlert;
+    }
+
+    fn handlePlaintextHandshake(self: *Client, frag: []const u8) Error!void {
+        if (self.phase != .await_server_hello) return Error.UnexpectedPlaintextHandshake;
+        const sh_msg = if (frag.len >= 4 and frag[0] == handshake.handshake_type_server_hello) frag else return Error.UnexpectedPlaintextHandshake;
+
+        // 转录在 ServerHello **之后**取快照（CH..SH）。
+        self.flight.transcript.add(sh_msg);
+        const sh = handshake.parseServerHello(sh_msg) catch return Error.UnexpectedState;
+        self.shared = x25519.scalarmult(self.secret, sh.key_share) catch return Error.NoKeyShare;
+
+        const th = self.level();
+        self.hs_th = th;
+        const sched = ks.buildSchedule(&self.shared, &th, &th) catch return Error.UnexpectedState;
+        self.schedule = sched;
+        self.server_hs_traffic = sched.server_hs_traffic;
+        self.client_hs_traffic = sched.client_hs_traffic;
+        self.server_hs = protect.KeyState.init(sched.server_hs_traffic);
+        self.client_hs = protect.KeyState.init(sched.client_hs_traffic);
+        self.phase = .await_flight;
+    }
+
+    fn handleProtected(self: *Client, frag: []const u8, scratch: []u8) Error!void {
+        var k = self.server_hs orelse {
+            // 还没拿到握手密钥就收到密文：不是本实现能理解的流。
+            return Error.UnexpectedState;
+        };
+        const r = protect.openFragment(scratch, &k, frag) catch return Error.UnexpectedState;
+        self.server_hs = k;
+
+        if (self.phase == .established) {
+            // 应用数据阶段：内容留在 `scratch`，上层按 (type,len) 取用。
+            self.last_payload_len = r.len;
+            self.last_payload_type = r.ct;
+            return;
+        }
+        switch (r.ct) {
+            // 加密后的 alert：把对端拒绝的原因带出去，而不是当成坏记录。
+            21 => {
+                if (r.len < 2) return Error.BadAlert;
+                self.alert = .{ .level = scratch[0], .description = scratch[1] };
+                return Error.PeerAlert;
+            },
+            22 => return self.ingestHandshake(scratch[0..r.len]),
+            // 握手期间的哑 CCS 有时也被加密进记录里（少见但合法）。
+            20 => return,
+            else => return Error.UnexpectedState,
+        }
+    }
+
+    fn ingestHandshake(self: *Client, data: []const u8) Error!void {
+        // 视图按值构造：buf 指向本结构体的字段，len 独立保存在 `reader_len`。
+        var r = record.MessageReader{ .buf = &self.msg_buf, .len = self.reader_len };
+        const first = r.push(.handshake, data) catch return Error.UnexpectedState;
+        self.reader_len = r.len;
+        if (first) |msg| try self.dispatchHandshake(msg);
+        while (true) {
+            const next = r.take() catch return Error.UnexpectedState;
+            self.reader_len = r.len;
+            const msg = next orelse break;
+            try self.dispatchHandshake(msg);
+        }
+    }
+
+    fn dispatchHandshake(self: *Client, msg: []const u8) Error!void {
+        const srv_hs_tr = self.server_hs_traffic;
+        // 先处理 Certificate / CertificateVerify 的语义（Flight 只管顺序与转录）。
+        switch (msg[0]) {
+            handshake.handshake_type_certificate => {
+                var entries: [handshake.max_certs]handshake.CertEntry = undefined;
+                const list = handshake.parseCertificate(msg, &entries) catch return Error.BadCertificate;
+                if (list.len > 0) {
+                    self.leaf_cert = cert.parse(list[0].der) catch return Error.BadCertificate;
+                    cert.verifySignature(&self.leaf_cert.?) catch return Error.BadCertificate;
+                    self.certificate_verified_self_signed = true;
+                }
+            },
+            handshake.handshake_type_certificate_verify => {
+                const cv = handshake.parseCertificateVerify(msg) catch return Error.CertificateVerifyFailed;
+                if (cv.scheme != handshake.sig_ecdsa_secp256r1_sha256) return Error.CertificateVerifyFailed;
+                if (self.opts.trust_cert_der) |der| {
+                    var trusted = cert.parse(der) catch return Error.BadCertificate;
+                    var buf: [128 + 32]u8 = undefined;
+                    const content = handshake.certificateVerifyContent(&buf, self.level()) catch return Error.BufferTooSmall;
+                    cert.verifyMessage(&trusted, content, cv.signature) catch return Error.CertificateVerifyFailed;
+                    self.certificate_trusted = true;
+                }
+                // trust 为 null：只记录"未验信任"，不阻断（文档必须照此声明）。
+            },
+            else => {},
+        }
+        // Finished 的密钥这里必须传：Flight 内部在计入转录前取快照并校验。
+        handshake.advanceFlight(&self.flight, msg, srv_hs_tr) catch |e| switch (e) {
+            handshake.Flight.Error.BadFinished => return Error.UnexpectedState,
+            handshake.Flight.Error.UnexpectedMessage => return Error.UnexpectedState,
+            else => return Error.UnexpectedState,
+        };
+        if (self.flight.state == .done) self.phase = .ready_client_finished;
+    }
+
+    /// 写客户端 Finished（handshake 记录，client_hs 密钥加密），并切到应用密钥。
+    pub fn buildClientFinished(self: *Client, out: []u8) Error!usize {
+        if (self.phase != .ready_client_finished) return Error.UnexpectedState;
+        const th = self.level(); // 已含服务端 Finished
+        var sched = self.schedule orelse return Error.UnexpectedState;
+        const verify = ks.finishedVerifyData(self.client_hs_traffic, &th);
+
+        var msg: [4 + ks.hash_length]u8 = undefined;
+        msg[0] = handshake.handshake_type_finished;
+        msg[1] = 0;
+        msg[2] = 0;
+        msg[3] = ks.hash_length;
+        @memcpy(msg[4..], &verify);
+
+        var client_keys = self.client_hs orelse return Error.UnexpectedState;
+        const n = protect.seal(out, &client_keys, @backingInt(record.ContentType.handshake), &msg) catch return Error.BufferTooSmall;
+        self.client_hs = client_keys;
+        self.flight.transcript.add(&msg); // 客户端也要把自己的 Finished 计入后续转录
+
+        // 应用密钥：hs_transcript = CH..SH、ap_transcript = CH..server Finished。
+        // 两个快照都在被使用前取过，这里只做派生（HKDF 相对网络开销可忽略）。
+        const ap_th = th;
+        const full = ks.buildSchedule(&self.shared, &self.hs_th, &ap_th) catch return Error.UnexpectedState;
+        sched = full;
+        self.schedule = full;
+        self.client_ap = protect.KeyState.init(full.client_ap_traffic);
+        self.server_ap = protect.KeyState.init(full.server_ap_traffic);
+        self.phase = .established;
+        return n;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// 用例：脚本化服务端把整条握手跑完（主机侧、无 I/O）
+// ---------------------------------------------------------------------------
+
+const TestStream = struct {
+    state: u64 = 0x2026_0301,
+    fn fillFn(ctx: ?*anyopaque, out: []u8) void {
+        const self: *TestStream = @ptrCast(@alignCast(ctx.?));
+        var i: usize = 0;
+        while (i < out.len) {
+            self.state +%= 0x9E37_79B9_7F4A_7C15;
+            var z = self.state;
+            z = (z ^ (z >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+            z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+            z ^= z >> 31;
+            var buf: [8]u8 = undefined;
+            std.mem.writeInt(u64, &buf, z, .little);
+            const n = @min(8, out.len - i);
+            @memcpy(out[i..][0..n], buf[0..n]);
+            i += n;
+        }
+    }
+    fn reader(self: *TestStream) random.Reader {
+        return .{ .ctx = self, .fillFn = fillFn, .secure = false };
+    }
+};
+
+fn put24b(buf: []u8, v: u32) void {
+    buf[0] = @intCast((v >> 16) & 0xff);
+    buf[1] = @intCast((v >> 8) & 0xff);
+    buf[2] = @intCast(v & 0xff);
+}
+
+fn hsWrap(buf: []u8, typ: u8, body: []const u8) []const u8 {
+    buf[0] = typ;
+    put24b(buf[1..], @intCast(body.len));
+    @memcpy(buf[4..][0..body.len], body);
+    return buf[0 .. 4 + body.len];
+}
+
+/// 拼一条 ServerHello（只含 supported_versions + key_share）。
+fn buildServerHello(buf: []u8, server_pub: [32]u8) []const u8 {
+    var i: usize = 4;
+    buf[i] = 0x03;
+    buf[i + 1] = 0x03;
+    i += 2;
+    @memset(buf[i..][0..32], 0x5A);
+    i += 32;
+    buf[i] = 0; // session id echo
+    i += 1;
+    buf[i] = 0x13;
+    buf[i + 1] = 0x01;
+    i += 2;
+    buf[i] = 1;
+    buf[i + 1] = 0;
+    i += 2;
+    const exts_len_off = i;
+    i += 2;
+    const exts_start = i;
+    // supported_versions
+    buf[i] = 0x00;
+    buf[i + 1] = 0x2b;
+    buf[i + 2] = 0x00;
+    buf[i + 3] = 0x02;
+    buf[i + 4] = 0x03;
+    buf[i + 5] = 0x04;
+    i += 6;
+    // key_share
+    buf[i] = 0x00;
+    buf[i + 1] = 0x33;
+    buf[i + 2] = 0x00;
+    buf[i + 3] = 0x24;
+    buf[i + 4] = 0x00;
+    buf[i + 5] = 0x1d;
+    buf[i + 6] = 0x00;
+    buf[i + 7] = 0x20;
+    i += 8;
+    @memcpy(buf[i..][0..32], &server_pub);
+    i += 32;
+    buf[exts_len_off] = @intCast((i - exts_start) >> 8);
+    buf[exts_len_off + 1] = @intCast((i - exts_start) & 0xff);
+    buf[0] = handshake.handshake_type_server_hello;
+    put24b(buf[1..], @intCast(i - 4));
+    return buf[0..i];
+}
+
+fn wrapHandshakeRecord(buf: []u8, msg: []const u8) []const u8 {
+    record.writeHeader(buf[0..record.header_len], .handshake, msg.len) catch unreachable;
+    @memcpy(buf[record.header_len..][0..msg.len], msg);
+    return buf[0 .. record.header_len + msg.len];
+}
+
+fn sealRecord(out: []u8, k: *protect.KeyState, inner_ct: u8, content: []const u8) []const u8 {
+    const n = protect.seal(out, k, inner_ct, content) catch unreachable;
+    return out[0..n];
+}
+
+test "client: 完整握手（CH→SH→EE/Cert/CV/Finished→client Finished），Finished 真验" {
+    var stream = TestStream{};
+    var client = Client.init(.{ .server_name = "ch23-stub.local" }, stream.reader());
+    var ch_rec: [512]u8 = undefined;
+    const ch_n = try client.start(&ch_rec);
+    try std.testing.expectEqual(@as(u8, 0x16), ch_rec[0]);
+    try std.testing.expectEqual(@as(u16, 0x0301), std.mem.readInt(u16, ch_rec[1..3], .big));
+
+    // ---- 服务端侧：用自己的私钥与客户端公钥算共享秘密 ----
+    const server_secret: [32]u8 = @splat(0x42);
+    const shared = try x25519.scalarmult(server_secret, client.clientPublic());
+    var srv_tr = handshake.Transcript.init();
+    srv_tr.add(ch_rec[record.header_len..ch_n]);
+
+    var sh_buf: [256]u8 = undefined;
+    const sh = buildServerHello(&sh_buf, x25519.publicKey(server_secret));
+    srv_tr.add(sh);
+    const hs_th = srv_tr.snapshot();
+    const sched = try ks.buildSchedule(&shared, &hs_th, &hs_th);
+    var srv_hs = protect.KeyState.init(sched.server_hs_traffic);
+    var cli_hs = protect.KeyState.init(sched.client_hs_traffic);
+
+    var sh_rec: [300]u8 = undefined;
+    try client.onRecord(wrapHandshakeRecord(&sh_rec, sh), undefined_scratch());
+    try std.testing.expectEqual(Phase.await_flight, client.phase);
+
+    // CCS（OpenSSL 的哑记录）必须被静默跳过
+    var ccs_rec = [_]u8{ 20, 0x03, 0x03, 0x00, 0x01, 0x01 };
+    try client.onRecord(&ccs_rec, undefined_scratch());
+    try std.testing.expectEqual(Phase.await_flight, client.phase);
+
+    // ---- 服务端飞行 ----
+    var msgbuf: [512]u8 = undefined;
+    var recbuf: [600]u8 = undefined;
+
+    // EncryptedExtensions
+    const ee = hsWrap(&msgbuf, handshake.handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    srv_tr.add(ee);
+    var sealed: [600]u8 = undefined;
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, ee), undefined_scratch());
+
+    // Certificate（用组件自带 fixture，保证 DER 可解析且自洽）
+    var cert_body: [512]u8 = undefined;
+    cert_body[0] = 0;
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    put24b(cert_body[4..], @intCast(cert.fixture_der.len));
+    @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    const cert_msg = hsWrap(&recbuf, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    srv_tr.add(cert_msg);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
+    try std.testing.expect(client.certificate_verified_self_signed);
+    try std.testing.expect(!client.certificate_trusted); // 没配 trust：不判信任
+
+    // CertificateVerify（trust=null，不验签名，只记录）
+    const cv = hsWrap(&msgbuf, handshake.handshake_type_certificate_verify, &[_]u8{ 0x04, 0x03, 0x00, 0x02, 0xAA, 0xBB });
+    srv_tr.add(cv);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cv), undefined_scratch());
+
+    // Finished：verify_data 覆盖 CH…CV（不含自己）
+    const before_fin = srv_tr.snapshot();
+    const verify = ks.finishedVerifyData(sched.server_hs_traffic, &before_fin);
+    var fin_body: [ks.hash_length]u8 = undefined;
+    @memcpy(&fin_body, &verify);
+    const fin = hsWrap(&msgbuf, handshake.handshake_type_finished, &fin_body);
+    srv_tr.add(fin);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch());
+    try std.testing.expectEqual(Phase.ready_client_finished, client.phase);
+
+    // ---- 客户端 Finished：用 client_hs 密钥加密，内容必须与同一规则算出的值一致 ----
+    var fin_rec: [128]u8 = undefined;
+    const n = try client.buildClientFinished(&fin_rec);
+    try std.testing.expectEqual(Phase.established, client.phase);
+
+    var plain: [128]u8 = undefined;
+    const r = try protect.openFragment(&plain, &cli_hs, fin_rec[record.header_len..n]);
+    try std.testing.expectEqual(@as(u8, 22), r.ct);
+    // 客户端 Finished 的转录 = CH…server Finished；这里用服务端侧的转录快照独立重算
+    const cli_th = srv_tr.snapshot();
+    const expect2 = ks.finishedVerifyData(sched.client_hs_traffic, &cli_th);
+    try std.testing.expectEqualSlices(u8, &expect2, plain[4..][0..ks.hash_length]);
+}
+
+test "client: 服务端 Finished 被篡改时握手失败（不是静默接受）" {
+    var stream = TestStream{};
+    var client = Client.init(.{ .server_name = "a.test" }, stream.reader());
+    var ch_rec: [512]u8 = undefined;
+    const ch_n = try client.start(&ch_rec);
+
+    const server_secret: [32]u8 = @splat(0x42);
+    const shared = try x25519.scalarmult(server_secret, client.clientPublic());
+    var srv_tr = handshake.Transcript.init();
+    srv_tr.add(ch_rec[record.header_len..ch_n]);
+    var sh_buf: [256]u8 = undefined;
+    const sh = buildServerHello(&sh_buf, x25519.publicKey(server_secret));
+    srv_tr.add(sh);
+    const hs_th = srv_tr.snapshot();
+    const sched = try ks.buildSchedule(&shared, &hs_th, &hs_th);
+    var srv_hs = protect.KeyState.init(sched.server_hs_traffic);
+
+    var sh_rec: [300]u8 = undefined;
+    try client.onRecord(wrapHandshakeRecord(&sh_rec, sh), undefined_scratch());
+
+    var msgbuf: [512]u8 = undefined;
+    var sealed: [600]u8 = undefined;
+    const ee = hsWrap(&msgbuf, handshake.handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    srv_tr.add(ee);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, ee), undefined_scratch());
+
+    var cert_body: [512]u8 = undefined;
+    cert_body[0] = 0;
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    put24b(cert_body[4..], @intCast(cert.fixture_der.len));
+    @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    var cb2: [512]u8 = undefined;
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    srv_tr.add(cert_msg);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
+
+    const cv = hsWrap(&msgbuf, handshake.handshake_type_certificate_verify, &[_]u8{ 0x04, 0x03, 0x00, 0x01, 0x00 });
+    srv_tr.add(cv);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cv), undefined_scratch());
+
+    var fin_body: [ks.hash_length]u8 = @splat(0x77); // 伪造
+    const fin = hsWrap(&msgbuf, handshake.handshake_type_finished, &fin_body);
+    try std.testing.expectError(Error.UnexpectedState, client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch()));
+    try std.testing.expect(client.phase != .ready_client_finished);
+}
+
+/// 用例里 SH 是明文记录，解密缓冲不会被写；给一块真缓冲以免传 undefined 触发安全构建的检查。
+var scratch_buf: [record.max_record_length]u8 = undefined;
+fn undefined_scratch() []u8 {
+    return &scratch_buf;
+}

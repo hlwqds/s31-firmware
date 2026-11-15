@@ -21,6 +21,8 @@ const std = @import("std");
 const aead = @import("aead.zig");
 const record = @import("tls_record.zig");
 
+pub const Opened = struct { len: usize, ct: u8 };
+
 pub const Error = error{
     BufferTooSmall,
     /// 密文长度不是 tag 的整数倍关系（< tag 或短于 tag）。
@@ -82,27 +84,27 @@ pub fn seal(out: []u8, ks: *KeyState, content_type: u8, content: []const u8) Err
     return total;
 }
 
-/// 解开一条 TLSCiphertext。`record_bytes` 是**整条记录**（含 5 字节头）。
-/// 明文写进 `out`，返回 (内容长度, 内容类型)。
-pub fn open(out: []u8, ks: *KeyState, record_bytes: []const u8) Error!struct { len: usize, ct: u8 } {
+/// 解开一条 TLSCiphertext（**整条记录**，含 5 字节头）。
+pub fn open(out: []u8, ks: *KeyState, record_bytes: []const u8) Error!Opened {
     if (record_bytes.len < record.header_len + aead.tag_length) return Error.TooShort;
     const hdr = record.readHeader(record_bytes[0..record.header_len]) catch return Error.TooShort;
     if (hdr.content_type != .application_data) return Error.BadInnerType;
+    return openFragment(out, ks, record_bytes[record.header_len..][0..hdr.length]);
+}
 
-    const ciphertext = record_bytes[record.header_len..][0..hdr.length];
+/// 解一段密文（**不含**记录头）：AD 的长度字段必须用 `ciphertext.len`（含 tag）。
+/// 分开这一层是为了让驱动在"记录已被拆开"时不必为了 5 字节头再复制一整条记录
+/// （在 16 KiB 栈的板子上，那份拷贝正好是放不下的）。
+pub fn openFragment(out: []u8, ks: *KeyState, ciphertext: []const u8) Error!Opened {
+    if (ciphertext.len < aead.tag_length + 1) return Error.TooShort;
     const payload_len = ciphertext.len - aead.tag_length;
-    if (payload_len == 0) return Error.TooShort;
     if (payload_len > out.len) return Error.BufferTooSmall;
 
     const tag = ciphertext[payload_len..][0..aead.tag_length];
     const ad = aead.additionalData(@backingInt(record.ContentType.application_data), ciphertext.len);
-
-    // 直接解到调用方的缓冲里：16.6 KiB 的临时数组放在这里是 rv32 的栈自杀
-    // （本板栈 16 KiB）。解密后 out[0..payload_len] = content ‖ inner_type ‖ 零填充。
     aead.openWithNonce(out[0..payload_len], ciphertext[0..payload_len], tag.*, &ad, ks.nonce(), ks.key) catch return Error.AuthFailed;
     ks.seq += 1;
 
-    // 去掉末尾填充：最后一个非零字节就是内层内容类型。
     var type_index: ?usize = null;
     var i: usize = payload_len;
     while (i > 0) {

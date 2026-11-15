@@ -47,6 +47,14 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：新增 `tls_client.zig`——**客户端状态机**，把 CH→SH→EE/Cert/CV/Finished→
+  client Finished 串起来并完成密钥切换。三处真 bug 在主机侧用例里被抓住：
+  ① `MessageReader` 存了 `&msg_buf` 的悬空指针（`Client` 按值返回后失效，症状是深层
+  解析 `BadLength`）；改为按 (buf,len) 现场构造视图。② `Client` 与 `Flight` 各持一份
+  转录，Finished 校验用的是缺 CH+SH 的那份；改为 Flight 独占。③ Finished 用的是 AEAD
+  key（16 B）而非流量密钥（32 B）。用例：脚本化服务端跑完整握手并对拍双方转录哈希、
+  客户端 Finished 用 client_hs 密钥解开后逐字节相等、篡改服务端 Finished 必须失败、
+  CCS 静默跳过、fixture 证书自洽验证通过且 `certificate_trusted=false`。53 → 55 项。
 - net-tls-http：**修掉一个认证漏洞**——`Flight` 收到 Finished 时只把它计入转录、
   从未校验 verify_data，伪造的 Finished 会被接受。现在 `advanceFlight` 必须带
   `server_hs_traffic`，在**计入转录之前**取快照并验（RFC 8446 §4.4.4 的边界），
