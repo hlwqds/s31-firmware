@@ -82,6 +82,11 @@ need "wire: tcp ESTABLISHED"
 need "wire: tcp RST sent"
 need "wire: checks passed="
 
+# e2e 对"板子不在"这类情况会写 <skipped/> 并以 0 退出——门禁里 skip 等于没跑。
+if [ -f "$JUNIT" ] && grep -qa "<skipped" "$JUNIT"; then
+    echo "  FAIL e2e reported a skipped case (board/host prerequisites not exercised)" >&2
+    missing=1
+fi
 if grep -qa "skipped/no-dhcp-server" "$LOG" 2>/dev/null; then
     echo "  FAIL net-wire skipped: DHCP/firewall not actually exercised" >&2
     missing=1

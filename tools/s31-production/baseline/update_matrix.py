@@ -61,6 +61,15 @@ def sanitize(line: str) -> str:
     return VOLATILE.sub("", line).strip()
 
 
+STAMP_RE = re.compile(r"自动更新 \d{4}-\d{2}-\d{2}")
+
+
+def normalize_dates(text: str) -> str:
+    """比较时把日期掩掉：否则跨天（甚至跨时区）的 `--check` 会天天报"需要更新"，
+    而内容其实一字未变。日期只在**摘录真的变了**的时候才跟着刷新。"""
+    return STAMP_RE.sub("自动更新 <date>", text)
+
+
 def status_for(lines: list[str], predicate: str, excerpt: str) -> str:
     if not any(re.search(predicate, ln) for ln in lines):
         return "未执行：生产日志缺少对应判据行（跑 `scripts/gate-board.sh`）"
@@ -102,6 +111,8 @@ def main() -> int:
     old = MATRIX.read_text()
     new, changed = rewrite(old, lines)
     if args.check:
+        # 日期不参与比较（见 normalize_dates 的说明）。
+        changed = [] if normalize_dates(new) == normalize_dates(old) else changed
         if changed:
             print(f"update_matrix: 需要更新 {', '.join(changed)}")
             return 1

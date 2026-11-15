@@ -14,6 +14,9 @@
 > `tools/s31-production/*` 切片的宿主测试也已跑通（15/15、8/8、18/18、9/9）。
 > 其余章节的“仓库记录”仍只是对已提交文档/日志的转述，不构成本切片自己的通过证据。
 
+`matrix.md` 的读法：**W1–W3 的状态列由 `update_matrix.py` 从 `logs/e2e-net-wire-boot.log`
+生成**（每行带来源日志与日期），W4 及 E/C 行仍是人工记录——不要以为整张表都是机器写的。
+
 ## 文件
 
 | 文件           | 作用                                             |
@@ -21,6 +24,8 @@
 | `README.md`    | 本文件：用途、用法、边界                         |
 | `matrix.md`    | 生产基线门禁表：每项含当前状态 / 通过判据 / 依赖 |
 | `inventory.py` | 只读盘点脚本，输出 TSV 或 JSON；默认不执行构建   |
+| `update_matrix.py` | 用生产日志刷新 `matrix.md` 的 W1–W3 状态列（W4 与 E/C 行保持人工）；`--check` 退出码 0=一致、1=需更新、2=缺日志 |
+| `capacity.json` | 各 profile 的镜像/段长基线，由 `scripts/check-capacity.py` 读取；`--update` 重写 |
 
 ## `inventory.py`
 

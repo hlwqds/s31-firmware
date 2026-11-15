@@ -31,9 +31,11 @@ tools/s31-production/        生产化组件（netmgr/ota/provisioning/recovery/
 `firmware/build.zig` 生成 `enabled.zig`（仅包含已启用子系统的 `run` 入口），
 未启用的组件**不参与编译**。默认 `boot + net`；TLS/应用/Wi-Fi 按需开启。
 
-限制：`irom` 与 `drom` 的虚拟窗口（`0x40000020` / `0x40020020`）使单镜像在
-「恰好两段」约束下只能容纳约 128 KB 代码；开启 TLS 会越界。解决方向见 ROADMAP P0.2
-（多段镜像 + 布局校验）。
+两段窗口（唯一真相是 `boards/esp32s31-coreboard/linker/s31.ld`）：`irom` 从 `0x40000020`、
+`drom` 从 `0x40080020`，各 `0x7F000`（520 192 B）。P0.2 扩容后 TLS/Wi-Fi 都能装下：
+`full`（TLS + Wi-Fi + apps）实测镜像 398 560 B、IROM 段 305 696 B、DROM 段 70 768 B，
+窗口余量分别为 214 496 B / 449 424 B，factory 分区余量 1 137 440 B。余量由
+`scripts/check-capacity.py` 持续把关（窗口从链接脚本解析，增长超过 8 KiB 即失败）。
 
 ## 证据链
 
