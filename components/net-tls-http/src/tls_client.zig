@@ -34,7 +34,12 @@ pub const Error = error{
     UnexpectedPlaintextHandshake,
     BufferTooSmall,
     BadAlert,
-    PeerAlert,
+    /// 服务端 Finished 的 verify_data 不对（伪造/篡改）。
+    BadFinished,
+    /// 记录 AEAD 校验失败（密钥/序号/AD 不对）。
+    RecordAuthFailed,
+    /// 对端发来 alert（`alert` 字段带 level/description）。
+    ServerAlert,
     /// 配了 trust 证书但 CertificateVerify 验不过（签名或 scheme 不对）。
     CertificateVerifyFailed,
     /// 配了 trust 证书但证书本身解析失败。
@@ -83,8 +88,10 @@ pub const Client = struct {
 
     /// 证书链与信任状态（供日志/上层判读）。
     certificate_trusted: bool = false,
+    /// 叶证书自洽（自签/自校验）通过。**不是**信任判断。
     certificate_verified_self_signed: bool = false,
-    leaf_cert: ?cert.Cert = null,
+    /// 叶证书指纹（SHA-256），供日志对拍；切片持有会随重组缓冲失效，所以只留指纹。
+    leaf_fingerprint: [32]u8 = @splat(0),
 
     alert: ?Alert = null,
     /// 应用数据阶段最近一条记录的内容位置（内容留在调用方的 scratch 里）。
@@ -142,7 +149,7 @@ pub const Client = struct {
     fn handlePlaintextAlert(self: *Client, frag: []const u8) Error!void {
         if (frag.len < 2) return Error.BadAlert;
         self.alert = .{ .level = frag[0], .description = frag[1] };
-        return Error.PeerAlert;
+        return Error.ServerAlert;
     }
 
     fn handlePlaintextHandshake(self: *Client, frag: []const u8) Error!void {
@@ -166,12 +173,12 @@ pub const Client = struct {
     }
 
     fn handleProtected(self: *Client, frag: []const u8, scratch: []u8) Error!void {
-        var k = self.server_hs orelse {
-            // 还没拿到握手密钥就收到密文：不是本实现能理解的流。
-            return Error.UnexpectedState;
-        };
-        const r = protect.openFragment(scratch, &k, frag) catch return Error.UnexpectedState;
-        self.server_hs = k;
+        // 读方向的序号是独立的：握手阶段用 server_hs，established 之后必须换成 server_ap
+        // （用错密钥的表现是 AuthFailed，而服务端那边看起来"发了但对方没反应"）。
+        const established = self.phase == .established;
+        var k = (if (established) self.server_ap else self.server_hs) orelse return Error.UnexpectedState;
+        const r = protect.openFragment(scratch, &k, frag) catch return Error.RecordAuthFailed;
+        if (established) self.server_ap = k else self.server_hs = k;
 
         if (self.phase == .established) {
             // 应用数据阶段：内容留在 `scratch`，上层按 (type,len) 取用。
@@ -184,7 +191,7 @@ pub const Client = struct {
             21 => {
                 if (r.len < 2) return Error.BadAlert;
                 self.alert = .{ .level = scratch[0], .description = scratch[1] };
-                return Error.PeerAlert;
+                return Error.ServerAlert;
             },
             22 => return self.ingestHandshake(scratch[0..r.len]),
             // 握手期间的哑 CCS 有时也被加密进记录里（少见但合法）。
@@ -215,9 +222,13 @@ pub const Client = struct {
                 var entries: [handshake.max_certs]handshake.CertEntry = undefined;
                 const list = handshake.parseCertificate(msg, &entries) catch return Error.BadCertificate;
                 if (list.len > 0) {
-                    self.leaf_cert = cert.parse(list[0].der) catch return Error.BadCertificate;
-                    cert.verifySignature(&self.leaf_cert.?) catch return Error.BadCertificate;
-                    self.certificate_verified_self_signed = true;
+                    const leaf = cert.parse(list[0].der) catch return Error.BadCertificate;
+                    self.leaf_fingerprint = cert.fingerprint(list[0].der);
+                    // 自签校验只做记录，**不当作握手前提**：CA 签发的叶证书本来就不是
+                    // 自签的，在这里失败会把正常服务器拒之门外。
+                    if (cert.verifySignature(&leaf)) |_| {
+                        self.certificate_verified_self_signed = true;
+                    } else |_| {}
                 }
             },
             handshake.handshake_type_certificate_verify => {
@@ -236,9 +247,9 @@ pub const Client = struct {
         }
         // Finished 的密钥这里必须传：Flight 内部在计入转录前取快照并校验。
         handshake.advanceFlight(&self.flight, msg, srv_hs_tr) catch |e| switch (e) {
-            handshake.Flight.Error.BadFinished => return Error.UnexpectedState,
+            handshake.Flight.Error.BadFinished => return Error.BadFinished,
             handshake.Flight.Error.UnexpectedMessage => return Error.UnexpectedState,
-            else => return Error.UnexpectedState,
+            handshake.Flight.Error.NotEncryptedExtensions => return Error.UnexpectedState,
         };
         if (self.flight.state == .done) self.phase = .ready_client_finished;
     }
@@ -496,7 +507,7 @@ test "client: 服务端 Finished 被篡改时握手失败（不是静默接受�
 
     var fin_body: [ks.hash_length]u8 = @splat(0x77); // 伪造
     const fin = hsWrap(&msgbuf, handshake.handshake_type_finished, &fin_body);
-    try std.testing.expectError(Error.UnexpectedState, client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch()));
+    try std.testing.expectError(Error.BadFinished, client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch()));
     try std.testing.expect(client.phase != .ready_client_finished);
 }
 
@@ -504,4 +515,72 @@ test "client: 服务端 Finished 被篡改时握手失败（不是静默接受�
 var scratch_buf: [record.max_record_length]u8 = undefined;
 fn undefined_scratch() []u8 {
     return &scratch_buf;
+}
+
+test "client: established 之后的应用数据必须用 server_ap 解（握手密钥解不开）" {
+    // 复用完整握手的前半段：CH → SH → EE/Cert/CV/Finished → client Finished
+    var stream = TestStream{};
+    var client = Client.init(.{ .server_name = "a.test" }, stream.reader());
+    var ch_rec: [512]u8 = undefined;
+    const ch_n = try client.start(&ch_rec);
+
+    const server_secret: [32]u8 = @splat(0x42);
+    const shared = try x25519.scalarmult(server_secret, client.clientPublic());
+    var srv_tr = handshake.Transcript.init();
+    srv_tr.add(ch_rec[record.header_len..ch_n]);
+    var sh_buf: [256]u8 = undefined;
+    const sh = buildServerHello(&sh_buf, x25519.publicKey(server_secret));
+    srv_tr.add(sh);
+    const hs_th = srv_tr.snapshot();
+    const sched = try ks.buildSchedule(&shared, &hs_th, &hs_th);
+    var srv_hs = protect.KeyState.init(sched.server_hs_traffic);
+
+    var sh_rec: [300]u8 = undefined;
+    try client.onRecord(wrapHandshakeRecord(&sh_rec, sh), undefined_scratch());
+
+    var msgbuf: [512]u8 = undefined;
+    var sealed: [600]u8 = undefined;
+    const ee = hsWrap(&msgbuf, handshake.handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    srv_tr.add(ee);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, ee), undefined_scratch());
+
+    var cert_body: [512]u8 = undefined;
+    cert_body[0] = 0;
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    put24b(cert_body[4..], @intCast(cert.fixture_der.len));
+    @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    var cb2: [512]u8 = undefined;
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    srv_tr.add(cert_msg);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
+
+    const cv = hsWrap(&msgbuf, handshake.handshake_type_certificate_verify, &[_]u8{ 0x04, 0x03, 0x00, 0x01, 0x00 });
+    srv_tr.add(cv);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cv), undefined_scratch());
+
+    const before_fin = srv_tr.snapshot();
+    const fin_v = ks.finishedVerifyData(sched.server_hs_traffic, &before_fin);
+    var fin_body: [ks.hash_length]u8 = undefined;
+    @memcpy(&fin_body, &fin_v);
+    const fin = hsWrap(&msgbuf, handshake.handshake_type_finished, &fin_body);
+    srv_tr.add(fin);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch());
+
+    var fin_rec: [128]u8 = undefined;
+    _ = try client.buildClientFinished(&fin_rec);
+    try std.testing.expectEqual(Phase.established, client.phase);
+
+    // 服务端用 *应用* 密钥发一条数据：客户端必须用 server_ap 解开。
+    // （旧实现固定用 server_hs，这里会 AuthFailed——正是这条用例的存在理由。）
+    // 应用密钥必须用 **CH..server Finished** 的转录派生（客户端在 buildClientFinished
+    // 里就是这么算的）；拿第一次 schedule 的 ap 字段会得到另一组密钥。
+    const after_fin = srv_tr.snapshot();
+    const ap_sched = try ks.buildSchedule(&shared, &hs_th, &after_fin);
+    var srv_ap = protect.KeyState.init(ap_sched.server_ap_traffic);
+    var app_rec: [64]u8 = undefined;
+    const payload = "HTTP/1.1 200 OK\r\n";
+    const rec = sealRecord(&app_rec, &srv_ap, 23, payload);
+    try client.onRecord(rec, undefined_scratch());
+    try std.testing.expectEqual(@as(u8, 23), client.last_payload_type);
+    try std.testing.expectEqual(payload.len, client.last_payload_len);
 }

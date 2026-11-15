@@ -47,6 +47,16 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：`tls_client` 收口四处会在板上表现为"莫名失败"的问题：
+  ① **应用阶段解不开**：`handleProtected` 固定用 `server_hs`，established 后必须换成
+  `server_ap`（新用例：服务端用应用密钥发一条 HTTP 数据，客户端必须解开）；
+  ② **错误不可分辨**：`BadFinished`/`RecordAuthFailed`/`ServerAlert` 各自独立，不再统统
+  折成 `UnexpectedState`（板上日志要能区分伪造 Finished、坏 MAC 与对端 alert）；
+  ③ **叶证书切片悬空**：`?cert.Cert` 持有重组缓冲的切片，下一次 push 即失效；改为只留
+  SHA-256 指纹与判定布尔；
+  ④ **自签校验当门槛**：CA 签发的叶证书本就不是自签的，自签校验失败不再中断握手，
+  只记录 `certificate_verified_self_signed`；信任仍由 `trust_cert_der`（PIN）决定。
+  55 → 56 项。
 - net-tls-http：新增 `tls_client.zig`——**客户端状态机**，把 CH→SH→EE/Cert/CV/Finished→
   client Finished 串起来并完成密钥切换。三处真 bug 在主机侧用例里被抓住：
   ① `MessageReader` 存了 `&msg_buf` 的悬空指针（`Client` 按值返回后失效，症状是深层

@@ -4,7 +4,7 @@
 //! `start.zig`/`main.zig`/`selftest.zig`，所以能在 x86_64 / Zig 0.17.1 上跑，
 //! 不需要开发板、不需要网线、不需要 root。
 //!
-//! 被测试的十个模块全是纯逻辑（54 个具名用例 + 根容器 test = 55）：
+//! 被测试的十个模块全是纯逻辑（55 个具名用例 + 根容器 test = 56）：
 //!
 //!   - `tls_record.zig`      记录头编解码、长度上限（2^14+256）、分片、
 //!                           跨记录握手重组；
@@ -22,7 +22,8 @@
 //!                           转录哈希与 Flight 顺序机（含 Finished 验签）；
 //!   - `tls_protect.zig`     记录保护：nonce=iv⊕seq、AD=外层头、内层类型藏明文末尾；
 //!   - `tls_client.zig`      客户端状态机：CH→SH→EE/Cert/CV/Finished→client Finished，
-//!                           脚本化服务端跑完整条链（含 CCS 跳过、伪造 Finished 被拒）。
+//!                           脚本化服务端跑完整条链（CCS 跳过、伪造 Finished 被拒、
+//!                           established 后的应用数据按 server_ap 解）。
 //!
 //! 板侧那一只自检（`src/selftest.zig`）复用同样的模块，在 rv32 上把十三条
 //! 判据各走一遍；两套测试的边界必须写清楚，不能互相冒充：主机侧负责
