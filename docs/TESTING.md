@@ -38,9 +38,16 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 板级门禁（发布前必跑）：
 
 ```bash
-scripts/host-prep-wire.sh up          # 幂等：放行 udp 67/53、tcp 9000，起监听器
+# 本机（NixOS）三处环境都要显式给：zig 与 esptool 在 LD_LIBRARY_PATH 下会撞 glibc，
+# 默认 python3 没有 pyserial。
+export ZIG=/tmp/bin/zig
+export ESPTOOL=/nix/store/.../bin/esptool          # esptool 5.x；`command -v esptool` 有就用它
+export PYTHON=/nix/store/.../python3.14            # 必须能 `import serial`
+export PYTHONPATH=/nix/store/.../python3.14-pyserial-3.5/lib/python3.14/site-packages
+
+sudo scripts/host-prep-wire.sh up     # 幂等：放行 udp 67/53、tcp 9000，起监听器（accept 后读掉字节并停留 2 s）
 scripts/gate-board.sh                 # 构建 → 烧录 → 抓 30 s → 断言握手三段 + checks 计数
-scripts/host-prep-wire.sh down        # 收尾：撤销规则与监听器
+sudo scripts/host-prep-wire.sh down   # 收尾：撤销规则与监听器
 ```
 
 门禁通过后自动跑 `tools/s31-production/baseline/update_matrix.py`，把 matrix §4 的 W1–W3
