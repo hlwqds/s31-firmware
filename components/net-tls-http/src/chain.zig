@@ -110,18 +110,43 @@ pub fn verifyChain(
     // 叶证书直接由锚签发？
     if (signedBy(&leaf, &anchor)) return .{ .chain_len = 1, .expiry_checked = now != null, .issuer_der = anchor_der };
 
-    // 否则在 issuers 里找一张能签叶证书的，再要求它由锚签发（一层中间证书）。
-    for (issuer_ders) |der| {
-        var mid = cert.parse(der) catch return Error.BadCertificate;
-        if (now) |n| {
-            if (!validityContains(&mid, n)) continue;
+    // 否则沿 issuers 往上走：每一步要求"当前证书由某个尚未用过的 issuer 签发"，
+    // 直到走到锚。层数上限 4（链长 5），防止环形/病态输入把循环拖长。
+    var used: u8 = 0;
+    var current: []const u8 = leaf_der;
+    var depth: usize = 1; // 已走到的证书数（叶=1）
+    var first_issuer: ?[]const u8 = null;
+    var any_signed_leaf = false;
+
+    while (depth < 5) {
+        var progressed = false;
+        for (issuer_ders, 0..) |der, i| {
+            if (used & (@as(u8, 1) << @intCast(i)) != 0) continue;
+            var mid = cert.parse(der) catch return Error.BadCertificate;
+            if (now) |n| {
+                if (!validityContains(&mid, n)) continue;
+            }
+            var cur = cert.parse(current) catch return Error.BadCertificate;
+            if (!signedBy(&cur, &mid)) continue;
+
+            if (depth == 1) any_signed_leaf = true;
+            used |= @as(u8, 1) << @intCast(i);
+            if (first_issuer == null) first_issuer = der;
+
+            if (signedBy(&mid, &anchor)) {
+                return .{ .chain_len = depth + 1, .expiry_checked = now != null, .issuer_der = first_issuer.? };
+            }
+            current = der;
+            depth += 1;
+            progressed = true;
+            break;
         }
-        if (!signedBy(&leaf, &mid)) continue;
-        if (signedBy(&mid, &anchor)) return .{ .chain_len = 2, .expiry_checked = now != null, .issuer_der = der };
-        // 找到了签发者但它本身不被锚信任：明确报"锚没用上"，不静默降级。
-        return Error.UntrustedAnchor;
+        if (!progressed) break;
     }
-    return Error.NoIssuer;
+
+    // 走不动了：要么叶根本没人签（NoIssuer），要么链最终没接到锚上（UntrustedAnchor）。
+    if (!any_signed_leaf) return Error.NoIssuer;
+    return Error.UntrustedAnchor;
 }
 
 // ---------------------------------------------------------------------------
