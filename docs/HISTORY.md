@@ -14,7 +14,7 @@
 | `components/net-tcp` | TCP 状态机与可靠传输 | 33 |
 | `components/net-congestion` | TCP 拥塞控制 | 21 |
 | `components/net-sockets` | Socket API 与事件循环 | 36 |
-| `components/net-tls-http` | TLS 记录层与 HTTP/1.1 | 48 |
+| `components/net-tls-http` | TLS 记录层与 HTTP/1.1 | 53 |
 | `components/app-mqtt-ota` | MQTT 与 OTA | 27 |
 | `components/wifi-boundary` | Wi-Fi blob 边界 | 15 |
 | `components/wifi-connect` | Wi-Fi 连接管理 | 20 |

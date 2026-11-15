@@ -18,7 +18,9 @@
 //!   - `http.zig`            请求行 + 首部 + `Content-Length`、chunked 解码、
 //!                           keep-alive 判定、响应构造；
 //!   - `random.zig`          熵源接缝（`Reader` + 测试用确定性流，标明非密码学安全）；
-//!   - `tls_handshake.zig`   ClientHello 的三层长度与扩展编码（random/key_share/SNI）。
+//!   - `tls_handshake.zig`   ClientHello 编码、ServerHello/EE/Cert/CV/Finished 解析、
+//!                           转录哈希与 Flight 顺序机（含 Finished 验签）；
+//!   - `tls_protect.zig`     记录保护：nonce=iv⊕seq、AD=外层头、内层类型藏明文末尾。
 //!
 //! 板侧那一只自检（`src/selftest.zig`）复用同样的模块，在 rv32 上把十三条
 //! 判据各走一遍；两套测试的边界必须写清楚，不能互相冒充：主机侧负责
@@ -33,6 +35,7 @@ test {
     _ = @import("http.zig");
     _ = @import("random.zig");
     _ = @import("tls_handshake.zig");
+    _ = @import("tls_protect.zig");
 }
 
 // ---------------------------------------------------------------------------
