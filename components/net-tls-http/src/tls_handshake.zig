@@ -28,6 +28,10 @@ pub const Error = error{
     BadVersion,
     BadCompression,
     BadExtension,
+    /// 服务端选了我们没实现的套件（只支持 TLS_AES_128_GCM_SHA256）。
+    BadCipher,
+    /// TLS 1.3 的 ServerHello 没有 key_share：意味着 HRR/PSK 等本实现不走的路径。
+    MissingKeyShare,
     /// server_name 超过 255 字节（TLS 的 SNI 长度是 u16，但本实现只支持常见域名）。
     NameTooLong,
 };
@@ -350,10 +354,12 @@ pub const Transcript = struct {
 pub const ServerHello = struct {
     random: [32]u8,
     cipher_suite: u16,
-    /// 服务端 key_share（x25519）。缺失时握手必须失败：TLS 1.3 的 ServerHello
-    /// 没有 key_share 就意味着退化到不支持的模式。
-    key_share: ?[x25519.key_length]u8 = null,
-    supported_version: ?u16 = null,
+    /// 服务端 key_share（x25519）。**解析时强制存在**：TLS 1.3 的 ServerHello 若
+    /// 没有 key_share，说明服务端走的是 HRR/PSK 等本实现不支持的路径——这种情况下
+    /// 继续握手只会用空密钥派生出错东西，所以就地报错。
+    key_share: [x25519.key_length]u8,
+    /// TLS 1.3 必须在 supported_versions 里回 0x0304；缺省或别的值都说明对方不是 1.3。
+    supported_version: u16,
 };
 
 /// 解析一条完整的 ServerHello 握手消息（含 type=2 + 3 字节长度）。
@@ -370,7 +376,7 @@ pub fn parseServerHello(msg: []const u8) Error!ServerHello {
     i += 2;
 
     // 带默认值初始化（`= undefined` 会把 `key_share`/`supported_version` 的 null 默认一起抹掉）
-    var sh: ServerHello = .{ .random = undefined, .cipher_suite = 0 };
+    var sh: ServerHello = .{ .random = undefined, .cipher_suite = 0, .key_share = undefined, .supported_version = 0 };
     @memcpy(&sh.random, msg[i..][0..32]);
     i += 32;
 
@@ -392,6 +398,8 @@ pub fn parseServerHello(msg: []const u8) Error!ServerHello {
     i += 2;
     if (i + exts_len != end) return Error.Truncated;
 
+    var have_version = false;
+    var have_key_share = false;
     while (i < end) {
         if (i + 4 > end) return Error.Truncated;
         const id = read16(msg[i..]);
@@ -403,19 +411,24 @@ pub fn parseServerHello(msg: []const u8) Error!ServerHello {
             ext_supported_versions => {
                 if (len != 2) return Error.BadExtension;
                 sh.supported_version = read16(body);
+                have_version = true;
             },
             ext_key_share => {
                 if (len != 2 + 2 + x25519.key_length) return Error.BadExtension;
                 if (read16(body[0..2]) != group_x25519) return Error.BadExtension;
                 if (read16(body[2..4]) != x25519.key_length) return Error.BadExtension;
-                var ks: [x25519.key_length]u8 = undefined;
-                @memcpy(&ks, body[4..][0..x25519.key_length]);
-                sh.key_share = ks;
+                @memcpy(&sh.key_share, body[4..][0..x25519.key_length]);
+                have_key_share = true;
             },
             else => {},
         }
         i += len;
     }
+
+    // 三处强制校验：都是"能解析但继续下去会用错密钥"的情形，必须在解析处就死。
+    if (sh.cipher_suite != cipher_tls_aes_128_gcm_sha256) return Error.BadCipher;
+    if (!have_version or sh.supported_version != 0x0304) return Error.BadVersion;
+    if (!have_key_share) return Error.MissingKeyShare;
     return sh;
 }
 
@@ -473,32 +486,76 @@ test "handshake: ServerHello 解析出 random/套件/key_share/版本" {
     const sh = try parseServerHello(msg);
     try std.testing.expectEqualSlices(u8, &rand, &sh.random);
     try std.testing.expectEqual(cipher_tls_aes_128_gcm_sha256, sh.cipher_suite);
-    try std.testing.expectEqual(@as(?u16, 0x0304), sh.supported_version);
-    try std.testing.expectEqualSlices(u8, &ks, &sh.key_share.?);
+    try std.testing.expectEqual(@as(u16, 0x0304), sh.supported_version);
+    try std.testing.expectEqualSlices(u8, &ks, &sh.key_share);
 }
 
-test "handshake: ServerHello 缺 key_share 时字段为 null，错类型/截断显式报错" {
+test "handshake: 服务端选别的套件/版本缺失/key_share 缺失都是硬错" {
     var buf: [256]u8 = undefined;
     const rand: [32]u8 = @splat(7);
     const ks: [x25519.key_length]u8 = @splat(9);
 
-    // 没有 supported_versions（合法但版本未知）
-    const msg = buildServerHelloForTest(&buf, rand, 0x1301, ks, false);
-    const sh = try parseServerHello(msg);
-    try std.testing.expectEqual(@as(?u16, null), sh.supported_version);
-    try std.testing.expect(sh.key_share != null);
+    // 只支持 TLS_AES_128_GCM_SHA256：服务端选 AES-256-GCM-SHA384 必须当场报错，
+    // 否则会用错误的密钥长度继续派生（下游表现为静默算错）。
+    const wrong_suite = buildServerHelloForTest(&buf, rand, 0x1302, ks, true);
+    try std.testing.expectError(Error.BadCipher, parseServerHello(wrong_suite));
 
-    // 错类型（各用独立副本，避免互相污染）
+    // 没有 supported_versions ⇒ 对方不是 TLS 1.3
+    const wrong_version = buildServerHelloForTest(&buf, rand, cipher_tls_aes_128_gcm_sha256, ks, false);
+    try std.testing.expectError(Error.BadVersion, parseServerHello(wrong_version));
+}
+
+test "handshake: 去掉 key_share 扩展时返回 MissingKeyShare" {
+    // 手工构造一条合法 SH，再去掉 key_share 扩展（只留 supported_versions）。
+    var buf: [256]u8 = undefined;
+    const rand: [32]u8 = @splat(3);
+    var i: usize = 4;
+    put16(buf[i..], 0x0303);
+    i += 2;
+    @memcpy(buf[i..][0..32], &rand);
+    i += 32;
+    buf[i] = 0;
+    i += 1;
+    put16(buf[i..], cipher_tls_aes_128_gcm_sha256);
+    i += 2;
+    buf[i] = 1;
+    i += 1;
+    buf[i] = 0;
+    i += 1;
+    const exts_len_off = i;
+    i += 2;
+    const exts_start = i;
+    put16(buf[i..], ext_supported_versions);
+    put16(buf[i + 2 ..], 2);
+    i += 4;
+    put16(buf[i..], 0x0304);
+    i += 2;
+    put16(buf[exts_len_off..], @intCast(i - exts_start));
+    buf[0] = handshake_type_server_hello;
+    put24(buf[1..], @intCast(i - 4));
+
+    try std.testing.expectError(Error.MissingKeyShare, parseServerHello(buf[0..i]));
+}
+
+test "handshake: 错类型与截断各自报错（截断先报 Truncated 再谈内容）" {
+    var buf: [256]u8 = undefined;
+    const rand: [32]u8 = @splat(5);
+    const ks: [x25519.key_length]u8 = @splat(6);
+    const msg = buildServerHelloForTest(&buf, rand, cipher_tls_aes_128_gcm_sha256, ks, true);
+
     var wrong_buf: [256]u8 = undefined;
     @memcpy(wrong_buf[0..msg.len], msg);
     wrong_buf[0] = handshake_type_client_hello;
     try std.testing.expectError(Error.NotServerHello, parseServerHello(wrong_buf[0..msg.len]));
 
-    // 截断：声明比实际长
     var trunc_buf: [256]u8 = undefined;
     @memcpy(trunc_buf[0..msg.len], msg);
     put24(trunc_buf[1..], @intCast(msg.len));
     try std.testing.expectError(Error.Truncated, parseServerHello(trunc_buf[0 .. msg.len - 1]));
+
+    // 空/过短缓冲：长度检查在读取 msg[0] 之前
+    try std.testing.expectError(Error.Truncated, parseServerHello(&[_]u8{}));
+    try std.testing.expectError(Error.Truncated, parseServerHello(&[_]u8{ 1, 2, 3 }));
 }
 
 test "handshake: 转录快照等于一次性 SHA-256（流式与整体一致）" {

@@ -46,6 +46,11 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-tls-http：`parseServerHello` 收紧为**硬校验**——套件只接受 `TLS_AES_128_GCM_SHA256`
+  （`BadCipher`）、`supported_versions` 必须是 0x0304 且必须存在（`BadVersion`）、
+  `key_share` 必须存在（`MissingKeyShare`）。三者都是“能解析但继续会用错密钥”的情形：
+  服务端若选 AES-256-GCM-SHA384，下游会按错误的密钥长度派生，表现为静默算错而不是报错。
+  `ServerHello.key_share` 随之去掉 Option。42 → 44 项。
 - net-tls-http：握手驱动的前半件——`Transcript`（流式 SHA-256，任意点取快照）与
   `parseServerHello`（random/套件/key_share/supported_versions，缺 key_share 时字段为
   null 由调用方判死，错类型/截断/坏扩展显式报错）。用例：手工按线上格式拼一条
