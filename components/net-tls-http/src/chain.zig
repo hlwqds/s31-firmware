@@ -112,7 +112,8 @@ pub fn verifyChain(
 
     // 否则沿 issuers 往上走：每一步要求"当前证书由某个尚未用过的 issuer 签发"，
     // 直到走到锚。层数上限 4（链长 5），防止环形/病态输入把循环拖长。
-    var used: u8 = 0;
+    // 位图用 u32：`issuer_ders` 是公开 API 的入参，u8 在 9 条以上会移出类型宽度。
+    var used: u32 = 0;
     var current: []const u8 = leaf_der;
     var depth: usize = 1; // 已走到的证书数（叶=1）
     var first_issuer: ?[]const u8 = null;
@@ -121,7 +122,8 @@ pub fn verifyChain(
     while (depth < 5) {
         var progressed = false;
         for (issuer_ders, 0..) |der, i| {
-            if (used & (@as(u8, 1) << @intCast(i)) != 0) continue;
+            if (i >= 32) return Error.BadCertificate;
+            if (used & (@as(u32, 1) << @intCast(i)) != 0) continue;
             var mid = cert.parse(der) catch return Error.BadCertificate;
             if (now) |n| {
                 if (!validityContains(&mid, n)) continue;
@@ -130,7 +132,7 @@ pub fn verifyChain(
             if (!signedBy(&cur, &mid)) continue;
 
             if (depth == 1) any_signed_leaf = true;
-            used |= @as(u8, 1) << @intCast(i);
+            used |= @as(u32, 1) << @intCast(i);
             if (first_issuer == null) first_issuer = der;
 
             if (signedBy(&mid, &anchor)) {
