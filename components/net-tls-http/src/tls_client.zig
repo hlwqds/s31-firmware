@@ -40,6 +40,8 @@ pub const Error = error{
     RecordAuthFailed,
     /// 对端发来 alert（`alert` 字段带 level/description）。
     ServerAlert,
+    /// 配了 trust 证书，但对端出示的叶证书不是钉住的那张。
+    CertificatePinMismatch,
     /// 配了 trust 证书但 CertificateVerify 验不过（签名或 scheme 不对）。
     CertificateVerifyFailed,
     /// 配了 trust 证书但证书本身解析失败。
@@ -224,6 +226,11 @@ pub const Client = struct {
                 if (list.len > 0) {
                     const leaf = cert.parse(list[0].der) catch return Error.BadCertificate;
                     self.leaf_fingerprint = cert.fingerprint(list[0].der);
+                    // PIN 语义：配了 trust 就必须是**同一张**证书。只验 CV 签名不够——
+                    // 否则任何持有自己私钥的服务端都能过（CV 用它的公钥验它自己的签名）。
+                    if (self.opts.trust_cert_der) |pinned| {
+                        if (!std.mem.eql(u8, pinned, list[0].der)) return Error.CertificatePinMismatch;
+                    }
                     // 自签校验只做记录，**不当作握手前提**：CA 签发的叶证书本来就不是
                     // 自签的，在这里失败会把正常服务器拒之门外。
                     if (cert.verifySignature(&leaf)) |_| {
@@ -583,4 +590,42 @@ test "client: established 之后的应用数据必须用 server_ap 解（握手�
     try client.onRecord(rec, undefined_scratch());
     try std.testing.expectEqual(@as(u8, 23), client.last_payload_type);
     try std.testing.expectEqual(payload.len, client.last_payload_len);
+}
+
+test "client: 配了 trust 但叶证书不是钉住的那张 → CertificatePinMismatch（只验 CV 签名不够）" {
+    var stream = TestStream{};
+    var client = Client.init(.{ .server_name = "a.test", .trust_cert_der = "not-the-server-cert" }, stream.reader());
+    var ch_rec: [512]u8 = undefined;
+    const ch_n = try client.start(&ch_rec);
+
+    const server_secret: [32]u8 = @splat(0x42);
+    const shared = try x25519.scalarmult(server_secret, client.clientPublic());
+    var srv_tr = handshake.Transcript.init();
+    srv_tr.add(ch_rec[record.header_len..ch_n]);
+    var sh_buf: [256]u8 = undefined;
+    const sh = buildServerHello(&sh_buf, x25519.publicKey(server_secret));
+    srv_tr.add(sh);
+    const hs_th = srv_tr.snapshot();
+    const sched = try ks.buildSchedule(&shared, &hs_th, &hs_th);
+    var srv_hs = protect.KeyState.init(sched.server_hs_traffic);
+
+    var sh_rec: [300]u8 = undefined;
+    try client.onRecord(wrapHandshakeRecord(&sh_rec, sh), undefined_scratch());
+
+    var msgbuf: [512]u8 = undefined;
+    var sealed: [600]u8 = undefined;
+    const ee = hsWrap(&msgbuf, handshake.handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    srv_tr.add(ee);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, ee), undefined_scratch());
+
+    var cert_body: [512]u8 = undefined;
+    cert_body[0] = 0;
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    put24b(cert_body[4..], @intCast(cert.fixture_der.len));
+    @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    var cb2: [512]u8 = undefined;
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    srv_tr.add(cert_msg);
+    // 对端出示的是 fixture，而我们钉的是别的证书：必须在证书这一条就失败。
+    try std.testing.expectError(Error.CertificatePinMismatch, client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch()));
 }

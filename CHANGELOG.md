@@ -47,6 +47,10 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：`trust_cert_der` 收紧为**钉住证书**（PIN）语义——此前只用钉住的公钥验
+  CertificateVerify，等于"任何持有自己私钥的服务端都能过"（CV 用它的公钥验它自己的
+  签名）。现在对端出示的叶证书必须与钉住的 DER **完全相同**，否则 `CertificatePinMismatch`。
+  新用例：钉的是别的证书、服务端出示 fixture → 在证书这一步失败。56 → 57 项。
 - net-tls-http：`tls_client` 收口四处会在板上表现为"莫名失败"的问题：
   ① **应用阶段解不开**：`handleProtected` 固定用 `server_hs`，established 后必须换成
   `server_ap`（新用例：服务端用应用密钥发一条 HTTP 数据，客户端必须解开）；
