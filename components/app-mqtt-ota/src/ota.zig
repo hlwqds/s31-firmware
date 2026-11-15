@@ -169,11 +169,21 @@ pub fn verify(bytes: []const u8, image: []const u8) Error!Manifest {
     // 2) 摘要：防传输损坏 / 半包。SHA-256 只证明“内容没变”，不证明“来源”。
     var digest: [32]u8 = undefined;
     Sha256.hash(image, &digest, .{});
+    return verifyDigest(bytes, digest);
+}
+
+/// 只给摘要的校验入口：调用方边收边算 SHA-256（或分块回读 flash），
+/// 不必把整镜像驻留内存——216 KB 的镜像在 512 KB SRAM 的板上放不下。
+///
+/// 与 `verify()` 的差别只有一个：长度检查由调用方负责（它知道自己收了多少字节）。
+/// 摘要与签名的判定顺序、错误集合完全一致。
+pub fn verifyDigest(bytes: []const u8, digest: [32]u8) Error!Manifest {
+    const m = try decodeManifest(bytes);
     if (!std.mem.eql(u8, &digest, &m.sha256)) return error.Sha256Mismatch;
 
-    // 3) 签名：证明“这份清单是持私钥的人签的”。签名覆盖 [0,44)，
-    //    所以改了版本号或长度也会让签名失效——这一点必须与摘要分开测，
-    //    否则“改版本号”这类攻击会被 SHA-256 那一关漏掉（摘要只覆盖 image）。
+    // 签名：证明“这份清单是持私钥的人签的”。签名覆盖 [0,44)，所以改了版本号或
+    // 长度也会让签名失效——这一点必须与摘要分开测，否则“改版本号”这类攻击会被
+    // SHA-256 那一关漏掉（摘要只覆盖 image）。
     const pk = Ed25519.PublicKey.fromBytes(trusted_key) catch return error.UntrustedKey;
     const sig = Ed25519.Signature.fromBytes(m.signature);
     sig.verify(bytes[0..signed_len], pk) catch return error.BadSignature;
