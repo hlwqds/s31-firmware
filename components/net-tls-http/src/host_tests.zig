@@ -4,7 +4,7 @@
 //! `start.zig`/`main.zig`/`selftest.zig`，所以能在 x86_64 / Zig 0.17.1 上跑，
 //! 不需要开发板、不需要网线、不需要 root。
 //!
-//! 被测试的十个模块全是纯逻辑（59 个具名用例 + 根容器 test = 60）：
+//! 被测试的十个模块全是纯逻辑（63 个具名用例 + 根容器 test = 64）：
 //!
 //!   - `tls_record.zig`      记录头编解码、长度上限（2^14+256）、分片、
 //!                           跨记录握手重组；
@@ -15,6 +15,7 @@
 //!   - `aead.zig`            NIST SP 800-38D 的 AES-128-GCM 两组向量、
 //!                           tag 篡改/AD 篡改的拒绝分支、TLS nonce 的 XOR；
 //!   - `cert.zig`            DER 构造 / 解析 / ECDSA 自洽验签、fixture 对拍；
+//!   - `chain.zig`           信任链校验：签发关系 + 签名 + 有效期 + 主机名（锚由调用方给）；
 //!   - `http.zig`            请求行 + 首部 + `Content-Length`、chunked 解码、
 //!                           keep-alive 判定、响应构造；
 //!   - `random.zig`          熵源接缝（`Reader` + 测试用确定性流，标明非密码学安全）；
@@ -35,6 +36,7 @@ test {
     _ = @import("x25519.zig");
     _ = @import("aead.zig");
     _ = @import("cert.zig");
+    _ = @import("chain.zig");
     _ = @import("http.zig");
     _ = @import("random.zig");
     _ = @import("tls_handshake.zig");

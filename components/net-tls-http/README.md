@@ -2,7 +2,7 @@
 
 记录层、HKDF/X25519/AES-GCM、证书 DER、HTTP 解析与 chunked。
 
-- 主机测试：**60 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
+- 主机测试：**64 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 与 `checks: passed=N`
 - 依赖方向：本组件 → `boards`；不依赖其它组件
 
@@ -15,6 +15,7 @@
 | `src/random.zig` | 熵源接缝：`Reader` + 测试用确定性流（**非**密码学安全，日志须标注） |
 | `src/tls_handshake.zig` | ClientHello 编码：三层长度、SNI、supported_versions、key_share |
 | `src/tls_protect.zig` | 记录保护：nonce=iv⊕seq、AD=外层头、内层类型藏在明文末尾 |
+| `src/chain.zig` | 信任链校验：签发关系/签名/有效期/主机名；锚由调用方提供 |
 | `src/tls_client.zig` | 客户端状态机：CH→SH→飞行→client Finished，密钥切换 |
 | `src/host_tests.zig` | 主机测试入口（聚合模块内 `test`） |
 

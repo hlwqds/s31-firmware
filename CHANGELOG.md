@@ -47,6 +47,11 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：新增 `chain.zig`——**信任链校验**的最小实现：叶证书的 issuer 必须等于签发者
+  subject、签名必须被签发者公钥验过、有效期包含调用方给的 `now`、SAN/CN 覆盖主机名；
+  **信任锚由调用方提供**（不采信对端链里的根），链顶不是锚时明确报 `UntrustedAnchor`
+  而不是静默降级。主机名支持单级通配符 `*.example.com`（不匹配裸域/多级）。
+  时钟不在组件里——没有 `now` 就不该声称验过有效期。60 → 64 项。
 - net-tls-http：**修 Certificate 消息解析**——每个 `CertificateEntry` 在证书数据之后还有一个
   **2 字节的 extensions 长度字段**（RFC 8446 §4.4.2），原实现没读它，于是 `list_len`
   比条目之和多 2。板上实测：DER 完整（entry=426、`30 82 01 a6` 正确）而消息头宣告
