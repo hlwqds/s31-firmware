@@ -451,10 +451,13 @@ test "client: 完整握手（CH→SH→EE/Cert/CV/Finished→client Finished）�
     // Certificate（用组件自带 fixture，保证 DER 可解析且自洽）
     var cert_body: [512]u8 = undefined;
     cert_body[0] = 0;
-    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    // list = entry_len(3) + der + entry extensions(2)
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len + 2));
     put24b(cert_body[4..], @intCast(cert.fixture_der.len));
     @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
-    const cert_msg = hsWrap(&recbuf, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    cert_body[7 + cert.fixture_der.len] = 0;
+    cert_body[8 + cert.fixture_der.len] = 0;
+    const cert_msg = hsWrap(&recbuf, handshake.handshake_type_certificate, cert_body[0 .. 9 + cert.fixture_der.len]);
     srv_tr.add(cert_msg);
     try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
     try std.testing.expect(client.certificate_verified_self_signed);
@@ -517,11 +520,14 @@ test "client: 服务端 Finished 被篡改时握手失败（不是静默接受�
 
     var cert_body: [512]u8 = undefined;
     cert_body[0] = 0;
-    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    // list = entry_len(3) + der + entry extensions(2)
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len + 2));
     put24b(cert_body[4..], @intCast(cert.fixture_der.len));
     @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    cert_body[7 + cert.fixture_der.len] = 0;
+    cert_body[8 + cert.fixture_der.len] = 0;
     var cb2: [512]u8 = undefined;
-    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 9 + cert.fixture_der.len]);
     srv_tr.add(cert_msg);
     try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
 
@@ -570,11 +576,14 @@ test "client: established 之后的应用数据必须用 server_ap 解（握手�
 
     var cert_body: [512]u8 = undefined;
     cert_body[0] = 0;
-    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    // list = entry_len(3) + der + entry extensions(2)
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len + 2));
     put24b(cert_body[4..], @intCast(cert.fixture_der.len));
     @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    cert_body[7 + cert.fixture_der.len] = 0;
+    cert_body[8 + cert.fixture_der.len] = 0;
     var cb2: [512]u8 = undefined;
-    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 9 + cert.fixture_der.len]);
     srv_tr.add(cert_msg);
     try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
 
@@ -637,11 +646,14 @@ test "client: 配了 trust 但叶证书不是钉住的那张 → CertificatePinM
 
     var cert_body: [512]u8 = undefined;
     cert_body[0] = 0;
-    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    // list = entry_len(3) + der + entry extensions(2)
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len + 2));
     put24b(cert_body[4..], @intCast(cert.fixture_der.len));
     @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    cert_body[7 + cert.fixture_der.len] = 0;
+    cert_body[8 + cert.fixture_der.len] = 0;
     var cb2: [512]u8 = undefined;
-    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 9 + cert.fixture_der.len]);
     srv_tr.add(cert_msg);
     // 对端出示的是 fixture，而我们钉的是别的证书：必须在证书这一条就失败。
     try std.testing.expectError(Error.CertificatePinMismatch, client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch()));
@@ -676,11 +688,14 @@ test "client: established 后 sealApplication 的记录能被对端的应用密�
 
     var cert_body: [512]u8 = undefined;
     cert_body[0] = 0;
-    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len));
+    // list = entry_len(3) + der + entry extensions(2)
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len + 2));
     put24b(cert_body[4..], @intCast(cert.fixture_der.len));
     @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    cert_body[7 + cert.fixture_der.len] = 0;
+    cert_body[8 + cert.fixture_der.len] = 0;
     var cb2: [512]u8 = undefined;
-    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 7 + cert.fixture_der.len]);
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 9 + cert.fixture_der.len]);
     srv_tr.add(cert_msg);
     try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cert_msg), undefined_scratch());
 

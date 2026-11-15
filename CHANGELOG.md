@@ -47,6 +47,11 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：**修 Certificate 消息解析**——每个 `CertificateEntry` 在证书数据之后还有一个
+  **2 字节的 extensions 长度字段**（RFC 8446 §4.4.2），原实现没读它，于是 `list_len`
+  比条目之和多 2。板上实测：DER 完整（entry=426、`30 82 01 a6` 正确）而消息头宣告
+  `list=431`，随后 `cert.parse` 因尾部多出 2 字节报 `BadCertificate`。测试用的构造器
+  当初也漏了这 2 字节，所以 220 条用例全绿——现在补上并有专门的回归用例。59 → 60 项。
 - net-tls-http：**修 `buildSchedule` 的双重哈希**。它接收的是转录**哈希**，但内部走
   `deriveSecret`（对 context 再哈希一次），于是 context 变成 hash(hash(CH‖SH))，与
   对端的 hash(CH‖SH) 不同 → 握手密钥全错、记录层 `RecordAuthFailed`，而转录哈希本身

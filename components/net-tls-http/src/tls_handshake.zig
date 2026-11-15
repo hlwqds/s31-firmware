@@ -636,6 +636,14 @@ pub fn parseCertificate(msg: []const u8, out: *[max_certs]CertEntry) Error![]Cer
         out[n] = .{ .der = msg[i..][0..clen] };
         n += 1;
         i += clen;
+        // RFC 8446 §4.4.2：每个 CertificateEntry = cert_data<1..2^24-1> + extensions<0..2^16-1>。
+        // 这 2 字节的扩展长度字段很容易被忘掉（本实现最初就没读），症状是
+        // list_len 比"条目长度之和"多 2：`certmsg` 里 entry=426 而 list=431。
+        if (i + 2 > end) return Error.Truncated;
+        const ext_len = read16(msg[i..]);
+        i += 2;
+        if (i + ext_len > end) return Error.Truncated;
+        i += ext_len;
     }
     return out[0..n];
 }
@@ -783,9 +791,12 @@ test "flight: 顺序 EE → Certificate → CertificateVerify → Finished，错
     const ee = hsMsg(&a, handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
     var cert_body: [16]u8 = undefined;
     cert_body[0] = 0; // request context 长度
-    put24(cert_body[1..], 3 + 2);
+    // list = entry_len(3) + der(2) + entry extensions len(2)
+    put24(cert_body[1..], 3 + 2 + 2);
     put24(cert_body[4..], 2);
     @memcpy(cert_body[7..][0..2], "DE");
+    cert_body[9] = 0; // CertificateEntry.extensions 长度
+    cert_body[10] = 0;
     const cert = hsMsg(&b, handshake_type_certificate, &cert_body);
     const cv = hsMsg(&c, handshake_type_certificate_verify, &[_]u8{ 0x04, 0x03, 0x00, 0x01, 0xEE });
     var fin_body: [32]u8 = @splat(0x5A);
@@ -828,14 +839,19 @@ test "flight: 顺序 EE → Certificate → CertificateVerify → Finished，错
 
 test "flight: Certificate 列表逐张切出 DER，bin/长度不符即报错" {
     var buf: [512]u8 = undefined;
-    var body: [32]u8 = undefined;
+    var body: [40]u8 = undefined;
     body[0] = 0;
-    put24(body[1..], 11); // 两条目：3+2 + 3+3
+    // 条目 = len(3) + der + ext_len(2)；两条目：5+2 + 6+2 = 15
+    put24(body[1..], 15);
     put24(body[4..], 2);
     @memcpy(body[7..][0..2], "AA");
-    put24(body[9..], 3);
-    @memcpy(body[12..][0..3], "BBB");
-    const msg = hsMsg(&buf, handshake_type_certificate, body[0..15]);
+    body[9] = 0; // entry1 extensions
+    body[10] = 0;
+    put24(body[11..], 3);
+    @memcpy(body[14..][0..3], "BBB");
+    body[17] = 0; // entry2 extensions
+    body[18] = 0;
+    const msg = hsMsg(&buf, handshake_type_certificate, body[0..19]);
 
     var entries: [max_certs]CertEntry = undefined;
     const list = try parseCertificate(msg, &entries);
@@ -880,4 +896,29 @@ test "flight: Finished 长度错误与 verify_data 不匹配" {
     var th2 = th;
     th2[31] ^= 0x80;
     try std.testing.expect(!verifyFinished(secret, th2, good));
+}
+
+test "flight: CertificateEntry 的 2 字节 extensions 必须被读掉（RFC 8446 §4.4.2）" {
+    // 真服务器（openssl）每个条目都带 extensions<0..2^16-1> 长度字段；漏读它会让
+    // list_len 比"条目之和"多 2，从而在切 DER 时越界或把后续字节当证书。
+    var buf: [128]u8 = undefined;
+    var body: [32]u8 = undefined;
+    body[0] = 0;
+    // 单条目：len(3)=2 + der(2) + ext_len(2)=0  → list = 3+2+2 = 7
+    put24(body[1..], 7);
+    put24(body[4..], 2);
+    @memcpy(body[7..][0..2], "XY");
+    body[9] = 0;
+    body[10] = 0;
+    const msg = hsMsg(&buf, handshake_type_certificate, body[0..11]);
+    var entries: [max_certs]CertEntry = undefined;
+    const list = try parseCertificate(msg, &entries);
+    try std.testing.expectEqual(@as(usize, 1), list.len);
+    try std.testing.expectEqualStrings("XY", list[0].der);
+
+    // 同一消息但 list_len 少算 2（模拟旧实现/错误构造）→ 必须拒绝
+    var bad: [128]u8 = undefined;
+    @memcpy(bad[0..msg.len], msg);
+    put24(bad[5..], 5);
+    try std.testing.expectError(Error.Truncated, parseCertificate(bad[0..msg.len], &entries));
 }
