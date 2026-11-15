@@ -122,6 +122,13 @@ pub fn deriveSecret(
     return out;
 }
 
+/// 用**已经算好的转录哈希**作为 context（`buildSchedule` 用的就是这个）。
+pub fn expandToSecret(secret: [hash_length]u8, label: []const u8, transcript_hash: []const u8) Error![hash_length]u8 {
+    var out: [hash_length]u8 = undefined;
+    try expandLabel(&out, secret, label, transcript_hash);
+    return out;
+}
+
 /// 一条完整链的产物。字段名直接对应 RFC 8446 §7.1 的图。
 pub const Schedule = struct {
     early_secret: [hash_length]u8,
@@ -133,14 +140,18 @@ pub const Schedule = struct {
     server_ap_traffic: [hash_length]u8,
 };
 
-/// 从 ECDHE 共享秘密 + 两个转录哈希走完整条链。
+/// 从 ECDHE 共享秘密 + 两个**转录哈希**走完整条链。
 ///
-/// `hs_transcript` 是 ClientHello…ServerHello 的转录；
-/// `ap_transcript` 是 ClientHello…server Finished 的转录。
+/// 参数是 `SHA-256(转录)`，不是转录原文（调用方本来就只有一个流式哈希的快照）。
+/// `Expand-Label` 的 context 就是这个哈希本身；**不要再哈希一次**——那会得到
+/// hash(hash(transcript))，与对端的 hash(transcript) 不同，症状是密钥全错、
+/// 记录层报 `RecordAuthFailed`，而转录哈希（如果你单独打了）看起来完全正确。
+/// 这个错曾经真实发生：脚本化服务端的用例两边同样多哈希一次，所以测不出来；
+/// 只有和 openssl 的 keylog 对拍才暴露。
 pub fn buildSchedule(
     shared_secret: []const u8,
-    hs_transcript: []const u8,
-    ap_transcript: []const u8,
+    hs_hash: []const u8,
+    ap_hash: []const u8,
 ) Error!Schedule {
     const zeros: [hash_length]u8 = @splat(0);
     const empty: []const u8 = "";
@@ -148,12 +159,12 @@ pub fn buildSchedule(
     const early = extract(empty, &zeros);
     const derived_early = try deriveSecret(early, "derived", empty);
     const handshake = extract(&derived_early, shared_secret);
-    const c_hs = try deriveSecret(handshake, "c hs traffic", hs_transcript);
-    const s_hs = try deriveSecret(handshake, "s hs traffic", hs_transcript);
+    const c_hs = try expandToSecret(handshake, "c hs traffic", hs_hash);
+    const s_hs = try expandToSecret(handshake, "s hs traffic", hs_hash);
     const derived_hs = try deriveSecret(handshake, "derived", empty);
     const master = extract(&derived_hs, &zeros);
-    const c_ap = try deriveSecret(master, "c ap traffic", ap_transcript);
-    const s_ap = try deriveSecret(master, "s ap traffic", ap_transcript);
+    const c_ap = try expandToSecret(master, "c ap traffic", ap_hash);
+    const s_ap = try expandToSecret(master, "s ap traffic", ap_hash);
 
     return .{
         .early_secret = early,
@@ -326,4 +337,24 @@ test "RFC 8448 3: empty-transcript hash is the SHA-256 of the empty string" {
         0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
     };
     try std.testing.expectEqualSlices(u8, &expected, &h);
+}
+
+test "keyschedule: buildSchedule 用转录哈希作为 context（RFC 8448 §3 对拍）" {
+    // 这正是客户端实际走的路径：只有哈希，没有转录原文。
+    // 若这里把哈希再哈希一次，c_hs/s_hs 就与 RFC 不符——而脚本化服务端的用例
+    // 两边同样错，测不出来。所以这条向量是那个 bug 的唯一防线。
+    const zeros: [hash_length]u8 = @splat(0);
+    const empty: []const u8 = "";
+    const early = extract(empty, &zeros);
+    const derived_early = try deriveSecret(early, "derived", empty);
+    const handshake = extract(&derived_early, &rfc8448.shared);
+    const c_hs = try expandToSecret(handshake, "c hs traffic", &rfc8448.hs_transcript_hash);
+    const s_hs = try expandToSecret(handshake, "s hs traffic", &rfc8448.hs_transcript_hash);
+    try std.testing.expectEqualSlices(u8, &rfc8448.client_hs_traffic, &c_hs);
+    try std.testing.expectEqualSlices(u8, &rfc8448.server_hs_traffic, &s_hs);
+
+    // buildSchedule 的 hs 字段必须与上面一致（ap 部分这里传入同一哈希，不参与比较）
+    const sched = try buildSchedule(&rfc8448.shared, &rfc8448.hs_transcript_hash, &rfc8448.hs_transcript_hash);
+    try std.testing.expectEqualSlices(u8, &rfc8448.client_hs_traffic, &sched.client_hs_traffic);
+    try std.testing.expectEqualSlices(u8, &rfc8448.server_hs_traffic, &sched.server_hs_traffic);
 }

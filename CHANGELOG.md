@@ -47,6 +47,12 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：**修 `buildSchedule` 的双重哈希**。它接收的是转录**哈希**，但内部走
+  `deriveSecret`（对 context 再哈希一次），于是 context 变成 hash(hash(CH‖SH))，与
+  对端的 hash(CH‖SH) 不同 → 握手密钥全错、记录层 `RecordAuthFailed`，而转录哈希本身
+  打出来是对的。新增 `expandToSecret`（context = 给定哈希）并让 `buildSchedule` 使用它；
+  补一条 **RFC 8448 §3 向量测试**（这正是客户端实际走的路径，脚本化服务端两边同样多
+  哈希一次，测不出来）。板上定位手段：`openssl s_server -keylogfile` 对拍。58 → 59 项。
 - net-tls-http：**修 ServerHello 解析的线上格式错误**——`legacy_compression_method` 在
   ServerHello 里是**单字节**（RFC 8446 §4.1.3），原实现按 ClientHello 的
   `compression_methods`（长度+列表）读了两字节，导致其后所有扩展偏移错一位。

@@ -2,7 +2,7 @@
 
 记录层、HKDF/X25519/AES-GCM、证书 DER、HTTP 解析与 chunked。
 
-- 主机测试：**58 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
+- 主机测试：**59 项**（`firmware` 的 `test` step 聚合；也可单独 `zig build test` 于 `firmware/`）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 与 `checks: passed=N`
 - 依赖方向：本组件 → `boards`；不依赖其它组件
 
