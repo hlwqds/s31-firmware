@@ -62,7 +62,9 @@ pub fn parse(der: []const u8, issuer: *const cert.Cert) Error!Crl {
 
     var t: usize = 0;
     var field = cert.nextTlv(tbs.body, &t) catch return Error.BadDer;
-    if (field.tag == 0xA0) field = cert.nextTlv(tbs.body, &t) catch return Error.BadDer; // version
+    // version 是 OPTIONAL：openssl 写的是裸 INTEGER（v1 风格），RFC 5280 的 v2 则是
+    // [0] EXPLICIT INTEGER。两种都要吃。
+    if (field.tag == 0xA0 or field.tag == 0x02) field = cert.nextTlv(tbs.body, &t) catch return Error.BadDer;
     if (field.tag != 0x30) return Error.BadDer; // sigAlg
     _ = cert.nextTlv(tbs.body, &t) catch return Error.BadDer; // issuer
     _ = cert.nextTlv(tbs.body, &t) catch return Error.BadDer; // thisUpdate
@@ -183,17 +185,21 @@ fn makeCrl(buf: []u8, serials: []const []const u8, kp: anytype) ![]const u8 {
     return buf[0..op];
 }
 
-fn fakeIssuer(kp: anytype) cert.Cert {
-    var c: cert.Cert = undefined;
-    c.spki_point = &kp.public_key.toUncompressedSec1();
-    return c;
+/// 用测试密钥造一张"签发者"证书视图。sec1 缓冲由调用方持有——把它的地址
+/// 存进返回的结构体里，缓冲生命周期必须长于使用它的解析调用。
+fn issuerFrom(kp: anytype, sec1: *[65]u8, out: *cert.Cert) void {
+    sec1.* = kp.public_key.toUncompressedSec1();
+    out.* = undefined;
+    out.spki_point = sec1;
 }
 
 test "crl: 吊销的序列号被命中，未吊销的不命中" {
     const kp = try std.crypto.sign.ecdsa.EcdsaP256Sha256.KeyPair.generateDeterministic(@splat(7));
     var buf: [1024]u8 = undefined;
     const der = try makeCrl(&buf, &[_][]const u8{ &[_]u8{0x01}, &[_]u8{0x7F} }, kp);
-    var issuer = fakeIssuer(kp);
+    var sec1: [65]u8 = undefined;
+    var issuer: cert.Cert = undefined;
+    issuerFrom(kp, &sec1, &issuer);
     const c = try parse(der, &issuer);
     try testing.expectEqual(@as(usize, 2), c.len);
     try testing.expect(c.isRevoked(&[_]u8{0x01}));
@@ -206,6 +212,8 @@ test "crl: 换一张证书验签必须失败（CRL 是签发者签的）" {
     const other = try std.crypto.sign.ecdsa.EcdsaP256Sha256.KeyPair.generateDeterministic(@splat(9));
     var buf: [1024]u8 = undefined;
     const der = try makeCrl(&buf, &[_][]const u8{&[_]u8{0x01}}, kp);
-    var wrong = fakeIssuer(other);
+    var sec1: [65]u8 = undefined;
+    var wrong: cert.Cert = undefined;
+    issuerFrom(other, &sec1, &wrong);
     try testing.expectError(error.BadSignature, parse(der, &wrong));
 }
