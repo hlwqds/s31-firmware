@@ -671,6 +671,30 @@ pub const Conn = struct {
     }
 
     /// 应用请求关闭（主动关闭或 CLOSE_WAIT 里的被动关闭收尾）。
+    /// 窗口更新：接收缓冲腾出空间后补发一个纯 ACK。
+    ///
+    /// TCP 的窗口不在“读走数据”时自动改变——只有下一次出向段带的新窗口才生效。
+    /// 因此当接收缓冲刚被应用排空、而最后一次通告的窗口是 0（或明显偏小）时，
+    /// 必须主动补一个 ACK，否则对端会一直以为窗口为 0 而不再发数据：
+    /// 症状是“发送方 `send` 秒返回、接收方永远等不到下一个字节”。
+    ///
+    /// 只在这个连接仍能接收的中间态发；`closed`/`listen`/`syn_sent`/`syn_rcvd`
+    /// 阶段没有可通告的窗口（握手段自己带窗口）。
+    pub fn windowUpdate(self: *Conn) Action {
+        const usable = switch (self.state) {
+            .established, .fin_wait_1, .fin_wait_2, .close_wait, .last_ack => true,
+            else => false,
+        };
+        if (!usable) return .{};
+        return .{
+            .send = true,
+            .seq = self.snd_nxt,
+            .ack = self.rcv_nxt,
+            .flags = .{ .ack = true },
+            .to = self.state,
+        };
+    }
+
     pub fn appClose(self: *Conn, now_us: u64) Action {
         switch (self.state) {
             .established => {
@@ -1509,6 +1533,24 @@ test "tcp: 同时关闭走 CLOSING（双方 FIN 竞争）" {
     n = try encode(.{ .src_port = 5000, .dst_port = 5000, .seq = 0x9002, .ack = fin.seq + 1, .flags = .{ .ack = true } }, .{}, "", &buf);
     _ = conn.onSegment(try parse(buf[0..n]), 300);
     try testing.expectEqual(State.time_wait, conn.state);
+}
+
+test "tcp: windowUpdate 只在中间态出段,seq/ack 取自当前状态" {
+    var c: Conn = .{};
+    // 未连接：没有可通告的窗口
+    try testing.expect(!c.windowUpdate().send);
+
+    // 主动打开 + 握手完成
+    _ = c.activeOpen(0x1234_5678, 0);
+    _ = c.onSegment(.{ .hdr = .{ .src_port = 1, .dst_port = 2, .seq = 9000, .ack = 0x1234_5679, .flags = .{ .syn = true, .ack = true }, .window = 1024 }, .opts = .{}, .payload = "" }, 10);
+    try testing.expectEqual(State.established, c.state);
+    const a = c.windowUpdate();
+    try testing.expect(a.send);
+    try testing.expect(a.flags.ack);
+    try testing.expect(!a.flags.syn and !a.flags.fin);
+    try testing.expectEqual(@as(usize, 0), a.payload_len);
+    try testing.expectEqual(c.snd_nxt, a.seq);
+    try testing.expectEqual(c.rcv_nxt, a.ack);
 }
 
 test "tcp: TIME_WAIT 里收到重传 FIN 会重发 ACK 并重置 2MSL" {

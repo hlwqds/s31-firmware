@@ -46,6 +46,10 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-tcp：新增 `Conn.windowUpdate()`。TCP 的接收窗口**不会**因为应用 `recv` 了数据就
+  自动变大——只有下一次出向段带的新窗口才生效。接收缓冲排空后若不补发纯 ACK，
+  对端会一直以为窗口为 0（症状：发送方 `send` 秒返回、接收方永远等不到下一字节，
+  两端日志都"正常"）。只在仍可接收的中间态出段，`seq/ack` 取自当前状态。32 → 33。
 - net-sockets：把 `onSegment` **不校验什么**写进状态迁移表的注释，并用一条用例钉死：
   `.data` 不看 `seq`（按序到达假设），重传段再投递一次会把字节**再塞一遍**、`rcv_nxt`
   多算；`.ack` 不看 `ack` 值（`syn_rcvd` 见 ack 即 `established`）。⇒ 接真链路时
