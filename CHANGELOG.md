@@ -46,6 +46,12 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-tls-http：**修掉一个认证漏洞**——`Flight` 收到 Finished 时只把它计入转录、
+  从未校验 verify_data，伪造的 Finished 会被接受。现在 `advanceFlight` 必须带
+  `server_hs_traffic`，在**计入转录之前**取快照并验（RFC 8446 §4.4.4 的边界），
+  失败返回 `BadFinished`；用例补上“伪造 verify_data 被拒”。同时 ClientHello 的
+  `signature_algorithms` 只通告 ECDSA P-256（`cert.zig` 只验得了这个），
+  不再通告 RSA-PSS——否则服务端选了 PSS 会在 CertificateVerify 处失败。
 - net-tls-http：服务端飞行的其余消息与**认证核心**。`parseCertificate`（列表逐张切 DER）、
   `parseCertificateVerify`（scheme + 签名）、`parseFinished`（32 字节 verify_data）、
   `certificateVerifyContent`（64 空格 + 上下文串 + 0x00 + 转录哈希），以及

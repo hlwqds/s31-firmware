@@ -47,7 +47,6 @@ pub const handshake_type_server_hello: u8 = 0x02;
 pub const cipher_tls_aes_128_gcm_sha256: u16 = 0x1301;
 pub const group_x25519: u16 = 0x001d;
 pub const sig_ecdsa_secp256r1_sha256: u16 = 0x0403;
-pub const sig_rsa_pss_rsae_sha256: u16 = 0x0804;
 
 const ext_server_name: u16 = 0x0000;
 const ext_supported_groups: u16 = 0x000a;
@@ -81,7 +80,7 @@ pub fn writeClientHello(out: []u8, p: Params, rng: random.Reader) Error!usize {
     const sni_ext = 4 + 2 + name_entry;
     const ver_ext = 4 + 1 + 2;
     const groups_ext = 4 + 2 + 2;
-    const sig_ext = 4 + 2 + 4;
+    const sig_ext = 4 + 2 + 2; // 只通告 ECDSA P-256：cert.zig 只验得了这个
     const ks_ext = 4 + 2 + 2 + 2 + x25519.key_length;
     const exts_len = sni_ext + ver_ext + groups_ext + sig_ext + ks_ext;
     const body_len = 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + exts_len;
@@ -148,13 +147,11 @@ pub fn writeClientHello(out: []u8, p: Params, rng: random.Reader) Error!usize {
 
     // 0x000d signature_algorithms
     put16(out[i..], ext_signature_algorithms);
-    put16(out[i + 2 ..], 6);
+    put16(out[i + 2 ..], 4);
     i += 4;
-    put16(out[i..], 4);
+    put16(out[i..], 2);
     i += 2;
     put16(out[i..], sig_ecdsa_secp256r1_sha256);
-    i += 2;
-    put16(out[i..], sig_rsa_pss_rsae_sha256);
     i += 2;
 
     // 0x0033 key_share（一个 x25519 share）
@@ -271,7 +268,7 @@ test "handshake: ClientHello 的三层长度与扩展逐字段自洽" {
     try std.testing.expectEqual(@as(u16, group_x25519), read16(groups[2..]));
 
     const sigs = findExt(hs, exts_off, exts_len, ext_signature_algorithms);
-    try std.testing.expectEqual(@as(u16, 4), read16(sigs[0..2]));
+    try std.testing.expectEqual(@as(u16, 2), read16(sigs[0..2])); // 只通告 ECDSA P-256
     try std.testing.expectEqual(sig_ecdsa_secp256r1_sha256, read16(sigs[2..]));
 
     const ks = findExt(hs, exts_off, exts_len, ext_key_share);
@@ -736,7 +733,7 @@ pub const Flight = struct {
 /// 推进一步飞行状态；`msg` 是完整的握手消息（含 4 字节头）。
 /// 成功时把消息计入转录并前进状态；Finished 由调用方用 `verifyFinished` 校验，
 /// 因为密钥取决于 schedule（本函数不持有密钥）。
-pub fn advanceFlight(f: *Flight, msg: []const u8) Flight.Error!void {
+pub fn advanceFlight(f: *Flight, msg: []const u8, server_hs_traffic: [tls_keyschedule.hash_length]u8) Flight.Error!void {
     const t = msg[0];
     switch (f.state) {
         .expect_encrypted_extensions => {
@@ -756,8 +753,13 @@ pub fn advanceFlight(f: *Flight, msg: []const u8) Flight.Error!void {
         },
         .expect_finished => {
             if (t != handshake_type_finished) return Flight.Error.UnexpectedMessage;
-            // 注意：Finished 本身要计入转录（客户端 Finished 用它）。
-            f.transcript.add(msg);
+            // RFC 8446 §4.4.4：服务端 verify_data 覆盖的是**收到 Finished 之前**的转录
+            // （CH…CertificateVerify）。所以先取快照并验，再把 Finished 计入转录——
+            // 顺序反了就是那句经典的"密钥调度对不上"。
+            const before = f.transcript.snapshot();
+            const received = parseFinished(msg) catch return Flight.Error.UnexpectedMessage;
+            if (!verifyFinished(server_hs_traffic, before, received)) return Flight.Error.BadFinished;
+            f.transcript.add(msg); // 客户端 Finished 的转录从这里往后算
             f.state = .done;
         },
         .done => return Flight.Error.UnexpectedMessage,
@@ -792,24 +794,39 @@ test "flight: 顺序 EE → Certificate → CertificateVerify → Finished，错
     var fin_body: [32]u8 = @splat(0x5A);
     const fin = hsMsg(&d, handshake_type_finished, &fin_body);
 
+    const traffic: [tls_keyschedule.hash_length]u8 = @splat(0x33);
+
     var f = Flight.init();
-    // 正确顺序
-    try advanceFlight(&f, ee);
+    // 正确顺序：Finished 必须通过验证才算完成，所以要按真实边界算 verify_data
+    try advanceFlight(&f, ee, traffic);
     try std.testing.expect(f.expect(.expect_certificate));
-    try advanceFlight(&f, cert);
+    try advanceFlight(&f, cert, traffic);
     try std.testing.expect(f.expect(.expect_certificate_verify));
-    try advanceFlight(&f, cv);
+    try advanceFlight(&f, cv, traffic);
     try std.testing.expect(f.expect(.expect_finished));
-    try advanceFlight(&f, fin);
+
+    // 服务端 Finished 覆盖的是**收到它之前**的转录（CH…CV），这里正是 Flight 自己算出来的
+    const before_fin = f.transcript.snapshot();
+    const good = tls_keyschedule.finishedVerifyData(traffic, &before_fin);
+    var good_msg_buf: [40]u8 = undefined;
+    const good_fin = hsMsg(&good_msg_buf, handshake_type_finished, &good);
+    try advanceFlight(&f, good_fin, traffic);
     try std.testing.expect(f.expect(.done));
 
-    // 错序：Finished 先到
+    // 伪造的 verify_data 必须被拒（曾经这里只计入转录、不校验）
     var g = Flight.init();
-    try std.testing.expectError(Flight.Error.UnexpectedMessage, advanceFlight(&g, fin));
-    // 错序：CV 在 Certificate 之前
+    try advanceFlight(&g, ee, traffic);
+    try advanceFlight(&g, cert, traffic);
+    try advanceFlight(&g, cv, traffic);
+    try std.testing.expectError(Flight.Error.BadFinished, advanceFlight(&g, fin, traffic));
+
+    // 错序：Finished 先到
     var h = Flight.init();
-    try advanceFlight(&h, ee);
-    try std.testing.expectError(Flight.Error.UnexpectedMessage, advanceFlight(&h, cv));
+    try std.testing.expectError(Flight.Error.UnexpectedMessage, advanceFlight(&h, fin, traffic));
+    // 错序：CV 在 Certificate 之前
+    var k = Flight.init();
+    try advanceFlight(&k, ee, traffic);
+    try std.testing.expectError(Flight.Error.UnexpectedMessage, advanceFlight(&k, cv, traffic));
 }
 
 test "flight: Certificate 列表逐张切出 DER，bin/长度不符即报错" {
