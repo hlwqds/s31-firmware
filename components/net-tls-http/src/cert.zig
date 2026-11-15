@@ -67,6 +67,9 @@ pub const UtcTime = struct {
 pub const Cert = struct {
     /// 整个 tbsCertificate 的原始 DER（签名的输入）。
     tbs: []const u8,
+    /// serialNumber 的原始 INTEGER 内容（去掉 02/长度；可能带前导 0x00）。
+    /// CRL 吊销检查按这个字节串比对，所以不做数值化——序列号允许超过 64 位。
+    serial: []const u8,
     /// tbs 里 signature 算法的 OID 内容（不含 06/长度）。
     tbs_sig_oid: []const u8,
     /// 外层 signatureAlgorithm 的 OID 内容。
@@ -160,6 +163,7 @@ pub fn parse(der: []const u8) Error!Cert {
 
     var out: Cert = .{
         .tbs = tbs.raw,
+        .serial = "", // 由 tbs 解析后填入
         .tbs_sig_oid = undefined,
         .sig_oid = undefined,
         .sig = sig_bits.body[1..],
@@ -191,7 +195,7 @@ pub fn parse(der: []const u8) Error!Cert {
     if (n < i + 6) return Error.MissingField;
 
     const serial = try expectTag(children[i], 0x02);
-    _ = serial;
+    out.serial = serial.body;
     const tbs_alg = try expectTag(children[i + 1], 0x30);
     out.tbs_sig_oid = try algorithmOid(tbs_alg);
     if (!std.mem.eql(u8, out.tbs_sig_oid, &oid_ecdsa_sha256)) return Error.UnsupportedAlgorithm;
