@@ -40,6 +40,8 @@ pub const Error = error{
     RecordAuthFailed,
     /// 对端发来 alert（`alert` 字段带 level/description）。
     ServerAlert,
+    /// ServerHello 解析失败（细节见 `last_parse_error`，可用 `@errorFromInt` 还原名字）。
+    BadServerHello,
     /// 配了 trust 证书，但对端出示的叶证书不是钉住的那张。
     CertificatePinMismatch,
     /// 配了 trust 证书但 CertificateVerify 验不过（签名或 scheme 不对）。
@@ -96,6 +98,9 @@ pub const Client = struct {
     leaf_fingerprint: [32]u8 = @splat(0),
 
     alert: ?Alert = null,
+    /// 最近一次 ServerHello 解析失败的原始错误码（板上没有 stderr，driver 用
+    /// `@errorFromInt` 还原成具体名字；这个字段就是在定位"压缩方法读错字节"时加的）。
+    last_parse_error: u16 = 0,
     /// 应用数据阶段最近一条记录的内容位置（内容留在调用方的 scratch 里）。
     last_payload_len: usize = 0,
     last_payload_type: u8 = 0,
@@ -160,7 +165,10 @@ pub const Client = struct {
 
         // 转录在 ServerHello **之后**取快照（CH..SH）。
         self.flight.transcript.add(sh_msg);
-        const sh = handshake.parseServerHello(sh_msg) catch return Error.UnexpectedState;
+        const sh = handshake.parseServerHello(sh_msg) catch |e| {
+            self.last_parse_error = @intFromError(e);
+            return Error.BadServerHello;
+        };
         self.shared = x25519.scalarmult(self.secret, sh.key_share) catch return Error.NoKeyShare;
 
         const th = self.level();
