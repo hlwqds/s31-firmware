@@ -26,6 +26,7 @@ const protect = @import("tls_protect.zig");
 const x25519 = @import("x25519.zig");
 const ks = @import("tls_keyschedule.zig");
 const cert = @import("cert.zig");
+const chain = @import("chain.zig");
 const random = @import("random.zig");
 const aead = @import("aead.zig");
 
@@ -44,6 +45,12 @@ pub const Error = error{
     BadServerHello,
     /// 配了 trust 证书，但对端出示的叶证书不是钉住的那张。
     CertificatePinMismatch,
+    /// 链校验失败：签发关系/签名/锚不对。
+    CertificateChainFailed,
+    /// 链校验发现证书过期。
+    CertificateExpired,
+    /// 链校验发现主机名与 SAN 不匹配。
+    CertificateHostnameMismatch,
     /// 配了 trust 证书但 CertificateVerify 验不过（签名或 scheme 不对）。
     CertificateVerifyFailed,
     /// 配了 trust 证书但证书本身解析失败。
@@ -65,8 +72,12 @@ pub const Alert = struct { level: u8, description: u8 };
 
 pub const Options = struct {
     server_name: []const u8,
-    /// 调用方提供的信任证书（DER）。null ⇒ 只验证书自洽与 CV 签名，不判信任。
+    /// PIN 模式：钉住单张证书（DER）。null ⇒ 不用 PIN。
     trust_cert_der: ?[]const u8 = null,
+    /// 链模式：信任锚（DER，调用方持有，不采信对端链里的根）。
+    trust_anchor_der: ?[]const u8 = null,
+    /// 校验有效期用的“现在”。null ⇒ **跳过并标注**（没有可信时钟就别假装验过）。
+    now: ?cert.UtcTime = null,
 };
 
 pub const Client = struct {
@@ -96,6 +107,11 @@ pub const Client = struct {
     certificate_verified_self_signed: bool = false,
     /// 叶证书指纹（SHA-256），供日志对拍；切片持有会随重组缓冲失效，所以只留指纹。
     leaf_fingerprint: [32]u8 = @splat(0),
+    /// 叶证书 DER 的**稳定副本**（重组缓冲会被下一条消息覆盖，CV 还要用它验签）。
+    leaf_der: [cert.max_cert_len]u8 = undefined,
+    leaf_len: usize = 0,
+    /// 有效期是否真的检查过（`now == null` 时为 false，日志必须照实写）。
+    expiry_checked: bool = false,
 
     alert: ?Alert = null,
     /// 最近一次 ServerHello 解析失败的原始错误码（板上没有 stderr，driver 用
@@ -232,15 +248,33 @@ pub const Client = struct {
                 var entries: [handshake.max_certs]handshake.CertEntry = undefined;
                 const list = handshake.parseCertificate(msg, &entries) catch return Error.BadCertificate;
                 if (list.len > 0) {
+                    if (list[0].der.len > self.leaf_der.len) return Error.BadCertificate;
+                    @memcpy(self.leaf_der[0..list[0].der.len], list[0].der);
+                    self.leaf_len = list[0].der.len;
                     const leaf = cert.parse(list[0].der) catch return Error.BadCertificate;
                     self.leaf_fingerprint = cert.fingerprint(list[0].der);
-                    // PIN 语义：配了 trust 就必须是**同一张**证书。只验 CV 签名不够——
-                    // 否则任何持有自己私钥的服务端都能过（CV 用它的公钥验它自己的签名）。
-                    if (self.opts.trust_cert_der) |pinned| {
+
+                    if (self.opts.trust_anchor_der) |anchor| {
+                        // 链模式：锚由调用方给；对端链里的其它证书只作为候选签发者。
+                        var issuers: [handshake.max_certs][]const u8 = undefined;
+                        var n: usize = 0;
+                        for (list[1..]) |e| {
+                            issuers[n] = e.der;
+                            n += 1;
+                        }
+                        const r = chain.verifyChain(list[0].der, issuers[0..n], anchor, self.opts.now, self.opts.server_name) catch |e| switch (e) {
+                            chain.Error.Expired => return Error.CertificateExpired,
+                            chain.Error.HostnameMismatch => return Error.CertificateHostnameMismatch,
+                            else => return Error.CertificateChainFailed,
+                        };
+                        self.certificate_trusted = true;
+                        self.expiry_checked = r.expiry_checked;
+                    } else if (self.opts.trust_cert_der) |pinned| {
+                        // PIN 语义：必须是**同一张**证书；只验 CV 签名不够。
                         if (!std.mem.eql(u8, pinned, list[0].der)) return Error.CertificatePinMismatch;
+                        self.certificate_trusted = true;
                     }
-                    // 自签校验只做记录，**不当作握手前提**：CA 签发的叶证书本来就不是
-                    // 自签的，在这里失败会把正常服务器拒之门外。
+                    // 自签校验只做记录，不当作握手前提。
                     if (cert.verifySignature(&leaf)) |_| {
                         self.certificate_verified_self_signed = true;
                     } else |_| {}
@@ -254,7 +288,13 @@ pub const Client = struct {
                     var buf: [128 + 32]u8 = undefined;
                     const content = handshake.certificateVerifyContent(&buf, self.level()) catch return Error.BufferTooSmall;
                     cert.verifyMessage(&trusted, content, cv.signature) catch return Error.CertificateVerifyFailed;
-                    self.certificate_trusted = true;
+                } else if (self.opts.trust_anchor_der != null) {
+                    // 链模式：CV 由**出示的叶证书**的私钥签，用它的公钥验（链已经建立信任）。
+                    if (self.leaf_len == 0) return Error.CertificateVerifyFailed;
+                    var leaf = cert.parse(self.leaf_der[0..self.leaf_len]) catch return Error.BadCertificate;
+                    var buf: [128 + 32]u8 = undefined;
+                    const content = handshake.certificateVerifyContent(&buf, self.level()) catch return Error.BufferTooSmall;
+                    cert.verifyMessage(&leaf, content, cv.signature) catch return Error.CertificateVerifyFailed;
                 }
                 // trust 为 null：只记录"未验信任"，不阻断（文档必须照此声明）。
             },
@@ -726,4 +766,119 @@ test "client: established 后 sealApplication 的记录能被对端的应用密�
     const r = try protect.openFragment(&plain, &srv_ap, app[record.header_len..n]);
     try std.testing.expectEqual(@as(u8, 23), r.ct);
     try std.testing.expectEqualStrings("GET / HTTP/1.1\r\n\r\n", plain[0..r.len]);
+}
+
+// ---------------------------------------------------------------------------
+// 链模式的用例：fixture 的私钥可由固定 seed 复现，所以能造出真签名
+// ---------------------------------------------------------------------------
+
+const Ecdsa = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+
+/// 组件 fixture 的密钥（`cert.buildSelfSigned` 用 `generateDeterministic(@splat(0x23))`）。
+fn fixtureKey() Ecdsa.KeyPair {
+    return Ecdsa.KeyPair.generateDeterministic(@splat(0x23)) catch unreachable;
+}
+
+/// 造一条由 fixture 私钥真正签过名的 CertificateVerify 消息。
+fn signCv(buf: []u8, transcript_hash: [32]u8) []const u8 {
+    var content_buf: [128 + 32]u8 = undefined;
+    const content = handshake.certificateVerifyContent(&content_buf, transcript_hash) catch unreachable;
+    const kp = fixtureKey();
+    const sig = kp.sign(content, @splat(0)) catch unreachable;
+    var sig_buf: [Ecdsa.Signature.der_encoded_length_max]u8 = undefined;
+    const sig_der = sig.toDer(&sig_buf);
+    var body: [2 + 2 + Ecdsa.Signature.der_encoded_length_max]u8 = undefined;
+    body[0] = 0x04; // ecdsa_secp256r1_sha256
+    body[1] = 0x03;
+    body[2] = @intCast((sig_der.len >> 8) & 0xff);
+    body[3] = @intCast(sig_der.len & 0xff);
+    @memcpy(body[4..][0..sig_der.len], sig_der);
+    return hsWrap(buf, handshake.handshake_type_certificate_verify, body[0 .. 4 + sig_der.len]);
+}
+
+fn chainOptions(anchor: []const u8, now: ?cert.UtcTime) Options {
+    return .{ .server_name = "ch23.local", .trust_anchor_der = anchor, .now = now };
+}
+
+/// 跑到 CV 之前的公共步骤，返回 (client, srv_tr, sched, srv_hs)。
+fn driveToCv(client: *Client, srv_tr: *handshake.Transcript, sched: *ks.Schedule, srv_hs: *protect.KeyState) !void {
+    var ch_rec: [512]u8 = undefined;
+    const ch_n = try client.start(&ch_rec);
+    const server_secret: [32]u8 = @splat(0x42);
+    const shared = try x25519.scalarmult(server_secret, client.clientPublic());
+    srv_tr.* = handshake.Transcript.init();
+    srv_tr.add(ch_rec[record.header_len..ch_n]);
+
+    var sh_buf: [256]u8 = undefined;
+    const sh = buildServerHello(&sh_buf, x25519.publicKey(server_secret));
+    srv_tr.add(sh);
+    const hs_th = srv_tr.snapshot();
+    sched.* = try ks.buildSchedule(&shared, &hs_th, &hs_th);
+    srv_hs.* = protect.KeyState.init(sched.server_hs_traffic);
+
+    var sh_rec: [300]u8 = undefined;
+    try client.onRecord(wrapHandshakeRecord(&sh_rec, sh), undefined_scratch());
+
+    var msgbuf: [512]u8 = undefined;
+    var sealed: [1024]u8 = undefined;
+    const ee = hsWrap(&msgbuf, handshake.handshake_type_encrypted_extensions, &[_]u8{ 0, 0 });
+    srv_tr.add(ee);
+    try client.onRecord(sealRecord(&sealed, &srv_hs.*, 22, ee), undefined_scratch());
+
+    var cert_body: [1024]u8 = undefined;
+    cert_body[0] = 0;
+    put24b(cert_body[1..], @intCast(3 + cert.fixture_der.len + 2));
+    put24b(cert_body[4..], @intCast(cert.fixture_der.len));
+    @memcpy(cert_body[7..][0..cert.fixture_der.len], cert.fixture_der);
+    cert_body[7 + cert.fixture_der.len] = 0;
+    cert_body[8 + cert.fixture_der.len] = 0;
+    var cb2: [1024]u8 = undefined;
+    const cert_msg = hsWrap(&cb2, handshake.handshake_type_certificate, cert_body[0 .. 9 + cert.fixture_der.len]);
+    srv_tr.add(cert_msg);
+    try client.onRecord(sealRecord(&sealed, &srv_hs.*, 22, cert_msg), undefined_scratch());
+}
+
+test "client+chain: 自签 fixture 作锚 → trusted，CV 用叶证书公钥验过" {
+    var stream = TestStream{};
+    var client = Client.init(chainOptions(cert.fixture_der, .{ .year = 2026, .month = 6, .day = 1, .hour = 0, .minute = 0, .second = 0 }), stream.reader());
+    var srv_tr: handshake.Transcript = undefined;
+    var sched: ks.Schedule = undefined;
+    var srv_hs: protect.KeyState = undefined;
+    try driveToCv(&client, &srv_tr, &sched, &srv_hs);
+    try std.testing.expect(client.certificate_trusted);
+    try std.testing.expect(client.expiry_checked);
+
+    var cv_buf: [512]u8 = undefined;
+    const cv = signCv(&cv_buf, srv_tr.snapshot());
+    srv_tr.add(cv);
+    var sealed: [1024]u8 = undefined;
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, cv), undefined_scratch());
+
+    var msgbuf: [512]u8 = undefined;
+    const before_fin = srv_tr.snapshot();
+    const verify = ks.finishedVerifyData(sched.server_hs_traffic, &before_fin);
+    const fin = hsWrap(&msgbuf, handshake.handshake_type_finished, &verify);
+    srv_tr.add(fin);
+    try client.onRecord(sealRecord(&sealed, &srv_hs, 22, fin), undefined_scratch());
+    try std.testing.expectEqual(Phase.ready_client_finished, client.phase);
+}
+
+test "client+chain: 过期/主机名不符/错误锚各自在证书这一步失败" {
+    var stream = TestStream{};
+    var client = Client.init(chainOptions(cert.fixture_der, .{ .year = 2030, .month = 1, .day = 1, .hour = 0, .minute = 0, .second = 0 }), stream.reader());
+    var srv_tr: handshake.Transcript = undefined;
+    var sched: ks.Schedule = undefined;
+    var srv_hs: protect.KeyState = undefined;
+    try std.testing.expectError(Error.CertificateExpired, driveToCv(&client, &srv_tr, &sched, &srv_hs));
+
+    // 主机名不符
+    var stream2 = TestStream{};
+    var c2 = Client.init(.{ .server_name = "evil.example", .trust_anchor_der = cert.fixture_der, .now = .{ .year = 2026, .month = 6, .day = 1, .hour = 0, .minute = 0, .second = 0 } }, stream2.reader());
+    try std.testing.expectError(Error.CertificateHostnameMismatch, driveToCv(&c2, &srv_tr, &sched, &srv_hs));
+
+    // 锚不是签发者（用一张"看起来像证书"的错误 DER：直接把 fixture 的 CN 改掉做不到，
+    // 用空锚字节触发 BadCertificate → 映射成 CertificateChainFailed）
+    var stream3 = TestStream{};
+    var c3 = Client.init(.{ .server_name = "ch23.local", .trust_anchor_der = "not-a-cert", .now = null }, stream3.reader());
+    try std.testing.expectError(Error.CertificateChainFailed, driveToCv(&c3, &srv_tr, &sched, &srv_hs));
 }

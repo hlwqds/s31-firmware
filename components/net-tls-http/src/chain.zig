@@ -80,7 +80,7 @@ fn signedBy(leaf: *const cert.Cert, issuer: *const cert.Cert) bool {
     return true;
 }
 
-pub const Result = struct { chain_len: usize };
+pub const Result = struct { chain_len: usize, expiry_checked: bool };
 
 /// 校验一条链：`leaf` 由 `issuers` 里的某张签发，链顶必须由 `anchor` 签发（或就是锚）。
 /// `issuers` 顺序不限（逐张尝试），但必须能连成一条到锚的路径。
@@ -88,24 +88,30 @@ pub fn verifyChain(
     leaf_der: []const u8,
     issuer_ders: []const []const u8,
     anchor_der: []const u8,
-    now: cert.UtcTime,
+    now: ?cert.UtcTime,
     hostname: []const u8,
 ) Error!Result {
     const anchor = cert.parse(anchor_der) catch return Error.BadCertificate;
     var leaf = cert.parse(leaf_der) catch return Error.BadCertificate;
 
-    if (!validityContains(&leaf, now)) return Error.Expired;
+    // `now == null` 表示**没有可信时钟**：跳过有效期并在结果里标注，
+    // 而不是拿构建期常量假装验过（那样永远不会失败）。
+    if (now) |n| {
+        if (!validityContains(&leaf, n)) return Error.Expired;
+    }
     if (!hostnameMatches(&leaf, hostname)) return Error.HostnameMismatch;
 
     // 叶证书直接由锚签发？
-    if (signedBy(&leaf, &anchor)) return .{ .chain_len = 1 };
+    if (signedBy(&leaf, &anchor)) return .{ .chain_len = 1, .expiry_checked = now != null };
 
     // 否则在 issuers 里找一张能签叶证书的，再要求它由锚签发（一层中间证书）。
     for (issuer_ders) |der| {
         var mid = cert.parse(der) catch return Error.BadCertificate;
-        if (!validityContains(&mid, now)) continue;
+        if (now) |n| {
+            if (!validityContains(&mid, n)) continue;
+        }
         if (!signedBy(&leaf, &mid)) continue;
-        if (signedBy(&mid, &anchor)) return .{ .chain_len = 2 };
+        if (signedBy(&mid, &anchor)) return .{ .chain_len = 2, .expiry_checked = now != null };
         // 找到了签发者但它本身不被锚信任：明确报"锚没用上"，不静默降级。
         return Error.UntrustedAnchor;
     }

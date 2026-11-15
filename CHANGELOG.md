@@ -47,6 +47,13 @@
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tls-http: 新增 tls_protect.zig — 记录保护(nonce=iv^seq, AD=外层头, 内层类型藏在明文末尾); seal 成功后自己递增序号，open 失败不推进; 用例 5 条; 48 -> 53.
+- net-tls-http：`tls_client` 接上**链模式**。`Options.trust_anchor_der` + `Options.now`：
+  收到 Certificate 时把叶证书复制到稳定缓冲（重组缓冲会被下一条消息覆盖），用
+  `chain.verifyChain` 校验（签发关系/签名/锚/主机名/有效期），CV 改用**叶证书公钥**验；
+  `now == null` 时跳过有效期并置 `expiry_checked = false`（不允许拿构建期常量假装验过）。
+  错误分类：`CertificateChainFailed` / `CertificateExpired` / `CertificateHostnameMismatch`。
+  用例：fixture 私钥可由固定 seed 复现，所以能造**真签名**的 CV 走完整链；
+  过期、主机名不符、坏锚各自在证书这一步失败。65 → 67 项。
 - net-tls-http：`Cert` 给 SAN 条目加了**类型标记** `san_is_ip`，`chain.hostnameMatches`
   只匹配 dNSName（RFC 6125 §6.4.4），不再把 iPAddress SAN 当主机名比较。回归用例
   fixture（含 `ch23.local`、`www.ch23.local`、`127.0.0.1`）：DNS 名字匹配、`127.0.0.1`
