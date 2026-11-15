@@ -86,6 +86,8 @@ pub fn build(b: *std.Build) void {
             }),
         });
         t.root_module.addImport("board", board);
+        // net-sockets 的 wire.zig 需要 net_tcp（真实段 ⇄ 组件内段的适配）
+        if (m.group == .net) t.root_module.addImport("net_tcp", tcp_mod);
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 

@@ -20,4 +20,5 @@ test {
     _ = @import("netstub.zig");
     _ = @import("socket.zig");
     _ = @import("event.zig");
+    _ = @import("wire.zig");
 }

@@ -46,6 +46,10 @@
   `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
   主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
   `wire: checks passed=4 failed=0`、`main: verdict=pass`。
+- net-sockets：新增 `src/wire.zig`——真实 `tcp.Segment` ⇄ 组件内 `netstub.Segment`
+  的适配层（RX 的 kind 判定优先级 rst > syn|ack > syn > fin > data > ack；TX 的
+  kind → flags 与端口/窗口上下文），不复制载荷、不碰网卡。主机用例 28 → 32；
+  `firmware/build.zig` 的 host-test 模块补 `net_tcp` 导入（仅 net group）。
 - net-tcp：`SEND_SLOTS` 8 → 32（每槽只记 `(seq, len)`，代价 256 B `.bss`），
   让慢启动能把 `cwnd` 长到 30 段上下再做拥塞避免。该轮板级实测（ch21-cwnd-emac-lab）：
   在途 10.2 KB → 20.3 KB、`srtt` 3.1 → 2.2 ms，但 64 KiB 传输吞吐 1.87 → 1.89 MB/s

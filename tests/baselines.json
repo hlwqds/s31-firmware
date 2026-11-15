@@ -3,7 +3,7 @@
   "net-udp-dhcp-dns": 50,
   "net-tcp": 32,
   "net-congestion": 21,
-  "net-sockets": 28,
+  "net-sockets": 32,
   "net-tls-http": 32,
   "app-mqtt-ota": 27,
   "wifi-boundary": 15,
