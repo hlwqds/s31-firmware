@@ -41,6 +41,11 @@
   该轮板级实测（ch21-cwnd-emac-lab）：`cksum_us` 6423 → **4778**（126 → 96 µs/帧，
   口径是“走 `fillTcp` 的数据帧”；零拷贝组帧后数据帧的这项已并入 `asm_us`，
   小帧仍走这条路径）。
+- net-tcp：`checksum.Sum.add` 把 16 位字循环**展开 4 个字（8 字节）/轮**；有界折叠
+  （每 4096 字）、奇数字节配对与尾部逻辑不变。板级（ch21-cwnd-emac-lab，两轮）：
+  `asm_us` 11440 → **8111**、整轮 13.8 → **10.4 ms**、吞吐 4.75 → **6.26–6.32 MB/s**，
+  主机 7.5 → 3.3–4.2 ms，`mismatches=0`。线上语义已用生产 `net-wire` 复验：
+  `wire: checks passed=4 failed=0`、`main: verdict=pass`。
 - net-tcp：`SEND_SLOTS` 8 → 32（每槽只记 `(seq, len)`，代价 256 B `.bss`），
   让慢启动能把 `cwnd` 长到 30 段上下再做拥塞避免。该轮板级实测（ch21-cwnd-emac-lab）：
   在途 10.2 KB → 20.3 KB、`srtt` 3.1 → 2.2 ms，但 64 KiB 传输吞吐 1.87 → 1.89 MB/s

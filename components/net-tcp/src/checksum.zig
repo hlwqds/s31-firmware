@@ -52,16 +52,23 @@ pub const Sum = struct {
             i = 1;
             self.odd = null;
         }
-        // 任意长度切片都安全：u32 累加器在 4096 个字后可能逼近 2^32
-        // （4096 × 0xFFFF ≈ 2.68e8，仍有 16 倍余量），所以按 4096 字折一次。
+        // 展开 4 个 u16/轮（8 字节）：省掉 3/4 的循环分支，读入仍是逐字节（rv32 上
+        // 2 字节对齐不保证，别假设能一次 lbu 变 lhu）。
         var since_fold: u32 = 0;
-        while (i + 1 < bytes.len) : (i += 2) {
+        while (i + 8 <= bytes.len) : (i += 8) {
             self.acc += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
-            since_fold += 1;
-            if (since_fold == 4096) {
+            self.acc += (@as(u32, bytes[i + 2]) << 8) | bytes[i + 3];
+            self.acc += (@as(u32, bytes[i + 4]) << 8) | bytes[i + 5];
+            self.acc += (@as(u32, bytes[i + 6]) << 8) | bytes[i + 7];
+            since_fold += 4;
+            if (since_fold >= 4096) {
+                // 有界折叠：4096 字 × 0xFFFF ≈ 2.68e8，余量 16 倍
                 self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
                 since_fold = 0;
             }
+        }
+        while (i + 1 < bytes.len) : (i += 2) {
+            self.acc += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
         }
         // 末尾一次折叠（含上面 odd 字与可能剩下的单字节）
         self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
