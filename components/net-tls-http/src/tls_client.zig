@@ -81,6 +81,9 @@ pub const Options = struct {
     trust_cert_der: ?[]const u8 = null,
     /// 链模式：信任锚（DER，调用方持有，不采信对端链里的根）。
     trust_anchor_der: ?[]const u8 = null,
+    /// 信任库：多根锚。非空时优先于 `trust_anchor_der`，语义是"任一路径终结于
+    /// 库中任一锚即信任"（RFC 5280 的 trust store 行为）。
+    anchors_der: []const []const u8 = &.{},
     /// 校验有效期用的“现在”。null ⇒ **跳过并标注**（没有可信时钟就别假装验过）。
     now: ?cert.UtcTime = null,
     /// 可选 CRL（DER）。给了就在链校验之后按序列号查吊销；CRL 的签名由
@@ -264,7 +267,46 @@ pub const Client = struct {
                     const leaf = cert.parse(list[0].der) catch return Error.BadCertificate;
                     self.leaf_fingerprint = cert.fingerprint(list[0].der);
 
-                    if (self.opts.trust_anchor_der) |anchor| {
+                    if (self.opts.anchors_der.len > 0) {
+                        var last_err: ?chain.Error = null;
+                        var saw_untrusted = false;
+                        var saw_no_issuer = false;
+                        var trusted: ?chain.Result = null;
+                        for (self.opts.anchors_der) |anchor| {
+                            var issuers: [handshake.max_certs][]const u8 = undefined;
+                            var n: usize = 0;
+                            for (list[1..]) |e| {
+                                issuers[n] = e.der;
+                                n += 1;
+                            }
+                            if (chain.verifyChain(list[0].der, issuers[0..n], anchor, self.opts.now, self.opts.server_name)) |r| {
+                                trusted = r;
+                                break;
+                            } else |e| {
+                                switch (e) {
+                                    chain.Error.UntrustedAnchor => saw_untrusted = true,
+                                    chain.Error.NoIssuer => saw_no_issuer = true,
+                                    chain.Error.Expired => return Error.CertificateExpired,
+                                    chain.Error.HostnameMismatch => return Error.CertificateHostnameMismatch,
+                                    else => last_err = e,
+                                }
+                            }
+                        }
+                        const r = trusted orelse {
+                            if (saw_untrusted) return Error.CertificateUntrustedAnchor;
+                            if (saw_no_issuer) return Error.CertificateChainFailed;
+                            if (last_err != null) return Error.CertificateChainFailed;
+                            return Error.CertificateChainFailed;
+                        };
+                        self.certificate_trusted = true;
+                        self.expiry_checked = r.expiry_checked;
+                        self.chain_len = @intCast(r.chain_len);
+                        if (self.opts.crl_der) |crl_der| {
+                            var issuer_cert = cert.parse(r.issuer_der) catch return Error.BadCertificate;
+                            const crl = crl_mod.parse(crl_der, &issuer_cert) catch return Error.CertificateChainFailed;
+                            if (crl.isRevoked(leaf.serial)) return Error.CertificateRevoked;
+                        }
+                    } else if (self.opts.trust_anchor_der) |anchor| {
                         // 链模式：锚由调用方给；对端链里的其它证书只作为候选签发者。
                         var issuers: [handshake.max_certs][]const u8 = undefined;
                         var n: usize = 0;
