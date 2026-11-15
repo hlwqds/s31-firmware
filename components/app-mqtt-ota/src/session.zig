@@ -48,6 +48,8 @@ pub const State = enum {
 
 pub const Config = struct {
     keepalive_s: u16 = 60,
+    /// 会话恢复：false 时订阅与离线消息由 broker 保留（ch23 lab 用它验过 resume）。
+    clean_session: bool = true,
     /// 同时在途的 QoS>0 报文上限（真机上就是 broker 的 receive maximum，
     /// 3.1.1 没有这个字段，靠我们自律）。
     max_inflight: u8 = 4,
@@ -199,7 +201,7 @@ pub const Session = struct {
         const n = try mqtt.encodeConnect(&buf, .{
             .client_id = client_id,
             .keepalive_s = self.cfg.keepalive_s,
-            .clean_session = true,
+            .clean_session = self.cfg.clean_session,
         });
         self.sink.emit(buf[0..n]);
         self.state = .connecting;
