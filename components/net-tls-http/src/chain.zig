@@ -80,7 +80,13 @@ fn signedBy(leaf: *const cert.Cert, issuer: *const cert.Cert) bool {
     return true;
 }
 
-pub const Result = struct { chain_len: usize, expiry_checked: bool };
+pub const Result = struct {
+    chain_len: usize,
+    expiry_checked: bool,
+    /// 实际签发叶证书的那张证书（DER）：chain_len=1 时是锚，=2 时是中间证书。
+    /// 吊销检查要用它验 CRL 的签名——CRL 由签发者签，不是由锚签。
+    issuer_der: []const u8,
+};
 
 /// 校验一条链：`leaf` 由 `issuers` 里的某张签发，链顶必须由 `anchor` 签发（或就是锚）。
 /// `issuers` 顺序不限（逐张尝试），但必须能连成一条到锚的路径。
@@ -102,7 +108,7 @@ pub fn verifyChain(
     if (!hostnameMatches(&leaf, hostname)) return Error.HostnameMismatch;
 
     // 叶证书直接由锚签发？
-    if (signedBy(&leaf, &anchor)) return .{ .chain_len = 1, .expiry_checked = now != null };
+    if (signedBy(&leaf, &anchor)) return .{ .chain_len = 1, .expiry_checked = now != null, .issuer_der = anchor_der };
 
     // 否则在 issuers 里找一张能签叶证书的，再要求它由锚签发（一层中间证书）。
     for (issuer_ders) |der| {
@@ -111,7 +117,7 @@ pub fn verifyChain(
             if (!validityContains(&mid, n)) continue;
         }
         if (!signedBy(&leaf, &mid)) continue;
-        if (signedBy(&mid, &anchor)) return .{ .chain_len = 2, .expiry_checked = now != null };
+        if (signedBy(&mid, &anchor)) return .{ .chain_len = 2, .expiry_checked = now != null, .issuer_der = der };
         // 找到了签发者但它本身不被锚信任：明确报"锚没用上"，不静默降级。
         return Error.UntrustedAnchor;
     }

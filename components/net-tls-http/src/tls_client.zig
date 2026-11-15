@@ -26,6 +26,7 @@ const protect = @import("tls_protect.zig");
 const x25519 = @import("x25519.zig");
 const ks = @import("tls_keyschedule.zig");
 const cert = @import("cert.zig");
+const crl_mod = @import("crl.zig");
 const chain = @import("chain.zig");
 const random = @import("random.zig");
 const aead = @import("aead.zig");
@@ -49,6 +50,8 @@ pub const Error = error{
     CertificateChainFailed,
     /// 链里找到了签发者，但它不被注入的锚信任（`chain.Error.UntrustedAnchor`）。
     CertificateUntrustedAnchor,
+    /// 叶证书的序列号出现在配置的 CRL 里。
+    CertificateRevoked,
     /// 链校验发现证书过期。
     CertificateExpired,
     /// 链校验发现主机名与 SAN 不匹配。
@@ -80,6 +83,9 @@ pub const Options = struct {
     trust_anchor_der: ?[]const u8 = null,
     /// 校验有效期用的“现在”。null ⇒ **跳过并标注**（没有可信时钟就别假装验过）。
     now: ?cert.UtcTime = null,
+    /// 可选 CRL（DER）。给了就在链校验之后按序列号查吊销；CRL 的签名由
+    /// **签发叶证书的那张证书**验（不是锚）。
+    crl_der: ?[]const u8 = null,
 };
 
 pub const Client = struct {
@@ -275,6 +281,12 @@ pub const Client = struct {
                         self.certificate_trusted = true;
                         self.expiry_checked = r.expiry_checked;
                         self.chain_len = @intCast(r.chain_len);
+
+                        if (self.opts.crl_der) |crl_der| {
+                            var issuer_cert = cert.parse(r.issuer_der) catch return Error.BadCertificate;
+                            const crl = crl_mod.parse(crl_der, &issuer_cert) catch return Error.CertificateChainFailed;
+                            if (crl.isRevoked(leaf.serial)) return Error.CertificateRevoked;
+                        }
                     } else if (self.opts.trust_cert_der) |pinned| {
                         // PIN 语义：必须是**同一张**证书；只验 CV 签名不够。
                         if (!std.mem.eql(u8, pinned, list[0].der)) return Error.CertificatePinMismatch;
