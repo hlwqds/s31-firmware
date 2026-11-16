@@ -15,6 +15,11 @@
 //!     （`esp_wifi_init` 路径），而不是继续调容量；
 //!   - 容量按**段字节**算（`readelf -S`），不是对象文件大小：全量 105 个对象 text 384 590 +
 //!     rodata 102 518，文件却有 2.6 MB（debug/符号表）。
+//!   - 关掉 `app.link_gc_sections` 后 lld 报 **195 个未定义符号**（不是 208；libgcc 那 24 个由
+//!     Zig 的 compiler_rt 满足）。用 195 个自动生成的桩补齐后**链接成功**：`.flash.text`
+//!     586 384 B（窗口 720 896）、`elf2image` 报 `Invalid segment count 124 (max 16)`。
+//!     124 段的来源是 blob 的 **603 个 `.rodata_wlog…`** 独立段 + `.wifislprxiram.*` + `.eh_frame*`，
+//!     我们的 `s31.ld` 没收集它们。**R3 的下一步是段收集，不是适配层逻辑。**
 //!
 //! 等 R3 真正开工时，这些桩要换成 esp_adapter（TLSF 堆、FreeRTOS 队列/信号量、
 //! esp_phy/coex 的真实钩子）。

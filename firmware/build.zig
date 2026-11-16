@@ -34,7 +34,10 @@ pub fn build(b: *std.Build) void {
     const g_wire = b.option(bool, "wire", "真实链路探针（DHCP+TCP，需主机配合）") orelse false;
     // R3 链接实验：把 IDF 的 Wi-Fi blob（net80211/pp/core）加进链接，看能不能吃下。
     // 只在给了目录时生效；产物**不上板**（适配层全是桩）。
-    const wifi_blob_dir = b.option([]const u8, "wifi-blob-dir", "directory with libnet80211.a/libpp.a/libcore.a (link experiment)") orelse "";
+    const wifi_blob_dir = b.option([]const u8, "wifi-blob-dir", "directory with unpacked blob objects (link experiment)") orelse "";
+    // 逗号分隔的对象文件名（相对 wifi-blob-dir）。用 `ls *.o | paste -sd,` 生成，
+    // 这样链接命令行上一眼能看见到底进了哪些成员，也不用在 build.zig 里做目录扫描。
+    const wifi_blob_objs = b.option([]const u8, "wifi-blob-objs", "comma-separated object names inside wifi-blob-dir") orelse "";
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -94,16 +97,17 @@ pub fn build(b: *std.Build) void {
     if (wifi_blob_dir.len > 0) {
         // 目录里是 .a 就按归档加（成员按需取用）；是解包后的 .o 就全部加（等价 --whole-archive）。
         // 后者才是"这个 blob 到底能不能塞进两段窗口"的真实测量。
-        // 现实会拉进来的那批对象（api/ioctl/sta/output/scan + pp 的 pm/wdev/pp），
-        // 由 `ar x` 解包到一个目录后整批链接——等价 --whole-archive，才能真正量出体积。
-        const objs = [_][]const u8{
-            "ieee80211_api.o",   "ieee80211_ioctl.o", "ieee80211_sta.o",
-            "ieee80211_output.o", "ieee80211_scan.o", "pp.o",
-            "wdev.o",            "pm.o",
-        };
-        for (objs) |name| {
+        var obj_it = std.mem.splitScalar(u8, wifi_blob_objs, ',');
+        var added: usize = 0;
+        while (obj_it.next()) |name| {
+            if (name.len == 0) continue;
             app.root_module.addObjectFile(.{ .cwd_relative = b.fmt("{s}/{s}", .{ wifi_blob_dir, name }) });
+            added += 1;
         }
+        if (added == 0) @panic("-Dwifi-blob-objs 为空：给它逗号分隔的对象名");
+        // 关掉 --gc-sections：否则没被引用的段会被整段裁掉，量到的"能链接"是空转。
+        // 只在实验分支里关，常规构建保持默认。
+        app.link_gc_sections = false;
         const blobs_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/adapter.zig") });
         // 归档成员只在被引用时才会取用：用一个独立的 Zig 对象引用 probe()，
         // 否则链接"成功"只是什么都没拉进来。
