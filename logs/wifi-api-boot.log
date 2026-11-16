@@ -1,26 +1,26 @@
 wifi-init-probe: begin
-wifi-init-probe: arena=372336 B
-wifi-init-probe: table=0x2f01bf4c cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: arena=372400 B
+wifi-init-probe: table=0x2f01bf10 cfg magic=0x1f2f3f4f crypto size=52
 wifi-init-probe: task blocked -> yielded to idle hook
 wifi-init-probe: esp_wifi_init_internal rc=0
-wifi-init-probe: INIT OK, arena free=368464/372320 B, bad_handle=0, blocking_refused=2
+wifi-init-probe: INIT OK, arena free=340880/372384 B, bad_handle=0, blocking_refused=1
 wifi-init-probe: tasks recorded=1
-sched-test: begin, task sp=0x2f01bc80 stack=0x2f017cc0
+sched-test: begin, task sp=0x2f01bb80 stack=0x2f017bc0
 sched-test: task iteration 0 (yielding)
-sched-test: main resumed after round 0 (main_sp=0x2f07ac50 task_sp=0x2f01bb50)
+sched-test: main resumed after round 0 (main_sp=0x2f07ac50 task_sp=0x2f01ba50)
 sched-test: task iteration 0 resumed
 sched-test: task iteration 1 (yielding)
-sched-test: main resumed after round 1 (main_sp=0x2f07ac50 task_sp=0x2f01bb50)
+sched-test: main resumed after round 1 (main_sp=0x2f07ac50 task_sp=0x2f01ba50)
 sched-test: task iteration 1 resumed
 sched-test: task iteration 2 (yielding)
-sched-test: main resumed after round 2 (main_sp=0x2f07ac50 task_sp=0x2f01bb50)
+sched-test: main resumed after round 2 (main_sp=0x2f07ac50 task_sp=0x2f01ba50)
 sched-test: task iteration 2 resumed
 sched-test: task done, returning to main
-sched-test: main resumed after round 3 (main_sp=0x2f07ac50 task_sp=0x2f01bb50)
+sched-test: main resumed after round 3 (main_sp=0x2f07ac50 task_sp=0x2f01ba50)
 sched-test: PASS
 wifi-init-probe: reg_rxcb rc=0
 wifi-init-probe: get_config_channel rc=0 primary=0 second=0
-wifi-init-probe: internal_tx rc=0x3007 (64 B)
+wifi-init-probe: internal_tx rc=0x3002 (64 B)
 wifi-init-probe: starting task[0] entry=0x2f00d024 arg=0x00000000 on its own stack
 wifi-init-probe: task context ready (not started yet)
-wifi-init-probe: calling esp_wifi_start (idle_calls=320, hook budget=1000)
+wifi-init-probe: calling esp_wifi_start (idle_calls=128, hook budget=1000)

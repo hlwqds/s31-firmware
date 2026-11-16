@@ -474,7 +474,9 @@ pub var calls: struct {
     task_delay: u32 = 0,
 } = .{};
 
-/// "当前任务"的假对象。blob 会解引用它的字段（实测 `lw s0,12(a0)` → 再把 s0 当指针解引用），
+/// 任务的假对象：**一个指针同时充当"创建时写出的 handle"与"当前任务"**。
+/// 两者曾经是两个不同的全局，导致 ROM 的身份判断（"我是不是 wifi 任务"）永远为假。
+/// blob 会解引用它的字段（实测 `lw s0,12(a0)` → 再把 s0 当指针解引用），
 /// 所以必须是**足够大的清零缓冲**：单字节时 `+12` 读到相邻 `.bss`（实测 0x102），
 /// 随后 `lw a5,0(s0)` 直接 fault（misaligned, mtval=0x102）。
 var task_dummy: [256]u8 align(16) = @splat(0);
@@ -598,9 +600,6 @@ pub const Task = struct {
 };
 pub var tasks: [4]Task = @splat(.{});
 pub var task_count: usize = 0;
-/// 任务 handle 的假对象：同样要够大且清零（blob 可能解引用 handle 的字段）。
-var task_handle_dummy: [64]u8 align(16) = @splat(0);
-
 /// `_task_delete`：从任务表里移除该 handle 对应的槽位（桩不释放会让重复 init 泄漏槽位）。
 fn shellTaskDelete(p: ?*anyopaque) callconv(.c) void {
     if (p == null) return;
@@ -630,7 +629,8 @@ fn shellTaskCreatePinned(
     if (task_count >= tasks.len) return 0;
     tasks[task_count] = .{ .entry = entry, .arg = param };
     task_count += 1;
-    if (handle_out) |h| h.* = @ptrCast(&task_handle_dummy);
+    // handle 与"当前任务"是同一个对象（见 `task_dummy` 的说明）。
+    if (handle_out) |h| h.* = @ptrCast(&task_dummy);
     return 1; // pdPASS
 }
 

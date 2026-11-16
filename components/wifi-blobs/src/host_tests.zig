@@ -360,3 +360,18 @@ test "sched: initContext 把帧放在栈区间内且 16 字节对齐" {
     while (i < 12) : (i += 1) try std.testing.expectEqual(@as(u32, 0), sched.frameWord(&ctx, i));
     try std.testing.expect(sched.frameWord(&ctx, 12) != 0);
 }
+
+test "osi_impl: 创建写出的 handle 与 _task_get_current_task 是同一个对象" {
+    var buf: [4096]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+    const create: *const fn (?*const anyopaque, ?[*:0]const u8, u32, ?*anyopaque, u32, *?*anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._task_create.?);
+    const current: *const fn () callconv(.c) ?*anyopaque = @ptrCast(tbl._task_get_current_task.?);
+
+    var handle: ?*anyopaque = null;
+    const rc = create(null, "t", 1024, null, 1, &handle, 0);
+    try std.testing.expectEqual(@as(i32, 1), rc);
+    try std.testing.expect(handle != null);
+    // 身份判断依赖这一点：handle 与 current 必须是同一指针。
+    try std.testing.expectEqual(@intFromPtr(handle.?), @intFromPtr(current()));
+}
