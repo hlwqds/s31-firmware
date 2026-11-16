@@ -3093,3 +3093,27 @@ IDF 在同样的空白 NVS 上也会得到同一个返回码 ⇒ **不是分歧�
 PHY 校准数据**根本存不下**。已提到 **2048**，并把 `max_slots` 从 32 降到 8（静态占用 16 KiB，可接受）。
 改完重测：自旋**不变**（`mepc=0x2f0091fe`，`mac=0x00fff000`）——所以"存不下校准数据"也不是当前卡点，
 但这个容量 bug 该修（它是真实存在的隐患）。
+
+### `clk_conf_power_st`（+0x0C）**就是**逐域 ICG 控制寄存器——IDF 的写法是逐域 OR
+
+IDF 的 `modem_clock_hal_set_clock_domain_icg_bitmap()`（`components/hal/esp32s31/modem_clock_hal.c:23`）
+逐域落到 **`hw->clk_conf_power_st.clk_*_st_map`**（`modem_syscon_ll.h:227-272`）：
+
+| 域 | 字段（+0x0C 的 nibble） |
+| --- | --- |
+| MODEM_APB | bits 31:28 `clk_modem_apb_st_map` |
+| MODEM_PERIPH | bits 27:24 `clk_modem_peri_st_map` |
+| **WIFI** | bits 23:20 `clk_wifi_st_map` |
+| BT | bits 19:16 `clk_bt_st_map` |
+| **FE** | bits 15:12 `clk_fe_st_map` |
+| IEEE802154 | bits 11:8 `clk_zb_st_map` |
+
+而 IDF 的初始化（`modem_clock.c:121` `modem_clock_module_icg_map_init_all()`）是**逐域**：
+`new = icg_config[domain] | 当前该域字段`，其中 `icg_config` 在 S31 端口里是
+`ICG_NOGATING_ACTIVE|ICG_NOGATING_MODEM`（= `BIT(2)|BIT(1)` = **6**）或只有 `ACTIVE`（= **4**）
+（`port/esp32s31/modem_clock_impl.c:370`）。**这正好解释了 IDF 的 `0x64646400`**：wifi/fe/modem_apb = 6，
+其余 = 4。
+
+⇒ 所以 `+0x0C` **是可写的逐域 ICG 控制**，不是只读状态（此前"写完读回 0"的解读要改）。
+我们写 `0x64646400` 不生效，需要单独查：可能是**写的时机**（modem APB 时钟还没开）或写后被别的初始化覆盖。
+这条与"MAC 域没真正上电"是同一件事的两面。
