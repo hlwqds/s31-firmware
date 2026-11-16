@@ -51,6 +51,12 @@ MEMORY
     sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
 }
 
+/* ROM 符号（Wi-Fi blob 需要的 ROM 函数/数据地址）。只抄了本仓引用到的那些，
+ * 见 rom_syms.ld 的说明。常规镜像不引用它们，包含进来无副作用。
+ *
+ * 路径相对**构建根**（`zig build` 必须在 firmware/ 下跑，这是 Zig 的约定），
+ * 因为 lld 的 INCLUDE 是相对 cwd 解析的，不是相对本脚本。 */
+
 SECTIONS
 {
     .flash.text : ALIGN(16)
@@ -193,3 +199,5 @@ SECTIONS
     PROVIDE(esp_rom_printf = 0x2f800024);
     PROVIDE(esp_rom_delay_us = 0x2f80003c);
 }
+
+INCLUDE ../boards/esp32s31-coreboard/linker/rom_syms.ld
