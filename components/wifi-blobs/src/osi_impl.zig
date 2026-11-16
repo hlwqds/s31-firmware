@@ -233,6 +233,7 @@ pub const Queue = struct {
         @memcpy(b[self.tail * self.item_size ..][0..self.item_size], item);
         self.tail = (self.tail + 1) % self.cap;
         self.count += 1;
+        send_probe += 1;
         return 1;
     }
 
@@ -484,15 +485,16 @@ pub const idle_spin_limit: u32 = 64;
 pub const queue_block_spin_limit: u32 = 20_000;
 /// 最近的钩子调用（id = `hook_ids` 的下标），用于停机时说明"它在等什么"。
 pub const hook_ids = [_][]const u8{
-    "semphr_take", "semphr_give",   "mutex_lock",        "mutex_unlock",
-    "queue_recv",  "queue_send",    "queue_msg_waiting", "task_create",
-    "malloc",      "zalloc",        "calloc",            "mutex_create",
-    "event_post",  "alloc",         "recv_probe",        "phy_enable",
-    "timer_fire",  "timer_setfn",   "timer_arm",         "timer_disarm",
-    "wifi_clk_en", "wifi_clk_dis",  "wifi_reset_mac",    "coex_init",
-    "coex_enable", "coex_status",   "coex_pti",          "coex_req",
-    "coex_rel",    "coex_interval", "coex_start_cb",     "set_intr",
-    "set_isr",     "ints_on",
+    "semphr_take",   "semphr_give", "mutex_lock",        "mutex_unlock",
+    "queue_recv",    "queue_send",  "queue_msg_waiting", "task_create",
+    "malloc",        "zalloc",      "calloc",            "mutex_create",
+    "event_post",    "alloc",       "recv_probe",        "phy_enable",
+    "timer_fire",    "timer_setfn", "timer_arm",         "timer_disarm",
+    // 17 = queue_send_ok（`Queue.send` 成功分支）
+    "queue_send_ok", "wifi_clk_en", "wifi_clk_dis",      "wifi_reset_mac",
+    "coex_init",     "coex_enable", "coex_status",       "coex_pti",
+    "coex_req",      "coex_rel",    "coex_interval",     "coex_start_cb",
+    "set_intr",      "set_isr",     "ints_on",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
@@ -893,6 +895,8 @@ const TimerEntry = struct {
 };
 var timers: [16]TimerEntry = @splat(TimerEntry{});
 var timer_fires: u32 = 0;
+/// 诊断：`Queue.send` 成功次数（前 8 次用 note(17) 记录 {队列指针, 之后 count}）。
+var send_probe: u32 = 0;
 /// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。
 /// **诊断用强制上膛**：把"已 `setfn` 但未 armed"的定时器全部设成"立即到期、一次性"，
 /// 交给 `serviceTimers()` 走真实路径 fire。返回被上膛的个数。
