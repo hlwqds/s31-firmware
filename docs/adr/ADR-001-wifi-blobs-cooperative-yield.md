@@ -2046,3 +2046,20 @@ modem APB / modem PERI / WIFI 域的"实际状态"。在 IDF 侧读它前后各�
 **下一步**：`MODEM_PWR` 整块在 IDF 里**始终为 0**，所以域上电不是它做的。要继续找那个写操作，应在 IDF 侧
 再加 dump：`HP_SYS_CLKRST`（0x20587000..，`modem_conf` 在 0x205871E0）与 PMU 相关寄存器，在
 init/start 前后各一次，然后与我们的值逐字对比。
+
+### 顺着 POWER_ST 追：两条被排除的路径 + 一条对齐的改动
+
+1. **`esp_wifi_bt_power_domain_on()` 在 S31 上是空函数**。它解除 `RTC_CNTL_DIG_PWC_REG` 的
+   `WIFI_FORCE_PD`、脉冲 `SYSCON_WIFI_RST_EN`、解除 `RTC_CNTL_DIG_ISO_REG` 的 `WIFI_FORCE_ISO`——
+   但整段都在 `#if SOC_PM_MODEM_PD_BY_SW` 里，而 **S31 的 `soc_caps.h` 只定义了
+   `SOC_PM_SUPPORT_MODEM_PD=1`，没有 `SOC_PM_MODEM_PD_BY_SW`** ⇒ 那段在 S31 上被编译剔除。
+   所以"我们漏了 RTC_CNTL 的掉电解锁"这条**不成立**。
+2. **标定数据不是差异**：把 IDF 跑过之后的 `phy_init` NVS 分区（flash `0xf000`，4 KB）读出来，
+   **整块是 0xFF（空）** ⇒ IDF 也是当场做标定，没有可复用的出厂数据。
+3. **`wifi_bt_common_module_enable()` 在 S31 上 = `modem_clock_module_enable(PERIPH_PHY_MODULE)`**，
+   其 deps 是 `MODEM_ADC_COMMON_FE | MODEM_PRIVATE_FE | SOC_PLL_SOURCE_CG | I2C_MASTER` ——
+   正是我们手写的那批时钟位。
+
+**一处按 IDF 对齐的改动**：IDF 的 `LPCON+18` 在 start 期间是 **`0x7`**（bit0 wifipwr / bit1 coex /
+bit2 i2c_mst），之后回到 `0x1`；我们此前写的是 **`0b1111`**（多开了 bit3 `clk_lp_timer`）。
+已改成 `0b0111` 并上板——`POWER_ST` 仍是 0、自旋照旧，所以 bit3 不是原因，但对齐本身是对的。

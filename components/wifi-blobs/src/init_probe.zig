@@ -351,7 +351,10 @@ pub fn run() noreturn {
                     {
                         const conf: *volatile u32 = @ptrFromInt(0x2010_F018);
                         const before = conf.*;
-                        conf.* = before | 0b1111;
+                        // IDF 实测（station 例程）：start 期间 LPCON+18 = **0x7**（bit0 wifipwr /
+                        // bit1 coex / bit2 i2c_mst），之后回到 0x1；**bit3(lp_timer) 不开**。
+                        // 之前我们写 0b1111 会多开 bit3——按 IDF 的值对齐。
+                        conf.* = before | 0b0111;
                         log.line("wifi-init-probe: MODEM_LPCON_CLK_CONF 0x{x} -> 0x{x}", .{ before, conf.* });
                     }
                     // 照 IDF `modem_clock_module_enable(PERIPH_PHY_MODULE)` 移植（S31 分支）：
