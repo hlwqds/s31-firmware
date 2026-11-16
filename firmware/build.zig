@@ -32,6 +32,9 @@ pub fn build(b: *std.Build) void {
     const g_apps = b.option(bool, "apps", "MQTT/OTA 应用协议") orelse false;
     const g_wifi = b.option(bool, "wifi", "Wi-Fi/BLE/802.15.4 边界") orelse false;
     const g_wire = b.option(bool, "wire", "真实链路探针（DHCP+TCP，需主机配合）") orelse false;
+    // R3 链接实验：把 IDF 的 Wi-Fi blob（net80211/pp/core）加进链接，看能不能吃下。
+    // 只在给了目录时生效；产物**不上板**（适配层全是桩）。
+    const wifi_blob_dir = b.option([]const u8, "wifi-blob-dir", "directory with libnet80211.a/libpp.a/libcore.a (link experiment)") orelse "";
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -88,6 +91,32 @@ pub fn build(b: *std.Build) void {
     , .{fat_rodata});
     const fat_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("fat_rodata.zig", fat_src) });
     app.root_module.addImport("fat_rodata", fat_mod);
+    if (wifi_blob_dir.len > 0) {
+        // 目录里是 .a 就按归档加（成员按需取用）；是解包后的 .o 就全部加（等价 --whole-archive）。
+        // 后者才是"这个 blob 到底能不能塞进两段窗口"的真实测量。
+        // 现实会拉进来的那批对象（api/ioctl/sta/output/scan + pp 的 pm/wdev/pp），
+        // 由 `ar x` 解包到一个目录后整批链接——等价 --whole-archive，才能真正量出体积。
+        const objs = [_][]const u8{
+            "ieee80211_api.o",   "ieee80211_ioctl.o", "ieee80211_sta.o",
+            "ieee80211_output.o", "ieee80211_scan.o", "pp.o",
+            "wdev.o",            "pm.o",
+        };
+        for (objs) |name| {
+            app.root_module.addObjectFile(.{ .cwd_relative = b.fmt("{s}/{s}", .{ wifi_blob_dir, name }) });
+        }
+        const blobs_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/adapter.zig") });
+        // 归档成员只在被引用时才会取用：用一个独立的 Zig 对象引用 probe()，
+        // 否则链接"成功"只是什么都没拉进来。
+        const probe_src = "const a = @import(\"wifi_blobs\");\npub export fn wifi_blob_probe() usize {\n    return a.probe();\n}\n";
+        const probe_mod = b.createModule(.{
+            .root_source_file = b.addWriteFiles().add("wifi_probe.zig", probe_src),
+            .target = target,
+            .optimize = optimize,
+        });
+        probe_mod.addImport("wifi_blobs", blobs_mod);
+        const probe_obj = b.addObject(.{ .name = "wifi_probe", .root_module = probe_mod });
+        app.root_module.addObject(probe_obj);
+    }
     app.root_module.addImport("board", board);
     app.root_module.addImport("enabled", enabled_mod);
     // 主机侧测试：每个 component 的 host_tests.zig 独立成测试目标，
