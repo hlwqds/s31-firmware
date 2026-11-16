@@ -565,7 +565,9 @@ pub fn run() noreturn {
                 const rom_mtvec_ptr = @extern(*const usize, .{ .name = "rom_mtvec" });
                 log.line("wifi-init-probe: chain-to-ROM mode, rom_mtvec=0x{x:0>8}", .{rom_mtvec_ptr.*});
                 trap.chain_other_irqs = true;
-                hw.routeT0Interrupt(25); // 源 -> CPU 输入 25（不写这条 CLIC 永远没 pending）
+                // 采样器回到 **T0 / 输入 25** 并自 ack：改用 T1/26、把 25 转发给 ROM dispatcher 会让
+                // "尚未安装 handler 的 25"变成电平中断风暴（实测 init 直接卡在 0x4004a764）。
+                hw.routeT0Interrupt(25);
                 hw.armT0Interrupt(2000);
                 hw.enableInterrupts();
                 in_task = true;

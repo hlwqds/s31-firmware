@@ -2278,3 +2278,30 @@ phy_wifi_enable_set(1);
 也是它**——我们的 ISR 自己 ack 并重装，blob 的 tick ISR 永远不会被服务。要验证这条，必须把采样器挪到
 **T1 / 输入 26**（矩阵 `0x20585068`、CLIC `0x10801068`、mie bit26、`t1config +0x24`、
 `t1alarmlo +0x28`、`t1alarmhi +0x2c`、`int_*` 的 bit1），让输入 25 转发给 ROM dispatcher。
+
+### 把采样器挪到 T1/输入 26 的尝试：**数据无效（是中断风暴），已回滚**
+
+想把 T0/输入 25 让给 blob 的 tick，把采样器改到 T1/输入 26。板侧结果看着"输入 25 一次都没触发"，
+但那份数据**不可用**：
+
+- 采样数在 ~40 s 内到 **854016**（≈ 21 kHz，而设定是 2 ms = 500 Hz）；
+- 前几条样本 `mepc` 全是 `0x4004a764` —— 典型的**同一 PC 风暴**。
+
+根因是我写错了 T1 的三个常量（`soc/esp32s31/register/soc/timer_group_reg.h` + `hp_sys_clkrst_reg.h`）：
+
+| 我写的 | 实际 |
+| --- | --- |
+| `t1alarmlo = timg0 + 0x28` / `t1alarmhi = +0x2c` | 那是 **T1LO/T1HI（计数器）**；alarm 是 **+0x34 / +0x38** |
+| `ctrl_t1_clk_en = 1 << 6` | **bit 8**（bit 6 是 `T1_SRC_SEL[0]`，会改时钟源） |
+
+alarm 目标因此恒为 0、立刻匹配 → 风暴。**已把这段 T1 支持整体删除**（不留错常量），采样器回到
+T0/输入 25 自 ack，并验证基线恢复：
+
+```text
+esp_wifi_init_internal rc=0
+calling esp_wifi_start (idle_calls=199)
+irq-sample #11776 .. mepc=0x2f009206 mac=0x00fff000
+```
+
+**若以后还要挪采样器**，正确的 T1 参数是：`config +0x24`、`alarm lo/hi +0x34/+0x38`、
+`counter lo/hi +0x28/+0x2c`、`update +0x30`、`int_ena/int_st/int_clr` 的 **bit1**、时钟使能 **bit8**。
