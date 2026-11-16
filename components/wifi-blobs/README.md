@@ -99,7 +99,14 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 
 ## 待验证项
 
+- **PHY（当前墙）**：`register_chipv7_phy` 挂起，已二分到 **ROM 函数 `phy_open_fe_bb_clk`
+  （0x2f80131c，`rom_syms.ld:115`）**。LPCON/SYSCON/CLKRST 的时钟位全部打开并读回确认
+  （`CLK_CONF1 = 0x38E28C`），模拟 I2C 时钟由 IDF 二级 bootloader 打开。下一步 dump ROM 该地址、
+  反汇编它轮询的寄存器+位。
+- `esp_wifi_start`：取锁 + `zalloc(24 B)` + `event_post(id=43)` 之后自旋，不投队列；需要 PHY/coex
+  bring-up，或定时器中断抢占（`MIE=0` 现状）。
 - `on_idle` 接 EMAC：收包 → `esp_wifi_internal_reg_rxcb` 注册的回调；发送走 `esp_wifi_internal_tx`。
-- `_task_delay` 按同一语义实现（目前是桩）。
-- 任务栈：任务体跑在主栈（`_stack_size = 0x4000`）上；若 blob 任务需求更大，需单独分配 arena 栈并切 `sp`。
 - 扫描/连接：需要 `esp_wifi_connect` / `esp_wifi_disconnect` 等 IDF 侧符号的桩。
+
+已完成（此前列在这里）：任务体跑在**自己的静态栈**上（`sched.zig`，`sched-test: PASS`）；
+`_task_delay` 已按"让出 + 计时"实现。
