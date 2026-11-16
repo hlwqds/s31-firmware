@@ -1020,6 +1020,10 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
     fo_sys.* |= (1 << 2) | (1 << 3) | (1 << 4);
     const fo_lp: *volatile u32 = @ptrFromInt(0x2010_F01C);
     fo_lp.* |= (1 << 0) | (1 << 2);
+    // **`SOC_PLL_SOURCE_CG`**：IDF 的 `modem_clock_hal_enable_soc_pll_source_cg()`（`modem_clock_hal.c:125`）
+    // 就是 `HP_SYS_CLKRST.modem_conf.val = 0x3d`。它是 `PHY_CLOCK_DEPS` 的四项之一，我们此前**从未写过**。
+    const modem_conf: *volatile u32 = @ptrFromInt(0x2058_71E0);
+    modem_conf.* = 0x3d;
     return 0;
 }
 

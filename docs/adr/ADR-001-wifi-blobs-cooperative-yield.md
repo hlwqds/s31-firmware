@@ -3267,3 +3267,26 @@ if (!s_is_phy_calibrated) esp_phy_load_cal_and_init();
 
 ⇒ 剩余空间只剩两种：① blob 内部某个**我们喂的数据**（NVS 的 108 字节键在两边都是 NOT_FOUND，
 所以不是）；② **硬件面**（PHY/RF 的真实就绪状态）。这与路线图 R3.2「需要真实 AP / 真 RF」一致。
+
+### 补上 `SOC_PLL_SOURCE_CG`（`modem_conf = 0x3d`）：**无变化**
+
+`PHY_CLOCK_DEPS` 四项里我们**唯一没写**的是 `SOC_PLL_SOURCE_CG`
+（`modem_clock_hal.c:125`：`HP_SYS_CLKRST.modem_conf.val = enable ? 0x3d : 0x25`）。已补：
+
+```text
+post-init ctx ... mac=0x0000e000      ← 仍然没清
+irq-sample #11776 ... mepc=0x2f009206 ← 自旋不变
+```
+
+⇒ **PHY 时钟依赖不是缺失的那一步**（四项现已全部覆盖）。改动保留（与 IDF 一致）。
+
+### 仍未做的一项：**通用 osi 钩子的语义对拍**
+
+此前只对拍了"哪些钩子被调用"，**没有逐项比对语义**。已发现一处明确差异：
+
+| 钩子 | IDF（FreeRTOS） | 我们 |
+| --- | --- | --- |
+| `_queue_recv(q, item, OSI_FUNCS_TIME_BLOCKING)` | `xQueueReceive(..., portMAX_DELAY)` —— **无限阻塞** | 有界自旋（`idle_spin_limit` = 64 次让出）后**返回 0** |
+
+这类差异（超时单位：tick vs ms/us；返回码：`pdPASS`/`pdFAIL` vs 0/1；阻塞语义）**可能在 MAC 使能之前
+就让 `init_internal` 走到不同分支**。下一步应对拍：`queue_*` / `semphr_*` / `mutex_*` / `malloc*` 四族。
