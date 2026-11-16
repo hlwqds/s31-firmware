@@ -3403,3 +3403,29 @@ HOOKTRACE end
 即处理器读写的**某个状态**或它调用的**某个钩子**不同。
 
 IDF 树已还原（`components/esp_wifi` clean）。
+
+### ★★ IDF 钩子计数对拍（init 窗口内）：**我们多调了 `_wifi_reset_mac`**
+
+在 IDF 的 `esp_adapter.c` 里加计数器（boot-safe，不用 printf），在 `wifi_init.c` 的 init 窗口结束后打印：
+
+```text
+HOOKTRACE begin
+HOOKTRACE end
+IDFCNT qsend=1 qrecv=2 clken=1 rstmac=0
+```
+
+与我们同一窗口内的计数对比：
+
+| 钩子 | IDF | 我们 | 差异 |
+| --- | --- | --- | --- |
+| `_queue_send` | 1 | **5** | 我们多 4 次（可能是窗口边界不同） |
+| `_queue_recv` | 2 | 4~5 | 同上 |
+| `_wifi_clock_enable` | 1 | **2** | 我们多 1 次 |
+| **`_wifi_reset_mac`** | **0** | **1** | **IDF 在 init 里根本不调它，我们调了** |
+
+⇒ **最有价值的差异是最后一行**：**IDF 的 init 期间从不调用 `_wifi_reset_mac`，我们调了一次**。
+（注意这是**同一个 blob** 的调用决策 ⇒ 说明我们的 init 流程把 blob 带到了不同的分支，或者我们的
+`_wifi_reset_mac` 被别处触发。）
+
+⇒ 下一步：定位**谁**在我们这边调了 `_wifi_reset_mac`（`note(22, …)` 已有打点，看它在 trace 里的位置），
+以及**把它去掉/延后**后 `MAC_ST` 是否会在 init 后变 0。
