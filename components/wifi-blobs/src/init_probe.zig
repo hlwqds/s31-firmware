@@ -321,7 +321,10 @@ pub fn run() noreturn {
         bg_pre[14],                                    bg_pre[15], bg_pre[288],
         @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*,
     });
-    bg_pre[14] = 1;
+    // **ctx[15] 前置实验**：wrapper 0x40035ea8 的第一道门就是 ctx[15]；实测它在 init 跑到 ~#512 才变 1，
+    // 也就是说 init 走到那次 enable 调用时它还是 0 -> 被跳过 -> 之后无人重试。这里提前置 1。
+    // 判据：post-init 的 b16/b27/b288 是否变 1（成功路径标志），而不是 mac（deinit 命令字会污染 en 位）。
+    bg_pre[15] = 1;
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: post-init ctx b14={d} b15={d} b16={d} b27={d} b288={d} b289={d} mac=0x{x:0>8}", .{
         bg_pre[14],                                    bg_pre[15], bg_pre[16], bg_pre[27], bg_pre[288], bg_pre[289],
