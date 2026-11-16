@@ -476,6 +476,45 @@ fn shellTaskGetMaxPriority() callconv(.c) i32 {
     return 8;
 }
 
+/// 极简"任务"：没有调度器，但 `xTaskCreate` 的返回值是 **pdPASS=1 / pdFAIL=0**（FreeRTOS 约定），
+/// 通用桩返回 0 会被当成"创建失败"，`ic_create_wifi_task` 于是报 INVALID_ARG。
+/// 这里记下入口与参数、返回 1；主循环需要时自己调用一次（协作式，不是抢占式）。
+pub const Task = struct {
+    entry: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    arg: ?*anyopaque = null,
+};
+pub var tasks: [4]Task = @splat(.{});
+pub var task_count: usize = 0;
+var task_handle_dummy: u8 = 0;
+
+fn shellTaskCreatePinned(
+    entry: ?*const fn (?*anyopaque) callconv(.c) void,
+    name: ?[*:0]const u8,
+    stack_depth: u32,
+    param: ?*anyopaque,
+    prio: u32,
+    handle_out: ?*?*anyopaque,
+    core_id: u32,
+) callconv(.c) c_int {
+    _ = .{ name, stack_depth, prio, core_id };
+    if (task_count >= tasks.len) return 0;
+    tasks[task_count] = .{ .entry = entry, .arg = param };
+    task_count += 1;
+    if (handle_out) |h| h.* = @ptrCast(&task_handle_dummy);
+    return 1; // pdPASS
+}
+
+fn shellTaskCreate(
+    entry: ?*const fn (?*anyopaque) callconv(.c) void,
+    name: ?[*:0]const u8,
+    stack_depth: u32,
+    param: ?*anyopaque,
+    prio: u32,
+    handle_out: ?*?*anyopaque,
+) callconv(.c) c_int {
+    return shellTaskCreatePinned(entry, name, stack_depth, param, prio, handle_out, 0);
+}
+
 /// 自旋锁：单线程 + 关中断下没有竞争者，返回一个稳定的非空指针即可（驱动会判空）。
 var spin_lock_dummy: u8 = 0;
 
@@ -581,6 +620,8 @@ pub fn makeTable() osi.Osi {
     t._esp_timer_get_time = @ptrCast(&shellEspTimerGetTime);
     t._log_timestamp = @ptrCast(&shellLogTimestamp);
     t._read_mac = @ptrCast(&shellReadMac);
+    t._task_create_pinned_to_core = @ptrCast(&shellTaskCreatePinned);
+    t._task_create = @ptrCast(&shellTaskCreate);
     t._set_intr = @ptrCast(&shellSetIntr);
     t._clear_intr = @ptrCast(&shellClearIntr);
     t._set_isr = @ptrCast(&shellSetIsr);

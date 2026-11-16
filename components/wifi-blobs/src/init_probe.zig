@@ -95,6 +95,23 @@ pub fn run() noreturn {
         log.line("wifi-init-probe: {s} rc={d}", .{ name, rc });
         if (rc != 0) break;
     }
+    // 先让 worker 自己跑完整序列；它失败时再做分阶段诊断（stage 调用会改状态，别提前跑）。
+
+
+    // worker 内部的顺序（`.text.wifi_init_in_caller_task` 的反汇编）：
+    //   wifi_log → _spin_lock_create（存 g_intr_lock_mux）→ mac_list_lock →
+    //   wifi_menuconfig_init(config) → misc_nvs_init → ic_create_wifi_task → ieee80211_ioctl_init
+    // 每个都是"非 0 就返回"。逐个调，第一个非 0 的就是 258 的来源。
+    {
+        const menu = @extern(*const fn (*const initcfg.InitConfig) callconv(.c) c_int, .{ .name = "wifi_menuconfig_init" });
+        const rc = menu(&cfg);
+        log.line("wifi-init-probe: wifi_menuconfig_init rc={d}", .{rc});
+    }
+    inline for (.{ "misc_nvs_init", "ic_create_wifi_task", "ieee80211_ioctl_init" }) |name| {
+        const f = @extern(*const fn () callconv(.c) c_int, .{ .name = name });
+        const rc = f();
+        log.line("wifi-init-probe: {s} rc={d}", .{ name, rc });
+    }
     {
         const f = @extern(*const fn (*const initcfg.InitConfig) callconv(.c) c_int, .{ .name = "wifi_init_in_caller_task" });
         const rc = f(&cfg);

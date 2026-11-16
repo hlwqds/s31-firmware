@@ -12,6 +12,9 @@
 
 const osi = @import("osi.zig");
 
+/// `ESP_WIFI_CRYPTO_VERSION`（`esp_wifi_crypto_types.h:24`）。
+pub const crypto_version: u32 = 0x0000_0001;
+
 /// `WIFI_INIT_CONFIG_MAGIC`：blob 校验这个值，抄错会**返回失败而不是崩**，很难联想到常量。
 /// 原文：`esp_wifi.h:191` —— `#define WIFI_INIT_CONFIG_MAGIC    0x1F2F3F4F`
 /// 注意是 9 位十六进制、末尾是 `F`（写成 `0x1F2F3F4` 就是另一个数）。
@@ -84,6 +87,11 @@ comptime {
 pub fn defaults(table: *const osi.Osi) InitConfig {
     var c: InitConfig = .{};
     c.osi_funcs = table;
+    // `wifi_menuconfig_init` 会校验这两个值（反汇编 `.L718`/`.L720`）：
+    //   1) config->magic == 0x1F2F3F4F
+    //   2) config->wpa_crypto_funcs.size == sizeof(wpa_crypto_funcs_t) == 52
+    // 我们的表原先全零 → size=0 → 直接 258。`version` 用 ESP_WIFI_CRYPTO_VERSION（=1）。
+    c.wpa_crypto_funcs = .{ .size = @sizeOf(WpaCrypto), .version = crypto_version };
     c.static_rx_buf_num = 10; // CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM
     c.dynamic_rx_buf_num = 32; // CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM
     c.tx_buf_type = 1; // CONFIG_ESP_WIFI_TX_BUFFER_TYPE（动态 TX）
