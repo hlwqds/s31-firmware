@@ -591,8 +591,13 @@ fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
     intr_matrix_set(@intCast(cpu), src, num);
     // IDF 的 `set_intr_wrapper` 还会设优先级：CLIC 每输入 ctrl 字的 [31:24]。
     if (num < 32 and prio >= 0) {
-        const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + @as(usize, num) * 4);
-        ctl.* = (ctl.* & ~@as(u32, 0xFF00_0000)) | (@as(u32, @intCast(prio & 0xFF)) << 24);
+        // CLIC ctrl 寄存器按 **CLIC ID = 外部号 + 16** 索引（IDF `esp_rom_clic.c:21`：
+        // `CLIC_INT_CTRL_REG(rv_int_num + CLIC_EXT_INTR_NUM_OFFSET)`，offset = 16）。
+        // 布局：prio [31:24]、trig [18:17]（0=电平，1=上升沿）、IE bit8。
+        const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + (@as(usize, @intCast(num)) + 16) * 4);
+        const trig: u32 = 0; // INTR_TYPE_LEVEL
+        ctl.* = (ctl.* & ~(@as(u32, 0xFF00_0000) | (@as(u32, 3) << 17))) |
+            (@as(u32, @intCast(prio & 0xFF)) << 24) | (trig << 17);
     }
 }
 fn shellClearIntr(src: u32, num: u32) callconv(.c) void {

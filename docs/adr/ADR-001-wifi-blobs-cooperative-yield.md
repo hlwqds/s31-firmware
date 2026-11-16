@@ -2413,3 +2413,16 @@ blob 在 `0x400490f4` 里做的 `mie |= 1<<25` / `int_ena |= 1<<1` / 矩阵路�
 
 **方法论教训**：用调试口读 RAM 得到的"运行期状态"必须先证明芯片处于运行态（连接会复位）。
 本次是 app 侧扫描推翻了调试口读数——**运行期状态只能在 app 里读**。
+
+### 下标约定：表按**外部中断号**索引（= CLIC ID − 16）
+
+IDF 的权威口径：`components/riscv/interrupt.c` 里 `intr_get_item(mcause - RV_EXTERNAL_INT_OFFSET)`，
+`RV_EXTERNAL_INT_OFFSET = 16`（`csr_clic.h:29`）；ROM 分发器 `0x2f80193e` 的 `addi a0,a0,-16` 是同一约定。
+`_set_isr(n, ...)` 里的 `n` 也是外部号。
+
+所以 **CLIC 输入 25 对应表项 9**。先前 `trapDispatch` 用 `cause & 0x3F`（=25）去查表，装了 handler
+也永远查不到——已改为 `input - 16`（`input >= 16` 时）。同理 `_set_intr` 写 CLIC ctrl 时寄存器索引是
+`num + 16`（IDF `esp_rom_clic.c:21`：`CLIC_INT_CTRL_REG(rv_int_num + CLIC_EXT_INTR_NUM_OFFSET)`），
+并且要设触发类型 `trig [18:17]`（0=电平、1=上升沿）——两处都已修正。
+
+板侧复核（pb184）：自旋锚定扫描与哨兵往返结果不变（除哨兵外全空），基线不变。

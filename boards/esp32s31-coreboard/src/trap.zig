@@ -227,10 +227,14 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 if (e.fn_) |f| log.line("romtbl[{d}] fn=0x{x} arg=0x{x}", .{ k, @intFromPtr(f), if (e.arg) |a| @intFromPtr(a) else 0 });
             }
         }
-        var h = getHandler(input);
+        // **表的下标是外部中断号 = CLIC ID - 16**（IDF `components/riscv/interrupt.c`：
+        // `intr_get_item(mcause - RV_EXTERNAL_INT_OFFSET)`，`RV_EXTERNAL_INT_OFFSET = 16`；
+        // ROM 分发器 `0x2f80193e` 的 `addi a0,a0,-16` 是同一约定）。CLIC 输入 25 -> 外部号 9。
+        const ext: usize = if (input >= 16) input - 16 else input;
+        var h = getHandler(ext);
         // 其次看 **ROM 的表**：blob 是直接调 ROM 的 `intr_handler_set` 装 handler 的，所以它的
         // tick handler 在这张表里。ROM 读合法 -> 我们替 ROM 分发。
-        if (h.fn_ == null) h = romHandler(input);
+        if (h.fn_ == null) h = romHandler(ext);
         if (h.fn_) |f| {
             if (input == 25) hw.ackT0Interrupt(2000);
             f(h.arg);
