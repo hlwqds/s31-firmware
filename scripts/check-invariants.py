@@ -35,7 +35,7 @@ def main() -> int:
     if len(desc) != 1 or desc[0].name != "start.zig" or desc[0].parent.name != "src" or desc[0].parents[1].name != "firmware":
         errors.append(f"project_name 必须且只能出现在 firmware/src/start.zig，实际: {[str(f.relative_to(ROOT)) for f in desc]}")
 
-    board_starts = [f for f in files if f.name == "start.zig" and f.parts[len(ROOT.parts)] == "boards"] if False else [
+    board_starts = [
         f for f in files if f.name == "start.zig" and "boards" in f.relative_to(ROOT).parts
     ]
     if board_starts:

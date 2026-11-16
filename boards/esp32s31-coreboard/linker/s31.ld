@@ -8,8 +8,8 @@
  *
  * 段布局（三段，两段在 flash）：
  *
- *     irom 0x40000020  .flash.text     esp_app_desc_t(256B) + .text.trap + .text（上限 0x7F000）
- *     drom 0x40080020  .flash.rodata   .rodata/.srodata（上限 0x7F000）
+ *     irom 0x40000020  .flash.text     esp_app_desc_t(256B) + .text.trap + .text（上限 0xB0000）
+ *     drom 0x40100020  .flash.rodata   .rodata/.srodata（上限 0xB0000）
  *     sram 0x2F000000  .trap_ram       trap 入口（放 flash 会 CPU_LOCKUP_RESET）
  *                      .data           有初值可写数据（LMA == VMA）
  *                      .bss            NOBITS，_start 清零
@@ -18,13 +18,16 @@
  *
  * 三条不变的硬约束（真机实测，见 docs/history/BRINGUP-chapter-era.md）：
  *   1) 镜像里落在 flash 映射窗口的装载段仍只有两个（IROM + DROM），vaddr 按 64 KiB
- *      页对齐：irom 0x40000020 / drom 0x40080020（页偏移 0x00020 同余）。
- *      窗口各扩到 0x7F000，使 TLS/Wi-Fi 全特性单镜像可链接（P0.2）；
+ *      页对齐：irom 0x40000020 / drom 0x40100020（页偏移 0x00020 同余）。
+ *      窗口演进：P0.2 各扩到 0x7F000；P0.3 把 drom 基址移到 0x40100020、两窗各 0xB0000
+ *      （合计 1 441 792 B，仍在 factory 1 500 K 内）。芯片侧上限远大于此
+ *      （SOC_IROM_HIGH = 0x44000000，MMU 1024 × 64 KiB），但 drom 段必须结束在
+ *      0x43FF0000 以下——loader 把 DROM 区间最后一页当分区发现的临时页；
  *   2) trap 向量必须落在 SRAM（.trap_ram）；
  *   3) 第一个装载段最前面是 256 字节 esp_app_desc_t。
  *
  * 与 ch23 的差异：本章不用 AES（没有 align(64) 的软件查表），.flash.rodata
- * 的起点为 ORIGIN(drom) = 0x40080020（按 64 KiB 页对齐）。实际值仍由 LLVM 的输入节对齐决定，
+ * 的起点为 ORIGIN(drom) = 0x40100020（按 64 KiB 页对齐）。实际值仍由 LLVM 的输入节对齐决定，
  * 交付时以 `image-info` 打印的两行 DROM/IROM 为准（见本章 README 与
  * 章节 24.10 的镜像事实）。
  *
@@ -74,7 +77,7 @@ SECTIONS
 
     /* 第二个 flash 装载段 = DROM：少了它 bootloader 的 rom_index == 2 断言会挂。
      *
-     * 段起点由 lld 按输入节对齐决定，实测落在 ORIGIN(drom) = 0x40080020；
+     * 段起点由 lld 按输入节对齐决定，实测落在 ORIGIN(drom) = 0x40100020；
      * bootloader 只要求页内偏移同余（esp_image_format.c:904），elf2image
      * 会插填充段对齐 paddr。drom 与 irom 的页偏移同为 0x20。 */
     .flash.rodata : ALIGN(16)
