@@ -111,3 +111,12 @@ wifi-init-probe: calling esp_wifi_start (idle_calls=320)
 
 在路线 1 落地前，`on_idle` 的合作式切换仍然是**正确且必要**的：它已经让 init、
 `reg_rxcb`、`get_config_channel` 从"永久阻塞"变成"正常返回"。
+
+## 追加（2026-11-16）：任务身份必须只有一个
+
+`_task_create` 写出的 handle 与 `_task_get_current_task()` 的返回值曾经是**两个不同的全局对象**，
+于是 ROM 里任何"我是不是 wifi 任务"的身份判断都是假。统一成同一个清零对象（256 B）后，
+`internal_tx` 的错误码从 `0x3007`（`ESP_ERR_WIFI_CONN`）变成 `0x3002`
+（`ESP_ERR_WIFI_NOT_STARTED`）——状态判断变准了，而 init 仍返回 0、`sched-test` 仍 PASS。
+
+主机用例钉住这条不变量（handle 与 current 必须同址），避免以后又分叉。
