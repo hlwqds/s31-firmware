@@ -603,3 +603,30 @@ trace 里 **`queue_recv` 只出现一次**。结合我们的实现（`recv` 的�
 
 下次直接用日志把 take 的三个入口条件（`count`、`blocking`、是否调了 `on_idle`）打出来即可定案；
 在此之前，不要基于"take 会触发让出"这个假设继续推理。
+
+### 改序之后的进展：IPC 往返已经通了（2026-11-16）
+
+任务先启动、再调 API 之后，seam 探针那几次调用**完整跑通了**：
+
+```text
+trace queue_recv a0=0x2f01d940 a1=0xffffffff   # 任务取消息
+trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+trace semphr_give a0=0x2f01dfe0 a1=0x00000000  # ← ack 用**有效句柄** give 了
+```
+
+也就是说描述符 → 队列 → 任务处理 → ack 这条链**是通的**（句柄 `0x2f01dfe0` 非空，与之前的
+`give(NULL)` 形成对照）。
+
+现在停在下一处：`esp_wifi_start` 自己那次 take：
+
+```text
+calling esp_wifi_start (idle_calls=197)
+trace alloc  a0=0x18 a1=0x2f01dfb8
+trace queue_send a0=0x2f01d940 a1=0x00000006
+trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+（此后 45 s 无输出，trace 只用了 52/200 行，不是被截断）
+```
+
+消息已经入队（`queue_send` 在 take 之前），但任务在 start 的等待期间**没有再 recv**——与之前
+"take 期间任务未被调度"的现象同型。下一步就是把 `idleHook` 在 start 期间的实际调用情况记下来
+（`in_task`/`task_ctx_ready`/`on_idle` 是否被调用），这次要放在**任务就绪之后**计数。
