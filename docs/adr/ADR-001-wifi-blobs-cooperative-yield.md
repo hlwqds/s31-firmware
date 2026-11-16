@@ -236,8 +236,29 @@ phy_open_fe_bb_clk      <-- 挂在这里
 （`boards/esp32s31-coreboard/linker/rom_syms.ld:115`：`phy_open_fe_bb_clk = 0x2f80131c`）。
 所以自旋在 ROM 代码内部，等一个我们还没制造出来的硬件状态位。
 
-**下一步（具体）**：dump ROM 里 `0x2f80131c` 附近的字（esptool `read_mem`，或让探针读并打印），
-反汇编它轮询的寄存器+位——那就是缺失条件。若该条件与中断相关，再走定时器/中断路径。
+**ROM dump 结果（2026-11-16）**：先核对了地址来源——IDF 自己的
+`components/esp_rom/esp32s31/ld/esp32s31.rom.phy.ld:96` 就是
+`phy_open_fe_bb_clk = 0x2f80131c`，与 `rom_syms.ld:115` 完全一致，所以之前的二分有效。
+
+dump 出来的第一个字 `0x3a52206f` 看着像 ASCII（"o R:"），实际是因为**这一段是 `j` thunk 表**：
+每 4 字节一条 `jal x0, <target>`（都以 `0x…206f` 结尾）。解码第一条得 `j 0x2f823ec0`，那里是真代码：
+
+```asm
+2f823ec0  lui  a5, 0x20100      # 0x20100000
+2f823ec4  addi a4, zero, 0x1e7
+2f823ec8  sw   a4, 0x400(a5)    # 0x20100400 = 0x1E7
+2f823ecc  lui  a4, 0x20101
+2f823ed0  lw   a5, -2048(a4)    # 0x20100800（我们之前读到 0x1）
+2f823ed4  lui  a3, 0x20704
+2f823ed8  ori  a5, a5, 3
+2f823edc  sw   a5, -2048(a4)    # 置 bit0|bit1
+2f823ee0  lui  a5, 0x20108
+...
+2f823ee8  jalr a7, ...          # 间接调用另一个 ROM 例程 —— 自旋在这里
+```
+
+所以 `phy_open_fe_bb_clk` 做完两次寄存器写后，**尾调一个 ROM 例程**；挂起在那个被调方，不在写操作里。
+下一步：解出 `jalr` 前 `a7` 的来源（紧邻的 `lui/addi` 对），dump 那个目标。
 
 **更正（此前写错）**：S31 **有**调制解调器寄存器头，位置是
 `components/soc/esp32s31/include/modem/`（不是 `register/soc/`）：
