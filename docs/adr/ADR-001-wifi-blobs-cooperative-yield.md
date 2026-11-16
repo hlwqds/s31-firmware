@@ -222,8 +222,22 @@ WIFI_BB_80X1(7)/WIFI_APB(9)），`CLK_CONF1` 读回 **`0x38E28C`**；`phy_rf_ini
   `SOC_PM_MODEM_PD_BY_SW` → 这颗芯片的 `esp_wifi_power_domain_on` **就是**上面那组时钟写，
   没有 RTC_CNTL force-PD 步骤可试。
 
-**结论**：时钟这条线到此为止（全部打开、读回确认）。剩下的解释是 RF 标定的完成握手——
-`MIE=0` 下收不到的中断，或只能从 PHY 自身寄存器窗口读到的状态位。下一步做**中断路径**。
+**结论**：时钟这条线到此为止（全部打开、读回确认）。
+
+进一步把 `phy_rf_init` 里**无参**的被调函数逐个单跑（反汇编确认无参），挂起点又缩小一级：
+
+```text
+phy_get_xtal_freq       returned
+phy_get_rf_cal_version  returned
+phy_open_fe_bb_clk      <-- 挂在这里
+```
+
+`phy_open_fe_bb_clk` 不在我们链接的任何归档里、也不是我们的桩——它是 **ROM 函数**
+（`boards/esp32s31-coreboard/linker/rom_syms.ld:115`：`phy_open_fe_bb_clk = 0x2f80131c`）。
+所以自旋在 ROM 代码内部，等一个我们还没制造出来的硬件状态位。
+
+**下一步（具体）**：dump ROM 里 `0x2f80131c` 附近的字（esptool `read_mem`，或让探针读并打印），
+反汇编它轮询的寄存器+位——那就是缺失条件。若该条件与中断相关，再走定时器/中断路径。
 
 **更正（此前写错）**：S31 **有**调制解调器寄存器头，位置是
 `components/soc/esp32s31/include/modem/`（不是 `register/soc/`）：
