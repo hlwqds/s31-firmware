@@ -142,7 +142,7 @@ test "osi_impl: 表里没有任何 null 钩子（未实现的由具名桩顶上�
     }
     // 未实现的钩子已由 osi_stubs 填成具名桩：表里不再有 null，被调用时按索引计数。
     const stubs = @import("osi_stubs.zig");
-    try std.testing.expectEqual(@as(usize, 66), stubs.field_count);
+    try std.testing.expectEqual(@as(usize, 62), stubs.field_count);
     inline for (.{ "_timer_arm", "_coex_init", "_phy_enable", "_event_post" }) |name| {
         try std.testing.expect(@field(tbl, name) != null);
     }
@@ -204,7 +204,7 @@ test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
 
 test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
     try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len + 2); // +2 = _version/_magic
-    try std.testing.expectEqual(@as(usize, 60), impl.implemented.len); // 21 原语 + 9 分配器族 + 13 中断/任务 + 6 时间/随机/MAC + 12 NVS
+    try std.testing.expectEqual(@as(usize, 64), impl.implemented.len); // 21 原语 + 9 分配器族 + 13 中断/任务 + 6 时间/随机/MAC + 12 NVS
 }
 
 var test_now_us: u64 = 1_234_567;
