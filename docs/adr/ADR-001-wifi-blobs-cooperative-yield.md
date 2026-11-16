@@ -2709,3 +2709,22 @@ init 前它就是 0 ⇒ IDF 侧起点也是 0；若有 ROM 侧写者，它在我
    说明分歧点不在这里，要回到更早的 init 分支。
 2. 若 IDF 非 0：在 IDF 的 `esp_adapter.c` / blob 导出符号里找"谁写这个槽"，
    对应到我们适配层缺的那个导出符号或 osi 钩子。
+
+### 段归属与"基址错位"假设：**重定位存在 ⇒ 无错位**
+
+有人会担心：blob 代码里那些硬编码绝对地址（`lui 0x2f014; addi -720`）若打在**我们自己的 .bss** 上，
+就说明 `.iram_blobs` 的加载基址偏了，读到的"blob 自己的 ctx"其实是 app 的内存残渣。
+
+**这个假设已被证伪**：`/tmp/blobobjs/*.o` 里带**重定位记录**——
+
+```text
+esf_buf.o  RELOCATION RECORDS FOR [.text...]:  00000000 R_RISCV_HI20 .LANCHOR0
+hal_ampdu.o:                                   00000102 R_RISCV_HI20 .LANCHOR0
+hal_coex.o:                                    00000004 R_RISCV_HI20 g_osi_funcs_p
+```
+
+也就是说 blob 的静态数据引用是**符号 + 重定位**，由**我们的链接器**解析到最终地址；它落在 `.bss`
+（0x2f0118d0..0x2f01d570）是**合并后的正确位置**，不是"打到别人内存上"。`nm` 看不到名字是因为
+这些是 `.LANCHOR0` 一类的**局部符号**，链接时被丢弃。
+
+⇒ 段布局不是问题；`0x2f013d30` / `0x2f011aa8` 的读数可信，`ctx[15]` 这条线成立。
