@@ -253,19 +253,6 @@ pub fn run() noreturn {
         // 先验证上下文切换本身（两根栈），再谈 API 与任务的交错。
         runSchedSelfTest();
 
-        // 收发接缝探针：在不启动射频的前提下，问清楚哪些内部 API 现在就可达。
-        {
-            const rrc = reg_rxcb(0, &rxCb); // 0 = WIFI_IF_STA
-            log.line("wifi-init-probe: reg_rxcb rc={d}", .{rrc});
-            var primary: u8 = 0;
-            var second: u8 = 0;
-            const crc = get_config_channel(0, &primary, &second);
-            log.line("wifi-init-probe: get_config_channel rc={d} primary={d} second={d}", .{ crc, primary, second });
-            var frame: [64]u8 = @splat(0xaa);
-            const trc = wifi_tx(0, &frame, @intCast(frame.len));
-            log.line("wifi-init-probe: internal_tx rc=0x{x} (64 B)", .{@as(u32, @bitCast(trc))});
-        }
-
         // 协作式跑一次登记的任务：没有调度器，`entry(arg)` 一旦进入自己的等待循环就永不返回，
         // 所以给钩子调用一个预算（300 次），耗尽即打印现场并停机。
         if (impl.task_count > 0) {
@@ -460,6 +447,19 @@ pub fn run() noreturn {
                 in_task = false;
                 impl.current_is_task = false;
                 log.line("wifi-init-probe: task blocked, main resumed (idle_calls={d})", .{idle_calls});
+
+                // 收发接缝探针：在不启动射频的前提下，问清楚哪些内部 API 现在就可达。
+                {
+                    const rrc = reg_rxcb(0, &rxCb); // 0 = WIFI_IF_STA
+                    log.line("wifi-init-probe: reg_rxcb rc={d}", .{rrc});
+                    var primary: u8 = 0;
+                    var second: u8 = 0;
+                    const crc = get_config_channel(0, &primary, &second);
+                    log.line("wifi-init-probe: get_config_channel rc={d} primary={d} second={d}", .{ crc, primary, second });
+                    var frame: [64]u8 = @splat(0xaa);
+                    const trc = wifi_tx(0, &frame, @intCast(frame.len));
+                    log.line("wifi-init-probe: internal_tx rc=0x{x} (64 B)", .{@as(u32, @bitCast(trc))});
+                }
 
                 const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });
                 // 预算实验：`note()` 在 semphr_take/give、mutex_lock、queue_recv/send 上都会递减
