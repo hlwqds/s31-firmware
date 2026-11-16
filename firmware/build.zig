@@ -38,6 +38,8 @@ pub fn build(b: *std.Build) void {
     // 逗号分隔的对象文件名（相对 wifi-blob-dir）。用 `ls *.o | paste -sd,` 生成，
     // 这样链接命令行上一眼能看见到底进了哪些成员，也不用在 build.zig 里做目录扫描。
     const wifi_blob_objs = b.option([]const u8, "wifi-blob-objs", "comma-separated object names inside wifi-blob-dir") orelse "";
+    // R3 探针：编进"装表 → 调 esp_wifi_init_internal → 打日志停机"的入口。
+    const wifi_init_probe = b.option(bool, "wifi-init-probe", "run the wifi init probe instead of the normal self-test") orelse false;
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -105,10 +107,13 @@ pub fn build(b: *std.Build) void {
             added += 1;
         }
         if (added == 0) @panic("-Dwifi-blob-objs 为空：给它逗号分隔的对象名");
-        // 关掉 --gc-sections：否则没被引用的段会被整段裁掉，量到的"能链接"是空转。
-        // 只在实验分支里关，常规构建保持默认。
-        app.link_gc_sections = false;
+        // 关掉 --gc-sections **只在"量体积"模式**：那时没有真实引用，不关就什么都不会进来。
+        // 探针模式有真实入口（esp_wifi_init_internal），必须保持 gc 打开，否则整个 blob 闭包
+        // 全被链进来、irom 直接溢出（实测溢出 67 KB）。
+        if (!wifi_init_probe) app.link_gc_sections = false;
         const blobs_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/adapter.zig") });
+        blobs_mod.addImport("board", board);
+
         // 归档成员只在被引用时才会取用：用一个独立的 Zig 对象引用 probe()，
         // 否则链接"成功"只是什么都没拉进来。
         const probe_src = "const a = @import(\"wifi_blobs\");\npub export fn wifi_blob_probe() usize {\n    return a.probe();\n}\n";
@@ -123,6 +128,17 @@ pub fn build(b: *std.Build) void {
     }
     app.root_module.addImport("board", board);
     app.root_module.addImport("enabled", enabled_mod);
+    // 探针模块总是存在（start.zig 无条件 import），用 comptime 常量决定是否真的跑：
+    // 关闭时是空实现，避免把 blob 的 @extern 引用带进常规构建。
+    if (wifi_init_probe and wifi_blob_dir.len > 0) {
+        const probe_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/init_probe.zig") });
+        probe_mod.addImport("board", board);
+        app.root_module.addImport("wifi_init_probe", probe_mod);
+    } else {
+        const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
+        const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("wifi_init_probe_off.zig", off_src) });
+        app.root_module.addImport("wifi_init_probe", off_mod);
+    }
     // 主机侧测试：每个 component 的 host_tests.zig 独立成测试目标，
     // 与章节时代一致——测试入口只 import 纯逻辑模块。
     const test_step = b.step("test", "host-side unit tests (all components)");

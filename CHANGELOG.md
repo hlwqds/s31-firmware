@@ -8,6 +8,22 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **第一次真正执行 blob 代码**（R3 里程碑）：`-Dwifi-init-probe=true` 编进"装 osi 表 → 构造
+  `wifi_init_config_t` → 调 `esp_wifi_init_internal` → 打印返回码与桩命中"的入口，实测：
+
+  ```text
+  wifi-init-probe: arena=397936 B
+  wifi-init-probe: osi installed prev=0x00000000
+  wifi-init-probe: cfg size=160 magic=0x1f2f3f4f
+  wifi-init-probe: esp_wifi_init_internal rc=257        ← ESP_ERR_NO_MEM
+  wifi-init-probe: osi stub _calloc_internal hits=1
+  ```
+
+  补上分配器族（`_malloc_internal`/`_zalloc_internal`/`_calloc_internal`/`_realloc_internal`/
+  `_wifi_malloc/_wifi_calloc/_wifi_zalloc/_wifi_realloc`，共 9 个）后 rc 变成 **258**
+  （ESP_ERR_INVALID_ARG），失败点前移到链接桩 `net80211_printf`/`pp_printf`——这正是"把清单变成
+  实测"的效果：每次只暴露下一个真正缺的东西。探针与常规构建用 comptime 分流（`probe.enabled`），
+  常规镜像不受影响（167 520 B、两段）。
 - **`wifi_osi_funcs_t` 的 Zig 镜像**（`components/wifi-blobs/src/osi.zig`）：字段表由 IDF 头
   `esp_wifi/include/esp_private/wifi_os_adapter.h` 经 `sdkconfig.h` 预处理后**自动生成**
   （128 个字段，`_version` 首、`_magic` 尾），不是手写。ilp32 下用 comptime 断言钉死

@@ -259,6 +259,27 @@ fn shellFree(p: ?*anyopaque) callconv(.c) void {
     arena_state.free(q);
 }
 
+/// `*_internal` / `wifi_*` 这一族只是不同 heap 域的分配器；我们没有多堆，全部走同一个 arena。
+fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
+    return shellMalloc(size);
+}
+fn shellZallocInternal(size: usize) callconv(.c) ?*anyopaque {
+    const p = shellMalloc(size) orelse return null;
+    @memset(@as([*]u8, @ptrCast(p))[0..size], 0);
+    return p;
+}
+fn shellCallocInternal(n: usize, size: usize) callconv(.c) ?*anyopaque {
+    return shellZallocInternal(n * size);
+}
+fn shellReallocInternal(p: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque {
+    const q: ?[*]u8 = if (p) |v| @ptrCast(v) else null;
+    const np = arena_state.realloc(q, size) orelse return null;
+    return @ptrCast(np);
+}
+fn shellFreeInternal(p: ?*anyopaque) callconv(.c) void {
+    shellFree(p);
+}
+
 fn shellFreeHeapSize() callconv(.c) usize {
     return arena_state.bytes_free;
 }
@@ -529,6 +550,14 @@ pub fn makeTable() osi.Osi {
     var t = osi.empty;
     t._malloc = @ptrCast(&shellMalloc);
     t._free = @ptrCast(&shellFree);
+    t._malloc_internal = @ptrCast(&shellMallocInternal);
+    t._zalloc_internal = @ptrCast(&shellZallocInternal);
+    t._calloc_internal = @ptrCast(&shellCallocInternal);
+    t._realloc_internal = @ptrCast(&shellReallocInternal);
+    t._wifi_malloc = @ptrCast(&shellMallocInternal);
+    t._wifi_zalloc = @ptrCast(&shellZallocInternal);
+    t._wifi_calloc = @ptrCast(&shellCallocInternal);
+    t._wifi_realloc = @ptrCast(&shellReallocInternal);
     t._get_free_heap_size = @ptrCast(&shellFreeHeapSize);
     t._semphr_create = @ptrCast(&shellSemphrCreate);
     t._semphr_delete = @ptrCast(&shellSemphrDelete);
@@ -588,6 +617,8 @@ pub fn makeTable() osi.Osi {
 /// 中断/任务/定时器/事件/NVS/PHY 这些要么需要真实硬件路径，要么需要 IDF 的 C 层配合。
 /// 仍然为 null 的钩子（下一步照这张单子填）。
 /// 注意 `_log_write`/`_log_writev` 是 C 变参函数，**Zig 无法定义**，要么写一小段 C shim，要么保持 null。
+/// 仍然为 null 的钩子（下一步照这张单子填）。
+/// 注意 `_log_write`/`_log_writev` 是 C 变参函数，**Zig 无法定义**，要么写一小段 C shim，要么保持 null。
 /// 已实现的钩子名（由 makeTable() 里实际赋值的字段生成）。
 pub const implemented = [_][]const u8{
     "_set_intr",              "_clear_intr",       "_set_isr",           "_ints_on",            "_ints_off",               "_is_from_isr",
@@ -598,11 +629,10 @@ pub const implemented = [_][]const u8{
     "_task_get_max_priority", "_malloc",           "_free",              "_get_free_heap_size", "_rand",                   "_read_mac",
     "_esp_timer_get_time",    "_nvs_set_i8",       "_nvs_get_i8",        "_nvs_set_u8",         "_nvs_get_u8",             "_nvs_set_u16",
     "_nvs_get_u16",           "_nvs_open",         "_nvs_close",         "_nvs_commit",         "_nvs_set_blob",           "_nvs_get_blob",
-    "_nvs_erase_key",         "_get_random",       "_random",            "_log_timestamp",
+    "_nvs_erase_key",         "_get_random",       "_random",            "_log_timestamp",      "_malloc_internal",        "_realloc_internal",
+    "_calloc_internal",       "_zalloc_internal",  "_wifi_malloc",       "_wifi_realloc",       "_wifi_calloc",            "_wifi_zalloc",
 };
 
-/// 仍然为 null 的钩子（下一步照这张单子填）。
-/// 注意 `_log_write`/`_log_writev` 是 C 变参函数，**Zig 无法定义**，要么写一小段 C shim，要么保持 null。
 /// 仍然为桩的钩子（`_version`/`_magic` 是数据字段，不计入）。
 pub const unimplemented = [_][]const u8{
     "_env_is_chip",                             "_wifi_thread_semphr_get",                "_queue_send_from_isr",            "_event_group_create",
@@ -613,9 +643,7 @@ pub const unimplemented = [_][]const u8{
     "_timer_disarm",                            "_timer_done",                            "_timer_setfn",                    "_timer_arm_us",
     "_wifi_reset_mac",                          "_wifi_clock_enable",                     "_wifi_clock_disable",             "_wifi_rtc_enable_iso",
     "_wifi_rtc_disable_iso",                    "_get_time",                              "_slowclk_cal_get",                "_log_write",
-    "_log_writev",                              "_malloc_internal",                       "_realloc_internal",               "_calloc_internal",
-    "_zalloc_internal",                         "_wifi_malloc",                           "_wifi_realloc",                   "_wifi_calloc",
-    "_wifi_zalloc",                             "_wifi_create_queue",                     "_wifi_delete_queue",              "_coex_init",
+    "_log_writev",                              "_wifi_create_queue",                     "_wifi_delete_queue",              "_coex_init",
     "_coex_deinit",                             "_coex_enable",                           "_coex_disable",                   "_coex_status_get",
     "_coex_condition_set",                      "_coex_wifi_request",                     "_coex_wifi_release",              "_coex_wifi_channel_set",
     "_coex_event_duration_get",                 "_coex_pti_get",                          "_coex_schm_status_bit_clear",     "_coex_schm_status_bit_set",

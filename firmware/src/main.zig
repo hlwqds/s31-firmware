@@ -3,6 +3,10 @@ const board = @import("board");
 const enabled = @import("enabled");
 
 pub export fn main() noreturn {
+    // `-Dwifi-init-probe` 打开时，入口换成 R3 探针（正常自检不跑）。
+    // `enabled` 是 comptime 常量，关闭时整个分支被剪掉。
+    const probe = @import("wifi_init_probe");
+    if (probe.enabled) probe.run();
     board.log.raw("s31-firmware boot\n");
     var n: u32 = 0;
     var failed: u32 = 0;
