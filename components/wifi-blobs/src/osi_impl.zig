@@ -283,6 +283,86 @@ fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
     return s.give();
 }
 
+/// 中断/任务类钩子的调用计数。它们先做成**可观测的空操作**：
+/// 若 blob 在 init 期间真的调了，计数非 0 → 说明必须把中断真接上；
+/// 若一直是 0 → 说明 S31 这条路径不需要宿主中断（比留 null 崩掉快得多地"把未知变已知"）。
+pub var calls: struct {
+    set_intr: u32 = 0,
+    clear_intr: u32 = 0,
+    set_isr: u32 = 0,
+    ints_on: u32 = 0,
+    ints_off: u32 = 0,
+    wifi_int_disable: u32 = 0,
+    wifi_int_restore: u32 = 0,
+    task_yield_from_isr: u32 = 0,
+    task_delay: u32 = 0,
+} = .{};
+
+var task_dummy: u8 = 0;
+
+fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
+    _ = .{ cpu, src, num, prio };
+    calls.set_intr += 1;
+}
+fn shellClearIntr(src: u32, num: u32) callconv(.c) void {
+    _ = .{ src, num };
+    calls.clear_intr += 1;
+}
+fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
+    _ = .{ n, f, arg };
+    calls.set_isr += 1;
+}
+fn shellIntsOn(mask: u32) callconv(.c) void {
+    _ = mask;
+    calls.ints_on += 1;
+}
+fn shellIntsOff(mask: u32) callconv(.c) void {
+    _ = mask;
+    calls.ints_off += 1;
+}
+/// 我们永远不在 ISR 里（MIE=0、无中断驱动），如实返回 false。
+fn shellIsFromIsr() callconv(.c) bool {
+    return false;
+}
+/// 全局关中断下"保存的状态"就是 0：没有可恢复的东西。
+fn shellWifiIntDisable(mux: ?*anyopaque) callconv(.c) u32 {
+    _ = mux;
+    calls.wifi_int_disable += 1;
+    return 0;
+}
+fn shellWifiIntRestore(mux: ?*anyopaque, saved: u32) callconv(.c) void {
+    _ = .{ mux, saved };
+    calls.wifi_int_restore += 1;
+}
+fn shellTaskYieldFromIsr() callconv(.c) void {
+    calls.task_yield_from_isr += 1;
+}
+fn shellTaskDelay(ms: u32) callconv(.c) void {
+    _ = ms;
+    calls.task_delay += 1;
+}
+/// IDF 默认 tick = 1 ms，所以数值上就是 ms。
+fn shellTaskMsToTick(ms: u32) callconv(.c) i32 {
+    return @intCast(ms);
+}
+fn shellTaskGetCurrentTask() callconv(.c) ?*anyopaque {
+    return @ptrCast(&task_dummy);
+}
+fn shellTaskGetMaxPriority() callconv(.c) i32 {
+    return 8;
+}
+
+/// 自旋锁：单线程 + 关中断下没有竞争者，返回一个稳定的非空指针即可（驱动会判空）。
+var spin_lock_dummy: u8 = 0;
+
+fn shellSpinLockCreate() callconv(.c) ?*anyopaque {
+    return @ptrCast(&spin_lock_dummy);
+}
+
+fn shellSpinLockDelete(p: ?*anyopaque) callconv(.c) void {
+    _ = p;
+}
+
 fn shellMutexCreate() callconv(.c) ?*anyopaque {
     const mem = arena_state.alloc(@sizeOf(Mutex), @alignOf(Mutex)) orelse return null;
     const m: *Mutex = @ptrCast(@alignCast(mem));
@@ -323,6 +403,13 @@ fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callco
     return q.send(bytes[0..q.item_size], blocking);
 }
 
+fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
+    _ = blocking; // 队首插入不阻塞（满了直接失败）
+    const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
+    const bytes: [*]const u8 = @ptrCast(item orelse return 0);
+    return q.sendFront(bytes[0..q.item_size]);
+}
+
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
     const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
     const bytes: [*]u8 = @ptrCast(item orelse return 0);
@@ -344,7 +431,23 @@ pub fn makeTable() osi.Osi {
     t._semphr_delete = @ptrCast(&shellSemphrDelete);
     t._semphr_take = @ptrCast(&shellSemphrTake);
     t._semphr_give = @ptrCast(&shellSemphrGive);
+    t._set_intr = @ptrCast(&shellSetIntr);
+    t._clear_intr = @ptrCast(&shellClearIntr);
+    t._set_isr = @ptrCast(&shellSetIsr);
+    t._ints_on = @ptrCast(&shellIntsOn);
+    t._ints_off = @ptrCast(&shellIntsOff);
+    t._is_from_isr = @ptrCast(&shellIsFromIsr);
+    t._wifi_int_disable = @ptrCast(&shellWifiIntDisable);
+    t._wifi_int_restore = @ptrCast(&shellWifiIntRestore);
+    t._task_yield_from_isr = @ptrCast(&shellTaskYieldFromIsr);
+    t._task_delay = @ptrCast(&shellTaskDelay);
+    t._task_ms_to_tick = @ptrCast(&shellTaskMsToTick);
+    t._task_get_current_task = @ptrCast(&shellTaskGetCurrentTask);
+    t._task_get_max_priority = @ptrCast(&shellTaskGetMaxPriority);
+    t._spin_lock_create = @ptrCast(&shellSpinLockCreate);
+    t._spin_lock_delete = @ptrCast(&shellSpinLockDelete);
     t._mutex_create = @ptrCast(&shellMutexCreate);
+    t._recursive_mutex_create = @ptrCast(&shellMutexCreate);
     t._mutex_delete = @ptrCast(&shellMutexDelete);
     t._mutex_lock = @ptrCast(&shellMutexLock);
     t._mutex_unlock = @ptrCast(&shellMutexUnlock);
@@ -352,6 +455,48 @@ pub fn makeTable() osi.Osi {
     t._queue_delete = @ptrCast(&shellQueueDelete);
     t._queue_send = @ptrCast(&shellQueueSend);
     t._queue_recv = @ptrCast(&shellQueueRecv);
+    t._queue_send_to_front = @ptrCast(&shellQueueSendFront);
+    t._queue_send_to_back = @ptrCast(&shellQueueSend);
     t._queue_msg_waiting = @ptrCast(&shellQueueMsgWaiting);
     return t;
 }
+
+/// 仍然为 null 的钩子（下一步照这张单子填）。由 `osi.zig` 的 128 个字段减去上面 21 个得出；
+/// 中断/任务/定时器/事件/NVS/PHY 这些要么需要真实硬件路径，要么需要 IDF 的 C 层配合。
+/// 已实现的钩子名（由 makeTable() 里实际赋值的字段生成）。
+pub const implemented = [_][]const u8{
+    "_set_intr",              "_clear_intr",       "_set_isr",           "_ints_on",            "_ints_off",               "_is_from_isr",
+    "_spin_lock_create",      "_spin_lock_delete", "_wifi_int_disable",  "_wifi_int_restore",   "_task_yield_from_isr",    "_semphr_create",
+    "_semphr_delete",         "_semphr_take",      "_semphr_give",       "_mutex_create",       "_recursive_mutex_create", "_mutex_delete",
+    "_mutex_lock",            "_mutex_unlock",     "_queue_create",      "_queue_delete",       "_queue_send",             "_queue_send_to_back",
+    "_queue_send_to_front",   "_queue_recv",       "_queue_msg_waiting", "_task_delay",         "_task_ms_to_tick",        "_task_get_current_task",
+    "_task_get_max_priority", "_malloc",           "_free",              "_get_free_heap_size",
+};
+
+/// 仍然为 null 的钩子（下一步照这张单子填）。
+pub const unimplemented = [_][]const u8{
+    "_version",                         "_env_is_chip",                    "_wifi_thread_semphr_get",                  "_queue_send_from_isr",
+    "_event_group_create",              "_event_group_delete",             "_event_group_set_bits",                    "_event_group_clear_bits",
+    "_event_group_wait_bits",           "_task_create_pinned_to_core",     "_task_create",                             "_task_delete",
+    "_event_post",                      "_rand",                           "_dport_access_stall_other_cpu_start_wrap", "_dport_access_stall_other_cpu_end_wrap",
+    "_wifi_pm_sleep_lock_acquire",      "_wifi_pm_sleep_lock_release",     "_phy_disable",                             "_phy_enable",
+    "_phy_update_country_info",         "_read_mac",                       "_timer_arm",                               "_timer_disarm",
+    "_timer_done",                      "_timer_setfn",                    "_timer_arm_us",                            "_wifi_reset_mac",
+    "_wifi_clock_enable",               "_wifi_clock_disable",             "_wifi_rtc_enable_iso",                     "_wifi_rtc_disable_iso",
+    "_esp_timer_get_time",              "_nvs_set_i8",                     "_nvs_get_i8",                              "_nvs_set_u8",
+    "_nvs_get_u8",                      "_nvs_set_u16",                    "_nvs_get_u16",                             "_nvs_open",
+    "_nvs_close",                       "_nvs_commit",                     "_nvs_set_blob",                            "_nvs_get_blob",
+    "_nvs_erase_key",                   "_get_random",                     "_get_time",                                "_random",
+    "_slowclk_cal_get",                 "_log_write",                      "_log_writev",                              "_log_timestamp",
+    "_malloc_internal",                 "_realloc_internal",               "_calloc_internal",                         "_zalloc_internal",
+    "_wifi_malloc",                     "_wifi_realloc",                   "_wifi_calloc",                             "_wifi_zalloc",
+    "_wifi_create_queue",               "_wifi_delete_queue",              "_coex_init",                               "_coex_deinit",
+    "_coex_enable",                     "_coex_disable",                   "_coex_status_get",                         "_coex_condition_set",
+    "_coex_wifi_request",               "_coex_wifi_release",              "_coex_wifi_channel_set",                   "_coex_event_duration_get",
+    "_coex_pti_get",                    "_coex_schm_status_bit_clear",     "_coex_schm_status_bit_set",                "_coex_schm_interval_set",
+    "_coex_schm_interval_get",          "_coex_schm_curr_period_get",      "_coex_schm_curr_phase_get",                "_coex_schm_process_restart",
+    "_coex_schm_register_cb",           "_coex_register_start_cb",         "_regdma_link_set_write_wait_content",      "_sleep_retention_find_link_by_id",
+    "_coex_schm_flexible_period_set",   "_coex_schm_flexible_period_get",  "_coex_schm_get_phase_by_idx",              "_coex_configure_preemption_end_cb",
+    "_wifi_disable_ac_ax",              "_wifi_bb_sleep_retention_attach", "_wifi_bb_sleep_retention_detach",          "_wifi_mac_sleep_retention_attach",
+    "_wifi_mac_sleep_retention_detach", "_magic",
+};

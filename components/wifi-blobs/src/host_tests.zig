@@ -173,3 +173,27 @@ test "osi_impl: 通过表指针调用分配/信号量/队列（C 调用约定）
     try std.testing.expectEqual(@as(i32, 1), q_recv(q, &out, 0));
     try std.testing.expectEqualSlices(u8, &item, &out);
 }
+
+test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
+    var buf: [4096]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+    try std.testing.expect(tbl._set_intr != null);
+    try std.testing.expect(tbl._ints_on != null);
+    try std.testing.expect(tbl._task_get_current_task != null);
+
+    const before = impl.calls;
+    const set_intr: *const fn (i32, u32, u32, i32) callconv(.c) void = @ptrCast(tbl._set_intr.?);
+    const ints_on: *const fn (u32) callconv(.c) void = @ptrCast(tbl._ints_on.?);
+    const is_from_isr: *const fn () callconv(.c) bool = @ptrCast(tbl._is_from_isr.?);
+    set_intr(0, 1, 2, 3);
+    ints_on(0xff);
+    try std.testing.expectEqual(before.set_intr + 1, impl.calls.set_intr);
+    try std.testing.expectEqual(before.ints_on + 1, impl.calls.ints_on);
+    try std.testing.expect(!is_from_isr());
+}
+
+test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
+    try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len);
+    try std.testing.expectEqual(@as(usize, 34), impl.implemented.len); // 21 原语 + 13 中断/任务
+}
