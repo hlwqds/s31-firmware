@@ -1987,3 +1987,38 @@ xphyQueue=0x2f01dbd0        g_coex_param_ptr=0x00000000
 
 要给它定名，下一步应记录 start 期间**所有 arena 分配**的返回地址，找出谁拿到 `0x2f01cab0`——
 这需要给 `_malloc/_zalloc/_calloc` 加"返回地址落在 0x2f01c000..0x2f01d000 就打印"的过滤。
+
+## ★★ 与 IDF 的实测对照（2026-11-17）：**POWER_ST 是 0 vs 0x64646400**
+
+按"和已知能跑的系统对照"这条最后的路，把 IDF 自己的 `examples/wifi/getting_started/station`
+（`idf.py --preview set-target esp32s31` 可直接构建）加上一个每秒打印寄存器的小任务，烧到**同一块板**：
+
+```text
+DIAG: MAC_ST=0x00000000 CLK_CONF1=0x00000000 RST_CONF=0x00000000 POWER_ST=0x64646400
+DIAG: esp_wifi_start() ...
+DIAG: esp_wifi_start() returned OK          ← ★ IDF 的 start 直接返回，不卡
+DIAG: MAC_ST=0x00000000 CLK_CONF1=0x0038e7ff RST_CONF=0x00000000 POWER_ST=0x64646400
+DIAG: MAC_ST=0x10004000 CLK_CONF1=0x0038e7ff ...
+```
+
+对照我们的裸机探针：
+
+| 寄存器 | 我们的裸机 | **IDF（同一块板，正常工作）** | 判定 |
+| --- | --- | --- | --- |
+| `0x20104CAC`（MAC 状态） | **0x0000e000**（复位态，bits 13..15=1） | **0x00000000**（偶尔 0x10004000） | **1 = busy/未就绪** ⇒ 我们的 MAC 从未就绪 |
+| `CLK_CONF1`（0x20109C14） | `0x0038e7ff` | **`0x0038e7ff`** | ✅ **完全一致**，时钟位没配错 |
+| **`CLK_CONF_POWER_ST`（0x20109C0C）** | **`0x00000000`** | **`0x64646400`** | ❌❌ **决定性差异**：我们的电源域状态是 0，IDF 是 0x64/0x64/0x64 |
+| `RST_CONF`（0x20109C10） | — | `0x00000000` | 正常（无复位在挂） |
+
+**三条结论**：
+
+1. **极性钉死**：MAC 真正跑起来时 `0x20104CAC` 是 **0**，所以 bits 13..15 的 **1 = busy/未就绪**。
+   我们读到的 `0x0000e000` 说明 **MAC 从未进入就绪状态**——之前"1 = idle"的倾向**被推翻**。
+2. **时钟配置没问题**：`CLK_CONF1` 与 IDF 逐位相同（`0x38e7ff`）。
+3. **真正缺的是电源域**：`CLK_CONF_POWER_ST = 0` vs IDF 的 `0x64646400`。也就是说
+   `SYSCON_FORCE_ON` 之类的"使能位"并没有让三个域真正上电（与技能里"使能位 ≠ 上电"那句一致），
+   而 MAC 引擎在没有真正上电的域里永远报 busy ⇒ 自旋永远等不到。
+
+**下一步**：查 `0x64646400` 是怎么来的——`CLK_CONF_POWER_ST` 的三个字节（0x64/0x64/0x64）分别是
+modem APB / modem PERI / WIFI 域的"实际状态"。在 IDF 侧读它前后各打一次（在 `esp_wifi_init` 前后），
+就能定位是**哪一步**把域真正打开；我们的 bring-up 缺的正是那一步。
