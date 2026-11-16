@@ -462,16 +462,18 @@ pub var budget: u32 = 0;
 pub const idle_spin_limit: u32 = 64;
 /// 最近的钩子调用（id = `hook_ids` 的下标），用于停机时说明"它在等什么"。
 pub const hook_ids = [_][]const u8{
-    "semphr_take", "semphr_give",  "mutex_lock",        "mutex_unlock",
-    "queue_recv",  "queue_send",   "queue_msg_waiting", "task_create",
-    "malloc",      "zalloc",       "calloc",            "mutex_create",
-    "event_post",  "alloc",        "recv_probe",        "phy_enable",
-    "timer_fire",  "timer_setfn",  "timer_arm",         "timer_disarm",
-    "wifi_clk_en", "wifi_clk_dis", "wifi_reset_mac",
+    "semphr_take", "semphr_give",   "mutex_lock",        "mutex_unlock",
+    "queue_recv",  "queue_send",    "queue_msg_waiting", "task_create",
+    "malloc",      "zalloc",        "calloc",            "mutex_create",
+    "event_post",  "alloc",         "recv_probe",        "phy_enable",
+    "timer_fire",  "timer_setfn",   "timer_arm",         "timer_disarm",
+    "wifi_clk_en", "wifi_clk_dis",  "wifi_reset_mac",    "coex_init",
+    "coex_enable", "coex_status",   "coex_pti",          "coex_req",
+    "coex_rel",    "coex_interval", "coex_start_cb",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 22;
+pub const note_id_max: u8 = 30;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
@@ -899,6 +901,46 @@ fn shellPhyEnable() callconv(.c) usize {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// coex 家族：**先只做可观测**。ROM 的 coex 调度器（`coexist_funcs`=0x2f07ff9c、
+// `g_coa_funcs_p`=0x2f07ff98）会回调这些 app 侧钩子；它们一直是空桩，调度器拿不到
+// interval/status，"可以开始发"的回调永远不会到 —— 与 MAC 的 TX/RX 一直 busy 吻合。
+// 这一轮先看**谁被调用**，再决定实现语义。
+// ---------------------------------------------------------------------------
+fn shellCoexInit() callconv(.c) usize {
+    note(23, 0, 0);
+    return 0;
+}
+fn shellCoexEnable() callconv(.c) usize {
+    note(24, 0, 0);
+    return 0;
+}
+fn shellCoexStatusGet() callconv(.c) usize {
+    note(25, 0, 0);
+    return 0;
+}
+fn shellCoexPtiGet(kind: u32, pti: ?*u8) callconv(.c) usize {
+    note(26, kind, @intFromPtr(pti));
+    if (pti) |q| q.* = 0;
+    return 0;
+}
+fn shellCoexWifiRequest(kind: u32, event: u32, latency: u32) callconv(.c) usize {
+    note(27, kind, (@as(usize, event) << 16) | (latency & 0xFFFF));
+    return 0;
+}
+fn shellCoexWifiRelease(kind: u32) callconv(.c) usize {
+    note(28, kind, 0);
+    return 0;
+}
+fn shellCoexSchmIntervalSet(interval: u32) callconv(.c) usize {
+    note(29, interval, 0);
+    return 0;
+}
+fn shellCoexRegisterStartCb(cb: ?*anyopaque) callconv(.c) usize {
+    note(30, @intFromPtr(cb), 0);
+    return 0;
+}
+
 /// `_wifi_clock_enable/disable` 与 `_wifi_reset_mac`：这三个同样是空桩。
 /// 目前先做到"**可观测**"——在自旋前被调用就能从 trace 里看到；时钟位是幂等重申。
 /// IDF `wifi_module_enable()` 的 `WIFI_CLOCK_DEPS`（`modem_clock_impl.c:14`）对应的 CLK_CONF1 位。
@@ -1122,6 +1164,15 @@ pub fn makeTable() osi.Osi {
     t._queue_delete = @ptrCast(&shellQueueDelete);
     // `_wifi_create_queue`/`_wifi_delete_queue` 是 IDF 的"内部队列"变体，语义同 queue_create/delete。
     // 板级实测：`pp_create_task` 用 `(len=200, item_size=8)` 调 index 94，桩返回 0 → 257(NO_MEM)。
+    // coex 家族：先观测（谁被 ROM 的 coex 调度器回调）。
+    t._coex_init = @ptrCast(&shellCoexInit);
+    t._coex_enable = @ptrCast(&shellCoexEnable);
+    t._coex_status_get = @ptrCast(&shellCoexStatusGet);
+    t._coex_pti_get = @ptrCast(&shellCoexPtiGet);
+    t._coex_wifi_request = @ptrCast(&shellCoexWifiRequest);
+    t._coex_wifi_release = @ptrCast(&shellCoexWifiRelease);
+    t._coex_schm_interval_set = @ptrCast(&shellCoexSchmIntervalSet);
+    t._coex_register_start_cb = @ptrCast(&shellCoexRegisterStartCb);
     // 这三个曾长期是空桩：blob 的 MAC 时钟/复位路径全靠它们（静态引用 19/5 处）。
     t._wifi_clock_enable = @ptrCast(&shellWifiClockEnable);
     t._wifi_clock_disable = @ptrCast(&shellWifiClockDisable);
@@ -1178,13 +1229,11 @@ pub const unimplemented = [_][]const u8{
     "_timer_done",                              "_wifi_clock_enable",                     "_wifi_rtc_enable_iso",
     "_wifi_rtc_disable_iso",                    "_get_time",                              "_slowclk_cal_get",
     "_log_write",                               "_log_writev",                            "_coex_init",
-    "_coex_deinit",                             "_coex_enable",                           "_coex_disable",
-    "_coex_status_get",                         "_coex_condition_set",                    "_coex_wifi_request",
-    "_coex_wifi_release",                       "_coex_wifi_channel_set",                 "_coex_event_duration_get",
-    "_coex_pti_get",                            "_coex_schm_status_bit_clear",            "_coex_schm_status_bit_set",
-    "_coex_schm_interval_set",                  "_coex_schm_interval_get",                "_coex_schm_curr_period_get",
-    "_coex_schm_curr_phase_get",                "_coex_schm_process_restart",             "_coex_schm_register_cb",
-    "_coex_register_start_cb",                  "_regdma_link_set_write_wait_content",    "_sleep_retention_find_link_by_id",
+    "_coex_deinit",                             "_coex_disable",                          "_coex_condition_set",
+    "_coex_wifi_request",                       "_coex_wifi_channel_set",                 "_coex_event_duration_get",
+    "_coex_schm_status_bit_clear",              "_coex_schm_status_bit_set",              "_coex_schm_interval_get",
+    "_coex_schm_curr_period_get",               "_coex_schm_curr_phase_get",              "_coex_schm_process_restart",
+    "_coex_schm_register_cb",                   "_regdma_link_set_write_wait_content",    "_sleep_retention_find_link_by_id",
     "_coex_schm_flexible_period_set",           "_coex_schm_flexible_period_get",         "_coex_schm_get_phase_by_idx",
     "_coex_configure_preemption_end_cb",        "_wifi_disable_ac_ax",                    "_wifi_bb_sleep_retention_attach",
     "_wifi_bb_sleep_retention_detach",          "_wifi_mac_sleep_retention_attach",       "_wifi_mac_sleep_retention_detach",

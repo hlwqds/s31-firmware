@@ -1462,3 +1462,20 @@ irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
 （另：`LPCON.clk_conf` 的 bit0 `clk_wifipwr_en` / bit2 `clk_i2c_mst_en` 也已置；合计 `0xf`。）
 
 所以"时钟依赖没开全"这条**有据可查地**被排除——七项全开、复位脉冲全试过、busy 位仍不清。
+
+### coex 家族：只被调用 `_coex_enable` 一次（2026-11-16，候选 11）
+
+`_coex_*` 一直是全空桩。先给八个最可能的钩子（`init/enable/status_get/pti_get/wifi_request/
+wifi_release/schm_interval_set/register_start_cb`）装上 note 观测，上板（pb133）：
+
+| 钩子 | 调用次数 |
+| --- | --- |
+| `_coex_enable` | **1**（在 `swap#6` 之后、自旋之前） |
+| 其余七个 | 0 |
+
+所以 start 路径上 coex 只走到 `enable` 就停了，其余钩子根本没被调用——"coex 调度器拿不到 interval/status
+所以 TX/RX 一直忙"这条**在本轮观测下不成立**（没有调用，也就谈不上缺实现）。自旋照旧
+（`mac=0x00fff000`）。
+
+若将来要把 coex 做完整，最小语义是：`_coex_enable` → 调 ROM `coex_core_enable`，并把 interval /
+start callback 记下来；但**它不解释当前卡点**。
