@@ -40,6 +40,8 @@ const esp_wifi_init_internal = @extern(*const fn (*const initcfg.InitConfig) cal
 const reg_rxcb = @extern(*const fn (u32, *const fn (?*anyopaque, u16, ?*anyopaque) callconv(.c) c_int) callconv(.c) c_int, .{ .name = "esp_wifi_internal_reg_rxcb" });
 /// 探针是否在 init 阶段真的发一帧（实验开关：false = 不弄脏 TX 引擎）。
 const probe_send_init_frame = false;
+/// 探针是否注册 RX 回调（实验开关：false = 不让 RX 引擎认为有人持有缓冲）。
+const probe_register_rxcb = false;
 const wifi_tx = @extern(*const fn (u32, ?*anyopaque, u16) callconv(.c) c_int, .{ .name = "esp_wifi_internal_tx" });
 const get_config_channel = @extern(*const fn (u32, *u8, *u8) callconv(.c) c_int, .{ .name = "esp_wifi_internal_get_config_channel" });
 
@@ -480,8 +482,13 @@ pub fn run() noreturn {
 
                 // 收发接缝探针：在不启动射频的前提下，问清楚哪些内部 API 现在就可达。
                 {
-                    const rrc = reg_rxcb(0, &rxCb); // 0 = WIFI_IF_STA
-                    log.line("wifi-init-probe: reg_rxcb rc={d}", .{rrc});
+                    // 实验：不注册 RX 回调（RX 引擎"有人持有缓冲"可能让 deinit 永远等 RX 静止）。
+                    if (probe_register_rxcb) {
+                        const rrc = reg_rxcb(0, &rxCb); // 0 = WIFI_IF_STA
+                        log.line("wifi-init-probe: reg_rxcb rc={d}", .{rrc});
+                    } else {
+                        log.raw("wifi-init-probe: reg_rxcb SKIPPED (probe_register_rxcb=false)\n");
+                    }
                     var primary: u8 = 0;
                     var second: u8 = 0;
                     const crc = get_config_channel(0, &primary, &second);

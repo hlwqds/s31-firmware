@@ -1502,3 +1502,26 @@ coex_pti_tab_ptr = 0x2f07ffa4    coex_env_ptr = 0x2f07ffa8
 ```
 
 上板（pb134）：`coex_enable` 真跑了（无 panic），**自旋照旧**（`mac=0x00fff000`）。
+
+### 最后一个变体：不注册 RX 回调（候选 13，同样无效）
+
+`reg_rxcb` 会把我们的 RX 回调挂进 blob，RX 引擎可能因此认为"有人持有缓冲"而永远不静止。把注册也做成
+开关（`probe_register_rxcb = false`）后上板（pb135）：`reg_rxcb SKIPPED`，自旋照旧 `mac=0x00fff000`。
+
+**十三候选全表**（每个都有板侧证据）：
+
+| # | 候选 | 结果 |
+| --- | --- | --- |
+| 1 | 跳过 RF 标定 | ✗ |
+| 2 | `_phy_enable` 空桩 | 自旋前未调用 |
+| 3 | `_timer_*` 空桩 | 注册 14 次、arm 0 次 |
+| 4 | `wifi_rf_phy_enable` 未调用 | ✗ |
+| 5 | `_wifi_reset_mac` 空桩 | 被调用，✗ |
+| 6 | 时钟位不全 | 七项 dep 全开，✗ |
+| 7 | init `internal_tx` 弄脏 TX | ✗ |
+| 8 | FE TX/RX 未复位 | ✗ |
+| 9 | `rst_wifibb` 未脉冲 | ✗ |
+| 10 | clock-gated 复位 | ✗ |
+| 11 | coex 调度器缺实现 | 只有 `_coex_enable` 被调用 |
+| 12 | `coex_enable` 空桩 | 真实调用后 ✗ |
+| 13 | RX 回调持有缓冲 | 不注册，✗ |
