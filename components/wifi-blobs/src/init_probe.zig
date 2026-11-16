@@ -321,7 +321,10 @@ pub fn run() noreturn {
                     {
                         const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
                         const before = conf1.*;
-                        const bits: u32 = (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+                        // PHY 组（FE）+ `PERIPH_PHY_CALIBRATION_MODULE` 组：
+                        // WIFI_BB_44M(2) / WIFI_BB(3) / WIFI_BB_80X1(7) / WIFI_APB(9)。
+                        const bits: u32 = (1 << 2) | (1 << 3) | (1 << 7) | (1 << 9) |
+                            (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
                         conf1.* = before | bits;
                         log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
                     }
