@@ -207,13 +207,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // （IDF 的 `_global_interrupt_handler` 就是这个形状）。电平输入（T0/25）要先 ack。
         // 一次性把 **ROM 表**在 app 运行期（blob 已初始化）扫一遍并打印——调试口读到的快照可能是
         // 复位后的，这里才是权威读数。只做一次，且与采样器一样从 trap 里打（仓库既有做法）。
-        if (input == 25 and !rom_table_dumped and irq_count >= 1000) {
+        // **锚定在自旋里**再扫：`mepc == 0x2f009206` 是 MAC 自旋签名。之前用 `irq_count>=1000` 触发，
+        // 而自旋签名到 #9984 才出现 -> 那次扫的是 init 中途的表，不能证明"运行期为空"。
+        if (input == 25 and !rom_table_dumped and frame.mepc == 0x2f009206) {
             rom_table_dumped = true;
             // **哨兵自检**：先用 ROM 的 `intr_handler_set` 装一个已知项，再扫。若扫不到 -> app 视图
             // 根本看不到那张表（0x2f07xxxx 在 app 上下文另有映射），"整表为空"的结论就不能成立。
             const ihs = @extern(*const fn (i32, ?*anyopaque, ?*anyopaque) callconv(.c) void, .{ .name = "intr_handler_set" });
             ihs(30, @ptrFromInt(@intFromPtr(&sentinelIsr)), @ptrFromInt(0x5a5a5a5a));
             log.line("romtbl-scan n=32 (sample {d}) sentinel[30]=0x{x} arg=0x5a5a5a5a", .{ irq_count, @intFromPtr(&sentinelIsr) });
+            // 同时看 CLIC 的向量表基址（mtvt 是 CLIC 模式下的逐输入入口表）。
+            const mtvt = asm volatile ("csrr %[v], 0x307"
+                : [v] "=r" (-> usize),
+            );
+            log.line("mtvt=0x{x}", .{mtvt});
             var k: usize = 0;
             while (k < 32) : (k += 1) {
                 const e = romHandler(k);

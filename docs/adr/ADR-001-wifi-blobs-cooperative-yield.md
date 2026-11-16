@@ -2386,10 +2386,14 @@ ROM 的 `PROVIDE(intr_handler_set = 0x2f800764)` 只在符号**未定义**时才
 | 方式 | 读数 | 判读 |
 | --- | --- | --- |
 | 调试口 esptool 直读（64 字） | `table[1]=0x2f8117f4/0x2f07f018`、`table[5]=0x2f00133c`，`table[25]=0` | **不可靠**：esptool 连接会复位芯片，读到的是 **ROM 启动后自装的默认项**，不是 app 运行期的表 |
-| **app 侧扫描 + 哨兵自检**（trap 在 `irq_count>=1000` 时先 `intr_handler_set(30, sentinel, 0x5a5a5a5a)`，再 `romHandler(i)` 扫 32 项） | `romtbl[30] fn=0x4004c85a arg=0x5a5a5a5a` —— **哨兵被扫到了**；除哨兵外**无任何非空项** | **权威**：先证明 app 视图就是那张表（否则"全 0"可能只是看不到 ROM RAM），再看表本身——blob 已初始化完、正卡在自旋，**除我们自己的哨兵外整张表为空** |
+| **自旋锚定扫描 + 哨兵自检**（trap 在**第一个 `mepc==0x2f009206`** 的 input 25 上先 `intr_handler_set(30, sentinel, 0x5a5a5a5a)`，再 `romHandler(i)` 扫 32 项，并读 `mtvt`） | `romtbl-scan n=32 (sample 631) sentinel[30]=0x4004c85a arg=0x5a5a5a5a`；`mtvt=0x0`；`romtbl[30] fn=0x4004c85a arg=0x5a5a5a5a`，**再无其它项** | **权威**：哨兵证明 app 视图就是那张表；扫描锚定在自旋签名上，**除我们自己的哨兵外整张表为空** |
 
 （CPU 侧读这块 ROM RAM 是安全的：`trapDispatch` 在每次 input 25 里都读表，11776 次采样无 fault。
 "ROM 读合法"说的是**总线访问**，与调试口读到的内容是否代表运行期状态是两件事。）
+
+**时机也是证据的一部分**：早先用 `irq_count>=1000` 触发扫描，但自旋签名到 #9984 才稳定出现——那次扫的是
+**init 中途**的表，不能证明"运行期为空"。改成锚定 `mepc==0x2f009206`（自旋签名）后，第一次命中即扫，
+结果一致（除哨兵外全空），且顺带得到 **`mtvt = 0`**：CLIC 逐输入向量表基址是 0，硬件没有可用的向量表。
 
 **为什么哨兵自检是必需的**：`0x2f07f070` **在应用链接窗口之外**——`linker/s31.ld:38-40` 记
 应用可用 SRAM 只到 `0x2F07AFC0`，其上的 `0x2F07AFC0–0x2F07FFFF` 是二级 bootloader 的
