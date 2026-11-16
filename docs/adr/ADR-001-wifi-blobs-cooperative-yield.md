@@ -2328,3 +2328,21 @@ calling esp_wifi_start ... 自旋 mac=0x00fff000
 ```
 
 所以两处都是**必须修的正确性问题**，但都不改变卡点。
+
+### 决定性实验：把输入 25（blob 的 tick）**ack 后转发给 `rom_mtvec`** → `instruction access fault`
+
+按"ack 再转发"的正确顺序试了一次（先 `ackT0Interrupt` 清 int_st + 重装 alarm，再 `return true` 让入口
+跳到 `rom_mtvec & ~3`）：
+
+```text
+panic: exception code=1 (instruction access fault) cause=0x8000001
+panic: mepc=0x2f8210d2 mtval=0x2f8210d2
+panic: ra=0x2f812326
+```
+
+**`mepc == mtval == 0x2f8210d2`** ⇒ 跳过去的目标**不是可执行代码**。这正面证实了此前的判断：
+`mtvec = 0x2f801703` 的低 2 位是 **CLIC 模式**，掩位后的 `0x2f801700` 是**向量表基址**，
+不是 common 入口。所以"把中断转发给 ROM 入口"这条路**在 CLIC 模式下不成立**——要转发必须走
+**`mtvt`（向量表）里的第 `id` 项**，那是另一套机制（CSR 号实现相关）。
+
+已回滚（输入 25 恢复自 ack、不转发），基线不受影响。

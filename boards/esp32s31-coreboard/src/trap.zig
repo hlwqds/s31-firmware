@@ -202,7 +202,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 输入 25 默认自己 ack。把它转发给 ROM 入口的实验结果见 ADR：机制**未定**
         // （之前"风暴/不 ack"的判读被打印上限的假象污染过，不要沿用）。
         if (input == 25) {
-            hw.ackT0Interrupt(2000); // 电平中断：不清会在 mret 后立刻重入
+            // 输入 25 是 blob 自己的 tick。**不能**转发给 `rom_mtvec`：实测跳到掩位后的
+            // 0x2f801700 会 `instruction access fault`（mepc=mtval=0x2f8210d2）——那个地址是
+            // CLIC 模式的**向量表基址**，不是代码入口。转发要给 `mtvt[id]`，那是另一件事。
+            hw.ackT0Interrupt(2000);
             return false;
         }
         // 别的输入：交给 ROM 的 ISR（它自己会 ack），asm 里走链式跳转路径。
