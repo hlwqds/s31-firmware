@@ -282,6 +282,10 @@ pub fn run() noreturn {
                 impl.resetEvents();
                 trace_lines = 0;
                 impl.budget = 0; // 不设预算，用 traceNote 逐行追踪
+                // `esp_wifi_start` 的第一件事是 `wifi_init_completed()`（返回非 0 才继续）：
+                // 它读 blob 内部状态字并和 3 比较。直接问它，省得猜。
+                const init_completed = @extern(*const fn () callconv(.c) c_int, .{ .name = "wifi_init_completed" });
+                log.line("wifi-init-probe: wifi_init_completed={d} (非 0 才继续)", .{init_completed()});
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

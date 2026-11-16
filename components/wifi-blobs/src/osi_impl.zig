@@ -252,6 +252,23 @@ pub fn eventPost() i32 {
     return -1;
 }
 
+/// 表里用的 `_event_post` 壳：**打点后返回 0（成功）**。
+///
+/// 这里刻意与 `eventPost()` 的 -1 区分：`esp_wifi_start` 若认为"投递失败"会重试/自旋，
+/// 而我们没有事件循环，投递本来就只是丢弃——返回成功才能让状态机继续走。
+fn shellEventPost(
+    event_base: ?*const anyopaque,
+    event_id: u32,
+    event_data: ?*const anyopaque,
+    data_size: usize,
+) callconv(.c) c_int {
+    _ = event_base;
+    _ = event_data;
+    note(12, event_id, data_size);
+    events_dropped += 1;
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // 把原语接成 `Osi` 表（C 调用约定的薄壳）
 //
@@ -407,10 +424,11 @@ pub const hook_ids = [_][]const u8{
     "semphr_take", "semphr_give", "mutex_lock",        "mutex_unlock",
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
     "malloc",      "zalloc",      "calloc",            "mutex_create",
+    "event_post",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 11;
+pub const note_id_max: u8 = 12;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
@@ -874,6 +892,7 @@ pub fn makeTable() osi.Osi {
     t._wifi_create_queue = @ptrCast(&shellWifiQueueCreate);
     t._wifi_delete_queue = @ptrCast(&shellWifiQueueDelete);
     t._wifi_thread_semphr_get = @ptrCast(&shellThreadSemphrGet);
+    t._event_post = @ptrCast(&shellEventPost);
     t._queue_send = @ptrCast(&shellQueueSend);
     t._queue_recv = @ptrCast(&shellQueueRecv);
     t._queue_send_to_front = @ptrCast(&shellQueueSendFront);

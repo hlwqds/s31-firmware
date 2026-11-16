@@ -64,8 +64,10 @@ wifi-init-probe: internal_tx rc=0x3002 (64 B)
 wifi-init-probe: starting task[0] entry=0x2f00d024 arg=0x00000000 on its own stack
 wifi-init-probe: task context ready, running it until it blocks
 wifi-init-probe: task blocked, main resumed (idle_calls=129)
+wifi-init-probe: wifi_init_completed=1 (非 0 才继续)
 wifi-init-probe: calling esp_wifi_start (idle_calls=129, tracing hooks)
 wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
 wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
 wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
 wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace event_post a0=0x0000002b a1=0x00000010
