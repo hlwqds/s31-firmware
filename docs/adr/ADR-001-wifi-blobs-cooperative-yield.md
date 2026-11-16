@@ -3117,3 +3117,26 @@ IDF 的 `modem_clock_hal_set_clock_domain_icg_bitmap()`（`components/hal/esp32s
 ⇒ 所以 `+0x0C` **是可写的逐域 ICG 控制**，不是只读状态（此前"写完读回 0"的解读要改）。
 我们写 `0x64646400` 不生效，需要单独查：可能是**写的时机**（modem APB 时钟还没开）或写后被别的初始化覆盖。
 这条与"MAC 域没真正上电"是同一件事的两面。
+
+### ICG 端口的精确清单（下一步要做的）
+
+IDF 的逐域 setter 写的就是 `clk_conf_power_st.clk_*_st_map`（`modem_syscon_ll.h:251` 等），
+所以 **+0x0C 的 nibble 是控制位**。差别在**写的值**与**覆盖面**：
+
+| 项 | IDF | 我们 |
+| --- | --- | --- |
+| 写什么值 | `icg_config[domain] \| 当前该域 nibble`（`ICG_NOGATING_ACTIVE`=`BIT(2)`，部分域再 `\| BIT(1)`） | 扁平 `0x64646400` 一次写 |
+| MODEM_SYSCON 的 4 个域 | 逐域写 | 一次写（值等价时应当可行） |
+| **MODEM_LPCON 的 4 个域**（`lp_apb`/`i2c_master`/`coex`/**`wifipwr`**） | **`modem_lpcon_ll_set_*_icg_bitmap`** | **完全没管** ← 最可能的缺口 |
+| 顺序 | ICG map → CLK_CONF1 依赖位 | 只有 CLK_CONF1（+ 一次扁平写） |
+
+**端口清单**：
+1. 取 `PMU_HP_ICG_MODEM_CODE_*` 的数值（`esp_hal_pmu/include/hal/pmu_types.h`：MODEM=1、ACTIVE=2）；
+2. 逐域 `new = config[domain] | 当前 nibble` 写回——**SYSCON 4 个 + LPCON 4 个（含 WIFIPWR）**；
+3. 再写 CLK_CONF1 依赖位（已有）。
+
+**判据**：写完逐域读回应与 IDF 一致（IDF 实测 `SYSCON+0x0C = 0x64646400`、`LPCON+0x18 = 0x7 → 0x1`），
+然后看 **init 后 `MAC_ST` 是否变 0**、自旋是否消失。
+
+**待查的异常**：我们写 `0x64646400` 读回 0——可能是**写时机**（modem APB 时钟未开）或值不被接受，
+需要在写入点前后各读一次来定。
