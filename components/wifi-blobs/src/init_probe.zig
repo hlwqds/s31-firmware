@@ -328,6 +328,19 @@ pub fn run() noreturn {
                         conf1.* = before | bits;
                         log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
                     }
+                    // 先打开 force-on 位（使能位不等于上电）：
+                    //   SYSCON_FORCE_ON(0x20109C08)：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
+                    //   LPCON_FORCE_ON(0x2010F01C)：WIFIPWR_FO(0) | I2C_MST_FO(2)
+                    {
+                        const fo_sys: *volatile u32 = @ptrFromInt(0x2010_9C08);
+                        const before = fo_sys.*;
+                        fo_sys.* = before | (1 << 2) | (1 << 3) | (1 << 4);
+                        log.line("wifi-init-probe: SYSCON_FORCE_ON 0x{x} -> 0x{x}", .{ before, fo_sys.* });
+                        const fo_lp: *volatile u32 = @ptrFromInt(0x2010_F01C);
+                        const b2 = fo_lp.*;
+                        fo_lp.* = b2 | (1 << 0) | (1 << 2);
+                        log.line("wifi-init-probe: LPCON_FORCE_ON 0x{x} -> 0x{x}", .{ b2, fo_lp.* });
+                    }
                     // `MODEM_SYSCON_CLK_CONF_POWER_ST_REG`(0x20109C0C)：各域时钟的**实际**状态。
                     // 字段：MODEM_APB[31:28] / MODEM_PERI[27:24] / WIFI[23:20]。
                     {
