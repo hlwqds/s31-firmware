@@ -2386,12 +2386,13 @@ ROM 的 `PROVIDE(intr_handler_set = 0x2f800764)` 只在符号**未定义**时才
 | 方式 | 读数 | 判读 |
 | --- | --- | --- |
 | 调试口 esptool 直读（64 字） | `table[1]=0x2f8117f4/0x2f07f018`、`table[5]=0x2f00133c`，`table[25]=0` | **不可靠**：esptool 连接会复位芯片，读到的是 **ROM 启动后自装的默认项**，不是 app 运行期的表 |
-| **app 侧扫描**（trap 在 `irq_count>=1000` 时 `romHandler(i)` 扫 32 项并打印） | 只打出 `romtbl-scan n=32 (sample 1000)`，**无任何非空项** | **权威**：此时 blob 已初始化完、正卡在自旋，**整张表 32 项全空** |
+| **app 侧扫描 + 哨兵自检**（trap 在 `irq_count>=1000` 时先 `intr_handler_set(30, sentinel, 0x5a5a5a5a)`，再 `romHandler(i)` 扫 32 项） | `romtbl[30] fn=0x4004c85a arg=0x5a5a5a5a` —— **哨兵被扫到了**；除哨兵外**无任何非空项** | **权威**：先证明 app 视图就是那张表（否则"全 0"可能只是看不到 ROM RAM），再看表本身——blob 已初始化完、正卡在自旋，**除我们自己的哨兵外整张表为空** |
 
 （CPU 侧读这块 ROM RAM 是安全的：`trapDispatch` 在每次 input 25 里都读表，11776 次采样无 fault。
 "ROM 读合法"说的是**总线访问**，与调试口读到的内容是否代表运行期状态是两件事。）
 
-**结论**：blob **在 ROM 的表里也没装输入 25 的 handler**——运行期整张表是空的。这与"blob 从未调用
+**结论**：blob **在 ROM 的表里也没装输入 25 的 handler**——运行期除我们自装的哨兵外整张表是空的。
+（哨兵自检排除了"app 根本看不到 0x2f07xxxx"这一竞争解释：若看不到，entry30 也不会显示。）这与"blob 从未调用
 `_set_isr`"一致，并且排除了"handler 装在 ROM 表里、只是我们调不到"这一解释——**根本没有 handler 可调**。
 
 于是"把输入 25 转发给某张表"这条路彻底关闭：应用侧表空、ROM 表空、`rom_mtvec` 是 CLIC 向量表基址。
