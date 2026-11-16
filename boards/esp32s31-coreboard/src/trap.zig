@@ -172,21 +172,20 @@ pub var chain_other_irqs: bool = false;
 pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
     if ((cause & 0x8000_0000) != 0) {
-        if (irq_count < irq_samples.len) {
-            irq_samples[irq_count] = frame.mepc;
-            // 前 8 次直接打印：即使主上下文再也拿不回 CPU，也能看到自旋点的 PC。
-            if (irq_count < 64) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
-                irq_count,
-                cause & 0x3F,
-                frame.mepc,
-            });
-        }
-        irq_count += 1;
+        // 数组只存前 `irq_samples.len` 个（判读用）；**打印独立限长**——之前把打印放在
+        // `irq_count < irq_samples.len`（16）里面，于是"16 条之后没输出"被误读成"中断停了"，
+        // 实际只是打印被数组长度卡住。
+        if (irq_count < irq_samples.len) irq_samples[irq_count] = frame.mepc;
+        // 前 64 条全打，之后每 256 条打一条：既不刷屏，又能证明"采样在 swap 之后仍在继续"。
+        if (irq_count < 64 or (irq_count % 256) == 0) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
+            irq_count,
+            cause & 0x3F,
+            frame.mepc,
+        });
+        irq_count +%= 1;
         const input = cause & 0x3F;
-        // ★ 实测结论（2026-11-16）：把输入 25 **不 ack 直接转发**给 ROM 入口（`0x2f801700`）
-        // 会让板子立刻进入"同一 PC 反复采样"的风暴——说明那个 ROM 入口**不清 T0 的 int_st**
-        // （它大概按自己的处理表分发，表里没有输入 25）。所以 T0 必须由我们自己 ack；
-        // `chain_other_irqs` 只对**别的输入**有意义。
+        // 输入 25 默认自己 ack。把它转发给 ROM 入口的实验结果见 ADR：机制**未定**
+        // （之前"风暴/不 ack"的判读被打印上限的假象污染过，不要沿用）。
         if (input == 25) {
             hw.ackT0Interrupt(2000); // 电平中断：不清会在 mret 后立刻重入
             return false;
