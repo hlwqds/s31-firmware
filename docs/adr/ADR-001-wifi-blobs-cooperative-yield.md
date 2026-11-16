@@ -2391,8 +2391,13 @@ ROM 的 `PROVIDE(intr_handler_set = 0x2f800764)` 只在符号**未定义**时才
 （CPU 侧读这块 ROM RAM 是安全的：`trapDispatch` 在每次 input 25 里都读表，11776 次采样无 fault。
 "ROM 读合法"说的是**总线访问**，与调试口读到的内容是否代表运行期状态是两件事。）
 
-**结论**：blob **在 ROM 的表里也没装输入 25 的 handler**——运行期除我们自装的哨兵外整张表是空的。
-（哨兵自检排除了"app 根本看不到 0x2f07xxxx"这一竞争解释：若看不到，entry30 也不会显示。）这与"blob 从未调用
+**为什么哨兵自检是必需的**：`0x2f07f070` **在应用链接窗口之外**——`linker/s31.ld:38-40` 记
+应用可用 SRAM 只到 `0x2F07AFC0`，其上的 `0x2F07AFC0–0x2F07FFFF` 是二级 bootloader 的
+`iram_loader_seg`。所以"app 读到全 0"本来有两种解释：表真的空，或该地址在 app 上下文另有占用。
+哨兵往返（写 `intr_handler_set(30,..)` -> 同一地址读回 `0x4004c85a/0x5a5a5a5a`）证明**在这个 app 里
+该地址就是那张表**：RAM 就是 RAM，bootloader 的 loader 段在 app 运行期已不再使用。
+
+**结论**：blob **在 ROM 的表里也没装输入 25 的 handler**——运行期除我们自装的哨兵外整张表是空的。这与"blob 从未调用
 `_set_isr`"一致，并且排除了"handler 装在 ROM 表里、只是我们调不到"这一解释——**根本没有 handler 可调**。
 
 于是"把输入 25 转发给某张表"这条路彻底关闭：应用侧表空、ROM 表空、`rom_mtvec` 是 CLIC 向量表基址。
