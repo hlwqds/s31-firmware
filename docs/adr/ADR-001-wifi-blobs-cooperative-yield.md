@@ -322,6 +322,18 @@ force-on 之后 PHY 继续跑，撞到 `mepc=0x2f82625a`、`mtval=0xa4`。把 RO
 2f826252  lw   a5, 164(a5)      # a5 = 0 → 读 0xA4 → load access fault
 ```
 
-所以根因是 **`0x2f07FC40` 这个全局指针还是 0**（不是 ROM 的 bug）。它是 blob 的 PHY 上下文指针，
-正常由 IDF 的 C 层（`esp_phy_init` 一侧）初始化。下一步：确定这个全局是谁定义/谁负责填，
-并在调用 `register_chipv7_phy` 之前把它建好。
+当时记成"根因是 `0x2f07FC40` 为空"。**这个结论被后续实验推翻了**：那个空指针是**手工二分**造成的
+——把 ROM 的 PHY 函数逐个单独调用会跳过 ROM 自己的初始化顺序，本该先填好的全局当然还是 0。
+
+把手动二分关掉（`const manual_bisect = false`）、只跑真实路径后，**PHY 入口返回了**：
+
+```text
+fe_bb writes done
+register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
+```
+
+所以这条线的最终结论是：**force-on 位 + 时钟使能之后，`register_chipv7_phy` 不再卡死**。
+（诊断纪律：手工乱序调用 ROM 函数得到的故障不可直接当结论——先跑真实路径。）
+
+之后是一个新的、与 PHY 无关的故障：`illegal instruction`，`mepc=0x2f01c9d4`（SRAM）、
+`ra=0x40017876` —— 执行流跳进了 RAM，说明有一次调用走了坏函数指针。
