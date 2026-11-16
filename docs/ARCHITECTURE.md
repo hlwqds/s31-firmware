@@ -15,6 +15,7 @@ components/
   ├── net-tls-http           TLS 记录层/密钥日程/AEAD/DER、HTTP/1.1
   ├── app-mqtt-ota           MQTT 3.1.1、OTA 清单校验/回滚
   ├── wifi-boundary          OSI 函数表 ABI、blob 边界
+  ├── wifi-blobs             真实 blob 链接 + osi 适配层（init/任务/合作式让出）
   ├── wifi-connect           扫描/连接状态机、WPA2/WPA3 派生
   ├── ble-802154             HCI/ATT/GATT、802.15.4 FCF/6LoWPAN
   └── boot-power-perf        otadata 选槽、A/B、功耗/性能模型

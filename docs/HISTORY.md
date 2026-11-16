@@ -18,6 +18,7 @@
 | `components/app-mqtt-ota` | MQTT 与 OTA | 27 |
 | `components/wifi-boundary` | Wi-Fi blob 边界 | 15 |
 | `components/wifi-connect` | Wi-Fi 连接管理 | 20 |
+| `components/wifi-blobs` | 真实 Wi-Fi blob 链接与 osi 适配（ch25 的实测延伸） | 20 |
 | `components/ble-802154` | BLE / 802.15.4 边界 | 20 |
 | `tools/s31-production/{netmgr,ota,provisioning,recovery}` | 生产化原型 | 15 / 8 / 18 / 9 |
 

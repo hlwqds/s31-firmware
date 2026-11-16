@@ -712,37 +712,54 @@ fn inArena(p: ?*anyopaque) bool {
     return addr >= arena_state.base and addr < arena_state.base + arena_state.bytes_total;
 }
 
+/// 句柄有两种形态，ROM 两个都存过（`-228(s3)` 存包装体、`0x2f07ff0c` 存首字），
+/// 所以收发钩子必须都能接受：
+///
+/// - **裸 `*Queue`**（`_queue_create` 的返回）：首字是 `item_size`（小标量）；
+/// - **包装体 `WifiQueue`**（`_wifi_create_queue` 的返回）：首字是指向 arena 内的 `*Queue`。
+///
+/// 判别是无歧义的：标量不可能落进 arena 地址区间。包装体再做一次自洽检查
+/// （内部队列的 `item_size`/`cap` 必须非 0），避免把野指针当队列。
+fn unwrapQueue(p: ?*anyopaque) ?*Queue {
+    const raw = p orelse return null;
+    if (!inArena(raw)) return null;
+    const word0 = @as(*const usize, @ptrCast(@alignCast(raw))).*;
+    if (word0 >= arena_state.base and word0 < arena_state.base + arena_state.bytes_total) {
+        const inner: *Queue = @ptrFromInt(word0);
+        if (inner.item_size > 0 and inner.cap > 0) return inner;
+    }
+    return @ptrCast(@alignCast(raw));
+}
+
 fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
     note(5, @intFromPtr(p), blocking);
-    if (!inArena(p)) {
+    const q = unwrapQueue(p) orelse {
         bad_handle += 1;
         return 0;
-    }
-    const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
+    };
     const bytes: [*]const u8 = @ptrCast(item orelse return 0);
     return q.send(bytes[0..q.item_size], blocking);
 }
 
 fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
     _ = blocking; // 队首插入不阻塞（满了直接失败）
-    const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
+    const q = unwrapQueue(p) orelse return 0;
     const bytes: [*]const u8 = @ptrCast(item orelse return 0);
     return q.sendFront(bytes[0..q.item_size]);
 }
 
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
     note(4, @intFromPtr(p), blocking);
-    if (!inArena(p)) {
+    const q = unwrapQueue(p) orelse {
         bad_handle += 1;
         return 0;
-    }
-    const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
+    };
     const bytes: [*]u8 = @ptrCast(item orelse return 0);
     return q.recv(bytes[0..q.item_size], blocking);
 }
 
 fn shellQueueMsgWaiting(p: ?*anyopaque) callconv(.c) u32 {
-    const q: *const Queue = @ptrCast(@alignCast(p orelse return 0));
+    const q = unwrapQueue(p) orelse return 0;
     return q.msgWaiting();
 }
 

@@ -183,6 +183,37 @@ test "osi_impl: 通过表指针调用分配/信号量/队列（C 调用约定）
     try std.testing.expectEqualSlices(u8, &item, &out);
 }
 
+test "osi_impl: 收发钩子同时接受裸队列与包装体（ROM 两种句柄都存过）" {
+    var buf: [8192]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+
+    const q_create: *const fn (u32, u32) callconv(.c) ?*anyopaque = @ptrCast(tbl._queue_create.?);
+    const wq_create: *const fn (u32, u32) callconv(.c) ?*anyopaque = @ptrCast(tbl._wifi_create_queue.?);
+    const q_send: *const fn (?*anyopaque, ?*const anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._queue_send.?);
+    const q_recv: *const fn (?*anyopaque, ?*anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._queue_recv.?);
+    const q_waiting: *const fn (?*anyopaque) callconv(.c) u32 = @ptrCast(tbl._queue_msg_waiting.?);
+
+    // 裸 *Queue：首字是 item_size（标量），不是 arena 指针。
+    const raw = q_create(2, 4) orelse return error.OutOfMemory;
+    var item = [4]u8{ 9, 8, 7, 6 };
+    try std.testing.expectEqual(@as(i32, 1), q_send(raw, &item, 0));
+    try std.testing.expectEqual(@as(u32, 1), q_waiting(raw));
+
+    // 包装体：首字指向内部 *Queue。发到包装体上的消息必须落进同一个内部队列。
+    const wrapped = wq_create(2, 4) orelse return error.OutOfMemory;
+    try std.testing.expectEqual(@as(i32, 1), q_send(wrapped, &item, 0));
+    try std.testing.expectEqual(@as(u32, 1), q_waiting(wrapped));
+    var out: [4]u8 = undefined;
+    try std.testing.expectEqual(@as(i32, 1), q_recv(wrapped, &out, 0));
+    try std.testing.expectEqualSlices(u8, &item, &out);
+
+    // 越界句柄既不算裸队列也不算包装体：返回失败并计数，而不是解引用。
+    const before = impl.bad_handle;
+    try std.testing.expectEqual(@as(i32, 0), q_send(@ptrFromInt(8), &item, 0));
+    try std.testing.expect(impl.bad_handle > before);
+}
+
 test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
     var buf: [4096]u8 align(16) = undefined;
     impl.initArena(&buf);
