@@ -38,6 +38,8 @@ const esp_wifi_init_internal = @extern(*const fn (*const initcfg.InitConfig) cal
 /// - `esp_wifi_internal_tx(ifx, buf, len)`：把帧交给 blob 发；
 /// - `esp_wifi_internal_get_config_channel(ifx, &primary, &second)`：查当前信道。
 const reg_rxcb = @extern(*const fn (u32, *const fn (?*anyopaque, u16, ?*anyopaque) callconv(.c) c_int) callconv(.c) c_int, .{ .name = "esp_wifi_internal_reg_rxcb" });
+/// 探针是否在 init 阶段真的发一帧（实验开关：false = 不弄脏 TX 引擎）。
+const probe_send_init_frame = false;
 const wifi_tx = @extern(*const fn (u32, ?*anyopaque, u16) callconv(.c) c_int, .{ .name = "esp_wifi_internal_tx" });
 const get_config_channel = @extern(*const fn (u32, *u8, *u8) callconv(.c) c_int, .{ .name = "esp_wifi_internal_get_config_channel" });
 
@@ -188,9 +190,8 @@ fn traceNote(id: u8, a0: usize, a1: usize) void {
     // 追踪 take(0)/give(1)/queue_recv(4)/queue_send(5)/alloc(13)：
     // 关键问题是"任务到底有没有收到我们发的消息"（send 句柄 0x2f01d940 vs recv 句柄）。
     // 定时器相关的 id（16..19）也放行：要回答"blob 在自旋前到底有没有 setfn/arm 过定时器"。
-    if (id != 0 and id != 1 and id != 4 and id != 5 and id != 13 and id != 14 and
-        id != 16 and id != 17 and id != 18 and id != 19 and
-        id != 20 and id != 21 and id != 22) return;
+    // 放行全部已登记 id（新增 id 只要进了 hook_ids 就能打，不必再改这里）。
+    if (id >= impl.hook_ids.len) return;
     if (trace_lines >= 200) return;
     trace_lines += 1;
     const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";
@@ -328,7 +329,10 @@ pub fn run() noreturn {
                         const before = conf1.*;
                         // PHY 组（FE）+ `PERIPH_PHY_CALIBRATION_MODULE` 组：
                         // WIFI_BB_44M(2) / WIFI_BB(3) / WIFI_BB_80X1(7) / WIFI_APB(9)。
-                        const bits: u32 = (1 << 2) | (1 << 3) | (1 << 7) | (1 << 9) |
+                        // WIFI_CLOCK_DEPS 对应的完整位集（见 osi_impl.zig 的 wifi_clk_conf1_bits 注释）：
+                        // BB 主时钟组 0..8 + WIFI_MAC(9) + WIFI_APB(10) + FE 组 13,14,15,19,20,21。
+                        const bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) |
+                            (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) |
                             (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
                         conf1.* = before | bits;
                         log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
@@ -482,9 +486,15 @@ pub fn run() noreturn {
                     var second: u8 = 0;
                     const crc = get_config_channel(0, &primary, &second);
                     log.line("wifi-init-probe: get_config_channel rc={d} primary={d} second={d}", .{ crc, primary, second });
-                    var frame: [64]u8 = @splat(0xaa);
-                    const trc = wifi_tx(0, &frame, @intCast(frame.len));
-                    log.line("wifi-init-probe: internal_tx rc=0x{x} (64 B)", .{@as(u32, @bitCast(trc))});
+                    // 实验：**不**在 init 阶段真发帧。上一次 `internal_tx` 返回 0x3002（失败），
+                    // 很可能把 MAC 的 TX 引擎留在半提交态，导致 start 里的 deinit 等 TX 静止死等。
+                    if (probe_send_init_frame) {
+                        var frame: [64]u8 = @splat(0xaa);
+                        const trc = wifi_tx(0, &frame, @intCast(frame.len));
+                        log.line("wifi-init-probe: internal_tx rc=0x{x} (64 B)", .{@as(u32, @bitCast(trc))});
+                    } else {
+                        log.raw("wifi-init-probe: internal_tx SKIPPED (probe_send_init_frame=false)\n");
+                    }
                 }
 
                 const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });
@@ -503,6 +513,12 @@ pub fn run() noreturn {
                 // IDF 的 `esp_phy_enable()` 会调 ROM 的 `wifi_rf_phy_enable`(0x2f800cf4)，
                 // 而我们的手工 bring-up 从没调过它——先补上这一次，看 [15:13] 是否自清。
                 {
+                    // 先复位 FE 的 TX/RX 状态机（ROM `phy_fe_txrx_reset` = 0x2f8013d8，
+                    // esp32s31.rom.phy.ld:143）：MAC deinit 等的 busy{13..15} 正是 TX/RX 引擎的忙位。
+                    const fe_txrx_reset = @extern(*const fn () callconv(.c) void, .{ .name = "phy_fe_txrx_reset" });
+                    log.raw("wifi-init-probe: calling phy_fe_txrx_reset()\n");
+                    fe_txrx_reset();
+                    log.raw("wifi-init-probe: phy_fe_txrx_reset returned\n");
                     const rf_enable = @extern(*const fn () callconv(.c) void, .{ .name = "wifi_rf_phy_enable" });
                     log.raw("wifi-init-probe: calling wifi_rf_phy_enable()\n");
                     rf_enable();

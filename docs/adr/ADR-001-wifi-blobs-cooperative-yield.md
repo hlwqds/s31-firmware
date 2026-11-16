@@ -1381,3 +1381,24 @@ irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
 
 下一步（可测）：在探针里给 `esp_wifi_internal_tx` 一个**真的**出口（把帧丢掉但**归还 TX 缓冲/推进
 描述符**），并在 rxcb 侧按 blob 期望的方式归还 RX 缓冲，看 deinit 的 busy 位是否自清。
+
+### 候选清单与实验结论（截至 2026-11-16 的完整账）
+
+| # | 候选 | 实验 | 结果 |
+| --- | --- | --- | --- |
+| 1 | 跳过 RF 标定 | `PHY_RF_CAL_FULL(2)` | 自旋不变 |
+| 2 | `_phy_enable` 空桩 | 实现真实上电 | 自旋前**未调用** |
+| 3 | `_timer_*` 空桩 | 实现协作式软件定时器 | 自旋前注册 14 次、**arm 0 次** |
+| 4 | `wifi_rf_phy_enable` 未调用 | start 前显式调用 | 自旋不变 |
+| 5 | `_wifi_reset_mac` 空桩 | 实现 `rst_wifimac`(0x20109C10 bit9) 1→0 脉冲 | **被调用**，自旋不变 |
+| 6 | `_wifi_clock_enable` 位不全 | 补齐 `WIFI_CLOCK_DEPS` 全部位（CLK_CONF1=0x38E7FF） | 自旋不变 |
+| 7 | init 的 `internal_tx` 弄脏 TX 引擎 | 跳过该帧（`probe_send_init_frame=false`） | 自旋不变 |
+| 8 | FE 的 TX/RX 状态机未复位 | start 前调 ROM `phy_fe_txrx_reset`(0x2f8013d8) | 自旋不变 |
+
+**结论（诚实版）**：`esp_wifi_start` 期间 blob 走的是 MAC deinit 路径（`g_mac_deinit_count++`、
+`g_mac_deinit_txing/rxing` ← `0x20104CAC` 的 bit13/bit14），随后**等 busy{13..15} 自清**；这三位在
+镜像里**没有任何一处软件写清**（9 处访问里唯一的 AND 清的是 bits 17..19），只能由硬件在 TX/RX 真正
+静止时清。八条宿主侧解释全部被实验排除，剩下的是**闭源寄存器语义**：那三位由谁、在什么条件下清。
+
+继续推进需要的不是更多猜测，而是硬件手册或另一台已知正常的 S31 上做同址对比（例如 IDF 官方
+`esp_wifi_start` 成功后 `0x20104CAC` 的读回值）。

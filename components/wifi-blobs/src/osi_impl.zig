@@ -901,11 +901,21 @@ fn shellPhyEnable() callconv(.c) usize {
 
 /// `_wifi_clock_enable/disable` 与 `_wifi_reset_mac`：这三个同样是空桩。
 /// 目前先做到"**可观测**"——在自旋前被调用就能从 trace 里看到；时钟位是幂等重申。
+/// IDF `wifi_module_enable()` 的 `WIFI_CLOCK_DEPS`（`modem_clock_impl.c:14`）对应的 CLK_CONF1 位。
+/// 位名来自 `modem_syscon_struct.h` 的 `clk_conf1` 位域（bit0..21）：
+///   0 wifibb_22m / 1 wifibb_40m / 2 wifibb_44m / 3 wifibb_80m / 4 wifibb_40x / 5 wifibb_80x
+///   6 wifibb_40x1 / 7 wifibb_80x1 / 8 wifibb_160x1 / **9 wifimac** / **10 wifi_apb**
+///   13 fe_80m / 14 fe_160m / 15 fe_apb / 19 fe_pwdet_adc / 20 fe_adc / 21 fe_dac
+/// 早先只置了 {2,3,7,9,13,14,15,19,20,21}——**缺 BB 主时钟组（0,1,4,5,6,8）与 WIFI_APB（10）**。
+const wifi_clk_conf1_bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) |
+    (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) |
+    (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+
 fn shellWifiClockEnable() callconv(.c) usize {
-    note(20, 0, 0);
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    conf1.* |= (1 << 2) | (1 << 3) | (1 << 7) | (1 << 9) |
-        (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+    const before = conf1.*;
+    conf1.* = before | wifi_clk_conf1_bits;
+    note(20, before, conf1.*);
     return 0;
 }
 
