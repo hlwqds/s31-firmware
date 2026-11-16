@@ -225,15 +225,24 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // ROM 的 WiFi 定时器回调指针（esp32s31.rom.pp.ld:377 `g_timer_func = 0x2f07feb8`）：
             // 若非零且指向 ROM，就是候选的 tick handler。
             const g_timer_func = @as(*volatile usize, @ptrFromInt(0x2f07feb8)).*;
-            // **复位/时钟现场**：`modem_rst_conf`(+0x10) bit1 = rst_wifimac、bit0 = rst_wifibb
-            // （IDF `modem_syscon_struct.h:100-101`）。若 bit1 仍为 1，MAC 一直在复位里，
-            // 那条 `MAC+0xCAC` 的命令永远不会被应答——正是自旋的样子。
+            // **复位/时钟现场**：`modem_rst_conf`(+0x10) **bit9 = rst_wifimac、bit8 = rst_wifibb**
+            // （IDF `modem_syscon_struct.h`，reserved0..7 之后那两位）。若 bit9 仍为 1，MAC 一直在
+            // 复位里，那条 `MAC+0xCAC` 的命令永远不会被应答——正是自旋的样子。
             const rst_conf = @as(*volatile u32, @ptrFromInt(0x20109C10)).*;
             const clk1 = @as(*volatile u32, @ptrFromInt(0x20109C14)).*;
             const icg = @as(*volatile u32, @ptrFromInt(0x20109C0C)).*;
             log.line("mtvt=0x{x} mtvt2=0x{x} g_timer_func=0x{x}", .{ mtvt, mtvt2, g_timer_func });
-            log.line("rst_conf=0x{x:0>8} (bit1 rst_wifimac={d}) clk_conf1=0x{x:0>8} icg=0x{x:0>8}", .{
-                rst_conf, (rst_conf >> 1) & 1, clk1, icg,
+            log.line("rst_conf=0x{x:0>8} (bit9 rst_wifimac={d} bit8 rst_wifibb={d}) clk_conf1=0x{x:0>8} icg=0x{x:0>8}", .{
+                rst_conf, (rst_conf >> 9) & 1, (rst_conf >> 8) & 1, clk1, icg,
+            });
+            // **PP 任务**：MAC 状态机在 ROM 的 PP 任务里推进（`ppTask = 0x2f800fc0`）。句柄为空
+            // ⇒ 任务压根没建起来 ⇒ `MAC_ST[15:13]` 永远没人清。同时读三个 deinit 簿记全局。
+            const pp_task_hdl = @as(*volatile usize, @ptrFromInt(0x2f07ff18)).*;
+            const deinit_count = @as(*volatile u32, @ptrFromInt(0x2f07fd30)).*;
+            const deinit_rxing = @as(*volatile u8, @ptrFromInt(0x2f07fd2d)).*;
+            const deinit_txing = @as(*volatile u8, @ptrFromInt(0x2f07fd2c)).*;
+            log.line("pp_task_hdl=0x{x} deinit_count={d} rxing={d} txing={d}", .{
+                pp_task_hdl, deinit_count, deinit_rxing, deinit_txing,
             });
             // 表只有 **32 项**（外部号 0..31）：扫到 64 时 34..48 读到的是别的 ROM 数据
             // （`fn=0x780078`、`0x20303a` 这类明显是代码字），不是 handler。
@@ -350,12 +359,12 @@ pub fn romHandler(n: usize) Handler {
 
 /// `_set_isr(n, f, arg)` 的落地：把 handler 装进**我们自己的**表。
 ///
-/// **下标约定**：表按**外部中断号**索引（= CLIC ID − 16，见 `trapDispatch`）。blob 的调用方
-/// 用的是 CLIC 输入号（它自己写 `mie |= 1<<25`），所以这里做归一化：`n >= 16` 时存到 `n-16`。
-/// 这样 `_set_isr(25, ..)` 与 `trapDispatch` 对输入 25 的查找（`25-16 = 9`）落在同一格。
+/// **下标约定**：表按**外部中断号**索引。IDF 的链路是 `_set_isr(n,…)` → `intr_handler_set(n,…)`
+/// → `s_intr_handlers[core][n]`，分发时取 `s_intr_handlers[core][mcause - RV_EXTERNAL_INT_OFFSET]`
+/// （`components/riscv/interrupt.c`，offset=16）——所以**调用方传的 n 本身就是外部号**（0..31），
+/// 这里**照存**，不做任何换算。`trapDispatch` 负责把 CLIC ID 换算成外部号后查表。
 pub fn setHandler(n: usize, f: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
-    const idx: usize = if (n >= 16) n - 16 else n;
-    if (idx < handlers.len) handlers[idx] = .{ .fn_ = f, .arg = arg };
+    if (n < handlers.len) handlers[n] = .{ .fn_ = f, .arg = arg };
 }
 
 /// 取某个输入的 handler（供 trapDispatch 分发）。

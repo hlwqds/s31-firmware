@@ -2490,7 +2490,7 @@ MAC 侧没有应答。所以问题从"调度/中断"转成"**这条命令依赖�
 rst_conf=0x00000000 (bit1 rst_wifimac=0) clk_conf1=0x0038e7ff icg=0x64646400
 ```
 
-- `modem_rst_conf`(+0x10) **bit1 = 0** ⇒ MAC **不在复位里**（"MAC 被 hold 在 reset"这个假设被否掉）；
+- `modem_rst_conf`(+0x10) **bit9(`rst_wifimac`)/bit8(`rst_wifibb`) 都是 0** ⇒ MAC **不在复位里**（"MAC 被 hold 在 reset"这个假设被否掉）；
 - `CLK_CONF1 = 0x0038e7ff`：bits 0..10 全开（wifibb_22m/40m/44m/80m/40x/80x/40x1/80x1/160x1/wifimac/wifi_apb）、
   bits 13..15（fe_80m/fe_160m/fe_apb）、bits 19..21（fe_pwdet_adc/fe_adc/fe_dac）—— 是"全开"的形态；
 - `ICG = 0x64646400` 与 IDF 工作值一致。
@@ -2498,3 +2498,26 @@ rst_conf=0x00000000 (bit1 rst_wifimac=0) clk_conf1=0x0038e7ff icg=0x64646400
 **所以时钟与复位都不是解释。** 剩下的方向是：MAC+0xCAC 这条命令本身需要的前置（例如 MAC 的 AHB 时钟域
 或某条 enable 序列）没满足，或者 blob 期望某处状态由我们喂入——需要拿 IDF 在同一条命令前后的
 `MAC+0xCAC` 读数做逐位对照，才能定位到具体缺哪一位。
+
+### 决定性现场：PP 任务**已创建**，MAC 报 `rxing=1 txing=1` 且永不排空
+
+自旋点一次性读四个簿记全局（`esp32s31.rom.pp.ld` 与 ROM 数据窗）：
+
+```text
+rst_conf=0x00000000 (bit9 rst_wifimac=0 bit8 rst_wifibb=0) clk_conf1=0x0038e7ff icg=0x64646400
+pp_task_hdl=0x2f01ce60 deinit_count=1 rxing=1 txing=1
+```
+
+| 读数 | 含义 |
+| --- | --- |
+| `pp_task_hdl = 0x2f01ce60` | **PP 任务已创建**（非空）——"PP 任务没人跑"这个候选被否掉 |
+| `deinit_count = 1` | 是**第一次**进这个 deinit 等待 |
+| `rxing = 1` / `txing = 1` | 入口时 MAC_ST 的 **bit14（RX busy）与 bit13（TX busy）都是 1** |
+| `MAC_ST = 0x00fff000`（全程） | 命令字已写、MAC 自报 **TX/RX 都在忙**，且**永不排空** |
+
+所以自旋的语义是清楚的：**`g_mac_deinit_*` 这条 deinit 路径在等 MAC 把 TX/RX 排空，而 MAC 自报
+TX/RX 一直忙**。也就是说卡点不在"谁去清状态位"，而在**MAC 的 TX/RX 状态机本身没在前进**——
+它以为自己在收/发，但没有任何东西推进它。
+
+下一步方向：查 MAC 的 TX/RX 使能是从哪来的（blob 在 deinit 之前应先 stop TX/RX；若那一步被跳过，
+这两位就会一直是 1），以及 MAC 的 DMA/AHB 时钟是否真的在该域上（`clk_conf1` 全开只说明门控开了）。
