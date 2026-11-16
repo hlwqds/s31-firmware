@@ -1668,3 +1668,20 @@ thunk `0x2f800da4` → `j 0x2f8342c6`，真体：
    极性的表述因此降级为**倾向**（文档已按此改写），最终判据要读 `ic->fns[55]` 的真体。
 2. **IC 上下文指针在 `0x2f07ff48`**（`g_ic`）——`ic_mac_init` 这类 IC 层函数很可能要它作参数，
    之前那次"无参调用"没生效可能就是 ABI 不对。
+
+### 候选 15：`ic_mac_init(g_ic)`（带 IC 上下文）同样无效
+
+按 `is_lmac_idle` 的反汇编，IC 层函数走 `*(0x2f07ff48)` 的 vtable，所以 `ic_mac_init` 很可能要这个
+上下文指针。按此调用（pb142）：
+
+```text
+wifi-init-probe: g_ic=0x2f01d3c8
+wifi-init-probe: after ic_mac_init(g_ic): is_lmac_idle=1 iface=0 mac=0x0000e000
+irq-sample #14336 .. mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1
+```
+
+`g_ic` 是一个有效指针（arena 里的对象），调用后**三个读数全不变**、自旋照旧。所以"ABI 不对"这条解释
+也被排除——`ic_mac_init` 即使拿到上下文，也不会把接口使能。
+
+**十五个候选全部实验排除。** 剩下的唯一方向是完整实现 MAC 使能链（vtable 里的 `fns[55]` 真体、
+`hal_mac_*` 的 TX/RX 使能、DMA 环建立），这已经不是"补一个钩子"能解决的事。

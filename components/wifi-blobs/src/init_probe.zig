@@ -531,14 +531,20 @@ pub fn run() noreturn {
                 // 所以先问 ROM 自己"LMAC 是否空闲"，再试一次 ROM 的 MAC 初始化。
                 {
                     const is_lmac_idle = @extern(*const fn () callconv(.c) c_int, .{ .name = "is_lmac_idle" });
-                    const ic_mac_init = @extern(*const fn () callconv(.c) void, .{ .name = "ic_mac_init" });
                     const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
                     const ic_interface_enabled = @extern(*const fn () callconv(.c) c_int, .{ .name = "ic_interface_enabled" });
                     log.line("wifi-init-probe: is_lmac_idle={d} ic_interface_enabled={d} mac=0x{x:0>8}", .{
                         is_lmac_idle(), ic_interface_enabled(), mac_st.*,
                     });
-                    ic_mac_init();
-                    log.line("wifi-init-probe: after ic_mac_init: is_lmac_idle={d} mac=0x{x:0>8}", .{ is_lmac_idle(), mac_st.* });
+                    // `is_lmac_idle` 的反汇编显示 IC 层走 `*(0x2f07ff48)` 的 vtable，所以 IC 函数
+                    // 很可能要这个上下文指针作参数；之前无参调用没生效可能就是 ABI 不对。
+                    const ic_ctx = @as(*const usize, @ptrFromInt(0x2f07_FF48)).*;
+                    log.line("wifi-init-probe: g_ic=0x{x:0>8}", .{ic_ctx});
+                    const ic_mac_init_ctx = @extern(*const fn (usize) callconv(.c) void, .{ .name = "ic_mac_init" });
+                    ic_mac_init_ctx(ic_ctx);
+                    log.line("wifi-init-probe: after ic_mac_init(g_ic): is_lmac_idle={d} iface={d} mac=0x{x:0>8}", .{
+                        is_lmac_idle(), ic_interface_enabled(), mac_st.*,
+                    });
                 }
                 // ★ 按 IDF 标准顺序补齐配置：init → set_mode → set_country → set_storage → start。
                 // 探针此前从 init **直接跳到** start，中间三步一步都没做；而触发 MAC deinit 的函数
