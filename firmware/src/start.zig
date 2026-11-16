@@ -20,6 +20,8 @@
 
 const builtin = @import("builtin");
 const app = @import("main.zig");
+/// `-Dfat-rodata=N` 生成的填充块（默认 N=0）。取地址一次，链接器才会保留它。
+const fat = @import("fat_rodata");
 const board = @import("board");
 const trap = board.trap;
 
@@ -99,6 +101,8 @@ comptime {
     // 下面汇编里的 `call main` / `la t0, trapEntry` 对 Zig 的引用图不可见：
     // 它们只是字符串。不显式引用，符号不会进目标文件，链接期报 undefined。
     _ = &app.main;
+    // 填充块由 `fat_rodata.keep()` 引用；comptime 里取函数地址即可把它拉进引用图。
+    _ = &fat.keep;
     _ = &trap.trapEntry;
 }
 

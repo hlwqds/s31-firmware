@@ -4,7 +4,7 @@
 对每个 e2e profile 构建一次，量出镜像总量与 DROM/IROM 两段各自的尺寸，检查三件事：
 
 1. 镜像 ≤ factory 分区（`PART_FACTORY`）；
-2. 每个 DROM/IROM 段 ≤ 两段窗口（`WINDOW`，ROADMAP P0.2 扩容后的 0x7F000）；
+2. 每个 DROM/IROM 段 ≤ 两段窗口（从 `linker/s31.ld` 解析，P0.3 后各 0xB0000）；
 3. 相对 `capacity.json` 基线**不得无解释地增长**（默认容忍 +8 KiB，超出即失败；
    确认是合理增长后用 `--update` 重写基线）。
 

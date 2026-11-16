@@ -22,6 +22,9 @@ const all_modules = [_]Mod{
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    // P0.3 的板级证明工具：往 .rodata 里塞 N 字节静态数组，把 DROM 段撑过旧的 0x7F000。
+    // 只有窗口真是 0xB0000 时才能链接成功；烧上去能起来才说明 loader 也接受这个段长。
+    const fat_rodata = b.option(usize, "fat-rodata", "pad .rodata with N bytes to prove the DROM window (0 = off)") orelse 0;
 
     const g_boot = b.option(bool, "boot", "boot/power/perf 子系统") orelse true;
     const g_net = b.option(bool, "net", "IPv4/UDP/TCP/Socket/TLS 子系统") orelse true;
@@ -74,6 +77,17 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    // 用 `@splat` 而不是 `[_]u8{0x5a} ** N`：后者在 Zig 0.17 里会报 `**` 的空格错误。
+    // 必须经由一个 export 函数引用：`@export(&const 数组)` 在 0.17 不会 emit 数据。
+    const fat_src = b.fmt(
+        \\const blob: [{d}]u8 align(16) linksection(".rodata.fat") = @splat(0x5a);
+        \\pub export fn keep() [*]const u8 {{
+        \\    return &blob;
+        \\}}
+        \\
+    , .{fat_rodata});
+    const fat_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("fat_rodata.zig", fat_src) });
+    app.root_module.addImport("fat_rodata", fat_mod);
     app.root_module.addImport("board", board);
     app.root_module.addImport("enabled", enabled_mod);
     // 主机侧测试：每个 component 的 host_tests.zig 独立成测试目标，

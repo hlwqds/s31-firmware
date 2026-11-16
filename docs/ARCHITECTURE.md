@@ -34,10 +34,12 @@ tools/s31-production/        生产化组件（netmgr/ota/provisioning/recovery/
 两段窗口（唯一真相是 `boards/esp32s31-coreboard/linker/s31.ld`）：`irom` 从 `0x40000020`、
 `drom` 从 `0x40100020`，各 `0xB0000`（720 896 B，P0.3 扩容；合计 1 441 792 B 仍在 factory 1 500 K 内）。
 芯片侧上限远大于此（`SOC_IROM_HIGH=0x44000000`、MMU 1024×64 KiB），但 DROM 段必须结束在
-`0x43FF0000` 以下——loader 把 DROM 区间最后一页当分区发现的临时页。P0.2 扩容后 TLS/Wi-Fi 都能装下：
+`0x43FF0000` 以下——loader 把 DROM 区间最后一页当分区发现的临时页。P0.3 扩容后 TLS/Wi-Fi 都能装下：
 `full`（TLS + Wi-Fi + apps）实测镜像 398 560 B、IROM 段 305 696 B、DROM 段 70 768 B，
-窗口余量分别为 214 496 B / 449 424 B，factory 分区余量 1 137 440 B。余量由
+窗口余量分别为 415 200 B / 650 128 B，factory 分区余量 1 137 440 B。余量由
 `scripts/check-capacity.py` 持续把关（窗口从链接脚本解析，增长超过 8 KiB 即失败）。
+窗口上限本身有板级证据：`-Dfat-rodata=600000` 造出 **636 372 B** 的 DROM 段（超过旧 0x7F000），
+烧录后 `sections: passed=7 failed=0 total=7`、`verdict=pass`。
 
 ## 证据链
 

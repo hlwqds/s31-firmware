@@ -12,6 +12,10 @@
   `0x40080020 → 0x40100020`（保持 64 KiB 对齐 + 0x20）。合计 1 441 792 B 仍在 factory 1 500 K
   之内，不需要动分区表；`full` 的 IROM 余量从 214 496 B 涨到 415 200 B、DROM 到 650 128 B。
   板级验证：`gate-board.sh`（net-wire）PASS 7/7，`--profile full` 12 段 `verdict=pass`。
+  **单段真的能到 0xB0000** 也补了实测：新增 `-Dfat-rodata=N`（往 `.rodata.fat` 塞 N 字节静态数组），
+  `-Dfat-rodata=600000` 的 `net` 镜像 DROM 段 **0x9b5d4 = 636 372 B**（旧的 0x7F000 装不下），
+  烧上去 `sections: passed=7 failed=0 total=7`、`verdict=pass`——窗口扩容在 loader 侧成立，
+  不只是链接期。
   上限说明写进 `docs/ARCHITECTURE.md`：芯片窗口 64 MiB，但 DROM 段须结束在 `0x43FF0000` 以下
   （loader 保留最后一页做分区发现）。
 - **CI 的 board job 走发布前门禁**（R4.1 的另一半）：`workflow_dispatch` 默认

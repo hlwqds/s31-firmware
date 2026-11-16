@@ -2,7 +2,7 @@
 
 板级层：链接脚本与板级源码（启动、异常、日志、寄存器）。
 
-- `linker/s31.ld`：两个 flash 装载段（`irom 0x40000020` / `drom 0x40020020`）、
+- `linker/s31.ld`：两个 flash 装载段（`irom 0x40000020` / `drom 0x40100020`，窗口各 `0xB0000`）、
   `.trap_ram`、栈/堆边界与镜像 ASSERT。
 - `src/hw.zig` / `src/log.zig` / `src/trap.zig`：寄存器、串口输出、trap 入口（导出符号）。
 
