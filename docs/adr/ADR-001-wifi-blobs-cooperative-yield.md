@@ -2924,3 +2924,34 @@ irq-sample #11776 input=25 mepc=0x2f009206 mac=0x00fff000   ← 自旋不变
 （此前只能写"从未 arm ⇒ 未验证"；现在是实测否掉。）
 
 `serviceTimers()` 在 **trap 的 input-25 分支**里接线（自旋期间没有让出点，只有 tick 在跑），保留。
+
+## ★★★ IDF 侧对照（2026-11-17，决定性）
+
+把 IDF 的 `examples/wifi/getting_started/station` 插桩（读 `0x20104CAC` / `0x20109C10` / `0x20109C14` /
+`0x20109C0C`）后在同一块板上跑：
+
+```text
+PROBE mac_st before_init =0x0000e000  rst=0x00000000 clk1=0x00000000 icg=0x00000000
+PROBE mac_st after_init  =0x00000000
+PROBE mac_st before_start=0x00000000
+PROBE mac_st after_start =0x00ff1000
+```
+
+| 阶段 | IDF | 我们 |
+| --- | --- | --- |
+| init 前 | `0x0000E000` | `0x0000E000`（一致） |
+| **init 后** | **`0x00000000`** | **仍是 `0x0000E000`** ← **唯一分歧** |
+| start 后 | `0x00FF1000`（**bits 15:13 = 0**，不忙） | `0x00FFF000`（bits 15:13 = 1，永远忙） |
+
+**两条硬结论**：
+
+1. **根因精确定位**：IDF 的 `esp_wifi_init_internal` 会把 `MAC_ST` 从 `0xE000` 清到 **0**；我们的没有。
+   后续 start 里的 deinit 等待就是要等 `bits[15:13]` 清零——IDF 那边它们本来就是 0，我们这边**是复位值
+   且从未被清**，所以永远等不到。
+2. **命令字 `0xff1000` 不需要"应答"**：IDF 的 start 结束后 `MAC_ST` 就是 `0x00FF1000`（写位仍在、忙位为 0），
+   并且 `esp_wifi_start` 返回 OK。所以"写命令字等硬件清忙位"这个模型是**我们这边的现象**，
+   不是硬件语义——硬件只需要忙位在**命令之前**已经是 0。
+
+⇒ 下一步唯一目标：**找出 IDF 的 init 里把 `MAC_ST` 从 `0xE000` 清到 0 的那一步**。
+   候选是 `esp_phy_enable`/`register_chipv7_phy`（IDF 在 init 里做 PHY 初始化，我们放在 `_phy_enable`），
+   以及 `ic_mac_init` 一族。做法：在 IDF 侧把 init 内部按阶段打点（或二分 `esp_phy_enable` 前后）。
