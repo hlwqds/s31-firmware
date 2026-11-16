@@ -2478,3 +2478,23 @@ MAC 侧没有应答。所以问题从"调度/中断"转成"**这条命令依赖�
 
 下一步（未做）：把 `0x20104CAC` 归属的外设块查清，并在 IDF 同一相位读同一寄存器对照；
 若 IDF 那边同样写入后立刻清零，则差异就在该块的时钟/复位（我们可能少给了某一个）。
+
+### 复位/时钟现场实测：`rst_wifimac` 是 0、ICG/CLK_CONF1 都正常 —— 不是"MAC 在复位里"
+
+`0x20104CAC` 的归属查清了：`MODEM_BASE(0x20100000) + 0x4CAC` = **`DR_REG_WIFI_MAC_BASE(0x20104000) + 0xCAC`**
+（IDF `soc/esp32s31/include/modem/reg_base.h`）。也就是说 blob 写的是 **WiFi MAC 自己的寄存器**。
+
+自旋期间读现场（pb192）：
+
+```text
+rst_conf=0x00000000 (bit1 rst_wifimac=0) clk_conf1=0x0038e7ff icg=0x64646400
+```
+
+- `modem_rst_conf`(+0x10) **bit1 = 0** ⇒ MAC **不在复位里**（"MAC 被 hold 在 reset"这个假设被否掉）；
+- `CLK_CONF1 = 0x0038e7ff`：bits 0..10 全开（wifibb_22m/40m/44m/80m/40x/80x/40x1/80x1/160x1/wifimac/wifi_apb）、
+  bits 13..15（fe_80m/fe_160m/fe_apb）、bits 19..21（fe_pwdet_adc/fe_adc/fe_dac）—— 是"全开"的形态；
+- `ICG = 0x64646400` 与 IDF 工作值一致。
+
+**所以时钟与复位都不是解释。** 剩下的方向是：MAC+0xCAC 这条命令本身需要的前置（例如 MAC 的 AHB 时钟域
+或某条 enable 序列）没满足，或者 blob 期望某处状态由我们喂入——需要拿 IDF 在同一条命令前后的
+`MAC+0xCAC` 读数做逐位对照，才能定位到具体缺哪一位。

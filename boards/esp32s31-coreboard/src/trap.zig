@@ -225,7 +225,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // ROM 的 WiFi 定时器回调指针（esp32s31.rom.pp.ld:377 `g_timer_func = 0x2f07feb8`）：
             // 若非零且指向 ROM，就是候选的 tick handler。
             const g_timer_func = @as(*volatile usize, @ptrFromInt(0x2f07feb8)).*;
+            // **复位/时钟现场**：`modem_rst_conf`(+0x10) bit1 = rst_wifimac、bit0 = rst_wifibb
+            // （IDF `modem_syscon_struct.h:100-101`）。若 bit1 仍为 1，MAC 一直在复位里，
+            // 那条 `MAC+0xCAC` 的命令永远不会被应答——正是自旋的样子。
+            const rst_conf = @as(*volatile u32, @ptrFromInt(0x20109C10)).*;
+            const clk1 = @as(*volatile u32, @ptrFromInt(0x20109C14)).*;
+            const icg = @as(*volatile u32, @ptrFromInt(0x20109C0C)).*;
             log.line("mtvt=0x{x} mtvt2=0x{x} g_timer_func=0x{x}", .{ mtvt, mtvt2, g_timer_func });
+            log.line("rst_conf=0x{x:0>8} (bit1 rst_wifimac={d}) clk_conf1=0x{x:0>8} icg=0x{x:0>8}", .{
+                rst_conf, (rst_conf >> 1) & 1, clk1, icg,
+            });
             // 表只有 **32 项**（外部号 0..31）：扫到 64 时 34..48 读到的是别的 ROM 数据
             // （`fn=0x780078`、`0x20303a` 这类明显是代码字），不是 handler。
             var k: usize = 0;
