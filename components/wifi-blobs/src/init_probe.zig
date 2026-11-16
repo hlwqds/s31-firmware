@@ -395,6 +395,17 @@ pub fn run() noreturn {
                         fo_lp.* = b2 | (1 << 0) | (1 << 2);
                         log.line("wifi-init-probe: LPCON_FORCE_ON 0x{x} -> 0x{x}", .{ b2, fo_lp.* });
                     }
+                    // ★ `CLK_CONF_POWER_ST`(0x20109C0C) **不是只读状态寄存器，而是各域的 ICG（时钟门控）
+                    // 位图**：`modem_syscon_ll_set_{modem_apb,modem_periph,wifi,bt,fe,ieee802154}_icg_bitmap`
+                    // 写的都是它（bits 31:28 / 27:24 / 23:20 / 19:16 / 15:12 / 11:8）。
+                    // IDF 实测（station 例程 init 之后）= **0x64646400**（apb=6/peri=6/wifi=4/bt=4/fe=4）。
+                    // 我们此前从没写过它 → 所有域都被门控 → MAC 永远不跑 → 自旋永不结束。
+                    {
+                        const st: *volatile u32 = @ptrFromInt(0x2010_9C0C);
+                        const before = st.*;
+                        st.* = 0x6464_6400;
+                        log.line("wifi-init-probe: ICG_POWER_ST 0x{x} -> 0x{x} (IDF=0x64646400)", .{ before, st.* });
+                    }
                     // `MODEM_SYSCON_CLK_CONF_POWER_ST_REG`(0x20109C0C)：各域时钟的**实际**状态。
                     // 字段：MODEM_APB[31:28] / MODEM_PERI[27:24] / WIFI[23:20]。
                     {

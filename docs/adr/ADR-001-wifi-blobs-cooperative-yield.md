@@ -2086,3 +2086,35 @@ DUMP[after-esp_wifi_start]      SYSCON+0c=0x64646400  LPCON+18=0x7  MAC_ST=0x000
 **下一步**：逐字段对比我们的 `InitConfig` 与 IDF 的默认值（重点 `nvs_enable`、`feature_caps`、
 `tx_buf_type`、`static/dynamic_*_buf_num`、`magic`/`version`），把差异逐个试；`nvs_enable` 尤其可疑
 ——blob 可能据此跳过 PHY/校准路径。
+
+### ★ 重要更正：`CLK_CONF_POWER_ST`(0x20109C0C) 是**可写的 ICG 位图**，不是只读状态
+
+`hal/esp32s31/modem_syscon_ll.h:209-241` 里的 `modem_syscon_ll_set_{ieee802154,fe,bt,...}_icg_bitmap`
+写的都是 `hw->clk_conf_power_st.*_st_map` —— 这个寄存器是**各域时钟门控（ICG）的位图**：
+
+| 位 | 域 |
+| --- | --- |
+| 31:28 | modem_apb |
+| 27:24 | modem_periph |
+| 23:20 | wifi |
+| 19:16 | bt |
+| 15:12 | fe |
+| 11:8 | ieee802154 |
+
+IDF 在 init 之后的值 `0x64646400` 就是"这些域全部解除门控"（6/4/6/4/6/4）。而
+`modem_clock_module_enable()` 里的 `modem_clock_module_icg_map_init_all()` 负责编程它
+（S31 有 `SOC_PM_SUPPORT_MODEM_CLOCK_DOMAIN_ICG`）。
+
+**我们的探针此前从没写过它**，所以所有域都被门控。已补上写入（照 IDF 的值）：
+
+```text
+wifi-init-probe: ICG_POWER_ST 0x0 -> 0x64646400 (IDF=0x64646400)
+wifi-init-probe: CLK_CONF_POWER_ST=0x64646400 apb=6 peri=4 wifi=6
+```
+
+**但自旋照旧**（`mac=0x00fff000`）。所以"ICG 未解除"是**必要条件但不是充分条件**：解除门控之后，
+还差让 MAC 引擎真正跑起来的那一步（很可能在 `esp_wifi_init_internal` 内部，由我们那份手写的
+`wifi_init_config_t` 决定走哪条路径）。
+
+**注意**：这条更正推翻了本节前面"POWER_ST 是只读状态、说明域没上电"的读法——它是**可写位图**，
+我们读到 0 只说明**我们没解除门控**，不能直接说"硬件没上电"。
