@@ -23,4 +23,4 @@ wifi-init-probe: get_config_channel rc=0 primary=0 second=0
 wifi-init-probe: internal_tx rc=0x3007 (64 B)
 wifi-init-probe: starting task[0] entry=0x2f00d024 arg=0x00000000 on its own stack
 wifi-init-probe: task context ready (not started yet)
-wifi-init-probe: calling esp_wifi_start (idle_calls=320)
+wifi-init-probe: calling esp_wifi_start (idle_calls=320, hook budget=1000)

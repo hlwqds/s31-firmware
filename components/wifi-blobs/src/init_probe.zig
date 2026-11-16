@@ -247,8 +247,13 @@ pub fn run() noreturn {
                 log.raw("wifi-init-probe: task context ready (not started yet)\n");
 
                 const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });
-                log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d})", .{idle_calls});
+                // 预算实验：`note()` 在 semphr_take/give、mutex_lock、queue_recv/send 上都会递减
+                // `impl.budget`，归零即打印事件环。用它在"start 不返回"的情况下判断 blob 到底
+                // 有没有调我们的钩子（例如非阻塞 take 轮询：idle_calls 不涨，但钩子在涨）。
+                impl.budget = 1000;
+                log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, hook budget=1000)", .{idle_calls});
                 const src = esp_wifi_start();
+                log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });
                 log.line("wifi-init-probe: esp_wifi_start rc=0x{x} (idle_calls={d})", .{
                     @as(u32, @bitCast(src)),
                     idle_calls,
