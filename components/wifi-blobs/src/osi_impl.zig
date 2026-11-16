@@ -877,6 +877,21 @@ const TimerEntry = struct {
 var timers: [16]TimerEntry = @splat(TimerEntry{});
 var timer_fires: u32 = 0;
 /// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。
+/// **诊断用强制上膛**：把"已 `setfn` 但未 armed"的定时器全部设成"立即到期、一次性"，
+/// 交给 `serviceTimers()` 走真实路径 fire。返回被上膛的个数。
+pub fn forceArmAll() u32 {
+    const now = if (hooks.now_us) |f| f() else 0;
+    var n: u32 = 0;
+    for (&timers) |*t| {
+        if (t.fn_ == null or t.armed) continue;
+        t.armed = true;
+        t.deadline_us = now;
+        t.period_us = 0;
+        n += 1;
+    }
+    return n;
+}
+
 pub fn timerStats() u64 {
     var n: u32 = 0;
     for (&timers) |*t| {

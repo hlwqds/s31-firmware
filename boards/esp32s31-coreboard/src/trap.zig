@@ -292,6 +292,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // （实测：自旋锚定 + 哨兵验证下运行期这张表除自装哨兵外为空，所以 blob 目前没这么做。）
         if (h.fn_ == null) h = romHandler(ext);
         if (h.fn_) |f| {
+            // 自旋期间没有任何让出点，只有 tick 在跑 —— 在这里推进软件定时器（等价于 esp_timer 的
+            // alarm ISR 派发到期回调）。
+            if (timer_service_hook) |svc| svc();
             if (input == 25) hw.ackT0Interrupt(2000);
             rom_handler_calls += 1;
             if (rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x}", .{ rom_handler_calls, @intFromPtr(f) });
@@ -358,6 +361,8 @@ var rom_table_dumped = false;
 /// 由 probe 注入（board 模块不能直接 import wifi-blobs，见模块依赖方向）。
 /// 打包返回：低 32 位 = fires，高 32 位 = armed（避免跨模块匿名结构体类型不匹配）。
 pub var timer_stats_hook: ?*const fn () u64 = null;
+/// 由 probe 注入：在 tick 里推进软件定时器（自旋期间没有让出点，只有 tick 在跑）。
+pub var timer_service_hook: ?*const fn () void = null;
 var rom_handler_calls: usize = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。

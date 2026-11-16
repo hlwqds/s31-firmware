@@ -299,6 +299,7 @@ pub fn run() noreturn {
         .on_phy_enable = &phyEnableHook,
     });
     @import("board").trap.timer_stats_hook = &impl.timerStats;
+    @import("board").trap.timer_service_hook = &impl.serviceTimers;
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，
@@ -825,6 +826,9 @@ pub fn run() noreturn {
                         });
                     }
                 }
+                // **强制上膛 + fire 实验已做**：`forceArmAll armed=14` → `trace timer_fire` 出现 14 次
+                // （走真实路径）→ `timers fires=14 armed=0`，而自旋**不变**。
+                // ⇒ 定时器路径**已被验证**：14 个回调全部 fire 过，状态机不推进。
                 // **ppTask 泵实验已做**：给它自己的栈 + `sched.initContext`/`swapContext` 后它**能正常让出**
                 // （不会像直接 call 那样挂死），但 **16 轮泵下来 b288 仍为 0、MAC_ST 不变**。
                 // ⇒ ROM 的 PP worker 单独跑也不推进状态机（它多半在等别的消息/事件）。

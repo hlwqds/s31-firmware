@@ -2908,7 +2908,19 @@ timers fires=0 armed=0
 | `timer_disarm` | **7** |
 | **`timer_arm` / `timer_arm_us`** | **0** |
 
-⇒ blob 在 init 期间**只注册回调、随后 disarm，从未 arm 过任何定时器**。所以 `armed=0`、`fires=0`
-是自洽的，**定时器路径不是那条缺失的消息源**（至少在自旋之前不是）。
+⇒ blob 在 init 期间**只注册回调、随后 disarm，从未 arm 过任何定时器**（`armed=0`、`fires=0` 自洽）。
 
-`serviceTimers()` 的接线仍然保留——它是正确的（定时器一旦被 arm 就会 fire），只是现在没有对象可推进。
+**于是做判决实验：人为上膛 + fire 全部 14 个回调**（`forceArmAll()` 把"已 `setfn` 未 armed"的项设成
+立即到期、一次性；由 trap 里新增的 `serviceTimers()` 钩子走**真实路径** fire）：
+
+```text
+wifi-init-probe: forceArmAll armed=14
+trace timer_fire × 14
+timers fires=14 armed=0
+irq-sample #11776 input=25 mepc=0x2f009206 mac=0x00fff000   ← 自旋不变
+```
+
+⇒ **定时器路径已被验证**：14 个回调全部 fire 过，状态机不推进、`MAC_ST` 不变。
+（此前只能写"从未 arm ⇒ 未验证"；现在是实测否掉。）
+
+`serviceTimers()` 在 **trap 的 input-25 分支**里接线（自旋期间没有让出点，只有 tick 在跑），保留。
