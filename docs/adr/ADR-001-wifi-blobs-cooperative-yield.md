@@ -2118,3 +2118,29 @@ wifi-init-probe: CLK_CONF_POWER_ST=0x64646400 apb=6 peri=4 wifi=6
 
 **注意**：这条更正推翻了本节前面"POWER_ST 是只读状态、说明域没上电"的读法——它是**可写位图**，
 我们读到 0 只说明**我们没解除门控**，不能直接说"硬件没上电"。
+
+### 三处按 IDF 对齐的实测结果（2026-11-17）
+
+按 IDF `after-esp_wifi_init` 的 `MODEM_SYSCON` 值逐字对齐，并补上 IDF wrapper 的 `coex_init()`：
+
+| 寄存器 | IDF | 我们（对齐前） | 结论 |
+| --- | --- | --- | --- |
+| `+00 test_conf` | `0x00000100` | **已经是 `0x100`** | ✅ 本来就一致 |
+| `+04 clk_conf` | `0x00201002` | **已经是 `0x00201002`** | ✅ 本来就一致（模拟前端时钟由 blob 自己设） |
+| `+08 force_on` | `0x00000000` | `0x1c` | ⚠ **不能清 0**：清了之后 `phy_open_fe_bb_clk` 的写序列**直接 stall**（实测日志停在 `write 0x20107C80`）。IDF 的 0 是因为它有别的上电路径，我们靠 FORCE_ON 才不 stall |
+| `+0c ICG` | `0x64646400` | 已补写，读回一致 | ✅ 但自旋不变 |
+
+另外补上了 **IDF wrapper 的 `coex_init()`**（在 `esp_wifi_init_internal` 之前；`wifi_init.c` 的顺序是
+`coex_init(); esp_wifi_set_log_level(); esp_wifi_power_domain_on(); esp_wifi_init_internal(config);`）：
+
+```text
+wifi-init-probe: calling coex_init() (IDF wrapper 顺序)
+wifi-init-probe: coex_init returned
+wifi-init-probe: esp_wifi_init_internal rc=0
+irq-sample #14336 .. mac=0x00fff000
+```
+
+**`coex_init` 单独也不解开自旋**（但它是 IDF 确实会做、我们此前漏掉的一步，保留）。
+
+至此"寄存器/时钟/顺序"这一层能对齐的都对齐了，剩下的差异只剩 **`wifi_init_config_t` 的字段值**
+（IDF 用 `WIFI_INIT_CONFIG_DEFAULT()` 的一整套 Kconfig 值）。

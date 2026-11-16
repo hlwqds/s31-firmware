@@ -293,6 +293,14 @@ pub fn run() noreturn {
 
     // 4) 完整 init（干净路径）。**只能调一次**：重复初始化会在第二次进入时解引用无效指针
     //    （实测 exception code=5）。
+    // IDF 的 `esp_wifi_init` wrapper 在 `esp_wifi_init_internal` **之前**调 `coex_init()`
+    // （wifi_init.c），我们一直没做；`g_coex_param_ptr` 为 0 也与此吻合。
+    {
+        const coex_init = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
+        log.raw("wifi-init-probe: calling coex_init() (IDF wrapper 顺序)\n");
+        coex_init();
+        log.raw("wifi-init-probe: coex_init returned\n");
+    }
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: esp_wifi_init_internal rc={d}", .{init_rc});
     {
@@ -394,6 +402,22 @@ pub fn run() noreturn {
                         const b2 = fo_lp.*;
                         fo_lp.* = b2 | (1 << 0) | (1 << 2);
                         log.line("wifi-init-probe: LPCON_FORCE_ON 0x{x} -> 0x{x}", .{ b2, fo_lp.* });
+                    }
+                    // ★★ 按 IDF 实测值对齐 `MODEM_SYSCON` 的三处（IDF `after-esp_wifi_init`）：
+                    //   +00 test_conf = 0x00000100
+                    //   +04 clk_conf  = 0x00201002   ← 模拟前端时钟（pwdet/adc/dac），我们**从未写过**
+                    //   +08 force_on  = 0x00000000   ← IDF 这里是 0；我们写了 0x1c
+                    //   +0c ICG       = 0x64646400
+                    {
+                        const t0: *volatile u32 = @ptrFromInt(0x2010_9C00);
+                        const t4: *volatile u32 = @ptrFromInt(0x2010_9C04);
+                        const t8: *volatile u32 = @ptrFromInt(0x2010_9C08);
+                        log.line("wifi-init-probe: IDF-align before: +00=0x{x} +04=0x{x} +08=0x{x}", .{ t0.*, t4.*, t8.* });
+                        // 注意：**不能**把 force_on(+08) 清 0——IDF 的 +08 是 0，但它有别的上电路径；
+                        // 我们靠 FORCE_ON 让 `phy_open_fe_bb_clk` 的写序列不 stall（实测清 0 会卡死）。
+                        t0.* = 0x0000_0100;
+                        t4.* = 0x0020_1002;
+                        log.line("wifi-init-probe: IDF-align after:  +00=0x{x} +04=0x{x} +08=0x{x}", .{ t0.*, t4.*, t8.* });
                     }
                     // ★ `CLK_CONF_POWER_ST`(0x20109C0C) **不是只读状态寄存器，而是各域的 ICG（时钟门控）
                     // 位图**：`modem_syscon_ll_set_{modem_apb,modem_periph,wifi,bt,fe,ieee802154}_icg_bitmap`
