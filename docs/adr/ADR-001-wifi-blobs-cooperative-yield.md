@@ -1020,5 +1020,10 @@ PHY 时钟门打开（对照 `phy_init`/`esp_phy_enable` 的寄存器序列）�
 签名，`init_probe.zig:410`）与 IDF `esp_phy_enable` 的时钟门序列（`MODEM_LPCON`），
 而不是空桩。
 
+签名细节（下一步实现要用）：osi 表里 `_phy_enable: ?*const anyopaque`，当前指向
+`fn stub8() callconv(.c) usize { hits[8] += 1; return 0; }`——**无参数、返回 0**，正好对应 IDF 的
+`esp_phy_enable(void)`。真实实现要做的是：开 `MODEM_LPCON` 的 PHY 时钟门 → 调 libphy 的
+`phy_enable()`（以及首启时的 `register_chipv7_phy`）→ 返回 0。
+
 顺序建议：先把 `_phy_enable` 真实化 → 重跑探针 → 观察 `0x20104CAC` 的 [15:13] 是否自清、
 `esp_wifi_start` 是否返回。这一条比继续追调度器/中断更值得先做。
