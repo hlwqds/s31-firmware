@@ -1971,3 +1971,18 @@ irq-sample #14336 mepc=0x2f009206 mac=0x00fff000 a0=0x00000640 a1=0x2f01cab0
    的一次访问，不代表它当前操作的对象）；
 3. 下一步若要继续，应先给 `0x2f01cab0` 这个对象**定名**：在 blob 代码里找"哪个全局被赋成这个地址"
    （即 `g_xxx = arena_alloc(...)` 的结果），或从 `0x4003ef8e` 那个函数的参数/局部变量回溯。
+
+### 给 `0x2f01cab0` 找归属：不属于任何已知全局（它是 start 期间才分配的）
+
+把一批 ROM 数据指针在 start 之前打出来（pb154）：
+
+```text
+g_hmac_cnt_ptr=0x2f0129dc   g_ic_ptr=0x2f012194      g_eb_list_desc_ptr=0x2f00f660
+g_lmac_cnt_ptr=0x2f0149b8   pp_sig_cnt_ptr=0x2f011f68  trc_ctl_ptr=0x2f010834
+xphyQueue=0x2f01dbd0        g_coex_param_ptr=0x00000000
+```
+
+**没有一个等于 `0x2f01cab0`**（自旋的 `a1`）。所以那个对象**是在 start 期间才分配的**（或来自局部指针）。
+
+要给它定名，下一步应记录 start 期间**所有 arena 分配**的返回地址，找出谁拿到 `0x2f01cab0`——
+这需要给 `_malloc/_zalloc/_calloc` 加"返回地址落在 0x2f01c000..0x2f01d000 就打印"的过滤。

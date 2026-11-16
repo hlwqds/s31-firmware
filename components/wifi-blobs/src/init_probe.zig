@@ -622,6 +622,22 @@ pub fn run() noreturn {
                     const ppw = @as(*const usize, @ptrFromInt(0x2f07_FF48)).*;
                     const chm = @as(*const usize, @ptrFromInt(0x2f07_FF88)).*;
                     log.line("wifi-init-probe: wDevCtrl=0x{x:0>8} pp_wdev_funcs=0x{x:0>8} g_chm=0x{x:0>8}", .{ wdev, ppw, chm });
+                    // 给"自旋的 a1 = 0x2f01cab0"找归属：把一批 ROM 数据指针一起打出来比对。
+                    const names = [_]struct { n: []const u8, a: usize }{
+                        .{ .n = "g_hmac_cnt_ptr", .a = 0x2f07ff80 },
+                        .{ .n = "g_ic_ptr", .a = 0x2f07ff84 },
+                        .{ .n = "g_eb_list_desc_ptr", .a = 0x2f07ff30 },
+                        .{ .n = "g_lmac_cnt_ptr", .a = 0x2f07ff38 },
+                        .{ .n = "pp_sig_cnt_ptr", .a = 0x2f07ff34 },
+                        .{ .n = "s_wifi_queue", .a = 0x2f07ff1c },
+                        .{ .n = "trc_ctl_ptr", .a = 0x2f07fef4 },
+                        .{ .n = "xphyQueue", .a = 0x2f07ff0c },
+                        .{ .n = "g_coex_param_ptr", .a = 0x2f07ff94 },
+                    };
+                    for (names) |e| {
+                        const v = @as(*const usize, @ptrFromInt(e.a)).*;
+                        log.line("wifi-init-probe: ptr {s}=0x{x:0>8}", .{ e.n, v });
+                    }
                 }
                 // 实验：blob 在 start 期间走 MAC deinit 等 TX/RX 静止（`g_mac_deinit_*`）。
                 // IDF 的 `esp_phy_enable()` 会调 ROM 的 `wifi_rf_phy_enable`(0x2f800cf4)，
