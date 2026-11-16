@@ -2022,3 +2022,27 @@ DIAG: MAC_ST=0x10004000 CLK_CONF1=0x0038e7ff ...
 **下一步**：查 `0x64646400` 是怎么来的——`CLK_CONF_POWER_ST` 的三个字节（0x64/0x64/0x64）分别是
 modem APB / modem PERI / WIFI 域的"实际状态"。在 IDF 侧读它前后各打一次（在 `esp_wifi_init` 前后），
 就能定位是**哪一步**把域真正打开；我们的 bring-up 缺的正是那一步。
+
+### IDF 侧的 modem 块 dump：`POWER_ST` 是 **init/start 期间**从 0 变成 0x64646400 的
+
+在 IDF 的 station 例程里加了三处整块 dump（`MODEM_SYSCON` / `MODEM_PWR` / `MODEM_LPCON` 各 8 字）：
+
+| 采样点 | `SYSCON+0c`(POWER_ST) | `LPCON+18` | `MAC_ST` |
+| --- | --- | --- | --- |
+| `app_main` **之前**（还没 init） | `0x00000000` | `0x00000001` | **`0x0000e000`** |
+| `esp_wifi_start` 之后 | **`0x64646400`** | `0x00000007` | **`0x00000000`** |
+| 连接重试阶段 | `0x64646400` | `0x00000001` | **`0x00ff1000`** |
+
+四条结论：
+
+1. **`MAC_ST = 0x0000e000` 确实是复位态**——IDF 在 init 之前也是这个值 ✓（我们的"复位基线"读数得到独立验证）；
+2. 电源域在 **init/start 期间**真正上电（`POWER_ST` 0 → `0x64646400`），而我们的实现无论怎么调 `FORCE_ON`
+   都停在 0；
+3. `LPCON+18` 在 start 期间是 `0x7`（bits 0,1,2），之后回到 `0x1`——**我们的实现写的是 `0xF`**（多了 bit3），
+   而且**从未回到 0x1**；
+4. **`MAC_ST = 0x00ff1000` 是工作系统的正常值之一**（bits 12 + 16..23），我们读到 `0x00fff000` 多出的正是
+   bits 13..15 —— 与"引擎忙"一致。
+
+**下一步**：`MODEM_PWR` 整块在 IDF 里**始终为 0**，所以域上电不是它做的。要继续找那个写操作，应在 IDF 侧
+再加 dump：`HP_SYS_CLKRST`（0x20587000..，`modem_conf` 在 0x205871E0）与 PMU 相关寄存器，在
+init/start 前后各一次，然后与我们的值逐字对比。
