@@ -775,6 +775,8 @@ pub fn run() noreturn {
                 log.line("wifi-init-probe: post-pulse MAC_ST=0x{x:0>8} rst=0x{x:0>8} en_bits={d}", .{
                     mac_st.*, rst_reg.*, (mac_st.* >> 17) & 7,
                 });
+                // **b14 实验已做**（置 1 后 start）：无效——`b16`/`b288` 仍为 0，说明 MAC 使能函数
+                // （0x40034d1a）在 **init 期间**就被 b14=0 挡掉返回了，start 里不会再跑一次。
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

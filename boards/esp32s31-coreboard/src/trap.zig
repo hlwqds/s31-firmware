@@ -241,6 +241,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             const deinit_count = @as(*volatile u32, @ptrFromInt(0x2f07fd30)).*;
             const deinit_rxing = @as(*volatile u8, @ptrFromInt(0x2f07fd2d)).*;
             const deinit_txing = @as(*volatile u8, @ptrFromInt(0x2f07fd2c)).*;
+            // **MAC 使能函数（0x40034d1a）的门控字节**：它以 `s0 = 0x2f013d30`（blob 全局结构），
+            // 先看 `+289`，再要求 `+14` 与 `+15` 非零，否则**直接返回、不置使能位**。
+            const g = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
+            log.line("blob_g b1={d} b14={d} b15={d} b16={d} b27={d} b288={d} b289={d}", .{
+                g[1], g[14], g[15], g[16], g[27], g[288], g[289],
+            });
             log.line("pp_task_hdl=0x{x} deinit_count={d} rxing={d} txing={d}", .{
                 pp_task_hdl, deinit_count, deinit_rxing, deinit_txing,
             });
