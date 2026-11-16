@@ -26,6 +26,7 @@ const initcfg = @import("init_config.zig");
 const osi_stubs = @import("osi_stubs.zig");
 const sched = @import("sched.zig");
 const phy_init_data = @import("phy_init_data.zig");
+const event_bus = @import("event_bus.zig");
 const link_stubs = @import("link_stubs.zig");
 
 /// blob 里的入口（`esp_wifi.h:437` / `esp_private/wifi.h`）。
@@ -214,6 +215,13 @@ fn traceNote(id: u8, a0: usize, a1: usize) void {
     if (trace_lines >= 200) return;
     trace_lines += 1;
     const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";
+    if (id == 12) { // event_post：顺带打"有多少处理器、有多少落空"
+        log.line("wifi-init-probe: trace event_post id={d} bits=0x{x} handlers={d} undispatched={d}", .{
+            a0, a1, event_bus.count, event_bus.undispatched,
+        });
+        trace_lines += 1;
+        return;
+    }
     log.line("wifi-init-probe: trace {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{ name, a0, a1 });
 }
 
@@ -663,6 +671,9 @@ pub fn run() noreturn {
                     rf_enable();
                     log.raw("wifi-init-probe: wifi_rf_phy_enable returned\n");
                 }
+                log.line("wifi-init-probe: event_bus handlers={d} posts={d} undispatched={d}", .{
+                    event_bus.count, event_bus.posts, event_bus.undispatched,
+                });
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

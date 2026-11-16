@@ -59,6 +59,9 @@ pub export fn esp_event_handler_unregister(
 }
 
 /// 同步派发：调用所有匹配 `(base, id)` 的处理函数。
+/// 没有任何处理器匹配的 post 次数（探针用它判断"事件落空"）。
+pub var undispatched: usize = 0;
+
 pub fn post(base: ?*const anyopaque, id: i32, data: ?*const anyopaque) void {
     posts += 1;
     // 复制一份要调用的列表：处理函数里可能注册/注销。
@@ -66,11 +69,14 @@ pub fn post(base: ?*const anyopaque, id: i32, data: ?*const anyopaque) void {
     var n: usize = 0;
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        if (entries[i].base == base and entries[i].id == id) {
+        // IDF 允许用 `ESP_EVENT_ANY_ID`(-1) 注册通配处理器；只做严格相等匹配会让
+        // "以 ANY_ID 注册、用具体 id post" 的场景一条都匹配不上（实测嫌疑：event 43）。
+        if (entries[i].base == base and (entries[i].id == id or entries[i].id == -1)) {
             snapshot[n] = entries[i];
             n += 1;
         }
     }
+    if (n == 0) undispatched += 1;
     i = 0;
     while (i < n) : (i += 1) {
         if (snapshot[i].handler) |h| {

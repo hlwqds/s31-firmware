@@ -775,6 +775,7 @@ fn shellMutexLock(p: ?*anyopaque) callconv(.c) i32 {
 }
 
 fn shellMutexUnlock(p: ?*anyopaque) callconv(.c) i32 {
+    note(3, @intFromPtr(p), 0); // id 3 = mutex_unlock（此前没有 note，trace 里看不到解锁）
     const m: *Mutex = @ptrCast(@alignCast(p orelse return 0));
     return m.unlock();
 }

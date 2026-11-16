@@ -1891,3 +1891,22 @@ irq-sample #19456 .. mepc=0x2f009206 mac=0x00fff000
 
 注册在钩子里成功（rc=0），**自旋照旧**。所以"PHY 注册的时机"不是卡点原因——候选 2 再次排除
 （这次是在**正确的顺序**下排除的，不再受"修桩前流程没走到"的影响）。
+
+### 补两处观测缺口：`mutex_unlock` 的 note、`event_post` 的处理器计数
+
+1. **`shellMutexUnlock` 之前没有 `note()`** —— trace 里看不到任何解锁行，容易被误读成"只加锁不解锁"。
+   已补 `note(3, …)`（id 3 = `mutex_unlock`）。修后 trace 里 `mutex_lock`/`mutex_unlock` 成对出现 ✓。
+2. **`event_bus.post` 只做 `(base,id)` 严格相等匹配**，而 IDF 允许用 `ESP_EVENT_ANY_ID`(-1) 注册通配处理器。
+   已加 `or entries[i].id == -1`，并新增 `undispatched` 计数（`n == 0` 的 post 次数），探针在
+   `event_post` 的 trace 里一并打印。
+
+板侧读数（pb150）：
+
+```text
+trace event_post id=43 bits=0x10 handlers=0 undispatched=0
+```
+
+`handlers=0` 是**预期**的：探针没有注册任何处理器；而 event 43 正是 `WIFI_EVENT_WIFI_READY`（对应用的
+通知）。所以"event 43 落空导致状态机不推进"这条**不成立**——它是信息性事件，不需要处理器。
+
+（注：打印发生在 `note()` 里、`event_bus.post` 之前，所以 `undispatched` 显示的是这次 post **之前**的值。）
