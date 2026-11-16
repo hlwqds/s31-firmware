@@ -50,6 +50,10 @@ var rx_frames: u32 = 0;
 
 // ---- 上下文切换自检（两根栈）----
 var static_stack: [16 * 1024]u8 align(16) = undefined;
+/// ROM 的 PP worker（`ppTask = 0x2f800fc0`）自己的栈与上下文：它是任务体（死循环），
+/// 只能像 blob 任务那样"给栈 + 切进去"，不能直接调用（实测直接 call 后采样停止）。
+var pp_stack: [16 * 1024]u8 align(16) = undefined;
+var pp_ctx: sched.Context = .{};
 /// PHY 标定数据（`esp_phy_calibration_data_t.opaque[1894]`），由 `register_chipv7_phy` 填充。
 /// `esp_phy_calibration_data_t` = version[4] + mac[6] + opaque[1894] = **1904** 字节。
 /// 之前只声明 1894 字节并把 `&cal_data` 当结构体起点传给 `register_chipv7_phy`：
@@ -814,6 +818,9 @@ pub fn run() noreturn {
                         });
                     }
                 }
+                // **ppTask 泵实验已做**：给它自己的栈 + `sched.initContext`/`swapContext` 后它**能正常让出**
+                // （不会像直接 call 那样挂死），但 **16 轮泵下来 b288 仍为 0、MAC_ST 不变**。
+                // ⇒ ROM 的 PP worker 单独跑也不推进状态机（它多半在等别的消息/事件）。
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

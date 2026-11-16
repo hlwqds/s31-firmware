@@ -2830,6 +2830,18 @@ ppTask: calling once from trap (mepc=0x2f009206)
 （"ppTask: returned" 永不打印；采样在 #512 后停止）
 ```
 
-⇒ **它是任务入口（不返回）**，不能像普通函数那样调用。要驱动它必须像 blob 任务那样
-**给一个栈 + 上下文切换**（`sched.initContext` + 周期 `swapContext`），而不是直接 `call`。
+⇒ **它是任务入口（不返回）**，不能像普通函数那样调用。
+
+**给它自己的栈后能正常让出，但 16 轮泵也不推进**：
+
+```text
+ppTask pump 0:  b14=0 b15=1 b16=1 b288=0 mac=0x0000e000
+ppTask pump 4:  b14=0 b15=1 b16=1 b288=0 mac=0x0000e000
+ppTask pump 8:  b14=0 b15=1 b16=1 b288=0 mac=0x0000e000
+ppTask pump 12: b14=0 b15=1 b16=1 b288=0 mac=0x0000e000
+```
+
+（`sched.initContext(&pp_ctx, &pp_stack, ppTask, null)` + `swapContext` 能进入并正常让出，
+说明"给栈 + 切换"这条路是通的；但**状态机不推进**——`b288` 仍为 0、`MAC_ST` 不变。）
+
 已回滚，基线恢复（`calling esp_wifi_start` 到达、无 panic、自旋 `0x2f009206`）。
