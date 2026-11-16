@@ -257,8 +257,41 @@ dump 出来的第一个字 `0x3a52206f` 看着像 ASCII（"o R:"），实际是�
 2f823ee8  jalr a7, ...          # 间接调用另一个 ROM 例程 —— 自旋在这里
 ```
 
-所以 `phy_open_fe_bb_clk` 做完两次寄存器写后，**尾调一个 ROM 例程**；挂起在那个被调方，不在写操作里。
-下一步：解出 `jalr` 前 `a7` 的来源（紧邻的 `lui/addi` 对），dump 那个目标。
+**更正**：把 dump 出来的字按 RV32 完整解码后，`phy_open_fe_bb_clk` 其实是**直筒代码**——没有循环、
+没有 `jalr`，就是四次寄存器写然后 `ret`：
+
+```asm
+sw   a4, 1024(a5)    # 0x20100400 = 0x1E7
+lw   a5, -2048(a4)   # 0x20100800
+ori  a5, a5, 3
+sw   a5, -2048(a4)   # 0x20100800 |= 3
+sw   a4, -896(a5)    # 0x20107C80 = 0xFFFFFFFF
+lw   a5, 28(a3)      # 0x2070401C
+or   a5, a5, 0x40000F
+sw   a5, 28(a3)      # 0x2070401C |= 0x0040000F
+ret
+```
+
+逐条复现（每条写前打日志）后，停点确定：
+
+```text
+write 0x20100400    ok
+rmw   0x20100800    ok
+write 0x20107C80    <-- stall
+```
+
+`0x20107C80` = `MODEM_BASE + 0x7C80`，即 **WiFi BB** 寄存器窗口。再读
+`MODEM_SYSCON_CLK_CONF_POWER_ST_REG`（0x20109C0C，`MODEM_APB[31:28]` / `MODEM_PERI[27:24]` /
+`WIFI[23:20]`）：
+
+```text
+CLK_CONF_POWER_ST=0x00000000  apb=0  peri=0  wifi=0
+```
+
+**三个域全部报 0** —— 使能位置上了，但域没真的上电，所以 BB 窗口的写 stall。
+缺的是"上电"那一半：`MODEM_SYSCON_CLK_CONF_FORCE_ON_REG`(0x20109C08) /
+`MODEM_LPCON_CLK_CONF_FORCE_ON_REG`(0x2010F01C) 的 force-on 位，以及/或 PMU 电源域；
+设好后先轮询 POWER_ST 的 WIFI nibble 非 0，再碰 BB 窗口。
 
 **更正（此前写错）**：S31 **有**调制解调器寄存器头，位置是
 `components/soc/esp32s31/include/modem/`（不是 `register/soc/`）：
