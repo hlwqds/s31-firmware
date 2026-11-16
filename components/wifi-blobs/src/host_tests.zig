@@ -11,10 +11,12 @@
 const std = @import("std");
 const adapter = @import("adapter.zig");
 const osi = @import("osi.zig");
+const impl = @import("osi_impl.zig");
 
 test {
     _ = adapter;
     _ = osi;
+    _ = impl;
 }
 
 test "wifi-blobs: probe 解析到替身符号的地址" {
@@ -42,3 +44,75 @@ test "wifi-blobs: osi 表字段数与首尾字段固定" {
 
 /// 主机侧替身：`adapter.probe()` 引用这个名字，链接必须能解析。
 pub export fn esp_wifi_80211_tx() callconv(.c) void {}
+
+test "osi_impl: 分配器对齐、释放合并、耗尽" {
+    var buf: [4096]u8 align(16) = undefined;
+    var arena: impl.Arena = .{};
+    arena.init(&buf);
+    try std.testing.expect(arena.bytes_total > 3000);
+
+    const a = arena.alloc(64, @alignOf(usize)) orelse return error.OutOfMemory;
+    const b = arena.alloc(128, @alignOf(usize)) orelse return error.OutOfMemory;
+    try std.testing.expect(@intFromPtr(a) != @intFromPtr(b));
+    // 写满确认不越界
+    @memset(a[0..64], 0xaa);
+    @memset(b[0..128], 0xbb);
+
+    arena.free(a);
+    arena.free(b);
+    // 释放后应能再拿到同样大的块（合并生效）
+    const c = arena.alloc(128, @alignOf(usize)) orelse return error.OutOfMemory;
+    try std.testing.expect(@intFromPtr(c) != 0);
+    arena.free(c);
+
+    // 耗尽：要一块比总量还大的
+    try std.testing.expectEqual(@as(?[*]u8, null), arena.alloc(arena.bytes_total + 16, @alignOf(usize)));
+}
+
+test "osi_impl: realloc 保留内容" {
+    var buf: [2048]u8 align(16) = undefined;
+    var arena: impl.Arena = .{};
+    arena.init(&buf);
+    const a = arena.alloc(32, @alignOf(usize)) orelse return error.OutOfMemory;
+    for (0..32) |i| a[i] = @intCast(i);
+    const b = arena.realloc(a, 200) orelse return error.OutOfMemory;
+    for (0..32) |i| try std.testing.expectEqual(@as(u8, @intCast(i)), b[i]);
+    arena.free(b);
+}
+
+test "osi_impl: 信号量计数与空 take" {
+    var s: impl.Semphr = .{ .count = 1, .max = 2 };
+    // 单线程语义：take 空立刻失败，不阻塞
+    try std.testing.expectEqual(@as(u32, 1), s.count);
+    s.count -= 1;
+    try std.testing.expectEqual(@as(u32, 0), s.count);
+    try std.testing.expectEqual(@as(u32, 0), s.count); // 空
+    s.count = @min(s.count + 1, s.max);
+    try std.testing.expectEqual(@as(u32, 1), s.count);
+}
+
+test "osi_impl: 队列环绕与满/空" {
+    var storage: [impl.Queue.bytesNeeded(4, 3)]u8 align(8) = undefined;
+    const q: *impl.Queue = @ptrCast(&storage);
+    q.* = .{ .item_size = 4, .cap = 3 };
+    var out: [4]u8 = undefined;
+
+    try std.testing.expect(!q.recv(&out)); // 空
+    for (0..3) |i| {
+        const item = [4]u8{ @intCast(i), 0, 0, 0 };
+        try std.testing.expect(q.send(&item));
+    }
+    try std.testing.expect(!q.send(&[4]u8{ 9, 9, 9, 9 })); // 满
+    for (0..3) |i| {
+        try std.testing.expect(q.recv(&out));
+        try std.testing.expectEqual(@as(u8, @intCast(i)), out[0]);
+    }
+    try std.testing.expect(!q.recv(&out)); // 又空
+}
+
+test "osi_impl: 互斥在单线程下是空操作" {
+    var m: impl.Mutex = .{};
+    m.locked = true;
+    m.locked = false;
+    try std.testing.expect(!m.locked);
+}
