@@ -526,6 +526,17 @@ pub fn run() noreturn {
                 // 它读 blob 内部状态字并和 3 比较。直接问它，省得猜。
                 const init_completed = @extern(*const fn () callconv(.c) c_int, .{ .name = "wifi_init_completed" });
                 log.line("wifi-init-probe: wifi_init_completed={d} (非 0 才继续)", .{init_completed()});
+                // ★ ROM 里有 `ic_mac_init`(0x2f800d9c) / `ic_mac_deinit`(0x2f800d98) /
+                // `is_lmac_idle`(0x2f800da4)。自旋函数属于 blob 的 MAC deinit 路径，
+                // 所以先问 ROM 自己"LMAC 是否空闲"，再试一次 ROM 的 MAC 初始化。
+                {
+                    const is_lmac_idle = @extern(*const fn () callconv(.c) c_int, .{ .name = "is_lmac_idle" });
+                    const ic_mac_init = @extern(*const fn () callconv(.c) void, .{ .name = "ic_mac_init" });
+                    const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+                    log.line("wifi-init-probe: is_lmac_idle={d} mac=0x{x:0>8}", .{ is_lmac_idle(), mac_st.* });
+                    ic_mac_init();
+                    log.line("wifi-init-probe: after ic_mac_init: is_lmac_idle={d} mac=0x{x:0>8}", .{ is_lmac_idle(), mac_st.* });
+                }
                 // ★ 按 IDF 标准顺序补齐配置：init → set_mode → set_country → set_storage → start。
                 // 探针此前从 init **直接跳到** start，中间三步一步都没做；而触发 MAC deinit 的函数
                 // 读 `g_chm`(0x2f07ff88) = channel manager，说明 start 会按"新信道"重配 MAC。
