@@ -461,6 +461,8 @@ var hooks: Hooks = .{};
 
 /// 钩子调用预算：>0 时每调用一次递减，归零即回调（见 `Hooks.on_budget_exhausted`）。
 pub var budget: u32 = 0;
+/// 见 `shellTaskCreatePinned` 的实验说明。
+pub var task_create_fail: bool = false;
 /// 一次"阻塞等待"最多让出多少次（每次让出都会跑一遍主循环的 idle 钩子）。
 pub const idle_spin_limit: u32 = 64;
 /// 最近的钩子调用（id = `hook_ids` 的下标），用于停机时说明"它在等什么"。
@@ -793,7 +795,9 @@ fn shellTaskCreatePinned(
     task_count += 1;
     // handle 与"当前任务"是同一个对象（见 `task_dummy` 的说明）。
     if (handle_out) |h| h.* = @ptrCast(&task_dummy);
-    return 1; // pdPASS
+    // 实验开关：返回 0(pdFAIL) 时，部分协议栈会改为"就地同步执行"那段工作，
+    // 从而绕开"我们没有调度器"这个结构性问题。
+    return if (task_create_fail) 0 else 1;
 }
 
 fn shellTaskCreate(
