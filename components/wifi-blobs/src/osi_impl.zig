@@ -298,6 +298,12 @@ fn shellFree(p: ?*anyopaque) callconv(.c) void {
 /// `*_internal` / `wifi_*` 这一族只是不同 heap 域的分配器；我们没有多堆，全部走同一个 arena。
 fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
     note(8, size, 0);
+    const r = mallocRaw(size);
+    note(13, size, @intFromPtr(r));
+    return r;
+}
+
+fn mallocRaw(size: usize) ?*anyopaque {
     return shellMalloc(size);
 }
 fn shellZallocInternal(size: usize) callconv(.c) ?*anyopaque {
@@ -425,10 +431,11 @@ pub const hook_ids = [_][]const u8{
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
     "malloc",      "zalloc",      "calloc",            "mutex_create",
     "event_post",
+    "alloc",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 12;
+pub const note_id_max: u8 = 13;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →

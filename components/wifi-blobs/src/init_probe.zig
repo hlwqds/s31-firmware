@@ -176,7 +176,7 @@ fn budgetExhaustedHook(total: u32) void {
 var trace_lines: u32 = 0;
 
 fn traceNote(id: u8, a0: usize, a1: usize) void {
-    if (trace_lines >= 40) return;
+    if (trace_lines >= 150) return;
     trace_lines += 1;
     const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";
     log.line("wifi-init-probe: trace {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{ name, a0, a1 });
@@ -405,6 +405,8 @@ pub fn run() noreturn {
                             log.line("wifi-init-probe: {s} returned", .{name});
                         }
                     }
+                    // 只追踪 PHY 这一段（含 blob 的分配地址，便于对账坏指针）。
+                    trace_lines = 0;
                     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{ .name = "register_chipv7_phy" });
                     log.line("wifi-init-probe: cal_data=0x{x:0>8} init_params=0x{x:0>8} wrapper=0x{x:0>8} inner=0x{x:0>8}", .{
                         @intFromPtr(&cal_data),
