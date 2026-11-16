@@ -14,6 +14,7 @@
 //! 以及"表里哪些字段被填了"。
 
 const std = @import("std");
+const event_bus = @import("event_bus.zig");
 const osi = @import("osi.zig");
 const nvs = @import("nvs_ram.zig");
 const stubs = @import("osi_stubs.zig");
@@ -48,6 +49,20 @@ pub const Arena = struct {
 
     fn payload(b: *Block) [*]u8 {
         return @as([*]u8, @ptrCast(b)) + @sizeOf(Block);
+    }
+
+    /// 描述某个地址落在哪个块里（探针用它回答"这个坏指针是谁的"）。
+    pub const BlockInfo = struct { size: usize, free: bool, offset: usize };
+
+    pub fn describe(self: *Arena, addr: usize) ?BlockInfo {
+        var it = self.head;
+        while (it) |b| : (it = b.next) {
+            const p = @intFromPtr(payload(b));
+            if (addr >= p and addr < p + b.size) {
+                return .{ .size = b.size, .free = b.free, .offset = addr - p };
+            }
+        }
+        return null;
     }
 
     pub fn alloc(self: *Arena, size: usize, alignment: usize) ?[*]u8 {
@@ -262,10 +277,9 @@ fn shellEventPost(
     event_data: ?*const anyopaque,
     data_size: usize,
 ) callconv(.c) c_int {
-    _ = event_base;
-    _ = event_data;
     note(12, event_id, data_size);
-    events_dropped += 1;
+    // 同步派发：blob 通过 `esp_event_handler_register` 注册的处理函数在这里被调用。
+    event_bus.post(event_base, @intCast(event_id), event_data);
     return 0;
 }
 
@@ -309,6 +323,7 @@ fn mallocRaw(size: usize) ?*anyopaque {
 fn shellZallocInternal(size: usize) callconv(.c) ?*anyopaque {
     note(9, size, 0);
     const p = shellMalloc(size) orelse return null;
+    note(13, size, @intFromPtr(p));
     @memset(@as([*]u8, @ptrCast(p))[0..size], 0);
     return p;
 }

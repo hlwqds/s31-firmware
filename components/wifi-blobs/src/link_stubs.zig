@@ -24,14 +24,6 @@ pub const names = [_][]const u8{
     "strtok",
 };
 
-pub export fn esp_event_handler_register() callconv(.c) usize {
-    hits[0] += 1;
-    return 0;
-}
-pub export fn esp_event_handler_unregister() callconv(.c) usize {
-    hits[1] += 1;
-    return 0;
-}
 pub export fn esp_mesh_send_event_internal() callconv(.c) usize {
     hits[2] += 1;
     return 0;

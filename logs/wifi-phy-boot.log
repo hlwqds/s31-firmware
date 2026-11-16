@@ -1,7 +1,13 @@
-wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f01d854
-wifi-init-probe: cal_data=0x2f011680 init_params=0x40104d60 wrapper=0x2f01df04 inner=0x2f01d8a0
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f01d0d4
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f01d128
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f01d750
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f01d8d4
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01df98
+wifi-init-probe: INIT OK, arena free=364528/368384 B, bad_handle=0, blocking_refused=2
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01df98
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01df98
 wifi-init-probe: register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
 panic: exception code=2 (illegal instruction) cause=0x30000002
-panic: mepc=0x2f01c9e4 mtval=0x0 mstatus=0x3801
-panic: ra=0x40017876 a0=0xa a1=0x1 a2=0x2
+panic: mepc=0x2f011674 mtval=0xac50 mstatus=0x3801
+panic: ra=0x40017876 a0=0x2f01c9d0 a1=0x1 a2=0x2
 panic: halted (wfi)

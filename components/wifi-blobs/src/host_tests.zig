@@ -14,6 +14,7 @@ const osi = @import("osi.zig");
 const impl = @import("osi_impl.zig");
 const sched = @import("sched.zig");
 const phy_init_data = @import("phy_init_data.zig");
+const event_bus = @import("event_bus.zig");
 const initcfg = @import("init_config.zig");
 
 test {
@@ -385,4 +386,25 @@ test "osi_impl: 创建写出的 handle 与 _task_get_current_task 是同一个�
 test "phy_init_data: 128 字节、首字节为 1（IDF 默认表的形状）" {
     try std.testing.expectEqual(@as(usize, 128), phy_init_data.params.len);
     try std.testing.expectEqual(@as(u8, 1), phy_init_data.params[0]);
+}
+
+test "event_bus: 注册后 post 同步调用；注销后不再调用" {
+    const State = struct {
+        var calls: u32 = 0;
+    };
+    const H = struct {
+        fn onEvent(_: ?*anyopaque, _: ?*const anyopaque, _: i32, _: ?*const anyopaque) callconv(.c) void {
+            State.calls += 1;
+        }
+    };
+    const base: *const anyopaque = @ptrFromInt(0x1234);
+    try std.testing.expectEqual(@as(c_int, 0), event_bus.esp_event_handler_register(base, 7, &H.onEvent, null));
+    event_bus.post(base, 7, null);
+    try std.testing.expectEqual(@as(u32, 1), State.calls);
+    // 不匹配的 (base,id) 不触发
+    event_bus.post(base, 8, null);
+    try std.testing.expectEqual(@as(u32, 1), State.calls);
+    try std.testing.expectEqual(@as(c_int, 0), event_bus.esp_event_handler_unregister(base, 7, &H.onEvent));
+    event_bus.post(base, 7, null);
+    try std.testing.expectEqual(@as(u32, 1), State.calls);
 }
