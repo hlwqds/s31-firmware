@@ -183,8 +183,16 @@ register_chipv7_phy(&phy_init_data.params, &cal_data /*1894 B 清零*/, 0 /*PHY_
 | 先单独读它开头访问的 `0x20109c18` / `0x20100800` | 读得通（`0` / `1`），没有总线挂起 |
 | 逐个调用它的 5 个前序函数 | 全部返回 |
 
-所以挂起点在**主体**：经 `phy_get_romfunc_addr` 拿到的 ROM 函数表走的标定路径，最可能在等 PHY
-应答（本固件 `MIE=0`，中断永远不来）。电源域/时钟仍是候选，但不再是第一嫌疑。IDF 的顺序仍然是：
+继续二分后已经落到**单个函数**：
+
+| 测量 | 结果 |
+| --- | --- |
+| `cal_mode = PHY_RF_CAL_NONE`（跳过 RF 标定） | 仍挂起 → **不是标定路径** |
+| 逐个调用主体里的函数 | `phy_get_xtal_freq` ✓、`phy_get_rf_cal_version` ✓、**`phy_rf_init` 挂起** |
+
+`phy_rf_init` 的 23 个调用里，`phy_rc_cal_init` → `phy_rc_cal` 会驱动 PHY 的 I2C master 访问
+`0x20162824` —— 硬件握手，需要调制解调器/I2C 时钟在位。所以电源域/时钟重新成为第一嫌疑，
+位置精确到 `phy_rf_init`。IDF 的顺序仍然是：
 
 | 步骤 | 来源 | 动作 |
 | --- | --- | --- |
