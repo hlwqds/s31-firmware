@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FW = ROOT / "firmware"
 PART_FACTORY = 0x177000
 ZIG = os.environ.get("ZIG", "zig")
+# 板子重新枚举后可能变成 ttyUSB0；默认仍是 ttyUSB1，门禁/CI 可用 BOARD 覆盖。
+BOARD = os.environ.get("BOARD", "/dev/ttyUSB1")
 
 PROFILES = {
     "min": {"flags": {"boot": True, "net": False, "tls": False, "apps": False, "wifi": False},
@@ -113,8 +115,8 @@ def build_profile(name: str, profile: dict) -> Case:
 
 def board_case(profile_name: str) -> Case:
     c = Case(f"board:{profile_name}")
-    if not Path("/dev/ttyUSB1").exists():
-        c.skipped = "no /dev/ttyUSB1"
+    if not Path(BOARD).exists():
+        c.skipped = f"no {BOARD}"
         return c
     flash_args = FW / "idf-bootstrap" / "build" / "flash_args"
     if not flash_args.is_file():
@@ -130,12 +132,12 @@ def board_case(profile_name: str) -> Case:
         c.output = build.output
         return c
     start = time.time()
-    flash = run(["flock", "/tmp/s31-board.lock", "sh", "-c", "sh tools/flash.sh /dev/ttyUSB1"], cwd=FW)
+    flash = run(["flock", "/tmp/s31-board.lock", "sh", "-c", f"sh tools/flash.sh {BOARD}"], cwd=FW)
     c.check(flash.returncode == 0, f"flash failed: {(flash.stdout + flash.stderr)[-800:]}")
     if flash.returncode != 0:
         return c
     log = ROOT / "logs" / f"e2e-{profile_name}-boot.log"
-    cap = run([sys.executable, str(ROOT / "tools" / "capture.py"), "/dev/ttyUSB1", str(log), "30"])
+    cap = run([sys.executable, str(ROOT / "tools" / "capture.py"), BOARD, str(log), "30"])
     c.check(cap.returncode == 0, "capture failed")
     text = log.read_text(errors="replace") if log.exists() else ""
     c.output = text[-4000:]

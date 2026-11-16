@@ -41,6 +41,10 @@
   两段窗口容量改由 `scripts/check-capacity.py` 门禁。
 
 ### Fixed
+- 板子重新枚举成 `/dev/ttyUSB0` 时门禁会假绿：`run_e2e.py` 的 board case 硬编码
+  `/dev/ttyUSB1`，于是走 `SKIP` 分支并以 0 退出。现在 `run_e2e.py` 认 `BOARD` 环境变量，
+  `gate-board.sh` 在 ttyUSB1/ttyUSB0 里挑存在的那个并把 `BOARD` 传给 e2e；
+  junit 的 `<skipped/>` 仍算失败（本轮正是靠这条断言发现的）。
 - net-ethernet：DMA 不取描述符的根因是 APM 控制过滤器。IDF app 在
   `bootloader_init_mem()` 里关闭 `HP/MEM/LP_APM_FUNC_CTRL`，二级 bootloader
   因 `#if !BOOTLOADER_BUILD` 跳过；`enableBusClock()` 现补 `enableApmForDma()`。

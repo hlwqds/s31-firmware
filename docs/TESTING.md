@@ -45,6 +45,10 @@ export ESPTOOL=/nix/store/.../bin/esptool          # esptool 5.x；`command -v e
 export PYTHON=/nix/store/.../python3.14            # 必须能 `import serial`
 export PYTHONPATH=/nix/store/.../python3.14-pyserial-3.5/lib/python3.14/site-packages
 
+# 板子重新枚举后可能变成 ttyUSB0：`BOARD=` 可覆盖（脚本默认在 ttyUSB1/ttyUSB0 里挑存在的那个，
+# run_e2e.py 也认 BOARD；不传时仍是 /dev/ttyUSB1）
+export BOARD=/dev/ttyUSB0
+
 sudo scripts/host-prep-wire.sh up     # 幂等：放行 udp 67/53、tcp 9000，起监听器（accept 后读掉字节并停留 2 s）
 scripts/gate-board.sh                 # 构建 → 烧录 → 抓 30 s → 断言握手三段 + checks 计数
 sudo scripts/host-prep-wire.sh down   # 收尾：撤销规则与监听器

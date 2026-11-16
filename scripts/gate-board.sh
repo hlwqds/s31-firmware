@@ -14,7 +14,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 PROFILE=${PROFILE:-net-wire}
-BOARD=${BOARD:-/dev/ttyUSB1}
+# 板子重新枚举后可能变成 ttyUSB0：默认在 ttyUSB1/ttyUSB0 里挑存在的那个。
+if [ -z "${BOARD:-}" ]; then
+    if [ -e /dev/ttyUSB1 ]; then BOARD=/dev/ttyUSB1; else BOARD=/dev/ttyUSB0; fi
+fi
 LOG="logs/e2e-${PROFILE}-boot.log"
 JUNIT="reports/e2e-board-${PROFILE}.xml"
 # NixOS 上 esptool 通常不在默认 python 里：优先用 PATH 里的 esptool，其次 python -m esptool。
@@ -61,7 +64,7 @@ mkdir -p reports logs
 rm -f "$LOG"
 # NixOS 上继承来的 LD_LIBRARY_PATH 会让 esptool/zig 撞 glibc（"stack smashing detected"），
 # 这是本仓所有板级脚本都踩过的坑，门禁里显式剥掉。
-env -u LD_LIBRARY_PATH ESPTOOL="$ESPTOOL" ZIG="$ZIG" "$PYTHON" tests/e2e/run_e2e.py \
+env -u LD_LIBRARY_PATH ESPTOOL="$ESPTOOL" ZIG="$ZIG" BOARD="$BOARD" "$PYTHON" tests/e2e/run_e2e.py \
     --board --profile "$PROFILE" --junit "$JUNIT"
 e2e=$?
 
