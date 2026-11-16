@@ -238,7 +238,7 @@ test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
 
 test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
     try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len + 2); // +2 = _version/_magic
-    try std.testing.expectEqual(@as(usize, 71), impl.implemented.len); // 21 原语 + 9 分配器族 + 13 中断/任务 + 6 时间/随机/MAC + 12 NVS
+    try std.testing.expectEqual(@as(usize, 77), impl.implemented.len); // 71 + _phy_enable + 5 个 _timer_*
 }
 
 var test_now_us: u64 = 1_234_567;

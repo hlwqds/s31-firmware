@@ -466,10 +466,11 @@ pub const hook_ids = [_][]const u8{
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
     "malloc",      "zalloc",      "calloc",            "mutex_create",
     "event_post",  "alloc",       "recv_probe",        "phy_enable",
+    "timer_fire",  "timer_setfn", "timer_arm",         "timer_disarm",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 14;
+pub const note_id_max: u8 = 19;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
@@ -822,6 +823,7 @@ fn allocTimer(ptimer: ?*anyopaque) ?*TimerEntry {
 }
 
 fn shellTimerSetfn(ptimer: ?*anyopaque, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) callconv(.c) usize {
+    note(17, @intFromPtr(ptimer), @intFromPtr(fn_));
     const t = allocTimer(ptimer) orelse return 1;
     t.fn_ = fn_;
     t.arg = arg;
@@ -829,6 +831,7 @@ fn shellTimerSetfn(ptimer: ?*anyopaque, fn_: ?*const fn (?*anyopaque) callconv(.
 }
 
 fn armTimerCommon(ptimer: ?*anyopaque, us: u64, repeat: bool) usize {
+    note(18, @intFromPtr(ptimer), @intCast(us));
     const t = allocTimer(ptimer) orelse return 1;
     const now = if (hooks.now_us) |f| f() else 0;
     t.deadline_us = now + us;
@@ -846,6 +849,7 @@ fn shellTimerArmUs(ptimer: ?*anyopaque, us: u32, repeat: bool) callconv(.c) usiz
 }
 
 fn shellTimerDisarm(ptimer: ?*anyopaque) callconv(.c) usize {
+    note(19, @intFromPtr(ptimer), 0);
     if (findTimer(ptimer)) |t| t.armed = false;
     return 0;
 }

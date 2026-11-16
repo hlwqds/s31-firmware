@@ -1219,16 +1219,21 @@ irq-sample #5120 mepc=0x2f009204 mac=0x00fff000 b13=1 b14=1
 （协作式软件定时器：16 槽，`serviceTimers()` 在每个让出点推进，`_timer_arm` 单位 ms、
 `_timer_arm_us` 单位 µs），并接进 `on_idle` 之前。
 
-板侧（pb120，40 s）：`timer_fire` 计数 **0**，日志与之前一字不差：
+**第一次板跑（pb120/pb121）不可判读**：那两次对定时器钩子没有任何观测（`hook_ids` 只有 16 项、
+`note_id_max` 仍是 14、探针的 `traceNote` 只放行 id 0/1/4/5/13/14），"fires=0"既可能是"没 arm"，
+也可能是"根本没观测到"。补上观测（`hook_ids` 20 项、`note_id_max=19`、放行 id 16..19、
+`host_tests` 的 `implemented.len` 71→77）后重跑（pb122，40 s）才拿到数据：
 
 ```text
-trace alloc -> queue_send -> semphr_take
-swap#6 in_task=false hooks=7
-irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
+trace timer_setfn a0=0x2f01452c a1=0x400334ee     # ← blob 确实注册了回调
+... 共 14 次 timer_setfn
+trace timer_arm   : 0 次
+trace timer_fire  : 0 次
+irq-sample #10 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0
 ```
 
-结论：**blob 在自旋之前根本没有 arm 任何定时器**（`semphr_take` 的让出路径已经跑过
-`serviceTimers()`，槽位全空）。所以"定时器被桩 → 调度不推进"也不是当前自旋的原因。
+结论：**blob 在自旋前注册了 14 个软件定时器回调（`setfn`），但一次都没 arm**。所以"定时器被桩 →
+调度不推进"不是当前自旋的原因（我们的实现本身工作正常，`setfn` 已被调用 14 次）。
 
 三个候选至此都被实验排除：
 

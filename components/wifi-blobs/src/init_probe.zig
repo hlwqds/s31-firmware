@@ -187,7 +187,9 @@ var trace_lines: u32 = 0;
 fn traceNote(id: u8, a0: usize, a1: usize) void {
     // 追踪 take(0)/give(1)/queue_recv(4)/queue_send(5)/alloc(13)：
     // 关键问题是"任务到底有没有收到我们发的消息"（send 句柄 0x2f01d940 vs recv 句柄）。
-    if (id != 0 and id != 1 and id != 4 and id != 5 and id != 13 and id != 14) return;
+    // 定时器相关的 id（16..19）也放行：要回答"blob 在自旋前到底有没有 setfn/arm 过定时器"。
+    if (id != 0 and id != 1 and id != 4 and id != 5 and id != 13 and id != 14 and
+        id != 16 and id != 17 and id != 18 and id != 19) return;
     if (trace_lines >= 200) return;
     trace_lines += 1;
     const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";
