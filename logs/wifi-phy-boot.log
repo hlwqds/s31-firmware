@@ -1,7 +1,5 @@
-wifi-init-probe: INIT OK, arena free=364688/368544 B, bad_handle=0, blocking_refused=2
 wifi-init-probe: pre-PHY regs: 0x20109c18=0x00000000 0x20100800=0x00000001
-wifi-init-probe: calling phy_get_xtal_freq
-wifi-init-probe: phy_get_xtal_freq returned
-wifi-init-probe: calling phy_get_rf_cal_version
-wifi-init-probe: phy_get_rf_cal_version returned
-wifi-init-probe: calling phy_rf_init
+panic: exception code=5 (load access fault) cause=0x30000005
+panic: mepc=0x400487a8 mtval=0x20162824 mstatus=0x3801
+panic: ra=0x40048788 a0=0x401045e8 a1=0x2f07aea1 a2=0xc8
+panic: halted (wfi)
