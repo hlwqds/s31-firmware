@@ -1,13 +1,7 @@
 wifi-init-probe: INIT OK, arena free=364688/368544 B, bad_handle=0, blocking_refused=2
-wifi-init-probe: internal_tx rc=0x3007 (64 B)
 wifi-init-probe: pre-PHY regs: 0x20109c18=0x00000000 0x20100800=0x00000001
-wifi-init-probe: calling phy_get_romfunc_addr
-wifi-init-probe: phy_get_romfunc_addr returned
-wifi-init-probe: calling phy_force_txrx_off
-wifi-init-probe: phy_force_txrx_off returned
-wifi-init-probe: calling phy_freq_module_resetn
-wifi-init-probe: phy_freq_module_resetn returned
-wifi-init-probe: calling phy_dis_hw_set_freq
-wifi-init-probe: phy_dis_hw_set_freq returned
-wifi-init-probe: calling phy_i2c_master_reset
-wifi-init-probe: phy_i2c_master_reset returned
+wifi-init-probe: calling phy_get_xtal_freq
+wifi-init-probe: phy_get_xtal_freq returned
+wifi-init-probe: calling phy_get_rf_cal_version
+wifi-init-probe: phy_get_rf_cal_version returned
+wifi-init-probe: calling phy_rf_init

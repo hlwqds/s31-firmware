@@ -288,6 +288,11 @@ pub fn run() noreturn {
                     //   phy_get_romfunc_addr / phy_force_txrx_off / phy_freq_module_resetn /
                     //   phy_dis_hw_set_freq / phy_i2c_master_reset
                     inline for (.{
+                        "phy_get_xtal_freq",
+                        "phy_get_rf_cal_version",
+                        "phy_rf_init",
+                        "phy_bb_init",
+                        "phy_get_temp_init",
                         "phy_get_romfunc_addr",
                         "phy_force_txrx_off",
                         "phy_freq_module_resetn",
@@ -304,8 +309,10 @@ pub fn run() noreturn {
                     // `phy_init_magic_post` 紧贴之后。PHY 代码可能检查这两个魔数，所以照抄布局。
                     magic_pre = "PHYINIT\x00".*;
                     magic_post = "PHYINIT\x00".*;
-                    const rc_phy = register_phy(&phy_init_data.params, &cal_data, 0); // 0 = PHY_RF_CAL_PARTIAL
-                    log.line("wifi-init-probe: register_chipv7_phy rc={d} (cal_data 已填充 {d} B)", .{
+                    // 先跳过 RF 标定（PHY_RF_CAL_NONE = 1）：标定路径是本固件最可疑的地方
+                    // （它等 PHY 应答，而 MIE=0 时中断永远不来）。若 NONE 能返回，就锁定标定。
+                    const rc_phy = register_phy(&phy_init_data.params, &cal_data, 1); // 1 = PHY_RF_CAL_NONE
+                    log.line("wifi-init-probe: register_chipv7_phy(NONE) rc={d} (cal_data {d} B)", .{
                         rc_phy,
                         @as(usize, 1894),
                     });

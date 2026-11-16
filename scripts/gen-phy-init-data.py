@@ -15,8 +15,10 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+import subprocess
 import sys
 
 IDF = pathlib.Path.home() / "esp/esp-idf"
@@ -72,6 +74,13 @@ def main() -> int:
         "pub const params: [128]u8 = .{\n" + "\n".join(rows) + "\n};\n",
         encoding="utf-8",
     )
+    # 生成物必须 zig fmt 干净：否则每次重新生成都会把 check-fmt 弄红。
+    zig = os.environ.get("ZIG", "zig")
+    try:
+        subprocess.run([zig, "fmt", str(OUT)], check=True, capture_output=True)
+    except (OSError, subprocess.CalledProcessError):
+        print(f"警告：未能用 `{zig} fmt` 规范化 {OUT}（请手动跑一次）", file=sys.stderr)
+
     print(f"写入 {OUT}：128 字节（max_tx_power={max_tx_power}）")
     return 0
 
