@@ -135,3 +135,25 @@ trace event_post  a0=0x2b (43)  a1=0x10   # start 事件，16 B
 （`ESP_ERR_WIFI_NOT_STARTED`）——状态判断变准了，而 init 仍返回 0、`sched-test` 仍 PASS。
 
 主机用例钉住这条不变量（handle 与 current 必须同址），避免以后又分叉。
+
+## 追加（2026-11-16）：任务侧故障指向 PHY/coex bring-up
+
+把 `_task_get_current_task` 改成**上下文感知**（主上下文与 wifi 任务是两个不同对象）之后，
+任务第一次真正处理消息：
+
+```text
+trace semphr_give a0=0x00000000
+trace queue_recv a0=0x2f01ca80 a1=0xffffffff
+trace semphr_give a0=0x2f01d120
+trace queue_recv a0=0x2f01ca80 a1=0xffffffff
+panic: mepc=0x40017846 mtval=0x102 (a0=0x2f01d0f8)
+```
+
+两轮之后撞到同一个"未初始化上下文"故障：`ctx+12` 是 `0x102`（`ESP_ERR_INVALID_ARG`），
+随后被当指针解引用。反汇编显示 `wifi_start_process` 的第一个调用是 `adc2_wifi_acquire`
+（blob 里的**弱符号**，真实构建由 IDF 的 `esp_phy` 覆盖），说明 start 状态机要先把 PHY/ADC/coex
+bring-up 做完才会建好那个上下文。
+
+因此下一步的优先级是：**先 PHY/coex bring-up**（`esp_phy_init` 等价物 + eFuse 标定表 —— 目前
+24 个 `est_PHY_*` 仍是零值桩），再谈定时器抢占；否则任务即使拿到 CPU 也会在这个未初始化的
+上下文上崩。
