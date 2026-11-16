@@ -201,11 +201,17 @@ register_chipv7_phy(&phy_init_data.params, &cal_data /*1894 B 清零*/, 0 /*PHY_
 | 3 | `esp_hw_support/periph_ctrl.c:98` | `wifi_bt_common_module_enable()`：S31 走 `modem_clock_module_enable(PERIPH_PHY_MODULE)`（`SOC_MODEM_CLOCK_IS_INDEPENDENT`） |
 | 4 | 之后 | 再调 `register_chipv7_phy` |
 
-**移植前的一个坑（已核对）**：S31 的 `components/soc/esp32s31/register/soc/` 里**没有**
-`rtc_cntl_reg.h` / `syscon_reg.h`（只有 `rtc_timer_reg.h`、`rtc_wdt_reg.h`、`rtclockcali_reg.h`
-等），所以 `RTC_CNTL_WIFI_FORCE_PD`、`SYSCON_WIFI_RST_EN_REG` 这些名字在 S31 上无处可抄——
-地址要么从 S31 TRM 取，要么从 `libphy.a` / ROM 的初始化代码里反推（那里会写同样的位）。
-`modem_clock` 是独立驱动（`esp_hw_support/modem_clock.c`），也可能需要一并移植。
+**已实测的一刀（2026-11-16）**：`MODEM_LPCON_TEST_CONF_REG`（`0x2010F000`）bit0 =
+`MODEM_LPCON_CLK_EN`（默认 0），IDF 的 `modem_clock_module_enable(PERIPH_PHY_MODULE)` 就是开这一位。
+写下去生效（`0x0 -> 0x1`），`phy_get_xtal_freq`/`phy_get_rf_cal_version` 仍返回，但
+**`phy_rf_init` 仍然挂起** —— 顶层调制解调器门不够，还需要 I2C 模拟主控 / RF 块的时钟
+（`DR_REG_I2C_ANA_MST_BASE = 0x2010F800`）。
+
+**更正（此前写错）**：S31 **有**调制解调器寄存器头，位置是
+`components/soc/esp32s31/include/modem/`（不是 `register/soc/`）：
+`MODEM_BASE=0x20100000`、`MODEM_PWR_BASE=0x2010D000`、`DR_REG_MODEM_LPCON_BASE=0x2010F000`、
+`DR_REG_MODEM_SYSCON_BASE=0x20109C00`。另外 `0x20162824` 是给 PHY 的 I2C master 用的
+**RF 寄存器地址**，不是 CPU 地址——从 CPU 读它会 load access fault（已实测 `mtval=0x20162824`）。
 
 另一条独立可能：PHY 标定本身可能依赖中断（`MIE=0` 下永远等不到），这与 §"定时器中断抢占"
 是同一件事的两面——先做电源域/时钟，若仍挂起，再开中断路径。
