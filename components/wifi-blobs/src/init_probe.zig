@@ -516,6 +516,36 @@ pub fn run() noreturn {
                 // 它读 blob 内部状态字并和 3 比较。直接问它，省得猜。
                 const init_completed = @extern(*const fn () callconv(.c) c_int, .{ .name = "wifi_init_completed" });
                 log.line("wifi-init-probe: wifi_init_completed={d} (非 0 才继续)", .{init_completed()});
+                // ★ 按 IDF 标准顺序补齐配置：init → set_mode → set_country → set_storage → start。
+                // 探针此前从 init **直接跳到** start，中间三步一步都没做；而触发 MAC deinit 的函数
+                // 读 `g_chm`(0x2f07ff88) = channel manager，说明 start 会按"新信道"重配 MAC。
+                {
+                    const WifiCountry = extern struct {
+                        cc: [3]u8,
+                        schan: u8,
+                        nchan: u8,
+                        max_tx_power: i8,
+                        policy: u32,
+                    };
+                    const set_mode = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_wifi_set_mode" });
+                    const set_country = @extern(*const fn (*const WifiCountry) callconv(.c) c_int, .{ .name = "esp_wifi_set_country" });
+                    const set_storage = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_wifi_set_storage" });
+
+                    const rc_mode = set_mode(1); // WIFI_MODE_STA
+                    log.line("wifi-init-probe: set_mode(STA) rc={d}", .{rc_mode});
+                    // "01" 被拒（rc=258 = ESP_ERR_INVALID_ARG），改真实国家码 CN（1..13）。
+                    const country: WifiCountry = .{
+                        .cc = .{ 'C', 'N', 0 },
+                        .schan = 1,
+                        .nchan = 13,
+                        .max_tx_power = 20,
+                        .policy = 0, // WIFI_COUNTRY_POLICY_AUTO
+                    };
+                    const rc_cc = set_country(&country);
+                    log.line("wifi-init-probe: set_country(CN,1..13) rc={d}", .{rc_cc});
+                    const rc_st = set_storage(1); // WIFI_STORAGE_RAM
+                    log.line("wifi-init-probe: set_storage(RAM) rc={d}", .{rc_st});
+                }
                 // 实验：blob 在 start 期间走 MAC deinit 等 TX/RX 静止（`g_mac_deinit_*`）。
                 // IDF 的 `esp_phy_enable()` 会调 ROM 的 `wifi_rf_phy_enable`(0x2f800cf4)，
                 // 而我们的手工 bring-up 从没调过它——先补上这一次，看 [15:13] 是否自清。

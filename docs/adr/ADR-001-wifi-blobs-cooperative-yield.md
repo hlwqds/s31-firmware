@@ -1525,3 +1525,23 @@ coex_pti_tab_ptr = 0x2f07ffa4    coex_env_ptr = 0x2f07ffa8
 | 11 | coex 调度器缺实现 | 只有 `_coex_enable` 被调用 |
 | 12 | `coex_enable` 空桩 | 真实调用后 ✗ |
 | 13 | RX 回调持有缓冲 | 不注册，✗ |
+
+### 候选 14：补齐 IDF 标准配置序列（`set_mode`/`set_country`/`set_storage`）
+
+触发 MAC deinit 的函数读 `g_chm`（`0x2f07ff88`，channel manager），所以怀疑"CHM/信道未配置"导致 start
+先重配 MAC。探针此前从 init **直接跳到** start，中间三步一步都没做。补齐后（pb136/pb137）：
+
+```text
+set_mode(STA) rc=0
+set_country(01,1..11) rc=258      # 258 = 0x102 = ESP_ERR_INVALID_ARG
+set_country(CN,1..13) rc=258      # 换成真实国家码也一样
+set_storage(RAM) rc=0
+calling esp_wifi_start ...
+irq-sample #16640 .. mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1
+```
+
+`set_mode` 与 `set_storage` 成功，`set_country` 一律返回 258（结构体布局已按
+`esp_wifi_types_generic.h:69-81` 复刻：`char cc[3]; u8 schan; u8 nchan; i8 max_tx_power; u32 policy`），
+**自旋照旧**。所以"配置序列缺失"也不是当前卡点的原因（`set_country` 的 258 另案，但它不影响自旋）。
+
+**十四个候选全部实验排除。**
