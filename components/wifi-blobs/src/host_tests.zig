@@ -408,3 +408,62 @@ test "event_bus: 注册后 post 同步调用；注销后不再调用" {
     event_bus.post(base, 7, null);
     try std.testing.expectEqual(@as(u32, 1), State.calls);
 }
+
+// ---------------------------------------------------------------------------
+// 软件定时器（`_timer_*`）：主机侧证明 `serviceTimers` 的语义正确。
+// 板级动机见 ADR-001：这五个钩子曾是空桩，blob 注册的回调永远不会到期。
+// ---------------------------------------------------------------------------
+var test_clock_us: u64 = 0;
+fn testNowUs() u64 {
+    return test_clock_us;
+}
+
+var test_fires: u32 = 0;
+fn testTimerFn(_: ?*anyopaque) callconv(.c) void {
+    test_fires += 1;
+}
+
+test "osi_impl: 软件定时器 setfn/arm_us/到期/一次性/disarm" {
+    impl.hooks.now_us = &testNowUs;
+    defer impl.hooks.now_us = null;
+
+    var obj: u32 = 0;
+    const pt: ?*anyopaque = @ptrCast(&obj);
+    test_clock_us = 0;
+    test_fires = 0;
+
+    try std.testing.expectEqual(@as(usize, 0), impl.shellTimerSetfn(pt, &testTimerFn, null));
+    try std.testing.expectEqual(@as(usize, 0), impl.shellTimerArmUs(pt, 1000, false));
+
+    // 时间没到 → 不触发
+    impl.serviceTimers();
+    try std.testing.expectEqual(@as(u32, 0), test_fires);
+
+    // 到期 → 触发一次
+    test_clock_us = 1000;
+    impl.serviceTimers();
+    try std.testing.expectEqual(@as(u32, 1), test_fires);
+
+    // 一次性定时器触发后自动解除：再推进时间也不触发
+    test_clock_us = 10_000;
+    impl.serviceTimers();
+    try std.testing.expectEqual(@as(u32, 1), test_fires);
+
+    // 周期定时器：每次到期都触发
+    try std.testing.expectEqual(@as(usize, 0), impl.shellTimerArmUs(pt, 500, true));
+    test_clock_us = 10_500;
+    impl.serviceTimers();
+    try std.testing.expectEqual(@as(u32, 2), test_fires);
+    test_clock_us = 11_000;
+    impl.serviceTimers();
+    try std.testing.expectEqual(@as(u32, 3), test_fires);
+
+    // disarm 幂等，且解除后不再触发
+    try std.testing.expectEqual(@as(usize, 0), impl.shellTimerDisarm(pt));
+    try std.testing.expectEqual(@as(usize, 0), impl.shellTimerDisarm(pt));
+    test_clock_us = 99_000;
+    impl.serviceTimers();
+    try std.testing.expectEqual(@as(u32, 3), test_fires);
+
+    try std.testing.expectEqual(@as(usize, 0), impl.shellTimerDone(pt));
+}
