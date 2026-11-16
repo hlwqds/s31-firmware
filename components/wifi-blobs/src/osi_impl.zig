@@ -580,25 +580,63 @@ var main_task_dummy: [256]u8 align(16) = @splat(0);
 /// 当前 CPU 属于哪个上下文（由调度器/探针维护）。
 pub var current_is_task: bool = false;
 
+/// `_set_intr(cpu, src, num, prio)`：把**外设源** `src` 路由到 **CPU 输入** `num`。
+/// IDF 里是 `esp_rom_intr_matrix_set`；ROM 符号 `intr_matrix_set = 0x2f800768`。
+/// 空桩会把 blob 的中断安装整个丢掉——它装不上 handler 就只能干等。
 fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
-    _ = .{ cpu, src, num, prio };
     calls.set_intr += 1;
+    note(2, (@as(usize, @intCast(src)) << 8) | (num & 0xFF), @intCast(@as(u32, @bitCast(prio))));
+    const intr_matrix_set = @extern(*const fn (u32, u32, u32) callconv(.c) void, .{ .name = "intr_matrix_set" });
+    intr_matrix_set(@intCast(cpu), src, num);
 }
 fn shellClearIntr(src: u32, num: u32) callconv(.c) void {
     _ = .{ src, num };
     calls.clear_intr += 1;
 }
+/// `_set_isr(n, f, arg)`：把 handler 装到 CPU 输入 `n` 上（IDF 是 `esp_rom_intr_handler_set`；
+/// ROM 符号 `intr_handler_set = 0x2f800764`，内部写 `s_intr_handlers[core][n] = {f, arg}`）。
 fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
-    _ = .{ n, f, arg };
     calls.set_isr += 1;
+    note(4, @intCast(n), @intFromPtr(f));
+    const intr_handler_set = @extern(*const fn (i32, ?*anyopaque, ?*anyopaque) callconv(.c) void, .{
+        .name = "intr_handler_set",
+    });
+    intr_handler_set(n, f, arg);
 }
+/// `_ints_on(mask)`：打开 `mask` 里那些 **CLIC 输入** 的使能位。
+/// S31 是 CLIC：每输入一个 ctrl 字（`0x1080_1000 + 4*i`，bit8 = IE）。
 fn shellIntsOn(mask: u32) callconv(.c) void {
-    _ = mask;
     calls.ints_on += 1;
+    note(5, mask, 0);
+    var m = mask;
+    var i: usize = 0;
+    while (m != 0 and i < 32) : (i += 1) {
+        if ((m & 1) != 0) {
+            const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + i * 4);
+            ctl.* |= (1 << 8); // IE
+        }
+        m >>= 1;
+    }
+    asm volatile ("csrs mie, %[m]"
+        :
+        : [m] "r" (@as(usize, mask)),
+        : .{ .memory = true });
 }
 fn shellIntsOff(mask: u32) callconv(.c) void {
-    _ = mask;
     calls.ints_off += 1;
+    var m = mask;
+    var i: usize = 0;
+    while (m != 0 and i < 32) : (i += 1) {
+        if ((m & 1) != 0) {
+            const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + i * 4);
+            ctl.* &= ~@as(u32, 1 << 8);
+        }
+        m >>= 1;
+    }
+    asm volatile ("csrc mie, %[m]"
+        :
+        : [m] "r" (@as(usize, mask)),
+        : .{ .memory = true });
 }
 /// 我们永远不在 ISR 里（MIE=0、无中断驱动），如实返回 false。
 fn shellIsFromIsr() callconv(.c) bool {
@@ -893,6 +931,9 @@ var phy_enable_calls: u32 = 0;
 fn shellPhyEnable(modem: u32) callconv(.c) usize {
     phy_enable_calls +%= 1;
     note(15, modem, phy_enable_calls);
+    // 与 IDF 的 `esp_phy_enable` 一致：先保证 ICG 位图解除门控（见 `shellWifiClockEnable` 的注释）。
+    const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
+    icg.* = 0x6464_6400;
     // IDF 的顺序：`esp_phy_enable(modem)` 内部才做"共用时钟 → phy_module_enable → 首次标定"。
     // 探针注入的实现负责首次 `register_chipv7_phy`（它持有 phy_init_data/cal_data）。
     if (hooks.on_phy_enable) |f| _ = f(modem);
@@ -967,6 +1008,13 @@ const wifi_clk_conf1_bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 
     (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
 
 fn shellWifiClockEnable() callconv(.c) usize {
+    // ★ IDF 的 `wifi_module_enable()` → `modem_clock_module_enable()` 会先
+    // `modem_clock_module_icg_map_init_all()`，把各域的 **ICG 位图**写进 `CLK_CONF_POWER_ST`(0x20109C0C)
+    // —— 实测 IDF 工作值是 `0x64646400`。我们此前只写 CLK_CONF1，没写这张位图。
+    const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
+    const icg_before = icg.*;
+    icg.* = 0x6464_6400;
+    note(20, icg_before, icg.*);
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
     const before = conf1.*;
     conf1.* = before | wifi_clk_conf1_bits;
@@ -975,7 +1023,6 @@ fn shellWifiClockEnable() callconv(.c) usize {
     const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
     const lb = lpcon.*;
     lpcon.* = lb | (1 << 0) | (1 << 1) | (1 << 2); // wifipwr | coex | i2c_mst
-    note(20, before, conf1.*);
     return 0;
 }
 

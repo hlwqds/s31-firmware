@@ -2217,3 +2217,24 @@ IDF 一致的候选：`_set_isr` / `_set_intr` / `_clear_intr`（中断注册）
 
 **下一步**：把 IDF 的 `esp_adapter.c` 里每个 `._xxx = wrapper` 的**真实实现**逐个对照我们的钩子，
 重点看 `_set_isr`/`_set_intr`/`_clear_intr`（它们决定 blob 的中断能不能装上）与 `_event_post`。
+
+### 中断注册钩子已真实化，但 blob 在自旋前**根本没调它们**
+
+把三个空桩改成真实实现（IDF 对应 ROM 原语）：
+
+| 钩子 | 实现 |
+| --- | --- |
+| `_set_intr(cpu, src, num, prio)` | `intr_matrix_set(cpu, src, num)`（ROM `0x2f800768`） |
+| `_set_isr(n, f, arg)` | `intr_handler_set(n, f, arg)`（ROM `0x2f800764`） |
+| `_ints_on(mask)` / `_ints_off(mask)` | CLIC 每输入 ctrl bit8（IE）+ `csrs/csrc mie` |
+
+`rom_syms.ld` 补上 `intr_handler_set`/`intr_matrix_set`/`ets_intr_register_ctx`/`ets_intr_lock/unlock`。
+`chain_other_irqs` 本来就是 `true`（非 25 的输入会转发给 ROM 的 dispatcher）。
+
+板侧（pb165）：**trace 里一条 `set_intr`/`set_isr` 都没有** —— blob 在进入自旋之前**从未安装中断处理器**。
+所以"中断注册被空桩吞掉"这条**不解释当前卡点**（虽然这些实现本身是正确的、应当保留）。
+
+**当前状态小结**：宿主侧能对齐/能实现的都已到位（时钟、ICG、config 逐字段、`coex_init`、中断注册原语），
+自旋依旧。剩下的最可能方向是 **`_phy_enable`/`_wifi_clock_enable` 的语义深度**（IDF 的实现还会
+`phy_wifi_enable_set(1)`、`modem_clock_module_icg_map_init_all()` 等），或 blob 内部依赖某个
+我们尚未观察到被调用的钩子。

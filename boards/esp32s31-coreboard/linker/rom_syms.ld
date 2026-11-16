@@ -298,3 +298,10 @@ PROVIDE(coexist_funcs = 0x2f07ff9c);
 PROVIDE(coex_schm_env_ptr = 0x2f07ffa0);
 PROVIDE(coex_pti_tab_ptr = 0x2f07ffa4);
 PROVIDE(coex_env_ptr = 0x2f07ffa8);
+
+/* 中断注册原语（`esp32s31.rom.ld:333-337`）：osi 的 `_set_isr`/`_set_intr` 需要它们。 */
+PROVIDE(intr_handler_set = 0x2f800764);
+PROVIDE(intr_matrix_set = 0x2f800768);
+PROVIDE(ets_intr_register_ctx = 0x2f80076c);
+PROVIDE(ets_intr_lock = 0x2f800770);
+PROVIDE(ets_intr_unlock = 0x2f800774);
