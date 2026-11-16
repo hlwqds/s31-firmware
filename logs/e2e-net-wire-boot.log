@@ -1,4 +1,4 @@
-½½Ñé ESP-ROM:esp32s31-20251218
+‹é efuóESP-ROM:esp32s31-20251218
 Build:Dec 18 2025
 rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
 SPI mode:DIO, clock div:1
@@ -39,9 +39,9 @@ check: dhcp bound ip=10.42.0.139 ok=1
 wire: arp host mac learned
 check: arp host mac ok=1
 wire: tcp SYN sent iss=0x20263111 fd=0
-wire: socket peer_iss=0x6b80fe32 local_iss=0x20263112
+wire: socket peer_iss=0x1902b57b local_iss=0x20263112
 check: tcp handshake ok=1
-wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112 rcv_nxt=0x6b80fe32
+wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112 rcv_nxt=0x1902b57b
 check: socket layer established ok=1
 check: socket send accepted ok=1
 check: socket tx acked ok=1
