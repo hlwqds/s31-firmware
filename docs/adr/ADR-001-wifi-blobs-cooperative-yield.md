@@ -1078,3 +1078,20 @@ blob 通过 ROM RAM 里的 `g_osi_funcs_p`（`0x2F07FF44`）取 osi 表，再按
 探针里 `register_chipv7_phy(..., PHY_RF_CAL_NONE)` 当初是为绕开"标定要等 PHY 应答、而当时中断关着"。
 现在中断已经开着，这个理由不成立了；blob 的 PHY 流程很可能正是**靠标定完成**才清掉那三位。
 去掉 `PHY_RF_CAL_NONE`（走 `PHY_RF_CAL_FULL`）是比实现时钟门更便宜的一次实验。
+
+### `PHY_RF_CAL_FULL` 实测：**不能**解开自旋（2026-11-16）
+
+把探针里的标定模式从 `PHY_RF_CAL_NONE(1)` 改成 `PHY_RF_CAL_FULL(2)` 上板（pb117，40 s）：
+
+```text
+calling esp_wifi_start (idle_calls=197, tracing hooks)
+trace alloc -> queue_send -> semphr_take
+swap#6 in_task=false hooks=7
+irq-sample #256 .. #1792 input=25 mepc=0x2f009206
+```
+
+**自旋点不变、仍然卡在 `0x2f009206`**。所以"跳过标定导致握手位不清"这条候选被排除
+（`register_chipv7_phy` 返回 rc=0，标定本身也没报错）。
+
+剩下的主候选就是**空桩**：`_phy_enable`（静态证据 4 处引用）与 `_timer_*` 全族（上千处）都还是
+no-op，blob 的 PHY 上电与定时器驱动因此都不存在。下一步按实现顺序那节做 `_phy_enable`。

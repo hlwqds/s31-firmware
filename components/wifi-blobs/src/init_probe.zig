@@ -434,8 +434,11 @@ pub fn run() noreturn {
                     magic_post = "PHYINIT\x00".*;
                     // 先跳过 RF 标定（PHY_RF_CAL_NONE = 1）：标定路径是本固件最可疑的地方
                     // （它等 PHY 应答，而 MIE=0 时中断永远不来）。若 NONE 能返回，就锁定标定。
-                    const rc_phy = register_phy(&phy_init_data.params, &cal_data, 1); // 1 = PHY_RF_CAL_NONE
-                    log.line("wifi-init-probe: register_chipv7_phy(NONE) rc={d} (cal_data {d} B)", .{
+                    // 实验：改成 PHY_RF_CAL_FULL=2（不是 1=NONE）。当初跳过标定是因为中断关着、
+                    // 怕标定路径要等 PHY 应答；现在中断已开，且 blob 很可能正是靠标定完成才清
+                    // MAC+0xAC 的 [15:13] 握手位。
+                    const rc_phy = register_phy(&phy_init_data.params, &cal_data, 2); // 2 = PHY_RF_CAL_FULL
+                    log.line("wifi-init-probe: register_chipv7_phy(mode=FULL) rc={d} (cal_data {d} B)", .{
                         rc_phy,
                         @as(usize, 1894),
                     });
