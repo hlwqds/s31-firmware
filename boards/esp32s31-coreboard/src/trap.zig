@@ -183,13 +183,18 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
             const b13: *volatile u8 = @ptrFromInt(0x2f07_fd2c);
             const b14: *volatile u8 = @ptrFromInt(0x2f07_fd2d);
-            log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d}", .{
+            // a0/a1 也打出来：样本落在 ROM 的外设状态轮询助手（0x2f83efd2..de）时，
+            // a0 就是**外设索引**（助手算 `(*(u32*)(((a0+0x2038A)<<12)+0x1C) >> 16) & 0xFF`），
+            // 由此可以给"它在等哪个外设"点名。
+            log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} a0=0x{x:0>8} a1=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
                 mac_st.*,
                 b13.*,
                 b14.*,
+                frame.a0,
+                frame.a1,
             });
         }
         irq_count +%= 1;
