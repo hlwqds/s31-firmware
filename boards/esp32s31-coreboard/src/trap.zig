@@ -205,6 +205,17 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // （之前"风暴/不 ack"的判读被打印上限的假象污染过，不要沿用）。
         // **应用侧 handler 优先**：只要 `_set_isr` 装过这个输入，就由我们直接调用它
         // （IDF 的 `_global_interrupt_handler` 就是这个形状）。电平输入（T0/25）要先 ack。
+        // 一次性把 **ROM 表**在 app 运行期（blob 已初始化）扫一遍并打印——调试口读到的快照可能是
+        // 复位后的，这里才是权威读数。只做一次，且与采样器一样从 trap 里打（仓库既有做法）。
+        if (input == 25 and !rom_table_dumped and irq_count >= 1000) {
+            rom_table_dumped = true;
+            log.line("romtbl-scan n=32 (sample {d})", .{irq_count});
+            var k: usize = 0;
+            while (k < 32) : (k += 1) {
+                const e = romHandler(k);
+                if (e.fn_) |f| log.line("romtbl[{d}] fn=0x{x} arg=0x{x}", .{ k, @intFromPtr(f), if (e.arg) |a| @intFromPtr(a) else 0 });
+            }
+        }
         var h = getHandler(input);
         // 其次看 **ROM 的表**：blob 是直接调 ROM 的 `intr_handler_set` 装 handler 的，所以它的
         // tick handler 在这张表里。ROM 读合法 -> 我们替 ROM 分发。
@@ -270,6 +281,7 @@ pub const Handler = struct {
 };
 
 var handlers: [64]Handler = @splat(Handler{});
+var rom_table_dumped = false;
 
 /// **ROM 的 handler 表**（反汇编 `intr_handler_set`(0x2f800764 -> 0x2f80192c) 得到）：
 ///
