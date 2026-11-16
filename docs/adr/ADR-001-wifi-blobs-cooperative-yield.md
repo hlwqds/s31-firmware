@@ -311,6 +311,17 @@ force-on 之后 PHY 继续跑，撞到 `mepc=0x2f82625a`、`mtval=0xa4`。把 RO
 2f826252  lw  a5, 164(a5)     # 0xA4 == 164 → a5 是 0，读 0x0+0xA4 → load access fault
 ```
 
-也就是说 ROM 从**一个空指针**的 `+164` 处取字段：某个全局指针还是 0。这类全局通常由 IDF 的 C 层
-（`esp_phy_init` 那一侧）填写。下一步是解出 `lw` 之前加载 `a5` 的 `lui/auipc` 对，确定是哪个全局，
-再看 blob 期望谁填它。
+继续往前 dump 到函数入口，`a5` 的来源已经确定：
+
+```asm
+2f82623a  addi sp, sp, -32
+2f82623c  sw   s2, 16(sp)
+2f82623e  lui  s2, 0x2f080
+2f826242  lw   a5, -960(s2)     # → 0x2f07FC40（SRAM 里的全局指针）
+...
+2f826252  lw   a5, 164(a5)      # a5 = 0 → 读 0xA4 → load access fault
+```
+
+所以根因是 **`0x2f07FC40` 这个全局指针还是 0**（不是 ROM 的 bug）。它是 blob 的 PHY 上下文指针，
+正常由 IDF 的 C 层（`esp_phy_init` 一侧）初始化。下一步：确定这个全局是谁定义/谁负责填，
+并在调用 `register_chipv7_phy` 之前把它建好。
