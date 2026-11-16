@@ -55,6 +55,10 @@ var cal_data: [1894]u8 align(4) = @splat(0xA5);
 
 /// 实验开关：是否在 init 阶段就注册 PHY。false = 交给 `_phy_enable`（IDF 的真实顺序）。
 const probe_register_phy_at_init = false;
+/// 实验开关：探针是否在 start 前手动调 ROM 的 PHY/MAC 入口。IDF 的 wrapper **不会**这么做，
+/// 打开会把状态机推到半初始化态，干扰"到底缺哪一步"的判断。默认全关，走干净路径。
+const probe_manual_phy_calls = false;
+const probe_manual_ic_mac_init = false;
 
 /// `_phy_enable(modem)` 的真实实现：首次调用做 `register_chipv7_phy`（IDF 的
 /// `esp_phy_enable` → `esp_phy_load_cal_and_init` 就是这个时机）。
@@ -571,7 +575,7 @@ pub fn run() noreturn {
                     // `is_lmac_idle` 的真体是 `ic->fns[55](i)`、i=0..4 ⇒ IC 层函数的入参是**接口号**，
                     // 不是上下文指针（传 g_ic 会把 0x2f01d3c8 当指针用，属乱序调用的错误用法）。
                     const ic_mac_init_ifx = @extern(*const fn (u32) callconv(.c) void, .{ .name = "ic_mac_init" });
-                    ic_mac_init_ifx(0);
+                    if (probe_manual_ic_mac_init) ic_mac_init_ifx(0);
                     log.line("wifi-init-probe: after ic_mac_init(0): is_lmac_idle={d} iface={d} mac=0x{x:0>8}", .{
                         is_lmac_idle(), ic_interface_enabled(), mac_st.*,
                     });
@@ -663,13 +667,17 @@ pub fn run() noreturn {
                     _ = clearStatus(0xE000);
                     log.line("wifi-init-probe: post-clear mac=0x{x:0>8}", .{mac_st.*});
                     const fe_txrx_reset = @extern(*const fn () callconv(.c) void, .{ .name = "phy_fe_txrx_reset" });
-                    log.raw("wifi-init-probe: calling phy_fe_txrx_reset()\n");
-                    fe_txrx_reset();
-                    log.raw("wifi-init-probe: phy_fe_txrx_reset returned\n");
+                    if (probe_manual_phy_calls) {
+                        log.raw("wifi-init-probe: calling phy_fe_txrx_reset()\n");
+                        fe_txrx_reset();
+                        log.raw("wifi-init-probe: phy_fe_txrx_reset returned\n");
+                    }
                     const rf_enable = @extern(*const fn () callconv(.c) void, .{ .name = "wifi_rf_phy_enable" });
-                    log.raw("wifi-init-probe: calling wifi_rf_phy_enable()\n");
-                    rf_enable();
-                    log.raw("wifi-init-probe: wifi_rf_phy_enable returned\n");
+                    if (probe_manual_phy_calls) {
+                        log.raw("wifi-init-probe: calling wifi_rf_phy_enable()\n");
+                        rf_enable();
+                        log.raw("wifi-init-probe: wifi_rf_phy_enable returned\n");
+                    }
                 }
                 log.line("wifi-init-probe: event_bus handlers={d} posts={d} undispatched={d}", .{
                     event_bus.count, event_bus.posts, event_bus.undispatched,

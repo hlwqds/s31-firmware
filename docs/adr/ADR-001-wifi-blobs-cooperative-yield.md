@@ -1910,3 +1910,23 @@ trace event_post id=43 bits=0x10 handlers=0 undispatched=0
 通知）。所以"event 43 落空导致状态机不推进"这条**不成立**——它是信息性事件，不需要处理器。
 
 （注：打印发生在 `note()` 里、`event_bus.post` 之前，所以 `undispatched` 显示的是这次 post **之前**的值。）
+
+### 干净路径复跑：去掉探针侧所有手动 PHY/MAC 调用，仍自旋
+
+把探针里三处"实验遗留"的手动调用全部关掉（`probe_manual_phy_calls = false`、
+`probe_manual_ic_mac_init = false`）：`wifi_rf_phy_enable`、`phy_fe_txrx_reset`、`ic_mac_init(0)` 都不再
+由探针调用，PHY 注册只在 blob 经 `_phy_enable` 触发时发生——与 IDF 的 wrapper 行为一致。
+
+板侧（pb151）：
+
+```text
+（manual calls: 0 次）
+_phy_enable(modem=0) -> register_chipv7_phy rc=0
+trace ... phy_enable → coex_enable → wifi_reset_mac → mutex_lock → mutex_unlock → timer_disarm
+irq-sample #16896 .. mepc=0x2f009206 mac=0x00fff000
+无 panic
+```
+
+**结论**：探针侧的手动调用不是卡点原因，也不是"半初始化干扰"——在完全干净的 IDF 顺序下自旋照旧。
+trace 尾部的顺序（`phy_enable → coex_enable → wifi_reset_mac → 锁/解锁 → timer_disarm → 自旋`）现在
+是可信的基线。
