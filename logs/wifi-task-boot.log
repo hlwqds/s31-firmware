@@ -9,4 +9,4 @@ wifi-init-probe: INIT OK, arena free=385264/389120 B, bad_handle=0, blocking_ref
 wifi-init-probe: tasks recorded=1
 wifi-init-probe: running task[0] entry=0x2f00d012 arg=0x00000000 budget=300
 wifi-init-probe: idle hook called 200 times, task alive and cooperative
-wifi-init-probe: hook calls total=32, blocking_refused=4
+wifi-init-probe: hook calls total=31, blocking_refused=3

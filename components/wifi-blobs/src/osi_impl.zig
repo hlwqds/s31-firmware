@@ -513,9 +513,20 @@ fn shellWifiIntRestore(mux: ?*anyopaque, saved: u32) callconv(.c) void {
 fn shellTaskYieldFromIsr() callconv(.c) void {
     calls.task_yield_from_isr += 1;
 }
+/// `_task_delay(ms)`：单线程壳里没有别的执行体，所以"延时"= **让出**并按注入时钟计时。
+/// 每次让出跑一遍 `on_idle`（主循环），上限 `idle_spin_limit` 次——保证调用方一定能返回。
+/// 时钟不可用（`now_us` 为 null）时退化为"让出固定次数"，绝不忙等。
 fn shellTaskDelay(ms: u32) callconv(.c) void {
-    _ = ms;
     calls.task_delay += 1;
+    const start = if (hooks.now_us) |now| now() else 0;
+    const want_us: u64 = @as(u64, ms) * 1000;
+    var spins: u32 = 0;
+    while (spins < idle_spin_limit) : (spins += 1) {
+        if (hooks.on_idle) |idle| idle();
+        if (hooks.now_us) |now| {
+            if (now() -% start >= want_us) return;
+        }
+    }
 }
 /// IDF 默认 tick = 1 ms，所以数值上就是 ms。
 fn shellTaskMsToTick(ms: u32) callconv(.c) i32 {
