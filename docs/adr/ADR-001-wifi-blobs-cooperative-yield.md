@@ -1628,3 +1628,17 @@ ROM 的三个谓词/状态一起读出来，图景很一致：
 所以 blob 的自旋在等"**接口/引擎变成活跃**"，而 `ic_mac_init()` 单独调用**不会**把 `ic_interface_enabled`
 翻成 1（调用前后都是 0）。真正使能接口的那一步（多半是带参数的 `ic_mac_init`/`hal_mac` 序列 + DMA 环）
 仍是缺口。
+
+### ROM 的 `ic_mac_init` 是跳转桩
+
+`esptool read-mem` 逐字 dump `0x2f800d9c`（ROM 不可变，读取有效）：
+
+```text
+0x2f800d9c 0x4f82b06f   # jal x0, +0x164f8  -> 0x2f817294
+0x2f800da0 0x5d23806f   # ic_interface_enabled 的桩
+0x2f800da4 0x5223306f   # is_lmac_idle 的桩
+```
+
+所以 `ic_mac_init` 的真体在 **`0x2f817294`**（`0x2f800d9c + 0x164f8`）。同一段是 16 位压缩指令，
+逐字手工解码性价比低；下一步若要继续，直接用
+`riscv32-esp-elf-objdump -D -b binary -m riscv:rv32 --adjust-vma=0x2f817294` 反汇编这批 dump 出来的字节。
