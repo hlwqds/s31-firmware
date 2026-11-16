@@ -1609,3 +1609,22 @@ while ((REG[0x20104CAC] & 0xE000) != 0) { }   # 等 [15:13] 变成 0
 
 **下一步的方向因此明确**：要让 `[15:13]` 变成 0（即 LMAC 变活跃），需要真正的 MAC 启动序列
 （`ic_mac_init` + 使能 TX/RX + DMA 环建立），而不是任何"停止/复位"动作。
+
+### 补充读数：`ic_interface_enabled()=0`（接口未使能）
+
+```text
+wifi-init-probe: is_lmac_idle=1 ic_interface_enabled=0 mac=0x0000e000
+wifi-init-probe: after ic_mac_init: is_lmac_idle=1 mac=0x0000e000
+```
+
+ROM 的三个谓词/状态一起读出来，图景很一致：
+
+| 读数 | 含义 |
+| --- | --- |
+| `is_lmac_idle = 1` | LMAC 空闲 |
+| `ic_interface_enabled = 0` | **接口未使能** |
+| `0x20104CAC = 0x0000e000` | bits 13..15 = 1（与"空闲"一致） |
+
+所以 blob 的自旋在等"**接口/引擎变成活跃**"，而 `ic_mac_init()` 单独调用**不会**把 `ic_interface_enabled`
+翻成 1（调用前后都是 0）。真正使能接口的那一步（多半是带参数的 `ic_mac_init`/`hal_mac` 序列 + DMA 环）
+仍是缺口。

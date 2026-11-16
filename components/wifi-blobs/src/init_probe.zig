@@ -533,7 +533,10 @@ pub fn run() noreturn {
                     const is_lmac_idle = @extern(*const fn () callconv(.c) c_int, .{ .name = "is_lmac_idle" });
                     const ic_mac_init = @extern(*const fn () callconv(.c) void, .{ .name = "ic_mac_init" });
                     const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
-                    log.line("wifi-init-probe: is_lmac_idle={d} mac=0x{x:0>8}", .{ is_lmac_idle(), mac_st.* });
+                    const ic_interface_enabled = @extern(*const fn () callconv(.c) c_int, .{ .name = "ic_interface_enabled" });
+                    log.line("wifi-init-probe: is_lmac_idle={d} ic_interface_enabled={d} mac=0x{x:0>8}", .{
+                        is_lmac_idle(), ic_interface_enabled(), mac_st.*,
+                    });
                     ic_mac_init();
                     log.line("wifi-init-probe: after ic_mac_init: is_lmac_idle={d} mac=0x{x:0>8}", .{ is_lmac_idle(), mac_st.* });
                 }
