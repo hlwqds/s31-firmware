@@ -287,6 +287,16 @@ pub fn run() noreturn {
                     // 逐个调用它的前序函数，定位挂起点（register_chipv7_phy 只调这 5 个）：
                     //   phy_get_romfunc_addr / phy_force_txrx_off / phy_freq_module_resetn /
                     //   phy_dis_hw_set_freq / phy_i2c_master_reset
+                    // 调制解调器时钟：`MODEM_LPCON_TEST_CONF_REG`（0x2010F000）的 bit0
+                    // （`MODEM_LPCON_CLK_EN`，默认 0）。IDF 用 `modem_clock_module_enable(PERIPH_PHY_MODULE)`
+                    // 打开它；不打开时 PHY 的 I2C 握手永远等不到完成（`phy_rf_init` 就是挂在那里）。
+                    {
+                        const clk_reg: *volatile u32 = @ptrFromInt(0x2010_F000);
+                        const before = clk_reg.*;
+                        clk_reg.* = before | 1;
+                        const after = clk_reg.*;
+                        log.line("wifi-init-probe: MODEM_LPCON_CLK_EN 0x{x} -> 0x{x}", .{ before, after });
+                    }
                     inline for (.{
                         "phy_get_xtal_freq",
                         "phy_get_rf_cal_version",
