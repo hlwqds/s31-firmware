@@ -1,7 +1,7 @@
-wifi-init-probe: trace queue_send a0=0x2f01d890 a1=0x00000006
-wifi-init-probe: trace queue_send a0=0x2f01d890 a1=0x00000006
-wifi-init-probe: trace queue_send a0=0x2f01d890 a1=0x00000006
-wifi-init-probe: cal_data=0x2f011680 init_params=0x40104d40
+wifi-init-probe: trace queue_send a0=0x2f01d8a0 a1=0x00000006
+wifi-init-probe: trace queue_send a0=0x2f01d8a0 a1=0x00000006
+wifi-init-probe: trace queue_send a0=0x2f01d8a0 a1=0x00000006
+wifi-init-probe: cal_data=0x2f011680 init_params=0x40104d58 wrapper=0x2f01df04 inner=0x2f01d8a0
 wifi-init-probe: register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
 panic: exception code=2 (illegal instruction) cause=0x30000002
 panic: mepc=0x2f01c9e4 mtval=0x0 mstatus=0x3801

@@ -737,11 +737,17 @@ pub const WifiQueue = struct {
     inner: *Queue,
 };
 
+/// 最近一次 `_wifi_create_queue` 的包装体/内部队列地址（探针用它对账"坏指针来自哪个对象"）。
+pub var last_wrapper: usize = 0;
+pub var last_inner: usize = 0;
+
 fn shellWifiQueueCreate(len: u32, item_size: u32) callconv(.c) ?*anyopaque {
     const inner = shellQueueCreate(len, item_size) orelse return null;
     const mem = arena_state.alloc(@sizeOf(WifiQueue), @alignOf(WifiQueue)) orelse return null;
     const w: *WifiQueue = @ptrCast(@alignCast(mem));
     w.* = .{ .inner = @ptrCast(@alignCast(inner)) };
+    last_wrapper = @intFromPtr(w);
+    last_inner = @intFromPtr(inner);
     return @ptrCast(w);
 }
 

@@ -406,9 +406,11 @@ pub fn run() noreturn {
                         }
                     }
                     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{ .name = "register_chipv7_phy" });
-                    log.line("wifi-init-probe: cal_data=0x{x:0>8} init_params=0x{x:0>8}", .{
+                    log.line("wifi-init-probe: cal_data=0x{x:0>8} init_params=0x{x:0>8} wrapper=0x{x:0>8} inner=0x{x:0>8}", .{
                         @intFromPtr(&cal_data),
                         @intFromPtr(&phy_init_data.params),
+                        impl.last_wrapper,
+                        impl.last_inner,
                     });
                     // IDF 的布局：`phy_init_magic_pre`（"PHYINIT\0"，8 B）紧贴结构体之前、
                     // `phy_init_magic_post` 紧贴之后。PHY 代码可能检查这两个魔数，所以照抄布局。
