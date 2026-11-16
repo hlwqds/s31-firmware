@@ -167,6 +167,49 @@ pub fn halt() noreturn {
     }
 }
 
+const t0alarmlo: usize = timg0 + 0x10;
+const t0alarmhi: usize = timg0 + 0x14;
+const timg_int_ena: usize = timg0 + 0x70;
+
+/// TIMG0_T0 的中断源编号（`soc/esp32s31/include/soc/interrupts.h` 枚举顺序）。
+pub const tg0_t0_int_source: usize = 25;
+const clic_ctl_base: usize = 0x1080_1000;
+
+/// 武装 TIMG0 T0 的周期中断（用于中断采样：任务不让出时抢回 CPU）。
+/// 1 MHz 计数 → `period_us` 微秒。
+pub fn armT0Interrupt(period_us: u32) void {
+    const now = nowUs();
+    const alarm = now + period_us;
+    writeReg(t0alarmlo, @intCast(alarm & 0xFFFF_FFFF));
+    writeReg(t0alarmhi, @intCast((alarm >> 32) & 0xFFFF));
+    writeReg(timg_int_ena, readReg(timg_int_ena) | 1); // bit0 = T0
+    // CLIC 输入：优先级 1 + 使能（`CLIC_INT_CTL` 在 [31:24]、`CLIC_INT_IE` 在 bit8）
+    writeReg(clic_ctl_base + tg0_t0_int_source * 4, (1 << 24) | (1 << 8));
+    asm volatile ("csrs mie, %[m]"
+        :
+        : [m] "r" (@as(usize, 1) << tg0_t0_int_source),
+        : .{ .memory = true });
+}
+
+/// 读回采样中断的武装状态（诊断用）：ena/alarmlo/alarmhi/clic/mie，另加 mstatus 与 int_st。
+pub fn samplerIrqState() [7]u32 {
+    const mstatus: usize = asm volatile ("csrr %[v], mstatus"
+        : [v] "=r" (-> usize),
+    );
+    const mie: usize = asm volatile ("csrr %[v], mie"
+        : [v] "=r" (-> usize),
+    );
+    return .{
+        readReg(timg_int_ena),
+        readReg(t0alarmlo),
+        readReg(t0alarmhi),
+        readReg(clic_ctl_base + tg0_t0_int_source * 4),
+        @intCast(mie),
+        @intCast(mstatus),
+        readReg(timg0 + 0x74), // int_st
+    };
+}
+
 /// 打开全局中断（`mstatus.MIE`）。中断采样/抢占需要它。
 pub fn enableInterrupts() void {
     asm volatile ("csrsi mstatus, 8" ::: .{ .memory = true });

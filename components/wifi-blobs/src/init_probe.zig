@@ -214,6 +214,9 @@ const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
 
 pub fn run() noreturn {
     log.raw("wifi-init-probe: begin\n");
+    // TIMG0 T0 是本仓的时间基（1 MHz）；探针构建不会自动初始化它，
+    // 不初始化则 nowUs() 恒 0（实测），超时/采样中断都无从谈起。
+    hw.initTimer();
 
     // 1) 分配器缓冲：链接脚本给的堆区间（_heap_start.._heap_end，绝对符号取地址）。
     const heap_start: [*]u8 = @ptrFromInt(@intFromPtr(heapStart()));
@@ -449,8 +452,19 @@ pub fn run() noreturn {
                 log.raw("wifi-init-probe: task context ready, running it until it blocks\n");
                 // 先让任务跑一轮（它阻塞收消息 → 通过 idleHook 让回主上下文），
                 // 这样 wifi 状态机有机会推进到 start 期待的状态。
-                // 打开全局中断：任务一旦在 blob 里不让出，只有中断能抢回 CPU 采样 PC。
+                // 打开全局中断并武装 TIMG0 T0 周期中断：任务一旦在 blob 里不让出，
+                // 只有中断能抢回 CPU 采样 PC（trap 的中断分支已改为"采样后返回"）。
                 hw.enableInterrupts();
+                hw.armT0Interrupt(2000); // 2 ms
+                const t1 = hw.nowUs();
+                var spin: u32 = 0;
+                while (spin < 200_000) : (spin += 1) {}
+                const t2 = hw.nowUs();
+                log.line("wifi-init-probe: timer {d} -> {d} (delta={d})", .{ t1, t2, t2 -% t1 });
+                const st = hw.samplerIrqState();
+                log.line("wifi-init-probe: irq ena=0x{x} alarm=0x{x}:0x{x} clic=0x{x} mie=0x{x} mstatus=0x{x} int_st=0x{x}", .{
+                    st[0], st[2], st[1], st[3], st[4], st[5], st[6],
+                });
                 in_task = true;
                 impl.current_is_task = true;
                 sched.start(&task_ctx, &main_ctx);

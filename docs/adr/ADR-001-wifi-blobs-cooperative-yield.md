@@ -724,7 +724,19 @@ ch15/ch17 实测，1 MHz），所以最省事的路径是：
 3. `mie` 对应位置位（配合已打开的 `mstatus.MIE`）；
 4. ISR 里只采样 `mepc`（前 8 次打印已在 `trapDispatch` 里）。
 
-**输入号已查到**（`components/soc/esp32s31/include/soc/interrupts.h` 的枚举顺序，从 0 起）：
+**进展与新的阻塞点（2026-11-16）**：
+
+- 探针原先**没有初始化 TIMG0 T0**，`nowUs()` 恒为 0（实测 `timer 0 -> 0`）——已补 `hw.initTimer()`，
+  现在 `timer 278417 -> 278419` ✓（时间基正常）。
+- 武装后读回：`ena=0x1`（T0 中断已使能）、`alarm=now+2000` ✓、`clic=0x1fc00100`（IE 位已置）、
+  `mstatus=0x2009`（MIE=1 ✓）、`int_st=0x0`（此刻尚未到点，符合预期）。
+- 但**仍然没有 `irq-sample`**。
+
+剩下的嫌疑：S31 的 CLIC 若按**向量模式**分发（`CLIC_INT_CONFIG_NVBITS=1`），中断会走 `mtvt`
+指向的向量表而不是我们的 `mtvec` 入口——下一步应确认 `mtvt`/向量模式，或显式把该输入的
+`SHV` 清掉走非向量路径。
+
+**输入号**（`components/soc/esp32s31/include/soc/interrupts.h` 的枚举顺序，从 0 起）：
 
 | 源 | 编号 |
 | --- | --- |
