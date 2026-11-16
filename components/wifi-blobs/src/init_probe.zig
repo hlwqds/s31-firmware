@@ -65,8 +65,10 @@ pub fn run() noreturn {
     // 3) 建表并装进 ROM 槽位（`g_osi_funcs_p` = 0x2f07ff44）
     var table = impl.makeTable();
     table._log_write = s31_log_write; // C 变参 shim：能看到驱动自己的报错
-    const prev = osi.install(&table);
-    log.line("wifi-init-probe: osi installed prev=0x{x:0>8}", .{if (prev) |p| @intFromPtr(p) else 0});
+    // 不预装：`wifi_osi_funcs_register` 会在槽位为空时校验并**自己注册**（反汇编 0x2a-0x2e 的
+    // `_version == 9` 检查就在那条路径上）。预装会让它走"已注册"捷径、跳过校验——上一版就是那样，
+    // 结果是 258 但看不出原因。
+    log.line("wifi-init-probe: osi NOT preinstalled, slot=0x{x:0>8}", .{osi.slot_addr});
 
     // 4) 构造 config 并调用
     const cfg = initcfg.defaults(&table);
