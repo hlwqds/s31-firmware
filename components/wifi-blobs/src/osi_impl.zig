@@ -430,8 +430,7 @@ pub const hook_ids = [_][]const u8{
     "semphr_take", "semphr_give", "mutex_lock",        "mutex_unlock",
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
     "malloc",      "zalloc",      "calloc",            "mutex_create",
-    "event_post",
-    "alloc",
+    "event_post",  "alloc",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
