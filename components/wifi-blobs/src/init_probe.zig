@@ -306,6 +306,25 @@ pub fn run() noreturn {
                         conf.* = before | 0b1111;
                         log.line("wifi-init-probe: MODEM_LPCON_CLK_CONF 0x{x} -> 0x{x}", .{ before, conf.* });
                     }
+                    // 照 IDF `modem_clock_module_enable(PERIPH_PHY_MODULE)` 移植（S31 分支）：
+                    //   deps = MODEM_ADC_COMMON_FE | MODEM_PRIVATE_FE | SOC_PLL_SOURCE_CG | I2C_MASTER
+                    // 1) SOC_PLL_SOURCE_CG：`HP_SYS_CLKRST_MODEM_CONF_REG` = 0x3d
+                    //    （`modem_clock_hal_enable_soc_pll_source_cg`，`hal/esp32s31/modem_clock_hal.c:122`）
+                    // 2) MODEM_ADC_COMMON_FE：`CLK_CONF1` 的 FE_APB(15) / FE_80M(13)
+                    // 3) MODEM_PRIVATE_FE：FE_160M(14) / FE_DAC(21) / FE_PWDET_ADC(19) / FE_ADC(20)
+                    {
+                        const pll: *volatile u32 = @ptrFromInt(0x2058_71E0);
+                        const before = pll.*;
+                        pll.* = 0x3d;
+                        log.line("wifi-init-probe: HP_SYS_CLKRST_MODEM_CONF 0x{x} -> 0x{x}", .{ before, pll.* });
+                    }
+                    {
+                        const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+                        const before = conf1.*;
+                        const bits: u32 = (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+                        conf1.* = before | bits;
+                        log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
+                    }
                     inline for (.{
                         "phy_get_xtal_freq",
                         "phy_get_rf_cal_version",
