@@ -177,11 +177,21 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 实际只是打印被数组长度卡住。
         if (irq_count < irq_samples.len) irq_samples[irq_count] = frame.mepc;
         // 前 64 条全打，之后每 256 条打一条：既不刷屏，又能证明"采样在 swap 之后仍在继续"。
-        if (irq_count < 64 or (irq_count % 256) == 0) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
-            irq_count,
-            cause & 0x3F,
-            frame.mepc,
-        });
+        if (irq_count < 64 or (irq_count % 256) == 0) {
+            // 心跳里顺带读硬件现场：`0x20104CAC` 是 WiFi MAC 块 +0xAC（blob 自旋等 [15:13] 清零），
+            // `0x2f07fd2c/2d` 是自旋函数缓存下来的 bit13/bit14 最近值。
+            const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+            const b13: *volatile u8 = @ptrFromInt(0x2f07_fd2c);
+            const b14: *volatile u8 = @ptrFromInt(0x2f07_fd2d);
+            log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d}", .{
+                irq_count,
+                cause & 0x3F,
+                frame.mepc,
+                mac_st.*,
+                b13.*,
+                b14.*,
+            });
+        }
         irq_count +%= 1;
         const input = cause & 0x3F;
         // 输入 25 默认自己 ack。把它转发给 ROM 入口的实验结果见 ADR：机制**未定**
