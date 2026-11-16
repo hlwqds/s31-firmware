@@ -110,6 +110,12 @@ var task_ctx_ready: bool = false;
 fn idleHook() void {
     idle_calls += 1;
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
+    // 每 1000 次让出打一行：区分"在乒乓（任务没答话）"与"blob 忙等（根本不进钩子）"。
+    if (idle_calls % 1000 == 0) log.line("wifi-init-probe: idle_calls={d} in_task={} hooks={d}", .{
+        idle_calls,
+        in_task,
+        impl.event_count,
+    });
     if (idle_calls > 20_000) {
         log.line("wifi-init-probe: idle budget exhausted ({d}), halting", .{idle_calls});
         hw.halt();
@@ -241,6 +247,7 @@ pub fn run() noreturn {
                 log.raw("wifi-init-probe: task context ready (not started yet)\n");
 
                 const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });
+                log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d})", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: esp_wifi_start rc=0x{x} (idle_calls={d})", .{
                     @as(u32, @bitCast(src)),
