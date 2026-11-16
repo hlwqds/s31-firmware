@@ -1,5 +1,6 @@
 wifi-init-probe: pre-PHY regs: 0x20109c18=0x00000000 0x20100800=0x00000001
 wifi-init-probe: MODEM_LPCON_CLK_EN 0x0 -> 0x1
+wifi-init-probe: MODEM_LPCON_CLK_CONF 0x4 -> 0xf
 wifi-init-probe: calling phy_get_xtal_freq
 wifi-init-probe: phy_get_xtal_freq returned
 wifi-init-probe: calling phy_get_rf_cal_version

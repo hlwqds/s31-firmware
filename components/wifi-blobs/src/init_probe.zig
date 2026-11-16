@@ -297,6 +297,15 @@ pub fn run() noreturn {
                         const after = clk_reg.*;
                         log.line("wifi-init-probe: MODEM_LPCON_CLK_EN 0x{x} -> 0x{x}", .{ before, after });
                     }
+                    // `MODEM_LPCON_CLK_CONF_REG`（0x2010F018）：bit0 WIFIPWR / bit1 COEX /
+                    // bit2 I2C_MST / bit3 LP_TIMER。`phy_rf_init` 的握手走 I2C 模拟主控，
+                    // 所以至少要 bit2；一并把 WiFi 电源与 coex 打开。
+                    {
+                        const conf: *volatile u32 = @ptrFromInt(0x2010_F018);
+                        const before = conf.*;
+                        conf.* = before | 0b1111;
+                        log.line("wifi-init-probe: MODEM_LPCON_CLK_CONF 0x{x} -> 0x{x}", .{ before, conf.* });
+                    }
                     inline for (.{
                         "phy_get_xtal_freq",
                         "phy_get_rf_cal_version",
