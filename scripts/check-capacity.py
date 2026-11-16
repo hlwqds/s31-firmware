@@ -37,8 +37,26 @@ FW = ROOT / "firmware"
 BASELINE = ROOT / "tools" / "s31-production" / "baseline" / "capacity.json"
 
 ZIG = os.environ.get("ZIG", "zig")
-PART_FACTORY = 0x177000
 LINKER = ROOT / "boards" / "esp32s31-coreboard" / "linker" / "s31.ld"
+PART_CSV = ROOT / "firmware" / "idf-bootstrap" / "partitions.csv"
+
+
+def part_factory() -> int:
+    """factory 槽大小从仓库里的分区表读：它同时决定应用偏移与容量上限，不能两处各写一份。"""
+    if not PART_CSV.is_file():
+        sys.exit(f"check-capacity: 缺少 {PART_CSV.relative_to(ROOT)}（factory 大小必须来自分区表）")
+    for line in PART_CSV.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        cells = [c.strip() for c in line.split(",")]
+        if len(cells) >= 5 and cells[0] == "factory":
+            size = cells[4]
+            return int(size, 16) if size.lower().startswith("0x") else int(size[:-1]) * 1024 if size.endswith("K") else int(size)
+    sys.exit(f"check-capacity: {PART_CSV.relative_to(ROOT)} 里没有 factory 行")
+
+
+PART_FACTORY = part_factory()
 GROWTH_TOLERANCE = 8 * 1024
 
 

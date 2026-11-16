@@ -67,6 +67,17 @@ CI 上的同一套入口：`ci.yml` 的 `board` job（`workflow_dispatch`，自�
 `skipped/no-dhcp-server` 在门禁里算失败，前置缺失时退出码 2 并打印修复命令。
 NixOS 上需要 `env -u LD_LIBRARY_PATH`（脚本已内置）和带 pyserial 的解释器（`PYTHON=` 指定）。
 
+分区表（仓库自有，不再依赖 IDF 默认值）：
+
+```bash
+scripts/gen-partition-table.sh          # 从 firmware/idf-bootstrap/partitions.csv 生成 bin
+scripts/gen-partition-table.sh --check  # 校验现有 bin 与 csv 一致（不需要 IDF 工具链）
+```
+
+`partitions.csv` 与 `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE` 的默认表逐字节一致
+（nvs 0x9000 / phy_init 0xf000 / factory 0x10000 + 1500K），所以应用偏移与既有证据都不变；
+`check-capacity.py` 与 `run_e2e.py` 的 factory 上限现在都从这张表解析。
+
 容量门禁（无板即可跑）：
 
 ```bash

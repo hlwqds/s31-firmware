@@ -1,0 +1,16 @@
+# s31-firmware 生产固件的分区布局（显式落库，不再依赖 IDF 的 single-app-large 默认值）。
+#
+# 与 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE 的默认表逐字节一致：
+#   nvs 0x9000 / phy_init 0xf000 / factory 0x10000 + 1500K
+# 因此 tools/flash.sh 的应用行（0x10000）与已有证据里的偏移都不变。
+#
+# 为什么落库：分区表是**承重**的——应用偏移、容量门禁的 factory 上限、将来 OTA 的
+# ota_0/ota_1/otadata 位置都从这里读。以前它只存在于 sdkconfig 的默认值里，
+# 换 IDF 版本或改一行配置就会悄悄变。
+#
+# 改这张表时同步：`scripts/check-capacity.py` 与 `tests/e2e/run_e2e.py` 都从这里解析
+# factory 的大小（不再硬编码 0x177000）。
+# name,     type, subtype,  offset,   size
+nvs,        data, nvs,      0x9000,   24K
+phy_init,   data, phy,      0xf000,   4K
+factory,    app,  factory,  0x10000,  1500K

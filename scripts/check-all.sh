@@ -16,6 +16,7 @@ scripts/check-fmt.sh
 scripts/check-host.sh
 "$PYTHON" scripts/check-coverage.py
 "$PYTHON" tools/s31-production/baseline/update_matrix.py --check
+scripts/gen-partition-table.sh --check
 "$PYTHON" scripts/check-capacity.py
 mkdir -p reports
 ESPTOOL=${ESPTOOL:-python -m esptool} "$PYTHON" tests/e2e/run_e2e.py --host --junit reports/e2e-host.xml

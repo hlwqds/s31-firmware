@@ -8,6 +8,11 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **分区表落库**：`firmware/idf-bootstrap/partitions.csv`（nvs 0x9000 / phy_init 0xf000 /
+  factory 0x10000 + 1500K，与 `SINGLE_APP_LARGE` 的默认表**逐字节一致**），
+  `sdkconfig.defaults` 改走 `CONFIG_PARTITION_TABLE_CUSTOM`；新增
+  `scripts/gen-partition-table.sh`（`--check` 校验 bin 与 csv 一致，纯 Python、不需要 IDF 工具链）。
+  `check-capacity.py` 与 `run_e2e.py` 的 factory 上限改为从表里解析，不再硬编码 `0x177000`。
 - **P0.3 两段窗口扩容**：`linker/s31.ld` 的 `irom`/`drom` 各 `0x7F000 → 0xB0000`，drom 基址
   `0x40080020 → 0x40100020`（保持 64 KiB 对齐 + 0x20）。合计 1 441 792 B 仍在 factory 1 500 K
   之内，不需要动分区表；`full` 的 IROM 余量从 214 496 B 涨到 415 200 B、DROM 到 650 128 B。

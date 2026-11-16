@@ -26,7 +26,25 @@ from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[2]
 FW = ROOT / "firmware"
-PART_FACTORY = 0x177000
+# factory 槽大小来自仓库里的分区表（firmware/idf-bootstrap/partitions.csv），不再硬编码。
+def _part_factory() -> int:
+    csv = FW / "idf-bootstrap" / "partitions.csv"
+    for line in csv.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        cells = [c.strip() for c in line.split(",")]
+        if len(cells) >= 5 and cells[0] == "factory":
+            size = cells[4]
+            if size.lower().startswith("0x"):
+                return int(size, 16)
+            if size.endswith("K"):
+                return int(size[:-1]) * 1024
+            return int(size)
+    raise SystemExit(f"no factory row in {csv}")
+
+
+PART_FACTORY = _part_factory()
 ZIG = os.environ.get("ZIG", "zig")
 # 板子重新枚举后可能变成 ttyUSB0；默认仍是 ttyUSB1，门禁/CI 可用 BOARD 覆盖。
 BOARD = os.environ.get("BOARD", "/dev/ttyUSB1")
