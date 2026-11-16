@@ -18,9 +18,14 @@ pub const err_invalid_len: c_int = 0x110C; // ESP_ERR_NVS_INVALID_LENGTH
 pub const err_invalid_arg: c_int = 0x102; // ESP_ERR_INVALID_ARG
 
 pub const max_namespaces = 4;
-pub const max_slots = 32;
+/// 槽数 × `max_blob` 是静态 `.bss` 占用：8 × 2048 = 16 KiB（原 32 × 64 = 2 KiB）。
+/// blob 实际用到的键很少，8 个够用；若日志出现"槽满"再调。
+pub const max_slots = 8;
 pub const max_key = 16;
-pub const max_blob = 64;
+/// **必须装得下 PHY 校准数据**：`esp_phy_calibration_data_t` = 1904 字节。此前是 64，
+/// 于是 blob 在 init 里读 `cal_data` 会拿到 `ESP_ERR_NVS_INVALID_LENGTH`（实测 rc=0x1102），
+/// PHY 走"无校准"分支。这里给到 2048。
+pub const max_blob = 2048;
 
 const Kind = enum { i8v, u8v, u16v, blob };
 

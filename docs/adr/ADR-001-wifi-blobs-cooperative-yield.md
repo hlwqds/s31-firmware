@@ -3077,3 +3077,19 @@ INITCFG feature_caps=0x1a1 sta_pm=1 espnow=7 hetb=3 dumpsig=0 priv=0 rmac=0 magi
 也没有 `SYSCON_WIFI_RST_EN_REG` / `MODEM_RESET_FIELD_WHEN_PU` ⇒ `esp_wifi_bt_power_domain_on()` 里
 那整块（清 FORCE_PD → modem 复位脉冲 → 清 FORCE_ISO）**在 S31 上被编译掉了**。
 这与二分结论一致（它在 IDF 里不清 `MAC_ST`）。
+
+### NVS 轨迹：blob 读的是 108 字节的键，返回 `0x1102`（NOT_FOUND）——不是长度问题
+
+给 `_nvs_get_blob` 加了轨迹（记录最近一次请求长度与返回码），板侧读数：
+
+```text
+nvs get_blob calls=15 last_want=108 last_rc=4354
+```
+
+`4354 = 0x1102` = **`ESP_ERR_NVS_NOT_FOUND`**（不是 `INVALID_LENGTH`）⇒ **那个键在全新 NVS 里本来就不存在**，
+IDF 在同样的空白 NVS 上也会得到同一个返回码 ⇒ **不是分歧点**。
+
+顺带修了一个真实隐患：`nvs_ram.max_blob` 原来是 **64**，而 `esp_phy_calibration_data_t` 是 **1904 字节** ——
+PHY 校准数据**根本存不下**。已提到 **2048**，并把 `max_slots` 从 32 降到 8（静态占用 16 KiB，可接受）。
+改完重测：自旋**不变**（`mepc=0x2f0091fe`，`mac=0x00fff000`）——所以"存不下校准数据"也不是当前卡点，
+但这个容量 bug 该修（它是真实存在的隐患）。

@@ -427,10 +427,22 @@ fn shellNvsSetBlob(handle: u32, key: ?[*:0]const u8, value: ?*const anyopaque, l
     const p: [*]const u8 = @ptrCast(value orelse return nvs.err_invalid_arg);
     return nvs.setBlob(handle, key orelse return nvs.err_invalid_arg, p[0..length]);
 }
+/// 诊断：最近一次 `_nvs_get_blob` 的请求长度与返回码（由探针打印）。
+pub var nvs_last_want: usize = 0;
+pub var nvs_last_rc: c_int = 0;
+pub var nvs_get_blob_calls: u32 = 0;
+
 fn shellNvsGetBlob(handle: u32, key: ?[*:0]const u8, out: ?*anyopaque, length: ?*usize) callconv(.c) c_int {
     const p: [*]u8 = @ptrCast(out orelse return nvs.err_invalid_arg);
     const l = length orelse return nvs.err_invalid_arg;
-    return nvs.getBlob(handle, key orelse return nvs.err_invalid_arg, p[0..l.*], l);
+    const want = l.*;
+    const rc = nvs.getBlob(handle, key orelse return nvs.err_invalid_arg, p[0..want], l);
+    // **NVS trace**：记录最近一次 blob 读取的请求长度与返回码。PHY 校准数据是 1904 字节，
+    // 而我们的 `nvs.max_blob` 只有 64 —— 这两个数一对比就能看出缺口。
+    nvs_last_want = want;
+    nvs_last_rc = rc;
+    nvs_get_blob_calls += 1;
+    return rc;
 }
 fn shellNvsEraseKey(handle: u32, key: ?[*:0]const u8) callconv(.c) c_int {
     return nvs.eraseKey(handle, key orelse return nvs.err_invalid_arg);
