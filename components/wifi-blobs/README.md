@@ -40,6 +40,7 @@ _ = esp_wifi_init_internal(&cfg);           // 只能调用一次
 | `fill_random` | 随机数（blob 的 nonce/序列号） | 填 0，安全性失效但能跑 |
 | `mac` | 出厂 MAC | 全 0 |
 | `on_idle` | **阻塞等待时的让出点**，调用方在这里跑主循环（收包/发送） | 等待退化成忙等：任务体占满 CPU，主循环拿不到执行权 |
+| `on_note` | **每次**钩子调用都回调（逐行追踪某个阶段的调用序列） | 无 trace，只能看计数 |
 | `on_budget_exhausted` | `impl.budget` 归零时回调（诊断用） | 无刹车 |
 
 ### 为什么 `on_idle` 是中心契约
@@ -93,6 +94,7 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 | `src/init_config.zig` | `wifi_init_config_t` 默认值（含 `wpa_crypto_funcs.size = 52`） |
 | `src/init_probe.zig` | 板侧探针：装表 → 构造 config → init → 跑一次任务体（`-Dwifi-init-probe=true`） |
 | `src/sched.zig` | 两根栈的合作式上下文切换（naked `s31_swap_context`） |
+| `src/sched.zig` | 32 位帧的 `initContext`（主机用例覆盖）+ 目标门控的 naked 切换 |
 | `src/host_tests.zig` | 主机测试入口（20 个用例） |
 
 ## 待验证项

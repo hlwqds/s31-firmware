@@ -42,7 +42,7 @@ wifi-init-probe:   hook[0] queue_recv a0=0x2f018820 a1=0xffffffff   ← 连续 8
 - **诊断要靠预算与事件环**：`impl.budget` 归零时回调打印现场，`impl.events` 保留最近 8 次
   `(钩子 id, a0, a1)`——「它在等什么」不靠猜。
 - **组件不 import 板级代码**：`Hooks` 注入（`now_us`/`fill_random`/`mac`/`on_idle`/
-  `on_budget_exhausted`），固件侧接线。
+  `on_note`/`on_budget_exhausted`），固件侧接线。
 
 ## 后果
 
@@ -89,7 +89,8 @@ wifi-init-probe: calling esp_wifi_start (idle_calls=320)
 （之后无输出）
 ```
 
-它一次都不经过我们的信号量/队列钩子，即**在 blob 内部忙等**一个由 wifi 任务设置的标志。
+它**看起来**不经过我们的信号量/队列钩子（后来证明是预算判据不足，见本文件末尾"逐行追踪"一节：
+start 实际会 `zalloc(24 B)`、取三次互斥锁、`event_post(id=43)`，之后才不再调用钩子）。
 反汇编确认 `wifi_init_completed` 只读状态字（不等待）、`esp_wifi_start` 先 `_wifi_zalloc`
 （表 index 93）再 `ieee80211_ioctl`，所以卡点在 ioctl/状态机内部。
 
