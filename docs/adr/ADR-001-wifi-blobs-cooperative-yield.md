@@ -2238,3 +2238,23 @@ IDF 一致的候选：`_set_isr` / `_set_intr` / `_clear_intr`（中断注册）
 自旋依旧。剩下的最可能方向是 **`_phy_enable`/`_wifi_clock_enable` 的语义深度**（IDF 的实现还会
 `phy_wifi_enable_set(1)`、`modem_clock_module_icg_map_init_all()` 等），或 blob 内部依赖某个
 我们尚未观察到被调用的钩子。
+
+### 把 CLK_CONF1/FORCE_ON 推迟到 start 阶段（照 IDF 的相位）：**行不通**
+
+IDF 的 `after-esp_wifi_init` 里 `CLK_CONF1 = 0`（Wi-Fi 时钟要到 start 才开），而我们一直是在 init 就写
+`0x38e7ff`。于是试了"init 不写、交给 `_wifi_clock_enable`"：
+
+```text
+wifi-init-probe: CLK_CONF1 SKIPPED at init (交给 _wifi_clock_enable)
+wifi-init-probe: SYSCON_FORCE_ON SKIPPED at init
+（之后日志直接停住：连 calling esp_wifi_start 都没到，无 panic）
+```
+
+**结论**：`FORCE_ON` 必须**早于** PHY 的 FE/BB 时钟写序列，否则那条写序列直接 stall（与之前"清 force_on
+会让 `phy_open_fe_bb_clk` 卡死"是同一件事）。所以"相位对齐 IDF"这条路在我们的裸机 bring-up 上不成立
+——IDF 能等，是因为它有别的上电路径。
+
+**顺带记下一条还没试的真实差异**：IDF 的 `esp_phy_enable_wrapper` 是
+`esp_phy_enable(PHY_MODEM_WIFI); phy_wifi_enable_set(1); ...`，而 **`phy_wifi_enable_set` 定义在
+`libphy.a` 里**（`esp_phy_init.h:288` 只有声明）。如果 libphy 的代码按这个标志门控，我们的 `_phy_enable`
+就少了一步——下一步值得把它加进钩子。

@@ -55,6 +55,11 @@ var cal_data: [1894]u8 align(4) = @splat(0xA5);
 
 /// 实验开关：是否在 init 阶段就注册 PHY。false = 交给 `_phy_enable`（IDF 的真实顺序）。
 const probe_register_phy_at_init = false;
+/// 实验开关：是否在**探针 init** 阶段就写 CLK_CONF1 / FORCE_ON。
+/// IDF 实测：`after-esp_wifi_init` 时 `CLK_CONF1 = 0`（Wi-Fi 时钟是在 **start** 期间由
+/// `_wifi_clock_enable` 打开的，值才变成 0x38e7ff）。我们此前在 init 就把 MAC 时钟打开，
+/// 比 IDF 早了一个阶段。false = 交给钩子（与 IDF 一致）。
+const probe_clock_at_init = true; // 实测必须 true：关掉会让 FE/BB 时钟写序列 stall
 /// 实验开关：探针是否在 start 前手动调 ROM 的 PHY/MAC 入口。IDF 的 wrapper **不会**这么做，
 /// 打开会把状态机推到半初始化态，干扰"到底缺哪一步"的判断。默认全关，走干净路径。
 const probe_manual_phy_calls = false;
@@ -387,8 +392,12 @@ pub fn run() noreturn {
                         const bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) |
                             (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10) |
                             (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
-                        conf1.* = before | bits;
-                        log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
+                        if (probe_clock_at_init) {
+                            conf1.* = before | bits;
+                            log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
+                        } else {
+                            log.raw("wifi-init-probe: CLK_CONF1 SKIPPED at init (交给 _wifi_clock_enable)\n");
+                        }
                     }
                     // 先打开 force-on 位（使能位不等于上电）：
                     //   SYSCON_FORCE_ON(0x20109C08)：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
@@ -396,8 +405,12 @@ pub fn run() noreturn {
                     {
                         const fo_sys: *volatile u32 = @ptrFromInt(0x2010_9C08);
                         const before = fo_sys.*;
-                        fo_sys.* = before | (1 << 2) | (1 << 3) | (1 << 4);
-                        log.line("wifi-init-probe: SYSCON_FORCE_ON 0x{x} -> 0x{x}", .{ before, fo_sys.* });
+                        if (probe_clock_at_init) {
+                            fo_sys.* = before | (1 << 2) | (1 << 3) | (1 << 4);
+                            log.line("wifi-init-probe: SYSCON_FORCE_ON 0x{x} -> 0x{x}", .{ before, fo_sys.* });
+                        } else {
+                            log.raw("wifi-init-probe: SYSCON_FORCE_ON SKIPPED at init\n");
+                        }
                         const fo_lp: *volatile u32 = @ptrFromInt(0x2010_F01C);
                         const b2 = fo_lp.*;
                         fo_lp.* = b2 | (1 << 0) | (1 << 2);
