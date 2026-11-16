@@ -12,11 +12,13 @@ const std = @import("std");
 const adapter = @import("adapter.zig");
 const osi = @import("osi.zig");
 const impl = @import("osi_impl.zig");
+const initcfg = @import("init_config.zig");
 
 test {
     _ = adapter;
     _ = osi;
     _ = impl;
+    _ = initcfg;
 }
 
 test "wifi-blobs: probe 解析到替身符号的地址" {
@@ -278,4 +280,25 @@ test "osi_impl: NVS 经表指针可读写（RAM 版）" {
 
     try std.testing.expectEqual(@as(c_int, 0), erase(handle, "cal"));
     try std.testing.expectEqual(nvs.err_not_found, get_blob(handle, "cal", &out, &len));
+}
+
+test "init_config: 默认配置填好表指针与 magic" {
+    var buf: [4096]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+    const c = initcfg.defaults(&tbl);
+    try std.testing.expectEqual(@as(i32, 0x1F2F3F4F), c.magic);
+    try std.testing.expect(c.osi_funcs != null);
+    // 主机是 64 位，尺寸断言只在 ilp32 下生效；这里断言字段关系即可
+    try std.testing.expectEqual(@as(i32, 0x1F2F3F4F), initcfg.init_magic);
+    try std.testing.expect(@offsetOf(initcfg.InitConfig, "osi_funcs") == 0);
+}
+
+test "init_config: 交叉编译期的布局断言在 ilp32 下成立" {
+    // 这些值由 C 侧 _Static_assert 验证过（wpa 52/44/48），Zig 侧在 comptime 里再钉一次。
+    if (@sizeOf(usize) == 4) {
+        try std.testing.expectEqual(@as(usize, 52), @sizeOf(initcfg.WpaCrypto));
+        try std.testing.expectEqual(@as(usize, 160), @sizeOf(initcfg.InitConfig));
+        try std.testing.expectEqual(@as(usize, 152), @offsetOf(initcfg.InitConfig, "magic"));
+    }
 }
