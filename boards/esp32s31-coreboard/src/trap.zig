@@ -153,6 +153,7 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        lw      t6, 72(sp)
         \\        la      t0, rom_mtvec
         \\        lw      t0, 0(t0)
+        \\        andi    t0, t0, -4        # mtvec 低 2 位是模式（实测 0x2f801703 = vectored）
         \\        mv      sp, t6
         \\        jr      t0
     );
@@ -182,12 +183,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         }
         irq_count += 1;
         const input = cause & 0x3F;
-        // 采样器自己的输入：清状态并重新武装（T0 是电平中断，不清会在 mret 后立刻重入）。
+        // ★ 实测结论（2026-11-16）：把输入 25 **不 ack 直接转发**给 ROM 入口（`0x2f801700`）
+        // 会让板子立刻进入"同一 PC 反复采样"的风暴——说明那个 ROM 入口**不清 T0 的 int_st**
+        // （它大概按自己的处理表分发，表里没有输入 25）。所以 T0 必须由我们自己 ack；
+        // `chain_other_irqs` 只对**别的输入**有意义。
         if (input == 25) {
-            hw.ackT0Interrupt(2000);
+            hw.ackT0Interrupt(2000); // 电平中断：不清会在 mret 后立刻重入
             return false;
         }
-        // 别人的中断：交给 ROM 的 ISR（它自己会 ack），asm 里走链式跳转路径。
+        // 别的输入：交给 ROM 的 ISR（它自己会 ack），asm 里走链式跳转路径。
         return chain_other_irqs and romMtvec() != 0;
     } else {
         const code = cause & 0x3F;
