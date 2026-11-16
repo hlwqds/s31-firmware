@@ -883,3 +883,33 @@ swap#6 in_task=false hooks=7      ← 任务拿到 CPU 后再无输出
    原始 `mepc`）。
 
 方案 3 的"改 `mepc` 再 `mret`"最省事，且不需要动寄存器；先验证 ROM 入口对 `mepc` 的依赖。
+
+### 链式转发已实现并上板（2026-11-16）：init 段明显前进，swap#6 后采样消失
+
+实现：
+
+- `trapDispatch` 返回 `bool`：`true` = 把这次中断**转发**给 ROM 的入口；
+- 入口新增链式路径：恢复 `ra`/`t1..t5`/`a0..a7`/被中断的 `sp`，`jr rom_mtvec`（`t0`/`t6` 作临时寄存器）；
+- 探针置 `trap.chain_other_irqs = true` 并保留自己的采样输入 25。
+
+板侧结果（40 s 采集）——**init 段确实前进了**，出现了此前从未见过的调用：
+
+```text
+chain-to-ROM mode, rom_mtvec=0x2f801703
+trace semphr_give a0=0x2f01e020 a1=0x00000000
+trace queue_recv a0=0x2f01d980 a1=0xffffffff
+trace recv_probe a0=0x00000000 a1=0x00000008
+swap#5 in_task=true hooks=124
+...
+calling esp_wifi_start (idle_calls=197)
+trace alloc -> queue_send -> semphr_take
+swap#6 in_task=false hooks=7
+```
+
+但 **`swap#6` 之后一次采样都没有**（2 ms 周期，40 s 内本该有上万次）——采样中断**彻底停了**。
+最可能的解释：任务拿到 CPU 后 blob **自己装了 `mtvec`**（或屏蔽了中断），我们的 handler 从此不再被调用。
+这也解释了为什么"任务不让出"在换了向量之后依然存在。
+
+下一步：确认 `mtvec` 是否被任务改写。手段：在 swap 到任务前后各读一次 `mtvec`（`sched` 侧可做），
+或在 ROM tick 的 ISR 里打点。若确实被改写，采样必须换成**不依赖 `mtvec`** 的手段
+（例如在 ROM 的 tick 处理路径上挂钩子，或用 SYSTIMER 的独立中断源在 CLIC 层抢占）。

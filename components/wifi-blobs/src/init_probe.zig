@@ -15,6 +15,7 @@ const std = @import("std");
 /// 供 start.zig 做 comptime 选择：探针构建为 true。
 pub const enabled = true;
 const board = @import("board");
+const trap = board.trap;
 const log = board.log;
 const hw = board.hw;
 const rng = board.rng;
@@ -452,19 +453,13 @@ pub fn run() noreturn {
                 log.raw("wifi-init-probe: task context ready, running it until it blocks\n");
                 // 先让任务跑一轮（它阻塞收消息 → 通过 idleHook 让回主上下文），
                 // 这样 wifi 状态机有机会推进到 start 期待的状态。
-                // 关键实验：把 `mtvec` **还给 ROM**。blob 自己在 init 里就把 TIMG0_T0 配成 tick
-                // （矩阵 25 / CLIC 25 / mie bit25）；我们的 trapEntry 会截获它、只采样不处理，
-                // 于是 ROM 的 tick ISR 从不运行、blob 永远等不到 tick。
+                // 共存实验：保留我们的 `mtvec` 做采样，但把**别人的中断链式转发**给 ROM 的入口。
+                // blob 把 TIMG0_T0 当自己的 tick；只采样不转发，ROM 的 tick ISR 永不运行。
                 const rom_mtvec_ptr = @extern(*const usize, .{ .name = "rom_mtvec" });
-                if (rom_mtvec_ptr.* != 0) {
-                    log.line("wifi-init-probe: restore ROM mtvec=0x{x:0>8}", .{rom_mtvec_ptr.*});
-                    asm volatile ("csrw mtvec, %[v]"
-                        :
-                        : [v] "r" (rom_mtvec_ptr.*),
-                        : .{ .memory = true });
-                } else {
-                    log.raw("wifi-init-probe: rom_mtvec 为 0，保持我们的 trapEntry\n");
-                }
+                log.line("wifi-init-probe: chain-to-ROM mode, rom_mtvec=0x{x:0>8}", .{rom_mtvec_ptr.*});
+                trap.chain_other_irqs = true;
+                hw.routeT0Interrupt(25); // 源 -> CPU 输入 25（不写这条 CLIC 永远没 pending）
+                hw.armT0Interrupt(2000);
                 hw.enableInterrupts();
                 in_task = true;
                 impl.current_is_task = true;

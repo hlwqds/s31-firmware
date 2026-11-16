@@ -1,8 +1,24 @@
-wifi-init-probe: trace semphr_take a0=0x2f01dfc8 a1=0xffffffff
-wifi-init-probe: trace queue_send a0=0x2f01d950 a1=0x00000006
-wifi-init-probe: trace semphr_take a0=0x2f01dff0 a1=0xffffffff
-wifi-init-probe: restore ROM mtvec=0x2f801703
-wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d70c
-wifi-init-probe: trace queue_recv a0=0x2f01d950 a1=0xffffffff
-wifi-init-probe: trace queue_recv a0=0x2f01d950 a1=0xffffffff
+wifi-init-probe: chain-to-ROM mode, rom_mtvec=0x2f801703
+irq-sample #0 input=25 mepc=0x4004914a
+wifi-init-probe: trace irq-sample #1 input=25 mepc=0x2f83efda
+semphr_give a0=0x000000irq-sample #2 input=25 mepc=0x2f83efda
+wifi-irq-sample #3 input=25 mepc=0x2f83efda
+init-probe: trace queueirq-sample #4 input=25 mepc=0x2f83efda
+_recv a0=0x2f01d980 a1=irq-sample #5 input=25 mepc=0x2f83efda
+wifi-init-pirq-sample #6 input=25 mepc=0x2f83efda
+robe: trace recv_probe irq-sample #7 input=25 mepc=0x2f812220
+a0=0x00000001 a1=0x0000irq-sample #8 input=25 mepc=0x2f83efda
+wifi-init-probe: irq-sample #9 input=25 mepc=0x2f83efda
+trace alloc a0=0x000012irq-sample #10 input=25 mepc=0x2f83efd6
+irq-sample #11 input=25 mepc=0x4004c5b8
+wifi-init-probe: trace irq-sample #12 input=25 mepc=0x2f83efda
+alloc a0=0x00000400 a1=irq-sample #13 input=25 mepc=0x2f83efda
+irq-sample #14 input=25 mepc=0x4003d280
+wifi-init-probe: trace irq-sample #15 input=25 mepc=0x2f83efda
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
 wifi-init-probe: swap#1 in_task=true hooks=106
+wifi-init-probe: swap#2 in_task=false hooks=112
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: swap#3 in_task=true hooks=115
+wifi-init-probe: swap#4 in_task=false hooks=121
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008

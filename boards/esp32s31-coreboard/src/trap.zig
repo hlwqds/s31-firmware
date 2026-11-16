@@ -106,7 +106,9 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        mv      a0, sp
         \\        call    trapDispatch
         \\
-        \\        # trapDispatch 不返回；保留完整恢复路径供后续章节复用。
+        \\        # a0 != 0 -> 链式转发到 ROM 的入口；否则正常恢复并 mret。
+        \\        bnez    a0, 2f
+        \\
         \\        lw      t0, 64(sp)
         \\        csrw    mepc, t0
         \\        lw      t0, 68(sp)
@@ -130,6 +132,29 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        lw      a7, 60(sp)
         \\        addi    sp, sp, 80
         \\        mret
+        \\
+        \\2:
+        \\        # ---- 链式转发：恢复被中断的寄存器与 sp，跳进 ROM 的 ISR ----
+        \\        # t0/t6 用作跳转的临时寄存器（被中断代码的这两个值会丢，实测无害）。
+        \\        lw      ra, 0(sp)
+        \\        lw      t1, 8(sp)
+        \\        lw      t2, 12(sp)
+        \\        lw      t3, 16(sp)
+        \\        lw      t4, 20(sp)
+        \\        lw      t5, 24(sp)
+        \\        lw      a0, 32(sp)
+        \\        lw      a1, 36(sp)
+        \\        lw      a2, 40(sp)
+        \\        lw      a3, 44(sp)
+        \\        lw      a4, 48(sp)
+        \\        lw      a5, 52(sp)
+        \\        lw      a6, 56(sp)
+        \\        lw      a7, 60(sp)
+        \\        lw      t6, 72(sp)
+        \\        la      t0, rom_mtvec
+        \\        lw      t0, 0(t0)
+        \\        mv      sp, t6
+        \\        jr      t0
     );
 }
 
@@ -138,23 +163,32 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
 pub var irq_samples: [16]usize = @splat(0);
 pub var irq_count: u32 = 0;
 
-pub export fn trapDispatch(frame: *TrapFrame) void {
+/// 非采样输入的中断是否**链式转发**给 ROM 的入口（由探针打开）。
+/// 我们的 `mtvec` 会遮蔽 bootloader/ROM 装的中断向量；blob 把 TIMG0_T0 当自己的 tick，
+/// 只采样不转发会让它永远等不到 tick。
+pub var chain_other_irqs: bool = false;
+
+pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
     if ((cause & 0x8000_0000) != 0) {
         if (irq_count < irq_samples.len) {
             irq_samples[irq_count] = frame.mepc;
             // 前 8 次直接打印：即使主上下文再也拿不回 CPU，也能看到自旋点的 PC。
-            if (irq_count < 8) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
+            if (irq_count < 32) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
             });
         }
         irq_count += 1;
-        // 清状态并重新武装：T0 是电平中断，不清就会在 mret 后立刻重入（实测中断风暴）。
-        if ((cause & 0x3F) == 25) hw.ackT0Interrupt(2000);
-        // 采样后返回：asm 的恢复路径会把 mepc/mstatus 与寄存器都还原。
-        return;
+        const input = cause & 0x3F;
+        // 采样器自己的输入：清状态并重新武装（T0 是电平中断，不清会在 mret 后立刻重入）。
+        if (input == 25) {
+            hw.ackT0Interrupt(2000);
+            return false;
+        }
+        // 别人的中断：交给 ROM 的 ISR（它自己会 ack），asm 里走链式跳转路径。
+        return chain_other_irqs and romMtvec() != 0;
     } else {
         const code = cause & 0x3F;
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
@@ -180,4 +214,11 @@ pub export fn trapDispatch(frame: *TrapFrame) void {
     hw.halt();
     log.raw("panic: halted (wfi)\n");
     hw.halt();
+    return false;
+}
+
+/// 启动汇编在覆盖 `mtvec` 前保存的 ROM 入口（`start.zig` 的 `export var rom_mtvec`）。
+fn romMtvec() usize {
+    const p = @extern(*const usize, .{ .name = "rom_mtvec" });
+    return p.*;
 }
