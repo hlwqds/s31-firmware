@@ -255,6 +255,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 非 0 -> 走回调；为 0 -> 走兜底 `jal 0x40035ea8`（被 ctx[15] 挡住）。
             const cb_slot = @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*;
             log.line("blob cb_slot[0x2f011aa8]=0x{x}", .{cb_slot});
+            if (timer_stats_hook) |f| {
+                const packed_ts = f();
+                log.line("timers fires={d} armed={d}", .{
+                    @as(u32, @truncate(packed_ts)), @as(u32, @truncate(packed_ts >> 32)),
+                });
+            }
             log.line("pp_task_hdl=0x{x} deinit_count={d} rxing={d} txing={d}", .{
                 pp_task_hdl, deinit_count, deinit_rxing, deinit_txing,
             });
@@ -349,6 +355,9 @@ pub const Handler = struct {
 
 var handlers: [64]Handler = @splat(Handler{});
 var rom_table_dumped = false;
+/// 由 probe 注入（board 模块不能直接 import wifi-blobs，见模块依赖方向）。
+/// 打包返回：低 32 位 = fires，高 32 位 = armed（避免跨模块匿名结构体类型不匹配）。
+pub var timer_stats_hook: ?*const fn () u64 = null;
 var rom_handler_calls: usize = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。

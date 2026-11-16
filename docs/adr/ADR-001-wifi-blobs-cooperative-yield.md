@@ -2888,3 +2888,27 @@ pump round 0 after:  ... recv=5 send=4 delay=1
 
 **如果继续，唯一有信息量的方向**是把 IDF 侧的 `MAC+0xCAC` 变化序列（请求 → 应答两拍）与我们这边
 逐位对照，看是"应答从未产生"还是"应答产生了但没人读"。
+
+### 软件定时器：固件里**从未接过** `serviceTimers()` —— 但 blob 也**从未 arm**
+
+先修了一个真实缺口：`serviceTimers()` 此前**只在 host tests 里被调用**，固件里没有任何让出点推进它
+⇒ blob 注册的定时器永不到期。已在 `idleHook` 里接上（正是该函数注释里写的设计）。
+
+但接上之后实测：
+
+```text
+timers fires=0 armed=0
+```
+
+调用统计：
+
+| 钩子 | 次数 |
+| --- | --- |
+| `timer_setfn` | **14** |
+| `timer_disarm` | **7** |
+| **`timer_arm` / `timer_arm_us`** | **0** |
+
+⇒ blob 在 init 期间**只注册回调、随后 disarm，从未 arm 过任何定时器**。所以 `armed=0`、`fires=0`
+是自洽的，**定时器路径不是那条缺失的消息源**（至少在自旋之前不是）。
+
+`serviceTimers()` 的接线仍然保留——它是正确的（定时器一旦被 arm 就会 fire），只是现在没有对象可推进。

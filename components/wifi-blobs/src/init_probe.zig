@@ -161,6 +161,10 @@ var task_ctx_ready: bool = false;
 /// - 在**任务**上下文里被调用（任务阻塞收消息）→ 切回主上下文。
 fn idleHook() void {
     idle_calls += 1;
+    // **推进软件定时器**：blob 通过 `_timer_setfn`/`_timer_arm` 注册的到期回调必须有人 fire。
+    // 此前 `serviceTimers()` 只在 host tests 里被调用，固件里**从未接过** ⇒ blob 的定时器永不到期
+    // ⇒ 状态机拿不到定时消息。这里在让出点推进（正是该函数注释里写的设计）。
+    impl.serviceTimers();
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
     // 每 1000 次让出打一行：区分"在乒乓（任务没答话）"与"blob 忙等（根本不进钩子）"。
     if (idle_calls % 1000 == 0) log.line("wifi-init-probe: idle_calls={d} in_task={} hooks={d}", .{
@@ -294,6 +298,7 @@ pub fn run() noreturn {
         .on_note = &traceNote,
         .on_phy_enable = &phyEnableHook,
     });
+    @import("board").trap.timer_stats_hook = &impl.timerStats;
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，

@@ -876,6 +876,14 @@ const TimerEntry = struct {
 };
 var timers: [16]TimerEntry = @splat(TimerEntry{});
 var timer_fires: u32 = 0;
+/// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。
+pub fn timerStats() u64 {
+    var n: u32 = 0;
+    for (&timers) |*t| {
+        if (t.armed) n += 1;
+    }
+    return (@as(u64, n) << 32) | @as(u64, timer_fires);
+}
 
 fn findTimer(ptimer: ?*anyopaque) ?*TimerEntry {
     for (&timers) |*t| {
