@@ -79,9 +79,21 @@ comptime {
     }
 }
 
-/// 默认配置：表指针与 magic 填好，其余保持 0（等价于 IDF 的零值化默认）。
+/// IDF `WIFI_INIT_CONFIG_DEFAULT()` 的取值（来自 `esp_wifi.h:340-366` 的宏与我们的 sdkconfig.h）。
+/// 全 0 的 config 会让 blob 以 `ESP_ERR_INVALID_ARG`（0x102）拒绝——板级实测 rc=258。
 pub fn defaults(table: *const osi.Osi) InitConfig {
     var c: InitConfig = .{};
     c.osi_funcs = table;
+    c.static_rx_buf_num = 10; // CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM
+    c.dynamic_rx_buf_num = 32; // CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM
+    c.tx_buf_type = 1; // CONFIG_ESP_WIFI_TX_BUFFER_TYPE（动态 TX）
+    c.static_tx_buf_num = 0; // 动态 TX 模式下为 0
+    c.dynamic_tx_buf_num = 32; // CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM
+    c.rx_mgmt_buf_type = 0; // CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF = 0（静态 mgmt 缓冲）
+    c.rx_mgmt_buf_num = 5; // CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF
+    c.nvs_enable = 1; // WIFI_NVS_ENABLED
+    c.beacon_max_len = 752; // WIFI_SOFTAP_BEACON_MAX_LEN
+    c.mgmt_sbuf_num = 32; // WIFI_MGMT_SBUF_NUM
+    c.espnow_max_encrypt_num = 7; // CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM
     return c;
 }

@@ -133,6 +133,8 @@ pub fn build(b: *std.Build) void {
     if (wifi_init_probe and wifi_blob_dir.len > 0) {
         const probe_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/init_probe.zig") });
         probe_mod.addImport("board", board);
+        // C 变参 shim：Zig 定义不了变参函数，驱动的报错偏偏走它们。
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
         app.root_module.addImport("wifi_init_probe", probe_mod);
     } else {
         const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";

@@ -1,11 +1,10 @@
 //! 链接期桩：让 blob 的链接闭合，同时**记录谁被调用**（R3 的探针）。
 //!
-//! 这些是 lld 报的 45 个非 ROM 符号（ROM 的 269 个已在 `linker/rom_syms.ld` 里）。
-//! 函数桩累加计数并返回 0；数据桩是零值全局——**链接能过不代表能跑**：真实适配层要按
-//! 符号类型给真变量/真实现（`est_PHY_*` 是 eFuse 标定表，零值等于"没有标定"）。
+//! 这些是 lld 报的 45 个非 ROM 符号里、还没有真实现的部分（`net80211_printf`/`pp_printf`/
+//! `mesh_printf` 已由 `printf_shim.c` 提供，故不在此列）。函数桩累加计数并返回 0；
+//! 数据桩是零值全局——**链接能过不代表能跑**：`est_PHY_*` 是 eFuse 标定表，零值等于没标定。
 
-/// 与 `names` 同序的调用计数（只有函数桩会累加）。
-pub var hits: [18]u32 = @splat(0);
+pub var hits: [15]u32 = @splat(0);
 
 pub const names = [_][]const u8{
     "esp_event_handler_register",
@@ -16,10 +15,7 @@ pub const names = [_][]const u8{
     "esp_wifi_disconnect",
     "free",
     "hexstr2bin",
-    "mesh_printf",
-    "net80211_printf",
     "phy_printf",
-    "pp_printf",
     "putchar",
     "puts",
     "rtc_clk_xtal_freq_get",
@@ -60,44 +56,32 @@ pub export fn hexstr2bin() callconv(.c) usize {
     hits[7] += 1;
     return 0;
 }
-pub export fn mesh_printf() callconv(.c) usize {
+pub export fn phy_printf() callconv(.c) usize {
     hits[8] += 1;
     return 0;
 }
-pub export fn net80211_printf() callconv(.c) usize {
+pub export fn putchar() callconv(.c) usize {
     hits[9] += 1;
     return 0;
 }
-pub export fn phy_printf() callconv(.c) usize {
+pub export fn puts() callconv(.c) usize {
     hits[10] += 1;
     return 0;
 }
-pub export fn pp_printf() callconv(.c) usize {
+pub export fn rtc_clk_xtal_freq_get() callconv(.c) usize {
     hits[11] += 1;
     return 0;
 }
-pub export fn putchar() callconv(.c) usize {
+pub export fn snprintf() callconv(.c) usize {
     hits[12] += 1;
     return 0;
 }
-pub export fn puts() callconv(.c) usize {
+pub export fn sprintf() callconv(.c) usize {
     hits[13] += 1;
     return 0;
 }
-pub export fn rtc_clk_xtal_freq_get() callconv(.c) usize {
-    hits[14] += 1;
-    return 0;
-}
-pub export fn snprintf() callconv(.c) usize {
-    hits[15] += 1;
-    return 0;
-}
-pub export fn sprintf() callconv(.c) usize {
-    hits[16] += 1;
-    return 0;
-}
 pub export fn strtok() callconv(.c) usize {
-    hits[17] += 1;
+    hits[14] += 1;
     return 0;
 }
 

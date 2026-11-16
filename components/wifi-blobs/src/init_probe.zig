@@ -40,6 +40,15 @@ fn macHook() [6]u8 {
     return .{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
 }
 
+/// C shim 的回调：把驱动自己的报错原样打到串口（只有格式串，变参不展开）。
+pub export fn s31_printf_hook(msg: ?[*:0]const u8) void {
+    const m = msg orelse return;
+    log.line("wifi-blob: {s}", .{std.mem.span(m)});
+}
+
+/// `_log_write` 的 C 实现（变参），取地址填进表。
+const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
+
 pub fn run() noreturn {
     log.raw("wifi-init-probe: begin\n");
 
@@ -55,6 +64,7 @@ pub fn run() noreturn {
 
     // 3) 建表并装进 ROM 槽位（`g_osi_funcs_p` = 0x2f07ff44）
     var table = impl.makeTable();
+    table._log_write = s31_log_write; // C 变参 shim：能看到驱动自己的报错
     const prev = osi.install(&table);
     log.line("wifi-init-probe: osi installed prev=0x{x:0>8}", .{if (prev) |p| @intFromPtr(p) else 0});
 
