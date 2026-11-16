@@ -476,6 +476,53 @@ fn shellTaskGetMaxPriority() callconv(.c) i32 {
     return 8;
 }
 
+/// 事件组：位集合。`_event_group_create` 必须返回**非空**指针——桩返回 0 时，
+/// 驱动随后的 `_event_group_set_bits` 会解引用 null+偏移（实测 mtval=0xc 的 load access fault）。
+pub const EventGroup = struct {
+    bits: u32 = 0,
+};
+
+fn shellEventGroupCreate() callconv(.c) ?*anyopaque {
+    const mem = arena_state.alloc(@sizeOf(EventGroup), @alignOf(EventGroup)) orelse return null;
+    const g: *EventGroup = @ptrCast(@alignCast(mem));
+    g.* = .{};
+    return @ptrCast(g);
+}
+
+fn shellEventGroupDelete(p: ?*anyopaque) callconv(.c) void {
+    shellSemphrDelete(p);
+}
+
+fn shellEventGroupSetBits(p: ?*anyopaque, bits: u32) callconv(.c) c_int {
+    const g: *EventGroup = @ptrCast(@alignCast(p orelse return 0));
+    g.bits |= bits;
+    return 1;
+}
+
+fn shellEventGroupClearBits(p: ?*anyopaque, bits: u32) callconv(.c) c_int {
+    const g: *EventGroup = @ptrCast(@alignCast(p orelse return 0));
+    const prev = g.bits;
+    g.bits &= ~bits;
+    return @bitCast(prev);
+}
+
+/// 单线程下没有"等待"：返回当前位（等价于立即超时），不阻塞。
+fn shellEventGroupWaitBits(
+    p: ?*anyopaque,
+    bits: u32,
+    clear_on_exit: c_int,
+    wait_all: c_int,
+    blocking: u32,
+) callconv(.c) u32 {
+    const g: *EventGroup = @ptrCast(@alignCast(p orelse return 0));
+    if (blocking == time_blocking) blocking_refused += 1;
+    const want = if (wait_all != 0) bits else (g.bits & bits);
+    const got = g.bits & bits;
+    const ok = if (wait_all != 0) (got == bits) else (want != 0);
+    if (ok and clear_on_exit != 0) g.bits &= ~bits;
+    return got;
+}
+
 /// 极简"任务"：没有调度器，但 `xTaskCreate` 的返回值是 **pdPASS=1 / pdFAIL=0**（FreeRTOS 约定），
 /// 通用桩返回 0 会被当成"创建失败"，`ic_create_wifi_task` 于是报 INVALID_ARG。
 /// 这里记下入口与参数、返回 1；主循环需要时自己调用一次（协作式，不是抢占式）。
@@ -620,6 +667,11 @@ pub fn makeTable() osi.Osi {
     t._esp_timer_get_time = @ptrCast(&shellEspTimerGetTime);
     t._log_timestamp = @ptrCast(&shellLogTimestamp);
     t._read_mac = @ptrCast(&shellReadMac);
+    t._event_group_create = @ptrCast(&shellEventGroupCreate);
+    t._event_group_delete = @ptrCast(&shellEventGroupDelete);
+    t._event_group_set_bits = @ptrCast(&shellEventGroupSetBits);
+    t._event_group_clear_bits = @ptrCast(&shellEventGroupClearBits);
+    t._event_group_wait_bits = @ptrCast(&shellEventGroupWaitBits);
     t._task_create_pinned_to_core = @ptrCast(&shellTaskCreatePinned);
     t._task_create = @ptrCast(&shellTaskCreate);
     t._set_intr = @ptrCast(&shellSetIntr);
