@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: E2E profile（min/net/wifi）
+        description: E2E profile（net-wire 为发布前门禁；min/net/wifi 仅冒烟）
         required: false
-        default: net
+        default: net-wire
+      gate:
+        description: 走发布前门禁（host 预置 → gate-board.sh → 收尾）；关闭则只跑裸 e2e
+        type: boolean
+        required: false
+        default: true
 
 env:
   ZIG_VERSION: "0.17.1"
@@ -85,7 +90,10 @@ jobs:
 
   board:
     # 自托管 runner（标签 self-hosted, s31），不参与合并门禁；手动触发。
-    # runner 前置：zig 0.17.1 在 PATH、idf-bootstrap/build 已生成、板子在 /dev/ttyUSB1。
+    # runner 前置：zig 0.17.1 在 PATH、idf-bootstrap/build 已生成、板子在 /dev/ttyUSB1
+    # （或用 BOARD 指定，例如重新枚举后的 /dev/ttyUSB0）、sudo 免密。
+    # 默认走 scripts/gate-board.sh：host 预置 + 删旧日志 + 证据断言 + junit skipped 判失败，
+    # 与本地发布前门禁同一套入口（R4.1）。
     name: board self-check (manual)
     if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, s31]
@@ -102,7 +110,17 @@ jobs:
               && idf.py --preview set-target esp32s31 \
               && idf.py build )
           fi
-      - name: board e2e (build + flash + capture + assert)
+      - name: board gate (host prep → gate-board.sh → cleanup)
+        if: ${{ github.event.inputs.gate != 'false' }}
+        env:
+          PROFILE: ${{ github.event.inputs.profile }}
+        run: |
+          set -euo pipefail
+          sudo scripts/host-prep-wire.sh up
+          trap 'sudo scripts/host-prep-wire.sh down' EXIT
+          scripts/gate-board.sh
+      - name: board e2e (raw, gate disabled)
+        if: ${{ github.event.inputs.gate == 'false' }}
         run: |
           python3 tests/e2e/run_e2e.py --board --profile "${{ github.event.inputs.profile }}" \
             --junit reports/e2e-board.xml

@@ -8,6 +8,10 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **CI 的 board job 走发布前门禁**（R4.1 的另一半）：`workflow_dispatch` 默认
+  `profile=net-wire`、`gate=true`，步骤为 `host-prep-wire.sh up` → `gate-board.sh` →
+  `trap` 收尾 `down`，与本地同一套脚本；`gate=false` 保留裸 e2e 冒烟路径。
+  之前该 job 既不跑 host 预置、`profile` 默认还是 `net`，缺 DHCP 时退化成 skip 且 exit 0。
 - **`net-wire` 的 TCP 改由 socket 层驱动**（R2.2d）：`components/net-sockets/src/api.zig` 提供
   统一入口，`firmware/build.zig` 给 wire 组接上 `net_sockets`；探针用 `Table.connect()` 建客户端、
   `tcp.Conn` 保持线上真相，SYN-ACK 学 `peer_iss` 后按偏移去重镜像，应用 64 B 经

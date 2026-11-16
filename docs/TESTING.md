@@ -59,6 +59,10 @@ sudo scripts/host-prep-wire.sh down   # 收尾：撤销规则与监听器
 `--check` 模式在 `scripts/check-all.sh` 里，matrix 与已提交日志漂移即失败。W4（无 DHCP 降级）
 要的是另一个场景（`logs/net-wire-no-dhcp.log`），故意保持人工维护，不用正常场景的行去填。
 
+CI 上的同一套入口：`ci.yml` 的 `board` job（`workflow_dispatch`，自托管 runner）默认
+`profile=net-wire`、`gate=true`，执行 `sudo scripts/host-prep-wire.sh up` → `scripts/gate-board.sh`
+→ `trap` 收尾 `down`；`gate=false` 时才退回裸 `run_e2e.py --board`（只做冒烟）。
+
 `gate-board.sh` 自己会删掉上一轮的 `logs/e2e-net-wire-boot.log`（证据只能来自本轮），
 `skipped/no-dhcp-server` 在门禁里算失败，前置缺失时退出码 2 并打印修复命令。
 NixOS 上需要 `env -u LD_LIBRARY_PATH`（脚本已内置）和带 pyserial 的解释器（`PYTHON=` 指定）。
