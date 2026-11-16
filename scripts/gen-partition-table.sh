@@ -21,7 +21,7 @@ PY=${PYTHON:-python3}
 
 if [ "${1:-}" = "--check" ]; then
     tmp=$(mktemp)
-    env -u LD_LIBRARY_PATH "$PY" "$GEN" "$CSV" "$tmp" >/dev/null
+    env -u LD_LIBRARY_PATH "$PY" "$GEN" -q --offset 0x8000 --primary-bootloader-offset 0x1000 "$CSV" "$tmp" >/dev/null
     if [ -f "$OUT" ] && cmp -s "$tmp" "$OUT"; then
         echo "partition table: OK（$OUT 与 $CSV 一致）"
         rm -f "$tmp"
@@ -33,6 +33,6 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 mkdir -p "$(dirname "$OUT")"
-env -u LD_LIBRARY_PATH "$PY" "$GEN" "$CSV" "$OUT"
+env -u LD_LIBRARY_PATH "$PY" "$GEN" -q --offset 0x8000 --primary-bootloader-offset 0x1000 "$CSV" "$OUT"
 echo "written: $OUT"
 env -u LD_LIBRARY_PATH "$PY" "$GEN" "$OUT" | head -6

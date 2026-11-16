@@ -12,9 +12,9 @@
 # 本章不启用 PSRAM：otadata 扇区副本与统计样本全在内部 SRAM
 # （链接脚本也只映射 SRAM）。PSRAM 与 cache 一致性不在本章范围内。
 #
-# 分区表刻意保持 single-app-large：本章**不写 flash**，A/B 槽位是内存模型
-# （见 src/ota.zig）。真做 OTA 时要换成带 otadata + ota_0/ota_1 的自定义
-# 分区表，那是 ch09（flash/分区表）的题目，本章不代填。
+# 分区表由仓库的 partitions.csv 定义（CONFIG_PARTITION_TABLE_CUSTOM），内容与
+# single-app-large 的默认表逐字节一致。真做 OTA 时在**那张 csv** 里加
+# otadata + ota_0/ota_1（偏移按现有 factory 之后顺排），不要另起一份表。
 #
 # 控制台保持默认：应用侧 TX 走 ROM 的 esp_rom_printf，恒定输出到 UART0
 # （GPIO58/59）、115200 8N1。
