@@ -1009,3 +1009,16 @@ irq-sample #2304 input=25 mepc=0x2f009206
 
 下一步的具体动作：在调 `esp_wifi_start` 之前，按 IDF 的 PHY 初始化顺序把 `MODEM_LPCON` 的
 PHY 时钟门打开（对照 `phy_init`/`esp_phy_enable` 的寄存器序列），再看这三位是否会自清。
+
+### 根因候选（强）：`_phy_enable` 在我们这边是**空桩**（2026-11-16）
+
+`components/wifi-blobs/src/osi_stubs.zig:300` 把 osi 表的 `_phy_enable` 直接指向 `stub8`（空函数）。
+也就是说 blob 通过 osi 表请求"打开 PHY"时，我们**什么都没做**——PHY 的时钟/电源自然不会起来，
+`MODEM_BASE+0x4CAC` 那些握手位也就永远不会自清。这与自旋语义完全吻合。
+
+要验证/修复，需要把 `_phy_enable` 换成真实实现：走 `register_chipv7_phy(...)`（我们已有可调用的
+签名，`init_probe.zig:410`）与 IDF `esp_phy_enable` 的时钟门序列（`MODEM_LPCON`），
+而不是空桩。
+
+顺序建议：先把 `_phy_enable` 真实化 → 重跑探针 → 观察 `0x20104CAC` 的 [15:13] 是否自清、
+`esp_wifi_start` 是否返回。这一条比继续追调度器/中断更值得先做。
