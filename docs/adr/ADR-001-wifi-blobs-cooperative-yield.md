@@ -3010,3 +3010,26 @@ PROBE3 mac_st=0x00000000
 
 **结论（重要）**：跨构建**不能**按地址对比 blob 的静态数据；能对比的只有**硬件寄存器**
 （`MAC_ST`、`CLK_CONF1`、`ICG` 等）与 **ROM 表**（ROM 地址两边一致）。已回滚该 dump。
+
+### IDF 侧 ROM 表读数：**entry 9 也是空的** ⇒ 表不是 tick handler 的所在
+
+在 IDF 的 `wifi_init.c` 里于 `esp_wifi_init_internal` 之后扫 ROM 表（`0x2f07f070`，32 项）：
+
+```text
+ROMTBL[01] fn=0x00000020  ROMTBL[08] fn=0x400548c4  ROMTBL[10] fn=0x00000020
+ROMTBL[17] fn=0x400548b4  ROMTBL[19] fn=0x00000020  ROMTBL[22] fn=0x2f01af18
+ROMTBL[26] fn=0x400548a4  ROMTBL[28] fn=0x00000018  ROMTBL[29] fn=0x2f07afc4
+ROMTBL[31] fn=0x2f07f14c
+ROMTBL-scan done (entry9 fn=0x00000000 arg=0x00000000)     ← **entry 9 空**
+ROMGLOB g_timer_func=0x400414e4 pp_task_hdl=0x2f07ec20 mac_st=0x00000000
+```
+
+（`0x00000020` / `0x00000018` 显然不是函数指针，说明这一段在 IDF 上下文里也混着别的数据。）
+
+**结论**：
+1. **`entry 9` 在 IDF 里同样为空** ⇒ "IDF 把 Wi-Fi tick handler 装在 ROM 表 entry 9"这个假设**被否掉**；
+   ROM 表不是 tick handler 的存放处（两边都不是）。
+2. `g_timer_func`（IDF `0x400414e4` vs 我们 `0x4003012e`）与 `pp_task_hdl`（IDF `0x2f07ec20` vs 我们
+   `0x2f01ce60`）在两边不同，是因为**两边链接的是不同的 blob 构建**——这类 blob 内部指针不能跨构建对比
+   （同上一节的方法论更正）。
+3. 仍然可跨构建对比的硬事实只有：**IDF 的 init 把 `MAC_ST` 清成 0，我们的没有**。
