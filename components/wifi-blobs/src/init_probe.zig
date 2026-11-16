@@ -415,6 +415,13 @@ pub fn run() noreturn {
                     } else {
                         log.raw("wifi-init-probe: 0x2f01c9e4 不在 arena 里\n");
                     }
+                    // 被调地址稳定等于 `cal_data - 12`：把附近的静态对象都打出来对账。
+                    log.line("wifi-init-probe: magic_pre=0x{x} magic_post=0x{x} cal_data=0x{x} cal_data-12=0x{x}", .{
+                        @intFromPtr(&magic_pre),
+                        @intFromPtr(&magic_post),
+                        @intFromPtr(&cal_data),
+                        @intFromPtr(&cal_data) - 12,
+                    });
                     log.line("wifi-init-probe: cal_data=0x{x:0>8} init_params=0x{x:0>8} wrapper=0x{x:0>8} inner=0x{x:0>8}", .{
                         @intFromPtr(&cal_data),
                         @intFromPtr(&phy_init_data.params),
