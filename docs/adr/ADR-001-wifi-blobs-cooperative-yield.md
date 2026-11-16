@@ -1287,3 +1287,17 @@ irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
 **自旋不变**。至此四个候选全部被实验排除：标定模式、`_phy_enable` 空桩、`_timer_*` 空桩、
 `wifi_rf_phy_enable` 未调用。剩下唯一没做的一步就是**给 `0x2f00254e` 命名**（deinit 发起者）并
 查清"谁在 start 期间触发 MAC deinit"——`g_mac_deinit_count` 的调用者。
+
+### 给 `0x2f00254e` 命名的可行方法（字节匹配**不可行**，已实测）
+
+试过两种字节匹配，都失败，原因值得记住：
+
+1. 直接在各 `.o` 的 `.iram_blobs` 里搜 `0x2f00254e` 处的字节 → 无命中；
+2. 把 `libphy/libcoexist/libmesh/libespnow` 全部 `ar x` 解开（49 个成员）再搜 → 仍无命中。
+
+原因是 **重定位**：链接后 ELF 里的 `lui a5, 0x2f001` 是重定位结果，而 `.o` 里的立即数是 0
+（skill §7 记过这条）。所以字节模式匹配天然失效。
+
+可行替代：按**段内偏移**映射。`0x2f00254e − 0x2f0000b0 = 0x249E`，只要按链接顺序累加各成员的
+`.iram_blobs` 大小（`objdump -h <member>.o`），落到 `0x249E` 的那个成员就是它；再用
+`riscv32-esp-elf-nm` 在该成员里找 `0x249E − 成员起始偏移` 最近的符号即可。
