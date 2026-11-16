@@ -151,6 +151,8 @@ pub export fn trapDispatch(frame: *TrapFrame) void {
             });
         }
         irq_count += 1;
+        // 清状态并重新武装：T0 是电平中断，不清就会在 mret 后立刻重入（实测中断风暴）。
+        if ((cause & 0x3F) == 25) hw.ackT0Interrupt(2000);
         // 采样后返回：asm 的恢复路径会把 mepc/mstatus 与寄存器都还原。
         return;
     } else {

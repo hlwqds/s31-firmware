@@ -734,9 +734,31 @@ ch15/ch17 实测，1 MHz），所以最省事的路径是：
   但**仍然没有 `irq-sample`**（CPU 没有取这个中断）。
 
 `mtvec` 是**直接模式**（低 2 位 = 0，见 `firmware/src/start.zig:170`），所以向量模式不是原因。
-剩下的嫌疑集中在 CLIC 一侧：输入的优先级/阈值编码（`CLIC_INT_CTL` 的 [31:24] 与
-`CLIC_INT_THRESH`）、或 `CLIC_INT_ATTR` 的触发/模式位与 S31 的实际编码不一致。下一步用读回值
-逐位对照 `soc/esp32s31/include/soc/clic_reg.h`。
+**根因找到了：缺中断矩阵路由。** `ETS_*_INTR_SOURCE` 是**源号**，不是 CPU 输入号；源必须先经中断
+矩阵映射到某个 CPU 输入。S31 的寄存器是
+`INTERRUPT_CORE0_TIMERGRP0_T0_INTR_MAP_REG = 0x2058_5000 + 0x64`（低 6 位 = CPU 输入号）。
+补上 `hw.routeT0Interrupt(25)` 之后，**采样立刻工作**：
+
+```text
+irq-sample #0 input=25 mepc=0x400490ca
+... （8 次，PC 完全一致）
+```
+
+反汇编 `0x400490ca` 附近很说明问题：
+
+```asm
+400490be  sw   a1, 100(s7)     # 0x10801064 = CLIC ctrl for input 25
+400490c2  lui  a0, 0x2000
+400490c6  csrs mie, a0         # mie bit 25
+400490ca  auipc ra, 0x1
+400490ce  jalr -280(ra)        # → 0x40049fb2
+```
+
+也就是说 **blob 自己就在配置 TIMG0_T0（CLIC 输入 25 + `mie` bit25）**——它把这颗定时器当自己的 tick
+中断用。我们的采样器正好落在它的配置代码上。
+
+另外确认了一件事：**T0 是电平中断，ISR 必须清 `int_clr`（`timg0+0x78` bit0）并重设 alarm**，
+否则 `mret` 后会立刻重入（第一版没清，看到的是中断风暴）。
 
 **输入号**（`components/soc/esp32s31/include/soc/interrupts.h` 的枚举顺序，从 0 起）：
 

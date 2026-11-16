@@ -177,6 +177,24 @@ const clic_ctl_base: usize = 0x1080_1000;
 
 /// 武装 TIMG0 T0 的周期中断（用于中断采样：任务不让出时抢回 CPU）。
 /// 1 MHz 计数 → `period_us` 微秒。
+/// 清 TIMG0 T0 的中断状态并重新设下一次 alarm。
+/// **必须做**：T0 是电平中断，不清状态会在 `mret` 后立刻再次进入 ISR（实测中断风暴）。
+pub fn ackT0Interrupt(period_us: u32) void {
+    writeReg(timg0 + 0x78, 1); // int_clr, bit0 = T0
+    const now = nowUs();
+    const alarm = now + period_us;
+    writeReg(t0alarmlo, @intCast(alarm & 0xFFFF_FFFF));
+    writeReg(t0alarmhi, @intCast((alarm >> 32) & 0xFFFF));
+    writeReg(t0config, readReg(t0config) | (1 << 10)); // 重新使能 alarm
+}
+
+/// 把 TIMG0_T0 中断源路由到 CPU 输入 `input`（S31 的中断矩阵：
+/// `INTERRUPT_CORE0_TIMERGRP0_T0_INTR_MAP_REG` = 0x2058_5000 + 0x64，低 6 位是 CPU 输入号）。
+/// **不做这一步，CLIC 里永远看不到 pending**（源号 ≠ 输入号）。
+pub fn routeT0Interrupt(input: usize) void {
+    writeReg(0x2058_5000 + 0x64, @intCast(input & 0x3F));
+}
+
 pub fn armT0Interrupt(period_us: u32) void {
     // 关键：T0 的 alarm 必须**显式使能**（config 的 bit10），否则计数到点也不会触发。
     writeReg(t0config, readReg(t0config) | (1 << 10));
@@ -191,6 +209,21 @@ pub fn armT0Interrupt(period_us: u32) void {
         :
         : [m] "r" (@as(usize, 1) << tg0_t0_int_source),
         : .{ .memory = true });
+}
+
+/// 使能某个 CLIC 输入的 IE（bit8）。
+pub fn enableClicInput(i: usize) void {
+    writeReg(clic_ctl_base + i * 4, readReg(clic_ctl_base + i * 4) | (1 << 8));
+}
+
+/// 扫描 CLIC 各输入，返回第一个 pending（IP 位）非零的输入号；没有则返回 null。
+/// 用途：找出外设中断源实际被路由到的 CPU 输入号（`ETS_*_INTR_SOURCE` 是**源**号，不是输入号）。
+pub fn findPendingClicInput() ?usize {
+    var i: usize = 0;
+    while (i < 64) : (i += 1) {
+        if ((readReg(clic_ctl_base + i * 4) & 1) != 0) return i;
+    }
+    return null;
 }
 
 /// 读回采样中断的武装状态（诊断用）：ena/alarmlo/alarmhi/clic/mie，另加 mstatus 与 int_st。

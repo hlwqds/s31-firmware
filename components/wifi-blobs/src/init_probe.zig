@@ -455,12 +455,23 @@ pub fn run() noreturn {
                 // 打开全局中断并武装 TIMG0 T0 周期中断：任务一旦在 blob 里不让出，
                 // 只有中断能抢回 CPU 采样 PC（trap 的中断分支已改为"采样后返回"）。
                 hw.enableInterrupts();
+                hw.routeT0Interrupt(hw.tg0_t0_int_source); // 源 25 → CPU 输入 25
                 hw.armT0Interrupt(2000); // 2 ms
                 const t1 = hw.nowUs();
                 var spin: u32 = 0;
                 while (spin < 200_000) : (spin += 1) {}
                 const t2 = hw.nowUs();
                 log.line("wifi-init-probe: timer {d} -> {d} (delta={d})", .{ t1, t2, t2 -% t1 });
+                // 扫描 CLIC 的 pending 输入：找到外设中断真正被路由到的 CPU 输入号。
+                var scan: u32 = 0;
+                while (scan < 3) : (scan += 1) {
+                    if (hw.findPendingClicInput()) |inp| {
+                        log.line("wifi-init-probe: CLIC pending input={d} (scan {d})", .{ inp, scan });
+                        // 直接使能这个输入的 IE（bit8），看 CPU 是否取中断。
+                        hw.enableClicInput(inp);
+                        break;
+                    }
+                }
                 const st = hw.samplerIrqState();
                 log.line("wifi-init-probe: irq ena=0x{x} alarm=0x{x}:0x{x} clic=0x{x} mie=0x{x} mstatus=0x{x} int_st=0x{x}", .{
                     st[0], st[2], st[1], st[3], st[4], st[5], st[6],
