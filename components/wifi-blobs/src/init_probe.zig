@@ -51,6 +51,23 @@ var rx_frames: u32 = 0;
 var static_stack: [16 * 1024]u8 align(16) = undefined;
 /// PHY 标定数据（`esp_phy_calibration_data_t.opaque[1894]`），由 `register_chipv7_phy` 填充。
 var cal_data: [1894]u8 align(4) = @splat(0xA5);
+
+/// 实验开关：是否在 init 阶段就注册 PHY。false = 交给 `_phy_enable`（IDF 的真实顺序）。
+const probe_register_phy_at_init = false;
+
+/// `_phy_enable(modem)` 的真实实现：首次调用做 `register_chipv7_phy`（IDF 的
+/// `esp_phy_enable` → `esp_phy_load_cal_and_init` 就是这个时机）。
+var phy_registered = false;
+fn phyEnableHook(modem: u32) usize {
+    if (phy_registered) return 0;
+    const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{
+        .name = "register_chipv7_phy",
+    });
+    const rc = register_phy(&phy_init_data.params, &cal_data, 2); // PHY_RF_CAL_FULL
+    phy_registered = true;
+    log.line("wifi-init-probe: _phy_enable(modem={d}) -> register_chipv7_phy rc={d}", .{ modem, rc });
+    return 0;
+}
 /// `phy_init_magic_pre`：必须紧贴在 `phy_init_data.params` 之前（IDF 的布局约定）。
 var magic_pre: [8]u8 = @splat(0);
 /// `phy_init_magic_post`：紧贴之后。
@@ -246,6 +263,7 @@ pub fn run() noreturn {
         .on_budget_exhausted = &budgetExhaustedHook,
         .on_idle = &idleHook,
         .on_note = &traceNote,
+        .on_phy_enable = &phyEnableHook,
     });
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
@@ -456,11 +474,15 @@ pub fn run() noreturn {
                     // 实验：改成 PHY_RF_CAL_FULL=2（不是 1=NONE）。当初跳过标定是因为中断关着、
                     // 怕标定路径要等 PHY 应答；现在中断已开，且 blob 很可能正是靠标定完成才清
                     // MAC+0xAC 的 [15:13] 握手位。
-                    const rc_phy = register_phy(&phy_init_data.params, &cal_data, 2); // 2 = PHY_RF_CAL_FULL
-                    log.line("wifi-init-probe: register_chipv7_phy(mode=FULL) rc={d} (cal_data {d} B)", .{
-                        rc_phy,
-                        @as(usize, 1894),
-                    });
+                    if (probe_register_phy_at_init) {
+                        const rc_phy = register_phy(&phy_init_data.params, &cal_data, 2); // 2 = PHY_RF_CAL_FULL
+                        log.line("wifi-init-probe: register_chipv7_phy(mode=FULL) rc={d} (cal_data {d} B)", .{
+                            rc_phy,
+                            @as(usize, 1894),
+                        });
+                    } else {
+                        log.raw("wifi-init-probe: register_chipv7_phy SKIPPED at init (交给 _phy_enable)\n");
+                    }
                 }
 
                 log.line("wifi-init-probe: starting task[0] entry=0x{x:0>8} arg=0x{x:0>8} on its own stack", .{

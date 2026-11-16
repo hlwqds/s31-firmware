@@ -447,6 +447,9 @@ pub const Hooks = struct {
     /// "阻塞"只能是"把控制权让给主循环去做事（收包/发送），再回来查一次"。
     /// 探针用它证明任务体存活且会让出；生产用它跑主循环的收发。
     on_idle: ?*const fn () void = null,
+    /// `_phy_enable(modem)` 的**真实实现**：由探针注入（它才有 phy_init_data/cal_data）。
+    /// 返回 0 表示成功；非 0 会被忽略（钩子只做副作用）。
+    on_phy_enable: ?*const fn (modem: u32) usize = null,
     /// 每次钩子调用都回调（探针用它逐行追踪某个阶段的调用序列，带上限）。
     on_note: ?*const fn (id: u8, a0: usize, a1: usize) void = null,
     /// 钩子调用预算耗尽时回调（探针用它打印现场并停机）。
@@ -886,9 +889,12 @@ pub fn serviceTimers() void {
 /// 那三位永不清 → 任务恒定自旋。
 var phy_enable_calls: u32 = 0;
 
-fn shellPhyEnable() callconv(.c) usize {
+fn shellPhyEnable(modem: u32) callconv(.c) usize {
     phy_enable_calls +%= 1;
-    note(15, phy_enable_calls, 0);
+    note(15, modem, phy_enable_calls);
+    // IDF 的顺序：`esp_phy_enable(modem)` 内部才做"共用时钟 → phy_module_enable → 首次标定"。
+    // 探针注入的实现负责首次 `register_chipv7_phy`（它持有 phy_init_data/cal_data）。
+    if (hooks.on_phy_enable) |f| _ = f(modem);
     // 重申 PHY 时钟位（MODEM_SYSCON.CLK_CONF1）与两个 FORCE_ON 寄存器，
     // 序列与探针的 init 完全一致；幂等，重复调用无害。
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);

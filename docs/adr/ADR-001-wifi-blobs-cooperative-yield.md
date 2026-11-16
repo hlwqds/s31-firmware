@@ -1872,3 +1872,22 @@ trace timer_disarm
 
 **下一步**：把 PHY 注册/标定**移进 `_phy_enable`**（IDF 的顺序是 `esp_phy_enable` 内部才
 `esp_phy_load_cal_and_init()` → `register_chipv7_phy`），而不是像现在这样在探针 init 阶段提前调。
+
+### 把 PHY 注册移进 `_phy_enable`（IDF 的顺序）：仍然自旋
+
+按 IDF 的真实顺序改造：探针 **init 阶段不再**调 `register_chipv7_phy`
+（`probe_register_phy_at_init = false`），改由 `_phy_enable(modem)` 钩子在**首次调用**时做
+（新增 `Hooks.on_phy_enable` 注入点，探针持有 `phy_init_data`/`cal_data`）。
+
+上板（pb148）：
+
+```text
+wifi-init-probe: register_chipv7_phy SKIPPED at init (交给 _phy_enable)
+wifi-init-probe: calling wifi_rf_phy_enable()
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0
+trace ... wifi_clk_en → phy_enable → coex_enable → wifi_reset_mac → event_post(0x2b)
+irq-sample #19456 .. mepc=0x2f009206 mac=0x00fff000
+```
+
+注册在钩子里成功（rc=0），**自旋照旧**。所以"PHY 注册的时机"不是卡点原因——候选 2 再次排除
+（这次是在**正确的顺序**下排除的，不再受"修桩前流程没走到"的影响）。
