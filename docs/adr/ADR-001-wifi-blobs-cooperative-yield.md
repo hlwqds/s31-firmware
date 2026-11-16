@@ -3140,3 +3140,20 @@ IDF 的逐域 setter 写的就是 `clk_conf_power_st.clk_*_st_map`（`modem_sysc
 
 **待查的异常**：我们写 `0x64646400` 读回 0——可能是**写时机**（modem APB 时钟未开）或值不被接受，
 需要在写入点前后各读一次来定。
+
+### S31 上两个"IDF 包装步骤"都是编译期空操作（已核对 soc_caps）
+
+| 步骤 | 守卫宏 | S31 | 结论 |
+| --- | --- | --- | --- |
+| `esp_wifi_bt_power_domain_on()` 的函数体 | `SOC_PM_MODEM_PD_BY_SW` | **未定义** | 空操作 |
+| `esp_clk_tree_enable_src(SOC_MOD_CLK_MODEM_APB, true)` | `SOC_CLOCK_TREE_MANAGEMENT_SUPPORTED` | **未定义**（只有 esp32c5 有） | 空操作 |
+
+⇒ 所以 IDF 在 S31 上**不会**通过"电源域上电"或"时钟树管理"去动 modem 时钟；它能做的只有
+`modem_clock_module_icg_map_init_all()`（逐域 ICG）+ `modem_clock_device_control()`（CLK_CONF1 依赖位）
++ 把控制权交给 blob。
+
+⇒ 这也把"写 `0x64646400` 读回 0"的候选缩小到：**写时机/顺序**（ICG map 与 CLK_CONF1 的先后）
+或值本身不被接受，而不是"少开了某个时钟源"。
+
+⚠ 因此 **"复位脉冲不是机制"这条要标为待重验**：它建立在"对 `MODEM_SYSCON` 的写能生效"这个前提上，
+而那个前提本身还没被验证（我们从未逐域读回确认）。
