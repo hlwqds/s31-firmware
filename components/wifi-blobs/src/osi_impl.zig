@@ -112,15 +112,53 @@ pub const Arena = struct {
     }
 };
 
-/// 信号量：单线程 + 关中断，所以"阻塞等待"退化成"立刻失败"。
+/// `OSI_FUNCS_TIME_BLOCKING`（`wifi_os_adapter.h:23`）：IDF 里表示"无限等"。
+pub const time_blocking: u32 = 0xFFFF_FFFF;
+
+/// 观测用计数器：被拒绝的无限阻塞请求。单线程 + 关中断下阻塞=死锁，
+/// 所以这里**有意偏离** IDF 语义：返回失败而不是挂住，但要能被看见。
+pub var blocking_refused: u32 = 0;
+/// 被丢弃的事件（没有事件循环时 `_event_post` 无法投递）。
+pub var events_dropped: u32 = 0;
+
+/// 信号量：返回值是 **FreeRTOS 风格**（成功=1、失败/超时=0），与 `esp_adapter.c` 一致。
 pub const Semphr = struct {
     count: u32,
     max: u32,
+
+    /// `blocking == time_blocking` 时 IDF 会无限等；我们拒绝并计数（见 `blocking_refused`）。
+    pub fn take(self: *Semphr, blocking: u32) i32 {
+        if (self.count > 0) {
+            self.count -= 1;
+            return 1;
+        }
+        if (blocking == time_blocking) blocking_refused += 1;
+        return 0;
+    }
+
+    pub fn give(self: *Semphr) i32 {
+        if (self.count < self.max) {
+            self.count += 1;
+            return 1;
+        }
+        return 0;
+    }
 };
 
 pub const Mutex = struct {
     /// 单线程下没有竞争者；留着字段是为了将来接中断/任务。
+    /// 返回值按 IDF 的 `xSemaphoreTakeRecursive` 约定：成功=1。
     locked: bool = false,
+
+    pub fn lock(self: *Mutex) i32 {
+        self.locked = true;
+        return 1;
+    }
+
+    pub fn unlock(self: *Mutex) i32 {
+        self.locked = false;
+        return 1;
+    }
 };
 
 /// 定长元素队列（环形）。`item_size` 由调用方给，载荷紧跟在结构体后面。
@@ -139,21 +177,56 @@ pub const Queue = struct {
         return @sizeOf(Queue) + item_size * cap;
     }
 
-    pub fn send(self: *Queue, item: []const u8) bool {
-        if (self.count == self.cap or item.len != self.item_size) return false;
+    /// 队列方向常量（`wifi_os_adapter.h:25-27`）。
+    pub const send_front: u32 = 0;
+    pub const send_back: u32 = 1;
+    pub const send_overwrite: u32 = 2;
+
+    /// 返回值 **FreeRTOS 风格**：成功=1、满/尺寸不符=0。
+    pub fn send(self: *Queue, item: []const u8, blocking: u32) i32 {
+        if (item.len != self.item_size) return 0;
+        if (self.count == self.cap) {
+            if (blocking == time_blocking) blocking_refused += 1;
+            return 0;
+        }
         const b = self.buf();
         @memcpy(b[self.tail * self.item_size ..][0..self.item_size], item);
         self.tail = (self.tail + 1) % self.cap;
         self.count += 1;
-        return true;
+        return 1;
     }
 
-    pub fn recv(self: *Queue, out: []u8) bool {
-        if (self.count == 0 or out.len != self.item_size) return false;
+    /// `send_to_front`：插到队首（IDF 的 `queueSEND_TO_FRONT`）。
+    pub fn sendFront(self: *Queue, item: []const u8) i32 {
+        if (item.len != self.item_size or self.count == self.cap) return 0;
+        const b = self.buf();
+        self.head = (self.head + self.cap - 1) % self.cap;
+        @memcpy(b[self.head * self.item_size ..][0..self.item_size], item);
+        self.count += 1;
+        return 1;
+    }
+
+    pub fn recv(self: *Queue, out: []u8, blocking: u32) i32 {
+        if (out.len != self.item_size) return 0;
+        if (self.count == 0) {
+            if (blocking == time_blocking) blocking_refused += 1;
+            return 0;
+        }
         const b = self.buf();
         @memcpy(out, b[self.head * self.item_size ..][0..self.item_size]);
         self.head = (self.head + 1) % self.cap;
         self.count -= 1;
-        return true;
+        return 1;
+    }
+
+    pub fn msgWaiting(self: *const Queue) u32 {
+        return @intCast(self.count);
     }
 };
+
+/// `_event_post` 是 **esp_event 风格：成功=0、失败=-1**（与队列/信号量的 FreeRTOS 风格相反）。
+/// 我们没有事件循环，投递必然失败——返回 -1 并计数，让 blob 的 init 明确失败而不是静默丢事件。
+pub fn eventPost() i32 {
+    events_dropped += 1;
+    return -1;
+}

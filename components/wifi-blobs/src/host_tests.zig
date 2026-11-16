@@ -80,15 +80,16 @@ test "osi_impl: realloc 保留内容" {
     arena.free(b);
 }
 
-test "osi_impl: 信号量计数与空 take" {
+test "osi_impl: 信号量按 FreeRTOS 约定返回 1/0，无限阻塞被拒绝并计数" {
     var s: impl.Semphr = .{ .count = 1, .max = 2 };
-    // 单线程语义：take 空立刻失败，不阻塞
-    try std.testing.expectEqual(@as(u32, 1), s.count);
-    s.count -= 1;
-    try std.testing.expectEqual(@as(u32, 0), s.count);
-    try std.testing.expectEqual(@as(u32, 0), s.count); // 空
-    s.count = @min(s.count + 1, s.max);
-    try std.testing.expectEqual(@as(u32, 1), s.count);
+    try std.testing.expectEqual(@as(i32, 1), s.take(0));
+    try std.testing.expectEqual(@as(i32, 0), s.take(0)); // 空、非阻塞 → 0
+    const before = impl.blocking_refused;
+    try std.testing.expectEqual(@as(i32, 0), s.take(impl.time_blocking)); // 无限阻塞 → 有意拒绝
+    try std.testing.expectEqual(before + 1, impl.blocking_refused);
+    try std.testing.expectEqual(@as(i32, 1), s.give());
+    try std.testing.expectEqual(@as(i32, 1), s.give());
+    try std.testing.expectEqual(@as(i32, 0), s.give()); // 已满 → 0
 }
 
 test "osi_impl: 队列环绕与满/空" {
@@ -97,17 +98,29 @@ test "osi_impl: 队列环绕与满/空" {
     q.* = .{ .item_size = 4, .cap = 3 };
     var out: [4]u8 = undefined;
 
-    try std.testing.expect(!q.recv(&out)); // 空
+    try std.testing.expectEqual(@as(i32, 0), q.recv(&out, 0)); // 空
     for (0..3) |i| {
         const item = [4]u8{ @intCast(i), 0, 0, 0 };
-        try std.testing.expect(q.send(&item));
+        try std.testing.expectEqual(@as(i32, 1), q.send(&item, 0));
     }
-    try std.testing.expect(!q.send(&[4]u8{ 9, 9, 9, 9 })); // 满
+    try std.testing.expectEqual(@as(i32, 0), q.send(&[4]u8{ 9, 9, 9, 9 }, 0)); // 满
+    try std.testing.expectEqual(@as(u32, 3), q.msgWaiting());
     for (0..3) |i| {
-        try std.testing.expect(q.recv(&out));
+        try std.testing.expectEqual(@as(i32, 1), q.recv(&out, 0));
         try std.testing.expectEqual(@as(u8, @intCast(i)), out[0]);
     }
-    try std.testing.expect(!q.recv(&out)); // 又空
+    try std.testing.expectEqual(@as(i32, 0), q.recv(&out, 0)); // 又空
+
+    // 队首插入
+    try std.testing.expectEqual(@as(i32, 1), q.sendFront(&[4]u8{ 7, 0, 0, 0 }));
+    try std.testing.expectEqual(@as(i32, 1), q.recv(&out, 0));
+    try std.testing.expectEqual(@as(u8, 7), out[0]);
+}
+
+test "osi_impl: event_post 用 esp_event 约定（成功=0/失败=-1）" {
+    const before = impl.events_dropped;
+    try std.testing.expectEqual(@as(i32, -1), impl.eventPost());
+    try std.testing.expectEqual(before + 1, impl.events_dropped);
 }
 
 test "osi_impl: 互斥在单线程下是空操作" {
