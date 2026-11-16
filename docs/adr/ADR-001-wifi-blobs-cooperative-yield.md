@@ -1803,3 +1803,28 @@ PP/WDEV/CHM 状态层指向垃圾。
 上板（pb146）：`esp_wifi_init_internal rc=0`、`register_chipv7_phy rc=0`、无 panic，但**自旋照旧**
 （`mac=0x00fff000`，`mepc` 仍是 `0x2f0091fe/0x2f009206`）。所以这个 bug 是**必须修的正确性问题**，
 但它不是当前卡点的原因——至少说明 blob 的状态层现在拿到的是真指针，后续观察才可信。
+
+### 调用链定名：自旋在 **`chm_deinit`（信道管理器拆除）** 的清理路径里
+
+在 `/tmp/blobobjs` 里按重定位搜 `g_chm`（`0x2f07ff88`），命中的是 `wl_chm.o` 的
+`chm_acquire_lock / chm_cancel_op / chm_change_channel / **chm_deinit** / chm_end_op / …`。
+反汇编 `chm_deinit`：
+
+```asm
+chm_deinit:
+  lui  s1,%hi(g_chm) ; lw a0,%lo(g_chm)(s1)   # a0 = g_chm
+  lui  s0,%hi(g_osi_funcs_p) ; lw a5,0(s0)    # a5 = osi 表
+  addi a0,a0,36                               # a0 = g_chm + 36（内嵌的定时器对象）
+  lw   a5,232(a5) ; jalr a5                   # 调 osi->fns[58] = _timer_done
+  ...                                          # 再调一次 fns[58]
+```
+
+即 `chm_deinit` 先 `_timer_done(g_chm+36)`（拆掉信道管理器的定时器），随后走 MAC 拆除。
+
+**这改变了问题的定位**：自旋不是"start 主路径在等硬件"，而是**某条拆除/清理路径**在等
+`0x20104CAC[15:13]` 变 0。也就是说 **`esp_wifi_start` 很可能在更早的地方就失败/退出了**，随后进入
+`chm_deinit` → MAC deinit → 卡住；真正的错误在**上游**。
+
+下一步应当去找"进 deinit 之前那次失败"：沿 `wifi_start_process` 的返回值分支看哪一步返回了错误
+（trace 里 start 只走到 `alloc → queue_send → semphr_take → swap`，之后就直接进 deinit，说明失败点
+很可能就在这几步之间或紧随其后）。
