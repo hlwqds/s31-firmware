@@ -2314,8 +2314,10 @@ irq-sample #11776 .. mepc=0x2f009206 mac=0x00fff000
    已改为 `[1904]u8`、清零，并按 IDF 的路径在偏移 4 写入 station MAC（`1c:29:04:d1:99:28`）。
 2. **note id 撞号**：`note(2)` 同时被 `shellSetIntr` 与 `shellMutexLock` 使用、`note(4)` 被
    `shellSetIsr` 与 `shellQueueRecv`、`note(5)` 被 `shellIntsOn` 与 `shellQueueSend` ——
-   所以"blob 没调 `_set_intr`/`_set_isr`"这个结论**在 trace 上无法成立**（调用会以别人的名字打印）。
-   已给三个钩子独立 id（**31/32/33**）并把 `hook_ids` 补齐到 34 项。
+   ——但这**不会**让"blob 没调 `_set_intr`/`_set_isr`"变成假阴性：两者的 `a0` 是**小整数**
+   （`shellSetIntr` 是 `(src<<8)|num`，`shellSetIsr` 是中断号），而真实的 `mutex_lock`/`queue_recv`
+   行的 `a0` 都是指针（`0x2f01d370` 之类）。用 `a0=0x0000` 过滤即可确认它们确实没被调用。
+   仍给三个钩子换成独立 id（**31/32/33**）并把 `hook_ids` 补齐到 34 项——这是**未来防错**，不是纠正。
 
 **修完后的板侧读数（pb172）**：
 
