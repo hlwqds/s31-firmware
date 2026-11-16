@@ -12,7 +12,10 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:
-    print("需要 PyYAML：python3 -m pip install pyyaml", file=sys.stderr)
+    print("需要 PyYAML：python3 -m pip install pyyaml\n"
+          "  没有 pip（NixOS）时换解释器：PYTHON=<带 pyyaml 的 python> "
+          "PYTHONPATH=<...-pyyaml/lib/python3.X/site-packages> scripts/check-all.sh",
+          file=sys.stderr)
     raise SystemExit(2)
 
 
