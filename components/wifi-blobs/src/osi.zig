@@ -17,8 +17,13 @@
 
 pub const field_count: usize = 128;
 
+/// IDF 头里的两个常量（`wifi_os_adapter.h:20-21`）：驱动会校验，填错直接拒绝。
+pub const version: u32 = 0x0000_0009;
+/// `0xDEADBEAF` 在 C 里是 `int`（负值），这里按位存成 u32 再 bitCast。
+pub const magic: i32 = @bitCast(@as(u32, 0xDEAD_BEAF));
+
 pub const Osi = extern struct {
-    _version: i32 = 0,
+    _version: i32 = @bitCast(version),
     _env_is_chip: ?*const anyopaque = null,
     _set_intr: ?*const anyopaque = null,
     _clear_intr: ?*const anyopaque = null,
@@ -145,7 +150,7 @@ pub const Osi = extern struct {
     _wifi_bb_sleep_retention_detach: ?*const anyopaque = null,
     _wifi_mac_sleep_retention_attach: ?*const anyopaque = null,
     _wifi_mac_sleep_retention_detach: ?*const anyopaque = null,
-    _magic: i32 = 0,
+    _magic: i32 = magic,
 };
 
 comptime {
@@ -157,10 +162,31 @@ comptime {
     }
 }
 
-/// 空表：所有钩子为 null。真适配层要逐项填（malloc/free/信号量/队列/定时器/日志/random）。
+/// 空表：钩子全 null，但 `_version`/`_magic` 已是驱动认可的值。
+/// 真适配层要逐项填（malloc/free/信号量/队列/定时器/日志/random）。
 pub const empty: Osi = .{};
 
-// 重新生成字段表：
+/// **ROM 里的表指针槽位**：`esp32s31.rom.pp.ld:340` 把 `g_osi_funcs_p` 定义成
+/// `0x2f07ff44`——那是 ROM 保留 RAM 里的一个 4 字节槽位，blob 读的是**它**，
+/// 不是我们定义的符号。所以光填好表不够，必须把表地址写进这个槽位。
+///
+/// 注意这个地址在我们的 SRAM 上界（`0x2F07AFC0`）**之上**：属于 ROM 留作 RAM 的区域，
+/// 与我们的堆/栈不冲突，但写入前应先读回原值确认是合理指针（`install` 会返回它）。
+pub const slot_addr: usize = 0x2F07_FF44;
+
+/// 把表装进 ROM 槽位，返回装之前槽位里的值（便于确认没有覆盖别的东西）。
+/// 非 riscv32（主机测试）时是 no-op：那个地址在主机上不可访问。
+pub fn install(table: *const Osi) ?*const Osi {
+    if (@import("builtin").cpu.arch != .riscv32) return null;
+    const slot: *volatile ?*const Osi = @ptrFromInt(slot_addr);
+    const previous = slot.*;
+    slot.* = table;
+    return previous;
+}
+
+// 重新生成字段表（**不要**用文本解析：这个头有 5 处按目标裁剪字段的 #if，
+// 文本解析出的字段数/偏移必错，而链接照样过、运行期调用全错位）：
+//   IDF=~/esp/esp-idf
 //   GCC=~/.espressif/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin/riscv32-esp-elf-gcc
 //   $GCC -E -P -I$IDF/esp_wifi/include -I$IDF/esp_wifi/include/esp_private \
 //     -I$IDF/soc/esp32s31/include -I$IDF/hal/esp32s31/include \

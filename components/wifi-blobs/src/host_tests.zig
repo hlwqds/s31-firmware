@@ -21,6 +21,18 @@ test "wifi-blobs: probe 解析到替身符号的地址" {
     try std.testing.expect(adapter.probe() != 0);
 }
 
+test "wifi-blobs: osi 表填好驱动会校验的 version/magic" {
+    const tbl = osi.empty;
+    try std.testing.expectEqual(@as(i32, 0x0000_0009), tbl._version);
+    try std.testing.expectEqual(@as(i32, @bitCast(@as(u32, 0xDEAD_BEAF))), tbl._magic);
+}
+
+test "wifi-blobs: ROM 槽位地址与 install 的 off-target 行为" {
+    try std.testing.expectEqual(@as(usize, 0x2F07_FF44), osi.slot_addr);
+    // 主机上没有那块 ROM RAM：install 必须是 no-op，不能真的去写 0x2f07ff44。
+    try std.testing.expectEqual(@as(?*const osi.Osi, null), osi.install(&osi.empty));
+}
+
 test "wifi-blobs: osi 表字段数与首尾字段固定" {
     // 字段数是 IDF 头经 sdkconfig 预处理后的结果；改了 IDF 版本就要重新生成 osi.zig。
     try std.testing.expectEqual(@as(usize, 128), osi.field_count);
