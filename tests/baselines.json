@@ -9,7 +9,7 @@
   "net-tcp": 33,
   "net-tls-http": 68,
   "net-udp-dhcp-dns": 50,
-  "wifi-blobs": 11,
+  "wifi-blobs": 13,
   "wifi-boundary": 15,
   "wifi-connect": 20
 }

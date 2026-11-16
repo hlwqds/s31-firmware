@@ -230,3 +230,128 @@ pub fn eventPost() i32 {
     events_dropped += 1;
     return -1;
 }
+
+// ---------------------------------------------------------------------------
+// 把原语接成 `Osi` 表（C 调用约定的薄壳）
+//
+// 这些壳只做类型转换与池化，语义全在上面四个原语里。函数指针按 ilp32 都是 4 字节，
+// 用 `@ptrCast` 填进 `?*const anyopaque` 字段即可。
+// ---------------------------------------------------------------------------
+
+var arena_state: Arena = .{};
+var arena_buf: []u8 = &.{};
+
+/// 裸机上传 `[_heap_start, _heap_end)`；主机测试传静态数组。
+pub fn initArena(buf: []u8) void {
+    arena_buf = buf;
+    arena_state.init(buf);
+}
+
+fn shellMalloc(size: usize) callconv(.c) ?*anyopaque {
+    const p = arena_state.alloc(size, @alignOf(usize)) orelse return null;
+    return @ptrCast(p);
+}
+
+fn shellFree(p: ?*anyopaque) callconv(.c) void {
+    const q: ?[*]u8 = if (p) |v| @ptrCast(v) else null;
+    arena_state.free(q);
+}
+
+fn shellFreeHeapSize() callconv(.c) usize {
+    return arena_state.bytes_free;
+}
+
+fn shellSemphrCreate(max: u32, init_count: u32) callconv(.c) ?*anyopaque {
+    const mem = arena_state.alloc(@sizeOf(Semphr), @alignOf(Semphr)) orelse return null;
+    const s: *Semphr = @ptrCast(@alignCast(mem));
+    s.* = .{ .count = @min(init_count, max), .max = max };
+    return @ptrCast(s);
+}
+
+fn shellSemphrDelete(p: ?*anyopaque) callconv(.c) void {
+    const q: ?[*]u8 = if (p) |v| @ptrCast(v) else null;
+    arena_state.free(q);
+}
+
+fn shellSemphrTake(p: ?*anyopaque, blocking: u32) callconv(.c) i32 {
+    const s: *Semphr = @ptrCast(@alignCast(p orelse return 0));
+    return s.take(blocking);
+}
+
+fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
+    const s: *Semphr = @ptrCast(@alignCast(p orelse return 0));
+    return s.give();
+}
+
+fn shellMutexCreate() callconv(.c) ?*anyopaque {
+    const mem = arena_state.alloc(@sizeOf(Mutex), @alignOf(Mutex)) orelse return null;
+    const m: *Mutex = @ptrCast(@alignCast(mem));
+    m.* = .{};
+    return @ptrCast(m);
+}
+
+fn shellMutexDelete(p: ?*anyopaque) callconv(.c) void {
+    shellSemphrDelete(p);
+}
+
+fn shellMutexLock(p: ?*anyopaque) callconv(.c) i32 {
+    const m: *Mutex = @ptrCast(@alignCast(p orelse return 0));
+    return m.lock();
+}
+
+fn shellMutexUnlock(p: ?*anyopaque) callconv(.c) i32 {
+    const m: *Mutex = @ptrCast(@alignCast(p orelse return 0));
+    return m.unlock();
+}
+
+fn shellQueueCreate(len: u32, item_size: u32) callconv(.c) ?*anyopaque {
+    if (len == 0 or item_size == 0) return null;
+    const need = Queue.bytesNeeded(item_size, len);
+    const mem = arena_state.alloc(need, @alignOf(Queue)) orelse return null;
+    const q: *Queue = @ptrCast(@alignCast(mem));
+    q.* = .{ .item_size = item_size, .cap = len };
+    return @ptrCast(q);
+}
+
+fn shellQueueDelete(p: ?*anyopaque) callconv(.c) void {
+    shellSemphrDelete(p);
+}
+
+fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
+    const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
+    const bytes: [*]const u8 = @ptrCast(item orelse return 0);
+    return q.send(bytes[0..q.item_size], blocking);
+}
+
+fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
+    const q: *Queue = @ptrCast(@alignCast(p orelse return 0));
+    const bytes: [*]u8 = @ptrCast(item orelse return 0);
+    return q.recv(bytes[0..q.item_size], blocking);
+}
+
+fn shellQueueMsgWaiting(p: ?*anyopaque) callconv(.c) u32 {
+    const q: *const Queue = @ptrCast(@alignCast(p orelse return 0));
+    return q.msgWaiting();
+}
+
+/// 把已实现的钩子填进表；未实现的保持 null（调用到会立刻崩，好过静默错值）。
+pub fn makeTable() osi.Osi {
+    var t = osi.empty;
+    t._malloc = @ptrCast(&shellMalloc);
+    t._free = @ptrCast(&shellFree);
+    t._get_free_heap_size = @ptrCast(&shellFreeHeapSize);
+    t._semphr_create = @ptrCast(&shellSemphrCreate);
+    t._semphr_delete = @ptrCast(&shellSemphrDelete);
+    t._semphr_take = @ptrCast(&shellSemphrTake);
+    t._semphr_give = @ptrCast(&shellSemphrGive);
+    t._mutex_create = @ptrCast(&shellMutexCreate);
+    t._mutex_delete = @ptrCast(&shellMutexDelete);
+    t._mutex_lock = @ptrCast(&shellMutexLock);
+    t._mutex_unlock = @ptrCast(&shellMutexUnlock);
+    t._queue_create = @ptrCast(&shellQueueCreate);
+    t._queue_delete = @ptrCast(&shellQueueDelete);
+    t._queue_send = @ptrCast(&shellQueueSend);
+    t._queue_recv = @ptrCast(&shellQueueRecv);
+    t._queue_msg_waiting = @ptrCast(&shellQueueMsgWaiting);
+    return t;
+}

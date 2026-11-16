@@ -129,3 +129,47 @@ test "osi_impl: 互斥在单线程下是空操作" {
     m.locked = false;
     try std.testing.expect(!m.locked);
 }
+
+test "osi_impl: 表里已实现的钩子非空，未实现的是 null" {
+    var buf: [8192]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+    try std.testing.expectEqual(@as(i32, 0x0000_0009), tbl._version);
+    inline for (.{ "_malloc", "_free", "_semphr_create", "_semphr_take", "_semphr_give", "_mutex_lock", "_mutex_unlock", "_queue_create", "_queue_send", "_queue_recv" }) |name| {
+        try std.testing.expect(@field(tbl, name) != null);
+    }
+    // 没实现：PHY/NVS/日志这些还留着 null，调用即崩（好过静默错值）
+    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._nvs_open);
+    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._phy_enable);
+}
+
+test "osi_impl: 通过表指针调用分配/信号量/队列（C 调用约定）" {
+    var buf: [8192]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+
+    const malloc_fn: *const fn (usize) callconv(.c) ?*anyopaque = @ptrCast(tbl._malloc.?);
+    const free_fn: *const fn (?*anyopaque) callconv(.c) void = @ptrCast(tbl._free.?);
+    const sem_create: *const fn (u32, u32) callconv(.c) ?*anyopaque = @ptrCast(tbl._semphr_create.?);
+    const sem_take: *const fn (?*anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._semphr_take.?);
+    const sem_give: *const fn (?*anyopaque) callconv(.c) i32 = @ptrCast(tbl._semphr_give.?);
+    const q_create: *const fn (u32, u32) callconv(.c) ?*anyopaque = @ptrCast(tbl._queue_create.?);
+    const q_send: *const fn (?*anyopaque, ?*const anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._queue_send.?);
+    const q_recv: *const fn (?*anyopaque, ?*anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._queue_recv.?);
+
+    const p = malloc_fn(64) orelse return error.OutOfMemory;
+    @memset(@as([*]u8, @ptrCast(p))[0..64], 0x5a);
+    free_fn(p);
+
+    const s = sem_create(1, 1) orelse return error.OutOfMemory;
+    try std.testing.expectEqual(@as(i32, 1), sem_take(s, 0));
+    try std.testing.expectEqual(@as(i32, 0), sem_take(s, 0));
+    try std.testing.expectEqual(@as(i32, 1), sem_give(s));
+
+    const q = q_create(4, 4) orelse return error.OutOfMemory;
+    var item = [4]u8{ 1, 2, 3, 4 };
+    try std.testing.expectEqual(@as(i32, 1), q_send(q, &item, 0));
+    var out: [4]u8 = undefined;
+    try std.testing.expectEqual(@as(i32, 1), q_recv(q, &out, 0));
+    try std.testing.expectEqualSlices(u8, &item, &out);
+}
