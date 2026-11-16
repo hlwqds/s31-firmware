@@ -515,6 +515,14 @@ pub fn run() noreturn {
                 {
                     // 先复位 FE 的 TX/RX 状态机（ROM `phy_fe_txrx_reset` = 0x2f8013d8，
                     // esp32s31.rom.phy.ld:143）：MAC deinit 等的 busy{13..15} 正是 TX/RX 引擎的忙位。
+                    // `WIFI_CLOCK_DEPS` 的 COEXIST 一项在 LPCON（0x2010F000）的 clk_conf(+0x18)：
+                    // bit0 wifipwr / **bit1 coex** / bit2 i2c_mst（modem_lpcon_ll_enable_coex_clock）。
+                    {
+                        const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
+                        const before = lpcon.*;
+                        lpcon.* = before | (1 << 0) | (1 << 1) | (1 << 2);
+                        log.line("wifi-init-probe: LPCON_CLK_CONF 0x{x} -> 0x{x}", .{ before, lpcon.* });
+                    }
                     // IDF 开 BB 时钟时的序列是"**先脉冲 RST_WIFIBB 再开 0x17b 时钟**"
                     // （modem_clock_wifi_bb_configure → modem_syscon_ll_reset_wifibb）。
                     // 我们从没动过 BB 的复位——而 TX/RX 状态机正住在 BB 里。

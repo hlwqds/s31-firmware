@@ -915,6 +915,11 @@ fn shellWifiClockEnable() callconv(.c) usize {
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
     const before = conf1.*;
     conf1.* = before | wifi_clk_conf1_bits;
+    // `WIFI_CLOCK_DEPS` 的最后一项 COEXIST 不在 CLK_CONF1 里：它在
+    // `MODEM_LPCON(0x2010F000).clk_conf(+0x18)` 的 bit1（`modem_lpcon_ll_enable_coex_clock`）。
+    const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
+    const lb = lpcon.*;
+    lpcon.* = lb | (1 << 0) | (1 << 1) | (1 << 2); // wifipwr | coex | i2c_mst
     note(20, before, conf1.*);
     return 0;
 }

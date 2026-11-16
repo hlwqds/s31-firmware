@@ -1444,3 +1444,21 @@ irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
 
 **这条线到此为止**。要再推进只能靠：① 忠实实现 IDF 的 `esp_phy_enable` + MAC DMA 环建立（工作量最大的
 那条路）；② 在一台已知正常的 S31 上读 `0x20104CAC` 做对照，确定这三位的清零条件。
+
+### `WIFI_CLOCK_DEPS` 七项逐条核对：全部已开（2026-11-16，补上最后的审计）
+
+之前只核了 CLK_CONF1，没把七项与寄存器一一对上。现在逐条落实（每一项都有 IDF 的 LL 函数作依据）：
+
+| dep | 寄存器 / 位 | 我们的状态 |
+| --- | --- | --- |
+| `WIFI_MAC` | `CLK_CONF1(0x20109C14)` bit9 `clk_wifimac_en` | ✅ |
+| `WIFI_APB` | 同上 bit10 `clk_wifi_apb_en` | ✅ |
+| `WIFI_BB` | 同上 `0x17b`（bit0,1,3,4,5,6,8） | ✅ |
+| `WIFI_BB_44M` | 同上 bit2 | ✅ |
+| `WIFI_BB_80X1` | 同上 bit7 | ✅ |
+| **`COEXIST`** | **`MODEM_LPCON(0x2010F000).clk_conf(+0x18)` bit1**（`modem_lpcon_ll_enable_coex_clock`） | ✅（板侧 `MODEM_LPCON_CLK_CONF 0x4 -> 0xf`） |
+| **`SOC_PLL_SOURCE_CG`** | **`HP_SYS_CLKRST.modem_conf(0x205871E0) = 0x3d`**（`modem_clock_hal_enable_soc_pll_source_cg`） | ✅（板侧 `0x25 -> 0x3d`） |
+
+（另：`LPCON.clk_conf` 的 bit0 `clk_wifipwr_en` / bit2 `clk_i2c_mst_en` 也已置；合计 `0xf`。）
+
+所以"时钟依赖没开全"这条**有据可查地**被排除——七项全开、复位脉冲全试过、busy 位仍不清。
