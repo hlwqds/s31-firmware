@@ -78,3 +78,36 @@ wifi-init-probe:   hook[0] queue_recv a0=0x2f018820 a1=0xffffffff   ← 连续 8
 
 板侧自检（`logs/wifi-sched-boot.log`）：任务在自己栈上跑 3 轮、每轮让出，主上下文依次恢复，
 任务返回后自动切回主上下文并打印 `sched-test: PASS`。
+
+## 追加（2026-11-16）：合作式的边界——`esp_wifi_start` 忙等
+
+`esp_wifi_start`（blob 符号，`ieee80211_api.o`）调用后板侧**再无任何日志**，连 idle 钩子的
+每 1000 次进度行都没有：
+
+```text
+wifi-init-probe: calling esp_wifi_start (idle_calls=320)
+（之后无输出）
+```
+
+它一次都不经过我们的信号量/队列钩子，即**在 blob 内部忙等**一个由 wifi 任务设置的标志。
+反汇编确认 `wifi_init_completed` 只读状态字（不等待）、`esp_wifi_start` 先 `_wifi_zalloc`
+（表 index 93）再 `ieee80211_ioctl`，所以卡点在 ioctl/状态机内部。
+
+**结论**：合作式让出能覆盖「阻塞在 OS 原语上」的一切路径（init、`reg_rxcb`、
+`get_config_channel` 都已实测通过），但覆盖不了「blob 自己 spin」的路径。
+
+### 两条后续路线（未实现，按代价排序）
+
+1. **定时器中断抢占**（真正的修复）
+   - 现状：`MIE=0`，`trap.zig` 只处理异常；`hw.nowUs` 走 SYSTIMER 读数（不产生中断）。
+   - 需要：配置 SYSTIMER/mtimecmp 周期中断 → `mtvec` 指向新的 ISR → ISR 里保存
+     **全部 caller-saved + callee-saved**（中断版上下文比 `sched.zig` 的 13 个字多得多）→
+     切换栈 → `mret`。
+   - 判据：忙等期间 idle 计数器/任务轮次持续增长；`esp_wifi_start` 返回非 `0x3007`。
+2. **post 型入口**（更省事，但依赖内部结构）
+   - 找到 `ieee80211_ioctl` 的消息格式，把「start」作为消息直接投进 `s_wifi_queue`，
+     由任务自己处理——这会经过我们的队列钩子，合作式切换即可介入。
+   - 风险：消息结构未公开，随 blob 版本漂移；只在路线 1 代价过高时采用。
+
+在路线 1 落地前，`on_idle` 的合作式切换仍然是**正确且必要**的：它已经让 init、
+`reg_rxcb`、`get_config_channel` 从"永久阻塞"变成"正常返回"。
