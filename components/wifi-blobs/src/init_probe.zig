@@ -369,36 +369,41 @@ pub fn run() noreturn {
                         r3.* = r3.* | 0x0040_000F;
                         log.raw("wifi-init-probe: fe_bb writes done\n");
                     }
-                    inline for (.{
-                        "phy_get_xtal_freq",
-                        "phy_get_rf_cal_version",
-                        // `phy_rf_init` 的 23 个被调函数里，这些**不接收参数**（反汇编确认），
-                        // 可以安全地逐个单独调用；`phy_rc_cal_init` 是首要嫌疑
-                        // （它内部构造 I2C 命令结构再调 `phy_rc_cal`，走模拟 I2C 主控）。
-                        // `phy_open_fe_bb_clk` 反汇编出来是**直筒**（无循环、无 jalr），
-                        // 只做四次寄存器写：
-                        //   0x20100400 = 0x1E7；0x20100800 |= 3；
-                        //   0x20107C80 = 0xFFFFFFFF；0x2070401C |= 0x40000F
-                        // 所以"挂起"只可能是其中某个**写**在总线上 stall。逐条写、逐条打日志定位。
-                        "phy_open_fe_bb_clk",
-                        "phy_rc_cal_init",
-                        "phy_rfpll_chgp_cal",
-                        "phy_tsens_read_init",
-                        "phy_get_temp_init",
-                        "phy_bbpll_cal",
-                        "phy_rf_init",
-                        "phy_bb_init",
-                        "phy_get_temp_init",
-                        "phy_get_romfunc_addr",
-                        "phy_force_txrx_off",
-                        "phy_freq_module_resetn",
-                        "phy_dis_hw_set_freq",
-                        "phy_i2c_master_reset",
-                    }) |name| {
-                        const f = @extern(*const fn () callconv(.c) void, .{ .name = name });
-                        log.line("wifi-init-probe: calling {s}", .{name});
-                        f();
-                        log.line("wifi-init-probe: {s} returned", .{name});
+                    // 关掉手工二分：只在"真实路径"上跑 `register_chipv7_phy`，否则 ROM 自己的
+                    // 初始化顺序被跳过，得到的故障可能是探针人为造成的（0x2f07FC40 为空的教训）。
+                    const manual_bisect = false;
+                    if (manual_bisect) {
+                        inline for (.{
+                            "phy_get_xtal_freq",
+                            "phy_get_rf_cal_version",
+                            // `phy_rf_init` 的 23 个被调函数里，这些**不接收参数**（反汇编确认），
+                            // 可以安全地逐个单独调用；`phy_rc_cal_init` 是首要嫌疑
+                            // （它内部构造 I2C 命令结构再调 `phy_rc_cal`，走模拟 I2C 主控）。
+                            // `phy_open_fe_bb_clk` 反汇编出来是**直筒**（无循环、无 jalr），
+                            // 只做四次寄存器写：
+                            //   0x20100400 = 0x1E7；0x20100800 |= 3；
+                            //   0x20107C80 = 0xFFFFFFFF；0x2070401C |= 0x40000F
+                            // 所以"挂起"只可能是其中某个**写**在总线上 stall。逐条写、逐条打日志定位。
+                            "phy_open_fe_bb_clk",
+                            "phy_rc_cal_init",
+                            "phy_rfpll_chgp_cal",
+                            "phy_tsens_read_init",
+                            "phy_get_temp_init",
+                            "phy_bbpll_cal",
+                            "phy_rf_init",
+                            "phy_bb_init",
+                            "phy_get_temp_init",
+                            "phy_get_romfunc_addr",
+                            "phy_force_txrx_off",
+                            "phy_freq_module_resetn",
+                            "phy_dis_hw_set_freq",
+                            "phy_i2c_master_reset",
+                        }) |name| {
+                            const f = @extern(*const fn () callconv(.c) void, .{ .name = name });
+                            log.line("wifi-init-probe: calling {s}", .{name});
+                            f();
+                            log.line("wifi-init-probe: {s} returned", .{name});
+                        }
                     }
                     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{ .name = "register_chipv7_phy" });
                     // IDF 的布局：`phy_init_magic_pre`（"PHYINIT\0"，8 B）紧贴结构体之前、

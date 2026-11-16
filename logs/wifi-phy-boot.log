@@ -1,18 +1,10 @@
+wifi-init-probe: INIT OK, arena free=364688/368544 B, bad_handle=0, blocking_refused=2
 wifi-init-probe: SYSCON_FORCE_ON 0x0 -> 0x1c
 wifi-init-probe: LPCON_FORCE_ON 0x4 -> 0x5
 wifi-init-probe: CLK_CONF_POWER_ST=0x00000000 apb=0 peri=0 wifi=0
-wifi-init-probe: write 0x20100400
-wifi-init-probe: rmw 0x20100800
-wifi-init-probe: write 0x20107C80
 wifi-init-probe: fe_bb writes done
-wifi-init-probe: calling phy_get_xtal_freq
-wifi-init-probe: phy_get_xtal_freq returned
-wifi-init-probe: calling phy_get_rf_cal_version
-wifi-init-probe: phy_get_rf_cal_version returned
-wifi-init-probe: calling phy_open_fe_bb_clk
-wifi-init-probe: phy_open_fe_bb_clk returned
-wifi-init-probe: calling phy_rc_cal_init
-panic: exception code=5 (load access fault) cause=0x30000005
-panic: mepc=0x2f82625a mtval=0xa4 mstatus=0x3801
-panic: ra=0x400437ba a0=0x2f07ac78 a1=0x2f07ac74 a2=0x2f07ac7c
+wifi-init-probe: register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
+panic: exception code=2 (illegal instruction) cause=0x30000002
+panic: mepc=0x2f01c9d4 mtval=0x0 mstatus=0x3801
+panic: ra=0x40017876 a0=0xa a1=0x1 a2=0x2
 panic: halted (wfi)
