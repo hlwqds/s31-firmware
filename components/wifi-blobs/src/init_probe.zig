@@ -579,6 +579,14 @@ pub fn run() noreturn {
                     log.line("wifi-init-probe: set_country(CN,1..13) rc={d}", .{rc_cc});
                     const rc_st = set_storage(1); // WIFI_STORAGE_RAM
                     log.line("wifi-init-probe: set_storage(RAM) rc={d}", .{rc_st});
+                    // 关键：`set_country` 被拒（258），`get_config_channel` 一直是 0/0 —— 信道从未设定。
+                    // 而自旋的调用者属于信道管理路径（wl_chm.o 的 chm_*），"切到信道 0" 正好会触发 MAC 重配。
+                    const set_channel = @extern(*const fn (u8, u8) callconv(.c) c_int, .{ .name = "esp_wifi_set_channel" });
+                    const rc_ch = set_channel(6, 0); // primary=6, secondary=0（2.4G 20MHz）
+                    log.line("wifi-init-probe: set_channel(6,0) rc={d}", .{rc_ch});
+                    const wdev = @as(*const usize, @ptrFromInt(0x2f07_FF40)).*;
+                    const ppw = @as(*const usize, @ptrFromInt(0x2f07_FF48)).*;
+                    log.line("wifi-init-probe: wDevCtrl=0x{x:0>8} pp_wdev_funcs=0x{x:0>8}", .{ wdev, ppw });
                 }
                 // 实验：blob 在 start 期间走 MAC deinit 等 TX/RX 静止（`g_mac_deinit_*`）。
                 // IDF 的 `esp_phy_enable()` 会调 ROM 的 `wifi_rf_phy_enable`(0x2f800cf4)，

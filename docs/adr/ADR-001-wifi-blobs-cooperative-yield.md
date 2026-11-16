@@ -1804,7 +1804,7 @@ PP/WDEV/CHM 状态层指向垃圾。
 （`mac=0x00fff000`，`mepc` 仍是 `0x2f0091fe/0x2f009206`）。所以这个 bug 是**必须修的正确性问题**，
 但它不是当前卡点的原因——至少说明 blob 的状态层现在拿到的是真指针，后续观察才可信。
 
-### 调用链定名：自旋在 **`chm_deinit`（信道管理器拆除）** 的清理路径里
+### 调用链归因（**未定案**）：自旋的调用者属于**信道管理路径**
 
 在 `/tmp/blobobjs` 里按重定位搜 `g_chm`（`0x2f07ff88`），命中的是 `wl_chm.o` 的
 `chm_acquire_lock / chm_cancel_op / chm_change_channel / **chm_deinit** / chm_end_op / …`。
@@ -1821,10 +1821,28 @@ chm_deinit:
 
 即 `chm_deinit` 先 `_timer_done(g_chm+36)`（拆掉信道管理器的定时器），随后走 MAC 拆除。
 
-**这改变了问题的定位**：自旋不是"start 主路径在等硬件"，而是**某条拆除/清理路径**在等
-`0x20104CAC[15:13]` 变 0。也就是说 **`esp_wifi_start` 很可能在更早的地方就失败/退出了**，随后进入
-`chm_deinit` → MAC deinit → 卡住；真正的错误在**上游**。
+**注意别过度归因**：`chm_deinit` 的真体只有两次 `_timer_done` 调用，**没有**调用 MAC 拆除包装
+（`0x4003eb5a`），所以"自旋在 `chm_deinit` 里"**未被证明**。可证的是：自旋的调用者（`0x4003ef8e`）
+**读 `g_chm`**，而 `wl_chm.o` 的 `chm_*` 整族都引用它——所以"自旋的调用者属于**信道管理路径**"是稳妥
+的表述，`chm_change_channel`（切信道会触发 MAC 重配）仍是活的候选。
 
 下一步应当去找"进 deinit 之前那次失败"：沿 `wifi_start_process` 的返回值分支看哪一步返回了错误
 （trace 里 start 只走到 `alloc → queue_send → semphr_take → swap`，之后就直接进 deinit，说明失败点
 很可能就在这几步之间或紧随其后）。
+
+### 信道相关：`set_channel` 在 start 之前被拒（`0x3002`），这不是配置缺失
+
+补上两个读数（pb147）：
+
+```text
+wifi-init-probe: set_country(CN,1..13) rc=258
+wifi-init-probe: set_channel(6,0) rc=12290      # 12290 = 0x3002 = ESP_ERR_WIFI_NOT_STARTED
+wifi-init-probe: wDevCtrl=0x2f01085c pp_wdev_funcs=0x2f01d3c8
+```
+
+两点结论：
+
+1. **`set_channel` 必须在 start 之后**（IDF 的语义）——所以"start 前信道是 0"是**正常状态**，
+   不是配置缺失；"信道 0 触发 `chm_change_channel` 去 deinit"这条因果因此**不成立**。
+2. `wDevCtrl = 0x2f01085c`、`pp_wdev_funcs = 0x2f01d3c8` 都是 **DRAM 里的真指针** ✓ ——
+   这正面验证了"解除 101 个数据符号桩化"的修复生效了。
