@@ -464,4 +464,24 @@ auipc t1, ...; ieee80211_ioctl(...)
 
 实测 `msg[12]`（= 故障时的 `s0`）落在主栈，而 `ctx[0]` 是 `cal_data - 12`——也就是说
 **那张 24 字节消息里 `msg[12]` 指向的栈对象，其第一个字段被填成了 `cal_data - 12`**。
-下一步就是找 `esp_wifi_start` 里给 `s1` 赋值的那几行，看它本来应该指向什么。
+`msg[12] = s1` 的来源也读出来了：这条消息由 **`esp_wifi_ipc_internal(a0, a1)`**（`ieee80211_api.o`）
+构造，其中 `s1 = a0`——就是**调用者传进来的第一个参数**。所以 `ctx` 不是它自己造的，而是**调用者给的**：
+
+```asm
+esp_wifi_ipc_internal:
+  addi sp, sp, -32
+  beqz a0, .L1187          # a0 为空就报错
+  lw   a5, 0(a0)           # 检查 a0[0]
+  mv   s1, a0              # s1 = a0（调用者的上下文）
+  mv   s0, a1
+  call wifi_init_completed
+  lw   a5, 372(g_osi_funcs_p)   # _wifi_zalloc
+  li   a0, 24
+  jalr a5                  # 分配 24 字节消息
+  ...填 msg...
+  sw   s1, 12(a0)          # msg[12] = 调用者的 a0
+  call ieee80211_ioctl
+```
+
+所以下一步变成：找**谁调用 `esp_wifi_ipc_internal`**，以及它传进来的 `a0` 是什么（其首字为
+`cal_data - 12`）。那就是整条链的起点。
