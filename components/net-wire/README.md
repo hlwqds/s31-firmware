@@ -39,6 +39,6 @@ ZIG=... python3 tests/e2e/run_e2e.py --board --profile net-wire
 2026-11-15 实测（`tcp.Conn` 版）：DHCP 租约 `10.42.0.139`，板侧
 `wire: tcp SYN sent iss=0x20263111` →
 `wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112 rcv_nxt=0xeeaeab06`
-→ `wire: tcp RST sent`，`wire: checks passed=4 failed=0`；主机 accept 到
+→ `wire: tcp RST sent`，`wire: checks passed=7 failed=0`（TCP 走 socket 层后多了三项）；主机 accept 到
 `10.42.0.139:40000`，随后 `Connection reset by peer`（RST，符合预期）。
 日志 `logs/e2e-net-wire-boot.log`。

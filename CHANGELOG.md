@@ -32,8 +32,9 @@
   `scripts/host-prep-wire.sh up|down|check` 固化主机预置（接口地址、dnsmasq、udp 67/53 与
   tcp 9000 放行、监听器，幂等且可撤销）；门禁先删旧日志（证据只能来自本轮），跑
   `run_e2e.py --board --profile net-wire`，再断言 `wire: tcp SYN sent` / `ESTABLISHED` /
-  `RST sent` / `checks passed=4 failed=0`；`skipped/no-dhcp-server` 算失败。
-  退出码 2 = 前置缺失，1 = 证据不符。实测 `gate-board: PASS — wire: checks passed=4 failed=0`。
+  `RST sent` / `checks passed=7 failed=0`（R2.2d 之后探针多了 socket established /
+  send accepted / tx acked 三项）；`skipped/no-dhcp-server` 算失败。
+  退出码 2 = 前置缺失，1 = 证据不符。实测 `gate-board: PASS — wire: checks passed=7 failed=0`。
   脚本内置 NixOS 的两处坑：剥掉 `LD_LIBRARY_PATH`（否则 esptool/zig 撞 glibc）、
   显式指定带 pyserial 的解释器。
 - `net-wire` 可选 profile（`-Dwire=true`）：生产固件在真实链路跑 DHCP

@@ -21,4 +21,6 @@ test {
     _ = @import("socket.zig");
     _ = @import("event.zig");
     _ = @import("wire.zig");
+    // 统一入口 `api.zig` 也编进来：它是纯再导出，但导出路径写错只有编译才会暴露。
+    _ = @import("api.zig");
 }

@@ -24,9 +24,7 @@ import re
 import sys
 from pathlib import Path
 
-# api.zig 是纯再导出（只有 `pub const X = @import(...)`），没有可测逻辑；
-# 它只被固件构建引用，host_tests 不会 import 它。
-EXCLUDE = {"selftest.zig", "hw.zig", "log.zig", "gen_cert_fixture.zig", "host_tests.zig", "api.zig"}
+EXCLUDE = {"selftest.zig", "hw.zig", "log.zig", "gen_cert_fixture.zig", "host_tests.zig"}
 IMPORT_RE = re.compile(r'@import\("([^"]+\.zig)"\)')
 TEST_RE = re.compile(r'^\s*test\b', re.MULTILINE)
 

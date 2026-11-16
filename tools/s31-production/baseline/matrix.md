@@ -110,7 +110,8 @@ TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 
 **2026-11-16：W1–W3 从“可选 profile”提升为发布前板级门禁** —— `scripts/gate-board.sh`
 （前置 `scripts/host-prep-wire.sh up`）跑 `tests/e2e/run_e2e.py --board --profile net-wire`，
-再断言 `wire: tcp SYN sent` / `ESTABLISHED` / `RST sent` / `checks passed=4 failed=0`；
+再断言 `wire: tcp SYN sent` / `ESTABLISHED` / `RST sent` / `checks passed=7 failed=0`
+（TCP 走 socket 层后探针共 7 项：新增 socket established / send accepted / tx acked）；
 `skipped/no-dhcp-server` 与缺失证据行都算失败（退出码 2 = 前置缺失，1 = 证据不符）。
 
 | #   | 门禁项        | 当前状态                                                                                     | 通过判据                                                                              | 依赖                             |
