@@ -357,7 +357,18 @@ pub fn run() noreturn {
     // ⇒ ICG 位图不是缺失的那一步（至少单独不是）。已回滚，保持基线干净。
     // 实验已做：`impl.task_create_fail = true`（_task_create 返回 pdFAIL）会让
     // `esp_wifi_init_internal` 直接返回 257(ESP_ERR_NO_MEM) ⇒ blob **要求建任务成功**，没有同步回退。
+    // **init 窗口标记**：与 IDF 的 HOOKTRACE begin/end 同口径，只统计 init 期间的钩子。
+    const w_qsend = impl.calls.queue_send;
+    const w_qrecv = impl.calls.queue_recv;
+    const w_rst = impl.cnt_reset_mac;
+    const w_clk = impl.cnt_clk_en;
     const init_rc = esp_wifi_init_internal(&cfg);
+    log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d}", .{
+        impl.calls.queue_send - w_qsend,
+        impl.calls.queue_recv - w_qrecv,
+        impl.cnt_reset_mac - w_rst,
+        impl.cnt_clk_en - w_clk,
+    });
     log.line("wifi-init-probe: post-init ctx b14={d} b15={d} b16={d} b27={d} b288={d} b289={d} mac=0x{x:0>8}", .{
         bg_pre[14],                                    bg_pre[15], bg_pre[16], bg_pre[27], bg_pre[288], bg_pre[289],
         @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,

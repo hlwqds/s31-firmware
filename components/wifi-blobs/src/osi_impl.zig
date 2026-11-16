@@ -902,6 +902,9 @@ var timer_fires: u32 = 0;
 var send_probe: u32 = 0;
 /// 诊断：`Queue.send` 成功次数 / `Queue.recv` 成功次数 / 最近一次 recv 时的 count。
 pub var send_ok: u32 = 0;
+/// init 窗口对拍用的计数器（与 IDF 侧同口径）。
+pub var cnt_reset_mac: u32 = 0;
+pub var cnt_clk_en: u32 = 0;
 pub var recv_ok: u32 = 0;
 pub var last_recv_count: usize = 0;
 /// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。
@@ -1102,6 +1105,7 @@ const wifi_clk_conf1_bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 
     (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
 
 fn shellWifiClockEnable() callconv(.c) usize {
+    cnt_clk_en +%= 1;
     // ★ IDF 的 `wifi_module_enable()` → `modem_clock_module_enable()` 会先
     // `modem_clock_module_icg_map_init_all()`，把各域的 **ICG 位图**写进 `CLK_CONF_POWER_ST`(0x20109C0C)
     // —— 实测 IDF 工作值是 `0x64646400`。我们此前只写 CLK_CONF1，没写这张位图。
@@ -1133,6 +1137,7 @@ fn shellWifiClockDisable() callconv(.c) usize {
 ///     FORCE_ON=0x08、POWER_ST=0x0c、CLK_CONF1=0x14 三个锚点一致）；
 ///   - `rst_wifimac` 是 **bit 9**（`modem_syscon_struct.h` 里 reserved0..7 之后的第二位）。
 fn shellWifiResetMac() callconv(.c) usize {
+    cnt_reset_mac +%= 1;
     const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
     const before = rst.*;
     rst.* = before | (1 << 9);

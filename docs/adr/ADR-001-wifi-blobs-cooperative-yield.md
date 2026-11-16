@@ -3429,3 +3429,26 @@ IDFCNT qsend=1 qrecv=2 clken=1 rstmac=0
 
 ⇒ 下一步：定位**谁**在我们这边调了 `_wifi_reset_mac`（`note(22, …)` 已有打点，看它在 trace 里的位置），
 以及**把它去掉/延后**后 `MAC_ST` 是否会在 init 后变 0。
+
+### ★★ 同窗口对拍（修正上一节）：`rstmac` 两边都是 0；真正差异是 **`clken` IDF=1、我们=0**
+
+上一节把"IDF 的 init 窗口计数"与"我们**整个运行期**的计数"直接比，**口径不同、结论作废**。
+现在在我们的探针里加了 **init 窗口快照**（`esp_wifi_init_internal` 前后取计数器差值）：
+
+```text
+我们的 INITWIN: qsend=1 qrecv=0 rstmac=0 clken=0
+IDF 的 IDFCNT : qsend=1 qrecv=2 rstmac=0 clken=1
+```
+
+| 钩子 | IDF（init 窗口） | 我们（init 窗口） | 判读 |
+| --- | --- | --- | --- |
+| `_queue_send` | 1 | **1** | ✅ 一致 |
+| `_wifi_reset_mac` | 0 | **0** | ✅ 一致（**上一节的"差异"是窗口假象**） |
+| `_queue_recv` | 2 | **0** | 差异（窗口边界/任务是否在窗口内跑） |
+| **`_wifi_clock_enable`** | **1** | **0** | **真差异：IDF 在 init 里开了 WiFi 时钟，我们没开** |
+
+⇒ **目前唯一同口径下的行为差异**：**IDF 的 init 会调用 `_wifi_clock_enable` 一次，我们的 init 没有**。
+（我们的 `wifi_clk_en` 共 2 次，都发生在 init 之外。）
+
+⇒ 下一步：既然 blob 是同一份，"init 里不调 `_wifi_clock_enable`" 说明**我们的 init 在更早的地方走了不同分支**，
+或那次调用被我们的某个钩子返回值挡掉了（例如某个前置钩子返回 0/失败）。
