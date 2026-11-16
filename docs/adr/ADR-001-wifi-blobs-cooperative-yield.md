@@ -1095,3 +1095,27 @@ irq-sample #256 .. #1792 input=25 mepc=0x2f009206
 
 剩下的主候选就是**空桩**：`_phy_enable`（静态证据 4 处引用）与 `_timer_*` 全族（上千处）都还是
 no-op，blob 的 PHY 上电与定时器驱动因此都不存在。下一步按实现顺序那节做 `_phy_enable`。
+
+### `_phy_enable` 的真实实现配方（读 IDF `phy_init.c` 得出）
+
+`libphy.a` 里**没有** `phy_enable` 符号（`nm libphy.a | grep phy_enable` 为空；导出的是
+`register_chipv7_phy`、`phy_close_fe_bb_clk`、`phy_close_rf`、`phy_open_i2c_xpd_new` 等 163 个）。
+真正的"打开"逻辑在 IDF 的 `esp_phy/src/phy_init.c:324 esp_phy_enable(esp_phy_modem_t modem)` 里，
+顺序是：
+
+```c
+if (phy_get_modem_flag() == 0) {
+    phy_update_wifi_mac_time(false, now);      // 开共用时钟前先更新 MAC 时间
+    esp_phy_common_clock_enable();             // 共用时钟（periph/modem clock）
+    phy_module_enable();                       // MODEM_SYSCON 的 PHY 时钟位
+    assert(phy_module_has_clock_bits(PHY_INIT_MODEM_CLOCK_REQUIRED_BITS));
+    if (!s_is_phy_calibrated) {
+        esp_phy_load_cal_and_init();           // 首次：读 NVS 标定 → register_chipv7_phy
+        s_is_phy_calibrated = true;
+    }
+}
+```
+
+所以我们的 `_phy_enable` 钩子应当：**① 开共用时钟 → ② 置 MODEM_SYSCON 的 PHY 时钟位（并回读校验）
+→ ③ 首次调用时跑 `register_chipv7_phy`（我们已经会调，rc=0）→ 返回 0**。`assert` 那一步很值得
+照抄成"回读校验并打印"，因为 `0x20104CAC` 的 [15:13] 正是"时钟真的到位了没有"的硬件答案。
