@@ -109,5 +109,8 @@ pub fn defaults(table: *const osi.Osi) InitConfig {
     c.rx_ba_win = 6; // CONFIG_ESP_WIFI_RX_BA_WIN=6
     c.tx_hetb_queue_num = 3; // CONFIG_ESP_WIFI_TX_HETB_QUEUE_NUM=3
     c.sta_disconnected_pm = true; // CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=1
+    // ★ `feature_caps`：IDF 例程里 `WIFI_INIT_CONFIG_DEFAULT()` 实测 **0x1a1**
+    // （我们之前留 0）。这是最后一个与 IDF 不同的字段。
+    c.feature_caps = 0x1a1;
     return c;
 }

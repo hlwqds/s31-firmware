@@ -2165,3 +2165,33 @@ irq-sample #14336 .. mac=0x00fff000
 
 **下一步**：让 IDF 例程把 `WIFI_INIT_CONFIG_DEFAULT()` 的各字段值打印出来（一次 build 即可），
 照抄进 `defaults()`——尤其是 `feature_caps`。
+
+### `wifi_init_config_t` 已与 IDF **逐字段一致**（`feature_caps=0x1a1`）——仍自旋
+
+让 IDF 例程把 `WIFI_INIT_CONFIG_DEFAULT()` 的每个字段打印出来，逐项核对：
+
+```text
+CFG: static_rx=10 dyn_rx=32 tx_type=1 static_tx=0 dyn_tx=32 rxmgmt_type=0 rxmgmt_num=5
+CFG: cache_tx=0 csi=0 ampdu_rx=1 ampdu_tx=1 amsdu_tx=0 nvs=1 nano=0 rx_ba_win=6
+CFG: task_core=0 beacon_max=752 mgmt_sbuf=32 feature_caps=0x1a1 sta_pm=1 espnow=7 hetb=3
+```
+
+我们此前唯一不同的是 **`feature_caps`（0 vs `0x1a1`）**，已补上。板侧（pb162）：
+`esp_wifi_init_internal rc=0`、ICG 写入生效、**自旋照旧**（`mac=0x00fff000`）。
+
+**至此"宿主能提供的输入"已全部对齐**：
+
+| 层 | 状态 |
+| --- | --- |
+| 时钟（`CLK_CONF1` / ICG / LPCON / `HP_SYS_CLKRST`） | ✅ 与 IDF 一致 |
+| `MODEM_SYSCON` `+00`/`+04` | ✅ 本来就一致 |
+| `force_on` | ⚠ 我们保留 `0x1c`（清 0 会 stall），IDF 为 0 但有别的上电路径 |
+| `coex_init()` | ✅ 已按 IDF wrapper 顺序补上 |
+| `wifi_init_config_t` | ✅ **逐字段一致**（含 `feature_caps=0x1a1`） |
+
+所以卡点**不在**这些可对齐的输入里。剩下的差异只能在 IDF 宿主侧的其他部分（`esp_netif` 创建、
+事件处理器注册、`esp_wifi_start` 前后的 netif 绑定），或者 blob 内部依赖某个我们尚未实现的 osi 钩子
+（尽管 `_coex_enable`/`_phy_enable`/`_wifi_clock_enable` 都已实现并被调用）。
+
+**下一步建议**：在 IDF 例程里**不创建 netif / 不注册事件**，看 `esp_wifi_start` 是否仍返回 OK——
+以此判断"宿主还提供了什么 blob 依赖的东西"。
