@@ -1195,3 +1195,20 @@ irq-sample #5120 mepc=0x2f009204 mac=0x00fff000 b13=1 b14=1
    power/xpd 位（参照 IDF `esp_phy_enable` → `phy_open_i2c_xpd_new`）；
 2. 判别器就是本行心跳：`mac` 的 bits 12..19 变成 0 → 模拟域起来了，自旋会消失；仍为 `0x00fff000`
    → 换下一组位再试。
+
+### 候选 A 的实现路径已查明：blob 的 tick 走的是**我们桩掉的 osi `_timer_*`**
+
+想"把 input 25 转发给 ROM 的 handler 表"这条路走不通：ROM 的 `intr_handler_set`（`0x2f800764`）
+写的是 **ROM 内部静态数组** `s_intr_handlers[core][int_no]`（`components/riscv/interrupt.c:36`），
+而 `_global_interrupt_handler` **没有导出符号**（`esp32s31.rom.ld` 里只有 `intr_handler_set` /
+`intr_matrix_set`）。所以我们既拿不到表地址，也调不到 ROM 的分发器。
+
+但沿着这条线反而找到了更可信的候选 A 形态：blob 的软件定时器（coex/协议栈调度）走的是 **osi 表的
+`_timer_setfn` / `_timer_arm` / `_timer_arm_us` / `_timer_disarm` / `_timer_done`**，而这五个在
+`osi_stubs.zig` 里全是**空桩**（`stub10..14`）。静态扫描显示它们被引用上千次（`_timer_done` 537、
+`_timer_disarm` 336、`_timer_setfn` 289、`_timer_arm` 164、`_timer_arm_us` 88）。
+
+所以"时序步进不被推进"的真正机制很可能是：**blob 注册的软件定时器永远不会到期**，因此它等待的
+状态机步骤永远不前进。实现这五个钩子（挑一条空闲硬件定时器 + 一个 CLIC 输入，到期回调
+`setfn` 存的 `fn(arg)`；`_timer_arm` 单位 ms、`_timer_arm_us` 单位 µs）是下一个可执行步骤，
+而且它比"转发 input 25"更直接、更可能有解。
