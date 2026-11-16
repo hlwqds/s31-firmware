@@ -186,8 +186,11 @@ register_chipv7_phy(&phy_init_data.params, &cal_data /*1894 B 清零*/, 0 /*PHY_
 | 3 | `esp_hw_support/periph_ctrl.c:98` | `wifi_bt_common_module_enable()`：S31 走 `modem_clock_module_enable(PERIPH_PHY_MODULE)`（`SOC_MODEM_CLOCK_IS_INDEPENDENT`） |
 | 4 | 之后 | 再调 `register_chipv7_phy` |
 
-移植时需要的 S31 寄存器地址/位域在 `components/soc/esp32s31/register/soc/rtc_cntl_reg.h` 与
-`syscon_reg.h` 里；`modem_clock` 是独立的驱动（`esp_hw_support/modem_clock.c`）。
+**移植前的一个坑（已核对）**：S31 的 `components/soc/esp32s31/register/soc/` 里**没有**
+`rtc_cntl_reg.h` / `syscon_reg.h`（只有 `rtc_timer_reg.h`、`rtc_wdt_reg.h`、`rtclockcali_reg.h`
+等），所以 `RTC_CNTL_WIFI_FORCE_PD`、`SYSCON_WIFI_RST_EN_REG` 这些名字在 S31 上无处可抄——
+地址要么从 S31 TRM 取，要么从 `libphy.a` / ROM 的初始化代码里反推（那里会写同样的位）。
+`modem_clock` 是独立驱动（`esp_hw_support/modem_clock.c`），也可能需要一并移植。
 
 另一条独立可能：PHY 标定本身可能依赖中断（`MIE=0` 下永远等不到），这与 §"定时器中断抢占"
 是同一件事的两面——先做电源域/时钟，若仍挂起，再开中断路径。
