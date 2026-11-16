@@ -3053,3 +3053,27 @@ APPTBL set int_no=3 fn=0x2f0038ae arg=0x2f01cb38
 
 **方法论**：不要在 `intr_handler_set` 这种会被早期/中断上下文调用的函数里 `printf`；
 要枚举表项，应在**初始化完成后**遍历 `s_intr_handlers`（静态符号，需在同一编译单元里加一个导出函数）。
+
+### `wifi_init_config_t` 逐字段对照：**完全一致** ⇒ 配置不是差异
+
+在 IDF 的 `wifi_init.c` 里于 `esp_wifi_init_internal` 之前把 `wifi_init_config_t` 逐字段打出来：
+
+```text
+INITCFG srx=10 drx=32 txtype=1 stx=0 dtx=32 rxmtype=0 rxmn=5 cachetx=0 csi=0
+INITCFG ampdu_rx=1 ampdu_tx=1 amsdu_tx=0 nvs=1 nano=0 rx_ba_win=6 core=0 beacon=752 sbuf=32
+INITCFG feature_caps=0x1a1 sta_pm=1 espnow=7 hetb=3 dumpsig=0 priv=0 rmac=0 magic=0x1f2f3f4f
+```
+
+与我们 `init_config.zig` 的值**逐项相同**（`static_rx=10` / `dyn_rx=32` / `tx_type=1` / `static_tx=0` /
+`dyn_tx=32` / `rxmgmt_type=0` / `rxmgmt_num=5` / `cache_tx=0` / `csi=0` / `ampdu_rx=1` / `ampdu_tx=1` /
+`amsdu_tx=0` / `nvs=1` / `nano=0` / `rx_ba_win=6` / `task_core=0` / `beacon_max=752` / `mgmt_sbuf=32` /
+`feature_caps=0x1a1` / `sta_pm=1` / `espnow=7` / `hetb=3` / `magic=0x1F2F3F4F`）。
+
+⇒ **`wifi_init_config_t` 不是差异**（这条此前只是"看起来一致"，现在是两边实测对照）。
+
+### 顺带：S31 上 `esp_wifi_bt_power_domain_on()` 是**空操作**
+
+查 IDF 头文件：S31 定义了 `SOC_PM_SUPPORT_MODEM_PD`，但**没有** `SOC_PM_MODEM_PD_BY_SW`，
+也没有 `SYSCON_WIFI_RST_EN_REG` / `MODEM_RESET_FIELD_WHEN_PU` ⇒ `esp_wifi_bt_power_domain_on()` 里
+那整块（清 FORCE_PD → modem 复位脉冲 → 清 FORCE_ISO）**在 S31 上被编译掉了**。
+这与二分结论一致（它在 IDF 里不清 `MAC_ST`）。
