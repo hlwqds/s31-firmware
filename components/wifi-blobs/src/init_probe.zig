@@ -498,6 +498,15 @@ pub fn run() noreturn {
                 // 它读 blob 内部状态字并和 3 比较。直接问它，省得猜。
                 const init_completed = @extern(*const fn () callconv(.c) c_int, .{ .name = "wifi_init_completed" });
                 log.line("wifi-init-probe: wifi_init_completed={d} (非 0 才继续)", .{init_completed()});
+                // 实验：blob 在 start 期间走 MAC deinit 等 TX/RX 静止（`g_mac_deinit_*`）。
+                // IDF 的 `esp_phy_enable()` 会调 ROM 的 `wifi_rf_phy_enable`(0x2f800cf4)，
+                // 而我们的手工 bring-up 从没调过它——先补上这一次，看 [15:13] 是否自清。
+                {
+                    const rf_enable = @extern(*const fn () callconv(.c) void, .{ .name = "wifi_rf_phy_enable" });
+                    log.raw("wifi-init-probe: calling wifi_rf_phy_enable()\n");
+                    rf_enable();
+                    log.raw("wifi-init-probe: wifi_rf_phy_enable returned\n");
+                }
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

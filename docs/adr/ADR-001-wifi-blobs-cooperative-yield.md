@@ -1270,3 +1270,20 @@ bit13 → `txing`**，调 `0x2f00254e` 发起停止，然后**等 TX/RX 的"仍�
    **从没调过它**。在 start 前调一次 `wifi_rf_phy_enable`，看 deinit 的 [15:13] 是否自清。
 2. 给 `0x2f00254e` 命名：`/tmp/blobobjs/*.o` 有符号表，用 `.iram_blobs` 段内偏移
    （`0x2f0091fe − 0x2f0000b0 = 0x914E`）字节匹配定位 .o，再用 `nm` 拿函数名。
+
+### `wifi_rf_phy_enable` 提前调用：**也不能**解开自旋（2026-11-16）
+
+在 `esp_wifi_start` 之前显式调用 ROM 的 `wifi_rf_phy_enable`（`0x2f800cf4`，IDF `esp_phy_enable`
+走的就是它），调用与返回都有日志（pb123）：
+
+```text
+calling wifi_rf_phy_enable()
+wifi_rf_phy_enable returned
+calling esp_wifi_start (idle_calls=197, tracing hooks)
+swap#6 in_task=false hooks=8
+irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
+```
+
+**自旋不变**。至此四个候选全部被实验排除：标定模式、`_phy_enable` 空桩、`_timer_*` 空桩、
+`wifi_rf_phy_enable` 未调用。剩下唯一没做的一步就是**给 `0x2f00254e` 命名**（deinit 发起者）并
+查清"谁在 start 期间触发 MAC deinit"——`g_mac_deinit_count` 的调用者。
