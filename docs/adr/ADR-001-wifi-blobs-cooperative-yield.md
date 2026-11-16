@@ -1778,3 +1778,24 @@ wifi-init-probe: dma_enable=0        ← 这条现在没有信息量（桩）
 
 所以 `ic_interface_enabled(0)=0` 的正确读法是：**接口 0 的 TX 队列里没有待发帧**——这与"数据面（队列/DMA）
 从未建立"一致，但它是**结果**而不是原因。
+
+### 修掉一个真实的链接 bug：101 个 ROM 数据符号被做成了空函数桩
+
+`components/wifi-blobs/link/zz_stubs.c` 原本把 `stub-symbols.txt` 里的**每个**符号都生成
+`void <sym>(void) {}`。但其中 **101 个是 ROM RAM 里的数据指针**（`rom_syms.ld` 里以
+`PROVIDE(name = 0x2f0xxxxx)` 提供），例如：
+
+```
+g_chm, g_ic_ptr, g_lmac_cnt_ptr, wDevCtrl_ptr, pp_wdev_funcs,
+g_eb_list_desc_ptr, trc_ctl_ptr, xphyQueue, s_bars, regdomain_table, …
+```
+
+桩是 `.text` 里的**强定义**，会压过 `PROVIDE`（PROVIDE 只在符号未定义时生效）——于是 **blob 读这些
+"指针变量"时拿到的是"一个空函数的地址"**，而不是 ROM RAM 里的真指针。这等于让 blob 的整个
+PP/WDEV/CHM 状态层指向垃圾。
+
+修法：`gen-blob-stubs.py` 里解析 `rom_syms.ld`，把这 101 个数据符号排除（桩数 185 → 84）。
+
+上板（pb146）：`esp_wifi_init_internal rc=0`、`register_chipv7_phy rc=0`、无 panic，但**自旋照旧**
+（`mac=0x00fff000`，`mepc` 仍是 `0x2f0091fe/0x2f009206`）。所以这个 bug 是**必须修的正确性问题**，
+但它不是当前卡点的原因——至少说明 blob 的状态层现在拿到的是真指针，后续观察才可信。

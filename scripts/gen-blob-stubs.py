@@ -22,6 +22,7 @@ import pathlib
 import sys
 
 SYMS = pathlib.Path("components/wifi-blobs/link/stub-symbols.txt")
+ROM_LD = pathlib.Path("boards/esp32s31-coreboard/linker/rom_syms.ld")
 OUT = pathlib.Path("components/wifi-blobs/link/zz_stubs.c")
 
 # libphy/libcoexist/libmesh/libespnow 里已有真实实现，绝不能重复定义。
@@ -39,8 +40,25 @@ PROVIDED_BY_ARCHIVES = {
 }
 
 
+def rom_data_symbols() -> set[str]:
+    """`rom_syms.ld` 里以 `PROVIDE(name = 0x2f0xxxxx)` 提供的 **ROM RAM 数据**符号。
+
+    这些是 blob 用来访问自己状态的**指针变量**（`g_chm`、`g_ic_ptr`、`wDevCtrl_ptr`、`pp_wdev_funcs`…）。
+    绝不能做成 `void name(void){}` 的桩：桩是 `.text` 里的强定义，会压过 `PROVIDE`，于是 blob 读到的
+    是"一个空函数的地址"而不是 ROM RAM 里的真指针——实测踩过（101 个符号）。
+    """
+    import re
+    text = ROM_LD.read_text(encoding="utf-8")
+    return {m.group(1) for m in re.finditer(r"PROVIDE\(\s*(\w+)\s*=\s*0x2f0[0-9a-f]{5}\s*\)", text)}
+
+
 def main() -> int:
     syms = [l.strip() for l in SYMS.read_text(encoding="utf-8").splitlines() if l.strip()]
+    rom_data = rom_data_symbols()
+    skipped = sorted(set(syms) & rom_data)
+    if skipped:
+        print(f"跳过 {len(skipped)} 个由 rom_syms.ld 提供的 ROM 数据符号（不能做桩）")
+    syms = [s for s in syms if s not in rom_data]
     clash = sorted(set(syms) & PROVIDED_BY_ARCHIVES)
     if clash:
         print(f"这些符号由静态库提供，不能做成桩：{clash}", file=sys.stderr)
