@@ -61,6 +61,28 @@ while (spins < idle_spin_limit) : (spins += 1) {  // 上限 64
 2. **init 自己也会阻塞**，所以让出语义必须对 init 路径同样正确——判据是 `rc` 仍为 0。
    决策记录见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md`。
 
+## 两根栈：`src/sched.zig`
+
+blob 的 API 会阻塞等待任务应答，而任务体永不返回——同一根栈上无法共存。`sched.zig` 提供
+最小上下文切换（保存/恢复 `sp, ra, s0..s11`），让主上下文继续调 API、任务体在自己的栈上跑，
+阻塞时切回主上下文。
+
+```zig
+var main_ctx: sched.Context = .{};
+var task_ctx: sched.Context = .{};
+sched.initContext(&task_ctx, &static_stack, &taskEntry, null);
+sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这里继续
+```
+
+三条实现约束（都踩过）：
+
+1. 切换函数**必须 naked**（普通函数的前导会让保存的帧基址与 `ret` 错位 N 字节）；
+   Zig 不允许直接调用 naked 函数，所以 `@export` + `@extern` 间接调用。
+2. 初始 `sp` 用 `alignBackward`：`alignForward` 会越过分配区间、踩坏相邻 arena 块头。
+3. arena 只接受自然对齐请求；要 16 字节对齐的栈就申请 8 字节对齐，栈顶自己对齐。
+
+板侧自检：`logs/wifi-sched-boot.log`（任务 3 轮让出 → `sched-test: PASS`）。
+
 ## 文件职责
 
 | 文件 | 作用 |
@@ -70,6 +92,7 @@ while (spins < idle_spin_limit) : (spins += 1) {  // 上限 64
 | `src/osi_stubs.zig` | 未实现钩子的**具名桩**（只填空字段，绝不覆盖已实现项） |
 | `src/init_config.zig` | `wifi_init_config_t` 默认值（含 `wpa_crypto_funcs.size = 52`） |
 | `src/init_probe.zig` | 板侧探针：装表 → 构造 config → init → 跑一次任务体（`-Dwifi-init-probe=true`） |
+| `src/sched.zig` | 两根栈的合作式上下文切换（naked `s31_swap_context`） |
 | `src/host_tests.zig` | 主机测试入口（20 个用例） |
 
 ## 待验证项

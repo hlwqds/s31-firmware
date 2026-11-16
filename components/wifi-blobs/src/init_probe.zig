@@ -23,12 +23,74 @@ const osi = @import("osi.zig");
 const impl = @import("osi_impl.zig");
 const initcfg = @import("init_config.zig");
 const osi_stubs = @import("osi_stubs.zig");
+const sched = @import("sched.zig");
 const link_stubs = @import("link_stubs.zig");
 
 /// blob 里的入口（`esp_wifi.h:437` / `esp_private/wifi.h`）。
 const esp_wifi_init_internal = @extern(*const fn (*const initcfg.InitConfig) callconv(.c) c_int, .{
     .name = "esp_wifi_init_internal",
 });
+
+/// 收发接缝（`esp_private/wifi.h:485/578/819`）：
+/// - `esp_wifi_internal_reg_rxcb(ifx, fn)`：注册**我们的**回调，blob 收到帧后调它；
+/// - `esp_wifi_internal_tx(ifx, buf, len)`：把帧交给 blob 发；
+/// - `esp_wifi_internal_get_config_channel(ifx, &primary, &second)`：查当前信道。
+const reg_rxcb = @extern(*const fn (u32, *const fn (?*anyopaque, u16, ?*anyopaque) callconv(.c) c_int) callconv(.c) c_int, .{ .name = "esp_wifi_internal_reg_rxcb" });
+const wifi_tx = @extern(*const fn (u32, ?*anyopaque, u16) callconv(.c) c_int, .{ .name = "esp_wifi_internal_tx" });
+const get_config_channel = @extern(*const fn (u32, *u8, *u8) callconv(.c) c_int, .{ .name = "esp_wifi_internal_get_config_channel" });
+
+var rx_frames: u32 = 0;
+
+// ---- 上下文切换自检（两根栈）----
+var static_stack: [16 * 1024]u8 align(16) = undefined;
+var main_ctx: sched.Context = .{};
+var task_ctx: sched.Context = .{};
+
+fn schedTestEntry(arg: ?*anyopaque) callconv(.c) void {
+    _ = arg;
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        log.line("sched-test: task iteration {d} (yielding)", .{i});
+        sched.swapContext(&task_ctx, &main_ctx); // 让出：切回主上下文
+        log.line("sched-test: task iteration {d} resumed", .{i});
+    }
+    log.raw("sched-test: task done, returning to main\n");
+}
+
+/// 自检：任务在自己的栈上跑 3 轮，每轮让出一次；主上下文依次恢复。
+fn runSchedSelfTest() void {
+    // 先用**静态**栈：把 arena 的分配/对齐变量排除掉，只测切换原语。
+    sched.initContext(&task_ctx, &static_stack, &schedTestEntry, null);
+    log.line("sched-test: begin, task sp=0x{x:0>8} stack=0x{x:0>8}", .{
+        task_ctx.sp,
+        @intFromPtr(&static_stack),
+    });
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        if (i == 0) {
+            sched.start(&task_ctx, &main_ctx); // 第一次进入任务
+        } else {
+            sched.swapContext(&main_ctx, &task_ctx); // 恢复任务
+        }
+        log.line("sched-test: main resumed after round {d} (main_sp=0x{x:0>8} task_sp=0x{x:0>8})", .{
+            i,
+            main_ctx.sp,
+            task_ctx.sp,
+        });
+    }
+    log.raw("sched-test: PASS\n");
+}
+
+/// `wifi_rxcb_t`（`wifi.h:564`）：`esp_err_t (*)(void *buffer, uint16_t len, void *eb)`。
+fn rxCb(buffer: ?*anyopaque, len: u16, eb: ?*anyopaque) callconv(.c) c_int {
+    rx_frames += 1;
+    if (rx_frames <= 2) log.line("wifi-init-probe: rx frame len={d} buf=0x{x:0>8} eb=0x{x:0>8}", .{
+        len,
+        @intFromPtr(buffer),
+        @intFromPtr(eb),
+    });
+    return 0;
+}
 
 /// 静态 osi 表（见 run() 里的说明）。
 var osi_table: osi.Osi = undefined;
@@ -131,6 +193,22 @@ pub fn run() noreturn {
             impl.blocking_refused,
         });
         log.line("wifi-init-probe: tasks recorded={d}", .{impl.task_count});
+
+        // 先验证上下文切换本身（两根栈），再谈 API 与任务的交错。
+        runSchedSelfTest();
+
+        // 收发接缝探针：在不启动射频的前提下，问清楚哪些内部 API 现在就可达。
+        {
+            const rrc = reg_rxcb(0, &rxCb); // 0 = WIFI_IF_STA
+            log.line("wifi-init-probe: reg_rxcb rc={d}", .{rrc});
+            var primary: u8 = 0;
+            var second: u8 = 0;
+            const crc = get_config_channel(0, &primary, &second);
+            log.line("wifi-init-probe: get_config_channel rc={d} primary={d} second={d}", .{ crc, primary, second });
+            var frame: [64]u8 = @splat(0xaa);
+            const trc = wifi_tx(0, &frame, @intCast(frame.len));
+            log.line("wifi-init-probe: internal_tx rc=0x{x} (64 B)", .{@as(u32, @bitCast(trc))});
+        }
 
         // 协作式跑一次登记的任务：没有调度器，`entry(arg)` 一旦进入自己的等待循环就永不返回，
         // 所以给钩子调用一个预算（300 次），耗尽即打印现场并停机。

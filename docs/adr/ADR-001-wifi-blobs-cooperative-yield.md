@@ -53,6 +53,28 @@ wifi-init-probe:   hook[0] queue_recv a0=0x2f018820 a1=0xffffffff   ← 连续 8
 - 需要后续跟进：
   1. `on_idle` 目前只计数（探针）；生产路径要接 EMAC 收发（`esp_wifi_internal_reg_rxcb` /
      `esp_wifi_internal_tx`）。
-  2. `_task_delay` 仍是桩，需要按同一语义实现（让出 + 按 `now_us` 计时）。
-  3. 任务体跑在我们的栈上；若 blob 任务栈需求超过主栈（`_stack_size = 0x4000`），
-     需要给任务单独分配 arena 栈并切换 `sp`。
+  2. ~~`_task_delay` 仍是桩~~ → 已按同一语义实现（让出 + 按 `now_us` 计时，上限 64 次）。
+  3. ~~任务体跑在我们的栈上~~ → 已实现两根栈的上下文切换（见下）。
+
+## 追加（2026-11-16）：为什么最终必须有上下文切换
+
+只做「让出」还不够。blob 的对外 API（`esp_wifi_internal_reg_rxcb` /
+`esp_wifi_internal_ioctl` …）会**阻塞等待任务应答**，而任务体**永不返回**——同一根栈上两者
+无法共存：先调 API 就没人跑任务（实测 `reg_rxcb` 卡住，`on_idle` 被调到 200 次上限），
+先跑任务就回不到调用点。
+
+因此新增 `src/sched.zig`：两根栈 + 一次保存/恢复 `(sp, ra, s0..s11)`。
+
+**实现上的硬约束（都踩过）**：
+
+1. **切换函数必须是 naked**。普通函数有编译器前导（`sp -= N`），保存下来的帧基址与 `ret`
+   弹出的位置错位 N 字节 → 第一次让出后就再无下文（实测：进了任务、打印一行、卡死）。
+   Zig 不允许直接调用 `callconv(.naked)` 函数，所以 `@export` 成 `s31_swap_context` 再经
+   `@extern` 间接调用；naked 函数也不能引用参数名，参数按 ABI 落在 `a0`/`a1`。
+2. **初始 `sp` 用 `alignBackward`**（栈向下增长）。`alignForward` 会越过分配区间最多 15 字节，
+   踩到相邻 arena 块头——这种破坏是静默的。
+3. **arena 只接受自然对齐请求**（`alloc` 里 `pad != 0` 就跳过该块）：要 16 字节对齐的栈就申请
+   8 字节对齐，栈顶自己在 `initContext` 里对齐。
+
+板侧自检（`logs/wifi-sched-boot.log`）：任务在自己栈上跑 3 轮、每轮让出，主上下文依次恢复，
+任务返回后自动切回主上下文并打印 `sched-test: PASS`。

@@ -1,0 +1,22 @@
+wifi-init-probe: begin
+wifi-init-probe: arena=372688 B
+wifi-init-probe: table=0x2f01bde4 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: INIT OK, arena free=368816/372672 B, bad_handle=0, blocking_refused=2
+wifi-init-probe: tasks recorded=1
+sched-test: begin, task sp=0x2f01bb70 stack=0x2f017bb0
+sched-test: task iteration 0 (yielding)
+sched-test: main resumed after round 0 (main_sp=0x2f07ac50 task_sp=0x2f01ba40)
+sched-test: task iteration 0 resumed
+sched-test: task iteration 1 (yielding)
+sched-test: main resumed after round 1 (main_sp=0x2f07ac50 task_sp=0x2f01ba40)
+sched-test: task iteration 1 resumed
+sched-test: task iteration 2 (yielding)
+sched-test: main resumed after round 2 (main_sp=0x2f07ac50 task_sp=0x2f01ba40)
+sched-test: task iteration 2 resumed
+sched-test: task done, returning to main
+sched-test: main resumed after round 3 (main_sp=0x2f07ac50 task_sp=0x2f01ba40)
+sched-test: PASS
+wifi-init-probe: idle hook called 200 times, task alive and cooperative
+wifi-init-probe: hook calls total=10, blocking_refused=3
