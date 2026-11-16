@@ -3378,3 +3378,28 @@ queue send_ok=5 recv_ok=5 last_recv_count=1
 
 ⇒ **"消息没送到"这条假设彻底排除**。blob 任务收到了全部消息、仍然不推进 ⇒ 问题在**消息处理之后**
 （即任务拿到消息后走到的分支），或消息**内容/类型**不对。
+
+### ★★ IDF 侧消息流对拍：**与我们完全相同**（`QS type=6`）
+
+在 IDF 的 `esp_adapter.c` 里给 `queue_send_wrapper`/`queue_recv_wrapper` 加打印（`QS queue=… type=…` /
+`QR queue=…`），并在 `wifi_init.c` 的 init 前后加窗口标记 `HOOKTRACE begin/end`：
+
+```text
+HOOKTRACE begin
+QR queue=0x2f07e504
+QS queue=0x2f07e504 type=6
+QR queue=0x2f07e504
+QS queue=0x2f07e504 type=6
+...（重复）
+HOOKTRACE end
+```
+
+**IDF 在 init 期间也是在同一队列上反复投递 `type=6`**，与我们那 5 条 `type=6` **完全一致**
+（队列指针不同是跨构建地址差异，不是语义差异）。
+
+⇒ **消息流不是分歧点**（这条彻底排除）。两边发的消息类型、顺序、收/发配对都相同。
+
+⇒ 于是分歧只能落在**消息处理之后**：同一个 `type=6` 消息，IDF 的处理器推进了状态机、我们的没有 ——
+即处理器读写的**某个状态**或它调用的**某个钩子**不同。
+
+IDF 树已还原（`components/esp_wifi` clean）。
