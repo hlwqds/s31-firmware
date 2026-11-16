@@ -3197,3 +3197,26 @@ irq-sample #11776 ... mepc=0x2f009206
 
 ⇒ 现在 **SYSCON(+0x0C = 0x64646400) 与 LPCON(+0x20 = 0x66660000) 两侧 ICG 都与 IDF 对齐**，
 `MAC_ST` 依旧停在复位值 ⇒ **ICG 逐域门控不是缺失的那一步**（彻底排除）。已回滚。
+
+### `_phy_enable` 补齐 IDF 的第三步（`set_bb_wdg`）：**无变化**
+
+IDF 的 `esp_phy_enable_wrapper`（`esp_adapter.c:641`）是三步：
+
+```c
+esp_phy_enable(PHY_MODEM_WIFI);
+phy_wifi_enable_set(1);
+// disable bb idle check(max: 139ms) for temporary to avoid unexpected RXTXPANIC
+set_bb_wdg(true, false, 0x18, 0xaa, false, false, false);
+```
+
+我们此前只做了第②步。已补上第③步（`set_bb_wdg` 就在我们已链接的 `libphy.a` 里）：
+
+```text
+post-init ctx ... mac=0x0000e000     ← 仍然没清
+irq-sample #11776 ... mepc=0x2f009206 ← 自旋不变
+```
+
+⇒ **BB 看门狗不是缺失的那一步**（第③步单独补上无效）。改动保留（它本来就该有，与 IDF 一致）。
+
+> 注：第①步 `esp_phy_enable(PHY_MODEM_WIFI)` 是 IDF 的 C 层函数（含 NVS 校准加载），我们走的是
+> 自己的 `register_chipv7_phy` 路径——这一条的等价性仍未逐项验证。

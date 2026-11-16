@@ -1001,6 +1001,13 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
     // 我们此前漏了这一步；若 libphy/ROM 的代码按这个标志门控，缺它 PHY 侧就不会真正使能。
     const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
     phy_wifi_enable_set(1);
+    // **IDF 的第三步（我们此前完全没做）**：`esp_phy_enable_wrapper` 在 `phy_wifi_enable_set(1)` 之后
+    // 调 `set_bb_wdg(true, false, 0x18, 0xaa, false, false, false)`，注释写着
+    // "disable bb idle check(max: 139ms) for temporary to avoid unexpected RXTXPANIC"。
+    // BB 的 idle check/看门狗默认是开的 —— 不关它，BB 可能在 139 ms 超时后复位，
+    // MAC 的 TX/RX 状态机就永远不排空。`set_bb_wdg` 就在我们已链接的 libphy.a 里。
+    const set_bb_wdg = @extern(*const fn (bool, bool, u16, u16, bool, bool, bool) callconv(.c) void, .{ .name = "set_bb_wdg" });
+    set_bb_wdg(true, false, 0x18, 0xaa, false, false, false);
     // IDF 的顺序：`esp_phy_enable(modem)` 内部才做"共用时钟 → phy_module_enable → 首次标定"。
     // 探针注入的实现负责首次 `register_chipv7_phy`（它持有 phy_init_data/cal_data）。
     if (hooks.on_phy_enable) |f| _ = f(modem);
