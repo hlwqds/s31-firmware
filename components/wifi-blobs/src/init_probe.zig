@@ -452,30 +452,20 @@ pub fn run() noreturn {
                 log.raw("wifi-init-probe: task context ready, running it until it blocks\n");
                 // 先让任务跑一轮（它阻塞收消息 → 通过 idleHook 让回主上下文），
                 // 这样 wifi 状态机有机会推进到 start 期待的状态。
-                // 打开全局中断并武装 TIMG0 T0 周期中断：任务一旦在 blob 里不让出，
-                // 只有中断能抢回 CPU 采样 PC（trap 的中断分支已改为"采样后返回"）。
-                hw.enableInterrupts();
-                hw.routeT0Interrupt(hw.tg0_t0_int_source); // 源 25 → CPU 输入 25
-                hw.armT0Interrupt(2000); // 2 ms
-                const t1 = hw.nowUs();
-                var spin: u32 = 0;
-                while (spin < 200_000) : (spin += 1) {}
-                const t2 = hw.nowUs();
-                log.line("wifi-init-probe: timer {d} -> {d} (delta={d})", .{ t1, t2, t2 -% t1 });
-                // 扫描 CLIC 的 pending 输入：找到外设中断真正被路由到的 CPU 输入号。
-                var scan: u32 = 0;
-                while (scan < 3) : (scan += 1) {
-                    if (hw.findPendingClicInput()) |inp| {
-                        log.line("wifi-init-probe: CLIC pending input={d} (scan {d})", .{ inp, scan });
-                        // 直接使能这个输入的 IE（bit8），看 CPU 是否取中断。
-                        hw.enableClicInput(inp);
-                        break;
-                    }
+                // 关键实验：把 `mtvec` **还给 ROM**。blob 自己在 init 里就把 TIMG0_T0 配成 tick
+                // （矩阵 25 / CLIC 25 / mie bit25）；我们的 trapEntry 会截获它、只采样不处理，
+                // 于是 ROM 的 tick ISR 从不运行、blob 永远等不到 tick。
+                const rom_mtvec_ptr = @extern(*const usize, .{ .name = "rom_mtvec" });
+                if (rom_mtvec_ptr.* != 0) {
+                    log.line("wifi-init-probe: restore ROM mtvec=0x{x:0>8}", .{rom_mtvec_ptr.*});
+                    asm volatile ("csrw mtvec, %[v]"
+                        :
+                        : [v] "r" (rom_mtvec_ptr.*),
+                        : .{ .memory = true });
+                } else {
+                    log.raw("wifi-init-probe: rom_mtvec 为 0，保持我们的 trapEntry\n");
                 }
-                const st = hw.samplerIrqState();
-                log.line("wifi-init-probe: irq ena=0x{x} alarm=0x{x}:0x{x} clic=0x{x} mie=0x{x} mstatus=0x{x} int_st=0x{x}", .{
-                    st[0], st[2], st[1], st[3], st[4], st[5], st[6],
-                });
+                hw.enableInterrupts();
                 in_task = true;
                 impl.current_is_task = true;
                 sched.start(&task_ctx, &main_ctx);

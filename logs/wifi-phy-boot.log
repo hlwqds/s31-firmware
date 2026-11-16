@@ -1,9 +1,8 @@
-irq-sample #0 input=25 mepc=0x400490ca
-wifi-init-probe: timer irq-sample #1 input=25 mepc=0x2f83efda
-284534 -> 284535 (deltairq-sample #2 input=25 mepc=0x2f83efd2
-wifi-init-probe: iirq-sample #3 input=25 mepc=0x2f83efda
-rq ena=0x1 alarm=0x0:0xirq-sample #4 input=25 mepc=0x2f83efda
-489f9 clic=0x1fc00100 mirq-sample #5 input=25 mepc=0x2f83efde
-ie=0x0 mstatus=0x2089 iirq-sample #6 input=25 mepc=0x2f83efd6
-wifi-init-prirq-sample #7 input=25 mepc=0x2f83efde
-wifi-init-probe: calling esp_wifi_start (idle_calls=197, tracing hooks)
+wifi-init-probe: trace semphr_take a0=0x2f01dfc8 a1=0xffffffff
+wifi-init-probe: trace queue_send a0=0x2f01d950 a1=0x00000006
+wifi-init-probe: trace semphr_take a0=0x2f01dff0 a1=0xffffffff
+wifi-init-probe: restore ROM mtvec=0x2f801703
+wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d70c
+wifi-init-probe: trace queue_recv a0=0x2f01d950 a1=0xffffffff
+wifi-init-probe: trace queue_recv a0=0x2f01d950 a1=0xffffffff
+wifi-init-probe: swap#1 in_task=true hooks=106

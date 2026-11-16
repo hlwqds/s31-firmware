@@ -20,6 +20,10 @@
 
 const builtin = @import("builtin");
 const app = @import("main.zig");
+
+/// ROM/bootloader 原本装的 `mtvec`（我们在覆盖前保存；ROM 的 tick ISR 需要它）。
+/// `export` 是必须的：启动汇编按 C 符号名 `rom_mtvec` 引用它。
+export var rom_mtvec: usize = 0;
 /// `-Dfat-rodata=N` 生成的填充块（默认 N=0）。取地址一次，链接器才会保留它。
 const fat = @import("fat_rodata");
 const board = @import("board");
@@ -106,6 +110,8 @@ comptime {
     // 填充块由 `fat_rodata.keep()` 引用；comptime 里取函数地址即可把它拉进引用图。
     _ = &fat.keep;
     _ = &trap.trapEntry;
+    // `rom_mtvec` 只被上面的启动汇编引用（`la t1, rom_mtvec`），同样要显式保留。
+    _ = &rom_mtvec;
 }
 
 pub export fn _start() callconv(.naked) noreturn {
@@ -168,6 +174,11 @@ pub export fn _start() callconv(.naked) noreturn {
         \\2:
         \\
         \\        # ---- 5) 安装 trap 向量（直接模式：低 2 位 = 0）----
+        \\        # 先把 ROM/bootloader 装好的旧 mtvec 存下来：ROM 自己的 tick ISR 需要它，
+        \\        # 我们只在异常时接管；中断可以按需把 mtvec 还回去。
+        \\        csrr    t0, mtvec
+        \\        la      t1, rom_mtvec
+        \\        sw      t0, 0(t1)
         \\        la      t0, trapEntry
         \\        csrw    mtvec, t0
         \\

@@ -850,3 +850,21 @@ irq-sample #3 input=25 mepc=0x2f83efda
 3. 这样 blob 的 tick 能跑，采样器只处理自己的输入，互不干扰。
 
 在那之前，"任务不让出"的现象不应再归因于调度器或 ack——**它是被我们自己的向量表截断的**。
+
+### 把 `mtvec` 还给 ROM 的实验（2026-11-16）：仍然停在 swap#6
+
+按上面的假设实现：`start.zig` 在覆盖前把旧 `mtvec` 存进 `export var rom_mtvec`（实测
+**0x2f801703**，ROM 地址 ✓），探针在切到任务前把它写回 `mtvec` 并打开中断（不再武装自己的采样器）。
+
+结果：**现象不变**——`esp_wifi_start` 之后依然是
+
+```text
+trace alloc a0=0x18 -> 0x2f01dfc8
+trace queue_send a0=0x2f01d950 a1=0x00000006
+trace semphr_take a0=0x2f01dff0 a1=0xffffffff
+swap#6 in_task=false hooks=7      ← 任务拿到 CPU 后再无输出
+```
+
+也就是说"ROM 的 tick 被我们截获"这条假设**单独不足以解释**：把向量还回去之后任务仍然不让出。
+下一步需要在**恢复 ROM 向量**的前提下重新采一次样（此时得用别的手段，例如 ROM 自己的 tick 计数
+或再叠一层包装），确认任务此刻的 PC 是否还是那个 ROM 轮询辅助函数。
