@@ -2346,3 +2346,24 @@ panic: ra=0x2f812326
 **`mtvt`（向量表）里的第 `id` 项**，那是另一套机制（CSR 号实现相关）。
 
 已回滚（输入 25 恢复自 ack、不转发），基线不受影响。
+
+### 按 IDF 的形状补上"应用侧 handler 表 + 自己的分发"
+
+IDF 的 `intr_handler_set` **不是 ROM 的**：`components/riscv/interrupt.c:36` 写的是应用静态数组
+`s_intr_handlers[core][int_no]`（:22），由应用自己的 `vectors.S`/`vectors_clic.S` 分发。
+ROM 的 `PROVIDE(intr_handler_set = 0x2f800764)` 只在符号**未定义**时才生效——我们没链接
+`components/riscv`，所以 `_set_isr` 一直落到 **ROM 的那张表**上，而 ROM 的分发器正藏在我们覆盖掉的
+`mtvec` 后面 ⇒ **handler 即使装上了也永远跑不到，而且 ROM 的表我们也读不到**。
+
+已按 IDF 的形状补齐：
+
+| 件 | 实现 |
+| --- | --- |
+| 应用侧表 | `trap.zig` 里 `handlers[64]` + `setHandler`/`getHandler` |
+| `_set_isr(n, f, arg)` | **同时**写我们的表与 ROM 的 `intr_handler_set` |
+| `trapDispatch` | **优先**查我们的表：有 handler 就直接 `f(arg)`（T0 先 ack）；没有才走原来的逻辑 |
+| `_set_intr(cpu, src, num, prio)` | `intr_matrix_set` **加** CLIC 每输入 ctrl 的 `[31:24]` 优先级（IDF 的 `set_intr_wrapper` 两步都做） |
+
+板侧（pb176）：基线不变（`calling esp_wifi_start` 到达、无 panic、自旋 `0x2f009206`）——因为 blob
+**至今没调用 `_set_isr`**，表是空的。这套机制现在是**正确且可用**的：一旦 blob 真的装 handler，它就会
+被我们的 trap 调用（而不是落进 ROM 那张够不着的表）。

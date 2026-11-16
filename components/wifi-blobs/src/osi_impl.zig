@@ -589,6 +589,11 @@ fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
     note(31, (@as(usize, @intCast(src)) << 8) | (num & 0xFF), @intCast(@as(u32, @bitCast(prio))));
     const intr_matrix_set = @extern(*const fn (u32, u32, u32) callconv(.c) void, .{ .name = "intr_matrix_set" });
     intr_matrix_set(@intCast(cpu), src, num);
+    // IDF 的 `set_intr_wrapper` 还会设优先级：CLIC 每输入 ctrl 字的 [31:24]。
+    if (num < 32 and prio >= 0) {
+        const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + @as(usize, num) * 4);
+        ctl.* = (ctl.* & ~@as(u32, 0xFF00_0000)) | (@as(u32, @intCast(prio & 0xFF)) << 24);
+    }
 }
 fn shellClearIntr(src: u32, num: u32) callconv(.c) void {
     _ = .{ src, num };
@@ -599,6 +604,11 @@ fn shellClearIntr(src: u32, num: u32) callconv(.c) void {
 fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
     calls.set_isr += 1;
     note(32, @intCast(n), @intFromPtr(f));
+    // 写**应用侧**的表（我们的 trap 才会分发它）——IDF 的 `s_intr_handlers` 就是应用侧。
+    if (n >= 0) {
+        const hf: ?*const fn (?*anyopaque) callconv(.c) void = if (f) |p| @ptrCast(@alignCast(p)) else null;
+        @import("board").trap.setHandler(@intCast(n), hf, arg);
+    }
     const intr_handler_set = @extern(*const fn (i32, ?*anyopaque, ?*anyopaque) callconv(.c) void, .{
         .name = "intr_handler_set",
     });

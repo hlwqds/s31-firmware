@@ -199,8 +199,18 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         }
         irq_count +%= 1;
         const input = cause & 0x3F;
-        // 输入 25 默认自己 ack。把它转发给 ROM 入口的实验结果见 ADR：机制**未定**
+        // 输入 25 默认自己 ack。**转发给 ROM 入口已被实测证伪**：ack 后 jr rom_mtvec 会
+        // `instruction access fault`（mepc==mtval）——`mtvec` 低 2 位是 CLIC 模式，掩位后的基址
+        // 是**向量表基址**而不是代码入口；而且 ROM 的 `s_intr_handlers` 里没有输入 25 的 handler。
         // （之前"风暴/不 ack"的判读被打印上限的假象污染过，不要沿用）。
+        // **应用侧 handler 优先**：只要 `_set_isr` 装过这个输入，就由我们直接调用它
+        // （IDF 的 `_global_interrupt_handler` 就是这个形状）。电平输入（T0/25）要先 ack。
+        const h = getHandler(input);
+        if (h.fn_) |f| {
+            if (input == 25) hw.ackT0Interrupt(2000);
+            f(h.arg);
+            return false;
+        }
         if (input == 25) {
             // 输入 25 是 blob 自己的 tick。**不能**转发给 `rom_mtvec`：实测跳到掩位后的
             // 0x2f801700 会 `instruction access fault`（mepc=mtval=0x2f8210d2）——那个地址是
@@ -242,4 +252,28 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 fn romMtvec() usize {
     const p = @extern(*const usize, .{ .name = "rom_mtvec" });
     return p.*;
+}
+
+// ---------------------------------------------------------------------------
+// 应用侧中断 handler 表（IDF `components/riscv/interrupt.c` 的 `s_intr_handlers` 形状）
+//
+// 为什么需要它：ROM 的 `intr_handler_set`(0x2f800764) 写的是 **ROM 内部**的表，只有 ROM 的
+// dispatcher（在 `mtvec` 后面）会读；而我们的 `trapEntry` 覆盖了 `mtvec`，所以那张表我们既读不到
+// 也调不动。IDF 的做法是**应用自己维护一张表**，由自己的 trap 分发——这里照做。
+// ---------------------------------------------------------------------------
+pub const Handler = struct {
+    fn_: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    arg: ?*anyopaque = null,
+};
+
+var handlers: [64]Handler = @splat(Handler{});
+
+/// `_set_isr(n, f, arg)` 的落地：把 handler 装进**我们自己的**表。
+pub fn setHandler(n: usize, f: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
+    if (n < handlers.len) handlers[n] = .{ .fn_ = f, .arg = arg };
+}
+
+/// 取某个输入的 handler（供 trapDispatch 分发）。
+pub fn getHandler(n: usize) Handler {
+    return if (n < handlers.len) handlers[n] else .{};
 }
