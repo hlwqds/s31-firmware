@@ -51,7 +51,12 @@ var rx_frames: u32 = 0;
 // ---- 上下文切换自检（两根栈）----
 var static_stack: [16 * 1024]u8 align(16) = undefined;
 /// PHY 标定数据（`esp_phy_calibration_data_t.opaque[1894]`），由 `register_chipv7_phy` 填充。
-var cal_data: [1894]u8 align(4) = @splat(0xA5);
+/// `esp_phy_calibration_data_t` = version[4] + mac[6] + opaque[1894] = **1904** 字节。
+/// 之前只声明 1894 字节并把 `&cal_data` 当结构体起点传给 `register_chipv7_phy`：
+/// 库会把前 10 字节当 version/mac，并读写数组末尾之后 10 字节（越界）。
+/// IDF 的真实路径（phy_init.c:895-960）：calloc(1904) → 从 NVS 读标定（空分区 ⇒ 失败 ⇒ FULL）
+/// → 把 station MAC 写进 `cal_data->mac` → `register_chipv7_phy(init_data, cal_data, FULL)`。
+var cal_data: [1904]u8 align(8) = @splat(0);
 
 /// 实验开关：是否在 init 阶段就注册 PHY。false = 交给 `_phy_enable`（IDF 的真实顺序）。
 const probe_register_phy_at_init = false;
@@ -73,7 +78,10 @@ fn phyEnableHook(modem: u32) usize {
     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{
         .name = "register_chipv7_phy",
     });
-    const rc = register_phy(&phy_init_data.params, &cal_data, 2); // PHY_RF_CAL_FULL
+    // 把 station MAC 写进 `cal_data->mac`（偏移 4，6 字节）——IDF 在标定前就是这么做的；
+    // 标定数据是 MAC 绑定的（`phy_rfcal_data_check_new`/`_sub_new` 会校验）。
+    @memcpy(cal_data[4..10], &[_]u8{ 0x1c, 0x29, 0x04, 0xd1, 0x99, 0x28 });
+    const rc = register_phy(&phy_init_data.params, @ptrCast(&cal_data), 2); // PHY_RF_CAL_FULL
     phy_registered = true;
     log.line("wifi-init-probe: _phy_enable(modem={d}) -> register_chipv7_phy rc={d}", .{ modem, rc });
     return 0;
@@ -538,7 +546,7 @@ pub fn run() noreturn {
                     // 怕标定路径要等 PHY 应答；现在中断已开，且 blob 很可能正是靠标定完成才清
                     // MAC+0xAC 的 [15:13] 握手位。
                     if (probe_register_phy_at_init) {
-                        const rc_phy = register_phy(&phy_init_data.params, &cal_data, 2); // 2 = PHY_RF_CAL_FULL
+                        const rc_phy = register_phy(&phy_init_data.params, @ptrCast(&cal_data), 2); // 2 = PHY_RF_CAL_FULL
                         log.line("wifi-init-probe: register_chipv7_phy(mode=FULL) rc={d} (cal_data {d} B)", .{
                             rc_phy,
                             @as(usize, 1894),

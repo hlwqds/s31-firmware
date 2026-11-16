@@ -2305,3 +2305,24 @@ irq-sample #11776 .. mepc=0x2f009206 mac=0x00fff000
 
 **若以后还要挪采样器**，正确的 T1 参数是：`config +0x24`、`alarm lo/hi +0x34/+0x38`、
 `counter lo/hi +0x28/+0x2c`、`update +0x30`、`int_ena/int_st/int_clr` 的 **bit1**、时钟使能 **bit8**。
+
+### 两个真实缺陷已修：`cal_data` 少 10 字节、中断钩子的 note id 撞号
+
+1. **`cal_data` 缓冲区尺寸错误**：`esp_phy_calibration_data_t` = `version[4] + mac[6] + opaque[1894]`
+   = **1904 字节**，而探针只声明了 `[1894]u8` 并把 `&cal_data` 当结构体起点传给 `register_chipv7_phy`
+   ——库会把前 10 字节当 version/mac，并**读写数组末尾之后 10 字节**（越界）。
+   已改为 `[1904]u8`、清零，并按 IDF 的路径在偏移 4 写入 station MAC（`1c:29:04:d1:99:28`）。
+2. **note id 撞号**：`note(2)` 同时被 `shellSetIntr` 与 `shellMutexLock` 使用、`note(4)` 被
+   `shellSetIsr` 与 `shellQueueRecv`、`note(5)` 被 `shellIntsOn` 与 `shellQueueSend` ——
+   所以"blob 没调 `_set_intr`/`_set_isr`"这个结论**在 trace 上无法成立**（调用会以别人的名字打印）。
+   已给三个钩子独立 id（**31/32/33**）并把 `hook_ids` 补齐到 34 项。
+
+**修完后的板侧读数（pb172）**：
+
+```text
+_phy_enable(modem=0) -> register_chipv7_phy rc=0     ← 不再越界
+（trace 里仍然没有任何 set_intr/set_isr/ints_on）    ← 用独立 id 复核，结论成立
+calling esp_wifi_start ... 自旋 mac=0x00fff000
+```
+
+所以两处都是**必须修的正确性问题**，但都不改变卡点。

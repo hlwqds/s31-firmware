@@ -472,11 +472,12 @@ pub const hook_ids = [_][]const u8{
     "timer_fire",  "timer_setfn",   "timer_arm",         "timer_disarm",
     "wifi_clk_en", "wifi_clk_dis",  "wifi_reset_mac",    "coex_init",
     "coex_enable", "coex_status",   "coex_pti",          "coex_req",
-    "coex_rel",    "coex_interval", "coex_start_cb",
+    "coex_rel",    "coex_interval", "coex_start_cb",     "set_intr",
+    "set_isr",     "ints_on",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 30;
+pub const note_id_max: u8 = 33;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
@@ -585,7 +586,7 @@ pub var current_is_task: bool = false;
 /// 空桩会把 blob 的中断安装整个丢掉——它装不上 handler 就只能干等。
 fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
     calls.set_intr += 1;
-    note(2, (@as(usize, @intCast(src)) << 8) | (num & 0xFF), @intCast(@as(u32, @bitCast(prio))));
+    note(31, (@as(usize, @intCast(src)) << 8) | (num & 0xFF), @intCast(@as(u32, @bitCast(prio))));
     const intr_matrix_set = @extern(*const fn (u32, u32, u32) callconv(.c) void, .{ .name = "intr_matrix_set" });
     intr_matrix_set(@intCast(cpu), src, num);
 }
@@ -597,7 +598,7 @@ fn shellClearIntr(src: u32, num: u32) callconv(.c) void {
 /// ROM 符号 `intr_handler_set = 0x2f800764`，内部写 `s_intr_handlers[core][n] = {f, arg}`）。
 fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
     calls.set_isr += 1;
-    note(4, @intCast(n), @intFromPtr(f));
+    note(32, @intCast(n), @intFromPtr(f));
     const intr_handler_set = @extern(*const fn (i32, ?*anyopaque, ?*anyopaque) callconv(.c) void, .{
         .name = "intr_handler_set",
     });
@@ -607,7 +608,7 @@ fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
 /// S31 是 CLIC：每输入一个 ctrl 字（`0x1080_1000 + 4*i`，bit8 = IE）。
 fn shellIntsOn(mask: u32) callconv(.c) void {
     calls.ints_on += 1;
-    note(5, mask, 0);
+    note(33, mask, 0);
     var m = mask;
     var i: usize = 0;
     while (m != 0 and i < 32) : (i += 1) {
