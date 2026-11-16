@@ -3033,3 +3033,23 @@ ROMGLOB g_timer_func=0x400414e4 pp_task_hdl=0x2f07ec20 mac_st=0x00000000
    `0x2f01ce60`）在两边不同，是因为**两边链接的是不同的 blob 构建**——这类 blob 内部指针不能跨构建对比
    （同上一节的方法论更正）。
 3. 仍然可跨构建对比的硬事实只有：**IDF 的 init 把 `MAC_ST` 清成 0，我们的没有**。
+
+### IDF 应用侧 handler 表插桩：只看到 `int_no=2/3`，且打印会把启动搞崩
+
+在 IDF 的 `components/riscv/interrupt.c` 的 `intr_handler_set()` 里加一行 `printf`：
+
+```text
+APPTBL set int_no=2 fn=0x2f00034c arg=0
+APPTBL set int_no=3 fn=0x2f0038ae arg=0x2f01cb38
+（随后 abort() at PC 0x2f002bab，早于 esp_wifi_init）
+```
+
+两条读数：
+
+1. **IDF 早期只注册了外部号 2 与 3 两个 handler**（CLIC 18/19），**没有 9**（= CLIC 25）。
+   ⇒ 至少在 `esp_wifi_init` 之前，IDF 也没有为 input 25 装 handler。
+2. **这个插桩本身会破坏启动**（`printf` 在早期中断注册路径里不安全 → `abort()`），所以拿不到完整清单。
+   已回滚（`components/riscv` clean）。
+
+**方法论**：不要在 `intr_handler_set` 这种会被早期/中断上下文调用的函数里 `printf`；
+要枚举表项，应在**初始化完成后**遍历 `s_intr_handlers`（静态符号，需在同一编译单元里加一个导出函数）。
