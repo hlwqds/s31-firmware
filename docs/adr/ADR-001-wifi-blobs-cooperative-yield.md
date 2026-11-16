@@ -93,8 +93,22 @@ wifi-init-probe: calling esp_wifi_start (idle_calls=320)
 反汇编确认 `wifi_init_completed` 只读状态字（不等待）、`esp_wifi_start` 先 `_wifi_zalloc`
 （表 index 93）再 `ieee80211_ioctl`，所以卡点在 ioctl/状态机内部。
 
+**逐行追踪（2026-11-16，`Hooks.on_note`）**：上面的"不经过钩子"最初是从"1000 次预算未耗尽"
+推出来的，那个推断**不成立**（只证明少于 1000 次）。把 `_event_post` 从具名桩换成实现后，
+`esp_wifi_start` 的完整序列是：
+
+```text
+trace zalloc      a0=0x18                 # 24 B
+trace mutex_lock  a0=0x2f01c90c   ×3      # API 互斥锁
+trace event_post  a0=0x2b (43)  a1=0x10   # start 事件，16 B
+（之后没有任何钩子调用，也没有返回）
+```
+
+也就是说：取锁、发事件都做了，**但从未把 start 命令投进 wifi 队列**；任务停在阻塞收消息上，
+谁也推进不了它。
+
 **结论**：合作式让出能覆盖「阻塞在 OS 原语上」的一切路径（init、`reg_rxcb`、
-`get_config_channel` 都已实测通过），但覆盖不了「blob 自己 spin」的路径。
+`get_config_channel` 都已实测通过），但覆盖不了「blob 自己 spin / 等自己状态机」的路径。
 
 ### 两条后续路线（未实现，按代价排序）
 
