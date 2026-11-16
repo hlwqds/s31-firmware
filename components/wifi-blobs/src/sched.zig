@@ -26,6 +26,7 @@
 //! （只有一根任务栈，所以不需要为每个上下文单独传参）。
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const frame_bytes = 64;
 
@@ -43,10 +44,20 @@ pub const Context = struct {
 /// 帧基址上——表现为"进了任务、第一次让出后再也没有下文"（实测）。
 /// naked 下没有前导，`sp` 的算术是精确的；参数按 ABI 在 `a0`/`a1` 里。
 pub fn swapContext(from: *Context, to: *const Context) void {
-    // Zig 不允许直接调用 naked 函数，所以经 `@extern` 走间接调用（ABI 仍然正确：
-    // 两个整数参数落在 a0/a1）。
-    const f = @extern(*const fn (usize, usize) callconv(.c) void, .{ .name = "s31_swap_context" });
-    f(@intFromPtr(from), @intFromPtr(to));
+    // 只有 rv32 目标才有这段汇编；主机上把整个分支编译掉，让 `initContext` 仍可被主机用例覆盖。
+    if (comptime builtin.cpu.arch == .riscv32) {
+        // Zig 不允许直接调用 naked 函数，所以经 `@extern` 走间接调用（ABI 仍然正确：
+        // 两个整数参数落在 a0/a1）。
+        const f = @extern(*const fn (usize, usize) callconv(.c) void, .{ .name = "s31_swap_context" });
+        f(@intFromPtr(from), @intFromPtr(to));
+    } else {
+        @panic("sched.swapContext 只能在 rv32 上执行");
+    }
+}
+
+/// 帧内第 `i` 个 **32 位**字（0..11 = s0..s11，12 = ra）。主机用例用它验证布局。
+pub fn frameWord(ctx: *const Context, i: usize) u32 {
+    return @as([*]const u32, @ptrFromInt(ctx.sp))[i];
 }
 
 /// 真正做切换的 naked 函数：`a0` = `&from.sp`，`a1` = `&to.sp`（ABI 决定，参数名在这里不可用）。
@@ -109,10 +120,12 @@ pub fn initContext(ctx: *Context, stack: []u8, entry: *const fn (?*anyopaque) ca
     // 用 alignForward 会越过 slice 末尾（最多 15 字节），踩到相邻 arena 块头。
     const top = std.mem.alignBackward(usize, @intFromPtr(stack.ptr) + stack.len, 16);
     const frame: usize = top - frame_bytes;
-    const words: [*]usize = @ptrFromInt(frame);
+    // 帧是 **rv32 布局**：13 个 4 字节字（s0..s11 + ra），不是 `usize`——
+    // 主机（x86_64）上 `usize` 是 8 字节，会写到 96 字节、越过 64 字节帧（实测）。
+    const words: [*]u32 = @ptrFromInt(frame);
     var i: usize = 0;
     while (i < 12) : (i += 1) words[i] = 0; // s0..s11
-    words[12] = @intFromPtr(&trampoline); // ra
+    words[12] = @intCast(@intFromPtr(&trampoline) & 0xffff_ffff); // ra（rv32 地址）
     ctx.* = .{ .sp = frame, .stack = stack };
 }
 
@@ -123,5 +136,9 @@ pub fn start(ctx: *Context, self: *Context) void {
 }
 
 comptime {
-    @export(&swapAsm, .{ .name = "s31_swap_context", .linkage = .strong });
+    // 只在 rv32 上导出：`@export` 会强制 codegen，在 x86 主机测试里把 RV32 汇编编进二进制
+    // （实测：主机测试直接 SIGSEGV，且没有任何输出）。
+    if (builtin.cpu.arch == .riscv32) {
+        @export(&swapAsm, .{ .name = "s31_swap_context", .linkage = .strong });
+    }
 }

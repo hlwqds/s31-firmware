@@ -29,9 +29,6 @@ from pathlib import Path
 EXCLUDE = {
     "selftest.zig", "hw.zig", "log.zig", "gen_cert_fixture.zig", "host_tests.zig",
     "init_probe.zig", "link_stubs.zig",
-    # sched.zig 是 rv32 内联汇编（naked 上下文切换），主机上无法执行也无法 import：
-    # 它的判据是板侧自检 `logs/wifi-sched-boot.log`（sched-test: PASS）。
-    "sched.zig",
 }
 IMPORT_RE = re.compile(r'@import\("([^"]+\.zig)"\)')
 TEST_RE = re.compile(r'^\s*test\b', re.MULTILINE)

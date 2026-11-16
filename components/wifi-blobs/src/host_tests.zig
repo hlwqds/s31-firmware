@@ -12,6 +12,7 @@ const std = @import("std");
 const adapter = @import("adapter.zig");
 const osi = @import("osi.zig");
 const impl = @import("osi_impl.zig");
+const sched = @import("sched.zig");
 const initcfg = @import("init_config.zig");
 
 test {
@@ -339,4 +340,23 @@ test "init_config: 交叉编译期的布局断言在 ilp32 下成立" {
         try std.testing.expectEqual(@as(usize, 160), @sizeOf(initcfg.InitConfig));
         try std.testing.expectEqual(@as(usize, 152), @offsetOf(initcfg.InitConfig, "magic"));
     }
+}
+
+test "sched: initContext 把帧放在栈区间内且 16 字节对齐" {
+    var stack: [4096]u8 align(16) = undefined;
+    var ctx: sched.Context = .{};
+    sched.initContext(&ctx, &stack, struct {
+        fn entry(_: ?*anyopaque) callconv(.c) void {}
+    }.entry, null);
+
+    const base = @intFromPtr(&stack);
+    const end = base + stack.len;
+    // 帧必须整个落在区间内：alignForward 会越过末尾，踩坏相邻内存（实测过）。
+    try std.testing.expect(ctx.sp >= base);
+    try std.testing.expect(ctx.sp + sched.frame_bytes <= end);
+    try std.testing.expectEqual(@as(usize, 0), ctx.sp % 16);
+    // 帧布局：s0..s11 清零，ra 指向 trampoline（非 0）。
+    var i: usize = 0;
+    while (i < 12) : (i += 1) try std.testing.expectEqual(@as(u32, 0), sched.frameWord(&ctx, i));
+    try std.testing.expect(sched.frameWord(&ctx, 12) != 0);
 }
