@@ -792,6 +792,28 @@ pub fn run() noreturn {
                 });
                 // **b14 实验已做**（置 1 后 start）：无效——`b16`/`b288` 仍为 0，说明 MAC 使能函数
                 // （0x40034d1a）在 **init 期间**就被 b14=0 挡掉返回了，start 里不会再跑一次。
+                // **泵任务实验**：`esp_wifi_start` 会阻塞在 deinit 自旋里，而 IDF 靠 FreeRTOS 抢占让 blob
+                // 任务在阻塞期间继续推进状态机。我们的调度器是合作式的，所以这里在 start **之前**多泵几轮，
+                // 看状态机能否推进到 MAC 使能（判据：ctx b16/b27/b288 变 1）。
+                {
+                    const bgp = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
+                    var round: usize = 0;
+                    while (round < 8) : (round += 1) {
+                        log.line("wifi-init-probe: pump round {d} before: b14={d} b15={d} b16={d} b27={d} b288={d} mac=0x{x:0>8}", .{
+                            round,                                         bgp[14], bgp[15], bgp[16], bgp[27], bgp[288],
+                            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
+                        });
+                        in_task = true;
+                        impl.current_is_task = true;
+                        sched.swapContext(&main_ctx, &task_ctx);
+                        in_task = false;
+                        impl.current_is_task = false;
+                        log.line("wifi-init-probe: pump round {d} after:  b14={d} b15={d} b16={d} b27={d} b288={d} mac=0x{x:0>8}", .{
+                            round,                                         bgp[14], bgp[15], bgp[16], bgp[27], bgp[288],
+                            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
+                        });
+                    }
+                }
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });
