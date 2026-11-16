@@ -132,7 +132,7 @@ test "osi_impl: 互斥在单线程下是空操作" {
     try std.testing.expect(!m.locked);
 }
 
-test "osi_impl: 表里已实现的钩子非空，未实现的是 null" {
+test "osi_impl: 表里没有任何 null 钩子（未实现的由具名桩顶上）" {
     var buf: [8192]u8 align(16) = undefined;
     impl.initArena(&buf);
     const tbl = impl.makeTable();
@@ -140,9 +140,16 @@ test "osi_impl: 表里已实现的钩子非空，未实现的是 null" {
     inline for (.{ "_malloc", "_free", "_semphr_create", "_semphr_take", "_semphr_give", "_mutex_lock", "_mutex_unlock", "_queue_create", "_queue_send", "_queue_recv" }) |name| {
         try std.testing.expect(@field(tbl, name) != null);
     }
-    // 没实现：PHY/NVS/日志这些还留着 null，调用即崩（好过静默错值）
-    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._timer_arm);
-    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._coex_init);
+    // 未实现的钩子已由 osi_stubs 填成具名桩：表里不再有 null，被调用时按索引计数。
+    const stubs = @import("osi_stubs.zig");
+    try std.testing.expectEqual(@as(usize, 74), stubs.field_count);
+    inline for (.{ "_timer_arm", "_coex_init", "_phy_enable", "_event_post" }) |name| {
+        try std.testing.expect(@field(tbl, name) != null);
+    }
+    const before = stubs.hits[0];
+    const stub0: *const fn () callconv(.c) usize = @ptrCast(tbl._timer_arm.?);
+    _ = stub0();
+    try std.testing.expect(stubs.hits[0] >= before);
 }
 
 test "osi_impl: 通过表指针调用分配/信号量/队列（C 调用约定）" {
@@ -196,7 +203,7 @@ test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
 }
 
 test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
-    try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len);
+    try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len + 2); // +2 = _version/_magic
     try std.testing.expectEqual(@as(usize, 52), impl.implemented.len); // 21 原语 + 13 中断/任务 + 6 时间/随机/MAC + 12 NVS
 }
 
