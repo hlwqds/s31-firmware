@@ -13,8 +13,13 @@
   IRAM 变体收进 SRAM 的 `.iram_blobs`（62 240 B），`.dram1` 并进 `.data`。没有这一步，
   105 个 blob 对象会让 `elf2image` 报 `Invalid segment count 124 (max 16)`。
   收集后同一实验镜像变成合法两段：irom **586 128 B**、drom **163 360 B**、SRAM 92 KB，
-  总镜像 818 368 B（factory 1 536 000 之内）。常规镜像不受影响（`elf2image` 仍两段、
-  `gate-board` 7/7 通过）。
+  总镜像 818 368 B（factory 1 536 000 之内），`image-info` 里 DROM/IROM 行正好 2 行
+  （`rom_index == 2` 成立）。**这份 blob 镜像已烧上板并正常启动**：
+  `sections: passed=1 failed=0 total=1`、`verdict=pass`——586 KB irom + 163 KB drom + 62 KB
+  SRAM 的新布局被 loader 正常映射，这是板级事实而非静态账。常规镜像不受影响
+  （`elf2image` 仍两段、`gate-board` 7/7 通过）。
+  注意 `Merged N ELF section` 是 esptool 的**合并次数**（`before - after`），不是 flash 段数，
+  判据看 `image-info` 的 DROM/IROM 行数。
 - **分区表落库**：`firmware/idf-bootstrap/partitions.csv`（nvs 0x9000 / phy_init 0xf000 /
   factory 0x10000 + 1500K，与 `SINGLE_APP_LARGE` 的默认表**逐字节一致**），
   `sdkconfig.defaults` 改走 `CONFIG_PARTITION_TABLE_CUSTOM`；新增
