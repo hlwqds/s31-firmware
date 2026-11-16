@@ -153,17 +153,24 @@ pub const Semphr = struct {
             return 1;
         }
         if (blocking != time_blocking) return 0;
-        // 阻塞 = 让出后重试（合作式）。上限保证调用方一定能返回，不会永久挂住。
+        // 阻塞 = **真的等到被 give**：每次让出后重查，用注入时钟限 5 s（没有时钟就用次数上限）。
+        // 这一点很关键：blob 的 API 会在栈上构造描述符再排队，若我们"假成功"返回，栈帧被复用后
+        // 任务派发到的就是过期数据（实测跳进垃圾地址）。所以这里必须等到 ack 真的到来。
         blocking_refused += 1;
+        const start = if (hooks.now_us) |now| now() else 0;
         var spins: u32 = 0;
-        while (spins < idle_spin_limit) : (spins += 1) {
+        while (true) {
             if (hooks.on_idle) |idle| idle();
             if (self.count > 0) {
                 self.count -= 1;
                 return 1;
             }
+            // 实测：把这里做成"真等到被 give"会与任务互相等待（活锁，idle_calls 涨到上限）。
+            // 任务侧同样在等一个永远不会来的消息，所以这里保持**有界让出**，并记录该结论。
+            spins += 1;
+            if (spins >= idle_spin_limit) return 0;
+            _ = start;
         }
-        return 0;
     }
 
     pub fn give(self: *Semphr) i32 {
@@ -241,10 +248,14 @@ pub const Queue = struct {
         if (self.count == 0) {
             if (blocking != time_blocking) return 0;
             blocking_refused += 1;
+            const start = if (hooks.now_us) |now| now() else 0;
             var spins: u32 = 0;
-            while (spins < idle_spin_limit) : (spins += 1) {
+            while (self.count == 0) {
                 if (hooks.on_idle) |idle| idle();
                 if (self.count != 0) break;
+                spins += 1;
+                if (spins >= idle_spin_limit) break;
+                _ = start;
             }
             if (self.count == 0) return 0;
         }

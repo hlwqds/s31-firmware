@@ -485,3 +485,20 @@ esp_wifi_ipc_internal:
 
 所以下一步变成：找**谁调用 `esp_wifi_ipc_internal`**，以及它传进来的 `a0` 是什么（其首字为
 `cal_data - 12`）。那就是整条链的起点。
+
+### "把阻塞等待做成真等"这个修法被实测否掉（2026-11-16）
+
+按"API 返回后栈帧被复用"的解释，把 `TIME_BLOCKING` 的 take/recv 改成**真的等到被 give**
+（每次让出后重查，5 s 时钟上限）。板侧结果不是修好，而是**活锁**：
+
+```text
+wifi-init-probe: idle_calls=10000 in_task=false hooks=16
+...
+wifi-init-probe: idle budget exhausted (20001), halting
+```
+
+`hooks` 一直是 16（没有任何新的钩子调用），说明**任务侧也在等**：主上下文等 ack，任务等消息，
+两边互相让出、谁都不前进。所以"真等"在这里不是答案——ack/消息的**生产者**本身缺失。
+
+已回退成有界让出（并在代码里写明这次实测结论，避免下次重复）。真正的下一步是查清
+"谁应该 give 这个 ack / 谁应该往任务队列投消息"。

@@ -1,9 +1,4 @@
-wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
-wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
-wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
-wifi-init-probe: magic_pre=0x2f01ca30 magic_post=0x2f01ca28 cal_data=0x2f011690 cal_data-12=0x2f011684
-wifi-init-probe: cal_data=0x2f011690 init_params=0x40104de0 wrapper=0x2f01dfa4 inner=0x2f01d940
-wifi-init-probe: register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
-panic: mepc=0x2f011684 mtval=0xac50 mstatus=0x3801
-panic: sp=0x2f01c950 s0=0x2f07ac60
-panic: ctx[0]=0x2f011684 ctx[1]=0x2f01c9e0 ctx[2]=0x2010a000 ctx[3]=0x20101000
+wifi-init-probe: idle_calls=18000 in_task=false hooks=16
+wifi-init-probe: idle_calls=19000 in_task=false hooks=16
+wifi-init-probe: idle_calls=20000 in_task=false hooks=16
+wifi-init-probe: idle budget exhausted (20001), halting
