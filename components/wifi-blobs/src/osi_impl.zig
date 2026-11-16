@@ -934,6 +934,10 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
     // 与 IDF 的 `esp_phy_enable` 一致：先保证 ICG 位图解除门控（见 `shellWifiClockEnable` 的注释）。
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     icg.* = 0x6464_6400;
+    // IDF 的 `esp_phy_enable_wrapper` 还会调 `phy_wifi_enable_set(1)`（ROM `0x2f80145c`）——
+    // 我们此前漏了这一步；若 libphy/ROM 的代码按这个标志门控，缺它 PHY 侧就不会真正使能。
+    const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
+    phy_wifi_enable_set(1);
     // IDF 的顺序：`esp_phy_enable(modem)` 内部才做"共用时钟 → phy_module_enable → 首次标定"。
     // 探针注入的实现负责首次 `register_chipv7_phy`（它持有 phy_init_data/cal_data）。
     if (hooks.on_phy_enable) |f| _ = f(modem);

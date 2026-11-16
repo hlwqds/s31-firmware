@@ -2258,3 +2258,23 @@ wifi-init-probe: SYSCON_FORCE_ON SKIPPED at init
 `esp_phy_enable(PHY_MODEM_WIFI); phy_wifi_enable_set(1); ...`，而 **`phy_wifi_enable_set` 定义在
 `libphy.a` 里**（`esp_phy_init.h:288` 只有声明）。如果 libphy 的代码按这个标志门控，我们的 `_phy_enable`
 就少了一步——下一步值得把它加进钩子。
+
+### 补上 `phy_wifi_enable_set(1)`（IDF wrapper 的真实一步）：仍自旋
+
+`phy_wifi_enable_set` 不在 libphy.a，而是 **ROM `0x2f80145c`**（`esp32s31.rom.phy.ld:176`）。
+已加进 `_phy_enable`（在 ICG 写之后）：
+
+```zig
+const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
+phy_wifi_enable_set(1);
+```
+
+板侧（pb168）：`esp_wifi_start` 正常进入、无 panic、**自旋照旧**（`mac=0x00fff000`）。
+
+**至此 IDF 宿主侧能列举出来的步骤都做了**：时钟（CLK_CONF1/ICG/LPCON/HP_SYS_CLKRST）、`coex_init`、
+`phy_wifi_enable_set(1)`、`register_chipv7_phy`、中断注册原语、`wifi_init_config_t` 逐字段。
+
+**剩下唯一一个已确认的结构性差异还没消除**：**采样器占着 TIMG0_T0 / CLIC 输入 25，而 blob 的 tick
+也是它**——我们的 ISR 自己 ack 并重装，blob 的 tick ISR 永远不会被服务。要验证这条，必须把采样器挪到
+**T1 / 输入 26**（矩阵 `0x20585068`、CLIC `0x10801068`、mie bit26、`t1config +0x24`、
+`t1alarmlo +0x28`、`t1alarmhi +0x2c`、`int_*` 的 bit1），让输入 25 转发给 ROM dispatcher。
