@@ -85,6 +85,11 @@ SECTIONS
         _rodata_start = .;
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
+        /* IDF blob（net80211/pp）的只读数据：每条 Wi-Fi 日志串都是一个独立段
+         * `.rodata_wlog…`（实测 603 个），不收进来 lld 会各自成段，镜像段数直接爆掉。
+         * `.eh_frame*` 我们没有展开器，但仍收进 rodata（丢弃会改变镜像语义）。 */
+        *(.rodata_wlog*)
+        *(.eh_frame .eh_frame.* .eh_frame_hdr)
         . = ALIGN(16);
         _rodata_end = .;
     } > drom
@@ -98,11 +103,27 @@ SECTIONS
         _trap_end = .;
     } > sram
 
+    /* IDF blob 的 IRAM 变体：这些段带 SHF_ALLOC 且必须落在 SRAM（可执行），
+     * 不收集的话 lld 会把它们当 flash 段，段数爆掉、语义也错。
+     * 实测体积：.wifislprx* 13 182 B + 其余 iram 变体 49 182 B。 */
+    .iram_blobs : ALIGN(16)
+    {
+        *(.iram1 .iram1.*)
+        *(.wifislpiram*)
+        *(.wifirxiram*)
+        *(.wifiextrairam*)
+        *(.wifiorslpiram*)
+        *(.wifislprxiram*)
+        *(.wifi0iram*)
+        . = ALIGN(16);
+    } > sram
+
     /* 有初值的可写数据。本布局 LMA == VMA：_start 不需要搬运。 */
     .data : ALIGN(16)
     {
         _data_start = .;
         *(.data .data.*)
+        *(.dram1 .dram1.*)
         /* RISC-V small-data anchor：gp = 当前 + 0x800。 */
         __global_pointer$ = . + 0x800;
         *(.sdata .sdata.*)

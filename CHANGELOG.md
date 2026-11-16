@@ -8,6 +8,13 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **链接脚本收集 IDF blob 的段**：`s31.ld` 现在把 `.rodata_wlog*`（603 个 Wi-Fi 日志串段）、
+  `.eh_frame*` 并进 `.flash.rodata`，`.iram1/.wifis*piram/.wifirxiram/.wifiextrairam` 等
+  IRAM 变体收进 SRAM 的 `.iram_blobs`（62 240 B），`.dram1` 并进 `.data`。没有这一步，
+  105 个 blob 对象会让 `elf2image` 报 `Invalid segment count 124 (max 16)`。
+  收集后同一实验镜像变成合法两段：irom **586 128 B**、drom **163 360 B**、SRAM 92 KB，
+  总镜像 818 368 B（factory 1 536 000 之内）。常规镜像不受影响（`elf2image` 仍两段、
+  `gate-board` 7/7 通过）。
 - **分区表落库**：`firmware/idf-bootstrap/partitions.csv`（nvs 0x9000 / phy_init 0xf000 /
   factory 0x10000 + 1500K，与 `SINGLE_APP_LARGE` 的默认表**逐字节一致**），
   `sdkconfig.defaults` 改走 `CONFIG_PARTITION_TABLE_CUSTOM`；新增

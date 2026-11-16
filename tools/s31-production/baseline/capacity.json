@@ -1,36 +1,36 @@
 {
   "full": {
-    "drom_len": 70796,
+    "drom_len": 70800,
     "drom_load": 1074790464,
-    "image": 398576,
+    "image": 398592,
     "irom_len": 305696,
     "irom_load": 1073741856
   },
   "min": {
-    "drom_len": 4148,
+    "drom_len": 4144,
     "drom_load": 1074790432,
     "image": 69760,
     "irom_len": 13168,
     "irom_load": 1073741856
   },
   "net": {
-    "drom_len": 36372,
+    "drom_len": 36368,
     "drom_load": 1074790432,
     "image": 167520,
     "irom_len": 89008,
     "irom_load": 1073741856
   },
   "net-wire": {
-    "drom_len": 8216,
+    "drom_len": 8208,
     "drom_load": 1074790432,
     "image": 73824,
     "irom_len": 32256,
     "irom_load": 1073741856
   },
   "tls": {
-    "drom_len": 51876,
+    "drom_len": 51872,
     "drom_load": 1074790464,
-    "image": 254160,
+    "image": 254144,
     "irom_len": 190080,
     "irom_load": 1073741856
   },
