@@ -203,9 +203,18 @@ register_chipv7_phy(&phy_init_data.params, &cal_data /*1894 B 清零*/, 0 /*PHY_
 
 **已实测的一刀（2026-11-16）**：`MODEM_LPCON_TEST_CONF_REG`（`0x2010F000`）bit0 =
 `MODEM_LPCON_CLK_EN`（默认 0），IDF 的 `modem_clock_module_enable(PERIPH_PHY_MODULE)` 就是开这一位。
-写下去生效（`0x0 -> 0x1`），`phy_get_xtal_freq`/`phy_get_rf_cal_version` 仍返回，但
-**`phy_rf_init` 仍然挂起** —— 顶层调制解调器门不够，还需要 I2C 模拟主控 / RF 块的时钟
-（`DR_REG_I2C_ANA_MST_BASE = 0x2010F800`）。
+写下去生效（`0x0 -> 0x1`）。随后按 `modem_clock_impl.c:20` 的整组依赖继续打开：
+
+| 寄存器 | 读回 |
+| --- | --- |
+| `MODEM_LPCON_CLK_CONF_REG`(0x2010F018) | 写前 `0x4`（I2C_MST 已开）→ `0xf` |
+| `HP_SYS_CLKRST_MODEM_CONF_REG`(0x205871E0) | **`0x25 -> 0x3d`**（`0x25` 正是 IDF 关闭值） |
+| `MODEM_SYSCON_CLK_CONF1_REG`(0x20109C14) | `0x0 -> 0x38E000`（FE_80M/FE_160M/FE_APB/FE_PWDET_ADC/FE_ADC/FE_DAC） |
+
+`phy_get_xtal_freq`/`phy_get_rf_cal_version` 仍返回，但 **`phy_rf_init` 依旧自旋**。
+这组依赖里剩下未开的是 `I2C_MASTER` 的 REGI2C 模拟时钟（`ANALOG_CLOCK_ENABLE()`，
+`modem_clock_impl.c:229`），以及 `PERIPH_PHY_CALIBRATION_MODULE` 的独立组
+（WIFI_APB/WIFI_BB/BB_44M/BB_80X1）。
 
 **更正（此前写错）**：S31 **有**调制解调器寄存器头，位置是
 `components/soc/esp32s31/include/modem/`（不是 `register/soc/`）：
