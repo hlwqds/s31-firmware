@@ -251,8 +251,11 @@ pub const Queue = struct {
         if (self.count == 0) {
             if (blocking != time_blocking) return 0;
             blocking_refused += 1;
+            // **IDF 的语义是"无限阻塞"**（`xQueueReceive(..., portMAX_DELAY)` 永不返回 0）。
+            // 我们原先只用 `idle_spin_limit`(64) 次让出就返回 0 —— blob 会把"空"当成一条合法答复，
+            // 从而走到不同分支。这里把阻塞上限放大（仍保留有界，避免把板子挂死）。
             var spins: u32 = 0;
-            while (spins < idle_spin_limit) : (spins += 1) {
+            while (spins < queue_block_spin_limit) : (spins += 1) {
                 serviceTimers();
                 serviceTimers();
                 if (hooks.on_idle) |idle| idle();
@@ -477,6 +480,8 @@ pub var budget: u32 = 0;
 pub var task_create_fail: bool = false;
 /// 一次"阻塞等待"最多让出多少次（每次让出都会跑一遍主循环的 idle 钩子）。
 pub const idle_spin_limit: u32 = 64;
+/// 阻塞队列接收的自旋上限：IDF 是 `portMAX_DELAY`（无限），我们用一个足够大的有界值近似。
+pub const queue_block_spin_limit: u32 = 20_000;
 /// 最近的钩子调用（id = `hook_ids` 的下标），用于停机时说明"它在等什么"。
 pub const hook_ids = [_][]const u8{
     "semphr_take", "semphr_give",   "mutex_lock",        "mutex_unlock",

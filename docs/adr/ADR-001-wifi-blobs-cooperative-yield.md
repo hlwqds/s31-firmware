@@ -3290,3 +3290,23 @@ irq-sample #11776 ... mepc=0x2f009206 ← 自旋不变
 
 这类差异（超时单位：tick vs ms/us；返回码：`pdPASS`/`pdFAIL` vs 0/1；阻塞语义）**可能在 MAC 使能之前
 就让 `init_internal` 走到不同分支**。下一步应对拍：`queue_*` / `semphr_*` / `mutex_*` / `malloc*` 四族。
+
+### 队列阻塞语义：上限 64 → 20000，**无变化**；`xQueueReceive` 的返回码我们本来就是对的
+
+把阻塞接收的自旋上限从 `idle_spin_limit`(64) 提到 `queue_block_spin_limit`(**20000**)：
+
+```text
+post-init ctx ... mac=0x0000e000      ← 仍然没清
+irq-sample #11776 ... mepc=0x2f009202 ← 自旋不变
+```
+
+⇒ **"有界自旋 vs 无限阻塞"不是缺失的那一步**（至少把上限放大 300 倍无变化）。
+
+顺带核对了一条**曾被怀疑的返回码**：FreeRTOS 的 `xQueueReceive()` 返回的是
+**`pdTRUE`(1) / `pdFALSE`(0)**（`freertos/queue.h` 的文档注释原文："pdTRUE if an item was successfully
+received from the queue"），**不是拷贝字节数** ⇒ 我们成功时 `return 1` **本来就是对的**，不需要改。
+（这条曾被建议改成 `return self.item_size`，核对后**否决**——改了反而是引入 bug。）
+
+真正的差异只剩：IDF 的阻塞是 `portMAX_DELAY`（永不返回 0），我们是有限上限后返回 0。要真正做到"无限阻塞"，
+阻塞点必须**切回 main 上下文**（像 `init_probe` 里 `swapContext(&task_ctx, &main_ctx)` 那样），
+而那又要求从 trap 的 tick 里驱动泵——两件事需要配套做。
