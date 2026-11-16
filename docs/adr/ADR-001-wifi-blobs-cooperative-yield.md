@@ -1642,3 +1642,29 @@ ROM 的三个谓词/状态一起读出来，图景很一致：
 所以 `ic_mac_init` 的真体在 **`0x2f817294`**（`0x2f800d9c + 0x164f8`）。同一段是 16 位压缩指令，
 逐字手工解码性价比低；下一步若要继续，直接用
 `riscv32-esp-elf-objdump -D -b binary -m riscv:rv32 --adjust-vma=0x2f817294` 反汇编这批 dump 出来的字节。
+
+### 反汇编 `is_lmac_idle` 本体：它读的是 **IC vtable**，不是 `0x20104CAC`
+
+thunk `0x2f800da4` → `j 0x2f8342c6`，真体：
+
+```asm
+2f8342c6  addi sp,sp,-16
+2f8342d0  li   s0,0                # i = 0
+2f8342d2  lui  s2,0x2f080
+2f8342d6  li   s1,5                # 5 个接口
+2f8342d8  lw   a5,-184(s2)         # a5 = *(0x2f07ff48)   ← IC 上下文指针（g_ic）
+2f8342dc  zext.b a0,s0
+2f8342e0  lw   a5,220(a5)          # a5 = ic->fns[55]
+2f8342e4  jalr a5                  # 调 ic->fns[55](i)
+2f8342e6  beqz a0, ret_path        # 返回非 0 就停
+2f8342e8  addi s0,s0,1
+2f8342ea  bne  s0,s1,0x2f8342d8
+```
+
+**两个结论**：
+
+1. `is_lmac_idle` 是通过 **IC 的 vtable**（`*(0x2f07ff48)` 的 `+220` 槽）间接判断的，**并不直接读
+   `0x20104CAC`**。所以"它返回 1 而 bits 13..15 也是 1 ⇒ 1=空闲"只是**不矛盾的相关性**，不是证明。
+   极性的表述因此降级为**倾向**（文档已按此改写），最终判据要读 `ic->fns[55]` 的真体。
+2. **IC 上下文指针在 `0x2f07ff48`**（`g_ic`）——`ic_mac_init` 这类 IC 层函数很可能要它作参数，
+   之前那次"无参调用"没生效可能就是 ABI 不对。
