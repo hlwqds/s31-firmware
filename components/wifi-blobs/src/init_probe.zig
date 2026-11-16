@@ -30,6 +30,9 @@ const esp_wifi_init_internal = @extern(*const fn (*const initcfg.InitConfig) cal
     .name = "esp_wifi_init_internal",
 });
 
+/// 静态 osi 表（见 run() 里的说明）。
+var osi_table: osi.Osi = undefined;
+
 fn nowUsHook() u64 {
     return hw.nowUs();
 }
@@ -63,11 +66,14 @@ pub fn run() noreturn {
     impl.setHooks(.{ .now_us = &nowUsHook, .fill_random = &fillRandomHook, .mac = &macHook });
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
-    var table = impl.makeTable();
-    table._log_write = s31_log_write; // C 变参 shim
-    const cfg = initcfg.defaults(&table);
+    // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，
+    // 栈上（`run()` 的局部变量）的表在返回后就失效——生产路径同理，所以放文件作用域。
+    osi_table = impl.makeTable();
+    osi_table._log_write = s31_log_write; // C 变参 shim
+    const table = &osi_table;
+    const cfg = initcfg.defaults(table);
     log.line("wifi-init-probe: table=0x{x:0>8} cfg magic=0x{x:0>8} crypto size={d}", .{
-        @intFromPtr(&table),
+        @intFromPtr(table),
         @as(u32, @bitCast(cfg.magic)),
         cfg.wpa_crypto_funcs.size,
     });
@@ -77,7 +83,13 @@ pub fn run() noreturn {
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: esp_wifi_init_internal rc={d}", .{init_rc});
     if (init_rc == 0) {
-        log.raw("wifi-init-probe: INIT OK\n");
+        log.line("wifi-init-probe: INIT OK, arena free={d}/{d} B, bad_handle={d}, blocking_refused={d}", .{
+            impl.arena_state.bytes_free,
+            impl.arena_state.bytes_total,
+            impl.bad_handle,
+            impl.blocking_refused,
+        });
+        log.line("wifi-init-probe: tasks recorded={d}", .{impl.task_count});
         hw.halt();
     }
 
