@@ -8,6 +8,13 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **Wi-Fi blob init 返回 0**（2026-11-16，R3 里程碑）：真实 blob 的 `esp_wifi_init_internal`
+  在裸机上返回 **0**（`wifi-init-probe: INIT OK`）。三个修复都由故障点反汇编定住：
+  `_wifi_create_queue`（表 index 94）是独立钩子且**返回对象的第一个字必须是内部队列指针**
+  （`pp_create_task` 把首字当句柄传给 `_queue_send`）；`_wifi_thread_semphr_get` 返回 null
+  会让 init 判成 `257`；`osi_stubs.fill` 改成只填仍为 null 的字段（否则新实现的钩子被同名桩
+  静默覆盖），并加主机用例断言"已实现 ∩ 桩 = ∅"。仍未闭环：init 创建的任务在协作式单线程壳里
+  从未被调度，扫描/关联/收包尚未发生。
 - **第一次真正执行 blob 代码**（R3 里程碑）：`-Dwifi-init-probe=true` 编进"装 osi 表 → 构造
   `wifi_init_config_t` → 调 `esp_wifi_init_internal` → 打印返回码与桩命中"的入口，实测：
 
