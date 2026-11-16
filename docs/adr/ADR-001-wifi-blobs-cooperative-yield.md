@@ -540,8 +540,30 @@ trace semphr_give a0=0x00000000 a1=0x2f00d70c   # a1 = 调用者 ra
 2f00d70c  li   s4, 0          # 返回地址
 ```
 
-也就是说 **blob 自己的 IRAM 任务代码**在 give 时传了 null。下一步是在 blob 对象里按这段字节模式
-反查是哪个函数（`ieee80211_ioctl.o` / `pp.o` 一类），看它给 `a0` 赋值的那几行。
+也就是说 **blob 自己的 IRAM 任务代码**在 give 时传了 null。
+
+**但这个 null 更可能是症状而不是根因**（修正此前"根因链闭合"的说法）：take 失败（我们的有界让出
+返回 0）之后，blob 走**取消/错误路径**，用一个空句柄 give 掉；真正缺的仍然是"任务为什么没有 ack"。
+
+把 `queue_recv`(id 4) 也纳入追踪后，同一份日志里的**顺序**给出了答案：
+
+```text
+take(dfb8) → send(6)      # API 发第一条
+take(dfe0) → send(6)      # 第二条
+take(dfe0) → send(6)      # 第三条
+take(dfe0) → give(NULL)   # API 放弃（take 超时）
+queue_recv(0x2f01d940, BLOCKING)   # ← 任务到这时才第一次进入 recv
+```
+
+两个关键事实：
+
+1. **recv 的句柄与 send 的句柄相同**（`0x2f01d940`）——队列通道没错；
+2. **任务直到 API 放弃之后才进入 recv**——也就是说 API 阻塞等待期间，`on_idle` 的上下文切换
+   并**没有**把任务真正推进到"处理消息"那一步。
+
+所以剩下的问题收敛成一句：**API 的阻塞等待期间，为什么任务没有被调度到能取走消息？**
+下一步该看 `idleHook` 的 `in_task`/`task_ctx_ready` 状态与任务的 `spins` 计数（任务可能在自己的
+有界 recv 里先把 64 次让出烧完了）。
 
 ### 为什么还不能直接按字节反查（记录方法学）
 
