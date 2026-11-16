@@ -2430,3 +2430,24 @@ IDF 的权威口径：`components/riscv/interrupt.c` 里 `intr_get_item(mcause -
 并且要设触发类型 `trig [18:17]`（0=电平、1=上升沿）——两处都已修正。
 
 板侧复核（pb184）：自旋锚定扫描与哨兵往返结果不变（除哨兵外全空），基线不变。
+
+### `g_timer_func` 已装并被真实调用 4096+ 次，自旋不变 ⇒ tick handler 不是卡点
+
+`esp32s31.rom.pp.ld:377` 的 `g_timer_func = 0x2f07feb8` 在自旋期间读出来是 **`0x4003012e`**
+（blob 代码段），即 ROM WiFi 的定时器回调指针。把它按外部号 9（= CLIC 输入 25）装进 ROM 表：
+
+```text
+mtvt=0x0 mtvt2=0x0 g_timer_func=0x4003012e
+installed g_timer_func at ext#9 (input 25)
+romhandler calls=1024 fn=0x4003012e
+romhandler calls=4096 fn=0x4003012e
+irq-sample #11776 input=25 mepc=0x2f009206 mac=0x00fff000
+```
+
+**handler 确实被我们的 trap 调用了 4096+ 次，`MAC_ST[15:13]` 仍是 `1`，自旋 PC 不变。**
+
+⇒ 结论：**"blob 的 tick handler 从未运行"这个假设已被直接证伪**——它现在会运行，而卡点依旧。
+tick 不是阻塞项；`esp_wifi_start` 等的是别的东西（MAC 引擎真正起来 / 校准完成 / 某个我们没喂的输入）。
+
+顺带：**CSR 0x308（mtvt2）在本核不存在**，读它会 `illegal instruction`（`mtval=0x308029f3` 正是
+`csrr x19,0x308` 的编码）。所以"选择性向量"开关不存在，`mtvt=0` 也就无所谓。

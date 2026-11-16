@@ -219,7 +219,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             const mtvt = asm volatile ("csrr %[v], 0x307"
                 : [v] "=r" (-> usize),
             );
-            log.line("mtvt=0x{x}", .{mtvt});
+            // **CSR 0x308（mtvt2）在本核不存在**：读它会 `illegal instruction`
+            // （实测 `mepc=0x4004e3a4 mtval=0x308029f3`，正是 `csrr x19,0x308` 的编码）。
+            const mtvt2: usize = 0;
+            // ROM 的 WiFi 定时器回调指针（esp32s31.rom.pp.ld:377 `g_timer_func = 0x2f07feb8`）：
+            // 若非零且指向 ROM，就是候选的 tick handler。
+            const g_timer_func = @as(*volatile usize, @ptrFromInt(0x2f07feb8)).*;
+            log.line("mtvt=0x{x} mtvt2=0x{x} g_timer_func=0x{x}", .{ mtvt, mtvt2, g_timer_func });
             // 表只有 **32 项**（外部号 0..31）：扫到 64 时 34..48 读到的是别的 ROM 数据
             // （`fn=0x780078`、`0x20303a` 这类明显是代码字），不是 handler。
             var k: usize = 0;
@@ -229,6 +235,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }
             // 哨兵是诊断件，扫完就清掉，别给 ROM 留一个永久 no-op ISR。
             ihs(30, null, null);
+            // **候选 tick handler**：`g_timer_func` 非零就装到外部号 9（= CLIC 输入 25）上，
+            // 让我们的 trapDispatch 在 input 25 时调用它，看自旋是否解开。
+            if (g_timer_func != 0) {
+                ihs(9, @ptrFromInt(g_timer_func), null);
+                log.line("installed g_timer_func at ext#9 (input 25)", .{});
+            }
         }
         // **表的下标是外部中断号 = CLIC ID - 16**（IDF `components/riscv/interrupt.c`：
         // `intr_get_item(mcause - RV_EXTERNAL_INT_OFFSET)`，`RV_EXTERNAL_INT_OFFSET = 16`；
@@ -240,6 +252,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (h.fn_ == null) h = romHandler(ext);
         if (h.fn_) |f| {
             if (input == 25) hw.ackT0Interrupt(2000);
+            rom_handler_calls += 1;
+            if (rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x}", .{ rom_handler_calls, @intFromPtr(f) });
             f(h.arg);
             return false;
         }
@@ -300,6 +314,7 @@ pub const Handler = struct {
 
 var handlers: [64]Handler = @splat(Handler{});
 var rom_table_dumped = false;
+var rom_handler_calls: usize = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。
 fn sentinelIsr(_: ?*anyopaque) callconv(.c) void {}
