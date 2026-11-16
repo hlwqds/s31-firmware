@@ -139,8 +139,8 @@ test "osi_impl: 表里已实现的钩子非空，未实现的是 null" {
         try std.testing.expect(@field(tbl, name) != null);
     }
     // 没实现：PHY/NVS/日志这些还留着 null，调用即崩（好过静默错值）
-    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._nvs_open);
-    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._phy_enable);
+    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._timer_arm);
+    try std.testing.expectEqual(@as(?*const anyopaque, null), tbl._coex_init);
 }
 
 test "osi_impl: 通过表指针调用分配/信号量/队列（C 调用约定）" {
@@ -195,7 +195,7 @@ test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
 
 test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
     try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len);
-    try std.testing.expectEqual(@as(usize, 40), impl.implemented.len); // 21 原语 + 13 中断/任务 + 6 时间/随机/MAC
+    try std.testing.expectEqual(@as(usize, 52), impl.implemented.len); // 21 原语 + 13 中断/任务 + 6 时间/随机/MAC + 12 NVS
 }
 
 var test_now_us: u64 = 1_234_567;
@@ -234,4 +234,48 @@ test "osi_impl: 时间/随机/MAC 走注入钩子" {
     try std.testing.expectEqualSlices(u8, &test_mac, &mac);
 
     impl.setHooks(.{}); // 还原，避免影响别的用例
+}
+
+test "osi_impl: NVS 经表指针可读写（RAM 版）" {
+    const nvs = @import("nvs_ram.zig");
+    nvs.reset();
+    var buf: [4096]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+
+    const nvs_open: *const fn (?[*:0]const u8, c_uint, ?*u32) callconv(.c) c_int = @ptrCast(tbl._nvs_open.?);
+    const set_u8: *const fn (u32, ?[*:0]const u8, u8) callconv(.c) c_int = @ptrCast(tbl._nvs_set_u8.?);
+    const get_u8: *const fn (u32, ?[*:0]const u8, ?*u8) callconv(.c) c_int = @ptrCast(tbl._nvs_get_u8.?);
+    const set_blob: *const fn (u32, ?[*:0]const u8, ?*const anyopaque, usize) callconv(.c) c_int = @ptrCast(tbl._nvs_set_blob.?);
+    const get_blob: *const fn (u32, ?[*:0]const u8, ?*anyopaque, ?*usize) callconv(.c) c_int = @ptrCast(tbl._nvs_get_blob.?);
+    const erase: *const fn (u32, ?[*:0]const u8) callconv(.c) c_int = @ptrCast(tbl._nvs_erase_key.?);
+
+    var handle: u32 = 0;
+    try std.testing.expectEqual(@as(c_int, 0), nvs_open("nvs.net80211", 1, &handle));
+    try std.testing.expect(handle != 0);
+
+    try std.testing.expectEqual(@as(c_int, 0), set_u8(handle, "country", 7));
+    var v: u8 = 0;
+    try std.testing.expectEqual(@as(c_int, 0), get_u8(handle, "country", &v));
+    try std.testing.expectEqual(@as(u8, 7), v);
+
+    // 缺失键 → NOT_FOUND
+    try std.testing.expectEqual(nvs.err_not_found, get_u8(handle, "absent", &v));
+
+    const payload = [_]u8{ 1, 2, 3, 4, 5 };
+    try std.testing.expectEqual(@as(c_int, 0), set_blob(handle, "cal", &payload, payload.len));
+    var out: [8]u8 = undefined;
+    var len: usize = out.len;
+    try std.testing.expectEqual(@as(c_int, 0), get_blob(handle, "cal", &out, &len));
+    try std.testing.expectEqual(@as(usize, 5), len);
+    try std.testing.expectEqualSlices(u8, &payload, out[0..len]);
+
+    // 缓冲太小 → INVALID_LENGTH 且回填所需长度
+    var tiny: [2]u8 = undefined;
+    var need: usize = tiny.len;
+    try std.testing.expectEqual(nvs.err_invalid_len, get_blob(handle, "cal", &tiny, &need));
+    try std.testing.expectEqual(@as(usize, 5), need);
+
+    try std.testing.expectEqual(@as(c_int, 0), erase(handle, "cal"));
+    try std.testing.expectEqual(nvs.err_not_found, get_blob(handle, "cal", &out, &len));
 }

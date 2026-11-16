@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const osi = @import("osi.zig");
+const nvs = @import("nvs_ram.zig");
 
 /// 块头：`size` 是**载荷**字节数；`next` 是下一个块头（含空闲与已用）。
 const Block = struct {
@@ -283,6 +284,54 @@ fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
     return s.give();
 }
 
+// NVS：极简 RAM 版（见 nvs_ram.zig）。Wi-Fi init 几乎必然读 NVS，留 null 会撞空指针。
+fn shellNvsOpen(name: ?[*:0]const u8, mode: c_uint, out_handle: ?*u32) callconv(.c) c_int {
+    _ = mode;
+    return nvs.open(name orelse return nvs.err_invalid_arg, out_handle);
+}
+fn shellNvsClose(handle: u32) callconv(.c) void {
+    nvs.close(handle);
+}
+fn shellNvsCommit(handle: u32) callconv(.c) c_int {
+    return nvs.commit(handle);
+}
+fn shellNvsSetI8(handle: u32, key: ?[*:0]const u8, value: i8) callconv(.c) c_int {
+    return nvs.setNum(handle, key orelse return nvs.err_invalid_arg, @as(u8, @bitCast(value)), .i8v);
+}
+fn shellNvsGetI8(handle: u32, key: ?[*:0]const u8, out: ?*i8) callconv(.c) c_int {
+    var v: u16 = 0;
+    const rc = nvs.getNum(handle, key orelse return nvs.err_invalid_arg, .i8v, &v);
+    if (rc == nvs.ok) out.?.* = @bitCast(@as(u8, @truncate(v)));
+    return rc;
+}
+fn shellNvsSetU8(handle: u32, key: ?[*:0]const u8, value: u8) callconv(.c) c_int {
+    return nvs.setNum(handle, key orelse return nvs.err_invalid_arg, value, .u8v);
+}
+fn shellNvsGetU8(handle: u32, key: ?[*:0]const u8, out: ?*u8) callconv(.c) c_int {
+    var v: u16 = 0;
+    const rc = nvs.getNum(handle, key orelse return nvs.err_invalid_arg, .u8v, &v);
+    if (rc == nvs.ok) out.?.* = @truncate(v);
+    return rc;
+}
+fn shellNvsSetU16(handle: u32, key: ?[*:0]const u8, value: u16) callconv(.c) c_int {
+    return nvs.setNum(handle, key orelse return nvs.err_invalid_arg, value, .u16v);
+}
+fn shellNvsGetU16(handle: u32, key: ?[*:0]const u8, out: ?*u16) callconv(.c) c_int {
+    return nvs.getNum(handle, key orelse return nvs.err_invalid_arg, .u16v, out orelse return nvs.err_invalid_arg);
+}
+fn shellNvsSetBlob(handle: u32, key: ?[*:0]const u8, value: ?*const anyopaque, length: usize) callconv(.c) c_int {
+    const p: [*]const u8 = @ptrCast(value orelse return nvs.err_invalid_arg);
+    return nvs.setBlob(handle, key orelse return nvs.err_invalid_arg, p[0..length]);
+}
+fn shellNvsGetBlob(handle: u32, key: ?[*:0]const u8, out: ?*anyopaque, length: ?*usize) callconv(.c) c_int {
+    const p: [*]u8 = @ptrCast(out orelse return nvs.err_invalid_arg);
+    const l = length orelse return nvs.err_invalid_arg;
+    return nvs.getBlob(handle, key orelse return nvs.err_invalid_arg, p[0..l.*], l);
+}
+fn shellNvsEraseKey(handle: u32, key: ?[*:0]const u8) callconv(.c) c_int {
+    return nvs.eraseKey(handle, key orelse return nvs.err_invalid_arg);
+}
+
 /// 时间/随机/MAC 这类钩子需要硬件（`hw.nowUs`、TRNG、efuse MAC），而本组件不 import
 /// `board`——所以走**注入**：固件构建时用 `setHooks` 接上真实现，主机测试接测试替身。
 /// 没注入时退化为"计数 + 保守返回值"，不会崩。
@@ -484,6 +533,18 @@ pub fn makeTable() osi.Osi {
     t._semphr_delete = @ptrCast(&shellSemphrDelete);
     t._semphr_take = @ptrCast(&shellSemphrTake);
     t._semphr_give = @ptrCast(&shellSemphrGive);
+    t._nvs_open = @ptrCast(&shellNvsOpen);
+    t._nvs_close = @ptrCast(&shellNvsClose);
+    t._nvs_commit = @ptrCast(&shellNvsCommit);
+    t._nvs_set_i8 = @ptrCast(&shellNvsSetI8);
+    t._nvs_get_i8 = @ptrCast(&shellNvsGetI8);
+    t._nvs_set_u8 = @ptrCast(&shellNvsSetU8);
+    t._nvs_get_u8 = @ptrCast(&shellNvsGetU8);
+    t._nvs_set_u16 = @ptrCast(&shellNvsSetU16);
+    t._nvs_get_u16 = @ptrCast(&shellNvsGetU16);
+    t._nvs_set_blob = @ptrCast(&shellNvsSetBlob);
+    t._nvs_get_blob = @ptrCast(&shellNvsGetBlob);
+    t._nvs_erase_key = @ptrCast(&shellNvsEraseKey);
     t._rand = @ptrCast(&shellRand);
     t._random = @ptrCast(&shellRandom);
     t._get_random = @ptrCast(&shellGetRandom);
@@ -522,6 +583,8 @@ pub fn makeTable() osi.Osi {
 
 /// 仍然为 null 的钩子（下一步照这张单子填）。由 `osi.zig` 的 128 个字段减去上面 21 个得出；
 /// 中断/任务/定时器/事件/NVS/PHY 这些要么需要真实硬件路径，要么需要 IDF 的 C 层配合。
+/// 仍然为 null 的钩子（下一步照这张单子填）。
+/// 注意 `_log_write`/`_log_writev` 是 C 变参函数，**Zig 无法定义**，要么写一小段 C shim，要么保持 null。
 /// 已实现的钩子名（由 makeTable() 里实际赋值的字段生成）。
 pub const implemented = [_][]const u8{
     "_set_intr",              "_clear_intr",       "_set_isr",           "_ints_on",            "_ints_off",               "_is_from_isr",
@@ -530,7 +593,9 @@ pub const implemented = [_][]const u8{
     "_mutex_lock",            "_mutex_unlock",     "_queue_create",      "_queue_delete",       "_queue_send",             "_queue_send_to_back",
     "_queue_send_to_front",   "_queue_recv",       "_queue_msg_waiting", "_task_delay",         "_task_ms_to_tick",        "_task_get_current_task",
     "_task_get_max_priority", "_malloc",           "_free",              "_get_free_heap_size", "_rand",                   "_read_mac",
-    "_esp_timer_get_time",    "_get_random",       "_random",            "_log_timestamp",
+    "_esp_timer_get_time",    "_nvs_set_i8",       "_nvs_get_i8",        "_nvs_set_u8",         "_nvs_get_u8",             "_nvs_set_u16",
+    "_nvs_get_u16",           "_nvs_open",         "_nvs_close",         "_nvs_commit",         "_nvs_set_blob",           "_nvs_get_blob",
+    "_nvs_erase_key",         "_get_random",       "_random",            "_log_timestamp",
 };
 
 /// 仍然为 null 的钩子（下一步照这张单子填）。
@@ -543,10 +608,7 @@ pub const unimplemented = [_][]const u8{
     "_wifi_pm_sleep_lock_release",         "_phy_disable",                             "_phy_enable",                            "_phy_update_country_info",
     "_timer_arm",                          "_timer_disarm",                            "_timer_done",                            "_timer_setfn",
     "_timer_arm_us",                       "_wifi_reset_mac",                          "_wifi_clock_enable",                     "_wifi_clock_disable",
-    "_wifi_rtc_enable_iso",                "_wifi_rtc_disable_iso",                    "_nvs_set_i8",                            "_nvs_get_i8",
-    "_nvs_set_u8",                         "_nvs_get_u8",                              "_nvs_set_u16",                           "_nvs_get_u16",
-    "_nvs_open",                           "_nvs_close",                               "_nvs_commit",                            "_nvs_set_blob",
-    "_nvs_get_blob",                       "_nvs_erase_key",                           "_get_time",                              "_slowclk_cal_get",
+    "_wifi_rtc_enable_iso",                "_wifi_rtc_disable_iso",                    "_get_time",                              "_slowclk_cal_get",
     "_log_write",                          "_log_writev",                              "_malloc_internal",                       "_realloc_internal",
     "_calloc_internal",                    "_zalloc_internal",                         "_wifi_malloc",                           "_wifi_realloc",
     "_wifi_calloc",                        "_wifi_zalloc",                             "_wifi_create_queue",                     "_wifi_delete_queue",
