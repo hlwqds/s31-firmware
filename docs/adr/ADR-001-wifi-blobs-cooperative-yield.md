@@ -2063,3 +2063,26 @@ init/start 前后各一次，然后与我们的值逐字对比。
 **一处按 IDF 对齐的改动**：IDF 的 `LPCON+18` 在 start 期间是 **`0x7`**（bit0 wifipwr / bit1 coex /
 bit2 i2c_mst），之后回到 `0x1`；我们此前写的是 **`0b1111`**（多开了 bit3 `clk_lp_timer`）。
 已改成 `0b0111` 并上板——`POWER_ST` 仍是 0、自旋照旧，所以 bit3 不是原因，但对齐本身是对的。
+
+### ★ 收窄：`POWER_ST` 是 **`esp_wifi_init` 期间**变成 `0x64646400` 的（不是 start）
+
+在 IDF 例程里加了 `before/after esp_wifi_init` 两处 dump：
+
+```text
+DUMP[app_main-before-init]      SYSCON+0c=0x00000000  LPCON+18=0x1  MAC_ST=0x0000e000
+DUMP[before-esp_wifi_init]      SYSCON+0c=0x00000000  LPCON+18=0x1  MAC_ST=0x0000e000
+DUMP[after-esp_wifi_init]       SYSCON+0c=0x64646400  LPCON+18=0x1  MAC_ST=0x00000000   ← ★ 就在这里
+DUMP[after-esp_wifi_start]      SYSCON+0c=0x64646400  LPCON+18=0x7  MAC_ST=0x00000000
+```
+
+**这大幅收窄了范围**：
+
+1. 域上电与 `MAC_ST → 0` **都发生在 `esp_wifi_init` 内部**，而 `esp_wifi_start` 只额外把 `LPCON+18` 从
+   `0x1` 提到 `0x7`（start 期间才开 i2c_mst/coex/wifipwr 时钟）；
+2. 我们**也调了同一个 `esp_wifi_init_internal`** 并拿到 rc=0，但 `POWER_ST` 仍是 0 ⇒ 差别不在"调用哪个
+   函数"，而在**我们传进去的 `wifi_init_config_t`**（IDF 用的是 `WIFI_INIT_CONFIG_DEFAULT()` 那一整套
+   Kconfig 值，我们手写了一份）。
+
+**下一步**：逐字段对比我们的 `InitConfig` 与 IDF 的默认值（重点 `nvs_enable`、`feature_caps`、
+`tx_buf_type`、`static/dynamic_*_buf_num`、`magic`/`version`），把差异逐个试；`nvs_enable` 尤其可疑
+——blob 可能据此跳过 PHY/校准路径。
