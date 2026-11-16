@@ -1773,11 +1773,15 @@ wifi-init-probe: dma_enable=0        ← 这条现在没有信息量（桩）
 | `sb zero,49(a5)` | `ppSelectNextQueue` | 同上 |
 | `sb a4,49(a5)`（a4=1） | **`ppSearchTxframe`** | **置 1**（该接口已有可发的 TX 帧） |
 
-也就是说这个字节不是"接口使能开关"，而是**"该接口的 TX 队列里有待发帧"**的标志：
-`ppSearchTxframe` 找到帧就置 1，`ppEnableQueue`/`ppSelectNextQueue` 消费后清 0。
+**注意：`wDevCtrl+49` 与 `pp.o` 那三处 `sb ?,49(base)` 不是同一个对象。**
 
-所以 `ic_interface_enabled(0)=0` 的正确读法是：**接口 0 的 TX 队列里没有待发帧**——这与"数据面（队列/DMA）
-从未建立"一致，但它是**结果**而不是原因。
+- `ic_interface_enabled` 读的是 **`wDevCtrl+49` 的单个字节位图**（`lbu 49(a5)` 后 `srl by ifx`，地址不含 ifx 缩放）；
+  链接镜像同一函数内的读者/写者同形：`0x400315f8 lbu a5,49(a5)`+`srl`、`0x40031612 sb a5,49(s1)`（`s1=0x2f01085c`）。
+- `pp.o` 的 `ppSearchTxframe`/`ppEnableQueue`/`ppSelectNextQueue` 用的是 **`base + ifx*52 + 49`**（52 字节步长的
+  描述符字段）——那是 TX 队列描述符，**不是** `wDevCtrl`。
+
+所以正确表述是：**`wDevCtrl+49` 是一个单字节位图，第 `ifx` 位表示接口 `ifx` 的某个"就绪/使能"状态**；
+`ic_interface_enabled(0)=0` 只说明该位当前为 0，**不能**直接推出引擎状态。
 
 ### 修掉一个真实的链接 bug：101 个 ROM 数据符号被做成了空函数桩
 
