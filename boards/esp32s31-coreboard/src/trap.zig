@@ -152,6 +152,14 @@ pub export fn trapDispatch(frame: *TrapFrame) noreturn {
         frame.ra, frame.a0, frame.a1, frame.a2,
     });
     log.line("panic: sp=0x{x} s0=0x{x}", .{ frame.sp, frame.s0 });
+    // 把 s0 指向的上下文前四个字打出来：`wifi_ipc_process` 的形状是
+    // `ctx = *(a0+12); fn = *(ctx); fn(*(ctx+4))`，这四个字正好是 fn/arg 及其邻居。
+    if (frame.s0 > 0x2f000000 and frame.s0 < 0x2f100000) {
+        const w: [*]const usize = @ptrFromInt(frame.s0);
+        log.line("panic: ctx[0]=0x{x} ctx[1]=0x{x} ctx[2]=0x{x} ctx[3]=0x{x}", .{
+            w[0], w[1], w[2], w[3],
+        });
+    }
     log.raw("panic: halted (wfi)\n");
     hw.halt();
 }
