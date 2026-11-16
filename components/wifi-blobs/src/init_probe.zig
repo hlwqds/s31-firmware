@@ -176,9 +176,9 @@ fn budgetExhaustedHook(total: u32) void {
 var trace_lines: u32 = 0;
 
 fn traceNote(id: u8, a0: usize, a1: usize) void {
-    // 只追踪分配（id 13）：容量留给完整 init 段，便于把坏指针 0x2f01c9e4 对上号。
-    if (id != 13) return;
-    if (trace_lines >= 120) return;
+    // 追踪队列发送（5）与分配（13）：验证"栈上描述符被队列异步消费"这个假设。
+    if (id != 13 and id != 5) return;
+    if (trace_lines >= 200) return;
     trace_lines += 1;
     const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";
     log.line("wifi-init-probe: trace {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{ name, a0, a1 });

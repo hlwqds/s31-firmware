@@ -1,3 +1,6 @@
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: magic_pre=0x2f01ca30 magic_post=0x2f01ca28 cal_data=0x2f011690 cal_data-12=0x2f011684
 wifi-init-probe: cal_data=0x2f011690 init_params=0x40104de0 wrapper=0x2f01dfa4 inner=0x2f01d940
 wifi-init-probe: register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
