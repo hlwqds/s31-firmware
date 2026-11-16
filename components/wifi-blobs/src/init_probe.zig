@@ -131,7 +131,11 @@ fn idleHook() void {
     if (!task_ctx_ready) return;
     // 诊断：任务就绪后前 6 次让出（不依赖 idle_calls 的累计值）。
     ready_swaps += 1;
-    if (ready_swaps <= 6) log.line("wifi-init-probe: swap#{d} in_task={}", .{ ready_swaps, in_task });
+    if (ready_swaps <= 24) log.line("wifi-init-probe: swap#{d} in_task={} hooks={d}", .{
+        ready_swaps,
+        in_task,
+        impl.event_count,
+    });
     if (in_task) {
         in_task = false;
         impl.current_is_task = false;

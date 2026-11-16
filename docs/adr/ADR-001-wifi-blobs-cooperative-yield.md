@@ -667,3 +667,27 @@ trace recv_probe a0=0x00000000 a1=0x00000008   # 之后 count=0 → 消息确实
 
 下一步：把 `semphr_take` 的句柄也纳入同一份 trace（已经在内），确认 start 期间任务停在哪一个
 `take` 上；那一个就是"谁该给它"的答案。
+
+### 决定性观测：切到任务后它**再也不让出**（2026-11-16）
+
+把 swap 日志的上限提到 24 条并带上钩子计数：
+
+```text
+swap#1 in_task=true  hooks=106
+swap#2 in_task=false hooks=112
+...
+swap#5 in_task=true  hooks=124
+calling esp_wifi_start (idle_calls=197)
+swap#6 in_task=false hooks=7      # 事件环在 start 前被重置，所以计数回到 7
+（之后再没有 swap#7）
+```
+
+`swap#6` 是 start 的 take 让出、把控制权交给任务的那一次。**此后没有任何 swap**，也没有新的钩子
+调用——也就是说：**任务一旦拿到 CPU，就再也没让回来**，它在 blob 代码里自旋/长循环，且不经过任何
+OSI 钩子。
+
+这解释了为什么主上下文的 `take` 永远等不到 ack：不是 ack 没被给，而是**任务根本没回到能 give 的位置**。
+
+下一步：需要知道任务卡在哪个 PC。可选手段：(a) 用定时器中断采样 PC（同时把 trap 的中断分支改成
+返回，而不是停机）；(b) 若它在等某个硬件状态，会在 trap 里显形。这也把"中断路径"从"以后再说"
+变成了**当前必需的下一步**。

@@ -1,17 +1,23 @@
 wifi-init-probe: trace semphr_take a0=0x2f01dfb8 a1=0xffffffff
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
 wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d70c
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: trace recv_probe a0=0x00000001 a1=0x00000008
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: swap#1 in_task=true hooks=106
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+wifi-init-probe: swap#2 in_task=false hooks=112
 wifi-init-probe: trace semphr_give a0=0x2f01dfe0 a1=0x00000000
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: swap#3 in_task=true hooks=115
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+wifi-init-probe: swap#4 in_task=false hooks=121
 wifi-init-probe: trace semphr_give a0=0x2f01dfe0 a1=0x00000000
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: swap#5 in_task=true hooks=124
 wifi-init-probe: calling esp_wifi_start (idle_calls=197, tracing hooks)
+wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+wifi-init-probe: swap#6 in_task=false hooks=7
