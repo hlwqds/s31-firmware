@@ -176,8 +176,8 @@ fn budgetExhaustedHook(total: u32) void {
 var trace_lines: u32 = 0;
 
 fn traceNote(id: u8, a0: usize, a1: usize) void {
-    // 追踪队列发送（5）与分配（13）：验证"栈上描述符被队列异步消费"这个假设。
-    if (id != 13 and id != 5) return;
+    // 追踪 semphr_take(0)/give(1)、queue_send(5)、alloc(13)：看 IPC 的 ack 到底有没有被 give。
+    if (id != 0 and id != 1 and id != 5 and id != 13) return;
     if (trace_lines >= 200) return;
     trace_lines += 1;
     const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";

@@ -502,3 +502,23 @@ wifi-init-probe: idle budget exhausted (20001), halting
 
 已回退成有界让出（并在代码里写明这次实测结论，避免下次重复）。真正的下一步是查清
 "谁应该 give 这个 ack / 谁应该往任务队列投消息"。
+
+### 根因链已闭合：ack 的 `_semphr_give` 被用**空句柄**调用（2026-11-16）
+
+把 trace 扩到 `semphr_take(0)`/`give(1)` 之后，IPC 路径的完整序列是：
+
+```text
+trace semphr_take a0=0x2f01dfe0 a1=0xffffffff   # API 等 ack（BLOCKING）
+trace queue_send  a0=0x2f01d940 a1=0x00000006   # 投递消息（载荷 6）
+trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+trace queue_send  a0=0x2f01d940 a1=0x00000006
+trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+trace queue_send  a0=0x2f01d940 a1=0x00000006
+trace semphr_give a0=0x00000000 a1=0x00000000   # ← give 的句柄是 NULL！
+```
+
+`_semphr_give(NULL)` 在我们的壳里直接 `return 0`（静默丢弃），所以那个 ack **永远不会被 give**：
+API 的 take 超时返回 → 栈上的描述符被回收 → 任务派发到过期内容 → 非法指令。
+
+所以真正的根因是：**blob 用一个空句柄去 give ack**（它读的那个全局/字段没有初始化）。
+下一步：找出这个 null 来自哪里——是 `_semphr_create` 的返回值没被保存，还是某个全局本该由 init 填。
