@@ -620,7 +620,8 @@ pub fn run() noreturn {
                     log.line("wifi-init-probe: set_channel(6,0) rc={d}", .{rc_ch});
                     const wdev = @as(*const usize, @ptrFromInt(0x2f07_FF40)).*;
                     const ppw = @as(*const usize, @ptrFromInt(0x2f07_FF48)).*;
-                    log.line("wifi-init-probe: wDevCtrl=0x{x:0>8} pp_wdev_funcs=0x{x:0>8}", .{ wdev, ppw });
+                    const chm = @as(*const usize, @ptrFromInt(0x2f07_FF88)).*;
+                    log.line("wifi-init-probe: wDevCtrl=0x{x:0>8} pp_wdev_funcs=0x{x:0>8} g_chm=0x{x:0>8}", .{ wdev, ppw, chm });
                 }
                 // 实验：blob 在 start 期间走 MAC deinit 等 TX/RX 静止（`g_mac_deinit_*`）。
                 // IDF 的 `esp_phy_enable()` 会调 ROM 的 `wifi_rf_phy_enable`(0x2f800cf4)，

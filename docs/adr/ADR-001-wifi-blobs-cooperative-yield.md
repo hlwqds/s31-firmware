@@ -1953,3 +1953,21 @@ irq-sample #14336 mepc=0x2f009206 mac=0x00fff000 a0=0x00000640 a1=0x2f01cab0
 
 **但要记住一个结构性风险**：`serviceTimers()` 只在**让出点**推进，而自旋函数从不让出——一旦将来有定时器
 被 arm，它的到期回调永远不会被调用。届时应把 `serviceTimers()` 也挂到采样器 ISR（每 2 ms 一次）里。
+
+### 三个全局指针的实际值 + 自旋的 `a1` 不是 `g_chm`
+
+在 start 之前打印（pb153）：
+
+```text
+wifi-init-probe: wDevCtrl=0x2f01085c pp_wdev_funcs=0x2f01d3d8 g_chm=0x2f015264
+irq-sample #14336 mepc=0x2f009206 mac=0x00fff000 a0=0x00000640 a1=0x2f01cab0
+```
+
+三点：
+
+1. 三个指针都是 **arena 里的真实对象** ✓（`wDevCtrl` 在 0x2f01_0xxx，`pp_wdev_funcs`/`g_chm` 在 0x2f01_5xxx）；
+2. **自旋的 `a1 = 0x2f01cab0` ≠ `g_chm = 0x2f015264`** —— 所以自旋操作的不是 `g_chm` 本身，
+   而是另一个 arena 对象；"自旋在信道管理路径"这一归因因此**更要弱化**（调用者读 `g_chm` 只是它做过
+   的一次访问，不代表它当前操作的对象）；
+3. 下一步若要继续，应先给 `0x2f01cab0` 这个对象**定名**：在 blob 代码里找"哪个全局被赋成这个地址"
+   （即 `g_xxx = arena_alloc(...)` 的结果），或从 `0x4003ef8e` 那个函数的参数/局部变量回溯。
