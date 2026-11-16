@@ -273,6 +273,32 @@ pub fn run() noreturn {
                 // 之前没做这一步，`wifi_start_process` 的 `adc2_wifi_acquire` 与任务侧上下文都停在
                 // 未初始化状态。cal_data 是 1894 字节不透明缓冲（`esp_phy_calibration_data_t`）。
                 {
+                    // `register_chipv7_phy` 一开头就访问这两个绝对地址（反汇编 0x68/0xf2 处）：
+                    //   0x20109c18：lw → 清 bit1 → sw
+                    //   0x20100800：lw → sw
+                    // 如果调制解调器域还没上电，这些访问会**挂起而不报异常**——正好解释"不返回也不 fault"。
+                    // 先单独读一次：读得通就说明不是域的问题，读不通就是它。
+                    const reg_rtc: *volatile u32 = @ptrFromInt(0x2010_9c18);
+                    const reg_modem: *volatile u32 = @ptrFromInt(0x2010_0800);
+                    log.line("wifi-init-probe: pre-PHY regs: 0x20109c18=0x{x:0>8} 0x20100800=0x{x:0>8}", .{
+                        reg_rtc.*,
+                        reg_modem.*,
+                    });
+                    // 逐个调用它的前序函数，定位挂起点（register_chipv7_phy 只调这 5 个）：
+                    //   phy_get_romfunc_addr / phy_force_txrx_off / phy_freq_module_resetn /
+                    //   phy_dis_hw_set_freq / phy_i2c_master_reset
+                    inline for (.{
+                        "phy_get_romfunc_addr",
+                        "phy_force_txrx_off",
+                        "phy_freq_module_resetn",
+                        "phy_dis_hw_set_freq",
+                        "phy_i2c_master_reset",
+                    }) |name| {
+                        const f = @extern(*const fn () callconv(.c) void, .{ .name = name });
+                        log.line("wifi-init-probe: calling {s}", .{name});
+                        f();
+                        log.line("wifi-init-probe: {s} returned", .{name});
+                    }
                     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{ .name = "register_chipv7_phy" });
                     // IDF 的布局：`phy_init_magic_pre`（"PHYINIT\0"，8 B）紧贴结构体之前、
                     // `phy_init_magic_post` 紧贴之后。PHY 代码可能检查这两个魔数，所以照抄布局。
