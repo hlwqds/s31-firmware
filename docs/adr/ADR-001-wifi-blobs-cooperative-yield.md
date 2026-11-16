@@ -724,4 +724,13 @@ ch15/ch17 实测，1 MHz），所以最省事的路径是：
 3. `mie` 对应位置位（配合已打开的 `mstatus.MIE`）；
 4. ISR 里只采样 `mepc`（前 8 次打印已在 `trapDispatch` 里）。
 
-需要先查清 TIMG0_T0 在 S31 上的 CLIC 输入号（IDF 的 `soc/interrupts.h` 里有 `ETS_TG0_T0_LEVEL_INTR_SOURCE`）。
+**输入号已查到**（`components/soc/esp32s31/include/soc/interrupts.h` 的枚举顺序，从 0 起）：
+
+| 源 | 编号 |
+| --- | --- |
+| `ETS_TIMERGRP0_T0_INTR_SOURCE` | **25** |
+| `ETS_SYSTIMER_TARGET0_INTR_SOURCE` | **33** |
+
+CLIC 基址 `DR_REG_CLIC_BASE = 0x1080_0000`、控制区 `0x1080_1000`。所以剩下的实现就是：
+arm T0 alarm（`0x2058_0010/0x2058_0014`）→ 使能 `timg0 + 0x70` 的 T0 int_ena →
+CLIC 输入 25 使能 + `mie` 置位 → ISR 采样（`trapDispatch` 已就绪）。
