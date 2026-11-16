@@ -98,17 +98,31 @@ var osi_table: osi.Osi = undefined;
 /// 合作式让出点：任务体阻塞时被调用。计数并在有限次后停机——证明"任务存活且会让出"，
 /// 而不是把 CPU 卡在忙等里。生产路径里这里就是主循环（收包/发送）。
 var idle_calls: u32 = 0;
+/// 当前控制权是否在任务上下文里。
+var in_task: bool = false;
+/// 任务上下文是否已经建立（建立前 idle 只计数）。
+var task_ctx_ready: bool = false;
 
+/// 合作式调度的核心：主上下文与任务上下文互相让出。
+///
+/// - 在**主**上下文里被调用（blob API 阻塞等任务应答）→ 切到任务；
+/// - 在**任务**上下文里被调用（任务阻塞收消息）→ 切回主上下文。
 fn idleHook() void {
     idle_calls += 1;
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
-    if (idle_calls >= 200) {
-        log.line("wifi-init-probe: idle hook called {d} times, task alive and cooperative", .{idle_calls});
-        log.line("wifi-init-probe: hook calls total={d}, blocking_refused={d}", .{
-            impl.event_count,
-            impl.blocking_refused,
-        });
+    if (idle_calls > 20_000) {
+        log.line("wifi-init-probe: idle budget exhausted ({d}), halting", .{idle_calls});
         hw.halt();
+    }
+    if (!task_ctx_ready) return;
+    if (in_task) {
+        in_task = false;
+        sched.swapContext(&task_ctx, &main_ctx); // 任务让出
+        in_task = true; // 被恢复：回到任务上下文
+    } else {
+        in_task = true;
+        sched.swapContext(&main_ctx, &task_ctx); // 主上下文让出给任务
+        in_task = false;
     }
 }
 
@@ -215,13 +229,23 @@ pub fn run() noreturn {
         if (impl.task_count > 0) {
             const task = impl.tasks[0];
             if (task.entry) |entry| {
-                log.line("wifi-init-probe: running task[0] entry=0x{x:0>8} arg=0x{x:0>8} budget=300", .{
+                log.line("wifi-init-probe: starting task[0] entry=0x{x:0>8} arg=0x{x:0>8} on its own stack", .{
                     @intFromPtr(entry), @intFromPtr(task.arg),
                 });
-                impl.budget = 0; // 由 idle 钩子刹车
-                entry(task.arg);
-                impl.budget = 0;
-                log.line("wifi-init-probe: task[0] returned, hook calls={d}", .{impl.event_count});
+                // 只**建立**任务上下文，不主动跑它：blob 的任务体在 `esp_wifi_start` 之前
+                // 进入会在内部回调派发处解引用未初始化的上下文（实测 mtval=0x102）。
+                // 正确顺序是：先调 start，它 post 消息并阻塞等待 → idleHook 把控制权交给任务
+                // → 任务处理完应答 → 主上下文从阻塞处继续。
+                sched.initContext(&task_ctx, &static_stack, entry, task.arg);
+                task_ctx_ready = true;
+                log.raw("wifi-init-probe: task context ready (not started yet)\n");
+
+                const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });
+                const src = esp_wifi_start();
+                log.line("wifi-init-probe: esp_wifi_start rc=0x{x} (idle_calls={d})", .{
+                    @as(u32, @bitCast(src)),
+                    idle_calls,
+                });
             }
         }
         hw.halt();

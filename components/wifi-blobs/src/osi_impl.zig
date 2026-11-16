@@ -474,7 +474,10 @@ pub var calls: struct {
     task_delay: u32 = 0,
 } = .{};
 
-var task_dummy: u8 = 0;
+/// "当前任务"的假对象。blob 会解引用它的字段（实测 `lw s0,12(a0)` → 再把 s0 当指针解引用），
+/// 所以必须是**足够大的清零缓冲**：单字节时 `+12` 读到相邻 `.bss`（实测 0x102），
+/// 随后 `lw a5,0(s0)` 直接 fault（misaligned, mtval=0x102）。
+var task_dummy: [256]u8 align(16) = @splat(0);
 
 fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
     _ = .{ cpu, src, num, prio };
@@ -595,7 +598,8 @@ pub const Task = struct {
 };
 pub var tasks: [4]Task = @splat(.{});
 pub var task_count: usize = 0;
-var task_handle_dummy: u8 = 0;
+/// 任务 handle 的假对象：同样要够大且清零（blob 可能解引用 handle 的字段）。
+var task_handle_dummy: [64]u8 align(16) = @splat(0);
 
 /// `_task_delete`：从任务表里移除该 handle 对应的槽位（桩不释放会让重复 init 泄漏槽位）。
 fn shellTaskDelete(p: ?*anyopaque) callconv(.c) void {
