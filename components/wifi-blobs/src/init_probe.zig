@@ -24,6 +24,7 @@ const impl = @import("osi_impl.zig");
 const initcfg = @import("init_config.zig");
 const osi_stubs = @import("osi_stubs.zig");
 const sched = @import("sched.zig");
+const phy_init_data = @import("phy_init_data.zig");
 const link_stubs = @import("link_stubs.zig");
 
 /// blob 里的入口（`esp_wifi.h:437` / `esp_private/wifi.h`）。
@@ -43,6 +44,8 @@ var rx_frames: u32 = 0;
 
 // ---- 上下文切换自检（两根栈）----
 var static_stack: [16 * 1024]u8 align(16) = undefined;
+/// PHY 标定数据（`esp_phy_calibration_data_t.opaque[1894]`），由 `register_chipv7_phy` 填充。
+var cal_data: [1894]u8 align(4) = @splat(0);
 var main_ctx: sched.Context = .{};
 var task_ctx: sched.Context = .{};
 
@@ -261,6 +264,19 @@ pub fn run() noreturn {
         if (impl.task_count > 0) {
             const task = impl.tasks[0];
             if (task.entry) |entry| {
+                // PHY bring-up：`register_chipv7_phy` 在 libphy.a 里
+                // （签名见 `esp_private/phy.h:45`），真实 IDF 在 `esp_phy_init` 里调它。
+                // 之前没做这一步，`wifi_start_process` 的 `adc2_wifi_acquire` 与任务侧上下文都停在
+                // 未初始化状态。cal_data 是 1894 字节不透明缓冲（`esp_phy_calibration_data_t`）。
+                {
+                    const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{ .name = "register_chipv7_phy" });
+                    const rc_phy = register_phy(&phy_init_data.params, &cal_data, 0); // 0 = PHY_RF_CAL_PARTIAL
+                    log.line("wifi-init-probe: register_chipv7_phy rc={d} (cal_data 已填充 {d} B)", .{
+                        rc_phy,
+                        @as(usize, 1894),
+                    });
+                }
+
                 log.line("wifi-init-probe: starting task[0] entry=0x{x:0>8} arg=0x{x:0>8} on its own stack", .{
                     @intFromPtr(entry), @intFromPtr(task.arg),
                 });

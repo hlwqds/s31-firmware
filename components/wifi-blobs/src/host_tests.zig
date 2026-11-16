@@ -13,6 +13,7 @@ const adapter = @import("adapter.zig");
 const osi = @import("osi.zig");
 const impl = @import("osi_impl.zig");
 const sched = @import("sched.zig");
+const phy_init_data = @import("phy_init_data.zig");
 const initcfg = @import("init_config.zig");
 
 test {
@@ -379,4 +380,9 @@ test "osi_impl: 创建写出的 handle 与 _task_get_current_task 是同一个�
     try std.testing.expectEqual(@intFromPtr(handle.?), @intFromPtr(current()));
     impl.current_is_task = false;
     try std.testing.expect(@intFromPtr(current()) != @intFromPtr(handle.?));
+}
+
+test "phy_init_data: 128 字节、首字节为 1（IDF 默认表的形状）" {
+    try std.testing.expectEqual(@as(usize, 128), phy_init_data.params.len);
+    try std.testing.expectEqual(@as(u8, 1), phy_init_data.params[0]);
 }

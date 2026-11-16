@@ -1,0 +1,51 @@
+wifi-init-probe: begin
+wifi-init-probe: arena=368560 B
+wifi-init-probe: table=0x2f01ce10 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f01def8 a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f01d880 a1=0x0000000a
+wifi-init-probe: trace semphr_take a0=0x2f01df20 a1=0xffffffff
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: INIT OK, arena free=364688/368544 B, bad_handle=0, blocking_refused=2
+wifi-init-probe: tasks recorded=1
+sched-test: begin, task sp=0x2f01c220 stack=0x2f018260
+sched-test: task iteration 0 (yielding)
+sched-test: main resumed after round 0 (main_sp=0x2f07ac50 task_sp=0x2f01c0f0)
+sched-test: task iteration 0 resumed
+sched-test: task iteration 1 (yielding)
+sched-test: main resumed after round 1 (main_sp=0x2f07ac50 task_sp=0x2f01c0f0)
+sched-test: task iteration 1 resumed
+sched-test: task iteration 2 (yielding)
+sched-test: main resumed after round 2 (main_sp=0x2f07ac50 task_sp=0x2f01c0f0)
+sched-test: task iteration 2 resumed
+sched-test: task done, returning to main
+sched-test: main resumed after round 3 (main_sp=0x2f07ac50 task_sp=0x2f01c0f0)
+sched-test: PASS
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f01d880 a1=0x0000000a
+wifi-init-probe: trace semphr_take a0=0x2f01df20 a1=0xffffffff
+wifi-init-probe: reg_rxcb rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01d020 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f01d880 a1=0x0000000a
+wifi-init-probe: trace semphr_take a0=0x2f01df20 a1=0xffffffff
+wifi-init-probe: get_config_channel rc=0 primary=0 second=0
+wifi-init-probe: trace mutex_lock a0=0x2f01d80c a1=0x00000000
+wifi-init-probe: internal_tx rc=0x3007 (64 B)
