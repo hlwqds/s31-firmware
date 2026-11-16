@@ -83,16 +83,23 @@ pub fn run() noreturn {
     const lrc = api_lock();
     log.line("wifi-init-probe: wifi_api_lock rc={d}", .{lrc});
 
-    // 3c) 逐个调用 init 内部的顺序（反汇编给出的顺序）：谁先返回非 0，谁就是 258 的来源。
-    inline for (.{ "pm_funcs_init", "wdev_funcs_init", "net80211_funcs_init", "wifi_init_in_caller_task" }) |name| {
+    // 4) 构造 config（先构造，后面的阶段调用要传它）
+    const cfg = initcfg.defaults(&table);
+
+    // 3c) 逐个调用 init 内部的顺序（反汇编给出的顺序）。注意 `wifi_init_in_caller_task`
+    //     带一个 `const wifi_init_config_t*` 参数（对象里是 `mv a0,s1` 后调用）——不传参就会
+    //     拿垃圾指针去读 config->magic（实测 trap: mepc=0x40015820, `lw a4,152(s0)`, mtval=0xc2）。
+    inline for (.{ "pm_funcs_init", "wdev_funcs_init", "net80211_funcs_init" }) |name| {
         const f = @extern(*const fn () callconv(.c) c_int, .{ .name = name });
         const rc = f();
         log.line("wifi-init-probe: {s} rc={d}", .{ name, rc });
         if (rc != 0) break;
     }
-
-    // 4) 构造 config 并调用
-    const cfg = initcfg.defaults(&table);
+    {
+        const f = @extern(*const fn (*const initcfg.InitConfig) callconv(.c) c_int, .{ .name = "wifi_init_in_caller_task" });
+        const rc = f(&cfg);
+        log.line("wifi-init-probe: wifi_init_in_caller_task rc={d}", .{rc});
+    }
     log.line("wifi-init-probe: cfg size={d} magic=0x{x:0>8}", .{ @sizeOf(initcfg.InitConfig), @as(u32, @bitCast(cfg.magic)) });
     const rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: esp_wifi_init_internal rc={d}", .{rc});

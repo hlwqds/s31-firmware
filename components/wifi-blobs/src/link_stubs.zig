@@ -85,8 +85,21 @@ pub export fn strtok() callconv(.c) usize {
     return 0;
 }
 
-// 数据符号：零值占位（真值来自 eFuse / IDF 的 C 层）。
-pub export var WIFI_EVENT: [4]u8 = @splat(0);
+// 数据符号：按已知声明给**真实形态**，而不是一律 4 字节零。
+// 板级教训：`WIFI_EVENT` 是 `const char* const`（`ESP_EVENT_DECLARE_BASE`），零填充 = 空指针，
+// blob 一解引用就是 misaligned load（实测 mepc=0x40015820、mtval=0xc2）。
+pub export const WIFI_EVENT: [*:0]const u8 = "WIFI_EVENT";
+
+/// IDF 里是 `const wifi_regdomain_t regdomain_table[]`（`esp_wifi_regulatory.c:93`）。
+/// 尺寸未知，给足 4 KiB 零值，按下标读不会越界；内容为 0 = "没有国家配置"。
+pub export var regdomain_table: [4096]u8 = @splat(0);
+
+/// 同上：`const wifi_regulatory_t regulatory_data[]`（`esp_wifi_regulatory.c:280`）。
+pub export var regulatory_data: [4096]u8 = @splat(0);
+
+// `g_mt` 与 `g_espnow_user_oui` 由 libmesh.a / libespnow.a 自己定义，这里不能再导出（会重复符号）。
+
+// `est_PHY_*` 是 `uint16_t` 标量（FTM 标定表），4 字节零足够；真值要 eFuse 标定路径。
 pub export var est_PHY_INIT_FTM_COMP_20_20D_MHZ: [4]u8 = @splat(0);
 pub export var est_PHY_INIT_FTM_COMP_20_20D_MHZ_DIS: [4]u8 = @splat(0);
 pub export var est_PHY_INIT_FTM_COMP_20_20U_MHZ: [4]u8 = @splat(0);
@@ -111,5 +124,3 @@ pub export var est_PHY_RESP_FTM_COMP_40_40D_MHZ: [4]u8 = @splat(0);
 pub export var est_PHY_RESP_FTM_COMP_40_40D_MHZ_DIS: [4]u8 = @splat(0);
 pub export var est_PHY_RESP_FTM_COMP_40_40U_MHZ: [4]u8 = @splat(0);
 pub export var est_PHY_RESP_FTM_COMP_40_40U_MHZ_DIS: [4]u8 = @splat(0);
-pub export var regdomain_table: [4]u8 = @splat(0);
-pub export var regulatory_data: [4]u8 = @splat(0);
