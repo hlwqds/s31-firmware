@@ -178,6 +178,8 @@ const clic_ctl_base: usize = 0x1080_1000;
 /// 武装 TIMG0 T0 的周期中断（用于中断采样：任务不让出时抢回 CPU）。
 /// 1 MHz 计数 → `period_us` 微秒。
 pub fn armT0Interrupt(period_us: u32) void {
+    // 关键：T0 的 alarm 必须**显式使能**（config 的 bit10），否则计数到点也不会触发。
+    writeReg(t0config, readReg(t0config) | (1 << 10));
     const now = nowUs();
     const alarm = now + period_us;
     writeReg(t0alarmlo, @intCast(alarm & 0xFFFF_FFFF));
