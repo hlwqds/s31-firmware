@@ -1367,3 +1367,17 @@ irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
 
 **上板结果（pb125）：自旋仍然不变**（`mac=0x00fff000`）。所以"复位脉冲缺失"是必要条件但不是充分条件：
 复位之后还需要 blob 走完 MAC 初始化（时钟/配置），busy 位才会在硬件侧清掉。第五个候选部分排除。
+
+### 时钟侧已确认无误；剩下的怀疑转向 TX/RX 排空
+
+`_wifi_clock_enable` 该做的事也对上了：IDF 的 `wifi_module_enable()` →
+`modem_clock_module_enable(PERIPH_WIFI_MODULE)`，其 MAC 一项是
+`modem_syscon_ll_enable_wifi_mac_clock()` = `clk_conf1.clk_wifimac_en`（**bit 9**，见
+`modem_syscon_struct.h` 里 `clk_conf1` 的字段序），而我们的实现**本来就置了 bit 9**。
+
+所以复位与时钟两条都到位了，busy 位却仍不清。剩下的解释指向**活动本身**：init 阶段 blob 真的发过一帧
+（`internal_tx rc=0x3002 (64 B)`），而 TX/RX 的"仍在活动"位是等 DMA 排空才清的——而我们的宿主层
+没有真实收发（rxcb 是桩、TX 出口是桩），DMA 环可能永远处于"有一帧在飞"的状态。
+
+下一步（可测）：在探针里给 `esp_wifi_internal_tx` 一个**真的**出口（把帧丢掉但**归还 TX 缓冲/推进
+描述符**），并在 rxcb 侧按 blob 期望的方式归还 RX 缓冲，看 deinit 的 busy 位是否自清。
