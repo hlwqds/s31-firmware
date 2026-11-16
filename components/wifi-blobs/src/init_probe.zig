@@ -70,6 +70,19 @@ pub fn run() noreturn {
     // 结果是 258 但看不出原因。
     log.line("wifi-init-probe: osi NOT preinstalled, slot=0x{x:0>8}", .{osi.slot_addr});
 
+    // 3b) 直接问 `wifi_osi_funcs_register` 要一个答案（它是 blob 的全局符号）：
+    //     返回非 0 就说明表没通过它的校验（表空 / _version != 9 / _magic 不符）。
+    const register = @extern(*const fn (*const osi.Osi) callconv(.c) c_int, .{ .name = "wifi_osi_funcs_register" });
+    log.line("wifi-init-probe: table ptr=0x{x:0>8} version={d} magic=0x{x:0>8}", .{
+        @intFromPtr(&table), @as(u32, @bitCast(table._version)), @as(u32, @bitCast(table._magic)),
+    });
+    const rrc = register(&table);
+    log.line("wifi-init-probe: wifi_osi_funcs_register rc={d}", .{rrc});
+    // 再问 `wifi_api_lock`：init 里第二个 callee，它若非 0 会被原样透传成 rc。
+    const api_lock = @extern(*const fn () callconv(.c) c_int, .{ .name = "wifi_api_lock" });
+    const lrc = api_lock();
+    log.line("wifi-init-probe: wifi_api_lock rc={d}", .{lrc});
+
     // 4) 构造 config 并调用
     const cfg = initcfg.defaults(&table);
     log.line("wifi-init-probe: cfg size={d} magic=0x{x:0>8}", .{ @sizeOf(initcfg.InitConfig), @as(u32, @bitCast(cfg.magic)) });
