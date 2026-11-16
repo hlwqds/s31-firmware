@@ -1339,3 +1339,31 @@ if (wait_needed() != 0) { 等 [15:13] 清零 }      // 前置轮询
 这解释了读回 `0x00FFF000` 为什么会比写入多：bits 13..15 是 deinit 自己置的 busy，bits 17..19 是
 另外三条路径置的使能位。**下一步要查的是"谁该把 13..15 清掉"**——按 `g_mac_deinit_txing/rxing` 的
 语义，那是 MAC 真正停止 TX/RX 时由硬件清的，所以问题回到"TX/RX 为什么停不下来"。
+
+### 找到真正的缺失钩子：`_wifi_reset_mac` 就在自旋**之前**被调用（2026-11-16）
+
+给 `_wifi_clock_enable/disable` 与 `_wifi_reset_mac` 三个空桩加上 `note()` 观测后上板（pb124）：
+
+```text
+swap#6 in_task=false hooks=9
+trace timer_disarm
+trace wifi_clk_en          ← blob 调它
+trace wifi_reset_mac       ← ★ 紧接着就是它
+trace timer_disarm
+irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
+```
+
+**这是决定性观测**：blob 在进入 MAC deinit 自旋**之前**先调 `_wifi_reset_mac`——而这个钩子一直是
+空桩，等于**MAC 从来没被复位过**，TX/RX 的 busy 位自然停不下来。
+
+实现（照 IDF 的真实路径）：S31 的 `_wifi_reset_mac` = `modem_clock_module_mac_reset(PERIPH_WIFI_MODULE)`
+（`esp_wifi/esp32s31/esp_adapter.c:376`），其内核是 `modem_syscon_ll_reset_wifimac()`：
+
+- `MODEM_SYSCON.modem_rst_conf` = **0x20109C10**（字段序：`test_conf` 0x00 / `clk_conf` 0x04 /
+  `clk_conf_force_on` 0x08 / `clk_conf_power_st` 0x0C / **`modem_rst_conf` 0x10** / `clk_conf1` 0x14，
+  与探针里 FORCE_ON=0x08、POWER_ST=0x0C、CLK_CONF1=0x14 三个锚点完全吻合）；
+- `rst_wifimac` = **bit 9**；
+- 动作是 **1 → 0 脉冲**。
+
+**上板结果（pb125）：自旋仍然不变**（`mac=0x00fff000`）。所以"复位脉冲缺失"是必要条件但不是充分条件：
+复位之后还需要 blob 走完 MAC 初始化（时钟/配置），busy 位才会在硬件侧清掉。第五个候选部分排除。
