@@ -265,6 +265,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const e = romHandler(k);
                 if (e.fn_) |f| log.line("romtbl[{d}] fn=0x{x} arg=0x{x}", .{ k, @intFromPtr(f), if (e.arg) |a| @intFromPtr(a) else 0 });
             }
+            // **已测：`ppTask`(0x2f800fc0) 是任务体（死循环），不能直接调**——从 trap 里调一次后
+            // 采样在 #512 就停了（"calling once" 打出，"returned" 永不打印）。要驱动 PP worker，
+            // 必须走"给它一个栈 + 上下文切换"的路子（像 blob 任务那样），而不是直接调用。
             // 哨兵是诊断件，扫完就清掉，别给 ROM 留一个永久 no-op ISR。
             ihs(30, null, null);
             // **候选 tick handler**：`g_timer_func` 非零就装到外部号 9（= CLIC 输入 25）上，

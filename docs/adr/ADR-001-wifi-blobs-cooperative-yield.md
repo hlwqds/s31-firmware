@@ -2815,6 +2815,21 @@ pump round 0 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000
 **没有任何推进。** 说明任务并不是"没被调度"，而是**调度了也没事可做**——它阻塞在 `queue_recv` 上，
 而**那条本该唤醒它的消息从来没有被投递**。
 
-⇒ 这把"合作式调度饿死任务"这个解释也否掉了（至少不是主因）：**缺的是消息源**，不是 CPU 时间。
+**限定**：这 8 轮都在 `esp_wifi_start` **之前**，只证明"**那个时刻**任务无事可做"；
+**自旋期间**（主上下文被钉在 deinit 循环里）的并发性**尚未验证**，所以"合作式调度饿死任务"这条
+**不能算已否**，只是尚未被证实。
 下一步该查的是"谁应该 post 那条消息"——候选是某个 osi 钩子（`_event_post`/`_queue_send`）
 或某个本应被调用的 blob 内部函数。
+
+### `ppTask` 不能直接调：它是任务体（死循环）
+
+`ppTask`（`esp32s31.esp32s31.rom.pp.ld:193` → `0x2f800fc0`）是 ROM 的 PP worker。从 trap 里调一次：
+
+```text
+ppTask: calling once from trap (mepc=0x2f009206)
+（"ppTask: returned" 永不打印；采样在 #512 后停止）
+```
+
+⇒ **它是任务入口（不返回）**，不能像普通函数那样调用。要驱动它必须像 blob 任务那样
+**给一个栈 + 上下文切换**（`sched.initContext` + 周期 `swapContext`），而不是直接 `call`。
+已回滚，基线恢复（`calling esp_wifi_start` 到达、无 panic、自旋 `0x2f009206`）。
