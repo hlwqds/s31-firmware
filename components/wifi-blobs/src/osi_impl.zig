@@ -799,7 +799,16 @@ fn unwrapQueue(p: ?*anyopaque) ?*Queue {
 }
 
 fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
-    note(5, @intFromPtr(p), blocking);
+    // a1 带上载荷首字：`wifi_ipc_process` 的坏指针就来自消息内容，需要看到消息流。
+    // 载荷可能只有 4 字节（item_size 小），按字节读首字，别假设对齐。
+    const first_word: usize = if (item) |it| blk: {
+        const b: [*]const u8 = @ptrCast(it);
+        var w: usize = 0;
+        var i: usize = 0;
+        while (i < @sizeOf(usize)) : (i += 1) w |= @as(usize, b[i]) << @intCast(8 * i);
+        break :blk w;
+    } else 0;
+    note(5, @intFromPtr(p), first_word);
     const q = unwrapQueue(p) orelse {
         bad_handle += 1;
         return 0;

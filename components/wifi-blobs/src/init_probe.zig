@@ -45,7 +45,7 @@ var rx_frames: u32 = 0;
 // ---- 上下文切换自检（两根栈）----
 var static_stack: [16 * 1024]u8 align(16) = undefined;
 /// PHY 标定数据（`esp_phy_calibration_data_t.opaque[1894]`），由 `register_chipv7_phy` 填充。
-var cal_data: [1894]u8 align(4) = @splat(0);
+var cal_data: [1894]u8 align(4) = @splat(0xA5);
 /// `phy_init_magic_pre`：必须紧贴在 `phy_init_data.params` 之前（IDF 的布局约定）。
 var magic_pre: [8]u8 = @splat(0);
 /// `phy_init_magic_post`：紧贴之后。
@@ -406,6 +406,10 @@ pub fn run() noreturn {
                         }
                     }
                     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{ .name = "register_chipv7_phy" });
+                    log.line("wifi-init-probe: cal_data=0x{x:0>8} init_params=0x{x:0>8}", .{
+                        @intFromPtr(&cal_data),
+                        @intFromPtr(&phy_init_data.params),
+                    });
                     // IDF 的布局：`phy_init_magic_pre`（"PHYINIT\0"，8 B）紧贴结构体之前、
                     // `phy_init_magic_post` 紧贴之后。PHY 代码可能检查这两个魔数，所以照抄布局。
                     magic_pre = "PHYINIT\x00".*;
