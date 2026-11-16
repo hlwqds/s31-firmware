@@ -211,10 +211,19 @@ register_chipv7_phy(&phy_init_data.params, &cal_data /*1894 B 清零*/, 0 /*PHY_
 | `HP_SYS_CLKRST_MODEM_CONF_REG`(0x205871E0) | **`0x25 -> 0x3d`**（`0x25` 正是 IDF 关闭值） |
 | `MODEM_SYSCON_CLK_CONF1_REG`(0x20109C14) | `0x0 -> 0x38E000`（FE_80M/FE_160M/FE_APB/FE_PWDET_ADC/FE_ADC/FE_DAC） |
 
-`phy_get_xtal_freq`/`phy_get_rf_cal_version` 仍返回，但 **`phy_rf_init` 依旧自旋**。
-这组依赖里剩下未开的是 `I2C_MASTER` 的 REGI2C 模拟时钟（`ANALOG_CLOCK_ENABLE()`，
-`modem_clock_impl.c:229`），以及 `PERIPH_PHY_CALIBRATION_MODULE` 的独立组
-（WIFI_APB/WIFI_BB/BB_44M/BB_80X1）。
+再把 `PERIPH_PHY_CALIBRATION_MODULE` 的独立组加进同一处写（WIFI_BB_44M(2)/WIFI_BB(3)/
+WIFI_BB_80X1(7)/WIFI_APB(9)），`CLK_CONF1` 读回 **`0x38E28C`**；`phy_rf_init` **仍然不返回**。
+
+两条排除让范围很窄：
+
+- 模拟 I2C 主控时钟（`MODEM_LPCON.clk_conf.clk_i2c_mst_en` = 0x2010F018 bit2）**本来就是 1**——
+  IDF 二级 bootloader 打开它（`bootloader_support/src/esp32s31/bootloader_esp32s31.c:56-57`）。
+- S31 定义 `SOC_MODEM_CLOCK_IS_INDEPENDENT`，且没有 `SOC_PM_SUPPORT_WIFI_PD` /
+  `SOC_PM_MODEM_PD_BY_SW` → 这颗芯片的 `esp_wifi_power_domain_on` **就是**上面那组时钟写，
+  没有 RTC_CNTL force-PD 步骤可试。
+
+**结论**：时钟这条线到此为止（全部打开、读回确认）。剩下的解释是 RF 标定的完成握手——
+`MIE=0` 下收不到的中断，或只能从 PHY 自身寄存器窗口读到的状态位。下一步做**中断路径**。
 
 **更正（此前写错）**：S31 **有**调制解调器寄存器头，位置是
 `components/soc/esp32s31/include/modem/`（不是 `register/soc/`）：
