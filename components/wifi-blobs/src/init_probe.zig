@@ -760,6 +760,21 @@ pub fn run() noreturn {
                 log.line("wifi-init-probe: event_bus handlers={d} posts={d} undispatched={d}", .{
                     event_bus.count, event_bus.posts, event_bus.undispatched,
                 });
+                // **rst_wifimac 脉冲实验**：`modem_rst_conf`(0x20109C10) bit9 = rst_wifimac。
+                // bits 15:13（busy/ack）在 blob 里**没有软件清除路径**，所以 IDF init 后
+                // MAC_ST 0xE000 -> 0 只能是硬件副作用；复位脉冲是唯一候选。
+                const rst_reg = @as(*volatile u32, @ptrFromInt(0x20109C10));
+                const mac_st = @as(*volatile u32, @ptrFromInt(0x20104CAC));
+                log.line("wifi-init-probe: pre-pulse MAC_ST=0x{x:0>8} rst=0x{x:0>8}", .{ mac_st.*, rst_reg.* });
+                rst_reg.* |= (1 << 9);
+                var d: u32 = 0;
+                while (d < 2000) : (d += 1) asm volatile ("nop");
+                rst_reg.* &= ~@as(u32, 1 << 9);
+                d = 0;
+                while (d < 20000) : (d += 1) asm volatile ("nop");
+                log.line("wifi-init-probe: post-pulse MAC_ST=0x{x:0>8} rst=0x{x:0>8} en_bits={d}", .{
+                    mac_st.*, rst_reg.*, (mac_st.* >> 17) & 7,
+                });
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });
