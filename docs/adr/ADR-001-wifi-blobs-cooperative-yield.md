@@ -173,3 +173,21 @@ register_chipv7_phy(&phy_init_data.params, &cal_data /*1894 B 清零*/, 0 /*PHY_
 因此 PHY 这条线的顺序是：**先补调制解调器电源域与 PHY enable**（IDF 的 `esp_phy_enable` 在 C 层，
 不在 blob 里），以及目前仍是零值桩的 24 个 `est_PHY_*` 标定表，再回来调 `register_chipv7_phy`。
 在那之前，任务侧那个 `mtval=0x102` 的上下文故障也无法消除。
+
+### 下一步的具体序列（已从 IDF 源码取出，尚未移植）
+
+"不返回也不 fault"是**总线访问打到未上电域**的典型形态（寄存器访问挂起，不产生异常），
+而不是代码逻辑错。IDF 在 PHY 初始化之前做的正是这件事：
+
+| 步骤 | 来源 | 动作 |
+| --- | --- | --- |
+| 1 | `components/esp_wifi/src/wifi_init.c:462` | `esp_wifi_power_domain_on()`（= `esp_wifi_bt_power_domain_on` 的别名，`esp_phy/src/phy_init.c:1243`） |
+| 2 | `esp_phy/src/phy_init.c:453-477` | 清 `RTC_CNTL_DIG_PWC_REG` 的 `RTC_CNTL_WIFI_FORCE_PD` → 延时 10 µs → `wifi_bt_common_module_enable()` → 切 `SYSCON_WIFI_RST_EN_REG` 的 MODEM_RESET → 清 `RTC_CNTL_DIG_ISO_REG` 的 `RTC_CNTL_WIFI_FORCE_ISO` |
+| 3 | `esp_hw_support/periph_ctrl.c:98` | `wifi_bt_common_module_enable()`：S31 走 `modem_clock_module_enable(PERIPH_PHY_MODULE)`（`SOC_MODEM_CLOCK_IS_INDEPENDENT`） |
+| 4 | 之后 | 再调 `register_chipv7_phy` |
+
+移植时需要的 S31 寄存器地址/位域在 `components/soc/esp32s31/register/soc/rtc_cntl_reg.h` 与
+`syscon_reg.h` 里；`modem_clock` 是独立的驱动（`esp_hw_support/modem_clock.c`）。
+
+另一条独立可能：PHY 标定本身可能依赖中断（`MIE=0` 下永远等不到），这与 §"定时器中断抢占"
+是同一件事的两面——先做电源域/时钟，若仍挂起，再开中断路径。
