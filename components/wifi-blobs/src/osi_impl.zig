@@ -610,6 +610,8 @@ fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
     calls.set_isr += 1;
     note(32, @intCast(n), @intFromPtr(f));
     // 写**应用侧**的表（我们的 trap 才会分发它）——IDF 的 `s_intr_handlers` 就是应用侧。
+    // **约定**：`n` 是 CLIC 输入号（blob 自己的编号，如 `mie |= 1<<25`），`trap.setHandler` 内部
+    // 归一化到外部号（`n >= 16` 时存 `n-16`），与 `trapDispatch` 的查找口径一致。
     if (n >= 0) {
         const hf: ?*const fn (?*anyopaque) callconv(.c) void = if (f) |p| @ptrCast(@alignCast(p)) else null;
         @import("board").trap.setHandler(@intCast(n), hf, arg);
@@ -619,8 +621,10 @@ fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
     });
     intr_handler_set(n, f, arg);
 }
-/// `_ints_on(mask)`：打开 `mask` 里那些 **CLIC 输入** 的使能位。
-/// S31 是 CLIC：每输入一个 ctrl 字（`0x1080_1000 + 4*i`，bit8 = IE）。
+/// `_ints_on(mask)`：打开 `mask` 里那些**外部中断号**的使能位。
+/// S31 是 CLIC：ctrl 字下标 = **外部号 + 16**（IDF `esp_rom_clic.c:21` 的
+/// `CLIC_INT_CTRL_REG(rv_int_num + CLIC_EXT_INTR_NUM_OFFSET)`，offset=16），bit8 = IE。
+/// `mie` 的位是 **CLIC ID**（blob 自己写的是 `mie |= 1<<25`），所以 mask（外部号）要左移 16。
 fn shellIntsOn(mask: u32) callconv(.c) void {
     calls.ints_on += 1;
     note(33, mask, 0);
@@ -628,14 +632,14 @@ fn shellIntsOn(mask: u32) callconv(.c) void {
     var i: usize = 0;
     while (m != 0 and i < 32) : (i += 1) {
         if ((m & 1) != 0) {
-            const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + i * 4);
+            const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + (i + 16) * 4);
             ctl.* |= (1 << 8); // IE
         }
         m >>= 1;
     }
     asm volatile ("csrs mie, %[m]"
         :
-        : [m] "r" (@as(usize, mask)),
+        : [m] "r" (@as(usize, mask) << 16),
         : .{ .memory = true });
 }
 fn shellIntsOff(mask: u32) callconv(.c) void {
@@ -644,14 +648,14 @@ fn shellIntsOff(mask: u32) callconv(.c) void {
     var i: usize = 0;
     while (m != 0 and i < 32) : (i += 1) {
         if ((m & 1) != 0) {
-            const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + i * 4);
+            const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + (i + 16) * 4);
             ctl.* &= ~@as(u32, 1 << 8);
         }
         m >>= 1;
     }
     asm volatile ("csrc mie, %[m]"
         :
-        : [m] "r" (@as(usize, mask)),
+        : [m] "r" (@as(usize, mask) << 16),
         : .{ .memory = true });
 }
 /// 我们永远不在 ISR 里（MIE=0、无中断驱动），如实返回 false。

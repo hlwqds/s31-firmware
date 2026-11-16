@@ -207,8 +207,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // （IDF 的 `_global_interrupt_handler` 就是这个形状）。电平输入（T0/25）要先 ack。
         // 一次性把 **ROM 表**在 app 运行期（blob 已初始化）扫一遍并打印——调试口读到的快照可能是
         // 复位后的，这里才是权威读数。只做一次，且与采样器一样从 trap 里打（仓库既有做法）。
-        // **锚定在自旋里**再扫：`mepc == 0x2f009206` 是 MAC 自旋签名。之前用 `irq_count>=1000` 触发，
-        // 而自旋签名到 #9984 才出现 -> 那次扫的是 init 中途的表，不能证明"运行期为空"。
+        // **锚定在自旋里**再扫：`mepc == 0x2f009206` 是 MAC 自旋签名（pb116–pb135 里 #256–#512 就出现）。
         if (input == 25 and !rom_table_dumped and frame.mepc == 0x2f009206) {
             rom_table_dumped = true;
             // **哨兵自检**：先用 ROM 的 `intr_handler_set` 装一个已知项，再扫。若扫不到 -> app 视图
@@ -221,19 +220,23 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 : [v] "=r" (-> usize),
             );
             log.line("mtvt=0x{x}", .{mtvt});
+            // 表只有 **32 项**（外部号 0..31）：扫到 64 时 34..48 读到的是别的 ROM 数据
+            // （`fn=0x780078`、`0x20303a` 这类明显是代码字），不是 handler。
             var k: usize = 0;
             while (k < 32) : (k += 1) {
                 const e = romHandler(k);
                 if (e.fn_) |f| log.line("romtbl[{d}] fn=0x{x} arg=0x{x}", .{ k, @intFromPtr(f), if (e.arg) |a| @intFromPtr(a) else 0 });
             }
+            // 哨兵是诊断件，扫完就清掉，别给 ROM 留一个永久 no-op ISR。
+            ihs(30, null, null);
         }
         // **表的下标是外部中断号 = CLIC ID - 16**（IDF `components/riscv/interrupt.c`：
         // `intr_get_item(mcause - RV_EXTERNAL_INT_OFFSET)`，`RV_EXTERNAL_INT_OFFSET = 16`；
         // ROM 分发器 `0x2f80193e` 的 `addi a0,a0,-16` 是同一约定）。CLIC 输入 25 -> 外部号 9。
         const ext: usize = if (input >= 16) input - 16 else input;
         var h = getHandler(ext);
-        // 其次看 **ROM 的表**：blob 是直接调 ROM 的 `intr_handler_set` 装 handler 的，所以它的
-        // tick handler 在这张表里。ROM 读合法 -> 我们替 ROM 分发。
+        // 其次看 **ROM 的表**：blob 若直接调 ROM 的 `intr_handler_set` 装 handler，就会落在这张表里。
+        // （实测：自旋锚定 + 哨兵验证下运行期这张表除自装哨兵外为空，所以 blob 目前没这么做。）
         if (h.fn_ == null) h = romHandler(ext);
         if (h.fn_) |f| {
             if (input == 25) hw.ackT0Interrupt(2000);
@@ -322,8 +325,13 @@ pub fn romHandler(n: usize) Handler {
 }
 
 /// `_set_isr(n, f, arg)` 的落地：把 handler 装进**我们自己的**表。
+///
+/// **下标约定**：表按**外部中断号**索引（= CLIC ID − 16，见 `trapDispatch`）。blob 的调用方
+/// 用的是 CLIC 输入号（它自己写 `mie |= 1<<25`），所以这里做归一化：`n >= 16` 时存到 `n-16`。
+/// 这样 `_set_isr(25, ..)` 与 `trapDispatch` 对输入 25 的查找（`25-16 = 9`）落在同一格。
 pub fn setHandler(n: usize, f: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
-    if (n < handlers.len) handlers[n] = .{ .fn_ = f, .arg = arg };
+    const idx: usize = if (n >= 16) n - 16 else n;
+    if (idx < handlers.len) handlers[idx] = .{ .fn_ = f, .arg = arg };
 }
 
 /// 取某个输入的 handler（供 trapDispatch 分发）。
