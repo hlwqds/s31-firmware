@@ -133,12 +133,26 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
     );
 }
 
-pub export fn trapDispatch(frame: *TrapFrame) noreturn {
+/// 中断采样：只记前 N 次被中断的 PC，然后 `mret` 返回（异常仍然停机）。
+/// 目的：任务在 blob 代码里不让出时，用定时器中断抢回 CPU 定位自旋点。
+pub var irq_samples: [16]usize = @splat(0);
+pub var irq_count: u32 = 0;
+
+pub export fn trapDispatch(frame: *TrapFrame) void {
     const cause = hw.readMcause();
     if ((cause & 0x8000_0000) != 0) {
-        log.line("panic: unexpected interrupt input={d} cause=0x{x} mepc=0x{x}", .{
-            cause & 0x3F, cause, frame.mepc,
-        });
+        if (irq_count < irq_samples.len) {
+            irq_samples[irq_count] = frame.mepc;
+            // 前 8 次直接打印：即使主上下文再也拿不回 CPU，也能看到自旋点的 PC。
+            if (irq_count < 8) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
+                irq_count,
+                cause & 0x3F,
+                frame.mepc,
+            });
+        }
+        irq_count += 1;
+        // 采样后返回：asm 的恢复路径会把 mepc/mstatus 与寄存器都还原。
+        return;
     } else {
         const code = cause & 0x3F;
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
@@ -160,6 +174,8 @@ pub export fn trapDispatch(frame: *TrapFrame) noreturn {
             w[0], w[1], w[2], w[3],
         });
     }
+    log.raw("panic: halted (wfi)\n");
+    hw.halt();
     log.raw("panic: halted (wfi)\n");
     hw.halt();
 }

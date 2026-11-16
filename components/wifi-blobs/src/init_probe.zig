@@ -449,6 +449,8 @@ pub fn run() noreturn {
                 log.raw("wifi-init-probe: task context ready, running it until it blocks\n");
                 // 先让任务跑一轮（它阻塞收消息 → 通过 idleHook 让回主上下文），
                 // 这样 wifi 状态机有机会推进到 start 期待的状态。
+                // 打开全局中断：任务一旦在 blob 里不让出，只有中断能抢回 CPU 采样 PC。
+                hw.enableInterrupts();
                 in_task = true;
                 impl.current_is_task = true;
                 sched.start(&task_ctx, &main_ctx);

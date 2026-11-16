@@ -166,3 +166,13 @@ pub fn halt() noreturn {
         asm volatile ("wfi");
     }
 }
+
+/// 打开全局中断（`mstatus.MIE`）。中断采样/抢占需要它。
+pub fn enableInterrupts() void {
+    asm volatile ("csrsi mstatus, 8" ::: .{ .memory = true });
+}
+
+/// 关全局中断。
+pub fn disableInterrupts() void {
+    asm volatile ("csrci mstatus, 8" ::: .{ .memory = true });
+}
