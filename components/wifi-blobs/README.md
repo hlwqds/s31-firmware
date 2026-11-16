@@ -99,12 +99,14 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 
 ## 待验证项
 
-- **PHY（当前墙）**：`register_chipv7_phy` 挂起，已二分到 **ROM 函数 `phy_open_fe_bb_clk`
-  （0x2f80131c，`rom_syms.ld:115`）**。LPCON/SYSCON/CLKRST 的时钟位全部打开并读回确认
-  （`CLK_CONF1 = 0x38E28C`），模拟 I2C 时钟由 IDF 二级 bootloader 打开。下一步 dump ROM 该地址、
-  反汇编它轮询的寄存器+位。
-- `esp_wifi_start`：取锁 + `zalloc(24 B)` + `event_post(id=43)` 之后自旋，不投队列；需要 PHY/coex
-  bring-up，或定时器中断抢占（`MIE=0` 现状）。
+- **PHY（已解锁）**：`register_chipv7_phy` 现在**返回**（`rc=1`）。关键是把 `SYSCON_FORCE_ON`
+  (0x20109C08) 的 `0x1c`（WIFI_APB/FE/FE_APB）与 `LPCON_FORCE_ON` (0x2010F01C) 的 `WIFIPWR_FO`
+  设上——使能位不等于上电；`CLK_CONF_POWER_ST` 读 0 不是判据。
+  诊断纪律：**不要手工乱序调用 ROM 的 PHY 函数**（会得到假的空指针故障），跑真实路径。
+- `esp_wifi_start`：取锁 + `zalloc(24 B)` + `event_post(id=43)` 之后自旋，不投队列；需要定时器中断
+  抢占（`MIE=0` 现状）或 post 型入口。
+- 当前故障：PHY 之后出现 `illegal instruction`（`mepc=0x2f01c9d4`，SRAM；`ra=0x40017876`）——
+  `0x40017874: jalr a5` 通过上下文里的函数指针调用，而该指针落在 arena 范围。
 - `on_idle` 接 EMAC：收包 → `esp_wifi_internal_reg_rxcb` 注册的回调；发送走 `esp_wifi_internal_tx`。
 - 扫描/连接：需要 `esp_wifi_connect` / `esp_wifi_disconnect` 等 IDF 侧符号的桩。
 
