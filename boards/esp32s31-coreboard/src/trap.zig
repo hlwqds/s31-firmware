@@ -247,6 +247,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             log.line("blob_g b1={d} b14={d} b15={d} b16={d} b27={d} b288={d} b289={d}", .{
                 g[1], g[14], g[15], g[16], g[27], g[288], g[289],
             });
+            // **回调槽**：`0x40029366` 取 `0x2f011a34`，再 `lw a5,116(a5)` = `*(u32*)0x2f011aa8`。
+            // 非 0 -> 走回调；为 0 -> 走兜底 `jal 0x40035ea8`（被 ctx[15] 挡住）。
+            const cb_slot = @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*;
+            log.line("blob cb_slot[0x2f011aa8]=0x{x}", .{cb_slot});
             log.line("pp_task_hdl=0x{x} deinit_count={d} rxing={d} txing={d}", .{
                 pp_task_hdl, deinit_count, deinit_rxing, deinit_txing,
             });
