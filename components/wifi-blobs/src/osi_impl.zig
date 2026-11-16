@@ -140,6 +140,8 @@ pub var blocking_refused: u32 = 0;
 pub var bad_handle: u32 = 0;
 /// `_semphr_give(null)` 的次数（ack 的 give 侧句柄从未被赋值）。
 pub var null_give: u32 = 0;
+/// recv 探针计数（前 6 次打印 count/item_size）。
+pub var recv_probe: u32 = 0;
 /// 被丢弃的事件（没有事件循环时 `_event_post` 无法投递）。
 pub var events_dropped: u32 = 0;
 
@@ -459,11 +461,11 @@ pub const hook_ids = [_][]const u8{
     "semphr_take", "semphr_give", "mutex_lock",        "mutex_unlock",
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
     "malloc",      "zalloc",      "calloc",            "mutex_create",
-    "event_post",  "alloc",
+    "event_post",  "alloc",       "recv_probe",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 13;
+pub const note_id_max: u8 = 14;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
@@ -867,6 +869,11 @@ fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) c
 
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
     note(4, @intFromPtr(p), blocking);
+    const q_probe = unwrapQueue(p);
+    if (q_probe) |q0| {
+        recv_probe += 1;
+        if (recv_probe <= 6) note(14, q0.count, q0.item_size);
+    }
     const q = unwrapQueue(p) orelse {
         bad_handle += 1;
         return 0;

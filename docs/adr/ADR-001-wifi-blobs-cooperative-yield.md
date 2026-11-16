@@ -649,3 +649,21 @@ swap#6 in_task=false          # start 的 take 调了 on_idle，并切到了任�
 问题因此变成：**任务那次 `recv` 为什么没有把队列里已有的消息取走？**（`queue_send` 在 take 之前
 已经成功投递过一条 cmd=6 的消息。）下一步该在 `recv` 入口把 `self.count`、`out.len`、`item_size`
 三个值打出来——如果 `out.len != item_size`，我们的实现会**直接返回 0 而不消费**，正好造成这种乒乓。
+
+### recv 本身是好的（2026-11-16）
+
+在 `recv` 入口把 `count` 与 `item_size` 打出来后，假设被否定：
+
+```text
+trace queue_recv ...
+trace recv_probe a0=0x00000001 a1=0x00000008   # count=1、item_size=8 → 第一次就取到了
+trace queue_recv ...
+trace recv_probe a0=0x00000000 a1=0x00000008   # 之后 count=0 → 消息确实被消费
+```
+
+所以**队列收发与 item_size 都没问题**，任务也确实把消息取走了。`calling esp_wifi_start` 之后
+不再出现 `queue_recv` —— 说明任务此刻阻塞在**别处**（很可能是它自己的一次 `semphr_take`），
+而不是在等消息。
+
+下一步：把 `semphr_take` 的句柄也纳入同一份 trace（已经在内），确认 start 期间任务停在哪一个
+`take` 上；那一个就是"谁该给它"的答案。
