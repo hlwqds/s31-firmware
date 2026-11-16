@@ -8,6 +8,13 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **`wifi_osi_funcs_t` 的 Zig 镜像**（`components/wifi-blobs/src/osi.zig`）：字段表由 IDF 头
+  `esp_wifi/include/esp_private/wifi_os_adapter.h` 经 `sdkconfig.h` 预处理后**自动生成**
+  （128 个字段，`_version` 首、`_magic` 尾），不是手写。ilp32 下用 comptime 断言钉死
+  `@sizeOf == 512`、首尾字段偏移——交叉编译时就会检查（实测通过）。主机用例断言字段数与
+  首尾偏移。这张表是 blob 与宿主之间唯一的 OS 契约：三个大归档里
+  `xTaskCreate`/`xQueue*`/`xSemaphore*`/`esp_event_*`/`esp_timer_*`/`heap_caps_*` 的未定义引用
+  全是 0，所有 OS 访问都经 `g_osi_funcs_p` 回调。
 - **链接脚本收集 IDF blob 的段**：`s31.ld` 现在把 `.rodata_wlog*`（603 个 Wi-Fi 日志串段）、
   `.eh_frame*` 并进 `.flash.rodata`，`.iram1/.wifis*piram/.wifirxiram/.wifiextrairam` 等
   IRAM 变体收进 SRAM 的 `.iram_blobs`（62 240 B），`.dram1` 并进 `.data`。没有这一步，

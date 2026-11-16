@@ -26,6 +26,10 @@
 
 const std = @import("std");
 
+/// OS 抽象表（`wifi_osi_funcs_t` 的 Zig 镜像）。放进模块根是为了让 ilp32 的
+/// `@sizeOf == 4 × 128` 断言在**交叉编译时**就跑一遍，而不是等上板。
+pub const osi = @import("osi.zig");
+
 // 让链接器真的把 blob 拉进来：**运行时**取一次符号地址。
 // comptime 里取地址不会留下重定位，lld 也就不会去归档里找那个成员
 // （实测：comptime `_ = @extern(...)` 时 ELF 停在 29 464 B，什么都没拉进来）。

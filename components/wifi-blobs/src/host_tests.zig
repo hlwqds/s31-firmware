@@ -10,13 +10,22 @@
 
 const std = @import("std");
 const adapter = @import("adapter.zig");
+const osi = @import("osi.zig");
 
 test {
     _ = adapter;
+    _ = osi;
 }
 
 test "wifi-blobs: probe 解析到替身符号的地址" {
     try std.testing.expect(adapter.probe() != 0);
+}
+
+test "wifi-blobs: osi 表字段数与首尾字段固定" {
+    // 字段数是 IDF 头经 sdkconfig 预处理后的结果；改了 IDF 版本就要重新生成 osi.zig。
+    try std.testing.expectEqual(@as(usize, 128), osi.field_count);
+    try std.testing.expectEqual(@as(usize, 0), @offsetOf(osi.Osi, "_version"));
+    try std.testing.expectEqual(@as(usize, osi.field_count - 1), @offsetOf(osi.Osi, "_magic") / @sizeOf(usize));
 }
 
 /// 主机侧替身：`adapter.probe()` 引用这个名字，链接必须能解析。
