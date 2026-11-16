@@ -97,7 +97,6 @@ pub fn run() noreturn {
     }
     // 先让 worker 自己跑完整序列；它失败时再做分阶段诊断（stage 调用会改状态，别提前跑）。
 
-
     // worker 内部的顺序（`.text.wifi_init_in_caller_task` 的反汇编）：
     //   wifi_log → _spin_lock_create（存 g_intr_lock_mux）→ mac_list_lock →
     //   wifi_menuconfig_init(config) → misc_nvs_init → ic_create_wifi_task → ieee80211_ioctl_init
