@@ -195,5 +195,43 @@ test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
 
 test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
     try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len);
-    try std.testing.expectEqual(@as(usize, 34), impl.implemented.len); // 21 原语 + 13 中断/任务
+    try std.testing.expectEqual(@as(usize, 40), impl.implemented.len); // 21 原语 + 13 中断/任务 + 6 时间/随机/MAC
+}
+
+var test_now_us: u64 = 1_234_567;
+var test_mac: [6]u8 = .{ 0x02, 0x11, 0x22, 0x33, 0x44, 0x55 };
+fn testNowUs() u64 {
+    return test_now_us;
+}
+fn testFillRandom(dst: []u8) void {
+    for (dst, 0..) |*b, i| b.* = @intCast(0xa0 + (i & 0x0f));
+}
+fn testMac() [6]u8 {
+    return test_mac;
+}
+
+test "osi_impl: 时间/随机/MAC 走注入钩子" {
+    var buf: [4096]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    impl.setHooks(.{ .now_us = &testNowUs, .fill_random = &testFillRandom, .mac = &testMac });
+    const tbl = impl.makeTable();
+
+    const get_time: *const fn () callconv(.c) i64 = @ptrCast(tbl._esp_timer_get_time.?);
+    const log_ts: *const fn () callconv(.c) u32 = @ptrCast(tbl._log_timestamp.?);
+    const get_random: *const fn (?[*]u8, usize) callconv(.c) c_int = @ptrCast(tbl._get_random.?);
+    const read_mac: *const fn (?[*]u8, c_uint) callconv(.c) c_int = @ptrCast(tbl._read_mac.?);
+
+    try std.testing.expectEqual(@as(i64, 1_234_567), get_time());
+    try std.testing.expectEqual(@as(u32, 1234), log_ts());
+
+    var rnd: [8]u8 = undefined;
+    try std.testing.expectEqual(@as(c_int, 0), get_random(&rnd, rnd.len));
+    try std.testing.expectEqual(@as(u8, 0xa0), rnd[0]);
+    try std.testing.expectEqual(@as(u8, 0xa7), rnd[7]);
+
+    var mac: [6]u8 = undefined;
+    try std.testing.expectEqual(@as(c_int, 0), read_mac(&mac, 0));
+    try std.testing.expectEqualSlices(u8, &test_mac, &mac);
+
+    impl.setHooks(.{}); // 还原，避免影响别的用例
 }

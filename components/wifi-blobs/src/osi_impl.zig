@@ -283,6 +283,59 @@ fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
     return s.give();
 }
 
+/// 时间/随机/MAC 这类钩子需要硬件（`hw.nowUs`、TRNG、efuse MAC），而本组件不 import
+/// `board`——所以走**注入**：固件构建时用 `setHooks` 接上真实现，主机测试接测试替身。
+/// 没注入时退化为"计数 + 保守返回值"，不会崩。
+pub const Hooks = struct {
+    now_us: ?*const fn () u64 = null,
+    fill_random: ?*const fn (dst: []u8) void = null,
+    mac: ?*const fn () [6]u8 = null,
+};
+
+var hooks: Hooks = .{};
+
+pub fn setHooks(h: Hooks) void {
+    hooks = h;
+}
+
+fn shellRand() callconv(.c) u32 {
+    var b: [4]u8 = undefined;
+    if (hooks.fill_random) |f| {
+        f(&b);
+    } else {
+        b = .{ 0x5a, 0xa5, 0x3c, 0xc3 };
+    }
+    return std.mem.readInt(u32, &b, .little);
+}
+
+/// `unsigned long` 在 ilp32 上就是 32 位。
+fn shellRandom() callconv(.c) c_ulong {
+    return shellRand();
+}
+
+/// esp_err 风格：0 = 成功。
+fn shellGetRandom(buf: ?[*]u8, len: usize) callconv(.c) c_int {
+    const p = buf orelse return -1;
+    if (hooks.fill_random) |f| f(p[0..len]) else @memset(p[0..len], 0x5a);
+    return 0;
+}
+
+fn shellEspTimerGetTime() callconv(.c) i64 {
+    return if (hooks.now_us) |f| @intCast(f()) else 0;
+}
+
+fn shellLogTimestamp() callconv(.c) u32 {
+    return if (hooks.now_us) |f| @intCast(f() / 1000) else 0;
+}
+
+fn shellReadMac(mac: ?[*]u8, mac_type: c_uint) callconv(.c) c_int {
+    _ = mac_type;
+    const p = mac orelse return -1;
+    const m = if (hooks.mac) |f| f() else [6]u8{ 0x02, 0, 0, 0, 0, 0 };
+    @memcpy(p[0..6], &m);
+    return 0;
+}
+
 /// 中断/任务类钩子的调用计数。它们先做成**可观测的空操作**：
 /// 若 blob 在 init 期间真的调了，计数非 0 → 说明必须把中断真接上；
 /// 若一直是 0 → 说明 S31 这条路径不需要宿主中断（比留 null 崩掉快得多地"把未知变已知"）。
@@ -431,6 +484,12 @@ pub fn makeTable() osi.Osi {
     t._semphr_delete = @ptrCast(&shellSemphrDelete);
     t._semphr_take = @ptrCast(&shellSemphrTake);
     t._semphr_give = @ptrCast(&shellSemphrGive);
+    t._rand = @ptrCast(&shellRand);
+    t._random = @ptrCast(&shellRandom);
+    t._get_random = @ptrCast(&shellGetRandom);
+    t._esp_timer_get_time = @ptrCast(&shellEspTimerGetTime);
+    t._log_timestamp = @ptrCast(&shellLogTimestamp);
+    t._read_mac = @ptrCast(&shellReadMac);
     t._set_intr = @ptrCast(&shellSetIntr);
     t._clear_intr = @ptrCast(&shellClearIntr);
     t._set_isr = @ptrCast(&shellSetIsr);
@@ -470,33 +529,33 @@ pub const implemented = [_][]const u8{
     "_semphr_delete",         "_semphr_take",      "_semphr_give",       "_mutex_create",       "_recursive_mutex_create", "_mutex_delete",
     "_mutex_lock",            "_mutex_unlock",     "_queue_create",      "_queue_delete",       "_queue_send",             "_queue_send_to_back",
     "_queue_send_to_front",   "_queue_recv",       "_queue_msg_waiting", "_task_delay",         "_task_ms_to_tick",        "_task_get_current_task",
-    "_task_get_max_priority", "_malloc",           "_free",              "_get_free_heap_size",
+    "_task_get_max_priority", "_malloc",           "_free",              "_get_free_heap_size", "_rand",                   "_read_mac",
+    "_esp_timer_get_time",    "_get_random",       "_random",            "_log_timestamp",
 };
 
 /// 仍然为 null 的钩子（下一步照这张单子填）。
+/// 注意 `_log_write`/`_log_writev` 是 C 变参函数，**Zig 无法定义**，要么写一小段 C shim，要么保持 null。
 pub const unimplemented = [_][]const u8{
-    "_version",                         "_env_is_chip",                    "_wifi_thread_semphr_get",                  "_queue_send_from_isr",
-    "_event_group_create",              "_event_group_delete",             "_event_group_set_bits",                    "_event_group_clear_bits",
-    "_event_group_wait_bits",           "_task_create_pinned_to_core",     "_task_create",                             "_task_delete",
-    "_event_post",                      "_rand",                           "_dport_access_stall_other_cpu_start_wrap", "_dport_access_stall_other_cpu_end_wrap",
-    "_wifi_pm_sleep_lock_acquire",      "_wifi_pm_sleep_lock_release",     "_phy_disable",                             "_phy_enable",
-    "_phy_update_country_info",         "_read_mac",                       "_timer_arm",                               "_timer_disarm",
-    "_timer_done",                      "_timer_setfn",                    "_timer_arm_us",                            "_wifi_reset_mac",
-    "_wifi_clock_enable",               "_wifi_clock_disable",             "_wifi_rtc_enable_iso",                     "_wifi_rtc_disable_iso",
-    "_esp_timer_get_time",              "_nvs_set_i8",                     "_nvs_get_i8",                              "_nvs_set_u8",
-    "_nvs_get_u8",                      "_nvs_set_u16",                    "_nvs_get_u16",                             "_nvs_open",
-    "_nvs_close",                       "_nvs_commit",                     "_nvs_set_blob",                            "_nvs_get_blob",
-    "_nvs_erase_key",                   "_get_random",                     "_get_time",                                "_random",
-    "_slowclk_cal_get",                 "_log_write",                      "_log_writev",                              "_log_timestamp",
-    "_malloc_internal",                 "_realloc_internal",               "_calloc_internal",                         "_zalloc_internal",
-    "_wifi_malloc",                     "_wifi_realloc",                   "_wifi_calloc",                             "_wifi_zalloc",
-    "_wifi_create_queue",               "_wifi_delete_queue",              "_coex_init",                               "_coex_deinit",
-    "_coex_enable",                     "_coex_disable",                   "_coex_status_get",                         "_coex_condition_set",
-    "_coex_wifi_request",               "_coex_wifi_release",              "_coex_wifi_channel_set",                   "_coex_event_duration_get",
-    "_coex_pti_get",                    "_coex_schm_status_bit_clear",     "_coex_schm_status_bit_set",                "_coex_schm_interval_set",
-    "_coex_schm_interval_get",          "_coex_schm_curr_period_get",      "_coex_schm_curr_phase_get",                "_coex_schm_process_restart",
-    "_coex_schm_register_cb",           "_coex_register_start_cb",         "_regdma_link_set_write_wait_content",      "_sleep_retention_find_link_by_id",
-    "_coex_schm_flexible_period_set",   "_coex_schm_flexible_period_get",  "_coex_schm_get_phase_by_idx",              "_coex_configure_preemption_end_cb",
-    "_wifi_disable_ac_ax",              "_wifi_bb_sleep_retention_attach", "_wifi_bb_sleep_retention_detach",          "_wifi_mac_sleep_retention_attach",
-    "_wifi_mac_sleep_retention_detach", "_magic",
+    "_version",                            "_env_is_chip",                             "_wifi_thread_semphr_get",                "_queue_send_from_isr",
+    "_event_group_create",                 "_event_group_delete",                      "_event_group_set_bits",                  "_event_group_clear_bits",
+    "_event_group_wait_bits",              "_task_create_pinned_to_core",              "_task_create",                           "_task_delete",
+    "_event_post",                         "_dport_access_stall_other_cpu_start_wrap", "_dport_access_stall_other_cpu_end_wrap", "_wifi_pm_sleep_lock_acquire",
+    "_wifi_pm_sleep_lock_release",         "_phy_disable",                             "_phy_enable",                            "_phy_update_country_info",
+    "_timer_arm",                          "_timer_disarm",                            "_timer_done",                            "_timer_setfn",
+    "_timer_arm_us",                       "_wifi_reset_mac",                          "_wifi_clock_enable",                     "_wifi_clock_disable",
+    "_wifi_rtc_enable_iso",                "_wifi_rtc_disable_iso",                    "_nvs_set_i8",                            "_nvs_get_i8",
+    "_nvs_set_u8",                         "_nvs_get_u8",                              "_nvs_set_u16",                           "_nvs_get_u16",
+    "_nvs_open",                           "_nvs_close",                               "_nvs_commit",                            "_nvs_set_blob",
+    "_nvs_get_blob",                       "_nvs_erase_key",                           "_get_time",                              "_slowclk_cal_get",
+    "_log_write",                          "_log_writev",                              "_malloc_internal",                       "_realloc_internal",
+    "_calloc_internal",                    "_zalloc_internal",                         "_wifi_malloc",                           "_wifi_realloc",
+    "_wifi_calloc",                        "_wifi_zalloc",                             "_wifi_create_queue",                     "_wifi_delete_queue",
+    "_coex_init",                          "_coex_deinit",                             "_coex_enable",                           "_coex_disable",
+    "_coex_status_get",                    "_coex_condition_set",                      "_coex_wifi_request",                     "_coex_wifi_release",
+    "_coex_wifi_channel_set",              "_coex_event_duration_get",                 "_coex_pti_get",                          "_coex_schm_status_bit_clear",
+    "_coex_schm_status_bit_set",           "_coex_schm_interval_set",                  "_coex_schm_interval_get",                "_coex_schm_curr_period_get",
+    "_coex_schm_curr_phase_get",           "_coex_schm_process_restart",               "_coex_schm_register_cb",                 "_coex_register_start_cb",
+    "_regdma_link_set_write_wait_content", "_sleep_retention_find_link_by_id",         "_coex_schm_flexible_period_set",         "_coex_schm_flexible_period_get",
+    "_coex_schm_get_phase_by_idx",         "_coex_configure_preemption_end_cb",        "_wifi_disable_ac_ax",                    "_wifi_bb_sleep_retention_attach",
+    "_wifi_bb_sleep_retention_detach",     "_wifi_mac_sleep_retention_attach",         "_wifi_mac_sleep_retention_detach",       "_magic",
 };
