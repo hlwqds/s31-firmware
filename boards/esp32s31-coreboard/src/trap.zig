@@ -175,7 +175,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (irq_count < irq_samples.len) {
             irq_samples[irq_count] = frame.mepc;
             // 前 8 次直接打印：即使主上下文再也拿不回 CPU，也能看到自旋点的 PC。
-            if (irq_count < 32) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
+            if (irq_count < 64) log.line("irq-sample #{d} input={d} mepc=0x{x}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
