@@ -545,6 +545,10 @@ pub fn run() noreturn {
                     log.line("wifi-init-probe: after ic_mac_init(g_ic): is_lmac_idle={d} iface={d} mac=0x{x:0>8}", .{
                         is_lmac_idle(), ic_interface_enabled(), mac_st.*,
                     });
+                    // 只调无参的 `hal_mac_is_dma_enable`：`hal_mac_get_txq_state/complete` 带参数，
+                    // 用垃圾 a0 调会 store fault（实测 mtval=0xa6b000a）。
+                    const is_dma_enable = @extern(*const fn () callconv(.c) c_int, .{ .name = "hal_mac_is_dma_enable" });
+                    log.line("wifi-init-probe: dma_enable={d}", .{is_dma_enable()});
                 }
                 // ★ 按 IDF 标准顺序补齐配置：init → set_mode → set_country → set_storage → start。
                 // 探针此前从 init **直接跳到** start，中间三步一步都没做；而触发 MAC deinit 的函数

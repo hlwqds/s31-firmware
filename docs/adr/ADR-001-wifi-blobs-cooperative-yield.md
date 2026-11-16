@@ -1685,3 +1685,28 @@ irq-sample #14336 .. mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1
 
 **十五个候选全部实验排除。** 剩下的唯一方向是完整实现 MAC 使能链（vtable 里的 `fns[55]` 真体、
 `hal_mac_*` 的 TX/RX 使能、DMA 环建立），这已经不是"补一个钩子"能解决的事。
+
+### 决定性读数：`hal_mac_is_dma_enable() = 0` —— **DMA 环没建**
+
+把 ROM 的谓词接进探针（`hal_mac_is_dma_enable = 0x2f800d4c`，无参）：
+
+```text
+wifi-init-probe: after ic_mac_init(g_ic): is_lmac_idle=1 iface=0 mac=0x0000e000
+wifi-init-probe: dma_enable=0
+irq-sample #14336 .. mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1
+```
+
+四个读数第一次拼成完整图景：
+
+| 读数 | 值 | 含义 |
+| --- | --- | --- |
+| `is_lmac_idle` | 1 | LMAC 空闲 |
+| `ic_interface_enabled` | 0 | 接口未使能 |
+| **`hal_mac_is_dma_enable`** | **0** | **DMA 未使能** |
+| `0x20104CAC` | `0x0000e000` | bits 13..15 = 1 |
+
+所以自旋在等的状态跃迁，前提是 **MAC 的 DMA 环被建立并启用**——而我们的宿主层从来没做过这件事
+（IDF 里那是 `wifi_hw_start` / `hal_mac` 的活）。这不是"再补一个 osi 钩子"能解决的：缺的是**数据面初始化**。
+
+**踩坑记录**：`hal_mac_get_txq_state`/`hal_mac_get_txq_complete` **带参数**，用垃圾 a0 调会
+`store access fault`（实测 `mtval=0xa6b000a`、`mepc=0x4004e0ca`）。ROM 里只有名字带 `is_` 的谓词才可当无参调。
