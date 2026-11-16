@@ -3247,3 +3247,23 @@ if (!s_is_phy_calibrated) esp_phy_load_cal_and_init();
 **下一步（明确）**：把 `modem_clock_module_enable(PERIPH_PHY_MODULE)` 的语义端口过来——
 按 `modem_clock_device_t` 枚举与 `modem_clock_hal.c` 的映射，把 `PHY_CLOCK_DEPS` 的四个依赖位写进
 `MODEM_SYSCON.CLK_CONF1` / `I2C_ANA_MST` 相关寄存器，再验证 `MAC_ST` 是否在 init 后变 0。
+
+### `_phy_enable` 的时钟依赖核对：**已经覆盖**
+
+`PERIPH_PHY_MODULE` 的依赖（`PHY_CLOCK_DEPS`）逐项对照我们的 `_phy_enable`：
+
+| 依赖 | IDF 落点 | 我们 |
+| --- | --- | --- |
+| `MODEM_ADC_COMMON_FE` | CLK_CONF1 `fe_apb`(15) + `fe_80m`(13) | ✅ 已写 |
+| `MODEM_PRIVATE_FE` | CLK_CONF1 `fe_160m`(14) + `fe_dac`(21) + `fe_pwdet`(19) + `fe_adc`(20) | ✅ 已写 |
+| `SOC_PLL_SOURCE_CG` | `HP_SYS_CLKRST.modem_conf = 0x3d` | ✅ 已写 |
+| `I2C_ANA_MST` | `MODEM_LPCON.clk_conf.clk_i2c_mst_en`（+0x18 **bit2**） | ✅ 已写（我们写 0x4→0x7 含 bit0/1/2） |
+
+⇒ **`_phy_enable` 的时钟依赖已与 IDF 对齐**，不是缺失的那一步。
+
+至此，软件面上能对齐的都已对齐：config、ICG（SYSCON+LPCON）、CLK_CONF1/依赖位、
+`phy_wifi_enable_set`、`set_bb_wdg`、`register_chipv7_phy`（FULL）、中断注册、任务、定时器。
+而 **`esp_wifi_init_internal` 依旧不清 `MAC_ST`**。
+
+⇒ 剩余空间只剩两种：① blob 内部某个**我们喂的数据**（NVS 的 108 字节键在两边都是 NOT_FOUND，
+所以不是）；② **硬件面**（PHY/RF 的真实就绪状态）。这与路线图 R3.2「需要真实 AP / 真 RF」一致。
