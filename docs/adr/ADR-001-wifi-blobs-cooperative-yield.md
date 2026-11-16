@@ -716,6 +716,12 @@ OSI 钩子。
 板侧结果：**没有任何 `irq-sample` 行**——也就是说 `mstatus.MIE=1` 还不够，**没有任何中断源被武装**
 （定时器未启动、CLIC 输入未使能）。
 
-所以下一步很明确：自己武装一个周期定时器——
-`DR_REG_CLIC_BASE = 0x1080_0000`（S31 的 CLIC），SYSTIMER 目标比较（IDF `esp_timer` 在 S31 上用的
-就是它），使能对应 CLIC 输入与 `mie` 位；ISR 里只采样、不打印（已有前 8 次打印）。
+所以下一步很明确：自己武装一个周期定时器。本仓的时间基是 **TIMG0 T0**（`0x2058_0000`，
+ch15/ch17 实测，1 MHz），所以最省事的路径是：
+
+1. 用 T0 的 alarm 寄存器（`timg0 + 0x10/0x14`）设一个周期比较；
+2. 使能 T0 中断位（`timg0 + 0x70` 一带的 int_ena）与 **CLIC 输入**（`DR_REG_CLIC_BASE = 0x1080_0000`）；
+3. `mie` 对应位置位（配合已打开的 `mstatus.MIE`）；
+4. ISR 里只采样 `mepc`（前 8 次打印已在 `trapDispatch` 里）。
+
+需要先查清 TIMG0_T0 在 S31 上的 CLIC 输入号（IDF 的 `soc/interrupts.h` 里有 `ETS_TG0_T0_LEVEL_INTR_SOURCE`）。
