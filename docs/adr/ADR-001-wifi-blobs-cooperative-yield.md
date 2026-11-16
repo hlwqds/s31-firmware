@@ -2195,3 +2195,25 @@ CFG: task_core=0 beacon_max=752 mgmt_sbuf=32 feature_caps=0x1a1 sta_pm=1 espnow=
 
 **下一步建议**：在 IDF 例程里**不创建 netif / 不注册事件**，看 `esp_wifi_start` 是否仍返回 OK——
 以此判断"宿主还提供了什么 blob 依赖的东西"。
+
+### 隔离实验：IDF **不建 netif、不注册事件**，`esp_wifi_start` 仍返回 OK
+
+把 IDF 例程里的 `esp_netif_init()` / `esp_event_loop_create_default()` /
+`esp_netif_create_default_wifi_sta()` / 两个事件处理器注册全部关掉后重跑：
+
+```text
+DIAG: esp_wifi_start() ...
+DIAG: esp_wifi_start() returned OK
+SYSCON+0c = 0x64646400   MAC_ST = 0x00000000
+```
+
+**结论**：netif 与事件系统**不是** blob 的必需输入。宿主侧的最小集合是
+`esp_phy_enable`（经 osi 钩子）+ `esp_wifi_init` + `set_mode` + `esp_wifi_start` —— 与我们的探针结构一致。
+
+**因此卡点只可能在 osi 钩子的"行为"上**（不是配置、不是时钟、不是 netif）。已经实现并被调用的有
+`_phy_enable` / `_wifi_clock_enable` / `_coex_enable` / `_timer_*` / `_event_post`；尚未验证语义是否与
+IDF 一致的候选：`_set_isr` / `_set_intr` / `_clear_intr`（中断注册）、`_wifi_clock_disable`、
+`_wifi_reset_mac`（已实现但可能语义不同）、`_event_post` 的同步派发语义。
+
+**下一步**：把 IDF 的 `esp_adapter.c` 里每个 `._xxx = wrapper` 的**真实实现**逐个对照我们的钩子，
+重点看 `_set_isr`/`_set_intr`/`_clear_intr`（它们决定 blob 的中断能不能装上）与 `_event_post`。
