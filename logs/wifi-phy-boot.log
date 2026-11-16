@@ -1,59 +1,20 @@
-wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f01d0f4
-wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f01d148
-wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f01d770
-wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f01d8f4
 wifi-init-probe: trace semphr_take a0=0x2f01dfb8 a1=0xffffffff
-wifi-init-probe: task blocked -> yielded to idle hook
-wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01dfb8
 wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
-wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d70c
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f01dff8
-wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f01f21c
-wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f01f21c
-wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f01f2c4
-wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f01f36c
-wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f01f414
-wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f01f44c
-wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f01f484
-wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f01f4bc
-wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f01f4f4
-wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f01f78c
-wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f01fa24
-wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f01fcbc
-wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f01ff54
-wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f0201ec
-wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f020510
-wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f020834
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0208bc
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f020f74
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f02162c
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f021ce4
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f02239c
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f022a54
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f02310c
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0237c4
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f023e7c
-wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f024534
-wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f01dfb8
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: task blocked, main resumed (idle_calls=193)
-wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01dfb8
+wifi-init-probe: swap#1 in_task=true
 wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
-wifi-init-probe: trace semphr_give a0=0x2f01dfe0 a1=0x00000000
+wifi-init-probe: swap#2 in_task=false
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: reg_rxcb rc=0
-wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01dfb8
+wifi-init-probe: swap#3 in_task=true
 wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
-wifi-init-probe: trace semphr_give a0=0x2f01dfe0 a1=0x00000000
+wifi-init-probe: swap#4 in_task=false
 wifi-init-probe: trace queue_recv a0=0x2f01d940 a1=0xffffffff
-wifi-init-probe: get_config_channel rc=0 primary=0 second=0
-wifi-init-probe: internal_tx rc=0x3002 (64 B)
-wifi-init-probe: wifi_init_completed=1 (非 0 才继续)
+wifi-init-probe: swap#5 in_task=true
 wifi-init-probe: calling esp_wifi_start (idle_calls=197, tracing hooks)
-wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f01dfb8
 wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+wifi-init-probe: swap#6 in_task=false

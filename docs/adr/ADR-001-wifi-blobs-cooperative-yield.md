@@ -630,3 +630,22 @@ trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
 消息已经入队（`queue_send` 在 take 之前），但任务在 start 的等待期间**没有再 recv**——与之前
 "take 期间任务未被调度"的现象同型。下一步就是把 `idleHook` 在 start 期间的实际调用情况记下来
 （`in_task`/`task_ctx_ready`/`on_idle` 是否被调用），这次要放在**任务就绪之后**计数。
+
+### start 期间的让出诊断：确实发生了交换，然后进入乒乓（2026-11-16）
+
+在 `idleHook` 里按"任务就绪后的次数"计数（不依赖 `idle_calls` 的累计值），日志终于出现了：
+
+```text
+swap#5 in_task=true
+calling esp_wifi_start (idle_calls=197)
+trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
+swap#6 in_task=false          # start 的 take 调了 on_idle，并切到了任务
+（之后没有新的 recv/send 行）
+```
+
+所以**交换确实发生了**（不是"没调度"）。此后进入的是乒乓：任务在自己的 `recv` 里让出（`in_task=true`）
+→ 回到主上下文 → take 再让出（`in_task=false`）→ …… 两边各自消耗 64 次配额，谁都不前进。
+
+问题因此变成：**任务那次 `recv` 为什么没有把队列里已有的消息取走？**（`queue_send` 在 take 之前
+已经成功投递过一条 cmd=6 的消息。）下一步该在 `recv` 入口把 `self.count`、`out.len`、`item_size`
+三个值打出来——如果 `out.len != item_size`，我们的实现会**直接返回 0 而不消费**，正好造成这种乒乓。

@@ -105,6 +105,7 @@ var osi_table: osi.Osi = undefined;
 /// 合作式让出点：任务体阻塞时被调用。计数并在有限次后停机——证明"任务存活且会让出"，
 /// 而不是把 CPU 卡在忙等里。生产路径里这里就是主循环（收包/发送）。
 var idle_calls: u32 = 0;
+var ready_swaps: u32 = 0;
 /// 当前控制权是否在任务上下文里。
 var in_task: bool = false;
 /// 任务上下文是否已经建立（建立前 idle 只计数）。
@@ -128,6 +129,9 @@ fn idleHook() void {
         hw.halt();
     }
     if (!task_ctx_ready) return;
+    // 诊断：任务就绪后前 6 次让出（不依赖 idle_calls 的累计值）。
+    ready_swaps += 1;
+    if (ready_swaps <= 6) log.line("wifi-init-probe: swap#{d} in_task={}", .{ ready_swaps, in_task });
     if (in_task) {
         in_task = false;
         impl.current_is_task = false;
