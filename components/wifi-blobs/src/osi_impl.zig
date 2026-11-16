@@ -909,10 +909,16 @@ fn shellPhyEnable() callconv(.c) usize {
 // ---------------------------------------------------------------------------
 fn shellCoexInit() callconv(.c) usize {
     note(23, 0, 0);
+    // `libcoexist.a` 里就有真正的 `coex_init()`（我们链接了它）。
+    const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
+    f();
     return 0;
 }
 fn shellCoexEnable() callconv(.c) usize {
     note(24, 0, 0);
+    // 空桩时 blob 的 coex 从未真正使能；`coex_enable()` 在 libcoexist.a 里。
+    const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_enable" });
+    f();
     return 0;
 }
 fn shellCoexStatusGet() callconv(.c) usize {

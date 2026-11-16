@@ -290,3 +290,11 @@ PROVIDE(xphyQueue = 0x2f07ff0c);
 /* ---- esp32s31.rom.version.ld ---- */
 PROVIDE(_rom_eco_version = 0x2f800014);
 
+/* coex 的 ROM RAM 数据符号（`esp32s31.rom.coexist.ld:42-47`）。
+   链接 `libcoexist.a` 的 `coex_enable` 会引入 `coex_core.o`，它要这些表指针。 */
+PROVIDE(g_coex_param_ptr = 0x2f07ff94);
+PROVIDE(g_coa_funcs_p = 0x2f07ff98);
+PROVIDE(coexist_funcs = 0x2f07ff9c);
+PROVIDE(coex_schm_env_ptr = 0x2f07ffa0);
+PROVIDE(coex_pti_tab_ptr = 0x2f07ffa4);
+PROVIDE(coex_env_ptr = 0x2f07ffa8);

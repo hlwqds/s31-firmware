@@ -1479,3 +1479,26 @@ wifi_release/schm_interval_set/register_start_cb`）装上 note 观测，上板�
 
 若将来要把 coex 做完整，最小语义是：`_coex_enable` → 调 ROM `coex_core_enable`，并把 interval /
 start callback 记下来；但**它不解释当前卡点**。
+
+### `_coex_enable` 改成真实调用 `coex_enable()`：也不解开（候选 12）
+
+观测到 `_coex_enable` 确实被调用后，把它从空桩改成调用 `libcoexist.a` 里的真函数：
+
+```zig
+fn shellCoexEnable() callconv(.c) usize {
+    note(24, 0, 0);
+    const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_enable" });
+    f();
+    return 0;
+}
+```
+
+链接 `coex_enable` 会拉进 `coex_core.o`，它需要 ROM RAM 里的表指针——已在 `rom_syms.ld` 补上：
+
+```
+g_coex_param_ptr = 0x2f07ff94    g_coa_funcs_p = 0x2f07ff98
+coexist_funcs    = 0x2f07ff9c    coex_schm_env_ptr = 0x2f07ffa0
+coex_pti_tab_ptr = 0x2f07ffa4    coex_env_ptr = 0x2f07ffa8
+```
+
+上板（pb134）：`coex_enable` 真跑了（无 panic），**自旋照旧**（`mac=0x00fff000`）。
