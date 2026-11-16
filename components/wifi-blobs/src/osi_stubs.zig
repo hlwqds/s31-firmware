@@ -1,20 +1,17 @@
 //! 未实现钩子的**具名桩**（由 osi.zig 的字段表生成，与字段一一对应）。
 //!
 //! 调用 null 等于跳到 0x0；桩累加 `hits[i]` 并返回 0，日志按顺序告诉你 blob 先要哪个钩子。
+//!
+//! `fill` **只填空字段**：已实现（makeTable 里赋过值）的钩子不会被桩覆盖——否则新增实现会被
+//! 静默吃掉，表现为"改了代码但 hits 还在涨"。
 
 const osi = @import("osi.zig");
 
 pub var hits: [field_count]u32 = @splat(0);
-pub const field_count: usize = 62;
+pub const field_count: usize = 56;
 pub const names = [_][]const u8{
     "_env_is_chip",
-    "_wifi_thread_semphr_get",
     "_queue_send_from_isr",
-    "_event_group_create",
-    "_event_group_delete",
-    "_event_group_set_bits",
-    "_event_group_clear_bits",
-    "_event_group_wait_bits",
     "_task_delete",
     "_event_post",
     "_dport_access_stall_other_cpu_start_wrap",
@@ -295,92 +292,62 @@ fn stub55() callconv(.c) usize {
     hits[55] += 1;
     return 0;
 }
-fn stub56() callconv(.c) usize {
-    hits[56] += 1;
-    return 0;
-}
-fn stub57() callconv(.c) usize {
-    hits[57] += 1;
-    return 0;
-}
-fn stub58() callconv(.c) usize {
-    hits[58] += 1;
-    return 0;
-}
-fn stub59() callconv(.c) usize {
-    hits[59] += 1;
-    return 0;
-}
-fn stub60() callconv(.c) usize {
-    hits[60] += 1;
-    return 0;
-}
-fn stub61() callconv(.c) usize {
-    hits[61] += 1;
-    return 0;
-}
 
 pub fn fill(t: *osi.Osi) void {
-    t._env_is_chip = @ptrCast(&stub0);
-    t._wifi_thread_semphr_get = @ptrCast(&stub1);
-    t._queue_send_from_isr = @ptrCast(&stub2);
-    t._event_group_create = @ptrCast(&stub3);
-    t._event_group_delete = @ptrCast(&stub4);
-    t._event_group_set_bits = @ptrCast(&stub5);
-    t._event_group_clear_bits = @ptrCast(&stub6);
-    t._event_group_wait_bits = @ptrCast(&stub7);
-    t._task_delete = @ptrCast(&stub8);
-    t._event_post = @ptrCast(&stub9);
-    t._dport_access_stall_other_cpu_start_wrap = @ptrCast(&stub10);
-    t._dport_access_stall_other_cpu_end_wrap = @ptrCast(&stub11);
-    t._wifi_pm_sleep_lock_acquire = @ptrCast(&stub12);
-    t._wifi_pm_sleep_lock_release = @ptrCast(&stub13);
-    t._phy_disable = @ptrCast(&stub14);
-    t._phy_enable = @ptrCast(&stub15);
-    t._phy_update_country_info = @ptrCast(&stub16);
-    t._timer_arm = @ptrCast(&stub17);
-    t._timer_disarm = @ptrCast(&stub18);
-    t._timer_done = @ptrCast(&stub19);
-    t._timer_setfn = @ptrCast(&stub20);
-    t._timer_arm_us = @ptrCast(&stub21);
-    t._wifi_reset_mac = @ptrCast(&stub22);
-    t._wifi_clock_enable = @ptrCast(&stub23);
-    t._wifi_clock_disable = @ptrCast(&stub24);
-    t._wifi_rtc_enable_iso = @ptrCast(&stub25);
-    t._wifi_rtc_disable_iso = @ptrCast(&stub26);
-    t._get_time = @ptrCast(&stub27);
-    t._slowclk_cal_get = @ptrCast(&stub28);
-    t._log_write = @ptrCast(&stub29);
-    t._log_writev = @ptrCast(&stub30);
-    t._coex_init = @ptrCast(&stub31);
-    t._coex_deinit = @ptrCast(&stub32);
-    t._coex_enable = @ptrCast(&stub33);
-    t._coex_disable = @ptrCast(&stub34);
-    t._coex_status_get = @ptrCast(&stub35);
-    t._coex_condition_set = @ptrCast(&stub36);
-    t._coex_wifi_request = @ptrCast(&stub37);
-    t._coex_wifi_release = @ptrCast(&stub38);
-    t._coex_wifi_channel_set = @ptrCast(&stub39);
-    t._coex_event_duration_get = @ptrCast(&stub40);
-    t._coex_pti_get = @ptrCast(&stub41);
-    t._coex_schm_status_bit_clear = @ptrCast(&stub42);
-    t._coex_schm_status_bit_set = @ptrCast(&stub43);
-    t._coex_schm_interval_set = @ptrCast(&stub44);
-    t._coex_schm_interval_get = @ptrCast(&stub45);
-    t._coex_schm_curr_period_get = @ptrCast(&stub46);
-    t._coex_schm_curr_phase_get = @ptrCast(&stub47);
-    t._coex_schm_process_restart = @ptrCast(&stub48);
-    t._coex_schm_register_cb = @ptrCast(&stub49);
-    t._coex_register_start_cb = @ptrCast(&stub50);
-    t._regdma_link_set_write_wait_content = @ptrCast(&stub51);
-    t._sleep_retention_find_link_by_id = @ptrCast(&stub52);
-    t._coex_schm_flexible_period_set = @ptrCast(&stub53);
-    t._coex_schm_flexible_period_get = @ptrCast(&stub54);
-    t._coex_schm_get_phase_by_idx = @ptrCast(&stub55);
-    t._coex_configure_preemption_end_cb = @ptrCast(&stub56);
-    t._wifi_disable_ac_ax = @ptrCast(&stub57);
-    t._wifi_bb_sleep_retention_attach = @ptrCast(&stub58);
-    t._wifi_bb_sleep_retention_detach = @ptrCast(&stub59);
-    t._wifi_mac_sleep_retention_attach = @ptrCast(&stub60);
-    t._wifi_mac_sleep_retention_detach = @ptrCast(&stub61);
+    if (t._env_is_chip == null) t._env_is_chip = @ptrCast(&stub0);
+    if (t._queue_send_from_isr == null) t._queue_send_from_isr = @ptrCast(&stub1);
+    if (t._task_delete == null) t._task_delete = @ptrCast(&stub2);
+    if (t._event_post == null) t._event_post = @ptrCast(&stub3);
+    if (t._dport_access_stall_other_cpu_start_wrap == null) t._dport_access_stall_other_cpu_start_wrap = @ptrCast(&stub4);
+    if (t._dport_access_stall_other_cpu_end_wrap == null) t._dport_access_stall_other_cpu_end_wrap = @ptrCast(&stub5);
+    if (t._wifi_pm_sleep_lock_acquire == null) t._wifi_pm_sleep_lock_acquire = @ptrCast(&stub6);
+    if (t._wifi_pm_sleep_lock_release == null) t._wifi_pm_sleep_lock_release = @ptrCast(&stub7);
+    if (t._phy_disable == null) t._phy_disable = @ptrCast(&stub8);
+    if (t._phy_enable == null) t._phy_enable = @ptrCast(&stub9);
+    if (t._phy_update_country_info == null) t._phy_update_country_info = @ptrCast(&stub10);
+    if (t._timer_arm == null) t._timer_arm = @ptrCast(&stub11);
+    if (t._timer_disarm == null) t._timer_disarm = @ptrCast(&stub12);
+    if (t._timer_done == null) t._timer_done = @ptrCast(&stub13);
+    if (t._timer_setfn == null) t._timer_setfn = @ptrCast(&stub14);
+    if (t._timer_arm_us == null) t._timer_arm_us = @ptrCast(&stub15);
+    if (t._wifi_reset_mac == null) t._wifi_reset_mac = @ptrCast(&stub16);
+    if (t._wifi_clock_enable == null) t._wifi_clock_enable = @ptrCast(&stub17);
+    if (t._wifi_clock_disable == null) t._wifi_clock_disable = @ptrCast(&stub18);
+    if (t._wifi_rtc_enable_iso == null) t._wifi_rtc_enable_iso = @ptrCast(&stub19);
+    if (t._wifi_rtc_disable_iso == null) t._wifi_rtc_disable_iso = @ptrCast(&stub20);
+    if (t._get_time == null) t._get_time = @ptrCast(&stub21);
+    if (t._slowclk_cal_get == null) t._slowclk_cal_get = @ptrCast(&stub22);
+    if (t._log_write == null) t._log_write = @ptrCast(&stub23);
+    if (t._log_writev == null) t._log_writev = @ptrCast(&stub24);
+    if (t._coex_init == null) t._coex_init = @ptrCast(&stub25);
+    if (t._coex_deinit == null) t._coex_deinit = @ptrCast(&stub26);
+    if (t._coex_enable == null) t._coex_enable = @ptrCast(&stub27);
+    if (t._coex_disable == null) t._coex_disable = @ptrCast(&stub28);
+    if (t._coex_status_get == null) t._coex_status_get = @ptrCast(&stub29);
+    if (t._coex_condition_set == null) t._coex_condition_set = @ptrCast(&stub30);
+    if (t._coex_wifi_request == null) t._coex_wifi_request = @ptrCast(&stub31);
+    if (t._coex_wifi_release == null) t._coex_wifi_release = @ptrCast(&stub32);
+    if (t._coex_wifi_channel_set == null) t._coex_wifi_channel_set = @ptrCast(&stub33);
+    if (t._coex_event_duration_get == null) t._coex_event_duration_get = @ptrCast(&stub34);
+    if (t._coex_pti_get == null) t._coex_pti_get = @ptrCast(&stub35);
+    if (t._coex_schm_status_bit_clear == null) t._coex_schm_status_bit_clear = @ptrCast(&stub36);
+    if (t._coex_schm_status_bit_set == null) t._coex_schm_status_bit_set = @ptrCast(&stub37);
+    if (t._coex_schm_interval_set == null) t._coex_schm_interval_set = @ptrCast(&stub38);
+    if (t._coex_schm_interval_get == null) t._coex_schm_interval_get = @ptrCast(&stub39);
+    if (t._coex_schm_curr_period_get == null) t._coex_schm_curr_period_get = @ptrCast(&stub40);
+    if (t._coex_schm_curr_phase_get == null) t._coex_schm_curr_phase_get = @ptrCast(&stub41);
+    if (t._coex_schm_process_restart == null) t._coex_schm_process_restart = @ptrCast(&stub42);
+    if (t._coex_schm_register_cb == null) t._coex_schm_register_cb = @ptrCast(&stub43);
+    if (t._coex_register_start_cb == null) t._coex_register_start_cb = @ptrCast(&stub44);
+    if (t._regdma_link_set_write_wait_content == null) t._regdma_link_set_write_wait_content = @ptrCast(&stub45);
+    if (t._sleep_retention_find_link_by_id == null) t._sleep_retention_find_link_by_id = @ptrCast(&stub46);
+    if (t._coex_schm_flexible_period_set == null) t._coex_schm_flexible_period_set = @ptrCast(&stub47);
+    if (t._coex_schm_flexible_period_get == null) t._coex_schm_flexible_period_get = @ptrCast(&stub48);
+    if (t._coex_schm_get_phase_by_idx == null) t._coex_schm_get_phase_by_idx = @ptrCast(&stub49);
+    if (t._coex_configure_preemption_end_cb == null) t._coex_configure_preemption_end_cb = @ptrCast(&stub50);
+    if (t._wifi_disable_ac_ax == null) t._wifi_disable_ac_ax = @ptrCast(&stub51);
+    if (t._wifi_bb_sleep_retention_attach == null) t._wifi_bb_sleep_retention_attach = @ptrCast(&stub52);
+    if (t._wifi_bb_sleep_retention_detach == null) t._wifi_bb_sleep_retention_detach = @ptrCast(&stub53);
+    if (t._wifi_mac_sleep_retention_attach == null) t._wifi_mac_sleep_retention_attach = @ptrCast(&stub54);
+    if (t._wifi_mac_sleep_retention_detach == null) t._wifi_mac_sleep_retention_detach = @ptrCast(&stub55);
 }
