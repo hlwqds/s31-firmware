@@ -33,6 +33,41 @@ const esp_wifi_init_internal = @extern(*const fn (*const initcfg.InitConfig) cal
 /// 静态 osi 表（见 run() 里的说明）。
 var osi_table: osi.Osi = undefined;
 
+/// 合作式让出点：任务体阻塞时被调用。计数并在有限次后停机——证明"任务存活且会让出"，
+/// 而不是把 CPU 卡在忙等里。生产路径里这里就是主循环（收包/发送）。
+var idle_calls: u32 = 0;
+
+fn idleHook() void {
+    idle_calls += 1;
+    if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
+    if (idle_calls >= 200) {
+        log.line("wifi-init-probe: idle hook called {d} times, task alive and cooperative", .{idle_calls});
+        log.line("wifi-init-probe: hook calls total={d}, blocking_refused={d}", .{
+            impl.event_count,
+            impl.blocking_refused,
+        });
+        hw.halt();
+    }
+}
+
+/// 钩子预算耗尽：说明"任务体卡在哪个等待原语上"，然后停机。
+fn budgetExhaustedHook(total: u32) void {
+    log.line("wifi-init-probe: hook budget exhausted after {d} calls", .{total});
+    const n = @min(total, impl.events.len);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const idx = (total - n + i) % impl.events.len;
+        const e = impl.events[idx];
+        log.line("wifi-init-probe:   hook[{d}] {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{
+            i,
+            impl.hook_ids[e.id],
+            e.a0,
+            e.a1,
+        });
+    }
+    hw.halt();
+}
+
 fn nowUsHook() u64 {
     return hw.nowUs();
 }
@@ -63,7 +98,13 @@ pub fn run() noreturn {
     log.line("wifi-init-probe: arena={d} B", .{heap_len});
 
     // 2) 注入硬件钩子（组件不 import board）
-    impl.setHooks(.{ .now_us = &nowUsHook, .fill_random = &fillRandomHook, .mac = &macHook });
+    impl.setHooks(.{
+        .now_us = &nowUsHook,
+        .fill_random = &fillRandomHook,
+        .mac = &macHook,
+        .on_budget_exhausted = &budgetExhaustedHook,
+        .on_idle = &idleHook,
+    });
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，
@@ -90,6 +131,21 @@ pub fn run() noreturn {
             impl.blocking_refused,
         });
         log.line("wifi-init-probe: tasks recorded={d}", .{impl.task_count});
+
+        // 协作式跑一次登记的任务：没有调度器，`entry(arg)` 一旦进入自己的等待循环就永不返回，
+        // 所以给钩子调用一个预算（300 次），耗尽即打印现场并停机。
+        if (impl.task_count > 0) {
+            const task = impl.tasks[0];
+            if (task.entry) |entry| {
+                log.line("wifi-init-probe: running task[0] entry=0x{x:0>8} arg=0x{x:0>8} budget=300", .{
+                    @intFromPtr(entry), @intFromPtr(task.arg),
+                });
+                impl.budget = 0; // 由 idle 钩子刹车
+                entry(task.arg);
+                impl.budget = 0;
+                log.line("wifi-init-probe: task[0] returned, hook calls={d}", .{impl.event_count});
+            }
+        }
         hw.halt();
     }
 

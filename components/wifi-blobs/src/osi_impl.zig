@@ -137,7 +137,17 @@ pub const Semphr = struct {
             self.count -= 1;
             return 1;
         }
-        if (blocking == time_blocking) blocking_refused += 1;
+        if (blocking != time_blocking) return 0;
+        // 阻塞 = 让出后重试（合作式）。上限保证调用方一定能返回，不会永久挂住。
+        blocking_refused += 1;
+        var spins: u32 = 0;
+        while (spins < idle_spin_limit) : (spins += 1) {
+            if (hooks.on_idle) |idle| idle();
+            if (self.count > 0) {
+                self.count -= 1;
+                return 1;
+            }
+        }
         return 0;
     }
 
@@ -214,8 +224,14 @@ pub const Queue = struct {
     pub fn recv(self: *Queue, out: []u8, blocking: u32) i32 {
         if (out.len != self.item_size) return 0;
         if (self.count == 0) {
-            if (blocking == time_blocking) blocking_refused += 1;
-            return 0;
+            if (blocking != time_blocking) return 0;
+            blocking_refused += 1;
+            var spins: u32 = 0;
+            while (spins < idle_spin_limit) : (spins += 1) {
+                if (hooks.on_idle) |idle| idle();
+                if (self.count != 0) break;
+            }
+            if (self.count == 0) return 0;
         }
         const b = self.buf();
         @memcpy(out, b[self.head * self.item_size ..][0..self.item_size]);
@@ -300,11 +316,13 @@ fn shellSemphrDelete(p: ?*anyopaque) callconv(.c) void {
 }
 
 fn shellSemphrTake(p: ?*anyopaque, blocking: u32) callconv(.c) i32 {
+    note(0, @intFromPtr(p), blocking);
     const s: *Semphr = @ptrCast(@alignCast(p orelse return 0));
     return s.take(blocking);
 }
 
 fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
+    note(1, @intFromPtr(p), 0);
     const s: *Semphr = @ptrCast(@alignCast(p orelse return 0));
     return s.give();
 }
@@ -364,9 +382,40 @@ pub const Hooks = struct {
     now_us: ?*const fn () u64 = null,
     fill_random: ?*const fn (dst: []u8) void = null,
     mac: ?*const fn () [6]u8 = null,
+    /// 阻塞等待期间的**合作式让出点**：单线程壳里没有别的线程能填队列，所以
+    /// "阻塞"只能是"把控制权让给主循环去做事（收包/发送），再回来查一次"。
+    /// 探针用它证明任务体存活且会让出；生产用它跑主循环的收发。
+    on_idle: ?*const fn () void = null,
+    /// 钩子调用预算耗尽时回调（探针用它打印现场并停机）。
+    /// 单线程壳里"任务体进入自己的等待循环"就等于永不返回，必须有个外部刹车。
+    on_budget_exhausted: ?*const fn (total_calls: u32) void = null,
 };
 
 var hooks: Hooks = .{};
+
+/// 钩子调用预算：>0 时每调用一次递减，归零即回调（见 `Hooks.on_budget_exhausted`）。
+pub var budget: u32 = 0;
+/// 一次"阻塞等待"最多让出多少次（每次让出都会跑一遍主循环的 idle 钩子）。
+pub const idle_spin_limit: u32 = 64;
+/// 最近的钩子调用（id = `hook_ids` 的下标），用于停机时说明"它在等什么"。
+pub const hook_ids = [_][]const u8{
+    "semphr_take", "semphr_give", "mutex_lock",        "mutex_unlock",
+    "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
+};
+pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
+pub var events: [8]HookEvent = @splat(.{ .id = 0, .a0 = 0, .a1 = 0 });
+pub var event_count: u32 = 0;
+
+fn note(id: u8, a0: usize, a1: usize) void {
+    events[event_count % events.len] = .{ .id = id, .a0 = a0, .a1 = a1 };
+    event_count += 1;
+    if (budget > 0) {
+        budget -= 1;
+        if (budget == 0) {
+            if (hooks.on_budget_exhausted) |f| f(event_count);
+        }
+    }
+}
 
 pub fn setHooks(h: Hooks) void {
     hooks = h;
@@ -604,6 +653,7 @@ fn shellMutexDelete(p: ?*anyopaque) callconv(.c) void {
 }
 
 fn shellMutexLock(p: ?*anyopaque) callconv(.c) i32 {
+    note(2, @intFromPtr(p), 0);
     const m: *Mutex = @ptrCast(@alignCast(p orelse return 0));
     return m.lock();
 }
@@ -663,6 +713,7 @@ fn inArena(p: ?*anyopaque) bool {
 }
 
 fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
+    note(5, @intFromPtr(p), blocking);
     if (!inArena(p)) {
         bad_handle += 1;
         return 0;
@@ -680,6 +731,7 @@ fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) c
 }
 
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
+    note(4, @intFromPtr(p), blocking);
     if (!inArena(p)) {
         bad_handle += 1;
         return 0;
