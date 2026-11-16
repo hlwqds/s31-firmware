@@ -538,11 +538,11 @@ pub fn run() noreturn {
                     });
                     // `is_lmac_idle` 的反汇编显示 IC 层走 `*(0x2f07ff48)` 的 vtable，所以 IC 函数
                     // 很可能要这个上下文指针作参数；之前无参调用没生效可能就是 ABI 不对。
-                    const ic_ctx = @as(*const usize, @ptrFromInt(0x2f07_FF48)).*;
-                    log.line("wifi-init-probe: g_ic=0x{x:0>8}", .{ic_ctx});
-                    const ic_mac_init_ctx = @extern(*const fn (usize) callconv(.c) void, .{ .name = "ic_mac_init" });
-                    ic_mac_init_ctx(ic_ctx);
-                    log.line("wifi-init-probe: after ic_mac_init(g_ic): is_lmac_idle={d} iface={d} mac=0x{x:0>8}", .{
+                    // `is_lmac_idle` 的真体是 `ic->fns[55](i)`、i=0..4 ⇒ IC 层函数的入参是**接口号**，
+                    // 不是上下文指针（传 g_ic 会把 0x2f01d3c8 当指针用，属乱序调用的错误用法）。
+                    const ic_mac_init_ifx = @extern(*const fn (u32) callconv(.c) void, .{ .name = "ic_mac_init" });
+                    ic_mac_init_ifx(0);
+                    log.line("wifi-init-probe: after ic_mac_init(0): is_lmac_idle={d} iface={d} mac=0x{x:0>8}", .{
                         is_lmac_idle(), ic_interface_enabled(), mac_st.*,
                     });
                     // 只调无参的 `hal_mac_is_dma_enable`：`hal_mac_get_txq_state/complete` 带参数，

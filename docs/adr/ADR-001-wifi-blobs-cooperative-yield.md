@@ -1710,3 +1710,27 @@ irq-sample #14336 .. mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1
 
 **踩坑记录**：`hal_mac_get_txq_state`/`hal_mac_get_txq_complete` **带参数**，用垃圾 a0 调会
 `store access fault`（实测 `mtval=0xa6b000a`、`mepc=0x4004e0ca`）。ROM 里只有名字带 `is_` 的谓词才可当无参调。
+
+### ⚠ 撤回上一条：`hal_mac_is_dma_enable` 是**恒返回 0 的桩**（2026-11-16）
+
+反汇编 thunk `0x2f800d4c` → `j 0x2f83879a`，真体只有两条指令：
+
+```asm
+2f83879a  li  a0,0
+2f83879c  ret
+```
+
+**它无条件返回 0。** 所以"`dma_enable=0` ⇒ DMA 没使能"这个判读**不成立**——那是常量，不是读数。
+上一节把它写成"决定性读数"是错的，已按此撤回。
+
+同时补上 ABI 修正后的实验：`ic_mac_init(0)`（接口号，而不是上下文指针）：
+
+```text
+wifi-init-probe: after ic_mac_init(0): is_lmac_idle=1 iface=0 mac=0x0000e000
+wifi-init-probe: dma_enable=0        ← 这条现在没有信息量（桩）
+无 panic，自旋照旧
+```
+
+**现在真正有效的读数只剩两个**：`is_lmac_idle=1`（但它走 IC vtable，不直读寄存器）与
+`ic_interface_enabled=0`。要用它们下结论，还得先反汇编 `ic_interface_enabled`（thunk `0x2f800da0`）
+确认它不是另一个常量桩——**这是下一次动手前必须做的第一件事**。
