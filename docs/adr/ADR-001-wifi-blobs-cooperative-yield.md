@@ -3179,3 +3179,21 @@ irq-sample #11776 ... mepc=0x2f009206              ← 自旋不变
 
 ⇒ **ICG 位图不是缺失的那一步**（至少单独不是）：我们已经把 `+0x0C` 做成与 IDF 一模一样，init 仍不清忙位。
 已回滚该写入（保持基线干净）。
+
+### LPCON 的逐域 ICG：**写成功、与 IDF 一致，`MAC_ST` 仍未清** ⇒ ICG 侧彻底排除
+
+先纠正一个寄存器偏移：LPCON 的 `clk_conf_power_st` 在 **`LPCON_BASE + 0x20`**
+（`modem_lpcon_reg.h:198`），字段为 `wifipwr=[19:16]`、`coex=[23:20]`、`i2c_mst=[27:24]`、`lp_apb=[31:28]`；
+我们一直写的 **`+0x18` 是 `MODEM_LPCON_CLK_CONF_REG`**（时钟配置），**从来不是 ICG 图**。
+
+写 `+0x20 = 0x66660000`（四域各 6，与 IDF 的 `icg_config` 一致）：
+
+```text
+LPCON ICG +0x20 before=0x00000000 after=0x66660000 (wifipwr=6)
+LPCON +0x18 = 0x00000004          ← 我们以前写的是它
+post-init ctx ... mac=0x0000e000   ← **仍然没清**
+irq-sample #11776 ... mepc=0x2f009206
+```
+
+⇒ 现在 **SYSCON(+0x0C = 0x64646400) 与 LPCON(+0x20 = 0x66660000) 两侧 ICG 都与 IDF 对齐**，
+`MAC_ST` 依旧停在复位值 ⇒ **ICG 逐域门控不是缺失的那一步**（彻底排除）。已回滚。
