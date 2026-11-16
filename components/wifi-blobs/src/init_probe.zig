@@ -515,6 +515,29 @@ pub fn run() noreturn {
                 {
                     // 先复位 FE 的 TX/RX 状态机（ROM `phy_fe_txrx_reset` = 0x2f8013d8，
                     // esp32s31.rom.phy.ld:143）：MAC deinit 等的 busy{13..15} 正是 TX/RX 引擎的忙位。
+                    // IDF 开 BB 时钟时的序列是"**先脉冲 RST_WIFIBB 再开 0x17b 时钟**"
+                    // （modem_clock_wifi_bb_configure → modem_syscon_ll_reset_wifibb）。
+                    // 我们从没动过 BB 的复位——而 TX/RX 状态机正住在 BB 里。
+                    {
+                        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
+                        const before = rst.*;
+                        rst.* = before | (1 << 8); // rst_wifibb
+                        rst.* = rst.* & ~@as(u32, 1 << 8);
+                        log.line("wifi-init-probe: rst_wifibb pulse 0x{x} -> 0x{x}", .{ before, rst.* });
+                    }
+                    // 变体：**时钟关断状态下**脉冲复位（部分 SoC 要求 clock-gated reset 才生效）。
+                    // 序列：清 clk_wifimac_en(bit9) → 脉冲 rst_wifimac(bit9 of 0x20109C10) → 重新使能。
+                    {
+                        const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+                        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
+                        const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+                        const c0 = conf1.*;
+                        conf1.* = c0 & ~@as(u32, 1 << 9);
+                        rst.* = rst.* | (1 << 9);
+                        rst.* = rst.* & ~@as(u32, 1 << 9);
+                        conf1.* = c0;
+                        log.line("wifi-init-probe: gated reset (clk off -> rst -> on): mac=0x{x:0>8}", .{mac_st.*});
+                    }
                     // blob 自己的"清状态位"函数（`0x2f005b0c`，取 a0 作掩码，清 `(a0 & 0xFF000) | bit12`）。
                     // 实验：start 之前先把 stale 的 busy{13..15} 清掉，看 deinit 的轮询是否直接通过。
                     const clearStatus = @as(*const fn (u32) callconv(.c) usize, @ptrFromInt(0x2f005b0c));

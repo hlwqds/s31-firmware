@@ -1428,3 +1428,19 @@ irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
 
 要让 `esp_wifi_start` 返回，下一步只有两条路：① 提供真实的 MAC/PHY 初始化（IDF 的 `esp_phy_enable`
 完整等价物 + MAC 的 DMA 环建立），或 ② 在另一台**已知正常**的 S31 上读同址做对比，确认那三位的清零条件。
+
+### 补充两个"复位变体"，同样无效（2026-11-16，候选 9/10）
+
+按 IDF 开 BB 时钟的序列（`modem_clock_wifi_bb_configure`：**先脉冲 `rst_wifibb` 再开 0x17b 时钟**）
+以及"clock-gated reset"惯例各试一次，都在 start 之前：
+
+| # | 实验 | 结果 |
+| --- | --- | --- |
+| 9 | 脉冲 `rst_wifibb`（`0x20109C10` bit8） | `0x0 -> 0x0`，`mac` 仍 `0x0000e000` |
+| 10 | 时钟门控复位：清 `clk_wifimac_en`(CLK_CONF1 bit9) → 脉冲 `rst_wifimac` → 重新使能 | `mac=0x0000e000` 不变 |
+
+**十条宿主侧路径全部无效**。加上"blob 自己的清状态函数也写不掉"，可以确定：
+`0x20104CAC` 的 bits 13..15 由硬件独占，软件（包括复位与时钟门控）都无法改变。
+
+**这条线到此为止**。要再推进只能靠：① 忠实实现 IDF 的 `esp_phy_enable` + MAC DMA 环建立（工作量最大的
+那条路）；② 在一台已知正常的 S31 上读 `0x20104CAC` 做对照，确定这三位的清零条件。
