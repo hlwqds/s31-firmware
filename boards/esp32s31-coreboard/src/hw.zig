@@ -180,7 +180,9 @@ const clic_ctl_base: usize = 0x1080_1000;
 /// 清 TIMG0 T0 的中断状态并重新设下一次 alarm。
 /// **必须做**：T0 是电平中断，不清状态会在 `mret` 后立刻再次进入 ISR（实测中断风暴）。
 pub fn ackT0Interrupt(period_us: u32) void {
-    writeReg(timg0 + 0x78, 1); // int_clr, bit0 = T0
+    // S31 的 TIMG 偏移：int_ena=+0x70、int_st=+0x78、**int_clr=+0x7C**。
+    // 之前误写到 +0x78（状态寄存器），中断从未被清 → 中断风暴（同一 PC 反复采样）。
+    writeReg(timg0 + 0x7C, 1); // int_clr, bit0 = T0
     const now = nowUs();
     const alarm = now + period_us;
     writeReg(t0alarmlo, @intCast(alarm & 0xFFFF_FFFF));

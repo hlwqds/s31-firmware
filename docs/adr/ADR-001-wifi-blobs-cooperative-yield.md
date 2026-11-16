@@ -797,3 +797,35 @@ CLIC 输入 25 使能 + `mie` 置位 → ISR 采样（`trapDispatch` 已就绪�
 
 采样 PC 一直落在这个函数里，说明**它在被反复调用**——即 blob 在循环里重建 tick（或该函数被某个循环
 调用）。这给了下一步一个很具体的入口：看 `0x40049048` 的调用者，以及它为什么会被重复进入。
+
+### `int_clr` 偏移写错导致中断风暴；修好后采样指向一个 ROM 辅助函数（2026-11-16）
+
+S31 的 TIMG 偏移是 `int_ena=+0x70`、`int_st=+0x78`、**`int_clr=+0x7C`**
+（`soc/esp32s31/register/soc/timer_group_reg.h:649/701/727`）。第一版把"清中断"写到了 `+0x78`
+（那是**状态**寄存器），于是中断永远不清 → 中断风暴 → 8 次采样全部落在同一个 PC。
+
+改成写 `+0x7C` 之后，采样立刻变得有意义：
+
+```text
+irq-sample #0 input=25 mepc=0x400490ca
+irq-sample #1 input=25 mepc=0x2f83efda
+irq-sample #2 input=25 mepc=0x2f83efd2
+irq-sample #3 input=25 mepc=0x2f83efda
+...
+```
+
+后 7 次集中在 **0x2f83efd2..0x2f83efde**（ROM）。dump 该处并反汇编：
+
+```asm
+2f83efca  lui  a5, 0x20
+2f83efce  addi a5, a5, 906      # a5 = 0x2038A
+2f83efd2  add  a0, a0, a5
+2f83efd4  slli a0, a0, 0xc      # a0 = (idx + 0x2038A) << 12
+2f83efd6  lw   a0, 28(a0)       # 读该外设的 +28
+2f83efd8  srli a0, a0, 0x10
+2f83efda  zext.b a0, a0         # 取 [23:16] 这个字节
+2f83efde  ret
+```
+
+这是一个**"读某外设寄存器 +28 的 [23:16] 字段"的 ROM 辅助函数**。任务在反复调用它——也就是在
+**轮询某个外设的状态位**。下一步：找它的调用者（谁在循环里调它），那就是自旋点。
