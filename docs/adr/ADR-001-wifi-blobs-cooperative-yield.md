@@ -2970,3 +2970,23 @@ PROBE after_phy_enable rc=1 mac_st=0x0000e000     ← MAC_ST 没变，且 rc=1
 
 **结论不变**：清 `MAC_ST` 的那一步在 `esp_wifi_init_internal` **内部**，需要别的手段二分
 （例如在 IDF 的 `wifi_init.c` 里于 `esp_wifi_init_internal` 前后插桩，或对 blob 的 init 做分阶段打点）。
+
+### 二分判定：清位发生在 **`esp_wifi_init_internal` 内部**（`esp_wifi_power_domain_on` 排除）
+
+在 IDF 的 `components/esp_wifi/src/wifi_init.c` 里插两处读数（测完已 `git checkout` 还原）：
+
+```text
+PROBE2 before_power_domain_on  mac_st=0x0000e000
+PROBE2 after_power_domain_on   mac_st=0x0000e000    ← power_domain_on **不清**
+PROBE2 before_init_internal    mac_st=0x0000e000
+PROBE2 after_init_internal     mac_st=0x00000000    ← **清位在这里**
+```
+
+⇒ 排除 `esp_wifi_power_domain_on()`，也排除"单独调 `esp_phy_enable` 能清位"（那一枪 rc=1 且崩）。
+**清 `MAC_ST` 的那一步在 blob 的 `esp_wifi_init_internal` 内部**，而我们的调用返回 0 却没清。
+
+⇒ 我们的 init 虽然返回成功，但**内部走到了与 IDF 不同的分支**（少做了清位那一步）。
+下一步是在 blob 的 init 里定位"清 `MAC_ST`"的代码位置：`MAC+0xCAC` 的写者图谱我们已经有了
+（`0x4003458c` 清 bits 17..19、`0x40034d90` 等置位、`0x2f0091ec` 写命令字），
+但**没有任何一处写 0 到 bits 15:13** —— 说明那三位是**被别的寄存器/序列间接清掉的**（例如 MAC 的
+软复位/时钟门控脉冲）。这与"使能函数从未被调用"是两条独立的线。
