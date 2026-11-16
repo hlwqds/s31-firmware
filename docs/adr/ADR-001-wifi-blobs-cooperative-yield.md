@@ -441,3 +441,27 @@ trace queue_send a0=0x2f01d940 a1=0x00000006   ×3
 
 下一步：在 `ieee80211_api.o` 里找调用 `wifi_ipc_process` 的那一处（`objdump -dr` 搜重定位），
 看它把哪个栈对象/全局当作消息传进来——那就是"第一字段为什么是 `cal_data - 12`"的答案。
+
+### IPC 消息布局（从 `ieee80211_api.o` 反汇编读出来的，2026-11-16）
+
+`esp_wifi_start` 一侧在栈上构造一条 24 字节消息再提交（`.L1180`）：
+
+```asm
+li   a4, 49                     # 0x31 = 消息类型/命令
+sb   a4, 0(a0)                  # msg[0]  = 0x31
+lui  a4, wifi_ipc_process
+sw   a4, 4(a0)                  # msg[4]  = &wifi_ipc_process   ← 处理函数
+li   a4, 1
+sh   a4, 8(a0)                  # msg[8]  = 1（u16）
+sb   zero, 10(a0)               # msg[10] = 0
+sw   s1, 12(a0)                 # msg[12] = s1（指针）
+sw   zero, 20(a0)               # msg[20] = 0
+auipc t1, ...; ieee80211_ioctl(...)
+```
+
+而派发函数的形状是 `ctx = *(msg+12); fn = *(ctx); fn(*(ctx+4))`。把两者对上：
+`msg[12]` 指向的结构，其 `[0]` 是真正被调用的函数、`[4]` 是参数。
+
+实测 `msg[12]`（= 故障时的 `s0`）落在主栈，而 `ctx[0]` 是 `cal_data - 12`——也就是说
+**那张 24 字节消息里 `msg[12]` 指向的栈对象，其第一个字段被填成了 `cal_data - 12`**。
+下一步就是找 `esp_wifi_start` 里给 `s1` 赋值的那几行，看它本来应该指向什么。
