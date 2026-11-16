@@ -341,6 +341,9 @@ pub fn run() noreturn {
     // 也就是说 init 走到那次 enable 调用时它还是 0 -> 被跳过 -> 之后无人重试。这里提前置 1。
     // 判据：post-init 的 b16/b27/b288 是否变 1（成功路径标志），而不是 mac（deinit 命令字会污染 en 位）。
     bg_pre[15] = 1;
+    // **逐域 ICG map 实验已做**：写 `+0x0C` = 0x64646400（与 IDF 完全一致，读回也是 0x64646400），
+    // 但 `esp_wifi_init_internal` 返回后 `MAC_ST` 仍是 0xE000、自旋不变。
+    // ⇒ ICG 位图不是缺失的那一步（至少单独不是）。已回滚，保持基线干净。
     // 实验已做：`impl.task_create_fail = true`（_task_create 返回 pdFAIL）会让
     // `esp_wifi_init_internal` 直接返回 257(ESP_ERR_NO_MEM) ⇒ blob **要求建任务成功**，没有同步回退。
     const init_rc = esp_wifi_init_internal(&cfg);

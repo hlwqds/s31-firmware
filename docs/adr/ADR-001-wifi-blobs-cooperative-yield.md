@@ -3157,3 +3157,25 @@ IDF 的逐域 setter 写的就是 `clk_conf_power_st.clk_*_st_map`（`modem_sysc
 
 ⚠ 因此 **"复位脉冲不是机制"这条要标为待重验**：它建立在"对 `MODEM_SYSCON` 的写能生效"这个前提上，
 而那个前提本身还没被验证（我们从未逐域读回确认）。
+
+### `+0x0C` 可写性 + 逐域 ICG map 实验：**写成功、与 IDF 一致，但 `MAC_ST` 仍未清**
+
+先纠正一个长期误读：此前"写 `0x64646400` 读回 0"其实是**写 `+0x08`（force_on）、读 `+0x0C`（power_st）**
+——**两个不同的寄存器**，那个观测证明不了 `+0x0C` 写不进去。
+
+直接自测（对 `+0x0C` 的 wifi nibble 写 6）：
+
+```text
+POWER_ST write test before=0x00000000 after=0x00600000 wifi_nibble=6   ← **可写**
+```
+
+然后照 IDF 的 `modem_clock_module_icg_map_init_all()` 写整张表（apb=6 peri=4 wifi=6 bt=4 fe=6 zb=4）：
+
+```text
+ICG map before=0x00000000 after=0x64646400        ← 与 IDF 的实测值**完全一致**
+post-init ctx ... mac=0x0000e000                   ← **仍然没清**
+irq-sample #11776 ... mepc=0x2f009206              ← 自旋不变
+```
+
+⇒ **ICG 位图不是缺失的那一步**（至少单独不是）：我们已经把 `+0x0C` 做成与 IDF 一模一样，init 仍不清忙位。
+已回滚该写入（保持基线干净）。
