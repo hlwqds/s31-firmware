@@ -138,6 +138,8 @@ pub const time_blocking: u32 = 0xFFFF_FFFF;
 pub var blocking_refused: u32 = 0;
 /// 越界句柄（标量被当指针）的次数，探针会打印。
 pub var bad_handle: u32 = 0;
+/// `_semphr_give(null)` 的次数（ack 的 give 侧句柄从未被赋值）。
+pub var null_give: u32 = 0;
 /// 被丢弃的事件（没有事件循环时 `_event_post` 无法投递）。
 pub var events_dropped: u32 = 0;
 
@@ -367,6 +369,14 @@ fn shellSemphrTake(p: ?*anyopaque, blocking: u32) callconv(.c) i32 {
 }
 
 fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
+    if (p == null) {
+        // 实测 ack 的 give 传的是空句柄（take 侧却是有效句柄）→ 这是两个不同变量。
+        // 记下调用者 ra，便于反查"give 侧变量本应由谁写"。
+        const ra = @returnAddress();
+        null_give += 1;
+        if (null_give <= 3) note(1, 0, ra); // a1 = 调用者 ra，便于反查
+        return 0;
+    }
     note(1, @intFromPtr(p), 0);
     const s: *Semphr = @ptrCast(@alignCast(p orelse return 0));
     return s.give();

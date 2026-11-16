@@ -524,6 +524,21 @@ API 的 take 超时返回 → 栈上的描述符被回收 → 任务派发到过
 注意一个关键不对称：**take 侧的句柄是有效的**（`0x2f01dfe0`），而 **give 侧传的是 0**。说明这是
 两个不同的变量——take 用一个（已初始化），give 用另一个（从未被赋值）。
 
-所以下一步要查的是：那个"give 侧变量"本应由谁写。最可能是某个我们做成桩的注册/初始化调用
-（`_semphr_create` 的 out 参数、或 init 里的一次赋值）没有把句柄存进去。查法：在 `_semphr_give`
-里对 null 句柄打一条日志（带 `ra`），再从链接图反查是哪个对象在调用它。
+**已加日志并抓到调用者**：在 `_semphr_give` 里对 null 句柄记录 `@returnAddress()`：
+
+```text
+trace semphr_give a0=0x00000000 a1=0x2f00d70c   # a1 = 调用者 ra
+```
+
+`0x2f00d70c` 落在 **`.iram_blobs`**（blob 的 IRAM 代码），反汇编该处：
+
+```asm
+2f00d6fe  sw   ra, 60(sp)
+2f00d702  lui  s1, 0x40104
+2f00d706  lui  s2, 0x2f012
+2f00d70a  jalr a5            # ← 通过表指针调用 _semphr_give
+2f00d70c  li   s4, 0          # 返回地址
+```
+
+也就是说 **blob 自己的 IRAM 任务代码**在 give 时传了 null。下一步是在 blob 对象里按这段字节模式
+反查是哪个函数（`ieee80211_ioctl.o` / `pp.o` 一类），看它给 `a0` 赋值的那几行。

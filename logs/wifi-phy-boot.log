@@ -5,7 +5,5 @@ wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
 wifi-init-probe: trace queue_send a0=0x2f01d940 a1=0x00000006
 wifi-init-probe: trace semphr_take a0=0x2f01dfe0 a1=0xffffffff
-wifi-init-probe: register_chipv7_phy(NONE) rc=1 (cal_data 1894 B)
-wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d70c
 panic: mepc=0x2f011684 mtval=0xac50 mstatus=0x3801
-panic: ctx[0]=0x2f011684 ctx[1]=0x2f01c9e0 ctx[2]=0x2010a000 ctx[3]=0x20101000
