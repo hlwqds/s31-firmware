@@ -1734,3 +1734,30 @@ wifi-init-probe: dma_enable=0        ← 这条现在没有信息量（桩）
 **现在真正有效的读数只剩两个**：`is_lmac_idle=1`（但它走 IC vtable，不直读寄存器）与
 `ic_interface_enabled=0`。要用它们下结论，还得先反汇编 `ic_interface_enabled`（thunk `0x2f800da0`）
 确认它不是另一个常量桩——**这是下一次动手前必须做的第一件事**。
+
+### 两个全局符号定名 + `ic_interface_enabled` 是真谓词
+
+`rom_syms.ld` / `esp32s31.rom.pp.ld` 给出：
+
+| 地址 | 符号 |
+| --- | --- |
+| `0x2f07ff48` | **`pp_wdev_funcs`**（PP/WDEV 的函数表，不是"g_ic"） |
+| `0x2f07ff40` | **`wDevCtrl_ptr`**（WDEV 控制块指针） |
+
+`ic_interface_enabled` 的 thunk `0x2f800da0` → `0x2f839372`，真体：
+
+```asm
+2f839376  lw   a5,-192(a5)      # a5 = *(0x2f07ff40) = wDevCtrl
+2f83937a  lbu  a5,49(a5)        # a5 = wDevCtrl->[49]  ← 各接口的使能位图
+2f83937e  srl  a0,a5,a0         # a0 = 位图 >> ifx
+2f839382  andi a0,a0,1
+2f839384  ret
+```
+
+所以 **`ic_interface_enabled(ifx)` 是真函数**：返回 `wDevCtrl->[49]` 的第 `ifx` 位。实测
+`ic_interface_enabled(0) = 0` ⇒ **接口 0 的使能位是 0**，这是**有效读数**（与 `hal_mac_is_dma_enable`
+那个恒 0 桩不同）。
+
+**下一步的确切目标**：找到**谁把 `wDevCtrl->[49]` 的第 0 位置 1**。在 `/tmp/blobobjs/*.o` 与 `libpp`
+里搜 `sb ?,49(base)` 有多个命中（`pp.o` 3 处、`if_hwctrl.o` 2 处、`ieee80211_output.o` 3 处…），
+需要按 base 寄存器回溯确认哪一处写的是 `wDevCtrl`——那就是"使能接口"的调用点。
