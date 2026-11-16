@@ -3220,3 +3220,30 @@ irq-sample #11776 ... mepc=0x2f009206 ← 自旋不变
 
 > 注：第①步 `esp_phy_enable(PHY_MODEM_WIFI)` 是 IDF 的 C 层函数（含 NVS 校准加载），我们走的是
 > 自己的 `register_chipv7_phy` 路径——这一条的等价性仍未逐项验证。
+
+### `_phy_enable` 还差 IDF 的第①步：`modem_clock_module_enable(PERIPH_PHY_MODULE)`
+
+IDF 的 `esp_phy_enable()`（`phy_init.c:324`）在 `phy_get_modem_flag()==0` 时做：
+
+```c
+esp_phy_common_clock_enable();   // = wifi_bt_common_module_enable()
+phy_module_enable();             // = modem_clock_module_enable(PERIPH_PHY_MODULE)
+assert(phy_module_has_clock_bits(...));
+if (!s_is_phy_calibrated) esp_phy_load_cal_and_init();
+```
+
+而 `wifi_bt_common_module_enable()` 在 **`SOC_MODEM_CLOCK_IS_INDEPENDENT = 1`** 的 S31 上就是
+**`modem_clock_module_enable(PERIPH_PHY_MODULE)`**（`periph_ctrl.c:98-101`）。
+
+`PERIPH_PHY_MODULE` 的时钟依赖（`port/esp32s31/modem_clock_impl.c:20`）：
+
+```c
+#define PHY_CLOCK_DEPS  ( MODEM_CLOCKS(MODEM_ADC_COMMON_FE, MODEM_PRIVATE_FE, SOC_PLL_SOURCE_CG) | I2C_ANA_MST_CLOCK_DEPS )
+```
+
+⇒ **我们的 `_phy_enable` 从来没有打开 `MODEM_ADC_COMMON_FE` / `MODEM_PRIVATE_FE` / `I2C_ANA_MST` 这几个
+时钟依赖**（我们只写了 CLK_CONF1 的 fe/wifibb 位与 ICG 图）。这是 `_phy_enable` 里**唯一还没对齐的部分**。
+
+**下一步（明确）**：把 `modem_clock_module_enable(PERIPH_PHY_MODULE)` 的语义端口过来——
+按 `modem_clock_device_t` 枚举与 `modem_clock_hal.c` 的映射，把 `PHY_CLOCK_DEPS` 的四个依赖位写进
+`MODEM_SYSCON.CLK_CONF1` / `I2C_ANA_MST` 相关寄存器，再验证 `MAC_ST` 是否在 init 后变 0。
