@@ -280,14 +280,17 @@ fn shellFree(p: ?*anyopaque) callconv(.c) void {
 
 /// `*_internal` / `wifi_*` 这一族只是不同 heap 域的分配器；我们没有多堆，全部走同一个 arena。
 fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
+    note(8, size, 0);
     return shellMalloc(size);
 }
 fn shellZallocInternal(size: usize) callconv(.c) ?*anyopaque {
+    note(9, size, 0);
     const p = shellMalloc(size) orelse return null;
     @memset(@as([*]u8, @ptrCast(p))[0..size], 0);
     return p;
 }
 fn shellCallocInternal(n: usize, size: usize) callconv(.c) ?*anyopaque {
+    note(10, n, size);
     return shellZallocInternal(n * size);
 }
 fn shellReallocInternal(p: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque {
@@ -386,6 +389,8 @@ pub const Hooks = struct {
     /// "阻塞"只能是"把控制权让给主循环去做事（收包/发送），再回来查一次"。
     /// 探针用它证明任务体存活且会让出；生产用它跑主循环的收发。
     on_idle: ?*const fn () void = null,
+    /// 每次钩子调用都回调（探针用它逐行追踪某个阶段的调用序列，带上限）。
+    on_note: ?*const fn (id: u8, a0: usize, a1: usize) void = null,
     /// 钩子调用预算耗尽时回调（探针用它打印现场并停机）。
     /// 单线程壳里"任务体进入自己的等待循环"就等于永不返回，必须有个外部刹车。
     on_budget_exhausted: ?*const fn (total_calls: u32) void = null,
@@ -401,14 +406,33 @@ pub const idle_spin_limit: u32 = 64;
 pub const hook_ids = [_][]const u8{
     "semphr_take", "semphr_give", "mutex_lock",        "mutex_unlock",
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
+    "malloc",      "zalloc",      "calloc",            "mutex_create",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
+/// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
+pub const note_id_max: u8 = 11;
+
+comptime {
+    // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
+    // `{s}` 把相邻 .rodata 的字符串头当切片解引用（实测 mtval=0x69666977 = "wifi" 的 ASCII）。
+    if (hook_ids.len < @as(usize, note_id_max) + 1) {
+        @compileError("hook_ids 没有覆盖 note() 的全部 id");
+    }
+}
+
 pub var events: [8]HookEvent = @splat(.{ .id = 0, .a0 = 0, .a1 = 0 });
 pub var event_count: u32 = 0;
+
+/// 清空事件环与计数（探针在关键调用前用，确保看到的是"这一阶段"的序列）。
+pub fn resetEvents() void {
+    events = @splat(.{ .id = 0, .a0 = 0, .a1 = 0 });
+    event_count = 0;
+}
 
 fn note(id: u8, a0: usize, a1: usize) void {
     events[event_count % events.len] = .{ .id = id, .a0 = a0, .a1 = a1 };
     event_count += 1;
+    if (hooks.on_note) |f| f(id, a0, a1);
     if (budget > 0) {
         budget -= 1;
         if (budget == 0) {
@@ -657,6 +681,7 @@ fn shellSpinLockDelete(p: ?*anyopaque) callconv(.c) void {
 }
 
 fn shellMutexCreate() callconv(.c) ?*anyopaque {
+    note(11, 0, 0);
     const mem = arena_state.alloc(@sizeOf(Mutex), @alignOf(Mutex)) orelse return null;
     const m: *Mutex = @ptrCast(@alignCast(mem));
     m.* = .{};

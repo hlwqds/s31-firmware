@@ -1,7 +1,47 @@
 wifi-init-probe: begin
 wifi-init-probe: arena=372400 B
 wifi-init-probe: table=0x2f01bf10 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c120 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f01cff8 a1=0xffffffff
 wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
 wifi-init-probe: esp_wifi_init_internal rc=0
 wifi-init-probe: INIT OK, arena free=340880/372384 B, bad_handle=0, blocking_refused=1
 wifi-init-probe: tasks recorded=1
@@ -22,5 +62,10 @@ wifi-init-probe: reg_rxcb rc=0
 wifi-init-probe: get_config_channel rc=0 primary=0 second=0
 wifi-init-probe: internal_tx rc=0x3002 (64 B)
 wifi-init-probe: starting task[0] entry=0x2f00d024 arg=0x00000000 on its own stack
-wifi-init-probe: task context ready (not started yet)
-wifi-init-probe: calling esp_wifi_start (idle_calls=128, hook budget=1000)
+wifi-init-probe: task context ready, running it until it blocks
+wifi-init-probe: task blocked, main resumed (idle_calls=129)
+wifi-init-probe: calling esp_wifi_start (idle_calls=129, tracing hooks)
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000

@@ -140,14 +140,35 @@ fn budgetExhaustedHook(total: u32) void {
     while (i < n) : (i += 1) {
         const idx = (total - n + i) % impl.events.len;
         const e = impl.events[idx];
-        log.line("wifi-init-probe:   hook[{d}] {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{
-            i,
-            impl.hook_ids[e.id],
-            e.a0,
-            e.a1,
-        });
+        // 先打 id 数字，再在**边界内**才打名字：越界索引会把 .rodata 里的字符串头
+        // 当 `{s}` 解引用（实测 mtval=0x69666977，正是 "wifi" 的 ASCII）。
+        if (e.id < impl.hook_ids.len) {
+            log.line("wifi-init-probe:   hook[{d}] {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{
+                i,
+                impl.hook_ids[e.id],
+                e.a0,
+                e.a1,
+            });
+        } else {
+            log.line("wifi-init-probe:   hook[{d}] id={d}(OOB) a0=0x{x:0>8} a1=0x{x:0>8}", .{
+                i,
+                e.id,
+                e.a0,
+                e.a1,
+            });
+        }
     }
     hw.halt();
+}
+
+/// 逐行追踪钩子调用（上限 40 行，避免刷屏）。
+var trace_lines: u32 = 0;
+
+fn traceNote(id: u8, a0: usize, a1: usize) void {
+    if (trace_lines >= 40) return;
+    trace_lines += 1;
+    const name = if (id < impl.hook_ids.len) impl.hook_ids[id] else "?";
+    log.line("wifi-init-probe: trace {s} a0=0x{x:0>8} a1=0x{x:0>8}", .{ name, a0, a1 });
 }
 
 fn nowUsHook() u64 {
@@ -186,6 +207,7 @@ pub fn run() noreturn {
         .mac = &macHook,
         .on_budget_exhausted = &budgetExhaustedHook,
         .on_idle = &idleHook,
+        .on_note = &traceNote,
     });
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
@@ -244,14 +266,23 @@ pub fn run() noreturn {
                 // → 任务处理完应答 → 主上下文从阻塞处继续。
                 sched.initContext(&task_ctx, &static_stack, entry, task.arg);
                 task_ctx_ready = true;
-                log.raw("wifi-init-probe: task context ready (not started yet)\n");
+                log.raw("wifi-init-probe: task context ready, running it until it blocks\n");
+                // 先让任务跑一轮（它阻塞收消息 → 通过 idleHook 让回主上下文），
+                // 这样 wifi 状态机有机会推进到 start 期待的状态。
+                in_task = true;
+                sched.start(&task_ctx, &main_ctx);
+                in_task = false;
+                log.line("wifi-init-probe: task blocked, main resumed (idle_calls={d})", .{idle_calls});
 
                 const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });
                 // 预算实验：`note()` 在 semphr_take/give、mutex_lock、queue_recv/send 上都会递减
                 // `impl.budget`，归零即打印事件环。用它在"start 不返回"的情况下判断 blob 到底
                 // 有没有调我们的钩子（例如非阻塞 take 轮询：idle_calls 不涨，但钩子在涨）。
-                impl.budget = 1000;
-                log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, hook budget=1000)", .{idle_calls});
+                // 先清空事件环与 trace 计数，这样两者都只剩 `esp_wifi_start` 自己的调用。
+                impl.resetEvents();
+                trace_lines = 0;
+                impl.budget = 0; // 不设预算，用 traceNote 逐行追踪
+                log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });
                 log.line("wifi-init-probe: esp_wifi_start rc=0x{x} (idle_calls={d})", .{
