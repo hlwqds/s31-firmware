@@ -1846,3 +1846,29 @@ wifi-init-probe: wDevCtrl=0x2f01085c pp_wdev_funcs=0x2f01d3c8
    不是配置缺失；"信道 0 触发 `chm_change_channel` 去 deinit"这条因果因此**不成立**。
 2. `wDevCtrl = 0x2f01085c`、`pp_wdev_funcs = 0x2f01d3c8` 都是 **DRAM 里的真指针** ✓ ——
    这正面验证了"解除 101 个数据符号桩化"的修复生效了。
+
+### ★ 修桩之后流程真的前进了：`_phy_enable(2)` 现在**就在自旋之前**被调用
+
+pb147 的 trace（修桩后）在任务上下文里给出完整序列：
+
+```text
+trace wifi_clk_en a0=0x0038e7ff
+trace phy_enable  a0=0x00000002      ← ★ 以前从未出现！
+trace coex_enable a0=0x00000000
+trace wifi_reset_mac
+trace mutex_lock
+trace event_post  a0=0x0000002b a1=0x00000010   ← event 43 / bits 0x10
+trace timer_disarm
+[进入自旋]
+```
+
+两点修正：
+
+1. **候选 2 复活**：早先"`_phy_enable` 在自旋前从未被调用"是在**修桩之前**观测的；修桩后 blob 走得更远，
+   确实调了 `_phy_enable(2)`（参数 2 = modem id）。而我们的实现只做"幂等重申时钟位"，**没有做真正的
+   PHY 使能/标定**——这正是 IDF 的 `esp_phy_enable(modem)` 该做的事。
+2. `event_post(0x2b, 0x10)` 说明 blob 在自旋前向事件系统投了 **event 43**，我们的 `_event_post` 是同步
+   派发到自己的 event_bus——若没有 handler 注册，状态机不会推进。
+
+**下一步**：把 PHY 注册/标定**移进 `_phy_enable`**（IDF 的顺序是 `esp_phy_enable` 内部才
+`esp_phy_load_cal_and_init()` → `register_chipv7_phy`），而不是像现在这样在探针 init 阶段提前调。
