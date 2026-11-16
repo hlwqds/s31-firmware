@@ -931,12 +931,12 @@ swap#6 in_task=false hooks=7
 修法（已落地）：**打印与数组分离**——数组只存前 16 个，打印 `irq_count < 64` 全打、
 之后每 256 条打一条心跳。
 
-### 心跳证据：采样活过 `swap#6`，任务恒定自旋在 **0x2f009206**（2026-11-16）
+### 心跳证据：采样活过 `swap#6`，任务自旋在一个**硬件状态轮询**里（2026-11-16）
 
 修好打印后（pb116，30 s 采集）拿到的是干净证据：
 
 ```text
-wifi-init-probe: calling esp_wifi_start (idle_calls=197, tracing hooks)
+calling esp_wifi_start (idle_calls=197, tracing hooks)
 trace alloc -> queue_send -> semphr_take
 swap#6 in_task=false hooks=7
 irq-sample #256  input=25 mepc=0x2f009206
@@ -945,16 +945,25 @@ irq-sample #512  input=25 mepc=0x2f009206
 irq-sample #2304 input=25 mepc=0x2f009206
 ```
 
-两点都是新的：
+两点都是新的：**中断在 `swap#6` 之后仍然活着**（"观测手段失效/mtvec 被改写"的假设一并作废）；
+任务拿到 CPU 后**恒定自旋在 `0x2f009206`**。
 
-1. **中断在 `swap#6` 之后仍然活着**（心跳一路到 #2304），所以"观测手段失效/mtvec 被改写"的假设
-   也一并作废；
-2. 任务拿到 CPU 后**恒定自旋在 `0x2f009206`**——不是等状态位，是同一地址的紧循环。
+**这个地址是 blob 自己的代码**（先纠正一版错误判读：当时用 `esptool read-mem` dump 出"数据样式的字"
+就说它"不是代码"——`read-mem` 会先复位芯片，读到的是复位后残留，没有判据价值）。正确来源是 ELF：
+`0x2f009206` 落在 `.iram_blobs`（`0x2f0000b0 + 0xf5b0`，flags=EXEC），反汇编是**干净的循环**：
 
-**这个地址不是代码**：`esptool read-mem` dump 出的 40 字节（`0x2f0091e0..0x2f009207`）是
-`0xf7b945ac 0xc448f333 0xca3d9a53 0xa7e9ecfe …` 这种数据样式的字，解不出合理 RISC-V 指令
-（对比：`0x2f83efdX` 那个 ROM 辅助函数 dump 出来就是干净代码）。
+```asm
+2f0091fe  lui  a5, 0x20105
+2f009202  addi a5, a5, -852      # a5 = 0x20104CAC
+2f009202  lw   a5, 0(a5)         # a5 = REG[0x20104CAC]
+2f009204  and  a5, a5, a4        # a4 = 0xE000（lui 0xe）
+2f009206  bnez a5, 0x2f0091fe    # while ((REG & 0xE000) != 0) 空转
+```
 
-所以当前最可能的形态是：**任务跳进了数据区**（DRAM/栈区）并在那里打转——即"返回值/函数指针
-被破坏"，而不是"等不到 tick"。下一步要查的是这个地址属于哪个段（DRAM? 任务栈?），以及它是怎么
-被写进 PC 的（`swap` 保存的上下文、blob 的 `recv_probe` 回调表）。
+**结论**：任务不是"等不到 tick"，也不是"跳进数据区"，而是在**轮询硬件寄存器 `0x20104CAC` 的
+[15:13] 位，等它们清零**。同一个函数上面刚写过这个寄存器（`or` 上 `0xFF100000` 再 `sw`），
+所以这是"写下去 → 等硬件把状态位清掉"的握手。
+
+因此真正的阻塞点是**硬件/PHY 状态没有按 blob 预期变化**，与调度器、tick、中断向量都无关。
+下一步：确认 `0x20104CAC` 属于哪个外设块（`0x2010_xxxx`，S31 的 MAC/PHY 窗口），
+以及写进去的 `0xFF100000` 那几位要求什么条件才会自清——这决定了我们的 init 序列还缺哪一步。
