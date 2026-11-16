@@ -221,6 +221,12 @@ const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
 
 pub fn run() noreturn {
     log.raw("wifi-init-probe: begin\n");
+    // 复位态基线：在任何 blob 代码跑之前读一次 MAC 状态寄存器，
+    // 用来区分"busy{13..15} 是复位默认"还是"init 里被谁置起来的"。
+    {
+        const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+        log.line("wifi-init-probe: MAC_ST at begin = 0x{x:0>8}", .{mac_st.*});
+    }
     // TIMG0 T0 是本仓的时间基（1 MHz）；探针构建不会自动初始化它，
     // 不初始化则 nowUs() 恒 0（实测），超时/采样中断都无从谈起。
     hw.initTimer();
@@ -259,6 +265,10 @@ pub fn run() noreturn {
     //    （实测 exception code=5）。
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: esp_wifi_init_internal rc={d}", .{init_rc});
+    {
+        const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+        log.line("wifi-init-probe: MAC_ST after init = 0x{x:0>8}", .{mac_st.*});
+    }
     if (init_rc == 0) {
         log.line("wifi-init-probe: INIT OK, arena free={d}/{d} B, bad_handle={d}, blocking_refused={d}", .{
             impl.arena_state.bytes_free,

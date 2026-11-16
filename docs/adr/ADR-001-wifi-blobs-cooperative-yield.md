@@ -1545,3 +1545,23 @@ irq-sample #16640 .. mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1
 **自旋照旧**。所以"配置序列缺失"也不是当前卡点的原因（`set_country` 的 258 另案，但它不影响自旋）。
 
 **十四个候选全部实验排除。**
+
+### 复位基线：`MAC_ST` 在**任何 blob 代码之前**就是 `0x0000e000`
+
+在探针 `begin`（还没调 `esp_wifi_init_internal`）与 init 之后各读一次 `0x20104CAC`：
+
+```text
+wifi-init-probe: MAC_ST at begin   = 0x0000e000
+wifi-init-probe: MAC_ST after init = 0x0000e000
+irq-sample #0 input=25 mepc=0x4004a2fe mac=0x0000e000
+```
+
+也就是说 bits 13..15 **是芯片的复位态**，与我们的 init 无关、与任何钩子无关。这也解释了为什么
+"blob 自己的清状态函数也写不掉"——它们是硬件独占状态位。
+
+两种读法都指向同一结论：
+
+- 若 1 = busy（TX/RX 未静止）：blob 在等一个它自己永远等不到的状态；
+- 若 1 = idle（位是反相的）：那 start 是在**等 TX/RX 起来**，同样需要真实的 MAC/PHY 初始化才会变。
+
+无论哪种，**唯一能让它们改变的是真实的 MAC/PHY 上电初始化（DMA 环 + RF 前端）**，而不是任何宿主钩子。
