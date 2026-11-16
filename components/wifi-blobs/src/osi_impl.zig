@@ -461,7 +461,7 @@ pub const hook_ids = [_][]const u8{
     "semphr_take", "semphr_give", "mutex_lock",        "mutex_unlock",
     "queue_recv",  "queue_send",  "queue_msg_waiting", "task_create",
     "malloc",      "zalloc",      "calloc",            "mutex_create",
-    "event_post",  "alloc",       "recv_probe",
+    "event_post",  "alloc",       "recv_probe",        "phy_enable",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
@@ -778,6 +778,28 @@ pub const WifiQueue = struct {
 pub var last_wrapper: usize = 0;
 pub var last_inner: usize = 0;
 
+/// `_phy_enable()`：IDF `esp_phy_enable()` 的等价物（幂等）。
+///
+/// 板级动机（ADR-001）：blob 的 `esp_wifi_start` 在任务上下文里轮询 WiFi MAC 块 `+0xAC`
+/// 的 [15:13] 等硬件自清。这个钩子留成空桩时，PHY 在任务上下文里从未被真正打开，
+/// 那三位永不清 → 任务恒定自旋。
+var phy_enable_calls: u32 = 0;
+
+fn shellPhyEnable() callconv(.c) usize {
+    phy_enable_calls +%= 1;
+    note(15, phy_enable_calls, 0);
+    // 重申 PHY 时钟位（MODEM_SYSCON.CLK_CONF1）与两个 FORCE_ON 寄存器，
+    // 序列与探针的 init 完全一致；幂等，重复调用无害。
+    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+    conf1.* |= (1 << 2) | (1 << 3) | (1 << 7) | (1 << 9) |
+        (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+    const fo_sys: *volatile u32 = @ptrFromInt(0x2010_9C08);
+    fo_sys.* |= (1 << 2) | (1 << 3) | (1 << 4);
+    const fo_lp: *volatile u32 = @ptrFromInt(0x2010_F01C);
+    fo_lp.* |= (1 << 0) | (1 << 2);
+    return 0;
+}
+
 fn shellWifiQueueCreate(len: u32, item_size: u32) callconv(.c) ?*anyopaque {
     const inner = shellQueueCreate(len, item_size) orelse return null;
     const mem = arena_state.alloc(@sizeOf(WifiQueue), @alignOf(WifiQueue)) orelse return null;
@@ -955,6 +977,8 @@ pub fn makeTable() osi.Osi {
     t._queue_delete = @ptrCast(&shellQueueDelete);
     // `_wifi_create_queue`/`_wifi_delete_queue` 是 IDF 的"内部队列"变体，语义同 queue_create/delete。
     // 板级实测：`pp_create_task` 用 `(len=200, item_size=8)` 调 index 94，桩返回 0 → 257(NO_MEM)。
+    // `_phy_enable`：真正的 PHY 上电（空桩时 blob 的 `esp_wifi_start` 会卡在 MAC+0xAC 轮询）。
+    t._phy_enable = @ptrCast(&shellPhyEnable);
     t._wifi_create_queue = @ptrCast(&shellWifiQueueCreate);
     t._wifi_delete_queue = @ptrCast(&shellWifiQueueDelete);
     t._wifi_thread_semphr_get = @ptrCast(&shellThreadSemphrGet);
@@ -995,21 +1019,20 @@ pub const implemented = [_][]const u8{
 pub const unimplemented = [_][]const u8{
     "_env_is_chip",                             "_queue_send_from_isr",                   "_event_post",
     "_dport_access_stall_other_cpu_start_wrap", "_dport_access_stall_other_cpu_end_wrap", "_wifi_pm_sleep_lock_acquire",
-    "_wifi_pm_sleep_lock_release",              "_phy_disable",                           "_phy_enable",
-    "_phy_update_country_info",                 "_timer_arm",                             "_timer_disarm",
-    "_timer_done",                              "_timer_setfn",                           "_timer_arm_us",
-    "_wifi_reset_mac",                          "_wifi_clock_enable",                     "_wifi_clock_disable",
-    "_wifi_rtc_enable_iso",                     "_wifi_rtc_disable_iso",                  "_get_time",
-    "_slowclk_cal_get",                         "_log_write",                             "_log_writev",
-    "_coex_init",                               "_coex_deinit",                           "_coex_enable",
-    "_coex_disable",                            "_coex_status_get",                       "_coex_condition_set",
-    "_coex_wifi_request",                       "_coex_wifi_release",                     "_coex_wifi_channel_set",
-    "_coex_event_duration_get",                 "_coex_pti_get",                          "_coex_schm_status_bit_clear",
-    "_coex_schm_status_bit_set",                "_coex_schm_interval_set",                "_coex_schm_interval_get",
-    "_coex_schm_curr_period_get",               "_coex_schm_curr_phase_get",              "_coex_schm_process_restart",
-    "_coex_schm_register_cb",                   "_coex_register_start_cb",                "_regdma_link_set_write_wait_content",
-    "_sleep_retention_find_link_by_id",         "_coex_schm_flexible_period_set",         "_coex_schm_flexible_period_get",
-    "_coex_schm_get_phase_by_idx",              "_coex_configure_preemption_end_cb",      "_wifi_disable_ac_ax",
-    "_wifi_bb_sleep_retention_attach",          "_wifi_bb_sleep_retention_detach",        "_wifi_mac_sleep_retention_attach",
-    "_wifi_mac_sleep_retention_detach",
+    "_wifi_pm_sleep_lock_release",              "_phy_disable",                           "_phy_update_country_info",
+    "_timer_arm",                               "_timer_disarm",                          "_timer_done",
+    "_timer_setfn",                             "_timer_arm_us",                          "_wifi_reset_mac",
+    "_wifi_clock_enable",                       "_wifi_clock_disable",                    "_wifi_rtc_enable_iso",
+    "_wifi_rtc_disable_iso",                    "_get_time",                              "_slowclk_cal_get",
+    "_log_write",                               "_log_writev",                            "_coex_init",
+    "_coex_deinit",                             "_coex_enable",                           "_coex_disable",
+    "_coex_status_get",                         "_coex_condition_set",                    "_coex_wifi_request",
+    "_coex_wifi_release",                       "_coex_wifi_channel_set",                 "_coex_event_duration_get",
+    "_coex_pti_get",                            "_coex_schm_status_bit_clear",            "_coex_schm_status_bit_set",
+    "_coex_schm_interval_set",                  "_coex_schm_interval_get",                "_coex_schm_curr_period_get",
+    "_coex_schm_curr_phase_get",                "_coex_schm_process_restart",             "_coex_schm_register_cb",
+    "_coex_register_start_cb",                  "_regdma_link_set_write_wait_content",    "_sleep_retention_find_link_by_id",
+    "_coex_schm_flexible_period_set",           "_coex_schm_flexible_period_get",         "_coex_schm_get_phase_by_idx",
+    "_coex_configure_preemption_end_cb",        "_wifi_disable_ac_ax",                    "_wifi_bb_sleep_retention_attach",
+    "_wifi_bb_sleep_retention_detach",          "_wifi_mac_sleep_retention_attach",       "_wifi_mac_sleep_retention_detach",
 };

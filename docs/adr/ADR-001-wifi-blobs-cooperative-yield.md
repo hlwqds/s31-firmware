@@ -1119,3 +1119,41 @@ if (phy_get_modem_flag() == 0) {
 所以我们的 `_phy_enable` 钩子应当：**① 开共用时钟 → ② 置 MODEM_SYSCON 的 PHY 时钟位（并回读校验）
 → ③ 首次调用时跑 `register_chipv7_phy`（我们已经会调，rc=0）→ 返回 0**。`assert` 那一步很值得
 照抄成"回读校验并打印"，因为 `0x20104CAC` 的 [15:13] 正是"时钟真的到位了没有"的硬件答案。
+
+### `_phy_enable` 已实现，但**不在自旋之前**被调用（2026-11-16）
+
+把 `_phy_enable` 从空桩改成真实实现（幂等重申 `MODEM_SYSCON.CLK_CONF1` 的 PHY 时钟位与两个
+`FORCE_ON` 寄存器，并记一条 `note(15, …)` 追踪），上板（pb118，40 s）：
+
+```text
+calling esp_wifi_start (idle_calls=197, tracing hooks)
+trace alloc -> queue_send -> semphr_take
+swap#6 in_task=false hooks=7
+irq-sample #256 .. #1792 mepc=0x2f009206
+```
+
+**日志里一条 `trace phy_enable` 都没有** → 任务在调用 `_phy_enable` **之前**就已经进自旋了。
+所以这条钩子不是当前卡点的解药（它仍然是必须补的，但优先级排在自旋之后）。
+
+### 自旋函数的完整结构与调用链
+
+反汇编 `0x2f009190` 起（自旋函数本体，`ret` 在 `0x2f009220`）：
+
+```asm
+2f009194  lw   a5, -720(a4)        # 0x2f07fd30 += 1（调用计数）
+2f0091ac  lw   a5, 0(a4)           # a4 = 0x20104CAC
+2f0091b0  srli a5, a5, 0xe ; andi 1 ; sb -> 0x2f07fd2d   # 记录 bit14
+2f0091b8  lw   a5, 0(a4)
+2f0091be  srli a5, a5, 0xd ; andi 1 ; sb -> 0x2f07fd2c   # 记录 bit13
+2f0091c6  jal  0x2f00254e          # 一个"是否需要等"的判定
+2f0091ca  beqz a0, 0x2f0091dc      # 返回 0 → 跳过前置等待
+2f0091d2  lw/and 0xe000 ; bnez -> 自旋（前置：等 [15:13] 清零）
+2f0091dc  ... sw 0x00FF1000 ...
+2f0091f4  jalr -> 0x2f80003c       # ets_delay_us(20)（a0=20）
+2f009202  lw/and 0xe000 ; bnez 0x2f0091fe   # 后置自旋（采样落点 0x2f009206）
+2f009220  ret
+```
+
+调用链（静态）：`0x4003eb6e`（`.flash.text`）→ `0x2f005cc4` → `0x2f009190`。
+另外两个全局 `0x2f07fd2c` / `0x2f07fd2d` 缓存了 bit13/bit14 的最近值——它们是**可观测的判据**：
+下次采样时可以顺带把这两个字节读出来，直接看到硬件那两位在写前/写后的真实值。
