@@ -103,5 +103,11 @@ pub fn defaults(table: *const osi.Osi) InitConfig {
     c.beacon_max_len = 752; // WIFI_SOFTAP_BEACON_MAX_LEN
     c.mgmt_sbuf_num = 32; // WIFI_MGMT_SBUF_NUM
     c.espnow_max_encrypt_num = 7; // CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM
+    // 按 IDF 的 sdkconfig 补齐（之前漏设，全是 0）：
+    c.ampdu_rx_enable = 1; // CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=1
+    c.ampdu_tx_enable = 1; // CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=1
+    c.rx_ba_win = 6; // CONFIG_ESP_WIFI_RX_BA_WIN=6
+    c.tx_hetb_queue_num = 3; // CONFIG_ESP_WIFI_TX_HETB_QUEUE_NUM=3
+    c.sta_disconnected_pm = true; // CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=1
     return c;
 }

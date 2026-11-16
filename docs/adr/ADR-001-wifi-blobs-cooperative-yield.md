@@ -2144,3 +2144,24 @@ irq-sample #14336 .. mac=0x00fff000
 
 至此"寄存器/时钟/顺序"这一层能对齐的都对齐了，剩下的差异只剩 **`wifi_init_config_t` 的字段值**
 （IDF 用 `WIFI_INIT_CONFIG_DEFAULT()` 的一整套 Kconfig 值）。
+
+### 补齐 `wifi_init_config_t` 的字段（按 IDF sdkconfig）：仍自旋
+
+`defaults()` 之前漏设的字段按 `/tmp/idfprobe/build/config/sdkconfig.h` 补齐：
+
+| 字段 | 值 | 来源 |
+| --- | --- | --- |
+| `ampdu_rx_enable` | 1 | `CONFIG_ESP_WIFI_AMPDU_RX_ENABLED` |
+| `ampdu_tx_enable` | 1 | `CONFIG_ESP_WIFI_AMPDU_TX_ENABLED` |
+| `rx_ba_win` | 6 | `CONFIG_ESP_WIFI_RX_BA_WIN` |
+| `tx_hetb_queue_num` | 3 | `CONFIG_ESP_WIFI_TX_HETB_QUEUE_NUM` |
+| `sta_disconnected_pm` | true | `CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE` |
+
+板侧（pb161）：`esp_wifi_init_internal rc=0`、ICG 写入生效，**自旋照旧**（`mac=0x00fff000`）。
+
+**还没对齐的字段**：`feature_caps`（`WIFI_FEATURE_CAPS` 位掩码，最可能影响 blob 走哪条初始化分支）、
+`cache_tx_buf_num`、`csi_enable`、`amsdu_tx_enable`、`nano_enable`、`wifi_task_core_id`、
+`dump_hesigb_enable`、`privacy_enhancements`、`rmac_auto_reset_int`。
+
+**下一步**：让 IDF 例程把 `WIFI_INIT_CONFIG_DEFAULT()` 的各字段值打印出来（一次 build 即可），
+照抄进 `defaults()`——尤其是 `feature_caps`。
