@@ -372,6 +372,11 @@ test "osi_impl: 创建写出的 handle 与 _task_get_current_task 是同一个�
     const rc = create(null, "t", 1024, null, 1, &handle, 0);
     try std.testing.expectEqual(@as(i32, 1), rc);
     try std.testing.expect(handle != null);
-    // 身份判断依赖这一点：handle 与 current 必须是同一指针。
+
+    // 上下文感知：**任务上下文里** current 必须等于创建写出的 handle；
+    // 主上下文里必须是另一个对象（否则 ioctl 会误判"我是 wifi 任务"走就地处理分支）。
+    impl.current_is_task = true;
     try std.testing.expectEqual(@intFromPtr(handle.?), @intFromPtr(current()));
+    impl.current_is_task = false;
+    try std.testing.expect(@intFromPtr(current()) != @intFromPtr(handle.?));
 }

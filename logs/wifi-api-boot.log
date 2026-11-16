@@ -1,8 +1,8 @@
 wifi-init-probe: begin
-wifi-init-probe: arena=372400 B
-wifi-init-probe: table=0x2f01bf10 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: arena=372144 B
+wifi-init-probe: table=0x2f01c010 cfg magic=0x1f2f3f4f crypto size=52
 wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c120 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
 wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
 wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
 wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
@@ -12,38 +12,15 @@ wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
 wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
 wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
 wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
-wifi-init-probe: trace semphr_take a0=0x2f01cff8 a1=0xffffffff
+wifi-init-probe: trace semphr_take a0=0x2f01d0f8 a1=0xffffffff
 wifi-init-probe: task blocked -> yielded to idle hook
 wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
-wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
-wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
-wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
-wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f01ca80 a1=0x0000000a
+wifi-init-probe: trace semphr_take a0=0x2f01d120 a1=0xffffffff
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
 wifi-init-probe: esp_wifi_init_internal rc=0
-wifi-init-probe: INIT OK, arena free=340880/372384 B, bad_handle=0, blocking_refused=1
+wifi-init-probe: INIT OK, arena free=368272/372128 B, bad_handle=0, blocking_refused=2
 wifi-init-probe: tasks recorded=1
 sched-test: begin, task sp=0x2f01bb80 stack=0x2f017bc0
 sched-test: task iteration 0 (yielding)
@@ -58,16 +35,27 @@ sched-test: task iteration 2 resumed
 sched-test: task done, returning to main
 sched-test: main resumed after round 3 (main_sp=0x2f07ac50 task_sp=0x2f01ba50)
 sched-test: PASS
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f01ca80 a1=0x0000000a
+wifi-init-probe: trace semphr_take a0=0x2f01d120 a1=0xffffffff
 wifi-init-probe: reg_rxcb rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f01c220 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f01ca80 a1=0x0000000a
+wifi-init-probe: trace semphr_take a0=0x2f01d120 a1=0xffffffff
 wifi-init-probe: get_config_channel rc=0 primary=0 second=0
-wifi-init-probe: internal_tx rc=0x3002 (64 B)
+wifi-init-probe: trace mutex_lock a0=0x2f01ca0c a1=0x00000000
+wifi-init-probe: internal_tx rc=0x3007 (64 B)
 wifi-init-probe: starting task[0] entry=0x2f00d024 arg=0x00000000 on its own stack
 wifi-init-probe: task context ready, running it until it blocks
-wifi-init-probe: task blocked, main resumed (idle_calls=129)
-wifi-init-probe: wifi_init_completed=1 (非 0 才继续)
-wifi-init-probe: calling esp_wifi_start (idle_calls=129, tracing hooks)
-wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace mutex_lock a0=0x2f01c90c a1=0x00000000
-wifi-init-probe: trace event_post a0=0x0000002b a1=0x00000010
+wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f01ca80 a1=0xffffffff
+wifi-init-probe: trace semphr_give a0=0x2f01d120 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f01ca80 a1=0xffffffff
+panic: exception code=4 (load address misaligned) cause=0x30000004
+panic: mepc=0x40017846 mtval=0x102 mstatus=0x3801
+panic: ra=0x40015b94 a0=0x2f01d0f8 a1=0x2 a2=0x1
+panic: halted (wfi)

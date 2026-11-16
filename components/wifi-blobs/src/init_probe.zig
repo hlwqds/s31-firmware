@@ -123,12 +123,16 @@ fn idleHook() void {
     if (!task_ctx_ready) return;
     if (in_task) {
         in_task = false;
+        impl.current_is_task = false;
         sched.swapContext(&task_ctx, &main_ctx); // 任务让出
         in_task = true; // 被恢复：回到任务上下文
+        impl.current_is_task = true;
     } else {
         in_task = true;
+        impl.current_is_task = true;
         sched.swapContext(&main_ctx, &task_ctx); // 主上下文让出给任务
         in_task = false;
+        impl.current_is_task = false;
     }
 }
 
@@ -270,8 +274,10 @@ pub fn run() noreturn {
                 // 先让任务跑一轮（它阻塞收消息 → 通过 idleHook 让回主上下文），
                 // 这样 wifi 状态机有机会推进到 start 期待的状态。
                 in_task = true;
+                impl.current_is_task = true;
                 sched.start(&task_ctx, &main_ctx);
                 in_task = false;
+                impl.current_is_task = false;
                 log.line("wifi-init-probe: task blocked, main resumed (idle_calls={d})", .{idle_calls});
 
                 const esp_wifi_start = @extern(*const fn () callconv(.c) c_int, .{ .name = "esp_wifi_start" });

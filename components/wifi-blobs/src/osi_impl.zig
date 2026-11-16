@@ -523,6 +523,15 @@ pub var calls: struct {
 /// 随后 `lw a5,0(s0)` 直接 fault（misaligned, mtval=0x102）。
 var task_dummy: [256]u8 align(16) = @splat(0);
 
+/// 主上下文自己的"任务"对象：**与 wifi 任务的 handle 必须是不同对象**。
+///
+/// `wifi_api_lock` 会用 `current_task_is_wifi_task()` 决定走哪条路：如果主上下文也自称
+/// "我是 wifi 任务"，ioctl 会走"就地处理"分支（实测：没有 queue_send，直接自旋等任务侧状态）。
+var main_task_dummy: [256]u8 align(16) = @splat(0);
+
+/// 当前 CPU 属于哪个上下文（由调度器/探针维护）。
+pub var current_is_task: bool = false;
+
 fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
     _ = .{ cpu, src, num, prio };
     calls.set_intr += 1;
@@ -580,7 +589,7 @@ fn shellTaskMsToTick(ms: u32) callconv(.c) i32 {
     return @intCast(ms);
 }
 fn shellTaskGetCurrentTask() callconv(.c) ?*anyopaque {
-    return @ptrCast(&task_dummy);
+    return if (current_is_task) @ptrCast(&task_dummy) else @ptrCast(&main_task_dummy);
 }
 fn shellTaskGetMaxPriority() callconv(.c) i32 {
     return 8;
