@@ -255,6 +255,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 非 0 -> 走回调；为 0 -> 走兜底 `jal 0x40035ea8`（被 ctx[15] 挡住）。
             const cb_slot = @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*;
             log.line("blob cb_slot[0x2f011aa8]=0x{x}", .{cb_slot});
+            if (queue_stats_hook) |f| {
+                const q = f();
+                log.line("queue send_ok={d} recv_ok={d} last_recv_count={d}", .{
+                    @as(u32, @truncate(q)), @as(u32, @truncate(q >> 32)), @as(u32, @truncate(q >> 64)),
+                });
+            }
             if (nvs_stats_hook) |f| {
                 const nv = f();
                 log.line("nvs get_blob calls={d} last_want={d} last_rc={d}", .{
@@ -371,6 +377,8 @@ pub var timer_stats_hook: ?*const fn () u64 = null;
 pub var timer_service_hook: ?*const fn () void = null;
 /// 打包：低 32 = 调用次数，中 32 = 最近请求长度，高 32 = 最近返回码。
 pub var nvs_stats_hook: ?*const fn () u96 = null;
+/// 打包：低 32 = send_ok，中 32 = recv_ok，高 32 = last_recv_count。
+pub var queue_stats_hook: ?*const fn () u96 = null;
 var rom_handler_calls: usize = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。

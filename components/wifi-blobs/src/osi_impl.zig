@@ -234,6 +234,7 @@ pub const Queue = struct {
         self.tail = (self.tail + 1) % self.cap;
         self.count += 1;
         send_probe += 1;
+        send_ok +%= 1;
         return 1;
     }
 
@@ -265,6 +266,8 @@ pub const Queue = struct {
             if (self.count == 0) return 0;
         }
         const b = self.buf();
+        last_recv_count = self.count;
+        recv_ok +%= 1;
         @memcpy(out, b[self.head * self.item_size ..][0..self.item_size]);
         self.head = (self.head + 1) % self.cap;
         self.count -= 1;
@@ -897,6 +900,10 @@ var timers: [16]TimerEntry = @splat(TimerEntry{});
 var timer_fires: u32 = 0;
 /// 诊断：`Queue.send` 成功次数（前 8 次用 note(17) 记录 {队列指针, 之后 count}）。
 var send_probe: u32 = 0;
+/// 诊断：`Queue.send` 成功次数 / `Queue.recv` 成功次数 / 最近一次 recv 时的 count。
+pub var send_ok: u32 = 0;
+pub var recv_ok: u32 = 0;
+pub var last_recv_count: usize = 0;
 /// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。
 /// **诊断用强制上膛**：把"已 `setfn` 但未 armed"的定时器全部设成"立即到期、一次性"，
 /// 交给 `serviceTimers()` 走真实路径 fire。返回被上膛的个数。

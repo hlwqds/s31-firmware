@@ -3359,3 +3359,22 @@ trace queue_recv a0=0x2f021300 a1=0xffffffff   × 4~5
 
 **教训**：`hook_ids` 是**按 id 索引**的表，新增条目**必须追加到末尾**并同步 `note_id_max`，
 不能在中间插入。
+
+### ✅ 队列异常已解决：**消息确实送达并被消费**（5 发 5 收）
+
+加了三个计数器（`send_ok` / `recv_ok` / `last_recv_count`），在自旋点一次性读出：
+
+```text
+queue send_ok=5 recv_ok=5 last_recv_count=1
+```
+
+- **5 次 send 全部成功**（`Queue.send` 的成功分支）；
+- **5 次 recv 全部取到数据**（`last_recv_count=1` 表示最后一次 recv 时队列里有 1 项）。
+
+⇒ **队列通路完全正常**：blob 发的 5 条消息都被 blob 任务收下了。
+
+⇒ 此前那个"send 之后 recv 看到 count=0"的异常是**误读**：`recv_probe` 只记录**前 6 次** recv 的
+`count`，而那几次发生在 send **之前**；后续的 recv 确实拿到了数据。
+
+⇒ **"消息没送到"这条假设彻底排除**。blob 任务收到了全部消息、仍然不推进 ⇒ 问题在**消息处理之后**
+（即任务拿到消息后走到的分支），或消息**内容/类型**不对。

@@ -159,6 +159,11 @@ var task_ctx_ready: bool = false;
 ///
 /// - 在**主**上下文里被调用（blob API 阻塞等任务应答）→ 切到任务；
 /// - 在**任务**上下文里被调用（任务阻塞收消息）→ 切回主上下文。
+fn queueStats() u96 {
+    return (@as(u96, impl.last_recv_count) << 64) |
+        (@as(u96, impl.recv_ok) << 32) | @as(u96, impl.send_ok);
+}
+
 fn nvsStats() u96 {
     return (@as(u96, @intCast(impl.nvs_last_rc)) << 64) |
         (@as(u96, impl.nvs_last_want) << 32) | @as(u96, impl.nvs_get_blob_calls);
@@ -306,6 +311,7 @@ pub fn run() noreturn {
     @import("board").trap.timer_stats_hook = &impl.timerStats;
     @import("board").trap.timer_service_hook = &impl.serviceTimers;
     @import("board").trap.nvs_stats_hook = &nvsStats;
+    @import("board").trap.queue_stats_hook = &queueStats;
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，
