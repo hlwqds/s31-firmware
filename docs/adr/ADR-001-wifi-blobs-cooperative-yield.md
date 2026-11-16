@@ -3329,3 +3329,26 @@ trace queue_recv a0=0x2f021300 a1=0xffffffff   × 4~5
 
 ⇒ 下一步：在 `shellQueueRecv` 命中数据时打点（记录取到的载荷首字），与那 5 次 `a1=6` 对账——
 **能对上 ⇒ 消息确实被消费了**，问题在消费之后的处理；**对不上 ⇒ 消息在队列里丢了**（容量/覆盖 bug）。
+
+### ⚠ 未解异常：`queue_send` 之后紧接着的 `queue_recv` 仍读到 `count=0`
+
+日志顺序（pb224）：
+
+```text
+307: trace queue_send a0=0x2f021300 a1=0x00000006     ← 载荷首字 = 6
+313: trace queue_recv a0=0x2f021300 a1=0xffffffff
+314: trace recv_probe a0=0x00000000 a1=0x00000008     ← **count=0，item_size=8**
+```
+
+**同一条队列、send 在前、recv 在后，recv 却看到队列为空。**
+
+代码上 `shellQueueSend` 传的是 `bytes[0..q.item_size]`（长度必然等于 `item_size`），
+`Queue.send` 的尺寸检查必然通过 ⇒ `count` 应当变成 1。而实测为 0。
+
+`unwrapQueue` 的两条路径（wrapper 首字指向 inner / 直接是 inner）都已核对：`Queue` 的首字段是
+`item_size`（小整数 8），不会落进 arena 判定 ⇒ 两条路径都返回同一对象。
+
+⇒ **这个矛盾目前没有解释**。可能是：send 与 recv 之间 `count` 被别处清零；或 send 实际落到另一个
+`Queue` 对象（句柄数值相同但映射不同）；或 `recv_probe` 记录的是**进入函数时**的 count 而非 send 之后的值。
+
+⇒ 下一步（零成本）：在 `Queue.send` 成功分支里打点（`count` 前后值），与 `recv` 的 `count` 对账。
