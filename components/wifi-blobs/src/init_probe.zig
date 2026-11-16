@@ -331,6 +331,15 @@ pub fn run() noreturn {
                     inline for (.{
                         "phy_get_xtal_freq",
                         "phy_get_rf_cal_version",
+                        // `phy_rf_init` 的 23 个被调函数里，这些**不接收参数**（反汇编确认），
+                        // 可以安全地逐个单独调用；`phy_rc_cal_init` 是首要嫌疑
+                        // （它内部构造 I2C 命令结构再调 `phy_rc_cal`，走模拟 I2C 主控）。
+                        "phy_open_fe_bb_clk",
+                        "phy_rc_cal_init",
+                        "phy_rfpll_chgp_cal",
+                        "phy_tsens_read_init",
+                        "phy_get_temp_init",
+                        "phy_bbpll_cal",
                         "phy_rf_init",
                         "phy_bb_init",
                         "phy_get_temp_init",
