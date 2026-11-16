@@ -34,7 +34,9 @@ pub const TrapFrame = extern struct {
     a7: usize,
     mepc: usize,
     mstatus: usize,
-    pad: [2]usize,
+    /// 被中断的 sp（= 帧尾 + 80）与 s0：定位"谁调用了这个函数"时最有用。
+    sp: usize,
+    s0: usize,
 };
 
 comptime {
@@ -97,6 +99,10 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        csrr    t0, mstatus
         \\        sw      t0, 68(sp)
         \\
+        \\        addi    t0, sp, 80
+        \\        sw      t0, 72(sp)
+        \\        sw      s0, 76(sp)
+        \\
         \\        mv      a0, sp
         \\        call    trapDispatch
         \\
@@ -145,6 +151,7 @@ pub export fn trapDispatch(frame: *TrapFrame) noreturn {
     log.line("panic: ra=0x{x} a0=0x{x} a1=0x{x} a2=0x{x}", .{
         frame.ra, frame.a0, frame.a1, frame.a2,
     });
+    log.line("panic: sp=0x{x} s0=0x{x}", .{ frame.sp, frame.s0 });
     log.raw("panic: halted (wfi)\n");
     hw.halt();
 }
