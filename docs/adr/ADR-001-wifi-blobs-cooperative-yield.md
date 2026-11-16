@@ -2367,3 +2367,35 @@ ROM 的 `PROVIDE(intr_handler_set = 0x2f800764)` 只在符号**未定义**时才
 板侧（pb176）：基线不变（`calling esp_wifi_start` 到达、无 panic、自旋 `0x2f009206`）——因为 blob
 **至今没调用 `_set_isr`**，表是空的。这套机制现在是**正确且可用**的：一旦 blob 真的装 handler，它就会
 被我们的 trap 调用（而不是落进 ROM 那张够不着的表）。
+
+### ROM 的 handler 表找到了，而且**输入 25 是空的**
+
+反汇编 `intr_handler_set`（`0x2f800764` -> `j 0x2f80192c`）拿到它的实现，地址是**硬编码的**：
+
+```asm
+2f80192c: lui  a5,0x2f07f ; slli a0,a0,3 ; addi a5,a5,112 ; add a5,a5,a0
+2f801938: sw   a1,0(a5)   ; sw a2,4(a5)  ; ret
+2f80193e: addi a0,a0,-16  ; ... 查表 ; lw a4,0(a5) ; beqz a4,ret ; lw a0,4(a5) ; jr a4
+```
+
+即 **表在 `0x2f07f070`**，每项 `{fn, arg}` 8 字节；紧跟其后的 `0x2f80193e` 就是 ROM 的分发器
+（`input - 16` 后查表，空则直接返回）。**ROM 读合法**，所以这张表我们读得到。
+
+板侧实测（板子在自旋中，esptool 直读 64 个字）：
+
+| 项 | 值 |
+| --- | --- |
+| `table[1]` | `fn=0x2f8117f4, arg=0x2f07f018` |
+| `table[5]` | `fn=0x2f00133c, arg=0` |
+| **`table[25]`（`0x2f07f138`）** | **`0x0, 0x0` —— 空** |
+| 其余 29 项 | 全 0 |
+
+**结论**：blob **在 ROM 的表里也没装输入 25 的 handler**。这与"blob 从未调用 `_set_isr`"一致，
+并且排除了"handler 装在 ROM 表里、只是我们调不到"这一解释——**根本没有 handler 可调**。
+
+于是"把输入 25 转发给某张表"这条路彻底关闭：应用侧表空、ROM 表空、`rom_mtvec` 是 CLIC 向量表基址。
+blob 在 `0x400490f4` 里做的 `mie |= 1<<25` / `int_ena |= 1<<1` / 矩阵路由，是**使能了一个没人处理的
+中断**（在 IDF 里该 handler 由 app 侧 `esp_intr_alloc` 装，而 blob 自己没装）。
+
+已把 `trapDispatch` 改成三级查找（应用侧表 -> **ROM 表** -> 原来的 ack 逻辑），板侧基线不变
+（表空，行为等价），但机制完备：将来 blob 一旦装了 handler，无论装在哪张表都能被调用。

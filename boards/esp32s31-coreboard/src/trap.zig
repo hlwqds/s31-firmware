@@ -205,7 +205,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // （之前"风暴/不 ack"的判读被打印上限的假象污染过，不要沿用）。
         // **应用侧 handler 优先**：只要 `_set_isr` 装过这个输入，就由我们直接调用它
         // （IDF 的 `_global_interrupt_handler` 就是这个形状）。电平输入（T0/25）要先 ack。
-        const h = getHandler(input);
+        var h = getHandler(input);
+        // 其次看 **ROM 的表**：blob 是直接调 ROM 的 `intr_handler_set` 装 handler 的，所以它的
+        // tick handler 在这张表里。ROM 读合法 -> 我们替 ROM 分发。
+        if (h.fn_ == null) h = romHandler(input);
         if (h.fn_) |f| {
             if (input == 25) hw.ackT0Interrupt(2000);
             f(h.arg);
@@ -267,6 +270,26 @@ pub const Handler = struct {
 };
 
 var handlers: [64]Handler = @splat(Handler{});
+
+/// **ROM 的 handler 表**（反汇编 `intr_handler_set`(0x2f800764 -> 0x2f80192c) 得到）：
+///
+/// ```asm
+/// lui  a5,0x2f07f ; slli a0,a0,3 ; addi a5,a5,112 ; add a5,a5,a0
+/// sw   a1,0(a5)   ; sw a2,4(a5)  ; ret
+/// ```
+///
+/// 即 `0x2f07f070 + n*8` = `{fn, arg}`。紧跟其后的 `0x2f80193e` 就是 ROM 的分发器
+/// （`addi a0,a0,-16` -> 查表 -> `beqz` 跳过 -> `jr`）。**ROM 读是合法的**，所以我们能直接读它，
+/// 不必让 ROM 的分发器运行（那需要把 `mtvec` 还回去）。
+pub const rom_handler_table: [*]volatile u32 = @ptrFromInt(0x2f07f070);
+
+/// 取 ROM 表里某个输入的 handler（0 表示没装）。
+pub fn romHandler(n: usize) Handler {
+    const fn_ = rom_handler_table[n * 2];
+    if (fn_ == 0) return .{};
+    const arg: ?*anyopaque = @ptrFromInt(rom_handler_table[n * 2 + 1]);
+    return .{ .fn_ = @ptrFromInt(fn_), .arg = arg };
+}
 
 /// `_set_isr(n, f, arg)` 的落地：把 handler 装进**我们自己的**表。
 pub fn setHandler(n: usize, f: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
