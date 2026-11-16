@@ -1,14 +1,15 @@
 {
-  "net-ipv4": 70,
-  "net-udp-dhcp-dns": 50,
-  "net-tcp": 33,
-  "net-congestion": 21,
-  "net-sockets": 38,
-  "net-tls-http": 68,
   "app-mqtt-ota": 27,
-  "wifi-boundary": 15,
-  "wifi-connect": 20,
   "ble-802154": 20,
   "boot-power-perf": 14,
-  "net-ethernet": 20
+  "net-congestion": 21,
+  "net-ethernet": 20,
+  "net-ipv4": 70,
+  "net-sockets": 38,
+  "net-tcp": 33,
+  "net-tls-http": 68,
+  "net-udp-dhcp-dns": 50,
+  "wifi-blobs": 1,
+  "wifi-boundary": 15,
+  "wifi-connect": 20
 }
