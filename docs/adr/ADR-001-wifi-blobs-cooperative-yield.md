@@ -1761,3 +1761,20 @@ wifi-init-probe: dma_enable=0        ← 这条现在没有信息量（桩）
 **下一步的确切目标**：找到**谁把 `wDevCtrl->[49]` 的第 0 位置 1**。在 `/tmp/blobobjs/*.o` 与 `libpp`
 里搜 `sb ?,49(base)` 有多个命中（`pp.o` 3 处、`if_hwctrl.o` 2 处、`ieee80211_output.o` 3 处…），
 需要按 base 寄存器回溯确认哪一处写的是 `wDevCtrl`——那就是"使能接口"的调用点。
+
+### `wDevCtrl->[49]` 的语义与写入者（`libpp` 静态定位）
+
+`ic_interface_enabled(ifx)` 读的是 `wDevCtrl->[ifx*52 + 49]`（每个接口描述符 52 字节）。在 `libpp.a`
+里逐个 `objdump -dr` 搜 `sb ?,49(` 并按所在函数归类：
+
+| 站点 | 函数 | 动作 |
+| --- | --- | --- |
+| `sb zero,49(a5)` | **`ppEnableQueue`** | 清该接口的"就绪"字节 |
+| `sb zero,49(a5)` | `ppSelectNextQueue` | 同上 |
+| `sb a4,49(a5)`（a4=1） | **`ppSearchTxframe`** | **置 1**（该接口已有可发的 TX 帧） |
+
+也就是说这个字节不是"接口使能开关"，而是**"该接口的 TX 队列里有待发帧"**的标志：
+`ppSearchTxframe` 找到帧就置 1，`ppEnableQueue`/`ppSelectNextQueue` 消费后清 0。
+
+所以 `ic_interface_enabled(0)=0` 的正确读法是：**接口 0 的 TX 队列里没有待发帧**——这与"数据面（队列/DMA）
+从未建立"一致，但它是**结果**而不是原因。
