@@ -314,7 +314,16 @@ pub fn run() noreturn {
         coex_init();
         log.raw("wifi-init-probe: coex_init returned\n");
     }
+    // **b14 前置实验（B 判定）**：把强制置位提前到 init **之前**。若 init 里真的会调使能函数
+    // （0x40034d1a），它应当走到结尾并写下 b288/b16=1；否则说明那条调用路径压根没执行。
+    const bg_pre = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
+    log.line("wifi-init-probe: pre-init ctx b14={d} b15={d} b288={d}", .{ bg_pre[14], bg_pre[15], bg_pre[288] });
+    bg_pre[14] = 1;
     const init_rc = esp_wifi_init_internal(&cfg);
+    log.line("wifi-init-probe: post-init ctx b14={d} b15={d} b16={d} b27={d} b288={d} b289={d} mac=0x{x:0>8}", .{
+        bg_pre[14],                                    bg_pre[15], bg_pre[16], bg_pre[27], bg_pre[288], bg_pre[289],
+        @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
+    });
     log.line("wifi-init-probe: esp_wifi_init_internal rc={d}", .{init_rc});
     {
         const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
