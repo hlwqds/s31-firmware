@@ -83,6 +83,14 @@ pub fn run() noreturn {
     const lrc = api_lock();
     log.line("wifi-init-probe: wifi_api_lock rc={d}", .{lrc});
 
+    // 3c) 逐个调用 init 内部的顺序（反汇编给出的顺序）：谁先返回非 0，谁就是 258 的来源。
+    inline for (.{ "pm_funcs_init", "wdev_funcs_init", "net80211_funcs_init", "wifi_init_in_caller_task" }) |name| {
+        const f = @extern(*const fn () callconv(.c) c_int, .{ .name = name });
+        const rc = f();
+        log.line("wifi-init-probe: {s} rc={d}", .{ name, rc });
+        if (rc != 0) break;
+    }
+
     // 4) 构造 config 并调用
     const cfg = initcfg.defaults(&table);
     log.line("wifi-init-probe: cfg size={d} magic=0x{x:0>8}", .{ @sizeOf(initcfg.InitConfig), @as(u32, @bitCast(cfg.magic)) });
