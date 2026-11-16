@@ -74,9 +74,9 @@ ESPTOOL=<esptool> python3 scripts/check-capacity.py            # 镜像 ≤ fact
 ESPTOOL=<esptool> python3 scripts/check-capacity.py --update   # 确认增长合理后重写 tools/s31-production/baseline/capacity.json
 ```
 
-现状（2026-11-16 实测，段长取自 `image-info` 的 Length 列）：`full`（TLS+Wi-Fi+apps）
-镜像 398 560 B（factory 余量 1 137 440 B），IROM 段 305 696 B（窗口余量 214 496 B）、
-DROM 段 70 768 B（余量 449 424 B）——P0.2 扩容后两段窗口不再是瓶颈，但 `full` 已用掉 IROM 窗口的 59%。
+现状（2026-11-16 实测，段长取自 `image-info` 的 Length 列，P0.3 扩容后窗口各 `0xB0000`）：
+`full`（TLS+Wi-Fi+apps）镜像 398 560 B（factory 余量 1 137 440 B），IROM 段 305 696 B
+（窗口余量 415 200 B）、DROM 段 70 768 B（余量 650 128 B）——`full` 用掉 IROM 窗口的 42%。
 自检方式：`CAP_WINDOW=0x40000` 跑一次，门禁必须报 `IROM ends at … > window end …`（证明断言不是恒真）。
 
 新增/移动 `all_modules` 里的组件时，必须同步 `PROFILES[*].sections`（board 断言是全等比较）。

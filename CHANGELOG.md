@@ -8,6 +8,12 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **P0.3 两段窗口扩容**：`linker/s31.ld` 的 `irom`/`drom` 各 `0x7F000 → 0xB0000`，drom 基址
+  `0x40080020 → 0x40100020`（保持 64 KiB 对齐 + 0x20）。合计 1 441 792 B 仍在 factory 1 500 K
+  之内，不需要动分区表；`full` 的 IROM 余量从 214 496 B 涨到 415 200 B、DROM 到 650 128 B。
+  板级验证：`gate-board.sh`（net-wire）PASS 7/7，`--profile full` 12 段 `verdict=pass`。
+  上限说明写进 `docs/ARCHITECTURE.md`：芯片窗口 64 MiB，但 DROM 段须结束在 `0x43FF0000` 以下
+  （loader 保留最后一页做分区发现）。
 - **CI 的 board job 走发布前门禁**（R4.1 的另一半）：`workflow_dispatch` 默认
   `profile=net-wire`、`gate=true`，步骤为 `host-prep-wire.sh up` → `gate-board.sh` →
   `trap` 收尾 `down`，与本地同一套脚本；`gate=false` 保留裸 e2e 冒烟路径。
@@ -46,6 +52,10 @@
   两段窗口容量改由 `scripts/check-capacity.py` 门禁。
 
 ### Fixed
+- `tests/e2e/run_e2e.py` 的 board case 现在**自己**删旧日志并要求本轮产生日志：此前只有
+  `gate-board.sh` 做这件事，任何直接调 `--board` 的路径（比如手工跑 `--profile full`）在
+  flash 失败后都会拿上一轮文本当本轮证据——本轮实测踩到（`esptool: command not found` 后
+  断言仍然“通过”）。
 - 板子重新枚举成 `/dev/ttyUSB0` 时门禁会假绿：`run_e2e.py` 的 board case 硬编码
   `/dev/ttyUSB1`，于是走 `SKIP` 分支并以 0 退出。现在 `run_e2e.py` 认 `BOARD` 环境变量，
   `gate-board.sh` 在 ttyUSB1/ttyUSB0 里挑存在的那个并把 `BOARD` 传给 e2e；

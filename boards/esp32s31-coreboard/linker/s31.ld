@@ -40,8 +40,11 @@ ENTRY(_start)
 
 MEMORY
 {
-    irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0x7F000
-    drom (r)   : ORIGIN = 0x40080020, LENGTH = 0x7F000
+    /* P0.3：两段各 0xB0000（合计 1 441 792 B，仍在 factory 1 500 K 之内）。
+     * drom 基址移到 0x40100020（保持 64 KiB 对齐 + 0x20），irom 因此可用满 0x100000 空间；
+     * drom 段必须结束在 0x43FF0000 以下——loader 把 DROM 区间最后一页当分区发现的临时页。 */
+    irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0xB0000
+    drom (r)   : ORIGIN = 0x40100020, LENGTH = 0xB0000
     sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
 }
 

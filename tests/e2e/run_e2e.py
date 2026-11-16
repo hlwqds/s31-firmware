@@ -137,8 +137,12 @@ def board_case(profile_name: str) -> Case:
     if flash.returncode != 0:
         return c
     log = ROOT / "logs" / f"e2e-{profile_name}-boot.log"
+    # 证据只能来自本轮：不删旧日志的话，flash/capture 失败后断言会拿上一轮的文本当本轮结果
+    # （这正是 gate-board.sh 里那条防线；下沉到这里，任何直接调 `--board` 的路径都受保护）。
+    log.unlink(missing_ok=True)
     cap = run([sys.executable, str(ROOT / "tools" / "capture.py"), BOARD, str(log), "30"])
     c.check(cap.returncode == 0, "capture failed")
+    c.check(log.exists(), f"capture produced no log at {log.relative_to(ROOT)}")
     text = log.read_text(errors="replace") if log.exists() else ""
     c.output = text[-4000:]
     c.duration = time.time() - start
