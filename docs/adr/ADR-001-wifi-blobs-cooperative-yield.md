@@ -1246,3 +1246,27 @@ irq-sample #10 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0
 剩下的就是硬件本身：写 `0x00FF1000` → 硬件置 busy{13:15} → **它不自清**。下一步要么找出谁该清它
 （ROM 里同款流程的前后步骤），要么承认"这条 PHY 启动路径需要真实 PHY 固件/校准序列，裸机探针
 还不具备条件"。
+
+### 自旋函数正名：**MAC deinit**（ROM 符号表给出名字，2026-11-16）
+
+`esp32s31.rom.pp.ld:417-419`（与我们的 `rom_syms.ld:216-218` 一致）给出了三个全局的名字：
+
+| 地址 | 符号 |
+| --- | --- |
+| `0x2f07fd30` | `g_mac_deinit_count` |
+| `0x2f07fd2d` | `g_mac_deinit_rxing` |
+| `0x2f07fd2c` | `g_mac_deinit_txing` |
+
+对上 `0x2f009190` 的反汇编：先 `g_mac_deinit_count++`，再把 `0x20104CAC` 的 **bit14 → `rxing`、
+bit13 → `txing`**，调 `0x2f00254e` 发起停止，然后**等 TX/RX 的"仍在活动"位（[15:13]）自清**。
+
+所以这段**不是"等 PHY 上电"**，而是 blob 在 `esp_wifi_start` 期间走了一次 **MAC deinit/复位**，
+在等 TX/RX 静止。之前所有"PHY 电源域"的表述都应以此为准。
+
+**两条有符号支撑的下一步**：
+
+1. `wifi_rf_phy_enable = 0x2f800cf4` / `wifi_rf_phy_disable = 0x2f800cf0`
+   （`esp32s31.rom.net80211.ld:65-66`）——IDF 的 `esp_phy_enable()` 走这一对，而我们的手工 bring-up
+   **从没调过它**。在 start 前调一次 `wifi_rf_phy_enable`，看 deinit 的 [15:13] 是否自清。
+2. 给 `0x2f00254e` 命名：`/tmp/blobobjs/*.o` 有符号表，用 `.iram_blobs` 段内偏移
+   （`0x2f0091fe − 0x2f0000b0 = 0x914E`）字节匹配定位 .o，再用 `nm` 拿函数名。
