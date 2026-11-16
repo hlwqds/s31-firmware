@@ -1,3 +1,4 @@
+wifi-init-probe: CLK_CONF_POWER_ST=0x00000000 apb=0 peri=0 wifi=0
 wifi-init-probe: write 0x20100400
 wifi-init-probe: rmw 0x20100800
 wifi-init-probe: write 0x20107C80

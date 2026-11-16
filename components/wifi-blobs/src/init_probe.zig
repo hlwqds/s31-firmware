@@ -328,6 +328,18 @@ pub fn run() noreturn {
                         conf1.* = before | bits;
                         log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
                     }
+                    // `MODEM_SYSCON_CLK_CONF_POWER_ST_REG`(0x20109C0C)：各域时钟的**实际**状态。
+                    // 字段：MODEM_APB[31:28] / MODEM_PERI[27:24] / WIFI[23:20]。
+                    {
+                        const st: *volatile u32 = @ptrFromInt(0x2010_9C0C);
+                        const v = st.*;
+                        log.line("wifi-init-probe: CLK_CONF_POWER_ST=0x{x:0>8} apb={d} peri={d} wifi={d}", .{
+                            v,
+                            (v >> 28) & 0xf,
+                            (v >> 24) & 0xf,
+                            (v >> 20) & 0xf,
+                        });
+                    }
                     // 逐条复现 `phy_open_fe_bb_clk` 的写序列（日志在写之前，最后一行即挂点）。
                     {
                         const r0: *volatile u32 = @ptrFromInt(0x2010_0400);
