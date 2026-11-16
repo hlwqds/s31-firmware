@@ -165,6 +165,8 @@ pub const Semphr = struct {
         blocking_refused += 1;
         var spins: u32 = 0;
         while (spins < idle_spin_limit) : (spins += 1) {
+            serviceTimers();
+            serviceTimers();
             if (hooks.on_idle) |idle| idle();
             if (self.count > 0) {
                 self.count -= 1;
@@ -251,6 +253,8 @@ pub const Queue = struct {
             blocking_refused += 1;
             var spins: u32 = 0;
             while (spins < idle_spin_limit) : (spins += 1) {
+                serviceTimers();
+                serviceTimers();
                 if (hooks.on_idle) |idle| idle();
                 if (self.count != 0) break;
             }
@@ -615,6 +619,7 @@ fn shellTaskDelay(ms: u32) callconv(.c) void {
     const want_us: u64 = @as(u64, ms) * 1000;
     var spins: u32 = 0;
     while (spins < idle_spin_limit) : (spins += 1) {
+        serviceTimers();
         if (hooks.on_idle) |idle| idle();
         if (hooks.now_us) |now| {
             if (now() -% start >= want_us) return;
@@ -777,6 +782,95 @@ pub const WifiQueue = struct {
 /// 最近一次 `_wifi_create_queue` 的包装体/内部队列地址（探针用它对账"坏指针来自哪个对象"）。
 pub var last_wrapper: usize = 0;
 pub var last_inner: usize = 0;
+
+// ---------------------------------------------------------------------------
+// 软件定时器（ets_timer 语义）：`_timer_setfn/_timer_arm/_timer_arm_us/_timer_disarm/_timer_done`
+//
+// S31 的 ROM 没有 `ets_timer_*`，这五个钩子只能应用侧实现。之前它们是空桩，意味着 blob 注册的
+// 定时器**永远不会到期**——而 blob 的 coex/协议栈调度正是靠它推进（静态扫描：`_timer_done` 537、
+// `_timer_disarm` 336、`_timer_setfn` 289 次引用）。
+//
+// 这里用**协作式软件定时器**：不占用硬件定时器/中断，由 `serviceTimers()` 在让出点推进。
+// ---------------------------------------------------------------------------
+const TimerEntry = struct {
+    ptimer: ?*anyopaque = null,
+    fn_: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    arg: ?*anyopaque = null,
+    deadline_us: u64 = 0,
+    period_us: u64 = 0, // 0 = 一次性
+    armed: bool = false,
+};
+var timers: [16]TimerEntry = @splat(TimerEntry{});
+var timer_fires: u32 = 0;
+
+fn findTimer(ptimer: ?*anyopaque) ?*TimerEntry {
+    for (&timers) |*t| {
+        if (t.ptimer == ptimer) return t;
+    }
+    return null;
+}
+
+fn allocTimer(ptimer: ?*anyopaque) ?*TimerEntry {
+    if (findTimer(ptimer)) |t| return t;
+    for (&timers) |*t| {
+        if (t.ptimer == null) {
+            t.* = .{ .ptimer = ptimer };
+            return t;
+        }
+    }
+    return null;
+}
+
+fn shellTimerSetfn(ptimer: ?*anyopaque, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) callconv(.c) usize {
+    const t = allocTimer(ptimer) orelse return 1;
+    t.fn_ = fn_;
+    t.arg = arg;
+    return 0;
+}
+
+fn armTimerCommon(ptimer: ?*anyopaque, us: u64, repeat: bool) usize {
+    const t = allocTimer(ptimer) orelse return 1;
+    const now = if (hooks.now_us) |f| f() else 0;
+    t.deadline_us = now + us;
+    t.period_us = if (repeat) us else 0;
+    t.armed = true;
+    return 0;
+}
+
+fn shellTimerArm(ptimer: ?*anyopaque, ms: u32, repeat: bool) callconv(.c) usize {
+    return armTimerCommon(ptimer, @as(u64, ms) * 1000, repeat);
+}
+
+fn shellTimerArmUs(ptimer: ?*anyopaque, us: u32, repeat: bool) callconv(.c) usize {
+    return armTimerCommon(ptimer, us, repeat);
+}
+
+fn shellTimerDisarm(ptimer: ?*anyopaque) callconv(.c) usize {
+    if (findTimer(ptimer)) |t| t.armed = false;
+    return 0;
+}
+
+fn shellTimerDone(ptimer: ?*anyopaque) callconv(.c) usize {
+    if (findTimer(ptimer)) |t| t.* = .{};
+    return 0;
+}
+
+/// 由让出点（`on_idle`/`_task_delay`）调用：推进所有到期定时器。
+pub fn serviceTimers() void {
+    const now = if (hooks.now_us) |f| f() else return;
+    for (&timers) |*t| {
+        if (!t.armed or t.fn_ == null) continue;
+        if (now < t.deadline_us) continue;
+        if (t.period_us > 0) {
+            t.deadline_us = now + t.period_us;
+        } else {
+            t.armed = false;
+        }
+        timer_fires +%= 1;
+        note(16, @intFromPtr(t.ptimer), timer_fires);
+        t.fn_.?(t.arg);
+    }
+}
 
 /// `_phy_enable()`：IDF `esp_phy_enable()` 的等价物（幂等）。
 ///
@@ -977,6 +1071,12 @@ pub fn makeTable() osi.Osi {
     t._queue_delete = @ptrCast(&shellQueueDelete);
     // `_wifi_create_queue`/`_wifi_delete_queue` 是 IDF 的"内部队列"变体，语义同 queue_create/delete。
     // 板级实测：`pp_create_task` 用 `(len=200, item_size=8)` 调 index 94，桩返回 0 → 257(NO_MEM)。
+    // 软件定时器五件套：空桩时 blob 注册的定时器永不到期，调度永远不推进。
+    t._timer_setfn = @ptrCast(&shellTimerSetfn);
+    t._timer_arm = @ptrCast(&shellTimerArm);
+    t._timer_arm_us = @ptrCast(&shellTimerArmUs);
+    t._timer_disarm = @ptrCast(&shellTimerDisarm);
+    t._timer_done = @ptrCast(&shellTimerDone);
     // `_phy_enable`：真正的 PHY 上电（空桩时 blob 的 `esp_wifi_start` 会卡在 MAC+0xAC 轮询）。
     t._phy_enable = @ptrCast(&shellPhyEnable);
     t._wifi_create_queue = @ptrCast(&shellWifiQueueCreate);
@@ -1020,19 +1120,18 @@ pub const unimplemented = [_][]const u8{
     "_env_is_chip",                             "_queue_send_from_isr",                   "_event_post",
     "_dport_access_stall_other_cpu_start_wrap", "_dport_access_stall_other_cpu_end_wrap", "_wifi_pm_sleep_lock_acquire",
     "_wifi_pm_sleep_lock_release",              "_phy_disable",                           "_phy_update_country_info",
-    "_timer_arm",                               "_timer_disarm",                          "_timer_done",
-    "_timer_setfn",                             "_timer_arm_us",                          "_wifi_reset_mac",
-    "_wifi_clock_enable",                       "_wifi_clock_disable",                    "_wifi_rtc_enable_iso",
-    "_wifi_rtc_disable_iso",                    "_get_time",                              "_slowclk_cal_get",
-    "_log_write",                               "_log_writev",                            "_coex_init",
-    "_coex_deinit",                             "_coex_enable",                           "_coex_disable",
-    "_coex_status_get",                         "_coex_condition_set",                    "_coex_wifi_request",
-    "_coex_wifi_release",                       "_coex_wifi_channel_set",                 "_coex_event_duration_get",
-    "_coex_pti_get",                            "_coex_schm_status_bit_clear",            "_coex_schm_status_bit_set",
-    "_coex_schm_interval_set",                  "_coex_schm_interval_get",                "_coex_schm_curr_period_get",
-    "_coex_schm_curr_phase_get",                "_coex_schm_process_restart",             "_coex_schm_register_cb",
-    "_coex_register_start_cb",                  "_regdma_link_set_write_wait_content",    "_sleep_retention_find_link_by_id",
-    "_coex_schm_flexible_period_set",           "_coex_schm_flexible_period_get",         "_coex_schm_get_phase_by_idx",
-    "_coex_configure_preemption_end_cb",        "_wifi_disable_ac_ax",                    "_wifi_bb_sleep_retention_attach",
-    "_wifi_bb_sleep_retention_detach",          "_wifi_mac_sleep_retention_attach",       "_wifi_mac_sleep_retention_detach",
+    "_timer_done",                              "_wifi_reset_mac",                        "_wifi_clock_enable",
+    "_wifi_clock_disable",                      "_wifi_rtc_enable_iso",                   "_wifi_rtc_disable_iso",
+    "_get_time",                                "_slowclk_cal_get",                       "_log_write",
+    "_log_writev",                              "_coex_init",                             "_coex_deinit",
+    "_coex_enable",                             "_coex_disable",                          "_coex_status_get",
+    "_coex_condition_set",                      "_coex_wifi_request",                     "_coex_wifi_release",
+    "_coex_wifi_channel_set",                   "_coex_event_duration_get",               "_coex_pti_get",
+    "_coex_schm_status_bit_clear",              "_coex_schm_status_bit_set",              "_coex_schm_interval_set",
+    "_coex_schm_interval_get",                  "_coex_schm_curr_period_get",             "_coex_schm_curr_phase_get",
+    "_coex_schm_process_restart",               "_coex_schm_register_cb",                 "_coex_register_start_cb",
+    "_regdma_link_set_write_wait_content",      "_sleep_retention_find_link_by_id",       "_coex_schm_flexible_period_set",
+    "_coex_schm_flexible_period_get",           "_coex_schm_get_phase_by_idx",            "_coex_configure_preemption_end_cb",
+    "_wifi_disable_ac_ax",                      "_wifi_bb_sleep_retention_attach",        "_wifi_bb_sleep_retention_detach",
+    "_wifi_mac_sleep_retention_attach",         "_wifi_mac_sleep_retention_detach",
 };

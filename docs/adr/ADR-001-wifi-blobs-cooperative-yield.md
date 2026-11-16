@@ -1212,3 +1212,32 @@ irq-sample #5120 mepc=0x2f009204 mac=0x00fff000 b13=1 b14=1
 状态机步骤永远不前进。实现这五个钩子（挑一条空闲硬件定时器 + 一个 CLIC 输入，到期回调
 `setfn` 存的 `fn(arg)`；`_timer_arm` 单位 ms、`_timer_arm_us` 单位 µs）是下一个可执行步骤，
 而且它比"转发 input 25"更直接、更可能有解。
+
+### 软件定时器五件套已实现，但**自旋前一个都没被 arm**（2026-11-16）
+
+按上一节的判断实现了 osi 的 `_timer_setfn/_timer_arm/_timer_arm_us/_timer_disarm/_timer_done`
+（协作式软件定时器：16 槽，`serviceTimers()` 在每个让出点推进，`_timer_arm` 单位 ms、
+`_timer_arm_us` 单位 µs），并接进 `on_idle` 之前。
+
+板侧（pb120，40 s）：`timer_fire` 计数 **0**，日志与之前一字不差：
+
+```text
+trace alloc -> queue_send -> semphr_take
+swap#6 in_task=false hooks=7
+irq-sample #256 .. mepc=0x2f00920x mac=0x00fff000 b13=1 b14=1
+```
+
+结论：**blob 在自旋之前根本没有 arm 任何定时器**（`semphr_take` 的让出路径已经跑过
+`serviceTimers()`，槽位全空）。所以"定时器被桩 → 调度不推进"也不是当前自旋的原因。
+
+三个候选至此都被实验排除：
+
+| 候选 | 实验 | 结果 |
+| --- | --- | --- |
+| 跳过标定 | `PHY_RF_CAL_FULL` | 自旋不变 |
+| `_phy_enable` 空桩 | 实现真实上电 | 自旋前未被调用 |
+| `_timer_*` 空桩 | 实现协作式定时器 | 自旋前无定时器被 arm |
+
+剩下的就是硬件本身：写 `0x00FF1000` → 硬件置 busy{13:15} → **它不自清**。下一步要么找出谁该清它
+（ROM 里同款流程的前后步骤），要么承认"这条 PHY 启动路径需要真实 PHY 固件/校准序列，裸机探针
+还不具备条件"。
