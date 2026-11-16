@@ -563,6 +563,10 @@ pub var calls: struct {
     wifi_int_restore: u32 = 0,
     task_yield_from_isr: u32 = 0,
     task_delay: u32 = 0,
+    /// 队列收发计数：泵任务实验必须看它们，否则"任务又阻塞了"无法区分
+    /// "没人投递" 与 "投到了别的句柄"。
+    queue_recv: u32 = 0,
+    queue_send: u32 = 0,
 } = .{};
 
 /// 任务的假对象：**一个指针同时充当"创建时写出的 handle"与"当前任务"**。
@@ -1135,6 +1139,7 @@ fn unwrapQueue(p: ?*anyopaque) ?*Queue {
 }
 
 fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
+    calls.queue_send += 1;
     // a1 带上载荷首字：`wifi_ipc_process` 的坏指针就来自消息内容，需要看到消息流。
     // 载荷可能只有 4 字节（item_size 小），按字节读首字，别假设对齐。
     const first_word: usize = if (item) |it| blk: {
@@ -1161,6 +1166,7 @@ fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) c
 }
 
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
+    calls.queue_recv += 1;
     note(4, @intFromPtr(p), blocking);
     const q_probe = unwrapQueue(p);
     if (q_probe) |q0| {

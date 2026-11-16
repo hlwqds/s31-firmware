@@ -2845,3 +2845,18 @@ ppTask pump 12: b14=0 b15=1 b16=1 b288=0 mac=0x0000e000
 说明"给栈 + 切换"这条路是通的；但**状态机不推进**——`b288` 仍为 0、`MAC_ST` 不变。）
 
 已回滚，基线恢复（`calling esp_wifi_start` 到达、无 panic、自旋 `0x2f009206`）。
+
+### 队列计数：泵期间 `queue_recv` 调用数不变 —— 但读数要正确解读
+
+给 `calls` 加了 `queue_recv`/`queue_send` 计数（`shellQueueRecv`/`shellQueueSend` 入口自增）后：
+
+```text
+pump round 0 before: ... recv=5 send=4 delay=1
+pump round 0 after:  ... recv=5 send=4 delay=1
+...（8 轮全部 recv=5 send=4 delay=1）
+```
+
+**注意解读**：计数是**每次调用**自增，而阻塞等待的循环在 `q.recv(...)` **内部**（`shellQueueRecv` 只进一次），
+所以"计数不变"**不能**推出"任务没运行"。结合"每轮泵都会返回"这一事实，更合理的读法是：
+**任务每轮都在 `q.recv` 的阻塞循环里转到 `idle_spin_limit`(64) 次上限、没拿到消息、然后让出返回**
+⇒ **仍然指向"没有人投递那条消息"**，而不是"任务没被调度"。

@@ -803,18 +803,18 @@ pub fn run() noreturn {
                     const bgp = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
                     var round: usize = 0;
                     while (round < 8) : (round += 1) {
-                        log.line("wifi-init-probe: pump round {d} before: b14={d} b15={d} b16={d} b27={d} b288={d} mac=0x{x:0>8}", .{
-                            round,                                         bgp[14], bgp[15], bgp[16], bgp[27], bgp[288],
-                            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
+                        log.line("wifi-init-probe: pump round {d} before: b14={d} b15={d} b16={d} b27={d} b288={d} mac=0x{x:0>8} recv={d} send={d} delay={d}", .{
+                            round,                                         bgp[14],               bgp[15],               bgp[16],               bgp[27], bgp[288],
+                            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*, impl.calls.queue_recv, impl.calls.queue_send, impl.calls.task_delay,
                         });
                         in_task = true;
                         impl.current_is_task = true;
                         sched.swapContext(&main_ctx, &task_ctx);
                         in_task = false;
                         impl.current_is_task = false;
-                        log.line("wifi-init-probe: pump round {d} after:  b14={d} b15={d} b16={d} b27={d} b288={d} mac=0x{x:0>8}", .{
-                            round,                                         bgp[14], bgp[15], bgp[16], bgp[27], bgp[288],
-                            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
+                        log.line("wifi-init-probe: pump round {d} after:  b14={d} b15={d} b16={d} b27={d} b288={d} mac=0x{x:0>8} recv={d} send={d} delay={d}", .{
+                            round,                                         bgp[14],               bgp[15],               bgp[16],               bgp[27], bgp[288],
+                            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*, impl.calls.queue_recv, impl.calls.queue_send, impl.calls.task_delay,
                         });
                     }
                 }
