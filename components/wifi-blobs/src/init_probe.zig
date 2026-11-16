@@ -515,6 +515,13 @@ pub fn run() noreturn {
                 {
                     // 先复位 FE 的 TX/RX 状态机（ROM `phy_fe_txrx_reset` = 0x2f8013d8，
                     // esp32s31.rom.phy.ld:143）：MAC deinit 等的 busy{13..15} 正是 TX/RX 引擎的忙位。
+                    // blob 自己的"清状态位"函数（`0x2f005b0c`，取 a0 作掩码，清 `(a0 & 0xFF000) | bit12`）。
+                    // 实验：start 之前先把 stale 的 busy{13..15} 清掉，看 deinit 的轮询是否直接通过。
+                    const clearStatus = @as(*const fn (u32) callconv(.c) usize, @ptrFromInt(0x2f005b0c));
+                    const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+                    log.line("wifi-init-probe: pre-start mac=0x{x:0>8}, clearing 0xE000", .{mac_st.*});
+                    _ = clearStatus(0xE000);
+                    log.line("wifi-init-probe: post-clear mac=0x{x:0>8}", .{mac_st.*});
                     const fe_txrx_reset = @extern(*const fn () callconv(.c) void, .{ .name = "phy_fe_txrx_reset" });
                     log.raw("wifi-init-probe: calling phy_fe_txrx_reset()\n");
                     fe_txrx_reset();
