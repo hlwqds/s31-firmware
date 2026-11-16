@@ -1028,3 +1028,53 @@ PHY 时钟门打开（对照 `phy_init`/`esp_phy_enable` 的寄存器序列）�
 
 顺序建议：先把 `_phy_enable` 真实化 → 重跑探针 → 观察 `0x20104CAC` 的 [15:13] 是否自清、
 `esp_wifi_start` 是否返回。这一条比继续追调度器/中断更值得先做。
+
+### 静态证明：blob **确实**依赖那些空桩（2026-11-16，不需要上板）
+
+blob 通过 ROM RAM 里的 `g_osi_funcs_p`（`0x2F07FF44`）取 osi 表，再按固定偏移取函数指针。
+在 `/tmp/blobobjs/*.o` 上用 `objdump -dr` 找出所有 "先 `lw reg, %lo(g_osi_funcs_p)` 再
+`lw fn, OFF(reg)`" 的模式，统计 `OFF` 的分布，再按 `osi.zig` 的字段顺序映射回钩子名：
+
+| idx | off | 钩子 | 被引用次数 |
+| --- | --- | --- | --- |
+| 2 | 0x008 | `_set_intr` | 28 |
+| 3 | 0x00c | `_clear_intr` | 17 |
+| 4 | 0x010 | `_set_isr` | 29 |
+| 53 | 0x0d4 | **`_phy_enable`** | 4 |
+| 56 | 0x0e0 | **`_timer_arm`** | 164 |
+| 57 | 0x0e4 | **`_timer_disarm`** | 336 |
+| 58 | 0x0e8 | **`_timer_done`** | 537 |
+| 59 | 0x0ec | **`_timer_setfn`** | 289 |
+| 60 | 0x0f0 | **`_timer_arm_us`** | 88 |
+| 62 | 0x0f8 | **`_wifi_clock_enable`** | 19 |
+
+（映射自检：idx 44 = `_free` 264 次、idx 93 = `_wifi_zalloc` 231 次、idx 106 = `_coex_pti_get`
+89 次，都与直觉一致。）
+
+**结论**：这些钩子不是"可能有用的边缘 API"，而是 blob 的**主路径**——`_timer_*` 那一族被引用
+上千次（ESP 的 ets_timer 语义），`_phy_enable` 4 次。而它们在 `osi_stubs.zig` 里全是空桩。
+所以"PHY 没上电 → `0x20104CAC` 的 [15:13] 永不自清"这条链条，不再只是推断：
+**blob 明确会调 `_phy_enable`，而我们返回 0 什么都没做**。
+
+### 实现顺序（下一步）
+
+1. **`_phy_enable`**：签名 `fn () callconv(.c) usize`（= IDF 的 `esp_phy_enable(void)`）。
+   时钟那一半的 ROM 等价物是 `phy_open_fe_bb_clk`（`0x2f80131c`，`rom_syms.ld:115`），四步写已在
+   ADR 早期解码（`0x20100400=0x1E7`、`0x20100800|=3`、`0x20107C80=0xFFFFFFFF`、
+   `0x2070401C|=0x40000F`）。注意 **PHY 时钟位在 `MODEM_SYSCON`（0x20109C00）的 `clk_conf1`**
+   （`modem_clock.c:167-168` 的 `modem_syscon_ll_clk_conf1_get/set`），`MODEM_LPCON`（0x2010F000）
+   管的是低电域 power——别只写 LPCON。另一半要先确认 libphy 里有没有可调的 `phy_enable` 符号
+   （`nm libphy.a | grep -i phy_enable`），没有就只剩 `register_chipv7_phy` 这条路。
+2. **`_timer_*` 五件套**：S31 的 ROM **没有 `ets_timer_*`**，只能应用侧自己实现——选一条**没被占用**
+   的定时器（T0 被 blob 的 tick 与采样器占着，用 T1 或别的组）+ 一个 CLIC 输入，到期在 ISR 里回调
+   `_timer_setfn` 存下的 `fn(arg)`；`_timer_arm` 单位 ms、`_timer_arm_us` 单位 µs。
+3. **`_set_isr`/`_set_intr`/`_clear_intr`**：对应 ROM 的 `intr_handler_set`（`0x2f800764`）、
+   `intr_matrix_set`（`0x2f800768`）、`ets_intr_lock/unlock`（`0x2f800770/774`），
+   `esp32s31.rom.ld:333-337`。
+4. 实现后 `host_tests.zig:149` 里"这些属于桩集合"的断言要同步改。
+
+### 另一个待验证的候选：`PHY_RF_CAL_NONE`
+
+探针里 `register_chipv7_phy(..., PHY_RF_CAL_NONE)` 当初是为绕开"标定要等 PHY 应答、而当时中断关着"。
+现在中断已经开着，这个理由不成立了；blob 的 PHY 流程很可能正是**靠标定完成**才清掉那三位。
+去掉 `PHY_RF_CAL_NONE`（走 `PHY_RF_CAL_FULL`）是比实现时钟门更便宜的一次实验。
