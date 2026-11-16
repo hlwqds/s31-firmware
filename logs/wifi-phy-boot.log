@@ -1,6 +1,3 @@
-wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x0 -> 0x38e28c
-wifi-init-probe: calling phy_get_xtal_freq
-wifi-init-probe: phy_get_xtal_freq returned
-wifi-init-probe: calling phy_get_rf_cal_version
-wifi-init-probe: phy_get_rf_cal_version returned
-wifi-init-probe: calling phy_open_fe_bb_clk
+wifi-init-probe: write 0x20100400
+wifi-init-probe: rmw 0x20100800
+wifi-init-probe: write 0x20107C80

@@ -328,12 +328,33 @@ pub fn run() noreturn {
                         conf1.* = before | bits;
                         log.line("wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x{x} -> 0x{x}", .{ before, conf1.* });
                     }
+                    // 逐条复现 `phy_open_fe_bb_clk` 的写序列（日志在写之前，最后一行即挂点）。
+                    {
+                        const r0: *volatile u32 = @ptrFromInt(0x2010_0400);
+                        log.raw("wifi-init-probe: write 0x20100400\n");
+                        r0.* = 0x1E7;
+                        const r1: *volatile u32 = @ptrFromInt(0x2010_0800);
+                        log.raw("wifi-init-probe: rmw 0x20100800\n");
+                        r1.* = r1.* | 3;
+                        const r2: *volatile u32 = @ptrFromInt(0x2010_7C80);
+                        log.raw("wifi-init-probe: write 0x20107C80\n");
+                        r2.* = 0xFFFF_FFFF;
+                        const r3: *volatile u32 = @ptrFromInt(0x2070_401C);
+                        log.raw("wifi-init-probe: rmw 0x2070401C\n");
+                        r3.* = r3.* | 0x0040_000F;
+                        log.raw("wifi-init-probe: fe_bb writes done\n");
+                    }
                     inline for (.{
                         "phy_get_xtal_freq",
                         "phy_get_rf_cal_version",
                         // `phy_rf_init` 的 23 个被调函数里，这些**不接收参数**（反汇编确认），
                         // 可以安全地逐个单独调用；`phy_rc_cal_init` 是首要嫌疑
                         // （它内部构造 I2C 命令结构再调 `phy_rc_cal`，走模拟 I2C 主控）。
+                        // `phy_open_fe_bb_clk` 反汇编出来是**直筒**（无循环、无 jalr），
+                        // 只做四次寄存器写：
+                        //   0x20100400 = 0x1E7；0x20100800 |= 3；
+                        //   0x20107C80 = 0xFFFFFFFF；0x2070401C |= 0x40000F
+                        // 所以"挂起"只可能是其中某个**写**在总线上 stall。逐条写、逐条打日志定位。
                         "phy_open_fe_bb_clk",
                         "phy_rc_cal_init",
                         "phy_rfpll_chgp_cal",
