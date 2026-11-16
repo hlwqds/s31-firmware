@@ -2955,3 +2955,18 @@ PROBE mac_st after_start =0x00ff1000
 ⇒ 下一步唯一目标：**找出 IDF 的 init 里把 `MAC_ST` 从 `0xE000` 清到 0 的那一步**。
    候选是 `esp_phy_enable`/`register_chipv7_phy`（IDF 在 init 里做 PHY 初始化，我们放在 `_phy_enable`），
    以及 `ic_mac_init` 一族。做法：在 IDF 侧把 init 内部按阶段打点（或二分 `esp_phy_enable` 前后）。
+
+### 二分尝试：单独调 `esp_phy_enable` 会把板子搞成重启循环（已回滚）
+
+在 IDF 例程里于 `esp_wifi_init` **之前**单独调 `esp_phy_enable(1)`：
+
+```text
+PROBE after_phy_enable rc=1 mac_st=0x0000e000     ← MAC_ST 没变，且 rc=1
+（随后板子进入重启循环；after_phy_disable 从未打印）
+```
+
+⇒ **单独调 `esp_phy_enable` 既不清 MAC_ST，还会崩**（它必须在 IDF 的 init 序列上下文里调，
+不能脱离 `esp_wifi_init` 单独用）。已回滚，IDF 探针恢复为干净的 4 行对照读数。
+
+**结论不变**：清 `MAC_ST` 的那一步在 `esp_wifi_init_internal` **内部**，需要别的手段二分
+（例如在 IDF 的 `wifi_init.c` 里于 `esp_wifi_init_internal` 前后插桩，或对 blob 的 init 做分阶段打点）。
