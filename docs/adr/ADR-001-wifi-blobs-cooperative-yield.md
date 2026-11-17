@@ -4073,3 +4073,23 @@ blob 已经走到删除那一步）。
 ⇒ 于是问题收敛成一句话：**`take` 必须真的等到 PP 任务的 `give`**。
 而"真阻塞 + 泵 PP worker"实测会让 init 挂死（PP worker 跑不到 give）⇒ **下一步是查"PP worker 为什么跑不到它的 give"**，
 而不是继续追信号量本身。
+
+### 判决：进入 `ppTask` **直接崩溃**（`load access fault`）——PP worker 无法在我们的栈上运行
+
+用包装入口（先打点再转 `ppTask`）建上下文并泵一次：
+
+```text
+（"ppEntry entered" 从未打印）
+panic: exception code=5 (load access fault) cause=0x30000005
+（共 182 次 panic）
+```
+
+⇒ **连包装入口的第一行都没执行到就崩了** ⇒ 崩溃发生在**上下文切换/栈切换**这一步，
+不是 `ppTask` 内部。
+
+⇒ 结合"泵 PP worker 时 `hooks` 冻结在 17"：**`ppTask` 在我们的合成栈上根本跑不起来**。
+
+⇒ **"泵 PP worker"这条路彻底关闭**。这也解释了为什么"真阻塞 + 泵 PP worker"会让 init 挂死——
+`take` 等一个永远来不了的 `give`。
+
+已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0 semcreate=2 semnull=0`、无 panic、自旋 `0x2f009206`）。
