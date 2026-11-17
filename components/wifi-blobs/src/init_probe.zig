@@ -212,7 +212,7 @@ fn idleHook() void {
         in_task,
         impl.event_count,
     });
-    if (idle_calls > 20_000) {
+    if (idle_calls > 4_000_000) {
         log.line("wifi-init-probe: idle budget exhausted ({d}), halting", .{idle_calls});
         hw.halt();
     }

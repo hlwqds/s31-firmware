@@ -136,6 +136,8 @@ pub const time_blocking: u32 = 0xFFFF_FFFF;
 /// 观测用计数器：被拒绝的无限阻塞请求。单线程 + 关中断下阻塞=死锁，
 /// 所以这里**有意偏离** IDF 语义：返回失败而不是挂住，但要能被看见。
 pub var blocking_refused: u32 = 0;
+/// `Queue.recv` 在 `portMAX_DELAY` 下长时间等不到而放弃的次数（正常情况下应为 0）。
+pub var queue_block_giveup: u32 = 0;
 /// 越界句柄（标量被当指针）的次数，探针会打印。
 pub var bad_handle: u32 = 0;
 /// `_semphr_give(null)` 的次数（ack 的 give 侧句柄从未被赋值）。
@@ -261,14 +263,19 @@ pub const Queue = struct {
             // **IDF 的语义是"无限阻塞"**（`xQueueReceive(..., portMAX_DELAY)` 永不返回 0）。
             // 我们原先只用 `idle_spin_limit`(64) 次让出就返回 0 —— blob 会把"空"当成一条合法答复，
             // 从而走到不同分支。这里把阻塞上限放大（仍保留有界，避免把板子挂死）。
-            var spins: u32 = 0;
-            while (spins < queue_block_spin_limit) : (spins += 1) {
+            // **真阻塞**：`portMAX_DELAY` 语义下永不返回 0。每次让出都重查；
+            // 让出点是 `on_idle`，它会把控制权交给别的任务/主上下文（RTOS 式 block）。
+            var spins: u64 = 0;
+            while (self.count == 0) : (spins += 1) {
                 serviceTimers();
                 serviceTimers();
                 if (hooks.on_idle) |idle| idle();
-                if (self.count != 0) break;
+                // 防御：真的没人会 post 时不要静默返回 0，而是明确记一次（便于判读）。
+                if (spins > 50_000_000) {
+                    queue_block_giveup +%= 1;
+                    return 0;
+                }
             }
-            if (self.count == 0) return 0;
         }
         const b = self.buf();
         last_recv_count = self.count;

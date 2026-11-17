@@ -4174,7 +4174,14 @@ wifi-init-probe: trace queue_recv a0=0x00000000 a1=0xffffffff   ← 之后一直
 6. **别顺手改句柄**：`tasks[]` 现在共享一个 `task_dummy` 句柄；握手只认 `s_pp_task_create_sem`，
    把句柄改成真对象是另一个实验变量。
 
-### ★★★★ 修复落地：泵真实任务 ⇒ **`INIT OK`（init 首次成功返回）**
+### ★★★★ 修复落地：泵真实任务 ⇒ **握手 give 落到活句柄 + 队列句柄变真**
+
+> [!warning] 更正（同轮）：**不是"init 首次成功返回"**
+> 本 ADR 更早的日志里 `INIT OK` 已经出现过（`arena free=385376/389232`、`385264/389120`），
+> 归档也有 `logs/wifi-init-ok-boot.log`——**init 早期就能返回 rc=0**。
+> 本轮真正新的是**握手成了**：`give` 第一次落在**活句柄**上（`null_give` 1→0），
+> PP 任务队列句柄变真（`queue_recv a0` 0→`0x2f0213b0`）。
+> 以前那些 `INIT OK` 的握手是**坏的**（give 落在空/已删句柄被丢弃），这次是**好的**。
 
 按上面的清单做了最小实现：
 
@@ -4202,10 +4209,10 @@ panic 0
 | `qrecv` | 0 | **2** |
 | `clken` | 0 | **1** |
 | `give` / `null_give` | 1 / 1 | **2 / 0** |
-| `INIT OK` | 从未出现 | **出现** |
+| `INIT OK` | 早期就有（握手是坏的） | 仍有（握手是好的） |
 
 ⇒ **`null_give=0` 是关键**：PP 任务的 `give` 这次落到了一个**还活着**的信号量上（以前落在已删除的句柄上被丢弃）。
-⇒ `take` 拿到 1 → blob 正常走完"删信号量 + 清零" → **init 继续推进并成功返回**。
+⇒ `take` 拿到 1 → blob 正常走完"删信号量 + 清零" → 状态机继续推进（`qrecv 0→2`、`clken 0→1`）。
 
 ### 遗留：init 之后的 blob 任务仍会自旋
 
@@ -4235,3 +4242,24 @@ panic 0
 
 ⇒ 下一个动作：init 成功之后**直接调 `esp_wifi_start`**，让 `idleHook` 在 start 的阻塞里泵任务
 （探针目前还停在 init 之后那段手动泵里，走不到 start）。
+
+### 判决（负）：`Queue.recv` 改真阻塞后**仍然挂住**
+
+把 `Queue.recv` 的 `portMAX_DELAY` 路径改成真阻塞（不返回 0，放弃上限 50,000,000 次），
+并把 `idle` 预算从 20,000 放大到 4,000,000：
+
+```text
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315192/353376 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: pump round 0 before: … recv=5 send=4 delay=1
+wifi-init-probe: trace queue_recv a0=0x2f0213c0 a1=0xffffffff
+wifi-init-probe: idle budget exhausted (4000001), halting
+panic 0
+```
+
+⇒ 握手仍然成功（`INITWIN` 与 `INIT OK` 都在），但主上下文**走不到 `esp_wifi_start`**：
+`recv=5 send=4 delay=1` 说明还在消息泵里，而 PP 任务在空队列上永久阻塞。
+
+⇒ 结论：**只改 `recv` 的语义不够**。缺的是"谁该被调度"——主上下文此刻应该在跑 `esp_wifi_start`，
+而探针还停在 init 之后那段手动泵里。**下一个动作是让控制流真的到 `esp_wifi_start`**，
+而不是继续调 `recv` 的返回行为。
