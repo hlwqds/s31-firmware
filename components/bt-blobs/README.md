@@ -500,6 +500,22 @@ bt probe: probing 0x2010B000 ...
 
 ⇒ 有了 2 行复现器，验证任何候选都只需**一次烧录**（读通即修好）。
 
+**实验（2026-11-17）**：按 IDF 顺序先开我们那套时钟门控，再调归档里的
+`bt_bb_v2_init_cmplx(1)`（= IDF `esp_btbb_enable` 的核心，由 `libbtbb.a` 提供）：
+
+```text
+bt probe: clock gates first ...
+bt probe: calling bt_bb_v2_init_cmplx(1) ...
+（挂死）
+```
+
+⇒ **Espressif 自己的 BB 初始化函数也挂在同一处**。这不是我们调用方式的问题，
+而是该块在**没有 PHY 前置**的情况下根本不可访问。
+
+⇒ 结论：缺的前置是 **`esp_phy_enable(PHY_MODEM_BT)` 那一层**（PHY 的电源/时钟/标定），
+而我们的移植从头到尾没做过 PHY 初始化 —— ch25 的 `shellPhyEnable` 只覆盖了 Wi-Fi 侧的一部分，
+BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB 寄存器"。
+
 ### 一个原因解释全部症状：**总线挂死**（2026-11-17 结论）
 
 把 panic 输出也改成非阻塞（`hw.rawLine`，直接写 UART FIFO）后，卡住时**依然没有 panic**。

@@ -31,6 +31,9 @@ const sched = @import("sched.zig");
 const porting = @import("porting.zig");
 const board = @import("board");
 
+/// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
+extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
+
 /// 链接脚本 `s31.ld` 的堆边界是**绝对符号**：取地址得到边界值，
 /// 声明成 `usize` 会变成"去那个地址读一个 usize"。
 fn heapStart() *const anyopaque {
@@ -139,16 +142,23 @@ pub fn run() noreturn {
         board.log.line("{s}", .{"bt probe: irqs OFF (control run)"});
     }
 
-    // **独立验证**：归档在 `r_sym_bt_XPuq` 里读 `0x2010B000..0x2010B100`（MODEM_BASE+0xB000，
-    // BLE/MAC 块，soc 头里没有它的寄存器定义 ⇒ 私有）。这里在 init 之前**直接读一次**：
-    // 若探针就停在这一行，说明该块不应答（总线挂死），与归档无关。
-    board.log.line("{s}", .{"bt probe: probing 0x2010B000 ..."});
+    // **可访问性实验**：归档在 `r_sym_bt_XPuq` 里读 `0x2010B000..0x2010B100`
+    // （MODEM_BASE+0xB000，BLE/MAC 私有块，soc 头里无定义）。
+    // 已验证：**在什么都没做时读它一次就挂死**（总线挂起）。
+    // 现在按 IDF 的顺序先做前置，再读一次，看是否变可读：
+    //   ① 开我们那套时钟门控  ② 调归档里的 `bt_bb_v2_init_cmplx(1)`（= esp_btbb_enable 的核心）
+    board.log.line("{s}", .{"bt probe: clock gates first ..."});
+    var early_cfg = config.defaults();
+    porting.clock_writes_enabled = true;
+    porting.btdmLpEnableClock(&early_cfg.btdm);
+
+    board.log.line("{s}", .{"bt probe: calling bt_bb_v2_init_cmplx(1) ..."});
+    _ = bt_bb_v2_init_cmplx(1);
+
+    board.log.line("{s}", .{"bt probe: probing 0x2010B000 (after bb init) ..."});
     const bleblk: *volatile u32 = @ptrFromInt(0x2010_B000);
     const ble0 = bleblk.*;
-    board.log.line("bt probe: 0x2010B000 = 0x{x:0>8} (readable)", .{ble0});
-    const bleblk4: *volatile u32 = @ptrFromInt(0x2010_B004);
-    const ble4 = bleblk4.*;
-    board.log.line("bt probe: 0x2010B004 = 0x{x:0>8}", .{ble4});
+    board.log.line("bt probe: 0x2010B000 = 0x{x:0>8} (READABLE!)", .{ble0});
 
     // 1) arena 最先
     const hs = @intFromPtr(heapStart());
