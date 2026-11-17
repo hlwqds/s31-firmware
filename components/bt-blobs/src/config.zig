@@ -262,7 +262,7 @@ pub fn defaults() Config {
         .ble_hci_evt_buf_size = 70, // :82
         .ble_multi_adv_instances = 1,
         .ble_ext_adv_max_size = 31, // :88
-        .controller_task_stack_size = 4096, // UC_BT_CTRL_TASK_STACK_SIZE（字节）
+        .controller_task_stack_size = 8192, // 裸机没有栈保护页 ⇒ 比 IDF 的 4096 多给 4 KB 买个保险
         .controller_task_prio = 23, // ESP_TASK_BT_CONTROLLER_PRIO
         .controller_run_cpu = 0,
         .enable_qa_test = 0,
@@ -296,7 +296,7 @@ pub fn defaults() Config {
     };
     c.btdm = .{
         .version = BTDM_CONFIG_VERSION,
-        .task_stack_size = 4096,
+        .task_stack_size = 8192, // 同上：溢出是静默内存损坏，代价可忽略
         .task_prio = 23,
         .task_run_cpu = 0,
         .hci_cmd_num = 2, // CONFIG_BT_CTRL_HCI_CMD_NUM 默认
@@ -317,8 +317,8 @@ test "defaults: 关键字段与 IDF 默认宏一致" {
     try std.testing.expectEqual(@as(u64, 32_000), c.ble.rtc_freq);
     try std.testing.expectEqual(@as(u8, 40), c.ble.main_xtal_freq);
     try std.testing.expectEqual(@as(u8, 1), c.btdm.bluetooth_mode);
-    try std.testing.expectEqual(@as(u16, 4096), c.ble.controller_task_stack_size);
-    try std.testing.expectEqual(@as(u16, 4096), c.btdm.task_stack_size);
+    try std.testing.expectEqual(@as(u16, 8192), c.ble.controller_task_stack_size);
+    try std.testing.expectEqual(@as(u16, 8192), c.btdm.task_stack_size);
     try std.testing.expectEqual(@as(u8, 206), c.ble.cca_rssi_thresh);
     // backoff_rssi 是 int8_t ⇒ -100
     try std.testing.expectEqual(@as(i8, -100), @as(i8, @bitCast(c.ble.backoff_rssi)));

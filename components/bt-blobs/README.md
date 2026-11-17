@@ -68,6 +68,9 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
 | `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
+| `src/probe.zig` | 板上探针（`-Dbt-probe`）：装钩子 → arena → init → enable → 进任务 → 发 Reset → 泵任务 |
+| `src/root.zig` | 单一模块根：所有文件属于同一个模块（分两个会报"文件属于多个模块"） |
+| `tools/gen-bt-closure.sh` | **重新生成闭包对象清单**（解包 4 归档 → 符号图 BFS → 减 ROM → 打印构建命令） |
 | `src/sched.zig` | 协作式上下文切换（rv32 64 字节帧）+ 任务表 + `block()`/`resumeTask()` |
 | `src/transport.zig` | HCI 传输层（自有 ops + 下行分发 + 事件回程），含 `sendReset()`/`sendReadLocalVersion()` |
 | `src/extfuncs.zig` | `ext_funcs_t`（rv32 **40 字节**）：controller 的 malloc/free/rand/assert 表 |
@@ -265,6 +268,39 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 
 ⚠ `task_create` 现在真的从 arena 分 `stack_size` 字节栈（16 对齐）并建上下文；
 arena 或任务表满时退回"只登记"并**打一行日志**（不静默）。
+
+## 探针（`src/probe.zig`，`-Dbt-probe`）
+
+顺序（三个点错一个就白跑一趟）：
+
+1. **先装钩子**：`now_ms = hw.nowUs()/1000`（**毫秒**，不是微秒）、`log` 同步刷 UART、
+   `irq_save/restore` 暂空、`setMacHook` 给出厂 MAC。
+2. **arena 最先初始化**：`r_btdm_task_init` 内部调我们的 `task_create`，要从 arena 分 8 KiB 栈；
+   arena 没初始化 ⇒ `alloc` 返回 null ⇒ `task_create` 返 ENOMEM ⇒ init 链**第 4 步**失败，
+   报错会指向"task_init 失败"而不是"arena 没初始化"。
+3. `init`（15 步）→ `enable`（6 步）→ **`sched.startScheduler()`**（只有第一次进任务用它）
+   → 发 `HCI Reset` → 主循环周期 `resumeTask` + `serviceCallouts`。
+
+**日志怎么读**：
+
+| 现象 | 结论 |
+| --- | --- |
+| 没有 `bt task round` | 任务从没跑过（`start` 没生效 / 任务没建出来） |
+| 有 round、命令已发、没有 `EVT` | 任务跑了但没回包 → 查切片 E / 时钟门控 |
+| 有 `EVT` 但 status≠0 | 回包了但命令失败 |
+
+## 构建配方可复现（`tools/gen-bt-closure.sh`）
+
+之前闭包清单只存在于 `/tmp`，换台机器镜像就编不出来。现在一条命令重建：
+
+```bash
+bash components/bt-blobs/tools/gen-bt-closure.sh /tmp/bt_all
+# → 打印 116 对象闭包、减 ROM 后的未解析符号、以及可直接复制的 zig build 命令
+```
+
+**根集合 = 我们的 Zig 直接调用的每一个归档符号**（任务/流控、两个 stack、公有地址、msys/ext_funcs、
+HCI A 与 B 两条路径）。少一个就会出现"链接期 undefined"——实测踩过：加 `r_base_stack_initEnv`
+才发现闭包漏了它。
 
 ## 待验证项
 

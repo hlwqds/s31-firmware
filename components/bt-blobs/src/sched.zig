@@ -70,7 +70,9 @@ pub fn enterAs(ctx: *const Context) void {
 /// 那样这里保存的 `s0..s11` 是编译器自己的值，恢复后 `ret` 回到调用点时 `sp` 也不在调用者的
 /// 帧基址上——表现为"进了任务、第一次让出后再也没有下文"（实测）。
 /// naked 下没有前导，`sp` 的算术是精确的；参数按 ABI 在 `a0`/`a1` 里。
-pub fn swapContext(from: *Context, to: *const Context) void {
+/// ⚠ **必须 noinline**：切换发生在被调用的那一帧里，调用者在此之前必然已把活跃值溢出到栈上。
+/// 一旦内联进 `semPend` 这类函数，编译器可能把信号量指针留在寄存器里跨越切换 ⇒ 恢复后是垃圾。
+pub noinline fn swapContext(from: *Context, to: *const Context) void {
     // 只有 rv32 目标才有这段汇编；主机上把整个分支编译掉，让 `initContext` 仍可被主机用例覆盖。
     if (comptime builtin.cpu.arch == .riscv32) {
         // Zig 不允许直接调用 naked 函数，所以经 `@extern` 走间接调用（ABI 仍然正确：
@@ -220,8 +222,19 @@ pub fn taskCreate(stack: []u8, entry: *const fn (?*anyopaque) callconv(.c) void,
     return null;
 }
 
+/// 第一个已登记的任务（probe 用）。
+pub fn firstTask() ?*Task {
+    for (&tasks) |*t| {
+        if (t.in_use) return t;
+    }
+    return null;
+}
+
 /// 第一次切进 `t`（之后任务靠 `block`/`resume` 来回）。
-pub fn startScheduler(t: *Task) void {
+/// **只有第一次进入任务才用它**（它负责登记 `main_ctx` + `enterAs`）。
+/// 之后的恢复只能用 `resumeTask` / 裸 `swapContext(&main_ctx, &task)`——
+/// 再调 `start`/`enterAs` 会把 `entering` 指错。
+pub noinline fn startScheduler(t: *Task) void {
     started = true;
     main_ctx = .{};
     enterAs(&t.ctx);
@@ -230,7 +243,8 @@ pub fn startScheduler(t: *Task) void {
 }
 
 /// **阻塞**：把当前上下文切回主上下文。等 `resumeTask()` 再切回来，从原地继续。
-pub fn block() void {
+/// ⚠ **必须 noinline**，理由同 `swapContext`。
+pub noinline fn block() void {
     if (!started) return; // 还没有调度器：退化成"立即返回"，由调用方按 TIMEOUT 处理
     stats_state.blocks += 1;
     swapContext(current, &main_ctx);
@@ -238,7 +252,8 @@ pub fn block() void {
 }
 
 /// **恢复**某个被阻塞的任务（`resume` 是 Zig 关键字，故命名 `resumeTask`），并把控制权交给它（直到它再次阻塞）。
-pub fn resumeTask(t: *Context) void {
+/// ⚠ **必须 noinline**，理由同 `swapContext`。
+pub noinline fn resumeTask(t: *Context) void {
     if (!started) return;
     stats_state.resumes += 1;
     swapContext(current, t);

@@ -107,6 +107,7 @@ comptime {
     _ = &app.main;
     // `-Dwifi-init-probe` 打开时，入口换成 R3 探针（正常自检不跑）。
     _ = &@import("wifi_init_probe").run;
+    _ = &@import("bt_probe").run;
     // 填充块由 `fat_rodata.keep()` 引用；comptime 里取函数地址即可把它拉进引用图。
     _ = &fat.keep;
     _ = &trap.trapEntry;

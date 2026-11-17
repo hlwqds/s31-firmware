@@ -8,6 +8,15 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **板上探针 + 构建配方可复现**（2026-11-17）：`components/bt-blobs/src/probe.zig`（`-Dbt-probe`）
+  按"装钩子 → arena → init → enable → 进任务 → 发 Reset → 泵任务"的顺序跑，并在主循环打
+  `bt task round N` —— 日志能直接区分三种失败：**任务从没跑过**（没有 round）/ **跑了但没回包**
+  （有 round、没 EVT）/ **回包但 status≠0**。钩子必须在 init 前装：`now_ms = nowUs()/1000`
+  （**毫秒**，差 1000 倍会让所有超时窗口变成天文数字）、`log` 同步刷 UART。
+  新增 `tools/gen-bt-closure.sh`：解包 4 归档 → 符号图 BFS → 减 ROM → 打印对象清单与构建命令，
+  把原先只存在于 `/tmp` 的配方固化。**根集合 = 我们的 Zig 直接调用的每个归档符号**——实测踩到
+  `r_base_stack_initEnv` 因不在根里而链接失败，补全后闭包 113 → **116 对象**。
+  另：所有 bt-blobs 文件合成**单一模块**（`root.zig`），分两个会报"文件属于多个模块"。
 - **协作式调度器 + OSAL 真阻塞**（2026-11-17，`components/bt-blobs/src/sched.zig`）：从
   `wifi-blobs/src/sched.zig` 复制（**不 import**，否则会把 wifi blob 的依赖拖进来），
   在其上加了任务表与 `block()`/`resumeTask()`。BLE 的任务体是 `sem_pend(FOREVER)` /

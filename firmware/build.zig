@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
     // 适配面由 components/bt-blobs/link/bt_stubs.c + s31.ld 的 btdm 边界补上。
     const bt_blob_dir = b.option([]const u8, "bt-blob-dir", "directory with unpacked BLE controller objects") orelse "";
     const bt_blob_objs = b.option([]const u8, "bt-blob-objs", "comma-separated object names inside bt-blob-dir") orelse "";
+    const bt_probe = b.option(bool, "bt-probe", "run the BLE controller probe instead of the normal self-test") orelse false;
 
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
@@ -163,13 +164,34 @@ pub fn build(b: *std.Build) void {
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = &.{} });
         // OSAL 的 36 个 `wr_btdm_osal_*` 导出（强定义覆盖归档里的弱断言桩）。
         // 单独成对象：它只被归档引用，不需要进 root 模块。
-        const osal_mod = b.createModule(.{
-            .root_source_file = b.path("../components/bt-blobs/src/osal.zig"),
+        // **单一模块**：所有 bt-blobs 的文件都属于它（分两个模块会报"文件属于多个模块"）。
+        const bt_core = b.createModule(.{
+            .root_source_file = b.path("../components/bt-blobs/src/root.zig"),
             .target = target,
             .optimize = optimize,
         });
-        const osal_obj = b.addObject(.{ .name = "bt_osal", .root_module = osal_mod });
-        app.root_module.addObject(osal_obj);
+        bt_core.addImport("board", board);
+        const bt_obj = b.addObject(.{ .name = "bt_core", .root_module = bt_core });
+        app.root_module.addObject(bt_obj);
+        // probe 用同一个模块（它 import 的是 `bt_core`，不是相对路径）
+        const probe_shim = "const c = @import(\"bt_core\");\npub const enabled = true;\npub const run = c.probe.run;\n";
+        // probe 模块**总是存在**（与 wifi_init_probe 同构）：开则真探针，关则空实现。
+        // 只 addImport 不调用是不会被编译的（import 惰性）⇒ 必须由 main.zig 显式引用。
+        if (bt_probe) {
+            const shim_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("bt_probe_on.zig", probe_shim) });
+            shim_mod.addImport("bt_core", bt_core);
+            app.root_module.addImport("bt_probe", shim_mod);
+        } else {
+            const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
+            const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("bt_probe_off.zig", off_src) });
+            app.root_module.addImport("bt_probe", off_mod);
+        }
+    }
+
+    if (bt_blob_dir.len == 0) {
+        const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
+        const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("bt_probe_off2.zig", off_src) });
+        app.root_module.addImport("bt_probe", off_mod);
     }
 
     // 主机侧测试：每个 component 的 host_tests.zig 独立成测试目标，
