@@ -133,6 +133,6 @@ factory 和某个 OTA 槽，板子会 stage→复位→再 stage→再复位，�
 > nvs 计数扇区(0xE000, 1 扇区)，否则下一次开机仍按旧 otadata 起槽。
 
 板上证据：`logs/c5-ab-factory.log`、`logs/c5-ab-stage-confirm.log`、`logs/c5-ab-rollback.log`
-（矩阵 C5）。切槽/首启用 `-Dab-stage=a|b`、失败注入用 `-Dab-fail` 两个构建开关构造。
+（矩阵 C5）。三个构造开关见上面的「三个构建开关」一节（`-Dab-stage` / `-Dab-fail` / `-Dab-revert`）。
 
 历史来源见 `docs/HISTORY.md`。
