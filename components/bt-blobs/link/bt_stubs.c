@@ -66,11 +66,23 @@ int e_btdm_lp_modem_clock_set(int enable) {
  * ------------------------------------------------------------------------- */
 extern int ets_printf(const char *format, ...);
 
+/* 断言行为分两档，由 `BT_ASSERT_RETURNS` 选择：
+ *   - 未定义（**生产默认**）：打印后**挂住**——断言就是要停下来；
+ *   - 定义（**探针构建**）：打印后**返回**——挂住只能说明"到了某处"，
+ *     返回才能看出后续还能走多远（本轮实验证明这里不是卡点，命中 0 次）。
+ * 命中次数记在 `bt_assert_hits`，便于事后统计。 */
+unsigned bt_assert_hits = 0;
+
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
+    bt_assert_hits++;
+#if !BT_LOG_SILENT
     ets_printf("bt-blob-strong-assert %s:%d p0=%d p1=%d type=%d\n",
                file ? file : "?", line, p0, p1, (int)type);
+#endif
+#ifndef BT_ASSERT_RETURNS
     for (;;) {
     }
+#endif
 }
 
 /* ---------------------------------------------------------------------------

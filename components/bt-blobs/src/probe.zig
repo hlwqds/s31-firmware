@@ -115,7 +115,8 @@ pub fn run() noreturn {
         {
             const reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
             const old = reg.*;
-            reg.* = (old & 0x7) | (1 << 3);
+            // **必须保留 bit8（IE）**：只保留低 3 位会把使能位一起清掉，中断就不来了。
+            reg.* = (old & 0x107) | (1 << 3);
             board.log.line("bt probe: clic[25] 0x{x} -> 0x{x} (nmies)", .{ old, reg.* });
         }
         board.log.line("{s}", .{"bt probe: irq enabled (probe only), t0=2ms"});

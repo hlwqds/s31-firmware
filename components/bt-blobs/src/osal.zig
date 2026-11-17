@@ -272,6 +272,20 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
         }
         // 无限等且调度器在跑 ⇒ **真阻塞**：切回主上下文，`semRelease` 再切回来。
         // 不能像 wifi-blobs 那样直接返回失败——BLE 会据此走错分支（"起来了但不发射"）。
+        if (timeout == forever and !sched.isStarted()) {
+            // 调度器还没起来 ⇒ 用**有界忙等**代替真阻塞（返回 TIMEOUT 会让归档
+            // 拿到没预期的错误码）。忙等期间**不打印**（UART 可能已经半死）。
+            var spins: u32 = 0;
+            while (s.count == 0 and spins < 2_000_000) : (spins += 1) std.atomic.spinLoopHint();
+            stats_state.blocked_calls += 1;
+            if (s.count == 0) {
+                stats_state.sem_pend_timeout += 1;
+                return TIMEOUT;
+            }
+            s.count -= 1;
+            stats_state.sem_pend_ok += 1;
+            return OK;
+        }
         if (timeout == forever and sched.isStarted() and s.waiter == null) {
             stats_state.blocked_calls += 1;
             s.waiter = sched.currentContext();
@@ -454,6 +468,16 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
     const q = slotGet(EventQ, qslot) orelse return null;
     while (true) {
         if (q.head != null) break;
+        if (timeout == forever and !sched.isStarted()) {
+            var spins: u32 = 0;
+            while (q.head == null and spins < 2_000_000) : (spins += 1) std.atomic.spinLoopHint();
+            stats_state.blocked_calls += 1;
+            if (q.head == null) {
+                stats_state.eventq_get_empty += 1;
+                return null;
+            }
+            continue;
+        }
         if (timeout == forever and sched.isStarted() and q.waiter == null) {
             stats_state.blocked_calls += 1;
             q.waiter = sched.currentContext();

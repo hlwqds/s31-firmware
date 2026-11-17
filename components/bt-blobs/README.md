@@ -410,6 +410,19 @@ ae: r_sym_bt_HGbP...
 ⇒ 已确认 `0x78` 的 thunk 是良性的（`lw a5,[LANCHOR0]; sw zero,0(a5); sw a5,4(a5); ret`），
 所以停摆在 `0xa0` 及之后的归档符号里。
 
+### 再排除三条（2026-11-17 晚）
+
+| 假设 | 实验 | 结果 |
+| --- | --- | --- |
+| `mutex_pend(FOREVER)` 返回 TIMEOUT 让归档拿到意外错误码 | 把 `mutexPend`/`semPend`/`eventqGet` 的 FOREVER 改成**有界忙等**（绝不返回 TIMEOUT，除非自旋耗尽） | 仍卡；且日志显示 mutex 本来是**空的** ⇒ FOREVER 分支根本没走到 ⇒ **OSAL 语义排除** |
+| 卡点函数里的 `wr_btdm_assert` 挂住 | 反汇编 `r_sym_bt_BOhff...` 发现它引用了 `wr_btdm_assert`（行号 308/311）；把断言改成**打印后返回** | 仍卡，且 `strong-assert` **命中 0 次** ⇒ **不是断言** |
+| CLIC 写把 IE(bit8) 清了 | 掩码改为 `old & 0x107` | 已修（此前 `& 0x7` 会清掉使能位），但 NMI 仍未生效 |
+
+### 断言行为（生产 vs 探针）
+
+`bt_stubs.c` 的 `wr_btdm_assert`：**生产默认打印后挂住**；探针构建用 `-DBT_ASSERT_RETURNS=1`
+改成打印后返回（挂住只能说明"到了某处"，返回才能看出后续还能走多远）。
+
 ### 已排除的假设（都是板上对照，别再重试）
 
 | 假设 | 实验 | 结果 |
