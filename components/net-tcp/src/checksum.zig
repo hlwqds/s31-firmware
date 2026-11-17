@@ -52,8 +52,49 @@ pub const Sum = struct {
             i = 1;
             self.odd = null;
         }
-        // 展开 4 个 u16/轮（8 字节）：省掉 3/4 的循环分支，读入仍是逐字节（rv32 上
-        // 2 字节对齐不保证，别假设能一次 lbu 变 lhu）。
+        // **快路径：4 字节对齐时用 32 位读 + 双车道累加，不做任何字节交换。**
+        //
+        // 一个 u32 按小端读入是 `w = b0 | b1<<8 | b2<<16 | b3<<24`，它代表两个**大端** u16：
+        // `b0<<8|b1` 与 `b2<<8|b3`，两者之和 = `((b0+b2) << 8) + (b1+b3)`。
+        // 所以把 (b0, b2) 累进一个 u32 的低/高 16 位车道、把 (b1, b3) 累进另一个，
+        // 最后合成一次即可 —— 每 4 字节只有「1 读 + 2 与 + 2 加」。
+        //
+        // 为什么这不是"对齐读持平"那条老结论的重复：那条针对的是**交换字节**的做法
+        // （rv32 无 `rev8`，两个大端 u16 要移位+掩码，净亏）。这里根本不交换。
+        //
+        // 车道只有 16 位宽、每字节最大 255 ⇒ 每 32 个字（128 字节）必须折一次，否则溢出串道。
+        // 真实数据路径的段起点是 `tx_buf(align 16) + tcp_at(34)` ⇒ `+34 ≡ 2 (mod 4)`，
+        // 所以先按字节吃掉**一个 u16** 把指针推到 4 字节对齐，否则快路径永远命不中
+        // （第一版没做这一步，板上实测 cksum 反而慢 14%：只是给回退路径增加了代码）。
+        if ((@intFromPtr(bytes.ptr) + i) % 4 == 2 and i + 2 <= bytes.len) {
+            self.acc += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
+            i += 2;
+        }
+        if ((@intFromPtr(bytes.ptr) + i) % 4 == 0) {
+            var lane_a: u32 = 0; // 低半 Σb0、高半 Σb2
+            var lane_b: u32 = 0; // 低半 Σb1、高半 Σb3
+            var words: u32 = 0;
+            while (i + 4 <= bytes.len) : (i += 4) {
+                const w = @as(*align(4) const u32, @ptrCast(@alignCast(bytes.ptr + i))).*;
+                lane_a +%= w & 0x00FF_00FF;
+                lane_b +%= (w >> 8) & 0x00FF_00FF;
+                words += 1;
+                if (words == 32) {
+                    self.acc += ((lane_a & 0xFFFF) + (lane_a >> 16)) << 8;
+                    self.acc += (lane_b & 0xFFFF) + (lane_b >> 16);
+                    self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
+                    lane_a = 0;
+                    lane_b = 0;
+                    words = 0;
+                }
+            }
+            self.acc += ((lane_a & 0xFFFF) + (lane_a >> 16)) << 8;
+            self.acc += (lane_b & 0xFFFF) + (lane_b >> 16);
+            self.acc = (self.acc & 0xFFFF) + (self.acc >> 16);
+        }
+
+        // 回退路径（起点不是 4 字节对齐）：逐字节读 + 展开 4 个 u16/轮。
+        // 小帧路径的栈缓冲不保证奇偶，所以这条分支必须保留。
         var since_fold: u32 = 0;
         while (i + 8 <= bytes.len) : (i += 8) {
             self.acc += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
@@ -221,4 +262,46 @@ test "checksum: 奇数字节载荷（跨片半字配对）" {
     s.add(seg[0..21]);
     s.add(seg[21..]);
     try testing.expectEqual(@as(u16, 0), s.finish());
+}
+
+/// 逐字节参考实现（只用于测试；与 `Sum.add` 的快路径必须等价）。
+fn refOf(bytes: []const u8) u16 {
+    var acc: u32 = 0;
+    var i: usize = 0;
+    while (i + 1 < bytes.len) : (i += 2) acc += (@as(u32, bytes[i]) << 8) | bytes[i + 1];
+    if (i < bytes.len) acc += @as(u32, bytes[i]) << 8;
+    while (acc >> 16 != 0) acc = (acc & 0xFFFF) + (acc >> 16);
+    return @truncate(~acc);
+}
+
+test "checksum: 32 位车道快路径与逐字节参考在任意对齐/长度下一致" {
+    // 4 字节对齐的快路径 + 非对齐回退 + odd 前缀，三者必须给出同一个值。
+    // 起点扫 0..8（覆盖 0/2/4/6 对齐），长度扫 0..=200（覆盖跨 128 字节的车道折叠边界）。
+    var buf: [256]u8 = undefined;
+    var seed: u32 = 1;
+    for (&buf) |*b| {
+        seed = seed *% 1_664_525 +% 1_013_904_223;
+        b.* = @truncate(seed >> 24);
+    }
+
+    var len: usize = 0;
+    while (len <= 200) : (len += 1) {
+        var start: usize = 0;
+        while (start < 8) : (start += 1) {
+            const slice = buf[start..][0..len];
+            try testing.expectEqual(refOf(slice), of(slice));
+        }
+    }
+}
+
+test "checksum: 分片（跨非对齐边界）与整体一致" {
+    var buf: [200]u8 = undefined;
+    var seed: u32 = 7;
+    for (&buf) |*b| {
+        seed = seed *% 1_664_525 +% 1_013_904_223;
+        b.* = @truncate(seed >> 23);
+    }
+    // 从奇数地址开始切片：3 / 3+128 / 剩余，强制前一片走回退、后一片走快路径。
+    const base = buf[1..];
+    try testing.expectEqual(refOf(base), ofSlices(&.{ base[0..3], base[3..131], base[131..] }));
 }
