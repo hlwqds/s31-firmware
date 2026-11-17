@@ -279,8 +279,8 @@ pub fn rawWrite(msg: []const u8) void {
     const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
     for (msg) |ch| {
         var spins: u32 = 0;
-        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
-        if (spins >= 20000) return;
+        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
+        if (spins >= 5000) return;
         fifo.* = ch;
     }
 }
@@ -290,11 +290,11 @@ pub fn rawLine(msg: []const u8) void {
     const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
     for (msg) |ch| {
         var spins: u32 = 0;
-        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
-        if (spins >= 20000) return;
+        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
+        if (spins >= 5000) return;
         fifo.* = ch;
     }
     var spins: u32 = 0;
-    while ((((status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
-    if (spins < 20000) fifo.* = '\n';
+    while ((((status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
+    if (spins < 5000) fifo.* = '\n';
 }
