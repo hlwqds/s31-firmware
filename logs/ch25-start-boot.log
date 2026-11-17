@@ -1,0 +1,539 @@
+ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (78) boot: End of partition table
+I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=52330h (336688) map
+I (144) esp_image: segment 1: paddr=00062358 vaddr=2f000000 size=000a8h (   168) load
+I (146) esp_image: segment 2: paddr=00062408 vaddr=2f0000b0 size=0dc10h ( 56336) load
+I (160) esp_image: segment 3: paddr=00070020 vaddr=40100020 size=18080h ( 98432) map
+I (177) esp_image: segment 4: paddr=000880a8 vaddr=2f00dcc0 size=071c0h ( 29120) load
+I (189) boot: Loaded app from partition at offset 0x10000
+I (189) boot: Disabling RNG early entropy source...
+wifi-init-probe: begin
+wifi-init-probe: MAC_ST at begin = 0x0000e000
+wifi-init-probe: arena=353360 B
+wifi-init-probe: table=0x2f020760 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: calling coex_init() (IDF wrapper 顺序)
+wifi-init-probe: coex_init returned
+wifi-init-probe: pre-init ctx b14=0 b15=0 b288=0 cb_slot=0x0
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f020b94
+wifi-blob: pp rom version: %s
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f020be8
+wifi-blob: net80211 rom version: %s
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f021210
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f021394
+wifi-init-probe: trace semphr_take a0=0x2f021a58 a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace semphr_give a0=0x2f021a58 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f0213e0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#1 hooks=20 give=1 null_give=0 semcreate=65536
+wifi-init-probe: pump#2 hooks=20 give=1 null_give=0 semcreate=65536
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f023480
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f0213e0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f021a58 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017408 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f0234a8
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f0246cc
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f0246cc
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f024774
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f02481c
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0248c4
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0248fc
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f024934
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f02496c
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f0249a4
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f024c3c
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f024ed4
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f02516c
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f025404
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f02569c
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f0259c0
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000078 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f025ce4
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f025d6c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f026424
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f026adc
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f027194
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f02784c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f027f04
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0285bc
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f028c74
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f02932c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0299e4
+wifi-init-probe: trace timer_setfn a0=0x2f017394 a1=0x400346b0
+wifi-init-probe: trace timer_setfn a0=0x2f0173a8 a1=0x400346a8
+wifi-init-probe: trace timer_setfn a0=0x2f0173e4 a1=0x400346a0
+wifi-init-probe: trace timer_setfn a0=0x2f0173d0 a1=0x40034698
+wifi-init-probe: trace timer_setfn a0=0x2f017408 a1=0x40034690
+wifi-init-probe: trace timer_setfn a0=0x2f01741c a1=0x40034688
+wifi-init-probe: trace timer_setfn a0=0x2f017430 a1=0x40034680
+wifi-init-probe: trace timer_setfn a0=0x2f01744c a1=0x40034678
+wifi-init-probe: trace timer_setfn a0=0x2f017754 a1=0x40034670
+wifi-init-probe: trace timer_setfn a0=0x2f0176f4 a1=0x40034668
+wifi-init-probe: trace timer_setfn a0=0x2f017730 a1=0x40034660
+wifi-init-probe: trace timer_setfn a0=0x2f0175a4 a1=0x4003862a
+wifi-init-probe: trace queue_send_ok a0=0x00000000 a1=0x64646400
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000004
+wifi-init-probe: trace zalloc a0=0x00000004 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f02a09c
+wifi-init-probe: trace coex_interval a0=0x40007de0 a1=0x00000000
+wifi-init-probe: trace timer_setfn a0=0x2f016d90 a1=0x40028eec
+wifi-init-probe: trace timer_setfn a0=0x2f016da4 a1=0x40028ee2
+wifi-init-probe: trace timer_disarm a0=0x2f0152bc a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f021a58 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f0213e0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#3 hooks=149 give=2 null_give=0 semcreate=65536
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: ROMGLOB swq=0x2f0213e0 ppq=0x2f020360 ppsem=0x0
+wifi-init-probe: post-init ctx b14=0 b15=1 b16=0 b27=0 b288=0 b289=0 mac=0x0000e000
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: MAC_ST after init = 0x0000e000
+wifi-init-probe: INIT OK, arena free=315160/353344 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: tasks recorded=1
+sched-test: begin, task sp=0x2f01f840 stack=0x2f01b880
+sched-test: task iteration 0 (yielding)
+sched-test: main resumed after round 0 (main_sp=0x2f07ac90 task_sp=0x2f01f710)
+sched-test: task iteration 0 resumed
+sched-test: task iteration 1 (yielding)
+sched-test: main resumed after round 1 (main_sp=0x2f07ac90 task_sp=0x2f01f710)
+sched-test: task iteration 1 resumed
+sched-test: task iteration 2 (yielding)
+sched-test: main resumed after round 2 (main_sp=0x2f07ac90 task_sp=0x2f01f710)
+sched-test: task iteration 2 resumed
+sched-test: task done, returning to main
+sched-test: main resumed after round 3 (main_sp=0x2f07ac90 task_sp=0x2f01f710)
+sched-test: PASS
+wifi-init-probe: pre-PHY regs: 0x20109c18=0x00000000 0x20100800=0x00000001
+wifi-init-probe: MODEM_LPCON_CLK_EN 0x0 -> 0x1
+wifi-init-probe: MODEM_LPCON_CLK_CONF 0x7 -> 0x7
+wifi-init-probe: HP_SYS_CLKRST_MODEM_CONF 0x25 -> 0x3d
+wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x38e7ff -> 0x38e7ff
+wifi-init-probe: SYSCON_FORCE_ON 0x0 -> 0x1c
+wifi-init-probe: LPCON_FORCE_ON 0x4 -> 0x5
+wifi-init-probe: IDF-align before: +00=0x100 +04=0x201002 +08=0x1c
+wifi-init-probe: IDF-align after:  +00=0x100 +04=0x201002 +08=0x1c
+wifi-init-probe: ICG_POWER_ST 0x64646400 -> 0x64646400 (IDF=0x64646400)
+wifi-init-probe: CLK_CONF_POWER_ST=0x64646400 apb=6 peri=4 wifi=6
+wifi-init-probe: write 0x20100400
+wifi-init-probe: rmw 0x20100800
+wifi-init-probe: write 0x20107C80
+wifi-init-probe: rmw 0x2070401C
+wifi-init-probe: fe_bb writes done
+wifi-init-probe: 0x2f01c9e4 不在 arena 里
+wifi-init-probe: magic_pre=0x2f0200d0 magic_post=0x2f0200c8 cal_data=0x2f01f880 cal_data-12=0x2f01f874
+wifi-init-probe: cal_data=0x2f01f880 init_params=0x40105460 wrapper=0x2f021a44 inner=0x2f0213e0
+wifi-init-probe: register_chipv7_phy SKIPPED at init (交给 _phy_enable)
+wifi-init-probe: starting task[0] entry=0x2f00d70a arg=0x00000000 on its own stack
+wifi-init-probe: task context ready, running it until it blocks
+wifi-init-probe: chain-to-ROM mode, rom_mtvec=0x2f801703
+irq-sample #0 input=25 mepc=0x4004aca6 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x02000000 a1=0x000000c8
+wifi-init-probe: task birq-sample #1 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000006c
+locked, main resumed (iirq-sample #2 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000064
+dle_calls=6)
+wifi-initirq-sample #3 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000002d
+-probe: reg_rxcb SKIPPEirq-sample #4 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000044
+D (probe_register_rxcb=irq-sample #5 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000066
+false)
+wifi-init-probeirq-sample #6 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000003a
+: trace mutex_lock a0=0irq-sample #7 input=25 mepc=0x2f812228 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000078
+x2f020b80 a1=0x00000000irq-sample #8 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x0000000d
+
+wifi-init-probe: tracirq-sample #9 input=25 mepc=0x2f83efd2 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000065
+e mutex_unlock a0=0x2f0irq-sample #10 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000032
+20b80 a1=0x00000000
+wiirq-sample #11 input=25 mepc=0x2f812228 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000066
+fi-init-probe: trace zairq-sample #12 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000006c
+lloc a0=0x00000018 a1=0irq-sample #13 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000078
+x00000000
+wifi-init-prirq-sample #14 input=25 mepc=0x2f83efca mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x0000006f
+obe: trace alloc a0=0x0irq-sample #15 input=25 mepc=0x2f812220 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000030
+0000018 a1=0x2f023480
+irq-sample #16 input=25 mepc=0x400184a8 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x2f023480 a1=0x00000000
+wifi-init-probe: trace irq-sample #17 input=25 mepc=0x2f83efd6 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x2038a000 a1=0x0000006d
+mutex_lock a0=0x2f020b8irq-sample #18 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000030
+0 a1=0x00000000
+wifi-iirq-sample #19 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x0000006e
+nit-probe: trace queue_irq-sample #20 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000073
+send a0=0x2f0213e0 a1=0irq-sample #21 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000078
+x00000006
+wifi-init-prirq-sample #22 input=25 mepc=0x2f83efca mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x0000006f
+obe: trace mutex_unlockirq-sample #23 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000020
+ a0=0x2f020b80 a1=0x000irq-sample #24 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000030
+00000
+wifi-init-probe:irq-sample #25 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000020
+ trace semphr_take a0=0irq-sample #26 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000078
+x2f021a58 a1=0xffffffffirq-sample #27 input=25 mepc=0x2f83efca mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x0000000d
+
+wifi-init-probe: tracirq-sample #28 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000065
+e timer_disarm a0=0x2f0irq-sample #29 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000031
+17408 a1=0x00000000
+wiirq-sample #30 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000066
+fi-init-probe: trace seirq-sample #31 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x0000006d
+mphr_give a0=0x2f021a58irq-sample #32 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000020
+ a1=0x00000000
+wifi-inirq-sample #33 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000069
+it-probe: trace queue_rirq-sample #34 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000065
+ecv a0=0x2f0213e0 a1=0xirq-sample #35 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000066
+ffffffff
+wifi-init-proirq-sample #36 input=25 mepc=0x2f812228 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000062
+be: trace recv_probe a0irq-sample #37 input=25 mepc=0x2f83efd6 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x2038a000 a1=0x0000003d
+=0x00000000 a1=0x000000irq-sample #38 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000030
+08
+wifi-init-probe: puirq-sample #39 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000006d
+mp#4 hooks=163 give=3 nirq-sample #40 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000075
+ull_give=0 semcreate=65irq-sample #41 input=25 mepc=0x2f83efd2 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000035
+536
+wifi-init-probe: girq-sample #42 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000065
+et_config_channel rc=0 irq-sample #43 input=25 mepc=0x2f812220 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000070
+primary=0 second=0
+wifirq-sample #44 input=25 mepc=0x2f83efd6 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x2038a000 a1=0x00000069
+i-init-probe: internal_irq-sample #45 input=25 mepc=0x2f83efd2 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000074
+tx SKIPPED (probe_send_irq-sample #46 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000069
+init_frame=false)
+wifiirq-sample #47 input=25 mepc=0x2f83efd2 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x0000002d
+-init-probe: trace muteirq-sample #48 input=25 mepc=0x2f812220 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000078
+x_lock a0=0x2f020b80 a1irq-sample #49 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000003d
+=0x00000000
+wifi-init-irq-sample #50 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000070
+probe: trace mutex_unloirq-sample #51 input=25 mepc=0x2f83efd2 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000063
+ck a0=0x2f020b80 a1=0x0irq-sample #52 input=25 mepc=0x2f812220 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x00000030
+0000000
+wifi-init-probirq-sample #53 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000065
+e: wifi_init_completed=irq-sample #54 input=25 mepc=0x2f83efde mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000080 a1=0x00000031
+1 (非 0 才继续)
+wiirq-sample #55 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000066
+fi-init-probe: is_lmac_irq-sample #56 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000069
+idle=1 ic_interface_enairq-sample #57 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000062
+bled=0 mac=0x0000e000
+irq-sample #58 input=25 mepc=0x4004c358 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x2f07af6c a1=0x40104a51
+wifi-init-probe: after irq-sample #59 input=25 mepc=0x2f83efd6 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x2038a000 a1=0x00000069
+ic_mac_init(0): is_lmacirq-sample #60 input=25 mepc=0x2f83efd2 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x00000000 a1=0x0000005f
+_idle=1 iface=0 mac=0x0irq-sample #61 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000030
+000e000
+wifi-init-probirq-sample #62 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000065
+e: dma_enable=0
+wifi-iirq-sample #63 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x0000006e
+nit-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f023480
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f0213e0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f021a58 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017408 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f021a58 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f0213e0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#5 hooks=14 give=4 null_give=0 semcreate=65536
+wifi-init-probe: set_mode(STA) rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f023480
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f0213e0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f021a58 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017408 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f021a58 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f0213e0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#6 hooks=26 give=5 null_give=0 semcreate=65536
+wifi-init-probe: set_country(CN,1..13) rc=258
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: set_storage(RAM) rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: set_channel(6,0) rc=12290
+wifi-init-probe: wDevCtrl=0x2f01085c pp_wdev_funcs=0x2f020be8 g_chm=0x2f0180b4
+wifi-init-probe: ptr g_hmac_cnt_ptr=0x2f01582c
+wifi-init-probe: ptr g_ic_ptr=0x2f014fe4
+wifi-init-probe: ptr g_eb_list_desc_ptr=0x2f00f660
+wifi-init-probe: ptr g_lmac_cnt_ptr=0x2f017808
+wifi-init-probe: ptr pp_sig_cnt_ptr=0x2f014db0
+wifi-init-probe: ptr s_wifi_queue=0x2f021a44
+wifi-init-probe: ptr trc_ctl_ptr=0x2f010834
+wifi-init-probe: ptr xphyQueue=0x2f0213e0
+wifi-init-probe: ptr g_coex_param_ptr=0x00000000
+wifi-init-probe: LPCON_CLK_CONF 0x7 -> 0x7
+wifi-init-probe: rst_wifibb pulse 0x0 -> 0x0
+wifi-init-probe: gated reset (clk off -> rst -> on): mac=0x0000e000
+wifi-init-probe: pre-start mac=0x0000e000, clearing 0xE000
+wifi-init-probe: post-clear mac=0x0000e000
+wifi-init-probe: event_bus handlers=0 posts=0 undispatched=0
+wifi-init-probe: pre-pulse MAC_ST=0x0000e000 rst=0x00000000
+wifi-init-probe: post-pulse MAC_ST=0x0000e000 rst=0x00000000 en_bits=0
+wifi-init-probe: pump round 0 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=5 send=4 delay=1
+wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d73c
+wifi-init-probe: trace queue_recv a0=0x2f0213e0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump round 0 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 1 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 1 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 2 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 2 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 3 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 3 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 4 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 4 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 5 before:irq-sample #256 input=25 mepc=0x2f83efda mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x0000e080 a1=0x00000020
+ b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 5 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 6 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 6 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 7 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 7 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f023480
+wifi-init-probe: trace mutex_lock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f0213e0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f020b80 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f021a58 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017408 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace queue_send_ok a0=0x64646400 a1=0x64646400
+wifi-init-probe: trace phy_enable a0=0x00000000 a1=0x00000001
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0
+wifi-init-probe: trace coex_init a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace wifi_clk_dis a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02136c a1=0x00000000
+wifi-init-probe: trace event_post id=43 bits=0x10 handlers=0 undispatched=0
+wifi-init-probe: trace timer_disarm a0=0x2f017408 a1=0x00000000
+romtbl-scan n=32 (sample 377) sentinel[30]=0x4004d3e4 arg=0x5a5a5a5a
+mtvt=0x0 mtvt2=0x0 g_timer_func=0x4003012e
+rst_conf=0x00000000 (bit9 rst_wifimac=0 bit8 rst_wifibb=0) clk_conf1=0x0038e7ff icg=0x64646400
+blob_g b1=0 b14=0 b15=1 b16=0 b27=0 b288=0 b289=0
+blob cb_slot[0x2f011aa8]=0x0
+romglob s_pp_task_create_sem=0x0
+semcreate args: 0x00010000 0x00000001 0x00010000 0x00000001
+semphr give_total=6 null_give=1
+queue send_ok=5 recv_ok=5 last_recv_count=1
+nvs get_blob calls=15 last_want=108 last_rc=4354
+timers fires=0 armed=0
+pp_task_hdl=0x2f020360 deinit_count=1 rxing=1 txing=1
+romtbl[30] fn=0x4004d3e4 arg=0x5a5a5a5a
+installed g_timer_func at ext#9 (input 25)
+irq-sample #512 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #768 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #1024 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #1280 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=1024 fn=0x4003012e
+irq-sample #1536 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #1792 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #2048 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #2304 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=2048 fn=0x4003012e
+irq-sample #2560 input=25 mepc=0x2f009204 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #2816 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #3072 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #3328 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=3072 fn=0x4003012e
+irq-sample #3584 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #3840 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #4096 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #4352 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=4096 fn=0x4003012e
+irq-sample #4608 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #4864 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #5120 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #5376 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=5120 fn=0x4003012e
+irq-sample #5632 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #5888 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #6144 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #6400 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=6144 fn=0x4003012e
+irq-sample #6656 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #6912 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #7168 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #7424 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=7168 fn=0x4003012e
+irq-sample #7680 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #7936 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #8192 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #8448 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=8192 fn=0x4003012e
+irq-sample #8704 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #8960 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #9216 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #9472 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=9216 fn=0x4003012e
+irq-sample #9728 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #9984 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #10240 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #10496 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=10240 fn=0x4003012e
+irq-sample #10752 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #11008 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #11264 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #11520 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=11264 fn=0x4003012e
+irq-sample #11776 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #12032 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #12288 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #12544 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=12288 fn=0x4003012e
+irq-sample #12800 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #13056 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #13312 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #13568 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=13312 fn=0x4003012e
+irq-sample #13824 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #14080 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #14336 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #14592 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=14336 fn=0x4003012e
+irq-sample #14848 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #15104 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #15360 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #15616 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=15360 fn=0x4003012e
+irq-sample #15872 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #16128 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #16384 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #16640 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=16384 fn=0x4003012e
+irq-sample #16896 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #17152 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #17408 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #17664 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=17408 fn=0x4003012e
+irq-sample #17920 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #18176 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #18432 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #18688 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=18432 fn=0x4003012e
+irq-sample #18944 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #19200 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #19456 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #19712 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=19456 fn=0x4003012e
+irq-sample #19968 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #20224 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #20480 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #20736 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+romhandler calls=20480 fn=0x4003012e
+irq-sample #20992 input=25 mepc=0x2f009206 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
+irq-sample #21248 input=25 mepc=0x2f009202 mac=0x00fff000 b13=1 b14=1 ctx15=1 en=7 a0=0x00000640 a1=0x2f0209e0
