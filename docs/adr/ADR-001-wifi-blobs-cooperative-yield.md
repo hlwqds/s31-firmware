@@ -3956,3 +3956,20 @@ IDF 那边 `pp_task_hdl` 在 init 时应当为 0（首次创建），我们却�
 
 ⇒ 下一步：在 `esp_wifi_init_internal` 之前把 **`pp_task_hdl` 清零**（或让 `_task_delete` 对假对象安全），
 看分支是否改变。
+
+### 清零 `pp_task_hdl`：**无效**（init 里又被写回 `task_dummy`）
+
+在 `esp_wifi_init_internal` 之前把它清 0：
+
+```text
+INITWIN ... semcreate=2 semnull=0
+ROMGLOB swq=0x2f021330 ppq=0x2f0203b0 ppsem=0x0    ← ppq **又变回 task_dummy**
+```
+
+⇒ **init 期间我们的 `_task_create` 又把它写成 `task_dummy`**，所以"清零让它走首次创建分支"这个思路不成立。
+
+⇒ 更根本的问题在**我们的 `_task_create` 语义**：它把 `handle_out` 写成固定的 `&task_dummy`
+（不是每次新建一个对象）。blob 侧对 `pp_task_hdl` 的判断（非零 ⇒ 已有任务）因此恒为真。
+
+⇒ 下一步：让 `_task_create` 返回**每次不同的**句柄（或让 `_task_delete` 对 `task_dummy` 安全无害），
+再看 `pp_create_task` 的分支与 `ppsem`。

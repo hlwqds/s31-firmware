@@ -387,6 +387,8 @@ pub fn run() noreturn {
     // （`idle_calls` 涨到 20000 而 `hooks` 冻结在 17）⇒ 它不是 ack 的生产者。已回滚。
     // **`s_pp_task_create_sem` 实验已做**：我们把它写成 0x2f020ad0，但自旋时读回 **0x0**
     // ⇒ **blob 会把它清零**（`pp_create_task` 先清、再期望某个钩子填）⇒ 单纯"app 侧创建"无效。
+    // **清零 `pp_task_hdl` 实验已做**：清零无效——init 里 `_task_create` 又把它写成 `task_dummy`
+    // （实测 `ppq` 仍是 0x2f0203b0）⇒ 单纯清零不改变分支结果。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
         impl.calls.queue_send - w_qsend,
