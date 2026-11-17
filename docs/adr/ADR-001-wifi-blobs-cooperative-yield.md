@@ -4286,3 +4286,31 @@ panic 0
 ⇒ ROM 的 tick ISR 在正常跑（`romhandler calls` 持续增长），说明中断与调度都是活的。
 
 ⇒ 下一步：看 `start` 是否返回、`MAC_ST` 的使能位（`b16`/`b288`）是否被置起。
+
+### 结构性修正：entry/arg 搬进 `Context`、arena 按自然对齐申请
+
+两个隐患，都会在"多任务泵"下咬人：
+
+1. **`pending_entry`/`pending_arg` 是模块级单槽**（`sched.zig`）：`initContext` 写、`trampoline` 读。
+   单任务没事，round-robin 下"先建 N 个、再逐个启动"会让**所有栈跑最后一个注册的 entry**。
+   改法：`Context` 增加 `entry`/`arg` 字段，`trampoline` 从 `enterAs(ctx)` 指好的**目标上下文**里读。
+2. **`arena_state.alloc(bytes, 16)` 会失败**：arena 只接受**自然对齐**的请求（`pad != 0` 直接跳过），
+   第一个块之后全被跳过。改成 `@alignOf(usize)`；栈顶 16 对齐由 `initContext` 的 `alignBackward` 负责。
+
+回归与修复：改完第一次上板**回退到 `esp_wifi_start` 之前**（`hooks` 冻在 154、`in_task=true`），
+原因是 `sched.start()` 没调 `enterAs` ⇒ 自测路径的 `trampoline` 拿不到 entry。补上后恢复：
+
+```text
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315160/353344 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+panic 0
+```
+
+### ★ 新判读：start 的等待**不走我们的让出原语**
+
+`idle_calls` 停在 **20**（`calling esp_wifi_start` 之后**再没有一条 idle 心跳行**），而 ROM tick 仍在跑。
+⇒ `esp_wifi_start` 的等待**不调 `on_idle`** ⇒ 任务在 start 期间**永远不会被泵** ⇒ start 永等。
+
+⇒ 下一步不是继续调 `recv`/`take`，而是**找到 start 的真实等待原语**（task notification？哪个 `_queue_recv` 变体？），
+必要时把"泵"挂到 tick ISR 或那个原语上——就像 init 期挂到 `take` 上一样。

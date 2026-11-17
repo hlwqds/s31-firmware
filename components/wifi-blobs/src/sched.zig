@@ -22,7 +22,8 @@
 //! offset 52 .. 63 : padding（保持 16 字节对齐）
 //! ```
 //!
-//! 新上下文的 `ra` 指向 `trampoline`，它用全局的 `pending_entry/pending_arg` 起跑
+//! 新上下文的 `ra` 指向 `trampoline`，它从**目标 Context 自己的** `entry/arg` 起跑
+//! （`enterAs` 在切换前指好；早期版本用全局单槽，多任务下会被最后一个注册的 entry 覆盖）
 //! （只有一根任务栈，所以不需要为每个上下文单独传参）。
 
 const std = @import("std");
@@ -35,7 +36,19 @@ pub const Context = struct {
     sp: usize = 0,
     /// 栈区间（从 arena 分配；`null` 表示用调用方给的静态栈）。
     stack: []u8 = &.{},
+    /// 该上下文的入口/参数。**存在 Context 里**，不再用模块级单槽——
+    /// round-robin 下"先建 N 个再逐个启动"会让所有栈跑同一个 entry（实测过的坑）。
+    entry: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    arg: ?*anyopaque = null,
 };
+
+/// `trampoline` 读它：切换前由 `enterAs` 设成目标上下文。
+var entering: ?*const Context = null;
+
+/// 切进 `ctx` 之前调用：告诉 trampoline 该跑哪个 entry。
+pub fn enterAs(ctx: *const Context) void {
+    entering = ctx;
+}
 
 /// 保存当前上下文到 `from.sp`，切到 `to.sp`。
 ///
@@ -97,14 +110,13 @@ fn swapAsm(_: usize, _: usize) callconv(.naked) void {
     );
 }
 
-var pending_entry: ?*const fn (?*anyopaque) callconv(.c) void = null;
-var pending_arg: ?*anyopaque = null;
 /// 任务体返回后切回这里（由 `start` 记录）。
 var main_context: ?*Context = null;
 
 fn trampoline() callconv(.c) void {
-    const entry = pending_entry orelse return;
-    entry(pending_arg);
+    const ctx = entering orelse return;
+    const entry = ctx.entry orelse return;
+    entry(ctx.arg);
     // 任务体返回了：切回主上下文，永不回来。
     if (main_context) |main| {
         var dead: Context = .{};
@@ -114,8 +126,6 @@ fn trampoline() callconv(.c) void {
 
 /// 在 `stack` 上准备一个可运行上下文；`entry(arg)` 会在第一次 `swapContext` 后开始执行。
 pub fn initContext(ctx: *Context, stack: []u8, entry: *const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
-    pending_entry = entry;
-    pending_arg = arg;
     // 栈向下增长：初始 sp 必须是区间**内**最后一个 16 对齐地址。
     // 用 alignForward 会越过 slice 末尾（最多 15 字节），踩到相邻 arena 块头。
     const top = std.mem.alignBackward(usize, @intFromPtr(stack.ptr) + stack.len, 16);
@@ -126,12 +136,13 @@ pub fn initContext(ctx: *Context, stack: []u8, entry: *const fn (?*anyopaque) ca
     var i: usize = 0;
     while (i < 12) : (i += 1) words[i] = 0; // s0..s11
     words[12] = @intCast(@intFromPtr(&trampoline) & 0xffff_ffff); // ra（rv32 地址）
-    ctx.* = .{ .sp = frame, .stack = stack };
+    ctx.* = .{ .sp = frame, .stack = stack, .entry = entry, .arg = arg };
 }
 
 /// 从当前上下文切到 `ctx`（并记录自己以便任务体返回时切回）。
 pub fn start(ctx: *Context, self: *Context) void {
     main_context = self;
+    enterAs(ctx);
     swapContext(self, ctx);
 }
 

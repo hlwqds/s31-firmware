@@ -191,6 +191,7 @@ fn pumpRealTask() bool {
         cur_task = t;
         in_task = true;
         impl.current_is_task = true;
+        sched.enterAs(&t.ctx);
         sched.swapContext(&main_ctx, &t.ctx);
         // 从任务切回：任务在自己的阻塞点调了 on_idle。
         cur_task = null;
@@ -207,11 +208,24 @@ fn idleHook() void {
     // ⇒ PP worker 在我们的环境里跑不到它的 `give`。已回滚。
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
     // 每 1000 次让出打一行：区分"在乒乓（任务没答话）"与"blob 忙等（根本不进钩子）"。
-    if (idle_calls % 1000 == 0) log.line("wifi-init-probe: idle_calls={d} in_task={} hooks={d}", .{
-        idle_calls,
-        in_task,
-        impl.event_count,
-    });
+    if (idle_calls % 1000 == 0) {
+        var e0: usize = 0;
+        var e1: usize = 0;
+        if (impl.task_count > 0) if (impl.tasks[0].entry) |e| {
+            e0 = @intFromPtr(e);
+        };
+        if (impl.task_count > 1) if (impl.tasks[1].entry) |e| {
+            e1 = @intFromPtr(e);
+        };
+        log.line("wifi-init-probe: idle_calls={d} in_task={} hooks={d} tasks={d} e0=0x{x} e1=0x{x}", .{
+            idle_calls,
+            in_task,
+            impl.event_count,
+            impl.task_count,
+            e0,
+            e1,
+        });
+    }
     if (idle_calls > 4_000_000) {
         log.line("wifi-init-probe: idle budget exhausted ({d}), halting", .{idle_calls});
         hw.halt();
@@ -932,6 +946,7 @@ pub fn run() noreturn {
                         });
                         in_task = true;
                         impl.current_is_task = true;
+                        sched.enterAs(&task_ctx);
                         sched.swapContext(&main_ctx, &task_ctx);
                         in_task = false;
                         impl.current_is_task = false;

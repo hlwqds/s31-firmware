@@ -827,7 +827,9 @@ pub fn ensureTaskContext(t: *Task, stack_depth: u32) bool {
     var bytes: usize = if (stack_depth == 0) 16 * 1024 else @as(usize, stack_depth);
     if (bytes < 4 * 1024) bytes = 4 * 1024;
     if (bytes > 64 * 1024) bytes = 64 * 1024;
-    const mem = arena_state.alloc(bytes, 16) orelse return false;
+    // **按自然对齐申请**：arena 只接受自然对齐的请求（`pad != 0` 直接跳过），
+    // 用 16 会让第一个块之后全部失败。栈顶 16 对齐由 `sched.initContext` 的 alignBackward 负责。
+    const mem = arena_state.alloc(bytes, @alignOf(usize)) orelse return false;
     t.stack = mem[0..bytes];
     @import("sched.zig").initContext(&t.ctx, t.stack, entry, t.arg);
     return true;
