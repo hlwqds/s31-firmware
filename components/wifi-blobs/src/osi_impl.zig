@@ -546,8 +546,8 @@ comptime {
     }
 }
 
-/// **扩到 64**：要与 IDF 侧对比 init 期间的完整 osi 调用序列（8 条装不下）。
-pub var events: [64]HookEvent = @splat(.{ .id = 0, .a0 = 0, .a1 = 0 });
+/// **扩到 256**：init 期间实测 152 条，要一次装下完整序列（8/64 都不够；256×12B = 3 KB `.bss`）。
+pub var events: [256]HookEvent = @splat(.{ .id = 0, .a0 = 0, .a1 = 0 });
 pub var event_count: u32 = 0;
 
 /// 清空事件环与计数（探针在关键调用前用，确保看到的是"这一阶段"的序列）。

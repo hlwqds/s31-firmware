@@ -512,10 +512,12 @@ pub fn run() noreturn {
     // **完整 osi 调用序列**（init 窗口内，最多 64 条）——与 IDF 侧逐条 diff，分叉点就是缺的那一步。
     {
         const n = @min(impl.event_count, impl.events.len);
-        log.line("wifi-init-probe: OSISEQ n={d} (ring={d})", .{ impl.event_count, impl.events.len });
+        // **环里存的是"最后 n 条"**，所以起点是 `event_count - n`，不是 0。
+        const base = impl.event_count - n;
+        log.line("wifi-init-probe: OSISEQ n={d} ring={d} base={d}", .{ impl.event_count, impl.events.len, base });
         var i: u32 = 0;
         while (i < n) : (i += 1) {
-            const e = impl.events[i];
+            const e = impl.events[(base + i) % impl.events.len];
             if (e.id < impl.hook_ids.len) {
                 log.line("wifi-init-probe: OSI {d} {s} a0=0x{x} a1=0x{x}", .{
                     i, impl.hook_ids[e.id], e.a0, e.a1,

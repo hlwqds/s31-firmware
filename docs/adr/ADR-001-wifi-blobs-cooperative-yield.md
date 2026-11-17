@@ -5719,3 +5719,30 @@ OSI 15 coex_interval / 16-17 timer_setfn / 18 timer_disarm / 19 semphr_give
 
 ⇒ 另一个值得注意的读数：**`OSI 9 queue_send_ok a1=0x64646400`** —— blob 自己把 `0x64646400` 作为参数传出去，
 这也解释了为什么我们写 `0x64646000` 之后读回会变成 `0x64646400`（**blob 随后又写了一次**，不是我们写错）。
+
+### ⚠ 更正：环存的是**最后** N 条，`wifi_clk_en` 实际在 **139/152** 位
+
+上一节报"`wifi_clk_en` 在第 11 位"是错的——那是**环里最后一个 64 条窗口内的相对索引**，
+而 `dump` 循环从 `events[0]` 开始读（环只保最后 64 条 ⇒ 读到的是第 88..151 条，索引错位 88）。
+
+修正两处：
+
+1. **环从 64 扩到 256**（init 实测 152 条，一次装下；`HookEvent` 12 B ⇒ 3 KB `.bss`）；
+2. **dump 起点改为 `event_count - n`**（环语义是"最后 n 条"，不是"前 n 条"）。
+
+修正后：
+
+```text
+wifi-init-probe: OSISEQ n=152 ring=256 base=0
+OSI 0 mutex_create / 1 mutex_lock / 2 calloc / 3 zalloc / 4 alloc / 5 calloc …
+OSI 139 wifi_clk_en a0=0x0 a1=0x0        ← **`_wifi_clock_enable` 在 139/152 位**
+```
+
+⇒ 所以 **`wifi_clock_enable` 发生在 init 的**接近末尾**（139/152），不是开头**。
+⇒ 之前"前 20 条里就有 wifi_clk_en"的判读**作废**。
+
+⇒ 顺带撤一条**伪线索**：`OSI 9 queue_send_ok a1=0x64646400` 里的 `a1` 只是 `note()` 记的**参数**，
+与 `0x20109C0C` 的内容无关；静态扫描也已证明 blob 从不写 ICG（只碰 bits 17-19）。
+⇒ **"blob 自己把 ICG 写成 0x64646400"这条不成立**，别再当线索。
+
+归档：`logs/ch25-osi-seq-boot.log`（完整 152 条）。
