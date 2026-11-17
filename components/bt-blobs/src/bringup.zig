@@ -143,10 +143,12 @@ pub fn init(cfg: *config.Config) c_int {
     // 4. 归档：任务层
     // **BT_BLOCK_PROBE**：直读 `0x2010B000`。寄存器已与 IDF 同点对齐，
     // 若这行之后没有打印值 ⇒ 我们的块仍不可读；有值 ⇒ 块已可读、fault 另有其因。
-    // **对照读**：先读一个已知可读的设备地址，证明读路径本身没坏
-    osal.logPublic("bt probe: control read 0x20109C04 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*});
-    osal.logPublic("bt probe: BT_BLOCK_PROBE reading 0x2010B000 ...", .{});
-    osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_B000))).*});
+    // **对照读 + 目标读**（仅目标侧：主机上这些地址不存在）
+    if (@import("builtin").target.os.tag == .freestanding) {
+        osal.logPublic("bt probe: control read 0x20109C04 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*});
+        osal.logPublic("bt probe: BT_BLOCK_PROBE reading 0x2010B000 ...", .{});
+        osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_B000))).*});
+    }
     enter(6, "r_btdm_task_init");
     {
         const pp = @import("probe_ptr.zig");
