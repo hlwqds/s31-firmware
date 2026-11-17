@@ -512,7 +512,9 @@ pub fn run() noreturn {
     dumpClockRegs("before-init");
     // **重测 ROM `ic_mac_init(0)`**：ADR 那次是**旧状态**（握手未修好、任务不调度），且 ABI 可能不对
     // （入参应为"接口号"，即 `ic_mac_init(0)`）。现在握手成立，值得按正确 ABI 重跑一次。
-    {
+    // **实测结论：rc=0 但 MAC_ST 仍 0xE000**（见 ADR）。因此默认关闭；
+    // 需要复跑时把 `probe_manual_ic_mac_init` 置 true 即可（走同一开关，不再有第二个调用点）。
+    if (probe_manual_ic_mac_init) {
         const ic_mac_init = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "ic_mac_init" });
         const rc = ic_mac_init(0);
         const ms: *volatile u32 = @ptrFromInt(0x2010_4CAC);
