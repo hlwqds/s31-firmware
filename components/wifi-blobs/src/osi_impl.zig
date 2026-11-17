@@ -1177,6 +1177,16 @@ fn shellWifiClockEnable() callconv(.c) usize {
     const icg_before = icg.*;
     icg.* = 0x6464_6400;
     note(20, icg_before, icg.*);
+    // **LPCON 侧 ICG 位图（0x2010F020）必须在 init 期就和 SYSCON 侧一起就位**——
+    // 之前是在 start 前补写的，那时 after-init 仍是 0。IDF 的 `modem_clock_domain_enable`
+    // 两侧一次做完（`modem_clock_hal_set_clock_domain_icg_bitmap`，hal/esp32s31/modem_clock_hal.c:53-64）。
+    // 四域（LP_APB/I2C_MASTER/COEX/WIFIPWR）各 `ACTIVE|MODEM = 0x6` ⇒ `0x66660000`。
+    {
+        const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
+        const b20 = icg20.*;
+        icg20.* = 0x6666_0000;
+        note(24, b20, icg20.*);
+    }
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
     const before = conf1.*;
     conf1.* = before | wifi_clk_conf1_bits;
@@ -1197,12 +1207,6 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // 字段布局：wifipwr[19:16] / coex[23:20] / i2c_mst[27:24] / lp_apb[31:28]
     // ⇒ 四域各 0x6 ⇒ **0x66660000**。
     // `wifipwr` 就是 WiFi 电源域——它一直是 0，很可能正是 blob 要自己写 force_on 的原因。
-    {
-        const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
-        const b20 = icg20.*;
-        icg20.* = 0x6666_0000;
-        note(24, b20, icg20.*);
-    }
     return 0;
 }
 
