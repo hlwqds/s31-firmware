@@ -144,7 +144,9 @@ pub fn init(cfg: *config.Config) c_int {
     // **BT_BLOCK_PROBE**：直读 `0x2010B000`。寄存器已与 IDF 同点对齐，
     // 若这行之后没有打印值 ⇒ 我们的块仍不可读；有值 ⇒ 块已可读、fault 另有其因。
     // **对照读 + 目标读**（仅目标侧：主机上这些地址不存在）
-    if (@import("builtin").target.os.tag == .freestanding) {
+    // ⚠ **必须受开关控制**：`0x2010B000` 不可访问时会挂住整个系统，
+    // 若无条件执行，**每一次正常运行都会死在它上面**（本轮就是这样，白白丢了几轮板测）。
+    if (@import("builtin").target.os.tag == .freestanding and @import("probe.zig").ble_block_experiment) {
         osal.logPublic("bt probe: control read 0x20109C04 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*});
         osal.logPublic("bt probe: BT_BLOCK_PROBE reading 0x2010B000 ...", .{});
         osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_B000))).*});
