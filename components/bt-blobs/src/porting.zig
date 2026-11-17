@@ -165,6 +165,12 @@ const b_conf1_fe_dac: u32 = @as(u32, 1) << 21;
 const reg_lpcon_lp_timer_conf: usize = lpcon_base + 0x04;
 const reg_lpcon_32k_conf: usize = lpcon_base + 0x14;
 const b_lpcon_clk_lp_timer_en: u32 = @as(u32, 1) << 3;
+// **`MODEM_LPCON + 0x18` 的 bit0/bit1 此前从未写**，而 IDF 的 `BLE_CLOCK_DEPS` 里有
+// `COEXIST` → `modem_lpcon_ll_enable_coex_clock()` → `clk_conf.clk_coex_en`(bit1)、
+// 以及 `WIFIPWR`(bit0)。板侧对拍实证：IDF 在 step 5 之后该字 = `0x0000000b`
+// （bit0+bit1+bit3），我们只写了 bit3 ⇒ **bit1 缺失**是 `0x2010B000` 不可访问的直接原因。
+const b_lpcon_clk_wifipwr_en: u32 = @as(u32, 1) << 0;
+const b_lpcon_clk_coex_en: u32 = @as(u32, 1) << 1;
 
 const mmio = @import("builtin");
 extern fn bt_mmio_read(addr: usize) u32;
@@ -252,7 +258,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // 2.7) **LP timer 时钟**（IDF 放在 mac_reset 之后；我们紧随其后，顺序同样满足"门控先于复位"）
     wr(reg_lpcon_lp_timer_conf, rd(reg_lpcon_lp_timer_conf) & ~@as(u32, 0xF) | @as(u32, 1)); // 选 32k 源 + div=0
     wr(reg_lpcon_32k_conf, (rd(reg_lpcon_32k_conf) & ~@as(u32, 0x3)) | @as(u32, 1)); // 32k 选内部 RC32K
-    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_clk_lp_timer_en);
+    // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
+    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_clk_wifipwr_en |
+        b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
     osal.logPublic("bt lp: lp_timer_conf=0x{x:0>8} 32k_conf=0x{x:0>8} lpcon_clk=0x{x:0>8}", .{
         rd(reg_lpcon_lp_timer_conf), rd(reg_lpcon_32k_conf), rd(reg_lpcon_clk_conf),
     });

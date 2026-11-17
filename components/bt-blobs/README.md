@@ -771,6 +771,36 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### ✅ 已补：`MODEM_LPCON +0x18` 的 bit0/bit1（`wifipwr` / `coex`）
+
+板侧逐字对拍实证：
+
+| 侧 | `MODEM_LPCON + 0x18`（step 5 之后） |
+| --- | --- |
+| IDF oracle | **`0x0000000b`**（bit0 + bit1 + bit3） |
+| 我们（修复前） | 只写 bit3 |
+
+⇒ 我们**从未写过 bit1 `clk_coex_en`**，而 IDF 的 `BLE_CLOCK_DEPS` 里有 `COEXIST` →
+`modem_lpcon_ll_enable_coex_clock()` → `clk_conf.clk_coex_en`。已补上 bit0+bit1。
+
+**但板测仍停在 step 6 并进 `deinit`** ⇒ 这一位是**必要但不充分**。
+
+### 📋 `btdm_lp_enable_clock` 的完整对照清单（下一轮的施工图）
+
+IDF（esp32s31）这一函数做四件事，我们逐条对照：
+
+| # | IDF 动作 | 我们 |
+| --- | --- | --- |
+| 1 | `modem_clock_module_enable(PERIPH_BT_MODULE)`（一次，由 `s_btdm_lp_modem_clk_en` 守卫）→ 先 `icg_map_init_all()`，再 `device_control(BLE_CLOCK_DEPS)`：`BLE_MAC, BT_I154_COMMON_BB, ETM, COEXIST, WIFI_BB_80X1, SOC_PLL_SOURCE_CG, BT_APB, BT_PERIPHERAL` | 逐位手写；**已核对的**：`clk_btbb_en`(clk_conf1 bit17) ✓、`MODEM_CONF=0x3d` ✓、`clk_coex_en`(LPCON bit1) ✓（本轮补） |
+| 2 | `modem_clock_module_enable(PERIPH_BT_APB_MODULE)` → `icg_map_init_all()` + `BT_APB_CLOCK_DEPS`：`BT_APB, ETM, SOC_PLL_SOURCE_CG, BLE_MAC` | 部分 |
+| 3 | `modem_clock_module_mac_reset(PERIPH_BT_MODULE)` → `reset_btmac / reset_btmac_apb / reset_ble_timer / reset_modem_sec` | ✓ 四族都已做 |
+| 4 | `btdm_lp_timer_clk_init(cfg)` | ✓ |
+
+**最强嫌疑（未做）**：`icg_map_init_all()` 覆盖**两个域** ——
+`MODEM_SYSCON.clk_conf_power_st`（我们写了 `0x64646400`）**和 `MODEM_LPCON` 自己的
+`clk_conf_power_st`**（`clk_coex_st_map / clk_i2c_mst_st_map / clk_lp_apb_st_map`），
+**后者我们一个字都没写**。
+
 ### 🎯 二分完成：使能者是 **step 5 `btdm_lp_enable_clock`**
 
 | 探读 `0x2010B000` 的时机 | 结果 |
