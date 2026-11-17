@@ -4615,3 +4615,26 @@ wifi-init-probe: idle budget exhausted (4000001), halting     ← 是 **idleHook
 2. `rst_wifimac` 脉冲（bit9，20 µs 宽）；
 3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（ADR 实验 9 早已判负）。
 4. ~~让 PP worker 在 start 期间跑~~ —— **未测**（上一节误记，已撤回）。
+
+### 判决（负）：自旋让出补丁**不安全**，已回滚——上下文记账不支持从 main 的任意点切入
+
+从桩里直接调 `pumpRealTask()`：
+
+```text
+!! 3d306120 3d306120 80007881          # mepc = mtval = 0x3d306120（垃圾地址）
+panic: exception code=1 (instruction access fault)
+```
+
+⇒ 切进任务后跳到了垃圾地址。两条路都不行：
+
+| 走法 | 结果 |
+|---|---|
+| `idleHook()` | `in_task` 是残留 true ⇒ 走"从任务切回主"分支 ⇒ **用错基址 swap**（400 万次错位切换） |
+| `pumpRealTask()` 直调 | **`instruction access fault`**，跳到 `0x3d306120` |
+
+**根因**：`main_ctx` 只由 `sched.start()` 登记过一次。从 main 的**任意点**（这里是 blob 代码里的自旋桩）
+让出时，**没有对应的 main 帧**可存 ⇒ 切回来必然错位。
+
+⇒ 要真正做"在 start 的自旋里让出"，必须先让**每个让出点登记自己的 main 帧**
+（每处一个 `Context`，或用 `setjmp` 式保存），**不是改几个字节就能解决的**。
+⇒ 补丁已回滚，基线恢复（`INITWIN qrecv=2 clken=1` / `INIT OK` / `calling esp_wifi_start`、无 panic）。
