@@ -161,6 +161,15 @@ pub fn build(b: *std.Build) void {
         app.link_gc_sections = false;
         // 适配面：10 个符号里的 5 个非链接脚本符号（另 5 个在 s31.ld 里 PROVIDE）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = &.{} });
+        // OSAL 的 36 个 `wr_btdm_osal_*` 导出（强定义覆盖归档里的弱断言桩）。
+        // 单独成对象：它只被归档引用，不需要进 root 模块。
+        const osal_mod = b.createModule(.{
+            .root_source_file = b.path("../components/bt-blobs/src/osal.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        const osal_obj = b.addObject(.{ .name = "bt_osal", .root_module = osal_mod });
+        app.root_module.addObject(osal_obj);
     }
 
     // 主机侧测试：每个 component 的 host_tests.zig 独立成测试目标，

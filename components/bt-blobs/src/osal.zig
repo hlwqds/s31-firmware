@@ -1,39 +1,59 @@
 //! BLE controller 的 OSAL（`wr_btdm_osal_*`）裸机实现。
 //!
 //! 归档里的 56 个 `wr_btdm_*` 都是**弱定义**的断言桩（函数体是
-//! `wr_btdm_assert(file, line)`），这里给**强定义**覆盖它们。签名取自
-//! `porting_btdm/controller/btdm_common/include/btdm_osal.h`，参数的整数
-//! 语义已逐条对照该头文件；`wr_btdm_assert` 的覆盖已实测生效（镜像里出现
-//! 标记串即说明选中的是我们这份）。
+//! `wr_btdm_assert(file, line)`），这里给**强定义**覆盖它们。
+//!
+//! ## ⚠ 形状：C 传进来的是 **4 字节槽位**，不是对象本体
+//!
+//! `btdm_osal.h:44-60` 里 `struct btdm_osal_{event,eventq,callout,mutex,sem}` 全都是
+//! **单个 `void *`**，而 IDF 的参考实现在这个槽位里只存**一个指向另行分配的状态的指针**：
+//!
+//! ```c
+//! ev->event = btdm_osal_malloc(sizeof(struct btdm_osal_event_freertos), ...);  // :317
+//! mu->mutex = btdm_osal_malloc(...);                                          // :397
+//! ```
+//!
+//! ⇒ 这些槽位**就是 controller 自己结构体里的那 4 个字节**。所以本模块严格分成两层：
+//!
+//! - **槽位层**（`Slot`，4 字节，`extern struct`）：导出的 C ABI 只碰它；
+//! - **状态层**（`Event`/`Sem`/`Mutex`/`EventQ`/`Callout`）：从静态池分配，
+//!   指针存在 `slot.p` 里。
+//!
+//! 直接把状态对象往传入指针上写会溢出 12 字节、踩坏 controller 的结构体——主机用例
+//! `slot 形状` 一节专门盯这件事（`@sizeOf(Slot) == 4` + 金丝雀）。
 //!
 //! ## 三条不能照抄 IDF 的地方
 //!
 //! 1. **时基是毫秒**：`BTDM_OSAL_USE_ESP_TIMER` 恒为 1 ⇒ `time_get()` 在 IDF 里是
 //!    `esp_timer_get_time() / 1000`，`ms_to_ticks`/`ticks_to_ms` 是**恒等**（1 tick = 1 ms）。
 //!    返回微秒会让所有超时窗口大 1000 倍，而且 32 位微秒约 71 分钟就回绕。
-//! 2. **`time_get()` 会被 ISR 调用**：所以刻度源必须是 CSR/注入的毫秒钩子，
-//!    **不能**用 `board.hw.nowUs()`（它读 APB 寄存器并自旋等 update 位，在 ISR 里会重入冲突）。
-//! 3. **阻塞要真等**：`components/wifi-blobs/src/osi_impl.zig` 在"无限阻塞"时故意返回失败
-//!    （单线程壳里避免死锁）。Wi-Fi blob 把"空"当合法答复，但 BLE 的
-//!    `sem_pend(FOREVER)` 若返回失败会让 controller 走错分支，症状是"init 过了、任务也起来了、
-//!    但永远不发射"。这里**有意不同**：无任务要切换时退化成立即返回 `TIMEOUT`，并在
-//!    `stats.blocked_calls` 里计数，让"本可以等但没等"这件事**可见**。
-//!
-//! ## 句柄布局
-//!
-//! OSAL 的 `struct btdm_osal_{event,eventq,callout,mutex,sem}` 全都是**单个 `void *`**
-//! （`btdm_osal.h:44-60`）⇒ 我们把自己的对象指针写进去即可，没有 ABI 对齐风险。
+//! 2. **`time_get()` 会被 ISR 调用**：刻度源必须是 CSR/注入的毫秒钩子，
+//!    **不能**用 `board.hw.nowUs()`（读 APB 寄存器并自旋等 update 位，ISR 里会重入冲突）。
+//! 3. **阻塞还不能真等**：没有可切换的任务时，`pend(FOREVER)` 立即返回 `TIMEOUT` 并在
+//!    `stats.blocked_calls` 里计数——让"本可以等但没等"这件事**可见**，而不是静默挂住。
+//!    （`wifi-blobs/src/osi_impl.zig` 做的是同一件事，但那套对象形状也不能直接搬。）
 const std = @import("std");
-const builtin = @import("builtin");
 
 pub const OK: c_int = 0;
 pub const ENOMEM: c_int = 1;
 pub const EINVAL: c_int = 2;
 pub const TIMEOUT: c_int = 6;
-pub const EIO: c_int = 12;
 
-/// `portMAX_DELAY`（FreeRTOS）= `0xFFFFFFFF`。IDF 的 `get_time_forever()` 直接返回它。
+/// `portMAX_DELAY`（FreeRTOS）= `0xFFFFFFFF`；IDF 的 `get_time_forever()` 直接返回它。
 pub const forever: u32 = 0xFFFF_FFFF;
+
+/// C 侧的句柄结构体：`struct btdm_osal_{event,eventq,callout,mutex,sem} { void *x; }`。
+/// **必须**逐字镜像成 4 字节——controller 把这 4 个字节内嵌在自己的结构体里。
+pub const Slot = extern struct {
+    p: ?*anyopaque = null,
+};
+
+comptime {
+    // 槽位大小 == 一个指针：rv32 上是 4（与 C 的 `struct { void *x; }` 完全一致），
+    // 主机（x86_64）上是 8——那种情况下这个断言本就不该按 4 来判。
+    std.debug.assert(@sizeOf(Slot) == @sizeOf(*anyopaque));
+    std.debug.assert(@offsetOf(Slot, "p") == 0);
+}
 
 /// 1 tick = 1 ms（`BTDM_OSAL_USE_ESP_TIMER` 恒为 1 时的恒等刻度）。
 pub fn msToTicks(ms: u32) u32 {
@@ -54,7 +74,6 @@ pub const Hooks = struct {
 };
 
 var hooks: Hooks = .{};
-var stats_state = Stats{};
 
 pub fn setHooks(h: Hooks) void {
     hooks = h;
@@ -65,6 +84,7 @@ pub fn stats() Stats {
 pub fn resetStats() void {
     stats_state = .{};
 }
+var stats_state = Stats{};
 
 pub const Stats = struct {
     sem_pend_ok: u32 = 0,
@@ -77,16 +97,15 @@ pub const Stats = struct {
     callout_fired: u32 = 0,
     /// 本可以阻塞等待、但没有任务可切换而直接返回失败的次数（**应当可见**）。
     blocked_calls: u32 = 0,
-    task_create: u32 = 0,
-    intr_alloc: u32 = 0,
 };
 
-fn logLine(comptime fmt: []const u8, args: anytype) void {
-    if (hooks.log) |f| {
-        var buf: [128]u8 = undefined;
-        const s = std.fmt.bufPrint(&buf, fmt, args) catch return;
-        f(s);
-    }
+fn slotGet(comptime T: type, slot: *Slot) ?*T {
+    const raw = slot.p orelse return null;
+    return @ptrCast(@alignCast(raw));
+}
+
+fn slotSet(comptime T: type, slot: *Slot, value: *T) void {
+    slot.p = @ptrCast(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -124,78 +143,73 @@ pub fn getTimeForever() u32 {
 // 信号量（计数）
 // ---------------------------------------------------------------------------
 
-pub const Sem = struct {
-    count: u16,
-    in_use: bool = true,
-};
+pub const Sem = struct { count: u16 = 0, in_use: bool = false };
 
-var sem_pool: [16]?*Sem = @splat(null);
+/// 静态记录池：**不用 allocator**。`riscv32-freestanding` 上 `std.heap.page_allocator`
+/// 没有后端（主机测试里却正常），用它会在板侧第一次 init 就炸。
+/// 每个记录自带 `in_use` 标志，池本身就是存储。
+fn Pool(comptime T: type) type {
+    return struct {
+        records: [16]T = @splat(.{}),
 
-fn allocSem() ?*Sem {
-    for (&sem_pool) |*slot| {
-        if (slot.* != null) continue;
-        const s = std.heap.page_allocator.create(Sem) catch return null;
-        slot.* = s;
-        return s;
-    }
-    return null;
-}
-
-fn freeSem(p: *Sem) void {
-    for (&sem_pool) |*slot| {
-        if (slot.* == p) {
-            slot.* = null;
-            break;
+        fn take(self: *@This()) ?*T {
+            for (&self.records) |*r| {
+                if (r.in_use) continue;
+                r.* = .{};
+                r.in_use = true;
+                return r;
+            }
+            return null;
         }
-    }
-    std.heap.page_allocator.destroy(p);
+
+        fn give(self: *@This(), obj: *T) void {
+            for (&self.records) |*r| {
+                if (r == obj) {
+                    r.in_use = false;
+                    return;
+                }
+            }
+        }
+    };
 }
 
-pub fn semInit(handle: *?*anyopaque, tokens: u16) c_int {
-    const s = allocSem() orelse return ENOMEM;
-    s.* = .{ .count = tokens };
-    handle.* = s;
+var sem_pool: Pool(Sem) = .{};
+
+pub fn semInit(slot: *Slot, tokens: u16) c_int {
+    const s = sem_pool.take() orelse return ENOMEM;
+    s.count = tokens;
+    slotSet(Sem, slot, s);
     return OK;
 }
 
-pub fn semDeinit(handle: *?*anyopaque) c_int {
-    const raw = handle.* orelse return EINVAL;
-    freeSem(@ptrCast(@alignCast(raw)));
-    handle.* = null;
+pub fn semDeinit(slot: *Slot) c_int {
+    const s = slotGet(Sem, slot) orelse return EINVAL;
+    sem_pool.give(s);
+    slot.p = null;
     return OK;
 }
 
-/// `timeout` 单位 tick（= ms）。`forever` 表示无限等——这里没有可切换的任务，
-/// 因此**立即返回 TIMEOUT** 并计数，而不是静默挂住。
-pub fn semPend(handle: ?*anyopaque, timeout: u32) c_int {
-    const raw = handle orelse return EINVAL;
-    const s: *Sem = @ptrCast(@alignCast(raw));
+pub fn semPend(slot: *Slot, timeout: u32) c_int {
+    const s = slotGet(Sem, slot) orelse return EINVAL;
     if (s.count > 0) {
         s.count -= 1;
         stats_state.sem_pend_ok += 1;
         return OK;
     }
-    if (timeout == 0) {
-        stats_state.sem_pend_timeout += 1;
-        return TIMEOUT;
-    }
-    // 有超时但当前没有调度 ⇒ 如实报告失败，并让"本可以等"这件事可见。
-    stats_state.blocked_calls += 1;
+    if (timeout != 0) stats_state.blocked_calls += 1;
     stats_state.sem_pend_timeout += 1;
     return TIMEOUT;
 }
 
-pub fn semRelease(handle: ?*anyopaque) c_int {
-    const raw = handle orelse return EINVAL;
-    const s: *Sem = @ptrCast(@alignCast(raw));
+pub fn semRelease(slot: *Slot) c_int {
+    const s = slotGet(Sem, slot) orelse return EINVAL;
     if (s.count == std.math.maxInt(u16)) return EINVAL;
     s.count += 1;
     return OK;
 }
 
-pub fn semGetCount(handle: ?*anyopaque) u16 {
-    const raw = handle orelse return 0;
-    const s: *Sem = @ptrCast(@alignCast(raw));
+pub fn semGetCount(slot: *Slot) u16 {
+    const s = slotGet(Sem, slot) orelse return 0;
     return s.count;
 }
 
@@ -203,64 +217,43 @@ pub fn semGetCount(handle: ?*anyopaque) u16 {
 // 互斥
 // ---------------------------------------------------------------------------
 
-pub const Mutex = struct { locked: bool = false };
+pub const Mutex = struct { locked: bool = false, in_use: bool = false };
 
-var mutex_pool: [16]?*Mutex = @splat(null);
+var mutex_pool: Pool(Mutex) = .{};
 
-pub fn mutexInit(handle: *?*anyopaque) c_int {
-    var s: ?*Mutex = null;
-    for (&mutex_pool) |*slot| {
-        if (slot.* != null) continue;
-        slot.* = std.heap.page_allocator.create(Mutex) catch return ENOMEM;
-        s = slot.*;
-        break;
-    }
-    const m = s orelse return ENOMEM;
-    m.* = .{};
-    handle.* = m;
+pub fn mutexInit(slot: *Slot) c_int {
+    const m = mutex_pool.take() orelse return ENOMEM;
+    slotSet(Mutex, slot, m);
     return OK;
 }
 
-pub fn mutexDeinit(handle: *?*anyopaque) c_int {
-    const raw = handle.* orelse return EINVAL;
-    const m: *Mutex = @ptrCast(@alignCast(raw));
-    for (&mutex_pool) |*slot| {
-        if (slot.* == m) {
-            slot.* = null;
-            break;
-        }
-    }
-    std.heap.page_allocator.destroy(m);
-    handle.* = null;
+pub fn mutexDeinit(slot: *Slot) c_int {
+    const m = slotGet(Mutex, slot) orelse return EINVAL;
+    mutex_pool.give(m);
+    slot.p = null;
     return OK;
 }
 
-pub fn mutexPend(handle: ?*anyopaque, timeout: u32) c_int {
-    const raw = handle orelse return EINVAL;
-    const m: *Mutex = @ptrCast(@alignCast(raw));
+pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
+    const m = slotGet(Mutex, slot) orelse return EINVAL;
     if (!m.locked) {
         m.locked = true;
         stats_state.mutex_pend_ok += 1;
         return OK;
     }
-    if (timeout == 0) {
-        stats_state.mutex_pend_busy += 1;
-        return TIMEOUT;
-    }
-    stats_state.blocked_calls += 1;
+    if (timeout != 0) stats_state.blocked_calls += 1;
     stats_state.mutex_pend_busy += 1;
     return TIMEOUT;
 }
 
-pub fn mutexRelease(handle: ?*anyopaque) c_int {
-    const raw = handle orelse return EINVAL;
-    const m: *Mutex = @ptrCast(@alignCast(raw));
+pub fn mutexRelease(slot: *Slot) c_int {
+    const m = slotGet(Mutex, slot) orelse return EINVAL;
     m.locked = false;
     return OK;
 }
 
 // ---------------------------------------------------------------------------
-// 事件与事件队列
+// 事件与事件队列（状态对象在池里，槽位只存指针）
 // ---------------------------------------------------------------------------
 
 pub const Event = struct {
@@ -268,37 +261,39 @@ pub const Event = struct {
     fn_: ?*const fn (?*anyopaque) callconv(.c) void = null,
     arg: ?*anyopaque = null,
     queued: bool = false,
+    /// 反查回 controller 自己的那个 4 字节槽位（`eventq_get` 必须返回槽位指针）。
+    slot: ?*Slot = null,
+    in_use: bool = false,
 };
 
 pub const EventQ = struct {
     head: ?*Event = null,
     tail: ?*Event = null,
+    in_use: bool = false,
 };
 
-var eventq_pool: [8]?*EventQ = @splat(null);
+var event_pool: Pool(Event) = .{};
+var eventq_pool: Pool(EventQ) = .{};
 
-pub fn eventqInit(handle: *?*anyopaque) void {
-    for (&eventq_pool) |*slot| {
-        if (slot.* != null) continue;
-        const q = std.heap.page_allocator.create(EventQ) catch return;
-        q.* = .{};
-        slot.* = q;
-        handle.* = q;
-        return;
-    }
+pub fn eventqInit(slot: *Slot) void {
+    const q = eventq_pool.take() orelse return;
+    slotSet(EventQ, slot, q);
 }
 
-pub fn eventqIsEmpty(handle: ?*anyopaque) bool {
-    const raw = handle orelse return true;
-    const q: *EventQ = @ptrCast(@alignCast(raw));
+pub fn eventqDeinit(slot: *Slot) void {
+    const q = slotGet(EventQ, slot) orelse return;
+    eventq_pool.give(q);
+    slot.p = null;
+}
+
+pub fn eventqIsEmpty(slot: *const Slot) bool {
+    const q = slotGet(EventQ, @constCast(slot)) orelse return true;
     return q.head == null;
 }
 
-pub fn eventqPut(handle: ?*anyopaque, ev: ?*anyopaque) void {
-    const qraw = handle orelse return;
-    const eraw = ev orelse return;
-    const q: *EventQ = @ptrCast(@alignCast(qraw));
-    const e: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
+    const q = slotGet(EventQ, qslot) orelse return;
+    const e = slotGet(Event, eslot) orelse return;
     e.next = null;
     e.queued = true;
     if (q.tail) |t| {
@@ -310,11 +305,9 @@ pub fn eventqPut(handle: ?*anyopaque, ev: ?*anyopaque) void {
     stats_state.eventq_put += 1;
 }
 
-pub fn eventqPutToFront(handle: ?*anyopaque, ev: ?*anyopaque) void {
-    const qraw = handle orelse return;
-    const eraw = ev orelse return;
-    const q: *EventQ = @ptrCast(@alignCast(qraw));
-    const e: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
+    const q = slotGet(EventQ, qslot) orelse return;
+    const e = slotGet(Event, eslot) orelse return;
     e.next = q.head;
     e.queued = true;
     q.head = e;
@@ -322,27 +315,26 @@ pub fn eventqPutToFront(handle: ?*anyopaque, ev: ?*anyopaque) void {
     stats_state.eventq_put += 1;
 }
 
-pub fn eventqGet(handle: ?*anyopaque, timeout: u32) ?*anyopaque {
-    const qraw = handle orelse return null;
-    const q: *EventQ = @ptrCast(@alignCast(qraw));
+pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
+    const q = slotGet(EventQ, qslot) orelse return null;
     if (q.head) |e| {
         q.head = e.next;
         if (q.head == null) q.tail = null;
         e.next = null;
         e.queued = false;
         stats_state.eventq_get_ok += 1;
-        return e;
+        // C 侧 `eventq_get` 返回的是 `struct btdm_osal_event *`——即**槽位指针**，
+        // 所以状态对象必须能反查回它的槽位。
+        return e.slot;
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
     stats_state.eventq_get_empty += 1;
     return null;
 }
 
-pub fn eventqRemove(handle: ?*anyopaque, ev: ?*anyopaque) void {
-    const qraw = handle orelse return;
-    const eraw = ev orelse return;
-    const q: *EventQ = @ptrCast(@alignCast(qraw));
-    const target: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventqRemove(qslot: *Slot, eslot: *Slot) void {
+    const q = slotGet(EventQ, qslot) orelse return;
+    const target = slotGet(Event, eslot) orelse return;
     var prev: ?*Event = null;
     var cur = q.head;
     while (cur) |c| {
@@ -358,111 +350,122 @@ pub fn eventqRemove(handle: ?*anyopaque, ev: ?*anyopaque) void {
     }
 }
 
-pub fn eventInit(ev: ?*anyopaque, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
-    const eraw = ev orelse return;
-    const e: *Event = @ptrCast(@alignCast(eraw));
-    e.* = .{ .fn_ = fn_, .arg = arg };
+pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
+    // 槽位里可能已经有状态（重复 init）——复用，否则新建。
+    const e = slotGet(Event, slot) orelse blk: {
+        const fresh = event_pool.take() orelse return;
+        slotSet(Event, slot, fresh);
+        break :blk fresh;
+    };
+    e.fn_ = fn_;
+    e.arg = arg;
+    e.slot = slot;
 }
 
-pub fn eventRun(ev: ?*anyopaque) void {
-    const eraw = ev orelse return;
-    const e: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventDeinit(slot: *Slot) void {
+    const e = slotGet(Event, slot) orelse return;
+    event_pool.give(e);
+    slot.p = null;
+}
+
+pub fn eventRun(slot: *Slot) void {
+    const e = slotGet(Event, slot) orelse return;
     if (e.fn_) |f| f(e.arg);
 }
 
-pub fn eventIsQueued(ev: ?*anyopaque) bool {
-    const eraw = ev orelse return false;
-    const e: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventIsQueued(slot: *const Slot) bool {
+    const e = slotGet(Event, @constCast(slot)) orelse return false;
     return e.queued;
 }
 
-pub fn eventGetArg(ev: ?*anyopaque) ?*anyopaque {
-    const eraw = ev orelse return null;
-    const e: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventGetArg(slot: *Slot) ?*anyopaque {
+    const e = slotGet(Event, slot) orelse return null;
     return e.arg;
 }
 
-pub fn eventSetArg(ev: ?*anyopaque, arg: ?*anyopaque) void {
-    const eraw = ev orelse return;
-    const e: *Event = @ptrCast(@alignCast(eraw));
+pub fn eventSetArg(slot: *Slot, arg: ?*anyopaque) void {
+    const e = slotGet(Event, slot) orelse return;
     e.arg = arg;
 }
 
-pub fn eventReset(ev: ?*anyopaque) void {
-    const eraw = ev orelse return;
-    const e: *Event = @ptrCast(@alignCast(eraw));
-    e.* = .{};
+pub fn eventReset(slot: *Slot) void {
+    const e = slotGet(Event, slot) orelse return;
+    e.fn_ = null;
+    e.arg = null;
+    e.next = null;
+    e.queued = false;
 }
 
 // ---------------------------------------------------------------------------
-// callout（软件定时器）：IDF 用 esp_timer 实现，我们用一个轮子 + 外部 tick 驱动
+// callout（软件定时器）：IDF 用 esp_timer，我们用一个轮子 + 外部 tick 驱动
 // ---------------------------------------------------------------------------
 
 pub const Callout = struct {
     deadline_ms: u32 = 0,
     active: bool = false,
-    evq: ?*anyopaque = null,
-    ev_fn: ?*const fn (?*anyopaque) callconv(.c) void = null,
-    ev_arg: ?*anyopaque = null,
-    /// 每个 callout 自带一个事件对象：到期时投进它绑定的 eventq。
-    ev: Event = .{},
+    evq: ?*Slot = null,
+    ev_slot: Slot = .{},
+    in_use: bool = false,
 };
 
-var callout_pool: [16]?*Callout = @splat(null);
+var callout_pool: Pool(Callout) = .{};
 
-pub fn calloutInit(handle: *?*anyopaque, evq: ?*anyopaque, ev_cb: ?*const fn (?*anyopaque) callconv(.c) void, ev_arg: ?*anyopaque) c_int {
-    var c: ?*Callout = null;
-    for (&callout_pool) |*slot| {
-        if (slot.* != null) continue;
-        slot.* = std.heap.page_allocator.create(Callout) catch return ENOMEM;
-        c = slot.*;
-        break;
-    }
-    const co = c orelse return ENOMEM;
-    co.* = .{ .evq = evq, .ev_fn = ev_cb, .ev_arg = ev_arg };
-    co.ev = .{ .fn_ = ev_cb, .arg = ev_arg };
-    handle.* = co;
+pub fn calloutInit(slot: *Slot, evq: ?*Slot, ev_cb: ?*const fn (?*anyopaque) callconv(.c) void, ev_arg: ?*anyopaque) c_int {
+    const co = callout_pool.take() orelse return ENOMEM;
+    co.evq = evq;
+    slotSet(Callout, slot, co);
+    // callout 自带一个事件槽位：到期时把它投进绑定的 eventq。
+    eventInit(&co.ev_slot, ev_cb, ev_arg);
     return OK;
 }
 
-pub fn calloutReset(handle: ?*anyopaque, ticks: u32) c_int {
-    const raw = handle orelse return EINVAL;
-    const co: *Callout = @ptrCast(@alignCast(raw));
+pub fn calloutDeinit(slot: *Slot) void {
+    const co = slotGet(Callout, slot) orelse return;
+    eventDeinit(&co.ev_slot);
+    callout_pool.give(co);
+    slot.p = null;
+}
+
+pub fn calloutReset(slot: *Slot, ticks: u32) c_int {
+    const co = slotGet(Callout, slot) orelse return EINVAL;
     co.deadline_ms = timeGet() +% ticks;
     co.active = true;
     return OK;
 }
 
-pub fn calloutStop(handle: ?*anyopaque) void {
-    const raw = handle orelse return;
-    const co: *Callout = @ptrCast(@alignCast(raw));
+pub fn calloutStop(slot: *Slot) void {
+    const co = slotGet(Callout, slot) orelse return;
     co.active = false;
 }
 
-pub fn calloutIsActive(handle: ?*anyopaque) bool {
-    const raw = handle orelse return false;
-    const co: *Callout = @ptrCast(@alignCast(raw));
+pub fn calloutIsActive(slot: *const Slot) bool {
+    const co = slotGet(Callout, @constCast(slot)) orelse return false;
     return co.active;
 }
 
-pub fn calloutRemainingTicks(handle: ?*anyopaque, now: u32) u32 {
-    const raw = handle orelse return 0;
-    const co: *Callout = @ptrCast(@alignCast(raw));
+pub fn calloutRemainingTicks(slot: *const Slot, now: u32) u32 {
+    const co = slotGet(Callout, @constCast(slot)) orelse return 0;
     if (!co.active) return 0;
     return if (co.deadline_ms > now) co.deadline_ms - now else 0;
+}
+
+/// IDF 的 `callout_mem_reset` 是 `memset(co, 0, sizeof(struct btdm_osal_callout))`
+/// ⇒ 这里等价于把 4 字节槽位清零。
+pub fn calloutMemReset(slot: *Slot) void {
+    slot.p = null;
 }
 
 /// 由 tick 源（板级 trap 的 input-25 分支 / 主机测试）调用：把到期的 callout
 /// 投进它绑定的 eventq。返回本次到期个数。
 pub fn serviceCallouts(now: u32) u32 {
     var fired: u32 = 0;
-    for (callout_pool) |slot| {
-        const raw = slot orelse continue;
-        const co: *Callout = @ptrCast(@alignCast(raw));
+    for (&callout_pool.records) |*maybe| {
+        if (!maybe.in_use) continue;
+        const co = maybe;
         if (!co.active) continue;
         if (now < co.deadline_ms) continue;
         co.active = false;
-        if (co.evq) |q| eventqPut(q, &co.ev);
+        if (co.evq) |q| eventqPut(q, &co.ev_slot);
         fired += 1;
     }
     stats_state.callout_fired += fired;
@@ -470,15 +473,42 @@ pub fn serviceCallouts(now: u32) u32 {
 }
 
 // ---------------------------------------------------------------------------
-// 主机侧单元测试（x86_64；纯逻辑，不碰硬件）
+// 主机侧单元测试（x86_64；按 C 的**槽位形状**调用，才能暴露 ABI 错误）
 // ---------------------------------------------------------------------------
 
+const testing = std.testing;
+
+var fake_clock: u32 = 1000;
 fn fakeNow() u32 {
     return fake_clock;
 }
-var fake_clock: u32 = 1000;
 
-const testing = std.testing;
+var fake_irq_depth: u32 = 0;
+fn fakeIrqSave() u32 {
+    fake_irq_depth += 1;
+    return fake_irq_depth;
+}
+fn fakeIrqRestore(_: u32) void {}
+
+test "slot: 与 C 的 4 字节句柄同形，写入不越界" {
+    try testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(Slot));
+    try testing.expectEqual(@as(usize, 0), @offsetOf(Slot, "p"));
+    // rv32 上必须是 4（C 的 `struct { void *x; }`）
+    if (@sizeOf(usize) == 4) try testing.expectEqual(@as(usize, 4), @sizeOf(Slot));
+    // 金丝雀：槽位前后各放一个哨兵，任何 >4 字节的写入都会被看见。
+    var guard = struct {
+        pre: u32 = 0xDEAD_BEEF,
+        s: Slot = .{},
+        post: u32 = 0xCAFE_F00D,
+    }{};
+    try testing.expectEqual(OK, semInit(&guard.s, 3));
+    try testing.expectEqual(@as(u32, 0xDEAD_BEEF), guard.pre);
+    try testing.expectEqual(@as(u32, 0xCAFE_F00D), guard.post);
+    try testing.expectEqual(@as(u16, 3), semGetCount(&guard.s));
+    try testing.expectEqual(OK, semDeinit(&guard.s));
+    try testing.expect(guard.s.p == null);
+    try testing.expectEqual(@as(u32, 0xCAFE_F00D), guard.post);
+}
 
 test "time: 毫秒刻度，ms<->ticks 恒等" {
     setHooks(.{ .now_ms = fakeNow });
@@ -493,14 +523,6 @@ test "time: 未注入钩子时返回 0（宁早失败，不静默冻死）" {
     setHooks(.{});
     try testing.expectEqual(@as(u32, 0), timeGet());
 }
-
-var fake_irq_depth: u32 = 0;
-
-fn fakeIrqSave() u32 {
-    fake_irq_depth += 1;
-    return fake_irq_depth;
-}
-fn fakeIrqRestore(_: u32) void {}
 
 test "critical: 嵌套计数与 is_in_critical" {
     setHooks(.{ .irq_save = fakeIrqSave, .irq_restore = fakeIrqRestore });
@@ -518,59 +540,63 @@ test "critical: 嵌套计数与 is_in_critical" {
 
 test "sem: 计数、pend/release、超时可见" {
     resetStats();
-    var h: ?*anyopaque = null;
-    try testing.expectEqual(OK, semInit(&h, 2));
-    try testing.expectEqual(@as(u16, 2), semGetCount(h));
-    try testing.expectEqual(OK, semPend(h, 0));
-    try testing.expectEqual(OK, semPend(h, 0));
-    try testing.expectEqual(@as(u16, 0), semGetCount(h));
-    try testing.expectEqual(TIMEOUT, semPend(h, 0));
-    try testing.expectEqual(OK, semRelease(h));
-    try testing.expectEqual(@as(u16, 1), semGetCount(h));
-    try testing.expectEqual(OK, semPend(h, 0)); // 把 token 拿走
-    // 有超时但没有可切换的任务 ⇒ 立刻失败，且 blocked_calls 记账
-    try testing.expectEqual(TIMEOUT, semPend(h, 100));
+    var s: Slot = .{};
+    try testing.expectEqual(OK, semInit(&s, 2));
+    try testing.expectEqual(@as(u16, 2), semGetCount(&s));
+    try testing.expectEqual(OK, semPend(&s, 0));
+    try testing.expectEqual(OK, semPend(&s, 0));
+    try testing.expectEqual(@as(u16, 0), semGetCount(&s));
+    try testing.expectEqual(TIMEOUT, semPend(&s, 0));
+    try testing.expectEqual(OK, semRelease(&s));
+    try testing.expectEqual(@as(u16, 1), semGetCount(&s));
+    try testing.expectEqual(OK, semPend(&s, 0)); // 把 token 拿走
+    try testing.expectEqual(TIMEOUT, semPend(&s, 100)); // 有超时但无可切换任务
     try testing.expectEqual(@as(u32, 1), stats().blocked_calls);
-    try testing.expectEqual(OK, semDeinit(&h));
+    try testing.expectEqual(OK, semDeinit(&s));
 }
 
 test "mutex: 上锁/释放，重复 pend 返回 TIMEOUT" {
     resetStats();
-    var h: ?*anyopaque = null;
-    try testing.expectEqual(OK, mutexInit(&h));
-    try testing.expectEqual(OK, mutexPend(h, 0));
-    try testing.expectEqual(TIMEOUT, mutexPend(h, 0));
-    try testing.expectEqual(OK, mutexRelease(h));
-    try testing.expectEqual(OK, mutexPend(h, 0));
-    try testing.expectEqual(OK, mutexDeinit(&h));
+    var s: Slot = .{};
+    try testing.expectEqual(OK, mutexInit(&s));
+    try testing.expectEqual(OK, mutexPend(&s, 0));
+    try testing.expectEqual(TIMEOUT, mutexPend(&s, 0));
+    try testing.expectEqual(OK, mutexRelease(&s));
+    try testing.expectEqual(OK, mutexPend(&s, 0));
+    try testing.expectEqual(OK, mutexDeinit(&s));
 }
 
 test "eventq: FIFO、put_to_front、remove、is_empty" {
     resetStats();
-    var q: ?*anyopaque = null;
+    var q: Slot = .{};
+    var se1: Slot = .{};
+    var se2: Slot = .{};
     eventqInit(&q);
-    try testing.expect(eventqIsEmpty(q));
-    var e1: Event = .{};
-    var e2: Event = .{};
-    eventqPut(q, &e1);
-    eventqPut(q, &e2);
-    try testing.expect(!eventqIsEmpty(q));
-    try testing.expectEqual(@as(?*anyopaque, &e1), eventqGet(q, 0));
-    try testing.expectEqual(@as(?*anyopaque, &e2), eventqGet(q, 0));
-    try testing.expect(eventqIsEmpty(q));
-    // put_to_front（注意：已入队的事件不能再 put，否则链表成环）
-    eventqPutToFront(q, &e2);
-    eventqPut(q, &e1);
-    try testing.expectEqual(@as(?*anyopaque, &e2), eventqGet(q, 0));
-    try testing.expectEqual(@as(?*anyopaque, &e1), eventqGet(q, 0));
-    try testing.expect(eventqIsEmpty(q));
+    eventInit(&se1, null, null);
+    eventInit(&se2, null, null);
+    try testing.expect(eventqIsEmpty(&q));
+    eventqPut(&q, &se1);
+    eventqPut(&q, &se2);
+    try testing.expect(!eventqIsEmpty(&q));
+    try testing.expectEqual(@as(?*Slot, &se1), eventqGet(&q, 0));
+    try testing.expectEqual(@as(?*Slot, &se2), eventqGet(&q, 0));
+    try testing.expect(eventqIsEmpty(&q));
+    // put_to_front（已入队的事件不能再 put，否则链表成环）
+    eventqPutToFront(&q, &se2);
+    eventqPut(&q, &se1);
+    try testing.expectEqual(@as(?*Slot, &se2), eventqGet(&q, 0));
+    try testing.expectEqual(@as(?*Slot, &se1), eventqGet(&q, 0));
+    try testing.expect(eventqIsEmpty(&q));
     // remove
-    eventqPut(q, &e1);
-    eventqRemove(q, &e1);
-    try testing.expect(eventqIsEmpty(q));
+    eventqPut(&q, &se1);
+    eventqRemove(&q, &se1);
+    try testing.expect(eventqIsEmpty(&q));
+    eventqDeinit(&q);
+    eventDeinit(&se1);
+    eventDeinit(&se2);
 }
 
-test "event: run 调到回调，arg 可取可设" {
+test "event: run 调到回调，arg 可取可设，is_queued 跟随队列" {
     var hit: u32 = 0;
     const cb = struct {
         fn f(arg: ?*anyopaque) callconv(.c) void {
@@ -578,32 +604,199 @@ test "event: run 调到回调，arg 可取可设" {
             p.* += 1;
         }
     }.f;
-    var e: Event = .{};
-    eventInit(&e, cb, &hit);
-    eventRun(&e);
+    var s: Slot = .{};
+    eventInit(&s, cb, &hit);
+    eventRun(&s);
     try testing.expectEqual(@as(u32, 1), hit);
-    try testing.expectEqual(@as(?*anyopaque, &hit), eventGetArg(&e));
-    eventSetArg(&e, &hit);
-    try testing.expect(!eventIsQueued(&e));
+    try testing.expectEqual(@as(?*anyopaque, &hit), eventGetArg(&s));
+    eventSetArg(&s, &hit);
+    var q: Slot = .{};
+    eventqInit(&q);
+    eventqPut(&q, &s);
+    try testing.expect(eventIsQueued(&s));
+    _ = eventqGet(&q, 0);
+    try testing.expect(!eventIsQueued(&s));
+    eventqDeinit(&q);
+    eventDeinit(&s);
 }
 
 test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
     resetStats();
     setHooks(.{ .now_ms = fakeNow });
     fake_clock = 500;
-    var q: ?*anyopaque = null;
+    var q: Slot = .{};
     eventqInit(&q);
-    var co: ?*anyopaque = null;
-    try testing.expectEqual(OK, calloutInit(&co, q, null, null));
-    try testing.expect(!calloutIsActive(co));
-    try testing.expectEqual(OK, calloutReset(co, 20));
-    try testing.expect(calloutIsActive(co));
-    try testing.expectEqual(@as(u32, 20), calloutRemainingTicks(co, 500));
+    var co: Slot = .{};
+    try testing.expectEqual(OK, calloutInit(&co, &q, null, null));
+    try testing.expect(!calloutIsActive(&co));
+    try testing.expectEqual(OK, calloutReset(&co, 20));
+    try testing.expect(calloutIsActive(&co));
+    try testing.expectEqual(@as(u32, 20), calloutRemainingTicks(&co, 500));
     try testing.expectEqual(@as(u32, 0), serviceCallouts(510));
     try testing.expectEqual(@as(u32, 1), serviceCallouts(521));
-    try testing.expect(!calloutIsActive(co));
-    try testing.expect(!eventqIsEmpty(q));
+    try testing.expect(!calloutIsActive(&co));
+    try testing.expect(!eventqIsEmpty(&q));
     try testing.expectEqual(@as(u32, 0), serviceCallouts(600)); // 不重复投
-    calloutStop(co);
+    calloutStop(&co);
+    calloutDeinit(&co);
+    eventqDeinit(&q);
     setHooks(.{});
+}
+
+// ---------------------------------------------------------------------------
+// C ABI 导出层（链接器只认 `export fn`；没有这一层，controller 调到的仍是归档里的弱桩）
+//
+// 签名逐条照 `btdm_osal.h`：句柄参数都是 `struct btdm_osal_*`（4 字节槽位）⇒ `*Slot`；
+// `btdm_osal_time_t` 是 u32；错误码用 IDF 的枚举值（OK=0、ENOMEM=1、EINVAL=2、TIMEOUT=6）。
+// ---------------------------------------------------------------------------
+
+const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
+
+export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
+    eventqInit(evq);
+}
+export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
+    eventqDeinit(evq);
+}
+export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
+    return eventqGet(evq, tmo);
+}
+export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
+    eventqPut(evq, ev);
+}
+export fn wr_btdm_osal_eventq_put_to_front(evq: *Slot, ev: *Slot) callconv(.c) void {
+    eventqPutToFront(evq, ev);
+}
+export fn wr_btdm_osal_eventq_remove(evq: *Slot, ev: *Slot) callconv(.c) void {
+    eventqRemove(evq, ev);
+}
+export fn wr_btdm_osal_eventq_is_empty(evq: *Slot) callconv(.c) bool {
+    return eventqIsEmpty(evq);
+}
+
+export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
+    eventRun(ev);
+}
+export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
+    eventInit(ev, fn_, arg);
+}
+export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
+    eventDeinit(ev);
+}
+export fn wr_btdm_osal_event_reset(ev: *Slot) callconv(.c) void {
+    eventReset(ev);
+}
+export fn wr_btdm_osal_event_is_queued(ev: *Slot) callconv(.c) bool {
+    return eventIsQueued(ev);
+}
+export fn wr_btdm_osal_event_get_arg(ev: *Slot) callconv(.c) ?*anyopaque {
+    return eventGetArg(ev);
+}
+export fn wr_btdm_osal_event_set_arg(ev: *Slot, arg: ?*anyopaque) callconv(.c) void {
+    eventSetArg(ev, arg);
+}
+
+export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
+    return mutexInit(mu);
+}
+export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
+    return mutexDeinit(mu);
+}
+export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
+    return mutexPend(mu, timeout);
+}
+export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
+    return mutexRelease(mu);
+}
+
+export fn wr_btdm_osal_sem_init(sem: *Slot, tokens: u16) callconv(.c) c_int {
+    return semInit(sem, tokens);
+}
+export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
+    return semDeinit(sem);
+}
+export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
+    return semPend(sem, timeout);
+}
+export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
+    return semRelease(sem);
+}
+export fn wr_btdm_osal_sem_get_count(sem: *Slot) callconv(.c) u16 {
+    return semGetCount(sem);
+}
+
+export fn wr_btdm_osal_callout_init(co: *Slot, evq: ?*Slot, ev_cb: EventFn, ev_arg: ?*anyopaque) callconv(.c) c_int {
+    return calloutInit(co, evq, ev_cb, ev_arg);
+}
+export fn wr_btdm_osal_callout_deinit(co: *Slot) callconv(.c) void {
+    calloutDeinit(co);
+}
+export fn wr_btdm_osal_callout_reset(co: *Slot, ticks: u32) callconv(.c) c_int {
+    return calloutReset(co, ticks);
+}
+export fn wr_btdm_osal_callout_mem_reset(co: *Slot) callconv(.c) void {
+    calloutMemReset(co);
+}
+export fn wr_btdm_osal_callout_stop(co: *Slot) callconv(.c) void {
+    calloutStop(co);
+}
+export fn wr_btdm_osal_callout_is_active(co: *Slot) callconv(.c) bool {
+    return calloutIsActive(co);
+}
+export fn wr_btdm_osal_callout_get_ticks(co: *Slot) callconv(.c) u32 {
+    const c = slotGet(Callout, co) orelse return 0;
+    return c.deadline_ms;
+}
+export fn wr_btdm_osal_callout_remaining_ticks(co: *Slot, now: u32) callconv(.c) u32 {
+    return calloutRemainingTicks(co, now);
+}
+export fn wr_btdm_osal_callout_set_arg(co: *Slot, arg: ?*anyopaque) callconv(.c) void {
+    const c = slotGet(Callout, co) orelse return;
+    eventSetArg(&c.ev_slot, arg);
+}
+
+export fn wr_btdm_osal_time_get() callconv(.c) u32 {
+    return timeGet();
+}
+export fn wr_btdm_osal_time_ms_to_ticks(ms: u32, out_ticks: *u32) callconv(.c) c_int {
+    out_ticks.* = msToTicks(ms);
+    return OK;
+}
+export fn wr_btdm_osal_time_ticks_to_ms(ticks: u32, out_ms: *u32) callconv(.c) c_int {
+    out_ms.* = ticksToMs(ticks);
+    return OK;
+}
+export fn wr_btdm_osal_time_ms_to_ticks32(ms: u32) callconv(.c) u32 {
+    return msToTicks(ms);
+}
+export fn wr_btdm_osal_time_ticks_to_ms32(ticks: u32) callconv(.c) u32 {
+    return ticksToMs(ticks);
+}
+
+export fn wr_btdm_osal_hw_enter_critical() callconv(.c) u32 {
+    return hwEnterCritical();
+}
+export fn wr_btdm_osal_hw_exit_critical(ctx: u32) callconv(.c) void {
+    hwExitCritical(ctx);
+}
+export fn wr_btdm_osal_hw_is_in_critical() callconv(.c) u8 {
+    return hwIsInCritical();
+}
+
+export fn wr_btdm_osal_get_time_forever() callconv(.c) u32 {
+    return getTimeForever();
+}
+
+test "export layer: 至少这些符号是全局强定义（链接器才看得见）" {
+    // 名字在这里被引用一次，保证不会被裁掉；同时是清单的自查。
+    const names = [_]*const anyopaque{
+        &wr_btdm_osal_eventq_init,       &wr_btdm_osal_eventq_get,       &wr_btdm_osal_eventq_put,
+        &wr_btdm_osal_event_init,        &wr_btdm_osal_event_run,        &wr_btdm_osal_event_set_arg,
+        &wr_btdm_osal_mutex_init,        &wr_btdm_osal_mutex_pend,       &wr_btdm_osal_mutex_release,
+        &wr_btdm_osal_sem_init,          &wr_btdm_osal_sem_pend,         &wr_btdm_osal_sem_release,
+        &wr_btdm_osal_sem_get_count,     &wr_btdm_osal_callout_init,     &wr_btdm_osal_callout_reset,
+        &wr_btdm_osal_callout_stop,      &wr_btdm_osal_time_get,         &wr_btdm_osal_time_ms_to_ticks,
+        &wr_btdm_osal_hw_enter_critical, &wr_btdm_osal_get_time_forever,
+    };
+    try testing.expectEqual(@as(usize, 20), names.len);
 }
