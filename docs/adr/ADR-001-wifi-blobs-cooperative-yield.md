@@ -4483,7 +4483,16 @@ wifi-init-probe: after rst_wifimac pulse MAC_ST=0x0000e000 (was 0x0000e000)
 
 ⇒ 下一个判别点应转向**"谁把这三位置成 1"**，而不是"怎么清"。
 
-### 判决（负）：补上 IDF 的 `rst_wifibb` 序列，MAC_ST 仍 `0xE000`
+### ⚠ 撤回一条判读：这是一次**重复实验**（`rst_wifibb` 早做过并判负）
+
+**先记错**：本轮按 IDF `wifi_module_enable()` 补 `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`，
+结果 `MAC_ST` 仍 `0x0000e000`。但 ADR **§候选清单实验 9** 早已写着
+「脉冲 `rst_wifibb`（`0x20109C10` bit8）→ `0x0 -> 0x0`，`mac` 仍 `0x0000e000`」——
+**这是同一实验的第二遍**。代码改动已回滚（顺带避开 `conf1 = 0x17b` 那次破坏性覆盖）。
+
+⇒ 纪律：**改寄存器/脉冲变体之前，先查 §候选清单**。已连做几轮无进展，该换方向了。
+
+### 判决（负）：补上 IDF 的 `rst_wifibb` 序列，MAC_ST 仍 `0xE000`（已回滚，见上）
 
 IDF `wifi_module_enable()`（`modem_clock_impl.c`）在开 WiFi 模块时做了我们缺的三件事，
 现按顺序补进 `_wifi_clock_enable`：

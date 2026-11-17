@@ -1180,22 +1180,10 @@ fn shellWifiClockEnable() callconv(.c) usize {
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
     const before = conf1.*;
     conf1.* = before | wifi_clk_conf1_bits;
-    // **IDF `wifi_module_enable()` 有、我们一直缺的一步**：
-    // `modem_syscon_ll_reset_wifibb()` —— 对 `modem_rst_conf.rst_wifibb`
-    // （MODEM_SYSCON 0x20109C00 + 0x10，**bit 8**）打 1→0 复位脉冲，
-    // 随后 `clk_conf1_configure(hw, 1, 0x17b)` 配 BB 时钟组，再置 `clk_wifibb_80x1_en`。
-    // 见 IDF `components/esp_hw_support/modem/port/esp32s31/modem_clock_impl.c`。
-    {
-        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
-        const rb = rst.*;
-        rst.* = rb | (1 << 8); // rst_wifibb = 1
-        romDelayUs(20);
-        rst.* = rst.* & ~@as(u32, 1 << 8); // rst_wifibb = 0（释放）
-        romDelayUs(20);
-        note(23, rb, rst.*);
-    }
-    conf1.* = 0x17b; // `clk_conf1_configure(hw, 1, 0x17b)`
-    conf1.* = conf1.* | (1 << 7); // `clk_wifibb_80x1_en`
+    // **`rst_wifibb` 序列已回滚**：ADR §候选清单**实验 9** 早已做过并判负
+    // （脉冲 `rst_wifibb`(0x20109C10 bit8) → `0x0->0x0`，`mac` 仍 `0x0000e000`）。
+    // 本轮又按 IDF `wifi_module_enable()` 的完整顺序重做了一遍（rst_wifibb 脉冲 + `clk_conf1=0x17b`
+    // + `clk_wifibb_80x1_en`），结果同样是 `MAC_ST=0x0000e000`——**同一实验的第二遍，已撤回**。
     // `WIFI_CLOCK_DEPS` 的最后一项 COEXIST 不在 CLK_CONF1 里：它在
     // `MODEM_LPCON(0x2010F000).clk_conf(+0x18)` 的 bit1（`modem_lpcon_ll_enable_coex_clock`）。
     const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
