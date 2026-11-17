@@ -4410,7 +4410,7 @@ wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
 2f0091dc: lui  a5, 0x20105
 2f0091e0: addi a5, a5, -852      # MAC_ST
 2f0091e4: lw   a4, 0(a5)
-2f0091e6: lui  a3, 0xff1         # 0xFF100000
+2f0091e6: lui  a3, 0xff1         # 0x0FF10000（bits 12 + 16-23）
 2f0091ea: li   a0, 20
 2f0091ec: or   a4, a4, a3        # ★ 置 bits 20-23 / 24-31
 2f0091ee: sw   a4, 0(a5)         # 写回 MAC_ST
@@ -4438,7 +4438,7 @@ MAC 的时钟是否真的送到、复位是否已释放（`0x20100800`、`0x2010
 而调用前 `li a0, 20`。所以那段是：
 
 ```asm
-or  a4, a4, 0xFF100000   # 置 MAC_ST 高位（触发）
+or  a4, a4, 0x0FF10000   # 置 MAC_ST 高位（触发；`lui 0xff1` = 0x0FF10000，与 IDF after_start 实测的 0x00FF1000 同族）
 sw  a4, 0(a5)
 ets_delay_us(20)         # 等 20 µs
 loop: lw a5, 0(MAC_ST)
@@ -4449,3 +4449,17 @@ loop: lw a5, 0(MAC_ST)
 ⇒ 这是一个**"写触发位 → 等 20 µs → 等硬件把状态位清 0"**的握手。
 ⇒ bits 13–15 **一直不清** ⇒ **MAC 硬件根本没响应这次触发**（没时钟 / 还在复位 / 没上电）。
 ⇒ 与"软件写不掉这三位"完全自洽：它们由硬件驱动，而硬件没在跑。
+
+### 三处口径更正（读归档日志核对后）
+
+1. **`lui a3, 0xff1` = `0x0FF10000`**（bits 12 + 16–23），不是 `0xFF100000`。它与 IDF `after_start`
+   实测的命令字 `0x00FF1000` 同族——**命令写法两边一样**，差别只在命令前的 **MAC_ST 底色**（IDF=0，我们=`0xE000`）。
+2. **`semcreate=65536` 不是计数器**：归档里 `semcreate args: 0x00010000 0x00000001` 说明 blob 调的是
+   `_semphr_create(max=0x10000, initial=1)`；泵行里那个 `65536` 是**信号量的 max 参数**被误打进了 "semcreate" 标签。
+3. **`null_give` 要注明口径**：**泵期间**是 0，但**运行末**是 `give_total=6 null_give=1`——
+   `semphr_give a0=0x00000000 a1=0x2f00d73c`（`a1` 正是 ROM PP worker 的返回地址）就是**迟到的 give 落在已删句柄上**。
+   所以"`null_give` 1→0"只对 **init 窗口内**成立。
+4. **"彻底推到 MAC 时钟/复位域"是过度收口**：自旋 `0x2f0091fe` **不让出** ⇒ **ROM 的 PP worker 在
+   `esp_wifi_start` 期间仍然一次都跑不到**。所以"MAC 域没起来"这个结论**仍带着旧前提**（"任务从未被调度"）。
+   准确表述：**调度这条线在 init 期间已打通；start 期间的自旋仍不让出 ⇒ PP worker 仍跑不到，
+   两种可能（硬件没起来 / 任务没跑到）尚未分离。**

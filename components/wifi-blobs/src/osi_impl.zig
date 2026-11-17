@@ -1200,11 +1200,23 @@ fn shellWifiClockDisable() callconv(.c) usize {
 ///     clk_conf_force_on(0x08)/clk_conf_power_st(0x0c)/modem_rst_conf(0x10)，与探针里
 ///     FORCE_ON=0x08、POWER_ST=0x0c、CLK_CONF1=0x14 三个锚点一致）；
 ///   - `rst_wifimac` 是 **bit 9**（`modem_syscon_struct.h` 里 reserved0..7 之后的第二位）。
+/// ROM 的微秒级忙等（`ets_delay_us` = 0x2f80003c，见链接脚本 `rom_syms.ld`）。
+fn romDelayUs(us: u32) void {
+    if (@import("builtin").cpu.arch != .riscv32) return;
+    const f = @extern(*const fn (u32) callconv(.c) void, .{ .name = "ets_delay_us" });
+    f(us);
+}
+
 fn shellWifiResetMac() callconv(.c) usize {
     cnt_reset_mac +%= 1;
     const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
     const before = rst.*;
     rst.* = before | (1 << 9);
+    // **脉冲宽度**：置 1 与清 0 之间必须有显式延时——背靠背两条 `sw` 只隔一个周期，
+    // 异步复位域很可能根本采不到这么窄的脉冲（IDF 的 `modem_clock_module_mac_reset`
+    // 在 set/clear 之间就有 µs 级 `esp_rom_delay_us`）。没有这一步，
+    // 所有"复位无效"的结论都不可信。
+    romDelayUs(20);
     rst.* = rst.* & ~@as(u32, 1 << 9);
     note(22, before, rst.*);
     return 0;
