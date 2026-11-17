@@ -302,6 +302,25 @@ bash components/bt-blobs/tools/gen-bt-closure.sh /tmp/bt_all
 HCI A 与 B 两条路径）。少一个就会出现"链接期 undefined"——实测踩过：加 `r_base_stack_initEnv`
 才发现闭包漏了它。
 
+## 板上实测（2026-11-17）
+
+跑到 init **step 6 `r_btdm_task_init` 内部**停住。用 TIMG0 T0（2 ms）采样被中断的 PC：
+
+| 观测 | 值 |
+| --- | --- |
+| PC | `0x2f83efda` ×13、`0x2f812220` ×5（都在 ROM 区） |
+| `mac` | **28/28 全是 `0x0000e000`** |
+
+⇒ **`MAC_ST & 0xE000 != 0`** —— 与 Wi-Fi controller 的卡点是**同一组只读忙位**。
+两个 controller 都停在"MAC/PHY 内部状态从未离开 busy"，是同一个底层状态，不是各自的问题。
+
+**已确证**（板侧，非推断）：12 个时钟门全部置上（`clk_conf=0x72601002`、`clk_conf1=0x00070080`、
+`lpcon=0x00000006`）；池需求 `evt=187 evtq=33 co=41 sem=20 mutex=16`；init 链可达 step 5。
+
+⚠ **探针必须调 `hw.initTimer()`**：不调则 `nowUs()` 恒 0 ⇒ ① T0 的 alarm 永不到点 ⇒
+采样中断一个都不来；② OSAL 的 `now_ms` 恒 0 ⇒ 任何"等到某时刻"的条件永不成立。
+ADR-001:729 已因同一个原因记过一次。
+
 ## 待验证项
 
 1. **`esp_btdm_controller_config_t` 逐字段镜像**（含结尾的 `magic`，`esp_bt.h:239`）+ `bluetooth_mode` 不能是 IDLE。

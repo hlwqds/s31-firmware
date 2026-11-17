@@ -68,6 +68,16 @@ pub fn run() noreturn {
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
 
+    // **最先初始化时基**：不调 `hw.initTimer()`，TIMG0 的时钟没开 ⇒ `nowUs()` 恒 0（实测，
+    // 见 ADR-001:729-730）⇒ ① T0 的 alarm 永不到点 ⇒ 一个中断都不来（采样器永远静默）；
+    // ② OSAL 的 `now_ms = nowUs()/1000` 恒 0 ⇒ 归档里任何"等到某个时刻"的条件永远不成立 ⇒ 死等。
+    // 这一行缺席的代价是整条链卡在 step 6，而且现象与"中断不工作"完全一样。
+    board.hw.initTimer();
+    const t0 = board.hw.nowUs();
+    board.hw.initTimer();
+    const t1 = board.hw.nowUs();
+    board.log.line("bt probe: timer {d} -> {d} (must increase)", .{ t0, t1 });
+
     // **在 init 之前**武装 T0 + 开中断：init 一旦卡住，只有 ISR 还能说话。
     // 采样点在 trap 的输入 25 分支；中断还在来 ⇒ 是 spin 而非死机。
     // ⚠ 只有探针构建这么做，生产固件保持 MIE=0。

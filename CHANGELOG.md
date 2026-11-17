@@ -8,6 +8,16 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **板上结论：BLE 与 Wi-Fi 撞同一面墙**（2026-11-17）：BLE controller 跑到 init step 6
+  （`r_btdm_task_init` 内部）停住，用 TIMG0 T0 采样被中断的 PC —— 28 个样本全部 `mac=0x0000e000`，
+  PC 集中在 ROM 区的 `0x2f83efda`/`0x2f812220` ⇒ **`MAC_ST & 0xE000 != 0`**，与 ch25 记录的
+  Wi-Fi blob 卡点是**同一组只读忙位**。⇒ 两个 controller 都停在"MAC/PHY 内部状态从未离开 busy"，
+  是同一个底层状态而非各自的问题；R3.2 与 R3.3 的后续都卡在"让 MAC 从 busy 里出来"这一件事上
+  （ch25 已为此排除 17 条路径，下一步仍是 JTAG 写监视点或 ROM 侧情报）。
+  顺带确证（板侧实测）：12 个时钟门全部置上；控制器要的池容量 `evt=187 evtq=33 co=41 sem=20 mutex=16`；
+  init 链可达 step 5。
+  ⚠ 探针漏调 `hw.initTimer()` 的代价：`nowUs()` 恒 0 ⇒ T0 采样中断永不到点、OSAL 时基恒 0
+  （ADR-001:729 因同一原因记过一次，这次又踩，已写进 README）。
 - **板上探针 + 构建配方可复现**（2026-11-17）：`components/bt-blobs/src/probe.zig`（`-Dbt-probe`）
   按"装钩子 → arena → init → enable → 进任务 → 发 Reset → 泵任务"的顺序跑，并在主循环打
   `bt task round N` —— 日志能直接区分三种失败：**任务从没跑过**（没有 round）/ **跑了但没回包**
