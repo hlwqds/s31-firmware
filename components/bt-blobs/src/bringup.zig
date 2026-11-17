@@ -26,6 +26,7 @@ const osal = @import("osal.zig");
 const config = @import("config.zig");
 const porting = @import("porting.zig");
 const r_ext_funcs = @import("extfuncs.zig");
+const transport = @import("transport.zig");
 
 pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 
@@ -164,6 +165,13 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(14, "r_esp_ble_ll_set_public_addr", if (freestanding) r_esp_ble_ll_set_public_addr(&mac) else 0);
     if (rc != 0) return rc;
 
+    // 15. **HCI 传输层**（IDF 里是 `esp_bt_controller_init` 的最后一步、enable 之前）。
+    //     不做这一步：命令照样发得出去（我们直接调 forward），但 controller **没有回程回调**
+    //     ⇒ Command Complete 永远到不了 `leEvtTx` ⇒ 症状是"init 全绿、命令发了、就是没回包"，
+    //     极易被误判成时钟/中断/任务没做。
+    rc = step(15, "hci_transport_init", transport.init());
+    if (rc != 0) return rc;
+
     status_state = .inited;
     osal.logPublic("bt bringup: INITED", .{});
     return 0;
@@ -181,19 +189,19 @@ pub fn enable() c_int {
     }
 
     porting.btdmLpReset(true);
-    var rc = step(15, "btdm_coex_enable", porting.btdmCoexEnable());
+    var rc = step(16, "btdm_coex_enable", porting.btdmCoexEnable());
     if (rc != 0) return rc;
 
-    rc = step(16, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
+    rc = step(17, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
     if (rc != 0) return rc;
-    rc = step(17, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable() else 0);
+    rc = step(18, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable() else 0);
     if (rc != 0) return rc;
 
-    rc = step(18, "r_btdm_hci_fc_enable", if (freestanding) r_btdm_hci_fc_enable() else 0);
+    rc = step(19, "r_btdm_hci_fc_enable", if (freestanding) r_btdm_hci_fc_enable() else 0);
     if (rc != 0) return rc;
 
     // **最后一步**：controller 任务在这里才真正启动
-    rc = step(19, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
+    rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
 
     status_state = .enabled;
@@ -226,7 +234,7 @@ test "bringup: init 走到 INITED，enable 走到 ENABLED" {
     try std.testing.expectEqual(@as(c_int, 0), enable());
     try std.testing.expectEqual(Status.enabled, status());
     // 最后一步必须是 task_enable（否则 controller 任务没起来）
-    try std.testing.expectEqual(@as(u32, 19), fake_step);
+    try std.testing.expectEqual(@as(u32, 20), fake_step);
     // 跳过了 host-only 的 ext_funcs
     try std.testing.expectEqual(@as(u32, 1), stats().ext_funcs_registered);
 }

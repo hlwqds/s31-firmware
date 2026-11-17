@@ -199,9 +199,52 @@ pub fn sendCmd(opcode: u16, params: []const u8) c_int {
     return f(TYPE_CMD, @ptrCast(pkt), total, DIR_H2C, 0);
 }
 
+// ---------------------------------------------------------------------------
+// B 路径：走 NimBLE host 层入口，**不碰** 12 字节包结构 / BLE flag / `r_btdm_hci_trans_rx`
+//
+// 比 A 路径少一半代码，先试这条；失败再回到 A（`sendCmd`）。
+// `r_ble_hci_trans_buf_alloc` 的 type 是 `BLE_HCI_TRANS_BUF_CMD = **3**`——
+// ⚠ 与 A 路径的 `r_btdm_hci_trans_buf_alloc(HCI_DRIVER_TYPE_CMD = 1)` 是**两个不同的分配器、
+// 不同的 type 值**，别混用。
+// ---------------------------------------------------------------------------
+
+extern fn r_ble_hci_trans_buf_alloc(flag_type: c_int) ?[*]u8;
+extern fn r_ble_hci_trans_hs_cmd_tx(cmd: [*]u8) c_int;
+
+pub const BLE_HCI_TRANS_BUF_CMD: c_int = 3;
+
+/// 用 host 层入口发一条命令（`buf` 里放 HCI 命令**不含 H4 类型字节**：opcode 小端 + plen + params）。
+pub fn sendCmdViaHs(opcode: u16, params: []const u8) c_int {
+    if (!inited) return -1;
+    if (params.len > 250) return -2;
+    if (!freestanding) {
+        stats_state.cmds_sent += 1;
+        return 0;
+    }
+    const buf = r_ble_hci_trans_buf_alloc(BLE_HCI_TRANS_BUF_CMD) orelse {
+        stats_state.cmd_alloc_null += 1;
+        osal.logPublic("bt hci(hs): buf_alloc returned null", .{});
+        return -3;
+    };
+    buf[0] = @truncate(opcode);
+    buf[1] = @truncate(opcode >> 8);
+    buf[2] = @intCast(params.len);
+    for (params, 0..) |b, i| buf[3 + i] = b;
+    stats_state.cmds_sent += 1;
+    osal.logPublic("bt hci(hs) >> CMD opcode=0x{x:0>4} plen={d}", .{ opcode, params.len });
+    const rc = r_ble_hci_trans_hs_cmd_tx(buf);
+    r_ble_hci_trans_buf_free(buf);
+    return rc;
+}
+
 /// `HCI Reset`（0x0C03，无参数）—— 里程碑的第一条命令。
 pub fn sendReset() c_int {
     return sendCmd(0x0C03, &.{});
+}
+
+/// B 路径的 `HCI Reset`：期望回程是 `04 04 0E 03 0C 00`（最后那个 00 才是成功）。
+pub fn sendResetViaHs() c_int {
+    return sendCmdViaHs(0x0C03, &.{});
 }
 
 /// `HCI Read Local Version Information`（0x1001，无参数）。
@@ -239,6 +282,18 @@ test "transport: 事件回调按 cmd[1]+2 切长度、记下 event code" {
     try std.testing.expectEqual(@as(u32, 1), stats().evt_count);
     try std.testing.expectEqual(@as(u8, 0x0E), stats().last_evt_code);
     try std.testing.expectEqual(@as(u8, 3), stats().last_evt_len);
+}
+
+test "transport: B 路径同样受 init 门禁，type 常量与 A 路径不同" {
+    resetStats();
+    inited = false;
+    try std.testing.expectEqual(@as(c_int, -1), sendResetViaHs());
+    try std.testing.expectEqual(@as(c_int, 0), init());
+    try std.testing.expectEqual(@as(c_int, 0), sendResetViaHs());
+    try std.testing.expectEqual(@as(u32, 1), stats().cmds_sent);
+    // 两个分配器的 type 值不同：A=1（HCI_DRIVER_TYPE_CMD），B=3（BLE_HCI_TRANS_BUF_CMD）
+    try std.testing.expectEqual(@as(u32, 1), TYPE_CMD);
+    try std.testing.expectEqual(@as(c_int, 3), BLE_HCI_TRANS_BUF_CMD);
 }
 
 test "transport: 未 init 时发命令被拒；init 后可发" {

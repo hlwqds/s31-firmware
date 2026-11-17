@@ -8,6 +8,15 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **transport.init 接进 init 链（第 15 步）+ B 路径发命令**（2026-11-17）：
+  `hci_transport_init` 在 IDF 里是 `esp_bt_controller_init` 的**最后一步、enable 之前**——
+  不做它，命令照样发得出去（我们直接调 forward），但 controller **没有回程回调**
+  （`r_ble_hci_trans_cfg_hs` / `r_btdm_hci_trans_register_tx` 都没跑）⇒ 症状是
+  "init 全绿、命令发了、就是没回包"，极易误判成时钟/中断/任务没做。
+  另加 **B 路径**（`r_ble_hci_trans_buf_alloc(3)` + `r_ble_hci_trans_hs_cmd_tx`）——
+  比 A 路径少一半代码，先试它；⚠ 两个分配器的 type 值不同（B=3、A=1），别混用。
+  **判据**：HCI Reset 的成功回程是 `04 04 0E 03 0C 00`，最后那个 `00` 才是 status 成功。
+  enable 的步骤号顺延到 16–20，避免与 init 的 `failed_step` 混淆。
 - **公有地址设置**（2026-11-17，init 第 14 步）：`r_esp_ble_ll_set_public_addr(mac)`（归档 ✓），
   `mac` 先 `readEfuseMac` 再**字节逆序**（IDF 同样是 `swap_in_place(mac, 6)` 之后再设）。
   没有这一步 **HCI Reset 能过、但扫描/广播命令全部无效** —— "命令有回包但没效果"的典型成因。

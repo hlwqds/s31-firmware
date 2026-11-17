@@ -217,8 +217,20 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 3. 回程字节在 `pkt.data`/`pkt.length`；我们是 host ⇒ **读完自己释放**
    （`r_ble_hci_trans_buf_free(载荷指针)`，它收的是**载荷**不是包）。
 
+**判据**：HCI Reset 的成功回程是 **`04 04 0E 03 0C 00`** —— 最后那个 `00` 才是 status 成功，
+只看"有回包"不够。
+
 事件字节布局 `[0]=0x04, [1]=len, [2]=event code`，总长 `cmd[1]+2`；回调里先打日志
 （每个字节一行，最多 16 个）再转发。
+
+**两条发命令的路，先试 B**：
+
+| 路径 | 写法 | 备注 |
+| --- | --- | --- |
+| **B**（host 层入口，代码少一半） | `r_ble_hci_trans_buf_alloc(3)` → 填 `opcode小端+plen+params` → `r_ble_hci_trans_hs_cmd_tx(buf)` → `r_ble_hci_trans_buf_free(buf)` | `BLE_HCI_TRANS_BUF_CMD = **3**` |
+| **A**（IDF transport 路径） | `r_btdm_hci_trans_buf_alloc(1, 0)` → 填 `pkt.data/length` → `set_ble_flag` → `r_btdm_hci_trans_rx(pkt)` | `HCI_DRIVER_TYPE_CMD = **1**` |
+
+⚠ 两个分配器的 type 值**不同**（3 vs 1），别混用。
 
 **前置**：`sendCmd` 只有在 `bringup.status()==enabled` 后才有意义——`r_btdm_hci_trans_rx`
 开头查 `esp_bt_controller_get_status()`，非 ENABLED 直接 -1。
