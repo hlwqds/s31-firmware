@@ -91,9 +91,11 @@ pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验
 /// 于是"卡住之后什么都看不到"，无法区分"程序停在那"与"只是打印停了"。
 /// 这里对每个字节做**有界**等待，等不到就丢弃，保证日志通道本身不会堵死。
 fn logHook(msg: []const u8) void {
-    // ⚠ 这里**不能**再用 `verbose` 关门：里程碑行（`bt bringup: enter step N`）也走这条路径，
-    //   关掉就等于"关掉了唯一能判断进度的输出"（本轮实测：静默跑 177 行日志里一条里程碑都没有）。
-    //   需要降噪时用 `osal.trace_hooks`（只挡 `bt hook:` 行）。
+    // **三层语义各归各位**（这条以前写错过两次，每次代价是一轮无效板测）：
+    //   里程碑 `bt bringup:`  → 无条件放行（唯一能判断进度的输出）
+    //   归档日志 `osal>`       → 受 `verbose` 控制
+    //   逐调用 `bt hook:`      → 受 `osal.trace_hooks` 控制（在 `logLine` 里）
+    if (!verbose and std.mem.startsWith(u8, msg, "osal> ")) return;
     const uart_fifo: *volatile u32 = @ptrFromInt(0x2038_A000); // UART_FIFO
     const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS
     for (msg) |ch| {
