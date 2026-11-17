@@ -217,6 +217,7 @@ fn pumpRealTask() bool {
 fn dumpClockRegs(tag: []const u8) void {
     const R = struct { name: []const u8, addr: usize };
     const regs = [_]R{
+        .{ .name = "test_conf(+00)", .addr = 0x2010_9C00 },
         .{ .name = "clk_conf(+04)", .addr = 0x2010_9C04 },
         .{ .name = "force_on(+08)", .addr = 0x2010_9C08 },
         .{ .name = "icg(+0C)", .addr = 0x2010_9C0C },

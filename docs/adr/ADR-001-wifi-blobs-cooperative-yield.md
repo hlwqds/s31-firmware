@@ -5557,3 +5557,39 @@ panic 0
 那必然有一个我们看不见的状态参与其中**——这时只有调试探针（写监视点）或 IDF 侧逐调用的时间戳能推进。
 
 ⇒ 本轮到此，寄存器层面的调查已**完全穷尽**。
+
+### 补最后一格：`test_conf(+0x00) = 0x00000100` 也与 IDF 相同
+
+把 `0x20109C00` 加进 CLKDMP：
+
+```text
+CLKDMP[before-init]  test_conf(+00)=0x00000100     # IDF c00 = 0x00000100  ✓
+                     clk_conf(+04)=0x00201002     # IDF        0x00201002  ✓
+                     lpcon+18=0x00000004          # IDF 是 0x1（已知唯一差异，已对齐验证）
+CLKDMP[after-init]   test_conf(+00)=0x00000100     # 不变
+```
+
+⇒ **`before_init` 的可观测面（11 个寄存器 + MAC 块 `0x20104C00..10` + `hp1e0`）现在全部与 IDF 一致。**
+⇒ `lpcon+18` 那格也已用 pre-init 写 `0x1` 对齐过（置 bit0、清 bit2），`MAC_ST` 仍不清。
+
+### 边界声明：寄存器层面的调查**到此为止**
+
+这条路径能做的都做了：
+
+| 已穷尽 | 结论 |
+|---|---|
+| boot 底色（11 寄存器 + MAC 块） | **与 IDF 逐格相同** |
+| IDF `wifi_module_enable` 的写集 | **只有 3 个寄存器**（`c0C`/`c14`/`hp1e0`），全已复刻 |
+| 写序（device 枚举序 2→9） | 已照抄 |
+| 位号（`clk_wifimac_en`=bit9 等） | 已修正 |
+| ICG 两侧（SYSCON/LPCON） | 已对齐 |
+| 复位脉冲（rst_wifimac/rst_wifibb） | 无效 |
+| ROM `ic_mac_init` | 早前已判负 |
+| 全库 133 个 `.o` 搜写 bits 13-15 | **不存在** |
+| 自旋让出 | 记账模型不支持 |
+
+⇒ **剩下的只有"不可观测状态"**：时钟树内部 FSM / PMU 影子状态 / IDF bootloader 在 `app_main` 之前
+跑的 ROM 代码留下的、不落在这些寄存器上的副作用。
+
+⇒ 唯一能推进的手段：**调试探针写监视点**（需 ESP-Prog 或接出板子的 USB-JTAG 口；`openocd` 与
+`target/esp32s31.cfg` 都在，缺的只是传输通道）。
