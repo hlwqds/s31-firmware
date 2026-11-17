@@ -713,11 +713,10 @@ pub fn run() noreturn {
                 hw.routeT0Interrupt(25);
                 hw.armT0Interrupt(2000);
                 hw.enableInterrupts();
-                in_task = true;
-                impl.current_is_task = true;
-                sched.start(&task_ctx, &main_ctx);
-                in_task = false;
-                impl.current_is_task = false;
+                // **不再手动 `sched.start`**：`idleHook.pumpRealTask()` 已经 round-robin 泵真实任务
+                // 上下文（`tasks[i].ctx`）。同一个 entry 建两份上下文（`task_ctx` + `tasks[i].ctx`）
+                // 会让 `cur_task` 记账错位——任务在 `task_ctx` 上阻塞时切不回来（实测 hooks 冻结）。
+                _ = &task_ctx;
                 log.line("wifi-init-probe: task blocked, main resumed (idle_calls={d})", .{idle_calls});
 
                 // 收发接缝探针：在不启动射频的前提下，问清楚哪些内部 API 现在就可达。

@@ -4212,3 +4212,26 @@ panic 0
 `tasks recorded=1` 之后，探针照旧去跑 `tasks[0].entry`，那个任务在等 `esp_wifi_start` 的消息，
 `hooks` 冻结在 154、`in_task=true`、`idle` 预算耗尽停机。这是**下一个问题**（`start` 之前任务不该被跑），
 与本次修复无关——本次要证的"init 能过握手"已经证完。
+
+### 队列句柄现在是真的（`_wifi_create_queue` 成功）
+
+去掉重复的 `sched.start(&task_ctx, …)`（同一 entry 建两份上下文会让 `cur_task` 记账错位）后：
+
+```text
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315208/353392 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: trace queue_recv a0=0x2f0213b0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+panic 0
+```
+
+⇒ **`queue_recv` 的句柄从 `0` 变成 `0x2f0213b0`**（落在 arena 里，`table=0x2f020730` 同一片）——
+说明 `pp_create_task` 的 `_wifi_create_queue(200, 8)` **这次真的成功了**。
+（init 成功注册表之后才调用它，所以不需要我们手动 `install`。）
+
+⇒ 剩下的挂点是**语义**问题，不是句柄问题：PP 任务在**空队列 + 无限超时**上等，而 init 已经返回、
+没有人会再往里 post。`Queue.recv` 自旋 `queue_block_spin_limit` 次后 `return 0`，违反 IDF 语义
+（`xQueueReceive(portMAX_DELAY)` 永不返回 0），blob 于是把"空"当合法答复。
+
+⇒ 下一个动作：init 成功之后**直接调 `esp_wifi_start`**，让 `idleHook` 在 start 的阻塞里泵任务
+（探针目前还停在 init 之后那段手动泵里，走不到 start）。
