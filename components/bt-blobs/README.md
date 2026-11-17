@@ -771,6 +771,43 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🎯 找到 stall 的确切指令：`Xpuq` 无条件读写 `0x2010B000`
+
+`r_sym_bt_XPuq`（`libbtdm_common/19.o`）的循环体（section 级，逐条）：
+
+```asm
+10: lui  a5, 0x2010b        # a5 = 0x2010B000
+14-1c: sw zero,0(a1); sw zero,4(a1); sh zero,20(a1)   ; 通过 a1 = P 写（无害）
+24: addi a3, a5, 256        # a3 = 0x2010B100（上界）
+28: lw   a4, 0(a5)          # ★ **读 0x2010B000**
+2a: addi a5, a5, 16
+2c: and  a4, a4, 0xfff00000
+2e: sw   a4, -16(a5)        # 写回
+32: bne  a5, a3, 0x28       # 直到 0x2010B100，共 16 次，**无条件**
+```
+
+⇒ **该循环与 `P` 无关**，它总是访问 `0x2010B000..0x2010B100`。
+而 `Xpuq` 在 `r_btdm_task_init` 的 `0xb8` 处被调用（`BOhff`→`HGbP`→**`Xpuq`**）。
+
+**oracle 实测：该块的可读性由 step 1–5 建立**
+
+```text
+[启动时直读]                          → 挂死（此前已多次验证）
+[step 1-5 之后] 0x2010B000 = 0x5ac968f1 → **READABLE**
+[init 之后]     0x2010B000 = 0x5ac968f1 → READABLE
+```
+
+⇒ 所以使能者就在 **step 1–5** 里；step 2（`btdm_log_init`）与 step 3（`btdm_external_init`）
+在 IDF 源码里都是 `return 0`，因此候选只剩：
+
+1. step 1 `btdm_osal_elem_mempool_init`
+2. step 4 `btdm_coex_init`
+3. **step 5 `btdm_lp_enable_clock`** ← 最可疑：IDF 版做 `modem_clock_module_enable(PERIPH_BT_MODULE)`
+   \+ `modem_clock_module_enable(PERIPH_BT_APB_MODULE)` + `modem_clock_module_mac_reset(BT)`，
+   而我们重写的版本只覆盖了自己推断出来的那些位
+
+⇒ `HGbP`（`0xae`，`Xpuq` 前一个调用）已读全：只是 `*(u32*)a0 = 40; *(u32*)(a0+4) = 46; ret`，无害。
+
 ### 🎯 三个数，把锚点/守卫链**一次性证清**（板侧实测）
 
 在 `wr_btdm_osal_mutex_pend` 的成功路径里（即 `r_btdm_task_init` 偏移 `0x66`：
