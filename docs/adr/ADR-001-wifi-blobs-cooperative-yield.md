@@ -4699,3 +4699,11 @@ panic: exception code=1 (instruction access fault)
 （`_task_create` 返回 0 ⇒ init rc=257）恰恰证明**它在 init 路径上被调用过**。
 ⇒ S31 上 blob **就只建这一个任务**，`entry=0x2f00d70a` 就是 PP worker。**不是漏建**，
 别再顺着"缺 Wi-Fi 命令任务"这条不存在的线索查。
+
+### 证据归档（不再只存在于 `/tmp`）
+
+| 日志 | 内容 |
+|---|---|
+| `logs/ch25-start-boot.log` | `INITWIN qrecv=2 clken=1` / `INIT OK` / `calling esp_wifi_start` |
+| `logs/ch25-spinpatch-yield-boot.log` | 自旋让出那次：`idle_calls` 涨到 4,000,000 而 `hooks` 冻在 57（"大部分 idleHook 没切任务"的实物） |
+| `logs/ch25-spinpatch-panic-boot.log` | 桩里直调 `pumpRealTask` 的 `!! 3d306120` 垃圾跳转（回滚依据） |
