@@ -202,10 +202,52 @@ fn pumpRealTask() bool {
     return false;
 }
 
-// **自旋让出补丁已撤回**：补丁地址来自 ELF 的**线性反汇编**，而采样到的 mepc
-// （0x2f009202/0x2f009206，都是 2 mod 4）说明那里是**压缩指令**；线性扫描在
-// 0x2f0091fe（2 mod 4）解出一条 32 位 `addi`，本身就违反 RISC-V 的 4 字节对齐 ⇒ 边界不可信。
-// 在错边界上写 `auipc+jalr` 会把 blob 改成垃圾。**先按 `.o` 的符号表 + 字节匹配定位真实边界，再谈补丁。**
+/// **让 `esp_wifi_start` 的自旋环让出**，使 PP worker 在 start 期间真能跑（本轮唯一未测实验）。
+///
+/// 环的真实边界（带 C 扩展时 32 位指令可落在 2 mod 4，环头自证 `ffe5` imm=-8）：
+/// ```text
+/// 2f0091fe: addi a5,a3,-852      # MAC_ST      (4 字节)  ← 被补丁覆盖
+/// 2f009202: lw   a5,0(a5)        #             (2 字节)  ← 被补丁覆盖
+/// 2f009204: and  a5,a5,a4        # & 0xE000    (2 字节)  ← 被补丁覆盖
+/// 2f009206: bnez a5,0x2f0091fe   # 回跳 -8     (2 字节)  ← 保留（不再可达）
+/// ```
+/// 前 8 字节改写成 `auipc ra,hi; jalr ra,lo` 指向本桩；桩语义与原环一致，只是每轮**让出一次**。
+/// `ra` 被覆盖没关系：环后第一条就是 `li a0,5` 然后 `auipc ra,…` 重设 `ra`。
+fn spinYieldStub() callconv(.c) void {
+    const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+    var rounds: u32 = 0;
+    while ((mac_st.* & 0xE000) != 0) : (rounds += 1) {
+        // **只在主上下文里让出**：任务侧命中会让出到它自己 ⇒ 递归/栈爆。
+        if (!in_task) idleHook();
+        if (rounds > 4_000_000) {
+            log.line("wifi-init-probe: spin stub gave up rounds={d} MAC_ST=0x{x:0>8}", .{ rounds, mac_st.* });
+            return;
+        }
+    }
+    log.line("wifi-init-probe: spin stub cleared rounds={d} MAC_ST=0x{x:0>8}", .{ rounds, mac_st.* });
+}
+
+fn patchSpinToYield() void {
+    if (@import("builtin").cpu.arch != .riscv32) return;
+    const pc: usize = 0x2F00_91FE;
+    const target = @intFromPtr(&spinYieldStub);
+    const off: i64 = @as(i64, @intCast(target)) - @as(i64, @intCast(pc));
+    if (off > 0x7FFF_FFFF or off < -0x8000_0000) {
+        log.line("wifi-init-probe: spin patch out of auipc range ({d})", .{off});
+        return;
+    }
+    const u: u32 = @bitCast(@as(i32, @truncate(off)));
+    const hi20: u32 = ((u +% 0x800) >> 12) & 0xFFFFF;
+    const lo12: u32 = u & 0xFFF;
+    const auipc: u32 = (hi20 << 12) | (1 << 7) | 0x17; // auipc ra, hi20
+    const jalr: u32 = (lo12 << 20) | (1 << 15) | (1 << 7) | 0x67; // jalr ra, lo12(ra)
+    // 2 字节对齐即可（C 扩展下 IALIGN=16）：用 `*align(2) u32` 逐字节安全写。
+    const b: [*]volatile u8 = @ptrFromInt(pc);
+    inline for (0..4) |i| b[i] = @truncate(auipc >> @intCast(8 * i));
+    inline for (0..4) |i| b[4 + i] = @truncate(jalr >> @intCast(8 * i));
+    asm volatile ("fence.i" ::: .{ .memory = true });
+    log.line("wifi-init-probe: spin patched -> 0x{x} (auipc=0x{x:0>8} jalr=0x{x:0>8})", .{ target, auipc, jalr });
+}
 
 fn idleHook() void {
     idle_calls += 1;
@@ -995,6 +1037,7 @@ pub fn run() noreturn {
                     mac_st.* = 0;
                     log.line("wifi-init-probe: MAC_ST cleared -> 0x{x:0>8}", .{mac_st.*});
                 }
+                patchSpinToYield();
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

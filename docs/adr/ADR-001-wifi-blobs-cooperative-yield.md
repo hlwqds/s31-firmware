@@ -4558,3 +4558,30 @@ panic 0
 
 ⇒ **自旋让出补丁恢复为"可做"**（不是"地址不可信"）。真正的坑是另外两个：
 改写后 `ra` 的语义要补（或改用不依赖 `ra` 的跳转）、以及写完必须 `fence.i`。
+
+### ★★★ 自旋让出补丁**成功执行**，且 `MAC_ST` 其实**可写**（推翻了"写不粘"）
+
+补丁（`0x2f0091fe` 前 8 字节 → `auipc ra,hi; jalr ra,lo`，逐字节写 + `fence.i`）板侧确认生效：
+
+```text
+wifi-init-probe: spin patched -> 0x4004caac (auipc=0x11044097 jalr=0x8ae080e7)
+wifi-init-probe: spin stub gave up rounds=4000001 MAC_ST=0x00fff000
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+panic 0
+```
+
+⇒ **桩真的接管了自旋**（跑了 4,000,001 轮），说明"改写 `.iram_blobs` 里的环"这条路是通的。
+
+⇒ **`MAC_ST` 从 `0x0000E000` 变成了 `0x00FFF000`** ⇒ **这个寄存器是可写的**。
+之前"写 0 后读回 0xE000"的判读要修正：**不是写不进去，而是写完之后 blob 自己那条
+`or 0x0FF10000` 又把它改了**（顺序问题，不是只读）。
+
+⇒ 但 **bits 13–15（`& 0xE000`）在 4,000,001 轮里始终没清** ⇒
+**"让 PP worker 在 start 期间跑起来就能清掉这三位"这个假设被否**（在桩确实让出的前提下）。
+
+### ⚠ 一个待查的异常：`idle_calls` 没有涨
+
+桩跑了 4,000,001 轮，而 `idle_calls` 仍停在 20（没有 1000 的心跳行）。
+`idleHook` 是**先自增**再判断的，所以这说明 **`idleHook` 没被调用** ⇒ 桩里 `!in_task` 为假
+（`in_task` 一直是 true）。⇒ **"桩确实让出了"这一点还没被证实**，
+上述"假设被否"要先打上这个保留。
