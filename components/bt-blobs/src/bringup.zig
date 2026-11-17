@@ -139,6 +139,15 @@ fn dumpBootState() void {
             @as(*volatile u32, @ptrFromInt(a)).* = v;
         }
     };
+    // **调 ROM 的 `esp_phy_enable(PHY_MODEM_BT=2)`**（0x2f00e756）。
+    // IDF 的 `btdm_lp_reset` 第一件事就是它；我们的移植**从未调用过 PHY 层**
+    // ⇒ modem 前端没上电 ⇒ `0x2010B000`（BT 基带）不应答。这是本轮最可疑的缺失。
+    {
+        const phy_enable = @as(*const fn (u32) callconv(.c) void, @ptrFromInt(0x2f00_e756));
+        osal.logLine("BOOTSTATE: calling ROM esp_phy_enable(2) ...", .{});
+        phy_enable(2);
+        osal.logLine("BOOTSTATE: esp_phy_enable(2) returned", .{});
+    }
     wr.f(0x2010_F008, 0x314); // lpcon+0x08：IDF boot 值
     wr.f(0x2010_F00C, 0x1); // lpcon+0x0c：IDF boot 值
     wr.f(0x2058_7008, 0x1); // clkrst+0x08：IDF boot 值
