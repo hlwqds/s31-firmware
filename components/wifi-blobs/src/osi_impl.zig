@@ -140,6 +140,8 @@ pub var blocking_refused: u32 = 0;
 pub var bad_handle: u32 = 0;
 /// `_semphr_give(null)` 的次数（ack 的 give 侧句柄从未被赋值）。
 pub var null_give: u32 = 0;
+/// 诊断：`_semphr_give` 的总次数（与 `null_give` 对比即可看出有多少 give 被丢弃）。
+pub var give_total: u32 = 0;
 /// recv 探针计数（前 6 次打印 count/item_size）。
 pub var recv_probe: u32 = 0;
 /// 被丢弃的事件（没有事件循环时 `_event_post` 无法投递）。
@@ -385,6 +387,7 @@ fn shellSemphrTake(p: ?*anyopaque, blocking: u32) callconv(.c) i32 {
 }
 
 fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
+    give_total +%= 1;
     if (p == null) {
         // 实测 ack 的 give 传的是空句柄（take 侧却是有效句柄）→ 这是两个不同变量。
         // 记下调用者 ra，便于反查"give 侧变量本应由谁写"。

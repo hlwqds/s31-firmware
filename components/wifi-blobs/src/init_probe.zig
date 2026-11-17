@@ -171,6 +171,10 @@ fn pumpPpWorker() void {
     impl.current_is_task = false;
 }
 
+fn giveStats() u64 {
+    return (@as(u64, impl.null_give) << 32) | @as(u64, impl.give_total);
+}
+
 fn queueStats() u96 {
     return (@as(u96, impl.last_recv_count) << 64) |
         (@as(u96, impl.recv_ok) << 32) | @as(u96, impl.send_ok);
@@ -324,6 +328,7 @@ pub fn run() noreturn {
     @import("board").trap.timer_service_hook = &impl.serviceTimers;
     @import("board").trap.nvs_stats_hook = &nvsStats;
     @import("board").trap.queue_stats_hook = &queueStats;
+    @import("board").trap.give_stats_hook = &giveStats;
     // 自旋期 tick 泵实验已测（无推进），已回滚。
     @import("board").trap.pump_hook = &pumpPpWorker;
 

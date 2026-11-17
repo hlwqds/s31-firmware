@@ -3597,3 +3597,25 @@ if (p == null) { null_give += 1; return 0; }   // 空句柄的 give 被丢弃
 
 ⇒ 下一步（很具体）：在探针里读 **`*(0x2f07ff14)`**（ROM 全局 `s_pp_task_create_sem`），看它是否为空；
 并查 `null_give` 计数是否 > 0。
+
+### ★★ 决定性读数：`s_pp_task_create_sem = 0x0`，且有 **1 次空句柄 give 被丢弃**
+
+在自旋点读 ROM 全局与 give 计数：
+
+```text
+romglob s_pp_task_create_sem=0x0
+semphr give_total=4 null_give=1
+```
+
+⇒ **`ppTask` 首条动作要 `give` 的那个信号量是 NULL**，而我们的 `shellSemphrGive` 对空句柄
+**直接丢弃并返回 0** ⇒ 那 1 次 `null_give` 就是它。
+
+⇒ 这条链现在闭合了一半：
+1. `pp_task_hdl` 非空 ⇒ PP 任务**被创建了**；
+2. 但 **`s_pp_task_create_sem`（0x2f07ff14）是 NULL** ⇒ "PP 任务已起来"的通知**发不出去**；
+3. 我们的 `_semphr_create` 返回的是**arena 指针**（`shellSemphrCreate`），不会返回 null，
+   除非 arena 分配失败 ⇒ 所以更可能是 **blob 的 `pp_create_task` 那条路根本没把信号量存进 0x2f07ff14**
+   （例如它先 `_semphr_create` 再存，而中间某个钩子返回 0 让它跳过了存储）。
+
+⇒ 下一步：查 **谁写 0x2f07ff14**（反汇编里搜 `sw …,−236(base)`，base=0x2f080000），
+以及它前面判了什么。

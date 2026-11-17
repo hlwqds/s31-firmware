@@ -255,6 +255,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 非 0 -> 走回调；为 0 -> 走兜底 `jal 0x40035ea8`（被 ctx[15] 挡住）。
             const cb_slot = @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*;
             log.line("blob cb_slot[0x2f011aa8]=0x{x}", .{cb_slot});
+            // **`ppTask` 首条动作的句柄**：`s_pp_task_create_sem`（ROM 全局 0x2f07ff14）。
+            // 若为 null，`_semphr_give` 会被我们的空句柄特例丢弃 ⇒ "PP 任务已起来"的通知发不出去。
+            const pp_sem = @as(*volatile usize, @ptrFromInt(0x2f07ff14)).*;
+            log.line("romglob s_pp_task_create_sem=0x{x}", .{pp_sem});
+            if (give_stats_hook) |f| {
+                const gv = f();
+                log.line("semphr give_total={d} null_give={d}", .{
+                    @as(u32, @truncate(gv)), @as(u32, @truncate(gv >> 32)),
+                });
+            }
             if (queue_stats_hook) |f| {
                 const q = f();
                 log.line("queue send_ok={d} recv_ok={d} last_recv_count={d}", .{
@@ -385,6 +395,8 @@ pub var queue_stats_hook: ?*const fn () u96 = null;
 /// 由 probe 注入：**在 tick 里泵 blob 任务**（等价于 FreeRTOS 的抢占）。
 /// 由 probe 注入：自旋期间从 tick 泵任务（实验用；实测无推进）。
 pub var pump_hook: ?*const fn () void = null;
+/// 打包：低 32 = give_total，高 32 = null_give。
+pub var give_stats_hook: ?*const fn () u64 = null;
 var rom_handler_calls: usize = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。
