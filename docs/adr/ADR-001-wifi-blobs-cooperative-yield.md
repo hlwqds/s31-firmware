@@ -6086,3 +6086,35 @@ IDF 128 个函数指针 / 我们 127 个（去掉 _version）
 `sdkconfig.h` 预处理该头，再 `sed -n '/typedef struct wifi_osi_funcs_t {/,/} wifi_osi_funcs_t;/p'` 取生效字段。
 ⇒ 结论：**布局无需修改**；`indexOf()` 仍然有用（它读的是我们自己的结构，不存在裁剪问题），
 但**不能拿它去和未预处理的头文件比对**。
+
+### ✅ 决定性验证：我们的 128 字段镜像**完全正确**（用正确方法预处理后逐项对上）
+
+按 `osi.zig` 注释里的正确做法（`riscv32-esp-elf-gcc -E -P` + 真实 `sdkconfig.h` + S31 头路径），
+取 S31 **实际生效**的字段序，与我们结构逐项比对：
+
+```text
+S31 生效函数指针数: 126
+我们的函数指针数:   127   ← 去掉 `_version` 后
+✅ 前 126 项完全一致
+```
+
+尾部对照：
+
+| | 末 4 项 |
+|---|---|
+| IDF(S31) | `_wifi_bb_sleep_retention_attach` / `_detach` / `_wifi_mac_sleep_retention_attach` / `_detach` |
+| 我们 | 同上 4 项 **+ `_magic`** |
+
+⇒ 我们的布局 = **`_version` + 126 个函数指针 + `_magic` = 128** —— 与 IDF 的 S31 生效结构**完全一致**。
+
+⇒ **布局问题彻底排除**（之前那次"错位 2 项"确认为文本解析假警报）。
+
+> [!note] 正确方法（可复核）
+> ```bash
+> GCC=~/.espressif/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin/riscv32-esp-elf-gcc
+> $GCC -E -P -I firmware/idf-bootstrap/build/config \
+>   -I $IDF/components/esp_wifi/include -I $IDF/components/esp_wifi/include/esp_private \
+>   -I $IDF/components/soc/esp32s31/include -I $IDF/components/hal/esp32s31/include \
+>   -include sdkconfig.h - <<<'#include "esp_private/wifi_os_adapter.h"'
+> ```
+> 然后**按 `;` 切分声明语句、每条取第一个 `(*name)`**（否则嵌套函数指针参数 `int (*cb)(int)` 会被误当字段）。
