@@ -100,8 +100,14 @@ SECTIONS
         _rodata_end = .;
     } > drom
 
-    /* trap 入口必须在 SRAM：放 flash 时异常投递直接 CPU_LOCKUP_RESET(0x1a)。 */
-    .trap_ram : ALIGN(4)
+    /* trap 入口必须在 SRAM：放 flash 时异常投递直接 CPU_LOCKUP_RESET(0x1a)。
+     *
+     * ⚠ **低 2 KB 必须让给归档**：BLE controller 建任务时把栈基址**硬编码**成
+     * `0x2F000000`、大小 2000 字节（`r_btdm_task_init` 的 `lui a5,0x2f000`），
+     * 而 `ORIGIN(sram)` 正是 `0x2F000000` ⇒ 任务一启动就会覆盖向量表/`.bss` 头部，
+     * 症状是"中断不再递送"。这里把 SRAM 侧的起点抬到 `+0x800`，
+     * 让任务栈独占 `0x2F000000..0x2F0007D0`。 */
+    .trap_ram ORIGIN(sram) + 0x800 : ALIGN(4)
     {
         _trap_start = .;
         KEEP(*(.trap_ram))
