@@ -1213,11 +1213,12 @@ fn shellWifiClockEnable() callconv(.c) usize {
         romDelayUs(20);
     }
     // 3) BB 时钟组（`clk_conf1_configure` 用 OR，不是覆盖——IDF `modem_syscon_ll_clk_conf1_configure` 是 OR）
-    conf1.* = conf1.* | 0x17b;
+    conf1.* = conf1.* | 0x7FF;
     // 4) WIFI_BB_80X1
     conf1.* = conf1.* | (1 << 7);
-    // 5) 其余位（APB/44M/COEXIST）沿用原来的整组 OR
-    conf1.* = conf1.* | wifi_clk_conf1_bits;
+    // 5) **不再额外 OR `wifi_clk_conf1_bits`**：IDF 侧实测 enable 后 `clk_conf1 = 0x000007FF`，
+    //    而我们原来写 `0x0038E7FF`（多出 bits 12-21）——多写的位正是嫌疑。
+    _ = wifi_clk_conf1_bits;
     // 6) **SOC_PLL_SOURCE_CG —— 我们从来没写过的那个**
     // IDF `modem_clock_hal_enable_soc_pll_source_cg()`（hal/esp32s31/modem_clock_hal.c:122-126）：
     //     `HP_SYS_CLKRST.modem_conf.val = enable ? 0x3d : 0x25;`
