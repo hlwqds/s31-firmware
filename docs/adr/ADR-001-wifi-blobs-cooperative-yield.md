@@ -3619,3 +3619,21 @@ semphr give_total=4 null_give=1
 
 ⇒ 下一步：查 **谁写 0x2f07ff14**（反汇编里搜 `sw …,−236(base)`，base=0x2f080000），
 以及它前面判了什么。
+
+### `s_pp_task_create_sem` 的写者：blob 的 **`pp_create_task`**（`pp.o`）
+
+在 blob 的 `pp.o` 里找到对 `s_pp_task_create_sem` 的**重定位**：
+
+```text
+c2: R_RISCV_HI20  s_pp_task_create_sem
+c6: sw a5, 0(a4)              # ← 写它
+fa: lw a0, 0(s2) ; R_RISCV_LO12_I s_pp_task_create_sem   # 读它
+```
+
+⇒ **`pp_create_task` 负责创建并存入这个信号量**；我们的运行期它是 **0** ⇒ 那次 `sw` 没执行到，
+或写入的值就是 0（`_semphr_create` 返回 null）。
+
+⇒ 而 `pp_task_hdl`（0x2f07ff18）非空 ⇒ 说明 `pp_create_task` **跑过一部分**。
+
+⇒ 下一步：反汇编 `pp_create_task` 里 `sw a5,0(a4)` 前后的几条，看它前面判了什么、
+以及 a5 来自哪（是否就是 `_semphr_create` 的返回值）。
