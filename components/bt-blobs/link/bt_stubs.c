@@ -1,0 +1,51 @@
+/*
+ * BLE controller 适配面里"由我们提供"的那几个符号。
+ *
+ * 清单来自离线量算（`nm` 并集 → 减归档自身定义 → 减 ROM → 减同族归档）：
+ *   libble_app.a + libbtdm_common.a + libbtbb.a + libphy.a
+ *   选择性闭包 113 个对象，减 ROM 后剩 10 个，其中 5 个是链接脚本符号
+ *   （见 boards/esp32s31-coreboard/linker/s31.ld 的 btdm 边界），本文件给其余 5 个。
+ *
+ * 这些函数的返回/参数形态是按归档里的调用点反查出来的，不是猜的：
+ *   - `e_btdm_lp_modem_clock_set`：调用点先 `li a0, 0`（一个整型实参），返回值被丢弃；
+ *   - `rtc_clk_xtal_freq_get`：无参，返回值参与运算（晶振频率）；
+ *   - `phy_printf` / `sprintf`：C 变参，Zig 定义不了，只能放在 C 里；
+ *   - `__assert_func`：newlib 的断言钩子，四个参数。
+ *
+ * 与 wifi-blobs 的 zz_stubs.c 是**不同的符号集**：两套不要同时链进同一个镜像。
+ */
+
+typedef unsigned int u32;
+
+/* newlib 断言钩子。真断言在裸机上没地方报，直接挂住；调试期看串口最后一行即可。 */
+void __assert_func(const char *file, int line, const char *func, const char *expr) {
+    (void)file;
+    (void)line;
+    (void)func;
+    (void)expr;
+    for (;;) {
+    }
+}
+
+/* BLE 侧的打印走 PHY 的 C 变参函数；裸机上没有 vprintf 实现，丢弃。 */
+int phy_printf(const char *format, ...) {
+    (void)format;
+    return 0;
+}
+
+/* controller 内部用 sprintf 拼日志/版本串；给个最小实现，避免把 libc 拉进来。 */
+int sprintf(char *buf, const char *format, ...) {
+    (void)format;
+    if (buf) buf[0] = 0;
+    return 0;
+}
+
+/* 晶振频率：本板 40 MHz 晶振（与 ch17 的 PHY/RGMII 时钟配置一致）。 */
+u32 rtc_clk_xtal_freq_get(void) { return 40; }
+
+/* 低功耗 modem 时钟开关：控制器在 lp 初始化时关一次（实参恒为 0）。
+ * 我们的时钟树由 board 层统一管理，这里只记录不动作。 */
+int e_btdm_lp_modem_clock_set(int enable) {
+    (void)enable;
+    return 0;
+}

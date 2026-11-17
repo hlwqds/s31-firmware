@@ -305,3 +305,11 @@ PROVIDE(intr_matrix_set = 0x2f800768);
 PROVIDE(ets_intr_register_ctx = 0x2f80076c);
 PROVIDE(ets_intr_lock = 0x2f800770);
 PROVIDE(ets_intr_unlock = 0x2f800774);
+
+/* BLE controller 收敛所需的四个 ROM 符号（2026-11-17）。
+ * 链接实验里 lld 报未定义，查 `esp32s31.rom.ld` / `esp32s31.rom.libc.ld` 确认它们
+ * 本来就在 ROM 里——不必写桩，给地址即可。 */
+PROVIDE(abs = 0x2f800584);
+PROVIDE(ets_printf = 0x2f800024);
+PROVIDE(phy_set_chan_freq_sw_start = 0x2f801660);
+PROVIDE(printf = 0x2f8005c4);

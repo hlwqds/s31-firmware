@@ -40,6 +40,12 @@ pub fn build(b: *std.Build) void {
     const wifi_blob_objs = b.option([]const u8, "wifi-blob-objs", "comma-separated object names inside wifi-blob-dir") orelse "";
     // R3 探针：编进"装表 → 调 esp_wifi_init_internal → 打日志停机"的入口。
     const wifi_init_probe = b.option(bool, "wifi-init-probe", "run the wifi init probe instead of the normal self-test") orelse false;
+    // R3.3 链接实验：把 BLE controller 归档（libble_app/libbtdm_common/libbtbb/libphy）
+    // 加进链接。与 wifi-blob-* 同构：给目录 + 对象清单，产物用于量容量与解符号，
+    // 适配面由 components/bt-blobs/link/bt_stubs.c + s31.ld 的 btdm 边界补上。
+    const bt_blob_dir = b.option([]const u8, "bt-blob-dir", "directory with unpacked BLE controller objects") orelse "";
+    const bt_blob_objs = b.option([]const u8, "bt-blob-objs", "comma-separated object names inside bt-blob-dir") orelse "";
+
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -141,6 +147,22 @@ pub fn build(b: *std.Build) void {
         const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("wifi_init_probe_off.zig", off_src) });
         app.root_module.addImport("wifi_init_probe", off_mod);
     }
+    if (bt_blob_dir.len > 0) {
+        // 与 wifi-blob 同构：逗号分隔的对象清单，逐个加进链接（等价 --whole-archive）。
+        // 关掉 gc-sections——这里没有真实引用，不关就一个成员都不会进来，量到的就是空镜像。
+        var bt_it = std.mem.splitScalar(u8, bt_blob_objs, ',');
+        var bt_added: usize = 0;
+        while (bt_it.next()) |name| {
+            if (name.len == 0) continue;
+            app.root_module.addObjectFile(.{ .cwd_relative = b.fmt("{s}/{s}", .{ bt_blob_dir, name }) });
+            bt_added += 1;
+        }
+        if (bt_added == 0) @panic("-Dbt-blob-objs 为空：给它逗号分隔的对象名");
+        app.link_gc_sections = false;
+        // 适配面：10 个符号里的 5 个非链接脚本符号（另 5 个在 s31.ld 里 PROVIDE）。
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = &.{} });
+    }
+
     // 主机侧测试：每个 component 的 host_tests.zig 独立成测试目标，
     // 与章节时代一致——测试入口只 import 纯逻辑模块。
     const test_step = b.step("test", "host-side unit tests (all components)");

@@ -121,6 +121,10 @@ SECTIONS
         *(.wifiorslpiram*)
         *(.wifislprxiram*)
         *(.wifi0iram*)
+        /* BLE controller 的 RAM 常驻睡眠代码（`libble_app` 的 .iram_sleep* 族）。
+         * 不收集的话它们各自成段，`elf2image` 会报 Invalid segment count。 */
+        *(.iram_sleep*)
+        *(.iram_single_sleep*)
         . = ALIGN(16);
     } > sram
 
@@ -171,6 +175,28 @@ SECTIONS
 
     _heap_start = _bss_end;
     _heap_end = _stack_bottom;
+
+    /* ---------------------------------------------------------------------
+     * btdm（BLE controller）边界符号
+     *
+     * `libble_app.a` 的一个对象会用
+     *   memset(&_bss_start_btdm, 0, &_bss_end_btdm - &_bss_start_btdm)
+     *   memcpy(&_data_start_btdm, _data_start_btdm_rom, &_data_end_btdm - &_data_start_btdm)
+     * 初始化 controller 的工作区。本布局里 controller 自己的 `.bss`/`.data`
+     * 就落在上面的常规 `.bss`/`.data` 中，而且：
+     *   - `.bss` 已由 `_start` 清零；
+     *   - `.data` 的 LMA == VMA（镜像里就是初值），启动时无需搬运。
+     * 因此把这两个区间定义成**零长度**（start == end），上面两段变成 no-op，
+     * 语义等价，且不必另开一块 RAM 窗口。
+     * 只在本板链接 BLE controller 时才有意义；`PROVIDE` 只填未定义符号，
+     * 常规镜像不受影响。S31 没有 ROM 里的 btdm 副本，所以 ROM 侧地址也指向同一处。
+     * ------------------------------------------------------------------- */
+    PROVIDE(_bss_start_btdm = _bss_end);
+    PROVIDE(_bss_end_btdm = _bss_end);
+    PROVIDE(_data_start_btdm = _data_end);
+    PROVIDE(_data_end_btdm = _data_end);
+    PROVIDE(_data_start_btdm_rom = _data_end);
+
 
     /* 链接期就否决明显错误的布局，免得自检变成唯一的防线。 */
     ASSERT(_image_start == ORIGIN(irom),
