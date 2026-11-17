@@ -4028,28 +4028,17 @@ blob 以为"等到了/超时了"⇒ **直接走到删信号量 + 清零** ⇒ `p
 ⇒ 下一步：把 `Semphr.take` 的 `time_blocking` 改成**真阻塞**，**同时**保证阻塞期间 PP 任务能被调度
 （`on_idle` 里除了切 blob 任务，也要能切 PP 任务）。
 
-### 判决实验：真阻塞 + idleHook 泵 PP worker ⇒ **init 直接挂住**
+### ⚠ 撤回一条判读：曾经的「真阻塞 + idleHook 泵 PP worker ⇒ init 直接挂住」
 
-按"建 → 起任务 → take 等报到"这条链，做了配套改动：
-1. `Semphr.take` 在 `time_blocking` 下改成真阻塞（上限 2,000,000 次让出）；
-2. `idleHook` 在 `pp_ctx` 就绪时**优先切给 PP worker**；
-3. PP worker 上下文在 `esp_wifi_init_internal` **之前**建好。
+**曾经的写法**：三处配套改动（真阻塞 take、idleHook 优先切 `pp_ctx`、PP 上下文在 init 前建好）之后
+init 挂住（无 INITWIN、无 post-init、`panic 0`）⇒ 结论写成"PP worker 被切进去了，但始终没有 `give`"、
+"PP worker 在我们这个环境里跑不到它的 `give`"。
 
-结果：
+**真相**：那次实验跑在 **`g_osi_funcs_p` 仍为 NULL** 的环境里（见下方「★★★ 崩溃根因」）。`ppTask` 入口
+第一条 `lw a5,64(a5)` 就 fault ⇒ **`give` 根本没机会执行** ⇒ "跑不到 give"**从未被验证**。init 挂住的原因是
+`take` 等一个**永远到不了的** give，而 give 缺席的原因是 NULL 槽位，不是"PP worker 跑不到"。
 
-```text
-wifi-init-probe: PP worker context ready (idleHook will pump it)
-（之后 **没有任何 INITWIN / post-init 输出** ⇒ init 挂住）
-panic 0
-```
-
-⇒ **PP worker 被切进去了，但它始终没有 `give` 那个信号量** ⇒ `take` 永远等不到 ⇒ init 挂死。
-
-⇒ 结合早先"泵 PP worker 时 `hooks` 冻结在 17"：**PP worker 在我们这个环境里跑不到它的 `give`**
-（它的上下文/栈/前置状态可能不对，或它第一件事就在等别的东西）。
-
-⇒ 两条配套改动都已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0 semcreate=2 semnull=0`、无 panic、
-自旋 `0x2f009206`）。
+⇒ 结论应改成：**"NULL 槽位下，任何形式的泵都只会 fault 或空等"**。泵本身没有被否定。
 
 ### ★★ 重新解读：`s_pp_task_create_sem` 在 init 之后为 0 是**设计如此**
 
@@ -4074,52 +4063,48 @@ blob 已经走到删除那一步）。
 而"真阻塞 + 泵 PP worker"实测会让 init 挂死（PP worker 跑不到 give）⇒ **下一步是查"PP worker 为什么跑不到它的 give"**，
 而不是继续追信号量本身。
 
-### 判决：进入 `ppTask` **直接崩溃**（`load access fault`）——PP worker 无法在我们的栈上运行
+### ⚠ 撤回一条判读：曾经的「进入 `ppTask` 直接崩溃 ⇒ PP worker 无法在合成栈上运行 ⇒ 泵线彻底关闭」
 
-用包装入口（先打点再转 `ppTask`）建上下文并泵一次：
+**曾经的写法**：用包装入口泵一次 → 182 次 `load access fault`、"ppEntry entered" 从未打印
+⇒ 结论写成"崩溃在**上下文切换/栈切换**这一步"、"`ppTask` 在我们的合成栈上根本跑不起来"、
+"**"泵 PP worker"这条路彻底关闭**"。
 
-```text
-（"ppEntry entered" 从未打印）
-panic: exception code=5 (load access fault) cause=0x30000005
-（共 182 次 panic）
-```
+**真相**（见下方「★★★ 崩溃根因」）：崩溃发生在 **`ppTask` 内部**的 `lw a5,64(a5)`——基址
+`g_osi_funcs_p`（ROM 槽位 `0x2F07FF44`）在 init 之前是 NULL，于是从地址 `0x40` 读。装好槽位后，
+**同一个合成栈上 `ppTask` 跑得好好的**（不崩，而且真的调到了 `_semphr_give` / `_queue_recv`）。
 
-⇒ **连包装入口的第一行都没执行到就崩了** ⇒ 崩溃发生在**上下文切换/栈切换**这一步，
-不是 `ppTask` 内部。
+⇒ 三条都要撤：**不是**"上下文/栈切换崩"、**不是**"合成栈跑不起来"、**不是**"泵线彻底关闭"。
 
-⇒ 结合"泵 PP worker 时 `hooks` 冻结在 17"：**`ppTask` 在我们的合成栈上根本跑不起来**。
+⇒ 准确的说法：**泵"合成入口"无效**（槽位 NULL + 队列未建）；**正确的对象是 blob 用 `_task_create`
+建出来的真实任务**（队列已存在、信号量仍在时泵）。
 
-⇒ **"泵 PP worker"这条路彻底关闭**。这也解释了为什么"真阻塞 + 泵 PP worker"会让 init 挂死——
-`take` 等一个永远来不了的 `give`。
+### ⚠ 撤回一条判读：曾经的「`tp`（x4）不是崩溃原因」
 
-已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0 semcreate=2 semnull=0`、无 panic、自旋 `0x2f009206`）。
+`swapAsm` 只保存/恢复 `ra` + `s0..s11`（64 字节帧），**从不保存/设置 `tp`（x4）**——这仍是事实，
+若 `ppTask` 用 tp 相对寻址，tp=0 会 `load access fault`。
 
-### 排除：`tp`（x4）不是崩溃原因
+实验：给包装入口一个清零的 4 KB TLS 区并 `mv tp` 之后再转 `ppTask`。结果仍是 182 次
+`load access fault`、"ppEntry(no-tp)" 未打印。
 
-`swapAsm` 只保存/恢复 `ra` + `s0..s11`（64 字节帧），**从不保存/设置 `tp`（x4）**——
-若 `ppTask` 用 tp 相对寻址，tp=0 就会 `load access fault`，这是首要嫌疑。
+**曾经的结论**："设 tp 无效，tp 不是（唯一）原因"。
 
-实验：给包装入口一个清零的 4 KB TLS 区并 `mv tp` 之后再转 `ppTask`。
+**撤回理由**：包装入口的**第一行都没执行到**，`mv tp` 压根没跑过 ⇒ 这个实验**根本没测到 tp**，
+不是"否定了 tp"。真正的崩因是 NULL `g_osi_funcs_p`（见下节），与 tp 无关——tp 这条既没被证实、
+也没被证伪，**是无效实验**。
 
-结果：
+### ⚠ 撤回一条判读：曾经的「`mtval` 拿不到」
 
-```text
-（"ppEntry(no-tp)" 仍未打印）
-panic: exception code=5 (load access fault)
-（仍 182 次 panic）
-```
-
-⇒ **设 tp 无效**，tp 不是（唯一）原因。
-
-### 遗留：`mtval` 拿不到
-
-`trap.zig` 的 panic 行本来会打 `mepc=… mtval=… mstatus=…`，但 ROM 启动横幅会**插进同一行**：
+`trap.zig` 的 panic 行原本带长标签（`panic: mepc=… mtval=… mstatus=…`），ROM 启动横幅会**插进同一行**：
 
 ```text
 panic: mepc=��SP-ROM:esp32s31-20251218
 ```
 
-⇒ 故障地址（`mtval`）被横幅覆盖，拿不到。要拿到必须把 panic 信息**先缓存、稍后再打**，或换独立通道。
+**曾经的结论**："故障地址被横幅覆盖，拿不到；要拿到必须先把 panic 信息缓存、稍后再打，或换独立通道。"
+
+**撤回理由**：不需要那么麻烦——把三元组**放在第一行、不带长标签**就够了
+（`log.line("!! {x} {x} {x}", …)`），短行能活下来。已入库（`23a28b4`），并据此拿到
+`!! 2f00d726 40 3801` ⇒ 根因闭合。
 
 ### ★★★ 崩溃根因：`g_osi_funcs_p` 为 NULL（`lw a5,64(a5)` 从 0x40 读）
 
