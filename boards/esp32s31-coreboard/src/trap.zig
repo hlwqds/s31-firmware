@@ -259,6 +259,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 若为 null，`_semphr_give` 会被我们的空句柄特例丢弃 ⇒ "PP 任务已起来"的通知发不出去。
             const pp_sem = @as(*volatile usize, @ptrFromInt(0x2f07ff14)).*;
             log.line("romglob s_pp_task_create_sem=0x{x}", .{pp_sem});
+            if (sem_args_hook) |f| {
+                const a = f();
+                log.line("semcreate args: 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} 0x{x:0>8}", .{
+                    @as(u32, @truncate(a)),       @as(u32, @truncate(a >> 16)),
+                    @as(u32, @truncate(a >> 32)), @as(u32, @truncate(a >> 48)),
+                });
+            }
             if (give_stats_hook) |f| {
                 const gv = f();
                 log.line("semphr give_total={d} null_give={d}", .{
@@ -397,6 +404,8 @@ pub var queue_stats_hook: ?*const fn () u96 = null;
 pub var pump_hook: ?*const fn () void = null;
 /// 打包：低 32 = give_total，高 32 = null_give。
 pub var give_stats_hook: ?*const fn () u64 = null;
+/// 打包 4 个 16-bit 的 `_semphr_create` 参数（max<<16|init）。
+pub var sem_args_hook: ?*const fn () u64 = null;
 var rom_handler_calls: usize = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。

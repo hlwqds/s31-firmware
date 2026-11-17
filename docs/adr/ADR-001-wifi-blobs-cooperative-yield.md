@@ -3973,3 +3973,24 @@ ROMGLOB swq=0x2f021330 ppq=0x2f0203b0 ppsem=0x0    ← ppq **又变回 task_dumm
 
 ⇒ 下一步：让 `_task_create` 返回**每次不同的**句柄（或让 `_task_delete` 对 `task_dummy` 安全无害），
 再看 `pp_create_task` 的分支与 `ppsem`。
+
+### ★★ 判决：`_semphr_create(1,0)` **确实被调用过** ⇒ 值是被之后清掉的
+
+给 `_semphr_create` 记录参数（打包成 `max<<16|init`）：
+
+```text
+semcreate args: #0=0x00010000  #1=0x00000001
+```
+
+- `#0 = 0x00010000` ⇒ **max=1, init=0** ⇒ **`(1, 0)`** —— 正是 `pp_create_task` 建块里的调用形态
+  （`li a0,1; li a1,0`）；
+- `#1 = 0x00000001` ⇒ (0,1)，另一个信号量。
+
+⇒ **`pp_create_task` 的建块确实执行了** ⇒ `0x4003989e` 的 store 必然写入了非 0 值
+⇒ **`s_pp_task_create_sem` 是之后被清成 0 的**。
+
+⇒ 于是问题变成：**谁在之后清了它？** 全镜像里只有两处清/写：
+- `0x40039920: sw zero,-236(s2)`（`_semphr_delete` 之后）
+- `0x40048f08: sw a0,-236(s0)`（另一个函数，带 `ret+(ret==0)` 防空，写非 0）
+
+⇒ **只能是 `0x40039920` 那条删除路径**。下一步：找它的**调用者/触发条件**。

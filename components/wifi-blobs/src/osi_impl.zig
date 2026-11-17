@@ -370,6 +370,9 @@ fn shellFreeHeapSize() callconv(.c) usize {
 
 fn shellSemphrCreate(max: u32, init_count: u32) callconv(.c) ?*anyopaque {
     cnt_sem_create +%= 1;
+    if (cnt_sem_create <= 4) {
+        sem_create_args[cnt_sem_create - 1] = (max << 16) | (init_count & 0xFFFF);
+    }
     const mem = arena_state.alloc(@sizeOf(Semphr), @alignOf(Semphr)) orelse {
         cnt_sem_create_null +%= 1;
         return null;
@@ -926,6 +929,8 @@ pub var cnt_clk_en: u32 = 0;
 /// init 窗口对拍：`_semphr_create` 的调用次数与返回 null 的次数。
 pub var cnt_sem_create: u32 = 0;
 pub var cnt_sem_create_null: u32 = 0;
+/// 诊断：最近 4 次 `_semphr_create` 的 `(max, init_count)`（打包 max<<16|init），供与 blob 的调用形态对账。
+pub var sem_create_args: [4]u32 = @splat(0);
 pub var recv_ok: u32 = 0;
 pub var last_recv_count: usize = 0;
 /// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。

@@ -171,6 +171,11 @@ fn pumpPpWorker() void {
     impl.current_is_task = false;
 }
 
+fn semArgs() u64 {
+    // 每个参数是 `(max<<16)|init`；只带前 2 个（32 位足够），避免打包丢失信息。
+    return @as(u64, impl.sem_create_args[0]) | (@as(u64, impl.sem_create_args[1]) << 32);
+}
+
 fn giveStats() u64 {
     return (@as(u64, impl.null_give) << 32) | @as(u64, impl.give_total);
 }
@@ -329,6 +334,7 @@ pub fn run() noreturn {
     @import("board").trap.nvs_stats_hook = &nvsStats;
     @import("board").trap.queue_stats_hook = &queueStats;
     @import("board").trap.give_stats_hook = &giveStats;
+    @import("board").trap.sem_args_hook = &semArgs;
     // 自旋期 tick 泵实验已测（无推进），已回滚。
     @import("board").trap.pump_hook = &pumpPpWorker;
 
