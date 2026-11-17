@@ -229,6 +229,9 @@ fn dumpClockRegs(tag: []const u8) void {
         .{ .name = "lpcon+1C_fo", .addr = 0x2010_F01C },
         .{ .name = "lpcon+20_icg", .addr = 0x2010_F020 },
         .{ .name = "hp1e0_socpll", .addr = 0x2058_71E0 },
+        // MAC 块窗口（IDF `before_init` 里 `m10 = 0xf7c40000`，其余为 0——与我们对照）
+        .{ .name = "mac_c00", .addr = 0x2010_4C00 },
+        .{ .name = "mac_c10", .addr = 0x2010_4C10 },
     };
     log.line("wifi-init-probe: CLKDMP[{s}]", .{tag});
     for (regs) |r| {
@@ -491,6 +494,15 @@ pub fn run() noreturn {
     // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     dumpClockRegs("before-init");
+    // **全表 diff 找到的唯一差异**：`LPCON+0x18`（clk_conf）在 IDF 侧是 `0x1`（bit0 = `clk_wifipwr_fo`，
+    // WiFi 电源域 force-on，由 bootloader 打开），我们侧是 `0x4`（bit2 = `clk_i2c_mst_fo`）。
+    // ⇒ 在 init **之前**把它对正：置 bit0、清 bit2。
+    {
+        const lp: *volatile u32 = @ptrFromInt(0x2010_F018);
+        const b = lp.*;
+        lp.* = (b & ~@as(u32, 1 << 2)) | (1 << 0);
+        log.line("wifi-init-probe: LPCON+18 fixed pre-init 0x{x} -> 0x{x} (IDF=0x1)", .{ b, lp.* });
+    }
     // **b14 / b21 门在新前提下的重测已做（均无效）**：b14=1 或 b14=1+b21=1 之后
     // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);

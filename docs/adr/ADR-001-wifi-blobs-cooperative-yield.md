@@ -5530,3 +5530,30 @@ bit2 `clk_i2c_mst_fo` / bit3 `clk_lp_timer_fo` / bit4 `clk_fe_mem_fo`。
 
 ⇒ 下一步（明确）：在 init 之前把 `LPCON+0x18` 的 **bit0 置上、bit2 清掉**（即先写成 `0x1`），
 再走原来的 enable 序列，看 `MAC_ST` 是否第一次归零。
+
+### 判决：`before_init` 全表**已与 IDF 完全一致**（含 MAC 块），`MAC_ST` 仍不清
+
+补上 `LPCON+0x18` 的差异（pre-init 置 bit0、清 bit2：`0x4 -> 0x1`）后，再把 MAC 块窗口加进我们的 CLKDMP：
+
+```text
+wifi-init-probe: LPCON+18 fixed pre-init 0x4 -> 0x1 (IDF=0x1)
+wifi-init-probe:   mac_c00=0x00000000        # IDF m00 = 0x0        ✓
+wifi-init-probe:   mac_c10=0xf7c40000        # IDF m10 = 0xf7c40000 ✓
+wifi-init-probe: MAC_ST after init = 0x0000e000     # 仍不清
+panic 0
+```
+
+⇒ **`before_init` 的可观测全表（10 个寄存器 + MAC 块 `0x20104C00..10` + `hp1e0`）现在与 IDF 逐格相同**，
+`LPCON+0x18` 那唯一一格差异也已对齐——**`MAC_ST` 依旧 `0xE000`**。
+
+⇒ **这条结论很硬**：**差异不在任何"能在 init 之前观测到的寄存器状态"里。**
+
+⇒ 于是只剩两个方向（都指向"非寄存器状态"）：
+1. **调用时点**：`_wifi_clock_enable` 在 init 序列里的位置不同（`clken=1` 只是计数相同）；
+2. **不可观测状态**：时钟树内部的 FSM 状态、或某个我们没有任何寄存器可见性的前置条件
+   （例如 IDF 的 bootloader 在 `app_main` 之前跑过某段 ROM 代码，其副作用不落在这些寄存器上）。
+
+⇒ 判据很明确：**若两侧 `before_init` 全表相同、`wifi_clock_enable` 的写序列也相同，而结果不同，
+那必然有一个我们看不见的状态参与其中**——这时只有调试探针（写监视点）或 IDF 侧逐调用的时间戳能推进。
+
+⇒ 本轮到此，寄存器层面的调查已**完全穷尽**。
