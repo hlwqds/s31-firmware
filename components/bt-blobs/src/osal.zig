@@ -138,6 +138,18 @@ fn slotSet(comptime T: type, slot: *Slot, value: *T) void {
 // 时间与临界区
 // ---------------------------------------------------------------------------
 
+/// controller 的 `_os_random`。板级注入真 TRNG（`board/src/rng.zig`）；主机侧用 xorshift 保证可测。
+pub var rand_hook: ?*const fn () u32 = null;
+var lcg_state: u32 = 0x1234_5678;
+
+pub fn randomU32() u32 {
+    if (rand_hook) |f| return f();
+    lcg_state ^= lcg_state << 13;
+    lcg_state ^= lcg_state >> 17;
+    lcg_state ^= lcg_state << 5;
+    return lcg_state;
+}
+
 pub fn timeGet() u32 {
     if (hooks.now_ms) |f| return f();
     return 0;

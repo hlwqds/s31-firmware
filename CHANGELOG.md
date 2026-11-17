@@ -8,6 +8,14 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **`ext_funcs_t` 注册**（2026-11-17，`components/bt-blobs/src/extfuncs.zig`）：这是 controller 拿
+  **malloc/free/rand/assert** 的那张表（`ble.c:97-109`，rv32 上 **40 字节**）。上一版把它当成
+  "可以跳过"是错的——跳过等于 controller 没有分配器，`r_ble_controller_init` 必然失败，
+  且失败点会被误判成"时钟/中断没做"。`ext_version=0x20250819`、`magic=0xA5A5A5A5`；
+  `_malloc/_free` 接我们的 arena、`_os_random` 接 `osal.randomU32()`（板级可注入真 TRNG）；
+  `_osi_assert` 的参数顺序是**行号在前、函数名在后**（与 `__assert_func` 相反）。
+  三个 ECC 项给**返回 -1 的桩**——IDF 在 `CONFIG_BT_LE_SM_LEGACY/SC` 未开时本来就 return -1，
+  `_ecc_aes_cmac` 转发的是 NimBLE host 的函数（controller-only 没有 host）⇒ 不需要 ROM ECC。
 - **init / enable 编排落地**（2026-11-17，`components/bt-blobs/src/bringup.zig`）：init 13 步、
   enable 6 步，状态机 `idle → inited → enabled` + `getStatus()`（HCI 传输层的门禁就查它）。
   两步最容易错：① **`r_btdm_task_enable` 在 enable 的最后一步**，不在 init 里——只做 init

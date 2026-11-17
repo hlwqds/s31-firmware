@@ -68,6 +68,7 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
 | `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
+| `src/extfuncs.zig` | `ext_funcs_t`（rv32 **40 字节**）：controller 的 malloc/free/rand/assert 表 |
 | `src/bringup.zig` | init（13 步）/ enable（6 步）编排，状态机 `idle→inited→enabled`，附 `getStatus()` |
 | `src/porting.zig` | IDF porting 层的 C 函数在裸机侧的实现：4 个空实现 + `ble_msys_init` + mempool 容量校验 |
 | `src/config.zig` | `esp_bt_controller_config_t` 逐字段镜像（60 字段、**每字段偏移都断言**）、`defaults()`、`elemCalc()`/`mempoolElemNum()` |
@@ -175,9 +176,19 @@ BT_APB、ETM、SOC_PLL_SOURCE_CG、BLE_MAC。
 2. **`r_btdm_hci_fc_env_init` 必调**：`UC_BT_CTRL_CONN_FC_ENABLE` 在 `btdm_user_cfg.h:108`
    是硬编码 1，IDF 的 init 链无条件调用它。
 
-**跳过的一步**：`esp_register_ext_funcs(&ext_funcs_ro)` —— 归档里有 `esp_register_ext_funcs`，
-但 **`ext_funcs_ro` 是 NimBLE host 的符号，归档里没有**。跳过并打日志（`stats.skipped_ext_funcs`）；
-若后续事件送不出来，第一个要回头查这里。
+**必须注册的一步**：`esp_register_ext_funcs(&table)` —— 那张 `ext_funcs_t`（`ble.c:97-109`，
+rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）里装的是 controller 侧的
+**`_malloc` / `_free` / `_os_random` / `_osi_assert`**。跳过就等于 controller 没有分配器，
+`r_ble_controller_init` 必然失败。
+
+| 项 | 值 |
+| --- | --- |
+| `ext_version` | `0x20250819` |
+| `magic` | `0xA5A5A5A5` |
+| `_malloc/_free` | 我们的 `wr_btdm_osal_malloc/_free`（都走 arena） |
+| `_os_random` | `osal.randomU32()`（板级可注入真 TRNG） |
+| `_osi_assert(u32 ln, const char* fn, u32 p1, u32 p2)` | ⚠ **行号在前、函数名在后**（与 `__assert_func` 相反） |
+| 三个 ECC 项 | **返回 -1** —— 与 IDF 在 `CONFIG_BT_LE_SM_LEGACY/SC` 未开时一致（`ble.c:506-522`）⇒ 不需要 ROM ECC |
 
 每个失败都记 `stats.failed_step` + `last_rc` 并打印，所以板侧日志能直接指出停在第几步。
 

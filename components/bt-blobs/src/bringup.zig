@@ -17,14 +17,15 @@
 //! ⚠ **`r_btdm_task_enable` 在 enable 步、不在 init 步**——只做 init 的话 controller 任务
 //! 永不启动，HCI 不会有回包。这是"起来了但不发射"最常见的原因。
 //!
-//! ⚠ `esp_register_ext_funcs(&ext_funcs_ro)` 被**跳过**：`ext_funcs_ro` 是 NimBLE **host** 的符号，
-//! 归档里只有 `esp_register_ext_funcs`/`esp_unregister_ext_funcs`，没有 `ext_funcs_ro`。
-//! 若后续事件送不出来，第一个要回头查的就是这里。
+//! ⚠ `esp_register_ext_funcs` **必须注册**（见 `extfuncs.zig`）：那张 40 字节的表里带的是
+//! controller 侧的 `_malloc`/`_free`/`_os_random`/`_osi_assert`，跳过就等于 controller 没有分配器，
+//! `r_ble_controller_init` 必然失败。ECC 三项照 IDF 在 SM 未开时那样给返回 -1 的桩。
 const std = @import("std");
 const builtin = @import("builtin");
 const osal = @import("osal.zig");
 const config = @import("config.zig");
 const porting = @import("porting.zig");
+const r_ext_funcs = @import("extfuncs.zig");
 
 pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 
@@ -42,7 +43,7 @@ pub const Stats = struct {
     enable_calls: u32 = 0,
     failed_step: u32 = 0, // 0 = 没有失败
     last_rc: c_int = 0,
-    skipped_ext_funcs: u32 = 0,
+    ext_funcs_registered: u32 = 0,
 };
 var stats_state = Stats{};
 pub fn stats() Stats {
@@ -131,14 +132,16 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(8, "r_btdm_hci_fc_env_init", if (freestanding) r_btdm_hci_fc_env_init() else 0);
     if (rc != 0) return rc;
 
-    // 7. BLE 控制器：注册 BB 回调 → r_ble_controller_init → msys
+    // 7. BLE 控制器：**先注册 ext_funcs**（controller 的 malloc/free/rand/assert 都在这张表里，
+    //    跳过它就等于 controller 没有分配器 ⇒ r_ble_controller_init 必然失败）
+    rc = step(9, "esp_register_ext_funcs", if (freestanding) r_ext_funcs.register() else 0);
+    if (rc != 0) return rc;
+    // 再注册 BB 回调 → r_ble_controller_init → msys
     rc = step(9, "esp_ble_register_bb_funcs", if (freestanding) esp_ble_register_bb_funcs() else 0);
     if (rc != 0) return rc;
     rc = step(10, "r_ble_controller_init", if (freestanding) r_ble_controller_init(&cfg.ble) else 0);
     if (rc != 0) return rc;
-    // `esp_register_ext_funcs(&ext_funcs_ro)` 跳过：`ext_funcs_ro` 是 NimBLE host 的符号
-    stats_state.skipped_ext_funcs += 1;
-    osal.logPublic("bt bringup: skipped esp_register_ext_funcs (host-only ext_funcs_ro)", .{});
+    stats_state.ext_funcs_registered += 1;
     // `ble_controller_scan_duplicate_config` 是 host 侧 ⇒ 空操作
     porting.bleControllerScanDuplicateConfig();
     rc = step(11, "ble_msys_init", porting.bleMsysInit());
@@ -214,7 +217,7 @@ test "bringup: init 走到 INITED，enable 走到 ENABLED" {
     // 最后一步必须是 task_enable（否则 controller 任务没起来）
     try std.testing.expectEqual(@as(u32, 18), fake_step);
     // 跳过了 host-only 的 ext_funcs
-    try std.testing.expectEqual(@as(u32, 1), stats().skipped_ext_funcs);
+    try std.testing.expectEqual(@as(u32, 1), stats().ext_funcs_registered);
 }
 
 test "bringup: 任一步失败就停下并记录是哪一步" {
