@@ -13,6 +13,9 @@ test {
     _ = @import("extfuncs.zig");
     _ = @import("transport.zig");
     _ = @import("sched.zig");
+    // 模块根：它本身没有逻辑，但导入它才能让覆盖门禁看到 `root.zig`
+    // 与它下面那些只经根暴露的文件（如 `xpuq_shim.zig`）。
+    _ = @import("root.zig");
     std.testing.refAllDecls(@import("osal.zig"));
     std.testing.refAllDecls(@import("config.zig"));
     std.testing.refAllDecls(@import("porting.zig"));

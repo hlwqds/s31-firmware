@@ -135,31 +135,33 @@ stdout 只输出一个 JSON 对象；人类可读的计划与错误走 stderr，
 
 ## 5. 配置字段（`config.example.json`）
 
-| 字段                                                                              | 说明                                                             |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `allow_hardware`                                                                  | 真实模式总开关，必须显式为 `true`；dry-run 不受影响              |
-| `port` / `baud`                                                                   | DUT 串口与波特率                                                 |
-| `firmware`                                                                        | 固件文件路径（相对仓库根或绝对路径）；esptool 的最后一个参数     |
-| `artifacts_dir`                                                                   | 串口日志目录，默认 `tools/s31-production/hil/artifacts`          |
-| `build.enabled`                                                                   | 是否运行外部构建命令；默认 `false`                               |
-| `build.command` / `build.cwd` / `build.timeout_s`                                 | 构建命令数组、工作目录、超时                                     |
-| `flash.esptool`                                                                   | esptool 可执行文件名或路径（示例 `esptool.py`）                  |
-| `flash.chip` / `flash.baud` / `flash.offset`                                      | 传给 esptool 的芯片、烧录波特率、偏移（字符串，如 `0x10000`）    |
-| `flash.extra_args`                                                                | 追加到命令末尾的额外参数                                         |
-| `relay.command`                                                                   | 命令数组模板，必须包含 `{channel}` 与 `{state}`                  |
-| `relay.power_channel` / `relay.reset_channel`                                     | 电源/复位通道号                                                  |
-| `relay.on_value` / `relay.off_value`                                              | 吸合/释放状态字符串                                              |
-| `relay.settle_ms` / `relay.reset_pulse_ms`                                        | 切换后的稳定等待、复位脉冲宽度                                   |
-| `capture.duration_s`                                                              | 单次抓取时长上界（秒）                                           |
-| `capture.stop_pattern`                                                            | 命中即提前结束的正则（可选）                                     |
-| `capture.encoding`                                                                | 串口字节解码编码，默认 `utf-8`                                   |
-| `capture.reset`                                                                   | 打开串口后的复位动作：`none`/`reset`/`bootloader`（详见第 8 节） |
-| `artifacts_keep`                                                                  | 产物目录最多保留文件数；`0`（默认）= 不按条数清理                |
-| `artifacts_max_age_days`                                                          | 产物的最长保留天数；`0`（默认）= 不按年龄清理                    |
-| `assertions[]`                                                                    | 通用断言：`name` / `pattern`（正则）/ `timeout_s` / `required`   |
-| `link.assertions[]`                                                               | `link` 套件覆盖断言；缺省回退到通用列表                          |
-| `fault.cycles` / `fault.power_off_ms` / `fault.assertions[]`                      | 掉电轮数、掉电保持时间、恢复断言                                 |
-| `soak.cycles` / `soak.cycle_interval_s` / `soak.duration_s` / `soak.assertions[]` | 浸泡轮数、轮间等待、单轮抓取、启动断言                           |
+| 字段                                                                              | 说明                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `allow_hardware`                                                                  | 真实模式总开关，必须显式为 `true`；dry-run 不受影响                 |
+| `port` / `baud`                                                                   | DUT 串口与波特率                                                    |
+| `firmware`                                                                        | 固件文件路径（相对仓库根或绝对路径）；esptool 的最后一个参数        |
+| `artifacts_dir`                                                                   | 串口日志目录，默认 `tools/s31-production/hil/artifacts`             |
+| `build.enabled`                                                                   | 是否运行外部构建命令；默认 `false`                                  |
+| `build.command` / `build.cwd` / `build.timeout_s`                                 | 构建命令数组、工作目录、超时                                        |
+| `flash.esptool`                                                                   | esptool 可执行文件名或路径（示例 `esptool.py`）                     |
+| `flash.chip` / `flash.baud` / `flash.offset`                                      | 传给 esptool 的芯片、烧录波特率、偏移（字符串，如 `0x10000`）       |
+| `flash.global_args`                                                               | 插在 `write-flash` **之前**的 group 级选项，如 `--before usb-reset` |
+| `flash.extra_args`                                                                | 追加到子命令**之后**的额外参数（只能带子命令自己的选项）            |
+| `relay.command`                                                                   | 命令数组模板，必须包含 `{channel}` 与 `{state}`                     |
+| `relay.power_channel` / `relay.reset_channel`                                     | 电源/复位通道号                                                     |
+| `relay.on_value` / `relay.off_value`                                              | 吸合/释放状态字符串                                                 |
+| `relay.settle_ms` / `relay.reset_pulse_ms`                                        | 切换后的稳定等待、复位脉冲宽度                                      |
+| `capture.duration_s`                                                              | 单次抓取时长上界（秒）                                              |
+| `capture.stop_pattern`                                                            | 命中即提前结束的正则（可选）                                        |
+| `capture.encoding`                                                                | 串口字节解码编码，默认 `utf-8`                                      |
+| `capture.reset`                                                                   | 打开串口后的复位动作：`none`/`reset`/`bootloader`（详见第 8 节）    |
+| `capture.reset_flow_control`                                                      | CP2102C 类适配器置 `true`：跳过收尾的 IO0 写（详见第 8.1 节）       |
+| `artifacts_keep`                                                                  | 产物目录最多保留文件数；`0`（默认）= 不按条数清理                   |
+| `artifacts_max_age_days`                                                          | 产物的最长保留天数；`0`（默认）= 不按年龄清理                       |
+| `assertions[]`                                                                    | 通用断言：`name` / `pattern`（正则）/ `timeout_s` / `required`      |
+| `link.assertions[]`                                                               | `link` 套件覆盖断言；缺省回退到通用列表                             |
+| `fault.cycles` / `fault.power_off_ms` / `fault.assertions[]`                      | 掉电轮数、掉电保持时间、恢复断言                                    |
+| `soak.cycles` / `soak.cycle_interval_s` / `soak.duration_s` / `soak.assertions[]` | 浸泡轮数、轮间等待、单轮抓取、启动断言                              |
 
 继电器命令契约：`hil.py` 只负责把占位符替换后以数组形式 `subprocess.run`，
 不经过 shell；命令返回码非 0 即判失败。实际模块（USB 继电器、GPIO 工具、智能插座 CLI）
@@ -215,16 +217,28 @@ stdout 只输出一个 JSON 对象；人类可读的计划与错误走 stderr，
 "可能整窗把芯片按在复位里"，那正是这条修复要消除的静默失败。
 
 **时序**照 esptool 的 `ClassicReset` / `hard_reset`，与
-`esp_pylib.serial_reset.classic_bootloader_reset` 逐行一致（IO0 先回到已知高电平，
-再拉低 EN 进复位，然后决定 IO0 电平，最后释放 EN 让芯片采样 IO0）：
+`esp_pylib.serial_reset.classic_bootloader_reset` 的 **`flow_control=False` 变体**逐行一致
+（IO0 先回到已知高电平，再拉低 EN 进复位，然后决定 IO0 电平，最后释放 EN 让芯片采样 IO0）：
 
 ```text
-bootloader: dtr=LOW(IO0 高) → rts=LOW(EN 低) → sleep 0.1
-            → dtr=HIGH(IO0 低) → rts=HIGH(EN 高) → sleep 0.05 → dtr=HIGH(IO0 高)
-reset     : dtr=LOW(IO0 高) → rts=LOW(EN 低) → sleep 0.1 → rts=HIGH(EN 高)
+bootloader: dtr=False(IO0 高) → rts=True(EN 低) → sleep 0.1
+            → dtr=True(IO0 低) → rts=False(EN 高) → sleep 0.05 → dtr=False(IO0 高)
+reset     : dtr=False(IO0 高) → rts=True(EN 低) → sleep 0.1 → rts=False(EN 高)
 ```
 
-（`dtr=LOW` 表示逻辑值 False/线为高；命名容易绕，代码里用 `IO0_HIGH`/`EN_LOW` 这类常量。）
+`dtr`/`rts` 是**逻辑值**（pyserial 的 True = 断言 = 线被拉低），括号里是**物理电平**。
+
+**`flow_control` 分支（CP2102C 类适配器）**：官方实现在 `flow_control=True` 时**跳过收尾那次
+`IO0=HIGH` 写**。理由是把 CTS 接到芯片 RTS 的适配器（如 SiLabs CP2102C），芯片启动后再翻
+DTR 会把 EN 短暂拉低 —— 正好把刚打开的下载窗口又关掉，后续 `flash` 就连不上 ROM 下载口。
+本仓库用 `capture.reset_flow_control`（默认 `false`）表达这个开关。
+
+**这条 classic 序列只对"外接 USB 转串口桥"的接线成立**（台架的 `/dev/ttyUSB0`）。
+S31 的**原生 USB（USB-Serial-JTAG，`/dev/ttyACM*`）**根本不把 DTR/RTS 接到 EN/IO0，
+所以在原生 USB 上 `capture.reset` 是**空操作**，真正的复位只能靠 `relay` 的 `reset_pulse`；
+那种接线下列出的 `--before usb-reset` 走 `flash.global_args`（见第 9 节边界 2）。
+官方针对这类外设另有一条 `usb_jtag_bootloader_reset` 序列，本仓库**未实现**；
+POSIX 上更严格的 `unix_tight_bootloader_reset`（`ioctl(TIOCMSET)` 原子写两线）也**未实现**。
 
 **为什么要"先开后复位"**：串口先打开、缓冲区就绪，再让芯片起来，才不会漏掉首行日志。
 两处延时分别是 `DEFAULT_TIMING` 里的 `enter_boot_delay_s`（0.1 s，复位保持）
@@ -245,19 +259,21 @@ reset     : dtr=LOW(IO0 高) → rts=LOW(EN 低) → sleep 0.1 → rts=HIGH(EN �
 
 ### 8.3 已做的验证（2026-11-18）
 
-| 项                   | 方法                                                | 结果                           |
-| -------------------- | --------------------------------------------------- | ------------------------------ |
-| `--help`             | 直接执行                                            | exit 0                         |
-| `--dry-run`（smoke） | `config.example.json`                               | exit 0，计划含 `capture.reset` |
-| `release_lines`      | 假串口（初始两线均为断言态）                        | 两线被置为高，芯片脱离复位     |
-| `reset` 时序         | 假串口记录赋值序列                                  | 与 `hard_reset` 一致           |
-| `bootloader` 时序    | 同上，断言"IO0 低点早于 EN 释放"、"收尾 IO0 必为高" | 通过                           |
-| `none` 模式          | 同上，断言不产生任何线操作                          | 通过                           |
-| 非法 `capture.reset` | `pulse_reset(ser, "bogus")`                         | `ConfigError` 明确拒绝         |
-| 轮转（按条数）       | 临时目录 6 个文件，`keep=3`                         | 删 3 留最新的 3 个             |
-| 轮转（按年龄）       | 240 h 与 1 h 两个文件，`max_age=2d`                 | 删旧的、留新的                 |
-| 轮转（默认）         | 两个阈值都是 0                                      | 一条不删                       |
-| 语法                 | `python -m py_compile`                              | OK                             |
+| 项                   | 方法                                                  | 结果                           |
+| -------------------- | ----------------------------------------------------- | ------------------------------ |
+| `--help`             | 直接执行                                              | exit 0                         |
+| `--dry-run`（smoke） | `config.example.json`                                 | exit 0，计划含 `capture.reset` |
+| `release_lines`      | 假串口（初始两线均为断言态）                          | 两线被置为高，芯片脱离复位     |
+| `reset` 时序         | 假串口记录赋值序列                                    | 与 `hard_reset` 一致           |
+| `bootloader` 时序    | 同上，断言"IO0 低点早于 EN 释放"、"收尾 IO0 必为高"   | 通过                           |
+| `none` 模式          | 同上，断言不产生任何线操作                            | 通过                           |
+| 非法 `capture.reset` | `pulse_reset(ser, "bogus")` / `validate_config`       | `ConfigError` 明确拒绝         |
+| `flow_control=true`  | 假串口，断言 EN 释放后不再出现 `dtr=False`            | 收尾 IO0 写被跳过              |
+| `flash.global_args`  | 断言 `--before` 下标 < `write-flash` < `--flash-mode` | group 级选项确实前置           |
+| 轮转（按条数）       | 临时目录 6 个文件，`keep=3`                           | 删 3 留最新的 3 个             |
+| 轮转（按年龄）       | 240 h 与 1 h 两个文件，`max_age=2d`                   | 删旧的、留新的                 |
+| 轮转（默认）         | 两个阈值都是 0                                        | 一条不删                       |
+| 语法                 | `python -m py_compile`                                | OK                             |
 
 **仍未验证**：真实 USB 转串口驱动的线级副作用、继电器抖动、真实 DUT 的启动竞态。
 
@@ -269,16 +285,29 @@ reset     : dtr=LOW(IO0 高) → rts=LOW(EN 低) → sleep 0.1 → rts=HIGH(EN �
    USB 转串口驱动的缓冲区行为未验证。
    **DTR/RTS 复位副作用**：已定位（pyserial 打开即断言两线）并已处理（`release_lines()`，
    见第 8.1 节），但**具体驱动的线级行为**仍未在真实硬件上确认。
-2. **esptool 参数顺序**：`--chip/--port/--baud write_flash OFFSET FILE [extra_args]`
-   仅按 esptool v4 常见形式拼接；不同版本/芯片的选项差异未验证，`extra_args` 位置可能需调整。
+2. **esptool 参数顺序**（已按 **esptool 5.6.0** 核对源码）：
+   - 子命令名是 `write-flash`；本仓库就发这个名字。
+   - `--chip/--port/--baud/--before/--after` 全是 **group 级**选项（与子命令共用同一装饰器栈），
+     click 要求它们出现在**子命令之前**，所以放在 `flash.global_args`（插在 `write-flash` 前）。
+   - `flash.extra_args` 拼在 `write-flash OFFSET FILE` **之后**，只能承载子命令自己的选项
+     （如 `--flash-mode`），**装不下 `--before`**。
+   - `--before` 取值是连字符形式：`default-reset` / `usb-reset` / `no-reset` / `no-reset-no-sync`；
+     `--after` 是 `hard-reset` / `soft-reset` / `no-reset` / `no-reset-stub` / `watchdog-reset`。
+     下划线写法会被转换成连字符并打告警。
+   - **S31 走原生 USB（`/dev/ttyACM*`）时必须 `flash.global_args: ["--before", "usb-reset"]`**，
+     否则 esptool 的默认 `default-reset` 对该接线无效。
+   - 仍未验证：真实调用时序、不同 esptool 小版本的选项差异。
 3. **自动下载模式**：**已实现**（`capture.reset`），但仍是**未在真实硬件上验证**的时序 ——
    见第 8 节。板子若不接 IO0/EN 两根信号线，复位会"静默失败"（不报错、只是没复位），
    所以 `step.detail` 会写明实际执行了什么。
 4. **继电器时序**：`settle_ms`、`reset_pulse_ms`、掉电保持时间均为经验值；
    真实继电器抖动、触点回弹、电源掉电斜率未测量。
-5. **断言与启动竞态**：抓取窗口从复位后开始，若 DUT 启动早于串口打开，可能漏掉首行日志。
-   **已实现“先开后复位”**：串口先打开、`release_lines()` 就绪，然后才（按 `capture.reset`）
-   复位目标，所以首行日志落在已打开的缓冲区里。真实驱动上是否仍有丢字节未验证。
+5. **断言与启动竞态**：**已实现“先开后复位”**（代码里的顺序是
+   open → `release_lines()` → 按 `capture.reset` 复位 → 才进 deadline 循环）。
+   - `reset` / `bootloader`：芯片在端口已就绪之后才启动，首行日志不会丢。
+   - `none`：不复位，**若 DUT 早于串口打开就已启动，首行日志仍会漏** ——
+     要用首行做断言时请用 `reset`，或让 relay 的 `reset_pulse` 排在 capture 之后。
+   - 真实 USB 转串口驱动是否仍会丢字节：未验证。
 6. **日志解码**：非 UTF-8 输出按 `capture.encoding` 解码并 `errors="replace"`；
    BIN 级输出会含替换字符，断言可能误判。
 7. **产物路径**：`run_id` 使用 UTC 时间戳（微秒），并发运行同一 suite 理论可区分。

@@ -184,6 +184,9 @@ def validate_config(cfg: dict[str, Any]) -> None:
     extra = flash.get("extra_args", [])
     if not isinstance(extra, list) or any(not isinstance(x, str) for x in extra):
         raise ConfigError("flash.extra_args 必须是字符串数组")
+    glob = flash.get("global_args", [])
+    if not isinstance(glob, list) or any(not isinstance(x, str) for x in glob):
+        raise ConfigError("flash.global_args 必须是字符串数组（放在子命令之前的 group 级选项）")
 
     relay = cfg.get("relay")
     if not isinstance(relay, dict):
@@ -207,6 +210,8 @@ def validate_config(cfg: dict[str, Any]) -> None:
     capture = cfg.get("capture", {})
     if not isinstance(capture, dict):
         raise ConfigError("字段 'capture' 必须是对象")
+    if not isinstance(capture.get("reset_flow_control", False), bool):
+        raise ConfigError("capture.reset_flow_control 必须是布尔值")
     reset_mode = capture.get("reset", "none")
     if reset_mode not in RESET_MODES:
         raise ConfigError(f"capture.reset 只能是 {'/'.join(RESET_MODES)}，收到 {reset_mode!r}")
@@ -308,6 +313,10 @@ def relay_params(cfg: dict[str, Any], action: str, channel: int) -> dict[str, An
 
 def flash_params(cfg: dict[str, Any]) -> dict[str, Any]:
     flash = cfg["flash"]
+    # esptool 的 --chip/--port/--baud/--before/--after 都是 **group 级** 选项
+    # （与子命令共用同一装饰器栈），click 要求它们出现在子命令之前。
+    # extra_args 拼在 `write_flash OFFSET FILE` 之后，只能承载子命令自己的选项，
+    # 装不下 `--before usb-reset`；那类参数必须走 global_args。
     cmd = [
         flash.get("esptool", "esptool.py"),
         "--chip",
@@ -316,10 +325,14 @@ def flash_params(cfg: dict[str, Any]) -> dict[str, Any]:
         cfg["port"],
         "--baud",
         str(int(flash.get("baud", 460800))),
-        "write_flash",
+    ]
+    cmd.extend(str(item) for item in flash.get("global_args", []))
+    cmd.extend([
+        # esptool 5.x 的子命令名是 `write-flash`；下划线形式仍可用，但会打弃用告警。
+        "write-flash",
         str(flash.get("offset", "0x10000")),
         str(resolve_repo_path(cfg["firmware"])),
-    ]
+    ])
     cmd.extend(str(item) for item in flash.get("extra_args", []))
     return {"cmd": cmd, "timeout_s": float(flash.get("timeout_s", 300))}
 
@@ -342,6 +355,7 @@ def capture_params(
         # reset: 复位后正常启动（跑应用，抓日志）
         # bootloader: 复位并进入下载模式（IO0 拉低）
         "reset": capture.get("reset", "none"),
+        "reset_flow_control": bool(capture.get("reset_flow_control", False)),
         "log_name": f"{sid}.log",
     }
 
@@ -383,7 +397,12 @@ def release_lines(ser: Any) -> None:
     _set_rts(ser, EN_HIGH)
 
 
-def pulse_reset(ser: Any, mode: str, timing: dict[str, float] | None = None) -> str:
+def pulse_reset(
+    ser: Any,
+    mode: str,
+    timing: dict[str, float] | None = None,
+    flow_control: bool = False,
+) -> str:
     """照 esptool `ClassicReset` / `hard_reset` 的时序复位目标。
 
     顺序与 `esp_pylib.serial_reset.classic_bootloader_reset` 逐行一致：
@@ -409,6 +428,11 @@ def pulse_reset(ser: Any, mode: str, timing: dict[str, float] | None = None) -> 
     _set_rts(ser, EN_HIGH)      # EN=HIGH，芯片在 IO0 的当前电平下启动
     if mode == "bootloader":
         time.sleep(t["reset_delay_s"])
+        if flow_control:
+            # CP2102C 这类把 CTS 接到芯片 RTS 的适配器：芯片启动后再翻 DTR
+            # 会把 EN glitch 到低，等于把刚打开的下载窗口又关掉。
+            # 对应 esp_pylib 的 flow_control=True 分支，跳过收尾那次 IO0=HIGH。
+            return "已进入 bootloader（flow_control=true，跳过收尾 IO0 写）"
         ser.dtr = IO0_HIGH      # IO0=HIGH，结束握手
         return "已进入 bootloader 等待下载"
     return "已复位（正常启动）"
@@ -806,7 +830,7 @@ class Runner:
         reset_note = "未复位"
         mode = params.get("reset", "none")
         try:
-            reset_note = pulse_reset(ser, mode)
+            reset_note = pulse_reset(ser, mode, flow_control=bool(params.get("reset_flow_control", False)))
         except ConfigError:
             raise
         except Exception as exc:

@@ -8,7 +8,10 @@
   "artifacts_max_age_days": 0,
   "build": {
     "enabled": false,
-    "command": ["zig", "build"],
+    "command": [
+      "zig",
+      "build"
+    ],
     "cwd": "firmware",
     "timeout_s": 600
   },
@@ -17,7 +20,8 @@
     "chip": "esp32s31",
     "baud": 460800,
     "offset": "0x10000",
-    "extra_args": []
+    "extra_args": [],
+    "global_args": []
   },
   "relay": {
     "command": [
@@ -40,7 +44,8 @@
     "duration_s": 20,
     "stop_pattern": null,
     "encoding": "utf-8",
-    "reset": "none"
+    "reset": "none",
+    "reset_flow_control": false
   },
   "assertions": [
     {
