@@ -4120,3 +4120,48 @@ panic: mepc=��SP-ROM:esp32s31-20251218
 ```
 
 ⇒ 故障地址（`mtval`）被横幅覆盖，拿不到。要拿到必须把 panic 信息**先缓存、稍后再打**，或换独立通道。
+
+### ★★★ 崩溃根因：`g_osi_funcs_p` 为 NULL（`lw a5,64(a5)` 从 0x40 读）
+
+把 trap 的 panic 输出改成**先打三元组**（长标签行会被 ROM 横幅截断），拿到了故障现场：
+
+```text
+!! 2f00d726 40 3801        # mepc=0x2f00d726  mtval=0x40  mstatus=0x3801
+```
+
+反汇编 `0x2f00d71e` 正是 `ppTask` 的入口：
+
+```asm
+2f00d712: lw a5,-188(s0)   # a5 = g_osi_funcs_p   (0x2f07ff44)
+2f00d71a: lw a0,-236(a4)   # a0 = s_pp_task_create_sem (0x2f07ff14)
+2f00d71e: lw a5,64(a5)     # ★ a5 = osi_funcs[16] = _semphr_give  ← a5 是 NULL ⇒ 读 0x40
+```
+
+⇒ **`mtval=0x40` = 64 = `osi_funcs[16]` 的偏移**，基址 `a5` 是 **0**。
+
+⇒ 根因：**`g_osi_funcs_p`（ROM 槽位 `0x2F07FF44`）在 init 之前是 NULL**。
+`osi.install()` 在生产代码里**从未被调用**（只有主机用例），表是由 `esp_wifi_init_internal` 自己注册的。
+
+### 验证：先装槽位，崩溃消失
+
+```text
+wifi-init-probe: slot installed prev=0x0 now=0x2f0206c0
+（panic 0 次）
+wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00d73c
+wifi-init-probe: trace queue_recv a0=0x00000000 a1=0xffffffff   ← 之后一直重复
+```
+
+⇒ `prev=0x0` **直接证实**槽位原本是空。装好之后 `ppTask` **不崩了**，而且**真的调到了我们的钩子**：
+先 `semphr_give(handle=0)`（信号量已被删，所以句柄是 0），然后 `queue_recv(handle=0, forever)`。
+
+⇒ **第二个问题浮出来**：`queue_recv` 的句柄是 **0**——因为我们是**在 init 之前**泵 `ppTask`，
+`pp_create_task` 还没跑，它的队列根本不存在。
+
+### 结论：`ppTask` **不能在 init 之前泵**（两条独立的理由）
+
+1. `g_osi_funcs_p` 还是 NULL ⇒ 入口第一条 `lw` 就 fault；
+2. 它的队列还没被 `_wifi_create_queue(200, 8)` 建出来 ⇒ 即使不崩，也会阻塞在空队列上。
+
+⇒ 正确的做法是：**泵 blob 自己 `_task_create` 出来的那个真任务**（在 init 期间/之后、队列已存在时），
+而不是我们另起一个合成上下文跑它的入口。**这正是 `_task_create` 需要补的能力**：
+现在它只记录，不运行；要让它能被合作式调度器真正跑起来。

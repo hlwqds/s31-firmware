@@ -382,6 +382,8 @@ pub fn run() noreturn {
     // **PP 上下文进入实验已做**：切进 `ppTask` 直接崩溃（182 次 panic，包装入口都没打印）
     // ⇒ PP worker 不能在我们的合成栈上运行。已回滚。
     // **tp 实验已做**：给 ppTask 设一个清零 TLS 区后仍是 182 次 panic、入口未打印 ⇒ tp 不是原因。
+    // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
+    // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
         impl.calls.queue_send - w_qsend,

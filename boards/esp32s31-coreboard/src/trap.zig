@@ -344,11 +344,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         return chain_other_irqs and romMtvec() != 0;
     } else {
         const code = cause & 0x3F;
+        // **故障地址先打**：ROM 的 panic 处理会往同一 UART 插横幅，长标签行会被截断/覆盖
+        // （实测 `panic: mepc=\xef\xbf\xbdSP-ROM:...`）。把最关键的三元组放在第一行、无长标签。
+        log.line("!! {x} {x} {x}", .{ frame.mepc, hw.readMtval(), frame.mstatus });
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
             code, causeName(code), cause,
-        });
-        log.line("panic: mepc=0x{x} mtval=0x{x} mstatus=0x{x}", .{
-            frame.mepc, hw.readMtval(), frame.mstatus,
         });
     }
     log.line("panic: ra=0x{x} a0=0x{x} a1=0x{x} a2=0x{x}", .{
