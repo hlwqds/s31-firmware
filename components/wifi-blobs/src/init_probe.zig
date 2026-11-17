@@ -202,6 +202,11 @@ fn pumpRealTask() bool {
     return false;
 }
 
+// **自旋让出补丁已撤回**：补丁地址来自 ELF 的**线性反汇编**，而采样到的 mepc
+// （0x2f009202/0x2f009206，都是 2 mod 4）说明那里是**压缩指令**；线性扫描在
+// 0x2f0091fe（2 mod 4）解出一条 32 位 `addi`，本身就违反 RISC-V 的 4 字节对齐 ⇒ 边界不可信。
+// 在错边界上写 `auipc+jalr` 会把 blob 改成垃圾。**先按 `.o` 的符号表 + 字节匹配定位真实边界，再谈补丁。**
+
 fn idleHook() void {
     idle_calls += 1;
     // **"真阻塞 + 泵 PP worker"实验已做**：init 直接挂住（PP 任务始终没 give）。
