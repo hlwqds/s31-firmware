@@ -432,6 +432,40 @@ ae: r_sym_bt_HGbP...
 之后才停 ⇒ 卡点在归档随后执行的代码里（`r_sym_bt_HGbP` / `XPuqT` / `AJP6` / `waDX`
 四个 14–186 字节的小函数，或其下层）。
 
+### 卡点已收敛到 `r_sym_bt_XPuq` 内部（2026-11-17 最后一步）
+
+用不阻塞的 UART 通道后，OSAL 追踪给出完整序列：
+
+```text
+bt bringup: enter step 6 r_btdm_task_init
+osal> eventqInit
+osal> eventInit            ← ×3（都成功）
+osal> mutexPend FOREVER
+osal> mutexPend< OK        ← 正常返回
+（之后无任何输出）
+```
+
+⇒ `XPuq` 里还会再调一次 `wr_btdm_osal_event_init`，但**第 4 次没有出现** ⇒
+卡点在 `XPuq` 内部、**它调 `event_init` 之前**。
+
+`XPuq`（186 字节）前半段是一个**固定 16 次**的循环，按 16 字节步长修改 `0x2010B000..0x2010B100`：
+
+```asm
+10: lui  a5, 0x2010b        # 0x2010B000
+20: lui  a2, 0xfff00        # 掩码 0xFFF00000
+24: addi a3, a5, 256        # 结束 0x2010B100
+28: lw   a4, 0(a5)
+2a: addi a5, a5, 16
+2c: and  a4, a4, a2
+2e: sw   a4, -16(a5)
+32: bne  a5, a3, .L547      # 固定 16 次，有界
+```
+
+`0x2010B000` = `MODEM_BASE + 0xB000`，位于 SYSCON(+0x9C00) 与 MODEM_PWR(+0xD000) 之间
+⇒ 是 **BLE/MAC 寄存器块**。
+
+⇒ 循环本身有界，所以停摆在它之后、`event_init` 之前的那几条指令（或该块访问触发的异常）。
+
 ### 断言行为（生产 vs 探针）
 
 `bt_stubs.c` 的 `wr_btdm_assert`：**生产默认打印后挂住**；探针构建用 `-DBT_ASSERT_RETURNS=1`

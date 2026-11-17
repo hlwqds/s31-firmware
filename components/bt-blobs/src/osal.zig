@@ -103,7 +103,7 @@ fn logLine(comptime fmt: []const u8, args: anytype) void {
 
 /// 前 N 次 OSAL 调用各打一行。板侧"卡在某次调用"时，最后一行就点名了那个调用
 /// （实测 `r_btdm_task_init` 会调 `get_time_forever` + `mutex_pend(FOREVER)`）。
-pub var trace_calls: u32 = 40;
+pub var trace_calls: u32 = 200;
 var trace_used: u32 = 0;
 
 fn trace(comptime what: []const u8, args: anytype) void {
@@ -409,6 +409,7 @@ var event_pool: Pool(Event, 384) = .{};
 var eventq_pool: Pool(EventQ, 96) = .{};
 
 pub fn eventqInit(slot: *Slot) void {
+    trace("eventqInit", .{});
     // 槽位已有状态就**复用**（IDF 的语义是 memblock 已属于本池就复用）——
     // 否则对同一槽位二次 init 会白漏一个池记录。
     if (slotGet(EventQ, slot)) |q| {
@@ -544,9 +545,13 @@ pub fn eventqRemove(qslot: *Slot, eslot: *Slot) void {
 }
 
 pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
+    trace("eventInit", .{});
     // 槽位里可能已经有状态（重复 init）——复用，否则新建。
     const e = slotGet(Event, slot) orelse blk: {
-        const fresh = event_pool.take() orelse return;
+        const fresh = event_pool.take() orelse {
+            trace("eventInit< FAILED (pool exhausted)", .{});
+            return;
+        };
         slotSet(Event, slot, fresh);
         break :blk fresh;
     };
@@ -562,6 +567,7 @@ pub fn eventDeinit(slot: *Slot) void {
 }
 
 pub fn eventRun(slot: *Slot) void {
+    trace("eventRun", .{});
     const e = slotGet(Event, slot) orelse return;
     if (e.fn_) |f| f(e.arg);
 }
@@ -604,6 +610,7 @@ pub const Callout = struct {
 var callout_pool: Pool(Callout, 128) = .{};
 
 pub fn calloutInit(slot: *Slot, evq: ?*Slot, ev_cb: ?*const fn (?*anyopaque) callconv(.c) void, ev_arg: ?*anyopaque) c_int {
+    trace("calloutInit", .{});
     if (slotGet(Callout, slot)) |co| { // 复用
         co.active = false;
         co.evq = evq;

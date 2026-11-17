@@ -21,16 +21,16 @@ I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
 I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
 I (71) boot:  2 factory          factory app      00 00 00010000 00177000
 I (78) boot: End of partition table
-I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9ade0h (634336) map
-I (192) esp_image: segment 1: paddr=000aae08 vaddr=2f000000 size=000ach (   172) load
-I (194) esp_image: segment 2: paddr=000aaebc vaddr=2f0000b0 size=0515ch ( 20828) load
-I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=14640h ( 83520) map
-I (219) esp_image: segment 4: paddr=000c4668 vaddr=2f00520c size=09e10h ( 40464) load
-I (228) esp_image: segment 5: paddr=000ce480 vaddr=2f00f01a size=00064h (   100) load
-I (230) esp_image: segment 6: paddr=000ce4ec vaddr=2f00f07c size=00110h (   272) load
-I (233) esp_image: segment 7: paddr=000ce604 vaddr=2f00f18a size=00068h (   104) load
-I (241) esp_image: segment 8: paddr=000ce674 vaddr=2f00f1f0 size=0006ch (   108) load
-I (248) esp_image: segment 9: paddr=000ce6e8 vaddr=2f00f260 size=003e0h (   992) load
+I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9afa0h (634784) map
+I (192) esp_image: segment 1: paddr=000aafc8 vaddr=2f000000 size=000ach (   172) load
+I (194) esp_image: segment 2: paddr=000ab07c vaddr=2f0000b0 size=04f9ch ( 20380) load
+I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=146d0h ( 83664) map
+I (219) esp_image: segment 4: paddr=000c46f8 vaddr=2f00504c size=09fd0h ( 40912) load
+I (228) esp_image: segment 5: paddr=000ce6d0 vaddr=2f00f01a size=00064h (   100) load
+I (230) esp_image: segment 6: paddr=000ce73c vaddr=2f00f07c size=00110h (   272) load
+I (234) esp_image: segment 7: paddr=000ce854 vaddr=2f00f18a size=00068h (   104) load
+I (241) esp_image: segment 8: paddr=000ce8c4 vaddr=2f00f1f0 size=0006ch (   108) load
+I (249) esp_image: segment 9: paddr=000ce938 vaddr=2f00f260 size=003e0h (   992) load
 I (259) boot: Loaded app from partition at offset 0x10000
 I (260) boot: Disabling RNG early entropy source...
 rom A @0x2f83efb0
@@ -65,5 +65,9 @@ bt lp: clk_conf1=0x003ff880 fe_ok=true
 bt lp: lp_timer_conf=0x00000001 32k_conf=0x00000001 lpcon_clk=0x0000000e
 bt lp: mac reset done, rst_conf=0x00000000
 bt bringup: enter step 6 r_btdm_task_init
+osal> eventqInit
+osal> eventInit
+osal> eventInit
+osal> eventInit
 osal> mutexPend tmo=4294967295
 osal> mutexPend< OK
