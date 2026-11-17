@@ -391,7 +391,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8}", .{
             frame.mepc, hw.readMtval(), frame.mstatus,
         }) catch "!! (fmt fail)";
-        hw.rawLine(head);
+        hw.rawLineBlocking(head);
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
             code, causeName(code), cause,
         });

@@ -285,6 +285,22 @@ pub fn rawWrite(msg: []const u8) void {
     }
 }
 
+/// **panic 专用**：肯等到 FIFO 有空位（上限很大）。
+/// 有界丢弃版本在 panic 时会因 FIFO 满而把 `!! mepc=...` 整行丢掉 ——
+/// 那正是本战役"fault 无地址"的根因。panic 慢一点无所谓，丢信息才致命。
+pub fn rawLineBlocking(msg: []const u8) void {
+    const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
+    const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    for (msg) |ch| {
+        var spins: u32 = 0;
+        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 2_000_000) : (spins += 1) {}
+        fifo.* = ch;
+    }
+    var spins: u32 = 0;
+    while ((((status.* >> 16) & 0xFF) >= 120) and spins < 2_000_000) : (spins += 1) {}
+    fifo.* = '\n';
+}
+
 pub fn rawLine(msg: []const u8) void {
     const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
     const status: *volatile u32 = @ptrFromInt(0x2038_A01C);

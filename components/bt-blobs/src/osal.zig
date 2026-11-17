@@ -390,6 +390,13 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
                 const e: [*]volatile u32 = @ptrFromInt(env);
                 logLine("bt env: [0]=0x{x} [1]=0x{x} [2]=0x{x} [3]=0x{x}", .{ e[0], e[1], e[2], e[3] });
                 logLine("bt env: [4]=0x{x} [5]=0x{x} [6]=0x{x} [7]=0x{x}", .{ e[4], e[5], e[6], e[7] });
+                // `P` 被 `deinit` 的 `gvLJK` 当作**链表头**：`a3 = P; a5 = *(P); ...`
+                // 若 `*(P)` 是垃圾，遍历/摘链就会 store 到野地址 ⇒ 这正是 deinit 的 fault。
+                const pv = pp.get();
+                if (pv != 0) {
+                    const pl: [*]volatile u32 = @ptrFromInt(pv);
+                    logLine("bt P:   [0]=0x{x} [1]=0x{x} [2]=0x{x} [3]=0x{x}", .{ pl[0], pl[1], pl[2], pl[3] });
+                }
             }
         }
         return OK;
