@@ -142,6 +142,11 @@ pub const pool_caps = struct {
 /// 复刻 `btdm_osal_elem_mempool_init(&elem)` 的**校验**部分：
 /// IDF 会按 `elem` 的 5 个计数建池；我们只能从静态池取，所以超了就直接报错。
 pub fn elemMempoolInit(elem: config.ElemNum) c_int {
+    // **先无条件报全五项**：只报第一项会让"到底要多少"分多次启动才能凑齐。
+    osal.logPublic("bt mempool: need evt={d} evtq={d} co={d} sem={d} mutex={d} / cap {d}/{d}/{d}/{d}/{d}", .{
+        elem.evt_count, elem.evtq_count, elem.co_count, elem.sem_count, elem.mutex_count,
+        pool_caps.evt,  pool_caps.evtq,  pool_caps.co,  pool_caps.sem,  pool_caps.mutex,
+    });
     if (elem.evt_count > pool_caps.evt) {
         osal.logPublic("bt mempool: evt {d} > cap {d}", .{ elem.evt_count, pool_caps.evt });
         return MempoolErr.evt;

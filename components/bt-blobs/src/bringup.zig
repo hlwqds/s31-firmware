@@ -75,7 +75,10 @@ pub fn setHooks(h: Hooks) void {
     hooks = h;
 }
 
+/// 每步**进入时**先打一行：否则"停在某步内部"与"没走到那步"分不开
+/// （实测：step 6 `r_btdm_task_init` 内部挂住时，日志停在 step 5 之后，看不出是哪步）。
 fn step(n: u32, comptime what: []const u8, archive_rc: ?c_int) c_int {
+    osal.logPublic("bt bringup: step {d} " ++ what ++ " ...", .{n});
     if (hooks.call) |f| {
         const rc = f(n);
         if (rc != 0) {

@@ -84,11 +84,14 @@ pub fn logPublic(comptime fmt: []const u8, args: anytype) void {
 
 /// 静态池容量（供 `porting.zig` 做 mempool 容量校验）。
 pub const pool_caps = struct {
-    pub const event: u16 = 192;
-    pub const eventq: u16 = 48;
-    pub const callout: u16 = 32;
-    pub const sem: u16 = 32;
-    pub const mutex: u16 = 32;
+    /// 实测：controller 在 init 第一步就要 co=41（seed 10 + LL 侧 18 + evq 3 + 10）⇒
+    /// 原来的 32 会在 `btdm_osal_elem_mempool_init` 就失败。SRAM 充裕（arena 413 KB），
+    /// 各项按实测值的 2–4 倍给，宁可多占几百字节也不要"池不够"。
+    pub const event: u16 = 384;
+    pub const eventq: u16 = 96;
+    pub const callout: u16 = 128;
+    pub const sem: u16 = 64;
+    pub const mutex: u16 = 64;
 };
 
 fn logLine(comptime fmt: []const u8, args: anytype) void {
@@ -227,7 +230,7 @@ fn Pool(comptime T: type, comptime n: usize) type {
 /// seed 就有 evt 103 / evtq 3 / co 10 / mutex 1，再加上 config 算出的部分
 /// ⇒ 事件 ≥ 121（config 大时到 180）、eventq ≥ 32、callout ≥ 23、sem ≥ 20、mutex ≥ 15。
 /// 记录只有几十字节，SRAM 503 KB 完全放得下，宁可给足。
-var sem_pool: Pool(Sem, 32) = .{};
+var sem_pool: Pool(Sem, 64) = .{};
 
 pub fn semInit(slot: *Slot, tokens: u16) c_int {
     if (slotGet(Sem, slot)) |s| { // 复用，别漏池记录
@@ -293,7 +296,7 @@ pub fn semGetCount(slot: *Slot) u16 {
 
 pub const Mutex = struct { locked: bool = false, in_use: bool = false };
 
-var mutex_pool: Pool(Mutex, 32) = .{};
+var mutex_pool: Pool(Mutex, 64) = .{};
 
 pub fn mutexInit(slot: *Slot) c_int {
     if (slotGet(Mutex, slot)) |m| {
@@ -352,8 +355,8 @@ pub const EventQ = struct {
     waiter: ?*sched.Context = null,
 };
 
-var event_pool: Pool(Event, 192) = .{};
-var eventq_pool: Pool(EventQ, 48) = .{};
+var event_pool: Pool(Event, 384) = .{};
+var eventq_pool: Pool(EventQ, 96) = .{};
 
 pub fn eventqInit(slot: *Slot) void {
     // 槽位已有状态就**复用**（IDF 的语义是 memblock 已属于本池就复用）——
@@ -538,7 +541,7 @@ pub const Callout = struct {
     in_use: bool = false,
 };
 
-var callout_pool: Pool(Callout, 32) = .{};
+var callout_pool: Pool(Callout, 128) = .{};
 
 pub fn calloutInit(slot: *Slot, evq: ?*Slot, ev_cb: ?*const fn (?*anyopaque) callconv(.c) void, ev_arg: ?*anyopaque) c_int {
     if (slotGet(Callout, slot)) |co| { // 复用
@@ -1393,23 +1396,23 @@ fn coexHelperExercise() c_int {
 
 test "pool: 耗尽可见（计数 + 日志），不是静默 null" {
     resetStats();
-    // 事件池 192 —— 取到耗尽为止，应当全部拿到且计数为 0
+    // 取到耗尽为止（容量跟着 pool_caps 走，别硬编码）
     var taken: usize = 0;
-    var slots: [200]Slot = @splat(.{});
+    var slots: [pool_caps.event + 2]Slot = @splat(.{});
     while (taken < slots.len) : (taken += 1) {
         const before = stats().pool_exhausted;
         eventInit(&slots[taken], null, null);
         if (stats().pool_exhausted != before) break;
     }
-    try testing.expectEqual(@as(usize, 192), taken);
+    try testing.expectEqual(@as(usize, pool_caps.event), taken);
     try testing.expectEqual(@as(u32, 1), stats().pool_exhausted);
     // 归还后又能取
     eventDeinit(&slots[0]);
-    eventInit(&slots[192], null, null);
+    eventInit(&slots[pool_caps.event], null, null);
     try testing.expectEqual(@as(u32, 1), stats().pool_exhausted);
     // **测试卫生**：把池全部归还，否则后续用例会因池空而"看起来"失败。
-    eventDeinit(&slots[192]);
-    for (slots[1..192]) |*s2| eventDeinit(s2);
+    eventDeinit(&slots[pool_caps.event]);
+    for (slots[1..pool_caps.event]) |*s2| eventDeinit(s2);
 }
 
 test "eventq: 重复 put 不成环（曾会死循环）" {
