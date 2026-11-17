@@ -8,6 +8,13 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **`btdm_lp_enable_clock` 按"空实现 + 大声日志"落地**（2026-11-17）：它是 9 个 porting 函数里唯一的
+  真硬件活，但 **HCI Reset / Read Local Version 是软件层命令**，未必需要射频时钟 ⇒ 先空着，
+  等 controller 一碰 MAC 寄存器就 fault 再补。补实现所需的规格已查全并写进
+  `components/bt-blobs/README.md`：`BLE_CLOCK_DEPS` 的 **8 个门**（BLE_MAC / BT_I154_COMMON_BB /
+  ETM / **COEXIST 在 lpcon 块** / WIFI_BB_80X1 / SOC_PLL_SOURCE_CG / BT_APB / BT_PERIPHERAL）
+  与 `BT_APB_CLOCK_DEPS` 的 4 个门，外加 `modem_clock_module_mac_reset`。
+  纪律：**宁可多开不要少开**（少一个门 = 访问该外设总线挂死，比缺时钟更糟）。
 - **porting 层的 9 个 C 函数里 7 个已落 Zig**（2026-11-17）：照 IDF 原文逐条读过之后，估工大幅下调——
   4 个是 `return 0`（`btdm_log_init`/`btdm_external_init`/`btdm_coex_init`/`btdm_lp_init`），
   `ble_controller_scan_duplicate_config` 是 NimBLE **host** 侧的扫描去重（全归档 `grep ble_vhci` 零命中

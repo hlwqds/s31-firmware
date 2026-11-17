@@ -134,9 +134,33 @@ NimBLE 开启时 host 常量是 `co=8 / ev=19 / evq=3 / sem=10 / mutex=4`，每�
 | `ble_controller_scan_duplicate_config` | 空操作 | 调的是 NimBLE **host** 侧 `ble_vhci_*`（全归档 `grep ble_vhci` 零命中）⇒ controller-only 没有 host |
 | `ble_msys_init` | 转调归档 `r_esp_ble_msys_init` | 常量取 `host/nimble/Kconfig.in:480-511` 的 **SOC_ESP_NIMBLE_CONTROLLER 分支**：`24/128`、`24/320`、`from_heap=y` |
 | `btdm_osal_elem_mempool_init` | **容量校验**（`elemMempoolInit`） | IDF 池空会回退动态 malloc，我们**没有回退** ⇒ 超限按类返回 `-1..-5` 并打印 5 个数字 |
-| `btdm_lp_enable_clock` | ❌ **未做**（唯一硬活） | `modem_clock_module_enable(BT/BT_APB)` + `modem_clock_module_mac_reset(BT)` + `btdm_lp_timer_clk_init`；`modem_clock_*` 是 IDF C、不是 ROM ⇒ 要自己写 CNNT/modem 域门控（与 ch17 的 CNNT 认知同源） |
+| `btdm_lp_enable_clock` | 🟡 **空实现 + 大声日志**（故意） | HCI Reset / Read Local Version 是**软件层**命令，未必需要射频时钟 ⇒ 先空着；一旦 controller 碰 MAC 寄存器就 fault，再补下面那张表 |
+| `btdm_lp_reset` / `btdm_coex_enable` | 无状态 / 返回 0 | 软件共存未开 |
 
 ⚠ **时序**：`btdm_lp_enable_clock` 在 `r_btdm_task_init` **之前**（`bt.c:234` vs `236`）。
+
+### `btdm_lp_enable_clock` 补实现时的规格（已查全，别重查）
+
+`modem_clock_module_enable(PERIPH_BT_MODULE)` = `BLE_CLOCK_DEPS`，**8 个门**：
+
+| 门 | HAL |
+| --- | --- |
+| BLE_MAC | `clk_conf1.clk_btmac_en` |
+| BT_I154_COMMON_BB | `enable_bt_bb_clock` |
+| ETM | `enable_etm_clock` |
+| **COEXIST** | **在 lpcon 块**（`modem_lpcon_ll_enable_coex_clock`）——别只改 syscon |
+| WIFI_BB_80X1 | `enable_wifibb_80x1_clock` |
+| SOC_PLL_SOURCE_CG | `modem_clock_hal_enable_soc_pll_source_cg` |
+| BT_APB | `enable_bt_apb_clock` + `enable_modem_sec_apb_clock` |
+| BT_PERIPHERAL | `enable_modem_sec_clock` + `enable_ble_timer_clock` |
+
+`modem_clock_module_enable(PERIPH_BT_APB_MODULE)` = `BT_APB_CLOCK_DEPS`，**4 个门**：
+BT_APB、ETM、SOC_PLL_SOURCE_CG、BLE_MAC。
+`modem_clock_module_mac_reset(PERIPH_BT_MODULE)` 单独一份（复位 BT MAC）。
+
+两条纪律：① **宁可多开不要少开** —— 少开一个门，controller 访问该外设就是**总线挂死**（比缺时钟更糟），
+多开只浪费功耗 ⇒ 照 `BLE_CLOCK_DEPS` 全开；② 裸机没有 `esp_os_enter_critical_safe` ⇒
+单核下用"关中断写寄存器再开"代替。
 
 ## 待验证项
 

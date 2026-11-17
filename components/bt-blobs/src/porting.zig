@@ -63,6 +63,51 @@ extern fn r_esp_ble_msys_init(
     from_heap: c_int,
 ) c_int;
 
+// ---------------------------------------------------------------------------
+// 时钟 / 复位 / 共存使能
+//
+// `btdm_lp_enable_clock` 是这 9 个函数里唯一的真硬件活。**当前故意留空实现 + 大声日志**：
+// HCI Reset / Read Local Version 是**软件层**的命令，未必需要射频时钟；只有当 controller
+// 一碰 MAC 寄存器就 fault 时，才回来补下面这 8+4 个门。
+//
+// 补的时候照 IDF `esp_hw_support/modem/port/esp32s31/modem_clock_impl.c`：
+//   `modem_clock_module_enable(PERIPH_BT_MODULE)`      = BLE_CLOCK_DEPS（**8 个门**）：
+//       BLE_MAC·clk_conf1.clk_btmac_en、BT_I154_COMMON_BB·enable_bt_bb_clock、
+//       ETM·enable_etm_clock、COEXIST（在 **lpcon** 块：modem_lpcon_ll_enable_coex_clock）、
+//       WIFI_BB_80X1·enable_wifibb_80x1_clock、SOC_PLL_SOURCE_CG·modem_clock_hal_enable_soc_pll_source_cg、
+//       BT_APB·enable_bt_apb_clock + enable_modem_sec_apb_clock、
+//       BT_PERIPHERAL·enable_modem_sec_clock + enable_ble_timer_clock
+//   `modem_clock_module_enable(PERIPH_BT_APB_MODULE)`   = BT_APB_CLOCK_DEPS（**4 个门**）：
+//       BT_APB、ETM、SOC_PLL_SOURCE_CG、BLE_MAC
+//   `modem_clock_module_mac_reset(PERIPH_BT_MODULE)`    = 复位 BT MAC（按 module 分派）
+//
+// 两条纪律：① **宁可多开不要少开** —— 少开一个门，controller 访问该外设就是总线挂死
+// （比缺时钟更糟）；多开只浪费一点功耗 ⇒ 直接照 BLE_CLOCK_DEPS 全开。
+// ② 裸机没有 `esp_os_enter_critical_safe` 的锁 ⇒ 单核下用"关中断写寄存器再开"代替。
+// ---------------------------------------------------------------------------
+
+var lp_clock_enabled: bool = false;
+
+/// TODO(里程碑 2b+)：实现 `BLE_CLOCK_DEPS` 的 8 个门 + `BT_APB_CLOCK_DEPS` 的 4 个门 + MAC 复位。
+/// 现在只记录"被调到了"，因为 HCI 软层命令不需要它。
+pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
+    if (!lp_clock_enabled) {
+        lp_clock_enabled = true;
+        osal.logPublic("bt lp: enable_clock UNIMPLEMENTED (BTMAC/BB/ETM/COEX/WIFIBB80X1/SOCPLL/BTAPB/BTPERIPH)", .{});
+    }
+    _ = cfg;
+}
+
+/// `btdm_lp_reset(true)`：低功耗子系统复位。当前无状态可复位。
+pub fn btdmLpReset(enable: bool) void {
+    _ = enable;
+}
+
+/// `btdm_coex_enable()`：软件共存未开 ⇒ 直接成功。
+pub fn btdmCoexEnable() c_int {
+    return 0;
+}
+
 /// 只在目标构建里引用归档符号；主机侧返回 0（主机没有 msys 子系统）。
 pub fn bleMsysInit() c_int {
     if (@import("builtin").os.tag != .freestanding) return 0;
@@ -158,4 +203,13 @@ test "porting: mempool 容量校验按类报错，默认 config 通过" {
     try std.testing.expectEqual(MempoolErr.sem, elemMempoolInit(over));
     over = .{ .mutex_count = 999 };
     try std.testing.expectEqual(MempoolErr.mutex, elemMempoolInit(over));
+}
+
+test "porting: 时钟门控是空实现（可重复调用不崩），共存使能返回 0" {
+    const c = config.defaults();
+    btdmLpEnableClock(&c.btdm);
+    btdmLpEnableClock(&c.btdm); // 幂等
+    btdmLpReset(true);
+    btdmLpReset(false);
+    try std.testing.expectEqual(@as(c_int, 0), btdmCoexEnable());
 }
