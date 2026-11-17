@@ -511,7 +511,8 @@ pub fn run() noreturn {
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     dumpClockRegs("before-init");
     // **全 4 KB MAC 块 diff 的唯一差异**：`0x201044EC`，IDF `0x000102C0` vs 我们 `0x00010080`
-    // ⇒ 差 **bit 6 与 bit 9**（`0x240`）。复刻 IDF 底色试一次。
+    // ⇒ 差 **bit 6 与 bit 9**（`0x240`）。**实测：写不粘**（读回仍 0x10080）⇒ 它也是只读状态位，
+    // 反映 MAC 状态而非配置它 ⇒ 是症状不是病因。保留这一行作为"已试过"的证据。
     {
         const w44ec: *volatile u32 = @ptrFromInt(0x2010_44EC);
         const b = w44ec.*;
