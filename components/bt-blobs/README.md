@@ -350,6 +350,35 @@ HCI A 与 B 两条路径）。少一个就会出现"链接期 undefined"——�
 **已确证**（板侧，非推断）：12 个时钟门全部置上（`clk_conf=0x72601002`、`clk_conf1=0x00070080`、
 `lpcon=0x00000006`）；池需求 `evt=187 evtq=33 co=41 sem=20 mutex=16`；init 链可达 step 5。
 
+### 卡点的**确切位置**（2026-11-17，OSAL 入口追踪）
+
+给 OSAL 每个入口加了有界日志（前 40 次）。板上 `r_btdm_task_init` 内部的调用序列**只打出一行**：
+
+```text
+bt bringup: enter step 6 r_btdm_task_init
+osal> mutexPend tmo=4294967295        ← FOREVER，且之后再无任何输出
+```
+
+对照：把 controller 的 8 个日志桩全部静音（`-DBT_LOG_SILENT=1`，不写串口）后**结果完全一样**。
+⇒ 所以既不是"日志灌死 UART"，也不是 `mutexPend` 之后又被别的 OSAL 调用卡住 ——
+**卡在我们这次 `mutexPend` 返回之后、归档的下一个 `r_sym_bt_*` 里**。
+
+反汇编 `r_btdm_task_init`（`libbtdm_common/21.o`，284 字节）给出的调用序列：
+
+```asm
+a:  beqz a0, .L95                     # cfg==null 检查
+c:  lw   a3, 0(a0)                    # cfg->version
+12: addi a4,a4,295  → 0x20260127      # BTDM_CONFIG_VERSION
+18: beq  a3,a4,.L103                  # 版本校验（我们已填对）
+1c: r_btdm_task_deinit                # 失败路径
+40: r_sym_bt_OkE7...                  # init 步骤（失败 → s0=-3）
+58: wr_btdm_osal_get_time_forever     ← 我们
+66: wr_btdm_osal_mutex_pend           ← 我们（FOREVER）
+78: r_sym_bt_2aNN...                  ← 卡在这里
+a0: r_sym_bt_BOhff...
+ae: r_sym_bt_HGbP...
+```
+
 ### 已排除的假设（都是板上对照，别再重试）
 
 | 假设 | 实验 | 结果 |

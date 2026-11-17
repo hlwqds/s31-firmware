@@ -89,21 +89,52 @@ static unsigned char s_log_flags;
 void wr_btdm_log_set_flags(unsigned char p0) { s_log_flags = p0; }
 void wr_btdm_log_reset_flags(unsigned char p0) { (void)p0; s_log_flags = 0; }
 
+/* **对照实验**：`BT_LOG_SILENT=1` 时这些桩不写串口。
+ * 动机：板侧显示 UART0_STATUS.TXFIFO_CNT 恒 128（FIFO 满且不排空），
+ * 且 OSAL 调用序列只打出一行就再无输出 ⇒ 先排除"controller 的日志把 UART 灌死"。 */
+#ifndef BT_LOG_SILENT
+#define BT_LOG_SILENT 0
+#endif
+
 void wr_btdm_log_internal_x0(unsigned int p0) {
+#if !BT_LOG_SILENT
     ets_printf("bt-log x0 %u\n", p0);
+#else
+    (void)p0;
+#endif
 }
 void wr_btdm_log_internal_x1(unsigned int p0, unsigned int p1) {
+#if !BT_LOG_SILENT
     ets_printf("bt-log x1 %u %u\n", p0, p1);
+#else
+    (void)p0; (void)p1;
+#endif
 }
 void wr_btdm_log_internal_x2(unsigned int p0, unsigned int p1, unsigned int p2) {
+#if !BT_LOG_SILENT
     ets_printf("bt-log x2 %u %u %u\n", p0, p1, p2);
+#else
+    (void)p0; (void)p1; (void)p2;
+#endif
 }
 void wr_btdm_log_internal_x3(unsigned int p0, unsigned int p1, unsigned int p2, unsigned int p3) {
+#if !BT_LOG_SILENT
     ets_printf("bt-log x3 %u %u %u %u\n", p0, p1, p2, p3);
+#else
+    (void)p0; (void)p1; (void)p2; (void)p3;
+#endif
 }
 void wr_btdm_log_internal_hex(unsigned int p0, unsigned int p1, unsigned int p2) {
+#if !BT_LOG_SILENT
     ets_printf("bt-log hex %u %x %x\n", p0, p1, p2);
+#else
+    (void)p0; (void)p1; (void)p2;
+#endif
 }
 void wr_btdm_log_raw_export(unsigned short p0, unsigned int p1, unsigned int p2) {
+#if !BT_LOG_SILENT
     ets_printf("bt-log raw %u %u %u\n", (unsigned)p0, p1, p2);
+#else
+    (void)p0; (void)p1; (void)p2;
+#endif
 }

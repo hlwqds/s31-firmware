@@ -101,6 +101,17 @@ fn logLine(comptime fmt: []const u8, args: anytype) void {
     f(msg);
 }
 
+/// 前 N 次 OSAL 调用各打一行。板侧"卡在某次调用"时，最后一行就点名了那个调用
+/// （实测 `r_btdm_task_init` 会调 `get_time_forever` + `mutex_pend(FOREVER)`）。
+pub var trace_calls: u32 = 40;
+var trace_used: u32 = 0;
+
+fn trace(comptime what: []const u8, args: anytype) void {
+    if (trace_used >= trace_calls) return;
+    trace_used += 1;
+    logLine("osal> " ++ what, args);
+}
+
 pub fn setHooks(h: Hooks) void {
     hooks = h;
 }
@@ -251,6 +262,7 @@ pub fn semDeinit(slot: *Slot) c_int {
 }
 
 pub fn semPend(slot: *Slot, timeout: u32) c_int {
+    trace("semPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "semPend", "end") != null) "{d}" else "-"), .{timeout});
     const s = slotGet(Sem, slot) orelse return EINVAL;
     while (true) {
         if (s.count > 0) {
@@ -274,6 +286,7 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
 }
 
 pub fn semRelease(slot: *Slot) c_int {
+    trace("semRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "semRelease", "end") != null) "{d}" else "-"), .{});
     const s = slotGet(Sem, slot) orelse return EINVAL;
     if (s.count == std.math.maxInt(u16)) return EINVAL;
     s.count += 1;
@@ -316,6 +329,7 @@ pub fn mutexDeinit(slot: *Slot) c_int {
 }
 
 pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
+    trace("mutexPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexPend", "end") != null) "{d}" else "-"), .{timeout});
     const m = slotGet(Mutex, slot) orelse return EINVAL;
     if (!m.locked) {
         m.locked = true;
@@ -328,6 +342,7 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
 }
 
 pub fn mutexRelease(slot: *Slot) c_int {
+    trace("mutexRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexRelease", "end") != null) "{d}" else "-"), .{});
     const m = slotGet(Mutex, slot) orelse return EINVAL;
     m.locked = false;
     return OK;

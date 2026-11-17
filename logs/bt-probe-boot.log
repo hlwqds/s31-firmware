@@ -21,17 +21,17 @@ I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
 I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
 I (71) boot:  2 factory          factory app      00 00 00010000 00177000
 I (78) boot: End of partition table
-I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9a5f0h (632304) map
-I (192) esp_image: segment 1: paddr=000aa618 vaddr=2f000000 size=000ach (   172) load
-I (194) esp_image: segment 2: paddr=000aa6cc vaddr=2f0000b0 size=0594ch ( 22860) load
-I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=14480h ( 83072) map
-I (218) esp_image: segment 4: paddr=000c44a8 vaddr=2f0059fc size=09620h ( 38432) load
-I (227) esp_image: segment 5: paddr=000cdad0 vaddr=2f00f01a size=00064h (   100) load
-I (229) esp_image: segment 6: paddr=000cdb3c vaddr=2f00f07c size=00110h (   272) load
-I (233) esp_image: segment 7: paddr=000cdc54 vaddr=2f00f18a size=00068h (   104) load
-I (240) esp_image: segment 8: paddr=000cdcc4 vaddr=2f00f1f0 size=0006ch (   108) load
-I (248) esp_image: segment 9: paddr=000cdd38 vaddr=2f00f260 size=003e0h (   992) load
-I (258) boot: Loaded app from partition at offset 0x10000
+I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9ac30h (633904) map
+I (192) esp_image: segment 1: paddr=000aac58 vaddr=2f000000 size=000ach (   172) load
+I (194) esp_image: segment 2: paddr=000aad0c vaddr=2f0000b0 size=0530ch ( 21260) load
+I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=14580h ( 83328) map
+I (218) esp_image: segment 4: paddr=000c45a8 vaddr=2f0053bc size=09c60h ( 40032) load
+I (228) esp_image: segment 5: paddr=000ce210 vaddr=2f00f01a size=00064h (   100) load
+I (230) esp_image: segment 6: paddr=000ce27c vaddr=2f00f07c size=00110h (   272) load
+I (233) esp_image: segment 7: paddr=000ce394 vaddr=2f00f18a size=00068h (   104) load
+I (241) esp_image: segment 8: paddr=000ce404 vaddr=2f00f1f0 size=0006ch (   108) load
+I (248) esp_image: segment 9: paddr=000ce478 vaddr=2f00f260 size=003e0h (   992) load
+I (259) boot: Loaded app from partition at offset 0x10000
 I (259) boot: Disabling RNG early entropy source...
 rom A @0x2f83efb0
 rom A +00: 000207b7 38a78793 07b297aa 06b75398 8f550004 f06fd398 07b7e53f 87930002
@@ -47,7 +47,7 @@ rom U @0x2038a000
 rom U +00: 00000000 00004002 00000000 00000001 00000000 0030015b 00000008 60808000
 rom U +32: 0004001c 00006001 00000000 00000000 00000000 00000000 001404f0 00001311
 bt probe: hooks installed (now_ms=us/1000)
-bt probe: timer 7 -> 10 (must increase)
+bt probe: timer 8 -> 12 (must increase)
 bt probe: irqs OFF (control run)
 bt probe: arena 407104 B
 bt probe: init start
@@ -58,5 +58,11 @@ bt bringup: enter step 2 btdm_log_init
 bt bringup: enter step 3 btdm_external_init
 bt bringup: enter step 4 btdm_coex_init
 bt bringup: enter step 5 btdm_lp_enable_clock
-bt lp: clock writes SKIPPED (control run)
+bt lp: clk_conf=0x72601002 clk_conf1=0x00070080 lpcon=0x00000006
+bt lp: gates conf_ok=true conf1_ok=true coex_ok=true
+bt lp: modem_conf=0x00000025 (want 0x3d) pll_ok=false
+bt lp: clk_conf1=0x003ff880 fe_ok=true
+bt lp: lp_timer_conf=0x00000001 32k_conf=0x00000001 lpcon_clk=0x0000000e
+bt lp: mac reset done, rst_conf=0x00000000
 bt bringup: enter step 6 r_btdm_task_init
+osal> mutexPend tmo=4294967295
