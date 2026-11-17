@@ -4093,3 +4093,30 @@ panic: exception code=5 (load access fault) cause=0x30000005
 `take` 等一个永远来不了的 `give`。
 
 已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0 semcreate=2 semnull=0`、无 panic、自旋 `0x2f009206`）。
+
+### 排除：`tp`（x4）不是崩溃原因
+
+`swapAsm` 只保存/恢复 `ra` + `s0..s11`（64 字节帧），**从不保存/设置 `tp`（x4）**——
+若 `ppTask` 用 tp 相对寻址，tp=0 就会 `load access fault`，这是首要嫌疑。
+
+实验：给包装入口一个清零的 4 KB TLS 区并 `mv tp` 之后再转 `ppTask`。
+
+结果：
+
+```text
+（"ppEntry(no-tp)" 仍未打印）
+panic: exception code=5 (load access fault)
+（仍 182 次 panic）
+```
+
+⇒ **设 tp 无效**，tp 不是（唯一）原因。
+
+### 遗留：`mtval` 拿不到
+
+`trap.zig` 的 panic 行本来会打 `mepc=… mtval=… mstatus=…`，但 ROM 启动横幅会**插进同一行**：
+
+```text
+panic: mepc=��SP-ROM:esp32s31-20251218
+```
+
+⇒ 故障地址（`mtval`）被横幅覆盖，拿不到。要拿到必须把 panic 信息**先缓存、稍后再打**，或换独立通道。

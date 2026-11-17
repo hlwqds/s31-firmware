@@ -381,6 +381,7 @@ pub fn run() noreturn {
     // （实测 `ppq` 仍是 0x2f0203b0）⇒ 单纯清零不改变分支结果。已回滚。
     // **PP 上下文进入实验已做**：切进 `ppTask` 直接崩溃（182 次 panic，包装入口都没打印）
     // ⇒ PP worker 不能在我们的合成栈上运行。已回滚。
+    // **tp 实验已做**：给 ppTask 设一个清零 TLS 区后仍是 182 次 panic、入口未打印 ⇒ tp 不是原因。
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
         impl.calls.queue_send - w_qsend,
