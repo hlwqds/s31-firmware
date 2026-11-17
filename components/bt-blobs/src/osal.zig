@@ -105,6 +105,8 @@ pub const Stats = struct {
     callout_fired: u32 = 0,
     /// 本可以阻塞等待、但没有任务可切换而直接返回失败的次数（**应当可见**）。
     blocked_calls: u32 = 0,
+    /// 静态池耗尽的次数。>0 说明容量不够，症状会伪装成"controller 不动"。
+    pool_exhausted: u32 = 0,
 };
 
 fn slotGet(comptime T: type, slot: *Slot) ?*T {
@@ -156,17 +158,23 @@ pub const Sem = struct { count: u16 = 0, in_use: bool = false };
 /// 静态记录池：**不用 allocator**。`riscv32-freestanding` 上 `std.heap.page_allocator`
 /// 没有后端（主机测试里却正常），用它会在板侧第一次 init 就炸。
 /// 每个记录自带 `in_use` 标志，池本身就是存储。
-fn Pool(comptime T: type) type {
+fn Pool(comptime T: type, comptime n: usize) type {
     return struct {
-        records: [16]T = @splat(.{}),
+        records: [n]T = @splat(.{}),
+        exhausted: u32 = 0,
 
         fn take(self: *@This()) ?*T {
             for (&self.records) |*r| {
                 if (r.in_use) continue;
-                r.* = .{};
+                r.* = .{}; // 注意：会清掉 in_use，所以紧接着要重新置位
                 r.in_use = true;
                 return r;
             }
+            // **池耗尽必须可见**：静默返回 null 的症状是"init 过了但 controller 不动"，
+            // 与真正的 controller 故障几乎无法区分。
+            self.exhausted += 1;
+            stats_state.pool_exhausted += 1;
+            logLine("bt osal: POOL EXHAUSTED ({s}, n={d}, total={d})", .{ @typeName(T), n, stats_state.pool_exhausted });
             return null;
         }
 
@@ -181,7 +189,11 @@ fn Pool(comptime T: type) type {
     };
 }
 
-var sem_pool: Pool(Sem) = .{};
+/// 容量依据（`bt.c:172-178` 的 seed + `ble_osal_elem_calc` 的累加）：
+/// seed 就有 evt 103 / evtq 3 / co 10 / mutex 1，再加上 config 算出的部分
+/// ⇒ 事件 ≥ 121（config 大时到 180）、eventq ≥ 32、callout ≥ 23、sem ≥ 20、mutex ≥ 15。
+/// 记录只有几十字节，SRAM 503 KB 完全放得下，宁可给足。
+var sem_pool: Pool(Sem, 32) = .{};
 
 pub fn semInit(slot: *Slot, tokens: u16) c_int {
     const s = sem_pool.take() orelse return ENOMEM;
@@ -227,7 +239,7 @@ pub fn semGetCount(slot: *Slot) u16 {
 
 pub const Mutex = struct { locked: bool = false, in_use: bool = false };
 
-var mutex_pool: Pool(Mutex) = .{};
+var mutex_pool: Pool(Mutex, 32) = .{};
 
 pub fn mutexInit(slot: *Slot) c_int {
     const m = mutex_pool.take() orelse return ENOMEM;
@@ -280,10 +292,12 @@ pub const EventQ = struct {
     in_use: bool = false,
 };
 
-var event_pool: Pool(Event) = .{};
-var eventq_pool: Pool(EventQ) = .{};
+var event_pool: Pool(Event, 192) = .{};
+var eventq_pool: Pool(EventQ, 48) = .{};
 
 pub fn eventqInit(slot: *Slot) void {
+    // C 侧签名是 void，返回不了错误码——但**不能静默**：池耗尽时槽位保持 null，
+    // 之后任何 eventqPut 都是野指针。⇒ take() 里已经记账打日志，这里只是继续。
     const q = eventq_pool.take() orelse return;
     slotSet(EventQ, slot, q);
 }
@@ -416,7 +430,7 @@ pub const Callout = struct {
     in_use: bool = false,
 };
 
-var callout_pool: Pool(Callout) = .{};
+var callout_pool: Pool(Callout, 32) = .{};
 
 pub fn calloutInit(slot: *Slot, evq: ?*Slot, ev_cb: ?*const fn (?*anyopaque) callconv(.c) void, ev_arg: ?*anyopaque) c_int {
     const co = callout_pool.take() orelse return ENOMEM;
@@ -951,7 +965,7 @@ pub const TaskRec = struct {
     in_use: bool = false,
 };
 
-var task_pool: Pool(TaskRec) = .{};
+var task_pool: Pool(TaskRec, 8) = .{};
 
 pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32, core_id: u32, handle: *?*anyopaque) c_int {
     const t = task_pool.take() orelse return ENOMEM;
@@ -980,7 +994,7 @@ pub const IntrRec = struct {
     in_use: bool = false,
 };
 
-var intr_pool: Pool(IntrRec) = .{};
+var intr_pool: Pool(IntrRec, 8) = .{};
 
 pub fn intrAlloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque, handle: *?*anyopaque) c_int {
     const r = intr_pool.take() orelse return ENOMEM;
@@ -1243,4 +1257,22 @@ fn coexHelperExercise() c_int {
     _ = wr_btdm_coex_register_wifi_channel_change_callback(null);
     _ = wr_btdm_coex_register_ble_cb(0, null);
     return 0;
+}
+
+test "pool: 耗尽可见（计数 + 日志），不是静默 null" {
+    resetStats();
+    // 事件池 192 —— 取到耗尽为止，应当全部拿到且计数为 0
+    var taken: usize = 0;
+    var slots: [200]Slot = @splat(.{});
+    while (taken < slots.len) : (taken += 1) {
+        const before = stats().pool_exhausted;
+        eventInit(&slots[taken], null, null);
+        if (stats().pool_exhausted != before) break;
+    }
+    try testing.expectEqual(@as(usize, 192), taken);
+    try testing.expectEqual(@as(u32, 1), stats().pool_exhausted);
+    // 归还后又能取
+    eventDeinit(&slots[0]);
+    eventInit(&slots[192], null, null);
+    try testing.expectEqual(@as(u32, 1), stats().pool_exhausted);
 }
