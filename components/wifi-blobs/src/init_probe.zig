@@ -147,6 +147,7 @@ var osi_table: osi.Osi = undefined;
 /// 合作式让出点：任务体阻塞时被调用。计数并在有限次后停机——证明"任务存活且会让出"，
 /// 而不是把 CPU 卡在忙等里。生产路径里这里就是主循环（收包/发送）。
 var idle_calls: u32 = 0;
+var pump_logs: u32 = 0;
 var ready_swaps: u32 = 0;
 /// 当前控制权是否在任务上下文里。
 var in_task: bool = false;
@@ -176,6 +177,30 @@ fn nvsStats() u96 {
         (@as(u96, impl.nvs_last_want) << 32) | @as(u96, impl.nvs_get_blob_calls);
 }
 
+/// round-robin 泵**真实任务上下文**（init 的 `take` 阻塞期间，PP 任务必须能跑）。
+var pump_idx: usize = 0;
+var cur_task: ?*impl.Task = null;
+fn pumpRealTask() bool {
+    if (impl.task_count == 0) return false;
+    var tried: usize = 0;
+    while (tried < impl.task_count) : (tried += 1) {
+        const i = (pump_idx + tried) % impl.task_count;
+        const t = &impl.tasks[i];
+        if (t.ctx.sp == 0) continue;
+        pump_idx = (i + 1) % impl.task_count;
+        cur_task = t;
+        in_task = true;
+        impl.current_is_task = true;
+        sched.swapContext(&main_ctx, &t.ctx);
+        // 从任务切回：任务在自己的阻塞点调了 on_idle。
+        cur_task = null;
+        in_task = false;
+        impl.current_is_task = false;
+        return true;
+    }
+    return false;
+}
+
 fn idleHook() void {
     idle_calls += 1;
     // **"真阻塞 + 泵 PP worker"实验已做**：init 直接挂住（PP 任务始终没 give）。
@@ -190,6 +215,29 @@ fn idleHook() void {
     if (idle_calls > 20_000) {
         log.line("wifi-init-probe: idle budget exhausted ({d}), halting", .{idle_calls});
         hw.halt();
+    }
+    // **任务侧让出**：被泵的任务在自己的阻塞点进到这里 ⇒ 切回主上下文（RTOS 式 block）。
+    if (in_task) {
+        if (cur_task) |t| {
+            in_task = false;
+            impl.current_is_task = false;
+            sched.swapContext(&t.ctx, &main_ctx);
+            in_task = true;
+            impl.current_is_task = true;
+        }
+        return;
+    }
+    // **泵真实任务**：init 期间 `task_ctx_ready` 还是 false，但 `_task_create` 已经登记了任务
+    // （含 PP 任务）。`take`/`recv` 的阻塞循环会进这里 ⇒ 切到任务跑一轮，它 give 之后 take 就能返回。
+    if (!in_task) {
+        const pumped = pumpRealTask();
+        if (pumped and pump_logs < 8) {
+            pump_logs += 1;
+            log.line("wifi-init-probe: pump#{d} hooks={d} give={d} null_give={d} semcreate={d}", .{
+                pump_logs, impl.event_count, impl.give_total, impl.null_give, impl.sem_create_args[0],
+            });
+        }
+        if (pumped) return;
     }
     if (!task_ctx_ready) return;
     // 诊断：任务就绪后前 6 次让出（不依赖 idle_calls 的累计值）。

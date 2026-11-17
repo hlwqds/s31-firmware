@@ -4173,3 +4173,42 @@ wifi-init-probe: trace queue_recv a0=0x00000000 a1=0xffffffff   ← 之后一直
    先只做两任务交替，语义跑通再扩。
 6. **别顺手改句柄**：`tasks[]` 现在共享一个 `task_dummy` 句柄；握手只认 `s_pp_task_create_sem`，
    把句柄改成真对象是另一个实验变量。
+
+### ★★★★ 修复落地：泵真实任务 ⇒ **`INIT OK`（init 首次成功返回）**
+
+按上面的清单做了最小实现：
+
+1. `Task` 增加 `stack` / `ctx` / `started`，`ensureTaskContext()` 按 `stack_depth` 从 arena 分栈
+   （夹在 4 KiB..64 KiB，单位按字节但不确定时夹紧更安全），`shellTaskCreatePinned` 不再丢弃 `stack_depth`；
+2. `idleHook` 改成 **round-robin 泵真实任务上下文**（`pumpRealTask()`），并在任务侧 `on_idle` 时
+   **切回主上下文**（`cur_task` 记账，RTOS 式 block）。
+
+板侧结果（`/tmp/pb260.log`）：
+
+```text
+pump#1 hooks=20  give=1 null_give=0
+pump#2 hooks=20  give=1 null_give=0
+pump#3 hooks=149 give=2 null_give=0
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315208/353392 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: tasks recorded=1
+panic 0
+```
+
+对比基线（`qsend=1 qrecv=0 rstmac=0 clken=0`、无 `INIT OK`）：
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| `qrecv` | 0 | **2** |
+| `clken` | 0 | **1** |
+| `give` / `null_give` | 1 / 1 | **2 / 0** |
+| `INIT OK` | 从未出现 | **出现** |
+
+⇒ **`null_give=0` 是关键**：PP 任务的 `give` 这次落到了一个**还活着**的信号量上（以前落在已删除的句柄上被丢弃）。
+⇒ `take` 拿到 1 → blob 正常走完"删信号量 + 清零" → **init 继续推进并成功返回**。
+
+### 遗留：init 之后的 blob 任务仍会自旋
+
+`tasks recorded=1` 之后，探针照旧去跑 `tasks[0].entry`，那个任务在等 `esp_wifi_start` 的消息，
+`hooks` 冻结在 154、`in_task=true`、`idle` 预算耗尽停机。这是**下一个问题**（`start` 之前任务不该被跑），
+与本次修复无关——本次要证的"init 能过握手"已经证完。

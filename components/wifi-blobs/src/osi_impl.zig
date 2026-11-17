@@ -804,7 +804,27 @@ fn shellEventGroupWaitBits(
 pub const Task = struct {
     entry: ?*const fn (?*anyopaque) callconv(.c) void = null,
     arg: ?*anyopaque = null,
+    /// 该任务的栈（按 `stack_depth` 从 arena 分配；`&.{}` = 还没建上下文）。
+    stack: []u8 = &.{},
+    /// 任务上下文（`sched.initContext` 建；`sp == 0` = 未初始化）。
+    ctx: @import("sched.zig").Context = .{},
+    /// 已经跑过（第一次进入后再让出即视为可再次调度）。
+    started: bool = false,
 };
+
+/// 给一个任务建上下文（幂等）。栈按 `stack_depth` 从 arena 分；单位按 **字节**（IDF `xTaskCreate` 约定），
+/// 夹在 4 KiB..64 KiB 之间——ROM 这条 osi 变体的实参单位未证实，夹紧比信一个未证实的单位安全。
+pub fn ensureTaskContext(t: *Task, stack_depth: u32) bool {
+    if (t.ctx.sp != 0) return true;
+    const entry = t.entry orelse return false;
+    var bytes: usize = if (stack_depth == 0) 16 * 1024 else @as(usize, stack_depth);
+    if (bytes < 4 * 1024) bytes = 4 * 1024;
+    if (bytes > 64 * 1024) bytes = 64 * 1024;
+    const mem = arena_state.alloc(bytes, 16) orelse return false;
+    t.stack = mem[0..bytes];
+    @import("sched.zig").initContext(&t.ctx, t.stack, entry, t.arg);
+    return true;
+}
 pub var tasks: [4]Task = @splat(.{});
 pub var task_count: usize = 0;
 /// `_task_delete`：从任务表里移除该 handle 对应的槽位（桩不释放会让重复 init 泄漏槽位）。
@@ -832,9 +852,11 @@ fn shellTaskCreatePinned(
     handle_out: ?*?*anyopaque,
     core_id: u32,
 ) callconv(.c) c_int {
-    _ = .{ name, stack_depth, prio, core_id };
+    _ = .{ name, prio, core_id };
     if (task_count >= tasks.len) return 0;
     tasks[task_count] = .{ .entry = entry, .arg = param };
+    // **建上下文**：泵真任务需要栈与上下文；`stack_depth` 不再丢弃。
+    _ = ensureTaskContext(&tasks[task_count], stack_depth);
     task_count += 1;
     // handle 与"当前任务"是同一个对象（见 `task_dummy` 的说明）。
     if (handle_out) |h| h.* = @ptrCast(&task_dummy);
