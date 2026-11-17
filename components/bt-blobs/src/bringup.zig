@@ -115,7 +115,39 @@ fn step(n: u32, comptime what: []const u8, archive_rc: ?c_int) c_int {
 // init（8 步）
 // ---------------------------------------------------------------------------
 
+/// 我们侧"boot 完成态"：与 oracle 的 `app_main` 入口同点（任何 BT 步骤之前）。
+fn dumpBootState() void {
+    if (@import("builtin").target.os.tag != .freestanding) return;
+    const wins = [_]struct { name: []const u8, base: usize, n: usize }{
+        .{ .name = "syscon", .base = 0x2010_9C00, .n = 16 },
+        .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
+        .{ .name = "pwr", .base = 0x2010_D000, .n = 16 },
+        .{ .name = "clkrst", .base = 0x2058_7000, .n = 32 },
+    };
+    for (wins) |w| {
+        var i: usize = 0;
+        while (i < w.n) : (i += 1) {
+            const v = (@as(*volatile u32, @ptrFromInt(w.base + i * 4))).*;
+            if (v != 0) osal.logLine("BOOTSTATE: {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
+        }
+    }
+
+    // **补齐 IDF boot 建立、我们缺的状态**（boot 态对拍实测差集）。
+    // 这些由 IDF bootloader / 系统初始化写入；我们的裸机镜像没有那一层。
+    const wr = struct {
+        fn f(a: usize, v: u32) void {
+            @as(*volatile u32, @ptrFromInt(a)).* = v;
+        }
+    };
+    wr.f(0x2010_F008, 0x314); // lpcon+0x08：IDF boot 值
+    wr.f(0x2010_F00C, 0x1); // lpcon+0x0c：IDF boot 值
+    wr.f(0x2058_7008, 0x1); // clkrst+0x08：IDF boot 值
+    wr.f(0x2058_700C, 0x2); // clkrst+0x0c：IDF boot 值
+    osal.logLine("BOOTSTATE: 已补齐 boot 差集 (lpcon+0x08/+0x0c, clkrst+0x08/+0x0c)", .{});
+}
+
 pub fn init(cfg: *config.Config) c_int {
+    dumpBootState();
     stats_state = .{};
     stats_state.init_calls += 1;
     status_state = .idle;
