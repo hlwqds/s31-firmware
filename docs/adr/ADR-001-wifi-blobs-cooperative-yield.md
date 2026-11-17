@@ -3512,3 +3512,31 @@ idle budget exhausted (20001), halting
 
 ⇒ 这解释了为什么"有界让出"是必要的：真等会活锁。两条都已回滚，基线恢复
 （`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0`、无 panic、自旋 `0x2f009206`）。
+
+### IDF 侧消息类型分布（宿主侧从已有日志读出，无需再烧板）
+
+从 `/tmp/pb-idf11.log`（带 `QS/QR` 打印的那次）：
+
+```text
+HOOKTRACE begin
+QR queue=0x2f07e504          ← init 窗口内先"收"
+QS queue=0x2f07e504 type=6   ← 再"发"类型 6
+HOOKTRACE end
+```
+
+整个运行期的 `QS` 类型分布：
+
+| 类型 | 次数 |
+| --- | --- |
+| 17 | 357 |
+| 7 | 83 |
+| 0 / 16 / 8 | 各 66 |
+| **6** | **12** |
+
+⇒ **关键顺序差异**：**IDF 的 init 窗口是"先收后发"（QR → QS type=6），我们的是"只发不收"（qsend=1 type=6、qrecv=0）**。
+
+⇒ 这与窗口计数（IDF `qrecv=2 clken=1` vs 我们 `0/0`）一致：**我们的 init 在第一次"收"之前就走了另一条路**
+（或那次收被有界让出提前返回 0 挡掉了）。
+
+⇒ 下一步：在**我们的 init 窗口**里把 `queue_send`/`queue_recv` 的**载荷类型**也打出来（现在只统计次数），
+与 IDF 的 `QR`/`QS type=6` 逐条对齐。
