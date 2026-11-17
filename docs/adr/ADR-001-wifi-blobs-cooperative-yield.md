@@ -5124,3 +5124,29 @@ panic 0
 
 ⇒ 下一步（精确）：把 `modem_clock_hal_get/set_clock_domain_icg_bitmap` 对**每个 domain** 的寄存器与位段查出来，
 按"**先读当前值、再 OR 配置值**"的方式逐 domain 写——而不是写常数 `0x64646400` / `0x66660000`。
+
+### ★ 找到机制差异：IDF 写 **ICG 的每个子字段**，我们是**整寄存器覆盖**
+
+`0x20109C0C`（`clk_conf_power_st`）是**多个 ICG 子字段**共用的寄存器：
+
+```c
+// hal/esp32s31/include/hal/modem_syscon_ll.h:251-253
+modem_syscon_ll_set_wifi_icg_bitmap(hw, bitmap)
+    hw->clk_conf_power_st.clk_wifi_st_map = bitmap;     // ← 只写"wifi"那一段
+// :275-277
+modem_syscon_ll_set_modem_apb_icg_bitmap(hw, bitmap)
+    hw->clk_conf_power_st.clk_modem_apb_st_map = bitmap; // ← 只写"modem_apb"那一段
+```
+
+⇒ **IDF 是逐字段 RMW**：`set(domain, icg_config[domain] | get(domain))`，
+**每个 domain 只改自己那一段**。
+
+⇒ **我们是 `icg.* = 0x6464_6400` —— 整寄存器覆盖**，把其他子字段（`clk_modem_apb_st_map`、
+`clk_modem_periph_st_map`、`clk_bt_st_map`、`clk_modem_fe_st_map` …）**一起写成了常数里撞上的值**。
+
+⇒ 这就是"我们写进去的值看起来对、硬件却不动"的机制性解释：单个字段的值可能没错，
+但**其他字段被我们覆盖成了错误的数**，整个域的 ICG 握手就配不起来。
+
+⇒ 下一步（精确可做）：把 `modem_syscon_ll_set_*_icg_bitmap` 的**字段位段**逐个查出来，
+按 **"读该字段 → 与配置值 OR → 只写回该字段"** 的方式重写 `shellWifiClockEnable` 的 ICG 部分，
+**不要**再整寄存器赋值。LPCON 侧（`0x2010F020`）同理。
