@@ -466,6 +466,37 @@ osal> mutexPend< OK        ← 正常返回
 
 ⇒ 循环本身有界，所以停摆在它之后、`event_init` 之前的那几条指令（或该块访问触发的异常）。
 
+### ✅ 根因已用 **2 行实验**证明：读 `0x2010B000` 直接挂死
+
+在探针里、**任何 init 之前**加：
+
+```zig
+board.log.line("{s}", .{"bt probe: probing 0x2010B000 ..."});
+const bleblk: *volatile u32 = @ptrFromInt(0x2010_B000);
+const ble0 = bleblk.*;
+```
+
+板侧输出：
+
+```text
+bt probe: probing 0x2010B000 ...
+（整个系统停住，无 panic、无后续、无中断）
+```
+
+⇒ **只要读一次 `0x2010B000`，系统就挂死**，与归档、与我们任何代码都无关。
+这就是**整个连锁的总根因**：BLE/MAC 寄存器块（`MODEM_BASE + 0xB000`）**当前不可访问**，
+访问即总线挂起（不返回错误、不触发异常）。
+
+⇒ 归档里 `r_sym_bt_XPuq` 恰好也要读这个块，所以 init 卡在那里；UART 与中断随后也全部停摆。
+
+**下一步**：让这块可达。三个候选（按 IDF 的初始化顺序）：
+1. **BT/Wi-Fi 共享电源域**：IDF 的 `esp_wifi_bt_power_domain_on()`（ch25 阶段就记录过"跳过了电源域"这个缺口）
+2. 该块自己的 `clk_conf` 门：我们已置 `clk_conf1` 的 bt_apb/btbb/btmac（bit16/17/18），
+   但 `MODEM_BASE+0xB000` 可能需要**另一个寄存器**（soc 头里没有它的定义 ⇒ 私有块）
+3. `PAU` 外设（`0x20341000`）里的 modem 电源域配置
+
+⇒ 有了这个 2 行复现器，验证任何候选都只需一次烧录。
+
 ### 一个原因解释全部症状：**总线挂死**（2026-11-17 结论）
 
 把 panic 输出也改成非阻塞（`hw.rawLine`，直接写 UART FIFO）后，卡住时**依然没有 panic**。

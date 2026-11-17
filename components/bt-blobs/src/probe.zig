@@ -139,6 +139,17 @@ pub fn run() noreturn {
         board.log.line("{s}", .{"bt probe: irqs OFF (control run)"});
     }
 
+    // **独立验证**：归档在 `r_sym_bt_XPuq` 里读 `0x2010B000..0x2010B100`（MODEM_BASE+0xB000，
+    // BLE/MAC 块，soc 头里没有它的寄存器定义 ⇒ 私有）。这里在 init 之前**直接读一次**：
+    // 若探针就停在这一行，说明该块不应答（总线挂死），与归档无关。
+    board.log.line("{s}", .{"bt probe: probing 0x2010B000 ..."});
+    const bleblk: *volatile u32 = @ptrFromInt(0x2010_B000);
+    const ble0 = bleblk.*;
+    board.log.line("bt probe: 0x2010B000 = 0x{x:0>8} (readable)", .{ble0});
+    const bleblk4: *volatile u32 = @ptrFromInt(0x2010_B004);
+    const ble4 = bleblk4.*;
+    board.log.line("bt probe: 0x2010B004 = 0x{x:0>8}", .{ble4});
+
     // 1) arena 最先
     const hs = @intFromPtr(heapStart());
     const he = @intFromPtr(heapEnd());
