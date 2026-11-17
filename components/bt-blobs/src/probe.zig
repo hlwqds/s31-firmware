@@ -68,7 +68,7 @@ pub var skip_task_init: bool = false;
 /// 补调 `fqmZk`（把 `Xpuq` 的锚点 `P` 填上）。
 /// **默认关**：oracle 实测 IDF 里该锚点在 init **之前也是 0**，由 init 自己填；
 /// 我们此前的"P=NULL 是 bug"是**误判**（在 step 6 之前读了它）。
-pub var populate_workaround: bool = true; // 2aNN 会 `sw zero,0(P)`：P 必须非空，否则向地址 0 写
+pub var populate_workaround: bool = false; // 真实路径：不替归档填锚点
 
 /// `Xpuq` 用的锚点全局（`libbtdm_common/2.o` 的 `.bss.r_sym_bt_d3D3sk5KewclELfrD5xa`）。
 /// 唯一的写者是 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG`：`P = wr_btdm_osal_malloc(...)`。

@@ -1143,6 +1143,9 @@ pub fn arenaFree() usize {
 /// 我们只有一个 arena，两者走同一条路——与 wifi-blobs 的 `shellMallocInternal` 同处理。
 pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     const r = bt_arena.alloc(size, 8);
+    // **清零**：归档把分配到的内存当结构体用，并假定字段初值为 0。
+    // 板侧证据：`deinit` 里读到 `a0=0xb7a10c0d` 这种垃圾，而 IDF 的堆在启动后是干净的。
+    if (r) |v| @memset(@as([*]u8, @ptrCast(v))[0..size], 0);
     // 归档对 NULL 不做检查就直接解引用（`Xpuq` 里 `sw zero,0(a1)`）⇒ 分配失败会表现为
     // "向地址 0 写"进而总线挂死。所以这里必须把每次失败都喊出来。
     // 成功/失败都记（writer 已改有界，不会再被 FIFO 卡死）。
