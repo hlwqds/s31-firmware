@@ -271,6 +271,19 @@ arena 或任务表满时退回"只登记"并**打一行日志**（不静默）�
 
 ## 探针（`src/probe.zig`，`-Dbt-probe`）
 
+**实验脚手架都收在开关后面，默认关**（保留是为了可复现，不干扰正常 bring-up）：
+
+| 开关 | 作用 |
+| --- | --- |
+| `probe.dump_rom` | 启动时 dump ROM 区（`0x2f83efb0`/`0x2f812180`）与 UART0 寄存器（`0x2038A000`） |
+| `probe.ble_block_experiment` | 复位脉冲 + 时钟重开 + `bt_bb_v2_init_cmplx(1)` + 读 `0x2010B000` |
+| `probe.probe_irqs` | 武装 T0 + 开中断（PC 采样用） |
+| `probe.verbose` | 是否把 `osal.logPublic` 每行打到 UART |
+| `porting.clock_writes_enabled` | 是否真的写时钟门控（对照实验用） |
+
+⇒ 默认全关时，探针只做"装钩子 → arena → init → enable"，日志干净。
+
+
 顺序（三个点错一个就白跑一趟）：
 
 1. **先装钩子**：`now_ms = hw.nowUs()/1000`（**毫秒**，不是微秒）、`log` 同步刷 UART、

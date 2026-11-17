@@ -56,6 +56,13 @@ var ctrl_task: ?*sched.Task = null;
 fn nowMs() u32 {
     return @intCast(board.hw.nowUs() / 1000);
 }
+/// **实验脚手架开关**（全部默认关）：这些是排查"卡在 0x2010B000"时用的一次性装置，
+/// 保留是为了可复现，但默认不干扰正常 bring-up。
+/// - `dump_rom`：启动时 dump ROM 区与 UART0 寄存器（离线反汇编用）
+/// - `ble_block_experiment`：复位脉冲 + 时钟重开 + `bt_bb_v2_init_cmplx` + 读 `0x2010B000`
+pub var dump_rom: bool = false;
+pub var ble_block_experiment: bool = false;
+
 /// 是否把 `osal.logPublic` 的每一行都打到 UART。
 /// 默认 **true**（可观测性优先）；设 false 可做"UART 静默"对照——但注意那样连进度行也看不到，
 /// 需要额外把里程碑用 `board.log.line` 直写，否则实验没有信息量（踩过）。
@@ -96,11 +103,11 @@ fn macHook(out: *[6]u8) void {
 
 pub fn run() noreturn {
     // **最先**做 ROM 取样：此时还没开中断，输出不会被 ISR 的行冲散。
-    dumpRom("A", 0x2f83efb0, 96);
-    dumpRom("B", 0x2f812180, 160); // 往前多两个 32 字节块：看谁 jal 进这个循环
-    // **对照**：把 0x2038A000..0x2038A040 打出来。若它真是 UART0，则 +0x1C 处应有
-    // 一个有意义的寄存器值（且复位值可查）；若整段是"常量/空洞"，说明轮询地址算错了。
-    dumpRom("U", 0x2038A000, 64);
+    if (dump_rom) {
+        dumpRom("A", 0x2f83efb0, 96);
+        dumpRom("B", 0x2f812180, 160);
+        dumpRom("U", 0x2038A000, 64);
+    }
 
     porting.clock_writes_enabled = clock_writes;
     osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
@@ -142,47 +149,49 @@ pub fn run() noreturn {
         board.log.line("{s}", .{"bt probe: irqs OFF (control run)"});
     }
 
-    // **可访问性实验**：归档在 `r_sym_bt_XPuq` 里读 `0x2010B000..0x2010B100`
-    // （MODEM_BASE+0xB000，BLE/MAC 私有块，soc 头里无定义）。
-    // 已验证：**在什么都没做时读它一次就挂死**（总线挂起）。
-    // 现在按 IDF 的顺序先做前置，再读一次，看是否变可读：
-    //   ① 开我们那套时钟门控  ② 调归档里的 `bt_bb_v2_init_cmplx(1)`（= esp_btbb_enable 的核心）
-    board.log.line("{s}", .{"bt probe: clock gates first ..."});
-    var early_cfg = config.defaults();
-    porting.clock_writes_enabled = true;
-    porting.btdmLpEnableClock(&early_cfg.btdm);
+    if (ble_block_experiment) {
+        // **可访问性实验**：归档在 `r_sym_bt_XPuq` 里读 `0x2010B000..0x2010B100`
+        // （MODEM_BASE+0xB000，BLE/MAC 私有块，soc 头里无定义）。
+        // 已验证：**在什么都没做时读它一次就挂死**（总线挂起）。
+        // 现在按 IDF 的顺序先做前置，再读一次，看是否变可读：
+        //   ① 开我们那套时钟门控  ② 调归档里的 `bt_bb_v2_init_cmplx(1)`（= esp_btbb_enable 的核心）
+        board.log.line("{s}", .{"bt probe: clock gates first ..."});
+        var early_cfg = config.defaults();
+        porting.clock_writes_enabled = true;
+        porting.btdmLpEnableClock(&early_cfg.btdm);
 
-    // `HP_SYS_CLKRST.MODEM_CTRL0`(0x20587040) 的 bit0 = `MODEM_CLK_EN`（默认 1）。
-    // 若它为 0，modem 块就没有时钟 ⇒ 访问会挂死。
-    const modem_ctrl0: *volatile u32 = @ptrFromInt(0x2058_7040);
-    const mc0 = modem_ctrl0.*;
-    board.log.line("bt probe: MODEM_CTRL0=0x{x:0>8} clk_en={}", .{ mc0, (mc0 & 1) != 0 });
-    if ((mc0 & 1) == 0) {
-        modem_ctrl0.* = mc0 | 1;
-        board.log.line("bt probe: MODEM_CLK_EN was 0 -> set, now 0x{x:0>8}", .{modem_ctrl0.*});
+        // `HP_SYS_CLKRST.MODEM_CTRL0`(0x20587040) 的 bit0 = `MODEM_CLK_EN`（默认 1）。
+        // 若它为 0，modem 块就没有时钟 ⇒ 访问会挂死。
+        const modem_ctrl0: *volatile u32 = @ptrFromInt(0x2058_7040);
+        const mc0 = modem_ctrl0.*;
+        board.log.line("bt probe: MODEM_CTRL0=0x{x:0>8} clk_en={}", .{ mc0, (mc0 & 1) != 0 });
+        if ((mc0 & 1) == 0) {
+            modem_ctrl0.* = mc0 | 1;
+            board.log.line("bt probe: MODEM_CLK_EN was 0 -> set, now 0x{x:0>8}", .{modem_ctrl0.*});
+        }
+        // 复位位：我们打印过 `rst_conf=0x00000000` ⇒ 所有 modem 复位位都是 0（未处于复位）✓
+
+        // **完整复位脉冲**（IDF 的 `MODEM_RESET_FIELD_WHEN_PU` 等价物）：此前我们只脉冲过
+        // bit16(`rst_btmac`)，而 bit15/17/23/29 这些子模块复位位可能**从未被置过**。
+        // 先写全 1（按住所有复位）再写全 0（释放），然后重开时钟（复位可能清掉时钟配置）。
+        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
+        const rst_before = rst.*;
+        rst.* = 0xFFFF_FFFF;
+        var d: u32 = 0;
+        while (d < 2000) : (d += 1) std.atomic.spinLoopHint();
+        rst.* = 0;
+        board.log.line("bt probe: rst pulse {x} -> all1 -> {x}", .{ rst_before, rst.* });
+        porting.forceReenableClocks(&early_cfg.btdm);
+        board.log.line("{s}", .{"bt probe: clocks re-enabled after reset pulse"});
+
+        board.log.line("{s}", .{"bt probe: calling bt_bb_v2_init_cmplx(1) ..."});
+        _ = bt_bb_v2_init_cmplx(1);
+
+        board.log.line("{s}", .{"bt probe: probing 0x2010B000 (after bb init) ..."});
+        const bleblk: *volatile u32 = @ptrFromInt(0x2010_B000);
+        const ble0 = bleblk.*;
+        board.log.line("bt probe: 0x2010B000 = 0x{x:0>8} (READABLE!)", .{ble0});
     }
-    // 复位位：我们打印过 `rst_conf=0x00000000` ⇒ 所有 modem 复位位都是 0（未处于复位）✓
-
-    // **完整复位脉冲**（IDF 的 `MODEM_RESET_FIELD_WHEN_PU` 等价物）：此前我们只脉冲过
-    // bit16(`rst_btmac`)，而 bit15/17/23/29 这些子模块复位位可能**从未被置过**。
-    // 先写全 1（按住所有复位）再写全 0（释放），然后重开时钟（复位可能清掉时钟配置）。
-    const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
-    const rst_before = rst.*;
-    rst.* = 0xFFFF_FFFF;
-    var d: u32 = 0;
-    while (d < 2000) : (d += 1) std.atomic.spinLoopHint();
-    rst.* = 0;
-    board.log.line("bt probe: rst pulse {x} -> all1 -> {x}", .{ rst_before, rst.* });
-    porting.forceReenableClocks(&early_cfg.btdm);
-    board.log.line("{s}", .{"bt probe: clocks re-enabled after reset pulse"});
-
-    board.log.line("{s}", .{"bt probe: calling bt_bb_v2_init_cmplx(1) ..."});
-    _ = bt_bb_v2_init_cmplx(1);
-
-    board.log.line("{s}", .{"bt probe: probing 0x2010B000 (after bb init) ..."});
-    const bleblk: *volatile u32 = @ptrFromInt(0x2010_B000);
-    const ble0 = bleblk.*;
-    board.log.line("bt probe: 0x2010B000 = 0x{x:0>8} (READABLE!)", .{ble0});
 
     // 1) arena 最先
     const hs = @intFromPtr(heapStart());
