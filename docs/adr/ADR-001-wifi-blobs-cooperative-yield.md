@@ -5804,3 +5804,30 @@ panic 0
 ⇒ **补上真·断电（enable→disable）后仍不清** ⇒ 这条也不是。
 
 ⇒ 但这次修掉的是**真 bug**（标签错位会让后续所有序列对照读错），保留。
+
+### 标签全部修好 + **真断电确实生效**（`hp1e0` 走 `0x3d → 0x25 → 0x3d`），但 `MAC_ST` 仍不清
+
+把剩下的 id 冲突也修掉（`shellCoexInit` 的 `23` → **`24`**；`hook_ids` 追加 **`icg_write`（下标 35）**，
+`note_id_max` 同步到 `35`），板侧序列现在是正确的：
+
+```text
+OSI 137 wifi_clk_en a0=0x0 a1=0x0
+OSI 138 icg_write   a0=0x0 a1=0x64646400      ← ICG 写入（原来错标成 queue_send_ok）
+OSI 140 wifi_clk_dis a0=0x0 a1=0x0
+```
+
+**`hp1e0`（`SOC_PLL_SOURCE_CG`）三时刻**：
+
+```text
+before-init  0x00000025
+after-init   0x00000025     ← 我们的 disable 真的写进去了（IDF disable 值就是 0x25）
+before-start 0x0000003D     ← 之后又被 enable 回 0x3D
+```
+
+⇒ **`enable → disable → 再 enable` 的完整周期确实发生了**（`0x25 → 0x3D → 0x25 → 0x3D` 链条可见）。
+
+⇒ **而 `MAC_ST` 仍是 `0x0000E000`** ⇒ **真·断电/上电周期也不是答案**。
+
+⇒ 到此，**"时钟域"这条线（门、源、顺序、断电周期）已全部实测过且全部无效**。
+⇒ 按物理视角，剩下的解释更偏向 **LMAC 固件/启动状态**（bits 13-15 = "LMAC 未启动"），
+而不是任何时钟寄存器配置。

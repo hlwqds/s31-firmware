@@ -533,10 +533,12 @@ pub const hook_ids = [_][]const u8{
     "coex_init",     "coex_enable", "coex_status",       "coex_pti",
     "coex_req",      "coex_rel",    "coex_interval",     "coex_start_cb",
     "set_intr",      "set_isr",     "ints_on",
+    // 34 = ints_on 之后；35 = icg_write（ICG 位图写入，替代原先误用 id 20/33）
+              "icg_write",
 };
 pub const HookEvent = struct { id: u8, a0: usize, a1: usize };
 /// `note()` 用到的最大 id（新增打点时同步改这里；下面的 comptime 断言会挡住越界）。
-pub const note_id_max: u8 = 33;
+pub const note_id_max: u8 = 35;
 
 comptime {
     // 这个断言防的是一类真炸过的事故：`hook_ids` 没跟上新增 id → 事件环打印越界索引 →
@@ -1084,7 +1086,7 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     const icg_before = icg.*;
     icg.* = 0x6464_6400;
-    note(33, icg_before, icg.*); // 33 = icg_write（原来用 20=queue_send_ok，标签错位）
+    note(35, icg_before, icg.*); // 35 = icg_write
     // IDF 的 `esp_phy_enable_wrapper` 还会调 `phy_wifi_enable_set(1)`（ROM `0x2f80145c`）——
     // 我们此前漏了这一步；若 libphy/ROM 的代码按这个标志门控，缺它 PHY 侧就不会真正使能。
     const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
@@ -1122,7 +1124,7 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
 // 这一轮先看**谁被调用**，再决定实现语义。
 // ---------------------------------------------------------------------------
 fn shellCoexInit() callconv(.c) usize {
-    note(23, 0, 0);
+    note(24, 0, 0); // 24 = coex_init（原来用 23，与 wifi_reset_mac 撞）
     // `libcoexist.a` 里就有真正的 `coex_init()`（我们链接了它）。
     const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
     f();
@@ -1190,7 +1192,7 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // 前面已经写过 SOC_PLL / COEXIST / WIFI_APB / WIFI_BB_44M。
     // 顺序：SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit9)** → WIFI_BB(rst+组) → WIFI_BB_80X1
     icg.* = 0x6464_6400;
-    note(33, icg_before, icg.*); // 33 = icg_write（原来用 20=queue_send_ok，标签错位）
+    note(35, icg_before, icg.*); // 35 = icg_write
 
     // 1) SOC_PLL_SOURCE_CG (dev=2)
     {
