@@ -28,6 +28,14 @@ pub fn get() u32 {
     return @extern(*volatile u32, .{ .name = "r_sym_bt_d3D3sk5KewclELfrD5xa" }).*;
 }
 
+/// **`r_sym_bt_OkE7` 读的那个锚点**（`21.o` 的 `.LANCHOR0`，最终镜像里是具名
+/// BSS 全局）。`OkE7` 进门就 `beqz`：为 0 直接返回 -1，不做任何初始化
+/// ⇒ 它是**消费者**，发布者在它之前（IDF 里由 init 链的前几步完成）。
+pub fn okE7Anchor() u32 {
+    if (!on_target) return 0;
+    return @extern(*volatile u32, .{ .name = "r_sym_bt_r4auAKWSAFwgQarMHZCc" }).*;
+}
+
 /// 补调写者（`P = wr_btdm_osal_malloc(...)`）。返回归档给的 `rc`。
 /// 幂等性由调用方保证：只在 `get() == 0` 时调。
 pub fn populate() c_int {

@@ -151,6 +151,7 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
+    osal.logPublic("bt bringup: OkE7 锚点=0x{x:0>8} (为 0 ⇒ OkE7 立即返回 -1，不会调 fqmZk)", .{@import("probe_ptr.zig").okE7Anchor()});
     if (skip_task_init) {
         osal.logPublic("bt bringup: step 6 r_btdm_task_init SKIPPED (experiment)", .{});
         rc = 0;
