@@ -52,8 +52,14 @@ var ctrl_task: ?*sched.Task = null;
 fn nowMs() u32 {
     return @intCast(board.hw.nowUs() / 1000);
 }
+/// 是否把 `osal.logPublic` 的每一行都打到 UART。
+/// 默认 **true**（可观测性优先）；设 false 可做"UART 静默"对照——但注意那样连进度行也看不到，
+/// 需要额外把里程碑用 `board.log.line` 直写，否则实验没有信息量（踩过）。
+pub var verbose: bool = true;
+
 /// 同步刷到 UART（不缓冲）——切上下文后日志顺序才可信。
 fn logHook(msg: []const u8) void {
+    if (!verbose) return;
     board.log.line("{s}", .{msg});
 }
 /// 当前不开中断 ⇒ 空实现；切片 E 真开中断后换成真的关/开。
@@ -69,7 +75,7 @@ fn macHook(out: *[6]u8) void {
 pub fn run() noreturn {
     // **最先**做 ROM 取样：此时还没开中断，输出不会被 ISR 的行冲散。
     dumpRom("A", 0x2f83efb0, 96);
-    dumpRom("B", 0x2f812200, 96);
+    dumpRom("B", 0x2f812180, 160); // 往前多两个 32 字节块：看谁 jal 进这个循环
 
     osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
     osal.setMacHook(macHook);

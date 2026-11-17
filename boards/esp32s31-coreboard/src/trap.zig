@@ -348,11 +348,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             //   addr = ((s0 + 0x2038A) << 12) + 28，判定 while ((*(u32*)(addr) >> 16) & 0xFF) > 127
             if (frame.mepc >= 0x2f812216 and frame.mepc <= 0x2f812230 and s0_probe_count < 8) {
                 s0_probe_count += 1;
-                const arg: usize = frame.s0;
+                // `TrapFrame` 只存到 s0 ⇒ 用**循环头的 a0**：`0x2f81221e` 刚执行 `mv a0,s0`，
+                // 所以打断在 0x2f812220/0x228 时 a0 就是传给读字节函数的参数。
+                const arg: usize = frame.a0;
                 const addr: usize = ((arg + 0x2038A) << 12) + 28;
                 const val: u32 = @as(*volatile u32, @ptrFromInt(addr)).*;
-                log.line("romloop pc=0x{x} s0=0x{x} addr=0x{x} val=0x{x:0>8} byte={d}", .{
-                    frame.mepc, arg, addr, val, (val >> 16) & 0xFF,
+                log.line("romloop pc=0x{x} a0=0x{x} s0=0x{x} addr=0x{x} val=0x{x:0>8} byte={d}", .{
+                    frame.mepc, frame.a0, frame.s0, addr, val, (val >> 16) & 0xFF,
                 });
             }
             // 每 256 次（≈0.5 s）打一行：**卡在 init 内部时只有 ISR 还能说话**，
