@@ -861,6 +861,7 @@ test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
 const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
+    logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
 }
 export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
@@ -891,6 +892,7 @@ export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
     eventRun(ev);
 }
 export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
+    logLine("bt hook: event_init", .{});
     eventInit(ev, fn_, arg);
 }
 export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
@@ -1280,6 +1282,7 @@ export fn wr_btdm_osal_task_delete(task_handle: ?*anyopaque) callconv(.c) void {
     taskDelete(task_handle);
 }
 export fn wr_btdm_osal_intr_alloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque, intr_handle: *?*anyopaque) callconv(.c) c_int {
+    logLine("bt hook: intr_alloc", .{});
     return intrAlloc(src, flags, fn_, arg, intr_handle);
 }
 export fn wr_btdm_osal_intr_free(intr_handle: ?*anyopaque) callconv(.c) void {

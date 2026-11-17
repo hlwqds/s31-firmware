@@ -53,6 +53,16 @@ pub fn setOkE7Anchor(v: u32) void {
     @extern(*volatile u32, .{ .name = "r_sym_bt_r4auAKWSAFwgQarMHZCc" }).* = v;
 }
 
+/// `7.o` 的锚点：`r_sym_bt_BOhff`（建任务辅助）的守卫。
+pub fn bohffAnchor() u32 {
+    if (!on_target) return 0;
+    return @extern(*volatile u32, .{ .name = "r_sym_bt_6Q68KSwuQQP4VjQGqiWa" }).*;
+}
+pub fn setBOhffAnchor(v: u32) void {
+    if (!on_target) return;
+    @extern(*volatile u32, .{ .name = "r_sym_bt_6Q68KSwuQQP4VjQGqiWa" }).* = v;
+}
+
 /// 补调写者（`P = wr_btdm_osal_malloc(...)`）。返回归档给的 `rc`。
 /// 幂等性由调用方保证：只在 `get() == 0` 时调。
 pub fn populate() c_int {

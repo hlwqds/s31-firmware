@@ -178,6 +178,14 @@ pub fn init(cfg: *config.Config) c_int {
                     xi[6] = 0x20260127; // BTDM_CONFIG_VERSION
                     xi[7] = 0x00171000;
                     pp.setOkE7Anchor(@intCast(@intFromPtr(x.?)));
+                    // **同时发布 7.o 的锚点**：`r_sym_bt_BOhff`（建任务）的守卫也判非空；
+                    // 只发布 21.o 时它会早退 ⇒ `task_create` 永不发生 ⇒ 走清理路径。
+                    if (pp.bohffAnchor() == 0) {
+                        if (osal2.btdmMalloc(32, 0)) |a7| {
+                            pp.setBOhffAnchor(@intCast(@intFromPtr(a7)));
+                            osal.logPublic("bt bringup: 发布 BOhff 锚点 a7=0x{x:0>8}", .{@intFromPtr(a7)});
+                        }
+                    }
                     osal.logPublic("bt bringup: 发布 OkE7 锚点 X=0x{x:0>8} (32B, +20=0x{x:0>8})", .{ @intFromPtr(x.?), @intFromPtr(p20.?) });
                 } else {
                     osal.logPublic("bt bringup: 发布 OkE7 锚点失败（arena 分配）", .{});
