@@ -53,3 +53,22 @@ int e_btdm_lp_modem_clock_set(int enable) {
     (void)enable;
     return 0;
 }
+
+/* ---------------------------------------------------------------------------
+ * 承重假设验证（2026-11-17）：归档里的 `wr_btdm_*` 都是**弱定义**的断言桩，
+ * 我们在这里给**强定义**，链接器应当选我们这份（ELF 规则：强覆盖弱）。
+ *
+ * 签名取自 IDF 的参考实现 `porting_btdm/controller/btdm_common/src/btdm_log.c:102`：
+ *   void wr_btdm_assert(const char *file, int line, int p0, int p1, uint8_t type)
+ * 归档里的调用点也能对上（a0=file, a1=行号, a2/a3=参数, a4=type）。
+ *
+ * 标记串 `bt-blob-strong-assert` 用于验证：镜像里出现它 ⇒ 被选中的是我们的实现。
+ * ------------------------------------------------------------------------- */
+extern int ets_printf(const char *format, ...);
+
+void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
+    ets_printf("bt-blob-strong-assert %s:%d p0=%d p1=%d type=%d\n",
+               file ? file : "?", line, p0, p1, (int)type);
+    for (;;) {
+    }
+}

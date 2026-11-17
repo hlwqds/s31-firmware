@@ -94,6 +94,16 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 4. **`wr_btdm_osal_*`（51 个）必须我们实现**：`nm` 显示它们由 `libbtdm_common` 定义，但类型是
    **`W`（弱定义）**，反汇编是 `wr_btdm_assert(file, line)` 的**断言占位**；IDF 的真实实现
    （`porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c`）在真实构建里强定义覆盖它们。
-   51 个按类：callout 9、event/eventq 11、临界区 3、中断分配 2、内存 2、互斥 4、信号量 5、
-   任务 2、时间 5、杂项 5（`ets_delay_us`/`rand`/`srand`/`read_efuse_mac`/`get_time_forever`）。
+   **准确口径**（按归档实际调用算）：**56 个弱桩** = 36 `wr_btdm_osal_*` + 11 `wr_btdm_coex_*`
+   + 8 `wr_btdm_log_*` + 1 `wr_btdm_assert`（归档里弱定义的 `wr_btdm_*` 共 77 个，21 个从不被调）。
    ⇒ 这是"让 controller 跑起来"的主要工作量，可复用 `wifi-blobs/src/osi_impl.zig` 与 `sched.zig`。
+
+   **「强覆盖弱」已实测**：本文件给 `wr_btdm_assert` 写了强定义，链接无重复符号错误，
+   镜像里出现标记串 `bt-blob-strong-assert` ⇒ 被选中是我们的实现。建议先写 8 个 `wr_btdm_log_*`，
+   "controller 的第一行日志能打出来"就是第一个独立可观测判据。
+
+   **时基**：`wr_btdm_osal_time_get()` 在 IDF 里是 `esp_timer_get_time() / 1000` ⇒ **毫秒**
+   （`BTDM_OSAL_USE_ESP_TIMER` 恒为 1，ms↔ticks 恒等）。返回 µs 会让所有超时窗口大 1000 倍。
+   `get_time_forever()` 的哨兵是 `portMAX_DELAY`。
+   ⚠ OSAL 的 `time_get` 会被 ISR 调用 ⇒ 刻度源要用 CSR（`mtime`），**不能**用 `hw.nowUs()`
+   （它读 APB 寄存器并自旋等 update 位，在 ISR 里会重入冲突）。
