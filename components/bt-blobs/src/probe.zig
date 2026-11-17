@@ -40,7 +40,7 @@ fn heapEnd() *const anyopaque {
 }
 
 /// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
-pub var probe_irqs: bool = false;
+pub var probe_irqs: bool = false; // 默认关：生产式的协作壳行为；做采样时临时开
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;

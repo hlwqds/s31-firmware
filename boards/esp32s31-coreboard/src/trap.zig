@@ -37,10 +37,11 @@ pub const TrapFrame = extern struct {
     /// 被中断的 sp（= 帧尾 + 80）与 s0：定位"谁调用了这个函数"时最有用。
     sp: usize,
     s0: usize,
+    s1: usize,
 };
 
 comptime {
-    if (@sizeOf(TrapFrame) != 80) @compileError("TrapFrame 必须是 80 字节");
+    if (@sizeOf(TrapFrame) != 84) @compileError("TrapFrame 必须是 84 字节（21 个 usize）；汇编帧按 16 对齐用 96 字节，尾部 12 字节是 padding");
     if (@offsetOf(TrapFrame, "mepc") != 64) @compileError("mepc 必须在偏移 64");
 }
 
@@ -76,7 +77,7 @@ pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
 // ---------------------------------------------------------------------------
 pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
     asm volatile (
-        \\        addi    sp, sp, -80
+        \\        addi    sp, sp, -96
         \\        sw      ra, 0(sp)
         \\        sw      t0, 4(sp)
         \\        sw      t1, 8(sp)
@@ -99,9 +100,10 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        csrr    t0, mstatus
         \\        sw      t0, 68(sp)
         \\
-        \\        addi    t0, sp, 80
+        \\        addi    t0, sp, 96
         \\        sw      t0, 72(sp)
         \\        sw      s0, 76(sp)
+        \\        sw      s1, 80(sp)   # 循环参数常存在 s1（实测：`mv s1,a0` 在函数入口）
         \\
         \\        mv      a0, sp
         \\        call    trapDispatch
@@ -130,7 +132,8 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        lw      a5, 52(sp)
         \\        lw      a6, 56(sp)
         \\        lw      a7, 60(sp)
-        \\        addi    sp, sp, 80
+        \\        lw      s1, 80(sp)
+        \\        addi    sp, sp, 96
         \\        mret
         \\
         \\2:
@@ -346,15 +349,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **定点探针**：只有当被中断的 PC 落在那个 ROM 轮询循环里时才计算轮询地址。
             // 反汇编给出：循环体 0x2f812216..0x2f812230，读字节的地址算式
             //   addr = ((s0 + 0x2038A) << 12) + 28，判定 while ((*(u32*)(addr) >> 16) & 0xFF) > 127
-            if (frame.mepc >= 0x2f812216 and frame.mepc <= 0x2f812230 and s0_probe_count < 8) {
+            // 判据用 **ra**：循环体只有几条指令，采样几乎总落在更长的叶子函数里，
+            // 而叶子的返回地址正是循环内 `jal` 的下一条（实测 `ra=0x2f812226`）。
+            if (frame.ra >= 0x2f812216 and frame.ra <= 0x2f812230 and s0_probe_count < 8) {
                 s0_probe_count += 1;
-                // `TrapFrame` 只存到 s0 ⇒ 用**循环头的 a0**：`0x2f81221e` 刚执行 `mv a0,s0`，
-                // 所以打断在 0x2f812220/0x228 时 a0 就是传给读字节函数的参数。
-                const arg: usize = frame.a0;
+                // 循环的参数来自函数入口的 `mv s1,a0` ⇒ 用 s1（帧里已补）。
+                const arg: usize = frame.s1;
                 const addr: usize = ((arg + 0x2038A) << 12) + 28;
                 const val: u32 = @as(*volatile u32, @ptrFromInt(addr)).*;
-                log.line("romloop pc=0x{x} a0=0x{x} s0=0x{x} addr=0x{x} val=0x{x:0>8} byte={d}", .{
-                    frame.mepc, frame.a0, frame.s0, addr, val, (val >> 16) & 0xFF,
+                log.line("romloop pc=0x{x} s1=0x{x} s0=0x{x} a0=0x{x} addr=0x{x} val=0x{x:0>8} byte={d}", .{
+                    frame.mepc, frame.s1, frame.s0, frame.a0, addr, val, (val >> 16) & 0xFF,
                 });
             }
             // 每 256 次（≈0.5 s）打一行：**卡在 init 内部时只有 ISR 还能说话**，
