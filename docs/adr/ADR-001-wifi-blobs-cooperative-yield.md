@@ -4865,3 +4865,26 @@ panic 0
 ```
 
 ⇒ **时序也对了、位置也对了，`MAC_ST` 依旧不动** ⇒ LPCON ICG 位图不是缺的那一步（保留这个改动，它与 IDF 一致）。
+
+### 更正：IDF 侧对照**不是新工程**，装置早就跑过
+
+**我上一节写错了**——"需要真正的 IDF WiFi app、是主要工程投入"这个判断不成立。
+
+ADR 自己就记着两处：
+
+- **:1993-1997**：把 IDF 的 `examples/wifi/getting_started/station`
+  （`idf.py --preview set-target esp32s31` 可直接构建）加一个每秒打印寄存器的小任务，烧到**同一块板**；
+  实测输出 `DIAG: MAC_ST=0x00000000 CLK_CONF1=0x00000000 RST_CONF=0x00000000 POWER_ST=0x64646400`。
+- **:2930-2933**：把**同一个 example** 插桩（读 `0x20104CAC`/`0x20109C10`/`0x20109C14`/`0x20109C0C`）
+  后在同一块板跑。
+
+⇒ 所以下一步是**把那套再跑一遍、多加几个 dump 点**：
+拷 example 到临时目录 → `app_main` 里 `esp_wifi_init()` 前后读 `0x20104CAC`（要更细就在
+`esp_wifi_init_internal()` 各步之后插读）→ `idf.py --preview set-target esp32s31` → build → flash → 抓日志。
+
+⇒ `idf-bootstrap` 的 `app_main` 是 stub **不影响**它——那个 stub 只负责给链接一个入口、
+产出 bootloader/分区表/flash_args；IDF 侧参考工程是 example 本身。
+
+> [!warning] 跑之前先对齐两件事
+> ① **同一份 sdkconfig / 分区表**（WiFi blob 版本与 NVS 布局要一致，否则对比不成立）；
+> ② 读的是**同一个地址 `0x20104CAC`**，别用 IDF 的寄存器别名。
