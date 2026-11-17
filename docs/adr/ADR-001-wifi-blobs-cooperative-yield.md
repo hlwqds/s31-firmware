@@ -6235,3 +6235,24 @@ panic 0
 
 ⇒ 开关已翻回 `false`（默认路径不变）。
 ⇒ 至此"coex 分支"假设也排除 —— 与 osi 层同构的结论一致：那条 `4` 本来就是标签错位，不是行为差异。
+
+### 排除：`.data` 初始化不是缺口（镜像段核对）
+
+怀疑过一条：我们的 `start.zig` 步骤 ①–⑥ 里**只有清 `.bss`、没有显式 `.data` 拷贝**——
+若 blob 的已初始化全局变量因此是垃圾，它的状态机就可能走不同分支。
+
+核对镜像段（`esptool image-info`）：
+
+```text
+Segments: 5
+  1  0x000a8  0x2f000000  DRAM/IRAM
+  2  0x0cbe0  0x2f0000b0  DRAM/IRAM
+  4  0x081f0  0x2f00cc90  DRAM/IRAM     ← 0x2f00cc90 + 0x81f0 = 0x2f014e80
+```
+
+而 `.data` 在 ELF 里是 `VMA 0x2f00f660`、size `0x5820` ⇒ `0x2f00f660 + 0x5820 = 0x2f014e80` **正好等于段 4 的终点**。
+
+⇒ **`.data` 确实被打进 flash 镜像（段 4），并由 IDF 二级 bootloader 拷到 RAM** ⇒ **不是缺口**。
+⇒ `.bss` 由我们的 `start.zig` 步骤 4 清零，也在镜像的 `memsz > filesz` 覆盖范围内 ⇒ 同样没问题。
+
+⇒ 这条也排除（清单扩到 **15 条**）。
