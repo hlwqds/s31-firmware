@@ -66,6 +66,15 @@ CI 上的同一套入口：`ci.yml` 的 `board` job（`workflow_dispatch`，自�
 
 `demo-board.sh` 与发布门禁的分工：它**不碰网络**（不需要 DHCP/监听器/防火墙），只验"这套固件
 自己能不能起来、能不能切槽并切回来"，证据落 `logs/c8-demo.log`；发布门禁仍是 `gate-board.sh`。
+
+同一套 A/B 演示也接进了 CI：`workflow_dispatch` 多一个 `demo` 输入（默认 `false`），置 `true`
+即在同一 `board` job 里跑 `scripts/demo-board.sh "${BOARD:-}"`。三点接线约束：
+① 闸门与演示**在同一个 job ⇒ 天然串行**，不会两个进程抢同一个串口；
+② 该步用 `always()`：`gate` 因主机前置缺失而失败时（runner 没做过 host-prep），A/B 仍然值得验
+—— 它不需要网络，且第一步就会把 factory 刷成默认镜像、不依赖上一步留下什么状态；
+③ 演示最后一步会写回默认固件并清 otadata/计数扇区，所以跑完板子仍是干净的。
+`ESPTOOL` 允许是**多词**（CI 里是 `python3 -m esptool`）：脚本按仓库既有约定用未加引号的
+`$ESPTOOL` 调用，只有"单段绝对路径"才把它的目录并进 `PATH`。
 它跑四步：① 默认固件从 factory 起来（`verdict=pass` / `ab=yes count=2` / crc32 match）；
 ② 正常镜像写进 ota_0，用 `-Dab-stage=a` 的镜像切槽（`offset 0x190000` + `confirmed VALID`）；
 ③ 把 `-Dab-revert` 的镜像写进 ota_0，它判废当前槽并复位 ⇒ 回到 factory（旧版本）；

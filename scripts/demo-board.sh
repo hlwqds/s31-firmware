@@ -26,15 +26,21 @@ fi
 
 ZIG=${ZIG:-$(command -v zig || true)}
 [ -n "$ZIG" ] || { echo "找不到 zig（给 ZIG=<path>）" >&2; exit 2; }
+# `ESPTOOL` 允许是**多个词**（CI 里是 `python3 -m esptool`），所以下面一律用未加引号的
+# `$ESPTOOL` —— 与 `scripts/build-image.sh` 的既有约定一致（那里也是 `$ELF_BIN`）。
 ESPTOOL=${ESPTOOL:-$(command -v esptool || command -v esptool.py || true)}
-[ -n "$ESPTOOL" ] || { echo "找不到 esptool（给 ESPTOOL=<path>）" >&2; exit 2; }
+[ -n "$ESPTOOL" ] || { echo "找不到 esptool（给 ESPTOOL=<path> 或 ESPTOOL='python3 -m esptool'）" >&2; exit 2; }
+# 只有"单段绝对路径"才把它的目录并进 PATH；多词形式交给 shell 分词（别对整串做 dirname）。
+case "$ESPTOOL" in
+  *" "*) ;;
+  */*) PATH="$(dirname "$ESPTOOL"):$PATH"; export PATH ;;
+esac
 PYTHON=${PYTHON:-python3}
 $PYTHON -c "import serial" 2>/dev/null || {
   echo "python 解释器 $PYTHON 无法 import serial（给 PYTHON=... PYTHONPATH=...）" >&2; exit 2; }
 
 # 继承来的 LD_LIBRARY_PATH 会让 esptool / zig 撞 glibc（NixOS 上的 stack smashing）。
 unset LD_LIBRARY_PATH
-export PATH="$(dirname "$ESPTOOL"):$PATH"
 export ESPTOOL
 
 WORK=$(mktemp -d)
@@ -54,7 +60,7 @@ build_image() { # <输出目录> [额外 -D 参数...]
   mkdir -p "$out"
   ( cd firmware && $ZIG build -Dtarget=riscv32-freestanding-eabihf \
       -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall "$@" >/dev/null ) || return 1
-  ( cd firmware && "$ESPTOOL" --chip esp32s31 elf2image --flash-mode dio --flash-size 16MB \
+  ( cd firmware && $ESPTOOL --chip esp32s31 elf2image --flash-mode dio --flash-size 16MB \
       --flash-freq 80m -o "$out/app.bin" zig-out/bin/app.elf >/dev/null 2>&1 ) || return 1
 }
 
@@ -63,8 +69,8 @@ capture() { # <日志> <秒>
 }
 
 flash_factory() { ( cd firmware && sh tools/flash.sh "$PORT" "$1" >/dev/null 2>&1 ); }
-write_slot() { "$ESPTOOL" --chip esp32s31 --port "$PORT" write-flash "$1" "$2" >/dev/null 2>&1; }
-erase_ota() { "$ESPTOOL" --chip esp32s31 --port "$PORT" erase-region 0x490000 0x2000 >/dev/null 2>&1; }
+write_slot() { $ESPTOOL --chip esp32s31 --port "$PORT" write-flash "$1" "$2" >/dev/null 2>&1; }
+erase_ota() { $ESPTOOL --chip esp32s31 --port "$PORT" erase-region 0x490000 0x2000 >/dev/null 2>&1; }
 
 say "== C8 demo: port=$PORT log=$LOG =="
 
@@ -105,7 +111,7 @@ say "4) 恢复：默认固件写回 factory 与 ota_0，并清 otadata / 计数�
 flash_factory "$WORK/base/app.bin" || { say "  恢复烧录失败"; exit 1; }
 write_slot 0x190000 "$WORK/base/app.bin" || true
 erase_ota
-"$ESPTOOL" --chip esp32s31 --port "$PORT" erase-region 0xE000 0x1000 >/dev/null 2>&1 || true
+$ESPTOOL --chip esp32s31 --port "$PORT" erase-region 0xE000 0x1000 >/dev/null 2>&1 || true
 capture "$WORK/step4.log" 10
 assert_line "$WORK/step4.log" 'Loaded app from partition at offset 0x10000' '恢复后从 factory 启动'
 

@@ -94,4 +94,7 @@ cat "$TMP"
 echo "=================================="
 
 # flash_args 里的相对路径以 build 目录为基准；在 FLASH_DIR 里调用 esptool。
-( cd "$FLASH_DIR" && esptool --chip esp32s31 -p "$PORT" -b 921600 write-flash "@$TMP" )
+# `$ESPTOOL` **不加引号**：它允许是多个词（CI/文档里常见 `python3 -m esptool`），
+# 与 `scripts/build-image.sh` 的 `$ELF_BIN` 是同一约定。之前这里写死裸 `esptool`，
+# 于是"设了 ESPTOOL 却仍按 PATH 找"—— 在干净 PATH 上会直接失败。
+( cd "$FLASH_DIR" && ${ESPTOOL:-esptool} --chip esp32s31 -p "$PORT" -b 921600 write-flash "@$TMP" )

@@ -15,6 +15,11 @@ on:
         type: boolean
         required: false
         default: true
+      demo:
+        description: 跑 C8 A/B 演示（构建→烧录→断言→切槽→切回旧版本）；不碰网络，可与 gate 同时开
+        type: boolean
+        required: false
+        default: false
 
 env:
   ZIG_VERSION: "0.17.1"
@@ -119,6 +124,18 @@ jobs:
           sudo scripts/host-prep-wire.sh up
           trap 'sudo scripts/host-prep-wire.sh down' EXIT
           scripts/gate-board.sh
+      # C8：A/B 九项断言由机器复检，不再靠人记得手跑。
+      # 用 `always()`：gate 因主机前置缺失而失败时（例如没跑过 host-prep 的 runner），
+      # A/B 仍然值得验 —— 它不需要 DHCP/防火墙，且第一步就会把 factory 刷成默认镜像，
+      # 不依赖上一步留下什么状态。
+      # 与 gate/e2e **同一个 job ⇒ 天然串行**，不会两个进程抢同一个串口。
+      # demo 的最后一步会写回默认固件并清 otadata/计数扇区，所以跑完板子仍是干净的。
+      - name: A/B demo (build → flash → assert → stage → revert)
+        if: ${{ always() && github.event.inputs.demo == 'true' }}
+        run: |
+          set -euo pipefail
+          scripts/demo-board.sh "${BOARD:-}"
+
       - name: board e2e (raw, gate disabled)
         if: ${{ github.event.inputs.gate == 'false' }}
         run: |
