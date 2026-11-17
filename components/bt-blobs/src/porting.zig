@@ -103,6 +103,15 @@ extern fn r_esp_ble_msys_init(
 // 范围收缩：**不碰 ICG 位图**（`icg_config[domain]` / `clk_conf_power_st` 是电源管理那条路，
 // `modem_clock_module_enable` 完全不碰它们）。
 const syscon_base: usize = 0x2010_9C00;
+
+/// 归档的池初始化（`libbtdm_common/14.o`）。`struct btdm_mempool` 约 28 B，
+/// 这里给 48 B 的 4 对齐静态对象，避免把布局写死。
+extern fn r_btdm_os_mempool_init(mp: *anyopaque, blocks: u16, block_size: u32, membuf: ?*anyopaque, name: [*:0]const u8) c_int;
+var mp_ev: [48]u8 align(4) = @splat(0);
+var mp_evq: [48]u8 align(4) = @splat(0);
+var mp_co: [48]u8 align(4) = @splat(0);
+var mp_sem: [48]u8 align(4) = @splat(0);
+var mp_mux: [48]u8 align(4) = @splat(0);
 const lpcon_base: usize = 0x2010_F000;
 const reg_clk_conf: usize = syscon_base + 0x04;
 const reg_clk_conf_power_st: usize = syscon_base + 0x0c;
@@ -378,7 +387,45 @@ pub fn elemMempoolInit(elem: config.ElemNum) c_int {
     osal.logPublic("bt mempool: ok evt={d} evtq={d} co={d} sem={d} mutex={d}", .{
         elem.evt_count, elem.evtq_count, elem.co_count, elem.sem_count, elem.mutex_count,
     });
+
+    // **真正建池**：这一步此前完全缺失，是本轮所有怪现象的源头。
+    //
+    // IDF 的 `btdm_osal_elem_mempool_init` 对每个池做两件事：
+    //   1. 用 `BTDM_MEMPOOL_SIZE(n, blksize) = ceil(blksize/4) * n` 个 u32 分配缓冲；
+    //   2. `btdm_mempool_init(&pool, count, blksize, buf, "name")` —— 它是 inline 包装，
+    //      真正干活的是**归档**的 `r_btdm_os_mempool_init`。
+    //
+    // 我们只做容量校验、从不调它 ⇒ 归档的池从未初始化 ⇒
+    // `r_sym_bt_OkE7` 的守卫 `*(*s0 + 8) != 0` 为假 ⇒ 跳过 `fqmZk`
+    // ⇒ 锚点 `P` 停在 NULL ⇒ `Xpuq` 从**地址 0** 零填充到 `0x2010B100`
+    // ⇒ modem 寄存器窗口（含我们配好的时钟）被清零 ⇒ 表现为"无声卡死"。
+    const rc_evt = initPool("evt", elem.evt_count, 12, &mp_ev);
+    if (rc_evt != 0) return rc_evt;
+    const rc_evq = initPool("evtq", elem.evtq_count, 4, &mp_evq);
+    if (rc_evq != 0) return rc_evq;
+    const rc_co = initPool("co", elem.co_count, 20, &mp_co);
+    if (rc_co != 0) return rc_co;
+    const rc_sem = initPool("sem", elem.sem_count, 4, &mp_sem);
+    if (rc_sem != 0) return rc_sem;
+    const rc_mux = initPool("mutex", elem.mutex_count, 4, &mp_mux);
+    if (rc_mux != 0) return rc_mux;
     return 0;
+}
+
+/// 建一个池：缓冲取自我们的 arena，池结构由归档的 `r_btdm_os_mempool_init` 填。
+/// 块尺寸按 IDF 的 `*_freertos` 结构（evt 12 / evtq 4 / co 20 / sem 4 / mutex 4）。
+fn initPool(name: [*:0]const u8, count: u16, blk: u32, mp: *anyopaque) c_int {
+    if (count == 0) return 0;
+    const bytes: u32 = ((blk + 3) / 4) * @as(u32, count) * 4;
+    const buf = osal.btdmMalloc(bytes, 0) orelse {
+        osal.logPublic("bt mempool: {s} 缓冲分配失败 ({d} B)", .{ name, bytes });
+        return MempoolErr.evt;
+    };
+    const rc = r_btdm_os_mempool_init(mp, count, blk, buf, name);
+    osal.logPublic("bt mempool: init {s} blocks={d} blk={d} buf={x} rc={d}", .{
+        name, count, blk, @intFromPtr(buf), rc,
+    });
+    return rc;
 }
 
 /// 一步到位：`seed + elemCalc → 容量校验`，就是 `bt.c:172-186` 那三步。
