@@ -127,6 +127,25 @@ E2E 断言：
 - 板级日志只增不改；E2E 使用 `logs/e2e-*.log`，历史日志 `logs/*-boot.log` 保持原名。
 - 断言失败时 JUnit 的 `<failure>` 会带最后 4 KB 串口输出，便于定位。
 
+### 先确认板上跑的是哪个构建（踩过的坑）
+
+**改源码 ≠ 刷固件。** 做台架实验（ch21/ch22/ch23 的 lab、`-Dbench`/`-Dab-*` 变体）会把 lab 镜像
+写到 `0x10000`，覆盖 factory 里的生产固件；随后只改源码、`git checkout` 回退，板上仍然是那份 lab 镜像。
+此时抓串口只会看到 bootloader 的 `Loaded app from partition at offset 0x10000`，**容易被误判成"启动回归"**
+（本会话就误判过一次）。
+
+判据：串口**第一行**就能认出是谁 ——
+
+| 首行 | 板上是 |
+| --- | --- |
+| `s31-firmware boot` | 生产固件（随后有 `ota: …` / `section: …` / `verdict=`） |
+| `ch21-cwnd-emac-lab \| form B …`（或 ch22/ch23 名称） | 那一章的 lab 镜像 |
+| `bench: rounds=…` 紧跟 lab 首行 | 该 lab 的 `-Dbench` 变体（跑完会 `halt`，不再有 `verdict`） |
+
+回收方式：`sh firmware/tools/flash.sh <PORT> <生产 app.bin>`（走 esptool 硬复位，不依赖 DTR/RTS），
+再抓一次确认 `ota: ab=…` 与 `main: verdict=pass`。`scripts/demo-board.sh` 的第 4 步会自己做这件事。
+生产默认构建的自检要跑十几秒（net 组会做真实计时），窗口给 20 s 以上才看得到 `verdict`。
+
 ## 本地运行
 
 ```bash
