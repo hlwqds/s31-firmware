@@ -6135,3 +6135,30 @@ S31 生效函数指针数: 126
 
 ⇒ 之前那次"129 个字段 / 从第 53 项错位"是**提取脚本的 bug**（正则把嵌套的 `int (*cb)(uint32_t)` 参数也当成了字段）。
 **布局问题彻底关闭。**
+
+### 部分序列对照：`clk_en → coex_rel → clk_dis`（我们）vs `clk_en → clk_dis`（IDF）
+
+按"下一步 ②"给 IDF 的 6 个表项埋记录点（`1=mutex_lock 2=timer_setfn 3=semphr_give 4=coex_rel 5=clk_en 6=clk_dis`），
+拿到的子序列：
+
+```text
+IDF (n=30):  1×24, 5, 6, 1, 1, 1, 1
+我们:        1, 3, 1×23, 2×12, 5, 4, 6, 2, 2, 3, 1
+```
+
+**两处差异**：
+
+1. **IDF 序列里完全没有 `2`（timer_setfn）与 `3`（semphr_give）** —— 这不是"IDF 不调"，
+   而是**那两个记录点插入失败**（`esp_coex_common_timer_setfn_wrapper` / `esp_coex_common_semphr_give_wrapper`
+   定义在别的文件，正则没匹配到）⇒ **这一类对比仍然不完整**；
+2. **能比的那几项**：
+
+| 断点 | IDF | 我们 |
+|---|---|---|
+| `clk_en`(5) 之后 | **直接 `clk_dis`(6)** | **中间夹一个 `coex_rel`(4)** |
+
+⇒ 这是一个**候选分歧**：我们 init 期在时钟 enable 与 disable 之间调了 `coex_rel`，IDF 那一段没有。
+⇒ 但**不能当结论**——IDF 的 `coex_rel` 记录点是否真的被调用、以及两个缺失钩子的补齐，都还没验证。
+
+⇒ 下一步（明确）：把 `esp_coex_common_*` 那两个 wrapper 的定义位置找出来（在 `esp_coex` 组件里），
+补齐记录点后**重跑一次**，再做完整子序列对照。**这次不算结论。**
