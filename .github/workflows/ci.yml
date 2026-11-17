@@ -83,7 +83,10 @@ jobs:
           python-version: "3.12"
       - name: Install esptool
         run: pip install esptool==5.6.0
-      - name: "Run host e2e (profiles: min/net/wifi, xfail tls)"
+      # 名字曾写着 "profiles: min/net/wifi, xfail tls" —— 那是 tls 还编不过时的口径。
+      # 现在这条命令不带 --profile，`--host` 会跑**全部** profile（min/net/wifi/tls/net-wire/full），
+      # 且 tls 早已通过（本地 `--board --profile tls` 也是 PASS），所以不再有 xfail。
+      - name: "Run host e2e (all profiles)"
         run: |
           mkdir -p reports
           ESPTOOL="python -m esptool" python3 tests/e2e/run_e2e.py --host --junit reports/e2e-host.xml
