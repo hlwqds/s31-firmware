@@ -224,6 +224,14 @@ fn idleHook() void {
             sched.swapContext(&t.ctx, &main_ctx);
             in_task = true;
             impl.current_is_task = true;
+        } else {
+            // 回退：走的是旧的 `task_ctx`（`pump round` 那条路径，没经过 `pumpRealTask`），
+            // 必须照旧切回主上下文——否则任务在 `on_idle` 里空转、主上下文永远回不去。
+            in_task = false;
+            impl.current_is_task = false;
+            sched.swapContext(&task_ctx, &main_ctx);
+            in_task = true;
+            impl.current_is_task = true;
         }
         return;
     }

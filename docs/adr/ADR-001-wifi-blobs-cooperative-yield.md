@@ -4263,3 +4263,26 @@ panic 0
 ⇒ 结论：**只改 `recv` 的语义不够**。缺的是"谁该被调度"——主上下文此刻应该在跑 `esp_wifi_start`，
 而探针还停在 init 之后那段手动泵里。**下一个动作是让控制流真的到 `esp_wifi_start`**，
 而不是继续调 `recv` 的返回行为。
+
+### ★★★★ 里程碑：控制流**到达 `esp_wifi_start`**
+
+上一条负判决的原因是记账漏洞：`pump round` 那段走的是旧的 `task_ctx`（不经过 `pumpRealTask`），
+而新的任务侧让出只看 `cur_task` ⇒ `cur_task` 为 null 时**直接 return、不切回主上下文** ⇒ 任务在
+`on_idle` 里空转、主上下文永远回不去。
+
+修法：任务侧让出时，`cur_task` 为空就**回退到旧的 `task_ctx` 切换**。
+
+板侧结果：
+
+```text
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315192/353376 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+（之后 ROM tick 0x4003012e 持续运行，无 panic）
+panic 0
+```
+
+⇒ **`esp_wifi_start` 首次被真正调到**（此前主上下文一直卡在 init 之后的手动泵里，永远走不到这里）。
+⇒ ROM 的 tick ISR 在正常跑（`romhandler calls` 持续增长），说明中断与调度都是活的。
+
+⇒ 下一步：看 `start` 是否返回、`MAC_ST` 的使能位（`b16`/`b288`）是否被置起。
