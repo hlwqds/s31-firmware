@@ -528,7 +528,7 @@ pub const hook_ids = [_][]const u8{
     "malloc",        "zalloc",      "calloc",            "mutex_create",
     "event_post",    "alloc",       "recv_probe",        "phy_enable",
     "timer_fire",    "timer_setfn", "timer_arm",         "timer_disarm",
-    // 17 = queue_send_ok（`Queue.send` 成功分支）
+    // 20 = queue_send_ok（`Queue.send` 成功分支）；17 = timer_setfn（shellTimerSetfn 的 note(17)）
     "queue_send_ok", "wifi_clk_en", "wifi_clk_dis",      "wifi_reset_mac",
     "coex_init",     "coex_enable", "coex_status",       "coex_pti",
     "coex_req",      "coex_rel",    "coex_interval",     "coex_start_cb",
@@ -960,7 +960,7 @@ const TimerEntry = struct {
 };
 var timers: [16]TimerEntry = @splat(TimerEntry{});
 var timer_fires: u32 = 0;
-/// 诊断：`Queue.send` 成功次数（前 8 次用 note(17) 记录 {队列指针, 之后 count}）。
+/// 诊断：`Queue.send` 成功次数（只走计数器；`note(17)` 已被 `timer_setfn` 占用，不要复用）。
 var send_probe: u32 = 0;
 /// 诊断：`Queue.send` 成功次数 / `Queue.recv` 成功次数 / 最近一次 recv 时的 count。
 pub var send_ok: u32 = 0;
