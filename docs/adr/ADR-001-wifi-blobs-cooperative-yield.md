@@ -5367,3 +5367,28 @@ CLKDMP[before-start] icg=0x64646400  clk_conf1=0x0038e7ff  hp1e0=0x3d   ← 被�
 
 ⇒ 下一步：把 `before-start` 那次读数的**探针自身写入**去掉（或把 PHY 实验段挪到 start 之后），
 让 `before-start` 保持 `after-init` 的值，再看 start 是否还能自旋——**这才是干净的对照**。
+
+### 更正上一条：那个 `0x38e7ff` 是**故意**写的，不是"污染"
+
+我上一节把它叫"探针自己的实验污染"——**不准确**。`init_probe.zig:69` 写着：
+
+```zig
+const probe_clock_at_init = true; // 实测必须 true：关掉会让 FE/BB 时钟写序列 stall
+```
+
+⇒ 那段 `conf1.* = before | bits`（PHY/FE 组位，终值 `0x38e7ff`）是**FE/BB 时钟写序列所必需的**，
+关掉它会让序列 stall。所以它是**设计的一部分**，不是误写。
+
+⇒ 于是两条都成立、不矛盾：
+
+| 时点 | `clk_conf1` | 谁写的 | 意义 |
+|---|---|---|---|
+| `after-init` | `0x000007FF` | 我们的 `_wifi_clock_enable`（已对齐 IDF） | 与 IDF 的 enable **逐位相同** ✓ |
+| `before-start` | `0x0038E7FF` | 探针的 PHY/FE 时钟序列（**故意**） | 裸机没有 IDF 的 `esp_phy_enable`，只能自己补 |
+
+⇒ **"我们的寄存器与 IDF 不同"这个判读要按行读**：`after-init` 那一行**完全相同**；
+`before-start` 的差异来自"裸机得自己做 PHY 时钟"这件事本身，不是配置错误。
+
+⇒ 所以"内容层面已对齐但 `MAC_ST` 仍不清"这条结论**成立**，下一步只能是：
+① 让 `before-start` 保持 `after-init` 的值（把 PHY 段挪到 start 之后）做**干净对照**；
+② 或抓 `wifi_module_enable()` 的**调用轨迹**（环形缓冲版）。
