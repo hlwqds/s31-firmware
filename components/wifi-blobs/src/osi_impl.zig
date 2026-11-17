@@ -1207,8 +1207,20 @@ fn shellWifiClockEnable() callconv(.c) usize {
     conf1.* = conf1.* | 0x17b;
     // 4) WIFI_BB_80X1
     conf1.* = conf1.* | (1 << 7);
-    // 5) 其余位（APB/44M/COEXIST/PLL 源）沿用原来的整组 OR
+    // 5) 其余位（APB/44M/COEXIST）沿用原来的整组 OR
     conf1.* = conf1.* | wifi_clk_conf1_bits;
+    // 6) **SOC_PLL_SOURCE_CG —— 我们从来没写过的那个**
+    // IDF `modem_clock_hal_enable_soc_pll_source_cg()`（hal/esp32s31/modem_clock_hal.c:122-126）：
+    //     `HP_SYS_CLKRST.modem_conf.val = enable ? 0x3d : 0x25;`
+    // `DR_REG_HP_SYS_CLKRST_BASE = 0x20587000`（soc/esp32s31/register/soc/reg_base.h:79），
+    // `HP_SYS_CLKRST_MODEM_CONF_REG = base + 0x1E0` ⇒ **0x205871E0**。
+    // 没有 PLL 源时钟，MAC 的状态机当然不会动。
+    {
+        const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
+        const b = modconf.*;
+        modconf.* = 0x3D;
+        note(26, b, modconf.*);
+    }
     return 0;
 }
 

@@ -5067,3 +5067,32 @@ modem_clock_module_enable(PERIPH_WIFI_MODULE)
 
 ⇒ 下一步：把这 4 个 device 的 `modem_syscon_ll_*` 写操作也复刻进来
 （`modem_clock_impl.c` 里各自的 `configure()` 就是一行 `modem_syscon_ll_enable_*`，逐个查 LL 头文件即可）。
+
+### 判决（负）：补齐 7 个时钟 device（含从未写过的 `0x205871E0`）**仍不清**
+
+补上最后 4 个 device 中最关键的一个 —— `SOC_PLL_SOURCE_CG`：
+
+```c
+// IDF hal/esp32s31/modem_clock_hal.c:122-126
+modem_clock_hal_enable_soc_pll_source_cg()
+    HP_SYS_CLKRST.modem_conf.val = enable ? 0x3d : 0x25;
+// DR_REG_HP_SYS_CLKRST_BASE = 0x20587000   (soc/esp32s31/register/soc/reg_base.h:79)
+// HP_SYS_CLKRST_MODEM_CONF_REG = base + 0x1E0  ⇒  0x205871E0
+```
+
+⇒ **`0x205871E0 = 0x3D` 是一个我们从来没写过的寄存器**（blob 侧也不写它，见前面的 133 文件扫描）。
+
+写进去之后：
+
+```text
+wifi-init-probe: MAC_ST after init = 0x0000e000     # 仍不清
+panic 0
+```
+
+⇒ **把 7 个 device 全复刻了，仍然不清** ⇒ IDF 的 `wifi_module_enable()` 里**还有别的东西**
+（源码里那条链已经走完：`icg_map_init_all` + `device_control(7 devices)`，所以剩下的只能是
+`configure()` 内部还有 ROM 调用，或 `enable` 之后紧跟的 ROM 侧初始化）。
+
+⇒ 但**关键定位已经拿到**：清位动作**只发生在 `wifi_clock_enable` 这一步**，
+`reset_mac` / `clock_disable` 都不改它。下一步只需把 `wifi_module_enable()` 的**汇编**看一遍
+（它在 IDF 里是源码，编出来的 `libesp_hw_support.a` 里就有），逐条对齐我们缺的调用。
