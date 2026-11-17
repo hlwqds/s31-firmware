@@ -277,6 +277,7 @@ arena 或任务表满时退回"只登记"并**打一行日志**（不静默）�
 | --- | --- |
 | `probe.dump_rom` | 启动时 dump ROM 区（`0x2f83efb0`/`0x2f812180`）与 UART0 寄存器（`0x2038A000`） |
 | `probe.ble_block_experiment` | 复位脉冲 + 时钟重开 + `bt_bb_v2_init_cmplx(1)` + 读 `0x2010B000` |
+| `bringup.skip_task_init` | 跳过 step 6 让链继续（**默认 false**；设为 true 会崩在 step 10 的空指针，见下） |
 | `probe.probe_irqs` | 武装 T0 + 开中断（PC 采样用） |
 | `probe.verbose` | 是否把 `osal.logPublic` 每行打到 UART |
 | `porting.clock_writes_enabled` | 是否真的写时钟门控（对照实验用） |

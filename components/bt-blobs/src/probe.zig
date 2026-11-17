@@ -63,7 +63,7 @@ fn nowMs() u32 {
 pub var dump_rom: bool = false;
 pub var ble_block_experiment: bool = false;
 /// 跳过 `r_btdm_task_init`（它会访问不可达块）⇒ 用于验证 step 7–15 / enable / HCI。
-pub var skip_task_init: bool = true;
+pub var skip_task_init: bool = false;
 
 /// 是否把 `osal.logPublic` 的每一行都打到 UART。
 /// 默认 **true**（可观测性优先）；设 false 可做"UART 静默"对照——但注意那样连进度行也看不到，
