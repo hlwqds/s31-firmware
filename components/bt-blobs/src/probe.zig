@@ -39,6 +39,9 @@ fn heapEnd() *const anyopaque {
     return @extern(*const anyopaque, .{ .name = "_heap_end" });
 }
 
+/// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
+pub var probe_irqs: bool = false;
+
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
 
@@ -85,10 +88,16 @@ pub fn run() noreturn {
     // **在 init 之前**武装 T0 + 开中断：init 一旦卡住，只有 ISR 还能说话。
     // 采样点在 trap 的输入 25 分支；中断还在来 ⇒ 是 spin 而非死机。
     // ⚠ 只有探针构建这么做，生产固件保持 MIE=0。
-    board.hw.routeT0Interrupt(25);
-    board.hw.armT0Interrupt(2000);
-    board.hw.enableInterrupts();
-    board.log.line("{s}", .{"bt probe: irq enabled (probe only), t0=2ms"});
+    // **对照实验开关**：ISR 里打印可能打断 ROM 的 UART 写（板侧证据：ROM 卡在
+    // `UART0+0x1C` 的 TX 状态、值恒 128）。默认**不开中断**，只保留时基。
+    if (probe_irqs) {
+        board.hw.routeT0Interrupt(25);
+        board.hw.armT0Interrupt(2000);
+        board.hw.enableInterrupts();
+        board.log.line("{s}", .{"bt probe: irq enabled (probe only), t0=2ms"});
+    } else {
+        board.log.line("{s}", .{"bt probe: irqs OFF (control run)"});
+    }
 
     // 1) arena 最先
     const hs = @intFromPtr(heapStart());

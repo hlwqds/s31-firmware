@@ -188,7 +188,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 由此可以给"它在等哪个外设"点名。
             // ctx[15]/使能位随时间变化：用于判断 b15 是在**进入 deinit 之前**还是之后翻的。
             const ctx15 = @as([*]volatile u8, @ptrFromInt(0x2f013d30))[15];
-            log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8}", .{
+            log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
@@ -199,6 +199,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 (@as(*volatile u32, @ptrFromInt(0x20104CAC)).* >> 17) & 7,
                 frame.a0,
                 frame.a1,
+                frame.s0,
+                frame.ra,
             });
         }
         irq_count +%= 1;
@@ -341,10 +343,24 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **PC 采样**：记下被中断的 PC。某个地方死等（spinning）时，把这里采到的地址
             // 打出来就直接指向那个循环，比逐层加日志快得多。
             recordPc(frame.mepc);
+            // **定点探针**：只有当被中断的 PC 落在那个 ROM 轮询循环里时才计算轮询地址。
+            // 反汇编给出：循环体 0x2f812216..0x2f812230，读字节的地址算式
+            //   addr = ((s0 + 0x2038A) << 12) + 28，判定 while ((*(u32*)(addr) >> 16) & 0xFF) > 127
+            if (frame.mepc >= 0x2f812216 and frame.mepc <= 0x2f812230 and s0_probe_count < 8) {
+                s0_probe_count += 1;
+                const arg: usize = frame.s0;
+                const addr: usize = ((arg + 0x2038A) << 12) + 28;
+                const val: u32 = @as(*volatile u32, @ptrFromInt(addr)).*;
+                log.line("romloop pc=0x{x} s0=0x{x} addr=0x{x} val=0x{x:0>8} byte={d}", .{
+                    frame.mepc, arg, addr, val, (val >> 16) & 0xFF,
+                });
+            }
             // 每 256 次（≈0.5 s）打一行：**卡在 init 内部时只有 ISR 还能说话**，
             // 这一行直接指出死等发生在哪个地址。
             if (pc_ring_n % 256 == 0) {
-                log.line("pcsample n={d} pc=0x{x} ra=0x{x}", .{ pc_ring_n, frame.mepc, frame.ra });
+                // 带上 s0：反汇编里那个轮询循环的 `s0` 就是"要读哪个寄存器"的实参，
+                // 靠它才能算出真正的轮询地址（`a0` 只是被掩码后的数据）。
+                log.line("pcsample n={d} pc=0x{x} ra=0x{x} s0=0x{x}", .{ pc_ring_n, frame.mepc, frame.ra, frame.s0 });
             }
             hw.ackT0Interrupt(2000);
             return false;
@@ -380,6 +396,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 }
 
 /// PC 采样环（诊断死等用）：`samplePcs()` 把最近几次被中断的 PC 拷出来。
+var s0_probe_count: u32 = 0;
 var pc_ring: [8]u32 = @splat(0);
 var pc_ring_n: u32 = 0;
 

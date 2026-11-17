@@ -164,6 +164,10 @@ fn wr(addr: usize, val: u32) void {
 
 var lp_clock_enabled: bool = false;
 
+/// 是否写 `SOC_PLL_SOURCE_CG`。默认 **false**：板侧证据显示写了之后 ROM 会卡在
+/// `UART0` 的 TX FIFO 排空上（`txfifo_cnt` 恒 128）——先排除"这一写扰动时钟"的可能。
+pub var pll_write_enabled: bool = false;
+
 /// `btdm_lp_enable_clock` 的真实现：`BLE_CLOCK_DEPS`(8) + `BT_APB_CLOCK_DEPS`(4) + MAC 复位。
 ///
 /// **顺序**：先开时钟（三个寄存器 12 位），**再**做 MAC 复位——IDF 也是
@@ -199,7 +203,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
 
     // 2.5) **SOC PLL 时钟源**：BT 与 PHY 的 deps 里都有它，但它不是门控位而是源选择
     //      ⇒ 只开门控而源没接上，MAC 读回恒 0/全 1，轮询它的状态位永远等不到。
-    wr(reg_hp_clkrst_modem_conf, modem_conf_on);
+    // **对照实验**：这一写疑似扰动了 UART/APB 时钟（板侧证据：ROM 在 `UART0_STATUS+0x1C`
+    // 上等 TX FIFO 排空，txfifo_cnt 恒 128 ⇒ FIFO 满且不动）。默认先不写，用 -Dbt-pll-write 打开。
+    if (pll_write_enabled) wr(reg_hp_clkrst_modem_conf, modem_conf_on);
     const mc = rd(reg_hp_clkrst_modem_conf);
     osal.logPublic("bt lp: modem_conf=0x{x:0>8} (want 0x3d) pll_ok={}", .{ mc, (mc & 0x3F) == modem_conf_on });
 
