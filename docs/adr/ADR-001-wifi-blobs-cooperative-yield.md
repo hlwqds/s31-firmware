@@ -5610,3 +5610,25 @@ CLKDMP[after-init]   test_conf(+00)=0x00000100     # 不变
 ⇒ 下一步（可做，零新装备）：把我们的 `clken` 计数改成**全程**计数（不只在 init 窗口），
 与 IDF 的 9 次对比；若我们全程也只有 1~2 次 ⇒ 说明 blob 的时钟引用计数在我们这里没涨起来
 （很可能因为它依赖的某个前置调用没发生）⇒ 那就是比"不可观测状态"更具体的一层。
+
+### ★★★ 实测：我们的 blob 只调 `_wifi_clock_enable` **1 次**，IDF 侧 **9 次**
+
+加了全程计数：
+
+```text
+wifi-init-probe: CLKEN total=1 (IDF=9 over init+start)
+wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
+```
+
+⇒ **这是"blob 走不同路径"的第一个直接读数**：IDF 的环境里 `wifi_module_enable()` 被调 **9 次**
+（引用计数涨到 9），我们的环境里只有 **1 次**。
+
+⇒ 含义：IDF 的 init/start 过程中有 **8 次额外的"取 WiFi 时钟"动作**（PHY、coex、或其他模块各自 acquire），
+**我们这边那些 acquire 全部没发生** ⇒ 说明**调用方**在两边不同，而不是被调用的实现不同。
+
+⇒ 这也和"寄存器全对齐却结果不同"自洽：**不是写错了，是"多出来的那 8 次调用"里有一次带来了
+真正让 MAC 状态机启动的东西**（例如某次 acquire 触发了时钟树的重配置/校准）。
+
+⇒ 下一步（明确且可做）：**在 IDF 侧给每次 `wifi_clock_enable` 记调用者返回地址**
+（`__builtin_return_address(0)`），拿到那 9 次的调用者列表 ⇒ 与我们在裸机侧只有 1 次的事实对照 ⇒
+**找出"我们缺的那 8 个调用者是谁"**，那就是缺的那一拍。

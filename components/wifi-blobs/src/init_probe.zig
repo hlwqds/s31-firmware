@@ -1024,6 +1024,8 @@ pub fn run() noreturn {
                 {
                     dumpClockRegs("before-start");
                     log.line("wifi-init-probe: MAC_ST before start = 0x{x:0>8} (spin mask 0xE000)", .{mac_st.*});
+                    // **全程 `_wifi_clock_enable` 调用次数**（IDF 侧是 9 次）——与 INITWIN 的窗口计数区分开。
+                    log.line("wifi-init-probe: CLKEN total={d} (IDF=9 over init+start)", .{impl.cnt_clk_en});
                     // **W1C 判别**：若 bits 13-15 是"写 1 清零"，写 0 当然没反应（之前试过），写 1 才会清。
                     // IDF start 后是 `0x00FF1000`（bits 13-15 = 0），我们是 `0x00FFF000`——差的就是这三位。
                     mac_st.* = 0xE000;
