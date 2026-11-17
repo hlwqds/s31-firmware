@@ -4638,3 +4638,37 @@ panic: exception code=1 (instruction access fault)
 ⇒ 要真正做"在 start 的自旋里让出"，必须先让**每个让出点登记自己的 main 帧**
 （每处一个 `Context`，或用 `setjmp` 式保存），**不是改几个字节就能解决的**。
 ⇒ 补丁已回滚，基线恢复（`INITWIN qrecv=2 clken=1` / `INIT OK` / `calling esp_wifi_start`、无 panic）。
+
+---
+
+## 当前状态总表（本轮结束时）
+
+### 已打通（有板侧证据）
+
+| 能力 | 证据 |
+|---|---|
+| osi 表注册 | `osi.install()` 补上后，`g_osi_funcs_p` 不再为 NULL |
+| **init 期握手** | `null_give=0`（give 落到活句柄）、`qrecv 0→2`、`clken 0→1`、`INIT OK` |
+| **任务真被调度（init 期）** | `_task_create` 按 `stack_depth` 分栈建上下文；`idleHook` round-robin 泵真实任务 |
+| **队列句柄变真** | `queue_recv a0` 由 `0` 变 `0x2f0213b0`（arena 地址） |
+| **控制流到达 `esp_wifi_start`** | `calling esp_wifi_start (idle_calls=20)` |
+
+### 阻塞点
+
+`esp_wifi_start` 自旋在 `while ((MAC_ST & 0xE000) != 0)`，而 `MAC_ST = 0x0000E000`，那三位**从不清**。
+
+### 已否掉的清位路径
+
+1. 直写 `MAC_ST`（可写，但 blob 随后 `or 0x0FF10000` 改回；bits 13–15 不受影响）；
+2. `rst_wifimac` 脉冲（bit9，20 µs 宽）；
+3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（实验 9，早已判负）；
+4. 从自旋桩里让出 —— **技术前提不具备**：`main_ctx` 只登记一次，从 main 任意点让出会错位
+   （`idleHook` 走错分支 / `pumpRealTask` 直调跳到 `0x3d306120`）。
+
+### 下一步（按性价比）
+
+1. **对比 IDF 侧的寄存器轨迹**：在**已知正常的 S31** 上读同址 `MAC_ST`（init 前/后），
+   确认那三位在 IDF 上到底是不是 0、什么时候变 0——这是唯一能直接回答"谁清它"的证据。
+2. 若必须在裸机上做：先让**每个让出点登记自己的 main 帧**（`Context` per yield point），
+   再做自旋让出实验；否则实验必然错位。
+3. 不要再来回试寄存器/脉冲变体（已连试三项全负）。
