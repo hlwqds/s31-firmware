@@ -9,16 +9,24 @@
 
 ## 验证状态
 
-**只到"链接成立、镜像合法"这一级**（2026-11-17）。**控制器还不能跑**：
+**当前级别（2026-11-17 收官）：init 链跑到 step 6 并停在内部**。硬件已证明无问题
+（官方 IDF 同板 `controller_init`/`enable` 均 `ESP_OK`）。细节见顶部「交接摘要」。
 
 | 级别 | 状态 | 证据 |
 | --- | --- | --- |
-| 归档能链进两段镜像 | ✅ | `.flash.text` 699 856 / 窗口 720 896（余 21 040）；`elf2image` 成功，`image-info` 恰好 2 条 `DROM, IROM` |
-| 闭包被真拉进来 | ✅ | 镜像里的字符串可见 `btdm_hci_trans.c`、`btdm_sleep.c`、`btdm_broker.c`；`.iram_blobs` 0 → 60 224 B |
-| `r_ble_controller_init` 调用 | ❌ 未做 | 需要 `esp_btdm_controller_config_t`（含 `magic`）的逐字段镜像 |
-| HCI 传输口打开 | ❌ 未做 | `hci_transport_init` **不在归档里**，是 IDF C 源 |
-| HCI Reset / Read Local Version 有应答 | ❌ 未做 | 需要一个 HCI host 侧（计划自己写 3 个 `hci_driver_ops`） |
-| controller 的 56 个弱断言占位 | ✅ **56/56 全部有强定义**（36 OSAL + 11 coex + 8 log + 1 assert；逐条对归档调用集核过，差集为空） | 见下方待验证项 4 |
+| 归档能链进两段镜像 | ✅ | `.flash.text` 699 856 / 窗口 720 896；`elf2image` 成功，`image-info` 恰好 2 条 `DROM, IROM` |
+| 闭包被真拉进来 | ✅ | 镜像里可见 `btdm_hci_trans.c`、`btdm_sleep.c`、`btdm_broker.c`；`.iram_blobs` 0 → 60 224 B |
+| 56 个弱断言占位 | ✅ **56/56 强定义** | 逐条对归档调用集核过，差集为空 |
+| init 链 1–5 步 | ✅ | `btdm_osal_elem_mempool_init`（**5 个池全 `rc=0`**）/ `btdm_log_init` / `btdm_external_init` / `btdm_coex_init` / `btdm_lp_enable_clock` |
+| init **step 6** `r_btdm_task_init` | ❌ **停在这里** | 板侧 trace 只有 `mutex_pend => OK`，其后**无 hook、无 `task_create`、无任务体** |
+| init step 7–15 | ⏸ 未执行 | 被 step 6 挡住 |
+| `r_ble_controller_init`（step 10）/ `transport.init`（step 15） | ⏸ **已实现、未执行** | 代码在 `bringup.zig` / `transport.zig`，只是链还没走到 |
+| HCI Reset / Read Local Version 有应答 | ⏸ 未执行 | 同上 |
+| 板级扫描/连接 | ❌ | 离这里还有一个可用 controller |
+
+> 别把"链接成立"读成"controller 可用"。当前准确表述是：
+> **软件栈已完整到 step 6 之前，卡点是归档里多个模块各自的 `.LANCHOR0` 环境指针未被发布**
+> （见「系统性发现」一节）。
 
 > 别把"链接成立"读成"controller 可用"。真实扫描/连接离这里有整整一个传输层。
 
@@ -625,7 +633,31 @@ BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB �
 >
 > **真正的根因（板上实测，已修）**，见下面"真实根因"一节。
 
-### 🔑 系统性发现：归档多个对象各自守卫**自己的** `.LANCHOR0` 锚点
+### ⛔ 以下"系统性发现"已被 oracle 否定（保留追溯）
+
+> **oracle 逐步复刻实测（2026-11-17）**：在**能跑通**的 IDF 应用里按 bt.c 的顺序
+> 逐调 `btdm_osal_elem_mempool_init` → `btdm_log_init` → `btdm_external_init`
+> → `btdm_coex_init` → `btdm_lp_enable_clock`，**每一步之后三个锚点全为 0**，
+> 而 `esp_bt_controller_init` 照样返回 `ESP_OK`：
+>
+> ```text
+> stepbystep: boot         a21=0x00000000 a2=0x00000000 a7=0x00000000
+> stepbystep: elem_mempool a21=0x00000000 a2=0x00000000 a7=0x00000000
+> stepbystep: log_init     a21=0x00000000 a2=0x00000000 a7=0x00000000
+> stepbystep: external     a21=0x00000000 a2=0x00000000 a7=0x00000000
+> stepbystep: coex_init    a21=0x00000000 a2=0x00000000 a7=0x00000000
+> stepbystep: lp_clock     a21=0x00000000 a2=0x00000000 a7=0x00000000
+> I (2433) idfbt: controller_init -> ESP_OK (0x0)
+> ```
+>
+> ⇒ **锚点在 step 6 之前为 0 是正常态**（`after_init` 才变非 0，说明发布者在 step 6 之内或之后）。
+> ⇒ 所以 `OkE7` / `2aNN` / `BOhff` 的守卫**在 IDF 里同样取 0**，它们各自早退是**正常行为**。
+> ⇒ 下面"s'系统性发现'把锚点为 0 当成缺陷"的推理**整条作废**。
+>
+> **遗留的真问题**：同样这几个函数、同样这些锚点为 0，IDF 里 `r_btdm_task_init`
+> 能返回、我们这里不返回 —— 差异在 `mutex_pend` 之后的归档代码，而**不是**锚点。
+
+### 🔑（已作废）归档多个对象各自守卫**自己的** `.LANCHOR0` 锚点
 
 板侧 hook 追踪（恢复每 hook 一行后）给出 step 6 内的**完整** OSAL 调用：
 
