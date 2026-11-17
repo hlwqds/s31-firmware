@@ -6118,3 +6118,20 @@ S31 生效函数指针数: 126
 >   -include sdkconfig.h - <<<'#include "esp_private/wifi_os_adapter.h"'
 > ```
 > 然后**按 `;` 切分声明语句、每条取第一个 `(*name)`**（否则嵌套函数指针参数 `int (*cb)(int)` 会被误当字段）。
+
+#### 补充证据：S31 专属的两个字段**确实在我们的结构里，且相对位置完全一致**
+
+有人质疑"`_coex_configure_preemption_end_cb` 与 `_wifi_disable_ac_ax` 可能不在我们 128 字段里"。逐个查下标：
+
+| 字段 | IDF 下标 | 我们下标 |
+|---|---|---|
+| `_coex_schm_flexible_period_set` | 117 | **118** |
+| `_coex_configure_preemption_end_cb` | 120 | **121** |
+| `_wifi_disable_ac_ax` | 121 | **122** |
+
+⇒ **恒定 +1 偏移**，正是因为我们在 index 0 多了 `_version` ⇒
+
+**我们的结构 = `_version`(0) + IDF 的 126 个字段(1..126) + `_magic`(127) = 128**，**完全正确**。
+
+⇒ 之前那次"129 个字段 / 从第 53 项错位"是**提取脚本的 bug**（正则把嵌套的 `int (*cb)(uint32_t)` 参数也当成了字段）。
+**布局问题彻底关闭。**
