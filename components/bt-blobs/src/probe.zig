@@ -44,7 +44,7 @@ fn heapEnd() *const anyopaque {
 }
 
 /// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
-pub var probe_irqs: bool = true; // 判定：hang 段内有无新鲜 pcsample
+pub var probe_irqs: bool = true; // 判别实验：只让 ISR 写串口
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
@@ -79,7 +79,7 @@ extern var r_sym_bt_d3D3sk5KewclELfrD5xa: u32;
 /// 是否把 `osal.logPublic` 的每一行都打到 UART。
 /// 默认 **true**（可观测性优先）；设 false 可做"UART 静默"对照——但注意那样连进度行也看不到，
 /// 需要额外把里程碑用 `board.log.line` 直写，否则实验没有信息量（踩过）。
-pub var verbose: bool = true; // 关掉会看不到里程碑；日志量问题用别的办法（见 README）
+pub var verbose: bool = false; // 主实验：日志几乎全关，只留里程碑行
 
 /// 对照实验用：false ⇒ 完全不写任何时钟门控（验证"我们改时钟把 UART 弄停"）。
 pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验

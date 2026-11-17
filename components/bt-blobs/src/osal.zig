@@ -94,7 +94,14 @@ pub const pool_caps = struct {
     pub const mutex: u16 = 64;
 };
 
+/// 是否输出 `bt hook:` 逐调用日志。默认**关**：单条日志可能长于 UART TX FIFO（128 字节），
+/// 灌满后写入器按设计丢弃 ⇒ 既有日志被冲掉，也拖慢归档本身。
+pub var trace_hooks: bool = false;
+
 pub fn logLine(comptime fmt: []const u8, args: anytype) void {
+    if (comptime std.mem.startsWith(u8, fmt, "bt hook: ")) {
+        if (!trace_hooks) return;
+    }
     const f = hooks.log orelse return;
     var buf: [128]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
