@@ -3550,3 +3550,23 @@ HOOKTRACE end
 
 ⇒ 下一步：在**我们的 init 窗口**里把 `queue_send`/`queue_recv` 的**载荷类型**也打出来（现在只统计次数），
 与 IDF 的 `QR`/`QS type=6` 逐条对齐。
+
+### 自旋期间的 tick 泵：**不再 panic，但无任何推进**
+
+上一轮的 tick 泵 panic（`mepc=0xffffffa0`）纯粹是**武装时机**问题：那时泵在 `sched.start` 之后就生效，
+会在 **init 期间**切进尚未就绪的任务上下文。把武装改到 **`esp_wifi_init_internal` 返回之后**再试：
+
+```text
+INITWIN qsend=1 qrecv=0 rstmac=0 clken=0
+post-init ctx ... mac=0x0000e000
+queue send_ok=5 recv_ok=5 last_recv_count=1
+irq-sample #11776 ... mepc=0x2f009206
+panic 0
+```
+
+⇒ **不再崩溃**（武装顺序确实修好了），但**自旋期间从 tick 泵 blob 任务没有任何推进**。
+
+⇒ 至此"泵"这条线全部走完：主上下文 8/16 轮、tick 泵（init 期崩、自旋期无效果）、真阻塞+PP worker（活锁）。
+**唯一的正面结论**是：**泵本身不是解法** —— 缺的是被泵者需要的前置条件。
+
+已回滚，基线恢复。

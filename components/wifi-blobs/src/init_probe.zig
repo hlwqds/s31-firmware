@@ -324,6 +324,7 @@ pub fn run() noreturn {
     @import("board").trap.timer_service_hook = &impl.serviceTimers;
     @import("board").trap.nvs_stats_hook = &nvsStats;
     @import("board").trap.queue_stats_hook = &queueStats;
+    // 自旋期 tick 泵实验已测（无推进），已回滚。
     @import("board").trap.pump_hook = &pumpPpWorker;
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）

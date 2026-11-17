@@ -307,7 +307,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 自旋期间没有任何让出点，只有 tick 在跑 —— 在这里推进软件定时器（等价于 esp_timer 的
             // alarm ISR 派发到期回调）。
             if (timer_service_hook) |svc| svc();
-            // tick 泵实验已回滚（配合真阻塞会活锁：`idle_calls` 涨到上限而 `hooks` 冻结在 17）。
+            // **自旋期间的 tick 泵已测**：不再 panic（武装顺序改对后），但**无任何推进**。
             // **tick 驱动泵已试并回滚**：init 期间任务上下文尚未初始化，在 ISR 里 swapContext
             // 会 panic（`mepc=0xffffffa0`）。要在自旋期间泵，必须先让任务上下文处于可安全恢复状态。
             if (input == 25) hw.ackT0Interrupt(2000);
@@ -383,7 +383,7 @@ pub var nvs_stats_hook: ?*const fn () u96 = null;
 /// 打包：低 32 = send_ok，中 32 = recv_ok，高 32 = last_recv_count。
 pub var queue_stats_hook: ?*const fn () u96 = null;
 /// 由 probe 注入：**在 tick 里泵 blob 任务**（等价于 FreeRTOS 的抢占）。
-/// 重入由 `pump_active` 保护——泵期间不再泵。
+/// 由 probe 注入：自旋期间从 tick 泵任务（实验用；实测无推进）。
 pub var pump_hook: ?*const fn () void = null;
 var rom_handler_calls: usize = 0;
 
