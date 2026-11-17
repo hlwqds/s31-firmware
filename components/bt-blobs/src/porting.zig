@@ -270,8 +270,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
     wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_clk_wifipwr_en |
         b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
-    // LP 域的 ICG 状态映射（此前从未写）：IDF 的 icg_map_init_all 覆盖两个域
-    wr(reg_lpcon_power_st, rd(reg_lpcon_power_st) | lpcon_power_st_value);
+    // ⚠ **不写 `MODEM_LPCON + 0x20`**：oracle 实测 IDF 在 step 4/5 之后该字都是
+    // `0x00000000`，即 IDF 的 BT 路径**没有**填这个位图。先前那条 `0x66660000`
+    // 是从 wifi 侧借来的，属于**过度修改**，已撤销。
     osal.logPublic("bt lp: lp_timer_conf=0x{x:0>8} 32k_conf=0x{x:0>8} lpcon_clk=0x{x:0>8}", .{
         rd(reg_lpcon_lp_timer_conf), rd(reg_lpcon_32k_conf), rd(reg_lpcon_clk_conf),
     });

@@ -385,6 +385,12 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
             const env = pp.okE7Anchor();
             const env8: u32 = if (env != 0) (@as(*volatile u32, @ptrFromInt(env + 8))).* else 0;
             logLine("bt gate: env=0x{x} *(env+8)=0x{x} P=0x{x}", .{ env, env8, pp.get() });
+            if (env != 0) {
+                // **env 内容**：与 oracle 的 X[0..7] 对拍，看 [16]/[20] 是否是 env+52/env+64
+                const e: [*]volatile u32 = @ptrFromInt(env);
+                logLine("bt env: [0]=0x{x} [1]=0x{x} [2]=0x{x} [3]=0x{x}", .{ e[0], e[1], e[2], e[3] });
+                logLine("bt env: [4]=0x{x} [5]=0x{x} [6]=0x{x} [7]=0x{x}", .{ e[4], e[5], e[6], e[7] });
+            }
         }
         return OK;
     }

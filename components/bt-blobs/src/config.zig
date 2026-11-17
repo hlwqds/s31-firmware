@@ -224,7 +224,7 @@ test "config: 默认值可填、魔数落位" {
     //   stack=4096 prio=23 hci_cmd=5 hci_conn=3
     // `task_stack_size = 0` 尤其致命：归档建任务时栈为 0，我们 `taskCreate`
     // 的 `stack_size >= 512` 门直接降级成"只登记不建上下文" ⇒ 任务体永不执行。
-    c.btdm.task_stack_size = 8192; // 裸机无栈保护页 ⇒ 比 IDF 的 4096 多给 4 KB（有意为之）
+    c.btdm.task_stack_size = 4096; // **照 IDF**：实测 env+28 与 oracle 的唯一差异就在这里（8192 vs 4096）
     c.ble.controller_task_stack_size = 8192; // 两处保持一致
     c.btdm.task_prio = 23;
     c.btdm.hci_cmd_num = 5;
@@ -273,7 +273,7 @@ pub fn defaults() Config {
 
     c.btdm = .{
         .version = BTDM_CONFIG_VERSION,
-        .task_stack_size = 8192, // 同上：溢出是静默内存损坏，代价可忽略
+        .task_stack_size = 4096, // **照 IDF**（实测 env+28 的唯一差异就在此：8192 vs 4096）
         .task_prio = 23,
         .task_run_cpu = 0,
         .hci_cmd_num = 2, // CONFIG_BT_CTRL_HCI_CMD_NUM 默认
@@ -283,7 +283,7 @@ pub fn defaults() Config {
         .bluetooth_mode = BTDM_CONTROLLER_MODE_BLE,
         .magic = BTDM_CONFIG_MAGIC_VALUE,
     };
-    c.ble.controller_task_stack_size = 8192; // 与 btdm.task_stack_size 一致（裸机余量）
+    c.ble.controller_task_stack_size = 4096; // 同上，与 btdm 保持一致
     return c;
 }
 
@@ -295,8 +295,8 @@ test "defaults: 关键字段与 IDF 默认宏一致" {
     try std.testing.expectEqual(@as(u64, 32_000), c.ble.rtc_freq);
     try std.testing.expectEqual(@as(u8, 40), c.ble.main_xtal_freq);
     try std.testing.expectEqual(@as(u8, 1), c.btdm.bluetooth_mode);
-    try std.testing.expectEqual(@as(u16, 8192), c.ble.controller_task_stack_size);
-    try std.testing.expectEqual(@as(u16, 8192), c.btdm.task_stack_size);
+    try std.testing.expectEqual(@as(u16, 4096), c.ble.controller_task_stack_size);
+    try std.testing.expectEqual(@as(u16, 4096), c.btdm.task_stack_size);
     try std.testing.expectEqual(@as(u8, 206), c.ble.cca_rssi_thresh);
     // backoff_rssi 是 int8_t ⇒ -100
     try std.testing.expectEqual(@as(i8, -100), @as(i8, @bitCast(c.ble.backoff_rssi)));
