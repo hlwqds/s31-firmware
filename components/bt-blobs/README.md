@@ -802,6 +802,32 @@ Error: esp_usb_jtag: could not find or open device!
 1. 在**本仓固件**上跑 → 看我们**卡在哪条指令**
 2. 在 **IDF 固件**上跑 → 看 IDF **如何让它变可访问**（这才是要找的使能动作）
 
+### ✅ 最后一条软件角度也排除了：**bootloader 与 IDF 相同**
+
+曾怀疑"我们的引导程序是否裁剪过、少做了 modem 初始化"。实测否定了这个可能：
+
+| 项 | 我们 | IDF 应用 |
+| --- | --- | --- |
+| `bootloader.bin` 大小 | 22 224 B | 22 224 B |
+| ELF 里 `MODEM_SYSCON`/`MODEM_LPCON` 基址符号 | 有 | 有 |
+| ELF 里 `phy`/`modem` 相关符号总数 | **2** | **2**（相同） |
+
+⇒ 两边用的是**同一个** IDF 标准二级 bootloader，bootloader 里**没有任何** modem/PHY 初始化代码。
+⇒ **boot 层不是差异来源。**
+
+至此，软件侧可以比较的面全部覆盖完毕：
+
+| 面 | 结论 |
+| --- | --- |
+| BT init 的寄存器写（step 1–5） | 与 IDF 一致 |
+| boot 完成态四窗口 | 差异已补齐 |
+| per-object 锚点 | `OkE7` 自己发布；`sitBB3S` 两边都 0 |
+| PHY 代码 | **IDF 自己的**，已链入并执行 |
+| bootloader | 同一个，无 modem 代码 |
+| 配置结构（192 字节） | 逐字节一致 |
+
+⇒ **没有剩余的可比面了。** 差异只能是外部的（JTAG 观察点或 vendor 文档）。
+
 ### 🏁 最终诊断：**PHY 校准也会 stall 总线 —— 撞的是同一堵墙**
 
 用 PC 采样器（`probe_irqs=true`，采样器在 `init()` 之前武装）测卡住期间的计数：
