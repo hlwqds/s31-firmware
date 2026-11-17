@@ -608,7 +608,36 @@ lw  a5, 0(a5)      # ← 解引用 NULL ⇒ load access fault, mtval=0
 而我们的移植从头到尾没做过 PHY 初始化 —— ch25 的 `shellPhyEnable` 只覆盖了 Wi-Fi 侧的一部分，
 BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB 寄存器"。
 
-### 一个原因解释全部症状：**总线挂死**（2026-11-17 结论）
+### ⛔ 本节以下"总线挂死/硬件阻塞"的结论**已作废**（2026-11-17 晚，官方 IDF 对照）
+
+> **对照实验**：把 IDF v6.1 的最小应用（`esp_bt_controller_init` +
+> `esp_bt_controller_enable` + 秒级心跳）烧到**同一块板**：
+>
+> ```text
+> idfbt: controller_init   -> ESP_OK (0x0)
+> idfbt: controller_enable -> ESP_OK (0x0)
+> idfbt: beat 3 … beat 11                     ← 心跳持续，不卡
+> ```
+>
+> ⇒ **官方栈在这块板上完全正常 ⇒ 硬件没有问题，`0x2010B000 不可达` 的判断是错的。**
+> ⇒ 所以下面"17 条排除 + 2 行复现器 + vendor 同挂 ⇒ 硬件/需 JTAG"那套推理**整段作废**；
+>   那些排除项是在**错误前提**（把"我们的 init 卡住"归因给该地址）下做的。
+>
+> **真正的根因（板上实测，已修）**，见下面"真实根因"一节。
+
+### 真实根因（2026-11-17 晚，PC 采样 + 全局直读）
+
+两个独立缺陷，都不在硬件：
+
+| # | 缺陷 | 证据 | 处置 |
+| --- | --- | --- | --- |
+| 1 | `Xpuq` 的锚点全局是 **NULL** | 直接读 `r_sym_bt_d3D3sk5KewclELfrD5xa` = `0x00000000`；`Xpuq` 用它作基址从地址 0 零填充到 `0x2010B100`（约 1.34 亿次写）= "无声卡死" | 它唯一的写者 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` 被 `if (*(*s0 + 8) != 0)` 守卫生生跳过 ⇒ 在 step 6 前补调，`P` 变为 `0x2f0139d0` |
+| 2 | 归档打印撞上**不排空的 UART0 TX FIFO** | PC 采样 `mepc=0x2f83efd2`（ROM 的 `UART0_STATUS` 等待循环）、`UART0_STATUS=0x60788000`（`TXFIFO_CNT=120`） | 给 `ets_printf` 强定义直接丢弃（`bt_printf_shim.c`）；日志看自己的 logger，不再依赖 ROM |
+
+**对照**：`clock_writes_enabled=false`（step 5 完全不写时钟）时卡点**完全一样**
+⇒ 我们改的时钟门控**不是**原因。
+
+### 已作废的旧结论（保留原文仅供追溯）：**总线挂死**（2026-11-17）
 
 把 panic 输出也改成非阻塞（`hw.rawLine`，直接写 UART FIFO）后，卡住时**依然没有 panic**。
 
