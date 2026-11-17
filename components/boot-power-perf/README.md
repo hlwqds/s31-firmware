@@ -117,7 +117,7 @@ factory 和某个 OTA 槽，板子会 stage→复位→再 stage→再复位，�
 
 | 开关 | 作用 |
 | --- | --- |
-| `-Dab-stage=a\|b` | 启动时把 otadata 指向指定槽（写扇区、`state=NEW`）然后复位 |
+| `-Dab-stage=a\|b` | 启动时把 otadata 指向指定槽（写扇区、`state=NEW`）然后复位。**目标槽已是当前槽时就地重写同一条记录**（同扇区、seq 不变），因此同样会无限循环；板上实测见 `logs/c5-ab-sameslot.log` |
 | `-Dab-fail` | 注入一条必然失败的自检，用来攒"连续 3 次失败" |
 | `-Dab-revert` | 把**当前**槽标 `INVALID` 后复位 ⇒ 回到另一槽/factory（"切回旧版本"） |
 
