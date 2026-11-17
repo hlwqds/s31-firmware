@@ -3759,3 +3759,28 @@ wrapper=0x2f021994 inner=0x2f021330     ← 两者都非空
 2. 建点执行了，但**之后被 `_semphr_delete` 清掉**（`0x40039920`）。
 
 ⇒ 下一步：确认这个函数的**入口地址与调用者**，以及在我们的 init 里是否被走到。
+
+### ★★ 矛盾解开了：`_semphr_create` 调了 2 次（都没返回 null），但 `ppsem` 仍是 0
+
+给 `_semphr_create` 加了窗口计数，并把三个 ROM 全局一起打出来：
+
+```text
+INITWIN ... semcreate=2 semnull=0
+ROMGLOB swq=0x2f021330 ppq=0x2f0203b0 ppsem=0x0
+```
+
+| 读数 | 含义 |
+| --- | --- |
+| `semcreate=2` / `semnull=0` | `_semphr_create` 在 init 窗口内**被调了两次、从未返回 null** |
+| `swq=0x2f021330` | `s_wifi_queue`（内部队列指针）**非空** ⇒ 建点的门 `bnez` 会放行 |
+| `ppq=0x2f0203b0` | `pp_task_hdl` 非空 |
+| **`ppsem=0x0`** | **`s_pp_task_create_sem` 仍是 0** |
+
+⇒ **`0x4003989e` 那条 `sw` 所在的函数，在我们的 init 流程里根本没有被执行**（否则门放行、store 必然发生，
+且它写出的值恒 >= 1）。
+
+⇒ **这就是 init 分歧的最终位置**：blob 里"创建 PP 任务 + 建信号量 + 起任务"的那一整段
+（`0x40039820..0x40039920`）在我们的流程里没被走到；而 `pp_task_hdl` 非空说明**另一个入口**创建了任务
+（或那是残留值）。
+
+⇒ 下一步：找出**谁调用了 `pp_task_hdl` 的写者**，以及**谁应该调用 `0x40039820` 所在的那个函数**。

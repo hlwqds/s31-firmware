@@ -369,7 +369,11 @@ fn shellFreeHeapSize() callconv(.c) usize {
 }
 
 fn shellSemphrCreate(max: u32, init_count: u32) callconv(.c) ?*anyopaque {
-    const mem = arena_state.alloc(@sizeOf(Semphr), @alignOf(Semphr)) orelse return null;
+    cnt_sem_create +%= 1;
+    const mem = arena_state.alloc(@sizeOf(Semphr), @alignOf(Semphr)) orelse {
+        cnt_sem_create_null +%= 1;
+        return null;
+    };
     const s: *Semphr = @ptrCast(@alignCast(mem));
     s.* = .{ .count = @min(init_count, max), .max = max };
     return @ptrCast(s);
@@ -919,6 +923,9 @@ pub var send_ok: u32 = 0;
 /// init 窗口对拍用的计数器（与 IDF 侧同口径）。
 pub var cnt_reset_mac: u32 = 0;
 pub var cnt_clk_en: u32 = 0;
+/// init 窗口对拍：`_semphr_create` 的调用次数与返回 null 的次数。
+pub var cnt_sem_create: u32 = 0;
+pub var cnt_sem_create_null: u32 = 0;
 pub var recv_ok: u32 = 0;
 pub var last_recv_count: usize = 0;
 /// 诊断用：已触发次数与"已武装且到点但还没 fire"的数量（见 `serviceTimers`）。

@@ -381,16 +381,25 @@ pub fn run() noreturn {
     const w_qrecv = impl.calls.queue_recv;
     const w_rst = impl.cnt_reset_mac;
     const w_clk = impl.cnt_clk_en;
+    const w_semc = impl.cnt_sem_create;
+    const w_semcn = impl.cnt_sem_create_null;
     // **PP worker 泵实验已做**：给它栈、在 tick 里泵，配合"真阻塞"仍活锁
     // （`idle_calls` 涨到 20000 而 `hooks` 冻结在 17）⇒ 它不是 ack 的生产者。已回滚。
     // **`s_pp_task_create_sem` 实验已做**：我们把它写成 0x2f020ad0，但自旋时读回 **0x0**
     // ⇒ **blob 会把它清零**（`pp_create_task` 先清、再期望某个钩子填）⇒ 单纯"app 侧创建"无效。
     const init_rc = esp_wifi_init_internal(&cfg);
-    log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d}", .{
+    log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
         impl.calls.queue_send - w_qsend,
         impl.calls.queue_recv - w_qrecv,
         impl.cnt_reset_mac - w_rst,
         impl.cnt_clk_en - w_clk,
+        impl.cnt_sem_create - w_semc,
+        impl.cnt_sem_create_null - w_semcn,
+    });
+    log.line("wifi-init-probe: ROMGLOB swq=0x{x} ppq=0x{x} ppsem=0x{x}", .{
+        @as(*volatile usize, @ptrFromInt(0x2f07ff0c)).*,
+        @as(*volatile usize, @ptrFromInt(0x2f07ff18)).*,
+        @as(*volatile usize, @ptrFromInt(0x2f07ff14)).*,
     });
     log.line("wifi-init-probe: post-init ctx b14={d} b15={d} b16={d} b27={d} b288={d} b289={d} mac=0x{x:0>8}", .{
         bg_pre[14],                                    bg_pre[15], bg_pre[16], bg_pre[27], bg_pre[288], bg_pre[289],
