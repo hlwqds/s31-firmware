@@ -50,6 +50,34 @@ PENDING_VERIFY}` 则写 VALID → 自检失败累加计数，到 `max_runtime_fa
 > 本仓 bootloader **没有**打开 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`（Kconfig 默认 `n`），
 > 所以 NEW→PENDING_VERIFY / ABORTED 的翻转不会发生，状态位全部由应用负责。
 
+### 静态缓冲（RAM，不是 flash）
+
+| 缓冲 | 大小 | 用途 |
+| --- | --- | --- |
+| `partition.table_buf` | 0xC00 ≈ 3 KB | 一次读完整张分区表（0x8000 起 0xC00 上限） |
+| `slot.sector_buf` | 0x1000 = 4 KB | 一次读写一个 otadata / nvs 扇区 |
+
+两者都在 `.bss`，**不计入**容量门禁的 flash 指标，但确实吃应用 SRAM（本板 512 KB）。
+再加同类缓冲前先算一下：读 otadata 一次就要 4 KB，别在每个函数里各开一份。
+
+### 两个镜像、谁刷哪（构造 C5 场景时必读）
+
+`-Dab-stage=a|b` 是**每次启动都会执行**的动作。如果把同一份带 `-Dab-stage` 的构建同时刷进
+factory 和某个 OTA 槽，板子会 stage→复位→再 stage→再复位，永远跑不到自检、拿不到证据。
+正确次序：
+
+| 步 | 镜像 | 刷到 |
+| --- | --- | --- |
+| 1 | 正常构建（无 `-Dab-stage`、无 `-Dab-fail`） | `ota_0`（0x190000） |
+| 2 | 带 `-Dab-stage=a` | factory（0x10000） |
+| 3 | 复位 → factory 写 otadata seq=1 NEW → 复位 → 起 ota_0 → 确认 VALID | — |
+| 4 | 失败注入：`-Dab-fail` 构建 | `ota_1`（0x310000） |
+| 5 | 带 `-Dab-stage=b` | factory |
+| 6 | 复位 → 起 ota_1 → 失败 3 次 → INVALID → 复位 → 回 ota_0 | — |
+
+> 测试收尾时把正常构建刷回 factory 与 ota_0，并擦掉 otadata(0x490000, 2 扇区) 与
+> nvs 计数扇区(0xE000, 1 扇区)，否则下一次开机仍按旧 otadata 起槽。
+
 板上证据：`logs/c5-ab-factory.log`、`logs/c5-ab-stage-confirm.log`、`logs/c5-ab-rollback.log`
 （矩阵 C5）。切槽/首启用 `-Dab-stage=a|b`、失败注入用 `-Dab-fail` 两个构建开关构造。
 

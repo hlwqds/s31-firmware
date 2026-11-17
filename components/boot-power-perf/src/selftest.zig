@@ -1,6 +1,7 @@
 //! boot-power-perf：板侧自检（12 条判据）。
 //!
-//! 本组件不写 flash、不真正进睡、不改 CPU 频率；板侧只把 bootloader 选槽、
+//! **教学模型**不写 flash、不真正进睡、不改 CPU 频率；真实落盘在 `slot.zig`（C5：
+//! 分区表 + otadata + flash 写入）。板侧自检仍只把 bootloader 选槽、
 //! A/B 回滚预算、睡眠/唤醒算术、性能统计这四组**纯逻辑**各走一遍。
 //! 真机验收（OTA 写槽、deep sleep 电流、80/160/320 MHz 吞吐）见`docs/history/` 的历史说明。
 //!

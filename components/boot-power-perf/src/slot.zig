@@ -59,8 +59,13 @@ pub fn otherSlot(s: Slot) Slot {
 
 const on_target = builtin.target.os.tag == .freestanding;
 
-/// ROM 的 `crc32_le`（`rom_syms.ld` 里 PROVIDE 为 0x2f800784），仅用于板上自检对拍。
-extern fn crc32_le(crc: u32, buf: [*]const u8, len: u32) u32;
+/// ROM 的 CRC-32，仅用于**板上自检对拍**。
+///
+/// **刻意用别名 `esp_rom_crc32_le`**（与 `crc32_le` 同址 0x2f800784）：wifi/full profile 会
+/// 链接 `components/wifi-blobs/link/zz_stubs.c`，那里有一个真实符号 `void crc32_le(void) {}`。
+/// `PROVIDE` 只填**未定义**符号，所以直接用 `crc32_le` 这个名字会链接到那个空桩、
+/// 拿到垃圾值（自检会误报 MISMATCH）。IDF 自己也用同样的别名规避撞名。
+extern fn esp_rom_crc32_le(crc: u32, buf: [*]const u8, len: u32) u32;
 
 /// 连续失败预算。与 `ota.AbConfig.max_runtime_failures` 的默认值一致（那里是模型，
 /// 这里是生产实现；两边都写在文档里，改一处要同步改另一处与 C5 的判据）。
@@ -204,7 +209,9 @@ pub fn select(a: Entry, b: Entry, app_count: u32) Selection {
 
     const idx = pick_idx orelse return .{};
     const e = if (idx == 0) a else b;
-    const raw = e.ota_seq - 1;
+    // 用 `-%`：ota_seq 理论上可能为 0（只被 CRC 认可的记录），C 那边是无符号回绕，
+    // Zig 的 `-` 在 Debug/host 测试下会直接 panic —— 显式回绕才与 IDF 行为一致。
+    const raw = e.ota_seq -% 1;
     const slot: Slot = if (app_count == 0 or raw % app_count == 0) .a else .b;
     return .{ .slot = slot, .state = e.ota_state, .seq = e.ota_seq, .sector = idx };
 }
@@ -481,7 +488,7 @@ pub fn checkCrc() CrcCheck {
     const probe = [_]u8{ 0x01, 0x00, 0x00, 0x00 };
     const mine = crc32Le(0xFFFFFFFF, &probe);
     if (!on_target) return .{ .mine = mine, .rom = mine, .ok = true, .applicable = false };
-    const rom = crc32_le(0xFFFFFFFF, &probe, probe.len);
+    const rom = esp_rom_crc32_le(0xFFFFFFFF, &probe, probe.len);
     return .{ .mine = mine, .rom = rom, .ok = mine == rom, .applicable = true };
 }
 

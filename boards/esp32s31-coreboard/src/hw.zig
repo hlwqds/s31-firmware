@@ -159,7 +159,6 @@ pub fn delayUs(us: u32) void {
     esp_rom_delay_us(us);
 }
 
-/// 停机：关全局中断后 `wfi`。正常收尾与 panic 都走这里。
 extern fn software_reset() void;
 
 /// 软复位。调用前先把 UART 排空：证据行被复位掐掉半行是最常见的"日志丢了"。
@@ -175,6 +174,7 @@ pub fn reset() noreturn {
     while (true) {}
 }
 
+/// 停机：关全局中断后 `wfi`。正常收尾与 panic 都走这里。
 pub fn halt() noreturn {
     asm volatile ("csrci mstatus, 0x8" ::: .{});
     while (true) {

@@ -11,6 +11,9 @@
 
 /* ---- esp32s31.rom.ld ---- */
 PROVIDE(crc32_le = 0x2f800784);
+/* 同址别名：wifi/full profile 里 `components/wifi-blobs/link/zz_stubs.c` 定义了真实符号
+ * `void crc32_le(void) {}`，`PROVIDE` 不会覆盖已定义符号 ⇒ 要用 ROM 版 CRC 就必须换个名字。 */
+PROVIDE(esp_rom_crc32_le = 0x2f800784);
 PROVIDE(ets_delay_us = 0x2f80003c);
 PROVIDE(roundup2 = 0x2f80008c);
 PROVIDE(software_reset = 0x2f800094);

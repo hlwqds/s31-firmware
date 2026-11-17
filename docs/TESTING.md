@@ -74,9 +74,12 @@ scripts/gen-partition-table.sh          # 从 firmware/idf-bootstrap/partitions.
 scripts/gen-partition-table.sh --check  # 校验现有 bin 与 csv 一致（不需要 IDF 工具链）
 ```
 
-`partitions.csv` 与 `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE` 的默认表逐字节一致
-（nvs 0x9000 / phy_init 0xf000 / factory 0x10000 + 1500K），所以应用偏移与既有证据都不变；
-`check-capacity.py` 与 `run_e2e.py` 的 factory 上限现在都从这张表解析。
+`partitions.csv` 的**前三条**与 `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE` 的默认表一致
+（nvs 0x9000 / phy_init 0xf000 / factory 0x10000 + 1500K）；2026-11-18 起在其后**追加**了
+A/B 三行（ota_0 0x190000、ota_1 0x310000、otadata 0x490000/8K，见该文件头注释）。
+所以 factory 偏移与既有证据都不变（bootloader 的分区表 dump 从 2 条变 6 条是预期变化），
+但整张表**已不再是**默认表的逐字节副本；
+`check-capacity.py` 与 `run_e2e.py` 的 factory 上限仍从这张表解析。
 
 容量门禁（无板即可跑）：
 

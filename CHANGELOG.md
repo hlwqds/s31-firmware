@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+### Added
+- **生产 A/B 与回滚（矩阵 C5，2026-11-18）**：`firmware/idf-bootstrap/partitions.csv` 追加
+  `ota_0`(0x190000) / `ota_1`(0x310000) / `otadata`(0x490000, 8K)，factory 仍在 0x10000。
+  新增真实落盘层 `components/boot-power-perf/src/{flash,partition,slot}.zig`：按 IDF
+  `esp_ota_select_entry_t`（32 B、`crc` **只覆盖 `ota_seq`**、槽位 `=(seq-1)%app_count`、
+  两扇区交替写）写 otadata，并解析 0x8000 的分区表。
+  **生产 bootloader 未开 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`（Kconfig 默认 `n`）**，所以
+  NEW/VALID/INVALID 全部由应用写；"待确认"判据是 `state ∈ {NEW, PENDING_VERIFY}`。
+  失败计数按槽隔离、落在 nvs 末扇区 0xE000（每次 16 B 追加，写满才擦）。
+  板上证据：`logs/c5-ab-factory.log`（`ab=yes count=2`、`crc32 mine=rom=0x4743989a`）、
+  `logs/c5-ab-stage-confirm.log`（`state=NEW(0) seq=1` → `confirmed VALID`）、
+  `logs/c5-ab-rollback.log`（`failure 1/3`→`3/3` → `marked INVALID` → 复位 → `offset 0x190000`），
+  已排除项见 `logs/c5-ab-negative.log`。
+  注：生产侧只做**落盘 + 选槽 + 回滚**；镜像由 esptool 直接写入槽位，下载/签名仍在 ch23 lab。
+  容量基线随之刷新（`capacity.json` 此前停在 `9bd55e4`，早于 TLS/MQTT 落地 ⇒ `tls` 的
+  +64 KB 主要是那批工作的累计增长，本次 C5 贡献各 profile 约 +10–15 KB `irom_len`）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
