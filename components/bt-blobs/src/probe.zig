@@ -76,6 +76,9 @@ pub fn run() noreturn {
     // **最先**做 ROM 取样：此时还没开中断，输出不会被 ISR 的行冲散。
     dumpRom("A", 0x2f83efb0, 96);
     dumpRom("B", 0x2f812180, 160); // 往前多两个 32 字节块：看谁 jal 进这个循环
+    // **对照**：把 0x2038A000..0x2038A040 打出来。若它真是 UART0，则 +0x1C 处应有
+    // 一个有意义的寄存器值（且复位值可查）；若整段是"常量/空洞"，说明轮询地址算错了。
+    dumpRom("U", 0x2038A000, 64);
 
     osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
     osal.setMacHook(macHook);

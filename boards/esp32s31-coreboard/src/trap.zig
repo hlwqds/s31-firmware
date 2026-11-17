@@ -351,10 +351,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             //   addr = ((s0 + 0x2038A) << 12) + 28，判定 while ((*(u32*)(addr) >> 16) & 0xFF) > 127
             // 判据用 **ra**：循环体只有几条指令，采样几乎总落在更长的叶子函数里，
             // 而叶子的返回地址正是循环内 `jal` 的下一条（实测 `ra=0x2f812226`）。
-            if (frame.ra >= 0x2f812216 and frame.ra <= 0x2f812230 and s0_probe_count < 8) {
+            if (frame.mepc >= 0x2f81221e and frame.mepc <= 0x2f812228 and s0_probe_count < 8) {
                 s0_probe_count += 1;
-                // 循环的参数来自函数入口的 `mv s1,a0` ⇒ 用 s1（帧里已补）。
-                const arg: usize = frame.s1;
+                // 反汇编：`0x2f812218: mv s0,a0`（在循环**之前**）⇒ 参数一直在 s0，
+                // 而 `s0` 是 callee-saved，叶子函数不会改它。
+                const arg: usize = frame.s0;
                 const addr: usize = ((arg + 0x2038A) << 12) + 28;
                 const val: u32 = @as(*volatile u32, @ptrFromInt(addr)).*;
                 log.line("romloop pc=0x{x} s1=0x{x} s0=0x{x} a0=0x{x} addr=0x{x} val=0x{x:0>8} byte={d}", .{
