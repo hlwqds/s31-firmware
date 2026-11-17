@@ -771,6 +771,50 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🎯 二分结果：step 1 已排除，**step 4 (`btdm_coex_init`) 在我们的移植里是空的**
+
+**oracle 二分（每次挂死也是有效数据）**
+
+| 探读点 | 结果 |
+| --- | --- |
+| 启动时（任何 BT 调用之前） | **挂死** |
+| step 1 `elem_mempool_init` 之后 | **挂死**（日志出现 3 次 = 3 次重启）⇒ **step 1 不是使能者** |
+| step 5 `lp_enable_clock` 之后 | ✅ `0x2010B000 = 0x5ac968f1` |
+
+⇒ 使能者只剩 **step 4** 或 **step 5**。
+
+**关键发现：我们的 step 4 是空壳**
+
+```zig
+pub fn btdmCoexInit() c_int {
+    return 0;
+}
+```
+
+而 IDF 的 `btdm_coex.c:204`：
+
+```c
+btdm_coex_init(void) {
+#if CONFIG_SW_COEXIST_ENABLE
+    return coex_init();          // ← 参考构建里该宏为 y（已核对 sdkconfig）
+#else
+    return ESP_OK;
+#endif
+}
+```
+
+⇒ **参考构建 `CONFIG_SW_COEXIST_ENABLE=y`，所以 IDF 的 step 4 真的跑 `coex_init()`**；
+而 `coex_init` 由 IDF 的 `esp_coex` 组件提供（**不在归档里**），我们的移植**完全没有这一层**。
+
+⇒ 这使 step 4 成为最强嫌疑：它是 step 1–5 里唯一"我们写成了空函数、而 IDF 会真正执行"的一步。
+
+**下一步（二选一，都很快）**
+
+1. oracle 里把探读点放到 **step 4 之后**：可读 ⇒ 使能者就是 `coex_init`，需要实现它（或至少复刻它对 modem 域的写）
+2. 若 step 4 之后仍挂 ⇒ 使能者是 step 5，那就把我们的 `btdmLpEnableClock` 与 IDF 的
+   `modem_clock_module_enable/mac_reset`（`esp_hw_support/modem/modem_clock.c`）**逐行**对齐，
+   而不是继续按推断的位写
+
 ### 🎯 找到 stall 的确切指令：`Xpuq` 无条件读写 `0x2010B000`
 
 `r_sym_bt_XPuq`（`libbtdm_common/19.o`）的循环体（section 级，逐条）：
