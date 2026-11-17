@@ -256,3 +256,15 @@ pub fn enableInterrupts() void {
 pub fn disableInterrupts() void {
     asm volatile ("csrci mstatus, 8" ::: .{ .memory = true });
 }
+
+// ---------------------------------------------------------------------------
+// 给组件用的 MMIO 读写（`bt-blobs` 的时钟门控要用；组件不能直接 `import board` 里的私有函数）
+// ---------------------------------------------------------------------------
+
+pub export fn bt_mmio_read(addr: usize) u32 {
+    return readReg(addr);
+}
+
+pub export fn bt_mmio_write(addr: usize, val: u32) void {
+    writeReg(addr, val);
+}

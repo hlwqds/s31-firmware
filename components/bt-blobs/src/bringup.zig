@@ -75,10 +75,16 @@ pub fn setHooks(h: Hooks) void {
     hooks = h;
 }
 
-/// 每步**进入时**先打一行：否则"停在某步内部"与"没走到那步"分不开
-/// （实测：step 6 `r_btdm_task_init` 内部挂住时，日志停在 step 5 之后，看不出是哪步）。
+/// **调用前**显式打一行。
+///
+/// 为什么不能放在 `step()` 里：`step(n, name, expr)` 的 `expr` 在**调用之前求值** ⇒
+/// 那样打出来的"进入"日志其实在归档调用**返回之后**才出现，会让人误以为卡在下一步。
+/// 实测踩过：`r_btdm_task_init` 内部挂住时，日志停在 step 5 之后，看起来像"卡在 step 6 之前"。
+fn enter(n: u32, comptime what: []const u8) void {
+    osal.logPublic("bt bringup: enter step {d} " ++ what, .{n});
+}
+
 fn step(n: u32, comptime what: []const u8, archive_rc: ?c_int) c_int {
-    osal.logPublic("bt bringup: step {d} " ++ what ++ " ...", .{n});
     if (hooks.call) |f| {
         const rc = f(n);
         if (rc != 0) {
@@ -110,45 +116,56 @@ pub fn init(cfg: *config.Config) c_int {
     status_state = .idle;
 
     // 1. mempool（seed + elemCalc + 容量校验）
+    enter(1, "mempool");
     var rc = step(1, "mempool", porting.prepareMempool(cfg));
     if (rc != 0) return rc;
 
     // 2. 三个空实现
+    enter(2, "btdm_log_init");
     rc = step(2, "btdm_log_init", porting.btdmLogInit());
     if (rc != 0) return rc;
+    enter(3, "btdm_external_init");
     rc = step(3, "btdm_external_init", porting.btdmExternalInit());
     if (rc != 0) return rc;
+    enter(4, "btdm_coex_init");
     rc = step(4, "btdm_coex_init", porting.btdmCoexInit());
     if (rc != 0) return rc;
 
-    // 3. 时钟（空实现 + 日志）
-    _ = step(5, "btdm_lp_enable_clock", null); // 空实现 + 日志，不算失败
+    // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
+    enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);
 
     // 4. 归档：任务层
+    enter(6, "r_btdm_task_init");
     rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) else 0);
     if (rc != 0) return rc;
 
     // 5. lp init（空实现）
+    enter(7, "btdm_lp_init");
     rc = step(7, "btdm_lp_init", porting.btdmLpInit());
     if (rc != 0) return rc;
 
     // 6. 归档：HCI 流控环境
+    enter(8, "r_btdm_hci_fc_env_init");
     rc = step(8, "r_btdm_hci_fc_env_init", if (freestanding) r_btdm_hci_fc_env_init() else 0);
     if (rc != 0) return rc;
 
     // 7. BLE 控制器：**先注册 ext_funcs**（controller 的 malloc/free/rand/assert 都在这张表里，
     //    跳过它就等于 controller 没有分配器 ⇒ r_ble_controller_init 必然失败）
+    enter(9, "esp_register_ext_funcs");
     rc = step(9, "esp_register_ext_funcs", if (freestanding) r_ext_funcs.register() else 0);
     if (rc != 0) return rc;
     // 再注册 BB 回调 → r_ble_controller_init → msys
+    enter(9, "esp_ble_register_bb_funcs");
     rc = step(9, "esp_ble_register_bb_funcs", if (freestanding) esp_ble_register_bb_funcs() else 0);
     if (rc != 0) return rc;
+    enter(10, "r_ble_controller_init");
     rc = step(10, "r_ble_controller_init", if (freestanding) r_ble_controller_init(&cfg.ble) else 0);
     if (rc != 0) return rc;
     stats_state.ext_funcs_registered += 1;
     // `ble_controller_scan_duplicate_config` 是 host 侧 ⇒ 空操作
     porting.bleControllerScanDuplicateConfig();
+    enter(11, "ble_msys_init");
     rc = step(11, "ble_msys_init", porting.bleMsysInit());
     if (rc != 0) return rc;
 
@@ -165,6 +182,7 @@ pub fn init(cfg: *config.Config) c_int {
     osal.logPublic("bt bringup: public addr {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
     });
+    enter(14, "r_esp_ble_ll_set_public_addr");
     rc = step(14, "r_esp_ble_ll_set_public_addr", if (freestanding) r_esp_ble_ll_set_public_addr(&mac) else 0);
     if (rc != 0) return rc;
 
@@ -172,6 +190,7 @@ pub fn init(cfg: *config.Config) c_int {
     //     不做这一步：命令照样发得出去（我们直接调 forward），但 controller **没有回程回调**
     //     ⇒ Command Complete 永远到不了 `leEvtTx` ⇒ 症状是"init 全绿、命令发了、就是没回包"，
     //     极易被误判成时钟/中断/任务没做。
+    enter(15, "hci_transport_init");
     rc = step(15, "hci_transport_init", transport.init());
     if (rc != 0) return rc;
 
@@ -192,18 +211,23 @@ pub fn enable() c_int {
     }
 
     porting.btdmLpReset(true);
+    enter(16, "btdm_coex_enable");
     var rc = step(16, "btdm_coex_enable", porting.btdmCoexEnable());
     if (rc != 0) return rc;
 
+    enter(17, "r_base_stack_enable");
     rc = step(17, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
     if (rc != 0) return rc;
+    enter(18, "r_conn_stack_enable");
     rc = step(18, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable() else 0);
     if (rc != 0) return rc;
 
+    enter(19, "r_btdm_hci_fc_enable");
     rc = step(19, "r_btdm_hci_fc_enable", if (freestanding) r_btdm_hci_fc_enable() else 0);
     if (rc != 0) return rc;
 
     // **最后一步**：controller 任务在这里才真正启动
+    enter(20, "r_btdm_task_enable");
     rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
 

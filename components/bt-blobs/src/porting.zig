@@ -86,16 +86,93 @@ extern fn r_esp_ble_msys_init(
 // ② 裸机没有 `esp_os_enter_critical_safe` 的锁 ⇒ 单核下用"关中断写寄存器再开"代替。
 // ---------------------------------------------------------------------------
 
+// ---- 寄存器与位号（全部来自 IDF reg 头里的 `bitpos:[n]` 注释，交叉验证过）----
+//
+//   DR_REG_MODEM_SYSCON_BASE = MODEM_BASE(0x20100000) + 0x9C00 = 0x20109C00
+//   DR_REG_MODEM_LPCON_BASE  = MODEM_PWR_BASE(0x2010D000) + 0x2000 = 0x2010F000
+//   clk_conf        = SYSCON + 0x4     modem_rst_conf = SYSCON + 0x10
+//   clk_conf1       = SYSCON + 0x14    LPCON clk_conf = LPCON + 0x18
+//
+// `clk_conf` 位号（从 `pwdet_sar_clock_ena`=bit0 数起，用 `CLK_DATA_DUMP_EN=BIT(31)` 反查）：
+//   clk_etm_en=22、clk_modem_sec_ecb_en=25、clk_modem_sec_apb_en=28、
+//   clk_modem_sec_en=29、clk_ble_timer_en=30
+// `clk_conf1` 位号（从 `clk_wifibb_22m_en`=bit0 数起，用 `CLK_FE_DAC_EN=BIT(21)` 反查）：
+//   clk_wifibb_80x1_en=7、clk_bt_apb_en=16、clk_btbb_en=17、clk_btmac_en=18
+// LPCON：clk_coex_en=bit1。复位：modem_rst_conf.rst_btmac=bit16。
+//
+// 范围收缩：**不碰 ICG 位图**（`icg_config[domain]` / `clk_conf_power_st` 是电源管理那条路，
+// `modem_clock_module_enable` 完全不碰它们）。
+const syscon_base: usize = 0x2010_9C00;
+const lpcon_base: usize = 0x2010_F000;
+const reg_clk_conf: usize = syscon_base + 0x04;
+const reg_rst_conf: usize = syscon_base + 0x10;
+const reg_clk_conf1: usize = syscon_base + 0x14;
+const reg_lpcon_clk_conf: usize = lpcon_base + 0x18;
+
+const b_conf_etm: u32 = @as(u32, 1) << 22;
+const b_conf_sec_ecb: u32 = @as(u32, 1) << 25;
+const b_conf_sec_apb: u32 = @as(u32, 1) << 28;
+const b_conf_sec: u32 = @as(u32, 1) << 29;
+const b_conf_ble_timer: u32 = @as(u32, 1) << 30;
+const b_conf1_wifibb_80x1: u32 = @as(u32, 1) << 7;
+const b_conf1_bt_apb: u32 = @as(u32, 1) << 16;
+const b_conf1_btbb: u32 = @as(u32, 1) << 17;
+const b_conf1_btmac: u32 = @as(u32, 1) << 18;
+const b_lpcon_coex: u32 = @as(u32, 1) << 1;
+const b_rst_btmac: u32 = @as(u32, 1) << 16;
+
+const mmio = @import("builtin");
+extern fn bt_mmio_read(addr: usize) u32;
+extern fn bt_mmio_write(addr: usize, val: u32) void;
+
+fn rd(addr: usize) u32 {
+    if (mmio.os.tag != .freestanding) return 0;
+    return bt_mmio_read(addr);
+}
+fn wr(addr: usize, val: u32) void {
+    if (mmio.os.tag != .freestanding) return;
+    bt_mmio_write(addr, val);
+}
+
 var lp_clock_enabled: bool = false;
 
-/// TODO(里程碑 2b+)：实现 `BLE_CLOCK_DEPS` 的 8 个门 + `BT_APB_CLOCK_DEPS` 的 4 个门 + MAC 复位。
-/// 现在只记录"被调到了"，因为 HCI 软层命令不需要它。
+/// `btdm_lp_enable_clock` 的真实现：`BLE_CLOCK_DEPS`(8) + `BT_APB_CLOCK_DEPS`(4) + MAC 复位。
+///
+/// **顺序**：先开时钟（三个寄存器 12 位），**再**做 MAC 复位——IDF 也是
+/// "开 BT 模块 → 开 BT APB 模块 → mac_reset → LP timer 时钟"。复位必须在时钟之后，
+/// 否则 MAC 刚被复位又被 controller 初始化。
+///
+/// 纪律：**宁可多开不要少开**——少一个门，访问该外设就是总线挂死（比缺时钟更糟）；
+/// 多开只浪费一点功耗。
 pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
-    if (!lp_clock_enabled) {
-        lp_clock_enabled = true;
-        osal.logPublic("bt lp: enable_clock UNIMPLEMENTED (BTMAC/BB/ETM/COEX/WIFIBB80X1/SOCPLL/BTAPB/BTPERIPH)", .{});
-    }
     _ = cfg;
+    if (lp_clock_enabled) return;
+    lp_clock_enabled = true;
+
+    // 1) 开时钟（读-改-写，别把别人的位清掉）
+    wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_btmac | b_conf1_btbb |
+        b_conf1_bt_apb | b_conf1_wifibb_80x1);
+    wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
+        b_conf_sec_apb | b_conf_sec | b_conf_ble_timer);
+    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_coex);
+
+    // 2) **读回自证**：这一行直接证明"门到底开没开"，比再烧一轮盲试快
+    const c0 = rd(reg_clk_conf);
+    const c1 = rd(reg_clk_conf1);
+    const lc = rd(reg_lpcon_clk_conf);
+    osal.logPublic("bt lp: clk_conf=0x{x:0>8} clk_conf1=0x{x:0>8} lpcon=0x{x:0>8}", .{ c0, c1, lc });
+    const need0 = b_conf_etm | b_conf_sec_ecb | b_conf_sec_apb | b_conf_sec | b_conf_ble_timer;
+    const need1 = b_conf1_btmac | b_conf1_btbb | b_conf1_bt_apb | b_conf1_wifibb_80x1;
+    osal.logPublic("bt lp: gates conf_ok={} conf1_ok={} coex_ok={}", .{
+        (c0 & need0) == need0,
+        (c1 & need1) == need1,
+        (lc & b_lpcon_coex) != 0,
+    });
+
+    // 3) MAC 复位（时钟之后）：写 1 再写 0
+    wr(reg_rst_conf, rd(reg_rst_conf) | b_rst_btmac);
+    wr(reg_rst_conf, rd(reg_rst_conf) & ~b_rst_btmac);
+    osal.logPublic("bt lp: mac reset done, rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
 }
 
 /// `btdm_lp_reset(true)`：低功耗子系统复位。当前无状态可复位。
