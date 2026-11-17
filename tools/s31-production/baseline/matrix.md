@@ -151,8 +151,11 @@ TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 ## 7. 建议执行顺序（早期计划；实际状态以第 5 节各行的"状态"列为准）
 
 1. `python tools/s31-production/baseline/inventory.py`：先确认 28 章目录存在与三标记分布。
-   注意 早期实现 按现行仓库只有 `README.md`（无 `build.zig`/`src/`），因此 `--strict` 会按设计
-   以退出码 1 报 `早期实现` 不完整；这是已知契约事实，不是脚本缺陷。
+   **2026-11-18 实测**：`--strict` 退出码 1，标记的是三个单元 —— `net-wire`（缺 `host_tests`，
+   真缺口，见其 README）、`firmware`（测试由各组件的 `host_tests.zig` 经 `firmware/build.zig`
+   聚合，本单元自然没有同名文件）、`esp32s31-coreboard`（板级包，测试在组件里）。
+   后两者是**结构性误报**，`--strict` 只检查文件是否存在、不判断测试是否在别处跑过。
+   （旧版这里写的是"报 `早期实现` 不完整"，与现行仓库不符。）
 2. B0–B3：主机测试与两种模板交叉编译，产出 `app.elf`。
 3. B4–B6：`idf-bootstrap` 供应商步骤、`elf2image`/`image-info`、`flash.sh` 静态检查。
 4. 第 3 节：早期实现/早期实现/早期实现 缺陷回归，优先处理 R07-1、R08-2、R12-3 三个未闭环项。
