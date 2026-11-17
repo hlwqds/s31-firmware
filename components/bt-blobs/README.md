@@ -771,6 +771,39 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🎯 二分完成：使能者是 **step 5 `btdm_lp_enable_clock`**
+
+| 探读 `0x2010B000` 的时机 | 结果 |
+| --- | --- |
+| 任何 BT 调用之前 | 挂死 |
+| step 1（建池）之后 | 挂死 |
+| **step 4（`coex_init`）之后** | **挂死** |
+| **step 5（`lp_enable_clock`）之后** | ✅ `0x5ac968f1` |
+
+⇒ **使能者是 step 5** —— 也就是我们自己重写的那一步。
+
+**BB 时钟的具体位（IDF 权威路径）**
+
+```c
+// modem_clock_impl.c:176
+modem_clock_ble_i154_bb_configure() → mod獸_syscon_ll_enable_bt_bb_clock(dev, enable)
+// modem_syscon_ll.h:623
+modem_syscon_ll_enable_bt_bb_clock() { hw->clk_conf1.clk_btbb_en = en; }
+```
+
+⇒ `clk_conf1` 的 **bit17 = `clk_btbb_en`**。
+
+**而我们的实现已经设了它**：板侧读回 `clk_conf1 = 0x003ff880`（bit16/17/18 全置）。
+
+⇒ 所以缺的**不是** `clk_btbb_en` 这一位，而是 step 5 里 IDF 会做的**其他动作**
+（`modem_clock_module_enable` 的 `icg_map_init_all()` 位图应用、或 `BT_PERIPHERAL`/`SOC_PLL_SOURCE_CG`
+这类依赖项的精确配置）。
+
+⇒ **最终修复的正确做法**：把 `btdmLpEnableClock` 改写为与 IDF 的
+`modem_clock_module_enable(PERIPH_BT_MODULE)` → `modem_clock_module_enable(PERIPH_BT_APB_MODULE)`
+→ `modem_clock_module_mac_reset(PERIPH_BT_MODULE)` **逐行等价**（即完整复刻
+`esp32s31/modem_clock_impl.c` 的 per-device configure 列表），而不是按推断的位手写。
+
 ### 🎯 二分结果：step 1 已排除，**step 4 (`btdm_coex_init`) 在我们的移植里是空的**
 
 **oracle 二分（每次挂死也是有效数据）**
