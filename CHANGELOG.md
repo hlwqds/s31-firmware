@@ -8,6 +8,14 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **HCI 传输层落地**（2026-11-17，`components/bt-blobs/src/transport.zig`）：我们**自己拥有**这一层
+  （归档里没有 `hci_driver_vhci_ops`/`uart_ops`），结构照 IDF 的 `hci_transport_init`：
+  `ops.init(cb)` → `r_ble_hci_trans_cfg_hs(leEvtTx, NULL, leAclTx, NULL)` → `r_btdm_hci_trans_register_tx(btdmTx, false)`。
+  三个必踩点：① **别手搓 12 字节包**——用归档的 `r_btdm_hci_trans_buf_alloc` 拿；② **必须置 BLE 位**
+  （`r_btdm_hci_pkt_flag_ble_setf`），否则包被当 BR/EDR 路由、症状是"命令没人接"；③ 我们是 host
+  ⇒ 回程读完要**自己释放**（`r_ble_hci_trans_buf_free` 收的是载荷不是包）。
+  `sendReset()`/`sendReadLocalVersion()` 已就绪；事件回调按 `cmd[1]+2` 切长度并把每个字节打进日志
+  ——这就是里程碑的唯一判据。前提是 `status()==enabled`（rx 路径自己会查）。
 - **`ext_funcs_t` 注册**（2026-11-17，`components/bt-blobs/src/extfuncs.zig`）：这是 controller 拿
   **malloc/free/rand/assert** 的那张表（`ble.c:97-109`，rv32 上 **40 字节**）。上一版把它当成
   "可以跳过"是错的——跳过等于 controller 没有分配器，`r_ble_controller_init` 必然失败，
