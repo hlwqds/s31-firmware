@@ -313,3 +313,6 @@ PROVIDE(abs = 0x2f800584);
 PROVIDE(ets_printf = 0x2f800024);
 PROVIDE(phy_set_chan_freq_sw_start = 0x2f801660);
 PROVIDE(printf = 0x2f8005c4);
+/* BLE 时基：controller 用它推所有超时/退避窗口，值必须是真频率（Hz）。
+ * 由 components/bt-blobs/link/bt_stubs.c 的 rtc_clk_xtal_freq_get 转发。 */
+PROVIDE(ets_clk_get_xtal_freq = 0x2f800708);
