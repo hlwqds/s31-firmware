@@ -962,6 +962,17 @@ pub fn run() noreturn {
                 // **ppTask 泵实验已做**：给它自己的栈 + `sched.initContext`/`swapContext` 后它**能正常让出**
                 // （不会像直接 call 那样挂死），但 **16 轮泵下来 b288 仍为 0、MAC_ST 不变**。
                 // ⇒ ROM 的 PP worker 单独跑也不推进状态机（它多半在等别的消息/事件）。
+                // **start 的自旋环已定位**（反汇编 0x2f0091fe..0x2f009206）：
+                //     lw a5, 0(0x20104CAC)      # MAC_ST
+                //     and a5, a5, 0xE000        # bits 13..15
+                //     bnez a5, 0x2f0091fe       # 只要这三位非 0 就一直转
+                // 我们板子上 MAC_ST=0x0000E000 ⇒ 这三位**全 1** ⇒ 死循环。
+                // IDF 侧 MAC_ST 是 0（bootloader_init_mem 清过），所以它能过。
+                {
+                    log.line("wifi-init-probe: MAC_ST before start = 0x{x:0>8} (spin mask 0xE000)", .{mac_st.*});
+                    mac_st.* = 0;
+                    log.line("wifi-init-probe: MAC_ST cleared -> 0x{x:0>8}", .{mac_st.*});
+                }
                 log.line("wifi-init-probe: calling esp_wifi_start (idle_calls={d}, tracing hooks)", .{idle_calls});
                 const src = esp_wifi_start();
                 log.line("wifi-init-probe: hook budget left={d}, hook calls={d}", .{ impl.budget, impl.event_count });

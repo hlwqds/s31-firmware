@@ -4332,3 +4332,32 @@ wifi-init-probe: INIT OK, arena free=315144/353328 B, bad_handle=0, blocking_ref
 wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
 panic 0
 ```
+
+### ★★★★ `esp_wifi_start` 的挂点定位：`while ((MAC_ST & 0xE000) != 0)` 死循环
+
+start 期间 IRQ 采样器的 `mepc` **全部落在同一个环上**（50 次 `0x2f009202`、31 次 `0x2f009206`）。
+反汇编那段：
+
+```asm
+2f0091f8: lui  a3, 0x20105
+2f0091fe: addi a5, a3, -852      # a5 = 0x20104CAC  ← MAC_ST
+2f009202: lw   a5, 0(a5)         # ★ 读 MAC_ST
+2f009204: and  a5, a5, a4        # a4 = 0xE000（bits 13..15）
+2f009206: bnez a5, 0x2f0091fe    # ★ 这三位非 0 就一直转
+```
+
+⇒ **`esp_wifi_start` 在等 `MAC_ST` 的 bits 13–15 变成 0**。
+我们板子上 `MAC_ST = 0x0000E000` ⇒ 这三位**全 1** ⇒ **死循环**。
+（IDF 侧 `MAC_ST` 是 0，所以它能过——这与"IDF init 把 MAC_ST 清 0 而我们没清"那条硬事实完全对上。）
+
+### 但软件写不掉：`MAC_ST = 0` 之后读回仍是 `0xE000`
+
+```text
+wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
+wifi-init-probe: MAC_ST cleared -> 0x0000e000
+```
+
+⇒ 这三位是**硬件状态位**（只读或被别的寄存器即时重设），**写 MAC_ST 清不掉**。
+
+⇒ 下一步：找**谁驱动这三位**（时钟/复位域？`0x20100800`？`0x20109C18`？），
+或者找 IDF 里把它变 0 的那条**真实动作**——不是写 MAC_ST 本身。
