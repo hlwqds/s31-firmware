@@ -3637,3 +3637,28 @@ fa: lw a0, 0(s2) ; R_RISCV_LO12_I s_pp_task_create_sem   # 读它
 
 ⇒ 下一步：反汇编 `pp_create_task` 里 `sw a5,0(a4)` 前后的几条，看它前面判了什么、
 以及 a5 来自哪（是否就是 `_semphr_create` 的返回值）。
+
+### `pp_create_task` 的前半段（`pp.o` 反汇编）
+
+```asm
+0:  addi sp,sp,-48
+12: lw   s5,52(g_wifi_menuconfig)
+16: lw   a5,g_osi_funcs_p
+1e: lw   a5,168(a5)      # osi_funcs[42] = _task_get_max_priority
+2a: jalr a5
+30: lw   a5,pp_task_hdl
+36: beqz a5,.L640         # hdl 为空才跳到 .L640
+3c: li   a0,6 ; ... wifi_log(...)
+4e: lw   a5,g_osi_funcs_p
+52: lw   a0,pp_task_hdl
+56: lw   a5,152(a5)      # osi_funcs[38]
+5a: jalr a5
+5c: .L640: lw a5,s_wifi_queue ; beqz a5,.L641
+```
+
+⇒ 关键点：`pp_create_task` **先调 `_task_get_max_priority`（我们实现了吗？返回值对不对？）**，
+再按 `pp_task_hdl` 是否为空走两条路。
+
+⇒ 下一步（很具体）：
+1. 查 `osi_funcs[42]`（`_task_get_max_priority`）在我们表里**是否是真实现**、返回值是多少；
+2. 继续反汇编 `.L640` 之后（`s_wifi_queue` 分支），找到 `sw a5,0(s_pp_task_create_sem)` 的位置与其前置条件。
