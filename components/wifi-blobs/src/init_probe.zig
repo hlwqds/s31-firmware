@@ -495,6 +495,7 @@ pub fn run() noreturn {
     // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     dumpClockRegs("before-init");
+    impl.resetEvents(); // 从干净的环开始记录 init 期间的完整 osi 序列
     // **全表 diff 找到的唯一差异**：`LPCON+0x18`（clk_conf）在 IDF 侧是 `0x1`（bit0 = `clk_wifipwr_fo`，
     // WiFi 电源域 force-on，由 bootloader 打开），我们侧是 `0x4`（bit2 = `clk_i2c_mst_fo`）。
     // ⇒ 在 init **之前**把它对正：置 bit0、清 bit2。
@@ -508,6 +509,22 @@ pub fn run() noreturn {
     // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);
     dumpClockRegs("after-init");
+    // **完整 osi 调用序列**（init 窗口内，最多 64 条）——与 IDF 侧逐条 diff，分叉点就是缺的那一步。
+    {
+        const n = @min(impl.event_count, impl.events.len);
+        log.line("wifi-init-probe: OSISEQ n={d} (ring={d})", .{ impl.event_count, impl.events.len });
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const e = impl.events[i];
+            if (e.id < impl.hook_ids.len) {
+                log.line("wifi-init-probe: OSI {d} {s} a0=0x{x} a1=0x{x}", .{
+                    i, impl.hook_ids[e.id], e.a0, e.a1,
+                });
+            } else {
+                log.line("wifi-init-probe: OSI {d} id={d} a0=0x{x}", .{ i, e.id, e.a0 });
+            }
+        }
+    }
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
         impl.calls.queue_send - w_qsend,
         impl.calls.queue_recv - w_qrecv,

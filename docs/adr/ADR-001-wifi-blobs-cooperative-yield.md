@@ -5692,3 +5692,30 @@ efuse/其他寄存器、或它此前的调用历史）。
 ⇒ 下一步（唯一且可做）：**对比 init 期间完整的 osi 钩子调用序列**。
 两边表同构（`hook id` 就是 IDF 表下标），我们已有事件环；IDF 侧在 `esp_adapter.c` 给每个 entry 记下标即可。
 **序列的分叉点就是答案。**
+
+### 拿到我们侧完整的 osi 调用序列：**init 窗口内 152 次**
+
+把事件环从 8 扩到 64，并在 init 前后各做一次重置/打印：
+
+```text
+wifi-init-probe: OSISEQ n=152 (ring=64)
+OSI 0  timer_setfn    a0=0x2f0173d0 a1=0x40034698
+OSI 1  timer_setfn    a0=0x2f017408 a1=0x40034690
+...
+OSI 9  queue_send_ok  a0=0x0 a1=0x64646400      ← 注意 a1 就是 ICG 值
+OSI 10 coex_rel       a0=0x0 a1=0x604
+OSI 11 wifi_clk_en    a0=0x0 a1=0x0             ← 我们的 `_wifi_clock_enable` 在第 11 位
+OSI 12 calloc / 13 zalloc / 14 alloc
+OSI 15 coex_interval / 16-17 timer_setfn / 18 timer_disarm / 19 semphr_give
+...
+```
+
+（环 64 条，`n=152` ⇒ 只剩**前 64 条**可见；要完整序列得把环再放大或分段记录。）
+
+归档：`logs/ch25-osi-seq-boot.log`。
+
+⇒ 这条序列现在可以直接与 IDF 侧逐条 diff —— **IDF 侧需要给 `esp_adapter.c` 那张表的每个 entry 加"记下标"包装**
+（128 个 entry，工作量大但机械；或只包前 30 个高频项，因为分叉点通常很早）。
+
+⇒ 另一个值得注意的读数：**`OSI 9 queue_send_ok a1=0x64646400`** —— blob 自己把 `0x64646400` 作为参数传出去，
+这也解释了为什么我们写 `0x64646000` 之后读回会变成 `0x64646400`（**blob 随后又写了一次**，不是我们写错）。
