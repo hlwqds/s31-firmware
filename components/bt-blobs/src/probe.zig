@@ -44,7 +44,7 @@ fn heapEnd() *const anyopaque {
 }
 
 /// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
-pub var probe_irqs: bool = false; // 稳定默认关；采样实验时临时开
+pub var probe_irqs: bool = true; // 实验：归档可能在等中断事件
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
@@ -64,6 +64,12 @@ pub var dump_rom: bool = false;
 pub var ble_block_experiment: bool = false;
 /// 跳过 `r_btdm_task_init`（它会访问不可达块）⇒ 用于验证 step 7–15 / enable / HCI。
 pub var skip_task_init: bool = false;
+
+/// `Xpuq` 用的锚点全局（`libbtdm_common/2.o` 的 `.bss.r_sym_bt_d3D3sk5KewclELfrD5xa`）。
+/// 唯一的写者是 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG`：`P = wr_btdm_osal_malloc(...)`。
+/// `Xpuq` 之后用 `a1 = P` 做 `sw zero, 0(a1) …` 的零填充 —— **若 P 为 NULL，
+/// 它会从地址 0 开始写，看起来就是"卡死"**（无 fault、无 OSAL 调用）。
+extern var r_sym_bt_d3D3sk5KewclELfrD5xa: u32;
 
 /// 是否把 `osal.logPublic` 的每一行都打到 UART。
 /// 默认 **true**（可观测性优先）；设 false 可做"UART 静默"对照——但注意那样连进度行也看不到，

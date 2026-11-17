@@ -193,7 +193,7 @@ pub var pll_write_enabled: bool = false;
 /// 是否真的写时钟门控。设 false 用于**对照实验**：排除"我们改时钟把 UART 弄停"。
 /// 板侧证据链：`UART0_STATUS.TXFIFO_CNT` 恒 128（FIFO 满且不排空），而 UART0 就在
 /// `0x2038A000` —— 和我们改的 modem/外设时钟是同一片。
-pub var clock_writes_enabled: bool = true;
+pub var clock_writes_enabled: bool = false; // 对照实验：完全不写时钟门控
 
 pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     _ = cfg;
@@ -303,6 +303,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     pulse.f(b_rst_ble_timer); // 3. BLE timer
     pulse.f(b_rst_modem_ecb | b_rst_modem_ccm | b_rst_modem_bah | b_rst_modem_sec); // 4. modem sec
     osal.logPublic("bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
+    osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
 }
 
 /// `btdm_lp_reset(true)`：低功耗子系统复位。当前无状态可复位。

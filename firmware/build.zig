@@ -162,6 +162,9 @@ pub fn build(b: *std.Build) void {
         app.link_gc_sections = false;
         // 适配面：10 个符号里的 5 个非链接脚本符号（另 5 个在 s31.ld 里 PROVIDE）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe) &.{ "-DBT_ASSERT_RETURNS=1" } else &.{} });
+        // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
+        // 归档的日志必须走我们的丢弃实现，否则"打印"就是"挂死"。
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{} });
         // OSAL 的 36 个 `wr_btdm_osal_*` 导出（强定义覆盖归档里的弱断言桩）。
         // 单独成对象：它只被归档引用，不需要进 root 模块。
         // **单一模块**：所有 bt-blobs 的文件都属于它（分两个模块会报"文件属于多个模块"）。

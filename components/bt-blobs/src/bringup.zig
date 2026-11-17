@@ -142,6 +142,15 @@ pub fn init(cfg: *config.Config) c_int {
 
     // 4. 归档：任务层
     enter(6, "r_btdm_task_init");
+    {
+        const pp = @import("probe_ptr.zig");
+        if (pp.get() == 0) {
+            const pr = pp.populate();
+            osal.logPublic("bt bringup: Xpuq 锚点为 NULL => 补调写者 rc={d}, 现在 P=0x{x:0>8}", .{ pr, pp.get() });
+        } else {
+            osal.logPublic("bt bringup: Xpuq 锚点已就绪 P=0x{x:0>8}", .{pp.get()});
+        }
+    }
     if (skip_task_init) {
         osal.logPublic("bt bringup: step 6 r_btdm_task_init SKIPPED (experiment)", .{});
         rc = 0;
