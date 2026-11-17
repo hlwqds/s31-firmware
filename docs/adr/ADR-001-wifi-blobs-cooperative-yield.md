@@ -3471,3 +3471,22 @@ panic: ra=0xffffffa0 a0=0x2f014bb4 a1=0x2f014ba8
 
 **正确的做法**：泵的开关要放到 **`esp_wifi_init_internal` 返回之后**（即 start/自旋期间）再武装——
 那才是 IDF 里 blob 任务与 `esp_wifi_start` 真正并发的时间窗。这条还没试。
+
+### 更正：init 期间**已经有**合作式任务切换（`swap#1..#8`）
+
+此前推断"init 期间没有并发"。查日志否掉了这条：`idleHook` 里本来就有双向 `swapContext`
+（`in_task` 时切回 main、否则切到 task），实测在 init 期间就在来回切：
+
+```text
+swap#1 in_task=true  hooks=150
+swap#2 in_task=false hooks=158
+swap#3 in_task=true  hooks=162
+...
+```
+
+⇒ **"init 期间没有并发"这个假设不成立**：blob 任务在 init 的每个阻塞点都被切进去运行过。
+
+⇒ 于是 init 窗口 `qrecv=0`（IDF 是 2）的差异**不是"任务没被调度"**，而是**任务跑起来后没有去 `queue_recv`**
+——即任务在 init 期间走的分支与 IDF 不同。
+
+⇒ 这把问题进一步收窄到"**任务运行时的分支决策**"，而不是调度。
