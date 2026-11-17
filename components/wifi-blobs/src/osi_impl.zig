@@ -964,6 +964,8 @@ pub var send_ok: u32 = 0;
 /// init 窗口对拍用的计数器（与 IDF 侧同口径）。
 pub var cnt_reset_mac: u32 = 0;
 pub var cnt_clk_en: u32 = 0;
+/// 最近一次 `_wifi_clock_enable` 的调用者返回地址（与 IDF 侧 `pm_attach`=0x4005700c 对照）。
+pub var clk_caller_ra: usize = 0;
 /// init 窗口对拍：`_semphr_create` 的调用次数与返回 null 的次数。
 pub var cnt_sem_create: u32 = 0;
 pub var cnt_sem_create_null: u32 = 0;
@@ -1172,6 +1174,9 @@ const wifi_clk_conf1_bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 
 
 fn shellWifiClockEnable() callconv(.c) usize {
     cnt_clk_en +%= 1;
+    // **调用者身份**：IDF 侧同一个钩子的调用者是 `0x4005700c` = blob 的 `pm_attach`。
+    // 记下我们的返回地址，与它对照（`@returnAddress()` 在 c callconv 下即 ra）。
+    clk_caller_ra = @returnAddress();
     // ★ IDF 的 `wifi_module_enable()` → `modem_clock_module_enable()` 会先
     // `modem_clock_module_icg_map_init_all()`，把各域的 **ICG 位图**写进 `CLK_CONF_POWER_ST`(0x20109C0C)
     // —— 实测 IDF 工作值是 `0x64646400`。我们此前只写 CLK_CONF1，没写这张位图。
