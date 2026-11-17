@@ -1084,7 +1084,7 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     const icg_before = icg.*;
     icg.* = 0x6464_6400;
-    note(20, icg_before, icg.*);
+    note(33, icg_before, icg.*); // 33 = icg_write（原来用 20=queue_send_ok，标签错位）
     // IDF 的 `esp_phy_enable_wrapper` 还会调 `phy_wifi_enable_set(1)`（ROM `0x2f80145c`）——
     // 我们此前漏了这一步；若 libphy/ROM 的代码按这个标志门控，缺它 PHY 侧就不会真正使能。
     const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
@@ -1175,6 +1175,7 @@ const wifi_clk_conf1_bits: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 
 
 fn shellWifiClockEnable() callconv(.c) usize {
     cnt_clk_en +%= 1;
+    note(21, 0, 0); // id 21 = wifi_clk_en
     // **调用者身份**：IDF 侧同一个钩子的调用者是 `0x4005700c` = blob 的 `pm_attach`。
     // 记下我们的返回地址，与它对照（`@returnAddress()` 在 c callconv 下即 ra）。
     clk_caller_ra = @returnAddress();
@@ -1189,7 +1190,7 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // 前面已经写过 SOC_PLL / COEXIST / WIFI_APB / WIFI_BB_44M。
     // 顺序：SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit9)** → WIFI_BB(rst+组) → WIFI_BB_80X1
     icg.* = 0x6464_6400;
-    note(20, icg_before, icg.*);
+    note(33, icg_before, icg.*); // 33 = icg_write（原来用 20=queue_send_ok，标签错位）
 
     // 1) SOC_PLL_SOURCE_CG (dev=2)
     {
@@ -1231,7 +1232,37 @@ fn shellWifiClockEnable() callconv(.c) usize {
 }
 
 fn shellWifiClockDisable() callconv(.c) usize {
-    note(21, 0, 0);
+    note(22, 0, 0);
+    // **这不是空桩**（原来只 note 不做事）。IDF 的 `wifi_module_disable()` 会真做
+    // `modem_clock_module_disable(PERIPH_WIFI_MODULE)`：按 deps **反向**逐设备 `configure(false)`
+    // （`SOC_PLL_SOURCE_CG` 写 `0x25`、其余清各时钟位），也就是 **init 期间的一次真·断电**。
+    // 我们的空桩让 blob 的 enable→disable 周期变成"只有 on、没有 off" ⇒ MAC 域没有真正复位过。
+    // 按 IDF 的反向顺序实现：
+    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+    // 9) WIFI_BB_80X1 off
+    conf1.* = conf1.* & ~@as(u32, 1 << 7);
+    // 8) WIFI_BB off（清 BB 组 + 脉冲 rst_wifibb）
+    conf1.* = conf1.* & ~@as(u32, 0x7FF);
+    {
+        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
+        rst.* = rst.* | (1 << 8);
+        romDelayUs(20);
+        rst.* = rst.* & ~@as(u32, 1 << 8);
+    }
+    // 7) WIFI_MAC off —— `clk_wifimac_en` = bit 9
+    conf1.* = conf1.* & ~@as(u32, 1 << 9);
+    // 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
+    conf1.* = conf1.* & ~@as(u32, (1 << 2) | (1 << 10));
+    // 3) COEXIST off —— LPCON ICG 位图清零
+    {
+        const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
+        icg20.* = 0;
+    }
+    // 2) SOC_PLL_SOURCE_CG off —— IDF disable 值是 0x25
+    {
+        const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
+        modconf.* = 0x25;
+    }
     return 0;
 }
 
@@ -1265,7 +1296,7 @@ fn shellWifiResetMac() callconv(.c) usize {
     // 所有"复位无效"的结论都不可信。
     romDelayUs(20);
     rst.* = rst.* & ~@as(u32, 1 << 9);
-    note(22, before, rst.*);
+    note(23, before, rst.*);
     return 0;
 }
 

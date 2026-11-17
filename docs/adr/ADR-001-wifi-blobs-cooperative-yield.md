@@ -5774,3 +5774,33 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
 
 ⇒ 结论：**ICG 这条线彻底关闭**（blob 不写、我们写的就是 IDF 值）。
 ⇒ 之前那条 `queue_send_ok a1=0x64646400` 的"伪线索"也一并作废（`a1` 只是 `note()` 记的参数）。
+
+### ★★★ 修掉一个 instrumentation bug（`note` id 与 `hook_ids` 系统错位）+ 实现真·`clock_disable`
+
+**① 标签错位**：`hook_ids` 下标与 clock/coex 里的 `note()` id 系统性错开一位：
+
+| 函数 | 原来用的 id | 实际标签 | 改成 |
+|---|---|---|---|
+| `shellWifiClockDisable` | `21` | `wifi_clk_en` ❌ | **`22`**（`wifi_clk_dis`） |
+| `shellWifiResetMac` | `22` | `wifi_clk_dis` ❌ | **`23`**（`wifi_reset_mac`） |
+| `shellWifiClockEnable` 入口 | 无 | — | **补 `note(21)`**（`wifi_clk_en`） |
+| ICG 写入 | `20` | `queue_send_ok` ❌ | **`33`**（`icg_write`） |
+
+⇒ **之前"OSI 139 wifi_clk_en"其实是 `clock_disable` 被调用**；"OSI 9 queue_send_ok"是 enable 里的 ICG note。
+⇒ 修正后：`OSI 137 wifi_clk_en` → `OSI 140 wifi_clk_dis` ⇒ **两边 init 都做了 enable→disable 一对**。
+
+**② `shellWifiClockDisable` 原来是空桩**（只 `note` 不做事），而 IDF 的 `wifi_module_disable()` 会真断电
+（deps 反向 `configure(false)` + `SOC_PLL_SOURCE_CG` 写 `0x25`）。已按 IDF 反向顺序实现：
+`80x1 off → BB 组清 + rst_wifibb 脉冲 → MAC(bit9) off → 44M/APB off → LPCON ICG 清零 → 0x205871E0=0x25`。
+
+**结果**：
+
+```text
+wifi-init-probe: MAC_ST after init = 0x0000e000     # 仍不清
+irq-sample … mac=0x00fff000                          # start 仍在自旋
+panic 0
+```
+
+⇒ **补上真·断电（enable→disable）后仍不清** ⇒ 这条也不是。
+
+⇒ 但这次修掉的是**真 bug**（标签错位会让后续所有序列对照读错），保留。
