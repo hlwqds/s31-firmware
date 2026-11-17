@@ -7,7 +7,7 @@
     "net-ethernet": 20,
     "net-ipv4": 73,
     "net-sockets": 38,
-    "net-tcp": 35,
+    "net-tcp": 36,
     "net-tls-http": 70,
     "net-udp-dhcp-dns": 50,
     "wifi-blobs": 26,

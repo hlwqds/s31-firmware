@@ -305,3 +305,25 @@ test "checksum: 分片（跨非对齐边界）与整体一致" {
     const base = buf[1..];
     try testing.expectEqual(refOf(base), ofSlices(&.{ base[0..3], base[3..131], base[131..] }));
 }
+
+test "checksum: odd 残留 + 起点非 4 对齐时走 2 字节前导" {
+    // 这条覆盖的是**两条路径的交界**：上一片留下 odd 高字节，而这一片的起点
+    // 满足 (ptr + i) % 4 == 2（吃掉 odd 后 i=1）。若 2 字节前导没把指针推到 4 对齐，
+    // 快路径就永远不命中——正是第一次板上实测"改了反而慢 14%"的那个形态。
+    var buf: [256]u8 align(8) = undefined;
+    var seed: u32 = 99;
+    for (&buf) |*b| {
+        seed = seed *% 1_664_525 +% 1_013_904_223;
+        b.* = @truncate(seed >> 24);
+    }
+    // 第一片从 buf+8（4 对齐）取 1 字节 ⇒ 留下 odd；第二片从 buf+9 起（≡ 1 mod 4）。
+    const base = buf[0..];
+    const first = base[8..9];
+    const rest = base[9..];
+    try testing.expectEqual(@as(usize, 1), first.len);
+
+    var s = Sum{};
+    s.add(first);
+    s.add(rest);
+    try testing.expectEqual(refOf(base[8..]), s.finish());
+}
