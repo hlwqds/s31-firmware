@@ -771,6 +771,45 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### ✅ 再进一步：PHY 初始化表与调用点都已就位，只差两个 IDF 源码函数
+
+继续按 IDF 的 `esp_phy_enable` 链路推进，逐项实测：
+
+| 项 | 状态 |
+| --- | --- |
+| `phy_get_romfunc_addr()` | ✅ 调用后 `g_phyFuns: 0x0 → 0x2f07f944` |
+| PHY 初始化表 | ✅ **128 字节**（`esp_phy_init_data_t`），从 IDF 的 ELF `.rodata` 抠出（`nm` 确认 `size=0x80`） |
+| `register_chipv7_phy` | ✅ 已在镜像（`0x40061c82`），签名 `(init_data, cal_data, mode)` |
+| `esp_phy_calibration_data_t` | ✅ **1904 B**（version[4] + mac[6] + opaque[1894]） |
+| 校准模式 | ✅ `PHY_RF_CAL_FULL = 2` |
+| NVS | ✅ **不需要**：`esp_phy_load_cal_data_from_nvs` 失败时 IDF 自带 `PHY_RF_CAL_FULL` fallback |
+
+**新发现的硬事实（实测报错定位）**
+
+`esp_phy_common_clock_enable`（`0x2f002dbc`）与 `phy_module_enable`（`0x2f0015ba`）
+在 IDF 的 ELF 里落在 **`0x2f00xxxx` = DRAM**，即 **IRAM 函数**，是 IDF 应用运行时载入的代码。
+我们板上那片区域是空的 ⇒ 直接调用得到 **`illegal instruction`**（`mcause=2`，实测）。
+
+它们的实现都归结为**一个**调用：
+
+```c
+wifi_bt_common_module_enable() → modem_clock_module_enable(PERIPH_PHY_MODULE)
+phy_module_enable()            → modem_clock_module_enable(PERIPH_PHY_CALIBRATION_MODULE)
+```
+
+而 `modem_clock_module_enable` 同样是 **IDF 源码**（`0x2f0021ea`，DRAM），
+其 PHY 依赖集是：
+
+```
+PHY_CLOCK_DEPS = MODEM_ADC_COMMON_FE + MODEM_PRIVATE_FE + SOC_PLL_SOURCE_CG + I2C_MASTER
+```
+
+⇒ **剩余工作**：把 `modem_clock_module_enable(PHY)` 的等效寄存器写补进来
+（关键是 **`I2C_ANA_MST`** —— PHY 寄存器访问走模拟 I2C 主控，我们从未使能过它），
+再调 `register_chipv7_phy(&init_data, &cal, 2)`。
+
+**修正后的剩余估计：半天到一天。**
+
 ### ✅ 重大修正：**`libphy.a` 早已全部链在镜像里**，只是从未初始化
 
 这一步把上面那份估计**大幅推翻**，全部是实测：
