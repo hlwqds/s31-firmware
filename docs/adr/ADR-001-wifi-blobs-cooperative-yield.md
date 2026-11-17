@@ -5096,3 +5096,31 @@ panic 0
 ⇒ 但**关键定位已经拿到**：清位动作**只发生在 `wifi_clock_enable` 这一步**，
 `reset_mac` / `clock_disable` 都不改它。下一步只需把 `wifi_module_enable()` 的**汇编**看一遍
 （它在 IDF 里是源码，编出来的 `libesp_hw_support.a` 里就有），逐条对齐我们缺的调用。
+
+### `wifi_module_enable` 的汇编：**只是 `li a0,5` + 一次调用**
+
+```asm
+00000000 <wifi_module_enable>:
+   0: addi sp,sp,-16
+   2: sw   ra,12(sp)
+   4: li   a0,5                    # PERIPH_WIFI_MODULE
+   6: auipc ra,0x0
+   a: jalr ra                      # → modem_clock_module_enable(5)
+   e: lw   ra,12(sp)
+  10: addi sp,sp,16
+  12: ret
+```
+
+（`libesp_hw_support.a` 里就是这两条。）
+
+⇒ 所以整条链就是 **`modem_clock_module_enable(5)`**，其内部只有两件事：
+
+1. `modem_clock_module_icg_map_init_all()` —— 对**所有 domain** 做
+   `set(domain, icg_config[domain] | get(domain))`（两侧 ICG 图）；
+2. `modem_clock_device_control(WIFI_CLOCK_DEPS, true)` —— 7 个 device 各 `configure()`。
+
+⇒ 我们已复刻 2 的全部 7 个 device（含 `0x205871E0=0x3D`），**仍不清** ⇒ 剩下的差异只能在
+**第 1 步的逐 domain ICG 值**上（IDF 是"逐 domain 取当前值再 OR"，我们是一次性写死两个常数）。
+
+⇒ 下一步（精确）：把 `modem_clock_hal_get/set_clock_domain_icg_bitmap` 对**每个 domain** 的寄存器与位段查出来，
+按"**先读当前值、再 OR 配置值**"的方式逐 domain 写——而不是写常数 `0x64646400` / `0x66660000`。
