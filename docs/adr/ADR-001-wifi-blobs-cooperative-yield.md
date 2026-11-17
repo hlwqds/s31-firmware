@@ -5295,3 +5295,38 @@ TRACE deps=0x000003ec icg_init_done
 
 ⇒ IDF 树已 `git checkout` 还原；板子已刷回 Zig 探针（`INITWIN qsend=1 qrecv=2 clken=1` / `INIT OK` /
 `calling esp_wifi_start` 均正常）。
+
+### 下一步的具体配方：**非打印环形缓冲**抓 `wifi_module_enable()` 调用轨迹
+
+printf 在 `device_control` 里会崩（持锁 + IRAM）⇒ 改成"只记录、后打印"：
+
+```c
+// 放在 modem_clock.c 顶部（不要 IRAM_ATTR，普通 DRAM 即可）
+static volatile uint8_t  tr_idx;
+static volatile uint8_t  tr_dev[64];
+static volatile uint8_t  tr_en[64];
+static volatile uint32_t tr_mac[64];
+
+// modem_clock_device_control 的循环里，替换 configure 调用处：
+if (tr_idx < 64) {
+    tr_dev[tr_idx] = (uint8_t)i;
+    tr_en[tr_idx]  = (uint8_t)enable;
+    tr_mac[tr_idx] = *(volatile uint32_t *)0x20104CAC;   // 每次 configure 前
+    tr_idx++;
+}
+ctx->dev->configure(ctx, i, enable, config_wrapper);
+// 循环外再记一条"全部完成"的哨兵
+```
+
+然后在 station 的 `app_main` 里、**`esp_wifi_init()` 返回之后**统一打印：
+
+```c
+for (int k = 0; k < tr_idx; k++)
+    printf("TRC %d dev=%d en=%d mac_before=%08x\n", k, tr_dev[k], tr_en[k], tr_mac[k]);
+```
+
+⇒ 这样能拿到"**每一个 device 的 configure 之前 MAC_ST 是多少**"，
+**第一个 `mac_before == 0` 的 device 就是清位者**（或者若全是 0xE000、只有 enable 返回后才是 0，
+说明清位发生在 `device_control` 之后、enable 收尾处）。
+
+⇒ 注意：`modem_clock.c` 是 IDF 源码，改完**测完必须 `git checkout` 还原**（本轮已证实 printf 版本会导致重启循环）。
