@@ -52,8 +52,6 @@ var rx_frames: u32 = 0;
 var static_stack: [16 * 1024]u8 align(16) = undefined;
 /// ROM 的 PP worker（`ppTask = 0x2f800fc0`）自己的栈与上下文：它是任务体（死循环），
 /// 只能像 blob 任务那样"给栈 + 切进去"，不能直接调用（实测直接 call 后采样停止）。
-var pp_stack: [16 * 1024]u8 align(16) = undefined;
-var pp_ctx: sched.Context = .{};
 /// PHY 标定数据（`esp_phy_calibration_data_t.opaque[1894]`），由 `register_chipv7_phy` 填充。
 /// `esp_phy_calibration_data_t` = version[4] + mac[6] + opaque[1894] = **1904** 字节。
 /// 之前只声明 1894 字节并把 `&cal_data` 当结构体起点传给 `register_chipv7_phy`：
@@ -159,6 +157,20 @@ var task_ctx_ready: bool = false;
 ///
 /// - 在**主**上下文里被调用（blob API 阻塞等任务应答）→ 切到任务；
 /// - 在**任务**上下文里被调用（任务阻塞收消息）→ 切回主上下文。
+/// **在 tick 里泵 ROM 的 PP worker**：它有独立栈（`pp_ctx`/`pp_stack`），实测能正常让出。
+/// 与"泵 blob 任务"不同——后者在 init 期间上下文未就绪会 panic。
+var pp_ctx_ready = false;
+var pp_ctx: sched.Context = .{};
+var pp_stack: [16 * 1024]u8 align(16) = undefined;
+fn pumpPpWorker() void {
+    if (!pp_ctx_ready) return;
+    in_task = true;
+    impl.current_is_task = true;
+    sched.swapContext(&main_ctx, &pp_ctx);
+    in_task = false;
+    impl.current_is_task = false;
+}
+
 fn queueStats() u96 {
     return (@as(u96, impl.last_recv_count) << 64) |
         (@as(u96, impl.recv_ok) << 32) | @as(u96, impl.send_ok);
@@ -312,7 +324,7 @@ pub fn run() noreturn {
     @import("board").trap.timer_service_hook = &impl.serviceTimers;
     @import("board").trap.nvs_stats_hook = &nvsStats;
     @import("board").trap.queue_stats_hook = &queueStats;
-    // tick 驱动泵实验已回滚（ISR 里 swapContext 会 panic）。
+    @import("board").trap.pump_hook = &pumpPpWorker;
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，
@@ -363,6 +375,8 @@ pub fn run() noreturn {
     const w_qrecv = impl.calls.queue_recv;
     const w_rst = impl.cnt_reset_mac;
     const w_clk = impl.cnt_clk_en;
+    // **PP worker 泵实验已做**：给它栈、在 tick 里泵，配合"真阻塞"仍活锁
+    // （`idle_calls` 涨到 20000 而 `hooks` 冻结在 17）⇒ 它不是 ack 的生产者。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d}", .{
         impl.calls.queue_send - w_qsend,

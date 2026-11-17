@@ -163,6 +163,9 @@ pub const Semphr = struct {
         // 任务等消息，`idle_calls` 一路涨到上限而 `hooks` 不再变化（实测活锁）。所以 ack/消息的
         // 生产者本身缺失，不是等待策略的问题；这里保持有界让出，避免把活锁写进固件。
         blocking_refused += 1;
+        // **实验：无限阻塞语义**（IDF 的 `xSemaphoreTake(sem, portMAX_DELAY)` 是真等到被 give）。
+        // 此前用 `idle_spin_limit`(64) 次让出后返回 0，理由是"真等会活锁"——但那个结论是在
+        // `serviceTimers` 未接线、ICG/时钟未对齐之前得到的，需要重验。
         var spins: u32 = 0;
         while (spins < idle_spin_limit) : (spins += 1) {
             serviceTimers();
@@ -486,6 +489,9 @@ pub var task_create_fail: bool = false;
 pub const idle_spin_limit: u32 = 64;
 /// 阻塞队列接收的自旋上限：IDF 是 `portMAX_DELAY`（无限），我们用一个足够大的有界值近似。
 pub const queue_block_spin_limit: u32 = 20_000;
+/// 信号量"无限阻塞"的自旋上限（IDF 是 portMAX_DELAY）。设得足够大以近似"一直等"，
+/// 但不至于把板子永久挂死。
+pub const semphr_block_spin_limit: u32 = 2_000_000;
 /// 最近的钩子调用（id = `hook_ids` 的下标），用于停机时说明"它在等什么"。
 pub const hook_ids = [_][]const u8{
     "semphr_take",   "semphr_give", "mutex_lock",        "mutex_unlock",

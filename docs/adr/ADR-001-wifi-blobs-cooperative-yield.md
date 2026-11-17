@@ -3490,3 +3490,25 @@ swap#3 in_task=true  hooks=162
 ——即任务在 init 期间走的分支与 IDF 不同。
 
 ⇒ 这把问题进一步收窄到"**任务运行时的分支决策**"，而不是调度。
+
+### 判决：真阻塞 + 泵 PP worker = **活锁**（`idle_calls` 涨到 20000，`hooks` 冻结在 17）
+
+IDF 的 `xSemaphoreTake(sem, portMAX_DELAY)` 是**真等到被 give**。我们把 `Semphr.take` 的无限阻塞
+改成近似无限（上限 2,000,000 次让出），同时把 **ROM 的 PP worker** 挂到自己的栈、从 tick 里泵：
+
+```text
+idle_calls=16000 in_task=false hooks=17
+idle_calls=17000 in_task=false hooks=17
+idle_calls=18000 in_task=false hooks=17
+idle_calls=19000 in_task=false hooks=17
+idle_calls=20000 in_task=false hooks=17
+idle budget exhausted (20001), halting
+```
+
+**`hooks` 从 17 起就冻结不动，`idle_calls` 一路涨到上限** —— 正是旧注释描述过的活锁。
+
+⇒ **结论**：**blob 任务与 ROM 的 PP worker 都不是那个 ack/消息的生产者**（至少在我们这个构建里都不是）。
+`esp_wifi_init_internal` 等待的 give 来自**别处**（或需要某个我们还没提供的条件）。
+
+⇒ 这解释了为什么"有界让出"是必要的：真等会活锁。两条都已回滚，基线恢复
+（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0`、无 panic、自旋 `0x2f009206`）。
