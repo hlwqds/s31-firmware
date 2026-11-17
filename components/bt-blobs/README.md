@@ -512,6 +512,13 @@ bt probe: calling bt_bb_v2_init_cmplx(1) ...
 ⇒ **Espressif 自己的 BB 初始化函数也挂在同一处**。这不是我们调用方式的问题，
 而是该块在**没有 PHY 前置**的情况下根本不可访问。
 
+**再排除两条（2026-11-17）**：
+
+| 候选 | 板上读数 | 结论 |
+| --- | --- | --- |
+| `HP_SYS_CLKRST.MODEM_CTRL0`(0x20587040) 的 `MODEM_CLK_EN`(bit0) 未开 | **`0x00000001`** ⇒ 已开 | 排除 |
+| `modem_rst_conf`(SYSCON+0x10) 有复位位未清 | **`0x00000000`** ⇒ 全部已清 | 排除 |
+
 ⇒ 结论：缺的前置是 **`esp_phy_enable(PHY_MODEM_BT)` 那一层**（PHY 的电源/时钟/标定），
 而我们的移植从头到尾没做过 PHY 初始化 —— ch25 的 `shellPhyEnable` 只覆盖了 Wi-Fi 侧的一部分，
 BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB 寄存器"。

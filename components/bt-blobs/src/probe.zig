@@ -152,6 +152,17 @@ pub fn run() noreturn {
     porting.clock_writes_enabled = true;
     porting.btdmLpEnableClock(&early_cfg.btdm);
 
+    // `HP_SYS_CLKRST.MODEM_CTRL0`(0x20587040) 的 bit0 = `MODEM_CLK_EN`（默认 1）。
+    // 若它为 0，modem 块就没有时钟 ⇒ 访问会挂死。
+    const modem_ctrl0: *volatile u32 = @ptrFromInt(0x2058_7040);
+    const mc0 = modem_ctrl0.*;
+    board.log.line("bt probe: MODEM_CTRL0=0x{x:0>8} clk_en={}", .{ mc0, (mc0 & 1) != 0 });
+    if ((mc0 & 1) == 0) {
+        modem_ctrl0.* = mc0 | 1;
+        board.log.line("bt probe: MODEM_CLK_EN was 0 -> set, now 0x{x:0>8}", .{modem_ctrl0.*});
+    }
+    // 复位位：我们打印过 `rst_conf=0x00000000` ⇒ 所有 modem 复位位都是 0（未处于复位）✓
+
     board.log.line("{s}", .{"bt probe: calling bt_bb_v2_init_cmplx(1) ..."});
     _ = bt_bb_v2_init_cmplx(1);
 
