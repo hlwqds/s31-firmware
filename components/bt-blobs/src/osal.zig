@@ -367,12 +367,12 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
     if (!m.locked) {
         m.locked = true;
         stats_state.mutex_pend_ok += 1;
-        trace("mutexPend< OK", .{});
+        logLine("bt hook: mutex_pend => OK", .{});
         return OK;
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
     stats_state.mutex_pend_busy += 1;
-    trace("mutexPend< TIMEOUT", .{});
+    logLine("bt hook: mutex_pend => TIMEOUT", .{});
     return TIMEOUT;
 }
 
@@ -867,9 +867,11 @@ export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
     eventqDeinit(evq);
 }
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
+    logLine("bt hook: eventq_get", .{});
     return eventqGet(evq, tmo);
 }
 export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
+    logLine("bt hook: eventq_put", .{});
     eventqPut(evq, ev);
 }
 export fn wr_btdm_osal_eventq_put_to_front(evq: *Slot, ev: *Slot) callconv(.c) void {
@@ -883,6 +885,7 @@ export fn wr_btdm_osal_eventq_is_empty(evq: *Slot) callconv(.c) bool {
 }
 
 export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
+    logLine("bt hook: event_run", .{});
     eventRun(ev);
 }
 export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
@@ -911,9 +914,11 @@ export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
+    logLine("bt hook: mutex_pend", .{});
     return mutexPend(mu, timeout);
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
+    logLine("bt hook: mutex_release", .{});
     return mutexRelease(mu);
 }
 
@@ -924,9 +929,11 @@ export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
     return semDeinit(sem);
 }
 export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
+    logLine("bt hook: sem_pend", .{});
     return semPend(sem, timeout);
 }
 export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
+    logLine("bt hook: sem_release", .{});
     return semRelease(sem);
 }
 export fn wr_btdm_osal_sem_get_count(sem: *Slot) callconv(.c) u16 {
@@ -982,9 +989,11 @@ export fn wr_btdm_osal_time_ticks_to_ms32(ticks: u32) callconv(.c) u32 {
 }
 
 export fn wr_btdm_osal_hw_enter_critical() callconv(.c) u32 {
+    logLine("bt hook: hw_enter_critical", .{});
     return hwEnterCritical();
 }
 export fn wr_btdm_osal_hw_exit_critical(ctx: u32) callconv(.c) void {
+    logLine("bt hook: hw_exit_critical", .{});
     hwExitCritical(ctx);
 }
 export fn wr_btdm_osal_hw_is_in_critical() callconv(.c) u8 {
@@ -1250,6 +1259,7 @@ export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
     btdmFree(ptr);
 }
 export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
+    logLine("bt hook: task_create", .{});
     _ = name;
     return taskCreate(fn_, stack_size, arg, priority, core_id, task_handle);
 }
