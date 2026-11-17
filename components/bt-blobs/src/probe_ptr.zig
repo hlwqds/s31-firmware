@@ -36,6 +36,23 @@ pub fn okE7Anchor() u32 {
     return @extern(*volatile u32, .{ .name = "r_sym_bt_r4auAKWSAFwgQarMHZCc" }).*;
 }
 
+/// 写入 `OkE7` 锚点。
+///
+/// **为什么必须由我们写**：`r_btdm_task_init` 在 `mutex_pend` 返回后紧接着
+///
+/// ```asm
+/// lw   a5, 0(s1)     ; a5 = 锚点值
+/// sb   a4, 0(a5)     ; *(u8*)a5 = 1        ← 锚点为 0 时就是**向地址 0 写字节**
+/// ```
+///
+/// 地址 0 的 store 在这块芯片上不产生异常、只让事务不退休 ⇒ 无 fault、无 PC 采样、
+/// 后续 hook/建任务全都不再发生 —— 与板侧观测逐条吻合。
+/// 因此锚点必须在 step 6 之前指向一段**可写内存**；`OkE7` 的守卫还要求 `*(anchor+8) != 0`。
+pub fn setOkE7Anchor(v: u32) void {
+    if (!on_target) return;
+    @extern(*volatile u32, .{ .name = "r_sym_bt_r4auAKWSAFwgQarMHZCc" }).* = v;
+}
+
 /// 补调写者（`P = wr_btdm_osal_malloc(...)`）。返回归档给的 `rc`。
 /// 幂等性由调用方保证：只在 `get() == 0` 时调。
 pub fn populate() c_int {

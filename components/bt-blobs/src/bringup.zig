@@ -151,7 +151,29 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
-    osal.logPublic("bt bringup: OkE7 锚点=0x{x:0>8} (为 0 ⇒ OkE7 立即返回 -1，不会调 fqmZk)", .{@import("probe_ptr.zig").okE7Anchor()});
+    {
+        // **发布 OkE7 锚点**：见 probe_ptr.zig 的说明 —— 为 0 会让归档对地址 0 写字节，
+        // 那是一次不退休的总线事务，表现为"无声卡死"。
+        const pp = @import("probe_ptr.zig");
+        if (pp.okE7Anchor() == 0) {
+            const x = @import("osal.zig").btdmMalloc(16, 0) orelse @as(?*anyopaque, null);
+            const y = @import("osal.zig").btdmMalloc(16, 0) orelse @as(?*anyopaque, null);
+            if (x != null and y != null) {
+                const xi: [*]u32 = @ptrCast(@alignCast(x.?));
+                const xv = @intFromPtr(x.?);
+                xi[0] = 0;
+                xi[1] = 0;
+                xi[2] = @intCast(@intFromPtr(y.?)); // +8：OkE7 的第二层守卫
+                xi[3] = 0;
+                pp.setOkE7Anchor(@intCast(xv));
+                osal.logPublic("bt bringup: 发布 OkE7 锚点 X=0x{x:0>8} X+8=0x{x:0>8}", .{ xv, @intFromPtr(y.?) });
+            } else {
+                osal.logPublic("bt bringup: 发布 OkE7 锚点失败（arena 分配）", .{});
+            }
+        } else {
+            osal.logPublic("bt bringup: OkE7 锚点已就绪=0x{x:0>8}", .{pp.okE7Anchor()});
+        }
+    }
     if (skip_task_init) {
         osal.logPublic("bt bringup: step 6 r_btdm_task_init SKIPPED (experiment)", .{});
         rc = 0;

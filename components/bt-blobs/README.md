@@ -633,6 +633,48 @@ BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB �
 >
 > **真正的根因（板上实测，已修）**，见下面"真实根因"一节。
 
+### ✅ 本轮真实进展：静默 stall → 可诊断的 fault，并定位到 deinit 路径
+
+**1. 发布锚点后的行为变化**
+
+在 `bringup` 里给 `OkE7` 锚点填一个 arena 结构（`X`，`X+8` 指向第二个 arena 对象）后，
+系统**不再静默**，而是打出 panic：
+
+```text
+bt bringup: 发布 OkE7 锚点 X=0x2f014858 X+8=0x2f014878
+bt hook: mutex_pend
+panic: exception code=5 (load access fault) cause=0x38000005
+panic: ra=0x4005fa7e a0=0xb7a10c0d a1=0xa a2=0x770001
+panic: sp=0x2f07ad70 s0=0x2f00f7e8
+panic: ctx[0]=0x2f014858 ctx[1]=0x0
+```
+
+⇒ **静默 stall 变成可诊断的 fault**，这是本轮最实质的进步：
+   要么有输出、要么能据此改，不再靠猜。
+
+**2. fault 地址映射到位**
+
+```text
+ra=0x4005fa7e → r_btdm_task_deinit (0x4005fa4a, size 0x7a)
+```
+
+⇒ `mutex_pend` 返回后，`r_btdm_task_init` 走的是**错误清理路径** `r_btdm_task_deinit`。
+   也就是说 step 6 是在**报错后清理**时挂的，而不是在正常初始化途中挂的。
+
+**3. oracle 给出的真结构形状（供复刻，别再瞎填）**
+
+```text
+X[0]=0x00000001   ← 状态字节（archive 的 `sb 1,0(X)` 写这里；enable 后变 2）
+X[1]=0x2f07c8ac   X[2]=0x2f07c670(=*(X+8))   X[3]=0x0
+X[4]=0x2f07c914   X[5]=0x2f07c920
+X[6]=0x20260127   ← **BTDM_CONFIG_VERSION 魔数**
+X[7]=0x00171000
+Y = *(X+8) 的内容是一串指针（0x2f07c988, 0x2f07c678 …）
+```
+
+⇒ 所以这个"锚点"其实是**控制器 env 结构**，里面有状态字节、若干指针和一个版本魔数。
+   我们填的零填充假结构必然导致后续 fault —— 这一步证明"填对了才有意义"。
+
 ### ⛔ 以下"系统性发现"已被 oracle 否定（保留追溯）
 
 > **oracle 逐步复刻实测（2026-11-17）**：在**能跑通**的 IDF 应用里按 bt.c 的顺序
