@@ -255,7 +255,8 @@ fn idleHook() void {
         const pumped = pumpRealTask();
         if (pumped and pump_logs < 8) {
             pump_logs += 1;
-            log.line("wifi-init-probe: pump#{d} hooks={d} give={d} null_give={d} semcreate={d}", .{
+            // 标签用 `semmax`：那个数是 `_semphr_create` 的 **max 参数**（`0x00010000`），不是调用计数。
+            log.line("wifi-init-probe: pump#{d} hooks={d} give={d} null_give={d} semmax=0x{x}", .{
                 pump_logs, impl.event_count, impl.give_total, impl.null_give, impl.sem_create_args[0],
             });
         }
