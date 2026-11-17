@@ -6002,3 +6002,30 @@ fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
 
 ⇒ 要做对：IDF 侧计数器必须挂在我们**同样标注**的那些表项上（`_malloc_internal` 对应 IDF 的哪一项，需先查表），
 或更稳的做法 —— **两侧都用"表下标"计数**，不靠名字。
+
+#### 佐证：我们的计数是**按函数**、不是按表项
+
+`note(8)`（标签 `malloc`）与 `note(13)`（标签 `alloc`）都在 `shellMallocInternal` 里；
+而 `note(13)` **还在 `shellZallocInternal` 里**：
+
+```zig
+fn shellMallocInternal(...) { note(8, size, 0); ... note(13, size, ...); }
+fn shellZallocInternal(...) { note(13, size, ...); }        // ← 第二个 note(13)
+```
+
+⇒ 直方图 `malloc=23 / alloc=33 / zalloc=10` 恰好满足 **33 = 23 + 10** ⇒ 印证：
+**这些标签是"按函数"统计的**（`shellMallocInternal` / `shellZallocInternal`），
+而 IDF 的计数器是**按表项**（`_wifi_malloc` 一项）。
+
+⇒ 我们那张表把 `_malloc_internal` **和** `_wifi_malloc` **都指向 `shellMallocInternal`**：
+
+```zig
+t._malloc_internal = @ptrCast(&shellMallocInternal);
+t._wifi_malloc     = @ptrCast(&shellMallocInternal);   // ← 两个表项共用同一实现
+```
+
+⇒ 所以我们的 `23` 是**两个表项之和**，IDF 的 `5` 只是 `_wifi_malloc` 一项
+⇒ **两边不可比**，结论维持撤回。
+
+⇒ 若要做对：在 `shellMallocInternal` 里按**调用来源**（哪个表项）分开计数，
+或让 IDF 侧也在 `_malloc_internal` 上加计数器，两边同口径。
