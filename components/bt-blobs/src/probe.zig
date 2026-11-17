@@ -163,6 +163,19 @@ pub fn run() noreturn {
     }
     // 复位位：我们打印过 `rst_conf=0x00000000` ⇒ 所有 modem 复位位都是 0（未处于复位）✓
 
+    // **完整复位脉冲**（IDF 的 `MODEM_RESET_FIELD_WHEN_PU` 等价物）：此前我们只脉冲过
+    // bit16(`rst_btmac`)，而 bit15/17/23/29 这些子模块复位位可能**从未被置过**。
+    // 先写全 1（按住所有复位）再写全 0（释放），然后重开时钟（复位可能清掉时钟配置）。
+    const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
+    const rst_before = rst.*;
+    rst.* = 0xFFFF_FFFF;
+    var d: u32 = 0;
+    while (d < 2000) : (d += 1) std.atomic.spinLoopHint();
+    rst.* = 0;
+    board.log.line("bt probe: rst pulse {x} -> all1 -> {x}", .{ rst_before, rst.* });
+    porting.forceReenableClocks(&early_cfg.btdm);
+    board.log.line("{s}", .{"bt probe: clocks re-enabled after reset pulse"});
+
     board.log.line("{s}", .{"bt probe: calling bt_bb_v2_init_cmplx(1) ..."});
     _ = bt_bb_v2_init_cmplx(1);
 

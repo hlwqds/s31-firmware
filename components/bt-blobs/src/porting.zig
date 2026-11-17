@@ -164,6 +164,12 @@ fn wr(addr: usize, val: u32) void {
 
 var lp_clock_enabled: bool = false;
 
+/// 强制重开时钟门控（复位脉冲之后用：复位可能清掉时钟配置）。
+pub fn forceReenableClocks(cfg: *const config.BtdmCfg) void {
+    lp_clock_enabled = false;
+    btdmLpEnableClock(cfg);
+}
+
 /// 是否写 `SOC_PLL_SOURCE_CG`。默认 **false**：板侧证据显示写了之后 ROM 会卡在
 /// `UART0` 的 TX FIFO 排空上（`txfifo_cnt` 恒 128）——先排除"这一写扰动时钟"的可能。
 pub var pll_write_enabled: bool = false;

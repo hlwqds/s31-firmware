@@ -512,6 +512,19 @@ bt probe: calling bt_bb_v2_init_cmplx(1) ...
 ⇒ **Espressif 自己的 BB 初始化函数也挂在同一处**。这不是我们调用方式的问题，
 而是该块在**没有 PHY 前置**的情况下根本不可访问。
 
+**完整复位脉冲也无效（2026-11-17 最后一次实验）**：对 `modem_rst_conf`(0x20109C10)
+写全 1 再写全 0（IDF `MODEM_RESET_FIELD_WHEN_PU` 的等价物，此前只脉冲过 bit16），
+然后重开时钟、调 `bt_bb_v2_init_cmplx(1)`：
+
+```text
+bt probe: rst pulse 0 -> all1 -> 0     ← 写全 1 后读回 0（bit8-31 不可回读）
+bt probe: clocks re-enabled after reset pulse
+bt probe: calling bt_bb_v2_init_cmplx(1) ...
+（挂死）
+```
+
+⇒ 复位脉冲不解决。至此**所有能查的寄存器侧前置都已排除**。
+
 **再排除两条（2026-11-17）**：
 
 | 候选 | 板上读数 | 结论 |
