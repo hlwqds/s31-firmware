@@ -8,6 +8,15 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **init / enable 编排落地**（2026-11-17，`components/bt-blobs/src/bringup.zig`）：init 13 步、
+  enable 6 步，状态机 `idle → inited → enabled` + `getStatus()`（HCI 传输层的门禁就查它）。
+  两步最容易错：① **`r_btdm_task_enable` 在 enable 的最后一步**，不在 init 里——只做 init
+  的话 controller 任务永不启动，HCI 不会有回包；② `r_btdm_hci_fc_env_init` **必调**
+  （`UC_BT_CTRL_CONN_FC_ENABLE` 在 `btdm_user_cfg.h:108` 硬编码为 1）。
+  跳过 `esp_register_ext_funcs(&ext_funcs_ro)`：归档里有前者，但 **`ext_funcs_ro` 是 NimBLE
+  host 的符号、归档里没有** ⇒ 跳过并计数；若事件送不出来第一个回来查这里。
+  归档调用写成 `if (freestanding) f(...) else 0`（comptime 条件 ⇒ 主机分支不求值），
+  所以 13 个归档符号在主机测试里不进 debug info，29 个用例仍能在 x86_64 上跑。
 - **`btdm_lp_enable_clock` 按"空实现 + 大声日志"落地**（2026-11-17）：它是 9 个 porting 函数里唯一的
   真硬件活，但 **HCI Reset / Read Local Version 是软件层命令**，未必需要射频时钟 ⇒ 先空着，
   等 controller 一碰 MAC 寄存器就 fault 再补。补实现所需的规格已查全并写进

@@ -68,6 +68,7 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
 | `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
+| `src/bringup.zig` | init（13 步）/ enable（6 步）编排，状态机 `idle→inited→enabled`，附 `getStatus()` |
 | `src/porting.zig` | IDF porting 层的 C 函数在裸机侧的实现：4 个空实现 + `ble_msys_init` + mempool 容量校验 |
 | `src/config.zig` | `esp_bt_controller_config_t` 逐字段镜像（60 字段、**每字段偏移都断言**）、`defaults()`、`elemCalc()`/`mempoolElemNum()` |
 | `tools/btcfg-probe.{c,sh}` | 用 rv32 gcc 把 `sizeof`/`offsetof` 发射成常量表再读回（交叉产物跑不了） |
@@ -161,6 +162,24 @@ BT_APB、ETM、SOC_PLL_SOURCE_CG、BLE_MAC。
 两条纪律：① **宁可多开不要少开** —— 少开一个门，controller 访问该外设就是**总线挂死**（比缺时钟更糟），
 多开只浪费功耗 ⇒ 照 `BLE_CLOCK_DEPS` 全开；② 裸机没有 `esp_os_enter_critical_safe` ⇒
 单核下用"关中断写寄存器再开"代替。
+
+## 编排（`bringup.zig`）
+
+`init(cfg)` 13 步、`enable()` 6 步，状态机 `idle → inited → enabled`，
+并提供 `getStatus()`（HCI 传输层开头就拿它做门禁，非 ENABLED 直接 -1）。
+
+**顺序上最容易错的两点**：
+
+1. **`r_btdm_task_enable` 在 enable 的最后一步**，不在 init 里——只做 init 的话 controller
+   任务永不启动，HCI 不会有回包，症状就是"起来了但不发射"。
+2. **`r_btdm_hci_fc_env_init` 必调**：`UC_BT_CTRL_CONN_FC_ENABLE` 在 `btdm_user_cfg.h:108`
+   是硬编码 1，IDF 的 init 链无条件调用它。
+
+**跳过的一步**：`esp_register_ext_funcs(&ext_funcs_ro)` —— 归档里有 `esp_register_ext_funcs`，
+但 **`ext_funcs_ro` 是 NimBLE host 的符号，归档里没有**。跳过并打日志（`stats.skipped_ext_funcs`）；
+若后续事件送不出来，第一个要回头查这里。
+
+每个失败都记 `stats.failed_step` + `last_rc` 并打印，所以板侧日志能直接指出停在第几步。
 
 ## 待验证项
 

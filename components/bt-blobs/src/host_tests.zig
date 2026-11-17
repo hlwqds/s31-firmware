@@ -9,7 +9,9 @@ test {
     _ = @import("osal.zig");
     _ = @import("config.zig");
     _ = @import("porting.zig");
+    _ = @import("bringup.zig");
     std.testing.refAllDecls(@import("osal.zig"));
     std.testing.refAllDecls(@import("config.zig"));
     std.testing.refAllDecls(@import("porting.zig"));
+    std.testing.refAllDecls(@import("bringup.zig"));
 }
