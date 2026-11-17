@@ -5500,3 +5500,33 @@ IDF 在 `app_main` 之前（bootloader / 早期启动）已经把某些 MAC/PHY 
 ⇒ **唯一还没做的决定性实验**：把 IDF 的 `before_init` 打印扩成**全表 CLKDMP**
 （八寄存器 + `0x205871E0` + MAC 块窗口），与我们的 `CLKDMP[before-init]` **逐格 diff**——
 **底色不同的那一格，就是缺的那一拍。**
+
+### ★★★★★ 全表 diff 找到**唯一差异**：`LPCON+0x18`（IDF `0x1`，我们 `0x4`）
+
+把 IDF station 的 `before_init` 打印扩成全表（八寄存器 + `0x205871E0` + MAC 块 `0x20104C00..10`），
+与我们的 `CLKDMP[before-init]` 逐格对比：
+
+| 寄存器 | **IDF `before_init`** | **我们 `before-init`** | |
+|---|---|---|---|
+| `MAC_ST` | `0x0000E000` | `0x0000E000` | ✓ |
+| `c04` clk_conf | `0x00201002` | `0x00201002` | ✓ |
+| `c08` force_on | `0x0` | `0x0` | ✓ |
+| `c0C` icg | `0x0` | `0x0` | ✓ |
+| `c10` rst_conf | `0x0` | `0x0` | ✓ |
+| `c14` clk_conf1 | `0x0` | `0x0` | ✓ |
+| **`f018` LPCON clk_conf** | **`0x00000001`** | **`0x00000004`** | **✗ 唯一差异** |
+| `f01C` LPCON force_on | `0x00000004` | `0x00000004` | ✓ |
+| `f020` LPCON icg | `0x0` | `0x0` | ✓ |
+| `hp1e0` | `0x00000025` | `0x00000025` | ✓ |
+
+`f018` 的字段（`modem_lpcon_struct.h:108-113`）：bit0 `clk_wifipwr_fo` / bit1 `clk_coex_fo` /
+bit2 `clk_i2c_mst_fo` / bit3 `clk_lp_timer_fo` / bit4 `clk_fe_mem_fo`。
+
+⇒ **IDF 的启动环境给的是 `clk_wifipwr_fo`（WiFi 电源域 force-on，bit0）**；
+**我们被给成的是 `clk_i2c_mst_fo`（bit2）**。
+
+⇒ 这就是"启动环境底色不同"的**具体一格**：**WiFi 电源域的 force-on 在 IDF 的 bootloader 阶段就已经打开，
+而我们没有** ⇒ MAC 域始终没有真正上电 ⇒ `MAC_ST[15:13]` 永远不清。
+
+⇒ 下一步（明确）：在 init 之前把 `LPCON+0x18` 的 **bit0 置上、bit2 清掉**（即先写成 `0x1`），
+再走原来的 enable 序列，看 `MAC_ST` 是否第一次归零。
