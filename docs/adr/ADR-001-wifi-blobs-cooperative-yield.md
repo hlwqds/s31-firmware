@@ -5272,3 +5272,26 @@ panic 0
 ⇒ 下一步（唯一）：在 IDF 侧把 `wifi_module_enable()` 的**调用轨迹**抓下来
 （给 `modem_clock_module_enable` / `modem_clock_device_control` / 各 `configure` 各加一行打点），
 看它实际执行了哪些函数——寄存器已经对齐，剩下的差异只能在**调用**上。
+
+### 判决（负）：在 `modem_clock_device_control` 里 printf ⇒ **重启循环**
+
+按"抓调用轨迹"的思路给 `modem_clock_module_enable` / `modem_clock_device_control` / `configure` 各加 `TRACE` printf：
+重新构建 + 烧板 + 抓串口后：
+
+```text
+TRACE enter modem_clock_module_enable(5)
+TRACE deps=0x000003ec icg_init_done
+（"TRACE device_control done" 0 条、  "TRACE configure dev=" 0 条）
+（"PROBE mac_st before_init" 出现 24 次 ⇒ 板子一直在重启）
+```
+
+⇒ **`device_control` 内部（持临界锁 + IRAM 上下文）的 printf 直接把板子搞崩，进入重启循环。**
+
+⇒ 有用的半截信息：**`deps = 0x000003EC`** —— 正是 `WIFI_CLOCK_DEPS` 的位图（7 个 device），
+且 `icg_map_init_all` 那一步是能跑完的。
+
+⇒ **结论：这条路要用"先记录、后打印"的非打印环形缓冲**（在 `device_control` 里只写一个静态数组，
+等 `esp_wifi_init()` 返回后再统一打出来），不能在里面 printf。
+
+⇒ IDF 树已 `git checkout` 还原；板子已刷回 Zig 探针（`INITWIN qsend=1 qrecv=2 clken=1` / `INIT OK` /
+`calling esp_wifi_start` 均正常）。
