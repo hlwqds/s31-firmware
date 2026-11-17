@@ -68,6 +68,14 @@ pub fn run() noreturn {
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
 
+    // **在 init 之前**武装 T0 + 开中断：init 一旦卡住，只有 ISR 还能说话。
+    // 采样点在 trap 的输入 25 分支；中断还在来 ⇒ 是 spin 而非死机。
+    // ⚠ 只有探针构建这么做，生产固件保持 MIE=0。
+    board.hw.routeT0Interrupt(25);
+    board.hw.armT0Interrupt(2000);
+    board.hw.enableInterrupts();
+    board.log.line("{s}", .{"bt probe: irq enabled (probe only), t0=2ms"});
+
     // 1) arena 最先
     const hs = @intFromPtr(heapStart());
     const he = @intFromPtr(heapEnd());
@@ -125,6 +133,15 @@ pub fn run() noreturn {
     }
     osal.logPublic("bt probe: no EVT after {d} rounds (evt_count=0)", .{round});
     halt();
+}
+
+/// 打印 PC 采样：卡住时这是"它在哪转"的唯一线索。
+fn dumpPcs() void {
+    var pcs: [8]u32 = @splat(0);
+    const n = board.trap.samplePcs(&pcs);
+    osal.logPublic("bt probe: pc samples n={d} total={d}", .{ n, board.trap.pcSampleCount() });
+    var i: usize = 0;
+    while (i < n) : (i += 1) osal.logPublic("bt probe:   pc[{d}]=0x{x:0>8}", .{ i, pcs[i] });
 }
 
 fn findFirstTask() ?*sched.Task {

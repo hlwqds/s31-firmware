@@ -337,6 +337,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 输入 25 是 blob 自己的 tick。**不能**转发给 `rom_mtvec`：实测跳到掩位后的
             // 0x2f801700 会 `instruction access fault`（mepc=mtval=0x2f8210d2）——那个地址是
             // CLIC 模式的**向量表基址**，不是代码入口。转发要给 `mtvt[id]`，那是另一件事。
+            //
+            // **PC 采样**：记下被中断的 PC。某个地方死等（spinning）时，把这里采到的地址
+            // 打出来就直接指向那个循环，比逐层加日志快得多。
+            recordPc(frame.mepc);
+            // 每 256 次（≈0.5 s）打一行：**卡在 init 内部时只有 ISR 还能说话**，
+            // 这一行直接指出死等发生在哪个地址。
+            if (pc_ring_n % 256 == 0) {
+                log.line("pcsample n={d} pc=0x{x} ra=0x{x}", .{ pc_ring_n, frame.mepc, frame.ra });
+            }
             hw.ackT0Interrupt(2000);
             return false;
         }
@@ -368,6 +377,30 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     log.raw("panic: halted (wfi)\n");
     hw.halt();
     return false;
+}
+
+/// PC 采样环（诊断死等用）：`samplePcs()` 把最近几次被中断的 PC 拷出来。
+var pc_ring: [8]u32 = @splat(0);
+var pc_ring_n: u32 = 0;
+
+fn recordPc(pc: usize) void {
+    pc_ring[pc_ring_n % 8] = @intCast(pc & 0xFFFF_FFFF);
+    pc_ring_n +%= 1;
+}
+
+/// 采样次数（调用方据此判断"中断还在来" ⇒ 是 spin 而不是死机）。
+pub fn pcSampleCount() u32 {
+    return pc_ring_n;
+}
+
+/// 把最近的采样拷进 `out`（按时间顺序），返回拷了几个。
+pub fn samplePcs(out: *[8]u32) usize {
+    const n = @min(pc_ring_n, 8);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        out[i] = pc_ring[(pc_ring_n +% 8 - n + i) % 8];
+    }
+    return n;
 }
 
 /// 启动汇编在覆盖 `mtvec` 前保存的 ROM 入口（`start.zig` 的 `export var rom_mtvec`）。
