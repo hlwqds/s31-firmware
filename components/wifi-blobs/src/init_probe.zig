@@ -223,6 +223,11 @@ fn dumpClockRegs(tag: []const u8) void {
         .{ .name = "rst_conf(+10)", .addr = 0x2010_9C10 },
         .{ .name = "clk_conf1(+14)", .addr = 0x2010_9C14 },
         .{ .name = "lpcon+18", .addr = 0x2010_F018 },
+        // LPCON 侧还有两个我们**从没写过**的：force_on(+0x1C) 与 ICG 位图(+0x20)。
+        // IDF 的 `modem_clock_hal_set_clock_domain_icg_bitmap()` 对 SYSCON 侧和 LPCON 侧**都写**，
+        // 我们只写了 SYSCON 侧那张 ⇒ 这两格很可能是"域没真上电"的另一半。
+        .{ .name = "lpcon+1C_fo", .addr = 0x2010_F01C },
+        .{ .name = "lpcon+20_icg", .addr = 0x2010_F020 },
     };
     log.line("wifi-init-probe: CLKDMP[{s}]", .{tag});
     for (regs) |r| {

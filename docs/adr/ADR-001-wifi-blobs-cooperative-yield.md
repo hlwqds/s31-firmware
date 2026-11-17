@@ -4751,3 +4751,38 @@ panic: exception code=1 (instruction access fault)
 ⇒ 顺带一条新差异：`force_on(+08)` 在 after-init 与 before-start 之间从 `0` 变成 `0x1C`
 （= bits 2,3,4：`wifi_apb_fo`/`fe_fo`/`fe_apb_fo`），**不含 `clk_wifimac_fo`(bit1) 与 `clk_wifibb_fo`(bit0)**——
 这是目前唯一还没和 IDF 对齐的时钟位。
+
+### 补上 LPCON 侧 ICG 位图（`0x2010F020`）——写入生效，但 MAC_ST 仍不清
+
+**新发现的差异**：IDF 的 `modem_clock_hal_set_clock_domain_icg_bitmap()`
+（`hal/esp32s31/modem_clock_hal.c:53-64`）对 **SYSCON 侧和 MODEM_LPCON 侧都写**，
+而我们只写了 SYSCON 侧（`0x20109C0C = 0x64646400`），**LPCON 侧的位图 `0x2010F020` 一直是 0**。
+
+IDF 的确切值（`modem_clock_impl.c:371-393` + `pmu_types.h:34-36`）：
+
+| 域 | 值 | 位段 |
+|---|---|---|
+| `LP_APB` | `ICG_NOGATING_ACTIVE \| ICG_NOGATING_MODEM` = `0x6` | `[31:28]` |
+| `I2C_MASTER` | `0x6` | `[27:24]` |
+| `COEX` | `0x6` | `[23:20]` |
+| `WIFIPWR` | `0x6` | `[19:16]` |
+
+（`PMU_HP_ICG_MODEM_CODE_ACTIVE=2` ⇒ `BIT(2)=0x4`；`..._MODEM=1` ⇒ `BIT(1)=0x2`）
+⇒ 四域各 `0x6` ⇒ **`0x66660000`**。
+
+写入后：
+
+```text
+wifi-init-probe:   lpcon+20_icg=0x66660000     ← 写进去了（原来是 0）
+wifi-init-probe: MAC_ST before start = 0x0000e000
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+panic 0
+```
+
+⇒ **位图写入生效**（`0x66660000`），但 `MAC_ST` **仍是 `0xE000`**、start 仍在自旋。
+
+⇒ 这条也是"补上了、但不够"。**`wifipwr` 域的门控图现在对了**，所以"blob 因为 wifipwr 没开才去
+force-on"这个解释也站不住（`lpcon+1C_fo` 仍从 `0x4` 变 `0x5`，blob 照样置 bit0）。
+
+⇒ 到这一步，**时钟侧能对的都对了**（SYSCON ICG / clk_conf1 / LPCON clk_conf / LPCON ICG 四张图全在 IDF 值上），
+`MAC_ST[15:13]` 依旧不动 ⇒ 剩下唯一方向就是 **IDF init 内部哪一步让这三位归零**（逐 osi 调用点插桩）。
