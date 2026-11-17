@@ -7,5 +7,7 @@ const std = @import("std");
 
 test {
     _ = @import("osal.zig");
+    _ = @import("config.zig");
     std.testing.refAllDecls(@import("osal.zig"));
+    std.testing.refAllDecls(@import("config.zig"));
 }

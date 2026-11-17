@@ -68,6 +68,8 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
 | `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
+| `src/config.zig` | `esp_bt_controller_config_t` 的逐字段镜像（60 字段），comptime 断言钉死全部偏移 |
+| `tools/btcfg-probe.{c,sh}` | 用 rv32 gcc 把 `sizeof`/`offsetof` 发射成常量表再读回（交叉产物跑不了） |
 
 **两条形状纪律**（踩过就炸内存）：
 
@@ -94,6 +96,21 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 
 `printf` / `ets_printf` 走的是 **ROM 的格式化器**（走 ROM 的 UART 配置，不是我们的板日志）。
 里程碑 2 接 HCI 时若要统一日志，需要把这两个换成自己的 shim。
+
+## 布局实测（`tools/btcfg-probe.sh`）
+
+```text
+sizeof(esp_bt_controller_config_t) = 192
+  ble   @ 0     (112 字节)
+  bredr @ 112   (56 字节，含 8 个 C 位域 ⇒ [56]u8)
+  btdm  @ 168   (20 字节)
+ble 内: config_version@0、rtc_freq@24（u64，Hz）、main_xtal_freq@84（u8，MHz）、config_magic@108
+btdm 内: version@0、magic@16
+```
+
+`config.zig` 用 13 条 comptime 断言把这些数字钉住——**字段类型写错会当场编译失败**，
+不需要上板才发现。`esp_bt.h` 本身交叉编译不出来（它会拉 FreeRTOS 的 `portmacro.h`），
+所以探针只抄了 `esp_bt.h:176-323` 的结构体本体。
 
 ## 待验证项
 

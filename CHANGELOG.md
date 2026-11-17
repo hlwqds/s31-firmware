@@ -8,6 +8,14 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **`esp_bt_controller_config_t` 的逐字段镜像 + 布局实测**（2026-11-17，R3.3 里程碑 2 前置）：
+  `components/bt-blobs/src/config.zig` 镜像 60 个字段，13 条 comptime 断言钉死全部偏移
+  （总长 **192**、`ble`@0/**112 B**、`bredr`@112/**56 B**、`btdm`@168/**20 B**；
+  `ble` 内 `config_version`@0、`rtc_freq`@24、`main_xtal_freq`@84、`config_magic`@108）。
+  数字**不是手算**：`tools/btcfg-probe.sh` 用 rv32 gcc 把 `sizeof`/`offsetof` 发射成常量表再读回
+  （交叉产物跑不了，而 `esp_bt.h` 会拉 FreeRTOS 的 `portmacro.h` 编不过 ⇒ 探针只抄了结构体本体）。
+  三处照抄要点：`bredr` 有 8 个 C 位域 ⇒ Zig 无位域，用 `[56]u8` 占位（`btdm` 的偏移由它决定）；
+  `ble.rtc_freq` 是 u64 ⇒ 引入 8 字节对齐填充；4 个 C `bool` 用 `u8`（Zig `bool` 遇非 0/1 字节是 UB）。
 - **56 个弱断言桩全部有强定义**（2026-11-17，R3.3 里程碑 2c1 收口）：在 36 个 OSAL 之上补齐
   **11 个 `wr_btdm_coex_*`**（Wi-Fi/BLE 共存钩子）。这批**不能做空桩**——controller 会问
   "Wi-Fi 现在哪个信道"、"这个状态位可用吗"，空桩返回 0 会被当成"可用"或"信道 0"。做法是维持
