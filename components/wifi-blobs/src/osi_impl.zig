@@ -1179,9 +1179,9 @@ fn shellWifiClockEnable() callconv(.c) usize {
     const icg_before = icg.*;
     // **严格按 IDF `modem_clock_device_control` 的 device 顺序写**——
     // 环形缓冲轨迹（ADR）证明：清 `MAC_ST[15:13]` 的就是 **dev=7 = `WIFI_MAC`** 的 configure，
-    // 即写 `clk_conf1.clk_wifimac_en`（bit0）；而它是设备循环里的**第 5 个**，
+    // 即写 `clk_conf1.clk_wifimac_en`（**bit 9**）；而它是设备循环里的**第 5 个**，
     // 前面已经写过 SOC_PLL / COEXIST / WIFI_APB / WIFI_BB_44M。
-    // 顺序：SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit0)** → WIFI_BB(rst+组) → WIFI_BB_80X1
+    // 顺序：SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit9)** → WIFI_BB(rst+组) → WIFI_BB_80X1
     icg.* = 0x6464_6400;
     note(20, icg_before, icg.*);
 
