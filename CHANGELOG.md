@@ -20,7 +20,9 @@
   "`rom_syms.ld` 里有"，增量链接实验要先对账；
   ③ 5 个 `*_btdm` 边界符号用**零长度区间**即可：`libble_app/112.o` 的用法是
   `memset(start, 0, end-start)`，而本布局 `.bss` 已由 `_start` 清零、`.data` 的 LMA == VMA。
-  另：`wr_btdm_osal_*` 51 个**全部由归档自身定义**（未定义交集为 0），不需要我们实现。
+  另：`wr_btdm_osal_*` 51 个虽由归档定义，但类型是 **`W`（弱定义）、函数体是 `wr_btdm_assert` 断言占位**
+  ⇒ **必须由我们实现**（IDF 的真实实现是 `btdm_osal_freertos.c`，基于 FreeRTOS）。这是"让 controller
+  跑起来"的主要工作量；`nm` 只数"有定义"不够，必须看类型字母。
 - **Wi-Fi blob init 返回 0**（2026-11-16，R3 里程碑）：真实 blob 的 `esp_wifi_init_internal`
   在裸机上返回 **0**（`wifi-init-probe: INIT OK`）。三个修复都由故障点反汇编定住：
   `_wifi_create_queue`（表 index 94）是独立钩子且**返回对象的第一个字必须是内部队列指针**

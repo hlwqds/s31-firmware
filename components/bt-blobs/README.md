@@ -17,7 +17,8 @@
 | 闭包被真拉进来 | ✅ | 镜像里的字符串可见 `btdm_hci_trans.c`、`btdm_sleep.c`、`btdm_broker.c`；`.iram_blobs` 0 → 60 224 B |
 | `r_ble_controller_init` 调用 | ❌ 未做 | 需要 `esp_btdm_controller_config_t`（含 `magic`）的逐字段镜像 |
 | HCI 传输口打开 | ❌ 未做 | `hci_transport_init` **不在归档里**，是 IDF C 源 |
-| HCI Reset / Read Local Version 有应答 | ❌ 未做 | 需要一个 HCI host 侧（本组件计划自己写 3 个 `hci_driver_ops`） |
+| HCI Reset / Read Local Version 有应答 | ❌ 未做 | 需要一个 HCI host 侧（计划自己写 3 个 `hci_driver_ops`） |
+| controller 的 OSAL（51 个弱断言占位） | ❌ 未实现 | 不实现就一调 `wr_btdm_assert` 挂住；见下方待验证项 4 |
 
 > 别把"链接成立"读成"controller 可用"。真实扫描/连接离这里有整整一个传输层。
 
@@ -90,4 +91,9 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
    把 CMD 打进 `btdm_hci_trans_rx`，回程经 `r_ble_hci_trans_cfg_hs` + `btdm_hci_trans_register_tx` 注册的
    回调出来，每个字节进日志。`ble_controller_enable/disable`、`hci_transport_init`、
    `ble_controller_scan_duplicate_config`、`ble_msys_init` 都在**归档外**，同属"我们提供"那一桶。
-4. **`wr_btdm_osal_*` 已确认不用写**：51 个全部由 `libbtdm_common` 自身定义（未定义交集为 0）。
+4. **`wr_btdm_osal_*`（51 个）必须我们实现**：`nm` 显示它们由 `libbtdm_common` 定义，但类型是
+   **`W`（弱定义）**，反汇编是 `wr_btdm_assert(file, line)` 的**断言占位**；IDF 的真实实现
+   （`porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c`）在真实构建里强定义覆盖它们。
+   51 个按类：callout 9、event/eventq 11、临界区 3、中断分配 2、内存 2、互斥 4、信号量 5、
+   任务 2、时间 5、杂项 5（`ets_delay_us`/`rand`/`srand`/`read_efuse_mac`/`get_time_forever`）。
+   ⇒ 这是"让 controller 跑起来"的主要工作量，可复用 `wifi-blobs/src/osi_impl.zig` 与 `sched.zig`。
