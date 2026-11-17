@@ -4463,3 +4463,22 @@ loop: lw a5, 0(MAC_ST)
    `esp_wifi_start` 期间仍然一次都跑不到**。所以"MAC 域没起来"这个结论**仍带着旧前提**（"任务从未被调度"）。
    准确表述：**调度这条线在 init 期间已打通；start 期间的自旋仍不让出 ⇒ PP worker 仍跑不到，
    两种可能（硬件没起来 / 任务没跑到）尚未分离。**
+
+### 判决（负）：`rst_wifimac` 脉冲（已加宽到 20 µs）**清不掉** MAC_ST bits 13–15
+
+```text
+wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
+wifi-init-probe: after rst_wifimac pulse MAC_ST=0x0000e000 (was 0x0000e000)
+```
+
+手动脉冲 `_wifi_reset_mac`（`0x20109C10` bit9，set → `ets_delay_us(20)` → clear）之后，
+那三位**一位都没变**。
+
+⇒ 两条假设同时被否：
+1. **"复位脉冲太窄，异步域采不到"** —— 已加宽到 20 µs，仍无变化；
+2. **"bits 13–15 属于 `rst_wifimac` 复位域"** —— 不属于。
+
+结合此前"直写 MAC_ST 不粘"：这三位既**写不动**、也**复位不动** ⇒ 由**另一条路径**驱动
+（更可能是某个使能/时钟序列完成后由硬件自己置位，而不是等软件清）。
+
+⇒ 下一个判别点应转向**"谁把这三位置成 1"**，而不是"怎么清"。

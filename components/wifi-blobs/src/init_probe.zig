@@ -971,6 +971,15 @@ pub fn run() noreturn {
                 // IDF 侧 MAC_ST 是 0（bootloader_init_mem 清过），所以它能过。
                 {
                     log.line("wifi-init-probe: MAC_ST before start = 0x{x:0>8} (spin mask 0xE000)", .{mac_st.*});
+                    // **判别实验**：手动脉冲 `rst_wifimac`（`_wifi_reset_mac` 钩子，bit9，脉冲已加宽到 20 µs），
+                    // 看 MAC_ST 的 bits 13-15 是否因此清零——若清不掉，说明那三位不属于这个复位域。
+                    {
+                        const before = mac_st.*;
+                        _ = impl.callResetMac();
+                        log.line("wifi-init-probe: after rst_wifimac pulse MAC_ST=0x{x:0>8} (was 0x{x:0>8})", .{
+                            mac_st.*, before,
+                        });
+                    }
                     // **闸门**：`0x2f00254e` 返回 `b[0x2F0174A2]`（非 0 时）否则 `b[0x2F0175C4]`；
                     // 返回 0 时 `esp_wifi_start` **跳过** MAC_ST 等待（`beqz a0, 0x2f0091dc`）。
                     {

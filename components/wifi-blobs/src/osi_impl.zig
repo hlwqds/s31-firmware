@@ -1207,6 +1207,11 @@ fn romDelayUs(us: u32) void {
     f(us);
 }
 
+/// 给探针用的公开入口（与 `_wifi_reset_mac` 钩子同一实现）。
+pub fn callResetMac() usize {
+    return shellWifiResetMac();
+}
+
 fn shellWifiResetMac() callconv(.c) usize {
     cnt_reset_mac +%= 1;
     const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
