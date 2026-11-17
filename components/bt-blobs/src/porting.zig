@@ -105,7 +105,15 @@ extern fn r_esp_ble_msys_init(
 const syscon_base: usize = 0x2010_9C00;
 const lpcon_base: usize = 0x2010_F000;
 const reg_clk_conf: usize = syscon_base + 0x04;
+const reg_clk_conf_power_st: usize = syscon_base + 0x0c;
 const reg_rst_conf: usize = syscon_base + 0x10;
+// `modem_rst_conf` 的位（esp32s31 `modem_syscon_struct.h`）。读回恒 0,只可写。
+const b_rst_btmac_apb: u32 = 1 << 15;
+const b_rst_modem_ecb: u32 = 1 << 25;
+const b_rst_modem_ccm: u32 = 1 << 26;
+const b_rst_modem_bah: u32 = 1 << 27;
+const b_rst_modem_sec: u32 = 1 << 29;
+const b_rst_ble_timer: u32 = 1 << 30;
 const reg_clk_conf1: usize = syscon_base + 0x14;
 const reg_lpcon_clk_conf: usize = lpcon_base + 0x18;
 
@@ -240,10 +248,61 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         rd(reg_lpcon_lp_timer_conf), rd(reg_lpcon_32k_conf), rd(reg_lpcon_clk_conf),
     });
 
-    // 3) MAC 复位（时钟之后）：写 1 再写 0
-    wr(reg_rst_conf, rd(reg_rst_conf) | b_rst_btmac);
-    wr(reg_rst_conf, rd(reg_rst_conf) & ~b_rst_btmac);
-    osal.logPublic("bt lp: mac reset done, rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
+    // 2.75) **modem PLL 时钟**（`HP_SYS_CLKRST_MODEM_CONF` = 0x205871e0）。
+    //   位定义（hp_sys_clkrst_struct.h）：
+    //     bit0 modem_apb_clk_en(默认1)  bit1 modem_rst_en  bit2 modem_clk_en(默认1)
+    //     bit3 modem_clk_source_sel     bit4 **modem_pll_clk_en(默认 0)**
+    //     bit5 modem_xtal_clk_en(默认1)
+    //   IDF 的对照镜像实测：init 前 0x25，init 后 0x3d ⇒ 它把 bit3 与 bit4 打开。
+    //   **bit4 是 modem PLL 时钟，默认关闭**；不开它，modem 的寄存器总线不应答，
+    //   表现为访问 `0x2010B000` 直接挂死（不是 fault）。
+    {
+        const a: usize = 0x2058_71E0;
+        wr(a, rd(a) | @as(u32, 0x18)); // modem_clk_source_sel | modem_pll_clk_en
+        osal.logPublic("bt lp: MODEM_CONF=0x{x:0>8} (bit3+bit4 set)", .{rd(a)});
+    }
+
+    // 2.8) **IDF `clk_conf` 里被我们漏掉的时钟**（与 IDF 成功镜像逐字对拍得出）：
+    //      IDF clk_conf=0x7e601002，我们 0x00201002 ⇒ 差 0x7E400000：
+    //        bit22 clk_etm_en
+    //        bit25 clk_modem_sec_ecb_en   bit26 _ccm_en   bit27 _bah_en
+    //        bit28 clk_modem_sec_apb_en   bit29 clk_modem_sec_en
+    //        bit30 **clk_ble_timer_en**
+    //      复位与时钟必须成对：此前我们复位了这些块却从未给它们开门控。
+    {
+        const b_etm: u32 = 1 << 22;
+        const b_sec = (@as(u32, 1) << 25) | (@as(u32, 1) << 26) | (@as(u32, 1) << 27) |
+            (@as(u32, 1) << 28) | (@as(u32, 1) << 29);
+        const b_ble_timer: u32 = 1 << 30;
+        wr(reg_clk_conf, rd(reg_clk_conf) | b_etm | b_sec | b_ble_timer);
+        // clk_conf1 / clk_conf_power_st：IDF 分别为 0x00070080 / 0x64646400，我们全 0。
+        wr(reg_clk_conf1, rd(reg_clk_conf1) | @as(u32, 0x0007_0080));
+        wr(reg_clk_conf_power_st, rd(reg_clk_conf_power_st) | @as(u32, 0x6464_6400));
+        osal.logPublic("bt lp: clk_conf=0x{x:0>8} clk_conf1=0x{x:0>8} power_st=0x{x:0>8}", .{
+            rd(reg_clk_conf), rd(reg_clk_conf1), rd(reg_clk_conf_power_st),
+        });
+    }
+
+    // 3) **MAC 复位族**（时钟之后）。IDF `modem_clock_module_mac_reset(PERIPH_BT_MODULE)`
+    //    依次复位四个域,顺序与位号如下（`modem_syscon_struct.h` 的 `modem_rst_conf`）:
+    //      rst_btmac      bit16
+    //      rst_btmac_apb  bit15   ← 此前**漏做**
+    //      rst_ble_timer  bit30   ← 此前**漏做**
+    //      modem_sec      bit29 (+ ecb 25 / ccm 26 / bah 27) ← 此前**漏做**
+    //    只做 bit16 时,`0x2010B000`(BLE/MAC 私有块)读一次即总线挂起;
+    //    IDF 的对照镜像里同一地址在 init 后读得到 `0x5ac00000`。
+    //    该寄存器读回恒为 0（写 1 不可回读）,所以每步都**直接写值**而非 RMW。
+    const pulse = struct {
+        fn f(v: u32) void {
+            wr(reg_rst_conf, v);
+            wr(reg_rst_conf, 0);
+        }
+    };
+    pulse.f(b_rst_btmac); // 1. BT MAC
+    pulse.f(b_rst_btmac_apb); // 2. BT MAC APB
+    pulse.f(b_rst_ble_timer); // 3. BLE timer
+    pulse.f(b_rst_modem_ecb | b_rst_modem_ccm | b_rst_modem_bah | b_rst_modem_sec); // 4. modem sec
+    osal.logPublic("bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
 }
 
 /// `btdm_lp_reset(true)`：低功耗子系统复位。当前无状态可复位。

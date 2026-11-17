@@ -211,6 +211,23 @@ pub fn run() noreturn {
     // 2) init 链（15 步）
     cfg = config.defaults();
     osal.logPublic("bt probe: init start", .{});
+    // **syscon 窗口对拍**：与 IDF 成功镜像的 `[after_init]` 逐字比较
+    {
+        var k: usize = 0;
+        while (k < 16) : (k += 1) {
+            const a: usize = 0x2010_9C00 + k * 4;
+            board.log.line("bt probe: syscon+0x{x:0>2} = 0x{x:0>8}", .{ k * 4, (@as(*volatile u32, @ptrFromInt(a))).* });
+        }
+    }
+    // hp_sys_clkrst 全窗口（与 IDF 成功镜像的程序化对拍）
+    {
+        var k: usize = 0;
+        while (k < 128) : (k += 1) {
+            const a: usize = 0x2058_7000 + k * 4;
+            const v = (@as(*volatile u32, @ptrFromInt(a))).*;
+            if (v != 0) board.log.line("clkrst+0x{x:0>3} = 0x{x:0>8}", .{ k * 4, v });
+        }
+    }
     var rc = bringup.init(&cfg);
     if (rc != 0) {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
@@ -229,9 +246,9 @@ pub fn run() noreturn {
     // 4) 真正进任务（只有第一次用 startScheduler）
     ctrl_task = findFirstTask();
     if (ctrl_task) |t| {
-        osal.logPublic("bt probe: entering controller task (stack={d} B)", .{t.stack_size});
-        sched.startScheduler(t);
-        osal.logPublic("bt probe: back in main (task blocked or returned)", .{});
+        // 调度器已在 `task_create` 时启动过（FreeRTOS 语义）⇒ 这里不能再调
+        // `startScheduler`（它会重置 `main_ctx`）。
+        osal.logPublic("bt probe: controller task present (stack={d} B, scheduler started={})", .{ t.stack_size, sched.isStarted() });
     } else {
         osal.logPublic("bt probe: WARN no task was created by r_btdm_task_init", .{});
     }

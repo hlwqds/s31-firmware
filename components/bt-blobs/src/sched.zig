@@ -238,8 +238,12 @@ pub noinline fn startScheduler(t: *Task) void {
     started = true;
     main_ctx = .{};
     enterAs(&t.ctx);
+    // `current` 必须**在切换前**指向即将运行的那个上下文：
+    // swap 返回时控制权已经变了，事后再设会把记账写反（任务第一次 block 会
+    // `swapContext(main, main)` 自己切自己 ⇒ 原地死循环，看起来像"卡住"）。
+    current = &t.ctx;
     swapContext(&main_ctx, &t.ctx);
-    current = &main_ctx;
+    current = &main_ctx; // 从任务回到这里 ⇒ 现在是主上下文
 }
 
 /// **阻塞**：把当前上下文切回主上下文。等 `resumeTask()` 再切回来，从原地继续。
@@ -247,8 +251,8 @@ pub noinline fn startScheduler(t: *Task) void {
 pub noinline fn block() void {
     if (!started) return; // 还没有调度器：退化成"立即返回"，由调用方按 TIMEOUT 处理
     stats_state.blocks += 1;
+    // 不能在这里写 `current = &main_ctx`：本函数从任务里调用，恢复后仍在任务里。
     swapContext(current, &main_ctx);
-    current = &main_ctx;
 }
 
 /// **恢复**某个被阻塞的任务（`resume` 是 Zig 关键字，故命名 `resumeTask`），并把控制权交给它（直到它再次阻塞）。
@@ -256,8 +260,9 @@ pub noinline fn block() void {
 pub noinline fn resumeTask(t: *Context) void {
     if (!started) return;
     stats_state.resumes += 1;
-    swapContext(current, t);
-    current = &main_ctx;
+    current = t; // 即将在任务里运行
+    swapContext(&main_ctx, t);
+    current = &main_ctx; // 任务阻塞回来 ⇒ 主上下文
 }
 
 /// 任务侧：`t` 是不是主上下文。

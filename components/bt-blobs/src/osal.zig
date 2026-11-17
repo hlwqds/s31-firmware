@@ -348,6 +348,7 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
         trace("mutexPend< EINVAL (null slot)", .{});
         return EINVAL;
     };
+    logLine("bt osal: mutex_pend slot={x} m={x} locked={}", .{ @intFromPtr(slot), @intFromPtr(m), m.locked });
     // **FOREVER 必须"等到拿到"**：归档用 `portMAX_DELAY` 表示"这把锁我会一直等"，
     // 返回 TIMEOUT 会让它拿到没预期的错误码。调度器没启动时没有可切换的任务
     // ⇒ 用**有界忙等**代替真阻塞（忙等期间不打印）。
@@ -859,137 +860,178 @@ test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
 const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
+    logLine("bt osal: eventq_init", .{});
     eventqInit(evq);
 }
 export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
+    logLine("bt osal: eventq_deinit", .{});
     eventqDeinit(evq);
 }
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
+    logLine("bt osal: eventq_get", .{});
     return eventqGet(evq, tmo);
 }
 export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
+    logLine("bt osal: eventq_put", .{});
     eventqPut(evq, ev);
 }
 export fn wr_btdm_osal_eventq_put_to_front(evq: *Slot, ev: *Slot) callconv(.c) void {
+    logLine("bt osal: eventq_put_to_front", .{});
     eventqPutToFront(evq, ev);
 }
 export fn wr_btdm_osal_eventq_remove(evq: *Slot, ev: *Slot) callconv(.c) void {
+    logLine("bt osal: eventq_remove", .{});
     eventqRemove(evq, ev);
 }
 export fn wr_btdm_osal_eventq_is_empty(evq: *Slot) callconv(.c) bool {
+    logLine("bt osal: eventq_is_empty", .{});
     return eventqIsEmpty(evq);
 }
 
 export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
+    logLine("bt osal: event_run", .{});
     eventRun(ev);
 }
 export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
+    logLine("bt osal: event_init", .{});
     eventInit(ev, fn_, arg);
 }
 export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
+    logLine("bt osal: event_deinit", .{});
     eventDeinit(ev);
 }
 export fn wr_btdm_osal_event_reset(ev: *Slot) callconv(.c) void {
+    logLine("bt osal: event_reset", .{});
     eventReset(ev);
 }
 export fn wr_btdm_osal_event_is_queued(ev: *Slot) callconv(.c) bool {
+    logLine("bt osal: event_is_queued", .{});
     return eventIsQueued(ev);
 }
 export fn wr_btdm_osal_event_get_arg(ev: *Slot) callconv(.c) ?*anyopaque {
+    logLine("bt osal: event_get_arg", .{});
     return eventGetArg(ev);
 }
 export fn wr_btdm_osal_event_set_arg(ev: *Slot, arg: ?*anyopaque) callconv(.c) void {
+    logLine("bt osal: event_set_arg", .{});
     eventSetArg(ev, arg);
 }
 
 export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
+    logLine("bt osal: mutex_init", .{});
     return mutexInit(mu);
 }
 export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
+    logLine("bt osal: mutex_deinit", .{});
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
+    logLine("bt osal: mutex_pend", .{});
     return mutexPend(mu, timeout);
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
+    logLine("bt osal: mutex_release", .{});
     return mutexRelease(mu);
 }
 
 export fn wr_btdm_osal_sem_init(sem: *Slot, tokens: u16) callconv(.c) c_int {
+    logLine("bt osal: sem_init", .{});
     return semInit(sem, tokens);
 }
 export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
+    logLine("bt osal: sem_deinit", .{});
     return semDeinit(sem);
 }
 export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
+    logLine("bt osal: sem_pend", .{});
     return semPend(sem, timeout);
 }
 export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
+    logLine("bt osal: sem_release", .{});
     return semRelease(sem);
 }
 export fn wr_btdm_osal_sem_get_count(sem: *Slot) callconv(.c) u16 {
+    logLine("bt osal: sem_get_count", .{});
     return semGetCount(sem);
 }
 
 export fn wr_btdm_osal_callout_init(co: *Slot, evq: ?*Slot, ev_cb: EventFn, ev_arg: ?*anyopaque) callconv(.c) c_int {
+    logLine("bt osal: callout_init", .{});
     return calloutInit(co, evq, ev_cb, ev_arg);
 }
 export fn wr_btdm_osal_callout_deinit(co: *Slot) callconv(.c) void {
+    logLine("bt osal: callout_deinit", .{});
     calloutDeinit(co);
 }
 export fn wr_btdm_osal_callout_reset(co: *Slot, ticks: u32) callconv(.c) c_int {
+    logLine("bt osal: callout_reset", .{});
     return calloutReset(co, ticks);
 }
 export fn wr_btdm_osal_callout_mem_reset(co: *Slot) callconv(.c) void {
+    logLine("bt osal: callout_mem_reset", .{});
     calloutMemReset(co);
 }
 export fn wr_btdm_osal_callout_stop(co: *Slot) callconv(.c) void {
+    logLine("bt osal: callout_stop", .{});
     calloutStop(co);
 }
 export fn wr_btdm_osal_callout_is_active(co: *Slot) callconv(.c) bool {
+    logLine("bt osal: callout_is_active", .{});
     return calloutIsActive(co);
 }
 export fn wr_btdm_osal_callout_get_ticks(co: *Slot) callconv(.c) u32 {
+    logLine("bt osal: callout_get_ticks", .{});
     const c = slotGet(Callout, co) orelse return 0;
     return c.deadline_ms;
 }
 export fn wr_btdm_osal_callout_remaining_ticks(co: *Slot, now: u32) callconv(.c) u32 {
+    logLine("bt osal: callout_remaining_ticks", .{});
     return calloutRemainingTicks(co, now);
 }
 export fn wr_btdm_osal_callout_set_arg(co: *Slot, arg: ?*anyopaque) callconv(.c) void {
+    logLine("bt osal: callout_set_arg", .{});
     const c = slotGet(Callout, co) orelse return;
     eventSetArg(&c.ev_slot, arg);
 }
 
 export fn wr_btdm_osal_time_get() callconv(.c) u32 {
+    logLine("bt osal: time_get", .{});
     return timeGet();
 }
 export fn wr_btdm_osal_time_ms_to_ticks(ms: u32, out_ticks: *u32) callconv(.c) c_int {
+    logLine("bt osal: time_ms_to_ticks", .{});
     out_ticks.* = msToTicks(ms);
     return OK;
 }
 export fn wr_btdm_osal_time_ticks_to_ms(ticks: u32, out_ms: *u32) callconv(.c) c_int {
+    logLine("bt osal: time_ticks_to_ms", .{});
     out_ms.* = ticksToMs(ticks);
     return OK;
 }
 export fn wr_btdm_osal_time_ms_to_ticks32(ms: u32) callconv(.c) u32 {
+    logLine("bt osal: time_ms_to_ticks32", .{});
     return msToTicks(ms);
 }
 export fn wr_btdm_osal_time_ticks_to_ms32(ticks: u32) callconv(.c) u32 {
+    logLine("bt osal: time_ticks_to_ms32", .{});
     return ticksToMs(ticks);
 }
 
 export fn wr_btdm_osal_hw_enter_critical() callconv(.c) u32 {
+    logLine("bt osal: hw_enter_critical", .{});
     return hwEnterCritical();
 }
 export fn wr_btdm_osal_hw_exit_critical(ctx: u32) callconv(.c) void {
+    logLine("bt osal: hw_exit_critical", .{});
     hwExitCritical(ctx);
 }
 export fn wr_btdm_osal_hw_is_in_critical() callconv(.c) u8 {
+    logLine("bt osal: hw_is_in_critical", .{});
     return hwIsInCritical();
 }
 
 export fn wr_btdm_osal_get_time_forever() callconv(.c) u32 {
+    logLine("bt osal: get_time_forever", .{});
     return getTimeForever();
 }
 
@@ -1131,7 +1173,15 @@ pub fn arenaFree() usize {
 /// `flags`（`BTDM_OSAL_MALLOC_F_INTERNAL` vs `NORMAL`）在 IDF 里选不同的 heap 域。
 /// 我们只有一个 arena，两者走同一条路——与 wifi-blobs 的 `shellMallocInternal` 同处理。
 pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
-    return bt_arena.alloc(size, 8);
+    const r = bt_arena.alloc(size, 8);
+    // 归档对 NULL 不做检查就直接解引用（`Xpuq` 里 `sw zero,0(a1)`）⇒ 分配失败会表现为
+    // "向地址 0 写"进而总线挂死。所以这里必须把每次失败都喊出来。
+    if (r == null) {
+        logLine("bt osal: malloc({d}) = NULL  <-- 归档会解引用它", .{size});
+    } else {
+        logLine("bt osal: malloc({d}) = {x}", .{ size, @intFromPtr(r.?) });
+    }
+    return r;
 }
 
 pub fn btdmFree(ptr: ?*anyopaque) void {
@@ -1172,6 +1222,11 @@ pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32,
             const slice = @as([*]u8, @ptrCast(mem))[0..stack_size];
             if (sched.taskCreate(slice, f, arg)) |task| {
                 handle.* = @ptrCast(task);
+                // **模拟 FreeRTOS 的"新任务立即抢占创建者"**：
+                // `r_btdm_task_init` 会等这个任务发出就绪信号；若任务要等 init 返回后
+                // 才被调度，那个等待永远无法满足 ⇒ 静默死循环（无 fault、无日志）。
+                // 未启动调度器时就直接切进去一次：任务阻塞时自然回到调用者继续。
+                if (!sched.isStarted()) sched.startScheduler(task);
                 logLine("bt osal: task_create stack={d} prio={d} core={d} -> context ready", .{ stack_size, priority, core_id });
                 return OK;
             }
@@ -1233,22 +1288,28 @@ export fn wr_btdm_osal_malloc(size: u32, flags: c_int) callconv(.c) ?*anyopaque 
     return btdmMalloc(size, flags);
 }
 export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
+    logLine("bt osal: free", .{});
     btdmFree(ptr);
 }
 export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
+    logLine("bt osal: task_create", .{});
     _ = name;
     return taskCreate(fn_, stack_size, arg, priority, core_id, task_handle);
 }
 export fn wr_btdm_osal_task_delete(task_handle: ?*anyopaque) callconv(.c) void {
+    logLine("bt osal: task_delete", .{});
     taskDelete(task_handle);
 }
 export fn wr_btdm_osal_intr_alloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque, intr_handle: *?*anyopaque) callconv(.c) c_int {
+    logLine("bt osal: intr_alloc", .{});
     return intrAlloc(src, flags, fn_, arg, intr_handle);
 }
 export fn wr_btdm_osal_intr_free(intr_handle: ?*anyopaque) callconv(.c) void {
+    logLine("bt osal: intr_free", .{});
     intrFree(intr_handle);
 }
 export fn wr_btdm_osal_read_efuse_mac(mac: *[6]u8) callconv(.c) void {
+    logLine("bt osal: read_efuse_mac", .{});
     readEfuseMac(mac);
 }
 
