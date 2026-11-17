@@ -771,6 +771,32 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🏁 全表定案：10 个 per-object 锚点里有 **7 个从未被发布**
+
+最终镜像里 `nm | grep " B r_sym_bt_"` 恰好给出 **10 个**锚点（`0x2f00ffd0..0x2f00fff4`，每个 4 字节），
+在 `mutex_pend` 钩子处（`OkE7` 已跑完）逐个读出：
+
+| # | 地址 | 符号 | 板侧值 | 说明 |
+| --- | --- | --- | --- | --- |
+| 0 | `ffd0` | `pSy5Wex1v0iXw5RdWtwL` | **0** | **11.o** —— 当前 fault 处（`cKuT2` 读它） |
+| 1 | `ffd4` | `WDq2rzn4KRWP5mort5eS` | **0** | 未发布 |
+| 2 | `ffd8` | `YnZmsxu068uuC3PC4iu8` | **0** | 未发布 |
+| 3 | `ffdc` | `kfu8vf8dQgqwEzvqhb3d` | **0** | 未发布 |
+| 4 | `ffe0` | `d3D3sk5KewclELfrD5xa` | `0x2f0150b8` | 2.o 的 `P`，由 `fqmZk` 发布 ✓ |
+| 5 | `ffe4` | `sitBB3SrXn0IePgsPrBY` | **0** | 未发布 |
+| 6 | `ffe8` | `r4auAKWSAFwgQarMHZCc` | `0x2f015058` | **21.o**，由 `OkE7` 惰性发布 ✓ |
+| 7 | `ffec` | `lRdavKxt45o0gicEyznn` | **0** | 未发布 |
+| 8 | `fff0` | `6Q68KSwuQQP4VjQGqiWa` | `0x2f015038` | **7.o**，由我们手动发布 ✓ |
+| 9 | `fff4` | `y5Dip5N8bwiiGRcrWzBO` | **0** | 未发布 |
+
+⇒ **因果闭合**：归档的每个模块各有一份 env 指针，消费前不做空检查（`cKuT2` 只是先例）。
+凡未发布者，消费时就是一次**向 0 的访问**（`mtval=0` 正是这么来的）。
+
+⇒ **下一步（一次到位）**：在 oracle 里 `nm` 出同一批符号，`esp_bt_controller_init` 完成后
+逐个读值 ⇒ 非 0 的即 IDF 发布过的；与我们这张表做差集，就是**必须由我们发布的完整清单**。
+拿到后按 `OkE7` 的模式（`malloc` + 写入锚点 + `memset` + 填 cfg）逐个发布，
+或找出 IDF 里对应的发布函数并在 bringup 里补调（更忠实）。
+
 ### 🔎 `deinit` 的 fault 是**断言**，不是野指针
 
 `r_btdm_task_deinit`（`0x7a`）的调用表与 `+0x4a` 处 callee 的真实身份：

@@ -396,6 +396,19 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
                 if (pv != 0) {
                     const pl: [*]volatile u32 = @ptrFromInt(pv);
                     logLine("bt P:   [0]=0x{x} [1]=0x{x} [2]=0x{x} [3]=0x{x}", .{ pl[0], pl[1], pl[2], pl[3] });
+                    // **10 个 per-object 锚点全表**（最终镜像里 `B r_sym_bt_*` 的完整集合）。
+                    // 非 0 = 已被归档自己发布；0 = 无人发布 ⇒ 后续消费它就是一次向 0 的访问。
+                    const names = [_][:0]const u8{
+                        "pSy5Wex1v0iXw5RdWtwL", "WDq2rzn4KRWP5mort5eS", "YnZmsxu068uuC3PC4iu8",
+                        "kfu8vf8dQgqwEzvqhb3d", "d3D3sk5KewclELfrD5xa", "sitBB3SrXn0IePgsPrBY",
+                        "r4auAKWSAFwgQarMHZCc", "lRdavKxt45o0gicEyznn", "6Q68KSwuQQP4VjQGqiWa",
+                        "y5Dip5N8bwiiGRcrWzBO",
+                    };
+                    var k: usize = 0;
+                    while (k < names.len) : (k += 1) {
+                        const v = (@as(*volatile u32, @ptrFromInt(0x2f00_ffd0 + k * 4))).*;
+                        logLine("bt anchor[{d}] {s} = 0x{x}", .{ k, names[k], v });
+                    }
                 }
             }
         }
