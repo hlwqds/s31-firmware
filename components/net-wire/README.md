@@ -7,7 +7,7 @@
 `baseline/inventory.py --strict` 会把这个组件标成"缺 host_tests"，这里说明它是**有意的**：
 本组件是**薄 I/O 胶水**——EMAC 收发、DHCP 报文收发、`tcp.Conn` 的喂入，全是板级动作；
 它依赖的三块逻辑各自都有完整的主机测试（`net-ethernet` 的纯逻辑面、`net-udp-dhcp-dns`、
-`net-tcp` 的 `tcp.Conn`，共 20+70+49+116 项）。在本组件里再造一份等价测试只会复制那些用例。
+`net-tcp` 的 `tcp.Conn`，共 20+50+35 = **105 项**主机用例）。在本组件里再造一份等价测试只会复制那些用例。
 
 它的验收方式是**板上**：`scripts/gate-board.sh`（发布门禁，需 host 预置）或
 `tests/e2e/run_e2e.py --board --profile net-wire`，断言 DHCP 到手 + 三次握手三段日志。

@@ -144,7 +144,8 @@ E2E 断言：
 
 回收方式：`sh firmware/tools/flash.sh <PORT> <生产 app.bin>`（走 esptool 硬复位，不依赖 DTR/RTS），
 再抓一次确认 `ota: ab=…` 与 `main: verdict=pass`。`scripts/demo-board.sh` 的第 4 步会自己做这件事。
-生产默认构建的自检要跑十几秒（net 组会做真实计时），窗口给 20 s 以上才看得到 `verdict`。
+生产默认构建的自检要跑 **30~45 s**（net 组做真实计时），窗口给 45 s 才稳定看得到 `verdict`；
+20 s 的窗口常常只抓到一半的 `check:` 行，别据此判断板子有问题。
 
 ## 本地运行
 
