@@ -28,6 +28,7 @@ const config = @import("config.zig");
 const bringup = @import("bringup.zig");
 const transport = @import("transport.zig");
 const sched = @import("sched.zig");
+const porting = @import("porting.zig");
 const board = @import("board");
 
 /// 链接脚本 `s31.ld` 的堆边界是**绝对符号**：取地址得到边界值，
@@ -57,6 +58,9 @@ fn nowMs() u32 {
 /// 需要额外把里程碑用 `board.log.line` 直写，否则实验没有信息量（踩过）。
 pub var verbose: bool = true;
 
+/// 对照实验用：false ⇒ 完全不写任何时钟门控（验证"我们改时钟把 UART 弄停"）。
+pub var clock_writes: bool = false;
+
 /// 同步刷到 UART（不缓冲）——切上下文后日志顺序才可信。
 fn logHook(msg: []const u8) void {
     if (!verbose) return;
@@ -80,6 +84,7 @@ pub fn run() noreturn {
     // 一个有意义的寄存器值（且复位值可查）；若整段是"常量/空洞"，说明轮询地址算错了。
     dumpRom("U", 0x2038A000, 64);
 
+    porting.clock_writes_enabled = clock_writes;
     osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
