@@ -16,9 +16,14 @@
 //! ## 为什么 `incomplete` 时不能"先发出去再说"
 //!
 //! 以太网帧必须有目的 MAC。没有解析结果时，唯一能发的是广播 ARP 请求；
-//! 上层数据报必须**排队**（`pending queue`，本组件未实现，见 18.11 的边界）
+//! 上层数据报必须**排队**（本组件提供 `queue` / `takeReady`），
 //! 或直接返回"暂时不可达"。很多实现选择"发广播帧试试看"，结果是数据帧
 //! 被所有主机收下又丢弃，还污染了对端的连接状态。
+//!
+//! 排队策略（与 Linux 的 `unres_qlen` 同思路，但更简单）：
+//!   - 固定 `pending_slots` 个槽，每槽最多 `max_pending_payload` 字节，**复制**存储；
+//!   - 排队项在 `pending_ttl_ms` 内没有被解析出来就丢弃（防止槽被长期占住）；
+//!   - `takeReady` 在解析完成后由上层调用，取走并移除一条。
 
 const std = @import("std");
 const inet = @import("inet.zig");
@@ -159,6 +164,14 @@ pub const Cache = struct {
         expired: u32 = 0,
         failures: u32 = 0,
         evicted: u32 = 0,
+        /// 排队成功的次数。
+        queued: u32 = 0,
+        /// 排队满/超长被拒的次数。
+        queue_rejected: u32 = 0,
+        /// 解析完成后被取走的次数。
+        dequeued: u32 = 0,
+        /// 等不到解析结果而过期丢弃的次数。
+        queue_expired: u32 = 0,
     };
 
     pub const Lookup = struct {
@@ -166,7 +179,23 @@ pub const Cache = struct {
         state: State,
     };
 
+    /// 排队槽数。4 条足够覆盖"一次 ARP 往返内、同一目的地的连续几个包"。
+    pub const pending_slots = 4;
+    /// 单条排队数据报的上限。超长由上层自己处理（本组件不静默截断）。
+    pub const max_pending_payload = 576;
+    /// 排队项的最长等待时间：超过就丢弃并计数（ARP 3 次重传约 3 s）。
+    pub const pending_ttl_ms: u32 = 5_000;
+
+    pub const Pending = struct {
+        in_use: bool = false,
+        ip: inet.Addr = inet.any,
+        len: u16 = 0,
+        queued_ms: u32 = 0,
+        data: [max_pending_payload]u8 = undefined,
+    };
+
     entries: [capacity]Entry = @splat(Entry{}),
+    pending: [pending_slots]Pending = @splat(Pending{}),
     stats: Stats = .{},
 
     fn find(self: *Cache, ip: inet.Addr) ?usize {
@@ -368,6 +397,62 @@ pub const Cache = struct {
     }
 
     /// 诊断：读取某个 IP 的当前状态（不改状态机）。
+    /// 把一条等 MAC 的数据报排进队列。
+    ///
+    /// 返回 `false` 的情形：数据报超长（> `max_pending_payload`）、队列已满。
+    /// 两种情况都计入 `stats.queue_rejected`，**不静默截断**。
+    ///
+    /// 调用时机：`lookup` 返回 null（MAC 还不可用）之后。若调用方已经拿到 MAC，
+    /// 就不该走这里。
+    pub fn queue(self: *Cache, ip: inet.Addr, payload: []const u8, now_ms: u32) bool {
+        if (payload.len > max_pending_payload) {
+            self.stats.queue_rejected += 1;
+            return false;
+        }
+        for (&self.pending) |*q| {
+            if (q.in_use) continue;
+            q.* = .{ .in_use = true, .ip = ip, .len = @intCast(payload.len), .queued_ms = now_ms };
+            @memcpy(q.data[0..payload.len], payload);
+            self.stats.queued += 1;
+            return true;
+        }
+        self.stats.queue_rejected += 1;
+        return false;
+    }
+
+    /// 取走一条"目的地已经可解析"的排队数据报，写进 `out` 并返回长度。
+    ///
+    /// 顺带做两件清理：超过 `pending_ttl_ms` 的排队项被丢弃；取走的那条槽被释放。
+    /// 返回 null 表示当前没有可发的（要么还在等 ARP，要么队列空）。
+    pub fn takeReady(self: *Cache, out: []u8, now_ms: u32) ?usize {
+        for (&self.pending) |*q| {
+            if (!q.in_use) continue;
+            if (now_ms -% q.queued_ms > pending_ttl_ms) {
+                q.in_use = false;
+                self.stats.queue_expired += 1;
+                continue;
+            }
+            const hit = self.lookup(q.ip, now_ms) orelse continue;
+            _ = hit;
+            const len: usize = q.len;
+            if (out.len < len) return null; // 调用方缓冲区太小：保留排队项，不改状态
+            @memcpy(out[0..len], q.data[0..len]);
+            q.in_use = false;
+            self.stats.dequeued += 1;
+            return len;
+        }
+        return null;
+    }
+
+    /// 当前排队条数（诊断用）。
+    pub fn pendingCount(self: *const Cache) usize {
+        var n: usize = 0;
+        for (self.pending) |q| {
+            if (q.in_use) n += 1;
+        }
+        return n;
+    }
+
     pub fn stateOf(self: *const Cache, ip: inet.Addr) State {
         for (self.entries) |e| {
             if (e.state != .free and inet.eql(e.ip, ip)) return e.state;
@@ -693,4 +778,61 @@ test "arp: 缓存满了优先踢掉 stale，再踢 reachable" {
     try testing.expectEqual(State.incomplete, c.stateOf(new_ip));
     try testing.expectEqual(State.free, c.stateOf(try inet.parse("10.0.0.1")));
     try testing.expectEqual(@as(u32, 1), c.stats.evicted);
+}
+
+test "arp: pending queue —— 未解析时排队，解析成功后取走" {
+    var c: Cache = .{};
+    const dst = try inet.parse("10.0.0.7");
+    const frame = [_]u8{ 0xAA, 0xBB, 0xCC };
+
+    // 未解析：lookup 为 null，数据报进队列
+    try testing.expect(c.lookup(dst, 0) == null);
+    try testing.expect(c.queue(dst, &frame, 0));
+    try testing.expectEqual(@as(usize, 1), c.pendingCount());
+
+    // 还没学到 MAC：takeReady 拿不到
+    var out: [64]u8 = undefined;
+    try testing.expect(c.takeReady(&out, 10) == null);
+    try testing.expectEqual(@as(usize, 1), c.pendingCount());
+
+    // 学到映射后即可取走，且内容原样
+    _ = c.resolve(dst, 0);
+    c.learn(dst, .{ 1, 2, 3, 4, 5, 6 }, 20);
+    const n = c.takeReady(&out, 30) orelse return error.NothingReady;
+    try testing.expectEqual(@as(usize, frame.len), n);
+    try testing.expectEqualSlices(u8, &frame, out[0..n]);
+    try testing.expectEqual(@as(usize, 0), c.pendingCount());
+    try testing.expectEqual(@as(u32, 1), c.stats.dequeued);
+}
+
+test "arp: pending queue —— 超长与队满都计入 queue_rejected" {
+    var c: Cache = .{};
+    const dst = try inet.parse("10.0.0.8");
+    const big: [Cache.max_pending_payload + 1]u8 = @splat(0);
+    try testing.expect(!c.queue(dst, &big, 0));
+    try testing.expectEqual(@as(u32, 1), c.stats.queue_rejected);
+
+    const small = [_]u8{1};
+    var i: usize = 0;
+    while (i < Cache.pending_slots) : (i += 1) {
+        try testing.expect(c.queue(dst, &small, 0));
+    }
+    // 第 slots+1 条被拒
+    try testing.expect(!c.queue(dst, &small, 0));
+    try testing.expectEqual(@as(usize, Cache.pending_slots), c.pendingCount());
+    try testing.expectEqual(@as(u32, 2), c.stats.queue_rejected);
+}
+
+test "arp: pending queue —— 超过 TTL 的排队项被丢弃" {
+    var c: Cache = .{};
+    const dst = try inet.parse("10.0.0.9");
+    const frame = [_]u8{7};
+    _ = c.queue(dst, &frame, 0);
+    // 学到 MAC，但时间已经越过 TTL
+    _ = c.resolve(dst, 0);
+    c.learn(dst, .{ 9, 9, 9, 9, 9, 9 }, 1);
+    var out: [8]u8 = undefined;
+    try testing.expect(c.takeReady(&out, Cache.pending_ttl_ms + 1) == null);
+    try testing.expectEqual(@as(u32, 1), c.stats.queue_expired);
+    try testing.expectEqual(@as(usize, 0), c.pendingCount());
 }
