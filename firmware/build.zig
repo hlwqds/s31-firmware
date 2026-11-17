@@ -45,6 +45,10 @@ pub fn build(b: *std.Build) void {
     // 适配面由 components/bt-blobs/link/bt_stubs.c + s31.ld 的 btdm 边界补上。
     const bt_blob_dir = b.option([]const u8, "bt-blob-dir", "directory with unpacked BLE controller objects") orelse "";
     const bt_blob_objs = b.option([]const u8, "bt-blob-objs", "comma-separated object names inside bt-blob-dir") orelse "";
+    // **PHY 层**：`libphy.a` 解包后的目录（21 个对象，可装载仅 18 KB）。
+    // 链接它 + 调 `phy_get_romfunc_addr()` 才能填充 `g_phyFuns`（PHY 函数表）。
+    const phy_lib_dir = b.option([]const u8, "phy-lib-dir", "directory with unpacked libphy.a objects") orelse "";
+    const phy_objs = b.option([]const u8, "phy-objs", "comma-separated object names inside phy-lib-dir") orelse "";
     const bt_probe = b.option(bool, "bt-probe", "run the BLE controller probe instead of the normal self-test") orelse false;
 
 
@@ -148,6 +152,14 @@ pub fn build(b: *std.Build) void {
         const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("wifi_init_probe_off.zig", off_src) });
         app.root_module.addImport("wifi_init_probe", off_mod);
     }
+    if (phy_lib_dir.len > 0 and phy_objs.len > 0) {
+        var it = std.mem.splitScalar(u8, phy_objs, ',');
+        while (it.next()) |name| {
+            if (name.len == 0) continue;
+            app.root_module.addObjectFile(.{ .cwd_relative = b.fmt("{s}/{s}", .{ phy_lib_dir, name }) });
+        }
+    }
+
     if (bt_blob_dir.len > 0) {
         // 与 wifi-blob 同构：逗号分隔的对象清单，逐个加进链接（等价 --whole-archive）。
         // 关掉 gc-sections——这里没有真实引用，不关就一个成员都不会进来，量到的就是空镜像。
