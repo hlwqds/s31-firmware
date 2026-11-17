@@ -5456,3 +5456,47 @@ panic 0
 
 ⇒ 已穷尽：寄存器内容（八格全对齐）、写序（照 IDF device 顺序）、复位脉冲（rst_wifimac/rst_wifibb）、
 临界区位（b14/b21）、ROM `ic_mac_init`、自旋让出、全库静态搜索（无人写 bits 13-15）。
+
+### 位号修正（重要 bug）+ ICG 回归 IDF 值
+
+**`clk_conf1` 的位号我之前写错了**。按 `modem_syscon_struct.h:130-140` 的字段序：
+
+| bit | 字段 |
+|---|---|
+| 0 | `clk_wifibb_22m_en` |
+| 1 | `clk_wifibb_40m_en` |
+| **2** | **`clk_wifibb_44m_en`** |
+| 3 | `clk_wifibb_80m_en` |
+| 4 | `clk_wifibb_40x_en` |
+| 5 | `clk_wifibb_80x_en` |
+| 6 | `clk_wifibb_40x1_en` |
+| **7** | **`clk_wifibb_80x1_en`** |
+| 8 | `clk_wifibb_160x1_en` |
+| **9** | **`clk_wifimac_en`** ← 清位点 |
+| **10** | **`clk_wifi_apb_en`** |
+| 11 | `clk_fe_20m_en` |
+
+⇒ 我之前写的"MAC=bit0 / APB=bit9"是**错的**：`bit0` 根本不是 MAC 时钟，MAC 是 **bit 9**、APB 是 **bit 10**。
+
+同时 **ICG 回退到 `0x64646400`**：那个 zb nibble 的 `4` 是 **IEEE802154 域**的码
+（`set_clock_domain_icg_bitmap` 把 802154 映射到 `clk_zb_st_map[11:8]`），
+所以 `0x64646400` **本来就是 IDF 对齐值**，我改成 `0x64646000` 反而制造了偏差。
+
+修正后（位号对、ICG 对、顺序对）：
+
+```text
+wifi-init-probe: MAC_ST after init = 0x0000e000     # 仍不清
+panic 0
+```
+
+⇒ **寄存器内容、位号、写序、ICG 全部对齐/修正后，`MAC_ST` 依旧不清。**
+
+### 结论：寄存器层面**彻底穷尽**，剩下的只有"启动环境底色"
+
+两边跑的是**同一份 blob**，所以 blob 调 `_wifi_clock_enable` 之前做的事**相同**。
+⇒ "调用时机不同"这个说法其实是"**启动环境底色不同**"的另一种表述：
+IDF 在 `app_main` 之前（bootloader / 早期启动）已经把某些 MAC/PHY 前置状态配好了，我们裸机没有。
+
+⇒ **唯一还没做的决定性实验**：把 IDF 的 `before_init` 打印扩成**全表 CLKDMP**
+（八寄存器 + `0x205871E0` + MAC 块窗口），与我们的 `CLKDMP[before-init]` **逐格 diff**——
+**底色不同的那一格，就是缺的那一拍。**

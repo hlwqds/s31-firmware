@@ -1182,7 +1182,7 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // 即写 `clk_conf1.clk_wifimac_en`（bit0）；而它是设备循环里的**第 5 个**，
     // 前面已经写过 SOC_PLL / COEXIST / WIFI_APB / WIFI_BB_44M。
     // 顺序：SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit0)** → WIFI_BB(rst+组) → WIFI_BB_80X1
-    icg.* = 0x6464_6000;
+    icg.* = 0x6464_6400;
     note(20, icg_before, icg.*);
 
     // 1) SOC_PLL_SOURCE_CG (dev=2)
@@ -1196,12 +1196,14 @@ fn shellWifiClockEnable() callconv(.c) usize {
         icg20.* = 0x6666_0000;
     }
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    // 3) WIFI_APB (dev=5)
-    conf1.* = conf1.* | (1 << 9);
-    // 4) WIFI_BB_44M (dev=6)
+    // 3) WIFI_APB (dev=5) —— `clk_wifi_apb_en` = **bit 10**
+    conf1.* = conf1.* | (1 << 10);
+    // 4) WIFI_BB_44M (dev=6) —— `clk_wifibb_44m_en` = bit 2
     conf1.* = conf1.* | (1 << 2);
-    // 5) **WIFI_MAC (dev=7) —— 轨迹里的清位点**
-    conf1.* = conf1.* | (1 << 0);
+    // 5) **WIFI_MAC (dev=7) —— 轨迹里的清位点；`clk_wifimac_en` = bit 9**
+    //    （字段序：22m=0/40m=1/44m=2/80m=3/40x=4/80x=5/40x1=6/80x1=7/160x1=8/
+    //      **wifimac=9** / **wifi_apb=10** / fe_20m=11 …）
+    conf1.* = conf1.* | (1 << 9);
     note(29, 0, conf1.*);
     // 6) WIFI_BB (dev=8)：rst_wifibb 脉冲 + BB 时钟组
     {
