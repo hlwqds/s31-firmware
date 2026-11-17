@@ -61,10 +61,25 @@ pub var verbose: bool = true;
 /// 对照实验用：false ⇒ 完全不写任何时钟门控（验证"我们改时钟把 UART 弄停"）。
 pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验
 
-/// 同步刷到 UART（不缓冲）——切上下文后日志顺序才可信。
+/// 直接写 UART0 的 FIFO，**永不阻塞**。
+///
+/// 为什么不用 `board.log.line`（ROM 的 `esp_rom_printf`）：ROM 的路径会
+/// `while (txfifo_cnt > 127) {}` 死等——一旦 FIFO 不排空，**日志自己也挂住**，
+/// 于是"卡住之后什么都看不到"，无法区分"程序停在那"与"只是打印停了"。
+/// 这里对每个字节做**有界**等待，等不到就丢弃，保证日志通道本身不会堵死。
 fn logHook(msg: []const u8) void {
     if (!verbose) return;
-    board.log.line("{s}", .{msg});
+    const uart_fifo: *volatile u32 = @ptrFromInt(0x2038_A000); // UART_FIFO
+    const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS
+    for (msg) |ch| {
+        var spins: u32 = 0;
+        while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
+        if (spins >= 20000) return; // FIFO 卡死：**丢弃本次输出，绝不挂住**
+        uart_fifo.* = ch;
+    }
+    var spins: u32 = 0;
+    while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
+    if (spins < 20000) uart_fifo.* = '\n';
 }
 /// 当前不开中断 ⇒ 空实现；切片 E 真开中断后换成真的关/开。
 fn irqSave() u32 {

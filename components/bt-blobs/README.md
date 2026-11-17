@@ -418,6 +418,20 @@ ae: r_sym_bt_HGbP...
 | 卡点函数里的 `wr_btdm_assert` 挂住 | 反汇编 `r_sym_bt_BOhff...` 发现它引用了 `wr_btdm_assert`（行号 308/311）；把断言改成**打印后返回** | 仍卡，且 `strong-assert` **命中 0 次** ⇒ **不是断言** |
 | CLIC 写把 IE(bit8) 清了 | 掩码改为 `old & 0x107` | 已修（此前 `& 0x7` 会清掉使能位），但 NMI 仍未生效 |
 
+### 日志通道必须**自己写 UART FIFO**（2026-11-17 关键工具）
+
+`board.log.line` 走 ROM 的 `esp_rom_printf`，而 ROM 的路径是
+`while (txfifo_cnt > 127) {}` **死等**。一旦 FIFO 不排空，**日志自己也挂住** ——
+于是"卡住之后什么都看不到"，无法区分"程序停了"与"只是打印停了"。
+
+⇒ 探针的 `logHook` 改成直接写 `UART_FIFO`(0x2038A000)，每字节做**有界**等待
+（`txfifo_cnt >= 120` 时最多自旋 20000 次），等不到就**丢弃该次输出**。
+代价是可能丢日志，收益是**日志通道永不堵死**。
+
+用这个通道后确认：`mutexPend` 打印 `osal> mutexPend< OK` 后**正常返回**，
+之后才停 ⇒ 卡点在归档随后执行的代码里（`r_sym_bt_HGbP` / `XPuqT` / `AJP6` / `waDX`
+四个 14–186 字节的小函数，或其下层）。
+
 ### 断言行为（生产 vs 探针）
 
 `bt_stubs.c` 的 `wr_btdm_assert`：**生产默认打印后挂住**；探针构建用 `-DBT_ASSERT_RETURNS=1`

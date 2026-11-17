@@ -344,14 +344,35 @@ pub fn mutexDeinit(slot: *Slot) c_int {
 
 pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
     trace("mutexPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexPend", "end") != null) "{d}" else "-"), .{timeout});
-    const m = slotGet(Mutex, slot) orelse return EINVAL;
+    const m = slotGet(Mutex, slot) orelse {
+        trace("mutexPend< EINVAL (null slot)", .{});
+        return EINVAL;
+    };
+    // **FOREVER 必须"等到拿到"**：归档用 `portMAX_DELAY` 表示"这把锁我会一直等"，
+    // 返回 TIMEOUT 会让它拿到没预期的错误码。调度器没启动时没有可切换的任务
+    // ⇒ 用**有界忙等**代替真阻塞（忙等期间不打印）。
+    if (m.locked and timeout == forever) {
+        var spins: u32 = 0;
+        while (m.locked and spins < 2_000_000) : (spins += 1) std.atomic.spinLoopHint();
+        stats_state.blocked_calls += 1;
+        if (m.locked) {
+            trace("mutexPend< TIMEOUT (spin exhausted)", .{});
+            return TIMEOUT;
+        }
+        m.locked = true;
+        stats_state.mutex_pend_ok += 1;
+        trace("mutexPend< OK (after spin)", .{});
+        return OK;
+    }
     if (!m.locked) {
         m.locked = true;
         stats_state.mutex_pend_ok += 1;
+        trace("mutexPend< OK", .{});
         return OK;
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
     stats_state.mutex_pend_busy += 1;
+    trace("mutexPend< TIMEOUT", .{});
     return TIMEOUT;
 }
 
