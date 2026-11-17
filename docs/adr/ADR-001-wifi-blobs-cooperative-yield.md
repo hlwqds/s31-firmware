@@ -5977,3 +5977,28 @@ DMASEQ n=14
 ⇒ 这条假设（早前 ADR 里"忙位要等 DMA 环 + RF 前端上电"）**正式排除**。
 
 ⇒ 也说明 `hal_mac_is_dma_enable()` 不是"LMAC 起来了"的更早信号 —— 它在 IDF 侧同样是 0。
+
+### ⚠ 撤回：「malloc 5 vs 23」**不可比**（数的是不同表项）
+
+在 IDF 的 `wifi_malloc` / `wifi_zalloc_wrapper` / `wifi_calloc` / `mutex_lock_wrapper` 里加计数器：
+
+```text
+HCNT malloc=5 zalloc=6 calloc=6 mutex_lock=28
+```
+
+与我们直方图的 `malloc=23 / zalloc=10 / calloc=4 / mutex_lock=25` 一比，`malloc` 差 4.6 倍——**看似重大分叉，其实不成立**：
+
+```zig
+// 我们的 note(8, ...)（标签 "malloc"）在 shellMallocInternal 里，不是 shellMalloc
+fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
+    note(8, size, 0);          // ← 我们数的是 _malloc_internal
+```
+
+⇒ **IDF 侧的计数器挂在 `_wifi_malloc`，我们数的是 `_malloc_internal` —— 两个不同的 osi 表项**。
+⇒ 所以 5 vs 23（以及其余三项）**都不是同一个钩子的计数** ⇒ **这条对比作废**。
+
+⇒ 教训：**做两侧计数/序列对比前，必须确认"数的确实是同一个表项"**——
+这已经是本课题第三次因"标签/表项错位"产生的假线索（前两次：ring 起点错位、`note` id 与 `hook_ids` 错位）。
+
+⇒ 要做对：IDF 侧计数器必须挂在我们**同样标注**的那些表项上（`_malloc_internal` 对应 IDF 的哪一项，需先查表），
+或更稳的做法 —— **两侧都用"表下标"计数**，不靠名字。
