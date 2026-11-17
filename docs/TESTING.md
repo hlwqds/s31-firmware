@@ -159,3 +159,29 @@ python3 scripts/check-coverage.py
 . /tmp/idfenv.sh && ESPTOOL="python -m esptool" python3 tests/e2e/run_e2e.py --host
 python3 tests/e2e/run_e2e.py --board --profile net     # 需要板子与 idf-bootstrap/build
 ```
+
+## 验证覆盖审计（功能待办清空之后）
+
+「没有 TODO」不等于「都验过」。四个陷阱会让"跑过"变成假象，每条都踩过：
+
+| 陷阱 | 表现 | 规避 |
+| --- | --- | --- |
+| **缓存静默** | `zig build test` 命中缓存 ⇒ **rc=0 且零输出**；`--summary all` 只打 `run test cached` | 必配 `--summary all` **和** 每次独立的 `--cache-dir` |
+| **管道吃输出** | `cmd \| tail -3` 可能什么都不留；`$?` 取的是 `head` 的退出码 | 重定向到文件，再 `grep '^Build Summary'` / 单独取 `$?` |
+| **改源码 ≠ 刷固件** | lab/bench/demo 镜像覆盖了 factory，回退源码后串口只剩 bootloader 行 ⇒ 像"启动回归" | 看串口**首行**（见上节表格），需要时重刷生产固件并确认 `verdict=pass` |
+| **过期的"预期失败"** | 步骤名写 `xfail tls`，而命令其实跑全部 profile 且 tls 已通过 | 审计时逐个核对步骤名与实际命令 |
+
+本仓的入口清单（`check-all` 覆盖前 8 项）：
+
+```bash
+scripts/check-all.sh                   # yaml/invariants/fmt/host/coverage/update_matrix/partition/capacity + 六 profile
+scripts/build-image.sh firmware <dir>  # 两段镜像断言；<dir> 必须先存在
+tests/e2e/run_e2e.py --board --profile net|tls     # 不需要主机网络的板级 e2e
+scripts/demo-board.sh <PORT>           # A/B 九项断言
+scripts/gate-board.sh                  # 需免密 sudo（host-prep 动 iptables）；前置失败会 exit 2
+tools/s31-production/baseline/inventory.py [--strict]   # --strict 只查文件存在，不判断测试是否在别处跑
+scripts/gen-blob-stubs.py              # 生成器：无参即重写 zz_stubs.c（幂等，但探活前先看它会写哪些文件）
+```
+
+`--strict` 的已知标记（不是缺陷）：`net-wire` 无 `host_tests`（薄 I/O 胶水，见其 README）、
+`firmware` 与 `esp32s31-coreboard` 的测试分别聚合在组件与板级包之外。
