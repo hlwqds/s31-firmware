@@ -268,3 +268,20 @@ pub export fn bt_mmio_read(addr: usize) u32 {
 pub export fn bt_mmio_write(addr: usize, val: u32) void {
     writeReg(addr, val);
 }
+
+/// **不阻塞**的串口输出：直接写 UART0 的 FIFO，每字节有界等待，等不到就丢弃。
+/// 与 `log.line`（ROM printf，会 `while (txfifo_cnt > 127)` 死等）的区别：
+/// 当 FIFO 不再排空时，这条路**不会把调用者挂死**——panic 路径尤其需要这个性质。
+pub fn rawLine(msg: []const u8) void {
+    const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
+    const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    for (msg) |ch| {
+        var spins: u32 = 0;
+        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
+        if (spins >= 20000) return;
+        fifo.* = ch;
+    }
+    var spins: u32 = 0;
+    while ((((status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
+    if (spins < 20000) fifo.* = '\n';
+}

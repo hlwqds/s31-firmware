@@ -11,6 +11,7 @@
 //! `mcause` 口径（早期工程 结论）：最高位 1 = 中断，低 6 位是 CLIC 输入号；
 //! 同步异常的异常码也只取低 6 位（S31 在高位带 CLIC 附加字段）。
 
+const std = @import("std");
 const hw = @import("hw.zig");
 const log = @import("log.zig");
 
@@ -378,7 +379,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         const code = cause & 0x3F;
         // **故障地址先打**：ROM 的 panic 处理会往同一 UART 插横幅，长标签行会被截断/覆盖
         // （实测 `panic: mepc=\xef\xbf\xbdSP-ROM:...`）。把最关键的三元组放在第一行、无长标签。
-        log.line("!! {x} {x} {x}", .{ frame.mepc, hw.readMtval(), frame.mstatus });
+        // **非阻塞**：FIFO 卡住时 ROM printf 会挂死，panic 信息就永远看不到。
+        var pbuf: [96]u8 = undefined;
+        const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8}", .{
+            frame.mepc, hw.readMtval(), frame.mstatus,
+        }) catch "!! (fmt fail)";
+        hw.rawLine(head);
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
             code, causeName(code), cause,
         });
