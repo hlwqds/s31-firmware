@@ -98,7 +98,7 @@ PENDING_VERIFY}` 则写 VALID → 自检失败累加计数，到 `max_runtime_fa
 两者都在 `.bss`，**不计入**容量门禁的 flash 指标，但确实吃应用 SRAM（本板 512 KB）。
 再加同类缓冲前先算一下：读 otadata 一次就要 4 KB，别在每个函数里各开一份。
 
-### 两个镜像、谁刷哪（构造 C5 场景时必读）
+### 三个构建开关、谁刷哪（构造 C5 / C8 场景时必读）
 
 `-Dab-stage=a|b` 是**每次启动都会执行**的动作。如果把同一份带 `-Dab-stage` 的构建同时刷进
 factory 和某个 OTA 槽，板子会 stage→复位→再 stage→再复位，永远跑不到自检、拿不到证据。
@@ -112,6 +112,22 @@ factory 和某个 OTA 槽，板子会 stage→复位→再 stage→再复位，�
 | 4 | 失败注入：`-Dab-fail` 构建 | `ota_1`（0x310000） |
 | 5 | 带 `-Dab-stage=b` | factory |
 | 6 | 复位 → 起 ota_1 → 失败 3 次 → INVALID → 复位 → 回 ota_0 | — |
+
+三个构建开关：
+
+| 开关 | 作用 |
+| --- | --- |
+| `-Dab-stage=a\|b` | 启动时把 otadata 指向指定槽（写扇区、`state=NEW`）然后复位 |
+| `-Dab-fail` | 注入一条必然失败的自检，用来攒"连续 3 次失败" |
+| `-Dab-revert` | 把**当前**槽标 `INVALID` 后复位 ⇒ 回到另一槽/factory（"切回旧版本"） |
+
+> `-Dab-stage` 是**每次启动都执行**的动作：把同一份带它的构建同时刷进 factory 和某个 OTA 槽，
+> 板子会 stage→复位→再 stage→再复位，永远跑不到自检。所以"切回旧版本"之前必须先把 factory
+> 换回**不带** `-Dab-stage` 的基线镜像，否则判废后 bootloader 回到 factory 会立刻又被切走
+> （看着像"切回没生效"）。
+
+整套流程已脚本化为 `scripts/demo-board.sh [PORT]`（四步、9 项断言，证据 `logs/c8-demo.log`），
+不必照上面的表手工拼命令。
 
 > 测试收尾时把正常构建刷回 factory 与 ota_0，并擦掉 otadata(0x490000, 2 扇区) 与
 > nvs 计数扇区(0xE000, 1 扇区)，否则下一次开机仍按旧 otadata 起槽。
