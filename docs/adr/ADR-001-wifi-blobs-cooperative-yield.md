@@ -4950,3 +4950,44 @@ IDF 源码里**只有声明**（`include/esp_private/wifi.h:437`）。
 直接抓"哪条 PC 让它变 0"。这需要 JTAG 探针（当前只有 `/dev/ttyUSB0` 串口，没有 openocd）。
 ⇒ 没有探针时的次优：在 IDF 侧**源码函数**（`esp_phy_enable`、`esp_clock_*` 等）上插桩，
 或在 IDF 侧起一个高优先级任务轮询 `MAC_ST` 拿到时间点，再与串口日志对齐。
+
+### 合并校准：今天的结论**与 ADR `:1425-1427` / `:1567` / `:1689` 的既有结论是同一件事**
+
+> [!warning] 先读这段，别把今天的推导当成新结论
+> ADR **`:1425-1427`** 早就写着：「`esp_wifi_start` 的 MAC deinit 在等 TX/RX 引擎的硬件忙位清零；
+> 这些位**复位即为 1、软件不可写**，只有**真正完成 MAC/PHY 上电与初始化（DMA 环 + RF 前端）**才会清。
+> 我们的裸机探针没有真实 PHY 收发链路，所以永远不清——这不是宿主钩子能修的问题。」
+> **`:1567`** 再说一遍：「唯一能让它们改变的是真实的 MAC/PHY 上电初始化（DMA 环 + RF 前端），而不是任何宿主钩子。」
+> **`:1689`** 给了现成判据：**`hal_mac_is_dma_enable()`（ROM `0x2f800d4c`，无参）= `0`** ⇒ **DMA 环没建**。
+
+⇒ 今天这条「bits 13–15 是只读硬件状态、全库无人写、只可能由硬件清零」**正是上面那条结论的独立验证**
+（静态侧：133 个 `.o` 里没有任何一处写这三位；板侧：写 0/写 1 都读回 1）。
+
+⇒ 所以本 ADR 早前那条"唯一候选 = 等 stop/deinit"（写在 `esp_wifi_start` 之后）**是弱化的重推导，且有逻辑洞**：
+IDF 在 **start 之前**这三位就已经是 0，而那时板子还没发过任何 TX/RX ⇒ 不存在"等收发停止"的阶段。
+**正确的框架是**：IDF 的 init 期间完成了 **MAC/PHY 上电初始化（DMA 环 + RF 前端）**，我们没做。
+
+### 更正：openocd **是有的**
+
+我上一节写"只有 `/dev/ttyUSB0`、没有 openocd"——**错**：
+
+```text
+~/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/openocd-esp32/bin/openocd   ✓ 存在
+```
+
+⇒ JTAG 写监视点这条路**可行**（需要探针硬件 + 正确的 attach 顺序：
+先 `break esp_wifi_init` → continue 到断点 → 再 `awatch *0x20104cac` → continue，
+否则只能看到 init 之后的写）。
+
+### 下一步（两条并行，主次明确）
+
+| 线 | 内容 | 判据 / 成本 |
+|---|---|---|
+| **主线：IDF 侧 osi adapter 插桩** | 在 IDF 的 **osi adapter 低频函数**（`wifi_reset_mac` / `wifi_clock_enable` / `wifi_clock_disable` / `wifi_on`）各加一行 `MAC_ST` printf；blob 在 `esp_wifi_init_internal` 里按序调它们，**第一个打出 0 的函数名就是清位者**。⚠️ 别给 malloc/timer/queue 这类高频钩子加打印。基建现成（PROBE/PROBE2/PROBE3 三轮先例 + `/tmp/idf-station-probe`） | 改完 `idf.py build` + flash；测完 `git checkout` 还原 IDF 树 |
+| **备选：JTAG 写监视点** | `openocd -f interface/esp_usb_jtag.cfg -f target/esp32s31.cfg` → gdb `break esp_wifi_init` → `awatch *0x20104cac` | 直接给出 PC；需探针硬件 |
+| **并行：MAC 使能链实现** | 补 **DMA 环 + RF 前端**的上电初始化（ADR `:1689` 的 `hal_mac_is_dma_enable()` 是现成状态位判据，现在读 0） | 与上面互证：静态扫描证明"缺的不是寄存器写，是上电初始化动作" |
+
+> [!note] 实操提醒
+> ① 烧 IDF app 会覆盖板上的 Zig 探针镜像 ⇒ 实验后把 Zig 探针刷回；
+> ② 同板对比前**两边都擦 NVS 分区**（我们固件在板上留过键值，`nvs get_blob calls=15` 就是痕迹）；
+> ③ 每条 dump 带**递增序号 + 时间戳**，缺号能看出流程没走到那一步，避免把"没进 init"误读成"init 没清零"。
