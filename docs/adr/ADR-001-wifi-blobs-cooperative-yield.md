@@ -3816,3 +3816,27 @@ ROMGLOB swq=0x2f021330 ppq=0x2f0203b0 ppsem=0x0
 ⇒ 下一步（两条）：
 1. 在 blob 里搜**把 `0x40039794` 放进表/全局**的地方（`lui`+`addi` 或 `.data` 里的初值）；
 2. 或按**符号名**在 `blobobjs/*.o` 里 `nm` 出 `pp_create_task` 的引用者（谁 `jal` 到它）。
+
+### `ic_create_wifi_task` → `pp_create_task`：**无条件尾调用**（没有门）
+
+`if_hwctrl.o` 里：
+
+```asm
+00000000 <ic_create_wifi_task>:
+   0: auipc t1,0x0
+      R_RISCV_CALL pp_create_task
+   4: jr    t1            # ← 尾调用，无任何条件判断
+```
+
+⇒ **只要 `ic_create_wifi_task` 被调用，`pp_create_task` 就必然执行**。
+
+而我们此前在 pdFAIL 实验里观察到：`_task_create` 返回 0 ⇒ `esp_wifi_init_internal` 返回 **257**，
+且当时的判读是"错误来自 `ic_create_wifi_task`" ⇒ **说明它在 init 路径上被调用了**。
+
+⇒ **这与"`s_pp_task_create_sem` 的 store 没执行"矛盾**（只要 pp_create_task 跑，store 就该发生）。
+
+**最可能的解释**：我把 `0x40039794` 当成 `pp_create_task` 的**链接后地址**这一步**没有验证过**
+（我们的 ELF 无符号表，`.o` 里的偏移不等于链接后地址）。
+
+⇒ 下一步（必须先做）：**用 `.o` 的段内偏移 + 段基址**把 `pp_create_task` 的真实链接地址算出来，
+再核对 `0x40039794` 到底是不是它。否则后面所有"这段代码没执行"的结论都建立在错误的地址映射上。
