@@ -1123,12 +1123,18 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
 // interval/status，"可以开始发"的回调永远不会到 —— 与 MAC 的 TX/RX 一直 busy 吻合。
 // 这一轮先看**谁被调用**，再决定实现语义。
 // ---------------------------------------------------------------------------
+/// **实验开关**：`true` 时 `_coex_init` 返回非 0（模拟"coex 不可用"）。
+/// 动机：我们序列里有 coex 调度簇（11 连发 timer_setfn + schm_interval_set），IDF 侧没有 ——
+/// 若那是"polluted by our coex stubs returning success"，改成失败后应消失。
+/// 三态判据：呼叫消失+MAC_ST 清 ⇒ coex 是门闩；消失但不清 ⇒ 旁支；init 直接失败 ⇒ coex 必需。
+const coex_init_fail: bool = false;
+
 fn shellCoexInit() callconv(.c) usize {
     note(24, 0, 0); // 24 = coex_init（原来用 23，与 wifi_reset_mac 撞）
     // `libcoexist.a` 里就有真正的 `coex_init()`（我们链接了它）。
     const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
     f();
-    return 0;
+    return if (coex_init_fail) 1 else 0;
 }
 fn shellCoexEnable() callconv(.c) usize {
     note(24, 0, 0);

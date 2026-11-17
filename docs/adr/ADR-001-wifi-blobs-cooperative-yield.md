@@ -6216,3 +6216,22 @@ IDF  (46): 1, 3, 1×23, 2×12, 5, 6, 2, 2, 3, 1, 1, 2, 1, 1, 3
 ⇒ 于是整个课题的剩余解释被压缩到一句：
 **在 osi 层完全同构、所有可写寄存器完全同构的前提下，`MAC_ST[15:13]`（及 `0x201044EC` bit6/9）
 这些只读状态位仍不同** —— 说明差异发生在 **osi 之下、寄存器可见面之外**（MAC/PHY 内部固件或 ROM 早期初始化）。
+
+### 判决（负）：`_coex_init` 返回失败后，**coex 簇仍在、`MAC_ST` 仍不清**
+
+动机：我们的序列里有 coex 调度簇（`timer_setfn` 连发 + `coex_schm_interval_set`），IDF 侧没有——
+怀疑是"我们的 coex 桩一律返回成功"让 blob 走了 coex 分支。把 `shellCoexInit` 改成返回 `1`（仍调用真 `coex_init()`，只改返回值）：
+
+```text
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=312168/350352 B, bad_handle=0, blocking_refused=4
+（timer_setfn / coex 相关条目仍有 16 条）
+wifi-init-probe: MAC_ST after init = 0x0000e000
+panic 0
+```
+
+⇒ **三态判据落在第二态**：**coex 簇不消失、`MAC_ST` 不清、init 照常成功**
+⇒ **`coex` 是旁支，不是门闩**（blob 容忍 `coex_init` 失败并照常走完 init）。
+
+⇒ 开关已翻回 `false`（默认路径不变）。
+⇒ 至此"coex 分支"假设也排除 —— 与 osi 层同构的结论一致：那条 `4` 本来就是标签错位，不是行为差异。
