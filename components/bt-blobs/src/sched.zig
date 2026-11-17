@@ -130,6 +130,9 @@ fn swapAsm(_: usize, _: usize) callconv(.naked) void {
 var main_context: ?*Context = null;
 
 fn trampoline() callconv(.c) void {
+    // **任务体入口**：这一行是否出现，直接回答"任务体在 init 期间跑过没有"
+    // —— 锚点由归档的任务体自己写，任务是它唯一的写者候选。
+    @import("osal.zig").logLine("bt sched: *任务体开始执行*", .{});
     const ctx = entering orelse return;
     const entry = ctx.entry orelse return;
     entry(ctx.arg);

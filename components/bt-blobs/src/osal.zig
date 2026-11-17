@@ -94,7 +94,7 @@ pub const pool_caps = struct {
     pub const mutex: u16 = 64;
 };
 
-fn logLine(comptime fmt: []const u8, args: anytype) void {
+pub fn logLine(comptime fmt: []const u8, args: anytype) void {
     const f = hooks.log orelse return;
     var buf: [128]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
@@ -1168,6 +1168,7 @@ pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32,
     // **真的建上下文**：从 arena 分 `stack_size` 字节栈（16 对齐），交给 sched。
     // 只登记不建的话 controller 任务是永不返回的阻塞循环 ⇒ 永远不执行 ⇒
     // init 会"成功"然后什么都不发生（这是最容易误判的一步）。
+    logLine("bt osal: task_create 入口 stack_size={d} prio={d}", .{ stack_size, priority });
     const f = fn_ orelse {
         handle.* = @ptrCast(t);
         logLine("bt osal: task_create with null entry (registered only)", .{});

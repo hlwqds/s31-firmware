@@ -68,7 +68,7 @@ pub var skip_task_init: bool = false;
 /// 补调 `fqmZk`（把 `Xpuq` 的锚点 `P` 填上）。
 /// **默认关**：oracle 实测 IDF 里该锚点在 init **之前也是 0**，由 init 自己填；
 /// 我们此前的"P=NULL 是 bug"是**误判**（在 step 6 之前读了它）。
-pub var populate_workaround: bool = false;
+pub var populate_workaround: bool = true; // 2aNN 会 `sw zero,0(P)`：P 必须非空，否则向地址 0 写
 
 /// `Xpuq` 用的锚点全局（`libbtdm_common/2.o` 的 `.bss.r_sym_bt_d3D3sk5KewclELfrD5xa`）。
 /// 唯一的写者是 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG`：`P = wr_btdm_osal_malloc(...)`。
@@ -246,6 +246,15 @@ pub fn run() noreturn {
         while (k < 4) : (k += 1) {
             board.log.line("uart0 采样[{d}] 0x{x:0>8}", .{ k, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* });
             board.hw.delayUs(100_000);
+        }
+    }
+    // PMU 窗口（0x20704000..+0x200）非零项 —— 与 IDF oracle 的同类 dump 逐字对拍
+    {
+        var k: usize = 0;
+        while (k < 128) : (k += 1) {
+            const a: usize = 0x2070_4000 + k * 4;
+            const v = (@as(*volatile u32, @ptrFromInt(a))).*;
+            if (v != 0) board.log.line("pmu+0x{x:0>3} = 0x{x:0>8}", .{ k * 4, v });
         }
     }
     var rc = bringup.init(&cfg);
