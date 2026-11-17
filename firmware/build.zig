@@ -182,6 +182,19 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 
+    // bt-blobs 的 OSAL 是纯逻辑，单独成主机测试目标；不起 app 的依赖
+    // （归档链接是 opt-in 的 -Dbt-blob-*，常规构建里这个组件不参与）。
+    {
+        const bt_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("../components/bt-blobs/src/host_tests.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
+        test_step.dependOn(&b.addRunArtifact(bt_tests).step);
+    }
+
     app.setLinkerScript(b.path("../boards/esp32s31-coreboard/linker/s31.ld"));
     const install = b.addInstallArtifact(app, .{ .dest_sub_path = "app.elf" });
     b.getInstallStep().dependOn(&install.step);

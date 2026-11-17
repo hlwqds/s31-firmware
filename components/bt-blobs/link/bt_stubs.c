@@ -72,3 +72,38 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
     for (;;) {
     }
 }
+
+/* ---------------------------------------------------------------------------
+ * 8 个 `wr_btdm_log_*`（2026-11-17）
+ *
+ * controller 在 init 阶段就会写日志 ⇒ 这 8 个弱桩是**第一个会被调到的**，
+ * 不覆盖就会在"第一行日志"上断言挂住。签名取自 IDF 参考实现
+ * `porting_btdm/controller/btdm_common/src/btdm_log.c:29-95`。
+ *
+ * 注意：`log_internal_x*` / `log_internal_hex` 的参数是**整数**，不是格式串
+ * （IDF 内部按 p0 去查一张日志表）。我们没有那张表，所以只打印数值——
+ * 目的就是"第一行日志能出来"这个可观测判据，不是还原原文。
+ * ------------------------------------------------------------------------- */
+static unsigned char s_log_flags;
+
+void wr_btdm_log_set_flags(unsigned char p0) { s_log_flags = p0; }
+void wr_btdm_log_reset_flags(unsigned char p0) { (void)p0; s_log_flags = 0; }
+
+void wr_btdm_log_internal_x0(unsigned int p0) {
+    ets_printf("bt-log x0 %u\n", p0);
+}
+void wr_btdm_log_internal_x1(unsigned int p0, unsigned int p1) {
+    ets_printf("bt-log x1 %u %u\n", p0, p1);
+}
+void wr_btdm_log_internal_x2(unsigned int p0, unsigned int p1, unsigned int p2) {
+    ets_printf("bt-log x2 %u %u %u\n", p0, p1, p2);
+}
+void wr_btdm_log_internal_x3(unsigned int p0, unsigned int p1, unsigned int p2, unsigned int p3) {
+    ets_printf("bt-log x3 %u %u %u %u\n", p0, p1, p2, p3);
+}
+void wr_btdm_log_internal_hex(unsigned int p0, unsigned int p1, unsigned int p2) {
+    ets_printf("bt-log hex %u %x %x\n", p0, p1, p2);
+}
+void wr_btdm_log_raw_export(unsigned short p0, unsigned int p1, unsigned int p2) {
+    ets_printf("bt-log raw %u %u %u\n", (unsigned)p0, p1, p2);
+}
