@@ -5150,3 +5150,38 @@ modem_syscon_ll_set_modem_apb_icg_bitmap(hw, bitmap)
 ⇒ 下一步（精确可做）：把 `modem_syscon_ll_set_*_icg_bitmap` 的**字段位段**逐个查出来，
 按 **"读该字段 → 与配置值 OR → 只写回该字段"** 的方式重写 `shellWifiClockEnable` 的 ICG 部分，
 **不要**再整寄存器赋值。LPCON 侧（`0x2010F020`）同理。
+
+### 新观测：**blob 自己会把 ICG 写回 `0x64646400`**（我们的值被覆盖）
+
+按 `modem_syscon_struct.h` 的实测布局重算（**注意：不是 4 位 reserved，是 8 位**）：
+
+```c
+// components/soc/esp32s31/include/modem/modem_syscon_struct.h:78-89
+clk_conf_power_st:
+    reserved0              : 8    // [7:0]
+    clk_zb_st_map          : 4    // [11:8]
+    clk_fe_st_map          : 4    // [15:12]
+    clk_bt_st_map          : 4    // [19:16]
+    clk_wifi_st_map        : 4    // [23:20]
+    clk_modem_peri_st_map  : 4    // [27:24]
+    clk_modem_apb_st_map   : 4    // [31:28]
+```
+
+IDF 逐域值：FE=`0x6` / BT=`0x4` / WIFI=`0x6` / PERIPH=`0x4` / APB=`0x6`，**zb 域 IDF 不写 ⇒ 0**
+⇒ 正确整寄存器值 = **`0x64646000`**（我们原来的 `0x64646400` 唯一差别是 `clk_zb_st_map` 写成了 4）。
+
+写进去之后读回：
+
+```text
+wifi-init-probe:   icg(+0C)=0x64646400      # ★ 不是我们写的 0x64646000
+```
+
+⇒ **有别人把它改回 `0x64646400`** —— 只可能是 **blob 自己的 `_wifi_clock_enable` 调用链之外**还有一处写，
+或 blob 在 init 里直接写了这个寄存器。
+
+⇒ 所以"我们写的 ICG 值错"这条**不成立**（我们的值活不过一个 init 窗口）。
+⇒ 这也解释了为什么改这个常量一直没效果：**写了就会被覆盖**。
+
+⇒ 下一步：在 `shellWifiClockEnable` 之后再 dump 一次 ICG，定位是"我们的写没生效"还是"之后被覆盖"，
+然后用**调用时序**（而不是改常量）去对——IDF 的 `wifi_module_enable()` 之所以能清位，
+是因为它在**正确的时刻**（blob 还没自己配 ICG 之前）做完了整条链。
