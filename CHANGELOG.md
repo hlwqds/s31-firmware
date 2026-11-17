@@ -8,6 +8,14 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **porting 层的 9 个 C 函数里 7 个已落 Zig**（2026-11-17）：照 IDF 原文逐条读过之后，估工大幅下调——
+  4 个是 `return 0`（`btdm_log_init`/`btdm_external_init`/`btdm_coex_init`/`btdm_lp_init`），
+  `ble_controller_scan_duplicate_config` 是 NimBLE **host** 侧的扫描去重（全归档 `grep ble_vhci` 零命中
+  ⇒ controller-only 构建没有 host，空实现是对的），`ble_msys_init` 只是转调归档里的
+  `r_esp_ble_msys_init`（常量取 `host/nimble/Kconfig.in` 的 SOC_ESP_NIMBLE_CONTROLLER 分支：24/128、24/320）。
+  `btdm_osal_elem_mempool_init` 做成**容量校验**：IDF 池空会回退动态 malloc，我们的静态池**没有回退**
+  ⇒ 超限按类返回 -1..-5 并把 5 个数字打出来，免得"池不够"表现成"controller 不动"。
+  **只剩 `btdm_lp_enable_clock` 是硬活**（CNNT/modem 域时钟门控 + BT MAC 复位，`modem_clock_*` 是 IDF C 不是 ROM）。
 - **`ble_osal_elem_calc` 的 Zig 版**（2026-11-17，R3.3 里程碑 2 前置）：`config.elemCalc()` /
   `mempoolElemNum()` 复刻 `ble.c:1586-1607`，作为 `btdm_osal_elem_mempool_init` 的输入。
   两个必须照抄的点：① **seed 不是零**——`bt.c:172-178` 预置 `{evt=103, evtq=3, co=10, sem=0, mutex=1}`，

@@ -8,6 +8,8 @@ const std = @import("std");
 test {
     _ = @import("osal.zig");
     _ = @import("config.zig");
+    _ = @import("porting.zig");
     std.testing.refAllDecls(@import("osal.zig"));
     std.testing.refAllDecls(@import("config.zig"));
+    std.testing.refAllDecls(@import("porting.zig"));
 }

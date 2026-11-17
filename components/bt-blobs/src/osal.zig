@@ -76,6 +76,20 @@ pub const Hooks = struct {
 var hooks: Hooks = .{};
 
 /// 走注入的日志钩子（板级接串口）。未注入时静默——主机测试里不重要。
+/// 对外暴露的日志（porting 层用）。
+pub fn logPublic(comptime fmt: []const u8, args: anytype) void {
+    logLine(fmt, args);
+}
+
+/// 静态池容量（供 `porting.zig` 做 mempool 容量校验）。
+pub const pool_caps = struct {
+    pub const event: u16 = 192;
+    pub const eventq: u16 = 48;
+    pub const callout: u16 = 32;
+    pub const sem: u16 = 32;
+    pub const mutex: u16 = 32;
+};
+
 fn logLine(comptime fmt: []const u8, args: anytype) void {
     const f = hooks.log orelse return;
     var buf: [128]u8 = undefined;
