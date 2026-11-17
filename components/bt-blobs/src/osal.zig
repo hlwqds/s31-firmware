@@ -375,6 +375,17 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
         m.locked = true;
         stats_state.mutex_pend_ok += 1;
         logLine("bt hook: mutex_pend => OK", .{});
+        {
+            // **关键三数测量**：此处在 `r_btdm_task_init` 偏移 0x66，
+            // 即 `OkE7` 已经跑完、`2aNN`（用 2.o 锚点 P）还没跑。
+            //   env     = 21.o 锚点（OkE7 发布的 76B 环境）
+            //   *(env+8)= OkE7 里 fqmZk 的守卫所读的字段（应为 eventq 槽位指针）
+            //   P       = 2.o 锚点（由 fqmZk 设置；为 0 则 2aNN 会向地址 0 写）
+            const pp = @import("probe_ptr.zig");
+            const env = pp.okE7Anchor();
+            const env8: u32 = if (env != 0) (@as(*volatile u32, @ptrFromInt(env + 8))).* else 0;
+            logLine("bt gate: env=0x{x} *(env+8)=0x{x} P=0x{x}", .{ env, env8, pp.get() });
+        }
         return OK;
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
