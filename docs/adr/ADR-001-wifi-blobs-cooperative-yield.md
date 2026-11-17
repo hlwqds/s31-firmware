@@ -3662,3 +3662,18 @@ fa: lw a0, 0(s2) ; R_RISCV_LO12_I s_pp_task_create_sem   # 读它
 ⇒ 下一步（很具体）：
 1. 查 `osi_funcs[42]`（`_task_get_max_priority`）在我们表里**是否是真实现**、返回值是多少；
 2. 继续反汇编 `.L640` 之后（`s_wifi_queue` 分支），找到 `sw a5,0(s_pp_task_create_sem)` 的位置与其前置条件。
+
+### app 侧创建 `s_pp_task_create_sem`：**被 blob 清回 0**
+
+按"app 应当创建它"的思路，在 `esp_wifi_init_internal` 之前创建并存入：
+
+```text
+wifi-init-probe: s_pp_task_create_sem <- 0x2f020ad0     ← 写入成功
+romglob s_pp_task_create_sem=0x0                        ← 自旋时读回 **0**
+semphr give_total=4 null_give=1                         ← 仍然丢弃
+```
+
+⇒ **blob 会把它清零**（`pp_create_task` 先清、再期望某个钩子填）⇒ **单纯"app 侧创建"无效**。
+`pp.o` 里只有 `lw a0, s_pp_task_create_sem; beqz`（只读），写者不在 `pp.o`。
+
+⇒ 下一步：找出**清零它的那条指令**（`sw zero, …` 到 `0x2f07ff14`）以及紧随其后的"填值"路径。

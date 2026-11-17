@@ -383,6 +383,8 @@ pub fn run() noreturn {
     const w_clk = impl.cnt_clk_en;
     // **PP worker 泵实验已做**：给它栈、在 tick 里泵，配合"真阻塞"仍活锁
     // （`idle_calls` 涨到 20000 而 `hooks` 冻结在 17）⇒ 它不是 ack 的生产者。已回滚。
+    // **`s_pp_task_create_sem` 实验已做**：我们把它写成 0x2f020ad0，但自旋时读回 **0x0**
+    // ⇒ **blob 会把它清零**（`pp_create_task` 先清、再期望某个钩子填）⇒ 单纯"app 侧创建"无效。
     const init_rc = esp_wifi_init_internal(&cfg);
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d}", .{
         impl.calls.queue_send - w_qsend,

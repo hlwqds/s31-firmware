@@ -375,6 +375,11 @@ fn shellSemphrCreate(max: u32, init_count: u32) callconv(.c) ?*anyopaque {
     return @ptrCast(s);
 }
 
+/// 供探针调用：创建信号量（与 `_semphr_create` 同一实现）。
+pub fn shellSemphrCreatePublic(max: u32, init_count: u32) ?*anyopaque {
+    return shellSemphrCreate(max, init_count);
+}
+
 fn shellSemphrDelete(p: ?*anyopaque) callconv(.c) void {
     const q: ?[*]u8 = if (p) |v| @ptrCast(v) else null;
     arena_state.free(q);
