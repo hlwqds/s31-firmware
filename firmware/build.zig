@@ -49,6 +49,12 @@ pub fn build(b: *std.Build) void {
     // 链接它 + 调 `phy_get_romfunc_addr()` 才能填充 `g_phyFuns`（PHY 函数表）。
     const phy_lib_dir = b.option([]const u8, "phy-lib-dir", "directory with unpacked libphy.a objects") orelse "";
     const phy_objs = b.option([]const u8, "phy-objs", "comma-separated object names inside phy-lib-dir") orelse "";
+    // **IDF 源码编好的 PHY 对象**（从 IDF 的 build 目录直接取，省掉重建头文件树）：
+    //   phy_init.c.obj / phy_common.c.obj / btbb_init.c.obj
+    //   modem_clock.c.obj / periph_ctrl.c.obj
+    // 它们提供 `esp_phy_common_clock_enable` / `phy_module_enable` /
+    // `modem_clock_module_enable` —— 这些是 IRAM 代码，我们板上没有。
+    const phy_src_objs = b.option([]const u8, "phy-src-objs", "comma-separated absolute paths of IDF PHY objects") orelse "";
     const bt_probe = b.option(bool, "bt-probe", "run the BLE controller probe instead of the normal self-test") orelse false;
 
 
@@ -152,6 +158,14 @@ pub fn build(b: *std.Build) void {
         const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("wifi_init_probe_off.zig", off_src) });
         app.root_module.addImport("wifi_init_probe", off_mod);
     }
+    if (phy_src_objs.len > 0) {
+        var it2 = std.mem.splitScalar(u8, phy_src_objs, ',');
+        while (it2.next()) |path| {
+            if (path.len == 0) continue;
+            app.root_module.addObjectFile(.{ .cwd_relative = path });
+        }
+    }
+
     if (phy_lib_dir.len > 0 and phy_objs.len > 0) {
         var it = std.mem.splitScalar(u8, phy_objs, ',');
         while (it.next()) |name| {
@@ -177,6 +191,8 @@ pub fn build(b: *std.Build) void {
         // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
         // 归档的日志必须走我们的丢弃实现，否则"打印"就是"挂死"。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{} });
+        // IDF `esp_phy`/`modem_clock` 源码对象的桩（NVS 故意返回 NOT_FOUND ⇒ 全量校准）
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/phy_stubs.c"), .flags = &.{} });
         // OSAL 的 36 个 `wr_btdm_osal_*` 导出（强定义覆盖归档里的弱断言桩）。
         // 单独成对象：它只被归档引用，不需要进 root 模块。
         // **单一模块**：所有 bt-blobs 的文件都属于它（分两个模块会报"文件属于多个模块"）。

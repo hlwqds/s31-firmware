@@ -484,3 +484,7 @@ PROVIDE(phy_wait_rfpll_cal_end = 0x2f8016a4);
 PROVIDE(phy_wifi_track_tx_power = 0x2f8016a8);
 PROVIDE(phy_write_rfpll_sdm = 0x2f8016b4);
 PROVIDE(phy_xpd_rf = 0x2f8016b8);
+
+/* ---- 外围基址（IDF `esp32s31.peripherals.ld`）：PHY 源码对象需要 ---- */
+PROVIDE(MODEM_SYSCON = 0x20109C00);
+PROVIDE(MODEM_LPCON  = 0x2010F000);

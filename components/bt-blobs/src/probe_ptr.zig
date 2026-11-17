@@ -70,3 +70,12 @@ pub fn populate() c_int {
     const f = @extern(*const fn () callconv(.c) c_int, .{ .name = "r_sym_bt_fqmZkUKgd5GE6m7i2YFG" });
     return f();
 }
+
+/// 调 **IDF 真实实现** 的 PHY 使能链（由 `-Dphy-src-objs` 链入）。
+pub fn initPhy() void {
+    if (!on_target) return;
+    const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
+    const phy_enable = @extern(*const fn (u32) callconv(.c) void, .{ .name = "esp_phy_enable" });
+    get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）
+    phy_enable(2); // PHY_MODEM_BT
+}

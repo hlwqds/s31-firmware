@@ -119,41 +119,14 @@ fn step(n: u32, comptime what: []const u8, archive_rc: ?c_int) c_int {
 fn dumpBootState() void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     {
-        // **完整 PHY 初始化**（此前从未做过）：
-        //   1) `phy_get_romfunc_addr()` 填 `g_phyFuns`（PHY 函数表，原先恒 0）
-        //   2) `register_chipv7_phy(init_data, cal_data, PHY_RF_CAL_FULL)` —— 真正上电 + 校准
-        //   3) `esp_phy_enable(PHY_MODEM_BT=2)`
-        // `init_data` 是 IDF 里 `phy_init_data` 那张 **128 字节**静态表的实测副本
-        // （从 IDF 的 ELF `.rodata` 抠出，`nm` 显示 size=0x80）。
-        // `cal_data` 是 `esp_phy_calibration_data_t` = version[4]+mac[6]+opaque[1894] = 1904 B。
-        const init_data: [128]u8 = .{
-            0x01, 0x00, 0x50, 0x50, 0x50, 0x50, 0x4c, 0x48, 0x50, 0x50, 0x4c, 0x48, 0x40, 0x3c, 0x3c, 0x3c,
-            0x4c, 0x4c, 0x48, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        };
-        var cal_data: [1904]u8 align(4) = @splat(0);
-        const get_romfuncs = @as(*const fn () callconv(.c) void, @ptrFromInt(0x4006_1728));
-        const register_phy = @as(*const fn ([*]const u8, [*]u8, u32) callconv(.c) c_int, @ptrFromInt(0x4006_1c82));
-        const phy_enable = @as(*const fn (u32) callconv(.c) void, @ptrFromInt(0x2f00_e756));
-
-        // **顺序照 IDF 的 `esp_phy_enable`**：填表 → 开公共时钟 → 开模块 → 校准 → 使能
-        const common_clk_on = @as(*const fn () callconv(.c) void, @ptrFromInt(0x2f00_2dbc));
-        const module_enable = @as(*const fn () callconv(.c) void, @ptrFromInt(0x2f00_15ba));
-        get_romfuncs();
-        osal.logLine("BOOTSTATE: g_phyFuns=0x{x}", .{(@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*});
-        common_clk_on();
-        osal.logLine("BOOTSTATE: esp_phy_common_clock_enable done", .{});
-        module_enable();
-        osal.logLine("BOOTSTATE: phy_module_enable done, calibrating ...", .{});
-        const rc = register_phy(&init_data, &cal_data, 2); // PHY_RF_CAL_FULL
-        osal.logLine("BOOTSTATE: register_chipv7_phy rc={d}", .{rc});
-        phy_enable(2);
-        osal.logLine("BOOTSTATE: esp_phy_enable(2) done", .{});
+        // **PHY 初始化**：现在用的是 **IDF 的真实实现**（`-Dphy-src-objs` 链进来的
+        // `esp_phy.c`/`modem_clock.c`/`periph_ctrl.c` 对象），不再按地址调 IRAM。
+        // 顺序与 IDF 的 `esp_phy_enable` 一致：填表 → 使能（内部含时钟/模块/校准）。
+        const pp = @import("probe_ptr.zig");
+        pp.initPhy();
+        osal.logLine("BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=0x{x}", .{
+            (@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*,
+        });
     }
 
     const wins = [_]struct { name: []const u8, base: usize, n: usize }{

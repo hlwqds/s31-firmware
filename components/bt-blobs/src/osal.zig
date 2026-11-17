@@ -1616,3 +1616,18 @@ export fn s31_bt_log_hook(msg: [*:0]const u8) callconv(.c) void {
     const s = std.mem.span(msg);
     logLine("bt archive> {s}", .{s});
 }
+
+// ---- PHY 桩（`link/phy_stubs.c`）用的导出 ----
+export fn s31_btdm_malloc(size: u32) callconv(.c) ?*anyopaque {
+    return btdmMalloc(size, 0);
+}
+export fn s31_btdm_free(ptr: ?*anyopaque) callconv(.c) void {
+    btdmFree(ptr);
+}
+export fn s31_phy_log(tag: [*:0]const u8, msg: [*:0]const u8) callconv(.c) void {
+    _ = msg; // 只打 tag，格式串不展开（裸机无 vprintf）
+    logLine("phy: {s}", .{std.mem.span(tag)});
+}
+export fn s31_now_us() callconv(.c) u64 {
+    return @as(u64, timeGet()) * 1000;
+}
