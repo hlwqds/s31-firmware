@@ -510,6 +510,14 @@ pub fn run() noreturn {
     // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     dumpClockRegs("before-init");
+    // **全 4 KB MAC 块 diff 的唯一差异**：`0x201044EC`，IDF `0x000102C0` vs 我们 `0x00010080`
+    // ⇒ 差 **bit 6 与 bit 9**（`0x240`）。复刻 IDF 底色试一次。
+    {
+        const w44ec: *volatile u32 = @ptrFromInt(0x2010_44EC);
+        const b = w44ec.*;
+        w44ec.* = b | 0x240;
+        log.line("wifi-init-probe: 0x201044EC fixed 0x{x} -> 0x{x} (IDF=0x102C0)", .{ b, w44ec.* });
+    }
     impl.resetEvents(); // 从干净的环开始记录 init 期间的完整 osi 序列
     // **全表 diff 找到的唯一差异**：`LPCON+0x18`（clk_conf）在 IDF 侧是 `0x1`（bit0 = `clk_wifipwr_fo`，
     // WiFi 电源域 force-on，由 bootloader 打开），我们侧是 `0x4`（bit2 = `clk_i2c_mst_fo`）。
