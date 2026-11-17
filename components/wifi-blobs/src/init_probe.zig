@@ -213,12 +213,20 @@ fn pumpRealTask() bool {
 /// ```
 /// 前 8 字节改写成 `auipc ra,hi; jalr ra,lo` 指向本桩；桩语义与原环一致，只是每轮**让出一次**。
 /// `ra` 被覆盖没关系：环后第一条就是 `li a0,5` 然后 `auipc ra,…` 重设 `ra`。
+var spin_stub_depth: u32 = 0;
+
 fn spinYieldStub() callconv(.c) void {
     const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
     var rounds: u32 = 0;
     while ((mac_st.* & 0xE000) != 0) : (rounds += 1) {
-        // **只在主上下文里让出**：任务侧命中会让出到它自己 ⇒ 递归/栈爆。
-        if (!in_task) idleHook();
+        // **无条件让出**，只用重入标志防递归。
+        // 原来加 `!in_task` 的守卫导致 idle_calls 一直不动（`in_task` 是残留 true）⇒ 桩跑了 400 万轮
+        // 却一次都没真让出。这里改成：只要不在本桩里，就调 idleHook（它自己知道怎么切）。
+        if (spin_stub_depth == 0) {
+            spin_stub_depth += 1;
+            idleHook();
+            spin_stub_depth -= 1;
+        }
         if (rounds > 4_000_000) {
             log.line("wifi-init-probe: spin stub gave up rounds={d} MAC_ST=0x{x:0>8}", .{ rounds, mac_st.* });
             return;

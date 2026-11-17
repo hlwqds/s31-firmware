@@ -4585,3 +4585,35 @@ panic 0
 `idleHook` 是**先自增**再判断的，所以这说明 **`idleHook` 没被调用** ⇒ 桩里 `!in_task` 为假
 （`in_task` 一直是 true）。⇒ **"桩确实让出了"这一点还没被证实**，
 上述"假设被否"要先打上这个保留。
+
+### ★★★★ 判决：**让出真的生效了，MAC_ST bits 13–15 仍不清** ⇒ "任务没被调度"这条解释被否
+
+把桩里的 `!in_task` 守卫换成重入标志（`spin_stub_depth`）后，`idleHook` 真被调用：
+
+```text
+wifi-init-probe: spin patched -> 0x4004cab2 (auipc=0x11044097 jalr=0x8b4080e7)
+wifi-init-probe: idle_calls=3998000 in_task=true hooks=57 tasks=1 e0=0x2f00d70a e1=0x0
+wifi-init-probe: idle_calls=4000000 in_task=true hooks=57 tasks=1 e0=0x2f00d70a e1=0x0
+（没有 esp_wifi_start rc= 行）
+panic 0
+```
+
+| 读数 | 值 | 含义 |
+|---|---|---|
+| `idle_calls` | **4,000,000** | 桩真的让出了 400 万轮（不再是"跑了但没让出"） |
+| `hooks` | **20 → 57** | **PP worker 在 start 期间真的被泵起来跑了**（多了 37 次钩子调用） |
+| `MAC_ST & 0xE000` | **仍非 0** | **400 万轮里一次都没清** |
+| `esp_wifi_start rc=` | **无** | start 仍未返回 |
+
+⇒ **"让 PP worker 在 start 期间跑起来，它就会清掉那三位"这个假设，现在是在"让出确实发生"的前提下被否掉的。**
+⇒ 于是"MAC_ST 不清"不再是"任务没被调度"的后果，而是**独立的硬件状态**。
+
+### 已否掉的清位路径（汇总）
+
+1. 直写 `MAC_ST`（可写，但 blob 随后自己 `or 0x0FF10000` 改回，bits 13–15 不受影响）；
+2. `rst_wifimac` 脉冲（bit9，20 µs 宽）；
+3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（ADR 实验 9 早已判负）；
+4. **让 PP worker 在 start 期间跑（本轮新增，400 万轮让出）**。
+
+⇒ 剩下的方向：查**这三位在 IDF 侧是被谁清掉的**（对比 IDF init 前后的寄存器轨迹），
+而不是继续在"怎么清"上试变体。
