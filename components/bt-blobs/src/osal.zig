@@ -1113,3 +1113,127 @@ const required_exports = [_]*const anyopaque{
 test "导出层：归档会调的 36 个逐个点名都在" {
     try testing.expectEqual(@as(usize, 36), required_exports.len);
 }
+
+// ---------------------------------------------------------------------------
+// 11 个 `wr_btdm_coex_*`（Wi-Fi/BLE 共存钩子）
+//
+// 这批**不能做成空桩**：controller 会问 "Wi-Fi 现在哪个信道"、"这个状态位能不能用"，
+// 空桩返回 0 会被当成"可用"或"信道 0"。我们的做法是**维持一个真实的状态位图 +
+// 存下回调**，并按 IDF 在"未开软件共存"分支下的返回值作答（`wifi_channel_get` → -1、
+// `iso_protect_frame_thres_get` → 0）。日志只在有限次数内打印，热路径只计数。
+// ---------------------------------------------------------------------------
+
+pub const CoexStats = struct {
+    status_bit_set: u32 = 0,
+    status_bit_clear: u32 = 0,
+    iso_start: u32 = 0,
+    iso_stop: u32 = 0,
+    iso_end_int: u32 = 0,
+    idle_inform: u32 = 0,
+    register_calls: u32 = 0,
+};
+var coex_stats_state = CoexStats{};
+pub fn coexStats() CoexStats {
+    return coex_stats_state;
+}
+
+var coex_status_bits: u64 = 0;
+var coex_btdm_cb: ?*anyopaque = null;
+var coex_wifi_channel_cb: ?*anyopaque = null;
+var coex_ble_cb: ?*anyopaque = null;
+
+pub fn coexStatusBitSet(btype: u32, status: u32) void {
+    if (status < 64) coex_status_bits |= (@as(u64, 1) << @intCast(status));
+    coex_stats_state.status_bit_set += 1;
+    if (coex_stats_state.status_bit_set <= 4)
+        logLine("bt coex: status_bit_set type={d} status={d} bits=0x{x}", .{ btype, status, coex_status_bits });
+}
+
+pub fn coexStatusBitClear(_: u32, status: u32) void {
+    if (status < 64) coex_status_bits &= ~(@as(u64, 1) << @intCast(status));
+    coex_stats_state.status_bit_clear += 1;
+}
+
+pub fn coexStatusBits() u64 {
+    return coex_status_bits;
+}
+
+export fn wr_btdm_coex_schm_status_bit_set(btype: u32, status: u32) callconv(.c) void {
+    coexStatusBitSet(btype, status);
+}
+export fn wr_btdm_coex_schm_status_bit_clear(btype: u32, status: u32) callconv(.c) void {
+    coexStatusBitClear(btype, status);
+}
+export fn wr_btdm_coex_schm_register_btdm_callback(cb: ?*anyopaque) callconv(.c) c_int {
+    coex_btdm_cb = cb;
+    coex_stats_state.register_calls += 1;
+    logLine("bt coex: register_btdm_callback", .{});
+    return 0;
+}
+export fn wr_btdm_coex_register_wifi_channel_change_callback(cb: ?*anyopaque) callconv(.c) c_int {
+    coex_wifi_channel_cb = cb;
+    coex_stats_state.register_calls += 1;
+    logLine("bt coex: register_wifi_channel_change_callback", .{});
+    return 0;
+}
+/// IDF 在未开软件共存时返回 **-1**（`btdm_coex.c:106-114`）——照抄，别返回 0
+/// （0 会被读成"拿到信道了"，于是 primary/secondary 是未初始化垃圾）。
+export fn wr_btdm_coex_wifi_channel_get(primary: ?*u8, secondary: ?*u8) callconv(.c) c_int {
+    _ = primary;
+    _ = secondary;
+    return -1;
+}
+export fn wr_btdm_coex_iso_start(info: ?*anyopaque) callconv(.c) c_int {
+    _ = info;
+    coex_stats_state.iso_start += 1;
+    return 0;
+}
+export fn wr_btdm_coex_iso_stop(handle: u16) callconv(.c) c_int {
+    _ = handle;
+    coex_stats_state.iso_stop += 1;
+    return 0;
+}
+export fn wr_btdm_coex_iso_end_int_handle(handle: u16, duration: u32) callconv(.c) void {
+    _ = handle;
+    _ = duration;
+    coex_stats_state.iso_end_int += 1;
+}
+/// 同 IDF 的非共存分支：返回 0（`btdm_coex.c:153-162`）。
+export fn wr_btdm_coex_iso_protect_frame_thres_get() callconv(.c) u16 {
+    return 0;
+}
+export fn wr_btdm_coex_ble_idle_time_inform(start_offset: u32, duration: u32) callconv(.c) void {
+    _ = start_offset;
+    _ = duration;
+    coex_stats_state.idle_inform += 1;
+}
+export fn wr_btdm_coex_register_ble_cb(cb_type: u32, func: ?*anyopaque) callconv(.c) c_int {
+    coex_ble_cb = func;
+    coex_stats_state.register_calls += 1;
+    logLine("bt coex: register_ble_cb type={d}", .{cb_type});
+    return 0;
+}
+
+test "coex: 状态位图可置可清，未开共存时按 IDF 的返回值作答" {
+    coex_stats_state = .{};
+    coex_status_bits = 0;
+    coexStatusBitSet(0, 3);
+    try testing.expectEqual(@as(u64, 1 << 3), coexStatusBits());
+    coexStatusBitClear(0, 3);
+    try testing.expectEqual(@as(u64, 0), coexStatusBits());
+    try testing.expectEqual(@as(c_int, -1), wr_btdm_coex_wifi_channel_get(null, null));
+    try testing.expectEqual(@as(u16, 0), wr_btdm_coex_iso_protect_frame_thres_get());
+    try testing.expectEqual(@as(c_int, 0), coexHelperExercise());
+}
+
+/// 小助手：逐个调用那些没有返回值的 coex 导出，保证它们被引用、且不崩。
+fn coexHelperExercise() c_int {
+    _ = wr_btdm_coex_iso_start(null);
+    _ = wr_btdm_coex_iso_stop(0);
+    wr_btdm_coex_iso_end_int_handle(0, 0);
+    wr_btdm_coex_ble_idle_time_inform(0, 0);
+    _ = wr_btdm_coex_schm_register_btdm_callback(null);
+    _ = wr_btdm_coex_register_wifi_channel_change_callback(null);
+    _ = wr_btdm_coex_register_ble_cb(0, null);
+    return 0;
+}

@@ -8,6 +8,13 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **56 个弱断言桩全部有强定义**（2026-11-17，R3.3 里程碑 2c1 收口）：在 36 个 OSAL 之上补齐
+  **11 个 `wr_btdm_coex_*`**（Wi-Fi/BLE 共存钩子）。这批**不能做空桩**——controller 会问
+  "Wi-Fi 现在哪个信道"、"这个状态位可用吗"，空桩返回 0 会被当成"可用"或"信道 0"。做法是维持
+  真实的状态位图 + 存下回调，并按 IDF 在"未开软件共存"分支下的返回值作答
+  （`wifi_channel_get` → **-1**、`iso_protect_frame_thres_get` → **0**，见 `btdm_coex.c:106-114/153-162`）。
+  逐条对归档调用集核过：56/56 覆盖，差集为空（我们共提供 68 个 `wr_btdm_*` 强定义）。
+  热路径（`ble_idle_time_inform`/`iso_*`）只计数不打印，避免把串口打爆。
 - **BT controller 的 OSAL 落成**（2026-11-17，R3.3 里程碑 2c0）：`components/bt-blobs/src/osal.zig`
   实现 time/critical/sem/mutex/event/eventq/callout + 自有 arena，并导出 **48 个** `wr_btdm_osal_*`
   强定义（覆盖归档里的弱断言桩）。归档**实际会调**的 **36 个逐个点名核对**（差集为空），

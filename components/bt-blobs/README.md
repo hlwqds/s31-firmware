@@ -18,7 +18,7 @@
 | `r_ble_controller_init` 调用 | ❌ 未做 | 需要 `esp_btdm_controller_config_t`（含 `magic`）的逐字段镜像 |
 | HCI 传输口打开 | ❌ 未做 | `hci_transport_init` **不在归档里**，是 IDF C 源 |
 | HCI Reset / Read Local Version 有应答 | ❌ 未做 | 需要一个 HCI host 侧（计划自己写 3 个 `hci_driver_ops`） |
-| controller 的 OSAL（**56** 个弱断言占位） | 🟡 **核心已实现**（time/critical/sem/mutex/event/eventq/callout + arena），`task_create`/`intr_alloc` 仅登记并打日志，11 个 coex 未做 | 见下方待验证项 4 |
+| controller 的 56 个弱断言占位 | ✅ **56/56 全部有强定义**（36 OSAL + 11 coex + 8 log + 1 assert；逐条对归档调用集核过，差集为空） | 见下方待验证项 4 |
 
 > 别把"链接成立"读成"controller 可用"。真实扫描/连接离这里有整整一个传输层。
 
@@ -66,7 +66,7 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | 文件 | 职责 |
 | --- | --- |
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
-| `src/osal.zig` | OSAL 核心 + **48 个 C ABI 导出**（含归档实际会调的 **36 个，逐个点名核对**）；14 个主机用例 |
+| `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
 
 **两条形状纪律**（踩过就炸内存）：
