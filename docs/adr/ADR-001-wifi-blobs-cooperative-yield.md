@@ -3545,8 +3545,13 @@ HOOKTRACE end
 ⇒ **这两条差异（`qrecv=0` 与 `clken=0`）很可能是同一个根因的两个表征**：没收到回复 ⇒ 所以没走到
 开时钟那一步。**不要把它们当两条独立的线分别查。**
 
-⇒ 这与窗口计数（IDF `qrecv=2 clken=1` vs 我们 `0/0`）一致：**我们的 init 在第一次"收"之前就走了另一条路**
-（或那次收被有界让出提前返回 0 挡掉了）。
+⇒ ~~这与窗口计数（IDF `qrecv=2 clken=1` vs 我们 `0/0`）一致：**我们的 init 在第一次"收"之前就走了另一条路**。~~
+
+> [!warning] ⚠ 已撤回（后轮实测推翻）
+> 握手修好之后，我们的窗口计数变成 `qsend=1 qrecv=2 clken=1 rstmac=0`，
+> **与 IDF 的 `IDFCNT qsend=1 qrecv=2 clken=1 rstmac=0` 四项逐项相同**。
+> 所以"我们的 init 走了另一条路"这条读法**不成立**——当时的 `qrecv=0 / clken=0`
+> 是**有界让出提前返回 0** 的直接后果（生产者根本没被泵起来），不是"另一条路径"。
 
 ⇒ 下一步：在**我们的 init 窗口**里把 `queue_send`/`queue_recv` 的**载荷类型**也打出来（现在只统计次数），
 与 IDF 的 `QR`/`QS type=6` 逐条对齐。
@@ -4611,7 +4616,7 @@ wifi-init-probe: idle budget exhausted (4000001), halting     ← 是 **idleHook
 
 ### 已否掉的清位路径（订正后）
 
-1. 直写 `MAC_ST`（**可写**，但 blob 随后自己 `or 0x0FF10000` 改回，bits 13–15 不受影响）；
+1. 直写 `MAC_ST`：**写 0 不粘**（写后**立即**读回仍是 `0xE000`，机制未明）；而 start 期命令字的 OR 位（bits 12+16–23）**能粘住**（实测 `0x00fff000`）⇒ **寄存器可写性与 bits 13–15 的行为尚未统一解释**（OR 只置位、且发生在后，解释不了 13–15 为何写 0 也回原值）。
 2. `rst_wifimac` 脉冲（bit9，20 µs 宽）；
 3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（ADR 实验 9 早已判负）。
 4. ~~让 PP worker 在 start 期间跑~~ —— **未测**（上一节误记，已撤回）。
@@ -4659,7 +4664,7 @@ panic: exception code=1 (instruction access fault)
 
 ### 已否掉的清位路径
 
-1. 直写 `MAC_ST`（可写，但 blob 随后 `or 0x0FF10000` 改回；bits 13–15 不受影响）；
+1. 直写 `MAC_ST`：**写 0 不粘**（写后**立即**读回仍是 `0xE000`，机制未明）；而 start 期命令字的 OR 位（bits 12+16–23）**能粘住**（实测 `0x00fff000`）⇒ **寄存器可写性与 bits 13–15 的行为尚未统一解释**（OR 只置位、且发生在后，解释不了 13–15 为何写 0 也回原值）。
 2. `rst_wifimac` 脉冲（bit9，20 µs 宽）；
 3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（实验 9，早已判负）；
 4. 从自旋桩里让出 —— **技术前提不具备**：`main_ctx` 只登记一次，从 main 任意点让出会错位
@@ -4672,3 +4677,25 @@ panic: exception code=1 (instruction access fault)
 2. 若必须在裸机上做：先让**每个让出点登记自己的 main 帧**（`Context` per yield point），
    再做自旋让出实验；否则实验必然错位。
 3. 不要再来回试寄存器/脉冲变体（已连试三项全负）。
+
+### ★ 里程碑（更硬的证据）：**init 窗口的 osi 调用计数与 IDF 四项全同**
+
+| 项 | IDF 侧（`IDFCNT`） | 我们（`INITWIN`） |
+|---|---|---|
+| `qsend` | 1 | 1 |
+| `qrecv` | **2** | **2** |
+| `clken` | **1** | **1** |
+| `rstmac` | 0 | 0 |
+
+修复前我们是 `qrecv=0 clken=0`——两项都不对。**现在四项逐项相同** ⇒
+**init 阶段的 osi 调用行为与 IDF 完全一致**。这比"握手成了"更强，也是同口径、任何人可复核的两组数。
+
+⇒ 因此 ADR 早前那条判读**被推翻**：「我们的 init 在第一次『收』之前就走了另一条路
+（`qrecv=0`、`clken=0` 是同一个根因的两个表征）」——那两个差异现在都消失了。
+
+### 更正：`tasks recorded=1` 是**设计如此**，不是"漏建第二个任务"
+
+`ic_create_wifi_task` 是**无条件尾调用 `pp_create_task`**（无任何门），而 pdFAIL 实验
+（`_task_create` 返回 0 ⇒ init rc=257）恰恰证明**它在 init 路径上被调用过**。
+⇒ S31 上 blob **就只建这一个任务**，`entry=0x2f00d70a` 就是 PP worker。**不是漏建**，
+别再顺着"缺 Wi-Fi 命令任务"这条不存在的线索查。
