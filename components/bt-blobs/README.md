@@ -68,6 +68,7 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
 | `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
+| `src/sched.zig` | 协作式上下文切换（rv32 64 字节帧）+ 任务表 + `block()`/`resumeTask()` |
 | `src/transport.zig` | HCI 传输层（自有 ops + 下行分发 + 事件回程），含 `sendReset()`/`sendReadLocalVersion()` |
 | `src/extfuncs.zig` | `ext_funcs_t`（rv32 **40 字节**）：controller 的 malloc/free/rand/assert 表 |
 | `src/bringup.zig` | init（13 步）/ enable（6 步）编排，状态机 `idle→inited→enabled`，附 `getStatus()` |
@@ -234,6 +235,36 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 
 **前置**：`sendCmd` 只有在 `bringup.status()==enabled` 后才有意义——`r_btdm_hci_trans_rx`
 开头查 `esp_bt_controller_get_status()`，非 ENABLED 直接 -1。
+
+## 调度器（`sched.zig`）
+
+从 `wifi-blobs/src/sched.zig` **复制**而来（不 import 它，否则会把 wifi blob 的依赖拖进来），
+并加了 controller 真正需要的东西：
+
+| 能力 | 实现 |
+| --- | --- |
+| 任务表 | `taskCreate(stack, entry, arg)`：`initContext` 建帧（栈内**最后一个 16 对齐地址**） |
+| 阻塞 | `block()` = `swapContext(current, main)` —— 任务的 `sp` 被存下，恢复后**从原地继续** |
+| 恢复 | `resumeTask(ctx)` = `swapContext(main, task)` |
+
+**为什么必须有**：BLE 的任务体是 `sem_pend(FOREVER)` / `eventq_get(FOREVER)` 的**死循环**。
+只登记不建上下文 ⇒ 任务永不执行 ⇒ init 会"成功"然后什么都不发生；
+若建立了却**阻塞时不切回主上下文** ⇒ 主循环饿死、连串口日志都出不来（日志在主循环里）。
+
+**OSAL 侧的接线**（`osal.zig`）：
+
+| 原语 | 行为 |
+| --- | --- |
+| `sem_pend(FOREVER)` 且计数 0 | 记下 `waiter` → `sched.block()` → 唤醒后**重新检查**（while 循环） |
+| `sem_release` | 计数 +1；若有 `waiter` → `resumeTask` |
+| `eventq_get(FOREVER)` 且队列空 | 同上 |
+| `eventq_put` | 入队；若有 `waiter` → `resumeTask` |
+
+⚠ 调度器**未启动**时（`sched.isStarted()==false`，例如主机测试）阻塞退化成返回 `TIMEOUT`
+并计入 `stats.blocked_calls` —— 保证不会无限自旋。
+
+⚠ `task_create` 现在真的从 arena 分 `stack_size` 字节栈（16 对齐）并建上下文；
+arena 或任务表满时退回"只登记"并**打一行日志**（不静默）。
 
 ## 待验证项
 

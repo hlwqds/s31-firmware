@@ -33,6 +33,7 @@
 //!    `stats.blocked_calls` 里计数——让"本可以等但没等"这件事**可见**，而不是静默挂住。
 //!    （`wifi-blobs/src/osi_impl.zig` 做的是同一件事，但那套对象形状也不能直接搬。）
 const std = @import("std");
+const sched = @import("sched.zig");
 
 pub const OK: c_int = 0;
 pub const ENOMEM: c_int = 1;
@@ -181,7 +182,12 @@ pub fn getTimeForever() u32 {
 // 信号量（计数）
 // ---------------------------------------------------------------------------
 
-pub const Sem = struct { count: u16 = 0, in_use: bool = false };
+pub const Sem = struct {
+    count: u16 = 0,
+    in_use: bool = false,
+    /// 等这个信号量的任务上下文（协作式：单等待者足够，controller 就是单线程）。
+    waiter: ?*sched.Context = null,
+};
 
 /// 静态记录池：**不用 allocator**。`riscv32-freestanding` 上 `std.heap.page_allocator`
 /// 没有后端（主机测试里却正常），用它会在板侧第一次 init 就炸。
@@ -243,20 +249,36 @@ pub fn semDeinit(slot: *Slot) c_int {
 
 pub fn semPend(slot: *Slot, timeout: u32) c_int {
     const s = slotGet(Sem, slot) orelse return EINVAL;
-    if (s.count > 0) {
-        s.count -= 1;
-        stats_state.sem_pend_ok += 1;
-        return OK;
+    while (true) {
+        if (s.count > 0) {
+            s.count -= 1;
+            stats_state.sem_pend_ok += 1;
+            return OK;
+        }
+        // 无限等且调度器在跑 ⇒ **真阻塞**：切回主上下文，`semRelease` 再切回来。
+        // 不能像 wifi-blobs 那样直接返回失败——BLE 会据此走错分支（"起来了但不发射"）。
+        if (timeout == forever and sched.isStarted() and s.waiter == null) {
+            stats_state.blocked_calls += 1;
+            s.waiter = sched.currentContext();
+            sched.block();
+            s.waiter = null;
+            continue; // 被唤醒后重新检查计数
+        }
+        if (timeout != 0) stats_state.blocked_calls += 1;
+        stats_state.sem_pend_timeout += 1;
+        return TIMEOUT;
     }
-    if (timeout != 0) stats_state.blocked_calls += 1;
-    stats_state.sem_pend_timeout += 1;
-    return TIMEOUT;
 }
 
 pub fn semRelease(slot: *Slot) c_int {
     const s = slotGet(Sem, slot) orelse return EINVAL;
     if (s.count == std.math.maxInt(u16)) return EINVAL;
     s.count += 1;
+    // 有等待者就**切进**它（它会重新检查计数）
+    if (s.waiter) |w| {
+        s.waiter = null;
+        sched.resumeTask(w);
+    }
     return OK;
 }
 
@@ -326,6 +348,8 @@ pub const EventQ = struct {
     head: ?*Event = null,
     tail: ?*Event = null,
     in_use: bool = false,
+    /// 等事件的任务上下文。
+    waiter: ?*sched.Context = null,
 };
 
 var event_pool: Pool(Event, 192) = .{};
@@ -391,6 +415,10 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
     }
     q.tail = e;
     stats_state.eventq_put += 1;
+    if (q.waiter) |w| {
+        q.waiter = null;
+        sched.resumeTask(w);
+    }
 }
 
 pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
@@ -406,6 +434,19 @@ pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
 
 pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
     const q = slotGet(EventQ, qslot) orelse return null;
+    while (true) {
+        if (q.head != null) break;
+        if (timeout == forever and sched.isStarted() and q.waiter == null) {
+            stats_state.blocked_calls += 1;
+            q.waiter = sched.currentContext();
+            sched.block();
+            q.waiter = null;
+            continue;
+        }
+        if (timeout != 0) stats_state.blocked_calls += 1;
+        stats_state.eventq_get_empty += 1;
+        return null;
+    }
     if (q.head) |e| {
         q.head = e.next;
         if (q.head == null) q.tail = null;
@@ -1047,9 +1088,27 @@ pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32,
     t.stack_size = stack_size;
     t.priority = priority;
     t.core_id = core_id;
+    // **真的建上下文**：从 arena 分 `stack_size` 字节栈（16 对齐），交给 sched。
+    // 只登记不建的话 controller 任务是永不返回的阻塞循环 ⇒ 永远不执行 ⇒
+    // init 会"成功"然后什么都不发生（这是最容易误判的一步）。
+    const f = fn_ orelse {
+        handle.* = @ptrCast(t);
+        logLine("bt osal: task_create with null entry (registered only)", .{});
+        return OK;
+    };
+    if (stack_size >= 512) {
+        const raw = bt_arena.alloc(stack_size, 16);
+        if (raw) |mem| {
+            const slice = @as([*]u8, @ptrCast(mem))[0..stack_size];
+            if (sched.taskCreate(slice, f, arg)) |task| {
+                handle.* = @ptrCast(task);
+                logLine("bt osal: task_create stack={d} prio={d} core={d} -> context ready", .{ stack_size, priority, core_id });
+                return OK;
+            }
+        }
+    }
     handle.* = @ptrCast(t);
-    // 还没有把任务挂到调度器上：先如实记录，板侧日志里能看到 controller 要建任务。
-    logLine("bt osal: task_create registered stack={d} prio={d} core={d}", .{ stack_size, priority, core_id });
+    logLine("bt osal: task_create could NOT build a context (arena or table full), registered only", .{});
     return OK;
 }
 

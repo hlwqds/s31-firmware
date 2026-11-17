@@ -8,6 +8,16 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **协作式调度器 + OSAL 真阻塞**（2026-11-17，`components/bt-blobs/src/sched.zig`）：从
+  `wifi-blobs/src/sched.zig` 复制（**不 import**，否则会把 wifi blob 的依赖拖进来），
+  在其上加了任务表与 `block()`/`resumeTask()`。BLE 的任务体是 `sem_pend(FOREVER)` /
+  `eventq_get(FOREVER)` 的**死循环**：只登记不建上下文 ⇒ 任务永不执行，init 会"成功"
+  然后什么都不发生；建立了却不切回主上下文 ⇒ 主循环饿死、连串口日志都出不来。
+  `swapContext(from,to)` 存 `from.sp` 恢复 `to.sp` ⇒ 阻塞=切回 main、恢复=切回任务，
+  任务的 `sp` 已存下，**从原地继续**。OSAL 侧 `sem_pend`/`eventq_get` 在 FOREVER 且无资源时
+  记 `waiter` 再阻塞、唤醒后**重新检查**；`sem_release`/`eventq_put` 有等待者就 `resumeTask`。
+  调度器未启动时（主机测试）退化成 `TIMEOUT` 并计入 `blocked_calls`，不会自旋。
+  `task_create` 现在真的从 arena 分栈并建上下文，失败时打日志而不是静默。
 - **transport.init 接进 init 链（第 15 步）+ B 路径发命令**（2026-11-17）：
   `hci_transport_init` 在 IDF 里是 `esp_bt_controller_init` 的**最后一步、enable 之前**——
   不做它，命令照样发得出去（我们直接调 forward），但 controller **没有回程回调**
