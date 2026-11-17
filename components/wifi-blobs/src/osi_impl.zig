@@ -138,6 +138,8 @@ pub const time_blocking: u32 = 0xFFFF_FFFF;
 pub var blocking_refused: u32 = 0;
 /// `Queue.recv` 在 `portMAX_DELAY` 下长时间等不到而放弃的次数（正常情况下应为 0）。
 pub var queue_block_giveup: u32 = 0;
+/// `Semphr.take` 在 `portMAX_DELAY` 下长时间等不到而放弃的次数（正常应为 0）。
+pub var semphr_block_giveup: u32 = 0;
 /// 越界句柄（标量被当指针）的次数，探针会打印。
 pub var bad_handle: u32 = 0;
 /// `_semphr_give(null)` 的次数（ack 的 give 侧句柄从未被赋值）。
@@ -170,17 +172,22 @@ pub const Semphr = struct {
         // **实验：无限阻塞语义**（IDF 的 `xSemaphoreTake(sem, portMAX_DELAY)` 是真等到被 give）。
         // 此前用 `idle_spin_limit`(64) 次让出后返回 0，理由是"真等会活锁"——但那个结论是在
         // `serviceTimers` 未接线、ICG/时钟未对齐之前得到的，需要重验。
-        var spins: u32 = 0;
-        while (spins < idle_spin_limit) : (spins += 1) {
+        // **真阻塞**（与 `Queue.recv` 同一套语义）：`portMAX_DELAY` 下永不返回 0。
+        // 让出点是 `on_idle`——它会把控制权交给被泵的任务/主上下文（RTOS 式 block）。
+        // 现在生产者（PP 任务）已经能被泵起来并 give（实测 `null_give=0`），
+        // 所以"真等会活锁"那条旧结论的前提已不成立。
+        var spins: u64 = 0;
+        while (self.count == 0) : (spins += 1) {
             serviceTimers();
             serviceTimers();
             if (hooks.on_idle) |idle| idle();
-            if (self.count > 0) {
-                self.count -= 1;
-                return 1;
+            if (spins > 50_000_000) {
+                semphr_block_giveup +%= 1;
+                return 0;
             }
         }
-        return 0;
+        self.count -= 1;
+        return 1;
     }
 
     pub fn give(self: *Semphr) i32 {

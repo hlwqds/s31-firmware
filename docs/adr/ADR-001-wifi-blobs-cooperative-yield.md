@@ -4314,3 +4314,21 @@ panic 0
 
 ⇒ 下一步不是继续调 `recv`/`take`，而是**找到 start 的真实等待原语**（task notification？哪个 `_queue_recv` 变体？），
 必要时把"泵"挂到 tick ISR 或那个原语上——就像 init 期挂到 `take` 上一样。
+
+### `Semphr.take` 也改成真阻塞（与 `Queue.recv` 同一套语义）
+
+`take` 此前仍是有界的（自旋 `idle_spin_limit`=64 次就 `return 0`，并 `blocking_refused += 1`）——
+blob 的 `semphr_take(ack, BLOCKING)` 于是拿到 **0（假装超时）**，状态机走错分支。
+现在生产者（PP 任务）已经能被泵起来并 give（`null_give=0`），"真等会活锁"那条旧结论的前提已不成立。
+
+改成：`count == 0` 且 `blocking == time_blocking` 时循环 `serviceTimers()` + `on_idle()`，**永不返回 0**
+（放弃上限 50,000,000 次，`semphr_block_giveup` 计数，正常应为 0）。
+
+板侧无回归：
+
+```text
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315144/353328 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+panic 0
+```
