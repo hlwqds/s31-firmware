@@ -4050,3 +4050,26 @@ panic 0
 
 ⇒ 两条配套改动都已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0 semcreate=2 semnull=0`、无 panic、
 自旋 `0x2f009206`）。
+
+### ★★ 重新解读：`s_pp_task_create_sem` 在 init 之后为 0 是**设计如此**
+
+回看那条序列：
+
+```asm
+40039900: take(sem)          # 等 PP 任务报到
+4003990a: task_delay(1)
+4003991a: semphr_delete(sem) # **无条件删除**
+40039920: sw zero,s_pp_task_create_sem   # 清空全局
+```
+
+⇒ **它是一个一次性的"握手信号量"**：建 → 起任务 → `take` 等报到 → 删掉 → 清空。
+
+⇒ **所以 init 结束后 `s_pp_task_create_sem == 0` 是正常状态，不是异常**。
+之前把它当成"没建/被误清"的判读**要撤回**——我们一直在追一个**非异常**。
+
+⇒ 真正的信号是 **`null_give=1`**：PP 任务的 `give` **在信号量被删除之后才到**（因为我们的 `take` 提前返回，
+blob 已经走到删除那一步）。
+
+⇒ 于是问题收敛成一句话：**`take` 必须真的等到 PP 任务的 `give`**。
+而"真阻塞 + 泵 PP worker"实测会让 init 挂死（PP worker 跑不到 give）⇒ **下一步是查"PP worker 为什么跑不到它的 give"**，
+而不是继续追信号量本身。
