@@ -224,7 +224,10 @@ test "config: 默认值可填、魔数落位" {
 }
 
 /// `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` 的 BLE_ONLY 分支（`esp_bt.h:487-561`），
-/// 取值来自 `ble_user_cfg.h` 的**非 NimBLE** fallback 分支（逐条核过行号）。
+/// 取值来自 **controller 侧** 的权威 Kconfig `porting_btdm/controller/ble/Kconfig.in`
+/// （归档就是用它编的）——**不是** `ble_user_cfg.h` 的 `#else` 兜底分支，那一组只在
+/// `CONFIG_BT_LE_*` 未定义时生效，而 controller 构建里它们是有定义的（差异很大：
+/// ACL buf size 517 vs 255、ACL count 10 vs 24、max_connections 3 vs 2、SCA 60 vs 0）。
 ///
 /// ⚠ 若哪天打开 `CONFIG_BT_NIMBLE_EXT_ADV`，`ble_hci_evt_buf_size` 与
 /// `ble_ext_adv_max_size` 会变成 **257 / 1650**（`ble_user_cfg.h:34-35` 走 MYNEWT_VAL），
@@ -233,7 +236,7 @@ pub fn defaults() Config {
     var c: Config = .{};
     c.ble = .{
         .config_version = BLE_CONFIG_VERSION,
-        .ble_ll_resolv_list_size = 0,
+        .ble_ll_resolv_list_size = 4, // BT_LE_LL_RESOLV_LIST_SIZE
         .ble_hci_evt_hi_buf_count = 30, // ble_user_cfg.h:106
         .ble_hci_evt_lo_buf_count = 8, // 同区段 fallback
         .ble_ll_sync_list_cnt = 5,
@@ -242,7 +245,7 @@ pub fn defaults() Config {
         .ble_ll_adv_dup_list_count = 0,
         .ble_ll_tx_pwr_dbm = 0,
         .rtc_freq = RTC_FREQ_32K,
-        .ble_ll_sca = 0, // CONFIG_BT_LE_LL_SCA 的 Kconfig 默认
+        .ble_ll_sca = 60, // BT_LE_LL_SCA（ppm）
         .ble_ll_scan_phy_number = 1, // BLE_LL_SCAN_PHY_NUMBER_N（非 2M-PHY 分支）
         .ble_ll_conn_def_auth_pyld_tmo = 3000, // ble_user_cfg.h:159
         .ble_ll_jitter_usecs = 16, // ble_user_cfg.h:155
@@ -252,10 +255,10 @@ pub fn defaults() Config {
         .ble_scan_rsp_data_max_len = 31, // = DEFAULT_BT_LE_EXT_ADV_MAX_SIZE
         .ble_ll_cfg_num_hci_cmd_pkts = 1, // :145
         .ble_ll_ctrl_proc_timeout_ms = 40000, // :143
-        .nimble_max_connections = 2,
+        .nimble_max_connections = 3, // BT_LE_MAX_CONNECTIONS
         .ble_whitelist_size = 12, // ble_user_cfg.h:100
-        .ble_acl_buf_size = 255, // :70
-        .ble_acl_buf_count = 24, // :76
+        .ble_acl_buf_size = 517, // BT_LE_ACL_BUF_SIZE
+        .ble_acl_buf_count = 10, // BT_LE_ACL_BUF_COUNT
         .ble_hci_evt_buf_size = 70, // :82
         .ble_multi_adv_instances = 1,
         .ble_ext_adv_max_size = 31, // :88
@@ -297,7 +300,7 @@ pub fn defaults() Config {
         .task_prio = 23,
         .task_run_cpu = 0,
         .hci_cmd_num = 2, // CONFIG_BT_CTRL_HCI_CMD_NUM 默认
-        .hci_conn_num = 2, // max_connections + iso_cis + iso_bis
+        .hci_conn_num = 3, // max_connections + iso_cis + iso_bis
         .sleep_en = 0,
         .version_num = 0,
         .bluetooth_mode = BTDM_CONTROLLER_MODE_BLE,
@@ -319,6 +322,14 @@ test "defaults: 关键字段与 IDF 默认宏一致" {
     try std.testing.expectEqual(@as(u8, 206), c.ble.cca_rssi_thresh);
     // backoff_rssi 是 int8_t ⇒ -100
     try std.testing.expectEqual(@as(i8, -100), @as(i8, @bitCast(c.ble.backoff_rssi)));
+    // 这几个值直接改 LL 的缓冲/记账，取错来源不会报错、只会让 ACL 包莫名其妙
+    // （controller 侧 Kconfig vs ble_user_cfg.h 的兜底分支差得很大）。
+    try std.testing.expectEqual(@as(u16, 517), c.ble.ble_acl_buf_size);
+    try std.testing.expectEqual(@as(u16, 10), c.ble.ble_acl_buf_count);
+    try std.testing.expectEqual(@as(u16, 3), c.ble.nimble_max_connections);
+    try std.testing.expectEqual(@as(u16, 4), c.ble.ble_ll_resolv_list_size);
+    try std.testing.expectEqual(@as(u16, 60), c.ble.ble_ll_sca);
+    try std.testing.expectEqual(@as(u8, 3), c.btdm.hci_conn_num);
 }
 
 // ---------------------------------------------------------------------------

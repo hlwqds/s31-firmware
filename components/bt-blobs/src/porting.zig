@@ -43,13 +43,16 @@ pub fn bleControllerScanDuplicateConfig() void {}
 // msys：`ble_msys.c:67-72` 转调归档的 `r_esp_ble_msys_init`
 // ---------------------------------------------------------------------------
 
-/// 取值来自 `host/nimble/Kconfig.in:480-511` 的 **SOC_ESP_NIMBLE_CONTROLLER 分支**（S31 就是）。
+/// 取值来自 **controller 侧** Kconfig `porting_btdm/controller/ble/Kconfig.in:225-254`
+/// （`#if CONFIG_BT_NIMBLE_ENABLED` 的 `#else` 分支，controller-only 构建走这条）。
+/// ⚠ `from_heap=1` ⇒ 归档会经 `wr_btdm_osal_malloc` 向我们的 arena 要约
+/// `12×(256+8) + 24×(320+8) ≈ 11 KB` ⇒ **`initArena()` 必须先于本函数完成**。
 pub const msys = struct {
-    pub const block1_count: u16 = 24; // default 24 if SOC_ESP_NIMBLE_CONTROLLER
-    pub const block1_size: u16 = 128; // default 128 if SOC_ESP_NIMBLE_CONTROLLER
+    pub const block1_count: u16 = 12; // BT_LE_MSYS_1_BLOCK_COUNT（Kconfig.in:227）
+    pub const block1_size: u16 = 256; // BT_LE_MSYS_1_BLOCK_SIZE（:236）
     pub const block2_count: u16 = 24;
     pub const block2_size: u16 = 320;
-    pub const from_heap: c_int = 1; // BT_NIMBLE_MSYS_BUF_FROM_HEAP default y
+    pub const from_heap: c_int = 1; // BT_LE_MSYS_BUF_FROM_HEAP default y
 };
 
 extern fn r_esp_ble_msys_init(
@@ -133,6 +136,12 @@ test "porting: 4 个空实现都返回 0，扫描去重是空操作" {
     try std.testing.expectEqual(@as(c_int, 0), btdmLpInit());
     bleControllerScanDuplicateConfig();
     try std.testing.expectEqual(@as(c_int, 0), bleMsysInit()); // 主机侧早退
+    // 常量取 controller 侧 Kconfig（不是 NimBLE 的 24/128 分支）
+    try std.testing.expectEqual(@as(u16, 12), msys.block1_count);
+    try std.testing.expectEqual(@as(u16, 256), msys.block1_size);
+    try std.testing.expectEqual(@as(u16, 24), msys.block2_count);
+    try std.testing.expectEqual(@as(u16, 320), msys.block2_size);
+    try std.testing.expectEqual(@as(c_int, 1), msys.from_heap);
 }
 
 test "porting: mempool 容量校验按类报错，默认 config 通过" {
