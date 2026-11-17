@@ -4150,3 +4150,26 @@ wifi-init-probe: trace queue_recv a0=0x00000000 a1=0xffffffff   ← 之后一直
 ⇒ 正确的做法是：**泵 blob 自己 `_task_create` 出来的那个真任务**（在 init 期间/之后、队列已存在时），
 而不是我们另起一个合成上下文跑它的入口。**这正是 `_task_create` 需要补的能力**：
 现在它只记录，不运行；要让它能被合作式调度器真正跑起来。
+
+### 下一步实现清单（根因闭合之后，泵线重开）
+
+泵"合成入口"无效，但**泵 blob 自己 `_task_create` 出来的真实任务**仍然成立，而且接缝都在：
+
+1. **先装表再泵**：`osi.install(&osi_table)` 必须在 `makeTable()` **之后**（表之前是 `undefined`，
+   早装会把垃圾地址发布给 ROM 槽位）。init 里 `esp_wifi_init_internal` 之后还会用同一张表再注册一遍，
+   两边地址一致才不会互相覆盖。**目前 `install` 只在主机用例里被调用，生产路径从未调用。**
+2. **`_task_create` 要能真跑**：`shellTaskCreatePinned` 现在把 `stack_depth` 丢掉
+   （`_ = .{ name, stack_depth, prio, core_id };`），只记 `tasks[n] = .{entry, arg}`。要跑真任务必须
+   按 `stack_depth` 从 arena 分栈（先确认单位：IDF `xTaskCreate` 是字节，ROM 这条 osi 变体可能是字），
+   再 `sched.initContext(ctx, stack, entry, arg)`。
+3. **切走要落在阻塞路径里**：`Semphr.take` 与 `Queue.recv` 的阻塞循环里**已经有** `hooks.on_idle`
+   （`osi_impl.zig:172` / `:265`）——把 `on_idle` 从"泵合成上下文"改成"切到下一个可运行的真实任务"即可，
+   不用另起机制。
+4. **`Queue.recv` 的返回 0 要撤**：代码注释自己写了"IDF 语义是永不返回 0"（`xQueueReceive(portMAX_DELAY)`），
+   但当前自旋 `queue_block_spin_limit` 次后仍 `return 0`——blob 会把"空"当成合法答复走进错误分支。
+   空队列+永久阻塞必须表现为**切回来源上下文**（RTOS 式 block），不是超时返回。
+5. **记账别覆盖**：`sched.zig` 的 `main_context` 是单一全局，两层交替（main ↔ PP）够用；
+   但被泵任务内部再进 `on_idle` 时**不能覆盖**它，否则 trampoline 切回时跳错栈。
+   先只做两任务交替，语义跑通再扩。
+6. **别顺手改句柄**：`tasks[]` 现在共享一个 `task_dummy` 句柄；握手只认 `s_pp_task_create_sem`，
+   把句柄改成真对象是另一个实验变量。
