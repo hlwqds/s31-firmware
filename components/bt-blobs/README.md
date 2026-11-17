@@ -68,7 +68,7 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
 | `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
-| `src/config.zig` | `esp_bt_controller_config_t` 的逐字段镜像（60 字段），comptime 断言钉死全部偏移 |
+| `src/config.zig` | `esp_bt_controller_config_t` 逐字段镜像（60 字段、**每字段偏移都断言**）、`defaults()`、`elemCalc()`/`mempoolElemNum()` |
 | `tools/btcfg-probe.{c,sh}` | 用 rv32 gcc 把 `sizeof`/`offsetof` 发射成常量表再读回（交叉产物跑不了） |
 
 **两条形状纪律**（踩过就炸内存）：
@@ -111,6 +111,19 @@ btdm 内: version@0、magic@16
 `config.zig` 用 13 条 comptime 断言把这些数字钉住——**字段类型写错会当场编译失败**，
 不需要上板才发现。`esp_bt.h` 本身交叉编译不出来（它会拉 FreeRTOS 的 `portmacro.h`），
 所以探针只抄了 `esp_bt.h:176-323` 的结构体本体。
+
+## 元素计数（`btdm_osal_elem_mempool_init` 的输入）
+
+`elemCalc()` 复刻 `ble.c:1586-1607`：先调归档的 `r_ble_ll_get_npl_element_info(cfg, &ll)`
+（传**整个 config**，不是 `&cfg->ble`），再累加。两个必须照抄的点：
+
+1. **seed 不是零**：`bt.c:172-178` 在算之前预置 `{ evt=103, evtq=3, co=10, sem=0, mutex=1 }`
+   ⇒ 从零开始会少算 103 个事件。
+2. **五个宏是交叉用的**：`evt` 用 `BLE_HOST_CO_COUNT`、`evtq` 用 `BLE_HOST_EV_COUNT`、
+   `co` 用 `BLE_HOST_EVQ_COUNT` —— 看着像 IDF 的笔误，但归档依赖这个语义，别"修正"。
+
+NimBLE 开启时 host 常量是 `co=8 / ev=19 / evq=3 / sem=10 / mutex=4`，每项再加 `+10`。
+按默认 config 算出的上限（事件 ~181）决定了池要 ≥192。
 
 ## 待验证项
 

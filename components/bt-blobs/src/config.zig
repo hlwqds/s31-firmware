@@ -320,3 +320,124 @@ test "defaults: 关键字段与 IDF 默认宏一致" {
     // backoff_rssi 是 int8_t ⇒ -100
     try std.testing.expectEqual(@as(i8, -100), @as(i8, @bitCast(c.ble.backoff_rssi)));
 }
+
+// ---------------------------------------------------------------------------
+// 元素计数：`ble_osal_elem_calc` + `btdm_osal_elem_mempool_init` 的输入
+//
+// 权威实现：`porting_btdm/controller/ble/src/ble.c:1586-1607`。
+// ⚠ 注意 IDF 里五个累加宏是**交叉**用的（`evt` 用的是 `BLE_HOST_CO_COUNT`、
+// `evtq` 用 `BLE_HOST_EV_COUNT`、`co` 用 `BLE_HOST_EVQ_COUNT`），看着像笔误，
+// 但它就是归档依赖语义 ⇒ 照抄，别"修正"。
+// ---------------------------------------------------------------------------
+
+/// `btdm_osal_elem_num_t`：**5 个 u16 = 10 字节**（`btdm_osal.h:36-42`）。
+pub const ElemNum = extern struct {
+    evt_count: u16 = 0,
+    evtq_count: u16 = 0,
+    co_count: u16 = 0,
+    sem_count: u16 = 0,
+    mutex_count: u16 = 0,
+};
+
+comptime {
+    std.debug.assert(@sizeOf(ElemNum) == 10);
+}
+
+/// NimBLE 开启时的 host 侧常量（`ble.c:1573-1581`）。
+pub const host_counts = struct {
+    pub const co: u16 = 8;
+    pub const ev: u16 = 11 + co; // 19
+    pub const evq: u16 = 3;
+    pub const sem: u16 = 10;
+    pub const mutex: u16 = 4;
+};
+
+/// 归档里的 `r_ble_ll_get_npl_element_info(cfg, &elem)`。
+/// 传的是**整个 `esp_bt_controller_config_t*`**（不是 `&cfg->ble`）——归档可能读 `btdm` 字段。
+extern fn r_ble_ll_get_npl_element_info(cfg: ?*anyopaque, elem: *ElemNum) c_int;
+
+/// 只在目标构建里真正引用归档符号；主机上没有归档，走死代码路径（测试必须注入 hook）。
+fn callArchive(cfg: *const Config, ll: *ElemNum) void {
+    if (@import("builtin").os.tag == .freestanding) {
+        _ = r_ble_ll_get_npl_element_info(@constCast(cfg), ll);
+    } else {
+        ll.* = .{};
+    }
+}
+
+/// 注入点：主机测试没法调归档，换成替身。未注入时调归档。
+pub var npl_info_hook: ?*const fn (cfg: *const Config, elem: *ElemNum) void = null;
+
+/// `bt.c:172-178` 的 **seed**：controller 在算之前就把这几个数预置好了，
+/// 不是从零开始（evt 起步就是 3+100）。少这一步会少算 103 个事件。
+pub fn seed() ElemNum {
+    return .{ .evt_count = 3 + 100, .evtq_count = 1 + 2, .co_count = 0 + 10, .sem_count = 0, .mutex_count = 1 };
+}
+
+/// 复刻 `ble_osal_elem_calc`：先问归档要 LL 侧的数目，再按交叉的那组宏累加。
+pub fn elemCalc(cfg: *const Config, elem: *ElemNum) void {
+    var ll: ElemNum = .{};
+    if (npl_info_hook) |f| {
+        f(cfg, &ll);
+    } else {
+        callArchive(cfg, &ll);
+    }
+    elem.evt_count +%= ll.evt_count +% host_counts.co +% 10;
+    elem.evtq_count +%= ll.evtq_count +% host_counts.ev +% 10;
+    elem.co_count +%= ll.co_count +% host_counts.evq +% 10;
+    elem.sem_count +%= ll.sem_count +% host_counts.sem +% 10;
+    elem.mutex_count +%= ll.mutex_count +% host_counts.mutex +% 10;
+}
+
+/// 一步到位：seed + elemCalc。`btdm_osal_elem_mempool_init(&elem)` 收的就是它的指针。
+pub fn mempoolElemNum(cfg: *const Config) ElemNum {
+    var e = seed();
+    elemCalc(cfg, &e);
+    return e;
+}
+
+test "elem: seed 来自 bt.c 的预置值，不是零" {
+    const s = seed();
+    try std.testing.expectEqual(@as(u16, 103), s.evt_count);
+    try std.testing.expectEqual(@as(u16, 3), s.evtq_count);
+    try std.testing.expectEqual(@as(u16, 10), s.co_count);
+    try std.testing.expectEqual(@as(u16, 0), s.sem_count);
+    try std.testing.expectEqual(@as(u16, 1), s.mutex_count);
+}
+
+test "elem: 累加用交叉的那组宏（IDF 原样）" {
+    npl_info_hook = struct {
+        fn f(_: *const Config, e: *ElemNum) void {
+            e.* = .{ .evt_count = 1, .evtq_count = 2, .co_count = 3, .sem_count = 4, .mutex_count = 5 };
+        }
+    }.f;
+    defer npl_info_hook = null;
+    const c = defaults();
+    const e = mempoolElemNum(&c);
+    // evt += 1 + co(8) + 10 = 19 ⇒ 103+19 = 122
+    try std.testing.expectEqual(@as(u16, 122), e.evt_count);
+    // evtq += 2 + ev(19) + 10 = 31 ⇒ 3+31 = 34
+    try std.testing.expectEqual(@as(u16, 34), e.evtq_count);
+    // co += 3 + evq(3) + 10 = 16 ⇒ 10+16 = 26
+    try std.testing.expectEqual(@as(u16, 26), e.co_count);
+    // sem += 4 + sem(10) + 10 = 24 ⇒ 0+24 = 24
+    try std.testing.expectEqual(@as(u16, 24), e.sem_count);
+    // mutex += 5 + mutex(4) + 10 = 19 ⇒ 1+19 = 20
+    try std.testing.expectEqual(@as(u16, 20), e.mutex_count);
+}
+
+test "elem: 池容量必须覆盖 element 数的上限" {
+    npl_info_hook = struct {
+        fn f(_: *const Config, e: *ElemNum) void {
+            e.* = .{ .evt_count = 60, .evtq_count = 5, .co_count = 5, .sem_count = 5, .mutex_count = 5 };
+        }
+    }.f;
+    defer npl_info_hook = null;
+    const e = mempoolElemNum(&defaults());
+    // 事件 103+60+8+10 = 181 ⇒ 池 192 够用
+    try std.testing.expect(e.evt_count <= 192);
+    try std.testing.expect(e.evtq_count <= 48);
+    try std.testing.expect(e.co_count <= 32);
+    try std.testing.expect(e.sem_count <= 32);
+    try std.testing.expect(e.mutex_count <= 32);
+}

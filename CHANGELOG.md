@@ -8,6 +8,13 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **`ble_osal_elem_calc` 的 Zig 版**（2026-11-17，R3.3 里程碑 2 前置）：`config.elemCalc()` /
+  `mempoolElemNum()` 复刻 `ble.c:1586-1607`，作为 `btdm_osal_elem_mempool_init` 的输入。
+  两个必须照抄的点：① **seed 不是零**——`bt.c:172-178` 预置 `{evt=103, evtq=3, co=10, sem=0, mutex=1}`，
+  从零算会少 103 个事件；② **五个累加宏是交叉用的**（`evt` 用 `BLE_HOST_CO_COUNT`、
+  `evtq` 用 `BLE_HOST_EV_COUNT`、`co` 用 `BLE_HOST_EVQ_COUNT`），像笔误但归档依赖它。
+  归档符号 `r_ble_ll_get_npl_element_info` 只在目标构建引用（主机走注入 hook），
+  所以 4 个用例能在 x86_64 上钉住算术；按默认 config 算出的上限（事件 ~181）正好验证池 ≥192 够用。
 - **`esp_bt_controller_config_t` 的逐字段镜像 + 布局实测**（2026-11-17，R3.3 里程碑 2 前置）：
   `components/bt-blobs/src/config.zig` 镜像 60 个字段，13 条 comptime 断言钉死全部偏移
   （总长 **192**、`ble`@0/**112 B**、`bredr`@112/**56 B**、`btdm`@168/**20 B**；
