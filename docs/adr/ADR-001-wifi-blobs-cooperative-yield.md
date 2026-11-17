@@ -4707,3 +4707,22 @@ panic: exception code=1 (instruction access fault)
 | `logs/ch25-start-boot.log` | `INITWIN qrecv=2 clken=1` / `INIT OK` / `calling esp_wifi_start` |
 | `logs/ch25-spinpatch-yield-boot.log` | 自旋让出那次：`idle_calls` 涨到 4,000,000 而 `hooks` 冻在 57（"大部分 idleHook 没切任务"的实物） |
 | `logs/ch25-spinpatch-panic-boot.log` | 桩里直调 `pumpRealTask` 的 `!! 3d306120` 垃圾跳转（回滚依据） |
+
+### 取证：`0x3d306120` **不在我们的镜像里**——是"把数据当地址跳"
+
+本镜像的段范围（`objdump -h`）：
+
+```text
+.flash.text    0x40000020
+.flash.rodata  0x40100020
+.trap_ram      0x2f000000
+.iram_blobs    0x2f0000b0
+.data          0x2f00f660
+.bss           0x2f014e80
+```
+
+⇒ `0x3d306120` **落在所有这些段之外**（`0x3D000000` 一带是 flash 的 **DROM 数据映射区，不可取指**）。
+
+⇒ 那次 `instruction access fault`（`mepc = mtval = 0x3d306120`）是**把数据当代码跳**——
+与"上下文记账错位后恢复出一个被栈残值顶掉的返回地址/指针"一致。
+⇒ 这也说明"修好账本再重做"是唯一正路：不是编码问题，是**帧/记账模型**问题。
