@@ -3570,3 +3570,30 @@ panic 0
 **唯一的正面结论**是：**泵本身不是解法** —— 缺的是被泵者需要的前置条件。
 
 已回滚，基线恢复。
+
+### ★ ROM 侧反汇编：`ppTask` 的第一条动作是 **`_semphr_give(s_pp_task_create_sem)`**
+
+`ppTask`（`0x2f800fc0`）是**跳板**（`j 0x2f831f9e`），真体在 `0x2f831f9e`：
+
+```asm
+2f831f9e: addi sp,sp,-48
+2f831fa6: lw   a5,-188(s0)      # osi_funcs 基址（0x2f07ff44）
+2f831fae: lw   a0,-236(a4)      # a0 = *(0x2f07ff14) = s_pp_task_create_sem
+2f831fb2: lw   a5,64(a5)        # osi_funcs[16]
+2f831fd2: jalr a5               # ← **第一条动作**
+```
+
+`osi.zig` 里第 16 项是 **`_semphr_give`** ⇒ **`ppTask` 一启动就 `give(s_pp_task_create_sem)`**，
+用它通知"PP 任务已起来"。
+
+**这与我们的一个已知特例直接相关**：`shellSemphrGive` 里有
+
+```zig
+if (p == null) { null_give += 1; return 0; }   // 空句柄的 give 被丢弃
+```
+
+⇒ 如果 `*(0x2f07ff14)` 在我们这边是 **null**（例如 `pp_create_task` 那条路没把它存进去），
+**这次 give 就被丢掉** ⇒ 等它的那一侧永远不醒。
+
+⇒ 下一步（很具体）：在探针里读 **`*(0x2f07ff14)`**（ROM 全局 `s_pp_task_create_sem`），看它是否为空；
+并查 `null_give` 计数是否 > 0。
