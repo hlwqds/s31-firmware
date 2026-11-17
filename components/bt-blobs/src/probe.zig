@@ -44,7 +44,7 @@ fn heapEnd() *const anyopaque {
 }
 
 /// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
-pub var probe_irqs: bool = true; // 实验：归档可能在等中断事件
+pub var probe_irqs: bool = true; // 判定：hang 段内有无新鲜 pcsample
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
@@ -232,6 +232,15 @@ pub fn run() noreturn {
             const a: usize = 0x2058_7000 + k * 4;
             const v = (@as(*volatile u32, @ptrFromInt(a))).*;
             if (v != 0) board.log.line("clkrst+0x{x:0>3} = 0x{x:0>8}", .{ k * 4, v });
+        }
+    }
+    // **UART0 排水能力判定**：同一地址连采 4 次，间隔约 100 ms。
+    // 递减 ⇒ 只是排得慢（查波特率/时钟）；恒定 ⇒ 真的停住。
+    {
+        var k: usize = 0;
+        while (k < 4) : (k += 1) {
+            board.log.line("uart0 采样[{d}] 0x{x:0>8}", .{ k, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* });
+            board.hw.delayUs(100_000);
         }
     }
     var rc = bringup.init(&cfg);

@@ -193,7 +193,7 @@ pub var pll_write_enabled: bool = false;
 /// 是否真的写时钟门控。设 false 用于**对照实验**：排除"我们改时钟把 UART 弄停"。
 /// 板侧证据链：`UART0_STATUS.TXFIFO_CNT` 恒 128（FIFO 满且不排空），而 UART0 就在
 /// `0x2038A000` —— 和我们改的 modem/外设时钟是同一片。
-pub var clock_writes_enabled: bool = false; // 对照实验：完全不写时钟门控
+pub var clock_writes_enabled: bool = true;
 
 pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     _ = cfg;

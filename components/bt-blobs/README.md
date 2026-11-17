@@ -632,7 +632,15 @@ BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB �
 | # | 缺陷 | 证据 | 处置 |
 | --- | --- | --- | --- |
 | 1 | `Xpuq` 的锚点全局是 **NULL** | 直接读 `r_sym_bt_d3D3sk5KewclELfrD5xa` = `0x00000000`；`Xpuq` 用它作基址从地址 0 零填充到 `0x2010B100`（约 1.34 亿次写）= "无声卡死" | 它唯一的写者 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` 被 `if (*(*s0 + 8) != 0)` 守卫生生跳过 ⇒ 在 step 6 前补调，`P` 变为 `0x2f0139d0` |
-| 2 | 归档打印撞上**不排空的 UART0 TX FIFO** | PC 采样 `mepc=0x2f83efd2`（ROM 的 `UART0_STATUS` 等待循环）、`UART0_STATUS=0x60788000`（`TXFIFO_CNT=120`） | 给 `ets_printf` 强定义直接丢弃（`bt_printf_shim.c`）；日志看自己的 logger，不再依赖 ROM |
+| 2 | 归档打印卡在 **ROM 的 UART0 TX-FIFO 空位等待循环** | 新鲜采样 66 条：`mepc=0x2f83efda`×29、`0x2f83efd2`×8（该循环及其读字节叶子）；循环条件 `while (((*(u32*)(0x2038A01C))>>16)&0xFF > 127)`，即 `UART0_STATUS.TXFIFO_CNT` | 给 `ets_printf` 强定义直接丢弃（`bt_printf_shim.c`） |
+
+> [!IMPORTANT] 关于缺陷 2 的**准确措辞**
+> FIFO **不是**"永不排空"：连采 4 次（间隔 100 ms）得到
+> `0xe0808000 → 0xe0008000 → 0xe0008000 → 0xe0808000`，
+> 即 `TXFIFO_CNT` 在 **128 ↔ 0** 之间跳变 ⇒ 发送端在工作。
+> 所以卡在这一循环的更可能解释是**打印量远大于 UART 吞吐**（爬行），
+> 或者该循环等待的条件在本板上另有含义 —— **这两种还没判别**。
+> 已排除的是"我们的时钟写把 UART 弄死"（`clock_writes_enabled=false` 卡点相同）。
 
 **对照**：`clock_writes_enabled=false`（step 5 完全不写时钟）时卡点**完全一样**
 ⇒ 我们改的时钟门控**不是**原因。
