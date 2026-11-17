@@ -214,6 +214,21 @@ fn pumpRealTask() bool {
 
 /// **时钟域六寄存器快照**（IDF 对照用）：写前 / 写后 / init 后 三个时刻各打一次。
 /// "钩子被调 ≠ 位真的生效" 是当前唯一未验证的环节，这张表就是判据。
+/// MAC 块全窗口的**校验和**（4 KB，`0x20104000..0x20105000`）——逐字 dump 太占串口，
+/// 用异或+求和两个数就能与 IDF 侧对照"整块是否相同"。
+fn macWindowHash() struct { x: u32, s: u32 } {
+    const w: [*]const volatile u32 = @ptrFromInt(0x2010_4000);
+    var x: u32 = 0;
+    var s: u32 = 0;
+    var i: usize = 0;
+    while (i < 1024) : (i += 1) {
+        const v = w[i];
+        x ^= v *% @as(u32, @intCast(i + 1));
+        s +%= v;
+    }
+    return .{ .x = x, .s = s };
+}
+
 fn dumpClockRegs(tag: []const u8) void {
     const R = struct { name: []const u8, addr: usize };
     const regs = [_]R{
@@ -509,6 +524,50 @@ pub fn run() noreturn {
     // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);
     dumpClockRegs("after-init");
+    {
+        const h = macWindowHash();
+        log.line("wifi-init-probe: MACWIN xor=0x{x:0>8} sum=0x{x:0>8}", .{ h.x, h.s });
+        // 分段 hash：4 段 × 256 字，定位差异落在哪一段
+        const base: [*]const volatile u32 = @ptrFromInt(0x2010_4000);
+        var q: usize = 0;
+        while (q < 4) : (q += 1) {
+            var x: u32 = 0;
+            var sm: u32 = 0;
+            var k: usize = 0;
+            while (k < 256) : (k += 1) {
+                const v = base[q * 256 + k];
+                x ^= v *% @as(u32, @intCast(k + 1));
+                sm +%= v;
+            }
+            log.line("wifi-init-probe: MACWINQ {d} xor=0x{x:0>8} sum=0x{x:0>8}", .{ q, x, sm });
+            // Quarter 1 再细分成 16 段 × 16 字（差异已定位到该区）
+            if (q == 1) {
+                var b: usize = 0;
+                while (b < 16) : (b += 1) {
+                    var bx: u32 = 0;
+                    var bs: u32 = 0;
+                    var kk: usize = 0;
+                    while (kk < 16) : (kk += 1) {
+                        const v = base[256 + b * 16 + kk];
+                        bx ^= v *% @as(u32, @intCast(kk + 1));
+                        bs +%= v;
+                    }
+                    log.line("wifi-init-probe: Q1B {d} addr=0x{x} xor=0x{x:0>8} sum=0x{x:0>8}", .{
+                        b, 0x2010_4400 + b * 64, bx, bs,
+                    });
+                    if (b == 3) {
+                        var w: usize = 0;
+                        while (w < 16) : (w += 1) {
+                            const v = base[256 + 3 * 16 + w];
+                            log.line("wifi-init-probe: W4C0 {d} addr=0x{x} v=0x{x:0>8}", .{
+                                w, 0x2010_44C0 + w * 4, v,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
     // **完整 osi 调用序列**（init 窗口内，最多 64 条）——与 IDF 侧逐条 diff，分叉点就是缺的那一步。
     {
         const n = @min(impl.event_count, impl.events.len);
