@@ -5392,3 +5392,43 @@ const probe_clock_at_init = true; // 实测必须 true：关掉会让 FE/BB 时�
 ⇒ 所以"内容层面已对齐但 `MAC_ST` 仍不清"这条结论**成立**，下一步只能是：
 ① 让 `before-start` 保持 `after-init` 的值（把 PHY 段挪到 start 之后）做**干净对照**；
 ② 或抓 `wifi_module_enable()` 的**调用轨迹**（环形缓冲版）。
+
+### ★★★★★ 环形缓冲轨迹：**清位的正是 `dev=7` = `MODEM_CLOCK_WIFI_MAC` 的 `configure(true)`**
+
+用非打印环形缓冲（`device_control` 里只写数组、不 printf）抓到 14 条记录：
+
+```text
+TRC dump n=14 done=1
+TRC 0 dev=2 en=1 mac_b=0000e000 mac_a=0000e000
+TRC 1 dev=3 en=1 mac_b=0000e000 mac_a=0000e000
+TRC 2 dev=5 en=1 mac_b=0000e000 mac_a=0000e000
+TRC 3 dev=6 en=1 mac_b=0000e000 mac_a=0000e000
+TRC 4 dev=7 en=1 mac_b=0000e000 mac_a=00000000   ← ★ 就是这一步清的
+TRC 5 dev=8 en=1 mac_b=00000000 mac_a=00000000
+TRC 6 dev=9 en=1 mac_b=00000000 mac_a=00000000
+TRC 7..13 dev=2,3,5,6,7,8,9 en=0 全 0（disable 路径）
+```
+
+设备编号对应 `modem_clock_device_t`（`modem_clock_impl.h:48-70`）：
+
+| idx | 枚举 | configure 做的事 |
+|---|---|---|
+| 2 | `SOC_PLL_SOURCE_CG` | `HP_SYS_CLKRST.modem_conf = 0x3D` |
+| 3 | `COEXIST` | LPCON ICG 位图 |
+| 5 | `WIFI_APB` | `clk_conf1` 位 |
+| 6 | `WIFI_BB_44M` | `clk_conf1` 位 |
+| **7** | **`WIFI_MAC`** | **`clk_conf1.clk_wifimac_en = 1`（bit 0）** |
+| 8 | `WIFI_BB` | `rst_wifibb` 脉冲 + BB 时钟组 |
+| 9 | `WIFI_BB_80X1` | `clk_conf1` 位 |
+
+⇒ **清位动作 = 写 `clk_conf1` 的 bit 0（`clk_wifimac_en`）**，而已知 `clk_conf1` 的整块终值是 `0x7FF`
+⇒ 也就是说：**`clk_conf1` 从 `0` 变成含 bit0 的那一刻**，`MAC_ST` 的 bits 13–15 被硬件清掉。
+
+⇒ **而这一步我们也在写**（`conf1.* = conf1.* | (1 << 0);`，且写前 `clk_conf1` 也是 `0`）——
+但我们的 `MAC_ST` 不清 ⇒ **差别只能在"写的时机"上**：
+IDF 是在 `device_control` 的**设备循环里第 5 个**写 bit0（前面已写过 SOC_PLL/COEXIST/WIFI_APB/WIFI_BB_44M），
+**我们则把它放在自己序列的第一步**。
+
+⇒ 下一步（明确且可做）：把 `shellWifiClockEnable` 的写序**严格改成 IDF 的 device 循环顺序**
+（SOC_PLL → COEXIST(LPCON ICG) → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit0)** → WIFI_BB(rst+组) → WIFI_BB_80X1），
+让写 bit0 的那一刻**前面那四个已经写过**，再看 `MAC_ST` 是否清零。
