@@ -970,6 +970,13 @@ pub fn run() noreturn {
                 // IDF 侧 MAC_ST 是 0（bootloader_init_mem 清过），所以它能过。
                 {
                     log.line("wifi-init-probe: MAC_ST before start = 0x{x:0>8} (spin mask 0xE000)", .{mac_st.*});
+                    // **闸门**：`0x2f00254e` 返回 `b[0x2F0174A2]`（非 0 时）否则 `b[0x2F0175C4]`；
+                    // 返回 0 时 `esp_wifi_start` **跳过** MAC_ST 等待（`beqz a0, 0x2f0091dc`）。
+                    {
+                        const g1: *volatile u8 = @ptrFromInt(0x2F0174A2);
+                        const g2: *volatile u8 = @ptrFromInt(0x2F0175C4);
+                        log.line("wifi-init-probe: gate b[2F0174A2]={d} b[2F0175C4]={d}", .{ g1.*, g2.* });
+                    }
                     mac_st.* = 0;
                     log.line("wifi-init-probe: MAC_ST cleared -> 0x{x:0>8}", .{mac_st.*});
                 }
