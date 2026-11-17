@@ -339,6 +339,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         });
     }
 
+    if (!on_target) return; // 主机侧无 MMIO：窗口 dump 与后续写入都跳过
     // **四个 modem 窗口全量 dump**（step 5 末尾）：与 oracle 的同名 dump 逐字对拍。
     // 直读 `0x2010B000` 会挂板，所以"我们的块是否可读"只能靠寄存器状态等价来推断。
     {
