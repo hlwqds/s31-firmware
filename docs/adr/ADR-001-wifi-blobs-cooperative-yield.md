@@ -5746,3 +5746,31 @@ OSI 139 wifi_clk_en a0=0x0 a1=0x0        ← **`_wifi_clock_enable` 在 139/152 
 ⇒ **"blob 自己把 ICG 写成 0x64646400"这条不成立**，别再当线索。
 
 归档：`logs/ch25-osi-seq-boot.log`（完整 152 条）。
+
+### ★ 闭环：ICG 的 `0x64646400` 是**我们自己写的**（`shellPhyEnable`），且正是 IDF 的值
+
+两件事一起钉死：
+
+**① 静态扫描证明 blob 从不写 ICG**：把 133 个 blob `.o` 全扫 `0x20109C0C`——
+
+```text
+（无任何 .o 命中）
+```
+
+⇒ **blob 侧从不碰 `0x20109C0C`** ⇒ "blob 自己把 ICG 写成 `0x64646400`"这条**证伪**。
+
+**② 那是谁写的？我们自己的 `_phy_enable` 钩子**：
+
+```zig
+fn shellPhyEnable(modem: u32) callconv(.c) usize {
+    ...
+    const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
+    const icg_before = icg.*;
+    icg.* = 0x6464_6400;      // ← 这里
+```
+
+⇒ `shellPhyEnable` 在 init 期间被调用，把 ICG 写成 `0x64646400` —— **而这正是 IDF 的实测值** ⇒
+**ICG 一直是对的**，之前"我们写 `0x64646000` 读回变 `0x64646400`"的现象就是**这一步覆盖**。
+
+⇒ 结论：**ICG 这条线彻底关闭**（blob 不写、我们写的就是 IDF 值）。
+⇒ 之前那条 `queue_send_ok a1=0x64646400` 的"伪线索"也一并作废（`a1` 只是 `note()` 记的参数）。
