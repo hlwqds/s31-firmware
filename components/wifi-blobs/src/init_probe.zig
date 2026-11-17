@@ -157,20 +157,6 @@ var task_ctx_ready: bool = false;
 ///
 /// - 在**主**上下文里被调用（blob API 阻塞等任务应答）→ 切到任务；
 /// - 在**任务**上下文里被调用（任务阻塞收消息）→ 切回主上下文。
-/// **在 tick 里泵 ROM 的 PP worker**：它有独立栈（`pp_ctx`/`pp_stack`），实测能正常让出。
-/// 与"泵 blob 任务"不同——后者在 init 期间上下文未就绪会 panic。
-var pp_ctx_ready = false;
-var pp_ctx: sched.Context = .{};
-var pp_stack: [16 * 1024]u8 align(16) = undefined;
-fn pumpPpWorker() void {
-    if (!pp_ctx_ready) return;
-    in_task = true;
-    impl.current_is_task = true;
-    sched.swapContext(&main_ctx, &pp_ctx);
-    in_task = false;
-    impl.current_is_task = false;
-}
-
 fn semArgs() u64 {
     // 每个参数是 `(max<<16)|init`；只带前 2 个（32 位足够），避免打包丢失信息。
     return @as(u64, impl.sem_create_args[0]) | (@as(u64, impl.sem_create_args[1]) << 32);
@@ -192,10 +178,8 @@ fn nvsStats() u96 {
 
 fn idleHook() void {
     idle_calls += 1;
-    // **推进软件定时器**：blob 通过 `_timer_setfn`/`_timer_arm` 注册的到期回调必须有人 fire。
-    // 此前 `serviceTimers()` 只在 host tests 里被调用，固件里**从未接过** ⇒ blob 的定时器永不到期
-    // ⇒ 状态机拿不到定时消息。这里在让出点推进（正是该函数注释里写的设计）。
-    impl.serviceTimers();
+    // **"真阻塞 + 泵 PP worker"实验已做**：init 直接挂住（PP 任务始终没 give）。
+    // ⇒ PP worker 在我们的环境里跑不到它的 `give`。已回滚。
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
     // 每 1000 次让出打一行：区分"在乒乓（任务没答话）"与"blob 忙等（根本不进钩子）"。
     if (idle_calls % 1000 == 0) log.line("wifi-init-probe: idle_calls={d} in_task={} hooks={d}", .{
@@ -336,7 +320,7 @@ pub fn run() noreturn {
     @import("board").trap.give_stats_hook = &giveStats;
     @import("board").trap.sem_args_hook = &semArgs;
     // 自旋期 tick 泵实验已测（无推进），已回滚。
-    @import("board").trap.pump_hook = &pumpPpWorker;
+    // tick 泵实验已回滚。
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，

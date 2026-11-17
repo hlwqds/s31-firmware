@@ -4027,3 +4027,26 @@ blob 以为"等到了/超时了"⇒ **直接走到删信号量 + 清零** ⇒ `p
 
 ⇒ 下一步：把 `Semphr.take` 的 `time_blocking` 改成**真阻塞**，**同时**保证阻塞期间 PP 任务能被调度
 （`on_idle` 里除了切 blob 任务，也要能切 PP 任务）。
+
+### 判决实验：真阻塞 + idleHook 泵 PP worker ⇒ **init 直接挂住**
+
+按"建 → 起任务 → take 等报到"这条链，做了配套改动：
+1. `Semphr.take` 在 `time_blocking` 下改成真阻塞（上限 2,000,000 次让出）；
+2. `idleHook` 在 `pp_ctx` 就绪时**优先切给 PP worker**；
+3. PP worker 上下文在 `esp_wifi_init_internal` **之前**建好。
+
+结果：
+
+```text
+wifi-init-probe: PP worker context ready (idleHook will pump it)
+（之后 **没有任何 INITWIN / post-init 输出** ⇒ init 挂住）
+panic 0
+```
+
+⇒ **PP worker 被切进去了，但它始终没有 `give` 那个信号量** ⇒ `take` 永远等不到 ⇒ init 挂死。
+
+⇒ 结合早先"泵 PP worker 时 `hooks` 冻结在 17"：**PP worker 在我们这个环境里跑不到它的 `give`**
+（它的上下文/栈/前置状态可能不对，或它第一件事就在等别的东西）。
+
+⇒ 两条配套改动都已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0 semcreate=2 semnull=0`、无 panic、
+自旋 `0x2f009206`）。
