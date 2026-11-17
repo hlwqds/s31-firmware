@@ -312,6 +312,7 @@ pub fn run() noreturn {
     @import("board").trap.timer_service_hook = &impl.serviceTimers;
     @import("board").trap.nvs_stats_hook = &nvsStats;
     @import("board").trap.queue_stats_hook = &queueStats;
+    // tick 驱动泵实验已回滚（ISR 里 swapContext 会 panic）。
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，

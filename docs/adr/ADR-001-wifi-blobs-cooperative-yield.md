@@ -3452,3 +3452,22 @@ IDF 的 IDFCNT : qsend=1 qrecv=2 rstmac=0 clken=1
 
 ⇒ 下一步：既然 blob 是同一份，"init 里不调 `_wifi_clock_enable`" 说明**我们的 init 在更早的地方走了不同分支**，
 或那次调用被我们的某个钩子返回值挡掉了（例如某个前置钩子返回 0/失败）。
+
+### tick 驱动的任务泵：**在 init 期间会 panic**（`mepc=0xffffffa0`）
+
+把 blob 任务的泵挂到 trap 的 input-25 分支（带 `pump_active` 重入保护），从 `sched.start` 之后就武装：
+
+```text
+panic: exception code=1 (instruction access fault)
+panic: mepc=0xffffffa0 mtval=0xffffffa0
+panic: ra=0xffffffa0 a0=0x2f014bb4 a1=0x2f014ba8
+（采样在 #512 就停了）
+```
+
+⇒ **任务在 init 阶段还不能被泵**：它的上下文还没初始化到"可安全恢复"的状态，在 ISR 里 `swapContext`
+过去就会崩。这与探针自己早先的注释一致（"blob 的任务体在 `esp_wifi_start` 之前进入会解引用未初始化的上下文"）。
+
+已回滚，基线恢复（`INITWIN qsend=1 qrecv=0 rstmac=0 clken=0`、无 panic、自旋 `0x2f009206`）。
+
+**正确的做法**：泵的开关要放到 **`esp_wifi_init_internal` 返回之后**（即 start/自旋期间）再武装——
+那才是 IDF 里 blob 任务与 `esp_wifi_start` 真正并发的时间窗。这条还没试。
