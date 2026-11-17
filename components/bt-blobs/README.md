@@ -771,6 +771,45 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🎯 剩余工作已精确量化：链 IDF 的 PHY 源码对象，补 **68 个符号**
+
+关键简化：**IDF 的构建目录里已经有编好的 `.o`**，不需要重建头文件树。
+
+```text
+build/esp-idf/esp_phy/.../phy_init.c.obj
+build/esp-idf/esp_phy/.../phy_common.c.obj
+build/esp-idf/esp_phy/.../btbb_init.c.obj
+build/esp-idf/esp_hw_support/.../modem_clock.c.obj
+build/esp-idf/esp_hw_support/.../periph_ctrl.c.obj
+```
+
+**实测差集**（这 5 个对象的未定义符号 vs 我们镜像已定义）：
+
+| 项 | 数 |
+| --- | --- |
+| 未定义符号总数 | **82** |
+| 我们已提供 | 14 |
+| **需补桩** | **68** |
+
+68 个按类别分（都可桩或复用现有实现）：
+
+| 类别 | 示例 | 处理 |
+| --- | --- | --- |
+| 内存 | `calloc` / `free` | 转我们的 arena |
+| 日志 | `esp_log` / `esp_log_timestamp` | 转我们的 logger |
+| 定时器 | `esp_timer_create/start/stop/delete/get_time` | 桩（PHY 只用于温度跟踪，可空实现） |
+| 锁 | `_lock_acquire` / `_lock_release` | 我们的临界区 |
+| GPIO | `gpio_config` / `esp_rom_gpio_*` | 桩 |
+| efuse/MAC | `esp_efuse_mac_get_default` | 桩 |
+| 睡眠 | `esp_sleep_*` / `esp_deep_sleep_register_phy_hook` | 桩 |
+| modem_clock 内部 | `modem_clock_*`（约 10 个） | 与 `modem_clock.c.obj` 一起链，再补剩余 |
+
+⇒ **这是整条线最后的、也是唯一还有明确工作量的部分：68 个桩 + 链接。**
+
+**为什么不继续手工推寄存器**：四个窗口已全对齐、`g_phyFuns` 已填、`register_chipv7_phy` 已就位，
+但缺的两个使能函数是 **IRAM 代码（IDF 源码）**，地址在我们板上是空的（实测 `illegal instruction`）。
+把它们**编进来**比逆向推它们**更可靠、更省时**。
+
 ### ✅ 再进一步：PHY 初始化表与调用点都已就位，只差两个 IDF 源码函数
 
 继续按 IDF 的 `esp_phy_enable` 链路推进，逐项实测：
