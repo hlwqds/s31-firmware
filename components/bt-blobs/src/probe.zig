@@ -91,17 +91,19 @@ pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验
 /// 于是"卡住之后什么都看不到"，无法区分"程序停在那"与"只是打印停了"。
 /// 这里对每个字节做**有界**等待，等不到就丢弃，保证日志通道本身不会堵死。
 fn logHook(msg: []const u8) void {
-    if (!verbose) return;
+    // ⚠ 这里**不能**再用 `verbose` 关门：里程碑行（`bt bringup: enter step N`）也走这条路径，
+    //   关掉就等于"关掉了唯一能判断进度的输出"（本轮实测：静默跑 177 行日志里一条里程碑都没有）。
+    //   需要降噪时用 `osal.trace_hooks`（只挡 `bt hook:` 行）。
     const uart_fifo: *volatile u32 = @ptrFromInt(0x2038_A000); // UART_FIFO
     const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS
     for (msg) |ch| {
         var spins: u32 = 0;
-        while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
-        if (spins >= 20000) return; // FIFO 卡死：**丢弃本次输出，绝不挂住**
+        while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
+        if (spins >= 5000) return; // FIFO 卡死：**丢弃本次输出，绝不挂住**
         uart_fifo.* = ch;
     }
     var spins: u32 = 0;
-    while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 20000) : (spins += 1) {}
+    while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
     if (spins < 20000) uart_fifo.* = '\n';
 }
 /// 当前不开中断 ⇒ 空实现；切片 E 真开中断后换成真的关/开。
