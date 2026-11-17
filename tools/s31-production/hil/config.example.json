@@ -4,6 +4,8 @@
   "baud": 115200,
   "firmware": "firmware/zig-out/bin/app.bin",
   "artifacts_dir": "tools/s31-production/hil/artifacts",
+  "artifacts_keep": 0,
+  "artifacts_max_age_days": 0,
   "build": {
     "enabled": false,
     "command": ["zig", "build"],
@@ -18,7 +20,14 @@
     "extra_args": []
   },
   "relay": {
-    "command": ["relayctl", "--port", "/dev/ttyACM0", "set", "{channel}", "{state}"],
+    "command": [
+      "relayctl",
+      "--port",
+      "/dev/ttyACM0",
+      "set",
+      "{channel}",
+      "{state}"
+    ],
     "power_channel": 1,
     "reset_channel": 2,
     "on_value": "on",
@@ -30,7 +39,8 @@
   "capture": {
     "duration_s": 20,
     "stop_pattern": null,
-    "encoding": "utf-8"
+    "encoding": "utf-8",
+    "reset": "none"
   },
   "assertions": [
     {

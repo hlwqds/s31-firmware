@@ -207,6 +207,15 @@ def validate_config(cfg: dict[str, Any]) -> None:
     capture = cfg.get("capture", {})
     if not isinstance(capture, dict):
         raise ConfigError("字段 'capture' 必须是对象")
+    reset_mode = capture.get("reset", "none")
+    if reset_mode not in RESET_MODES:
+        raise ConfigError(f"capture.reset 只能是 {'/'.join(RESET_MODES)}，收到 {reset_mode!r}")
+    keep = cfg.get("artifacts_keep", 0)
+    if not isinstance(keep, int) or isinstance(keep, bool) or keep < 0:
+        raise ConfigError("artifacts_keep 必须是非负整数（0 = 不按条数清理）")
+    age = cfg.get("artifacts_max_age_days", 0)
+    if not isinstance(age, (int, float)) or isinstance(age, bool) or age < 0:
+        raise ConfigError("artifacts_max_age_days 必须是 >= 0 的数（0 = 不按年龄清理）")
     duration = capture.get("duration_s", 20)
     if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0:
         raise ConfigError("capture.duration_s 必须是正数")
@@ -329,8 +338,80 @@ def capture_params(
         "encoding": capture.get("encoding", "utf-8"),
         "stop_patterns": [a["pattern"] for a in assertions],
         "stop_pattern": capture.get("stop_pattern"),
+        # none: 不动 DTR/RTS（默认，行为与之前一致）
+        # reset: 复位后正常启动（跑应用，抓日志）
+        # bootloader: 复位并进入下载模式（IO0 拉低）
+        "reset": capture.get("reset", "none"),
         "log_name": f"{sid}.log",
     }
+
+
+RESET_MODES = ("none", "reset", "bootloader")
+
+# 极性与 esp_pylib.serial_reset 一致（Espressif 工具的 active-low 约定）：
+# 断言 = 线被拉低。DTR 接 IO0，RTS 接 EN。
+#   DTR=True  -> IO0 低 -> 下载模式
+#   RTS=True  -> EN  低 -> 芯片处于复位
+IO0_LOW = True
+IO0_HIGH = False
+EN_LOW = True
+EN_HIGH = False
+
+# 默认延时取自 esptool：进入复位保持 0.1 s，释放 EN 后 0.05 s 再放开 IO0。
+DEFAULT_TIMING = {"enter_boot_delay_s": 0.1, "reset_delay_s": 0.05}
+
+
+def _set_rts(ser: Any, state: bool) -> None:
+    """设置 RTS，并复现 Windows `usbser.sys` 的变通写法。
+
+    部分 Windows USB-CDC 驱动只有在同一次操作里同时写入 DTR 与 RTS 才会发出
+    `SET_CONTROL_LINE_STATE`，所以在改 RTS 之后重写一次当前的 DTR 值。
+    Unix 上这次多余写入无害，故无条件执行（与 esp_pylib 保持一致）。
+    """
+    ser.rts = state
+    ser.dtr = ser.dtr
+
+
+def release_lines(ser: Any) -> None:
+    """把 DTR/RTS 都放到高电平（IO0=HIGH、EN=HIGH），让芯片跑起来。
+
+    为什么必须显式做：pyserial 打开端口时默认断言两线。对带自动下载电路的
+    板子，"断言"就是"IO0 低 + EN 低" —— 芯片从打开那一刻起被按在复位里，
+    整个抓取窗口读到 0 字节，而且**不会报错**，只表现为"串口无输出"。
+    """
+    ser.dtr = IO0_HIGH
+    _set_rts(ser, EN_HIGH)
+
+
+def pulse_reset(ser: Any, mode: str, timing: dict[str, float] | None = None) -> str:
+    """照 esptool `ClassicReset` / `hard_reset` 的时序复位目标。
+
+    顺序与 `esp_pylib.serial_reset.classic_bootloader_reset` 逐行一致：
+    先把 IO0 放到已知的高电平，再拉低 EN 进入复位，然后决定 IO0 的电平，
+    最后释放 EN 让芯片在那一刻采样 IO0。
+
+    返回一句可写进日志的说明；`mode == "none"` 不碰任何线。
+    """
+    if mode not in RESET_MODES:
+        raise ConfigError(f"capture.reset 只能是 {'/'.join(RESET_MODES)}，收到 {mode!r}")
+    if mode == "none":
+        return "未复位（capture.reset=none，两条线由 release_lines 置为运行态）"
+
+    t = dict(DEFAULT_TIMING)
+    if timing:
+        t.update(timing)
+
+    ser.dtr = IO0_HIGH          # IO0=HIGH，先回到已知态
+    _set_rts(ser, EN_LOW)       # EN=LOW，芯片进入复位
+    time.sleep(t["enter_boot_delay_s"])
+    if mode == "bootloader":
+        ser.dtr = IO0_LOW       # IO0=LOW，复位期间决定下载模式
+    _set_rts(ser, EN_HIGH)      # EN=HIGH，芯片在 IO0 的当前电平下启动
+    if mode == "bootloader":
+        time.sleep(t["reset_delay_s"])
+        ser.dtr = IO0_HIGH      # IO0=HIGH，结束握手
+        return "已进入 bootloader 等待下载"
+    return "已复位（正常启动）"
 
 
 def wait_params(ms: float) -> dict[str, Any]:
@@ -474,7 +555,13 @@ def describe_step(step: Step) -> str:
         state = params["on_value"] if params["action"] == "power_on" else params["off_value"]
         return f"将切换通道 {channel} -> {state}: {render(state)}"
     if kind == "capture":
-        return f"将打开串口 {params['port']} @ {params['baud']}，最多抓 {params['duration_s']:g}s，日志写入 artifacts/{params['log_name']}"
+        reset_note = ""
+        if params.get("reset", "none") != "none":
+            reset_note = f"，打开后{'进入 bootloader' if params['reset'] == 'bootloader' else '复位'}"
+        return (
+            f"将打开串口 {params['port']} @ {params['baud']}，最多抓 {params['duration_s']:g}s{reset_note}，"
+            f"日志写入 artifacts/{params['log_name']}"
+        )
     if kind == "wait":
         return f"将等待 {params['ms']:g}ms"
     if kind == "assert":
@@ -490,6 +577,8 @@ def describe_step(step: Step) -> str:
 
 class Runner:
     def __init__(self, cfg: dict[str, Any], suite: str, dry_run: bool) -> None:
+        # 本次运行清理掉的旧产物条数（artifacts_keep / artifacts_max_age_days 生效时）。
+        self.pruned = 0
         self.cfg = cfg
         self.suite = suite
         self.dry_run = dry_run
@@ -705,6 +794,24 @@ class Runner:
         except Exception as exc:  # pyserial 的 SerialException 及底层 OSError
             raise StepError(f"无法打开串口 {port} @ {baud}: {exc}") from exc
 
+        # pyserial 打开端口时默认断言 DTR/RTS。对带自动下载电路的板子，
+        # 这等于把芯片按在复位里；不释放的话 reset="none" 会整窗读到 0 字节。
+        try:
+            release_lines(ser)
+        except Exception as exc:
+            raise StepError(f"释放 DTR/RTS 失败（串口可能不支持调制解调器控制线）: {exc}") from exc
+
+        # “先开后复位”：串口已经打开、缓冲区就绪，复位后才开始倾听，
+        # 避免 DUT 启动早于串口打开而漏掉首行日志（见 README 边界 5）。
+        reset_note = "未复位"
+        mode = params.get("reset", "none")
+        try:
+            reset_note = pulse_reset(ser, mode)
+        except ConfigError:
+            raise
+        except Exception as exc:
+            raise StepError(f"串口复位时序失败（mode={mode}）: {exc}") from exc
+
         try:
             while time.monotonic() < deadline:
                 try:
@@ -759,11 +866,42 @@ class Runner:
 
     # -- 产物 ---------------------------------------------------------------
 
+    def _prune_artifacts(self, directory: Path) -> int:
+        """按保留条数与最大年龄清理旧产物；返回删除个数。
+
+        两个阈值都 <= 0 时（默认）完全不清理，保持“产物是证据”的语义。
+        """
+        keep = int(self.cfg.get("artifacts_keep", 0) or 0)
+        max_age_days = float(self.cfg.get("artifacts_max_age_days", 0) or 0)
+        if keep <= 0 and max_age_days <= 0:
+            return 0
+        try:
+            files = [item for item in directory.iterdir() if item.is_file()]
+        except OSError:
+            return 0
+        files.sort(key=lambda item: item.stat().st_mtime, reverse=True)
+        now = time.time()
+        removed = 0
+        for index, item in enumerate(files):
+            stat = item.stat()
+            too_many = keep > 0 and index >= keep
+            too_old = max_age_days > 0 and (now - stat.st_mtime) > max_age_days * 86400.0
+            if too_many or too_old:
+                try:
+                    item.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+        return removed
+
     def _write_artifact(self, kind: str, name: str, content: str) -> None:
         directory = resolve_repo_path(self.cfg.get("artifacts_dir", "tools/s31-production/hil/artifacts"))
         path = directory / f"{self.run_id}-{self.suite}-{name}"
         try:
             directory.mkdir(parents=True, exist_ok=True)
+            pruned = self._prune_artifacts(directory)
+            if pruned:
+                self.pruned += pruned
             path.write_text(content, encoding="utf-8")
         except OSError as exc:
             raise StepError(f"无法写入产物 {path}: {exc}") from exc
@@ -778,6 +916,7 @@ class Runner:
             "dry_run": self.dry_run,
             "steps": [step.to_json() for step in steps],
             "artifacts": list(self.artifacts),
+            "artifacts_pruned": self.pruned,
         }
         if self.first_error is not None:
             result["error"] = str(self.first_error)

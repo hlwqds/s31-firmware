@@ -27,3 +27,6 @@ __pycache__/
 bt_all/
 bt_objs/
 bt_objs.csv
+
+# HIL runner 运行时产物（串口日志；由 tools/s31-production/hil/hil.py 真实模式生成）
+tools/s31-production/hil/artifacts/
