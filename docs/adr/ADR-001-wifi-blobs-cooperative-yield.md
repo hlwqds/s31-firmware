@@ -5432,3 +5432,27 @@ IDF 是在 `device_control` 的**设备循环里第 5 个**写 bit0（前面已�
 ⇒ 下一步（明确且可做）：把 `shellWifiClockEnable` 的写序**严格改成 IDF 的 device 循环顺序**
 （SOC_PLL → COEXIST(LPCON ICG) → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit0)** → WIFI_BB(rst+组) → WIFI_BB_80X1），
 让写 bit0 的那一刻**前面那四个已经写过**，再看 `MAC_ST` 是否清零。
+
+### 判决（负）：**严格照 IDF 的 device 顺序**重写，`MAC_ST` 仍不清
+
+按轨迹把写序改成 `SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit0)** → WIFI_BB(rst+组) → WIFI_BB_80X1`
+（`clk_conf1` 从 `0` 开始，bit0 是第 5 个写入的位）：
+
+```text
+wifi-init-probe: MAC_ST after init = 0x0000e000     # 仍不清
+panic 0
+```
+
+⇒ **同样的写、同样的顺序、同样的底色（`clk_conf1` 写前都是 `0`），IDF 清、我们不清。**
+
+⇒ 到这为止，可以从寄存器/写序层面排除的因素已经穷尽。剩下的唯一解释是**调用时机**：
+`_wifi_clock_enable` 在我们这里被 blob 调用的**时点**，与 IDF 的 `wifi_clock_enable` 不同——
+虽然计数 `clken=1` 两边一致，但**它在 init 序列中的相对位置**可能与 IDF 不同
+（IDF 的 `esp_wifi_init_internal` 是同一份 blob，但外部的 IDF 运行环境不同）。
+
+⇒ 下一步（唯一剩下的）：**记录 `_wifi_clock_enable` 被调用时"init 已经走到哪一步"**——
+在钩子里打一个"当前已发生的 osi 调用序号"（我们本来就有 `event_count`），
+与 IDF 侧同一钩子被调时的序号对比。若序号不同 ⇒ 就是时机差；若相同 ⇒ 说明还有别的前置状态。
+
+⇒ 已穷尽：寄存器内容（八格全对齐）、写序（照 IDF device 顺序）、复位脉冲（rst_wifimac/rst_wifibb）、
+临界区位（b14/b21）、ROM `ic_mac_init`、自旋让出、全库静态搜索（无人写 bits 13-15）。

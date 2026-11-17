@@ -1177,34 +1177,33 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // —— 实测 IDF 工作值是 `0x64646400`。我们此前只写 CLK_CONF1，没写这张位图。
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     const icg_before = icg.*;
-    // **按 `modem_syscon_struct.h` 的实测布局重算**（不是猜）：
-    //   clk_conf_power_st: reserved0[7:0] / clk_zb_st_map[11:8] / clk_fe_st_map[15:12] /
-    //                      clk_bt_st_map[19:16] / clk_wifi_st_map[23:20] /
-    //                      clk_modem_peri_st_map[27:24] / clk_modem_apb_st_map[31:28]
-    // IDF 逐域值（`modem_clock_impl.c:371-393`）：FE=0x6 / BT=0x4 / WIFI=0x6 / PERIPH=0x4 / APB=0x6，
-    // **zb 域 IDF 不写 ⇒ 保持 0** ⇒ 正确值 = **0x64646000**（原来的 0x64646400 把 zb 写成了 4）。
+    // **严格按 IDF `modem_clock_device_control` 的 device 顺序写**——
+    // 环形缓冲轨迹（ADR）证明：清 `MAC_ST[15:13]` 的就是 **dev=7 = `WIFI_MAC`** 的 configure，
+    // 即写 `clk_conf1.clk_wifimac_en`（bit0）；而它是设备循环里的**第 5 个**，
+    // 前面已经写过 SOC_PLL / COEXIST / WIFI_APB / WIFI_BB_44M。
+    // 顺序：SOC_PLL → COEXIST → WIFI_APB → WIFI_BB_44M → **WIFI_MAC(bit0)** → WIFI_BB(rst+组) → WIFI_BB_80X1
     icg.* = 0x6464_6000;
-    const icg_after = icg.*;
-    note(20, icg_before, icg_after);
-    // **LPCON 侧 ICG 位图（0x2010F020）必须在 init 期就和 SYSCON 侧一起就位**——
-    // 之前是在 start 前补写的，那时 after-init 仍是 0。IDF 的 `modem_clock_domain_enable`
-    // 两侧一次做完（`modem_clock_hal_set_clock_domain_icg_bitmap`，hal/esp32s31/modem_clock_hal.c:53-64）。
-    // 四域（LP_APB/I2C_MASTER/COEX/WIFIPWR）各 `ACTIVE|MODEM = 0x6` ⇒ `0x66660000`。
+    note(20, icg_before, icg.*);
+
+    // 1) SOC_PLL_SOURCE_CG (dev=2)
+    {
+        const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
+        modconf.* = 0x3D;
+    }
+    // 2) COEXIST (dev=3) —— LPCON 侧 ICG 位图
     {
         const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
-        const b20 = icg20.*;
         icg20.* = 0x6666_0000;
-        note(24, b20, icg20.*);
     }
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    const before = conf1.*;
-    note(25, before, before);
-    // **按 IDF `WIFI_CLOCK_DEPS` 的逐设备顺序写**（不是一次性 OR 全部位）：
-    // `modem_clock_device_control` 按 WIFI_MAC → WIFI_APB → WIFI_BB → WIFI_BB_44M → COEXIST → WIFI_BB_80X1
-    // → SOC_PLL_SOURCE_CG 的顺序逐个 `configure()`。IDF 侧实测：**就是这一串让 `MAC_ST` 从 0xE000 变 0**。
-    // 1) WIFI_MAC: `clk_conf1.clk_wifimac_en = 1`（bit0，位域 RMW）
+    // 3) WIFI_APB (dev=5)
+    conf1.* = conf1.* | (1 << 9);
+    // 4) WIFI_BB_44M (dev=6)
+    conf1.* = conf1.* | (1 << 2);
+    // 5) **WIFI_MAC (dev=7) —— 轨迹里的清位点**
     conf1.* = conf1.* | (1 << 0);
-    // 2) WIFI_BB: 先脉冲 `rst_wifibb`，再写 BB 时钟组
+    note(29, 0, conf1.*);
+    // 6) WIFI_BB (dev=8)：rst_wifibb 脉冲 + BB 时钟组
     {
         const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
         rst.* = rst.* | (1 << 8);
@@ -1212,36 +1211,13 @@ fn shellWifiClockEnable() callconv(.c) usize {
         rst.* = rst.* & ~@as(u32, 1 << 8);
         romDelayUs(20);
     }
-    // 3) BB 时钟组（`clk_conf1_configure` 用 OR，不是覆盖——IDF `modem_syscon_ll_clk_conf1_configure` 是 OR）
     conf1.* = conf1.* | 0x7FF;
-    // 4) WIFI_BB_80X1
+    // 7) WIFI_BB_80X1 (dev=9)
     conf1.* = conf1.* | (1 << 7);
-    // 5) **不再额外 OR `wifi_clk_conf1_bits`**：IDF 侧实测 enable 后 `clk_conf1 = 0x000007FF`，
-    //    而我们原来写 `0x0038E7FF`（多出 bits 12-21）——多写的位正是嫌疑。
-    _ = wifi_clk_conf1_bits;
-    // 6) **SOC_PLL_SOURCE_CG —— 我们从来没写过的那个**
-    // IDF `modem_clock_hal_enable_soc_pll_source_cg()`（hal/esp32s31/modem_clock_hal.c:122-126）：
-    //     `HP_SYS_CLKRST.modem_conf.val = enable ? 0x3d : 0x25;`
-    // `DR_REG_HP_SYS_CLKRST_BASE = 0x20587000`（soc/esp32s31/register/soc/reg_base.h:79），
-    // `HP_SYS_CLKRST_MODEM_CONF_REG = base + 0x1E0` ⇒ **0x205871E0**。
-    // 没有 PLL 源时钟，MAC 的状态机当然不会动。
-    {
-        const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
-        const b = modconf.*;
-        modconf.* = 0x3D;
-        note(26, b, modconf.*);
-    }
-    // 7) **LPCON clk_conf（`0x2010F018`）—— 之前的编辑把这段整段删掉了**（所以读回一直是 0x4）。
-    // IDF 侧实测 enable：`0x1 -> 0x3`，即置 **bit0 `clk_wifipwr_fo`** 与 **bit1 `clk_coex_fo`**
-    // （字段序：clk_wifipwr_fo/clk_coex_fo/clk_i2c_mst_fo/clk_lp_timer_fo/clk_fe_mem_fo）。
+    // 8) LPCON clk_conf（IDF 侧 AFTER 是 0x3）
     {
         const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
-        const lb = lpcon.*;
-        // IDF 的 BEFORE 是 `0x1`、AFTER 是 `0x3`；我们的 BEFORE 是 `0x4`（底色不同）⇒
-        // **按 IDF 的终态绝对值写 `0x3`**，而不是 `lb | 0x3`（那会得到 0x7）。
-
         lpcon.* = 0x3;
-        note(28, lb, lpcon.*);
     }
     return 0;
 }
