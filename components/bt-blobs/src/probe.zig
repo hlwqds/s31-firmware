@@ -59,7 +59,7 @@ fn nowMs() u32 {
 pub var verbose: bool = true;
 
 /// 对照实验用：false ⇒ 完全不写任何时钟门控（验证"我们改时钟把 UART 弄停"）。
-pub var clock_writes: bool = false;
+pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验
 
 /// 同步刷到 UART（不缓冲）——切上下文后日志顺序才可信。
 fn logHook(msg: []const u8) void {

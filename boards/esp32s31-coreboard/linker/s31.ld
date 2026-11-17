@@ -191,11 +191,24 @@ SECTIONS
      * 只在本板链接 BLE controller 时才有意义；`PROVIDE` 只填未定义符号，
      * 常规镜像不受影响。S31 没有 ROM 里的 btdm 副本，所以 ROM 侧地址也指向同一处。
      * ------------------------------------------------------------------- */
-    PROVIDE(_bss_start_btdm = _bss_end);
-    PROVIDE(_bss_end_btdm = _bss_end);
-    PROVIDE(_data_start_btdm = _data_end);
-    PROVIDE(_data_end_btdm = _data_end);
-    PROVIDE(_data_start_btdm_rom = _data_end);
+    /* **真实区间**（2026-11-17 修正）：原先是零长度区间，理由是"archive 的 .bss/.data
+     * 已经在普通段里"。但 ROM 的 BT 代码可能用这段放**它自己的**状态 ⇒ 零长度 ⇒ 写越界。
+     * 现在给两块独立的 RAM：btdm BSS 32 KiB（NOBITS）+ btdm DATA 4 KiB（NOBITS，初值由
+     * `_data_start_btdm_rom` 指向同址 ⇒ memcpy 长度为 0，语义仍是"已初始化"）。 */
+    .btdm_bss (NOLOAD) : ALIGN(16)
+    {
+        _bss_start_btdm = .;
+        . = . + 0x8000;
+        _bss_end_btdm = .;
+    } > sram
+
+    .btdm_data (NOLOAD) : ALIGN(16)
+    {
+        _data_start_btdm = .;
+        . = . + 0x1000;
+        _data_end_btdm = .;
+        _data_start_btdm_rom = _data_start_btdm;
+    } > sram
 
 
     /* 链接期就否决明显错误的布局，免得自检变成唯一的防线。 */

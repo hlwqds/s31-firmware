@@ -350,6 +350,17 @@ HCI A 与 B 两条路径）。少一个就会出现"链接期 undefined"——�
 **已确证**（板侧，非推断）：12 个时钟门全部置上（`clk_conf=0x72601002`、`clk_conf1=0x00070080`、
 `lpcon=0x00000006`）；池需求 `evt=187 evtq=33 co=41 sem=20 mutex=16`；init 链可达 step 5。
 
+### 已排除的假设（都是板上对照，别再重试）
+
+| 假设 | 实验 | 结果 |
+| --- | --- | --- |
+| 少开时钟 | 12 个 BT 门 + 8 个 PHY FE + SOC PLL + LP timer，全部读回自证 | 仍卡 |
+| 我们改时钟把 UART 弄停 | `clock_writes = false`，一笔都不写 | 仍卡 |
+| ISR 打印打断 ROM 的 UART 写 | 完全不 arm T0、不开 MIE | 仍卡 |
+| SOC PLL 源写坏 | 加开关默认不写 | 仍卡 |
+| **BTDM 的 RAM 区间是零长度** | `s31.ld` 给 32 KiB BSS + 4 KiB DATA 真实区间 | **仍卡** |
+| 时基没初始化 | `hw.initTimer()` + 打递增自证 | 修正了采样器，但不是卡点原因 |
+
 ⚠ **探针必须调 `hw.initTimer()`**：不调则 `nowUs()` 恒 0 ⇒ ① T0 的 alarm 永不到点 ⇒
 采样中断一个都不来；② OSAL 的 `now_ms` 恒 0 ⇒ 任何"等到某时刻"的条件永不成立。
 ADR-001:729 已因同一个原因记过一次。
