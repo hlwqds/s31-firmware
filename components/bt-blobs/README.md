@@ -489,13 +489,16 @@ bt probe: probing 0x2010B000 ...
 
 ⇒ 归档里 `r_sym_bt_XPuq` 恰好也要读这个块，所以 init 卡在那里；UART 与中断随后也全部停摆。
 
-**下一步**：让这块可达。三个候选（按 IDF 的初始化顺序）：
-1. **BT/Wi-Fi 共享电源域**：IDF 的 `esp_wifi_bt_power_domain_on()`（ch25 阶段就记录过"跳过了电源域"这个缺口）
-2. 该块自己的 `clk_conf` 门：我们已置 `clk_conf1` 的 bt_apb/btbb/btmac（bit16/17/18），
-   但 `MODEM_BASE+0xB000` 可能需要**另一个寄存器**（soc 头里没有它的定义 ⇒ 私有块）
-3. `PAU` 外设（`0x20341000`）里的 modem 电源域配置
+**让这块可达的候选**（按 IDF 初始化顺序，逐个排除）：
 
-⇒ 有了这个 2 行复现器，验证任何候选都只需一次烧录。
+| # | 候选 | 状态 |
+| --- | --- | --- |
+| 1 | BT/Wi-Fi 共享**电源域**（`esp_wifi_bt_power_domain_on`） | ❌ **排除**：该函数体被 `#if SOC_PM_MODEM_PD_BY_SW` 包住，而 S31 的 `soc_caps.h` **没有定义**它 ⇒ 这段在 S31 上根本不编译 ⇒ 电源域不由软件控制 |
+| 2 | 该块自己的**时钟门** | 未排除。我们已置 `clk_conf1` 的 `bt_apb`/`btbb`/`btmac`（bit16/17/18），但 `MODEM_BASE+0xB000` 在 soc 头里**没有任何定义**（可查的块只到 SYSCON +0x9C00）⇒ 它是**未文档化的私有块**，门可能在别处 |
+| 3 | `PAU`（`0x20341000`）的 modem 配置 | 未排除 |
+| 4 | **`esp_phy_enable` 前置** | **最可能**：IDA 的流程里 PHY 先起、再碰 modem/BLE 寄存器；我们跳过了 `esp_phy_enable`（ch25 的 `shellPhyEnable` 只做了 Wi-Fi 侧的一部分），BT 侧可能没做 |
+
+⇒ 有了 2 行复现器，验证任何候选都只需**一次烧录**（读通即修好）。
 
 ### 一个原因解释全部症状：**总线挂死**（2026-11-17 结论）
 
