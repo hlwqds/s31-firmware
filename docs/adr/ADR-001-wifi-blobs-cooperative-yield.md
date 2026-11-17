@@ -5038,3 +5038,32 @@ void wifi_module_enable(void) { modem_clock_module_enable(PERIPH_WIFI_MODULE); }
 
 ⇒ 下一步：读 S31 的 `modem_clock_impl` device 表里的 `configure`，把它做的寄存器动作逐条复刻进
 `shellWifiClockEnable`（或直接调 ROM/等价函数）。
+
+### 判决（负）：照 IDF 的**逐设备顺序**重写 `shellWifiClockEnable`，**仍不清**
+
+按 `WIFI_CLOCK_DEPS` 的顺序重写（`clk_wifimac_en` → `rst_wifibb` 脉冲 → BB 时钟组 OR → `clk_wifibb_80x1_en`
+→ 其余位整组 OR）：
+
+```text
+wifi-init-probe: MAC_ST after init = 0x0000e000     # 仍不清
+wifi-init-probe:   clk_conf1(+14)=0x0038e7ff        # 与之前完全一致
+panic 0
+```
+
+⇒ **顺序不是关键**。`clk_conf1` 的终值与 IDF 相同（`0x0038e7ff`），`MAC_ST` 依旧 `0xE000`。
+
+⇒ 说明 IDF 的 `wifi_module_enable()` 里**还有我们没复刻的东西**。按源码，它的完整路径是：
+
+```c
+modem_clock_module_enable(PERIPH_WIFI_MODULE)
+  ├─ modem_clock_module_icg_map_init_all()        // 两侧 ICG 图（我们已写）
+  └─ modem_clock_device_control(WIFI_CLOCK_DEPS, true)
+       WIFI_MAC, WIFI_APB, WIFI_BB, WIFI_BB_44M, COEXIST, WIFI_BB_80X1, SOC_PLL_SOURCE_CG
+```
+
+⇒ **7 个 device 里我们只复刻了 3 个（MAC / BB / BB_80X1）**，
+`WIFI_APB`、`WIFI_BB_44M`、`COEXIST`、**`SOC_PLL_SOURCE_CG`** 这 4 个没写。
+其中 **`SOC_PLL_SOURCE_CG`（PLL 源时钟门）** 是最可疑的一个——没有 PLL 源，MAC 的状态机当然不动。
+
+⇒ 下一步：把这 4 个 device 的 `modem_syscon_ll_*` 写操作也复刻进来
+（`modem_clock_impl.c` 里各自的 `configure()` 就是一行 `modem_syscon_ll_enable_*`，逐个查 LL 头文件即可）。

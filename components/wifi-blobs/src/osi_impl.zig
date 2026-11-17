@@ -1189,24 +1189,26 @@ fn shellWifiClockEnable() callconv(.c) usize {
     }
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
     const before = conf1.*;
-    conf1.* = before | wifi_clk_conf1_bits;
-    // **`rst_wifibb` 序列已回滚**：ADR §候选清单**实验 9** 早已做过并判负
-    // （脉冲 `rst_wifibb`(0x20109C10 bit8) → `0x0->0x0`，`mac` 仍 `0x0000e000`）。
-    // 本轮又按 IDF `wifi_module_enable()` 的完整顺序重做了一遍（rst_wifibb 脉冲 + `clk_conf1=0x17b`
-    // + `clk_wifibb_80x1_en`），结果同样是 `MAC_ST=0x0000e000`——**同一实验的第二遍，已撤回**。
-    // `WIFI_CLOCK_DEPS` 的最后一项 COEXIST 不在 CLK_CONF1 里：它在
-    // `MODEM_LPCON(0x2010F000).clk_conf(+0x18)` 的 bit1（`modem_lpcon_ll_enable_coex_clock`）。
-    const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
-    const lb = lpcon.*;
-    lpcon.* = lb | (1 << 0) | (1 << 1) | (1 << 2); // wifipwr | coex | i2c_mst
-    // **LPCON 侧的 ICG 位图（0x2010F020）——我们一直没写过，读回是 0。**
-    // IDF `modem_clock_domain_icg_config()`（modem_clock_impl.c:371-393）里，
-    // LP_APB / I2C_MASTER / COEX / WIFIPWR **四个域全是**
-    // `ICG_NOGATING_ACTIVE | ICG_NOGATING_MODEM` = `BIT(2) | BIT(1)` = **0x6**
-    // （`PMU_HP_ICG_MODEM_CODE_ACTIVE=2`、`..._MODEM=1`，见 pmu_types.h:34-36）。
-    // 字段布局：wifipwr[19:16] / coex[23:20] / i2c_mst[27:24] / lp_apb[31:28]
-    // ⇒ 四域各 0x6 ⇒ **0x66660000**。
-    // `wifipwr` 就是 WiFi 电源域——它一直是 0，很可能正是 blob 要自己写 force_on 的原因。
+    note(25, before, before);
+    // **按 IDF `WIFI_CLOCK_DEPS` 的逐设备顺序写**（不是一次性 OR 全部位）：
+    // `modem_clock_device_control` 按 WIFI_MAC → WIFI_APB → WIFI_BB → WIFI_BB_44M → COEXIST → WIFI_BB_80X1
+    // → SOC_PLL_SOURCE_CG 的顺序逐个 `configure()`。IDF 侧实测：**就是这一串让 `MAC_ST` 从 0xE000 变 0**。
+    // 1) WIFI_MAC: `clk_conf1.clk_wifimac_en = 1`（bit0，位域 RMW）
+    conf1.* = conf1.* | (1 << 0);
+    // 2) WIFI_BB: 先脉冲 `rst_wifibb`，再写 BB 时钟组
+    {
+        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
+        rst.* = rst.* | (1 << 8);
+        romDelayUs(20);
+        rst.* = rst.* & ~@as(u32, 1 << 8);
+        romDelayUs(20);
+    }
+    // 3) BB 时钟组（`clk_conf1_configure` 用 OR，不是覆盖——IDF `modem_syscon_ll_clk_conf1_configure` 是 OR）
+    conf1.* = conf1.* | 0x17b;
+    // 4) WIFI_BB_80X1
+    conf1.* = conf1.* | (1 << 7);
+    // 5) 其余位（APB/44M/COEXIST/PLL 源）沿用原来的整组 OR
+    conf1.* = conf1.* | wifi_clk_conf1_bits;
     return 0;
 }
 
