@@ -4998,3 +4998,43 @@ IDF 在 **start 之前**这三位就已经是 0，而那时板子还没发过任
 > ① 烧 IDF app 会覆盖板上的 Zig 探针镜像 ⇒ 实验后把 Zig 探针刷回；
 > ② 同板对比前**两边都擦 NVS 分区**（我们固件在板上留过键值，`nvs get_blob calls=15` 就是痕迹）；
 > ③ 每条 dump 带**递增序号 + 时间戳**，缺号能看出流程没走到那一步，避免把"没进 init"误读成"init 没清零"。
+
+### ★★★★★ 定位成功：**`wifi_clock_enable` 就是清位者**（IDF 侧 osi adapter 插桩）
+
+按"主线"做法：在 IDF 的 S31 osi adapter（`components/esp_wifi/esp32s31/esp_adapter.c`）三个低频 wrapper
+里各加两行 `MAC_ST` printf，用现成的 `/tmp/idf-station-probe`（station example + PROBE 插桩）重建、烧板、抓串口。
+
+**结果（`/tmp/idf-station-run.log`）**：
+
+```text
+PROBE mac_st before_init=0x0000e000 rst=0x00000000 clk1=0x00000000 icg=0x00000000
+PROBE MAC_ST before clock_en=0x0000e000
+PROBE MAC_ST after  clock_en=0x00000000     ← ★★★ 就在这里清的
+PROBE MAC_ST before clock_dis=0x00000000
+PROBE MAC_ST after  clock_dis=0x00000000
+PROBE mac_st after_init=0x00000000
+PROBE mac_st before_start=0x00000000
+PROBE MAC_ST before reset_mac=0x00000000
+PROBE MAC_ST after  reset_mac=0x00000000
+PROBE MAC_ST before clock_dis=0x00ff1000
+PROBE mac_st after_start=0x00ff1000
+```
+
+⇒ **`MAC_ST` 从 `0xE000` 变 `0` 的唯一一步，是 `wifi_clock_enable_wrapper()` → `wifi_module_enable()`。**
+⇒ `reset_mac` 之后**没变**（仍是 0）⇒ **`rst_wifimac` 与这三位无关**，这也解释了为什么我们手动脉冲一直无效。
+⇒ `clock_disable` 也不改它（0 → 0）。
+
+**IDF 的调用链**（`periph_ctrl.c:141`）：
+
+```c
+void wifi_module_enable(void) { modem_clock_module_enable(PERIPH_WIFI_MODULE); }
+  → modem_clock_module_icg_map_init_all();            // ICG 位图（两侧）
+  → modem_clock_device_control(deps, true);
+      → 每个 device 的 configure() → 时钟域使能 + 复位序列
+```
+
+⇒ **我们的 `shellWifiClockEnable` 只手写了三处寄存器（ICG / CLK_CONF1 / LPCON clk_conf），
+完全没走这条 `configure()` 链** ⇒ 这就是缺的那一步，而且**不是"少写一个寄存器"，是少了一整条 device 配置序列**。
+
+⇒ 下一步：读 S31 的 `modem_clock_impl` device 表里的 `configure`，把它做的寄存器动作逐条复刻进
+`shellWifiClockEnable`（或直接调 ROM/等价函数）。
