@@ -4967,17 +4967,24 @@ IDF 源码里**只有声明**（`include/esp_private/wifi.h:437`）。
 IDF 在 **start 之前**这三位就已经是 0，而那时板子还没发过任何 TX/RX ⇒ 不存在"等收发停止"的阶段。
 **正确的框架是**：IDF 的 init 期间完成了 **MAC/PHY 上电初始化（DMA 环 + RF 前端）**，我们没做。
 
-### 更正：openocd **是有的**
+### 更正（并再更正一次）：openocd 与 target cfg 都在，但**传输通道不在**
 
-我上一节写"只有 `/dev/ttyUSB0`、没有 openocd"——**错**：
+第一次写"没有 openocd"——**错**；第二次写"openocd 有 ⇒ JTAG 可行"——**只对一半**。实测：
 
-```text
-~/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/openocd-esp32/bin/openocd   ✓ 存在
-```
+| 项 | 状态 |
+|---|---|
+| `openocd` 二进制 | ✓ `~/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/openocd-esp32/bin/openocd` |
+| `target/esp32s31.cfg` | ✓ 存在 |
+| `interface/esp_usb_jtag.cfg` | ✓ 存在 |
+| **`/dev/ttyUSB0` 是什么** | **CP2102N USB-to-UART**（`ID_VENDOR=Silicon_Labs` `ID_VENDOR_ID=10c4` `ID_MODEL_ID=ea60`）——**不是**芯片内置 USB-JTAG |
+| USB-JTAG 设备（VID `303a`） | **未枚举**（`lsusb` 无 303a） |
 
-⇒ JTAG 写监视点这条路**可行**（需要探针硬件 + 正确的 attach 顺序：
-先 `break esp_wifi_init` → continue 到断点 → 再 `awatch *0x20104cac` → continue，
-否则只能看到 init 之后的写）。
+⇒ **结论**：工具与配置齐全，但**没有 JTAG 传输通道**——板子上的 `/dev/ttyUSB0` 是 UART 桥，
+芯片的 USB-JTAG 没有接出来/没插。⇒ 写监视点这条路**缺硬件**（需要 ESP-Prog 或把板子的 USB-JTAG 口接上），
+不是"缺软件"。
+
+⇒ 若将来接上，attach 顺序不能省：先 `break esp_wifi_init` → continue 到断点 →
+再 `awatch *0x20104cac` → continue（否则只能抓到 init 之后的写）。
 
 ### 下一步（两条并行，主次明确）
 
