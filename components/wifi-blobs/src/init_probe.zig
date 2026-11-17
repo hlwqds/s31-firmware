@@ -212,6 +212,25 @@ fn pumpRealTask() bool {
 // ⇒ 要做这件事，必须先让"让出点"能登记自己的 main 帧（每处让出点一个 `Context`），
 // 不是改几个字节就能解决的。
 
+/// **时钟域六寄存器快照**（IDF 对照用）：写前 / 写后 / init 后 三个时刻各打一次。
+/// "钩子被调 ≠ 位真的生效" 是当前唯一未验证的环节，这张表就是判据。
+fn dumpClockRegs(tag: []const u8) void {
+    const R = struct { name: []const u8, addr: usize };
+    const regs = [_]R{
+        .{ .name = "clk_conf(+04)", .addr = 0x2010_9C04 },
+        .{ .name = "force_on(+08)", .addr = 0x2010_9C08 },
+        .{ .name = "icg(+0C)", .addr = 0x2010_9C0C },
+        .{ .name = "rst_conf(+10)", .addr = 0x2010_9C10 },
+        .{ .name = "clk_conf1(+14)", .addr = 0x2010_9C14 },
+        .{ .name = "lpcon+18", .addr = 0x2010_F018 },
+    };
+    log.line("wifi-init-probe: CLKDMP[{s}]", .{tag});
+    for (regs) |r| {
+        const v: *volatile u32 = @ptrFromInt(r.addr);
+        log.line("wifi-init-probe:   {s}=0x{x:0>8}", .{ r.name, v.* });
+    }
+}
+
 fn idleHook() void {
     idle_calls += 1;
     // **"真阻塞 + 泵 PP worker"实验已做**：init 直接挂住（PP 任务始终没 give）。
@@ -465,7 +484,9 @@ pub fn run() noreturn {
     // **tp 实验已做**：给 ppTask 设一个清零 TLS 区后仍是 182 次 panic、入口未打印 ⇒ tp 不是原因。
     // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
+    dumpClockRegs("before-init");
     const init_rc = esp_wifi_init_internal(&cfg);
+    dumpClockRegs("after-init");
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
         impl.calls.queue_send - w_qsend,
         impl.calls.queue_recv - w_qrecv,
@@ -980,6 +1001,7 @@ pub fn run() noreturn {
                 // 我们板子上 MAC_ST=0x0000E000 ⇒ 这三位**全 1** ⇒ 死循环。
                 // IDF 侧 MAC_ST 是 0（bootloader_init_mem 清过），所以它能过。
                 {
+                    dumpClockRegs("before-start");
                     log.line("wifi-init-probe: MAC_ST before start = 0x{x:0>8} (spin mask 0xE000)", .{mac_st.*});
                     // **判别实验**：手动脉冲 `rst_wifimac`（`_wifi_reset_mac` 钩子，bit9，脉冲已加宽到 20 µs），
                     // 看 MAC_ST 的 bits 13-15 是否因此清零——若清不掉，说明那三位不属于这个复位域。
