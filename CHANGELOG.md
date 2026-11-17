@@ -8,6 +8,23 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **死等循环已反汇编出来**（2026-11-17，不需要 JTAG）：探针把 ROM 区 `0x2f83efb0` 与 `0x2f812200`
+  各 96 字节读出来（`0x2f8xxxxx` 可直接读），离线 `objdump -D -b binary -m riscv:rv32` 反汇编。
+  轮询循环在 `0x2f812216`：
+
+  ```asm
+  2f81221a: addi s1,zero,127
+  2f81221e: mv   a0,s0            # ← 循环头
+  2f812222: jal  0x2f83efca       # 读一个字节
+  2f812228: bltu s1,a0,0x2f81221e # while (127 < byte) 继续转
+  ```
+
+  读字节的叶子函数（`0x2f83efca`）= `((*(u32*)(((arg + 0x2038A) << 12) + 28) >> 16) & 0xFF)`。
+  采样到的 `a0=0xE080` ⇒ 轮询地址 **`0x2E40A01C`**；`0x2f83efda` 被采到 13 次不是在那儿转，
+  而是它是叶子函数、被这个循环高频调用。⇒ 下一步只需弄清 `0x2E40A01C` 是哪个外设的状态字节，
+  MAC 在等什么就明确了。**本条完全不需要外部设备**，也不需要 JTAG。
+  另确证：`SOC_PLL_SOURCE_CG`（`0x205871E0` = 0x3d）、PHY 的 8 个 FE 时钟、LP timer 时钟
+  （LPCON +0x4/+0x14/+0x18）全部已开并读回自证，仍卡在同一处 —— 排除了"只是少开时钟"。
 - **板上结论：BLE 与 Wi-Fi 撞同一面墙**（2026-11-17）：BLE controller 跑到 init step 6
   （`r_btdm_task_init` 内部）停住，用 TIMG0 T0 采样被中断的 PC —— 28 个样本全部 `mac=0x0000e000`，
   PC 集中在 ROM 区的 `0x2f83efda`/`0x2f812220` ⇒ **`MAC_ST & 0xE000 != 0`**，与 ch25 记录的

@@ -64,6 +64,10 @@ fn macHook(out: *[6]u8) void {
 }
 
 pub fn run() noreturn {
+    // **最先**做 ROM 取样：此时还没开中断，输出不会被 ISR 的行冲散。
+    dumpRom("A", 0x2f83efb0, 96);
+    dumpRom("B", 0x2f812200, 96);
+
     osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
@@ -152,6 +156,21 @@ fn dumpPcs() void {
     osal.logPublic("bt probe: pc samples n={d} total={d}", .{ n, board.trap.pcSampleCount() });
     var i: usize = 0;
     while (i < n) : (i += 1) osal.logPublic("bt probe:   pc[{d}]=0x{x:0>8}", .{ i, pcs[i] });
+}
+
+/// 按 8 字一行打印一段 ROM（`0x2f8xxxxx` 可直接读）。
+fn dumpRom(tag: []const u8, base: usize, len: usize) void {
+    board.log.line("rom {s} @0x{x}", .{ tag, base });
+    var off: usize = 0;
+    while (off < len) : (off += 32) {
+        board.log.line("rom {s} +{d:0>2}: {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{
+            tag,                                    off,
+            board.hw.bt_mmio_read(base + off),      board.hw.bt_mmio_read(base + off + 4),
+            board.hw.bt_mmio_read(base + off + 8),  board.hw.bt_mmio_read(base + off + 12),
+            board.hw.bt_mmio_read(base + off + 16), board.hw.bt_mmio_read(base + off + 20),
+            board.hw.bt_mmio_read(base + off + 24), board.hw.bt_mmio_read(base + off + 28),
+        });
+    }
 }
 
 fn findFirstTask() ?*sched.Task {

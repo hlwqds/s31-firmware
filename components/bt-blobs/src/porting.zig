@@ -121,6 +121,34 @@ const b_conf1_btmac: u32 = @as(u32, 1) << 18;
 const b_lpcon_coex: u32 = @as(u32, 1) << 1;
 const b_rst_btmac: u32 = @as(u32, 1) << 16;
 
+// ---- 第二轮补的缺口（2026-11-17）----
+//
+// 板侧证据：`r_btdm_task_init` 在 ROM 里等 `MAC_ST[15:13]`（28/28 采样 mac=0xE000）。
+// 只开 ICG 门控位不够 —— 还缺三样：
+//   ① `SOC_PLL_SOURCE_CG`：**不是门控位**，是时钟源选择字段，写整个 6 bit 魔数
+//      `0x3d`（开）/ `0x25`（关）到 `HP_SYS_CLKRST.modem_conf` = **0x205871E0**。
+//   ② PHY 的前端时钟（同在 `clk_conf1`）：`clk_fe_20m/40m/80m/160m/apb_en`=11..15、
+//      `clk_fe_pwdet_adc_en`=19、`clk_fe_adc_en`=20、`clk_fe_dac_en`=21。
+//      不开这一路，PHY 起不来 ⇒ MAC 等不到 PHY 就绪 ⇒ 忙位永不清。
+//   ③ LP timer 时钟（LPCON）：`LP_TIMER_CONF`=+0x4（选 32k 源 + 分频 0）、
+//      `MODEM_32K_CLK_CONF`=+0x14（RC32K 码 = 1）、`CLK_CONF`=+0x18 的 bit3 `clk_lp_timer_en`。
+const reg_hp_clkrst_modem_conf: usize = 0x2058_71E0;
+const modem_conf_on: u32 = 0x3d;
+const modem_conf_off: u32 = 0x25;
+
+const b_conf1_fe_20m: u32 = @as(u32, 1) << 11;
+const b_conf1_fe_40m: u32 = @as(u32, 1) << 12;
+const b_conf1_fe_80m: u32 = @as(u32, 1) << 13;
+const b_conf1_fe_160m: u32 = @as(u32, 1) << 14;
+const b_conf1_fe_apb: u32 = @as(u32, 1) << 15;
+const b_conf1_fe_pwdet_adc: u32 = @as(u32, 1) << 19;
+const b_conf1_fe_adc: u32 = @as(u32, 1) << 20;
+const b_conf1_fe_dac: u32 = @as(u32, 1) << 21;
+
+const reg_lpcon_lp_timer_conf: usize = lpcon_base + 0x04;
+const reg_lpcon_32k_conf: usize = lpcon_base + 0x14;
+const b_lpcon_clk_lp_timer_en: u32 = @as(u32, 1) << 3;
+
 const mmio = @import("builtin");
 extern fn bt_mmio_read(addr: usize) u32;
 extern fn bt_mmio_write(addr: usize, val: u32) void;
@@ -167,6 +195,28 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         (c0 & need0) == need0,
         (c1 & need1) == need1,
         (lc & b_lpcon_coex) != 0,
+    });
+
+    // 2.5) **SOC PLL 时钟源**：BT 与 PHY 的 deps 里都有它，但它不是门控位而是源选择
+    //      ⇒ 只开门控而源没接上，MAC 读回恒 0/全 1，轮询它的状态位永远等不到。
+    wr(reg_hp_clkrst_modem_conf, modem_conf_on);
+    const mc = rd(reg_hp_clkrst_modem_conf);
+    osal.logPublic("bt lp: modem_conf=0x{x:0>8} (want 0x3d) pll_ok={}", .{ mc, (mc & 0x3F) == modem_conf_on });
+
+    // 2.6) **PHY 前端时钟**：不开这路，PHY 起不来 ⇒ MAC 等不到 PHY 就绪。
+    wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_fe_80m |
+        b_conf1_fe_160m | b_conf1_fe_apb | b_conf1_fe_pwdet_adc | b_conf1_fe_adc | b_conf1_fe_dac);
+    const c1b = rd(reg_clk_conf1);
+    const fe_need = b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_fe_80m | b_conf1_fe_160m |
+        b_conf1_fe_apb | b_conf1_fe_pwdet_adc | b_conf1_fe_adc | b_conf1_fe_dac;
+    osal.logPublic("bt lp: clk_conf1=0x{x:0>8} fe_ok={}", .{ c1b, (c1b & fe_need) == fe_need });
+
+    // 2.7) **LP timer 时钟**（IDF 放在 mac_reset 之后；我们紧随其后，顺序同样满足"门控先于复位"）
+    wr(reg_lpcon_lp_timer_conf, rd(reg_lpcon_lp_timer_conf) & ~@as(u32, 0xF) | @as(u32, 1)); // 选 32k 源 + div=0
+    wr(reg_lpcon_32k_conf, (rd(reg_lpcon_32k_conf) & ~@as(u32, 0x3)) | @as(u32, 1)); // 32k 选内部 RC32K
+    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_clk_lp_timer_en);
+    osal.logPublic("bt lp: lp_timer_conf=0x{x:0>8} 32k_conf=0x{x:0>8} lpcon_clk=0x{x:0>8}", .{
+        rd(reg_lpcon_lp_timer_conf), rd(reg_lpcon_32k_conf), rd(reg_lpcon_clk_conf),
     });
 
     // 3) MAC 复位（时钟之后）：写 1 再写 0
