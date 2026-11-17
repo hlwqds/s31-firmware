@@ -51,6 +51,7 @@ export BOARD=/dev/ttyUSB0
 
 sudo scripts/host-prep-wire.sh up     # 幂等：放行 udp 67/53、tcp 9000，起监听器（accept 后读掉字节并停留 2 s）
 scripts/gate-board.sh                 # 构建 → 烧录 → 抓 30 s → 断言握手三段 + checks 计数
+scripts/demo-board.sh [PORT]          # C8 自检：构建 → 烧录 → 抓串口 → 断言；并演示 A/B 切槽与切回旧版本
 sudo scripts/host-prep-wire.sh down   # 收尾：撤销规则与监听器
 ```
 
@@ -62,6 +63,14 @@ sudo scripts/host-prep-wire.sh down   # 收尾：撤销规则与监听器
 CI 上的同一套入口：`ci.yml` 的 `board` job（`workflow_dispatch`，自托管 runner）默认
 `profile=net-wire`、`gate=true`，执行 `sudo scripts/host-prep-wire.sh up` → `scripts/gate-board.sh`
 → `trap` 收尾 `down`；`gate=false` 时才退回裸 `run_e2e.py --board`（只做冒烟）。
+
+`demo-board.sh` 与发布门禁的分工：它**不碰网络**（不需要 DHCP/监听器/防火墙），只验"这套固件
+自己能不能起来、能不能切槽并切回来"，证据落 `logs/c8-demo.log`；发布门禁仍是 `gate-board.sh`。
+它跑四步：① 默认固件从 factory 起来（`verdict=pass` / `ab=yes count=2` / crc32 match）；
+② 正常镜像写进 ota_0，用 `-Dab-stage=a` 的镜像切槽（`offset 0x190000` + `confirmed VALID`）；
+③ 把 `-Dab-revert` 的镜像写进 ota_0，它判废当前槽并复位 ⇒ 回到 factory（旧版本）；
+④ 恢复默认固件并清 otadata/计数扇区。**第 3 步之前必须先把 factory 换回基线镜像** ——
+否则判废后 bootloader 回到 factory、而那里仍是 stage 构建，会立刻又被切走，看起来像"切回没生效"。
 
 `gate-board.sh` 自己会删掉上一轮的 `logs/e2e-net-wire-boot.log`（证据只能来自本轮），
 `skipped/no-dhcp-server` 在门禁里算失败，前置缺失时退出码 2 并打印修复命令。

@@ -36,6 +36,16 @@
   附带观测：320 档 `mhz_measured=320` ⇒ APB 未随分频改变，硬件自动纠正（`rtc_clk.c` 注释警告的行为）。
   构建开关 `-Dperf-tiers`，默认构建不含改频代码。
 
+- **C8 综合 demo（2026-11-18）**：新增 `scripts/demo-board.sh [PORT]`，一条命令完成
+  构建 → 烧录 → 抓串口 → 断言，并演示 A/B：① 默认固件从 factory 起来（`verdict=pass`）；
+  ② 正常镜像写进 ota_0 后切槽（`offset 0x190000` + `confirmed VALID`）；
+  ③ `-Dab-revert` 的镜像判废当前槽（`marked INVALID -> reverting`）⇒ 回到 factory（旧版本）；
+  ④ 恢复默认固件并清 otadata/计数扇区。
+  它不碰网络（不需要 DHCP/监听器/防火墙），发布门禁仍是 `scripts/gate-board.sh`。
+  踩到的顺序坑：第 3 步之前必须先把 factory 换回**不带** `-Dab-stage` 的基线镜像，
+  否则判废后 bootloader 回到 factory、而那里仍是 stage 构建，会立刻又被切走。
+  新增构建开关 `-Dab-revert`。证据：`logs/c8-demo.log`（四段串口原文 + 尾部标注）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

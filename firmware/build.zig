@@ -64,6 +64,8 @@ pub fn build(b: *std.Build) void {
     const perf_run = b.option(bool, "perf-run", "run the cycle benchmark at boot (C7)") orelse false;
     // C7 三档：切 CPU 到 80/160/320 各测一遍（改频，失败会挂；默认关闭）。
     const perf_tiers = b.option(bool, "perf-tiers", "also sweep CPU clock tiers 80/160/320 (C7, changes clocks)") orelse false;
+    // C8：按需切回旧版本 —— 把当前槽标 INVALID 后复位，bootloader 改走另一槽/ factory。
+    const ab_revert = b.option(bool, "ab-revert", "mark the running slot INVALID and reset (C8 revert-to-old)") orelse false;
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -178,7 +180,7 @@ pub fn build(b: *std.Build) void {
     ) }));
     app.root_module.addImport("ab_fail_flag", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
         "ab_flags.zig",
-        b.fmt("pub const enabled = {};\npub const stage = \"{s}\";\n", .{ ab_fail, ab_stage }),
+        b.fmt("pub const enabled = {};\npub const stage = \"{s}\";\npub const revert = {};\n", .{ ab_fail, ab_stage, ab_revert }),
     ) }));
     app.root_module.addImport("board", board);
     app.root_module.addImport("enabled", enabled_mod);

@@ -64,6 +64,9 @@ pub export fn main() noreturn {
     if (comptime perf_flag.run) runPerf();
     if (comptime perf_flag.tiers) runPerfTiers();
 
+    // --- C8: 按需切回旧版本（`-Dab-revert`）--------------------------------
+    if (comptime ab_flags.revert) revertToOld(boot_state);
+
     // --- C5: 切槽（`-Dab-stage=a|b`），写完复位让 bootloader 重新选 --------
     if (comptime ab_flags.stage.len > 0) {
         stageBoot(ab_flags.stage);
@@ -225,6 +228,27 @@ fn measureCpuMhz() u32 {
     const us = board.hw.elapsedUs(t0);
     if (us == 0) return 0;
     return @intCast((c1 - c0) / us);
+}
+
+/// `-Dab-revert`：把当前槽标成 INVALID 后复位 —— bootloader 会跳过它、改走另一槽或 factory。
+///
+/// 这就是 C5 回滚用的同一个动作（`markInvalid`），只是由人触发而不是由失败计数触发；
+/// 因此 C8 的"可通过 OTA 槽位切回旧版本"与 C5 的回滚共用一条代码路径。
+fn revertToOld(boot: ?ota_ab.Boot) void {
+    if (boot) |b| {
+        if (b.selection.slot == null) {
+            board.log.raw("ota: already on factory, nothing to revert\n");
+            return;
+        }
+        if (ota_ab.markInvalid(b)) {
+            board.log.line("ota: slot {s} marked INVALID -> reverting to the old image", .{b.selection.desc()});
+        } else |e| {
+            board.log.line("ota: markInvalid failed: {s}", .{@errorName(e)});
+            return;
+        }
+        board.log.raw("ota: resetting to boot the old image\n");
+        board.hw.reset();
+    }
 }
 
 /// `-Dab-stage=a|b`：把下次启动切到指定槽，然后复位。
