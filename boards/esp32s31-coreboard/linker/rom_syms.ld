@@ -488,3 +488,5 @@ PROVIDE(phy_xpd_rf = 0x2f8016b8);
 /* ---- 外围基址（IDF `esp32s31.peripherals.ld`）：PHY 源码对象需要 ---- */
 PROVIDE(MODEM_SYSCON = 0x20109C00);
 PROVIDE(MODEM_LPCON  = 0x2010F000);
+PROVIDE(HP_SYS_CLKRST = 0x20587000);   /* IDF `esp32s31.peripherals.ld` */
+PROVIDE(LP_CLKRST    = 0x20701000);

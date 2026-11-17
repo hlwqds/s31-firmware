@@ -1625,8 +1625,11 @@ export fn s31_btdm_free(ptr: ?*anyopaque) callconv(.c) void {
     btdmFree(ptr);
 }
 export fn s31_phy_log(tag: [*:0]const u8, msg: [*:0]const u8) callconv(.c) void {
-    _ = msg; // 只打 tag，格式串不展开（裸机无 vprintf）
-    logLine("phy: {s}", .{std.mem.span(tag)});
+    // ⚠ **不要解引用 tag**：IDF 的 `esp_log` 是宏，实际调用点传进来的第 1 个参数
+    // 未必是字符串常量（实测 `a0=3` ⇒ 拿它当指针会 `load access fault`）。
+    _ = tag;
+    _ = msg;
+    logLine("phy: (log)", .{});
 }
 export fn s31_now_us() callconv(.c) u64 {
     return @as(u64, timeGet()) * 1000;

@@ -35,10 +35,11 @@ extern void s31_btdm_free(void *ptr);
 extern void s31_phy_log(const char *tag, const char *msg);
 extern uint64_t s31_now_us(void);
 
-/* ------------------------------------------------------------------ */
-/* 寄存器基址（IDF `esp32s31.peripherals.ld`）                          */
-/* ------------------------------------------------------------------ */
-volatile void *const HP_SYS_CLKRST = (volatile void *)0x20587000u;
+/* 注：`HP_SYS_CLKRST` 等**寄存器基址是绝对符号**，不是变量 ——
+ * IDF 用 `PROVIDE(HP_SYS_CLKRST = 0x20587000)` 定义，代码里取 `&HP_SYS_CLKRST`。
+ * 我一开始把它写成 `volatile void *const HP_SYS_CLKRST = ...`，于是 `&符号`
+ * 得到的是**那个变量在 drom 里的地址**（实测 `0x40104f48`），PHY 于是往 flash 写
+ * ⇒ `store access fault`。正确做法是放进 `rom_syms.ld`。 */
 
 /* ------------------------------------------------------------------ */
 /* PHY 初始化表：IDF `phy_init.c` 里的 `phy_init_data`（128 字节）       */
