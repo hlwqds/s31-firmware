@@ -4707,6 +4707,7 @@ panic: exception code=1 (instruction access fault)
 | `logs/ch25-start-boot.log` | `INITWIN qrecv=2 clken=1` / `INIT OK` / `calling esp_wifi_start` |
 | `logs/ch25-spinpatch-yield-boot.log` | 自旋让出那次：`idle_calls` 涨到 4,000,000 而 `hooks` 冻在 57（"大部分 idleHook 没切任务"的实物） |
 | `logs/ch25-spinpatch-panic-boot.log` | 桩里直调 `pumpRealTask` 的 `!! 3d306120` 垃圾跳转（回滚依据） |
+| `logs/ch25-clock-readback-boot.log` | 时钟六寄存器 × 三时刻读回表（排除"时钟没开"的实物） |
 
 ### 取证：`0x3d306120` **不在我们的镜像里**——是"把数据当地址跳"
 
