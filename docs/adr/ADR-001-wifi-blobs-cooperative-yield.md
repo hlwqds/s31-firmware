@@ -3930,3 +3930,29 @@ ROMGLOB swq=0x2f021330 ppq=0x2f0203b0 ppsem=0x0
 
 ⇒ 两种可能：① `0x40039914..0x40039920`（删+清）在之后执行过；② 我们读 `0x2f07ff0c` 的**时机**晚于它被改写。
 ⇒ 下一步：**在 init 窗口结束后立刻读 `0x2f07ff14`**（现在只在自旋时读），看它是"从来没写"还是"写了又被清"。
+
+### ★★ 关键分支：`pp_task_hdl` 非零 ⇒ `pp_create_task` 走"删除已有任务"路径
+
+```asm
+400397be: jalr a5              # osi_funcs[42] = _task_get_max_priority
+400397c0: lui s1,0x2f080
+400397c4: lw a5,-232(s1)       # a5 = pp_task_hdl (0x2f07ff18)
+400397c8: mv s4,a0             # s4 = max_priority
+400397ca: beqz a5, 0x400397ec  # ★ 为 0 → 直接去创建；非 0 → 走下面
+400397cc: ... 错误日志
+400397de: lw a5,-188(s0)       # osi_funcs
+400397e2: lw a0,-232(s1)       # a0 = pp_task_hdl
+400397e6: lw a5,152(a5)        # osi_funcs[38] = _task_delete
+400397ea: jalr a5              # **删掉"已有"的任务**
+```
+
+**我们的 `pp_task_hdl = 0x2f0203b0`（非零）** ⇒ **走的是"先删已有任务"这条路径**。
+
+而 `0x2f0203b0` 很可能是我们 `_task_create` 写出的 **`task_dummy`** 地址（假任务对象），
+并不是真正的 PP 任务句柄 ⇒ **`_task_delete` 作用在一个假对象上**，可能把后续流程带偏。
+
+⇒ **这条是"我们的 init 与 IDF 走不同分支"的一个具体、可修的点**：
+IDF 那边 `pp_task_hdl` 在 init 时应当为 0（首次创建），我们却带着上一次 `_task_create` 留下的假句柄。
+
+⇒ 下一步：在 `esp_wifi_init_internal` 之前把 **`pp_task_hdl` 清零**（或让 `_task_delete` 对假对象安全），
+看分支是否改变。
