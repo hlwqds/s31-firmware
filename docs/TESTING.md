@@ -171,6 +171,8 @@ python3 tests/e2e/run_e2e.py --board --profile net     # 需要板子与 idf-boo
 | **管道吃输出** | `cmd \| tail -3` 可能什么都不留；`$?` 取的是 `head` 的退出码 | 重定向到文件，再 `grep '^Build Summary'` / 单独取 `$?` |
 | **改源码 ≠ 刷固件** | lab/bench/demo 镜像覆盖了 factory，回退源码后串口只剩 bootloader 行 ⇒ 像"启动回归" | 看串口**首行**（见上节表格），需要时重刷生产固件并确认 `verdict=pass` |
 | **过期的"预期失败"** | 步骤名写 `xfail tls`，而命令其实跑全部 profile 且 tls 已通过 | 审计时逐个核对步骤名与实际命令 |
+| **缺键的基线** | `tests/baselines.json` 里没有某组件的键 ⇒ 基线按 0 算 ⇒ 它的用例**完全不受保护**（`bt-blobs` 曾有 36 项如此） | 加组件时同步加键；改完用 `check-coverage.py` 看 `actual` 与 `baseline` 是否相等 |
+| **文档里的数字** | 表格/README 引用的是旧的或别的单元的计数（三处 `14/14` 实为 28；`net-wire` README 曾把 lab 的计数当成组件的） | 改完代码后核对：主机用例数、板侧 checks 数、lab 用例数**是三个不同的数**，别混用 |
 
 本仓的入口清单（`check-all` 覆盖前 8 项）：
 
