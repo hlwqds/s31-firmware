@@ -224,7 +224,8 @@ test "config: 默认值可填、魔数落位" {
     //   stack=4096 prio=23 hci_cmd=5 hci_conn=3
     // `task_stack_size = 0` 尤其致命：归档建任务时栈为 0，我们 `taskCreate`
     // 的 `stack_size >= 512` 门直接降级成"只登记不建上下文" ⇒ 任务体永不执行。
-    c.btdm.task_stack_size = 4096;
+    c.btdm.task_stack_size = 8192; // 裸机无栈保护页 ⇒ 比 IDF 的 4096 多给 4 KB（有意为之）
+    c.ble.controller_task_stack_size = 8192; // 两处保持一致
     c.btdm.task_prio = 23;
     c.btdm.hci_cmd_num = 5;
     c.btdm.hci_conn_num = 3;
@@ -241,68 +242,35 @@ test "config: 默认值可填、魔数落位" {
 /// ⚠ 若哪天打开 `CONFIG_BT_NIMBLE_EXT_ADV`，`ble_hci_evt_buf_size` 与
 /// `ble_ext_adv_max_size` 会变成 **257 / 1650**（`ble_user_cfg.h:34-35` 走 MYNEWT_VAL），
 /// 不是这里的 70 / 31。
+/// **IDF `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` 的 192 字节实测副本**（esp32s31，oracle 打印）。
+///
+/// 为什么整份照抄而不是逐字段填：`.ble`（偏移 0..167）里有十几个非 0 字段
+/// （事件/连接缓冲数、扫描与同步列表长度、各超时与门限），我们的实现此前**全留 0**；
+/// 其中任何一个是"计数"类字段，归档就会按 0 去算尺寸并写坏它自己的 env。
+/// 逐字段猜了太多轮，直接把 192 字节搬过来最省事也最忠实。
+/// `btdm` 在偏移 **168**（不是 112）：version=0x20260127、stack=4096、prio=23、
+/// hci_cmd=5、hci_conn=3、mode=1、magic=0x5a5aa5a5 —— 与我们原先手填的值一致。
+pub const idf_cfg192 = [192]u8{
+    0x29, 0x10, 0x24, 0x20, 0x04, 0x00, 0x1e, 0x00, 0x08, 0x00, 0x05, 0x01, 0x14, 0x00, 0x14, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x3c, 0x00, 0x02, 0x00, 0xb8, 0x0b, 0x10, 0x00, 0x78, 0x01, 0xf6, 0x01, 0x54, 0x03, 0x72, 0x06,
+    0x01, 0x00, 0x00, 0x00, 0x40, 0x9c, 0x00, 0x00, 0x03, 0x00, 0x0c, 0x00, 0x05, 0x02, 0x0a, 0x00,
+    0x01, 0x01, 0x01, 0x00, 0x72, 0x06, 0x00, 0x10, 0x17, 0x00, 0x00, 0x00, 0x00, 0xce, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x00, 0x28, 0x00, 0x00, 0x01, 0x00, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa5, 0xa5, 0x5a, 0x5a,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x27, 0x01, 0x26, 0x20, 0x00, 0x10, 0x17, 0x00,
+    0x05, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xa5, 0xa5, 0x5a, 0x5a, 0x00, 0x00, 0x00, 0x00,
+};
+
 pub fn defaults() Config {
-    var c: Config = .{};
-    c.ble = .{
-        .config_version = BLE_CONFIG_VERSION,
-        .ble_ll_resolv_list_size = 4, // BT_LE_LL_RESOLV_LIST_SIZE
-        .ble_hci_evt_hi_buf_count = 30, // ble_user_cfg.h:106
-        .ble_hci_evt_lo_buf_count = 8, // 同区段 fallback
-        .ble_ll_sync_list_cnt = 5,
-        .ble_ll_sync_cnt = 1,
-        .ble_ll_rsp_dup_list_count = 0,
-        .ble_ll_adv_dup_list_count = 0,
-        .ble_ll_tx_pwr_dbm = 0,
-        .rtc_freq = RTC_FREQ_32K,
-        .ble_ll_sca = 60, // BT_LE_LL_SCA（ppm）
-        .ble_ll_scan_phy_number = 1, // BLE_LL_SCAN_PHY_NUMBER_N（非 2M-PHY 分支）
-        .ble_ll_conn_def_auth_pyld_tmo = 3000, // ble_user_cfg.h:159
-        .ble_ll_jitter_usecs = 16, // ble_user_cfg.h:155
-        .ble_ll_sched_max_adv_pdu_usecs = 376, // :151
-        .ble_ll_sched_direct_adv_max_usecs = 502, // :149
-        .ble_ll_sched_adv_max_usecs = 852, // :147
-        .ble_scan_rsp_data_max_len = 31, // = DEFAULT_BT_LE_EXT_ADV_MAX_SIZE
-        .ble_ll_cfg_num_hci_cmd_pkts = 1, // :145
-        .ble_ll_ctrl_proc_timeout_ms = 40000, // :143
-        .nimble_max_connections = 3, // BT_LE_MAX_CONNECTIONS
-        .ble_whitelist_size = 12, // ble_user_cfg.h:100
-        .ble_acl_buf_size = 517, // BT_LE_ACL_BUF_SIZE
-        .ble_acl_buf_count = 10, // BT_LE_ACL_BUF_COUNT
-        .ble_hci_evt_buf_size = 70, // :82
-        .ble_multi_adv_instances = 1,
-        .ble_ext_adv_max_size = 31, // :88
-        .controller_task_stack_size = 8192, // 裸机没有栈保护页 ⇒ 比 IDF 的 4096 多给 4 KB 买个保险
-        .controller_task_prio = 23, // ESP_TASK_BT_CONTROLLER_PRIO
-        .controller_run_cpu = 0,
-        .enable_qa_test = 0,
-        .enable_bqb_test = 0,
-        .enable_tx_cca = 0,
-        .cca_rssi_thresh = 206, // 256 - DEFAULT_BT_LE_CCA_RSSI_THRESH(50)
-        .sleep_en = 0,
-        .coex_phy_coded_tx_rx_time_limit = 0,
-        .dis_scan_backoff = 0,
-        .ble_scan_classify_filter_enable = 1,
-        .main_xtal_freq = MAIN_XTAL_FREQ_MHZ,
-        .ignore_wl_for_direct_adv = 0,
-        .enable_pcl = 0,
-        .csa2_select = 1,
-        .enable_csr = 0,
-        .backoff_rssi = @bitCast(@as(u8, @intCast(-100 + 256))),
-        .iso_enabled = 0,
-        .iso_bqb_test = 0,
-        .iso_fra_unseg = 0,
-        .iso_nsfc_en = 0,
-        .iso_nsfc_num = 0,
-        .iso_buf_count = 0,
-        .iso_buf_size = 0,
-        .iso_big_count = 0,
-        .iso_bis_count = 0,
-        .iso_bis_per_big = 0,
-        .iso_cig_count = 0,
-        .iso_cis_count = 0,
-        .iso_cis_per_cig = 0,
-        .config_magic = BLE_CONFIG_MAGIC,
-    };
+    // **整份照抄 IDF 的 192 字节实测值**（见 `idf_cfg192`）：
+    // `.ble` 里十几个计数/门限字段我们此前全留 0，归档据此算尺寸会写坏自己的 env。
+    var c: Config = undefined;
+    @memcpy(std.mem.asBytes(&c), &idf_cfg192);
+
     c.btdm = .{
         .version = BTDM_CONFIG_VERSION,
         .task_stack_size = 8192, // 同上：溢出是静默内存损坏，代价可忽略
@@ -315,6 +283,7 @@ pub fn defaults() Config {
         .bluetooth_mode = BTDM_CONTROLLER_MODE_BLE,
         .magic = BTDM_CONFIG_MAGIC_VALUE,
     };
+    c.ble.controller_task_stack_size = 8192; // 与 btdm.task_stack_size 一致（裸机余量）
     return c;
 }
 
