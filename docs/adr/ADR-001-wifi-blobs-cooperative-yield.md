@@ -4786,3 +4786,26 @@ force-on"这个解释也站不住（`lpcon+1C_fo` 仍从 `0x4` 变 `0x5`，blob 
 
 ⇒ 到这一步，**时钟侧能对的都对了**（SYSCON ICG / clk_conf1 / LPCON clk_conf / LPCON ICG 四张图全在 IDF 值上），
 `MAC_ST[15:13]` 依旧不动 ⇒ 剩下唯一方向就是 **IDF init 内部哪一步让这三位归零**（逐 osi 调用点插桩）。
+
+### ★★ 决定性读数：bits 13–15 被**硬件强制置 1**，写什么都回 1
+
+```text
+wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
+wifi-init-probe: after W1C write 0xE000 -> 0x0000e000        # 写 1 不清（不是 W1C）
+wifi-init-probe: after write 0x00FF1000 -> 0x00fff000        # ★ 写 0 进去，读回仍是 1
+```
+
+`0x00FF1000 | 0xE000 = 0x00FFF000`——**读回值恰好等于"写入值 | 0xE000"**。
+
+⇒ 这三位**既不是 W1C，也不是普通可写位**：它们是**硬件驱动的状态**，
+软件写 0 写 1 都改不了，读出来恒为 1。
+
+⇒ 而 IDF start 之后的值是 **`0x00FF1000`**（bits 13–15 = **0**）⇒ **IDF 侧这三位是 0**。
+
+⇒ 所以差异是**硬件状态本身**：IDF 的 init 把 MAC 带到了"这三位为 0"的状态，我们的没有。
+时钟四张图（SYSCON ICG / clk_conf1 / LPCON clk_conf / LPCON ICG）**全部已在 IDF 值上**，
+所以缺的不是时钟位，而是**某条 MAC 级操作**（`ic_mac_init` / `hal_mac_*` / MAC 复位序列）。
+
+⇒ 唯一还没试的那条：`rstmac=0` 说明 blob 在我们的运行里**从未调用 `_wifi_reset_mac`**，
+而 IDF 的 init 会调 —— 下一步要在 **init 期间**（不是 init 之后）补这个复位，
+或者让被 b14 挡掉的使能函数（`0x40034d1a`）真正跑起来。

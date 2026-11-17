@@ -1008,6 +1008,12 @@ pub fn run() noreturn {
                 {
                     dumpClockRegs("before-start");
                     log.line("wifi-init-probe: MAC_ST before start = 0x{x:0>8} (spin mask 0xE000)", .{mac_st.*});
+                    // **W1C 判别**：若 bits 13-15 是"写 1 清零"，写 0 当然没反应（之前试过），写 1 才会清。
+                    // IDF start 后是 `0x00FF1000`（bits 13-15 = 0），我们是 `0x00FFF000`——差的就是这三位。
+                    mac_st.* = 0xE000;
+                    log.line("wifi-init-probe: after W1C write 0xE000 -> 0x{x:0>8}", .{mac_st.*});
+                    mac_st.* = 0x00FF_1000;
+                    log.line("wifi-init-probe: after write 0x00FF1000 -> 0x{x:0>8}", .{mac_st.*});
                     // **判别实验**：手动脉冲 `rst_wifimac`（`_wifi_reset_mac` 钩子，bit9，脉冲已加宽到 20 µs），
                     // 看 MAC_ST 的 bits 13-15 是否因此清零——若清不掉，说明那三位不属于这个复位域。
                     {
