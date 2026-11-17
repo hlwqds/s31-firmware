@@ -490,6 +490,8 @@ pub fn run() noreturn {
     // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     dumpClockRegs("before-init");
+    // **b14 / b21 门在新前提下的重测已做（均无效）**：b14=1 或 b14=1+b21=1 之后
+    // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);
     dumpClockRegs("after-init");
     log.line("wifi-init-probe: INITWIN qsend={d} qrecv={d} rstmac={d} clken={d} semcreate={d} semnull={d}", .{
