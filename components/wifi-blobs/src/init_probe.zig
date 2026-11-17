@@ -228,6 +228,7 @@ fn dumpClockRegs(tag: []const u8) void {
         // 我们只写了 SYSCON 侧那张 ⇒ 这两格很可能是"域没真上电"的另一半。
         .{ .name = "lpcon+1C_fo", .addr = 0x2010_F01C },
         .{ .name = "lpcon+20_icg", .addr = 0x2010_F020 },
+        .{ .name = "hp1e0_socpll", .addr = 0x2058_71E0 },
     };
     log.line("wifi-init-probe: CLKDMP[{s}]", .{tag});
     for (regs) |r| {

@@ -5330,3 +5330,40 @@ for (int k = 0; k < tr_idx; k++)
 说明清位发生在 `device_control` 之后、enable 收尾处）。
 
 ⇒ 注意：`modem_clock.c` 是 IDF 源码，改完**测完必须 `git checkout` 还原**（本轮已证实 printf 版本会导致重启循环）。
+
+### ★★★ 整块 dump 的结论 + 一个**方法学发现**（探针自己的实验在污染时钟寄存器）
+
+**IDF 的 `wifi_module_enable()` 整块净变更只有 3 个寄存器**（`0x20109C00` 起 13 字 + `0x205871E0` 的 BEFORE/AFTER）：
+
+| 偏移 | BEFORE | AFTER |
+|---|---|---|
+| `0x00` | `0x00000100` | `0x00000100` |
+| `0x04` | `0x00201002` | `0x00201002` |
+| `0x08` | `0x0` | `0x0` |
+| **`0x0C` ICG** | `0x0` | **`0x64646400`** |
+| `0x10` rst_conf | `0x0` | `0x0` |
+| **`0x14` clk_conf1** | `0x0` | **`0x000007FF`** |
+| `0x18` / `0x1C` | `0x0` | `0x0` |
+| `0x20` | `0x00002070` | `0x00002070` |
+| `0x24` / `0x28` | `0x0` | `0x0` |
+| `0x2C` | `0x00000044` | `0x00000044` |
+| `0x30` | `0x02508080` | `0x02508080` |
+| **`hp1e0`** | `0x25` | **`0x3D`** |
+| **`MAC_ST`** | `0xE000` | **`0`** |
+
+⇒ **只有上面标粗的三个寄存器变化，而这三个我们早就都写了** ⇒ **内容层面已完全对齐，`MAC_ST` 仍不清。**
+
+**方法学发现（重要）**：我们自己的 `before-start` 读数是**被探针自己的 PHY 实验污染的**：
+
+```text
+CLKDMP[after-init]  icg=0x64646000  clk_conf1=0x000007ff  hp1e0=0x3d   ← 与 IDF 一致 ✓
+CLKDMP[before-start] icg=0x64646400  clk_conf1=0x0038e7ff  hp1e0=0x3d   ← 被改回去了
+```
+
+`init_probe.zig:601` 有一段 **PHY bring-up 实验**：`conf1.* = before | bits;`（PHY/FE 组位）
+—— 它在 init 之后又把 `clk_conf1` 写回 `0x38e7ff`。`icg` 的 `0x64646400` 同理来自别的探针实验。
+
+⇒ **所以"我们的 `before-start` 与 IDF 不同"这个判读是错的**：`after-init` 才是可比时点，那里三项已全对。
+
+⇒ 下一步：把 `before-start` 那次读数的**探针自身写入**去掉（或把 PHY 实验段挪到 start 之后），
+让 `before-start` 保持 `after-init` 的值，再看 start 是否还能自旋——**这才是干净的对照**。
