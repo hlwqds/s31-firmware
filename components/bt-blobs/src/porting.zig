@@ -229,6 +229,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     }
 
     // 1) 开时钟（读-改-写，别把别人的位清掉）
+    // **只置 IDF 在 step 5 后持有的位**：对拍实测 `clk_conf1 = 0x00070080`
+    // （bit7 wifibb_80x1 + bit16 bt_apb + bit17 btbb + bit18 btmac）。
+    // 此前的 `0x003ff880` 多置了 PHY-FE 一族（那是 wifi 侧的遗留 workaround）。
     wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_btmac | b_conf1_btbb |
         b_conf1_bt_apb | b_conf1_wifibb_80x1);
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
@@ -268,11 +271,17 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     wr(reg_lpcon_lp_timer_conf, rd(reg_lpcon_lp_timer_conf) & ~@as(u32, 0xF) | @as(u32, 1)); // 选 32k 源 + div=0
     wr(reg_lpcon_32k_conf, (rd(reg_lpcon_32k_conf) & ~@as(u32, 0x3)) | @as(u32, 1)); // 32k 选内部 RC32K
     // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
-    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_clk_wifipwr_en |
-        b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
-    // ⚠ **不写 `MODEM_LPCON + 0x20`**：oracle 实测 IDF 在 step 4/5 之后该字都是
-    // `0x00000000`，即 IDF 的 BT 路径**没有**填这个位图。先前那条 `0x66660000`
-    // 是从 wifi 侧借来的，属于**过度修改**，已撤销。
+    // 对拍：IDF step 5 后 `lpcon+0x18 = 0x0b`（bit0 wifipwr + bit1 coex + bit3 lp_timer）。
+    // **不置 bit2**（i2c_mst）—— 我们的 `0x0f` 比 IDF 多一位。
+    const keep = b_lpcon_clk_wifipwr_en | b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en;
+    wr(reg_lpcon_clk_conf, (rd(reg_lpcon_clk_conf) & ~@as(u32, 0x2)) | keep);
+    // **lpcon+0x04 = 0x41 / +0x08 = 0x314 / +0x0c = 0x01**（IDF step 5 后的实测值，我们此前未写）
+    wr(lpcon_base + 0x04, rd(lpcon_base + 0x04) | @as(u32, 0x40));
+    wr(lpcon_base + 0x08, rd(lpcon_base + 0x08) | @as(u32, 0x314));
+    wr(lpcon_base + 0x0c, rd(lpcon_base + 0x0c) | @as(u32, 0x01));
+    // **`MODEM_LPCON + 0x20` = 0x66660000**：step-5 边界四点对拍实测 IDF 写这个值
+    // （此前我按 **step4** 快照误判为 0 并撤销过一次 —— 那是错的时间点）。
+    wr(reg_lpcon_power_st, lpcon_power_st_value);
     osal.logPublic("bt lp: lp_timer_conf=0x{x:0>8} 32k_conf=0x{x:0>8} lpcon_clk=0x{x:0>8}", .{
         rd(reg_lpcon_lp_timer_conf), rd(reg_lpcon_32k_conf), rd(reg_lpcon_clk_conf),
     });
@@ -328,6 +337,24 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         osal.logPublic("bt lp: PMU ICG apply done func=0x{x:0>8} apb=0x{x:0>8} modem=0x{x:0>8} slp=0x{x:0>8}", .{
             rd(pmu + 0xfc), rd(pmu + 0x100), rd(pmu + 0x104), rd(pmu + 0xf8),
         });
+    }
+
+    // **四个 modem 窗口全量 dump**（step 5 末尾）：与 oracle 的同名 dump 逐字对拍。
+    // 直读 `0x2010B000` 会挂板，所以"我们的块是否可读"只能靠寄存器状态等价来推断。
+    {
+        const wins = [_]struct { name: []const u8, base: usize, n: usize }{
+            .{ .name = "syscon", .base = 0x2010_9C00, .n = 16 },
+            .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
+            .{ .name = "pwr", .base = 0x2010_D000, .n = 16 },
+            .{ .name = "clkrst", .base = 0x2058_7000, .n = 128 },
+        };
+        for (wins) |w| {
+            var i: usize = 0;
+            while (i < w.n) : (i += 1) {
+                const v = (@as(*volatile u32, @ptrFromInt(w.base + i * 4))).*;
+                if (v != 0) osal.logLine("win: {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
+            }
+        }
     }
 
     // 3) **MAC 复位族**（时钟之后）。IDF `modem_clock_module_mac_reset(PERIPH_BT_MODULE)`
