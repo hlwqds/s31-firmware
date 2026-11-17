@@ -4586,34 +4586,32 @@ panic 0
 （`in_task` 一直是 true）。⇒ **"桩确实让出了"这一点还没被证实**，
 上述"假设被否"要先打上这个保留。
 
-### ★★★★ 判决：**让出真的生效了，MAC_ST bits 13–15 仍不清** ⇒ "任务没被调度"这条解释被否
+### ⚠⚠ 撤回上一条判决：那次实验**根本没泵任务**，判决无效
 
-把桩里的 `!in_task` 守卫换成重入标志（`spin_stub_depth`）后，`idleHook` 真被调用：
+**先记错**：上一节把 `idle_calls=4,000,000` 当成"桩让出了 400 万轮、PP worker 被泵了 400 万次"，
+据此宣布"让 PP worker 跑起来也清不掉 MAC_ST"。
+
+**真相**（两个数对不上，且日志末尾写着）：
 
 ```text
-wifi-init-probe: spin patched -> 0x4004cab2 (auipc=0x11044097 jalr=0x8b4080e7)
-wifi-init-probe: idle_calls=3998000 in_task=true hooks=57 tasks=1 e0=0x2f00d70a e1=0x0
-wifi-init-probe: idle_calls=4000000 in_task=true hooks=57 tasks=1 e0=0x2f00d70a e1=0x0
-（没有 esp_wifi_start rc= 行）
-panic 0
+idle_calls=4000000 in_task=true hooks=57 tasks=1 e0=0x2f00d70a
+wifi-init-probe: idle budget exhausted (4000001), halting     ← 是 **idleHook 自己的预算**在停机
 ```
 
-| 读数 | 值 | 含义 |
-|---|---|---|
-| `idle_calls` | **4,000,000** | 桩真的让出了 400 万轮（不再是"跑了但没让出"） |
-| `hooks` | **20 → 57** | **PP worker 在 start 期间真的被泵起来跑了**（多了 37 次钩子调用） |
-| `MAC_ST & 0xE000` | **仍非 0** | **400 万轮里一次都没清** |
-| `esp_wifi_start rc=` | **无** | start 仍未返回 |
+1. **`hooks` 只从 20 涨到 57（37 次）**。PP worker 每被泵一次，它的 `queue_recv`/`take` 都会 `note()`；
+   若真泵了 400 万次，`hooks` 应在百万量级。**37 次说明实际切到任务只有几十次。**
+2. **`in_task` 一直是 true** ⇒ `idleHook` 每轮走的是"从任务切回主上下文"那个分支
+   （`if (in_task) { … swapContext(&cur_task/task_ctx, &main_ctx) … return; }`），**`pumpRealTask()` 根本没被调用**。
+3. 更糟的是：那时我们在**主上下文的桩里**，`in_task` 却是 true ⇒ 每轮都在**用错误的基址**做 `swapContext`
+   ⇒ 这 400 万次不是"让出"，是**400 万次错位切换**。
 
-⇒ **"让 PP worker 在 start 期间跑起来，它就会清掉那三位"这个假设，现在是在"让出确实发生"的前提下被否掉的。**
-⇒ 于是"MAC_ST 不清"不再是"任务没被调度"的后果，而是**独立的硬件状态**。
+⇒ **"让 PP worker 在 start 期间跑起来就能清 MAC_ST"这个假设，至今仍未被测过。**
+⇒ 需要先修 `in_task` 的记账（桩里应视为主上下文），再加"实际切任务次数"计数器，
+三个数（`idle_calls` / `switches` / `hooks` 增量）同量级才算让出真的生效。
 
-### 已否掉的清位路径（汇总）
+### 已否掉的清位路径（订正后）
 
-1. 直写 `MAC_ST`（可写，但 blob 随后自己 `or 0x0FF10000` 改回，bits 13–15 不受影响）；
+1. 直写 `MAC_ST`（**可写**，但 blob 随后自己 `or 0x0FF10000` 改回，bits 13–15 不受影响）；
 2. `rst_wifimac` 脉冲（bit9，20 µs 宽）；
-3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（ADR 实验 9 早已判负）；
-4. **让 PP worker 在 start 期间跑（本轮新增，400 万轮让出）**。
-
-⇒ 剩下的方向：查**这三位在 IDF 侧是被谁清掉的**（对比 IDF init 前后的寄存器轨迹），
-而不是继续在"怎么清"上试变体。
+3. `rst_wifibb` 脉冲 + `clk_conf1=0x17b` + `clk_wifibb_80x1_en`（ADR 实验 9 早已判负）。
+4. ~~让 PP worker 在 start 期间跑~~ —— **未测**（上一节误记，已撤回）。

@@ -179,6 +179,8 @@ fn nvsStats() u96 {
 
 /// round-robin 泵**真实任务上下文**（init 的 `take` 阻塞期间，PP 任务必须能跑）。
 var pump_idx: usize = 0;
+/// **实际切到任务的次数**——`idle_calls` 是"进了钩子几次"，不等于"切了几次任务"。
+var task_switches: u64 = 0;
 var cur_task: ?*impl.Task = null;
 fn pumpRealTask() bool {
     if (impl.task_count == 0) return false;
@@ -192,6 +194,7 @@ fn pumpRealTask() bool {
         in_task = true;
         impl.current_is_task = true;
         sched.enterAs(&t.ctx);
+        task_switches +%= 1;
         sched.swapContext(&main_ctx, &t.ctx);
         // 从任务切回：任务在自己的阻塞点调了 on_idle。
         cur_task = null;
@@ -228,7 +231,10 @@ fn spinYieldStub() callconv(.c) void {
             spin_stub_depth -= 1;
         }
         if (rounds > 4_000_000) {
-            log.line("wifi-init-probe: spin stub gave up rounds={d} MAC_ST=0x{x:0>8}", .{ rounds, mac_st.* });
+            log.line(
+                "wifi-init-probe: spin stub gave up rounds={d} MAC_ST=0x{x:0>8} idle={d} switches={d} hooks={d}",
+                .{ rounds, mac_st.*, idle_calls, task_switches, impl.event_count },
+            );
             return;
         }
     }
