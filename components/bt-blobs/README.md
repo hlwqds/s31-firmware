@@ -771,7 +771,36 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
-### 🧱 硬前置：**PHY 层缺失**（含 RF 校准数据）—— 工作量估计
+### ✅ 重大修正：**`libphy.a` 早已全部链在镜像里**，只是从未初始化
+
+这一步把上面那份估计**大幅推翻**，全部是实测：
+
+| 项 | 原估计 | 实测 |
+| --- | --- | --- |
+| 窗口够不够 | 需扩 ~140 KB | **早就够**：`libphy.a` 的**可装载内容只有 18 151 B**（text 15 116 + rodata 2 527 + data 508），文件 160 KB 里其余全是调试信息；irom 当前余 **81 344 B** |
+| 链接面 | 332 个未定义符号要补 | `libphy.a` 的 **210 个**未定义符号里，**208 个我们已提供**；缺的 `phy_get_sar2_vol` 只是 ROM 表没抄（已从 IDF 的 `esp32s31.rom.phy.ld` 合并 **164 条**，现共 449 条） |
+| 要不要额外链 libphy | 要 | **不用**：`libphy.a` 的 **21 个对象全部已在 bt-blobs 闭包内**（`nm` 逐字节比对确认） |
+| PHY 表初始化 | 未知 | `phy_get_romfunc_addr` **已在镜像内**（`0x40061728`），只是从没调用 |
+
+**板侧实测（关键）**
+
+```text
+BOOTSTATE: g_phyFuns(before)=0x0
+BOOTSTATE: g_phyFuns(after)=0x2f07f944      ← 调用后**表被填上**
+BOOTSTATE: calling esp_phy_enable(2) ...
+BOOTSTATE: esp_phy_enable(2) returned        ← ROM 的 PHY 使能**正常返回**（原先从没走到过）
+```
+
+⇒ 所以"缺 PHY 层"这个说法要**修正**为：**PHY 代码一直在，缺的是初始化调用**
+（`phy_get_romfunc_addr()` + `esp_phy_enable()`），而这两步现在都做了。
+
+**但块仍不可访问** ⇒ 使能之外还需要**校准**：
+`esp_phy_enable` 在 `s_is_phy_calibrated == false` 时会调 `esp_phy_load_cal_and_init()`，
+后者经 `nvs_open(PHY_NAMESPACE)` 读**每片芯片的 RF 校准数据** —— 我们裸机**没有 NVS**。
+
+⇒ **剩余工作收窄为一件事**：给 PHY 提供校准路径。
+
+### 🧱（估计已过时）硬前置：**PHY 层缺失**（含 RF 校准数据）
 
 三轮寄存器对拍全部对齐后块仍不可访问，最终定位到一个**被完全跳过的子系统**：PHY。
 

@@ -118,6 +118,22 @@ fn step(n: u32, comptime what: []const u8, archive_rc: ?c_int) c_int {
 /// 我们侧"boot 完成态"：与 oracle 的 `app_main` 入口同点（任何 BT 步骤之前）。
 fn dumpBootState() void {
     if (@import("builtin").target.os.tag != .freestanding) return;
+    {
+        // **PHY 初始化**（此前从未做过）：`libphy.a` 的 21 个对象**早已在闭包里**，
+        // `phy_get_romfunc_addr` 就在镜像内（0x40061728），只是从没被调用 ⇒ `g_phyFuns` 恒 0。
+        // 它内部会 `phy_param_addr()` + `phy_get_romfuncs()` 填充函数表。
+        const get_romfuncs = @as(*const fn () callconv(.c) void, @ptrFromInt(0x4006_1728));
+        const phy_funs: *volatile u32 = @ptrFromInt(0x2f00_fff8);
+        osal.logLine("BOOTSTATE: g_phyFuns(before)=0x{x}", .{phy_funs.*});
+        get_romfuncs();
+        osal.logLine("BOOTSTATE: g_phyFuns(after)=0x{x}", .{phy_funs.*});
+        // 再使能 PHY 的 BT modem（ROM）
+        const phy_enable = @as(*const fn (u32) callconv(.c) void, @ptrFromInt(0x2f00_e756));
+        osal.logLine("BOOTSTATE: calling esp_phy_enable(2) ...", .{});
+        phy_enable(2);
+        osal.logLine("BOOTSTATE: esp_phy_enable(2) returned", .{});
+    }
+
     const wins = [_]struct { name: []const u8, base: usize, n: usize }{
         .{ .name = "syscon", .base = 0x2010_9C00, .n = 16 },
         .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
@@ -142,12 +158,6 @@ fn dumpBootState() void {
     // **调 ROM 的 `esp_phy_enable(PHY_MODEM_BT=2)`**（0x2f00e756）。
     // IDF 的 `btdm_lp_reset` 第一件事就是它；我们的移植**从未调用过 PHY 层**
     // ⇒ modem 前端没上电 ⇒ `0x2010B000`（BT 基带）不应答。这是本轮最可疑的缺失。
-    {
-        const phy_enable = @as(*const fn (u32) callconv(.c) void, @ptrFromInt(0x2f00_e756));
-        osal.logLine("BOOTSTATE: calling ROM esp_phy_enable(2) ...", .{});
-        phy_enable(2);
-        osal.logLine("BOOTSTATE: esp_phy_enable(2) returned", .{});
-    }
     wr.f(0x2010_F008, 0x314); // lpcon+0x08：IDF boot 值
     wr.f(0x2010_F00C, 0x1); // lpcon+0x0c：IDF boot 值
     wr.f(0x2058_7008, 0x1); // clkrst+0x08：IDF boot 值
