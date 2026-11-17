@@ -152,28 +152,42 @@ pub fn init(cfg: *config.Config) c_int {
         }
     }
     {
-        // **发布 OkE7 锚点**：见 probe_ptr.zig 的说明 —— 为 0 会让归档对地址 0 写字节，
-        // 那是一次不退休的总线事务，表现为"无声卡死"。
+        // **发布 OkE7 锚点**（受 `populate_workaround` 控制，默认关）。
+        //
+        // 形状取自 oracle 的实测（`X[0..7]`）：
+        //   +0 状态字节(=1)、+4/+8/+16/+20 指针、+12 0、+24 = 0x20260127(版本魔数)、+28 = 0x171000
+        // `r_btdm_task_deinit` 会 `lw a0,20(a5)` 并把该字段当指针调用
+        // ⇒ 结构必须 **≥32 字节**，否则 +20 越界（16 字节时读到的正是 arena 块头 0xb7a10c0d）。
         const pp = @import("probe_ptr.zig");
+        const osal2 = @import("osal.zig");
         if (pp.okE7Anchor() == 0) {
-            const x = @import("osal.zig").btdmMalloc(16, 0) orelse @as(?*anyopaque, null);
-            const y = @import("osal.zig").btdmMalloc(16, 0) orelse @as(?*anyopaque, null);
-            if (x != null and y != null) {
-                const xi: [*]u32 = @ptrCast(@alignCast(x.?));
-                const xv = @intFromPtr(x.?);
-                xi[0] = 0;
-                xi[1] = 0;
-                xi[2] = @intCast(@intFromPtr(y.?)); // +8：OkE7 的第二层守卫
-                xi[3] = 0;
-                pp.setOkE7Anchor(@intCast(xv));
-                osal.logPublic("bt bringup: 发布 OkE7 锚点 X=0x{x:0>8} X+8=0x{x:0>8}", .{ xv, @intFromPtr(y.?) });
-            } else {
-                osal.logPublic("bt bringup: 发布 OkE7 锚点失败（arena 分配）", .{});
+            {
+                const x = osal2.btdmMalloc(32, 0);
+                const y = osal2.btdmMalloc(32, 0);
+                const p4 = osal2.btdmMalloc(32, 0);
+                const p16 = osal2.btdmMalloc(32, 0);
+                const p20 = osal2.btdmMalloc(32, 0);
+                if (x != null and y != null and p4 != null and p16 != null and p20 != null) {
+                    const xi: [*]u32 = @ptrCast(@alignCast(x.?));
+                    xi[0] = 1; // 状态：inited
+                    xi[1] = @intCast(@intFromPtr(p4.?));
+                    xi[2] = @intCast(@intFromPtr(y.?));
+                    xi[3] = 0;
+                    xi[4] = @intCast(@intFromPtr(p16.?));
+                    xi[5] = @intCast(@intFromPtr(p20.?));
+                    xi[6] = 0x20260127; // BTDM_CONFIG_VERSION
+                    xi[7] = 0x00171000;
+                    pp.setOkE7Anchor(@intCast(@intFromPtr(x.?)));
+                    osal.logPublic("bt bringup: 发布 OkE7 锚点 X=0x{x:0>8} (32B, +20=0x{x:0>8})", .{ @intFromPtr(x.?), @intFromPtr(p20.?) });
+                } else {
+                    osal.logPublic("bt bringup: 发布 OkE7 锚点失败（arena 分配）", .{});
+                }
             }
         } else {
             osal.logPublic("bt bringup: OkE7 锚点已就绪=0x{x:0>8}", .{pp.okE7Anchor()});
         }
     }
+
     if (skip_task_init) {
         osal.logPublic("bt bringup: step 6 r_btdm_task_init SKIPPED (experiment)", .{});
         rc = 0;

@@ -21,250 +21,269 @@ I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
 I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
 I (71) boot:  2 factory          factory app      00 00 00010000 00177000
 I (78) boot: End of partition table
-I (81) esp_image: segment 0: paddr=00010020 vaddr=40090020 size=0f838h ( 63544) map
-I (100) esp_image: segment 1: paddr=0001f860 vaddr=2f000000 size=007b8h (  1976) load
-I (102) esp_image: segment 2: paddr=00020020 vaddr=40000020 size=80788h (526216) map
-I (190) esp_image: segment 3: paddr=000a07b0 vaddr=2f0007b8 size=12f5ch ( 77660) load
-I (206) esp_image: segment 4: paddr=000b3714 vaddr=2f013780 size=033a4h ( 13220) load
-I (215) boot: Loaded app from partition at offset 0x10000
-I (216) boot: Disabling RNG early entropy source...
-I (225) cpu_start: Multicore app
-I (234) cpu_start: GPIO 59 and 58 are used as console UART I/O pins
-I (234) cpu_start: Pro cpu start user code
-I (235) cpu_start: cpu freq: 320000000 Hz
-I (236) app_init: Application information:
-I (240) app_init: Project name:     idf-bt-ctl
-I (244) app_init: App version:      1
-I (248) app_init: Compile time:     Nov 17 2026 21:26:57
-I (253) app_init: ELF file SHA256:  5e6bb4775...
-I (257) app_init: ESP-IDF:          v6.1
-I (261) efuse_init: Min chip rev:     v0.0
-I (264) efuse_init: Max chip rev:     v0.99 
-I (268) efuse_init: Chip rev:         v0.0
-I (272) heap_init: Initializing. RAM available for dynamic allocation:
-I (279) heap_init: At 2F018730 len 00062880 (394 KiB): RAM
-I (284) heap_init: At 2F07AFB0 len 000041C0 (16 KiB): RAM
-I (289) heap_init: At 2E000000 len 00007FE8 (31 KiB): RTCRAM
-I (295) spi_flash: detected chip: generic
-I (298) spi_flash: flash io: dio
-I (301) sleep_gpio: Configure to isolate all GPIO pins in sleep state
-I (307) sleep_gpio: Enable automatic switching of GPIO sleep configuration
-I (314) coexist: coex firmware version: a830d28
-I (318) coexist: coexist rom version cdcf52b
-I (323) main_task: Started on CPU0
-I (343) main_task: Calling app_main()
-I (343) idfbt: boot, idf=v6.1
-I (343) idfbt: beat 0
-I (1343) idfbt: beat 1
-I (2343) idfbt: == init first, then probe the block ==
-W (2343) idfbt: [before_init] OkE7_anchor=0x00000000 (*(+8)=0x00000000)  Xpuq_P=0x00000000
-W (2343) stepbystep: boot         a21=0x00000000 a2=0x00000000 a7=0x00000000
-W (2343) stepbystep: elem_mempool a21=0x00000000 a2=0x00000000 a7=0x00000000
-W (2353) stepbystep:   rc=0
-W (2353) stepbystep: log_init     a21=0x00000000 a2=0x00000000 a7=0x00000000
-W (2363) stepbystep:   rc=0
-W (2363) stepbystep: external     a21=0x00000000 a2=0x00000000 a7=0x00000000
-W (2373) stepbystep:   rc=0
-W (2373) stepbystep: coex_init    a21=0x00000000 a2=0x00000000 a7=0x00000000
-W (2383) stepbystep:   rc=0
-W (2383) BTDM_SLEEP: Using 136 kHz RC as clock source, use with caution as it may not maintain ACL or Sync process due to low clock accuracy!
-W (2393) stepbystep: lp_clock     a21=0x00000000 a2=0x00000000 a7=0x00000000
-I (2403) idfbt: controller_init ...
-I (2403) BTDM_INIT: BTDM version [39ed4dc]
-W (2413) BTDM_SLEEP: Using 136 kHz RC as clock source, use with caution as it may not maintain ACL or Sync process due to low clock accuracy!
-I (2423) BLE_INIT: BLE controller compile version [b8b0e63:1]
+I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9bcd0h (638160) map
+I (193) esp_image: segment 1: paddr=000abcf8 vaddr=2f000000 size=000ach (   172) load
+I (195) esp_image: segment 2: paddr=000abdac vaddr=2f0000b0 size=0426ch ( 17004) load
+I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=14c50h ( 85072) map
+I (219) esp_image: segment 4: paddr=000c4c78 vaddr=2f00431c size=0ad00h ( 44288) load
+I (230) esp_image: segment 5: paddr=000cf980 vaddr=2f00f01a size=00064h (   100) load
+I (232) esp_image: segment 6: paddr=000cf9ec vaddr=2f00f07c size=00110h (   272) load
+I (235) esp_image: segment 7: paddr=000cfb04 vaddr=2f00f18a size=00068h (   104) load
+I (242) esp_image: segment 8: paddr=000cfb74 vaddr=2f00f1f0 size=0006ch (   108) load
+I (250) esp_image: segment 9: paddr=000cfbe8 vaddr=2f00f260 size=003f0h (  1008) load
+I (261) boot: Loaded app from partition at offset 0x10000
+I (261) boot: Disabling RNG early entropy source...
+bt probe: hooks installed (now_ms=us/1000)
+bt probe: timer 2 -> 6 (must increase)
+irq-sample #0 input=25 mepc=0x4006586e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x02000000 a1=0x01000100 s0=0x20580000 ra=0x4006583a
+bt probe: clic[25] 0x1firq-sample #1 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000034 s0=0x1fc00100 ra=0x4006592e
+c00100 -> 0x1fc00100 (nirq-sample #2 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000034 s0=0x1fc00100 ra=0x4006592e
+mies)
+bt probe: irq enairq-sample #3 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000002b s0=0x2f07aecc ra=0x40065988
+bled (probe only), t0=2irq-sample #4 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000002b s0=0x2f07aecc ra=0x40065988
+ms
+bt probe: arena 4067irq-sample #5 input=25 mepc=0x400695fc mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000018 s0=0x2f076fc0 ra=0x40065a54
+84 B
+bt probe: init stairq-sample #6 input=25 mepc=0x400695fc mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000014 s0=0x5a5aa5a5 ra=0x40065bc8
+rt
+bt probe: syscon+0x0irq-sample #7 input=25 mepc=0x40068d9e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000000 ra=0x40065c7e
+0 = 0x00000100
+bt probeirq-sample #8 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000004 ra=0x40065c7e
+: syscon+0x04 = 0x00201irq-sample #9 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000004 ra=0x40065c7e
+002
+bt probe: syscon+0xirq-sample #10 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000008 ra=0x40065c7e
+08 = 0x00000000
+bt probirq-sample #11 input=25 mepc=0x40068d98 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000000c ra=0x40065c7e
+e: syscon+0x0c = 0x0000irq-sample #12 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000000c ra=0x40065c7e
+0000
+bt probe: syscon+0irq-sample #13 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000010 ra=0x40065c7e
+x10 = 0x00000000
+bt proirq-sample #14 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000014 ra=0x40065c7e
+be: syscon+0x14 = 0x000irq-sample #15 input=25 mepc=0x40068d98 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000014 ra=0x40065c7e
+00000
+bt probe: syscon+irq-sample #16 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000018 ra=0x40065c7e
+0x18 = 0x00000000
+bt prirq-sample #17 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000001c ra=0x40065c7e
+obe: syscon+0x1c = 0x00irq-sample #18 input=25 mepc=0x40068d98 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000001c ra=0x40065c7e
+000000
+bt probe: sysconirq-sample #19 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000020 ra=0x40065c7e
++0x20 = 0x00002070
+bt pirq-sample #20 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000024 ra=0x40065c7e
+robe: syscon+0x24 = 0x0irq-sample #21 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000024 ra=0x40065c7e
+0000000
+bt probe: syscoirq-sample #22 input=25 mepc=0x40068d98 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000028 ra=0x40065c7e
+n+0x28 = 0x00000000
+bt irq-sample #23 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000002c ra=0x40065c7e
+probe: syscon+0x2c = 0xirq-sample #24 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000002c ra=0x40065c7e
+00000044
+bt probe: syscirq-sample #25 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000030 ra=0x40065c7e
+on+0x30 = 0x02508080
+btirq-sample #26 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000034 ra=0x40065c7e
+ probe: syscon+0x34 = 0irq-sample #27 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000034 ra=0x40065c7e
+x00000000
+bt probe: sysirq-sample #28 input=25 mepc=0x40068da6 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000038 ra=0x40065c7e
+con+0x38 = 0x00000000
+birq-sample #29 input=25 mepc=0x40068da6 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000003c ra=0x40065c7e
+t probe: syscon+0x3c = irq-sample #30 input=25 mepc=0x40068d9e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000003c ra=0x40065c7e
+0x00000000
+clkrst+0x000irq-sample #31 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000000 ra=0x40065d48
+ = 0x00000001
+clkrst+0xirq-sample #32 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000004 ra=0x40065d48
+004 = 0x00000003
+clkrstirq-sample #33 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000010 ra=0x40065d48
++0x010 = 0x00000001
+clkirq-sample #34 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000001c ra=0x40065d48
+rst+0x01c = 0x00000003
+irq-sample #35 input=25 mepc=0x4006d43a mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aeab a1=0x2f07ae7a s0=0x00000002 ra=0x40066be6
+clkrst+0x020 = 0x000000irq-sample #36 input=25 mepc=0x40068d98 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000020 ra=0x40065d48
+04
+clkrst+0x024 = 0x000irq-sample #37 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000024 ra=0x40065d48
+00003
+clkrst+0x028 = 0xirq-sample #38 input=25 mepc=0x40068d9e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000028 ra=0x40065d48
+00000003
+clkrst+0x034 =irq-sample #39 input=25 mepc=0x40068da6 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000034 ra=0x40065d48
+ 0x00000001
+clkrst+0x03irq-sample #40 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000038 ra=0x40065d48
+8 = 0x000156db
+clkrst+0irq-sample #41 input=25 mepc=0x40068d9e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000003c ra=0x40065d48
+x03c = 0x0000000f
+clkrsirq-sample #42 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000040 ra=0x40065d48
+t+0x040 = 0x00000001
+clirq-sample #43 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000044 ra=0x40065d48
+krst+0x044 = 0x0000000firq-sample #44 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000044 ra=0x40065d48
 
-I (2433) BLE_INIT: Bluetooth MAC: 1c:29:04:d1:99:29
-I (2433) BTDM_INIT: BTDM controller init OK
-I (2433) idfbt: controller_init -> ESP_OK (0x0)
-I (2443) idfbt: controller_enable(BLE) ...
-W (2443) idfbt: [after_init] MODEM_CTRL0=0x00000001 MODEM_CONF=0x0000003d CLK_EN0=0x00000001
-W (2453) idfbt: [after_init] syscon+0x00 = 0x00000100
-W (2453) idfbt: [after_init] syscon+0x04 = 0x7e601002
-W (2463) idfbt: [after_init] syscon+0x08 = 0x00000000
-W (2463) idfbt: [after_init] syscon+0x0c = 0x64646400
-W (2473) idfbt: [after_init] syscon+0x10 = 0x00000000
-W (2473) idfbt: [after_init] syscon+0x14 = 0x00070080
-W (2483) idfbt: [after_init] syscon+0x18 = 0x00000000
-W (2483) idfbt: [after_init] syscon+0x1c = 0x00000000
-W (2493) idfbt: [after_init] syscon+0x20 = 0x00002070
-W (2493) idfbt: [after_init] syscon+0x24 = 0x00000000
-W (2503) idfbt: [after_init] syscon+0x28 = 0x00000000
-W (2503) idfbt: [after_init] syscon+0x2c = 0x00000044
-W (2513) idfbt: [after_init] syscon+0x30 = 0x02508080
-W (2513) idfbt: [after_init] syscon+0x34 = 0x00000000
-W (2523) idfbt: [after_init] syscon+0x38 = 0x00000000
-W (2523) idfbt: [after_init] syscon+0x3c = 0x00000000
-W (2533) oracle: clkrst+0x000 = 0x00000001
-W (2533) oracle: clkrst+0x008 = 0x00000001
-W (2533) oracle: clkrst+0x00c = 0x00000002
-W (2543) oracle: clkrst+0x010 = 0x00000001
-W (2543) oracle: clkrst+0x01c = 0x00000003
-W (2553) oracle: clkrst+0x020 = 0x00000003
-W (2553) oracle: clkrst+0x028 = 0x00000003
-W (2553) oracle: clkrst+0x034 = 0x00000001
-W (2563) oracle: clkrst+0x038 = 0x000156db
-W (2563) oracle: clkrst+0x03c = 0x0000000f
-W (2563) oracle: clkrst+0x040 = 0x00000001
-W (2573) oracle: clkrst+0x044 = 0x0000000f
-W (2573) oracle: clkrst+0x048 = 0x00000011
-W (2583) oracle: clkrst+0x058 = 0x00200000
-W (2583) oracle: clkrst+0x05c = 0x00000005
-W (2583) oracle: clkrst+0x064 = 0x00000ba1
-W (2593) oracle: clkrst+0x088 = 0x00000083
-W (2593) oracle: clkrst+0x0d8 = 0x00000001
-W (2593) oracle: clkrst+0x114 = 0x00000801
-W (2603) oracle: clkrst+0x118 = 0x00000011
-W (2603) oracle: clkrst+0x11c = 0x00000801
-W (2613) oracle: clkrst+0x120 = 0x00000011
-W (2613) oracle: clkrst+0x134 = 0x00000001
-W (2613) oracle: clkrst+0x144 = 0x00000001
-W (2623) oracle: clkrst+0x154 = 0x00000009
-W (2623) oracle: clkrst+0x15c = 0x00000011
-W (2633) oracle: clkrst+0x160 = 0x00001011
-W (2633) oracle: clkrst+0x164 = 0x00001011
-W (2633) oracle: clkrst+0x168 = 0x0000012c
-W (2643) oracle: clkrst+0x16c = 0x00000002
-W (2643) oracle: clkrst+0x170 = 0x00000002
-W (2643) oracle: clkrst+0x174 = 0x0000004d
-W (2653) oracle: clkrst+0x17c = 0x00000101
-W (2653) oracle: clkrst+0x180 = 0x00000102
-W (2663) oracle: clkrst+0x184 = 0x00000103
-W (2663) oracle: clkrst+0x188 = 0x00000505
-W (2663) oracle: clkrst+0x18c = 0x00000107
-W (2673) oracle: clkrst+0x190 = 0x00000117
-W (2673) oracle: clkrst+0x194 = 0x00000105
-W (2683) oracle: clkrst+0x198 = 0x0000010b
-W (2683) oracle: clkrst+0x1a0 = 0x000003ff
-W (2683) oracle: clkrst+0x1a4 = 0x000003ff
-W (2693) oracle: clkrst+0x1a8 = 0x000003ff
-W (2693) oracle: clkrst+0x1cc = 0x00000001
-W (2693) oracle: clkrst+0x1d8 = 0x00000001
-W (2703) oracle: clkrst+0x1dc = 0x00000001
-W (2703) oracle: clkrst+0x1e0 = 0x0000003d
-W (2713) oracle: clkrst+0x1e8 = 0x00000107
-W (2713) oracle: clkrst+0x1ec = 0x0000000c
-W (2713) oracle: clkrst+0x1f0 = 0x00000004
-W (2723) oracle: clkrst+0x1f4 = 0x00000004
-W (2723) oracle: clkrst+0x1f8 = 0x00000001
-W (2723) oracle: clkrst+0x1fc = 0x02509110
-W (2733) idfbt: [after_init] *(0x2010B000)=0x5ac00000  -> READABLE
-W (2733) idfbt: [after_init] OkE7_anchor=0x2f07c8e0 (*(+8)=0x2f07c670)  Xpuq_P=0x2f07ccac
-W (2743) oracle: X[0]=0x00000001
-W (2753) oracle: X[1]=0x2f07c8ac
-W (2753) oracle: X[2]=0x2f07c670
-W (2753) oracle: X[3]=0x00000000
-W (2753) oracle: X[4]=0x2f07c914
-W (2763) oracle: X[5]=0x2f07c920
-W (2763) oracle: X[6]=0x20260127
-W (2763) oracle: X[7]=0x00171000
-W (2773) oracle: Y[0]=0x2f07c988
-W (2773) oracle: Y[1]=0x2f07c678
-W (2773) oracle: Y[2]=0x2f07c67c
-W (2773) oracle: Y[3]=0x2f07c680
-W (2783) oracle: Y[4]=0x2f07c684
-W (2783) oracle: Y[5]=0x2f07c688
-W (2783) oracle: Y[6]=0x2f07c68c
-W (2793) oracle: Y[7]=0x2f07c690
-I (2793) phy_init: phy_version 100,dd4c590,Jul 14 2026,10:33:03
-E (2803) phy_init: esp_phy_load_cal_data_from_nvs: NVS has not been initialized. Call nvs_flash_init before starting WiFi/BT.
-W (2813) phy_init: failed to load RF calibration data (0x1101), falling back to full calibration
-I (2883) phy: libbtbb version: d5590f7, Jul 14 2026, 10:33:07
-I (2883) idfbt: controller_enable -> ESP_OK (0x0)
-W (2883) idfbt: [after_enable] MODEM_CTRL0=0x00000001 MODEM_CONF=0x0000003d CLK_EN0=0x00000001
-W (2893) idfbt: [after_enable] syscon+0x00 = 0x00000100
-W (2893) idfbt: [after_enable] syscon+0x04 = 0x7e601002
-W (2903) idfbt: [after_enable] syscon+0x08 = 0x00000000
-W (2903) idfbt: [after_enable] syscon+0x0c = 0x64646400
-W (2913) idfbt: [after_enable] syscon+0x10 = 0x00000000
-W (2913) idfbt: [after_enable] syscon+0x14 = 0x003fe080
-W (2923) idfbt: [after_enable] syscon+0x18 = 0x10003802
-W (2923) idfbt: [after_enable] syscon+0x1c = 0x00000000
-W (2933) idfbt: [after_enable] syscon+0x20 = 0x00002070
-W (2933) idfbt: [after_enable] syscon+0x24 = 0x00000000
-W (2943) idfbt: [after_enable] syscon+0x28 = 0x00000000
-W (2943) idfbt: [after_enable] syscon+0x2c = 0x00000044
-W (2953) idfbt: [after_enable] syscon+0x30 = 0x02508080
-W (2953) idfbt: [after_enable] syscon+0x34 = 0x00000000
-W (2963) idfbt: [after_enable] syscon+0x38 = 0x00000000
-W (2963) idfbt: [after_enable] syscon+0x3c = 0x00000000
-W (2973) oracle: clkrst+0x000 = 0x00000001
-W (2973) oracle: clkrst+0x008 = 0x00000001
-W (2973) oracle: clkrst+0x00c = 0x00000002
-W (2983) oracle: clkrst+0x010 = 0x00000001
-W (2983) oracle: clkrst+0x01c = 0x00000003
-W (2993) oracle: clkrst+0x020 = 0x00000003
-W (2993) oracle: clkrst+0x028 = 0x00000003
-W (2993) oracle: clkrst+0x034 = 0x00000001
-W (3003) oracle: clkrst+0x038 = 0x000156db
-W (3003) oracle: clkrst+0x03c = 0x0000000f
-W (3003) oracle: clkrst+0x040 = 0x00000001
-W (3013) oracle: clkrst+0x044 = 0x0000000f
-W (3013) oracle: clkrst+0x048 = 0x00000011
-W (3023) oracle: clkrst+0x058 = 0x00200000
-W (3023) oracle: clkrst+0x05c = 0x00000005
-W (3023) oracle: clkrst+0x064 = 0x00000ba1
-W (3033) oracle: clkrst+0x088 = 0x00000083
-W (3033) oracle: clkrst+0x0d8 = 0x00000001
-W (3043) oracle: clkrst+0x114 = 0x00000801
-W (3043) oracle: clkrst+0x118 = 0x00000011
-W (3043) oracle: clkrst+0x11c = 0x00000801
-W (3053) oracle: clkrst+0x120 = 0x00000011
-W (3053) oracle: clkrst+0x134 = 0x00000001
-W (3053) oracle: clkrst+0x144 = 0x00000001
-W (3063) oracle: clkrst+0x154 = 0x00000009
-W (3063) oracle: clkrst+0x15c = 0x00000011
-W (3073) oracle: clkrst+0x160 = 0x00001011
-W (3073) oracle: clkrst+0x164 = 0x00001011
-W (3073) oracle: clkrst+0x168 = 0x0000012c
-W (3083) oracle: clkrst+0x16c = 0x00000002
-W (3083) oracle: clkrst+0x170 = 0x00000002
-W (3083) oracle: clkrst+0x174 = 0x0000044d
-W (3093) oracle: clkrst+0x17c = 0x00000101
-W (3093) oracle: clkrst+0x180 = 0x00000102
-W (3103) oracle: clkrst+0x184 = 0x00000103
-W (3103) oracle: clkrst+0x188 = 0x00000505
-W (3103) oracle: clkrst+0x18c = 0x00000107
-W (3113) oracle: clkrst+0x190 = 0x00000117
-W (3113) oracle: clkrst+0x194 = 0x00000105
-W (3123) oracle: clkrst+0x198 = 0x0000010b
-W (3123) oracle: clkrst+0x1a0 = 0x000003ff
-W (3123) oracle: clkrst+0x1a4 = 0x000003ff
-W (3133) oracle: clkrst+0x1a8 = 0x000003ff
-W (3133) oracle: clkrst+0x1cc = 0x00000001
-W (3133) oracle: clkrst+0x1d8 = 0x00000001
-W (3143) oracle: clkrst+0x1dc = 0x00000001
-W (3143) oracle: clkrst+0x1e0 = 0x0000003d
-W (3153) oracle: clkrst+0x1e8 = 0x00000107
-W (3153) oracle: clkrst+0x1ec = 0x0000000c
-W (3153) oracle: clkrst+0x1f0 = 0x00000004
-W (3163) oracle: clkrst+0x1f4 = 0x00000004
-W (3163) oracle: clkrst+0x1f8 = 0x00000001
-W (3173) oracle: clkrst+0x1fc = 0x02509110
-W (3173) idfbt: [after_enable] *(0x2010B000)=0x5ac00000  -> READABLE
-W (3173) idfbt: [after_enable] OkE7_anchor=0x2f07c8e0 (*(+8)=0x2f07c670)  Xpuq_P=0x2f07ccac
-W (3183) oracle: X[0]=0x00000002
-W (3193) oracle: X[1]=0x2f07c8ac
-W (3193) oracle: X[2]=0x2f07c670
-W (3193) oracle: X[3]=0x2f022928
-W (3193) oracle: X[4]=0x2f07c914
-W (3203) oracle: X[5]=0x2f07c920
-W (3203) oracle: X[6]=0x20260127
-W (3203) oracle: X[7]=0x00171000
-W (3213) oracle: Y[0]=0x2f07c988
-W (3213) oracle: Y[1]=0x2f07c678
-W (3213) oracle: Y[2]=0x2f07c67c
-W (3223) oracle: Y[3]=0x2f07c680
-W (3223) oracle: Y[4]=0x2f07c684
-W (3223) oracle: Y[5]=0x2f07c688
-W (3223) oracle: Y[6]=0x2f07c68c
-W (3233) oracle: Y[7]=0x2f07c690
-I (3233) idfbt: beat 2
-I (4233) idfbt: beat 3
-I (5233) idfbt: beat 4
-I (6233) idfbt: beat 5
-I (7233) idfbt: beat 6
-I (8233) idfbt: beat 7
-I (9233) idfbt: beat 8
-I (10233) idfbt: beat 9
-I (11233) idfbt: beat 10
+clkrst+0x048 = 0x00000irq-sample #45 input=25 mepc=0x40068da6 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000048 ra=0x40065d48
+011
+clkrst+0x058 = 0x00irq-sample #46 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000058 ra=0x40065d48
+415555
+clkrst+0x05c = 0irq-sample #47 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000005c ra=0x40065d48
+x00000005
+clkrst+0x064 irq-sample #48 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000064 ra=0x40065d48
+= 0x00000ba1
+clkrst+0x0irq-sample #49 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000068 ra=0x40065d48
+68 = 0x00000181
+clkrst+irq-sample #50 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000006c ra=0x40065d48
+0x06c = 0x00800043
+clkrirq-sample #51 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000070 ra=0x40065d48
+st+0x070 = 0x00800043
+cirq-sample #52 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000078 ra=0x40065d48
+lkrst+0x078 = 0x0000000irq-sample #53 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000078 ra=0x40065d48
+1
+clkrst+0x07c = 0x0000irq-sample #54 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000007c ra=0x40065d48
+0001
+clkrst+0x080 = 0x0irq-sample #55 input=25 mepc=0x40068d9e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000080 ra=0x40065d48
+0000001
+clkrst+0x088 = irq-sample #56 input=25 mepc=0x40068d9e mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000088 ra=0x40065d48
+0x00000083
+clkrst+0x08cirq-sample #57 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000008c ra=0x40065d48
+ = 0x00000083
+clkrst+0xirq-sample #58 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000090 ra=0x40065d48
+090 = 0x00000083
+clkrstirq-sample #59 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000094 ra=0x40065d48
++0x094 = 0x00000083
+clkirq-sample #60 input=25 mepc=0x40068d9c mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x000000a8 ra=0x40065d48
+rst+0x0a8 = 0x00000040
+irq-sample #61 input=25 mepc=0x40066b44 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07af6c a1=0x0000000d s0=0x000000d8 ra=0x40065d00
+clkrst+0x0d8 = 0x000000irq-sample #62 input=25 mepc=0x40068da6 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x000000d8 ra=0x40065d48
+01
+clkrst+0x114 = 0x000irq-sample #63 input=25 mepc=0x40068d98 mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000114 ra=0x40065d48
+00921
+clkrst+0x118 = 0x00000011
+clkrst+0x11c = 0x00000921
+clkrst+0x134 = 0x00000001
+clkrst+0x144 = 0x00000001
+clkrst+0x15c = 0x00000011
+clkrst+0x160 = 0x00001011
+clkrst+0x164 = 0x00001011
+clkrst+0x168 = 0x0000012c
+clkrst+0x16c = 0x0000001a
+clkrst+0x170 = 0x00000002
+clkrst+0x174 = 0x0000004d
+clkrst+0x17c = 0x00000101
+clkrst+0x180 = 0x00000102
+clkrst+0x184 = 0x00000103
+clkrst+0x188 = 0x00000505
+clkrst+0x18c = 0x00000107
+clkrst+0x190 = 0x00000117
+clkrst+0x194 = 0x00000105
+clkrst+0x198 = 0x0000010b
+clkrst+0x1a0 = 0x000003ff
+clkrst+0x1a4 = 0x000003ff
+clkrst+0x1a8 = 0x000003ff
+clkrst+0x1b0 = 0x00000001
+clkrst+0x1cc = 0x00000001
+clkrst+0x1d0 = 0x00000001
+clkrst+0x1d8 = 0x00000001
+clkrst+0x1dc = 0x00000001
+clkrst+0x1e0 = 0x00000025
+clkrst+0x1e8 = 0x00000107
+clkrst+0x1ec = 0x0000000c
+clkrst+0x1f0 = 0x00000004
+clkrst+0x1f4 = 0x00000004
+clkrst+0x1f8 = 0x00000001
+clkrst+0x1fc = 0x02509110
+uart0 采样[0] 0xe0788000
+uart0 采样[1] 0xe0008000
+uart0 采样[2] 0xe0008000
+uart0 采样[3] 0xe0008000
+pcsample n=256 pc=0x2f8036ce ra=0x40065e04 s0=0x3
+irq-sample #256 input=25 mepc=0x2f8036cc mac=0x0000e000 b13=0 b14=0 ctx15=14 en=0 a0=0x007a1200 a1=0x0000001b s0=0x00000003 ra=0x40065e04
+pmu+0x004 = 0xffffffff
+pmu+0x008 = 0xffffffff
+pmu+0x00c = 0xffffffff
+pmu+0x010 = 0xffffffff
+pmu+0x034 = 0xc667f180
+pmu+0x03c = 0x80000000
+pmu+0x044 = 0xffffffff
+pmu+0x048 = 0xffffffff
+pmu+0x04c = 0xffffffff
+pmu+0x050 = 0xffffffff
+pmu+0x074 = 0xc6678000
+pmu+0x07c = 0x80000000
+pmu+0x084 = 0xffffffff
+pmu+0x088 = 0xffffffff
+pmu+0x08c = 0xffffffff
+pmu+0x090 = 0xffffffff
+pmu+0x0b4 = 0xc6678000
+pmu+0x0bc = 0x80000000
+pmu+0x0c0 = 0xc6600000
+pmu+0x0d0 = 0x40000000
+pmu+0x0d8 = 0xc6600000
+pmu+0x0e0 = 0x80000000
+pmu+0x0e8 = 0x40000000
+pmu+0x114 = 0x7fbfdfe0
+pmu+0x118 = 0x7fbf7e00
+pmu+0x11c = 0xffffffff
+pmu+0x120 = 0x0000001c
+pmu+0x124 = 0x0000001c
+pmu+0x128 = 0x0000001c
+pmu+0x12c = 0x0000001c
+pmu+0x130 = 0x0000001c
+pmu+0x134 = 0x0000001c
+pmu+0x138 = 0x0000001c
+pmu+0x13c = 0xff000000
+pmu+0x148 = 0x63fc0000
+pmu+0x14c = 0x01000100
+pmu+0x164 = 0x01000080
+pmu+0x168 = 0x00000080
+pmu+0x16c = 0x00010000
+pmu+0x178 = 0x00000032
+pmu+0x17c = 0x00000a0a
+pmu+0x180 = 0x80000000
+pmu+0x188 = 0x80000000
+pmu+0x1ac = 0x1ff00001
+pmu+0x1c0 = 0x08100800
+pmu+0x1c4 = 0x00802000
+pmu+0x1c8 = 0x91080002
+pmu+0x1cc = 0xffffffff
+pmu+0x1d0 = 0xffffffff
+pmu+0x1d4 = 0x77770000
+pmu+0x1d8 = 0xe0000000
+pmu+0x1dc = 0x028804b0
+pmu+0x1e0 = 0x00000008
+pmu+0x1e4 = 0x00000028
+bt bringup: enter step 1 mempool
+bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16 / cap 384/96/128/64/64
+bt mempool: ok evt=187 evtq=33 co=41 sem=20 mutex=16
+bt hook: malloc(2244) = 2f013ad0
+bt mempool: init evt blocks=187 blk=12 buf=2f013ad0 rc=0
+bt hook: malloc(132) = 2f0143a8
+bt mempool: init evtq blocks=33 blk=4 buf=2f0143a8 rc=0
+bt hook: malloc(820) = 2f014440
+bt mempool: init co blocks=41 blk=20 buf=2f014440 rc=0
+bt hook: malloc(80) = 2f014788
+bt mempool: init sem blocks=20 blk=4 buf=2f014788 rc=0
+bt hook: malloc(64) = 2f0147e8
+bt mempool: init mutex blocks=16 blk=4 buf=2f0147e8 rc=0
+bt bringup: enter step 2 btdm_log_init
+bt bringup: enter step 3 btdm_external_init
+bt bringup: enter step 4 btdm_coex_init
+bt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x72601002 clk_conf1=0x00070080 lpcon=0x00000006
+bt lp: gates conf_ok=true conf1_ok=true coex_ok=true
+bt lp: modem_conf=0x00000025 (want 0x3d) pll_ok=false
+bt lp: clk_conf1=0x003ff880 fe_ok=true
+bt lp: lp_timer_conf=0x00000001 32k_conf=0x00000001 lpcon_clk=0x0000000e
+bt lp: MODEM_CONF=0x0000003d (bit3+bit4 set)
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 power_st=0x64646400
+bt lp: PMU ICG apply done func=0x00000000 apb=0x00000000 modem=0x00000000 slp=0x00000000
+bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x00000000
+bt lp: uart0 status after = 0xe0788000
+bt bringup: enter step 6 r_btdm_task_init
+bt hook: malloc(8) = 2f014838
+bt bringup: Xpuq 锚点为 NULL => 补调写者 rc=0, 现在 P=0x2f014838
+bt hook: malloc(32) = 2f014858
+bt hook: malloc(32) = 2f014888
+bt hook: malloc(32) = 2f0148b8
+bt hook: malloc(32) = 2f0148e8
+bt hook: malloc(32) = 2f014918
+bt bringup: 发布 OkE7 锚点 X=0x2f014858 (32B, +20=0x2f014918)
+bt hook: mutex_pend
+osal> mutexPend tmo=4294967295
+bt hook: mutex_pend => OK
+!! mepc=0x4005b692 mtval=0x00000000 mstatus=0x00003881
+panic: exception code=7 (store access fault) cause=0x38000007
+panic: ra=0x4005fa94 a0=0x0 a1=0xa a2=0x770001
+panic: sp=0x2f07ad70 s0=0x2f00f7e8
+panic: ctx[0]=0x2f014858 ctx[1]=0x0 ctx[2]=0x0 ctx[3]=0x0
+panic: halted (wfi)
