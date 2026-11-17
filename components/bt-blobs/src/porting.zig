@@ -347,7 +347,8 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
             .{ .name = "syscon", .base = 0x2010_9C00, .n = 16 },
             .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
             .{ .name = "pwr", .base = 0x2010_D000, .n = 16 },
-            .{ .name = "clkrst", .base = 0x2058_7000, .n = 128 },
+            // clkrst 只打我们真正比对过的那几项（原 128 项会把 FIFO 灌满，导致后续行被丢）
+            .{ .name = "clkrst", .base = 0x2058_7000, .n = 16 },
         };
         for (wins) |w| {
             var i: usize = 0;
