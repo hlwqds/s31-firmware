@@ -26,8 +26,15 @@
   与 `hw.cycleCount()`（`mcycle` 的防撕裂读法）。用 `-Dperf-run` 打开，默认构建不含这段代码。
   板上读数：`cycles(p50)=59454`、`cycles_per_byte=14.515`、`cpu_mhz(measured)=80`
   （`mcycle` 与 TIMG0 两个独立计数源对算，与 `BOOTLOADER_CPU_CLK_FREQ_MHZ` 默认值一致）。
-  证据：`logs/c7-perf-baseline.log`。**三档（80/160/320）对比未做** —— 需要先做时钟树
-  bring-up（`clk_ll_cpu_set_*`，320 MHz 还要起 CPLL），本固件目前没有改频路径。
+  证据：`logs/c7-perf-baseline.log`。
+- **C7 三档对比完成（2026-11-18）**：新增 `boards/esp32s31-coreboard/src/clock.zig`，按 IDF
+  `rtc_clk_cpu_freq_set_config` 的序列与分频表切换 80/160/320 MHz（cpu/mem/sys/apb 四分频 +
+  切 CPLL + bus update + `esp_rom_set_cpu_ticks_per_us`），写后读回校验。
+  三档实测：`cycles_p50` 同为 59455（⇒ 纯 CPU 受限）、`cycles_per_byte=14.515`、
+  `mib_per_s` 5.256/10.512/21.024（恰好 2×/4×，验证 `perf.scaleNs` 模型）；
+  用 `mcycle`/`nowUs` 两源对算独立验证频率真的变了（79/160/320）。证据 `logs/c7-perf-tiers.log`。
+  附带观测：320 档 `mhz_measured=320` ⇒ APB 未随分频改变，硬件自动纠正（`rtc_clk.c` 注释警告的行为）。
+  构建开关 `-Dperf-tiers`，默认构建不含改频代码。
 
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）

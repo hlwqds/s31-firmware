@@ -62,6 +62,7 @@ pub export fn main() noreturn {
 
     // --- C7: 固定工作量的周期实测（`-Dperf-run`，默认关闭）----------------
     if (comptime perf_flag.run) runPerf();
+    if (comptime perf_flag.tiers) runPerfTiers();
 
     // --- C5: 切槽（`-Dab-stage=a|b`），写完复位让 bootloader 重新选 --------
     if (comptime ab_flags.stage.len > 0) {
@@ -145,6 +146,70 @@ fn runPerf() void {
         board.log.line("perf: cpu_mhz(measured)={d} p50_ns={d} mib_per_s={d:.3}", .{ mhz, ns, mib });
     }
     board.log.line("perf: sink=0x{x}", .{sink});
+}
+
+/// `-Dperf-tiers`：把 CPU 切到 80/160/320 各测一遍固定工作量。
+///
+/// **每档测完不打印**：320 档的 APB 是 53.33 MHz，UART 与 `nowUs()` 都会失真。
+/// 全部测完先切回 80 档（APB=40），再一次性打印。
+fn runPerfTiers() void {
+    const w = bpp.workload;
+    board.hw.initTimer();
+    w.initWork();
+
+    const tiers = board.clock.Tiers;
+    var cycles_p50: [tiers.len]u64 = @splat(0);
+    var cmp: [tiers.len]f64 = @splat(0);
+    var ok: [tiers.len]bool = @splat(false);
+    var readback: [tiers.len]u32 = @splat(0);
+    // 每档的**实测**频率（`mcycle` / `nowUs`）。这是"时钟真的变了"的独立证据：
+    // 寄存器读回只能证明"写了什么"。
+    var mhz_seen: [tiers.len]u32 = @splat(0);
+
+    var i: usize = 0;
+    while (i < tiers.len) : (i += 1) {
+        const mhz = tiers[i];
+        // 失败用 0 表示（合法分频从 1 起），避免在 catch 里 continue。
+        const div: u32 = board.clock.setCpuMhz(mhz) catch 0;
+        if (div == 0) continue;
+        readback[i] = div;
+        mhz_seen[i] = measureCpuMhz();
+        var sink: u64 = 0;
+        var samples: [16]u64 = undefined;
+        if (w.measure(&board.hw.cycleCount, &sink, samples.len, &samples)) |rep| {
+            cycles_p50[i] = rep.cycles_p50;
+            cmp[i] = rep.cycles_per_byte;
+            ok[i] = true;
+        } else |_| {}
+    }
+
+    // 先回到默认档（APB=40）再加打印，否则串口是乱码。
+    _ = board.clock.setCpuMhz(80) catch {};
+    const st = board.clock.readState() catch return;
+
+    i = 0;
+    while (i < tiers.len) : (i += 1) {
+        if (!ok[i]) {
+            board.log.line("perf-tier: {d}MHz set/measure FAILED (readback_div={d})", .{ tiers[i], readback[i] });
+            continue;
+        }
+        // 时间由**该档标称频率**折算；周期数是实测，频率无关。
+        const ns = cycles_p50[i] * 1000 / tiers[i];
+        const mib = bpp.perf.mibPerSecond(w.work_len, ns);
+        // `mhz_measured` 是独立的频率证据（`mcycle` 增量 / `nowUs` 增量）。
+        //
+        // 板上实测：80 → 79、160 → 160、320 → **320**。最后这个 320 同时说明
+        // **APB 没有跟着变**（若 APB 变成 53.33 MHz，`nowUs` 会走快 1.333 倍，
+        // 这里的读数就只会是 240）。也就是说按 IDF 的表写了 sys/apb 分频之后，
+        // 硬件把分频自动纠正了 —— 正是 IDF 在 `rtc_clk.c` 注释里警告的那件事
+        // （"Hardware could automatically correct the divider, and it won't be reflected
+        // to the registers"）。所以时间折算用**该档标称频率**，不做 APB 修正。
+        board.log.line(
+            "perf-tier: {d}MHz cycles_p50={d} cycles_per_byte={d:.3} p50_ns={d} mib_per_s={d:.3} div={d} mhz_measured={d}",
+            .{ tiers[i], cycles_p50[i], cmp[i], ns, mib, readback[i], mhz_seen[i] },
+        );
+    }
+    board.log.line("perf-tier: restored src={d} cpu_div={d} (4000000/x100 apb check below)", .{ st.src, st.cpu_div });
 }
 
 /// 实测 CPU 频率（MHz）：`mcycle` 增量 / `nowUs()` 增量。

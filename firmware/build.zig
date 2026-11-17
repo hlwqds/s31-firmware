@@ -62,6 +62,8 @@ pub fn build(b: *std.Build) void {
     const ab_stage = b.option([]const u8, "ab-stage", "stage boot slot: \"a\" or \"b\" (writes otadata, then resets)") orelse "";
     // C7：固定工作量跑周期实测（p50/p95、周期/字节）。默认关闭，避免影响启动时间与日志。
     const perf_run = b.option(bool, "perf-run", "run the cycle benchmark at boot (C7)") orelse false;
+    // C7 三档：切 CPU 到 80/160/320 各测一遍（改频，失败会挂；默认关闭）。
+    const perf_tiers = b.option(bool, "perf-tiers", "also sweep CPU clock tiers 80/160/320 (C7, changes clocks)") orelse false;
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -172,7 +174,7 @@ pub fn build(b: *std.Build) void {
     app.root_module.addImport("boot_power_perf", bpp_mod);
     app.root_module.addImport("perf_flag", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
         "perf_flag.zig",
-        b.fmt("pub const run = {};\n", .{perf_run}),
+        b.fmt("pub const run = {};\npub const tiers = {};\n", .{ perf_run, perf_tiers }),
     ) }));
     app.root_module.addImport("ab_fail_flag", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
         "ab_flags.zig",
