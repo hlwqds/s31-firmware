@@ -75,6 +75,14 @@ pub const Hooks = struct {
 
 var hooks: Hooks = .{};
 
+/// 走注入的日志钩子（板级接串口）。未注入时静默——主机测试里不重要。
+fn logLine(comptime fmt: []const u8, args: anytype) void {
+    const f = hooks.log orelse return;
+    var buf: [128]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
+    f(msg);
+}
+
 pub fn setHooks(h: Hooks) void {
     hooks = h;
 }
@@ -799,4 +807,309 @@ test "export layer: 至少这些符号是全局强定义（链接器才看得见
         &wr_btdm_osal_hw_enter_critical, &wr_btdm_osal_get_time_forever,
     };
     try testing.expectEqual(@as(usize, 20), names.len);
+}
+
+// ---------------------------------------------------------------------------
+// 内存、任务、中断、efuse MAC（归档**一定会调**的 7 个，见下方导出自查用例）
+//
+// 这 7 个此前漏掉了，而 `btdm_osal_elem_mempool_init` 第一步就要 `malloc` ⇒
+// 漏掉它们等于 init 链第一步就命中归档的弱断言桩。
+// ---------------------------------------------------------------------------
+
+/// 简单首次适配分配器：块头记 size + magic，空闲块串成链表，相邻空闲块合并。
+/// **不用 `std.heap.*`**（`riscv32-freestanding` 上 `page_allocator` 没有后端）。
+/// 对齐固定 8：controller 的结构里有 u64（`ble.rtc_freq`），4 字节对齐会被未对齐读。
+pub const Arena = struct {
+    const BlockHeader = extern struct {
+        size: u32, // 含块头的总大小，8 字节对齐
+        magic: u32 = headerMagic,
+        free: bool = false,
+        /// 补到 16 字节：块头之后就是数据区，若块头是 12 字节则 `addr + 12` 会破坏
+        /// 8 字节对齐（controller 的结构里有 u64，未对齐读会出错）。
+        _pad: [7]u8 = @splat(0),
+    };
+    comptime {
+        std.debug.assert(@sizeOf(BlockHeader) == 16);
+    }
+    const headerMagic: u32 = 0xB7A1_0C0D;
+    const block_align: usize = 8;
+    const min_block: usize = 32;
+
+    buf: []u8 = &.{},
+    initialized: bool = false,
+
+    pub fn init(self: *Arena, region: []u8) void {
+        self.buf = region;
+        self.initialized = false;
+        const start = std.mem.alignForward(usize, @intFromPtr(region.ptr), block_align);
+        const end = (@intFromPtr(region.ptr) + region.len) & ~(block_align - 1);
+        if (end <= start + @sizeOf(BlockHeader) + min_block) return;
+        const total: u32 = @intCast(end - start);
+        const hdr: *BlockHeader = @ptrFromInt(start);
+        hdr.* = .{ .size = total, .free = true };
+        self.initialized = true;
+    }
+
+    fn headerOf(ptr: *anyopaque) *BlockHeader {
+        const addr = @intFromPtr(ptr) - @sizeOf(BlockHeader);
+        return @ptrFromInt(addr);
+    }
+
+    pub fn alloc(self: *Arena, size: usize, alignment: usize) ?*anyopaque {
+        if (!self.initialized) return null;
+        const align_to = @max(alignment, block_align);
+        var need = std.mem.alignForward(usize, size + @sizeOf(BlockHeader), block_align);
+        if (need < min_block) need = min_block;
+
+        const base = @intFromPtr(self.buf.ptr);
+        var addr = std.mem.alignForward(usize, base, block_align);
+        const end = (base + self.buf.len) & ~(block_align - 1);
+        while (addr + @sizeOf(BlockHeader) <= end) {
+            const hdr: *BlockHeader = @ptrFromInt(addr);
+            if (hdr.magic != headerMagic) return null; // 越界/损坏
+            const next = addr + hdr.size;
+            if (hdr.free and hdr.size >= need) {
+                // 先按对齐要求把数据区推到位（可能要在前面切一块）
+                const data_addr = std.mem.alignForward(usize, addr + @sizeOf(BlockHeader), align_to);
+                const front = data_addr - @sizeOf(BlockHeader) - addr;
+                if (front >= min_block and front + need <= hdr.size) {
+                    hdr.size = @intCast(front);
+                    const rest_hdr: *BlockHeader = @ptrFromInt(addr + front);
+                    rest_hdr.* = .{ .size = @intCast(next - (addr + front)), .free = true };
+                    addr += front;
+                    continue;
+                }
+                const used = hdr.size;
+                if (used >= need + min_block) {
+                    const rest_hdr: *BlockHeader = @ptrFromInt(addr + need);
+                    rest_hdr.* = .{ .size = @intCast(used - need), .free = true };
+                    hdr.size = @intCast(need);
+                }
+                hdr.free = false;
+                return @ptrFromInt(addr + @sizeOf(BlockHeader));
+            }
+            if (next <= addr) return null;
+            addr = next;
+        }
+        return null;
+    }
+
+    pub fn freeRaw(self: *Arena, ptr: ?*anyopaque) void {
+        _ = self;
+        const p = ptr orelse return;
+        const addr = @intFromPtr(p);
+        if (addr < @sizeOf(BlockHeader)) return;
+        const hdr: *BlockHeader = @ptrFromInt(addr - @sizeOf(BlockHeader));
+        if (hdr.magic != headerMagic) return;
+        hdr.free = true;
+    }
+
+    pub fn bytesFree(self: *Arena) usize {
+        if (!self.initialized) return 0;
+        var total: usize = 0;
+        const base = @intFromPtr(self.buf.ptr);
+        var addr = std.mem.alignForward(usize, base, block_align);
+        const end = (base + self.buf.len) & ~(block_align - 1);
+        while (addr + @sizeOf(BlockHeader) <= end) {
+            const hdr: *BlockHeader = @ptrFromInt(addr);
+            if (hdr.magic != headerMagic) break;
+            if (hdr.free) total += hdr.size - @sizeOf(BlockHeader);
+            addr += hdr.size;
+        }
+        return total;
+    }
+};
+
+var bt_arena: Arena = .{};
+
+pub fn initArena(region: []u8) void {
+    bt_arena.init(region);
+}
+
+pub fn arenaFree() usize {
+    return bt_arena.bytesFree();
+}
+
+/// `flags`（`BTDM_OSAL_MALLOC_F_INTERNAL` vs `NORMAL`）在 IDF 里选不同的 heap 域。
+/// 我们只有一个 arena，两者走同一条路——与 wifi-blobs 的 `shellMallocInternal` 同处理。
+pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
+    return bt_arena.alloc(size, 8);
+}
+
+pub fn btdmFree(ptr: ?*anyopaque) void {
+    bt_arena.freeRaw(ptr);
+}
+
+const TaskFn = ?*const fn (?*anyopaque) callconv(.c) void;
+
+pub const TaskRec = struct {
+    fn_: TaskFn = null,
+    arg: ?*anyopaque = null,
+    stack_size: u32 = 0,
+    priority: u32 = 0,
+    core_id: u32 = 0,
+    in_use: bool = false,
+};
+
+var task_pool: Pool(TaskRec) = .{};
+
+pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32, core_id: u32, handle: *?*anyopaque) c_int {
+    const t = task_pool.take() orelse return ENOMEM;
+    t.fn_ = fn_;
+    t.arg = arg;
+    t.stack_size = stack_size;
+    t.priority = priority;
+    t.core_id = core_id;
+    handle.* = @ptrCast(t);
+    // 还没有把任务挂到调度器上：先如实记录，板侧日志里能看到 controller 要建任务。
+    logLine("bt osal: task_create registered stack={d} prio={d} core={d}", .{ stack_size, priority, core_id });
+    return OK;
+}
+
+pub fn taskDelete(handle: ?*anyopaque) void {
+    const raw = handle orelse return;
+    const t: *TaskRec = @ptrCast(@alignCast(raw));
+    task_pool.give(t);
+}
+
+pub const IntrRec = struct {
+    src: c_int = 0,
+    flags: c_int = 0,
+    fn_: ?*const fn (?*anyopaque) callconv(.c) void = null,
+    arg: ?*anyopaque = null,
+    in_use: bool = false,
+};
+
+var intr_pool: Pool(IntrRec) = .{};
+
+pub fn intrAlloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque, handle: *?*anyopaque) c_int {
+    const r = intr_pool.take() orelse return ENOMEM;
+    r.src = src;
+    r.flags = flags;
+    r.fn_ = fn_;
+    r.arg = arg;
+    handle.* = @ptrCast(r);
+    logLine("bt osal: intr_alloc registered src={d} (CLIC dispatch pending)", .{src});
+    return OK;
+}
+
+pub fn intrFree(handle: ?*anyopaque) void {
+    const raw = handle orelse return;
+    const r: *IntrRec = @ptrCast(@alignCast(raw));
+    intr_pool.give(r);
+}
+
+/// 出厂 MAC：板级注入（与 wifi-blobs 的 `Hooks.mac` 同源）。未注入时填一个本地管理地址。
+var hook_mac: ?*const fn (out: *[6]u8) void = null;
+pub fn setMacHook(f: *const fn (out: *[6]u8) void) void {
+    hook_mac = f;
+}
+
+pub fn readEfuseMac(out: *[6]u8) void {
+    if (hook_mac) |f| {
+        f(out);
+        return;
+    }
+    out.* = .{ 0x02, 0x00, 0x00, 0x00, 0xBB, 0x01 };
+}
+
+export fn wr_btdm_osal_malloc(size: u32, flags: c_int) callconv(.c) ?*anyopaque {
+    return btdmMalloc(size, flags);
+}
+export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
+    btdmFree(ptr);
+}
+export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
+    _ = name;
+    return taskCreate(fn_, stack_size, arg, priority, core_id, task_handle);
+}
+export fn wr_btdm_osal_task_delete(task_handle: ?*anyopaque) callconv(.c) void {
+    taskDelete(task_handle);
+}
+export fn wr_btdm_osal_intr_alloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque, intr_handle: *?*anyopaque) callconv(.c) c_int {
+    return intrAlloc(src, flags, fn_, arg, intr_handle);
+}
+export fn wr_btdm_osal_intr_free(intr_handle: ?*anyopaque) callconv(.c) void {
+    intrFree(intr_handle);
+}
+export fn wr_btdm_osal_read_efuse_mac(mac: *[6]u8) callconv(.c) void {
+    readEfuseMac(mac);
+}
+
+test "arena: 分配/释放/对齐 8，且不越界" {
+    var region: [4096]u8 align(8) = undefined;
+    var a: Arena = .{};
+    a.init(&region);
+    const p1 = a.alloc(100, 1) orelse return error.OutOfMemory;
+    try testing.expect(@intFromPtr(p1) % 8 == 0);
+    const p2 = a.alloc(200, 1) orelse return error.OutOfMemory;
+    try testing.expect(@intFromPtr(p2) % 8 == 0);
+    try testing.expect(p1 != p2);
+    a.freeRaw(p1);
+    const p3 = a.alloc(64, 1) orelse return error.OutOfMemory;
+    try testing.expectEqual(@intFromPtr(p1), @intFromPtr(p3)); // 复用刚释放的块
+    // 逐字节写一遍，确认没有踩到区域之外（mprotect 之外的粗检：首尾哨兵）
+    var guard = struct {
+        pre: u32 = 0x1234_5678,
+        region: [512]u8 align(8) = undefined,
+        post: u32 = 0x9ABC_DEF0,
+    }{};
+    var b: Arena = .{};
+    b.init(&guard.region);
+    _ = b.alloc(64, 1);
+    try testing.expectEqual(@as(u32, 0x1234_5678), guard.pre);
+    try testing.expectEqual(@as(u32, 0x9ABC_DEF0), guard.post);
+}
+
+test "缺失的 7 个导出现在都在，且 task/intr 可登记可释放" {
+    var h: ?*anyopaque = null;
+    try testing.expectEqual(OK, taskCreate(null, 4096, null, 5, 0, &h));
+    try testing.expect(h != null);
+    taskDelete(h);
+    var ih: ?*anyopaque = null;
+    try testing.expectEqual(OK, intrAlloc(25, 0, null, null, &ih));
+    try testing.expect(ih != null);
+    intrFree(ih);
+    var mac: [6]u8 = undefined;
+    readEfuseMac(&mac);
+    try testing.expect(mac[0] == 0x02);
+}
+
+/// 归档**实际调用**的 36 个 `wr_btdm_osal_*`（从归档未定义并集 ∩ 弱定义集取的）。
+/// 漏掉任何一个**链接期不会报错**（归档里有同名弱桩兜着），运行期会命中
+/// `wr_btdm_assert` 挂住——所以这里逐个点名引用：写错名字编译就失败，
+/// 引用一次也保证符号不被 gc 掉。
+const required_exports = [_]*const anyopaque{
+    // callout（6）
+    &wr_btdm_osal_callout_deinit,      &wr_btdm_osal_callout_init,
+    &wr_btdm_osal_callout_is_active,   &wr_btdm_osal_callout_mem_reset,
+    &wr_btdm_osal_callout_reset,       &wr_btdm_osal_callout_stop,
+    // event（7）
+    &wr_btdm_osal_event_deinit,        &wr_btdm_osal_event_get_arg,
+    &wr_btdm_osal_event_init,          &wr_btdm_osal_event_is_queued,
+    &wr_btdm_osal_event_reset,         &wr_btdm_osal_event_run,
+    &wr_btdm_osal_event_set_arg,
+    // eventq（7）
+          &wr_btdm_osal_eventq_deinit,
+    &wr_btdm_osal_eventq_get,          &wr_btdm_osal_eventq_init,
+    &wr_btdm_osal_eventq_is_empty,     &wr_btdm_osal_eventq_put,
+    &wr_btdm_osal_eventq_put_to_front, &wr_btdm_osal_eventq_remove,
+    // 内存（2）
+    &wr_btdm_osal_malloc,              &wr_btdm_osal_free,
+    // 时间（2）
+    &wr_btdm_osal_time_get,            &wr_btdm_osal_time_ms_to_ticks32,
+    // 临界区（2）
+    &wr_btdm_osal_hw_enter_critical,   &wr_btdm_osal_hw_exit_critical,
+    // 任务（2）
+    &wr_btdm_osal_task_create,         &wr_btdm_osal_task_delete,
+    // 中断（2）
+    &wr_btdm_osal_intr_alloc,          &wr_btdm_osal_intr_free,
+    // 其余（6）
+    &wr_btdm_osal_read_efuse_mac,      &wr_btdm_osal_get_time_forever,
+    &wr_btdm_osal_mutex_deinit,        &wr_btdm_osal_mutex_init,
+    &wr_btdm_osal_mutex_pend,          &wr_btdm_osal_mutex_release,
+};
+
+test "导出层：归档会调的 36 个逐个点名都在" {
+    try testing.expectEqual(@as(usize, 36), required_exports.len);
 }

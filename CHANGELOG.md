@@ -8,6 +8,16 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **BT controller 的 OSAL 落成**（2026-11-17，R3.3 里程碑 2c0）：`components/bt-blobs/src/osal.zig`
+  实现 time/critical/sem/mutex/event/eventq/callout + 自有 arena，并导出 **48 个** `wr_btdm_osal_*`
+  强定义（覆盖归档里的弱断言桩）。归档**实际会调**的 **36 个逐个点名核对**（差集为空），
+  因为**漏一个链接期不报错**（同名弱桩兜着）、运行期才以 `wr_btdm_assert` 挂住。
+  三处形状/环境的硬约束（都踩过）：
+  ① **句柄是 4 字节槽位**（`struct btdm_osal_* { void *x; }` 内嵌在 controller 结构体里）⇒
+  `Slot` 是 `extern struct { p: ?*anyopaque }`，状态对象只在静态池里、只把指针写进槽位；
+  ② **不能用 `std.heap.page_allocator`**（`riscv32-freestanding` 没有后端，主机上却正常 ⇒ 假绿）；
+  ③ 块头必须补到 **16 字节**，否则 `addr+12` 破坏 8 字节对齐（controller 结构里有 u64）。
+  14 个主机用例（含槽位金丝雀、arena 对齐、36 个导出点名）。
 - **BLE controller 链进两段镜像**（2026-11-17，R3.3 里程碑 1）：`libble_app` + `libbtdm_common` +
   `libbtbb` + `libphy` 的 113 对象闭包全部加进 `zig build`（新开关 `-Dbt-blob-dir` / `-Dbt-blob-objs`），
   `.flash.text` **699 920 / 720 896**（余 20 976）、`.flash.rodata` 110 848、`.iram_blobs` 60 224，
