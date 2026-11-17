@@ -771,7 +771,37 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
-### 🎯 剩余工作已精确量化：链 IDF 的 PHY 源码对象，补 **68 个符号**
+### 🚀 已完成：**IDF 的真实 PHY 实现跑进了我们的固件**
+
+这是整条线走得最远的一次，且是**可用代码**而不是推断。
+
+| 项 | 结果 |
+| --- | --- |
+| 链接的 IDF 对象 | `phy_init` · `phy_common` · `btbb_init` · `modem_clock` · `modem_clock_impl` · `modem_clock_hal` · `periph_ctrl` |
+| 补的桩 | `link/phy_stubs.c`，**37 个**（NVS 故意返回 `NOT_FOUND` ⇒ 走 IDF 自带的 `PHY_RF_CAL_FULL` fallback） |
+| 链接结果 | **0 个未定义符号** |
+| 真实函数进镜像 | `esp_phy_enable` @ `0x40000744` · `esp_phy_load_cal_and_init` @ `0x40000580` · `modem_clock_module_enable` / `phy_module_enable` 在 IRAM |
+
+**途中抓到两个我自己的真 bug**
+
+1. **`HP_SYS_CLKRST` 被写成变量**（应为绝对符号）。`&HP_SYS_CLKRST` 于是解析到该变量在
+   drom 的位置 `0x40104f48`，PHY 往 flash 写 ⇒ `store access fault`。
+   改为 `PROVIDE(HP_SYS_CLKRST = 0x20587000)` 后修复。
+2. **`esp_log` 桩解引用 tag**。IDF 的 `esp_log` 是宏，调用点第一个参数未必是字符串常量
+   （实测 `a0=3`）⇒ `load access fault`。去掉解引用后修复。
+
+**当前状态：PHY 代码执行后卡在 RF 校准**
+
+```text
+（step 1-5 不打印 —— PHY 初始化在 init() 入口，先于 step 1）
+phy: (log)
+phy: (log)
+（100 秒无进展，无 panic）
+```
+
+⇒ **不是"校准慢"，是真的停住**（100 秒抓取验证）。
+
+### 🎯（已完成）剩余工作精确量化：链 IDF 的 PHY 源码对象，补 **68 个符号**
 
 关键简化：**IDF 的构建目录里已经有编好的 `.o`**，不需要重建头文件树。
 
