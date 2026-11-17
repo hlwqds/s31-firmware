@@ -292,6 +292,24 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         });
     }
 
+    // 2.9) **PMU 的 ICG 应用触发**（IDF 在 `rtc_clk_init` 里做，我们此前从未做）。
+    //   只写 `clk_conf_power_st` 位图是**惰性**的：必须再打 apply 位，PMU 才会把
+    //   新的 clock-gating 图应用下去。位定义（`soc/esp32s31/register/soc/pmu_reg.h`）：
+    //     PMU_IMM_HP_FUNC_ICG   (+0xfc)  bit31 UPDATE_DIG_ICG_FUNC_EN
+    //     PMU_IMM_HP_APB_ICG    (+0x100) bit31 UPDATE_DIG_ICG_APB_EN
+    //     PMU_IMM_MODEM_ICG     (+0x104) bit31 UPDATE_DIG_ICG_MODEM_EN
+    //     PMU_IMM_SLEEP_SYSCLK  (+0xf8)  bit28 UPDATE_DIG_ICG_SWITCH
+    {
+        const pmu: usize = 0x2070_4000;
+        wr(pmu + 0xfc, rd(pmu + 0xfc) | (@as(u32, 1) << 31));
+        wr(pmu + 0x100, rd(pmu + 0x100) | (@as(u32, 1) << 31));
+        wr(pmu + 0x104, rd(pmu + 0x104) | (@as(u32, 1) << 31));
+        wr(pmu + 0xf8, rd(pmu + 0xf8) | (@as(u32, 1) << 28));
+        osal.logPublic("bt lp: PMU ICG apply done func=0x{x:0>8} apb=0x{x:0>8} modem=0x{x:0>8} slp=0x{x:0>8}", .{
+            rd(pmu + 0xfc), rd(pmu + 0x100), rd(pmu + 0x104), rd(pmu + 0xf8),
+        });
+    }
+
     // 3) **MAC 复位族**（时钟之后）。IDF `modem_clock_module_mac_reset(PERIPH_BT_MODULE)`
     //    依次复位四个域,顺序与位号如下（`modem_syscon_struct.h` 的 `modem_rst_conf`）:
     //      rst_btmac      bit16

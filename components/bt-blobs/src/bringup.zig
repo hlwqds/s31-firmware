@@ -144,11 +144,11 @@ pub fn init(cfg: *config.Config) c_int {
     enter(6, "r_btdm_task_init");
     {
         const pp = @import("probe_ptr.zig");
-        if (pp.get() == 0) {
+        if (@import("probe.zig").populate_workaround and pp.get() == 0) {
             const pr = pp.populate();
             osal.logPublic("bt bringup: Xpuq 锚点为 NULL => 补调写者 rc={d}, 现在 P=0x{x:0>8}", .{ pr, pp.get() });
         } else {
-            osal.logPublic("bt bringup: Xpuq 锚点已就绪 P=0x{x:0>8}", .{pp.get()});
+            osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
     if (skip_task_init) {

@@ -7,7 +7,7 @@ load:0x2f06a2b0,len:0xc7c
 load:0x2f06cfb0,len:0x3368
 entry 0x2f06a2ba
 I (26) boot: ESP-IDF v6.1 2nd stage bootloader
-I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: compile time Nov 17 2026 21:27:04
 I (26) boot: Multicore bootloader
 I (28) boot: chip revision: v0.0
 I (29) boot: efuse block revision: v0.2
@@ -21,26 +21,181 @@ I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
 I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
 I (71) boot:  2 factory          factory app      00 00 00010000 00177000
 I (78) boot: End of partition table
-I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9ac30h (633904) map
-I (192) esp_image: segment 1: paddr=000aac58 vaddr=2f000000 size=000ach (   172) load
-I (194) esp_image: segment 2: paddr=000aad0c vaddr=2f0000b0 size=0530ch ( 21260) load
-I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=14670h ( 83568) map
-I (218) esp_image: segment 4: paddr=000c4698 vaddr=2f0053bc size=09c60h ( 40032) load
-I (228) esp_image: segment 5: paddr=000ce300 vaddr=2f00f01a size=00064h (   100) load
-I (230) esp_image: segment 6: paddr=000ce36c vaddr=2f00f07c size=00110h (   272) load
-I (233) esp_image: segment 7: paddr=000ce484 vaddr=2f00f18a size=00068h (   104) load
-I (241) esp_image: segment 8: paddr=000ce4f4 vaddr=2f00f1f0 size=0006ch (   108) load
-I (248) esp_image: segment 9: paddr=000ce568 vaddr=2f00f260 size=003e0h (   992) load
-I (259) boot: Loaded app from partition at offset 0x10000
-I (259) boot: Disabling RNG early entropy source...
+I (81) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9b6b0h (636592) map
+I (193) esp_image: segment 1: paddr=000ab6d8 vaddr=2f000000 size=000ach (   172) load
+I (195) esp_image: segment 2: paddr=000ab78c vaddr=2f0000b0 size=0488ch ( 18572) load
+I (201) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=14a10h ( 84496) map
+I (219) esp_image: segment 4: paddr=000c4a38 vaddr=2f00493c size=0a6e0h ( 42720) load
+I (229) esp_image: segment 5: paddr=000cf120 vaddr=2f00f01a size=00064h (   100) load
+I (231) esp_image: segment 6: paddr=000cf18c vaddr=2f00f07c size=00110h (   272) load
+I (234) esp_image: segment 7: paddr=000cf2a4 vaddr=2f00f18a size=00068h (   104) load
+I (242) esp_image: segment 8: paddr=000cf314 vaddr=2f00f1f0 size=0006ch (   108) load
+I (249) esp_image: segment 9: paddr=000cf388 vaddr=2f00f260 size=003f0h (  1008) load
+I (260) boot: Loaded app from partition at offset 0x10000
+I (261) boot: Disabling RNG early entropy source...
 bt probe: hooks installed (now_ms=us/1000)
-bt probe: timer 9 -> 12 (must increase)
-bt probe: irqs OFF (control run)
-bt probe: arena 407104 B
-bt probe: init start
+bt probe: timer 6 -> 9 (must increase)
+irq-sample #0 input=25 mepc=0x4006586e mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x02000000 a1=0x01000100 s0=0x20580000 ra=0x4006583a
+bt probe: clic[25] 0x1firq-sample #1 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000034 s0=0x1fc00100 ra=0x4006592e
+c00100 -> 0x1fc00100 (nirq-sample #2 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000034 s0=0x1fc00100 ra=0x4006592e
+mies)
+bt probe: irq enairq-sample #3 input=25 mepc=0x400690d2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000002b s0=0x2f07aecc ra=0x40065988
+bled (probe only), t0=2irq-sample #4 input=25 mepc=0x400690da mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000002b s0=0x2f07aecc ra=0x40065988
+ms
+bt probe: arena 4067irq-sample #5 input=25 mepc=0x400692f2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000018 s0=0x2f076fc0 ra=0x40065a54
+84 B
+bt probe: init stairq-sample #6 input=25 mepc=0x400692ec mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000014 s0=0x5a5aa5a5 ra=0x40065bc8
+rt
+bt probe: syscon+0x0irq-sample #7 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000000 ra=0x40065c7e
+0 = 0x00000100
+bt probeirq-sample #8 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000004 ra=0x40065c7e
+: syscon+0x04 = 0x00201irq-sample #9 input=25 mepc=0x400690d2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000004 ra=0x40065c7e
+002
+bt probe: syscon+0xirq-sample #10 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000008 ra=0x40065c7e
+08 = 0x00000000
+bt probirq-sample #11 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000000c ra=0x40065c7e
+e: syscon+0x0c = 0x0000irq-sample #12 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000000c ra=0x40065c7e
+0000
+bt probe: syscon+0irq-sample #13 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000010 ra=0x40065c7e
+x10 = 0x00000000
+bt proirq-sample #14 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000014 ra=0x40065c7e
+be: syscon+0x14 = 0x000irq-sample #15 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000014 ra=0x40065c7e
+00000
+bt probe: syscon+irq-sample #16 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000018 ra=0x40065c7e
+0x18 = 0x00000000
+bt prirq-sample #17 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000001c ra=0x40065c7e
+obe: syscon+0x1c = 0x00irq-sample #18 input=25 mepc=0x400690d2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000001c ra=0x40065c7e
+000000
+bt probe: sysconirq-sample #19 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000020 ra=0x40065c7e
++0x20 = 0x00002070
+bt pirq-sample #20 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000024 ra=0x40065c7e
+robe: syscon+0x24 = 0x0irq-sample #21 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000024 ra=0x40065c7e
+0000000
+bt probe: syscoirq-sample #22 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000028 ra=0x40065c7e
+n+0x28 = 0x00000000
+bt irq-sample #23 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000002c ra=0x40065c7e
+probe: syscon+0x2c = 0xirq-sample #24 input=25 mepc=0x400690d2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000002c ra=0x40065c7e
+00000044
+bt probe: syscirq-sample #25 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000030 ra=0x40065c7e
+on+0x30 = 0x02508080
+btirq-sample #26 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000034 ra=0x40065c7e
+ probe: syscon+0x34 = 0irq-sample #27 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000034 ra=0x40065c7e
+x00000000
+bt probe: sysirq-sample #28 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x00000038 ra=0x40065c7e
+con+0x38 = 0x00000000
+birq-sample #29 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000003c ra=0x40065c7e
+t probe: syscon+0x3c = irq-sample #30 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x00000023 s0=0x0000003c ra=0x40065c7e
+0x00000000
+clkrst+0x000irq-sample #31 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000000 ra=0x40065d48
+ = 0x00000001
+clkrst+0xirq-sample #32 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000004 ra=0x40065d48
+004 = 0x00000003
+clkrstirq-sample #33 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000010 ra=0x40065d48
++0x010 = 0x00000001
+clkirq-sample #34 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000001c ra=0x40065d48
+rst+0x01c = 0x00000003
+irq-sample #35 input=25 mepc=0x4006ce2c mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aeab a1=0x2f07ae7c s0=0x00000002 ra=0x40066b2c
+clkrst+0x020 = 0x000000irq-sample #36 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000020 ra=0x40065d48
+04
+clkrst+0x024 = 0x000irq-sample #37 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000024 ra=0x40065d48
+00003
+clkrst+0x028 = 0xirq-sample #38 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000028 ra=0x40065d48
+00000003
+clkrst+0x034 =irq-sample #39 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000034 ra=0x40065d48
+ 0x00000001
+clkrst+0x03irq-sample #40 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000038 ra=0x40065d48
+8 = 0x000156db
+clkrst+0irq-sample #41 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000003c ra=0x40065d48
+x03c = 0x0000000f
+clkrsirq-sample #42 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000040 ra=0x40065d48
+t+0x040 = 0x00000001
+clirq-sample #43 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000044 ra=0x40065d48
+krst+0x044 = 0x0000000firq-sample #44 input=25 mepc=0x400690da mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000044 ra=0x40065d48
+
+clkrst+0x048 = 0x00000irq-sample #45 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000048 ra=0x40065d48
+011
+clkrst+0x058 = 0x00irq-sample #46 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000058 ra=0x40065d48
+415555
+clkrst+0x05c = 0irq-sample #47 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000005c ra=0x40065d48
+x00000005
+clkrst+0x064 irq-sample #48 input=25 mepc=0x400690d2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000064 ra=0x40065d48
+= 0x00000ba1
+clkrst+0x0irq-sample #49 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000068 ra=0x40065d48
+68 = 0x00000181
+clkrst+irq-sample #50 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000006c ra=0x40065d48
+0x06c = 0x00800043
+clkrirq-sample #51 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000070 ra=0x40065d48
+st+0x070 = 0x00800043
+cirq-sample #52 input=25 mepc=0x400690da mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000078 ra=0x40065d48
+lkrst+0x078 = 0x0000000irq-sample #53 input=25 mepc=0x400690d2 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000078 ra=0x40065d48
+1
+clkrst+0x07c = 0x0000irq-sample #54 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000007c ra=0x40065d48
+0001
+clkrst+0x080 = 0x0irq-sample #55 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000080 ra=0x40065d48
+0000001
+clkrst+0x088 = irq-sample #56 input=25 mepc=0x400690cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000088 ra=0x40065d48
+0x00000083
+clkrst+0x08cirq-sample #57 input=25 mepc=0x400690da mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x0000008c ra=0x40065d48
+ = 0x00000083
+clkrst+0xirq-sample #58 input=25 mepc=0x400690da mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000090 ra=0x40065d48
+090 = 0x00000083
+clkrstirq-sample #59 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000094 ra=0x40065d48
++0x094 = 0x00000083
+clkirq-sample #60 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x000000a8 ra=0x40065d48
+rst+0x0a8 = 0x00000040
+irq-sample #61 input=25 mepc=0x40066a7c mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07af6c a1=0x000000d8 s0=0x000000d8 ra=0x40065d00
+clkrst+0x0d8 = 0x000000irq-sample #62 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x000000d8 ra=0x40065d48
+01
+clkrst+0x114 = 0x000irq-sample #63 input=25 mepc=0x400690d0 mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x2f07aea1 a1=0x0000001a s0=0x00000114 ra=0x40065d48
+00921
+clkrst+0x118 = 0x00000011
+clkrst+0x11c = 0x00000921
+clkrst+0x134 = 0x00000001
+clkrst+0x144 = 0x00000001
+clkrst+0x15c = 0x00000011
+clkrst+0x160 = 0x00001011
+clkrst+0x164 = 0x00001011
+clkrst+0x168 = 0x0000012c
+clkrst+0x16c = 0x0000001a
+clkrst+0x170 = 0x00000002
+clkrst+0x174 = 0x0000004d
+clkrst+0x17c = 0x00000101
+clkrst+0x180 = 0x00000102
+clkrst+0x184 = 0x00000103
+clkrst+0x188 = 0x00000505
+clkrst+0x18c = 0x00000107
+clkrst+0x190 = 0x00000117
+clkrst+0x194 = 0x00000105
+clkrst+0x198 = 0x0000010b
+clkrst+0x1a0 = 0x000003ff
+clkrst+0x1a4 = 0x000003ff
+clkrst+0x1a8 = 0x000003ff
+clkrst+0x1b0 = 0x00000001
+clkrst+0x1cc = 0x00000001
+clkrst+0x1d0 = 0x00000001
+clkrst+0x1d8 = 0x00000001
+clkrst+0x1dc = 0x00000001
+clkrst+0x1e0 = 0x00000025
+clkrst+0x1e8 = 0x00000107
+clkrst+0x1ec = 0x0000000c
+clkrst+0x1f0 = 0x00000004
+clkrst+0x1f4 = 0x00000004
+clkrst+0x1f8 = 0x00000001
+clkrst+0x1fc = 0x02509110
+uart0 采样[0] 0xe0788000
+uart0 采样[1] 0xe0008000
+uart0 采样[2] 0xe0008000
+uart0 采样[3] 0xe0008000
+pcsample n=256 pc=0x2f8036ce ra=0x40065e04 s0=0x3
+irq-sample #256 input=25 mepc=0x2f8036cc mac=0x0000e000 b13=0 b14=0 ctx15=6 en=0 a0=0x007a1200 a1=0x0000001b s0=0x00000003 ra=0x40065e04
 bt bringup: enter step 1 mempool
 bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16 / cap 384/96/128/64/64
 bt mempool: ok evt=187 evtq=33 co=41 sem=20 mutex=16
+bt mempool: init evt blocks=187 blk=12 buf=2f013ad0 rc=0
+bt mempool: init evtq blocks=33 blk=4 buf=2f0143a8 rc=0
+bt mempool: init co blocks=41 blk=20 buf=2f014440 rc=0
+bt mempool: init sem blocks=20 blk=4 buf=2f014788 rc=0
+bt mempool: init mutex blocks=16 blk=4 buf=2f0147e8 rc=0
 bt bringup: enter step 2 btdm_log_init
 bt bringup: enter step 3 btdm_external_init
 bt bringup: enter step 4 btdm_coex_init
@@ -50,8 +205,13 @@ bt lp: gates conf_ok=true conf1_ok=true coex_ok=true
 bt lp: modem_conf=0x00000025 (want 0x3d) pll_ok=false
 bt lp: clk_conf1=0x003ff880 fe_ok=true
 bt lp: lp_timer_conf=0x00000001 32k_conf=0x00000001 lpcon_clk=0x0000000e
-bt lp: mac reset done, rst_conf=0x00000000
+bt lp: MODEM_CONF=0x0000003d (bit3+bit4 set)
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 power_st=0x64646400
+bt lp: PMU ICG apply done func=0x00000000 apb=0x00000000 modem=0x00000000 slp=0x00000000
+bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x00000000
+bt lp: uart0 status after = 0xe0788000
 bt bringup: enter step 6 r_btdm_task_init
+bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如此)
 osal> eventqInit
 osal> eventInit
 osal> eventInit
