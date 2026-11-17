@@ -151,6 +151,16 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
+    // **只发布 7.o 锚点**：给 `BOhff` 的守卫一块可读内存（入口只判非空）。
+    if (@import("probe.zig").publish_bohff_anchor) {
+        const pp7 = @import("probe_ptr.zig");
+        if (pp7.bohffAnchor() == 0) {
+            if (osal.btdmMalloc(16, 0)) |a7| {
+                pp7.setBOhffAnchor(@intCast(@intFromPtr(a7)));
+                osal.logPublic("bt bringup: 发布 7.o 锚点 a7=0x{x:0>8}（BOhff 守卫）", .{@intFromPtr(a7)});
+            }
+        }
+    }
     if (@import("probe.zig").populate_workaround) {
         // **发布 OkE7 锚点**（受 `populate_workaround` 控制，默认关）。
         //

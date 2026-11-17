@@ -732,6 +732,36 @@ beqz a5, .L80           ; 为 0 ⇒ 直接跳错误路径
 定位方法：在 oracle 里按 §"时间线采样"每 1 ms 打一次其中两个锚点的值，
 看它们各自在哪个调用之后从 0 变非 0。
 
+### 📍 当前前沿（2026-11-17 最终）
+
+`r_btdm_task_init` 的完整控制流（`.text.r_btdm_task_init`，`0x11c`，逐条读全）：
+
+```asm
+0x00-0x18  cfg==NULL? / cfg->version==0x20260127?  否则 → .L93(deinit)
+0x32-0x3c  cfg->magic==0x5a5aa5a5?                 否则 → .L93(deinit)
+0x40       call r_sym_bt_OkE7
+0x4a       bnez a0, .L93                            OkE7 非 0 → deinit
+0x4c-0x54  s1 = &(21.o 锚点); s2 = 锚点值
+0x58-0x62  a1 = get_time_forever(); s2 = 锚点值+4
+0x66       call <pend(&mutex@锚点+4, a1)>           ← 板侧 trace: => OK
+0x6e-0x74  a5 = 锚点值; sb 1, 0(a5)                 ← 写状态字节（现在是合法内存）
+0x78       call <无 OSAL hook>                      ★ 候选 1
+0x80-0xa0  sp+20 = {0x0b10, 33, 2000, 0x2f000000}
+0xa0       call r_sym_bt_BOhff                      ← 建任务；守卫 7.o 锚点
+0xa8       call <sp+12，8 字节零结构，无 OSAL>      ★ 候选 2
+```
+
+**已核对的签名事实**：IDF 的 `wr_btdm_osal_eventq_init` / `event_init` **本身就是 `void`**
+（`btdm_osal.h:82,91`），所以我们声明成 `void` 是正确的 —— "返回值残留触发 `bnez`"
+这条假设**不成立**，已排除。
+
+**唯一未解**：`0x78` 与 `0xa8` 两处调用**不碰任何 hook**，所以永远不出现在 hook trace 里。
+它们只能用**短行 PC 采样器**定位（该仪器本轮已修好并验证可用）。
+
+**`BOhff` 的栈是硬编码 `0x2f000000`（2000 字节）** —— 正是我们 bootloader 的 CLIC 向量表
+（`_mtvt_table` ≈ `0x2f000070`）与堆起始（`0x2f000a20`）所在区间。一旦任务真的建起来，
+它会**覆盖向量表**，症状恰好就是"中断不再递送"。这条在追 `0xa8` 之前必须先排除。
+
 ### 🔄 再更正：锚点由 `OkE7` 自己发布，而配置修好后它**成功了**
 
 读 `.text.r_sym_bt_OkE7...` 的完整函数体（`nm -S` 边界，`0x146` 字节）得到真实流程：
