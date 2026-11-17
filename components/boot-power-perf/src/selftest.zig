@@ -23,7 +23,9 @@ const std = @import("std");
 
 const bootslot = @import("bootslot.zig");
 const ota = @import("ota.zig");
-const perf = @import("perf.zig");
+/// 固定工作量的周期实测（频率无关）。导出给 `firmware/src/main.zig` 用。
+pub const workload = @import("workload.zig");
+pub const perf = @import("perf.zig");
 const power = @import("power.zig");
 const board = @import("board");
 const log = board.log;

@@ -413,3 +413,4 @@ ota: running factory, no slot bookkeeping
 #   判据行 `ota: ab=no ... count=0`，而同一次启动上一行的 `ota: table n=6 ... otadata=0x490000`
 #   说明分区表解析完全正确 ⇒ 问题只在 `@intFromBool(a)+@intFromBool(b)`（返回 u1，1+1 回绕成 0）。
 #   现已抽出 `appCount()` 并加回归测试；修复后的对照见 `logs/c5-ab-factory.log` 的 `ab=yes count=2`。
+# 原始字节：含 2 个 NUL（复位边界），与上同，按 L1 保留。

@@ -15,6 +15,7 @@ otadata 选槽、A/B 回滚预算、睡眠预算、p50/p95 与频率折算。
 | `src/flash.zig` | SPI flash 最小封装（ROM `esp_rom_spiflash_read/write/erase_sector`，4 KiB 扇区） |
 | `src/partition.zig` | 分区表二进制解析（0x8000，32 字节条目，magic 0xAA50） |
 | `src/slot.zig` | **otadata 的真实读写 + 启动槽选择**（见下节） |
+| `src/workload.zig` | 固定工作量的**周期实测**（注入时钟，主机可测；C7） |
 | `src/host_tests.zig` | 主机测试入口（聚合模块内 `test`） |
 
 ## otadata 的真实落盘（C5）
@@ -49,6 +50,27 @@ PENDING_VERIFY}` 则写 VALID → 自检失败累加计数，到 `max_runtime_fa
 
 > 本仓 bootloader **没有**打开 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`（Kconfig 默认 `n`），
 > 所以 NEW→PENDING_VERIFY / ABORTED 的翻转不会发生，状态位全部由应用负责。
+
+## 周期实测（C7 的基准尺）
+
+`workload.zig` 对一块 4 KiB 缓冲做一遍 64 位 ARX 混合（数据依赖，编译器消不掉），
+跑 N 轮、每轮用 `mcycle` 量周期，产出 `min/mean/p50/p95` 与 `cycles_per_byte`。
+
+**为什么是周期而不是时间**：`hw.nowUs()` 走 TIMG0（APB/40），一旦改 CPU 频率就不再准；
+`mcycle` 与频率无关 ⇒ "周期/字节"才能跨频率比较。时间/吞吐只能在已知频率下由周期折算，
+且必须标明是折算值。
+
+**实测 CPU 频率**：`mcycle` 增量 ÷ `nowUs()` 增量（20 ms 窗口）。两个计数源独立，
+比值就是 MHz。板上实测 **80 MHz**，与 IDF `BOOTLOADER_CPU_CLK_FREQ_MHZ` 在 esp32s31 的默认值
+（`components/bootloader/Kconfig.projbuild:44`）一致 —— CPU 频率继承自二级 bootloader。
+
+> 踩过的坑：`nowUs()` 在**未初始化**的 TIMG0 上恒为 0（生产 `main` 平时不调 `initTimer()`），
+> 表现为"频率测不出来"。`-Dperf-run` 那段会先显式 `initTimer()`。
+>
+> 另一个坑：早期按"标称 240 MHz"折算时间，比真实值小 3 倍（真实 80 MHz）。
+
+**未做**：80/160/320 三档对比。需要时钟树 bring-up（IDF 的 `clk_ll_cpu_set_*` 会同时改
+源与 cpu/mem/sys/apb 分频；320 MHz 还要先把 CPLL 起来），本固件没有改频路径。
 
 ### 静态缓冲（RAM，不是 flash）
 

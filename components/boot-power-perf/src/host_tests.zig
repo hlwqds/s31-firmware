@@ -13,6 +13,7 @@ test {
     _ = @import("flash.zig");
     _ = @import("partition.zig");
     _ = @import("slot.zig");
+    _ = @import("workload.zig");
     _ = @import("power.zig");
     _ = @import("perf.zig");
     _ = @import("ota.zig");

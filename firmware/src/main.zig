@@ -13,6 +13,8 @@ const board = @import("board");
 const enabled = @import("enabled");
 const ota_ab = @import("ota_ab");
 const ab_flags = @import("ab_fail_flag");
+const bpp = @import("boot_power_perf");
+const perf_flag = @import("perf_flag");
 
 pub export fn main() noreturn {
     // `-Dwifi-init-probe` 打开时，入口换成 R3 探针（正常自检不跑）。
@@ -57,6 +59,9 @@ pub export fn main() noreturn {
     } else |e| {
         board.log.line("ota: readBoot failed: {s}", .{@errorName(e)});
     }
+
+    // --- C7: 固定工作量的周期实测（`-Dperf-run`，默认关闭）----------------
+    if (comptime perf_flag.run) runPerf();
 
     // --- C5: 切槽（`-Dab-stage=a|b`），写完复位让 bootloader 重新选 --------
     if (comptime ab_flags.stage.len > 0) {
@@ -106,6 +111,55 @@ pub export fn main() noreturn {
     }
 
     board.hw.halt();
+}
+
+/// `-Dperf-run`：固定工作量跑若干轮，报告周期统计。
+///
+/// **只用 `mcycle`**，不碰 `nowUs()`：后者走 TIMG0（APB/40），一旦改 CPU 频率就不再准。
+/// 时间/吞吐由周期数按标称频率折算，日志里标明是"按标称频率折算"。
+fn runPerf() void {
+    const w = bpp.workload;
+    // TIMG0 必须先初始化：生产 main 平时不调它，而 `nowUs()` 在未初始化的 TIMG0 上**恒为 0**
+    // （与 bt-blobs 探针里记的那条实测一致）。只有「实测 CPU 频率」那一步用到它。
+    board.hw.initTimer();
+    w.initWork();
+
+    var sink: u64 = 0;
+    var samples: [24]u64 = undefined;
+    const report = w.measure(&board.hw.cycleCount, &sink, samples.len, &samples) catch |e| {
+        board.log.line("perf: measure failed: {s}", .{@errorName(e)});
+        return;
+    };
+    board.log.line(
+        "perf: bytes={d} rounds={d} cycles(min/mean/p50/p95)={d}/{d}/{d}/{d} cycles_per_byte={d:.3}",
+        .{ report.bytes, report.rounds, report.summary.min, report.summary.mean, report.cycles_p50, report.cycles_p95, report.cycles_per_byte },
+    );
+    // 实测 CPU 频率：`mcycle` 与 `nowUs()`（TIMG0 = APB/40）是两个独立的计数源，
+    // 一段时间内的"周期数 / 微秒数"就是 MHz。这样下面的折算用的是实测频率而不是标称值。
+    const mhz = measureCpuMhz();
+    if (mhz == 0) {
+        board.log.raw("perf: cpu_mhz measurement failed (nowUs did not advance)\n");
+    } else {
+        const ns = report.cycles_p50 * 1000 / mhz;
+        const mib = bpp.perf.mibPerSecond(report.bytes, ns);
+        board.log.line("perf: cpu_mhz(measured)={d} p50_ns={d} mib_per_s={d:.3}", .{ mhz, ns, mib });
+    }
+    board.log.line("perf: sink=0x{x}", .{sink});
+}
+
+/// 实测 CPU 频率（MHz）：`mcycle` 增量 / `nowUs()` 增量。
+///
+/// 两个计数源独立：`mcycle` 数的是 CPU 周期，`nowUs()` 数的是 TIMG0（APB/40）。
+/// 只要 APB 仍是 40 MHz（本固件没有改频路径），这个比值就是真实的 CPU MHz。
+fn measureCpuMhz() u32 {
+    const c0 = board.hw.cycleCount();
+    const t0 = board.hw.nowUs();
+    var guard: u32 = 0;
+    while (board.hw.elapsedUs(t0) < 20_000 and guard < 5_000_000) : (guard += 1) {}
+    const c1 = board.hw.cycleCount();
+    const us = board.hw.elapsedUs(t0);
+    if (us == 0) return 0;
+    return @intCast((c1 - c0) / us);
 }
 
 /// `-Dab-stage=a|b`：把下次启动切到指定槽，然后复位。

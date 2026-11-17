@@ -60,7 +60,8 @@ pub fn build(b: *std.Build) void {
     const ab_fail = b.option(bool, "ab-fail", "inject a failing self-test entry (C5 rollback trigger)") orelse false;
     // C5 切槽：启动时把下次引导切到 ota_0/ota_1（写 otadata 后复位）。
     const ab_stage = b.option([]const u8, "ab-stage", "stage boot slot: \"a\" or \"b\" (writes otadata, then resets)") orelse "";
-
+    // C7：固定工作量跑周期实测（p50/p95、周期/字节）。默认关闭，避免影响启动时间与日志。
+    const perf_run = b.option(bool, "perf-run", "run the cycle benchmark at boot (C7)") orelse false;
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
 
@@ -85,6 +86,11 @@ pub fn build(b: *std.Build) void {
 
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
+    // `boot_power_perf` 模块**无条件**创建：main 需要它（perf 实测），
+    // 而 `enabled` 只在 boot 组打开时才引用它 ⇒ 关闭时不会带进任何代码。
+    const bpp_mod = b.createModule(.{ .root_source_file = b.path("../components/boot-power-perf/src/selftest.zig") });
+    bpp_mod.addImport("board", board);
+
     const enabled_mod = b.createModule(.{ .root_source_file = enabled_file });
     // `-Dab-fail` 注入的那条自检：永远返回 false，用来制造回滚条件。
     enabled_mod.addImport("ab_fail", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
@@ -94,6 +100,11 @@ pub fn build(b: *std.Build) void {
 
     for (all_modules) |m| {
         if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
+        if (std.mem.eql(u8, m.name, "boot_power_perf")) {
+            // 复用 bpp_mod：同一份 selftest.zig 不能同时属于两个模块。
+            enabled_mod.addImport(m.name, bpp_mod);
+            continue;
+        }
         const mod = b.createModule(.{ .root_source_file = b.path(m.path) });
         mod.addImport("board", board);
         if (std.mem.eql(u8, m.name, "net_wire")) {
@@ -158,6 +169,11 @@ pub fn build(b: *std.Build) void {
     // C5：otadata 的真实读写层（分区表 + flash + IDF 32 字节条目）
     const ota_ab_mod = b.createModule(.{ .root_source_file = b.path("../components/boot-power-perf/src/slot.zig") });
     app.root_module.addImport("ota_ab", ota_ab_mod);
+    app.root_module.addImport("boot_power_perf", bpp_mod);
+    app.root_module.addImport("perf_flag", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
+        "perf_flag.zig",
+        b.fmt("pub const run = {};\n", .{perf_run}),
+    ) }));
     app.root_module.addImport("ab_fail_flag", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
         "ab_flags.zig",
         b.fmt("pub const enabled = {};\npub const stage = \"{s}\";\n", .{ ab_fail, ab_stage }),
@@ -206,7 +222,7 @@ pub fn build(b: *std.Build) void {
         if (bt_added == 0) @panic("-Dbt-blob-objs 为空：给它逗号分隔的对象名");
         app.link_gc_sections = false;
         // 适配面：10 个符号里的 5 个非链接脚本符号（另 5 个在 s31.ld 里 PROVIDE）。
-        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe) &.{ "-DBT_ASSERT_RETURNS=1" } else &.{} });
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe) &.{"-DBT_ASSERT_RETURNS=1"} else &.{} });
         // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
         // 归档的日志必须走我们的丢弃实现，否则"打印"就是"挂死"。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{} });

@@ -87,6 +87,39 @@ pub fn nowUs() u64 {
     return (hi << 32) | lo;
 }
 
+/// 已退休的周期数（RISC-V `mcycle`，64 位）。
+///
+/// **这是"周期/字节"类指标的基准尺**：它与 CPU 频率无关，也不依赖 APB。
+/// `nowUs()` 走 TIMG0（APB/40），一旦改 CPU 频率它就不再准；做性能实测只能用这个。
+///
+/// 读法：`mcycle` 是 32 位，单独读 `mcycle`/`mcycleh` 会在低位回绕时撕出错误的 64 位值，
+/// 所以按"读 hi → 读 lo → 再读 hi，两次 hi 一致才算数"重试。
+pub fn cycleCount() u64 {
+    var guard: u32 = 0;
+    while (guard < 8) : (guard += 1) {
+        var hi1: u32 = undefined;
+        var lo: u32 = undefined;
+        var hi2: u32 = undefined;
+        asm volatile ("rdcycleh %[h]"
+            : [h] "=r" (hi1),
+        );
+        asm volatile ("rdcycle %[l]"
+            : [l] "=r" (lo),
+        );
+        asm volatile ("rdcycleh %[h]"
+            : [h] "=r" (hi2),
+        );
+        if (hi1 == hi2) return (@as(u64, hi2) << 32) | lo;
+    }
+    // 8 次都没稳定：32 位计数器在回绕窗口里被反复撞上，实际不可能发生。
+    // 退化成单次读数，宁可有一次误差也不要卡死在这里。
+    var lo: u32 = undefined;
+    asm volatile ("rdcycle %[l]"
+        : [l] "=r" (lo),
+    );
+    return lo;
+}
+
 pub fn elapsedUs(since: u64) u64 {
     return nowUs() - since;
 }

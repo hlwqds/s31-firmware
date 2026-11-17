@@ -21,6 +21,14 @@
   容量基线随之刷新（`capacity.json` 此前停在 `9bd55e4`，早于 TLS/MQTT 落地 ⇒ `tls` 的
   +64 KB 主要是那批工作的累计增长，本次 C5 贡献各 profile 约 +10–15 KB `irom_len`）。
 
+- **周期实测基线与 CPU 频率实测（矩阵 C7 的一部分，2026-11-18）**：新增
+  `components/boot-power-perf/src/workload.zig`（4 KiB ARX 固定工作量、注入时钟、p50/p95/周期每字节）
+  与 `hw.cycleCount()`（`mcycle` 的防撕裂读法）。用 `-Dperf-run` 打开，默认构建不含这段代码。
+  板上读数：`cycles(p50)=59454`、`cycles_per_byte=14.515`、`cpu_mhz(measured)=80`
+  （`mcycle` 与 TIMG0 两个独立计数源对算，与 `BOOTLOADER_CPU_CLK_FREQ_MHZ` 默认值一致）。
+  证据：`logs/c7-perf-baseline.log`。**三档（80/160/320）对比未做** —— 需要先做时钟树
+  bring-up（`clk_ll_cpu_set_*`，320 MHz 还要起 CPLL），本固件目前没有改频路径。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
