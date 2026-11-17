@@ -771,6 +771,53 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🗺 两个关键函数的**完整调用图**（section 级反汇编，逐条核对）
+
+**`r_sym_bt_OkE7`（`0x146`）——env 的建造者**
+
+```asm
+2e: wr_btdm_osal_malloc(76)        ; env = malloc(76)
+36: sw a0, 0(anchor)               ; ★ 发布：anchor = env
+42: memset(env, 0, 76)
+52-56: memcpy(env+24, cfg, 20)     ; cfg 副本 ⇒ 与 oracle 的 X[6]=0x20260127(偏移24) 吻合
+66: sw env+52 → 16(env)            ; env[4]
+6a: sw env+64 → 20(env)            ; env[5]
+72: wr_btdm_osal_mutex_init(env+4)
+7c: bnez a0 → 错误 -4
+84: wr_btdm_osal_eventq_init(env+8)   ; ← **填出非空指针，这是 fqmZk 的前置**
+8e: lw a5, 8(*anchor); beqz → 跳过
+92: r_sym_bt_fqmZk                 ; ★ 设 P = malloc(...)（2.o 锚点）
+9e/aa/c2/cc: 后续四个调用（event_init 等）
+```
+
+⇒ **注意**：`fqmZk`（写 2.o 锚点 `P`）的守卫是 `*(env+8) != 0`，
+而 `env+8` 正是 `eventq_init` 写入的槽位指针 ⇒ 只要我们的 `eventqInit` 成功，
+`P` 就会被设上 ⇒ `task_init` 的 `0x78 (2aNN)` 是**安全**的。
+
+**`r_btdm_task_init`（`0x11c`）——完整调用序列**
+
+```asm
+1c: r_btdm_task_deinit      ; 三条错误路径的汇合点
+40: r_sym_bt_OkE7           ; env 建造（见上）
+58: wr_btdm_osal_get_time_forever
+66: wr_btdm_osal_mutex_pend ; 板侧 trace 最后一条 => OK
+78: r_sym_bt_2aNN           ; 通过 2.o 锚点 P 写（P 此时应已有效）
+a0: r_sym_bt_BOhff          ; 把调用方结构里的字段**拷进 7.o env**（偏移 0..15）
+ae: r_sym_bt_HGbP
+b8: r_sym_bt_XPuq           ; 那个 0x2010B000
+c2: r_sym_bt_AJP6
+ce: r_sym_bt_waDX
+e2: r_sym_bt_cgaC
+ea: r_sym_bt_FhFt
+```
+
+**`r_sym_bt_BOhff`（`0x7a`）不是建任务**：它按首字节（`(x-8)&0xF7==0`，`247=0b1111_0111`
+把 bit3 掩掉 ⇒ 归档自己的 `0x10` **合法**）进入 `.L77`，再从调用方结构拷 12 个字节到
+`*(7.o env)` 的偏移 0..15 ⇒ **16 字节的 env 刚好够**。
+
+⇒ 因此 `task_create` **不在 step 6 里**；它属于后面的步骤。step 6 的剩余候选是
+`ae/b8/c2/ce/e2/ea` 这六个调用。
+
 ### 📍 当前前沿（2026-11-17 最终）
 
 `r_btdm_task_init` 的完整控制流（`.text.r_btdm_task_init`，`0x11c`，逐条读全）：
