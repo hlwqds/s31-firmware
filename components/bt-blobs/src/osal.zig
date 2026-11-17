@@ -1170,11 +1170,14 @@ export fn wr_btdm_coex_schm_register_btdm_callback(cb: ?*anyopaque) callconv(.c)
     logLine("bt coex: register_btdm_callback", .{});
     return 0;
 }
+/// IDF 在未开软件共存时返回 **-1**（`btdm_coex.c:96-104`）——不是 0。
+/// （同文件里 `schm_register_btdm_callback` 与 `register_ble_cb` 却是 0，
+/// 三个注册函数的 disabled 分支返回值**不一致**，只能逐个照抄。）
 export fn wr_btdm_coex_register_wifi_channel_change_callback(cb: ?*anyopaque) callconv(.c) c_int {
     coex_wifi_channel_cb = cb;
     coex_stats_state.register_calls += 1;
-    logLine("bt coex: register_wifi_channel_change_callback", .{});
-    return 0;
+    logLine("bt coex: register_wifi_channel_change_callback (unsupported -> -1)", .{});
+    return -1;
 }
 /// IDF 在未开软件共存时返回 **-1**（`btdm_coex.c:106-114`）——照抄，别返回 0
 /// （0 会被读成"拿到信道了"，于是 primary/secondary 是未初始化垃圾）。
@@ -1222,6 +1225,10 @@ test "coex: 状态位图可置可清，未开共存时按 IDF 的返回值作答
     coexStatusBitClear(0, 3);
     try testing.expectEqual(@as(u64, 0), coexStatusBits());
     try testing.expectEqual(@as(c_int, -1), wr_btdm_coex_wifi_channel_get(null, null));
+    // 三个注册函数的 disabled 分支返回值不一致：schm→0、ble_cb→0、wifi_channel_change→-1
+    try testing.expectEqual(@as(c_int, 0), wr_btdm_coex_schm_register_btdm_callback(null));
+    try testing.expectEqual(@as(c_int, -1), wr_btdm_coex_register_wifi_channel_change_callback(null));
+    try testing.expectEqual(@as(c_int, 0), wr_btdm_coex_register_ble_cb(0, null));
     try testing.expectEqual(@as(u16, 0), wr_btdm_coex_iso_protect_frame_thres_get());
     try testing.expectEqual(@as(c_int, 0), coexHelperExercise());
 }
