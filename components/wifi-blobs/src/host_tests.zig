@@ -467,3 +467,10 @@ test "osi_impl: 软件定时器 setfn/arm_us/到期/一次性/disarm" {
 
     try std.testing.expectEqual(@as(usize, 0), impl.shellTimerDone(pt));
 }
+
+test "osi: 字段名到表下标的 comptime 映射与 IDF 头一致" {
+    const osi = @import("osi.zig");
+    // 抽查几个关键项：这些下标必须与 `wifi_osi_funcs_t` 的字段序一致。
+    try std.testing.expectEqual(@as(usize, 0), osi.indexOf("_version"));
+    try std.testing.expect(@import("std").mem.eql(u8, osi.nameOf(osi.indexOf("_version")), "_version"));
+}

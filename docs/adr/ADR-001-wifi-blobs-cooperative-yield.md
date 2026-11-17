@@ -6029,3 +6029,27 @@ t._wifi_malloc     = @ptrCast(&shellMallocInternal);   // ← 两个表项共用
 
 ⇒ 若要做对：在 `shellMallocInternal` 里按**调用来源**（哪个表项）分开计数，
 或让 IDF 侧也在 `_malloc_internal` 上加计数器，两边同口径。
+
+### 永久修法：用 comptime 从 `Osi` 结构生成「字段名 → 表下标」
+
+三次假线索都源于"名字/表项错位"。根治办法是把名字**从结构体自动导出**，而不是手工维护第二份清单：
+
+```zig
+// components/wifi-blobs/src/osi.zig
+pub fn indexOf(comptime name: []const u8) comptime_int {
+    const fields = @typeInfo(Osi).@"struct".fields;
+    inline for (fields, 0..) |f, i| {
+        if (std.mem.eql(u8, f.name, name)) return i;
+    }
+    @compileError("no such Osi field: " ++ name);
+}
+
+pub fn nameOf(i: usize) []const u8 { /* 反查，越界返回 "?" */ }
+```
+
+⇒ `Osi` 是 `extern struct`、每项 4 B ⇒ **下标 = 序号 = `offset/4`**，正是 IDF `wifi_osi_funcs_t` 的字段序。
+
+⇒ 以后两侧对照**一律用下标**：`osi.indexOf("_wifi_malloc")` 与 IDF 侧按同一序号计数/记录，
+**名字错位问题从根上消失**。
+
+（主机测试已加：抽查 `indexOf("_version") == 0` 且 `nameOf(0) == "_version"`。）
