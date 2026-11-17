@@ -1079,16 +1079,9 @@ fn shellPhyEnable(modem: u32) callconv(.c) usize {
     note(15, modem, phy_enable_calls);
     // 与 IDF 的 `esp_phy_enable` 一致：先保证 ICG 位图解除门控（见 `shellWifiClockEnable` 的注释）。
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
-    // **按 `modem_syscon_struct.h` 的实测布局重算**（不是猜）：
-    //   clk_conf_power_st: reserved0[7:0] / clk_zb_st_map[11:8] / clk_fe_st_map[15:12] /
-    //                      clk_bt_st_map[19:16] / clk_wifi_st_map[23:20] /
-    //                      clk_modem_peri_st_map[27:24] / clk_modem_apb_st_map[31:28]
-    // IDF 逐域值（`modem_clock_impl.c:371-393`）：FE=0x6 / BT=0x4 / WIFI=0x6 / PERIPH=0x4 / APB=0x6，
-    // **zb 域 IDF 不写 ⇒ 保持 0**。
-    // ⇒ 正确整寄存器值 = apb 6 | peri 4 | wifi 6 | bt 4 | fe 6 | zb 0 = **0x64646000**。
-    // 原来的 `0x64646400` 把 `clk_zb_st_map` 写成了 4（应 0），其余具名字段本来就对。
-    icg.* = 0x6464_6000;
-    note(27, 0x6464_6400, icg.*);
+    const icg_before = icg.*;
+    icg.* = 0x6464_6400;
+    note(20, icg_before, icg.*);
     // IDF 的 `esp_phy_enable_wrapper` 还会调 `phy_wifi_enable_set(1)`（ROM `0x2f80145c`）——
     // 我们此前漏了这一步；若 libphy/ROM 的代码按这个标志门控，缺它 PHY 侧就不会真正使能。
     const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
@@ -1184,8 +1177,15 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // —— 实测 IDF 工作值是 `0x64646400`。我们此前只写 CLK_CONF1，没写这张位图。
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     const icg_before = icg.*;
-    icg.* = 0x6464_6400;
-    note(20, icg_before, icg.*);
+    // **按 `modem_syscon_struct.h` 的实测布局重算**（不是猜）：
+    //   clk_conf_power_st: reserved0[7:0] / clk_zb_st_map[11:8] / clk_fe_st_map[15:12] /
+    //                      clk_bt_st_map[19:16] / clk_wifi_st_map[23:20] /
+    //                      clk_modem_peri_st_map[27:24] / clk_modem_apb_st_map[31:28]
+    // IDF 逐域值（`modem_clock_impl.c:371-393`）：FE=0x6 / BT=0x4 / WIFI=0x6 / PERIPH=0x4 / APB=0x6，
+    // **zb 域 IDF 不写 ⇒ 保持 0** ⇒ 正确值 = **0x64646000**（原来的 0x64646400 把 zb 写成了 4）。
+    icg.* = 0x6464_6000;
+    const icg_after = icg.*;
+    note(20, icg_before, icg_after);
     // **LPCON 侧 ICG 位图（0x2010F020）必须在 init 期就和 SYSCON 侧一起就位**——
     // 之前是在 start 前补写的，那时 after-init 仍是 0。IDF 的 `modem_clock_domain_enable`
     // 两侧一次做完（`modem_clock_hal_set_clock_domain_icg_bitmap`，hal/esp32s31/modem_clock_hal.c:53-64）。

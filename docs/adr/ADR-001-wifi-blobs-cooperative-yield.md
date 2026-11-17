@@ -5185,3 +5185,29 @@ wifi-init-probe:   icg(+0C)=0x64646400      # ★ 不是我们写的 0x64646000
 ⇒ 下一步：在 `shellWifiClockEnable` 之后再 dump 一次 ICG，定位是"我们的写没生效"还是"之后被覆盖"，
 然后用**调用时序**（而不是改常量）去对——IDF 的 `wifi_module_enable()` 之所以能清位，
 是因为它在**正确的时刻**（blob 还没自己配 ICG 之前）做完了整条链。
+
+### ⚠ 撤回我自己的错误：**不是 blob 写回，是我改错了函数**
+
+上一节写"blob 把 ICG 写回 `0x64646400`"——**错**。真相：
+
+```text
+grep -n "icg\.\* = " components/wifi-blobs/src/osi_impl.zig
+1082:    icg.* = 0x6464_6400;     ← 另一函数（没动）
+1185:    icg.* = 0x6464_6000;     ← 真正的 shellWifiClockEnable（我上一轮改到了 1082 那处）
+```
+
+⇒ 上一轮"改值"改到了**另一个函数**，`shellWifiClockEnable` 里仍是旧值 ⇒ 板上读回 `0x64646400` **是我们自己写的**，
+不是 blob 覆盖。**"blob 会写回"这条撤回。**
+
+改对之后：
+
+```text
+wifi-init-probe:   icg(+0C)=0x64646000      ← 写进去了，而且粘住
+wifi-init-probe: MAC_ST after init = 0x0000e000   # 仍不清
+panic 0
+```
+
+⇒ **ICG 内容现在与 IDF 完全一致（`0x64646000`），`MAC_ST` 依旧 `0xE000`** ⇒ **ICG 内容不是分歧因子**。
+
+⇒ 附带一条推论：blob 二进制两边**是同一份**，它对 ICG 的行为两边一致 ⇒ **ICG 相关的一切都不是两边分歧的来源**
+（IDF 的 post-init ICG 同样是这个值也能 start 成功）。
