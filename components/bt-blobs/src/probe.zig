@@ -41,7 +41,7 @@ fn heapEnd() *const anyopaque {
 }
 
 /// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
-pub var probe_irqs: bool = false; // 默认关：生产式的协作壳行为；做采样时临时开
+pub var probe_irqs: bool = false; // 稳定默认关；采样实验时临时开
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
@@ -108,6 +108,16 @@ pub fn run() noreturn {
         board.hw.routeT0Interrupt(25);
         board.hw.armT0Interrupt(2000);
         board.hw.enableInterrupts();
+        // **把 T0 的 CLIC 输入变成 NMI 源**：NMI 不受 `mstatus.MIE` 屏蔽，
+        // 所以即使归档进了临界区（关中断）也照样能打断它、拿到 PC。
+        // `CLIC_INT_CTRL_REG(i) = 0x10801000 + i*4`；bit3 = nmies、bits[7:4] = nmithres。
+        // 保留优先级低 3 位、置 nmies、把 nmithres 清零。
+        {
+            const reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
+            const old = reg.*;
+            reg.* = (old & 0x7) | (1 << 3);
+            board.log.line("bt probe: clic[25] 0x{x} -> 0x{x} (nmies)", .{ old, reg.* });
+        }
         board.log.line("{s}", .{"bt probe: irq enabled (probe only), t0=2ms"});
     } else {
         board.log.line("{s}", .{"bt probe: irqs OFF (control run)"});

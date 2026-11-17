@@ -379,6 +379,37 @@ a0: r_sym_bt_BOhff...
 ae: r_sym_bt_HGbP...
 ```
 
+### 采样器在卡点处失效的原因（已定位）
+
+卡住期间 **T0 中断不再到来**（2 ms 周期、28 秒窗口本该上万次，实测只来 2 次）。两条补救都试过：
+
+| 尝试 | 结果 |
+| --- | --- |
+| 关掉 controller 日志、减少 UART 流量 | 无效 |
+| 把 CLIC 输入 25 变成 **NMI**（`CLIC_INT_CTRL_REG(25) = 0x10801064`，置 bit3 `nmies`） | 写入 `0x1fc00100 → 0x1fc00000`，**bit3 读回不置位** ⇒ NMI 未生效 |
+
+⇒ 卡住处既不来普通中断、NMI 也配不出来 ⇒ **靠 PC 采样继续往下探这条路到边界了**。
+下一步要么换仪器（JTAG 写监视点 / 逻辑分析仪），要么从归档侧继续静态分析。
+
+### `r_btdm_task_init` 的完整调用序列（离线反汇编，284 字节）
+
+```asm
+0x0a: beqz a0, .L95                 # cfg==null 检查
+0x0c: lw   a3, 0(a0)                # cfg->version
+0x12: → 0x20260127                  # BTDM_CONFIG_VERSION
+0x18: beq  a3,a4,.L103              # 版本校验
+0x1c: r_btdm_task_deinit            # 失败路径
+0x40: r_sym_bt_OkE7...              # 146 字节的 init 步骤
+0x58: wr_btdm_osal_get_time_forever ← 我们
+0x66: wr_btdm_osal_mutex_pend       ← 我们（FOREVER）
+0x78: r_sym_bt_2aNN...              # **16 字节的良性 thunk**（初始化自环链表头，立即 ret）
+0xa0: r_sym_bt_BOhff...             # ← 卡点在这之后
+0xae: r_sym_bt_HGbP...
+```
+
+⇒ 已确认 `0x78` 的 thunk 是良性的（`lw a5,[LANCHOR0]; sw zero,0(a5); sw a5,4(a5); ret`），
+所以停摆在 `0xa0` 及之后的归档符号里。
+
 ### 已排除的假设（都是板上对照，别再重试）
 
 | 假设 | 实验 | 结果 |
