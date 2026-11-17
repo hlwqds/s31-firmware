@@ -7,6 +7,9 @@
 //! `ble_msys_init` 只是转调归档里的 `r_esp_ble_msys_init`。
 const std = @import("std");
 const osal = @import("osal.zig");
+const mempool_abi = @import("mempool_abi.zig");
+const builtin = @import("builtin");
+const on_target = builtin.target.os.tag == .freestanding;
 const config = @import("config.zig");
 
 // ---------------------------------------------------------------------------
@@ -104,14 +107,11 @@ extern fn r_esp_ble_msys_init(
 // `modem_clock_module_enable` 完全不碰它们）。
 const syscon_base: usize = 0x2010_9C00;
 
-/// 归档的池初始化（`libbtdm_common/14.o`）。`struct btdm_mempool` 约 28 B，
-/// 这里给 48 B 的 4 对齐静态对象，避免把布局写死。
-extern fn r_btdm_os_mempool_init(mp: *anyopaque, blocks: u16, block_size: u32, membuf: ?*anyopaque, name: [*:0]const u8) c_int;
-var mp_ev: [48]u8 align(4) = @splat(0);
-var mp_evq: [48]u8 align(4) = @splat(0);
-var mp_co: [48]u8 align(4) = @splat(0);
-var mp_sem: [48]u8 align(4) = @splat(0);
-var mp_mux: [48]u8 align(4) = @splat(0);
+var mp_ev: mempool_abi.Pool align(4) = @splat(0);
+var mp_evq: mempool_abi.Pool align(4) = @splat(0);
+var mp_co: mempool_abi.Pool align(4) = @splat(0);
+var mp_sem: mempool_abi.Pool align(4) = @splat(0);
+var mp_mux: mempool_abi.Pool align(4) = @splat(0);
 const lpcon_base: usize = 0x2010_F000;
 const reg_clk_conf: usize = syscon_base + 0x04;
 const reg_clk_conf_power_st: usize = syscon_base + 0x0c;
@@ -312,7 +312,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     pulse.f(b_rst_ble_timer); // 3. BLE timer
     pulse.f(b_rst_modem_ecb | b_rst_modem_ccm | b_rst_modem_bah | b_rst_modem_sec); // 4. modem sec
     osal.logPublic("bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
-    osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
+    if (on_target) {
+        osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
+    }
 }
 
 /// `btdm_lp_reset(true)`：低功耗子系统复位。当前无状态可复位。
@@ -399,6 +401,7 @@ pub fn elemMempoolInit(elem: config.ElemNum) c_int {
     // `r_sym_bt_OkE7` 的守卫 `*(*s0 + 8) != 0` 为假 ⇒ 跳过 `fqmZk`
     // ⇒ 锚点 `P` 停在 NULL ⇒ `Xpuq` 从**地址 0** 零填充到 `0x2010B100`
     // ⇒ modem 寄存器窗口（含我们配好的时钟）被清零 ⇒ 表现为"无声卡死"。
+    if (!on_target) return 0; // 主机侧无归档、无 arena：只验证容量逻辑
     const rc_evt = initPool("evt", elem.evt_count, 12, &mp_ev);
     if (rc_evt != 0) return rc_evt;
     const rc_evq = initPool("evtq", elem.evtq_count, 4, &mp_evq);
@@ -421,7 +424,7 @@ fn initPool(name: [*:0]const u8, count: u16, blk: u32, mp: *anyopaque) c_int {
         osal.logPublic("bt mempool: {s} 缓冲分配失败 ({d} B)", .{ name, bytes });
         return MempoolErr.evt;
     };
-    const rc = r_btdm_os_mempool_init(mp, count, blk, buf, name);
+    const rc = mempool_abi.init(mp, count, blk, buf, name);
     osal.logPublic("bt mempool: init {s} blocks={d} blk={d} buf={x} rc={d}", .{
         name, count, blk, @intFromPtr(buf), rc,
     });
