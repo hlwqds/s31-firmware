@@ -1145,8 +1145,8 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     const r = bt_arena.alloc(size, 8);
     // 归档对 NULL 不做检查就直接解引用（`Xpuq` 里 `sw zero,0(a1)`）⇒ 分配失败会表现为
     // "向地址 0 写"进而总线挂死。所以这里必须把每次失败都喊出来。
-    // 只在失败时喊：成功路径上千次分配，逐条打会把 UART TX FIFO（会卡在 128）淹掉。
-    if (r == null) logLine("bt osal: malloc({d}) = NULL  <-- 归档会解引用它", .{size});
+    // 成功/失败都记（writer 已改有界，不会再被 FIFO 卡死）。
+    logLine("bt hook: malloc({d}) = {x}", .{ size, if (r) |v| @intFromPtr(v) else @as(usize, 0) });
     return r;
 }
 

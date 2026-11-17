@@ -219,6 +219,15 @@ test "config: 默认值可填、魔数落位" {
     c.btdm.version = BTDM_CONFIG_VERSION;
     c.btdm.magic = BTDM_CONFIG_MAGIC_VALUE;
     c.btdm.bluetooth_mode = BTDM_CONTROLLER_MODE_BLE; // 不能是 IDLE/双模
+    // **以下四项此前全是 0，是 step 6 走错误清理路径的直接原因。**
+    // 取值照 `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` 的实测（oracle 打印）：
+    //   stack=4096 prio=23 hci_cmd=5 hci_conn=3
+    // `task_stack_size = 0` 尤其致命：归档建任务时栈为 0，我们 `taskCreate`
+    // 的 `stack_size >= 512` 门直接降级成"只登记不建上下文" ⇒ 任务体永不执行。
+    c.btdm.task_stack_size = 4096;
+    c.btdm.task_prio = 23;
+    c.btdm.hci_cmd_num = 5;
+    c.btdm.hci_conn_num = 3;
     std.testing.expectEqual(@as(u32, 0x5A5AA5A5), c.ble.config_magic) catch unreachable;
     std.testing.expectEqual(@as(u64, 32_000), c.ble.rtc_freq) catch unreachable;
 }
