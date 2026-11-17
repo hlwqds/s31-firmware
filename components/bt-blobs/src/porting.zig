@@ -273,11 +273,11 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
     // 对拍：IDF step 5 后 `lpcon+0x18 = 0x0b`（bit0 wifipwr + bit1 coex + bit3 lp_timer）。
     // **不置 bit2**（i2c_mst）—— 我们的 `0x0f` 比 IDF 多一位。
-    const keep = b_lpcon_clk_wifipwr_en | b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en;
-    wr(reg_lpcon_clk_conf, (rd(reg_lpcon_clk_conf) & ~@as(u32, 0x2)) | keep);
+    // **直接写定值** 0x0b（用 RMW 清位在本板上没生效过，实测仍是 0x0f）
+    wr(reg_lpcon_clk_conf, b_lpcon_clk_wifipwr_en | b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
     // **lpcon+0x04 = 0x41 / +0x08 = 0x314 / +0x0c = 0x01**（IDF step 5 后的实测值，我们此前未写）
     wr(lpcon_base + 0x04, rd(lpcon_base + 0x04) | @as(u32, 0x40));
-    wr(lpcon_base + 0x08, rd(lpcon_base + 0x08) | @as(u32, 0x314));
+    wr(lpcon_base + 0x08, @as(u32, 0x314)); // 定值写（IDF step5 后实测）
     wr(lpcon_base + 0x0c, rd(lpcon_base + 0x0c) | @as(u32, 0x01));
     // **`MODEM_LPCON + 0x20` = 0x66660000**：step-5 边界四点对拍实测 IDF 写这个值
     // （此前我按 **step4** 快照误判为 0 并撤销过一次 —— 那是错的时间点）。
