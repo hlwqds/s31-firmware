@@ -170,6 +170,15 @@ const b_lpcon_clk_lp_timer_en: u32 = @as(u32, 1) << 3;
 // 以及 `WIFIPWR`(bit0)。板侧对拍实证：IDF 在 step 5 之后该字 = `0x0000000b`
 // （bit0+bit1+bit3），我们只写了 bit3 ⇒ **bit1 缺失**是 `0x2010B000` 不可访问的直接原因。
 const b_lpcon_clk_wifipwr_en: u32 = @as(u32, 1) << 0;
+
+/// `MODEM_LPCON + 0x20` = `clk_conf_power_st`：LP 域的 ICG 状态映射
+/// （bit16-19 wifipwr / 20-23 coex / 24-27 i2c_mst / 28-31 lp_apb）。
+/// IDF 的 `modem_clock_module_icg_map_init_all()` 会把它覆盖到的**两个域**都填上：
+/// `MODEM_SYSCON.clk_conf_power_st`（我们写了 `0x64646400`）**和这一个**。
+/// 后者我们一个字都没写过 ⇒ 与首次对拍发现的 `clk_coex_en` 属同一类遗漏。
+/// `0x66660000` 与 wifi-blobs 在本板上早已验证过的写法一致（各域 st_map=6）。
+const reg_lpcon_power_st: usize = lpcon_base + 0x20;
+const lpcon_power_st_value: u32 = 0x6666_0000;
 const b_lpcon_clk_coex_en: u32 = @as(u32, 1) << 1;
 
 const mmio = @import("builtin");
@@ -261,6 +270,8 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
     wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_clk_wifipwr_en |
         b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
+    // LP 域的 ICG 状态映射（此前从未写）：IDF 的 icg_map_init_all 覆盖两个域
+    wr(reg_lpcon_power_st, rd(reg_lpcon_power_st) | lpcon_power_st_value);
     osal.logPublic("bt lp: lp_timer_conf=0x{x:0>8} 32k_conf=0x{x:0>8} lpcon_clk=0x{x:0>8}", .{
         rd(reg_lpcon_lp_timer_conf), rd(reg_lpcon_32k_conf), rd(reg_lpcon_clk_conf),
     });
