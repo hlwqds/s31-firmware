@@ -771,6 +771,37 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🔧 JTAG 那一步已备好：`tools/jtag-watch-modem-block.sh`
+
+软件侧能做的已穷尽，剩下的是**硬件动作**。为了让那一步"接上就能用"，准备了现成脚本。
+
+**它做什么**：用 `interface/esp_usb_jtag.cfg` + `target/esp32s31.cfg` 启动 openocd，
+对指定地址（默认 `0x2010B000`）下**写观察点**，命中后打印 PC —— 那就是**第一个访问该地址的指令**，
+用 `nm -n` 反查符号即可。
+
+**本机已就绪的部分（实测）**
+
+| 项 | 状态 |
+| --- | --- |
+| openocd-esp32 | ✅ `~/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/` |
+| `target/esp32s31.cfg` | ✅ 存在（`_CPUTAPID 0x00020C25`，SMP 双核配置） |
+| `interface/esp_usb_jtag.cfg` | ✅ 存在 |
+| NixOS 的 libusb | ✅ 脚本自动从 `/nix/store/*-libusb-1.0.*/lib` 注入 `LD_LIBRARY_PATH` |
+| 脚本语法 + 启动 | ✅ **实测到"找不到设备"这一步**（即除硬件外全通） |
+
+```
+$ tools/jtag-watch-modem-block.sh
+Error: esp_usb_jtag: could not find or open device!
+```
+
+⇒ **这个报错就是唯一剩下的阻塞**：S31 的原生 USB（D+/D-）未接到主机
+（本板 CP2102N 只出 UART）。接好后同一命令即可工作。
+
+**接好后有两种用法**
+
+1. 在**本仓固件**上跑 → 看我们**卡在哪条指令**
+2. 在 **IDF 固件**上跑 → 看 IDF **如何让它变可访问**（这才是要找的使能动作）
+
 ### 🏁 最终诊断：**PHY 校准也会 stall 总线 —— 撞的是同一堵墙**
 
 用 PC 采样器（`probe_irqs=true`，采样器在 `init()` 之前武装）测卡住期间的计数：
