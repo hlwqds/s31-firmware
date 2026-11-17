@@ -6053,3 +6053,36 @@ pub fn nameOf(i: usize) []const u8 { /* 反查，越界返回 "?" */ }
 **名字错位问题从根上消失**。
 
 （主机测试已加：抽查 `indexOf("_version") == 0` 且 `nameOf(0) == "_version"`。）
+
+### ⚠ 一次假警报：**不能用文本解析比对 `wifi_os_adapter.h` 的字段序**
+
+想用新加的 `osi.indexOf()` 验证"我们的 128 字段镜像与 IDF 头是否同序"，于是对头文件做正则提取：
+
+```text
+IDF 128 个函数指针 / 我们 127 个（去掉 _version）
+首个分叉 @53: IDF=_phy_common_clock_enable  我们=_phy_update_country_info
+（后续整体错位 2 项）
+```
+
+⇒ **表面看像"我们的表从第 53 项起整体错位 2 位"——但这是假警报。**
+
+原因：该头文件有 **9 处 `#if`**（其中至少 3 处按目标裁剪，含 **S31 专属**字段）：
+
+```c
+#if CONFIG_IDF_TARGET_ESP32S31
+    int (* _coex_configure_preemption_end_cb)(bool is_register, int(*cb)(uint32_t));
+#endif
+```
+
+⇒ **纯文本解析取到的是"所有分支全算"的顺序，必然与实际 S31 生效顺序不同** ——
+这正是 `osi.zig` 注释里早就写过的坑（"**不要**用文本解析：这个头有 5 处按目标裁剪字段的 `#if`"）。
+我这次又踩了一遍。
+
+**独立证据表明我们的布局是对的**：`INITWIN … clken=1` —— 说明 blob 调 `_wifi_clock_enable` 时
+**确实落到了我们的 `shellWifiClockEnable`**（`cnt_clk_en` 自增）。若从 53 起错位 2 项，
+那次调用会落到别的槽位上，`clken` 就不会是 1。
+
+⇒ **正确做法**（`osi.zig` 注释里已有现成命令）：用 `riscv32-esp-elf-gcc -E -P` 带上真实
+`sdkconfig.h` 预处理该头，再 `sed -n '/typedef struct wifi_osi_funcs_t {/,/} wifi_osi_funcs_t;/p'` 取生效字段。
+⇒ 结论：**布局无需修改**；`indexOf()` 仍然有用（它读的是我们自己的结构，不存在裁剪问题），
+但**不能拿它去和未预处理的头文件比对**。
