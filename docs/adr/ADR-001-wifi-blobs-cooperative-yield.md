@@ -5953,3 +5953,27 @@ panic 0
 但它与清位动作的**时间相关性**还没测过 —— 在 IDF 侧把它也进环形缓冲，
 看它是否在 `dev=7` 清位的同一拍变化。若 IDF 侧它在清位后变 `1`（而我们永远 `0`），
 它就是比 `MAC_ST` 更早的"LMAC 起来了"信号，可用于我们侧的持续监视。一次 IDF 构建 + 一次烧录。
+
+### 判决（负）：`hal_mac_is_dma_enable()` 在 IDF 的**每一次** configure 里都是 `0`
+
+在 IDF 的 `modem_clock_device_control` 循环里，每次 `configure` 前记 `hal_mac_is_dma_enable()`（ROM `0x2f800d4c`）
+与当时的 `MAC_ST`：
+
+```text
+DMASEQ n=14
+0 dev=2 dma_enable=0 mac_before=0000e000
+1 dev=3 dma_enable=0 mac_before=0000e000
+2 dev=5 dma_enable=0 mac_before=0000e000
+3 dev=6 dma_enable=0 mac_before=0000e000
+4 dev=7 dma_enable=0 mac_before=0000e000   ← 清位就发生在这里
+5 dev=8 dma_enable=0 mac_before=00000000
+6 dev=9 dma_enable=0 mac_before=00000000
+7..13（disable 路径）dma_enable=0
+```
+
+⇒ **`dma_enable` 全程是 `0`，包括 `dev=7` 清位之后。**
+
+⇒ **IDF 在 init 期间也从未把 DMA 环建起来** ⇒ **DMA 环不是这次清位的原因，也不是两边差异的判据**。
+⇒ 这条假设（早前 ADR 里"忙位要等 DMA 环 + RF 前端上电"）**正式排除**。
+
+⇒ 也说明 `hal_mac_is_dma_enable()` 不是"LMAC 起来了"的更早信号 —— 它在 IDF 侧同样是 0。
