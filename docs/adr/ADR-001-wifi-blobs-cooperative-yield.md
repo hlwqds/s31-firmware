@@ -4482,3 +4482,29 @@ wifi-init-probe: after rst_wifimac pulse MAC_ST=0x0000e000 (was 0x0000e000)
 （更可能是某个使能/时钟序列完成后由硬件自己置位，而不是等软件清）。
 
 ⇒ 下一个判别点应转向**"谁把这三位置成 1"**，而不是"怎么清"。
+
+### 判决（负）：补上 IDF 的 `rst_wifibb` 序列，MAC_ST 仍 `0xE000`
+
+IDF `wifi_module_enable()`（`modem_clock_impl.c`）在开 WiFi 模块时做了我们缺的三件事，
+现按顺序补进 `_wifi_clock_enable`：
+
+1. `modem_rst_conf.rst_wifibb`（`0x20109C10` **bit 8**）打 1 → `romDelayUs(20)` → 0 脉冲；
+2. `clk_conf1` 写 `0x17b`（`clk_conf1_configure(hw, 1, 0x17b)`）；
+3. 置 `clk_wifibb_80x1_en`（bit 7）。
+
+板侧：
+
+```text
+wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
+wifi-init-probe: after rst_wifimac pulse MAC_ST=0x0000e000 (was 0x0000e000)
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: INIT OK, arena free=315144/353328 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+panic 0
+```
+
+⇒ **`MAC_ST` 仍是 `0xE000`**。无回归（init 与 start 都照旧），但这一步也没解决它。
+
+⇒ 目前已被否掉的"清位"路径：**直写 MAC_ST**、**`rst_wifimac` 脉冲**、**`rst_wifibb` 脉冲 + BB 时钟组**。
+⇒ 剩下的可能：这三位根本不是"等清"的忙位，而是**某条更早的初始化链**（PHY/BB 上电、`ic_mac_init`）
+完成后才由硬件置/清——下一步应查**谁在 IDF 里让 MAC_ST 变 0**（对比 init 前后的寄存器轨迹），而不是继续猜复位。
