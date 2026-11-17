@@ -151,7 +151,7 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
-    {
+    if (@import("probe.zig").populate_workaround) {
         // **发布 OkE7 锚点**（受 `populate_workaround` 控制，默认关）。
         //
         // 形状取自 oracle 的实测（`X[0..7]`）：

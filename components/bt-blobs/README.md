@@ -732,6 +732,26 @@ beqz a5, .L80           ; 为 0 ⇒ 直接跳错误路径
 定位方法：在 oracle 里按 §"时间线采样"每 1 ms 打一次其中两个锚点的值，
 看它们各自在哪个调用之后从 0 变非 0。
 
+### 📋 可直接复用的参考资料（别再重新推导）
+
+| 项 | 值 |
+| --- | --- |
+| 三个锚点（全局 `B`，可 `@extern` 读写） | `r_sym_bt_d3D3sk5KewclELfrD5xa`(2.o, P) @ `0x2f00f7e0`；`r_sym_bt_r4auAKWSAFwgQarMHZCc`(21.o, OkE7) @ `0x2f00f7e8`；`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`(7.o, BOhff) @ `0x2f00f7f0` |
+| oracle 里 env 的形状（init 后） | `X[0]`=状态(1→enable 后 2)、`X[1]/X[2]/X[4]/X[5]`=指针、`X[3]`=0、`X[6]=0x20260127`、`X[7]=0x00171000`；`*(X+8)` 指向一串指针 |
+| `esp_btdm_controller_config_t` | **sizeof=20**；`version@0 stack@4 prio@6 cpu@7 hci_cmd@8 hci_conn@9 sleep@10 vnum@11 mode@12 magic@16`（C 的 `offsetof` 权威值，与我们的 extern struct 完全一致） |
+| IDF 的 `cfg.btdm` 默认值 | `version=0x20260127 stack=4096 prio=23 cpu=0 hci_cmd=5 hci_conn=3 sleep=0 vnum=0 mode=1 magic=0x5a5aa5a5` |
+| 整份 `esp_bt_controller_config_t` | **192 字节**，`ble` 在 0..167、`btdm` 在 **168**；完整 hexdump 已存进 `config.zig` 的 `idf_cfg192` 模板 |
+| `r_btdm_task_deinit` 的销毁顺序 | `lwb a0,20(a5)` 调一次、`lw a0,16(a5)` 再调一次；伪造 env 时 fault 落在 **+0x4a**（store access fault） |
+
+**当前两个开放问题**（下一轮从这两条开始）
+
+1. **`r_btdm_task_init` 为什么判定失败**：它的错误码存在 `s2`（`-2` 版本检查、`-4/-6` mutex/eventq、`-14/-15` event-arg），
+   而板侧 trace 显示 `mutex_pend => OK` 之后再无任何 hook。已加**每个 hook 的返回值日志**，
+   下一轮看最后一个非 0 返回即可。
+2. **IDF 里谁发布 env**：oracle 逐步复刻证明步骤 1–5 之后锚点仍为 0，而 `esp_bt_controller_init` 成功后变非 0
+   ⇒ 发布者在 step 6 或之后。已排除：配置布局、配置内容（192 字节已对齐）、时钟、复位、池、
+   锚点形状（伪造会导致 deinit 收敛循环，是伪路径）、归档强符号替换。
+
 ### ⛔ 已整条撤回：`OkE7 → fqmZk → P → 2aNN` 那条推理
 
 **撤回理由（静态反汇编直接读出，2026-11-17）**

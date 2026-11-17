@@ -868,7 +868,9 @@ export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
 }
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
     logLine("bt hook: eventq_get", .{});
-    return eventqGet(evq, tmo);
+    const _r = eventqGet(evq, tmo);
+    logLine("bt hook: eventq_get => {x}", .{if (_r) |v| @intFromPtr(v) else @as(usize, 0)});
+    return _r;
 }
 export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
     logLine("bt hook: eventq_put", .{});
@@ -908,7 +910,9 @@ export fn wr_btdm_osal_event_set_arg(ev: *Slot, arg: ?*anyopaque) callconv(.c) v
 }
 
 export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
-    return mutexInit(mu);
+    const _r = mutexInit(mu);
+    logLine("bt hook: mutex_init => {d}", .{_r});
+    return _r;
 }
 export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
     return mutexDeinit(mu);
@@ -923,14 +927,18 @@ export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
 }
 
 export fn wr_btdm_osal_sem_init(sem: *Slot, tokens: u16) callconv(.c) c_int {
-    return semInit(sem, tokens);
+    const _r = semInit(sem, tokens);
+    logLine("bt hook: sem_init => {d}", .{_r});
+    return _r;
 }
 export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
     return semDeinit(sem);
 }
 export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
     logLine("bt hook: sem_pend", .{});
-    return semPend(sem, timeout);
+    const _r = semPend(sem, timeout);
+    logLine("bt hook: sem_pend => {d}", .{_r});
+    return _r;
 }
 export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
     logLine("bt hook: sem_release", .{});
@@ -941,7 +949,9 @@ export fn wr_btdm_osal_sem_get_count(sem: *Slot) callconv(.c) u16 {
 }
 
 export fn wr_btdm_osal_callout_init(co: *Slot, evq: ?*Slot, ev_cb: EventFn, ev_arg: ?*anyopaque) callconv(.c) c_int {
-    return calloutInit(co, evq, ev_cb, ev_arg);
+    const _r = calloutInit(co, evq, ev_cb, ev_arg);
+    logLine("bt hook: callout_init => {d}", .{_r});
+    return _r;
 }
 export fn wr_btdm_osal_callout_deinit(co: *Slot) callconv(.c) void {
     calloutDeinit(co);
@@ -1552,4 +1562,10 @@ test "pool: 同一槽位二次 init 复用记录，不漏池记录" {
     while (i < 100) : (i += 1) _ = calloutInit(&co, null, null, null);
     try testing.expectEqual(@as(u32, 0), stats().pool_exhausted);
     calloutDeinit(&co);
+}
+
+/// 归档日志转发入口（`bt_printf_shim.c` 调用）。**有界写**，FIFO 满也不会卡。
+export fn s31_bt_log_hook(msg: [*:0]const u8) callconv(.c) void {
+    const s = std.mem.span(msg);
+    logLine("bt archive> {s}", .{s});
 }

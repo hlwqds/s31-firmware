@@ -25,9 +25,14 @@ int ets_printf(const char *format, ...)
     return r;
 }
 #else
+/* 转发**格式串本身**给 Zig 侧（变参不展开）。
+ * 归档在错误路径上会打印它自己的失败原因（disassembly：`.LC0` 格式串 + 参数），
+ * 直接丢弃等于把最直接的诊断信息扔掉；Zig 侧用有界写输出，不会自旋。 */
+extern void s31_bt_log_hook(const char *msg);
+
 int ets_printf(const char *format, ...)
 {
-    (void)format;
-    return 0; /* 丢弃：不让 ROM 的 UART 轮询有机会把系统卡死 */
+    s31_bt_log_hook(format);
+    return 0;
 }
 #endif
