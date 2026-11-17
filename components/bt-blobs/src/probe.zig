@@ -62,6 +62,8 @@ fn nowMs() u32 {
 /// - `ble_block_experiment`：复位脉冲 + 时钟重开 + `bt_bb_v2_init_cmplx` + 读 `0x2010B000`
 pub var dump_rom: bool = false;
 pub var ble_block_experiment: bool = false;
+/// 跳过 `r_btdm_task_init`（它会访问不可达块）⇒ 用于验证 step 7–15 / enable / HCI。
+pub var skip_task_init: bool = true;
 
 /// 是否把 `osal.logPublic` 的每一行都打到 UART。
 /// 默认 **true**（可观测性优先）；设 false 可做"UART 静默"对照——但注意那样连进度行也看不到，
@@ -110,6 +112,7 @@ pub fn run() noreturn {
     }
 
     porting.clock_writes_enabled = clock_writes;
+    bringup.skip_task_init = skip_task_init;
     osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});

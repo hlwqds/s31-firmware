@@ -30,6 +30,11 @@ const transport = @import("transport.zig");
 
 pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 
+/// **跳过 `r_btdm_task_init`**（实验用）。
+/// 该调用会访问不可达的 `0x2010B000` ⇒ 总线挂起，于是它之后的 step 7–15、enable 链、
+/// HCI 传输**从未在板上执行过**。跳过它即可验证那一大片。
+pub var skip_task_init: bool = false;
+
 var status_state: Status = .idle;
 pub fn status() Status {
     return status_state;
@@ -137,7 +142,12 @@ pub fn init(cfg: *config.Config) c_int {
 
     // 4. 归档：任务层
     enter(6, "r_btdm_task_init");
-    rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) else 0);
+    if (skip_task_init) {
+        osal.logPublic("bt bringup: step 6 r_btdm_task_init SKIPPED (experiment)", .{});
+        rc = 0;
+    } else {
+        rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) else 0);
+    }
     if (rc != 0) return rc;
 
     // 5. lp init（空实现）

@@ -538,6 +538,43 @@ bt probe: calling bt_bb_v2_init_cmplx(1) ...
 
 ⇒ 复位脉冲不解决。至此**所有能查的寄存器侧前置都已排除**。
 
+### 跳过 step 6 的实验（2026-11-17）：能验证 7–9，但 10 会崩
+
+加 `bringup.skip_task_init` 跳过 `r_btdm_task_init` 后，板上序列：
+
+```text
+step 6 r_btdm_task_init SKIPPED (experiment)
+step 7 btdm_lp_init                 ✓ 通过
+step 8 r_btdm_hci_fc_env_init       ✓ 通过
+step 9 esp_register_ext_funcs       ✓ 通过
+step 9 esp_ble_register_bb_funcs    ✓ 通过
+step 10 r_ble_controller_init
+   → !! mepc=0x4005f310 mtval=0x00000000
+     panic: exception code=5 (load access fault)
+```
+
+⇒ **step 7–9 在板上首次得到验证**（此前它们从未执行过）。
+
+⇒ 但 step 10 崩在**空指针**上。保留符号（探针构建 `strip=false`）后把 PC 映射出来：
+
+| 地址 | 最近的符号 |
+| --- | --- |
+| `0x4005f310`（mepc） | `r_sym_bt_Hl337IkWeUHjq0EeK30W`（`libbtdm_common/2.o`） |
+| `0x40005ba6`（ra） | `r_sym_ble_4W45cnSk8tMbpqkpDdkQ`（`libble_app`） |
+
+那个函数只有 8 字节有效代码：
+
+```asm
+lui a5, .LANCHOR0
+lw  a5, 0(a5)      # a5 = *(.LANCHOR0)  ← 这个全局指针是 NULL
+lw  a5, 0(a5)      # ← 解引用 NULL ⇒ load access fault, mtval=0
+```
+
+⇒ **一个全局指针没被初始化**。而它很可能正是 **step 6（被我们跳过的那一步）负责初始化的**
+⇒ 所以"跳过 step 6"这个实验**本身引入**了这个崩溃，不能据此判断 step 10 有问题。
+
+⇒ 结论：**step 6 是唯一的总闸门** —— 它不通，后面既不能跑也不能可靠验证。
+
 ### 一个关键范围收缩：modem 域**部分可访问**
 
 对比两组板侧读数：

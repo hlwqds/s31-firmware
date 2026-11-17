@@ -226,6 +226,8 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(bt_tests).step);
     }
 
+    // 探针构建保留符号：panic 的 PC 才能 addr2line 回函数名（生产镜像保持 strip）。
+    if (bt_probe) app.root_module.strip = false;
     app.setLinkerScript(b.path("../boards/esp32s31-coreboard/linker/s31.ld"));
     const install = b.addInstallArtifact(app, .{ .dest_sub_path = "app.elf" });
     b.getInstallStep().dependOn(&install.step);
