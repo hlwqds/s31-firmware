@@ -107,6 +107,8 @@ pub const Stats = struct {
     blocked_calls: u32 = 0,
     /// 静态池耗尽的次数。>0 说明容量不够，症状会伪装成"controller 不动"。
     pool_exhausted: u32 = 0,
+    /// 事件被重复入队（已在队列里又 put）的次数。>0 说明 controller 确实会重复 put。
+    eventq_requeued: u32 = 0,
 };
 
 fn slotGet(comptime T: type, slot: *Slot) ?*T {
@@ -196,6 +198,10 @@ fn Pool(comptime T: type, comptime n: usize) type {
 var sem_pool: Pool(Sem, 32) = .{};
 
 pub fn semInit(slot: *Slot, tokens: u16) c_int {
+    if (slotGet(Sem, slot)) |s| { // 复用，别漏池记录
+        s.count = tokens;
+        return OK;
+    }
     const s = sem_pool.take() orelse return ENOMEM;
     s.count = tokens;
     slotSet(Sem, slot, s);
@@ -242,6 +248,10 @@ pub const Mutex = struct { locked: bool = false, in_use: bool = false };
 var mutex_pool: Pool(Mutex, 32) = .{};
 
 pub fn mutexInit(slot: *Slot) c_int {
+    if (slotGet(Mutex, slot)) |m| {
+        m.locked = false;
+        return OK;
+    }
     const m = mutex_pool.take() orelse return ENOMEM;
     slotSet(Mutex, slot, m);
     return OK;
@@ -296,8 +306,12 @@ var event_pool: Pool(Event, 192) = .{};
 var eventq_pool: Pool(EventQ, 48) = .{};
 
 pub fn eventqInit(slot: *Slot) void {
-    // C 侧签名是 void，返回不了错误码——但**不能静默**：池耗尽时槽位保持 null，
-    // 之后任何 eventqPut 都是野指针。⇒ take() 里已经记账打日志，这里只是继续。
+    // 槽位已有状态就**复用**（IDF 的语义是 memblock 已属于本池就复用）——
+    // 否则对同一槽位二次 init 会白漏一个池记录。
+    if (slotGet(EventQ, slot)) |q| {
+        q.* = .{ .in_use = true };
+        return;
+    }
     const q = eventq_pool.take() orelse return;
     slotSet(EventQ, slot, q);
 }
@@ -313,9 +327,35 @@ pub fn eventqIsEmpty(slot: *const Slot) bool {
     return q.head == null;
 }
 
+/// 入队前先把"已在队列里"的那个摘掉——否则旧前驱的 `next` 仍指向它，
+/// 同一个事件在链表里出现两次 ⇒ `eventqGet`/`eventqRemove` 遍历成环**死循环**。
+/// IDF 那边是 FreeRTOS 队列（存指针、允许重复入队），controller 完全可能重复 put。
+fn unlinkIfQueued(q: *EventQ, e: *Event) void {
+    if (!e.queued) return;
+    var prev: ?*Event = null;
+    var cur = q.head;
+    while (cur) |c| {
+        if (c == e) {
+            if (prev) |pr| pr.next = c.next else q.head = c.next;
+            if (q.tail == c) q.tail = prev;
+            c.next = null;
+            c.queued = false;
+            stats_state.eventq_requeued += 1;
+            return;
+        }
+        prev = c;
+        cur = c.next;
+    }
+    // 标着 queued 但不在本队列里（跨队列移动）——只清标志，避免永久卡住。
+    e.queued = false;
+    e.next = null;
+    stats_state.eventq_requeued += 1;
+}
+
 pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
     const q = slotGet(EventQ, qslot) orelse return;
     const e = slotGet(Event, eslot) orelse return;
+    unlinkIfQueued(q, e);
     e.next = null;
     e.queued = true;
     if (q.tail) |t| {
@@ -330,6 +370,7 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
 pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
     const q = slotGet(EventQ, qslot) orelse return;
     const e = slotGet(Event, eslot) orelse return;
+    unlinkIfQueued(q, e);
     e.next = q.head;
     e.queued = true;
     q.head = e;
@@ -433,6 +474,12 @@ pub const Callout = struct {
 var callout_pool: Pool(Callout, 32) = .{};
 
 pub fn calloutInit(slot: *Slot, evq: ?*Slot, ev_cb: ?*const fn (?*anyopaque) callconv(.c) void, ev_arg: ?*anyopaque) c_int {
+    if (slotGet(Callout, slot)) |co| { // 复用
+        co.active = false;
+        co.evq = evq;
+        eventInit(&co.ev_slot, ev_cb, ev_arg);
+        return OK;
+    }
     const co = callout_pool.take() orelse return ENOMEM;
     co.evq = evq;
     slotSet(Callout, slot, co);
@@ -1275,4 +1322,52 @@ test "pool: 耗尽可见（计数 + 日志），不是静默 null" {
     eventDeinit(&slots[0]);
     eventInit(&slots[192], null, null);
     try testing.expectEqual(@as(u32, 1), stats().pool_exhausted);
+    // **测试卫生**：把池全部归还，否则后续用例会因池空而"看起来"失败。
+    eventDeinit(&slots[192]);
+    for (slots[1..192]) |*s2| eventDeinit(s2);
+}
+
+test "eventq: 重复 put 不成环（曾会死循环）" {
+    resetStats();
+    var q: Slot = .{};
+    var se: Slot = .{};
+    eventqInit(&q);
+    eventInit(&se, null, null);
+    eventqPut(&q, &se);
+    eventqPut(&q, &se); // 同一个事件再 put 一次
+    eventqPut(&q, &se); // 再来一次
+    // 关键：取的时候不能死循环，且只应取出一个
+    var n: usize = 0;
+    while (eventqGet(&q, 0)) |_| n += 1;
+    try testing.expectEqual(@as(usize, 1), n);
+    try testing.expect(eventqIsEmpty(&q));
+    try testing.expectEqual(@as(u32, 2), stats().eventq_requeued);
+    eventqDeinit(&q);
+    eventDeinit(&se);
+}
+
+test "pool: 同一槽位二次 init 复用记录，不漏池记录" {
+    resetStats();
+    // eventq：二次 init 后再 init 200 次也不该耗尽（池 48）
+    var q: Slot = .{};
+    var i: usize = 0;
+    while (i < 200) : (i += 1) eventqInit(&q);
+    try testing.expectEqual(@as(u32, 0), stats().pool_exhausted);
+    eventqDeinit(&q);
+    // sem / mutex / callout 同理
+    var se: Slot = .{};
+    i = 0;
+    while (i < 100) : (i += 1) _ = semInit(&se, 1);
+    try testing.expectEqual(@as(u32, 0), stats().pool_exhausted);
+    try testing.expectEqual(OK, semDeinit(&se));
+    var mu: Slot = .{};
+    i = 0;
+    while (i < 100) : (i += 1) _ = mutexInit(&mu);
+    try testing.expectEqual(@as(u32, 0), stats().pool_exhausted);
+    try testing.expectEqual(OK, mutexDeinit(&mu));
+    var co: Slot = .{};
+    i = 0;
+    while (i < 100) : (i += 1) _ = calloutInit(&co, null, null, null);
+    try testing.expectEqual(@as(u32, 0), stats().pool_exhausted);
+    calloutDeinit(&co);
 }
