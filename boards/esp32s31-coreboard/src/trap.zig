@@ -180,8 +180,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // `irq_count < irq_samples.len`（16）里面，于是"16 条之后没输出"被误读成"中断停了"，
         // 实际只是打印被数组长度卡住。
         if (irq_count < irq_samples.len) irq_samples[irq_count] = frame.mepc;
-        // 前 64 条全打，之后每 256 条打一条：既不刷屏，又能证明"采样在 swap 之后仍在继续"。
-        if (irq_count < 64 or (irq_count % 256) == 0) {
+        // **极短计数器行**：前 16 条打详细现场，之后每 64 条打一行 ≤24 字节的
+        // `s=<n> pc=0x<x>`。目的：FIFO 压力小几个数量级，且计数**是否继续增长**
+        // 直接判定"中断还在来（自旋）"还是"事务不退休（stall）"。
+        if (irq_count >= 16 and (irq_count % 64) == 0) {
+            log.line("s={d} pc=0x{x}", .{ irq_count, frame.mepc });
+            // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
+            //   （本轮实测就是这样，日志里全是 s=64）。
+        }
+        if (irq_count < 16) {
             // 心跳里顺带读硬件现场：`0x20104CAC` 是 WiFi MAC 块 +0xAC（blob 自旋等 [15:13] 清零），
             // `0x2f07fd2c/2d` 是自旋函数缓存下来的 bit13/bit14 最近值。
             const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
