@@ -95,4 +95,8 @@
 5. `tests/e2e/run_e2e.py --host` 通过（profile 构建 + 两段镜像）。
 6. 文档变更需通过 Markdown 链接检查（相对路径必须存在）。
 
-自托管 runner 上的板级任务（`workflow_dispatch` 触发）不属于合并门禁，但发布前必须跑过一次。
+自托管 runner 上的板级任务（`workflow_dispatch` 触发）不属于合并门禁，但发布前必须跑过一次，
+**且要带 `demo=true`** —— 否则 A/B 切槽与回滚那九项断言在发布流程里仍是"没验"的。
+三个入口的分工：`gate=true`（发布门禁，需 sudo 免密与 host 预置）/ `gate=false`（裸 e2e 冒烟，
+只验证能跑起来）/ `demo=true`（`scripts/demo-board.sh`，不碰网络的 A/B 自检，可与前两者同开）。
+详见 `docs/TESTING.md` 的 "CI 上的同一套入口" 一节。

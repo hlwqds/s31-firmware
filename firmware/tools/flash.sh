@@ -17,6 +17,9 @@
 #   3. 在 idf-bootstrap/ 里完成一次 IDF 构建
 #                                    -> idf-bootstrap/build/{bootloader,partition_table,flash_args}
 #
+# esptool 的解析顺序：`$ESPTOOL`（可以为多个词，如 `python3 -m esptool`）→ 否则 PATH 上的
+# `esptool`。不读 `$ESPTOOL` 的旧写法在"设了变量却仍按 PATH 找"时会静默用错版本。
+#
 # 烧完后串口按 115200 8N1 打开（UART0，GPIO58/59）：应用侧没有重配 UART，
 # 输出走的是 ROM 已经配好的那一套。自检不改串口。
 set -eu

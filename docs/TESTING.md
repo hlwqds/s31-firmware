@@ -63,6 +63,7 @@ sudo scripts/host-prep-wire.sh down   # 收尾：撤销规则与监听器
 CI 上的同一套入口：`ci.yml` 的 `board` job（`workflow_dispatch`，自托管 runner）默认
 `profile=net-wire`、`gate=true`，执行 `sudo scripts/host-prep-wire.sh up` → `scripts/gate-board.sh`
 → `trap` 收尾 `down`；`gate=false` 时才退回裸 `run_e2e.py --board`（只做冒烟）。
+再加 `demo=true` 即**在同一个 job 里串行**跑 A/B 演示（不是另一个 job —— 同一条串口不能并发）。
 
 `demo-board.sh` 与发布门禁的分工：它**不碰网络**（不需要 DHCP/监听器/防火墙），只验"这套固件
 自己能不能起来、能不能切槽并切回来"，证据落 `logs/c8-demo.log`；发布门禁仍是 `gate-board.sh`。
