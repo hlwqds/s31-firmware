@@ -61,6 +61,7 @@ extern fn r_base_stack_initEnv() c_int;
 extern fn r_conn_stack_initEnv() c_int;
 extern fn r_base_stack_enable() c_int;
 extern fn r_conn_stack_enable() c_int;
+extern fn r_esp_ble_ll_set_public_addr(addr: *const [6]u8) c_int;
 
 const freestanding = builtin.os.tag == .freestanding;
 
@@ -153,6 +154,16 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(13, "r_conn_stack_initEnv", if (freestanding) r_conn_stack_initEnv() else 0);
     if (rc != 0) return rc;
 
+    // 14. 公有地址：**没有它 HCI Reset 能过，但扫描/广播命令全部无效**
+    var mac: [6]u8 = undefined;
+    osal.readEfuseMac(&mac);
+    std.mem.reverse(u8, &mac); // IDF 也是 `swap_in_place(mac, 6)` 之后再设
+    osal.logPublic("bt bringup: public addr {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+    });
+    rc = step(14, "r_esp_ble_ll_set_public_addr", if (freestanding) r_esp_ble_ll_set_public_addr(&mac) else 0);
+    if (rc != 0) return rc;
+
     status_state = .inited;
     osal.logPublic("bt bringup: INITED", .{});
     return 0;
@@ -170,19 +181,19 @@ pub fn enable() c_int {
     }
 
     porting.btdmLpReset(true);
-    var rc = step(14, "btdm_coex_enable", porting.btdmCoexEnable());
+    var rc = step(15, "btdm_coex_enable", porting.btdmCoexEnable());
     if (rc != 0) return rc;
 
-    rc = step(15, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
+    rc = step(16, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
     if (rc != 0) return rc;
-    rc = step(16, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable() else 0);
+    rc = step(17, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable() else 0);
     if (rc != 0) return rc;
 
-    rc = step(17, "r_btdm_hci_fc_enable", if (freestanding) r_btdm_hci_fc_enable() else 0);
+    rc = step(18, "r_btdm_hci_fc_enable", if (freestanding) r_btdm_hci_fc_enable() else 0);
     if (rc != 0) return rc;
 
     // **最后一步**：controller 任务在这里才真正启动
-    rc = step(18, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
+    rc = step(19, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
 
     status_state = .enabled;
@@ -215,7 +226,7 @@ test "bringup: init 走到 INITED，enable 走到 ENABLED" {
     try std.testing.expectEqual(@as(c_int, 0), enable());
     try std.testing.expectEqual(Status.enabled, status());
     // 最后一步必须是 task_enable（否则 controller 任务没起来）
-    try std.testing.expectEqual(@as(u32, 18), fake_step);
+    try std.testing.expectEqual(@as(u32, 19), fake_step);
     // 跳过了 host-only 的 ext_funcs
     try std.testing.expectEqual(@as(u32, 1), stats().ext_funcs_registered);
 }

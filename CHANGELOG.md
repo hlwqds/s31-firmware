@@ -8,6 +8,10 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **公有地址设置**（2026-11-17，init 第 14 步）：`r_esp_ble_ll_set_public_addr(mac)`（归档 ✓），
+  `mac` 先 `readEfuseMac` 再**字节逆序**（IDF 同样是 `swap_in_place(mac, 6)` 之后再设）。
+  没有这一步 **HCI Reset 能过、但扫描/广播命令全部无效** —— "命令有回包但没效果"的典型成因。
+  enable 链的步骤号相应顺延到 15–19（最后仍是 `r_btdm_task_enable`）。
 - **HCI 传输层落地**（2026-11-17，`components/bt-blobs/src/transport.zig`）：我们**自己拥有**这一层
   （归档里没有 `hci_driver_vhci_ops`/`uart_ops`），结构照 IDF 的 `hci_transport_init`：
   `ops.init(cb)` → `r_ble_hci_trans_cfg_hs(leEvtTx, NULL, leAclTx, NULL)` → `r_btdm_hci_trans_register_tx(btdmTx, false)`。
