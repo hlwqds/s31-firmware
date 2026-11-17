@@ -771,6 +771,36 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 两种可能：① 我对该比较的语义读错了；② `BOhff` 本就不是成功建任务的路径，建任务在别处。
 下一轮用同样的 section 级反汇编把 `.L77`（成功分支）读出来即可定案。
 
+### 🔎 `deinit` 的 fault 是**断言**，不是野指针
+
+`r_btdm_task_deinit`（`0x7a`）的调用表与 `+0x4a` 处 callee 的真实身份：
+
+```asm
+22: wr_btdm_osal_mutex_pend(env+4, forever)      ← deinit 自己也 pend 一次
+2e: lbu a3, 0(env)          # 状态字节
+32: bltu 1, a3, .L80        # state > 1 ⇒ 另一支
+36: lw  a0, 20(env)  ; call r_sym_bt_gvLJK4crXTPEAF7nrRbG
+40: lw  a5, 0(anchor)
+42: lw  a0, 16(env)  ; call r_sym_bt_gvLJK4crXTPEAF7nrRbG      ← fault 落在这里
+4c/54: 后续两个调用
+```
+
+而 `r_sym_bt_gvLJK4crXTPEAF7nrRbG`（`libbtdm_common/2.o`）是**断言函数**：
+
+```asm
+0: lw   a5, 4(a0)        # a5 = *(obj+4)
+a: beqz a5, .L4          # 为 0 ⇒ 跳过
+18: li  a1, 42
+20: call wr_btdm_assert  # ← 断言（行号 42）：对象**仍在使用**
+```
+
+⇒ 所以 `deinit` 的 "store fault" 实际上是：**归档检测到对仍在使用的对象做清理，触发断言**，
+而我们的 `wr_btdm_assert`（`BT_ASSERT_RETURNS=1`）返回后，流程继续在已释放/半初始化的对象上走。
+
+⇒ **这是 `task_init` 失败的后果，不是原因**。因此排查方向必须回到
+`task_init` 为何判定失败 —— 而它的四个判据（版本、magic、`OkE7` 返回值、`0xce` 调用的返回值）
+里，前三项均已实测通过（env 已与 oracle 逐字节一致）。
+
 ### ✅ 已补：`MODEM_LPCON +0x18` 的 bit0/bit1（`wifipwr` / `coex`）
 
 板侧逐字对拍实证：
