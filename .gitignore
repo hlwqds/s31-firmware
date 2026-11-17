@@ -22,3 +22,8 @@ reports/
 # python 导入 run_e2e 时产生的字节码（scripts/check-capacity.py）
 __pycache__/
 *.pyc
+
+# BLE controller 归档解包产物（bt-blobs 链接实验；配方见 components/bt-blobs/README.md）
+bt_all/
+bt_objs/
+bt_objs.csv

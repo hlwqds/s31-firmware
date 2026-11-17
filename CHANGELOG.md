@@ -8,6 +8,19 @@
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
 ### Added
+- **BLE controller 链进两段镜像**（2026-11-17，R3.3 里程碑 1）：`libble_app` + `libbtdm_common` +
+  `libbtbb` + `libphy` 的 113 对象闭包全部加进 `zig build`（新开关 `-Dbt-blob-dir` / `-Dbt-blob-objs`），
+  `.flash.text` **699 920 / 720 896**（余 20 976）、`.flash.rodata` 110 848、`.iram_blobs` 60 224，
+  `elf2image` 成功且 `image-info` 恰好 2 条 `DROM, IROM`。控制器**还不能跑**（config/任务/HCI 传输未做），
+  详见 `components/bt-blobs/README.md`。三个落地要点：
+  ① `libble_app` 的 `.iram_sleep*`/`.iram_single_sleep*` 不在原 `.iram_blobs` 收集规则里，
+  不显式收编就各自成段、`elf2image` 报 `Invalid segment count 27 (max 16)`（与当年 105 对象那次同类）；
+  ② 链接期只剩 4 个未定义符号，且**全在 S31 ROM 集里**（`printf`/`ets_printf`/`abs`/
+  `phy_set_chan_freq_sw_start`）⇒ 加进 `rom_syms.ld` 而不是写桩——"ROM 集里有"不等于
+  "`rom_syms.ld` 里有"，增量链接实验要先对账；
+  ③ 5 个 `*_btdm` 边界符号用**零长度区间**即可：`libble_app/112.o` 的用法是
+  `memset(start, 0, end-start)`，而本布局 `.bss` 已由 `_start` 清零、`.data` 的 LMA == VMA。
+  另：`wr_btdm_osal_*` 51 个**全部由归档自身定义**（未定义交集为 0），不需要我们实现。
 - **Wi-Fi blob init 返回 0**（2026-11-16，R3 里程碑）：真实 blob 的 `esp_wifi_init_internal`
   在裸机上返回 **0**（`wifi-init-probe: INIT OK`）。三个修复都由故障点反汇编定住：
   `_wifi_create_queue`（表 index 94）是独立钩子且**返回对象的第一个字必须是内部队列指针**

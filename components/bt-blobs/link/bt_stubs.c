@@ -17,12 +17,12 @@
 
 typedef unsigned int u32;
 
-/* newlib 断言钩子。真断言在裸机上没地方报，直接挂住；调试期看串口最后一行即可。 */
+/* newlib 断言钩子。controller 断言时把定位信息打到串口再挂住——否则板子上只会
+ * 静默死循环，看不到任何线索。用 ROM 的 printf（标准 %s/%d，controller 就是这么调的）。 */
+extern int ets_printf(const char *format, ...);
+
 void __assert_func(const char *file, int line, const char *func, const char *expr) {
-    (void)file;
-    (void)line;
-    (void)func;
-    (void)expr;
+    ets_printf("bt assert: %s:%d %s: %s\n", file, line, func ? func : "?", expr ? expr : "?");
     for (;;) {
     }
 }
@@ -40,8 +40,12 @@ int sprintf(char *buf, const char *format, ...) {
     return 0;
 }
 
-/* 晶振频率：本板 40 MHz 晶振（与 ch17 的 PHY/RGMII 时钟配置一致）。 */
-u32 rtc_clk_xtal_freq_get(void) { return 40; }
+/* 晶振频率（**单位 Hz**）：本板 40 MHz 晶振，即 40 000 000。
+ * controller 的全部时基（定时器、退避、CCA 窗口）都从这个值推，写错不会崩、
+ * 只会变成"超时窗口大到离谱"这类静默错误 ⇒ 直接问 ROM，别自己填常数。 */
+extern u32 ets_clk_get_xtal_freq(void);
+
+u32 rtc_clk_xtal_freq_get(void) { return ets_clk_get_xtal_freq(); }
 
 /* 低功耗 modem 时钟开关：控制器在 lp 初始化时关一次（实参恒为 0）。
  * 我们的时钟树由 board 层统一管理，这里只记录不动作。 */

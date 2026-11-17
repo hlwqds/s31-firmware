@@ -20,6 +20,7 @@
 | `components/wifi-connect` | Wi-Fi 连接管理 | 20 |
 | `components/wifi-blobs` | 真实 Wi-Fi blob 链接与 osi 适配（ch25 的实测延伸） | 20 |
 | `components/ble-802154` | BLE / 802.15.4 边界 | 20 |
+| `components/bt-blobs` | ch27 §27.11（BLE/802.15.4 边界）+ R3.3 | — （归档链接实验，无主机测试） |
 | `tools/s31-production/{netmgr,ota,provisioning,recovery}` | 生产化原型 | 15 / 8 / 18 / 9 |
 
 ## 日志
