@@ -56,6 +56,10 @@ pub fn build(b: *std.Build) void {
     // `modem_clock_module_enable` —— 这些是 IRAM 代码，我们板上没有。
     const phy_src_objs = b.option([]const u8, "phy-src-objs", "comma-separated absolute paths of IDF PHY objects") orelse "";
     const bt_probe = b.option(bool, "bt-probe", "run the BLE controller probe instead of the normal self-test") orelse false;
+    // C5 回滚链路：注入一条必然失败的自检，用来制造"连续 3 次失败"。
+    const ab_fail = b.option(bool, "ab-fail", "inject a failing self-test entry (C5 rollback trigger)") orelse false;
+    // C5 切槽：启动时把下次引导切到 ota_0/ota_1（写 otadata 后复位）。
+    const ab_stage = b.option([]const u8, "ab-stage", "stage boot slot: \"a\" or \"b\" (writes otadata, then resets)") orelse "";
 
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
@@ -64,6 +68,9 @@ pub fn build(b: *std.Build) void {
     for (all_modules) |m| {
         if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
         src = b.fmt("{s}    .{{ .name = \"{s}\", .run = @import(\"{s}\").run }},\n", .{ src, m.name, m.name });
+    }
+    if (ab_fail) {
+        src = b.fmt("{s}    .{{ .name = \"ab-fail\", .run = @import(\"ab_fail\").run }},\n", .{src});
     }
     src = b.fmt("{s}}};\n", .{src});
 
@@ -79,6 +86,11 @@ pub fn build(b: *std.Build) void {
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
     const enabled_mod = b.createModule(.{ .root_source_file = enabled_file });
+    // `-Dab-fail` 注入的那条自检：永远返回 false，用来制造回滚条件。
+    enabled_mod.addImport("ab_fail", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
+        "ab_fail.zig",
+        "pub fn run() bool {\n    return false;\n}\n",
+    ) }));
 
     for (all_modules) |m| {
         if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
@@ -143,6 +155,13 @@ pub fn build(b: *std.Build) void {
         const probe_obj = b.addObject(.{ .name = "wifi_probe", .root_module = probe_mod });
         app.root_module.addObject(probe_obj);
     }
+    // C5：otadata 的真实读写层（分区表 + flash + IDF 32 字节条目）
+    const ota_ab_mod = b.createModule(.{ .root_source_file = b.path("../components/boot-power-perf/src/slot.zig") });
+    app.root_module.addImport("ota_ab", ota_ab_mod);
+    app.root_module.addImport("ab_fail_flag", b.createModule(.{ .root_source_file = b.addWriteFiles().add(
+        "ab_flags.zig",
+        b.fmt("pub const enabled = {};\npub const stage = \"{s}\";\n", .{ ab_fail, ab_stage }),
+    ) }));
     app.root_module.addImport("board", board);
     app.root_module.addImport("enabled", enabled_mod);
     // 探针模块总是存在（start.zig 无条件 import），用 comptime 常量决定是否真的跑：

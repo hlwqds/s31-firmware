@@ -9,6 +9,10 @@
 
 test {
     _ = @import("bootslot.zig");
+    // C5 的真实 I/O 层：分区表解析、flash 封装、otadata 落盘与选槽。
+    _ = @import("flash.zig");
+    _ = @import("partition.zig");
+    _ = @import("slot.zig");
     _ = @import("power.zig");
     _ = @import("perf.zig");
     _ = @import("ota.zig");

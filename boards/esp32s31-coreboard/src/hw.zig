@@ -160,6 +160,21 @@ pub fn delayUs(us: u32) void {
 }
 
 /// 停机：关全局中断后 `wfi`。正常收尾与 panic 都走这里。
+extern fn software_reset() void;
+
+/// 软复位。调用前先把 UART 排空：证据行被复位掐掉半行是最常见的"日志丢了"。
+///
+/// ROM 地址 0x2f800094（`esp32s31.rom.ld`，由 `linker/rom_syms.ld` PROVIDE）。
+pub fn reset() noreturn {
+    // 100 ms ≈ 115200 8N1 下 1150 字节的排空余量。复位会把 UART FIFO 里没发完的
+    // 字节直接丢掉；实测 2 ms 会掐断一条 ~100 字节的日志行（证据里出现过
+    // `count�ESP-ROM` 这种半行）。reset 很少发生，100 ms 的代价可接受。
+    delayUs(100_000);
+    software_reset();
+    // ROM 不返回；留一个兜底，避免编译器认为这里可达
+    while (true) {}
+}
+
 pub fn halt() noreturn {
     asm volatile ("csrci mstatus, 0x8" ::: .{});
     while (true) {

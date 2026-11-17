@@ -13,6 +13,7 @@
 PROVIDE(crc32_le = 0x2f800784);
 PROVIDE(ets_delay_us = 0x2f80003c);
 PROVIDE(roundup2 = 0x2f80008c);
+PROVIDE(software_reset = 0x2f800094);
 
 /* ---- esp32s31.rom.libc.ld ---- */
 PROVIDE(strcpy = 0x2f8004d0);

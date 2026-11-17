@@ -1,8 +1,15 @@
 # s31-firmware 生产固件的分区布局（显式落库，不再依赖 IDF 的 single-app-large 默认值）。
 #
-# 与 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE 的默认表逐字节一致：
+# 前三条与 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE 的默认表逐字节一致
 #   nvs 0x9000 / phy_init 0xf000 / factory 0x10000 + 1500K
-# 因此 tools/flash.sh 的应用行（0x10000）与已有证据里的偏移都不变。
+# 因此应用行（0x10000）与已有证据里的偏移都不变。
+#
+# 自 2026-11-18 起追加 A/B 三行（C5）：
+#   ota_0 0x190000 / ota_1 0x310000（各 1536K）/ otadata 0x490000（8K = 两个扇区）
+# 为什么从 0x190000 起：factory 结束于 0x187000，留 0x1000 余量并按 64K 对齐；
+# 与 ch23 lab 已在板上验证过的布局一致（`Loaded app from partition at offset 0x190000`）。
+# otadata 必须是 **4 KiB 对齐的两个扇区**：IDF 把两条 32 字节记录各放一个扇区。
+# 顺序上 otadata 放在最后一个 64K 块之后，避免以后再插槽位时挪动它。
 #
 # 为什么落库：分区表是**承重**的——应用偏移、容量门禁的 factory 上限、将来 OTA 的
 # ota_0/ota_1/otadata 位置都从这里读。以前它只存在于 sdkconfig 的默认值里，
@@ -14,3 +21,6 @@
 nvs,        data, nvs,      0x9000,   24K
 phy_init,   data, phy,      0xf000,   4K
 factory,    app,  factory,  0x10000,  1500K
+ota_0,      app,  ota_0,    0x190000, 1536K
+ota_1,      app,  ota_1,    0x310000, 1536K
+otadata,    data, ota,      0x490000, 8K

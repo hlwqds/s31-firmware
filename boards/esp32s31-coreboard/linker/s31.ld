@@ -243,6 +243,16 @@ SECTIONS
      */
     PROVIDE(esp_rom_printf = 0x2f800024);
     PROVIDE(esp_rom_delay_us = 0x2f80003c);
+    /*
+     * SPI flash 读/写/擦（C5 的 OTA 落盘需要）：
+     *   esp_rom_spiflash_erase_sector = 0x2f800160  (参数是**扇区号**)
+     *   esp_rom_spiflash_write        = 0x2f800168
+     *   esp_rom_spiflash_read         = 0x2f80016c
+     * 签名见同版本 `esp_rom_spiflash.h`；地址与 ch09/ch23 的实测快照一致。
+     */
+    PROVIDE(esp_rom_spiflash_erase_sector = 0x2f800160);
+    PROVIDE(esp_rom_spiflash_write = 0x2f800168);
+    PROVIDE(esp_rom_spiflash_read = 0x2f80016c);
 }
 
 INCLUDE ../boards/esp32s31-coreboard/linker/rom_syms.ld
