@@ -1231,6 +1231,18 @@ fn shellWifiClockEnable() callconv(.c) usize {
         modconf.* = 0x3D;
         note(26, b, modconf.*);
     }
+    // 7) **LPCON clk_conf（`0x2010F018`）—— 之前的编辑把这段整段删掉了**（所以读回一直是 0x4）。
+    // IDF 侧实测 enable：`0x1 -> 0x3`，即置 **bit0 `clk_wifipwr_fo`** 与 **bit1 `clk_coex_fo`**
+    // （字段序：clk_wifipwr_fo/clk_coex_fo/clk_i2c_mst_fo/clk_lp_timer_fo/clk_fe_mem_fo）。
+    {
+        const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
+        const lb = lpcon.*;
+        // IDF 的 BEFORE 是 `0x1`、AFTER 是 `0x3`；我们的 BEFORE 是 `0x4`（底色不同）⇒
+        // **按 IDF 的终态绝对值写 `0x3`**，而不是 `lb | 0x3`（那会得到 0x7）。
+
+        lpcon.* = 0x3;
+        note(28, lb, lpcon.*);
+    }
     return 0;
 }
 
