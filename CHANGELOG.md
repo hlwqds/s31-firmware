@@ -59,6 +59,16 @@
   `net_sockets` 组件模块包含同一批文件（同时进镜像会撞 Zig 的"一个文件属于两个模块"）。
   `tests/baselines.json` 已加 `posix-compat: 17`。
 
+- **OSAL 抽成独立组件（2026-11-18）**：`components/bt-blobs/src/{sched,osal,probe_ptr}.zig`
+  → `components/osal/`（1946 行，零 `board` 依赖，时间/临界区/随机数都是注入钩子）。
+  动机是给 POSIX 兼容层一个可复用的内核落点，而不是再造一份。
+  搬移本身**行为未变**的证据：闭包链接的镜像大小搬前搬后**逐字节相同**（913728 B）。
+  bt-blobs 的 10 个文件、18 处相对 import 改为模块导入；其主机用例 36 → 17（19 项随文件迁走，
+  归 `osal` 自己的测试目标，避免同一批用例被两个组件各数一遍）。
+  ⚠️ `osal/src/api.zig` 里那行 `comptime { _ = &osal.timeGet; }` **不能删** —— 没有它
+  `osal.zig` 的 5 个 `export fn` 不会发射，`bt_core.o` 变 0 符号对象、闭包链接报未定义
+  （`scripts/check-bt-link.sh` 会抓到）。新增组件基线：`osal: 20`，`bt-blobs: 17`。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

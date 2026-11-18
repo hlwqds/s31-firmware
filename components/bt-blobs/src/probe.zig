@@ -23,11 +23,11 @@
 //! | 有 `EVT` 但 status≠0 | 回包了但命令失败 |
 const std = @import("std");
 const builtin = @import("builtin");
-const osal = @import("osal.zig");
+const osal = @import("osal_kit").osal;
 const config = @import("config.zig");
 const bringup = @import("bringup.zig");
 const transport = @import("transport.zig");
-const sched = @import("sched.zig");
+const sched = @import("osal_kit").sched;
 const porting = @import("porting.zig");
 const board = @import("board");
 

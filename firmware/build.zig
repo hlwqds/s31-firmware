@@ -88,6 +88,10 @@ pub fn build(b: *std.Build) void {
     const socks_mod = b.createModule(.{ .root_source_file = b.path("../components/net-sockets/src/api.zig") });
     socks_mod.addImport("net_tcp", tcp_mod);
 
+    // OSAL（任务/调度器 + 同步原语）：从 bt-blobs 抽出来的独立组件。
+    // 依赖面只有 std + builtin（时间/临界区/随机数是注入钩子），所以没有 board 依赖。
+    const osal_mod = b.createModule(.{ .root_source_file = b.path("../components/osal/src/api.zig") });
+
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
     // `boot_power_perf` 模块**无条件**创建：main 需要它（perf 实测），
@@ -241,6 +245,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
         bt_core.addImport("board", board);
+        bt_core.addImport("osal_kit", osal_mod);
         const bt_obj = b.addObject(.{ .name = "bt_core", .root_module = bt_core });
         app.root_module.addObject(bt_obj);
         // probe 用同一个模块（它 import 的是 `bt_core`，不是相对路径）
@@ -297,6 +302,16 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 
+    // OSAL 组件自己的主机测试（19 项：osal 17 + sched 2）
+    {
+        const t = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path("../components/osal/src/host_tests.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }) });
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+
     // bt-blobs 的 OSAL 是纯逻辑，单独成主机测试目标；不起 app 的依赖
     // （归档链接是 opt-in 的 -Dbt-blob-*，常规构建里这个组件不参与）。
     {
@@ -307,6 +322,7 @@ pub fn build(b: *std.Build) void {
                 .optimize = .Debug,
             }),
         });
+        bt_tests.root_module.addImport("osal_kit", osal_mod);
         test_step.dependOn(&b.addRunArtifact(bt_tests).step);
     }
 

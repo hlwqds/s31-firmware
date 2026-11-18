@@ -18,7 +18,7 @@
 //!    （`r_ble_hci_trans_buf_free(载荷指针)`，注意它收的是**载荷**不是包）。
 const std = @import("std");
 const builtin = @import("builtin");
-const osal = @import("osal.zig");
+const osal = @import("osal_kit").osal;
 
 /// 枚举值照抄 `esp_hci_driver.h`（写错不报错、只会静默路由错）。
 pub const TYPE_CMD: u32 = 0x01;

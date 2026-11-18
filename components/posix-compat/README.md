@@ -141,7 +141,11 @@ net-sockets（生产）        hw/tick（板级）
 **只有一条路**：把生产侧的 OSAL 抽成独立组件。不存在"只在 lab 里做一份"的选项 ——
 lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，lab 版永远进不了这里。
 
-**抽取成本（2026-11-18 实测，不是估计）**：`components/bt-blobs/src/{sched.zig, osal.zig}`
+> ✅ **这一步已于 2026-11-18 完成**：`components/osal/`（`sched.zig` + `osal.zig` + `probe_ptr.zig`，
+> 1946 行，零 `board` 依赖）。搬移行为未变的证据是闭包链接的镜像大小**逐字节相同**（913728 B）。
+> 验收命令 `scripts/check-bt-link.sh`。⇒ 下面的表就是**现在可以开始做**的工作。
+
+**抽取成本（已完成，实测数据留作记录）**：`components/bt-blobs/src/{sched.zig, osal.zig}`
 合计 **1946 行**，依赖面只有 `std` + `builtin` —— **零 `board` 依赖**。全文件里与板级相关的
 只有三处，且都不需要改：两处注释（说明为什么**不**用 `board.hw.nowUs`、TRNG 由谁注入）、
 一处 `asm`（上下文切换本身）。时间、临界区、随机数已经是**注入钩子**

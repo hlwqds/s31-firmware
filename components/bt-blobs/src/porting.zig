@@ -6,7 +6,7 @@
 //! NimBLE **host** 侧的扫描去重（controller-only 构建没有 host，归档里也从不引用它），
 //! `ble_msys_init` 只是转调归档里的 `r_esp_ble_msys_init`。
 const std = @import("std");
-const osal = @import("osal.zig");
+const osal = @import("osal_kit").osal;
 const mempool_abi = @import("mempool_abi.zig");
 const builtin = @import("builtin");
 const on_target = builtin.target.os.tag == .freestanding;

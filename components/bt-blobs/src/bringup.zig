@@ -22,7 +22,7 @@
 //! `r_ble_controller_init` 必然失败。ECC 三项照 IDF 在 SM 未开时那样给返回 -1 的桩。
 const std = @import("std");
 const builtin = @import("builtin");
-const osal = @import("osal.zig");
+const osal = @import("osal_kit").osal;
 const config = @import("config.zig");
 const porting = @import("porting.zig");
 const r_ext_funcs = @import("extfuncs.zig");
@@ -122,7 +122,7 @@ fn dumpBootState() void {
         // **PHY 初始化**：现在用的是 **IDF 的真实实现**（`-Dphy-src-objs` 链进来的
         // `esp_phy.c`/`modem_clock.c`/`periph_ctrl.c` 对象），不再按地址调 IRAM。
         // 顺序与 IDF 的 `esp_phy_enable` 一致：填表 → 使能（内部含时钟/模块/校准）。
-        const pp = @import("probe_ptr.zig");
+        const pp = @import("osal_kit").probe_ptr;
         pp.initPhy();
         osal.logLine("BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=0x{x}", .{
             (@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*,
@@ -199,7 +199,7 @@ pub fn init(cfg: *config.Config) c_int {
     }
     enter(6, "r_btdm_task_init");
     {
-        const pp = @import("probe_ptr.zig");
+        const pp = @import("osal_kit").probe_ptr;
         if (@import("probe.zig").populate_workaround and pp.get() == 0) {
             const pr = pp.populate();
             osal.logPublic("bt bringup: Xpuq 锚点为 NULL => 补调写者 rc={d}, 现在 P=0x{x:0>8}", .{ pr, pp.get() });
@@ -209,7 +209,7 @@ pub fn init(cfg: *config.Config) c_int {
     }
     // **只发布 7.o 锚点**：给 `BOhff` 的守卫一块可读内存（入口只判非空）。
     if (@import("probe.zig").publish_bohff_anchor) {
-        const pp7 = @import("probe_ptr.zig");
+        const pp7 = @import("osal_kit").probe_ptr;
         if (pp7.bohffAnchor() == 0) {
             if (osal.btdmMalloc(16, 0)) |a7| {
                 pp7.setBOhffAnchor(@intCast(@intFromPtr(a7)));
@@ -224,8 +224,8 @@ pub fn init(cfg: *config.Config) c_int {
         //   +0 状态字节(=1)、+4/+8/+16/+20 指针、+12 0、+24 = 0x20260127(版本魔数)、+28 = 0x171000
         // `r_btdm_task_deinit` 会 `lw a0,20(a5)` 并把该字段当指针调用
         // ⇒ 结构必须 **≥32 字节**，否则 +20 越界（16 字节时读到的正是 arena 块头 0xb7a10c0d）。
-        const pp = @import("probe_ptr.zig");
-        const osal2 = @import("osal.zig");
+        const pp = @import("osal_kit").probe_ptr;
+        const osal2 = @import("osal_kit").osal;
         if (pp.okE7Anchor() == 0) {
             {
                 const x = osal2.btdmMalloc(32, 0);

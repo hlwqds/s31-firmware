@@ -24,9 +24,9 @@ extern var r_sym_bt_d3D3sk5KewclELfrD5xa: u32;
 pub fn run() void {
     if (!on_target) return;
     const p = r_sym_bt_d3D3sk5KewclELfrD5xa;
-    @import("osal.zig").logLine("bt shim: 2aNN 进入 P=0x{x:0>8}", .{p});
+    @import("osal_kit").osal.logLine("bt shim: 2aNN 进入 P=0x{x:0>8}", .{p});
     if (p == 0) {
-        @import("osal.zig").logLine("bt shim: P==NULL ⇒ 跳过向地址 0 的零填充", .{});
+        @import("osal_kit").osal.logLine("bt shim: P==NULL ⇒ 跳过向地址 0 的零填充", .{});
         return;
     }
     const q: [*]u32 = @ptrFromInt(p);

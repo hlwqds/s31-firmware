@@ -12,7 +12,7 @@
 //!    HCI Reset / Read Local Version 这条路上 ⇒ 不需要任何 ROM ECC。
 const std = @import("std");
 const builtin = @import("builtin");
-const osal = @import("osal.zig");
+const osal = @import("osal_kit").osal;
 
 pub const EXT_FUNC_VERSION: u32 = 0x20250819;
 pub const EXT_FUNC_MAGIC_VALUE: u32 = 0xA5A5A5A5;
