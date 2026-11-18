@@ -125,13 +125,13 @@ fn logHook(msg: []const u8) void {
     const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS
     for (msg) |ch| {
         var spins: u32 = 0;
-        while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
-        if (spins >= 5000) return; // FIFO 卡死：**丢弃本次输出，绝不挂住**
+        while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 40) : (spins += 1) {}
+        if (spins >= 40) return; // FIFO 卡死：**立即丢字节，绝不把 CPU 停在 UART**
         uart_fifo.* = ch;
     }
     var spins: u32 = 0;
-    while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
-    if (spins < 20000) uart_fifo.* = '\n';
+    while ((((uart_status.* >> 16) & 0xFF) >= 120) and spins < 40) : (spins += 1) {}
+    if (spins < 40) uart_fifo.* = '\n';
 }
 /// 当前不开中断 ⇒ 空实现；切片 E 真开中断后换成真的关/开。
 fn irqSave() u32 {
