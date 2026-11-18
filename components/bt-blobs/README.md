@@ -5295,3 +5295,39 @@ pcsample n=14592 pc=0x400670a4 ra=0x400670a4
    需要在**当前**镜像上 `objdump -d | grep "<abort>"` 列出所有调用点。
 
 **第 2 条最快**：一条 grep 就能列出当前构建的全部 abort 调用点及其前置条件。
+
+## 🏁 真正的 abort 点：`esp_phy_get_init_data` 返回垃圾（2026-11-19 最终定位）
+
+当前镜像里 `esp_phy_load_cal_and_init` 的完整判据链：
+
+```asm
+400005b8: jal  calloc                    # calloc(1,1904) -> 实测成功（ret=0x2f020010）
+400005be: c.beqz a0, .L66                # 若 NULL -> "failed to allocate"（站点 1，未命中）
+400005c0: c.jal esp_phy_get_init_data    # **调用前没有设置 a0**
+400005c4: c.beqz a0, .L67                # 若 0 -> "failed to obtain PHY init data"（站点 2）
+400005d6: c.jal esp_phy_load_cal_data_from_nvs
+400005da: c.bnez a0, .L68
+```
+
+而 thunk 本体（`0x40000414`，10 字节）是：
+
+```asm
+addi a0,a0,-17      # 预期 a0 = 0x40105000 ⇒ 得到 &phy_init_data = 0x40104fef
+c.jr ra
+```
+
+⇒ **它依赖调用者把 `a0` 预置成 `0x40105000`**（这是 `lui`+`jal` 的 PC 相对惯用法），
+   但调用点用的是 `c.jal`（**不设置任何参数**）⇒ `a0` 保持 `calloc` 的返回值
+   ⇒ `a0 - 17` = 一个堆地址附近的垃圾值。
+
+⇒ 只有当那个垃圾值恰好为 0 时才走 abort；否则后续逻辑拿到的是**错误指针**。
+
+### 结论
+
+**这是 blob 与我们的桩之间的调用约定不匹配**：
+`esp_phy_get_init_data` 在 IDF 里由 LTO/内联展开，`a0` 由编译器预设；
+我们的镜像把它当普通函数调用，**预设丢失**。
+
+**修法（一处）**：在 `phy_stubs.c` 里**提供我们自己的 `esp_phy_get_init_data`**，
+直接返回仓里那张静态表的地址（`0x40104fef` 或我们自备的 128 字节），
+覆盖掉那个依赖 `a0` 的 thunk。
