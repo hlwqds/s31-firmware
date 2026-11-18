@@ -1333,8 +1333,8 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     last_req_size = size;
     const r = bt_arena.alloc(size, 8);
     // **判据**：PHY 校准的 1904 字节请求 —— 成功打 '+'、失败打 '-'（单字节，不会被 FIFO 丢）。
+    last_ret = if (r) |v| @intFromPtr(v) else 0;   // **必须先赋值**（上一版在 dump 之后赋值 ⇒ 读到初值 0）
     if (size == 1904) {
-        // 在这一刻触发导出（canary 扫描 + 块头读数）——此时 PHY 校准正在要内存。
         if (dump_hook) |f| f();
     }
     // **清零**：归档把分配到的内存当结构体用，并假定字段初值为 0。
@@ -1343,7 +1343,6 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     // 归档对 NULL 不做检查就直接解引用（`Xpuq` 里 `sw zero,0(a1)`）⇒ 分配失败会表现为
     // "向地址 0 写"进而总线挂死。所以这里必须把每次失败都喊出来。
     // 成功/失败都记（writer 已改有界，不会再被 FIFO 卡死）。
-    last_ret = if (r) |v| @intFromPtr(v) else 0;
     logLine("bt hook: malloc({d}) = {x}", .{ size, last_ret });
     return r;
 }
