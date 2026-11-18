@@ -1998,3 +1998,22 @@ bt anchors[after-phy]:  0 0 0 0 0 0 0 0 0 0
 
 **下一步只剩一件事**：定位 task_init 里"为什么提前退出"——最直接的手段是把
 `ets_printf` 接回我们的 logger（归档自己会报它走到哪），而不是继续反汇编。
+
+### 锚点不是 ROM 表，是归档自己的 BSS 变量；但 `g_phyFuns` 对不上（2026-11-18）
+
+- 本机**没有 S31 的 ROM ELF**（`esp-rom-elfs` 里只有 esp32/c2/c3/c5/c6 等；用 S3 的去解释 S31 地址是张冠李戴）。
+  权威来源是 IDF 的 `components/esp_rom/esp32s31/ld/*.ld`。
+- 那些 `.ld` 里 **0x2f00f 段没有任何符号** ⇒ `0x2f00ffd0` 不在 ROM 符号表里。
+  结合 `sw …,-16(a0) # 2f00fff0 <r_sym_bt_6Q68KSwu…>` 这类标注：**这 10 个"锚点"就是归档各对象的
+  BSS 变量**，被链接脚本排成连续的 0x2f00ffd0 + 4i（`anchor[8]` 在 +0x20 = 0xfff0 ✓ 与标注一致）。
+  ⇒ "ROM 拥有的状态区"这条假设到此**完全排除**（前景对读也已实测全 0）。
+- 顺带一个**对不上**的观察：IDF 的 S31 ROM 符号里 `rom_phyFuns = 0x2f07fc3c`，而板侧
+  `BOOTSTATE` 打印的 `g_phyFuns = 0x2f07f944` —— 两者不同址。即 `phy_get_romfunc_addr()`
+  填的是 RAM 里的另一张表，而非 ROM 静态表。这条值得单独查（可能与 PHY 使能"未真正完成"有关）。
+
+### 结论：写 anchor[0] 的代码在 `libbtdm_common_11.o` 里但没被执行到
+
+anchor[0] 是该对象的 BSS 变量（`B` 符号），而同对象的 trampoline 会读它。全镜像没有对它的
+store 标注、也没有 store 重定位 ⇒ 写者用**别的方式**算地址（例如经 `_bss_start_btdm` + 偏移，
+或经另一个锚点导出的指针）。既然进 step 6 时表全 0、`mutex_pend` 时已有 3 个槽被填，
+**说明 task_init 里前面那些写成功了、写 anchor[0] 的那段没跑到** ⇒ 故障前 task_init 已提前退出。
