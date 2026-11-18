@@ -2548,3 +2548,36 @@ panic: live mepc=0x4006eff0 mtval=0x0
 **对归档那次崩溃的读法**：`mepc=0x4005b692` 之前若有一条 `fence`（或等价的队列排空点），
 真正写 0 的指令就在那条 `fence` **之前**；`cKuT` 入口只是"浮出点"。
 下一步据此在 `0x4005b692` 之前反汇编找 `fence`，其前最近的 `sb/sw`（目标可能为 0）即真凶候选。
+
+### 窗口夹小到「deinit 的最后四次调用」（2026-11-18）
+
+在 **OSAL 每个钩子入口**插 `fence iorw,iorw` 后重跑：报出位置**完全不变**（`mepc=0x4005b692`）
+⇒ 坏写**不在**任何 OSAL 调用之前。
+
+而 `mutex_pend` 返回到 `jal cKuT` 之间的 36 字节：
+
+```
+4005fa6c: lw   a5,0(s0)
+4005fa70: lbu  a3,0(a5)
+4005fa74: bltu a4,a3, .L80
+4005fa78: lw   a0,20(a5)
+4005fa7a: jal  <r_sym_bt_gvLJK...>
+4005fa7e: lw   a5,0(s0)
+4005fa80: lw   a0,16(a5)
+4005fa82: jal  <r_sym_bt_gvLJK...>
+4005fa86: jal  <r_sym_bt_G1Ui...>
+4005fa8a: c.jal <r_sym_bt_0cPe...>
+4005fa8c: jal  <r_sym_bt_FzF1...>
+4005fa90: jal  <r_sym_bt_cKuT...>     <- 报出点（入口的 lui）
+```
+
+**只有 load 和 jal，没有任何 sw/sb** ⇒ 坏写必在四个被调函数之一体内，
+且该函数里有排空点（`fence` 或等价）在写之后、返回之前。
+
+**注意一个坑**：`jal` 注释里的符号名（如 `r_sym_bt_FzF1…` → `0x400609b2`）与在该地址反汇编出的
+符号（`noise_check_loop`/`tx_pwctrl_background`）**不一致** —— 说明这个 ELF 的分节符号表与
+线性反汇编对不上（per-function section 已被链接器重排）。**找函数体必须用 `readelf -s` 拿到
+该符号的 st_value，而不是 jal 操作数上的注释。** 这一步没做对，就会像本轮一样搜错区间。
+
+**下一位接手者**：`readelf -sW app.elf | grep -E "FzF1|0cPe|G1Ui|gvLJK"` 取四个 st_value，
+各自反汇编找 `fence`；有 fence 的那个函数，其 fence 之前的写就是真凶。

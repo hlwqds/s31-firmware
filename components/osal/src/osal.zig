@@ -891,6 +891,7 @@ const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
 }
@@ -899,6 +900,7 @@ export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
 }
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_get", .{});
     const _r = eventqGet(evq, tmo);
     logLine("bt hook: eventq_get => {x}", .{if (_r) |v| @intFromPtr(v) else @as(usize, 0)});
@@ -906,6 +908,7 @@ export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
 }
 export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_put", .{});
     eventqPut(evq, ev);
 }
@@ -921,16 +924,19 @@ export fn wr_btdm_osal_eventq_is_empty(evq: *Slot) callconv(.c) bool {
 
 export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: event_run", .{});
     eventRun(ev);
 }
 export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: event_init", .{});
     eventInit(ev, fn_, arg);
 }
 export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     eventDeinit(ev);
 }
 export fn wr_btdm_osal_event_reset(ev: *Slot) callconv(.c) void {
@@ -948,37 +954,44 @@ export fn wr_btdm_osal_event_set_arg(ev: *Slot, arg: ?*anyopaque) callconv(.c) v
 
 export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     const _r = mutexInit(mu);
     logLine("bt hook: mutex_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: mutex_pend", .{});
     return mutexPend(mu, timeout);
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: mutex_release", .{});
     return mutexRelease(mu);
 }
 
 export fn wr_btdm_osal_sem_init(sem: *Slot, tokens: u16) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     const _r = semInit(sem, tokens);
     logLine("bt hook: sem_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     return semDeinit(sem);
 }
 export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: sem_pend", .{});
     const _r = semPend(sem, timeout);
     logLine("bt hook: sem_pend => {d}", .{_r});
@@ -986,6 +999,7 @@ export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
 }
 export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: sem_release", .{});
     return semRelease(sem);
 }
@@ -1318,6 +1332,7 @@ export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
 }
 export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
     noteCaller();
+    asm volatile ("fence iorw, iorw");
     logLine("bt hook: task_create", .{});
     _ = name;
     return taskCreate(fn_, stack_size, arg, priority, core_id, task_handle);
