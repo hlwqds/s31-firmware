@@ -403,8 +403,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     log.line("panic: ra=0x{x} a0=0x{x} a1=0x{x} a2=0x{x}", .{
         frame.ra, frame.a0, frame.a1, frame.a2,
     });
+    // 帧里的 mepc 可能被采样器/嵌套覆盖 ⇒ 直接从 CSR 再读一次，两个值并排比。
+    const live_mepc = asm volatile ("csrr %[v], mepc" : [v] "=r" (-> usize));
+    const live_mtval = asm volatile ("csrr %[v], mtval" : [v] "=r" (-> usize));
+    log.line("panic: live mepc=0x{x} mtval=0x{x}", .{ live_mepc, live_mtval });
     log.line("panic: sp=0x{x} s0=0x{x} s1=0x{x}", .{ frame.sp, frame.s0, frame.s1 });
-    log.line("panic: regs a4=0x{x} a5=0x{x} a6=0x{x} a7=0x{x}", .{ frame.a4, frame.a5, frame.a6, frame.a7 });
+    log.line("panic: regs a3=0x{x} a4=0x{x} a5=0x{x} a6=0x{x} a7=0x{x}", .{ frame.a3, frame.a4, frame.a5, frame.a6, frame.a7 });
+    log.line("panic: tregs t0=0x{x} t1=0x{x} t2=0x{x} t3=0x{x} t4=0x{x} t5=0x{x} t6=0x{x}", .{ frame.t0, frame.t1, frame.t2, frame.t3, frame.t4, frame.t5, frame.t6 });
     // 把 s0 指向的上下文前四个字打出来：`wifi_ipc_process` 的形状是
     // `ctx = *(a0+12); fn = *(ctx); fn(*(ctx+4))`，这四个字正好是 fn/arg 及其邻居。
     if (frame.s0 > 0x2f000000 and frame.s0 < 0x2f100000) {
