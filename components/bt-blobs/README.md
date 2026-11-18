@@ -8656,3 +8656,62 @@ rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) e
 检查 `osal` 层 `wr_btdm_osal_mutex_init` 的实现：
 - 若它把计数初始化为 **0** ⇒ 第一次 `mutex_pend` 必然永久阻塞 ⇒ **这就是根因**；
 - 修法：初始化为 **1**（可用）。
+
+## 🏁 根因：**单线程移植无法满足归档的并发前提**（2026-11-19）
+
+### 关键代码（`components/osal/src/osal.zig:373-408`）
+
+```zig
+pub const Mutex = struct { locked: bool = false, in_use: bool = false };   // 初始**可用** ✓
+
+pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
+    const m = slotGet(Mutex, slot) orelse return EINVAL;
+    // 调度器没启动 ⇒ 用**有界忙等**代替真阻塞
+    if (m.locked and timeout == forever) {
+        var spins: u32 = 0;
+        while (m.locked and spins < 2_000_000) : (spins += 1) spinLoopHint();
+        stats_state.blocked_calls += 1;
+        if (m.locked) {
+            logLine("bt osal: mutexPend 忙等耗尽 => TIMEOUT（归档会重试）");
+            return TIMEOUT;
+        }
+        ...
+```
+
+### 判定
+
+| 假设 | 结果 |
+| --- | --- |
+| `mutex_init` 初始计数为 0 | ❌ **错** —— 它设 `locked = false`（可用）|
+| **`mutexPend(FOREVER)` 无法真阻塞** | ✅ **确认** —— 忙等 2 000 000 次后返回 `TIMEOUT` |
+| 归档对 `TIMEOUT` 的处理 | 日志明写"**归档会重试**" |
+
+⇒ **形态 = 无限重试环**：
+归档 `pend` → 我方忙等耗尽 → 返 `TIMEOUT` → 归档重试 → ……
+
+### 这解释了本会话的**全部**观测
+
+| 观测 | 解释 |
+| --- | --- |
+| PC 在两环 + 助手间轮转 | 每次重试都跑一遍相同的代码路径 |
+| `osal.taskCreate` **0 次** | 单线程移植，从未建任务 |
+| `mutexPend tmo=4294` 反复出现 | 就是重试 |
+| 中断/日志仍正常 | 不是中断问题 |
+| step 7+ 从未出现 | `r_btdm_task_init` 的事件循环永不返回 |
+
+### 结论
+
+**根因不在 PHY、不在时钟、不在 ROM 代码，而在移植层的并发模型**：
+BT controller 归档**要求真实的"阻塞 + 任务切换"**（`portMAX_DELAY` + 另一个任务释放锁），
+而我们的 osal 是**单线程 + 有界忙等** ⇒ 互斥量永远等不到释放
+（因为"本该释放它的那个任务"根本不存在）。
+
+### 修法方向
+
+| 选项 | 代价 |
+| --- | --- |
+| **实现最小任务调度**（`taskCreate` + 上下文切换 + 真阻塞）| 大，但这是**唯一符合归档前提**的路 |
+| 在 `mutexPend` 里**协作式让出**（需有任务）| 依赖上一行 |
+| 让归档认为锁可用（把持锁方"假释放"）| 治标，且会破坏互斥语义 |
+
+⇒ 与 `WITH_PHY` 教训**完全同构**：问题在**我们自己实现的层**，不在厂商代码或硬件。
