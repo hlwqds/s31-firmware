@@ -215,6 +215,8 @@ pub fn init(cfg: *config.Config) c_int {
     // 采样会全部落在 `probe.logHook` 上（实测 48 条全是它）。
     board.trap.resetPcs(); // 只保留本窗口的采样
     board.trap.sample_quiet = true;
+    osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook
+    osal.clearMutexHook(); // gate 钩子会打 15 行锚点表，每行都走 UART 自旋
     board.hw.armT0Interrupt(100);
     // ⚠️ `armT0Interrupt` 会把 CLIC 控制字整字重写（`(1<<24)|(1<<8)`），**清掉** probe.zig
     // 给 T0 设的 `nmies`(bit3) ⇒ NMI 采样在 step 6 期间根本不触发（实测：48 条采样全落在

@@ -126,6 +126,12 @@ fn trace(comptime what: []const u8, args: anytype) void {
 pub fn setHooks(h: Hooks) void {
     hooks = h;
 }
+
+/// 只清掉"取到互斥锁"的门控钩子（保留 log/now/irq）。诊断窗口里用它静音我们自己的打印，
+/// 否则采样会全落在 `logHook` 的 UART 自旋上。用 `probe.zig` 的 `installHooks()` 恢复。
+pub fn clearMutexHook() void {
+    hooks.on_mutex_acquired = null;
+}
 pub fn stats() Stats {
     return stats_state;
 }
