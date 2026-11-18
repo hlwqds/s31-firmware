@@ -113,9 +113,24 @@ pub fn ringPush(msg: []const u8) void {
 
 /// ISR 侧调用：吐出第 `idx` 条（0 = 最新），返回切片。
 /// 事件触发导出：打 PC 采样 + 计数器，然后停机。
+var dump_done: bool = false;
 fn dumpAtPend() void {
+    if (dump_done) return;
     board.log.line("DUMP lc={d} lr={d} n={d}", .{ log_hook_calls, log_ring_n, osal.caller_n });
-    while (true) asm volatile ("wfi");
+    // 最近 12 条 OSAL 调用点（归档自己的地址），按从新到旧。
+    var ci: usize = 0;
+    while (ci < @min(osal.caller_n, 12)) : (ci += 1) {
+        const idx = (osal.caller_n -% 1 -% ci) % osal.caller_ring.len;
+        board.log.line("C{x}", .{osal.caller_ring[idx]});
+    }
+    // 环里最新的 4 条归档消息。
+    var mi: u32 = 0;
+    while (mi < 2) : (mi += 1) {
+        const m = ringAt(mi);
+        if (m.len > 0) board.log.line("M{s}", .{m});
+    }
+    // **不停机**：归档紧接着要执行 `*(obj)=1` 标记与下一次调用，halt 会自己中止 task_init。
+    dump_done = true;
 }
 
 pub fn ringCount() u32 { return log_ring_n; }

@@ -3411,3 +3411,35 @@ DUMP300
 按 `n=21` 逐条解析 OSAL 调用者环（`panic: osalcaller[]` 的导出路径已可用），
 得到归档在 32 ms 内的**完整调用序列**，再对照 `lr=67` 的消息文本 ——
 两条证据合起来足以回答"它走到了哪、在等什么"。
+
+## ⚠️ 重大更正：我们的导出**自己 halt 了 task_init**（2026-11-18）
+
+`task_init` 在 `OkE7` 返回 0 之后紧接着做：
+
+```asm
+4005fb84: jal  <wr_btdm_osal_mutex_pend>   # <- 我们的 dump_hook 在这里触发并 halt
+4005fb88: lw   a5,0(s1)
+4005fb8a: li   a4,1
+4005fb8e: sb   a4,0(a5)                    # *(obj) = 1  <- 标记"初始化完成"
+4005fb92: c.jal <r_sym_bt_2aNNQgpuVlZoKiS5xEYJ>
+```
+
+⇒ **`dumpAtPend` 里的 `while (true) wfi` 把归档中止在"标记完成"之前**。
+也就是说：加上导出仪器之后的"32 ms 停摆"，**有一半是我们自己的 halt 造成的**。
+
+已改成：只打印、不再停机（`dump_done` 一次性）。
+
+### 去掉 halt 后的结果
+
+```
+DUMP lc=114 lr=67 n=21
+C4005b5d4
+Mosal> mutexPend tmo=4294967295
+Mosal> eventInit            <- 环里最新一条：归档又调了 event_init
+```
+
+⇒ 归档确实**越过了 `mutex_pend`** 并继续调用（`event_init`），随后才静默。
+⇒ 这修正了"停摆点"的位置：真正的静默发生在 `event_init` 之后，而不是 `mutex_pend` 处。
+
+**下个会话**：从 `event_init` 这一步继续，看它在 `2aNNNgpu…` 之后做了什么；
+并注意**任何一次性导出都不得 halt**，否则会把自己的观测点变成故障点。
