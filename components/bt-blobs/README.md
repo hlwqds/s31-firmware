@@ -5449,3 +5449,37 @@ AB 0x40000672 free=944       <- abort 时刻堆仅剩 944 字节
 - **归档推进到 PHY 校准**（域时钟突破：心跳 320 → 9728+）
 - **堆与分配器验证健康**（356 KiB、无溢出、块链合法、`free` 读数准确）
 - **abort 精确到 `0x4000066e`**（calloc 返回 NULL），原因是 **free=944 < 1904**
+
+## 分配器拓扑与"是否真的耗尽"（2026-11-19 收尾）
+
+### 镜像里只有**一个**分配器
+
+```
+calloc  @ 0x40067022 (46 B)  ->  s31_btdm_malloc (8 B thunk)  ->  osal.btdmMalloc -> bt_arena
+free    @ 0x40067050 ( 8 B)  ->  s31_btdm_free                ->  osal.btdmFree  -> bt_arena.freeRaw
+```
+
+**没有** `malloc` / `heap_caps_malloc` / `_sbrk` ⇒ 归档的所有分配都走我们的 arena。
+⇒ 因此 `free=944` 确实是**唯一堆的剩余**，不存在"第二个看不见的堆"。
+
+### 但 `freeRaw` **不做相邻合并**
+
+```zig
+pub fn freeRaw(self: *Arena, ptr: ?*anyopaque) void {
+    ... hdr.free = true;          // 只置标志，不与相邻空闲块合并
+}
+```
+
+⇒ 若归档有 free 动作，释放的空间会被**割裂**，无法满足 1904 的连续请求。
+
+### 两个判据（还需一次板测，二者都很便宜）
+
+| 判据 | 含义 |
+| --- | --- |
+| `free=944` 但**最大单块** ≥ 1920 | **碎片化** ⇒ 给 `freeRaw` 加合并即可 |
+| `free=944` 且最大单块 < 1920 | **真耗尽** ⇒ SRAM 上限所限，只能减少分配或扩窗 |
+
+`arenaFree()` 已经给出 944（= 所有空闲块之和）；还缺**最大单块**这一个数。
+
+**下一步（一行）**：在 `Arena` 里加 `largestFree()`（遍历取 `max(hdr.size)`），
+与 `arenaFree()` 一起在 abort 时刻打出。
