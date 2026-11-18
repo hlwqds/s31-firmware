@@ -128,8 +128,8 @@
 理由：`errno`/`time`/`addr`/`fd` **不需要内核**，可以全部用主机用例钉住（`net-sockets` 的
 `Table` 是纯逻辑）。内核在 2026-11-18 已抽成 `components/osal/`，于是 `sync`/`thread`/`cond`
 可以接上真内核；它们**真正阻塞的那一段**（`sched.block()`）在主机上不可执行，所以主机用例
-只钉策略，阻塞行为仍是板级验收（见 §4.6 与 §6.3）。**本组件目前不进镜像**（模块根冲突，
-见 §5），因此"能编过、用例通过"不等于"板上可用"。
+只钉策略。**本组件已进镜像**（section `posix`，group `net`），阻塞行为有
+**板级证据**：`section: posix` → 15/15（`logs/e2e-net-boot.log`），详见 §5。
 
 ## 4. 分层
 
@@ -244,22 +244,23 @@ worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走�
 
 ## 4.6 条件变量的 wake 注入（2026-11-18）
 
-`cond.zig` 只把 **`resumeTask` 一件**做成注入点（`bindHooks(.{ .wake = ... })`），因为
-`swapContext` 在 x86_64 上 `@panic`，其余逻辑照常直连 `sched`/`sync`。这样 `signal`/`broadcast`
-的**策略**（唤醒谁、FIFO 顺序、唤醒前先摘链、广播先摘完再逐个唤醒）都能在主机上断言，
-而板上不绑钩子时默认走 `sched.resumeTask`。
+注入点**只有一处**，在 `sync.bindHooks(.{ .wake, .now })`：`resumeTask` 是唯一不可移植的原语
+（`swapContext` 在 x86_64 上 `@panic`）。`cond`/`timer`/`rwlock`/`pthread_once`/`thread` 全部复用
+它，**没有任何一个模块持有自己的钩子**；板上不绑，默认走 `sched.resumeTask`。
+于是 `signal`/`broadcast` 的**策略**（唤醒谁、FIFO 顺序、唤醒前先摘链、广播先摘完再逐个唤醒）
+都能在主机上断言。
 
 **多等待者队列放在 `posix-compat/waitq.zig`，不放内核**（2026-11-18 定）：往 `osal` 加 FIFO
 会改 `bt_core.o`，而它服务的是已编译的 BLE 归档，其阻塞路径**没有任何现有门禁能验证**
 （`sched.block()` 在主机被编译掉、`check-bt-link.sh` 只证明链接、`gate-board.sh` 走 net-wire TCP）。
-`waitq` 是 test-only 的（不进镜像），语义可以在主机上钉住；等有板级跑 BLE probe 的那一步
-再考虑搬进内核，届时必须重建镜像基线。
+`waitq` 随本层一起进了镜像（section `posix`）并由板级自检覆盖；但要搬进 `osal` 仍需要一次
+`-Dbt-probe` 板级运行 —— 那是唯一能观察归档阻塞路径的门禁，届时要重建镜像基线。
 
 **队列的生命周期规则**（写进 `waitq.zig` 头，是唯一容易出错的地方）：节点由等待者在栈上分配
 ⇒ 唤醒方 `pop()` 必须**先摘链清 `linked` 再 `resumeTask`**；等待者只在 `linked == true` 时
 继续 `block()`（虚假唤醒不会留毒节点）；超时/取消走 `remove()` 自摘链。
-**仍未做**：`pthread_cond_*`（需要与 mutex 配合的等待队列，而 `osal` 只有单 waiter 槽）、
-`fork`/`waitpid`、文件 I/O。
+**仍未做**：阻塞式 `accept`/`connect`、`select`/`epoll`、`fork`/`waitpid`、文件 I/O
+（各自前置见 §6.3）。
 
 ✅ **搬运所需的门禁已就绪（2026-11-18）**：`scripts/check-bt-link.sh` —— 生成闭包 → 用闭包链接
 → 断言镜像 > 500 KB。实测 116 个对象、镜像 913728 B；去掉 `root.zig` 的根引用后门禁失败（负例验过）。
