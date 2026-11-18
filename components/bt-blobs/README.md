@@ -14829,3 +14829,66 @@ board.trap.diag_b = @intFromPtr(&some_local);
 1. **`0x2010B000` 一读即挂 = 四项时钟配置错误**（已验证；修好后 init 完成）
 2. **`trap` 行是唯一稳定的观测通道**（`logPublic` 在本故障下全丢）
 3. **随机地址 + `return` 处爆 = 栈损坏**（下一步用 `diag_a`/`diag_b` 测用量）
+
+## 栈探针方法无效（记录，避免重走）
+
+### 尝试
+
+```zig
+var probe_local: u8 = 0;
+board.trap.diag_a = @intCast(@intFromPtr(&probe_local) & 0xFFFF);   // init 入口
+…
+var probe_local2: u8 = 0;
+board.trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);  // INITED 前
+```
+
+### 读数
+
+```text
+step=15 hci_transport_init da=0xadb4 db=0xadcb
+```
+
+⇒ `db - da = +23`，但 RISC-V **栈向下增长** ⇒ 应为负。
+
+### 为什么无效
+
+| 问题 | 说明 |
+| --- | --- |
+| **截断到 16 位** | 地址低 16 位可能跨 64 KB 边界，差值无意义 |
+| **取的是局部变量地址，不是 `sp`** | 编译器可能把两个局部放在不同位置（甚至同址复用），差值不代表栈用量 |
+| 两处位于**不同栈帧** | `init()` 内两层嵌套 ⇒ 差值含帧开销，不是"峰值用量" |
+
+### 正确做法
+
+用**真实 `sp`** 且**不截断**：
+
+```zig
+// board.trap 侧
+pub var sp_min: usize = ~@as(usize, 0);
+pub inline fn noteSp() void {
+    var sp: usize = 0;
+    asm volatile ("mv %[s], sp" : [s] "=r" (sp));
+    if (sp < sp_min) sp_min = sp;
+}
+```
+
+⇒ 在 `init()` 各步调用 `noteSp()`，记录**最低 sp**；
+与栈底比较 ⇒ **真实峰值用量**。
+
+### 或者更省事
+
+**直接加大栈再测**：若崩溃消失或地址变化 ⇒ 确认栈溢出。
+这比精确测量更快得到"是/不是"的答案。
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完整完成** | ✅ `INITED` |
+| **新故障** | **栈损坏**（`return` 处爆、地址随机）|
+| 本会话新增的无效方法 | 1（16 位局部地址探针）|
+| 代码修复 | 28 |
+| 撤回 | 61 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **193** |

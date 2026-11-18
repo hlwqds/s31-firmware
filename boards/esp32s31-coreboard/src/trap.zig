@@ -470,9 +470,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **把 step 并进这一行**：这是唯一被证明一定会出现的诊断行
         // （`panic: LASTSTEP` 那条 dump 路径在本故障里根本不执行）。
         var pbuf: [160]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8} ra=0x{x:0>8} step={d} {s}", .{
+        const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8} ra=0x{x:0>8} step={d} {s} da=0x{x} db=0x{x}", .{
             frame.mepc, hw.readMtval(), frame.mstatus, frame.ra,
-            last_step, last_step_name,
+            last_step, last_step_name, diag_a, diag_b,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
@@ -559,6 +559,8 @@ pub var extra_dump: ?*const fn () void = null;
 /// （UART 平时被自身日志灌满，只有 panic 时刻是清空的）。
 /// **进度镜像**（由 bt-blobs 的 `enter()` 写入）：panic 行里带上它，
 /// 因为它所在的 `!! mepc=…` 行是唯一被证明一定会出现的诊断。
+pub var diag_a: u32 = 0;
+pub var diag_b: u32 = 0;
 pub var last_step: u32 = 0;
 pub var last_step_name: []const u8 = "none";
 

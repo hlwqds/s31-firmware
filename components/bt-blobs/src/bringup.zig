@@ -179,6 +179,11 @@ pub fn init(cfg: *config.Config) c_int {
     // 之后 `0x20109C04/0x20109C14` 的写才生效（参考日志次序：
     // `MODEM_CONF=0x3d` → `clk_conf=0x7e601002`）。我们此前顺序反了 ⇒ 写被丢弃。
     @as(*volatile u32, @ptrFromInt(0x2058_71E0)).* = 0x3d;
+    // **栈用量探针**：入口与 INITED 处各取一次近似 sp（局部变量地址）
+    {
+        var probe_local: u8 = 0;
+        @import("board").trap.diag_a = @intCast(@intFromPtr(&probe_local) & 0xFFFF);
+    }
     @as(*volatile u32, @ptrFromInt(0x2010_9C04)).* = 0x0020_1002;
     @as(*volatile u32, @ptrFromInt(0x2010_9C00)).* = 0x0000_0100;
     @as(*volatile u32, @ptrFromInt(0x2010_9C0C)).* = 0x6464_6400;
@@ -388,6 +393,10 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
 
     status_state = .inited;
+    {
+        var probe_local2: u8 = 0;
+        @import("board").trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
+    }
     osal.logPublic("bt bringup: INITED", .{});
     return 0;
 }
