@@ -128,7 +128,9 @@ fn dumpBootState() void {
         gate.dumpAnchors("before-phy");
         pp.initPhy();
         gate.dumpAnchors("after-phy");
-        osal.logLine("BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=0x{x}", .{
+        // ⚠️ `0x2f00fff8` **不是** `g_phyFuns`：它在锚点块里（`0x2f00ffd0 + 0x28`，第 11 个槽）。
+        // 之前的标签把它当成 `g_phyFuns`，由此推出的"rom_phyFuns(0x2f07fc3c) ≠ g_phyFuns"是**误读**。
+        osal.logLine("BOOTSTATE: esp_phy_enable(BT) done, anchor[+0x28]=0x{x}", .{
             (@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*,
         });
     }
