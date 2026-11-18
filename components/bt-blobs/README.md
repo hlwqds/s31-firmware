@@ -7983,3 +7983,47 @@ bt mempool: bt bbbbbbbbbt lp:bps n=512 pc=0x2f828a78 ...
 在每个 step 边界往 **RAM 全局**写 step 号（不受 UART/FIFO 影响），
 结束时一次性 dump ⇒ 真正的 step 进度成为板上事实。
 或直接依赖 PC 采样 + 寄存器读数（已验证可信）。
+
+## ✅ 最终定位：挂在 **step 5 之后的 PHY 块**（2026-11-19）
+
+此前三次推断（step 6 / step 2 / step 1）**全部作废**。用代码与证据交叉排除：
+
+| 候选 | 证伪依据 |
+| --- | --- |
+| step 1 `prepareMempool` | ❌ 它内部的 `bt mempool: need … / cap …` 行**已打印** |
+| step 2 `btdmLogInit` | ❌ `porting.zig:20-22` 就是 `return 0;`，不可能挂 |
+| step 3/4 | ❌ 同样是空桩 |
+| **step 5 之后的 PHY 块** | ✅ **PC 样本全在 PHY ROM 代码里** |
+
+`bringup.zig:209-212`：
+
+```zig
+if (!phy_before_clocks) {
+    porting.phyDomainEnable();
+    @import("probe_ptr.zig").initPhy();
+    osal.logPublic("bt bringup: PHY enabled AFTER step 5 (idf order)", .{});
+}
+```
+
+⇒ **挂点在 `phyDomainEnable()` 或 `initPhy()` 内。**
+
+### 为什么日志看不到 enter 2–5
+
+探针把 FIFO 灌满后旧行被**按设计丢弃**（`osal.zig:104-113` 注释：单条日志可长于 128 B FIFO，
+灌满后写入器丢弃 ⇒ 既有日志被冲掉），**不是没执行**。
+
+### 与 PC 样本完全一致
+
+| 证据 | 指向 |
+| --- | --- |
+| PC 在 `0x2f828a64/78`、`0x2f826484`、`0x2f8036cc` | PHY ROM 代码 |
+| 这几个环的退出条件实测满足 | 环会退出 ⇒ 外层反复重入 |
+| 时钟三写改变卡点位置但不解锁 | PHY 路径内确实在等某种条件 |
+
+⇒ 结论：**PHY 校准在 PHY 块内反复重试**（不是 step 1/2/6 的任何"步骤卡住"）。
+
+### 下一步
+
+1. 在 `phyDomainEnable()` 与 `initPhy()` 之间各加一个 **RAM 标记**（不依赖 UART），定位是哪一个；
+2. 若在 `initPhy()`（即 `register_chipv7_phy`），则已知它在 `phy_pwdet_tone_start` 一族里轮转，
+   需按 `g_phyFuns` 表定位间接调用（唯一剩余离线手段）。
