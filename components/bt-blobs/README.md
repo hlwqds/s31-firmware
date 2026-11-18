@@ -8250,3 +8250,45 @@ step 5 → phyDomainEnable ✓ → initPhy ✗
 - 挂点 = **`initPhy()` 内部**（由可信日志切分得出，与 `g_phyFuns` 无关）；
 - 日志 FIFO 排空修复有效；
 - `phy_pwdet_tone_start` 命名有效（thunk `0x2f80137c` → `0x2f82643c`）。
+
+## 🏁 根因定案：挂点是 **`WITH_PHY=1` 构建自造**，默认构建 PHY 正常（2026-11-19）
+
+### 对照实验
+
+| 构建 | `esp_phy_enable` 来源 | 结果 |
+| --- | --- | --- |
+| **`WITH_PHY=1`** | 我们自己链进去的 IDF C（`0x40000744`）| **挂在 PHY 块**（`initPhy()` 内，PDET 族反复重入）|
+| **默认（不带该标志）** | **ROM 的 `0x2f00e756`** | ✅ **PHY enabled → 进到 step 6** |
+
+默认构建日志：
+
+```text
+bt bringup: enter step 5 btdm_lp_enable_clock
+bt bringup: enter step 52 init_phy
+bt bringup: PHY enabled              ← **完成**
+bt bringup: enter step 6 r_btdm_task_init
+```
+
+### 结论
+
+**整个 PHY 挂死是 `-Dphy-src-objs`（`WITH_PHY=1`）引入的自造问题**：
+我们自己链接的 IDF C 版 `esp_phy_load_cal_and_init → register_chipv7_phy` 路径
+（配我们的桩：NVS 恒 NOT_FOUND、假 MAC、efuse/timer 桩）在 `phy_pwdet_tone_start` 一族里反复重入；
+**ROM 自带的 `esp_phy_enable` 在同一块板上正常完成**。
+
+⇒ README 最初记录的 **"卡在 init step 6"** 是**正确**的。
+本会话围绕 PHY 的解码（486 B 调用链、PDET 环、FE 寄存器）**全部是对自造路径的分析**，
+不构成对硬件的结论。
+
+### 当前真正的前沿
+
+**step 6 `r_btdm_task_init`**（PHY 之后的下一个挂点）。
+PC 热点：`0x40065cc8`（应用 IRAM）+ `0x2f8036cc`（ROM 延时助手）。
+
+⇒ 回到最初的路线：分析 `r_btdm_task_init` 为何不返回。
+
+### 交接要点（更新）
+
+1. **默认构建是基线** —— `WITH_PHY=1` 是一条会挂的支路，除非要调查它，否则别用；
+2. 日志通道已修（`enter()` 的 TXFIFO 排空等待）—— step 号**现在可信**；
+3. 下一步：查 `r_btdm_task_init`（README 前半部分已有相关记录）。
