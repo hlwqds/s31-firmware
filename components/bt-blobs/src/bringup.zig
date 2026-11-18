@@ -150,9 +150,13 @@ fn dumpBootState() void {
             @as(*volatile u32, @ptrFromInt(a)).* = v;
         }
     };
-    // **调 ROM 的 `esp_phy_enable(PHY_MODEM_BT=2)`**（0x2f00e756）。
-    // IDF 的 `btdm_lp_reset` 第一件事就是它；我们的移植**从未调用过 PHY 层**
-    // ⇒ modem 前端没上电 ⇒ `0x2010B000`（BT 基带）不应答。这是本轮最可疑的缺失。
+    // 下面**不是** PHY 使能：这里只补 IDF boot 建好、我们缺的 4 个寄存器。
+    // 真正的 PHY 使能是 `dumpBootState()` 里的 `pp.initPhy()`（`probe_ptr.zig`）：
+    // 先 `phy_get_romfunc_addr()` 填 `g_phyFuns`，再 `esp_phy_enable(2)`（PHY_MODEM_BT）。
+    // 那个 `@extern` 解析到哪份实现取决于构建：
+    //   - 不给 `-Dphy-src-objs` ⇒ `rom_syms.ld` 的 `PROVIDE` ⇒ ROM `0x2f00e756`（能返回，
+    //     板侧打过 `BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=…`）；
+    //   - 给了 IDF 的 7 个 PHY 对象 ⇒ 真实定义覆盖 PROVIDE，但镜像会死在 bringup 之前。
     wr.f(0x2010_F008, 0x314); // lpcon+0x08：IDF boot 值
     wr.f(0x2010_F00C, 0x1); // lpcon+0x0c：IDF boot 值
     wr.f(0x2058_7008, 0x1); // clkrst+0x08：IDF boot 值
