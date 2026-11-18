@@ -119,7 +119,8 @@ static void put1(char c) {
 unsigned g_flag_a = 0;
 unsigned g_posctl = 0;
 volatile unsigned g_abort_ra = 0;
-unsigned g_c_count = 0;   /* 精确计数（RAM，不受 FIFO 丢字节影响） */
+unsigned g_c_count = 0;
+extern unsigned char _phy_cal_buf_start[];   /* 精确计数（RAM，不受 FIFO 丢字节影响） */
 static unsigned char g_phy_cal_buf[4][2048] __attribute__((aligned(16)));
 static unsigned g_phy_cal_next = 0;
 
@@ -127,7 +128,14 @@ void *calloc(size_t n, size_t sz)
 {
     /* 阳性对照已完成：见 README；此处保持空实现，避免干扰正常运行。 */
     size_t total = n * sz;
-    /* carve-out 已移除：arena 376 KiB 已足够（2026-11-19 验证用） */
+    /* **校准缓冲走独立段**（`.phy_cal_buf`，不在 arena 内）：
+     * 归档 init 会吃光 arena（实测只剩 712 B），校准则需要 1904 B —— 两者不能共存。 */
+    if (total == 1904) {
+        unsigned char *const base = (unsigned char *)_phy_cal_buf_start;
+        g_c_count++;
+        for (size_t i = 0; i < total; i++) base[i] = 0;
+        return base;
+    }
     void *p = s31_btdm_malloc((uint32_t)total);
     if (p) {
         uint8_t *b = (uint8_t *)p;
@@ -136,6 +144,7 @@ void *calloc(size_t n, size_t sz)
     return p;
 }
 void free(void *p) {
+    if (p == (void *)_phy_cal_buf_start) return;   /* 专用段不归还 */
     /* 专用缓冲不归还（4 槽范围内都算专用） */
     for (unsigned i = 0; i < 4; i++) if (p == (void *)g_phy_cal_buf[i]) return;
     s31_btdm_free(p);

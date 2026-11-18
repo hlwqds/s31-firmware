@@ -6693,3 +6693,64 @@ A40000672/712        ; RA=0x40000672（calloc NULL 分支） / 空闲 712 B
 
 **A 与 B 各修一半**：A 让校准成功但阻塞归档初始化；B 让两者共存。
 ⇒ **真正的目标是 B**：让归档 init 与校准各自有独立内存。
+
+## ✅ 最终修法：校准缓冲放进**独立链接段**（2026-11-19 达成）
+
+### 改动
+
+```ld
+    .phy_cal_buf (NOLOAD) : ALIGN(16)
+    {
+        _phy_cal_buf_start = .;
+        . = . + 0x800;   /* 2048 B */
+        _phy_cal_buf_end = .;
+    } > sram
+
+    _heap_start = _phy_cal_buf_end;   /* 段之后才起堆 */
+```
+
+```c
+if (total == 1904) {                     /* calloc */
+    unsigned char *const base = (unsigned char *)_phy_cal_buf_start;
+    for (i...) base[i] = 0;
+    return base;                          /* **不占 arena** */
+}
+```
+
+链接结果：
+
+| 符号 | 值 |
+| --- | --- |
+| `_phy_cal_buf_start` | `0x2f01b080` |
+| `_phy_cal_buf_end` | `0x2f01b880` |
+| `_heap_start` | `0x2f01b880` |
+| arena | **374 KiB** |
+
+### 板测（决定性）
+
+```
+abort 行: 0                     ← **无 abort**
+enter step 1                    ← step 1 执行
+pc=0x2f828a76 s0=0x20100000     ← 在 ROM / modem 区继续执行
+```
+
+⇒ **校准与归档 init 共存**：校准用独立段，归档用 arena，互不争用。
+
+### 为什么只有这个方案可行
+
+| 时序 | 结果 |
+| --- | --- |
+| 校准在 boot（arena 空） | 成功，但归档 init 不跑（到不了 step 1） |
+| 校准在 step 5 后（arena 已被吃满，剩 712 B） | 失败 ⇒ abort |
+| **校准用独立段（本方案）** | **两者都跑** ✓ |
+
+⇒ 归档会吃光 arena（"有多少用多少"），所以**唯一出路是让校准不依赖 arena**。
+
+### 这条线的最终状态
+
+```
+已修：anchor[8] 自伤预发布
+      PHY 域时钟（含 BLE 专属 I2C_MST_FO）→ 总线停摆消失
+      校准缓冲 → 独立链接段（不占 arena）
+现状：无 abort；step 1 执行；校准在 ROM/modem 区运行
+```

@@ -183,7 +183,7 @@ SECTIONS
      * 这两个段是 NOLOAD 但**占用真实地址**（32 KiB + 4 KiB），落在 `_bss_end` 之后。
      * 若 `_heap_start == _bss_end`，allocator 会覆盖归档自己的全局对象
      * （锚点槽/事件队列/链表头都在 .btdm_bss 内）—— 本会话已因此出现过多例"不可解释"现象。 */
-    _heap_start = _data_end_btdm;   /* 无守卫页：已证明 .btdm_data 不越界（free=944 时需多 4 KiB） */
+    _heap_start = _phy_cal_buf_end;  /* 校准段（2 KiB）之后再起堆：它不占 arena */
     _heap_end = _stack_bottom;
 
     /* ---------------------------------------------------------------------
@@ -218,6 +218,15 @@ SECTIONS
         . = . + 0x1000;   /* 4 KiB：减到 2 KiB 只让 free 涨 128 B（归档会吃光给它的空间）*/
         _data_end_btdm = .;
         _data_start_btdm_rom = _data_start_btdm;
+    } > sram
+
+    /* **PHY 校准专用缓冲**：位于 .btdm_data 之后、堆之前。
+     * 它**不占 arena**（不进 _heap_start.._heap_end），归档的 memset 也不覆盖它。 */
+    .phy_cal_buf (NOLOAD) : ALIGN(16)
+    {
+        _phy_cal_buf_start = .;
+        . = . + 0x800;   /* 2048 B */
+        _phy_cal_buf_end = .;
     } > sram
 
 
