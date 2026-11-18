@@ -6039,3 +6039,44 @@ AB 0x1234 C=0 f=352048
 
 ⇒ 但 `g_flag_a` 目前只能通过心跳的 `.` 间接体现（`flagsText` 先查 `g_c_count`）——
    下一轮应让 `flagsText` **优先**返回 `<A>`（abort 优先于计数），使"无 abort"由**标志位**而非**缺席的行**证明。
+
+## 🔴 最后一个仪器缺口（已核实，2026-11-19 收尾）
+
+核实心跳来源：
+
+```
+trap.zig:198:  if (irq_count % 512 == 0) log.raw(".");
+```
+
+⇒ 心跳是**字面量** `.` —— **完全不查 `g_flag_a` / `g_c_count`**。
+
+| 事实 | 含义 |
+| --- | --- |
+| `g_flag_a` 由 abort 桩设置 | 但**没有任何代码读取并打印它** |
+| 心跳恒为 `.` | 与 abort 是否发生**无关** |
+| `flagsText` / `probe_flags_at` | 早前 `git checkout` 后已不存在 |
+
+### 因此"abort 已消除"的准确表述（按建议收紧）
+
+> **在 carve-out 之后的 N 次抓取中未观察到 AB 行；导出路径由"启动调用者"的阳性对照
+> （`AB 0x1234`）验证可用。**
+
+即：**路径可用**（已证）+ **该行未出现**（多次观察），但**尚无标志位独立验证**，
+且阳性对照来自启动路径而非 abort 自旋时刻（时机/FIFO 状态不同）。
+
+### 下一会话第一步（两文件，机械改动）
+
+1. `trap.zig`：`pub var probe_flags_at: ?*const fn () []const u8 = null;`，
+   心跳改为 `log.raw(if (probe_flags_at) |g| g() else ".");`
+2. `probe.zig`：`extern var g_flag_a: u32;`（与已验证的 `g_abort_ra` 同款）+
+   `pub fn flagsText() []const u8 { return if (g_flag_a != 0) "<A>" else "."; }` +
+   在 `run()` 里注册到 `board.trap.probe_flags_at`
+3. 阳性对照：注入 `g_flag_a=1`，心跳应显示 `<A>` —— 这是**不会被 FIFO 丢失**的验证
+
+### 当前可交付结论（按证据强度）
+
+| 结论 | 强度 |
+| --- | --- |
+| 三个根因（anchor[8] / 域时钟 / 分配耗尽）已修 | **强**（对照实验 + 直接读数） |
+| PHY 校准在 modem 寄存器块轮询（`s0=0x20100000`） | **强**（采样） |
+| abort 已消除 | **中**（AB 行未出现 + 导出路径已对照；缺标志位验证） |
