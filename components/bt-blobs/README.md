@@ -3357,3 +3357,27 @@ s320.0.2.1      <- 之后停止；MPIE 恒为 1
 （外设计时器/DMA 记录后事后读取），或把 `probe_stop_at_tick` 设在 **300** 并**绕过 `@panic`**
 （在 ISR 里直接调 `trap.extra_dump.?()` 再停机 —— Zig 的 panic 路径在中断上下文里本身可能挂住，
 这解释了此前设 200 却未触发）。
+
+## 无 panic 导出：已实现但**未触发**（2026-11-18 最后一步）
+
+实现：心跳分支之前加
+
+```zig
+if (probe_stop_at_tick != 0 and irq_count >= probe_stop_at_tick) {
+    log.line("DUMP {d}", .{irq_count});
+    if (extra_dump) |f| f();
+    while (true) asm volatile ("wfi");
+}
+```
+
+`probe_stop_at_tick = 300`，而心跳实测能到 `s320` ⇒ 条件本应成立，但串口**没有任何 `DUMP` 行**。
+
+⇒ 两种可能，尚未区分：
+1. 心跳的 `s320` 与 `irq_count` **不是同一计数**（`resetPcs()` 可能清零 `irq_count`，
+   而心跳读的是清零后的值），导致 `>= 300` 永远不成立；
+2. 该分支在到达 300 之前就不再执行（与"中断停摆"一致）。
+
+**下个会话第一件事**：把 `irq_count` 的**清零点**与心跳计数基准一次性查清
+（`grep -n "irq_count = 0" trap.zig`），并让 `probe_stop_at_tick` 与心跳**读同一个变量**。
+在这一点澄清之前，`s320` 与 `tick=300` 这两个数字的基准都不可信 —— 这是本会话第三次踩"基准不明"的坑
+（前两次：`n=3` 的 OSAL 计数、`mepc` 的精度）。

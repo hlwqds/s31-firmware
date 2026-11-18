@@ -183,6 +183,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **极短计数器行**：前 16 条打详细现场，之后每 64 条打一行 ≤24 字节的
         // `s=<n> pc=0x<x>`。目的：FIFO 压力小几个数量级，且计数**是否继续增长**
         // 直接判定"中断还在来（自旋）"还是"事务不退休（stall）"。
+        if (probe_stop_at_tick != 0 and irq_count >= probe_stop_at_tick) {
+            log.line("DUMP {d}", .{irq_count});
+            if (extra_dump) |f| f();
+            while (true) asm volatile ("wfi");
+        }
         if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) {
             // **极短心跳**：< 16 字节，且每 512 tick 一条，避免 ISR 自己把 FIFO 灌满后停摆。
             // 末尾带 MPIE（进入 trap 前中断是否开）：1 => 更像总线挂死；0 => 归档自己屏蔽了中断（临界区）。
@@ -201,8 +206,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 由此可以给"它在等哪个外设"点名。
             // ctx[15]/使能位随时间变化：用于判断 b15 是在**进入 deinit 之前**还是之后翻的。
             const ctx15 = @as([*]volatile u8, @ptrFromInt(0x2f013d30))[15];
-            if (probe_stop_at_tick != 0 and irq_count == probe_stop_at_tick) @panic("probe: deliberate stop");
-    // 每 64 tick 吐一条 RAM 环里的归档消息（短行，60 字节以内）。
+            // 每 64 tick 吐一条 RAM 环里的归档消息（短行，60 字节以内）。
     if (irq_count % 64 == 0) {
         if (ring_at) |f| {
             const m = f((irq_count / 64) % 8);
