@@ -20,7 +20,7 @@
 > | 项 | 现状 |
 > | --- | --- |
 > | **默认构建 + `phy_domain_enable=false`（基线，799 KB 级）** | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**；心跳止于 ~320 tick |
-> | **`phy_domain_enable=true`（总线停摆修复）** | 心跳升至 **9728+ 且持续**（`0x2010B000` 一读即挂死**不再成立**）；归档**进到 step 6**（`CODES n=16`）。⇒ 该修复**只解决了总线**，没有解决分配 |
+> | **`phy_domain_enable=true`** | 由 `porting.phyDomainEnable()` 打开频域时钟（含 `I2C_MST_FO`）⇒ 心跳 **320 → 9728+**、`0x2010B000` 不再挂死。⚠️ 该构建下 bringup **到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器轮询不返回）。**step 6 的 `CODES n=16` 属于默认构建，不属于本配置。** |
 > | **`WITH_PHY=1`（当前配置）** | arena **376 KiB**（`.btdm_bss` 32→8 KiB）；`calloc(1,1904)` 由 arena 成功返回、**无 abort**；`phy_domain_enable=true`。⚠️ **bringup 到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器上轮询不返回）。⚠️ 缩短洞的风险未验证（见文末） |
 > | 锚点读数 | 取址已修（`@extern` 本身即指针）。**两版都已复验且全为 0**：默认版 `base=0x2f00ffd0: 0×10`，`WITH_PHY=1` 版 `base=0x2f010ee0: 0×10` ⇒ 与"ROM 不填这张表"一致 |
 > | 调用序列 | 已可读：`CODES n=16 0120000000000000`（0=malloc 1=mutex_init 2=eventq_init 3=event_init 4=mutex_pend…） |
