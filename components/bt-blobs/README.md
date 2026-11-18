@@ -9359,3 +9359,51 @@ riscv32-esp-elf-objdump -d --start-address=<jH5m> --stop-address=<next sym> firm
 ### 判序原则（本会话反复踩到）
 
 **一律以 `caller_ring` 的下标顺序为准**，串口行序不可信（FIFO 会丢/串）。
+
+## 🔍 计数器与 trace 的矛盾的线索：**ELF 里没有 `osal.stats_state` 符号**（2026-11-19）
+
+### 事实
+
+```bash
+nm app.elf | grep -E " [bBdD] .*stats"
+```
+
+```text
+2f0154e4 b bringup.stats_state      ← bringup.zig 自己的同名字段
+2f015494 b osal.coex_stats_state.0
+2f015498 b osal.coex_stats_state.1
+2f012834 b osal.coex_stats_state.2
+...
+```
+
+⇒ **没有 `osal.stats_state`**，尽管 `osal.zig:169` 写着 `var stats_state = Stats{};`。
+
+### 两条待定解释
+
+| 解释 | 含义 |
+| --- | --- |
+| (a) 该变量被链接器合并/消除 | 那么读取它的路径可能读到**别的实例** ⇒ 计数器不可信 |
+| (b) 我的读取路径有误（`osal.stats()` 返回的是别处）| 需核对 `pub fn stats()` 的实现 |
+
+### 与另一处矛盾的呼应
+
+| 观测 | 问题 |
+| --- | --- |
+| 轨迹有 `osal> mutexPend` | — |
+| 但 `mutex_pend_ok = 0`、`mutex_pend_busy = 0`、`blocked_calls = 0` | `mutexPend` 的**任何一条路径都至少加一个计数**（`osal.zig:408`/`414`）⇒ 三者全 0 意味着**它没走这些路径** |
+
+⇒ 两者结合指向：**我们读的计数器与归档实际调用的实现不是同一份数据**。
+
+### 因此
+
+「队列从未初始化」（`99a749f`）与「根因 = 静默丢弃」（会话中早先）**均不成立**，已在 `1e53a54` 撤回。
+
+### 下一步（先做这个，否则所有计数都是哑数据）
+
+1. 读 `pub fn stats()`（`osal.zig:163`）的实现，确认它返回的是哪个变量；
+2. 在该函数里加一行**自身地址打印**（`@intFromPtr(&stats_state)`），与 `nm` 里 `bringup.stats_state` 的地址对比；
+3. 若两者相同 ⇒ 链接器合并了同名 `Stats{}` 零值 ⇒ **必须换一个唯一的变量名**（否则计数永远读错）。
+
+### 教训
+
+**"计数器为 0" 只有在"确认该计数器与该调用绑定到同一份存储"之后才有意义。**
