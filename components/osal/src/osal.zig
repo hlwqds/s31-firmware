@@ -990,11 +990,12 @@ export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
-    logPublic("bt call: mutex_pend", .{});
+    logPublic("bt call: mutex_pend slot=0x{x} tmo={d}", .{ @intFromPtr(mu), timeout });
     noteCaller();
     asm volatile ("fence iorw, iorw");
-    logLine("bt hook: mutex_pend", .{});
-    return mutexPend(mu, timeout);
+    const __r = mutexPend(mu, timeout);
+    logPublic("bt ret: mutex_pend => {d}", .{__r});
+    return __r;
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
     noteCaller();
