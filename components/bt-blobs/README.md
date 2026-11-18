@@ -4684,3 +4684,36 @@ A356K
 1. `readelf -sW | grep s31_btdm_malloc` 看它的 st_value 与所属源（或用 `nm` 确认与 `osal.btdmMalloc` 同一地址）；
 2. 读 `Arena.alloc`（`osal.zig:1167-1200`）的完整找块逻辑，重点看 `min_block` 与 `block_align` 对
    `size=1904` 的处理 —— 这类"大块在小碎片里找不到连续空间"的 bug 在简单 bump/split 分配器里很常见。
+
+## 分配链已完全确认，但仍存在矛盾（2026-11-19 末）
+
+`WITH_PHY=1`（811 680 B）符号与反汇编：
+
+```
+calloc            @ 0x40067022 (46 B)
+  -> s31_btdm_malloc @ 0x4006c872 (8 B)
+       auipc t1,0xffffe ; jalr zero,1486(t1)  ==  tail-call  osal.btdmMalloc (0x4006ae40) ✅
+  -> btdmMalloc -> bt_arena.alloc
+```
+
+| 已知 | 值 |
+| --- | --- |
+| arena（板上实测） | **356 KiB**（`A356K`） |
+| 请求 | `calloc(1,1904)` ⇒ `need = align(1904+16, 8) = 1920` |
+| `Arena.alloc` 逻辑 | 首块 356 KiB、free、`need ≤ size` ⇒ **必然返回非 NULL** |
+| `initArena` 位置 | probe.zig:395-401，**早于** `bringup.init()`（:447）⇒ PHY 使能时已初始化 |
+
+⇒ **按现有证据，这次分配不应失败**，但 `0x40101df8` 的串（"failed to allocate memory for RF
+calibration data"）说明它确实失败了。⇒ 存在一处**尚未观测到的差异**。
+
+### 唯一可靠的下一步（一次板测，二值）
+
+在 `btdmMalloc` 里对 `size == 1904` 打一个**单字节标记**（如 `+` 表示成功、`-` 表示失败），
+或直接把返回值的最低字节写成一个十六进制字符。一次运行即可判定：
+
+- 若打出 `-`（失败）⇒ `Arena.alloc` 在该时刻状态与假设不符（打印 `bytesFree()` 一并看）；
+- 若打出 `+`（成功）⇒ `calloc` 的失败另有来源（例如它检查了别的条件，或该 1904 请求
+  并非我们读到的那个调用点）。
+
+⚠️ **地址会随构建漂移**：本轮再次踩到 —— 同一 `0x4000066e` 在 default 与 WITH_PHY 构建里
+分别是 `abort` 调用点与 `r_sym_ble_*` 调用。**任何引用都必须标注构建配置并当场用 `readelf` 复核**。
