@@ -3837,3 +3837,23 @@ OVERLAP .iram_blobs addr=0x2f0008b0 size=0xfd30 end=0x2f0105e0
 **移植时的一个反向差异**：`init_probe.zig:533-541` 把 `LPCON+0x18` 对正成 wifi 的 `0x1`
 （清 bit2 `clk_i2c_mst_fo`）—— BLE 的 PHY 寄存器**正走模拟 I2C**，移植时**不要照抄这一句**，
 应保持 bit2、只补缺失的模拟前端时钟。`0x201044EC |= 0x240` 是 wifi 专属修正，也不要一起搬。
+
+## 扩窗的具体数字（下会话直接改）
+
+`boards/esp32s31-coreboard/linker/s31.ld:49-51` 当前：
+
+```ld
+irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0xB0000    // 720 KiB，末址 0x400B0020
+drom (r)   : ORIGIN = 0x40100020, LENGTH = 0xB0000
+sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
+```
+
+⇒ **`irom` 与 `drom` 之间有空档**：`irom` 从 `0x40000020` 起，`drom` 在 `0x40100020` 起，
+中间还有 `0x50000`（320 KiB）未被任何段占用。
+把 `irom` 的 `LENGTH` 从 `0xB0000` 提到 **`0x100000`（1 MiB）** 即可容纳 `libphy` 需要的 ~140 KB，
+且**不移动 `drom` 的起点**（`0x40100020` 保持不变）。
+
+改完必须同步：
+1. 分区表里 app 分区大小要 ≥ 新镜像（当前镜像 798 KB，扩后预计 ~940 KB）；
+2. `readelf -SW` 复核 `.iram_blobs` 不再越过 `0x2f00ffd0`（这才是本项的验收判据）；
+3. 板上锚点 dump 应为有效指针（`0x2f0155b8` 一类），而非 `40f2ed8f` 这类指令字节。
