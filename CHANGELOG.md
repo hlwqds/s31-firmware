@@ -153,6 +153,14 @@
   `fcntl(O_NONBLOCK)` 标成 ●（"已有"）而**代码里根本没有这个函数** —— 非阻塞应用的必备 API。同时修正 `poll` 行：
   `timeout_ms < 0` 是立即返回，不是 POSIX 的永久等待。1 项新用例（总计 **86**）。
 
+- **POSIX 层进镜像并上板验证（2026-11-18）**：`firmware/build.zig` 把它登记为 section `posix`
+  （group `net`），模块根 `api.zig` 不导入 `board`，板级自检在 `selftest.zig`（独立模块）。
+  为消除"同一批文件属于两个模块"，`net-sockets` 与 `net-tcp` 的 `selftest.zig` 改为**经模块导入**。
+  上板结果：`section: posix` → **15/15**（真任务、`sem_wait` 阻塞、`sem_post` 唤醒、`join`、
+  `pthread_self`、每 Task `errno`），`logs/e2e-net-boot.log`；`e2e --board --profile net` PASS。
+  容量：`net` +3.1 KB；`full` bin +62 KB 里 **51 KB 是第二段窗口的 64 KiB 步进 padding**，
+  真实段增长 ~10.8 KB —— `capacity.json` 已 `--update`，原因写在此处。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

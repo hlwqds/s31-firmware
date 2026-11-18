@@ -184,25 +184,22 @@ const Slot = struct {
 - `tests/baselines.json` 里 `posix-compat: 86`（与上式之和一致）；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
-**本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
-`all_modules` 里）。两个原因：
+**本组件已进镜像**（2026-11-18）：`firmware/build.zig` 里登记为 section `posix`（group `net`），
+模块根是 `api.zig`（**不导入 `board`**），板级自检在 `selftest.zig` —— 后者是**另一个模块**，
+和 `net-sockets`/`net-tcp` 一样"section 根与组件根分开"。为此 `net-sockets` 与 `net-tcp` 的
+`selftest.zig` 改成**经模块导入**（`@import("net_sockets").socket`），否则同一批文件会落进
+两个模块（Zig 的 "file exists in modules"）。
 
-1. 本版没有板级行为变更 —— 没有 selftest 要跑；
-2. 它依赖 `net_sockets` 模块，而 `net_sockets` 组件模块（`selftest.zig` 为根）与
-   `api.zig` 为根的模块**包含同一批文件**；两者同时进镜像会撞 Zig 的
-   "file exists in modules 'net_sockets' and 'net_sockets0'"。
-   ⚠️ 统一根时不要图省事写成 `api.zig` 里 `pub const selftest = @import("selftest.zig")` ——
-   `selftest.zig` 导入了 `board`，那样会把 `board` 依赖拖进本组件的**主机测试目标**（那里没有
-   `board` 模块）。正确形状：`selftest.zig` 自成**独立模块**并从模块导入
-   （`@import("net_sockets").socket`），而不是从文件导入。
+**板级证据**：`net` profile 上板，`section: posix` → `checks: passed=15 failed=0 total=15`
+（`logs/e2e-net-boot.log`）。它验证的正是主机用例证不了的部分：真任务、真阻塞、真唤醒、真 join ——
+worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走快路径返回；`pthread_self`
+在任务内非空、在主上下文为空；`errno` 按任务隔离。
 
-**接线前先量体积**：`thread.zig` 的栈**归调用方**（`pthread_attr_setstack`），默认属性才用
-小静态池 `2 × 8 KiB = 16 KiB` 的 `.bss`（此前是 8 × 8 KiB = 64 KiB）。S31 的 SRAM 还要和
-413 KB 的 BLE arena 分享，`scripts/check-capacity.py` 按段断言 load+len —— 所以接进镜像前
-先跑一次容量门禁，别等它红了自己发现。
+**自我保护**：自检里 `join` 只在 `tid.done` 为真时调用 —— `join` 对未完成线程是真阻塞，
+若调度切换没按预期工作，宁可报失败也不要让开机 hang 在自检里。
 
-> 决策记录：为什么本层自持队列而不借用 `osal`，见
-> `docs/adr/ADR-002-posix-compat-own-wait-queue.md`（含三条队列不变量与各自对应的一次真实缺陷）。
+**容量代价**：`net` +3.1 KB、`full` 的 bin +62 KB（其中 **51 KB 是 padding** —— 第二段窗口按
+64 KiB 步进，内容越过边界后整体后移 0x10000；真实段增长约 10.8 KB）。`capacity.json` 已更新。
 
 ## 6. 进度与剩余项
 

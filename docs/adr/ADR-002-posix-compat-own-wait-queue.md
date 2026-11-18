@@ -99,3 +99,18 @@
 POSIX 的 `errno` 是线程私有的。裸机没有 TLS，但 `sched` 的 `*Context` 天然唯一 ⇒
 用 8 槽表按上下文索引，表满退回 0 号槽并累加 `overflows`（**可见地**退化）。
 任务退出后槽不回收是安全的：POSIX 规定成功调用后 `errno` 是**未指定**值。
+
+## 追加（2026-11-18）：本层已进镜像，并拿到了第一份板级证据
+
+决策后的第一条后续（"统一模块根"）已落地：`net-sockets` 与 `net-tcp` 的 `selftest.zig` 从
+**按文件导入**改成**经模块导入**，于是同一批文件不再属于两个模块；`posix` 自身也用同一形状
+（`api.zig` 作组件根、`selftest.zig` 作 section 根）。`api.zig` 刻意**不导入 `board`**，
+这样主机测试目标仍然只要它一个。
+
+上板（`net` profile）结果：`section: posix` → `checks: passed=15 failed=0 total=15`
+（`logs/e2e-net-boot.log`）。它验证的正是主机用例结构上做不到的四件事：任务真的被创建并运行、
+`sem_wait` 真的阻塞、`sem_post` 真的唤醒、`join` 真的返回。
+
+代价是容量：`net` +3.1 KB；`full` 的 bin +62 KB，其中 **51 KB 是第二段窗口按 64 KiB 步进产生的
+padding**，真实段增长约 10.8 KB（irom +7.8 KB、drom +3.1 KB）。这条值得记下来：本仓的
+"镜像大小"不是线性于代码量的，`capacity.json` 的基线因此必须用 `--update` 显式重写并写明原因。

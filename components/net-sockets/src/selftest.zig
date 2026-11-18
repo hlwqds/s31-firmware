@@ -25,9 +25,13 @@
 
 const std = @import("std");
 
-const event = @import("event.zig");
-const netstub = @import("netstub.zig");
-const socket = @import("socket.zig");
+// 经**模块**导入，不按文件导入：`socket.zig` 等文件只属于 `net_sockets` 模块
+// （`api.zig` 为根），本文件是**另一个**模块（section）的根。按文件导入会让同一批文件
+// 落进两个模块，Zig 直接报 "file exists in modules 'net_sockets' and 'net_sockets0'"。
+const socks = @import("net_sockets");
+const event = socks.event;
+const netstub = socks.netstub;
+const socket = socks.socket;
 
 const board = @import("board");
 const log = board.log;

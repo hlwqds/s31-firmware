@@ -10,6 +10,7 @@ const all_modules = [_]Mod{
     .{ .name = "net_congestion", .path = "../components/net-congestion/src/selftest.zig", .group = .net },
     .{ .name = "net_sockets", .path = "../components/net-sockets/src/selftest.zig", .group = .net },
     .{ .name = "net_ethernet", .path = "../components/net-ethernet/src/selftest.zig", .group = .net },
+    .{ .name = "posix", .path = "../components/posix-compat/src/selftest.zig", .group = .net },
     .{ .name = "net_wire", .path = "../components/net-wire/src/selftest.zig", .group = .wire },
     .{ .name = "net_tls_http", .path = "../components/net-tls-http/src/selftest.zig", .group = .tls },
     .{ .name = "app_mqtt_ota", .path = "../components/app-mqtt-ota/src/selftest.zig", .group = .apps },
@@ -91,6 +92,10 @@ pub fn build(b: *std.Build) void {
     // OSAL（任务/调度器 + 同步原语）：从 bt-blobs 抽出来的独立组件。
     // 依赖面只有 std + builtin（时间/临界区/随机数是注入钩子），所以没有 board 依赖。
     const osal_mod = b.createModule(.{ .root_source_file = b.path("../components/osal/src/api.zig") });
+    // POSIX 兼容层（api 根，**不导入 board**：主机测试目标也要用它）
+    const posix_mod = b.createModule(.{ .root_source_file = b.path("../components/posix-compat/src/api.zig") });
+    posix_mod.addImport("osal_kit", osal_mod);
+    posix_mod.addImport("net_sockets", socks_mod);
 
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
@@ -115,6 +120,18 @@ pub fn build(b: *std.Build) void {
         }
         const mod = b.createModule(.{ .root_source_file = b.path(m.path) });
         mod.addImport("board", board);
+        if (std.mem.eql(u8, m.name, "net_tcp")) {
+            mod.addImport("net_tcp", tcp_mod);
+        }
+        if (std.mem.eql(u8, m.name, "net_sockets")) {
+            // section 根（selftest.zig）与组件根（api.zig）是两个模块；
+            // selftest 经模块取实现，于是 socket.zig 只属于 api 模块。
+            mod.addImport("net_sockets", socks_mod);
+        }
+        if (std.mem.eql(u8, m.name, "posix")) {
+            mod.addImport("posix", posix_mod);
+            mod.addImport("osal_kit", osal_mod);
+        }
         if (std.mem.eql(u8, m.name, "net_wire")) {
             mod.addImport("net_ethernet", eth_mod);
             mod.addImport("net_ipv4", ipv4_mod);
@@ -285,25 +302,13 @@ pub fn build(b: *std.Build) void {
         t.root_module.addImport("board", board);
         // net-sockets 的 wire.zig 需要 net_tcp（真实段 ⇄ 组件内段的适配）
         if (m.group == .net) t.root_module.addImport("net_tcp", tcp_mod);
+        if (std.mem.eql(u8, m.name, "posix")) {
+            // 本层的宿主测试就是 `host_tests.zig`（循环已把 selftest.zig 换成它）
+            t.root_module.addImport("osal_kit", osal_mod);
+            t.root_module.addImport("net_sockets", socks_mod);
+        }
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
-    // posix-compat 只登记**主机测试**，不进镜像：
-    //   - 目前还没有任何应用代码 import 它，因此没有板级行为变更；其中真正阻塞的那一段
-    //     （sched.block()）在主机上是 no-op，所以板级验收留到接入应用的那一步；
-    //   - 它需要 `net_sockets` 模块，而 `net_sockets` 组件模块（selftest 根）与这个 api 模块
-    //     包含同一批文件 —— 同时进镜像会撞 Zig 的"一个文件属于两个模块"。
-    {
-        const t = b.addTest(.{ .root_module = b.createModule(.{
-            .root_source_file = b.path("../components/posix-compat/src/host_tests.zig"),
-            .target = b.graph.host,
-            .optimize = .Debug,
-        }) });
-        t.root_module.addImport("net_sockets", socks_mod);
-        // sync/cond/thread 只要 `sched`（不再用 osal 的 sem/mutex 池）
-        t.root_module.addImport("osal_kit", osal_mod);
-        test_step.dependOn(&b.addRunArtifact(t).step);
-    }
-
     // OSAL 组件自己的主机测试（20 项：osal 17 + sched 2 + 聚合 1）
     {
         const t = b.addTest(.{ .root_module = b.createModule(.{

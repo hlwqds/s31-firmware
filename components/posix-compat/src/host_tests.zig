@@ -28,6 +28,8 @@ test {
     _ = @import("cond.zig");
     _ = @import("timer.zig");
     _ = @import("rwlock.zig");
+    // 模块根：覆盖门禁要求每个模块都可达
+    _ = @import("api.zig");
     std.testing.refAllDecls(@import("fd.zig"));
     std.testing.refAllDecls(@import("sync.zig"));
     std.testing.refAllDecls(@import("thread.zig"));
@@ -35,4 +37,5 @@ test {
     std.testing.refAllDecls(@import("cond.zig"));
     std.testing.refAllDecls(@import("timer.zig"));
     std.testing.refAllDecls(@import("rwlock.zig"));
+    std.testing.refAllDecls(@import("api.zig"));
 }

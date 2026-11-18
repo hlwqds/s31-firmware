@@ -22,8 +22,11 @@
 
 const std = @import("std");
 
-const checksum = @import("checksum.zig");
-const tcp = @import("tcp.zig");
+// 经模块导入（`api.zig` 为根）：本文件是 section 模块的根，按文件导入会让
+// `tcp.zig`/`checksum.zig` 同时属于两个模块。
+const net_tcp = @import("net_tcp");
+const checksum = net_tcp.checksum;
+const tcp = net_tcp.tcp;
 
 const board = @import("board");
 const log = board.log;
