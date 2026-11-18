@@ -9649,3 +9649,40 @@ if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 �
 用 `caller_ring` 在**更晚的锚点**取快照，或直接**离线走调用链**：
 从 `r_btdm_task_init` 的 `0x92`/`0x9e` 两个候选继续向下（`nm -A -S` + `readelf -r`），
 直到遇到含循环或寄存器等待的函数。
+
+## 调用链在 `0x9e` 之后终止（2026-11-19）
+
+| 符号 | 对象 | 大小 |
+| --- | --- | --- |
+| `r_sym_bt_MDZbajeLxsB0cvuBOREd` | `8.o` | **14 B** |
+| `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` | `8.o` | **14 B** |
+
+⇒ 两者都是**极小的 thunk/访问器**，其后无更深的调用。
+
+### 因此
+
+`r_btdm_task_init` 在 `eventq_init`（`0x84`）之后的两次调用**都不会长期阻塞**。
+
+⇒ 停滞若不是在 `r_btdm_task_init` **内部的非调用代码**（`0x84`–`0x92` 之间的内联 `memcpy`/`memset` 等），
+就是**该函数已经返回**，而停滞发生在**调用它的 `step(6)` 之后**的代码里。
+
+### 这两种可能如何区分（一次读数）
+
+`r_btdm_task_init` 返回后，`bringup` 会继续到 `enter(7, "btdm_lp_init")`。
+⇒ **只需确认 `enter step 7` 是否出现**：
+
+| 观察 | 结论 |
+| --- | --- |
+| `enter step 7` 出现 | `r_btdm_task_init` **已返回**，停滞在 step 7 之后 |
+| `enter step 7` 不出现 | 停滞**在 `r_btdm_task_init` 内**（包含其事件循环）|
+
+⇒ 这是一条**零成本**的判读，README 里此前的所有"step 6 停滞"表述都**默认**了后者，但从未验证过。
+
+### 本会话交接最终状态
+
+| 项 | 值 |
+| --- | --- |
+| HEAD | 本次提交后更新 |
+| 观测手段 | 整行预留日志 + 保序 `caller_ring` + 行号判读 |
+| 已确证 | `eventInit`×2 与 `eventqInit` 均执行；停滞在其后 |
+| **待验证** | **`enter step 7` 是否出现** —— 这决定停滞函数的归属 |
