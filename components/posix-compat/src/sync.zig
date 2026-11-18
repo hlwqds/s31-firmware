@@ -76,11 +76,15 @@ fn pendAcquire(s: *sem_t) c_int {
         if (!spinForCount(s)) return fail(e.EAGAIN); // "没能阻塞住"，不是到期
     } else {
         var n = waitq.Node{ .ctx = sched.currentContext() };
-        while (s.count == 0) {
-            if (!n.linked) s.q.push(&n);
+        // 退出条件是"**确实被交接了令牌**"，不是"计数值不为 0"。
+        // 只看计数的话，一次与自己无关的唤醒（将来的取消/超时路径）会让等待者看到别人
+        // 刚被 post 的令牌就退出循环把它抢走，而 `count` 是 u16 ⇒ 第二个取用者下溢 panic。
+        // `sem_post` 是"先加计数再 pop 一个等待者"，所以被 pop 的等待者一定能看到 count > 0。
+        while (n.linked or s.count == 0) {
+            if (!n.linked) s.q.push(&n); // 还没在队里（首次，或被 pop 后计数仍为 0）
             sched.block();
         }
-        if (n.linked) _ = s.q.remove(&n); // 醒来时可能还挂在队里（虚假唤醒）
+        if (n.linked) _ = s.q.remove(&n); // 正常路径不会走到：退出时已不在队里
     }
     s.count -= 1;
     return 0;
@@ -191,20 +195,43 @@ pub fn pthread_mutex_unlock(m: *pthread_mutex_t) c_int {
 pub const pthread_once_t = struct {
     /// 0 = 未跑，1 = 正在跑，2 = 已完成。CAS 保证只有一个调用者执行。
     state: std.atomic.Value(u32) = .init(0),
+    /// 等 `init_routine` 跑完的其他调用者。**必须排队阻塞**：协作式调度下自旋不让出，
+    /// 一旦 `init_routine` 阻塞（它常常要拿锁或等初始化），发起者永远回不来 ⇒ 全系统楔死。
+    q: waitq.Queue = .{},
 
     pub const initializer: pthread_once_t = .{};
 };
 
+/// 发布"已完成"并唤醒所有等待者。抽出来是为了能在主机上验证唤醒路径
+/// （发起者那一支在主机上跑不了真调度，但这段是它唯一会做的收尾动作）。
+fn finishOnce(once: *pthread_once_t) void {
+    once.state.store(2, .release);
+    var out: [sched.max_tasks]*sched.Context = undefined;
+    const n = once.q.drain(&out);
+    for (out[0..n]) |ctx| wake(ctx);
+}
+
 pub fn pthread_once(once: *pthread_once_t, init_routine: *const fn () callconv(.c) void) c_int {
     if (once.state.cmpxchgStrong(0, 1, .acquire, .acquire) == null) {
         init_routine();
-        once.state.store(2, .release);
+        finishOnce(once);
         return 0;
     }
-    var spins: u32 = 0;
-    while (once.state.load(.acquire) != 2) : (spins += 1) {
-        if (spins == 2_000_000) return fail(e.EINTR);
-        std.atomic.spinLoopHint();
+    if (!sched.isStarted()) {
+        // 没有调度器时这里只可能是 `init_routine` 内部的重入调用 —— 那是调用方的死锁，
+        // 报 EINTR 让它可以退出，而不是原地自旋把系统钉死。
+        var spins: u32 = 0;
+        while (once.state.load(.acquire) != 2) : (spins += 1) {
+            if (spins == 2_000_000) return fail(e.EINTR);
+            std.atomic.spinLoopHint();
+        }
+        return 0;
+    }
+    var n = waitq.Node{ .ctx = sched.currentContext() };
+    // 同 `pendAcquire`：退出条件是"**确实被交接了**"（被 pop），而不是"看到状态变成 2"。
+    while (n.linked or once.state.load(.acquire) != 2) {
+        if (!n.linked) once.q.push(&n);
+        sched.block();
     }
     return 0;
 }
@@ -404,6 +431,23 @@ test "sync: unlock 把锁直接交给等待者（不再置 1 后被第三方抢�
 var once_runs: u32 = 0;
 fn onceBody() callconv(.c) void {
     once_runs += 1;
+}
+
+test "sync: pthread_once 完成时会唤醒所有等待者（FIFO）" {
+    useRecorder();
+    var once: pthread_once_t = .initializer;
+    once.state.store(1, .release); // 模拟"发起者正在跑"
+    var a = waitq.Node{ .ctx = fakeCtx(0) };
+    var b = waitq.Node{ .ctx = fakeCtx(1) };
+    once.q.push(&a);
+    once.q.push(&b);
+    finishOnce(&once);
+    try testing.expectEqual(@as(u32, 2), once.state.load(.acquire));
+    try testing.expectEqual(@as(usize, 2), resumed_n);
+    try testing.expectEqual(fakeCtx(0), resumed[0]);
+    try testing.expectEqual(fakeCtx(1), resumed[1]);
+    try testing.expect(!a.linked and !b.linked);
+    try testing.expect(once.q.isEmpty());
 }
 
 test "sync: pthread_once 只执行一次（含已完成状态的重入）" {

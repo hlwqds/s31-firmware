@@ -60,6 +60,11 @@
 | `pthread_rwlock_*` | — | — 本版不做（读者写者饥饿问题需要单独设计） |
 | `pthread_spin_*` | — | ○ 待做（`std.atomic.spinLoopHint` 足够，但要知道它在单核上没有意义） |
 
+> ⚠️ **阻塞的前提**：`sem_wait`/`mutex_lock`/`cond_wait` 要求调度器**已启动**
+> （`sched.isStarted()`）。没启动时不做真阻塞 —— 有界忙等 2M 次 `spinLoopHint` 后返回
+> `EAGAIN`（`cond_wait` 直接 `ENOSYS`）。这是"哪条门禁能观察到"的必然结果：主机上
+> `sched.block()` 是 no-op，若不设这个前提，用例会原地死循环而不是失败。
+>
 > ✅ **单等待者限制已解除**（2026-11-18）：`sem_t` / `pthread_mutex_t` 改成自持计数 + `waitq`
 > FIFO，多线程可以排队；也不再从 `osal` 的 `sem_pool`（64 槽，BLE 同池）取句柄。
 >
@@ -160,9 +165,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**56 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 16** · **thread 11** · **waitq 6** · **cond 6** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 56`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**57 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 17** · **thread 11** · **waitq 6** · **cond 6** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 57`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
