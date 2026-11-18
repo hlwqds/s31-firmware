@@ -8323,3 +8323,39 @@ PC 样本（仅 2 条，采样极少）：
 | `WITH_PHY=1` | ⚠️ 会挂在 PHY，除非专门调查否则别用 |
 | 日志通道 | ✅ 已修（`enter()` 的 TXFIFO 排空等待）|
 | 当前挂点 | step 6 `r_btdm_task_init`（**采样不足，未定性**）|
+
+## step 6 的 OSAL 轨迹（默认构建，2026-11-19）
+
+对默认构建的捕获（`pc174`）grep OSAL 痕迹：
+
+```text
+osal> mutex
+osal> event
+osal> event
+```
+
+### 判读
+
+| 观察 | 含义 |
+| --- | --- |
+| `osal> mutex` 出现 | `mutexPend` **被调用**（进入 step 6 内部）|
+| 之后有 `osal> event` | 已越过 mutex，进入 event 操作 |
+| **没有 `mutex_release` 里程碑** | `osal.zig:427` 注释：它是 `r_btdm_task_init` 的**最后一次 OSAL 调用** ⇒ **函数没跑完** |
+
+⇒ **挂在 `mutexPend` 之后的 event 操作里**（或 event 之后）。
+
+### 已知的采样盲区（重要）
+
+`recordPc(frame.mepc)` 被关在 **`if (input == 25)`**（归档自己的 tick）分支内
+⇒ **step 6 阶段归档 tick 可能还没跑**（任务未创建）⇒ 采样器在此阶段**几乎无样本**
+（实测整个 50 s 只有 2 条）。
+
+⇒ 要定位 step 6 的具体循环，必须先**把 `recordPc` 移出 `input == 25` 门控**
+（改用 TIMG0 T0 定时中断触发），并**跳过落在 trap handler 自身区间的 mepc**
+（否则 ISR 地址会污染分布）。
+
+### 下一步
+
+1. 解除 `recordPc` 的门控（上述两处小改）；
+2. 在 `osal.eventGroupWait` / `event` 相关入口加里程日志；
+3. 重跑默认构建，拿到 step 6 的真实热点。
