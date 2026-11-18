@@ -14356,3 +14356,56 @@ osal.logPublic("bt bringup: enable step 1 {d}", .{0});
 | 撤回 | 58 |
 | 数据源错误 | 22 类 |
 | 自我纠正 | **182** |
+
+## 收窄：崩溃在 `enable()` 的第 16 步**之后**（2026-11-19）
+
+### `enable()` 的开头（`bringup.zig:390-400`）
+
+```zig
+pub fn enable() c_int {
+    stats_state.enable_calls += 1;
+    if (status_state != .inited) { … return -1; }   // 若失败会打 "enable refused"
+    porting.btdmLpReset(true);                       // ← **空实现**
+    enter(16, "btdm_coex_enable");                   // ← 已有的分步标记
+    var rc = step(16, …);
+```
+
+### 每一项都已排除
+
+| 候选 | 结论 |
+| --- | --- |
+| `stats_state.enable_calls += 1` | 加法，不可能崩 |
+| `status_state != .inited` 分支 | 若成立会打 `enable refused`（日志里没有）⇒ 未走 |
+| **`porting.btdmLpReset(true)`** | **空实现**（`_ = enable;`）⇒ **不可能崩** |
+| ⇒ 因此崩溃在 `enter(16)` **之后** | 而 `enter step 16` 行**又被交错吞了** |
+
+⇒ 结论：崩溃发生在 **enable 链的某一步（16 及以后）**，但**具体哪一步**因标记丢失而未知。
+
+### 这说明什么
+
+本会话反复遇到的**同一个问题**（输出交错），现在**阻碍了对新问题的定位**。
+
+⇒ 在解决"标记能被可靠看到"之前，**无法定位 enable 链的崩溃点**。
+
+### 下一步（两条，按优先级）
+
+| # | 动作 | 理由 |
+| --- | --- | --- |
+| **1** | **让标记可靠**：把 `enter()` 的输出改走 `rawLineBlocking`（与 `dumpLine` 同样做法）| 否则任何分步定位都不可信 |
+| 2 | 或：把 `enter step N` 记进 **RAM 数组**，崩溃后由 panic 路径 dump | 完全不受 FIFO 影响 |
+
+⇒ **推荐 2**：`panic` 路径已经在打 `ctx[]`，加一行 dump 最近 8 个 step 号即可，
+**彻底绕开所有输出问题**。
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
+| 新前沿 | enable 链 16+ 步内崩溃，**具体步骤因标记丢失未知** |
+| 代码修复 | 26 |
+| 诊断清理 | 4 |
+| 撤回 | 58 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **183** |
