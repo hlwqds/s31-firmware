@@ -4507,3 +4507,35 @@ _heap_start = _bss_end , _heap_end = _stack_bottom
 
 - 出现 `= 0x0` ⇒ arena 确实不够 ⇒ 按上面两条修；
 - 出现非 0 地址 ⇒ 分配成功，abort 另有原因（此时只剩 `esp_phy_load_cal_and_init` 里未读到的第三处检查）。
+
+## 🔴 结构性 bug：**堆区间与 `.btdm_bss` / `.btdm_data` 重叠**（2026-11-19）
+
+链接后实测符号：
+
+```
+_bss_end      = 0x2f015ec0      <- _heap_start 取它
+.btdm_bss     0x2f015ec0 .. 0x2f01dec0   (32 KiB, NOBITS)
+.btdm_data    0x2f01dec0 .. 0x2f01eec0   ( 4 KiB, NOBITS)
+_heap_end     = 0x2f076fc0      (= _stack_bottom)
+```
+
+⇒ `_heap_start` 被放在 **`.btdm_bss` 的起点**，而 `.btdm_bss` / `.btdm_data` 共 **36 KiB**
+正落在这段"堆"里 ⇒ **arena 一旦分配，就会覆盖归档自己的 BSS/数据**。
+
+⇒ 这解释了本会话许多"不可解释"的现象：归档的全局对象被我们自己的分配器反复覆盖
+（锚点槽、事件队列、`d3D3` 链表头都在 `.btdm_bss` 里）。
+
+### 正确布局
+
+```
+_bss_end 应取 .btdm_data 的末址 = 0x2f01eec0
+堆 = [0x2f01eec0, 0x2f076fc0) ≈ 360 KiB
+```
+
+即链接脚本里 `_heap_start` / `_bss_end` 的定义必须**放在 `.btdm_bss` 与 `.btdm_data` 之后**，
+而不是 `.bss` 之后。
+
+**验收判据**：
+1. `readelf -sW` 后 `_heap_start >= .btdm_data 末址`；
+2. 板上 `bt probe: arena` 报 ≈ 360 KiB（而不是 4039 B —— 那个数字来自更早的布局，需复核）；
+3. 归档的 `.btdm_bss` 在运行期间不再被分配器改写（可用锚点读数验证）。
