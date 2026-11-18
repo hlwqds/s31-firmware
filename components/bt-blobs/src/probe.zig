@@ -115,7 +115,7 @@ pub fn ringPush(msg: []const u8) void {
 /// 事件触发导出：打 PC 采样 + 计数器，然后停机。
 var dump_done: bool = false;
 fn dumpAtPend() void {
-    if (dump_done) return;
+    if (dump_done or osal.caller_n < 20) return; // 推迟到序列后段，避免在第一步就冻结
     board.log.line("DUMP lc={d} lr={d} n={d}", .{ log_hook_calls, log_ring_n, osal.caller_n });
     // 最近 12 条 OSAL 调用点（归档自己的地址），按从新到旧。
     var ci: usize = 0;
@@ -125,7 +125,7 @@ fn dumpAtPend() void {
     }
     // 环里最新的 4 条归档消息。
     var mi: u32 = 0;
-    while (mi < 2) : (mi += 1) {
+    while (mi < 6) : (mi += 1) {
         const m = ringAt(mi);
         if (m.len > 0) board.log.line("M{s}", .{m});
     }

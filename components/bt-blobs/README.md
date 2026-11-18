@@ -3443,3 +3443,43 @@ Mosal> eventInit            <- 环里最新一条：归档又调了 event_init
 
 **下个会话**：从 `event_init` 这一步继续，看它在 `2aNNNgpu…` 之后做了什么；
 并注意**任何一次性导出都不得 halt**，否则会把自己的观测点变成故障点。
+
+## 静默点已推进到 `event_init` 一族之后（2026-11-18 最终）
+
+`task_init` 在 pend 与就绪标记之后调用的 `r_sym_bt_2aNNQgpuVlZoKiS5xEYJ`（`0x4005f394`，18 字节）是：
+
+```asm
+4005f394: lui  a5,0x2f010
+4005f398: lw   a5,-32(a5)   # a5 = *(0x2f00ffe0) = d3D3 (P)
+4005f39c: sw   zero,0(a5)   # *(P) = 0
+4005f3a0: c.sw a5,4(a5)     # *(P+4) = P   (链表头自环)
+4005f3a2: c.jr ra           # 返回
+```
+
+⇒ **纯数据结构初始化，不访问任何外设** ⇒ 它不会撞 `0x2010B000`。
+
+而环里最新的几条归档消息是：
+
+```
+Mosal> mutexPend tmo=4294967295
+Mosal> eventInit
+Mosal> eventInit
+Mosal> eventInit
+Mosal> eventqInit
+Mwin: clkrst +0x03c = 0x0000000f
+```
+
+⇒ 归档在 pend 之后继续初始化了 eventq 与多个 event，**静默发生在这一族之后**。
+
+### 这条线的准确状态
+
+| 项 | 结论 |
+| --- | --- |
+| 回滚崩溃 | **已修**（预发布 `anchor[8]` 是自伤） |
+| 归档推进深度 | 越过 `OkE7` 全部分级检查（`PsB8` / `ZGgi` / `jH5m`）→ `task_init` 的 pend → 就绪标记 → `eventqInit` + `eventInit`×3 |
+| 静默点 | 在 `event_init` 一族**之后**，且**尚未观测到**它随后调用的确切函数 |
+| 是否撞 `0x2010B000` | **仍未观测**（`2aNN` 已排除，后续未读） |
+
+**下个会话入口**：把导出触发点改为 `event_init` 之后的第一个 OSAL 调用（或第 2 次 pend），
+并用 **按字节预算** 的打印（1 行计数 + 3 条截断到 24 字节的 M 行 ≈ 101 B）——FIFO 只有 128 B，
+否则又只能看到前几行。
