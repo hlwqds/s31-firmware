@@ -467,9 +467,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **故障地址先打**：ROM 的 panic 处理会往同一 UART 插横幅，长标签行会被截断/覆盖
         // （实测 `panic: mepc=\xef\xbf\xbdSP-ROM:...`）。把最关键的三元组放在第一行、无长标签。
         // **非阻塞**：FIFO 卡住时 ROM printf 会挂死，panic 信息就永远看不到。
-        var pbuf: [96]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8}", .{
-            frame.mepc, hw.readMtval(), frame.mstatus,
+        // **把 step 并进这一行**：这是唯一被证明一定会出现的诊断行
+        // （`panic: LASTSTEP` 那条 dump 路径在本故障里根本不执行）。
+        var pbuf: [160]u8 = undefined;
+        const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8} ra=0x{x:0>8} step={d} {s}", .{
+            frame.mepc, hw.readMtval(), frame.mstatus, frame.ra,
+            last_step, last_step_name,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
@@ -554,6 +557,11 @@ pub var extra_dump: ?*const fn () void = null;
 
 /// 在指定 tick 处**故意 panic**，把计数器与采样经 panic 路径一次性导出
 /// （UART 平时被自身日志灌满，只有 panic 时刻是清空的）。
+/// **进度镜像**（由 bt-blobs 的 `enter()` 写入）：panic 行里带上它，
+/// 因为它所在的 `!! mepc=…` 行是唯一被证明一定会出现的诊断。
+pub var last_step: u32 = 0;
+pub var last_step_name: []const u8 = "none";
+
 pub var probe_stop_at_tick: u32 = 0;
 
 /// probe 侧注册的 RAM 环读取器（不能跨模块 import）。

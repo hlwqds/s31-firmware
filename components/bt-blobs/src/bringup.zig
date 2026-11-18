@@ -100,6 +100,9 @@ pub var last_step_name: []const u8 = "none";
 fn enter(n: u32, comptime what: []const u8) void {
     last_step = n;
     last_step_name = what;
+    // 同步到 board 侧（panic 行会打印它）
+    @import("board").trap.last_step = n;
+    @import("board").trap.last_step_name = what;
     osal.logPublic("bt bringup: enter step {d} " ++ what, .{n});
     // 让 UART FIFO 排空：step 1..5 在同一瞬间连发，5×~30 B > 128 B FIFO
     // ⇒ 溢出时 hw.rawWrite **按设计丢弃** ⇒ 只剩第一行可见（误判为"没执行"）。

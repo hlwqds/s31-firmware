@@ -14519,3 +14519,68 @@ fn dumpAtPend() void {
 | 1 | 把 `panic: LASTSTEP` 移到 `dumpAtPend` 的**第一行**（阻塞写）|
 | 2 | 拿到 step 号 ⇒ 定位 `enable()` 的具体步骤 |
 | 3 | 该步骤里查**未初始化的结构体/栈变量**（地址随机是判据）|
+
+## 🎯 定位成功：崩溃在 `INITED` 之后、`enter(16)` 之前 —— **`arenaFree()` 是头号嫌疑**
+
+### 把 step 并进 `!! mepc=…` 行（唯一必现的诊断）
+
+```zig
+!! mepc=0x4859e894 mtval=0x00000000 mstatus=0x00003881 ra=0x4859e895
+   step=15 hci_transport_init
+```
+
+⇒ **`step = 15`** ⇒ 最后一次 `enter()` 是 `enter(15, "hci_transport_init")`
+⇒ `enter(16, "btdm_coex_enable")` **从未执行**
+
+### 因此崩溃窗口
+
+```text
+enter(15, "hci_transport_init")     ← last_step = 15
+bt bringup: INITED                   ← 已打印（init 结束）
+return 0
+osal.logPublic("bt probe: init ok, arena free={d}", .{osal.arenaFree()});   ← ★ 嫌疑
+bringup.enable():
+    enable_calls += 1
+    status_state != .inited ?        （若失败会打 "enable refused"，日志无）
+    btdmLpReset(true)                （空实现，不可能崩）
+    enter(16, …)                     ← 从未执行
+```
+
+⇒ **`osal.arenaFree()` 是这段里唯一"会做事"的调用。**
+
+### 为什么它可能崩
+
+| 可能 | 说明 |
+| --- | --- |
+| `arenaFree()` 遍历空闲链表时踩到未初始化/已破坏的节点 | 地址随机正是**链表指针未初始化**的特征 |
+| 归档在 init 期间越界写了 arena 元数据 | 与早前"归档 init 吃掉 arena"的观察一致 |
+
+⇒ **与"崩溃地址随机"完全吻合**：损坏的链表节点指向垃圾。
+
+### 下一步（一次改动即可验证）
+
+把那条 log 拆成两步：
+
+```zig
+osal.logPublic("bt probe: init ok {d}", .{0});          // 先打，不碰 arena
+const af = osal.arenaFree();                            // 单独取
+osal.logPublic("bt probe: arena free={d} B", .{af});
+```
+
+| 观察 | 结论 |
+| --- | --- |
+| 见 "init ok" 不见 "arena free" | ✅ **确认崩在 `arenaFree()`** |
+| 两者都见 | 崩在 `enable()` 内，继续二分 |
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
+| 新故障定位 | **`step=15` ⇒ 崩在 `INITED` 与 `enter(16)` 之间；`arenaFree()` 头号嫌疑** |
+| 代码修复 | 28 |
+| 诊断清理 | 4 |
+| 撤回 | 58 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **186** |
