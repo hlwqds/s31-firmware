@@ -9563,3 +9563,44 @@ dump 应挂在**停滞之后**，例如：
 | `caller_ring` 保序可信 | ✅ |
 | `jH5m` 是环里最后的调用者 | ✅（但需确认是同一时刻的相对关系）|
 | PHY 挂死 = `WITH_PHY=1` 自造 | ✅ |
+
+## 周期打印无输出的原因（结案）+ 两个候选的初步分析
+
+### `bt_print_osal_stats` 为何从不执行
+
+`trap.zig` 的心跳块整体被门控：
+
+```zig
+if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 … }
+```
+
+而 `bringup.zig:322` 设了 **`board.trap.sample_quiet = true;`**
+（目的：不让 ISR 自己的打印灌满 FIFO）
+⇒ **整个心跳块被跳过** ⇒ 周期统计一次都不会执行。
+
+⇒ **"无输出"是必然，不是故障。** 该条可结案。
+
+### 停滞在 `eventq_init`（`0x84`）之后的两个候选
+
+| 偏移 | 符号 | 对象 | 大小 | 内容 |
+| --- | --- | --- | --- | --- |
+| `0x92` | `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` | `2.o` | **44 B** | `malloc` + `assert` ×4 + `free` ⇒ **分配器包装** |
+| `0x9e` | `r_sym_bt_JwHsRJf87ncwDuzskIUj` | `7.o` | **84 B** | `r_sym_bt_MDZbajeLxsB0cvuBOREd` / `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` + `assert` ×4 |
+
+⇒ 两者都是**小包装**，继续调更深的助手 ⇒ 链条需再走一层。
+
+### 当前的准确状态（本会话结束时）
+
+| 项 | 值 |
+| --- | --- |
+| 停滞位置 | `r_btdm_task_init` 的 `eventq_init`(`0x84`) **之后**，具体在 `0x92`/`0x9e` 的子链中 |
+| 已确认执行 | `eventInit` ×2、`eventqInit`（行号 233 实证） |
+| 已结案 | 周期打印无输出（`sample_quiet` 门控）；计数器全 0（dump 早于调用）|
+| 观测仪器 | 整行预留（不截断）+ 回调槽（确定性触发）+ 保序环 + 行号顺序判读 |
+
+### 下一步（离线）
+
+沿 `0x9e` 的 `r_sym_bt_MDZbajeLxsB0cvuBOREd` / `r_sym_bt_2VbAPsx8lRNZdbVZTEOe`
+继续反汇编（同样的 `nm -A -S` + `readelf -r` 手法），直到找到一个**含循环或寄存器等待**的函数。
+或者更省：把 dump 触发点改到**第一次 `eventq_get`**（消费者阻塞处），
+那时 `caller_ring` 的最后几条就是停滞现场的直接证据。
