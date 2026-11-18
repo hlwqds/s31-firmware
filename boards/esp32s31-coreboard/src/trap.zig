@@ -493,6 +493,29 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }
             diag_a = @truncate(found);
         }
+        // **原始帧内容**（阻塞写，单独一行）：看替换者是什么
+        {
+            var fb: [200]u8 = undefined;
+            const w = std.fmt.bufPrint(&fb, "FR [sp..+64) = {x},{x},{x},{x},{x},{x},{x},{x} | {x},{x},{x},{x},{x},{x},{x},{x}", .{
+                (@as(*const usize, @ptrFromInt(frame.sp + 0))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 4))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 8))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 12))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 16))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 20))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 24))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 28))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 32))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 36))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 40))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 44))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 48))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 52))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 56))).*,
+                (@as(*const usize, @ptrFromInt(frame.sp + 60))).*,
+            }) catch "FR (fmt fail)";
+            hw.rawLineBlocking(w);
+        }
         var pbuf: [280]u8 = undefined;
         const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
             csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
