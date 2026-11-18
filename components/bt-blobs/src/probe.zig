@@ -131,7 +131,7 @@ fn macHook(out: *[6]u8) void {
 /// 因果实验：把 anchor[0] 毒成一个**有效可写 RAM 指针**（+28=0），
 /// 若崩溃因此消失或换点，就证明"anchor[0]==0 → 零值兜底 → store 到 0"这条链。
 var poison_buf: [64]u8 align(4) = @splat(0);
-pub var poison_anchor0: bool = true;
+pub var poison_anchor0: bool = false; // 实验已完成：毒化不影响崩溃，见 README
 
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
