@@ -3561,3 +3561,45 @@ OSAL 环止于 **21** 次，其中**没有 `task_create`**。两种可能（未�
 **下一步（单点、离线）**：把 `0x40060772..0x40060870` 整段 `objdump` 出来逐条读
 （约 250 字节），找出它返回前的最后一条 `jalr`/`jr` —— 那就是它跳去向的地方，
 也即 `task_init` 卡住前的最后一步。
+
+## 🏁 闭环：干净流程**走到了 `Xpuq`**，即 README 记录的硬件墙（2026-11-18 定论）
+
+`task_init` 尾部（前面 `BOhff` 建描述符、`HGbPEa9` 写两个常量 40/46 之后）：
+
+```asm
+4005fbc4: jal ra,4005eb1e <r_sym_bt_XPuqTHliEO5V9xpR7aJR>   # <- 就是那个 XPuq
+4005fbc8: c.bnez a0, .L93                                    # 失败则回滚
+4005fbca: jal ra,4005baaa <r_sym_bt_AJP6s1I6EhaAHnz8n72F>
+...
+4005fc00: jal ra,<wr_btdm_osal_mutex_release>
+```
+
+而 README 早已记录 `Xpuq`（186 字节）的前半段是**固定 16 次循环**，按 16 字节步长访问
+`0x2010B000..0x2010B100`，并且**读一次该地址即挂死整个系统**（2 行实验已证）。
+
+⇒ **整条链闭合**：
+
+```
+task_init -> OkE7(全部分级通过) -> mutex_pend(0) -> 就绪标记 -> eventq/event 初始化
+  -> BOhff(建任务描述符) -> HGbPEa9(写 40/46) -> XPuq -> 读 0x2010B000 -> 总线挂死
+```
+
+且这条路径是**干净的**：无 anchor[8] 预发布、无 bail 补丁、无导出 halt。
+此前所有"卡住"的观测偏差（UART 饱和、导出丢弃、导出 halt）都已排除，
+剩余的唯一障碍就是 **modem/BLE 寄存器块不可访问**。
+
+### 与先前结论的关系
+
+| 先前结论 | 现在 |
+| --- | --- |
+| "到达 modem 墙"（曾被我撤回，因无证据） | **重新成立，且有干净路径的调用点作证**：`0x4005fbc4` → `XPuq` |
+| "卡在 mutex_pend / 死锁 / 阻塞语义" | 全部作废（pend 返回 0，流程继续到 `Xpuq`） |
+| "anchor 链是闸门" | 全部作废（干净流程下无预发布也能走到 `Xpuq`） |
+
+### 结论
+
+**BLE controller 在我们裸机 OS 上的 init 已经跑到 `Xpuq`，剩余唯一障碍是
+`0x2010B000`（`MODEM_BASE + 0xB000`，BLE/MAC 寄存器块）不可访问。**
+要让流程继续，必须让该块可访问 —— 即 README 早已收敛的那件事：
+**给 PHY 提供校准路径**（`nvs_open(PHY_NAMESPACE)` 返回 `ESP_ERR_NVS_NOT_FOUND`
+⇒ 触发全量 RF 校准），以及 modem 域上电/复位释放的时序对齐。
