@@ -2239,3 +2239,26 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 所以之前"值环 40 条但调用者环 0 条"的怪现象是**死代码路径**造成的，不是环没写进去。
 **下一步（一行）**：把 `mmiocaller[]` 与 rings 行的打印搬到 `panic: pc[...]` 所在的那个块里，
 调用者环就会立刻可见 —— 而它记录的是**归档自己的返回地址**，是当前唯一能拿到的归档侧 PC。
+
+### 关键纠正：`bt_mmio_*` **不是**归档的入口，OSAL 钩子才是（2026-11-18）
+
+归档的 undefined 符号只有 **10 个**（`__assert_func`、5 个链接脚本符号、`e_btdm_lp_modem_clock_set`、
+`phy_printf`、`rtc_clk_xtal_freq_get`、`sprintf`）—— **`bt_mmio_read` 不在其中**（`flat/unresolved.txt`）。
+仓内调用 `bt_mmio_*` 的只有 `porting.zig:190/194` 与 `probe.zig:342`，**全是我们自己的代码**。
+
+⇒ 这也解释了那 40 条寄存器记录：**它们是我们 bringup 写的**（modem 复位族等），不是归档；
+`bt_mmio_*` 的调用者环永远只会解析到 `porting.zig`/`probe.zig`，**这条观测路线是死路**。
+
+**归档真正进入我们代码的入口是 OSAL 钩子**（trace 里那 12 次调用）：
+`wr_btdm_osal_malloc` / `mutex_pend` / `eventq_init` / `sem_release` …
+
+⇒ 正确的最后一个仪器：在 **OSAL 钩子函数**里记 `@returnAddress()` —— **那些返回地址就是归档的 PC**，
+不需要打印、不依赖 mmio，而且是唯一的归档侧观测点。
+
+实现形状（下一步，三处小改）：
+
+1. `osal.zig` 加一个 `caller_ring` + `noteCaller()`（osal 保持零 `board` 依赖，所以只存不打印）；
+2. `board/trap` 加 `pub var extra_dump: ?*const fn () void`，panic 时调用；
+3. `probe.zig`（同时依赖 board 与 osal）注册一个 dump 函数，把 osal 的环打出来。
+
+做完这一步，43 条采样即使仍落在我们的钩子里，也能通过调用者环得到**归档的返回地址**。
