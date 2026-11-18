@@ -9407,3 +9407,44 @@ nm app.elf | grep -E " [bBdD] .*stats"
 ### 教训
 
 **"计数器为 0" 只有在"确认该计数器与该调用绑定到同一份存储"之后才有意义。**
+
+## 收敛：唯一"不加计数"的路径是 `slotGet` 失败（2026-11-19）
+
+### `mutexPend` 的四条出口
+
+| 出口 | 是否加计数 |
+| --- | --- |
+| `slotGet` 失败 → `return EINVAL`（`:392-394`）| ❌ **完全不计数** |
+| FOREVER 忙等后成功（`:407-409`）| ✅ `mutex_pend_ok` |
+| 立即成功（`:412-415`）| ✅ `mutex_pend_ok` |
+| 忙等耗尽 → `TIMEOUT`（`:402-405`）| ✅ `blocked_calls` |
+
+### 因此
+
+轨迹里出现了 `osal> mutexPend`（`:391` 的 trace 在最前面），
+而 `mutex_pend_ok`/`mutex_pend_busy`/`blocked_calls` **全为 0**
+⇒ **只可能走第一条出口** ⇒ **mutex 槽无效（`slotGet` 返回 null）**。
+
+### 这条假设的价值
+
+| 若成立 | 解释 |
+| --- | --- |
+| mutex 槽无效 ⇒ 每次 `mutexPend` 返回 `EINVAL` | 归档拿到错误码、继续执行（不阻塞）|
+| 同理 `eventq_put` 的 `slotGet` 也可能失效 | 事件投递被静默丢弃 |
+| **共同的根因可能是"槽位分配失败"** | 即 `Slot` 结构里的 `p` 指针为 null ⇒ 归档传入的句柄无效 |
+
+⇒ 一条统一的解释：**归档传给我们的所有 `Slot*` 句柄都是无效的**
+（可能我们的 `Slot` 布局与归档期望的不同，或归档的句柄来自另一处分配）。
+
+### 下一步（一次读数即可定案）
+
+在 `mutexPend` 的 `slotGet` 失败分支加一行：
+
+```zig
+logLine("bt osal: mutexPend EINVAL slot.p=0x{x}", .{ @intFromPtr(slot.p) });
+```
+
+- 若打印出 `0x0` ⇒ **句柄本身是 null** ⇒ 归档传了空指针（我们的 ABI/布局问题）；
+- 若打印出非 0 但 `slotGet` 仍失败 ⇒ `slotGet` 的逻辑/类型问题。
+
+**这比任何计数器都直接**，且只需一次运行。
