@@ -298,6 +298,12 @@ pub fn init(cfg: *config.Config) c_int {
             reg.* = (reg.* & 0x107) | (1 << 3);
         }
         rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) else 0);
+        // not-ready 协议判据：若第一次只"发布对象"并返回 not-ready，第二次应能继续。
+        // 只在第一次非零时重试一次，且不吞掉原始 rc 的日志。
+        if (rc != 0 and freestanding) {
+            osal.logPublic("bt bringup: step 6 first rc={d}, retrying once", .{rc});
+            rc = step(6, "r_btdm_task_init(retry)", r_btdm_task_init(&cfg.btdm));
+        }
     }
     if (rc != 0) return rc;
 
