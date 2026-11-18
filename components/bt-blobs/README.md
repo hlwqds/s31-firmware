@@ -7698,3 +7698,28 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 ⇒ 下一步：确认 `phy_pwdet_tone_start` 的**调用者频率**。若它被无限重调，
 则问题在它的调用者（PDET 循环），需要继续把**上一层**调用者命名
 （同样手法：在 `0x2f801200–0x2f801700` 邻区 dump 更多 thunk，或查 ROM 里谁 `jal 0x2f80137c`）。
+
+## 排除：`phy_pwdet_tone_start` 的调用者**不在任何归档里**（2026-11-19）
+
+| 检查 | 结果 |
+| --- | --- |
+| `libphy.a` 163 对象 grep 环字节模式 | **无命中**（环在 ROM）|
+| BT 控制器归档（`libble_app.a` / `libbtdm_common.a` / `libbredr_app.a`）重定位到 `phy_pwdet_tone_start` / `phy_pwdet_reg_init` / `phy_get_sar_sig_ref` / `phy_txtone_linear_pwr` | **无命中** |
+
+⇒ 调用者**在 ROM 内部**（ROM 函数调 ROM 函数），不经过任何归档。
+
+### 这意味着什么
+
+- 无法用"grep 归档重定位"这一招拿到调用者名字；
+- 唯一剩下的手段是**在 ROM 里搜 `jal 0x2f80137c`**，但 ROM 有 320 KB，
+  经 128 B FIFO 全量 dump 不现实；
+- 因此**"谁是 `phy_pwdet_tone_start` 的调用者"在本机材料下不可得** ——
+  这是**材料边界**，不是分析不足（与早前"材料不存在"不同：那次判断错了，这次三项检查都做了）。
+
+### 可替代的判据（不需要调用者名字）
+
+在环命中时读**栈上的返回地址**：`phy_pwdet_tone_start` 的序言是
+`addi sp,sp,-16; sw ra,12(sp)`（`0x2f826440`/`0x2f826444`）⇒ 进入后 `ra` 存在 `sp+12`。
+停滞时读 `sp` 并取 `*(sp+12)` 即得**调用者地址**，再对照 `rom_syms.ld` 命名。
+
+这比全量 dump ROM 便宜得多，且是**一次读数**。
