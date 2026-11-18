@@ -316,7 +316,7 @@ pub const MmioRec = extern struct {
     addr: u32 = 0,
     val: u32 = 0,
 };
-pub var mmio_ring: [16]MmioRec = @splat(.{});
+pub var mmio_ring: [48]MmioRec = @splat(.{});
 pub var mmio_ring_next: u32 = 0;
 
 fn mmioRecord(kind: u32, addr: usize, val: u32) void {

@@ -2070,3 +2070,27 @@ R 0x20109c10 = 0
 
 ⇒ 复位序列本身看起来是健康的，问题不在"复位没做"，而在**复位之后那次写**。
 `0x2070410x` 三次读全 0 也仍待查（`MODEM_BASE+0x4100` = WIFI_MAC 段内）。
+
+### 40 条寄存器史揭示了真正的动作：归档死前在**给 modem 关时钟**（2026-11-18）
+
+把环从 16 扩到 48、导出 40 条后（`logs/bt-probe-mmio40.log`），崩溃前的序列是：
+
+```text
+R PMU +0x0f8 = 0 → W 0x10000000      PMU_IMM_SLEEP_SYSCLK   (bit28)
+R PMU +0x0fc = 0 → W 0x80000000      PMU_IMM_HP_FUNC_ICG    (bit31)
+R PMU +0x100 = 0 → W 0x80000000      PMU_IMM_HP_APB_ICG     (bit31)
+R PMU +0x104 = 0 → W 0x80000000      PMU_IMM_MODEM_ICG      (bit31)
+（读回四个寄存器全 0）
+→ MODEM_RST_CONF 四组脉冲（bit16 / bit15 / RST_BLE_TIMER / RST_MODEM_SEC+3）
+→ R MODEM_RST_CONF = 0 → store fault
+```
+
+`PMU = 0x2070_4000`（`esp32s31.peripherals.ld`）；`IMM_*` 是**"immediate"睡眠/门控**寄存器。
+
+⇒ **这不是初始化序列，是下电序列**：先关 HP_FUNC/HP_APB/MODEM 的时钟门控，再脉冲复位 modem 各块，
+然后去解引用一个未发布的锚点而崩。**与"崩在 `r_btdm_task_deinit`"完全吻合** ——
+即 task_init 先失败，清理路径做了一整套 power-down，最后踩到 NULL。
+
+⇒ 追查方向应回到**"task_init 为什么先失败"**（早于这些寄存器动作），
+而不是再解读这段下电序列本身（它是正确的收尾动作，只是收尾时崩了）。
+读回 0 也可能只是这些 IMM 位"写入即自清/只写"，不代表写没生效。

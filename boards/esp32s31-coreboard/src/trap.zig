@@ -409,7 +409,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         });
         // 归档最近碰过的 modem 寄存器（`bt_mmio_*` 静默记录）：死前在操作哪个寄存器，
         // 往往比 PC 更能说明"它以为自己在做什么"。
-        var hist: [12]hw.MmioRec = @splat(.{});
+        var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;
         while (k < hn) : (k += 1) {
