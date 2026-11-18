@@ -38,7 +38,7 @@ pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 pub var skip_task_init: bool = false;
 
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
-pub var phy_before_clocks: bool = true; // 实验：PHY 初始化放到 step 5 之后
+pub var phy_before_clocks: bool = false; // 实验：PHY 初始化放到 step 5 之后
 
 /// 是否在 step 6 前预先发布 anchor[8]（`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`）。
 pub var prepublish_bohff: bool = false;
