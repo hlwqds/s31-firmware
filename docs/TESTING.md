@@ -179,6 +179,7 @@ python3 tests/e2e/run_e2e.py --board --profile net     # 需要板子与 idf-boo
 ```bash
 scripts/check-all.sh                   # yaml/invariants/fmt/host/coverage/update_matrix/partition/capacity + 六 profile
 # invariants 含：前门测试总数（README/ROADMAP/TESTING）必须等于 tests/baselines.json 的合计
+#             以及 run_e2e.py 每个 profile 的 section 列表必须与 all_modules 的顺序逐项一致（e2e 有序比较）
 scripts/build-image.sh firmware <dir>  # 两段镜像断言；<dir> 必须先存在
 tests/e2e/run_e2e.py --board --profile net|tls     # 不需要主机网络的板级 e2e
 scripts/demo-board.sh <PORT>           # A/B 九项断言
