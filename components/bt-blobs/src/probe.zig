@@ -94,6 +94,10 @@ pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验
 /// `while (txfifo_cnt > 127) {}` 死等——一旦 FIFO 不排空，**日志自己也挂住**，
 /// 于是"卡住之后什么都看不到"，无法区分"程序停在那"与"只是打印停了"。
 /// 这里对每个字节做**有界**等待，等不到就丢弃，保证日志通道本身不会堵死。
+pub var log_hook_calls: u32 = 0;
+/// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
+pub var log_hook_silent: bool = false; // 实验表明会同时静音我们自己的进度日志，故默认关闭
+
 fn logHook(msg: []const u8) void {
     // **三层语义各归各位**（这条以前写错过两次，每次代价是一轮无效板测）：
     //   里程碑 `bt bringup:`  → 无条件放行（唯一能判断进度的输出）
@@ -105,6 +109,8 @@ fn logHook(msg: []const u8) void {
     // ⚠️ 曾经这里无条件 `osal.trace_hooks = true` —— 每次打印都会把调用方设的静音**重新打开**，
     // 诊断窗口因此失效。trace 的开关应在入口显式设，不该藏在日志钩子里。
     board.trap.recordLogCaller(@returnAddress());
+    log_hook_calls +%= 1;
+    if (log_hook_silent) return; // 对照实验：只计数，不写 UART
     if (!verbose and std.mem.startsWith(u8, msg, "osal> ")) return;
     const uart_fifo: *volatile u32 = @ptrFromInt(0x2038_A000); // UART_FIFO
     const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS
