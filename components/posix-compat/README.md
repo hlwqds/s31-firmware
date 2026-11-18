@@ -7,15 +7,31 @@
 
 | 层 | 在哪 | 形态 |
 | --- | --- | --- |
-| 调度器（抢占、优先级、WaitList） | `practice/zig-esp32-s31/ch10/ch11` 的 `sched.zig` | **lab 内**，尚未成为组件 |
-| 互斥/信号量/事件组/队列/spin | `ch12-sync-primitives-ipc` 的 `mutex.zig`/`sem.zig`/`events.zig`/`queue.zig`/`spin.zig` | 同上；mutex 已支持优先级继承 |
+| **生产 OSAL：任务 + 调度器** | `components/bt-blobs/src/sched.zig`（310 行） | `taskCreate(stack, entry, arg)`、`currentContext`、`start`；协作式，已被 BLE blob 使用 |
+| **生产 OSAL：同步原语** | `components/bt-blobs/src/osal.zig`（1636 行） | `semInit/semPend(timeout)/semRelease/semGetCount/semDeinit`、`mutexInit/mutexPend(timeout)/mutexRelease/mutexDeinit`、`eventqPut/Get(timeout)`、`calloutInit/Reset`（软件定时器） |
+| 生产 Wi-Fi OSAL | `components/wifi-blobs/src/osi_impl.zig`（1567 行） | Wi-Fi blob 的 osi 表实现（事件/定时器/锁），形状由 blob ABI 决定 |
+| 教学内核 | `practice/zig-esp32-s31/ch10/ch11/ch12` 的 `sched/mutex/sem/events/queue/spin` | 抢占 + 优先级继承的**教学**实现 |
 | socket 层（fd 表、状态机、errno 语义） | `s31-firmware/components/net-sockets` | **已是生产组件**，`Table` + `Socket` + `Io{err,n}` |
 | 时间基准 | `ch08`/`ch12` 的 tick（1 ms 周期） | lab 内；生产侧是 TIMG0（`hw.nowUs`） |
 | C 库 | 无 libc，ROM 提供 `memcpy`/`printf` 等 | 无 POSIX 头文件 |
 
-关键观察：**socket 层已经用 POSIX 的 errno 词汇**（`again`/`bad_fd`/`not_conn`/`conn_reset`/
-`pool_full`/`in_progress`）和 `Io = {err, n}` 结果类型 ⇒ POSIX 兼容层的这一半只是**薄适配**，
-不是重新实现。而**内核那一半**（线程、条件变量）目前只活在 lab 里。
+关键观察（**2026-11-18 更正**）：本文件第一版写"内核只活在 lab 里"是**错的**。
+`components/bt-blobs` 里已经有一套**生产级 OSAL**，而且它比教学内核更贴近 POSIX：
+
+| POSIX | `bt-blobs` OSAL | 差距 |
+| --- | --- | --- |
+| `sem_init/destroy/post/getvalue/wait/trywait` | `semInit/semDeinit/semRelease/semGetCount/semPend(timeout)` | **几乎 1:1**，且 `semPend` 已支持超时（`sem_timedwait` 不用另造） |
+| `pthread_mutex_init/destroy/lock/unlock/trylock` | `mutexInit/mutexDeinit/mutexRelease/mutexPend(timeout)` | 同上；超时已在 |
+| `pthread_create` | `sched.taskCreate(stack, entry, arg)` | 缺 join/detach；调用方要自备栈 |
+| `mq_send/receive` | `eventqPut/eventqGet(timeout)` | 槽位式（`*Slot`）而非字节流 |
+| `timer_create` | `calloutInit/calloutReset(ticks)` | 固定周期，无 `itimerspec` |
+| `pthread_self` | `sched.currentContext` | ● |
+
+而 socket 层已经用 POSIX 的 errno 词汇（`again`/`bad_fd`/`not_conn`/`conn_reset`/`pool_full`/
+`in_progress`）和 `Io{err,n}` 结果 ⇒ 兼容层两半**都是薄适配**，不是重新实现。
+
+⚠️ 但这两套 OSAL **现在只服务各自的 blob**：作为组件私有文件存在，模块根是各自的 `selftest.zig`。
+复用它们需要先把 OSAL/sched 抽成独立组件（见 §6）。
 
 ## 2. 映射表
 
@@ -120,8 +136,33 @@ net-sockets（生产）        hw/tick（板级）
    "file exists in modules 'net_sockets' and 'net_sockets0'"。等接内核时把 socket 层的
    模块根统一（api 兼作组件根，并在 test 目标里特殊处理 `host_tests.zig` 的路径映射）再一起进。
 
-## 6. 下一步（线程与条件变量）
+## 6. 下一步（线程、条件变量、超时）
 
-需要先把 `ch10`–`ch12` 的内核提成组件（调度器 + mutex/sem/events/queue/spin），否则
-`pthread_*` 只能在假内核上自说自话。提上来之后本组件把 `sync/thread` 建在其上，
-`errno` 改为每 Task 一份（现在是一个全局，见 `errno.zig` 的说明）。
+**只有一条路**：把生产侧的 OSAL 抽成独立组件。不存在"只在 lab 里做一份"的选项 ——
+lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，lab 版永远进不了这里。
+
+**抽取成本（2026-11-18 实测，不是估计）**：`components/bt-blobs/src/{sched.zig, osal.zig}`
+合计 **1946 行**，依赖面只有 `std` + `builtin` —— **零 `board` 依赖**。全文件里与板级相关的
+只有三处，且都不需要改：两处注释（说明为什么**不**用 `board.hw.nowUs`、TRNG 由谁注入）、
+一处 `asm`（上下文切换本身）。时间、临界区、随机数已经是**注入钩子**
+（`hooks.now_ms` / `hooks.irq_save` / `hooks.irq_restore` / `rand_hook`），主机测试本来就这么跑。
+
+所以第一步是纯搬运 + 改模块根：
+
+| 步 | 内容 |
+| --- | --- |
+| 1 | 新建 `components/osal/`，搬 `sched.zig` + `osal.zig` + 一份 `host_tests.zig`（现在这 36 项用例属于 bt-blobs） |
+| 2 | `bt-blobs` 改为 `@import("osal_component")`（它的 `selftest.zig` 里 `run()` 继续调搬过去的实现） |
+| 3 | `posix-compat` 加 `sync.zig` / `thread.zig`，依赖这个组件 |
+
+搬完才能做：
+
+| 目标 | 落在哪 | 备注 |
+| --- | --- | --- |
+| `pthread_create/join/detach/exit/self` | `sched.taskCreate` + 新增 join（等待 Task 退出） | 栈由调用方给；`pthread_attr_setstack` 正好对应 |
+| `pthread_mutex_*` | `mutexInit/Pend/Release` | `trylock` 用 `mutexPend(0)` |
+| `sem_*` / `sem_timedwait` | `semInit/Pend(timeout)/Release` | **超时已支持**，只需把 `timespec` 换算成 tick |
+| `pthread_cond_*` | **要新写** | `eventq`/`event` 是信号量语义，不是条件变量；`cond_wait` 必须原子释放 mutex + 入等待队列，且 `cond_timedwait` 要能被打断 |
+| `poll` 超时 | 现版用 1 ms 轮询；接内核后改为等待 `eventqGet(timeout)` 或 tick 唤醒 | 现在是"睡一小步再看"，不是真等待 |
+
+`errno` 也要在那一步改成每 Task 一份（现在是模块级全局，见 `errno.zig` 的说明）。

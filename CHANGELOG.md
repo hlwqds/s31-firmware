@@ -46,6 +46,19 @@
   否则判废后 bootloader 回到 factory、而那里仍是 stage 构建，会立刻又被切走。
   新增构建开关 `-Dab-revert`。证据：`logs/c8-demo.log`（四段串口原文 + 尾部标注）。
 
+- **POSIX 兼容层第一版（2026-11-18）**：新增 `components/posix-compat/`，把 POSIX 接口映射到
+  现有实现。README 是**梳理**产物：逐接口列出「我们的对应物 / 状态（已有·语义要补·缺·不做）/
+  决定」，并纠正了一个错误结论 —— 生产侧早有 `bt-blobs` 的 OSAL（`semPend`/`mutexPend` 都**已
+  支持超时**），内核并非只活在章节目录里。
+  本版实现不需要内核的那一半：`errno`（Linux 数值 + 与 `net-sockets` 枚举的双射）、
+  `time`（`clock_gettime`/`nanosleep`/`usleep`/`sleep`，时钟与睡眠注入；`CLOCK_REALTIME`
+  明确 `EINVAL`，因为没有墙钟）、`addr`（`sockaddr_in` 16 字节布局与网络序端口）、
+  `fd`（`socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll`）。
+  共 **17 项**主机用例，含一条 `socket→bind→listen→SYN→ACK→accept` 的完整链路。
+  **只登记主机测试目标、不进镜像**：本版无板级行为变更，且其 `net_sockets` 模块与
+  `net_sockets` 组件模块包含同一批文件（同时进镜像会撞 Zig 的"一个文件属于两个模块"）。
+  `tests/baselines.json` 已加 `posix-compat: 17`。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
