@@ -2824,3 +2824,36 @@ bt probe: re-probing 0x2010B000 ...
 ⇒ 下一步应当是工程性决策，而不是继续调试：
 - 要么在裸机上补出 modem 前端上电/校准能力（`esp_phy` 那一层），使 `0x2010B000` 可访问；
 - 要么接受 BLE controller 在该板当前状态下不可用，把这一支从"待打通"降级为"依赖硬件前置"。
+
+## 剩余工作已收敛为一件事：给 PHY 提供校准路径（2026-11-18 收敛）
+
+前面几轮的结论汇合到这里：
+
+| 已完成 | 事实 |
+| --- | --- |
+| `g_phyFuns` 表 | 调用 `phy_get_romfunc_addr()` 后**被填上**（`0x2f07f944`） |
+| `esp_phy_enable(2)` | **正常返回**（ROM 函数，原先从没走到过） |
+| 但 `0x2010B000` | **仍不应答总线**（本轮复核：一读即挂） |
+
+⇒ 差的那一步是**校准**：`esp_phy_enable` 在 `s_is_phy_calibrated == false` 时会走
+`esp_phy_load_cal_and_init()` → `esp_phy_load_cal_data_from_nvs()` → **`nvs_open(PHY_NAMESPACE)`**。
+
+### 可执行方案（按顺序，每步都有唯一判据）
+
+1. **给 NVS 提供最小实现**，只为 PHY 命名空间服务：
+   - `nvs_open("phy", NVS_READONLY, &h)` → 返回 `ESP_ERR_NVS_NOT_FOUND`（**故意**，触发全量校准）；
+   - `nvs_get_blob(...)` → 若被调用，返回 `ESP_ERR_NVS_NOT_FOUND`、长度置 0；
+   - `nvs_close/erase_key/commit` → 空实现返回 `ESP_OK`。
+   - **判据**：串口出现"校准开始"一类日志，或 `s_is_phy_calibrated` 变为 true，且**不再**在
+     `nvs_open` 处返回错误码后直接跳过校准。
+2. **确认走了全量校准分支**：`PHY_RF_CAL_FULL = 2`（仓库已记录该模式可用）；
+   若代码在 `NOT_FOUND` 时回退到"跳过校准"，则改为返回"空数据但成功"，迫使它按全量校准初始化。
+3. **验证块可访问**：用默认关闭的 `reprobe_ble_block` 开关再读一次 `0x2010B000`。
+   - **判据**：能打印出 `0x2010B000 = 0x… (survived)` ⇒ 这堵墙破了，BLE controller 可以继续。
+   - 若仍挂 ⇒ 校准不是唯一条件，需回到 `MODEM_PWR`/`MODEM_SYSCON` 的电源域使能序列逐位核对
+     （仓库已有三轮寄存器对拍的记录可直接复用）。
+
+### 为什么不再继续调锚点链
+
+`anchor[9]`/`FzF1`/`-6` 闸门这些都是**同一堵墙的早期症状**：越过闸门只会更快撞到 `0x2010B000`。
+先让块可访问，再回头处理 `task_init` 的发布顺序，才有观测价值。
