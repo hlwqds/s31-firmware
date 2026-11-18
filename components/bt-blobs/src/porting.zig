@@ -199,7 +199,7 @@ var lp_clock_enabled: bool = false;
 /// **PHY 频域使能**（移植自 wifi 侧已验证序列，默认关闭）。
 /// 与 wifi 的关键差异：**保留 `LPCON_FORCE_ON` 的 `I2C_MST_FO`(bit2)** —— BLE 的 PHY 寄存器
 /// 走模拟 I2C 主控，wifi 侧那条 `LPCON+0x18←0x1` 会把 bit2 清掉，**不能照抄**。
-pub var phy_domain_enable: bool = true; // 测试
+pub var phy_domain_enable: bool = false; // 默认关（基线可复现）；推进需改源码重建
 
 pub fn phyDomainEnable() void {
     if (!phy_domain_enable) return;

@@ -30,6 +30,7 @@ extern var g_abort_ra: u32;
 
 /// 供 C 侧 abort 桩调用：在崩溃瞬间把状态导出（不 halt）。
 export fn probe_dump_now() void {
+    dump_done = false;   // abort 时刻必须能再次导出（否则被 once-only 门挡住）
     dumpAtPend();
 }
 const config = @import("config.zig");
