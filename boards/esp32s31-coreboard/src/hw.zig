@@ -369,12 +369,23 @@ pub export fn bt_mmio_write(addr: usize, val: u32) void {
 /// 当 FIFO 不再排空时，这条路**不会把调用者挂死**——panic 路径尤其需要这个性质。
 /// 有界写：FIFO 满时最多自旋 20000 次就放弃，**绝不阻塞**。
 /// 与 `rawLine` 的区别是不追加换行，供 `log.line` 使用。
+/// `rawWrite` 内部计数器（**唯一可信的停滞期观测**：不依赖 dump 之后的读数）。
+pub var rw_calls: u32 = 0;
+pub var rw_bytes: u32 = 0;
+pub var rw_drops: u32 = 0;
+pub var rw_max_fifo: u32 = 0;
+
 pub fn rawWrite(msg: []const u8) void {
     const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
     const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
     // **整条消息先等足够空间**，再逐字符写。
     // 旧实现按"FIFO 里 ≥120 才等"，而 FIFO 只有 128 B ⇒ 一行 30 B 必然写不完，
     // 后半截被丢（本会话最大的观测陷阱：step 日志/轨迹/里程碑全被截断）。
+    rw_calls +%= 1;
+    {
+        const used0 = (status.* >> 16) & 0xFF;
+        if (used0 > rw_max_fifo) rw_max_fifo = used0;
+    }
     const need: u32 = @intCast(msg.len);
     var w: u32 = 0;
     while (w < 5_000) : (w += 1) {   // 上限压到 5 000（原来 200 000 会在 FIFO 被占时每次烧 ~1 ms）
@@ -384,8 +395,9 @@ pub fn rawWrite(msg: []const u8) void {
     for (msg) |ch| {
         var spins: u32 = 0;
         while ((((status.* >> 16) & 0xFF) >= 126) and spins < 5000) : (spins += 1) {}
-        if (spins >= 5000) return;
+        if (spins >= 5000) { rw_drops +%= 1; return; }
         fifo.* = ch;
+        rw_bytes +%= 1;
     }
 }
 
