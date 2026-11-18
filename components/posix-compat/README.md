@@ -112,7 +112,7 @@
 
 ## 3. 本版范围（可验证优先）
 
-做（11 个模块，**85** 项主机用例）：
+做（**10 个模块**，11 个源文件 —— 多的那个是 `host_tests.zig`；**85** 项主机用例）：
 
 - `errno`（每 Task 分槽）· `time`（clock_gettime/nanosleep/clock_getres）·
   `addr`（`sockaddr_in` 编解码 + 每 fd 地址表）·
