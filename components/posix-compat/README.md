@@ -165,9 +165,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**66 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 7** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 66`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**67 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 8** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 67`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -214,7 +214,7 @@ const Slot = struct {
 | --- | --- | --- |
 | ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`；`wake` 统一注入在 `sync.bindHooks` | — |
 | ~~多等待者 / 与 BLE 共用静态池~~ | ✅ 已解除：`sync.zig` 自持计数 + FIFO 队列，不再用 `osal.Sem` 的槽位 | — |
-| 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
+| 阻塞式 `accept`/`connect` | 两个硬前提（**先满足才有意义**）：① RX 泵与调用者必须是**不同任务** —— 本仓的 RX 就是调用者那个任务在 `emac.rxPollCopy` 里喂 `Table`，阻塞 `accept` 会把喂它的那个任务停住 ⇒ 自死锁；② `Table` **没有通知路径**，没人告诉等待者"连接到了"，需要 socket 层加钩子（动生产代码），否则只能退化成"轮询+睡眠"，那不是阻塞 | 判断依据见 `waitq` 的落点原则 |
 | ~~`sem_timedwait` / `mutex_timedlock`~~ | ✅ 已完成：`timer.zig`（侵入式到期链表）+ `sync.pump()`。**契约**：应用每个 tick 调一次 `pump()`，否则定时等待永不到期；未绑时钟钩子则 `ENOSYS` | — |
 | `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |
 | 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
