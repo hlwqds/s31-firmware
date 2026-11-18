@@ -466,7 +466,7 @@ var pc_ring_n: u32 = 0;
 pub var sample_quiet: bool = false;
 
 /// ISR 重装用的周期（µs）。**不能用硬编码 2000**：调用方设的短周期会在第一个 tick 后失效。
-pub var sample_period_us: u32 = 0x7fff_ffff; // 对照实验：让采样器几乎不再触发（约 35 分钟一次）
+pub var sample_period_us: u32 = 2000;
 
 /// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
 pub var extra_dump: ?*const fn () void = null;
