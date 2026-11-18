@@ -3722,3 +3722,42 @@ bt lp: … win: clkrst +0x03c = 0x0000000f      <- step 5 已执行
 我们从未使能的那一步。补齐后再跑同样这一次，判据仍是那一行 `PHY enabled AFTER` 是否出现。
 
 `phy_before_clocks` 开关保留（两种顺序都已实测），默认按 IDF 顺序。
+
+## `WITH_PHY=1` 版在 **PMU 转储阶段**就停（2026-11-18 最后一次板测，条件已修正）
+
+前一轮的两个污染已排除：镜像确认为 `WITH_PHY=1`（**811 216 B**，非 ROM 版的 798 672 B），
+且 `probe_stop_at_tick = 0`（关闭，它此前从开机起算并 halt，吃掉了多轮实验）。
+
+结果：
+
+```
+pmu+0x1dc = 0x028804b0
+pmu+0x1e0 = 0x00000008
+pmu+0x1e4 = 0x00000028
+（此后无输出；`enter step` 行数 = 0）
+```
+
+⇒ **带 IDF PHY 对象的镜像在 `dumpBootState()` 的 PMU 转储阶段就停止，bringup 一步都没开始** ——
+与 README 早先记录"给 IDF 7 个 PHY 对象时镜像会死在 bringup 之前"**完全一致**。
+
+⇒ 因此"PHY 顺序"实验在 `WITH_PHY=1` 下**根本测不到**：流程到不了 step 5。
+⇒ 上一轮"顺序修正后仍卡在 `initPhy()`"的结论**作废**（那轮测的是 ROM 版镜像，镜像号 798 672 B 已证）。
+
+### 现在的真实边界（两条互斥的路径）
+
+| 路径 | 现状 |
+| --- | --- |
+| **默认（ROM PHY）** | init 能跑到 `Xpuq`，卡在 `0x2010B000` 首读（已闭环验证） |
+| **`WITH_PHY=1`（IDF PHY）** | 死在 PMU 转储阶段，连 bringup 都进不去 |
+
+### 建议的下一步（更可控的一条）
+
+**不要继续让 IDF PHY 在缺依赖的环境里自己跑**。仓库里已有在 S31 上跑通的 PHY 使能序列可直接移植：
+
+- `components/wifi-blobs/src/init_probe.zig:688-696` = IDF `modem_clock_module_enable(PERIPH_PHY_MODULE)`
+  的 S31 等价物（SOC_PLL_SOURCE_CG `0x2058_71E0←0x3d`；MODEM_ADC_COMMON_FE 的 FE_APB/FE_80M；
+  MODEM_PRIVATE_FE 的 FE_160M/FE_DAC/FE_PWDET_ADC/FE_ADC）；
+- `components/wifi-blobs/src/osi_impl.zig:1082-1106` 的 `shellPhyEnable` 给出完整顺序
+  （ICG `0x2010_9C0C←0x64646400` → `phy_*_enable_set(1)` → `set_bb_wdg` → 首次 `register_chipv7_phy` → 重申 CLK_CONF1）。
+
+把这一套搬进 BLE 的 `btdmLpEnableClock`/`initPhy`，比让 IDF PHY 自己跑可控得多。
