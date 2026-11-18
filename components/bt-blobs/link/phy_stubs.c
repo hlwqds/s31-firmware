@@ -127,14 +127,7 @@ void *calloc(size_t n, size_t sz)
 {
     /* 阳性对照已完成：见 README；此处保持空实现，避免干扰正常运行。 */
     size_t total = n * sz;
-    if (total == 1904) {
-        g_c_count++;   /* RAM 计数；不再写裸字节（会淹没 128 B FIFO） */
-        unsigned slot = g_phy_cal_next & 3u;   /* **4 槽轮转**：避免别名 */
-        g_phy_cal_next++;
-        uint8_t *b = (uint8_t *)g_phy_cal_buf[slot];
-        for (size_t i = 0; i < total; i++) b[i] = 0;
-        return (void *)b;
-    }
+    /* carve-out 已移除：arena 376 KiB 已足够（2026-11-19 验证用） */
     void *p = s31_btdm_malloc((uint32_t)total);
     if (p) {
         uint8_t *b = (uint8_t *)p;
