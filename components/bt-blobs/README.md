@@ -8027,3 +8027,32 @@ if (!phy_before_clocks) {
 1. 在 `phyDomainEnable()` 与 `initPhy()` 之间各加一个 **RAM 标记**（不依赖 UART），定位是哪一个；
 2. 若在 `initPhy()`（即 `register_chipv7_phy`），则已知它在 `phy_pwdet_tone_start` 一族里轮转，
    需按 `g_phyFuns` 表定位间接调用（唯一剩余离线手段）。
+
+## FIFO 算术：为什么只看得到 `enter step 1`（2026-11-19）
+
+`enter(1..5)` 在同一瞬间连发 5 行，每行约 30 B ⇒ **5 × 30 ≈ 150 B > 128 B FIFO**
+⇒ 溢出窗口里**只有第一行活下来**。
+
+这一条同时解释三件事：
+
+| 现象 | 解释 |
+| --- | --- |
+| 只见 `enter step 1` | FIFO 只容得下第一行 |
+| PC 样本在 PHY 校准环 | `prepareMempool` 是纯 Zig 软件函数，**物理上产生不了 `0x2f82xxxx` 的 PC** |
+| `bringup.zig:95` 的历史记录"挂 `r_btdm_task_init` 时日志停在 step 5 之后" | 同为日志被淹 |
+
+⇒ **"日志停在 step N"永远不能用来判挂点**，这是本项目反复踩到的坑。
+
+### 一次尝试失败（记录）
+
+想用 `pc_snap` 环打有序 PC（一行 8 条）来判断重试周期结构，
+但 one-shot 触发相位下 `pc_snap_n = 0` ⇒ 输出 `Sn=0`，**该路不通**（环在该时点未积累）。
+
+### 终审手段（唯一有判别力的）
+
+在 `enter(2)` 之前与 `enter(6)` 之前各放一枚**直写 UART THR** 的裸标记
+（绕开 `logPublic` 与 FIFO）：
+
+- 第一枚出现 ⇒ 证明"日志被淹"而非"没执行"；
+- 第二枚出现 ⇒ 证明执行真到了 step 6；
+- 若第一枚有、第二枚无 ⇒ 挂点在 step 2–5 之间（含 PHY 块）。
