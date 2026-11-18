@@ -282,6 +282,20 @@ pub fn build(b: *std.Build) void {
         if (m.group == .net) t.root_module.addImport("net_tcp", tcp_mod);
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+    // posix-compat 只登记**主机测试**，不进镜像：
+    //   - 本版（errno/time/addr/fd）没有板级行为变更，README 的"本版范围"写明板上验收
+    //     留到接内核那一步；
+    //   - 它需要 `net_sockets` 模块，而 `net_sockets` 组件模块（selftest 根）与这个 api 模块
+    //     包含同一批文件 —— 同时进镜像会撞 Zig 的"一个文件属于两个模块"。
+    {
+        const t = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path("../components/posix-compat/src/host_tests.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }) });
+        t.root_module.addImport("net_sockets", socks_mod);
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
 
     // bt-blobs 的 OSAL 是纯逻辑，单独成主机测试目标；不起 app 的依赖
     // （归档链接是 opt-in 的 -Dbt-blob-*，常规构建里这个组件不参与）。

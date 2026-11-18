@@ -10,6 +10,7 @@
     "net-tcp": 36,
     "net-tls-http": 70,
     "net-udp-dhcp-dns": 50,
+    "posix-compat": 17,
     "wifi-blobs": 26,
     "wifi-boundary": 15,
     "wifi-connect": 20
