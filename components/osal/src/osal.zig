@@ -1325,6 +1325,9 @@ fn putByte(ch: u8) void {
 }
 
 pub var malloc_calls: u32 = 0;
+/// 每次分配的 (size, 返回值) —— 供 abort 时刻导出，指出"第几次、多大、失败"。
+pub var mc_sizes: [16]u32 = @splat(0);
+pub var mc_rets: [16]usize = @splat(0);
 pub var last_req_size: u32 = 0;
 pub var last_ret: usize = 0;
 
@@ -1334,6 +1337,10 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     const r = bt_arena.alloc(size, 8);
     // **判据**：PHY 校准的 1904 字节请求 —— 成功打 '+'、失败打 '-'（单字节，不会被 FIFO 丢）。
     last_ret = if (r) |v| @intFromPtr(v) else 0;   // **必须先赋值**（上一版在 dump 之后赋值 ⇒ 读到初值 0）
+    if (malloc_calls <= 16) {
+        mc_sizes[malloc_calls - 1] = size;
+        mc_rets[malloc_calls - 1] = last_ret;
+    }
     if (size == 1904) {
         if (dump_hook) |f| f();
     }
