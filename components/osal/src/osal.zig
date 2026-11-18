@@ -127,7 +127,7 @@ fn trace(comptime what: []const u8, args: anytype) void {
 /// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
 /// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
 var bail_sentinel: [64]u8 align(4) = @splat(0);
-pub var patch_bail_field: bool = false; // 已证伪：写 evq 首字不改变崩溃
+pub var patch_bail_field: bool = true; // 已验证：越过闸门；默认保留以便继续推进
 
 fn fillBailField() void {
     if (!patch_bail_field) return;
@@ -908,6 +908,7 @@ export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
+    logPublic("bt ret: eventq_init done", .{});
     // 判据补丁（实验）：必须在 `eventqInit` **之后**——`evq` 就是 `obj+8`（`c.addi a0,8`），
     // `eventqInit` 会写槽首字，放在前面会被它覆盖。
     // 判据补丁（实验）：`evq` 形参**就是**被检查的那个字（归档传的是 `obj+8`），
@@ -979,7 +980,7 @@ export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
     noteCaller();
     asm volatile ("fence iorw, iorw");
     const _r = mutexInit(mu);
-    logLine("bt hook: mutex_init => {d}", .{_r});
+    logPublic("bt ret: mutex_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
