@@ -134,17 +134,27 @@ var poison_buf: [64]u8 align(4) = @splat(0);
 pub var poison_anchor0: bool = false; // 基线：毒化可能自造崩溃，见 README
 /// 自测：故意往地址 0 写一次。用它的标签地址与 panic 报出的 mepc 比对，
 /// 判定这颗 CPU 的 store 异常是精确的还是会延迟上报。
-pub var selftest_store0: bool = false; // 已判定：store 异常不精确，见 README
+pub var selftest_store0: bool = false; // 标定完成：见 README
+
+var selftest_scratch: u32 = 0;
 
 export fn probeSelftestStore0() void {
+    // 标定延迟：坏写 -> fence -> 一次正常写（带标签）。
+    // 若 mepc 落在 fence 处，说明错误在 fence（写队列排空点）上报。
     asm volatile ("sb zero, 0(zero)");
+    asm volatile ("fence iorw, iorw");
+}
+
+export fn probeSelftestAfterFence() void {
+    const q: *volatile u32 = &selftest_scratch;
+    q.* = 0x1234;
 }
 
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     if (selftest_store0) {
-        board.log.line("selftest: store-to-0 at 0x{x}", .{@intFromPtr(&probeSelftestStore0)});
         probeSelftestStore0();
+        probeSelftestAfterFence();
     }
     if (poison_anchor0) {
         // +28 填有效指针：若 `lw a0,28(a5)` 的值被下游当指针用，崩点应随之后移。

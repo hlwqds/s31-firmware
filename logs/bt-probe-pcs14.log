@@ -1,0 +1,51 @@
+# [SANITIZED]
+�.�..�.���.��.���.�����.��...����.����.
+I�ESP-ROM:esp32s31-20251218.
+Build:Dec 18 2025.
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT).
+SPI mode:DIO, clock div:1.
+load:0x2f0740c0,len:0x168c.
+load:0x2f06a2b0,len:0xc7c.
+load:0x2f06cfb0,len:0x3368.
+entry 0x2f06a2ba.
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader.
+I (26) boot: compile time Nov 13 2026 21:42:42.
+I (26) boot: Multicore bootloader.
+I (28) boot: chip revision: v0.0.
+I (29) boot: efuse block revision: v0.2.
+I (32) boot.esp32s31: SPI Speed      : 80MHz.
+I (36) boot.esp32s31: SPI Mode       : DIO.
+I (40) boot.esp32s31: SPI Flash Size : 16MB.
+I (44) boot: Enabling RNG early entropy source....
+I (49) boot: Partition Table:.
+I (51) boot: ## Label            Usage          Type ST Offset   Length.
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000.
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000.
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000.
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000.
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000.
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000.
+I (98) boot: End of partition table.
+I (101) boot: Defaulting to factory image.
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=9d930h (645424) map.
+I (217) esp_image: segment 1: paddr=000ad958 vaddr=2f000800 size=000ach (   172) load.
+I (219) esp_image: segment 2: paddr=000ada0c vaddr=2f0008b0 size=0260ch (  9740) load.
+I (224) esp_image: segment 3: paddr=000b0020 vaddr=40100020 size=15570h ( 87408) map.
+I (244) esp_image: segment 4: paddr=000c5598 vaddr=2f002ebc size=0c960h ( 51552) load.
+I (256) esp_image: segment 5: paddr=000d1f00 vaddr=2f00f81a size=00064h (   100) load.
+I (258) esp_image: segment 6: paddr=000d1f6c vaddr=2f00f87c size=00110h (   272) load.
+I (261) esp_image: segment 7: paddr=000d2084 vaddr=2f00f98a size=00068h (   104) load.
+I (268) esp_image: segment 8: paddr=000d20f4 vaddr=2f00f9f0 size=0006ch (   108) load.
+I (276) esp_image: segment 9: paddr=000d2168 vaddr=2f00fa60 size=003f0h (  1008) load.
+I (287) boot: Loaded app from partition at offset 0x10000.
+I (287) boot: Disabling RNG early entropy source....
+selftest: store-to-0 at 0x4006a71a fence-end
+selftest: after-fence store at 0x4006a708
+!! mepc=0x40065bdc mtval=0x00000000 mstatus=0x00003801
+panic: exception code=7 (store access fault) cause=0x30000007
+panic: ra=0x40065bd4 a0=0x2f07aea1 a1=0x2a a2=0x770001
+panic: live mepc=0x40065bdc mtval=0x0
+panic: sp=0x2f07ae80 s0=0xa s1=0x40100000
+panic: regs a3=0x500000 a4=0x0 a5=0x271 a6=0x2a a7=0x270
+panic: tregs t0=0xa t1=0xf80000 t2=0x2038a000 t3=0x1000 t4=0x0 t5=0x2050037c t6=0x20500380
+panic: halted (wfi)
