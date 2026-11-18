@@ -401,7 +401,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
             var i: usize = 0;
             while (i < w.n) : (i += 1) {
                 const v = (@as(*volatile u32, @ptrFromInt(w.base + i * 4))).*;
-                if (v != 0) osal.logLine("win: {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
+                osal.logLine("bt bringup: win: {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
             }
         }
     }
