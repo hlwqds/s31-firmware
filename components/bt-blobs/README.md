@@ -3066,3 +3066,32 @@ bt ret: mutex_pend => 0            <- 成功，未超时、无死锁
 - 若采样也停止 ⇒ 总线挂起（与 `0x2010B000` 同类）。
 
 这正是仓库已有的 `s31-baremetal-irq-pc-sampler` 的用途，也是唯一还未用于此处的仪器。
+
+## 交接设计：ISR 侧存活探针（唯一未做的仪器）
+
+现状：所有 `bt ret:` 都在归档**主动调用我们**时才出现；静默期里归档不调 OSAL ⇒ 无输出是正常的。
+要判断"CPU 还在跑"还是"总线挂死"，必须让**定时器 ISR 自己打印**。
+
+### 设计（最小改动）
+
+1. `osal.noteCaller()` 里增加 `pub var last_hook: u32 = 0;`（写当前钩子编号）+ `last_hook_n: u32`；
+2. `trap` 的 T0 ISR 里，每 **N 次** tick（例如 5000 次 ≈ 10 s @2 ms）打印一行：
+   `logPublic("alive: hook={d} n={d} pc=0x{x}", ...)`，`pc` 取 `mepc` 实参；
+3. 判读分两支：
+   - **ISR 持续打印** ⇒ CPU 活着 ⇒ 看 `hook/last_hook` 与 `pc`，多落点在归档某函数 ⇒ 纯自旋（可离线定位）；
+   - **ISR 也停了** ⇒ 中断不再投递 ⇒ 总线挂死（与 `0x2010B000` 同族）。
+
+### 必需的开关状态（当前镜像已是这样）
+
+| 开关 | 值 | 原因 |
+| --- | --- | --- |
+| `publish_bohff_anchor` | `false` | 预发布会令 `JwHs` 短路返回 2 ⇒ 回滚 |
+| `patch_bail_field` | `false` | 会覆盖 `eventqInit` 写入的真实 `slot.p` |
+| `reprobe_ble_block` | `false` | 读 `0x2010B000` 会挂死系统 |
+| `sample_quiet` | `true` | 防止自身打印占满采样槽 |
+
+### 已知未覆盖点
+
+其余 wrapper 的 `logLine` 在 step 6 的 `trace_hooks=false` 下**全部被过滤**
+（`event_init`/`sem_*`/`free`/`eventq_put`/`wr_btdm_assert`…）⇒ 静默期里**可能还有 OSAL 调用**。
+上面第 1 条（`last_hook`）正是为了在不依赖日志的情况下也能看到"最后一次调用了谁"。
