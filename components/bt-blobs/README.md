@@ -9686,3 +9686,52 @@ if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 �
 | 观测手段 | 整行预留日志 + 保序 `caller_ring` + 行号判读 |
 | 已确证 | `eventInit`×2 与 `eventqInit` 均执行；停滞在其后 |
 | **待验证** | **`enter step 7` 是否出现** —— 这决定停滞函数的归属 |
+
+## ✅ 最后一悬置事实已确证：**`r_btdm_task_init` 没有返回**（2026-11-19）
+
+```text
+enter step 1 mempool
+enter step 3 btdm_external_init
+enter step 4 btdm_coex_init
+enter step 5 btdm_lp_enable_clock
+enter step 52 init_phy
+enter step 6 r_btdm_task_init     ← 最后一条，**没有 enter step 7**
+```
+
+⇒ **停滞确在 `r_btdm_task_init` 内部**（不是它返回之后的 step 7）。
+
+⇒ 这终结了"该函数是否已返回"的歧义（此前所有表述都默认了这一点但未验证）。
+
+## ⚠️ 一处方法学更正：`readelf -r` 必须**按节**读
+
+此前用 `readelf -rW <obj>` 直接取 `R_RISCV_CALL` 会把**所有节**混在一起
+⇒ 偏移对不上（同一偏移出现两个不同符号），据此推的调用序列**不可靠**。
+
+**正确做法**：
+
+```bash
+readelf -rW <obj> | sed -n '/\.rela\.text\.r_sym_bt_<NAME>/,/^$/p'
+```
+
+按此重读 `r_sym_bt_jH5mD2DMmyYTiDCZQCFd`（`16.o`）的真实调用序列：
+
+| 偏移 | 调用 |
+| --- | --- |
+| `0x1c` | `wr_btdm_osal_free` |
+| `0x2c` | `wr_btdm_osal_free` |
+| `0x4c` | `wr_btdm_osal_malloc` |
+| `0x60` | `memset` |
+| `0x70` | `wr_btdm_osal_malloc` |
+| `0x86` | `wr_btdm_osal_malloc` |
+
+⇒ 与之前"混表"得出的 `eventq_put ×2` 序列**完全不同** ⇒
+**此前关于 `jH5m` 的全部描述作废**，需按新序列重新解读。
+
+## 本会话交接（最终）
+
+| 项 | 值 |
+| --- | --- |
+| 停滞位置 | **`r_btdm_task_init` 内部**（已由 `enter step 7` 缺失确证）|
+| 已执行到 | `eventq_init`（`0x84`）**之后** |
+| 观测纪律 | 整行预留日志 + 保序 `caller_ring` + 行号判读 + **按节读重定位** |
+| 下一步 | 按新方法重走 `jH5m` 的真实序列，并继续 PC 环映射 |
