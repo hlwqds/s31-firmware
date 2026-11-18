@@ -8579,3 +8579,42 @@ T r_btdm_task_init
 ⇒ 下一步：在这两个对象里按**偏移**列出 `mutex_pend` 与 `event_init` 的具体调用点，
 定位到**函数符号**，再反汇编该函数看 `mutexPend`/`eventInit` **之后**还会调什么 ——
 **下一个该出现却没出现的调用**才是挂点。
+
+## 🏁 step 6 挂因：**把任务体当普通 init 函数直接调用**（2026-11-19）
+
+### 证据链
+
+| 检查 | 结果 |
+| --- | --- |
+| `libbtdm_common.a` 中引用 `r_btdm_task_init` 的对象 | **无**（`21.o` 只有分节名自引用）|
+| `libble_app.a` 中对 `r_btdm_task_init` 的未定义引用 | **0** |
+| 该函数的函数体（`21.o` 重定位表） | `eventq_is_empty` → `get_time_forever` → **`eventq_get`** → `event_run` |
+| 归档内没有任何地方把它注册为任务 | ⇒ **它由我们直接调用** |
+
+### 结论
+
+`r_btdm_task_init` **是一个事件循环函数体**（`eventq_get(FOREVER)` + `event_run`），
+而 `bringup.zig:322` 把它当普通 init 函数**直接调用**：
+
+```zig
+rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) else 0);
+```
+
+⇒ CPU 在 **init 栈上进入事件循环**，**永不返回** ⇒ 表现为"挂在 step 6"。
+
+### 这与其它已证事实完全一致
+
+| 事实 | 解释 |
+| --- | --- |
+| `osal.taskCreate` 入口日志 **0 次** | 我们从未创建任务，而是直接跑任务体 |
+| 轨迹 `mutexPend` → `eventInit ×2` | 任务体进入循环前的初始化（在 `r_sym_bt_*` 内部）|
+| `eventq_get` 在调度器未启动时**自旋 200 万次返回 null** | 所以不是永久阻塞，而是**反复空转** ⇒ 与"两环轮转"的采样分布一致 |
+| step 6 之后仍有日志（89 行） | 那些是 `r_btdm_task_init` **之前**或**异步**打的 |
+
+### 修法方向（两条，需确认 IDF 原意）
+
+1. **按 IDF 原意**：注册 `r_btdm_task_init` 为任务入口，由调度器运行
+   （`taskCreate(r_btdm_task_init, ...)` + `sched.startScheduler()`）；
+2. **或**让 bringup 不直接调用它，改为在**任务上下文**里调用。
+
+⇒ 需要先看 IDF 的 `btdm_task_init` 在 `esp_bt_controller_init` 路径里是**被创建为任务**还是**被直接调用**。
