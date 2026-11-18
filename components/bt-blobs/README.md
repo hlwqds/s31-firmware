@@ -14173,3 +14173,66 @@ enter step 15                                 ← 仍推进到 step 15
 | 撤回 | 58 |
 | 数据源错误 | 22 类 |
 | 自我纠正 | **181** |
+
+# 🎉🎉🎉 BLE 初始化**完成**（`bt bringup: INITED`）——随后在新位置崩溃
+
+## 实测（清理后镜像，`pc1bb.log`）
+
+```text
+bt bringup: enter step 15 hci_transport_init
+bt hci: transport ready (own ops, no VHCI ring)
+bt bringup: INITED                          ← **初始化完成！**
+!! mepc=0x4859e894 mtval=0x00000000 mstatus=0x00003881
+panic: exception code=2 (illegal instruction) cause=0x38000002
+panic: ra=0x4859e895 a0=0x0 a1=0xa a2=0x0
+```
+
+## 意义
+
+| 里程碑 | 状态 |
+| --- | --- |
+| BLE controller **init 完成** | ✅ **`bt bringup: INITED`** |
+| HCI transport 就绪 | ✅ `transport ready (own ops, no VHCI ring)` |
+| 之后调用非法地址 | ❌ `mepc=0x4859e894`（illegal instruction）|
+
+⇒ **本会话的根因（四项时钟配置）修好后，初始化第一次完整跑完。**
+
+## 新问题（与时钟无关，独立）
+
+| 项 | 值 |
+| --- | --- |
+| `mepc` | **`0x4859e894`** |
+| `ra` | `0x4859e895` |
+| 异常 | code=2 **illegal instruction** |
+| `mtval` | 0 |
+
+⇒ `0x4859e894` 落在 **`0x48xxxxxx`** 区间 —— 不是 IRAM（`0x400xxxxx`）、不是 ROM（`0x2f8xxxxx`）、
+不是 DRAM（`0x2f0xxxxx`）。
+
+⇒ 极可能是**未初始化的函数指针**（或未填充的锚点/表项）被当作函数调用。
+
+⇒ `ra = mepc+1` 说明是**直接跳转到该地址**（而非从它返回）。
+
+## 下一步（明确）
+
+1. 查 `INITED` 之后紧接着执行的是什么（`bringup` 里 `INITED` 那行之后）
+2. 定位 `0x4859e894` 这个值的来源：哪个结构体/锚点/表项提供了它
+3. 若它是**未填充的符号**（`r_sym_bt_*` 之一），则与早前"锚点发布"那条线汇合
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
+| 遗留问题 | `0x4859e894` 非法指令（新、独立）|
+| 代码修复 | 26 |
+| 诊断清理 | 4 |
+| 撤回 | 58 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **182** |
+
+### 一句话
+
+> **四项时钟配置修好后，BLE controller 初始化第一次完整跑完（`INITED`）。**
+> **之后在 `0x4859e894` 崩于非法指令 —— 这是一个新的、与时钟无关的问题。**
