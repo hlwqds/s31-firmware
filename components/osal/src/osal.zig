@@ -458,6 +458,8 @@ var eventq_pool: Pool(EventQ, 96) = .{};
 
 pub fn eventqInit(slot: *Slot) void {
     trace("eventqInit", .{});
+    evq_init_n += 1;
+    if (on_eventq_init) |f| f(evq_init_n);
     // 槽位已有状态就**复用**（IDF 的语义是 memblock 已属于本池就复用）——
     // 否则对同一槽位二次 init 会白漏一个池记录。
     if (slotGet(EventQ, slot)) |q| {
@@ -594,6 +596,9 @@ pub fn eventqRemove(qslot: *Slot, eslot: *Slot) void {
 
 /// 事件初始化回调（**运行期槽**，零链接耦合；bt-blobs 侧可挂调试钩子）。
 pub var on_event_init: ?*const fn (u32) void = null;
+/// 事件队列初始化回调（第几次）。
+pub var on_eventq_init: ?*const fn (u32) void = null;
+var evq_init_n: u32 = 0;
 var ev_init_n: u32 = 0;
 
 pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {

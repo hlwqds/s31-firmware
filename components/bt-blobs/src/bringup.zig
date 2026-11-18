@@ -214,6 +214,7 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
 
     @import("osal_kit").osal.on_event_init = &@import("probe.zig").bt_hook_event_init;
+    @import("osal_kit").osal.on_eventq_init = &@import("probe.zig").bt_hook_eventq_init;
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
     enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);

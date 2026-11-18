@@ -33,6 +33,13 @@ extern var g_c_count: u32;
 /// **周期性**打印 OSAL 计数器（不依赖任何触发点）。
 /// 停滞期间由 trap 的心跳反复调用 ⇒ 最后一行就是停滞时的计数。
 /// 第 2 次 `event_init` 时触发总 dump（**确定性**触发点，不依赖中断）。
+/// 第 1 次 `eventq_init` 时 dump —— 此时已越过 init 链早期，
+/// 计数器首次反映真实事件操作。
+pub fn bt_hook_eventq_init(n: u32) void {
+    if (n != 1) return;
+    probe_dump_now();
+}
+
 pub fn bt_hook_event_init(n: u32) void {
     if (n != 2) return;
     probe_dump_now();
