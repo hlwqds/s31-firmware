@@ -8,8 +8,8 @@
 > 3. 需要过程与反例时再读中间各节。
 >
 > **一句话现状**：三个根因（`anchor[8]` 自伤、PHY 域时钟缺失、容量缺口）**全部已修**；
-> `carve-out` 已移除，`.btdm_bss` 32→6 KiB + 新增 2 KiB `.phy_cal_buf`（同源洞）使 arena 保持 **376 KiB**（`_heap_start` 未动），`calloc(1,1904)` 从 arena 成功、**无 abort**。
-> 现状：**`enter step 1` 出现、无 abort**，PHY 校准在 ROM 中轮询 modem 寄存器（`s0=0x20100000`）。
+> `carve-out` 已移除，`.btdm_bss` 32→6 KiB + 新增 2 KiB `.phy_cal_buf`（同源洞，校准专用，**不占 arena**）⇒ arena 保持 **376 KiB**、`_heap_start` 未动、carve-out 已移除、`phy_before_clocks=false`，`calloc(1,1904)` 从 arena 成功、**无 abort**。
+> 现状：**`enter step 1` 出现、无 abort**，PHY 校准在 ROM 中轮询 **FE 块**（`s0=0x20100000` = `DR_REG_FE_BASE`）。
 > 剩余原因**未定位**（不写成"硬件握手"——本会话已两次把自身缺口误判成硬件墙）。
 >
 > 相关技能：`s31-ble-probe-bringup`（构建与判读）、
@@ -7162,3 +7162,35 @@ ps n=256 pc=0x2f8036ce s0=0x3 a0=0x7a1200 a1=0x1b
 | 另一轮采样恰好落在读指令上 | 增加采样密度 |
 
 ⇒ **`a1`/`a2` 是下一个可读的候选**，而它们已经在 `frame` 里（`frame.a1`/`frame.a2`）。
+
+## 🔴 重大更正：`s0=0x20100000` 是 **FE（前端）块**，不是 SYSCON（2026-11-19）
+
+本机 `reg_base.h` 实测：
+
+```
+MODEM_BASE                = 0x20100000
+DR_REG_FE_BASE            = MODEM_BASE + 0x0000   ⇒ **0x20100000 = FE 块**
+DR_REG_WIFI_MAC_BASE      = MODEM_BASE + 0x4000
+DR_REG_WIFI_BB_BASE       = MODEM_BASE + 0x7000
+DR_REG_MODEM_SYSCON_BASE  = MODEM_BASE + 0x9C00   ⇒ 0x20109C00
+```
+
+⇒ 我此前把 `s0=0x20100000` 当作 SYSCON 并推出"软件可修"——**这个推理作废**。
+⇒ 它是 **FE（front-end）块**，而本机 IDF **没有 FE 的寄存器头文件**
+   （只有 `modem/{syscon,lpcon,widgets,i2c_ana_mst}_reg.h` 与 `reg_base.h`）。
+⇒ 因此 `0x201000xx` 处的寄存器**无法离线命名**，也不能断言"我们能编程"。
+
+### 现在能说的与不能说的
+
+| 可以说 | 不能说 |
+| --- | --- |
+| 校准在 **FE 块**（`0x20100000` 起）等待 | 它等的是哪个寄存器 |
+| `a0` 是循环计数（已否证是偏移） | 它是"时钟/复位"还是"RF 就绪" |
+| `a1=0x0`（该样本的操作数） | 该位是否由我们满足 |
+
+### 下一步（唯一可行）
+
+**从厂商自己的轮询代码取地址**：IDF 的 `esp_phy` 满校准路径必然读某个 FE 状态位，
+在 `~/esp/esp-idf/components/esp_phy/src/` 与 `hal/esp32s31/` 里 grep
+`cal_done`/`rf_cal`/`0x201000` 即可拿到**寄存器名与偏移**，
+再把我们的 ROM 采样点对应到那个函数。
