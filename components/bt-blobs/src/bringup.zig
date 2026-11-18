@@ -216,8 +216,9 @@ pub fn init(cfg: *config.Config) c_int {
     // 若无条件执行，**每一次正常运行都会死在它上面**（本轮就是这样，白白丢了几轮板测）。
     if (@import("builtin").target.os.tag == .freestanding and (@import("probe.zig").ble_block_experiment or @import("probe.zig").bt_block_read_only)) {
         osal.logPublic("bt probe: control read 0x20109C04 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*});
-        osal.logPublic("bt probe: BT_BLOCK_PROBE reading 0x2010B000 ...", .{});
-        osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_B000))).*});
+        osal.logPublic("bt probe: M1 before-read {d}", .{1});
+        const bv = (@as(*volatile u32, @ptrFromInt(0x2010_B000))).*;
+        osal.logPublic("bt probe: M2 after-read = 0x{x:0>8}", .{bv});
     }
     // **静默高频采样窗口**：step 6 里归档不打印，而我们自己的打印会占满采样
     //（本板 TX FIFO 停在 128）⇒ 先静默、把 T0 提到 ~100 µs，只把 PC 记进环。
