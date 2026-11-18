@@ -4271,3 +4271,24 @@ s9792.416.419.1            <- 仍在增长
 2. 据此把 `phy_stubs.c` 的 NVS 行为从"NOT_FOUND"改成"返回成功 + 空 blob 长度 0"，
    或直接让 `s_is_phy_calibrated` 初值为 false 走全量校准；
 3. 判据：出现校准完成标志（或 `esp_phy_enable` 返回），随后 `0x2010B000` 可读。
+
+## `abort` 已加标记；复现需 `phy_domain_enable=true`（2026-11-19 收尾）
+
+| 事实 | 值 |
+| --- | --- |
+| `abort` 符号 | `0x40067094`，**size = 2**（`for(;;){}` 编译成 2 字节自跳转） |
+| `ra=0x40000672` | 该处是 `jal esp_log_timestamp`（**日志调用**，不是 abort 调用点） |
+| 结论 | 采样落在 `abort` 的自旋里，但 `ra` 指向 PHY 的日志路径 ⇒ 断言来自 PHY 校准内部的日志/检查 |
+
+已在 `phy_stubs.c` 的 `abort` 里加**入口标记**（连续写 8 个 `'A'` 再自旋），
+这样"到达 abort"与"卡在别处"在串口上可区分。
+
+⚠️ **复现条件**：必须 `phy_domain_enable = true`（默认 `false` 是基线，会早停在 `Xpuq`）。
+本轮用默认（false）构建跑，自然看不到 `A`。
+
+**下一轮的固定动作**：
+1. 把 `phy_domain_enable` 置 `true`（改源码 → 重建，它在 ReleaseSmall 下会被常量折叠，运行时可翻无效）；
+2. 抓串口，看是否出现 `AAAAAAAA`；
+   - 出现 ⇒ PHY 断言成立，下一步在 `esp_phy_load_cal_and_init` 里找那条断言的上游判据；
+   - 不出现 ⇒ CPU 卡在别处（用 1 字节心跳 + 码数导出定位）；
+3. 测完把开关改回 `false` 再提交（保持基线可复现）。

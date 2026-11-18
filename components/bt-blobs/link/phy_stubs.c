@@ -123,7 +123,13 @@ int esp_log_default_level = 0;
 /* ------------------------------------------------------------------ */
 /* 其余桩                                                              */
 /* ------------------------------------------------------------------ */
-void abort(void) { for (;;) {} }
+void abort(void) {
+    /* 先写一个标记再自旋：否则"到了 abort"与"卡在别处"在串口上无法区分。 */
+    volatile unsigned *fifo = (volatile unsigned *)0x2038A000;
+    volatile unsigned *stat = (volatile unsigned *)0x2038A01C;
+    for (int i = 0; i < 8; i++) { unsigned sp = 0; while (((*stat >> 16) & 0xFF) >= 120 && sp < 40) sp++; if (sp < 40) *fifo = 'A'; }
+    for (;;) {}
+}
 void _esp_error_check_failed(int rc, const char *file, int line, const char *func, const char *expr)
 {
     (void)rc; (void)file; (void)line; (void)func; (void)expr;
