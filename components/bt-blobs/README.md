@@ -10755,3 +10755,59 @@ grep -n "log.line\|log.raw" components/bt-blobs/src/bringup.zig | head -20
 | `rawWrite` 占 85–96% CPU | ✅ **归因已核实** |
 | 调用者 | ❓ **未知**（静音期不该有调用）|
 | 与"输出仅 224 行"的矛盾 | ❓ 未解 |
+
+## 最后的判定方法（一行，下一位接手者的第一步）
+
+### 事实
+
+`probe.zig:261/265` 已有两个计数器：
+
+```zig
+log_hook_calls +%= 1;                              // 所有进入钩子的消息
+if (startsWith(msg, "bt ")) log_hook_ours +%= 1;   // 我们自己的短行
+```
+
+而 `probe.zig:287-292` 的直接 FIFO 写是**归档消息**的路径（不经 `hw.rawWrite`）。
+
+### 待判定
+
+`hw.rawWrite` 占 85–96% CPU，但在静音窗口里**理论上无人调用**
+⇒ 存在一个**未知的高频调用者**。
+
+### 三步验证（各一行）
+
+1. 把 `log_hook_calls` / `log_hook_ours` 加进 `dumpAtPend` 的 `Q` 行；
+2. 同时读 UART 的 `TXFIFO_CNT`（`0x2038A01C` bits[23:16]）与 `FBR`（`0x2038A018`）——
+   `TXFIFO_CNT` 常驻接近 128 ⇒ FIFO 被占；
+   `FBR` 与 115200 的分频不符 ⇒ **UART 时钟被改**（与 tick 慢 58 倍可能是同一原因）；
+3. `grep -n "log.line\|log.raw" components/bt-blobs/src/bringup.zig`
+   ⇒ 找在 step 5–6 之后仍执行的打印语句。
+
+### 判读表
+
+| `log_hook_calls` | `log_hook_ours` | `TXFIFO_CNT` | 结论 |
+| --- | --- | --- | --- |
+| 巨大 | 小 | 高 | 归档高频打印 ⇒ FIFO 被占 ⇒ 我们的写入等待 |
+| 巨大 | 巨大 | 高 | 我们自己的高频打印 |
+| 小 | 小 | 低 | **归因有误**，`rawWrite` 的热度另有原因 |
+
+## 本会话最终账目
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 11 |
+| 已确证事实 | 8 |
+| 撤回 | 22 |
+| 自我纠正 | 139 |
+
+### 三个真实、可复用的修复
+
+1. **`hw.rawWrite` 整行预留**（上限 5 000）—— 日志行不再被截断
+2. **`dumpLine` → `rawLineBlocking`** —— dump 42 行完整落盘
+3. **`samplePcs` 替代 `pc_snap`** —— 采样源修正（此前一直读错缓冲）
+
+### 唯一可复用的方法论
+
+> **先证明观测通道在采它宣称采的东西，再解读内容。**
+
+本会话 22 次撤回全部源于违反这一条。
