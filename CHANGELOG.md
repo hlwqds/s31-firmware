@@ -145,9 +145,10 @@
 
 - **`fcntl`（2026-11-18）**：`fd.fcntl` 实现 `F_GETFL`/`F_SETFL`，只认 `O_NONBLOCK`
   （`net_sockets` 的 socket 只有 `nonblocking: bool` 这一个开关，没有 `O_APPEND`/`O_ASYNC` 的概念）；
-  其它位与命令返回 `EINVAL`，坏 fd 返回 `EBADF`。补它的原因是本轮对账发现 README 把
-  `fcntl(O_NONBLOCK)` 标成 ●（"已有"）而**代码里根本没有这个函数** —— 非阻塞应用的必备 API。
-  1 项新用例（总计 **86**）。
+  其它位与命令返回 `EINVAL`，坏 fd 返回 `EBADF`。**清除 `O_NONBLOCK` 也被拒绝** —— `Socket.nonblocking`
+  只是展示字段（socket 层从不读它），允许清除会让调用方以为 fd 阻塞而 `recv` 仍 `EAGAIN`。补它的原因是本轮对账发现 README 把
+  `fcntl(O_NONBLOCK)` 标成 ●（"已有"）而**代码里根本没有这个函数** —— 非阻塞应用的必备 API。同时修正 `poll` 行：
+  `timeout_ms < 0` 是立即返回，不是 POSIX 的永久等待。1 项新用例（总计 **86**）。
 
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）

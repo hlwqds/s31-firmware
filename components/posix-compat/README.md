@@ -98,9 +98,9 @@
 | `shutdown` | `closeHalf` | ● |
 | `close` | `Table.close` | ● |
 | `read` / `write` | `fd.read` / `fd.write`（同 `recv`/`send`） | ✅ 已完成 |
-| `select` / `poll` / `epoll` | `fd.poll`（单次、非阻塞） | ✅ `poll` 已完成；`select`/`epoll` 不做 |
+| `select` / `poll` / `epoll` | `fd.poll` | ◐ **有超时**（按注入时钟 1 ms 步长轮询，可主机测试）；**`timeout_ms < 0` 立即返回**，不是 POSIX 的「永久等待」 —— 阻塞式 poll 属于 §6.3 那类前置未满足的项。`select`/`epoll` 不做 |
 | `setsockopt` / `getsockopt` | — | — `SO_REUSEADDR`/`TCP_NODELAY` 无意义（我们只有一条连接、不聚合 Nagle），返回 `ENOPROTOOPT` |
-| `fcntl(fd, F_GETFL/F_SETFL)` | `fd.fcntl` → `Socket.nonblocking` | ✅ 已完成（只认 `O_NONBLOCK`；其它位/命令 `EINVAL`，坏 fd `EBADF`） |
+| `fcntl(fd, F_GETFL/F_SETFL)` | `fd.fcntl`（**本层无阻塞模式**） | ✅ `F_GETFL` 恒报 `O_NONBLOCK`；`F_SETFL` 只接受带 `O_NONBLOCK` 的请求，**想清除它 → `EINVAL`**（`Socket.nonblocking` 是展示字段，socket 层从不读它） |
 | 文件 I/O（`open`/`stat`/`fsync`…） | 无 VFS | — 不做（`ENOSYS`） |
 
 ### 2.5 错误

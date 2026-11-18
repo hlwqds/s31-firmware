@@ -270,8 +270,16 @@ pub fn close(fd: c_int) c_int {
 /// 等待靠注入的 `time`（`nanosleep`），所以主机测试是即时的。返回就绪个数；超时返回 0。
 /// `fcntl(fd, F_GETFL)` / `fcntl(fd, F_SETFL, flags)`。
 ///
-/// 只支持 `O_NONBLOCK`：`net_sockets` 的 socket 只有 `nonblocking: bool` 这一个开关，
-/// 没有 `O_APPEND`/`O_ASYNC` 之类的概念。其它命令返回 `EINVAL` 而不是假装成功。
+/// **本层没有阻塞模式**，所以这里只有一个正确答案：
+///
+/// - `F_GETFL` 永远报告 `O_NONBLOCK`（那是 `net_sockets` 的真实语义）；
+/// - `F_SETFL` 只接受**带 `O_NONBLOCK`** 的请求；试图**清除**它返回 `EINVAL`。
+///
+/// 为什么拒绝而不是"接受但忽略"：`Socket.nonblocking` 是**展示字段**（`socket.zig` 注明它只是
+/// 把契约打印出来，阻塞模式需要调度器让出 CPU，形态 B 没有），socket 层从不读它。
+/// 若在这里让 `F_SETFL 0` 成功，调用方会以为 fd 变成阻塞的，而 `recv` 依旧返回 `EAGAIN`
+/// —— 一个只有 POSIX 形状、没有 POSIX 语义的承诺，正是 ADR-002 里要避免的那类东西。
+/// 其它位（`O_APPEND`/`O_ASYNC`）与未知命令同样 `EINVAL`，坏 fd `EBADF`。
 pub fn fcntl(fd: c_int, cmd: c_int, arg: c_int) c_int {
     const t = tbl() orelse return -1;
     if (fd < 0 or fd >= max_fds) {
@@ -285,14 +293,15 @@ pub fn fcntl(fd: c_int, cmd: c_int, arg: c_int) c_int {
     }
     const s = slot(t, f);
     switch (cmd) {
-        F_GETFL => return if (s.nonblocking) O_NONBLOCK else 0,
+        // 本层没有阻塞模式：读回来永远是 O_NONBLOCK（见函数头）
+        F_GETFL => return O_NONBLOCK,
         F_SETFL => {
-            // 只认 O_NONBLOCK；其它位保留不了，就明确拒绝
-            if ((arg & ~O_NONBLOCK) != 0) {
+            // 只接受"保持非阻塞"的请求；清除 O_NONBLOCK 或带其它位都拒绝
+            if ((arg & O_NONBLOCK) == 0 or (arg & ~O_NONBLOCK) != 0) {
                 errno.set(errno.EINVAL);
                 return -1;
             }
-            s.nonblocking = (arg & O_NONBLOCK) != 0;
+            s.nonblocking = true; // 展示字段，实质不变
             return 0;
         },
         else => {
@@ -377,14 +386,15 @@ test "fd: fcntl 读写 O_NONBLOCK，非法命令与坏 fd 各有其码" {
 
     const s0 = socket(AF_INET, SOCK_STREAM, 0);
     try testing.expect(s0 >= 0);
-    try testing.expectEqual(O_NONBLOCK, fcntl(s0, F_GETFL, 0)); // 默认就是非阻塞
-    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_SETFL, 0)); // 切成阻塞
-    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_GETFL, 0));
-    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_SETFL, O_NONBLOCK)); // 再切回
+    try testing.expectEqual(O_NONBLOCK, fcntl(s0, F_GETFL, 0)); // 本层只有非阻塞
+    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_SETFL, O_NONBLOCK)); // 幂等
     try testing.expectEqual(O_NONBLOCK, fcntl(s0, F_GETFL, 0));
 
     errno.set(0);
-    try testing.expectEqual(@as(c_int, -1), fcntl(s0, F_SETFL, 0o2000)); // O_APPEND 之类
+    try testing.expectEqual(@as(c_int, -1), fcntl(s0, F_SETFL, 0)); // 想变阻塞 → 拒绝
+    try testing.expectEqual(errno.EINVAL, errno.get());
+    errno.set(0);
+    try testing.expectEqual(@as(c_int, -1), fcntl(s0, F_SETFL, O_NONBLOCK | 0o2000)); // O_APPEND
     try testing.expectEqual(errno.EINVAL, errno.get());
     errno.set(0);
     try testing.expectEqual(@as(c_int, -1), fcntl(s0, 99, 0));
