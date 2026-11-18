@@ -1308,6 +1308,19 @@ pub fn initArena(region: []u8) void {
     bt_arena.init(region);
 }
 
+pub fn arenaLargestFree() usize {
+    var best: usize = 0;
+    var addr = std.mem.alignForward(usize, @intFromPtr(bt_arena.buf.ptr), Arena.block_align);
+    const end = (@intFromPtr(bt_arena.buf.ptr) + bt_arena.buf.len) & ~(Arena.block_align - 1);
+    while (addr + @sizeOf(BlockHeader) <= end) {
+        const hdr: *Arena.Block = @ptrFromInt(addr);
+        if (hdr.magic != Arena.headerMagic) break;
+        if (hdr.free and hdr.size > best) best = hdr.size;
+        addr += hdr.size;
+    }
+    return best;
+}
+
 pub fn arenaFree() usize {
     return bt_arena.bytesFree();
 }

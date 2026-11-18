@@ -5483,3 +5483,35 @@ pub fn freeRaw(self: *Arena, ptr: ?*anyopaque) void {
 
 **下一步（一行）**：在 `Arena` 里加 `largestFree()`（遍历取 `max(hdr.size)`），
 与 `arenaFree()` 一起在 abort 时刻打出。
+
+## 🏁 SRAM 上限已由 IDF 自己的链接脚本确认（2026-11-19 终）
+
+`firmware/idf-bootstrap/build/esp-idf/esp_system/ld/memory.ld` 声明：
+
+```
+sram_seg : org = 0x2F000000, len = 0x7AFC0     <- 与我们用的窗口**完全相同**
+```
+
+⇒ **没有更多 SRAM 可用** ⇒ "扩大 sram 窗口"这条路**关闭**。
+⇒ 因此"堆不够"不能靠扩窗解决，只能**减少需求**或**把缓冲搬到别处**。
+
+### 但存在 PSRAM
+
+同文件里另有 `extern_ram_seg`（`0x50000000` 段）。若该 PSRAM 在本板可用，
+PHY 校准那 1904 字节可直接从 PSRAM 分配，而不占 SRAM 的 arena。
+
+### 两条可行的下一步（按成本排序）
+
+1. **实现 `freeRaw` 的相邻合并**（约 10 行）：若归档在失败前 free 过缓冲区，
+   合并后即可回收那缺失的 ~1 KB。这是**最可能真实有效**且改动最小的方案；
+2. **把大块搬到 PSRAM / `.btdm_bss`**：给 PHY 校准单独一个 1904 字节的静态缓冲
+   （`.btdm_bss` 预留 32 KiB，或 PSRAM），不走共享 arena。
+
+### 同时确认的数据（不变）
+
+| 项 | 值 |
+| --- | --- |
+| arena 总 | 356 KiB |
+| abort 时刻 `free` | 944 B < 请求 1904 B |
+| 分配器拓扑 | 单一（`calloc` → `s31_btdm_malloc` → arena） |
+| 栈 | 16 KiB（8 KiB 实测栈溢出，不可减） |
