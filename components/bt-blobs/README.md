@@ -1,3 +1,18 @@
+
+> ## 当前状态（唯一权威，2026-11-19）
+>
+> | 路径 | 现状 |
+> | --- | --- |
+> | **默认（ROM PHY）** | 已闭环：init 跑到 `Xpuq`(`0x4005fbc4`) → 其 `.L547` 循环首读 `0x2010B000` → 总挂死（离线逐条验证） |
+> | **`WITH_PHY=1`（IDF PHY）** | **结构性不可用**：`.iram_blobs` = `0x2f0008b0..0x2f0105e0` **覆盖锚点块 `0x2f00ffd0`** ⇒ 锚点读到的是指令字节（`40f2…`/`8082`） |
+>
+> **唯一剩余动作**：扩两段镜像窗口（技能记载 `libphy` 需 +140 KB），之后 WITH_PHY 路径才有意义；
+> 然后在 `btdmLpEnableClock` 里移植 `wifi-blobs` 已验证的频域使能
+> （`0x2058_71E0←0x3d` + CLK_CONF1 的 FE_* 位 + `I2C_ANA_MST`），**不要照抄 wifi 的 `LPCON+0x18←0x1`**
+> （那会清掉 bit2 `clk_i2c_mst_fo`，BLE 的 PHY 正是走模拟 I2C）。
+>
+> 以下历史章节按时间追加，凡与本块冲突的以本块为准。
+
 # bt-blobs —— BLE controller 归档在裸机镜像里的适配面
 
 把 IDF 的 BLE controller 归档（`libble_app` / `libbtdm_common` / `libbtbb` / `libphy`）
@@ -3788,3 +3803,23 @@ bt lp: …                                       <- step 5 执行了
 以及 `MODEM_ADC_COMMON_FE` / `MODEM_PRIVATE_FE` / `SOC_PLL_SOURCE_CG` 这几路频域使能 ——
 仓库里 `components/wifi-blobs/src/init_probe.zig:686-700` 已有这些的 S31 实测值（`0x2058_71E0←0x3d` 等），
 可直接移植到 `btdmLpEnableClock`。
+
+## 🔴 定案：`WITH_PHY=1` 结构性损坏 —— `.iram_blobs` 覆盖锚点块（2026-11-19）
+
+`readelf -S` 检查越过 `0x2f00ffd0` 的段：
+
+```
+OVERLAP .iram_blobs addr=0x2f0008b0 size=0xfd30 end=0x2f0105e0
+```
+
+⇒ `.iram_blobs`（`0x2f0008b0..0x2f0105e0`）**完全覆盖** 10 个 `r_sym_bt_*` 锚点所在的 `0x2f00ffd0..0x2f010000`。
+
+⇒ 板上 `bt anchors[before-phy]: 40f2ed8f 44d24462 80826105 …` 全是指令编码字节 —— 与重叠完全吻合。
+
+**因此**：
+- `WITH_PHY=1` 路径的所有读数（含"卡在 `initPhy()`"）**都建立在一个被覆盖的镜像上，不可用**；
+- 这印证了技能里记录的前置条件：**链 `libphy` 需要先扩两段镜像窗口（约 +140 KB）**，窗口从未扩过；
+- 默认路径（ROM PHY）不受影响（其 `.iram_blobs` 不越界，锚点读出的是有效指针 `0x2f0155b8` 等）。
+
+**下一步唯一有意义的工作**：扩窗（`s31.ld` 的两段 ORIGIN/LENGTH）→ 重新构 `WITH_PHY=1` →
+确认锚点块不再被覆盖（`readelf` 无 OVERLAP + 板上 anchor dump 为有效指针）→ 再谈 PHY 频域使能。
