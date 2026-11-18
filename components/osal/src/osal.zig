@@ -114,7 +114,7 @@ pub fn logLine(comptime fmt: []const u8, args: anytype) void {
 
 /// 前 N 次 OSAL 调用各打一行。板侧"卡在某次调用"时，最后一行就点名了那个调用
 /// （实测 `r_btdm_task_init` 会调 `get_time_forever` + `mutex_pend(FOREVER)`）。
-pub var trace_calls: u32 = 0;
+pub var trace_calls: u32 = 200;
 var trace_used: u32 = 0;
 
 fn trace(comptime what: []const u8, args: anytype) void {

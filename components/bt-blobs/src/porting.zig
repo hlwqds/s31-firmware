@@ -220,8 +220,11 @@ pub fn phyDomainEnable() void {
     //   +00 test_conf = 0x00000100
     //   +04 clk_conf  = 0x00201002  ← 模拟前端时钟（pwdet/adc/dac）
     //   +0c ICG(门控位图) = 0x64646400  ← apb/peri/wifi/bt/fe
+    // **注意**：这三行是本会话加的，且跑在 step 51 —— **晚于** step 5 的
+    // `btdmLpEnableClock()`（它已把 `+0x04` 置成 IDF 的 step-5 后值 `0x7e601002`）。
+    // 若在此写成 boot 值 `0x00201002`，会把 `0x7e400000`（modem/模拟域时钟位）**抹掉**
+    // ⇒ `0x2010B000` 立即不应答。这里只保留 `+0x04` 的**已有值**，不清位。
     (@as(*volatile u32, @ptrFromInt(0x2010_9C00))).* = 0x0000_0100;
-    (@as(*volatile u32, @ptrFromInt(0x2010_9C04))).* = 0x0020_1002;
     (@as(*volatile u32, @ptrFromInt(0x2010_9C0C))).* = 0x6464_6400;
     // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
     const fo: usize = 0x2010_9C08;
