@@ -11776,3 +11776,58 @@ MUTEX_EINVAL      = （无）
 ⇒ 若它是包装，则下一步查 `JwHs`（`0x9e`，84 B）与其子调用 `MDZbaj…`/`2VbAP…`（各 14 B，thunk）。
 
 ⇒ 更可能的落点：**`PsB8`（`0xc2`）或 `ZGgi`（`0xcc`）** —— 它们是环里**最后出现**的名字。
+
+## 结论的证据边界（重要澄清）
+
+### 三类读数，可信度不同
+
+| 读数 | 值 | 可信？ |
+| --- | --- | --- |
+| `Q2`（`DUMP3000` 窗口内）| `0 0 0` | ✅ **可信**（计数器为真实全局，停滞期测量）|
+| `MUTEX_EINVAL` | **0 次** | ✅ **可信**（`bt bringup:` 前缀，`logHook` 无条件放行）|
+| `osal> mutexPend` | 0 次 | ❌ **不可信** —— `trace_calls = 0`，trace **被关闭** |
+
+⇒ **结论只能基于前两条**：
+
+> `mutexPend` 若被调用并成功，`mutex_pend_ok` 必 ≥1；
+> 若走 EINVAL，`MUTEX_EINVAL` 必出现。
+> 两者皆无 ⇒ **`mutexPend` 从未被调用**。
+
+### 因此停滞位置确定
+
+```
+r_btdm_task_init:
+  0x40  r_sym_bt_OkE7MxSSqFt63m8XlU3d   ← **停滞在此函数内**
+  0x58  get_time_forever                 （返回常量，不会挂）
+  0x66  mutex_pend                       ← **从未到达**
+```
+
+而 `OkE7` 已执行到 `0x84`（`eventq_init` 在轨迹中出现过）⇒
+**停滞在 `OkE7` 的 `0x92`–`0xcc` 段**，其成员正是 caller ring 里最后出现的
+`PsB8qxrZXPdSUAqQMBRY`（`0xc2`）与 `ZGgifdtgyUnZ7f0ME7VH`（`0xcc`）。
+
+### 下一步（一条命令）
+
+```bash
+objdump -dr --section=.text.r_sym_bt_PsB8qxrZXPdSUAqQMBRY <21.o>
+objdump -dr --section=.text.r_sym_bt_ZGgifdtgyUnZ7f0ME7VH <9.o>
+```
+
+⇒ 找含**循环或寄存器等待**的那一个；若两者都是纯函数，
+则继续向下（它们的重定位目标）。
+
+## 本会话最终总计
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 15 |
+| 已确证事实 | 14 |
+| 撤回 | 30 |
+| 数据源错误 | 13 |
+| 自我纠正 | 145 |
+
+### 最后一条纪律（本会话第四次强化）
+
+> **"某条日志没出现"只有在确认它"能出现"之后才有意义。**
+>
+> `trace_calls = 0` 让 `osal>` 行**构造性地**不存在 —— 用它当证据就是第十三次同类错误。
