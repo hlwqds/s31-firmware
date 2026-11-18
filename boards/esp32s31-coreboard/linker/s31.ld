@@ -215,7 +215,7 @@ SECTIONS
     .btdm_data (NOLOAD) : ALIGN(16)
     {
         _data_start_btdm = .;
-        . = . + 0x1000;
+        . = . + 0x1000;   /* 4 KiB：减到 2 KiB 只让 free 涨 128 B（归档会吃光给它的空间）*/
         _data_end_btdm = .;
         _data_start_btdm_rom = _data_start_btdm;
     } > sram
