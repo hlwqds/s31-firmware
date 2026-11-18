@@ -183,8 +183,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **极短计数器行**：前 16 条打详细现场，之后每 64 条打一行 ≤24 字节的
         // `s=<n> pc=0x<x>`。目的：FIFO 压力小几个数量级，且计数**是否继续增长**
         // 直接判定"中断还在来（自旋）"还是"事务不退休（stall）"。
-        if (!sample_quiet and irq_count >= 16 and (irq_count % 64) == 0) {
-            if (ring_n_at) |g| log.line("s={d} pc=0x{x} lr={d} lc={d}", .{ irq_count, frame.mepc, g(), logc_at() }) else log.line("s={d} pc=0x{x}", .{ irq_count, frame.mepc });
+        if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) {
+            // **极短心跳**：< 16 字节，且每 512 tick 一条，避免 ISR 自己把 FIFO 灌满后停摆。
+            if (ring_n_at) |g| log.line("s{d}.{d}.{d}", .{ irq_count, g(), logc_at() }) else log.line("s{d}", .{irq_count});
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
         }
@@ -207,7 +208,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             if (m.len > 0) log.line("arch: {s}", .{m});
         }
     }
-    if (!sample_quiet and (irq_count % 64 == 0)) log.line("irq#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
+    if (!sample_quiet and (irq_count % 4096 == 0)) log.line("irq#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
