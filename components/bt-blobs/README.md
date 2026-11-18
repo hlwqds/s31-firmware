@@ -8837,3 +8837,28 @@ osal> eventInit
 回到 PC 采样：既然日志通道已可信、样本采集器也已解除门控，
 需要确认**采样在 step 6 之后是否仍在积累**——若不是，说明定时中断在该阶段被关，
 改用"在 `eventInit` 之后插入一个自旋计数器 + 周期打印"来定位。
+
+## 确认：`eventInit` 与 `eventqInit` 是两个不同 API（2026-11-19）
+
+| 行号 | trace 串 | 对应归档 API |
+| --- | --- | --- |
+| `osal.zig:460` | `eventqInit` | `wr_btdm_osal_eventq_init` |
+| `osal.zig:596` | **`eventInit`** | **`wr_btdm_osal_event_init`**（另一套） |
+
+而 `r_btdm_task_init`（`21.o`）的重定位表里是 **`eventq_init`**（`0x84`）。
+⇒ **轨迹里的 `eventInit ×2` 不来自 `r_btdm_task_init`**，而来自它调用的某个助手。
+
+### 现成的运行时证据（无需新插桩）
+
+`osal.zig:149-152` 定义了 `noteCaller()`，且**每个 `wr_btdm_osal_*` 包装的第一行就已经调用它**
+（`event_init`:960、`mutex_pend`:997、`mutex_release`:1005、`event_run`:954、`malloc`:1493、`task_create`:1505 …）。
+`probe.zig:564-567` 已实现把该环打成 `panic: osalcaller[i]=0x…`，但目前**只挂在 panic 路径**。
+
+⇒ **下一步只需一处接线**：在 step 6 的停止点调用同一个 dump（或 `probe_dump_now()`），
+即可拿到**最后 32 个归档 PC**（纯 RAM，不受 FIFO 影响）。
+再与 `nm app.elf` 对照 ⇒ 直接得到"停滞前最后到达的归档函数名"。
+
+### 交叉校验
+
+`wr_btdm_osal_event_init` 的包装里有**无条件** `logLine("bt hook: event_init")`（`osal.zig:962`）
+⇒ grep 捕获日志中该行的条数，应正好为 **2**，可与环的条数互验。
