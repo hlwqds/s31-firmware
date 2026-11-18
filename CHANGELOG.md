@@ -179,6 +179,13 @@
   `onReady` 因此加了 `sched.inMain()` 守卫，非主上下文的通知丢弃并计数
   （`fd.droppedNotifies()`），而不是破坏调度器。
 
+- **阻塞 `connect`（2026-11-18）**：`fd.connectBlock` —— 与 `acceptBlock` 共用就绪钩子。
+  关键点：钩子只报"有事情变了"，等待者**重查自己的 fd 状态**，所以与本次连接无关的唤醒
+  （别的 fd 收到数据）会被重查吸收；`accepted` 侧则要多一次 SYN-ACK 之前的重试。板级演示：
+  `connector` 任务阻塞 → 主上下文投 SYN-ACK → 唤醒 → 返回 0。`section: posix` 现为 **32/32**。
+  另外修了：未启用阻塞模式时两个阻塞调用**没有设 errno**（返回 -1 但 `errno` 还是旧值），
+  统一改为 `EAGAIN`。1 项新用例（总计 **90**）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

@@ -392,8 +392,43 @@ pub fn acceptBlock(listen_fd: c_int) c_int {
         const r = accept(listen_fd, null, null);
         if (r >= 0) return r;
         if (errno.get() != errno.EAGAIN) return -1;
-        const sem = g_ready_sem orelse return -1; // 未启用阻塞模式
+        const sem = g_ready_sem orelse {
+            errno.set(errno.EAGAIN); // 未启用阻塞模式：与"没能阻塞住"同码
+            return -1;
+        };
         if (sync.sem_wait(sem) != 0) return -1; // 未能阻塞：EAGAIN 已由 sync 置好
+    }
+}
+
+/// 阻塞版 `connect`：调用 `connect()` 拿到 `EINPROGRESS` 之后，等**这个 fd 自己**连上。
+///
+/// 与 `acceptBlock` 共用同一个就绪钩子 —— 钩子只说"有事情变了"，所以这里是
+/// `sem_wait → 重查自己状态 → 再等` 的形状。**与本次连接无关的唤醒会被重查吸收**
+/// （例如另一个 fd 收到数据），这正是"钩子只报事件、等待者自己判断"的好处。
+///
+/// 同一批前提：RX 泵在**主上下文**，调用者在**另一个任务**里。
+pub fn connectBlock(fd_: c_int) c_int {
+    const t = tbl() orelse return -1;
+    const f = fdOk(t, fd_) orelse return -1;
+    while (true) {
+        const st = slot(t, f).state;
+        switch (st) {
+            .established => {
+                addrs[f].connecting = false;
+                return 0;
+            },
+            .syn_sent => {},
+            else => {
+                // 连接失败/被重置：POSIX 用 ECONNREFUSED/ECONNRESET 表达
+                errno.set(if (slot(t, f).reset_seen) errno.ECONNRESET else errno.ECONNREFUSED);
+                return -1;
+            },
+        }
+        const sem = g_ready_sem orelse {
+            errno.set(errno.EAGAIN); // 未启用阻塞模式
+            return -1;
+        };
+        if (sync.sem_wait(sem) != 0) return -1; // 未能阻塞（EAGAIN 已由 sync 置好）
     }
 }
 
@@ -550,6 +585,33 @@ test "fd: 钩子能穿过 Table.reset()，abort 也会通知" {
     t.abort(@intCast(lfd2)); // 淘汰路径：等待者要被叫醒
     try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
     try testing.expectEqual(@as(c_int, 2), v);
+}
+
+test "fd: connectBlock 在已连上时立刻返回，未启用阻塞时返回 EAGAIN" {
+    fakeTime();
+    var t: net_sockets.socket.Table = .{};
+    freshTable(&t);
+    defer deinit();
+
+    const c = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(c >= 0);
+    var sa: [16]u8 = undefined;
+    _ = addr.encode(addr.make(.{ 10, 0, 0, 1 }, 80), &sa);
+    try testing.expectEqual(@as(c_int, -1), connect(c, &sa)); // 非阻塞：EINPROGRESS
+    try testing.expectEqual(errno.EINPROGRESS, errno.get());
+
+    // 对端回 SYN-ACK ⇒ established
+    const seg = net_sockets.netstub.Segment{ .kind = .syn_ack };
+    net_sockets.socket.Table.deliver(&t, @intCast(c), seg);
+    try testing.expectEqual(@as(c_int, 0), connectBlock(c)); // 已经连上：不等
+
+    // 新的 fd 处于 syn_sent，且没启用阻塞 ⇒ EAGAIN 而不是挂住
+    const c2 = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(c2 >= 0);
+    try testing.expectEqual(@as(c_int, -1), connect(c2, &sa));
+    errno.set(0);
+    try testing.expectEqual(@as(c_int, -1), connectBlock(c2));
+    try testing.expectEqual(errno.EAGAIN, errno.get());
 }
 
 test "fd: 没启用阻塞时 acceptBlock 立刻返回（不挂住）" {

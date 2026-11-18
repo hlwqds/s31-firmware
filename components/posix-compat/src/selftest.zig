@@ -33,6 +33,7 @@ const sem = posix.sync;
 const thread = posix.thread;
 const errno = posix.errno;
 const fd = posix.fd;
+const addr = posix.addr;
 const socks = @import("net_sockets");
 
 var g_passed: u32 = 0;
@@ -49,6 +50,8 @@ var g_tbl: socks.socket.Table = .{};
 var g_ready: sem.sem_t = .{};
 var g_listen: c_int = -1;
 var g_accepted: c_int = -2;
+var g_client: c_int = -1;
+var g_connected: c_int = -2;
 /// 线程体写它，主上下文读它 —— 两个上下文的唯一数据通道。
 var g_worker_ran: u32 = 0;
 var g_worker_saw_self = false;
@@ -68,6 +71,11 @@ fn worker(_: ?*anyopaque) callconv(.c) void {
 /// accepter：阻塞在 accept 上，直到主上下文把 SYN 喂进表。
 fn accepter(_: ?*anyopaque) callconv(.c) void {
     g_accepted = fd.acceptBlock(g_listen);
+}
+
+/// connector：阻塞在自己这条连接上，直到对端回 SYN-ACK。
+fn connector(_: ?*anyopaque) callconv(.c) void {
+    g_connected = fd.connectBlock(g_client);
 }
 
 pub fn run() bool {
@@ -140,6 +148,27 @@ pub fn run() bool {
         check(atid.done, "accepter finished after ACK", .{});
         check(g_accepted >= 0, "accept returned fd={d}", .{g_accepted});
         if (atid.done) _ = thread.pthread_join(atid, null);
+    }
+    // ---- 阻塞 connect：同一个钩子，客户端侧 -----------------------------------
+    g_client = fd.socket(fd.AF_INET, fd.SOCK_STREAM, 0);
+    check(g_client >= 0, "client socket", .{});
+    var sa: [16]u8 = undefined;
+    _ = addr.encode(addr.make(.{ 10, 0, 0, 1 }, 80), &sa);
+    if (g_client >= 0) {
+        const r = fd.connect(g_client, &sa);
+        check(r == -1 and errno.get() == errno.EINPROGRESS, "connect -> EINPROGRESS", .{});
+    }
+    var ctid: thread.pthread_t = undefined;
+    const ccreated = thread.pthread_create(&ctid, null, connector, null) == 0;
+    check(ccreated, "connector created", .{});
+    if (ccreated) {
+        sched.resumeTask(&ctid.task.?.ctx);
+        check(!ctid.done, "connector blocked in connectBlock", .{});
+        // 与 accept 不同：SYN-ACK 一步就把客户端带到 established ⇒ 一次唤醒就够
+        g_tbl.deliver(@intCast(g_client), .{ .kind = .syn_ack });
+        check(ctid.done, "connector finished after SYN-ACK", .{});
+        check(g_connected == 0, "connectBlock returned {d}", .{g_connected});
+        if (ctid.done) _ = thread.pthread_join(ctid, null);
     }
     check(fd.droppedNotifies() == 0, "no notify dropped (wake from main)", .{});
     fd.disableBlockingAccept();
