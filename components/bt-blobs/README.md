@@ -15025,3 +15025,42 @@ pub var ptr_logf: usize = 0;   // hooks.log
 | 撤回 | 62 |
 | 数据源错误 | 22 类 |
 | 自我纠正 | **195** |
+
+## 核对：`0xB0B0` 标记位置**正确**（在 `if (rc != 0)` 之前）
+
+### 代码实况（`probe.zig:537-545`）
+
+```zig
+var rc = bringup.init(&cfg);
+@import("board").trap.diag_b = 0xB0B0;    // ← **顶层，在 if 之前**
+if (rc != 0) {
+    osal.logPublic("bt probe: init FAILED at step {d} rc={d}", …);
+    halt();
+}
+osal.logPublic("bt probe: init ok {d}", .{0});
+```
+
+⇒ 标记是**无条件执行**的（不在 `rc != 0` 分支内）。
+
+⇒ 因此 `db = 0xadcb`（而非 `0xB0B0`）**确实证明**：
+**那条标记没有执行** ⇒ **崩溃在 `init()` 返回之前**。
+
+### 结论维持
+
+| 项 | 状态 |
+| --- | --- |
+| "崩溃在 `init()` 内、`return` 之前" | ✅ **成立**（本轮已核对标记位置）|
+| `ra = mepc+1` ⇒ 间接调用到垃圾 | ✅ 成立 |
+| ⇒ 唯一自洽解释 | **`INITED` 那行的 `logPublic` 内部调用了坏指针** |
+
+### 防御性修法已加入（待测）
+
+`osal.logLine` 里增加钩子指针合法性检查：
+
+```zig
+const p = @intFromPtr(f);
+if (p < 0x4000_0000 or p >= 0x5000_0000) return;   // 不在可执行区 ⇒ 丢弃
+```
+
+⇒ 若加入后**崩溃消失** ⇒ 确认坏钩子指针；
+⇒ 若仍崩 ⇒ 说明坏指针不在 `hooks.log`，需查 `hooks.call` 或其它间接调用。

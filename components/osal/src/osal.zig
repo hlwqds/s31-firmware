@@ -107,6 +107,13 @@ pub fn logLine(comptime fmt: []const u8, args: anytype) void {
         if (!trace_hooks) return;
     }
     const f = hooks.log orelse return;
+    // **钩子指针合法性检查**：不在可执行区（IRAM 0x400xxxxx / flash 0x42xxxxxx–0x48xxxxxx）
+    // 就直接丢弃 —— 防止归档把 hooks 结构体写坏后调用到垃圾地址
+    // （本会话的崩溃正是 `ra = mepc+1` 的间接调用形态）。
+    {
+        const p = @intFromPtr(f);
+        if (p < 0x4000_0000 or p >= 0x5000_0000) return;
+    }
     var buf: [128]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
     f(msg);
