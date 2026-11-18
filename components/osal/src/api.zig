@@ -5,12 +5,14 @@
 //!
 //! 依赖面：`std` + `builtin`，**零 `board` 依赖**。时间、临界区、随机数都是注入钩子
 //! （`hooks.now_ms` / `hooks.irq_save` / `hooks.irq_restore` / `rand_hook`），
-//! 所以主机用例可以完整跑（本组件 19 项）。
+//! 所以主机用例可以完整跑（本组件 20 项）。
 //!
-//! ⚠️ 下面这行 `comptime` **不能删**：`osal.zig` 里的 5 个 `export fn`
+//! ⚠️ 本文件**不持有**发射开关：模块是惰性编译的，写在这里的 `comptime` 不会执行。
+//! 开关是下面的 `forceExports()`，**由消费者（`bt-blobs/src/root.zig`）在 comptime 调一次**
+//! —— 少了那次调用，`osal.zig` 的 5 个 `export fn`
 //! （`s31_now_us`/`s31_btdm_malloc`/`s31_btdm_free`/`s31_phy_log`/`s31_bt_log_hook`）
-//! 只有在文件被分析时才会发射，而本文件只是转出口。删掉它 `bt_core.o` 会变成 0 符号对象，
-//! BLE 归档的闭包链接报 5 个未定义 —— `scripts/check-bt-link.sh` 会抓到这个。
+//! 就不发射，`bt_core.o` 变 0 符号对象，BLE 归档的闭包链接报 5 个未定义
+//! （`scripts/check-bt-link.sh` 会抓到这个）。
 pub const osal = @import("osal.zig");
 pub const sched = @import("sched.zig");
 /// 调试用的指针探针（`osal.zig` 读寄存器/栈时会用到）。

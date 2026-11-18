@@ -13,6 +13,19 @@
 | `src/probe_ptr.zig` | 调试用的指针探针 |
 | `src/api.zig` | 模块根（转出口 + `forceExports()`，见下） |
 
+## 归档核对记录（从 bt-blobs 迁来时保留）
+
+`osal.zig` 持 **59 个 C ABI 导出**给 BLE controller 归档用。逐项核对过两处清单：
+
+| 来源 | 数量 | 说明 |
+| --- | --- | --- |
+| `bt-blobs/link/bt_stubs.c` 的 `BT_STUB_LIST` 宏 | **36** | controller 会调、由我们提供 |
+| `bt-blobs` 各文件里的 `export fn` | **11** | 我们自己发的（`s31_*` 等） |
+| 其余 | 12 | coex / 日志 / 时间等基础钩子 |
+
+迁移只改了文件的**位置**，导出符号与签名未动 —— 闭包链接的镜像大小搬前搬后逐字节相同
+（913728 B）就是这一点的执行证据。
+
 ## 依赖面：零 `board`
 
 只有 `std` + `builtin`。时间、临界区、随机数都是**注入钩子**：
