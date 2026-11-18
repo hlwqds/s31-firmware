@@ -21,17 +21,16 @@ const logLine = osal.logLine;
 /// 打印锚点表（基址 `0x2f00ffd0`，10 个槽）的一行快照，供"某操作前后"对读。
 pub fn dumpAnchors(tag: []const u8) void {
     var buf: [128]u8 = undefined;
+    const p0: *volatile u32 = @extern(*volatile u32, .{ .name = "r_sym_bt_pSy5Wex1v0iXw5RdWtwL" });
     var i: usize = 0;
     var w: usize = 0;
     while (i < 10) : (i += 1) {
-        // **符号地址，不用硬编码 0x2f00ffd0**：锚点会随镜像布局移动
-        // （WITH_PHY=1 版 anchor[0] 在 0x2f010ee0）。
-        const base: usize = @intFromPtr(&@extern(*volatile u32, .{ .name = "r_sym_bt_pSy5Wex1v0iXw5RdWtwL" }));
-        const v = (@as(*volatile u32, @ptrFromInt(base + i * 4))).*;
+        // **符号即指针**（与 `probe_ptr.zig` 一致），不要再取 `&`。
+        const v = (@as(*volatile u32, @ptrFromInt(@intFromPtr(p0) + i * 4))).*;
         const n = std.fmt.bufPrint(buf[w..], " {x}", .{v}) catch break;
         w += n.len;
     }
-    logLine("bt anchors[{s}]:{s}", .{ tag, buf[0..w] });
+    logLine("bt anchors[{s}] base=0x{x}:{s}", .{ tag, @intFromPtr(p0), buf[0..w] });
 }
 
 pub fn probeAnchors() void {
