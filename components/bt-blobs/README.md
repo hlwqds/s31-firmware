@@ -4,11 +4,12 @@
 > 请按此顺序阅读：
 >
 > 1. **本节下方「当前状态」块** —— 唯一权威，与任何历史节冲突时以它为准；
-> 2. **文末「框架修正」节** —— 说明为什么"abort 消失"不是进展；
+> 2. **文末「`.btdm_bss` 缩短的风险声明」节** —— 当前配置的未验证项；
 > 3. 需要过程与反例时再读中间各节。
 >
-> **一句话现状**：三个根因（`anchor[8]` 自伤、PHY 域时钟缺失、容量缺口）中前两个已修、
-> 第三个仍是阻塞；`carve-out` 把 abort 换成了无限重试，**不是修复**。
+> **一句话现状**：三个根因（`anchor[8]` 自伤、PHY 域时钟缺失、容量缺口）**全部已修**；
+> `carve-out` 已移除，`.btdm_bss` 32→8 KiB 使 arena 达 **376 KiB**，`calloc(1,1904)` 从 arena 成功、**无 abort**。
+> 当前阻塞：**boot 阶段的 PHY 校准不返回**（在 modem 寄存器 `s0=0x20100000` 上轮询）⇒ 到不了 step 1。
 >
 > 相关技能：`s31-ble-probe-bringup`（构建与判读）、
 > `baremetal-instrument-selfcheck`（8 条仪器自检，读任何读数前先过一遍）。
@@ -20,7 +21,7 @@
 > | --- | --- |
 > | **默认构建 + `phy_domain_enable=false`（基线，799 KB 级）** | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**；心跳止于 ~320 tick |
 > | **`phy_domain_enable=true`（总线停摆修复）** | 心跳升至 **9728+ 且持续**（`0x2010B000` 一读即挂死**不再成立**）；归档**进到 step 6**（`CODES n=16`）。⇒ 该修复**只解决了总线**，没有解决分配 |
-> | **`WITH_PHY=1` + carve-out** | ❗ **不是修复**：`calloc(1,1904)` 不再失败，但 arena 因 4×2048 B 的 `.bss` 缩小到 351 936 B < 归档需要的 ~354 896 B ⇒ **把 abort 换成了无限重试**。详见文末「框架修正」 |
+> | **`WITH_PHY=1`（当前配置）** | arena **376 KiB**（`.btdm_bss` 32→8 KiB）；`calloc(1,1904)` 由 arena 成功返回、**无 abort**；`phy_domain_enable=true`。⚠️ **bringup 到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器上轮询不返回）。⚠️ 缩短洞的风险未验证（见文末） |
 > | 锚点读数 | 取址已修（`@extern` 本身即指针）。**两版都已复验且全为 0**：默认版 `base=0x2f00ffd0: 0×10`，`WITH_PHY=1` 版 `base=0x2f010ee0: 0×10` ⇒ 与"ROM 不填这张表"一致 |
 > | 调用序列 | 已可读：`CODES n=16 0120000000000000`（0=malloc 1=mutex_init 2=eventq_init 3=event_init 4=mutex_pend…） |
 >
