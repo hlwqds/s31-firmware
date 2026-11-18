@@ -112,6 +112,9 @@ pub fn ringPush(msg: []const u8) void {
 }
 
 /// ISR 侧调用：吐出第 `idx` 条（0 = 最新），返回切片。
+pub fn ringCount() u32 { return log_ring_n; }
+pub fn logcCount() u32 { return log_hook_calls; }
+
 pub fn ringAt(idx: u32) []const u8 {
     if (idx >= log_ring_n) return "";
     const slot = (log_ring_n -% 1 -% idx) % ring_slots;
@@ -192,6 +195,8 @@ export fn probeSelftestAfterFence() void {
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.ring_at = ringAt;
+    board.trap.ring_n_at = ringCount;
+    board.trap.probe_logc = logcCount;
     if (reprobe_ble_block) {
         // 复核 README 记录的总根因：读 BLE/MAC 寄存器块是否会挂死（会挂，默认关）。
         board.log.line("{s}", .{"bt probe: re-probing 0x2010B000 ..."});

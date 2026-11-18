@@ -184,7 +184,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // `s=<n> pc=0x<x>`。目的：FIFO 压力小几个数量级，且计数**是否继续增长**
         // 直接判定"中断还在来（自旋）"还是"事务不退休（stall）"。
         if (!sample_quiet and irq_count >= 16 and (irq_count % 64) == 0) {
-            log.line("s={d} pc=0x{x}", .{ irq_count, frame.mepc });
+            if (ring_n_at) |g| log.line("s={d} pc=0x{x} lr={d} lc={d}", .{ irq_count, frame.mepc, g(), logc_at() }) else log.line("s={d} pc=0x{x}", .{ irq_count, frame.mepc });
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
         }
@@ -490,6 +490,10 @@ pub var probe_stop_at_tick: u32 = 0;
 
 /// probe 侧注册的 RAM 环读取器（不能跨模块 import）。
 pub var ring_at: ?*const fn (u32) []const u8 = null;
+/// 环写入计数与日志调用计数的读取器（同款函数指针，避免跨模块 import）。
+pub var ring_n_at: ?*const fn () u32 = null;
+pub fn logc_at() u32 { return if (probe_logc) |f| f() else 0; }
+pub var probe_logc: ?*const fn () u32 = null;
 
 /// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。
 /// 用模块级变量是为了避开"快照在 if 分支、打印在公共作用域"的作用域问题（踩过一次）。
