@@ -3627,3 +3627,21 @@ task_init -> OkE7(全部分级通过) -> mutex_pend(0) -> 就绪标记 -> eventq
 
 **这就是最终答案**：软件侧已经推进到硬件边界，剩余工作 = PHY 校准路径 + modem 上电/复位时序
 （两类工作都有独立的工作量记录，且**不在**本仓库的软件能力范围内可以绕开）。
+
+## ⚠️ `WITH_PHY=1` + reprobe 的负结果**不成立**（2026-11-18 最后一条更正）
+
+用 `WITH_PHY=1` 构建（镜像 811 520 B，IDF PHY 对象已链入）并把 `reprobe_ble_block` 打开后：
+
+```
+bt probe: re-probing 0x2010B000 ...
+（此后无输出）
+```
+
+**但这个实验无效**：`reprobe_ble_block` 的读发生在 `probe.run()` **最开头**，
+即在任何 `phy_get_romfunc_addr()` / `esp_phy_enable()` / 校准**之前**。
+此刻 PHY 尚未使能，块当然不应答 —— 与"链入 PHY 对象是否有帮助"无关。
+
+⇒ **正确做法**：把 reprobe 移到 PHY 使能/校准**之后**（例如 `pp.initPhy()` + `esp_phy_enable(2)`
+返回之后立即读一次）。判据仍是同一条：能打印 `0x2010B000 = 0x… (survived)` 即为破壁。
+
+开关已置回 `false`，避免下次误用这个无效位置。
