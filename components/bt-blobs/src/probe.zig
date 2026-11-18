@@ -102,7 +102,9 @@ fn logHook(msg: []const u8) void {
     //
     // probe 镜像默认**打开**逐调用日志：它就是为了看"崩之前最后一个归档调用是什么"。
     // 输出量大，正式镜像不要开（`logLine` 里按前缀过滤，这里只是把门打开）。
-    osal.trace_hooks = true;
+    // ⚠️ 曾经这里无条件 `osal.trace_hooks = true` —— 每次打印都会把调用方设的静音**重新打开**，
+    // 诊断窗口因此失效。trace 的开关应在入口显式设，不该藏在日志钩子里。
+    board.trap.recordLogCaller(@returnAddress());
     if (!verbose and std.mem.startsWith(u8, msg, "osal> ")) return;
     const uart_fifo: *volatile u32 = @ptrFromInt(0x2038_A000); // UART_FIFO
     const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS

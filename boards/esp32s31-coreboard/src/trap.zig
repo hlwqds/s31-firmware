@@ -416,6 +416,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 静默采样窗口里记下的 PC（高频、不打印）：崩溃前归档在哪个函数里跑。
         var pi: usize = 0;
         while (pi < pc_snap_n) : (pi += 1) log.line("panic: pc[{d}]=0x{x:0>8}", .{ pi, pc_snap[pi] });
+        // 谁在调 logHook（窗口里到底是谁在打印）
+        var ci: usize = 0;
+        while (ci < @min(caller_n, 8)) : (ci += 1) log.line("panic: caller[{d}]=0x{x:0>8}", .{ ci, caller_ring[ci] });
         var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;
@@ -444,6 +447,15 @@ pub var sample_quiet: bool = false;
 
 /// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。
 /// 用模块级变量是为了避开"快照在 if 分支、打印在公共作用域"的作用域问题（踩过一次）。
+/// `logHook` 的**调用者返回地址**环：找出"窗口里是谁在打印"。
+pub var caller_ring: [16]u32 = @splat(0);
+pub var caller_n: u32 = 0;
+
+pub fn recordLogCaller(ra: usize) void {
+    caller_ring[caller_n % caller_ring.len] = @truncate(ra);
+    caller_n +%= 1;
+}
+
 var pc_snap: [48]u32 = @splat(0);
 var pc_snap_n: usize = 0;
 

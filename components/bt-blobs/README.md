@@ -2146,3 +2146,20 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 
 ⇒ **下一次要做的**：窗口里把 `Hooks.on_mutex_acquired` 一并清掉（现在 `probe.zig` 是唯一设置它的地方，
 需要一个 `osal.clearMutexHook()` 之类的入口），再跑同一个窗口。届时采样才可能落在归档代码上。
+
+### 找到"谁在窗口里打印"：`logHook` 里藏着一行 `osal.trace_hooks = true`（2026-11-18）
+
+根因不是某个调用点，而是 `probe.logHook` **自己**每次打印都执行 `osal.trace_hooks = true` ——
+于是调用方设的静音会在下一次打印后**被重新打开**，窗口内的 `bt hook:` 逐调用日志源源不断。
+
+处置：
+- 删掉那行副作用（trace 开关应在 probe 入口显式设，不该藏在日志钩子里）；
+- 给 `logHook` 加**调用者返回地址环**（`trap.recordLogCaller(@returnAddress())`，16 条，
+  panic 时导出 `panic: caller[i]=…`），下次再有人问"谁在打印"可直接答。
+
+板级结果（`logs/bt-probe-pcs3.log`）：窗口内 `caller[]` **一条都没有** ⇒ **logHook 确实静音了** ✓；
+而 48 条 PC 采样全部落在 **`hw.mmioRecord`** —— 因为归档在密集访问寄存器，而我们每访问一次就记一条环，
+**我们的记录函数自己成了热路径**（观察者效应）。
+
+⇒ 下一步很明确：**采样窗口里把 mmio 环也关掉**（加 `mmio_disabled` 开关，窗口内只置位不记录），
+再看那 48 条采样落到归档的哪个函数上。这才是"去掉所有观察者"后的净观测。
