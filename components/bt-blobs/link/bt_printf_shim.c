@@ -94,3 +94,27 @@ int ets_printf(const char *format, ...)
     return (int)(o - buf);
 }
 #endif
+
+/* **同一桩的另两个名字**。
+ * ROM 集合里 `printf` / `esp_rom_printf` 与 `ets_printf` 同址（`0x2f800024`），
+ * 而 `PROVIDE` 只提供**弱**符号 ⇒ 没有强定义的名字仍解析到 ROM 实现，
+ * 其循环是 `while (txfifo_cnt > 127) {}` —— README 记录的
+ * `mepc=0x2f83efda × 29` 正是它。此前只强定义了 `ets_printf`，覆盖不全。
+ * 这里把三个名字都接到同一实现（`ets_printf` 已按上面分支处理）。 */
+int printf(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int r = ets_printf(format, ap);
+    va_end(ap);
+    return r;
+}
+
+int esp_rom_printf(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int r = ets_printf(format, ap);
+    va_end(ap);
+    return r;
+}

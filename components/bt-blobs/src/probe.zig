@@ -168,20 +168,21 @@ fn dumpLine(comptime fmt: []const u8, args: anytype) void {
 fn dumpAtPend() void {
     if (dump_done) return;
 
-    // **UART 排空自测**（在任何写之前）：读计数 → 写 1 字节 → 等 → 再读。
+    // **UART 排空自测（修正版）**：自旋到计数 < 5（有界 ~20 ms），并**双读**对照。
+    // 旧版只等 ~10 ms，而 125 B @115200 需 10.85 ms ⇒ 结论无效。
     {
         const st: *volatile u32 = @ptrFromInt(0x2038_A01C);
         const f: *volatile u32 = @ptrFromInt(0x2038_A000);
         const before = (st.* >> 16) & 0xFF;
         f.* = 'Z';
         var k: u32 = 0;
-        while (k < 200_000) : (k += 1) std.atomic.spinLoopHint();
-        const after = (st.* >> 16) & 0xFF;
-        const div = (@as(*volatile u32, @ptrFromInt(0x2038_A014))).*;
+        while (k < 2_000_000) : (k += 1) {
+            if (((st.* >> 16) & 0xFF) < 5) break;
+        }
+        const r1 = (st.* >> 16) & 0xFF;
+        const r2 = (st.* >> 16) & 0xFF;
         const cc = (@as(*volatile u32, @ptrFromInt(0x2038_A088))).*;
-        board.log.line("U {d}->{d} div={x} cc={x} txen={d} txrst={d}", .{
-            before, after, div, cc, (cc >> 24) & 1, (cc >> 26) & 1,
-        });
+        board.log.line("U {d}->{d},{d} spins={d} cc={x}", .{ before, r1, r2, k, cc });
     }
     dumpLine("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
     osal.canaryScan();
