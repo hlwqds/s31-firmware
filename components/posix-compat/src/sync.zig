@@ -18,6 +18,14 @@
 //! - `sem_init` 的 `pshared` 只能是 0：单地址空间，没有共享内存语义。
 //! - 非递归、无优先级继承/错误检查（`pthread_mutexattr_t` 不支持，传非 NULL 返回 `EINVAL`）。
 //!
+//! # 单等待者（重要限制）
+//!
+//! `osal.Sem` 只有一个 waiter 槽（`Sem.waiter: ?*sched.Context`）。**第二个**线程在同一个
+//! 信号量上 `sem_wait` 时会走"槽被占用"分支、立刻返回 `EAGAIN`，而不是排队等待。
+//! 所以：同一 `sem_t` / `pthread_mutex_t` 上**最多一个**阻塞者。多线程争用需要内核提供
+//! 等待队列 —— 那是改 `osal`，不在本层。这条限制在主机上无法测（`sched.block()` 在
+//! x86_64 上被 comptime 编译掉），所以它写在类型旁边而不是用例里。
+//!
 //! # 与 BLE 共用静态池
 //!
 //! `sem_t` 与 `pthread_mutex_t` 都从 `osal` 的 **`sem_pool`（64 槽）**取槽位 —— 和 BLE

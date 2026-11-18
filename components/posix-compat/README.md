@@ -41,10 +41,10 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `pthread_create` | `osal.sched.taskCreate(stack, entry, arg)` | ◐ 需要 trampoline + 栈池（`sched` 只有 `max_tasks=8` 个槽，`Task` 没有 `done` 字段） |
-| `pthread_join` | **`Slot.done` + 每线程一个 `osem`**（见 §4.5） | ○ `sched` 里**没有** `wake`/WaitList，join 只能做在包装层 |
-| `pthread_exit` / `pthread_self` | `sched.currentContext()` / `sched.block()` | ○ **都没实现**：`sched` 里**没有** `currentTask`（只有 `currentContext()`），退出只能靠 `block()` 不再回来 |
-| `pthread_detach` | — | ○ 简单标志 |
+| `pthread_create` | `thread.zig` → `sched.taskCreate` + 静态栈池 | ✅ 已完成（**上限 8 次/boot**，见下） |
+| `pthread_join` | `thread.zig` → `Slot.done` + 每线程 `done_sem` | ✅ 已完成（重复 join / detach 后 join → `EINVAL`） |
+| `pthread_exit` / `pthread_self` | `thread.zig` → `sched.currentContext()` / `sched.block()` | ✅ 已完成（主上下文 `self` 返回 `null`） |
+| `pthread_detach` | `thread.zig`（完成时自己回收槽） | ✅ 已完成 |
 | `fork` / `exec` / `waitpid` | — | — 单地址空间、无 MMU 进程模型，不做 |
 | `getpid` | — | ○ 可返回固定值 |
 
@@ -54,12 +54,15 @@
 | --- | --- | --- |
 | `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `osal.Sem`** | ✅ 已完成（**不是** `osal.Mutex`：它只忙等、不唤醒，见下） |
 | `pthread_cond_init/wait/signal/broadcast` | **无** | ○ **要新写**：cond 必须与 mutex 配合、避免丢失唤醒 |
-| `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → `osal.Sem` | ✅ 已完成 |
+| `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → `osal.Sem` | ✅ 已完成（**限制**：同一 sem 上最多一个阻塞者，见下） |
 | `sem_timedwait` / `pthread_mutex_timedlock` | — | ⌛ 内核只有**无限阻塞**；有限超时的 `semPend` 会立即返回，所以这两个返回 `ENOSYS`（不是假装超时） |
 | `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
 | `pthread_rwlock_*` | — | — 本版不做（读者写者饥饿问题需要单独设计） |
 | `pthread_spin_*` | — | ○ 待做（`std.atomic.spinLoopHint` 足够，但要知道它在单核上没有意义） |
 
+> ⚠️ **单等待者限制**：`osal.Sem` 只有一个 waiter 槽。第二个线程在同一个信号量/互斥量上
+> 阻塞会立刻拿到 `EAGAIN`（而不是排队）。多线程争用要在内核里加等待队列，本层不做。
+>
 > ⚠️ **勘误（2026-11-18）**：本表原先写的 `mutex.zig`（含 PI）/ `sem.zig` / `spin.zig` /
 > `events.zig` 是 **lab 内核**的文件名，固件仓里**没有这些文件**。生产侧只有 `osal` 一套原语，
 > 而且 `osal.Mutex` **不是**一把能阻塞的锁：`mutexPend` 只做 2M 次 `spinLoopHint` 的有界
@@ -149,8 +152,8 @@ const Slot = struct {
 ## 5. 验收与登记方式
 
 - 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**28 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 30`；
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 10** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 40`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -191,10 +194,14 @@ lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，l
 > `EAGAIN`，不能因为"线程已经 join 了"就以为能再创建。join/done 槽位可以自己回收，
 > `sched` 的槽不行。
 
-**剩 `thread.zig`**：`pthread_create/join/detach/self/exit`。按 §4.5 的 `Slot` + 信号量实现，
-`pthread_join` 是 `semPend(forever)`，trampoline 收尾 `done = true; semRelease(...)`。
-主机测试只能覆盖 **Slot 协议**（重复 join → `EINVAL`、detach 后 join → `EINVAL`、超时），
-因为 `sched` 的上下文切换是 rv32 `asm`，主机上跑不了真并发。
+**`thread.zig` 已完成**（10 项用例）。实现要点：线程体跑完不能返回 —— trampoline 记返回值、
+置 `done`、`sem_post` 唤醒 joiner，然后 `sched.block()` 永不返回；这个顺序安全的前提正是
+`sched` 不回收任务槽（没人会再 resume 那个退出的任务，它的栈复用后不会有帧在跑）。
+主机用例覆盖槽位分配/回收、重复 join、detach、`self` 在主上下文返回 `null`，
+走的是 trampoline 收尾的**同一段** `complete()`，不是替身。
+
+**仍未做**：`pthread_cond_*`（需要与 mutex 配合的等待队列，而 `osal` 只有单 waiter 槽）、
+`fork`/`waitpid`、文件 I/O。
 
 ✅ **搬运所需的门禁已就绪（2026-11-18）**：`scripts/check-bt-link.sh` —— 生成闭包 → 用闭包链接
 → 断言镜像 > 500 KB。实测 116 个对象、镜像 913728 B；去掉 `root.zig` 的根引用后门禁失败（负例验过）。

@@ -88,6 +88,13 @@
   比不做更危险。无定时等待的 `semWait`/`pthread_mutex_lock` 在 `osal.TIMEOUT`（= 没能阻塞住，
   不是到期）时返回 `EAGAIN` 而非 `ETIMEDOUT`，后者是 POSIX 只允许定时变体用的。
 
+- **POSIX 线程层（2026-11-18）**：`components/posix-compat/src/thread.zig` ——
+  `pthread_create/join/detach/self/exit` 建在 `sched.taskCreate` + 静态栈池上。
+  硬边界写进文件头：`sched` 没有 `taskDelete`/`taskExit`，任务槽**永不回收** ⇒
+  每 boot 最多 **8** 次成功创建，第 9 次返回 `EAGAIN`（线程退出也不还槽）。
+  退出协议：线程体返回后不能 return，trampoline 记返回值 → `done` → `sem_post` →
+  `block()` 永不返回；安全性来自"退出的任务永不再被 resume"。10 项用例（40 总计）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
