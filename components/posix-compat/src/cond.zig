@@ -14,11 +14,9 @@
 //! - `pthread_cond_wait` 要求调度器已启动（`sched.isStarted()`）：它必须先解锁、再阻塞、
 //!   醒来后重新加锁；没有调度器时这三步无法原子完成，返回 `ENOSYS` 而不是假装等到。
 //! - 没有超时变体：内核没有定时唤醒（同 `sync.zig` 的 `sem_timedwait`）。
-//! - **`broadcast` 之后的多等待者复锁会退化成 EAGAIN**：每个醒来的 waiter 都要重新
-//!   `pthread_mutex_lock`，而它的后端是单等待者 `osal.Sem` ⇒ 第 2 个抢锁的 waiter 拿到
-//!   `EAGAIN`（`sync.zig` 的已知限制），`pthread_cond_wait` 因此返回 -1。
-//!   这条**只在板上有意义**（主机上 `wait` 直接 `ENOSYS` 返回），所以写在这里而不是用例里。
-//!   要真正支持多等待者复锁，得先有支持多等待者的 mutex 后端。
+//! - 多等待者复锁**已可工作**（2026-11-18）：`sync` 的 mutex 换成自持 FIFO 队列之后，
+//!   `broadcast` 唤醒的每个 waiter 都能排队重新加锁。（此前用 `osal.Sem` 时第 2 个会拿
+//!   `EAGAIN`。）
 //! - `pthread_cond_destroy` 不检查是否还有等待者（POSIX 里这是调用方的错；我们没有
 //!   可靠的"还有人在等"判断，静默成功比误报更安全）。
 const std = @import("std");
@@ -30,22 +28,6 @@ const waitq = @import("waitq.zig");
 pub const pthread_cond_t = struct {
     q: waitq.Queue = .{},
 };
-
-/// 只有 `resume` 一件是不可移植的（见文件头）；未绑定时用板上实现。
-pub const Hooks = struct {
-    /// `resume` 是 Zig 关键字，故命名 `wake`。
-    wake: ?*const fn (ctx: *sched.Context) void = null,
-};
-var hooks: Hooks = .{};
-
-pub fn bindHooks(h: Hooks) void {
-    hooks = h;
-}
-
-fn wake(ctx: *sched.Context) void {
-    if (hooks.wake) |f| return f(ctx);
-    sched.resumeTask(ctx);
-}
 
 fn fail(err_no: c_int) c_int {
     e.set(err_no);
@@ -82,7 +64,7 @@ pub fn pthread_cond_wait(c: *pthread_cond_t, m: *sync.pthread_mutex_t) c_int {
 
 pub fn pthread_cond_signal(c: *pthread_cond_t) c_int {
     // 先摘链（`pop` 会清 `linked`）再 resume —— 顺序反了就会 resume 一个即将返回的帧。
-    if (c.q.pop()) |ctx| wake(ctx);
+    if (c.q.pop()) |ctx| sync.wake(ctx);
     return 0;
 }
 
@@ -91,7 +73,7 @@ pub fn pthread_cond_signal(c: *pthread_cond_t) c_int {
 pub fn pthread_cond_broadcast(c: *pthread_cond_t) c_int {
     var out: [sched.max_tasks]*sched.Context = undefined;
     const n = c.q.drain(&out);
-    for (out[0..n]) |ctx| wake(ctx);
+    for (out[0..n]) |ctx| sync.wake(ctx);
     return 0;
 }
 
@@ -112,7 +94,7 @@ fn recordResume(ctx: *sched.Context) void {
 
 fn useRecorder() void {
     resumed_n = 0;
-    bindHooks(.{ .wake = recordResume });
+    sync.bindHooks(.{ .wake = recordResume });
 }
 
 fn fakeCtx(i: usize) *sched.Context {

@@ -52,16 +52,16 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `osal.Sem`** | ✅ 已完成（**不是** `osal.Mutex`：它只忙等、不唤醒，见下） |
-| `pthread_cond_init/wait/signal/broadcast` | `cond.zig` → `waitq`（FIFO）+ **注入的 wake** | ✅ 已完成（`wait` 要求调度器已启动，否则 `ENOSYS`） |
-| `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → `osal.Sem` | ✅ 已完成（**限制**：同一 sem 上最多一个阻塞者，见下） |
+| `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `sem_t`（自持等待队列）** | ✅ 已完成（**不用** `osal.Mutex`：它只忙等、不唤醒） |
+| `pthread_cond_init/wait/signal/broadcast` | `cond.zig` → `waitq`（FIFO）+ **注入的 wake** | ✅ 已完成（`wait` 要求调度器已启动，否则 `ENOSYS`；**多等待者复锁已可工作**） |
+| `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → 自持计数 + `waitq` FIFO | ✅ 已完成（**多等待者**，与 BLE 不共享静态池） |
 | `sem_timedwait` / `pthread_mutex_timedlock` | — | ⌛ 内核只有**无限阻塞**；有限超时的 `semPend` 会立即返回，所以这两个返回 `ENOSYS`（不是假装超时） |
 | `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
 | `pthread_rwlock_*` | — | — 本版不做（读者写者饥饿问题需要单独设计） |
 | `pthread_spin_*` | — | ○ 待做（`std.atomic.spinLoopHint` 足够，但要知道它在单核上没有意义） |
 
-> ⚠️ **单等待者限制**：`osal.Sem` 只有一个 waiter 槽。第二个线程在同一个信号量/互斥量上
-> 阻塞会立刻拿到 `EAGAIN`（而不是排队）。多线程争用要在内核里加等待队列，本层不做。
+> ✅ **单等待者限制已解除**（2026-11-18）：`sem_t` / `pthread_mutex_t` 改成自持计数 + `waitq`
+> FIFO，多线程可以排队；也不再从 `osal` 的 `sem_pool`（64 槽，BLE 同池）取句柄。
 >
 > ⚠️ **勘误（2026-11-18）**：本表原先写的 `mutex.zig`（含 PI）/ `sem.zig` / `spin.zig` /
 > `events.zig` 是 **lab 内核**的文件名，固件仓里**没有这些文件**。生产侧只有 `osal` 一套原语，
@@ -160,9 +160,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**53 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 11** · **waitq 6** · **cond 6** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 53`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**56 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 16** · **thread 11** · **waitq 6** · **cond 6** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 56`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -207,7 +207,8 @@ const Slot = struct {
 
 | 项 | 阻塞点 | 代价 |
 | --- | --- | --- |
-| ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`。`wake` 做成注入点，于是「唤醒谁/什么顺序/唤醒前是否已摘链」在主机上有断言；`swapContext` 在主机 panic 的那一下被绕开了 | — |
+| ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`；`wake` 统一注入在 `sync.bindHooks` | — |
+| ~~多等待者 / 与 BLE 共用静态池~~ | ✅ 已解除：`sync.zig` 自持计数 + FIFO 队列，不再用 `osal.Sem` 的槽位 | — |
 | 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
 | `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动：阻塞的任务**自己查不了截止期**，必须有外部唤醒源（`osal.serviceCallouts(now)`）。注意纯 POSIX 应用里**没人会去推它**（bt-blobs 里是 BLE tick 在推）⇒ 本层得提供一个应用必须周期性调用的入口（如 `tick(now_ms)`），并在文档里**明说**：不调它，定时等待就永不到期 |
 | `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |

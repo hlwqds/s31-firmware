@@ -107,6 +107,13 @@
   广播是否先摘完再逐个唤醒」全部有主机断言；`wait` 在调度器未启动时返回 `ENOSYS`
   而不是挂住。6 项新用例，posix-compat 47 → **53**。
 
+- **`sync` 改用自持等待队列（2026-11-18）**：`sem_t` / `pthread_mutex_t` 不再借用 `osal.Sem`
+  的句柄，改为「计数 + `waitq` FIFO + `sched.block()/resumeTask()`」。一次解掉三个约束：
+  多等待者（此前第 2 个阻塞者拿 `EAGAIN`）、不再与 BLE 归档共用 `sem_pool`（64 槽）、
+  `sem_t` 变成普通结构体（`in_use` 区分"未初始化"与"计数为 0"）。
+  `unlock` 现在把锁**直接交给队首等待者**，不再"置 1 后被第三方抢走"。
+  `wake` 注入点统一到 `sync.bindHooks`，`cond.zig` 复用。16 项 sync 用例（总计 **56**）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
