@@ -4,11 +4,14 @@
 //! 对照时不会对不上。我们的 socket 层已经有同样词汇的枚举
 //! （`net_sockets.socket.Errno`），这里做双向映射而不是另造一套。
 //!
-//! ## 单线程假设
+//! ## 每任务一份
 //!
-//! POSIX 的 `errno` 是**每线程**的。我们还没有 TLS（线程支持要等内核提成组件），所以这里
-//! 是一个模块级全局，并在文档里写明：**在多任务下它会互相覆盖**。等 `thread.zig` 落地后
-//! 要换成每 Task 一份（`sched.Task` 加一个 `errno: c_int` 字段即可）。
+//! POSIX 的 `errno` 是**每线程**的，所以这里按 `sched` 的上下文指针分槽（见文件中部
+//! `Table`）：每个任务一份，主上下文算一个。表容量 `max_contexts = 8`（与 `sched.max_tasks`
+//! 同量级）；表满时**退回 0 号槽并累加 `overflows`** —— 可见地退化，而不是静默共用。
+//!
+//! 任务退出后它的槽不会被回收（`sched` 也不回收任务槽）：残留值无害，POSIX 规定
+//! `errno` 在成功调用后是**未指定**的，读到的旧值没有意义。
 
 const std = @import("std");
 const net_sockets = @import("net_sockets");

@@ -115,8 +115,10 @@
 每 fd 地址表）· `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll）
 · `sync`（sem/mutex/once）· `thread`（create/join/detach/self/exit）· `cond`（含 `waitq`）
 
-暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、`sem_timedwait`/`cond_timedwait`
-（内核没有定时阻塞）、阻塞式 `accept`/`connect`（socket 层是轮询的）。
+暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、`cond_timedwait`、
+阻塞式 `accept`/`connect`（前置见 §6.3）。
+
+（`sem_timedwait` / `pthread_mutex_timedlock` **已做** —— 靠应用周期性调 `sync.pump()`。）
 
 理由：`errno`/`time`/`addr`/`fd` **不需要内核**，可以全部用主机用例钉住（`net-sockets` 的
 `Table` 是纯逻辑）。内核在 2026-11-18 已抽成 `components/osal/`，于是 `sync`/`thread`/`cond`
@@ -128,7 +130,7 @@
 ```text
 应用
   ↓  POSIX 形状（int 返回 + errno）
-posix-compat: errno | time | addr | fd | sync | thread | waitq | cond
+posix-compat: errno | time | addr | fd | sync | thread | waitq | cond | timer | rwlock
   ↓  组件接口（Io{err,n} / Table / Socket）
 net-sockets（生产）    osal（sem/sched）    hw/tick（板级）
 ```
@@ -261,4 +263,4 @@ import 全部改成模块导入，**改错在主机用例里看不出来**（用
 | `pthread_cond_*` | **要新写** | ✅ `waitq.zig` + `cond.zig`（不是 `eventq`：它是信号量语义）；`cond_timedwait` **未做** |
 | `poll` 超时 | 接内核后改为 tick 唤醒 | ⏳ 仍是 1 ms 轮询 |
 
-`errno` 也要在那一步改成每 Task 一份（现在是模块级全局，见 `errno.zig` 的说明）。
+`errno` 已按任务分槽（见 §2.5 与 `errno.zig` 的 `Table`）。
