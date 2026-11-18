@@ -1,15 +1,23 @@
 
-> ## 当前状态（唯一权威，2026-11-19）
+> ## 当前状态（唯一权威，2026-11-19 末）
 >
-> | 路径 | 现状 |
+> | 项 | 现状 |
 > | --- | --- |
-> | **默认（ROM PHY）** | 已闭环：init 跑到 `Xpuq`(`0x4005fbc4`) → 其 `.L547` 循环首读 `0x2010B000` → 总挂死（离线逐条验证） |
-> | **`WITH_PHY=1`（IDF PHY）** | **原诊断有误，已修**：锚点符号随镜像布局移动（anchor[0] → `0x2f010ee0`），而诊断代码**硬编码** `0x2f00ffd0` ⇒ 读到的是 `.iram_blobs` 里的字节。改用符号地址后 anchor[0] 读出 `0x2f010ee0`（有效指针） |
+> | **默认构建**（`build-probe.sh`，799 328 B） | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**。反汇编 + 调用序列双证据 |
+> | **`WITH_PHY=1`**（812 000 B） | **可用**（此前"结构性损坏"是我们硬编码锚点地址造成的假象，已修）；进入 bringup、到达 step 5，随后 `initPhy()` 不返回 |
+> | 锚点读数 | 已修正取址（`@extern` 本身即指针）；`initPhy()` 前后 **10 个槽全为 0**，与"ROM 不填表"一致 |
+> | 调用序列 | 已可读：`CODES n=16 0120000000000000`（0=malloc 1=mutex_init 2=eventq_init 3=event_init 4=mutex_pend…） |
 >
-> **唯一剩余动作**：扩两段镜像窗口（技能记载 `libphy` 需 +140 KB），之后 WITH_PHY 路径才有意义；
-> 然后在 `btdmLpEnableClock` 里移植 `wifi-blobs` 已验证的频域使能
+> **关键默认值**（改动前先看这里）：
+> `publish_bohff_anchor=false`（预发布会让 `JwHs` 短路 ⇒ 旧的 -8 回滚签名）、
+> `patch_bail_field=false`、`pmu_dump=false`、`anchors_enabled=false`、`phy_before_clocks=true`、
+> `probe_stop_at_tick=0`、`log_hook_silent=false`。
+>
+> **唯一剩余工作**：在 `btdmLpEnableClock` 里移植 `wifi-blobs` 已验证的频域使能
 > （`0x2058_71E0←0x3d` + CLK_CONF1 的 FE_* 位 + `I2C_ANA_MST`），**不要照抄 wifi 的 `LPCON+0x18←0x1`**
-> （那会清掉 bit2 `clk_i2c_mst_fo`，BLE 的 PHY 正是走模拟 I2C）。
+> （会清掉 bit2 `clk_i2c_mst_fo`，BLE 的 PHY 正走模拟 I2C）；材料见
+> `phy_init_data.zig`、`init_probe.zig:686-700`、`osi_impl.zig:1082-1106`。
+> 判据：`initPhy()` 之后能否打印那行 "PHY enabled"，以及随后 `0x2010B000` 是否可读。
 >
 > 以下历史章节按时间追加，凡与本块冲突的以本块为准。
 
