@@ -178,9 +178,10 @@ fn dumpAtPend() void {
         while (k < 200_000) : (k += 1) std.atomic.spinLoopHint();
         const after = (st.* >> 16) & 0xFF;
         const div = (@as(*volatile u32, @ptrFromInt(0x2038_A014))).*;
-        const c0 = (@as(*volatile u32, @ptrFromInt(0x2038_A020))).*;
-        const c1 = (@as(*volatile u32, @ptrFromInt(0x2038_A024))).*;
-        board.log.line("U {d}->{d} div={x} c0={x} c1={x}", .{ before, after, div, c0, c1 });
+        const cc = (@as(*volatile u32, @ptrFromInt(0x2038_A088))).*;
+        board.log.line("U {d}->{d} div={x} cc={x} txen={d} txrst={d}", .{
+            before, after, div, cc, (cc >> 24) & 1, (cc >> 26) & 1,
+        });
     }
     dumpLine("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
     osal.canaryScan();
