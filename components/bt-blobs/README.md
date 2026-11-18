@@ -4883,3 +4883,33 @@ riscv32-esp-elf-nm -u <每个归档 .o> | grep -E "_bss_|_data_|_heap_"
 
 看**归档自己**引用了哪些边界符号。若某个 `.o` 引用 `_heap_start`/`_data_end_btdm` 作为清除终点，
 那就是清零循环越过边界、抹掉我们块头的直接证据；若都只用 `_bss_start/_bss_end`，则覆盖者另有其人。
+
+## 排查：归档的 bss 清零 / data 拷贝**范围正确**（2026-11-19）
+
+`r_sym_ble_zEWRSkDdfQbTqLJOuE4J`（`0x4000562e`，116 B）是全镜像里唯一引用 `_bss_end` /
+`_bss_end_btdm` / `_data_end_btdm` 的归档函数，反汇编：
+
+```asm
+lui  a0,0x2f016 ; addi a0,a0,-320   # a0 = 0x2f015ec0 (_bss_end)
+lui  a5,0x2f01e ; addi a5,a5,-320   # a5 = 0x2f01dec0 (_bss_end_btdm)
+sub  a2,a5,a2                        # len = 0x8000  (32 KiB)
+li   a1,0
+jal  smallMemset                     # memset(0x2f015ec0, 0, 0x8000)  -> .btdm_bss
+...
+addi a5,a5,-320                      # a5 = 0x2f01eec0 (_data_end_btdm)
+sub  a2,a5,a2                        # len = 0x1000  (4 KiB)
+jal  memcpySmall                     # memcpy(0x2f01dec0, 0, 0x1000) -> .btdm_data
+```
+
+⇒ **两者的范围都精确止于 `.btdm_data` 末址（0x2f01eec0），不触及守卫页与堆** ⇒ **不是覆盖者**。
+
+⇒ 因此"清零/拷贝越界"这一假设**也被排除**。
+
+### 覆盖者的候选因此只剩
+
+1. **`.btdm_bss` / `.btdm_data` 内部的越界写**（归档把某个指针当作它们末尾之后使用）；
+2. **我们自己的代码**（`osal`/`probe` 里某处写越界）；
+3. **canary 扫描本身尚未出数**（仪器已就位，但导出未触发），所以上述判断仍缺少直接证据。
+
+**下一步不变**：让 canary 扫描真正落数（在 `dumpAtPend` 首行打单字节确认它是否被调用），
+它给出的"首个被改写地址 + 实际值 + 字数"将直接点名上述三类中的一类。
