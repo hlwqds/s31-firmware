@@ -9823,3 +9823,49 @@ PC 样本落在 `malloc`/`memset` 之间的区域
 2. **拿到 `malloc` 的 size**：`logPublic` 被过滤 ⇒ 改用 `board.log.line` 直接打印；
 3. 若 size 是亿级且返回 NULL ⇒ **确认"NULL 上 memset 巨长"** ⇒ 修法是 arena 扩容或独立段；
 4. 若 size 正常 ⇒ 转向该函数内联的清零循环。
+
+## ❌ 证伪："NULL 上 memset 巨长"（2026-11-19）
+
+从 `.o` 反汇编（节标记正确）`r_sym_bt_UghmLBN0bKpgsg8nI8fM`：
+
+```asm
+ 20: beqz a0, c8 <.L532>       ← **malloc 返回 NULL ⇒ 直接跳走，跳过 memset**
+ 28: R_RISCV_CALL memset        ← memset 是**独立调用**，未内联
+ 2c: jalr ra
+ 3a: jalr ra                   ← 第二次 malloc
+ 44: beqz a5, cc <.L533>       ← 同样有 NULL 检查
+ 80: jalr ra                   ← 第三次 malloc
+ 8a: beqz a5, d0 <.L534>       ← 同样
+```
+
+⇒ **代码在每个 memset/malloc 后都检查 NULL**
+⇒ "malloc 返回 NULL ⇒ 对着地址 0 狂写 1.34 亿次" **不成立**。
+
+### 同时
+
+`memset` 是**独立 `jalr` 调用**（非内联）⇒ 若 CPU 真在 `memset` 里，PC 样本应落在 **ROM/newlib**，
+而实测样本全在 **`Ughm` 自身函数体**（`0x4005ea36/ea4e/ea90`）
+⇒ **`Ughm` 只是被正常路过**，不是停滞点。
+
+### 因此
+
+"热点 = `Ughm`" 这个判断**减弱**：6/48 的样本集中在它体内，
+但该函数只做"分配 + 清零"且**每次都检查 NULL**，不具备长期阻塞的结构。
+
+⇒ 需要**完整 48 条频次排序**才能判断它是否真是榜首（本轮只看了前 6）。
+
+### 当前最可靠的三条事实（不变）
+
+1. `r_btdm_task_init` **没有返回**（`enter step 7` 缺失）
+2. 停滞区**不产生 OSAL 调用**
+3. 采样在停滞期**极其稀疏**（50 s 约 6 条）
+
+⇒ 第 3 条结合 `trap.zig` 的结构（定时器**只在 `input == 25` 分支重装**）说明：
+**归档可能接管了 input 25，导致我们的定时器不再重装 ⇒ 中断枯竭**。
+这条若成立，则"样本稀疏"是**仪器问题**，而非"CPU 在睡眠"的证据。
+
+### 下一步（两条，都便宜）
+
+1. 把 `hw.ackT0Interrupt(...)` **移出 `input == 25` 条件**（每次 trap 都重装）
+   ⇒ 若样本变密 ⇒ 证实"定时器被归档接管"；
+2. 若样本仍稀疏 ⇒ 才考虑"CPU 在 WFI/关中断"。
