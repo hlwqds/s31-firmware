@@ -1246,7 +1246,41 @@ var bt_arena: Arena = .{};
 pub var arena_init_magic: u32 = 0;
 pub var arena_init_size: u32 = 0;
 
+/// 堆区 canary 扫描结果（由导出读取，**不经过 UART**）。
+pub var canary_first_off: usize = 0;   // 第一个被改写的 4 字节偏移（相对堆起点）
+pub var canary_first_val: u32 = 0;     // 该处的实际值
+pub var canary_bad_words: usize = 0;   // 一共被改写的字数
+pub var canary_base: usize = 0;        // 堆起点（便于换算绝对地址）
+
+pub fn canaryScan() void {
+    const base = canary_base;
+    if (base == 0) return;
+    canary_first_off = 0;
+    canary_first_val = 0;
+    canary_bad_words = 0;
+    var i: usize = 0;
+    while (i < bt_arena.buf.len / 4) : (i += 1) {
+        const w: *volatile u32 = @ptrFromInt(base + i * 4);
+        if (w.* != @as(u32, @truncate(i * 4 +| 0xCAFE_0000))) {
+            if (canary_bad_words == 0) {
+                canary_first_off = i * 4;
+                canary_first_val = w.*;
+            }
+            canary_bad_words += 1;
+        }
+    }
+}
+
 pub fn initArena(region: []u8) void {
+    // **canary 预填**：每个 4 字节字写它自己的偏移（便于定位写入者）。
+    canary_base = @intFromPtr(region.ptr);
+    {
+        var i: usize = 0;
+        while (i < region.len / 4) : (i += 1) {
+            const w: *volatile u32 = @ptrFromInt(@intFromPtr(region.ptr) + i * 4);
+            w.* = @truncate(i * 4 +| 0xCAFE_0000);
+        }
+    }
     bt_arena.init(region);
 }
 
@@ -1269,7 +1303,10 @@ fn putByte(ch: u8) void {
 pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     const r = bt_arena.alloc(size, 8);
     // **判据**：PHY 校准的 1904 字节请求 —— 成功打 '+'、失败打 '-'（单字节，不会被 FIFO 丢）。
-    if (size == 1904) putByte(if (r != null) '+' else '-');
+    if (size == 1904) {
+        // 在这一刻触发导出（canary 扫描 + 块头读数）——此时 PHY 校准正在要内存。
+        if (dump_hook) |f| f();
+    }
     // **清零**：归档把分配到的内存当结构体用，并假定字段初值为 0。
     // 板侧证据：`deinit` 里读到 `a0=0xb7a10c0d` 这种垃圾，而 IDF 的堆在启动后是干净的。
     if (r) |v| @memset(@as([*]u8, @ptrCast(v))[0..size], 0);

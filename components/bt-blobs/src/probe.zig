@@ -151,7 +151,7 @@ fn codePush(c: u8) void {
     }
     // **按码数触发导出**：不依赖 `irq_count`（其基准未核实），也不 halt。
     // 16 个码≈接近序列尾部，此时打一行 ~30 字节，FIFO 放得下。
-    if (code_n == 16) {
+    if (code_n == 8 or code_n == 16) {
         if (board.trap.extra_dump) |f| f();
     }
 }
@@ -493,7 +493,10 @@ pub fn run() noreturn {
 /// 这些返回地址是归档自己的 PC —— 采样被我们的钩子占据时，这是唯一的归档侧落点。
 fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
-    board.log.line("AM 0x{x} 0x{x}", .{ osal.arena_init_magic, osal.arena_init_size });
+    // **无条件**输出（不随 code_n 阈值）：这是本轮唯一必须拿到的读数。
+    osal.canaryScan();
+    board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
+    if (osal.arena_init_magic != 0) board.log.line("AM {x}", .{osal.arena_init_magic});
     if (code_n > 0) board.log.line("CODES n={d} {s}", .{ code_n, code_ring[0..code_n] });
     board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
     board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});
