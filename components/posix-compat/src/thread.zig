@@ -116,6 +116,8 @@ pub fn pthread_create(
     arg: ?*anyopaque,
 ) c_int {
     if (attr != null) return fail(e.EINVAL); // 非默认属性（含显式栈）不支持
+    // C 调用方可以传 NULL：Zig 类型上是非可选指针，但 ABI 不拦。
+    if (@intFromPtr(start_routine) == 0) return fail(e.EINVAL);
     const s = allocSlot() orelse return fail(e.EAGAIN); // 8 个槽用完了
     s.func = start_routine;
     s.arg = arg;
@@ -262,6 +264,16 @@ test "thread: detach 之后 join 报 EINVAL；detach 已完成线程会立即回
     e.set(0);
     try testing.expectEqual(@as(c_int, -1), pthread_join(s, null));
     try testing.expectEqual(e.EINVAL, e.get());
+    resetSlots();
+}
+
+test "thread: 已 detach 的线程收尾时会回收自己的槽（否则 8 次后永久 EAGAIN）" {
+    resetSlots();
+    const s = allocSlot() orelse return error.OutOfSlots;
+    try testing.expectEqual(@as(c_int, 0), pthread_detach(s));
+    try testing.expect(s.in_use); // 还没结束，槽仍占着
+    complete(s, null); // trampoline 收尾
+    try testing.expect(!s.in_use); // 回收
     resetSlots();
 }
 

@@ -151,9 +151,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**28 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 40`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**41 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 11** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 41`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -165,41 +165,41 @@ const Slot = struct {
    "file exists in modules 'net_sockets' and 'net_sockets0'"。等接内核时把 socket 层的
    模块根统一（api 兼作组件根，并在 test 目标里特殊处理 `host_tests.zig` 的路径映射）再一起进。
 
-## 6. 下一步（线程、条件变量、超时）
+## 6. 进度与剩余项
 
-**只有一条路**：把生产侧的 OSAL 抽成独立组件。不存在"只在 lab 里做一份"的选项 ——
-lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，lab 版永远进不了这里。
+### 6.1 内核抽取（已完成 2026-11-18）
 
-> ✅ **这一步已于 2026-11-18 完成**：`components/osal/`（`sched.zig` + `osal.zig` + `probe_ptr.zig`，
-> 1946 行，零 `board` 依赖）。搬移行为未变的证据是闭包链接的镜像大小**逐字节相同**（913728 B）。
-> 验收命令 `scripts/check-bt-link.sh`。⇒ 下面的表就是**现在可以开始做**的工作。
+`components/osal/` = `api.zig` + `osal.zig` + `sched.zig` + `host_tests.zig`，**1959 行**，
+零 `board` 依赖（`probe_ptr.zig` 在去耦那次退回 `bt-blobs` —— 它读的地址是 BLE 专有的）。
+验收：`scripts/check-bt-link.sh`（116 个闭包对象、镜像 913728 B）。
 
-**抽取成本（已完成，实测数据留作记录）**：`components/bt-blobs/src/{sched.zig, osal.zig}`
-合计 **1946 行**，依赖面只有 `std` + `builtin` —— **零 `board` 依赖**。全文件里与板级相关的
-只有三处，且都不需要改：两处注释（说明为什么**不**用 `board.hw.nowUs`、TRNG 由谁注入）、
-一处 `asm`（上下文切换本身）。时间、临界区、随机数已经是**注入钩子**
-（`hooks.now_ms` / `hooks.irq_save` / `hooks.irq_restore` / `rand_hook`），主机测试本来就这么跑。
+| 步 | 内容 | 状态 |
+| --- | --- | --- |
+| 1 | 建 `components/osal/`，搬内核两件 + 测试入口 | ✅ |
+| 2 | `bt-blobs` 改为 `@import("osal_kit")` | ✅ |
+| 3 | `posix-compat` 加 `sync.zig` / `thread.zig` | ✅ 41 项 |
 
-所以第一步是纯搬运 + 改模块根：
+### 6.2 线程层（已完成 2026-11-18）
 
-| 步 | 内容 |
-| --- | --- |
-| 1 | 新建 `components/osal/`，搬 `sched.zig` + `osal.zig` + 一份 `host_tests.zig`（现在这 36 项用例属于 bt-blobs） |
-| 2 | `bt-blobs` 改为 `@import("osal_component")`（它的 `selftest.zig` 里 `run()` 继续调搬过去的实现） |
-| 3 | `posix-compat` 加 `sync.zig` / `thread.zig`，依赖这个组件 —— **`sync.zig` 已完成**（28 项） |
+`thread.zig`（11 项用例）：线程体跑完不能返回 —— trampoline 记返回值、置 `done`、
+`sem_post` 唤醒 joiner，然后 `sched.block()` 永不返回；这个顺序安全的前提正是 `sched`
+不回收任务槽（没人会再 resume 那个退出的任务，它的栈复用后不会有帧在跑）。
 
-> ⚠️ **写 `thread.zig` 前必须知道的硬边界**：`sched.taskCreate()` 置 `in_use = true`，
-> 而 `sched.zig` **没有** `taskDelete`/`taskExit` —— 槽位永不回收。所以每个 boot 最多
-> **8 次** `pthread_create`（`max_tasks = 8`），线程退出也不还槽；第 9 次必须返回
-> `EAGAIN`，不能因为"线程已经 join 了"就以为能再创建。join/done 槽位可以自己回收，
-> `sched` 的槽不行。
-
-**`thread.zig` 已完成**（10 项用例）。实现要点：线程体跑完不能返回 —— trampoline 记返回值、
-置 `done`、`sem_post` 唤醒 joiner，然后 `sched.block()` 永不返回；这个顺序安全的前提正是
-`sched` 不回收任务槽（没人会再 resume 那个退出的任务，它的栈复用后不会有帧在跑）。
 主机用例覆盖槽位分配/回收、重复 join、detach、`self` 在主上下文返回 `null`，
 走的是 trampoline 收尾的**同一段** `complete()`，不是替身。
 
+### 6.3 剩下的 ○（按价值排序）
+
+| 项 | 阻塞点 | 代价 |
+| --- | --- | --- |
+| `pthread_cond_*` | `osal.Sem` 只有**一个** waiter 槽 ⇒ 条件变量必须自己维护等待队列 | 要么在 `osal` 加等待队列（改内核 + 重跑闭包门禁），要么在 `posix-compat` 用 `sched.block()/resumeTask()` 自建 |
+| 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
+| `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动的超时唤醒（`callout` + `resumeTask`） |
+| `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |
+| 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
+
+**共同前提**：剩下的三项都要一条**多等待者队列**。它应当落在 `osal`（内核该有的东西），
+而那会改 `bt_core.o` ⇒ 需重跑 `scripts/check-bt-link.sh` 并重新确立镜像尺寸基线。
 **仍未做**：`pthread_cond_*`（需要与 mutex 配合的等待队列，而 `osal` 只有单 waiter 槽）、
 `fork`/`waitpid`、文件 I/O。
 
