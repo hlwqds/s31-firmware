@@ -127,7 +127,7 @@ fn trace(comptime what: []const u8, args: anytype) void {
 /// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
 /// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
 var bail_sentinel: [64]u8 align(4) = @splat(0);
-pub var patch_bail_field: bool = false; // 实验默认关闭：见 README
+pub var patch_bail_field: bool = false; // 已证伪：填 [obj+8] 不影响崩溃
 
 fn fillBailField() void {
     if (!patch_bail_field) return;
@@ -904,13 +904,13 @@ test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
 const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
-    // 判据补丁（实验）：task_init 在 eventq_init 返回后检查 `*(anchor[6]+8) == 0` 就 bail。
-    // 这里在返回前把它填成非零，用来验证"+8 是唯一缺口"。
-    fillBailField();
     noteCaller();
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
+    // 判据补丁（实验）：必须在 `eventqInit` **之后**——`evq` 就是 `obj+8`（`c.addi a0,8`），
+    // `eventqInit` 会写槽首字，放在前面会被它覆盖。
+    fillBailField();
 }
 export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
     eventqDeinit(evq);

@@ -2751,3 +2751,25 @@ cleanup 路径会连续解引用多个未初始化对象，补一个槽只换一
 ⇒ 要拿到 step 7 的观测，必须**让 `task_init` 本身成功**（bail 不发生、rollback 不触发）。
 
 `patch_bail_field` 已置回 `false`，实验代码与其结论一起保留。
+
+### 证伪：「bail 判据是 `[obj+8]==0`」（2026-11-18，两种放置都试过）
+
+在 `wr_btdm_osal_eventq_init` 里补写 `*(anchor[6]+8)`，两次实验：
+
+| 放置 | 结果 |
+| --- | --- |
+| 在 `eventqInit(evq)` **之前** | `patch=applied`，崩溃不变 |
+| 在 `eventqInit(evq)` **之后**（`evq` 就是 `obj+8`，会覆盖前者） | `patch=applied`，崩溃**仍不变** |
+
+⇒ 填该字段**不改变**崩溃路径 ⇒ 那条 `lw a5,8(a5); beqz` **不是** task_init 提前退出的判据。
+（此前基于该分支静态形态的推断，以本条为准作废。）
+
+**但仍有一个强一致的事实**：OSAL 环 `n=3`（mutex_init / eventq_init / mutex_pend）——
+说明 `eventq_init` 之后**没有**再发生分配，紧接着就是回滚路径里的 `mutex_pend`。
+所以退出确实发生在 `eventq_init` 与下一次分配之间，只是**判据不是那个字段**。
+
+**下一步（明确、单点）**：把 `OkE7…` 从 `0x4005f8d4`（`jal eventq_init`）到 `0x4005f8e0`
+完整读一遍（现在 README 里只有片段），看 `beqz` 的目标 `.L40` 之后到底做什么 ——
+是设置返回码为某个立即数、还是跳到别的检查。这段只有几十字节，离线即可，不用刷板。
+
+`patch_bail_field` 已置回 `false`，两种放置方式与其结论都保留在代码注释里。
