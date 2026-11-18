@@ -2031,5 +2031,9 @@ store 标注、也没有 store 重定位 ⇒ 写者用**别的方式**算地址�
 1. 提高归档的日志级别 —— **已查到入口但还没跟进**：`r_ble_log_init_simple`
    （`libble_app_69.o`，8 字节）是 `auipc t1,0 ; jr t1` 的**尾跳**，重定位目标是
    `R_RISCV_CALL r_sym_ble_X6TrvuCkpvS7KEA8Jat8` —— 又一个 per-object 锚点符号。
-   要判断"日志级别能不能开"，得顺着这条锚点链找到真正的 log-init 实现。
+   顺着这条链追了一跳：`r_sym_ble_X6TrvuCkpvS7KEA8Jat8` 由 `libble_app_71.o` 定义（224 字节），
+   入口对 `a0`/`a1` 判空后返回，随后经另一个锚点 `r_sym_ble_pBNUoU5EPgUlFpeQVn6W` 取表 ——
+   它是**日志输出函数**的形状，不是"设置级别"的函数。
+   ⇒ 级别判断大概率在**各调用点**（每次打印前比较一个全局级别），要继续就得逐个调用点追。
+   本条到此为止：再往下是成规模的逆向，不属于"顺带推进"。
 2. ~~`rom_phyFuns` vs `g_phyFuns`~~ —— **已撤回**（见上节，地址读错）。
