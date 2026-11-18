@@ -426,6 +426,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         }
         // `bt_mmio_*` 的**调用者**（= 归档自己的 PC）：采样被我们的外壳占满时，这是唯一的归档落点。
         const mn = @min(hw.mmio_caller_n, 8);
+        log.line("panic: rings mmio_n={d} mmio_caller_n={d} pc_n={d} caller_n={d}", .{ hw.mmio_ring_next, hw.mmio_caller_n, pc_snap_n, caller_n });
         var mi: usize = 0;
         while (mi < mn) : (mi += 1) {
             const idx = (hw.mmio_caller_n +% hw.mmio_caller_ring.len - mn + mi) % hw.mmio_caller_ring.len;
