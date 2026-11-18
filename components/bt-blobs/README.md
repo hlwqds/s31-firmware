@@ -7946,3 +7946,40 @@ README 早前记录"卡在 init step 6"是**另一配置/另一轮的结论**。
 
 ⇒ **下一步必须先区分 1 与 2**：检查 `logPublic` 是否可能停止，或在一处**确定会执行**的位置
 （如 `enter(5, ...)` 之前）加一个**直接写 UART** 的裸标记，绕开 `logPublic`。
+
+## ✅ 矛盾已解：日志**确实在丢/交错**，CPU 在 PHY（2026-11-19）
+
+捕获原文：
+
+```text
+bt bringup: enter step 1 mempool
+bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16 / cap 384/96/128/64/64
+bt mempool: bt bbbbbbbbbt lp:bps n=512 pc=0x2f828a78 ...
+```
+
+第二行来自 `porting.zig:465-489`，位于 `prepareMempool` **内部之后**
+⇒ **`prepareMempool()` 已执行完**（含容量校验）。
+
+第三行被心跳 `.` 打断（`bt bbbbbbbbbt lp:bps`）⇒ **日志行在 FIFO 里被截断/交错**。
+
+### 结论
+
+| 判断 | 状态 |
+| --- | --- |
+| "挂在 `prepareMempool`" | ❌ **错** —— 它已返回 |
+| "日志停在 step 1 = 只走到 step 1" | ❌ **错** —— 日志在丢/被截断 |
+| **CPU 在 PHY ROM 代码里** | ✅ **对** —— PC 样本（`0x2f828a78` 等）是可信的 |
+
+⇒ **日志不能用来判进度**；PC 采样与寄存器读数是可信的观测。
+
+### 因此
+
+- 挂点在 **PHY 初始化路径内**（`step 5` 之后 `phyDomainEnable` + `initPhy`），
+  与 PC 样本一致；
+- 此前"step 6 / step 2 / step 1"的三次推断**全部作废** —— 它们都基于不可靠的日志。
+
+### 下一步（唯一可信手段）
+
+在每个 step 边界往 **RAM 全局**写 step 号（不受 UART/FIFO 影响），
+结束时一次性 dump ⇒ 真正的 step 进度成为板上事实。
+或直接依赖 PC 采样 + 寄存器读数（已验证可信）。
