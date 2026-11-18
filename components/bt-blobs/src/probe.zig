@@ -32,6 +32,15 @@ extern var g_c_count: u32;
 /// 供 C 侧 abort 桩调用：在崩溃瞬间把状态导出（不 halt）。
 export fn probe_dump_now() void {
     dump_done = false;   // abort 时刻必须能再次导出（否则被 once-only 门挡住）
+    // **OSAL 计数器**：判断"投递了但消费不到"还是"根本没投递"的关键
+    {
+        const st = osal.stats();
+        board.log.line("S put={d} gok={d} gempty={d} mok={d} mbusy={d} blk={d} pool={d} requeue={d}", .{
+            st.eventq_put,      st.eventq_get_ok,   st.eventq_get_empty,
+            st.mutex_pend_ok,   st.mutex_pend_busy, st.blocked_calls,
+            st.pool_exhausted,  st.eventq_requeued,
+        });
+    }
     dumpAtPend();
 }
 const config = @import("config.zig");

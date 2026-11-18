@@ -9081,3 +9081,48 @@ eventInit ×2     (有 trace)
 
 "trace 串复制粘贴错了（`eventqPut` 写成 `eventInit`）" —— **不成立**：
 `eventqPut` 根本没有 trace 调用。
+
+## OSAL 计数器接线（2026-11-19，部分完成）
+
+### 已做的改动
+
+`probe.zig` 的 `probe_dump_now()` 开头新增一行：
+
+```zig
+const st = osal.stats();
+board.log.line("S put={d} gok={d} gempty={d} mok={d} mbusy={d} blk={d} pool={d} requeue={d}", ...);
+```
+
+（`osal` 在该文件里是 `@import("osal_kit").osal`，不是 `@import("osal")`。）
+
+### 触发接线（两端都确认存在）
+
+| 侧 | 位置 |
+| --- | --- |
+| 声明+调用 | `trap.zig:14` `extern fn probe_dump_now() callconv(.c) void;`，`trap.zig:190` 调用 |
+| 触发条件 | `bringup.zig:323` `probe_stop_at_tick = 30000`（100 µs/tick ⇒ ~3 s）|
+
+### 但该行**没有出现在串口**
+
+同一次捕获里 `osalcaller[0…]` **已打印**（它由 `probe_dump_now` → `dumpAtPend` 输出，
+位于我新增那行**之后**）⇒ 函数确实执行了，但 `S put=…` 那行**没落到串口**。
+
+可能原因（未验证）：
+- 该行较长（约 80 B），写时仍有丢弃（`rawWrite` 的整行预留上限是 120，理论上够）；
+- 或格式化失败（`{d}` 与字段类型不匹配）导致 `bufPrint` 提前 return。
+
+### 交接
+
+下一步：把该行**拆成 4 行短输出**（每行 ≤ 24 B），或改用 `@as(u32, ...)` 显式转换后再格式化，
+即可确认是长度问题还是格式化问题。计数器本身（`Stats` 结构 `osal.zig:171-188`）是现成的：
+
+```text
+eventq_put / eventq_get_ok / eventq_get_empty / mutex_pend_ok /
+mutex_pend_busy / blocked_calls / pool_exhausted / eventq_requeued
+```
+
+判读表（关键）：
+- `eventq_put == 0` 而 `jH5m` 确实调了两次 ⇒ **投递被静默丢弃**（`slotGet` 失败，`osal.zig:507` 开头）
+- `eventq_requeued > 0` ⇒ 跨队列投递
+- `eventq_get_empty > 0` ⇒ 消费者取不到
+- `pool_exhausted > 0` ⇒ 静态池容量不足
