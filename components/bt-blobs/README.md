@@ -7292,3 +7292,45 @@ if (ret == ESP_CAL_DATA_CHECK_FAIL) { ... }
 
 **在 `PHY_RF_CAL_FULL` 模式下，`register_chipv7_phy` 需要真实 RF 前端来产生校准结果。**
 本板无天线/RF 通路 ⇒ 校准无法完成 —— **这是硬件前提，且有源码依据**。
+
+## 🔬 反汇编 `libphy.a`（s31）：FE 寄存器 **`0x20100800`**（2026-11-19）
+
+**材料存在**（此前判断错误）：`~/esp/esp-idf/components/esp_phy/lib/esp32s31/libphy.a`
+
+| 符号 | 所在对象 | 大小 |
+| --- | --- | --- |
+| `register_chipv7_phy` | `phy_init.o` | **0x1e6 = 486 B** |
+| `phy_fe_reg_update` | `phy_reg.o` | **0x32 = 50 B** |
+
+### `register_chipv7_phy` 内的 FE 访问（`phy_init.o`）
+
+```asm
+  f2: lui  s4,0x20101
+  f6: lw   a5,-2048(s4)      ; 读 **0x20100800**
+  fa: lw   s1,164(s0)
+  fe: ori  a5,a5,4           ; **置 bit 2**
+ 102: sw   a5,-2048(s4)      ; 写回 **0x20100800**
+ 106: call phy_get_xtal_freq
+ 108: call **phy_fe_reg_update**   （重定位 0x108）
+```
+
+⇒ **FE 控制寄存器 = `0x20100800`**，其中 **bit 2** 被置位（很可能是 "FE 使能/校准启动"）。
+
+### `phy_fe_reg_update`（`phy_reg.o`，50 B）是**读-改-写**，不是等待
+
+```asm
+ d4: or   a4,a4,a3
+ d6: sw   a4,1112(a5)      ; 写偏移 1112
+ da: lw   a4,1112(a5)      ; **读回**
+ e4: and  a4,a4,a3         ; 清若干位
+ ec: or   a4,a4,a3         ; 置若干位
+ ee: sw   a4,1112(a5)
+ f2: ret                   ; **无循环**
+```
+
+⇒ 它是配置函数，**不含等待**。
+
+### 因此等待在更深处
+
+⇒ 需继续跟踪 `register_chipv7_phy` 的后续调用（或 `phy_get_xtal_freq` 之后的分支），
+   直到找到**带循环**的那一段 —— 那才是板上的轮询点。
