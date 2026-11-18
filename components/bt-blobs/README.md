@@ -8156,3 +8156,57 @@ dump `0x2f07f800–0x2f07f948`（21 行）后：
 "用表槽偏移反推 `jalr` 的 imm"这条路**暂时走不通**（前提不成立）。
 需要先确认 `0x2f07f944` 的**真实语义**（谁调用它、结构体大小、字段顺序），
 或直接改用**运行时**手段：在 `phy_pwdet_tone_start` 入口读 `ra`/`*(sp+12)`。
+
+## 🎯 挂点锁定：**`initPhy()` 内部**（2026-11-19，日志修好后的首次可信切分）
+
+在 step 5→6 窗口插入 `enter(51, "phy_domain_enable")` 与 `enter(52, "init_phy")` 两枚标记后：
+
+```text
+bt bringup: enter step 1 mempool
+bt bringup: enter step 3 btdm_external_init
+bt bringup: enter step 4 btdm_coex_init
+bt bringup: enter step 5 btdm_lp_enable_clock
+bt bringup: enter step 52 init_phy      ← **出现**
+```
+
+### 判定
+
+| 函数 | 状态 |
+| --- | --- |
+| `btdmLpEnableClock()`（step 5 表达式）| ✅ 已返回（`enter step 52` 出现）|
+| `porting.phyDomainEnable()` | ✅ 已返回 |
+| **`initPhy()`** | ❌ **挂在这里** |
+
+`enter(51)` 本身未出现 —— 因为 `phyDomainEnable()` 自己会打一行日志，
+两行之间没有排空 ⇒ 仍是同类丢弃；但 `enter(52)` 出现**足以证明前两者都已返回**。
+
+### `initPhy()` 的内容（`probe_ptr.zig:75-78`）
+
+```zig
+phy_get_romfunc_addr();      // 填 g_phyFuns
+esp_phy_enable(modem);       // IDF 真实现 → esp_phy_load_cal_and_init → register_chipv7_phy
+```
+
+⇒ 与 PC 样本落在 PHY ROM（`0x2f828a64` / `0x2f826484` / `0x2f8036cc`）**完全一致**。
+
+### 因此本会话的定位链已闭合
+
+```
+step 5 → phyDomainEnable ✓ → initPhy ✗
+                              └─ esp_phy_enable → register_chipv7_phy
+                                 └─ 在 phy_pwdet_tone_start 一族里反复重入
+```
+
+### 交接清单（按证据强度，各需一次板载周期）
+
+1. 读 **`0x2f07f944` 这个字**：若 ≠ `0x2f07f944` ⇒ 表未建立 ⇒ `jalr -2040(a5)` 跳无效地址；
+2. dump `0x40104fef` 起 **128 B**，与 `wifi-blobs/src/phy_init_data.zig` 比对
+   （`phy_stubs.c:50-54` 那张表只有 20 B 有效值，其余 108 B 补零）；
+3. `phy_stubs.c` 的 `esp_efuse_mac_get_default` → 真 MAC `1c:29:04:d1:99:28`；
+4. 照抄 Wi-Fi 侧 IDF 对齐写入 + ③ 一起做（已知可用配置回放）。
+
+### 未证事项（勿当结论）
+
+- "`+0x0C` 有害 / 三写全开退步" —— 该判定发生在**日志坏掉**时期，需重测；
+- "`g_phyFuns` 不是函数表" —— dump 窗口（基址下方 0x144 B）**未覆盖负偏移槽区**，
+  该假设**未被证伪**，应改为"窗口内未命中"。

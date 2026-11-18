@@ -218,7 +218,9 @@ pub fn init(cfg: *config.Config) c_int {
     porting.btdmLpEnableClock(&cfg.btdm);
     // **正确顺序**（对齐 IDF）：BT/LP 模块时钟已使能之后，再做 PHY 使能/校准。
     if (!phy_before_clocks) {
+        enter(51, "phy_domain_enable");
         porting.phyDomainEnable();
+        enter(52, "init_phy");
         @import("probe_ptr.zig").initPhy();
         osal.logPublic("bt bringup: PHY enabled AFTER step 5 (idf order)", .{});
     }
