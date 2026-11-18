@@ -385,6 +385,7 @@ pub fn run() noreturn {
 /// 这些返回地址是归档自己的 PC —— 采样被我们的钩子占据时，这是唯一的归档侧落点。
 fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
+    board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
     board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});
     // s0=0x2f00ffe8 = anchor[6]；把 11 个锚点 + 每个非零锚点的 +8 字段打出来，
     // 直接回答「哪个字段未发布」。0x2f00ffd0 是 anchor[0]。
