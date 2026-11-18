@@ -76,7 +76,10 @@ pub fn build(b: *std.Build) void {
         // probe 镜像里不能带 posix section：它会把 `osal_kit`（sched/osal）编进 app，
         // 而 `bt_core` 对象里已有一份 ⇒ `bt_swap_context`、`s31_now_us` 等 export 重复。
         // probe 是诊断镜像，本来也不需要那一段。
-        if (bt_probe and std.mem.eql(u8, m.name, "posix")) continue;
+        // **带 BLE 闭包的镜像里不挂 posix section**：闭包本身已占 `.flash.text` 699 856 /
+        // 窗口 720 896，posix 再 +8.75 KB 就溢出（`scripts/check-bt-link.sh` 实测 2032 B）。
+        // posix 是自检段，与 BLE 链接无关；真要三者共存必须先扩两段窗口。
+        if ((bt_probe or bt_blob_dir.len > 0) and std.mem.eql(u8, m.name, "posix")) continue;
         src = b.fmt("{s}    .{{ .name = \"{s}\", .run = @import(\"{s}\").run }},\n", .{ src, m.name, m.name });
     }
     if (ab_fail) {
@@ -268,10 +271,11 @@ pub fn build(b: *std.Build) void {
         });
         bt_core.addImport("board", board);
         bt_core.addImport("osal_kit", osal_mod);
-        // **不作为独立对象**：`addObject` 会把 `board`/`osal_kit` 再编一份，而 app 自己也编
-        // 同一批模块 ⇒ `bt_swap_context`、`s31_now_us`、`bt_mmio_read` 等 `export fn` 全部重复。
-        // 作为 app 的一个模块引入则只编一次；blob 构建已关 gc-sections，`export` 不会被裁掉。
-        app.root_module.addImport("bt_core", bt_core);
+        // **只在 probe 镜像里编 bt_core**（探针要跑 bringup/transport）。非 probe 的闭包
+        // 构建只需要 osal 的 5 个 `s31_*` 导出给归档解析 —— 用下面那个 comptime 根引用触发。
+        // 把 bt_core 整个编进来会多 ~2 KB：blob 构建关了 gc-sections，`.flash.text` 会溢出
+        // 窗口（`scripts/check-bt-link.sh` 实测 2032 B）。
+        if (bt_probe) app.root_module.addImport("bt_core", bt_core);
         // probe 用同一个模块（它 import 的是 `bt_core`，不是相对路径）
         // 直接 import 模块：bt_core 现在是 app 的模块（只编一次），因此既能强制分析
         // （`export fn` 才会发射），也不会像 addObject 那样把 board/osal 再编一遍。
@@ -283,8 +287,14 @@ pub fn build(b: *std.Build) void {
             shim_mod.addImport("bt_core", bt_core);
             app.root_module.addImport("bt_probe", shim_mod);
         } else {
-            const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
+            // 归档要的 5 个 `s31_*` 在 osal.zig 里；没人引用就不会发射（惰性分析）。
+            // 根引用必须挂在**会被引用的模块**上：main 引用 `bt_probe.enabled` ⇒ 本模块被分析
+            // ⇒ 下面这行 comptime 生效。单独 import 一个锚点模块不会分析它（试过，5 个仍未定义）。
+            const off_src = "const k = @import(\"osal_kit\");\n" ++
+                "comptime {\n    k.forceExports();\n}\n" ++
+                "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
             const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("bt_probe_off.zig", off_src) });
+            off_mod.addImport("osal_kit", osal_mod);
             app.root_module.addImport("bt_probe", off_mod);
         }
     }

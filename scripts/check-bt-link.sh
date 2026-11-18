@@ -16,8 +16,10 @@
 #    （四个归档 179 个成员摊平只剩 142）。必须用 `tools/gen-bt-closure.sh` 的闭包清单。
 # 2. **`export fn` 需要有人强制分析**：`osal.zig` 里有 5 个 `export fn`，而 `api.zig` 只转出口，
 #    Zig 不分析被转出的文件。开关本身在 `components/osal/src/api.zig` 的 `forceExports()`，
-#    但**必须由真正被编译的模块根在 comptime 调一次**（现在是 `bt-blobs/src/root.zig`）：
-#    `osal_kit` 是惰性模块，只写 `pub const osal = @import("osal_kit").osal` 不会分析它。
+#    但**必须由真正被编译的模块根在 comptime 调一次**。非 probe 的闭包构建里由
+#    build.zig 生成的 probe-off shim 做（main 引用 `bt_probe.enabled` ⇒ 该模块被分析 ⇒
+#    comptime 生效）；probe 镜像里则由 `bt-blobs/src/root.zig` 做。
+#    注意：**import 一个"只做根引用"的独立模块不会分析它** —— 试过，5 个符号仍未定义。
 #    没有这次调用，`bt_core.o` 符号数是 **0**，链接报 `s31_now_us` 等 5 个未定义
 #    （`-Dbt-probe` 会掩盖它）。
 # 3. **镜像不能"链接成功但为空"**：没有真实引用时归档成员按需取用可能一个都不进来。

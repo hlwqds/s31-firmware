@@ -163,3 +163,20 @@ padding**，真实段增长约 10.8 KB（irom +7.8 KB、drom +3.1 KB）。这条
 `send` **没有**阻塞版，而且不是"还没做"，是**没有通知源**：发送缓冲腾出空间发生在对端 ACK 到达时，
 处理它的是 `net-tcp` 的连接状态机与 `net-sockets` 的 `onSegment`，**不经过 `Table.on_ready`**。
 要做阻塞写，先得让那条路径也发通知 —— 那是另一处生产代码改动，收益要等真有阻塞写调用方时再评估。
+
+## 追加（2026-11-18）：posix 与 BLE 闭包**装不进同一个窗口**
+
+把 posix 接成 section 之后，`scripts/check-bt-link.sh` 的闭包链接失败：
+
+```text
+error: ld.lld: section '.flash.text' will not fit in region 'irom': overflowed by 2032 bytes
+```
+
+原因不是代码质量，是容量：闭包本身占 `.flash.text` 699 856 / 窗口 720 896，posix section
+（net profile 实测 +8.75 KB）再加进去就顶爆。**两者都不需要同时存在**：posix 是自检段，
+BLE 闭包构建是链接验收，所以 `-Dbt-blob-dir` 或 `-Dbt-probe` 时不再挂 posix section
+（`firmware/build.zig` 里有一行跳过 + 注释）。真要三者共存，先扩两段窗口。
+
+这次改动也让闭包镜像从 913 728 变成 **913 744 B**（+16 B）：非 probe 的闭包构建不再把
+`bt_core` 整个编进来（那会 +2 KB），改成让 probe-off shim 里做一次 `osal.forceExports()`
+的 comptime 根引用 —— 只发射归档要的 5 个 `s31_*`。

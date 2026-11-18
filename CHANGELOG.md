@@ -216,6 +216,14 @@
   +0x4a）处以 `a0=0x0` 触发 **store access fault** —— 与"拿未发布锚点当基址写"一致，
   即此前静默零填充的同一个缺陷，现在变成了可定位的 fault。
 
+- **posix 与 BLE 闭包装不进同一窗口（2026-11-18，门禁实测）**：加 posix section 后
+  `scripts/check-bt-link.sh` 报 `.flash.text` 溢出 **2032 B**（闭包占 699 856 / 窗口 720 896，
+  posix +8.75 KB）。两者不必共存 ⇒ `-Dbt-blob-dir` / `-Dbt-probe` 时跳过 posix section，
+  并在注释与 ADR 写明"要三者共存须先扩窗口"。
+  同批修正：非 probe 的闭包构建不再把 `bt_core` 编进 app（那会 +2 KB），改由 probe-off shim
+  做一次 `osal.forceExports()` 的 comptime 根引用 —— 只发射归档要的 5 个 `s31_*`；
+  闭包镜像因此从 913 728 → **913 744 B**（+16 B），门禁通过。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
