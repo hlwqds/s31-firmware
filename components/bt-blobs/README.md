@@ -8551,3 +8551,31 @@ bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如
    找**谁应该 `eventq_put`**（`r_sym_bt_*` 派生符号之一，需用符号表反查）；
 2. 若 `event_run` 有被调用 ⇒ 任务正常，挂点在**更后面的 step**（step 7+），
    `enter step 6` 停在最后一行只是因为它之后没有更多 `enter()` 标记。
+
+## ❌ 更正上一节：`r_btdm_task_init` 的序列**不能**推出"卡在 eventq_get"（2026-11-19）
+
+上一节把两张表混在一起，结论**收窄**：
+
+| 事实 | 影响 |
+| --- | --- |
+| 重定位表里 `r_btdm_task_init` 调的是 **`mutex_init`** 与 **`eventq_init`** | 而实测轨迹是 **`mutexPend`** 与 **`eventInit`** —— **四个不同的 API** |
+| ⇒ `mutexPend`/`eventInit` **不在** `r_btdm_task_init` 体内 | 它们在 `r_sym_bt_*` 归档内部函数里 |
+| `get_time_forever` + `eventq_get` 在**同一张表**里（`0x46`/`0x54`）| 更像**任务体**（BT 任务本就该在事件队列上等），**不能**据此说"卡在 eventq_get" |
+
+⇒ README 上一节的"在 `eventq_get(FOREVER)` 上无限等待"应视为**待定**，不是结论。
+
+### 已确认的离线事实（本轮）
+
+`libbtdm_common.a` 中含 `wr_btdm_osal_mutex_pend` 引用的对象：**`15.o`** 与 **`21.o`**。
+
+`21.o` 导出的符号：
+```
+T r_btdm_task_deinit
+T r_btdm_task_disable
+T r_btdm_task_enable
+T r_btdm_task_init
+```
+
+⇒ 下一步：在这两个对象里按**偏移**列出 `mutex_pend` 与 `event_init` 的具体调用点，
+定位到**函数符号**，再反汇编该函数看 `mutexPend`/`eventInit` **之后**还会调什么 ——
+**下一个该出现却没出现的调用**才是挂点。
