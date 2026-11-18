@@ -73,26 +73,26 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `clock_gettime(CLOCK_MONOTONIC)` | tick 计数 / `hw.nowUs` | ○ 需要 `timespec` 与单位换算（注入 ns 时钟，便于主机测试） |
-| `nanosleep` / `usleep` / `sleep` | tick 阻塞 | ○ 需要"睡到某个 tick"的阻塞等待 |
-| `clock_getres` | 恒定 1 ms / 1 µs | ○ |
+| `clock_gettime(CLOCK_MONOTONIC)` | `time.clock_gettime`（注入 `Clock = fn () u64` ns） | ✅ 已完成 |
+| `nanosleep` / `usleep` / `sleep` | `time.nanosleep/usleep/sleep`（注入 `Sleeper`） | ✅ 已完成（板侧 sleeper 由应用接 tick；轮询式） |
+| `clock_getres` | `time.clock_getres`（恒定 1 ms / 1 µs） | ✅ 已完成 |
 | `gettimeofday` | — | — 无墙上时钟（板子没有 RTC 校准源），不做；需要时由应用注入 |
 
 ### 2.4 fd 与 socket
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `socket(AF_INET, SOCK_STREAM, 0)` | `Table.alloc` + 状态检查 | ○ 要校验 family/type/proto 并记录地址 |
-| `bind` | **无**（socket 层不存地址） | ○ 本组件维护每 fd 的 `sockaddr_in` |
+| `socket(AF_INET, SOCK_STREAM, 0)` | `fd.socket` → `Table.alloc` + family/type/proto 校验 | ✅ 已完成 |
+| `bind` | `fd.bind` + 本组件的每 fd `sockaddr_in` 表 | ✅ 已完成 |
 | `listen` | `Table.listen` | ● |
-| `accept` | `backlog` + `accept_token` | ◐ 需要非阻塞语义（`EAGAIN`）与阻塞等待（接上调度器） |
-| `connect` | `Table.connect` + 线路侧握手 | ◐ 同上：非阻塞返回 `EINPROGRESS`，完成后再变可写 |
+| `accept` | `fd.accept` → `backlog` + `accept_token` | ✅ 非阻塞（`EAGAIN`）；⏳ **阻塞等待未做**（见 §6.3） |
+| `connect` | `fd.connect` → `Table.connect` | ✅ 非阻塞返回 `EINPROGRESS`；⏳ 阻塞等待未做 |
 | `send` / `recv` | `Socket.send` / `Socket.recv` | ● 直接映射到 `ssize_t` + `errno` |
 | `sendto` / `recvfrom` / `sendmsg` / `recvmsg` | — | — 只有 TCP，不做 |
 | `shutdown` | `closeHalf` | ● |
 | `close` | `Table.close` | ● |
-| `read` / `write` | 同 `recv`/`send`（fd 都是 socket） | ○ 别名 |
-| `select` / `poll` / `epoll` | `Table.readyRead` + 每 socket 的 `readable`/`writable` | ○ 本版提供 `poll`（单次、非阻塞）；`epoll` 不做 |
+| `read` / `write` | `fd.read` / `fd.write`（同 `recv`/`send`） | ✅ 已完成 |
+| `select` / `poll` / `epoll` | `fd.poll`（单次、非阻塞） | ✅ `poll` 已完成；`select`/`epoll` 不做 |
 | `setsockopt` / `getsockopt` | — | — `SO_REUSEADDR`/`TCP_NODELAY` 无意义（我们只有一条连接、不聚合 Nagle），返回 `ENOPROTOOPT` |
 | `fcntl(O_NONBLOCK)` | `Socket.nonblocking` | ● |
 | 文件 I/O（`open`/`stat`/`fsync`…） | 无 VFS | — 不做（`ENOSYS`） |
@@ -101,28 +101,31 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `errno` 全局 | `net-sockets` 的 `Errno` 枚举 | ○ 本组件提供 `errno` 变量 + 双向映射（枚举值按 Linux 数值，便于与主机工具对照） |
-| `strerror` | `Errno.name` | ○ |
+| `errno` 全局 | `errno.zig`：模块级 `value` + `set/get` + `fromNetSockets` | ✅ 已完成（值按 Linux 数值；**每 Task 一份**未做，见 §6.3） |
+| `strerror` | `errno.name`（只覆盖本文件定义的子集） | ✅ 已完成 |
 
 ## 3. 本版范围（可验证优先）
 
 做：`errno` · `time`（clock_gettime/nanosleep/clock_getres）· `addr`（`sockaddr_in` 编解码 +
 每 fd 地址表）· `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll）
+· `sync`（sem/mutex/once）· `thread`（create/join/detach/self/exit）· `cond`（含 `waitq`）
 
-暂不做：线程与条件变量（需要把 ch10–ch12 的内核提成组件，是下一步）、`select`/`epoll`、
-文件 I/O、`gettimeofday`。
+暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、`sem_timedwait`/`cond_timedwait`
+（内核没有定时阻塞）、阻塞式 `accept`/`connect`（socket 层是轮询的）。
 
-理由：前三块**不需要内核**，可以全部用主机用例钉住（`net-sockets` 的 `Table` 是纯逻辑）；
-线程/条件变量的正确性依赖真实调度器，应当在内核成为组件之后再接，否则只能靠假内核自说自话。
+理由：`errno`/`time`/`addr`/`fd` **不需要内核**，可以全部用主机用例钉住（`net-sockets` 的
+`Table` 是纯逻辑）。内核在 2026-11-18 已抽成 `components/osal/`，于是 `sync`/`thread`/`cond`
+可以接上真内核；它们**真正阻塞的那一段**（`sched.block()`）在主机上不可执行，所以主机用例
+只钉策略，阻塞行为仍是板级验收（见 §4.6 与 §6.3）。
 
 ## 4. 分层
 
 ```text
 应用
   ↓  POSIX 形状（int 返回 + errno）
-posix-compat: errno | time | addr | fd
+posix-compat: errno | time | addr | fd | sync | thread | waitq | cond
   ↓  组件接口（Io{err,n} / Table / Socket）
-net-sockets（生产）        hw/tick（板级）
+net-sockets（生产）    osal（sem/sched）    hw/tick（板级）
 ```
 
 注入点（为了主机可测，全部做成参数而不是全局）：
@@ -138,7 +141,7 @@ net-sockets（生产）        hw/tick（板级）
 **直接依赖 `osal_kit`，不再造注入 port。** 当初 `time.zig` 用注入，是因为当时没有可复用的内核；
 现在 `components/osal/` 零 `board` 依赖、20 项主机用例可驱动，直接 import 就是"在真内核上测真语义"，
 §4 那句"假内核自说自话"的前提已经消失。**目前有两处注入点**：`time.zig` 的时钟/睡眠
-（`osan` 侧则是 `hooks.now_ms`），以及 `cond.zig` 的 `wake`（见 §4.6）。两者都只为"主机上
+（`osal` 侧则是 `hooks.now_ms`），以及 `cond.zig` 的 `wake`（见 §4.6）。两者都只为"主机上
 不可执行的那一个原语"存在，其余一律直连。
 
 **`pthread_join` 不动 `sched.zig`。** 用包装层实现：每个线程配一个 `Slot`
