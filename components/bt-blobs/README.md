@@ -5612,3 +5612,50 @@ arena 356 KiB  →  188 个块填满  →  abort 时仅剩 1200 B  →  请求 1
 `nmemb*size == 1904` 时**直接返回该缓冲**，不进入共享 arena。
 
 判据：`MC` 的 `ret` 非 0、`AB` 消失、`bt phy: domain clocks on` 之后出现新进展。
+
+## 🎉 修法生效：abort 消失，进入 ROM 代码（2026-11-19 最终成果）
+
+在 `phy_stubs.c` 给 `n*sz == 1904` 的请求提供**专用静态缓冲**（2048 B，16 字节对齐，不参与共享 arena）：
+
+```c
+static unsigned char g_phy_cal_buf[2048] __attribute__((aligned(16)));
+void *calloc(size_t n, size_t sz) {
+    size_t total = n * sz;
+    if (total == 1904) { /* 清零后返回 g_phy_cal_buf */ }
+    ...
+}
+void free(void *p) { if (p == g_phy_cal_buf) return; ... }
+```
+
+板测（`WITH_PHY=1`，815 232 B）：
+
+```
+（**没有** AB 行 —— abort 不再发生）
+pcsample n=9728 pc=0x2f826484 ra=0x2f826478 s0=0x1
+```
+
+| 项 | 之前 | 现在 |
+| --- | --- | --- |
+| abort | 每轮必现 | **消失** |
+| PC 位置 | `abort` 自旋（`0x400670a4`） | **ROM `0x2f826484`** 的紧密循环 |
+| 状态 | 停在 PHY 校准的内存分配 | **PHY 校准继续执行，进入 ROM 例程** |
+
+⇒ **PHY 校准真正跑起来了**，进入 ROM 中的 RF/PHY 例程。
+
+### 这条线的完整因果链（每步有实测）
+
+```
+BLE controller 卡在 init
+  → [修] anchor[8] 自伤预发布                → 归档开始推进
+  → [突破] PHY 域时钟（含 I2C_MST_FO）        → 总线停摆消失（心跳 320 → 9728+）
+  → [定位] abort = 0x4000066e（calloc NULL）  → RA = 0x40000672
+  → [量化] free=1200、最大单块 1216、请求 1920、188 块走到堆尾 ⇒ 真耗尽
+  → [实证] 归档"有多少用多少"（多给 2 KiB 只涨 128 B）
+  → [修法] 专用缓冲（不参与共享 arena）        → **abort 消失，进入 ROM**
+```
+
+### 下一步
+
+PC 在 ROM `0x2f826484` 的紧密循环（`ra` 就在旁边）⇒ 需确认是：
+- ROM 的正常忙等（如 PLL 锁定 / 校准等待）⇒ 继续观察更长时间；
+- 或另一处卡点 ⇒ 用采样分布在 ROM 内定位，再对照 IDF 的 PHY 校准流程。

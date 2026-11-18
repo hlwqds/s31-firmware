@@ -104,9 +104,19 @@ void _lock_release(void **lock) { (void)lock; }
 /* ------------------------------------------------------------------ */
 /* 内存：转我们的 arena                                                */
 /* ------------------------------------------------------------------ */
+/* **PHY 校准专用缓冲**：arena 已被归档吃到只剩 ~1.2 KB（实测 188 块、走到堆尾），
+ * 而 PHY 校准要 1904 B ⇒ 必失败 ⇒ `phy_init.c` 的 ESP_ERROR_CHECK → abort。
+ * 这一块不参与共享 arena 的竞争：`n*sz == 1904` 时直接给静态缓冲。 */
+static unsigned char g_phy_cal_buf[2048] __attribute__((aligned(16)));
+
 void *calloc(size_t n, size_t sz)
 {
     size_t total = n * sz;
+    if (total == 1904) {
+        uint8_t *b = (uint8_t *)g_phy_cal_buf;
+        for (size_t i = 0; i < total; i++) b[i] = 0;
+        return g_phy_cal_buf;
+    }
     void *p = s31_btdm_malloc((uint32_t)total);
     if (p) {
         uint8_t *b = (uint8_t *)p;
@@ -114,7 +124,10 @@ void *calloc(size_t n, size_t sz)
     }
     return p;
 }
-void free(void *p) { s31_btdm_free(p); }
+void free(void *p) {
+    if (p == (void *)g_phy_cal_buf) return;   /* 专用缓冲不归还 */
+    s31_btdm_free(p);
+}
 
 /* ------------------------------------------------------------------ */
 /* 日志                                                                */
