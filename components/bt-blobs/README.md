@@ -7723,3 +7723,19 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 停滞时读 `sp` 并取 `*(sp+12)` 即得**调用者地址**，再对照 `rom_syms.ld` 命名。
 
 这比全量 dump ROM 便宜得多，且是**一次读数**。
+
+### 补证：全库未定义引用检查（2026-11-19）
+
+`nm -u libphy.a`（全部 163 对象）：
+
+| 符号 | 是否被库内引用 |
+| --- | --- |
+| `phy_pwdet_reg_init` | ✅ 有 UND 引用（且它就在 `register_chipv7_phy` 的 23 调用里，`0x160`）|
+| `phy_pwdet_tone_start` | ❌ **无任何 UND 引用** |
+| `phy_get_sar_sig_ref` / `phy_txtone_linear_pwr` / `phy_get_fm_sar_dout` | ❌ 无 |
+
+⇒ **`phy_pwdet_tone_start` 纯粹由 ROM 内部调用**，libphy.a 与 BT 归档都不引用它。
+
+⇒ 找调用者只剩两条路：
+1. 停滞时读**栈上返回地址**（`*(sp+12)`，该函数序言 `sw ra,12(sp)`）—— 一次读数；
+2. 全量 dump ROM 搜 `jal 0x2f80137c` —— 320 KB，经 128 B FIFO 不现实。
