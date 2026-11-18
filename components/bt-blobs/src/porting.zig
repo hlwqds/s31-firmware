@@ -215,10 +215,13 @@ pub fn phyDomainEnable() void {
     const conf: usize = 0x2010_9C04;
     wr(conf, rd(conf) | 0x0020_1002);
     // 2c) test_conf(+0x00) 与 ICG 门控位图(+0x0C)，同样按 IDF 实测值对齐
-    const tc: usize = 0x2010_9C00;
-    wr(tc, rd(tc) | 0x0000_0100);
-    const icg: usize = 0x2010_9C0C;
-    wr(icg, rd(icg) | 0x6464_6400);
+    // 逐项实验：先只留 +0x04，test_conf/ICG 暂不开
+    if (false) {
+        const tc: usize = 0x2010_9C00;
+        wr(tc, rd(tc) | 0x0000_0100);
+        const icg: usize = 0x2010_9C0C;
+        wr(icg, rd(icg) | 0x6464_6400);
+    }
     // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
     const fo: usize = 0x2010_9C08;
     wr(fo, rd(fo) | (1 << 2) | (1 << 3) | (1 << 4));
