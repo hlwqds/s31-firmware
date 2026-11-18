@@ -38,7 +38,7 @@ fi
 ZIG=${ZIG:-$(command -v zig)}
 ELF_BIN=${ESPTOOL:-esptool}
 
-if [ -n "${WITH_PHY:-}" ]; then echo "== build (probe + closure + idf phy objs) [WITH_PHY=1]"; else echo "== build (probe + closure + rom phy) [default]"; fi
+if [ "${WITH_PHY:-0}" != "0" ]; then echo "== build (probe + closure + idf phy objs) [WITH_PHY=1]"; else echo "== build (probe + closure + rom phy) [default]"; fi
 ( cd firmware && env -u LD_LIBRARY_PATH "$ZIG" build \
     -Dtarget=riscv32-freestanding-eabihf \
     -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall \
