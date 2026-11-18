@@ -6754,3 +6754,45 @@ pc=0x2f828a76 s0=0x20100000     ← 在 ROM / modem 区继续执行
       校准缓冲 → 独立链接段（不占 arena）
 现状：无 abort；step 1 执行；校准在 ROM/modem 区运行
 ```
+
+## ✅ 最终布局（零成本）：校准段嵌在三段之内（2026-11-19 达成）
+
+```ld
+.btdm_bss  (NOLOAD) 0x1800    /* 6 KiB（原 8 KiB）—— 归档只按符号 memset，缩短即少清 */
+.phy_cal_buf (NOLOAD) 0x800   /* 2 KiB —— **校准专用，不占 arena** */
+.btdm_data (NOLOAD) 0x1000    /* 4 KiB —— 不变 */
+                          ─────────
+                          合计 12 KiB（与之前完全相同）
+_heap_start = _data_end_btdm   /* 因此 **不变** */
+```
+
+链接结果（`WITH_PHY=1`，814 656 B）：
+
+| 符号 | 值 |
+| --- | --- |
+| `_bss_end_btdm` = `_phy_cal_buf_start` | `0x2f019880` |
+| `_phy_cal_buf_end` | `0x2f01a080` |
+| `_heap_start` | **`0x2f01b080`**（未变）|
+| arena | **376 KiB**（未缩）|
+
+⇒ **零成本**：校准拿到 2 KiB，arena 一点没变，且校准段在堆之外、也不在归档的 memset 范围内。
+
+### 板测（决定性）
+
+```
+abort: 0           ← 无 abort
+step: 1            ← step 1 执行
+pc=0x2f828a78 s0=0x20100000   ← 校准在 ROM / modem 区继续
+```
+
+且 `calloc` 的 1904 分支**显式清零**（`.phy_cal_buf` 是 NOLOAD，`_start` 不清它）。
+
+### 本会话最终成果
+
+```
+已修：① anchor[8] 自伤预发布            → 归档开始推进
+      ② PHY 域时钟（含 I2C_MST_FO）     → 总线停摆消失（心跳 320 → 9728+）
+      ③ 校准段独立于 arena（零成本）     → 无 abort、step 1 执行
+现状：校准在 ROM/modem 区运行（s0=0x20100000），归档 bringup 进入 step 1
+剩余：PHY 校准在 modem 寄存器上的硬件握手（与内存无关）
+```

@@ -183,7 +183,7 @@ SECTIONS
      * 这两个段是 NOLOAD 但**占用真实地址**（32 KiB + 4 KiB），落在 `_bss_end` 之后。
      * 若 `_heap_start == _bss_end`，allocator 会覆盖归档自己的全局对象
      * （锚点槽/事件队列/链表头都在 .btdm_bss 内）—— 本会话已因此出现过多例"不可解释"现象。 */
-    _heap_start = _phy_cal_buf_end;  /* 校准段（2 KiB）之后再起堆：它不占 arena */
+    _heap_start = _data_end_btdm;   /* 校准段在三段之内，不改变 _heap_start */
     _heap_end = _stack_bottom;
 
     /* ---------------------------------------------------------------------
@@ -208,8 +208,18 @@ SECTIONS
     .btdm_bss (NOLOAD) : ALIGN(16)
     {
         _bss_start_btdm = .;
-        . = . + 0x2000;   /* 32 KiB -> 8 KiB：这是纯占位洞（无输入节），缩短即把 16 KiB 还给堆 */
+        . = . + 0x1800;   /* 6 KiB（原 8 KiB）：让出 2 KiB 给校准段 */
         _bss_end_btdm = .;
+    } > sram
+
+    /* **PHY 校准专用缓冲**：位于 .btdm_bss 与 .btdm_data 之间，
+     * 三者总长保持 12 KiB ⇒ _data_end_btdm / _heap_start 不变、arena 保持 376 KiB。
+     * NOLOAD 且不在 .bss 内 ⇒ _start 不清零，calloc 路径必须自己清零。 */
+    .phy_cal_buf (NOLOAD) : ALIGN(16)
+    {
+        _phy_cal_buf_start = .;
+        . = . + 0x800;   /* 2048 B */
+        _phy_cal_buf_end = .;
     } > sram
 
     .btdm_data (NOLOAD) : ALIGN(16)
@@ -220,14 +230,7 @@ SECTIONS
         _data_start_btdm_rom = _data_start_btdm;
     } > sram
 
-    /* **PHY 校准专用缓冲**：位于 .btdm_data 之后、堆之前。
-     * 它**不占 arena**（不进 _heap_start.._heap_end），归档的 memset 也不覆盖它。 */
-    .phy_cal_buf (NOLOAD) : ALIGN(16)
-    {
-        _phy_cal_buf_start = .;
-        . = . + 0x800;   /* 2048 B */
-        _phy_cal_buf_end = .;
-    } > sram
+
 
 
     /* 链接期就否决明显错误的布局，免得自检变成唯一的防线。 */
