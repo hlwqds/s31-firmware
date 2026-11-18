@@ -12590,3 +12590,65 @@ bringup.zig:137  dumpBootState()   // 已在打 BOOTSTATE: {syscon|lpcon|pwr|clk
 本仓已有该对照（2433 ms 的 `ESP_OK`），我却没用。
 
 ⇒ 这是第十五次同类错误：**手上有推翻自己的证据，却没有先用它。**
+
+## 🏁 四窗口对拍首次可见（2026-11-19，**本会话最有价值的读数**）
+
+### 阻塞原因：`BOOTSTATE` 前缀不是 `bt `
+
+`dumpBootState()` 用的是 `osal.logLine("BOOTSTATE: …")` —— **前缀不是 `bt `**
+⇒ 被 `logHook` **全部丢弃** ⇒ **四窗口对拍从未可见过**。
+
+**已修**：改为 `"bt bringup: BOOTSTATE …"`（3 处）。
+
+### 实测（修复后首次可见）
+
+```text
+bt bringup: BOOTSTATE esp_phy_enable(BT) done, anchor[+0x28]=0x0
+bt bringup: BOOTSTATE syscon +0x000 = 0x00000100
+```
+
+**只有 2 行**，而代码是 `if (v != 0)` 才打印。
+
+⇒ **四个窗口共 80 个字，仅 1 个非零**（`syscon+0x000 = 0x100`）！
+
+⇒ **我们的 boot 层几乎什么都没建立** —— 这就是与 IDF oracle 的实质差距。
+
+### 更关键：`"已补齐 boot 差集"` 那行**从未出现**
+
+```zig
+wr.f(0x2010_F008, 0x314);   // lpcon+0x08
+wr.f(0x2010_F00C, 0x1);     // lpcon+0x0c
+wr.f(0x2058_7008, 0x1);     // clkrst+0x08
+wr.f(0x2058_700C, 0x2);     // clkrst+0x0c
+osal.logLine("bt bringup: BOOTSTATE 已补齐 boot 差集 …");   // ← **从未打印**
+```
+
+⇒ 挂在这 4 次**写**之一，或写完后的那行之前。
+
+### 而 README 点名的候选**不在这 4 个里**
+
+> `clkrst` 的 **`+0x004`** 与 **`+0x020`** 两边不同
+
+⇒ **补齐块的覆盖不完整**，且它自身可能挂住。
+
+### 下一步（二分，一次一写）
+
+把 4 次写**各自前后加标记**，定位是哪一次挂住：
+
+```zig
+osal.logLine("bt bringup: W1 before {d}", .{0}); wr.f(0x2010_F008, 0x314);
+osal.logLine("bt bringup: W1 after {d}", .{0});
+… 对 4 个依次 …
+```
+
+⇒ 首位挂住的那次写，对应的窗口就是**不可访问的**（与 `0x2010B000` 同类）。
+
+### 本会话累计
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 17 |
+| 观测通道修复 | **+1（BOOTSTATE 前缀）** |
+| 撤回 | 41 |
+| 数据源错误 | 15 |
+| 自我纠正 | 158 |

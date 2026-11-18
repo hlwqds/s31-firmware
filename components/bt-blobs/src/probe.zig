@@ -168,13 +168,6 @@ fn dumpLine(comptime fmt: []const u8, args: anytype) void {
 fn dumpAtPend() void {
     if (dump_done) return;
 
-    // **决定性读数**：modem 窗口是否应答。挂死本身就是答案。
-    // （先打一行标记，确保"读到之前"能被看到）
-    board.log.line("B0 before {d}", .{0});
-    {
-        const v = (@as(*volatile u32, @ptrFromInt(0x2010_B000))).*;
-        board.log.line("B0 ok {x}", .{v});
-    }
     // **UART 排空自测（修正版）**：自旋到计数 < 5（有界 ~20 ms），并**双读**对照。
     // 旧版只等 ~10 ms，而 125 B @115200 需 10.85 ms ⇒ 结论无效。
     {

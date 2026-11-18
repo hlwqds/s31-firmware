@@ -151,7 +151,7 @@ fn dumpBootState() void {
         gate.dumpAnchors("after-phy");
         // ⚠️ `0x2f00fff8` **不是** `g_phyFuns`：它在锚点块里（`0x2f00ffd0 + 0x28`，第 11 个槽）。
         // 之前的标签把它当成 `g_phyFuns`，由此推出的"rom_phyFuns(0x2f07fc3c) ≠ g_phyFuns"是**误读**。
-        osal.logLine("BOOTSTATE: esp_phy_enable(BT) done, anchor[+0x28]=0x{x}", .{
+        osal.logLine("bt bringup: BOOTSTATE esp_phy_enable(BT) done, anchor[+0x28]=0x{x}", .{
             (@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*,
         });
     }
@@ -166,7 +166,7 @@ fn dumpBootState() void {
         var i: usize = 0;
         while (i < w.n) : (i += 1) {
             const v = (@as(*volatile u32, @ptrFromInt(w.base + i * 4))).*;
-            if (v != 0) osal.logLine("BOOTSTATE: {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
+            if (v != 0) osal.logLine("bt bringup: BOOTSTATE {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
         }
     }
 
@@ -188,7 +188,7 @@ fn dumpBootState() void {
     wr.f(0x2010_F00C, 0x1); // lpcon+0x0c：IDF boot 值
     wr.f(0x2058_7008, 0x1); // clkrst+0x08：IDF boot 值
     wr.f(0x2058_700C, 0x2); // clkrst+0x0c：IDF boot 值
-    osal.logLine("BOOTSTATE: 已补齐 boot 差集 (lpcon+0x08/+0x0c, clkrst+0x08/+0x0c)", .{});
+    osal.logLine("bt bringup: BOOTSTATE 已补齐 boot 差集 (lpcon+0x08/+0x0c, clkrst+0x08/+0x0c)", .{});
 }
 
 pub fn init(cfg: *config.Config) c_int {
