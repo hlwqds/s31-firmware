@@ -60,6 +60,24 @@ zig build -Dtarget=riscv32-freestanding-eabihf \
   -Dbt-blob-dir="$T/flat" -Dbt-blob-objs="$(ls "$T/flat" | paste -sd,)"
 ```
 
+> [!WARNING] 上面这条"全部成员"配方 **2026-11-18 实测跑不通**，四个卡点按出现顺序：
+>
+> 1. **成员名是数字**（`0.o`、`1.o`…），多归档 `cp` 到同一个 `flat/` 会**互相覆盖**
+>    （四个归档摊平只剩 142 个而不是 179 个）。必须先加归档名前缀再摊平。
+> 2. **我们自己的桩与归档撞名**：`link/phy_stubs.c:144` 定义了 `get_phy_version_str`，
+>    而 `libphy` 的 `phy_debug.o` 也定义它 ⇒ `duplicate symbol: get_phy_version_str`。
+>    排除该对象后重复消失。
+> 3. **`export fn` 是惰性分析的**：不传 `-Dbt-probe=true` 时 `bt_core` 的
+>    `s31_now_us/s31_btdm_malloc/s31_btdm_free/s31_phy_log/s31_bt_log_hook` **不会进镜像**，
+>    链接报未定义。加 `-Dbt-probe=true` 才能解析。
+> 4. 加 `-Dbt-probe=true` 后仍缺三个：`esp_phy_enable`、`esp_restart`（需要 `libphy` 里被排除之外的成员/ROM 符号）
+>    与 `malloc`（C 桩需要 libc）。
+>
+> ⇒ "全部成员（等价 `--whole-archive`）"这个用法**不成立**；能用的是从归档外入口算出的**闭包**
+> （13x 量级成员，见 ROADMAP R3.3 与技能 `idf-blob-adaptation-surface-measure`）。
+> 这也意味着：**这条链接路径目前没有可复现的验收**，任何"把 `osal.zig`/`sched.zig` 搬出去"的重构
+> 都缺少兜底 —— 先恢复可复现的链接，再动文件。
+
 镜像与判据：
 
 ```bash
