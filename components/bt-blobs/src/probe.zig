@@ -136,6 +136,7 @@ pub fn ringAt(idx: u32) []const u8 {
     return log_ring[slot][0..log_ring_lens[slot]];
 }
 pub var log_hook_ours: u32 = 0;
+pub var log_hook_calls_only: u32 = 0;
 pub var log_hook_other: u32 = 0;
 /// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
 pub var log_hook_silent: bool = false; // 默认放行；true 会连我们自己的进度日志一起静音（实测过）
@@ -156,9 +157,12 @@ fn logHook(msg: []const u8) void {
     // 归档的消息只计数不写 UART ⇒ 串口不再被灌满，采样可用。
     if (std.mem.startsWith(u8, msg, "bt ")) {
         log_hook_ours +%= 1;
-        // **限量**：只放行前 24 条自身日志，其余只计数 —— 否则总量 ≫ 128 B FIFO，
-        // 尾部会被丢弃，反而看不到停在哪（本会话反复踩过）。
-        if (log_hook_ours > 24) return;
+        // **只对逐调用行限量**（`bt ret:`/`bt call:`），里程碑（`bt bringup:`/`bt lp:`）不受限：
+        // 早先把上限套在全部自身日志上，结果里程碑被吃掉、`malloc` 行变成 0（本会话踩过）。
+        if (std.mem.startsWith(u8, msg, "bt ret:") or std.mem.startsWith(u8, msg, "bt call:")) {
+            if (log_hook_calls_only > 40) return;
+            log_hook_calls_only +%= 1;
+        }
     } else {
         log_hook_other +%= 1; // 归档自己的消息：进 RAM 环，不打 UART
         ringPush(msg);
