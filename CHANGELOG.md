@@ -101,6 +101,12 @@
   （主机上 `swapContext` 直接 panic，链接门禁只看链接，板级门禁走 net-wire TCP）。
   因此 `pthread_cond_*` 目前只有队列、没有胶水层 —— 胶水需要一次板级运行才能验收。
 
+- **POSIX 条件变量（2026-11-18）**：`components/posix-compat/src/cond.zig` ——
+  `init/destroy/wait/signal/broadcast`，队列用 `waitq`。只有 `resumeTask` 做成注入点
+  （`swapContext` 在 x86_64 上 panic），因此「唤醒谁、FIFO 顺序、唤醒前是否已摘链、
+  广播是否先摘完再逐个唤醒」全部有主机断言；`wait` 在调度器未启动时返回 `ENOSYS`
+  而不是挂住。6 项新用例，posix-compat 47 → **53**。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

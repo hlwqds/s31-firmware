@@ -53,7 +53,7 @@
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
 | `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `osal.Sem`** | ✅ 已完成（**不是** `osal.Mutex`：它只忙等、不唤醒，见下） |
-| `pthread_cond_init/wait/signal/broadcast` | **无** | ○ **要新写**：cond 必须与 mutex 配合、避免丢失唤醒 |
+| `pthread_cond_init/wait/signal/broadcast` | `cond.zig` → `waitq`（FIFO）+ **注入的 wake** | ✅ 已完成（`wait` 要求调度器已启动，否则 `ENOSYS`） |
 | `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → `osal.Sem` | ✅ 已完成（**限制**：同一 sem 上最多一个阻塞者，见下） |
 | `sem_timedwait` / `pthread_mutex_timedlock` | — | ⌛ 内核只有**无限阻塞**；有限超时的 `semPend` 会立即返回，所以这两个返回 `ENOSYS`（不是假装超时） |
 | `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
@@ -151,9 +151,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**47 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 11** · **waitq 6** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 47`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**53 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 11** · **waitq 6** · **cond 6** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 53`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -198,11 +198,18 @@ const Slot = struct {
 
 | 项 | 阻塞点 | 代价 |
 | --- | --- | --- |
-| `pthread_cond_*` | **队列已有**（`waitq.zig`，6 项用例）；缺的是 `cond.zig` 那层胶水，而它在主机上**无法验证**（`swapContext` 在 x86_64 上 `@panic`） | 需要在板上跑一次才能验收；无板时只交付 `waitq` |
+| ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`。`wake` 做成注入点，于是「唤醒谁/什么顺序/唤醒前是否已摘链」在主机上有断言；`swapContext` 在主机 panic 的那一下被绕开了 | — |
 | 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
 | `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动的超时唤醒（`callout` + `resumeTask`） |
 | `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |
 | 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
+
+## 4.6 条件变量的 wake 注入（2026-11-18）
+
+`cond.zig` 只把 **`resumeTask` 一件**做成注入点（`bindHooks(.{ .wake = ... })`），因为
+`swapContext` 在 x86_64 上 `@panic`，其余逻辑照常直连 `sched`/`sync`。这样 `signal`/`broadcast`
+的**策略**（唤醒谁、FIFO 顺序、唤醒前先摘链、广播先摘完再逐个唤醒）都能在主机上断言，
+而板上不绑钩子时默认走 `sched.resumeTask`。
 
 **多等待者队列放在 `posix-compat/waitq.zig`，不放内核**（2026-11-18 定）：往 `osal` 加 FIFO
 会改 `bt_core.o`，而它服务的是已编译的 BLE 归档，其阻塞路径**没有任何现有门禁能验证**
