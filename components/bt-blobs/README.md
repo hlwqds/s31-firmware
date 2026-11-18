@@ -2574,10 +2574,11 @@ panic: live mepc=0x4006eff0 mtval=0x0
 **只有 load 和 jal，没有任何 sw/sb** ⇒ 坏写必在四个被调函数之一体内，
 且该函数里有排空点（`fence` 或等价）在写之后、返回之前。
 
-**注意一个坑**：`jal` 注释里的符号名（如 `r_sym_bt_FzF1…` → `0x400609b2`）与在该地址反汇编出的
-符号（`noise_check_loop`/`tx_pwctrl_background`）**不一致** —— 说明这个 ELF 的分节符号表与
-线性反汇编对不上（per-function section 已被链接器重排）。**找函数体必须用 `readelf -s` 拿到
-该符号的 st_value，而不是 jal 操作数上的注释。** 这一步没做对，就会像本轮一样搜错区间。
+**更正**：上一条"`jal` 注释符号不可信"是**错的**。四个 `st_value`
+（gvLJK=`0x4005f1c6`、G1Ui=`0x4005d1bc`、0cPe=`0x4005f618`、FzF1=`0x400609b2`）与 `jal` 操作数
+**逐一吻合**。上轮"搜错区间"是 `objdump` 的**显示假象**（我的 `tail -12` 截断 + 它跳到下一个符号
+边界 `0x40060aa0`），不是符号表错位。正确做法：按 `st_value + st_size` **精确**给区间
+（`--start-address/--stop-address`），三小函数各 54/44/18 字节，一次就能看完。
 
 **下一位接手者**：`readelf -sW app.elf | grep -E "FzF1|0cPe|G1Ui|gvLJK"` 取四个 st_value，
 各自反汇编找 `fence`；有 fence 的那个函数，其 fence 之前的写就是真凶。
@@ -2623,3 +2624,39 @@ panic: live mepc=0x4006eff0 mtval=0x0
 即可算出），并在板上确认该槽在崩前一直为 0。然后决定修补方向：
 让归档不走这条 `deinit`（例如修好 `task_init` 的 `[a5+8]==0` 依赖），
 或在 `deinit` 前先给缺失对象做一次惰性发布。
+
+
+### 缺失的槽位已确定：**anchor[9]**（2026-11-18）
+
+`FzF1` 序言给出 `s0` 的来源：
+
+```asm
+400609b6: lui  s0,0x2f010
+400609c2: addi s0,s0,-12 # 2f00fff4 <r_sym_bt_y5Dip5N8bwiiGRcrWzBO>
+```
+
+⇒ `s0 = 0x2f00fff4`，换算成锚点表基址 `0x2f00ffd0`：
+`(0x2f00fff4 - 0x2f00ffd0) / 4 = 9` ⇒ **anchor[9]**。
+
+而板上 `panic: anchor[i]` 的实测（多轮一致）：
+
+```
+anchor[0]=0 anchor[1]=0 anchor[2]=0 anchor[4]=0x2f0155b8 ... anchor[9]=0x00000000
+```
+
+⇒ **`anchor[9]` 从未被惰性发布** ⇒ `*(s0)==0` ⇒ `beqz .L113` ⇒ `sb zero,0(a5)` 写地址 0。
+
+**至此整条链闭合，无推断成分**：
+
+```
+task_init: mutex_init -> eventq_init -> [anchor?+8]==0 -> 提前退出
+  -> task_deinit -> FzF1 -> lw a5,0(0x2f00fff4)=0 -> beqz .L113
+     -> sb zero,0(a5)   (a5=0) -> store access fault, mtval=0, cause=7
+                                （上报点 = 排空点之后的指令，故 mepc 落在 cKuT 入口的 lui）
+```
+
+**修补方向**：
+1. **治本**：找出谁该发布 `anchor[9]`（`r_sym_bt_y5Dip5N8bwiiGRcrWzBO` 的写者），
+   并让它先于 `deinit` 执行 —— 用 `readelf -r` 的 LO12_S（写）/LO12_I（读）分类，或对链接后 ELF
+   `objdump -d | grep -E '(c\.)?sw.*2f00fff4'` 找直接写者（注意 `lui+addi+sw` 形式的间接写）。
+2. **绕过**：在 `deinit` 之前给 `anchor[9]` 预置一个哨兵对象，使 `FzF1` 走正常分支。
