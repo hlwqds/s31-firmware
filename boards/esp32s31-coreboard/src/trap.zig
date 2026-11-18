@@ -383,6 +383,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 别的输入：交给 ROM 的 ISR（它自己会 ack），asm 里走链式跳转路径。
         return chain_other_irqs and romMtvec() != 0;
     } else {
+        // **第一条语句**：把当前采样环拷走并静音。下面每一行 panic 打印都会走 `logHook`
+        // 的 UART 自旋、被采样器再次采到并覆盖环 —— 晚一步，看到的就全是我们自己的打印。
+        pc_snap_n = samplePcs(&pc_snap);
+        sample_quiet = true;
         const code = cause & 0x3F;
         // **故障地址先打**：ROM 的 panic 处理会往同一 UART 插横幅，长标签行会被截断/覆盖
         // （实测 `panic: mepc=\xef\xbf\xbdSP-ROM:...`）。把最关键的三元组放在第一行、无长标签。
@@ -410,10 +414,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 归档最近碰过的 modem 寄存器（`bt_mmio_*` 静默记录）：死前在操作哪个寄存器，
         // 往往比 PC 更能说明"它以为自己在做什么"。
         // 静默采样窗口里记下的 PC（高频、不打印）：崩溃前归档在哪个函数里跑。
-        var pcs: [48]u32 = @splat(0);
-        const pn = samplePcs(&pcs);
         var pi: usize = 0;
-        while (pi < pn) : (pi += 1) log.line("panic: pc[{d}]=0x{x:0>8}", .{ pi, pcs[pi] });
+        while (pi < pc_snap_n) : (pi += 1) log.line("panic: pc[{d}]=0x{x:0>8}", .{ pi, pc_snap[pi] });
         var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;
@@ -439,6 +441,11 @@ var pc_ring_n: u32 = 0;
 /// 用途：在 `r_btdm_task_init` 期间开高频采样，同时避免我们自己的 UART 打印占满 CPU/串口
 /// （本板 TX FIFO 停在 128，打印极慢 —— 之前采样全被我们自己的日志占满就是这个原因）。
 pub var sample_quiet: bool = false;
+
+/// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。
+/// 用模块级变量是为了避开"快照在 if 分支、打印在公共作用域"的作用域问题（踩过一次）。
+var pc_snap: [48]u32 = @splat(0);
+var pc_snap_n: usize = 0;
 
 fn recordPc(pc: usize) void {
     pc_ring[pc_ring_n % pc_ring.len] = @intCast(pc & 0xFFFF_FFFF);
