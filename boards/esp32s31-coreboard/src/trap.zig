@@ -189,8 +189,14 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 极短、并且**先 PC 后计数**：FIFO 只有 128 B，一次打不完 = 后面的会被丢。
             log.line("DUMP{d}", .{irq_count});
             probe_dump_now();
-            var i: usize = 0;
-            while (i < @min(pc_snap_n, 4)) : (i += 1) log.line("P{d}", .{pc_snap[i]});
+            // 打满 48 条（每行 8 个，紧凑；rawWrite 会为整行预留）
+            var b: usize = 0;
+            while (b + 8 <= pc_snap_n and b < 48) : (b += 8) {
+                log.line("{x},{x},{x},{x},{x},{x},{x},{x}", .{
+                    pc_snap[b], pc_snap[b + 1], pc_snap[b + 2], pc_snap[b + 3],
+                    pc_snap[b + 4], pc_snap[b + 5], pc_snap[b + 6], pc_snap[b + 7],
+                });
+            }
             while (true) asm volatile ("wfi");
         }
         if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) {
@@ -379,6 +385,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **表的下标是外部中断号 = CLIC ID - 16**（IDF `components/riscv/interrupt.c`：
         // `intr_get_item(mcause - RV_EXTERNAL_INT_OFFSET)`，`RV_EXTERNAL_INT_OFFSET = 16`；
         // ROM 分发器 `0x2f80193e` 的 `addi a0,a0,-16` 是同一约定）。CLIC 输入 25 -> 外部号 9。
+        // **定时器重装移到分发之前**：归档若用 `intr_handler_set` 接管 input 25，
+        // 原实现（只在 `h.fn_` 分支里重装）会让定时器再也不重装 ⇒ 中断枯竭 ⇒ 采样变稀。
+        // 这里无条件重装（仅按 input 判断），与是否装了 handler 无关。
+        if (input == 25) hw.ackT0Interrupt(sample_period_us);
         const ext: usize = if (input >= 16) input - 16 else input;
         var h = getHandler(ext);
         // 其次看 **ROM 的表**：blob 若直接调 ROM 的 `intr_handler_set` 装 handler，就会落在这张表里。
