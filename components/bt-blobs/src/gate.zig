@@ -21,7 +21,7 @@ const logLine = osal.logLine;
 /// 打印锚点表（基址 `0x2f00ffd0`，10 个槽）的一行快照，供"某操作前后"对读。
 /// 锚点表 dump 默认**关闭**：一次约 120 字节，两行就会把 128 B 的 TX FIFO 吃掉大半，
 /// 导致后续里程碑（`bt lp:`、`bt ret: malloc`）被丢弃。需要看锚点时再打开。
-pub var anchors_enabled: bool = false;
+pub var anchors_enabled: bool = false; // 默认关：一次约 120 B，会挤掉后续里程碑
 
 pub fn dumpAnchors(tag: []const u8) void {
     if (!anchors_enabled) return;
