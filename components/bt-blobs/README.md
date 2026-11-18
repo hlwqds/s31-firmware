@@ -11418,3 +11418,47 @@ int esp_rom_printf(const char *format, ...)  { ... return ets_printf(...); }
 > **先证明观测通道在采它宣称采的东西，再解读内容。**
 >
 > 并且：**当手上的计数器已经能推翻某个假设时，先去读它。**
+
+## 🎯 按节读出的 `r_btdm_task_init` 真实序列（2026-11-19）
+
+方法：`readelf -rW 21.o | sed -n '/\.rela\.text\.r_btdm_task_init/,/^$/p'`
+（**必须按节**，否则偏移会与其它节混在一起 —— 本会话踩过）
+
+```text
+0x1c  r_btdm_task_deinit
+0x40  r_sym_bt_OkE7MxSSqFt63m8XlU3d          ← caller_ring 里出现过
+0x58  wr_btdm_osal_get_time_forever          ┐ 与实测轨迹
+0x66  wr_btdm_osal_mutex_pend                ┘ 完全吻合
+0x78  r_sym_bt_2aNNQgpuVlZoKiS5xEYJ          ← `eventInit`×2 应在它内部
+0xa0  r_sym_bt_BOhffsuJp3HZRA44ZYRn          ← **anchor[8] 相关对象**
+0xae  r_sym_bt_HGbPEa9oUCsYybIAWjE0
+0xb8  r_sym_bt_XPuqTHliEO5V9xpR7aJR          ← **曾为 NULL 的那个锚点**
+0xc2  r_sym_bt_AJP6s1I6EhaAHnz8n72F
+0xce  r_sym_bt_waDX0omCE7oLuPVSoPOK
+0xe2  r_sym_bt_cgaCegmpqnbaoszyOy3c
+0xea  r_sym_bt_FhFt6zMM60F4oVbVX97R
+```
+
+### 重要：`r_btdm_task_init` **不是**任务体
+
+IDF `bt.c:230` 证实它是**普通 init 函数**（直接调用，之后才 `btdm_lp_init`）。
+⇒ 之前把它当"事件循环"的解释**错误**。
+
+### 因此停滞点应在这条链的某一处
+
+| 已确认执行 | 依据 |
+| --- | --- |
+| `OkE7`（`0x40`）| `caller_ring` 里有 `0x4005f892/f8ca` |
+| `get_time_forever` + `mutex_pend` | 轨迹 |
+| `eventInit` ×2 | 轨迹 |
+
+⇒ 停滞在 **`0x78`（`2aNN…`）之内或其后的 `0xa0 BOhoff` / `0xb8 XPuq`**。
+
+### 下一步（离线，一处）
+
+反汇编 `r_sym_bt_2aNNQgpuVlZoKiS5xEYJ`（`0x78` 的调用目标）：
+它内部应有 `event_init` ×2 —— 那就是轨迹的来源，
+而它**返回之后**的下一个调用（`BOhff` / `XPuq`）就是停滞候选。
+
+⇒ 特别注意 `XPuq`：README 早前记录过 `Xpuq 锚点 P=0x00000000`。
+若它确实为 NULL 而后续代码**解引用**它 ⇒ **那就是挂点**。
