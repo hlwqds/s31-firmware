@@ -128,8 +128,18 @@ fn macHook(out: *[6]u8) void {
     out.* = .{ 0x02, 0x00, 0x00, 0x00, 0xBB, 0x01 };
 }
 
+/// 因果实验：把 anchor[0] 毒成一个**有效可写 RAM 指针**（+28=0），
+/// 若崩溃因此消失或换点，就证明"anchor[0]==0 → 零值兜底 → store 到 0"这条链。
+var poison_buf: [64]u8 align(4) = @splat(0);
+pub var poison_anchor0: bool = true;
+
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
+    if (poison_anchor0) {
+        const slot: *volatile u32 = @ptrFromInt(0x2f00ffd0);
+        slot.* = @intFromPtr(&poison_buf);
+        board.log.line("poison: anchor[0] -> 0x{x}", .{@intFromPtr(&poison_buf)});
+    }
     // **最先**做 ROM 取样：此时还没开中断，输出不会被 ISR 的行冲散。
     if (dump_rom) {
         dumpRom("A", 0x2f83efb0, 96);

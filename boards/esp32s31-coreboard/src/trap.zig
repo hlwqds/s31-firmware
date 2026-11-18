@@ -403,7 +403,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     log.line("panic: ra=0x{x} a0=0x{x} a1=0x{x} a2=0x{x}", .{
         frame.ra, frame.a0, frame.a1, frame.a2,
     });
-    log.line("panic: sp=0x{x} s0=0x{x}", .{ frame.sp, frame.s0 });
+    log.line("panic: sp=0x{x} s0=0x{x} s1=0x{x}", .{ frame.sp, frame.s0, frame.s1 });
+    log.line("panic: regs a4=0x{x} a5=0x{x} a6=0x{x} a7=0x{x}", .{ frame.a4, frame.a5, frame.a6, frame.a7 });
     // 把 s0 指向的上下文前四个字打出来：`wifi_ipc_process` 的形状是
     // `ctx = *(a0+12); fn = *(ctx); fn(*(ctx+4))`，这四个字正好是 fn/arg 及其邻居。
     if (frame.s0 > 0x2f000000 and frame.s0 < 0x2f100000) {

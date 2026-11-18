@@ -2388,3 +2388,36 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 
 **下一步**：`+8` 字段由谁填 —— 在链接后 ELF 里找对 `0(s0)+8` 的 `sw` 写者，
 或用 `r_sym_bt_r4auAKWSAFwgQarMHZCc` 的消费点反查（`objdump -d | grep '<r_sym_bt_r4auAK'`）。
+
+### 故障瞬间的实参寄存器：a4=1、a5=0、mtval=0、store（2026-11-18）
+
+`logs/bt-probe-pcs10.log`：
+
+```
+!! mepc=0x4005b692 mtval=0x00000000 mstatus=0x00003881
+panic: sp=0x2f07ad80 s0=0x2f00ffe8 s1=0x2f015598
+panic: regs a4=0x1 a5=0x0 a6=0x40104264 a7=0x2f07acbf
+```
+
+这是 `sb a4,0(a5)`（`a4` 先被 `ori a4,a4,1`，`a5` 为 0）的**精确签名**：
+`lbu` 得 0 → `ori 1` → 写地址 0 ⇒ `mtval=0`、`cause=7` 全部对上。
+
+**但这条指令前面有 `beqz a5` 保护**，且：
+- `nm` 检查 **没有** 重复的 `r_sym_bt_*` 符号（不是 duplicate 模块）；
+- `anchor[0]`（`r_sym_bt_pSy5Wex1v0iXw5RdWtwL`）在 **`.bss`（section 11, NOBITS）**，无数据镜像 ⇒ 发布者只能是代码；
+- 全镜像有 **48** 处引用 `0x2f00ffd0`（读取者很多，不是孤立变量）。
+
+⇒ **矛盾仍未解开**：寄存器与 mtval 都指向"用 0 指针写"，但已知的两处 store 候选都被 `beqz` 保护，
+而 `mepc` 落在一条 `lui`（不可能产生访问异常）。这条 instrument 的极限就在这里。
+
+**下一步候选（按性价比）**：
+1. 在 `vpbJU7UPeyxEM4bymUIi`（0x4005b6a4）的 `sb` **前**插一条记录（把 a5 写进静默环），直接看它执行时 a5 是多少；
+2. 若确认为 0，则 `beqz` 没生效 ⇒ 查该分支的指令编码/是否被我们的 `gc-sections` 或跳板改写；
+3. 或者接受"异步报点"解释（store 缓冲延迟提交），此时应改为**记录所有 `sb/sw` 的地址**而不是依赖 mepc。
+
+### 操作教训（本轮代价最大的一条）
+
+`python heredoc` 改源码时，若 shell 处于"busy session 的副本"状态，**写入不会落盘**，
+脚本仍会打印成功。本轮因此有三次"改完刷板但镜像没变"：`strings app.elf | grep <新日志串>`
+才是唯一可靠的判据。以后每次改源码都先 `grep -c <新串> 文件` + `strings app.elf | grep -c <新串>`
+再烧录。
