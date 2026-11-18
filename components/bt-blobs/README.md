@@ -9126,3 +9126,47 @@ mutex_pend_busy / blocked_calls / pool_exhausted / eventq_requeued
 - `eventq_requeued > 0` ⇒ 跨队列投递
 - `eventq_get_empty > 0` ⇒ 消费者取不到
 - `pool_exhausted > 0` ⇒ 静态池容量不足
+
+## ⚠️ `probe_stop_at_tick` 触发点**不稳定**（2026-11-19）
+
+| 捕获 | `DUMP` / `osalcaller` 出现了？|
+| --- | --- |
+| `pc179` | ✅ 是（拿到了完整的 caller_ring）|
+| `pc17a` | ✅ `osalcaller[0]` 出现，但 `S put=` 未出现 |
+| `pc17b` | ❌ **完全没有**（连 `DUMP` 都没有）|
+
+⇒ **`probe_stop_at_tick = 30000` 这个触发点不可靠**。
+
+### 原因
+
+它按**开机起算的 IRQ 计数**键控：
+- 若停滞前中断仍在跑，计数会到 30000 ⇒ 触发；
+- 若计数因任何原因没到（或重置），则**永不触发**。
+
+⇒ 这正是"用中断计数当软件里程碑"的固有问题。
+
+### 正确做法（确定性触发）
+
+**不依赖中断**，在 `osal` 侧按键控：
+
+```zig
+// components/osal/src/osal.zig
+var ev_init_n: u32 = 0;
+pub fn eventInit(...) void {
+    trace("eventInit", .{});
+    ev_init_n += 1;
+    if (ev_init_n == 2) {
+        extern fn probe_dump_now() callconv(.c) void;
+        probe_dump_now();
+    }
+    ...
+}
+```
+
+理由：轨迹已证**全程只有 3 次 OSAL 调用**，最后两次就是 `eventInit`
+⇒ 第 2 次 `eventInit` 是**确定性的**触发点，与中断是否存活无关。
+
+### 状态
+
+- `probe.zig` 的计数器输出已改为 3 行短格式（`Q1`/`Q2`/`Q3`），**待可靠触发后即可读到**；
+- `trap.zig` 的 `probe_dump_now` 调用可保留（无害），但**不应作为唯一触发点**。

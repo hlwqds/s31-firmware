@@ -35,11 +35,9 @@ export fn probe_dump_now() void {
     // **OSAL 计数器**：判断"投递了但消费不到"还是"根本没投递"的关键
     {
         const st = osal.stats();
-        board.log.line("S put={d} gok={d} gempty={d} mok={d} mbusy={d} blk={d} pool={d} requeue={d}", .{
-            st.eventq_put,      st.eventq_get_ok,   st.eventq_get_empty,
-            st.mutex_pend_ok,   st.mutex_pend_busy, st.blocked_calls,
-            st.pool_exhausted,  st.eventq_requeued,
-        });
+        board.log.line("Q1 {d} {d} {d}", .{ st.eventq_put, st.eventq_get_ok, st.eventq_get_empty });
+        board.log.line("Q2 {d} {d}", .{ st.mutex_pend_ok, st.blocked_calls });
+        board.log.line("Q3 {d} {d}", .{ st.pool_exhausted, st.eventq_requeued });
     }
     dumpAtPend();
 }
