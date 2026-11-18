@@ -9001,3 +9001,44 @@ osalcaller[11] = 0x4005d0de → r_sym_bt_jH5mD2DMmyYTiDCZQCFd
 
 ⇒ 第 2 条最值得先查：`osal.zig` 的 `eventqPut` 是否在入队后唤醒 `q.waiter`
 （对照 `eventqGet` 已实现的 `sched.block()` 范式）。
+
+## 收窄：`jH5m` 之后的两个函数都很小（2026-11-19）
+
+| 符号 | 对象 | 大小 |
+| --- | --- | --- |
+| `r_sym_bt_4D3jExDF3lqXXndV4BPL` | `16.o` | **50 B**（0x32）|
+| `r_sym_bt_vlE2mL5FNjejBKjkw4Lw` | `10.o` | **32 B**（0x20）|
+
+⇒ 两者都太小，**不太可能是停滞点**。
+
+### 因此停滞候选缩小为两处
+
+| 候选 | 依据 |
+| --- | --- |
+| **`jH5m` 自身**（164 B，`16.o`）在 `eventq_put`（`0x26`）之后 | 环里最后一条就是它的返回地址 `0x4005d0de` |
+| **`jH5m` 进入的 ROM 调用** | 若 `jH5m` 内部有 `jal` 到 ROM，且在那里自旋 |
+
+### 下一步（离线，一步）
+
+反汇编 **链接后的** `jH5m`（地址已知，`app.elf` 里符号为 `r_sym_bt_jH5mD2DMmyYTiDCZQCFd`）：
+
+```bash
+riscv32-esp-elf-objdump -d --start-address=<jH5m 起始> --stop-address=<下一个符号> app.elf
+```
+
+看 `0x26`（`eventq_put` 调用）**之后**的指令：
+- 若还有 `jal` 到 `0x2f8xxxxx` ⇒ 停滞在 ROM 内（用 thunk 反查法命名）；
+- 若是自旋（`lw` + `andi` + `bne` 回跳）⇒ 记录它读的寄存器地址，一次板上读数即可判定。
+
+### 本会话到此的完整链条
+
+```
+WITH_PHY=1 → PHY 挂死（自造）                ← 定案
+默认构建 → step 6
+日志不可信 → rawWrite 整行预留（根治）        ← 修复
+轨迹：mutexPend → eventInit×2（仅 3 次）
+caller_ring → PsB8×3 → ZGgi → jH5m×2
+jH5m = 事件生产者（eventq_put）
+jH5m 之后的两个函数仅 50 B / 32 B            ← 本轮
+⇒ 停滞在 jH5m 自身或其 ROM 调用里
+```
