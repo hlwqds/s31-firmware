@@ -3823,3 +3823,17 @@ OVERLAP .iram_blobs addr=0x2f0008b0 size=0xfd30 end=0x2f0105e0
 
 **下一步唯一有意义的工作**：扩窗（`s31.ld` 的两段 ORIGIN/LENGTH）→ 重新构 `WITH_PHY=1` →
 确认锚点块不再被覆盖（`readelf` 无 OVERLAP + 板上 anchor dump 为有效指针）→ 再谈 PHY 频域使能。
+
+## 可复用数据（扩窗后移植 PHY 时直接用，不必重新从 IDF ELF 抠）
+
+| 需要的东西 | 现成位置 |
+| --- | --- |
+| `esp_phy_init_data_t`（128 字节初始化表） | `components/wifi-blobs/src/phy_init_data.zig`：`pub const params: [128]u8`（生成脚本 `scripts/gen-phy-init-data.py`） |
+| 频域使能实测值（`SOC_PLL_SOURCE_CG` 等） | `components/wifi-blobs/src/init_probe.zig:686-700`（`0x2058_71E0←0x3d`、CLK_CONF1 的 FE_* 位） |
+| 完整 `esp_phy_enable` 顺序 | `components/wifi-blobs/src/osi_impl.zig:1082-1106`（`shellPhyEnable`） |
+| NVS 桩 | 用 **BLE 自己的** `components/bt-blobs/link/phy_stubs.c`（返回 `ESP_ERR_NVS_NOT_FOUND` ⇒ 全量校准）；**不要**搬 wifi 的 `nvs_ram.zig` |
+| 校准模式 | `PHY_RF_CAL_FULL = 2` |
+
+**移植时的一个反向差异**：`init_probe.zig:533-541` 把 `LPCON+0x18` 对正成 wifi 的 `0x1`
+（清 bit2 `clk_i2c_mst_fo`）—— BLE 的 PHY 寄存器**正走模拟 I2C**，移植时**不要照抄这一句**，
+应保持 bit2、只补缺失的模拟前端时钟。`0x201044EC |= 0x240` 是 wifi 专属修正，也不要一起搬。
