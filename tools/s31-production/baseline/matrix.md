@@ -120,6 +120,7 @@ TCP 握手自 2026-11-15 起由 `net-tcp` 的 `tcp.Conn` 驱动（`activeOpen` /
 | W2 | DHCP DORA | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: dhcp DISCOVER`、`wire: dhcp OFFER ip=10.42.0.139`、`wire: dhcp ACK ip=10.42.0.139 gw=10.42.0.1` | `check: dhcp bound ... ok=1`                                                          | host dnsmasq；放行 UDP 67        |
 | W3 | TCP 握手 | 自动更新 2026-11-16（`logs/e2e-net-wire-boot.log`）：`wire: tcp SYN sent iss=0x20263111 fd=0`、`check: tcp handshake ok=1`、`wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112`、`wire: tcp RST sent` | `check: tcp handshake ok=1`；`wire: tcp ESTABLISHED state=ESTABLISHED`；host `accept()` | host TCP 9000 监听；放行 TCP 9000 |
 | W4  | 无 DHCP 降级  | 已实测：不放行 udp/67 时打印 `wire: skipped/no-dhcp-server`、`wire: checks passed=1 failed=0`，`main: verdict=pass` | 无 DHCP 应答时 section 不 failed（fail-closed，不拖红 e2e）                            | 日志 `logs/net-wire-no-dhcp.log` |
+| P1  | POSIX 线程/信号量 | 板级实测 2026-11-18（`logs/e2e-net-boot.log`）：`section: posix` → `checks: passed=15 failed=0 total=15`，含 worker 阻塞在 sem、`sem_post` 唤醒后继续、`join`、每 Task `errno` 隔离 | `section: posix` 出现在段序末尾；`e2e --board --profile net` PASS | 板子在手；仅 net/wifi/tls/full profile（wire profile 关 net 组） |
 
 ## 5. 早期实现 编译 / 上板
 

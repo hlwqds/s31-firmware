@@ -166,12 +166,18 @@ net-sockets（生产）    osal（sem/sched）    hw/tick（板级）
 **`pthread_join` 不动 `sched.zig`。** 用包装层实现：每个线程配一个 `Slot`
 
 ```zig
+// thread.zig 里的实际形状（示意；完整定义见该文件）
 const Slot = struct {
-    done: std.atomic.Value(bool) = .init(false),
-    sem: sync.sem_t = undefined, // 本层自持的计数 + 队列，不是 osal.Sem
+    in_use: bool = false,
+    done: bool = false,          // trampoline 收尾置真
+    detached: bool = false,
+    retval: ?*anyopaque = null,
+    task: ?*sched.Task = null,
+    done_sem: sync.sem_t = .{},  // 本层自持的「计数 + waitq」，不是 osal.Sem
 };
-// trampoline 收尾：done = true; osal.semRelease(&sem);
-// join：osal.semPend(&sem, timeout); 重复 join 读 done 直接返回
+// trampoline 收尾：complete(): done = true; sync.sem_post(&done_sem);
+//   （若已 detach 则当场 retireSlot，不叫醒任何人；随后 sched.block() 永不返回）
+// join：done 已真 ⇒ 快路径；否则 sync.sem_wait(&done_sem)；重复 join ⇒ EINVAL
 ```
 
 好处：`sched.zig` 保持原样（它只有 2 项用例，改内部必然要动上下文切换），而 join 的语义
@@ -182,7 +188,7 @@ const Slot = struct {
 - 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**86 项**
   （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
 - `tests/baselines.json` 里 `posix-compat: 86`（与上式之和一致）；
-- 板上验收留到接内核那一步（本版没有板级行为变更）。
+- **板级**：`section: posix` → 15/15（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
 
 **本组件已进镜像**（2026-11-18）：`firmware/build.zig` 里登记为 section `posix`（group `net`），
 模块根是 `api.zig`（**不导入 `board`**），板级自检在 `selftest.zig` —— 后者是**另一个模块**，
