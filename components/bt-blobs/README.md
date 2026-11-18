@@ -4476,3 +4476,34 @@ calloc(1, 1904)                     <- esp_phy_load_cal_and_init 里的分配点
 2. 若为 0 ⇒ **扩大 arena**：`heapStart()` / `heapEnd()` 之间就是 `[.bss 末, 栈底)`，
    当前只切出 4039 B（`heapEnd` 取值偏保守）——把 `heapEnd` 上移（留足栈）即可；
 3. 或给 PHY 校准预留一块**专用 2 KB 缓冲**，让 `calloc` 的大块请求回落到它。
+
+## arena 只有 4039 B 的原因：**BSS 已逼近栈底**（2026-11-19 定论）
+
+链接脚本约定（`s31.ld:16,182-183`）：
+
+```
+_stack_top = ORIGIN(sram) + LENGTH(sram)      # SRAM 末尾
+栈 16 KiB，向下增长 ⇒ _stack_bottom = _stack_top - 16 KiB
+_heap_start = _bss_end , _heap_end = _stack_bottom
+```
+
+`Arena.init` **没有任何上限**（`osal.zig:1150`）⇒ 板上 `arena 4039 B` 就是
+`_stack_bottom - _bss_end` 的真实值 ⇒ **BSS（含归档的 `.btdm_bss` 等）已经长到只剩 4 KB 空隙**。
+
+⇒ 因此 1904 B 的 `calloc` **不是"肯定够"**：arena 里已有 21 次分配 + 每块 header + 对齐，
+1904 的连续块是否还存在需要**实测**（一行 `bt hook: malloc(1904) = 0x…`）。
+
+### 两条修法（都不改语义）
+
+1. **缩小 BSS**：`WITH_PHY=1` 版多链了很多对象，BSS 随之变大；若某些 `.bss` 段其实不必要，
+   可从闭包里去掉；
+2. **扩大 SRAM 窗口**：`sram LENGTH = 0x7AFC0`（`s31.ld:51`），若硬件允许可加大；
+   或**减小栈预留**（当前 16 KiB，可试 8 KiB —— 但先确认最深调用链，别冒栈溢出风险）。
+
+### 最终判据（一次板测）
+
+在 `WITH_PHY=1` + `phy_domain_enable=true` 下把 `trace_hooks` 临时打开，
+看是否出现 `bt hook: malloc(1904) = 0x0`：
+
+- 出现 `= 0x0` ⇒ arena 确实不够 ⇒ 按上面两条修；
+- 出现非 0 地址 ⇒ 分配成功，abort 另有原因（此时只剩 `esp_phy_load_cal_and_init` 里未读到的第三处检查）。
