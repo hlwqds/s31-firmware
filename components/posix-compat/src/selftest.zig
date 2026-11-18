@@ -17,9 +17,10 @@
 //! 另有三条判据：`pthread_self` 在任务里非空 / 在主上下文为空；`errno` 按任务隔离；
 //! 线程的返回值被 `join` 带出。
 //!
-//! ⚠️ `sched.startScheduler()` 只应调用一次（它会重置主上下文），且本 section 必须排在
-//! 其它 section 之后 —— 它把调度器带起来之后，主上下文仍然可用，但后续 section 若再用
-//! `sched.block()` 语义会与之前不同。
+//! ⚠️ **本 section 必须排在最后**（`all_modules` 末尾，e2e 的 section 列表也把它放在末尾）。
+//! 理由：`sched.startScheduler()` 会 `main_ctx = .{}` 后把**调用者这一帧**记成主上下文 ——
+//! 也就是本 section 的 `run()` 帧。之后再有任何 section 调用 `sched.block()`，就会切回
+//! 这个**已经返回**的帧。所以它后面不能再有阻塞型 section。
 
 const std = @import("std");
 const board = @import("board");
@@ -60,12 +61,14 @@ fn worker(_: ?*anyopaque) callconv(.c) void {
 pub fn run() bool {
     var tid: thread.pthread_t = undefined;
 
+    // 信号量必须先于线程存在：worker 一进来就 `sem_wait`，若那时还没 init，
+    // 它会拿到 EINVAL 直接跑过去（"阻塞"就没被验证到）。
+    check(sem.sem_init(&g_gate, 0, 0) == 0, "sem_init", .{});
+
     // ① 登记线程（此时还没跑）
     const created = thread.pthread_create(&tid, null, worker, null) == 0;
     check(created and tid.task != null, "create", .{});
     if (!created) return false;
-
-    check(sem.sem_init(&g_gate, 0, 0) == 0, "sem_init", .{});
     check(!tid.done, "not run yet", .{});
 
     // ② 切进线程：它 sem_wait 拿不到 ⇒ block ⇒ 控制权回到这里

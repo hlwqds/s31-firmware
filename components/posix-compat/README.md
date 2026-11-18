@@ -168,7 +168,7 @@ net-sockets（生产）    osal（sem/sched）    hw/tick（板级）
 ```zig
 const Slot = struct {
     done: std.atomic.Value(bool) = .init(false),
-    sem: osal.Sem = undefined,
+    sem: sync.sem_t = undefined, // 本层自持的计数 + 队列，不是 osal.Sem
 };
 // trampoline 收尾：done = true; osal.semRelease(&sem);
 // join：osal.semPend(&sem, timeout); 重复 join 读 done 直接返回
@@ -279,9 +279,9 @@ import 全部改成模块导入，**改错在主机用例里看不出来**（用
 | 目标 | 原计划 | **实际落地（2026-11-18）** |
 | --- | --- | --- |
 | `pthread_create/join/detach/exit/self` | `sched.taskCreate` + 新增 join | ✅ `thread.zig`：`Done` 标志 + 每线程 `done_sem`；**上限 8 次/boot**（`sched` 不回收任务槽） |
-| `pthread_mutex_*` | ~~`mutexInit/Pend/Release`~~ | ❌ **原计划不成立**：`osal.Mutex` 只忙等、不唤醒、无 owner。实际用**令牌数 1 的 `osal.Sem`**（`sync.zig`） |
-| `sem_*` | `semInit/Pend(timeout)/Release` | ✅ 用 `osal.Sem`；`sem_timedwait` 返回 **`ENOSYS`**（`semPend` 没有真定时阻塞） |
-| `pthread_cond_*` | **要新写** | ✅ `waitq.zig` + `cond.zig`（不是 `eventq`：它是信号量语义）；`cond_timedwait` **未做** |
+| `pthread_mutex_*` | ~~`mutexInit/Pend/Release`~~ | ❌ 原计划不成立：`osal.Mutex` 只忙等、不唤醒、无 owner ⇒ 实际是**令牌数 1 的 `sync.sem_t`**（自持队列） |
+| `sem_*` | ~~`semInit/Pend(timeout)/Release`~~ | ❌ 原计划不成立：`osal.Sem` 单等待者且与归档共用池 ⇒ 实际是 `sync.sem_t`（计数 + `waitq`）；`sem_timedwait` 走 `timer.zig` + `sync.pump()` |
+| `pthread_cond_*` | **要新写** | ✅ `waitq.zig` + `cond.zig`（不是 `eventq`：它是信号量语义）；`cond_timedwait` 也已做 |
 | `poll` 超时 | 接内核后改为 tick 唤醒 | ⏳ 仍是 1 ms 轮询 |
 
 `errno` 已按任务分槽（见 §2.5 与 `errno.zig` 的 `Table`）。

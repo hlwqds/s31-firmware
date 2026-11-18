@@ -10,7 +10,6 @@ const all_modules = [_]Mod{
     .{ .name = "net_congestion", .path = "../components/net-congestion/src/selftest.zig", .group = .net },
     .{ .name = "net_sockets", .path = "../components/net-sockets/src/selftest.zig", .group = .net },
     .{ .name = "net_ethernet", .path = "../components/net-ethernet/src/selftest.zig", .group = .net },
-    .{ .name = "posix", .path = "../components/posix-compat/src/selftest.zig", .group = .net },
     .{ .name = "net_wire", .path = "../components/net-wire/src/selftest.zig", .group = .wire },
     .{ .name = "net_tls_http", .path = "../components/net-tls-http/src/selftest.zig", .group = .tls },
     .{ .name = "app_mqtt_ota", .path = "../components/app-mqtt-ota/src/selftest.zig", .group = .apps },
@@ -18,6 +17,7 @@ const all_modules = [_]Mod{
     .{ .name = "wifi_connect", .path = "../components/wifi-connect/src/selftest.zig", .group = .wifi },
     .{ .name = "ble_802154", .path = "../components/ble-802154/src/selftest.zig", .group = .wifi },
     .{ .name = "boot_power_perf", .path = "../components/boot-power-perf/src/selftest.zig", .group = .boot },
+    .{ .name = "posix", .path = "../components/posix-compat/src/selftest.zig", .group = .net },
 };
 
 pub fn build(b: *std.Build) void {
