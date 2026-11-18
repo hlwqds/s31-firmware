@@ -8508,3 +8508,46 @@ bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如
 2. 在**我们自己的 osal 桩**的等待循环里自采状态（不依赖中断）；
 3. 离线反汇编 `libbtdm_common.a` 里的 `r_btdm_task_init`，列出其 OSAL 调用序列，
    与 `mutexPend tmo=4294` → `eventInit`×2 的实测轨迹对照，找**下一个**应出现的调用。
+
+## 🎯 `r_btdm_task_init` 的反汇编：**在 `eventq_get(FOREVER)` 上无限等待**（2026-11-19）
+
+`libbtdm_common.a:21.o`，符号 `r_btdm_task_init`，**284 B（0x11C）**。
+
+### 任务体部分（偏移 0x28–0x72）
+
+| 偏移 | 调用 | 含义 |
+| --- | --- | --- |
+| `0x28` | `wr_btdm_osal_eventq_is_empty` | 队列是否空 |
+| `0x3c` | `e_btdm_lp_modem_clock_set` | 调制解调器时钟 |
+| **`0x46`** | **`wr_btdm_osal_get_time_forever`** | **取"永远"超时值** |
+| **`0x54`** | **`wr_btdm_osal_eventq_get`** | **在事件队列上等**（超时= FOREVER）|
+| `0x60` | `e_btdm_lp_modem_clock_set` | 时钟 |
+| `0x68` | `r_sym_bt_TCHk4TWcbxhI2YzTmly2` | 派生符号 |
+| `0x72` | `wr_btdm_osal_event_run` | 处理事件 |
+
+### 初始化部分（另一对象）
+
+| 偏移 | 调用 |
+| --- | --- |
+| `0x1c`/`0x22` | `wr_btdm_osal_eventq_put` ×2 |
+| `0x2e` | `wr_btdm_osal_malloc` |
+| `0x42`/`0x56` | `memset` / `memcpy` |
+| `0x72` | `wr_btdm_osal_mutex_init` |
+| `0x84` | `wr_btdm_osal_eventq_init` |
+
+⇒ 与实测轨迹 **`mutexPend tmo=4294` → `eventInit` ×2** 完全吻合。
+
+### 结论
+
+`r_btdm_task_init` 的形态是**"初始化若干队列/互斥量 → 进入 `eventq_get(FOREVER)` 循环"**。
+停滞 = **在 `eventq_get` 上等一个从不被投递的事件**。
+
+⇒ 问题不是"函数没返回"，而是**它是一个事件循环，本就应该一直在里面**；
+真正的判据应该是"**循环体是否在跑**"（`event_run` 是否被调用），而不是"函数是否返回"。
+
+### 下一步（方向变了）
+
+1. 在 `wr_btdm_osal_event_run` 入口加里程日志 ⇒ 若**从未被调用**，说明队列永远空 ⇒
+   找**谁应该 `eventq_put`**（`r_sym_bt_*` 派生符号之一，需用符号表反查）；
+2. 若 `event_run` 有被调用 ⇒ 任务正常，挂点在**更后面的 step**（step 7+），
+   `enter step 6` 停在最后一行只是因为它之后没有更多 `enter()` 标记。
