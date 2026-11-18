@@ -8753,3 +8753,25 @@ README 里"唯一符合归档前提的路 = **实现最小任务调度**（代�
 
 `r_sym_bt_3DcjgYC1ikQrP7jNyXGR` 定义在 **`libbtdm_common.a:2.o`**。
 反汇编它，列出 `eventq_init` **之后**的调用序列 —— 第一个"没打日志的"就是新的停滞候选。
+
+## 排除：`r_sym_bt_3DcjgYC1ikQrP7jNyXGR` 不是 eventInit 所在（2026-11-19）
+
+`libbtdm_common.a:2.o` 中该符号 **仅 0x3A = 58 字节**，调用序列：
+
+| 偏移 | 调用 |
+| --- | --- |
+| `0x08` | `wr_btdm_osal_malloc` |
+| `0x1e`/`0x20`/`0x24`/`0x2a` | `wr_btdm_assert` |
+| `0x34` | `wr_btdm_osal_free` |
+
+⇒ 它是一个 **malloc/free 包装**，**不含** `event_init`。
+
+⇒ `eventInit ×2` 来自**别的对象/助手**，本轮未定位。
+
+### 当前状态（本会话结束时）
+
+| 项 | 状态 |
+| --- | --- |
+| step 6 停滞位置 | **`eventInit ×2` 之后的非日志代码**（仍未定位到具体函数）|
+| 已排除 | mutex 忙等重试（0 次"忙等耗尽"）、中断、锚点、采样门控、`r_sym_bt_3Dcjg…`（58 B 分配器）|
+| 下一步 | 在 `libbtdm_common.a` **全库**搜引用 `wr_btdm_osal_event_init` 的对象 → 反汇编该函数 → 列 `event_init` 之后的调用 |
