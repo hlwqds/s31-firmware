@@ -132,6 +132,7 @@ fn macHook(out: *[6]u8) void {
 /// 若崩溃因此消失或换点，就证明"anchor[0]==0 → 零值兜底 → store 到 0"这条链。
 var poison_buf: [64]u8 align(4) = @splat(0);
 pub var poison_anchor0: bool = false; // 基线
+pub var reprobe_ble_block: bool = false; // 复核实验：读 0x2010B000 会挂死整个系统
 /// 自测：故意往地址 0 写一次。用它的标签地址与 panic 报出的 mepc 比对，
 /// 判定这颗 CPU 的 store 异常是精确的还是会延迟上报。
 pub var selftest_store0: bool = false; // 标定完成：见 README
@@ -152,6 +153,13 @@ export fn probeSelftestAfterFence() void {
 
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
+    if (reprobe_ble_block) {
+        // 复核 README 记录的总根因：读 BLE/MAC 寄存器块是否会挂死（会挂，默认关）。
+        board.log.line("{s}", .{"bt probe: re-probing 0x2010B000 ..."});
+        const bleblk: *volatile u32 = @ptrFromInt(0x2010_B000);
+        const ble0 = bleblk.*;
+        board.log.line("bt probe: 0x2010B000 = 0x{x} (survived)", .{ble0});
+    }
     if (selftest_store0) {
         probeSelftestStore0();
         probeSelftestAfterFence();
