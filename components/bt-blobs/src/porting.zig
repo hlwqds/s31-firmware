@@ -131,12 +131,12 @@ const b_conf_sec_ecb: u32 = @as(u32, 1) << 25;
 const b_conf_sec_apb: u32 = @as(u32, 1) << 28;
 const b_conf_sec: u32 = @as(u32, 1) << 29;
 const b_conf_ble_timer: u32 = @as(u32, 1) << 30;
-// **IDF `clk_conf` 里我们漏掉的两个字段**（逐位对比 IDF 目标 0x7e601002 得出）：
-//   bit24 `clk_zbmac_en`        —— **BLE/MAC 块的时钟**（`0x2010B000` 就是那个块！）
-//   bit26 `clk_modem_sec_ccm_en` —— modem 安全 CCM
-// 缺 bit24 ⇒ 归档访问 `0x2010B000` 时块无时钟 ⇒ **静默总线挂死（无 fault）**。
-const b_conf_zbmac: u32 = @as(u32, 1) << 24;
+// **IDF `clk_conf` = 0x7e601002** 的位图（nibble6 = E = 1110）：
+//   bit25 sec_ecb / bit26 sec_ccm / **bit27 sec_bah** 置位，**bit24 zbmac 清零**。
+// ⇒ 我们此前漏的是 **bit26 与 bit27**（而 bit24 不应置位）。
+// 目标 = 0x00201002 | bit23 | {22,25,26,27,28,29,30} = **0x7e601002**。
 const b_conf_sec_ccm: u32 = @as(u32, 1) << 26;
+const b_conf_sec_bah: u32 = @as(u32, 1) << 27;
 const b_conf1_wifibb_80x1: u32 = @as(u32, 1) << 7;
 const b_conf1_bt_apb: u32 = @as(u32, 1) << 16;
 const b_conf1_btbb: u32 = @as(u32, 1) << 17;
@@ -234,7 +234,9 @@ pub fn phyDomainEnable() void {
     // 放在这里（step 51）会覆盖 step 5 的 RMW 结果。
     // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
     const fo: usize = 0x2010_9C08;
-    wr(fo, rd(fo) | (1 << 2) | (1 << 3) | (1 << 4));
+    // **补 bit6 `clk_btmac_fo` 与 bit7 `clk_bt_apb_fo`**（IDF `clk_conf_force_on` 位序）：
+    // `0x2010B000` 是私有 BLE/MAC 块，缺这两个 force-on ⇒ 无时钟 ⇒ 不应答。
+    wr(fo, rd(fo) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7));
     // 4) LPCON_FORCE_ON：WIFIPWR_FO(0) | **I2C_MST_FO(2)**（BLE 必需）
     const fo_lp: usize = 0x2010_F01C;
     wr(fo_lp, rd(fo_lp) | (1 << 0) | (1 << 2));
@@ -280,11 +282,14 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // **只置 IDF 在 step 5 后持有的位**：对拍实测 `clk_conf1 = 0x00070080`
     // （bit7 wifibb_80x1 + bit16 bt_apb + bit17 btbb + bit18 btmac）。
     // 此前的 `0x003ff880` 多置了 PHY-FE 一族（那是 wifi 侧的遗留 workaround）。
-    wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_btmac | b_conf1_btbb |
+    // **整字直接写**（RMW 回读证明写没落地：应为 0x003ff880，回读 0x003fe080）
+    _ = b_conf1_btmac; _ = b_conf1_btbb;
+    wr(reg_clk_conf1, 0x003f_f880);
+    if (false) wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_btmac | b_conf1_btbb |
         b_conf1_bt_apb | b_conf1_wifibb_80x1);
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
         b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |
-        b_conf_zbmac | b_conf_sec_ccm);
+        b_conf_sec_ccm | b_conf_sec_bah);
     wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_coex);
 
     // 2) **读回自证**：这一行直接证明"门到底开没开"，比再烧一轮盲试快
@@ -292,7 +297,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     const c1 = rd(reg_clk_conf1);
     const lc = rd(reg_lpcon_clk_conf);
     osal.logPublic("bt lp: clk_conf=0x{x:0>8} clk_conf1=0x{x:0>8} lpcon=0x{x:0>8}", .{ c0, c1, lc });
-    const need0 = b_conf_etm | b_conf_sec_ecb | b_conf_sec_apb | b_conf_sec | b_conf_ble_timer | b_conf_zbmac | b_conf_sec_ccm;
+    const need0 = b_conf_etm | b_conf_sec_ecb | b_conf_sec_apb | b_conf_sec | b_conf_ble_timer | b_conf_sec_ccm | b_conf_sec_bah;
     const need1 = b_conf1_btmac | b_conf1_btbb | b_conf1_bt_apb | b_conf1_wifibb_80x1;
     osal.logPublic("bt lp: gates conf_ok={} conf1_ok={} coex_ok={}", .{
         (c0 & need0) == need0,

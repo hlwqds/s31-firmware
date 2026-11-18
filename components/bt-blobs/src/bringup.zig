@@ -166,6 +166,10 @@ pub fn init(cfg: *config.Config) c_int {
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
     // 必须**先**存在，step 5 的 `rd(reg_clk_conf) | 0x7e400000` 才会得到 IDF 的 `0x7e601002`。
     // 若缺这一步，step 5 只会写出 `0x7e400000`，模拟前端时钟缺失 ⇒ modem 窗口不应答。
+    // **顺序关键**：参考构建先写 modem PLL（`0x2058_71E0 = 0x3d`），
+    // 之后 `0x20109C04/0x20109C14` 的写才生效（参考日志次序：
+    // `MODEM_CONF=0x3d` → `clk_conf=0x7e601002`）。我们此前顺序反了 ⇒ 写被丢弃。
+    @as(*volatile u32, @ptrFromInt(0x2058_71E0)).* = 0x3d;
     @as(*volatile u32, @ptrFromInt(0x2010_9C04)).* = 0x0020_1002;
     @as(*volatile u32, @ptrFromInt(0x2010_9C00)).* = 0x0000_0100;
     @as(*volatile u32, @ptrFromInt(0x2010_9C0C)).* = 0x6464_6400;
