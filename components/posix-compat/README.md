@@ -186,7 +186,7 @@ const Slot = struct {
 ## 5. 验收与登记方式
 
 - 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**91 项**
-  （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
+  （errno 6 · time 4 · addr 3 · **fd 12** · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1 = **91**）；
 - `tests/baselines.json` 里 `posix-compat: 91`（与上式之和一致）；
 - **板级**：`section: posix` → 36/36（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
 
