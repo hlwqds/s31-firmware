@@ -30,6 +30,15 @@ extern var g_abort_ra: u32;
 extern var g_c_count: u32;
 
 /// 供 C 侧 abort 桩调用：在崩溃瞬间把状态导出（不 halt）。
+/// **周期性**打印 OSAL 计数器（不依赖任何触发点）。
+/// 停滞期间由 trap 的心跳反复调用 ⇒ 最后一行就是停滞时的计数。
+export fn bt_print_osal_stats() void {
+    const st = osal.stats();
+    board.log.line("Q1 {d} {d} {d}", .{ st.eventq_put, st.eventq_get_ok, st.eventq_get_empty });
+    board.log.line("Q2 {d} {d}", .{ st.mutex_pend_ok, st.blocked_calls });
+    board.log.line("Q3 {d} {d}", .{ st.pool_exhausted, st.eventq_requeued });
+}
+
 export fn probe_dump_now() void {
     dump_done = false;   // abort 时刻必须能再次导出（否则被 once-only 门挡住）
     // **OSAL 计数器**：判断"投递了但消费不到"还是"根本没投递"的关键

@@ -9170,3 +9170,44 @@ pub fn eventInit(...) void {
 
 - `probe.zig` 的计数器输出已改为 3 行短格式（`Q1`/`Q2`/`Q3`），**待可靠触发后即可读到**；
 - `trap.zig` 的 `probe_dump_now` 调用可保留（无害），但**不应作为唯一触发点**。
+
+## 周期统计打印：接线完成但**未输出**（2026-11-19）
+
+### 已做
+
+| 文件 | 改动 |
+| --- | --- |
+| `probe.zig` | `export fn bt_print_osal_stats()`（3 行短格式 `Q1/Q2/Q3`）|
+| `trap.zig` | `extern fn bt_print_osal_stats() callconv(.c) void;` + 心跳里 `if (irq_count % 4096 == 0)` 调用 |
+
+构建通过（805 504 B）。
+
+### 结果：**无 Q 行输出**
+
+日志 7 805 B（短），`Q1` 计数 **0**。
+
+⇒ 可能原因（未验证）：
+
+| 可能 | 检查 |
+| --- | --- |
+| 心跳 `irq_count % 4096` 在停滞前未命中 | 看是否有 `.` 心跳行 |
+| 停滞期中断不触发 ⇒ 心跳不跑 | 之前的观察显示日志在 step 6 后继续，需复核 |
+| `board.log.line` 在该上下文不可用 | 换 `hw.rawWrite` 直接写 |
+
+### 下一步（更保险）
+
+把打印**放到 OSAL 侧的回调槽**（不依赖中断，运行在停滞线程里）：
+
+```zig
+// osal.zig
+pub var on_event_init: ?*const fn (u32) void = null;
+// eventInit 里：ev_init_n += 1; if (on_event_init) |f| f(ev_init_n);
+```
+```zig
+// bt-blobs/probe.zig
+pub fn bt_hook_event_init(n: u32) void { if (n == 2) probe_dump_now(); }
+// bringup 里：osal.on_event_init = bt_hook_event_init;
+```
+
+⇒ 用**回调槽**而非 `extern`，避免 `osal` 反向依赖具体产品
+（否则不链 bt-blobs 的 host 测试会链接失败）。
