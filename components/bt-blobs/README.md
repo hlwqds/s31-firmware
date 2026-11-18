@@ -3674,3 +3674,27 @@ bt probe: re-probing 0x2010B000 ...
 4. 不能返回 ⇒ 缺的是时钟/`I2C_ANA_MST` 依赖，不是校准数据，回到第 1 步逐项补齐。
 
 **在完成第 1 步之前，任何 reprobe 结果都不具判读力。**
+
+## 🔍 顺序倒置（2026-11-18 最后一条结构性发现）
+
+`bringup.init()` 里的实际顺序：
+
+```
+:178  dumpBootState()      -> :133 pp.initPhy() -> phy_get_romfunc_addr() + esp_phy_enable(2)
+:195  enter(4, btdm_coex_init)
+:200  enter(5, btdm_lp_enable_clock) -> porting.btdmLpEnableClock()   <- BT/LP 模块时钟
+```
+
+⇒ **PHY 使能发生在 BT/LP 模块时钟使能之前**，与 IDF 的顺序（先
+`modem_clock_module_enable(PERIPH_BT_MODULE)` / `PERIPH_BT_APB_MODULE`，再 `esp_phy_enable`）**相反**。
+
+这为"给 IDF 7 个 PHY 对象后镜像死在 bringup 之前"提供了解释：
+**PHY 在时钟未使能时被访问**，于是卡在它的 PMU 转储/RF 校准里。
+
+### 下一轮的第一个动作（比改校准数据更可能见效）
+
+把 `pp.initPhy()` 移到 **step 5（`btdmLpEnableClock`）之后**（或把 step 5 提到它之前），
+再 `WITH_PHY=1` 构建，看 `esp_phy_enable(2)` 能否返回；
+能返回则把后置 reprobe 插在它之后读 `0x2010B000`（判据：`survived`）。
+
+这条改动只有**移动一处调用**，不需要新代码 —— 是本会话所有剩余选项里成本最低、判据最清晰的一个。
