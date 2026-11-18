@@ -11899,3 +11899,77 @@ TX 不发送 · 两份 osal · SROA 误判 · 池耗尽
 真实修复（都验证过有效）：日志整行预留、阻塞 dump、采样源 `samplePcs`、
 定时器重装、`printf`/`esp_rom_printf` 强定义、`on_event_init`/`on_eventq_init` 回调槽、
 `rawWrite` 内部计数器、诊断前缀改为里程碑、`call_stream_on` 关闭等。
+
+## 定位到 `PsB8`：`eventInit` 的真实来源（2026-11-19）
+
+### `r_sym_bt_PsB8qxrZXPdSUAqQMBRY`（`11.o`，**328 B**）
+
+按节读的重定位：
+
+| 偏移 | 调用 |
+| --- | --- |
+| `0x1a` | `r_sym_bt_DkIeMv5o1Pl8nCGYcGxA` |
+| `0x4a` | `wr_btdm_osal_malloc` |
+| `0x5c` | `memset` |
+| **`0x72`** | **`wr_btdm_osal_event_init`** ← **轨迹里 `eventInit`×2 的来源** |
+| `0x84` / `0xa6` / `0xbe` / `0xe6` | `wr_btdm_osal_malloc` ×4 |
+
+⇒ 由 `OkE7` 的 `0xc2` 调用 → **与"事件初始化"完全吻合**。
+
+### 链尾 `r_sym_bt_ZGgifdtgyUnZ7f0ME7VH`（`9.o`，**54 B**）
+
+```asm
+0x0a  jal  wr_btdm_osal_malloc
+0x1a  beqz a0, .L102
+0x22  jal  memset
+0x2c  lw   ra,12(sp)
+0x34  j    .L100
+```
+
+⇒ **纯 `malloc`+`memset` 包装，无循环。**
+
+### 因此
+
+停滞**不在**这两个函数体内，而在 `PsB8` 内部的：
+- 5 次 `wr_btdm_osal_malloc`（`0x4a/0x84/0xa6/0xbe/0xe6`），或
+- `wr_btdm_osal_event_init`（`0x72`）及其后续。
+
+而 `Q3 pool_exhausted=0` ⇒ **不是池耗尽**。
+
+### 下一步（决定性，一行）
+
+**打开 trace 到小预算**：
+
+```zig
+osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
+```
+
+⇒ `osal> …` 行以**文本**打印
+⇒ **停滞前最后一条 trace 就是停滞点的精确位置**
+（`eventInit`、`mutexPend`、`malloc`… 谁最后出现就是它）。
+
+这是本会话唯一还没用过、且**直接**给出答案的手段 —— 此前因为 `trace_calls=0` / 被压缩 / 被过滤，从未真正看到过 trace 的结尾。
+
+## 本会话最终总计
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 15 |
+| 已确证事实 | 16 |
+| 撤回 | 32 |
+| 数据源错误 | 13 |
+| 自我纠正 | 148 |
+
+### 定位链（最终）
+
+```text
+默认构建 → step 6 r_btdm_task_init（确认未返回、无错误码）
+  → OkE7(0x40)（已进入，见 caller ring）
+    → 0x84 eventq_init ✓
+    → 0xc2 PsB8（328 B）
+      → 0x72 event_init（轨迹证据）
+      → 5× malloc（状态健康，pool_exhausted=0）
+    → 0xcc ZGgi（54 B，纯包装，无循环）
+  → 0x58 get_time_forever（不可能挂）
+  → 0x66 mutex_pend（从未到达，Q2 全 0 + 无 EINVAL）
+```
