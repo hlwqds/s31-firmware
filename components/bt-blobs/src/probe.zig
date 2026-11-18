@@ -156,6 +156,9 @@ fn logHook(msg: []const u8) void {
     // 归档的消息只计数不写 UART ⇒ 串口不再被灌满，采样可用。
     if (std.mem.startsWith(u8, msg, "bt ")) {
         log_hook_ours +%= 1;
+        // **限量**：只放行前 24 条自身日志，其余只计数 —— 否则总量 ≫ 128 B FIFO，
+        // 尾部会被丢弃，反而看不到停在哪（本会话反复踩过）。
+        if (log_hook_ours > 24) return;
     } else {
         log_hook_other +%= 1; // 归档自己的消息：进 RAM 环，不打 UART
         ringPush(msg);
