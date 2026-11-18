@@ -115,7 +115,7 @@ pub fn ringPush(msg: []const u8) void {
 /// 事件触发导出：打 PC 采样 + 计数器，然后停机。
 var dump_done: bool = false;
 fn dumpAtPend() void {
-    if (dump_done or osal.caller_n < 22) return; // 推迟到 event_init 一族之后
+    if (dump_done) return;
     // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
     board.log.line("D{d}.{d}", .{ log_hook_calls, osal.caller_n });
     var mi: u32 = 0;
