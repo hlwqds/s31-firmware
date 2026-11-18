@@ -3510,3 +3510,32 @@ Mwin: clkrst +0x03c = 0x0000000f
 BLE controller 在我们的裸机 OS 上已经**跑过 `task_init` 的绝大部分**（21 次 OSAL、event/queue 建立、
 就绪标记写入），剩余障碍位于**不经过钩子的归档代码 + 中断停摆**这一段；
 `0x2010B000` 那堵硬件墙**既未被证实也未被排除**（`2aNN` 已排除，其后的路径未读）。
+
+## 🎯 `task_init` 尾部读到了：它**在建任务**（2026-11-18 收尾）
+
+`2aNN` 返回后，`task_init` 组装一个任务描述并调用建任务函数：
+
+```asm
+4005fb9e: li  a5,33                     # 优先级
+4005fba6: li  a5,2000                   # 栈大小
+4005fbaa: c.swsp a5,24(sp)
+4005fbac: c.addi4spn a0,sp,20
+4005fbb4: jal ra,40060772 <r_sym_bt_BOhffsuJp3HZRA44ZYRn>   # <- 建任务
+4005fbb8: c.addi4spn a0,sp,12
+4005fbbc: c.swsp zero,16(sp)
+4005fbbe: jal ra,4005e98a <r_sym_bt_HGbPEa9oUCsYybIAWjE0>   # <- 其后
+```
+
+⇒ 归档**确实走到了"创建 controller 任务"这一步** —— 这比本会话此前任何一次推进都深
+（此前 `task_create` 从未发生，现在代码路径已经到达它）。
+
+### 与 OSAL 计数的交叉
+
+OSAL 环止于 **21** 次，其中**没有 `task_create`**。两种可能（未区分）：
+
+1. `BOhff` 内部走了不调用我们 `task_create` 的路径（例如它自己实现或被 GC 掉）；
+2. `BOhff` 在调用 `task_create` **之前**就返回/失败。
+
+**下一步（单点）**：反汇编 `r_sym_bt_BOhff…`（`0x40060772`），看它：
+- 是否调用 `wr_btdm_osal_task_create`（若是，则它没被调用就说明前面的分支失败）；
+- 它在调用前读了哪个锚点/字段 —— 那正是当前真正的闸门。
