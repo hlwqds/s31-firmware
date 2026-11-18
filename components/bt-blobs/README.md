@@ -15129,3 +15129,68 @@ nm -n app.elf | awk '{a=strtonum("0x"$1); if ((a & 0xFFFFFF) == 0x59E894) print}
 | 撤回 | 63 |
 | 数据源错误 | 22 类 |
 | 自我纠正 | **196** |
+
+## 🏁 仪器修正后的决定性读数：**instruction access fault**（非 illegal instruction）
+
+### 直接读 CSR（不再依赖可能被覆写的 `frame.mepc`）
+
+```text
+c_mepc=0x885de894  c_mtval=0x885de894  c_ms=0x00003881  c_ra=0x885de895
+f_mepc=0x885de894  f_sp=0x2f07ae90     cause=0x1   step=15 hci_transport_init
+```
+
+### 三条关键结论
+
+| # | 事实 | 意义 |
+| --- | --- | --- |
+| 1 | **`c_mepc == f_mepc`** | ✅ **帧未被采样器覆写** ⇒ 此前所有基于 `mepc` 的推论**有效** |
+| 2 | **`cause = 0x1`** | **instruction access fault**（**不是** code 2 的 illegal instruction）|
+| 3 | **`mtval == mepc`** | CPU 在 `0x885de894` **取指失败** ⇒ 该地址**不可执行** |
+
+⇒ **不是"执行了非法指令"，而是"取指就失败"** ⇒ 跳到了**不可执行的内存**。
+
+### 这修正了什么
+
+| 之前 | 现在 |
+| --- | --- |
+| "illegal instruction (cause=2)" | ❌ **实为 cause=1：instruction access fault** |
+| "执行了非法编码" | ❌ 是**取指失败**（地址本身不可执行）|
+| `frame.mepc` 可信吗？ | ✅ **可信**（与 CSR 一致）|
+
+### 因此机制确定
+
+**某处间接调用/跳转把目标设成了 `0x885de894`** —— 一个不可执行的地址 ⇒ 取指 fault。
+
+⇒ `ra = mepc + 1` 是跳转指令的下一条 ⇒ 与"`jalr` 到垃圾"完全一致。
+
+### 地址模式（三次）
+
+| 运行 | mepc |
+| --- | --- |
+| 1 | `0x4859e894` |
+| 3 | `0x8859e894` |
+| **4** | **`0x885de894`** |
+
+⇒ 后两次**高 12 位相同**（`0x885`），低 20 位变化。
+
+⇒ 仍符合"**部分损坏的指针**"：一段位固定、一段变化。
+
+### 下一步（一条命令，已有判据）
+
+```bash
+nm -n app.elf | awk '{a=strtonum("0x"$1); if ((a & 0xFFF) == 0x894) print}'
+```
+
+⇒ 找低 12 位 `0x894` 的符号；或按 `0x885` 前缀查是否对应某个结构体字段。
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完整完成** | ✅ `INITED` |
+| **新故障** | **instruction access fault @ `0x885de894`**（跳转到不可执行地址）|
+| 已排除 | 栈损坏、`hooks.log`、帧被覆写、illegal instruction |
+| 撤回 | 64 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **197** |

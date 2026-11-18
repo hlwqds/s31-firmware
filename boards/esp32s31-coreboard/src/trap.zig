@@ -469,9 +469,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **非阻塞**：FIFO 卡住时 ROM printf 会挂死，panic 信息就永远看不到。
         // **把 step 并进这一行**：这是唯一被证明一定会出现的诊断行
         // （`panic: LASTSTEP` 那条 dump 路径在本故障里根本不执行）。
-        var pbuf: [160]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! mepc=0x{x:0>8} mtval=0x{x:0>8} mstatus=0x{x:0>8} ra=0x{x:0>8} step={d} {s} da=0x{x} db=0x{x}", .{
-            frame.mepc, hw.readMtval(), frame.mstatus, frame.ra,
+        // **直接读 CSR**（`frame.mepc` 可能被采样器覆写，代码自己注释过）。
+        var csr_mepc: usize = 0;
+        var csr_mtval: usize = 0;
+        var csr_mstatus: usize = 0;
+        asm volatile ("csrr %[m], mepc" : [m] "=r" (csr_mepc));
+        asm volatile ("csrr %[m], mtval" : [m] "=r" (csr_mtval));
+        asm volatile ("csrr %[m], mstatus" : [m] "=r" (csr_mstatus));
+        var pbuf: [240]u8 = undefined;
+        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
+            csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, cause & 0x3F,
             last_step, last_step_name, diag_a, diag_b,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);

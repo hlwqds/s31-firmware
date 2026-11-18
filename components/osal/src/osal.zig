@@ -111,8 +111,15 @@ pub fn logLine(comptime fmt: []const u8, args: anytype) void {
     // 就直接丢弃 —— 防止归档把 hooks 结构体写坏后调用到垃圾地址
     // （本会话的崩溃正是 `ra = mepc+1` 的间接调用形态）。
     {
+        // **真实代码范围**（由 app.elf 实测）：
+        //   .flash.text = 0x4000_0020 .. 0x400A_0300
+        //   ROM          = 0x2f80_0000 .. 0x2f85_0000
+        // 之前用 [0x40000000,0x50000000) 是**空操作** —— 观测到的垃圾
+        // 0x4859e894 / 0x4c5de8d4 正好落在里面，所以那次测试不具决定性。
         const p = @intFromPtr(f);
-        if (p < 0x4000_0000 or p >= 0x5000_0000) return;
+        const in_text = (p >= 0x4000_0020 and p < 0x400A_0300);
+        const in_rom = (p >= 0x2f80_0000 and p < 0x2f85_0000);
+        if (!in_text and !in_rom) return;
     }
     var buf: [128]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
