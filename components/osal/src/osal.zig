@@ -1348,9 +1348,11 @@ pub fn readEfuseMac(out: *[6]u8) void {
 }
 
 export fn wr_btdm_osal_malloc(size: u32, flags: c_int) callconv(.c) ?*anyopaque {
+    noteCaller();
     return btdmMalloc(size, flags);
 }
 export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
+    noteCaller();
     logLine("bt osal: free", .{});
     btdmFree(ptr);
 }
