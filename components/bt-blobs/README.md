@@ -1947,3 +1947,29 @@ libbtdm_common_12.o  00000004  R_RISCV_HI20  r_sym_bt_pSy5Wex1[...]
 - ⇒ 正确工具是 **linker map**（把 `0x2f00ffd0` 归到某个 section），或在 ELF 上按
   `sw …, -0x30(...)` + 同函数内 `lui 0x2f010` 的**组合模式**过滤。Zig 0.17 的
   `Build.Module` 没有 `addLinkArgs`，出 map 需要换写法（例如 `compile.link_args`）。
+
+### anchor[0] 在整个镜像/归档里**没有任何软件写者**（2026-11-18 实测）
+
+对链接后的 ELF 全面反汇编，统计"带符号标注的锚点 store"：
+
+```text
+sw …,<r_sym_bt_6Q68KSwuQQP4VjQGqiWa>   ×1        ← anchor[8]，已发布
+（其余锚点：0 条）
+```
+
+而 anchor[0]（`pSy5Wex…`）的情况：
+
+- 定义在 `libbtdm_common_11.o`（BSS），
+- 全包 `readelf -r` 只有**一处**引用：`libbtdm_common_12.o` 的 `R_RISCV_HI20`（取地址），
+- **没有任何 store 型重定位，也没有任何带标注的 `sw`**。
+
+⇒ **归档里没有代码写 anchor[0]**。这与"7 个未发布锚点属于更晚子系统"是同一模式的极端情况：
+anchor[0] 的写者不在归档里。
+
+**假设（明确标注为未证实）**：`0x2f00ffd0` 起这张表可能是 **ROM/PHY 侧拥有的 RAM 状态**，
+由 ROM 的 PHY 入口（我们经 `phy_get_romfunc_addr` / `esp_phy_enable` 调的那条链）填充；
+ROM 路径下 PHY 使能"返回了"但可能并未真正完成标定 ⇒ 表里仍是 0。
+这与 IDF PHY 对象路径行为不同（那条路在 PHY 内就停了）指向同一个方向：**PHY 初始化没有真正完成**。
+
+**验证方式（下一步）**：在 `pp.initPhy()` 前后各读一次 `0x2f00ffd0` 区域的 10 个字并打印 ——
+若 `esp_phy_enable` 返回后 anchor[0] 仍为 0，则"ROM 未填表"成立，问题回到 PHY 使能本身。
