@@ -4000,3 +4000,46 @@ bt anchors[before-phy]: 2f00ffd0 696e6170 6c203a63 756f2063 …
 
 判据：清零后板上 `anchor[0..9]` 在归档运行前应**全为 0**；这正好可以用现成开关验证
 （`publish_bohff_anchor=false` 时归档惰性发布前，`anchors[before-phy]` 应全 0）。
+
+## 🚨 更正：锚点 dump 的地址计算**可能是错的**（2026-11-19）
+
+符号表给出决定性证据：
+
+```
+31650: 2f00ffd0  4 OBJECT GLOBAL DEFAULT  11  r_sym_bt_pSy5Wex1v0iXw5RdWtwL
+31883: 2f00fff4  4 OBJECT GLOBAL DEFAULT  11  r_sym_bt_y5Dip5N8bwiiGRcrWzBO
+[11] .bss  NOBITS  2f00fe80 005100   <- Ndx=11 就是 .bss
+```
+
+⇒ 锚点符号的 **Ndx = 11 = `.bss`（NOBITS）** ⇒ 启动清零后**运行时必须是 0**（除非被写入）。
+⇒ 因此读到 `696e6170`（"pain"）这类 ASCII **不可能是这些槽的内容** ⇒ **是我们 dump 的地址算错了**。
+
+**可疑代码**（本会话我改的两处）：
+
+```zig
+const base: usize = @intFromPtr(&@extern(*volatile u32, .{ .name = "r_sym_bt_pSy5…" }));
+const v = (@as(*volatile u32, @ptrFromInt(base + i * 4))).*;
+```
+
+`@extern(*volatile u32, …)` 本身**就是**指向该符号的指针（`probe_ptr.zig` 里的用法是 `. *`），
+对它再取 `&` 取到的是**指针变量的地址**，不一定是符号地址 —— 这很可能就是读到错误位置的原因。
+
+**正确写法**（与 `probe_ptr.zig:26-28` 一致）：
+
+```zig
+const p: *volatile u32 = @extern(*volatile u32, .{ .name = "r_sym_bt_pSy5…" });
+const v = (@as(*volatile u32, @ptrFromInt(@intFromPtr(p) + i * 4))).*;
+```
+
+### 影响范围（必须声明）
+
+**本会话中所有基于 `anchors[]` 读数的判断都需要复核**，包括：
+- “anchor[0]=0 / anchor[4] 有效 / anchor[9]=0”这类对读；
+- 由此推出的“惰性发布”“某槽未发布”“`anchor[8]` 预发布导致 JwHs 短路”等结论。
+
+其中**独立于 dump 的部分仍然成立**：`JwHs`/`FzF1` 的反汇编、OSAL 调用者环、闭环到 `Xpuq`
+（后者来自反汇编与 OSAL 序列，不依赖 anchors 读数）。
+
+**下一步（第一步，先于一切）**：按上面的正确写法修 `gate.zig` 与 `probe.zig` 的两处，
+重新在板上读一次 `anchors[before-phy]`；若全为 0 ⇒ `.bss` 正常、此前读数全是 dump 的锅；
+若仍非 0 ⇒ 才轮到怀疑 `.bss` 清零。
