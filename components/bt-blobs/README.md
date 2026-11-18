@@ -8392,3 +8392,42 @@ step：enter step 52 → enter step 6
 | `mstatus.MIE = 0` | 归档在临界区里死等 ⇒ 找那个临界区的配对 |
 | `MIE = 1` 但定时器计数不走 | 定时器被重编程 |
 | 两者都正常却无样本 | 中断被更高优先级屏蔽（CLIC 层级）|
+
+## 修正：轨迹是 `mutexPend` → `eventInit`×2（2026-11-19）
+
+之前写的"`osal> event`"是**前缀截断**。完整尾部：
+
+```text
+D115.21
+Mosal> mutexPend tmo=4294
+Mosal> eventInit
+Mosal> eventInit
+```
+
+### 更精确的判读
+
+| 事实 | 含义 |
+| --- | --- |
+| `mutexPend tmo=4294` | 一次 **有超时**的 mutex 等待（4294 单位）|
+| `eventInit` × 2 | 随后**两次事件初始化** |
+| 之后无任何输出 | 挂在这两步之后 |
+
+⇒ 之前"挂在 event 操作里"的说法**不成立**（"event" 可能是 eventInit/eventPost/eventGroup 任一）。
+正确表述：**`mutexPend(tmo=4294)` 之后执行了两次 `eventInit`，随后停滞**。
+
+### 心跳与样本同时消失
+
+`pc175` 中 `bt lp:bps` / `pcsample` **计数为 0** ⇒ 与 PC 样本一起消失
+⇒ **定时中断在 step 6 之后不再到达**（不是采样器问题）。
+
+### 下一步（一次读数）
+
+紧跟 `enter(6, ...)` 之后打印：
+
+| 寄存器 | 判据 |
+| --- | --- |
+| `mstatus.MIE`(bit3) / `MPIE`(bit7) | `MIE=0` ⇒ 进了未退出的临界区 |
+| `INT_ENA_TIMERS(+0x70)` bit0 | `=0` ⇒ 定时器被禁用/重配 |
+| `INT_RAW` | 无挂起 ⇒ 中断源不产生 |
+
+三种结果对应三种完全不同的修法（我们 OSAL 临界区 / 归档重配 TIMG0 / 更外层屏蔽）。
