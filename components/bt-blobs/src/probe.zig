@@ -138,7 +138,7 @@ pub fn ringAt(idx: u32) []const u8 {
 pub var log_hook_ours: u32 = 0;
 pub var log_hook_other: u32 = 0;
 /// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
-pub var log_hook_silent: bool = true; // 窗口内整体静音：让 FIFO 空着给 DUMP 用 // 实验表明会同时静音我们自己的进度日志，故默认关闭
+pub var log_hook_silent: bool = false; // 默认放行；true 会连我们自己的进度日志一起静音（实测过）
 
 fn logHook(msg: []const u8) void {
     // **三层语义各归各位**（这条以前写错过两次，每次代价是一轮无效板测）：
