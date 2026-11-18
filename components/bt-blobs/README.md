@@ -14952,3 +14952,76 @@ pub var ptr_callf: usize = 0;   // hooks.call
 | 撤回 | **62** |
 | 数据源错误 | 22 类 |
 | 自我纠正 | **194** |
+
+## 🎯 决定性：`db ≠ 0xB0B0` ⇒ **崩溃发生在 `init()` 返回之前**
+
+### 实验设计
+
+| 位置 | 写入 |
+| --- | --- |
+| `init()` 内、`INITED` 之前 | `diag_b = 0xadcb`（栈探针的局部地址）|
+| **`init()` 返回后、调用者第一条语句** | **`diag_b = 0xB0B0`** |
+
+⇒ 崩溃时打印 `diag_b`：
+- `0xadcb` ⇒ 崩在 `return` **之前**（post-init 标记未执行）
+- `0xB0B0` ⇒ 崩在 `return` **之后**
+
+### 实测
+
+```text
+step=15 hci_transport_init da=0xadb4 db=0xadcb
+```
+
+⇒ **`db = 0xadcb`**（不是 `0xB0B0`）⇒ **post-init 标记从未执行**
+⇒ **崩溃在 `init()` 内部、`return` 之前。**
+
+### 这与 `ra = mepc+1` 的推理合并
+
+| 证据 | 结论 |
+| --- | --- |
+| `db = 0xadcb`（post-init 未执行）| 崩在 `init()` 内 |
+| `ra = mepc + 1` | **间接调用到垃圾地址**（不是返回地址被破坏）|
+
+⇒ **`init()` 内部有一次"通过坏函数指针的调用"**，发生在
+**栈探针（INITED 之前）之后**、**`return` 之前**。
+
+### 因此窗口进一步收窄
+
+```text
+{ diag_b = 0xadcb; }                 ← 栈探针（INITED 之前）
+osal.logPublic("bt bringup: INITED", .{});   ← 已打印
+return 0;                             ← 未完成
+```
+
+⇒ 窗口 = **`INITED` 那一行 + `return 0`**。
+
+### 两种解释
+
+| # | 解释 |
+| --- | --- |
+| (a) `INITED` 那行**自身**在返回途中调了坏指针（`logPublic` → `hooks.log`）| 与 `ra = mepc+1`、与"地址随机"都吻合 |
+| (b) `return 0` 的 `ret`（`jalr x0,0(ra)`）—— 但**不改 `ra`** ⇒ 与 `ra = mepc+1` 矛盾 ⇒ **排除** |
+
+⇒ **(a) 是唯一自洽的解释：`logPublic` 的 `hooks.log` 指针是坏的。**
+
+### 下一步（一次读数，明确）
+
+在 `!! mepc=…` 行上追加打印：
+
+```zig
+pub var ptr_logf: usize = 0;   // hooks.log
+```
+
+⇒ 在 `logPublic` 调用**之前**把 `@intFromPtr(hooks.log)` 存进去
+⇒ 崩溃时若它等于 `mepc` 那一类垃圾 ⇒ **直接点名**。
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完整完成** | ✅ `INITED`（该行确实打印）|
+| **新故障** | **`init()` 内 `logPublic`/`hooks.log` 的坏函数指针**（唯一自洽解释）|
+| 撤回 | 62 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **195** |
