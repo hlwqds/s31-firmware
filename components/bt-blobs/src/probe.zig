@@ -137,6 +137,8 @@ pub fn ringAt(idx: u32) []const u8 {
 }
 pub var log_hook_ours: u32 = 0;
 pub var log_hook_calls_only: u32 = 0;
+/// 仅 step 6 窗口内为真：只有此刻才发数字码（序列纯净，且不被里程碑挤掉）。
+pub var call_stream_on: bool = false;
 
 /// 直接写一个字节（绕过行缓冲；用于"每次调用一字母"的低带宽编码）。
 fn uartPut(ch: u8) void {
@@ -187,13 +189,16 @@ fn logHook(msg: []const u8) void {
         // 早先把上限套在全部自身日志上，结果里程碑被吃掉、`malloc` 行变成 0（本会话踩过）。
         // **逐调用只写 1 个字节**：把 `bt ret: <name>…` / `bt call: <name>…` 压成该名字的首字母。
         // 21 次调用只占 21 字节，永不灌满 128 B FIFO，也不会与 ISR 心跳逐字节交错到无法 grep。
-        if (std.mem.indexOf(u8, msg, "bt ret: ")) |k| {
-            const rest = msg[k + 8 ..];
-            if (rest.len > 0) { uartPut(codeOf(rest)); return; }
-        }
-        if (std.mem.indexOf(u8, msg, "bt call: ")) |k| {
-            const rest = msg[k + 9 ..];
-            if (rest.len > 0) { uartPut(codeOf(rest)); return; }
+        if (call_stream_on) {
+            if (std.mem.indexOf(u8, msg, "bt ret: ")) |k| {
+                const rest = msg[k + 8 ..];
+                if (rest.len > 0) { uartPut(codeOf(rest)); return; }
+            }
+            if (std.mem.indexOf(u8, msg, "bt call: ")) |k| {
+                const rest = msg[k + 9 ..];
+                if (rest.len > 0) { uartPut(codeOf(rest)); return; }
+            }
+            return; // 窗口内其它自身日志一律不发：把 21 字节留给码流
         }
     } else {
         log_hook_other +%= 1; // 归档自己的消息：进 RAM 环，不打 UART
