@@ -399,7 +399,8 @@ pub fn run() noreturn {
     if (he > hs) {
         const region = @as([*]u8, @ptrFromInt(hs))[0 .. he - hs];
         osal.initArena(region);
-        osal.logPublic("bt probe: arena {d} B", .{he - hs});
+        // **极短**：长行会被 FIFO 丢；这里只要一个数字（KB）就够判读。
+        board.log.line("A{d}K", .{(he - hs) / 1024});
     } else {
         osal.logPublic("bt probe: FATAL no heap region", .{});
         halt();

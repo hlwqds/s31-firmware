@@ -4659,3 +4659,28 @@ abort 前那条日志的实际格式串是 **`0x40101df8`**（我此前按 `0x40
 **确认板上 arena 的真实数值**：把 `bt probe: arena {d} B` 改到 step 6 之后再打一次
 （或用 1 字节心跳那套机制），确保这行不被前面的输出挤掉。
 在拿到这个数字之前，任何关于"堆够不够"的判断都不可靠 —— 这正是本会话反复踩的同一类坑。
+
+## ✅ 板上确认：arena = **356 KiB**，因此分配失败**不是尺寸问题**（2026-11-19）
+
+把 arena 行改成极短标记（长行会被 FIFO 丢），板上得到：
+
+```
+A356K
+```
+
+⇒ 堆修复**已生效**（4 KB → 356 KiB），与链接符号一致。
+
+### 由此得出
+
+`calloc(1, 1904)` 在 **356 KiB 空闲**的 arena 上返回 NULL ⇒ **不是容量问题**，只剩三种可能：
+
+1. **`s31_btdm_malloc` 不是 `btdmMalloc`**：`calloc` 调的是 `0x4006c85a` 的 `s31_btdm_malloc`，
+   需确认它是否就是 `osal.btdmMalloc`（`osal.zig:1244`）的导出，还是另一个实现；
+2. **`Arena.alloc` 的找块/切分有 bug**（如 `min_block`/对齐导致的边界条件）；
+3. **初始化时机**：PHY 使能在 `dumpBootState()`（`bringup.init` 内，probe.zig:447），
+   而 `initArena` 在 probe.zig:395-401 —— 顺序上在前，但需确认那段确实执行到（`A356K` 已证明执行了）。
+
+**下一步（离线，最小）**：
+1. `readelf -sW | grep s31_btdm_malloc` 看它的 st_value 与所属源（或用 `nm` 确认与 `osal.btdmMalloc` 同一地址）；
+2. 读 `Arena.alloc`（`osal.zig:1167-1200`）的完整找块逻辑，重点看 `min_block` 与 `block_align` 对
+   `size=1904` 的处理 —— 这类"大块在小碎片里找不到连续空间"的 bug 在简单 bump/split 分配器里很常见。
