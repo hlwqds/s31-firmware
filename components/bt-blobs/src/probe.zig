@@ -140,6 +140,17 @@ pub var log_hook_calls_only: u32 = 0;
 /// 仅 step 6 窗口内为真：只有此刻才发数字码（序列纯净，且不被里程碑挤掉）。
 pub var call_stream_on: bool = false;
 
+/// 调用码存进 RAM（不占 UART），由一次性导出统一打出来 —— 里程碑进度照常可见。
+pub var code_ring: [48]u8 = @splat(0);
+pub var code_n: u32 = 0;
+
+fn codePush(c: u8) void {
+    if (code_n < code_ring.len) {
+        code_ring[code_n] = c;
+        code_n += 1;
+    }
+}
+
 /// 直接写一个字节（绕过行缓冲；用于"每次调用一字母"的低带宽编码）。
 fn uartPut(ch: u8) void {
     const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
@@ -192,11 +203,11 @@ fn logHook(msg: []const u8) void {
         if (call_stream_on) {
             if (std.mem.indexOf(u8, msg, "bt ret: ")) |k| {
                 const rest = msg[k + 8 ..];
-                if (rest.len > 0) { uartPut(codeOf(rest)); return; }
+                if (rest.len > 0) { codePush(codeOf(rest)); return; }
             }
             if (std.mem.indexOf(u8, msg, "bt call: ")) |k| {
                 const rest = msg[k + 9 ..];
-                if (rest.len > 0) { uartPut(codeOf(rest)); return; }
+                if (rest.len > 0) { codePush(codeOf(rest)); return; }
             }
             return; // 窗口内其它自身日志一律不发：把 21 字节留给码流
         }
@@ -477,6 +488,7 @@ pub fn run() noreturn {
 fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
     board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
+    if (code_n > 0) board.log.line("CODES n={d} {s}", .{ code_n, code_ring[0..code_n] });
     board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});
     // s0=0x2f00ffe8 = anchor[6]；把 11 个锚点 + 每个非零锚点的 +8 字段打出来，
     // 直接回答「哪个字段未发布」。0x2f00ffd0 是 anchor[0]。
