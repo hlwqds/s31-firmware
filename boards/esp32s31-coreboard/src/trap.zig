@@ -485,13 +485,18 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 那么 +12 也就不是"保存的 ra"，整块覆盖的结论要撤回。
             // **扫描 sp 下方 64 字节**，找第一个落在 .flash.text 的字
             // （= 被中断函数保存的 ra）。找到 ⇒ 寄存器被写坏；找不到 ⇒ 帧被破坏。
+            // **扫整段已用栈**：`f_sp` 距 `_stack_top` 约 304 B ⇒ 扫 [sp, sp+304)。
+            // 之前扫的 [sp, sp+64) 是帧的**最低** 64 B，而保存的 ra 在帧**顶端**，
+            // 且叶子函数根本没有保存的 ra ⇒ "64 B 内无代码地址"是正常形态，不是证据。
             var found: usize = 0;
             var k: usize = 0;
-            while (k < 64) : (k += 4) {
+            while (k < 304) : (k += 4) {
                 const v = (@as(*const usize, @ptrFromInt(frame.sp + k))).*;
                 if (v >= 0x4000_0020 and v < 0x400A_0300) { found = v; break; }
             }
             diag_a = @truncate(found);
+            // **anchor[0] 与其 +28 字段**（分派器读的就是这两个）
+            diag_b = @truncate((@as(*const usize, @ptrFromInt(0x2f00_ffd0))).*);
         }
         // **原始帧内容**（阻塞写，单独一行）：看替换者是什么
         {
