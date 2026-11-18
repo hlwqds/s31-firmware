@@ -57,6 +57,11 @@ pub fn bindHooks(h: Hooks) void {
     timer.bindWake(wake);
 }
 
+/// 已绑定的单调时钟（纳秒）；未绑定时 `null` —— 调用方据此返回 `ENOSYS`。
+pub fn nowNs() ?u64 {
+    return if (hooks.now) |f| f() else null;
+}
+
 /// **应用必须周期性地调它**（每个 tick 一次）。到期定时器在这里被摘链并唤醒；
 /// 不调就意味着 `sem_timedwait` / `mutex_timedlock` 永不到期（见 `timer.zig` 文件头）。
 pub fn pump() usize {

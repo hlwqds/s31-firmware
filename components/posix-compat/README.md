@@ -53,7 +53,7 @@
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
 | `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `sem_t`（自持等待队列）** | ✅ 已完成（**不用** `osal.Mutex`：它只忙等、不唤醒） |
-| `pthread_cond_init/wait/signal/broadcast` | `cond.zig` → `waitq`（FIFO）+ **注入的 wake** | ✅ 已完成（`wait` 要求调度器已启动，否则 `ENOSYS`；**多等待者复锁已可工作**） |
+| `pthread_cond_init/wait/timedwait/signal/broadcast` | `cond.zig` → `waitq`（FIFO）+ **注入的 wake** + `timer` | ✅ 已完成（`wait` 要求调度器已启动，否则 `ENOSYS`；`timedwait` 靠 `sync.pump()` 到期） |
 | `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → 自持计数 + `waitq` FIFO | ✅ 已完成（**多等待者**，与 BLE 不共享静态池） |
 | `sem_timedwait` / `pthread_mutex_timedlock` | `sync.sem_timedwait` → `timer.zig` + 应用周期性 `sync.pump()` | ✅ 已完成（**契约**：不调 `pump()` 就永不到期；未绑时钟 ⇒ `ENOSYS`） |
 | `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
@@ -115,8 +115,7 @@
 每 fd 地址表）· `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll）
 · `sync`（sem/mutex/once）· `thread`（create/join/detach/self/exit）· `cond`（含 `waitq`）
 
-暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、`cond_timedwait`、
-阻塞式 `accept`/`connect`（前置见 §6.3）。
+暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、阻塞式 `accept`/`connect`（前置见 §6.3）。
 
 （`sem_timedwait` / `pthread_mutex_timedlock` **已做** —— 靠应用周期性调 `sync.pump()`。）
 
@@ -167,9 +166,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**80 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 80`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**83 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 83`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在

@@ -24,6 +24,8 @@ const sched = @import("osal_kit").sched;
 const e = @import("errno.zig");
 const sync = @import("sync.zig");
 const waitq = @import("waitq.zig");
+const timer = @import("timer.zig");
+const time = @import("time.zig");
 
 pub const pthread_cond_t = struct {
     q: waitq.Queue = .{},
@@ -60,6 +62,40 @@ pub fn pthread_cond_wait(c: *pthread_cond_t, m: *sync.pthread_mutex_t) c_int {
     // 只在**自己还在队里**时继续阻塞：`signal` 摘链后我们才醒；虚假唤醒不会提前返回。
     while (n.linked) sched.block();
     return sync.pthread_mutex_lock(m);
+}
+
+/// 带截止期的等待：到点由 `sync.pump()` 唤醒（见 `timer.zig`），返回 `ETIMEDOUT`。
+///
+/// 检查顺序是刻意的：**先解析 `timespec`（`EINVAL`）→ 再取时钟（`ENOSYS`）→ 再判到期
+/// （`ETIMEDOUT`）→ 最后才看调度器（`ENOSYS`）**。这样"已经过期"在调度器没起来的机器上
+/// 也能给出正确答复，而不是被"不能阻塞"挡在前面。
+pub fn pthread_cond_timedwait(
+    c: *pthread_cond_t,
+    m: *sync.pthread_mutex_t,
+    abstime: *const time.timespec,
+) c_int {
+    const deadline = time.fromTimespec(abstime.*) orelse return fail(e.EINVAL);
+    const now = sync.nowNs() orelse return fail(e.ENOSYS); // 没时钟就判定不了到期
+    if (now >= deadline) return fail(e.ETIMEDOUT);
+    if (!sched.isStarted()) return fail(e.ENOSYS); // 不能阻塞 ⇒ 别假装等过
+
+    var n = waitq.Node{ .ctx = sched.currentContext() };
+    var t: timer.Timer = .{};
+    // 入队与挂定时器都在解锁**之前**：解锁可能立刻切走，届时 signal 必须能摘到我们。
+    c.q.push(&n);
+    timer.arm(&t, deadline, &c.q, &n);
+    if (sync.pthread_mutex_unlock(m) != 0) {
+        _ = c.q.remove(&n);
+        timer.disarm(&t);
+        return -1;
+    }
+    // 退出条件：被交接（节点被 pop）或到期；只看"是否还有人 signal"会漏掉超时。
+    while (n.linked and !t.expired) sched.block();
+    if (n.linked) _ = c.q.remove(&n);
+    if (!t.expired) timer.disarm(&t); // 正常被唤醒：撤销定时器
+    const relock = sync.pthread_mutex_lock(m);
+    if (t.expired) return fail(e.ETIMEDOUT);
+    return relock;
 }
 
 pub fn pthread_cond_signal(c: *pthread_cond_t) c_int {
@@ -157,6 +193,60 @@ test "cond: 没有调度器时 wait 返回 ENOSYS，而不是挂住" {
     try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_init(&m, null));
     e.set(0);
     try testing.expectEqual(@as(c_int, -1), pthread_cond_wait(&c, &m));
+    try testing.expectEqual(e.ENOSYS, e.get());
+    try testing.expect(c.q.isEmpty()); // 失败不留节点
+    try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_destroy(&m));
+}
+
+test "cond: timedwait 的 timespec 非法报 EINVAL" {
+    var c: pthread_cond_t = .{};
+    var m: sync.pthread_mutex_t = .{};
+    try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_init(&m, null));
+    const bad = time.timespec{ .tv_sec = -1, .tv_nsec = 0 };
+    e.set(0);
+    try testing.expectEqual(@as(c_int, -1), pthread_cond_timedwait(&c, &m, &bad));
+    try testing.expectEqual(e.EINVAL, e.get());
+    try testing.expect(c.q.isEmpty());
+    try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_destroy(&m));
+}
+
+test "cond: timedwait 在截止期已过时报 ETIMEDOUT（即使调度器没起来）" {
+    var c: pthread_cond_t = .{};
+    var m: sync.pthread_mutex_t = .{};
+    try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_init(&m, null));
+    var fake_now: u64 = 200;
+    const clock = struct {
+        var v: u64 = 0;
+        fn now() u64 {
+            return v;
+        }
+    };
+    clock.v = fake_now;
+    sync.bindHooks(.{ .wake = recordResume, .now = clock.now });
+    defer sync.bindHooks(.{});
+    const ts = time.timespec{ .tv_sec = 0, .tv_nsec = 100 }; // 100ns 已过
+    e.set(0);
+    try testing.expectEqual(@as(c_int, -1), pthread_cond_timedwait(&c, &m, &ts));
+    try testing.expectEqual(e.ETIMEDOUT, e.get());
+    try testing.expect(c.q.isEmpty());
+    try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_destroy(&m));
+    _ = &fake_now;
+}
+
+test "cond: timedwait 未到期且无法阻塞时报 ENOSYS" {
+    var c: pthread_cond_t = .{};
+    var m: sync.pthread_mutex_t = .{};
+    try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_init(&m, null));
+    const clock = struct {
+        fn now() u64 {
+            return 0;
+        }
+    };
+    sync.bindHooks(.{ .wake = recordResume, .now = clock.now });
+    defer sync.bindHooks(.{});
+    const ts = time.timespec{ .tv_sec = 1, .tv_nsec = 0 };
+    e.set(0);
+    try testing.expectEqual(@as(c_int, -1), pthread_cond_timedwait(&c, &m, &ts));
     try testing.expectEqual(e.ENOSYS, e.get());
     try testing.expect(c.q.isEmpty()); // 失败不留节点
     try testing.expectEqual(@as(c_int, 0), sync.pthread_mutex_destroy(&m));
