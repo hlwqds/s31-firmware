@@ -117,7 +117,20 @@ var dump_done: bool = false;
 fn dumpAtPend() void {
     if (dump_done) return;
     osal.canaryScan();
+    // 分配结束（0x2f0206a0）之后 56 个字：区分"连续溢出"与"孤立结构化写入"。
+    {
+        var k: usize = 0;
+        var buf: [128]u8 = undefined;
+        var w: usize = 0;
+        while (k < 32) : (k += 1) {
+            const q: *volatile u32 = @ptrFromInt(0x2f0206a0 + k * 4);
+            const n = std.fmt.bufPrint(buf[w..], "{x},", .{q.*}) catch break;
+            w += n.len;
+        }
+        board.log.line("W {s}", .{buf[0..w]});
+
     board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
+    }
     // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
     board.log.line("D{d}.{d}", .{ log_hook_calls, osal.caller_n });
     var mi: u32 = 0;
@@ -498,6 +511,18 @@ fn dumpOsalCallers() void {
     // **无条件**输出（不随 code_n 阈值）：这是本轮唯一必须拿到的读数。
     osal.canaryScan();
     board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
+    // 分配结束（0x2f0206a0）之后 56 个字：区分"连续溢出"与"孤立结构化写入"。
+    {
+        var k: usize = 0;
+        var buf: [224]u8 = undefined;
+        var w: usize = 0;
+        while (k < 56) : (k += 1) {
+            const q: *volatile u32 = @ptrFromInt(0x2f0206a0 + k * 4);
+            const n = std.fmt.bufPrint(buf[w..], "{x},", .{q.*}) catch break;
+            w += n.len;
+        }
+        board.log.line("W {s}", .{buf[0..w]});
+    }
     if (osal.arena_init_magic != 0) board.log.line("AM {x}", .{osal.arena_init_magic});
     if (code_n > 0) board.log.line("CODES n={d} {s}", .{ code_n, code_ring[0..code_n] });
     board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
