@@ -203,8 +203,11 @@ pub var phy_domain_enable: bool = true; // 本轮测试
 
 pub fn phyDomainEnable() void {
     if (!phy_domain_enable) return;
-    // 1) SOC_PLL_SOURCE_CG（IDF modem_clock_hal_enable_soc_pll_source_cg，S31 分支）
-    wr(0x2058_71E0, 0x3d);
+    // 1) SOC_PLL_SOURCE_CG —— **不写**。
+    // 本文件 238-240 行已记录：写了之后 ROM 会卡在 UART0 TX-FIFO 排空上（txfifo_cnt 恒 128）。
+    // 实测（2026-11-19）：TXFIFO_CNT 停在 120/128、CPU 85–96% 在 hw.rawWrite、
+    // tick 只有 170 Hz（设定 10 kHz）⇒ 这一写扰动了时钟源。由 `pll_write_enabled` 控制，默认关。
+    if (pll_write_enabled) wr(0x2058_71E0, 0x3d);
     // 2) MODEM_SYSCON CLK_CONF1：PHY 依赖组（FE_APB/FE_80M/FE_160M/FE_DAC/FE_PWDET_ADC/FE_ADC）
     const conf1: usize = 0x2010_9C14;
     const bits: u32 = (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
@@ -329,8 +332,13 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     //   表现为访问 `0x2010B000` 直接挂死（不是 fault）。
     {
         const a: usize = 0x2058_71E0;
-        wr(a, rd(a) | @as(u32, 0x18)); // modem_clk_source_sel | modem_pll_clk_en
-        osal.logPublic("bt lp: MODEM_CONF=0x{x:0>8} (bit3+bit4 set)", .{rd(a)});
+        // **受 `pll_write_enabled` 控制**：本文件 238-240 记录写此寄存器会让 ROM 卡在
+        // UART0 TX-FIFO 排空上（txfifo_cnt 恒 128）。实测 2026-11-19 复现：
+        // TXFIFO_CNT=120/128、tick 170 Hz（设定 10 kHz）。默认关，便于二分 bit3/bit4。
+        if (pll_write_enabled) {
+            wr(a, rd(a) | @as(u32, 0x18)); // modem_clk_source_sel | modem_pll_clk_en
+            osal.logPublic("bt lp: MODEM_CONF=0x{x:0>8} (bit3+bit4 set)", .{rd(a)});
+        }
     }
 
     // 2.8) **IDF `clk_conf` 里被我们漏掉的时钟**（与 IDF 成功镜像逐字对拍得出）：
