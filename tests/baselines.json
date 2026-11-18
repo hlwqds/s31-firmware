@@ -11,7 +11,7 @@
     "net-tls-http": 70,
     "net-udp-dhcp-dns": 50,
     "osal": 20,
-    "posix-compat": 67,
+    "posix-compat": 75,
     "wifi-blobs": 26,
     "wifi-boundary": 15,
     "wifi-connect": 20
