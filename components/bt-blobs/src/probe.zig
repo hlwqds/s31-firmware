@@ -126,7 +126,7 @@ pub fn ringPush(msg: []const u8) void {
 var dump_done: bool = false;
 fn dumpAtPend() void {
     if (dump_done) return;
-    board.log.line("A{x}", .{g_abort_ra}); // 极短：abort 调用者地址
+    board.log.line("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
     osal.canaryScan();
 
     osal.arenaWalk();
@@ -519,7 +519,7 @@ fn dumpOsalCallers() void {
     // **无条件**输出（不随 code_n 阈值）：这是本轮唯一必须拿到的读数。
     osal.canaryScan();
     osal.arenaWalk();
-    board.log.line("A{x}", .{g_abort_ra}); // 极短：abort 调用者地址
+    board.log.line("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
     { var mi: u32 = 0; while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) board.log.line("M{d} {d} 0x{x}", .{mi, osal.mc_sizes[mi], osal.mc_rets[mi]}); }
     board.log.line("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
     board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
