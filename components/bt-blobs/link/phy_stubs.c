@@ -116,6 +116,7 @@ static void put1(char c) {
     while ((((*stat >> 16) & 0xFF) >= 120) && sp < 40) sp++;
     if (sp < 40) *fifo = (unsigned)c;
 }
+volatile unsigned g_c_count = 0;   /* 精确计数（RAM，不受 FIFO 丢字节影响） */
 static unsigned char g_phy_cal_buf[4][2048] __attribute__((aligned(16)));
 static unsigned g_phy_cal_next = 0;
 
@@ -123,6 +124,7 @@ void *calloc(size_t n, size_t sz)
 {
     size_t total = n * sz;
     if (total == 1904) {
+        g_c_count++;
         put1('C');
         unsigned slot = g_phy_cal_next & 3u;   /* **4 槽轮转**：避免别名 */
         g_phy_cal_next++;

@@ -27,6 +27,7 @@ const osal = @import("osal_kit").osal;
 
 /// abort 桩里记录的**直接调用者地址**（C 侧全局）。
 extern var g_abort_ra: u32;
+extern var g_c_count: u32;
 
 /// 供 C 侧 abort 桩调用：在崩溃瞬间把状态导出（不 halt）。
 export fn probe_dump_now() void {
@@ -142,6 +143,12 @@ fn dumpAtPend() void {
     dump_done = true;
 }
 
+
+var flag_buf: [16]u8 = @splat(0);
+fn flagBuf() []const u8 {
+    const n = std.fmt.bufPrint(&flag_buf, "<C{d}>", .{g_c_count}) catch return "<C>";
+    return n;
+}
 
 pub fn ringCount() u32 { return log_ring_n; }
 pub fn logcCount() u32 { return log_hook_calls; }
