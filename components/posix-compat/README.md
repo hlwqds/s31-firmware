@@ -134,21 +134,27 @@ posix-compat: errno | time | addr | fd | sync | thread | waitq | cond | timer | 
 net-sockets（生产）    osal（sem/sched）    hw/tick（板级）
 ```
 
-注入点（为了主机可测，全部做成参数而不是全局）：
-- `time.zig`：`Clock = fn () u64`（纳秒）与 `Sleeper = fn (u64) void`
-- `fd.zig`：`*socket.Table` 与地址表由调用方持有（无全局状态）
-- `cond.zig`：`bindHooks(.{ .wake = fn (*sched.Context) void })` —— 只有 `resumeTask` 一件
-  （`swapContext` 在 x86_64 上 `@panic`），见 §4.6
-- `osal`（由 `bt-blobs/probe.zig` 绑）：`hooks.now_ms` / `irq_save` / `irq_restore` / `log` /
-  `on_mutex_acquired`
+注入点（为了主机可测，全部做成参数而不是全局）。**三套，别再加第四套**：
+
+- `sync.bindHooks(.{ .wake, .now })` —— 本层唯一拥有唤醒钩子的地方：
+  - `.wake`：`resumeTask` 是唯一不可移植的原语（`swapContext` 在 x86_64 上 `@panic`）。
+    `cond` / `pthread_once` / `thread` / `rwlock` 都调 `sync.wake`，**没有各自的钩子**；
+    `timer.zig` 由 `bindHooks` 顺带 `timer.bindWake(wake)`，且未绑时回落到 `sched.resumeTask`。
+  - `.now`：单调时钟（纳秒），只用于判定定时等待的截止期。
+- `time.zig` 自己的 `Clock = fn () u64` + `Sleeper = fn (u64) void`（时钟与睡眠，独立于上面的 `.now`）。
+- `errno.contextFn: ?*const fn () *sched.Context` —— 测试注入"当前任务"，生产走 `sched.currentContext()`。
+
+另外两处不是钩子而是**调用方持有的状态**：`fd.zig` 的 `*socket.Table` 与地址表；
+`osal`（由 `bt-blobs/probe.zig` 绑）的 `now_ms` / `irq_save` / `irq_restore` / `log` /
+`on_mutex_acquired`。
 
 ## 4.5 绑定决策（2026-11-18 定）
 
 **直接依赖 `osal_kit`，不再造注入 port。** 当初 `time.zig` 用注入，是因为当时没有可复用的内核；
 现在 `components/osal/` 零 `board` 依赖、20 项主机用例可驱动，直接 import 就是"在真内核上测真语义"，
-§4 那句"假内核自说自话"的前提已经消失。**目前有两处注入点**：`time.zig` 的时钟/睡眠
-（`osal` 侧则是 `hooks.now_ms`），以及 `cond.zig` 的 `wake`（见 §4.6）。两者都只为"主机上
-不可执行的那一个原语"存在，其余一律直连。
+§4 那句"假内核自说自话"的前提已经消失。**目前是三套注入点**（见 §4 清单）：`sync.bindHooks`
+（`wake` + `now`，`cond`/`once`/`thread`/`rwlock`/`timer` 共用）、`time.zig` 的时钟/睡眠、
+`errno.contextFn`。每一套都只为"主机上不可执行的那一个原语"存在，其余一律直连。
 
 **`pthread_join` 不动 `sched.zig`。** 用包装层实现：每个线程配一个 `Slot`
 
@@ -179,6 +185,11 @@ const Slot = struct {
    `api.zig` 为根的模块**包含同一批文件**；两者同时进镜像会撞 Zig 的
    "file exists in modules 'net_sockets' and 'net_sockets0'"。等接内核时把 socket 层的
    模块根统一（api 兼作组件根，并在 test 目标里特殊处理 `host_tests.zig` 的路径映射）再一起进。
+
+**接线前先量体积**（现在不进镜像，所以还没人付这笔账）：`thread.zig` 的栈池是
+`max_threads × stack_bytes = 8 × 8 KiB = 64 KiB` 的 `.bss`；S31 的 SRAM 已经要和 413 KB 的
+BLE arena 分享，`scripts/check-capacity.py` 又是按段断言 load+len 的。所以接进镜像前要么把栈
+缩到线程实际用量，要么把线程数与栈大小做成 build option —— 别等容量门禁红了自己发现。
 
 ## 6. 进度与剩余项
 
