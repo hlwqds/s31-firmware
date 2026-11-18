@@ -72,7 +72,7 @@ pub var populate_workaround: bool = false; // 真实路径（21.o 锚点由 OkE7
 /// **只发布 7.o 的锚点**（`r_sym_bt_BOhff` 的守卫）。依据：21.o 的锚点由 `OkE7`
 /// 自己 malloc(76) 并发布（见 README），而 7.o 的锚点**没有任何惰性发布者**
 /// ⇒ `BOhff`（建任务）永远早退 ⇒ `task_create` 永不发生。
-pub var publish_bohff_anchor: bool = true;
+pub var publish_bohff_anchor: bool = false; // 实验：不预发布 anchor[8]，让 JwHs 自己分配
 
 /// `Xpuq` 用的锚点全局（`libbtdm_common/2.o` 的 `.bss.r_sym_bt_d3D3sk5KewclELfrD5xa`）。
 /// 唯一的写者是 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG`：`P = wr_btdm_osal_malloc(...)`。

@@ -127,7 +127,7 @@ fn trace(comptime what: []const u8, args: anytype) void {
 /// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
 /// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
 var bail_sentinel: [64]u8 align(4) = @splat(0);
-pub var patch_bail_field: bool = true; // 已验证：越过闸门；默认保留以便继续推进
+pub var patch_bail_field: bool = false; // 有害：会覆盖 eventqInit 写入的真实 slot.p，见 README
 
 fn fillBailField() void {
     if (!patch_bail_field) return;
@@ -1349,7 +1349,9 @@ pub fn readEfuseMac(out: *[6]u8) void {
 
 export fn wr_btdm_osal_malloc(size: u32, flags: c_int) callconv(.c) ?*anyopaque {
     noteCaller();
-    return btdmMalloc(size, flags);
+    const r = btdmMalloc(size, flags);
+    logPublic("bt ret: malloc({d}) => 0x{x}", .{ size, @intFromPtr(r) });
+    return r;
 }
 export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
     noteCaller();

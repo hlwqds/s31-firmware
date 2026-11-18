@@ -2992,3 +2992,36 @@ bt probe: re-probing 0x2010B000 ...
 1. 反汇编 `0x4005f8de..0x4005f8f0`，看 `-9` 那一级检查的是什么；
 2. 反汇编 `PsB8…(0x4005b56c)` 与 `ZGgi…(0x4006090c)` 的入口，看它们的首个条件分支读哪个字段 ——
    这两个函数都很短，且不碰 OSAL，属于纯数据检查，比继续追回滚路径便宜得多。
+
+## 🎯 回滚根因：**我们自己**预发布了 `anchor[8]`，害得归档 `JwHs` 短路返回 2（2026-11-18）
+
+`OkE7` 在 `fqmZk` 之后的分级检查（`-8` 级）调 `JwHs`（`0x40060704`）：
+
+```asm
+4006070c: addi s0,s0,-16      # s0 = 0x2f00fff0 = anchor[8] (r_sym_bt_6Q68KSwuQQP4VjQGqiWa)
+40060710: lw   a4,0(s0)       # a4 = *(anchor[8])
+40060714: li   a5,2
+40060716: beqz a4, .L68       # 0 -> malloc(36) 正常路径
+40060718 <.L62>: ...          # 非零 -> 直接返回 a5 = 2（"已初始化"）
+```
+
+而 **bringup 一直把 `anchor[8]` 预发布成非零**（开关 `publish_bohff_anchor`，默认 `true`），
+注释理由是"只发布 21.o 时 `r_sym_bt_BOhff` 会早退"—— **那个理由不成立**：
+`JwHs` 看到非零返回 2，`OkE7` 把非零当失败 ⇒ `task_init` 记为 `-3` ⇒ 回滚 ⇒ `deinit` ⇒ `FzF1` 写 0。
+
+### 对照实验（同一镜像，仅改这一个开关）
+
+| 运行 | OSAL 序列 | 结果 |
+| --- | --- | --- |
+| `publish_bohff_anchor=true`（旧默认） | malloc(76) → mutex_init → eventq_init → malloc(8) → **deinit** | 回滚崩溃（`store fault @0`） |
+| `publish_bohff_anchor=false` | 同上 + **malloc(36)** + malloc(32) + 12 + 12 + …（共 **15 次** malloc） | **无 fault、无 panic** |
+
+⇒ 关掉预发布后归档真的在初始化，最后**停在 `0x2010B000` 的总线挂起**上（45 s 无输出、无异常，
+与 README 前述"读该块即挂死"的签名一致）—— 也就是**到达了真正的硬件墙**。
+
+### 结论
+
+1. `store fault @0` / `deinit` 回滚**不是归档的缺陷**，而是我们**错误的预发布**造成的；
+   `publish_bohff_anchor` 默认已改为 **`false`**。
+2. 归档现在能跑到 `task_init` 深处（15 次分配），剩余唯一障碍是 **modem 前端不可访问**
+   （需要 PHY 校准路径，见上一节的工作量表）。

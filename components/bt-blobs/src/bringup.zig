@@ -37,6 +37,9 @@ pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 /// HCI 传输**从未在板上执行过**。跳过它即可验证那一大片。
 pub var skip_task_init: bool = false;
 
+/// 是否在 step 6 前预先发布 anchor[8]（`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`）。
+pub var prepublish_bohff: bool = false;
+
 var status_state: Status = .idle;
 pub fn status() Status {
     return status_state;
@@ -257,9 +260,14 @@ pub fn init(cfg: *config.Config) c_int {
                     xi[6] = 0x20260127; // BTDM_CONFIG_VERSION
                     xi[7] = 0x00171000;
                     pp.setOkE7Anchor(@intCast(@intFromPtr(x.?)));
-                    // **同时发布 7.o 的锚点**：`r_sym_bt_BOhff`（建任务）的守卫也判非空；
-                    // 只发布 21.o 时它会早退 ⇒ `task_create` 永不发生 ⇒ 走清理路径。
-                    if (pp.bohffAnchor() == 0) {
+                    // ⚠️ 这段预发布**曾长期误导**：`JwHs`(0x40060704) 读 anchor[8]
+                    // （`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`），**非零就返回 2**（"已初始化"），
+                    // 而 `OkE7` 把非零当失败 ⇒ 返回 -8 ⇒ `task_init` 回滚 ⇒ deinit ⇒ 写 0 崩溃。
+                    // `publish_bohff_anchor=false` 后 `JwHs` 自己 malloc(36)，`task_init` 跑过 15 次
+                    // 分配才撞上 `0x2010B000` 总线挂起（真正的墙）。
+                    // 实验：**不**预发布 anchor[8]（`6Q68KSw`）。归档自己的 `JwHs` 看到它非零就
+                    // 返回 2（"已初始化"），而调用方把非零当失败 ⇒ OkE7 返回 -8 ⇒ 回滚。
+                    if (prepublish_bohff and pp.bohffAnchor() == 0) {
                         if (osal2.btdmMalloc(32, 0)) |a7| {
                             pp.setBOhffAnchor(@intCast(@intFromPtr(a7)));
                             osal.logPublic("bt bringup: 发布 BOhff 锚点 a7=0x{x:0>8}", .{@intFromPtr(a7)});
