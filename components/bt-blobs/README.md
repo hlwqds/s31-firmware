@@ -4321,3 +4321,25 @@ s9792.416.419.1            <- 仍在增长
 3. 判据：`phy_init.c` 的 `E (...)` 日志消失，或 `esp_phy_enable` 返回 0。
 
 ⚠️ 该路径**必须** `phy_domain_enable=true` 才能到达（默认 `false` 是基线）。
+
+## `phy_init` 内的实际调用顺序（离线反汇编，2026-11-19）
+
+```
+400005b8: jal  calloc                            <- 分配校准缓冲（真实分配器，46 B，含清零 + NULL 判断）
+400005c0: c.jal esp_phy_get_init_data            <- 取 PHY 初始化表
+400005d6: c.jal esp_phy_load_cal_data_from_nvs   <- 读校准数据
+4000063e: jal  free
+40000700: c.jal esp_phy_store_cal_data_to_nvs    <- 写回校准数据
+```
+
+⇒ abort 必是两处 `ESP_ERROR_CHECK` 之一：
+
+| 候选 | 触发条件 | 判据 |
+| --- | --- | --- |
+| **`calloc` 返回 NULL** → "failed to allocate memory for RF calibration" | 堆不足 | 我们的 `calloc` 是真实实现（`40067026`，46 B，清零循环 + `beqz` 判 NULL），但**堆大小未知** |
+| **`esp_phy_get_init_data` 失败** → "failed to obtain PHY init data" | 初始化表取不到 | 需要 128 B `esp_phy_init_data_t`（`phy_init_data.zig` 有），但要确认它被真的传进去 |
+
+**下一步（一处改动即可区分）**：在 `calloc` 桩里记录**请求的字节数**（写 1 字节码或一行短日志），
+一次运行就能知道 RF 校准要多大；若远大于我们的堆，就扩堆；若请求很小却返回 NULL，则是堆未初始化。
+
+⚠️ 仍需 `phy_domain_enable=true` 才能到达该路径（默认 `false` 是基线）。
