@@ -4598,3 +4598,33 @@ pcsample n=9728 pc=0x400670d4 ra=0x40000672
 
 **下一步**：反汇编 `esp_phy_load_cal_data_from_nvs`（`0x40000420`，264 B）全段，
 列出它在 `nvs_open` 之后调用的每个 `nvs_*` 与对应判据 —— 这是唯一还没读过的函数。
+
+## `esp_phy_load_cal_data_from_nvs` 的检查也全部会通过（2026-11-19 末）
+
+反汇编（`0x40000420`，264 B）：
+
+```
+40000436: jal  nvs_open        ; beqz a0 -> .L45（成功）
+40000486: jal  nvs_close
+400004a2: jal  nvs_open        ; beqz a0 -> .L48（成功）
+400004d8: jal  nvs_open        ; bnez a0 -> .L54（失败才跳）
+400004e2: jal  nvs_erase_all   ; beqz a0 -> .L52
+```
+
+我们的桩：`nvs_open` 返回 `ESP_OK`(0)、`nvs_erase_all` 返回 `ESP_OK` ⇒ **这些检查全部走成功路径**
+⇒ **该函数不会 abort**。
+
+### 剩下的矛盾（如实记录）
+
+`esp_phy_load_cal_and_init` 在 `0x4000066e` 附近调用 `esp_log`，
+我按操作数算出的格式串是 `0x40101dcc`（"failed to obtain PHY init data"）；
+但 `esp_phy_get_init_data` 是 10 字节 thunk（返回静态表），**不可能失败**。
+
+两者不能同时成立 ⇒ 其中一处判读有误，最可能是**该处的指令边界/操作数解码**（`lui`+`addi` 组合
+在 misaligned 反汇编下会算错地址）。
+
+**下一步（离线，最可靠）**：用 `objdump -d --start-address=0x40000660 --stop-address=0x400006a0`
+**按 4 字节对齐**重读，逐条记录 `lui` / `addi` 的立即数并手工合成地址，再与 rodata 里的两条串对照。
+
+**另一个更简单的判据（板测）**：abort 标记里顺便把**当前的 ra**（`__builtin_return_address(0)`）
+写进串口——那就是 abort 的直接调用者地址，一次运行即可确定它属于哪个函数，不必再猜格式串。
