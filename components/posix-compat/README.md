@@ -55,7 +55,7 @@
 | `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `sem_t`（自持等待队列）** | ✅ 已完成（**不用** `osal.Mutex`：它只忙等、不唤醒） |
 | `pthread_cond_init/wait/signal/broadcast` | `cond.zig` → `waitq`（FIFO）+ **注入的 wake** | ✅ 已完成（`wait` 要求调度器已启动，否则 `ENOSYS`；**多等待者复锁已可工作**） |
 | `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → 自持计数 + `waitq` FIFO | ✅ 已完成（**多等待者**，与 BLE 不共享静态池） |
-| `sem_timedwait` / `pthread_mutex_timedlock` | — | ⌛ 内核只有**无限阻塞**；有限超时的 `semPend` 会立即返回，所以这两个返回 `ENOSYS`（不是假装超时） |
+| `sem_timedwait` / `pthread_mutex_timedlock` | `sync.sem_timedwait` → `timer.zig` + 应用周期性 `sync.pump()` | ✅ 已完成（**契约**：不调 `pump()` 就永不到期；未绑时钟 ⇒ `ENOSYS`） |
 | `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
 | `pthread_rwlock_*` | — | — 本版不做（读者写者饥饿问题需要单独设计） |
 | `pthread_spin_*` | — | ○ 待做（`std.atomic.spinLoopHint` 足够，但要知道它在单核上没有意义） |
@@ -165,9 +165,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**57 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 17** · **thread 11** · **waitq 6** · **cond 6** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 57`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**66 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 7** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 66`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -215,7 +215,7 @@ const Slot = struct {
 | ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`；`wake` 统一注入在 `sync.bindHooks` | — |
 | ~~多等待者 / 与 BLE 共用静态池~~ | ✅ 已解除：`sync.zig` 自持计数 + FIFO 队列，不再用 `osal.Sem` 的槽位 | — |
 | 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
-| `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动：阻塞的任务**自己查不了截止期**，必须有外部唤醒源（`osal.serviceCallouts(now)`）。注意纯 POSIX 应用里**没人会去推它**（bt-blobs 里是 BLE tick 在推）⇒ 本层得提供一个应用必须周期性调用的入口（如 `tick(now_ms)`），并在文档里**明说**：不调它，定时等待就永不到期 |
+| ~~`sem_timedwait` / `mutex_timedlock`~~ | ✅ 已完成：`timer.zig`（侵入式到期链表）+ `sync.pump()`。**契约**：应用每个 tick 调一次 `pump()`，否则定时等待永不到期；未绑时钟钩子则 `ENOSYS` | — |
 | `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |
 | 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
 

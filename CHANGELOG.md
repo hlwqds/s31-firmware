@@ -114,6 +114,11 @@
   `unlock` 现在把锁**直接交给队首等待者**，不再"置 1 后被第三方抢走"。
   `wake` 注入点统一到 `sync.bindHooks`，`cond.zig` 复用。16 项 sync 用例（总计 **56**）。
 
+- **定时等待（2026-11-18）**：`components/posix-compat/src/timer.zig` —— 侵入式到期链表 +
+  `pump(now_ns)`。阻塞中的任务读不到时钟，所以到期必须由外部唤醒；本层提供
+  `sync.pump()`，**应用每个 tick 调一次**。到期时 `pump` **从链表摘除**定时器（否则下一次 pump 会读等待者已返回的栈帧），而是真正挂定时器等待；未绑时钟钩子时仍 `ENOSYS`（无法判定到期），
+  调度器未启动时 `EAGAIN`（不能假装等过）。7 项 timer 用例 + 2 项新 sync 用例（总计 **66**）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

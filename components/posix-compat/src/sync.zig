@@ -31,6 +31,7 @@ const std = @import("std");
 const sched = @import("osal_kit").sched;
 const e = @import("errno.zig");
 const waitq = @import("waitq.zig");
+const timer = @import("timer.zig");
 
 /// 计数信号量。`in_use` 让"未初始化 / 已销毁"与"计数为 0 的合法信号量"可区分。
 pub const sem_t = struct {
@@ -46,11 +47,21 @@ pub const pthread_mutex_t = sem_t;
 pub const Hooks = struct {
     /// `resume` 是 Zig 关键字，故命名 `wake`。
     wake: ?*const fn (ctx: *sched.Context) void = null,
+    /// 单调时钟（纳秒）。**不绑它，所有定时等待返回 `ENOSYS`** —— 没有时钟就没法判定到期。
+    now: ?*const fn () u64 = null,
 };
 var hooks: Hooks = .{};
 
 pub fn bindHooks(h: Hooks) void {
     hooks = h;
+    timer.bindWake(wake);
+}
+
+/// **应用必须周期性地调它**（每个 tick 一次）。到期定时器在这里被摘链并唤醒；
+/// 不调就意味着 `sem_timedwait` / `mutex_timedlock` 永不到期（见 `timer.zig` 文件头）。
+pub fn pump() usize {
+    const now = if (hooks.now) |f| f() else return 0;
+    return timer.pump(now);
 }
 
 pub fn wake(ctx: *sched.Context) void {
@@ -138,17 +149,40 @@ pub fn sem_getvalue(sem: *sem_t, sval: *c_int) c_int {
     return 0;
 }
 
-/// 见文件头：内核侧没有定时唤醒，本层也还没有 `pump` ⇒ 只有"立刻能拿到"或"已经过期"
-/// 两种情况能给出确定答案。
-pub fn sem_timedwait(sem: *sem_t, abstime: *const @import("time.zig").timespec, now_ns: u64) c_int {
+/// 带截止期的等待。
+///
+/// 阻塞中的任务读不到时钟，所以到期要靠**外部** `pump()` 唤醒（`timer.zig`）。
+/// 没有绑 `.now` 时钟 ⇒ 无法判定到期，返回 `ENOSYS`；调度器未启动 ⇒ 无法阻塞，返回 `EAGAIN`。
+pub fn sem_timedwait(sem: *sem_t, abstime: *const @import("time.zig").timespec) c_int {
     if (!sem.in_use) return fail(e.EINVAL);
     const deadline = @import("time.zig").fromTimespec(abstime.*) orelse return fail(e.EINVAL);
     if (sem.count > 0) {
         sem.count -= 1;
         return 0;
     }
-    if (now_ns >= deadline) return fail(e.ETIMEDOUT);
-    return fail(e.ENOSYS);
+    const now = hooks.now orelse return fail(e.ENOSYS);
+    if (now() >= deadline) return fail(e.ETIMEDOUT);
+    if (!sched.isStarted()) return fail(e.EAGAIN); // 不能阻塞 ⇒ 别假装等过
+
+    var n = waitq.Node{ .ctx = sched.currentContext() };
+    var t: timer.Timer = .{};
+    sem.q.push(&n);
+    timer.arm(&t, deadline, &sem.q, &n);
+    // 退出条件是"**被交接了令牌**"（节点被 pop）或"定时器到期"，不是"计数不为 0" ——
+    // 否则一次与自己无关的唤醒就会让它抢走别人的令牌（`count` 是 u16，会下溢）。
+    while (n.linked and !t.expired) sched.block();
+    if (!n.linked and sem.count > 0) { // 令牌先到：正常取得
+        timer.disarm(&t);
+        sem.count -= 1;
+        return 0;
+    }
+    if (n.linked) _ = sem.q.remove(&n); // pump 已摘过；这里只兜底
+    return fail(e.ETIMEDOUT);
+}
+
+/// 同 `sem_timedwait`，只是语义上给互斥量用。
+pub fn pthread_mutex_timedlock(m: *pthread_mutex_t, abstime: *const @import("time.zig").timespec) c_int {
+    return sem_timedwait(m, abstime);
 }
 
 // ---------------------------------------------------------------------------
@@ -255,9 +289,15 @@ fn fakeCtx(i: usize) *sched.Context {
     return &fake_ctxs[i];
 }
 
+var now_ns: u64 = 0;
+fn fakeNow() u64 {
+    return now_ns;
+}
+
 fn useRecorder() void {
     resumed_n = 0;
-    bindHooks(.{ .wake = recordResume });
+    now_ns = 0;
+    bindHooks(.{ .wake = recordResume, .now = fakeNow });
 }
 
 test "sync: sem 的 init/getvalue/wait/post 基本流" {
@@ -313,27 +353,50 @@ test "sync: 未初始化的 sem 不能直接用（不需要先 memset）" {
 }
 
 test "sync: timespec 为负或超出可表示范围时 sem_timedwait 报 EINVAL" {
+    useRecorder();
     var s: sem_t = .{};
     try testing.expectEqual(@as(c_int, 0), sem_init(&s, 0, 0));
     const bad = @import("time.zig").timespec{ .tv_sec = -1, .tv_nsec = 0 };
     e.set(0);
-    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &bad, 0));
+    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &bad));
     try testing.expectEqual(e.EINVAL, e.get());
     try testing.expectEqual(@as(c_int, 0), sem_destroy(&s));
 }
 
-test "sync: sem_timedwait 有令牌即成功，过期报 ETIMEDOUT，未到期无令牌报 ENOSYS" {
+test "sync: sem_timedwait 有令牌即成功；过期报 ETIMEDOUT；不能阻塞时 EAGAIN" {
+    useRecorder();
     var s: sem_t = .{};
     try testing.expectEqual(@as(c_int, 0), sem_init(&s, 0, 1));
     const ts = @import("time.zig").timespec{ .tv_sec = 100, .tv_nsec = 0 };
-    try testing.expectEqual(@as(c_int, 0), sem_timedwait(&s, &ts, 0));
+    now_ns = 0;
+    try testing.expectEqual(@as(c_int, 0), sem_timedwait(&s, &ts)); // 有令牌
     e.set(0);
-    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &ts, 100 * std.time.ns_per_s));
+    now_ns = 100 * std.time.ns_per_s; // 截止期已过
+    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &ts));
     try testing.expectEqual(e.ETIMEDOUT, e.get());
     e.set(0);
-    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &ts, 0));
+    now_ns = 0; // 未到期 + 无令牌 + 调度器没起来 ⇒ 不能假装等过
+    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &ts));
+    try testing.expectEqual(e.EAGAIN, e.get());
+    try testing.expectEqual(@as(c_int, 0), sem_destroy(&s));
+}
+
+test "sync: 没绑时钟时定时等待报 ENOSYS（无法判定到期）" {
+    var s: sem_t = .{};
+    try testing.expectEqual(@as(c_int, 0), sem_init(&s, 0, 0));
+    bindHooks(.{}); // 清掉 now
+    defer useRecorder();
+    const ts = @import("time.zig").timespec{ .tv_sec = 100, .tv_nsec = 0 };
+    e.set(0);
+    try testing.expectEqual(@as(c_int, -1), sem_timedwait(&s, &ts));
     try testing.expectEqual(e.ENOSYS, e.get());
     try testing.expectEqual(@as(c_int, 0), sem_destroy(&s));
+}
+
+test "sync: pump 在绑了时钟时推进到期（无定时器时返回 0）" {
+    useRecorder();
+    now_ns = 5;
+    try testing.expectEqual(@as(usize, 0), pump());
 }
 
 test "sync: mutex 的 lock/unlock 与 trylock 的 EBUSY" {
