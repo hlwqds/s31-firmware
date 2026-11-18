@@ -115,23 +115,17 @@ pub fn ringPush(msg: []const u8) void {
 /// 事件触发导出：打 PC 采样 + 计数器，然后停机。
 var dump_done: bool = false;
 fn dumpAtPend() void {
-    if (dump_done or osal.caller_n < 20) return; // 推迟到序列后段，避免在第一步就冻结
-    board.log.line("DUMP lc={d} lr={d} n={d}", .{ log_hook_calls, log_ring_n, osal.caller_n });
-    // 最近 12 条 OSAL 调用点（归档自己的地址），按从新到旧。
-    var ci: usize = 0;
-    while (ci < @min(osal.caller_n, 12)) : (ci += 1) {
-        const idx = (osal.caller_n -% 1 -% ci) % osal.caller_ring.len;
-        board.log.line("C{x}", .{osal.caller_ring[idx]});
-    }
-    // 环里最新的 4 条归档消息。
+    if (dump_done or osal.caller_n < 22) return; // 推迟到 event_init 一族之后
+    // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
+    board.log.line("D{d}.{d}", .{ log_hook_calls, osal.caller_n });
     var mi: u32 = 0;
-    while (mi < 6) : (mi += 1) {
+    while (mi < 3) : (mi += 1) {
         const m = ringAt(mi);
-        if (m.len > 0) board.log.line("M{s}", .{m});
+        if (m.len > 0) board.log.line("M{s}", .{m[0..@min(m.len, 24)]});
     }
-    // **不停机**：归档紧接着要执行 `*(obj)=1` 标记与下一次调用，halt 会自己中止 task_init。
     dump_done = true;
 }
+
 
 pub fn ringCount() u32 { return log_ring_n; }
 pub fn logcCount() u32 { return log_hook_calls; }
