@@ -340,7 +340,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **自旋期间的 tick 泵已测**：不再 panic（武装顺序改对后），但**无任何推进**。
             // **tick 驱动泵已试并回滚**：init 期间任务上下文尚未初始化，在 ISR 里 swapContext
             // 会 panic（`mepc=0xffffffa0`）。要在自旋期间泵，必须先让任务上下文处于可安全恢复状态。
-            if (input == 25) hw.ackT0Interrupt(2000);
+            if (input == 25) hw.ackT0Interrupt(sample_period_us);
             rom_handler_calls += 1;
             if (!sample_quiet and rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x}", .{ rom_handler_calls, @intFromPtr(f) });
             f(h.arg);
@@ -377,7 +377,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // 靠它才能算出真正的轮询地址（`a0` 只是被掩码后的数据）。
                 log.line("pcsample n={d} pc=0x{x} ra=0x{x} s0=0x{x}", .{ pc_ring_n, frame.mepc, frame.ra, frame.s0 });
             }
-            hw.ackT0Interrupt(2000);
+            hw.ackT0Interrupt(sample_period_us);
             return false;
         }
         // 别的输入：交给 ROM 的 ISR（它自己会 ack），asm 里走链式跳转路径。
@@ -419,6 +419,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 谁在调 logHook（窗口里到底是谁在打印）
         var ci: usize = 0;
         while (ci < @min(caller_n, 8)) : (ci += 1) log.line("panic: caller[{d}]=0x{x:0>8}", .{ ci, caller_ring[ci] });
+        // `bt_mmio_*` 的**调用者**（= 归档自己的 PC）：采样被我们的外壳占满时，这是唯一的归档落点。
+        var mi: usize = 0;
+        while (mi < @min(hw.mmio_caller_n, 8)) : (mi += 1) log.line("panic: mmiocaller[{d}]=0x{x:0>8}", .{ mi, hw.mmio_caller_ring[mi] });
         var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;
@@ -444,6 +447,9 @@ var pc_ring_n: u32 = 0;
 /// 用途：在 `r_btdm_task_init` 期间开高频采样，同时避免我们自己的 UART 打印占满 CPU/串口
 /// （本板 TX FIFO 停在 128，打印极慢 —— 之前采样全被我们自己的日志占满就是这个原因）。
 pub var sample_quiet: bool = false;
+
+/// ISR 重装用的周期（µs）。**不能用硬编码 2000**：调用方设的短周期会在第一个 tick 后失效。
+pub var sample_period_us: u32 = 2000;
 
 /// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。
 /// 用模块级变量是为了避开"快照在 if 分支、打印在公共作用域"的作用域问题（踩过一次）。

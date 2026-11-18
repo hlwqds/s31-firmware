@@ -323,6 +323,17 @@ pub var mmio_ring_next: u32 = 0;
 /// **记录函数自己就成了热路径**（实测采样全落在 `mmioRecord`）。
 pub var mmio_off: bool = false;
 
+/// `bt_mmio_*` 的**调用者返回地址**环：那就是归档自己的 PC。采样被外壳占满时的替代观测点。
+pub var mmio_caller_ring: [16]u32 = @splat(0);
+pub var mmio_caller_n: u32 = 0;
+
+fn recordMmioCaller(ra: usize) void {
+    // **不受 `mmio_off` 控制**：那个开关关的是"寄存器值环"（热路径），
+    // 而调用者环只有两次 store，却是采样被外壳占满时唯一的归档落点。
+    mmio_caller_ring[mmio_caller_n % mmio_caller_ring.len] = @truncate(ra);
+    mmio_caller_n +%= 1;
+}
+
 fn mmioRecord(kind: u32, addr: usize, val: u32) void {
     if (mmio_off) return;
     const i = mmio_ring_next % mmio_ring.len;
@@ -341,12 +352,14 @@ pub fn mmioHistory(out: []MmioRec) usize {
 }
 
 pub export fn bt_mmio_read(addr: usize) u32 {
+    recordMmioCaller(@returnAddress());
     const v = readReg(addr);
     mmioRecord(0, addr, v);
     return v;
 }
 
 pub export fn bt_mmio_write(addr: usize, val: u32) void {
+    recordMmioCaller(@returnAddress());
     mmioRecord(1, addr, val);
     writeReg(addr, val);
 }

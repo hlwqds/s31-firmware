@@ -284,6 +284,7 @@ pub fn init(cfg: *config.Config) c_int {
         // 窗口内还要**撤掉 gate 钩子**：归档取到互斥锁时它会打 15 行锚点表，每行都走 UART 自旋，
         // 采样会全部落在 `probe.logHook` 上（实测 48 条全是它）。
         board.hw.mmio_off = true; // 关掉寄存器记录（否则它是热路径）
+        board.trap.sample_period_us = 100; // ISR 重装也用 100 µs（否则窗口只活一个 tick）
         board.trap.resetPcs(); // 只保留本窗口的采样
         board.trap.sample_quiet = true;
         osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook
