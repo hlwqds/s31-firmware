@@ -5331,3 +5331,21 @@ c.jr ra
 **修法（一处）**：在 `phy_stubs.c` 里**提供我们自己的 `esp_phy_get_init_data`**，
 直接返回仓里那张静态表的地址（`0x40104fef` 或我们自备的 128 字节），
 覆盖掉那个依赖 `a0` 的 thunk。
+
+## 最后一项仪器修正：abort 时段的导出被 `dump_done` 挡掉（2026-11-19 终）
+
+现状：
+
+- dump 在 `btdmMalloc(1904)` 时触发（**abort 之前**）⇒ 那时 `g_abort_ra` 必然是 0；
+- abort 桩里虽调用了 `probe_dump_now()`，但 `dumpAtPend` 开头有 `if (dump_done) return;`
+  ⇒ **第二次（abort 时刻）导出是空操作**。
+
+⇒ 所以 `AB 0x0` 只是"第一次导出时 abort 还没发生"，与调用约定无关（RA 已改用
+`__asm__ volatile ("mv %0, ra")`，入口处 `ra` 一定有效）。
+
+**修法（两行）**：
+1. `probe_dump_now()` 里先把 `dump_done = false;` 再调 `dumpAtPend()`；
+2. 或给 abort 路径单独一个不检查 `dump_done` 的导出函数。
+
+之后一次运行即可从 `AB 0x<addr>` 拿到**真实的 abort 调用者**，
+与本文件的调用点清单（当前镜像只有两处：`0x4000066e` / `0x40000690`）对照即定案。

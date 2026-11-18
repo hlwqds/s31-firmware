@@ -134,7 +134,13 @@ int esp_log_default_level = 0;
  * 然后自旋。导出处会把它打出来。 */
 volatile unsigned g_abort_ra = 0;
 void abort(void) {
-    g_abort_ra = (unsigned)(unsigned long)__builtin_return_address(0);
+    {
+        unsigned ra;
+        /* 函数入口处 ra 仍是调用者的返回地址；`__builtin_return_address` 在
+         * 无帧指针时返回 0，故直接用汇编。 */
+        __asm__ volatile ("mv %0, ra" : "=r"(ra));
+        g_abort_ra = ra;
+    }
     { extern void probe_dump_now(void); probe_dump_now(); }   /* 崩溃瞬间导出 */
     for (;;) {}
 }
