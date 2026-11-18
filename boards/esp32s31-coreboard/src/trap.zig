@@ -11,6 +11,7 @@
 //! `mcause` 口径（早期工程 结论）：最高位 1 = 中断，低 6 位是 CLIC 输入号；
 //! 同步异常的异常码也只取低 6 位（S31 在高位带 CLIC 附加字段）。
 
+extern fn probe_dump_now() callconv(.c) void;
 const std = @import("std");
 const hw = @import("hw.zig");
 const log = @import("log.zig");
@@ -186,6 +187,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (probe_stop_at_tick != 0 and irq_count >= probe_stop_at_tick) {
             // 极短、并且**先 PC 后计数**：FIFO 只有 128 B，一次打不完 = 后面的会被丢。
             log.line("DUMP{d}", .{irq_count});
+            probe_dump_now();
             var i: usize = 0;
             while (i < @min(pc_snap_n, 4)) : (i += 1) log.line("P{d}", .{pc_snap[i]});
             while (true) asm volatile ("wfi");

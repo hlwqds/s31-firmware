@@ -320,7 +320,7 @@ pub fn init(cfg: *config.Config) c_int {
         board.trap.sample_period_us = 100; // ISR 重装也用 100 µs（否则窗口只活一个 tick）
         board.trap.resetPcs(); // 只保留本窗口的采样
         board.trap.sample_quiet = true;
-        board.trap.probe_stop_at_tick = 0; // 关闭：它会从开机起算并 halt，吃掉整轮实验 // 约 2 s 后故意 panic，一次性导出计数器 // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
+        board.trap.probe_stop_at_tick = 30000; // 100us/tick ⇒ ~3 s，落在 step 6 停滞之后 // 关闭：它会从开机起算并 halt，吃掉整轮实验 // 约 2 s 后故意 panic，一次性导出计数器 // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
         osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook
         osal.clearMutexHook(); // gate 钩子会打 15 行锚点表，每行都走 UART 自旋
         board.hw.armT0Interrupt(100);

@@ -8956,3 +8956,48 @@ enter step 6 r_btdm_task_init
 
 修复后 OSAL 轨迹**仍是 3 条**（`mutexPend` → `eventInit` ×2）
 ⇒ 预算不是限制、丢行也不是原因 ⇒ **确实只发生了 3 次 OSAL 调用**。
+
+## 🎯 `caller_ring` 解出：停滞前最后的归档函数是**事件生产者**（2026-11-19）
+
+### 接线方式（已生效）
+
+- `trap.zig` 里 `extern fn probe_dump_now() callconv(.c) void;`（链接期符号，**不受模块层级限制**）
+- `probe_stop_at_tick = 30000`（100 µs/tick ⇒ ~3 s，落在 step 6 停滞之后）
+- DUMP 路径调用 `probe_dump_now()`
+
+### 环内容（最后 6 条）
+
+```text
+osalcaller[6]  = 0x4005b600 → r_sym_bt_PsB8qxrZXPdSUAqQMBRY
+osalcaller[7]  = 0x4005b614 → r_sym_bt_PsB8qxrZXPdSUAqQMBRY
+osalcaller[8]  = 0x4005b638 → r_sym_bt_PsB8qxrZXPdSUAqQMBRY
+osalcaller[9]  = 0x4006091a → r_sym_bt_ZGgifdtgyUnZ7f0ME7VH
+osalcaller[10] = 0x4005d0c2 → r_sym_bt_jH5mD2DMmyYTiDCZQCFd
+osalcaller[11] = 0x4005d0de → r_sym_bt_jH5mD2DMmyYTiDCZQCFd
+```
+
+调用链：`PsB8`×3 → `ZGgi` → **`jH5m`×2（最后）**
+
+### 末位函数 `r_sym_bt_jH5mD2DMmyYTiDCZQCFd`（`16.o`，164 B）
+
+| 偏移 | 调用 |
+| --- | --- |
+| `0x10` | `wr_btdm_osal_event_is_queued` |
+| `0x1c` | `r_sym_bt_C0B6WsJES1DZlVd8Ki6D` |
+| **`0x20`/`0x26`** | **`wr_btdm_osal_eventq_put`** ← **投递事件** |
+| `0x78`/`0xa2`/`0xb6` | `r_sym_bt_4D3jExDF3lqXXndV4BPL` ×3 |
+| `0x7c` | `r_sym_bt_vlE2mL5FNjejBKjkw4Lw` |
+
+⇒ **停滞前最后执行的归档函数是一个事件生产者**（`eventq_put`）。
+
+### 重要含义
+
+`eventq_put` 是**唤醒等待方**的那一侧。
+⇒ 说明**有人确实在投递事件**，而 `eventq_get` 的等待方却拿不到 —— 可能原因：
+
+1. **投递到了错误的队列**（`eventq_put` 的队列对象与 `eventq_get` 的不是同一个）；
+2. **`eventq_put` 在我们的桩里没有唤醒 waiter**（只入队、不 `resumeTask`）；
+3. `event_is_queued` 判定为"已在队列"⇒ **跳过投递**（去重逻辑误判）。
+
+⇒ 第 2 条最值得先查：`osal.zig` 的 `eventqPut` 是否在入队后唤醒 `q.waiter`
+（对照 `eventqGet` 已实现的 `sched.block()` 范式）。
