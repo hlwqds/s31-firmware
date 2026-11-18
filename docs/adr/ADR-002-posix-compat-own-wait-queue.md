@@ -177,6 +177,7 @@ error: ld.lld: section '.flash.text' will not fit in region 'irom': overflowed b
 BLE 闭包构建是链接验收，所以 `-Dbt-blob-dir` 或 `-Dbt-probe` 时不再挂 posix section
 （`firmware/build.zig` 里有一行跳过 + 注释）。真要三者共存，先扩两段窗口。
 
-这次改动也让闭包镜像从 913 728 变成 **913 744 B**（+16 B）：非 probe 的闭包构建不再把
+这次改动也让闭包镜像从 913 728 变成 **913 744 B**（+16 B；后来 `bt_printf_shim.c` 加了有界
+格式化器又涨到 **917 840 B**，该代码只存在于带 `-Dbt-blob-*` 的构建里）：非 probe 的闭包构建不再把
 `bt_core` 整个编进来（那会 +2 KB），改成让 probe-off shim 里做一次 `osal.forceExports()`
 的 comptime 根引用 —— 只发射归档要的 5 个 `s31_*`。
