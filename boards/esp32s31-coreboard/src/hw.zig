@@ -377,7 +377,7 @@ pub fn rawWrite(msg: []const u8) void {
     // 后半截被丢（本会话最大的观测陷阱：step 日志/轨迹/里程碑全被截断）。
     const need: u32 = @intCast(msg.len);
     var w: u32 = 0;
-    while (w < 200_000) : (w += 1) {
+    while (w < 5_000) : (w += 1) {   // 上限压到 5 000（原来 200 000 会在 FIFO 被占时每次烧 ~1 ms）
         const used = (status.* >> 16) & 0xFF;
         if (used + need <= 120) break;
     }
