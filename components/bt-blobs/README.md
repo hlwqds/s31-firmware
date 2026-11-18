@@ -6589,3 +6589,42 @@ pcsample pc=0x400670c6 ra=0x400670c6      ← 在 abort 自旋段
 - 技能自检清单是 **10 条**（不是 8 条）；
 - `关键默认值` 列表需要与树同步：`phy_before_clocks=false`（本轮已翻转）、
   `phy_domain_enable=true`（来自 `porting.zig`）。
+
+## abort 确实进入、导出确实被调用，但 AB 行仍不可见（2026-11-19 收尾）
+
+当前构建的反汇编证据：
+
+```asm
+400670aa <abort>:            ; size 30
+...
+400670c2: jalr ra,-688(ra)   ; 调用 probe_dump_now  ✓
+400670c6: c.j  400670c6      ; 我们的 for(;;) 自旋  ✓
+```
+
+且 `probe_dump_now` 的实现确认会清门：
+
+```zig
+export fn probe_dump_now() void {
+    dump_done = false;
+    dumpAtPend();
+}
+```
+
+⇒ **abort 进入 ✓、导出被调用 ✓、门已清 ✓** —— 但 `AB` 行**仍未出现**。
+
+⇒ 因此这是**输出丢失**（FIFO）而非逻辑挡死。
+
+### 结论
+
+| 事实 | 状态 |
+| --- | --- |
+| step 1 之后进入 abort | **已证**（PC 在自旋段、`jalr` 在调用点）|
+| abort 的调用者 | **未知**（RA 未能输出）|
+| 输出为何丢失 | 未查（AB 行约 40 B，理论上应能进 FIFO）|
+
+### 下一轮的第一步（二选一）
+
+1. 把 `AB` 行缩到 **< 16 字节**（只打 `A{ra:x}`），并**去掉** `arenaFree()`/`arenaLargestFree()` 的调用；
+2. 或改用**不可打印单字节**（`\x02`）+ RA 的最低位，绕开一切文本。
+
+⚠️ 在此之前，"abort 的调用者是谁"这个问题**没有答案** —— 不要用"step 1 之后"当作定位。
