@@ -112,9 +112,14 @@
 
 ## 3. 本版范围（可验证优先）
 
-做：`errno` · `time`（clock_gettime/nanosleep/clock_getres）· `addr`（`sockaddr_in` 编解码 +
-每 fd 地址表）· `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll）
-· `sync`（sem/mutex/once）· `thread`（create/join/detach/self/exit）· `cond`（含 `waitq`）
+做（11 个模块，**85** 项主机用例）：
+
+- `errno`（每 Task 分槽）· `time`（clock_gettime/nanosleep/clock_getres）·
+  `addr`（`sockaddr_in` 编解码 + 每 fd 地址表）·
+  `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll）
+- `waitq`（FIFO 等待队列）· `sync`（sem / mutex / once，含 `sem_timedwait` / `mutex_timedlock`）·
+  `cond`（wait / timedwait / signal / broadcast）· `timer`（`pump` 推进到期）·
+  `rwlock`（写者优先）· `thread`（create/join/detach/self/exit + `pthread_attr_t`）
 
 暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、阻塞式 `accept`/`connect`（前置见 §6.3）。
 
@@ -123,7 +128,8 @@
 理由：`errno`/`time`/`addr`/`fd` **不需要内核**，可以全部用主机用例钉住（`net-sockets` 的
 `Table` 是纯逻辑）。内核在 2026-11-18 已抽成 `components/osal/`，于是 `sync`/`thread`/`cond`
 可以接上真内核；它们**真正阻塞的那一段**（`sched.block()`）在主机上不可执行，所以主机用例
-只钉策略，阻塞行为仍是板级验收（见 §4.6 与 §6.3）。
+只钉策略，阻塞行为仍是板级验收（见 §4.6 与 §6.3）。**本组件目前不进镜像**（模块根冲突，
+见 §5），因此"能编过、用例通过"不等于"板上可用"。
 
 ## 4. 分层
 
