@@ -213,6 +213,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         log.line("Sn={d}", .{pc_snap_n});
                     }
                 }
+                // g_phyFuns 表尾：找值为 0x2f80137c 的槽（定位 jalr 的 imm）
+                var a: usize = 0x2f07f800;
+                while (a < 0x2f07f948) : (a += 16) {
+                    const w0 = (@as(*volatile u32, @ptrFromInt(a))).*;
+                    const w1 = (@as(*volatile u32, @ptrFromInt(a + 4))).*;
+                    const w2 = (@as(*volatile u32, @ptrFromInt(a + 8))).*;
+                    const w3 = (@as(*volatile u32, @ptrFromInt(a + 12))).*;
+                    log.line("{x}:{x},{x},{x},{x}", .{ a, w0, w1, w2, w3 });
+                }
             }
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
