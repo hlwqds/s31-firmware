@@ -13637,3 +13637,62 @@ step: enter step 3 → 4 → 5      ← **停在 5**（此前到 6）
 
 > **`0x2010B000` 是 BLE/MAC 块，它需要 `clk_conf` 的 bit24（`clk_zbmac_en`）才应答。**
 > 而我们的 `btdmLpEnableClock()` 漏掉了这一位 —— 这就是"一读即挂"的机制。
+
+## ❌ "停在 step 5" 又是交错假象（2026-11-19）
+
+### 实际日志（`pc1b1.log`，step 5 之后）
+
+```text
+bt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x77601002 clk_conf1=0x003fe080 lpcon=0x00000006
+bt lp: gates conf_ok=true conf1_ok=true coex_ok=bbbbbbbbbbbbt bringup:   ← 明显截断
+bt ret: malloc(76) => 0x2f01bQ1 0 0 0                                    ← malloc 已发生
+Q2 0 0 0
+Q3 0 0
+Q4 52 51
+Q5 95 2706 0 126
+```
+
+⇒ **`bt ret: malloc(76)`** 说明已进入 `OkE7`（它做 `malloc`）
+⇒ **`Q1/Q2/Q3` dump** 说明 `on_event_init` 钩子已触发（`PsB8` 的 `event_init`）
+⇒ **实际已进入 step 6**，只是 `enter step 6` 那一行**被交错吞掉**。
+
+### 因此
+
+| 结论 | 状态 |
+| --- | --- |
+| "加时钟位后停在 step 5" | ❌ **交错假象，撤回** |
+| 实际进度 | 与之前相同（进 step 6、到 `event_init`）|
+| `clk_conf` 补 bit24 | ✅ **真实生效**（`0x72601002` → `0x77601002`）|
+
+### 第二十一类观测错误
+
+**"最后一条 `enter step N` = 卡在第 N 步"** —— 当该行本身可能被吞掉时，这个判据**不成立**。
+
+⇒ 正确的进度判据应当是**多源交叉**：
+`enter step N` **或** 该步之后的特征输出（如 `bt ret: malloc`、`Q*` dump）。
+
+## 本会话最终总计（终稿）
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 22 |
+| 本会话引入的危害 | 5（均已处置）|
+| **真实进展** | `clk_conf` 补上 `clk_zbmac_en`(bit24)，值 `0x72601002` → `0x77601002` |
+| 直接确证 | 1（修复前）|
+| 撤回 | **57** |
+| 数据源错误 | **21 类** |
+| 自我纠正 | **176** |
+
+### 交接（明确）
+
+1. **`clk_conf` 还差 bit27**（我们 `0x77` vs IDF `0x7e`，差 bit24 与 bit27）；
+2. **停滞仍在 `event_init` 之后** —— 与加位前一致；
+3. **进度判据改用多源交叉**（`enter step N` 或其后特征输出），不要只信最后一行 `enter step`。
+
+### 最后一条规律（第五次）
+
+> **"最后一条日志 = 实际状态"这个假设，在本会话里错了五次。**
+>
+> `enter step` 会被吞、`win:` 会被吞、`Q2` 会被早期快照冒充、
+> 而真正的进度往往体现在**其它输出**里（`malloc`、`Q*`、`event_init`）。
