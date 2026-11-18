@@ -2339,12 +2339,11 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 板上 anchor 表实测（`panic: anchor[i]`）：**anchor[0..2]、[5]、[7]、[9] 全为 0**，
 非零的是 `[4]`、`[6]`、`[8]`、`[10]`。而 `mtval=0`、`cause=7` 与 `sb 0(a5)`（a5=0）完全吻合。
 
-⇒ **完整链条**（全部来自归档自己的指令 + 板上实测，无推断）：
-
-```
-task_init: mutex_init -> eventq_init -> [a5+8]==0 -> 提前退出
-  -> task_deinit -> jal cKuT... -> lw anchor[0] (=0) -> 零值路径 -> sb a4,0 -> store fault @0
-```
+⚠️ **上面这条"sb 到 0"的结论已撤回**（2026-11-18 复核）：`cKuT...` 的零值目标是
+`.L201: c.jr ra`（**仅返回，不写**）；真正的 `sb a4,0(a5)` 在下一个函数
+`r_sym_bt_vpbJU7UPeyxEM4bymUIi` 里，同样被 `beqz a5,.L204` 保护。两者都不会写空指针。
+而且 `mepc=0x4005b692` 是 `lui a5,0x2f010` —— `lui` 不可能触发访问异常。
+⇒ **故障 PC 尚未确定**，`mepc` 与实际 store 指令对不上，是下一个要查的点。
 
 即：**崩溃的直接原因不是缺 OSAL、不是锁、不是 PHY**，而是归档读到自己从未发布的
 **anchor[0]** 后走"零值兜底"路径，而那条路径本身就假定指针非空 —— 归档的零值分支写地址 0。
@@ -2353,3 +2352,39 @@ task_init: mutex_init -> eventq_init -> [a5+8]==0 -> 提前退出
 它是 10 个 `r_sym_bt_*` 锚点里编号最小的一个；`[a5+8]==0` 的判据与 `lw a0,28(a5)` 的字段
 说明它指向一个"表/描述符"。找写者仍用已验证的方法：`objdump -d | grep 'sw.*<r_sym_bt_pSy5'`
 （注意 `.o` 未重定位时无效，必须用链接后 ELF）。
+
+### 锚点是**惰性发布**：读取 → 为空则 malloc → 写回（2026-11-18，反汇编确认）
+
+`r_sym_bt_OkE7MxSSqFt63m8XlU3d` 序言：
+
+```
+4005f868: addi s0,s0,-24              # s0 = 0x2f00ffe8 =& r_sym_bt_r4auAKWSAFwgQarMHZCc
+4005f86c: lw   a5,0(s0)               # 读锚点
+4005f876: beqz a5, 4005f886 <.L59>    # 为空 -> 惰性初始化
+...
+4005f88e: jal  ra,<wr_btdm_osal_malloc>   # malloc(76)
+4005f892: sw   a0,0(s0)                    # <-- 把新指针写回锚点 = 发布
+4005f896: beqz a0, 4005f878 <.L40>         # malloc 失败 -> 退出
+4005f89e: jal  ra,<compiler_rt.smallMemset> # memset(0)
+```
+
+⇒ 这解释了"3/10 锚点已发布 = 崩前三次 malloc"：**归档按需发布锚点**，不是启动时统一填表。
+`panic: anchor[i]` 打出的非零槽就是"本次运行已被惰性初始化过"的对象。
+
+### 提前退出的真实判据（已确定）
+
+`eventq_init` 之后：
+
+```
+4005f8d8: lw a5,0(s0)        # 刚 malloc 并 memset 的对象
+4005f8da: lw a5,8(a5)        # 该对象 +8 字段
+4005f8dc: beqz a5, .L40      # 为 0 -> 退出
+```
+
+对象是**自己刚分配且 memset 成全 0 的 76 字节**，所以 `+8` 必然是 0 —— 除非**别处先把它填上**。
+⇒ 提前退出不是错误分支，而是"**依赖的另一个子系统尚未初始化**"的正常返回值。
+这也解释了 `[a5+8]==0` 为什么与 anchor[6]/anchor[8] 的板上读数对不上：那个 `a5` 来自
+`s0` 指向的**另一个**锚点（`r4auAK…`），不是 panic 里那个属于故障子函数的 `s0`。
+
+**下一步**：`+8` 字段由谁填 —— 在链接后 ELF 里找对 `0(s0)+8` 的 `sw` 写者，
+或用 `r_sym_bt_r4auAKWSAFwgQarMHZCc` 的消费点反查（`objdump -d | grep '<r_sym_bt_r4auAK'`）。
