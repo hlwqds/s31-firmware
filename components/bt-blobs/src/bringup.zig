@@ -27,6 +27,7 @@ const config = @import("config.zig");
 const porting = @import("porting.zig");
 const r_ext_funcs = @import("extfuncs.zig");
 const transport = @import("transport.zig");
+const gate = @import("gate.zig");
 
 pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 
@@ -123,7 +124,10 @@ fn dumpBootState() void {
         // `esp_phy.c`/`modem_clock.c`/`periph_ctrl.c` 对象），不再按地址调 IRAM。
         // 顺序与 IDF 的 `esp_phy_enable` 一致：填表 → 使能（内部含时钟/模块/校准）。
         const pp = @import("probe_ptr.zig");
+        // 前后对读锚点表：区分"表由 PHY/ROM 填"与"表由闭包外的软件填"。
+        gate.dumpAnchors("before-phy");
         pp.initPhy();
+        gate.dumpAnchors("after-phy");
         osal.logLine("BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=0x{x}", .{
             (@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*,
         });

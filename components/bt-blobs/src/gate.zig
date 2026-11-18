@@ -12,10 +12,24 @@
 //! - `env`     = 21.o 锚点（`OkE7` 发布的 76 B 环境）
 //! - `*(env+8)`= `OkE7` 里 `fqmZk` 的守卫所读字段（应为 eventq 槽位指针）
 //! - `P`       = 2.o 锚点（由 `fqmZk` 设置；为 0 则 `2aNN` 会向地址 0 写）
+const std = @import("std");
 const osal = @import("osal_kit").osal;
 const pp = @import("probe_ptr.zig");
 
 const logLine = osal.logLine;
+
+/// 打印锚点表（基址 `0x2f00ffd0`，10 个槽）的一行快照，供"某操作前后"对读。
+pub fn dumpAnchors(tag: []const u8) void {
+    var buf: [128]u8 = undefined;
+    var i: usize = 0;
+    var w: usize = 0;
+    while (i < 10) : (i += 1) {
+        const v = (@as(*volatile u32, @ptrFromInt(0x2f00_ffd0 + i * 4))).*;
+        const n = std.fmt.bufPrint(buf[w..], " {x}", .{v}) catch break;
+        w += n.len;
+    }
+    logLine("bt anchors[{s}]:{s}", .{ tag, buf[0..w] });
+}
 
 pub fn probeAnchors() void {
     const env = pp.okE7Anchor();

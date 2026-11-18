@@ -1973,3 +1973,28 @@ ROM 路径下 PHY 使能"返回了"但可能并未真正完成标定 ⇒ 表里�
 
 **验证方式（下一步）**：在 `pp.initPhy()` 前后各读一次 `0x2f00ffd0` 区域的 10 个字并打印 ——
 若 `esp_phy_enable` 返回后 anchor[0] 仍为 0，则"ROM 未填表"成立，问题回到 PHY 使能本身。
+
+### ROM 的 PHY 使能**不填**锚点表（2026-11-18，前后对读，假设已否）
+
+在 `pp.initPhy()`（`phy_get_romfunc_addr()` + `esp_phy_enable(2)`）前后各读一次 `0x2f00ffd0`
+的 10 个槽：
+
+```text
+bt anchors[before-phy]: 0 0 0 0 0 0 0 0 0 0
+bt anchors[after-phy]:  0 0 0 0 0 0 0 0 0 0
+```
+
+⇒ **"表由 ROM/PHY 填充"这条假设否掉了**：PHY 使能返回后，表仍然全 0。
+
+配合另外两条事实：
+
+- 归档/镜像里**没有**指向 anchor[0] 的 store（全 ELF 只有 anchor[8] 一处 store 标注）；
+- 进 step 6 时表仍全 0，而在 `mutex_pend => OK` 那一刻已有 **3 个**槽被填
+  （`logs/bt-probe-anchors.log`）。
+
+⇒ 结论收窄为：**这 3 个槽是 `r_btdm_task_init` 内部自己的代码写的（算地址、无符号标注），
+而写 anchor[0] 的那一段没有被执行到** —— 也就是 task_init 在到达写 anchor[0] 之前就已经中途退出
+（随后走 `r_btdm_task_deinit`，在那里读到 NULL 而崩）。
+
+**下一步只剩一件事**：定位 task_init 里"为什么提前退出"——最直接的手段是把
+`ets_printf` 接回我们的 logger（归档自己会报它走到哪），而不是继续反汇编。
