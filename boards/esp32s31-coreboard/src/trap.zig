@@ -409,6 +409,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     log.line("panic: live mepc=0x{x} mtval=0x{x}", .{ live_mepc, live_mtval });
     log.line("panic: sp=0x{x} s0=0x{x} s1=0x{x}", .{ frame.sp, frame.s0, frame.s1 });
     log.line("panic: regs a3=0x{x} a4=0x{x} a5=0x{x} a6=0x{x} a7=0x{x}", .{ frame.a3, frame.a4, frame.a5, frame.a6, frame.a7 });
+    // 从 frame.sp 读调用者的存帧：+8 应为 s0（自校验），+12 应为 ra（即 deinit 的调用点）。
+    if (frame.sp > 0x2f000000 and frame.sp < 0x2f100000) {
+        const w: [*]const usize = @ptrFromInt(frame.sp);
+        log.line("panic: callframe +8=0x{x} +12=0x{x}", .{ w[2], w[3] });
+    }
     log.line("panic: tregs t0=0x{x} t1=0x{x} t2=0x{x} t3=0x{x} t4=0x{x} t5=0x{x} t6=0x{x}", .{ frame.t0, frame.t1, frame.t2, frame.t3, frame.t4, frame.t5, frame.t6 });
     // 把 s0 指向的上下文前四个字打出来：`wifi_ipc_process` 的形状是
     // `ctx = *(a0+12); fn = *(ctx); fn(*(ctx+4))`，这四个字正好是 fn/arg 及其邻居。

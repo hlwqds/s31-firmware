@@ -2887,3 +2887,35 @@ bt probe: re-probing 0x2010B000 ...
 该对象若由我们构造（`ble` 配置 / anchor 对象 / `xi[]`），把首字补成 `0x20260127` 即可。
 
 > 注意 `xi[6] = 0x20260127` 是**偏移 24**，不是首字，因此不是这个判据的对象。
+
+## 回滚的三条条件已全部读出，且 `n=3` 不是有效判别器（2026-11-18 末）
+
+`r_btdm_task_init`（`0x4005fb2e`，216 字节）里三条失败条件都汇到 `.L93`（`0x4005fb4a`）：
+
+```asm
+4005fb46: beq  a3,a4, .L103       # +0  version == 0x20260127
+4005fb5a <.L103>:
+4005fb60: addi a5,a5,1445         #     0x5a5aa5a5 = BTDM_CONFIG_MAGIC_VALUE
+4005fb64: bne  a4,a5, .L93        # +16 magic  不匹配 -> deinit
+4005fb68: c.jal 4005f860 <OkE7>   #     惰性初始化那个对象
+4005fb6c: c.bnez a0, .L93         # OkE7 返回非零 -> deinit（rc=-3）
+```
+
+`config.defaults()` 里 **version 与 magic 都已正确设置**（`config.zig:275` / `:284`），
+所以前两条通过 ⇒ **实际回滚来自第三条：`OkE7` 返回非零**（即 `OkE7` 内部的 -4/-6 之一）。
+
+`callframe +12 = 0x4005fb4c` 只能证明"从 `.L93` 回来"，三条分支的返回地址相同，**无法区分**。
+
+### 重要修正：`osaldump reached n=3` 不能当判别器
+
+我此前用"打补丁后 n 仍为 3"推断"流程没越过闸门"，**这个推断无效**：
+`noteCaller()` 目前只加在 **15 个**包装层（`eventq_*`/`event_*`/`sem_*`/`mutex_*`/`task_create`），
+**`wr_btdm_osal_malloc` 没有插桩**，而 `OkE7` 之后的 `fqmZk` 正是靠 `malloc` 发布 `d3D3`
+⇒ 越过闸门也**不会**让 n 增加。
+
+⇒ 因此"补丁写 `evq` 首字无效"这一结论**未定**，需要先用带 `malloc` 的完整环重做判别。
+
+**下一步（唯一，且明确）**：
+1. 给**所有** `export fn wr_btdm_osal_*` 补 `noteCaller()`（本轮批量编辑失败已回退，需逐个手工加）；
+2. 重跑基线，记录 n 与最后几条 RA，确认 `OkE7` 返回前的完整序列；
+3. 再重跑 `patch_bail_field=true`，看 n 是否增加、故障点是否移动 —— 那才是有效判别。
