@@ -121,7 +121,10 @@
   `cond`（wait / timedwait / signal / broadcast）· `timer`（`pump` 推进到期）·
   `rwlock`（写者优先）· `thread`（create/join/detach/self/exit + `pthread_attr_t`）
 
-暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`。（阻塞 `accept`/`connect` 均已做，见 §2.4。）
+暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`。
+
+阻塞 IO 家族（`acceptBlock` / `connectBlock` / `recvBlock`）**已做并板级验证**，靠 `socket.Table.on_ready`；
+`send` 没有阻塞版，原因见 §2.4 与 ADR-002 追加。
 
 （`sem_timedwait` / `pthread_mutex_timedlock` **已做** —— 靠应用周期性调 `sync.pump()`。）
 
