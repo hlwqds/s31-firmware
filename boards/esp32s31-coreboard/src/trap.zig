@@ -189,13 +189,19 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 极短、并且**先 PC 后计数**：FIFO 只有 128 B，一次打不完 = 后面的会被丢。
             log.line("DUMP{d}", .{irq_count});
             probe_dump_now();
-            // 打满 48 条（每行 8 个，紧凑；rawWrite 会为整行预留）
-            var b: usize = 0;
-            while (b + 8 <= pc_snap_n and b < 48) : (b += 8) {
-                log.line("{x},{x},{x},{x},{x},{x},{x},{x}", .{
-                    pc_snap[b], pc_snap[b + 1], pc_snap[b + 2], pc_snap[b + 3],
-                    pc_snap[b + 4], pc_snap[b + 5], pc_snap[b + 6], pc_snap[b + 7],
-                });
+            // 打满 48 条：**必须用 `samplePcs`**（它读 `pc_ring`）；
+            // `pc_snap` 只在 fault 路径填充 ⇒ 在 DUMP 路径下恒为 0（本会话踩过）。
+            {
+                var pcs: [48]u32 = undefined;
+                const n = samplePcs(&pcs);
+                log.line("SN{d}", .{n});
+                var b: usize = 0;
+                while (b + 8 <= n) : (b += 8) {
+                    log.line("{x},{x},{x},{x},{x},{x},{x},{x}", .{
+                        pcs[b], pcs[b + 1], pcs[b + 2], pcs[b + 3],
+                        pcs[b + 4], pcs[b + 5], pcs[b + 6], pcs[b + 7],
+                    });
+                }
             }
             while (true) asm volatile ("wfi");
         }
@@ -205,6 +211,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **1 字节心跳**：14 B/条 × 152 条 = 2.1 KB ≫ 128 B FIFO ⇒ 之后的一切被丢。
             // 改成每 512 tick 一个 '.'，FIFO 只占几十字节，里程碑与 abort 文本才能存活。
             if (irq_count % 512 == 0) log.raw(".");
+            // **无条件** tick 计数（先把 sample_quiet 放开才可见）：定位 tick 何时停
+            if (irq_count % 1024 == 0) log.line("T n={d}", .{irq_count});
             if (irq_count % 4096 == 0) bt_print_osal_stats();
             // **一次性读**三个寄存器：若 FE 域被门控，读本身会挂住 ⇒ 心跳在此之后停止**也是信号**。
             if (irq_count >= 2000 and irq_count < 2001 + 512) {
