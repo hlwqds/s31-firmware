@@ -202,6 +202,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const c1 = (@as(*volatile u32, @ptrFromInt(0x20109C14))).*;
                 const fo = (@as(*volatile u32, @ptrFromInt(0x20109C08))).*;
                 log.line("F{x}.{x}.{x}", .{ fe, c1, fo });
+                const gf = (@as(*volatile u32, @ptrFromInt(0x2f07f944))).*;
+                log.line("G{x}", .{gf});
                 // 有序 PC 环：一行紧凑输出 8 条，绕开 128 B FIFO
                 {
                     var k: usize = 0;
@@ -214,8 +216,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     }
                 }
                 // g_phyFuns 表尾：找值为 0x2f80137c 的槽（定位 jalr 的 imm）
-                var a: usize = 0x2f07f800;
-                while (a < 0x2f07f948) : (a += 16) {
+                var a: usize = 0x2f00b580;
+                while (a < 0x2f00b600) : (a += 16) {
                     const w0 = (@as(*volatile u32, @ptrFromInt(a))).*;
                     const w1 = (@as(*volatile u32, @ptrFromInt(a + 4))).*;
                     const w2 = (@as(*volatile u32, @ptrFromInt(a + 8))).*;
