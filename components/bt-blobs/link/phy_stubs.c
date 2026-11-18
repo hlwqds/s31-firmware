@@ -117,12 +117,15 @@ static void put1(char c) {
     if (sp < 40) *fifo = (unsigned)c;
 }
 unsigned g_flag_a = 0;
+unsigned g_posctl = 0;
+volatile unsigned g_abort_ra = 0;
 unsigned g_c_count = 0;   /* 精确计数（RAM，不受 FIFO 丢字节影响） */
 static unsigned char g_phy_cal_buf[4][2048] __attribute__((aligned(16)));
 static unsigned g_phy_cal_next = 0;
 
 void *calloc(size_t n, size_t sz)
 {
+    /* 阳性对照已完成：见 README；此处保持空实现，避免干扰正常运行。 */
     size_t total = n * sz;
     if (total == 1904) {
         g_c_count++;   /* RAM 计数；不再写裸字节（会淹没 128 B FIFO） */
@@ -161,7 +164,6 @@ int esp_log_default_level = 0;
 /* ------------------------------------------------------------------ */
 /* abort：把**直接调用者地址**写进一个 RAM 全局（不走 UART，不会被丢），
  * 然后自旋。导出处会把它打出来。 */
-volatile unsigned g_abort_ra = 0;
 void abort(void) {
     {
         unsigned ra;
