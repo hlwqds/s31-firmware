@@ -93,7 +93,13 @@ pub fn setHooks(h: Hooks) void {
 /// 为什么不能放在 `step()` 里：`step(n, name, expr)` 的 `expr` 在**调用之前求值** ⇒
 /// 那样打出来的"进入"日志其实在归档调用**返回之后**才出现，会让人误以为卡在下一步。
 /// 实测踩过：`r_btdm_task_init` 内部挂住时，日志停在 step 5 之后，看起来像"卡在 step 6 之前"。
+/// **纯 RAM 进度记录**（不受串口丢行影响）：崩溃后由 panic 路径 dump。
+pub var last_step: u32 = 0;
+pub var last_step_name: []const u8 = "none";
+
 fn enter(n: u32, comptime what: []const u8) void {
+    last_step = n;
+    last_step_name = what;
     osal.logPublic("bt bringup: enter step {d} " ++ what, .{n});
     // 让 UART FIFO 排空：step 1..5 在同一瞬间连发，5×~30 B > 128 B FIFO
     // ⇒ 溢出时 hw.rawWrite **按设计丢弃** ⇒ 只剩第一行可见（误判为"没执行"）。
