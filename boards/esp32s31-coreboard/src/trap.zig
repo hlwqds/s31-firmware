@@ -197,7 +197,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 改成每 512 tick 一个 '.'，FIFO 只占几十字节，里程碑与 abort 文本才能存活。
             if (irq_count % 512 == 0) log.raw(".");
             // **一次性读**三个寄存器：若 FE 域被门控，读本身会挂住 ⇒ 心跳在此之后停止**也是信号**。
-            if (irq_count == 2000) {
+            if (irq_count >= 2000 and irq_count < 2001 + 512) {
                 const fe = (@as(*volatile u32, @ptrFromInt(0x20100800))).*;
                 const c1 = (@as(*volatile u32, @ptrFromInt(0x20109C14))).*;
                 const fo = (@as(*volatile u32, @ptrFromInt(0x20109C08))).*;
