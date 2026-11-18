@@ -208,7 +208,7 @@ SECTIONS
     .btdm_bss (NOLOAD) : ALIGN(16)
     {
         _bss_start_btdm = .;
-        . = . + 0x8000;
+        . = . + 0x2000;   /* 32 KiB -> 8 KiB：这是纯占位洞（无输入节），缩短即把 16 KiB 还给堆 */
         _bss_end_btdm = .;
     } > sram
 
