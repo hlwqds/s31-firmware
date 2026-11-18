@@ -9042,3 +9042,42 @@ jH5m = 事件生产者（eventq_put）
 jH5m 之后的两个函数仅 50 B / 32 B            ← 本轮
 ⇒ 停滞在 jH5m 自身或其 ROM 调用里
 ```
+
+## ✅ 环与轨迹的"矛盾"已解：**trace 只覆盖部分函数**（2026-11-19）
+
+### 事实
+
+| 函数 | 有 `trace()`？ |
+| --- | --- |
+| `eventqInit`（`:460`）| ✅ `"eventqInit"` |
+| `eventInit`（`:596`）| ✅ `"eventInit"` |
+| `eventRun`（`:618`）| ✅ `"eventRun"` |
+| `mutexPend`/`mutexRelease` | ✅ |
+| **`eventqPut`** | ❌ **无 trace** |
+| **`eventIsQueued`** | ❌ **无 trace** |
+
+⇒ **`caller_ring` 记录所有 OSAL 入口**（含无 trace 的），
+而 **`osal> …` 轨迹只记录有 trace 的那几个**。
+
+### 因此真实顺序是
+
+```text
+mutexPend        (有 trace)
+eventInit ×2     (有 trace)
+→ jH5m 的 eventq_put ×2   (无 trace，只在 caller_ring 里)
+→ 停滞
+```
+
+⇒ 环与轨迹**并不矛盾**，它们覆盖的函数集合不同。
+
+### 修正后的结论
+
+"停在 `eventInit×2` 之后"应改为：
+**停在 `r_sym_bt_jH5m…` 的最后一次 OSAL 调用（`eventq_put`）之后**。
+
+⇒ 与上一节"候选 = `jH5m` 自身或它的 ROM 调用"一致。
+
+### 一条被证伪的捷径
+
+"trace 串复制粘贴错了（`eventqPut` 写成 `eventInit`）" —— **不成立**：
+`eventqPut` 根本没有 trace 调用。
