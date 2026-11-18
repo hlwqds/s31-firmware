@@ -1241,8 +1241,20 @@ pub fn arenaFree() usize {
 
 /// `flags`（`BTDM_OSAL_MALLOC_F_INTERNAL` vs `NORMAL`）在 IDF 里选不同的 heap 域。
 /// 我们只有一个 arena，两者走同一条路——与 wifi-blobs 的 `shellMallocInternal` 同处理。
+/// 直接写一个字节到 UART（40 次自旋上限，满了就丢）。
+fn putByte(ch: u8) void {
+    if (@import("builtin").os.tag != .freestanding) return;
+    const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
+    const stat: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    var spins: u32 = 0;
+    while ((((stat.* >> 16) & 0xFF) >= 120) and spins < 40) : (spins += 1) {}
+    if (spins < 40) fifo.* = ch;
+}
+
 pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     const r = bt_arena.alloc(size, 8);
+    // **判据**：PHY 校准的 1904 字节请求 —— 成功打 '+'、失败打 '-'（单字节，不会被 FIFO 丢）。
+    if (size == 1904) putByte(if (r != null) '+' else '-');
     // **清零**：归档把分配到的内存当结构体用，并假定字段初值为 0。
     // 板侧证据：`deinit` 里读到 `a0=0xb7a10c0d` 这种垃圾，而 IDF 的堆在启动后是干净的。
     if (r) |v| @memset(@as([*]u8, @ptrCast(v))[0..size], 0);

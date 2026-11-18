@@ -4717,3 +4717,41 @@ calibration data"）说明它确实失败了。⇒ 存在一处**尚未观测到
 
 ⚠️ **地址会随构建漂移**：本轮再次踩到 —— 同一 `0x4000066e` 在 default 与 WITH_PHY 构建里
 分别是 `abort` 调用点与 `r_sym_ble_*` 调用。**任何引用都必须标注构建配置并当场用 `readelf` 复核**。
+
+## 🎯 板上定案：`btdmMalloc(1904)` **失败**，尽管 arena 有 352 KiB（2026-11-19）
+
+在 `btdmMalloc` 里对 `size == 1904` 打单字节判据（`+` 成功 / `-` 失败），板上：
+
+```
+A352K          <- arena 352 KiB（堆修复已生效）
+-
+-
+-
+-              <- 1904 字节请求**全部失败**
+AAAAAAAA       <- abort（"failed to allocate memory for RF calibration data"）
+```
+
+⇒ **不是容量问题**（352 KiB 空闲却失败）。
+
+### 代码里的关键早退
+
+`Arena.alloc`（`osal.zig:1167`）遍历块表时**第一件事**就是：
+
+```zig
+if (hdr.magic != headerMagic) return null;   // 越界/损坏
+```
+
+⇒ 若**首块的 `magic` 被破坏**，任何分配都会立刻返回 NULL，与剩余空间无关。
+
+### 因此最可能的根因
+
+**arena 的首块头部被写坏** —— 即在 `_heap_start`（0x2f01dfc0）附近有别的写入：
+- 归档的 `.btdm_data` 溢出（它紧邻堆起点，`NOLOAD` 但占地址）；
+- 或某段 `memcpy`/`memset` 越界覆盖了 `BlockHeader`。
+
+**下一步（一次板测即可确认）**：在 `alloc` 的 magIC 检查失败分支里打一个单字节（如 `!`），
+并顺带打出实际 magic 的最低字节。若出现 `!` ⇒ 确认是头部损坏，再沿"谁在写 0x2f01dfc0"追；
+若不出现 ⇒ 是 `need`/`min_block` 的比较问题（读 `min_block` 的实际值）。
+
+⚠️ 这也解释了为何 `Arena.alloc` 的静态分析"必然成功"却在实际板上失败：
+**静态分析假设了首块完好**，而运行时它已被破坏。
