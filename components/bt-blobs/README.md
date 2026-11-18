@@ -8775,3 +8775,31 @@ README 里"唯一符合归档前提的路 = **实现最小任务调度**（代�
 | step 6 停滞位置 | **`eventInit ×2` 之后的非日志代码**（仍未定位到具体函数）|
 | 已排除 | mutex 忙等重试（0 次"忙等耗尽"）、中断、锚点、采样门控、`r_sym_bt_3Dcjg…`（58 B 分配器）|
 | 下一步 | 在 `libbtdm_common.a` **全库**搜引用 `wr_btdm_osal_event_init` 的对象 → 反汇编该函数 → 列 `event_init` 之后的调用 |
+
+## `event_init` 的引用者：4 个对象（2026-11-19）
+
+在 `libbtdm_common.a` 全库搜 `wr_btdm_osal_event_init` 的 `R_RISCV_CALL`：
+
+| 对象 | 说明 |
+| --- | --- |
+| `11.o` | 导出 `r_btdm_hci_pkt_flag_ble_getf/setf` 等（HCI 包标志）|
+| `15.o` | 含 `wr_btdm_osal_task_create` 的实现 |
+| `16.o` | 导出多个 `r_sym_bt_*` 混淆符号 |
+| `19.o` | — |
+
+⇒ 轨迹中的 `eventInit ×2` 来自这 4 个之一，需按**调用图**收窄：
+`r_btdm_task_init`（`21.o`）→ `r_sym_bt_*` 助手 → 上述某个对象。
+
+### 下一步（离线，机械）
+
+1. 从 `21.o` 的重定位表取 `r_btdm_task_init` 调用的**全部 `r_sym_bt_*` 名字**；
+2. 在 `11/15/16/19.o` 中找**定义**这些符号的那个对象；
+3. 反汇编该对象中对应函数，列 `event_init` 之后的调用 —— 第一个"不打日志"的就是新的停滞候选。
+
+### 本会话结束时的状态
+
+| 项 | 值 |
+| --- | --- |
+| HEAD | `2dcf7c3`（本次提交后更新）|
+| step 6 停滞 | `eventInit ×2` 之后的非日志代码（候选收窄到 4 个对象）|
+| 已排除 | mutex 重试、中断、锚点、采样门控、FIFO、`g_phyFuns` 表、58 B 分配器 |
