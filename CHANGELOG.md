@@ -95,6 +95,12 @@
   退出协议：线程体返回后不能 return，trampoline 记返回值 → `done` → `sem_post` →
   `block()` 永不返回；安全性来自"退出的任务永不再被 resume"。11 项用例（41 总计）。
 
+- **等待队列（2026-11-18）**：`components/posix-compat/src/waitq.zig` —— FIFO 等待者链表，
+  6 项主机用例（顺序、摘链清理、中段/队首/队尾自摘、重复摘、`drain` 广播）。
+  **刻意不放进 `osal`**：那会改 `bt_core.o`，而归档的阻塞路径没有任何现有门禁能验证
+  （主机上 `swapContext` 直接 panic，链接门禁只看链接，板级门禁走 net-wire TCP）。
+  因此 `pthread_cond_*` 目前只有队列、没有胶水层 —— 胶水需要一次板级运行才能验收。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

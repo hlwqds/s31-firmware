@@ -151,9 +151,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**41 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 11** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 41`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**47 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · **thread 11** · **waitq 6** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 47`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -198,14 +198,21 @@ const Slot = struct {
 
 | 项 | 阻塞点 | 代价 |
 | --- | --- | --- |
-| `pthread_cond_*` | `osal.Sem` 只有**一个** waiter 槽 ⇒ 条件变量必须自己维护等待队列 | 要么在 `osal` 加等待队列（改内核 + 重跑闭包门禁），要么在 `posix-compat` 用 `sched.block()/resumeTask()` 自建 |
+| `pthread_cond_*` | **队列已有**（`waitq.zig`，6 项用例）；缺的是 `cond.zig` 那层胶水，而它在主机上**无法验证**（`swapContext` 在 x86_64 上 `@panic`） | 需要在板上跑一次才能验收；无板时只交付 `waitq` |
 | 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
 | `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动的超时唤醒（`callout` + `resumeTask`） |
 | `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |
 | 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
 
-**共同前提**：剩下的三项都要一条**多等待者队列**。它应当落在 `osal`（内核该有的东西），
-而那会改 `bt_core.o` ⇒ 需重跑 `scripts/check-bt-link.sh` 并重新确立镜像尺寸基线。
+**多等待者队列放在 `posix-compat/waitq.zig`，不放内核**（2026-11-18 定）：往 `osal` 加 FIFO
+会改 `bt_core.o`，而它服务的是已编译的 BLE 归档，其阻塞路径**没有任何现有门禁能验证**
+（`sched.block()` 在主机被编译掉、`check-bt-link.sh` 只证明链接、`gate-board.sh` 走 net-wire TCP）。
+`waitq` 是 test-only 的（不进镜像），语义可以在主机上钉住；等有板级跑 BLE probe 的那一步
+再考虑搬进内核，届时必须重建镜像基线。
+
+**队列的生命周期规则**（写进 `waitq.zig` 头，是唯一容易出错的地方）：节点由等待者在栈上分配
+⇒ 唤醒方 `pop()` 必须**先摘链清 `linked` 再 `resumeTask`**；等待者只在 `linked == true` 时
+继续 `block()`（虚假唤醒不会留毒节点）；超时/取消走 `remove()` 自摘链。
 **仍未做**：`pthread_cond_*`（需要与 mutex 配合的等待队列，而 `osal` 只有单 waiter 槽）、
 `fork`/`waitpid`、文件 I/O。
 

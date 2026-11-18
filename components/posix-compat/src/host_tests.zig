@@ -14,7 +14,9 @@ test {
     _ = @import("fd.zig");
     _ = @import("sync.zig");
     _ = @import("thread.zig");
+    _ = @import("waitq.zig");
     std.testing.refAllDecls(@import("fd.zig"));
     std.testing.refAllDecls(@import("sync.zig"));
     std.testing.refAllDecls(@import("thread.zig"));
+    std.testing.refAllDecls(@import("waitq.zig"));
 }
