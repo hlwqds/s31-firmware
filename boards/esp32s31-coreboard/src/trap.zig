@@ -417,11 +417,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         var pi: usize = 0;
         while (pi < pc_snap_n) : (pi += 1) log.line("panic: pc[{d}]=0x{x:0>8}", .{ pi, pc_snap[pi] });
         // 谁在调 logHook（窗口里到底是谁在打印）
+        // **取最新的 n 条**（滚动环：从头打印会给出开机早期的陈旧地址，很容易被误读成崩溃现场）。
+        const cn = @min(caller_n, 8);
         var ci: usize = 0;
-        while (ci < @min(caller_n, 8)) : (ci += 1) log.line("panic: caller[{d}]=0x{x:0>8}", .{ ci, caller_ring[ci] });
+        while (ci < cn) : (ci += 1) {
+            const idx = (caller_n +% caller_ring.len - cn + ci) % caller_ring.len;
+            log.line("panic: caller[{d}]=0x{x:0>8}", .{ ci, caller_ring[idx] });
+        }
         // `bt_mmio_*` 的**调用者**（= 归档自己的 PC）：采样被我们的外壳占满时，这是唯一的归档落点。
+        const mn = @min(hw.mmio_caller_n, 8);
         var mi: usize = 0;
-        while (mi < @min(hw.mmio_caller_n, 8)) : (mi += 1) log.line("panic: mmiocaller[{d}]=0x{x:0>8}", .{ mi, hw.mmio_caller_ring[mi] });
+        while (mi < mn) : (mi += 1) {
+            const idx = (hw.mmio_caller_n +% hw.mmio_caller_ring.len - mn + mi) % hw.mmio_caller_ring.len;
+            log.line("panic: mmiocaller[{d}]=0x{x:0>8}", .{ mi, hw.mmio_caller_ring[idx] });
+        }
         var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;

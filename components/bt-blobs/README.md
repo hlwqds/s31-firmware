@@ -2207,3 +2207,23 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 **下一步（唯一可行）**：先让 NMI 在 step 6 内真的跑起来（在 `armT0Interrupt` 内部保留 `nmies`，
 或改用不受 `mstatus.MIE` 影响的中断源），否则任何采样方案都无数据。这一步需要对着 CLIC 寄存器
 逐位核对，是一次独立的调试。
+
+### 一处尚未解释的矛盾（2026-11-18，留给下一步第一件事）
+
+同一次运行（`logs/bt-probe-pcs6.log`）：
+
+| 导出段 | 行数 |
+| --- | --- |
+| `panic: pc[...]` | **43**（采样有数据 ✓） |
+| `panic: caller[...]` | 0（logHook 静音 ✓ 正确） |
+| `panic: mmiocaller[...]` | **0** |
+| `panic: mmio[...]` | **40** |
+
+而 `hw.zig` 里 `recordMmioCaller(@returnAddress())` 确实在 `bt_mmio_read` 与 `bt_mmio_write`
+的第一行（第 355/362 行），`mmioRecord` 只在同一对函数里被调用 —— 两者应当同进同出。
+**但值环有 40 条、调用者环 0 条**，说明至少有一条假设是错的：
+要么那 40 条不是本次开机写的，要么 `mmio_caller_n` 被某处清零，要么导出循环有作用域/类型问题。
+
+**下一步第一件事**：在 panic 里先把两个计数器本身打出来
+（`panic: mmio_n={d} mmio_caller_n={d}`）—— 一行就能分开"计数为 0"与"导出循环坏了"，
+比继续读 40 条寄存器更有判断力。
