@@ -193,7 +193,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) {
             // **极短心跳**：< 16 字节，且每 512 tick 一条，避免 ISR 自己把 FIFO 灌满后停摆。
             // 末尾带 MPIE（进入 trap 前中断是否开）：1 => 更像总线挂死；0 => 归档自己屏蔽了中断（临界区）。
-            if (ring_n_at) |g| log.line("s{d}.{d}.{d}.{d}", .{ irq_count, g(), logc_at(), (frame.mstatus >> 7) & 1 }) else log.line("s{d}", .{irq_count});
+            // **1 字节心跳**：14 B/条 × 152 条 = 2.1 KB ≫ 128 B FIFO ⇒ 之后的一切被丢。
+            // 改成每 512 tick 一个 '.'，FIFO 只占几十字节，里程碑与 abort 文本才能存活。
+            if (irq_count % 512 == 0) log.raw(".");
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
         }

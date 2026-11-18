@@ -3,7 +3,8 @@
 >
 > | 项 | 现状 |
 > | --- | --- |
-> | **默认构建**（`build-probe.sh`，799 328 B） | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**。反汇编 + 调用序列双证据 |
+> | **默认构建 + `phy_domain_enable=false`（基线，799 KB 级）** | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**；心跳止于 ~320 tick |
+> | **`phy_domain_enable=true`（已验证的推进手段）** | 心跳升至 **9728+ 且持续**（总线停摆消失）；归档**进到 step 6**（`CODES n=16`）；PHY 校准真正执行，最终在 `esp_phy_load_cal_and_init`(`ra=0x40000672`) 内 **`abort`**。⇒ `0x2010B000` 一读即挂死在此构建下**不再成立** |
 > | **`WITH_PHY=1`**（812 000 B） | **可用**（此前"结构性损坏"是我们取址错误造成的假象，已修）；进入 bringup、到达 step 5，随后 `initPhy()` 不返回 |
 > | 锚点读数 | 取址已修（`@extern` 本身即指针）。**两版都已复验且全为 0**：默认版 `base=0x2f00ffd0: 0×10`，`WITH_PHY=1` 版 `base=0x2f010ee0: 0×10` ⇒ 与"ROM 不填这张表"一致 |
 > | 调用序列 | 已可读：`CODES n=16 0120000000000000`（0=malloc 1=mutex_init 2=eventq_init 3=event_init 4=mutex_pend…） |
