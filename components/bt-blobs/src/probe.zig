@@ -188,6 +188,7 @@ fn macHook(out: *[6]u8) void {
 /// 若崩溃因此消失或换点，就证明"anchor[0]==0 → 零值兜底 → store 到 0"这条链。
 var poison_buf: [64]u8 align(4) = @splat(0);
 pub var poison_anchor0: bool = false; // 基线
+pub var pmu_dump: bool = false; // 纯诊断；WITH_PHY 版会在此停住，默认关
 pub var reprobe_ble_block: bool = false; // 验证须放在 PHY 使能/校准**之后**，见 README // 复核实验：读 0x2010B000 会挂死整个系统
 /// 自测：故意往地址 0 写一次。用它的标签地址与 panic 报出的 mepc 比对，
 /// 判定这颗 CPU 的 store 异常是精确的还是会延迟上报。
@@ -374,7 +375,8 @@ pub fn run() noreturn {
         }
     }
     // PMU 窗口（0x20704000..+0x200）非零项 —— 与 IDF oracle 的同类 dump 逐字对拍
-    {
+    // ⚠️ 纯诊断；`WITH_PHY=1` 版在最后几项停住（0x207041E4 之后），故默认关闭。
+    if (pmu_dump) {
         var k: usize = 0;
         while (k < 128) : (k += 1) {
             const a: usize = 0x2070_4000 + k * 4;

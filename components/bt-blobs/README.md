@@ -3761,3 +3761,30 @@ pmu+0x1e4 = 0x00000028
   （ICG `0x2010_9C0C←0x64646400` → `phy_*_enable_set(1)` → `set_bb_wdg` → 首次 `register_chipv7_phy` → 重申 CLK_CONF1）。
 
 把这一套搬进 BLE 的 `btdmLpEnableClock`/`initPhy`，比让 IDF PHY 自己跑可控得多。
+
+## ✅ `WITH_PHY=1` 的真正阻塞是**诊断用的 PMU 转储**，不是 PHY（2026-11-19）
+
+把 `probe.zig` 里那段纯诊断的 PMU 窗口 dump 用开关 `pmu_dump`（默认 **false**）关掉后，
+`WITH_PHY=1`（811 024 B）**能够进入 bringup**：
+
+```
+pcsample n=256 pc=0x2f8036cc ra=0x40067798 s0=0x3
+s256.0.2.1
+bt anchors[before-phy]: 40f2ed8f 44d24462 …    <- dumpBootState 执行了
+bt lp: …                                       <- step 5 执行了
+（此后无输出）
+```
+
+⇒ 之前"给 IDF PHY 对象就死在 bringup 之前"的记录**不准确**：死在的是**我们自己加的诊断转储**，
+它在 `0x207041E4` 附近停住；关掉它之后流程照常进入 step 4/5。
+
+⇒ 现在的位置是：**step 5 成功之后调用 `initPhy()`（`WITH_PHY=1` 的 IDF PHY 使能）仍不返回**。
+这才是 PHY 路径的真实门槛，与"顺序倒置"无关（顺序已按 IDF 修正）。
+
+### 下一步（单点）
+
+`initPhy()`（`probe_ptr.zig:75-81`：`phy_get_romfunc_addr()` → `esp_phy_enable(2)`）
+在时钟已使能的条件下仍挂住 ⇒ 按技能记录，缺的是 PHY 寄存器所走的**模拟 I2C 主控（`I2C_ANA_MST`）**
+以及 `MODEM_ADC_COMMON_FE` / `MODEM_PRIVATE_FE` / `SOC_PLL_SOURCE_CG` 这几路频域使能 ——
+仓库里 `components/wifi-blobs/src/init_probe.zig:686-700` 已有这些的 S31 实测值（`0x2058_71E0←0x3d` 等），
+可直接移植到 `btdmLpEnableClock`。
