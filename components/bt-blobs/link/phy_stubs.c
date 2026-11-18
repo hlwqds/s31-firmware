@@ -62,8 +62,6 @@ const uint8_t phy_init_data[128] = {
 /* **PHY 初始化表**：IDF 的 `esp_phy_get_init_data()` 会 `nvs_open` + `nvs_get_blob` 取它，
  * 取不到就 `ESP_ERROR_CHECK` → "failed to obtain PHY init data" → abort。
  * 这里提供仓里现成的 128 字节表（`wifi-blobs/src/phy_init_data.zig` 的 `params`，由 Zig 侧导出）。 */
-extern const unsigned char g_phy_init_data_128[128];
-
 int nvs_open(const char *name, int open_mode, uint32_t *out_handle)
 {
     (void)name; (void)open_mode;
@@ -73,24 +71,10 @@ int nvs_open(const char *name, int open_mode, uint32_t *out_handle)
 int nvs_close(uint32_t handle) { (void)handle; return ESP_OK; }
 int nvs_commit(uint32_t handle) { (void)handle; return ESP_OK; }
 int nvs_erase_all(uint32_t handle) { (void)handle; return ESP_OK; }
-/* 两种 key：PHY 初始化表（128 B，我们提供）/ 校准数据（返回 NOT_FOUND ⇒ IDF 走全量校准）。 */
-int nvs_get_blob(uint32_t h, const char *k, void *o, size_t *len)
-{
-    (void)h; (void)k;
-    if (!o || !len) return ESP_ERR_NVS_NOT_FOUND;
-    if (*len < 128) {
-        *len = 128;                        /* 先查长度：返回所需大小 + INVALID_LENGTH（IDF 的约定） */
-        return ESP_ERR_NVS_INVALID_LENGTH;
-    }
-    if (*len >= 128) {
-        const unsigned char *src = g_phy_init_data_128;
-        unsigned char *dst = (unsigned char *)o;
-        for (int i = 0; i < 128; i++) dst[i] = src[i];
-        *len = 128;
-        return ESP_OK;
-    }
-    return ESP_ERR_NVS_NOT_FOUND;   /* 校准 blob：走全量校准 */
-}
+/* 校准数据 blob：返回 NOT_FOUND ⇒ IDF 走全量校准。
+ * 注：PHY 初始化表**不经过 NVS** —— `esp_phy_get_init_data()` 是返回静态表
+ * `phy_init_data`(0x40104fef) 的 thunk（size 10，不可能失败），镜像里本来就带着它。 */
+int nvs_get_blob(uint32_t h, const char *k, void *o, size_t *len) { (void)h; (void)k; (void)o; (void)len; return ESP_ERR_NVS_NOT_FOUND; }
 int nvs_set_blob(uint32_t h, const char *k, const void *v, size_t l) { (void)h; (void)k; (void)v; (void)l; return ESP_ERR_NVS_NOT_FOUND; }
 int nvs_get_u32(uint32_t h, const char *k, uint32_t *o) { (void)h; (void)k; (void)o; return ESP_ERR_NVS_NOT_FOUND; }
 int nvs_set_u32(uint32_t h, const char *k, uint32_t v) { (void)h; (void)k; (void)v; return ESP_ERR_NVS_NOT_FOUND; }

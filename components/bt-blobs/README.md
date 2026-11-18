@@ -4402,3 +4402,30 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 
 **下一步（离线即可量出）**：看 `0x400005b8` 那次 `calloc` 的**实参**（`0x400005a4..0x400005b8` 的
 `li a0,N` / `li a1,M`），即可知道 RF 校准缓冲要多大；再对照我们的堆上限决定"扩堆"还是"给专用池"。
+
+## 撤掉冗余的初始化表副本（2026-11-19）
+
+`esp_phy_get_init_data`（`0x40000414`，**10 字节**）是返回静态表 `phy_init_data`（`0x40104fef`）的 thunk，
+**镜像里本来就带着这张表** ⇒ 无需第二份。已删除：
+
+- `components/bt-blobs/src/phy_init_data_export.zig`（含 `@export g_phy_init_data_128`）
+- `probe.zig` 里对它的 `comptime` 引用
+- `phy_stubs.c` 里的 `extern` 与 `nvs_get_blob` 的 128 字节分支
+
+`nvs_get_blob` 回到"校准 blob → `NOT_FOUND` ⇒ 走全量校准"。
+`nvs_open` 保留返回 `ESP_OK`（`esp_phy_load_cal_data_from_nvs`（`0x40000420`，264 B）需要能打开命名空间；
+其错误串 `0x40101ef4` 是 **"NVS has not been initialized. Call nvs_flash_init before…"**）。
+
+### 由此得到的函数边界（`readelf`，务必按 size 反汇编）
+
+| 符号 | st_value | size |
+| --- | --- | --- |
+| `load_cal_data_from_nvs_handle` | `0x40000120` | 852 |
+| `store_cal_data_to_nvs_handle` | `0x40000282` | 786 |
+| `esp_phy_disable` | `0x400003ba` | 132 |
+| **`esp_phy_get_init_data`** | `0x40000414` | **10** |
+| **`esp_phy_load_cal_data_from_nvs`** | `0x40000420` | **264** |
+| `esp_phy_load_cal_and_init` | `0x40000580` | 452 |
+
+⇒ 本会话多次把相邻函数的代码当成同一个（`get_init_data` vs `load_cal_data_from_nvs`），
+**先用 `st_size` 划定区间再反汇编**是唯一可靠的做法。
