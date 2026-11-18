@@ -12,6 +12,7 @@
 //! 同步异常的异常码也只取低 6 位（S31 在高位带 CLIC 附加字段）。
 
 extern fn probe_dump_now() callconv(.c) void;
+extern fn bt_print_osal_stats() callconv(.c) void;
 const std = @import("std");
 const hw = @import("hw.zig");
 const log = @import("log.zig");
@@ -198,6 +199,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **1 字节心跳**：14 B/条 × 152 条 = 2.1 KB ≫ 128 B FIFO ⇒ 之后的一切被丢。
             // 改成每 512 tick 一个 '.'，FIFO 只占几十字节，里程碑与 abort 文本才能存活。
             if (irq_count % 512 == 0) log.raw(".");
+            if (irq_count % 4096 == 0) bt_print_osal_stats();
             // **一次性读**三个寄存器：若 FE 域被门控，读本身会挂住 ⇒ 心跳在此之后停止**也是信号**。
             if (irq_count >= 2000 and irq_count < 2001 + 512) {
                 const fe = (@as(*volatile u32, @ptrFromInt(0x20100800))).*;
