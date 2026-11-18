@@ -1205,6 +1205,7 @@ pub const Arena = struct {
                     hdr.size = @intCast(need);
                 }
                 hdr.free = false;
+                recAlloc(addr + @sizeOf(BlockHeader), need - @sizeOf(BlockHeader));
                 return @ptrFromInt(addr + @sizeOf(BlockHeader));
             }
             if (next <= addr) { putByte('x'); return null; }
@@ -1252,6 +1253,27 @@ pub var canary_first_val: u32 = 0;     // 该处的实际值
 pub var canary_bad_words: usize = 0;   // 一共被改写的字数
 pub var canary_base: usize = 0;        // 堆起点（便于换算绝对地址）
 
+/// 已分配区间表（供扫描跳过）：(起点, 长度)
+pub const AllocRec = struct { ptr: usize = 0, len: usize = 0 };
+pub var alloc_recs: [32]AllocRec = @splat(.{});
+pub var alloc_rec_n: usize = 0;
+
+fn recAlloc(ptr: usize, len: usize) void {
+    if (alloc_rec_n < alloc_recs.len) {
+        alloc_recs[alloc_rec_n] = .{ .ptr = ptr, .len = len };
+        alloc_rec_n += 1;
+    }
+}
+
+fn inAlloc(addr: usize) bool {
+    var i: usize = 0;
+    while (i < alloc_rec_n) : (i += 1) {
+        const r = alloc_recs[i];
+        if (addr >= r.ptr and addr < r.ptr + r.len) return true;
+    }
+    return false;
+}
+
 pub fn canaryScan() void {
     const base = canary_base;
     if (base == 0) return;
@@ -1261,6 +1283,8 @@ pub fn canaryScan() void {
     var i: usize = 0;
     while (i < bt_arena.buf.len / 4) : (i += 1) {
         const w: *volatile u32 = @ptrFromInt(base + i * 4);
+        const addr = base + i * 4;
+        if (inAlloc(addr) or (i * 4) < 16) continue;
         if (w.* != @as(u32, @truncate(i * 4 +| 0xCAFE_0000))) {
             if (canary_bad_words == 0) {
                 canary_first_off = i * 4;
