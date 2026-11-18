@@ -309,11 +309,40 @@ pub fn disableInterrupts() void {
 // 给组件用的 MMIO 读写（`bt-blobs` 的时钟门控要用；组件不能直接 `import board` 里的私有函数）
 // ---------------------------------------------------------------------------
 
+/// **归档的 modem 寄存器访问环**：静默记录最后 16 次（读/写、地址、值），只在 panic 时由 trap 打出。
+/// 归档 init 走到哪、死前在碰哪个寄存器，这比 PC 更直接。写入只是几次普通 store：不打印、不阻塞。
+pub const MmioRec = extern struct {
+    kind: u32 = 0, // 0 = read, 1 = write
+    addr: u32 = 0,
+    val: u32 = 0,
+};
+pub var mmio_ring: [16]MmioRec = @splat(.{});
+pub var mmio_ring_next: u32 = 0;
+
+fn mmioRecord(kind: u32, addr: usize, val: u32) void {
+    const i = mmio_ring_next % mmio_ring.len;
+    mmio_ring[i] = .{ .kind = kind, .addr = @truncate(addr), .val = val };
+    mmio_ring_next +%= 1;
+}
+
+/// 按发生顺序导出最近的记录（最多 out.len 条）。
+pub fn mmioHistory(out: []MmioRec) usize {
+    const n = @min(@as(u32, @intCast(out.len)), mmio_ring_next);
+    var k: u32 = 0;
+    while (k < n) : (k += 1) {
+        out[k] = mmio_ring[(mmio_ring_next + mmio_ring.len - n + k) % mmio_ring.len];
+    }
+    return n;
+}
+
 pub export fn bt_mmio_read(addr: usize) u32 {
-    return readReg(addr);
+    const v = readReg(addr);
+    mmioRecord(0, addr, v);
+    return v;
 }
 
 pub export fn bt_mmio_write(addr: usize, val: u32) void {
+    mmioRecord(1, addr, val);
     writeReg(addr, val);
 }
 

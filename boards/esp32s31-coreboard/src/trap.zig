@@ -407,6 +407,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         log.line("panic: ctx[0]=0x{x} ctx[1]=0x{x} ctx[2]=0x{x} ctx[3]=0x{x}", .{
             w[0], w[1], w[2], w[3],
         });
+        // 归档最近碰过的 modem 寄存器（`bt_mmio_*` 静默记录）：死前在操作哪个寄存器，
+        // 往往比 PC 更能说明"它以为自己在做什么"。
+        var hist: [12]hw.MmioRec = @splat(.{});
+        const hn = hw.mmioHistory(&hist);
+        var k: usize = 0;
+        while (k < hn) : (k += 1) {
+            log.line("panic: mmio[{d}] {s} 0x{x:0>8} = 0x{x:0>8}", .{
+                k, if (hist[k].kind == 0) "R" else "W", hist[k].addr, hist[k].val,
+            });
+        }
     }
     log.raw("panic: halted (wfi)\n");
     hw.halt();
