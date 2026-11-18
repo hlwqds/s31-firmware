@@ -14584,3 +14584,74 @@ osal.logPublic("bt probe: arena free={d} B", .{af});
 | 撤回 | 58 |
 | 数据源错误 | 22 类 |
 | 自我纠正 | **186** |
+
+## 🎯 最终收窄：`INITED` 出现，`init ok` 不出现 ⇒ 窗口 = **一个函数调用**
+
+### 本轮实测（`pc1bf.log`）
+
+| 行 | 次数 |
+| --- | --- |
+| `bt bringup: INITED` | **1** ✅ |
+| `bt probe: init ok 0` | **0** ❌ |
+| `bt probe: arena free=…` | 0 |
+| `!! mepc=… step=15 hci_transport_init` | ✅ |
+
+### 因此
+
+```text
+osal.logPublic("bt bringup: INITED", .{});   ← 已打印（init 的最后一行）
+return 0;
+…
+osal.logPublic("bt probe: init ok {d}", .{0});   ← **未打印**
+```
+
+⇒ 崩溃发生在 **`INITED` 之后、那条 `logPublic` 之前/之中**。
+
+⇒ **窗口缩到一行**：从 `init()` 的 `return 0` 到调用者的第一条 `logPublic`。
+
+### 这排除了什么
+
+| 候选 | 状态 |
+| --- | --- |
+| `osal.arenaFree()` | ❌ **排除** —— 它在 `init ok` **之后**，更晚 |
+| `bringup.enable()` 链 | ❌ 排除 —— 更晚 |
+| `btdmLpReset` | ❌ 排除 —— 更晚 |
+| **`init()` 的返回 + 调用者的第一次 `logPublic`** | ✅ **仅剩** |
+
+### 唯一剩下的可能
+
+`logPublic` 路径本身在此刻**调用了什么**？
+
+`logPublic` → `hooks.log` → `logHook`（`probe.zig`）→ 写 FIFO **或** `s31_bt_log_hook`。
+
+⇒ 若 `logHook` 在这个时机**解引用了未初始化/已释放的东西** ⇒ 跳到垃圾地址 ⇒
+**与"地址随机"完全吻合**。
+
+### 下一步（一次读数）
+
+在 `logHook` 里加 `board.trap.diag_a` 标记：
+
+```zig
+fn logHook(msg: []const u8) void {
+    board.trap.diag_a = 1;          // 进入钩子
+    board.trap.recordLogCaller(@returnAddress());
+    board.trap.diag_a = 2;          // 通过 recordLogCaller
+    …
+    board.trap.diag_a = 3;          // 通过前缀判断
+}
+```
+
+⇒ `!! mepc=…` 行加上 `diag_a={d}` ⇒ **崩溃点立刻可见**。
+
+## 本会话最终总计（锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证** |
+| **里程碑：init 完成** | ✅ `INITED` 已打印 |
+| **新故障窗口** | **`INITED` 之后的第一条 `logPublic`（一行）** |
+| 头号嫌疑 | `logHook` 路径 |
+| 代码修复 | 28 |
+| 撤回 | 58 |
+| 数据源错误 | 22 类 |
+| 自我纠正 | **188** |

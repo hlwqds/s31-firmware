@@ -539,7 +539,9 @@ pub fn run() noreturn {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
     }
-    osal.logPublic("bt probe: init ok, arena free={d} B", .{osal.arenaFree()});
+    osal.logPublic("bt probe: init ok {d}", .{0});   // 先打，不碰 arena
+    const af = osal.arenaFree();
+    osal.logPublic("bt probe: arena free={d} B", .{af});
 
     // 3) enable 链（6 步）
     rc = bringup.enable();
