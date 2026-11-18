@@ -166,7 +166,9 @@ fn dumpBootState() void {
         var i: usize = 0;
         while (i < w.n) : (i += 1) {
             const v = (@as(*volatile u32, @ptrFromInt(w.base + i * 4))).*;
-            if (v != 0) osal.logLine("bt bringup: BOOTSTATE {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
+            // **零值也要打**：boot 层差异恰恰是"我们=0、oracle≠0"的那批，
+            // 之前 `if (v != 0)` 把它们全藏了起来。
+            osal.logLine("bt bringup: BOOTSTATE {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
         }
     }
 
