@@ -10317,3 +10317,50 @@ M5   76 0x2f01aef8
 | `panic: anchor[i]` | ❌ 基址错误，待修 |
 | `panic: osalcaller[i]` | ✅ 有效（`caller_ring` 保序，已验证与早前序列一致）|
 | PC 采样 `S…` | ⚠ 打印路径可能被丢弃（见上节）|
+
+## ✅ 仪器修复 ①：dump 改走**阻塞写**，42 行完整落盘（2026-11-19）
+
+### 改动
+
+`probe.zig` 新增 `dumpLine()`（格式化后走 `board.hw.rawLineBlocking`），
+并把 `dumpAtPend()` 内全部 6 处 `board.log.line(` 替换为 `dumpLine(`。
+
+```zig
+fn dumpLine(comptime fmt: []const u8, args: anytype) void {
+    var buf: [200:0]u8 = undefined;
+    const text = std.fmt.bufPrint(buf[0..198], fmt, args) catch return;
+    buf[text.len] = '\n';
+    buf[text.len + 1] = 0;
+    board.hw.rawLineBlocking(buf[0 .. text.len + 1 :0]);
+}
+```
+
+### 验证
+
+| 项 | 修复前 | 修复后 |
+| --- | --- | --- |
+| dump 行数 | 部分（长行被丢）| **42 行** |
+| `osalcaller[i]` | 不全 | **`[0]`–`[11]` 全部存在** |
+| `anchor[i]` | 不全 | **`[0]`–`[10]` 全部存在** |
+
+⇒ **`dumpAtPend` 的输出现在完整、可信。**
+
+### 这是本会话**第三个**真实修复
+
+| # | 修复 | 效果 |
+| --- | --- | --- |
+| 1 | `rawWrite` 整行预留 | 普通日志行不再被截断 |
+| 2 | 定时器重装移到分发前 | （采样行仍需接线，见下）|
+| 3 | **`dumpLine` → `rawLineBlocking`** | **dump 的 42 行完整落盘** |
+
+### 仍待处理
+
+| 项 | 状态 |
+| --- | --- |
+| PC 采样行（`^S`）| 仍在 trap 的 DUMP 路径（`irq_count >= 30000`）⇒ 可能未触发 |
+| `panic: anchor[]` 基址 | 仍读错区域（应查 `dumpAnchors` 的基址来源）|
+
+### 下一步
+
+把 48 条 PC 采样打印也改用 `dumpLine` 并**挪进回调**（`on_event_init`/`on_eventq_init`），
+即可获得停滞期的完整 PC 分布 —— 这是本案唯一还未拿到的关键观测。

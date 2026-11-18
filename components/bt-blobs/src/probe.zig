@@ -153,21 +153,31 @@ pub fn ringPush(msg: []const u8) void {
 /// ISR 侧调用：吐出第 `idx` 条（0 = 最新），返回切片。
 /// 事件触发导出：打 PC 采样 + 计数器，然后停机。
 var dump_done: bool = false;
+
+/// dump 专用：格式化后走**阻塞写**（肯等到 FIFO 有空位），避免长行被丢。
+fn dumpLine(comptime fmt: []const u8, args: anytype) void {
+    var buf: [200:0]u8 = undefined;
+    const text = std.fmt.bufPrint(buf[0..198], fmt, args) catch return;
+    buf[text.len] = '\n';
+    buf[text.len + 1] = 0;
+    board.hw.rawLineBlocking(buf[0 .. text.len + 1 :0]);
+}
+
 fn dumpAtPend() void {
     if (dump_done) return;
-    board.log.line("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
+    dumpLine("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
     osal.canaryScan();
 
     osal.arenaWalk();
-    { var mi: u32 = 0; while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) board.log.line("M{d} {d} 0x{x}", .{mi, osal.mc_sizes[mi], osal.mc_rets[mi]}); }
-    board.log.line("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
-    board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
+    { var mi: u32 = 0; while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) dumpLine("M{d} {d} 0x{x}", .{mi, osal.mc_sizes[mi], osal.mc_rets[mi]}); }
+    dumpLine("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
+    dumpLine("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
     // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
-    board.log.line("D{d}.{d}", .{ log_hook_calls, osal.caller_n });
+    dumpLine("D{d}.{d}", .{ log_hook_calls, osal.caller_n });
     var mi: u32 = 0;
     while (mi < 3) : (mi += 1) {
         const m = ringAt(mi);
-        if (m.len > 0) board.log.line("M{s}", .{m[0..@min(m.len, 24)]});
+        if (m.len > 0) dumpLine("M{s}", .{m[0..@min(m.len, 24)]});
     }
     dump_done = true;
 }
