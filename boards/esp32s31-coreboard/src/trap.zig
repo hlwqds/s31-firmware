@@ -199,7 +199,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 由此可以给"它在等哪个外设"点名。
             // ctx[15]/使能位随时间变化：用于判断 b15 是在**进入 deinit 之前**还是之后翻的。
             const ctx15 = @as([*]volatile u8, @ptrFromInt(0x2f013d30))[15];
-            if (!sample_quiet) log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
+            if (!sample_quiet and (irq_count % 256 == 0)) log.line("irq-sample#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
