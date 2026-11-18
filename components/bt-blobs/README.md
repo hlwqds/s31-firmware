@@ -3908,3 +3908,34 @@ s256.0.2.1                                        <- 心跳仍在
 2. 若确认停在 `initPhy()`：在 `btdmLpEnableClock` 里先补
    `SOC_PLL_SOURCE_CG (0x2058_71E0←0x3d)` 与 CLK_CONF1 的 FE_* 位、以及 `I2C_ANA_MST`
    （材料见上一节，**不要**照抄 wifi 的 `LPCON+0x18←0x1`），再测。
+
+## 锚点在 `WITH_PHY=1` 版里仍连续（已用符号表核实）
+
+```
+2f010ee0 r_sym_bt_pSy5…   <- anchor[0]
+2f010ee4 r_sym_bt_WDq2…
+2f010ee8 r_sym_bt_YnZm…
+...
+2f010f04 r_sym_bt_y5Di…   <- anchor[9]
+```
+
+⇒ **10 个槽仍是 `base + 4i` 连续排布**（间距恰好 4），所以 `base+4i` 的模型正确，
+只要 base 用符号地址（已修）。
+
+⇒ 之前 `anchors[]` 里 `anchor[0]=2f010ee0` 后面跟着 `696e6170`/`6c203a63` 这类 ASCII，
+**不是"读到了别的结构"，而是那些槽里的内容本身就是这些值** —— 即
+**`WITH_PHY=1` 版里 anchor[1..9] 里是加载镜像带来的非零垃圾**（默认版里它们是 0）。
+
+这一点对判读很重要：**"锚点非零"不能直接当成"已被发布"**，必须先确认它指向合法的堆对象；
+在 `WITH_PHY=1` 版里，非零值多半是镜像残留数据，会让归档的 `if (anchor != 0)` 守卫误判。
+
+### 下一步建议（策略层面）
+
+**绕开 IDF 的 `esp_phy_enable(2)`，改为自己复刻那几步**（wifi 侧已验证可行）：
+
+`phy_get_romfunc_addr()` 填表 → 置 ICG/CLK_CONF1 与模拟前端时钟（含 `I2C_ANA_MST`）
+→ `phy_modem_enable_set(1)` → `set_bb_wdg(...)` → **首次 `register_chipv7_phy`**
+（用 `phy_init_data.zig` 的 128 B 表，`PHY_RF_CAL_FULL=2`）→ 重申 CLK_CONF1 与 FORCE_ON。
+
+参考实现：`osi_impl.zig:1082-1106`（完整顺序）+ `init_probe.zig:78-89`（`phyEnableHook`）。
+判据不变：那行 "PHY enabled" 是否打印，以及随后能否读 `0x2010B000`。
