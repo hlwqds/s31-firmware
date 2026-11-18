@@ -4374,3 +4374,31 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 3. 判据：`AAAAAAAA` 消失，或日志里出现校准完成的迹象。
 
 **注意**：`abort` 的 8 字节标记应保留 —— 它是当前唯一能区分"到达 abort"与"卡在别处"的信号。
+
+## ⚠️ 更正：`esp_phy_get_init_data` **不会失败**，NVS 供给是多余的一步（2026-11-19）
+
+反汇编（`0x40000414`，**size = 10**）：
+
+```asm
+40000414: <prologue>
+40000418: addi a0,a0,-17     # a0 <- 0x40104fef <phy_init_data>   （静态表，就在镜像里）
+4000041c: c.jr ra            # 直接返回
+4000041e <esp_phy_release_init_data>: c.jr ra   # 空实现
+```
+
+⇒ `esp_phy_get_init_data()` 是**返回静态表地址的 thunk**，返回值恒非 0 ⇒ **不可能触发
+"failed to obtain PHY init data"**。
+
+⇒ 我先前把 `0x40000432` 起的 `nvs_open` 段落误当成它的函数体 —— **那属于下一个函数**
+（`0x40000432+`），因为它 `size=10` 只覆盖 `0x40000414..0x4000041e`。
+
+⇒ 因此**上一轮改的 NVS 语义（`nvs_open` 成功 + 128 B blob）不是根因的修复**，
+保留无害（对校准数据路径仍可能有用），但**不解决 abort**。
+
+### abort 的真实候选因此收窄为一条
+
+`esp_phy_load_cal_and_init` 里唯一的另一处 `ESP_ERROR_CHECK` 是
+**"failed to allocate memory for RF calibration"** ⇒ **`calloc` 返回了 NULL**。
+
+**下一步（离线即可量出）**：看 `0x400005b8` 那次 `calloc` 的**实参**（`0x400005a4..0x400005b8` 的
+`li a0,N` / `li a1,M`），即可知道 RF 校准缓冲要多大；再对照我们的堆上限决定"扩堆"还是"给专用池"。
