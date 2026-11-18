@@ -182,8 +182,14 @@ const Slot = struct {
 ### 6.2 线程层（已完成 2026-11-18）
 
 `thread.zig`（11 项用例）：线程体跑完不能返回 —— trampoline 记返回值、置 `done`、
-`sem_post` 唤醒 joiner，然后 `sched.block()` 永不返回；这个顺序安全的前提正是 `sched`
-不回收任务槽（没人会再 resume 那个退出的任务，它的栈复用后不会有帧在跑）。
+`sem_post` 唤醒 joiner，然后 `sched.block()` 永不返回。
+
+**安全性别归因错**：`sem_post` 会立刻切给 joiner，joiner 一步步就 `retireSlot()` 了，
+同一个 8 KiB 栈可能马上被新线程拿走，而垂死任务的活帧还在上面 —— 之所以无害，是因为
+**退出的任务永不再被 resume**（那些帧不会执行，被覆写也无妨）。结构性保证来自 `sched`
+不回收任务槽：没人持有它的 `Context`。哪天 `sched` 加了槽回收，这个论证就失效。
+回收点也不同：join 路径在 joiner 的栈上回收；detach 路径在**垂死任务自己的栈上**由
+`complete()` 回收，随后才落进 `block()`。
 
 主机用例覆盖槽位分配/回收、重复 join、detach、`self` 在主上下文返回 `null`，
 走的是 trampoline 收尾的**同一段** `complete()`，不是替身。

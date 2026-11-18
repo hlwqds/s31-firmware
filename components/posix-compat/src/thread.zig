@@ -15,9 +15,20 @@
 //! 没有可用的上下文销毁原语，所以线程体执行完毕后**不能返回**：trampoline 记下返回值、
 //! 置 `done`、`sem_release` 唤醒 joiner，然后 `sched.block()` 永不返回。
 //!
-//! 这个顺序是安全的，理由恰好来自上面那条硬边界：`resumeTask` 会把控制权交给 joiner，
-//! 而退出的任务**永远不会被再次 resume**（没人持有它的 Context，sched 也不回收槽），
-//! 所以它那份栈在被复用时不会再有帧在跑。
+//! 这个顺序**不是**"栈不会被复用"：`sem_post` → `semRelease` → `resumeTask(joiner)`
+//! 会立刻把控制权交给 joiner，joiner 在 `pthread_join` 里就 `retireSlot()` 了，
+//! 于是同一个 8 KiB 栈可能马上被新的 `pthread_create` 拿走 —— 而退出的任务**还有活帧**
+//! 留在那上面。
+//!
+//! 安全的真正理由是：**退出的任务永远不会被再次 resume**。那些帧只是一段不会被执行的
+//! 内存，被新线程覆写也无所谓。结构上这一点由上面那条硬边界保证 —— `sched` 不回收任务槽，
+//! 没人拿到它的 `Context`，也就没人能 resume 它。（反过来说，哪天 `sched` 加了
+//! `taskDelete`/槽回收，这条论证立刻失效，必须先重做退出协议。）
+//!
+//! 谁在哪一层回收槽：
+//! - **join 路径**：joiner 在切回来之后调 `retireSlot()`（跑在 joiner 自己的栈上）；
+//! - **detach 路径**：`complete()` 在**垂死任务自己的栈上**先 `retireSlot()` 再返回，
+//!   随后 trampoline 落进 `sched.block()` 不再碰这个槽。
 //!
 //! # 主机上能测什么
 //!
