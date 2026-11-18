@@ -8862,3 +8862,40 @@ osal> eventInit
 
 `wr_btdm_osal_event_init` 的包装里有**无条件** `logLine("bt hook: event_init")`（`osal.zig:962`）
 ⇒ grep 捕获日志中该行的条数，应正好为 **2**，可与环的条数互验。
+
+## 接线约束：`caller_ring` 的 dump 需要经 bt-blobs（2026-11-19）
+
+尝试在 `boards/esp32s31-coreboard/src/trap.zig` 的 one-shot 里直接读 `osal.caller_ring`：
+
+```
+error: no module named 'osal' available within module 'board'
+```
+
+⇒ **`board` 模块无法 import `osal`**（模块依赖方向是 `bt-blobs → board`，不是反向）。
+
+### 正确接线方式
+
+`probe.zig:562-567` 已有现成实现（在 panic 路径 `probe_dump_now` 里）：
+
+```zig
+const n = @min(osal.caller_n, 12);
+while (i < n) : (i += 1) {
+    const idx = (osal.caller_n +% osal.caller_ring.len - n + i) % osal.caller_ring.len;
+    board.log.line("panic: osalcaller[{d}]=0x{x:0>8}", .{ i, osal.caller_ring[idx] });
+}
+```
+
+⇒ 要在 step 6 停滞点 dump，有两条路：
+
+| 方式 | 做法 |
+| --- | --- |
+| **A（推荐）** | 在 `probe.zig` 里加一个 `pub fn dumpCallers()`，由 `trap.zig` 通过**回调钩子**触发（`board` 已有钩子机制：`board.trap.probe_stop_at_tick` 等）|
+| B | 直接调 `probe_dump_now()`（它会随 panic 一起导出全部计数与锚点，但会 halt）|
+
+⇒ 方式 A 需要一个新的跨层钩子（`board → bt-blobs` 回调），**本会话未做**（避免在上下文枯竭时做跨文件改动）。
+
+### 一句话交接
+
+`caller_ring` **已经在记录**（每个 `wr_btdm_osal_*` 包装入口都 `noteCaller()`），
+只差一个**从 bt-blobs 侧启动的 dump 触发点**；拿到后可配合 `nm app.elf` 直接命名
+"停滞前最后到达的归档函数"。
