@@ -8618,3 +8618,41 @@ rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) e
 2. **或**让 bringup 不直接调用它，改为在**任务上下文**里调用。
 
 ⇒ 需要先看 IDF 的 `btdm_task_init` 在 `esp_bt_controller_init` 路径里是**被创建为任务**还是**被直接调用**。
+
+## 🎯 轨迹精确匹配到 **`r_btdm_task_enable`** 的 `mutex_pend(FOREVER)`（2026-11-19）
+
+`libbtdm_common.a:21.o` 的 `r_btdm_task_enable` 重定位序列：
+
+| 偏移 | 调用 |
+| --- | --- |
+| `0x14` | `wr_btdm_osal_get_time_forever` |
+| **`0x22`** | **`wr_btdm_osal_mutex_pend`** ← **实测轨迹 `mutexPend tmo=4294`** |
+| `0x3a` | `r_sym_bt_3DcjgYC1ikQrP7jNyXGR` |
+| `0x4c` | `wr_btdm_osal_mutex_release` |
+| `0x54` | `r_btdm_task_disable` |
+
+⇒ `get_time_forever` 紧跟 `mutex_pend` = **拿"永远"当超时去 pend 一个互斥量**
+= 实测轨迹的 `mutexPend tmo=4294`（`4294` 是"永远"的编码值）。
+
+### 结论
+
+**停滞 = `mutex_pend(FOREVER)` 等一个永不释放的互斥量。**
+
+之后有 `eventInit ×2` 与 `event_run` —— 与 `r_btdm_task_init` 的循环体吻合，
+说明**顺序**是：`r_btdm_task_enable`（pend 互斥量）→ `r_btdm_task_init`（事件循环）。
+
+### 因此挂因是"互斥量从未被释放"
+
+| 可能 | 检查 |
+| --- | --- |
+| `mutex_init` 后互斥量处于**已锁定**状态（初始计数 0）| 看我们 `wr_btdm_osal_mutex_init` 的实现：是否把可用计数初始化为 **1** |
+| 另一线程本应 `mutex_release` 但那份代码没跑 | 需要任务存在 ⇒ 与 `taskCreate 0 次` 的硬事实呼应 |
+
+⇒ **最可能是我们的 `mutex_init` 语义错**（POSIX 互斥量初始化后是**可用**的，
+而"二进制信号量"型实现可能初始化为**不可用**）。
+
+### 下一步（一行代码级别）
+
+检查 `osal` 层 `wr_btdm_osal_mutex_init` 的实现：
+- 若它把计数初始化为 **0** ⇒ 第一次 `mutex_pend` 必然永久阻塞 ⇒ **这就是根因**；
+- 修法：初始化为 **1**（可用）。
