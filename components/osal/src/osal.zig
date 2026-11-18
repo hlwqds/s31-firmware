@@ -1157,6 +1157,10 @@ pub const Arena = struct {
         const hdr: *BlockHeader = @ptrFromInt(start);
         hdr.* = .{ .size = total, .free = true };
         self.initialized = true;
+        // 判据：初始化瞬间的 magic 低字节（应为 headerMagic 的低字节）
+        putByte('i');
+        putByte("0123456789abcdef"[((hdr.magic >> 4) & 0xF)]);
+        putByte("0123456789abcdef"[hdr.magic & 0xF]);
     }
 
     fn headerOf(ptr: *anyopaque) *BlockHeader {
