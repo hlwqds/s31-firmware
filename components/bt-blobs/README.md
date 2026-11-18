@@ -7739,3 +7739,28 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 ⇒ 找调用者只剩两条路：
 1. 停滞时读**栈上返回地址**（`*(sp+12)`，该函数序言 `sw ra,12(sp)`）—— 一次读数；
 2. 全量 dump ROM 搜 `jal 0x2f80137c` —— 320 KB，经 128 B FIFO 不现实。
+
+## 未定论：`phy_pwdet_reg_init` 是否调 `phy_pwdet_tone_start`（2026-11-19）
+
+`phy_pwdet_reg_init`（thunk `0x2f80136c`）→ 实现 `0x2f82634a`。dump `0x2f826300–0x2f826440`
+后反汇编出现**明显错位**（如 `jalr t1,1147(t1)`）⇒ dump 有缺行/断点，**不能据此下任何结论**。
+
+⇒ 该项**悬置**，不算已证也不算已否。
+
+### 更高价值的未做实验：校准模式
+
+| 路径 | 当前值 | IDF 默认 |
+| --- | --- | --- |
+| `components/wifi-blobs/src/init_probe.zig:86` | `register_phy(..., **2**)`（FULL）| `ESP_PHY_RF_CAL_PARTIAL = **0**`（`components/esp_phy/Kconfig:150`）|
+
+**FULL 才走 PDET/TX tone 那几步**，而 CPU 正坐在 `phy_pwdet_tone_start` 里。
+⇒ 我们可能在跑厂商在这块板上**从不跑**的标定路径；厂商 2433 ms 的 `ESP_OK` 也许只跑了 PARTIAL/NONE。
+
+**实验**：把 `2` 改成 `0`，其余不动，看 init 是否越过 step 6。
+- 越过 ⇒ 挂点在 FULL 路径；再选：(a) 与厂商对齐用 PARTIAL/NONE，(b) 补 FULL 需要的前置（`phy_open_i2c_xpd_new` / `phy_pwdet_sar2_init`）；
+- 仍挂 ⇒ 排除模式差异，回到调用者命名。
+
+### 另一条差异记录
+
+IDF 成功标定后会 `esp_phy_store_cal_data_to_nvs`；我们 NVS 桩恒返 NOT_FOUND
+⇒ **每次都重新标定**，这本身可能就是"反复进入 PDET"的来源之一。

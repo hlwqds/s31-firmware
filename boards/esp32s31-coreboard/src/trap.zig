@@ -224,8 +224,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     log.line("M{x}.{d}.{d}", .{ best, best_n, pc_snap_n });
                 }
                 // ROM 轮询环原文：0x2f828a40 起 160 B
-                var a: usize = 0x2f801200;
-                while (a < 0x2f801700) : (a += 16) {
+                var a: usize = 0x2f826300;
+                while (a < 0x2f826440) : (a += 16) {
                     const w0 = (@as(*volatile u32, @ptrFromInt(a))).*;
                     const w1 = (@as(*volatile u32, @ptrFromInt(a + 4))).*;
                     const w2 = (@as(*volatile u32, @ptrFromInt(a + 8))).*;
