@@ -62,6 +62,17 @@ var table: ?*net_sockets.socket.Table = null;
 var addrs: [max_fds]AddrEntry = @splat(.{});
 
 pub fn init(t: *net_sockets.socket.Table) void {
+    // 换表 ⇒ 之前绑在**旧表**上的就绪钩子不再有效（钩子存在 Table 里，不是存在这里）。
+    // 这里必须把绑定一起清掉：留着 `g_ready_sem` 的话，`acceptBlock` 会睡在一个
+    // 再也没有人 post 的信号量上 —— 任务级挂死，比报错难查得多。
+    // 换表后要阻塞 accept 的话，重新调一次 `enableBlockingAccept`。
+    if (table != t) {
+        g_ready_sem = null;
+        if (table) |old| {
+            old.on_ready = null;
+            old.on_ready_ctx = null;
+        }
+    }
     table = t;
     addrs = @splat(.{});
 }
@@ -319,20 +330,44 @@ pub fn fcntl(fd: c_int, cmd: c_int, arg: c_int) c_int {
 // "连接到了"时把等待者叫醒 —— 那就是 `socket.Table.on_ready`。桥接只需要一次 `sem_post`，
 // 所以这里是全层唯一"生产代码 ↔ 本层"的接缝。
 //
-// ⚠️ 前提：**RX 泵必须跑在与调用者不同的任务里**。本仓的 RX 是同一个任务在
-// `emac.rxPollCopy` 里喂表，若在那个任务里阻塞 `accept`，就没人再喂表 ⇒ 自死锁。
+// ⚠️ 前提（两条，缺一不可）：
+// 1. **RX 泵必须在主上下文里**，`accept` 的调用者必须是**另一个任务**。方向不能反：
+//    `sched.resumeTask` 会把调用者的帧存进 `main_ctx`，从任务里唤醒会破坏主上下文
+//    （见 `onReady` 的注释）。主上下文喂表同时也是唯一天然不阻塞的那个上下文。
+// 2. 因此"在原任务里阻塞 accept"仍然会自死锁 —— 那个任务就是喂表的人。
 // ---------------------------------------------------------------------------
 
 var g_ready_sem: ?*sync.sem_t = null;
 
+/// 从**非主上下文**触发的就绪通知被丢弃的次数（诊断用）。
+/// 之所以要丢：见 `onReady` 的注释 —— 从任务里唤醒会破坏主上下文。
+var g_dropped_notifies: u32 = 0;
+
+pub fn droppedNotifies() u32 {
+    return g_dropped_notifies;
+}
+
 fn onReady(ctx: ?*anyopaque) void {
     const p2 = ctx orelse return;
     const sem: *sync.sem_t = @ptrCast(@alignCast(p2));
+    // ⚠️ **只能在主上下文里唤醒**。`sched.resumeTask` 内部是
+    // `swapContext(&main_ctx, target)`：它把**调用者**那一帧存进 `main_ctx`。
+    // 若从某个任务里唤醒，`main_ctx` 就被换成那个任务的帧，主上下文原样丢失 ——
+    // 之后任务阻塞回来会从 RX 任务的帧继续跑（开机从错的地方接着走）。
+    // 这种破坏比"这次通知丢了"严重得多，所以宁可丢并计数。
+    if (!@import("osal_kit").sched.inMain()) {
+        g_dropped_notifies += 1;
+        return;
+    }
     _ = sync.sem_post(sem);
 }
 
-/// 让 `fd.acceptBlock` 能阻塞：把 `sem` 挂到 socket 表的就绪钩子上。
-/// `sem` 必须比钩子活得久（调用方持有；通常是应用里的静态变量）。
+/// 让 `fd.acceptBlock` 能阻塞：把 `sem` 挂到**当前绑定的** socket 表的就绪钩子上。
+///
+/// 生命周期规则：
+/// - `sem` 必须比钩子活得久（调用方持有，通常是应用里的静态变量）；
+/// - 钩子存在 `Table` 里，`Table.reset()` 会**保留**它（见 `socket.zig`）；
+/// - 但 `fd.init(&另一张表)` 会**清掉**绑定 ⇒ 换表后必须重新调一次本函数。
 pub fn enableBlockingAccept(sem: *sync.sem_t) c_int {
     const t = tbl() orelse return -1;
     g_ready_sem = sem;
@@ -481,6 +516,40 @@ test "fd: 就绪钩子把 socket 层的通知接到信号量上（阻塞 accept 
     try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
     try testing.expectEqual(@as(c_int, 1), v);
     seg.kind = .syn; // 同一段的复用只为让编译器满意
+}
+
+test "fd: 钩子能穿过 Table.reset()，abort 也会通知" {
+    fakeTime();
+    var t: net_sockets.socket.Table = .{};
+    freshTable(&t);
+    defer deinit();
+
+    var sem: sync.sem_t = .{};
+    try testing.expectEqual(@as(c_int, 0), sync.sem_init(&sem, 0, 0));
+    defer _ = sync.sem_destroy(&sem);
+    try testing.expectEqual(@as(c_int, 0), enableBlockingAccept(&sem));
+    defer disableBlockingAccept();
+
+    const lfd = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(lfd >= 0);
+    try testing.expectEqual(@as(c_int, 0), listen(lfd, 1));
+
+    var v: c_int = -1;
+    t.reset(); // 表被清空，但绑定必须还在
+    try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
+    try testing.expectEqual(@as(c_int, 0), v);
+
+    const lfd2 = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(lfd2 >= 0);
+    try testing.expectEqual(@as(c_int, 0), listen(lfd2, 1));
+    const seg: net_sockets.netstub.Segment = .{ .kind = .syn };
+    net_sockets.socket.Table.deliver(&t, @intCast(lfd2), seg);
+    try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
+    try testing.expectEqual(@as(c_int, 1), v); // reset 之后仍然通知得到
+
+    t.abort(@intCast(lfd2)); // 淘汰路径：等待者要被叫醒
+    try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
+    try testing.expectEqual(@as(c_int, 2), v);
 }
 
 test "fd: 没启用阻塞时 acceptBlock 立刻返回（不挂住）" {

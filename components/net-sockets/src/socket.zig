@@ -444,7 +444,14 @@ pub const Table = struct {
     }
 
     pub fn reset(self: *Table) void {
+        // **保留就绪钩子**：`self.* = .{}` 会把 `on_ready`/`on_ready_ctx` 一起抹掉，
+        // 而绑定通常只在初始化时做一次 ⇒ 之后任何一次 reset 都会静默丢掉回调
+        // （"字段存在≠语义存在"那一类）。钩子描述的是"这张表怎么被通知"，不是表的内容。
+        const keep_on = self.on_ready;
+        const keep_ctx = self.on_ready_ctx;
         self.* = .{};
+        self.on_ready = keep_on;
+        self.on_ready_ctx = keep_ctx;
     }
 
     pub fn get(self: *Table, fd: i8) ?*Socket {
@@ -601,6 +608,9 @@ pub const Table = struct {
     /// 立即释放（RST 式）：用于池淘汰与测试清理，不发 FIN、不等 ACK。
     pub fn abort(self: *Table, fd: u8) void {
         self.socks[fd].reset();
+        // 等待者必须被叫醒：它醒来重查会发现 fd 没了（`EBADF`），而不是永远睡着。
+        // 连接池淘汰走的就是 abort —— 那条路径上的等待者最容易一直挂着。
+        self.notify();
     }
 
     /// 指纹：状态、计数器、缓冲长度混在一起。重放同一脚本必须得到同一个值。

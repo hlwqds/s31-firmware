@@ -91,7 +91,7 @@
 | `socket(AF_INET, SOCK_STREAM, 0)` | `fd.socket` → `Table.alloc` + family/type/proto 校验 | ✅ 已完成 |
 | `bind` | `fd.bind` + 本组件的每 fd `sockaddr_in` 表 | ✅ 已完成 |
 | `listen` | `Table.listen` | ● |
-| `accept` | `fd.accept`（非阻塞）/ `fd.acceptBlock`（阻塞） | ✅ 阻塞版靠 `socket.Table.on_ready` + `enableBlockingAccept(sem)`；**前提见下**：RX 泵必须在另一个任务里 |
+| `accept` | `fd.accept`（非阻塞）/ `fd.acceptBlock`（阻塞） | ✅ 阻塞版靠 `socket.Table.on_ready` + `enableBlockingAccept(sem)`；**前提**：RX 泵在主上下文、accepter 在另一个任务 |
 | `connect` | `fd.connect` → `Table.connect` | ✅ 非阻塞返回 `EINPROGRESS`；⏳ 阻塞等待未做 |
 | `send` / `recv` | `Socket.send` / `Socket.recv` | ● 直接映射到 `ssize_t` + `errno` |
 | `sendto` / `recvfrom` / `sendmsg` / `recvmsg` | — | — 只有 TCP，不做 |
@@ -121,7 +121,7 @@
   `cond`（wait / timedwait / signal / broadcast）· `timer`（`pump` 推进到期）·
   `rwlock`（写者优先）· `thread`（create/join/detach/self/exit + `pthread_attr_t`）
 
-暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、阻塞式 `accept`/`connect`（前置见 §6.3）。
+暂不做：`select`/`epoll`、文件 I/O、`gettimeofday`、**阻塞式 `connect`**（阻塞 `accept` 已做，见 §2.4）。
 
 （`sem_timedwait` / `pthread_mutex_timedlock` **已做** —— 靠应用周期性调 `sync.pump()`。）
 
@@ -185,9 +185,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**88 项**
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**89 项**
   （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 88`（与上式之和一致）；
+- `tests/baselines.json` 里 `posix-compat: 89`（与上式之和一致）；
 - **板级**：`section: posix` → 15/15（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
 
 **本组件已进镜像**（2026-11-18）：`firmware/build.zig` 里登记为 section `posix`（group `net`），
@@ -242,7 +242,8 @@ worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走�
 | --- | --- | --- |
 | ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`；`wake` 统一注入在 `sync.bindHooks` | — |
 | ~~多等待者 / 与 BLE 共用静态池~~ | ✅ 已解除：`sync.zig` 自持计数 + FIFO 队列，不再用 `osal.Sem` 的槽位 | — |
-| 阻塞式 `accept`/`connect` | 两个硬前提（**先满足才有意义**）：① RX 泵与调用者必须是**不同任务** —— 本仓的 RX 就是调用者那个任务在 `emac.rxPollCopy` 里喂 `Table`，阻塞 `accept` 会把喂它的那个任务停住 ⇒ 自死锁；② `Table` **没有通知路径**，没人告诉等待者"连接到了"，需要 socket 层加钩子（动生产代码），否则只能退化成"轮询+睡眠"，那不是阻塞 | 判断依据见 `waitq` 的落点原则 |
+| ~~阻塞式 `accept`~~ | ✅ 已完成：`fd.acceptBlock` + `socket.Table.on_ready`（`deliver`/`close`/`abort` 触发）。**两条运行前提**：① RX 泵在**主上下文**、accepter 在**另一个任务**（方向不能反：`resumeTask` 存的是调用者帧）；② 先 `fd.enableBlockingAccept(&sem)`，换表后要重绑 | — |
+| 阻塞式 `connect` | 需要『到 ESTABLISHED』的通知 —— 同一个 `on_ready` 钩子能做，但要能区分『连上了』与『有数据了』 | 未做 |
 | ~~`sem_timedwait` / `mutex_timedlock`~~ | ✅ 已完成：`timer.zig`（侵入式到期链表）+ `sync.pump()`。**契约**：应用每个 tick 调一次 `pump()`，否则定时等待永不到期；未绑时钟钩子则 `ENOSYS` | — |
 | ~~`pthread_rwlock_*`~~ | ✅ 已完成：**写者优先**（有写者排队时新读者不许进，否则持续读者会让写者饿死）。无超时变体 | — |
 | ~~每 Task `errno`~~ | ✅ 已完成：`errno.Table` 按 `sched` 上下文分槽（8 槽，表满退回 0 号槽并计 `overflows`） | — |
@@ -265,7 +266,7 @@ worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走�
 **队列的生命周期规则**（写进 `waitq.zig` 头，是唯一容易出错的地方）：节点由等待者在栈上分配
 ⇒ 唤醒方 `pop()` 必须**先摘链清 `linked` 再 `resumeTask`**；等待者只在 `linked == true` 时
 继续 `block()`（虚假唤醒不会留毒节点）；超时/取消走 `remove()` 自摘链。
-**仍未做**：阻塞式 `accept`/`connect`、`select`/`epoll`、`fork`/`waitpid`、文件 I/O
+**仍未做**：阻塞式 `connect`、`select`/`epoll`、`fork`/`waitpid`、文件 I/O
 （各自前置见 §6.3）。
 
 ✅ **搬运所需的门禁已就绪（2026-11-18）**：`scripts/check-bt-link.sh` —— 生成闭包 → 用闭包链接
