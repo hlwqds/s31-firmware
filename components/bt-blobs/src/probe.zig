@@ -116,6 +116,8 @@ pub fn ringPush(msg: []const u8) void {
 var dump_done: bool = false;
 fn dumpAtPend() void {
     if (dump_done) return;
+    osal.canaryScan();
+    board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
     // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
     board.log.line("D{d}.{d}", .{ log_hook_calls, osal.caller_n });
     var mi: u32 = 0;
