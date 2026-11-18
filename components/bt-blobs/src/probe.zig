@@ -323,7 +323,7 @@ pub fn run() noreturn {
 
 /// 打印 PC 采样：卡住时这是"它在哪转"的唯一线索。
 fn dumpPcs() void {
-    var pcs: [8]u32 = @splat(0);
+    var pcs: [48]u32 = @splat(0);
     const n = board.trap.samplePcs(&pcs);
     osal.logPublic("bt probe: pc samples n={d} total={d}", .{ n, board.trap.pcSampleCount() });
     var i: usize = 0;

@@ -2124,3 +2124,25 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 
 **结论**：这四个外围仪器共同把问题**框到了"task_init 内部、任何外部可见行为之前"**，
 再往里需要**指令级**手段（JTAG 写监视点），属于另一类工具。
+
+### 静默高频采样窗口：已建成，但**必须同时静音我们自己的日志**（2026-11-18）
+
+本轮给采样器加了三件东西（都在 `trap.zig`/`bringup.zig`）：
+
+1. `pc_ring` 从 8 扩到 **48**，`samplePcs` 相应改签名；
+2. `trap.sample_quiet` 开关：为真时 IRQ **只记环不打印**（本板 UART FIFO 停在 128，打印既慢又扰动）；
+3. `trap.resetPcs()` + panic 路径导出 PC 环（`panic: pc[i]=…`）。
+
+窗口的接法是：`enter(6, …)` **先打印**（否则采样全落在 print 的 UART 自旋里）→ `resetPcs()` →
+`sample_quiet = true` → `armT0Interrupt(100)`（100 µs）→ 进归档 init。
+另外 `armT0Interrupt` 会**整字重写 CLIC 控制字**、清掉 probe 给 T0 设的 `nmies`(bit3)
+⇒ 窗口里要把它补回去：`reg = (reg & 0x107) | (1<<3)`（`0x10801000 + 25*4`）。
+
+**实测结果（`logs/bt-probe-pcs.log`）：48 条采样仍然全落在 `probe.logHook`** ——
+`addr2line` 确认是 `components/bt-blobs/src/probe.zig:111` 的 UART 等待循环。
+
+原因不是窗口没开，而是**窗口里我们还在打印**：归档一取到互斥锁，`gate` 钩子就打出 15 行锚点表，
+每行都走 `logHook` 的 UART 自旋，把这 100 µs 的采样槽全占了。
+
+⇒ **下一次要做的**：窗口里把 `Hooks.on_mutex_acquired` 一并清掉（现在 `probe.zig` 是唯一设置它的地方，
+需要一个 `osal.clearMutexHook()` 之类的入口），再跑同一个窗口。届时采样才可能落在归档代码上。

@@ -21,6 +21,7 @@
 //! controller 侧的 `_malloc`/`_free`/`_os_random`/`_osi_assert`，跳过就等于 controller 没有分配器，
 //! `r_ble_controller_init` 必然失败。ECC 三项照 IDF 在 SM 未开时那样给返回 -1 的桩。
 const std = @import("std");
+const board = @import("board");
 const builtin = @import("builtin");
 const osal = @import("osal_kit").osal;
 const config = @import("config.zig");
@@ -207,7 +208,21 @@ pub fn init(cfg: *config.Config) c_int {
         osal.logPublic("bt probe: BT_BLOCK_PROBE reading 0x2010B000 ...", .{});
         osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_B000))).*});
     }
-    enter(6, "r_btdm_task_init");
+    // **静默高频采样窗口**：step 6 里归档不打印，而我们自己的打印会占满采样
+    //（本板 TX FIFO 停在 128）⇒ 先静默、把 T0 提到 ~100 µs，只把 PC 记进环。
+    enter(6, "r_btdm_task_init"); // 先打印（否则采样会全落在我们自己的 UART 等待里）
+    // 窗口内还要**撤掉 gate 钩子**：归档取到互斥锁时它会打 15 行锚点表，每行都走 UART 自旋，
+    // 采样会全部落在 `probe.logHook` 上（实测 48 条全是它）。
+    board.trap.resetPcs(); // 只保留本窗口的采样
+    board.trap.sample_quiet = true;
+    board.hw.armT0Interrupt(100);
+    // ⚠️ `armT0Interrupt` 会把 CLIC 控制字整字重写（`(1<<24)|(1<<8)`），**清掉** probe.zig
+    // 给 T0 设的 `nmies`(bit3) ⇒ NMI 采样在 step 6 期间根本不触发（实测：48 条采样全落在
+    // 我们自己的 `logHook`，没有一条在归档里）。这里把 nmies 补回去。
+    {
+        const reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
+        reg.* = (reg.* & 0x107) | (1 << 3);
+    }
     {
         const pp = @import("probe_ptr.zig");
         if (@import("probe.zig").populate_workaround and pp.get() == 0) {

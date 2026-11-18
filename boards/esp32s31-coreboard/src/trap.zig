@@ -199,7 +199,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 由此可以给"它在等哪个外设"点名。
             // ctx[15]/使能位随时间变化：用于判断 b15 是在**进入 deinit 之前**还是之后翻的。
             const ctx15 = @as([*]volatile u8, @ptrFromInt(0x2f013d30))[15];
-            log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
+            if (!sample_quiet) log.line("irq-sample #{d} input={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
@@ -409,6 +409,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         });
         // 归档最近碰过的 modem 寄存器（`bt_mmio_*` 静默记录）：死前在操作哪个寄存器，
         // 往往比 PC 更能说明"它以为自己在做什么"。
+        // 静默采样窗口里记下的 PC（高频、不打印）：崩溃前归档在哪个函数里跑。
+        var pcs: [48]u32 = @splat(0);
+        const pn = samplePcs(&pcs);
+        var pi: usize = 0;
+        while (pi < pn) : (pi += 1) log.line("panic: pc[{d}]=0x{x:0>8}", .{ pi, pcs[pi] });
         var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;
@@ -427,12 +432,23 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 
 /// PC 采样环（诊断死等用）：`samplePcs()` 把最近几次被中断的 PC 拷出来。
 var s0_probe_count: u32 = 0;
-var pc_ring: [8]u32 = @splat(0);
+var pc_ring: [48]u32 = @splat(0);
 var pc_ring_n: u32 = 0;
 
+/// **静默采样窗口**：为 true 时 IRQ 只记环、不打印。
+/// 用途：在 `r_btdm_task_init` 期间开高频采样，同时避免我们自己的 UART 打印占满 CPU/串口
+/// （本板 TX FIFO 停在 128，打印极慢 —— 之前采样全被我们自己的日志占满就是这个原因）。
+pub var sample_quiet: bool = false;
+
 fn recordPc(pc: usize) void {
-    pc_ring[pc_ring_n % 8] = @intCast(pc & 0xFFFF_FFFF);
+    pc_ring[pc_ring_n % pc_ring.len] = @intCast(pc & 0xFFFF_FFFF);
     pc_ring_n +%= 1;
+}
+
+/// 清空采样环（开新的采样窗口前必须调：否则 dump 出来的是上一个窗口的旧 PC）。
+pub fn resetPcs() void {
+    pc_ring_n = 0;
+    pc_ring = @splat(0);
 }
 
 /// 采样次数（调用方据此判断"中断还在来" ⇒ 是 spin 而不是死机）。
@@ -441,11 +457,11 @@ pub fn pcSampleCount() u32 {
 }
 
 /// 把最近的采样拷进 `out`（按时间顺序），返回拷了几个。
-pub fn samplePcs(out: *[8]u32) usize {
-    const n = @min(pc_ring_n, 8);
+pub fn samplePcs(out: *[48]u32) usize {
+    const n = @min(pc_ring_n, @as(u32, @intCast(out.len)));
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        out[i] = pc_ring[(pc_ring_n +% 8 - n + i) % 8];
+        out[i] = pc_ring[(pc_ring_n +% pc_ring.len - n + i) % pc_ring.len];
     }
     return n;
 }
