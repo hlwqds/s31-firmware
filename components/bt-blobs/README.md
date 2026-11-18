@@ -1874,3 +1874,17 @@ panic: ra=0x4005fa94 a0=0x0
 `beqz` 之后的路径（trap 帧的 mepc 取值点与我的假设不同），要么落在随后 `lw a0,28(a5)` 的下游。
 要一句话说死，需要一份 **linker map**（`-Wl,-Map=`；Zig 0.17 的 `addLinkArgs` 不在 `Module` 上，
 本轮尝试未落地），把 PC→section 对上。
+
+### 假设"任务没跑导致 init 失败"——**已证伪**（2026-11-18）
+
+推论：归档 init 在等它刚创建的任务发就绪信号，而我们调度器只登记不执行 ⇒ 等不到 ⇒ 失败。
+
+两条证据否掉它：
+
+1. **立即抢占已实现**：`osal.taskCreate` 里有 `if (!sched.isStarted()) sched.startScheduler(task);`
+   —— 新任务在创建处直接跑一次，阻塞时回到调用者。所以"只登记不执行"不成立。
+2. **崩溃前没有 `task_create`**：那行日志不受 `trace_hooks` 过滤（前缀不是 `bt hook:`），
+   而 `logs/bt-probe-trace.log` 里**一次都没有** ⇒ 归档在建任务之前就死在 step 6 里。
+
+⇒ 对本崩溃不成立（对**后续**步骤仍是必要条件）。落点仍是：
+`r_btdm_task_init` 在 `mutex_pend => OK` 之后、建任务之前，经 anchor[0]（0）的 trampoline 触发 store to 0。
