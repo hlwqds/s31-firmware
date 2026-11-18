@@ -166,7 +166,15 @@
   `close` 时回调；回调约束是"同步、轻量、只 `sem_post`"。POSIX 侧新增
   `fd.enableBlockingAccept(sem)` / `fd.acceptBlock(fd)`：没连接时睡在就绪信号量上，醒来重试。
   **前置**：RX 泵必须跑在与调用者**不同的任务**里 —— 本仓的 RX 是同一任务在
-  `emac.rxPollCopy` 里喂表，原地阻塞即自死锁。2 项新用例（总计 **88**）。
+  `emac.rxPollCopy` 里喂表，原地阻塞即自死锁。3 项新用例（总计 **89**）。
+  **三处修正**（都来自"字段存在≠语义存在"那一类）：`Table.reset()` 原会 `self.* = .{}`
+  把钩子一起抹掉 ⇒ 改为保留；`abort()` 原不通知 ⇒ 连接池淘汰时等待者会一直挂着；
+  `fd.init(&另一张表)` 原会留下指向旧表的 `g_ready_sem` ⇒ 改为清掉绑定（换表须重绑），
+  否则 `acceptBlock` 会睡在一个再没人 post 的信号量上。
+  **唤醒上下文**：`sched.resumeTask` 内部是 `swapContext(&main_ctx, t)`（存的是**调用者**帧），
+  所以就绪钩子只能从**主上下文**触发 —— 从任务里唤醒会把主上下文换成那个任务的帧。
+  `onReady` 因此加了 `sched.inMain()` 守卫，非主上下文的通知丢弃并计数
+  （`fd.droppedNotifies()`），而不是破坏调度器。
 
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
