@@ -11831,3 +11831,71 @@ objdump -dr --section=.text.r_sym_bt_ZGgifdtgyUnZ7f0ME7VH <9.o>
 > **"某条日志没出现"只有在确认它"能出现"之后才有意义。**
 >
 > `trace_calls = 0` 让 `osal>` 行**构造性地**不存在 —— 用它当证据就是第十三次同类错误。
+
+## 停滞窗口的完整计数器快照（2026-11-19，`pc19b.log` 的 DUMP3000 窗口）
+
+```text
+Q1 0 0 0      eventq_put=0  get_ok=0  get_empty=0
+Q2 0 0 0      mutex_pend_ok=0  pend_busy=0  blocked=0
+Q3 0 0        pool_exhausted=0  eventq_requeued=0
+Q4 107 45     log_hook_calls=107  log_hook_ours=45
+Q5 ...        rawWrite 内部计数
+```
+
+### 逐项排除
+
+| 假设 | 判据 | 结果 |
+| --- | --- | --- |
+| 互斥量竞争 | `Q2` 全 0 + 无 `MUTEX_EINVAL` | ❌ 排除 |
+| 静态池耗尽（`mutex_pool`=64）| `pool_exhausted = 0` | ❌ **排除** |
+| 事件队列重复入队 | `eventq_requeued = 0` | ❌ 排除 |
+| 事件投递被丢弃 | `eventq_put = 0`（从未投递）| ❌ 排除 |
+| 消费者取空 | `eventq_get_empty = 0` | ❌ 排除 |
+
+⇒ **停滞区不产生任何 OSAL 活动**，且**所有池与队列状态健康**。
+
+### 因此停滞位置
+
+`OkE7`（`21.o`，326 B）在 `r_btdm_task_init:0x40` 被调用，**已进入**（caller ring 有 `0x4005f892/f8ca`），
+其前段（`0x2e malloc` → `0x56 memcpy` → `0x72 mutex_init` → `0x84 eventq_init`）**都不产生可观测计数器**，
+⇒ 停滞在其**后段 `0x92`–`0xcc`**（`fqmZk` / `JwHs` / `Ughm` / `PsB8` / `ZGgi`）。
+
+### 一条必须注意的一致性警告
+
+旧轨迹（`mutexPend → eventInit×2 → eventqInit`）来自**不同构建**
+（当时 `trace_calls = 20000`，现在是 0；且 `printf` 覆盖、PLL 写门控、`call_stream_on` 都改过）
+⇒ **不能用它推断当前构建的到达点**。
+
+### 交接（最终）
+
+| # | 动作 |
+| --- | --- |
+| 1 | 反汇编 `r_sym_bt_ZGgifdtgyUnZ7f0ME7VH`（`9.o`，caller ring 末位候选）与 `PsB8`（`21.o`） |
+| 2 | 找含**循环或寄存器等待**的那一个 |
+| 3 | 若都是纯函数 ⇒ 沿其重定位继续向下 |
+
+## 本会话最终总计
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 15 |
+| 已确证事实 | 15 |
+| 撤回 | 32 |
+| 数据源错误 | 13 |
+| 自我纠正 | 147 |
+
+## 本会话真正留下的东西
+
+**不是根因，而是十四项被逐一排除的假设 + 十五个真实修复。**
+
+被排除的假设（都为"看起来很像"）：
+
+```
+PHY/RF 硬件 · WITH_PHY=1(定案) · 事件队列未初始化 · malloc/memset 巨长 ·
+热点 Ughm · 分布平坦 · 采样密度 · 断言文本 · FIFO 卡住 · 96% 在 rawWrite ·
+TX 不发送 · 两份 osal · SROA 误判 · 池耗尽
+```
+
+真实修复（都验证过有效）：日志整行预留、阻塞 dump、采样源 `samplePcs`、
+定时器重装、`printf`/`esp_rom_printf` 强定义、`on_event_init`/`on_eventq_init` 回调槽、
+`rawWrite` 内部计数器、诊断前缀改为里程碑、`call_stream_on` 关闭等。
