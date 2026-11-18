@@ -7636,3 +7636,35 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
    归档若**写过** `0x2010080C`/`0x20100808` ⇒ 软件可改；只有读 ⇒ ROM/硬件置位。
 3. 把我们的 init 调用序列与 IDF `esp_bt_controller_init` 逐项对照，找**第一个**分歧点
    （README 前文的 stepbystep 对照表可直接用）。
+
+## `register_chipv7_phy` 尾段 `0x110–0x1E6` 的完整调用链（2026-11-19，首次解出）
+
+此前只解到 `0x108`，尾段**从未看过**。重定位表给出 23 个 `R_RISCV_CALL`：
+
+| 偏移 | 调用 | 偏移 | 调用 |
+| --- | --- | --- | --- |
+| `0x110` | `phy_open_i2c_xpd_new` | `0x17a` | `phy_freq_i2c_data_write` |
+| `0x114` | `phy_bb_agc_reg_update` | `0x186` | `phy_write_chan_freq` |
+| `0x118` | `phy_pbus_clear_reg` | `0x18e` | `phy_set_pbus_reg` |
+| `0x11a` | `phy_set_chan_freq_hw_init` | `0x196` | `phy_reg_init` |
+| `0x11c` | `phy_reg_update_new` | `0x19e` | `phy_reg_update_new` |
+| `0x122` | `phy_i2c_clk_sel` | `0x1a6` | `phy_bb_agc_reg_update` |
+| `0x124` | `phy_enable_agc` | `0x1b0` | `phy_set_chan_reg` |
+| `0x12a` | `phy_fe_txrx_reset` | `0x1c0` | `phy_set_txcap_reset` |
+| `0x130` | `phy_chip_set_chan` | `0x1cc` | `phy_bb_cbw_chan_cfg` |
+| `0x134` | `phy_adc_rate_set` | `0x1d4` | `phy_enable_agc` |
+| `0x13c` | `phy_i2cmst_reg_init` | `0x1dc` | **`phy_wait_freq_set_busy`** |
+| `0x148` | `phy_freq_reg_init` | `0x1e4` | **`phy_reset_ckgen`** |
+| `0x150` | `phy_fe_reg_init` | `0x134` | `phy_get_temp_init` |
+| `0x158` | `phy_fe_reg_update` | `0x150` | `phy_chip_set_chan_offset` |
+| `0x160` | `phy_pwdet_reg_init` | `0x15c` | `phy_rf_cal_data_backup_new` |
+| `0x168` | `phy_i2c_init2` | `0x164` | `phy_get_rf_cal_version` |
+| `0x174` | **`phy_rfcal_data_check_new`** | `0x184` | **`phy_bbpll_cal`** |
+| `0x194` | `phy_i2c_readReg` | `0x1a2` | `phy_en_hw_set_freq` |
+| `0x1ac` | `phy_force_txrx_off` | `0x1cc` | `phy_rf_cal_data_recovery_new` |
+
+**观察**：`phy_wait_freq_set_busy`（ROM `0x2f8012b0`）是序列里的**具名等待函数**，
+但**我们卡住的环在 `0x2f82647e`** —— 不同地址 ⇒ 卡点不在 `phy_wait_freq_set_busy` 内。
+
+⇒ 下一步：确定 `0x2f82647e` 属于哪个 ROM 函数（查 ROM 符号表覆盖该地址的符号），
+以及它由上述哪个调用进入（栈回溯或在该环命中时读取 `ra`）。
