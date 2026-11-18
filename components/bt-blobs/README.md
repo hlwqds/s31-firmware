@@ -12109,3 +12109,72 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 | 撤回 | 34 |
 | 数据源错误 | 13 |
 | 自我纠正 | 150 |
+
+## ⚠️ 重要复核：池初始化**已经实现**，"从未初始化"那条注释已过时
+
+### 现状（`porting.zig:500-520`）
+
+```zig
+// **真正建池**：这一步此前完全缺失，是本轮所有怪现象的源头。
+if (!on_target) return 0;
+const rc_evt = initPool("evt", elem.evt_count, 12, &mp_ev);
+if (rc_evt != 0) return rc_evt;
+const rc_evq = initPool("evtq", elem.evtq_count, 4, &mp_evq);
+if (rc_evq != 0) return rc_evq;
+const rc_co  = initPool("co",  elem.co_count,  20, &mp_co);
+…
+```
+
+⇒ **四个池都已真正初始化**，且返回值被检查并向上传播。
+
+### 逻辑推论
+
+若 `initPool` 失败 ⇒ `prepareMempool` 返回非 0 ⇒ `step(1, "mempool", …)` 会打
+**`bt bringup: step 1 mempool rc=X`** 并提前返回。
+
+**而 `rc=` 在全部捕获中出现 0 次** ⇒ **`prepareMempool` 成功** ⇒ **池已初始化**。
+
+⇒ 因此 `OkE7` 的守卫 `*(*s0+8) != 0` **应当为真**，
+⇒ 仓库注释里"完全缺失 / 从未初始化"的因果链**对当前代码已不成立**。
+
+### 那么 `OkE7` 为何仍返回非 0？
+
+`OkE7`（326 B）内部还有 5 次 `malloc`（`0x2e/0xaa/0xc2…`）与 `event_init`（`PsB8:0x72`），
+其中任一失败都会让 `OkE7` 返回非 0。
+
+⇒ **下一步（一行）**：把 `OkE7` 的返回值打出来。
+
+但它由归档在 `r_btdm_task_init:0x40` 内部调用 ⇒ 无法直接记录。
+**可行做法**：在 `wr_btdm_osal_malloc` / `wr_btdm_osal_event_init` 里加**失败计数**
+（已有 `Q` 行可扩展）：
+
+```zig
+if (p == null) bt_malloc_fail += 1;
+```
+
+随 DUMP 打印 ⇒ 若 `bt_malloc_fail > 0` ⇒ **`OkE7` 因分配失败而返回非 0**。
+
+## 本会话最终总计（修订）
+
+| 类别 | 数量 |
+| --- | --- |
+| 代码修复 | 15 |
+| **根因候选** | `OkE7` 返回非 0（**机制已确认**：`bnez a0` ⇒ 回滚 ⇒ 总线挂死）|
+| **但触发原因** | **待定** —— 池已初始化，故不是池缺失 |
+| 撤回 | 35 |
+| 数据源错误 | 13 |
+| 自我纠正 | 151 |
+
+### 已确认的部分（不会再变）
+
+`r_btdm_task_init` 的 `0x4a bnez a0, .L93` 成立时：
+
+```
+→ 0x1c r_btdm_task_deinit（回滚入口）
+→ FzF1 → *(anchor[9])==0 → sb zero,0(a5)
+→ 静默总线挂死：无 fault、无 rc=、无任何 OSAL 调用
+```
+
+⇒ **这就是 `Q1/Q2/Q3` 全 0、`enter step 7` 缺失的机制**。
+
+⇒ 剩下的唯一问题是：**`OkE7` 的哪一个内部失败让它返回了非 0**。
