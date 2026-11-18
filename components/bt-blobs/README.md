@@ -10699,3 +10699,59 @@ if (std.mem.startsWith(u8, msg, "bt ")) {
 | 已确证 | 8 条（见上节）|
 | 未解 | `rawWrite` 占用 85–96% 与输出量 224 行之间的矛盾 |
 | 下一步 | 把 `log_hook_calls` / `log_hook_ours` 加进 DUMP 输出（一行）|
+
+## ✅ 归因已核实：样本确实在 `hw.rawWrite` 内（2026-11-19）
+
+### 符号边界（`nm -S -n app.elf`）
+
+```text
+400699f6 0000006c t hw.rawWrite                      ← 108 B：0x400699f6–0x40069a62
+40069a62 00000012 t Io.Writer.printValue__func_239   ← 下一个符号
+```
+
+### 样本地址
+
+| 地址 | 在 `rawWrite` 内？ |
+| --- | --- |
+| `0x40069a0c` | ✅ |
+| `0x40069a0e` | ✅ |
+| `0x40069a10` | ✅ |
+| `0x40069a42` | ✅ |
+| `0x40069a4c` | ✅ |
+
+⇒ **全部落在 `0x400699f6–0x40069a62`** ⇒ **归因正确**，不是"最近符号"假象。
+
+### 但调用者未知
+
+`logHook`（`probe.zig:287-292`）**直接写 FIFO 寄存器**，不经 `hw.rawWrite`
+⇒ 在 `sample_quiet = true` + `call_stream_on = true` 的静音窗口里，
+**理论上没有任何代码调用 `hw.rawWrite`**。
+
+⇒ **存在一个未知调用者**，它在静音期高频调用 `hw.rawWrite`。
+
+### 可能的调用者
+
+| 候选 | 说明 |
+| --- | --- |
+| `board.log.line` / `log.raw` | 需要有人调用它们 |
+| `bringup.init` 自身 | 其符号紧邻（`0x400673c0`，大小 `0x2636`，**覆盖到 `0x400699f6`**）⇒ **`bringup.init` 就在 `rawWrite` 之前** |
+| 某个直接 `log.line` 的循环 | 需查 `bringup.zig` 里是否有循环打印 |
+
+⇒ **最可疑**：`bringup.init` 内部（大小 0x2636 ≈ 9.8 KB，是最大的函数）
+可能有一个**循环打印**的地方。
+
+### 下一步（一次 grep）
+
+```bash
+grep -n "log.line\|log.raw" components/bt-blobs/src/bringup.zig | head -20
+```
+
+找在 **step 5–6 之后**仍会执行的打印语句。
+
+### 本会话终点
+
+| 项 | 状态 |
+| --- | --- |
+| `rawWrite` 占 85–96% CPU | ✅ **归因已核实** |
+| 调用者 | ❓ **未知**（静音期不该有调用）|
+| 与"输出仅 224 行"的矛盾 | ❓ 未解 |
