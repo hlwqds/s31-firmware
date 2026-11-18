@@ -146,6 +146,23 @@ fn uartPut(ch: u8) void {
     while ((((status.* >> 16) & 0xFF) >= 120) and spins < 40) : (spins += 1) {}
     if (spins < 40) fifo.* = ch;
 }
+
+/// 调用名 → 单数字码（数字不会与日志散文里的字母混淆，grep `[0-9]` 即得序列）。
+/// malloc=0 mutex_init=1 eventq_init=2 event_init=3 mutex_pend=4
+/// mutex_release=5 free=6 eventq_get=7 eventq_put=8 sem_*=9 其余=#
+fn codeOf(name: []const u8) u8 {
+    if (std.mem.startsWith(u8, name, "malloc")) return '0';
+    if (std.mem.startsWith(u8, name, "mutex_init")) return '1';
+    if (std.mem.startsWith(u8, name, "eventq_init")) return '2';
+    if (std.mem.startsWith(u8, name, "event_init")) return '3';
+    if (std.mem.startsWith(u8, name, "mutex_pend")) return '4';
+    if (std.mem.startsWith(u8, name, "mutex_release")) return '5';
+    if (std.mem.startsWith(u8, name, "free")) return '6';
+    if (std.mem.startsWith(u8, name, "eventq_get")) return '7';
+    if (std.mem.startsWith(u8, name, "eventq_put")) return '8';
+    if (std.mem.startsWith(u8, name, "sem")) return '9';
+    return '#';
+}
 pub var log_hook_other: u32 = 0;
 /// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
 pub var log_hook_silent: bool = false; // 默认放行；true 会连我们自己的进度日志一起静音（实测过）
@@ -172,11 +189,11 @@ fn logHook(msg: []const u8) void {
         // 21 次调用只占 21 字节，永不灌满 128 B FIFO，也不会与 ISR 心跳逐字节交错到无法 grep。
         if (std.mem.indexOf(u8, msg, "bt ret: ")) |k| {
             const rest = msg[k + 8 ..];
-            if (rest.len > 0) { uartPut(rest[0]); return; }
+            if (rest.len > 0) { uartPut(codeOf(rest)); return; }
         }
         if (std.mem.indexOf(u8, msg, "bt call: ")) |k| {
             const rest = msg[k + 9 ..];
-            if (rest.len > 0) { uartPut(rest[0]); return; }
+            if (rest.len > 0) { uartPut(codeOf(rest)); return; }
         }
     } else {
         log_hook_other +%= 1; // 归档自己的消息：进 RAM 环，不打 UART
