@@ -137,6 +137,15 @@ pub fn ringAt(idx: u32) []const u8 {
 }
 pub var log_hook_ours: u32 = 0;
 pub var log_hook_calls_only: u32 = 0;
+
+/// 直接写一个字节（绕过行缓冲；用于"每次调用一字母"的低带宽编码）。
+fn uartPut(ch: u8) void {
+    const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
+    const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    var spins: u32 = 0;
+    while ((((status.* >> 16) & 0xFF) >= 120) and spins < 40) : (spins += 1) {}
+    if (spins < 40) fifo.* = ch;
+}
 pub var log_hook_other: u32 = 0;
 /// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
 pub var log_hook_silent: bool = false; // 默认放行；true 会连我们自己的进度日志一起静音（实测过）
@@ -159,9 +168,15 @@ fn logHook(msg: []const u8) void {
         log_hook_ours +%= 1;
         // **只对逐调用行限量**（`bt ret:`/`bt call:`），里程碑（`bt bringup:`/`bt lp:`）不受限：
         // 早先把上限套在全部自身日志上，结果里程碑被吃掉、`malloc` 行变成 0（本会话踩过）。
-        if (std.mem.startsWith(u8, msg, "bt ret:") or std.mem.startsWith(u8, msg, "bt call:")) {
-            if (log_hook_calls_only > 40) return;
-            log_hook_calls_only +%= 1;
+        // **逐调用只写 1 个字节**：把 `bt ret: <name>…` / `bt call: <name>…` 压成该名字的首字母。
+        // 21 次调用只占 21 字节，永不灌满 128 B FIFO，也不会与 ISR 心跳逐字节交错到无法 grep。
+        if (std.mem.indexOf(u8, msg, "bt ret: ")) |k| {
+            const rest = msg[k + 8 ..];
+            if (rest.len > 0) { uartPut(rest[0]); return; }
+        }
+        if (std.mem.indexOf(u8, msg, "bt call: ")) |k| {
+            const rest = msg[k + 9 ..];
+            if (rest.len > 0) { uartPut(rest[0]); return; }
         }
     } else {
         log_hook_other +%= 1; // 归档自己的消息：进 RAM 环，不打 UART

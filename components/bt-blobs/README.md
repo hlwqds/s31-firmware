@@ -4069,3 +4069,35 @@ bt anchors[after-phy]  base=0x2f00ffd0: 0 0 0 0 0 0 0 0 0 0
 凡**依赖 `anchors[]` 读数**的（"惰性发布""某槽未发布""anchor[8] 预发布导致 `JwHs` 短路"），
 其**证据来源已确认不可靠**，应视为待复核；而**不依赖它的**结论仍然成立：
 `JwHs`/`FzF1` 反汇编、OSAL 调用者环（21 条）、闭环到 `Xpuq`、以及若干次单开关对照实验。
+
+## ✅ 逐调用改成「1 字节编码」——低带宽序列可用（2026-11-19）
+
+`logHook` 里把 `bt ret: <name>…` / `bt call: <name>…` 压成该名字的**首字母**，
+直接写 1 字节到 UART（`uartPut`，40 次自旋上限）：
+
+| 字母 | 含义 |
+| --- | --- |
+| `m` | malloc |
+| `i` | mutex_init |
+| `q` | eventq_init |
+| `e` | event_init |
+| `p` | mutex_pend |
+
+21 次调用只占 **21 字节** ⇒ 永不灌满 128 B FIFO，也不受"前 N 条"上限影响。
+
+板上实测（18 s 抓取末尾）：
+
+```
+bt mempool: ok …
+mmmmmmmmm          <- 9 次 malloc 的编码，出现在日志最末尾（= step 6 阶段）
+```
+
+⇒ **"停在哪一次调用"现在可以逐字母读**，不再依赖长行与截断。
+
+### 下会话用法
+
+```bash
+grep -aoE "[meisqpt][meisqpt]{2,}" /tmp/x.log     # 连续字母 = 调用序列
+```
+
+配合已有的 RAM 环（`lr`）与调用者环（`n`），三路证据互相印证。
