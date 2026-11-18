@@ -3884,3 +3884,27 @@ bt anchors[before-phy]: 2f010ee0 696e6170 …     <- 第一个槽 = anchor[0]，
 `FzF1` 对代码字节 `sb`）**全部作废**。
 
 **教训**：诊断代码里的硬编码地址必须与符号地址核对一次 —— 镜像布局一变，硬编码就变成"读别人"。
+
+## 修复硬编码后的 `WITH_PHY=1` 现状（2026-11-19）
+
+改用符号地址后，同一份 811 040 B 镜像的日志：
+
+```
+bt anchors[before-phy]: 2f010ee0 696e6170 …      <- anchor[0] 正确
+bt anchor↓ / bt brin↓ / bt lp:↓                  <- 进入 bringup，走到 step 5（UART 截断成残片）
+s256.0.2.1                                        <- 心跳仍在
+（无 "PHY enabled AFTER step 5"、无 BOOTSTATE）
+```
+
+⇒ 归档侧的 `WITH_PHY=1` 路径**不再被误判为损坏**；它进入 bringup、到达 step 5，
+而按 IDF 顺序放在 step 5 之后的 `initPhy()` **仍未返回**（那条标记行没出现）。
+
+⚠️ 但**残片截断使这条判读不够硬**：要确证，需把逐行日志换成**每步一个短标记**
+（`S1`…`S6`、`PHY-`/`PHY+`，全部 <10 字节），一次运行即可读出无歧义的顺序与停点。
+
+### 下一步（两条，按优先级）
+
+1. **短标记改造**（10 分钟）：把 step 与 PHY 前后改成 <10 字节标记 ⇒ 一次运行得到干净序列；
+2. 若确认停在 `initPhy()`：在 `btdmLpEnableClock` 里先补
+   `SOC_PLL_SOURCE_CG (0x2058_71E0←0x3d)` 与 CLK_CONF1 的 FE_* 位、以及 `I2C_ANA_MST`
+   （材料见上一节，**不要**照抄 wifi 的 `LPCON+0x18←0x1`），再测。
