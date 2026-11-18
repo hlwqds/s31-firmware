@@ -138,6 +138,11 @@
   入队与挂定时器都在解锁**之前**（解锁可能立刻切走，届时 signal 必须能摘到我们）。3 项新用例
   （总计 **83**）。
 
+- **`pthread_attr_t` 与"栈归调用方"（2026-11-18）**：`thread.zig` 支持
+  `pthread_attr_init/destroy/setstack/setstacksize`（最小 1 KiB，只记切片不复制）。
+  默认属性才退回小静态池 —— `.bss` 从 8 × 8 KiB = **64 KiB 降到 2 × 8 KiB = 16 KiB**，
+  接进镜像时不会先撞容量门禁。3 项新用例（总计 **85**）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

@@ -41,7 +41,8 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `pthread_create` | `thread.zig` → `sched.taskCreate` + 静态栈池 | ✅ 已完成（**上限 8 次/boot**，见下） |
+| `pthread_create` | `thread.zig` → `sched.taskCreate`；栈由 `pthread_attr_t` 给出，默认池只 2 条 | ✅ 已完成（**上限 8 次/boot**，见下） |
+| `pthread_attr_init/destroy/setstack/setstacksize` | `thread.zig`（只记切片，不复制；最小 1 KiB） | ✅ 已完成 |
 | `pthread_join` | `thread.zig` → `Slot.done` + 每线程 `done_sem` | ✅ 已完成（重复 join / detach 后 join → `EINVAL`） |
 | `pthread_exit` / `pthread_self` | `thread.zig` → `sched.currentContext()` / `sched.block()` | ✅ 已完成（主上下文 `self` 返回 `null`） |
 | `pthread_detach` | `thread.zig`（完成时自己回收槽） | ✅ 已完成 |
@@ -172,9 +173,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**83 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 83`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**85 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 85`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -186,10 +187,10 @@ const Slot = struct {
    "file exists in modules 'net_sockets' and 'net_sockets0'"。等接内核时把 socket 层的
    模块根统一（api 兼作组件根，并在 test 目标里特殊处理 `host_tests.zig` 的路径映射）再一起进。
 
-**接线前先量体积**（现在不进镜像，所以还没人付这笔账）：`thread.zig` 的栈池是
-`max_threads × stack_bytes = 8 × 8 KiB = 64 KiB` 的 `.bss`；S31 的 SRAM 已经要和 413 KB 的
-BLE arena 分享，`scripts/check-capacity.py` 又是按段断言 load+len 的。所以接进镜像前要么把栈
-缩到线程实际用量，要么把线程数与栈大小做成 build option —— 别等容量门禁红了自己发现。
+**接线前先量体积**：`thread.zig` 的栈**归调用方**（`pthread_attr_setstack`），默认属性才用
+小静态池 `2 × 8 KiB = 16 KiB` 的 `.bss`（此前是 8 × 8 KiB = 64 KiB）。S31 的 SRAM 还要和
+413 KB 的 BLE arena 分享，`scripts/check-capacity.py` 按段断言 load+len —— 所以接进镜像前
+先跑一次容量门禁，别等它红了自己发现。
 
 ## 6. 进度与剩余项
 

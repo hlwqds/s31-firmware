@@ -30,6 +30,13 @@
 //! - **detach 路径**：`complete()` 在**垂死任务自己的栈上**先 `retireSlot()` 再返回，
 //!   随后 trampoline 落进 `sched.block()` 不再碰这个槽。
 //!
+//! # 栈归调用方（POSIX 本来就这么规定）
+//!
+//! `pthread_attr_setstack` 让调用方持有栈内存，本层只记切片不复制。默认属性（`attr == null`）
+//! 才退回到一个**小**静态池：`default_stacks × stack_bytes = 2 × 8 KiB = 16 KiB` 的 `.bss`。
+//! 之前是 8 × 8 KiB = 64 KiB —— 一旦这个组件进镜像，`scripts/check-capacity.py`（按段断言
+//! load+len）就会看到它，而 S31 的 SRAM 还要和 413 KB 的 BLE arena 分享。
+//!
 //! # 主机上能测什么
 //!
 //! `sched` 的上下文切换是 rv32 `asm`，x86_64 上被 comptime 编译掉 ⇒ **真并发跑不了**。
@@ -43,8 +50,15 @@ const sync = @import("sync.zig");
 /// 与 `sched.max_tasks` 对齐：本层多留槽也没用，`sched` 那边会先失败。
 pub const max_threads: usize = sched.max_tasks;
 
-/// 每线程栈大小。固定静态池，不走 allocator（裸机没有堆可依赖）。
+/// 默认属性的线程栈大小（调用方没给栈时用）。
 pub const stack_bytes: usize = 8 * 1024;
+
+/// 默认属性下同时可存在的线程数（其余线程必须由调用方经 `pthread_attr_setstack` 提供栈）。
+/// 这块是 `.bss`：`2 × 8 KiB = 16 KiB`，而 S31 的 SRAM 还要和 413 KB 的 BLE arena 分享。
+pub const default_stacks: usize = 2;
+
+/// 最小可接受的栈（够 `trampoline` + 一次浅调用；真跑业务要更大）。
+pub const min_stack_bytes: usize = 1024;
 
 pub const StartRoutine = *const fn (?*anyopaque) callconv(.c) void;
 
@@ -63,7 +77,39 @@ pub const Slot = struct {
 };
 
 var slots: [max_threads]Slot = @splat(.{});
-var stacks: [max_threads][stack_bytes]u8 = undefined;
+/// 只服务"默认属性"的线程；显式给栈的线程不占这里。
+var stacks: [default_stacks][stack_bytes]u8 = undefined;
+
+/// `pthread_attr_t`：POSIX 的栈由**调用方**拥有。这里只记切片，不复制。
+pub const pthread_attr_t = struct {
+    /// 调用方提供的栈（`pthread_attr_setstack`）。
+    stack: ?[]u8 = null,
+    /// 只要大小不要内存（`pthread_attr_setstacksize`）：仍从默认池取。
+    stack_size: usize = 0,
+};
+
+pub fn pthread_attr_init(a: *pthread_attr_t) c_int {
+    a.* = .{};
+    return 0;
+}
+
+pub fn pthread_attr_destroy(a: *pthread_attr_t) c_int {
+    a.* = .{};
+    return 0;
+}
+
+pub fn pthread_attr_setstack(a: *pthread_attr_t, stack: []u8) c_int {
+    if (stack.len < min_stack_bytes) return fail(e.EINVAL);
+    a.stack = stack;
+    a.stack_size = stack.len;
+    return 0;
+}
+
+pub fn pthread_attr_setstacksize(a: *pthread_attr_t, size: usize) c_int {
+    if (size < min_stack_bytes) return fail(e.EINVAL);
+    a.stack_size = size;
+    return 0;
+}
 
 /// `pthread_t` 就是槽位指针。槽位来自静态池，所以指针稳定、可直接比较。
 pub const pthread_t = *Slot;
@@ -88,8 +134,14 @@ fn allocSlot() ?*Slot {
     return null;
 }
 
-fn stackFor(s: *Slot) []u8 {
+/// 给这个槽找一块栈：优先调用方给的，其次默认池。
+fn stackFor(s: *Slot, attr: ?*const pthread_attr_t) ?[]u8 {
+    if (attr) |a| {
+        if (a.stack) |st| return st;
+        if (a.stack_size > stack_bytes) return null; // 要更大又不给内存 ⇒ 无处可取
+    }
     const idx = (@intFromPtr(s) - @intFromPtr(&slots)) / @sizeOf(Slot);
+    if (idx >= default_stacks) return null; // 默认池只服务前几个
     return &stacks[idx];
 }
 
@@ -122,17 +174,20 @@ fn trampoline(arg: ?*anyopaque) callconv(.c) void {
 
 pub fn pthread_create(
     tid: *pthread_t,
-    attr: ?*anyopaque,
+    attr: ?*const pthread_attr_t,
     start_routine: StartRoutine,
     arg: ?*anyopaque,
 ) c_int {
-    if (attr != null) return fail(e.EINVAL); // 非默认属性（含显式栈）不支持
     // C 调用方可以传 NULL：Zig 类型上是非可选指针，但 ABI 不拦。
     if (@intFromPtr(start_routine) == 0) return fail(e.EINVAL);
     const s = allocSlot() orelse return fail(e.EAGAIN); // 8 个槽用完了
+    const stack = stackFor(s, attr) orelse {
+        retireSlot(s);
+        return fail(e.EINVAL); // 没有可用的栈
+    };
     s.func = start_routine;
     s.arg = arg;
-    const task = sched.taskCreate(stackFor(s), trampoline, s) orelse {
+    const task = sched.taskCreate(stack, trampoline, s) orelse {
         retireSlot(s);
         return fail(e.EAGAIN); // sched 侧槽位也满
     };
@@ -221,13 +276,48 @@ test "thread: 池满时 allocSlot 返回 null（对应 pthread_create 的 EAGAIN
     resetSlots();
 }
 
-test "thread: create 拒绝非默认属性" {
+test "thread: attr 的栈设置：最小长度校验与切片记录" {
+    var a: pthread_attr_t = .{};
+    try testing.expectEqual(@as(c_int, 0), pthread_attr_init(&a));
+    e.set(0);
+    try testing.expectEqual(@as(c_int, -1), pthread_attr_setstacksize(&a, min_stack_bytes - 1));
+    try testing.expectEqual(e.EINVAL, e.get());
+    try testing.expectEqual(@as(c_int, 0), pthread_attr_setstacksize(&a, 4096));
+    try testing.expectEqual(@as(usize, 4096), a.stack_size);
+    var small: [64]u8 = undefined;
+    e.set(0);
+    try testing.expectEqual(@as(c_int, -1), pthread_attr_setstack(&a, &small));
+    try testing.expectEqual(e.EINVAL, e.get());
+    var buf: [2048]u8 = undefined;
+    try testing.expectEqual(@as(c_int, 0), pthread_attr_setstack(&a, &buf));
+    try testing.expectEqual(@as(usize, 2048), a.stack_size);
+    try testing.expect(a.stack.?.ptr == &buf);
+    try testing.expectEqual(@as(c_int, 0), pthread_attr_destroy(&a));
+    try testing.expect(a.stack == null);
+}
+
+test "thread: 显式给栈时 create 用的是调用方那块（不再吃默认池）" {
+    resetSlots();
+    var a: pthread_attr_t = .{};
+    _ = pthread_attr_init(&a);
+    var buf: [4096]u8 align(16) = undefined;
+    try testing.expectEqual(@as(c_int, 0), pthread_attr_setstack(&a, &buf));
+    var tid: pthread_t = undefined;
+    try testing.expectEqual(@as(c_int, 0), pthread_create(&tid, &a, body, null));
+    try testing.expectEqual(@as(u32, buf.len), tid.task.?.stack_size);
+    complete(tid, null);
+    try testing.expectEqual(@as(c_int, 0), pthread_join(tid, null));
+    resetSlots();
+}
+
+test "thread: 默认属性用默认池（栈大小等于 stack_bytes）" {
     resetSlots();
     var tid: pthread_t = undefined;
-    var dummy: u8 = 0;
-    e.set(0);
-    try testing.expectEqual(@as(c_int, -1), pthread_create(&tid, &dummy, body, null));
-    try testing.expectEqual(e.EINVAL, e.get());
+    try testing.expectEqual(@as(c_int, 0), pthread_create(&tid, null, body, null));
+    try testing.expectEqual(@as(u32, stack_bytes), tid.task.?.stack_size);
+    complete(tid, null);
+    try testing.expectEqual(@as(c_int, 0), pthread_join(tid, null));
+    resetSlots();
 }
 
 test "thread: create 真把线程接到 sched 上（主机上不切栈，但不该失败）" {
