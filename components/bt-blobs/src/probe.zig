@@ -41,7 +41,7 @@ pub fn bt_hook_event_init(n: u32) void {
 export fn bt_print_osal_stats() void {
     const st = osal.stats();
     board.log.line("Q1 {d} {d} {d}", .{ st.eventq_put, st.eventq_get_ok, st.eventq_get_empty });
-    board.log.line("Q2 {d} {d}", .{ st.mutex_pend_ok, st.blocked_calls });
+    board.log.line("Q2 {d} {d} {d}", .{ st.mutex_pend_ok, st.mutex_pend_busy, st.blocked_calls });
     board.log.line("Q3 {d} {d}", .{ st.pool_exhausted, st.eventq_requeued });
 }
 
@@ -51,7 +51,7 @@ export fn probe_dump_now() void {
     {
         const st = osal.stats();
         board.log.line("Q1 {d} {d} {d}", .{ st.eventq_put, st.eventq_get_ok, st.eventq_get_empty });
-        board.log.line("Q2 {d} {d}", .{ st.mutex_pend_ok, st.blocked_calls });
+        board.log.line("Q2 {d} {d} {d}", .{ st.mutex_pend_ok, st.mutex_pend_busy, st.blocked_calls });
         board.log.line("Q3 {d} {d}", .{ st.pool_exhausted, st.eventq_requeued });
     }
     dumpAtPend();
