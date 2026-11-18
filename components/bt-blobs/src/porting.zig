@@ -196,6 +196,31 @@ fn wr(addr: usize, val: u32) void {
 
 var lp_clock_enabled: bool = false;
 
+/// **PHY 频域使能**（移植自 wifi 侧已验证序列，默认关闭）。
+/// 与 wifi 的关键差异：**保留 `LPCON_FORCE_ON` 的 `I2C_MST_FO`(bit2)** —— BLE 的 PHY 寄存器
+/// 走模拟 I2C 主控，wifi 侧那条 `LPCON+0x18←0x1` 会把 bit2 清掉，**不能照抄**。
+pub var phy_domain_enable: bool = true; // 本轮验证
+
+pub fn phyDomainEnable() void {
+    if (!phy_domain_enable) return;
+    // 1) SOC_PLL_SOURCE_CG（IDF modem_clock_hal_enable_soc_pll_source_cg，S31 分支）
+    wr(0x2058_71E0, 0x3d);
+    // 2) MODEM_SYSCON CLK_CONF1：PHY 依赖组（FE_APB/FE_80M/FE_160M/FE_DAC/FE_PWDET_ADC/FE_ADC）
+    const conf1: usize = 0x2010_9C14;
+    const bits: u32 = (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+    wr(conf1, rd(conf1) | bits);
+    // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
+    const fo: usize = 0x2010_9C08;
+    wr(fo, rd(fo) | (1 << 2) | (1 << 3) | (1 << 4));
+    // 4) LPCON_FORCE_ON：WIFIPWR_FO(0) | **I2C_MST_FO(2)**（BLE 必需）
+    const fo_lp: usize = 0x2010_F01C;
+    wr(fo_lp, rd(fo_lp) | (1 << 0) | (1 << 2));
+    // 5) 确认 LPCON+0x18 的 bit2 保持（不要照抄 wifi 的 ←0x1）
+    const lp18: usize = 0x2010_F018;
+    wr(lp18, rd(lp18) | (1 << 2));
+    osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)", .{});
+}
+
 /// 强制重开时钟门控（复位脉冲之后用：复位可能清掉时钟配置）。
 pub fn forceReenableClocks(cfg: *const config.BtdmCfg) void {
     lp_clock_enabled = false;

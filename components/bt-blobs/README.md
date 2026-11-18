@@ -4234,3 +4234,39 @@ CODES n=16 0120000000000000
 | `WITH_PHY=1` 版 `esp_phy_enable` @ `0x40000744`（174 B FUNC） | ✅ 实测相符 |
 | `WITH_PHY=1` 版 `esp_phy_load_cal_and_init` @ `0x40000580`（452 B） | ✅ 实测相符 |
 | 默认版 `esp_phy_enable` = ROM `0x2f00e756`（ABS） | ✅ 相符 |
+
+## 🚀 突破：补 PHY 频域时钟后**总线停摆消失**，PHY 校准真正开跑（2026-11-19）
+
+移植 `porting.phyDomainEnable()`（默认关，本轮打开）后，`WITH_PHY=1` 构建的板测：
+
+```
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)
+...
+pcsample n=9728 pc=0x40067094 ra=0x40000672 s0=0x0
+s9728.416.419.1            <- 心跳到 9728 tick（此前卡在约 320）
+s9792.416.419.1            <- 仍在增长
+```
+
+| 项 | 之前 | 现在 |
+| --- | --- | --- |
+| 心跳上限 | ~320 tick（≈32 ms）后停 | **9728+ 且持续增长** |
+| 状态 | 总线挂起（静默） | **CPU 在跑，中断正常投递** |
+| 停点 | `Xpuq` 首读 `0x2010B000` | **`esp_phy_load_cal_and_init` 内部调用了 `abort`** |
+
+地址解析：
+
+| 地址 | 符号 |
+| --- | --- |
+| `pc=0x40067094` | **`abort`**（我们自己的） |
+| `ra=0x40000672` | **`esp_phy_load_cal_and_init`**（`0x40000580 + 0xF2`） |
+
+⇒ **PHY 校准路径已真正执行**（此前它连时钟都没有），现在的失败是**校准内部触发 `abort`**。
+⇒ 这一举推翻了"`0x2010B000` 一读即挂死"在本构建下的适用性：域时钟打开后总线不再挂死。
+
+### 下一步（单点、离线优先）
+
+1. 反汇编 `esp_phy_load_cal_and_init` 在 `0x40000672` 附近的调用点，看它调 `abort`/`assert` 前的判据
+   （很可能是 NVS 桩返回 `NOT_FOUND` 后走了 assert 分支，而不是回落到全量校准）；
+2. 据此把 `phy_stubs.c` 的 NVS 行为从"NOT_FOUND"改成"返回成功 + 空 blob 长度 0"，
+   或直接让 `s_is_phy_calibrated` 初值为 false 走全量校准；
+3. 判据：出现校准完成标志（或 `esp_phy_enable` 返回），随后 `0x2010B000` 可读。

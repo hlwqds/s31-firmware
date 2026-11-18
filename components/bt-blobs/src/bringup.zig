@@ -133,7 +133,10 @@ fn dumpBootState() void {
         const pp = @import("probe_ptr.zig");
         // 前后对读锚点表：区分"表由 PHY/ROM 填"与"表由闭包外的软件填"。
         gate.dumpAnchors("before-phy");
-        if (phy_before_clocks) pp.initPhy();
+        if (phy_before_clocks) {
+            porting.phyDomainEnable(); // 开关默认关；打开后在 PHY 使能前先补频域时钟
+            pp.initPhy();
+        }
         gate.dumpAnchors("after-phy");
         // ⚠️ `0x2f00fff8` **不是** `g_phyFuns`：它在锚点块里（`0x2f00ffd0 + 0x28`，第 11 个槽）。
         // 之前的标签把它当成 `g_phyFuns`，由此推出的"rom_phyFuns(0x2f07fc3c) ≠ g_phyFuns"是**误读**。
@@ -204,6 +207,7 @@ pub fn init(cfg: *config.Config) c_int {
     porting.btdmLpEnableClock(&cfg.btdm);
     // **正确顺序**（对齐 IDF）：BT/LP 模块时钟已使能之后，再做 PHY 使能/校准。
     if (!phy_before_clocks) {
+        porting.phyDomainEnable();
         @import("probe_ptr.zig").initPhy();
         osal.logPublic("bt bringup: PHY enabled AFTER step 5 (idf order)", .{});
     }
