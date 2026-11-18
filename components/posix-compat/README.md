@@ -106,7 +106,7 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `errno` 全局 | `errno.zig`：模块级 `value` + `set/get` + `fromNetSockets` | ✅ 已完成（值按 Linux 数值；**每 Task 一份**未做，见 §6.3） |
+| `errno` 全局 | `errno.zig`：`Table`（按 `sched` 上下文分槽，8 槽）+ `set/get` + `fromNetSockets` | ✅ 已完成：**每 Task 一份**（POSIX 要求线程私有），值按 Linux 数值 |
 | `strerror` | `errno.name`（只覆盖本文件定义的子集） | ✅ 已完成 |
 
 ## 3. 本版范围（可验证优先）
@@ -165,9 +165,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**77 项**
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**80 项**
   （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 77`；
+- `tests/baselines.json` 里 `posix-compat: 80`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -217,6 +217,7 @@ const Slot = struct {
 | 阻塞式 `accept`/`connect` | 两个硬前提（**先满足才有意义**）：① RX 泵与调用者必须是**不同任务** —— 本仓的 RX 就是调用者那个任务在 `emac.rxPollCopy` 里喂 `Table`，阻塞 `accept` 会把喂它的那个任务停住 ⇒ 自死锁；② `Table` **没有通知路径**，没人告诉等待者"连接到了"，需要 socket 层加钩子（动生产代码），否则只能退化成"轮询+睡眠"，那不是阻塞 | 判断依据见 `waitq` 的落点原则 |
 | ~~`sem_timedwait` / `mutex_timedlock`~~ | ✅ 已完成：`timer.zig`（侵入式到期链表）+ `sync.pump()`。**契约**：应用每个 tick 调一次 `pump()`，否则定时等待永不到期；未绑时钟钩子则 `ENOSYS` | — |
 | ~~`pthread_rwlock_*`~~ | ✅ 已完成：**写者优先**（有写者排队时新读者不许进，否则持续读者会让写者饿死）。无超时变体 | — |
+| ~~每 Task `errno`~~ | ✅ 已完成：`errno.Table` 按 `sched` 上下文分槽（8 槽，表满退回 0 号槽并计 `overflows`） | — |
 | 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
 
 ## 4.6 条件变量的 wake 注入（2026-11-18）

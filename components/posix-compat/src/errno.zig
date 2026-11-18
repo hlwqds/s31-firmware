@@ -38,15 +38,65 @@ pub const ETIMEDOUT: c_int = 110;
 pub const ECONNREFUSED: c_int = 111;
 pub const EINPROGRESS: c_int = 115;
 
-/// 模块级 errno（见文件头的单线程说明）。
-pub var value: c_int = 0;
+// ---------------------------------------------------------------------------
+// 每任务一份 errno
+//
+// POSIX 的 errno 是**线程私有**的。全局一个变量在协作式调度下会在 `set()` 与 `get()` 之间
+// 被切走，另一个任务写进去的值会顶掉前一个 —— 这类 bug 表现为"错误码偶尔不对"，极难复现。
+//
+// 键用 `sched` 的上下文指针（每个任务一个，主上下文也算一个）。任务数上限 8，
+// 表满时退回 0 号槽并记一次 `overflows`（可见而不是静默）。
+// ---------------------------------------------------------------------------
+
+const sched = @import("osal_kit").sched;
+
+pub const max_contexts = 8;
+
+pub const Table = struct {
+    keys: [max_contexts]?*sched.Context = @splat(null),
+    vals: [max_contexts]c_int = @splat(0),
+    /// 超过 `max_contexts` 个上下文时的退化次数（诊断用；生产上不该发生）。
+    overflows: u32 = 0,
+
+    fn slot(self: *Table, c: *sched.Context) usize {
+        var free: ?usize = null;
+        for (self.keys, 0..) |k, i| {
+            if (k == c) return i;
+            if (k == null and free == null) free = i;
+        }
+        if (free) |i| {
+            self.keys[i] = c;
+            return i;
+        }
+        self.overflows += 1;
+        return 0; // 表满：与 0 号上下文共用。可见（overflows），不静默。
+    }
+
+    pub fn set(self: *Table, c: *sched.Context, v: c_int) void {
+        self.vals[self.slot(c)] = v;
+    }
+
+    pub fn get(self: *Table, c: *sched.Context) c_int {
+        return self.vals[self.slot(c)];
+    }
+};
+
+var global: Table = .{};
+
+/// 注入"当前上下文"。未注入时用 `sched.currentContext()`（主机上返回主上下文，不会 panic）。
+pub var contextFn: ?*const fn () *sched.Context = null;
+
+fn currentContext() *sched.Context {
+    if (contextFn) |f| return f();
+    return sched.currentContext();
+}
 
 pub fn set(e: c_int) void {
-    value = e;
+    global.set(currentContext(), e);
 }
 
 pub fn get() c_int {
-    return value;
+    return global.get(currentContext());
 }
 
 /// 把我们的 socket 层错误码映射成 POSIX errno。
@@ -111,6 +161,40 @@ test "errno: socket 层错误码全部映射到非零 POSIX 值" {
         }
     }
     try testing.expectEqual(@as(c_int, 0), fromNetSockets(.ok));
+}
+
+test "errno: 两个任务各自的 errno 互不覆盖" {
+    var t: Table = .{};
+    var a: sched.Context = .{};
+    var b: sched.Context = .{};
+    t.set(&a, EAGAIN);
+    t.set(&b, EBUSY);
+    try testing.expectEqual(EAGAIN, t.get(&a));
+    try testing.expectEqual(EBUSY, t.get(&b));
+    t.set(&a, EINVAL);
+    try testing.expectEqual(EINVAL, t.get(&a));
+    try testing.expectEqual(EBUSY, t.get(&b));
+}
+
+test "errno: 同一上下文反复读写只占一个槽" {
+    var t: Table = .{};
+    var a: sched.Context = .{};
+    t.set(&a, EIO);
+    t.set(&a, ENOENT);
+    try testing.expectEqual(ENOENT, t.get(&a));
+    var used: usize = 0;
+    for (t.keys) |k| {
+        if (k != null) used += 1;
+    }
+    try testing.expectEqual(@as(usize, 1), used);
+}
+
+test "errno: 超过 max_contexts 个上下文时退化到 0 号槽并计数" {
+    var t: Table = .{};
+    var ctxs: [max_contexts + 1]sched.Context = @splat(.{});
+    for (&ctxs) |*c| t.set(c, ENOENT);
+    try testing.expect(t.overflows >= 1);
+    try testing.expectEqual(@as(c_int, ENOENT), t.get(&ctxs[max_contexts]));
 }
 
 test "errno: 数值与 Linux 口径一致" {
