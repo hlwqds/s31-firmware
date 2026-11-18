@@ -438,7 +438,10 @@ fn dumpOsalCallers() void {
     // 直接回答「哪个字段未发布」。0x2f00ffd0 是 anchor[0]。
     var ai: usize = 0;
     while (ai < 11) : (ai += 1) {
-        const slot: *const volatile u32 = @ptrFromInt(0x2f00ffd0 + 4 * ai);
+        // **不要用硬编码 0x2f00ffd0**：锚点符号地址随镜像布局移动
+        // （WITH_PHY=1 版里 anchor[0] 在 0x2f010ee0），必须取符号地址。
+        const base: usize = @intFromPtr(&@extern(*volatile u32, .{ .name = "r_sym_bt_pSy5Wex1v0iXw5RdWtwL" }));
+        const slot: *const volatile u32 = @ptrFromInt(base + 4 * ai);
         const v = slot.*;
         if (v != 0 and v > 0x2f000000 and v < 0x30000000) {
             const f8: *const volatile u32 = @ptrFromInt(@as(usize, v) + 8);

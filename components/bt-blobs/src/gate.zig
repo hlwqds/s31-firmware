@@ -24,7 +24,10 @@ pub fn dumpAnchors(tag: []const u8) void {
     var i: usize = 0;
     var w: usize = 0;
     while (i < 10) : (i += 1) {
-        const v = (@as(*volatile u32, @ptrFromInt(0x2f00_ffd0 + i * 4))).*;
+        // **符号地址，不用硬编码 0x2f00ffd0**：锚点会随镜像布局移动
+        // （WITH_PHY=1 版 anchor[0] 在 0x2f010ee0）。
+        const base: usize = @intFromPtr(&@extern(*volatile u32, .{ .name = "r_sym_bt_pSy5Wex1v0iXw5RdWtwL" }));
+        const v = (@as(*volatile u32, @ptrFromInt(base + i * 4))).*;
         const n = std.fmt.bufPrint(buf[w..], " {x}", .{v}) catch break;
         w += n.len;
     }

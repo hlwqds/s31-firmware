@@ -4,7 +4,7 @@
 > | 路径 | 现状 |
 > | --- | --- |
 > | **默认（ROM PHY）** | 已闭环：init 跑到 `Xpuq`(`0x4005fbc4`) → 其 `.L547` 循环首读 `0x2010B000` → 总挂死（离线逐条验证） |
-> | **`WITH_PHY=1`（IDF PHY）** | **结构性不可用**：`.iram_blobs` = `0x2f0008b0..0x2f0105e0` **覆盖锚点块 `0x2f00ffd0`** ⇒ 锚点读到的是指令字节（`40f2…`/`8082`） |
+> | **`WITH_PHY=1`（IDF PHY）** | **原诊断有误，已修**：锚点符号随镜像布局移动（anchor[0] → `0x2f010ee0`），而诊断代码**硬编码** `0x2f00ffd0` ⇒ 读到的是 `.iram_blobs` 里的字节。改用符号地址后 anchor[0] 读出 `0x2f010ee0`（有效指针） |
 >
 > **唯一剩余动作**：扩两段镜像窗口（技能记载 `libphy` 需 +140 KB），之后 WITH_PHY 路径才有意义；
 > 然后在 `btdmLpEnableClock` 里移植 `wifi-blobs` 已验证的频域使能
@@ -3857,3 +3857,30 @@ sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
 1. 分区表里 app 分区大小要 ≥ 新镜像（当前镜像 798 KB，扩后预计 ~940 KB）；
 2. `readelf -SW` 复核 `.iram_blobs` 不再越过 `0x2f00ffd0`（这才是本项的验收判据）；
 3. 板上锚点 dump 应为有效指针（`0x2f0155b8` 一类），而非 `40f2ed8f` 这类指令字节。
+
+## ⚠️ 撤回「结构性损坏」：真正原因是**我们的硬编码地址**（2026-11-19）
+
+复核方法（结论反转）：
+
+```
+readelf -sW app.elf | grep r_sym_bt_pSy5
+  -> 2f010ee0  4 OBJECT GLOBAL DEFAULT 11 r_sym_bt_pSy5...
+覆盖 0x2f00ffd0 的段：只有 .iram_blobs 一个（无第二个段 ⇒ **不存在重叠**）
+```
+
+⇒ **锚点没有重叠，是移动了**：`WITH_PHY=1` 版里 anchor[0] 在 **`0x2f010ee0`**，
+而 `probe.zig:441` 与 `gate.zig:26` 都**硬编码 `0x2f00ffd0`** ⇒ 读到的是 `.iram_blobs` 里的指令字节
+（`40f2ed8f`/`8082`…），被我误判成"段重叠损坏"。
+
+**修复**：两处都改为取符号地址
+`@intExternPotr(&@extern(*volatile u32, .{ .name = "r_sym_bt_pSy5Wex1v0iXw5RdWtwL" }))`。
+板上复验（`WITH_PHY=1`，811 040 B）：
+
+```
+bt anchors[before-phy]: 2f010ee0 696e6170 …     <- 第一个槽 = anchor[0]，有效指针
+```
+
+⇒ **`WITH_PHY=1` 镜像并未损坏**；此前所有基于"锚点是代码字节"的推论（含 `JwHs` 假非零、
+`FzF1` 对代码字节 `sb`）**全部作废**。
+
+**教训**：诊断代码里的硬编码地址必须与符号地址核对一次 —— 镜像布局一变，硬编码就变成"读别人"。
