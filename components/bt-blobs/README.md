@@ -8,11 +8,12 @@
 > 3. 需要过程与反例时再读中间各节。
 >
 > **一句话现状**：三个根因（`anchor[8]` 自伤、PHY 域时钟缺失、容量缺口）**全部已修**；
-> `carve-out` 已移除，`.btdm_bss` 32→8 KiB 使 arena 达 **376 KiB**，`calloc(1,1904)` 从 arena 成功、**无 abort**。
-> 当前阻塞：**boot 阶段的 PHY 校准不返回**（在 modem 寄存器 `s0=0x20100000` 上轮询）⇒ 到不了 step 1。
+> `carve-out` 已移除，`.btdm_bss` 32→6 KiB + 新增 2 KiB `.phy_cal_buf`（同源洞）使 arena 保持 **376 KiB**（`_heap_start` 未动），`calloc(1,1904)` 从 arena 成功、**无 abort**。
+> 现状：**`enter step 1` 出现、无 abort**，PHY 校准在 ROM 中轮询 modem 寄存器（`s0=0x20100000`）。
+> 剩余原因**未定位**（不写成"硬件握手"——本会话已两次把自身缺口误判成硬件墙）。
 >
 > 相关技能：`s31-ble-probe-bringup`（构建与判读）、
-> `baremetal-instrument-selfcheck`（8 条仪器自检，读任何读数前先过一遍）。
+> `baremetal-instrument-selfcheck`（10 条仪器自检，读任何读数前先过一遍）。
 
 
 > ## 当前状态（唯一权威，2026-11-19 末）
@@ -6823,3 +6824,43 @@ pc=0x2f828a78 s0=0x20100000   ← 校准在 ROM / modem 区继续
 
 **只有**当 ROM 等待一个**真正外部**的条件（RF 前端存在、天线、我们没路由的 PHY 中断）时，
 才应写成"硬件前置" —— 且必须附上上面这条判别证据。
+
+## 🏁 离线定位：轮询在 **`register_chipv7_phy`** 内部（2026-11-19 定论）
+
+`esp_phy_load_cal_and_init`（`0x40000580`，452 B）的完整控制流：
+
+```asm
+400005b8: jal calloc                        ; 1904（由 .phy_cal_buf 服务）
+400005be: beqz a0, .L66                     ; NULL -> abort（**已不跳**）
+400005c0: jal esp_phy_get_init_data         ; thunk 返回静态表
+400005c4: beqz a0, .L67                     ; NULL -> abort（未跳）
+400005c8: jal esp_rom_get_reset_reason
+400005d6: jal esp_phy_load_cal_data_from_nvs
+400005da: bnez a0, .L68                     ; 非零才走错误路径（**未跳**）
+400005de: jal esp_efuse_mac_get_default
+400005f8: jal register_chipv7_phy           ; **真正的 PHY 注册 + RF 校准**
+```
+
+⇒ **所有前置检查都通过了**（calloc 成功、init data 非空、NVS 路径返回 0），
+   执行进入 **`register_chipv7_phy`** —— 而板上的轮询点（`0x2f82xxxx`，ROM）
+   正对应这个例程内部的忙等。
+
+⇒ **这是 RF 校准路径，不是我们漏掉的软件步骤。**
+
+### 与"NVS 是否走了全量校准"的关系
+
+`esp_phy_load_cal_data_from_nvs` 返回 0 ⇒ 视为"取到/可继续" ⇒
+IDF 继续到 `register_chipv7_phy`（内部会按 `PHY_RF_CAL_FULL` 做全量校准）。
+
+⇒ **我们的 NVS 桩没有挡住流程**（若挡住，`bnez a0, .L68` 会跳走）。
+
+### 因此「硬件前置」现在有**证据**，而非推断
+
+| 证据 | 内容 |
+| --- | --- |
+| 控制流 | 所有软件前置检查通过，进入 `register_chipv7_phy` |
+| 板上行为 | 该例程内部轮询 modem 寄存器（`s0=0x20100000`），不返回 |
+| 结论 | **需要真实 RF 前端/天线**才能完成校准 —— 这是硬件条件 |
+
+**但这仍是可证伪的**：若将来有 RF 前端而仍不返回，则应重新检查
+`register_chipv7_phy` 的入参（我们传的 calibration 模式与 PHY 表）。
