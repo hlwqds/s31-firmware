@@ -273,6 +273,18 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
+    // **无条件打印观测值**（不翻行为标志 —— 那两个标志会走进已知崩溃路径）：
+    // 让当前构建与历史日志的轨迹可直接对齐。
+    {
+        const ppo = @import("probe_ptr.zig");
+        osal.logPublic("bt bringup: OBS bohffAnchor=0x{x:0>8}", .{ppo.bohffAnchor()});
+        osal.logPublic("bt bringup: OBS okE7Anchor=0x{x:0>8}", .{ppo.okE7Anchor()});
+        if (ppo.okE7Anchor() != 0) {
+            const env: *const u32 = @ptrFromInt(ppo.okE7Anchor());
+            osal.logPublic("bt bringup: OBS *(env+8)=0x{x:0>8}", .{(@as(*const u32, @ptrFromInt(ppo.okE7Anchor() + 8))).*});
+            _ = env;
+        }
+    }
     // **只发布 7.o 锚点**：给 `BOhff` 的守卫一块可读内存（入口只判非空）。
     if (@import("probe.zig").publish_bohff_anchor) {
         const pp7 = @import("probe_ptr.zig");
