@@ -2017,3 +2017,17 @@ anchor[0] 是该对象的 BSS 变量（`B` 符号），而同对象的 trampolin
 store 标注、也没有 store 重定位 ⇒ 写者用**别的方式**算地址（例如经 `_bss_start_btdm` + 偏移，
 或经另一个锚点导出的指针）。既然进 step 6 时表全 0、`mutex_pend` 时已有 3 个槽被填，
 **说明 task_init 里前面那些写成功了、写 anchor[0] 的那段没跑到** ⇒ 故障前 task_init 已提前退出。
+
+### printf 桥接就绪，但归档在这条路径上**不打日志**（2026-11-18）
+
+桥接落地后的板级运行（`logs/bt-probe-fmt.log`）：**归档侧输出 0 行**
+（grep `ets_printf`/归档标记 = 0，日志里只有 bootloader 与我们自己的行）。
+
+⇒ "让归档自己报进度"这条在本条路径上**得不到信息**：它要么不打印，要么日志级别过滤掉了。
+通道本身是对的（闭包里 7 个对象引用 `ets_printf`，`esp_log_write` 0 个）。
+
+**剩下两条杠杆**（都不需要额外硬件）：
+
+1. 提高归档的日志级别（`btdm_log_init` 的配置 / `esp_log_level_set` 等价物）——
+   需要先反查它读哪个配置字；
+2. 顺着 `rom_phyFuns(0x2f07fc3c)` ≠ `g_phyFuns(0x2f07f944)` 这条线查 PHY 使能是否真正完成。
