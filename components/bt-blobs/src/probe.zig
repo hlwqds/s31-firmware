@@ -535,6 +535,9 @@ pub fn run() noreturn {
         board.log.line("FE800={x}", .{w.*});
     }
     var rc = bringup.init(&cfg);
+    // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
+    // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
+    @import("board").trap.diag_b = 0xB0B0;
     if (rc != 0) {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
