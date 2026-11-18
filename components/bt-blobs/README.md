@@ -7918,3 +7918,31 @@ README 早前记录"卡在 init step 6"是**另一配置/另一轮的结论**。
 
 矛盾？不矛盾 —— 若 `btdmLogInit()` 内部会走到 PHY 初始化路径
 （或 PHY 校准是在更早的位置被触发），则两者一致。**需要用一次日志确认 `btdmLogInit` 与 PHY 的关系**。
+
+## ❌ 撤回上一节的结论（2026-11-19）
+
+上一节说"挂点是 `btdmLogInit()`"——**错误**，已撤回。真实语义：
+
+| 函数 | 打印时机 |
+| --- | --- |
+| `enter(n, what)` | **调用之前**（`bringup.zig:95-97`）|
+| `step(n, what, expr)` | **仅当 `rc != 0`**（`bringup.zig:100-108`）|
+
+日志 `bt bringup: enter step 1 mempool` 来自 `enter(1, ...)`，**且没有 `enter step 2`**
+⇒ 程序停在 **`prepareMempool()` 内部**（`porting.zig:535` → `elemMempoolInit`）。
+
+### 但这与 PC 样本**矛盾**
+
+| 证据 | 指向 |
+| --- | --- |
+| 日志停在 `enter step 1` | 挂在 `prepareMempool`（**纯软件**：seed + elemCalc）|
+| PC 样本在 ROM `0x2f828a64` / `0x2f826484` / `0x2f8036cc` | 挂在 **PHY ROM 代码** |
+
+两者**不能同时为真**。可能的解释：
+
+1. `logPublic` 在某个点停止输出（FIFO/标志），日志不是实时的 ⇒ "停在 step 1"是**假象**；
+2. PC 采样环是**上一轮**的残留；
+3. `prepareMempool` 之后有代码路径进入 PHY（但 `enter(2)` 未打印，说明确实没走回去）。
+
+⇒ **下一步必须先区分 1 与 2**：检查 `logPublic` 是否可能停止，或在一处**确定会执行**的位置
+（如 `enter(5, ...)` 之前）加一个**直接写 UART** 的裸标记，绕开 `logPublic`。
