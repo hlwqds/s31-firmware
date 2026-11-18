@@ -102,7 +102,10 @@ pub fn pump(now_ns: u64) usize {
                 if (t.node) |n| _ = q.remove(n);
             }
             if (t.node) |n| {
-                if (wake_fn) |f| f(n.ctx);
+                // **绝不能"到期了但不唤醒"**：没人绑钩子时（板上应用不 bind 也能跑）
+                // 必须回落到板上实现，否则等待者永远挂住 —— 与"定时等待会到期"这个
+                // 契约正好相反。
+                if (wake_fn) |f| f(n.ctx) else sched.resumeTask(n.ctx);
             }
             fired += 1;
             // prev 不变：当前节点已被摘掉
@@ -221,6 +224,22 @@ test "timer: 节点已被别人摘走时 pump 不重复摘、不报错" {
     try testing.expectEqual(@as(usize, 1), pump(20)); // 仍然算到期：等待者要知道自己超时了
     try testing.expect(t.expired);
     try testing.expectEqual(@as(usize, 1), resumed_n);
+}
+
+test "timer: wake 只经 sync.bindHooks 传播也生效（不需要单独 bindWake）" {
+    useRecorder();
+    reset();
+    // 用 sync 的钩子绑定，timer 不再单独绑
+    @import("sync.zig").bindHooks(.{ .wake = recordWake, .now = null });
+    var q: waitq.Queue = .{};
+    var n = waitq.Node{ .ctx = fakeCtx(0) };
+    q.push(&n);
+    var t: Timer = .{};
+    arm(&t, 10, &q, &n);
+    try testing.expectEqual(@as(usize, 1), pump(10));
+    try testing.expectEqual(@as(usize, 1), resumed_n);
+    try testing.expectEqual(fakeCtx(0), resumed[0]);
+    defer @import("sync.zig").bindHooks(.{ .wake = recordWake, .now = null });
 }
 
 test "timer: 到期后从链表摘除，第二次 pump 不会重复唤醒（也读不到死帧）" {
