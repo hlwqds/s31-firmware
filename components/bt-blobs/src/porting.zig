@@ -224,8 +224,8 @@ pub fn phyDomainEnable() void {
     // `btdmLpEnableClock()`（它已把 `+0x04` 置成 IDF 的 step-5 后值 `0x7e601002`）。
     // 若在此写成 boot 值 `0x00201002`，会把 `0x7e400000`（modem/模拟域时钟位）**抹掉**
     // ⇒ `0x2010B000` 立即不应答。这里只保留 `+0x04` 的**已有值**，不清位。
-    (@as(*volatile u32, @ptrFromInt(0x2010_9C00))).* = 0x0000_0100;
-    (@as(*volatile u32, @ptrFromInt(0x2010_9C0C))).* = 0x6464_6400;
+    // 2b 的两条整字写已**移到 boot 期**（`bringup.zig` 的 `init()` 开头）：
+    // 放在这里（step 51）会覆盖 step 5 的 RMW 结果。
     // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
     const fo: usize = 0x2010_9C08;
     wr(fo, rd(fo) | (1 << 2) | (1 << 3) | (1 << 4));

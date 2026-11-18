@@ -162,6 +162,13 @@ fn dumpBootState() void {
 }
 
 pub fn init(cfg: *config.Config) c_int {
+    // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
+    // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
+    // 必须**先**存在，step 5 的 `rd(reg_clk_conf) | 0x7e400000` 才会得到 IDF 的 `0x7e601002`。
+    // 若缺这一步，step 5 只会写出 `0x7e400000`，模拟前端时钟缺失 ⇒ modem 窗口不应答。
+    @as(*volatile u32, @ptrFromInt(0x2010_9C04)).* = 0x0020_1002;
+    @as(*volatile u32, @ptrFromInt(0x2010_9C00)).* = 0x0000_0100;
+    @as(*volatile u32, @ptrFromInt(0x2010_9C0C)).* = 0x6464_6400;
     dumpBootState();
     stats_state = .{};
     stats_state.init_calls += 1;
