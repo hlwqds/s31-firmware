@@ -3539,3 +3539,25 @@ OSAL 环止于 **21** 次，其中**没有 `task_create`**。两种可能（未�
 **下一步（单点）**：反汇编 `r_sym_bt_BOhff…`（`0x40060772`），看它：
 - 是否调用 `wr_btdm_osal_task_create`（若是，则它没被调用就说明前面的分支失败）；
 - 它在调用前读了哪个锚点/字段 —— 那正是当前真正的闸门。
+
+## 关键关系：`task_create` 在 **enable 步**，而我们还停在 init 步（2026-11-18 最终）
+
+全镜像只有两处调用 `wr_btdm_osal_task_create`：
+
+| 调用点 | 所在函数 |
+| --- | --- |
+| `0x4005fcaa` | **`r_btdm_task_enable`** |
+| `0x40056744` | `r_sym_ble_UJ7ddLOv5tT0E1Sqkwfb`（BLE 侧） |
+
+而 `bringup.zig` 的注释本就写着：**`r_btdm_task_enable` 在 enable 步、不在 init 步**。
+
+⇒ 因此"OSAL 环里没有 `task_create`"**完全正常**，不是缺能力、也不是闸门被挡：
+控制器任务本来就要到 **`enable()`** 才会被创建。
+
+⇒ 当前真正的问题是：**`task_init`（step 6）没有返回**，所以我们从未走到 step 7 之后的 enable 步。
+`task_init` 尾部（`0x4005fbb4`）调用 `r_sym_bt_BOhff`（建任务描述符：prio 33、stack 2000）
+之后静默，而 `BOhff` 函数体内**没有任何对符号的调用** ⇒ 它要么纯数据操作，要么经寄存器间接调用。
+
+**下一步（单点、离线）**：把 `0x40060772..0x40060870` 整段 `objdump` 出来逐条读
+（约 250 字节），找出它返回前的最后一条 `jalr`/`jr` —— 那就是它跳去向的地方，
+也即 `task_init` 卡住前的最后一步。
