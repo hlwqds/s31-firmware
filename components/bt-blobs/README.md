@@ -4429,3 +4429,24 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 
 ⇒ 本会话多次把相邻函数的代码当成同一个（`get_init_data` vs `load_cal_data_from_nvs`），
 **先用 `st_size` 划定区间再反汇编**是唯一可靠的做法。
+
+## RF 校准缓冲只需 **1904 字节**（离线读出，2026-11-19）
+
+`esp_phy_load_cal_and_init` 里的分配点：
+
+```asm
+400005b2: addi a1,zero,1904     # size  = 1904
+400005b6: c.li   a0,1           # nmemb = 1
+400005b8: jal    calloc         # calloc(1, 1904) —— 仅 1.9 KB
+```
+
+⇒ **不是"要几十 KB"** —— 1904 字节。所以若 `calloc` 返回 NULL，说明我们的分配器**根本没准备好**
+（而不是"堆不够大"）。
+
+**下一步（二选一，均离线优先）**：
+1. 找 `calloc`（`0x40067022`，46 字节）背后的堆：它从哪块内存取？是否需要在启动时初始化？
+   若是 Zig 的 bump 分配器且未赋初值，任何请求都会返回 NULL；
+2. 或在 `abort` 标记旁边再加一个"calloc 返回 NULL"标记，一次板测即可区分。
+
+**若 calloc 正常**，则 abort 来自别处 —— 但 `esp_phy_load_cal_and_init` 里只有两处 `ESP_ERROR_CHECK`，
+另一处（init data）已证明不可能失败（10 字节 thunk 返回静态表）。
