@@ -194,6 +194,14 @@
   容量：`net` +8.75 KB（阻塞 IO 的三个 API + 三段板级演示）、`full` +1.5 KB —— 两者都在窗口内，
   没有 64 KiB 步进；`capacity.json` 已 `--update`。
 
+- **W4 降级分支复测（2026-11-18）**：`socket.zig` 加了 `on_ready` 钩子之后要确认生产路径没变，
+  但本机 `sudo` 需要交互密码 ⇒ `scripts/host-prep-wire.sh up`（加 iptables 放行）跑不了 ⇒
+  **带 DHCP 的发布门禁本轮没跑**。取而代之刷了 `net-wire` profile：EMAC bring-up 仍 ok、
+  3 次 DHCP DISCOVER 无应答 ⇒ 走 W4 的 fail-closed 分支（`skipped/no-dhcp-server`、
+  `checks passed=1 failed=0`、`main: verdict=pass`），证据存 `logs/net-wire-no-dhcp.log`。
+  ⚠️ 这次**没有**用降级日志去更新 W1–W3：那会把"没跑通"洗成发布证据；`e2e-net-wire-boot.log`
+  保持原样，`update_matrix.py --check` 通过。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
