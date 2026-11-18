@@ -61,10 +61,7 @@ export fn probe_dump_now() void {
         board.log.line("Q2 {d} {d} {d}", .{ st.mutex_pend_ok, st.mutex_pend_busy, st.blocked_calls });
         board.log.line("Q3 {d} {d}", .{ st.pool_exhausted, st.eventq_requeued });
         board.log.line("Q4 {d} {d}", .{ log_hook_calls, log_hook_ours });
-        board.log.line("Q5 {d} {d}", .{
-            (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF,
-            (@as(*volatile u32, @ptrFromInt(0x2038_A018))).*,
-        });
+        board.log.line("Q5 {d} {d} {d} {d}", .{ board.hw.rw_calls, board.hw.rw_bytes, board.hw.rw_drops, board.hw.rw_max_fifo });
     }
     dumpAtPend();
 }
