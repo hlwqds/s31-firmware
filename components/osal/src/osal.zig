@@ -592,8 +592,14 @@ pub fn eventqRemove(qslot: *Slot, eslot: *Slot) void {
     }
 }
 
+/// 事件初始化回调（**运行期槽**，零链接耦合；bt-blobs 侧可挂调试钩子）。
+pub var on_event_init: ?*const fn (u32) void = null;
+var ev_init_n: u32 = 0;
+
 pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
     trace("eventInit", .{});
+    ev_init_n += 1;
+    if (on_event_init) |f| f(ev_init_n);
     // 槽位里可能已经有状态（重复 init）——复用，否则新建。
     const e = slotGet(Event, slot) orelse blk: {
         const fresh = event_pool.take() orelse {

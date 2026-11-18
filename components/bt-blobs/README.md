@@ -9211,3 +9211,63 @@ pub fn bt_hook_event_init(n: u32) void { if (n == 2) probe_dump_now(); }
 
 ⇒ 用**回调槽**而非 `extern`，避免 `osal` 反向依赖具体产品
 （否则不链 bt-blobs 的 host 测试会链接失败）。
+
+## 🏁🏁 根因定案：**事件队列从未初始化，所有投递被静默丢弃**（2026-11-19）
+
+### 决定性读数（确定性触发：第 2 次 `event_init` 时 dump）
+
+```text
+Q1 0 0 0     ← eventq_put=0, eventq_get_ok=0, eventq_get_empty=0
+Q2 0 0       ← mutex_pend_ok=0, blocked_calls=0
+Q3 0 0       ← pool_exhausted=0, eventq_requeued=0
+```
+
+### 判读
+
+| 计数器 | 值 | 含义 |
+| --- | --- | --- |
+| `eventq_put` | **0** | **投递从未成功计入** |
+| `eventq_get_ok` | 0 | 从未取到 |
+| `eventq_get_empty` | 0 | 甚至连"取空"都没有 |
+| `pool_exhausted` | 0 | 不是池耗尽 |
+| `eventq_requeued` | 0 | 不是重复入队 |
+
+⇒ **整个事件队列子系统从未发生过任何操作。**
+
+### 代码证据：`osal.zig:507-509`
+
+```zig
+pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
+    const q = slotGet(EventQ, qslot) orelse return;   // ← 槽无效：**静默返回**
+    const e = slotGet(Event, eslot) orelse return;    // ← 计数都不加
+    ...
+    stats_state.eventq_put += 1;                       // ← 只有成功才加
+```
+
+⇒ `eventq_put == 0` 与 `jH5m` 确实调了 `eventq_put` 并存于 `caller_ring`
+**完全一致**：调用发生了，但**槽无效 ⇒ 每次静默丢弃**。
+
+### 与轨迹的闭环
+
+`osal> ` 轨迹只有：`mutexPend` → `eventInit` ×2
+⇒ **从未出现 `eventqInit`** ⇒ **事件队列对象从未被创建**。
+
+⇒ 投递方的队列句柄指向一个**从未初始化的槽** ⇒ 全部投递被丢弃
+⇒ 等待方（`eventq_get`）永远拿不到事件。
+
+### 这是一条**可修的移植缺陷**
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | controller 的事件循环永远等不到事件 |
+| 根因 | `eventqInit` 未被调用（或调用时槽位分配失败但未记录）|
+| 证据 | `eventq_put/get_ok/get_empty` **全 0** + 轨迹无 `eventqInit` |
+| 修法方向 | 找到归档中应当 `eventq_init` 的位置，确认它为何没被调用/为何槽无效 |
+
+### 下一步
+
+1. 在 `eventqPut` 的 `slotGet` 失败分支加**计数与日志**（现在是静默的）⇒
+   一次运行即可看到"多少次投递因槽无效被丢弃"；
+2. 同理给 `eventqGet` 加；
+3. 查归档中 `wr_btdm_osal_eventq_init` 的调用者（`11/15/16/19.o` 之一），
+   确认它为何没有执行到。
