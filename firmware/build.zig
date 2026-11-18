@@ -73,6 +73,10 @@ pub fn build(b: *std.Build) void {
     var src: []const u8 = "pub const entries = .{\n";
     for (all_modules) |m| {
         if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
+        // probe 镜像里不能带 posix section：它会把 `osal_kit`（sched/osal）编进 app，
+        // 而 `bt_core` 对象里已有一份 ⇒ `bt_swap_context`、`s31_now_us` 等 export 重复。
+        // probe 是诊断镜像，本来也不需要那一段。
+        if (bt_probe and std.mem.eql(u8, m.name, "posix")) continue;
         src = b.fmt("{s}    .{{ .name = \"{s}\", .run = @import(\"{s}\").run }},\n", .{ src, m.name, m.name });
     }
     if (ab_fail) {
@@ -264,9 +268,13 @@ pub fn build(b: *std.Build) void {
         });
         bt_core.addImport("board", board);
         bt_core.addImport("osal_kit", osal_mod);
-        const bt_obj = b.addObject(.{ .name = "bt_core", .root_module = bt_core });
-        app.root_module.addObject(bt_obj);
+        // **不作为独立对象**：`addObject` 会把 `board`/`osal_kit` 再编一份，而 app 自己也编
+        // 同一批模块 ⇒ `bt_swap_context`、`s31_now_us`、`bt_mmio_read` 等 `export fn` 全部重复。
+        // 作为 app 的一个模块引入则只编一次；blob 构建已关 gc-sections，`export` 不会被裁掉。
+        app.root_module.addImport("bt_core", bt_core);
         // probe 用同一个模块（它 import 的是 `bt_core`，不是相对路径）
+        // 直接 import 模块：bt_core 现在是 app 的模块（只编一次），因此既能强制分析
+        // （`export fn` 才会发射），也不会像 addObject 那样把 board/osal 再编一遍。
         const probe_shim = "const c = @import(\"bt_core\");\npub const enabled = true;\npub const run = c.probe.run;\n";
         // probe 模块**总是存在**（与 wifi_init_probe 同构）：开则真探针，关则空实现。
         // 只 addImport 不调用是不会被编译的（import 惰性）⇒ 必须由 main.zig 显式引用。

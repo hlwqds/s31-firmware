@@ -202,6 +202,20 @@
   ⚠️ 这次**没有**用降级日志去更新 W1–W3：那会把"没跑通"洗成发布证据；`e2e-net-wire-boot.log`
   保持原样，`update_matrix.py --check` 通过。
 
+- **`bt-probe` 镜像原来编不出来（2026-11-18 修复）**：带闭包的 probe 构建报三组
+  `duplicate symbol`（`bt_swap_context` / `s31_now_us` / `bt_mmio_read` …）—— 根因是
+  `bt_core` 既作为**独立对象**（`addObject`）又把 `board`/`osal_kit` 编了进去，而 app 自己
+  也编同一批模块 ⇒ 同一模块编两遍、`export fn` 重复。改为 **`bt_core` 作 app 的模块**
+  （只编一次；blob 构建已关 `gc-sections`，`export` 不会被裁）。
+  另外 `esp_phy_enable` 是 ROM 函数（`0x2f00e756`）却**没在 `rom_syms.ld` 声明** ⇒ 补上。
+  ⚠️ 之前"`-Dbt-probe` 构建 RC=0"的结论只覆盖了**不带闭包**的形态（那时 probe 实际是关的）。
+  修复后 probe 镜像：bin **790 288 B** / factory 1.5 MB，两段窗口 ✓。
+- **首次拿到 BLE 锚点全表（2026-11-18，板级）**：`logs/bt-probe-anchors.log`。init 走到
+  step 6，10 个 `r_sym_bt_*` 锚点里 **只有 3 个已发布**（`[4]`/`[6]`/`[8]`），
+  **7 个仍是 0**（`[0][1][2][3][5][7][9]`）；随后在 `ra=0x4005fa94`（`r_btdm_task_init`
+  +0x4a）处以 `a0=0x0` 触发 **store access fault** —— 与"拿未发布锚点当基址写"一致，
+  即此前静默零填充的同一个缺陷，现在变成了可定位的 fault。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

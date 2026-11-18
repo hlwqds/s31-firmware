@@ -318,6 +318,9 @@ PROVIDE(ets_intr_unlock = 0x2f800774);
  * 本来就在 ROM 里——不必写桩，给地址即可。 */
 PROVIDE(abs = 0x2f800584);
 PROVIDE(ets_printf = 0x2f800024);
+/* BLE bring-up 的 PHY 使能：`bringup`/`probe_ptr` 按 ROM 地址直接调用
+ * （`esp_phy_enable(PHY_MODEM_BT=2)`）。地址取自 IDF 的 esp32s31.rom.ld。 */
+PROVIDE(esp_phy_enable = 0x2f00e756);
 PROVIDE(phy_set_chan_freq_sw_start = 0x2f801660);
 PROVIDE(printf = 0x2f8005c4);
 /* BLE 时基：controller 用它推所有超时/退避窗口，值必须是真频率（Hz）。
