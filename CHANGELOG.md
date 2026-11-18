@@ -69,6 +69,21 @@
   `osal.zig` 的 5 个 `export fn` 不会发射，`bt_core.o` 变 0 符号对象、闭包链接报未定义
   （`scripts/check-bt-link.sh` 会抓到）。新增组件基线：`osal: 20`，`bt-blobs: 17`。
 
+- **`osal` 不再知道自己服务谁（2026-11-18）**：`mutexPend` 里原本内嵌着 BLE bring-up 的门控
+  测量（`probe_ptr` 的 env/P + `0x2f00ffd0` 的 10 个 per-object 锚点表，约 37 行）。
+  那段代码读的地址和日志前缀都是 bt-blobs 专有的，而且 **`logLine` 只按 `"bt hook: "` 前缀
+  过滤日志**，`"bt gate: "`/`"bt env: "`/`"bt anchor["` 不在门内 ⇒ probe 路径下**每次取到
+  互斥锁都要往 UART 打 ~15 行**。现在门控搬进 `components/bt-blobs/src/gate.zig`，由
+  `Hooks.on_mutex_acquired` 注册；`probe_ptr.zig` 也随 ADR 退回 bt-blobs。
+  触发条件与迁移前完全一致（只有 `probe.zig` 设 `.log`，也只有它设新钩子），
+  日志格式逐字未变，闭包镜像仍 **913728 B**。
+- **POSIX 同步层（2026-11-18）**：`components/posix-compat/src/sync.zig` —— `sem_t` 与
+  `pthread_mutex_t` 建在 `osal.Sem` 上（**不是** `osal.Mutex`：后者只做有界忙等、不唤醒
+  等待者、无 owner/waiter），`pthread_once` 用 CAS。13 项新用例，posix-compat 17 → **30**。
+  `sem_timedwait`/`pthread_mutex_timedlock` 返回 `ENOSYS` —— 内核只有无限阻塞，假装超时
+  比不做更危险。无定时等待的 `semWait`/`pthread_mutex_lock` 在 `osal.TIMEOUT`（= 没能阻塞住，
+  不是到期）时返回 `EAGAIN` 而非 `ETIMEDOUT`，后者是 POSIX 只允许定时变体用的。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

@@ -15,8 +15,6 @@
 //! （`scripts/check-bt-link.sh` 会抓到这个）。
 pub const osal = @import("osal.zig");
 pub const sched = @import("sched.zig");
-/// 调试用的指针探针（`osal.zig` 读寄存器/栈时会用到）。
-pub const probe_ptr = @import("probe_ptr.zig");
 
 /// 让 `osal.zig` 里那 5 个 `export fn` 真正发射。**由消费者在 comptime 调一次**：
 ///

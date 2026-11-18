@@ -12,5 +12,7 @@ test {
     _ = @import("time.zig");
     _ = @import("addr.zig");
     _ = @import("fd.zig");
+    _ = @import("sync.zig");
     std.testing.refAllDecls(@import("fd.zig"));
+    std.testing.refAllDecls(@import("sync.zig"));
 }

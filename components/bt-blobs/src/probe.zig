@@ -132,7 +132,15 @@ pub fn run() noreturn {
 
     porting.clock_writes_enabled = clock_writes;
     bringup.skip_task_init = skip_task_init;
-    osal.setHooks(.{ .now_ms = nowMs, .log = logHook, .irq_save = irqSave, .irq_restore = irqRestore });
+    osal.setHooks(.{
+        .now_ms = nowMs,
+        .log = logHook,
+        .irq_save = irqSave,
+        .irq_restore = irqRestore,
+        // 门控测量（`r_btdm_task_init` 的 env/P/锚点表）原先硬编码在 `osal.mutexPend` 里，
+        // 现在由本组件注册 —— 内核不该知道 `0x2f00ffd0` 和 `probe_ptr`。
+        .on_mutex_acquired = @import("gate.zig").probeAnchors,
+    });
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
 

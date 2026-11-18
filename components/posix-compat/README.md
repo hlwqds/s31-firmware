@@ -41,9 +41,9 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `pthread_create` | `sched` 的 Task + 就绪队列 | ◐ 需要 create/join 包装与 trampoline（lab 里的任务是静态表） |
-| `pthread_join` | `sched.wake` + Task.done | ◐ 需要一个"等待某任务退出"的 WaitList |
-| `pthread_exit` / `pthread_self` | `sched.currentTask` | ● |
+| `pthread_create` | `osal.sched.taskCreate(stack, entry, arg)` | ◐ 需要 trampoline + 栈池（`sched` 只有 `max_tasks=8` 个槽，`Task` 没有 `done` 字段） |
+| `pthread_join` | **`Slot.done` + 每线程一个 `osem`**（见 §4.5） | ○ `sched` 里**没有** `wake`/WaitList，join 只能做在包装层 |
+| `pthread_exit` / `pthread_self` | `sched.currentContext()` / `sched.block()` | ○ **都没实现**：`sched` 里**没有** `currentTask`（只有 `currentContext()`），退出只能靠 `block()` 不再回来 |
 | `pthread_detach` | — | ○ 简单标志 |
 | `fork` / `exec` / `waitpid` | — | — 单地址空间、无 MMU 进程模型，不做 |
 | `getpid` | — | ○ 可返回固定值 |
@@ -52,13 +52,19 @@
 
 | POSIX | 我们的 | 状态 |
 | --- | --- | --- |
-| `pthread_mutex_init/lock/unlock/destroy` | `mutex.zig`（含 PI） | ● 直接映射 |
-| `pthread_mutex_trylock` | — | ○ 需要一个 tryLock（lab 里只有阻塞版） |
-| `pthread_cond_init/wait/signal/broadcast` | **无**（`events.zig` 是信号量语义，不是条件变量） | ○ **要新写**：cond 必须与 mutex 配合、避免丢失唤醒 |
-| `sem_init/wait/post/trywait/destroy` | `sem.zig` | ● |
-| `pthread_once` | — | ○ |
+| `pthread_mutex_init/lock/trylock/unlock/destroy` | `sync.zig` → **令牌数 1 的 `osal.Sem`** | ✅ 已完成（**不是** `osal.Mutex`：它只忙等、不唤醒，见下） |
+| `pthread_cond_init/wait/signal/broadcast` | **无** | ○ **要新写**：cond 必须与 mutex 配合、避免丢失唤醒 |
+| `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → `osal.Sem` | ✅ 已完成 |
+| `sem_timedwait` / `pthread_mutex_timedlock` | — | ⌛ 内核只有**无限阻塞**；有限超时的 `semPend` 会立即返回，所以这两个返回 `ENOSYS`（不是假装超时） |
+| `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
 | `pthread_rwlock_*` | — | — 本版不做（读者写者饥饿问题需要单独设计） |
-| `pthread_spin_*` | `spin.zig` | ● |
+| `pthread_spin_*` | — | ○ 待做（`std.atomic.spinLoopHint` 足够，但要知道它在单核上没有意义） |
+
+> ⚠️ **勘误（2026-11-18）**：本表原先写的 `mutex.zig`（含 PI）/ `sem.zig` / `spin.zig` /
+> `events.zig` 是 **lab 内核**的文件名，固件仓里**没有这些文件**。生产侧只有 `osal` 一套原语，
+> 而且 `osal.Mutex` **不是**一把能阻塞的锁：`mutexPend` 只做 2M 次 `spinLoopHint` 的有界
+> 忙等、`mutexRelease` 不唤醒等待者、Mutex 本身没有 owner/waiter 字段（它服务的是"不能真阻塞"
+> 的归档上下文）。
 
 ### 2.3 时间
 
@@ -142,9 +148,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**17 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 17`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**28 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 13** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 30`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
@@ -177,7 +183,12 @@ lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，l
 | --- | --- |
 | 1 | 新建 `components/osal/`，搬 `sched.zig` + `osal.zig` + 一份 `host_tests.zig`（现在这 36 项用例属于 bt-blobs） |
 | 2 | `bt-blobs` 改为 `@import("osal_component")`（它的 `selftest.zig` 里 `run()` 继续调搬过去的实现） |
-| 3 | `posix-compat` 加 `sync.zig` / `thread.zig`，依赖这个组件 |
+| 3 | `posix-compat` 加 `sync.zig` / `thread.zig`，依赖这个组件 —— **`sync.zig` 已完成**（28 项） |
+
+**剩 `thread.zig`**：`pthread_create/join/detach/self/exit`。按 §4.5 的 `Slot` + 信号量实现，
+`pthread_join` 是 `semPend(forever)`，trampoline 收尾 `done = true; semRelease(...)`。
+主机测试只能覆盖 **Slot 协议**（重复 join → `EINVAL`、detach 后 join → `EINVAL`、超时），
+因为 `sched` 的上下文切换是 rv32 `asm`，主机上跑不了真并发。
 
 ✅ **搬运所需的门禁已就绪（2026-11-18）**：`scripts/check-bt-link.sh` —— 生成闭包 → 用闭包链接
 → 断言镜像 > 500 KB。实测 116 个对象、镜像 913728 B；去掉 `root.zig` 的根引用后门禁失败（负例验过）。

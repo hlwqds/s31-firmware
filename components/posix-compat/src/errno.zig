@@ -23,6 +23,7 @@ pub const EAGAIN: c_int = 11;
 pub const ENOMEM: c_int = 12;
 pub const EACCES: c_int = 13;
 pub const EFAULT: c_int = 14;
+pub const EBUSY: c_int = 16;
 pub const EINVAL: c_int = 22;
 pub const EMFILE: c_int = 24;
 pub const EPIPE: c_int = 32;
@@ -76,6 +77,7 @@ pub fn name(e: c_int) []const u8 {
         ENOMEM => "ENOMEM",
         EACCES => "EACCES",
         EFAULT => "EFAULT",
+        EBUSY => "EBUSY",
         EINVAL => "EINVAL",
         EMFILE => "EMFILE",
         EPIPE => "EPIPE",

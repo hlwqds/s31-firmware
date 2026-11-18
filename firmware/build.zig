@@ -299,10 +299,11 @@ pub fn build(b: *std.Build) void {
             .optimize = .Debug,
         }) });
         t.root_module.addImport("net_sockets", socks_mod);
+        t.root_module.addImport("osal_kit", osal_mod); // sync.zig 建在 osal.Sem 上
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 
-    // OSAL 组件自己的主机测试（19 项：osal 17 + sched 2）
+    // OSAL 组件自己的主机测试（20 项：osal 17 + sched 2 + 聚合 1）
     {
         const t = b.addTest(.{ .root_module = b.createModule(.{
             .root_source_file = b.path("../components/osal/src/host_tests.zig"),

@@ -72,6 +72,10 @@ pub const Hooks = struct {
     irq_save: ?*const fn () u32 = null,
     irq_restore: ?*const fn (state: u32) void = null,
     log: ?*const fn (msg: []const u8) void = null,
+    /// 每次**无争用**取到互斥锁时调用。BLE 的 bring-up 用它做门控测量
+    /// （`r_btdm_task_init` 偏移 0x66 的 env/P/锚点表）——那是 bt-blobs 的事，
+    /// 内核不该知道 `probe_ptr` 或 `0x2f00ffd0` 这些地址。
+    on_mutex_acquired: ?*const fn () void = null,
 };
 
 var hooks: Hooks = .{};
@@ -375,43 +379,7 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
         m.locked = true;
         stats_state.mutex_pend_ok += 1;
         logLine("bt hook: mutex_pend => OK", .{});
-        {
-            // **关键三数测量**：此处在 `r_btdm_task_init` 偏移 0x66，
-            // 即 `OkE7` 已经跑完、`2aNN`（用 2.o 锚点 P）还没跑。
-            //   env     = 21.o 锚点（OkE7 发布的 76B 环境）
-            //   *(env+8)= OkE7 里 fqmZk 的守卫所读的字段（应为 eventq 槽位指针）
-            //   P       = 2.o 锚点（由 fqmZk 设置；为 0 则 2aNN 会向地址 0 写）
-            const pp = @import("probe_ptr.zig");
-            const env = pp.okE7Anchor();
-            const env8: u32 = if (env != 0) (@as(*volatile u32, @ptrFromInt(env + 8))).* else 0;
-            logLine("bt gate: env=0x{x} *(env+8)=0x{x} P=0x{x}", .{ env, env8, pp.get() });
-            if (env != 0) {
-                // **env 内容**：与 oracle 的 X[0..7] 对拍，看 [16]/[20] 是否是 env+52/env+64
-                const e: [*]volatile u32 = @ptrFromInt(env);
-                logLine("bt env: [0]=0x{x} [1]=0x{x} [2]=0x{x} [3]=0x{x}", .{ e[0], e[1], e[2], e[3] });
-                logLine("bt env: [4]=0x{x} [5]=0x{x} [6]=0x{x} [7]=0x{x}", .{ e[4], e[5], e[6], e[7] });
-                // `P` 被 `deinit` 的 `gvLJK` 当作**链表头**：`a3 = P; a5 = *(P); ...`
-                // 若 `*(P)` 是垃圾，遍历/摘链就会 store 到野地址 ⇒ 这正是 deinit 的 fault。
-                const pv = pp.get();
-                if (pv != 0) {
-                    const pl: [*]volatile u32 = @ptrFromInt(pv);
-                    logLine("bt P:   [0]=0x{x} [1]=0x{x} [2]=0x{x} [3]=0x{x}", .{ pl[0], pl[1], pl[2], pl[3] });
-                    // **10 个 per-object 锚点全表**（最终镜像里 `B r_sym_bt_*` 的完整集合）。
-                    // 非 0 = 已被归档自己发布；0 = 无人发布 ⇒ 后续消费它就是一次向 0 的访问。
-                    const names = [_][:0]const u8{
-                        "pSy5Wex1v0iXw5RdWtwL", "WDq2rzn4KRWP5mort5eS", "YnZmsxu068uuC3PC4iu8",
-                        "kfu8vf8dQgqwEzvqhb3d", "d3D3sk5KewclELfrD5xa", "sitBB3SrXn0IePgsPrBY",
-                        "r4auAKWSAFwgQarMHZCc", "lRdavKxt45o0gicEyznn", "6Q68KSwuQQP4VjQGqiWa",
-                        "y5Dip5N8bwiiGRcrWzBO",
-                    };
-                    var k: usize = 0;
-                    while (k < names.len) : (k += 1) {
-                        const v = (@as(*volatile u32, @ptrFromInt(0x2f00_ffd0 + k * 4))).*;
-                        logLine("bt anchor[{d}] {s} = 0x{x}", .{ k, names[k], v });
-                    }
-                }
-            }
-        }
+        if (hooks.on_mutex_acquired) |f| f();
         return OK;
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
