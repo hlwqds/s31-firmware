@@ -1308,6 +1308,27 @@ pub fn initArena(region: []u8) void {
     bt_arena.init(region);
 }
 
+pub var walk_blocks: usize = 0;
+pub var walk_stop: usize = 0;
+pub var walk_free: usize = 0;
+
+pub fn arenaWalk() void {
+    walk_blocks = 0;
+    walk_stop = 0;
+    walk_free = 0;
+    var addr = std.mem.alignForward(usize, @intFromPtr(bt_arena.buf.ptr), Arena.block_align);
+    const end = (@intFromPtr(bt_arena.buf.ptr) + bt_arena.buf.len) & ~(Arena.block_align - 1);
+    while (addr + @sizeOf(Arena.BlockHeader) <= end) {
+        const hdr: *Arena.BlockHeader = @ptrFromInt(addr);
+        if (hdr.magic != Arena.headerMagic) { walk_stop = addr; return; }
+        walk_blocks += 1;
+        if (hdr.free) walk_free += hdr.size;
+        if (hdr.size == 0) { walk_stop = addr; return; }
+        addr += hdr.size;
+    }
+    walk_stop = addr;
+}
+
 pub fn arenaLargestFree() usize {
     var best: usize = 0;
     var addr = std.mem.alignForward(usize, @intFromPtr(bt_arena.buf.ptr), Arena.block_align);
