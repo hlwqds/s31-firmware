@@ -206,7 +206,10 @@ pub fn phyDomainEnable() void {
     // 1) SOC_PLL_SOURCE_CG —— **不写**。
     // 本文件 238-240 行已记录：写了之后 ROM 会卡在 UART0 TX-FIFO 排空上（txfifo_cnt 恒 128）。
     // 实测（2026-11-19）：TXFIFO_CNT 停在 120/128、CPU 85–96% 在 hw.rawWrite、
-    // tick 只有 170 Hz（设定 10 kHz）⇒ 这一写扰动了时钟源。由 `pll_write_enabled` 控制，默认关。
+    // **注意**：此前曾据 TXFIFO_CNT=120 / tick 170 Hz 关掉这一写 —— 那两条观测后来都被撤回
+    // （120 是 dump 自己刚写的 14 行；FIFO 实际 125→4 能排空；170 Hz 是归档自己的 tick）。
+    // 本文件 331-333 行明确：**不开 bit4，modem 寄存器总线不应答，访问 0x2010B000 直接挂死（不是 fault）**。
+    // ⇒ 该写必须执行。`pll_write_enabled` 保留为实验开关，默认 true。
     if (pll_write_enabled) wr(0x2058_71E0, 0x3d);
     // 2) MODEM_SYSCON CLK_CONF1：PHY 依赖组（FE_APB/FE_80M/FE_160M/FE_DAC/FE_PWDET_ADC/FE_ADC）
     const conf1: usize = 0x2010_9C14;
@@ -240,7 +243,7 @@ pub fn forceReenableClocks(cfg: *const config.BtdmCfg) void {
 
 /// 是否写 `SOC_PLL_SOURCE_CG`。默认 **false**：板侧证据显示写了之后 ROM 会卡在
 /// `UART0` 的 TX FIFO 排空上（`txfifo_cnt` 恒 128）——先排除"这一写扰动时钟"的可能。
-pub var pll_write_enabled: bool = false;
+pub var pll_write_enabled: bool = true;
 
 /// `btdm_lp_enable_clock` 的真实现：`BLE_CLOCK_DEPS`(8) + `BT_APB_CLOCK_DEPS`(4) + MAC 复位。
 ///
