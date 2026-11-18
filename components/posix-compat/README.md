@@ -112,7 +112,7 @@
 
 ## 3. 本版范围（可验证优先）
 
-做（**10 个模块**，11 个源文件 —— 多的那个是 `host_tests.zig`；**85** 项主机用例）：
+做（**10 个模块**，11 个源文件 —— 多的那个是 `host_tests.zig`；**86** 项主机用例）：
 
 - `errno`（每 Task 分槽）· `time`（clock_gettime/nanosleep/clock_getres）·
   `addr`（`sockaddr_in` 编解码 + 每 fd 地址表）·
@@ -180,8 +180,8 @@ const Slot = struct {
 ## 5. 验收与登记方式
 
 - 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**86 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 86`；
+  （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 86`（与上式之和一致）；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在

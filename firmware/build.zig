@@ -288,7 +288,7 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
     // posix-compat 只登记**主机测试**，不进镜像：
-    //   - 它已被应用任何代码 import，没有板级行为变更；其中真正阻塞的那一段
+    //   - 目前还没有任何应用代码 import 它，因此没有板级行为变更；其中真正阻塞的那一段
     //     （sched.block()）在主机上是 no-op，所以板级验收留到接入应用的那一步；
     //   - 它需要 `net_sockets` 模块，而 `net_sockets` 组件模块（selftest 根）与这个 api 模块
     //     包含同一批文件 —— 同时进镜像会撞 Zig 的"一个文件属于两个模块"。

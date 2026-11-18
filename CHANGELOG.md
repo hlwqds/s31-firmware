@@ -50,6 +50,9 @@
   现有实现。README 是**梳理**产物：逐接口列出「我们的对应物 / 状态（已有·语义要补·缺·不做）/
   决定」，并纠正了一个错误结论 —— 生产侧早有 `bt-blobs` 的 OSAL（`semPend`/`mutexPend` 都**已
   支持超时**），内核并非只活在章节目录里。
+  > **更正（2026-11-18，后来的实测）**：这条"已支持超时"本身是**错的** —— `semPend` 只有
+  > `timeout == forever` 才真阻塞，有限超时**立即返回**；`mutexPend` 更是从不阻塞（只做 2M 次
+  > 有界忙等）。本层的定时等待因此另建了 `timer.zig` + `sync.pump()`，而不是复用它们。
   本版实现不需要内核的那一半：`errno`（Linux 数值 + 与 `net-sockets` 枚举的双射）、
   `time`（`clock_gettime`/`nanosleep`/`usleep`/`sleep`，时钟与睡眠注入；`CLOCK_REALTIME`
   明确 `EINVAL`，因为没有墙钟）、`addr`（`sockaddr_in` 16 字节布局与网络序端口）、
