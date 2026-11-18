@@ -8715,3 +8715,41 @@ BT controller 归档**要求真实的"阻塞 + 任务切换"**（`portMAX_DELAY`
 | 让归档认为锁可用（把持锁方"假释放"）| 治标，且会破坏互斥语义 |
 
 ⇒ 与 `WITH_PHY` 教训**完全同构**：问题在**我们自己实现的层**，不在厂商代码或硬件。
+
+## ❌ 撤回 4cbe870 的"根因"结论（2026-11-19）
+
+上一节断言"根因 = `mutexPend` 忙等超时 → 归档无限重试"。**该结论错误**，降级为假设。
+
+### 证伪依据（两条，都来自同一份日志）
+
+| 检查 | 结果 | 含义 |
+| --- | --- | --- |
+| `grep -c "忙等耗尽"` | **0** | 忙等耗尽分支（`osal.zig:404`）**从未执行** |
+| `mutexPend` 出现次数 | **1 次**（非反复） | **不存在重试环** |
+
+⇒ 锁**首次即拿到**（fresh mutex `locked=false`），没有进入忙等，更没有重试。
+⇒ 轨迹 `mutexPend → eventInit×2 → 静默` 的**静默点在 `eventInit×2` 之后**，
+   不在 mutex 上。
+
+### 同时修正另一处陈述
+
+README 里"唯一符合归档前提的路 = **实现最小任务调度**（代价大）"**也不成立**：
+调度器**早就有** —— `components/osal/src/sched.zig` 提供
+`block()` / `resumeTask()` / `startScheduler()` / `isStarted()` / `swapContext`，
+且 `osal.zig:541-556` 的 **`eventqGet` 已经按"真阻塞"范式实现**
+（`if (timeout == forever and sched.isStarted() and q.waiter == null)`）。
+
+⇒ 缺的**不是调度器**，而是 `mutexPend`/`mutexRelease` 里的对应两行（若将来需要）。
+
+### 当前正确的状态
+
+| 项 | 值 |
+| --- | --- |
+| step 6 停滞位置 | **`eventInit×2` 之后的非日志代码**（`r_sym_bt_3DcjgYC1ikQrP7jNyXGR` 尾段或其后 ROM 调用）|
+| 已证明 | 不是 mutex 忙等、不是中断、不是锚点、不是采样门控 |
+| 未证明 | 该助手尾段之后具体停在哪条调用 |
+
+### 下一步（纯离线）
+
+`r_sym_bt_3DcjgYC1ikQrP7jNyXGR` 定义在 **`libbtdm_common.a:2.o`**。
+反汇编它，列出 `eventq_init` **之后**的调用序列 —— 第一个"没打日志的"就是新的停滞候选。
