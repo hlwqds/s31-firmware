@@ -1165,7 +1165,7 @@ pub const Arena = struct {
     }
 
     pub fn alloc(self: *Arena, size: usize, alignment: usize) ?*anyopaque {
-        if (!self.initialized) return null;
+        if (!self.initialized) { putByte('!'); return null; }
         const align_to = @max(alignment, block_align);
         var need = std.mem.alignForward(usize, size + @sizeOf(BlockHeader), block_align);
         if (need < min_block) need = min_block;
@@ -1175,7 +1175,14 @@ pub const Arena = struct {
         const end = (base + self.buf.len) & ~(block_align - 1);
         while (addr + @sizeOf(BlockHeader) <= end) {
             const hdr: *BlockHeader = @ptrFromInt(addr);
-            if (hdr.magic != headerMagic) return null; // 越界/损坏
+            if (hdr.magic != headerMagic) {
+                // 判据：`M` + magic 的低字节（十六进制两字符）—— 区分"未初始化/被覆盖/碎片"。
+                putByte('M');
+                const hx = "0123456789abcdef";
+                putByte(hx[(hdr.magic >> 4) & 0xF]);
+                putByte(hx[hdr.magic & 0xF]);
+                return null; // 越界/损坏
+            }
             const next = addr + hdr.size;
             if (hdr.free and hdr.size >= need) {
                 // 先按对齐要求把数据区推到位（可能要在前面切一块）
@@ -1197,9 +1204,10 @@ pub const Arena = struct {
                 hdr.free = false;
                 return @ptrFromInt(addr + @sizeOf(BlockHeader));
             }
-            if (next <= addr) return null;
+            if (next <= addr) { putByte('x'); return null; }
             addr = next;
         }
+        putByte('#');   // 走完都没找到足够大的空闲块（碎片/链断）
         return null;
     }
 
