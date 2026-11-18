@@ -57,7 +57,7 @@
 | `sem_init/wait/trywait/post/getvalue/destroy` | `sync.zig` → 自持计数 + `waitq` FIFO | ✅ 已完成（**多等待者**，与 BLE 不共享静态池） |
 | `sem_timedwait` / `pthread_mutex_timedlock` | `sync.sem_timedwait` → `timer.zig` + 应用周期性 `sync.pump()` | ✅ 已完成（**契约**：不调 `pump()` 就永不到期；未绑时钟 ⇒ `ENOSYS`） |
 | `pthread_once` | `sync.zig`（CAS + 完成态自旋） | ✅ 已完成 |
-| `pthread_rwlock_*` | `rwlock.zig` → 两个 `waitq`（等读/等写）+ `sync.wake` | ✅ 已完成（**写者优先**，见下） |
+| `pthread_rwlock_*` | `rwlock.zig` → 两个 `waitq`（等读/等写）+ `sync.wake` | ✅ 已完成（**写者优先**，含交接窗口标记 `writer_pending`） |
 | `pthread_spin_*` | — | ○ 待做（`std.atomic.spinLoopHint` 足够，但要知道它在单核上没有意义） |
 
 > ⚠️ **阻塞的前提**：`sem_wait`/`mutex_lock`/`cond_wait` 要求调度器**已启动**
@@ -165,9 +165,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**75 项**
-  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 8** · **rwlock 8** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 75`；
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**77 项**
+  （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 11** · **waitq 6** · **cond 6** · **timer 8** · **rwlock 10** · 聚合块 1）；
+- `tests/baselines.json` 里 `posix-compat: 77`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在
