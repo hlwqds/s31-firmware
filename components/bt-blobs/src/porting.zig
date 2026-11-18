@@ -285,8 +285,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // **整字直接写**（RMW 回读证明写没落地：应为 0x003ff880，回读 0x003fe080）
     _ = b_conf1_btmac; _ = b_conf1_btbb;
     wr(reg_clk_conf1, 0x003f_f880);
-    if (false) wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_btmac | b_conf1_btbb |
-        b_conf1_bt_apb | b_conf1_wifibb_80x1);
+    // （曾用 RMW `rd(...) | 0x00070080`，因不落地改为整字写，见上）
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
         b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |
         b_conf_sec_ccm | b_conf_sec_bah);
@@ -403,9 +402,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // 直读 `0x2010B000` 会挂板，所以"我们的块是否可读"只能靠寄存器状态等价来推断。
     {
         const wins = [_]struct { name: []const u8, base: usize, n: usize }{
-            .{ .name = "syscon", .base = 0x2010_9C00, .n = 4 },   // 只打 +0x000..+0x00c（避免 80 行淹没 FIFO）
-            .{ .name = "lpcon", .base = 0x2010_F000, .n = 1 },
-            .{ .name = "pwr", .base = 0x2010_D000, .n = 1 },
+            // 只读 syscon 的前 4 个字（`+0x004` = clk_conf，是本轮根因的判据）。
+            // 其余窗口在 init 路径上会多打 ~1 KB 阻塞写，已移除。
+            .{ .name = "syscon", .base = 0x2010_9C00, .n = 4 },
             // clkrst 只打我们真正比对过的那几项（原 128 项会把 FIFO 灌满，导致后续行被丢）
             .{ .name = "clkrst", .base = 0x2058_7000, .n = 16 },
         };

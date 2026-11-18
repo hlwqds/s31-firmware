@@ -104,7 +104,7 @@ fn nowMs() u32 {
 pub var dump_rom: bool = false;
 /// **只做一次直读**（control read `0x20109C04` + `0x2010B000`），
 /// 不触发 `ble_block_experiment` 那条「重置脉冲 + bt_bb_v2_init_cmplx」的重路径。
-pub var bt_block_read_only: bool = true;
+pub var bt_block_read_only: bool = false; // 复现用；默认关（开启后每次开机读一次 0x2010B000）
 
 pub var ble_block_experiment: bool = false;
 /// 跳过 `r_btdm_task_init`（它会访问不可达块）⇒ 用于验证 step 7–15 / enable / HCI。
