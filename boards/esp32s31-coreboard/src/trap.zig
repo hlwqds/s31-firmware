@@ -393,7 +393,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             if (!sample_quiet and pc_ring_n % 256 == 0) {
                 // 带上 s0：反汇编里那个轮询循环的 `s0` 就是"要读哪个寄存器"的实参，
                 // 靠它才能算出真正的轮询地址（`a0` 只是被掩码后的数据）。
-                log.line("pcsample n={d} pc=0x{x} ra=0x{x} s0=0x{x}", .{ pc_ring_n, frame.mepc, frame.ra, frame.s0 });
+                log.line("ps n={d} pc=0x{x} s0=0x{x} a0=0x{x} a1=0x{x}", .{ pc_ring_n, frame.mepc, frame.s0, frame.a0, frame.a1 });
             }
             hw.ackT0Interrupt(sample_period_us);
             return false;
