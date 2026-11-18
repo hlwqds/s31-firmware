@@ -202,6 +202,36 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const c1 = (@as(*volatile u32, @ptrFromInt(0x20109C14))).*;
                 const fo = (@as(*volatile u32, @ptrFromInt(0x20109C08))).*;
                 log.line("F{x}.{x}.{x}", .{ fe, c1, fo });
+                const p1 = (@as(*volatile u32, @ptrFromInt(0x2010080C))).*;
+                const p2 = (@as(*volatile u32, @ptrFromInt(0x20100808))).*;
+                log.line("P{x}.{x}", .{ p1, p2 });
+                // 当前热点：对已采样本做众数统计（FIFO 太小，不能逐条打印）
+                {
+                    var best: u32 = 0;
+                    var best_n: usize = 0;
+                    var i: usize = 0;
+                    while (i < pc_snap_n) : (i += 1) {
+                        var c: usize = 0;
+                        var j: usize = 0;
+                        while (j < pc_snap_n) : (j += 1) {
+                            if (pc_snap[j] == pc_snap[i]) c += 1;
+                        }
+                        if (c > best_n) {
+                            best_n = c;
+                            best = pc_snap[i];
+                        }
+                    }
+                    log.line("M{x}.{d}.{d}", .{ best, best_n, pc_snap_n });
+                }
+                // ROM 轮询环原文：0x2f828a40 起 160 B
+                var a: usize = 0x2f801200;
+                while (a < 0x2f801700) : (a += 16) {
+                    const w0 = (@as(*volatile u32, @ptrFromInt(a))).*;
+                    const w1 = (@as(*volatile u32, @ptrFromInt(a + 4))).*;
+                    const w2 = (@as(*volatile u32, @ptrFromInt(a + 8))).*;
+                    const w3 = (@as(*volatile u32, @ptrFromInt(a + 12))).*;
+                    log.line("{x}:{x},{x},{x},{x}", .{ a, w0, w1, w2, w3 });
+                }
             }
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
