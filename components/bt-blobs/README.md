@@ -6531,3 +6531,30 @@ memcpy(0x2f01a080, 0, 0x1000)   ; _bss_end_btdm .. _data_end_btdm = 4 KiB
 
 "~355 KB 足迹"用**旧 32 KiB 洞**测得；当前配置的真实峰值**未重测**。
 376 KiB − ~355 KB ≈ **21 KiB 余量**是否够，需在**当前布局**下重测 `arenaFree()` 的峰值。
+
+## 🔑 `phy_before_clocks` 翻转：到达 step 1，随后 abort（2026-11-19 关键实验）
+
+把 `phy_before_clocks` 从 `true` 翻到 **`false`**（PHY 初始化移到 step 5 之后）：
+
+```
+bt bringup: enter step 1 mempool          ← **step 1 出现了**
+bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16 / cap 384/96/128/64/64
+pcsample n=9728 pc=0x400670c6 ra=0x400670c6   ← 落在 **abort 的自旋段**
+```
+
+| 配置 | 行为 |
+| --- | --- |
+| `phy_before_clocks=true`（原默认） | PHY 初始化在 `dumpBootState`（step 1 之前）⇒ **到不了 step 1** |
+| `phy_before_clocks=false`（本次） | **step 1 执行** → 然后 **abort** |
+
+⇒ **"到不了 step 1" 是开关造成的**，不是校准挂死。
+⇒ 翻过来之后暴露的是**另一处 abort**，位置在 step 1（mempool）之后。
+
+### 下一处嫌疑：mempool 校验
+
+`mempool: need evt=187 … / cap 384/96/128/64/64` 之后立即 abort ⇒
+很可能是**归档自己的 mempool 校验**拒绝了这些计数
+（`porting.zig` 里记录的校验：需要数超过 cap 即失败）。
+
+**下一步**：把 `evt` 计数或 caps 调到一致，看 step 1 是否能通过。
+这与"容量"是**同一个根**（需求 187 个事件 × 每事件缓冲）。
