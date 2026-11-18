@@ -4292,3 +4292,32 @@ s9792.416.419.1            <- 仍在增长
    - 出现 ⇒ PHY 断言成立，下一步在 `esp_phy_load_cal_and_init` 里找那条断言的上游判据；
    - 不出现 ⇒ CPU 卡在别处（用 1 字节心跳 + 码数导出定位）；
 3. 测完把开关改回 `false` 再提交（保持基线可复现）。
+
+## 🎯 `abort` 的确切原因（离线从 rodata 读出，2026-11-19）
+
+`WITH_PHY=1` ELF 的 rodata：
+
+```
+0x40100024: "phy_init"                       <- 源文件 phy_init.c
+0x40101dd0: "E (%lu) %s: failed to "          <- ESP_ERROR_CHECK 的日志格式
+0x40101dd4+: "…ed to obtain PHY init data"
+0x40101dfc+: "…(%lu) %s: failed to allocate memory for RF calibration"
+```
+
+⇒ **`phy_init.c` 里的 `ESP_ERROR_CHECK` 失败**，两条候选消息：
+1. **"failed to obtain PHY init data"** —— 取不到 PHY 初始化表（NVS/校准数据缺失）；
+2. **"failed to allocate memory for RF calibration"** —— 为 RF 校准**分配内存失败**。
+
+判定依据（都指向我们侧）：
+- 我们的 `phy_stubs.c` 让 `nvs_open(PHY_NAMESPACE)` 返回 `ESP_ERR_NVS_NOT_FOUND`
+  ⇒ 若 IDF 在 `NOT_FOUND` 时不回落到全量校准，就会命中第 1 条；
+- RF 校准需要一个较大的缓冲区（`esp_phy_load_cal_and_init` 里 malloc），
+  而我们的 arena 只有几十 KB 且已被 21 次 malloc 消耗 ⇒ 很可能命中第 2 条。
+
+**下一步（两处各一改，判据明确）**：
+1. `phy_stubs.c` 的 NVS 改为**返回成功 + 长度 0 的空 blob**（而不是 NOT_FOUND），
+   迫使它走"全量校准"而不是 assert；
+2. 若仍 abort，则加大 arena / 让 `btdmMalloc` 在大块请求时回落到大缓冲；
+3. 判据：`phy_init.c` 的 `E (...)` 日志消失，或 `esp_phy_enable` 返回 0。
+
+⚠️ 该路径**必须** `phy_domain_enable=true` 才能到达（默认 `false` 是基线）。
