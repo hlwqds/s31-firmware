@@ -7,8 +7,8 @@
 
 | 层 | 在哪 | 形态 |
 | --- | --- | --- |
-| **生产 OSAL：任务 + 调度器** | `components/bt-blobs/src/sched.zig`（310 行） | `taskCreate(stack, entry, arg)`、`currentContext`、`start`；协作式，已被 BLE blob 使用 |
-| **生产 OSAL：同步原语** | `components/bt-blobs/src/osal.zig`（1636 行） | `semInit/semPend(timeout)/semRelease/semGetCount/semDeinit`、`mutexInit/mutexPend(timeout)/mutexRelease/mutexDeinit`、`eventqPut/Get(timeout)`、`calloutInit/Reset`（软件定时器） |
+| **生产 OSAL：任务 + 调度器** | `components/osal/src/sched.zig`（310 行，2026-11-18 从 bt-blobs 抽出） | `taskCreate(stack, entry, arg)`、`currentContext`、`start`；协作式，已被 BLE blob 使用 |
+| **生产 OSAL：同步原语** | `components/osal/src/osal.zig`（1604 行，同上抽出） | `semInit/semPend(timeout)/semRelease/semGetCount/semDeinit`、`mutexInit/mutexPend(timeout)/mutexRelease/mutexDeinit`、`eventqPut/Get(timeout)`、`calloutInit/Reset`（软件定时器） |
 | 生产 Wi-Fi OSAL | `components/wifi-blobs/src/osi_impl.zig`（1567 行） | Wi-Fi blob 的 osi 表实现（事件/定时器/锁），形状由 blob ABI 决定 |
 | 教学内核 | `practice/zig-esp32-s31/ch10/ch11/ch12` 的 `sched/mutex/sem/events/queue/spin` | 抢占 + 优先级继承的**教学**实现 |
 | socket 层（fd 表、状态机、errno 语义） | `s31-firmware/components/net-sockets` | **已是生产组件**，`Table` + `Socket` + `Io{err,n}` |
@@ -20,8 +20,8 @@
 
 | POSIX | `bt-blobs` OSAL | 差距 |
 | --- | --- | --- |
-| `sem_init/destroy/post/getvalue/wait/trywait` | `semInit/semDeinit/semRelease/semGetCount/semPend(timeout)` | **几乎 1:1**，且 `semPend` 已支持超时（`sem_timedwait` 不用另造） |
-| `pthread_mutex_init/destroy/lock/unlock/trylock` | `mutexInit/mutexDeinit/mutexRelease/mutexPend(timeout)` | 同上；超时已在 |
+| `sem_init/destroy/post/getvalue/wait/trywait` | `semInit/semDeinit/semRelease/semGetCount/semPend(timeout)` | 形状 1:1，但 **`semPend` 只有 `forever` 才真阻塞**；有限超时立即返回 `TIMEOUT` ⇒ `sem_timedwait` **不能**靠它，本层返回 `ENOSYS` |
+| `pthread_mutex_init/destroy/lock/unlock/trylock` | `mutexInit/mutexDeinit/mutexRelease/mutexPend(timeout)` | ❌ **不能用**：`mutexPend` 只做 2M 次忙等、`mutexRelease` 不唤醒、Mutex 无 owner/waiter。本层改用令牌数 1 的 `Sem` |
 | `pthread_create` | `sched.taskCreate(stack, entry, arg)` | 缺 join/detach；调用方要自备栈 |
 | `mq_send/receive` | `eventqPut/eventqGet(timeout)` | 槽位式（`*Slot`）而非字节流 |
 | `timer_create` | `calloutInit/calloutReset(ticks)` | 固定周期，无 `itimerspec` |
@@ -30,8 +30,8 @@
 而 socket 层已经用 POSIX 的 errno 词汇（`again`/`bad_fd`/`not_conn`/`conn_reset`/`pool_full`/
 `in_progress`）和 `Io{err,n}` 结果 ⇒ 兼容层两半**都是薄适配**，不是重新实现。
 
-⚠️ 但这两套 OSAL **现在只服务各自的 blob**：作为组件私有文件存在，模块根是各自的 `selftest.zig`。
-复用它们需要先把 OSAL/sched 抽成独立组件（见 §6）。
+⚠️ 这两套 OSAL 原先只服务各自的 blob；**OSAL/sched 已于 2026-11-18 抽成 `components/osal/`**
+（见 §6.1）。Wi-Fi 那套仍留在 `wifi-blobs`（形状由 blob ABI 决定，不复用）。
 
 ## 2. 映射表
 
