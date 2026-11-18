@@ -175,7 +175,7 @@ SECTIONS
      * 堆从 _bss_end 长到 _stack_bottom。自检会打印这四个边界，
      * 并检查 `_heap_start <= _heap_end`、`_bss_end <= _stack_bottom`。
      * ------------------------------------------------------------------- */
-    _stack_size = 0x4000;
+    _stack_size = 0x4000;   /* 16 KiB：8 KiB 会栈溢出（实测 panic），不可减 */
     _stack_top = ORIGIN(sram) + LENGTH(sram);
     _stack_bottom = _stack_top - _stack_size;
 
@@ -183,7 +183,7 @@ SECTIONS
      * 这两个段是 NOLOAD 但**占用真实地址**（32 KiB + 4 KiB），落在 `_bss_end` 之后。
      * 若 `_heap_start == _bss_end`，allocator 会覆盖归档自己的全局对象
      * （锚点槽/事件队列/链表头都在 .btdm_bss 内）—— 本会话已因此出现过多例"不可解释"现象。 */
-    _heap_start = _data_end_btdm + 0x1000;   /* 守卫页（64 KiB 实验证明覆盖幅度更大，见 README） */
+    _heap_start = _data_end_btdm;   /* 无守卫页：已证明 .btdm_data 不越界（free=944 时需多 4 KiB） */
     _heap_end = _stack_bottom;
 
     /* ---------------------------------------------------------------------
