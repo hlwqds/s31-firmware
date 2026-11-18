@@ -224,6 +224,15 @@
   做一次 `osal.forceExports()` 的 comptime 根引用 —— 只发射归档要的 5 个 `s31_*`；
   闭包镜像因此从 913 728 → **913 744 B**（+16 B），门禁通过。
 
+- **PHY 使能的两条路径行为不同（2026-11-18，板级实测）**：
+  | 配置 | 结果 |
+  | --- | --- |
+  | 不给 `-Dphy-src-objs`（`PROVIDE(esp_phy_enable)` → ROM `0x2f00e756`） | bringup 跑到 **step 6**、打印全部锚点、崩在 deinit 路径 —— **可诊断** |
+  | 给 `-Dphy-src-objs`（IDF 编好的 7 个 PHY 对象） | 镜像起来就在 PHY 里打 PMU 寄存器转储（`pmu+0x164…`、`phy: (log)`），**没进 bringup** |
+  因此不强制任何一条：`PROVIDE` 作为**回退**保留（有真实定义时自动让位），
+  两条路径的差异写进 `build.zig` 注释。IDF 对象那条为何在 bringup 之前就停，待查
+  （`logs/bt-probe-phy-src.log`）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

@@ -226,6 +226,12 @@ pub fn build(b: *std.Build) void {
         const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("wifi_init_probe_off.zig", off_src) });
         app.root_module.addImport("wifi_init_probe", off_mod);
     }
+    // PHY 使能有两条路径，行为**不同**（2026-11-18 实测）：
+    //   - 不给 `-Dphy-src-objs`：`PROVIDE(esp_phy_enable)` 指到 ROM（`rom_syms.ld`）⇒
+    //     bringup 能跑到 step 6 并打印锚点，崩在 deinit 路径 —— **可诊断**；
+    //   - 给了 `-Dphy-src-objs`（IDF 编好的 7 个对象）：真实定义覆盖 PROVIDE ⇒ 但镜像
+    //     起来就在 PHY 里打 PMU 转储、**没进 bringup** —— 这条路本身待查。
+    // 所以不强制任何一条，也不为此 panic。
     if (phy_src_objs.len > 0) {
         var it2 = std.mem.splitScalar(u8, phy_src_objs, ',');
         while (it2.next()) |path| {
