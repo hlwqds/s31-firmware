@@ -127,7 +127,7 @@ fn trace(comptime what: []const u8, args: anytype) void {
 /// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
 /// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
 var bail_sentinel: [64]u8 align(4) = @splat(0);
-pub var patch_bail_field: bool = false; // 已证伪：填 [obj+8] 不影响崩溃
+pub var patch_bail_field: bool = false; // 已证伪：写 evq 首字不改变崩溃
 
 fn fillBailField() void {
     if (!patch_bail_field) return;
@@ -910,7 +910,13 @@ export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
     eventqInit(evq);
     // 判据补丁（实验）：必须在 `eventqInit` **之后**——`evq` 就是 `obj+8`（`c.addi a0,8`），
     // `eventqInit` 会写槽首字，放在前面会被它覆盖。
-    fillBailField();
+    // 判据补丁（实验）：`evq` 形参**就是**被检查的那个字（归档传的是 `obj+8`），
+    // 直接写它，不做任何地址推算。
+    if (patch_bail_field) {
+        const w: *volatile u32 = @ptrCast(evq); // 槽的首字（归档检查的就是它）
+        w.* = @intFromPtr(&bail_sentinel);
+        logPublic("bt patch: evq=0x{x} -> 0x{x}", .{ @intFromPtr(evq), w.* });
+    }
 }
 export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
     eventqDeinit(evq);
