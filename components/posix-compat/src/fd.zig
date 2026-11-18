@@ -18,6 +18,7 @@ const net_sockets = @import("net_sockets");
 const errno = @import("errno.zig");
 const addr = @import("addr.zig");
 const time = @import("time.zig");
+const sync = @import("sync.zig");
 
 pub const AF_INET: c_int = @as(c_int, addr.AF_INET);
 pub const SOCK_STREAM: c_int = 1;
@@ -311,6 +312,56 @@ pub fn fcntl(fd: c_int, cmd: c_int, arg: c_int) c_int {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 阻塞 accept：靠 socket 层的就绪通知
+//
+// `Table` 是轮询模型（`accept` 只会返回 `EAGAIN`）。要让它**阻塞**，必须有东西在
+// "连接到了"时把等待者叫醒 —— 那就是 `socket.Table.on_ready`。桥接只需要一次 `sem_post`，
+// 所以这里是全层唯一"生产代码 ↔ 本层"的接缝。
+//
+// ⚠️ 前提：**RX 泵必须跑在与调用者不同的任务里**。本仓的 RX 是同一个任务在
+// `emac.rxPollCopy` 里喂表，若在那个任务里阻塞 `accept`，就没人再喂表 ⇒ 自死锁。
+// ---------------------------------------------------------------------------
+
+var g_ready_sem: ?*sync.sem_t = null;
+
+fn onReady(ctx: ?*anyopaque) void {
+    const p2 = ctx orelse return;
+    const sem: *sync.sem_t = @ptrCast(@alignCast(p2));
+    _ = sync.sem_post(sem);
+}
+
+/// 让 `fd.acceptBlock` 能阻塞：把 `sem` 挂到 socket 表的就绪钩子上。
+/// `sem` 必须比钩子活得久（调用方持有；通常是应用里的静态变量）。
+pub fn enableBlockingAccept(sem: *sync.sem_t) c_int {
+    const t = tbl() orelse return -1;
+    g_ready_sem = sem;
+    t.on_ready = onReady;
+    t.on_ready_ctx = sem;
+    return 0;
+}
+
+/// 关掉阻塞 accept（把钩子摘掉）。
+pub fn disableBlockingAccept() void {
+    const t = tbl() orelse return;
+    t.on_ready = null;
+    t.on_ready_ctx = null;
+    g_ready_sem = null;
+}
+
+/// 阻塞版 `accept`：没连接时睡在就绪信号量上，被唤醒后重试。
+///
+/// 返回值与 `accept` 相同；`EAGAIN` 只可能来自"没能阻塞住"（没启用 / 调度器未启动）。
+pub fn acceptBlock(listen_fd: c_int) c_int {
+    while (true) {
+        const r = accept(listen_fd, null, null);
+        if (r >= 0) return r;
+        if (errno.get() != errno.EAGAIN) return -1;
+        const sem = g_ready_sem orelse return -1; // 未启用阻塞模式
+        if (sync.sem_wait(sem) != 0) return -1; // 未能阻塞：EAGAIN 已由 sync 置好
+    }
+}
+
 pub fn poll(fds: []pollfd, timeout_ms: c_int) c_int {
     const t = tbl() orelse return -1;
     const timeout: c_int = if (timeout_ms < 0) 0 else timeout_ms;
@@ -402,6 +453,47 @@ test "fd: fcntl 读写 O_NONBLOCK，非法命令与坏 fd 各有其码" {
     errno.set(0);
     try testing.expectEqual(@as(c_int, -1), fcntl(max_fds, F_GETFL, 0));
     try testing.expectEqual(errno.EBADF, errno.get());
+}
+
+test "fd: 就绪钩子把 socket 层的通知接到信号量上（阻塞 accept 的接缝）" {
+    fakeTime();
+    var t: net_sockets.socket.Table = .{};
+    freshTable(&t);
+    defer deinit();
+
+    var sem: sync.sem_t = .{};
+    try testing.expectEqual(@as(c_int, 0), sync.sem_init(&sem, 0, 0));
+    defer _ = sync.sem_destroy(&sem);
+    try testing.expectEqual(@as(c_int, 0), enableBlockingAccept(&sem));
+    defer disableBlockingAccept();
+
+    const lfd = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(lfd >= 0);
+    try testing.expectEqual(@as(c_int, 0), listen(lfd, 1));
+
+    var v: c_int = -1;
+    try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
+    try testing.expectEqual(@as(c_int, 0), v);
+
+    // 投一个 SYN ⇒ socket 层回调 ⇒ 信号量 +1
+    var seg: net_sockets.netstub.Segment = .{ .kind = .syn };
+    net_sockets.socket.Table.deliver(&t, @intCast(lfd), seg);
+    try testing.expectEqual(@as(c_int, 0), sync.sem_getvalue(&sem, &v));
+    try testing.expectEqual(@as(c_int, 1), v);
+    seg.kind = .syn; // 同一段的复用只为让编译器满意
+}
+
+test "fd: 没启用阻塞时 acceptBlock 立刻返回（不挂住）" {
+    fakeTime();
+    var t: net_sockets.socket.Table = .{};
+    freshTable(&t);
+    defer deinit();
+    const lfd = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(lfd >= 0);
+    try testing.expectEqual(@as(c_int, 0), listen(lfd, 1));
+    errno.set(0);
+    try testing.expectEqual(@as(c_int, -1), acceptBlock(lfd));
+    try testing.expectEqual(errno.EAGAIN, errno.get());
 }
 
 test "fd: socket 校验 family/type/protocol" {

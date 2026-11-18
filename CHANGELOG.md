@@ -161,6 +161,13 @@
   容量：`net` +3.1 KB；`full` bin +62 KB 里 **51 KB 是第二段窗口的 64 KiB 步进 padding**，
   真实段增长 ~10.8 KB —— `capacity.json` 已 `--update`，原因写在此处。
 
+- **socket 层就绪通知 + 阻塞 accept（2026-11-18）**：`net_sockets.socket.Table` 新增
+  `on_ready` 钩子（默认 `null`，行为与旧版一致），在 `deliver`（收到 SYN 或数据段）与
+  `close` 时回调；回调约束是"同步、轻量、只 `sem_post`"。POSIX 侧新增
+  `fd.enableBlockingAccept(sem)` / `fd.acceptBlock(fd)`：没连接时睡在就绪信号量上，醒来重试。
+  **前置**：RX 泵必须跑在与调用者**不同的任务**里 —— 本仓的 RX 是同一任务在
+  `emac.rxPollCopy` 里喂表，原地阻塞即自死锁。2 项新用例（总计 **88**）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 

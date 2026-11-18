@@ -91,7 +91,7 @@
 | `socket(AF_INET, SOCK_STREAM, 0)` | `fd.socket` → `Table.alloc` + family/type/proto 校验 | ✅ 已完成 |
 | `bind` | `fd.bind` + 本组件的每 fd `sockaddr_in` 表 | ✅ 已完成 |
 | `listen` | `Table.listen` | ● |
-| `accept` | `fd.accept` → `backlog` + `accept_token` | ✅ 非阻塞（`EAGAIN`）；⏳ **阻塞等待未做**（见 §6.3） |
+| `accept` | `fd.accept`（非阻塞）/ `fd.acceptBlock`（阻塞） | ✅ 阻塞版靠 `socket.Table.on_ready` + `enableBlockingAccept(sem)`；**前提见下**：RX 泵必须在另一个任务里 |
 | `connect` | `fd.connect` → `Table.connect` | ✅ 非阻塞返回 `EINPROGRESS`；⏳ 阻塞等待未做 |
 | `send` / `recv` | `Socket.send` / `Socket.recv` | ● 直接映射到 `ssize_t` + `errno` |
 | `sendto` / `recvfrom` / `sendmsg` / `recvmsg` | — | — 只有 TCP，不做 |
@@ -185,9 +185,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**86 项**
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**88 项**
   （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 86`（与上式之和一致）；
+- `tests/baselines.json` 里 `posix-compat: 88`（与上式之和一致）；
 - **板级**：`section: posix` → 15/15（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
 
 **本组件已进镜像**（2026-11-18）：`firmware/build.zig` 里登记为 section `posix`（group `net`），

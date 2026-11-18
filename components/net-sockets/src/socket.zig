@@ -428,6 +428,21 @@ pub const Table = struct {
     ignores: u32 = 0,
     spawn_token: u32 = 0,
 
+    /// **就绪通知**：某个 fd 可能变成可读时回调（默认 `null` = 不通知，行为与旧版一致）。
+    ///
+    /// 本层是**轮询**模型，`accept`/`recv` 只会返回「还没好」。要让它能被**阻塞**使用
+    /// （POSIX 语义），必须有东西在"数据到了"时把等待者叫醒 —— 那就是这个钩子。
+    ///
+    /// 约束：**在喂数据的那个任务里同步调用**，所以回调里不要阻塞、不要做重活；
+    /// 正确的用法是 `sem_post` 一次然后立刻返回。
+    on_ready: ?*const fn (ctx: ?*anyopaque) void = null,
+    on_ready_ctx: ?*anyopaque = null,
+
+    /// 触发一次就绪通知（`on_ready` 为空时什么也不做）。
+    pub fn notify(self: *Table) void {
+        if (self.on_ready) |f| f(self.on_ready_ctx);
+    }
+
     pub fn reset(self: *Table) void {
         self.* = .{};
     }
@@ -485,12 +500,14 @@ pub const Table = struct {
         if (s.state == .listen) {
             if (seg.kind == .syn) {
                 self.spawnChild(fd, seg);
+                self.notify(); // backlog 可能因此非空 ⇒ accept 可返回
             } else {
                 self.ignores += 1;
             }
             return;
         }
         s.onSegment(seg);
+        self.notify(); // 可能置 readable / reset_seen / 推进状态机
     }
 
     /// 字节串入口（单段）：解一段并投递。
@@ -572,6 +589,7 @@ pub const Table = struct {
     pub fn close(self: *Table, fd: u8) void {
         const s = &self.socks[fd];
         if (!s.state.isOpen()) return;
+        self.notify(); // 状态变化：等这个 fd 的读者应重新检查
         if (s.state == .listen) {
             s.reset();
             return;
