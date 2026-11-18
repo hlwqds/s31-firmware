@@ -107,12 +107,22 @@ void _lock_release(void **lock) { (void)lock; }
 /* **PHY 校准专用缓冲**：arena 已被归档吃到只剩 ~1.2 KB（实测 188 块、走到堆尾），
  * 而 PHY 校准要 1904 B ⇒ 必失败 ⇒ `phy_init.c` 的 ESP_ERROR_CHECK → abort。
  * 这一块不参与共享 arena 的竞争：`n*sz == 1904` 时直接给静态缓冲。 */
+
+/* 单字节输出（不走我们的日志栈，避免被过滤/丢弃） */
+static void put1(char c) {
+    volatile unsigned *fifo = (volatile unsigned *)0x2038A000;
+    volatile unsigned *stat = (volatile unsigned *)0x2038A01C;
+    unsigned sp = 0;
+    while ((((*stat >> 16) & 0xFF) >= 120) && sp < 40) sp++;
+    if (sp < 40) *fifo = (unsigned)c;
+}
 static unsigned char g_phy_cal_buf[2048] __attribute__((aligned(16)));
 
 void *calloc(size_t n, size_t sz)
 {
     size_t total = n * sz;
     if (total == 1904) {
+        put1('C');
         uint8_t *b = (uint8_t *)g_phy_cal_buf;
         for (size_t i = 0; i < total; i++) b[i] = 0;
         return g_phy_cal_buf;
@@ -154,6 +164,7 @@ void abort(void) {
         __asm__ volatile ("mv %0, ra" : "=r"(ra));
         g_abort_ra = ra;
     }
+    put1('A');
     { extern void probe_dump_now(void); probe_dump_now(); }   /* 崩溃瞬间导出 */
     for (;;) {}
 }
