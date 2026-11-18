@@ -5203,3 +5203,34 @@ canary 显示块头 `size=1920` 且其后 canary 完好 ⇒ **分配确实成功
 
 **下一步（唯一）**：在**当前**镜像上 `readelf` 取 `esp_phy_load_cal_and_init` 的
 `st_value`，反汇编它的 `calloc` 调用点与后续 `beqz`，确认请求大小与判据寄存器。
+
+## 🏁 分配**成功**：`ret=0x2f01ffd0`（2026-11-19 定论）
+
+修正仪器（把 `last_ret` 赋值移到 dump 之前）后：
+
+```
+MC 1 sz=1904 ret=0x2f01ffd0
+```
+
+`0x2f01ffd0 = _heap_start(0x2f01fec0) + 0x110` ⇒ **有效指针，非 NULL**。
+
+⇒ **`calloc(1, 1904)` 成功返回** ⇒ `0x400005be: c.beqz a0` **不会跳转**。
+
+### 因此整条"分配失败"线作废
+
+| 之前的结论 | 现在的证据 |
+| --- | --- |
+| `calloc` 返回 NULL ⇒ abort | **否证**：返回 `0x2f01ffd0` |
+| 堆太小 / 块头被覆盖 / 溢出 | 全部已逐一否证（356 KiB、canary 完好、余块头合法） |
+
+⇒ **abort 来自另一处 `abort` 调用**，而不是 `0x4000066e` 那个"分配失败"分支。
+
+### 下一步（当前镜像上重新定位）
+
+1. 在**当前** ELF 上 `readelf -sW | grep abort` 取 `abort` 的 `st_value`；
+2. 反汇编该 `abort` 的所有调用点（`objdump -d | grep "<abort>"`），
+   逐个看其前面的条件 —— 找到真正被走到的那个；
+3. 或在 `abort` 桩里打印 `__builtin_return_address(0)`（当前它只打 `AAAAAAAA`），
+   一次运行即可指出**直接调用者地址**。
+
+**第 3 条最省事**：abort 桩已有，只需把 `ra` 写进 RAM（不是 UART）并由导出打出。
