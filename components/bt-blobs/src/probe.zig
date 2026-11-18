@@ -95,6 +95,28 @@ pub var clock_writes: bool = true; // 默认写；false 仅用于对照实验
 /// 于是"卡住之后什么都看不到"，无法区分"程序停在那"与"只是打印停了"。
 /// 这里对每个字节做**有界**等待，等不到就丢弃，保证日志通道本身不会堵死。
 pub var log_hook_calls: u32 = 0;
+
+// ---- RAM 环形日志：不碰 UART，由 ISR 逐条吐出（短行才挤得进 FIFO）----
+const ring_slots = 32;
+const ring_len = 60;
+pub var log_ring: [ring_slots][ring_len]u8 = @splat(@splat(0));
+pub var log_ring_lens: [ring_slots]u8 = @splat(0);
+pub var log_ring_n: u32 = 0;
+
+pub fn ringPush(msg: []const u8) void {
+    const slot = log_ring_n % ring_slots;
+    const n = @min(msg.len, ring_len);
+    @memcpy(log_ring[slot][0..n], msg[0..n]);
+    log_ring_lens[slot] = @intCast(n);
+    log_ring_n +%= 1;
+}
+
+/// ISR 侧调用：吐出第 `idx` 条（0 = 最新），返回切片。
+pub fn ringAt(idx: u32) []const u8 {
+    if (idx >= log_ring_n) return "";
+    const slot = (log_ring_n -% 1 -% idx) % ring_slots;
+    return log_ring[slot][0..log_ring_lens[slot]];
+}
 pub var log_hook_ours: u32 = 0;
 pub var log_hook_other: u32 = 0;
 /// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
@@ -117,7 +139,8 @@ fn logHook(msg: []const u8) void {
     if (std.mem.startsWith(u8, msg, "bt ")) {
         log_hook_ours +%= 1;
     } else {
-        log_hook_other +%= 1;
+        log_hook_other +%= 1; // 归档自己的消息：进 RAM 环，不打 UART
+        ringPush(msg);
         return;
     }
     if (!verbose and std.mem.startsWith(u8, msg, "osal> ")) return;
@@ -168,6 +191,7 @@ export fn probeSelftestAfterFence() void {
 
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
+    board.trap.ring_at = ringAt;
     if (reprobe_ble_block) {
         // 复核 README 记录的总根因：读 BLE/MAC 寄存器块是否会挂死（会挂，默认关）。
         board.log.line("{s}", .{"bt probe: re-probing 0x2010B000 ..."});

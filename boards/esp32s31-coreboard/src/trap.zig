@@ -199,7 +199,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 由此可以给"它在等哪个外设"点名。
             // ctx[15]/使能位随时间变化：用于判断 b15 是在**进入 deinit 之前**还是之后翻的。
             const ctx15 = @as([*]volatile u8, @ptrFromInt(0x2f013d30))[15];
-            if (!sample_quiet and (irq_count % 64 == 0)) log.line("irq#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
+            if (probe_stop_at_tick != 0 and irq_count == probe_stop_at_tick) @panic("probe: deliberate stop");
+    // 每 64 tick 吐一条 RAM 环里的归档消息（短行，60 字节以内）。
+    if (irq_count % 64 == 0) {
+        if (ring_at) |f| {
+            const m = f((irq_count / 64) % 8);
+            if (m.len > 0) log.line("arch: {s}", .{m});
+        }
+    }
+    if (!sample_quiet and (irq_count % 64 == 0)) log.line("irq#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
@@ -475,6 +483,13 @@ pub var sample_period_us: u32 = 2000;
 
 /// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
 pub var extra_dump: ?*const fn () void = null;
+
+/// 在指定 tick 处**故意 panic**，把计数器与采样经 panic 路径一次性导出
+/// （UART 平时被自身日志灌满，只有 panic 时刻是清空的）。
+pub var probe_stop_at_tick: u32 = 0;
+
+/// probe 侧注册的 RAM 环读取器（不能跨模块 import）。
+pub var ring_at: ?*const fn (u32) []const u8 = null;
 
 /// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。
 /// 用模块级变量是为了避开"快照在 if 分支、打印在公共作用域"的作用域问题（踩过一次）。
