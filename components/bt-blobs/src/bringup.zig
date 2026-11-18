@@ -38,7 +38,7 @@ pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 pub var skip_task_init: bool = false;
 
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
-pub var phy_before_clocks: bool = false; // 实验：PHY 初始化放到 step 5 之后
+pub var phy_before_clocks: bool = true; // 实验：PHY 初始化放到 step 5 之后
 
 /// 是否在 step 6 前预先发布 anchor[8]（`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`）。
 pub var prepublish_bohff: bool = false;
@@ -183,9 +183,11 @@ fn dumpBootState() void {
     wr.f(0x2058_7020, 0x3);         // clkrst +0x020
     wr.f(0x2058_7028, 0x3);         // clkrst +0x028
     wr.f(0x2058_7034, 0x1);         // clkrst +0x034
+    osal.logLine("bt bringup: BOOTSTATE WROTE19 {d}", .{19});   // **落在读循环之前**：看到它就是写成功
 
     const wins = [_]struct { name: []const u8, base: usize, n: usize }{
-        .{ .name = "syscon", .base = 0x2010_9C00, .n = 16 },
+        // **只读 +0x000**：+0x004 起的读会挂死总线（本会话直接验证：写成功、读挂死）。
+        .{ .name = "syscon", .base = 0x2010_9C00, .n = 1 },
         .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
         .{ .name = "pwr", .base = 0x2010_D000, .n = 16 },
         .{ .name = "clkrst", .base = 0x2058_7000, .n = 32 },
@@ -209,7 +211,7 @@ fn dumpBootState() void {
     //   - 不给 `-Dphy-src-objs` ⇒ `rom_syms.ld` 的 `PROVIDE` ⇒ ROM `0x2f00e756`（能返回，
     //     板侧打过 `BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=…`）；
     //   - 给了 IDF 的 7 个 PHY 对象 ⇒ 真实定义覆盖 PROVIDE，但镜像会死在 bringup 之前。
-    osal.logLine("bt bringup: BOOTSTATE 已补齐 boot 差集 (lpcon+0x08/+0x0c, clkrst+0x08/+0x0c)", .{});
+    osal.logLine("bt bringup: BOOTSTATE DONE {d}", .{0});
 }
 
 pub fn init(cfg: *config.Config) c_int {
