@@ -188,12 +188,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (probe_stop_at_tick != 0 and irq_count >= probe_stop_at_tick) {
             // 极短、并且**先 PC 后计数**：FIFO 只有 128 B，一次打不完 = 后面的会被丢。
             log.line("DUMP{d}", .{irq_count});
+            // **先取快照**：probe_dump_now() 会阻塞写 ~800 B（~70 ms），
+            // 若在它之后再采样，环里最新条目会是 dump 自己的日志（本会话踩过）。
+            var pcs: [48]u32 = undefined;
+            const n_samples = samplePcs(&pcs);
             probe_dump_now();
             // 打满 48 条：**必须用 `samplePcs`**（它读 `pc_ring`）；
             // `pc_snap` 只在 fault 路径填充 ⇒ 在 DUMP 路径下恒为 0（本会话踩过）。
             {
-                var pcs: [48]u32 = undefined;
-                const n = samplePcs(&pcs);
+                const n = n_samples;
                 log.line("SN{d}", .{n});
                 var b: usize = 0;
                 while (b + 8 <= n) : (b += 8) {
@@ -212,7 +215,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 改成每 512 tick 一个 '.'，FIFO 只占几十字节，里程碑与 abort 文本才能存活。
             if (irq_count % 512 == 0) log.raw(".");
             // **无条件** tick 计数（先把 sample_quiet 放开才可见）：定位 tick 何时停
-            if (irq_count % 1024 == 0) log.line("T n={d}", .{irq_count});
+            if (irq_count % 4096 == 0) log.line("T n={d}", .{irq_count});
             if (irq_count % 4096 == 0) bt_print_osal_stats();
             // **一次性读**三个寄存器：若 FE 域被门控，读本身会挂住 ⇒ 心跳在此之后停止**也是信号**。
             if (irq_count >= 2000 and irq_count < 2001 + 512) {
