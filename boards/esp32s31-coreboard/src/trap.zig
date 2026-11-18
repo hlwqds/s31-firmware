@@ -483,7 +483,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             caller_ra = (@as(*const usize, @ptrFromInt(frame.sp + 12))).*;
             // **自校验**：若 +8 处不等于 frame.s0，说明帧布局假设不成立，
             // 那么 +12 也就不是"保存的 ra"，整块覆盖的结论要撤回。
-            diag_a = @truncate((@as(*const usize, @ptrFromInt(frame.sp + 8))).* ^ frame.s0);
+            // **扫描 sp 下方 64 字节**，找第一个落在 .flash.text 的字
+            // （= 被中断函数保存的 ra）。找到 ⇒ 寄存器被写坏；找不到 ⇒ 帧被破坏。
+            var found: usize = 0;
+            var k: usize = 0;
+            while (k < 64) : (k += 4) {
+                const v = (@as(*const usize, @ptrFromInt(frame.sp + k))).*;
+                if (v >= 0x4000_0020 and v < 0x400A_0300) { found = v; break; }
+            }
+            diag_a = @truncate(found);
         }
         var pbuf: [280]u8 = undefined;
         const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
