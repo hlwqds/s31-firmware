@@ -327,6 +327,8 @@ pub fn run() noreturn {
 /// 把 **osal 记录的归档调用点**打出来（panic 时由 board 调）。
 /// 这些返回地址是归档自己的 PC —— 采样被我们的钩子占据时，这是唯一的归档侧落点。
 fn dumpOsalCallers() void {
+    // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
+    board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});
     const n = @min(osal.caller_n, 12);
     var i: usize = 0;
     while (i < n) : (i += 1) {

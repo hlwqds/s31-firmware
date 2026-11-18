@@ -432,6 +432,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             const idx = (hw.mmio_caller_n +% hw.mmio_caller_ring.len - mn + mi) % hw.mmio_caller_ring.len;
             log.line("panic: mmiocaller[{d}]=0x{x:0>8}", .{ mi, hw.mmio_caller_ring[idx] });
         }
+        if (extra_dump) |f| f();
         var hist: [40]hw.MmioRec = @splat(.{});
         const hn = hw.mmioHistory(&hist);
         var k: usize = 0;

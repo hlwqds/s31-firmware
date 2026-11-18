@@ -290,7 +290,6 @@ pub fn semDeinit(slot: *Slot) c_int {
 }
 
 pub fn semPend(slot: *Slot, timeout: u32) c_int {
-    noteCaller();
     trace("semPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "semPend", "end") != null) "{d}" else "-"), .{timeout});
     const s = slotGet(Sem, slot) orelse return EINVAL;
     while (true) {
@@ -329,7 +328,6 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
 }
 
 pub fn semRelease(slot: *Slot) c_int {
-    noteCaller();
     trace("semRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "semRelease", "end") != null) "{d}" else "-"), .{});
     const s = slotGet(Sem, slot) orelse return EINVAL;
     if (s.count == std.math.maxInt(u16)) return EINVAL;
@@ -373,7 +371,6 @@ pub fn mutexDeinit(slot: *Slot) c_int {
 }
 
 pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
-    noteCaller();
     trace("mutexPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexPend", "end") != null) "{d}" else "-"), .{timeout});
     const m = slotGet(Mutex, slot) orelse {
         trace("mutexPend< EINVAL (null slot)", .{});
@@ -409,7 +406,6 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
 }
 
 pub fn mutexRelease(slot: *Slot) c_int {
-    noteCaller();
     // 里程碑：`r_btdm_task_init` 的最后一次 OSAL 调用就是它 ⇒ 看到这行说明函数跑完了。
     logLine("bt osal: *mutex_release* (r_btdm_task_init 收尾)", .{});
     trace("mutexRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexRelease", "end") != null) "{d}" else "-"), .{});
@@ -492,7 +488,6 @@ fn unlinkIfQueued(q: *EventQ, e: *Event) void {
 }
 
 pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
-    noteCaller();
     const q = slotGet(EventQ, qslot) orelse return;
     const e = slotGet(Event, eslot) orelse return;
     unlinkIfQueued(q, e);
@@ -523,7 +518,6 @@ pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
 }
 
 pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
-    noteCaller();
     const q = slotGet(EventQ, qslot) orelse return null;
     while (true) {
         if (q.head != null) break;
@@ -896,6 +890,7 @@ test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
 const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
+    noteCaller();
     logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
 }
@@ -903,12 +898,14 @@ export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
     eventqDeinit(evq);
 }
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
+    noteCaller();
     logLine("bt hook: eventq_get", .{});
     const _r = eventqGet(evq, tmo);
     logLine("bt hook: eventq_get => {x}", .{if (_r) |v| @intFromPtr(v) else @as(usize, 0)});
     return _r;
 }
 export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
+    noteCaller();
     logLine("bt hook: eventq_put", .{});
     eventqPut(evq, ev);
 }
@@ -923,14 +920,17 @@ export fn wr_btdm_osal_eventq_is_empty(evq: *Slot) callconv(.c) bool {
 }
 
 export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
+    noteCaller();
     logLine("bt hook: event_run", .{});
     eventRun(ev);
 }
 export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
+    noteCaller();
     logLine("bt hook: event_init", .{});
     eventInit(ev, fn_, arg);
 }
 export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
+    noteCaller();
     eventDeinit(ev);
 }
 export fn wr_btdm_osal_event_reset(ev: *Slot) callconv(.c) void {
@@ -947,37 +947,45 @@ export fn wr_btdm_osal_event_set_arg(ev: *Slot, arg: ?*anyopaque) callconv(.c) v
 }
 
 export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
+    noteCaller();
     const _r = mutexInit(mu);
     logLine("bt hook: mutex_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
+    noteCaller();
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
+    noteCaller();
     logLine("bt hook: mutex_pend", .{});
     return mutexPend(mu, timeout);
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
+    noteCaller();
     logLine("bt hook: mutex_release", .{});
     return mutexRelease(mu);
 }
 
 export fn wr_btdm_osal_sem_init(sem: *Slot, tokens: u16) callconv(.c) c_int {
+    noteCaller();
     const _r = semInit(sem, tokens);
     logLine("bt hook: sem_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
+    noteCaller();
     return semDeinit(sem);
 }
 export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
+    noteCaller();
     logLine("bt hook: sem_pend", .{});
     const _r = semPend(sem, timeout);
     logLine("bt hook: sem_pend => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
+    noteCaller();
     logLine("bt hook: sem_release", .{});
     return semRelease(sem);
 }
@@ -1189,7 +1197,6 @@ pub fn arenaFree() usize {
 /// `flags`（`BTDM_OSAL_MALLOC_F_INTERNAL` vs `NORMAL`）在 IDF 里选不同的 heap 域。
 /// 我们只有一个 arena，两者走同一条路——与 wifi-blobs 的 `shellMallocInternal` 同处理。
 pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
-    noteCaller();
     const r = bt_arena.alloc(size, 8);
     // **清零**：归档把分配到的内存当结构体用，并假定字段初值为 0。
     // 板侧证据：`deinit` 里读到 `a0=0xb7a10c0d` 这种垃圾，而 IDF 的堆在启动后是干净的。
@@ -1202,7 +1209,6 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
 }
 
 pub fn btdmFree(ptr: ?*anyopaque) void {
-    noteCaller();
     bt_arena.freeRaw(ptr);
 }
 
@@ -1220,7 +1226,6 @@ pub const TaskRec = struct {
 var task_pool: Pool(TaskRec, 8) = .{};
 
 pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32, core_id: u32, handle: *?*anyopaque) c_int {
-    noteCaller();
     const t = task_pool.take() orelse return ENOMEM;
     t.fn_ = fn_;
     t.arg = arg;
@@ -1312,6 +1317,7 @@ export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
     btdmFree(ptr);
 }
 export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
+    noteCaller();
     logLine("bt hook: task_create", .{});
     _ = name;
     return taskCreate(fn_, stack_size, arg, priority, core_id, task_handle);

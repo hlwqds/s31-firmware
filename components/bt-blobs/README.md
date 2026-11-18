@@ -2276,3 +2276,40 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 
 **下一步第一件事（一行）**：把 `extra_dump` 是否存在、以及 `osal.caller_n` 打一行出来 ——
 和上次 `mmio_caller_n` 一样，先分开"没注册"与"计数为 0"，再谈内容。
+
+### 归档的三个 OSAL 调用点已**点名**，崩点就在最后一条之后（2026-11-18）
+
+镜像用 `build-probe.sh`（含 elf2image）重建后 — 此前几次刷的是**旧 `app.bin`**，因此"0 条 osalcaller"
+是在测上一版构建 — OSAL 调用者环立刻产出 3 条，全部解析到归档自己的代码：
+
+| 归档调用点 | 所在函数 | 调用的导出 |
+| --- | --- | --- |
+| `0x4005f8c6` | `r_sym_bt_OkE7MxSSqFt63m8XlU3d` | **`wr_btdm_osal_mutex_init`** |
+| `0x4005f8d4` | 同一函数 | **`wr_btdm_osal_eventq_init`** |
+| `0x4005fa68` | `r_btdm_task_deinit` | **`wr_btdm_osal_mutex_pend`** |
+
+`objdump` 显示 `OkE7…` 里那两处是**相邻**的：
+
+```
+4005f8d4: jal ra, <wr_btdm_osal_eventq_init>
+4005f8d8: lw  a5,0(s0)
+4005f8da: lw  a5,8(a5)
+4005f8dc: beqz a5, 4005f878      <-- 为 0 就跳「退出」路径
+```
+
+⇒ **`[a5+8] == 0` 是 task_init 提前退出的直接判据**（不是异常、不是超时）。
+
+随后 `r_btdm_task_deinit`：
+
+```
+4005fa5e: jal ra, <wr_btdm_osal_get_time_forever>
+4005fa68: jal ra, <wr_btdm_osal_mutex_pend>
+4005fa6c: lw  a5,0(s0)      <-- 崩点紧随其后
+4005fa70: lbu a3,0(a5)
+```
+
+⇒ 之前"task_init 提前退出 → deinit 读未发布 anchor"的模型，**现在由归档的实际指令确认**，
+不再是推断。崩溃发生在这条 deinit 路径上 `mutex_pend` 返回之后的第一处解引用。
+
+**下一步**：`a5` 指向谁。`610` 行那条 `lw a5,8(a5)` 的 `s0` 与 `4005fa6c` 的 `s0` 是同一结构，
+把 panic dump 里的 `s0`（`0x2f00ffe8`）与这两处的偏移对读，就能确定是哪个字段未初始化。
