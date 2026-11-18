@@ -20,7 +20,7 @@
 > **唯一剩余工作**：在 `btdmLpEnableClock` 里移植 `wifi-blobs` 已验证的频域使能
 > （`0x2058_71E0←0x3d` + CLK_CONF1 的 FE_* 位 + `I2C_ANA_MST`），**不要照抄 wifi 的 `LPCON+0x18←0x1`**
 > （会清掉 bit2 `clk_i2c_mst_fo`，BLE 的 PHY 正走模拟 I2C）；材料见
-> `phy_init_data.zig`、`init_probe.zig:686-700`、`osi_impl.zig:1082-1106`。
+> `phy_init_data.zig`、`init_probe.zig:686-700`、`osi_impl.zig`（`grep -n 'shellPhyEnable'`）。
 > 判据：`initPhy()` 之后能否打印那行 "PHY enabled"，以及随后 `0x2010B000` 是否可读。
 >
 > 以下历史章节按时间追加，凡与本块冲突的以本块为准。
@@ -912,7 +912,7 @@ Error: esp_usb_jtag: could not find or open device!
 | 链接的 IDF 对象 | `phy_init` · `phy_common` · `btbb_init` · `modem_clock` · `modem_clock_impl` · `modem_clock_hal` · `periph_ctrl` |
 | 补的桩 | `link/phy_stubs.c`，**37 个**（NVS 故意返回 `NOT_FOUND` ⇒ 走 IDF 自带的 `PHY_RF_CAL_FULL` fallback） |
 | 链接结果 | **0 个未定义符号** |
-| 真实函数进镜像 | `esp_phy_enable` @ `0x40000744` · `esp_phy_load_cal_and_init` @ `0x40000580` · `modem_clock_module_enable` / `phy_module_enable` 在 IRAM |
+| 真实函数进镜像 | **仅 `WITH_PHY=1` 构建**：`esp_phy_enable` @ `0x40000744`(174 B) · `esp_phy_load_cal_and_init` @ `0x40000580`(452 B)。**默认构建走 ROM**：`esp_phy_enable`=`0x2f00e756`(ABS/PROVIDE)，`phy_get_romfunc_addr`=`0x40061728`(真实在镜像内) |
 
 **途中抓到两个我自己的真 bug**
 
@@ -3813,7 +3813,7 @@ bt lp: …                                       <- step 5 执行了
 `initPhy()`（`probe_ptr.zig:75-81`：`phy_get_romfunc_addr()` → `esp_phy_enable(2)`）
 在时钟已使能的条件下仍挂住 ⇒ 按技能记录，缺的是 PHY 寄存器所走的**模拟 I2C 主控（`I2C_ANA_MST`）**
 以及 `MODEM_ADC_COMMON_FE` / `MODEM_PRIVATE_FE` / `SOC_PLL_SOURCE_CG` 这几路频域使能 ——
-仓库里 `components/wifi-blobs/src/init_probe.zig:686-700` 已有这些的 S31 实测值（`0x2058_71E0←0x3d` 等），
+仓库里 `components/wifi-blobs/src/init_probe.zig`（`grep -n '0x2058_71E0'` / `grep -n 'PERIPH_PHY_MODULE'` 定位，**勿依赖行号**） 已有这些的 S31 实测值（`0x2058_71E0←0x3d` 等），
 可直接移植到 `btdmLpEnableClock`。
 
 ## 🔴 定案：`WITH_PHY=1` 结构性损坏 —— `.iram_blobs` 覆盖锚点块（2026-11-19）
@@ -3841,12 +3841,12 @@ OVERLAP .iram_blobs addr=0x2f0008b0 size=0xfd30 end=0x2f0105e0
 | 需要的东西 | 现成位置 |
 | --- | --- |
 | `esp_phy_init_data_t`（128 字节初始化表） | `components/wifi-blobs/src/phy_init_data.zig`：`pub const params: [128]u8`（生成脚本 `scripts/gen-phy-init-data.py`） |
-| 频域使能实测值（`SOC_PLL_SOURCE_CG` 等） | `components/wifi-blobs/src/init_probe.zig:686-700`（`0x2058_71E0←0x3d`、CLK_CONF1 的 FE_* 位） |
+| 频域使能实测值（`SOC_PLL_SOURCE_CG` 等） | `components/wifi-blobs/src/init_probe.zig`（`grep -n '0x2058_71E0'` / `grep -n 'PERIPH_PHY_MODULE'` 定位，**勿依赖行号**）（`0x2058_71E0←0x3d`、CLK_CONF1 的 FE_* 位） |
 | 完整 `esp_phy_enable` 顺序 | `components/wifi-blobs/src/osi_impl.zig:1082-1106`（`shellPhyEnable`） |
 | NVS 桩 | 用 **BLE 自己的** `components/bt-blobs/link/phy_stubs.c`（返回 `ESP_ERR_NVS_NOT_FOUND` ⇒ 全量校准）；**不要**搬 wifi 的 `nvs_ram.zig` |
 | 校准模式 | `PHY_RF_CAL_FULL = 2` |
 
-**移植时的一个反向差异**：`init_probe.zig:533-541` 把 `LPCON+0x18` 对正成 wifi 的 `0x1`
+**移植时的一个反向差异**：`init_probe.zig`（`grep -n '0x2010_F018'`） 把 `LPCON+0x18` 对正成 wifi 的 `0x1`
 （清 bit2 `clk_i2c_mst_fo`）—— BLE 的 PHY 寄存器**正走模拟 I2C**，移植时**不要照抄这一句**，
 应保持 bit2、只补缺失的模拟前端时钟。`0x201044EC |= 0x240` 是 wifi 专属修正，也不要一起搬。
 
@@ -3949,7 +3949,7 @@ s256.0.2.1                                        <- 心跳仍在
 → `phy_modem_enable_set(1)` → `set_bb_wdg(...)` → **首次 `register_chipv7_phy`**
 （用 `phy_init_data.zig` 的 128 B 表，`PHY_RF_CAL_FULL=2`）→ 重申 CLK_CONF1 与 FORCE_ON。
 
-参考实现：`osi_impl.zig:1082-1106`（完整顺序）+ `init_probe.zig:78-89`（`phyEnableHook`）。
+参考实现：`osi_impl.zig`（`grep -n 'shellPhyEnable'`）（完整顺序）+ `init_probe.zig`（`grep -n 'phyEnableHook'`）（`phyEnableHook`）。
 判据不变：那行 "PHY enabled" 是否打印，以及随后能否读 `0x2010B000`。
 
 ## 两处默认值修正 + 一个新矛盾（2026-11-19 收尾）

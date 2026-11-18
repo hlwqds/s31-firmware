@@ -45,6 +45,17 @@ if [ "${WITH_PHY:-0}" != "0" ]; then echo "== build (probe + closure + idf phy o
     -Dbt-probe -Dbt-blob-dir="$CLOSURE" -Dbt-blob-objs="$(cat "$CLOSURE/objs.csv")" \
     $PHY_FLAG )
 
+# 打印关键符号地址，使「配置 ↔ 地址」同屏（ELF_BIN 是 esptool，binutils 在它同目录）
+READELF="$(dirname "${ELF_BIN}")/riscv32-esp-elf-readelf"
+[ -x "$READELF" ] || READELF=$(command -v riscv32-esp-elf-readelf 2>/dev/null || true)
+[ -x "$READELF" ] || READELF=$(ls -d "$HOME"/.espressif/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin/riscv32-esp-elf-readelf 2>/dev/null | tail -1)
+[ -n "$READELF" ] || READELF=""
+if [ -x "$READELF" ]; then
+  echo "== symbols"
+  "$READELF" -sW firmware/zig-out/bin/app.elf 2>/dev/null \
+    | grep -E " (esp_phy_enable|phy_get_romfunc_addr)$" \
+    | awk '{printf "   %-22s 0x%s\n", $8, $2}'
+fi
 echo "== elf2image"
 env -u LD_LIBRARY_PATH $ELF_BIN --chip esp32s31 elf2image --flash-mode dio --flash-size 16MB \
     --flash-freq 80m -o firmware/zig-out/bin/app.bin firmware/zig-out/bin/app.elf
