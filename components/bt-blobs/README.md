@@ -4450,3 +4450,29 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 
 **若 calloc 正常**，则 abort 来自别处 —— 但 `esp_phy_load_cal_and_init` 里只有两处 `ESP_ERROR_CHECK`，
 另一处（init data）已证明不可能失败（10 字节 thunk 返回静态表）。
+
+## 🎯 根因候选确定：arena 只有 **4039 字节**，而 RF 校准一次要 **1904**（2026-11-19）
+
+链已闭环到具体数字：
+
+```
+calloc(1, 1904)                     <- esp_phy_load_cal_and_init 里的分配点（离线读出）
+  -> s31_btdm_malloc (0x4006c85a)
+  -> btdmMalloc                      (osal.zig:1244)
+  -> bt_arena.alloc                  (osal.zig:1167)
+```
+
+板上实测：**`bt probe: arena 4039 B`**。
+归档在 PHY 之前已做过 **21 次 malloc**（76 / 8 / 36 / 32 / 12 … 及 OSAL 对象），
+消耗掉一部分后，**1904 字节的连续块极可能已取不到** ⇒ `calloc` 返回 NULL
+⇒ `ESP_ERROR_CHECK` → "failed to allocate memory for RF calibration" → `abort`。
+
+**这与"不是堆太小"的先前判断冲突** —— 4039 B 的总量看着够，但**减去已用 + 对齐开销**后不一定够。
+
+### 下一步（一处改动，判据明确）
+
+1. 先**离线/一行日志确认**：`btdmMalloc` 里对 `size >= 1024` 的请求打一行（或用已有的
+   `bt hook: malloc({d}) = {x}`，把 `trace_hooks` 在 PHY 阶段临时打开），看 1904 是否返回 0；
+2. 若为 0 ⇒ **扩大 arena**：`heapStart()` / `heapEnd()` 之间就是 `[.bss 末, 栈底)`，
+   当前只切出 4039 B（`heapEnd` 取值偏保守）——把 `heapEnd` 上移（留足栈）即可；
+3. 或给 PHY 校准预留一块**专用 2 KB 缓冲**，让 `calloc` 的大块请求回落到它。
