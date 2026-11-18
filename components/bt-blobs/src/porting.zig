@@ -131,6 +131,12 @@ const b_conf_sec_ecb: u32 = @as(u32, 1) << 25;
 const b_conf_sec_apb: u32 = @as(u32, 1) << 28;
 const b_conf_sec: u32 = @as(u32, 1) << 29;
 const b_conf_ble_timer: u32 = @as(u32, 1) << 30;
+// **IDF `clk_conf` 里我们漏掉的两个字段**（逐位对比 IDF 目标 0x7e601002 得出）：
+//   bit24 `clk_zbmac_en`        —— **BLE/MAC 块的时钟**（`0x2010B000` 就是那个块！）
+//   bit26 `clk_modem_sec_ccm_en` —— modem 安全 CCM
+// 缺 bit24 ⇒ 归档访问 `0x2010B000` 时块无时钟 ⇒ **静默总线挂死（无 fault）**。
+const b_conf_zbmac: u32 = @as(u32, 1) << 24;
+const b_conf_sec_ccm: u32 = @as(u32, 1) << 26;
 const b_conf1_wifibb_80x1: u32 = @as(u32, 1) << 7;
 const b_conf1_bt_apb: u32 = @as(u32, 1) << 16;
 const b_conf1_btbb: u32 = @as(u32, 1) << 17;
@@ -277,7 +283,8 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_btmac | b_conf1_btbb |
         b_conf1_bt_apb | b_conf1_wifibb_80x1);
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
-        b_conf_sec_apb | b_conf_sec | b_conf_ble_timer);
+        b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |
+        b_conf_zbmac | b_conf_sec_ccm);
     wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) | b_lpcon_coex);
 
     // 2) **读回自证**：这一行直接证明"门到底开没开"，比再烧一轮盲试快
@@ -285,7 +292,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     const c1 = rd(reg_clk_conf1);
     const lc = rd(reg_lpcon_clk_conf);
     osal.logPublic("bt lp: clk_conf=0x{x:0>8} clk_conf1=0x{x:0>8} lpcon=0x{x:0>8}", .{ c0, c1, lc });
-    const need0 = b_conf_etm | b_conf_sec_ecb | b_conf_sec_apb | b_conf_sec | b_conf_ble_timer;
+    const need0 = b_conf_etm | b_conf_sec_ecb | b_conf_sec_apb | b_conf_sec | b_conf_ble_timer | b_conf_zbmac | b_conf_sec_ccm;
     const need1 = b_conf1_btmac | b_conf1_btbb | b_conf1_bt_apb | b_conf1_wifibb_80x1;
     osal.logPublic("bt lp: gates conf_ok={} conf1_ok={} coex_ok={}", .{
         (c0 & need0) == need0,
@@ -391,9 +398,9 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // 直读 `0x2010B000` 会挂板，所以"我们的块是否可读"只能靠寄存器状态等价来推断。
     {
         const wins = [_]struct { name: []const u8, base: usize, n: usize }{
-            .{ .name = "syscon", .base = 0x2010_9C00, .n = 16 },
-            .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
-            .{ .name = "pwr", .base = 0x2010_D000, .n = 16 },
+            .{ .name = "syscon", .base = 0x2010_9C00, .n = 4 },   // 只打 +0x000..+0x00c（避免 80 行淹没 FIFO）
+            .{ .name = "lpcon", .base = 0x2010_F000, .n = 1 },
+            .{ .name = "pwr", .base = 0x2010_D000, .n = 1 },
             // clkrst 只打我们真正比对过的那几项（原 128 项会把 FIFO 灌满，导致后续行被丢）
             .{ .name = "clkrst", .base = 0x2058_7000, .n = 16 },
         };
