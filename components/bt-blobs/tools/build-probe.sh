@@ -38,7 +38,7 @@ fi
 ZIG=${ZIG:-$(command -v zig)}
 ELF_BIN=${ESPTOOL:-esptool}
 
-echo "== build (probe + closure + idf phy objs)"
+if [ -n "${WITH_PHY:-}" ]; then echo "== build (probe + closure + idf phy objs) [WITH_PHY=1]"; else echo "== build (probe + closure + rom phy) [default]"; fi
 ( cd firmware && env -u LD_LIBRARY_PATH "$ZIG" build \
     -Dtarget=riscv32-freestanding-eabihf \
     -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall \
@@ -56,6 +56,9 @@ cat <<'TIP'
   ( cd firmware && sh tools/flash.sh /dev/ttyUSB0 )      # 端口按 docs/TESTING.md，本机是 ttyUSB0
   python3 tools/capture.py /dev/ttyUSB0 /tmp/bt-probe.log 25   # 位置参数，不是 --port
 
-期望：`bt bringup: enter step 6 r_btdm_task_init` 之后打印 10 个 `bt anchor[...]`，
-其中只有 3 个非 0；随后是 store access fault（ra 落在 r_btdm_task_deinit 区间）。
+期望（当前默认配置，`publish_bohff_anchor=false`）：
+  `enter step 6 r_btdm_task_init` → `CODES n=… <数字码>`（调用序列，0=malloc 1=mutex_init
+  2=eventq_init …）→ 在 `Xpuq`(`0x4005eb1e`) 读 `0x2010B000` 处**静默停摆（无 panic）**。
+  ⚠️ 若出现 `store access fault` 且 ra 落在 `r_btdm_task_deinit` 区间，说明
+  `publish_bohff_anchor` 被打开了（旧的 -8 回滚签名），不是当前默认行为。
 TIP
