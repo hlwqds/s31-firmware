@@ -175,7 +175,7 @@ const b_lpcon_clk_wifipwr_en: u32 = @as(u32, 1) << 0;
 /// （bit16-19 wifipwr / 20-23 coex / 24-27 i2c_mst / 28-31 lp_apb）。
 /// IDF 的 `modem_clock_module_icg_map_init_all()` 会把它覆盖到的**两个域**都填上：
 /// `MODEM_SYSCON.clk_conf_power_st`（我们写了 `0x64646400`）**和这一个**。
-/// 后者我们一个字都没写过 ⇒ 与首次对拍发现的 `clk_coex_en` 属同一类遗漏。
+/// 后者的写入见 `btdmLpEnableClock` 内的 `wr(reg_lpcon_power_st, …)`（此前这一段注释说"从未写过"，已过时）。
 /// `0x66660000` 与 wifi-blobs 在本板上早已验证过的写法一致（各域 st_map=6）。
 const reg_lpcon_power_st: usize = lpcon_base + 0x20;
 const lpcon_power_st_value: u32 = 0x6666_0000;
