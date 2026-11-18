@@ -129,6 +129,7 @@ fn dumpAtPend() void {
         }
         board.log.line("W {s}", .{buf[0..w]});
 
+    board.log.line("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
     board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
     }
     // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
@@ -510,6 +511,7 @@ fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
     // **无条件**输出（不随 code_n 阈值）：这是本轮唯一必须拿到的读数。
     osal.canaryScan();
+    board.log.line("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
     board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
     // 分配结束（0x2f0206a0）之后 56 个字：区分"连续溢出"与"孤立结构化写入"。
     {

@@ -5102,3 +5102,32 @@ W cafe06e0,cafe06e4,cafe06e8,cafe06ec,cafe06f0,…,cafe0714,…
 
 **下一步**：把 `alloc_recs` 的内容（每次的 `ptr/len`）与 `btdmMalloc` 的**调用次数**一起导出 ——
 若调用 2 次而成功 1 次，就锁定了"第二次请求为何失败"（看它的 size）。
+
+## 🔴 最终矛盾（全部数字到位，2026-11-19 终止点）
+
+```
+MC 1 sz=1904 ret=0x0        <- 只调过 1 次 btdmMalloc；请求 1904；返回 NULL
+CN 0x2f01fec0 0x780 8       <- 堆首有 size=0x780(1920) 的块头
+W cafe06e0,…                <- 其后 canary 完好（无溢出）
+```
+
+| 事实 | 值 |
+| --- | --- |
+| `btdmMalloc` 调用次数 | **1** |
+| 该次请求 | **1904** |
+| 返回值 | **NULL** |
+| 堆首块头 `size` | **1920**（= `alignForward(1904+16, 8)`） |
+| 分配后 canary | **完好** |
+
+### 三条事实无法同时成立 —— 除非
+
+`Arena.alloc` 在**写了 `hdr.size = need` 与 `free = false` 之后、返回之前**就失败了。
+该函数里唯一可能的分支是 `recAlloc` 与 `return` 之间 —— 两者之间没有可失败的操作。
+
+⇒ **因此问题不在 `Arena.alloc` 的逻辑，而在"返回值传递"这一环**：
+`s31_btdm_malloc`（8 字节 thunk）→ `calloc` 的 `beqz a0` 之间，
+寄存器 `a0` 可能被覆盖（例如 thunk 用了 `auipc t1` 之后 `a0` 未被正确保留，
+或 `calloc` 的 `mul`/`mv` 在优化后与 thunk 的调用约定不符）。
+
+**下一步（离线，10 分钟）**：反汇编 `calloc` 的完整 46 字节 + `s31_btdm_malloc` 的 8 字节，
+逐条确认 `a0` 在 `jalr` 前后是否被正确保留 —— 这是本会话唯一还没逐条核对过的调用约定。
