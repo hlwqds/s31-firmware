@@ -14,6 +14,11 @@
 //! - `pthread_cond_wait` 要求调度器已启动（`sched.isStarted()`）：它必须先解锁、再阻塞、
 //!   醒来后重新加锁；没有调度器时这三步无法原子完成，返回 `ENOSYS` 而不是假装等到。
 //! - 没有超时变体：内核没有定时唤醒（同 `sync.zig` 的 `sem_timedwait`）。
+//! - **`broadcast` 之后的多等待者复锁会退化成 EAGAIN**：每个醒来的 waiter 都要重新
+//!   `pthread_mutex_lock`，而它的后端是单等待者 `osal.Sem` ⇒ 第 2 个抢锁的 waiter 拿到
+//!   `EAGAIN`（`sync.zig` 的已知限制），`pthread_cond_wait` 因此返回 -1。
+//!   这条**只在板上有意义**（主机上 `wait` 直接 `ENOSYS` 返回），所以写在这里而不是用例里。
+//!   要真正支持多等待者复锁，得先有支持多等待者的 mutex 后端。
 //! - `pthread_cond_destroy` 不检查是否还有等待者（POSIX 里这是调用方的错；我们没有
 //!   可靠的"还有人在等"判断，静默成功比误报更安全）。
 const std = @import("std");

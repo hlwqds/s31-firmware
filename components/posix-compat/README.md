@@ -128,12 +128,18 @@ net-sockets（生产）        hw/tick（板级）
 注入点（为了主机可测，全部做成参数而不是全局）：
 - `time.zig`：`Clock = fn () u64`（纳秒）与 `Sleeper = fn (u64) void`
 - `fd.zig`：`*socket.Table` 与地址表由调用方持有（无全局状态）
+- `cond.zig`：`bindHooks(.{ .wake = fn (*sched.Context) void })` —— 只有 `resumeTask` 一件
+  （`swapContext` 在 x86_64 上 `@panic`），见 §4.6
+- `osal`（由 `bt-blobs/probe.zig` 绑）：`hooks.now_ms` / `irq_save` / `irq_restore` / `log` /
+  `on_mutex_acquired`
 
 ## 4.5 绑定决策（2026-11-18 定）
 
 **直接依赖 `osal_kit`，不再造注入 port。** 当初 `time.zig` 用注入，是因为当时没有可复用的内核；
 现在 `components/osal/` 零 `board` 依赖、20 项主机用例可驱动，直接 import 就是"在真内核上测真语义"，
-§4 那句"假内核自说自话"的前提已经消失。注入点只剩 `hooks.now_ms` 这一项（时钟/睡眠）。
+§4 那句"假内核自说自话"的前提已经消失。**目前有两处注入点**：`time.zig` 的时钟/睡眠
+（`osan` 侧则是 `hooks.now_ms`），以及 `cond.zig` 的 `wake`（见 §4.6）。两者都只为"主机上
+不可执行的那一个原语"存在，其余一律直连。
 
 **`pthread_join` 不动 `sched.zig`。** 用包装层实现：每个线程配一个 `Slot`
 
@@ -200,7 +206,7 @@ const Slot = struct {
 | --- | --- | --- |
 | ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`。`wake` 做成注入点，于是「唤醒谁/什么顺序/唤醒前是否已摘链」在主机上有断言；`swapContext` 在主机 panic 的那一下被绕开了 | — |
 | 阻塞式 `accept`/`connect` | socket 层是**轮询**的（`Table` 没有阻塞原语） | 需要同上的一条等待队列，并用 `poll` 包装成阻塞 |
-| `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动的超时唤醒（`callout` + `resumeTask`） |
+| `sem_timedwait` / `mutex_timedlock` | `semPend` 只有 `forever` 真阻塞 | 需要 tick 驱动：阻塞的任务**自己查不了截止期**，必须有外部唤醒源（`osal.serviceCallouts(now)`）。注意纯 POSIX 应用里**没人会去推它**（bt-blobs 里是 BLE tick 在推）⇒ 本层得提供一个应用必须周期性调用的入口（如 `tick(now_ms)`），并在文档里**明说**：不调它，定时等待就永不到期 |
 | `pthread_rwlock_*` | 读者写者饥饿 | 独立设计，先不做 |
 | 文件 I/O / `fork` | 无 VFS、无 MMU | 不做（`ENOSYS`） |
 
@@ -237,12 +243,12 @@ import 全部改成模块导入，**改错在主机用例里看不出来**（用
 
 搬完才能做：
 
-| 目标 | 落在哪 | 备注 |
+| 目标 | 原计划 | **实际落地（2026-11-18）** |
 | --- | --- | --- |
-| `pthread_create/join/detach/exit/self` | `sched.taskCreate` + 新增 join（等待 Task 退出） | 栈由调用方给；`pthread_attr_setstack` 正好对应 |
-| `pthread_mutex_*` | `mutexInit/Pend/Release` | `trylock` 用 `mutexPend(0)` |
-| `sem_*` / `sem_timedwait` | `semInit/Pend(timeout)/Release` | **超时已支持**，只需把 `timespec` 换算成 tick |
-| `pthread_cond_*` | **要新写** | `eventq`/`event` 是信号量语义，不是条件变量；`cond_wait` 必须原子释放 mutex + 入等待队列，且 `cond_timedwait` 要能被打断 |
-| `poll` 超时 | 现版用 1 ms 轮询；接内核后改为等待 `eventqGet(timeout)` 或 tick 唤醒 | 现在是"睡一小步再看"，不是真等待 |
+| `pthread_create/join/detach/exit/self` | `sched.taskCreate` + 新增 join | ✅ `thread.zig`：`Done` 标志 + 每线程 `done_sem`；**上限 8 次/boot**（`sched` 不回收任务槽） |
+| `pthread_mutex_*` | ~~`mutexInit/Pend/Release`~~ | ❌ **原计划不成立**：`osal.Mutex` 只忙等、不唤醒、无 owner。实际用**令牌数 1 的 `osal.Sem`**（`sync.zig`） |
+| `sem_*` | `semInit/Pend(timeout)/Release` | ✅ 用 `osal.Sem`；`sem_timedwait` 返回 **`ENOSYS`**（`semPend` 没有真定时阻塞） |
+| `pthread_cond_*` | **要新写** | ✅ `waitq.zig` + `cond.zig`（不是 `eventq`：它是信号量语义）；`cond_timedwait` **未做** |
+| `poll` 超时 | 接内核后改为 tick 唤醒 | ⏳ 仍是 1 ms 轮询 |
 
 `errno` 也要在那一步改成每 Task 一份（现在是模块级全局，见 `errno.zig` 的说明）。
