@@ -1888,3 +1888,19 @@ panic: ra=0x4005fa94 a0=0x0
 
 ⇒ 对本崩溃不成立（对**后续**步骤仍是必要条件）。落点仍是：
 `r_btdm_task_init` 在 `mutex_pend => OK` 之后、建任务之前，经 anchor[0]（0）的 trampoline 触发 store to 0。
+
+### 锚点的定义者（`nm --defined-only`，2026-11-18）
+
+`grep -l` 只给**引用者**；要定"谁该发布它"，必须看定义者：
+
+| 锚点 | 定义者 | 引用者 |
+| --- | --- | --- |
+| `pSy5Wex…`（anchor[0]） | `libbtdm_common_11.o` | `libbtdm_common_11/12.o` |
+| `WDq2rzn…`（anchor[1]） | `libbtdm_common_16.o` | `libbtdm_common_16.o` |
+
+⇒ anchor[0] 的**定义者与消费者是同一个对象**（`_11`）：发布它的 init 函数就在这个对象里，
+而崩溃的 trampoline 也在同一个对象里读它 ⇒ 定位"哪个函数写这个槽"只需在这一个对象里找。
+
+**未取到的一步**：`objdump -dr` 对该对象没有输出针对该符号的重定位（引用可能在数据段的指针表里），
+所以"哪个函数写这个槽"还没定到。下一步：用 `readelf -r libbtdm_common_11.o | grep pSy5Wex`
+看它在哪个 section 被重定位，再回到对应函数。
