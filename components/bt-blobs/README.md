@@ -9448,3 +9448,58 @@ logLine("bt osal: mutexPend EINVAL slot.p=0x{x}", .{ @intFromPtr(slot.p) });
 - 若打印出非 0 但 `slotGet` 仍失败 ⇒ `slotGet` 的逻辑/类型问题。
 
 **这比任何计数器都直接**，且只需一次运行。
+
+## ❌ EINVAL 假设被证伪（2026-11-19）
+
+加了诊断后重跑：
+
+```text
+=== EINVAL 诊断 ===   （空 —— 没有打印）
+=== 计数器 ===
+Q1 0 0 0
+Q2 0 0
+Q3 0 0
+```
+
+⇒ **`mutexPend` 没有走 `slotGet` 失败分支** ⇒ "槽无效"假设**错误**。
+
+### 现在的完整矛盾（未解）
+
+| 观测 | 与之冲突的 |
+| --- | --- |
+| 轨迹有 `osal> mutexPend`（`osal.zig:391` 在第 391 行，先于一切分支）| — |
+| `mutex_pend_ok = 0`（两条成功路径都会加）| ↑ |
+| `blocked_calls = 0`（忙等耗尽会加）| ↑ |
+| `EINVAL` 诊断**未打印**（slotGet 失败会打）| ↑ |
+
+⇒ **四条出口全部被排除** ⇒ 只剩一个解释：
+**`osal> mutexPend` 那行 trace 与我们读取的 `stats_state` 不来自同一份存储**。
+
+### 支持这一点的证据
+
+`nm app.elf` 里**没有 `osal.stats_state` 符号**，只有：
+
+```text
+2f0154e4 b bringup.stats_state      ← 另一个模块的同名字段
+2f015494 b osal.coex_stats_state.0
+```
+
+而 `pub fn stats()` 的实现是 `return stats_state;`（`osal.zig:163-165`）——
+代码层面正确。⇒ 若链接器把 `osal.stats_state` 与 `bringup.stats_state`（都是全零初始化）
+**合并（ICF）**，则读写应仍一致；若**被消除**（无人读？但有人读）……
+
+⇒ 需要板上读**地址**来定案：
+```zig
+board.log.line("stats@0x{x}", .{ @intFromPtr(&osal.stats_state) });
+```
+再与 `nm` 里 `bringup.stats_state` 的地址比对：
+- 相同 ⇒ 合并，计数应一致 ⇒ 矛盾另有原因；
+- 不同且 `nm` 里无对应符号 ⇒ 读的是废弃副本。
+
+### 交接
+
+**未解**：为什么 `mutexPend` 被调用却不计入任何计数器。
+
+**下一位应做的第一件事**：在 `mutexPend` 的**每个出口**各加一行带**出口标识**的日志
+（`EINVAL` / `SPIN_OK` / `FAST_OK` / `TIMEOUT`），一次运行即可看到它到底走了哪条 ——
+这比继续推断便宜，且能直接终结这个矛盾。

@@ -390,7 +390,7 @@ pub fn mutexDeinit(slot: *Slot) c_int {
 pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
     trace("mutexPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexPend", "end") != null) "{d}" else "-"), .{timeout});
     const m = slotGet(Mutex, slot) orelse {
-        trace("mutexPend< EINVAL (null slot)", .{});
+        logLine("bt osal: mutexPend EINVAL slot.p=0x{x}", .{@intFromPtr(slot.p)});
         return EINVAL;
     };
     // **FOREVER 必须"等到拿到"**：归档用 `portMAX_DELAY` 表示"这把锁我会一直等"，
