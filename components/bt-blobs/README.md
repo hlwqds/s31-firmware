@@ -1820,3 +1820,48 @@ ADR-001:729 已因同一个原因记过一次。
    `get_time_forever()` 的哨兵是 `portMAX_DELAY`。
    ⚠ OSAL 的 `time_get` 会被 ISR 调用 ⇒ 刻度源要用 CSR（`mtime`），**不能**用 `hw.nowUs()`
    （它读 APB 寄存器并自旋等 update 位，在 ISR 里会重入冲突）。
+
+### 板级调用序列与故障点（2026-11-18，trace 开启）
+
+`components/bt-blobs/tools/build-probe.sh` 默认构建的 probe 镜像（ROM PHY 路径）打开
+`osal.trace_hooks`，崩溃前的全部归档调用如下（`logs/bt-probe-trace.log`）：
+
+```text
+bt hook: malloc(2244) = 2f0142d0      bt hook: malloc(132) = 2f014ba8
+bt hook: malloc(820)  = 2f014c40      bt hook: malloc(80)  = 2f014f88
+bt hook: malloc(64)   = 2f014fe8      bt hook: malloc(16)  = 2f015038   ← 锚点[8]
+bt hook: malloc(76)   = 2f015058                                        ← 锚点[6]
+bt hook: mutex_init => 0              bt hook: eventq_init
+bt hook: malloc(8)    = 2f0150b8                                        ← 锚点[4]
+bt hook: mutex_pend                    bt hook: mutex_pend => OK
+!! mepc=0x4005b692 mtval=0x00000000    panic: exception code=7 (store access fault)
+panic: ra=0x4005fa94 a0=0x0
+```
+
+两条可判读的事实：
+
+1. **三个已发布的锚点就是崩溃前那三次 `malloc` 的结果**（0x2f015038 / 0x2f015058 / 0x2f0150b8）
+   ⇒ 锚点不是"外部填的全局"，而是归档自己 `malloc` 出来、挂到 per-object 锚点位上的对象指针。
+2. **崩溃紧跟在 `mutex_pend => OK` 之后**，中间没有任何 hook ⇒ 那次向地址 0 的写是归档的
+   **内联代码**，不是 OSAL 回调。`mtval=0` 说明写地址确实是 0。
+
+**7 个未发布锚点的归属**（闭包对象明文 `.symtab` 反查，一次 grep 即可）：
+
+| # | 锚点 | 引用它的对象 → 所属子系统 |
+| --- | --- | --- |
+| 0 | `pSy5Wex…` | `libbtdm_common_11/12` → HCI pkt flags |
+| 1 | `WDq2rzn…` | `libbtdm_common_16` → 数据对象（无常函数名） |
+| 2 | `YnZmsxu…` | `libbtdm_common_17/19` → sched list |
+| 3 | `kfu8vf8…` | `libble_app_49` + `libbtdm_common_19` → sched/BLE |
+| 5 | `sitBB3S…` | `libbtdm_common_20` → sleep |
+| 7 | `lRdavKx…` | `libbtdm_common_3` → **HCI flow control**（`r_btdm_hci_fc_env_init`） |
+| 9 | `y5Dip5N…` | `libbtdm_common_9` → HAL RTC freq |
+
+⇒ 它们全部属于**更晚的子系统**，本该由各自 init 发布 ⇒ **它们是"没走到那一步"的结果，不是原因**。
+
+**未闭合的一点**：`mepc=0x4005b692` 在最终 ELF 里恰好等于
+`r_sym_bt_cKuT2s3WOu8oyZWi8auj` 的入口（`libbtdm_common_11/21`），而该 trampoline 的第一条是
+`lui`（不可能是 store fault），且它对 `.LANCHOR0` 为 NULL 有 `beqz` 守卫。所以要么符号地址与
+指令不对齐（缺 linker map），要么故障指令落在这个 trampoline 调用的目标里。**下一步需要一份
+linker map**（或用 `-femit-bin` 的 map 选项）把 0x4005b692 定位到确切指令，再判断它写的是哪个
+env 字段。

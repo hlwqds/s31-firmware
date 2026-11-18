@@ -99,6 +99,10 @@ fn logHook(msg: []const u8) void {
     //   里程碑 `bt bringup:`  → 无条件放行（唯一能判断进度的输出）
     //   归档日志 `osal>`       → 受 `verbose` 控制
     //   逐调用 `bt hook:`      → 受 `osal.trace_hooks` 控制（在 `logLine` 里）
+    //
+    // probe 镜像默认**打开**逐调用日志：它就是为了看"崩之前最后一个归档调用是什么"。
+    // 输出量大，正式镜像不要开（`logLine` 里按前缀过滤，这里只是把门打开）。
+    osal.trace_hooks = true;
     if (!verbose and std.mem.startsWith(u8, msg, "osal> ")) return;
     const uart_fifo: *volatile u32 = @ptrFromInt(0x2038_A000); // UART_FIFO
     const uart_status: *volatile u32 = @ptrFromInt(0x2038_A01C); // UART_STATUS

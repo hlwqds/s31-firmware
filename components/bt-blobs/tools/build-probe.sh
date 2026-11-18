@@ -10,9 +10,12 @@
 # 产物：firmware/zig-out/bin/app.bin（可直接给 firmware/tools/flash.sh）
 #
 # 两个易错点（都踩过）：
-#   1. `esp_phy_enable` 来自 **IDF 源码对象**（不是 ROM 符号）：不给 `-Dphy-src-objs`
-#      会退到 `rom_syms.ld` 的 PROVIDE（ROM 0x2f00e756）。两条路**行为不同**：
-#      ROM 路径能跑到 init step 6（可诊断），IDF 对象路径目前死在 bringup 之前。
+#   1. 两条 PHY 路径**行为不同**（2026-11-18 板级实测）：
+#      - 默认（不给 `-Dphy-src-objs`）→ `rom_syms.ld` 的 PROVIDE → ROM 0x2f00e756：
+#        bringup 跑到 init step 6、打印 10 个锚点、崩在 deinit 路径 —— **可诊断**；
+#      - `WITH_PHY=1` → 链 IDF 的 7 个 PHY 对象：镜像起来就在 PHY 里打 PMU 转储，
+#        没进 bringup —— 那条路本身待查。
+#      所以默认走 ROM；要看 IDF 实现时用 `WITH_PHY=1`。
 #   2. `bt_core` 只在 probe 构建里作为 app 模块编译；非 probe 的闭包构建不要它
 #      （会 +2 KB 且把 `.flash.text` 顶出窗口）。
 set -euo pipefail
@@ -23,8 +26,14 @@ CLOSURE=${2:-/tmp/bt_all/flat}
 
 P=$IDF_BUILD/esp_phy/CMakeFiles/__idf_esp_phy.dir/src
 H=$IDF_BUILD/esp_hw_support/CMakeFiles/__idf_esp_hw_support.dir
+WITH_PHY=${WITH_PHY:-0}
 PHY="$P/phy_init.c.obj,$P/phy_common.c.obj,$P/btbb_init.c.obj,$H/modem/modem_clock.c.obj,$H/modem/port/esp32s31/modem_clock_impl.c.obj,$IDF_BUILD/hal/CMakeFiles/__idf_hal.dir/esp32s31/modem_clock_hal.c.obj,$H/periph_ctrl.c.obj"
-for o in ${PHY//,/ }; do [ -f "$o" ] || { echo "缺少 PHY 对象：$o" >&2; exit 2; }; done
+if [ "$WITH_PHY" = "1" ]; then
+  for o in ${PHY//,/ }; do [ -f "$o" ] || { echo "缺少 PHY 对象：$o" >&2; exit 2; }; done
+  PHY_FLAG="-Dphy-src-objs=$PHY"
+else
+  PHY_FLAG=""   # 默认走 rom_syms.ld 的 PROVIDE(RON)：能跑到 step 6，可诊断
+fi
 
 ZIG=${ZIG:-$(command -v zig)}
 ELF_BIN=${ESPTOOL:-esptool}
@@ -34,7 +43,7 @@ echo "== build (probe + closure + idf phy objs)"
     -Dtarget=riscv32-freestanding-eabihf \
     -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall \
     -Dbt-probe -Dbt-blob-dir="$CLOSURE" -Dbt-blob-objs="$(cat "$CLOSURE/objs.csv")" \
-    -Dphy-src-objs="$PHY" )
+    $PHY_FLAG )
 
 echo "== elf2image"
 env -u LD_LIBRARY_PATH $ELF_BIN --chip esp32s31 elf2image --flash-mode dio --flash-size 16MB \
