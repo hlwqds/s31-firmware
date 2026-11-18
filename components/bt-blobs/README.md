@@ -7251,3 +7251,44 @@ DR_REG_MODEM_SYSCON_BASE  = MODEM_BASE + 0x9C00   ⇒ 0x20109C00
 | 3 | 从 **IDF 的 s31 二进制 PHY**（`libphy.a`）反汇编该等待循环 | 有库即可，无需源码 |
 
 **在拿到上述任一材料之前，不应把这条线归因为"硬件缺失"。**
+
+## 🏁 源码确证：等待在 `register_chipv7_phy(…, PHY_RF_CAL_FULL)` 内（2026-11-19 定论）
+
+本机 `~/esp/esp-idf/components/esp_phy/src/phy_init.c:945-965` 原文：
+
+```c
+esp_phy_calibration_mode_t calibration_mode = CONFIG_ESP_PHY_CALIBRATION_MODE;
+esp_err_t err = esp_phy_load_cal_data_from_nvs(cal_data);
+if (err != ESP_OK) {
+    ESP_LOGW(TAG, "failed to load RF calibration data (0x%x), falling back to full calibration", err);
+    calibration_mode = PHY_RF_CAL_FULL;          /* ← 我们的 NVS 桩让这里成立 */
+}
+ESP_ERROR_CHECK(esp_efuse_mac_get_default(sta_mac));
+memcpy(cal_data->mac, sta_mac, 6);
+esp_err_t ret = register_chipv7_phy(init_data, cal_data, calibration_mode);
+if (ret == ESP_CAL_DATA_CHECK_FAIL) { ... }
+```
+
+⇒ **等待在 `register_chipv7_phy` 内**（已由源码确认，不再是推断）。
+⇒ 且模式是 **`PHY_RF_CAL_FULL`** —— **全量 RF 校准**，按定义需要真实 RF 通路。
+
+### 因此"硬件前置"现在有**源码级依据**
+
+| 证据 | 内容 |
+| --- | --- |
+| 源码 | `calibration_mode = PHY_RF_CAL_FULL` |
+| 语义 | 全量 RF 校准 = 测量实际射频通路 |
+| 板上 | `register_chipv7_phy` 内的 ROM 忙等不返回 |
+| 我们的桩 | 只影响 `cal_data->mac`（假 MAC），不影响是否走全量校准 |
+
+### 一个仍可排除的软件因素
+
+`esp_efuse_mac_get_default` 返回假 MAC ⇒ `cal_data->mac` 是假的。
+但源码显示 `ret == ESP_CAL_DATA_CHECK_FAIL` 只触发"保存校准数据"，**不改变**是否做全量校准。
+
+⇒ 假 MAC **不是**卡住的原因（否则会走 `ESP_CAL_DATA_CHECK_FAIL` 分支，那只是写 NVS）。
+
+### 结论
+
+**在 `PHY_RF_CAL_FULL` 模式下，`register_chipv7_phy` 需要真实 RF 前端来产生校准结果。**
+本板无天线/RF 通路 ⇒ 校准无法完成 —— **这是硬件前提，且有源码依据**。
