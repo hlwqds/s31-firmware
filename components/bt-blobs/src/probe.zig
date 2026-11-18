@@ -131,7 +131,7 @@ fn macHook(out: *[6]u8) void {
 /// 因果实验：把 anchor[0] 毒成一个**有效可写 RAM 指针**（+28=0），
 /// 若崩溃因此消失或换点，就证明"anchor[0]==0 → 零值兜底 → store 到 0"这条链。
 var poison_buf: [64]u8 align(4) = @splat(0);
-pub var poison_anchor0: bool = false; // 基线：毒化可能自造崩溃，见 README
+pub var poison_anchor0: bool = true; // 决定性验证：毒化 anchor[9]（FzF1 的 s0 = 0x2f00fff4）
 /// 自测：故意往地址 0 写一次。用它的标签地址与 panic 报出的 mepc 比对，
 /// 判定这颗 CPU 的 store 异常是精确的还是会延迟上报。
 pub var selftest_store0: bool = false; // 标定完成：见 README
@@ -160,7 +160,7 @@ pub fn run() noreturn {
         // +28 填有效指针：若 `lw a0,28(a5)` 的值被下游当指针用，崩点应随之后移。
         const p28: *u32 = @ptrCast(&poison_buf[28]);
         p28.* = @intFromPtr(&poison_buf);
-        const slot: *volatile u32 = @ptrFromInt(0x2f00ffd0);
+        const slot: *volatile u32 = @ptrFromInt(0x2f00fff4);
         slot.* = @intFromPtr(&poison_buf);
         board.log.line("poison: anchor[0] -> 0x{x}", .{@intFromPtr(&poison_buf)});
     }
