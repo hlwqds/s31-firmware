@@ -393,6 +393,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             f(h.arg);
             return false;
         }
+        // **不依赖归档 tick 的采样**：step 6 时归档 tick 可能还没跑（任务未创建），
+        // 那时 `input == 25` 永不触发 ⇒ 采样器在最需要它的时候是瞎的。
+        // 这里每次 trap 都记——落在 trap 自身区间的样本可离线按地址识别并剔除。
+        if (input != 25 and frame.mepc != 0) recordPc(frame.mepc);
         if (input == 25) {
             // 输入 25 是 blob 自己的 tick。**不能**转发给 `rom_mtvec`：实测跳到掩位后的
             // 0x2f801700 会 `instruction access fault`（mepc=mtval=0x2f8210d2）——那个地址是
