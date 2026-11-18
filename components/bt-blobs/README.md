@@ -3698,3 +3698,27 @@ bt probe: re-probing 0x2010B000 ...
 能返回则把后置 reprobe 插在它之后读 `0x2010B000`（判据：`survived`）。
 
 这条改动只有**移动一处调用**，不需要新代码 —— 是本会话所有剩余选项里成本最低、判据最清晰的一个。
+
+## 顺序修正后仍卡在 `initPhy()`（2026-11-18 最后一次板测）
+
+把 `pp.initPhy()` 从 `dumpBootState()`（`:133`）移到 **step 5 `btdmLpEnableClock` 之后**
+（新开关 `phy_before_clocks`，默认 `false` = 按 IDF 顺序），结果：
+
+```
+bt lp: … win: clkrst +0x03c = 0x0000000f      <- step 5 已执行
+（没有 "bt bringup: PHY enabled AFTER step 5" 这一行）
+```
+
+⇒ **step 5 成功、随后 `initPhy()` 挂住**。
+
+⇒ 说明"顺序倒置"不是唯一原因（甚至可能不是主要原因）：
+**BT/LP 时钟已使能后，PHY 使能路径仍然卡死**。
+与技能记录一致：该路径上次是在 PHY 内部打 PMU 转储/RF 校准处停住。
+
+### 因此剩余工作收敛为一项（不再是两项）
+
+**让 `esp_phy_enable` 在时钟已使能的条件下能返回。** 具体缺的仍是：
+`I2C_ANA_MST`（PHY 寄存器走模拟 I2C 主控）—— `modem_clock_module_enable(PERIPH_PHY_MODULE)` 里
+我们从未使能的那一步。补齐后再跑同样这一次，判据仍是那一行 `PHY enabled AFTER` 是否出现。
+
+`phy_before_clocks` 开关保留（两种顺序都已实测），默认按 IDF 顺序。

@@ -37,6 +37,9 @@ pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 /// HCI 传输**从未在板上执行过**。跳过它即可验证那一大片。
 pub var skip_task_init: bool = false;
 
+/// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
+pub var phy_before_clocks: bool = false;
+
 /// 是否在 step 6 前预先发布 anchor[8]（`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`）。
 pub var prepublish_bohff: bool = false;
 
@@ -130,7 +133,7 @@ fn dumpBootState() void {
         const pp = @import("probe_ptr.zig");
         // 前后对读锚点表：区分"表由 PHY/ROM 填"与"表由闭包外的软件填"。
         gate.dumpAnchors("before-phy");
-        pp.initPhy();
+        if (phy_before_clocks) pp.initPhy();
         gate.dumpAnchors("after-phy");
         // ⚠️ `0x2f00fff8` **不是** `g_phyFuns`：它在锚点块里（`0x2f00ffd0 + 0x28`，第 11 个槽）。
         // 之前的标签把它当成 `g_phyFuns`，由此推出的"rom_phyFuns(0x2f07fc3c) ≠ g_phyFuns"是**误读**。
@@ -199,6 +202,11 @@ pub fn init(cfg: *config.Config) c_int {
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
     enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);
+    // **正确顺序**（对齐 IDF）：BT/LP 模块时钟已使能之后，再做 PHY 使能/校准。
+    if (!phy_before_clocks) {
+        @import("probe_ptr.zig").initPhy();
+        osal.logPublic("bt bringup: PHY enabled AFTER step 5 (idf order)", .{});
+    }
 
     // 4. 归档：任务层
     // **BT_BLOCK_PROBE**：直读 `0x2010B000`。寄存器已与 IDF 同点对齐，
