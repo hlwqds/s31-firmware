@@ -1129,7 +1129,7 @@ test "export layer: 至少这些符号是全局强定义（链接器才看得见
 /// **不用 `std.heap.*`**（`riscv32-freestanding` 上 `page_allocator` 没有后端）。
 /// 对齐固定 8：controller 的结构里有 u64（`ble.rtc_freq`），4 字节对齐会被未对齐读。
 pub const Arena = struct {
-    const BlockHeader = extern struct {
+    pub const BlockHeader = extern struct {
         size: u32, // 含块头的总大小，8 字节对齐
         magic: u32 = headerMagic,
         free: bool = false,
@@ -1140,8 +1140,8 @@ pub const Arena = struct {
     comptime {
         std.debug.assert(@sizeOf(BlockHeader) == 16);
     }
-    const headerMagic: u32 = 0xB7A1_0C0D;
-    const block_align: usize = 8;
+    pub const headerMagic: u32 = 0xB7A1_0C0D;
+    pub const block_align: usize = 8;
     const min_block: usize = 32;
 
     buf: []u8 = &.{},
@@ -1312,8 +1312,8 @@ pub fn arenaLargestFree() usize {
     var best: usize = 0;
     var addr = std.mem.alignForward(usize, @intFromPtr(bt_arena.buf.ptr), Arena.block_align);
     const end = (@intFromPtr(bt_arena.buf.ptr) + bt_arena.buf.len) & ~(Arena.block_align - 1);
-    while (addr + @sizeOf(BlockHeader) <= end) {
-        const hdr: *Arena.Block = @ptrFromInt(addr);
+    while (addr + @sizeOf(Arena.BlockHeader) <= end) {
+        const hdr: *Arena.BlockHeader = @ptrFromInt(addr);
         if (hdr.magic != Arena.headerMagic) break;
         if (hdr.free and hdr.size > best) best = hdr.size;
         addr += hdr.size;
