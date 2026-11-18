@@ -3645,3 +3645,32 @@ bt probe: re-probing 0x2010B000 ...
 返回之后立即读一次）。判据仍是同一条：能打印 `0x2010B000 = 0x… (survived)` 即为破壁。
 
 开关已置回 `false`，避免下次误用这个无效位置。
+
+## 已尝试组合矩阵（下会话**不要**重试）
+
+| # | 组合 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 1 | 无 PHY（ROM `esp_phy_enable`）+ 前置 reprobe | 读 `0x2010B000` **挂死** | 探针在 bringup 之前，PHY 未使能 |
+| 2 | `WITH_PHY=1`（IDF 7 对象链入）+ 前置 reprobe | 读 `0x2010B000` **仍挂死** | 同上：探针位置早于校准，**不构成对 WITH_PHY 的否证** |
+| 3 | `publish_bohff_anchor=false`（干净 init） | init 推进到 `Xpuq` 后停 | **有效**，闭环证据 |
+
+⇒ 组合 1/2 都因为**探针位置在 PHY 使能之前**而无判读力。**不要再跑前置探针**。
+
+## 精确锚点（下会话直接用）
+
+| 位置 | 内容 |
+| --- | --- |
+| `probe_ptr.zig:75-81` | PHY 使能链：`phy_get_romfunc_addr()` → `esp_phy_enable(2)` |
+| `bringup.zig:133` | `pp.initPhy()` 的调用点 ⇒ **后置探针应插在这行之后** |
+| `bringup.zig:169` | 已记录：给 IDF 7 个 PHY 对象时"**镜像会死在 bringup 之前**" |
+| `porting.zig:284` | LPCON `clk_conf_power_st` 已写（`0x66660000`） |
+
+## 下一步的正确顺序（唯一）
+
+1. **先补时钟依赖**：在 `initPhy()` **之前**使能 PHY/LP 模块时钟，特别是 **`I2C_ANA_MST`**
+   （PHY 寄存器走模拟 I2C 主控，我们从未使能；IDF 的 `modem_clock_module_enable(PERIPH_PHY_MODULE)` 就做这个）；
+2. 再 `WITH_PHY=1` 构建，**看 `esp_phy_enable(2)` 能否返回**（技能记录该路径上次卡在 RF 校准/PMU 转储）；
+3. 能返回 ⇒ 在 `bringup.zig:133` **之后**读一次 `0x2010B000`，判据：打印 `survived` 即破壁；
+4. 不能返回 ⇒ 缺的是时钟/`I2C_ANA_MST` 依赖，不是校准数据，回到第 1 步逐项补齐。
+
+**在完成第 1 步之前，任何 reprobe 结果都不具判读力。**
