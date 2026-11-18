@@ -75,8 +75,12 @@
   过滤日志**，`"bt gate: "`/`"bt env: "`/`"bt anchor["` 不在门内 ⇒ probe 路径下**每次取到
   互斥锁都要往 UART 打 ~15 行**。现在门控搬进 `components/bt-blobs/src/gate.zig`，由
   `Hooks.on_mutex_acquired` 注册；`probe_ptr.zig` 也随 ADR 退回 bt-blobs。
-  触发条件与迁移前完全一致（只有 `probe.zig` 设 `.log`，也只有它设新钩子），
-  日志格式逐字未变，闭包镜像仍 **913728 B**。
+  触发条件与迁移前一致（只有 `probe.zig` 调 `setHooks`，新字段在同一次调用里注册，
+  不会被整表替换冲掉），日志格式逐字未变，闭包镜像仍 **913728 B**。
+  **未在板上复验本轮日志输出**；静态侧只确认了 `gate.zig` 会被分析（`app_zcu.o` 里有它的
+  字面量）且两种构建都 RC=0。另一个实测事实：生产镜像里 `probe.run` 无人引用，
+  gc-sections 会把 probe/gate 一起丢掉（`bt bringup` 也不在 ELF 里）—— 而生产路径本来
+  也没设过 `.log`，所以"生产不打这些日志"在迁移前后都成立。
 - **POSIX 同步层（2026-11-18）**：`components/posix-compat/src/sync.zig` —— `sem_t` 与
   `pthread_mutex_t` 建在 `osal.Sem` 上（**不是** `osal.Mutex`：后者只做有界忙等、不唤醒
   等待者、无 owner/waiter），`pthread_once` 用 CAS。13 项新用例，posix-compat 17 → **30**。

@@ -185,6 +185,12 @@ lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，l
 | 2 | `bt-blobs` 改为 `@import("osal_component")`（它的 `selftest.zig` 里 `run()` 继续调搬过去的实现） |
 | 3 | `posix-compat` 加 `sync.zig` / `thread.zig`，依赖这个组件 —— **`sync.zig` 已完成**（28 项） |
 
+> ⚠️ **写 `thread.zig` 前必须知道的硬边界**：`sched.taskCreate()` 置 `in_use = true`，
+> 而 `sched.zig` **没有** `taskDelete`/`taskExit` —— 槽位永不回收。所以每个 boot 最多
+> **8 次** `pthread_create`（`max_tasks = 8`），线程退出也不还槽；第 9 次必须返回
+> `EAGAIN`，不能因为"线程已经 join 了"就以为能再创建。join/done 槽位可以自己回收，
+> `sched` 的槽不行。
+
 **剩 `thread.zig`**：`pthread_create/join/detach/self/exit`。按 §4.5 的 `Slot` + 信号量实现，
 `pthread_join` 是 `semPend(forever)`，trampoline 收尾 `done = true; semRelease(...)`。
 主机测试只能覆盖 **Slot 协议**（重复 join → `EINVAL`、detach 后 join → `EINVAL`、超时），
