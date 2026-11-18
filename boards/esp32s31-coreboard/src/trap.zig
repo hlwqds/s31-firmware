@@ -481,6 +481,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         var caller_ra: usize = 0;
         if (frame.sp >= 0x2f00_0000 and frame.sp < 0x2f10_0000) {
             caller_ra = (@as(*const usize, @ptrFromInt(frame.sp + 12))).*;
+            // **自校验**：若 +8 处不等于 frame.s0，说明帧布局假设不成立，
+            // 那么 +12 也就不是"保存的 ra"，整块覆盖的结论要撤回。
+            diag_a = @truncate((@as(*const usize, @ptrFromInt(frame.sp + 8))).* ^ frame.s0);
         }
         var pbuf: [280]u8 = undefined;
         const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
