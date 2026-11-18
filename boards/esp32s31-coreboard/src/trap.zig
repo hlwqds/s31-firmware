@@ -196,6 +196,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **1 字节心跳**：14 B/条 × 152 条 = 2.1 KB ≫ 128 B FIFO ⇒ 之后的一切被丢。
             // 改成每 512 tick 一个 '.'，FIFO 只占几十字节，里程碑与 abort 文本才能存活。
             if (irq_count % 512 == 0) log.raw(".");
+            // **一次性读**三个寄存器：若 FE 域被门控，读本身会挂住 ⇒ 心跳在此之后停止**也是信号**。
+            if (irq_count == 2000) {
+                const fe = (@as(*volatile u32, @ptrFromInt(0x20100800))).*;
+                const c1 = (@as(*volatile u32, @ptrFromInt(0x20109C14))).*;
+                const fo = (@as(*volatile u32, @ptrFromInt(0x20109C08))).*;
+                log.line("F{x}.{x}.{x}", .{ fe, c1, fo });
+            }
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
         }
