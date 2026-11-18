@@ -1859,9 +1859,18 @@ panic: ra=0x4005fa94 a0=0x0
 
 ⇒ 它们全部属于**更晚的子系统**，本该由各自 init 发布 ⇒ **它们是"没走到那一步"的结果，不是原因**。
 
-**未闭合的一点**：`mepc=0x4005b692` 在最终 ELF 里恰好等于
-`r_sym_bt_cKuT2s3WOu8oyZWi8auj` 的入口（`libbtdm_common_11/21`），而该 trampoline 的第一条是
-`lui`（不可能是 store fault），且它对 `.LANCHOR0` 为 NULL 有 `beqz` 守卫。所以要么符号地址与
-指令不对齐（缺 linker map），要么故障指令落在这个 trampoline 调用的目标里。**下一步需要一份
-linker map**（或用 `-femit-bin` 的 map 选项）把 0x4005b692 定位到确切指令，再判断它写的是哪个
-env 字段。
+**`mepc=0x4005b692` 已定案（手工解码最终 ELF；objdump 因该段缺 ISA 属性只肯打成 `.word`）**：
+
+```asm
+4005b692  lui  a5, 0x2f010        ; a5 = 0x2f010000
+4005b696  lw   a5, -0x30(a5)      ; a5 = *(0x2f00ffd0)  ← 就是 anchor[0] 槽
+4005b69a  c781                    ; beqz a5, …
+```
+
+`0x2f00ffd0` 正是 gate 读的锚点表基址 ⇒ 崩溃现场是**在消费 anchor[0]**，而 anchor[0]
+（`pSy5Wex1v0iXw5RdWtwL`）恰好是未发布的 `0x0`。
+
+**仍未闭合**：该入口的指令是 `lui`/`lw`，本身不可能是 store；`mtval=0` 的 store fault 要么落在
+`beqz` 之后的路径（trap 帧的 mepc 取值点与我的假设不同），要么落在随后 `lw a0,28(a5)` 的下游。
+要一句话说死，需要一份 **linker map**（`-Wl,-Map=`；Zig 0.17 的 `addLinkArgs` 不在 `Module` 上，
+本轮尝试未落地），把 PC→section 对上。

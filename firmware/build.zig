@@ -260,6 +260,9 @@ pub fn build(b: *std.Build) void {
         }
         if (bt_added == 0) @panic("-Dbt-blob-objs 为空：给它逗号分隔的对象名");
         app.link_gc_sections = false;
+        // 出 linker map：blob 镜像里代码与字面量池混排，addr2line 只给符号名、
+        // objdump 会把常量误当指令 ⇒ 要定一个 PC 落在哪个 .o 的哪个 section，只有 map 靠得住。
+        app.root_module.addLinkArgs(&.{"-Wl,-Map=firmware/zig-out/app.map"});
         // 适配面：10 个符号里的 5 个非链接脚本符号（另 5 个在 s31.ld 里 PROVIDE）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe) &.{"-DBT_ASSERT_RETURNS=1"} else &.{} });
         // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
