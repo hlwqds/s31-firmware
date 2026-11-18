@@ -10653,3 +10653,49 @@ for (msg) |ch| {
 6. `panic: anchor[]` 通道读错区域，`M*` 才有效
 7. `rawWrite` 整行预留 + `dumpLine` 阻塞写使日志/dump 完整
 8. 采样源必须是 `samplePcs`（`pc_ring`），不是 `pc_snap`
+
+## 修正："空写"假设被削弱（`logHook` 已经过滤）
+
+### 代码事实（`probe.zig:264-270`）
+
+```zig
+if (std.mem.startsWith(u8, msg, "bt ")) {
+    log_hook_ours +%= 1;
+    if (call_stream_on) {
+        // `bt ret:`/`bt call:` 压成 1 个字节
+    }
+    ...
+}
+// 非 "bt " 前缀的消息：**只计数，不写 UART**
+```
+
+⇒ 归档消息**根本不进入 `rawWrite`** ⇒ "每条消息都烧等待"**不成立**。
+
+### 因此矛盾仍未解
+
+| 事实 | 值 |
+| --- | --- |
+| CPU 在 `rawWrite` | ~85–96% |
+| 实际输出 | ~224 行 / 60 s |
+
+⇒ 而 `rawWrite` 只被 `bt ` 前缀消息（限量）+ 里程碑 + 采样行调用。
+
+### 剩余可能性
+
+| # | 假设 | 检验 |
+| --- | --- | --- |
+| 1 | `rawWrite` 内部等待在**FIFO 常满**时每次都打满（即使只写 1 字节）| 读 `TXFIFO_CNT` 与 `FBR` 分频 |
+| 2 | 采样地址 `0x40069a0e/10/42/4c` 其实**不是** `rawWrite`（`addr2line` 只给最近符号）| dump 该区间反汇编确认 |
+| 3 | 归档侧触发了**大量** `bt ` 前缀消息（如每 tick 一条 `bt lp:`）| 统计 `log_hook_ours` 计数 |
+
+⇒ **#3 最可检验**：`log_hook_ours` 计数器已存在（`probe.zig:265`），
+把它加进 DUMP 输出即可 —— 若它达到数万，则"每 tick 一条 `bt ` 消息"成立。
+
+### 本会话终点状态
+
+| 项 | 值 |
+| --- | --- |
+| HEAD | 本次提交后 |
+| 已确证 | 8 条（见上节）|
+| 未解 | `rawWrite` 占用 85–96% 与输出量 224 行之间的矛盾 |
+| 下一步 | 把 `log_hook_calls` / `log_hook_ours` 加进 DUMP 输出（一行）|
