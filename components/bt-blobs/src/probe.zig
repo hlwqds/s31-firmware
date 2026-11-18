@@ -167,6 +167,19 @@ fn dumpLine(comptime fmt: []const u8, args: anytype) void {
 
 fn dumpAtPend() void {
     if (dump_done) return;
+
+    // **UART 排空自测**（在任何写之前）：读计数 → 写 1 字节 → 等 → 再读。
+    {
+        const st: *volatile u32 = @ptrFromInt(0x2038_A01C);
+        const f: *volatile u32 = @ptrFromInt(0x2038_A000);
+        const before = (st.* >> 16) & 0xFF;
+        f.* = 'Z';
+        var k: u32 = 0;
+        while (k < 200_000) : (k += 1) std.atomic.spinLoopHint();
+        const after = (st.* >> 16) & 0xFF;
+        const div = (@as(*volatile u32, @ptrFromInt(0x2038_A014))).*;
+        board.log.line("U {d}->{d} div={x}", .{ before, after, div });
+    }
     dumpLine("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
     osal.canaryScan();
 
