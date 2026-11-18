@@ -923,6 +923,7 @@ export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
     eventqDeinit(evq);
 }
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
+    logPublic("bt call: eventq_get", .{});
     noteCaller();
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_get", .{});
@@ -989,6 +990,7 @@ export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
+    logPublic("bt call: mutex_pend", .{});
     noteCaller();
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: mutex_pend", .{});
@@ -1359,6 +1361,7 @@ export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
     btdmFree(ptr);
 }
 export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
+    logPublic("bt call: task_create", .{});
     noteCaller();
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: task_create", .{});
