@@ -4,7 +4,7 @@
 
 | 层 | 内容 | 命令 | 门禁 |
 | --- | --- | --- | --- |
-| L1 单元 | 14 个组件的 `test` 块（572 项） | `scripts/check-host.sh` | 合并前必须绿 |
+| L1 单元 | 16 个测试项目的 `test` 块（572 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
 | L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
@@ -178,6 +178,7 @@ python3 tests/e2e/run_e2e.py --board --profile net     # 需要板子与 idf-boo
 
 ```bash
 scripts/check-all.sh                   # yaml/invariants/fmt/host/coverage/update_matrix/partition/capacity + 六 profile
+# invariants 含：前门测试总数（README/ROADMAP/TESTING）必须等于 tests/baselines.json 的合计
 scripts/build-image.sh firmware <dir>  # 两段镜像断言；<dir> 必须先存在
 tests/e2e/run_e2e.py --board --profile net|tls     # 不需要主机网络的板级 e2e
 scripts/demo-board.sh <PORT>           # A/B 九项断言
