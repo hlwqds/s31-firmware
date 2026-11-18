@@ -4221,3 +4221,16 @@ CODES n=16 0120000000000000
 
 抓到过 `…44`（两个 `mutex_pend`）：按反汇编 `task_init` 在 `0x4005fb84` 有一次，
 另一个 `4` 的调用点需在 `OkE7` 之后的路径里再核 —— **不要直接当成"两次 pend"**。
+
+## 交接引用已复核（2026-11-19）
+
+下一棒会直接照这些指针行动，故逐一核对：
+
+| 引用 | 状态 |
+| --- | --- |
+| `wifi-blobs/src/init_probe.zig:686-700`（`MODEM_LPCON_CLK_CONF` / PHY 模块时钟） | ✅ 内容相符 |
+| `wifi-blobs/src/osi_impl.zig:1082`（`fn shellPhyEnable(modem: u32)`） | ✅ 内容相符 |
+| `wifi-blobs/src/phy_init_data.zig`（`pub const params: [128]u8`） | ✅ 存在 |
+| `WITH_PHY=1` 版 `esp_phy_enable` @ `0x40000744`（174 B FUNC） | ✅ 实测相符 |
+| `WITH_PHY=1` 版 `esp_phy_load_cal_and_init` @ `0x40000580`（452 B） | ✅ 实测相符 |
+| 默认版 `esp_phy_enable` = ROM `0x2f00e756`（ABS） | ✅ 相符 |
