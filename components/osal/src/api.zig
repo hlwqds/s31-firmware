@@ -16,6 +16,16 @@ pub const sched = @import("sched.zig");
 /// 调试用的指针探针（`osal.zig` 读寄存器/栈时会用到）。
 pub const probe_ptr = @import("probe_ptr.zig");
 
-comptime {
+/// 让 `osal.zig` 里那 5 个 `export fn` 真正发射。**由消费者在 comptime 调一次**：
+///
+/// ```zig
+/// comptime { @import("osal_kit").forceExports(); }
+/// ```
+///
+/// 为什么不能只在本文件里写 `comptime { _ = &osal.timeGet; }`：本文件是模块根，
+/// 而模块是**惰性**编译的 —— 消费者只写 `pub const osal = @import("osal_kit").osal`
+/// 时本文件根本不会被分析，里面的 comptime 也就不会执行。实测：删掉消费者侧那次调用后，
+/// 闭包链接立刻报 5 个未定义符号（`scripts/check-bt-link.sh`）。
+pub fn forceExports() void {
     _ = &osal.timeGet;
 }

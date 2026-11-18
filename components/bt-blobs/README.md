@@ -68,10 +68,11 @@ zig build -Dtarget=riscv32-freestanding-eabihf \
 >    四个归档 179 个成员摊平只剩 142。**不要手工摊平**，用 `tools/gen-bt-closure.sh`
 >    的闭包清单（按需取成员，天然规避重复符号，例如我们 `phy_stubs.c` 的
 >    `get_phy_version_str` 与 `libphy/phy_debug.o` 撞名）。
-> 2. **`root.zig` 必须有根**：它原先只有 `pub const` 转出口，Zig 不分析被转出的文件，
->    于是 `bt_core.o` 的**符号数是 0**（`nm` 实测），链接报 `s31_now_us` 等 5 个未定义。
->    `-Dbt-probe` 会掩盖它（探针 shim 引用了 `probe.run`）。现在 `root.zig` 末尾有一行
->    `comptime { _ = &osal.timeGet; }` 把它钉住 —— **改 root.zig 时别删**。
+> 2. **`export fn` 需要有人强制分析**：`osal.zig` 的 5 个 `export fn` 只在文件被分析时发射，
+>    而 `root.zig` 全是转出口。开关在 `components/osal/src/api.zig` 的 `forceExports()`，
+>    由**本组件的 `root.zig` 在 comptime 调用**（`osal_kit` 是惰性模块，不调就不会被分析）。
+>    少了这次调用，`bt_core.o` 的**符号数是 0**（`nm` 实测），链接报 `s31_now_us` 等 5 个未定义。
+>    `-Dbt-probe` 会掩盖它（探针 shim 引用了 `probe.run`）—— **改 `root.zig` 时别删那行**。
 > 3. **镜像不能"链接成功但为空"**：没有真实引用时归档成员可能一个都不进来。
 
 
@@ -90,12 +91,12 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 | 文件 | 职责 |
 | --- | --- |
 | `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
-| `src/osal.zig` | OSAL 核心 + coex 钩子 + **59 个 C ABI 导出**（归档会调的 **36 + 11** 逐个点名核对）；15 个主机用例 |
+| `src/osal.zig` | **已迁出** → `components/osal/`（另有 `sched.zig`、`probe_ptr.zig`）；本组件经 `osal_kit` 模块使用 |
 | `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
 | `src/probe.zig` | 板上探针（`-Dbt-probe`）：装钩子 → arena → init → enable → 进任务 → 发 Reset → 泵任务 |
-| `src/root.zig` | 单一模块根：所有文件属于同一个模块（分两个会报"文件属于多个模块"） |
+| `src/root.zig` | 模块根：所有文件属于同一个模块（分两个会报"文件属于多个模块"）；另含 `forceExports()` 的强引用 |
 | `tools/gen-bt-closure.sh` | **重新生成闭包对象清单**（解包 4 归档 → 符号图 BFS → 减 ROM → 打印构建命令） |
-| `src/sched.zig` | 协作式上下文切换（rv32 64 字节帧）+ 任务表 + `block()`/`resumeTask()` |
+| `src/sched.zig` | **已迁出** → `components/osal/src/sched.zig` |
 | `src/transport.zig` | HCI 传输层（自有 ops + 下行分发 + 事件回程），含 `sendReset()`/`sendReadLocalVersion()` |
 | `src/extfuncs.zig` | `ext_funcs_t`（rv32 **40 字节**）：controller 的 malloc/free/rand/assert 表 |
 | `src/bringup.zig` | init（13 步）/ enable（6 步）编排，状态机 `idle→inited→enabled`，附 `getStatus()` |

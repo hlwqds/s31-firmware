@@ -120,6 +120,26 @@ net-sockets（生产）        hw/tick（板级）
 - `time.zig`：`Clock = fn () u64`（纳秒）与 `Sleeper = fn (u64) void`
 - `fd.zig`：`*socket.Table` 与地址表由调用方持有（无全局状态）
 
+## 4.5 绑定决策（2026-11-18 定）
+
+**直接依赖 `osal_kit`，不再造注入 port。** 当初 `time.zig` 用注入，是因为当时没有可复用的内核；
+现在 `components/osal/` 零 `board` 依赖、20 项主机用例可驱动，直接 import 就是"在真内核上测真语义"，
+§4 那句"假内核自说自话"的前提已经消失。注入点只剩 `hooks.now_ms` 这一项（时钟/睡眠）。
+
+**`pthread_join` 不动 `sched.zig`。** 用包装层实现：每个线程配一个 `Slot`
+
+```zig
+const Slot = struct {
+    done: std.atomic.Value(bool) = .init(false),
+    sem: osal.Sem = undefined,
+};
+// trampoline 收尾：done = true; osal.semRelease(&sem);
+// join：osal.semPend(&sem, timeout); 重复 join 读 done 直接返回
+```
+
+好处：`sched.zig` 保持原样（它只有 2 项用例，改内部必然要动上下文切换），而 join 的语义
+（重复 join、对未启动线程 join、超时）**全在主机用例的射程内**。
+
 ## 5. 验收与登记方式
 
 - 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**17 项**
