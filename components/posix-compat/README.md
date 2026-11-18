@@ -155,8 +155,11 @@ lab 在 quartz 仓、本组件在 s31-firmware 仓，跨仓 import 不存在，l
 | 2 | `bt-blobs` 改为 `@import("osal_component")`（它的 `selftest.zig` 里 `run()` 继续调搬过去的实现） |
 | 3 | `posix-compat` 加 `sync.zig` / `thread.zig`，依赖这个组件 |
 
-⚠️ **搬运前要先补一个门禁**：`bt-blobs` 的 **blob 链接路径**（`-Dbt-blob-dir` + 解包对象）
-**不在任何门禁里** —— `check-all` 的六个 profile 都不带 blob 目录，只有它的 36 项主机用例在跑。
+✅ **搬运所需的门禁已就绪（2026-11-18）**：`scripts/check-bt-link.sh` —— 生成闭包 → 用闭包链接
+→ 断言镜像 > 500 KB。实测 116 个对象、镜像 913728 B；去掉 `root.zig` 的根引用后门禁失败（负例验过）。
+它需要 IDF 树，不进 `check-all`，**动 `osal.zig`/`sched.zig` 前后各跑一次**即可。
+
+⚠️ 背景（原先的判断）：`bt-blobs` 的 blob 链接路径**不在任何门禁里** —— `check-all` 的六个 profile 都不带 blob 目录，只有它的 36 项主机用例在跑。
 而 `osal.zig`/`sched.zig` 被该组件的 **10 个文件、18 处相对 import** 引用（`bringup`/`extfuncs`/
 `porting`/`transport`/`probe`/`root`/`xpuq_shim`/`host_tests` 与它们自己）。移动文件会让这些
 import 全部改成模块导入，**改错在主机用例里看不出来**（用例只覆盖纯逻辑），要等一次真实链接才暴露。
