@@ -319,7 +319,12 @@ pub const MmioRec = extern struct {
 pub var mmio_ring: [48]MmioRec = @splat(.{});
 pub var mmio_ring_next: u32 = 0;
 
+/// 采样窗口里把它置真：归档密集访问寄存器，每访问一次都记环的话，
+/// **记录函数自己就成了热路径**（实测采样全落在 `mmioRecord`）。
+pub var mmio_off: bool = false;
+
 fn mmioRecord(kind: u32, addr: usize, val: u32) void {
+    if (mmio_off) return;
     const i = mmio_ring_next % mmio_ring.len;
     mmio_ring[i] = .{ .kind = kind, .addr = @truncate(addr), .val = val };
     mmio_ring_next +%= 1;

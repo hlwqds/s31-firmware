@@ -283,6 +283,7 @@ pub fn init(cfg: *config.Config) c_int {
         // 走 `osal.logPublic`（不受 `trace_hooks` 过滤），会在开窗后再打，把采样槽占满。
         // 窗口内还要**撤掉 gate 钩子**：归档取到互斥锁时它会打 15 行锚点表，每行都走 UART 自旋，
         // 采样会全部落在 `probe.logHook` 上（实测 48 条全是它）。
+        board.hw.mmio_off = true; // 关掉寄存器记录（否则它是热路径）
         board.trap.resetPcs(); // 只保留本窗口的采样
         board.trap.sample_quiet = true;
         osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook

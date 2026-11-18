@@ -183,7 +183,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **极短计数器行**：前 16 条打详细现场，之后每 64 条打一行 ≤24 字节的
         // `s=<n> pc=0x<x>`。目的：FIFO 压力小几个数量级，且计数**是否继续增长**
         // 直接判定"中断还在来（自旋）"还是"事务不退休（stall）"。
-        if (irq_count >= 16 and (irq_count % 64) == 0) {
+        if (!sample_quiet and irq_count >= 16 and (irq_count % 64) == 0) {
             log.line("s={d} pc=0x{x}", .{ irq_count, frame.mepc });
             // ⚠ 不能在这里 return：下面的 `irq_count += 1` 会被跳过 ⇒ 计数永远停在 64
             //   （本轮实测就是这样，日志里全是 s=64）。
@@ -342,7 +342,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 会 panic（`mepc=0xffffffa0`）。要在自旋期间泵，必须先让任务上下文处于可安全恢复状态。
             if (input == 25) hw.ackT0Interrupt(2000);
             rom_handler_calls += 1;
-            if (rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x}", .{ rom_handler_calls, @intFromPtr(f) });
+            if (!sample_quiet and rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x}", .{ rom_handler_calls, @intFromPtr(f) });
             f(h.arg);
             return false;
         }
@@ -372,7 +372,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }
             // 每 256 次（≈0.5 s）打一行：**卡在 init 内部时只有 ISR 还能说话**，
             // 这一行直接指出死等发生在哪个地址。
-            if (pc_ring_n % 256 == 0) {
+            if (!sample_quiet and pc_ring_n % 256 == 0) {
                 // 带上 s0：反汇编里那个轮询循环的 `s0` 就是"要读哪个寄存器"的实参，
                 // 靠它才能算出真正的轮询地址（`a0` 只是被掩码后的数据）。
                 log.line("pcsample n={d} pc=0x{x} ra=0x{x} s0=0x{x}", .{ pc_ring_n, frame.mepc, frame.ra, frame.s0 });
@@ -468,6 +468,11 @@ fn recordPc(pc: usize) void {
 pub fn resetPcs() void {
     pc_ring_n = 0;
     pc_ring = @splat(0);
+    // 计数器也要清：`irq_count % 64 == 0` 这类门控在清零后会在**第一次**中断就成立，
+    // 于是一开窗就打印一行 —— 正好把采样槽占掉（曾复现"48/48 logHook"）。
+    irq_count = 0;
+    rom_handler_calls = 0;
+    caller_n = 0;
 }
 
 /// 采样次数（调用方据此判断"中断还在来" ⇒ 是 spin 而不是死机）。
