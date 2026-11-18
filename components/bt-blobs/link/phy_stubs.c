@@ -116,16 +116,19 @@ static void put1(char c) {
     while ((((*stat >> 16) & 0xFF) >= 120) && sp < 40) sp++;
     if (sp < 40) *fifo = (unsigned)c;
 }
-static unsigned char g_phy_cal_buf[2048] __attribute__((aligned(16)));
+static unsigned char g_phy_cal_buf[4][2048] __attribute__((aligned(16)));
+static unsigned g_phy_cal_next = 0;
 
 void *calloc(size_t n, size_t sz)
 {
     size_t total = n * sz;
     if (total == 1904) {
         put1('C');
-        uint8_t *b = (uint8_t *)g_phy_cal_buf;
+        unsigned slot = g_phy_cal_next & 3u;   /* **4 槽轮转**：避免别名 */
+        g_phy_cal_next++;
+        uint8_t *b = (uint8_t *)g_phy_cal_buf[slot];
         for (size_t i = 0; i < total; i++) b[i] = 0;
-        return g_phy_cal_buf;
+        return (void *)b;
     }
     void *p = s31_btdm_malloc((uint32_t)total);
     if (p) {
@@ -135,7 +138,8 @@ void *calloc(size_t n, size_t sz)
     return p;
 }
 void free(void *p) {
-    if (p == (void *)g_phy_cal_buf) return;   /* 专用缓冲不归还 */
+    /* 专用缓冲不归还（4 槽范围内都算专用） */
+    for (unsigned i = 0; i < 4; i++) if (p == (void *)g_phy_cal_buf[i]) return;
     s31_btdm_free(p);
 }
 
