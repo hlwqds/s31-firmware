@@ -190,13 +190,19 @@ const Slot = struct {
 1. 本版没有板级行为变更 —— 没有 selftest 要跑；
 2. 它依赖 `net_sockets` 模块，而 `net_sockets` 组件模块（`selftest.zig` 为根）与
    `api.zig` 为根的模块**包含同一批文件**；两者同时进镜像会撞 Zig 的
-   "file exists in modules 'net_sockets' and 'net_sockets0'"。等接内核时把 socket 层的
-   模块根统一（api 兼作组件根，并在 test 目标里特殊处理 `host_tests.zig` 的路径映射）再一起进。
+   "file exists in modules 'net_sockets' and 'net_sockets0'"。
+   ⚠️ 统一根时不要图省事写成 `api.zig` 里 `pub const selftest = @import("selftest.zig")` ——
+   `selftest.zig` 导入了 `board`，那样会把 `board` 依赖拖进本组件的**主机测试目标**（那里没有
+   `board` 模块）。正确形状：`selftest.zig` 自成**独立模块**并从模块导入
+   （`@import("net_sockets").socket`），而不是从文件导入。
 
 **接线前先量体积**：`thread.zig` 的栈**归调用方**（`pthread_attr_setstack`），默认属性才用
 小静态池 `2 × 8 KiB = 16 KiB` 的 `.bss`（此前是 8 × 8 KiB = 64 KiB）。S31 的 SRAM 还要和
 413 KB 的 BLE arena 分享，`scripts/check-capacity.py` 按段断言 load+len —— 所以接进镜像前
 先跑一次容量门禁，别等它红了自己发现。
+
+> 决策记录：为什么本层自持队列而不借用 `osal`，见
+> `docs/adr/ADR-002-posix-compat-own-wait-queue.md`（含三条队列不变量与各自对应的一次真实缺陷）。
 
 ## 6. 进度与剩余项
 
