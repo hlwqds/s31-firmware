@@ -156,62 +156,9 @@ fn dumpBootState() void {
         });
     }
 
-    const wr = struct {
-        fn f(a: usize, v: u32) void {
-            @as(*volatile u32, @ptrFromInt(a)).* = v;
-        }
-    };
-
-    // **按 oracle boot 完成态表逐项直接赋值**（不做 RMW：这些是一次性 boot 状态，
-    // 而且 `rd()` 在未建立的窗口上会挂死总线 —— 本会话已直接验证 0x20109C04 一读即挂）。
-    wr.f(0x2010_9C04, 0x0020_1002); // syscon +0x004（clk_conf）
-    wr.f(0x2010_9C20, 0x0000_2070); // syscon +0x020
-    wr.f(0x2010_9C2C, 0x0000_0044); // syscon +0x02c
-    wr.f(0x2010_9C30, 0x0250_8080); // syscon +0x030
-    wr.f(0x2010_F008, 0x314);       // lpcon +0x008
-    wr.f(0x2010_F00C, 0x1);         // lpcon +0x00c
-    wr.f(0x2010_F018, 0x1);         // lpcon +0x018
-    wr.f(0x2010_F01C, 0x4);         // lpcon +0x01c
-    wr.f(0x2010_F028, 0x27);        // lpcon +0x028
-    wr.f(0x2010_F02C, 0x0888_8888); // lpcon +0x02c
-    wr.f(0x2010_F030, 0x0000_2070); // lpcon +0x030
-    wr.f(0x2058_7000, 0x1);         // clkrst +0x000
-    wr.f(0x2058_7008, 0x1);         // clkrst +0x008
-    wr.f(0x2058_700C, 0x2);         // clkrst +0x00c
-    wr.f(0x2058_7010, 0x1);         // clkrst +0x010
-    wr.f(0x2058_701C, 0x3);         // clkrst +0x01c
-    wr.f(0x2058_7020, 0x3);         // clkrst +0x020
-    wr.f(0x2058_7028, 0x3);         // clkrst +0x028
-    wr.f(0x2058_7034, 0x1);         // clkrst +0x034
-    osal.logLine("bt bringup: BOOTSTATE WROTE19 {d}", .{19});   // **落在读循环之前**：看到它就是写成功
-
-    const wins = [_]struct { name: []const u8, base: usize, n: usize }{
-        // **只读 +0x000**：+0x004 起的读会挂死总线（本会话直接验证：写成功、读挂死）。
-        .{ .name = "syscon", .base = 0x2010_9C00, .n = 1 },
-        .{ .name = "lpcon", .base = 0x2010_F000, .n = 16 },
-        .{ .name = "pwr", .base = 0x2010_D000, .n = 16 },
-        .{ .name = "clkrst", .base = 0x2058_7000, .n = 32 },
-    };
-    for (wins) |w| {
-        var i: usize = 0;
-        while (i < w.n) : (i += 1) {
-            const v = (@as(*volatile u32, @ptrFromInt(w.base + i * 4))).*;
-            // **零值也要打**：boot 层差异恰恰是"我们=0、oracle≠0"的那批，
-            // 之前 `if (v != 0)` 把它们全藏了起来。
-            osal.logLine("bt bringup: BOOTSTATE {s} +0x{x:0>3} = 0x{x:0>8}", .{ w.name, i * 4, v });
-        }
-    }
-
-    // **补齐 IDF boot 建立、我们缺的状态**（boot 态对拍实测差集）。
-    // 这些由 IDF bootloader / 系统初始化写入；我们的裸机镜像没有那一层。
-    // 下面**不是** PHY 使能：这里只补 IDF boot 建好、我们缺的 4 个寄存器。
-    // 真正的 PHY 使能是 `dumpBootState()` 里的 `pp.initPhy()`（`probe_ptr.zig`）：
-    // 先 `phy_get_romfunc_addr()` 填 `g_phyFuns`，再 `esp_phy_enable(2)`（PHY_MODEM_BT）。
-    // 那个 `@extern` 解析到哪份实现取决于构建：
-    //   - 不给 `-Dphy-src-objs` ⇒ `rom_syms.ld` 的 `PROVIDE` ⇒ ROM `0x2f00e756`（能返回，
-    //     板侧打过 `BOOTSTATE: esp_phy_enable(BT) done, g_phyFuns=…`）；
-    //   - 给了 IDF 的 7 个 PHY 对象 ⇒ 真实定义覆盖 PROVIDE，但镜像会死在 bringup 之前。
-    osal.logLine("bt bringup: BOOTSTATE DONE {d}", .{0});
+    // boot 期四窗口 dump 与 19 条补齐写已移除：
+    // 已知良好的四窗口状态在 step 5 之后由 `porting.zig` 的 `win:` dump 给出
+    // （见 pc48.log:263-291），那里 `0x20109C04` 是可读的。
 }
 
 pub fn init(cfg: *config.Config) c_int {
