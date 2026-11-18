@@ -98,10 +98,14 @@ fn enter(n: u32, comptime what: []const u8) void {
     // 让 UART FIFO 排空：step 1..5 在同一瞬间连发，5×~30 B > 128 B FIFO
     // ⇒ 溢出时 hw.rawWrite **按设计丢弃** ⇒ 只剩第一行可见（误判为"没执行"）。
     // 这里等 ~2 ms，足以让一行（30 B / 115200 ≈ 2.6 ms... 取保守值）排空。
-    var k: u32 = 0;
-    var sink: u32 = 0;
-    while (k < 20_000) : (k += 1) sink +%= k;
-    if (sink == 0xFFFF_FFFF) osal.logPublic("bt bringup: drain {d}", .{sink});
+    // 等 UART0 TX FIFO 排空（**有界**），再返回 —— 否则 5 行 step 日志连发会溢出
+    // 128 B FIFO，`hw.rawWrite` 按设计丢弃，只剩第一行可见（会误判为"没执行"）。
+    // UART0 = 0x2038A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]（见 phy_stubs.c 的 put1）。
+    const st: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    var guard: u32 = 0;
+    while (guard < 200_000) : (guard += 1) {
+        if (((st.* >> 16) & 0xFF) <= 8) break;
+    }
 }
 
 fn step(n: u32, comptime what: []const u8, archive_rc: ?c_int) c_int {

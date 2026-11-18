@@ -8087,3 +8087,47 @@ bt bringup: enter step 1 mempool
 
 ⇒ 下一次必须先钉死"日志与 PC 是否同一次启动"：在 `enter(1)` 里打印一个**自增 boot 计数**
 （RAM 全局，掉电清零），PC 采样行也带上它。
+
+## 🎯 突破：FIFO 排空修复**生效**，挂点确认为 **step 5 之后的 PHY 块**（2026-11-19）
+
+在 `enter()` 里加**真实的 TXFIFO_CNT 排空等待**（`0x2038A01C` 的 bit[23:16] ≤ 8，
+有界 200 000 次）后，step 日志**回来了**：
+
+```text
+bt bringup: enter step 1 mempool
+bt bringup: enter step 3 btdm_external_init
+bt bringup: enter step 4 btdm_coex_init
+bt bringup: enter step 5 btdm_lp_enable_clock
+```
+
+### 结论（本会话最终）
+
+| 项 | 判定 |
+| --- | --- |
+| 日志丢失原因 | ✅ **UART TX FIFO 溢出**（`hw.rawWrite` 满则放弃）|
+| 修复方式 | `enter()` 里等 `TXFIFO_CNT ≤ 8` 再返回 |
+| **挂点** | ✅ **`enter step 5` 之后** —— 即 `bringup.zig:209-212` 的 **PHY 块** |
+| 与 PC 样本一致性 | ✅ 完全一致（PHY ROM `0x2f828a64` / `0x2f826484` / `0x2f8036cc`）|
+
+### 为什么之前的"盲等"没生效
+
+第一次用了 20 000 次累加循环（约几十微秒），**远小于** 30 B @ 115200 ≈ 2.6 ms 的排空时间
+⇒ 五行仍挤在同一窗口 ⇒ 假阴性。**必须查真实 FIFO 计数**。
+
+### 因此所有"步骤推断"的最终答案
+
+| 曾经的结论 | 现在 |
+| --- | --- |
+| 卡在 step 6 | ❌ |
+| 卡在 step 2 `btdmLogInit` | ❌ |
+| 卡在 step 1 `prepareMempool` | ❌ |
+| **卡在 step 5 之后的 PHY 块** | ✅ **确认** |
+
+⇒ 与"PHY 校准在 `phy_pwdet_tone_start` 一族里反复重入"的证据**完全自洽**。
+
+### 下一步（方向明确）
+
+挂点在 `porting.phyDomainEnable()` 或 `initPhy()`（`register_chipv7_phy`）。
+两者都是已知的（前者时钟已穷尽，后者已解出 486 B + 23 调用、卡在 PDET 族）。
+
+⇒ 剩余唯一手段：dump `g_phyFuns = 0x2f07f944` 表定位间接调用点。
