@@ -432,6 +432,26 @@ pub fn connectBlock(fd_: c_int) c_int {
     }
 }
 
+/// 阻塞版 `recv`：没数据就睡在就绪信号量上，醒来重试。
+///
+/// 与 `acceptBlock`/`connectBlock` 同一形状、同一个钩子 —— 钩子只报事件，重查自己。
+/// 返回约定与 `recv` 相同（`0` = 对端关闭，`-1` + `errno` = 出错）。
+///
+/// ⚠️ 不阻塞 `send`：发送缓冲腾出空间发生在**线路侧**（对端 ACK），那条路径不经过本钩子。
+/// 需要阻塞写就得先有"tx 有空间"的通知。
+pub fn recvBlock(fd_: c_int, buf: []u8, flags: c_int) isize {
+    while (true) {
+        const n = recv(fd_, buf, flags);
+        if (n >= 0) return n;
+        if (errno.get() != errno.EAGAIN) return -1; // 真错误（含 EOF 之外的终态）
+        const sem = g_ready_sem orelse {
+            errno.set(errno.EAGAIN); // 未启用阻塞模式
+            return -1;
+        };
+        if (sync.sem_wait(sem) != 0) return -1;
+    }
+}
+
 pub fn poll(fds: []pollfd, timeout_ms: c_int) c_int {
     const t = tbl() orelse return -1;
     const timeout: c_int = if (timeout_ms < 0) 0 else timeout_ms;
@@ -612,6 +632,33 @@ test "fd: connectBlock 在已连上时立刻返回，未启用阻塞时返回 EA
     errno.set(0);
     try testing.expectEqual(@as(c_int, -1), connectBlock(c2));
     try testing.expectEqual(errno.EAGAIN, errno.get());
+}
+
+test "fd: recvBlock 有数据即刻返回；无数据且未启用阻塞时 EAGAIN" {
+    fakeTime();
+    var t: net_sockets.socket.Table = .{};
+    freshTable(&t);
+    defer deinit();
+
+    const c = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(c >= 0);
+    var sa: [16]u8 = undefined;
+    _ = addr.encode(addr.make(.{ 10, 0, 0, 1 }, 80), &sa);
+    _ = connect(c, &sa);
+    const seg = net_sockets.netstub.Segment{ .kind = .syn_ack };
+    net_sockets.socket.Table.deliver(&t, @intCast(c), seg);
+    try testing.expectEqual(@as(c_int, 0), connectBlock(c));
+
+    var buf: [8]u8 = undefined;
+    errno.set(0);
+    try testing.expectEqual(@as(isize, -1), recvBlock(c, &buf, 0)); // 无数据 + 未绑定
+    try testing.expectEqual(errno.EAGAIN, errno.get());
+
+    // 有数据：立刻返回字节数
+    const data = net_sockets.netstub.Segment{ .kind = .data, .payload = "hello" };
+    net_sockets.socket.Table.deliver(&t, @intCast(c), data);
+    try testing.expectEqual(@as(isize, 5), recvBlock(c, &buf, 0));
+    try testing.expectEqualStrings("hello", buf[0..5]);
 }
 
 test "fd: 没启用阻塞时 acceptBlock 立刻返回（不挂住）" {

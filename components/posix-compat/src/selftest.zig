@@ -52,6 +52,8 @@ var g_listen: c_int = -1;
 var g_accepted: c_int = -2;
 var g_client: c_int = -1;
 var g_connected: c_int = -2;
+var g_rx: isize = -2;
+var g_rxbuf: [8]u8 = undefined;
 /// 线程体写它，主上下文读它 —— 两个上下文的唯一数据通道。
 var g_worker_ran: u32 = 0;
 var g_worker_saw_self = false;
@@ -76,6 +78,11 @@ fn accepter(_: ?*anyopaque) callconv(.c) void {
 /// connector：阻塞在自己这条连接上，直到对端回 SYN-ACK。
 fn connector(_: ?*anyopaque) callconv(.c) void {
     g_connected = fd.connectBlock(g_client);
+}
+
+/// reader：连接建立后阻塞在 recv 上，直到对端发数据。
+fn reader(_: ?*anyopaque) callconv(.c) void {
+    g_rx = fd.recvBlock(g_client, &g_rxbuf, 0);
 }
 
 pub fn run() bool {
@@ -169,6 +176,18 @@ pub fn run() bool {
         check(ctid.done, "connector finished after SYN-ACK", .{});
         check(g_connected == 0, "connectBlock returned {d}", .{g_connected});
         if (ctid.done) _ = thread.pthread_join(ctid, null);
+    }
+    // ---- 阻塞 recv：同一个钩子，数据到达即返回 --------------------------------
+    var rtid: thread.pthread_t = undefined;
+    const rcreated = thread.pthread_create(&rtid, null, reader, null) == 0;
+    check(rcreated, "reader created", .{});
+    if (rcreated) {
+        sched.resumeTask(&rtid.task.?.ctx);
+        check(!rtid.done, "reader blocked in recvBlock", .{});
+        g_tbl.deliver(@intCast(g_client), .{ .kind = .data, .payload = "hi" });
+        check(rtid.done, "reader finished after data", .{});
+        check(g_rx == 2, "recvBlock returned {d}", .{g_rx});
+        if (rtid.done) _ = thread.pthread_join(rtid, null);
     }
     check(fd.droppedNotifies() == 0, "no notify dropped (wake from main)", .{});
     fd.disableBlockingAccept();

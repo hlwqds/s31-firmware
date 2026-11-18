@@ -93,11 +93,11 @@
 | `listen` | `Table.listen` | ● |
 | `accept` | `fd.accept`（非阻塞）/ `fd.acceptBlock`（阻塞） | ✅ 阻塞版靠 `socket.Table.on_ready` + `enableBlockingAccept(sem)`；**前提**：RX 泵在主上下文、accepter 在另一个任务。**已板级验证**：SYN 唤醒后子连接未 ESTABLISHED ⇒ 再次阻塞；ACK 后才 `accept` 成功 |
 | `connect` | `fd.connect`（非阻塞）/ `fd.connectBlock`（阻塞） | ✅ 非阻塞返回 `EINPROGRESS`；阻塞版等**自己的 fd** 到 `established`，与 `acceptBlock` 共用就绪钩子。**已板级验证**：SYN-ACK 一次唤醒即成功 |
-| `send` / `recv` | `Socket.send` / `Socket.recv` | ● 直接映射到 `ssize_t` + `errno` |
+| `send` / `recv` | `Socket.send` / `Socket.recv`；`fd.recvBlock` 阻塞版 | ✅ `recv` 有阻塞版（同一钩子，醒来重查）；`send` **不阻塞** —— tx 腾空间发生在对端 ACK，那条路径不经过钩子 |
 | `sendto` / `recvfrom` / `sendmsg` / `recvmsg` | — | — 只有 TCP，不做 |
 | `shutdown` | `closeHalf` | ● |
 | `close` | `Table.close` | ● |
-| `read` / `write` | `fd.read` / `fd.write`（同 `recv`/`send`） | ✅ 已完成 |
+| `read` / `write` | `fd.read` / `fd.write`（同 `recv`/`send`，都不阻塞 `write`） | ✅ 已完成 |
 | `select` / `poll` / `epoll` | `fd.poll` | ◐ **有超时**（按注入时钟 1 ms 步长轮询，可主机测试）；**`timeout_ms < 0` 立即返回**，不是 POSIX 的「永久等待」 —— 阻塞式 poll 属于 §6.3 那类前置未满足的项。`select`/`epoll` 不做 |
 | `setsockopt` / `getsockopt` | — | — `SO_REUSEADDR`/`TCP_NODELAY` 无意义（我们只有一条连接、不聚合 Nagle），返回 `ENOPROTOOPT` |
 | `fcntl(fd, F_GETFL/F_SETFL)` | `fd.fcntl`（**本层无阻塞模式**） | ✅ `F_GETFL` 恒报 `O_NONBLOCK`；`F_SETFL` 只接受带 `O_NONBLOCK` 的请求，**想清除它 → `EINVAL`**（`Socket.nonblocking` 是展示字段，socket 层从不读它） |
@@ -129,7 +129,7 @@
 `Table` 是纯逻辑）。内核在 2026-11-18 已抽成 `components/osal/`，于是 `sync`/`thread`/`cond`
 可以接上真内核；它们**真正阻塞的那一段**（`sched.block()`）在主机上不可执行，所以主机用例
 只钉策略。**本组件已进镜像**（section `posix`，group `net`），阻塞行为有
-**板级证据**：`section: posix` → 32/32（`logs/e2e-net-boot.log`），详见 §5。
+**板级证据**：`section: posix` → 36/36（`logs/e2e-net-boot.log`），详见 §5。
 
 ## 4. 分层
 
@@ -185,10 +185,10 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**90 项**
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**91 项**
   （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 90`（与上式之和一致）；
-- **板级**：`section: posix` → 32/32（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
+- `tests/baselines.json` 里 `posix-compat: 91`（与上式之和一致）；
+- **板级**：`section: posix` → 36/36（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
 
 **本组件已进镜像**（2026-11-18）：`firmware/build.zig` 里登记为 section `posix`（group `net`），
 模块根是 `api.zig`（**不导入 `board`**），板级自检在 `selftest.zig` —— 后者是**另一个模块**，
@@ -196,7 +196,7 @@ const Slot = struct {
 `selftest.zig` 改成**经模块导入**（`@import("net_sockets").socket`），否则同一批文件会落进
 两个模块（Zig 的 "file exists in modules"）。
 
-**板级证据**：`net` profile 上板，`section: posix` → `checks: passed=32 failed=0 total=32`
+**板级证据**：`net` profile 上板，`section: posix` → `checks: passed=36 failed=0 total=36`
 （`logs/e2e-net-boot.log`）。它验证的正是主机用例证不了的部分：真任务、真阻塞、真唤醒、真 join ——
 worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走快路径返回；`pthread_self`
 在任务内非空、在主上下文为空；`errno` 按任务隔离。

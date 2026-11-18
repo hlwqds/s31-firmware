@@ -1,9 +1,9 @@
 {
   "full": {
-    "drom_len": 77488,
+    "drom_len": 78944,
     "drom_load": 1074790464,
-    "image": 470816,
-    "irom_len": 329136,
+    "image": 472272,
+    "irom_len": 335568,
     "irom_load": 1073741856
   },
   "min": {
@@ -14,31 +14,31 @@
     "irom_load": 1073741856
   },
   "net": {
-    "drom_len": 43648,
+    "drom_len": 45088,
     "drom_load": 1074790432,
-    "image": 174800,
-    "irom_len": 108480,
+    "image": 183552,
+    "irom_len": 114896,
     "irom_load": 1073741856
   },
   "net-wire": {
     "drom_len": 12880,
     "drom_load": 1074790432,
     "image": 78496,
-    "irom_len": 42784,
+    "irom_len": 42816,
     "irom_load": 1073741856
   },
   "tls": {
-    "drom_len": 59024,
+    "drom_len": 60432,
     "drom_load": 1074790464,
-    "image": 321280,
-    "irom_len": 209872,
+    "image": 322688,
+    "irom_len": 216272,
     "irom_load": 1073741856
   },
   "wifi": {
-    "drom_len": 53200,
+    "drom_len": 54624,
     "drom_load": 1074790432,
-    "image": 249888,
-    "irom_len": 160944,
+    "image": 251312,
+    "irom_len": 167248,
     "irom_load": 1073741856
   }
 }

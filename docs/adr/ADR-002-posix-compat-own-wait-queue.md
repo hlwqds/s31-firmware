@@ -154,3 +154,12 @@ padding**，真实段增长约 10.8 KB（irom +7.8 KB、drom +3.1 KB）。这条
 同一轮里跑出来，且 `droppedNotifies() == 0` —— 即唤醒确实都发生在主上下文。
 
 顺带修掉一个"返回 -1 却不设 errno"的疏漏：未启用阻塞模式时两个阻塞调用现在都置 `EAGAIN`。
+
+## 追加（2026-11-18）：阻塞读用同一形状；阻塞写没有——原因不在实现而在通知源
+
+`fd.recvBlock` 与 `acceptBlock`/`connectBlock` 完全同构：`recv → EAGAIN → sem_wait → 重试`。
+板级判据：`reader` 任务阻塞 → 主上下文投一帧 data → 唤醒 → 返回字节数（`section: posix` 36/36）。
+
+`send` **没有**阻塞版，而且不是"还没做"，是**没有通知源**：发送缓冲腾出空间发生在对端 ACK 到达时，
+处理它的是 `net-tcp` 的连接状态机与 `net-sockets` 的 `onSegment`，**不经过 `Table.on_ready`**。
+要做阻塞写，先得让那条路径也发通知 —— 那是另一处生产代码改动，收益要等真有阻塞写调用方时再评估。

@@ -186,6 +186,14 @@
   另外修了：未启用阻塞模式时两个阻塞调用**没有设 errno**（返回 -1 但 `errno` 还是旧值），
   统一改为 `EAGAIN`。1 项新用例（总计 **90**）。
 
+- **阻塞 `recv`（2026-11-18）**：`fd.recvBlock` —— 与 `acceptBlock`/`connectBlock` 同一形状、
+  同一个钩子：没数据就睡，醒来重试。`send` **不做阻塞**：发送缓冲腾出空间发生在**对端 ACK** 的
+  线路侧，那条路径不经过 `on_ready`，要做就得先有"tx 有空间"的通知。板级演示：`reader` 任务
+  阻塞 → 主上下文投一帧 data → 唤醒 → 返回字节数。`section: posix` 现为 **36/36**。
+  1 项新用例（总计 **91**）。
+  容量：`net` +8.75 KB（阻塞 IO 的三个 API + 三段板级演示）、`full` +1.5 KB —— 两者都在窗口内，
+  没有 64 KiB 步进；`capacity.json` 已 `--update`。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
