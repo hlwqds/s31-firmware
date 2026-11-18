@@ -30,6 +30,7 @@ const transport = @import("transport.zig");
 const sched = @import("osal_kit").sched;
 const porting = @import("porting.zig");
 const board = @import("board");
+comptime { _ = @import("phy_init_data_export.zig"); } // 导出 g_phy_init_data_128 给 C 桩
 
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
 extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;

@@ -4343,3 +4343,34 @@ s9792.416.419.1            <- 仍在增长
 一次运行就能知道 RF 校准要多大；若远大于我们的堆，就扩堆；若请求很小却返回 NULL，则是堆未初始化。
 
 ⚠️ 仍需 `phy_domain_enable=true` 才能到达该路径（默认 `false` 是基线）。
+
+## NVS 供给 PHY 初始化表：已实现，abort 仍在（2026-11-19 收尾）
+
+实现（`phy_stubs.c` + `phy_init_data_export.zig`）：
+
+- `nvs_open` → 返回 `ESP_OK`（此前 `NOT_FOUND`）；
+- `nvs_get_blob`：`*len < 128` 时置 `*len=128` 并返回 `INVALID_LENGTH`（**IDF 的"先查长度"约定**）；
+  `*len >= 128` 时拷入 128 字节表并返回 `ESP_OK`；
+- 数据来源：`phy_init_data_export.zig`（由 `wifi-blobs/src/phy_init_data.zig` 的 `params` 复制生成，
+  经 `@export` 暴露为 C 符号 `g_phy_init_data_128`）——**不引入跨组件依赖**。
+
+板测（`phy_domain_enable=true`，`WITH_PHY=1`，812 128 B）：
+
+```
+AAAAAAAA                                   <- 我们给 abort 加的标记（abort 现在是 112 B）
+pcsample n=9728 pc=0x4006710a ra=0x40000672
+```
+
+⇒ **abort 仍然发生**（PC 落在我们 112 字节的 `abort` 桩内，`ra` 仍指向 `esp_phy_load_cal_and_init` 的日志调用）。
+
+⇒ 因此 `esp_phy_get_init_data()` 的失败**不只是 NVS 返回 NOT_FOUND**；
+   还可能是：它用 `nvs_get_blob` 的**其它 key**（如 `cal_data`/`cal_version`，见 rodata 里的
+   `phy-track-pll-timer` / `cal_version` 串），或它对返回内容有校验（长度/版本/CRC）。
+
+**下一步（离线优先）**：
+1. 反汇编 `esp_phy_get_init_data`（`0x40000414`）全段，看它在 `nvs_open` 后调了哪些 key、
+   以及它对失败的具体判据（返回值比较、长度检查；
+2. 按那些 key 补齐 `nvs_get_blob` 的分支（`cal_version` 可能是 u32，用 `nvs_get_u32`）；
+3. 判据：`AAAAAAAA` 消失，或日志里出现校准完成的迹象。
+
+**注意**：`abort` 的 8 字节标记应保留 —— 它是当前唯一能区分"到达 abort"与"卡在别处"的信号。
