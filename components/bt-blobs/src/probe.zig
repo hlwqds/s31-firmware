@@ -493,6 +493,7 @@ pub fn run() noreturn {
 /// 这些返回地址是归档自己的 PC —— 采样被我们的钩子占据时，这是唯一的归档侧落点。
 fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
+    board.log.line("AM 0x{x} 0x{x}", .{ osal.arena_init_magic, osal.arena_init_size });
     if (code_n > 0) board.log.line("CODES n={d} {s}", .{ code_n, code_ring[0..code_n] });
     board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
     board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});

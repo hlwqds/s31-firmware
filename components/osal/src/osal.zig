@@ -1157,10 +1157,9 @@ pub const Arena = struct {
         const hdr: *BlockHeader = @ptrFromInt(start);
         hdr.* = .{ .size = total, .free = true };
         self.initialized = true;
-        // 判据：初始化瞬间的 magic 低字节（应为 headerMagic 的低字节）
-        putByte('i');
-        putByte("0123456789abcdef"[((hdr.magic >> 4) & 0xF)]);
-        putByte("0123456789abcdef"[hdr.magic & 0xF]);
+        // **判据走 RAM**：init 时刻 UART 已满，putByte 会丢弃；存起来由导出统一打。
+        arena_init_magic = hdr.magic;
+        arena_init_size = hdr.size;
     }
 
     fn headerOf(ptr: *anyopaque) *BlockHeader {
@@ -1242,6 +1241,10 @@ pub const Arena = struct {
 };
 
 var bt_arena: Arena = .{};
+
+/// init 时刻写入的块头（供导出比对：若与 headerMagic 不符 ⇒ init 即错；为 0 ⇒ 被清零）。
+pub var arena_init_magic: u32 = 0;
+pub var arena_init_size: u32 = 0;
 
 pub fn initArena(region: []u8) void {
     bt_arena.init(region);
