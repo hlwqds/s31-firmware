@@ -1936,3 +1936,14 @@ libbtdm_common_12.o  00000004  R_RISCV_HI20  r_sym_bt_pSy5Wex1[...]
 
 **已排除**：任务未运行（立即抢占已实现）、mutex 超时（无 TIMEOUT）。
 **下一步**：在闭包反汇编里搜 `0x2f010000` 附近的 `sw`（或拿 linker map），定位"谁该写 anchor[0]"。
+
+### 找发布者的方法边界（2026-11-18 试过，记下结论）
+
+- **对象级 `objdump -d` 没用**：`.o` 未重定位，`lui` 的立即数全是 `0x0`（地址来自 `R_RISCV_HI20`），
+  所以"在闭包里搜 `0x2f010000`"必然 0 命中。
+- **只能对链接后的 ELF 搜**：`zig-out/bin/app.elf`（probe 构建、strip=false）里
+  `lui …,0x2f0xx` 共 **591 处** —— 绝大多数是我们自己的 arena/日志/寄存器访问，
+  靠这一条筛选不出发布者。
+- ⇒ 正确工具是 **linker map**（把 `0x2f00ffd0` 归到某个 section），或在 ELF 上按
+  `sw …, -0x30(...)` + 同函数内 `lui 0x2f010` 的**组合模式**过滤。Zig 0.17 的
+  `Build.Module` 没有 `addLinkArgs`，出 map 需要换写法（例如 `compile.link_args`）。
