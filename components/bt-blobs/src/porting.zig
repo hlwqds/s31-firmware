@@ -209,19 +209,14 @@ pub fn phyDomainEnable() void {
     const conf1: usize = 0x2010_9C14;
     const bits: u32 = (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
     wr(conf1, rd(conf1) | bits);
-    // 2b) MODEM_SYSCON CLK_CONF(+0x04)：**模拟前端时钟（pwdet/adc/dac）**
-    //     Wi-Fi 侧实测值 0x00201002 是 register_chipv7_phy 能返回的关键之一；
-    //     BLE 侧此前从未写过 ⇒ phy_pwdet_tone_start 的时钟源缺失。
-    const conf: usize = 0x2010_9C04;
-    wr(conf, rd(conf) | 0x0020_1002);
-    // 2c) test_conf(+0x00) 与 ICG 门控位图(+0x0C)，同样按 IDF 实测值对齐
-    // 逐项实验：先只留 +0x04，test_conf/ICG 暂不开
-    if (false) {
-        const tc: usize = 0x2010_9C00;
-        wr(tc, rd(tc) | 0x0000_0100);
-        const icg: usize = 0x2010_9C0C;
-        wr(icg, rd(icg) | 0x6464_6400);
-    }
+    // 2b) MODEM_SYSCON 三处按 IDF 实测值**直接写**（不是 OR —— Wi-Fi 侧就是这么写的，
+    //     且它能让 register_chipv7_phy 返回 rc=1）。
+    //   +00 test_conf = 0x00000100
+    //   +04 clk_conf  = 0x00201002  ← 模拟前端时钟（pwdet/adc/dac）
+    //   +0c ICG(门控位图) = 0x64646400  ← apb/peri/wifi/bt/fe
+    (@as(*volatile u32, @ptrFromInt(0x2010_9C00))).* = 0x0000_0100;
+    (@as(*volatile u32, @ptrFromInt(0x2010_9C04))).* = 0x0020_1002;
+    (@as(*volatile u32, @ptrFromInt(0x2010_9C0C))).* = 0x6464_6400;
     // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
     const fo: usize = 0x2010_9C08;
     wr(fo, rd(fo) | (1 << 2) | (1 << 3) | (1 << 4));
