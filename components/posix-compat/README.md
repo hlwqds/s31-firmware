@@ -243,7 +243,9 @@ worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走�
 | ~~`pthread_cond_*`~~ | ✅ 已完成：`waitq` + `cond.zig`；`wake` 统一注入在 `sync.bindHooks` | — |
 | ~~多等待者 / 与 BLE 共用静态池~~ | ✅ 已解除：`sync.zig` 自持计数 + FIFO 队列，不再用 `osal.Sem` 的槽位 | — |
 | ~~阻塞式 `accept`~~ | ✅ 已完成：`fd.acceptBlock` + `socket.Table.on_ready`（`deliver`/`close`/`abort` 触发）。**两条运行前提**：① RX 泵在**主上下文**、accepter 在**另一个任务**（方向不能反：`resumeTask` 存的是调用者帧）；② 先 `fd.enableBlockingAccept(&sem)`，换表后要重绑 | — |
-| 阻塞式 `connect` | 需要『到 ESTABLISHED』的通知 —— 同一个 `on_ready` 钩子能做，但要能区分『连上了』与『有数据了』 | 未做 |
+| ~~阻塞式 `connect`~~ | ✅ 已完成：`fd.connectBlock` —— 钩子**只报事件**，等待者重查**自己的** fd 状态，所以"连上了"与"有数据了"不需要区分。**已板级验证**：SYN-ACK 一次唤醒即成功（accept 侧要两次，因为 SYN 只到 `syn_rcvd`） | — |
+| ~~阻塞式 `recv`~~ | ✅ 已完成：`fd.recvBlock`（同一形状）。板级：数据到达一次唤醒即返回字节数 | — |
+| 阻塞式 `send` | **没有通知源**：发送缓冲腾空间发生在**对端 ACK** 的线路侧（`net-tcp` 状态机 + `net-sockets.onSegment`），不经过 `Table.on_ready` | 要先给那条路径加通知，属另一处生产改动；等真有阻塞写调用方再评估 |
 | ~~`sem_timedwait` / `mutex_timedlock`~~ | ✅ 已完成：`timer.zig`（侵入式到期链表）+ `sync.pump()`。**契约**：应用每个 tick 调一次 `pump()`，否则定时等待永不到期；未绑时钟钩子则 `ENOSYS` | — |
 | ~~`pthread_rwlock_*`~~ | ✅ 已完成：**写者优先**（有写者排队时新读者不许进，否则持续读者会让写者饿死）。无超时变体 | — |
 | ~~每 Task `errno`~~ | ✅ 已完成：`errno.Table` 按 `sched` 上下文分槽（8 槽，表满退回 0 号槽并计 `overflows`） | — |
