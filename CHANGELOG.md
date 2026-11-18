@@ -167,6 +167,9 @@
   `fd.enableBlockingAccept(sem)` / `fd.acceptBlock(fd)`：没连接时睡在就绪信号量上，醒来重试。
   **前置**：RX 泵必须跑在与调用者**不同的任务**里 —— 本仓的 RX 是同一任务在
   `emac.rxPollCopy` 里喂表，原地阻塞即自死锁。3 项新用例（总计 **89**）。
+  板级演示（`section: posix`，`net` profile，**26/26**）：主上下文当 RX 泵、任务当 accepter ——
+  阻塞 → 喂 SYN 唤醒后**再次阻塞**（子连接仍 `syn_rcvd`，`accept` 拿不到）→ 喂 ACK 后返回 fd。
+  这次板级跑出来的第一个失败正是"只喂 SYN"：`accept` 拿不到子连接，值得单独断言。
   **三处修正**（都来自"字段存在≠语义存在"那一类）：`Table.reset()` 原会 `self.* = .{}`
   把钩子一起抹掉 ⇒ 改为保留；`abort()` 原不通知 ⇒ 连接池淘汰时等待者会一直挂着；
   `fd.init(&另一张表)` 原会留下指向旧表的 `g_ready_sem` ⇒ 改为清掉绑定（换表须重绑），

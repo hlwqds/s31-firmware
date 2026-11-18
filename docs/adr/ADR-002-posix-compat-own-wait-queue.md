@@ -110,10 +110,31 @@ POSIX 的 `errno` 是线程私有的。裸机没有 TLS，但 `sched` 的 `*Cont
 （`api.zig` 作组件根、`selftest.zig` 作 section 根）。`api.zig` 刻意**不导入 `board`**，
 这样主机测试目标仍然只要它一个。
 
-上板（`net` profile）结果：`section: posix` → `checks: passed=15 failed=0 total=15`
+上板（`net` profile）结果：`section: posix` → `checks: passed=26 failed=0 total=26`
 （`logs/e2e-net-boot.log`）。它验证的正是主机用例结构上做不到的四件事：任务真的被创建并运行、
 `sem_wait` 真的阻塞、`sem_post` 真的唤醒、`join` 真的返回。
 
 代价是容量：`net` +3.1 KB；`full` 的 bin +62 KB，其中 **51 KB 是第二段窗口按 64 KiB 步进产生的
 padding**，真实段增长约 10.8 KB（irom +7.8 KB、drom +3.1 KB）。这条值得记下来：本仓的
 "镜像大小"不是线性于代码量的，`capacity.json` 的基线因此必须用 `--update` 显式重写并写明原因。
+
+## 追加（2026-11-18）：阻塞 `accept` 补上了"轮询模型 → 阻塞 API"的接缝
+
+`socket.Table` 是轮询的，`accept` 只能说"还没好"。唯一的接缝是新增的 `on_ready` 钩子
+（默认 `null`，不绑定时行为与旧版**逐字节一致**）：`deliver`（SYN 填 backlog / 数据段到达）、
+`close`、`abort` 时回调。POSIX 侧 `fd.enableBlockingAccept(sem)` 把钩子接到调用方的信号量，
+`fd.acceptBlock` 就是 `accept → EAGAIN → sem_wait → 重试`。
+
+三条在实现中撞出来的规则，都写进了代码：
+
+1. **`Table.reset()` 必须保留钩子**：原先 `self.* = .{}` 会连回调一起抹掉，而绑定只做一次 ⇒
+   第一次 reset 之后等待者会睡在一个再没人 post 的信号量上。
+2. **`abort()` 必须通知**：连接池淘汰走 abort，不通知的话那条路径上的等待者永远醒不来。
+3. **唤醒只能发生在主上下文**：`sched.resumeTask` 内部是 `swapContext(&main_ctx, t)`，存的是
+   **调用者**帧 ⇒ 从任务里唤醒会把主上下文换成那个任务的帧，之后"任务阻塞回来"会从错的地方
+   继续跑。所以 RX 泵必须在主上下文、accepter 必须在任务里；`onReady` 在非主上下文直接丢弃并
+   计数（`fd.droppedNotifies()`），宁可丢一次通知也不破坏调度器。
+
+板级判据（`net` profile，26/26）：accepter 阻塞 → 喂 SYN 唤醒后**再次阻塞**（子连接仍在
+`syn_rcvd`，`accept` 拿不到）→ 喂 ACK 后 `accept` 返回 fd。中间那一次"被唤醒≠成功"是这个模型里
+最容易误判的地方，所以单独断言了。

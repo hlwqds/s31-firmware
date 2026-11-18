@@ -91,7 +91,7 @@
 | `socket(AF_INET, SOCK_STREAM, 0)` | `fd.socket` → `Table.alloc` + family/type/proto 校验 | ✅ 已完成 |
 | `bind` | `fd.bind` + 本组件的每 fd `sockaddr_in` 表 | ✅ 已完成 |
 | `listen` | `Table.listen` | ● |
-| `accept` | `fd.accept`（非阻塞）/ `fd.acceptBlock`（阻塞） | ✅ 阻塞版靠 `socket.Table.on_ready` + `enableBlockingAccept(sem)`；**前提**：RX 泵在主上下文、accepter 在另一个任务 |
+| `accept` | `fd.accept`（非阻塞）/ `fd.acceptBlock`（阻塞） | ✅ 阻塞版靠 `socket.Table.on_ready` + `enableBlockingAccept(sem)`；**前提**：RX 泵在主上下文、accepter 在另一个任务。**已板级验证**：SYN 唤醒后子连接未 ESTABLISHED ⇒ 再次阻塞；ACK 后才 `accept` 成功 |
 | `connect` | `fd.connect` → `Table.connect` | ✅ 非阻塞返回 `EINPROGRESS`；⏳ 阻塞等待未做 |
 | `send` / `recv` | `Socket.send` / `Socket.recv` | ● 直接映射到 `ssize_t` + `errno` |
 | `sendto` / `recvfrom` / `sendmsg` / `recvmsg` | — | — 只有 TCP，不做 |
@@ -129,7 +129,7 @@
 `Table` 是纯逻辑）。内核在 2026-11-18 已抽成 `components/osal/`，于是 `sync`/`thread`/`cond`
 可以接上真内核；它们**真正阻塞的那一段**（`sched.block()`）在主机上不可执行，所以主机用例
 只钉策略。**本组件已进镜像**（section `posix`，group `net`），阻塞行为有
-**板级证据**：`section: posix` → 15/15（`logs/e2e-net-boot.log`），详见 §5。
+**板级证据**：`section: posix` → 26/26（`logs/e2e-net-boot.log`），详见 §5。
 
 ## 4. 分层
 
@@ -188,7 +188,7 @@ const Slot = struct {
 - 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**89 项**
   （errno 6 · time 4 · addr 3 · fd 7 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
 - `tests/baselines.json` 里 `posix-compat: 89`（与上式之和一致）；
-- **板级**：`section: posix` → 15/15（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
+- **板级**：`section: posix` → 26/26（`logs/e2e-net-boot.log`），见下方"已进镜像"段；
 
 **本组件已进镜像**（2026-11-18）：`firmware/build.zig` 里登记为 section `posix`（group `net`），
 模块根是 `api.zig`（**不导入 `board`**），板级自检在 `selftest.zig` —— 后者是**另一个模块**，
@@ -196,7 +196,7 @@ const Slot = struct {
 `selftest.zig` 改成**经模块导入**（`@import("net_sockets").socket`），否则同一批文件会落进
 两个模块（Zig 的 "file exists in modules"）。
 
-**板级证据**：`net` profile 上板，`section: posix` → `checks: passed=15 failed=0 total=15`
+**板级证据**：`net` profile 上板，`section: posix` → `checks: passed=26 failed=0 total=26`
 （`logs/e2e-net-boot.log`）。它验证的正是主机用例证不了的部分：真任务、真阻塞、真唤醒、真 join ——
 worker 先阻塞在 `sem_wait`，主上下文 `sem_post` 唤醒它，`join` 走快路径返回；`pthread_self`
 在任务内非空、在主上下文为空；`errno` 按任务隔离。

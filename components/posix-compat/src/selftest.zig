@@ -32,6 +32,8 @@ const sched = @import("osal_kit").sched;
 const sem = posix.sync;
 const thread = posix.thread;
 const errno = posix.errno;
+const fd = posix.fd;
+const socks = @import("net_sockets");
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;
@@ -42,6 +44,11 @@ fn check(ok: bool, comptime fmt: []const u8, args: anytype) void {
 }
 
 var g_gate: sem.sem_t = .{};
+/// 阻塞 accept 的演示：主上下文当 RX 泵，任务当 accepter（方向见 fd.zig 的前提注释）。
+var g_tbl: socks.socket.Table = .{};
+var g_ready: sem.sem_t = .{};
+var g_listen: c_int = -1;
+var g_accepted: c_int = -2;
 /// 线程体写它，主上下文读它 —— 两个上下文的唯一数据通道。
 var g_worker_ran: u32 = 0;
 var g_worker_saw_self = false;
@@ -56,6 +63,11 @@ fn worker(_: ?*anyopaque) callconv(.c) void {
     // 阻塞直到主上下文 post（第一次进来时 count 为 0）
     _ = sem.sem_wait(&g_gate);
     g_worker_ran += 10; // 醒来后的标记
+}
+
+/// accepter：阻塞在 accept 上，直到主上下文把 SYN 喂进表。
+fn accepter(_: ?*anyopaque) callconv(.c) void {
+    g_accepted = fd.acceptBlock(g_listen);
 }
 
 pub fn run() bool {
@@ -99,6 +111,39 @@ pub fn run() bool {
     }
 
     check(sem.sem_destroy(&g_gate) == 0, "sem_destroy", .{});
+
+    // ---- 阻塞 accept：真接缝（socket 表 → 钩子 → 信号量 → 任务）----------------
+    fd.init(&g_tbl);
+    g_listen = fd.socket(fd.AF_INET, fd.SOCK_STREAM, 0);
+    check(g_listen >= 0, "listen socket", .{});
+    check(g_listen >= 0 and fd.listen(g_listen, 1) == 0, "listen", .{});
+    check(sem.sem_init(&g_ready, 0, 0) == 0, "ready sem", .{});
+    check(fd.enableBlockingAccept(&g_ready) == 0, "enable blocking accept", .{});
+
+    var atid: thread.pthread_t = undefined;
+    const acreated = thread.pthread_create(&atid, null, accepter, null) == 0;
+    check(acreated, "accepter created", .{});
+    if (acreated) {
+        // 调度器已启动 ⇒ 直接把它切进来；主上下文当"RX 泵"
+        sched.resumeTask(&atid.task.?.ctx);
+        check(!atid.done, "accepter blocked in acceptBlock", .{});
+        // RX 泵喂 SYN：socket 层回调 ⇒ 信号量 ⇒ 唤醒 accepter。
+        // 但此时子连接还在 `syn_rcvd`，`accept` 拿不到 ⇒ 它会**再次阻塞** ——
+        // 这正是轮询模型里"被唤醒≠成功"的那一面，值得单独断言。
+        g_tbl.deliver(@intCast(g_listen), .{ .kind = .syn });
+        check(!atid.done, "accepter woke then blocked again (child not established)", .{});
+
+        // 再喂 ACK 让子连接 ESTABLISHED ⇒ 第二次唤醒后 accept 才成功
+        const child = g_tbl.socks[@intCast(g_listen)].backlog[0];
+        check(child >= 0, "child in backlog fd={d}", .{child});
+        if (child >= 0) g_tbl.deliver(@intCast(child), .{ .kind = .ack });
+        check(atid.done, "accepter finished after ACK", .{});
+        check(g_accepted >= 0, "accept returned fd={d}", .{g_accepted});
+        if (atid.done) _ = thread.pthread_join(atid, null);
+    }
+    check(fd.droppedNotifies() == 0, "no notify dropped (wake from main)", .{});
+    fd.disableBlockingAccept();
+    _ = sem.sem_destroy(&g_ready);
 
     log.line("checks: passed={d} failed={d} total={d}", .{
         g_passed, g_failed, g_passed + g_failed,

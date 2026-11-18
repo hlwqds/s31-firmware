@@ -131,6 +131,7 @@ pub fn build(b: *std.Build) void {
         if (std.mem.eql(u8, m.name, "posix")) {
             mod.addImport("posix", posix_mod);
             mod.addImport("osal_kit", osal_mod);
+            mod.addImport("net_sockets", socks_mod); // 阻塞 accept 的演示要建一张 socket 表
         }
         if (std.mem.eql(u8, m.name, "net_wire")) {
             mod.addImport("net_ethernet", eth_mod);
