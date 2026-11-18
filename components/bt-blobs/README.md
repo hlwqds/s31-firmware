@@ -4853,3 +4853,33 @@ abort: 1
 说明**某处指针指进了堆区**（与"块头被覆盖"是同一族问题：归档的某个指针/长度越界进入堆）。
 
 ⇒ 这条也把"垃圾数据"的判断纠正为"跨区访问"的证据。
+
+## 完整边界符号表（`WITH_PHY=1` 实测，2026-11-19）
+
+```
+_bss_start        0x2f010d40
+_bss_end          0x2f015ec0      <- **不含** .btdm_* 段（它们是独立的一组符号）
+_bss_start_btdm   0x2f015ec0
+_bss_end_btdm     0x2f01dec0
+_data_start_btdm  0x2f01dec0
+_data_end_btdm    0x2f01eec0      (= 0x2f01dec0 + 0x1000)
+_heap_start       0x2f01fec0      (= _data_end_btdm + 0x1000 守卫)
+_heap_end         0x2f076fc0      (= _stack_bottom)
+=> 堆 = 0x57100 = 356 KiB
+```
+
+### 由这张表能读出的两件事
+
+1. **`_bss_end` 不含 btdm 段** ⇒ 若归档的某段清零/拷贝循环用 `_bss_start.._bss_end`
+   是**安全的**（不碰堆）；
+2. 若有代码用 `_bss_start.._data_end_btdm` 或 `_heap_start` 作为清除终点，
+   就会清零 `[0x2f015ec0, 0x2f01fec0)` 甚至堆头 —— 与 `M`（magic 变）+ `size=0`（被清零）**完全吻合**。
+
+### 下一步（离线，`nm` 一条命令）
+
+```bash
+riscv32-esp-elf-nm -u <每个归档 .o> | grep -E "_bss_|_data_|_heap_"
+```
+
+看**归档自己**引用了哪些边界符号。若某个 `.o` 引用 `_heap_start`/`_data_end_btdm` 作为清除终点，
+那就是清零循环越过边界、抹掉我们块头的直接证据；若都只用 `_bss_start/_bss_end`，则覆盖者另有其人。
