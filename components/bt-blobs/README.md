@@ -8899,3 +8899,60 @@ while (i < n) : (i += 1) {
 `caller_ring` **已经在记录**（每个 `wr_btdm_osal_*` 包装入口都 `noteCaller()`），
 只差一个**从 bt-blobs 侧启动的 dump 触发点**；拿到后可配合 `nm app.elf` 直接命名
 "停滞前最后到达的归档函数"。
+
+## ✅ 结构性修复：`hw.rawWrite` 改为**整行预留空间**（2026-11-19）
+
+### 旧实现的缺陷
+
+```zig
+for (msg) |ch| {
+    while (((status.* >> 16) & 0xFF) >= 120 and spins < 5000) : (spins += 1) {}
+    if (spins >= 5000) return;
+    fifo.* = ch;
+}
+```
+
+按"FIFO 里 ≥ 120 才等"判断，而 **FIFO 只有 128 B** ⇒ 一行 30 B 必然写不完，
+**后半截被静默丢弃**。这正是本会话最大的观测陷阱：
+`osal> …` 轨迹、`bt hook:` 里程碑、`panic: osalcaller[i]=…`、PC 采样行**全都受影响**。
+
+### 新实现
+
+```zig
+// **整条消息先等足够空间**，再逐字符写
+const need: u32 = @intCast(msg.len);
+var w: u32 = 0;
+while (w < 200_000) : (w += 1) {
+    const used = (status.* >> 16) & 0xFF;
+    if (used + need <= 120) break;
+}
+for (msg) |ch| {
+    while (((status.* >> 16) & 0xFF) >= 126 and spins < 5000) : (spins += 1) {}
+    ...
+}
+```
+
+### 验证
+
+修复后一次捕获：
+
+```text
+enter step 1 mempool
+enter step 3 btdm_external_init
+enter step 4 btdm_coex_init
+enter step 5 btdm_lp_enable_clock
+enter step 52 init_phy
+enter step 6 r_btdm_task_init
+```
+
+**全部 step 行完整**（旧实现只有第一行）。
+
+### 这与 `enter()` 内的排空等待的关系
+
+`enter()` 里的排空是**局部补丁**；`rawWrite` 的整行预留是**根治**。
+两者并存无害（多等一次），但**以后新加的日志路径无需再各自补排空**。
+
+### 仍然确认的事实
+
+修复后 OSAL 轨迹**仍是 3 条**（`mutexPend` → `eventInit` ×2）
+⇒ 预算不是限制、丢行也不是原因 ⇒ **确实只发生了 3 次 OSAL 调用**。

@@ -372,9 +372,18 @@ pub export fn bt_mmio_write(addr: usize, val: u32) void {
 pub fn rawWrite(msg: []const u8) void {
     const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
     const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    // **整条消息先等足够空间**，再逐字符写。
+    // 旧实现按"FIFO 里 ≥120 才等"，而 FIFO 只有 128 B ⇒ 一行 30 B 必然写不完，
+    // 后半截被丢（本会话最大的观测陷阱：step 日志/轨迹/里程碑全被截断）。
+    const need: u32 = @intCast(msg.len);
+    var w: u32 = 0;
+    while (w < 200_000) : (w += 1) {
+        const used = (status.* >> 16) & 0xFF;
+        if (used + need <= 120) break;
+    }
     for (msg) |ch| {
         var spins: u32 = 0;
-        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
+        while ((((status.* >> 16) & 0xFF) >= 126) and spins < 5000) : (spins += 1) {}
         if (spins >= 5000) return;
         fifo.* = ch;
     }
@@ -399,9 +408,18 @@ pub fn rawLineBlocking(msg: []const u8) void {
 pub fn rawLine(msg: []const u8) void {
     const fifo: *volatile u32 = @ptrFromInt(0x2038_A000);
     const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    // **整条消息先等足够空间**，再逐字符写。
+    // 旧实现按"FIFO 里 ≥120 才等"，而 FIFO 只有 128 B ⇒ 一行 30 B 必然写不完，
+    // 后半截被丢（本会话最大的观测陷阱：step 日志/轨迹/里程碑全被截断）。
+    const need: u32 = @intCast(msg.len);
+    var w: u32 = 0;
+    while (w < 200_000) : (w += 1) {
+        const used = (status.* >> 16) & 0xFF;
+        if (used + need <= 120) break;
+    }
     for (msg) |ch| {
         var spins: u32 = 0;
-        while ((((status.* >> 16) & 0xFF) >= 120) and spins < 5000) : (spins += 1) {}
+        while ((((status.* >> 16) & 0xFF) >= 126) and spins < 5000) : (spins += 1) {}
         if (spins >= 5000) return;
         fifo.* = ch;
     }
