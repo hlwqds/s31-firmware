@@ -149,6 +149,11 @@ fn codePush(c: u8) void {
         code_ring[code_n] = c;
         code_n += 1;
     }
+    // **按码数触发导出**：不依赖 `irq_count`（其基准未核实），也不 halt。
+    // 16 个码≈接近序列尾部，此时打一行 ~30 字节，FIFO 放得下。
+    if (code_n == 16) {
+        if (board.trap.extra_dump) |f| f();
+    }
 }
 
 /// 直接写一个字节（绕过行缓冲；用于"每次调用一字母"的低带宽编码）。
@@ -487,8 +492,8 @@ pub fn run() noreturn {
 /// 这些返回地址是归档自己的 PC —— 采样被我们的钩子占据时，这是唯一的归档侧落点。
 fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
-    board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
     if (code_n > 0) board.log.line("CODES n={d} {s}", .{ code_n, code_ring[0..code_n] });
+    board.log.line("panic: lc ours={d} other={d} total={d}", .{ log_hook_ours, log_hook_other, log_hook_calls });
     board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});
     // s0=0x2f00ffe8 = anchor[6]；把 11 个锚点 + 每个非零锚点的 +8 字段打出来，
     // 直接回答「哪个字段未发布」。0x2f00ffd0 是 anchor[0]。
