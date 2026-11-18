@@ -126,6 +126,20 @@ fn trace(comptime what: []const u8, args: anytype) void {
 /// **归档的调用点**：每个 OSAL 入口记一次 `@returnAddress()`。
 /// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
 /// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
+var bail_sentinel: [64]u8 align(4) = @splat(0);
+pub var patch_bail_field: bool = false; // 实验默认关闭：见 README
+
+fn fillBailField() void {
+    if (!patch_bail_field) return;
+    const slot: *volatile u32 = @ptrFromInt(0x2f00ffe8); // anchor[6] 槽
+    const obj = slot.*;
+    // 判读用：记录"补丁是否被跳过"，否则无法区分"对象还没发布"与"依赖的不是这个字段"。
+    logPublic("bt patch: anchor6=0x{x} patch={s}", .{ obj, if (obj == 0) "skipped" else "applied" });
+    if (obj == 0) return;
+    const f8: *volatile u32 = @ptrFromInt(@as(usize, obj) + 8);
+    f8.* = @intFromPtr(&bail_sentinel);
+}
+
 pub var caller_ring: [32]u32 = @splat(0);
 pub var caller_n: u32 = 0;
 
@@ -890,6 +904,9 @@ test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
 const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
+    // 判据补丁（实验）：task_init 在 eventq_init 返回后检查 `*(anchor[6]+8) == 0` 就 bail。
+    // 这里在返回前把它填成非零，用来验证"+8 是唯一缺口"。
+    fillBailField();
     noteCaller();
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_init", .{});

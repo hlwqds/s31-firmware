@@ -2719,3 +2719,35 @@ bt bringup: enter step 6 r_btdm_task_init
 
 **推荐顺序**：先做第 2 条（成本一次 `probe` 改动，已验证可消除崩溃），
 用它换取"能跑到 step 7/8"的观测；再回头找 `[a5+8]` 该由谁填 —— 那时拿到的是新卡点而不是崩溃。
+
+## 两处必须在 README 里降级的说法（2026-11-18 末次复核）
+
+### 1「task_init 因 `[a5+8]==0` 提前退出」——**未证实，暂不当作结论**
+
+三条已有事实互相冲突：
+
+| 事实 | 含义 |
+| --- | --- |
+| `eventq_init` 前 `fillBailField` 已把 `*(anchor[6]+8)` 填成非零（本次实测 `anchor6=0x2f015598 patch=applied`） | 该判据若存在，应被越过 |
+| 板级 anchor dump：`anchor[6]=0x2f015598`、`+8=0x2f012628`（非零） | 同上 |
+| OSAL 调用环 **n=3**（mutex_init / eventq_init / mutex_pend），**没有** bail 越过后那次 `fqmZk` 的 `malloc` | 说明没走到那一步 |
+
+⇒ 补丁确实生效却仍崩，且没有后续 malloc ⇒ **bail 的位置/判据尚未证实**。
+`r_btdm_task_init` 还有别的失败返回（21.o 里 `1c: r_btdm_task_deinit`），
+不能把"`[a5+8]==0`"写成已证事实。**本文前面几处这样写，均以此条为准降级为待证。**
+
+分辨方法（两行日志 + 一次运行，尚未做）：
+`fillBailField` 打印 slot/obj/写入值；`task_init` 返回处打印 `anchor[6]` 及其 `+8`；
+同时把 OSAL 环打印从 3 条改为全量 32 条 —— 看清 eventq_init 到 mutex_pend 之间归档做了什么。
+
+### 2「预置 `anchor[9]` 能推进到 step 7」——**不成立，已收回**
+
+毒化 `anchor[9]` 那次的结果是 **load access fault @ `mtval=0x18`、`mepc=0x4005f1c8`（`gvLJK`）**，
+而 `gvLJK` 在 deinit 的调用序列里排在 `FzF1`（`0x4005fa8c`）**之前**（`0x4005fa7a` / `0x4005fa82`）。
+
+⇒ 毒化并不是"推进更远"，而是**把故障挪到了更早的一次解引用**。
+cleanup 路径会连续解引用多个未初始化对象，补一个槽只换一个故障点。
+
+⇒ 要拿到 step 7 的观测，必须**让 `task_init` 本身成功**（bail 不发生、rollback 不触发）。
+
+`patch_bail_field` 已置回 `false`，实验代码与其结论一起保留。
