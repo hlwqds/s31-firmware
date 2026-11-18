@@ -100,7 +100,7 @@
 | `read` / `write` | `fd.read` / `fd.write`（同 `recv`/`send`） | ✅ 已完成 |
 | `select` / `poll` / `epoll` | `fd.poll`（单次、非阻塞） | ✅ `poll` 已完成；`select`/`epoll` 不做 |
 | `setsockopt` / `getsockopt` | — | — `SO_REUSEADDR`/`TCP_NODELAY` 无意义（我们只有一条连接、不聚合 Nagle），返回 `ENOPROTOOPT` |
-| `fcntl(O_NONBLOCK)` | `Socket.nonblocking` | ● |
+| `fcntl(fd, F_GETFL/F_SETFL)` | `fd.fcntl` → `Socket.nonblocking` | ✅ 已完成（只认 `O_NONBLOCK`；其它位/命令 `EINVAL`，坏 fd `EBADF`） |
 | 文件 I/O（`open`/`stat`/`fsync`…） | 无 VFS | — 不做（`ENOSYS`） |
 
 ### 2.5 错误
@@ -116,7 +116,7 @@
 
 - `errno`（每 Task 分槽）· `time`（clock_gettime/nanosleep/clock_getres）·
   `addr`（`sockaddr_in` 编解码 + 每 fd 地址表）·
-  `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll）
+  `fd`（socket/bind/listen/accept/connect/send/recv/read/write/shutdown/close/poll/fcntl）
 - `waitq`（FIFO 等待队列）· `sync`（sem / mutex / once，含 `sem_timedwait` / `mutex_timedlock`）·
   `cond`（wait / timedwait / signal / broadcast）· `timer`（`pump` 推进到期）·
   `rwlock`（写者优先）· `thread`（create/join/detach/self/exit + `pthread_attr_t`）
@@ -179,9 +179,9 @@ const Slot = struct {
 
 ## 5. 验收与登记方式
 
-- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**85 项**
+- 每层主机用例（`zig build test` 聚合进 `firmware/build.zig` 的 test step）：**86 项**
   （errno 3 · time 4 · addr 3 · fd 6 · **sync 19** · **thread 13** · **waitq 6** · **cond 9** · **timer 8** · **rwlock 10** · 聚合块 1）；
-- `tests/baselines.json` 里 `posix-compat: 85`；
+- `tests/baselines.json` 里 `posix-compat: 86`；
 - 板上验收留到接内核那一步（本版没有板级行为变更）。
 
 **本组件只登记主机测试目标，不进镜像**（`firmware/build.zig` 里是单独的 `addTest`，不在

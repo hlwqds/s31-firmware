@@ -27,6 +27,11 @@ pub const SHUT_RD: c_int = 0;
 pub const SHUT_WR: c_int = 1;
 pub const SHUT_RDWR: c_int = 2;
 
+// `fcntl` 的命令与标志（POSIX 数值）
+pub const F_GETFL: c_int = 3;
+pub const F_SETFL: c_int = 4;
+pub const O_NONBLOCK: c_int = 0o0004000;
+
 pub const POLLIN: i16 = 0x001;
 pub const POLLOUT: i16 = 0x004;
 pub const POLLERR: i16 = 0x008;
@@ -263,6 +268,40 @@ pub fn close(fd: c_int) c_int {
 /// `poll(2)`：`timeout_ms < 0` 立即返回（不等），`0` 同样立即，`>0` 最多等这么久。
 ///
 /// 等待靠注入的 `time`（`nanosleep`），所以主机测试是即时的。返回就绪个数；超时返回 0。
+/// `fcntl(fd, F_GETFL)` / `fcntl(fd, F_SETFL, flags)`。
+///
+/// 只支持 `O_NONBLOCK`：`net_sockets` 的 socket 只有 `nonblocking: bool` 这一个开关，
+/// 没有 `O_APPEND`/`O_ASYNC` 之类的概念。其它命令返回 `EINVAL` 而不是假装成功。
+pub fn fcntl(fd: c_int, cmd: c_int, arg: c_int) c_int {
+    const t = tbl() orelse return -1;
+    if (fd < 0 or fd >= max_fds) {
+        errno.set(errno.EBADF);
+        return -1;
+    }
+    const f: u8 = @intCast(fd);
+    if (!addrs[f].allocated) {
+        errno.set(errno.EBADF);
+        return -1;
+    }
+    const s = slot(t, f);
+    switch (cmd) {
+        F_GETFL => return if (s.nonblocking) O_NONBLOCK else 0,
+        F_SETFL => {
+            // 只认 O_NONBLOCK；其它位保留不了，就明确拒绝
+            if ((arg & ~O_NONBLOCK) != 0) {
+                errno.set(errno.EINVAL);
+                return -1;
+            }
+            s.nonblocking = (arg & O_NONBLOCK) != 0;
+            return 0;
+        },
+        else => {
+            errno.set(errno.EINVAL);
+            return -1;
+        },
+    }
+}
+
 pub fn poll(fds: []pollfd, timeout_ms: c_int) c_int {
     const t = tbl() orelse return -1;
     const timeout: c_int = if (timeout_ms < 0) 0 else timeout_ms;
@@ -328,6 +367,31 @@ fn fakeTime() void {
     };
     F.now = 1_000_000;
     time.bind(.{ .now_ns = F.nowNs, .sleep_ns = F.sleepNs, .res_ns = 1_000_000 });
+}
+
+test "fd: fcntl 读写 O_NONBLOCK，非法命令与坏 fd 各有其码" {
+    fakeTime();
+    var t: net_sockets.socket.Table = .{};
+    freshTable(&t);
+    defer deinit();
+
+    const s0 = socket(AF_INET, SOCK_STREAM, 0);
+    try testing.expect(s0 >= 0);
+    try testing.expectEqual(O_NONBLOCK, fcntl(s0, F_GETFL, 0)); // 默认就是非阻塞
+    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_SETFL, 0)); // 切成阻塞
+    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_GETFL, 0));
+    try testing.expectEqual(@as(c_int, 0), fcntl(s0, F_SETFL, O_NONBLOCK)); // 再切回
+    try testing.expectEqual(O_NONBLOCK, fcntl(s0, F_GETFL, 0));
+
+    errno.set(0);
+    try testing.expectEqual(@as(c_int, -1), fcntl(s0, F_SETFL, 0o2000)); // O_APPEND 之类
+    try testing.expectEqual(errno.EINVAL, errno.get());
+    errno.set(0);
+    try testing.expectEqual(@as(c_int, -1), fcntl(s0, 99, 0));
+    try testing.expectEqual(errno.EINVAL, errno.get());
+    errno.set(0);
+    try testing.expectEqual(@as(c_int, -1), fcntl(max_fds, F_GETFL, 0));
+    try testing.expectEqual(errno.EBADF, errno.get());
 }
 
 test "fd: socket 校验 family/type/protocol" {

@@ -143,6 +143,12 @@
   默认属性才退回小静态池 —— `.bss` 从 8 × 8 KiB = **64 KiB 降到 2 × 8 KiB = 16 KiB**，
   接进镜像时不会先撞容量门禁。3 项新用例（总计 **85**）。
 
+- **`fcntl`（2026-11-18）**：`fd.fcntl` 实现 `F_GETFL`/`F_SETFL`，只认 `O_NONBLOCK`
+  （`net_sockets` 的 socket 只有 `nonblocking: bool` 这一个开关，没有 `O_APPEND`/`O_ASYNC` 的概念）；
+  其它位与命令返回 `EINVAL`，坏 fd 返回 `EBADF`。补它的原因是本轮对账发现 README 把
+  `fcntl(O_NONBLOCK)` 标成 ●（"已有"）而**代码里根本没有这个函数** —— 非阻塞应用的必备 API。
+  1 项新用例（总计 **86**）。
+
 ### Planned
 - P1：以太网 ARP/ICMP 上层（DMA 已闭环）
 
