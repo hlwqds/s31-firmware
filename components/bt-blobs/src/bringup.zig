@@ -220,18 +220,6 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: Xpuq 锚点 P=0x{x:0>8} (init 前为 0 是正常的，oracle 亦如此)", .{pp.get()});
         }
     }
-    // **无条件打印观测值**（不翻行为标志 —— 那两个标志会走进已知崩溃路径）：
-    // 让当前构建与历史日志的轨迹可直接对齐。
-    {
-        const ppo = @import("probe_ptr.zig");
-        osal.logPublic("bt bringup: OBS bohffAnchor=0x{x:0>8}", .{ppo.bohffAnchor()});
-        osal.logPublic("bt bringup: OBS okE7Anchor=0x{x:0>8}", .{ppo.okE7Anchor()});
-        if (ppo.okE7Anchor() != 0) {
-            const env: *const u32 = @ptrFromInt(ppo.okE7Anchor());
-            osal.logPublic("bt bringup: OBS *(env+8)=0x{x:0>8}", .{(@as(*const u32, @ptrFromInt(ppo.okE7Anchor() + 8))).*});
-            _ = env;
-        }
-    }
     // **只发布 7.o 锚点**：给 `BOhff` 的守卫一块可读内存（入口只判非空）。
     if (@import("probe.zig").publish_bohff_anchor) {
         const pp7 = @import("probe_ptr.zig");
@@ -304,7 +292,7 @@ pub fn init(cfg: *config.Config) c_int {
         board.trap.sample_period_us = 100; // ISR 重装也用 100 µs（否则窗口只活一个 tick）
         board.trap.resetPcs(); // 只保留本窗口的采样
         board.trap.sample_quiet = true;
-        board.trap.probe_stop_at_tick = 3000; // 100us/tick ⇒ ~3 s，落在 step 6 停滞之后 // 关闭：它会从开机起算并 halt，吃掉整轮实验 // 约 2 s 后故意 panic，一次性导出计数器 // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
+        board.trap.probe_stop_at_tick = 0;   // 干净采集：关掉 DUMP 路径（它的输出会与 win: dump 交错） // 100us/tick ⇒ ~3 s，落在 step 6 停滞之后 // 关闭：它会从开机起算并 halt，吃掉整轮实验 // 约 2 s 后故意 panic，一次性导出计数器 // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
         osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook
         osal.clearMutexHook(); // gate 钩子会打 15 行锚点表，每行都走 UART 自旋
         board.hw.armT0Interrupt(100);
