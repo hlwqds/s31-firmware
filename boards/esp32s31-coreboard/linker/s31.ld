@@ -179,7 +179,11 @@ SECTIONS
     _stack_top = ORIGIN(sram) + LENGTH(sram);
     _stack_bottom = _stack_top - _stack_size;
 
-    _heap_start = _bss_end;
+    /* **堆必须从归档的 .btdm_bss/.btdm_data 之后开始**：
+     * 这两个段是 NOLOAD 但**占用真实地址**（32 KiB + 4 KiB），落在 `_bss_end` 之后。
+     * 若 `_heap_start == _bss_end`，allocator 会覆盖归档自己的全局对象
+     * （锚点槽/事件队列/链表头都在 .btdm_bss 内）—— 本会话已因此出现过多例"不可解释"现象。 */
+    _heap_start = _data_end_btdm;
     _heap_end = _stack_bottom;
 
     /* ---------------------------------------------------------------------

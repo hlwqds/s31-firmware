@@ -4539,3 +4539,36 @@ _bss_end 应取 .btdm_data 的末址 = 0x2f01eec0
 1. `readelf -sW` 后 `_heap_start >= .btdm_data 末址`；
 2. 板上 `bt probe: arena` 报 ≈ 360 KiB（而不是 4039 B —— 那个数字来自更早的布局，需复核）；
 3. 归档的 `.btdm_bss` 在运行期间不再被分配器改写（可用锚点读数验证）。
+
+## ✅ 已修：堆起点移到 `.btdm_data` 之后（2026-11-19）
+
+`s31.ld` 改动一处：
+
+```ld
+-    _heap_start = _bss_end;
++    _heap_start = _data_end_btdm;    /* .btdm_bss(32K) + .btdm_data(4K) 之后 */
+```
+
+链接后实测：
+
+```
+_data_end_btdm 0x2f01dfc0   <- _heap_start
+_heap_end      0x2f076fc0
+=> 堆 = 0x59000 = **364 KiB**（原为 4039 B）
+```
+
+⇒ 归档的 `.btdm_bss` / `.btdm_data`（36 KiB）**不再落在堆区间内**，分配器不会覆盖它们。
+
+板测（默认构建，798 992 B）：mempool 行正常，**仍能走到 step 6**（`osalcaller[]` 导出出现），
+基线未被破坏。
+
+### 待复核
+
+板上 `bt probe: arena` 那行本轮被 FIFO 丢弃，未读到具体数值。
+下一轮顺手确认它报 ≈ 364 KiB 即可（若仍报 4039 B，说明读到的不是同一份镜像）。
+
+### 影响范围
+
+这个 bug 让 allocator 从 `0x2f015ec0` 起分配 —— 而那正是 `.btdm_bss` 的起点。
+**归档的锚点槽、事件队列、`d3D3` 链表头全部住在 `.btdm_bss` 里**，
+所以此前所有"锚点忽而有效忽而垃圾""不可解释的挂死"都可能由此解释。
