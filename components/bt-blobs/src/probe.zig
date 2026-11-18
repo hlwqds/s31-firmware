@@ -468,6 +468,10 @@ pub fn run() noreturn {
             if (v != 0) board.log.line("pmu+0x{x:0>3} = 0x{x:0>8}", .{ k * 4, v });
         }
     }
+    {
+        const w: *volatile u32 = @ptrFromInt(0x20100800);
+        board.log.line("FE800={x}", .{w.*});
+    }
     var rc = bringup.init(&cfg);
     if (rc != 0) {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
