@@ -184,8 +184,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // `s=<n> pc=0x<x>`。目的：FIFO 压力小几个数量级，且计数**是否继续增长**
         // 直接判定"中断还在来（自旋）"还是"事务不退休（stall）"。
         if (probe_stop_at_tick != 0 and irq_count >= probe_stop_at_tick) {
-            log.line("DUMP {d}", .{irq_count});
-            if (extra_dump) |f| f();
+            // 极短、并且**先 PC 后计数**：FIFO 只有 128 B，一次打不完 = 后面的会被丢。
+            log.line("DUMP{d}", .{irq_count});
+            var i: usize = 0;
+            while (i < @min(pc_snap_n, 4)) : (i += 1) log.line("P{d}", .{pc_snap[i]});
             while (true) asm volatile ("wfi");
         }
         if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) {

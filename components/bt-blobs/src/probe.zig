@@ -112,6 +112,12 @@ pub fn ringPush(msg: []const u8) void {
 }
 
 /// ISR 侧调用：吐出第 `idx` 条（0 = 最新），返回切片。
+/// 事件触发导出：打 PC 采样 + 计数器，然后停机。
+fn dumpAtPend() void {
+    board.log.line("DUMP lc={d} lr={d} n={d}", .{ log_hook_calls, log_ring_n, osal.caller_n });
+    while (true) asm volatile ("wfi");
+}
+
 pub fn ringCount() u32 { return log_ring_n; }
 pub fn logcCount() u32 { return log_hook_calls; }
 
@@ -123,7 +129,7 @@ pub fn ringAt(idx: u32) []const u8 {
 pub var log_hook_ours: u32 = 0;
 pub var log_hook_other: u32 = 0;
 /// 对照实验：为 true 时 logHook 只计数，把 UART 让出来（否则采样全落在它里面）。
-pub var log_hook_silent: bool = false; // 实验表明会同时静音我们自己的进度日志，故默认关闭
+pub var log_hook_silent: bool = true; // 窗口内整体静音：让 FIFO 空着给 DUMP 用 // 实验表明会同时静音我们自己的进度日志，故默认关闭
 
 fn logHook(msg: []const u8) void {
     // **三层语义各归各位**（这条以前写错过两次，每次代价是一轮无效板测）：
@@ -196,6 +202,7 @@ pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.ring_at = ringAt;
     board.trap.ring_n_at = ringCount;
+    osal.dump_hook = dumpAtPend;
     board.trap.probe_logc = logcCount;
     if (reprobe_ble_block) {
         // 复核 README 记录的总根因：读 BLE/MAC 寄存器块是否会挂死（会挂，默认关）。

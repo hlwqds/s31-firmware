@@ -127,6 +127,9 @@ fn trace(comptime what: []const u8, args: anytype) void {
 /// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
 /// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
 var bail_sentinel: [64]u8 align(4) = @splat(0);
+/// 事件触发的导出钩子（probe 侧注册：打印状态后停机）。
+pub var dump_hook: ?*const fn () void = null;
+
 pub var patch_bail_field: bool = false; // 有害：会覆盖 eventqInit 写入的真实 slot.p，见 README
 
 fn fillBailField() void {
@@ -995,6 +998,7 @@ export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
     asm volatile ("fence iorw, iorw");
     const __r = mutexPend(mu, timeout);
     logPublic("bt ret: mutex_pend => {d}", .{__r});
+    if (dump_hook) |f| f(); // 事件触发：此刻已过观测窗口，FIFO 也空出来了
     return __r;
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
