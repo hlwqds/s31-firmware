@@ -129,6 +129,7 @@ fn macHook(out: *[6]u8) void {
 }
 
 pub fn run() noreturn {
+    board.trap.extra_dump = dumpOsalCallers;
     // **最先**做 ROM 取样：此时还没开中断，输出不会被 ISR 的行冲散。
     if (dump_rom) {
         dumpRom("A", 0x2f83efb0, 96);
@@ -321,6 +322,17 @@ pub fn run() noreturn {
     }
     osal.logPublic("bt probe: no EVT after {d} rounds (evt_count=0)", .{round});
     halt();
+}
+
+/// 把 **osal 记录的归档调用点**打出来（panic 时由 board 调）。
+/// 这些返回地址是归档自己的 PC —— 采样被我们的钩子占据时，这是唯一的归档侧落点。
+fn dumpOsalCallers() void {
+    const n = @min(osal.caller_n, 12);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const idx = (osal.caller_n +% osal.caller_ring.len - n + i) % osal.caller_ring.len;
+        board.log.line("panic: osalcaller[{d}]=0x{x:0>8}", .{ i, osal.caller_ring[idx] });
+    }
 }
 
 /// 打印 PC 采样：卡住时这是"它在哪转"的唯一线索。

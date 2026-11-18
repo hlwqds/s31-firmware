@@ -426,7 +426,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         }
         // `bt_mmio_*` 的**调用者**（= 归档自己的 PC）：采样被我们的外壳占满时，这是唯一的归档落点。
         const mn = @min(hw.mmio_caller_n, 8);
-        log.line("panic: rings mmio_n={d} mmio_caller_n={d} pc_n={d} caller_n={d}", .{ hw.mmio_ring_next, hw.mmio_caller_n, pc_snap_n, caller_n });
+        if (extra_dump) |f| f();
         var mi: usize = 0;
         while (mi < mn) : (mi += 1) {
             const idx = (hw.mmio_caller_n +% hw.mmio_caller_ring.len - mn + mi) % hw.mmio_caller_ring.len;
@@ -460,6 +460,9 @@ pub var sample_quiet: bool = false;
 
 /// ISR 重装用的周期（µs）。**不能用硬编码 2000**：调用方设的短周期会在第一个 tick 后失效。
 pub var sample_period_us: u32 = 2000;
+
+/// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
+pub var extra_dump: ?*const fn () void = null;
 
 /// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。
 /// 用模块级变量是为了避开"快照在 if 分支、打印在公共作用域"的作用域问题（踩过一次）。

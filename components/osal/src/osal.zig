@@ -123,6 +123,17 @@ fn trace(comptime what: []const u8, args: anytype) void {
     logLine("osal> " ++ what, args);
 }
 
+/// **归档的调用点**：每个 OSAL 入口记一次 `@returnAddress()`。
+/// 归档的 undefined 列表里没有 `bt_mmio_*`（那是我们自己的 porting 层），
+/// 它真正进入我们代码的入口就是这些 OSAL 钩子 ⇒ 这里的返回地址就是归档的 PC。
+pub var caller_ring: [32]u32 = @splat(0);
+pub var caller_n: u32 = 0;
+
+pub inline fn noteCaller() void {
+    caller_ring[caller_n % caller_ring.len] = @truncate(@returnAddress());
+    caller_n +%= 1;
+}
+
 pub fn setHooks(h: Hooks) void {
     hooks = h;
 }
@@ -279,6 +290,7 @@ pub fn semDeinit(slot: *Slot) c_int {
 }
 
 pub fn semPend(slot: *Slot, timeout: u32) c_int {
+    noteCaller();
     trace("semPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "semPend", "end") != null) "{d}" else "-"), .{timeout});
     const s = slotGet(Sem, slot) orelse return EINVAL;
     while (true) {
@@ -317,6 +329,7 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
 }
 
 pub fn semRelease(slot: *Slot) c_int {
+    noteCaller();
     trace("semRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "semRelease", "end") != null) "{d}" else "-"), .{});
     const s = slotGet(Sem, slot) orelse return EINVAL;
     if (s.count == std.math.maxInt(u16)) return EINVAL;
@@ -360,6 +373,7 @@ pub fn mutexDeinit(slot: *Slot) c_int {
 }
 
 pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
+    noteCaller();
     trace("mutexPend tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexPend", "end") != null) "{d}" else "-"), .{timeout});
     const m = slotGet(Mutex, slot) orelse {
         trace("mutexPend< EINVAL (null slot)", .{});
@@ -395,6 +409,7 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
 }
 
 pub fn mutexRelease(slot: *Slot) c_int {
+    noteCaller();
     // 里程碑：`r_btdm_task_init` 的最后一次 OSAL 调用就是它 ⇒ 看到这行说明函数跑完了。
     logLine("bt osal: *mutex_release* (r_btdm_task_init 收尾)", .{});
     trace("mutexRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexRelease", "end") != null) "{d}" else "-"), .{});
@@ -477,6 +492,7 @@ fn unlinkIfQueued(q: *EventQ, e: *Event) void {
 }
 
 pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
+    noteCaller();
     const q = slotGet(EventQ, qslot) orelse return;
     const e = slotGet(Event, eslot) orelse return;
     unlinkIfQueued(q, e);
@@ -507,6 +523,7 @@ pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
 }
 
 pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
+    noteCaller();
     const q = slotGet(EventQ, qslot) orelse return null;
     while (true) {
         if (q.head != null) break;
@@ -1172,6 +1189,7 @@ pub fn arenaFree() usize {
 /// `flags`（`BTDM_OSAL_MALLOC_F_INTERNAL` vs `NORMAL`）在 IDF 里选不同的 heap 域。
 /// 我们只有一个 arena，两者走同一条路——与 wifi-blobs 的 `shellMallocInternal` 同处理。
 pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
+    noteCaller();
     const r = bt_arena.alloc(size, 8);
     // **清零**：归档把分配到的内存当结构体用，并假定字段初值为 0。
     // 板侧证据：`deinit` 里读到 `a0=0xb7a10c0d` 这种垃圾，而 IDF 的堆在启动后是干净的。
@@ -1184,6 +1202,7 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
 }
 
 pub fn btdmFree(ptr: ?*anyopaque) void {
+    noteCaller();
     bt_arena.freeRaw(ptr);
 }
 
@@ -1201,6 +1220,7 @@ pub const TaskRec = struct {
 var task_pool: Pool(TaskRec, 8) = .{};
 
 pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32, core_id: u32, handle: *?*anyopaque) c_int {
+    noteCaller();
     const t = task_pool.take() orelse return ENOMEM;
     t.fn_ = fn_;
     t.arg = arg;

@@ -2262,3 +2262,17 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 3. `probe.zig`（同时依赖 board 与 osal）注册一个 dump 函数，把 osal 的环打出来。
 
 做完这一步，43 条采样即使仍落在我们的钩子里，也能通过调用者环得到**归档的返回地址**。
+
+### 第一个"归档调用点"仪器：OSAL 钩子的返回地址环（2026-11-18，首跑无输出）
+
+实现（三处）：
+1. `osal.zig`：`caller_ring[32]` + `noteCaller()`，在 9 个入口记 `@returnAddress()`
+   （`btdmMalloc/btdmFree/semPend/semRelease/mutexPend/mutexRelease/eventqPut/eventqGet/taskCreate`）；
+2. `board/trap`：`pub var extra_dump: ?*const fn () void`，panic 时调用；
+3. `probe.zig`：注册 `dumpOsalCallers`，把环里最新 12 条打成 `panic: osalcaller[i]=…`。
+
+首跑（`logs/bt-probe-pcs7.log`）：panic 正常、`panic: pc[...]` 有 43 行，但
+**`panic: osalcaller[...]` 0 行** ⇒ 要么 `extra_dump` 未被调用，要么 `osal.caller_n` 为 0。
+
+**下一步第一件事（一行）**：把 `extra_dump` 是否存在、以及 `osal.caller_n` 打一行出来 ——
+和上次 `mmio_caller_n` 一样，先分开"没注册"与"计数为 0"，再谈内容。
