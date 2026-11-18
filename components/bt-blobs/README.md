@@ -6558,3 +6558,34 @@ pcsample n=9728 pc=0x400670c6 ra=0x400670c6   ← 落在 **abort 的自旋段**
 
 **下一步**：把 `evt` 计数或 caps 调到一致，看 step 1 是否能通过。
 这与"容量"是**同一个根**（需求 187 个事件 × 每事件缓冲）。
+
+## 本轮结果的边界（如实）
+
+`phy_before_clocks=false` 下：
+
+```
+enter step 1 mempool                      ← 出现
+bt mempool: need evt=187 …               ← 出现
+pcsample pc=0x400670c6 ra=0x400670c6      ← 在 abort 自旋段
+```
+
+**但 `AB` 行没有出现** ⇒ abort 的调用者**未能导出**。
+
+可能原因（未区分）：
+1. `probe_dump_now()` 的输出被 FIFO 丢弃（AB 行约 45 B）；
+2. 早前的 `git checkout -- probe.zig` 把 `probe_dump_now` 的导出或 AB-first 排序又回退掉了。
+
+⇒ **"step 1 之后 abort" 成立**（PC 证据），但**调用者未知**。
+
+### 下一轮第一步
+
+1. 确认 `probe_dump_now` 仍在 `probe.zig`（`grep -c probe_dump_now`）；
+2. 确认 `dumpAtPend` 的 `AB` 行仍是**第一条**输出；
+3. 再加一条**单字节**标记（不可打印字符，如 `\x02`）在 abort 桩入口 —— 它不会与日志混淆，
+   且 1 字节不会被丢；出现即证明 abort 被调用。
+
+### 同时修正的记录
+
+- 技能自检清单是 **10 条**（不是 8 条）；
+- `关键默认值` 列表需要与树同步：`phy_before_clocks=false`（本轮已翻转）、
+  `phy_domain_enable=true`（来自 `porting.zig`）。
