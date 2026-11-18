@@ -9306,3 +9306,56 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
 
 **"某个计数器为 0"只能证明"该计数器所指的那条路径没走通"，不能证明"功能没发生"** ——
 必须同时确认**该计数器是否覆盖了被观察的调用**（本例中 `eventInit` 不属于任何 Q 计数器）。
+
+## ✅ 精确化：`r_btdm_task_init` 从未执行到自己的 `eventq_init`（偏移 `0x84`）
+
+### 依据（这条不受上一轮撤回影响）
+
+`eventq_init` **有 trace**（`osal.zig:460` 打 `"eventqInit"`），而轨迹里**从未出现 `eventqInit`**。
+
+而 `r_btdm_task_init`（`21.o`）的重定位表里，`0x84: wr_btdm_osal_eventq_init` 是它**自己**的队列初始化调用
+（`0x92`/`0x9e` 是之后两个 `r_sym_bt_*`）。
+
+⇒ **该函数从未执行到 `0x84`** ⇒ 停滞发生在**更早**的调用里。
+
+### 按偏移排列的调用序列（`21.o`）
+
+```text
+0x0e/0x10/0x14  r_sym_bt_bj5z… / event_is_queued / r_sym_bt_bj5z…
+0x1c/0x26       wr_btdm_osal_eventq_put ×2
+0x28            wr_btdm_osal_eventq_is_empty
+0x2e            wr_btdm_osal_malloc
+0x32            r_sym_bt_PxePdGIO1nILThDDDbE1
+0x3c/0x60       e_btdm_lp_modem_clock_set
+0x42/0x56       memset / memcpy
+0x46            wr_btdm_osal_get_time_forever
+0x54            wr_btdm_osal_eventq_get
+0x68            r_sym_bt_TCHk4TWcbxhI2YzTmly2
+0x72            wr_btdm_osal_event_run
+0x84            wr_btdm_osal_eventq_init      ← **从未到达**
+0x92/0x9e       r_sym_bt_fqmZkUKgd5GE6m7i2YFG / r_sym_bt_JwHsRJf87ncwDuzskIUj
+```
+
+### 与 `caller_ring` 对齐
+
+环里**最后一条**是 `jH5m`（`16.o`）的 `0x4005d0de`（其体内偏移 `0x26`，即 `eventq_put`）。
+⇒ `jH5m` 由上述某一次调用进入。
+
+⇒ **停滞点在 `jH5m` 内部或它之后、而 `r_btdm_task_init` 尚未走到 `0x84`。**
+这与"`jH5m` 之后的两个函数仅 50 B / 32 B"一致 ⇒ **停滞极可能在 `jH5m` 自身**。
+
+### 下一步（离线，一步）
+
+反汇编**链接后**的 `jH5m`：
+
+```bash
+riscv32-esp-elf-objdump -d --start-address=<jH5m> --stop-address=<next sym> firmware/zig-out/bin/app.elf
+```
+
+看 `0x26`（`eventq_put`）之后、`0x78`（`4D3j…` ×3）之前的指令：
+- 若是自旋（`lw`+`andi`+`bne`）⇒ 记下寄存器地址，一次板上读数定性；
+- 若有 `jal` 到 `0x2f8xxxxx` ⇒ 进入 ROM，用 thunk 反查法命名。
+
+### 判序原则（本会话反复踩到）
+
+**一律以 `caller_ring` 的下标顺序为准**，串口行序不可信（FIFO 会丢/串）。
