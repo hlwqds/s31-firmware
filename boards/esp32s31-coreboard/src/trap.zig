@@ -476,9 +476,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         asm volatile ("csrr %[m], mepc" : [m] "=r" (csr_mepc));
         asm volatile ("csrr %[m], mtval" : [m] "=r" (csr_mtval));
         asm volatile ("csrr %[m], mstatus" : [m] "=r" (csr_mstatus));
-        var pbuf: [240]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
-            csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, cause & 0x3F,
+        // **调用者的保存 ra**（`*(sp+12)`）：判"ra 是被谁写坏的"。
+        // sp 经范围检查后再解引用，避免二次 fault。
+        var caller_ra: usize = 0;
+        if (frame.sp >= 0x2f00_0000 and frame.sp < 0x2f10_0000) {
+            caller_ra = (@as(*const usize, @ptrFromInt(frame.sp + 12))).*;
+        }
+        var pbuf: [280]u8 = undefined;
+        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
+            csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
             last_step, last_step_name, diag_a, diag_b,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
