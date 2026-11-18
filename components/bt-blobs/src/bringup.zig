@@ -294,7 +294,7 @@ pub fn init(cfg: *config.Config) c_int {
         board.hw.mmio_off = true; // 关掉寄存器记录（否则它是热路径）
         board.trap.sample_period_us = 100; // ISR 重装也用 100 µs（否则窗口只活一个 tick）
         board.trap.resetPcs(); // 只保留本窗口的采样
-        board.trap.sample_quiet = true;
+        board.trap.sample_quiet = false; // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
         osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook
         osal.clearMutexHook(); // gate 钩子会打 15 行锚点表，每行都走 UART 自旋
         board.hw.armT0Interrupt(100);
