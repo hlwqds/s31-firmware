@@ -11718,3 +11718,61 @@ osal.call_stream_on = false;   // 保持
 3. **异常读数先对照"它是否只是编译器/链接器的正常产物"**（SROA、弱符号、压缩、截断）。
 
 ⇒ 本会话 28 次撤回里，**至少 20 次**是这三条之一的违反。
+
+## 🏁 决定性：`mutexPend` **从未被调用** ⇒ 停滞在 `OkE7` 内部（2026-11-19）
+
+### 测量（`DUMP3000` 窗口内，tick 3000 ≈ 18 s，落在停滞期）
+
+```text
+184: DUMP3000
+411: DUMP3000
+DUMP 之后 Q2 = 0 0 0
+MUTEX_EINVAL      = （无）
+```
+
+⇒ 按判读矩阵：**`Q2 全 0` + 无 EINVAL** ⇒ **`mutexPend` 从未被调用**。
+
+### 因此停滞在 `r_btdm_task_init` 的**更早处**
+
+调用链（按节读）：
+
+```
+0x1c  r_btdm_task_deinit
+0x40  r_sym_bt_OkE7MxSSqFt63m8XlU3d      ← **停滞在此**
+0x58  wr_btdm_osal_get_time_forever       （只返回常量，不会挂）
+0x66  wr_btdm_osal_mutex_pend             ← **从未到达**
+```
+
+### `OkE7` 的完整结构（`21.o`，**326 B**）
+
+```text
+0x2e  wr_btdm_osal_malloc
+0x42  memset
+0x56  memcpy
+0x72  wr_btdm_osal_mutex_init
+0x84  wr_btdm_osal_eventq_init          ← 轨迹里有 eventqInit ⇒ **已越过**
+0x92  r_sym_bt_fqmZkUKgd5GE6m7i2YFG
+0x9e  r_sym_bt_JwHsRJf87ncwDuzskIUj
+0xaa  r_sym_bt_UghmLBN0bKpgsg8nI8fM     ← malloc 包装（早前的"热点"）
+0xc2  r_sym_bt_PsB8qxrZXPdSUAqQMBRY     ← caller ring 里出现过
+0xcc  r_sym_bt_ZGgifdtgyUnZ7f0ME7VH     ← caller ring 里出现过
+```
+
+⇒ 环里的 `PsB8` / `ZGgi` / `Ughm` **全部在此函数内**
+⇒ **`OkE7` 正在执行并推进，停滞在其 `0x92–0xcc` 段或它们调用的更深处。**
+
+### 这是本会话收敛出的最精确位置
+
+| 层级 | 结果 |
+| --- | --- |
+| 板级 | 默认构建、PHY 正常 |
+| 步骤 | step 6 `r_btdm_task_init` |
+| 调用 | `OkE7`（`0x40`）|
+| 段 | `0x92`–`0xcc`（`fqmZk` / `JwHs` / `Ughm` / `PsB8` / `ZGgi`）|
+
+### 下一步（离线，一次）
+
+反汇编 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG`（`0x92` 的目标，此前测得仅 **44 B**，是 `malloc`/`assert`/`free` 包装）
+⇒ 若它是包装，则下一步查 `JwHs`（`0x9e`，84 B）与其子调用 `MDZbaj…`/`2VbAP…`（各 14 B，thunk）。
+
+⇒ 更可能的落点：**`PsB8`（`0xc2`）或 `ZGgi`（`0xcc`）** —— 它们是环里**最后出现**的名字。
