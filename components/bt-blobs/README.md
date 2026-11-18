@@ -2308,8 +2308,48 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 4005fa70: lbu a3,0(a5)
 ```
 
-⇒ 之前"task_init 提前退出 → deinit 读未发布 anchor"的模型，**现在由归档的实际指令确认**，
-不再是推断。崩溃发生在这条 deinit 路径上 `mutex_pend` 返回之后的第一处解引用。
+⚠️ **上一句是错的**：`mepc`/`ra` 显示崩点不在这里。`ra=0x4005fa94` 对应的调用点是
+`0x4005fa90: jal ra, <r_sym_bt_cKuT2s3WOu8oyZWi8auj>`，真正崩的是**被调函数**，
+不是 deinit 本体；`s0=0x2f00ffe8` 属于那个子函数的帧，不能拿来对读 deinit 的 `lw a5,0(s0)`。
 
 **下一步**：`a5` 指向谁。`610` 行那条 `lw a5,8(a5)` 的 `s0` 与 `4005fa6c` 的 `s0` 是同一结构，
 把 panic dump 里的 `s0`（`0x2f00ffe8`）与这两处的偏移对读，就能确定是哪个字段未初始化。
+
+### 根因闭合：`anchor[0]` 未发布 → 归档自己 `sb` 到地址 0（2026-11-18）
+
+`!! mepc=0x4005b692 mtval=0x00000000 mstatus=0x00003881`，`mcause=7`（store access fault）。
+
+`mepc` 处的函数是 `r_sym_bt_cKuT2s3WOu8oyZWi8auj`，第一条指令就是读 **anchor[0]**：
+
+```
+4005b692: lui  a5,0x2f010
+4005b696: lw   a5,-48(a5)        # 0x2f00ffd0 = r_sym_bt_pSy5Wex1v0iXw5RdWtwL = anchor[0]
+4005b69a: beqz a5, .L201         # anchor[0]==0 -> 零值路径
+4005b69c: lw   a0,28(a5)
+4005b69e: jal  zero,<tail>
+```
+
+零值路径里：
+
+```
+4005b6b2: ori a4,a4,1
+4005b6b6: sb  a4,0(a5)           # a5 仍为 0 -> 写地址 0
+```
+
+板上 anchor 表实测（`panic: anchor[i]`）：**anchor[0..2]、[5]、[7]、[9] 全为 0**，
+非零的是 `[4]`、`[6]`、`[8]`、`[10]`。而 `mtval=0`、`cause=7` 与 `sb 0(a5)`（a5=0）完全吻合。
+
+⇒ **完整链条**（全部来自归档自己的指令 + 板上实测，无推断）：
+
+```
+task_init: mutex_init -> eventq_init -> [a5+8]==0 -> 提前退出
+  -> task_deinit -> jal cKuT... -> lw anchor[0] (=0) -> 零值路径 -> sb a4,0 -> store fault @0
+```
+
+即：**崩溃的直接原因不是缺 OSAL、不是锁、不是 PHY**，而是归档读到自己从未发布的
+**anchor[0]** 后走"零值兜底"路径，而那条路径本身就假定指针非空 —— 归档的零值分支写地址 0。
+
+**下一步**：确定 `r_sym_bt_pSy5Wex1v0iXw5RdWtwL`（anchor[0]）本该由谁发布。
+它是 10 个 `r_sym_bt_*` 锚点里编号最小的一个；`[a5+8]==0` 的判据与 `lw a0,28(a5)` 的字段
+说明它指向一个"表/描述符"。找写者仍用已验证的方法：`objdump -d | grep 'sw.*<r_sym_bt_pSy5'`
+（注意 `.o` 未重定位时无效，必须用链接后 ELF）。

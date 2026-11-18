@@ -329,6 +329,19 @@ pub fn run() noreturn {
 fn dumpOsalCallers() void {
     // 先报"我跑了 + 计数是多少"：分开「钩子没被调用」与「环真的空」。
     board.log.line("panic: osaldump reached n={d}", .{osal.caller_n});
+    // s0=0x2f00ffe8 = anchor[6]；把 11 个锚点 + 每个非零锚点的 +8 字段打出来，
+    // 直接回答「哪个字段未发布」。0x2f00ffd0 是 anchor[0]。
+    var ai: usize = 0;
+    while (ai < 11) : (ai += 1) {
+        const slot: *const volatile u32 = @ptrFromInt(0x2f00ffd0 + 4 * ai);
+        const v = slot.*;
+        if (v != 0 and v > 0x2f000000 and v < 0x30000000) {
+            const f8: *const volatile u32 = @ptrFromInt(@as(usize, v) + 8);
+            board.log.line("panic: anchor[{d}]=0x{x:0>8} +8=0x{x:0>8}", .{ ai, v, f8.* });
+        } else {
+            board.log.line("panic: anchor[{d}]=0x{x:0>8}", .{ ai, v });
+        }
+    }
     const n = @min(osal.caller_n, 12);
     var i: usize = 0;
     while (i < n) : (i += 1) {
