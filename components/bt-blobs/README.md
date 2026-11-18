@@ -4572,3 +4572,29 @@ _heap_end      0x2f076fc0
 这个 bug 让 allocator 从 `0x2f015ec0` 起分配 —— 而那正是 `.btdm_bss` 的起点。
 **归档的锚点槽、事件队列、`d3D3` 链表头全部住在 `.btdm_bss` 里**，
 所以此前所有"锚点忽而有效忽而垃圾""不可解释的挂死"都可能由此解释。
+
+## 负结果：堆修复**没有**消除 abort（2026-11-19 末）
+
+修好 `_heap_start`（4 KB → 364 KiB）后，`WITH_PHY=1` + `phy_domain_enable=true` 重跑：
+
+```
+AAAAAAAApcsample n=4096 pc=0x400670d4 ra=0x40000672 s0=0x0
+pcsample n=9728 pc=0x400670d4 ra=0x40000672
+```
+
+⇒ **abort 仍然发生**（`AAAAAAAA` 是我们给 abort 加的标记，`pc` 落在标记代码内）。
+
+⇒ 因此 **"堆与 `.btdm_bss` 重叠"不是 abort 的成因**（虽然它是一个真实的 bug，已修）。
+
+⚠️ 本轮 `bt probe: arena` 行被 FIFO 丢弃，**未能确认**堆的新数值 —— 下一轮应优先确认它（应约 364 KiB）。
+
+### abort 的候选重新变为
+
+| 候选 | 状态 |
+| --- | --- |
+| `calloc(1,1904)` 失败 | **几乎排除**（364 KiB 的堆不可能不够），但未直接观测 |
+| `esp_phy_get_init_data` 失败 | **已排除**（10 字节 thunk 返回静态表） |
+| **`esp_phy_load_cal_data_from_nvs` 内的检查** | **新候选**：它 `size=264`，内部 `nvs_open` + 若干 `nvs_get_*`；若 `cal_version` 等 key 取不到就报错 |
+
+**下一步**：反汇编 `esp_phy_load_cal_data_from_nvs`（`0x40000420`，264 B）全段，
+列出它在 `nvs_open` 之后调用的每个 `nvs_*` 与对应判据 —— 这是唯一还没读过的函数。
