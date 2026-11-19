@@ -622,6 +622,26 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 (@as(*const usize, @ptrFromInt(0x2f07_a45c))).*,
             }) catch "NB (fmt fail)";
             hw.rawLineBlocking(nl);
+
+        // **穷栈遍历**：扫 [sp-0x1000, sp) 里落在代码段 (0x40000020..0x400A0300) 的字
+        // ⇒ 这些是**保存的返回地址**，离线用 nm 解析即得调用链。
+        // 排除 handler 自己的帧 [sp-96, sp) —— 那里是按定义保存的"被中断寄存器"。
+        {
+            var k: isize = -4096;
+            const lo: usize = 0x4000_0020;
+            const hi: usize = 0x400A_0300;
+            while (k < -96) : (k += 4) {
+                const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + k));
+                const v = (@as(*const usize, @ptrFromInt(a))).*;
+                if (v >= lo and v < hi) {
+                    var cb: [96]u8 = undefined;
+                    const rc = std.fmt.bufPrint(&cb, "RA off={d} ret=0x{x:0>8}", .{
+                        -k, v,
+                    }) catch "RA (fmt fail)";
+                    hw.rawLineBlocking(rc);
+                }
+            }
+        }
         }
 
         // **ops 表转储**：0x2f020700..0x2f020780，看多少项是有效指针。
