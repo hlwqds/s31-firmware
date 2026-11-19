@@ -196,6 +196,8 @@ comptime {
 extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
 extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
 
+pub var bp_scan: [16]u32 = @splat(0);
+
 pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
     // **RISC-V debug trigger 断点**（mcause=3，同步异常，不受 MIE 屏蔽）：
