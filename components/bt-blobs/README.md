@@ -26313,3 +26313,22 @@ glue（pp_printf、net80211_printf、r_filter_*）/ libc 4 件（已实现 libc_
 ⇒ 下一会话从 466 面按类消解（log 族→osal log；timer 族→Zig timer 服务；
 wifi 胶水→osi 表 + osi_stubs 扩展；esp_timer 子集→自写非重叠对象；
 est_PHY→libphy.a 单成员提取；libcoexist.a→加链）。
+
+### 闭包迭代实录（2026-11-20 尾五）：archive-only csv + 精确裁剪清单
+
+实测推进：466 → 433（glue 消解 33）→ …，方向成立。**archive-only csv**
+（47 blob 成员 + 58 station 组件归档，去掉全部 station_*.obj 附加件）是正确形态
+（per-obj 与归档互相重复 = 大量 duplicate）。遗留裁剪清单（下一会话按表执行）：
+
+| 冲突源 | 与谁冲突 | 处置 |
+| --- | --- | --- |
+| phy_stubs.c: esp_timer 族(5)/xPortInIsrContext/xPortEnterCriticalTimeout/vPortExitCriticalMultiCore/_lock_acquire/_lock_release/calloc/free | libfreertos.a/libheap.a/libesp_timer.a | **手工删这 12 个函数**（脚本手术切坏了文件已回滚）|
+| phy_stubs.c: nvs_* 族 | libnvs_flash.a（已从 csv 移除）| 保留 phy_stubs 版（NOT_FOUND ⇒ 全量校准设计路径）|
+| wifi_glue.zig: esp_log_level_set | tag_log_level.c.obj（liblog.a）| 已删 ✓ |
+| libcoexist.a | 拖入 r_ble/r_btdm/r_sym 全家 BT 依赖 | 从 csv 移除；coex_init/enable 用 Zig 最小实现替代 |
+| est_PHY FTM 表（24 个） | libnet80211.a(ieee80211_ftm.o) 的**局部静态** | 该成员已拉入但符号未解析 ⇒ 需 nm -a 单成员提取后作独立 .o 加入（已提取到 /tmp/ftm/ieee80211_ftm.o 待验证）|
+| libc 4 件（putchar/puts/strcmp/strtok） | freestanding 无 libc | libc_glue.zig 已实现 ✓（未提交，与 wifi_glue 一起提交）|
+
+**RAM 判决**（station readelf）：dram0.data+bss ≈ 46KB ⇒ wifi 栈 RAM 需求小，
+sram 493KB 足够 ⇒ **RAM 不是约束**。flash：archive-pull 按需 ≈ 待最终链接定
+（分区余量 651KB，border-line）。
