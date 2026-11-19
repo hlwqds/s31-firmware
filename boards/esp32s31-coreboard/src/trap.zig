@@ -220,7 +220,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // ② {magic, pc, s0} 放**栈上 RAM**，MIE 屏蔽后擦写 0x18D000（不把 flash 当 RAM 指针）
         // ③ 记 RAM 环。④ 禁用触发器再继续（防无限重触发）。
         var auth_pc: u32 = undefined;
-        asm volatile ("csrr %[v], mepc" : [v] "=r" (auth_pc));
+        asm volatile ("csrr %[v], mepc"
+            : [v] "=r" (auth_pc),
+        );
         if (auth_pc != 0) recordPc(auth_pc);
         // **5 字命中记录**：{FEE7, 权威mepc, s0, tdata1_rb, tdata2_rb}
         // —— 命中即知核当时实际 armed 的 type/m/match 与地址（自证仪器）。
@@ -237,7 +239,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 : .{ .memory = true });
         }
         asm volatile ("li t1, 1");
-        asm volatile ("csrw 0x7a5, t1");   // tselect = 1
+        asm volatile ("csrw 0x7a5, t1"); // tselect = 1
         asm volatile ("csrw 0x7a0, zero"); // tdata1 = 0 ⇒ 触发器禁用
     }
     if ((cause & 0x8000_0000) != 0) {

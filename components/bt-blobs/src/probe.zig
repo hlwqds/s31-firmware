@@ -583,10 +583,17 @@ pub fn run() noreturn {
             while (bp < 32) : (bp += 1) {
                 const bit: u32 = @as(u32, 1) << @intCast(bp);
                 var cur: u32 = undefined;
-                asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (cur));
+                asm volatile ("csrr %[v], 0x7a0"
+                    : [v] "=r" (cur),
+                );
                 const wv: u32 = cur | bit;
-                asm volatile ("csrw 0x7a0, %[v]" : : [v] "r" (wv));
-                asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (cur));
+                asm volatile ("csrw 0x7a0, %[v]"
+                    :
+                    : [v] "r" (wv),
+                );
+                asm volatile ("csrr %[v], 0x7a0"
+                    : [v] "=r" (cur),
+                );
                 rb_bits[bp] = cur;
                 if ((cur & bit) != 0) keep |= bit;
             }
@@ -611,9 +618,14 @@ pub fn run() noreturn {
                 const bit: u32 = @as(u32, 1) << @intCast(bp);
                 asm volatile ("csrw 0x7a0, zero"); // 清场
                 const wv: u32 = bit;
-                asm volatile ("csrw 0x7a0, %[v]" : : [v] "r" (wv));
+                asm volatile ("csrw 0x7a0, %[v]"
+                    :
+                    : [v] "r" (wv),
+                );
                 var rb: u32 = undefined;
-                asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (rb));
+                asm volatile ("csrr %[v], 0x7a0"
+                    : [v] "=r" (rb),
+                );
                 if ((rb & bit) != 0) keep |= bit;
             }
             flashStage(92); // 位探测完成 ⇒ 未挂死
@@ -627,17 +639,27 @@ pub fn run() noreturn {
         var v_t3: u32 = undefined;
         var v_t4: u32 = undefined;
         var v_t5: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (v_t1)); // tinfo
+        asm volatile ("csrr %[v], 0x7a4"
+            : [v] "=r" (v_t1),
+        ); // tinfo
         asm volatile ("li t0, 0x4c");
         asm volatile ("csrw 0x7a0, t0"); // tdata1 = 0x4C
-        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (v_t2)); // 回读
+        asm volatile ("csrr %[v], 0x7a0"
+            : [v] "=r" (v_t2),
+        ); // 回读
         asm volatile ("li t0, 0x2f828a78");
         asm volatile ("csrw 0x7a1, t0"); // tdata2 = 地址
-        asm volatile ("csrr %[v], 0x7a1" : [v] "=r" (v_t3)); // 回读
+        asm volatile ("csrr %[v], 0x7a1"
+            : [v] "=r" (v_t3),
+        ); // 回读
         asm volatile ("li t0, 0x88");
         asm volatile ("csrw 0x7a3, t0"); // tcontrol
-        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (v_t4)); // 回读
-        asm volatile ("csrr %[v], 0x7a5" : [v] "=r" (v_t5)); // tselect
+        asm volatile ("csrr %[v], 0x7a3"
+            : [v] "=r" (v_t4),
+        ); // 回读
+        asm volatile ("csrr %[v], 0x7a5"
+            : [v] "=r" (v_t5),
+        ); // tselect
         var cv: [6]u32 = @splat(0);
         cv[0] = 0xADC0_FEEB;
         cv[1] = v_t1; // tinfo
@@ -668,112 +690,138 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
     }
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a3, t0"); // **tcontrol 先行**：触发器总使能，位探测才有效
-        // **逐触发器位探测**：4 个触发器各自有独立 tdata1（tselect 选号）。
-        // tselect=1 已知可写位 = [0,1]（LOAD/STORE）；EXECUTE(bit2) 可能在其它号可写。
-        // 每触发器：清场→逐位写→读回→keep 位图。结果 3×32 位落 0x189000。
-        {
-            const rd2 = struct {
-                fn r(addr: usize) u32 {
-                    return @as(*volatile u32, @ptrFromInt(addr)).*;
-                }
-                fn w(addr: usize, val: u32) void {
-                    @as(*volatile u32, @ptrFromInt(addr)).* = val;
-                }
-            };
-            const tsel_bits = [_]u32{ 0, 2, 3 };
-            var all_keep: [3]u32 = @splat(0);
-            for (0..3) |ti| {
-                const tsel = tsel_bits[ti];
-                rd2.w(0x7a5, tsel); // tselect = 触发器号
-                rd2.w(0x7a3, 0x88); // tcontrol 每次重确认
-                var keep_t: u32 = 0;
-                var bp: u32 = 0;
-                while (bp < 32) : (bp += 1) {
-                    const bit: u32 = @as(u32, 1) << @intCast(bp);
-                    rd2.w(0x7a0, 0); // 清场
-                    rd2.w(0x7a0, bit);
-                    const rb: u32 = rd2.r(0x7a0);
-                    if ((rb & bit) != 0) keep_t |= bit;
-                }
-                all_keep[ti] = keep_t;
-                board.trap.bp_keep[ti] = keep_t;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a3, t0"); // **tcontrol 先行**：触发器总使能，位探测才有效
+    // **逐触发器位探测**：4 个触发器各自有独立 tdata1（tselect 选号）。
+    // tselect=1 已知可写位 = [0,1]（LOAD/STORE）；EXECUTE(bit2) 可能在其它号可写。
+    // 每触发器：清场→逐位写→读回→keep 位图。结果 3×32 位落 0x189000。
+    {
+        const rd2 = struct {
+            fn r(addr: usize) u32 {
+                return @as(*volatile u32, @ptrFromInt(addr)).*;
             }
-            var kb: [4]u32 = @splat(0);
-            kb[0] = 0xADC0_FEED;
-            kb[1] = all_keep[0]; // tsel=0
-            kb[2] = all_keep[1]; // tsel=2
-            kb[3] = all_keep[2]; // tsel=3
-            // **ebreak**：进断点分支（trap 上下文 flash 写可靠）把 bp_keep/bp_scan 落盘 0x18D000
-            asm volatile ("ebreak");
-            _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x189000, &kb, 16);
+            fn w(addr: usize, val: u32) void {
+                @as(*volatile u32, @ptrFromInt(addr)).* = val;
+            }
+        };
+        const tsel_bits = [_]u32{ 0, 2, 3 };
+        var all_keep: [3]u32 = @splat(0);
+        for (0..3) |ti| {
+            const tsel = tsel_bits[ti];
+            rd2.w(0x7a5, tsel); // tselect = 触发器号
+            rd2.w(0x7a3, 0x88); // tcontrol 每次重确认
+            var keep_t: u32 = 0;
+            var bp: u32 = 0;
+            while (bp < 32) : (bp += 1) {
+                const bit: u32 = @as(u32, 1) << @intCast(bp);
+                rd2.w(0x7a0, 0); // 清场
+                rd2.w(0x7a0, bit);
+                const rb: u32 = rd2.r(0x7a0);
+                if ((rb & bit) != 0) keep_t |= bit;
+            }
+            all_keep[ti] = keep_t;
+            board.trap.bp_keep[ti] = keep_t;
         }
-        var r_scan: u32 = undefined;
-        var scan_r: [16]u32 = @splat(0);
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a2, t0");
-        asm volatile ("csrr %[v], 0x7a2" : [v] "=r" (r_scan));
-        scan_r[2] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a3, t0");
-        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (r_scan));
-        scan_r[3] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a4, t0");
-        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r_scan));
-        scan_r[4] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a6, t0");
-        asm volatile ("csrr %[v], 0x7a6" : [v] "=r" (r_scan));
-        scan_r[6] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a7, t0");
-        asm volatile ("csrr %[v], 0x7a7" : [v] "=r" (r_scan));
-        scan_r[7] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a8, t0");
-        asm volatile ("csrr %[v], 0x7a8" : [v] "=r" (r_scan));
-        scan_r[8] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a9, t0");
-        asm volatile ("csrr %[v], 0x7a9" : [v] "=r" (r_scan));
-        scan_r[9] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7aa, t0");
-        asm volatile ("csrr %[v], 0x7aa" : [v] "=r" (r_scan));
-        scan_r[10] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7ab, t0");
-        asm volatile ("csrr %[v], 0x7ab" : [v] "=r" (r_scan));
-        scan_r[11] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7ac, t0");
-        asm volatile ("csrr %[v], 0x7ac" : [v] "=r" (r_scan));
-        scan_r[12] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7ad, t0");
-        asm volatile ("csrr %[v], 0x7ad" : [v] "=r" (r_scan));
-        scan_r[13] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7ae, t0");
-        asm volatile ("csrr %[v], 0x7ae" : [v] "=r" (r_scan));
-        scan_r[14] = r_scan;
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7af, t0");
-        asm volatile ("csrr %[v], 0x7af" : [v] "=r" (r_scan));
-        scan_r[15] = r_scan;
-        var sbv: [17]u32 = @splat(0);
-        sbv[0] = 0xADC0_FEEA;
-        for (0..16) |k| sbv[1 + k] = scan_r[k];
-        _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x18F000, &sbv, @intCast(@sizeOf(@TypeOf(sbv))));
-        // 恢复 tdata1/tdata2（扫描可能覆盖了它们）
-        asm volatile ("li t0, 0x4c");
-        asm volatile ("csrw 0x7a0, t0");
-        asm volatile ("li t0, 0x2f828a78");
-        asm volatile ("csrw 0x7a1, t0");
+        var kb: [4]u32 = @splat(0);
+        kb[0] = 0xADC0_FEED;
+        kb[1] = all_keep[0]; // tsel=0
+        kb[2] = all_keep[1]; // tsel=2
+        kb[3] = all_keep[2]; // tsel=3
+        // **ebreak**：进断点分支（trap 上下文 flash 写可靠）把 bp_keep/bp_scan 落盘 0x18D000
+        asm volatile ("ebreak");
+        _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x189000, &kb, 16);
+    }
+    var r_scan: u32 = undefined;
+    var scan_r: [16]u32 = @splat(0);
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a2, t0");
+    asm volatile ("csrr %[v], 0x7a2"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[2] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a3, t0");
+    asm volatile ("csrr %[v], 0x7a3"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[3] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a4, t0");
+    asm volatile ("csrr %[v], 0x7a4"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[4] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a6, t0");
+    asm volatile ("csrr %[v], 0x7a6"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[6] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a7, t0");
+    asm volatile ("csrr %[v], 0x7a7"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[7] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a8, t0");
+    asm volatile ("csrr %[v], 0x7a8"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[8] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a9, t0");
+    asm volatile ("csrr %[v], 0x7a9"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[9] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7aa, t0");
+    asm volatile ("csrr %[v], 0x7aa"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[10] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7ab, t0");
+    asm volatile ("csrr %[v], 0x7ab"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[11] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7ac, t0");
+    asm volatile ("csrr %[v], 0x7ac"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[12] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7ad, t0");
+    asm volatile ("csrr %[v], 0x7ad"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[13] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7ae, t0");
+    asm volatile ("csrr %[v], 0x7ae"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[14] = r_scan;
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7af, t0");
+    asm volatile ("csrr %[v], 0x7af"
+        : [v] "=r" (r_scan),
+    );
+    scan_r[15] = r_scan;
+    var sbv: [17]u32 = @splat(0);
+    sbv[0] = 0xADC0_FEEA;
+    for (0..16) |k| sbv[1 + k] = scan_r[k];
+    _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
+    _ = esp_rom_spiflash_write(0x18F000, &sbv, @intCast(@sizeOf(@TypeOf(sbv))));
+    // 恢复 tdata1/tdata2（扫描可能覆盖了它们）
+    asm volatile ("li t0, 0x4c");
+    asm volatile ("csrw 0x7a0, t0");
+    asm volatile ("li t0, 0x2f828a78");
+    asm volatile ("csrw 0x7a1, t0");
 
     // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
     var rc = bringup.init(&cfg);
@@ -884,20 +932,24 @@ pub fn run() noreturn {
         // 不受 MIE 屏蔽 ⇒ 能命中 vendor 关中断段的自旋。
         // 首次命中时 trap 处理器记录权威 mepc 并禁用触发器（防无限重触发）。
         asm volatile ("li t1, 1");
-        asm volatile ("csrw 0x7a5, t1");   // tselect = 1
-        asm volatile ("li t0, 0x88");      // tcontrol = MPTE(bit7) | MTE(bit3) —— 触发器总使能
-        asm volatile ("csrw 0x7a3, t0");   // ← 此前从未写过：没有它任何触发器都不响！
-        asm volatile ("li t0, 0x4c");      // tdata1 = USER(bit3)|MACHINE(bit6)|EXECUTE(bit2)（Espressif 自定义布局，无 type 字段）
+        asm volatile ("csrw 0x7a5, t1"); // tselect = 1
+        asm volatile ("li t0, 0x88"); // tcontrol = MPTE(bit7) | MTE(bit3) —— 触发器总使能
+        asm volatile ("csrw 0x7a3, t0"); // ← 此前从未写过：没有它任何触发器都不响！
+        asm volatile ("li t0, 0x4c"); // tdata1 = USER(bit3)|MACHINE(bit6)|EXECUTE(bit2)（Espressif 自定义布局，无 type 字段）
         asm volatile ("csrw 0x7a0, t0");
         asm volatile ("li t0, 0x2f828a78");
-                // **展开扫描 0x7a0..0x7af**（跳过 0x7a5/0x7a1/0x7a0）：逐 CSR 写 0x88 读回，
+        // **展开扫描 0x7a0..0x7af**（跳过 0x7a5/0x7a1/0x7a0）：逐 CSR 写 0x88 读回，
         // 保留 0x88 的那个 = S31 的 tcontrol 等价物。结果落 0x18F000。
-asm volatile ("csrw 0x7a1, t0");   // tdata2 = 目标地址
+        asm volatile ("csrw 0x7a1, t0"); // tdata2 = 目标地址
         // 回读：tcontrol(0x7a3) 是否保持 0x88 + tdata1 是否保持 0x4c
         var r_ctl: u32 = undefined;
         var r_t1: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (r_ctl));
-        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (r_t1));
+        asm volatile ("csrr %[v], 0x7a3"
+            : [v] "=r" (r_ctl),
+        );
+        asm volatile ("csrr %[v], 0x7a0"
+            : [v] "=r" (r_t1),
+        );
         var rvv: [4]u32 = @splat(0);
         rvv[0] = 0xADC0_FEE9;
         rvv[1] = r_ctl;
@@ -1230,12 +1282,12 @@ fn flashStage(n: u32) void {
         const st = @import("transport.zig").stats();
         var c: [1]u32 = .{(@as(u32, st.btdm_tx) << 16) | (st.evt_count & 0xFFFF)};
         _ = esp_rom_spiflash_write(flash_mark_off + 4, &c, 4);
-    }    if (rc_e != 0 or rc_w != 0) {
+    }
+    if (rc_e != 0 or rc_w != 0) {
         var jb: [3]u32 = .{ 0xADC0_FEE4, n, @as(u32, 1) };
         _ = esp_rom_spiflash_erase_sector(0x18E000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18E000, &jb, 12);
     }
-
 }
 
 /// 同 `flashStage`，但额外把两个观察值写进标记扇区的第 3/4 个字。
