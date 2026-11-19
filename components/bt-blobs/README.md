@@ -25176,3 +25176,41 @@ BB init 重试（init 返回但位不置）、信道 37、地址类型。
 | 1 | 找 `phy_wait_freq_set_busy_new` / `phy_dis_hw_set_freq_new` 的**调用方**（libble_app 里 grep 调用重定位到 phy_hw_freq.o 的符号）| 反汇编上游 .o + objdump 重定位 |
 | 2 | 对拍：IDF `esp_phy_enable` 里 SOC_PLL/频率设置段（WITH_PHY=1 已能跑，stage 64 挂点 = `0x2f828a78`，同一环）| PC 采样器 |
 | 3 | 串口 POWERON 重插后读归档错误输出 | 5.4.0 esptool |
+
+## 🎯 oracle 终局：IDF 本体 `esp_phy_enable` 在裸机上也挂（本轮无歧义）
+
+| 保障 | 状态 |
+| --- | --- |
+| 标记扇区**烧前擦除**（erase-region）| ✅ 本轮数据无歧义 |
+| 采样器在 `esp_phy_enable` **之前**武装 | ✅ PC 环 n=72 全新 |
+| 三使能全部生效（自旋期回读）| `R_F83C=0x12411290`（bit28 ✓）、`R_4184=0xffff0000`（RF 供电 ✓）、`clk_conf1=0x003fffff`（全开 ✓）、ana-peri 电源序列已写 |
+| marker | **stage 70 之后停** ⇒ 挂在 `esp_phy_enable(2)` 内部 |
+| 挂点 | `PC=0x2f828a78 / ra=0x2f828a44 / s0=0x20100000 / a0=0x50` —— **与基线自旋完全相同**（vendor FE 轮询）|
+| `R_D800` | **`0x000653d8`（非零）** —— vendor busy 寄存器有真实硬件状态 |
+
+⇒ **IDF 自己的完整使能路径（数字时钟全开 + RF 供电 + 模拟域上电 + 模拟 I2C 主控时钟）
+在这块裸机板上也走不完。** vendor libphy 代码在 FE 块（MODEM_BASE+0x50 一带）轮询
+一个永不就绪的硬件状态。
+
+## 定性的最后一步：差异在 **boot 层的 PMU/电源初始化**
+
+README:12869 早已给出方向（"oracle 同板可访问 ⇒ 差异在 boot 层"），本轮以无歧义数据落实：
+
+| 层 | 官方栈 | 我们 |
+| --- | --- | --- |
+| IDF 二级 bootloader | 同 | 同 |
+| **app 启动阶段 PMU 初始化**（电源域/电压/ANA_PERI 全套）| ✅ `pmu_init` 全序列 | ❌ **我们跳过**（裸机 `_start` 直接进 bringup）|
+| `esp_phy_enable` | ✅ 走完 | ⛔ **vendor FE 轮询挂死** |
+
+⇒ 缺的不是寄存器写入，是 **IDF `pmu_init` 的整套电源初始化序列**
+（`esp-idf/components/esp_pm/` 或 `esp_private/pmu*`，数十个寄存器的上电/电压/切换配置）。
+把它移植进 `_start`（或 boot 之后、bringup 之前）是让射频活起来的正路。
+
+## 下次会话入口
+
+| # | 动作 | 工具 |
+| --- | --- | --- |
+| 1 | 读 IDF `pmu_init` 序列（`esp_private/pmu` 或 `hal/pmu_ll.h` 的上电/电压寄存器清单）| IDF 源码 |
+| 2 | 移植进 porting.zig（放在 phyDomainEnable 之前），每步带写-回读 | 本会话仪器 |
+| 3 | 每步后跑 oracle（stage 70→65→22→23 端到端） | flash 标记 |
+| 4 | 对照：官方 IDF app 同板跑通广播（WITH_PHY=1 + 完整 pmu_init 之后应当能走到）| 同上 |

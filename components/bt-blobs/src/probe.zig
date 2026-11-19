@@ -623,7 +623,7 @@ pub fn run() noreturn {
         // （clk_conf1 缺 wifibb 位组）。本轮自旋期快照证实 clk_conf1 已被归档自己开到
         // `0x003FFA8C`（含 wifibb_44m/80m/160x1/wifimac）⇒ 前置条件已变。
         // 用 PC 采样器判读：若再 stall，直接拿挂点地址；端到端判据 marker stage 23 / tx 6。
-        flashStage(64);
+        flashStage(70);
         // **采样窗口搬到此处**：esp_phy_enable 若挂，ISR 采 72 个样本后自动落盘 0x187000
         board.trap.resetPcs();
         board.trap.sample_quiet = true;
@@ -641,7 +641,7 @@ pub fn run() noreturn {
         // 问题在更上游（电源岛/晶振时钟路径）。
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
         esp_phy_enable(2); // PHY_MODEM_BT
-        flashStageExtra(64 + 1, @bitCast(@as(c_int, 0)), 0);
+        flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
         const bbrc = bt_bb_v2_init_cmplx(1);
         flashStageExtra(65, @bitCast(bbrc), 0);
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
@@ -895,7 +895,7 @@ fn dumpPcRing() void {
     }
     // 第二步：**此刻环已在自旋、已写过** ⇒ 读回才是"写了是否生效"的真判据。
     {
-        var buf2: [10]u32 = @splat(0);
+        var buf2: [13]u32 = @splat(0);
         buf2[0] = 0xADC0_FEE1;
         buf2[1] = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
         buf2[2] = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
@@ -906,6 +906,9 @@ fn dumpPcRing() void {
         buf2[7] = (@as(*volatile u32, @ptrFromInt(0x2010_9C00))).*; // SYSCON CLK_EN（本轮新开）
         buf2[8] = (@as(*volatile u32, @ptrFromInt(0x2010_9C14))).*; // clk_conf1（对照写入值 0x003ff880）
         buf2[9] = (@as(*volatile u32, @ptrFromInt(0x2010_F000))).*; // LPCON CLK_EN（本轮新开）
+        buf2[10] = (@as(*volatile u32, @ptrFromInt(0x2010_D800))).*; // **vendor 等 busy 的寄存器**
+        buf2[11] = (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).*; // ana mst 块时钟（应含 bit28）
+        buf2[12] = (@as(*volatile u32, @ptrFromInt(0x2070_4184))).*; // PMU_RF_PWC（RF 电路电源）
         _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
         _ = esp_rom_spiflash_write(0x188000, &buf2, @intCast(@sizeOf(@TypeOf(buf2))));
     }
