@@ -690,6 +690,13 @@ pub fn run() noreturn {
             board.hw.armT0Interrupt(2000);
             board.hw.enableInterrupts();
         }
+        // **等采样器的 ISR dump 完成**（72 次采样触发一次性落盘 0x187000）。
+        // 否则 flashStage(64) 的擦写会与 ISR dump **撞车**（ROM spiflash 不可重入）
+        // ⇒ marker 写静默失败（这正是 73 之后 64 不落地的机制）。
+        var wait_dumps: u32 = 0;
+        while (board.trap.pcSampleCount() < 80 and wait_dumps < 2_000_000) : (wait_dumps += 1) {
+            asm volatile ("nop");
+        }
         // **oracle 实验：IDF 本体的 `esp_phy_enable(PHY_MODEM_BT=2)`**
         // WITH_PHY=1 已把 IDF 的 phy_init.c 链进来（`esp_phy_enable` T 符号已确认）。
         // 它内部含我们手写版没有的完整射频使能段（含 analog/regi2c/PMU 路径）。
@@ -972,7 +979,10 @@ fn dumpPcRing() void {
 
 extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
 
-const flash_mark_off: u32 = 0x18_6000;
+// ⚠ **标记扇区从 0x186000 迁到 0x185000**（2026-11-19 晚）：
+// pmu_init 之后 0x186000 的擦写返回成功但数据不落地（同 boot 内其它扇区写均正常，
+// 屏蔽/不屏蔽中断都一样）⇒ 该扇区在 pmu 后不可信。host 判读改用 0x185000。
+const flash_mark_off: u32 = 0x18_5000;
 const flash_mark_magic: u32 = 0x5A17_0000; // 高 16 位是 magic，低 16 位是阶段
 
 /// 把阶段号写入 flash 标记槽。**只能在主上下文调用**。
@@ -984,13 +994,13 @@ fn flashStage(n: u32) void {
     // 正是用 `Critical`（清 mstatus.MIE）做这件事。
     // ⚠ `erase_sector` 的参数是**扇区号**，不是地址：
     // 传地址会静默擦到无关位置且返回成功。
-    const prev = asm volatile ("csrrci %[v], mstatus, 8"
-        : [v] "=r" (-> usize),
-    );
-    defer _ = asm volatile ("csrw mstatus, %[v]"
-        :
-        : [v] "r" (prev),
-        : .{ .memory = true });
+    // **实验（2026-11-19 晚）：去掉中断屏蔽**。
+    // 现象：pmu_init 之后，走本函数（屏蔽 MIE）的 marker 写静默失败，
+    // 而不屏蔽的直接写（0x18A000 快照、ISR dump 0x187000）都成功。
+    // ⇒ 区别就是 MIE 屏蔽。若不屏蔽后 marker 恢复更新 ⇒ 屏蔽是元凶
+    // （pmu_init 改电源/时钟后，屏蔽 MIE 的擦写路径在此时序下会静默失败）。
+    // 风险：擦写期间进中断可能硬 fault —— 本窗口内唯一中断源是刚武装的
+    // 2ms 采样器，其 ISR 只读寄存器不写 flash，重叠窗口 ≤ 一次擦除。
     const rc_e = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
     var w: [1]u32 = .{flash_mark_magic | (n & 0xFFFF)};
     const rc_w = esp_rom_spiflash_write(flash_mark_off, &w, 4);
