@@ -75,6 +75,11 @@ const board = @import("board");
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
 extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
 
+/// **本轮最深步骤号**（mark.put 单调递增；LP-RAM 跨 boot 累积用）。
+/// LP-RAM 累积的 RAM 侧副本（FEFE 记录用，写 flash 在 FEFC 证据之后）。
+pub var lp_boot_n: u32 = 0;
+pub var lp_hist: [9]u32 = @splat(0);
+
 /// 链接脚本 `s31.ld` 的堆边界是**绝对符号**：取地址得到边界值，
 /// 声明成 `usize` 会变成"去那个地址读一个 usize"。
 fn heapStart() *const anyopaque {
@@ -694,6 +699,25 @@ pub fn run() noreturn {
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
         flashStage(73);
+        // **LP-RAM 跨 boot 累积**（0x2E000000，CPU_LOCKUP 复位不清；pmu_init 后才可读）：
+        // LP[0]=boot 计数；LP[1..10]=最近 10 轮各自的最深步骤号。
+        // 每轮在此转写 flash 0x188000 ⇒ host 一次读到逐轮历史（循环下不再盲）。
+        {
+            // **LP 魔数守卫**：上电非零垃圾 ⇒ 魔数不符即清零（跨 lockup 存活则保留计数）
+            const magic_slot: *volatile u32 = @ptrFromInt(0x2E00_003C);
+            if (magic_slot.* != 0x2E00_B007) {
+                for (0..11) |k| {
+                    @as(*volatile u32, @ptrFromInt(0x2E00_0000 + 4 * k)).* = 0;
+                }
+                magic_slot.* = 0x2E00_B007;
+            }
+            lp_boot_n = @as(*volatile u32, @ptrFromInt(0x2E00_0000)).* +% 1;
+            @as(*volatile u32, @ptrFromInt(0x2E00_0000)).* = lp_boot_n;
+            for (0..9) |k| {
+                lp_hist[k] = @as(*volatile u32, @ptrFromInt(0x2E00_0004 + 4 * k)).*;
+            }
+            // flash 转写挪到 FEFC 证据块之后（紧跟 flashStage 的写会静默失败）
+        }
         var ab: [5]u32 = @splat(0);
         ab[0] = 0xADC0_FEE6;
         ab[1] = rd_.r(0x2070_4184);
@@ -726,6 +750,14 @@ pub fn run() noreturn {
     var base: [4]u32 = .{ 0xADC0_FEFC, vfe4, target_addr, cur_val };
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &base, 16);
+    // **LP 逐轮历史转写**（落点在 FEFC 之后 —— 该窗口写可靠）：
+    // {FEFE, boot_n, hist[0..9]} @0x18A000（空闲扇区；0x188000 已被自旋期回读 buf2 占用）。
+    var lrec: [11]u32 = @splat(0);
+    lrec[0] = 0xADC0_FEFE;
+    lrec[1] = lp_boot_n;
+    for (0..9) |k| lrec[2 + k] = lp_hist[k];
+    _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
+    _ = esp_rom_spiflash_write(0x18A000, &lrec, 44);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
     asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
@@ -766,7 +798,12 @@ pub fn run() noreturn {
     // **直写进度标记**（post-pmu 可靠通道：FEE6 已擦 0x18C000 扇区，0x18C020 起空闲；
     // 各 8 字 {magic, 值}，不再擦除，host 按 magic 定位最后到达的步）
     const mark = struct {
+        var seq: u32 = 0;
         fn put(off: u32, magic: u32, v: u32) void {
+            seq +%= 1;
+            // **直写 LP 槽**：本轮最深步骤号进 LP（RAM 直写，无 flash 失败问题）
+            const slot: *volatile u32 = @ptrFromInt(0x2E00_0004 + 4 * ((lp_boot_n - 1) % 10));
+            slot.* = seq;
             const pair: [2]u32 = .{ magic, v };
             _ = esp_rom_spiflash_write(0x18C000 + off, &pair, 8);
         }
@@ -782,22 +819,8 @@ pub fn run() noreturn {
         halt();
     }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
-    // **回调表填充状态 dump**（task_init 之后、enable 之前）：
-    // a4 = *(0x2f07ffe4)（bb_init 等的表基址），dump [a4+0..a4+40] 11 字
-    // ⇒ 哪些表项 task_init 已填、[a4+36] 缺谁填，一次看清。
-    {
-        const tbl_base: u32 = @as(*volatile u32, @ptrFromInt(0x2f07_FFE4)).*;
-        var td: [11]u32 = @splat(0);
-        td[0] = 0xADC0_FEFD;
-        td[1] = tbl_base;
-        if (tbl_base != 0) {
-            for (0..9) |k| {
-                td[2 + k] = @as(*volatile u32, @ptrFromInt(tbl_base + 4 * @as(u32, @intCast(k)))).*;
-            }
-        }
-        _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x188000, &td, 44);
-    }
+    // （FEFD 回调表 dump 已删：一次性实验已完成并提交 0328594；
+    //  0x188000 现由 LP 逐轮历史 FEFE 使用，勿再写此扇区。）
     // **解除 dump 钩子**：`dumpAtPend` 挂在 `dump_hook` 上，而它在**每次** `mutex_pend`
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
