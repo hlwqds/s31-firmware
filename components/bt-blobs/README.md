@@ -26381,7 +26381,9 @@ esp_rom/sha/ecc/event/uart/GPIO/efuse/NVS/esp_libc/rtos 时间...）。
 ### BT modem clock 实验结果（2026-11-20 最末）
 
 modem_clock_module_enable(6=BT) + (14=BT_APB) + mac_reset(6) 在 pmu_init 后调用。
-**LP hist 仍恒 11** ⇒ BT modem clock 门控使能不足以解除 FE 环自旋。
+**LP hist 仍恒 11 ⇒ 死亡点未变**；门控效果未验证——FEE1 的 11 个采样字里
+没有 BLE_CLOCK_DEPS 8 门所在的 modem_syscon 寄存器，不能据此说"门控没起作用"。
+（多缺链系统修好第一根断链后死亡点本来就不会动——不能把数量变化当进度条。）
 
 FE 环等待的是 **FE 测量电路的硬件结果**，这需要 RF PLL 在正确频率上运行 + 
 FE 测量电路使能 + 测量完成。这些由 register_chipv7_phy（libphy 归档）内部的
