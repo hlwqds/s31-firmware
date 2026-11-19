@@ -712,22 +712,22 @@ pub fn run() noreturn {
     }
     // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
     // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
-    // LOAD 观察点盯 0x2010047C（vendor FE 轮询反复读的地址，README 反汇编
-    // 2f828a76/78/7a 回跳重读 base+0x47C，s0=0x20100000）⇒ 命中 auth_pc = FE 轮询 PC。
-    // （上轮 STORE@0x20704184 已抓到 BT 链写电源寄存者 PC=0x2f00c3e2，提交 5e3979c。）
-    // 命中记录：trap 处理器写 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000。
+    // LOAD 观察点盯 0x201098BC（BLE 归档轮询的合成器 ready 位 bit2；上游 .o 解码
+    // `lw a5,-1860(s1); andi a5,4; bnez`，上限 65536 次，超时错误码 3）。
+    // 命中时 trap 记录扩到 8 字：auth_pc + 轮询值 + 0x20109880 + 0x2010D800 真值
+    // ⇒ 直接回答 "bit2 为什么不置位"。（前两轮命中见提交 5e3979c/32c5e33。）
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
     asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
-    asm volatile ("li t0, 0x2010047c");
+    asm volatile ("li t0, 0x201098bc");
     asm volatile ("csrw 0x7a2, t0"); // tdata2 先配地址（此刻无观察点在活）
     asm volatile ("li t0, 0x49");
     asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
     asm volatile ("li t0, 0x88");
     asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)（最后开）
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
-    // {FEE9, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活。
+    // {FEF1, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;
     var t2v: u32 = undefined;
     var tcv: u32 = undefined;
@@ -740,16 +740,27 @@ pub fn run() noreturn {
     asm volatile ("csrr %[v], 0x7a5"
         : [v] "=r" (tcv),
     );
-    var av: [4]u32 = .{ 0xADC0_FEE9, t1v, t2v, tcv };
+    var av: [4]u32 = .{ 0xADC0_FEF1, t1v, t2v, tcv };
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &av, 16);
     // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：
     // fe_poll: 命中 PC 0x2f828a5c 所在轮询环；rf_pwr: 命中 PC 0x2f00c3e2 所在例程。
     dumpRom("fe_poll", 0x2f828a40, 0x60);
     dumpRom("rf_pwr", 0x2f00c3b0, 0x60);
+    // 本轮采样环新挂点：bt_bb_v2_init_cmplx 执行期 PC=0x2f80e4d0/e4de
+    dumpRom("bb_init", 0x2f80e4a0, 0x80);
 
+    // **直写进度标记**（post-pmu 可靠通道：FEE6 已擦 0x18C000 扇区，0x18C020 起空闲；
+    // 各 8 字 {magic, 值}，不再擦除，host 按 magic 定位最后到达的步）
+    const mark = struct {
+        fn put(off: u32, magic: u32, v: u32) void {
+            const pair: [2]u32 = .{ magic, v };
+            _ = esp_rom_spiflash_write(0x18C000 + off, &pair, 8);
+        }
+    };
     // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
     var rc = bringup.init(&cfg);
+    mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
     // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
     @import("board").trap.diag_b = 0xB0B0;
@@ -770,7 +781,9 @@ pub fn run() noreturn {
 
     // 3) enable 链（6 步）
     flashStageExtra(11, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // 即将调用 enable()
+    mark.put(0x28, 0xADC0B102, @bitCast(rc));
     rc = bringup.enable();
+    mark.put(0x30, 0xADC0B103, @bitCast(rc));
     flashStageExtra(12, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // enable() 已返回
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
@@ -790,7 +803,9 @@ pub fn run() noreturn {
 
     // 5) 发第一条命令并泵任务
     osal.logPublic("bt probe: sending HCI Reset", .{});
+    mark.put(0x38, 0xADC0B104, 0);
     rc = transport.sendResetViaHs();
+    mark.put(0x40, 0xADC0B105, @bitCast(rc));
     osal.logPublic("bt probe: sendReset rc={d}", .{rc});
 
     // **判别实验**：发第二条**可区分**的命令（Read Local Version，opcode 0x1001）。
@@ -799,17 +814,23 @@ pub fn run() noreturn {
     rc = transport.sendCmdViaHs(0x1001, &.{});
     osal.logPublic("bt probe: B(hs) sendReadVersion rc={d} stats cmds={d} evt={d}", .{ rc, transport.stats().cmds_sent, transport.stats().evt_count });
     // **A 路径对照**：`sendCmd` 走 `r_btdm_hci_trans_rx`，前置要求 status == ENABLED。
+    mark.put(0x48, 0xADC0B106, 0);
     const a_rc = transport.sendCmd(0x1001, &.{});
+    mark.put(0x50, 0xADC0B107, transport.stats().btdm_tx);
     osal.logPublic("bt probe: A(rx) sendReadVersion rc={d} stats cmds={d} evt={d}", .{ a_rc, transport.stats().cmds_sent, transport.stats().evt_count });
     // **第二条 A 路径命令**（唯一 opcode 0x0C03）：看 `btdm_tx` 是否 1 → 2。
+    mark.put(0x58, 0xADC0B108, 0);
     const a2_rc = transport.sendCmd(0x0C03, &.{});
+    mark.put(0x60, 0xADC0B109, transport.stats().btdm_tx);
     osal.logPublic("bt probe: A2(rx) sendReset rc={d} btdm_tx={d}", .{ a2_rc, transport.stats().btdm_tx });
     // **第三条**：再发一次 Read Local Version，**让它成为最后一条** ⇒
     // `tx_head` 捕获的就是它的 12 字节应答（hci_version / manufacturer 等），
     // 用来确认 HCI 通道承载的是**真实数据**而不是桩。
     // **读 BD_ADDR**（`0x1009`）：controller 的公开地址。
     // 一条命令、确定回包（6 字节地址），且是后续 LE 广播的前提。
+    mark.put(0x68, 0xADC0B10a, 0);
     const a4_rc = transport.sendCmd(0x1009, &.{});
+    mark.put(0x70, 0xADC0B10b, transport.stats().btdm_tx);
     osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
 
     // **LE 广播 + flash 阶段标记**：每条命令前把阶段写进 `0x186000`，
@@ -870,7 +891,9 @@ pub fn run() noreturn {
         //    能保留 ⇒ "块无时钟"不成立，0x201098BC.bit2 是**硬件状态位**（RF/BB ready）。
         //    ⇒ 机制最终版：0x200A 写配置+启动选通 → 等 RF/BB ready → 位永不置位
         //      （射频使能链不完整）→ 超时错误码 3。见 README「最终机制」。
+        mark.put(0x78, 0xADC0B10c, 0);
         const r6 = transport.sendCmd(0x2006, &ap);
+        mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
         var ad: [32]u8 = @splat(0);
         ad[0] = 3;

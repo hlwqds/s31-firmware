@@ -25998,3 +25998,16 @@ trap 直写不屏蔽 MIE）：
 记录无法与旧轮残留区分）；0x2010D020..+3C 读挂总线、0xffff0000 读 load fault
 （0x2fxxxxxx 区**可直读**，dumpRom 走 UART ttyUSB0）；BT bringup/HCI 段挂死，
 仪器必须装在它之前。
+
+## 附记（2026-11-20 深夜）：直写进度标记 + bt_bb_v2_init_cmplx 停点第三方定位
+
+| 项 | 结果 |
+| --- | --- |
+| 直写进度标记（0x18C020..，FEE6 擦后免擦直写，magic 0xADC0B10x） | ✅ 全链路可定位：init rc=0 → **enable() rc=0（历史首次返回）** → sendReset rc=0 → 0x1001 应答 tx=1 → 0x0C03 tx=2 → 0x1009 tx=3 → **死在 bt_bb_v2_init_cmplx(1)**（0x2006 前的 M00c 未落地） |
+| 采样环（0x187000，magic FEE0） | n=72，含 **vendor PC 0x2f80e4d0 / 0x2f80e4de**（bb_init 执行期） |
+| dumpRom bb_init 邻域（0x2f80e4a0..0x520，UART ttyUSB0） | 0x2f80e4d0 = `jal ra`（调用点）；邻近 `lui a5,0x20501` + `lw a4,-28(a5)` = 读 **0x20500FE4**（HP 控制块）、基址 0x2f080000（vendor 数据段）⇒ 停点是 vendor 经 HP 控制块的调用/访问，非 ADR-001 的 WIFI_BB 写 |
+| 观察点 LOAD@0x201098BC | 武装自证 ✅（FEF1：tdata1_rb=0x21000049）；本轮流程未到归档轮询（bb_init 先挂）⇒ 未命中 |
+| trap 命中记录扩为 8 字（FEF0：+0x201098BC/0x20109880/0x2010D800 真值） | 机制就位待命中 |
+| 仪器事实：PMU_RF_PWC(0x20704184) 跨复位保持 | 上一轮单臂写的 0xffff0000 会被下一轮 pre-pmu 读到（FEE5/FEE6 内容判读须计入） |
+
+判读入口不变：0x201011AC（FE 环计数器）/ 0x201008D0（FE 等待位）/ 0x201098BC（合成器 ready）。
