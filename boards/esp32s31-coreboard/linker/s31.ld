@@ -131,6 +131,14 @@ SECTIONS
          * 不收集的话它们各自成段，`elf2image` 会报 Invalid segment count。 */
         *(.iram_sleep*)
         *(.iram_single_sleep*)
+        /* **`.iram_btslp*` 族（此前遗漏）**：`libble_app` 的 BLE 睡眠代码，
+         * IDF 用 `linker_esp_ble_controller.lf` 把 `.iram_sleep+ .iram_btslp+`
+         * 收进**同一个** `sleep_text`。我们漏掉后它们成了**孤儿段**，
+         * 由 lld 自行按 1,2,14,16,0 顺序放置，段间只有 2 字节间隔
+         * （`esp_image` 按 4 字节取整 ⇒ 段会重叠）。
+         * 段首在运行时被改为非法指令、且值每次 boot 不同 —— 见 README「根因 5」。 */
+        . = ALIGN(4);
+        *(.iram_btslp*)
         . = ALIGN(16);
     } > sram
 
