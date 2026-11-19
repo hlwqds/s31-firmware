@@ -838,9 +838,13 @@ extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
 /// 只写一次：flash 同址只能 1→0，重复写不会更新。
 fn dumpPcRing() void {
     const off: u32 = 0x187000;
-    var buf: [1 + 48]u32 = @splat(0);
+    var buf: [5 + 48]u32 = @splat(0);
     buf[0] = board.trap.pcSampleCount();
-    _ = board.trap.samplePcs(@ptrCast(buf[1..].ptr));
+    buf[1] = board.trap.dump_s0;
+    buf[2] = board.trap.dump_a0;
+    buf[3] = board.trap.dump_a1;
+    buf[4] = board.trap.dump_ra;
+    _ = board.trap.samplePcs(@ptrCast(buf[5..].ptr));
     _ = esp_rom_spiflash_erase_sector(off / 0x1000);
     _ = esp_rom_spiflash_write(off, &buf, @intCast(@sizeOf(@TypeOf(buf))));
 }

@@ -488,6 +488,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 位置在 resetPcs() 之后 ⇒ 环里全是"挂住期间"的 PC。
             if (!pc_dump_done and pc_ring_n >= pc_dump_at) {
                 pc_dump_done = true;
+                dump_s0 = @truncate(frame.s0);
+                dump_a0 = @truncate(frame.a0);
+                dump_a1 = @truncate(frame.a1);
+                dump_ra = @truncate(frame.ra);
                 if (on_pc_ready) |f| f();
             }
             if (!sample_quiet and pc_ring_n % 256 == 0) {
@@ -847,6 +851,13 @@ pub var extra_dump: ?*const fn () void = null;
 pub var on_pc_ready: ?*const fn () void = null;
 pub var pc_dump_at: u32 = 72;
 var pc_dump_done: bool = false;
+
+/// 落盘时一并带出的现场寄存器（input-25 分支在调钩子前填好）：
+/// `s0` 通常是被写/被轮询寄存器的**基址**，`a0/a1` 是状态与期望值。
+pub var dump_s0: u32 = 0;
+pub var dump_a0: u32 = 0;
+pub var dump_a1: u32 = 0;
+pub var dump_ra: u32 = 0;
 
 /// 在指定 tick 处**故意 panic**，把计数器与采样经 panic 路径一次性导出
 /// （UART 平时被自身日志灌满，只有 panic 时刻是清空的）。

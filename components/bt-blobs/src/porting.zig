@@ -251,6 +251,23 @@ pub fn phyDomainEnable() void {
     //    且 wifi 路径的自旋点就在它内部（ADR:231-237）。
     //    ⇒ BT 路径去跑它只会把 PHY 使能处 stall 掉，does not answer 0x200A.
     osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)", .{});
+
+    // 7) **`MODEM_WIDGETS_CLK_EN`（0x20109400 bit0，默认 0 = 关）**：
+    //    WIDGETS 私有块（MODEM_BASE+0x9400）**自己有一张时钟使能寄存器**，
+    //    我们此前从没写过 ⇒ 归档写 `W+0x480/4A8/4B8`(0x20109880/8A8/8B8) 全被丢弃
+    //    ⇒ `0x200A` 里它写完就轮询 ⇒ 死循环（2026-11-19 实测：写 0x0FFFFFFF 读回 0）。
+    //    IDF 侧出处：`soc/esp32s31/include/modem/modem_widgets_reg.h:14-18`。
+    //    **写-回读自证**：写特征值 → 读回相等才算成功。
+    {
+        const wclk: usize = 0x2010_9400;
+        wr(wclk, rd(wclk) | (1 << 0));
+        // 自证：写一个特征值到 W+0x480，读回比较
+        const probe_addr: usize = 0x2010_9880;
+        wr(probe_addr, 0x1234_5678);
+        const rb: u32 = rd(probe_addr);
+        osal.logPublic("bt phy: widgets clk on, W+0x480 write/readback 0x12345678=0x{x:0>8} ok={}", .{ rb, rb == 0x1234_5678 });
+    }
+    osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets)", .{});
 }
 
 /// 强制重开时钟门控（复位脉冲之后用：复位可能清掉时钟配置）。
