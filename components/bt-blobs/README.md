@@ -25238,3 +25238,31 @@ README:12869 早已给出方向（"oracle 同板可访问 ⇒ 差异在 boot 层
 | 2 | pmu_init 后 flash 写静默失败的机制 | 对照 0x187000（ISR 成功）vs 0x186000（主流程失败）|
 | 3 | 双初始化叠加：IDF `esp_phy_enable` + 我们手写 `phyDomainEnable`/`register_chipv7_phy` —— oracle 构建应**用 IDF 序列取代**手写，而不是叠加 | 干净 oracle 原则 |
 | 4 | 物理重插 USB（POWERON 串口判别，读归档错误输出） | 一直待办 |
+
+## 🔒 init data 排除 + I2C_ANA_MST 块定位（会话最终补充）
+
+| 项 | 结果 |
+| --- | --- |
+| 我们的 128B `init_data` | ✅ 与 `esp_phy/esp32s31/phy_init_data.c` **逐字节一致**（0x1,0x0,MAX_TX×4 序列吻合）|
+| NVS 路径 | ✅ 设计内 NOT_FOUND ⇒ 全量标定（`phy_stubs.c` 明确注释）|
+| 交付通路 | ✅ `phy_init_data` thunk（0x40104fef，镜像自带，"不可能失败"）|
+| **I2C_ANA_MST 块基址** | **`MODEM_PWR_BASE + 0x2800 = 0x2010F800`**（`reg_base.h:24`）|
+| 块时钟 | ✅ 已开（`R_F83C=0x12411290`，bit28 生效，回读正常）|
+
+⇒ init data / NVS / 模拟 I2C 主控通路 **三项全部排除或确认可用**。
+
+### 会话结束时的开放项（最终）
+
+```
+vendor libphy 在 FE 块（0x20100000+0x50 一带）轮询的硬件状态位永不置位
+  ⇒ 射频频率合成器从未锁定
+  ⇒ 差异不在：时钟（全开）、电源（RF 0xffff0000）、模拟主控（时钟/通路 ✓）、
+     init data（逐字节一致）、标定路径（全量标定设计内）、NV、寄存器（写-回读已验）
+  ⇒ 差异在 IDF 完整栈才有的、未文档化的启动序列（PMU/电源岛内部的供应商序列）
+```
+
+### 下次会话的唯一入口
+
+**vendor oracle**：让官方 IDF 完整栈（esp-idf-hosted，同板）跑通 BLE 广播，用本会话的
+PC 采样器对拍 `0x201098xx` / FE 块的真值序列与上电时序。差异即答案。
+（辅助：物理重插 USB —— 串口 POWERON 可读官方栈的错误/进度输出。）

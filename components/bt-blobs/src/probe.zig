@@ -552,6 +552,46 @@ pub fn run() noreturn {
         const w: *volatile u32 = @ptrFromInt(0x20100800);
         board.log.line("FE800={x}", .{w.*});
     }
+    // **IDF 次序：pmu_init → 时钟/使能 → BT init**。
+    // 前/后各拍 {PMU_RF_PWC, ana-mst-clk, ICG_MODEM×2} 到 0x18B/18C；
+    // pmu_init 的默认值会清掉 RF 电源/时钟 ⇒ 之后重放整套使能。
+    {
+        const rd_ = struct {
+            fn r(addr: usize) u32 {
+                return @as(*volatile u32, @ptrFromInt(addr)).*;
+            }
+            fn wr(addr: usize, val: u32) void {
+                @as(*volatile u32, @ptrFromInt(addr)).* = val;
+            }
+        };
+        var pb: [5]u32 = @splat(0);
+        pb[0] = 0xADC0_FEE5;
+        pb[1] = rd_.r(0x2070_4184);
+        pb[2] = rd_.r(0x2010_F83C);
+        pb[3] = rd_.r(0x2070_4014);
+        pb[4] = rd_.r(0x2070_4054);
+        _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18B000, &pb, @intCast(@sizeOf(@TypeOf(pb))));
+        flashStage(72);
+        const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
+        pmu_init_f();
+        flashStage(73);
+        var ab: [5]u32 = @splat(0);
+        ab[0] = 0xADC0_FEE6;
+        ab[1] = rd_.r(0x2070_4184);
+        ab[2] = rd_.r(0x2010_F83C);
+        ab[3] = rd_.r(0x2070_4014);
+        ab[4] = rd_.r(0x2070_4054);
+        _ = esp_rom_spiflash_erase_sector(0x18C000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18C000, &ab, @intCast(@sizeOf(@TypeOf(ab))));
+        // **重放使能**（pmu_init 默认值清掉了 RF 电源/时钟）：
+        porting.phyDomainEnable();
+        rd_.wr(0x2070_4184, 0xFFFF_0000);
+        rd_.wr(0x2010_F83C, rd_.r(0x2010_F83C) | (1 << 28));
+        var rc_: [3]u32 = .{ 0xADC0_FEE7, rd_.r(0x2070_4184), rd_.r(0x2010_F83C) };
+        _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
+    }
     var rc = bringup.init(&cfg);
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
     // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
@@ -936,16 +976,22 @@ fn flashStage(n: u32) void {
         :
         : [v] "r" (prev),
         : .{ .memory = true });
-    _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
+    const rc_e = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
     var w: [1]u32 = .{flash_mark_magic | (n & 0xFFFF)};
-    _ = esp_rom_spiflash_write(flash_mark_off, &w, 4);
+    const rc_w = esp_rom_spiflash_write(flash_mark_off, &w, 4);
+    // 失败日志（独立扇区 0x18E000）：{magic2, stage, 失败} ⇒ “没写成”不再静默
     // 第二个字：**计数器快照**，让 host 一次读出"命令有没有被消费"。
     // 高 16 = btdm_tx（应答数），低 16 = evt_count（leEvtTx 事件数）
     {
         const st = @import("transport.zig").stats();
         var c: [1]u32 = .{(@as(u32, st.btdm_tx) << 16) | (st.evt_count & 0xFFFF)};
         _ = esp_rom_spiflash_write(flash_mark_off + 4, &c, 4);
+    }    if (rc_e != 0 or rc_w != 0) {
+        var jb: [3]u32 = .{ 0xADC0_FEE4, n, @as(u32, 1) };
+        _ = esp_rom_spiflash_erase_sector(0x18E000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18E000, &jb, 12);
     }
+
 }
 
 /// 同 `flashStage`，但额外把两个观察值写进标记扇区的第 3/4 个字。
