@@ -595,8 +595,10 @@ pub fn run() noreturn {
     // **第三条**：再发一次 Read Local Version，**让它成为最后一条** ⇒
     // `tx_head` 捕获的就是它的 12 字节应答（hci_version / manufacturer 等），
     // 用来确认 HCI 通道承载的是**真实数据**而不是桩。
-    const a3_rc = transport.sendCmd(0x1001, &.{});
-    osal.logPublic("bt probe: A3(rx) sendReadVersion(LAST) rc={d} btdm_tx={d}", .{ a3_rc, transport.stats().btdm_tx });
+    // **读 BD_ADDR**（`0x1009`）：controller 的公开地址。
+    // 一条命令、确定回包（6 字节地址），且是后续 LE 广播的前提。
+    const a4_rc = transport.sendCmd(0x1009, &.{});
+    osal.logPublic("bt probe: A4(rx) readBdAddr(LAST) rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
 
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
