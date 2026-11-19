@@ -856,7 +856,7 @@ pub fn run() noreturn {
     );
     // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：
     // fe_poll: 命中 PC 0x2f828a5c 所在轮询环；rf_pwr: 命中 PC 0x2f00c3e2 所在例程。
-    dumpRom("fe_poll", 0x2f828a40, 0x60);
+    dumpRom("fe_poll", 0x2f828840, 0x2c0); // 扩窗到函数入口（setup 写序列）
     dumpRom("rf_pwr", 0x2f00c3b0, 0x60);
     // bb_init 尾调用目标与两个 helper（本轮自旋真挂点候选）
     dumpRom("tc_tgt", 0x2f8210c0, 0x60);

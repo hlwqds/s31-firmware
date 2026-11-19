@@ -501,17 +501,18 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 if (!fe3_done.* and frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
                     fe3_done.* = true;
                     var fb: [200]u8 = undefined;
-                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} CLK={x:0>8}/{x:0>8}/{x:0>8} SPI1={x:0>8} ST={x:0>8}/{x:0>8}", .{
-                        @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*,
+                    const fl = std.fmt.bufPrint(&fb, "FE3 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} P={x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}", .{
                         @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
                         frame.mepc,
-                        @as(*volatile u32, @ptrFromInt(0x2010_9C04)).*, // SYSCON clk_conf（PHY_CALIB deps 0x6364 落点）
-                        @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, // SYSCON clk_conf1
-                        @as(*volatile u32, @ptrFromInt(0x2010_F018)).*, // LPCON clk_conf
-                        @as(*volatile u32, @ptrFromInt(0x2050_1000)).*, // SPI1_CMD：MST_ST≠0 ⇒ 等 flash 空闲
-                        @as(*volatile u32, @ptrFromInt(0x2010_F81C)).*, // ANA_STATUS0（事务状态/读回数据）
-                        @as(*volatile u32, @ptrFromInt(0x2010_F800)).*, // I2C0_CTRL（bit25 BUSY）
+                        // **FE 测量参数簇**（函数入口 setup 写序列解码自 fe_poll dump）：
+                        @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, // = a2&3
+                        @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, // = a4+3（周期参数）
+                        @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, // 掩码值
+                        @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, // 掩码值
+                        @as(*volatile u32, @ptrFromInt(0x2010_0444)).*, // 环内写目标
+                        @as(*volatile u32, @ptrFromInt(0x2010_0450)).*, // 环内读
+                        @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, // 出环锁存
                     }) catch "FE3 (fmt fail)";
                     hw.rawLineBlocking(fl);
                     @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
