@@ -689,6 +689,11 @@ pub fn run() noreturn {
             board.hw.routeT0Interrupt(25);
             board.hw.armT0Interrupt(2000);
             board.hw.enableInterrupts();
+            // **NMI 转换**（与 boot 期 :438-444 相同）：esp_phy_enable 会关中断，
+            // 只有 NMI 能看见它关中断后的自旋 —— 这是本窗口的目的所在。
+            const nmi_reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
+            const old_c = nmi_reg.*;
+            nmi_reg.* = (old_c & 0x107) | (1 << 3); // 保留 bit8(IE)+低3位，置 nmies(bit3)
         }
         // **等采样器的 ISR dump 完成**（72 次采样触发一次性落盘 0x187000）。
         // 否则 flashStage(64) 的擦写会与 ISR dump **撞车**（ROM spiflash 不可重入）
