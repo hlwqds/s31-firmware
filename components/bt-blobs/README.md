@@ -25147,3 +25147,32 @@ BB init 重试（init 返回但位不置）、信道 37、地址类型。
    已知拦路虎：启动即 dump PMU、到不了 bringup，需先定位。
 2. 串口 POWERON 判别（需物理重插）。
 
+
+# 🎙️ 最后一块拼图：轮询位 = **射频频率合成器锁定**
+
+`phy_hw_freq.o`（libphy.a）里两个函数自报家门：
+
+| 函数 | 访问 | 语义 |
+| --- | --- | --- |
+| `phy_dis_hw_set_freq_new` | **0x2010D800** | 关闭硬件自动设频 |
+| `phy_wait_freq_set_busy_new` | 读 **0x2010D800**，返回 **FE+0x30** | **等"设频 busy"清零**（= 频率合成器锁定）|
+
+⇒ **`0x201098BC.bit2` = "频率合成器就绪"**。
+⇒ `0x201098xx` 写丢弃、轮询位不置 —— 因为**合成器从未运行**：SOC_PLL 时钟源/频率配置序列
+（`phy_dis_hw_set_freq_new` 之前的调用方）在我们裸机里没人执行。
+⇒ 分组探测在 `MODEM_PWR +0x20..+0x3C` 读挂 —— 那正是**频率配置区**，合成器未配置时
+该处访问的行为与未映射一致。
+
+## 开放项的最终命名
+
+> **射频频率合成器（SOC_PLL → RF synth）从未完成锁定。**
+> 需要的序列在 vendor `phy_hw_freq.o` 的调用方里（libble_app 的 `0x200A` 路径上游、
+> 或 IDF `esp_phy_enable` → `phy_track/phy_init` 链）。
+
+## 下次会话的入口（按优先级）
+
+| # | 动作 | 工具/判据 |
+| --- | --- | --- |
+| 1 | 找 `phy_wait_freq_set_busy_new` / `phy_dis_hw_set_freq_new` 的**调用方**（libble_app 里 grep 调用重定位到 phy_hw_freq.o 的符号）| 反汇编上游 .o + objdump 重定位 |
+| 2 | 对拍：IDF `esp_phy_enable` 里 SOC_PLL/频率设置段（WITH_PHY=1 已能跑，stage 64 挂点 = `0x2f828a78`，同一环）| PC 采样器 |
+| 3 | 串口 POWERON 重插后读归档错误输出 | 5.4.0 esptool |

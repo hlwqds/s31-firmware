@@ -624,6 +624,24 @@ pub fn run() noreturn {
         // `0x003FFA8C`（含 wifibb_44m/80m/160x1/wifimac）⇒ 前置条件已变。
         // 用 PC 采样器判读：若再 stall，直接拿挂点地址；端到端判据 marker stage 23 / tx 6。
         flashStage(64);
+        // **采样窗口搬到此处**：esp_phy_enable 若挂，ISR 采 72 个样本后自动落盘 0x187000
+        board.trap.resetPcs();
+        board.trap.sample_quiet = true;
+        board.trap.pc_dump_at = 72;
+        if (!probe_irqs) {
+            probe_irqs = true;
+            board.hw.routeT0Interrupt(25);
+            board.hw.armT0Interrupt(2000);
+            board.hw.enableInterrupts();
+        }
+        // **oracle 实验：IDF 本体的 `esp_phy_enable(PHY_MODEM_BT=2)`**
+        // WITH_PHY=1 已把 IDF 的 phy_init.c 链进来（`esp_phy_enable` T 符号已确认）。
+        // 它内部含我们手写版没有的完整射频使能段（含 analog/regi2c/PMU 路径）。
+        // 若这一步之后轮询位能置 ⇒ 缺的就是它；若仍挂 ⇒ 连 IDF 都点不亮这块，
+        // 问题在更上游（电源岛/晶振时钟路径）。
+        const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
+        esp_phy_enable(2); // PHY_MODEM_BT
+        flashStageExtra(64 + 1, @bitCast(@as(c_int, 0)), 0);
         const bbrc = bt_bb_v2_init_cmplx(1);
         flashStageExtra(65, @bitCast(bbrc), 0);
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
@@ -681,7 +699,8 @@ pub fn run() noreturn {
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
-        // **开 PC 采样窗口**（⚠ 诊断仪器，出厂/生产构建**绝不能开**）：
+        // （采样窗口已提前到 esp_phy_enable 之前 —— 见 stage 64 处注释）
+        // **诊断仪器，出厂/生产构建绝不能开**：
         // 1. 它把 T0 武装到 CLIC input 25（BT 归档的 tick 源）；
         // 2. ISR 会在挂住时**擦写 flash 扇区 0x187000**；
         // 3. 这两者都会改变出厂行为 —— 本文件是 bt-blobs 探针，不含在生产固件里。

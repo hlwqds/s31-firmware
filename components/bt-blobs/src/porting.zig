@@ -250,7 +250,26 @@ pub fn phyDomainEnable() void {
     //    :2253-2255 结论是"相位对齐 IDF 这条路在裸机 bring-up 上不成立"，
     //    且 wifi 路径的自旋点就在它内部（ADR:231-237）。
     //    ⇒ BT 路径去跑它只会把 PHY 使能处 stall 掉，does not answer 0x200A.
-    osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)", .{});
+    // 10) **PMU 模拟外设电源域上电**（`regi2c_ctrl_ll_i2c_sar_periph_enable` 等价，
+    //     esp_hal_regi2c/esp32s31/include/hal/regi2c_ctrl_ll.h:76-83）：
+    //     `PMU_ANA_PERI_PWR_CTRL_REG` = `DR_REG_PMU_BASE(0x20704000) + 0x208 = 0x20704208`
+    //     bit31 `PMU_RSTB_PERIF_I2C`（复位）、bit30 `PMU_XPD_PERIF_I2C`（上电）。
+    //     **此域没电 ⇒ 模拟前端（regi2c 之后的 RF/FE）不存在 ⇒ vendor PHY 在 FE 寄存器
+    //     上轮询永不满足（实测 0x2f828a78 自旋、基址 s0=0x20100000）**。
+    //     序列：清 bit31 → ~1µs → 置 bit30+bit31（IDF 注释：1µs 延时由数字设计推荐）。
+    {
+        const pa: usize = 0x2070_4208;
+        var v = rd(pa);
+        v &= ~(@as(u32, 1) << 31);
+        wr(pa, v);
+        var dly: u32 = 0;
+        while (dly < 2_000) : (dly += 1) asm volatile ("nop");
+        v = rd(pa);
+        v |= (1 << 30) | (1 << 31);
+        wr(pa, v);
+        osal.logPublic("bt phy: ana peri pwr on, reg=0x{x:0>8}", .{rd(pa)});
+    }
+    osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-en ana-pwr)", .{});
 
     // 7) **`MODEM_WIDGETS_CLK_EN`（0x20109400 bit0，默认 0 = 关）**：
     //    WIDGETS 私有块（MODEM_BASE+0x9400）**自己有一张时钟使能寄存器**，
