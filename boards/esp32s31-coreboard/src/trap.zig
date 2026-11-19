@@ -501,7 +501,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 if (!fe3_done.* and frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
                     fe3_done.* = true;
                     var fb: [200]u8 = undefined;
-                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} CLK={x:0>8}/{x:0>8}/{x:0>8} SPI1={x:0>8}", .{
+                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} CLK={x:0>8}/{x:0>8}/{x:0>8} SPI1={x:0>8} ST={x:0>8}/{x:0>8}", .{
                         @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
@@ -510,6 +510,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, // SYSCON clk_conf1
                         @as(*volatile u32, @ptrFromInt(0x2010_F018)).*, // LPCON clk_conf
                         @as(*volatile u32, @ptrFromInt(0x2050_1000)).*, // SPI1_CMD：MST_ST≠0 ⇒ 等 flash 空闲
+                        @as(*volatile u32, @ptrFromInt(0x2010_F81C)).*, // ANA_STATUS0（事务状态/读回数据）
+                        @as(*volatile u32, @ptrFromInt(0x2010_F800)).*, // I2C0_CTRL（bit25 BUSY）
                     }) catch "FE3 (fmt fail)";
                     hw.rawLineBlocking(fl);
                     @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
