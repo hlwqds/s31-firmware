@@ -26164,8 +26164,14 @@ esp_wifi_init 的前置序列（rate 表 dump 显示归档 wifi 配置可从 0x2
 
 ## 下一会话主线规格（2026-11-20 定稿）：WiFi osi 栈移植进 bt-blobs
 
-**目标**：用 wifi-blobs 已在本板验证的 init 序列（osi 表 → wifi_init_config_t →
-`esp_wifi_init_internal`）替换 LE 块里的裸 `esp_phy_enable(2)`，解锁 Wall 1。
+**目标（2026-11-20 修正）**：**综合两个项目的已证能力** —— wifi-blobs 提供
+表/config/序列（osi 表 → initcfg.defaults → esp_wifi_init_internal），bt-blobs 提供
+**已被证明能运行 blob 任务的调度器**（HCI 全通、scheduler started=true）。
+⚠ 修正：wifi-blobs 的 esp_wifi_init_internal **并未完全跑通** —— 它卡在
+`queue_recv(0, forever)`（ppTask 在其合成调度器上跑不起来，182 次 panic；详见
+init_probe.zig 的实验史：pp 泵活锁、pp_task_hdl 被 blob 清零等）。⇒ 主线 =
+把 osi_impl 的 queue/task 函数改接到 **bt-blobs 已验证的任务泵**上（ch22 协作
+调度器能跑 blob 任务），其余（表/config/序列）照搬。
 
 | 项 | 内容 |
 | --- | --- |
