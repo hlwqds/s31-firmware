@@ -85,7 +85,12 @@ fn heapEnd() *const anyopaque {
 }
 
 /// 是否在探针里开中断。默认 **false**：先排除"ISR 打印打断 ROM UART 写"这个变量。
-pub var probe_irqs: bool = true; // 判别实验：只让 ISR 写串口
+// **必须是 false**：`true` 会 `routeT0Interrupt(25)` + 每 2 ms 打印，而
+// CLIC input 25 **也是 BT 归档的 tick 源**（ADR-001:1185 候选 A、
+// README:9991-9994）⇒ ① 控制器时序步进不推进（0x200A 永远等不到完成条件）
+// ② ISR 每 2 ms 灌 UART ⇒ TX FIFO 打满（恒 128）⇒ 应用日志一行都出不来。
+// 这同时解释了"串口零字节"与"0x200A 挂住"两个症状。
+pub var probe_irqs: bool = false;
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
