@@ -494,16 +494,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             var found: usize = 0;
             var hit_off: usize = 0;
             var hits: u32 = 0;
-            var off: isize = -256;
+            // 窗口扩到 **1 KB 之下**（[sp-1280, sp-96)）：`lw ra, N(sp)` 可能指向任意深度的调用者帧。
+            var off: isize = -1280;
             while (off < -96) : (off += 4) {
                 const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + off));
                 const v = (@as(*const usize, @ptrFromInt(a))).*;
                 if (v == csr_mepc or v == (csr_mepc | 1)) {
-                    if (hits == 0) { found = v; hit_off = @intCast(off); }
+                    // `off` 恒为负 ⇒ 必须 bitCast（@intCast 在 ReleaseSmall 下会 panic）
+                    if (hits == 0) { found = v; hit_off = @as(usize, @bitCast(off)); }
+                    // 把所有命中偏移（绝对值）累加进 diag_d，便于一次看出"有几个、大概在哪"
+                    diag_d +%= @intCast(-off);
                     hits += 1;
                 }
             }
-            diag_d = hits;
+            diag_e = hits;
             diag_a = @truncate(found);
             diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
             diag_a = @truncate(found);
@@ -534,11 +538,23 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             hw.rawLineBlocking(w);
         }
         var pbuf: [280]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d}", .{
+        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d}", .{
             csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
-            last_step, last_step_name, diag_a, diag_b, diag_c,
+            last_step, last_step_name, diag_a, diag_b, diag_c, diag_d, diag_e,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
+
+        // **全寄存器转储**（独立行）：找哪个寄存器持有与 ra 相同的 `…e894` 模式。
+        {
+            var rbuf: [300]u8 = undefined;
+            const rl = std.fmt.bufPrint(&rbuf, "RG ra={x} t0={x} t1={x} t2={x} a0={x} a1={x} a2={x} a3={x} a4={x} a5={x} a6={x} a7={x} s0={x} s1={x}", .{
+                frame.ra,  frame.t0,  frame.t1,  frame.t2,
+                frame.a0,  frame.a1,  frame.a2,  frame.a3,
+                frame.a4,  frame.a5,  frame.a6,  frame.a7,
+                frame.s0,  frame.s1,
+            }) catch "RG (fmt fail)";
+            hw.rawLineBlocking(rl);
+        }
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
             code, causeName(code), cause,
         });
@@ -627,6 +643,7 @@ pub var diag_a: u32 = 0;
 pub var diag_b: u32 = 0;
 pub var diag_c: u32 = 0;
 pub var diag_d: u32 = 0;
+pub var diag_e: u32 = 0;
 pub var last_step: u32 = 0;
 pub var last_step_name: []const u8 = "none";
 
