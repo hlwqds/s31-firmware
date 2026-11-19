@@ -589,6 +589,9 @@ pub fn run() noreturn {
     // **A 路径对照**：`sendCmd` 走 `r_btdm_hci_trans_rx`，前置要求 status == ENABLED。
     const a_rc = transport.sendCmd(0x1001, &.{});
     osal.logPublic("bt probe: A(rx) sendReadVersion rc={d} stats cmds={d} evt={d}", .{ a_rc, transport.stats().cmds_sent, transport.stats().evt_count });
+    // **第二条 A 路径命令**（唯一 opcode 0x0C03）：看 `btdm_tx` 是否 1 → 2。
+    const a2_rc = transport.sendCmd(0x0C03, &.{});
+    osal.logPublic("bt probe: A2(rx) sendReset rc={d} btdm_tx={d}", .{ a2_rc, transport.stats().btdm_tx });
 
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
@@ -701,8 +704,8 @@ fn halt() noreturn {
             const bs = bringup.stats();
             const le = tr.last_evt;
             @import("board").log.line(
-                "bt HALT verdict: evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d} last_code=0x{x:0>2} fail_step={d} last_rc={d} evt_bytes={x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2} tx_type={x} tx_len={d} tx_head={x:0>2},{x:0>2},{x:0>2},{x:0>2}",
-                .{ tr.evt_count, tr.cmds_sent, tr.btdm_tx, tr.cmd_alloc_null, @import("board").hw.rw_drops, tr.last_evt_code, bs.failed_step, bs.last_rc, le[0], le[1], le[2], le[3], le[4], le[5], tr.tx_type, tr.tx_len, tr.tx_head[0], tr.tx_head[1], tr.tx_head[2], tr.tx_head[3] },
+                "bt HALT verdict: evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d} last_code=0x{x:0>2} fail_step={d} last_rc={d} evt_bytes={x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2} tx_type={x} tx_len={d} tx_head={x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2}",
+                .{ tr.evt_count, tr.cmds_sent, tr.btdm_tx, tr.cmd_alloc_null, @import("board").hw.rw_drops, tr.last_evt_code, bs.failed_step, bs.last_rc, le[0], le[1], le[2], le[3], le[4], le[5], tr.tx_type, tr.tx_len, tr.tx_head[0], tr.tx_head[1], tr.tx_head[2], tr.tx_head[3], tr.tx_head[4], tr.tx_head[5], tr.tx_head[6], tr.tx_head[7] },
             );
         }
         asm volatile ("" ::: .{ .memory = true });

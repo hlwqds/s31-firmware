@@ -21366,3 +21366,91 @@ controller ──(btdmTx, 0e 0c 02 01 10 …)──> host
 | —— | 同型"看起来对"错误 | **21** |
 | —— | 撤回总数 | 114 |
 | —— | 自我纠正 | **295** |
+
+## 🏆🏆🏆 最终确认：逐命令往返成立，**Reset 应答 status = 0x00**
+
+### 决定性读数
+
+```text
+bt HALT verdict: evt=1 cmds=4 **btdm_tx=2** alloc_null=0 rw_drops=0
+   last_code=0x0e fail_step=0 last_rc=0
+   tx_type=4  tx_len=6  tx_head=**0e,04,02,03,0c,00**
+```
+
+### 逐命令证明
+
+| 事件 | `btdm_tx` |
+| --- | --- |
+| 发第一条 A 命令（`0x1001`）| 0 → **1** |
+| **发第二条 A 命令（`0x0C03` Reset）** | **1 → 2** |
+
+⇒ **每条命令产生一条应答** ⇒ **不是合并、不是积压**。
+
+### 最新那条应答的完整解码
+
+```text
+0e 04 02 03 0c 00
+```
+
+| 偏移 | 值 | 含义 |
+| --- | --- | --- |
+| `[0]` | `0x0E` | **Command Complete** |
+| `[1]` | `0x04` | 参数长度 4 |
+| `[2]` | `0x02` | `num_hci_command_packets` |
+| `[3..4]` | **`0x03 0x0C`** | **opcode = `0x0C03`（HCI Reset）** |
+| `[5]` | **`0x00`** | **status = SUCCESS** |
+
+⇒ 与标准应答 `0E 04 01 03 0C 00` **逐字节吻合**（`ncmd` 为 2 而非 1，无害）。
+
+### 因此完整链路成立
+
+```text
+host ──sendCmd (A 路径, r_btdm_hci_trans_rx)──> controller
+controller 处理
+controller ──btdmTx (type=4 EVT)──> host
+   payload: 0e 04 02 03 0c 00   (Reset 成功)
+```
+
+| 环节 | 状态 |
+| --- | --- |
+| `enable()` | ✅ `fail_step=0`, `last_rc=0` |
+| controller 任务 | ✅ 运行中 |
+| **命令下行** | ✅ **被消费** |
+| **事件上行** | ✅ **逐命令应答** |
+| **Reset 执行结果** | ✅ **status = 0x00 SUCCESS** |
+
+### 三条被纠正的关键认知
+
+| # | 错误认知 | 真相 |
+| --- | --- | --- |
+| 1 | "应答走 `leEvtTx`" | **走 `btdmTx`**（`leEvtTx` 只收到 1 条 init 事件）|
+| 2 | "`sendCmdViaHs`（B 路径）会被消费" | **只有 A 路径（`r_btdm_hci_trans_rx`）被消费** |
+| 3 | "事件布局含 `0x04` 类型字节" | **不含**（`[0]=code`），而 `btdmTx` 的 `pkt.type=4` **才是**类型字节 |
+
+⇒ 第 3 条尤其说明问题：**两条通道的帧形态不同**
+—— `leEvtTx` 给的是裸载荷，`btdmTx` 给的是 `{type, length, data}` 结构体。
+我们的统计把它们混在了一个概念里。
+
+### 本会话的完整弧线
+
+```text
+BLE init 卡在 step 6
+ → 四项时钟配置            ✅ 修
+ → 任务栈未初始化          ✅ 修
+ → esp_phy_enable 冻结地址  ✅ 修
+ → r_conn_stack_enable 空桩 ✅ 修
+ → .iram_btslp* 孤儿段      ✅ 修（崩溃消失）
+ → 事件上行/命令下行分属两个回调 ✅ 澄清
+ → HCI Reset 应答 status=0x00 ✅ **验证**
+```
+
+## 本会话最终总计（最终锁定）
+
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1–5 | 五个缺陷 | **全部修复并验证** |
+| **里程碑** | **HCI 往返逐命令成立，Reset status=0x00** | ✅ **达成** |
+| **门禁** | fmt ✅ / coverage ✅ / check-host（`firmware` 既有失败，基线 57 错，非本会话引入）| |
+| —— | 同型"看起来对"错误 | **21** |
+| —— | 撤回总数 | 114 |
+| —— | 自我纠正 | **296** |

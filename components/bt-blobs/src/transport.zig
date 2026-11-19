@@ -83,7 +83,8 @@ pub const Stats = struct {
     last_evt_len8: u8 = 0,
     tx_type: u8 = 0,
     tx_len: u8 = 0,
-    tx_head: [4]u8 = .{ 0, 0, 0, 0 },
+    tx_head: [16]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    tx_first: [16]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 var stats_state = Stats{};
 pub fn stats() Stats {
@@ -144,12 +145,20 @@ fn btdmTx(pkt: *Packet) callconv(.c) c_int {
     stats_state.btdm_tx += 1;
     // **保存这条通道的头部**：`btdm_tx` 与 `evt` 是两个不同的出站回调，
     // 需要知道前者送回来的到底是 HCI 事件（`04 0E …`）还是别的。
+    if (stats_state.btdm_tx == 1) {
+        var j: usize = 0;
+        const c1: usize = @min(@as(usize, pkt.length), 16);
+        while (j < 16) : (j += 1) {
+            stats_state.tx_first[j] = if (j < c1) pkt.data[j] else 0;
+        }
+    }
     stats_state.tx_type = @intCast(pkt.type & 0xff);
     stats_state.tx_len = @intCast(@min(@as(usize, pkt.length), 255));
     {
         var i: usize = 0;
-        while (i < 4) : (i += 1) {
-            stats_state.tx_head[i] = if (i < pkt.length) pkt.data[i] else 0;
+        const cap: usize = @min(@as(usize, pkt.length), 16);
+        while (i < 16) : (i += 1) {
+            stats_state.tx_head[i] = if (i < cap) pkt.data[i] else 0;
         }
     }
     if (fwd) |f| _ = f(@as(u32, pkt.type), pkt.data, pkt.length, @as(u32, 0x02), 0);
