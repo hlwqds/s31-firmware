@@ -33,7 +33,11 @@ extern void s31_bt_log_hook(const char *msg);
  * 支持 %s %c %d %i %u %x %X %p %% 与宽度/零填充（跳过精度），其余按字面输出。
  * 归档的日志就是这些形状（`.LC0` 格式串 + 参数）。 */
 #define S31_BT_FMT_MAX 160
-#define S31_BT_FMT_LINES 20   /* 400 行 × 每次放弃自旋 5000 次 ⇒ 太慢；LE 路径下降到 20 */
+/* 归档日志的上限行数。**默认 400**：降到 20 的实验证明它**不是**洪水的主因，
+ * 反而把归档的诊断信息全丢了 ⇒ 恢复默认，并允许构建时 `-DS31_BT_FMT_LINES=N` 覆盖。 */
+#ifndef S31_BT_FMT_LINES
+#define S31_BT_FMT_LINES 400
+#endif
 static unsigned s31_bt_fmt_lines;
 
 static char *put_str(char *o, char *end, const char *s)
