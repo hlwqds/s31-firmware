@@ -1510,9 +1510,19 @@ pub fn intrAlloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callcon
     r.fn_ = fn_;
     r.arg = arg;
     handle.* = @ptrCast(r);
-    logLine("bt osal: intr_alloc registered src={d} (CLIC dispatch pending)", .{src});
+    if (on_intr_arm) |arm| {
+        arm(src);
+        logLine("bt osal: intr_alloc src={d} -> armed via hook", .{src});
+    } else {
+        logLine("bt osal: intr_alloc src={d} (NO ARM HOOK: CLIC dispatch pending)", .{src});
+    }
     return OK;
 }
+
+/// **中断使能钩子**：`intr_alloc` 只记录 handler 是不够的 ——
+/// controller 等的信号量由 ISR 释放，中断没使能它就永远等不到。
+/// 由板级/移植层注入真正的 CLIC/mie 使能逻辑（osal 不能直接依赖 board）。
+pub var on_intr_arm: ?*const fn (src: c_int) void = null;
 
 pub fn intrFree(handle: ?*anyopaque) void {
     const raw = handle orelse return;

@@ -212,6 +212,9 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(4, "btdm_coex_init", porting.btdmCoexInit());
     if (rc != 0) return rc;
 
+    // **中断使能钩子**：`intr_alloc` 只记录 handler 不够 —— controller 等的信号量由
+    // ISR 释放，中断没使能 ⇒ 回包永远到不了。这里把 CLIC 输入 IE + mie 位置起来。
+    @import("osal_kit").osal.on_intr_arm = &intrArm;
     @import("osal_kit").osal.on_event_init = &@import("probe.zig").bt_hook_event_init;
     @import("osal_kit").osal.on_eventq_init = &@import("probe.zig").bt_hook_eventq_init;
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
@@ -504,4 +507,20 @@ test "bringup: 未 init 时 enable 被拒" {
     // 手工把状态打回 idle，模拟"没 init 就 enable"
     status_state = .idle;
     try std.testing.expectEqual(@as(c_int, -1), enable());
+}
+
+/// 把外设源号对应的 CLIC 输入使能，并置 `mie` 位。
+/// ⚠ `src` 是**源号**，未必等于 CPU 输入号 ⇒ 同时尝试 `src & 63`，
+/// 并在日志里给出可用 `findPendingClicInput()` 校正的入口。
+fn intrArm(src: c_int) void {
+    if (@import("builtin").target.os.tag != .freestanding) return;
+    const hw = @import("board").hw;
+    const input: usize = @intCast(@as(u32, @intCast(src)) & 63);
+    hw.enableClicInput(input);
+    const bit: u32 = @as(u32, 1) << @intCast(input & 31);
+    asm volatile ("csrs mie, %[b]"
+        :
+        : [b] "r" (bit),
+    );
+    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d}, mie|=0x{x}", .{ src, input, bit });
 }

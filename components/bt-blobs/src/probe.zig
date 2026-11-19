@@ -583,7 +583,7 @@ pub fn run() noreturn {
 
     var round: u32 = 0;
     while (round < 200) : (round += 1) {
-        osal.logPublic("bt task round {d}", .{round});
+        if (round % 20 == 0) osal.logPublic("bt task round {d}", .{round});
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         _ = osal.serviceCallouts(osal.timeGet());
         if (transport.stats().evt_count > 0) {
