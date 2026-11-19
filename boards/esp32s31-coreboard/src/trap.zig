@@ -568,6 +568,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 diag_b = @truncate(envp);
                 diag_f = @truncate((@as(*const usize, @ptrFromInt(0x2f00_fe30))).*);
                 diag_g = @truncate(e0); diag_h = @truncate(e4); diag_i = @truncate(e8);
+                // **g_phyFuns**（0x2f00fff8）：PHY 函数表。为 0 或首项为 0
+                // ⇒ `esp_phy_enable` 调用空指针 ⇒ mepc = 0。
+                diag_m = @truncate((@as(*const usize, @ptrFromInt(0x2f00_fff8))).*);
+                const gf = (@as(*const usize, @ptrFromInt(0x2f00_fff8))).*;
+                var gf0: usize = 0;
+                if (gf >= 0x2f00_0000 and gf < 0x2f09_0000 and (gf & 3) == 0) {
+                    gf0 = (@as(*const usize, @ptrFromInt(gf))).*;
+                }
+                diag_n = @truncate(gf0);
             }
         }
         // **原始帧内容**（阻塞写，单独一行）：看替换者是什么
@@ -594,10 +603,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             hw.rawLineBlocking(w);
         }
         var pbuf: [420]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d} df=0x{x} dg=0x{x} di=0x{x} dj=0x{x}", .{
+        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d} df=0x{x} dg=0x{x} di=0x{x} dj=0x{x} gm=0x{x} gn=0x{x}", .{
             csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
             last_step, last_step_name, diag_a, diag_b, diag_c, diag_d, diag_e,
-            diag_f, diag_g, diag_j, diag_i,
+            diag_f, diag_g, diag_j, diag_i, diag_m, diag_n,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
 
@@ -791,6 +800,8 @@ pub var diag_e: u32 = 0;
 pub var diag_i: u32 = 0;
 pub var diag_j: u32 = 0;
 pub var diag_l: u32 = 0;
+pub var diag_n: u32 = 0;
+pub var diag_m: u32 = 0;
 pub var diag_k: u32 = 0;
 pub var diag_h: u32 = 0;
 pub var diag_g: u32 = 0;
