@@ -573,6 +573,44 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18B000, &pb, @intCast(@sizeOf(@TypeOf(pb))));
         flashStage(72);
+        // **CSR 扫描副本（pre-pmu，flash 可用窗口）**：0x7A2-0x7AF 逐个写 0x88 读回，
+        // 找保留 0x88 的 = S31 的 tcontrol 等价物。新变量名避免与后段冲突。
+        // 结果落 0x18F000（此窗口 flash 写可靠——stage 72 自己就落在这儿）。
+        var r_scan_p: u32 = undefined;
+        var scan_p: [16]u32 = @splat(0);
+        asm volatile ("csrr %[v], 0x7a2" : [v] "=r" (r_scan_p));
+        scan_p[2] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (r_scan_p));
+        scan_p[3] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r_scan_p));
+        scan_p[4] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7a6" : [v] "=r" (r_scan_p));
+        scan_p[6] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7a7" : [v] "=r" (r_scan_p));
+        scan_p[7] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7a8" : [v] "=r" (r_scan_p));
+        scan_p[8] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7a9" : [v] "=r" (r_scan_p));
+        scan_p[9] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7aa" : [v] "=r" (r_scan_p));
+        scan_p[10] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7ab" : [v] "=r" (r_scan_p));
+        scan_p[11] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7ac" : [v] "=r" (r_scan_p));
+        scan_p[12] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7ad" : [v] "=r" (r_scan_p));
+        scan_p[13] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7ae" : [v] "=r" (r_scan_p));
+        scan_p[14] = r_scan_p;
+        asm volatile ("csrr %[v], 0x7af" : [v] "=r" (r_scan_p));
+        scan_p[15] = r_scan_p;
+        {
+            var sb2: [17]u32 = @splat(0);
+            sb2[0] = 0xADC0_FEEA;
+            for (0..16) |k| sb2[1 + k] = scan_p[k];
+            _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
+            _ = esp_rom_spiflash_write(0x18F000, &sb2, @intCast(@sizeOf(@TypeOf(sb2))));
+        }
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
         flashStage(73);
