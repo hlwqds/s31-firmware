@@ -690,9 +690,10 @@ fn halt() noreturn {
     while (true) : (n +%= 1) {
         if (n % 2_000_000 == 1) {
             const bs = bringup.stats();
+            const le = tr.last_evt;
             @import("board").log.line(
-                "bt HALT verdict: evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d} last_code=0x{x:0>2} fail_step={d} last_rc={d}",
-                .{ tr.evt_count, tr.cmds_sent, tr.btdm_tx, tr.cmd_alloc_null, @import("board").hw.rw_drops, tr.last_evt_code, bs.failed_step, bs.last_rc },
+                "bt HALT verdict: evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d} last_code=0x{x:0>2} fail_step={d} last_rc={d} evt_bytes={x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2},{x:0>2}",
+                .{ tr.evt_count, tr.cmds_sent, tr.btdm_tx, tr.cmd_alloc_null, @import("board").hw.rw_drops, tr.last_evt_code, bs.failed_step, bs.last_rc, le[0], le[1], le[2], le[3], le[4], le[5] },
             );
         }
         asm volatile ("" ::: .{ .memory = true });

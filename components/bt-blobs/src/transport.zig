@@ -79,6 +79,8 @@ pub const Stats = struct {
     acl_ignored: u32 = 0,
     last_evt_code: u8 = 0,
     last_evt_len: u8 = 0,
+    last_evt: [8]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    last_evt_len8: u8 = 0,
 };
 var stats_state = Stats{};
 pub fn stats() Stats {
@@ -108,6 +110,15 @@ fn leEvtTx(cmd: [*]u8, _: ?*anyopaque) callconv(.c) c_int {
     const len: usize = @as(usize, cmd[1]) + 2;
     stats_state.evt_count += 1;
     stats_state.evt_bytes += @intCast(len);
+    // **保存最后一条事件的原始字节**：日志行会被 FIFO 丢弃，
+    // 但静态数组不会 ⇒ 停机后的周期判决可以把它打出来。
+    {
+        var i: usize = 0;
+        while (i < 8) : (i += 1) {
+            stats_state.last_evt[i] = if (i < len) cmd[i] else 0;
+        }
+        stats_state.last_evt_len8 = @intCast(@min(len, 8));
+    }
     dumpEvt(cmd[0..len]);
     if (fwd) |f| _ = f(TYPE_EVT, cmd, @intCast(len), DIR_LEC2H, 0);
     // 我们是 host ⇒ 读完自己释放（IDF 是把所有权交给 host 才不释放）

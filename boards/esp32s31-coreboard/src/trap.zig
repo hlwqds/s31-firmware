@@ -424,8 +424,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 第 1000 次 ≈ 2 s（周期 2 ms）。若长窗口里连这一行都没有
             // ⇒ NMI 根本没在跑（例如 controller 关了中断）⇒ "饿死"的原因要另找。
             nmi_count +%= 1;
-            if (nmi_count == 1000) {
-                hw.rawLineBlocking("NMI alive: 1000 ticks (ISR still firing)");
+            // 每 ~500 次打一行，**带上 `frame.mepc`** —— 饿死时每次中断都落在
+            // blob 的常驻循环里 ⇒ 这些 PC 的分布就是"卡在哪"的直接答案。
+            // 注意：input==25 的分支**不**走 `recordPc`（第 442 行显式排除），
+            // 所以这个环在饿死期间看不到任何东西 —— 只能靠这里打。
+            if (nmi_count % 50_000 == 0) {
+                var nb: [96]u8 = undefined;
+                const nl = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8}", .{
+                    nmi_count, frame.mepc,
+                }) catch "NMI (fmt fail)";
+                hw.rawLineBlocking(nl);
             }
         }
         const ext: usize = if (input >= 16) input - 16 else input;
