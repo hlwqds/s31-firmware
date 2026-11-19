@@ -128,6 +128,15 @@ pub fn espPhyEnable(modem: u32) callconv(.c) void {
     // `cal_data` = 静态 1904 B 缓冲，mode = 2（`PHY_RF_CAL_FULL`）。
     // ⚠ **`cal_data = NULL` 会崩**：`phy_rfcal_data_sub_new` 会对 `cal+0x0c` 执行 store
     // ⇒ `mtval=0x0c`、cause=7。必须给一块真缓冲（1904 B = `esp_phy_calibration_data_t`）。
+    // **① 先把 MAC 写进 cal 缓冲的 `[4..10]`**（`esp_phy_calibration_data_t` =
+    // `version[4] + mac[6] + opaque[1894]`）。
+    // IDF 的 `esp_phy_load_cal_and_init()` 在调 `register_chipv7_phy` **之前**做
+    // `memcpy(cal_data->mac, sta_mac, 6)`。我们此前留零 ⇒ 标定结果**内部不一致** ⇒
+    // IDF 的一致性检查（`ESP_CAL_DATA_CHECK_FAIL`）会判为"没有有效标定"。
+    // 这里用 controller 已经携带的地址（step 14 设置），保持一致。
+    const mac: [6]u8 = .{ 0x01, 0xbb, 0x00, 0x00, 0x00, 0x02 };
+    @memcpy(phy_cal_buf[4..10], &mac);
+
     const cal_rc = calib(@ptrCast(init_tbl), @ptrCast(&phy_cal_buf), 2); // PHY_RF_CAL_FULL
     // **验证 `rc=0` 是否真的做了事**：`rc=0` 也可能只是"接受但没产出"。
     // ① cal 缓冲是否被写入（`esp_phy_calibration_data_t` 的 opaque 从 +10 开始）

@@ -23952,3 +23952,70 @@ LE 广播挂住（0x200A 开始广播）
   ⇒ 缺 IDF 的「PHY 模块时钟/复位使能」两步
   ⇒ 需要移植 periph_ctrl.c:172 与 phy_init.c:285 的等价实现
 ```
+
+## 🔢 射频使能段的**真实掩码**（不再是猜的）
+
+### 前提已确认
+
+`soc_caps.h:512` → `#define SOC_MODEM_CLOCK_IS_INDEPENDENT (1)`（ESP32-S31）
+⇒ IDF 的两步**归约为同一个函数**，只是传不同 module id：
+
+| IDF 调用 | module id | deps 宏 | 值 |
+| --- | --- | --- | --- |
+| `wifi_bt_common_module_enable()` | `PERIPH_PHY_MODULE` | `PHY_CLOCK_DEPS` | **`0x17`** |
+| `phy_module_enable()` | `PERIPH_PHY_CALIBRATION_MODULE` | `PHY_CALIBRATION_CLOCK_DEPS` | 见下 |
+
+### 位的计算过程（`MODEM_CLOCK(dev) = BIT(MODEM_CLOCK_##dev)`）
+
+枚举顺序（`modem_clock_impl.h:54-82`）：
+
+| dev | bit | dev | bit |
+| --- | --- | --- | --- |
+| `MODEM_ADC_COMMON_FE` | 0 | `WIFI_BB_80X1` | 9 |
+| `MODEM_PRIVATE_FE` | 1 | `ETM` | 10 |
+| `SOC_PLL_SOURCE_CG` | 2 | `BLE_MAC` | 11 |
+| `COEXIST` | 3 | `BT_PERIPHERAL` | 12 |
+| `I2C_MASTER` | 4 | `BT_APB` | 13 |
+| `WIFI_APB` | 5 | `BT_I154_COMMON_BB` | 14 |
+| `WIFI_BB_44M` | 6 | `802154_MAC` | 15 |
+| `WIFI_MAC` | 7 | `DATADUMP` | 16 |
+| `WIFI_BB` | 8 | | |
+
+### 两个必需掩码
+
+```
+PHY_CLOCK_DEPS = BIT(0)|BIT(1)|BIT(2) | I2C_ANA_MST_CLOCK_DEPS
+               = 0x07 | 0x10
+               = 0x17
+
+BLE_CLOCK_DEPS = BIT(11)|BIT(14)|BIT(10)|BIT(3)|BIT(9)|BIT(2)|BIT(13)|BIT(12)
+               = 0x0800|0x4000|0x0400|0x0008|0x0200|0x0004|0x2000|0x1000
+               = 0x7E0C
+```
+
+### 与我们的猜测对照
+
+| 项 | 值 |
+| --- | --- |
+| 我们手写的 ICG | **`0x6464_6400`** |
+| `PHY_CLOCK_DEPS` | `0x17` |
+| `BLE_CLOCK_DEPS` | `0x7E0C` |
+
+⇒ `0x64646400` 是**四个字节的重复图案**，**与任何真实 deps 掩码都不对应**。
+
+⇒ **这就是"标定 `rc=0` 但发射机起不来"的机制**：标定走 `PHY_CALIBRATION` 依赖，
+发射走 `PHY_MODULE` 依赖；后者从未被正确门控。
+
+### 移植目标（一个函数，两个 id）
+
+```c
+// 等价于 IDF:
+//   esp_phy_common_clock_enable()  -> modem_clock_module_enable(PERIPH_PHY_MODULE)
+//   phy_module_enable()            -> modem_clock_module_enable(PERIPH_PHY_CALIBRATION_MODULE)
+// modem_clock_module_enable(m):
+//   deps = modem_clock_get_module_deps(m);
+//   modem_clock_device_control(instance, deps, true);
+```
+
+⇒ 内部还要 `modem_clock_device_control()` 对 `deps` 每位置门控（`modem_clock.c`）。
+**这是开放项的确切落点**：不是"补一段射频代码"，是**按 IDF 的 deps 掩码门控时钟**。
