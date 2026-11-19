@@ -26293,3 +26293,23 @@ FreeRTOS 任务（标准"app 进任务"模式）；与 bt-blobs 自有 sched（c
 **flash 成本**：net80211 376K + libpp 170K + freertos 44K + heap ≈ 600K，
 factory 分区余量 651K ⇒ **大概率不用窗口扩容**（RAM 才是要量的：从 station
 map 取 net80211/libpp/freertos 的 .bss/.data 合计 vs 探针 SRAM 余量）。
+
+### esp_wifi 闭包级联量化（2026-11-20 尾四）：466 符号面 = 多会话工程
+
+链入 wifi_init.c.obj + esp_coex_adapter + net80211/libpp 归档后，
+未定义符号级联到 **466 个**（esp_log impl 族 / esp_timer 子集 / ets_* /
+heap multi_* 族 / wifi 胶水（WIFI_EVENT、ant 表、GetUartDevice、g_* 全局）/
+coex 核心（libcoexist.a 待链）/ esp_ble_register_bb_funcs / pp·net80211 内部
+glue（pp_printf、net80211_printf、r_filter_*）/ libc 4 件（已实现 libc_glue.zig））。
+
+| 发现 | 内容 |
+| --- | --- |
+| esp_timer 部分重叠 | libpp 自带 esp_timer_create/start_periodic/stop ⇒ esp_timer.c.obj 与之冲突；缺的是 start_once 等子集 ⇒ 需自写"非重叠子集"对象（不能整链）|
+| libphy.a 冲突 | whole-archive 与 esp_phy 源对象的 get_phy_version_str 撞 ⇒ est_PHY FTM 表成员需**单成员提取**（ar + nm -a 定位）|
+| **工作性质** | 这 466 面正是 wifi-blobs 项目用 osi 表(126 项)+osi_stubs(347 行)+link shim 多个会话解决的同一张面 ⇒ **本主线 = 多会话工程**，非一轮可毕 |
+| 已完成 | osi_impl 移植+三层阻塞重写 ✓ / libc_glue.zig（putchar/puts/strcmp/strtok）✓ / printf_shim 编译行 ✓ / objs.csv 配方 ✓ / 表·initcfg·coex_init·esp_wifi_init_internal 接线 ✓（树内）|
+| 已提交 | 本提交收录全部工程状态；本轮构建止于 466 符号（如实记录）|
+
+⇒ 下一会话从 466 面按类消解（log 族→osal log；timer 族→Zig timer 服务；
+wifi 胶水→osi 表 + osi_stubs 扩展；esp_timer 子集→自写非重叠对象；
+est_PHY→libphy.a 单成员提取；libcoexist.a→加链）。

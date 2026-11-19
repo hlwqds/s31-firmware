@@ -264,7 +264,6 @@ pub const Queue = struct {
         self.head = (self.head + self.cap - 1) % self.cap;
         @memcpy(b[self.head * self.item_size ..][0..self.item_size], item);
         self.count += 1;
-        return 1;
         if (self.waiter) |w| sched.resumeTask(w);
         return 1;
     }
@@ -831,7 +830,7 @@ pub const Task = struct {
     /// 该任务的栈（按 `stack_depth` 从 arena 分配；`&.{}` = 还没建上下文）。
     stack: []u8 = &.{},
     /// 任务上下文（`sched.initContext` 建；`sp == 0` = 未初始化）。
-    ctx: @import("sched.zig").Context = .{},
+    ctx: @import("osal_kit").sched.Context = .{},
     /// 已经跑过（第一次进入后再让出即视为可再次调度）。
     started: bool = false,
 };
@@ -848,7 +847,7 @@ pub fn ensureTaskContext(t: *Task, stack_depth: u32) bool {
     // 用 16 会让第一个块之后全部失败。栈顶 16 对齐由 `sched.initContext` 的 alignBackward 负责。
     const mem = arena_state.alloc(bytes, @alignOf(usize)) orelse return false;
     t.stack = mem[0..bytes];
-    @import("sched.zig").initContext(&t.ctx, t.stack, entry, t.arg);
+    @import("osal_kit").sched.initContext(&t.ctx, t.stack, entry, t.arg);
     return true;
 }
 pub var tasks: [4]Task = @splat(.{});

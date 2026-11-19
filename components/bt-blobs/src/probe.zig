@@ -75,6 +75,14 @@ const board = @import("board");
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
 extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
 
+// **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
+const osi_impl = @import("osi_impl.zig");
+const init_config = @import("init_config.zig");
+const osi = @import("osi.zig");
+const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
+const libc_glue = @import("libc_glue.zig");
+var osi_table: osi.Osi = undefined;
+
 /// **本轮最深步骤号**（mark.put 单调递增；LP-RAM 跨 boot 累积用）。
 /// LP-RAM 累积的 RAM 侧副本（FEFE 记录用，写 flash 在 FEFC 证据之后）。
 pub var lp_boot_n: u32 = 0;
@@ -925,6 +933,30 @@ pub fn run() noreturn {
         // 它内部含我们手写版没有的完整射频使能段（含 analog/regi2c/PMU 路径）。
         // 若这一步之后轮询位能置 ⇒ 缺的就是它；若仍挂 ⇒ 连 IDF 都点不亮这块，
         // 问题在更上游（电源岛/晶振时钟路径）。
+        // **WiFi osi 栈前置**（wifi-blobs 配方：表 → initcfg → coex_init →
+        // esp_wifi_init_internal——esp_wifi_init_internal ∈ libnet80211.a 本轮已链）
+        {
+            osi_table = osi_impl.makeTable();
+            osi_table._log_write = s31_log_write;
+            const wcfg = init_config.defaults(&osi_table);
+            const coex_init = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
+            coex_init();
+            const esp_wifi_init_internal = @extern(*const fn (*const anyopaque) callconv(.c) c_int, .{ .name = "esp_wifi_init_internal" });
+            const wrc = esp_wifi_init_internal(&wcfg);
+            mark.put(0xa0, 0xADC0B111, @bitCast(wrc)); // M11: init_internal 返回码
+        }
+        // **WiFi osi 栈前置**（wifi-blobs 配方：表 → initcfg → coex_init →
+        // esp_wifi_init_internal（∈ libnet80211.a，本轮已链）；bb_v2_init 跳过中）
+        {
+            const coex_init = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
+            coex_init();
+            osi_table = osi_impl.makeTable();
+            osi_table._log_write = s31_log_write;
+            const wcfg = init_config.defaults(&osi_table);
+            const esp_wifi_init_internal = @extern(*const fn (*const anyopaque) callconv(.c) c_int, .{ .name = "esp_wifi_init_internal" });
+            const wrc = esp_wifi_init_internal(&wcfg);
+            mark.put(0xa8, 0xADC0B120, @bitCast(wrc)); // M20: init_internal 返回码
+        }
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
         mark.put(0xa0, 0xADC0B112, 0); // **调用前标记** ⇒ seq 12：hist=12 ⇒ 死在 esp_phy_enable 内；hist=11 ⇒ 死在本调用之前（LE 块前半段）
         esp_phy_enable(2); // PHY_MODEM_BT（判别轮的 modem=1 已回退——上轮判别因缺调用前标记而无效）
