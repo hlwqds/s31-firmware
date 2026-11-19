@@ -664,6 +664,21 @@ pub fn run() noreturn {
         // `0x003FFA8C`（含 wifibb_44m/80m/160x1/wifimac）⇒ 前置条件已变。
         // 用 PC 采样器判读：若再 stall，直接拿挂点地址；端到端判据 marker stage 23 / tx 6。
         // （pmu_init 已提前到 bringup 之前 —— IDF 次序；前/后 PMU 状态在 0x18B/18C 扇区）
+        // **单字二分 `0x2010D020..0x3C`**（MODEM_PWR 组 2 挂点边界）：每字独立阶段号 80-87，
+        // 读前写阶段号 ⇒ 挂哪个字 marker 停在哪；全幸存 ⇒ marker 到 90。
+        // 每字读后把 {magic2, 偏移, 值} 重写 0x18A000（同扇区反复擦写，诊断可接受）。
+        {
+            const p2: usize = 0x2010_D020;
+            var g2: u32 = 0;
+            while (g2 < 8) : (g2 += 1) {
+                flashStage(80 + g2);
+                const v2: u32 = (@as(*volatile u32, @ptrFromInt(p2 + 4 * g2))).*;
+                var sb: [3]u32 = .{ 0xADC0_FEE8, p2 + 4 * g2, v2 };
+                _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
+                _ = esp_rom_spiflash_write(0x18A000, &sb, 12);
+            }
+            flashStage(90);
+        }
         flashStage(73);
         // **采样窗口搬到此处**：esp_phy_enable 若挂，ISR 采 72 个样本后自动落盘 0x187000
         board.trap.resetPcs();
