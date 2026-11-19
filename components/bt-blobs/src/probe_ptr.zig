@@ -88,5 +88,22 @@ pub fn initPhy() void {
 /// 保留为**真实函数**而不是空桩：日志说明"未标定"，让后续任何失败都是**真实失败**，
 /// 而不是继续追一个指向别人函数体中间的地址。
 pub fn espPhyEnable(modem: u32) callconv(.c) void {
-    @import("osal_kit").osal.logPublic("bt phy: enable modem={d} (NO CALIBRATION: libphy not linked)", .{modem});
+    // **真正的使能序列**（对齐 IDF `esp_phy_enable` 中我们确实拥有的部分）。
+    // 只有首次标定（`register_chipv7_phy`，需要 phy_init_data/cal_data）保持缺失，
+    // 这一条在日志里明确说出来，避免后续 RF 失败被误归因。
+    const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
+    icg.* = 0x6464_6400; // ICG 位图解除门控
+    const wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
+    wifi_enable_set(1);
+    // BB idle check/看门狗默认开（139 ms 超时会复位 BB，MAC 状态机永不排空）。
+    const bb_wdg = @extern(*const fn (bool, bool, u16, u16, bool, bool, bool) callconv(.c) void, .{ .name = "set_bb_wdg" });
+    bb_wdg(true, false, 0x18, 0xaa, false, false, false);
+    // 重申 PHY 时钟位（MODEM_SYSCON.CLK_CONF1）
+    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+    conf1.* |= (1 << 2) | (1 << 3) | (1 << 7) | (1 << 9) |
+        (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
+    @import("osal_kit").osal.logPublic(
+        "bt phy: enable modem={d} icg+phy_wifi_enable_set+bb_wdg+conf1 done (NO CALIBRATION: register_chipv7_phy absent)",
+        .{modem},
+    );
 }
