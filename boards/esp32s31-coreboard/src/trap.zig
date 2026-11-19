@@ -512,7 +512,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
             diag_a = @truncate(found);
             // **anchor[0] 与其 +28 字段**（分派器读的就是这两个）
-            diag_b = @truncate((@as(*const usize, @ptrFromInt(0x2f00_ffd0))).*);
+            {
+                const envp = (@as(*const usize, @ptrFromInt(0x2f00_ffac))).*;
+                // env_p 非 0 时读它的 +0/+4/+8，判断表是否已填充
+                var e0: usize = 0; var e4: usize = 0; var e8: usize = 0;
+                if (envp != 0 and (envp & 3) == 0 and envp >= 0x2f00_0000 and envp < 0x2f09_0000) {
+                    e0 = (@as(*const usize, @ptrFromInt(envp))).*;
+                    e4 = (@as(*const usize, @ptrFromInt(envp + 4))).*;
+                    e8 = (@as(*const usize, @ptrFromInt(envp + 8))).*;
+                }
+                // diag_b=env_p, diag_f=*(0x2f00fe30), diag_g=e0, diag_h=e4, diag_i=e8
+                diag_b = @truncate(envp);
+                diag_f = @truncate((@as(*const usize, @ptrFromInt(0x2f00_fe30))).*);
+                diag_g = @truncate(e0); diag_h = @truncate(e4); diag_i = @truncate(e8);
+            }
         }
         // **原始帧内容**（阻塞写，单独一行）：看替换者是什么
         {
@@ -537,10 +550,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }) catch "FR (fmt fail)";
             hw.rawLineBlocking(w);
         }
-        var pbuf: [280]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d}", .{
+        var pbuf: [420]u8 = undefined;
+        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d} df=0x{x} dg=0x{x} di=0x{x} dj=0x{x}", .{
             csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
             last_step, last_step_name, diag_a, diag_b, diag_c, diag_d, diag_e,
+            diag_f, diag_g, diag_h, diag_i,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
 
@@ -644,6 +658,10 @@ pub var diag_b: u32 = 0;
 pub var diag_c: u32 = 0;
 pub var diag_d: u32 = 0;
 pub var diag_e: u32 = 0;
+pub var diag_i: u32 = 0;
+pub var diag_h: u32 = 0;
+pub var diag_g: u32 = 0;
+pub var diag_f: u32 = 0;
 pub var last_step: u32 = 0;
 pub var last_step_name: []const u8 = "none";
 
