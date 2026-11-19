@@ -559,13 +559,16 @@ pub fn run() noreturn {
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
     // bringup 已过观测窗口，这里解除，让运行时路径零开销。
+    flashStage(10); // host 可读：init 之后、enable 之前
     osal.dump_hook = null;
     osal.logPublic("bt probe: dump_hook disarmed", .{});
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 
     // 3) enable 链（6 步）
+    flashStage(11); // 即将调用 enable()
     rc = bringup.enable();
+    flashStage(12); // enable() 已返回
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
@@ -741,4 +744,27 @@ fn halt() noreturn {
         }
         asm volatile ("" ::: .{ .memory = true });
     }
+}
+
+// ---------------------------------------------------------------------------
+// **host 可读的 flash 标记**（`0x186000` = factory 分区尾部，app.bin 只到 ~0xDB000）
+//
+// 目的：日志通道不可靠时，仍能让 **host** 知道"流程走到哪一步"——
+// `esptool read-flash 0x186000 0x10` 即可，**完全不经过 UART**。
+//
+// ⚠ **绝不能从 NMI 调用**：ROM 的擦写会在临界区里阻塞取指，
+// 而 CPU 正从同一片 flash 执行 XIP ⇒ 会硬挂。只在**主上下文**里调用。
+// ---------------------------------------------------------------------------
+extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
+extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
+
+const flash_mark_off: u32 = 0x18_6000;
+const flash_mark_magic: u32 = 0x5A17_0000; // 高 16 位是 magic，低 16 位是阶段
+
+/// 把阶段号写入 flash 标记槽。**只能在主上下文调用**。
+fn flashStage(n: u32) void {
+    if (@import("builtin").target.os.tag != .freestanding) return;
+    _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
+    var w: [1]u32 = .{flash_mark_magic | (n & 0xFFFF)};
+    _ = esp_rom_spiflash_write(flash_mark_off, &w, 4);
 }

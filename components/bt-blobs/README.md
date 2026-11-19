@@ -23576,3 +23576,72 @@ NMI        → 只写 RAM 槽（阶段号 / mepc / pending CLIC）
 2. **复位后由 bootloader 侧读 RAM**（需 bootloader 配合）
 
 ⇒ 这也是为什么"NMI 直接写 flash"看起来诱人但**必须放弃**。
+
+## 🎉 host 可读通道**实测成功**：`0x186000` 读出 `0x5A17000C`
+
+### 读数（**完全没经过 UART**）
+
+```bash
+esptool -p /dev/ttyUSB0 read-flash 0x186000 0x10 /tmp/mark.bin
+xxd /tmp/mark.bin
+```
+
+```text
+00000000: 0c00 175a  ffff ffff  ffff ffff  ffff ffff
+          ↑
+          0x5A17000C  =  magic 0x5A17 | stage 0x0C = **12**
+```
+
+### 这证明了什么
+
+| 阶段号 | 含义 | 是否写入 |
+| --- | --- | --- |
+| 10 | `init` 之后、`enable` 之前 | ✅ |
+| 11 | 即将调用 `enable()` | ✅ |
+| **12** | **`enable()` 已返回** | ✅ **读到了** |
+
+⇒ **`bringup.enable()` 在这个运行里正常返回了。**
+⇒ 而这一切是**从 host 读到的**，不依赖任何一行日志。
+
+### 为什么这条重要
+
+本会话此前所有关于"卡在哪"的结论，**全部依赖日志**，
+而日志在这条路径上已被证明会整行丢失（`init ok` 计数为 0）。
+
+⇒ **这是第一个不依赖日志的、可重复的流程定位手段。**
+
+### 实现
+
+```zig
+extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
+extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
+
+const flash_mark_off: u32 = 0x18_6000;
+const flash_mark_magic: u32 = 0x5A17_0000;
+
+fn flashStage(n: u32) void {   // ⚠ 只能在主上下文调用
+    _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
+    var w: [1]u32 = .{flash_mark_magic | (n & 0xFFFF)};
+    _ = esp_rom_spiflash_write(flash_mark_off, &w, 4);
+}
+```
+
+⇒ **不需要跨组件依赖**：直接声明 ROM 符号即可
+（`boot-power-perf/src/flash.zig` 只封装了同一对符号，
+而它没有被 re-export，bt-blobs 取不到）。
+
+### 安全
+
+| # | 约束 |
+| --- | --- |
+| 1 | **只在主上下文调用** —— 擦写会在临界区阻塞取指，而 CPU 正从同一片 flash 执行 XIP |
+| 2 | `0x186000` 在 `factory` 分区内，且远离 app（`app.bin` 结束于 ~`0xDB000`）|
+| 3 | **不碰 `otadata`**（`0x490000`）|
+
+### 下一步（现在可以真正定位 LE 了）
+
+| # | 动作 |
+| --- | --- |
+| 1 | 在 LE 每条命令前加 `flashStage(20/21/22)` |
+| 2 | 跑一次，卡住后从 **host** 读 `0x186000` |
+| 3 | 读到的阶段号就是**最后执行到的那条命令** |
