@@ -110,13 +110,13 @@
 > `patch_bail_field=false`、`pmu_dump=false`、`anchors_enabled=false`、`phy_before_clocks=true`、
 > `probe_stop_at_tick=0`、`log_hook_silent=false`。
 >
-> **唯一剩余工作**：在 `btdmLpEnableClock` 里移植 `wifi-blobs` 已验证的频域使能
+> **~~唯一剩余工作~~（已完成，2026-11-19）**：
 > （`0x2058_71E0←0x3d` + CLK_CONF1 的 FE_* 位 + `I2C_ANA_MST`），**不要照抄 wifi 的 `LPCON+0x18←0x1`**
 > （会清掉 bit2 `clk_i2c_mst_fo`，BLE 的 PHY 正走模拟 I2C）；材料见
 > `phy_init_data.zig`、`init_probe.zig:686-700`、`osi_impl.zig`（`grep -n 'shellPhyEnable'`）。
 > 判据：`initPhy()` 之后能否打印那行 "PHY enabled"，以及随后 `0x2010B000` 是否可读。
 >
-> 以下历史章节按时间追加，凡与本块冲突的以本块为准。
+> 以下历史章节按时间追加。**凡与文末「## 最终状态（本会话结束时）」表冲突的，以文末表为准。**
 
 # bt-blobs —— BLE controller 归档在裸机镜像里的适配面
 
