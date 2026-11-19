@@ -107,13 +107,7 @@ fn enter(n: u32, comptime what: []const u8) void {
     // 同步到 board 侧（panic 行会打印它）
     @import("board").trap.last_step = n;
     @import("board").trap.last_step_name = what;
-    // **写监视**：把两个睡眠段基址的低半字挂在同一行 ⇒ 整条 boot 自带时间线，
-    // 无需额外日志行。`1141` 变 `0377` 的那一步就是写者。
-    const watch = if (@import("builtin").target.os.tag == .freestanding) .{
-        (@as(*align(1) const u16, @ptrFromInt(0x2f00_f99a))).*,
-        (@as(*align(1) const u16, @ptrFromInt(0x2f00_fa00))).*,
-    } else .{ @as(u16, 0), @as(u16, 0) };
-    osal.logPublic("bt bringup: enter step {d} " ++ what ++ " w16={x} w0={x}", .{ n, watch[0], watch[1] });
+    osal.logPublic("bt bringup: enter step {d} " ++ what, .{n});
     // 让 UART FIFO 排空：step 1..5 在同一瞬间连发，5×~30 B > 128 B FIFO
     // ⇒ 溢出时 hw.rawWrite **按设计丢弃** ⇒ 只剩第一行可见（误判为"没执行"）。
     // 这里等 ~2 ms，足以让一行（30 B / 115200 ≈ 2.6 ms... 取保守值）排空。
