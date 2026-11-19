@@ -603,6 +603,8 @@ pub fn run() noreturn {
         board.trap.bp_scan[14] = r_scan_p;
         asm volatile ("csrr %[v], 0x7af" : [v] "=r" (r_scan_p));
         board.trap.bp_scan[15] = r_scan_p;
+        // **stage 74 判别**：读循环跑完 ⇒ 死点在 ebreak/trap 写；没到 74 ⇒ 死在读循环
+        flashStage(74);
         {
             var sb2: [17]u32 = @splat(0);
             sb2[0] = 0xADC0_FEEA;
