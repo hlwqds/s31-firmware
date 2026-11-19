@@ -1219,7 +1219,7 @@ fn dumpPcRing() void {
     }
     // 第二步：**此刻环已在自旋、已写过** ⇒ 读回才是"写了是否生效"的真判据。
     {
-        var buf2: [14]u32 = @splat(0);
+        var buf2: [18]u32 = @splat(0);
         buf2[0] = 0xADC0_FEE1;
         buf2[1] = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
         buf2[2] = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
@@ -1234,6 +1234,14 @@ fn dumpPcRing() void {
         buf2[11] = (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).*; // ana mst 块时钟（应含 bit28）
         buf2[12] = (@as(*volatile u32, @ptrFromInt(0x2070_4184))).*; // PMU_RF_PWC（RF 电路电源）
         buf2[13] = (@as(*volatile u32, @ptrFromInt(0x1080_1064))).*; // **CLIC[25] 读回**：bit3 nmies、bit8 IE —— 定责 NMI 未投递还是被清
+        // **BT modem clock 门控快照**（modem_clock_module_enable(6/14) 写入的 8+4 门）：
+        // SYSCON clk_conf(0x20109C04)：bit22=etm 25/28/29=modem_sec 30=ble_timer
+        // SYSCON clk_conf1(0x20109C14)：bit7=wifibb_80x1 16=bt_apb 17=btbb 18=btmac
+        // LPCON clk_conf(0x2010F018)：bit1=coex
+        buf2[14] = (@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*; // SYSCON clk_conf
+        buf2[15] = (@as(*volatile u32, @ptrFromInt(0x2010_9C14))).*; // SYSCON clk_conf1
+        buf2[16] = (@as(*volatile u32, @ptrFromInt(0x2010_F018))).*; // LPCON clk_conf
+        buf2[17] = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*; // SYSCON modem_rst_conf
         _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
         _ = esp_rom_spiflash_write(0x188000, &buf2, @intCast(@sizeOf(@TypeOf(buf2))));
     }
