@@ -26594,3 +26594,26 @@ CLK=7e601002/003fffff/0000000f SPI1=0x00000000
 已链接的 regi2c 写一个已知寄存器再读回；写不落 ⇒ ana I2C master 块没使能
 （PERIPH_ANA_I2C_MASTER_MODULE=10，modem_clock deps 表里 ANALOG_CLOCK_ENABLE()
 那条路由没走通）；写落 ⇒ 问题在更深的 RF analog 序列，需对照官方链抓 regi2c 事务。
+
+### ana master 活体确认（2026-11-20 最末轮）：传输层活着，缺的是配置值本身
+
+post-pmu 只读探测（FEE7 扩到 7 字）：
+
+```
+[4] ANA_CONF0   = 0x2900e444   ← 非 FF 非 0，活配置
+[5] ANA_STATUS0 = 0x00ff7fff   ← RO 状态位活
+[6] I2C0_CTRL   = 0x01420d6d   ← 命令寄存器有内容
+```
+
+- I2C_ANA_MST 块（0x2010F800）**可访问、已配置**（F83C bit28 = 该块内寄存器，
+  本轮已显式恢复 0x12411290 ✓）；`phy_ana_i2c_master_burst_bbpll_config`
+  （零参 T 符号，内部 command_mem_cfg + burst_config(2)）已提前显式调用 ✓。
+- 但 FE3 环上：98BC 仍 0、11AC 仍 0、08D0 动态（0x1bf8/0xff403 各轮变）。
+- "FE 环等 flash"（SPI1=0 空闲）、"块不可访问"（活体）两个方向全部排除。
+
+**剩余单点（下一会话）**：BBPLL/RF 配置**值本身**——
+1. est_phy_tables（RF 参数表）是否真的接到 libphy 读取的位置（g_phyFuns/表指针）；
+2. burst 事务实际写入 I2C0 命令存储的内容 vs 官方对拍（I2C0_CTRL/命令 mem 在
+   burst 前后各拍一次）；
+3. esp_phy_load_cal_and_init 的 NVS 路径已证走 FULL 校准——校准过程里
+   regi2c 读（BBPLL 校准读回）是否完成（可在 burst 后读 ANA_STATUS0 高字节判事务状态）。

@@ -773,9 +773,27 @@ pub fn run() noreturn {
             const amst = rd_.r(0x2010_F83C);
             if ((amst & (1 << 28)) == 0) rd_.wr(0x2010_F83C, amst | (1 << 28));
         }
-        var rc_: [3]u32 = .{ 0xADC0_FEE7, rd_.r(0x2070_4184), rd_.r(0x2010_F83C) };
+        // **BBPLL burst 发车**（2026-11-20 终）：FE 环正点数据（三读全 0、SPI1 空闲、
+        // 时钟全开）⇒ 合成器从未被配置。libphy 的
+        // `phy_ana_i2c_master_burst_bbpll_config`（零参、自足：command_mem_cfg +
+        // burst_config(2)）就是官方链给 RF PLL 发车的 burst 序列。提前显式调一次，
+        // 判据：FE3 行 98BC 是否开始变化 / FE spin 是否放行。
+        const burst_bbpll = @extern(*const fn () callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_bbpll_config" });
+        burst_bbpll();
+        // **ana I2C master 块只读探测**（DR_REG_I2C_ANA_MST_BASE=0x2010F800）：
+        // regi2c 写-回读的前哨——若三读全 FF/stall ⇒ 块不可访问（时钟/电源未到位），
+        // burst 写自然 no-op；若可读 ⇒ 块活着，regi2c 死因在事务层。
+        var rc_: [7]u32 = .{
+            0xADC0_FEE7,
+            rd_.r(0x2070_4184),
+            rd_.r(0x2010_F83C),
+            0x5BB1_11C4, // burst bbpll 已调标记
+            rd_.r(0x2010_F818), // ANA_CONF0
+            rd_.r(0x2010_F81C), // ANA_STATUS0（RO）
+            rd_.r(0x2010_F800), // I2C0_CTRL
+        };
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
+        _ = esp_rom_spiflash_write(0x18D000, &rc_, 28);
     }
     // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
     // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
