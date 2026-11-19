@@ -509,6 +509,11 @@ PROVIDE(phy_xpd_rf = 0x2f8016b8);
 
 /* ---- 外围基址（IDF `esp32s31.peripherals.ld`）：PHY 源码对象需要 ---- */
 PROVIDE(MODEM_SYSCON = 0x20109C00);
+/* IDF C 对象（WITH_PHY=1 链入的 pmu_init/param）引用的 soc 实例别名：
+   &实例 = MMIO 基址，结构体字段偏移即寄存器偏移（IDF 链接期惯用法） */
+PROVIDE(PMU   = 0x20704000);   /* DR_REG_PMU_BASE   */
+PROVIDE(EFUSE = 0x20715000);   /* DR_REG_EFUSE_BASE */
+PROVIDE(rom_gpio_get_input_level = 0x2f800714); /* esp32s31.rom.ld:306 */
 PROVIDE(MODEM_LPCON  = 0x2010F000);
 PROVIDE(HP_SYS_CLKRST = 0x20587000);   /* IDF `esp32s31.peripherals.ld` */
 PROVIDE(LP_CLKRST    = 0x20701000);
