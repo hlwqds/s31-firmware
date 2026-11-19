@@ -114,3 +114,18 @@ echo "=================================="
 # 与 `scripts/build-image.sh` 的 `$ELF_BIN` 是同一约定。之前这里写死裸 `esptool`，
 # 于是"设了 ESPTOOL 却仍按 PATH 找"—— 在干净 PATH 上会直接失败。
 ( cd "$FLASH_DIR" && ${ESPTOOL:-esptool} --chip esp32s31 -p "$PORT" -b 921600 write-flash "@$TMP" )
+
+# **写后读回校验**：`write-flash` 退出 0 **不等于**写进去了。
+# 本会话就出现过「烧录静默失败、跑的是上一个镜像」——它的症状与「代码有问题」
+# 完全相同（日志停在某行、行为与预期不符）。`verify-flash` 逐字节比对，
+# 不一致时**明确失败**，从源头杜绝那一类误判。
+if [ "${FLASH_SKIP_VERIFY:-0}" != "1" ] && [ -f "$APP" ]; then
+    echo "flash: 读回校验 app @0x10000 ..." >&2
+    if ( cd "$FLASH_DIR" && ${ESPTOOL:-esptool} --chip esp32s31 -p "$PORT" -b 921600 \
+            verify-flash 0x10000 "$APP" >/dev/null 2>&1 ); then
+        echo "flash: 校验通过" >&2
+    else
+        echo "flash: **读回校验失败** —— 写入未生效，请勿据此判读板上行为" >&2
+        exit 4
+    fi
+fi
