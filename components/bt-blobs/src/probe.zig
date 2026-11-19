@@ -736,6 +736,10 @@ pub fn run() noreturn {
         var av: [4]u32 = .{ 0xADC0_FEE9, t1v, t2v, tcv };
         _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
         _ = esp_rom_spiflash_write(0x189000, &av, 16);
+        // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：
+        // fe_poll: 命中 PC 0x2f828a5c 所在轮询环；rf_pwr: 命中 PC 0x2f00c3e2 所在例程。
+        dumpRom("fe_poll", 0x2f828a40, 0x60);
+        dumpRom("rf_pwr", 0x2f00c3b0, 0x60);
 
     // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
     var rc = bringup.init(&cfg);

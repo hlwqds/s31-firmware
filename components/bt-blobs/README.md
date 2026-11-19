@@ -25954,3 +25954,37 @@ Espressif 的 `rv_utils_set_breakpoint` 写 `TDATA1_EXECUTE(1<<2)` 并用于自�
 | stage 74 判别 | **缺失** | 待补（pre-ebreak）|
 
 ⇒ 下一会话第一步：**理顺为线性单遍**（每块一处、次序固定、互不重叠），再继续定位。
+
+---
+
+## 触发器终局裁定（2026-11-20，提交 5e3979c + 32c5e33 + 本提交）
+
+上文 25445-25469 附近所有基于旧映射（tdata1=0x7a0 / tdata2=0x7a1 / tcontrol=0x7a3）的
+结论**全部作废**。实测 CSR 地址是 **Debug Spec v1.0 标准映射**：
+
+| CSR | 地址 | 实测 |
+|---|---|---|
+| tselect | 0x7a0 | 写 0x4c 回读 0x3（WARL：4 个触发器）|
+| tdata1 | 0x7a1 | 写 0x4a 回读 0x2100004a、写 0x49 回读 0x21000049（LOAD/STORE/EXEC/U/M 位保留，命中后 bit30=HIT）|
+| tdata2 | 0x7a2 | 地址精确保留 |
+| tinfo | 0x7a4 | 只读 0x4 |
+| tcontrol | 0x7a5 | MTE=bit3/MPTE=bit7，写 0x88 保留 |
+
+武装序列：`csrw 0x7a0,0 → csrw 0x7a1,<cfg> → csrw 0x7a2,<addr> → csrw 0x7a5,0x88`。
+
+**两次真实命中**（记录 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000，
+trap 直写不屏蔽 MIE）：
+
+1. STORE 观察点 @0x20704184（PMU_RF_PWC）→ **auth_pc=0x2f00c3e2**。
+   反汇编（本提交 dumpRom）：`sw a4,388(a5)` = PMU_RF_PWC 读-改-清低 16 位写，
+   属 vendor RF 电源序列（0x20704xxxx 块多个 lw/sw + 调 0x2f80003c）。
+2. LOAD 观察点 @0x2010047C（FE 轮询读地址）→ **auth_pc=0x2f828a5c**。
+   反汇编：轮询环 `lw a5,1148(a3)`（环首）→ 读 0x201008d0 → `srli 0x14; andi 3`
+   → **beqz 回跳环首（(0x2010047C>>20)&3==0 自旋）** → 非零时 0x201011AC
+   16 位计数器++ → `j` 回环首。旧谜值 0x2f828a78 = 环内 andi/beqz 对，
+   地址假设闭环。
+
+铁律（本轮反复踩过后固化）：flash 记录必须带**本轮构建独有 magic**（内容稳定的
+记录无法与旧轮残留区分）；0x2010D020..+3C 读挂总线、0xffff0000 读 load fault
+（0x2fxxxxxx 区**可直读**，dumpRom 走 UART ttyUSB0）；BT bringup/HCI 段挂死，
+仪器必须装在它之前。
