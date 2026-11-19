@@ -24227,3 +24227,39 @@ FE 一族是**有意**置的（PHY 需要），并标明 bit19 由 2.6 补。
 ### 读回自证
 
 日志里应有 `clk_conf1=0x003fffff`。
+
+## 📋 三个 deps 掩码（已用 `soc_caps.h:512-515,565` 的条件全成立核对过）
+
+| 宏                           | 值           | 位                   | 归属                            |
+| ---------------------------- | ------------ | -------------------- | ------------------------------- |
+| `PHY_CLOCK_DEPS`             | **`0x17`**   | 0,1,2,4              | `PERIPH_PHY_MODULE`             |
+| `PHY_CALIBRATION_CLOCK_DEPS` | **`0x6364`** | 2,5,6,8,9,13,14      | `PERIPH_PHY_CALIBRATION_MODULE` |
+| `BLE_CLOCK_DEPS`             | **`0x7E0C`** | 2,3,9,10,11,12,13,14 | `PERIPH_BT_MODULE`              |
+
+（`0x6364` = `WIFI_DEPS 0x364` | `BT_DEPS 0x6064`。）
+
+### ⚠ 关键纪律：deps **不是寄存器值**
+
+`deps` 是**设备索引位图**：每个置位选 `modem_clock_configure_impl`
+（`esp32s31/modem_clock_impl.c:291-324`）里的**一个条目**，各自写**不同寄存器**：
+
+| 走哪                                       | 例子                       |
+| ------------------------------------------ | -------------------------- |
+| `modem_syscon_ll_enable_*_clock`           | FE 组 ⇒ `CLK_CONF1`        |
+| `modem_lpcon_ll`                           | COEX                       |
+| `modem_clock_hal_enable_soc_pll_source_cg` | `HP_SYS_CLKRST.modem_conf` |
+| `ANALOG_CLOCK_ENABLE()`                    | I2C master                 |
+
+⇒ **绝不能把 `0x17` / `0x6364` 当掩码写进某个寄存器。**
+
+### 另一套独立机制：ICG
+
+`modem_clock_module_enable()` 的**第一步**是 `modem_clock_module_icg_map_init_all()`
+（`SOC_PM_SUPPORT_MODEM_CLOCK_DOMAIN_ICG = 1`，默认 `ICG_NOGATING_ACTIVE` 每域，
+`impl.c:374-391`）。
+
+| 项                                                                 | 说明                                                  |
+| ------------------------------------------------------------------ | ----------------------------------------------------- |
+| ICG 位图                                                           | **与设备时钟是两套机制**                              |
+| 我们的 `0x64646400` 写入 `clk_conf_power_st`                       | 很可能就是**在摸这套**（四字节重复 = 每域一个相同值） |
+| 但它不是 `CLK_CONF1`，且内容未与 IDF 的 `ICG_NOGATING_ACTIVE` 对账 | ⇒ 仍属**未验证的猜测**                                |
