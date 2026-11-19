@@ -581,6 +581,12 @@ pub fn run() noreturn {
     rc = transport.sendResetViaHs();
     osal.logPublic("bt probe: sendReset rc={d}", .{rc});
 
+    // **判别实验**：发第二条**可区分**的命令（Read Local Version，opcode 0x1001）。
+    // `evt=2` 且回包 opcode 为 `01 10` ⇒ 命令被逐条处理（`0000` 是 init 遗留事件）；
+    // 仍 `evt=1` ⇒ 我们抓到的那条是 blob 自己的 init 事件，命令未被消费。
+    rc = transport.sendCmdViaHs(0x1001, &.{});
+    osal.logPublic("bt probe: sendReadVersion rc={d}", .{rc});
+
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);

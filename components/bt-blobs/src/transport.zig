@@ -96,7 +96,7 @@ var inited = false;
 /// 回程字节先落一份到日志——这是里程碑唯一的判据。
 fn dumpEvt(bytes: []const u8) void {
     if (bytes.len < 3) return;
-    stats_state.last_evt_code = bytes[2];
+    stats_state.last_evt_code = bytes[0];
     stats_state.last_evt_len = bytes[1];
     osal.logPublic("bt hci << EVT code=0x{x:0>2} len={d}", .{ bytes[2], bytes[1] });
     var i: usize = 0;
@@ -105,9 +105,13 @@ fn dumpEvt(bytes: []const u8) void {
     }
 }
 
-/// 事件回调（controller → host）。字节布局：`[0]=0x04 EVT, [1]=len, [2]=event code`，总长 `cmd[1]+2`。
+/// 事件回调（controller → host）。
+/// **实测布局**（VHCI 约定，**不含 `0x04` 类型字节**）：
+/// `[0]=event code, [1]=parameter length, [2..]=parameters`，帧长 = `1 + bytes[1]`。
+/// 实测样本：`0e 03 01 00 00` = Command Complete / plen 3 / ncmd 1。
+/// ⚠ 旧注释写的是 `[0]=0x04, [1]=len, [2]=code`（H4 形态）—— **这条路径不是那个形态**。
 fn leEvtTx(cmd: [*]u8, _: ?*anyopaque) callconv(.c) c_int {
-    const len: usize = @as(usize, cmd[1]) + 2;
+    const len: usize = @as(usize, cmd[1]) + 1; // 无 0x04 类型字节 ⇒ 1+plen
     stats_state.evt_count += 1;
     stats_state.evt_bytes += @intCast(len);
     // **保存最后一条事件的原始字节**：日志行会被 FIFO 丢弃，
