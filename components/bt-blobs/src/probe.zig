@@ -618,6 +618,9 @@ pub fn run() noreturn {
     // 卡住后从 **host** 读回 —— 不依赖任何日志。
     {
         flashStage(20);
+        // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
+        // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
+        // 结果：去掉 37 无变化 ⇒ 恢复标准的"三个信道全开"。
         var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
         const r6 = transport.sendCmd(0x2006, &ap);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
