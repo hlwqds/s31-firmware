@@ -685,6 +685,38 @@ pub fn run() noreturn {
             board.hw.armT0Interrupt(2000);
             board.hw.enableInterrupts();
         }
+        // **门控扫描**：谁能让 0x20109880 的写"生效"？每个候选使能后写特征值→回读。
+        // 结果落 0x189000（独立扇区）；扫描前后各打阶段号（60/61），
+        // 若扫描本身挂死，marker 停在 60 ⇒ 知道是哪一步干的。
+        flashStage(60);
+        {
+            const target: usize = 0x2010_9880;
+            var res: [8]u32 = @splat(0);
+            res[0] = 0xADC0_FEE2;
+            // ① 基线（当前状态）
+            porting.wr(target, 0x1234_5678);
+            res[1] = porting.rd(target);
+            // ② HP_SYS_CLKRST.clk_en0 = 全 1（0x205871F8）
+            porting.wr(0x2058_71F8, 0xFFFF_FFFF);
+            porting.wr(target, 0x1234_5678);
+            res[2] = porting.rd(target);
+            // ③ HP_SYS_CLKRST.modem_ctrl0 |= 1（0x20587040）
+            porting.wr(0x2058_7040, porting.rd(0x2058_7040) | 1);
+            porting.wr(target, 0x1234_5678);
+            res[3] = porting.rd(target);
+            // ④ MODEM_WIDGETS_CLK_CONF = 全 1（0x20109400）
+            porting.wr(0x2010_9400, 0xFFFF_FFFF);
+            porting.wr(target, 0x1234_5678);
+            res[4] = porting.rd(target);
+            // ⑤ modem_rst_conf **不能乱脉冲**：写 1 = 整个 modem 域进复位且不会自动释放
+            //    （第一次跑：脉冲后控制器死掉，0x2006 都挂了，marker 停在 61）。
+            //    改为只读 0x20109400 看我们的 CLK_EN 是否仍在（作为"寄存器可写"对照）。
+            res[5] = porting.rd(0x2010_9400);
+            res[6] = 0x1234_5678; // 期望值放一起
+            _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+            _ = esp_rom_spiflash_write(0x189000, &res, @intCast(@sizeOf(@TypeOf(res))));
+        }
+        flashStage(61);
         var ae: [1]u8 = .{1};
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);

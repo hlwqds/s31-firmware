@@ -191,11 +191,11 @@ const mmio = @import("builtin");
 extern fn bt_mmio_read(addr: usize) u32;
 extern fn bt_mmio_write(addr: usize, val: u32) void;
 
-fn rd(addr: usize) u32 {
+pub fn rd(addr: usize) u32 {
     if (mmio.os.tag != .freestanding) return 0;
     return bt_mmio_read(addr);
 }
-fn wr(addr: usize, val: u32) void {
+pub fn wr(addr: usize, val: u32) void {
     if (mmio.os.tag != .freestanding) return;
     bt_mmio_write(addr, val);
 }
