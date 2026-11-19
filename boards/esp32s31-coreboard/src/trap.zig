@@ -599,6 +599,29 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 sj, sv, csr_mepc, diag_k, diag_l,
             }) catch "SL (fmt fail)";
             hw.rawLineBlocking(sl);
+
+            // **槽邻居**：0x2f07a420..0x2f07a460，看这个值周遭是"代码地址+保存寄存器"
+            // 还是"普通数据"——决定它是保存的 ra 槽还是数据字段。
+            var nb: [420]u8 = undefined;
+            const nl = std.fmt.bufPrint(&nb, "NB 420={x} 424={x} 428={x} 42c={x} 430={x} 434={x} 438={x} 43c={x} | 440={x} 444={x} 448={x} 44c={x} 450={x} 454={x} 458={x} 45c={x}", .{
+                (@as(*const usize, @ptrFromInt(0x2f07_a420))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a424))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a428))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a42c))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a430))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a434))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a438))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a43c))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a440))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a444))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a448))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a44c))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a450))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a454))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a458))).*,
+                (@as(*const usize, @ptrFromInt(0x2f07_a45c))).*,
+            }) catch "NB (fmt fail)";
+            hw.rawLineBlocking(nl);
         }
 
         // **ops 表转储**：0x2f020700..0x2f020780，看多少项是有效指针。
