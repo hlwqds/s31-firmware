@@ -430,10 +430,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // `.adv_trace`（NOLOAD，复位不清零）。下次上电读回即可知道卡在哪。
             {
                 const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
-                tr[0] = nmi_count;
+                tr[0] = nmi_count; // 0..3 = NMI 专用；8.. = 业务阶段
                 tr[1] = @truncate(frame.mepc);
                 tr[2] = @truncate(hw.findPendingClicInput() orelse 0xFFFF_FFFF);
-                tr[3] = @truncate(@as(usize, @bitCast(@as(isize, 0))));
+                tr[3] = @truncate(frame.sp); // 帧指针：辅助判断深度
             }
             // 每 ~500 次打一行，**带上 `frame.mepc`** —— 饿死时每次中断都落在
             // blob 的常驻循环里 ⇒ 这些 PC 的分布就是"卡在哪"的直接答案。

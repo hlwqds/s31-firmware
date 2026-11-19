@@ -621,7 +621,25 @@ pub fn run() noreturn {
     // ① ROM printf 自旋 ② per-pend dump ③ 日志洪水 ④ 静音 ⑤ 上限降到 20。
     // 且**烧录已校验**（flash.sh verify-flash 双向验证过）⇒ 不是镜像问题。
     // ⇒ 这是**真实且确定性**的卡住，成因未定。
-    osal.logPublic("bt probe: LE adv PAUSED (5 hypotheses eliminated, flash verified)", .{});
+    // **LE 三连 + 阶段号**：每条命令前把阶段写进 `.adv_trace`（NOLOAD，跨复位）。
+    // 卡住 → 复位 → `main()` 第一条打印 `T <stage> <pc>` ⇒ **不依赖 bringup 的日志**。
+    {
+        const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
+        var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
+        tr[8] = 1; // 即将发 0x2006（**不用 tr[0]**：那是 NMI 的计数器）
+        const r6 = transport.sendCmd(0x2006, &ap);
+        tr[8] = 2;
+        var ad: [32]u8 = @splat(0);
+        ad[0] = 3;
+        ad[1] = 2;
+        ad[2] = 0x06;
+        const r8 = transport.sendCmd(0x2008, &ad);
+        tr[8] = 3;
+        var ae: [1]u8 = .{1};
+        const ra2 = transport.sendCmd(0x200A, &ae);
+        tr[8] = 4;
+        osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
+    }
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
