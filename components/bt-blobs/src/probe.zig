@@ -670,6 +670,46 @@ pub fn run() noreturn {
     }
         asm volatile ("li t0, 0x88");
         asm volatile ("csrw 0x7a3, t0"); // **tcontrol 先行**：触发器总使能，位探测才有效
+        // **逐触发器位探测**：4 个触发器各自有独立 tdata1（tselect 选号）。
+        // tselect=1 已知可写位 = [0,1]（LOAD/STORE）；EXECUTE(bit2) 可能在其它号可写。
+        // 每触发器：清场→逐位写→读回→keep 位图。结果 3×32 位落 0x189000。
+        {
+            const rd2 = struct {
+                fn r(addr: usize) u32 {
+                    return @as(*volatile u32, @ptrFromInt(addr)).*;
+                }
+                fn w(addr: usize, val: u32) void {
+                    @as(*volatile u32, @ptrFromInt(addr)).* = val;
+                }
+            };
+            const tsel_bits = [_]u32{ 0, 2, 3 };
+            var all_keep: [3]u32 = @splat(0);
+            for (0..3) |ti| {
+                const tsel = tsel_bits[ti];
+                rd2.w(0x7a5, tsel); // tselect = 触发器号
+                rd2.w(0x7a3, 0x88); // tcontrol 每次重确认
+                var keep_t: u32 = 0;
+                var bp: u32 = 0;
+                while (bp < 32) : (bp += 1) {
+                    const bit: u32 = @as(u32, 1) << @intCast(bp);
+                    rd2.w(0x7a0, 0); // 清场
+                    rd2.w(0x7a0, bit);
+                    const rb: u32 = rd2.r(0x7a0);
+                    if ((rb & bit) != 0) keep_t |= bit;
+                }
+                all_keep[ti] = keep_t;
+                board.trap.bp_keep[ti] = keep_t;
+            }
+            var kb: [4]u32 = @splat(0);
+            kb[0] = 0xADC0_FEED;
+            kb[1] = all_keep[0]; // tsel=0
+            kb[2] = all_keep[1]; // tsel=2
+            kb[3] = all_keep[2]; // tsel=3
+            // **ebreak**：进断点分支（trap 上下文 flash 写可靠）把 bp_keep/bp_scan 落盘 0x18D000
+            asm volatile ("ebreak");
+            _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+            _ = esp_rom_spiflash_write(0x189000, &kb, 16);
+        }
         var r_scan: u32 = undefined;
         var scan_r: [16]u32 = @splat(0);
         asm volatile ("li t0, 0x88");
