@@ -634,8 +634,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             } else if (sj >= 0x4000_0020 and sj < 0x400A_0300) {
                 sv = (@as(*const usize, @ptrFromInt(sj))).*;
             }
-            const sl = std.fmt.bufPrint(&sb2, "SL sj=0x{x:0>8} sv=0x{x:0>8} want=0x{x:0>8} sn={d} sl=0x{x:0>8}", .{
-                sj, sv, csr_mepc, diag_k, diag_l,
+            const sl = std.fmt.bufPrint(&sb2, "SL sj=0x{x:0>8} sv=0x{x:0>8} want=0x{x:0>8} sn={d} sl=0x{x:0>8} mw=0x{x:0>8}", .{
+                sj, sv, csr_mepc, diag_k, diag_l, @as(usize, @as(u32, @bitCast((@as(*const u32, @ptrFromInt(csr_mepc & ~@as(usize, 3))).*)))),
             }) catch "SL (fmt fail)";
             hw.rawLineBlocking(sl);
 
