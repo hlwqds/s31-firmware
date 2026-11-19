@@ -25707,10 +25707,11 @@ vendor oracle（esp-idf-hosted 同板跑通广播对拍）= 唯一剩余路；
 | 设计 | CSR 扫描（13 连读）→ ebreak → 断点分支把 {FEE7, mepc, s0, CSR 映射} 落盘 0x18D000 |
 | 实测 | `0x18D000` 全 ff ⇒ **dump 未落地** |
 
-⇒ 之前"FEE7 从 trap 落盘成功"的案例是**单次断点 + 单次 flash 写**；
-本轮是 **13 连 cause-2 陷阱级联之后**的 flash 写 —— 级联可能破坏了 trap 内 flash 操作的前提。
-⇒ trap 内 flash 写的可靠性**不是无条件成立**——下一会话先验证：单次 ebreak（无级联）下
-FEE7 是否仍落盘（阳性对照），再决定级联场景的处理。
+⇒ ⚠ **归因未验证**：marker 停在 72 只说明流程死在 stage 72 之后（CSR **读**循环就在其后）
+——很可能某个未实现 CSR 的**读**触发了不可恢复异常路径（连 cause=2 跳过分支都没让流程继续），
+ebreak/trap 写根本没被执行 ⇒ **"trap 内 flash 写在级联场景失效"并未被证实**。
+判别（一行）：CSR 读循环之后、ebreak 之前插 `flashStage(74);` ⇒ marker 74 = 读循环跑完、
+死点在 ebreak/trap 写；仍 72 = 死在读循环（那才是真问题）。
 
 ## 会话终账
 
