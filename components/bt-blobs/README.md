@@ -20,12 +20,12 @@
 > `0x2010B000` 一读即挂**是 init 停滞的表象，不是其原因**。**四项缺一不可的条件**，
 > 前三项是配置错误、第四项是必需开关，**全部在我们自己的移植层**：
 >
-> | # | 条件 | 判据 |
-> | --- | --- | --- |
-> | ① | `clk_conf = 0x7e601002`（补 `sec_ccm(26)` + `sec_bah(27)`，**不可有 bit24**）| 回读等于该值 |
-> | ② | `clk_conf1 = 0x003ff880`（**整字写**；RMW 回读停在 `0x003fe080`，缺 bit16 `bt_apb`）| 回读等于该值 |
-> | ③ | **顺序**：`wr(0x2058_71E0, 0x3d)` 先于 syscon 写 | 顺序反了则写入被丢弃 |
-> | ④ | **`phy_domain_enable = true`**（`porting.zig:208`）| 置 false ⇒ 时钟值仍对却退回 step 6（实测）|
+> | #   | 条件                                                                                 | 判据                                       |
+> | --- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
+> | ①   | `clk_conf = 0x7e601002`（补 `sec_ccm(26)` + `sec_bah(27)`，**不可有 bit24**）        | 回读等于该值                               |
+> | ②   | `clk_conf1 = 0x003ff880`（**整字写**；RMW 回读停在 `0x003fe080`，缺 bit16 `bt_apb`） | 回读等于该值                               |
+> | ③   | **顺序**：`wr(0x2058_71E0, 0x3d)` 先于 syscon 写                                     | 顺序反了则写入被丢弃                       |
+> | ④   | **`phy_domain_enable = true`**（`porting.zig:208`）                                  | 置 false ⇒ 时钟值仍对却退回 step 6（实测） |
 >
 > ⇒ 四项齐备时 **BLE init 完整完成**（`bt bringup: INITED`；基线 `phy_before_clocks=false` 下同样成立）。
 >
@@ -55,16 +55,16 @@
 >
 > ## 开关现状（当前镜像的真实值）
 >
-> | 开关 | 值 | 性质 |
-> | --- | --- | --- |
-> | `pll_write_enabled` | **true** | **必需** |
-> | `phy_domain_enable` | **true** | **必需**（关掉退回 step 6）|
-> | `phy_before_clocks` | **false** | 基线 |
-> | `osal.trace_calls` | **200** | 原始默认 |
-> | `call_stream_on` | **false** | false = 全文本（true 会压成 1 字节）|
-> | `sample_quiet` | **true** | — |
-> | `probe_stop_at_tick` | **0** | 关闭 |
-> | `publish_bohff_anchor` / `populate_workaround` | **false** | **保持 false**（true 会崩溃）|
+> | 开关                                           | 值        | 性质                                 |
+> | ---------------------------------------------- | --------- | ------------------------------------ |
+> | `pll_write_enabled`                            | **true**  | **必需**                             |
+> | `phy_domain_enable`                            | **true**  | **必需**（关掉退回 step 6）          |
+> | `phy_before_clocks`                            | **false** | 基线                                 |
+> | `osal.trace_calls`                             | **200**   | 原始默认                             |
+> | `call_stream_on`                               | **false** | false = 全文本（true 会压成 1 字节） |
+> | `sample_quiet`                                 | **true**  | —                                    |
+> | `probe_stop_at_tick`                           | **0**     | 关闭                                 |
+> | `publish_bohff_anchor` / `populate_workaround` | **false** | **保持 false**（true 会崩溃）        |
 >
 > ## 仪器纪律（22 类观测陷阱）
 >
@@ -77,17 +77,15 @@
 >
 > > ---
 
-
-
 > ## 当前状态（2026-11-19 末，**历史快照 —— 已被文末「最终状态」表取代**）
 >
-> | 项 | 现状 |
-> | --- | --- |
-> | **默认构建 + `phy_domain_enable=false`（基线，799 KB 级）** | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**；心跳止于 ~320 tick |
-> | **`phy_domain_enable=true`** | 由 `porting.phyDomainEnable()` 打开频域时钟（含 `I2C_MST_FO`）⇒ 心跳 **320 → 9728+**、`0x2010B000` 不再挂死。⚠️ 该构建下 bringup **到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器轮询不返回）。**step 6 的 `CODES n=16` 属于默认构建，不属于本配置。** |
-> | **`WITH_PHY=1`（当前配置）** | arena **376 KiB**（`.btdm_bss` 32→8 KiB）；`calloc(1,1904)` 由 arena 成功返回、**无 abort**；`phy_domain_enable=true`。⚠️ **bringup 到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器上轮询不返回）。⚠️ 缩短洞的风险未验证（见文末） |
-> | 锚点读数 | 取址已修（`@extern` 本身即指针）。**两版都已复验且全为 0**：默认版 `base=0x2f00ffd0: 0×10`，`WITH_PHY=1` 版 `base=0x2f010ee0: 0×10` ⇒ 与"ROM 不填这张表"一致 |
-> | 调用序列 | 已可读：`CODES n=16 0120000000000000`（0=malloc 1=mutex_init 2=eventq_init 3=event_init 4=mutex_pend…） |
+> | 项                                                          | 现状                                                                                                                                                                                                                                                                       |
+> | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | **默认构建 + `phy_domain_enable=false`（基线，799 KB 级）** | init 跑到 `Xpuq`(`0x4005eb1e`) → `.L547` 首读 `0x2010B000` → **静默停摆（无 panic）**；心跳止于 ~320 tick                                                                                                                                                                  |
+> | **`phy_domain_enable=true`**                                | 由 `porting.phyDomainEnable()` 打开频域时钟（含 `I2C_MST_FO`）⇒ 心跳 **320 → 9728+**、`0x2010B000` 不再挂死。⚠️ 该构建下 bringup **到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器轮询不返回）。**step 6 的 `CODES n=16` 属于默认构建，不属于本配置。** |
+> | **`WITH_PHY=1`（当前配置）**                                | arena **376 KiB**（`.btdm_bss` 32→8 KiB）；`calloc(1,1904)` 由 arena 成功返回、**无 abort**；`phy_domain_enable=true`。⚠️ **bringup 到不了 step 1**：卡在 boot 阶段的 `initPhy()`（校准在 modem 寄存器上轮询不返回）。⚠️ 缩短洞的风险未验证（见文末）                      |
+> | 锚点读数                                                    | 取址已修（`@extern` 本身即指针）。**两版都已复验且全为 0**：默认版 `base=0x2f00ffd0: 0×10`，`WITH_PHY=1` 版 `base=0x2f010ee0: 0×10` ⇒ 与"ROM 不填这张表"一致                                                                                                               |
+> | 调用序列                                                    | 已可读：`CODES n=16 0120000000000000`（0=malloc 1=mutex_init 2=eventq_init 3=event_init 4=mutex_pend…）                                                                                                                                                                    |
 >
 > **关于早前锚点读数的说明**：`&@extern` 取的是**调用栈上临时变量**的地址，
 > 所以那段 dump 读的是栈 —— 第一个字是指针值（即 `base`，如 `0x2f010ee0`），
@@ -121,17 +119,17 @@
 **当前级别（2026-11-17 收官）：init 链跑到 step 6 并停在内部**。硬件已证明无问题
 （官方 IDF 同板 `controller_init`/`enable` 均 `ESP_OK`）。细节见顶部「交接摘要」。
 
-| 级别 | 状态 | 证据 |
-| --- | --- | --- |
-| 归档能链进两段镜像 | ✅ | `.flash.text` 699 856 / 窗口 720 896；`elf2image` 成功，`image-info` 恰好 2 条 `DROM, IROM` |
-| 闭包被真拉进来 | ✅ | 镜像里可见 `btdm_hci_trans.c`、`btdm_sleep.c`、`btdm_broker.c`；`.iram_blobs` 0 → 60 224 B |
-| 56 个弱断言占位 | ✅ **56/56 强定义** | 逐条对归档调用集核过，差集为空 |
-| init 链 1–5 步 | ✅ | `btdm_osal_elem_mempool_init`（**5 个池全 `rc=0`**）/ `btdm_log_init` / `btdm_external_init` / `btdm_coex_init` / `btdm_lp_enable_clock` |
-| init **step 6** `r_btdm_task_init` | ❌ **停在这里** | 板侧 trace 只有 `mutex_pend => OK`，其后**无 hook、无 `task_create`、无任务体** |
-| init step 7–15 | ⏸ 未执行 | 被 step 6 挡住 |
-| `r_ble_controller_init`（step 10）/ `transport.init`（step 15） | ⏸ **已实现、未执行** | 代码在 `bringup.zig` / `transport.zig`，只是链还没走到 |
-| HCI Reset / Read Local Version 有应答 | ⏸ 未执行 | 同上 |
-| 板级扫描/连接 | ❌ | 离这里还有一个可用 controller |
+| 级别                                                            | 状态                 | 证据                                                                                                                                     |
+| --------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 归档能链进两段镜像                                              | ✅                   | `.flash.text` 699 856 / 窗口 720 896；`elf2image` 成功，`image-info` 恰好 2 条 `DROM, IROM`                                              |
+| 闭包被真拉进来                                                  | ✅                   | 镜像里可见 `btdm_hci_trans.c`、`btdm_sleep.c`、`btdm_broker.c`；`.iram_blobs` 0 → 60 224 B                                               |
+| 56 个弱断言占位                                                 | ✅ **56/56 强定义**  | 逐条对归档调用集核过，差集为空                                                                                                           |
+| init 链 1–5 步                                                  | ✅                   | `btdm_osal_elem_mempool_init`（**5 个池全 `rc=0`**）/ `btdm_log_init` / `btdm_external_init` / `btdm_coex_init` / `btdm_lp_enable_clock` |
+| init **step 6** `r_btdm_task_init`                              | ❌ **停在这里**      | 板侧 trace 只有 `mutex_pend => OK`，其后**无 hook、无 `task_create`、无任务体**                                                          |
+| init step 7–15                                                  | ⏸ 未执行             | 被 step 6 挡住                                                                                                                           |
+| `r_ble_controller_init`（step 10）/ `transport.init`（step 15） | ⏸ **已实现、未执行** | 代码在 `bringup.zig` / `transport.zig`，只是链还没走到                                                                                   |
+| HCI Reset / Read Local Version 有应答                           | ⏸ 未执行             | 同上                                                                                                                                     |
+| 板级扫描/连接                                                   | ❌                   | 离这里还有一个可用 controller                                                                                                            |
 
 > 别把"链接成立"读成"controller 可用"。当前准确表述是：
 > **软件栈已完整到 step 6 之前，卡点是归档里多个模块各自的 `.LANCHOR0` 环境指针未被发布**
@@ -184,8 +182,6 @@ zig build -Dtarget=riscv32-freestanding-eabihf \
 >    `-Dbt-probe` 会掩盖它（探针 shim 引用了 `probe.run`）—— **改 `root.zig` 时别删那行**。
 > 3. **镜像不能"链接成功但为空"**：没有真实引用时归档成员可能一个都不进来。
 
-
-
 镜像与判据：
 
 ```bash
@@ -197,21 +193,21 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
 
 ## 文件职责
 
-| 文件 | 职责 |
-| --- | --- |
-| `link/bt_stubs.c` | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族） |
-| `src/osal.zig` | **已迁出** → `components/osal/`（另有 `sched.zig`、`probe_ptr.zig`）；本组件经 `osal_kit` 模块使用 |
-| `src/host_tests.zig` | 主机测试入口（`zig build test` 会跑到） |
-| `src/probe.zig` | 板上探针（`-Dbt-probe`）：装钩子 → arena → init → enable → 进任务 → 发 Reset → 泵任务 |
-| `src/root.zig` | 模块根：所有文件属于同一个模块（分两个会报"文件属于多个模块"）；另含 `forceExports()` 的强引用 |
-| `tools/gen-bt-closure.sh` | **重新生成闭包对象清单**（解包 4 归档 → 符号图 BFS → 减 ROM → 打印构建命令） |
-| `src/sched.zig` | **已迁出** → `components/osal/src/sched.zig` |
-| `src/transport.zig` | HCI 传输层（自有 ops + 下行分发 + 事件回程），含 `sendReset()`/`sendReadLocalVersion()` |
-| `src/extfuncs.zig` | `ext_funcs_t`（rv32 **40 字节**）：controller 的 malloc/free/rand/assert 表 |
-| `src/bringup.zig` | init（13 步）/ enable（6 步）编排，状态机 `idle→inited→enabled`，附 `getStatus()` |
-| `src/porting.zig` | IDF porting 层的 C 函数在裸机侧的实现：4 个空实现 + `ble_msys_init` + mempool 容量校验 |
-| `src/config.zig` | `esp_bt_controller_config_t` 逐字段镜像（60 字段、**每字段偏移都断言**）、`defaults()`、`elemCalc()`/`mempoolElemNum()` |
-| `tools/btcfg-probe.{c,sh}` | 用 rv32 gcc 把 `sizeof`/`offsetof` 发射成常量表再读回（交叉产物跑不了） |
+| 文件                       | 职责                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `link/bt_stubs.c`          | 归档要求宿主提供、且**确实由我们给**的 C 侧符号（断言/日志/printf 族）                                                  |
+| `src/osal.zig`             | **已迁出** → `components/osal/`（另有 `sched.zig`、`probe_ptr.zig`）；本组件经 `osal_kit` 模块使用                      |
+| `src/host_tests.zig`       | 主机测试入口（`zig build test` 会跑到）                                                                                 |
+| `src/probe.zig`            | 板上探针（`-Dbt-probe`）：装钩子 → arena → init → enable → 进任务 → 发 Reset → 泵任务                                   |
+| `src/root.zig`             | 模块根：所有文件属于同一个模块（分两个会报"文件属于多个模块"）；另含 `forceExports()` 的强引用                          |
+| `tools/gen-bt-closure.sh`  | **重新生成闭包对象清单**（解包 4 归档 → 符号图 BFS → 减 ROM → 打印构建命令）                                            |
+| `src/sched.zig`            | **已迁出** → `components/osal/src/sched.zig`                                                                            |
+| `src/transport.zig`        | HCI 传输层（自有 ops + 下行分发 + 事件回程），含 `sendReset()`/`sendReadLocalVersion()`                                 |
+| `src/extfuncs.zig`         | `ext_funcs_t`（rv32 **40 字节**）：controller 的 malloc/free/rand/assert 表                                             |
+| `src/bringup.zig`          | init（13 步）/ enable（6 步）编排，状态机 `idle→inited→enabled`，附 `getStatus()`                                       |
+| `src/porting.zig`          | IDF porting 层的 C 函数在裸机侧的实现：4 个空实现 + `ble_msys_init` + mempool 容量校验                                  |
+| `src/config.zig`           | `esp_bt_controller_config_t` 逐字段镜像（60 字段、**每字段偏移都断言**）、`defaults()`、`elemCalc()`/`mempoolElemNum()` |
+| `tools/btcfg-probe.{c,sh}` | 用 rv32 gcc 把 `sizeof`/`offsetof` 发射成常量表再读回（交叉产物跑不了）                                                 |
 
 **两条形状纪律**（踩过就炸内存）：
 
@@ -221,20 +217,20 @@ $PY -m esptool --chip esp32s31 image-info /tmp/bt_app.bin | grep -c 'DROM, IROM'
    踩坏 controller 的内存——主机用例 `slot: 与 C 的 4 字节句柄同形` 用金丝雀盯着这件事。
 2. **不用 allocator**：`std.heap.page_allocator` 在 `riscv32-freestanding` 上**没有后端**
    （主机 x86_64 上却正常 ⇒ 假绿）。池数组本身就是存储，每个记录带 `in_use` 标志。
-| `firmware/build.zig` 的 `bt_blob_dir` 块 | 把对象逐个加进链接；`bt_added == 0` 直接 panic |
-| `boards/esp32s31-coreboard/linker/s31.ld` | ① 收 `.iram_sleep*` / `.iram_single_sleep*` 进 `.iram_blobs`；② `PROVIDE` 5 个 `*_btdm` 边界 |
-| `boards/esp32s31-coreboard/linker/rom_syms.ld` | `abs` / `ets_printf` / `printf` / `phy_set_chan_freq_sw_start` / `ets_clk_get_xtal_freq` |
+   | `firmware/build.zig` 的 `bt_blob_dir` 块 | 把对象逐个加进链接；`bt_added == 0` 直接 panic |
+   | `boards/esp32s31-coreboard/linker/s31.ld` | ① 收 `.iram_sleep*` / `.iram_single_sleep*` 进 `.iram_blobs`；② `PROVIDE` 5 个 `*_btdm` 边界 |
+   | `boards/esp32s31-coreboard/linker/rom_syms.ld` | `abs` / `ets_printf` / `printf` / `phy_set_chan_freq_sw_start` / `ets_clk_get_xtal_freq` |
 
 ## 桩语义（哪些是假值，别当真）
 
-| 符号 | 当前实现 | 说明 |
-| --- | --- | --- |
-| `rtc_clk_xtal_freq_get` | **转发 ROM** `ets_clk_get_xtal_freq` | 返回**真**频率（Hz）。controller 的时基全从这里推，早期写成常数 40 是错的（差 1e6 倍） |
-| `__assert_func` | 打印 `file:line func: expr` 到串口后死循环 | 断言时先留线索，不静默挂死 |
-| `sprintf` | 写空串、返回 0 | **占位**。若某条路径拿它拼 MAC/版本串再解析，会拿到空串 |
-| `phy_printf` | 丢弃 | 占位（controller 的日志）；取证靠 HCI 字节流而不是它 |
-| `e_btdm_lp_modem_clock_set` | no-op，返回 0 | 时钟树由 board 层统一管理 |
-| `_bss_start_btdm` … `_data_start_btdm_rom` | **零长度区间**（`start == end`） | `112.o` 的用法是 `memset(start, 0, end-start)`；本布局 `.bss` 已由 `_start` 清零、`.data` 的 LMA == VMA，故零长度语义等价 |
+| 符号                                       | 当前实现                                   | 说明                                                                                                                      |
+| ------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `rtc_clk_xtal_freq_get`                    | **转发 ROM** `ets_clk_get_xtal_freq`       | 返回**真**频率（Hz）。controller 的时基全从这里推，早期写成常数 40 是错的（差 1e6 倍）                                    |
+| `__assert_func`                            | 打印 `file:line func: expr` 到串口后死循环 | 断言时先留线索，不静默挂死                                                                                                |
+| `sprintf`                                  | 写空串、返回 0                             | **占位**。若某条路径拿它拼 MAC/版本串再解析，会拿到空串                                                                   |
+| `phy_printf`                               | 丢弃                                       | 占位（controller 的日志）；取证靠 HCI 字节流而不是它                                                                      |
+| `e_btdm_lp_modem_clock_set`                | no-op，返回 0                              | 时钟树由 board 层统一管理                                                                                                 |
+| `_bss_start_btdm` … `_data_start_btdm_rom` | **零长度区间**（`start == end`）           | `112.o` 的用法是 `memset(start, 0, end-start)`；本布局 `.bss` 已由 `_start` 清零、`.data` 的 LMA == VMA，故零长度语义等价 |
 
 `printf` / `ets_printf` 走的是 **ROM 的格式化器**（走 ROM 的 UART 配置，不是我们的板日志）。
 里程碑 2 接 HCI 时若要统一日志，需要把这两个换成自己的 shim。
@@ -269,14 +265,14 @@ NimBLE 开启时 host 常量是 `co=8 / ev=19 / evq=3 / sem=10 / mutex=4`，每�
 
 ## porting 层：9 个 C 函数只有 1 个是硬活
 
-| 函数 | 实现 | 依据 |
-| --- | --- | --- |
-| `btdm_log_init` / `btdm_external_init` / `btdm_coex_init` / `btdm_lp_init` | `return 0` | IDF 原文就是空实现（coex 在 `CONFIG_SW_COEXIST_ENABLE` 关时；lp 的两个分支都不进） |
-| `ble_controller_scan_duplicate_config` | 空操作 | 调的是 NimBLE **host** 侧 `ble_vhci_*`（全归档 `grep ble_vhci` 零命中）⇒ controller-only 没有 host |
-| `ble_msys_init` | 转调归档 `r_esp_ble_msys_init` | 常量取 `host/nimble/Kconfig.in:480-511` 的 **SOC_ESP_NIMBLE_CONTROLLER 分支**：`24/128`、`24/320`、`from_heap=y` |
-| `btdm_osal_elem_mempool_init` | **容量校验**（`elemMempoolInit`） | IDF 池空会回退动态 malloc，我们**没有回退** ⇒ 超限按类返回 `-1..-5` 并打印 5 个数字 |
-| `btdm_lp_enable_clock` | 🟡 **空实现 + 大声日志**（故意） | HCI Reset / Read Local Version 是**软件层**命令，未必需要射频时钟 ⇒ 先空着；一旦 controller 碰 MAC 寄存器就 fault，再补下面那张表 |
-| `btdm_lp_reset` / `btdm_coex_enable` | 无状态 / 返回 0 | 软件共存未开 |
+| 函数                                                                       | 实现                              | 依据                                                                                                                              |
+| -------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `btdm_log_init` / `btdm_external_init` / `btdm_coex_init` / `btdm_lp_init` | `return 0`                        | IDF 原文就是空实现（coex 在 `CONFIG_SW_COEXIST_ENABLE` 关时；lp 的两个分支都不进）                                                |
+| `ble_controller_scan_duplicate_config`                                     | 空操作                            | 调的是 NimBLE **host** 侧 `ble_vhci_*`（全归档 `grep ble_vhci` 零命中）⇒ controller-only 没有 host                                |
+| `ble_msys_init`                                                            | 转调归档 `r_esp_ble_msys_init`    | 常量取 `host/nimble/Kconfig.in:480-511` 的 **SOC_ESP_NIMBLE_CONTROLLER 分支**：`24/128`、`24/320`、`from_heap=y`                  |
+| `btdm_osal_elem_mempool_init`                                              | **容量校验**（`elemMempoolInit`） | IDF 池空会回退动态 malloc，我们**没有回退** ⇒ 超限按类返回 `-1..-5` 并打印 5 个数字                                               |
+| `btdm_lp_enable_clock`                                                     | 🟡 **空实现 + 大声日志**（故意）  | HCI Reset / Read Local Version 是**软件层**命令，未必需要射频时钟 ⇒ 先空着；一旦 controller 碰 MAC 寄存器就 fault，再补下面那张表 |
+| `btdm_lp_reset` / `btdm_coex_enable`                                       | 无状态 / 返回 0                   | 软件共存未开                                                                                                                      |
 
 ⚠ **时序**：`btdm_lp_enable_clock` 在 `r_btdm_task_init` **之前**（`bt.c:234` vs `236`）。
 
@@ -284,16 +280,16 @@ NimBLE 开启时 host 常量是 `co=8 / ev=19 / evq=3 / sem=10 / mutex=4`，每�
 
 `modem_clock_module_enable(PERIPH_BT_MODULE)` = `BLE_CLOCK_DEPS`，**8 个门**：
 
-| 门 | HAL |
-| --- | --- |
-| BLE_MAC | `clk_conf1.clk_btmac_en` |
-| BT_I154_COMMON_BB | `enable_bt_bb_clock` |
-| ETM | `enable_etm_clock` |
-| **COEXIST** | **在 lpcon 块**（`modem_lpcon_ll_enable_coex_clock`）——别只改 syscon |
-| WIFI_BB_80X1 | `enable_wifibb_80x1_clock` |
-| SOC_PLL_SOURCE_CG | `modem_clock_hal_enable_soc_pll_source_cg` |
-| BT_APB | `enable_bt_apb_clock` + `enable_modem_sec_apb_clock` |
-| BT_PERIPHERAL | `enable_modem_sec_clock` + `enable_ble_timer_clock` |
+| 门                | HAL                                                                  |
+| ----------------- | -------------------------------------------------------------------- |
+| BLE_MAC           | `clk_conf1.clk_btmac_en`                                             |
+| BT_I154_COMMON_BB | `enable_bt_bb_clock`                                                 |
+| ETM               | `enable_etm_clock`                                                   |
+| **COEXIST**       | **在 lpcon 块**（`modem_lpcon_ll_enable_coex_clock`）——别只改 syscon |
+| WIFI_BB_80X1      | `enable_wifibb_80x1_clock`                                           |
+| SOC_PLL_SOURCE_CG | `modem_clock_hal_enable_soc_pll_source_cg`                           |
+| BT_APB            | `enable_bt_apb_clock` + `enable_modem_sec_apb_clock`                 |
+| BT_PERIPHERAL     | `enable_modem_sec_clock` + `enable_ble_timer_clock`                  |
 
 `modem_clock_module_enable(PERIPH_BT_APB_MODULE)` = `BT_APB_CLOCK_DEPS`，**4 个门**：
 BT_APB、ETM、SOC_PLL_SOURCE_CG、BLE_MAC。
@@ -324,14 +320,14 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 **`_malloc` / `_free` / `_os_random` / `_osi_assert`**。跳过就等于 controller 没有分配器，
 `r_ble_controller_init` 必然失败。
 
-| 项 | 值 |
-| --- | --- |
-| `ext_version` | `0x20250819` |
-| `magic` | `0xA5A5A5A5` |
-| `_malloc/_free` | 我们的 `wr_btdm_osal_malloc/_free`（都走 arena） |
-| `_os_random` | `osal.randomU32()`（板级可注入真 TRNG） |
-| `_osi_assert(u32 ln, const char* fn, u32 p1, u32 p2)` | ⚠ **行号在前、函数名在后**（与 `__assert_func` 相反） |
-| 三个 ECC 项 | **返回 -1** —— 与 IDF 在 `CONFIG_BT_LE_SM_LEGACY/SC` 未开时一致（`ble.c:506-522`）⇒ 不需要 ROM ECC |
+| 项                                                    | 值                                                                                                 |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `ext_version`                                         | `0x20250819`                                                                                       |
+| `magic`                                               | `0xA5A5A5A5`                                                                                       |
+| `_malloc/_free`                                       | 我们的 `wr_btdm_osal_malloc/_free`（都走 arena）                                                   |
+| `_os_random`                                          | `osal.randomU32()`（板级可注入真 TRNG）                                                            |
+| `_osi_assert(u32 ln, const char* fn, u32 p1, u32 p2)` | ⚠ **行号在前、函数名在后**（与 `__assert_func` 相反）                                              |
+| 三个 ECC 项                                           | **返回 -1** —— 与 IDF 在 `CONFIG_BT_LE_SM_LEGACY/SC` 未开时一致（`ble.c:506-522`）⇒ 不需要 ROM ECC |
 
 每个失败都记 `stats.failed_step` + `last_rc` 并打印，所以板侧日志能直接指出停在第几步。
 
@@ -339,12 +335,12 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 
 我们**自己拥有**这层（不碰归档里没有的 `hci_driver_vhci_ops`/`uart_ops`）：
 
-| 环节 | 做法 |
-| --- | --- |
-| `ops` | 3 个函数指针：`tx(type,data,len,dir)` / `init(cb)` / `deinit()` |
-| 下行 | 我们的 `forward`：`TYPE_CMD` 时 `pkt = @ptrCast(data)` → `r_btdm_hci_trans_rx(pkt)` |
-| 事件上行 | `r_ble_hci_trans_cfg_hs(leEvtTx, NULL, leAclTx, NULL)` |
-| BTDM 上行 | `r_btdm_hci_trans_register_tx(btdmTx, false)` |
+| 环节      | 做法                                                                                |
+| --------- | ----------------------------------------------------------------------------------- |
+| `ops`     | 3 个函数指针：`tx(type,data,len,dir)` / `init(cb)` / `deinit()`                     |
+| 下行      | 我们的 `forward`：`TYPE_CMD` 时 `pkt = @ptrCast(data)` → `r_btdm_hci_trans_rx(pkt)` |
+| 事件上行  | `r_ble_hci_trans_cfg_hs(leEvtTx, NULL, leAclTx, NULL)`                              |
+| BTDM 上行 | `r_btdm_hci_trans_register_tx(btdmTx, false)`                                       |
 
 三个必踩点：
 
@@ -363,10 +359,10 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 
 **两条发命令的路，先试 B**：
 
-| 路径 | 写法 | 备注 |
-| --- | --- | --- |
+| 路径                             | 写法                                                                                                                              | 备注                            |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | **B**（host 层入口，代码少一半） | `r_ble_hci_trans_buf_alloc(3)` → 填 `opcode小端+plen+params` → `r_ble_hci_trans_hs_cmd_tx(buf)` → `r_ble_hci_trans_buf_free(buf)` | `BLE_HCI_TRANS_BUF_CMD = **3**` |
-| **A**（IDF transport 路径） | `r_btdm_hci_trans_buf_alloc(1, 0)` → 填 `pkt.data/length` → `set_ble_flag` → `r_btdm_hci_trans_rx(pkt)` | `HCI_DRIVER_TYPE_CMD = **1**` |
+| **A**（IDF transport 路径）      | `r_btdm_hci_trans_buf_alloc(1, 0)` → 填 `pkt.data/length` → `set_ble_flag` → `r_btdm_hci_trans_rx(pkt)`                           | `HCI_DRIVER_TYPE_CMD = **1**`   |
 
 ⚠ 两个分配器的 type 值**不同**（3 vs 1），别混用。
 
@@ -378,11 +374,11 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 从 `wifi-blobs/src/sched.zig` **复制**而来（不 import 它，否则会把 wifi blob 的依赖拖进来），
 并加了 controller 真正需要的东西：
 
-| 能力 | 实现 |
-| --- | --- |
-| 任务表 | `taskCreate(stack, entry, arg)`：`initContext` 建帧（栈内**最后一个 16 对齐地址**） |
-| 阻塞 | `block()` = `swapContext(current, main)` —— 任务的 `sp` 被存下，恢复后**从原地继续** |
-| 恢复 | `resumeTask(ctx)` = `swapContext(main, task)` |
+| 能力   | 实现                                                                                 |
+| ------ | ------------------------------------------------------------------------------------ |
+| 任务表 | `taskCreate(stack, entry, arg)`：`initContext` 建帧（栈内**最后一个 16 对齐地址**）  |
+| 阻塞   | `block()` = `swapContext(current, main)` —— 任务的 `sp` 被存下，恢复后**从原地继续** |
+| 恢复   | `resumeTask(ctx)` = `swapContext(main, task)`                                        |
 
 **为什么必须有**：BLE 的任务体是 `sem_pend(FOREVER)` / `eventq_get(FOREVER)` 的**死循环**。
 只登记不建上下文 ⇒ 任务永不执行 ⇒ init 会"成功"然后什么都不发生；
@@ -390,12 +386,12 @@ rv32 上 **40 字节**：`u32 ext_version` + 8 个函数指针 + `u32 magic`）�
 
 **OSAL 侧的接线**（`osal.zig`）：
 
-| 原语 | 行为 |
-| --- | --- |
-| `sem_pend(FOREVER)` 且计数 0 | 记下 `waiter` → `sched.block()` → 唤醒后**重新检查**（while 循环） |
-| `sem_release` | 计数 +1；若有 `waiter` → `resumeTask` |
-| `eventq_get(FOREVER)` 且队列空 | 同上 |
-| `eventq_put` | 入队；若有 `waiter` → `resumeTask` |
+| 原语                           | 行为                                                               |
+| ------------------------------ | ------------------------------------------------------------------ |
+| `sem_pend(FOREVER)` 且计数 0   | 记下 `waiter` → `sched.block()` → 唤醒后**重新检查**（while 循环） |
+| `sem_release`                  | 计数 +1；若有 `waiter` → `resumeTask`                              |
+| `eventq_get(FOREVER)` 且队列空 | 同上                                                               |
+| `eventq_put`                   | 入队；若有 `waiter` → `resumeTask`                                 |
 
 ⚠ 调度器**未启动**时（`sched.isStarted()==false`，例如主机测试）阻塞退化成返回 `TIMEOUT`
 并计入 `stats.blocked_calls` —— 保证不会无限自旋。
@@ -407,17 +403,16 @@ arena 或任务表满时退回"只登记"并**打一行日志**（不静默）�
 
 **实验脚手架都收在开关后面，默认关**（保留是为了可复现，不干扰正常 bring-up）：
 
-| 开关 | 作用 |
-| --- | --- |
-| `probe.dump_rom` | 启动时 dump ROM 区（`0x2f83efb0`/`0x2f812180`）与 UART0 寄存器（`0x2038A000`） |
-| `probe.ble_block_experiment` | 复位脉冲 + 时钟重开 + `bt_bb_v2_init_cmplx(1)` + 读 `0x2010B000` |
-| `bringup.skip_task_init` | 跳过 step 6 让链继续（**默认 false**；设为 true 会崩在 step 10 的空指针，见下） |
-| `probe.probe_irqs` | 武装 T0 + 开中断（PC 采样用） |
-| `probe.verbose` | 是否把 `osal.logPublic` 每行打到 UART |
-| `porting.clock_writes_enabled` | 是否真的写时钟门控（对照实验用） |
+| 开关                           | 作用                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| `probe.dump_rom`               | 启动时 dump ROM 区（`0x2f83efb0`/`0x2f812180`）与 UART0 寄存器（`0x2038A000`）  |
+| `probe.ble_block_experiment`   | 复位脉冲 + 时钟重开 + `bt_bb_v2_init_cmplx(1)` + 读 `0x2010B000`                |
+| `bringup.skip_task_init`       | 跳过 step 6 让链继续（**默认 false**；设为 true 会崩在 step 10 的空指针，见下） |
+| `probe.probe_irqs`             | 武装 T0 + 开中断（PC 采样用）                                                   |
+| `probe.verbose`                | 是否把 `osal.logPublic` 每行打到 UART                                           |
+| `porting.clock_writes_enabled` | 是否真的写时钟门控（对照实验用）                                                |
 
 ⇒ 默认全关时，探针只做"装钩子 → arena → init → enable"，日志干净。
-
 
 顺序（三个点错一个就白跑一趟）：
 
@@ -431,11 +426,11 @@ arena 或任务表满时退回"只登记"并**打一行日志**（不静默）�
 
 **日志怎么读**：
 
-| 现象 | 结论 |
-| --- | --- |
-| 没有 `bt task round` | 任务从没跑过（`start` 没生效 / 任务没建出来） |
-| 有 round、命令已发、没有 `EVT` | 任务跑了但没回包 → 查切片 E / 时钟门控 |
-| 有 `EVT` 但 status≠0 | 回包了但命令失败 |
+| 现象                           | 结论                                          |
+| ------------------------------ | --------------------------------------------- |
+| 没有 `bt task round`           | 任务从没跑过（`start` 没生效 / 任务没建出来） |
+| 有 round、命令已发、没有 `EVT` | 任务跑了但没回包 → 查切片 E / 时钟门控        |
+| 有 `EVT` 但 status≠0           | 回包了但命令失败                              |
 
 ## 构建配方可复现（`tools/gen-bt-closure.sh`）
 
@@ -454,10 +449,10 @@ HCI A 与 B 两条路径）。少一个就会出现"链接期 undefined"——�
 
 跑到 init **step 6 `r_btdm_task_init` 内部**停住。用 TIMG0 T0（2 ms）采样被中断的 PC：
 
-| 观测 | 值 |
-| --- | --- |
-| PC | `0x2f83efda` ×13、`0x2f812220` ×5（都在 ROM 区） |
-| `mac` | **28/28 全是 `0x0000e000`** |
+| 观测  | 值                                               |
+| ----- | ------------------------------------------------ |
+| PC    | `0x2f83efda` ×13、`0x2f812220` ×5（都在 ROM 区） |
+| `mac` | **28/28 全是 `0x0000e000`**                      |
 
 ⇒ **`MAC_ST & 0xE000 != 0`** —— 与 Wi-Fi controller 的卡点是**同一组只读忙位**。
 
@@ -531,9 +526,9 @@ ae: r_sym_bt_HGbP...
 
 卡住期间 **T0 中断不再到来**（2 ms 周期、28 秒窗口本该上万次，实测只来 2 次）。两条补救都试过：
 
-| 尝试 | 结果 |
-| --- | --- |
-| 关掉 controller 日志、减少 UART 流量 | 无效 |
+| 尝试                                                                                  | 结果                                                             |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 关掉 controller 日志、减少 UART 流量                                                  | 无效                                                             |
 | 把 CLIC 输入 25 变成 **NMI**（`CLIC_INT_CTRL_REG(25) = 0x10801064`，置 bit3 `nmies`） | 写入 `0x1fc00100 → 0x1fc00000`，**bit3 读回不置位** ⇒ NMI 未生效 |
 
 ⇒ 卡住处既不来普通中断、NMI 也配不出来 ⇒ **靠 PC 采样继续往下探这条路到边界了**。
@@ -560,11 +555,11 @@ ae: r_sym_bt_HGbP...
 
 ### 再排除三条（2026-11-17 晚）
 
-| 假设 | 实验 | 结果 |
-| --- | --- | --- |
+| 假设                                                    | 实验                                                                                               | 结果                                                                               |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `mutex_pend(FOREVER)` 返回 TIMEOUT 让归档拿到意外错误码 | 把 `mutexPend`/`semPend`/`eventqGet` 的 FOREVER 改成**有界忙等**（绝不返回 TIMEOUT，除非自旋耗尽） | 仍卡；且日志显示 mutex 本来是**空的** ⇒ FOREVER 分支根本没走到 ⇒ **OSAL 语义排除** |
-| 卡点函数里的 `wr_btdm_assert` 挂住 | 反汇编 `r_sym_bt_BOhff...` 发现它引用了 `wr_btdm_assert`（行号 308/311）；把断言改成**打印后返回** | 仍卡，且 `strong-assert` **命中 0 次** ⇒ **不是断言** |
-| CLIC 写把 IE(bit8) 清了 | 掩码改为 `old & 0x107` | 已修（此前 `& 0x7` 会清掉使能位），但 NMI 仍未生效 |
+| 卡点函数里的 `wr_btdm_assert` 挂住                      | 反汇编 `r_sym_bt_BOhff...` 发现它引用了 `wr_btdm_assert`（行号 308/311）；把断言改成**打印后返回** | 仍卡，且 `strong-assert` **命中 0 次** ⇒ **不是断言**                              |
+| CLIC 写把 IE(bit8) 清了                                 | 掩码改为 `old & 0x107`                                                                             | 已修（此前 `& 0x7` 会清掉使能位），但 NMI 仍未生效                                 |
 
 ### 日志通道必须**自己写 UART FIFO**（2026-11-17 关键工具）
 
@@ -639,12 +634,12 @@ bt probe: probing 0x2010B000 ...
 
 **让这块可达的候选**（按 IDF 初始化顺序，逐个排除）：
 
-| # | 候选 | 状态 |
-| --- | --- | --- |
-| 1 | BT/Wi-Fi 共享**电源域**（`esp_wifi_bt_power_domain_on`） | ❌ **排除**：该函数体被 `#if SOC_PM_MODEM_PD_BY_SW` 包住，而 S31 的 `soc_caps.h` **没有定义**它 ⇒ 这段在 S31 上根本不编译 ⇒ 电源域不由软件控制 |
-| 2 | 该块自己的**时钟门** | 未排除。我们已置 `clk_conf1` 的 `bt_apb`/`btbb`/`btmac`（bit16/17/18），但 `MODEM_BASE+0xB000` 在 soc 头里**没有任何定义**（可查的块只到 SYSCON +0x9C00）⇒ 它是**未文档化的私有块**，门可能在别处 |
-| 3 | `PAU`（`0x20341000`）的 modem 配置 | 未排除 |
-| 4 | **`esp_phy_enable` 前置** | **最可能**：IDA 的流程里 PHY 先起、再碰 modem/BLE 寄存器；我们跳过了 `esp_phy_enable`（ch25 的 `shellPhyEnable` 只做了 Wi-Fi 侧的一部分），BT 侧可能没做 |
+| #   | 候选                                                     | 状态                                                                                                                                                                                              |
+| --- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | BT/Wi-Fi 共享**电源域**（`esp_wifi_bt_power_domain_on`） | ❌ **排除**：该函数体被 `#if SOC_PM_MODEM_PD_BY_SW` 包住，而 S31 的 `soc_caps.h` **没有定义**它 ⇒ 这段在 S31 上根本不编译 ⇒ 电源域不由软件控制                                                    |
+| 2   | 该块自己的**时钟门**                                     | 未排除。我们已置 `clk_conf1` 的 `bt_apb`/`btbb`/`btmac`（bit16/17/18），但 `MODEM_BASE+0xB000` 在 soc 头里**没有任何定义**（可查的块只到 SYSCON +0x9C00）⇒ 它是**未文档化的私有块**，门可能在别处 |
+| 3   | `PAU`（`0x20341000`）的 modem 配置                       | 未排除                                                                                                                                                                                            |
+| 4   | **`esp_phy_enable` 前置**                                | **最可能**：IDA 的流程里 PHY 先起、再碰 modem/BLE 寄存器；我们跳过了 `esp_phy_enable`（ch25 的 `shellPhyEnable` 只做了 Wi-Fi 侧的一部分），BT 侧可能没做                                          |
 
 ⇒ 有了 2 行复现器，验证任何候选都只需**一次烧录**（读通即修好）。
 
@@ -692,10 +687,10 @@ step 10 r_ble_controller_init
 
 ⇒ 但 step 10 崩在**空指针**上。保留符号（探针构建 `strip=false`）后把 PC 映射出来：
 
-| 地址 | 最近的符号 |
-| --- | --- |
+| 地址                 | 最近的符号                                              |
+| -------------------- | ------------------------------------------------------- |
 | `0x4005f310`（mepc） | `r_sym_bt_Hl337IkWeUHjq0EeK30W`（`libbtdm_common/2.o`） |
-| `0x40005ba6`（ra） | `r_sym_ble_4W45cnSk8tMbpqkpDdkQ`（`libble_app`） |
+| `0x40005ba6`（ra）   | `r_sym_ble_4W45cnSk8tMbpqkpDdkQ`（`libble_app`）        |
 
 那个函数只有 8 字节有效代码：
 
@@ -714,10 +709,10 @@ lw  a5, 0(a5)      # ← 解引用 NULL ⇒ load access fault, mtval=0
 
 对比两组板侧读数：
 
-| 地址 | 所属块 | 可读性 |
-| --- | --- | --- |
-| `0x2010_4CAC`（`MAC_ST`，ch25 全程在采） | `MODEM_BASE + 0x4000`(**WIFI_MAC**) | ✅ **每次采样都读得到**（恒 `0x0000E000`） |
-| `0x2010_B000` | `MODEM_BASE + 0xB000`（**私有 BLE/MAC 块**） | ❌ **读一次即总线挂起** |
+| 地址                                     | 所属块                                       | 可读性                                     |
+| ---------------------------------------- | -------------------------------------------- | ------------------------------------------ |
+| `0x2010_4CAC`（`MAC_ST`，ch25 全程在采） | `MODEM_BASE + 0x4000`(**WIFI_MAC**)          | ✅ **每次采样都读得到**（恒 `0x0000E000`） |
+| `0x2010_B000`                            | `MODEM_BASE + 0xB000`（**私有 BLE/MAC 块**） | ❌ **读一次即总线挂起**                    |
 
 ⇒ 整个 modem 域**不是**整体不可访问：WIFI_MAC 块正常，只有 `+0xB000` 这一块挂。
 
@@ -733,10 +728,10 @@ lw  a5, 0(a5)      # ← 解引用 NULL ⇒ load access fault, mtval=0
 
 **再排除两条（2026-11-17）**：
 
-| 候选 | 板上读数 | 结论 |
-| --- | --- | --- |
-| `HP_SYS_CLKRST.MODEM_CTRL0`(0x20587040) 的 `MODEM_CLK_EN`(bit0) 未开 | **`0x00000001`** ⇒ 已开 | 排除 |
-| `modem_rst_conf`(SYSCON+0x10) 有复位位未清 | **`0x00000000`** ⇒ 全部已清 | 排除 |
+| 候选                                                                 | 板上读数                    | 结论 |
+| -------------------------------------------------------------------- | --------------------------- | ---- |
+| `HP_SYS_CLKRST.MODEM_CTRL0`(0x20587040) 的 `MODEM_CLK_EN`(bit0) 未开 | **`0x00000001`** ⇒ 已开     | 排除 |
+| `modem_rst_conf`(SYSCON+0x10) 有复位位未清                           | **`0x00000000`** ⇒ 全部已清 | 排除 |
 
 ⇒ 结论：缺的前置是 **`esp_phy_enable(PHY_MODEM_BT)` 那一层**（PHY 的电源/时钟/标定），
 而我们的移植从头到尾没做过 PHY 初始化 —— ch25 的 `shellPhyEnable` 只覆盖了 Wi-Fi 侧的一部分，
@@ -755,7 +750,7 @@ BT 侧缺失。这解释了为什么两个 controller 都停在"访问 MAC/BB �
 >
 > ⇒ **官方栈在这块板上完全正常 ⇒ 硬件没有问题，`0x2010B000 不可达` 的判断是错的。**
 > ⇒ 所以下面"17 条排除 + 2 行复现器 + vendor 同挂 ⇒ 硬件/需 JTAG"那套推理**整段作废**；
->   那些排除项是在**错误前提**（把"我们的 init 卡住"归因给该地址）下做的。
+> 那些排除项是在**错误前提**（把"我们的 init 卡住"归因给该地址）下做的。
 >
 > **真正的根因（板上实测，已修）**，见下面"真实根因"一节。
 
@@ -776,7 +771,7 @@ panic: ctx[0]=0x2f014858 ctx[1]=0x0
 ```
 
 ⇒ **静默 stall 变成可诊断的 fault**，这是本轮最实质的进步：
-   要么有输出、要么能据此改，不再靠猜。
+要么有输出、要么能据此改，不再靠猜。
 
 **2. fault 地址映射到位**
 
@@ -785,7 +780,7 @@ ra=0x4005fa7e → r_btdm_task_deinit (0x4005fa4a, size 0x7a)
 ```
 
 ⇒ `mutex_pend` 返回后，`r_btdm_task_init` 走的是**错误清理路径** `r_btdm_task_deinit`。
-   也就是说 step 6 是在**报错后清理**时挂的，而不是在正常初始化途中挂的。
+也就是说 step 6 是在**报错后清理**时挂的，而不是在正常初始化途中挂的。
 
 **3. oracle 给出的真结构形状（供复刻，别再瞎填）**
 
@@ -799,7 +794,7 @@ Y = *(X+8) 的内容是一串指针（0x2f07c988, 0x2f07c678 …）
 ```
 
 ⇒ 所以这个"锚点"其实是**控制器 env 结构**，里面有状态字节、若干指针和一个版本魔数。
-   我们填的零填充假结构必然导致后续 fault —— 这一步证明"填对了才有意义"。
+我们填的零填充假结构必然导致后续 fault —— 这一步证明"填对了才有意义"。
 
 ### ⛔ 以下"系统性发现"已被 oracle 否定（保留追溯）
 
@@ -851,7 +846,7 @@ beqz a5, .L80           ; 为 0 ⇒ 直接跳错误路径
 （`OkE7`=0、`2aNN`/`BOhff` 各一份、`Xpuq` 一份……）。
 
 ⇒ 所以"多个对象同时早退"是**同一个缺失前置**的表现，而不是一堆独立 bug。
-   `BOhff` 早退 ⇒ **任务根本没被创建** ⇒ 与板侧 `task_create` 日志 0 次完全一致。
+`BOhff` 早退 ⇒ **任务根本没被创建** ⇒ 与板侧 `task_create` 日志 0 次完全一致。
 
 **下一步（唯一有意义的）**：找出 IDF 里发布这些 per-object 锚点的是哪一步。
 它必然由 IDF 源码侧（我们替换掉的那层，或 `bt.c` 的 prologue）调用；
@@ -907,13 +902,13 @@ SRAM 侧所有段（`.trap`/`.iram_blobs`/`.data`/`.bss`/堆）随之抬高 2 KB
 
 **本机已就绪的部分（实测）**
 
-| 项 | 状态 |
-| --- | --- |
-| openocd-esp32 | ✅ `~/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/` |
-| `target/esp32s31.cfg` | ✅ 存在（`_CPUTAPID 0x00020C25`，SMP 双核配置） |
-| `interface/esp_usb_jtag.cfg` | ✅ 存在 |
-| NixOS 的 libusb | ✅ 脚本自动从 `/nix/store/*-libusb-1.0.*/lib` 注入 `LD_LIBRARY_PATH` |
-| 脚本语法 + 启动 | ✅ **实测到"找不到设备"这一步**（即除硬件外全通） |
+| 项                           | 状态                                                                 |
+| ---------------------------- | -------------------------------------------------------------------- |
+| openocd-esp32                | ✅ `~/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/`        |
+| `target/esp32s31.cfg`        | ✅ 存在（`_CPUTAPID 0x00020C25`，SMP 双核配置）                      |
+| `interface/esp_usb_jtag.cfg` | ✅ 存在                                                              |
+| NixOS 的 libusb              | ✅ 脚本自动从 `/nix/store/*-libusb-1.0.*/lib` 注入 `LD_LIBRARY_PATH` |
+| 脚本语法 + 启动              | ✅ **实测到"找不到设备"这一步**（即除硬件外全通）                    |
 
 ```
 $ tools/jtag-watch-modem-block.sh
@@ -932,25 +927,25 @@ Error: esp_usb_jtag: could not find or open device!
 
 曾怀疑"我们的引导程序是否裁剪过、少做了 modem 初始化"。实测否定了这个可能：
 
-| 项 | 我们 | IDF 应用 |
-| --- | --- | --- |
-| `bootloader.bin` 大小 | 22 224 B | 22 224 B |
-| ELF 里 `MODEM_SYSCON`/`MODEM_LPCON` 基址符号 | 有 | 有 |
-| ELF 里 `phy`/`modem` 相关符号总数 | **2** | **2**（相同） |
+| 项                                           | 我们     | IDF 应用      |
+| -------------------------------------------- | -------- | ------------- |
+| `bootloader.bin` 大小                        | 22 224 B | 22 224 B      |
+| ELF 里 `MODEM_SYSCON`/`MODEM_LPCON` 基址符号 | 有       | 有            |
+| ELF 里 `phy`/`modem` 相关符号总数            | **2**    | **2**（相同） |
 
 ⇒ 两边用的是**同一个** IDF 标准二级 bootloader，bootloader 里**没有任何** modem/PHY 初始化代码。
 ⇒ **boot 层不是差异来源。**
 
 至此，软件侧可以比较的面全部覆盖完毕：
 
-| 面 | 结论 |
-| --- | --- |
-| BT init 的寄存器写（step 1–5） | 与 IDF 一致 |
-| boot 完成态四窗口 | 差异已补齐 |
-| per-object 锚点 | `OkE7` 自己发布；`sitBB3S` 两边都 0 |
-| PHY 代码 | **IDF 自己的**，已链入并执行 |
-| bootloader | 同一个，无 modem 代码 |
-| 配置结构（192 字节） | 逐字节一致 |
+| 面                             | 结论                                |
+| ------------------------------ | ----------------------------------- |
+| BT init 的寄存器写（step 1–5） | 与 IDF 一致                         |
+| boot 完成态四窗口              | 差异已补齐                          |
+| per-object 锚点                | `OkE7` 自己发布；`sitBB3S` 两边都 0 |
+| PHY 代码                       | **IDF 自己的**，已链入并执行        |
+| bootloader                     | 同一个，无 modem 代码               |
+| 配置结构（192 字节）           | 逐字节一致                          |
 
 ⇒ **没有剩余的可比面了。** 差异只能是外部的（JTAG 观察点或 vendor 文档）。
 
@@ -970,7 +965,7 @@ Error: esp_usb_jtag: could not find or open device!
 ⇒ **中断在 PHY 代码真正执行之前就停止了**，之后一条采样都没有。
 
 ⇒ 结论：**IDF 自己的 PHY 校准代码，在我们的镜像里也会把总线 stall 住** ——
-   和 BLE controller 停在 `0x2010B000` 时是**完全相同的签名**（无异常、中断停止、静默）。
+和 BLE controller 停在 `0x2010B000` 时是**完全相同的签名**（无异常、中断停止、静默）。
 
 **这个发现的意义**：把"缺 PHY"这个假设也排除了。不是"我们没实现 PHY"，
 而是**这块硬件（modem 前端的某个私有区域）在我们的镜像里根本不应答任何访问者** ——
@@ -989,12 +984,12 @@ Error: esp_usb_jtag: could not find or open device!
 
 这是整条线走得最远的一次，且是**可用代码**而不是推断。
 
-| 项 | 结果 |
-| --- | --- |
-| 链接的 IDF 对象 | `phy_init` · `phy_common` · `btbb_init` · `modem_clock` · `modem_clock_impl` · `modem_clock_hal` · `periph_ctrl` |
-| 补的桩 | `link/phy_stubs.c`，**37 个**（NVS 故意返回 `NOT_FOUND` ⇒ 走 IDF 自带的 `PHY_RF_CAL_FULL` fallback） |
-| 链接结果 | **0 个未定义符号** |
-| 真实函数进镜像 | **仅 `WITH_PHY=1` 构建**：`esp_phy_enable` @ `0x40000744`(174 B) · `esp_phy_load_cal_and_init` @ `0x40000580`(452 B)。**默认构建走 ROM**：`esp_phy_enable`=`0x2f00e756`(ABS/PROVIDE)，`phy_get_romfunc_addr`=`0x40061728`(真实在镜像内) |
+| 项              | 结果                                                                                                                                                                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 链接的 IDF 对象 | `phy_init` · `phy_common` · `btbb_init` · `modem_clock` · `modem_clock_impl` · `modem_clock_hal` · `periph_ctrl`                                                                                                                        |
+| 补的桩          | `link/phy_stubs.c`，**37 个**（NVS 故意返回 `NOT_FOUND` ⇒ 走 IDF 自带的 `PHY_RF_CAL_FULL` fallback）                                                                                                                                    |
+| 链接结果        | **0 个未定义符号**                                                                                                                                                                                                                      |
+| 真实函数进镜像  | **仅 `WITH_PHY=1` 构建**：`esp_phy_enable` @ `0x40000744`(174 B) · `esp_phy_load_cal_and_init` @ `0x40000580`(452 B)。**默认构建走 ROM**：`esp_phy_enable`=`0x2f00e756`(ABS/PROVIDE)，`phy_get_romfunc_addr`=`0x40061728`(真实在镜像内) |
 
 **途中抓到两个我自己的真 bug**
 
@@ -1029,24 +1024,24 @@ build/esp-idf/esp_hw_support/.../periph_ctrl.c.obj
 
 **实测差集**（这 5 个对象的未定义符号 vs 我们镜像已定义）：
 
-| 项 | 数 |
-| --- | --- |
+| 项             | 数     |
+| -------------- | ------ |
 | 未定义符号总数 | **82** |
-| 我们已提供 | 14 |
-| **需补桩** | **68** |
+| 我们已提供     | 14     |
+| **需补桩**     | **68** |
 
 68 个按类别分（都可桩或复用现有实现）：
 
-| 类别 | 示例 | 处理 |
-| --- | --- | --- |
-| 内存 | `calloc` / `free` | 转我们的 arena |
-| 日志 | `esp_log` / `esp_log_timestamp` | 转我们的 logger |
-| 定时器 | `esp_timer_create/start/stop/delete/get_time` | 桩（PHY 只用于温度跟踪，可空实现） |
-| 锁 | `_lock_acquire` / `_lock_release` | 我们的临界区 |
-| GPIO | `gpio_config` / `esp_rom_gpio_*` | 桩 |
-| efuse/MAC | `esp_efuse_mac_get_default` | 桩 |
-| 睡眠 | `esp_sleep_*` / `esp_deep_sleep_register_phy_hook` | 桩 |
-| modem_clock 内部 | `modem_clock_*`（约 10 个） | 与 `modem_clock.c.obj` 一起链，再补剩余 |
+| 类别             | 示例                                               | 处理                                    |
+| ---------------- | -------------------------------------------------- | --------------------------------------- |
+| 内存             | `calloc` / `free`                                  | 转我们的 arena                          |
+| 日志             | `esp_log` / `esp_log_timestamp`                    | 转我们的 logger                         |
+| 定时器           | `esp_timer_create/start/stop/delete/get_time`      | 桩（PHY 只用于温度跟踪，可空实现）      |
+| 锁               | `_lock_acquire` / `_lock_release`                  | 我们的临界区                            |
+| GPIO             | `gpio_config` / `esp_rom_gpio_*`                   | 桩                                      |
+| efuse/MAC        | `esp_efuse_mac_get_default`                        | 桩                                      |
+| 睡眠             | `esp_sleep_*` / `esp_deep_sleep_register_phy_hook` | 桩                                      |
+| modem_clock 内部 | `modem_clock_*`（约 10 个）                        | 与 `modem_clock.c.obj` 一起链，再补剩余 |
 
 ⇒ **这是整条线最后的、也是唯一还有明确工作量的部分：68 个桩 + 链接。**
 
@@ -1058,14 +1053,14 @@ build/esp-idf/esp_hw_support/.../periph_ctrl.c.obj
 
 继续按 IDF 的 `esp_phy_enable` 链路推进，逐项实测：
 
-| 项 | 状态 |
-| --- | --- |
-| `phy_get_romfunc_addr()` | ✅ 调用后 `g_phyFuns: 0x0 → 0x2f07f944` |
-| PHY 初始化表 | ✅ **128 字节**（`esp_phy_init_data_t`），从 IDF 的 ELF `.rodata` 抠出（`nm` 确认 `size=0x80`） |
-| `register_chipv7_phy` | ✅ 已在镜像（**`0x40061c56`**，`T`），签名 `(init_data, cal_data, mode)` |
-| `esp_phy_calibration_data_t` | ✅ **1904 B**（version[4] + mac[6] + opaque[1894]） |
-| 校准模式 | ✅ `PHY_RF_CAL_FULL = 2` |
-| NVS | ✅ **不需要**：`esp_phy_load_cal_data_from_nvs` 失败时 IDF 自带 `PHY_RF_CAL_FULL` fallback |
+| 项                           | 状态                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| `phy_get_romfunc_addr()`     | ✅ 调用后 `g_phyFuns: 0x0 → 0x2f07f944`                                                         |
+| PHY 初始化表                 | ✅ **128 字节**（`esp_phy_init_data_t`），从 IDF 的 ELF `.rodata` 抠出（`nm` 确认 `size=0x80`） |
+| `register_chipv7_phy`        | ✅ 已在镜像（**`0x40061c56`**，`T`），签名 `(init_data, cal_data, mode)`                        |
+| `esp_phy_calibration_data_t` | ✅ **1904 B**（version[4] + mac[6] + opaque[1894]）                                             |
+| 校准模式                     | ✅ `PHY_RF_CAL_FULL = 2`                                                                        |
+| NVS                          | ✅ **不需要**：`esp_phy_load_cal_data_from_nvs` 失败时 IDF 自带 `PHY_RF_CAL_FULL` fallback      |
 
 **新发现的硬事实（实测报错定位）**
 
@@ -1097,12 +1092,12 @@ PHY_CLOCK_DEPS = MODEM_ADC_COMMON_FE + MODEM_PRIVATE_FE + SOC_PLL_SOURCE_CG + I2
 
 这一步把上面那份估计**大幅推翻**，全部是实测：
 
-| 项 | 原估计 | 实测 |
-| --- | --- | --- |
-| 窗口够不够 | 需扩 ~140 KB | **早就够**：`libphy.a` 的**可装载内容只有 18 151 B**（text 15 116 + rodata 2 527 + data 508），文件 160 KB 里其余全是调试信息；irom 当前余 **81 344 B** |
-| 链接面 | 332 个未定义符号要补 | `libphy.a` 的 **210 个**未定义符号里，**208 个我们已提供**；缺的 `phy_get_sar2_vol` 只是 ROM 表没抄（已从 IDF 的 `esp32s31.rom.phy.ld` 合并 **164 条**，现共 449 条） |
-| 要不要额外链 libphy | 要 | **不用**：`libphy.a` 的 **21 个对象全部已在 bt-blobs 闭包内**（`nm` 逐字节比对确认） |
-| PHY 表初始化 | 未知 | `phy_get_romfunc_addr` **已在镜像内**（`0x40061728`），只是从没调用 |
+| 项                  | 原估计               | 实测                                                                                                                                                                  |
+| ------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 窗口够不够          | 需扩 ~140 KB         | **早就够**：`libphy.a` 的**可装载内容只有 18 151 B**（text 15 116 + rodata 2 527 + data 508），文件 160 KB 里其余全是调试信息；irom 当前余 **81 344 B**               |
+| 链接面              | 332 个未定义符号要补 | `libphy.a` 的 **210 个**未定义符号里，**208 个我们已提供**；缺的 `phy_get_sar2_vol` 只是 ROM 表没抄（已从 IDF 的 `esp32s31.rom.phy.ld` 合并 **164 条**，现共 449 条） |
+| 要不要额外链 libphy | 要                   | **不用**：`libphy.a` 的 **21 个对象全部已在 bt-blobs 闭包内**（`nm` 逐字节比对确认）                                                                                  |
+| PHY 表初始化        | 未知                 | `phy_get_romfunc_addr` **已在镜像内**（`0x40061728`），只是从没调用                                                                                                   |
 
 **板侧实测（关键）**
 
@@ -1128,36 +1123,36 @@ BOOTSTATE: esp_phy_enable(2) returned        ← ROM 的 PHY 使能**正常返�
 
 **证据链**
 
-| 观测 | 事实 |
-| --- | --- |
-| IDF 应用符号表 | 有完整 PHY 层：`esp_phy_enable`、`esp_phy_load_cal_and_init`、`esp_phy_common_clock_enable`… |
-| `esp_phy_enable` 实现 | `esp_phy_common_clock_enable()` → `phy_module_enable()` → `esp_phy_load_cal_and_init()` |
-| 校准数据来源 | `esp_phy_load_cal_data_from_nvs()` → **`nvs_open(PHY_NAMESPACE)`** ⇒ 依赖 **NVS 分区** |
-| 我们的镜像 | 无 PHY 初始化调用（`esp_phy_enable` 是 ROM 函数 `0x2f00e756`，已尝试调用，**仍不够**） |
+| 观测                  | 事实                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| IDF 应用符号表        | 有完整 PHY 层：`esp_phy_enable`、`esp_phy_load_cal_and_init`、`esp_phy_common_clock_enable`… |
+| `esp_phy_enable` 实现 | `esp_phy_common_clock_enable()` → `phy_module_enable()` → `esp_phy_load_cal_and_init()`      |
+| 校准数据来源          | `esp_phy_load_cal_data_from_nvs()` → **`nvs_open(PHY_NAMESPACE)`** ⇒ 依赖 **NVS 分区**       |
+| 我们的镜像            | 无 PHY 初始化调用（`esp_phy_enable` 是 ROM 函数 `0x2f00e756`，已尝试调用，**仍不够**）       |
 
 ⇒ `0x2010B000` 是 **BT 基带**，需要 modem 前端上电并完成 RF 校准后才应答总线；
-    这套在 IDF 里由 `esp_phy` 全权负责，裸机移植**完全没有这一层**。
+这套在 IDF 里由 `esp_phy` 全权负责，裸机移植**完全没有这一层**。
 
 **规模数据（本机实测）**
 
-| 项 | 数值 |
-| --- | --- |
-| `esp_phy` 组件 | **7 个 C 文件 / 2 158 行** |
-| `libphy.a`（esp32s31） | **0.16 MB** |
-| `libphy.a` 的未定义符号 | **332 个** |
-| 当前 flash 余量 | `irom` 720 896 B 中已用约 700 KB ⇒ **余 ~20 KB** |
-| 链接 `libphy.a` 需要 | **再扩 ~140 KB** ⇒ 必须先扩两段镜像窗口 |
+| 项                      | 数值                                             |
+| ----------------------- | ------------------------------------------------ |
+| `esp_phy` 组件          | **7 个 C 文件 / 2 158 行**                       |
+| `libphy.a`（esp32s31）  | **0.16 MB**                                      |
+| `libphy.a` 的未定义符号 | **332 个**                                       |
+| 当前 flash 余量         | `irom` 720 896 B 中已用约 700 KB ⇒ **余 ~20 KB** |
+| 链接 `libphy.a` 需要    | **再扩 ~140 KB** ⇒ 必须先扩两段镜像窗口          |
 
 **工作量估计（单人，含调试）**
 
-| # | 任务 | 估计 |
-| --- | --- | --- |
-| 1 | 扩两段镜像窗口（已有 `s31-two-segment-window-expansion` 的方法与板级验证流程） | **0.5 – 1 天** |
-| 2 | `libphy.a` 链接面：把 332 个未定义符号分类，补 `wr_*`/ROM/IDF 服务 | **2 – 3 天** |
-| 3 | `esp_phy` 核心路径移植：`esp_phy_enable` / `common_clock_enable` / `phy_module_enable` / `load_cal_and_init` | **3 – 5 天** |
-| 4 | 校准数据来源：最小 NVS，或强制每次开机全量重校准（省 NVS，但开机慢） | **0.5 – 2 天** |
-| 5 | 板级验证 + 调试（本战役的经验：调试点永远是最大项） | **2 – 4 天** |
-| | **合计** | **约 8 – 15 个工作日（2–3 周）** |
+| #   | 任务                                                                                                         | 估计                             |
+| --- | ------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| 1   | 扩两段镜像窗口（已有 `s31-two-segment-window-expansion` 的方法与板级验证流程）                               | **0.5 – 1 天**                   |
+| 2   | `libphy.a` 链接面：把 332 个未定义符号分类，补 `wr_*`/ROM/IDF 服务                                           | **2 – 3 天**                     |
+| 3   | `esp_phy` 核心路径移植：`esp_phy_enable` / `common_clock_enable` / `phy_module_enable` / `load_cal_and_init` | **3 – 5 天**                     |
+| 4   | 校准数据来源：最小 NVS，或强制每次开机全量重校准（省 NVS，但开机慢）                                         | **0.5 – 2 天**                   |
+| 5   | 板级验证 + 调试（本战役的经验：调试点永远是最大项）                                                          | **2 – 4 天**                     |
+|     | **合计**                                                                                                     | **约 8 – 15 个工作日（2–3 周）** |
 
 **最大风险**：第 3 项。`libphy.a` 是预编译 blob，它期望的**调用顺序与状态**没有文档；
 本轮"寄存器全对齐但仍不通"已经演示了这类 blob 的不可推断性。
@@ -1171,15 +1166,15 @@ BOOTSTATE: esp_phy_enable(2) returned        ← ROM 的 PHY 使能**正常返�
 
 三轮对拍完成后，所有能测到的差异都补上了：
 
-| 轮次 | 对齐内容 | 结果 |
-| --- | --- | --- |
-| 1 | IDF step 5 的 **6 个写**（`clk_conf`/`power_st`/`clk_conf1`/`lpcon+0x04/+0x18/+0x20`） | 板侧逐字一致 |
-| 2 | **boot 态差集**（`lpcon+0x08=0x314`、`+0x0c=1`、`clkrst+0x08=1`、`+0x0c=2`） | 已补 |
-| 3 | 带对照读的直读验证 | `control read` 成功，`0x2010B000` **挂住** |
+| 轮次 | 对齐内容                                                                               | 结果                                       |
+| ---- | -------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 1    | IDF step 5 的 **6 个写**（`clk_conf`/`power_st`/`clk_conf1`/`lpcon+0x04/+0x18/+0x20`） | 板侧逐字一致                               |
+| 2    | **boot 态差集**（`lpcon+0x08=0x314`、`+0x0c=1`、`clkrst+0x08=1`、`+0x0c=2`）           | 已补                                       |
+| 3    | 带对照读的直读验证                                                                     | `control read` 成功，`0x2010B000` **挂住** |
 
 ⇒ **结论**：`0x2010B000` 的可访问性**不由这四个窗口里的任何寄存器决定**。
-   三轮对拍已覆盖 `MODEM_SYSCON`/`MODEM_LPCON`/`MODEM_PWR`/`HP_SYS_CLKRST`
-   的全部可写位，以及 IDF boot 与 step 5 的全部可观测差异。
+三轮对拍已覆盖 `MODEM_SYSCON`/`MODEM_LPCON`/`MODEM_PWR`/`HP_SYS_CLKRST`
+的全部可写位，以及 IDF boot 与 step 5 的全部可观测差异。
 
 **因此剩下的只有两条路**（均需软件之外的手段）：
 
@@ -1216,14 +1211,14 @@ clkrst +0x000 = 0x1  +0x008 = 0x1  +0x00c = 0x2  +0x010 = 0x1
 在 oracle 里对 step 5 **前后**各 dump 四窗口再相减，得到 IDF 这一步**全部**的写
 （以 `before → after` 表示）：
 
-| 寄存器 | IDF step 5 写入 | 我们 |
-| --- | --- | --- |
-| `syscon+0x004` `clk_conf` | `0x00201002 → 0x7e601002` | ✅ 一致 |
-| `syscon+0x00c` `clk_conf_power_st` | `0 → 0x64646400` | ✅ 一致 |
-| `syscon+0x014` `clk_conf1` | `0 → 0x00070080` | ✅ 一致 |
-| `lpcon+0x004` | `0 → 0x00000041` | ✅ 一致 |
-| `lpcon+0x018` | `0x1 → 0x0000000b` | ✅ 一致 |
-| `lpcon+0x020` | `0 → 0x66660000` | ✅ 一致 |
+| 寄存器                             | IDF step 5 写入           | 我们    |
+| ---------------------------------- | ------------------------- | ------- |
+| `syscon+0x004` `clk_conf`          | `0x00201002 → 0x7e601002` | ✅ 一致 |
+| `syscon+0x00c` `clk_conf_power_st` | `0 → 0x64646400`          | ✅ 一致 |
+| `syscon+0x014` `clk_conf1`         | `0 → 0x00070080`          | ✅ 一致 |
+| `lpcon+0x004`                      | `0 → 0x00000041`          | ✅ 一致 |
+| `lpcon+0x018`                      | `0x1 → 0x0000000b`        | ✅ 一致 |
+| `lpcon+0x020`                      | `0 → 0x66660000`          | ✅ 一致 |
 
 ⇒ **只有这 6 条。我们全部一致。**
 
@@ -1245,12 +1240,12 @@ oracle 里"step 1–5 之后块就可读"之所以成立，是因为它跑在 ID
 
 在**同一时刻**（`btdm_lp_enable_clock` 返回后、step 6 之前）对拍四个 modem 窗口：
 
-| 窗口 | 结果 |
-| --- | --- |
-| `MODEM_SYSCON`（16 字） | 对齐（`clk_conf=0x7e601002`、`power_st=0x64646400`、`clk_conf1=0x00070080`） |
-| `MODEM_LPCON`（16 字） | 对齐（`+0x04=0x41`、`+0x08=0x314`、`+0x0c=0x01`、`+0x18=0x0b`、`+0x1c=0x04`、`+0x20=0x66660000`） |
-| `MODEM_PWR`（16 字） | 对齐 |
-| `HP_SYS_CLKRST`（128 字） | 主要项对齐 |
+| 窗口                      | 结果                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `MODEM_SYSCON`（16 字）   | 对齐（`clk_conf=0x7e601002`、`power_st=0x64646400`、`clk_conf1=0x00070080`）                      |
+| `MODEM_LPCON`（16 字）    | 对齐（`+0x04=0x41`、`+0x08=0x314`、`+0x0c=0x01`、`+0x18=0x0b`、`+0x1c=0x04`、`+0x20=0x66660000`） |
+| `MODEM_PWR`（16 字）      | 对齐                                                                                              |
+| `HP_SYS_CLKRST`（128 字） | 主要项对齐                                                                                        |
 
 **但 step 6 仍在同一处 fault。** ⇒ 这是本轮最重要的**否定性结果**：
 使能 `0x2010B000` 所需的条件**不在这四个窗口能写到的任何寄存器里**。
@@ -1263,33 +1258,33 @@ oracle 里"step 1–5 之后块就可读"之所以成立，是因为它跑在 ID
 最终镜像里 `nm | grep " B r_sym_bt_"` 恰好给出 **10 个**锚点（`0x2f00ffd0..0x2f00fff4`，每个 4 字节），
 在 `mutex_pend` 钩子处（`OkE7` 已跑完）逐个读出：
 
-| # | 地址 | 符号 | 板侧值 | 说明 |
-| --- | --- | --- | --- | --- |
-| 0 | `ffd0` | `pSy5Wex1v0iXw5RdWtwL` | **0** | **11.o** —— 当前 fault 处（`cKuT2` 读它） |
-| 1 | `ffd4` | `WDq2rzn4KRWP5mort5eS` | **0** | 未发布 |
-| 2 | `ffd8` | `YnZmsxu068uuC3PC4iu8` | **0** | 未发布 |
-| 3 | `ffdc` | `kfu8vf8dQgqwEzvqhb3d` | **0** | 未发布 |
-| 4 | `ffe0` | `d3D3sk5KewclELfrD5xa` | `0x2f0150b8` | 2.o 的 `P`，由 `fqmZk` 发布 ✓ |
-| 5 | `ffe4` | `sitBB3SrXn0IePgsPrBY` | **0** | 未发布 |
-| 6 | `ffe8` | `r4auAKWSAFwgQarMHZCc` | `0x2f015058` | **21.o**，由 `OkE7` 惰性发布 ✓ |
-| 7 | `ffec` | `lRdavKxt45o0gicEyznn` | **0** | 未发布 |
-| 8 | `fff0` | `6Q68KSwuQQP4VjQGqiWa` | `0x2f015038` | **7.o**，由我们手动发布 ✓ |
-| 9 | `fff4` | `y5Dip5N8bwiiGRcrWzBO` | **0** | 未发布 |
+| #   | 地址   | 符号                   | 板侧值       | 说明                                      |
+| --- | ------ | ---------------------- | ------------ | ----------------------------------------- |
+| 0   | `ffd0` | `pSy5Wex1v0iXw5RdWtwL` | **0**        | **11.o** —— 当前 fault 处（`cKuT2` 读它） |
+| 1   | `ffd4` | `WDq2rzn4KRWP5mort5eS` | **0**        | 未发布                                    |
+| 2   | `ffd8` | `YnZmsxu068uuC3PC4iu8` | **0**        | 未发布                                    |
+| 3   | `ffdc` | `kfu8vf8dQgqwEzvqhb3d` | **0**        | 未发布                                    |
+| 4   | `ffe0` | `d3D3sk5KewclELfrD5xa` | `0x2f0150b8` | 2.o 的 `P`，由 `fqmZk` 发布 ✓             |
+| 5   | `ffe4` | `sitBB3SrXn0IePgsPrBY` | **0**        | 未发布                                    |
+| 6   | `ffe8` | `r4auAKWSAFwgQarMHZCc` | `0x2f015058` | **21.o**，由 `OkE7` 惰性发布 ✓            |
+| 7   | `ffec` | `lRdavKxt45o0gicEyznn` | **0**        | 未发布                                    |
+| 8   | `fff0` | `6Q68KSwuQQP4VjQGqiWa` | `0x2f015038` | **7.o**，由我们手动发布 ✓                 |
+| 9   | `fff4` | `y5Dip5N8bwiiGRcrWzBO` | **0**        | 未发布                                    |
 
 **与 oracle（`esp_bt_controller_init` 完成后）的差集 —— 最终结论**
 
-| # | IDF | 我们 | 判定 |
-| --- | --- | --- | --- |
-| 0 `pSy5Wex…` | `0x2f07cd28` | 0 | **缺** |
-| 1 `WDq2rzn…` | `0x2f07d394` | 0 | **缺** |
-| 2 `YnZmsxu…` | `0x2f07cce4` | 0 | **缺** |
-| 3 `kfu8vf8…` | `0x2f07be10` | 0 | **缺** |
-| 4 `d3D3sk5…`(P) | `0x2f07ccac` | `0x2f0150b8` | ✓ |
-| 5 `sitBB3S…` | **`0x0`** | **0** | ✓ **IDF 也不发布 ⇒ 不是问题** |
-| 6 `r4auAKW…` | `0x2f07c8e0` | `0x2f015058` | ✓ |
-| 7 `lRdavKx…` | `0x2f07d408` | 0 | **缺** |
-| 8 `6Q68KSw…` | `0x2f07ccbc` | `0x2f015038` | ✓ |
-| 9 `y5Dip5N8…` | `0x2f07d370` | 0 | **缺** |
+| #               | IDF          | 我们         | 判定                          |
+| --------------- | ------------ | ------------ | ----------------------------- |
+| 0 `pSy5Wex…`    | `0x2f07cd28` | 0            | **缺**                        |
+| 1 `WDq2rzn…`    | `0x2f07d394` | 0            | **缺**                        |
+| 2 `YnZmsxu…`    | `0x2f07cce4` | 0            | **缺**                        |
+| 3 `kfu8vf8…`    | `0x2f07be10` | 0            | **缺**                        |
+| 4 `d3D3sk5…`(P) | `0x2f07ccac` | `0x2f0150b8` | ✓                             |
+| 5 `sitBB3S…`    | **`0x0`**    | **0**        | ✓ **IDF 也不发布 ⇒ 不是问题** |
+| 6 `r4auAKW…`    | `0x2f07c8e0` | `0x2f015058` | ✓                             |
+| 7 `lRdavKx…`    | `0x2f07d408` | 0            | **缺**                        |
+| 8 `6Q68KSw…`    | `0x2f07ccbc` | `0x2f015038` | ✓                             |
+| 9 `y5Dip5N8…`   | `0x2f07d370` | 0            | **缺**                        |
 
 ⇒ **恰好 6 个缺失**：`pSy5Wex / WDq2rzn / YnZmsxu / kfu8vf8 / lRdavKx / y5Dip5N8`。
 ⇒ 这 6 个必须在 step 6 **之前或之内**被发布，否则各模块消费时就是一次向 0 的访问。
@@ -1305,7 +1300,7 @@ oracle 里"step 1–5 之后块就可读"之所以成立，是因为它跑在 ID
    或 fault 其实发生在别的被调函数里（`ra` 已被证明不可靠，`mepc` 的归属同样需留疑）。
 
 ⇒ 因此**不能**用"锚点 #0 是 fault 处"来论证这张表，也**不能**据此断定 6 个都要补。
-   它是一份**待验证的候选清单**，而非结论。
+它是一份**待验证的候选清单**，而非结论。
 
 ⇒ **下一步（一次到位）**：在 oracle 里 `nm` 出同一批符号，`esp_bt_controller_init` 完成后
 逐个读值 ⇒ 非 0 的即 IDF 发布过的；与我们这张表做差集，就是**必须由我们发布的完整清单**。
@@ -1346,10 +1341,10 @@ a: beqz a5, .L4          # 为 0 ⇒ 跳过
 
 板侧逐字对拍实证：
 
-| 侧 | `MODEM_LPCON + 0x18`（step 5 之后） |
-| --- | --- |
-| IDF oracle | **`0x0000000b`**（bit0 + bit1 + bit3） |
-| 我们（修复前） | 只写 bit3 |
+| 侧             | `MODEM_LPCON + 0x18`（step 5 之后）    |
+| -------------- | -------------------------------------- |
+| IDF oracle     | **`0x0000000b`**（bit0 + bit1 + bit3） |
+| 我们（修复前） | 只写 bit3                              |
 
 ⇒ 我们**从未写过 bit1 `clk_coex_en`**，而 IDF 的 `BLE_CLOCK_DEPS` 里有 `COEXIST` →
 `modem_lpcon_ll_enable_coex_clock()` → `clk_conf.clk_coex_en`。已补上 bit0+bit1。
@@ -1360,12 +1355,12 @@ a: beqz a5, .L4          # 为 0 ⇒ 跳过
 
 IDF（esp32s31）这一函数做四件事，我们逐条对照：
 
-| # | IDF 动作 | 我们 |
-| --- | --- | --- |
-| 1 | `modem_clock_module_enable(PERIPH_BT_MODULE)`（一次，由 `s_btdm_lp_modem_clk_en` 守卫）→ 先 `icg_map_init_all()`，再 `device_control(BLE_CLOCK_DEPS)`：`BLE_MAC, BT_I154_COMMON_BB, ETM, COEXIST, WIFI_BB_80X1, SOC_PLL_SOURCE_CG, BT_APB, BT_PERIPHERAL` | 逐位手写；**已核对的**：`clk_btbb_en`(clk_conf1 bit17) ✓、`MODEM_CONF=0x3d` ✓、`clk_coex_en`(LPCON bit1) ✓（本轮补） |
-| 2 | `modem_clock_module_enable(PERIPH_BT_APB_MODULE)` → `icg_map_init_all()` + `BT_APB_CLOCK_DEPS`：`BT_APB, ETM, SOC_PLL_SOURCE_CG, BLE_MAC` | 部分 |
-| 3 | `modem_clock_module_mac_reset(PERIPH_BT_MODULE)` → `reset_btmac / reset_btmac_apb / reset_ble_timer / reset_modem_sec` | ✓ 四族都已做 |
-| 4 | `btdm_lp_timer_clk_init(cfg)` | ✓ |
+| #   | IDF 动作                                                                                                                                                                                                                                                  | 我们                                                                                                                 |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 1   | `modem_clock_module_enable(PERIPH_BT_MODULE)`（一次，由 `s_btdm_lp_modem_clk_en` 守卫）→ 先 `icg_map_init_all()`，再 `device_control(BLE_CLOCK_DEPS)`：`BLE_MAC, BT_I154_COMMON_BB, ETM, COEXIST, WIFI_BB_80X1, SOC_PLL_SOURCE_CG, BT_APB, BT_PERIPHERAL` | 逐位手写；**已核对的**：`clk_btbb_en`(clk_conf1 bit17) ✓、`MODEM_CONF=0x3d` ✓、`clk_coex_en`(LPCON bit1) ✓（本轮补） |
+| 2   | `modem_clock_module_enable(PERIPH_BT_APB_MODULE)` → `icg_map_init_all()` + `BT_APB_CLOCK_DEPS`：`BT_APB, ETM, SOC_PLL_SOURCE_CG, BLE_MAC`                                                                                                                 | 部分                                                                                                                 |
+| 3   | `modem_clock_module_mac_reset(PERIPH_BT_MODULE)` → `reset_btmac / reset_btmac_apb / reset_ble_timer / reset_modem_sec`                                                                                                                                    | ✓ 四族都已做                                                                                                         |
+| 4   | `btdm_lp_timer_clk_init(cfg)`                                                                                                                                                                                                                             | ✓                                                                                                                    |
 
 **最强嫌疑（未做）**：`icg_map_init_all()` 覆盖**两个域** ——
 `MODEM_SYSCON.clk_conf_power_st`（我们写了 `0x64646400`）**和 `MODEM_LPCON` 自己的
@@ -1374,11 +1369,11 @@ IDF（esp32s31）这一函数做四件事，我们逐条对照：
 
 ### 🎯 二分完成：使能者是 **step 5 `btdm_lp_enable_clock`**
 
-| 探读 `0x2010B000` 的时机 | 结果 |
-| --- | --- |
-| 任何 BT 调用之前 | 挂死 |
-| step 1（建池）之后 | 挂死 |
-| **step 4（`coex_init`）之后** | **挂死** |
+| 探读 `0x2010B000` 的时机            | 结果            |
+| ----------------------------------- | --------------- |
+| 任何 BT 调用之前                    | 挂死            |
+| step 1（建池）之后                  | 挂死            |
+| **step 4（`coex_init`）之后**       | **挂死**        |
 | **step 5（`lp_enable_clock`）之后** | ✅ `0x5ac968f1` |
 
 ⇒ **使能者是 step 5** —— 也就是我们自己重写的那一步。
@@ -1409,11 +1404,11 @@ modem_syscon_ll_enable_bt_bb_clock() { hw->clk_conf1.clk_btbb_en = en; }
 
 **oracle 二分（每次挂死也是有效数据）**
 
-| 探读点 | 结果 |
-| --- | --- |
-| 启动时（任何 BT 调用之前） | **挂死** |
+| 探读点                          | 结果                                                        |
+| ------------------------------- | ----------------------------------------------------------- |
+| 启动时（任何 BT 调用之前）      | **挂死**                                                    |
 | step 1 `elem_mempool_init` 之后 | **挂死**（日志出现 3 次 = 3 次重启）⇒ **step 1 不是使能者** |
-| step 5 `lp_enable_clock` 之后 | ✅ `0x2010B000 = 0x5ac968f1` |
+| step 5 `lp_enable_clock` 之后   | ✅ `0x2010B000 = 0x5ac968f1`                                |
 
 ⇒ 使能者只剩 **step 4** 或 **step 5**。
 
@@ -1495,13 +1490,14 @@ btdm_coex_init(void) {
 bt gate: env=0x2f015058   *(env+8)=0x2f012620   P=0x2f0150b8
 ```
 
-| 值 | 含义 |
-| --- | --- |
-| `env = 0x2f015058` | `OkE7` 的 `malloc(76)` 成功并已发布到 21.o 锚点 |
+| 值                      | 含义                                                  |
+| ----------------------- | ----------------------------------------------------- |
+| `env = 0x2f015058`      | `OkE7` 的 `malloc(76)` 成功并已发布到 21.o 锚点       |
 | `*(env+8) = 0x2f012620` | `eventq_init` 写入的槽位指针 ⇒ `fqmZk` 的守卫**通过** |
-| `P = 0x2f0150b8` | **`fqmZk` 确实执行了**并把 2.o 锚点设成有效指针 |
+| `P = 0x2f0150b8`        | **`fqmZk` 确实执行了**并把 2.o 锚点设成有效指针       |
 
 ⇒ **整条锚点/守卫链是通的**。因此：
+
 - `2aNN`（`0x78`，用 `P` 做 store）**是安全的**；
 - 此前"锚点为 0 ⇒ `sb 1,0(NULL)` ⇒ stall"的推断**作废**（那是**修好 cfg 之前**的行为）。
 
@@ -1609,13 +1605,13 @@ ea: r_sym_bt_FhFt
 ```
 
 ⇒ **所以锚点 = 76 字节的 cfg 环境，由 `OkE7` 自己 malloc 并发布**，
-   而且它是 `task_init` 在 `0x40` 处调用的**第一个函数**。
+而且它是 `task_init` 在 `0x40` 处调用的**第一个函数**。
 
 **这意味着**：把 `cfg.btdm.version/magic` 修对之后（本轮已修），`OkE7` 会成功、
 锚点会被填上 ⇒ `0x74` 的 `sb 1, 0(env)` 写的是**合法内存**。
 
 ⇒ 因此"`sb 1, 0(NULL)` 造成 stall"这一判断**对当前构建不再成立**；
-   stall 位置已**后移**到 `BOhff` 之后（`0xa8` 附近的调用），那里**不调任何 OSAL hook**。
+stall 位置已**后移**到 `BOhff` 之后（`0xa8` 附近的调用），那里**不调任何 OSAL hook**。
 
 ⇒ 这也解释了为什么 `ctx[0]` 在伪造实验后总是我们的指针：锚点本来就该由归档自己填。
 
@@ -1688,14 +1684,14 @@ board 侧 66 条 PC 采样的分布：
 
 ### 📋 可直接复用的参考资料（别再重新推导）
 
-| 项 | 值 |
-| --- | --- |
+| 项                                      | 值                                                                                                                                                                             |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 三个锚点（全局 `B`，可 `@extern` 读写） | `r_sym_bt_d3D3sk5KewclELfrD5xa`(2.o, P) @ `0x2f00f7e0`；`r_sym_bt_r4auAKWSAFwgQarMHZCc`(21.o, OkE7) @ `0x2f00f7e8`；`r_sym_bt_6Q68KSwuQQP4VjQGqiWa`(7.o, BOhff) @ `0x2f00f7f0` |
-| oracle 里 env 的形状（init 后） | `X[0]`=状态(1→enable 后 2)、`X[1]/X[2]/X[4]/X[5]`=指针、`X[3]`=0、`X[6]=0x20260127`、`X[7]=0x00171000`；`*(X+8)` 指向一串指针 |
-| `esp_btdm_controller_config_t` | **sizeof=20**；`version@0 stack@4 prio@6 cpu@7 hci_cmd@8 hci_conn@9 sleep@10 vnum@11 mode@12 magic@16`（C 的 `offsetof` 权威值，与我们的 extern struct 完全一致） |
-| IDF 的 `cfg.btdm` 默认值 | `version=0x20260127 stack=4096 prio=23 cpu=0 hci_cmd=5 hci_conn=3 sleep=0 vnum=0 mode=1 magic=0x5a5aa5a5` |
-| 整份 `esp_bt_controller_config_t` | **192 字节**，`ble` 在 0..167、`btdm` 在 **168**；完整 hexdump 已存进 `config.zig` 的 `idf_cfg192` 模板 |
-| `r_btdm_task_deinit` 的销毁顺序 | `lwb a0,20(a5)` 调一次、`lw a0,16(a5)` 再调一次；伪造 env 时 fault 落在 **+0x4a**（store access fault） |
+| oracle 里 env 的形状（init 后）         | `X[0]`=状态(1→enable 后 2)、`X[1]/X[2]/X[4]/X[5]`=指针、`X[3]`=0、`X[6]=0x20260127`、`X[7]=0x00171000`；`*(X+8)` 指向一串指针                                                  |
+| `esp_btdm_controller_config_t`          | **sizeof=20**；`version@0 stack@4 prio@6 cpu@7 hci_cmd@8 hci_conn@9 sleep@10 vnum@11 mode@12 magic@16`（C 的 `offsetof` 权威值，与我们的 extern struct 完全一致）              |
+| IDF 的 `cfg.btdm` 默认值                | `version=0x20260127 stack=4096 prio=23 cpu=0 hci_cmd=5 hci_conn=3 sleep=0 vnum=0 mode=1 magic=0x5a5aa5a5`                                                                      |
+| 整份 `esp_bt_controller_config_t`       | **192 字节**，`ble` 在 0..167、`btdm` 在 **168**；完整 hexdump 已存进 `config.zig` 的 `idf_cfg192` 模板                                                                        |
+| `r_btdm_task_deinit` 的销毁顺序         | `lwb a0,20(a5)` 调一次、`lw a0,16(a5)` 再调一次；伪造 env 时 fault 落在 **+0x4a**（store access fault）                                                                        |
 
 **当前两个开放问题**（下一轮从这两条开始）
 
@@ -1724,9 +1720,9 @@ call wr_btdm_osal_get_time_forever
 ⇒ 该变量在 `21.o` 里**既无写者、也无初值** ⇒ 恒为 0 ⇒ **IDF 里 `OkE7` 同样走早退分支**
 ⇒ `fqmZk` 两边都不跑 ⇒ `P` 两边都是 0
 ⇒ `r_sym_bt_2aNN`（向 `P` 里写）位于早退之后的分支上 ⇒ **两边都不执行**。
-   （⚠ 这条是**静态推断**：我曾试图用"替身打日志"实测，但替身链接后
-   `nm -S` 显示 size 仍是 `0x10` —— 与归档原版长度**相同**，因此**无法判定**
-   是我们的定义还是归档的定义胜出，那次实验**无效**，不能作为"从未被调用"的证据。）
+（⚠ 这条是**静态推断**：我曾试图用"替身打日志"实测，但替身链接后
+`nm -S` 显示 size 仍是 `0x10` —— 与归档原版长度**相同**，因此**无法判定**
+是我们的定义还是归档的定义胜出，那次实验**无效**，不能作为"从未被调用"的证据。）
 
 **stall 不在 `2aNN` 那次 store 的\*有效\*依据**（别用"替身没打日志"那条，它无效）：
 在 `P` 已被 workaround 填成非 NULL（`0x2f014838`）的那几轮板上实测里，那次 store 是**无害**的，
@@ -1739,11 +1735,11 @@ call wr_btdm_osal_get_time_forever
 
 **同时确立的两条工艺结论**
 
-| 结论 | 依据 |
-| --- | --- |
-| 归档内部**强符号**（`T`）能否被我们的 `export` 覆盖：**未定** | 替身 size `0x10` 与原版同长 ⇒ 判不出来。`ets_printf` 能覆盖是因为 ROM 那份是 `PROVIDE` **弱**符号（这条确定） |
-| 找"写某全局"要搜 `lui+addi` 之后的**无重定位 `sw`**，不是 `LO12_S` | `LO12_S` 只出现在"以该全局为基址+偏移"的写 |
-| **替换/替身类实验：先 `nm -S` 确认生效，再上板** | 本战役有一次替身 size 与原版同长（`0x10`），事后才发现"测了个寂寞"，白烧一轮板 |
+| 结论                                                               | 依据                                                                                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 归档内部**强符号**（`T`）能否被我们的 `export` 覆盖：**未定**      | 替身 size `0x10` 与原版同长 ⇒ 判不出来。`ets_printf` 能覆盖是因为 ROM 那份是 `PROVIDE` **弱**符号（这条确定） |
+| 找"写某全局"要搜 `lui+addi` 之后的**无重定位 `sw`**，不是 `LO12_S` | `LO12_S` 只出现在"以该全局为基址+偏移"的写                                                                    |
+| **替换/替身类实验：先 `nm -S` 确认生效，再上板**                   | 本战役有一次替身 size 与原版同长（`0x10`），事后才发现"测了个寂寞"，白烧一轮板                                |
 
 **目前唯一站得住的板侧前沿证据**：**我们自己的** `osal.taskCreate` 入口日志为 **0 次**
 （这是我们代码里的 trace，挂在 `wr_btdm_osal_task_create` 上，**真实有效**）。
@@ -1765,15 +1761,15 @@ call wr_btdm_osal_get_time_forever
 
 **板侧硬事实（可复现，均为实测）**
 
-| # | 观测 | 意义 |
-| --- | --- | --- |
-| 1 | IDF oracle：`controller_init -> ESP_OK`、`controller_enable -> ESP_OK`、心跳持续 | **硬件与厂商栈正常** |
-| 2 | 我们的日志止于 `enter step 6` | 卡在 step 6 内 |
-| 3 | PC 采样**最后一条在第 190 行**，`enter step 6` 在**第 212 行** | 卡住期间**无中断** ⇒ 事务不退休（stall），**不是自旋** |
-| 4 | `osal.taskCreate` 入口日志 **0 次**、调度器 trampoline 日志 **0 次** | **任务从未被创建**，更没执行 |
-| 5 | `OkE7` 锚点（`r_sym_bt_r4auAKWSAFwgQarMHZCc`）直读 = `0x00000000` | 该守卫取"立即返回"分支 |
-| 6 | oracle：`before_init` 时 `OkE7_anchor=0`、`Xpuq_P=0`；`after_init` 时分别 `0x2f07bdec` / `0x2f07c1b8` | init **之前**两个锚点都是 0 是**正常态**，不是缺陷 |
-| 7 | 5 个池由 `r_btdm_os_mempool_init` 建成，全部 `rc=0` | 池这条已修好（此前从未初始化） |
+| #   | 观测                                                                                                  | 意义                                                   |
+| --- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| 1   | IDF oracle：`controller_init -> ESP_OK`、`controller_enable -> ESP_OK`、心跳持续                      | **硬件与厂商栈正常**                                   |
+| 2   | 我们的日志止于 `enter step 6`                                                                         | 卡在 step 6 内                                         |
+| 3   | PC 采样**最后一条在第 190 行**，`enter step 6` 在**第 212 行**                                        | 卡住期间**无中断** ⇒ 事务不退休（stall），**不是自旋** |
+| 4   | `osal.taskCreate` 入口日志 **0 次**、调度器 trampoline 日志 **0 次**                                  | **任务从未被创建**，更没执行                           |
+| 5   | `OkE7` 锚点（`r_sym_bt_r4auAKWSAFwgQarMHZCc`）直读 = `0x00000000`                                     | 该守卫取"立即返回"分支                                 |
+| 6   | oracle：`before_init` 时 `OkE7_anchor=0`、`Xpuq_P=0`；`after_init` 时分别 `0x2f07bdec` / `0x2f07c1b8` | init **之前**两个锚点都是 0 是**正常态**，不是缺陷     |
+| 7   | 5 个池由 `r_btdm_os_mempool_init` 建成，全部 `rc=0`                                                   | 池这条已修好（此前从未初始化）                         |
 
 **因果链（前半段实测，后半段标注不确定）**
 
@@ -1786,6 +1782,7 @@ step 6 r_btdm_task_init
 ```
 
 > [!WARNING] 尚未确证的部分（别当结论引用）
+>
 > - `2aNN` 在 stall 瞬间的 `a5` 值**没有直接测到**（init 期间外部读不到）。
 > - 我从反汇编拼出的 `.L103` 调用序列（`OkE7 → … → mutex_pend → 2aNN`）
 >   **可能混入了同对象里相邻函数的代码块** —— 因为 `21.o` 里**全库没有任何 store**
@@ -1835,10 +1832,10 @@ hang 的**直接位置**是第四步，而它与 `P` 的因果关系**尚未证�
 
 **两个待判实验（都还没跑）**
 
-| 实验 | 判别什么 |
-| --- | --- |
-| 接管 ROM 导出的一整族 `uart_tx_*`（`uart_tx_one_char/one_char2/wait_idle/flush`） | 自旋是否就是"打印阻塞"；若是，step 6 应能走通 |
-| 用 IDF oracle 打印锚点 `r_sym_bt_r4auAKWSAFwgQarMHZCc` 在 init 前/后/enable 后的值 | 谁该发布它、该填什么 |
+| 实验                                                                               | 判别什么                                      |
+| ---------------------------------------------------------------------------------- | --------------------------------------------- |
+| 接管 ROM 导出的一整族 `uart_tx_*`（`uart_tx_one_char/one_char2/wait_idle/flush`）  | 自旋是否就是"打印阻塞"；若是，step 6 应能走通 |
+| 用 IDF oracle 打印锚点 `r_sym_bt_r4auAKWSAFwgQarMHZCc` 在 init 前/后/enable 后的值 | 谁该发布它、该填什么                          |
 
 **已修的卫生项**：我们的 `log.line` 每一行原先都走 ROM 的 `esp_rom_printf`（`0x2f800024`），
 它正是那个会自旋的实现；现已改为 `hw.rawWrite`（有界，FIFO 满时放弃），
@@ -1848,10 +1845,10 @@ hang 的**直接位置**是第四步，而它与 `P` 的因果关系**尚未证�
 
 两个独立缺陷，都不在硬件：
 
-| # | 缺陷 | 证据 | 处置 |
-| --- | --- | --- | --- |
-| 1 | `Xpuq` 的锚点全局是 **NULL** | 直接读 `r_sym_bt_d3D3sk5KewclELfrD5xa` = `0x00000000`；`Xpuq` 用它作基址从地址 0 零填充到 `0x2010B100`（约 1.34 亿次写）= "无声卡死" | 它唯一的写者 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` 被 `if (*(*s0 + 8) != 0)` 守卫生生跳过 ⇒ 在 step 6 前补调，`P` 变为 `0x2f0139d0` |
-| 2 | 归档打印卡在 **ROM 的 UART0 TX-FIFO 空位等待循环** | 新鲜采样 66 条：`mepc=0x2f83efda`×29、`0x2f83efd2`×8（该循环及其读字节叶子）；循环条件 `while (((*(u32*)(0x2038A01C))>>16)&0xFF > 127)`，即 `UART0_STATUS.TXFIFO_CNT` | 给 `ets_printf` 强定义直接丢弃（`bt_printf_shim.c`） |
+| #   | 缺陷                                               | 证据                                                                                                                                                                  | 处置                                                                                                                          |
+| --- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `Xpuq` 的锚点全局是 **NULL**                       | 直接读 `r_sym_bt_d3D3sk5KewclELfrD5xa` = `0x00000000`；`Xpuq` 用它作基址从地址 0 零填充到 `0x2010B100`（约 1.34 亿次写）= "无声卡死"                                  | 它唯一的写者 `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` 被 `if (*(*s0 + 8) != 0)` 守卫生生跳过 ⇒ 在 step 6 前补调，`P` 变为 `0x2f0139d0` |
+| 2   | 归档打印卡在 **ROM 的 UART0 TX-FIFO 空位等待循环** | 新鲜采样 66 条：`mepc=0x2f83efda`×29、`0x2f83efd2`×8（该循环及其读字节叶子）；循环条件 `while (((*(u32*)(0x2038A01C))>>16)&0xFF > 127)`，即 `UART0_STATUS.TXFIFO_CNT` | 给 `ets_printf` 强定义直接丢弃（`bt_printf_shim.c`）                                                                          |
 
 > [!IMPORTANT] 关于缺陷 2 的**准确措辞**
 > FIFO **不是**"永不排空"：连采 4 次（间隔 100 ms）得到
@@ -1870,12 +1867,12 @@ hang 的**直接位置**是第四步，而它与 `P` 的因果关系**尚未证�
 
 ⇒ 不是 load fault，而是**访问本身不返回**。这一条同时解释了此前所有现象：
 
-| 现象 | 由总线挂死解释 |
-| --- | --- |
-| 没有 panic / trap 输出 | 没有异常被投递 |
-| T0 中断只来 2 次后彻底停止 | 中断控制器也挂在同一条总线上 |
-| `UART0_STATUS.TXFIFO_CNT` 恒 128、输出停住 | 我们对 UART 的写也不返回 |
-| 我们的非阻塞日志通道也打不出后续 | 同上 |
+| 现象                                       | 由总线挂死解释               |
+| ------------------------------------------ | ---------------------------- |
+| 没有 panic / trap 输出                     | 没有异常被投递               |
+| T0 中断只来 2 次后彻底停止                 | 中断控制器也挂在同一条总线上 |
+| `UART0_STATUS.TXFIFO_CNT` 恒 128、输出停住 | 我们对 UART 的写也不返回     |
+| 我们的非阻塞日志通道也打不出后续           | 同上                         |
 
 而卡点那次访问正是 `r_sym_bt_XPuq` 里对 **`0x2010B000..0x2010B100`**（`MODEM_BASE + 0xB000`，
 BLE/MAC 寄存器块，位于 SYSCON +0x9C00 与 MODEM_PWR +0xD000 之间）的 16 次读-改-写循环。
@@ -1890,14 +1887,14 @@ BLE/MAC 寄存器块，位于 SYSCON +0x9C00 与 MODEM_PWR +0xD000 之间）的 
 
 ### 已排除的假设（都是板上对照，别再重试）
 
-| 假设 | 实验 | 结果 |
-| --- | --- | --- |
-| 少开时钟 | 12 个 BT 门 + 8 个 PHY FE + SOC PLL + LP timer，全部读回自证 | 仍卡 |
-| 我们改时钟把 UART 弄停 | `clock_writes = false`，一笔都不写 | 仍卡 |
-| ISR 打印打断 ROM 的 UART 写 | 完全不 arm T0、不开 MIE | 仍卡 |
-| SOC PLL 源写坏 | 加开关默认不写 | 仍卡 |
-| **BTDM 的 RAM 区间是零长度** | `s31.ld` 给 32 KiB BSS + 4 KiB DATA 真实区间 | **仍卡** |
-| 时基没初始化 | `hw.initTimer()` + 打递增自证 | 修正了采样器，但不是卡点原因 |
+| 假设                         | 实验                                                         | 结果                         |
+| ---------------------------- | ------------------------------------------------------------ | ---------------------------- |
+| 少开时钟                     | 12 个 BT 门 + 8 个 PHY FE + SOC PLL + LP timer，全部读回自证 | 仍卡                         |
+| 我们改时钟把 UART 弄停       | `clock_writes = false`，一笔都不写                           | 仍卡                         |
+| ISR 打印打断 ROM 的 UART 写  | 完全不 arm T0、不开 MIE                                      | 仍卡                         |
+| SOC PLL 源写坏               | 加开关默认不写                                               | 仍卡                         |
+| **BTDM 的 RAM 区间是零长度** | `s31.ld` 给 32 KiB BSS + 4 KiB DATA 真实区间                 | **仍卡**                     |
+| 时基没初始化                 | `hw.initTimer()` + 打递增自证                                | 修正了采样器，但不是卡点原因 |
 
 ⚠ **探针必须调 `hw.initTimer()`**：不调则 `nowUs()` 恒 0 ⇒ ① T0 的 alarm 永不到点 ⇒
 采样中断一个都不来；② OSAL 的 `now_ms` 恒 0 ⇒ 任何"等到某时刻"的条件永不成立。
@@ -1915,10 +1912,10 @@ ADR-001:729 已因同一个原因记过一次。
    **`W`（弱定义）**，反汇编是 `wr_btdm_assert(file, line)` 的**断言占位**；IDF 的真实实现
    （`porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c`）在真实构建里强定义覆盖它们。
    **准确口径**（按归档实际调用算）：**56 个弱桩** = 36 `wr_btdm_osal_*` + 11 `wr_btdm_coex_*`
-   + 8 `wr_btdm_log_*` + 1 `wr_btdm_assert`（归档里弱定义的 `wr_btdm_*` 共 77 个，21 个从不被调）。
-   ⇒ 这是"让 controller 跑起来"的主要工作量。**已完成**：8 个 `wr_btdm_log_*`（C 侧）、
-   `wr_btdm_assert`、以及 `src/osal.zig` 里的 time/critical/sem/mutex/event/eventq/callout 核心（9 个主机用例）。
-   **未完成**：36 个 OSAL 里剩下的 `task_*`/`intr_*`/`malloc`/`free`（要接调度器与 arena）、11 个 coex。
+   - 8 `wr_btdm_log_*` + 1 `wr_btdm_assert`（归档里弱定义的 `wr_btdm_*` 共 77 个，21 个从不被调）。
+     ⇒ 这是"让 controller 跑起来"的主要工作量。**已完成**：8 个 `wr_btdm_log_*`（C 侧）、
+     `wr_btdm_assert`、以及 `src/osal.zig` 里的 time/critical/sem/mutex/event/eventq/callout 核心（9 个主机用例）。
+     **未完成**：36 个 OSAL 里剩下的 `task_*`/`intr_*`/`malloc`/`free`（要接调度器与 arena）、11 个 coex。
 
    **「强覆盖弱」已实测**：本文件给 `wr_btdm_assert` 写了强定义，链接无重复符号错误，
    镜像里出现标记串 `bt-blob-strong-assert` ⇒ 被选中是我们的实现。建议先写 8 个 `wr_btdm_log_*`，
@@ -1956,15 +1953,15 @@ panic: ra=0x4005fa94 a0=0x0
 
 **7 个未发布锚点的归属**（闭包对象明文 `.symtab` 反查，一次 grep 即可）：
 
-| # | 锚点 | 引用它的对象 → 所属子系统 |
-| --- | --- | --- |
-| 0 | `pSy5Wex…` | `libbtdm_common_11/12` → HCI pkt flags |
-| 1 | `WDq2rzn…` | `libbtdm_common_16` → 数据对象（无常函数名） |
-| 2 | `YnZmsxu…` | `libbtdm_common_17/19` → sched list |
-| 3 | `kfu8vf8…` | `libble_app_49` + `libbtdm_common_19` → sched/BLE |
-| 5 | `sitBB3S…` | `libbtdm_common_20` → sleep |
-| 7 | `lRdavKx…` | `libbtdm_common_3` → **HCI flow control**（`r_btdm_hci_fc_env_init`） |
-| 9 | `y5Dip5N…` | `libbtdm_common_9` → HAL RTC freq |
+| #   | 锚点       | 引用它的对象 → 所属子系统                                             |
+| --- | ---------- | --------------------------------------------------------------------- |
+| 0   | `pSy5Wex…` | `libbtdm_common_11/12` → HCI pkt flags                                |
+| 1   | `WDq2rzn…` | `libbtdm_common_16` → 数据对象（无常函数名）                          |
+| 2   | `YnZmsxu…` | `libbtdm_common_17/19` → sched list                                   |
+| 3   | `kfu8vf8…` | `libble_app_49` + `libbtdm_common_19` → sched/BLE                     |
+| 5   | `sitBB3S…` | `libbtdm_common_20` → sleep                                           |
+| 7   | `lRdavKx…` | `libbtdm_common_3` → **HCI flow control**（`r_btdm_hci_fc_env_init`） |
+| 9   | `y5Dip5N…` | `libbtdm_common_9` → HAL RTC freq                                     |
 
 ⇒ 它们全部属于**更晚的子系统**，本该由各自 init 发布 ⇒ **它们是"没走到那一步"的结果，不是原因**。
 
@@ -2002,10 +1999,10 @@ panic: ra=0x4005fa94 a0=0x0
 
 `grep -l` 只给**引用者**；要定"谁该发布它"，必须看定义者：
 
-| 锚点 | 定义者 | 引用者 |
-| --- | --- | --- |
+| 锚点                    | 定义者                | 引用者                   |
+| ----------------------- | --------------------- | ------------------------ |
 | `pSy5Wex…`（anchor[0]） | `libbtdm_common_11.o` | `libbtdm_common_11/12.o` |
-| `WDq2rzn…`（anchor[1]） | `libbtdm_common_16.o` | `libbtdm_common_16.o` |
+| `WDq2rzn…`（anchor[1]） | `libbtdm_common_16.o` | `libbtdm_common_16.o`    |
 
 ⇒ anchor[0] 的**定义者与消费者是同一个对象**（`_11`）：发布它的 init 函数就在这个对象里，
 而崩溃的 trampoline 也在同一个对象里读它 ⇒ 定位"哪个函数写这个槽"只需在这一个对象里找。
@@ -2034,14 +2031,14 @@ libbtdm_common_12.o  00000004  R_RISCV_HI20  r_sym_bt_pSy5Wex1[...]
 
 ### 当前卡点（2026-11-18 净结论，别再重走）
 
-| 事实 | 证据 |
-| --- | --- |
-| 崩溃前 12 次 OSAL 调用**全部成功**，无 TIMEOUT | `logs/bt-probe-trace.log`（`mutex_pend => OK`，无失败行） |
-| `task_create` **从未发生** | 该日志不受 `trace_hooks` 过滤，却一次未出现 |
-| 崩溃在 **step 6 前半段**（建任务之前） | 同上 |
-| 崩溃读的是 **anchor[0]**（`0x2f00ffd0`，值 0） | `mepc=0x4005b692` 手工解码：`lui a5,0x2f010; lw a5,-0x30(a5)` |
-| anchor[0] 定义在 `libbtdm_common_11.o`，由 `_12` 取地址 | `nm --defined-only` / `readelf -r` |
-| 发布者用固定地址算术写，无符号重定位 | 全包只有一处 HI20、无 store 重定位 |
+| 事实                                                    | 证据                                                          |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| 崩溃前 12 次 OSAL 调用**全部成功**，无 TIMEOUT          | `logs/bt-probe-trace.log`（`mutex_pend => OK`，无失败行）     |
+| `task_create` **从未发生**                              | 该日志不受 `trace_hooks` 过滤，却一次未出现                   |
+| 崩溃在 **step 6 前半段**（建任务之前）                  | 同上                                                          |
+| 崩溃读的是 **anchor[0]**（`0x2f00ffd0`，值 0）          | `mepc=0x4005b692` 手工解码：`lui a5,0x2f010; lw a5,-0x30(a5)` |
+| anchor[0] 定义在 `libbtdm_common_11.o`，由 `_12` 取地址 | `nm --defined-only` / `readelf -r`                            |
+| 发布者用固定地址算术写，无符号重定位                    | 全包只有一处 HI20、无 store 重定位                            |
 
 **已排除**：任务未运行（立即抢占已实现）、mutex 超时（无 TIMEOUT）。
 **下一步**：在闭包反汇编里搜 `0x2f010000` 附近的 `sw`（或拿 linker map），定位"谁该写 anchor[0]"。
@@ -2168,8 +2165,8 @@ R 0x20109c10 = 0
 
 **地址已解码（IDF `soc/esp32s31/include/modem/`）**：
 
-| 地址 | 名称 | 我们写入的位 |
-| --- | --- | --- |
+| 地址         | 名称                                  | 我们写入的位                                                                                                            |
+| ------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `0x20109C10` | **`MODEM_SYSCON_MODEM_RST_CONF_REG`** | `0x00010000`=bit16、`0x00008000`=bit15、`0x40000000`=**RST_BLE_TIMER**(30)、`0x2e000000`=**RST_MODEM_SEC**(29)+27/26/25 |
 
 每个值之后都跟一次 `0`（**脉冲复位**：置位→清零）。这与我们自己 bringup 里那句
@@ -2216,6 +2213,7 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 **我们打印时的 UART 等待循环**，不是归档的 `r_btdm_task_init`。
 
 原因有两条，都写在这里以免下次再试：
+
 1. 采样周期 2 ms，而归档在 step 6 里**不打印、崩得很快**，整个 step 6 可能短于一个采样周期；
 2. 只要我们在打印，采样就会被我们自己的日志函数占满（本板 UART TX FIFO 停在 128，打印很慢）。
 
@@ -2224,12 +2222,12 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 
 ### 仪器清单与各自的极限（结论）
 
-| 仪器 | 能回答 | 为什么还不够 |
-| --- | --- | --- |
-| OSAL trace | 归档调了我们哪些桩、返回什么 | 崩溃发生在下一个归档调用**之前** |
-| printf 桥 | 归档自己报的进度 | 该路径输出 0 行 |
-| 寄存器环（48/40） | 死前在碰哪些寄存器 | 只看到 deinit 的下电动作（果，不是因） |
-| PC 采样 | 谁在占用 CPU | 采到的是我们自己的 UART 自旋；周期 2 ms 太粗 |
+| 仪器              | 能回答                       | 为什么还不够                                 |
+| ----------------- | ---------------------------- | -------------------------------------------- |
+| OSAL trace        | 归档调了我们哪些桩、返回什么 | 崩溃发生在下一个归档调用**之前**             |
+| printf 桥         | 归档自己报的进度             | 该路径输出 0 行                              |
+| 寄存器环（48/40） | 死前在碰哪些寄存器           | 只看到 deinit 的下电动作（果，不是因）       |
+| PC 采样           | 谁在占用 CPU                 | 采到的是我们自己的 UART 自旋；周期 2 ms 太粗 |
 
 **结论**：这四个外围仪器共同把问题**框到了"task_init 内部、任何外部可见行为之前"**，
 再往里需要**指令级**手段（JTAG 写监视点），属于另一类工具。
@@ -2262,6 +2260,7 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 于是调用方设的静音会在下一次打印后**被重新打开**，窗口内的 `bt hook:` 逐调用日志源源不断。
 
 处置：
+
 - 删掉那行副作用（trace 开关应在 probe 入口显式设，不该藏在日志钩子里）；
 - 给 `logHook` 加**调用者返回地址环**（`trap.recordLogCaller(@returnAddress())`，16 条，
   panic 时导出 `panic: caller[i]=…`），下次再有人问"谁在打印"可直接答。
@@ -2278,12 +2277,12 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 把三处 ISR 打印全部纳入 `sample_quiet`、`resetPcs()` 连 `irq_count`/`rom_handler_calls` 一起清、
 并在窗口里 `hw.mmio_off = true` 关掉寄存器记录之后，48 条采样变成：
 
-| 命中的函数 | 数量 |
-| --- | --- |
+| 命中的函数                            | 数量         |
+| ------------------------------------- | ------------ |
 | `hw.bt_mmio_read`（**外壳调用本身**） | 4 个不同地址 |
-| `hw.mmioRecord` | 1 |
-| `extfuncs.xMalloc`（**归档侧**） | 1 |
-| `Io.Writer.print` | 1 |
+| `hw.mmioRecord`                       | 1            |
+| `extfuncs.xMalloc`（**归档侧**）      | 1            |
+| `Io.Writer.print`                     | 1            |
 
 ⇒ 归档在最后几百微秒里**密集访问 modem 寄存器**，以至于"寄存器访问的外壳函数"本身就是热路径 ——
 再关掉记录也去不掉这层壳（每次访问都要过一次 `bt_mmio_read`）。这是采样法在这种负载下的**物理上限**。
@@ -2321,12 +2320,12 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 
 同一次运行（`logs/bt-probe-pcs6.log`）：
 
-| 导出段 | 行数 |
-| --- | --- |
-| `panic: pc[...]` | **43**（采样有数据 ✓） |
-| `panic: caller[...]` | 0（logHook 静音 ✓ 正确） |
-| `panic: mmiocaller[...]` | **0** |
-| `panic: mmio[...]` | **40** |
+| 导出段                   | 行数                     |
+| ------------------------ | ------------------------ |
+| `panic: pc[...]`         | **43**（采样有数据 ✓）   |
+| `panic: caller[...]`     | 0（logHook 静音 ✓ 正确） |
+| `panic: mmiocaller[...]` | **0**                    |
+| `panic: mmio[...]`       | **40**                   |
 
 而 `hw.zig` 里 `recordMmioCaller(@returnAddress())` 确实在 `bt_mmio_read` 与 `bt_mmio_write`
 的第一行（第 355/362 行），`mmioRecord` 只在同一对函数里被调用 —— 两者应当同进同出。
@@ -2375,6 +2374,7 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 ### 第一个"归档调用点"仪器：OSAL 钩子的返回地址环（2026-11-18，首跑无输出）
 
 实现（三处）：
+
 1. `osal.zig`：`caller_ring[32]` + `noteCaller()`，在 9 个入口记 `@returnAddress()`
    （`btdmMalloc/btdmFree/semPend/semRelease/mutexPend/mutexRelease/eventqPut/eventqGet/taskCreate`）；
 2. `board/trap`：`pub var extra_dump: ?*const fn () void`，panic 时调用；
@@ -2391,11 +2391,11 @@ irq-sample #12..15  mepc=0x400695a6  ra=0x40065fb2  a0=0x2f07aea1  a1=0x00000023
 镜像用 `build-probe.sh`（含 elf2image）重建后 — 此前几次刷的是**旧 `app.bin`**，因此"0 条 osalcaller"
 是在测上一版构建 — OSAL 调用者环立刻产出 3 条，全部解析到归档自己的代码：
 
-| 归档调用点 | 所在函数 | 调用的导出 |
-| --- | --- | --- |
-| `0x4005f8c6` | `r_sym_bt_OkE7MxSSqFt63m8XlU3d` | **`wr_btdm_osal_mutex_init`** |
-| `0x4005f8d4` | 同一函数 | **`wr_btdm_osal_eventq_init`** |
-| `0x4005fa68` | `r_btdm_task_deinit` | **`wr_btdm_osal_mutex_pend`** |
+| 归档调用点   | 所在函数                        | 调用的导出                     |
+| ------------ | ------------------------------- | ------------------------------ |
+| `0x4005f8c6` | `r_sym_bt_OkE7MxSSqFt63m8XlU3d` | **`wr_btdm_osal_mutex_init`**  |
+| `0x4005f8d4` | 同一函数                        | **`wr_btdm_osal_eventq_init`** |
+| `0x4005fa68` | `r_btdm_task_deinit`            | **`wr_btdm_osal_mutex_pend`**  |
 
 `objdump` 显示 `OkE7…` 里那两处是**相邻**的：
 
@@ -2512,6 +2512,7 @@ panic: regs a4=0x1 a5=0x0 a6=0x40104264 a7=0x2f07acbf
 `lbu` 得 0 → `ori 1` → 写地址 0 ⇒ `mtval=0`、`cause=7` 全部对上。
 
 **但这条指令前面有 `beqz a5` 保护**，且：
+
 - `nm` 检查 **没有** 重复的 `r_sym_bt_*` 符号（不是 duplicate 模块）；
 - `anchor[0]`（`r_sym_bt_pSy5Wex1v0iXw5RdWtwL`）在 **`.bss`（section 11, NOBITS）**，无数据镜像 ⇒ 发布者只能是代码；
 - 全镜像有 **48** 处引用 `0x2f00ffd0`（读取者很多，不是孤立变量）。
@@ -2520,6 +2521,7 @@ panic: regs a4=0x1 a5=0x0 a6=0x40104264 a7=0x2f07acbf
 而 `mepc` 落在一条 `lui`（不可能产生访问异常）。这条 instrument 的极限就在这里。
 
 **下一步候选（按性价比）**：
+
 1. 在 `vpbJU7UPeyxEM4bymUIi`（0x4005b6a4）的 `sb` **前**插一条记录（把 a5 写进静默环），直接看它执行时 a5 是多少；
 2. 若确认为 0，则 `beqz` 没生效 ⇒ 查该分支的指令编码/是否被我们的 `gc-sections` 或跳板改写；
 3. 或者接受"异步报点"解释（store 缓冲延迟提交），此时应改为**记录所有 `sb/sw` 的地址**而不是依赖 mepc。
@@ -2558,10 +2560,10 @@ panic: regs a4=0x1 a5=0x0 a6=0x40104264 a7=0x2f07acbf
 
 **实验一：毒化 vs 基线（同组寄存器）**
 
-| 运行 | anchor[0] | a3 | a4 | a5 | mtval | mepc |
-| --- | --- | --- | --- | --- | --- | --- |
-| 毒化 | `0x2f012e90` | `0x2f0155b8` | 1 | 0 | 0 | `0x4005b692` |
-| 基线（poison off） | `0` | `0x2f0155b8` | 1 | 0 | 0 | `0x4005b692` |
+| 运行               | anchor[0]    | a3           | a4  | a5  | mtval | mepc         |
+| ------------------ | ------------ | ------------ | --- | --- | ----- | ------------ |
+| 毒化               | `0x2f012e90` | `0x2f0155b8` | 1   | 0   | 0     | `0x4005b692` |
+| 基线（poison off） | `0`          | `0x2f0155b8` | 1   | 0   | 0     | `0x4005b692` |
 
 ⇒ 两组**逐寄存器相同** ⇒ 崩溃与 `anchor[0]` **无关**，"毒化自造崩溃"的猜测也排除。
 
@@ -2586,11 +2588,11 @@ panic: live mepc=0x4005b692 mtval=0x0        <- 直读 CSR
 
 ### 三个对照全部一致：故障可稳定复现，但 PC 不可解释（2026-11-18 收尾）
 
-| 对照组 | 变更 | a4 | a5 | mtval | mepc |
-| --- | --- | --- | --- | --- | --- |
-| 毒化 | `anchor[0]`=有效指针 | 1 | 0 | 0 | `0x4005b692` |
-| 基线 | 不毒化 | 1 | 0 | 0 | `0x4005b692` |
-| 无采样器 | `sample_period_us=0x7fffffff` | 1 | 0 | 0 | `0x4005b692` |
+| 对照组   | 变更                          | a4  | a5  | mtval | mepc         |
+| -------- | ----------------------------- | --- | --- | ----- | ------------ |
+| 毒化     | `anchor[0]`=有效指针          | 1   | 0   | 0     | `0x4005b692` |
+| 基线     | 不毒化                        | 1   | 0   | 0     | `0x4005b692` |
+| 无采样器 | `sample_period_us=0x7fffffff` | 1   | 0   | 0     | `0x4005b692` |
 
 三次**逐寄存器完全相同** ⇒ 与 `anchor[0]` 无关、与采样器无关，故障可稳定复现。
 
@@ -2635,6 +2637,7 @@ panic: live mepc=0x4006eff0 mtval=0x0
 需要用写目标记录（而非 PC）来定位。
 
 **下一步（唯一有效方向）**：记录写目标。归档的 `sb/sw` 不可插桩，但可：
+
 1. 在自测里验证"延迟多久"（在写 0 之后插入 N 次无害写，看 mepc 落多远）——用于界定搜索窗口；
 2. 用 `osal` 每个入口把 `a0..a2` 记入静默环，看归档是否把 0 当指针传给我们（则写者是我们）。
 
@@ -2734,7 +2737,6 @@ panic: live mepc=0x4006eff0 mtval=0x0
 让归档不走这条 `deinit`（例如修好 `task_init` 的 `[a5+8]==0` 依赖），
 或在 `deinit` 前先给缺失对象做一次惰性发布。
 
-
 ### 缺失的槽位已确定：**anchor[9]**（2026-11-18）
 
 `FzF1` 序言给出 `s0` 的来源：
@@ -2765,6 +2767,7 @@ task_init: mutex_init -> eventq_init -> [anchor?+8]==0 -> 提前退出
 ```
 
 **修补方向**：
+
 1. **治本**：找出谁该发布 `anchor[9]`（`r_sym_bt_y5Dip5N8bwiiGRcrWzBO` 的写者），
    并让它先于 `deinit` 执行 —— 用 `readelf -r` 的 LO12_S（写）/LO12_I（读）分类，或对链接后 ELF
    `objdump -d | grep -E '(c\.)?sw.*2f00fff4'` 找直接写者（注意 `lui+addi+sw` 形式的间接写）。
@@ -2774,9 +2777,9 @@ task_init: mutex_init -> eventq_init -> [anchor?+8]==0 -> 提前退出
 
 把毒化目标从 `anchor[0]` 改到 **`anchor[9]`（`0x2f00fff4`）**，其余不动：
 
-| 运行 | mepc | mtval | cause | 结论 |
-| --- | --- | --- | --- | --- |
-| 基线 | `0x4005b692` | `0x0` | 7 (store) | `FzF1` 的 `sb zero,0(a5)` 写地址 0 |
+| 运行           | mepc         | mtval  | cause        | 结论                                     |
+| -------------- | ------------ | ------ | ------------ | ---------------------------------------- |
+| 基线           | `0x4005b692` | `0x0`  | 7 (store)    | `FzF1` 的 `sb zero,0(a5)` 写地址 0       |
 | 毒化 anchor[9] | `0x4005f1c8` | `0x18` | **5 (load)** | **原崩溃消失**，改为 `gvLJK` 里读 `0x18` |
 
 ⇒ **`anchor[9] == 0` 是 `sb zero,0(a5)` 的直接原因，因果链闭合。**
@@ -2835,11 +2838,11 @@ bt bringup: enter step 6 r_btdm_task_init
 
 三条已有事实互相冲突：
 
-| 事实 | 含义 |
-| --- | --- |
+| 事实                                                                                                           | 含义                   |
+| -------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | `eventq_init` 前 `fillBailField` 已把 `*(anchor[6]+8)` 填成非零（本次实测 `anchor6=0x2f015598 patch=applied`） | 该判据若存在，应被越过 |
-| 板级 anchor dump：`anchor[6]=0x2f015598`、`+8=0x2f012628`（非零） | 同上 |
-| OSAL 调用环 **n=3**（mutex_init / eventq_init / mutex_pend），**没有** bail 越过后那次 `fqmZk` 的 `malloc` | 说明没走到那一步 |
+| 板级 anchor dump：`anchor[6]=0x2f015598`、`+8=0x2f012628`（非零）                                              | 同上                   |
+| OSAL 调用环 **n=3**（mutex_init / eventq_init / mutex_pend），**没有** bail 越过后那次 `fqmZk` 的 `malloc`     | 说明没走到那一步       |
 
 ⇒ 补丁确实生效却仍崩，且没有后续 malloc ⇒ **bail 的位置/判据尚未证实**。
 `r_btdm_task_init` 还有别的失败返回（21.o 里 `1c: r_btdm_task_deinit`），
@@ -2865,9 +2868,9 @@ cleanup 路径会连续解引用多个未初始化对象，补一个槽只换一
 
 在 `wr_btdm_osal_eventq_init` 里补写 `*(anchor[6]+8)`，两次实验：
 
-| 放置 | 结果 |
-| --- | --- |
-| 在 `eventqInit(evq)` **之前** | `patch=applied`，崩溃不变 |
+| 放置                                                            | 结果                            |
+| --------------------------------------------------------------- | ------------------------------- |
+| 在 `eventqInit(evq)` **之前**                                   | `patch=applied`，崩溃不变       |
 | 在 `eventqInit(evq)` **之后**（`evq` 就是 `obj+8`，会覆盖前者） | `patch=applied`，崩溃**仍不变** |
 
 ⇒ 填该字段**不改变**崩溃路径 ⇒ 那条 `lw a5,8(a5); beqz` **不是** task_init 提前退出的判据。
@@ -2931,6 +2934,7 @@ bt probe: re-probing 0x2010B000 ...
 继续在锚点链上做板级实验，收益低于处理"BT 基带需要 modem 前端上电 + RF 校准"这一层。
 
 ⇒ 下一步应当是工程性决策，而不是继续调试：
+
 - 要么在裸机上补出 modem 前端上电/校准能力（`esp_phy` 那一层），使 `0x2010B000` 可访问；
 - 要么接受 BLE controller 在该板当前状态下不可用，把这一支从"待打通"降级为"依赖硬件前置"。
 
@@ -2938,11 +2942,11 @@ bt probe: re-probing 0x2010B000 ...
 
 前面几轮的结论汇合到这里：
 
-| 已完成 | 事实 |
-| --- | --- |
-| `g_phyFuns` 表 | 调用 `phy_get_romfunc_addr()` 后**被填上**（`0x2f07f944`） |
-| `esp_phy_enable(2)` | **正常返回**（ROM 函数，原先从没走到过） |
-| 但 `0x2010B000` | **仍不应答总线**（本轮复核：一读即挂） |
+| 已完成              | 事实                                                       |
+| ------------------- | ---------------------------------------------------------- |
+| `g_phyFuns` 表      | 调用 `phy_get_romfunc_addr()` 后**被填上**（`0x2f07f944`） |
+| `esp_phy_enable(2)` | **正常返回**（ROM 函数，原先从没走到过）                   |
+| 但 `0x2010B000`     | **仍不应答总线**（本轮复核：一读即挂）                     |
 
 ⇒ 差的那一步是**校准**：`esp_phy_enable` 在 `s_is_phy_calibrated == false` 时会走
 `esp_phy_load_cal_and_init()` → `esp_phy_load_cal_data_from_nvs()` → **`nvs_open(PHY_NAMESPACE)`**。
@@ -3025,6 +3029,7 @@ bt probe: re-probing 0x2010B000 ...
 ⇒ 因此"补丁写 `evq` 首字无效"这一结论**未定**，需要先用带 `malloc` 的完整环重做判别。
 
 **下一步（唯一，且明确）**：
+
 1. 给**所有** `export fn wr_btdm_osal_*` 补 `noteCaller()`（本轮批量编辑失败已回退，需逐个手工加）；
 2. 重跑基线，记录 n 与最后几条 RA，确认 `OkE7` 返回前的完整序列；
 3. 再重跑 `patch_bail_field=true`，看 n 是否增加、故障点是否移动 —— 那才是有效判别。
@@ -3044,10 +3049,10 @@ bt probe: re-probing 0x2010B000 ...
 
 实测对照（`bt ret:` 已改为不受 `trace_hooks` 过滤）：
 
-| 运行 | 钩子返回 | 补丁 | 保存的 s0 | 判读 |
-| --- | --- | --- | --- | --- |
-| 基线 | `mutex_init => 0`、`eventq_init done` | 关 | `-3` | 闸门失败（`*(obj+8)==0`） |
-| 打过补丁 | 同上 | **`evq -> 0x2f012e98`** | **`-3`** | 闸门已过，`-3` 来自 `fqmZk` |
+| 运行     | 钩子返回                              | 补丁                    | 保存的 s0 | 判读                        |
+| -------- | ------------------------------------- | ----------------------- | --------- | --------------------------- |
+| 基线     | `mutex_init => 0`、`eventq_init done` | 关                      | `-3`      | 闸门失败（`*(obj+8)==0`）   |
+| 打过补丁 | 同上                                  | **`evq -> 0x2f012e98`** | **`-3`**  | 闸门已过，`-3` 来自 `fqmZk` |
 
 ⇒ **此前"补丁无效"的结论作废**：崩溃签名不变，是因为**下一段回滚路径（`lap6` → `deinit`）完全相同**，
 不是补丁没生效。这也是本会话里唯一一次"实验看起来失败、实际成功"的情形 ——
@@ -3064,13 +3069,13 @@ bt probe: re-probing 0x2010B000 ...
 
 补丁生效后 OSAL 环由 3 条变 **5 条**，完整序列（全部解析到归档自己的代码）：
 
-| # | 归档返回地址 | 所在函数 | 说明 |
-| --- | --- | --- | --- |
-| 1 | `0x4005f892` | `OkE7…` | 惰性发布 `malloc` |
-| 2 | `0x4005f8ca` | `OkE7…` | `mutex_init`（实测返回 0） |
-| 3 | `0x4005f8d8` | `OkE7…` | `eventq_init` |
-| 4 | `0x4005f3b2` | **`fqmZk…`** | **闸门之后才出现**（基线里没有） |
-| 5 | `0x4005fa6c` | `r_btdm_task_deinit` | 回滚 |
+| #   | 归档返回地址 | 所在函数             | 说明                             |
+| --- | ------------ | -------------------- | -------------------------------- |
+| 1   | `0x4005f892` | `OkE7…`              | 惰性发布 `malloc`                |
+| 2   | `0x4005f8ca` | `OkE7…`              | `mutex_init`（实测返回 0）       |
+| 3   | `0x4005f8d8` | `OkE7…`              | `eventq_init`                    |
+| 4   | `0x4005f3b2` | **`fqmZk…`**         | **闸门之后才出现**（基线里没有） |
+| 5   | `0x4005fa6c` | `r_btdm_task_deinit` | 回滚                             |
 
 `fqmZk` 本体是**成功**的：
 
@@ -3098,6 +3103,7 @@ bt probe: re-probing 0x2010B000 ...
 且这两个函数**没有任何 OSAL 调用**（环里 `fqmZk` 之后直接是 `deinit`）⇒ 它们快速返回了非零。
 
 **下一步（离线，两步）**：
+
 1. 反汇编 `0x4005f8de..0x4005f8f0`，看 `-9` 那一级检查的是什么；
 2. 反汇编 `PsB8…(0x4005b56c)` 与 `ZGgi…(0x4006090c)` 的入口，看它们的首个条件分支读哪个字段 ——
    这两个函数都很短，且不碰 OSAL，属于纯数据检查，比继续追回滚路径便宜得多。
@@ -3120,10 +3126,10 @@ bt probe: re-probing 0x2010B000 ...
 
 ### 对照实验（同一镜像，仅改这一个开关）
 
-| 运行 | OSAL 序列 | 结果 |
-| --- | --- | --- |
-| `publish_bohff_anchor=true`（旧默认） | malloc(76) → mutex_init → eventq_init → malloc(8) → **deinit** | 回滚崩溃（`store fault @0`） |
-| `publish_bohff_anchor=false` | 同上 + **malloc(36)** + malloc(32) + 12 + 12 + …（共 **15 次** malloc） | **无 fault、无 panic** |
+| 运行                                  | OSAL 序列                                                               | 结果                         |
+| ------------------------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `publish_bohff_anchor=true`（旧默认） | malloc(76) → mutex_init → eventq_init → malloc(8) → **deinit**          | 回滚崩溃（`store fault @0`） |
+| `publish_bohff_anchor=false`          | 同上 + **malloc(36)** + malloc(32) + 12 + 12 + …（共 **15 次** malloc） | **无 fault、无 panic**       |
 
 ⇒ 关掉预发布后归档真的在初始化，最后**停在 `0x2010B000` 的总线挂起**上（45 s 无输出、无异常，
 与 README 前述"读该块即挂死"的签名一致）—— 也就是**到达了真正的硬件墙**。
@@ -3171,6 +3177,7 @@ bt ret: mutex_pend => 0            <- 成功，未超时、无死锁
 
 **判读**：这段代码不经过我们的钩子，所以"没有输出"是**正常现象**，不能据此判断挂在哪。
 要区分"总线挂起"与"纯 CPU 死循环"，必须用**采样器**（`trap` 的 T0 采样）：
+
 - 若中断仍在触发、采样 PC 稳定在某个地址 ⇒ 纯死循环（可离线定位）；
 - 若采样也停止 ⇒ 总线挂起（与 `0x2010B000` 同类）。
 
@@ -3192,12 +3199,12 @@ bt ret: mutex_pend => 0            <- 成功，未超时、无死锁
 
 ### 必需的开关状态（当前镜像已是这样）
 
-| 开关 | 值 | 原因 |
-| --- | --- | --- |
-| `publish_bohff_anchor` | `false` | 预发布会令 `JwHs` 短路返回 2 ⇒ 回滚 |
-| `patch_bail_field` | `false` | 会覆盖 `eventqInit` 写入的真实 `slot.p` |
-| `reprobe_ble_block` | `false` | 读 `0x2010B000` 会挂死系统 |
-| `sample_quiet` | `true` | 防止自身打印占满采样槽 |
+| 开关                   | 值      | 原因                                    |
+| ---------------------- | ------- | --------------------------------------- |
+| `publish_bohff_anchor` | `false` | 预发布会令 `JwHs` 短路返回 2 ⇒ 回滚     |
+| `patch_bail_field`     | `false` | 会覆盖 `eventqInit` 写入的真实 `slot.p` |
+| `reprobe_ble_block`    | `false` | 读 `0x2010B000` 会挂死系统              |
+| `sample_quiet`         | `true`  | 防止自身打印占满采样槽                  |
 
 ### 已知未覆盖点
 
@@ -3309,11 +3316,11 @@ irq#0 in=25 mepc=0x4006a504 … a0=0x2038a000 a1=0x1 … ra=0x4006a4d6
 
 重跑结果：
 
-| 观测 | 值 |
-| --- | --- |
-| `bt ret: malloc` 行 | **0** |
-| ISR 行（`s=`/`irq#`） | 5 |
-| 采样计数 | 到 `s=320` |
+| 观测                  | 值         |
+| --------------------- | ---------- |
+| `bt ret: malloc` 行   | **0**      |
+| ISR 行（`s=`/`irq#`） | 5          |
+| 采样计数              | 到 `s=320` |
 
 ⇒ CPU 不再停在 UART（这是好事），但**日志几乎全被丢弃** ⇒ 无法从串口判断进度。
 
@@ -3334,9 +3341,9 @@ irq#0 in=25 mepc=0x4006a504 … a0=0x2038a000 a1=0x1 … ra=0x4006a4d6
 
 本会话的"卡住"其实是**两个不同现象**，不能合并成一条结论：
 
-| 层 | 现象 | 证据 | 结论 |
-| --- | --- | --- | --- |
-| ① 早期"静默" | 日志看似停止 | `irq#0 … a0=0x2038a000 a1=1`（UART 基址 + 发送忙） | **我们自己的 UART 饱和**，CPU 停在 `logHook` 自旋 |
+| 层                 | 现象                                | 证据                                                   | 结论                                                  |
+| ------------------ | ----------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| ① 早期"静默"       | 日志看似停止                        | `irq#0 … a0=0x2038a000 a1=1`（UART 基址 + 发送忙）     | **我们自己的 UART 饱和**，CPU 停在 `logHook` 自旋     |
 | ② 自旋降到 40 之后 | 心跳停在 `s=320`、此后无任何 ISR 行 | 此时 CPU 已不可能停在 UART（自旋 40 会丢字节而非等待） | **中断停摆** —— 与 `XPuq`/`0x2010B000` 总线挂死同签名 |
 
 ⇒ `2006b5e` 里"卡住＝我们自己的 UART 饱和"**只解释第①层**，不能外推到第②层。
@@ -3393,10 +3400,10 @@ s=320 pc=0x40069654 lr=0 lc=2
 
 两条硬事实与一条限定：
 
-| 事实 | 说明 |
-| --- | --- |
-| `lr = 0` | **环形缓冲写入 0 次** ⇒ 窗口内没有任何"非 `bt ` 前缀"的消息被记录 |
-| `lc = 2` | `logHook` 总共只被调用 **2 次** ⇒ 窗口内两侧都几乎没打印 |
+| 事实             | 说明                                                                   |
+| ---------------- | ---------------------------------------------------------------------- |
+| `lr = 0`         | **环形缓冲写入 0 次** ⇒ 窗口内没有任何"非 `bt ` 前缀"的消息被记录      |
+| `lc = 2`         | `logHook` 总共只被调用 **2 次** ⇒ 窗口内两侧都几乎没打印               |
 | 心跳停在 `s=320` | 观测窗口只有 ~0.3–0.6 s，之后中断停摆 ⇒ **无法据此断言归档的打印总量** |
 
 **另有分类缺陷**：分流用的是 `startsWith("bt ")`，而 bringup 里存在不带 `bt ` 前缀的**我们自己的**行
@@ -3407,6 +3414,7 @@ s=320 pc=0x40069654 lr=0 lc=2
 （"缺输出 ≠ 没发生"是本会话代价最高的一条，此处必须遵守。）
 
 **下个会话的两个精确修法**：
+
 1. 分流改为按 `recordLogCaller` 得到的 **RA 地址段**（归档 `0x4005xxxx` vs 我们 `0x4006xxxx`），不再用前缀；
 2. 心跳一次吐 **2–4 条**环条目（而不是 1 条），赶在 stall 之前把 32 条倒完。
 
@@ -3425,7 +3433,7 @@ s320.0.2        <- 之后再也没有
 - `lr=0`（环写入 0）、`lc=2`（logHook 仅 2 次）⇒ 窗口内两侧都几乎没输出；
 - 而 512 tick 间隔**从未出现**（`irq_count` 根本没到 512）。
 
-⇒ **中断在约 320 tick 后停止投递**（step 6 窗口的  ⇒ 约 **32 ms**，不是 0.64 s），这是第②层的受控证据：
+⇒ **中断在约 320 tick 后停止投递**（step 6 窗口的 ⇒ 约 **32 ms**，不是 0.64 s），这是第②层的受控证据：
 在有意的 UART 减压下依然成立 ⇒ 指向**总线/中断源停摆**（与 `0x2010B000` 同族），
 而不是我们的日志。
 
@@ -3453,7 +3461,7 @@ s320.0.2.1      <- 之后停止；MPIE 恒为 1
 
 ⇒ **进入 trap 前中断是开的** ⇒ 归档**没有**在自己的临界区里屏蔽中断。
 ⇒ 中断在 ~320 tick（≈ **32 ms**，因 step 6 用 100 µs 周期）之后不再投递，
-   在"中断本应开"的前提下发生 ⇒ 指向**中断源/总线侧停摆**，而非软件屏蔽。
+在"中断本应开"的前提下发生 ⇒ 指向**中断源/总线侧停摆**，而非软件屏蔽。
 
 ### 量纲更正
 
@@ -3482,6 +3490,7 @@ if (probe_stop_at_tick != 0 and irq_count >= probe_stop_at_tick) {
 `probe_stop_at_tick = 300`，而心跳实测能到 `s320` ⇒ 条件本应成立，但串口**没有任何 `DUMP` 行**。
 
 ⇒ 两种可能，尚未区分：
+
 1. 心跳的 `s320` 与 `irq_count` **不是同一计数**（`resetPcs()` 可能清零 `irq_count`，
    而心跳读的是清零后的值），导致 `>= 300` 永远不成立；
 2. 该分支在到达 300 之前就不再执行（与"中断停摆"一致）。
@@ -3501,11 +3510,11 @@ DUMP lc=114 lr=67 n=21
 DUMP300
 ```
 
-| 计数 | 值 | 含义 |
-| --- | --- | --- |
-| `lc`（logHook 调用） | **114** | 日志桥确实被调了 114 次 |
-| `lr`（环写入） | **67** | **有 67 条消息进了 RAM 环** —— 此前只看到 0/1，是**导出被丢弃**造成的假象 |
-| `n`（OSAL 调用者环） | **21** | 归档实际调了我们 **21 次** OSAL（插桩 malloc/free 后），远多于早期的 3/5 |
+| 计数                 | 值      | 含义                                                                      |
+| -------------------- | ------- | ------------------------------------------------------------------------- |
+| `lc`（logHook 调用） | **114** | 日志桥确实被调了 114 次                                                   |
+| `lr`（环写入）       | **67**  | **有 67 条消息进了 RAM 环** —— 此前只看到 0/1，是**导出被丢弃**造成的假象 |
+| `n`（OSAL 调用者环） | **21**  | 归档实际调了我们 **21 次** OSAL（插桩 malloc/free 后），远多于早期的 3/5  |
 
 ⇒ **本会话反复出现的"只看到 1 条 / n=3"全部是丢弃或插桩不全造成的误读**，
 真实量级要大得多。这也解释了为什么"归档几乎不打印"的结论一直站不住。
@@ -3582,12 +3591,12 @@ Mwin: clkrst +0x03c = 0x0000000f
 
 ### 这条线的准确状态
 
-| 项 | 结论 |
-| --- | --- |
-| 回滚崩溃 | **已修**（预发布 `anchor[8]` 是自伤） |
-| 归档推进深度 | 越过 `OkE7` 全部分级检查（`PsB8` / `ZGgi` / `jH5m`）→ `task_init` 的 pend → 就绪标记 → `eventqInit` + `eventInit`×3 |
-| 静默点 | 在 `event_init` 一族**之后**，且**尚未观测到**它随后调用的确切函数 |
-| 是否撞 `0x2010B000` | **仍未观测**（`2aNN` 已排除，后续未读） |
+| 项                  | 结论                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 回滚崩溃            | **已修**（预发布 `anchor[8]` 是自伤）                                                                               |
+| 归档推进深度        | 越过 `OkE7` 全部分级检查（`PsB8` / `ZGgi` / `jH5m`）→ `task_init` 的 pend → 就绪标记 → `eventqInit` + `eventInit`×3 |
+| 静默点              | 在 `event_init` 一族**之后**，且**尚未观测到**它随后调用的确切函数                                                  |
+| 是否撞 `0x2010B000` | **仍未观测**（`2aNN` 已排除，后续未读）                                                                             |
 
 **下个会话入口**：把导出触发点改为 `event_init` 之后的第一个 OSAL 调用（或第 2 次 pend），
 并用 **按字节预算** 的打印（1 行计数 + 3 条截断到 24 字节的 M 行 ≈ 101 B）——FIFO 只有 128 B，
@@ -3646,6 +3655,7 @@ OSAL 环止于 **21** 次，其中**没有 `task_create`**。两种可能（未�
 2. `BOhff` 在调用 `task_create` **之前**就返回/失败。
 
 **下一步（单点）**：反汇编 `r_sym_bt_BOhff…`（`0x40060772`），看它：
+
 - 是否调用 `wr_btdm_osal_task_create`（若是，则它没被调用就说明前面的分支失败）；
 - 它在调用前读了哪个锚点/字段 —— 那正是当前真正的闸门。
 
@@ -3653,9 +3663,9 @@ OSAL 环止于 **21** 次，其中**没有 `task_create`**。两种可能（未�
 
 全镜像只有两处调用 `wr_btdm_osal_task_create`：
 
-| 调用点 | 所在函数 |
-| --- | --- |
-| `0x4005fcaa` | **`r_btdm_task_enable`** |
+| 调用点       | 所在函数                                   |
+| ------------ | ------------------------------------------ |
+| `0x4005fcaa` | **`r_btdm_task_enable`**                   |
 | `0x40056744` | `r_sym_ble_UJ7ddLOv5tT0E1Sqkwfb`（BLE 侧） |
 
 而 `bringup.zig` 的注释本就写着：**`r_btdm_task_enable` 在 enable 步、不在 init 步**。
@@ -3699,11 +3709,11 @@ task_init -> OkE7(全部分级通过) -> mutex_pend(0) -> 就绪标记 -> eventq
 
 ### 与先前结论的关系
 
-| 先前结论 | 现在 |
-| --- | --- |
+| 先前结论                                | 现在                                                          |
+| --------------------------------------- | ------------------------------------------------------------- |
 | "到达 modem 墙"（曾被我撤回，因无证据） | **重新成立，且有干净路径的调用点作证**：`0x4005fbc4` → `XPuq` |
-| "卡在 mutex_pend / 死锁 / 阻塞语义" | 全部作废（pend 返回 0，流程继续到 `Xpuq`） |
-| "anchor 链是闸门" | 全部作废（干净流程下无预发布也能走到 `Xpuq`） |
+| "卡在 mutex_pend / 死锁 / 阻塞语义"     | 全部作废（pend 返回 0，流程继续到 `Xpuq`）                    |
+| "anchor 链是闸门"                       | 全部作废（干净流程下无预发布也能走到 `Xpuq`）                 |
 
 ### 结论
 
@@ -3732,7 +3742,7 @@ task_init -> OkE7(全部分级通过) -> mutex_pend(0) -> 就绪标记 -> eventq
 ⇒ 与 README 早先记录的"固定 16 次循环、按 16 字节步长访问 `0x2010B000..0x2010B100`"**逐条吻合**。
 
 ⇒ **闭环成立，无需再刷板**：干净流程 → `task_init` → … → `XPuq` → 第一次 `c.lw 0x2010B000`
-   → 该块不应答总线 → 全系统停摆。
+→ 该块不应答总线 → 全系统停摆。
 
 **这就是最终答案**：软件侧已经推进到硬件边界，剩余工作 = PHY 校准路径 + modem 上电/复位时序
 （两类工作都有独立的工作量记录，且**不在**本仓库的软件能力范围内可以绕开）。
@@ -3757,22 +3767,22 @@ bt probe: re-probing 0x2010B000 ...
 
 ## 已尝试组合矩阵（下会话**不要**重试）
 
-| # | 组合 | 结果 | 说明 |
-| --- | --- | --- | --- |
-| 1 | 无 PHY（ROM `esp_phy_enable`）+ 前置 reprobe | 读 `0x2010B000` **挂死** | 探针在 bringup 之前，PHY 未使能 |
-| 2 | `WITH_PHY=1`（IDF 7 对象链入）+ 前置 reprobe | 读 `0x2010B000` **仍挂死** | 同上：探针位置早于校准，**不构成对 WITH_PHY 的否证** |
-| 3 | `publish_bohff_anchor=false`（干净 init） | init 推进到 `Xpuq` 后停 | **有效**，闭环证据 |
+| #   | 组合                                         | 结果                       | 说明                                                 |
+| --- | -------------------------------------------- | -------------------------- | ---------------------------------------------------- |
+| 1   | 无 PHY（ROM `esp_phy_enable`）+ 前置 reprobe | 读 `0x2010B000` **挂死**   | 探针在 bringup 之前，PHY 未使能                      |
+| 2   | `WITH_PHY=1`（IDF 7 对象链入）+ 前置 reprobe | 读 `0x2010B000` **仍挂死** | 同上：探针位置早于校准，**不构成对 WITH_PHY 的否证** |
+| 3   | `publish_bohff_anchor=false`（干净 init）    | init 推进到 `Xpuq` 后停    | **有效**，闭环证据                                   |
 
 ⇒ 组合 1/2 都因为**探针位置在 PHY 使能之前**而无判读力。**不要再跑前置探针**。
 
 ## 精确锚点（下会话直接用）
 
-| 位置 | 内容 |
-| --- | --- |
-| `probe_ptr.zig:75-81` | PHY 使能链：`phy_get_romfunc_addr()` → `esp_phy_enable(2)` |
-| `bringup.zig:133` | `pp.initPhy()` 的调用点 ⇒ **后置探针应插在这行之后** |
-| `bringup.zig:169` | 已记录：给 IDF 7 个 PHY 对象时"**镜像会死在 bringup 之前**" |
-| `porting.zig:284` | LPCON `clk_conf_power_st` 已写（`0x66660000`） |
+| 位置                  | 内容                                                        |
+| --------------------- | ----------------------------------------------------------- |
+| `probe_ptr.zig:75-81` | PHY 使能链：`phy_get_romfunc_addr()` → `esp_phy_enable(2)`  |
+| `bringup.zig:133`     | `pp.initPhy()` 的调用点 ⇒ **后置探针应插在这行之后**        |
+| `bringup.zig:169`     | 已记录：给 IDF 7 个 PHY 对象时"**镜像会死在 bringup 之前**" |
+| `porting.zig:284`     | LPCON `clk_conf_power_st` 已写（`0x66660000`）              |
 
 ## 下一步的正确顺序（唯一）
 
@@ -3854,10 +3864,10 @@ pmu+0x1e4 = 0x00000028
 
 ### 现在的真实边界（两条互斥的路径）
 
-| 路径 | 现状 |
-| --- | --- |
-| **默认（ROM PHY）** | init 能跑到 `Xpuq`，卡在 `0x2010B000` 首读（已闭环验证） |
-| **`WITH_PHY=1`（IDF PHY）** | 死在 PMU 转储阶段，连 bringup 都进不去 |
+| 路径                        | 现状                                                     |
+| --------------------------- | -------------------------------------------------------- |
+| **默认（ROM PHY）**         | init 能跑到 `Xpuq`，卡在 `0x2010B000` 首读（已闭环验证） |
+| **`WITH_PHY=1`（IDF PHY）** | 死在 PMU 转储阶段，连 bringup 都进不去                   |
 
 ### 建议的下一步（更可控的一条）
 
@@ -3911,6 +3921,7 @@ OVERLAP .iram_blobs addr=0x2f0008b0 size=0xfd30 end=0x2f0105e0
 ⇒ 板上 `bt anchors[before-phy]: 40f2ed8f 44d24462 80826105 …` 全是指令编码字节 —— 与重叠完全吻合。
 
 **因此**：
+
 - `WITH_PHY=1` 路径的所有读数（含"卡在 `initPhy()`"）**都建立在一个被覆盖的镜像上，不可用**；
 - 这印证了技能里记录的前置条件：**链 `libphy` 需要先扩两段镜像窗口（约 +140 KB）**，窗口从未扩过；
 - 默认路径（ROM PHY）不受影响（其 `.iram_blobs` 不越界，锚点读出的是有效指针 `0x2f0155b8` 等）。
@@ -3920,13 +3931,13 @@ OVERLAP .iram_blobs addr=0x2f0008b0 size=0xfd30 end=0x2f0105e0
 
 ## 可复用数据（扩窗后移植 PHY 时直接用，不必重新从 IDF ELF 抠）
 
-| 需要的东西 | 现成位置 |
-| --- | --- |
-| `esp_phy_init_data_t`（128 字节初始化表） | `components/wifi-blobs/src/phy_init_data.zig`：`pub const params: [128]u8`（生成脚本 `scripts/gen-phy-init-data.py`） |
-| 频域使能实测值（`SOC_PLL_SOURCE_CG` 等） | `components/wifi-blobs/src/init_probe.zig`（`grep -n '0x2058_71E0'` / `grep -n 'PERIPH_PHY_MODULE'` 定位，**勿依赖行号**）（`0x2058_71E0←0x3d`、CLK_CONF1 的 FE_* 位） |
-| 完整 `esp_phy_enable` 顺序 | `components/wifi-blobs/src/osi_impl.zig:1082-1106`（`shellPhyEnable`） |
-| NVS 桩 | 用 **BLE 自己的** `components/bt-blobs/link/phy_stubs.c`（返回 `ESP_ERR_NVS_NOT_FOUND` ⇒ 全量校准）；**不要**搬 wifi 的 `nvs_ram.zig` |
-| 校准模式 | `PHY_RF_CAL_FULL = 2` |
+| 需要的东西                                | 现成位置                                                                                                                                                               |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `esp_phy_init_data_t`（128 字节初始化表） | `components/wifi-blobs/src/phy_init_data.zig`：`pub const params: [128]u8`（生成脚本 `scripts/gen-phy-init-data.py`）                                                  |
+| 频域使能实测值（`SOC_PLL_SOURCE_CG` 等）  | `components/wifi-blobs/src/init_probe.zig`（`grep -n '0x2058_71E0'` / `grep -n 'PERIPH_PHY_MODULE'` 定位，**勿依赖行号**）（`0x2058_71E0←0x3d`、CLK_CONF1 的 FE_* 位） |
+| 完整 `esp_phy_enable` 顺序                | `components/wifi-blobs/src/osi_impl.zig:1082-1106`（`shellPhyEnable`）                                                                                                 |
+| NVS 桩                                    | 用 **BLE 自己的** `components/bt-blobs/link/phy_stubs.c`（返回 `ESP_ERR_NVS_NOT_FOUND` ⇒ 全量校准）；**不要**搬 wifi 的 `nvs_ram.zig`                                  |
+| 校准模式                                  | `PHY_RF_CAL_FULL = 2`                                                                                                                                                  |
 
 **移植时的一个反向差异**：`init_probe.zig`（`grep -n '0x2010_F018'`） 把 `LPCON+0x18` 对正成 wifi 的 `0x1`
 （清 bit2 `clk_i2c_mst_fo`）—— BLE 的 PHY 寄存器**正走模拟 I2C**，移植时**不要照抄这一句**，
@@ -3948,6 +3959,7 @@ sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
 且**不移动 `drom` 的起点**（`0x40100020` 保持不变）。
 
 改完必须同步：
+
 1. 分区表里 app 分区大小要 ≥ 新镜像（当前镜像 798 KB，扩后预计 ~940 KB）；
 2. `readelf -SW` 复核 `.iram_blobs` 不再越过 `0x2f00ffd0`（这才是本项的验收判据）；
 3. 板上锚点 dump 应为有效指针（`0x2f0155b8` 一类），而非 `40f2ed8f` 这类指令字节。
@@ -4059,6 +4071,7 @@ bt anchors[before-phy]: 2f00ffd0 696e6170 6c203a63 756f2063 …
 `anchor[0..2]/[5]/[7]/[9]` 为 **0**。
 
 可能原因（未区分）：
+
 1. 这些槽所在的段是**加载镜像**（PROGBITS）而非 `NOBITS`，其初值来自 blob 数据；
 2. 或者是**读的基址/长度**与实际锚点表不一致（`base+4i` 假设 10 槽连续 —— `readelf` 显示确实连续）。
 
@@ -4080,6 +4093,7 @@ bt anchors[before-phy]: 2f00ffd0 696e6170 6c203a63 756f2063 …
 但板上 `anchors[1..9]` 读出 ASCII 残留 ⇒ **`.bss` 的清零范围不足或缺席**。
 
 **这解释了两件事**：
+
 1. 为什么"未发布锚点"不是 0 而是垃圾 —— 归档的 `if (anchor != 0)` 守卫会被**镜像残留**误满足；
 2. 早前 dump 里锚点为 0/有效指针的分歧（不同轮次残留不同）。
 
@@ -4089,6 +4103,7 @@ bt anchors[before-phy]: 2f00ffd0 696e6170 6c203a63 756f2063 …
 ### 下一步（优先级最高的一个 bug）
 
 检查启动代码里 `.bss` 清零的**起止范围**：
+
 - 应从 `__bss_start` 清到 `__bss_end`（或按链接脚本的 `.bss` 段范围）；
 - 当前疑似只清了前一段（例如只清到某个旧尺寸），导致 `0x2f00ffd0` 之后的槽保留加载残留。
 
@@ -4128,6 +4143,7 @@ const v = (@as(*volatile u32, @ptrFromInt(@intFromPtr(p) + i * 4))).*;
 ### 影响范围（必须声明）
 
 **本会话中所有基于 `anchors[]` 读数的判断都需要复核**，包括：
+
 - “anchor[0]=0 / anchor[4] 有效 / anchor[9]=0”这类对读；
 - 由此推出的“惰性发布”“某槽未发布”“`anchor[8]` 预发布导致 JwHs 短路”等结论。
 
@@ -4153,9 +4169,9 @@ bt anchors[after-phy]  base=0x2f00ffd0: 0 0 0 0 0 0 0 0 0 0
 
 ### 由此确定的判读规则（替换此前两条错误说法）
 
-| 错误说法 | 正确判据 |
-| --- | --- |
-| "`.bss` 清零不足" | ❌ 清零正常；问题在 dump |
+| 错误说法            | 正确判据                                                                 |
+| ------------------- | ------------------------------------------------------------------------ |
+| "`.bss` 清零不足"   | ❌ 清零正常；问题在 dump                                                 |
 | "锚点非零 ⇒ 已发布" | ⚠️ 仍不安全：**应检查该值是否落在堆区间 `[_bss_end, _stack_bottom)` 内** |
 
 ### 需要复核的历史结论
@@ -4169,13 +4185,13 @@ bt anchors[after-phy]  base=0x2f00ffd0: 0 0 0 0 0 0 0 0 0 0
 `logHook` 里把 `bt ret: <name>…` / `bt call: <name>…` 压成该名字的**首字母**，
 直接写 1 字节到 UART（`uartPut`，40 次自旋上限）：
 
-| 字母 | 含义 |
-| --- | --- |
-| `m` | malloc |
-| `i` | mutex_init |
-| `q` | eventq_init |
-| `e` | event_init |
-| `p` | mutex_pend |
+| 字母 | 含义        |
+| ---- | ----------- |
+| `m`  | malloc      |
+| `i`  | mutex_init  |
+| `q`  | eventq_init |
+| `e`  | event_init  |
+| `p`  | mutex_pend  |
 
 21 次调用只占 **21 字节** ⇒ 永不灌满 128 B FIFO，也不受"前 N 条"上限影响。
 
@@ -4200,14 +4216,14 @@ grep -aoE "[meisqpt][meisqpt]{2,}" /tmp/x.log     # 连续字母 = 调用序列
 
 字母编码不可用（`malloc`/`mutex_init`/`mutex_pend` 全是 `m`，会互相混淆），改为**数字码**：
 
-| 码 | 调用 | 码 | 调用 |
-| --- | --- | --- | --- |
-| `0` | malloc | `5` | mutex_release |
-| `1` | mutex_init | `6` | free |
-| `2` | eventq_init | `7` | eventq_get |
-| `3` | event_init | `8` | eventq_put |
-| `4` | mutex_pend | `9` | sem_* |
-| `#` | 其它 | | |
+| 码  | 调用        | 码  | 调用          |
+| --- | ----------- | --- | ------------- |
+| `0` | malloc      | `5` | mutex_release |
+| `1` | mutex_init  | `6` | free          |
+| `2` | eventq_init | `7` | eventq_get    |
+| `3` | event_init  | `8` | eventq_put    |
+| `4` | mutex_pend  | `9` | sem_*         |
+| `#` | 其它        |     |               |
 
 板上抓到的序列（30 s）：
 
@@ -4242,6 +4258,7 @@ grep -aoE "[0-9#]{3,}" /tmp/x.log | tail -3     # 尾部即崩溃前的最后调
 `0`(malloc 76) → `1`(mutex_init) → `2`(eventq_init) 开头。
 
 **两种可能（未区分）**：
+
 1. 前两次调用发生在本窗口**之前**（例如 `dumpBootState` 的 PHY 路径里就有一次 `malloc`）；
 2. 它们发了码但**在 `put` 时 FIFO 已满**被丢弃（窗口前那 6 条 `bt bringup:` + mempool 行 ≈ 300 B）。
 
@@ -4280,11 +4297,11 @@ CODES n=16 0120000000000000
 
 解码：
 
-| 位置 | 码 | 调用 |
-| --- | --- | --- |
-| 1 | `0` | `malloc(76)`（OkE7 惰性发布） |
-| 2 | `1` | `mutex_init` |
-| 3 | `2` | `eventq_init` |
+| 位置 | 码     | 调用                                  |
+| ---- | ------ | ------------------------------------- |
+| 1    | `0`    | `malloc(76)`（OkE7 惰性发布）         |
+| 2    | `1`    | `mutex_init`                          |
+| 3    | `2`    | `eventq_init`                         |
 | 4-16 | `0`×13 | 后续 `malloc`（8 / 36 / 32 / 12 / …） |
 
 ⇒ 与反汇编预测的顺序**逐项吻合**，也与早期 `bt ret:` 日志一致。
@@ -4295,6 +4312,7 @@ CODES n=16 0120000000000000
 ### 当前基线的正确判读（重要）
 
 `publish_bohff_anchor=false` 之后：
+
 - **没有 panic 是预期**（-8 回滚已消除，`FzF1` 的写 0 不再发生）；
 - 症状是 **`Xpuq` 处读 `0x2010B000` 的总线挂起** —— 与"默认路径闭环到 `Xpuq`"一致；
 - 因此 **panic 路径的触发器对当前基线不适用**，码数触发才是对的。
@@ -4308,14 +4326,14 @@ CODES n=16 0120000000000000
 
 下一棒会直接照这些指针行动，故逐一核对：
 
-| 引用 | 状态 |
-| --- | --- |
+| 引用                                                                             | 状态        |
+| -------------------------------------------------------------------------------- | ----------- |
 | `wifi-blobs/src/init_probe.zig:686-700`（`MODEM_LPCON_CLK_CONF` / PHY 模块时钟） | ✅ 内容相符 |
-| `wifi-blobs/src/osi_impl.zig:1082`（`fn shellPhyEnable(modem: u32)`） | ✅ 内容相符 |
-| `wifi-blobs/src/phy_init_data.zig`（`pub const params: [128]u8`） | ✅ 存在 |
-| `WITH_PHY=1` 版 `esp_phy_enable` @ `0x40000744`（174 B FUNC） | ✅ 实测相符 |
-| `WITH_PHY=1` 版 `esp_phy_load_cal_and_init` @ `0x40000580`（452 B） | ✅ 实测相符 |
-| 默认版 `esp_phy_enable` = ROM `0x2f00e756`（ABS） | ✅ 相符 |
+| `wifi-blobs/src/osi_impl.zig:1082`（`fn shellPhyEnable(modem: u32)`）            | ✅ 内容相符 |
+| `wifi-blobs/src/phy_init_data.zig`（`pub const params: [128]u8`）                | ✅ 存在     |
+| `WITH_PHY=1` 版 `esp_phy_enable` @ `0x40000744`（174 B FUNC）                    | ✅ 实测相符 |
+| `WITH_PHY=1` 版 `esp_phy_load_cal_and_init` @ `0x40000580`（452 B）              | ✅ 实测相符 |
+| 默认版 `esp_phy_enable` = ROM `0x2f00e756`（ABS）                                | ✅ 相符     |
 
 ## 🚀 突破：补 PHY 频域时钟后**总线停摆消失**，PHY 校准真正开跑（2026-11-19）
 
@@ -4329,17 +4347,17 @@ s9728.416.419.1            <- 心跳到 9728 tick（此前卡在约 320）
 s9792.416.419.1            <- 仍在增长
 ```
 
-| 项 | 之前 | 现在 |
-| --- | --- | --- |
-| 心跳上限 | ~320 tick（≈32 ms）后停 | **9728+ 且持续增长** |
-| 状态 | 总线挂起（静默） | **CPU 在跑，中断正常投递** |
-| 停点 | `Xpuq` 首读 `0x2010B000` | **`esp_phy_load_cal_and_init` 内部调用了 `abort`** |
+| 项       | 之前                     | 现在                                               |
+| -------- | ------------------------ | -------------------------------------------------- |
+| 心跳上限 | ~320 tick（≈32 ms）后停  | **9728+ 且持续增长**                               |
+| 状态     | 总线挂起（静默）         | **CPU 在跑，中断正常投递**                         |
+| 停点     | `Xpuq` 首读 `0x2010B000` | **`esp_phy_load_cal_and_init` 内部调用了 `abort`** |
 
 地址解析：
 
-| 地址 | 符号 |
-| --- | --- |
-| `pc=0x40067094` | **`abort`**（我们自己的） |
+| 地址            | 符号                                                   |
+| --------------- | ------------------------------------------------------ |
+| `pc=0x40067094` | **`abort`**（我们自己的）                              |
 | `ra=0x40000672` | **`esp_phy_load_cal_and_init`**（`0x40000580 + 0xF2`） |
 
 ⇒ **PHY 校准路径已真正执行**（此前它连时钟都没有），现在的失败是**校准内部触发 `abort`**。
@@ -4355,11 +4373,11 @@ s9792.416.419.1            <- 仍在增长
 
 ## `abort` 已加标记；复现需 `phy_domain_enable=true`（2026-11-19 收尾）
 
-| 事实 | 值 |
-| --- | --- |
-| `abort` 符号 | `0x40067094`，**size = 2**（`for(;;){}` 编译成 2 字节自跳转） |
-| `ra=0x40000672` | 该处是 `jal esp_log_timestamp`（**日志调用**，不是 abort 调用点） |
-| 结论 | 采样落在 `abort` 的自旋里，但 `ra` 指向 PHY 的日志路径 ⇒ 断言来自 PHY 校准内部的日志/检查 |
+| 事实            | 值                                                                                        |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| `abort` 符号    | `0x40067094`，**size = 2**（`for(;;){}` 编译成 2 字节自跳转）                             |
+| `ra=0x40000672` | 该处是 `jal esp_log_timestamp`（**日志调用**，不是 abort 调用点）                         |
+| 结论            | 采样落在 `abort` 的自旋里，但 `ra` 指向 PHY 的日志路径 ⇒ 断言来自 PHY 校准内部的日志/检查 |
 
 已在 `phy_stubs.c` 的 `abort` 里加**入口标记**（连续写 8 个 `'A'` 再自旋），
 这样"到达 abort"与"卡在别处"在串口上可区分。
@@ -4368,6 +4386,7 @@ s9792.416.419.1            <- 仍在增长
 本轮用默认（false）构建跑，自然看不到 `A`。
 
 **下一轮的固定动作**：
+
 1. 把 `phy_domain_enable` 置 `true`（改源码 → 重建，它在 ReleaseSmall 下会被常量折叠，运行时可翻无效）；
 2. 抓串口，看是否出现 `AAAAAAAA`；
    - 出现 ⇒ PHY 断言成立，下一步在 `esp_phy_load_cal_and_init` 里找那条断言的上游判据；
@@ -4386,16 +4405,19 @@ s9792.416.419.1            <- 仍在增长
 ```
 
 ⇒ **`phy_init.c` 里的 `ESP_ERROR_CHECK` 失败**，两条候选消息：
+
 1. **"failed to obtain PHY init data"** —— 取不到 PHY 初始化表（NVS/校准数据缺失）；
 2. **"failed to allocate memory for RF calibration"** —— 为 RF 校准**分配内存失败**。
 
 判定依据（都指向我们侧）：
+
 - 我们的 `phy_stubs.c` 让 `nvs_open(PHY_NAMESPACE)` 返回 `ESP_ERR_NVS_NOT_FOUND`
   ⇒ 若 IDF 在 `NOT_FOUND` 时不回落到全量校准，就会命中第 1 条；
 - RF 校准需要一个较大的缓冲区（`esp_phy_load_cal_and_init` 里 malloc），
   而我们的 arena 只有几十 KB 且已被 21 次 malloc 消耗 ⇒ 很可能命中第 2 条。
 
 **下一步（两处各一改，判据明确）**：
+
 1. `phy_stubs.c` 的 NVS 改为**返回成功 + 长度 0 的空 blob**（而不是 NOT_FOUND），
    迫使它走"全量校准"而不是 assert；
 2. 若仍 abort，则加大 arena / 让 `btdmMalloc` 在大块请求时回落到大缓冲；
@@ -4415,10 +4437,10 @@ s9792.416.419.1            <- 仍在增长
 
 ⇒ abort 必是两处 `ESP_ERROR_CHECK` 之一：
 
-| 候选 | 触发条件 | 判据 |
-| --- | --- | --- |
-| **`calloc` 返回 NULL** → "failed to allocate memory for RF calibration" | 堆不足 | 我们的 `calloc` 是真实实现（`40067026`，46 B，清零循环 + `beqz` 判 NULL），但**堆大小未知** |
-| **`esp_phy_get_init_data` 失败** → "failed to obtain PHY init data" | 初始化表取不到 | 需要 128 B `esp_phy_init_data_t`（`phy_init_data.zig` 有），但要确认它被真的传进去 |
+| 候选                                                                    | 触发条件       | 判据                                                                                        |
+| ----------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| **`calloc` 返回 NULL** → "failed to allocate memory for RF calibration" | 堆不足         | 我们的 `calloc` 是真实实现（`40067026`，46 B，清零循环 + `beqz` 判 NULL），但**堆大小未知** |
+| **`esp_phy_get_init_data` 失败** → "failed to obtain PHY init data"     | 初始化表取不到 | 需要 128 B `esp_phy_init_data_t`（`phy_init_data.zig` 有），但要确认它被真的传进去          |
 
 **下一步（一处改动即可区分）**：在 `calloc` 桩里记录**请求的字节数**（写 1 字节码或一行短日志），
 一次运行就能知道 RF 校准要多大；若远大于我们的堆，就扩堆；若请求很小却返回 NULL，则是堆未初始化。
@@ -4445,10 +4467,11 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 ⇒ **abort 仍然发生**（PC 落在我们 112 字节的 `abort` 桩内，`ra` 仍指向 `esp_phy_load_cal_and_init` 的日志调用）。
 
 ⇒ 因此 `esp_phy_get_init_data()` 的失败**不只是 NVS 返回 NOT_FOUND**；
-   还可能是：它用 `nvs_get_blob` 的**其它 key**（如 `cal_data`/`cal_version`，见 rodata 里的
-   `phy-track-pll-timer` / `cal_version` 串），或它对返回内容有校验（长度/版本/CRC）。
+还可能是：它用 `nvs_get_blob` 的**其它 key**（如 `cal_data`/`cal_version`，见 rodata 里的
+`phy-track-pll-timer` / `cal_version` 串），或它对返回内容有校验（长度/版本/CRC）。
 
 **下一步（离线优先）**：
+
 1. 反汇编 `esp_phy_get_init_data`（`0x40000414`）全段，看它在 `nvs_open` 后调了哪些 key、
    以及它对失败的具体判据（返回值比较、长度检查；
 2. 按那些 key 补齐 `nvs_get_blob` 的分支（`cal_version` 可能是 u32，用 `nvs_get_u32`）；
@@ -4499,14 +4522,14 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 
 ### 由此得到的函数边界（`readelf`，务必按 size 反汇编）
 
-| 符号 | st_value | size |
-| --- | --- | --- |
-| `load_cal_data_from_nvs_handle` | `0x40000120` | 852 |
-| `store_cal_data_to_nvs_handle` | `0x40000282` | 786 |
-| `esp_phy_disable` | `0x400003ba` | 132 |
-| **`esp_phy_get_init_data`** | `0x40000414` | **10** |
+| 符号                                 | st_value     | size    |
+| ------------------------------------ | ------------ | ------- |
+| `load_cal_data_from_nvs_handle`      | `0x40000120` | 852     |
+| `store_cal_data_to_nvs_handle`       | `0x40000282` | 786     |
+| `esp_phy_disable`                    | `0x400003ba` | 132     |
+| **`esp_phy_get_init_data`**          | `0x40000414` | **10**  |
 | **`esp_phy_load_cal_data_from_nvs`** | `0x40000420` | **264** |
-| `esp_phy_load_cal_and_init` | `0x40000580` | 452 |
+| `esp_phy_load_cal_and_init`          | `0x40000580` | 452     |
 
 ⇒ 本会话多次把相邻函数的代码当成同一个（`get_init_data` vs `load_cal_data_from_nvs`），
 **先用 `st_size` 划定区间再反汇编**是唯一可靠的做法。
@@ -4525,6 +4548,7 @@ pcsample n=9728 pc=0x4006710a ra=0x40000672
 （而不是"堆不够大"）。
 
 **下一步（二选一，均离线优先）**：
+
 1. 找 `calloc`（`0x40067022`，46 字节）背后的堆：它从哪块内存取？是否需要在启动时初始化？
    若是 Zig 的 bump 分配器且未赋初值，任何请求都会返回 NULL；
 2. 或在 `abort` 标记旁边再加一个"calloc 返回 NULL"标记，一次板测即可区分。
@@ -4617,6 +4641,7 @@ _bss_end 应取 .btdm_data 的末址 = 0x2f01eec0
 而不是 `.bss` 之后。
 
 **验收判据**：
+
 1. `readelf -sW` 后 `_heap_start >= .btdm_data 末址`；
 2. 板上 `bt probe: arena` 报 ≈ 360 KiB（而不是 4039 B —— 那个数字来自更早的布局，需复核）；
 3. 归档的 `.btdm_bss` 在运行期间不再被分配器改写（可用锚点读数验证）。
@@ -4671,10 +4696,10 @@ pcsample n=9728 pc=0x400670d4 ra=0x40000672
 
 ### abort 的候选重新变为
 
-| 候选 | 状态 |
-| --- | --- |
-| `calloc(1,1904)` 失败 | **几乎排除**（364 KiB 的堆不可能不够），但未直接观测 |
-| `esp_phy_get_init_data` 失败 | **已排除**（10 字节 thunk 返回静态表） |
+| 候选                                          | 状态                                                                                                |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `calloc(1,1904)` 失败                         | **几乎排除**（364 KiB 的堆不可能不够），但未直接观测                                                |
+| `esp_phy_get_init_data` 失败                  | **已排除**（10 字节 thunk 返回静态表）                                                              |
 | **`esp_phy_load_cal_data_from_nvs` 内的检查** | **新候选**：它 `size=264`，内部 `nvs_open` + 若干 `nvs_get_*`；若 `cal_version` 等 key 取不到就报错 |
 
 **下一步**：反汇编 `esp_phy_load_cal_data_from_nvs`（`0x40000420`，264 B）全段，
@@ -4725,10 +4750,10 @@ abort 前那条日志的实际格式串是 **`0x40101df8`**（我此前按 `0x40
 
 ### 已知条件与矛盾
 
-| 事实 | 值 |
-| --- | --- |
-| 请求 | `calloc(1, 1904)` |
-| 链接符号算出的堆 | `_heap_end - _heap_start` = 0x2f076fc0 - 0x2f01dfc0 = **364 KiB** |
+| 事实                   | 值                                                                    |
+| ---------------------- | --------------------------------------------------------------------- |
+| 请求                   | `calloc(1, 1904)`                                                     |
+| 链接符号算出的堆       | `_heap_end - _heap_start` = 0x2f076fc0 - 0x2f01dfc0 = **364 KiB**     |
 | 板上 `bt probe: arena` | **本轮被 FIFO 丢弃，未读到**（此前记录值是 4039 B，来自修复前的布局） |
 
 ⇒ 若板上 arena 仍是旧值（4039 B），则"修复未生效/刷的不是这版镜像"；
@@ -4762,6 +4787,7 @@ A356K
    而 `initArena` 在 probe.zig:395-401 —— 顺序上在前，但需确认那段确实执行到（`A356K` 已证明执行了）。
 
 **下一步（离线，最小）**：
+
 1. `readelf -sW | grep s31_btdm_malloc` 看它的 st_value 与所属源（或用 `nm` 确认与 `osal.btdmMalloc` 同一地址）；
 2. 读 `Arena.alloc`（`osal.zig:1167-1200`）的完整找块逻辑，重点看 `min_block` 与 `block_align` 对
    `size=1904` 的处理 —— 这类"大块在小碎片里找不到连续空间"的 bug 在简单 bump/split 分配器里很常见。
@@ -4777,12 +4803,12 @@ calloc            @ 0x40067022 (46 B)
   -> btdmMalloc -> bt_arena.alloc
 ```
 
-| 已知 | 值 |
-| --- | --- |
-| arena（板上实测） | **356 KiB**（`A356K`） |
-| 请求 | `calloc(1,1904)` ⇒ `need = align(1904+16, 8) = 1920` |
-| `Arena.alloc` 逻辑 | 首块 356 KiB、free、`need ≤ size` ⇒ **必然返回非 NULL** |
-| `initArena` 位置 | probe.zig:395-401，**早于** `bringup.init()`（:447）⇒ PHY 使能时已初始化 |
+| 已知               | 值                                                                       |
+| ------------------ | ------------------------------------------------------------------------ |
+| arena（板上实测）  | **356 KiB**（`A356K`）                                                   |
+| 请求               | `calloc(1,1904)` ⇒ `need = align(1904+16, 8) = 1920`                     |
+| `Arena.alloc` 逻辑 | 首块 356 KiB、free、`need ≤ size` ⇒ **必然返回非 NULL**                  |
+| `initArena` 位置   | probe.zig:395-401，**早于** `bringup.init()`（:447）⇒ PHY 使能时已初始化 |
 
 ⇒ **按现有证据，这次分配不应失败**，但 `0x40101df8` 的串（"failed to allocate memory for RF
 calibration data"）说明它确实失败了。⇒ 存在一处**尚未观测到的差异**。
@@ -4827,6 +4853,7 @@ if (hdr.magic != headerMagic) return null;   // 越界/损坏
 ### 因此最可能的根因
 
 **arena 的首块头部被写坏** —— 即在 `_heap_start`（0x2f01dfc0）附近有别的写入：
+
 - 归档的 `.btdm_data` 溢出（它紧邻堆起点，`NOLOAD` 但占地址）；
 - 或某段 `memcpy`/`memset` 越界覆盖了 `BlockHeader`。
 
@@ -4846,17 +4873,17 @@ A352K
 M x x x x x x x
 ```
 
-| 标记 | 含义 | 观测 |
-| --- | --- | --- |
-| `M` | `hdr.magic != headerMagic`（头部被改） | **出现** |
-| `x` | `next <= addr`（`hdr.size == 0`，链断） | 连续出现 |
-| `!` | 未初始化 | 未出现 |
-| `#` | 走完无足够块（碎片） | 未出现 |
+| 标记 | 含义                                    | 观测     |
+| ---- | --------------------------------------- | -------- |
+| `M`  | `hdr.magic != headerMagic`（头部被改）  | **出现** |
+| `x`  | `next <= addr`（`hdr.size == 0`，链断） | 连续出现 |
+| `!`  | 未初始化                                | 未出现   |
+| `#`  | 走完无足够块（碎片）                    | 未出现   |
 
 ⇒ **arena 首块的 `BlockHeader` 在运行中被覆盖**（magic 与 size 同时被清零）。
 ⇒ 覆盖来源几乎必然是**紧邻其下**的 `.btdm_data`：
-   它从 `0x2f01dec0` 起、我们只预留 `0x1000`（到 `0x2f01dfc0`），
-   而 `_heap_start` 正取在 `0x2f01dfc0` —— **`.btdm_data` 一旦超过 4 KiB 就越界写进块头**。
+它从 `0x2f01dec0` 起、我们只预留 `0x1000`（到 `0x2f01dfc0`），
+而 `_heap_start` 正取在 `0x2f01dfc0` —— **`.btdm_data` 一旦超过 4 KiB 就越界写进块头**。
 
 ### 修法（两种，建议都做）
 
@@ -5029,15 +5056,15 @@ CN 0x<首个被改写地址> 0x<该处实际值> <被改写字数>
 CN 0x2f01fec0 0x780 8
 ```
 
-| 字段 | 值 | 解读 |
-| --- | --- | --- |
-| 首个被改写地址 | `0x2f01fec0` | = `_heap_start`（堆首字） |
-| 该处实际值 | **`0x780` = 1920** | = `alignForward(1904+16, 8)` —— **正是 1904 请求的块大小** |
-| 被改写字数 | **8**（32 B） | = 一个 `BlockHeader`（16 B）+ 数据区前 16 B |
+| 字段           | 值                 | 解读                                                       |
+| -------------- | ------------------ | ---------------------------------------------------------- |
+| 首个被改写地址 | `0x2f01fec0`       | = `_heap_start`（堆首字）                                  |
+| 该处实际值     | **`0x780` = 1920** | = `alignForward(1904+16, 8)` —— **正是 1904 请求的块大小** |
+| 被改写字数     | **8**（32 B）      | = 一个 `BlockHeader`（16 B）+ 数据区前 16 B                |
 
 ⇒ **`Arena.alloc(1904)` 实际成功了**：它写了 `size=1920` 的块头并返回数据区指针。
 ⇒ 堆里**只有这一个**块头 ⇒ 归档此前那 21 次 malloc **没有落在这一版堆上**
-  （它们发生在 arena 初始化之前或另一个分区），与"`caller_n` 停在 21"是一致的。
+（它们发生在 arena 初始化之前或另一个分区），与"`caller_n` 停在 21"是一致的。
 
 ### 因此推翻两个此前的判读
 
@@ -5051,6 +5078,7 @@ CN 0x2f01fec0 0x780 8
 `"failed to allocate memory for RF calibration data"` 并 `abort`。
 
 ⇒ 那条 `ESP_ERROR_CHECK` 失败的原因**不是 `calloc` 返回 NULL**，而可能是：
+
 - `calloc` 之后**对返回指针的其它检查**（如 IS NULL 之外的长度/属性校验）；
 - 或该日志属于**另一条路径**（我们的 1904 请求只是巧合相同尺寸）。
 
@@ -5070,10 +5098,10 @@ CN 0x2f01fec0 0x780 8
 
 ### 与实践读数的矛盾（唯一未解）
 
-| 证据 | 结论 |
-| --- | --- |
+| 证据                  | 结论                                                       |
+| --------------------- | ---------------------------------------------------------- |
 | canary（不经过 UART） | 堆首有 **一个 `size=1920` 的块头** ⇒ 1904 的分配**成功过** |
-| `c.beqz a0` 跳转 | 该次 `calloc` **返回了 NULL** |
+| `c.beqz a0` 跳转      | 该次 `calloc` **返回了 NULL**                              |
 
 两者只有在**"成功的 1920 分配"与"失败的 1904 请求"是不同时刻/不同请求**时才能同时成立。
 
@@ -5125,11 +5153,11 @@ canary 扫描把每个字与图案比对，但**分配器自己会改写块头**
 CN 0x2f020740 0x56880 4
 ```
 
-| 量 | 值 |
-| --- | --- |
+| 量             | 值                                             |
+| -------------- | ---------------------------------------------- |
 | 首个外来字地址 | `0x2f020740` = `_heap_start + 0x880`（2176 B） |
-| 该处值 | `0x56880`（353 920） |
-| 被写字数 | 4（16 B） |
+| 该处值         | `0x56880`（353 920）                           |
+| 被写字数       | 4（16 B）                                      |
 
 唯一那次分配：块头 `0x2f01fec0`、数据 `0x2f01fed0`、长度 1920 ⇒ **结束于 `0x2f0206a0`**。
 `0x2f020740 - 0x2f0206a0 = 0xA0 = **160 字节**`。
@@ -5169,9 +5197,9 @@ W cafe06e0,cafe06e4,cafe06e8,cafe06ec,cafe06f0,…,cafe0714,…
 
 ### 由此推翻的最后两条假设
 
-| 假设 | 状态 |
-| --- | --- |
-| "PHY 写入超 1904 字节" | **否证**（canary 完好） |
+| 假设                             | 状态                             |
+| -------------------------------- | -------------------------------- |
+| "PHY 写入超 1904 字节"           | **否证**（canary 完好）          |
 | "块链被越界写坏导致后续分配失败" | **无证据**（链在分配后未被破坏） |
 
 ### 现在的准确矛盾
@@ -5192,13 +5220,13 @@ CN 0x2f01fec0 0x780 8       <- 堆首有 size=0x780(1920) 的块头
 W cafe06e0,…                <- 其后 canary 完好（无溢出）
 ```
 
-| 事实 | 值 |
-| --- | --- |
-| `btdmMalloc` 调用次数 | **1** |
-| 该次请求 | **1904** |
-| 返回值 | **NULL** |
-| 堆首块头 `size` | **1920**（= `alignForward(1904+16, 8)`） |
-| 分配后 canary | **完好** |
+| 事实                  | 值                                       |
+| --------------------- | ---------------------------------------- |
+| `btdmMalloc` 调用次数 | **1**                                    |
+| 该次请求              | **1904**                                 |
+| 返回值                | **NULL**                                 |
+| 堆首块头 `size`       | **1920**（= `alignForward(1904+16, 8)`） |
+| 分配后 canary         | **完好**                                 |
 
 ### 三条事实无法同时成立 —— 除非
 
@@ -5227,14 +5255,14 @@ last_ret = if (r) |v| @intFromPtr(v) else 0;    // <- 赋值在此之后
 ⇒ **dump 在 `last_ret` 赋值之前执行**，读到的是初值 `0`。
 
 ⇒ 因此 `MC 1 sz=1904 ret=0x0` 里的 `ret=0x0` **不是"返回 NULL"的证据**，
-   只是"记录变量还没被写"。
+只是"记录变量还没被写"。
 
 ### 这条纠正推翻了什么
 
-| 之前 | 现在 |
-| --- | --- |
-| "`calloc` 返回 NULL ⇒ abort" | **无证据**：`last_ret` 读数无效 |
-| "分配器成功但返回值丢失" | 也**无证据**：分配器可能正常返回，问题在 `calloc` 之后的判断 |
+| 之前                         | 现在                                                         |
+| ---------------------------- | ------------------------------------------------------------ |
+| "`calloc` 返回 NULL ⇒ abort" | **无证据**：`last_ret` 读数无效                              |
+| "分配器成功但返回值丢失"     | 也**无证据**：分配器可能正常返回，问题在 `calloc` 之后的判断 |
 
 ### 与 canary 的一致性
 
@@ -5265,12 +5293,12 @@ canary 显示块头 `size=1920` 且其后 canary 完好 ⇒ **分配确实成功
 
 ### 于是全部观测终于自洽
 
-| 观测 | 解释 |
-| --- | --- |
-| 堆首 `size=0x780`(1920) | **第一次**分配（need=1920）的块头 |
+| 观测                           | 解释                                     |
+| ------------------------------ | ---------------------------------------- |
+| 堆首 `size=0x780`(1920)        | **第一次**分配（need=1920）的块头        |
 | `heap+0x880` 处 `size=0x56880` | **另一个** need=0x880(2176) 分配的余块头 |
-| canary 完好 | 没有溢出 |
-| `ret=0x0` | **我的仪器 bug**（在赋值前读取） |
+| canary 完好                    | 没有溢出                                 |
+| `ret=0x0`                      | **我的仪器 bug**（在赋值前读取）         |
 
 ⇒ 两次分配**都成功**；堆**完全正常**。
 
@@ -5299,9 +5327,9 @@ MC 1 sz=1904 ret=0x2f01ffd0
 
 ### 因此整条"分配失败"线作废
 
-| 之前的结论 | 现在的证据 |
-| --- | --- |
-| `calloc` 返回 NULL ⇒ abort | **否证**：返回 `0x2f01ffd0` |
+| 之前的结论                 | 现在的证据                                         |
+| -------------------------- | -------------------------------------------------- |
+| `calloc` 返回 NULL ⇒ abort | **否证**：返回 `0x2f01ffd0`                        |
 | 堆太小 / 块头被覆盖 / 溢出 | 全部已逐一否证（356 KiB、canary 完好、余块头合法） |
 
 ⇒ **abort 来自另一处 `abort` 调用**，而不是 `0x4000066e` 那个"分配失败"分支。
@@ -5326,7 +5354,7 @@ MC 1 sz=1904 ret=0x2f020010         <- 分配成功，返回有效指针
 多次运行中 `ret` 分别为 `0x2f01ffd0` / `0x2f020010`（均非空）⇒ **分配稳定成功**。
 
 ⇒ 此前的 `AAAAAAAA` 可能来自**更早的构建**（当时 abort 桩会写 'A'），
-   而在当前配置下 abort 在 15 秒抓取窗口内**没有发生**。
+而在当前配置下 abort 在 15 秒抓取窗口内**没有发生**。
 
 ### 需要确认的两件事（下一轮）
 
@@ -5338,11 +5366,11 @@ MC 1 sz=1904 ret=0x2f020010         <- 分配成功，返回有效指针
 
 ### 已确立的事实（不再变动）
 
-| 项 | 状态 |
-| --- | --- |
-| 堆 | 356 KiB，边界正确，无重叠 |
-| 分配器 | 工作正常：1904 请求返回有效指针，块链合法，无溢出 |
-| abort（PHY 路径） | 在当前配置下**未复现** |
+| 项                | 状态                                              |
+| ----------------- | ------------------------------------------------- |
+| 堆                | 356 KiB，边界正确，无重叠                         |
+| 分配器            | 工作正常：1904 请求返回有效指针，块链合法，无溢出 |
+| abort（PHY 路径） | 在当前配置下**未复现**                            |
 
 ## 🏁 最终澄清：abort **确实被调用**；`AB 0x0` 是 RA 取不到（2026-11-19 终）
 
@@ -5358,15 +5386,15 @@ pcsample n=14592 pc=0x400670a4 ra=0x400670a4
 
 ⇒ **abort 被调用了**（PC 在它的死循环里）。
 ⇒ `AB 0x0` 的原因：`__builtin_return_address(0)` 在 **无帧指针的 ReleaseSmall 构建下返回 0**
-   （GCC 文档：`-fomit-frame-pointer` 时该内建可能返回 0）。
+（GCC 文档：`-fomit-frame-pointer` 时该内建可能返回 0）。
 
 ### 因此当前状态（准确）
 
-| 项 | 结论 |
-| --- | --- |
-| 分配 | **成功**（`ret=0x2f020010`，多次运行一致） |
-| abort | **仍被调用**（PC 在其自旋循环内） |
-| `AB 0x0` | **不是"没调用"**，是 RA 不可得 |
+| 项       | 结论                                       |
+| -------- | ------------------------------------------ |
+| 分配     | **成功**（`ret=0x2f020010`，多次运行一致） |
+| abort    | **仍被调用**（PC 在其自旋循环内）          |
+| `AB 0x0` | **不是"没调用"**，是 RA 不可得             |
 
 ### 取到真实调用者的两种办法
 
@@ -5403,8 +5431,8 @@ c.jr ra
 ```
 
 ⇒ **它依赖调用者把 `a0` 预置成 `0x40105000`**（这是 `lui`+`jal` 的 PC 相对惯用法），
-   但调用点用的是 `c.jal`（**不设置任何参数**）⇒ `a0` 保持 `calloc` 的返回值
-   ⇒ `a0 - 17` = 一个堆地址附近的垃圾值。
+但调用点用的是 `c.jal`（**不设置任何参数**）⇒ `a0` 保持 `calloc` 的返回值
+⇒ `a0 - 17` = 一个堆地址附近的垃圾值。
 
 ⇒ 只有当那个垃圾值恰好为 0 时才走 abort；否则后续逻辑拿到的是**错误指针**。
 
@@ -5430,6 +5458,7 @@ c.jr ra
 `__asm__ volatile ("mv %0, ra")`，入口处 `ra` 一定有效）。
 
 **修法（两行）**：
+
 1. `probe_dump_now()` 里先把 `dump_done = false;` 再调 `dumpAtPend()`；
 2. 或给 abort 路径单独一个不检查 `dump_done` 的导出函数。
 
@@ -5481,11 +5510,11 @@ CN 0x2f020780 0x780 73568       <- 73568 字 ≈ **294 KB** 已被改写
 
 ### 这条修正了什么
 
-| 先前判断 | 现在 |
-| --- | --- |
-| "356 KiB 很充裕，1.9 KB 不可能失败" | **错**：185 次分配已吃掉 294 KB |
-| "分配器有 bug" | **错**：分配器工作正常，是**容量真的不够** |
-| "canary 只看到一个块头" | 那是**第一次**分配时 dumps 的（当时只有 1 个块） |
+| 先前判断                            | 现在                                             |
+| ----------------------------------- | ------------------------------------------------ |
+| "356 KiB 很充裕，1.9 KB 不可能失败" | **错**：185 次分配已吃掉 294 KB                  |
+| "分配器有 bug"                      | **错**：分配器工作正常，是**容量真的不够**       |
+| "canary 只看到一个块头"             | 那是**第一次**分配时 dumps 的（当时只有 1 个块） |
 
 ### 修法（两条，按优先级）
 
@@ -5511,9 +5540,9 @@ AB 0x40000672 free=944       <- abort 时刻堆仅剩 944 字节
 
 ### 两次尝试（都做了实测）
 
-| 尝试 | 结果 |
-| --- | --- |
-| 回收 4 KiB 守卫页 | `free` 944 → **1200**，仍不足（归档几乎吃满） |
+| 尝试              | 结果                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| 回收 4 KiB 守卫页 | `free` 944 → **1200**，仍不足（归档几乎吃满）                                            |
 | 栈 16 KiB → 8 KiB | **栈溢出**：`mepc=0x00000000` + `instruction access fault`（返回地址被破坏）⇒ **不可减** |
 
 ⇒ 栈已回退 16 KiB；守卫页保持回收状态（`_heap_start = _data_end_btdm`）。
@@ -5555,10 +5584,10 @@ pub fn freeRaw(self: *Arena, ptr: ?*anyopaque) void {
 
 ### 两个判据（还需一次板测，二者都很便宜）
 
-| 判据 | 含义 |
-| --- | --- |
-| `free=944` 但**最大单块** ≥ 1920 | **碎片化** ⇒ 给 `freeRaw` 加合并即可 |
-| `free=944` 且最大单块 < 1920 | **真耗尽** ⇒ SRAM 上限所限，只能减少分配或扩窗 |
+| 判据                             | 含义                                           |
+| -------------------------------- | ---------------------------------------------- |
+| `free=944` 但**最大单块** ≥ 1920 | **碎片化** ⇒ 给 `freeRaw` 加合并即可           |
+| `free=944` 且最大单块 < 1920     | **真耗尽** ⇒ SRAM 上限所限，只能减少分配或扩窗 |
 
 `arenaFree()` 已经给出 944（= 所有空闲块之和）；还缺**最大单块**这一个数。
 
@@ -5590,12 +5619,12 @@ PHY 校准那 1904 字节可直接从 PSRAM 分配，而不占 SRAM 的 arena。
 
 ### 同时确认的数据（不变）
 
-| 项 | 值 |
-| --- | --- |
-| arena 总 | 356 KiB |
-| abort 时刻 `free` | 944 B < 请求 1904 B |
-| 分配器拓扑 | 单一（`calloc` → `s31_btdm_malloc` → arena） |
-| 栈 | 16 KiB（8 KiB 实测栈溢出，不可减） |
+| 项                | 值                                           |
+| ----------------- | -------------------------------------------- |
+| arena 总          | 356 KiB                                      |
+| abort 时刻 `free` | 944 B < 请求 1904 B                          |
+| 分配器拓扑        | 单一（`calloc` → `s31_btdm_malloc` → arena） |
+| 栈                | 16 KiB（8 KiB 实测栈溢出，不可减）           |
 
 ## 🏁 终局：**真耗尽**（只有一个空闲块，1200 < 1920）（2026-11-19 定案）
 
@@ -5603,22 +5632,22 @@ PHY 校准那 1904 字节可直接从 PSRAM 分配，而不占 SRAM 的 arena。
 AB 0x40000672 f=1200 L=1216
 ```
 
-| 量 | 值 | 含义 |
-| --- | --- | --- |
-| `f` = `arenaFree()` | **1200 B** | 所有空闲块之和（已扣块头） |
-| `L` = 最大单块 `hdr.size` | **1216 B** | 含 16 B 块头 ⇒ 载荷 1200 |
-| 请求 need | **1920 B** | 1904 + 16 |
+| 量                        | 值         | 含义                       |
+| ------------------------- | ---------- | -------------------------- |
+| `f` = `arenaFree()`       | **1200 B** | 所有空闲块之和（已扣块头） |
+| `L` = 最大单块 `hdr.size` | **1216 B** | 含 16 B 块头 ⇒ 载荷 1200   |
+| 请求 need                 | **1920 B** | 1904 + 16                  |
 
 ⇒ **`f ≈ L`** ⇒ 空闲区**基本就是一个块** ⇒ **不是碎片化**。
 ⇒ **1200 < 1920** ⇒ **真耗尽**。
 
 ### 因此三条修法的判定
 
-| 方案 | 判定 |
-| --- | --- |
-| `freeRaw` 加合并 | **无效**（只有一个空闲块，无可合并对象） |
-| 扩大 SRAM 窗口 | **不可行**（IDF `memory.ld` 确认 `sram_seg` 已是全部 0x7AFC0） |
-| 减小栈 | **不可行**（8 KiB 实测栈溢出） |
+| 方案                        | 判定                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `freeRaw` 加合并            | **无效**（只有一个空闲块，无可合并对象）                                      |
+| 扩大 SRAM 窗口              | **不可行**（IDF `memory.ld` 确认 `sram_seg` 已是全部 0x7AFC0）                |
+| 减小栈                      | **不可行**（8 KiB 实测栈溢出）                                                |
 | **给 PHY 校准一块专用缓冲** | **唯一可行** —— 从 `.btdm_bss`（预留 32 KiB）或 PSRAM（`0x50000000`）静态分配 |
 
 ### 这条线的完整因果链（全部有实测支撑）
@@ -5651,10 +5680,10 @@ AB 0x40000672 f=1328 L=1344
 
 **给 PHY 校准的 1904 字节一块专用缓冲**，不参与共享 arena 的竞争：
 
-| 方案 | 做法 |
-| --- | --- |
+| 方案          | 做法                                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A（推荐）** | 在 `phy_stubs.c`/`porting.zig` 里放一个 2048 字节静态数组，提供一个 `calloc` 的**专用分支**：当 `nmemb*size == 1904` 时直接返回该缓冲的首地址 |
-| B | 若 PSRAM 确在本板可用，从 `0x50000000` 分配（需确认 PSRAM 存在与缓存属性） |
+| B             | 若 PSRAM 确在本板可用，从 `0x50000000` 分配（需确认 PSRAM 存在与缓存属性）                                                                    |
 
 方案 A 只改一处、不依赖任何外部条件，且判据明确：`MC` 的 `ret` 非 0 且 `AB` 消失。
 
@@ -5673,11 +5702,11 @@ AB 0x40000672 f=1328 L=1344
 AB 0x40000672 f=1200 L=1216 nb=188 st=0x2f076fc0
 ```
 
-| 量 | 值 | 含义 |
-| --- | --- | --- |
-| `nb` | **188** | 遍历到的块数（与 ~187 次分配吻合） |
-| `st` | **0x2f076fc0** | = `_heap_end` ⇒ **走到了堆的末端，没有提前中断** |
-| `f` / `L` | 1200 / 1216 | 真实空闲量 / 最大单块 |
+| 量        | 值             | 含义                                             |
+| --------- | -------------- | ------------------------------------------------ |
+| `nb`      | **188**        | 遍历到的块数（与 ~187 次分配吻合）               |
+| `st`      | **0x2f076fc0** | = `_heap_end` ⇒ **走到了堆的末端，没有提前中断** |
+| `f` / `L` | 1200 / 1216    | 真实空闲量 / 最大单块                            |
 
 ⇒ **块链完好**，`f=1200` 是**真实**值。
 
@@ -5715,11 +5744,11 @@ void free(void *p) { if (p == g_phy_cal_buf) return; ... }
 pcsample n=9728 pc=0x2f826484 ra=0x2f826478 s0=0x1
 ```
 
-| 项 | 之前 | 现在 |
-| --- | --- | --- |
-| abort | 每轮必现 | **消失** |
-| PC 位置 | `abort` 自旋（`0x400670a4`） | **ROM `0x2f826484`** 的紧密循环 |
-| 状态 | 停在 PHY 校准的内存分配 | **PHY 校准继续执行，进入 ROM 例程** |
+| 项      | 之前                         | 现在                                |
+| ------- | ---------------------------- | ----------------------------------- |
+| abort   | 每轮必现                     | **消失**                            |
+| PC 位置 | `abort` 自旋（`0x400670a4`） | **ROM `0x2f826484`** 的紧密循环     |
+| 状态    | 停在 PHY 校准的内存分配      | **PHY 校准继续执行，进入 ROM 例程** |
 
 ⇒ **PHY 校准真正跑起来了**，进入 ROM 中的 RF/PHY 例程。
 
@@ -5738,6 +5767,7 @@ BLE controller 卡在 init
 ### 下一步
 
 PC 在 ROM `0x2f826484` 的紧密循环（`ra` 就在旁边）⇒ 需确认是：
+
 - ROM 的正常忙等（如 PLL 锁定 / 校准等待）⇒ 继续观察更长时间；
 - 或另一处卡点 ⇒ 用采样分布在 ROM 内定位，再对照 IDF 的 PHY 校准流程。
 
@@ -5755,17 +5785,18 @@ pc=0x2f828a78  ×13               <- 分布在 3 个不同 ROM 地址
 
 ### 本次会话的最终成果
 
-| 阶段 | 成果 |
-| --- | --- |
-| 崩溃 | `anchor[8]` 自伤预发布 → **已修** |
-| 总线 | PHY 域时钟（含 `I2C_MST_FO`）→ **停摆消失**（心跳 320 → 9728+） |
-| 分配 | 归档吃满 356 KiB arena（188 块、走到堆尾）→ **真耗尽**（已实证） |
-| abort | `calloc(1,1904)` 返回 NULL → **专用缓冲修复** |
-| 现状 | **PHY 校准在 ROM 中执行，40 秒无 abort** |
+| 阶段  | 成果                                                             |
+| ----- | ---------------------------------------------------------------- |
+| 崩溃  | `anchor[8]` 自伤预发布 → **已修**                                |
+| 总线  | PHY 域时钟（含 `I2C_MST_FO`）→ **停摆消失**（心跳 320 → 9728+）  |
+| 分配  | 归档吃满 356 KiB arena（188 块、走到堆尾）→ **真耗尽**（已实证） |
+| abort | `calloc(1,1904)` 返回 NULL → **专用缓冲修复**                    |
+| 现状  | **PHY 校准在 ROM 中执行，40 秒无 abort**                         |
 
 ### 下一阶段的方向
 
 PHY 校准在 ROM 里跑（`0x2f82xxxx`），需观察它最终**收敛到哪里**：
+
 - 若校准完成后回到归档并继续 → 下一步是 `task_init` 之后的流程；
 - 若长时间停在 ROM → 用采样分布对照 IDF 的 PHY 校准阶段定位。
 
@@ -5773,11 +5804,11 @@ PHY 校准在 ROM 里跑（`0x2f82xxxx`），需观察它最终**收敛到哪里
 
 修法是**按请求尺寸**分流的（`n*sz == 1904` ⇒ 专用缓冲）。因此：
 
-| 已证明 | 未证明 |
-| --- | --- |
-| **PHY 校准路径确实在执行**（40 秒 0 abort，采样落在 3 个不同 ROM 例程） | **BLE bring-up 完整走通** |
-| 那个 1904 的分配不再失败 | 归档的**其它**分配仍走共享 arena（修前已被填满：188 块、free=1200） |
-| | **下一次**其它尺寸的分配失败时，会在同一点（`0x4000066e`）再次 abort |
+| 已证明                                                                  | 未证明                                                               |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **PHY 校准路径确实在执行**（40 秒 0 abort，采样落在 3 个不同 ROM 例程） | **BLE bring-up 完整走通**                                            |
+| 那个 1904 的分配不再失败                                                | 归档的**其它**分配仍走共享 arena（修前已被填满：188 块、free=1200）  |
+|                                                                         | **下一次**其它尺寸的分配失败时，会在同一点（`0x4000066e`）再次 abort |
 
 ⇒ "verified" 在此处 = **校准开始运行**，不是"问题解决"。
 
@@ -5786,10 +5817,10 @@ PHY 校准在 ROM 里跑（`0x2f82xxxx`），需观察它最终**收敛到哪里
 归档的工作集约 **350 KB**，而 SRAM 全部只有 490 KB（IDF `memory.ld` 确认窗口 `0x7AFC0`）。
 因此持久方案必须是**给归档的工作集分配它自己的内存区**，而不是共享 arena：
 
-| 方案 | 说明 |
-| --- | --- |
-| A | 把 `.btdm_bss`(32 KiB) + `.btdm_data`(4 KiB) 之外的区域也划给归档的 arena（即把我们自己的 arena 与归档工作集分区） |
-| B | 若 PSRAM 在本板确实可用（`extern_ram_seg 0x50000000`，**尚未验证**），把归档的大块分配搬到 PSRAM |
+| 方案 | 说明                                                                                                               |
+| ---- | ------------------------------------------------------------------------------------------------------------------ |
+| A    | 把 `.btdm_bss`(32 KiB) + `.btdm_data`(4 KiB) 之外的区域也划给归档的 arena（即把我们自己的 arena 与归档工作集分区） |
+| B    | 若 PSRAM 在本板确实可用（`extern_ram_seg 0x50000000`，**尚未验证**），把归档的大块分配搬到 PSRAM                   |
 
 ### 仍未验证的两点（下一轮）
 
@@ -5811,12 +5842,13 @@ dump 行（AB/MC/CN）: 0 条
 ⇒ **`AB` 缺席证明的是"dump 没跑"，不是"没有 abort"。**
 
 ⇒ 因此 "PHY 校准在 ROM 中执行、40 秒无 abort" 这一**结论撤回**。
-   ROM 采样（`0x2f82xxxx` 三个地址）仍然真实，但它可能发生在**任何**阶段之后，
-   包括 abort 之后（abort 桩自旋本身就会产生采样）。
+ROM 采样（`0x2f82xxxx` 三个地址）仍然真实，但它可能发生在**任何**阶段之后，
+包括 abort 之后（abort 桩自旋本身就会产生采样）。
 
 ### 正确的验证方式（下一轮）
 
 把 dump 的触发点从 `btdmMalloc` 改到**与分配无关的位置**，例如：
+
 - `abort` 桩里（已有 `probe_dump_now`，但需确认它真的被调到）；
 - 或在 ROM 采样点上加一个"已进入校准"的标志字节。
 
@@ -5835,6 +5867,7 @@ dump 行（AB/MC/CN）: 0 条
 ```
 
 ⇒ **仍然无法判定** abort 是否发生：
+
 - 若没发生 ⇒ 专用缓冲的修复有效；
 - 若发生但输出被 FIFO 丢弃 ⇒ 修复无效。
 
@@ -5871,11 +5904,11 @@ dump 行（AB/MC/CN）: 0 条
 
 ### 正确的导出预算（下一轮照此实现）
 
-| 顺序 | 内容 | 长度 |
-| --- | --- | --- |
-| 1 | `AB 0x<ra>` | ~16 B |
-| 2 | `<C>` / `<A>` 标志（放**心跳**里，每 64 tick 重复） | 3 B |
-| 3 | 其余（`MC`/`CN`/`M`）**全部删掉或改成 RAM 记录** | — |
+| 顺序 | 内容                                                | 长度  |
+| ---- | --------------------------------------------------- | ----- |
+| 1    | `AB 0x<ra>`                                         | ~16 B |
+| 2    | `<C>` / `<A>` 标志（放**心跳**里，每 64 tick 重复） | 3 B   |
+| 3    | 其余（`MC`/`CN`/`M`）**全部删掉或改成 RAM 记录**    | —     |
 
 **合计 < 60 字节**，一次即可完整落地。
 
@@ -5898,11 +5931,11 @@ dump 行（AB/MC/CN）: 0 条
 CCCCCCCCCCCCCpcsample n=9728 pc=0x2f8036cc ra=0x40065e1c
 ```
 
-| 标记 | 含义 | 观测 |
-| --- | --- | --- |
-| `C` | 专用缓冲被服务（`calloc(1904)` 命中专用分支） | **持续、每心跳间隔约 13 次** |
-| `A` | 进入 `abort` | **从未出现** |
-| `AB 0x…` | abort 时刻的 RA 导出 | 0 行 |
+| 标记     | 含义                                          | 观测                         |
+| -------- | --------------------------------------------- | ---------------------------- |
+| `C`      | 专用缓冲被服务（`calloc(1904)` 命中专用分支） | **持续、每心跳间隔约 13 次** |
+| `A`      | 进入 `abort`                                  | **从未出现**                 |
+| `AB 0x…` | abort 时刻的 RA 导出                          | 0 行                         |
 
 ⇒ **专用缓冲消除了 abort**，且归档**反复请求 1904 字节**（PHY 校准的重试/多模块路径）。
 
@@ -5939,20 +5972,21 @@ n=9728        <- 心跳正常，CPU 在跑
 
 ⇒ **abort 已彻底消除**（489 次服务、0 次 abort）。
 ⇒ 但归档在**反复重试**同一个 1904 字节请求（≈25 次/秒）——
-   这是 PHY 校准的**重试循环**，不是在推进。
+这是 PHY 校准的**重试循环**，不是在推进。
 
 ### 现在的准确状态
 
-| 项 | 状态 |
-| --- | --- |
-| abort | **已消除**（验证：489 次服务、0 次 abort） |
-| 别名 | **已修**（4 槽轮转） |
-| PHY 校准 | **在重试循环中**，未收敛 |
-| CPU / ISR | 正常（心跳 9728） |
+| 项        | 状态                                       |
+| --------- | ------------------------------------------ |
+| abort     | **已消除**（验证：489 次服务、0 次 abort） |
+| 别名      | **已修**（4 槽轮转）                       |
+| PHY 校准  | **在重试循环中**，未收敛                   |
+| CPU / ISR | 正常（心跳 9728）                          |
 
 ### 下一步
 
 489 次重试说明校准**每次都在同一个判据上失败**。需要看：
+
 1. `calloc(1904)` 之后，归档**用这块内存做了什么**（写入了什么、读回了什么）；
 2. 哪个条件让它重试 —— 采样 PC（`0x2f8036cc`，ROM 外设轮询）已指向 ROM，
    说明它在**等某个硬件事件**（PLL 锁定 / 校准完成位）。
@@ -5963,12 +5997,12 @@ n=9728        <- 心跳正常，CPU 在跑
 
 ## 本轮核实（2026-11-19）
 
-| 项 | 值 | 结论 |
-| --- | --- | --- |
-| `_heap_start` | `0x2f021080`（原 `0x2f01fec0`） | 上移 8 KiB |
-| arena | **348 KiB**（原 356） | 4 槽 × 2048 B 的 `.bss` 吃掉 8 KiB —— **如预期** |
-| `free()` | 遍历 4 个槽并跳过 | ✅ 不会把 `.bss` 指针交给 `freeRaw` |
-| abort | **仍为 0** | 缩小 8 KiB 未让它复现（专用缓冲绕过 arena） |
+| 项            | 值                              | 结论                                             |
+| ------------- | ------------------------------- | ------------------------------------------------ |
+| `_heap_start` | `0x2f021080`（原 `0x2f01fec0`） | 上移 8 KiB                                       |
+| arena         | **348 KiB**（原 356）           | 4 槽 × 2048 B 的 `.bss` 吃掉 8 KiB —— **如预期** |
+| `free()`      | 遍历 4 个槽并跳过               | ✅ 不会把 `.bss` 指针交给 `freeRaw`              |
+| abort         | **仍为 0**                      | 缩小 8 KiB 未让它复现（专用缓冲绕过 arena）      |
 
 ### 仍需修正的一处（下一轮）
 
@@ -6010,12 +6044,12 @@ arena                                        → 348 KiB（牺牲 8 KiB 给专�
 
 ### 已确立（不再变动）
 
-| 项 | 证据 |
-| --- | --- |
-| abort 已消除 | `C` 持续输出、`A` 从未出现、`pc` 在 ROM 多例程间 |
+| 项                | 证据                                                |
+| ----------------- | --------------------------------------------------- |
+| abort 已消除      | `C` 持续输出、`A` 从未出现、`pc` 在 ROM 多例程间    |
 | 专用缓冲 4 槽轮转 | 镜像含 `g_phy_cal_buf[4][2048]`，`free()` 跳过 4 槽 |
-| arena 成本 | `_heap_start` 上移 8 KiB ⇒ 348 KiB |
-| 校准在重试 | `C` 高频输出（下限 489/20 s），`pc=0x2f82xxxx` ROM |
+| arena 成本        | `_heap_start` 上移 8 KiB ⇒ 348 KiB                  |
+| 校准在重试        | `C` 高频输出（下限 489/20 s），`pc=0x2f82xxxx` ROM  |
 
 ## 最终状态（2026-11-19 收尾）
 
@@ -6026,12 +6060,12 @@ pcsample n=9728 pc=0x2f828a60 ra=0x2f828a44 s0=0x20100000
 .
 ```
 
-| 项 | 状态 |
-| --- | --- |
-| abort | **未出现**（`AB` 行 0 条，`A` 标志未置） |
-| CPU / ISR | 正常（`n=9728`） |
-| 采样点 | ROM `0x2f828a60` / `ra=0x2f828a44`，`s0=0x20100000`（**modem 寄存器基址**）|
-| 跨语言计数 | 仍读 0（`volatile` 与非 `volatile` 都试过），**未解决** |
+| 项         | 状态                                                                        |
+| ---------- | --------------------------------------------------------------------------- |
+| abort      | **未出现**（`AB` 行 0 条，`A` 标志未置）                                    |
+| CPU / ISR  | 正常（`n=9728`）                                                            |
+| 采样点     | ROM `0x2f828a60` / `ra=0x2f828a44`，`s0=0x20100000`（**modem 寄存器基址**） |
+| 跨语言计数 | 仍读 0（`volatile` 与非 `volatile` 都试过），**未解决**                     |
 
 ### 最后一条有信息量的线索
 
@@ -6050,10 +6084,10 @@ pcsample n=9728 pc=0x2f828a60 ra=0x2f828a44 s0=0x20100000
 
 此前担心两件事会让"无 AB 行"失去意义，逐一核实：
 
-| 担心 | 核实结果 |
-| --- | --- |
+| 担心                                                                  | 核实结果                                                                            |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | 早前 `git checkout -- phy_stubs.c` 可能移除了 `probe_dump_now()` 调用 | **仍存在**：`abort()` 里依次做 RA 记录 → `g_flag_a = 1` → `probe_dump_now()` → 自旋 |
-| `g_c_count` 可能有重复/局部符号，导致 Zig 读到零页 | **唯一**：`readelf -sW` 显示 `g_c_count` @ `0x2f012f28`，GLOBAL OBJECT，无重复 |
+| `g_c_count` 可能有重复/局部符号，导致 Zig 读到零页                    | **唯一**：`readelf -sW` 显示 `g_c_count` @ `0x2f012f28`，GLOBAL OBJECT，无重复      |
 
 ⇒ 两条前提成立 ⇒ **"AB 行 0 条 + `g_flag_a` 未置"= abort 确实没有发生**。
 
@@ -6080,10 +6114,10 @@ pcsample n=9728 pc=0x2f828a60 ra=0x2f828a44 s0=0x20100000
 AB 0x1234 C=0 f=352048
 ```
 
-| 结果 | 含义 |
-| --- | --- |
+| 结果                 | 含义                                                           |
+| -------------------- | -------------------------------------------------------------- |
 | `AB 0x1234` **出现** | ✅ **导出路径有效**（`probe_dump_now` → `dumpAtPend` → AB 行） |
-| `f=352048` | 首次分配时 arena 空闲 **352 KB** |
+| `f=352048`           | 首次分配时 arena 空闲 **352 KB**                               |
 
 ⇒ **"AB 行 0 条" = "abort 未发生"** —— 这个结论现在有**阳性对照**支撑，不再只是"没看到"。
 
@@ -6108,10 +6142,10 @@ AB 0x1234 C=0 f=352048
 
 ### 因此"无 abort"的判据应分层
 
-| 判据 | 可靠性 |
-| --- | --- |
-| `AB` 行缺席 | 中（受 FIFO 影响，但对照片显示 AB 现已排**第一行**，风险已大幅降低） |
-| **心跳里的 `g_flag_a` 为 0** | **高**（单字节、每 64 tick 重复、不会被一次性丢失） |
+| 判据                         | 可靠性                                                               |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `AB` 行缺席                  | 中（受 FIFO 影响，但对照片显示 AB 现已排**第一行**，风险已大幅降低） |
+| **心跳里的 `g_flag_a` 为 0** | **高**（单字节、每 64 tick 重复、不会被一次性丢失）                  |
 
 ### 一个已经验证的绑定事实
 
@@ -6119,7 +6153,7 @@ AB 0x1234 C=0 f=352048
 ⇒ 同机制的 `g_flag_a` / `g_c_count` 读到 0 应是**真实值**，不是跨语言绑定失败。
 
 ⇒ 但 `g_flag_a` 目前只能通过心跳的 `.` 间接体现（`flagsText` 先查 `g_c_count`）——
-   下一轮应让 `flagsText` **优先**返回 `<A>`（abort 优先于计数），使"无 abort"由**标志位**而非**缺席的行**证明。
+下一轮应让 `flagsText` **优先**返回 `<A>`（abort 优先于计数），使"无 abort"由**标志位**而非**缺席的行**证明。
 
 ## 🔴 最后一个仪器缺口（已核实，2026-11-19 收尾）
 
@@ -6131,10 +6165,10 @@ trap.zig:198:  if (irq_count % 512 == 0) log.raw(".");
 
 ⇒ 心跳是**字面量** `.` —— **完全不查 `g_flag_a` / `g_c_count`**。
 
-| 事实 | 含义 |
-| --- | --- |
-| `g_flag_a` 由 abort 桩设置 | 但**没有任何代码读取并打印它** |
-| 心跳恒为 `.` | 与 abort 是否发生**无关** |
+| 事实                           | 含义                           |
+| ------------------------------ | ------------------------------ |
+| `g_flag_a` 由 abort 桩设置     | 但**没有任何代码读取并打印它** |
+| 心跳恒为 `.`                   | 与 abort 是否发生**无关**      |
 | `flagsText` / `probe_flags_at` | 早前 `git checkout` 后已不存在 |
 
 ### 因此"abort 已消除"的准确表述（按建议收紧）
@@ -6156,29 +6190,29 @@ trap.zig:198:  if (irq_count % 512 == 0) log.raw(".");
 
 ### 当前可交付结论（按证据强度）
 
-| 结论 | 强度 |
-| --- | --- |
-| 三个根因（anchor[8] / 域时钟 / 分配耗尽）已修 | **强**（对照实验 + 直接读数） |
-| PHY 校准在 modem 寄存器块轮询（`s0=0x20100000`） | **强**（采样） |
-| abort 已消除 | **中**（AB 行未出现 + 导出路径已对照；缺标志位验证） |
+| 结论                                             | 强度                                                 |
+| ------------------------------------------------ | ---------------------------------------------------- |
+| 三个根因（anchor[8] / 域时钟 / 分配耗尽）已修    | **强**（对照实验 + 直接读数）                        |
+| PHY 校准在 modem 寄存器块轮询（`s0=0x20100000`） | **强**（采样）                                       |
+| abort 已消除                                     | **中**（AB 行未出现 + 导出路径已对照；缺标志位验证） |
 
 ## 🔴 回归：carve-out 的 8 KiB 是**从 arena 里拿的**（2026-11-19 最后一条发现）
 
 数字对照：
 
-| 量 | 值 |
-| --- | --- |
-| 修复前 arena（`_heap_end - _heap_start`） | 356 096 B |
-| 修复后 arena | **351 936 B** |
-| 差 | **−4 160 B** |
-| 归档崩溃时的占用 | ~354 896 B（188 块，free 仅 1 200） |
+| 量                                        | 值                                  |
+| ----------------------------------------- | ----------------------------------- |
+| 修复前 arena（`_heap_end - _heap_start`） | 356 096 B                           |
+| 修复后 arena                              | **351 936 B**                       |
+| 差                                        | **−4 160 B**                        |
+| 归档崩溃时的占用                          | ~354 896 B（188 块，free 仅 1 200） |
 
 ⇒ `g_phy_cal_buf[4][2048]` 是普通 `.bss` 静态数组，而 `.bss` 在 `_heap_start` **之前**
-   ⇒ 它每涨 1 字节，arena 就少 1 字节。
+⇒ 它每涨 1 字节，arena 就少 1 字节。
 
 ⇒ **arena 现在装不下归档的工作集**（351 936 < 354 896）⇒ 某个**其它尺寸**的分配必然失败
-   ⇒ 归档失败后重试整个校准 ⇒ 每次重试都请求 1904（**这一条被 carve-out 保护**）
-   ⇒ 于是看到"1904 被反复服务、却没有任何进展"。**这就是重试循环的来源。**
+⇒ 归档失败后重试整个校准 ⇒ 每次重试都请求 1904（**这一条被 carve-out 保护**）
+⇒ 于是看到"1904 被反复服务、却没有任何进展"。**这就是重试循环的来源。**
 
 ### 修法（按顺序）
 
@@ -6196,21 +6230,21 @@ trap.zig:198:  if (irq_count % 512 == 0) log.raw(".");
 
 本会话后续几节把"abort 消失"当作进展记录，那**是错的**。正确的因果是：
 
-| 事实 | 正确解读 |
-| --- | --- |
-| arena 351 936 B（carve-out 后） | 归档工作集需要 **~354 896 B** ⇒ **全局容量缺口 ~3 KB** |
-| abort（`calloc(1,1904)` 返回 NULL） | 只是这个缺口的**第一个可见症状** |
-| carve-out 让 1904 永不失败 | 把一个**响亮的 abort** 换成**无声的无限重试** |
-| 1904 被反复请求、无进展 | 是**失败分配在被重试**，不是校准在推进 |
-| `pcsample` 停在 `s0=0x20100000` | 是**重试路径**上的采样，**尚不能**作为"校准在等硬件"的证据 |
+| 事实                                | 正确解读                                                   |
+| ----------------------------------- | ---------------------------------------------------------- |
+| arena 351 936 B（carve-out 后）     | 归档工作集需要 **~354 896 B** ⇒ **全局容量缺口 ~3 KB**     |
+| abort（`calloc(1,1904)` 返回 NULL） | 只是这个缺口的**第一个可见症状**                           |
+| carve-out 让 1904 永不失败          | 把一个**响亮的 abort** 换成**无声的无限重试**              |
+| 1904 被反复请求、无进展             | 是**失败分配在被重试**，不是校准在推进                     |
+| `pcsample` 停在 `s0=0x20100000`     | 是**重试路径**上的采样，**尚不能**作为"校准在等硬件"的证据 |
 
 ### 因此三条结论必须降级
 
-| 原结论 | 修正后 |
-| --- | --- |
-| "abort 已消除" | ❌ **不是进展**：症状被掩盖，缺口仍在 |
-| "PHY 校准在 modem 寄存器块轮询" | ⚠️ **未成立**：那条采样来自重试路径 |
-| "剩余是硬件握手" | ⚠️ **未成立**：当前阻塞仍是**容量** |
+| 原结论                          | 修正后                                |
+| ------------------------------- | ------------------------------------- |
+| "abort 已消除"                  | ❌ **不是进展**：症状被掩盖，缺口仍在 |
+| "PHY 校准在 modem 寄存器块轮询" | ⚠️ **未成立**：那条采样来自重试路径   |
+| "剩余是硬件握手"                | ⚠️ **未成立**：当前阻塞仍是**容量**   |
 
 ### 真正的下一步（唯一）
 
@@ -6226,18 +6260,18 @@ trap.zig:198:  if (irq_count % 512 == 0) log.raw(".");
 
 ### 算术
 
-| 量 | 值 |
-| --- | --- |
-| 未 carve-out 的 arena | 356 096 B |
+| 量                       | 值                              |
+| ------------------------ | ------------------------------- |
+| 未 carve-out 的 arena    | 356 096 B                       |
 | abort 时已占用（188 块） | 356 096 − 1 200 = **354 896 B** |
-| 随后请求 | +1 904 B |
-| 合计需求 | **~356 800 B > 356 096 B** |
+| 随后请求                 | +1 904 B                        |
+| 合计需求                 | **~356 800 B > 356 096 B**      |
 
 ⇒ **需求本身就超过了整块 arena** ⇒ abort 是**容量缺口的第一症状**，
-   carve-out 只是把它**搬进了重试循环**（并没有创造 RAM）。
+carve-out 只是把它**搬进了重试循环**（并没有创造 RAM）。
 
 ⇒ 因此"把 carve-out 移到 `.btdm_data` 之后的段"**也不解决问题** ——
-   只要 `_heap_start` 仍在它之后，arena 一样少那么多。**移位 ≠ 增加。**
+只要 `_heap_start` 仍在它之后，arena 一样少那么多。**移位 ≠ 增加。**
 
 ### 真正的杠杆：缩短 `.btdm_bss`（32 KiB → 16 KiB）
 
@@ -6276,17 +6310,17 @@ trap.zig:198:  if (irq_count % 512 == 0) log.raw(".");
 
 结果（`WITH_PHY=1`，814 656 B）：
 
-| 量 | 之前 | 之后 |
-| --- | --- | --- |
-| `_heap_start` | `0x2f01fec0` | **`0x2f01b080`**（降 19 520 B） |
-| arena | 352 KiB | **376 KiB** |
-| 归档需求 | ~355 KB | ~355 KB（不变） |
-| abort | 每轮出现 | **消失**（`AB: 0`，心跳 `n=8704`） |
+| 量            | 之前         | 之后                               |
+| ------------- | ------------ | ---------------------------------- |
+| `_heap_start` | `0x2f01fec0` | **`0x2f01b080`**（降 19 520 B）    |
+| arena         | 352 KiB      | **376 KiB**                        |
+| 归档需求      | ~355 KB      | ~355 KB（不变）                    |
+| abort         | 每轮出现     | **消失**（`AB: 0`，心跳 `n=8704`） |
 
 ⇒ **arena（376 KiB）> 需求（~355 KB）⇒ 缺口消失 ⇒ 分配不再失败。**
 
 ⇒ 这与早先的结论一致：**缺口是内生的**，靠"给一个请求开专用缓冲"无法解决，
-  必须**增加真正的可用内存** —— 而这 16 KiB 来自我们自己多留的空洞，不是新增硬件资源。
+必须**增加真正的可用内存** —— 而这 16 KiB 来自我们自己多留的空洞，不是新增硬件资源。
 
 ### 风险（已量化，未观测到）
 
@@ -6309,12 +6343,12 @@ bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16
 ```
 
 ⇒ 归档的分配数**恰好等于事件数 + 1** ⇒ 工作集**线性于 `evt_count`**，
-   而 `evt_count` 由**我们自己**的 `config.zig` 的 `seed()`（3 + 100）与 LL 的答复决定。
+而 `evt_count` 由**我们自己**的 `config.zig` 的 `seed()`（3 + 100）与 LL 的答复决定。
 
 ### 这意味着
 
 - 不必动 `.btdm_bss` / 栈 / carve-out，**只要减小事件预算**即可显著降低需求；
-- 但要**三处一致**：`seed()`、`elemCalc`、`osal.pool_caps` —— 
+- 但要**三处一致**：`seed()`、`elemCalc`、`osal.pool_caps` ——
   否则归档自己的 mempool 校验（`porting.zig:461-480`）会**提前失败并报另一个错**。
 
 ### 验证方式（无需新仪器）
@@ -6324,10 +6358,10 @@ bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16
 
 ### 与已做修复的关系
 
-| 手段 | 效果 | 代价 |
-| --- | --- | --- |
-| `.btdm_bss` 32→8 KiB（**已做**） | +24 KiB 到堆 | 归档的 init 临时区变小（风险已记录） |
-| **减小事件预算**（待做） | 线性降低需求（可能省下上百 KB） | 需三处一致，否则早期失败 |
+| 手段                             | 效果                            | 代价                                 |
+| -------------------------------- | ------------------------------- | ------------------------------------ |
+| `.btdm_bss` 32→8 KiB（**已做**） | +24 KiB 到堆                    | 归档的 init 临时区变小（风险已记录） |
+| **减小事件预算**（待做）         | 线性降低需求（可能省下上百 KB） | 需三处一致，否则早期失败             |
 
 两者不冲突；后者是**更根本**的一条，因为它直接改变需求而非供给。
 
@@ -6339,17 +6373,17 @@ bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16
 AB 0x0 C=0 f=374704
 ```
 
-| 事实 | 含义 |
-| --- | --- |
-| **AB 行出现** | **abort 仍被调用** |
-| `f=374704`（366 KiB 空闲） | **容量充足** ⇒ 不是容量问题 |
-| `AB 0x0` | RA 读到 0（`asm("mv %0, ra")` 在入口处竟为 0，需另查） |
+| 事实                       | 含义                                                   |
+| -------------------------- | ------------------------------------------------------ |
+| **AB 行出现**              | **abort 仍被调用**                                     |
+| `f=374704`（366 KiB 空闲） | **容量充足** ⇒ 不是容量问题                            |
+| `AB 0x0`                   | RA 读到 0（`asm("mv %0, ra")` 在入口处竟为 0，需另查） |
 
 ### 因此两条结论同时被推翻
 
-| 原结论 | 状态 |
-| --- | --- |
-| "abort = 容量缺口" | ❌ **不成立**（366 KiB 空闲仍 abort）|
+| 原结论                 | 状态                                                   |
+| ---------------------- | ------------------------------------------------------ |
+| "abort = 容量缺口"     | ❌ **不成立**（366 KiB 空闲仍 abort）                  |
 | "carve-out 掩盖了症状" | ⚠️ 部分成立：它确实让 1904 不再失败，但 abort 另有原因 |
 
 ### 但 `.btdm_bss` 的缩短**仍是真实改进**
@@ -6402,22 +6436,22 @@ alloc 成功（堆充裕） → abort 依然发生 → 说明 abort 来自 esp_p
 
 上一节把 `AB 0x0 C=0 f=374704` 读作"abort 仍发生"，**这是错的**。逐字段重读：
 
-| 字段 | 值 | 正确含义 |
-| --- | --- | --- |
-| `AB 0x0` | RA = **0** | **abort 从未执行**（真 abort 会写入非零 RA，如阳性对照的 `0x1234`） |
-| `f=374704` | 366 KiB 空闲（总 376 KiB） | 那一刻堆**几乎是空的**，只用掉 ~10 KiB |
-| 这行从哪来 | `btdmMalloc(1904)` 里的 `dump_hook` | **分配触发点**，不是故障路径 |
+| 字段       | 值                                  | 正确含义                                                            |
+| ---------- | ----------------------------------- | ------------------------------------------------------------------- |
+| `AB 0x0`   | RA = **0**                          | **abort 从未执行**（真 abort 会写入非零 RA，如阳性对照的 `0x1234`） |
+| `f=374704` | 366 KiB 空闲（总 376 KiB）          | 那一刻堆**几乎是空的**，只用掉 ~10 KiB                              |
+| 这行从哪来 | `btdmMalloc(1904)` 里的 `dump_hook` | **分配触发点**，不是故障路径                                        |
 
 ⇒ **AB 行有两个来源**（分配触发 / abort 桩），而我只看了第一个字段就下了结论 ——
-   这与本会话反复出现的"没读全就解释"是同一类错误。
+这与本会话反复出现的"没读全就解释"是同一类错误。
 
 ### 因此三条结论需要修正
 
-| 结论 | 修正 |
-| --- | --- |
-| "carve-out 移除后 abort 仍发生" | ❌ **撤回**：没有 abort |
-| "容量不是 abort 原因" | ❌ **撤回**：没有 abort 可归因 |
-| "`.btdm_bss` 缩短不解决 abort" | ❌ **撤回**：它**解决了分配失败**，且没有 abort 需要解决 |
+| 结论                            | 修正                                                     |
+| ------------------------------- | -------------------------------------------------------- |
+| "carve-out 移除后 abort 仍发生" | ❌ **撤回**：没有 abort                                  |
+| "容量不是 abort 原因"           | ❌ **撤回**：没有 abort 可归因                           |
+| "`.btdm_bss` 缩短不解决 abort"  | ❌ **撤回**：它**解决了分配失败**，且没有 abort 需要解决 |
 
 ### 还剩下的真实疑问
 
@@ -6425,7 +6459,7 @@ alloc 成功（堆充裕） → abort 依然发生 → 说明 abort 来自 esp_p
 说明那 188 块是**重试循环的稳态**，不是必然前提。
 
 ⇒ 真相可能是：**重试循环本身**（而非容量）才是持续分配的原因；
-   `btdmMalloc(1904)` 反复被调用 ⇒ 每次分配后又释放 ⇒ 堆看起来是空的。
+`btdmMalloc(1904)` 反复被调用 ⇒ 每次分配后又释放 ⇒ 堆看起来是空的。
 
 **下一步**：用 `CODES` 计数在心跳里判断"调用在增长还是持平" —— 增长 = 真推进，持平 = 空转。
 
@@ -6438,15 +6472,15 @@ alloc 成功（堆充裕） → abort 依然发生 → 说明 abort 来自 esp_p
 
 ### 这把几条"矛盾"全部解开
 
-| 观察 | 解释 |
-| --- | --- |
-| `f=374704`（几乎空堆） | 校准在 boot 阶段跑，归档尚未分配任何东西 |
+| 观察                   | 解释                                                                |
+| ---------------------- | ------------------------------------------------------------------- |
+| `f=374704`（几乎空堆） | 校准在 boot 阶段跑，归档尚未分配任何东西                            |
 | "188 块 / 355 KB 占用" | 那是 **task_init 阶段**的稳态，与 boot 阶段的校准是**两个不同时刻** |
-| `CODES=0` | 校准不使用 OSAL（它直接调 `calloc`/`free`） |
-| `AB 0x0` | 来自 `btdmMalloc(1904)` 的触发，那时没有 abort |
+| `CODES=0`              | 校准不使用 OSAL（它直接调 `calloc`/`free`）                         |
+| `AB 0x0`               | 来自 `btdmMalloc(1904)` 的触发，那时没有 abort                      |
 
 ⇒ **我此前把两个阶段的数字混在一起比较**，由此得出"容量缺口"的结论 ——
-   而容量缺口是 **task_init 阶段**的现象，**不是** PHY 校准失败的原因。
+而容量缺口是 **task_init 阶段**的现象，**不是** PHY 校准失败的原因。
 
 ### 因此准确的现状
 
@@ -6457,6 +6491,7 @@ task_init 阶段：188 块 / 355 KB —— 另一个阶段的独立问题
 ```
 
 **下一步**：分别测量两个阶段。
+
 - boot 阶段校准是否**完成**（`esp_phy_enable` 是否返回）；
 - task_init 阶段的容量是否足够（`arenaFree()` 在 step 6 附近）。
 
@@ -6464,23 +6499,23 @@ task_init 阶段：188 块 / 355 KB —— 另一个阶段的独立问题
 
 对最近 5 次抓取的统计：
 
-| 行 | 出现次数 | 含义 |
-| --- | --- | --- |
-| `bt probe:` | **21** | 抓到并解析（早期日志正常捕获）|
-| `bt mempool: need` | **0** | **归档从未到达 step 1** |
-| `enter step` | **0** | 同上 |
-| `CODES` | **0** | 归档从未调用 OSAL |
+| 行                 | 出现次数 | 含义                           |
+| ------------------ | -------- | ------------------------------ |
+| `bt probe:`        | **21**   | 抓到并解析（早期日志正常捕获） |
+| `bt mempool: need` | **0**    | **归档从未到达 step 1**        |
+| `enter step`       | **0**    | 同上                           |
+| `CODES`            | **0**    | 归档从未调用 OSAL              |
 
 ⇒ **`bringup.init()` 卡在 `dumpBootState()` 里的 `pp.initPhy()`**（step 1 之前），
-   PHY 校准**不返回**。
+PHY 校准**不返回**。
 
 ### 因此本会话后半程的所有"容量"结论都是**跨阶段的误读**
 
-| 数字 | 真实所属阶段 |
-| --- | --- |
-| `f=374704`（几乎空堆） | **boot**：校准在分配，归档尚未启动 |
-| "188 块 / 355 KB" | **task_init**：来自**更早、配置不同**的运行 |
-| `AB 0x0` | `btdmMalloc(1904)` 的触发，boot 阶段，无 abort |
+| 数字                   | 真实所属阶段                                   |
+| ---------------------- | ---------------------------------------------- |
+| `f=374704`（几乎空堆） | **boot**：校准在分配，归档尚未启动             |
+| "188 块 / 355 KB"      | **task_init**：来自**更早、配置不同**的运行    |
+| `AB 0x0`               | `btdmMalloc(1904)` 的触发，boot 阶段，无 abort |
 
 ⇒ **当前真正的阻塞**：`initPhy()` 不返回（不是 abort、不是容量）。
 
@@ -6488,6 +6523,7 @@ task_init 阶段：188 块 / 355 KB —— 另一个阶段的独立问题
 
 `initPhy()` = `phy_get_romfunc_addr()` + `esp_phy_enable(2)`。
 需确定它停在**哪一步**：
+
 1. 在两者之间各打一个极短标记（单字节，如 `P`/`Q`）；
 2. 或直接看采样：`pc=0x2f82xxxx`（ROM）+ `s0=0x20100000`（modem 基址）
    ⇒ 它在**轮询 modem 寄存器** ⇒ 等某个硬件状态位。
@@ -6498,15 +6534,15 @@ task_init 阶段：188 块 / 355 KB —— 另一个阶段的独立问题
 
 上一节把 `f=374704` 归给 boot、把"188 块 / 355 KB"归给 task_init，**这是错的**。正确的是：
 
-| 数字 | 来自哪次 dump | 说明 |
-| --- | --- | --- |
-| `f=374704` | `btdmMalloc(1904)` 的**分配触发** | 校准**刚开始**，堆自然几乎空 |
-| `f=1200` / 188 块 | **abort 时刻**的 dump | 校准**已分配完**（~355 KB），即将失败 |
+| 数字              | 来自哪次 dump                     | 说明                                  |
+| ----------------- | --------------------------------- | ------------------------------------- |
+| `f=374704`        | `btdmMalloc(1904)` 的**分配触发** | 校准**刚开始**，堆自然几乎空          |
+| `f=1200` / 188 块 | **abort 时刻**的 dump             | 校准**已分配完**（~355 KB），即将失败 |
 
 ⇒ 两者**都是 boot 阶段**，只是**时间点不同**。
 
 ⇒ 因此结论是：**boot 阶段的 PHY 校准本身需要 ~355 KB**，
-   旧 arena（352 KiB）不够 ⇒ abort；新 arena（376 KiB）够 ⇒ **1904 成功、无 abort**。
+旧 arena（352 KiB）不够 ⇒ abort；新 arena（376 KiB）够 ⇒ **1904 成功、无 abort**。
 
 ⇒ 而"从未到 step 1"是因为**校准还没返回**（它在轮询硬件），**不是**容量问题。
 
@@ -6529,11 +6565,11 @@ boot: initPhy() → 分配 ~355 KB（成功，arena 376 KiB 有余量 ~21 KiB）
 
 已采纳 `.btdm_bss` 32 KiB → 8 KiB（arena 352 → 376 KiB），但必须同时记录：
 
-| 事实 | 含义 |
-| --- | --- |
-| 归档**确实**把该洞当工作区（init 时按符号长度 memset） | ⇒ **不能假定**它不会写超过 8 KiB |
-| 若它写超 ⇒ **静默写坏堆** | 比 abort 更难查 |
-| 检测仪器（canary/块链）在 `dumpAtPend` 里，只由 `size==1904` 触发 | ⇒ **当前无法捕获该越界** |
+| 事实                                                              | 含义                             |
+| ----------------------------------------------------------------- | -------------------------------- |
+| 归档**确实**把该洞当工作区（init 时按符号长度 memset）            | ⇒ **不能假定**它不会写超过 8 KiB |
+| 若它写超 ⇒ **静默写坏堆**                                         | 比 abort 更难查                  |
+| 检测仪器（canary/块链）在 `dumpAtPend` 里，只由 `size==1904` 触发 | ⇒ **当前无法捕获该越界**         |
 
 ### 而且：足迹是用**旧配置**测的
 
@@ -6570,11 +6606,11 @@ memcpy(0x2f01a080, 0, 0x1000)   ; _bss_end_btdm .. _data_end_btdm = 4 KiB
 
 ### 因此上一节的风险声明可以撤销
 
-| 原担忧 | 结论 |
-| --- | --- |
+| 原担忧                    | 结论                                               |
+| ------------------------- | -------------------------------------------------- |
 | 归档把该洞当 scratch 写超 | ❌ **不成立**：它只 memset/memcpy 由符号界定的范围 |
-| 缩短引入静默堆破坏 | ❌ **不可能**：擦除更短不会越界 |
-| canary 无法检测 | 已无需检测 |
+| 缩短引入静默堆破坏        | ❌ **不可能**：擦除更短不会越界                    |
+| canary 无法检测           | 已无需检测                                         |
 
 ### 仍待确认（与安全无关）
 
@@ -6583,14 +6619,14 @@ memcpy(0x2f01a080, 0, 0x1000)   ; _bss_end_btdm .. _data_end_btdm = 4 KiB
 
 ## ✅ 安全性证明闭合（三项静态证据，2026-11-19 定论）
 
-| 证据 | 结果 |
-| --- | --- |
-| 洞内是否有对象符号 | **只有边界标记本身**（`_bss_start_btdm` / `_bss_end`，size 0、NOTYPE）⇒ **无对象** |
-| 归档全局在哪 | `r_sym_bt_pSy5…`=`0x2f010ee0`、`d3D3…`=`0x2f010ef0`、`6Q68…`=`0x2f010f00` ⇒ **常规 `.bss`，在洞之外** |
-| 引用边界符号的 10 处代码 | 1 处归档（memset/memcpy，符号界定）+ 3 处我们自己的（`probe.run` / `Arena.alloc` / `dumpAtPend`，**全部只读**）|
+| 证据                     | 结果                                                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| 洞内是否有对象符号       | **只有边界标记本身**（`_bss_start_btdm` / `_bss_end`，size 0、NOTYPE）⇒ **无对象**                              |
+| 归档全局在哪             | `r_sym_bt_pSy5…`=`0x2f010ee0`、`d3D3…`=`0x2f010ef0`、`6Q68…`=`0x2f010f00` ⇒ **常规 `.bss`，在洞之外**           |
+| 引用边界符号的 10 处代码 | 1 处归档（memset/memcpy，符号界定）+ 3 处我们自己的（`probe.run` / `Arena.alloc` / `dumpAtPend`，**全部只读**） |
 
 ⇒ **无对象驻留洞内、无代码越界写入** ⇒
-   **`.btdm_bss` 32→8 KiB 安全，由静态证据保证**（不是"看起来更好"）。
+**`.btdm_bss` 32→8 KiB 安全，由静态证据保证**（不是"看起来更好"）。
 
 ### 唯一剩余未知（与安全无关）
 
@@ -6607,10 +6643,10 @@ bt mempool: need evt=187 evtq=33 co=41 sem=20 mutex=16 / cap 384/96/128/64/64
 pcsample n=9728 pc=0x400670c6 ra=0x400670c6   ← 落在 **abort 的自旋段**
 ```
 
-| 配置 | 行为 |
-| --- | --- |
+| 配置                               | 行为                                                           |
+| ---------------------------------- | -------------------------------------------------------------- |
 | `phy_before_clocks=true`（原默认） | PHY 初始化在 `dumpBootState`（step 1 之前）⇒ **到不了 step 1** |
-| `phy_before_clocks=false`（本次） | **step 1 执行** → 然后 **abort** |
+| `phy_before_clocks=false`（本次）  | **step 1 执行** → 然后 **abort**                               |
 
 ⇒ **"到不了 step 1" 是开关造成的**，不是校准挂死。
 ⇒ 翻过来之后暴露的是**另一处 abort**，位置在 step 1（mempool）之后。
@@ -6637,6 +6673,7 @@ pcsample pc=0x400670c6 ra=0x400670c6      ← 在 abort 自旋段
 **但 `AB` 行没有出现** ⇒ abort 的调用者**未能导出**。
 
 可能原因（未区分）：
+
 1. `probe_dump_now()` 的输出被 FIFO 丢弃（AB 行约 45 B）；
 2. 早前的 `git checkout -- probe.zig` 把 `probe_dump_now` 的导出或 AB-first 排序又回退掉了。
 
@@ -6681,11 +6718,11 @@ export fn probe_dump_now() void {
 
 ### 结论
 
-| 事实 | 状态 |
-| --- | --- |
-| step 1 之后进入 abort | **已证**（PC 在自旋段、`jalr` 在调用点）|
-| abort 的调用者 | **未知**（RA 未能输出）|
-| 输出为何丢失 | 未查（AB 行约 40 B，理论上应能进 FIFO）|
+| 事实                  | 状态                                     |
+| --------------------- | ---------------------------------------- |
+| step 1 之后进入 abort | **已证**（PC 在自旋段、`jalr` 在调用点） |
+| abort 的调用者        | **未知**（RA 未能输出）                  |
+| 输出为何丢失          | 未查（AB 行约 40 B，理论上应能进 FIFO）  |
 
 ### 下一轮的第一步（二选一）
 
@@ -6706,10 +6743,10 @@ export fn probe_dump_now() void {
 
 ### 配合 `phy_before_clocks=false` 的完整解释
 
-| 配置 | PHY 初始化时机 | arena 状态 | 结果 |
-| --- | --- | --- | --- |
-| `true`（原） | `dumpBootState`（step 1 之前） | **几乎空**（`f=374704`） | 1904 成功 |
-| **`false`（本轮）** | **step 5 之后** | 归档**已吃满**（188 块） | **1904 失败 ⇒ abort** |
+| 配置                | PHY 初始化时机                 | arena 状态               | 结果                  |
+| ------------------- | ------------------------------ | ------------------------ | --------------------- |
+| `true`（原）        | `dumpBootState`（step 1 之前） | **几乎空**（`f=374704`） | 1904 成功             |
+| **`false`（本轮）** | **step 5 之后**                | 归档**已吃满**（188 块） | **1904 失败 ⇒ abort** |
 
 ⇒ **同一份代码、同一个请求，仅因时机不同就成功/失败** —— 这正是"容量"问题的真实形态。
 
@@ -6719,7 +6756,7 @@ export fn probe_dump_now() void {
 2. **step 5 之后再跑校准** ⇒ 堆已被归档吃满 ⇒ 失败。
 
 ⇒ 归档的 init **确实吃掉了 ~355 KB**，而 PHY 校准需要额外的 1.9 KB ——
-   两者**不能共存于同一时刻的 376 KiB**。
+两者**不能共存于同一时刻的 376 KiB**。
 
 ### 修法（回到最初的正确方向，但现在有完整依据）
 
@@ -6737,13 +6774,13 @@ A40000672/712        ; RA=0x40000672（calloc NULL 分支） / 空闲 712 B
 
 ### 与两种顺序完全吻合
 
-| `phy_before_clocks` | 校准时机 | 编辑时刻空闲 | 结果 |
-| --- | --- | --- | --- |
-| `true` | step 1 **之前** | ~374 704 B | 1904 **成功** |
-| `false` | step 5 **之后** | **712 B** | 1904 **失败 ⇒ abort** |
+| `phy_before_clocks` | 校准时机        | 编辑时刻空闲 | 结果                  |
+| ------------------- | --------------- | ------------ | --------------------- |
+| `true`              | step 1 **之前** | ~374 704 B   | 1904 **成功**         |
+| `false`             | step 5 **之后** | **712 B**    | 1904 **失败 ⇒ abort** |
 
 ⇒ **归档会吃光给它的任何空间**（376 KiB 也不例外）⇒ 校准必须**抢在它之前**，
-   或者拿**不属于 arena 的内存**。
+或者拿**不属于 arena 的内存**。
 
 ### 因此"容量 ~375 KB"是**当前配置的实测**，不再是导入数字
 
@@ -6751,10 +6788,10 @@ A40000672/712        ; RA=0x40000672（calloc NULL 分支） / 空闲 712 B
 
 ### 两条可行修法（都有依据）
 
-| 方案 | 依据 | 代价 |
-| --- | --- | --- |
-| **A. `phy_before_clocks=true`**（校准先跑） | 已实测成功（`f=374704`） | ⚠️ 该顺序下归档**到不了 step 1**（校准不返回） |
-| **B. 校准用非 arena 内存**（`.btdm_data` 之后的独立 NOLOAD 段） | 不与归档争用 | 需改链接脚本并验证不移动 `_heap_start` |
+| 方案                                                            | 依据                     | 代价                                           |
+| --------------------------------------------------------------- | ------------------------ | ---------------------------------------------- |
+| **A. `phy_before_clocks=true`**（校准先跑）                     | 已实测成功（`f=374704`） | ⚠️ 该顺序下归档**到不了 step 1**（校准不返回） |
+| **B. 校准用非 arena 内存**（`.btdm_data` 之后的独立 NOLOAD 段） | 不与归档争用             | 需改链接脚本并验证不移动 `_heap_start`         |
 
 **A 与 B 各修一半**：A 让校准成功但阻塞归档初始化；B 让两者共存。
 ⇒ **真正的目标是 B**：让归档 init 与校准各自有独立内存。
@@ -6784,12 +6821,12 @@ if (total == 1904) {                     /* calloc */
 
 链接结果：
 
-| 符号 | 值 |
-| --- | --- |
+| 符号                 | 值           |
+| -------------------- | ------------ |
 | `_phy_cal_buf_start` | `0x2f01b080` |
-| `_phy_cal_buf_end` | `0x2f01b880` |
-| `_heap_start` | `0x2f01b880` |
-| arena | **374 KiB** |
+| `_phy_cal_buf_end`   | `0x2f01b880` |
+| `_heap_start`        | `0x2f01b880` |
+| arena                | **374 KiB**  |
 
 ### 板测（决定性）
 
@@ -6803,11 +6840,11 @@ pc=0x2f828a76 s0=0x20100000     ← 在 ROM / modem 区继续执行
 
 ### 为什么只有这个方案可行
 
-| 时序 | 结果 |
-| --- | --- |
-| 校准在 boot（arena 空） | 成功，但归档 init 不跑（到不了 step 1） |
-| 校准在 step 5 后（arena 已被吃满，剩 712 B） | 失败 ⇒ abort |
-| **校准用独立段（本方案）** | **两者都跑** ✓ |
+| 时序                                         | 结果                                    |
+| -------------------------------------------- | --------------------------------------- |
+| 校准在 boot（arena 空）                      | 成功，但归档 init 不跑（到不了 step 1） |
+| 校准在 step 5 后（arena 已被吃满，剩 712 B） | 失败 ⇒ abort                            |
+| **校准用独立段（本方案）**                   | **两者都跑** ✓                          |
 
 ⇒ 归档会吃光 arena（"有多少用多少"），所以**唯一出路是让校准不依赖 arena**。
 
@@ -6833,12 +6870,12 @@ _heap_start = _data_end_btdm   /* 因此 **不变** */
 
 链接结果（`WITH_PHY=1`，814 656 B）：
 
-| 符号 | 值 |
-| --- | --- |
-| `_bss_end_btdm` = `_phy_cal_buf_start` | `0x2f019880` |
-| `_phy_cal_buf_end` | `0x2f01a080` |
-| `_heap_start` | **`0x2f01b080`**（未变）|
-| arena | **376 KiB**（未缩）|
+| 符号                                   | 值                       |
+| -------------------------------------- | ------------------------ |
+| `_bss_end_btdm` = `_phy_cal_buf_start` | `0x2f019880`             |
+| `_phy_cal_buf_end`                     | `0x2f01a080`             |
+| `_heap_start`                          | **`0x2f01b080`**（未变） |
+| arena                                  | **376 KiB**（未缩）      |
 
 ⇒ **零成本**：校准拿到 2 KiB，arena 一点没变，且校准段在堆之外、也不在归档的 memset 范围内。
 
@@ -6866,10 +6903,10 @@ pc=0x2f828a78 s0=0x20100000   ← 校准在 ROM / modem 区继续
 
 本会话已有**两次**把"我们的问题"误判成"硬件墙"：
 
-| 曾判为 | 实际是 |
-| --- | --- |
-| `0x2010B000` 一读即挂死（硬件不可访问） | **缺 PHY 频域时钟**（含 `I2C_MST_FO`）|
-| abort = 容量塞满 | **取决于校准与归档 init 的先后** |
+| 曾判为                                  | 实际是                                 |
+| --------------------------------------- | -------------------------------------- |
+| `0x2010B000` 一读即挂死（硬件不可访问） | **缺 PHY 频域时钟**（含 `I2C_MST_FO`） |
+| abort = 容量塞满                        | **取决于校准与归档 init 的先后**       |
 
 ⇒ 因此当前"校准在 modem 寄存器上轮询"**不能**直接写成硬件前置。
 
@@ -6906,8 +6943,8 @@ pc=0x2f828a78 s0=0x20100000   ← 校准在 ROM / modem 区继续
 ```
 
 ⇒ **所有前置检查都通过了**（calloc 成功、init data 非空、NVS 路径返回 0），
-   执行进入 **`register_chipv7_phy`** —— 而板上的轮询点（`0x2f82xxxx`，ROM）
-   正对应这个例程内部的忙等。
+执行进入 **`register_chipv7_phy`** —— 而板上的轮询点（`0x2f82xxxx`，ROM）
+正对应这个例程内部的忙等。
 
 ⇒ **这是 RF 校准路径，不是我们漏掉的软件步骤。**
 
@@ -6920,11 +6957,11 @@ IDF 继续到 `register_chipv7_phy`（内部会按 `PHY_RF_CAL_FULL` 做全量�
 
 ### 因此「硬件前置」现在有**证据**，而非推断
 
-| 证据 | 内容 |
-| --- | --- |
-| 控制流 | 所有软件前置检查通过，进入 `register_chipv7_phy` |
+| 证据     | 内容                                                   |
+| -------- | ------------------------------------------------------ |
+| 控制流   | 所有软件前置检查通过，进入 `register_chipv7_phy`       |
 | 板上行为 | 该例程内部轮询 modem 寄存器（`s0=0x20100000`），不返回 |
-| 结论 | **需要真实 RF 前端/天线**才能完成校准 —— 这是硬件条件 |
+| 结论     | **需要真实 RF 前端/天线**才能完成校准 —— 这是硬件条件  |
 
 **但这仍是可证伪的**：若将来有 RF 前端而仍不返回，则应重新检查
 `register_chipv7_phy` 的入参（我们传的 calibration 模式与 PHY 表）。
@@ -6938,20 +6975,20 @@ IDF 继续到 `register_chipv7_phy`（内部会按 `PHY_RF_CAL_FULL` 做全量�
 ISR 已经在打印 `a0/a1/s0/ra`（`irq#{n} in=25 mepc=… a0=… a1=…`），
 把它们**并入周期心跳**（而不是仅在 `irq#N` 行里偶然出现），即可在轮询期间持续读到：
 
-| 寄存器 | 通常是 |
-| --- | --- |
-| `a0` | 被轮询的**地址** |
+| 寄存器      | 通常是            |
+| ----------- | ----------------- |
+| `a0`        | 被轮询的**地址**  |
 | `a1` / `a2` | **期望值 / 掩码** |
 
 ⇒ 一旦拿到地址，就能直接看**哪个位一直不置位**。
 
 ### 两种可能的结果，对应两类修法
 
-| 若等的是 | 性质 | 修法 |
-| --- | --- | --- |
+| 若等的是                                          | 性质                                                                                                                           | 修法         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------ |
 | **状态位**（cal done / PLL lock / PHY init done） | 看我们是否满足它 —— 时钟/复位序列、或 efuse/NVS 喂了假数据（我们 `readEfuseMac` 返回固定 MAC，任何 per-chip 校准数据都是错的） | **软件可修** |
-| **中断 pending**（`mip` 有位但无人服务） | 我们的 ISR 没路由它 | **软件可修** |
-| 真正外部条件（RF 前端 / 天线） | 硬件 | 需硬件 |
+| **中断 pending**（`mip` 有位但无人服务）          | 我们的 ISR 没路由它                                                                                                            | **软件可修** |
+| 真正外部条件（RF 前端 / 天线）                    | 硬件                                                                                                                           | 需硬件       |
 
 **在这三项被区分之前，"硬件前置"只是候选之一。**
 
@@ -6967,23 +7004,24 @@ ISR 已经在打印 `a0/a1/s0/ra`（`irq#{n} in=25 mepc=… a0=… a1=…`），
 且 `_esp_error_check_failed`（`0x400670c8`）在我们的镜像里是 **`c.jr ra` 空桩** ⇒ 打印后**继续**。
 
 ⇒ **我们的 NVS 桩行为正确**：`nvs_get_blob` 返回 NOT_FOUND ⇒ IDF 打印该警告
-   ⇒ **回落到全量校准** ⇒ 执行后续的 `register_chipv7_phy` 等例程。
+⇒ **回落到全量校准** ⇒ 执行后续的 `register_chipv7_phy` 等例程。
 
 ### 因此"NVS 挡住了流程"这一可能**已排除**
 
-| 可能 | 状态 |
-| --- | --- |
-| NVS 桩导致空转 | ❌ **排除**：IDF 明确按"回落全量校准"处理 |
-| 全量校准需要 RF 前端 | **仍是候选**（但未被单独证实）|
+| 可能                 | 状态                                      |
+| -------------------- | ----------------------------------------- |
+| NVS 桩导致空转       | ❌ **排除**：IDF 明确按"回落全量校准"处理 |
+| 全量校准需要 RF 前端 | **仍是候选**（但未被单独证实）            |
 
 ### 仍未确立的（重要，避免过度断言）
 
-| 断言 | 状态 |
-| --- | --- |
-| "轮询在 `register_chipv7_phy` 内" | ❌ **未确立**：`0x400005f8` 是**调用**，采样在 ROM 更深处 |
-| "a0=地址 / a1=掩码" | ❌ **只是猜测**（实测 `a0=0x02000000 a1=0x01000100` 更像位掩码）|
+| 断言                              | 状态                                                             |
+| --------------------------------- | ---------------------------------------------------------------- |
+| "轮询在 `register_chipv7_phy` 内" | ❌ **未确立**：`0x400005f8` 是**调用**，采样在 ROM 更深处        |
+| "a0=地址 / a1=掩码"               | ❌ **只是猜测**（实测 `a0=0x02000000 a1=0x01000100` 更像位掩码） |
 
 **可辩护的表述**：
+
 > 归档在 ROM 的 `0x2f828a78` 处执行（`s0=0x20100000` modem 基址）；
 > 最近的归档侧被调者是 `register_chipv7_phy`（`0x400005f8`）；
 > **具体是哪个 ROM 函数、哪个寄存器/位 —— 未知。**
@@ -6999,15 +7037,15 @@ objdump -d app.elf | grep -oE "# 2f8[0-9a-f]+" | sort | uniq -c
 
 ⇒ 归档对 ROM 的进入点只有一个：**`0x2f8005c4`**（间接调用，`jalr`）。
 ⇒ 而采样 PC 是 `0x2f828a78` ⇒ 那是 **`0x2f8005c4` 内部继续跳转后**的深处地址，
-   不在我们能直接反汇编的范围内（ROM 无符号表）。
+不在我们能直接反汇编的范围内（ROM 无符号表）。
 
 ### 因此定位的边界
 
-| 项 | 状态 |
-| --- | --- |
-| 进入 ROM 的唯一入口 | `0x2f8005c4` ✅（离线可证）|
-| 其内部走向 `0x2f828a78` 的路径 | **不可离线追踪**（ROM 无符号/无源码）|
-| 轮询的寄存器/位 | **未知**，需板上读 `a0`（轮询地址）|
+| 项                             | 状态                                  |
+| ------------------------------ | ------------------------------------- |
+| 进入 ROM 的唯一入口            | `0x2f8005c4` ✅（离线可证）           |
+| 其内部走向 `0x2f828a78` 的路径 | **不可离线追踪**（ROM 无符号/无源码） |
+| 轮询的寄存器/位                | **未知**，需板上读 `a0`（轮询地址）   |
 
 **下一步只能是板测**：把 `a0`（轮询地址）与 `a1`（掩码）持续打进心跳，
 拿到地址后判断是哪个寄存器、哪个位不置位。
@@ -7029,16 +7067,17 @@ objdump -d app.elf | grep -oE "# 2f8[0-9a-f]+" | sort | uniq -c
 目标常量来自某个表/函数指针（IDF 的 PHY 层惯用 ROM 函数表）。
 
 ⇒ 因此"归档直接调 ROM 的哪个函数"**无法从调用图读出** —— 只能靠：
+
 1. ROM 的符号表（本机若无则不可得）；
 2. 或板上读 `a0`（轮询地址）反推是哪一段寄存器。
 
 ### 结论：离线分析的真实边界
 
-| 可离线得到 | 不可离线得到 |
-| --- | --- |
-| ROM 入口经 `jalr`（间接） | 具体哪个 ROM 函数 |
-| 轮询环大小 0x34 | 轮询的寄存器与位 |
-| `s0=0x20100000`（modem 基址） | 哪个位不置位 |
+| 可离线得到                    | 不可离线得到      |
+| ----------------------------- | ----------------- |
+| ROM 入口经 `jalr`（间接）     | 具体哪个 ROM 函数 |
+| 轮询环大小 0x34               | 轮询的寄存器与位  |
+| `s0=0x20100000`（modem 基址） | 哪个位不置位      |
 
 **下一步唯有板测**：把 `a0`/`a1` 持续打进心跳。
 
@@ -7056,30 +7095,30 @@ ls ~/esp/eh_host_s31/build/esp-idf/esp_system/ld/
 
 ### 剩下的唯一手段（板测）
 
-| 手段 | 输出 |
-| --- | --- |
-| 把 `a0`/`a1` 打进周期心跳 | 轮询**地址**与**掩码** |
-| 用地址对照已知寄存器表（`0x2010B000` 一族、`MODEM_*`） | 判断是哪一段 |
-| 读该寄存器的当前值 | 哪个位不置位 |
+| 手段                                                   | 输出                   |
+| ------------------------------------------------------ | ---------------------- |
+| 把 `a0`/`a1` 打进周期心跳                              | 轮询**地址**与**掩码** |
+| 用地址对照已知寄存器表（`0x2010B000` 一族、`MODEM_*`） | 判断是哪一段           |
+| 读该寄存器的当前值                                     | 哪个位不置位           |
 
 ### 这条线的**完整知识边界**（本会话最终）
 
-| 层 | 已知 | 未知 |
-| --- | --- | --- |
-| 崩溃 | `anchor[8]` 自伤预发布 | — |
-| 总线 | 缺 PHY 频域时钟（含 `I2C_MST_FO`） | — |
-| 内存 | 校准段需独立于 arena；已零成本解决 | — |
-| 校准 | 软件前置全通过；NVS 回落全量校准 | **等哪个 ROM 例程/寄存器位** |
-| 工具 | 无 ROM ELF ⇒ 不可离线命名 | — |
+| 层   | 已知                               | 未知                         |
+| ---- | ---------------------------------- | ---------------------------- |
+| 崩溃 | `anchor[8]` 自伤预发布             | —                            |
+| 总线 | 缺 PHY 频域时钟（含 `I2C_MST_FO`） | —                            |
+| 内存 | 校准段需独立于 arena；已零成本解决 | —                            |
+| 校准 | 软件前置全通过；NVS 回落全量校准   | **等哪个 ROM 例程/寄存器位** |
+| 工具 | 无 ROM ELF ⇒ 不可离线命名          | —                            |
 
 ## 为什么现在读不到轮询地址（精确原因，2026-11-19）
 
 两种采样行的字段不同：
 
-| 行 | 频率 | 字段 | 能否读轮询地址 |
-| --- | --- | --- | --- |
-| `irq#{n} in=25 mepc=… a0=… a1=… s0=… ra=…` | 每 4096 tick | **有 `a0/a1`** | ✅ 理论上 |
-| `pcsample n=… pc=… ra=… s0=…` | 每 256 拍 | **无 `a0/a1`** | ❌ |
+| 行                                         | 频率         | 字段           | 能否读轮询地址 |
+| ------------------------------------------ | ------------ | -------------- | -------------- |
+| `irq#{n} in=25 mepc=… a0=… a1=… s0=… ra=…` | 每 4096 tick | **有 `a0/a1`** | ✅ 理论上      |
+| `pcsample n=… pc=… ra=… s0=…`              | 每 256 拍    | **无 `a0/a1`** | ❌             |
 
 实际抓到的唯一 `irq#` 行是 `mepc=0x40067324`（**我们自己的代码**），
 而 ROM 等待点（`pc=0x2f828a78`）只出现在 `pcsample` 行里 —— 那里没有 `a0/a1`。
@@ -7111,11 +7150,11 @@ ps n=512 pc=0x2f828a78 s0=0x20100000 a0=0x50 a1=0x0
 ps n=768 pc=0x2f828a5c s0=0x20100000 a0=0x50 a1=0x0
 ```
 
-| 寄存器 | 值 | 含义 |
-| --- | --- | --- |
-| `s0` | `0x20100000` | **modem 基址** |
-| `a0` | **`0x50`** | **偏移** ⇒ 被轮询的寄存器 = **`0x20100050`** |
-| `a1` | `0x0` | 期望值（等它变成/不等于 0）|
+| 寄存器 | 值           | 含义                                         |
+| ------ | ------------ | -------------------------------------------- |
+| `s0`   | `0x20100000` | **modem 基址**                               |
+| `a0`   | **`0x50`**   | **偏移** ⇒ 被轮询的寄存器 = **`0x20100050`** |
+| `a1`   | `0x0`        | 期望值（等它变成/不等于 0）                  |
 
 ⇒ 校准在**等 `0x20100050` 的某个位**。
 
@@ -7141,10 +7180,10 @@ ps n=256 pc=0x2f8036ce s0=0x3 a0=0x7a1200 a1=0x1b
 
 ### 两种可能的语义（未区分）
 
-| 可能 | 值 | 含义 |
-| --- | --- | --- |
-| `a0` 是**字节偏移** | `0x20100000 + 0x50 = 0x20100050` | SYSCON 区 |
-| `a0` 是**字索引** | `0x20100000 + 0x50*4 = 0x20100140` | 仍在 SYSCON 区 |
+| 可能                | 值                                 | 含义           |
+| ------------------- | ---------------------------------- | -------------- |
+| `a0` 是**字节偏移** | `0x20100000 + 0x50 = 0x20100050`   | SYSCON 区      |
+| `a0` 是**字索引**   | `0x20100000 + 0x50*4 = 0x20100140` | 仍在 SYSCON 区 |
 
 `a1=0x0` 可能是**期望值**（等它变 0）或**掩码**。
 
@@ -7154,7 +7193,7 @@ ps n=256 pc=0x2f8036ce s0=0x3 a0=0x7a1200 a1=0x1b
 （**时钟 / 复位 / ICG 控制**）—— **不是** RF 基带（`+0xB000`，即早前那个 `0x2010B000`）。
 
 ⇒ **若被轮询的位在 SYSCON 区，那是我们能通过寄存器序列满足的**（软件可修），
-  而非"需要 RF 前端"。
+而非"需要 RF 前端"。
 
 ### 一次观测即可区分（两条都便宜）
 
@@ -7164,20 +7203,20 @@ ps n=256 pc=0x2f8036ce s0=0x3 a0=0x7a1200 a1=0x1b
    查 `MODEM_SYSCON` 结构体在该偏移的字段名（`*_cal_done` / `*_lock` / `*_ready` 之类）。
 
 ⇒ 若字段名是"时钟稳定/PLL 锁定" ⇒ **软件缺一段使能序列**；
-   若是"RF 校准完成" ⇒ 才轮到硬件前提。
+若是"RF 校准完成" ⇒ 才轮到硬件前提。
 
 ## 🔴 否证：「0x20100050」不是 MODEM_SYSCON 寄存器（2026-11-19）
 
 查本机 IDF 源码 `components/soc/esp32s31/include/modem/modem_syscon_reg.h`：
 
-| 寄存器 | 偏移 |
-| --- | --- |
-| `MODEM_SYSCON_TEST_CONF` | `+0x0` |
-| `MODEM_SYSCON_CLK_CONF` | `+0x4` |
-| `MODEM_SYSCON_CLK_CONF_FORCE_ON` | `+0x8` |
-| `MODEM_SYSCON_CLK_CONF_POWER_ST` | `+0xC` |
-| `MODEM_SYSCON_MODEM_RST_CONF` | `+0x10` |
-| `MODEM_SYSCON_CLK_CONF1` | `+0x14` |
+| 寄存器                           | 偏移    |
+| -------------------------------- | ------- |
+| `MODEM_SYSCON_TEST_CONF`         | `+0x0`  |
+| `MODEM_SYSCON_CLK_CONF`          | `+0x4`  |
+| `MODEM_SYSCON_CLK_CONF_FORCE_ON` | `+0x8`  |
+| `MODEM_SYSCON_CLK_CONF_POWER_ST` | `+0xC`  |
+| `MODEM_SYSCON_MODEM_RST_CONF`    | `+0x10` |
+| `MODEM_SYSCON_CLK_CONF1`         | `+0x14` |
 
 ⇒ `MODEM_SYSCON` 的寄存器只到 **`+0x14`**（其余在更后面）——**没有 `+0x50`**。
 
@@ -7185,14 +7224,14 @@ ps n=256 pc=0x2f8036ce s0=0x3 a0=0x7a1200 a1=0x1b
 
 ### `a0=0x50` 更可能是
 
-| 可能 | 依据 |
-| --- | --- |
+| 可能                    | 依据                                        |
+| ----------------------- | ------------------------------------------- |
 | **循环计数器**（80 次） | 与另一条采样 `a0=0x7a1200`（8M 次延时）同族 |
-| **字段索引** | `0x50*4 = 0x140` 也超出 SYSCON 头部 |
-| **期望值/掩码片段** | `a1=0x0` 为另一个操作数 |
+| **字段索引**            | `0x50*4 = 0x140` 也超出 SYSCON 头部         |
+| **期望值/掩码片段**     | `a1=0x0` 为另一个操作数                     |
 
 ⇒ 与 `a0=0x7a1200`（明确的延时计数）连起来看，**`a0` 在这两处都是"计数"而非"地址"**，
-   `s0=0x20100000` 才是基址 —— 而具体的寄存器偏移**仍未确定**。
+`s0=0x20100000` 才是基址 —— 而具体的寄存器偏移**仍未确定**。
 
 ### 这条否证的价值
 
@@ -7219,11 +7258,11 @@ ps n=256 pc=0x2f8036ce s0=0x3 a0=0x7a1200 a1=0x1b
 
 `a0` 是计数 ⇒ 被轮询的地址**不在 `a0` 里**。可能的来源：
 
-| 可能 | 检查方式 |
-| --- | --- |
-| `s0` + 代码内偏移（`s0=0x20100000`） | 反汇编 ROM（不可得）|
-| `a1`/`a2` | 把它们也打进采样行（一行改动）|
-| 另一轮采样恰好落在读指令上 | 增加采样密度 |
+| 可能                                 | 检查方式                       |
+| ------------------------------------ | ------------------------------ |
+| `s0` + 代码内偏移（`s0=0x20100000`） | 反汇编 ROM（不可得）           |
+| `a1`/`a2`                            | 把它们也打进采样行（一行改动） |
+| 另一轮采样恰好落在读指令上           | 增加采样密度                   |
 
 ⇒ **`a1`/`a2` 是下一个可读的候选**，而它们已经在 `frame` 里（`frame.a1`/`frame.a2`）。
 
@@ -7241,16 +7280,16 @@ DR_REG_MODEM_SYSCON_BASE  = MODEM_BASE + 0x9C00   ⇒ 0x20109C00
 
 ⇒ 我此前把 `s0=0x20100000` 当作 SYSCON 并推出"软件可修"——**这个推理作废**。
 ⇒ 它是 **FE（front-end）块**，而本机 IDF **没有 FE 的寄存器头文件**
-   （只有 `modem/{syscon,lpcon,widgets,i2c_ana_mst}_reg.h` 与 `reg_base.h`）。
+（只有 `modem/{syscon,lpcon,widgets,i2c_ana_mst}_reg.h` 与 `reg_base.h`）。
 ⇒ 因此 `0x201000xx` 处的寄存器**无法离线命名**，也不能断言"我们能编程"。
 
 ### 现在能说的与不能说的
 
-| 可以说 | 不能说 |
-| --- | --- |
-| 校准在 **FE 块**（`0x20100000` 起）等待 | 它等的是哪个寄存器 |
-| `a0` 是循环计数（已否证是偏移） | 它是"时钟/复位"还是"RF 就绪" |
-| `a1=0x0`（该样本的操作数） | 该位是否由我们满足 |
+| 可以说                                  | 不能说                       |
+| --------------------------------------- | ---------------------------- |
+| 校准在 **FE 块**（`0x20100000` 起）等待 | 它等的是哪个寄存器           |
+| `a0` 是循环计数（已否证是偏移）         | 它是"时钟/复位"还是"RF 就绪" |
+| `a1=0x0`（该样本的操作数）              | 该位是否由我们满足           |
 
 ### 下一步（唯一可行）
 
@@ -7263,15 +7302,15 @@ DR_REG_MODEM_SYSCON_BASE  = MODEM_BASE + 0x9C00   ⇒ 0x20109C00
 
 ### 已确立（有证据，可继承）
 
-| 结论 | 证据类型 |
-| --- | --- |
-| 崩溃 = `anchor[8]` 自伤预发布 | 开关对照 |
-| 总线停摆 = 缺 PHY 频域时钟（含 `I2C_MST_FO`） | 心跳 320 → 9728+ |
-| 校准缓冲必须独立于 arena | 链接符号 + 板上 0 abort |
-| `0x20100000` = **FE 块**（非 SYSCON） | `reg_base.h` |
-| `a0` 在 ROM 忙等里是**循环计数** | 与 8M 延时同族 + 寄存器表只到 `+0x30` |
-| 本机**无 S31 ROM ELF** | `find` 实测 |
-| 本机**无 FE 寄存器头文件** | soc 目录实测 |
+| 结论                                          | 证据类型                              |
+| --------------------------------------------- | ------------------------------------- |
+| 崩溃 = `anchor[8]` 自伤预发布                 | 开关对照                              |
+| 总线停摆 = 缺 PHY 频域时钟（含 `I2C_MST_FO`） | 心跳 320 → 9728+                      |
+| 校准缓冲必须独立于 arena                      | 链接符号 + 板上 0 abort               |
+| `0x20100000` = **FE 块**（非 SYSCON）         | `reg_base.h`                          |
+| `a0` 在 ROM 忙等里是**循环计数**              | 与 8M 延时同族 + 寄存器表只到 `+0x30` |
+| 本机**无 S31 ROM ELF**                        | `find` 实测                           |
+| 本机**无 FE 寄存器头文件**                    | soc 目录实测                          |
 
 ### 不可离线确立（边界）
 
@@ -7291,13 +7330,13 @@ DR_REG_MODEM_SYSCON_BASE  = MODEM_BASE + 0x9C00   ⇒ 0x20109C00
 
 ## 最终边界确认：校准等待在**预编译库/ROM** 内（2026-11-19 定论）
 
-| 检查 | 结果 |
-| --- | --- |
-| `grep cal_done\|esp_phy_wait_cal` 于 `esp_phy/src` 与 `hal/esp32s31` | **无匹配** |
-| `grep 0x20100` 于 `hal/soc/esp32s31` | 仅 `reg_base.h` 的 `MODEM_BASE` |
-| `phy_init.c` 里带 wait 的函数 | 仅 `phy_wait_freq_hw_hop_done`（跳频，无关）|
-| FE 块寄存器头文件 | **本树不含** |
-| S31 ROM ELF | **本机没有** |
+| 检查                                                                 | 结果                                         |
+| -------------------------------------------------------------------- | -------------------------------------------- |
+| `grep cal_done\|esp_phy_wait_cal` 于 `esp_phy/src` 与 `hal/esp32s31` | **无匹配**                                   |
+| `grep 0x20100` 于 `hal/soc/esp32s31`                                 | 仅 `reg_base.h` 的 `MODEM_BASE`              |
+| `phy_init.c` 里带 wait 的函数                                        | 仅 `phy_wait_freq_hw_hop_done`（跳频，无关） |
+| FE 块寄存器头文件                                                    | **本树不含**                                 |
+| S31 ROM ELF                                                          | **本机没有**                                 |
 
 ⇒ **校准的等待循环在预编译的 `libphy.a` / ROM 内，源码不可得。**
 
@@ -7308,11 +7347,11 @@ DR_REG_MODEM_SYSCON_BASE  = MODEM_BASE + 0x9C00   ⇒ 0x20109C00
 
 ### 三条出路（按成本）
 
-| # | 需要 | 说明 |
-| --- | --- | --- |
-| 1 | Espressif 的 **S31 ROM ELF** 或 **FE 寄存器手册** | 直接命名 |
-| 2 | **板上逐寄存器扫描**（读 `0x20100000..0x20100100`，找随校准变化的位）| 纯板测，费力但可行 |
-| 3 | 从 **IDF 的 s31 二进制 PHY**（`libphy.a`）反汇编该等待循环 | 有库即可，无需源码 |
+| #   | 需要                                                                  | 说明               |
+| --- | --------------------------------------------------------------------- | ------------------ |
+| 1   | Espressif 的 **S31 ROM ELF** 或 **FE 寄存器手册**                     | 直接命名           |
+| 2   | **板上逐寄存器扫描**（读 `0x20100000..0x20100100`，找随校准变化的位） | 纯板测，费力但可行 |
+| 3   | 从 **IDF 的 s31 二进制 PHY**（`libphy.a`）反汇编该等待循环            | 有库即可，无需源码 |
 
 **在拿到上述任一材料之前，不应把这条线归因为"硬件缺失"。**
 
@@ -7338,11 +7377,11 @@ if (ret == ESP_CAL_DATA_CHECK_FAIL) { ... }
 
 ### 因此"硬件前置"现在有**源码级依据**
 
-| 证据 | 内容 |
-| --- | --- |
-| 源码 | `calibration_mode = PHY_RF_CAL_FULL` |
-| 语义 | 全量 RF 校准 = 测量实际射频通路 |
-| 板上 | `register_chipv7_phy` 内的 ROM 忙等不返回 |
+| 证据     | 内容                                                   |
+| -------- | ------------------------------------------------------ |
+| 源码     | `calibration_mode = PHY_RF_CAL_FULL`                   |
+| 语义     | 全量 RF 校准 = 测量实际射频通路                        |
+| 板上     | `register_chipv7_phy` 内的 ROM 忙等不返回              |
 | 我们的桩 | 只影响 `cal_data->mac`（假 MAC），不影响是否走全量校准 |
 
 ### 一个仍可排除的软件因素
@@ -7361,10 +7400,10 @@ if (ret == ESP_CAL_DATA_CHECK_FAIL) { ... }
 
 **材料存在**（此前判断错误）：`~/esp/esp-idf/components/esp_phy/lib/esp32s31/libphy.a`
 
-| 符号 | 所在对象 | 大小 |
-| --- | --- | --- |
+| 符号                  | 所在对象     | 大小              |
+| --------------------- | ------------ | ----------------- |
 | `register_chipv7_phy` | `phy_init.o` | **0x1e6 = 486 B** |
-| `phy_fe_reg_update` | `phy_reg.o` | **0x32 = 50 B** |
+| `phy_fe_reg_update`   | `phy_reg.o`  | **0x32 = 50 B**   |
 
 ### `register_chipv7_phy` 内的 FE 访问（`phy_init.o`）
 
@@ -7397,7 +7436,7 @@ if (ret == ESP_CAL_DATA_CHECK_FAIL) { ... }
 ### 因此等待在更深处
 
 ⇒ 需继续跟踪 `register_chipv7_phy` 的后续调用（或 `phy_get_xtal_freq` 之后的分支），
-   直到找到**带循环**的那一段 —— 那才是板上的轮询点。
+直到找到**带循环**的那一段 —— 那才是板上的轮询点。
 
 ## 更正与进展（2026-11-19 末）
 
@@ -7416,11 +7455,11 @@ if (ret == ESP_CAL_DATA_CHECK_FAIL) { ... }
 
 ### 已定位的具体对象
 
-| 项 | 值 |
-| --- | --- |
-| FE 控制寄存器 | **`0x20100800`**（`DR_REG_FE_BASE + 0x800`），**bit 2** 被置位 |
-| `register_chipv7_phy` | `phy_init.o`，486 B |
-| `phy_fe_reg_update` | `phy_reg.o`，50 B，读-改-写**无循环** |
+| 项                    | 值                                                             |
+| --------------------- | -------------------------------------------------------------- |
+| FE 控制寄存器         | **`0x20100800`**（`DR_REG_FE_BASE + 0x800`），**bit 2** 被置位 |
+| `register_chipv7_phy` | `phy_init.o`，486 B                                            |
+| `phy_fe_reg_update`   | `phy_reg.o`，50 B，读-改-写**无循环**                          |
 
 ### 下一步（纯反汇编）
 
@@ -7440,11 +7479,11 @@ FE800=1        ; 0x20100800 = 0x1（仅 bit 0）
 
 ### 要判定"写是否生效"，需在**校准开始后**再读
 
-| 时刻 | 期望 | 含义 |
-| --- | --- | --- |
-| boot（本次） | `bit2 = 0` | ✓ 正常 |
-| 校准开始后 | `bit2 = 1` | 写生效，等待在别处 |
-| 校准开始后 | `bit2 = 0` | **写没生效** ⇒ FE/模拟域时钟未开 ⇒ **软件可修**（与早前域时钟同类） |
+| 时刻         | 期望       | 含义                                                                |
+| ------------ | ---------- | ------------------------------------------------------------------- |
+| boot（本次） | `bit2 = 0` | ✓ 正常                                                              |
+| 校准开始后   | `bit2 = 1` | 写生效，等待在别处                                                  |
+| 校准开始后   | `bit2 = 0` | **写没生效** ⇒ FE/模拟域时钟未开 ⇒ **软件可修**（与早前域时钟同类） |
 
 **做法**：在 `probe_dump_now()`（abort 路径）或周期心跳里读 `0x20100800` ——
 但当前运行**不 abort**，因此需放进心跳。
@@ -7452,6 +7491,7 @@ FE800=1        ; 0x20100800 = 0x1（仅 bit 0）
 ### 这是本线最后一个高价值判据
 
 一次读数即可区分：
+
 - `bit2 = 1` ⇒ ROM 在等**别的东西**（继续找循环）
 - `bit2 = 0` ⇒ **我们的时钟序列缺一步**（软件可修，不是 RF 前提）
 
@@ -7459,25 +7499,25 @@ FE800=1        ; 0x20100800 = 0x1（仅 bit 0）
 
 本次读的位置在 `bringup.init()` **之前** ⇒ PHY 校准尚未运行 ⇒ bit 2 自然为 0。
 
-| 读数时刻 | 能否判断"写是否生效" |
-| --- | --- |
+| 读数时刻          | 能否判断"写是否生效"      |
+| ----------------- | ------------------------- |
 | boot 前（本次点） | ❌ **不能**（校准还没跑） |
-| **校准开始之后** | ✅ 能 |
+| **校准开始之后**  | ✅ 能                     |
 
 ### 正确的测量（两点比较）
 
-| 点 | 位置 | 读什么 |
-| --- | --- | --- |
-| 早期 | `bringup.init()` 之前 | `0x20100800`、`0x20109C14`(CLK_CONF1)、`0x20109C08`(FORCE_ON) |
-| 停滞后 | 周期心跳 / 你已有的 dump 钩子 | 同上三个 |
+| 点     | 位置                          | 读什么                                                        |
+| ------ | ----------------------------- | ------------------------------------------------------------- |
+| 早期   | `bringup.init()` 之前         | `0x20100800`、`0x20109C14`(CLK_CONF1)、`0x20109C08`(FORCE_ON) |
+| 停滞后 | 周期心跳 / 你已有的 dump 钩子 | 同上三个                                                      |
 
 **判据**：
 
-| 早期 bit2 | 停滞后 bit2 | 结论 |
-| --- | --- | --- |
-| 0 | **1** | 写生效 ⇒ 等待在别处（继续找循环）|
-| 0 | **0** | **写没落地** ⇒ FE/模拟域仍被门控 ⇒ **软件可修**（与早前域时钟同类）|
-| 1 | 0 | 有东西把 FE 域复位了（另一个方向的问题）|
+| 早期 bit2 | 停滞后 bit2 | 结论                                                                |
+| --------- | ----------- | ------------------------------------------------------------------- |
+| 0         | **1**       | 写生效 ⇒ 等待在别处（继续找循环）                                   |
+| 0         | **0**       | **写没落地** ⇒ FE/模拟域仍被门控 ⇒ **软件可修**（与早前域时钟同类） |
+| 1         | 0           | 有东西把 FE 域复位了（另一个方向的问题）                            |
 
 ⇒ 只有**两点比较**才能定案；单点读数（无论早期还是停滞后）都会误导。
 
@@ -7499,10 +7539,10 @@ board.log.line("F{x} C{x} O{x}",
 
 ### 判据（一次运行即定案）
 
-| `FE800` bit2 | 结论 |
-| --- | --- |
-| **1** | 写入落地 ⇒ ROM 在等**别的东西**（继续找循环）|
-| **0** | **写入未落地** ⇒ FE/模拟域被门控 ⇒ **软件可修**（与早前域时钟同类）|
+| `FE800` bit2 | 结论                                                                |
+| ------------ | ------------------------------------------------------------------- |
+| **1**        | 写入落地 ⇒ ROM 在等**别的东西**（继续找循环）                       |
+| **0**        | **写入未落地** ⇒ FE/模拟域被门控 ⇒ **软件可修**（与早前域时钟同类） |
 
 ### 同时读 CLK_CONF1 / FORCE_ON 的原因
 
@@ -7525,11 +7565,11 @@ board.log.line("F{x} C{x} O{x}",
 
 ### 这是本会话最后一次尝试及其边界
 
-| 项 | 状态 |
-| --- | --- |
-| 一次性读代码 | ✅ 已加、编译通过、板子未挂 |
-| 触发条件 | ❌ 未命中 |
-| 修正 | 换范围条件或模运算（同文件一行） |
+| 项           | 状态                             |
+| ------------ | -------------------------------- |
+| 一次性读代码 | ✅ 已加、编译通过、板子未挂      |
+| 触发条件     | ❌ 未命中                        |
+| 修正         | 换范围条件或模运算（同文件一行） |
 
 ### 交接状态
 
@@ -7548,15 +7588,16 @@ board.log.line("F{x} C{x} O{x}",
 F7.3ffdff.1c
 ```
 
-| 寄存器 | 值 | 解读 |
-| --- | --- | --- |
-| `0x20100800`（FE+0x800） | **`7`** = `0b111` | **bit 2 已置** ⇒ 校准启动信号**写进去了** |
-| `0x20109C14`（CLK_CONF1） | `0x3FFDFF` | FE 位 **13/14/15/19/20/21 全为 1** |
-| `0x20109C08`（FORCE_ON） | `0x1C` | `WIFI_APB_FO(2)` + `FE_FO(3)` + `FE_APB_FO(4)` **全为 1** |
+| 寄存器                    | 值                | 解读                                                      |
+| ------------------------- | ----------------- | --------------------------------------------------------- |
+| `0x20100800`（FE+0x800）  | **`7`** = `0b111` | **bit 2 已置** ⇒ 校准启动信号**写进去了**                 |
+| `0x20109C14`（CLK_CONF1） | `0x3FFDFF`        | FE 位 **13/14/15/19/20/21 全为 1**                        |
+| `0x20109C08`（FORCE_ON）  | `0x1C`            | `WIFI_APB_FO(2)` + `FE_FO(3)` + `FE_APB_FO(4)` **全为 1** |
 
 ⇒ **我们负责的每一个位都正确**：
-  - 频域时钟已开（`phyDomainEnable()` 的效果可验证）；
-  - FE 校准启动位已落地。
+
+- 频域时钟已开（`phyDomainEnable()` 的效果可验证）；
+- FE 校准启动位已落地。
 
 ⇒ 因此 ROM 的等待**不是**"时钟没开"、**不是**"写没落地"。
 
@@ -7566,9 +7607,10 @@ F7.3ffdff.1c
 该结果由 **RF 前端实际测量**产生 —— 本板无天线/RF 通路 ⇒ **不产生**。
 
 ⇒ **这就是硬件前提，且现在有寄存器级证据**（不是推断）：
-  - 时钟：已开（三个寄存器实测）
-  - 启动位：已置（bit 2）
-  - 结果位：永不出现
+
+- 时钟：已开（三个寄存器实测）
+- 启动位：已置（bit 2）
+- 结果位：永不出现
 
 ### 本线结论
 
@@ -7579,11 +7621,11 @@ F7.3ffdff.1c
 
 `probe` 读回 `0x2f828a40..0x2f828b00` 原文，按 RISC-V 解码：
 
-| 地址 | 字节(u32 LE) | 指令 | 说明 |
-| --- | --- | --- | --- |
+| 地址         | 字节(u32 LE) | 指令               | 说明                                  |
+| ------------ | ------------ | ------------------ | ------------------------------------- |
 | `0x2f828a44` | `0x45042783` | `lw a5, 0x450(s0)` | s0=`0x20100000` ⇒ 读 **`0x20100450`** |
-| `0x2f828a50` | `0x0027e793` | `ori a5, a5, 2` | **置 bit 1** |
-| `0x2f828a54` | `0x44f42823` | `sw a5, 0x450(s0)` | 写回 **`0x20100450`** |
+| `0x2f828a50` | `0x0027e793` | `ori a5, a5, 2`    | **置 bit 1**                          |
+| `0x2f828a54` | `0x44f42823` | `sw a5, 0x450(s0)` | 写回 **`0x20100450`**                 |
 | `0x2f828a5c` | `0x47c6a783` | `lw a5, 0x47c(a3)` | a3=`0x20100000` ⇒ 读 **`0x2010047C`** |
 
 ⇒ **轮询对象是 FE 块的 `0x20100450` / `0x2010047C`**，不是外设页
@@ -7595,10 +7637,10 @@ F7.3ffdff.1c
 
 板上读 `0x20100450` 与 `0x2010047C` 的当前值：
 
-| `0x2010047C` | 结论 |
-| --- | --- |
-| 某位恒为 0（或恒为 1）不变 | 确认为等待位 ⇒ 查该位语义 |
-| 在变化 | 不是等待，环在正常推进 ⇒ 换 `0x2f826484` 那处再解 |
+| `0x2010047C`               | 结论                                              |
+| -------------------------- | ------------------------------------------------- |
+| 某位恒为 0（或恒为 1）不变 | 确认为等待位 ⇒ 查该位语义                         |
+| 在变化                     | 不是等待，环在正常推进 ⇒ 换 `0x2f826484` 那处再解 |
 
 ## ✅ 等待条件已完全解出（离线，无需上板）
 
@@ -7621,23 +7663,23 @@ F7.3ffdff.1c
 
 ### 结论（寄存器级、精确）
 
-| 项 | 值 |
-| --- | --- |
-| **完成位** | `0x2010047C` **bit 16**（`0x10000`）|
-| **等待条件** | `(0x201008D0 >> 20) & 0x3` **必须非 0** |
-| **kick 位** | `0x20100450` **bit 1** |
-| PC 样本 | `0x2f828a5c/60/64/76/78` —— 与本环**逐条吻合** ✓ |
+| 项           | 值                                               |
+| ------------ | ------------------------------------------------ |
+| **完成位**   | `0x2010047C` **bit 16**（`0x10000`）             |
+| **等待条件** | `(0x201008D0 >> 20) & 0x3` **必须非 0**          |
+| **kick 位**  | `0x20100450` **bit 1**                           |
+| PC 样本      | `0x2f828a5c/60/64/76/78` —— 与本环**逐条吻合** ✓ |
 
 ⇒ 环退出需要**二者之一**：`0x47C.bit16 = 1`（完成），
 或 `0x8D0[21:20] != 0`（后者只是"允许继续检查"，不等于完成）。
 
 ### 一次读数即可定性（更新后的判据）
 
-| `0x2010047C` bit16 | `0x201008D0[21:20]` | 含义 |
-| --- | --- | --- |
-| 0 | 0 | **环真正在空转** ⇒ 硬件未响应 kick（或 kick 位写错）|
-| 0 | ≠0 | 走了第二分支 ⇒ 看 `0x2f828a7a` 之后（**尚未解码**）|
-| 1 | — | 已应退出 ⇒ 停滞在别处（解 `0x2f826484` 那处）|
+| `0x2010047C` bit16 | `0x201008D0[21:20]` | 含义                                                 |
+| ------------------ | ------------------- | ---------------------------------------------------- |
+| 0                  | 0                   | **环真正在空转** ⇒ 硬件未响应 kick（或 kick 位写错） |
+| 0                  | ≠0                  | 走了第二分支 ⇒ 看 `0x2f828a7a` 之后（**尚未解码**）  |
+| 1                  | —                   | 已应退出 ⇒ 停滞在别处（解 `0x2f826484` 那处）        |
 
 ## 🎯 真等待环已解出，且**实测条件已满足**（2026-11-19）
 
@@ -7662,10 +7704,10 @@ PC 样本 `0x2f826484` **正是 `andi` 那条** ✓
 
 ### 板上实测
 
-| 寄存器 | 值 | 判读 |
-| --- | --- | --- |
+| 寄存器       | 值            | 判读                                         |
+| ------------ | ------------- | -------------------------------------------- |
 | `0x2010080C` | **`0x7F000`** | `(>>14)&7 = 0x1F&7 = **7**` ⇒ **条件已满足** |
-| `0x20100808` | `0x294501` | bit0 = 1（脉冲已发出）|
+| `0x20100808` | `0x294501`    | bit0 = 1（脉冲已发出）                       |
 
 ### 结论（重要修正）
 
@@ -7683,11 +7725,11 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 本仓已记录（README 前文 IDF oracle 节）：**官方 IDF v6.1 在同一块板上
 `esp_bt_controller_init` 约 2433 ms 返回 `ESP_OK`**，心跳持续。
 
-| 事实 | 推论 |
-| --- | --- |
-| 厂商栈 2.4 s 跑完全部 init（含 RF 校准）| **硬件/射频通路无问题** |
-| 我们几十秒仍停 `enter step 6` | **这是真挂死** |
-| 同板、同芯片、同射频 | ⇒ "需要真实 RF 前端"**被直接证伪**（第 3 次）|
+| 事实                                     | 推论                                          |
+| ---------------------------------------- | --------------------------------------------- |
+| 厂商栈 2.4 s 跑完全部 init（含 RF 校准） | **硬件/射频通路无问题**                       |
+| 我们几十秒仍停 `enter step 6`            | **这是真挂死**                                |
+| 同板、同芯片、同射频                     | ⇒ "需要真实 RF 前端"**被直接证伪**（第 3 次） |
 
 ⇒ 缺口在我们的**调用序列**，不在硬件。
 
@@ -7705,27 +7747,27 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 
 此前只解到 `0x108`，尾段**从未看过**。重定位表给出 23 个 `R_RISCV_CALL`：
 
-| 偏移 | 调用 | 偏移 | 调用 |
-| --- | --- | --- | --- |
-| `0x110` | `phy_open_i2c_xpd_new` | `0x17a` | `phy_freq_i2c_data_write` |
-| `0x114` | `phy_bb_agc_reg_update` | `0x186` | `phy_write_chan_freq` |
-| `0x118` | `phy_pbus_clear_reg` | `0x18e` | `phy_set_pbus_reg` |
-| `0x11a` | `phy_set_chan_freq_hw_init` | `0x196` | `phy_reg_init` |
-| `0x11c` | `phy_reg_update_new` | `0x19e` | `phy_reg_update_new` |
-| `0x122` | `phy_i2c_clk_sel` | `0x1a6` | `phy_bb_agc_reg_update` |
-| `0x124` | `phy_enable_agc` | `0x1b0` | `phy_set_chan_reg` |
-| `0x12a` | `phy_fe_txrx_reset` | `0x1c0` | `phy_set_txcap_reset` |
-| `0x130` | `phy_chip_set_chan` | `0x1cc` | `phy_bb_cbw_chan_cfg` |
-| `0x134` | `phy_adc_rate_set` | `0x1d4` | `phy_enable_agc` |
-| `0x13c` | `phy_i2cmst_reg_init` | `0x1dc` | **`phy_wait_freq_set_busy`** |
-| `0x148` | `phy_freq_reg_init` | `0x1e4` | **`phy_reset_ckgen`** |
-| `0x150` | `phy_fe_reg_init` | `0x134` | `phy_get_temp_init` |
-| `0x158` | `phy_fe_reg_update` | `0x150` | `phy_chip_set_chan_offset` |
-| `0x160` | `phy_pwdet_reg_init` | `0x15c` | `phy_rf_cal_data_backup_new` |
-| `0x168` | `phy_i2c_init2` | `0x164` | `phy_get_rf_cal_version` |
-| `0x174` | **`phy_rfcal_data_check_new`** | `0x184` | **`phy_bbpll_cal`** |
-| `0x194` | `phy_i2c_readReg` | `0x1a2` | `phy_en_hw_set_freq` |
-| `0x1ac` | `phy_force_txrx_off` | `0x1cc` | `phy_rf_cal_data_recovery_new` |
+| 偏移    | 调用                           | 偏移    | 调用                           |
+| ------- | ------------------------------ | ------- | ------------------------------ |
+| `0x110` | `phy_open_i2c_xpd_new`         | `0x17a` | `phy_freq_i2c_data_write`      |
+| `0x114` | `phy_bb_agc_reg_update`        | `0x186` | `phy_write_chan_freq`          |
+| `0x118` | `phy_pbus_clear_reg`           | `0x18e` | `phy_set_pbus_reg`             |
+| `0x11a` | `phy_set_chan_freq_hw_init`    | `0x196` | `phy_reg_init`                 |
+| `0x11c` | `phy_reg_update_new`           | `0x19e` | `phy_reg_update_new`           |
+| `0x122` | `phy_i2c_clk_sel`              | `0x1a6` | `phy_bb_agc_reg_update`        |
+| `0x124` | `phy_enable_agc`               | `0x1b0` | `phy_set_chan_reg`             |
+| `0x12a` | `phy_fe_txrx_reset`            | `0x1c0` | `phy_set_txcap_reset`          |
+| `0x130` | `phy_chip_set_chan`            | `0x1cc` | `phy_bb_cbw_chan_cfg`          |
+| `0x134` | `phy_adc_rate_set`             | `0x1d4` | `phy_enable_agc`               |
+| `0x13c` | `phy_i2cmst_reg_init`          | `0x1dc` | **`phy_wait_freq_set_busy`**   |
+| `0x148` | `phy_freq_reg_init`            | `0x1e4` | **`phy_reset_ckgen`**          |
+| `0x150` | `phy_fe_reg_init`              | `0x134` | `phy_get_temp_init`            |
+| `0x158` | `phy_fe_reg_update`            | `0x150` | `phy_chip_set_chan_offset`     |
+| `0x160` | `phy_pwdet_reg_init`           | `0x15c` | `phy_rf_cal_data_backup_new`   |
+| `0x168` | `phy_i2c_init2`                | `0x164` | `phy_get_rf_cal_version`       |
+| `0x174` | **`phy_rfcal_data_check_new`** | `0x184` | **`phy_bbpll_cal`**            |
+| `0x194` | `phy_i2c_readReg`              | `0x1a2` | `phy_en_hw_set_freq`           |
+| `0x1ac` | `phy_force_txrx_off`           | `0x1cc` | `phy_rf_cal_data_recovery_new` |
 
 **观察**：`phy_wait_freq_set_busy`（ROM `0x2f8012b0`）是序列里的**具名等待函数**，
 但**我们卡住的环在 `0x2f82647e`** —— 不同地址 ⇒ 卡点不在 `phy_wait_freq_set_busy` 内。
@@ -7765,10 +7807,10 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 
 ## 排除：`phy_pwdet_tone_start` 的调用者**不在任何归档里**（2026-11-19）
 
-| 检查 | 结果 |
-| --- | --- |
-| `libphy.a` 163 对象 grep 环字节模式 | **无命中**（环在 ROM）|
-| BT 控制器归档（`libble_app.a` / `libbtdm_common.a` / `libbredr_app.a`）重定位到 `phy_pwdet_tone_start` / `phy_pwdet_reg_init` / `phy_get_sar_sig_ref` / `phy_txtone_linear_pwr` | **无命中** |
+| 检查                                                                                                                                                                            | 结果                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `libphy.a` 163 对象 grep 环字节模式                                                                                                                                             | **无命中**（环在 ROM） |
+| BT 控制器归档（`libble_app.a` / `libbtdm_common.a` / `libbredr_app.a`）重定位到 `phy_pwdet_tone_start` / `phy_pwdet_reg_init` / `phy_get_sar_sig_ref` / `phy_txtone_linear_pwr` | **无命中**             |
 
 ⇒ 调用者**在 ROM 内部**（ROM 函数调 ROM 函数），不经过任何归档。
 
@@ -7792,15 +7834,16 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 
 `nm -u libphy.a`（全部 163 对象）：
 
-| 符号 | 是否被库内引用 |
-| --- | --- |
-| `phy_pwdet_reg_init` | ✅ 有 UND 引用（且它就在 `register_chipv7_phy` 的 23 调用里，`0x160`）|
-| `phy_pwdet_tone_start` | ❌ **无任何 UND 引用** |
-| `phy_get_sar_sig_ref` / `phy_txtone_linear_pwr` / `phy_get_fm_sar_dout` | ❌ 无 |
+| 符号                                                                    | 是否被库内引用                                                         |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `phy_pwdet_reg_init`                                                    | ✅ 有 UND 引用（且它就在 `register_chipv7_phy` 的 23 调用里，`0x160`） |
+| `phy_pwdet_tone_start`                                                  | ❌ **无任何 UND 引用**                                                 |
+| `phy_get_sar_sig_ref` / `phy_txtone_linear_pwr` / `phy_get_fm_sar_dout` | ❌ 无                                                                  |
 
 ⇒ **`phy_pwdet_tone_start` 纯粹由 ROM 内部调用**，libphy.a 与 BT 归档都不引用它。
 
 ⇒ 找调用者只剩两条路：
+
 1. 停滞时读**栈上返回地址**（`*(sp+12)`，该函数序言 `sw ra,12(sp)`）—— 一次读数；
 2. 全量 dump ROM 搜 `jal 0x2f80137c` —— 320 KB，经 128 B FIFO 不现实。
 
@@ -7813,14 +7856,15 @@ PC 采样落在环内只说明**采样时刻恰好在环里**，不说明环出�
 
 ### 更高价值的未做实验：校准模式
 
-| 路径 | 当前值 | IDF 默认 |
-| --- | --- | --- |
-| `components/wifi-blobs/src/init_probe.zig:86` | `register_phy(..., **2**)`（FULL）| `ESP_PHY_RF_CAL_PARTIAL = **0**`（`components/esp_phy/Kconfig:150`）|
+| 路径                                          | 当前值                             | IDF 默认                                                             |
+| --------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| `components/wifi-blobs/src/init_probe.zig:86` | `register_phy(..., **2**)`（FULL） | `ESP_PHY_RF_CAL_PARTIAL = **0**`（`components/esp_phy/Kconfig:150`） |
 
 **FULL 才走 PDET/TX tone 那几步**，而 CPU 正坐在 `phy_pwdet_tone_start` 里。
 ⇒ 我们可能在跑厂商在这块板上**从不跑**的标定路径；厂商 2433 ms 的 `ESP_OK` 也许只跑了 PARTIAL/NONE。
 
 **实验**：把 `2` 改成 `0`，其余不动，看 init 是否越过 step 6。
+
 - 越过 ⇒ 挂点在 FULL 路径；再选：(a) 与厂商对齐用 PARTIAL/NONE，(b) 补 FULL 需要的前置（`phy_open_i2c_xpd_new` / `phy_pwdet_sar2_init`）；
 - 仍挂 ⇒ 排除模式差异，回到调用者命名。
 
@@ -7833,17 +7877,17 @@ IDF 成功标定后会 `esp_phy_store_cal_data_to_nvs`；我们 NVS 桩恒返 NO
 
 在 `porting.zig::phyDomainEnable()` 补三写（此前 BLE 侧从未写过）：
 
-| 地址 | 写入 | 含义 |
-| --- | --- | --- |
-| `0x20109C00` | `0x00000100` | test_conf |
+| 地址             | 写入             | 含义                              |
+| ---------------- | ---------------- | --------------------------------- |
+| `0x20109C00`     | `0x00000100`     | test_conf                         |
 | **`0x20109C04`** | **`0x00201002`** | **模拟前端时钟（pwdet/adc/dac）** |
-| `0x20109C0C` | `0x64646400` | ICG 门控位图 |
+| `0x20109C0C`     | `0x64646400`     | ICG 门控位图                      |
 
 ### 结果：**卡点移动了**
 
-| 项 | 之前 | 之后 |
-| --- | --- | --- |
-| 停滞 PC | **`0x2f826484`**（`phy_pwdet_tone_start` 内的 `andi`）| **`0x2f828a64`**（第一个环的 `bgez`）|
+| 项      | 之前                                                   | 之后                                  |
+| ------- | ------------------------------------------------------ | ------------------------------------- |
+| 停滞 PC | **`0x2f826484`**（`phy_pwdet_tone_start` 内的 `andi`） | **`0x2f828a64`**（第一个环的 `bgez`） |
 
 ⇒ **这三写确实改变了 ROM 的行为路径** ⇒ 时钟配置是**相关变量**，不是无关背景。
 但 init **仍未越过 step 1 / 仍未完成**。
@@ -7857,11 +7901,11 @@ IDF 成功标定后会 `esp_phy_store_cal_data_to_nvs`；我们 NVS 桩恒返 NO
 
 ## 逐项实验 1：只开 `+0x04`（2026-11-19）
 
-| 配置 | 停滞 PC |
-| --- | --- |
-| 无三写（原始）| `0x2f826484`（`phy_pwdet_tone_start` 内 `andi`）|
-| 三写全开 | `0x2f828a64`（较早一个环的 `bgez`）|
-| **只开 `+0x04 = 0x00201002`** | **`0x2f8036bc` / `c8` / `cc` / `ce`** |
+| 配置                          | 停滞 PC                                          |
+| ----------------------------- | ------------------------------------------------ |
+| 无三写（原始）                | `0x2f826484`（`phy_pwdet_tone_start` 内 `andi`） |
+| 三写全开                      | `0x2f828a64`（较早一个环的 `bgez`）              |
+| **只开 `+0x04 = 0x00201002`** | **`0x2f8036bc` / `c8` / `cc` / `ce`**            |
 
 ### 判读
 
@@ -7872,10 +7916,10 @@ IDF 成功标定后会 `esp_phy_store_cal_data_to_nvs`；我们 NVS 桩恒返 NO
 
 两种可能，需区分：
 
-| 可能 | 含义 |
-| --- | --- |
+| 可能                                   | 含义                     |
+| -------------------------------------- | ------------------------ |
 | (a) 校准在**推进**，大量时间花在延时上 | 这是**正常**形状，只是慢 |
-| (b) 外层在**反复调用**「延时 + 检查」 | 校准重试环 |
+| (b) 外层在**反复调用**「延时 + 检查」  | 校准重试环               |
 
 区分办法：在 `0x2f8036b8` 返回点采样 `ra`，若 `ra` 只在极少数几个地址间轮换 ⇒ (b)；
 若覆盖很广 ⇒ (a)。
@@ -7890,12 +7934,12 @@ IDF 成功标定后会 `esp_phy_store_cal_data_to_nvs`；我们 NVS 桩恒返 NO
 
 只开 `+0x04` 的镜像，51 秒捕获的 PC 分布：
 
-| 次数 | PC | 属于 |
-| --- | --- | --- |
-| 24 | `0x2f828a64` | 环 A（`bgez`）|
-| 17 | `0x2f828a78` | 环 A（`andi`）|
-| 10 | `0x2f826484` | 环 B（`andi 7`）|
-| 6 | `0x2f8036cc` | 公共延时助手 |
+| 次数 | PC           | 属于             |
+| ---- | ------------ | ---------------- |
+| 24   | `0x2f828a64` | 环 A（`bgez`）   |
+| 17   | `0x2f828a78` | 环 A（`andi`）   |
+| 10   | `0x2f826484` | 环 B（`andi 7`） |
+| 6    | `0x2f8036cc` | 公共延时助手     |
 
 ⇒ CPU 在**环 A ↔ 环 B ↔ 助手**之间轮转 —— **不是卡在单一环里**。
 
@@ -7923,20 +7967,20 @@ IDF 成功标定后会 `esp_phy_store_cal_data_to_nvs`；我们 NVS 桩恒返 NO
 
 ## 直接写 vs OR：**行为相同**（2026-11-19）
 
-| 版本 | step | PC 分布（50 s）|
-| --- | --- | --- |
-| `+0x04` 用 OR | `enter step 1` | 24/17 环A、10 环B、6 助手 |
-| **三处直接写**（与 Wi-Fi 侧一致）| `enter step 1` | 23/13 环A、15 环B、8 助手 |
+| 版本                              | step           | PC 分布（50 s）           |
+| --------------------------------- | -------------- | ------------------------- |
+| `+0x04` 用 OR                     | `enter step 1` | 24/17 环A、10 环B、6 助手 |
+| **三处直接写**（与 Wi-Fi 侧一致） | `enter step 1` | 23/13 环A、15 环B、8 助手 |
 
 ⇒ **写法不是关键**；两种写法都是"两环 + 助手之间轮转"。
 
 ### 累计结论（本会话对时钟这条线的最终判定）
 
-| 假设 | 结果 |
-| --- | --- |
-| 缺 `+0x04` 模拟前端时钟 | 三写确实**改变卡点位置**，但**不解锁** |
-| OR 写法有害 | ❌ 直接写行为相同 ⇒ 写法无关 |
-| `+0x0C = 0x64646400` 有害 | ❌ 直接写（正确值）也不解锁 |
+| 假设                      | 结果                                   |
+| ------------------------- | -------------------------------------- |
+| 缺 `+0x04` 模拟前端时钟   | 三写确实**改变卡点位置**，但**不解锁** |
+| OR 写法有害               | ❌ 直接写行为相同 ⇒ 写法无关           |
+| `+0x0C = 0x64646400` 有害 | ❌ 直接写（正确值）也不解锁            |
 
 ⇒ **时钟配置已被穷尽**：它是相关变量（会影响 ROM 走哪条路径），但**不是**解锁条件。
 
@@ -7963,10 +8007,10 @@ dump `g_phyFuns = 0x2f07f944` 的**函数指针表**（`0x2f07f000..0x2f07f944`�
 
 ⇒ 看到 `bt bringup: enter step 1 mempool` 意味着：
 
-| 事实 | 含义 |
-| --- | --- |
+| 事实                | 含义                            |
+| ------------------- | ------------------------------- |
 | step 1 的日志已出现 | **`prepareMempool()` 已经返回** |
-| step 2 的日志未出现 | **`btdmLogInit()` 正在挂** |
+| step 2 的日志未出现 | **`btdmLogInit()` 正在挂**      |
 
 ⇒ **当前挂点是 `btdmLogInit()`**，不是 step 1 本身。
 
@@ -7987,20 +8031,20 @@ README 早前记录"卡在 init step 6"是**另一配置/另一轮的结论**。
 
 上一节说"挂点是 `btdmLogInit()`"——**错误**，已撤回。真实语义：
 
-| 函数 | 打印时机 |
-| --- | --- |
-| `enter(n, what)` | **调用之前**（`bringup.zig:95-97`）|
-| `step(n, what, expr)` | **仅当 `rc != 0`**（`bringup.zig:100-108`）|
+| 函数                  | 打印时机                                    |
+| --------------------- | ------------------------------------------- |
+| `enter(n, what)`      | **调用之前**（`bringup.zig:95-97`）         |
+| `step(n, what, expr)` | **仅当 `rc != 0`**（`bringup.zig:100-108`） |
 
 日志 `bt bringup: enter step 1 mempool` 来自 `enter(1, ...)`，**且没有 `enter step 2`**
 ⇒ 程序停在 **`prepareMempool()` 内部**（`porting.zig:535` → `elemMempoolInit`）。
 
 ### 但这与 PC 样本**矛盾**
 
-| 证据 | 指向 |
-| --- | --- |
-| 日志停在 `enter step 1` | 挂在 `prepareMempool`（**纯软件**：seed + elemCalc）|
-| PC 样本在 ROM `0x2f828a64` / `0x2f826484` / `0x2f8036cc` | 挂在 **PHY ROM 代码** |
+| 证据                                                     | 指向                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------- |
+| 日志停在 `enter step 1`                                  | 挂在 `prepareMempool`（**纯软件**：seed + elemCalc） |
+| PC 样本在 ROM `0x2f828a64` / `0x2f826484` / `0x2f8036cc` | 挂在 **PHY ROM 代码**                                |
 
 两者**不能同时为真**。可能的解释：
 
@@ -8028,11 +8072,11 @@ bt mempool: bt bbbbbbbbbt lp:bps n=512 pc=0x2f828a78 ...
 
 ### 结论
 
-| 判断 | 状态 |
-| --- | --- |
-| "挂在 `prepareMempool`" | ❌ **错** —— 它已返回 |
-| "日志停在 step 1 = 只走到 step 1" | ❌ **错** —— 日志在丢/被截断 |
-| **CPU 在 PHY ROM 代码里** | ✅ **对** —— PC 样本（`0x2f828a78` 等）是可信的 |
+| 判断                              | 状态                                            |
+| --------------------------------- | ----------------------------------------------- |
+| "挂在 `prepareMempool`"           | ❌ **错** —— 它已返回                           |
+| "日志停在 step 1 = 只走到 step 1" | ❌ **错** —— 日志在丢/被截断                    |
+| **CPU 在 PHY ROM 代码里**         | ✅ **对** —— PC 样本（`0x2f828a78` 等）是可信的 |
 
 ⇒ **日志不能用来判进度**；PC 采样与寄存器读数是可信的观测。
 
@@ -8052,12 +8096,12 @@ bt mempool: bt bbbbbbbbbt lp:bps n=512 pc=0x2f828a78 ...
 
 此前三次推断（step 6 / step 2 / step 1）**全部作废**。用代码与证据交叉排除：
 
-| 候选 | 证伪依据 |
-| --- | --- |
-| step 1 `prepareMempool` | ❌ 它内部的 `bt mempool: need … / cap …` 行**已打印** |
-| step 2 `btdmLogInit` | ❌ `porting.zig:20-22` 就是 `return 0;`，不可能挂 |
-| step 3/4 | ❌ 同样是空桩 |
-| **step 5 之后的 PHY 块** | ✅ **PC 样本全在 PHY ROM 代码里** |
+| 候选                     | 证伪依据                                              |
+| ------------------------ | ----------------------------------------------------- |
+| step 1 `prepareMempool`  | ❌ 它内部的 `bt mempool: need … / cap …` 行**已打印** |
+| step 2 `btdmLogInit`     | ❌ `porting.zig:20-22` 就是 `return 0;`，不可能挂     |
+| step 3/4                 | ❌ 同样是空桩                                         |
+| **step 5 之后的 PHY 块** | ✅ **PC 样本全在 PHY ROM 代码里**                     |
 
 `bringup.zig:209-212`：
 
@@ -8078,11 +8122,11 @@ if (!phy_before_clocks) {
 
 ### 与 PC 样本完全一致
 
-| 证据 | 指向 |
-| --- | --- |
-| PC 在 `0x2f828a64/78`、`0x2f826484`、`0x2f8036cc` | PHY ROM 代码 |
-| 这几个环的退出条件实测满足 | 环会退出 ⇒ 外层反复重入 |
-| 时钟三写改变卡点位置但不解锁 | PHY 路径内确实在等某种条件 |
+| 证据                                              | 指向                       |
+| ------------------------------------------------- | -------------------------- |
+| PC 在 `0x2f828a64/78`、`0x2f826484`、`0x2f8036cc` | PHY ROM 代码               |
+| 这几个环的退出条件实测满足                        | 环会退出 ⇒ 外层反复重入    |
+| 时钟三写改变卡点位置但不解锁                      | PHY 路径内确实在等某种条件 |
 
 ⇒ 结论：**PHY 校准在 PHY 块内反复重试**（不是 step 1/2/6 的任何"步骤卡住"）。
 
@@ -8099,11 +8143,11 @@ if (!phy_before_clocks) {
 
 这一条同时解释三件事：
 
-| 现象 | 解释 |
-| --- | --- |
-| 只见 `enter step 1` | FIFO 只容得下第一行 |
-| PC 样本在 PHY 校准环 | `prepareMempool` 是纯 Zig 软件函数，**物理上产生不了 `0x2f82xxxx` 的 PC** |
-| `bringup.zig:95` 的历史记录"挂 `r_btdm_task_init` 时日志停在 step 5 之后" | 同为日志被淹 |
+| 现象                                                                      | 解释                                                                      |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 只见 `enter step 1`                                                       | FIFO 只容得下第一行                                                       |
+| PC 样本在 PHY 校准环                                                      | `prepareMempool` 是纯 Zig 软件函数，**物理上产生不了 `0x2f82xxxx` 的 PC** |
+| `bringup.zig:95` 的历史记录"挂 `r_btdm_task_init` 时日志停在 step 5 之后" | 同为日志被淹                                                              |
 
 ⇒ **"日志停在 step N"永远不能用来判挂点**，这是本项目反复踩到的坑。
 
@@ -8166,12 +8210,12 @@ bt bringup: enter step 5 btdm_lp_enable_clock
 
 ### 结论（本会话最终）
 
-| 项 | 判定 |
-| --- | --- |
-| 日志丢失原因 | ✅ **UART TX FIFO 溢出**（`hw.rawWrite` 满则放弃）|
-| 修复方式 | `enter()` 里等 `TXFIFO_CNT ≤ 8` 再返回 |
-| **挂点** | ✅ **`enter step 5` 之后** —— 即 `bringup.zig:209-212` 的 **PHY 块** |
-| 与 PC 样本一致性 | ✅ 完全一致（PHY ROM `0x2f828a64` / `0x2f826484` / `0x2f8036cc`）|
+| 项               | 判定                                                                 |
+| ---------------- | -------------------------------------------------------------------- |
+| 日志丢失原因     | ✅ **UART TX FIFO 溢出**（`hw.rawWrite` 满则放弃）                   |
+| 修复方式         | `enter()` 里等 `TXFIFO_CNT ≤ 8` 再返回                               |
+| **挂点**         | ✅ **`enter step 5` 之后** —— 即 `bringup.zig:209-212` 的 **PHY 块** |
+| 与 PC 样本一致性 | ✅ 完全一致（PHY ROM `0x2f828a64` / `0x2f826484` / `0x2f8036cc`）    |
 
 ### 为什么之前的"盲等"没生效
 
@@ -8180,11 +8224,11 @@ bt bringup: enter step 5 btdm_lp_enable_clock
 
 ### 因此所有"步骤推断"的最终答案
 
-| 曾经的结论 | 现在 |
-| --- | --- |
-| 卡在 step 6 | ❌ |
-| 卡在 step 2 `btdmLogInit` | ❌ |
-| 卡在 step 1 `prepareMempool` | ❌ |
+| 曾经的结论                    | 现在        |
+| ----------------------------- | ----------- |
+| 卡在 step 6                   | ❌          |
+| 卡在 step 2 `btdmLogInit`     | ❌          |
+| 卡在 step 1 `prepareMempool`  | ❌          |
 | **卡在 step 5 之后的 PHY 块** | ✅ **确认** |
 
 ⇒ 与"PHY 校准在 `phy_pwdet_tone_start` 一族里反复重入"的证据**完全自洽**。
@@ -8200,12 +8244,13 @@ bt bringup: enter step 5 btdm_lp_enable_clock
 
 dump `0x2f07f800–0x2f07f948`（21 行）后：
 
-| 观察 | 值 |
-| --- | --- |
-| 含 `0x2f80xxxx` 的槽 | **0 个** |
-| 实际内容 | 多为 `0`，少数 `0x2f84e2d0` |
+| 观察                 | 值                          |
+| -------------------- | --------------------------- |
+| 含 `0x2f80xxxx` 的槽 | **0 个**                    |
+| 实际内容             | 多为 `0`，少数 `0x2f84e2d0` |
 
 **样例**：
+
 ```
 2f07f800:0,0,0,0
 2f07f810:0,2f84e2d0,0,0
@@ -8235,11 +8280,11 @@ bt bringup: enter step 52 init_phy      ← **出现**
 
 ### 判定
 
-| 函数 | 状态 |
-| --- | --- |
-| `btdmLpEnableClock()`（step 5 表达式）| ✅ 已返回（`enter step 52` 出现）|
-| `porting.phyDomainEnable()` | ✅ 已返回 |
-| **`initPhy()`** | ❌ **挂在这里** |
+| 函数                                   | 状态                              |
+| -------------------------------------- | --------------------------------- |
+| `btdmLpEnableClock()`（step 5 表达式） | ✅ 已返回（`enter step 52` 出现） |
+| `porting.phyDomainEnable()`            | ✅ 已返回                         |
+| **`initPhy()`**                        | ❌ **挂在这里**                   |
 
 `enter(51)` 本身未出现 —— 因为 `phyDomainEnable()` 自己会打一行日志，
 两行之间没有排空 ⇒ 仍是同类丢弃；但 `enter(52)` 出现**足以证明前两者都已返回**。
@@ -8294,11 +8339,11 @@ step 5 → phyDomainEnable ✓ → initPhy ✗
 
 ### 判定
 
-| 假设 | 结果 |
-| --- | --- |
-| `0x2f07f944` 是表基址 | ❌ 它是**变量地址** |
-| 变量内容 = 表基址 | ❌ 内容 `0x2f00bd7e` 落在**代码段** |
-| `g_phyFuns` 是**单个函数指针** | ✅ 最可能 |
+| 假设                           | 结果                                |
+| ------------------------------ | ----------------------------------- |
+| `0x2f07f944` 是表基址          | ❌ 它是**变量地址**                 |
+| 变量内容 = 表基址              | ❌ 内容 `0x2f00bd7e` 落在**代码段** |
+| `g_phyFuns` 是**单个函数指针** | ✅ 最可能                           |
 
 ⇒ `0x2f07f944` 存的是**一个函数地址**，不是函数指针数组。
 ⇒ "用表槽负偏移反推 `jalr` 的 imm"这条路的前置假设**不成立**。
@@ -8319,10 +8364,10 @@ step 5 → phyDomainEnable ✓ → initPhy ✗
 
 ### 对照实验
 
-| 构建 | `esp_phy_enable` 来源 | 结果 |
-| --- | --- | --- |
-| **`WITH_PHY=1`** | 我们自己链进去的 IDF C（`0x40000744`）| **挂在 PHY 块**（`initPhy()` 内，PDET 族反复重入）|
-| **默认（不带该标志）** | **ROM 的 `0x2f00e756`** | ✅ **PHY enabled → 进到 step 6** |
+| 构建                   | `esp_phy_enable` 来源                  | 结果                                               |
+| ---------------------- | -------------------------------------- | -------------------------------------------------- |
+| **`WITH_PHY=1`**       | 我们自己链进去的 IDF C（`0x40000744`） | **挂在 PHY 块**（`initPhy()` 内，PDET 族反复重入） |
+| **默认（不带该标志）** | **ROM 的 `0x2f00e756`**                | ✅ **PHY enabled → 进到 step 6**                   |
 
 默认构建日志：
 
@@ -8366,6 +8411,7 @@ bt bringup: enter step 6 r_btdm_task_init     ← 最后一行
 ```
 
 PC 样本（仅 2 条，采样极少）：
+
 - `0x40065cc8` → 反查 **`hw.enableInterrupts`**（`hw.zig:300`）⇒ **启动早期**，不是挂点；
 - `0x2f8036cc` → ROM 延时助手。
 
@@ -8381,12 +8427,12 @@ PC 样本（仅 2 条，采样极少）：
 
 ### 交接（最终）
 
-| 项 | 状态 |
-| --- | --- |
-| 默认构建 | ✅ **基线**（PHY 正常，进到 step 6）|
-| `WITH_PHY=1` | ⚠️ 会挂在 PHY，除非专门调查否则别用 |
-| 日志通道 | ✅ 已修（`enter()` 的 TXFIFO 排空等待）|
-| 当前挂点 | step 6 `r_btdm_task_init`（**采样不足，未定性**）|
+| 项           | 状态                                              |
+| ------------ | ------------------------------------------------- |
+| 默认构建     | ✅ **基线**（PHY 正常，进到 step 6）              |
+| `WITH_PHY=1` | ⚠️ 会挂在 PHY，除非专门调查否则别用               |
+| 日志通道     | ✅ 已修（`enter()` 的 TXFIFO 排空等待）           |
+| 当前挂点     | step 6 `r_btdm_task_init`（**采样不足，未定性**） |
 
 ## step 6 的 OSAL 轨迹（默认构建，2026-11-19）
 
@@ -8400,10 +8446,10 @@ osal> event
 
 ### 判读
 
-| 观察 | 含义 |
-| --- | --- |
-| `osal> mutex` 出现 | `mutexPend` **被调用**（进入 step 6 内部）|
-| 之后有 `osal> event` | 已越过 mutex，进入 event 操作 |
+| 观察                            | 含义                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `osal> mutex` 出现              | `mutexPend` **被调用**（进入 step 6 内部）                                             |
+| 之后有 `osal> event`            | 已越过 mutex，进入 event 操作                                                          |
 | **没有 `mutex_release` 里程碑** | `osal.zig:427` 注释：它是 `r_btdm_task_init` 的**最后一次 OSAL 调用** ⇒ **函数没跑完** |
 
 ⇒ **挂在 `mutexPend` 之后的 event 操作里**（或 event 之后）。
@@ -8437,11 +8483,11 @@ step：enter step 52 → enter step 6
 
 样本数**没有增加** ⇒ **不是门控问题**，而是 **step 6 阶段中断本身不再触发**。
 
-| 可能 | 说明 |
-| --- | --- |
+| 可能                 | 说明                               |
+| -------------------- | ---------------------------------- |
 | 归档在临界区内关中断 | `mstatus.MIE = 0` ⇒ 定时中断进不来 |
-| 定时器被重编程/停止 | TIMG0 T0 不再产生中断 |
-| CPU 在 `wfi` 等待 | 无中断 ⇒ 永久睡眠 |
+| 定时器被重编程/停止  | TIMG0 T0 不再产生中断              |
+| CPU 在 `wfi` 等待    | 无中断 ⇒ 永久睡眠                  |
 
 ⇒ 这与"挂在 `mutexPend` 之后的 event 操作"一致：**等一个永远不会到来的事件**，
 且**中断被关** ⇒ 连采样都进不来。
@@ -8451,11 +8497,11 @@ step：enter step 52 → enter step 6
 读 **`mstatus` 的 MIE 位**与 **`TIMG0 T0` 的中断使能/计数**，
 确认是"关中断"还是"定时器停"：
 
-| 读数 | 结论 |
-| --- | --- |
-| `mstatus.MIE = 0` | 归档在临界区里死等 ⇒ 找那个临界区的配对 |
-| `MIE = 1` 但定时器计数不走 | 定时器被重编程 |
-| 两者都正常却无样本 | 中断被更高优先级屏蔽（CLIC 层级）|
+| 读数                       | 结论                                    |
+| -------------------------- | --------------------------------------- |
+| `mstatus.MIE = 0`          | 归档在临界区里死等 ⇒ 找那个临界区的配对 |
+| `MIE = 1` 但定时器计数不走 | 定时器被重编程                          |
+| 两者都正常却无样本         | 中断被更高优先级屏蔽（CLIC 层级）       |
 
 ## 修正：轨迹是 `mutexPend` → `eventInit`×2（2026-11-19）
 
@@ -8470,11 +8516,11 @@ Mosal> eventInit
 
 ### 更精确的判读
 
-| 事实 | 含义 |
-| --- | --- |
-| `mutexPend tmo=4294` | 一次 **有超时**的 mutex 等待（4294 单位）|
-| `eventInit` × 2 | 随后**两次事件初始化** |
-| 之后无任何输出 | 挂在这两步之后 |
+| 事实                 | 含义                                      |
+| -------------------- | ----------------------------------------- |
+| `mutexPend tmo=4294` | 一次 **有超时**的 mutex 等待（4294 单位） |
+| `eventInit` × 2      | 随后**两次事件初始化**                    |
+| 之后无任何输出       | 挂在这两步之后                            |
 
 ⇒ 之前"挂在 event 操作里"的说法**不成立**（"event" 可能是 eventInit/eventPost/eventGroup 任一）。
 正确表述：**`mutexPend(tmo=4294)` 之后执行了两次 `eventInit`，随后停滞**。
@@ -8488,11 +8534,11 @@ Mosal> eventInit
 
 紧跟 `enter(6, ...)` 之后打印：
 
-| 寄存器 | 判据 |
-| --- | --- |
+| 寄存器                             | 判据                         |
+| ---------------------------------- | ---------------------------- |
 | `mstatus.MIE`(bit3) / `MPIE`(bit7) | `MIE=0` ⇒ 进了未退出的临界区 |
-| `INT_ENA_TIMERS(+0x70)` bit0 | `=0` ⇒ 定时器被禁用/重配 |
-| `INT_RAW` | 无挂起 ⇒ 中断源不产生 |
+| `INT_ENA_TIMERS(+0x70)` bit0       | `=0` ⇒ 定时器被禁用/重配     |
+| `INT_RAW`                          | 无挂起 ⇒ 中断源不产生        |
 
 三种结果对应三种完全不同的修法（我们 OSAL 临界区 / 归档重配 TIMG0 / 更外层屏蔽）。
 
@@ -8516,12 +8562,12 @@ M4   64 0x2f01aea8
 
 ### 因此
 
-| 假设 | 结果 |
-| --- | --- |
-| 中断被屏蔽（临界区） | ❌ **证伪** —— 日志在继续 |
-| 定时器停止 | ❌ 证伪（同上）|
-| handler 被归档接管 | 待查（但日志能出说明 trap/日志路径至少部分可用）|
-| **采样器路径本身有问题** | ✅ **最可能** |
+| 假设                     | 结果                                             |
+| ------------------------ | ------------------------------------------------ |
+| 中断被屏蔽（临界区）     | ❌ **证伪** —— 日志在继续                        |
+| 定时器停止               | ❌ 证伪（同上）                                  |
+| handler 被归档接管       | 待查（但日志能出说明 trap/日志路径至少部分可用） |
+| **采样器路径本身有问题** | ✅ **最可能**                                    |
 
 ⇒ "样本只有 2 条"是**采样式代码路径**的问题，不是中断问题。
 （`trap.zig:394` 附近有 `return false` 早退在 `input == 25` 块**之前**
@@ -8559,12 +8605,12 @@ bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如
 
 ### 已证伪的 step 6 假设清单
 
-| 假设 | 结果 |
-| --- | --- |
-| `WITH_PHY=1` 路径 | ❌ 那是更早的 PHY 块，默认构建已过 |
+| 假设                  | 结果                                |
+| --------------------- | ----------------------------------- |
+| `WITH_PHY=1` 路径     | ❌ 那是更早的 PHY 块，默认构建已过  |
 | 中断被屏蔽 / 定时器停 | ❌ step 6 之后日志继续 89 行 ⇒ 活着 |
-| `recordPc` 门控 | ❌ 解除后样本数不变 |
-| 锚点未发布 | ❌ 本行即可证伪（oracle 亦为 0）|
+| `recordPc` 门控       | ❌ 解除后样本数不变                 |
+| 锚点未发布            | ❌ 本行即可证伪（oracle 亦为 0）    |
 
 ### 剩余方向
 
@@ -8579,25 +8625,25 @@ bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如
 
 ### 任务体部分（偏移 0x28–0x72）
 
-| 偏移 | 调用 | 含义 |
-| --- | --- | --- |
-| `0x28` | `wr_btdm_osal_eventq_is_empty` | 队列是否空 |
-| `0x3c` | `e_btdm_lp_modem_clock_set` | 调制解调器时钟 |
-| **`0x46`** | **`wr_btdm_osal_get_time_forever`** | **取"永远"超时值** |
-| **`0x54`** | **`wr_btdm_osal_eventq_get`** | **在事件队列上等**（超时= FOREVER）|
-| `0x60` | `e_btdm_lp_modem_clock_set` | 时钟 |
-| `0x68` | `r_sym_bt_TCHk4TWcbxhI2YzTmly2` | 派生符号 |
-| `0x72` | `wr_btdm_osal_event_run` | 处理事件 |
+| 偏移       | 调用                                | 含义                                |
+| ---------- | ----------------------------------- | ----------------------------------- |
+| `0x28`     | `wr_btdm_osal_eventq_is_empty`      | 队列是否空                          |
+| `0x3c`     | `e_btdm_lp_modem_clock_set`         | 调制解调器时钟                      |
+| **`0x46`** | **`wr_btdm_osal_get_time_forever`** | **取"永远"超时值**                  |
+| **`0x54`** | **`wr_btdm_osal_eventq_get`**       | **在事件队列上等**（超时= FOREVER） |
+| `0x60`     | `e_btdm_lp_modem_clock_set`         | 时钟                                |
+| `0x68`     | `r_sym_bt_TCHk4TWcbxhI2YzTmly2`     | 派生符号                            |
+| `0x72`     | `wr_btdm_osal_event_run`            | 处理事件                            |
 
 ### 初始化部分（另一对象）
 
-| 偏移 | 调用 |
-| --- | --- |
+| 偏移          | 调用                         |
+| ------------- | ---------------------------- |
 | `0x1c`/`0x22` | `wr_btdm_osal_eventq_put` ×2 |
-| `0x2e` | `wr_btdm_osal_malloc` |
-| `0x42`/`0x56` | `memset` / `memcpy` |
-| `0x72` | `wr_btdm_osal_mutex_init` |
-| `0x84` | `wr_btdm_osal_eventq_init` |
+| `0x2e`        | `wr_btdm_osal_malloc`        |
+| `0x42`/`0x56` | `memset` / `memcpy`          |
+| `0x72`        | `wr_btdm_osal_mutex_init`    |
+| `0x84`        | `wr_btdm_osal_eventq_init`   |
 
 ⇒ 与实测轨迹 **`mutexPend tmo=4294` → `eventInit` ×2** 完全吻合。
 
@@ -8620,11 +8666,11 @@ bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如
 
 上一节把两张表混在一起，结论**收窄**：
 
-| 事实 | 影响 |
-| --- | --- |
-| 重定位表里 `r_btdm_task_init` 调的是 **`mutex_init`** 与 **`eventq_init`** | 而实测轨迹是 **`mutexPend`** 与 **`eventInit`** —— **四个不同的 API** |
-| ⇒ `mutexPend`/`eventInit` **不在** `r_btdm_task_init` 体内 | 它们在 `r_sym_bt_*` 归档内部函数里 |
-| `get_time_forever` + `eventq_get` 在**同一张表**里（`0x46`/`0x54`）| 更像**任务体**（BT 任务本就该在事件队列上等），**不能**据此说"卡在 eventq_get" |
+| 事实                                                                       | 影响                                                                           |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 重定位表里 `r_btdm_task_init` 调的是 **`mutex_init`** 与 **`eventq_init`** | 而实测轨迹是 **`mutexPend`** 与 **`eventInit`** —— **四个不同的 API**          |
+| ⇒ `mutexPend`/`eventInit` **不在** `r_btdm_task_init` 体内                 | 它们在 `r_sym_bt_*` 归档内部函数里                                             |
+| `get_time_forever` + `eventq_get` 在**同一张表**里（`0x46`/`0x54`）        | 更像**任务体**（BT 任务本就该在事件队列上等），**不能**据此说"卡在 eventq_get" |
 
 ⇒ README 上一节的"在 `eventq_get(FOREVER)` 上无限等待"应视为**待定**，不是结论。
 
@@ -8633,6 +8679,7 @@ bt bringup: Xpuq 锚点 P=0x00000000 (init 前为 0 是正常的，oracle 亦如
 `libbtdm_common.a` 中含 `wr_btdm_osal_mutex_pend` 引用的对象：**`15.o`** 与 **`21.o`**。
 
 `21.o` 导出的符号：
+
 ```
 T r_btdm_task_deinit
 T r_btdm_task_disable
@@ -8648,12 +8695,12 @@ T r_btdm_task_init
 
 ### 证据链
 
-| 检查 | 结果 |
-| --- | --- |
-| `libbtdm_common.a` 中引用 `r_btdm_task_init` 的对象 | **无**（`21.o` 只有分节名自引用）|
-| `libble_app.a` 中对 `r_btdm_task_init` 的未定义引用 | **0** |
-| 该函数的函数体（`21.o` 重定位表） | `eventq_is_empty` → `get_time_forever` → **`eventq_get`** → `event_run` |
-| 归档内没有任何地方把它注册为任务 | ⇒ **它由我们直接调用** |
+| 检查                                                | 结果                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------- |
+| `libbtdm_common.a` 中引用 `r_btdm_task_init` 的对象 | **无**（`21.o` 只有分节名自引用）                                       |
+| `libble_app.a` 中对 `r_btdm_task_init` 的未定义引用 | **0**                                                                   |
+| 该函数的函数体（`21.o` 重定位表）                   | `eventq_is_empty` → `get_time_forever` → **`eventq_get`** → `event_run` |
+| 归档内没有任何地方把它注册为任务                    | ⇒ **它由我们直接调用**                                                  |
 
 ### 结论
 
@@ -8668,12 +8715,12 @@ rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) e
 
 ### 这与其它已证事实完全一致
 
-| 事实 | 解释 |
-| --- | --- |
-| `osal.taskCreate` 入口日志 **0 次** | 我们从未创建任务，而是直接跑任务体 |
-| 轨迹 `mutexPend` → `eventInit ×2` | 任务体进入循环前的初始化（在 `r_sym_bt_*` 内部）|
+| 事实                                                    | 解释                                                            |
+| ------------------------------------------------------- | --------------------------------------------------------------- |
+| `osal.taskCreate` 入口日志 **0 次**                     | 我们从未创建任务，而是直接跑任务体                              |
+| 轨迹 `mutexPend` → `eventInit ×2`                       | 任务体进入循环前的初始化（在 `r_sym_bt_*` 内部）                |
 | `eventq_get` 在调度器未启动时**自旋 200 万次返回 null** | 所以不是永久阻塞，而是**反复空转** ⇒ 与"两环轮转"的采样分布一致 |
-| step 6 之后仍有日志（89 行） | 那些是 `r_btdm_task_init` **之前**或**异步**打的 |
+| step 6 之后仍有日志（89 行）                            | 那些是 `r_btdm_task_init` **之前**或**异步**打的                |
 
 ### 修法方向（两条，需确认 IDF 原意）
 
@@ -8687,13 +8734,13 @@ rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) e
 
 `libbtdm_common.a:21.o` 的 `r_btdm_task_enable` 重定位序列：
 
-| 偏移 | 调用 |
-| --- | --- |
-| `0x14` | `wr_btdm_osal_get_time_forever` |
+| 偏移       | 调用                                                              |
+| ---------- | ----------------------------------------------------------------- |
+| `0x14`     | `wr_btdm_osal_get_time_forever`                                   |
 | **`0x22`** | **`wr_btdm_osal_mutex_pend`** ← **实测轨迹 `mutexPend tmo=4294`** |
-| `0x3a` | `r_sym_bt_3DcjgYC1ikQrP7jNyXGR` |
-| `0x4c` | `wr_btdm_osal_mutex_release` |
-| `0x54` | `r_btdm_task_disable` |
+| `0x3a`     | `r_sym_bt_3DcjgYC1ikQrP7jNyXGR`                                   |
+| `0x4c`     | `wr_btdm_osal_mutex_release`                                      |
+| `0x54`     | `r_btdm_task_disable`                                             |
 
 ⇒ `get_time_forever` 紧跟 `mutex_pend` = **拿"永远"当超时去 pend 一个互斥量**
 = 实测轨迹的 `mutexPend tmo=4294`（`4294` 是"永远"的编码值）。
@@ -8707,10 +8754,10 @@ rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) e
 
 ### 因此挂因是"互斥量从未被释放"
 
-| 可能 | 检查 |
-| --- | --- |
-| `mutex_init` 后互斥量处于**已锁定**状态（初始计数 0）| 看我们 `wr_btdm_osal_mutex_init` 的实现：是否把可用计数初始化为 **1** |
-| 另一线程本应 `mutex_release` 但那份代码没跑 | 需要任务存在 ⇒ 与 `taskCreate 0 次` 的硬事实呼应 |
+| 可能                                                  | 检查                                                                  |
+| ----------------------------------------------------- | --------------------------------------------------------------------- |
+| `mutex_init` 后互斥量处于**已锁定**状态（初始计数 0） | 看我们 `wr_btdm_osal_mutex_init` 的实现：是否把可用计数初始化为 **1** |
+| 另一线程本应 `mutex_release` 但那份代码没跑           | 需要任务存在 ⇒ 与 `taskCreate 0 次` 的硬事实呼应                      |
 
 ⇒ **最可能是我们的 `mutex_init` 语义错**（POSIX 互斥量初始化后是**可用**的，
 而"二进制信号量"型实现可能初始化为**不可用**）。
@@ -8718,6 +8765,7 @@ rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) e
 ### 下一步（一行代码级别）
 
 检查 `osal` 层 `wr_btdm_osal_mutex_init` 的实现：
+
 - 若它把计数初始化为 **0** ⇒ 第一次 `mutex_pend` 必然永久阻塞 ⇒ **这就是根因**；
 - 修法：初始化为 **1**（可用）。
 
@@ -8744,24 +8792,24 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
 
 ### 判定
 
-| 假设 | 结果 |
-| --- | --- |
-| `mutex_init` 初始计数为 0 | ❌ **错** —— 它设 `locked = false`（可用）|
+| 假设                                | 结果                                             |
+| ----------------------------------- | ------------------------------------------------ |
+| `mutex_init` 初始计数为 0           | ❌ **错** —— 它设 `locked = false`（可用）       |
 | **`mutexPend(FOREVER)` 无法真阻塞** | ✅ **确认** —— 忙等 2 000 000 次后返回 `TIMEOUT` |
-| 归档对 `TIMEOUT` 的处理 | 日志明写"**归档会重试**" |
+| 归档对 `TIMEOUT` 的处理             | 日志明写"**归档会重试**"                         |
 
 ⇒ **形态 = 无限重试环**：
 归档 `pend` → 我方忙等耗尽 → 返 `TIMEOUT` → 归档重试 → ……
 
 ### 这解释了本会话的**全部**观测
 
-| 观测 | 解释 |
-| --- | --- |
-| PC 在两环 + 助手间轮转 | 每次重试都跑一遍相同的代码路径 |
-| `osal.taskCreate` **0 次** | 单线程移植，从未建任务 |
-| `mutexPend tmo=4294` 反复出现 | 就是重试 |
-| 中断/日志仍正常 | 不是中断问题 |
-| step 7+ 从未出现 | `r_btdm_task_init` 的事件循环永不返回 |
+| 观测                          | 解释                                  |
+| ----------------------------- | ------------------------------------- |
+| PC 在两环 + 助手间轮转        | 每次重试都跑一遍相同的代码路径        |
+| `osal.taskCreate` **0 次**    | 单线程移植，从未建任务                |
+| `mutexPend tmo=4294` 反复出现 | 就是重试                              |
+| 中断/日志仍正常               | 不是中断问题                          |
+| step 7+ 从未出现              | `r_btdm_task_init` 的事件循环永不返回 |
 
 ### 结论
 
@@ -8772,11 +8820,11 @@ BT controller 归档**要求真实的"阻塞 + 任务切换"**（`portMAX_DELAY`
 
 ### 修法方向
 
-| 选项 | 代价 |
-| --- | --- |
-| **实现最小任务调度**（`taskCreate` + 上下文切换 + 真阻塞）| 大，但这是**唯一符合归档前提**的路 |
-| 在 `mutexPend` 里**协作式让出**（需有任务）| 依赖上一行 |
-| 让归档认为锁可用（把持锁方"假释放"）| 治标，且会破坏互斥语义 |
+| 选项                                                       | 代价                               |
+| ---------------------------------------------------------- | ---------------------------------- |
+| **实现最小任务调度**（`taskCreate` + 上下文切换 + 真阻塞） | 大，但这是**唯一符合归档前提**的路 |
+| 在 `mutexPend` 里**协作式让出**（需有任务）                | 依赖上一行                         |
+| 让归档认为锁可用（把持锁方"假释放"）                       | 治标，且会破坏互斥语义             |
 
 ⇒ 与 `WITH_PHY` 教训**完全同构**：问题在**我们自己实现的层**，不在厂商代码或硬件。
 
@@ -8786,14 +8834,14 @@ BT controller 归档**要求真实的"阻塞 + 任务切换"**（`portMAX_DELAY`
 
 ### 证伪依据（两条，都来自同一份日志）
 
-| 检查 | 结果 | 含义 |
-| --- | --- | --- |
-| `grep -c "忙等耗尽"` | **0** | 忙等耗尽分支（`osal.zig:404`）**从未执行** |
-| `mutexPend` 出现次数 | **1 次**（非反复） | **不存在重试环** |
+| 检查                 | 结果               | 含义                                       |
+| -------------------- | ------------------ | ------------------------------------------ |
+| `grep -c "忙等耗尽"` | **0**              | 忙等耗尽分支（`osal.zig:404`）**从未执行** |
+| `mutexPend` 出现次数 | **1 次**（非反复） | **不存在重试环**                           |
 
 ⇒ 锁**首次即拿到**（fresh mutex `locked=false`），没有进入忙等，更没有重试。
 ⇒ 轨迹 `mutexPend → eventInit×2 → 静默` 的**静默点在 `eventInit×2` 之后**，
-   不在 mutex 上。
+不在 mutex 上。
 
 ### 同时修正另一处陈述
 
@@ -8807,11 +8855,11 @@ README 里"唯一符合归档前提的路 = **实现最小任务调度**（代�
 
 ### 当前正确的状态
 
-| 项 | 值 |
-| --- | --- |
-| step 6 停滞位置 | **`eventInit×2` 之后的非日志代码**（`r_sym_bt_3DcjgYC1ikQrP7jNyXGR` 尾段或其后 ROM 调用）|
-| 已证明 | 不是 mutex 忙等、不是中断、不是锚点、不是采样门控 |
-| 未证明 | 该助手尾段之后具体停在哪条调用 |
+| 项              | 值                                                                                        |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| step 6 停滞位置 | **`eventInit×2` 之后的非日志代码**（`r_sym_bt_3DcjgYC1ikQrP7jNyXGR` 尾段或其后 ROM 调用） |
+| 已证明          | 不是 mutex 忙等、不是中断、不是锚点、不是采样门控                                         |
+| 未证明          | 该助手尾段之后具体停在哪条调用                                                            |
 
 ### 下一步（纯离线）
 
@@ -8822,11 +8870,11 @@ README 里"唯一符合归档前提的路 = **实现最小任务调度**（代�
 
 `libbtdm_common.a:2.o` 中该符号 **仅 0x3A = 58 字节**，调用序列：
 
-| 偏移 | 调用 |
-| --- | --- |
-| `0x08` | `wr_btdm_osal_malloc` |
-| `0x1e`/`0x20`/`0x24`/`0x2a` | `wr_btdm_assert` |
-| `0x34` | `wr_btdm_osal_free` |
+| 偏移                        | 调用                  |
+| --------------------------- | --------------------- |
+| `0x08`                      | `wr_btdm_osal_malloc` |
+| `0x1e`/`0x20`/`0x24`/`0x2a` | `wr_btdm_assert`      |
+| `0x34`                      | `wr_btdm_osal_free`   |
 
 ⇒ 它是一个 **malloc/free 包装**，**不含** `event_init`。
 
@@ -8834,22 +8882,22 @@ README 里"唯一符合归档前提的路 = **实现最小任务调度**（代�
 
 ### 当前状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| step 6 停滞位置 | **`eventInit ×2` 之后的非日志代码**（仍未定位到具体函数）|
-| 已排除 | mutex 忙等重试（0 次"忙等耗尽"）、中断、锚点、采样门控、`r_sym_bt_3Dcjg…`（58 B 分配器）|
-| 下一步 | 在 `libbtdm_common.a` **全库**搜引用 `wr_btdm_osal_event_init` 的对象 → 反汇编该函数 → 列 `event_init` 之后的调用 |
+| 项              | 状态                                                                                                              |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| step 6 停滞位置 | **`eventInit ×2` 之后的非日志代码**（仍未定位到具体函数）                                                         |
+| 已排除          | mutex 忙等重试（0 次"忙等耗尽"）、中断、锚点、采样门控、`r_sym_bt_3Dcjg…`（58 B 分配器）                          |
+| 下一步          | 在 `libbtdm_common.a` **全库**搜引用 `wr_btdm_osal_event_init` 的对象 → 反汇编该函数 → 列 `event_init` 之后的调用 |
 
 ## `event_init` 的引用者：4 个对象（2026-11-19）
 
 在 `libbtdm_common.a` 全库搜 `wr_btdm_osal_event_init` 的 `R_RISCV_CALL`：
 
-| 对象 | 说明 |
-| --- | --- |
-| `11.o` | 导出 `r_btdm_hci_pkt_flag_ble_getf/setf` 等（HCI 包标志）|
-| `15.o` | 含 `wr_btdm_osal_task_create` 的实现 |
-| `16.o` | 导出多个 `r_sym_bt_*` 混淆符号 |
-| `19.o` | — |
+| 对象   | 说明                                                      |
+| ------ | --------------------------------------------------------- |
+| `11.o` | 导出 `r_btdm_hci_pkt_flag_ble_getf/setf` 等（HCI 包标志） |
+| `15.o` | 含 `wr_btdm_osal_task_create` 的实现                      |
+| `16.o` | 导出多个 `r_sym_bt_*` 混淆符号                            |
+| `19.o` | —                                                         |
 
 ⇒ 轨迹中的 `eventInit ×2` 来自这 4 个之一，需按**调用图**收窄：
 `r_btdm_task_init`（`21.o`）→ `r_sym_bt_*` 助手 → 上述某个对象。
@@ -8862,11 +8910,11 @@ README 里"唯一符合归档前提的路 = **实现最小任务调度**（代�
 
 ### 本会话结束时的状态
 
-| 项 | 值 |
-| --- | --- |
-| HEAD | `2dcf7c3`（本次提交后更新）|
-| step 6 停滞 | `eventInit ×2` 之后的非日志代码（候选收窄到 4 个对象）|
-| 已排除 | mutex 重试、中断、锚点、采样门控、FIFO、`g_phyFuns` 表、58 B 分配器 |
+| 项          | 值                                                                  |
+| ----------- | ------------------------------------------------------------------- |
+| HEAD        | `2dcf7c3`（本次提交后更新）                                         |
+| step 6 停滞 | `eventInit ×2` 之后的非日志代码（候选收窄到 4 个对象）              |
+| 已排除      | mutex 重试、中断、锚点、采样门控、FIFO、`g_phyFuns` 表、58 B 分配器 |
 
 ## 证伪：trace 预算不是限制（2026-11-19）
 
@@ -8890,6 +8938,7 @@ osal> eventInit
 ### 特征（可用于收窄）
 
 该段代码：
+
 - **不调用任何 OSAL** ⇒ 不是 mutex/event/queue 操作；
 - 仍在运行（日志通道活着、心跳正常）⇒ 是**自旋/长循环**或**等某个寄存器**。
 
@@ -8904,9 +8953,9 @@ osal> eventInit
 
 ## 确认：`eventInit` 与 `eventqInit` 是两个不同 API（2026-11-19）
 
-| 行号 | trace 串 | 对应归档 API |
-| --- | --- | --- |
-| `osal.zig:460` | `eventqInit` | `wr_btdm_osal_eventq_init` |
+| 行号           | trace 串        | 对应归档 API                            |
+| -------------- | --------------- | --------------------------------------- |
+| `osal.zig:460` | `eventqInit`    | `wr_btdm_osal_eventq_init`              |
 | `osal.zig:596` | **`eventInit`** | **`wr_btdm_osal_event_init`**（另一套） |
 
 而 `r_btdm_task_init`（`21.o`）的重定位表里是 **`eventq_init`**（`0x84`）。
@@ -8951,10 +9000,10 @@ while (i < n) : (i += 1) {
 
 ⇒ 要在 step 6 停滞点 dump，有两条路：
 
-| 方式 | 做法 |
-| --- | --- |
-| **A（推荐）** | 在 `probe.zig` 里加一个 `pub fn dumpCallers()`，由 `trap.zig` 通过**回调钩子**触发（`board` 已有钩子机制：`board.trap.probe_stop_at_tick` 等）|
-| B | 直接调 `probe_dump_now()`（它会随 panic 一起导出全部计数与锚点，但会 halt）|
+| 方式          | 做法                                                                                                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A（推荐）** | 在 `probe.zig` 里加一个 `pub fn dumpCallers()`，由 `trap.zig` 通过**回调钩子**触发（`board` 已有钩子机制：`board.trap.probe_stop_at_tick` 等） |
+| B             | 直接调 `probe_dump_now()`（它会随 panic 一起导出全部计数与锚点，但会 halt）                                                                    |
 
 ⇒ 方式 A 需要一个新的跨层钩子（`board → bt-blobs` 回调），**本会话未做**（避免在上下文枯竭时做跨文件改动）。
 
@@ -9044,13 +9093,13 @@ osalcaller[11] = 0x4005d0de → r_sym_bt_jH5mD2DMmyYTiDCZQCFd
 
 ### 末位函数 `r_sym_bt_jH5mD2DMmyYTiDCZQCFd`（`16.o`，164 B）
 
-| 偏移 | 调用 |
-| --- | --- |
-| `0x10` | `wr_btdm_osal_event_is_queued` |
-| `0x1c` | `r_sym_bt_C0B6WsJES1DZlVd8Ki6D` |
-| **`0x20`/`0x26`** | **`wr_btdm_osal_eventq_put`** ← **投递事件** |
-| `0x78`/`0xa2`/`0xb6` | `r_sym_bt_4D3jExDF3lqXXndV4BPL` ×3 |
-| `0x7c` | `r_sym_bt_vlE2mL5FNjejBKjkw4Lw` |
+| 偏移                 | 调用                                         |
+| -------------------- | -------------------------------------------- |
+| `0x10`               | `wr_btdm_osal_event_is_queued`               |
+| `0x1c`               | `r_sym_bt_C0B6WsJES1DZlVd8Ki6D`              |
+| **`0x20`/`0x26`**    | **`wr_btdm_osal_eventq_put`** ← **投递事件** |
+| `0x78`/`0xa2`/`0xb6` | `r_sym_bt_4D3jExDF3lqXXndV4BPL` ×3           |
+| `0x7c`               | `r_sym_bt_vlE2mL5FNjejBKjkw4Lw`              |
 
 ⇒ **停滞前最后执行的归档函数是一个事件生产者**（`eventq_put`）。
 
@@ -9068,19 +9117,19 @@ osalcaller[11] = 0x4005d0de → r_sym_bt_jH5mD2DMmyYTiDCZQCFd
 
 ## 收窄：`jH5m` 之后的两个函数都很小（2026-11-19）
 
-| 符号 | 对象 | 大小 |
-| --- | --- | --- |
-| `r_sym_bt_4D3jExDF3lqXXndV4BPL` | `16.o` | **50 B**（0x32）|
-| `r_sym_bt_vlE2mL5FNjejBKjkw4Lw` | `10.o` | **32 B**（0x20）|
+| 符号                            | 对象   | 大小             |
+| ------------------------------- | ------ | ---------------- |
+| `r_sym_bt_4D3jExDF3lqXXndV4BPL` | `16.o` | **50 B**（0x32） |
+| `r_sym_bt_vlE2mL5FNjejBKjkw4Lw` | `10.o` | **32 B**（0x20） |
 
 ⇒ 两者都太小，**不太可能是停滞点**。
 
 ### 因此停滞候选缩小为两处
 
-| 候选 | 依据 |
-| --- | --- |
-| **`jH5m` 自身**（164 B，`16.o`）在 `eventq_put`（`0x26`）之后 | 环里最后一条就是它的返回地址 `0x4005d0de` |
-| **`jH5m` 进入的 ROM 调用** | 若 `jH5m` 内部有 `jal` 到 ROM，且在那里自旋 |
+| 候选                                                          | 依据                                        |
+| ------------------------------------------------------------- | ------------------------------------------- |
+| **`jH5m` 自身**（164 B，`16.o`）在 `eventq_put`（`0x26`）之后 | 环里最后一条就是它的返回地址 `0x4005d0de`   |
+| **`jH5m` 进入的 ROM 调用**                                    | 若 `jH5m` 内部有 `jal` 到 ROM，且在那里自旋 |
 
 ### 下一步（离线，一步）
 
@@ -9091,6 +9140,7 @@ riscv32-esp-elf-objdump -d --start-address=<jH5m 起始> --stop-address=<下一�
 ```
 
 看 `0x26`（`eventq_put` 调用）**之后**的指令：
+
 - 若还有 `jal` 到 `0x2f8xxxxx` ⇒ 停滞在 ROM 内（用 thunk 反查法命名）；
 - 若是自旋（`lw` + `andi` + `bne` 回跳）⇒ 记录它读的寄存器地址，一次板上读数即可判定。
 
@@ -9111,14 +9161,14 @@ jH5m 之后的两个函数仅 50 B / 32 B            ← 本轮
 
 ### 事实
 
-| 函数 | 有 `trace()`？ |
-| --- | --- |
-| `eventqInit`（`:460`）| ✅ `"eventqInit"` |
-| `eventInit`（`:596`）| ✅ `"eventInit"` |
-| `eventRun`（`:618`）| ✅ `"eventRun"` |
-| `mutexPend`/`mutexRelease` | ✅ |
-| **`eventqPut`** | ❌ **无 trace** |
-| **`eventIsQueued`** | ❌ **无 trace** |
+| 函数                       | 有 `trace()`？    |
+| -------------------------- | ----------------- |
+| `eventqInit`（`:460`）     | ✅ `"eventqInit"` |
+| `eventInit`（`:596`）      | ✅ `"eventInit"`  |
+| `eventRun`（`:618`）       | ✅ `"eventRun"`   |
+| `mutexPend`/`mutexRelease` | ✅                |
+| **`eventqPut`**            | ❌ **无 trace**   |
+| **`eventIsQueued`**        | ❌ **无 trace**   |
 
 ⇒ **`caller_ring` 记录所有 OSAL 入口**（含无 trace 的），
 而 **`osal> …` 轨迹只记录有 trace 的那几个**。
@@ -9161,10 +9211,10 @@ board.log.line("S put={d} gok={d} gempty={d} mok={d} mbusy={d} blk={d} pool={d} 
 
 ### 触发接线（两端都确认存在）
 
-| 侧 | 位置 |
-| --- | --- |
+| 侧        | 位置                                                                               |
+| --------- | ---------------------------------------------------------------------------------- |
 | 声明+调用 | `trap.zig:14` `extern fn probe_dump_now() callconv(.c) void;`，`trap.zig:190` 调用 |
-| 触发条件 | `bringup.zig:323` `probe_stop_at_tick = 30000`（100 µs/tick ⇒ ~3 s）|
+| 触发条件  | `bringup.zig:323` `probe_stop_at_tick = 30000`（100 µs/tick ⇒ ~3 s）               |
 
 ### 但该行**没有出现在串口**
 
@@ -9172,6 +9222,7 @@ board.log.line("S put={d} gok={d} gempty={d} mok={d} mbusy={d} blk={d} pool={d} 
 位于我新增那行**之后**）⇒ 函数确实执行了，但 `S put=…` 那行**没落到串口**。
 
 可能原因（未验证）：
+
 - 该行较长（约 80 B），写时仍有丢弃（`rawWrite` 的整行预留上限是 120，理论上够）；
 - 或格式化失败（`{d}` 与字段类型不匹配）导致 `bufPrint` 提前 return。
 
@@ -9186,6 +9237,7 @@ mutex_pend_busy / blocked_calls / pool_exhausted / eventq_requeued
 ```
 
 判读表（关键）：
+
 - `eventq_put == 0` 而 `jH5m` 确实调了两次 ⇒ **投递被静默丢弃**（`slotGet` 失败，`osal.zig:507` 开头）
 - `eventq_requeued > 0` ⇒ 跨队列投递
 - `eventq_get_empty > 0` ⇒ 消费者取不到
@@ -9193,17 +9245,18 @@ mutex_pend_busy / blocked_calls / pool_exhausted / eventq_requeued
 
 ## ⚠️ `probe_stop_at_tick` 触发点**不稳定**（2026-11-19）
 
-| 捕获 | `DUMP` / `osalcaller` 出现了？|
-| --- | --- |
-| `pc179` | ✅ 是（拿到了完整的 caller_ring）|
+| 捕获    | `DUMP` / `osalcaller` 出现了？              |
+| ------- | ------------------------------------------- |
+| `pc179` | ✅ 是（拿到了完整的 caller_ring）           |
 | `pc17a` | ✅ `osalcaller[0]` 出现，但 `S put=` 未出现 |
-| `pc17b` | ❌ **完全没有**（连 `DUMP` 都没有）|
+| `pc17b` | ❌ **完全没有**（连 `DUMP` 都没有）         |
 
 ⇒ **`probe_stop_at_tick = 30000` 这个触发点不可靠**。
 
 ### 原因
 
 它按**开机起算的 IRQ 计数**键控：
+
 - 若停滞前中断仍在跑，计数会到 30000 ⇒ 触发；
 - 若计数因任何原因没到（或重置），则**永不触发**。
 
@@ -9239,10 +9292,10 @@ pub fn eventInit(...) void {
 
 ### 已做
 
-| 文件 | 改动 |
-| --- | --- |
-| `probe.zig` | `export fn bt_print_osal_stats()`（3 行短格式 `Q1/Q2/Q3`）|
-| `trap.zig` | `extern fn bt_print_osal_stats() callconv(.c) void;` + 心跳里 `if (irq_count % 4096 == 0)` 调用 |
+| 文件        | 改动                                                                                            |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| `probe.zig` | `export fn bt_print_osal_stats()`（3 行短格式 `Q1/Q2/Q3`）                                      |
+| `trap.zig`  | `extern fn bt_print_osal_stats() callconv(.c) void;` + 心跳里 `if (irq_count % 4096 == 0)` 调用 |
 
 构建通过（805 504 B）。
 
@@ -9252,11 +9305,11 @@ pub fn eventInit(...) void {
 
 ⇒ 可能原因（未验证）：
 
-| 可能 | 检查 |
-| --- | --- |
-| 心跳 `irq_count % 4096` 在停滞前未命中 | 看是否有 `.` 心跳行 |
-| 停滞期中断不触发 ⇒ 心跳不跑 | 之前的观察显示日志在 step 6 后继续，需复核 |
-| `board.log.line` 在该上下文不可用 | 换 `hw.rawWrite` 直接写 |
+| 可能                                   | 检查                                       |
+| -------------------------------------- | ------------------------------------------ |
+| 心跳 `irq_count % 4096` 在停滞前未命中 | 看是否有 `.` 心跳行                        |
+| 停滞期中断不触发 ⇒ 心跳不跑            | 之前的观察显示日志在 step 6 后继续，需复核 |
+| `board.log.line` 在该上下文不可用      | 换 `hw.rawWrite` 直接写                    |
 
 ### 下一步（更保险）
 
@@ -9267,6 +9320,7 @@ pub fn eventInit(...) void {
 pub var on_event_init: ?*const fn (u32) void = null;
 // eventInit 里：ev_init_n += 1; if (on_event_init) |f| f(ev_init_n);
 ```
+
 ```zig
 // bt-blobs/probe.zig
 pub fn bt_hook_event_init(n: u32) void { if (n == 2) probe_dump_now(); }
@@ -9288,13 +9342,13 @@ Q3 0 0       ← pool_exhausted=0, eventq_requeued=0
 
 ### 判读
 
-| 计数器 | 值 | 含义 |
-| --- | --- | --- |
-| `eventq_put` | **0** | **投递从未成功计入** |
-| `eventq_get_ok` | 0 | 从未取到 |
-| `eventq_get_empty` | 0 | 甚至连"取空"都没有 |
-| `pool_exhausted` | 0 | 不是池耗尽 |
-| `eventq_requeued` | 0 | 不是重复入队 |
+| 计数器             | 值    | 含义                 |
+| ------------------ | ----- | -------------------- |
+| `eventq_put`       | **0** | **投递从未成功计入** |
+| `eventq_get_ok`    | 0     | 从未取到             |
+| `eventq_get_empty` | 0     | 甚至连"取空"都没有   |
+| `pool_exhausted`   | 0     | 不是池耗尽           |
+| `eventq_requeued`  | 0     | 不是重复入队         |
 
 ⇒ **整个事件队列子系统从未发生过任何操作。**
 
@@ -9321,11 +9375,11 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
 
 ### 这是一条**可修的移植缺陷**
 
-| 项 | 内容 |
-| --- | --- |
-| 现象 | controller 的事件循环永远等不到事件 |
-| 根因 | `eventqInit` 未被调用（或调用时槽位分配失败但未记录）|
-| 证据 | `eventq_put/get_ok/get_empty` **全 0** + 轨迹无 `eventqInit` |
+| 项       | 内容                                                               |
+| -------- | ------------------------------------------------------------------ |
+| 现象     | controller 的事件循环永远等不到事件                                |
+| 根因     | `eventqInit` 未被调用（或调用时槽位分配失败但未记录）              |
+| 证据     | `eventq_put/get_ok/get_empty` **全 0** + 轨迹无 `eventqInit`       |
 | 修法方向 | 找到归档中应当 `eventq_init` 的位置，确认它为何没被调用/为何槽无效 |
 
 ### 下一步
@@ -9342,11 +9396,11 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
 
 ### 为什么
 
-| 读数 | 我的推断 | 实际问题 |
-| --- | --- | --- |
-| `eventq_*` 全 0 | 队列从未操作 | dump 在**第 2 次 `event_init`** 触发，彼时**可能确实还没发生队列操作** |
-| `caller_ring` 有 20 条 | "20 次调用却 0 计数"是矛盾 | 环是**从开机累积**的，与 dump 时刻的计数**不是同一时间窗** |
-| `mutex_pend_ok = 0` | 同上 | **`mutexPend` 在槽无效时返回 EINVAL 且不加计数**（`osal.zig:392-394`）⇒ 0 与"调用了"**可以共存** |
+| 读数                   | 我的推断                   | 实际问题                                                                                         |
+| ---------------------- | -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `eventq_*` 全 0        | 队列从未操作               | dump 在**第 2 次 `event_init`** 触发，彼时**可能确实还没发生队列操作**                           |
+| `caller_ring` 有 20 条 | "20 次调用却 0 计数"是矛盾 | 环是**从开机累积**的，与 dump 时刻的计数**不是同一时间窗**                                       |
+| `mutex_pend_ok = 0`    | 同上                       | **`mutexPend` 在槽无效时返回 EINVAL 且不加计数**（`osal.zig:392-394`）⇒ 0 与"调用了"**可以共存** |
 
 ⇒ 计数器全 0 **不足以**推出"队列从未初始化"。
 
@@ -9417,6 +9471,7 @@ riscv32-esp-elf-objdump -d --start-address=<jH5m> --stop-address=<next sym> firm
 ```
 
 看 `0x26`（`eventq_put`）之后、`0x78`（`4D3j…` ×3）之前的指令：
+
 - 若是自旋（`lw`+`andi`+`bne`）⇒ 记下寄存器地址，一次板上读数定性；
 - 若有 `jal` 到 `0x2f8xxxxx` ⇒ 进入 ROM，用 thunk 反查法命名。
 
@@ -9444,16 +9499,16 @@ nm app.elf | grep -E " [bBdD] .*stats"
 
 ### 两条待定解释
 
-| 解释 | 含义 |
-| --- | --- |
-| (a) 该变量被链接器合并/消除 | 那么读取它的路径可能读到**别的实例** ⇒ 计数器不可信 |
-| (b) 我的读取路径有误（`osal.stats()` 返回的是别处）| 需核对 `pub fn stats()` 的实现 |
+| 解释                                                | 含义                                                |
+| --------------------------------------------------- | --------------------------------------------------- |
+| (a) 该变量被链接器合并/消除                         | 那么读取它的路径可能读到**别的实例** ⇒ 计数器不可信 |
+| (b) 我的读取路径有误（`osal.stats()` 返回的是别处） | 需核对 `pub fn stats()` 的实现                      |
 
 ### 与另一处矛盾的呼应
 
-| 观测 | 问题 |
-| --- | --- |
-| 轨迹有 `osal> mutexPend` | — |
+| 观测                                                               | 问题                                                                                                      |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| 轨迹有 `osal> mutexPend`                                           | —                                                                                                         |
 | 但 `mutex_pend_ok = 0`、`mutex_pend_busy = 0`、`blocked_calls = 0` | `mutexPend` 的**任何一条路径都至少加一个计数**（`osal.zig:408`/`414`）⇒ 三者全 0 意味着**它没走这些路径** |
 
 ⇒ 两者结合指向：**我们读的计数器与归档实际调用的实现不是同一份数据**。
@@ -9476,12 +9531,12 @@ nm app.elf | grep -E " [bBdD] .*stats"
 
 ### `mutexPend` 的四条出口
 
-| 出口 | 是否加计数 |
-| --- | --- |
-| `slotGet` 失败 → `return EINVAL`（`:392-394`）| ❌ **完全不计数** |
-| FOREVER 忙等后成功（`:407-409`）| ✅ `mutex_pend_ok` |
-| 立即成功（`:412-415`）| ✅ `mutex_pend_ok` |
-| 忙等耗尽 → `TIMEOUT`（`:402-405`）| ✅ `blocked_calls` |
+| 出口                                           | 是否加计数         |
+| ---------------------------------------------- | ------------------ |
+| `slotGet` 失败 → `return EINVAL`（`:392-394`） | ❌ **完全不计数**  |
+| FOREVER 忙等后成功（`:407-409`）               | ✅ `mutex_pend_ok` |
+| 立即成功（`:412-415`）                         | ✅ `mutex_pend_ok` |
+| 忙等耗尽 → `TIMEOUT`（`:402-405`）             | ✅ `blocked_calls` |
 
 ### 因此
 
@@ -9491,11 +9546,11 @@ nm app.elf | grep -E " [bBdD] .*stats"
 
 ### 这条假设的价值
 
-| 若成立 | 解释 |
-| --- | --- |
-| mutex 槽无效 ⇒ 每次 `mutexPend` 返回 `EINVAL` | 归档拿到错误码、继续执行（不阻塞）|
-| 同理 `eventq_put` 的 `slotGet` 也可能失效 | 事件投递被静默丢弃 |
-| **共同的根因可能是"槽位分配失败"** | 即 `Slot` 结构里的 `p` 指针为 null ⇒ 归档传入的句柄无效 |
+| 若成立                                        | 解释                                                    |
+| --------------------------------------------- | ------------------------------------------------------- |
+| mutex 槽无效 ⇒ 每次 `mutexPend` 返回 `EINVAL` | 归档拿到错误码、继续执行（不阻塞）                      |
+| 同理 `eventq_put` 的 `slotGet` 也可能失效     | 事件投递被静默丢弃                                      |
+| **共同的根因可能是"槽位分配失败"**            | 即 `Slot` 结构里的 `p` 指针为 null ⇒ 归档传入的句柄无效 |
 
 ⇒ 一条统一的解释：**归档传给我们的所有 `Slot*` 句柄都是无效的**
 （可能我们的 `Slot` 布局与归档期望的不同，或归档的句柄来自另一处分配）。
@@ -9529,12 +9584,12 @@ Q3 0 0
 
 ### 现在的完整矛盾（未解）
 
-| 观测 | 与之冲突的 |
-| --- | --- |
-| 轨迹有 `osal> mutexPend`（`osal.zig:391` 在第 391 行，先于一切分支）| — |
-| `mutex_pend_ok = 0`（两条成功路径都会加）| ↑ |
-| `blocked_calls = 0`（忙等耗尽会加）| ↑ |
-| `EINVAL` 诊断**未打印**（slotGet 失败会打）| ↑ |
+| 观测                                                                 | 与之冲突的 |
+| -------------------------------------------------------------------- | ---------- |
+| 轨迹有 `osal> mutexPend`（`osal.zig:391` 在第 391 行，先于一切分支） | —          |
+| `mutex_pend_ok = 0`（两条成功路径都会加）                            | ↑          |
+| `blocked_calls = 0`（忙等耗尽会加）                                  | ↑          |
+| `EINVAL` 诊断**未打印**（slotGet 失败会打）                          | ↑          |
 
 ⇒ **四条出口全部被排除** ⇒ 只剩一个解释：
 **`osal> mutexPend` 那行 trace 与我们读取的 `stats_state` 不来自同一份存储**。
@@ -9553,10 +9608,13 @@ Q3 0 0
 **合并（ICF）**，则读写应仍一致；若**被消除**（无人读？但有人读）……
 
 ⇒ 需要板上读**地址**来定案：
+
 ```zig
 board.log.line("stats@0x{x}", .{ @intFromPtr(&osal.stats_state) });
 ```
+
 再与 `nm` 里 `bringup.stats_state` 的地址比对：
+
 - 相同 ⇒ 合并，计数应一致 ⇒ 矛盾另有原因；
 - 不同且 `nm` 里无对应符号 ⇒ 读的是废弃副本。
 
@@ -9570,10 +9628,10 @@ board.log.line("stats@0x{x}", .{ @intFromPtr(&osal.stats_state) });
 
 ### 附：关于"捕获混了两次启动"的检查
 
-| 检查 | 结果 |
-| --- | --- |
+| 检查                             | 结果  |
+| -------------------------------- | ----- |
 | `grep -c "enter step 1 mempool"` | **1** |
-| `grep -c "ESP-ROM"` | **1** |
+| `grep -c "ESP-ROM"`              | **1** |
 
 ⇒ **单次启动**，"混两次启动"的解释**不成立**（该解释已被本检查排除）。
 
@@ -9593,11 +9651,11 @@ board.log.line("stats@0x{x}", .{ @intFromPtr(&osal.stats_state) });
 
 ### 三条结论同时被推翻
 
-| 我之前写的 | 实际 |
-| --- | --- |
-| "计数器全 0 ⇒ 队列从未操作" | ❌ dump 时**什么都还没发生** |
-| "`r_btdm_task_init` 从未执行到 `0x84`（`eventq_init`）" | ❌ **`eventqInit` 出现了** |
-| "轨迹有 `mutexPend`，却不计数" | ❌ 本次捕获**根本没有 `mutexPend`**，那行来自**陈旧捕获** |
+| 我之前写的                                              | 实际                                                      |
+| ------------------------------------------------------- | --------------------------------------------------------- |
+| "计数器全 0 ⇒ 队列从未操作"                             | ❌ dump 时**什么都还没发生**                              |
+| "`r_btdm_task_init` 从未执行到 `0x84`（`eventq_init`）" | ❌ **`eventqInit` 出现了**                                |
+| "轨迹有 `mutexPend`，却不计数"                          | ❌ 本次捕获**根本没有 `mutexPend`**，那行来自**陈旧捕获** |
 
 ### 根因（关于观测方法）
 
@@ -9615,18 +9673,19 @@ board.log.line("stats@0x{x}", .{ @intFromPtr(&osal.stats_state) });
 ### 正确的触发点
 
 dump 应挂在**停滞之后**，例如：
+
 - 第 3 次 `event_init` 之后（若存在）；或
 - 改用 `irq_count` 阈值（但已验证不稳定）；或
 - **在心跳里周期打印**（`bt_print_osal_stats`，已实现但未输出——需查明为何不打印）。
 
 ### 仍成立的事实
 
-| 项 | 状态 |
-| --- | --- |
-| 日志通道整行预留修复 | ✅ 有效 |
-| `caller_ring` 保序可信 | ✅ |
-| `jH5m` 是环里最后的调用者 | ✅（但需确认是同一时刻的相对关系）|
-| PHY 挂死 = `WITH_PHY=1` 自造 | ✅ |
+| 项                           | 状态                               |
+| ---------------------------- | ---------------------------------- |
+| 日志通道整行预留修复         | ✅ 有效                            |
+| `caller_ring` 保序可信       | ✅                                 |
+| `jH5m` 是环里最后的调用者    | ✅（但需确认是同一时刻的相对关系） |
+| PHY 挂死 = `WITH_PHY=1` 自造 | ✅                                 |
 
 ## 周期打印无输出的原因（结案）+ 两个候选的初步分析
 
@@ -9646,21 +9705,21 @@ if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 �
 
 ### 停滞在 `eventq_init`（`0x84`）之后的两个候选
 
-| 偏移 | 符号 | 对象 | 大小 | 内容 |
-| --- | --- | --- | --- | --- |
-| `0x92` | `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` | `2.o` | **44 B** | `malloc` + `assert` ×4 + `free` ⇒ **分配器包装** |
+| 偏移   | 符号                            | 对象  | 大小     | 内容                                                                            |
+| ------ | ------------------------------- | ----- | -------- | ------------------------------------------------------------------------------- |
+| `0x92` | `r_sym_bt_fqmZkUKgd5GE6m7i2YFG` | `2.o` | **44 B** | `malloc` + `assert` ×4 + `free` ⇒ **分配器包装**                                |
 | `0x9e` | `r_sym_bt_JwHsRJf87ncwDuzskIUj` | `7.o` | **84 B** | `r_sym_bt_MDZbajeLxsB0cvuBOREd` / `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` + `assert` ×4 |
 
 ⇒ 两者都是**小包装**，继续调更深的助手 ⇒ 链条需再走一层。
 
 ### 当前的准确状态（本会话结束时）
 
-| 项 | 值 |
-| --- | --- |
-| 停滞位置 | `r_btdm_task_init` 的 `eventq_init`(`0x84`) **之后**，具体在 `0x92`/`0x9e` 的子链中 |
-| 已确认执行 | `eventInit` ×2、`eventqInit`（行号 233 实证） |
-| 已结案 | 周期打印无输出（`sample_quiet` 门控）；计数器全 0（dump 早于调用）|
-| 观测仪器 | 整行预留（不截断）+ 回调槽（确定性触发）+ 保序环 + 行号顺序判读 |
+| 项         | 值                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------- |
+| 停滞位置   | `r_btdm_task_init` 的 `eventq_init`(`0x84`) **之后**，具体在 `0x92`/`0x9e` 的子链中 |
+| 已确认执行 | `eventInit` ×2、`eventqInit`（行号 233 实证）                                       |
+| 已结案     | 周期打印无输出（`sample_quiet` 门控）；计数器全 0（dump 早于调用）                  |
+| 观测仪器   | 整行预留（不截断）+ 回调槽（确定性触发）+ 保序环 + 行号顺序判读                     |
 
 ### 下一步（离线）
 
@@ -9701,12 +9760,12 @@ if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 �
 
 ### 本会话最终观测手段排序
 
-| 手段 | 对本案是否有效 | 说明 |
-| --- | --- | --- |
-| 串口日志（step 行）| ✅（整行预留后）| 确定在 step 5→6 之间 |
-| **`caller_ring`** | ✅ **最有效** | 保序、纯 RAM、给出归档函数名 |
-| PC 采样 | ⚠️ 样本少 | step 6 后中断仍在，但样本稀疏 |
-| **OSAL 计数器** | ❌ **无效** | 停滞区不调用 OSAL ⇒ 恒 0 |
+| 手段                | 对本案是否有效   | 说明                          |
+| ------------------- | ---------------- | ----------------------------- |
+| 串口日志（step 行） | ✅（整行预留后） | 确定在 step 5→6 之间          |
+| **`caller_ring`**   | ✅ **最有效**    | 保序、纯 RAM、给出归档函数名  |
+| PC 采样             | ⚠️ 样本少        | step 6 后中断仍在，但样本稀疏 |
+| **OSAL 计数器**     | ❌ **无效**      | 停滞区不调用 OSAL ⇒ 恒 0      |
 
 ### 下一步（唯一有效方向）
 
@@ -9716,8 +9775,8 @@ if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 �
 
 ## 调用链在 `0x9e` 之后终止（2026-11-19）
 
-| 符号 | 对象 | 大小 |
-| --- | --- | --- |
+| 符号                            | 对象  | 大小     |
+| ------------------------------- | ----- | -------- |
 | `r_sym_bt_MDZbajeLxsB0cvuBOREd` | `8.o` | **14 B** |
 | `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` | `8.o` | **14 B** |
 
@@ -9735,20 +9794,20 @@ if (!sample_quiet and irq_count >= 64 and (irq_count % 64) == 0) { … 心跳 �
 `r_btdm_task_init` 返回后，`bringup` 会继续到 `enter(7, "btdm_lp_init")`。
 ⇒ **只需确认 `enter step 7` 是否出现**：
 
-| 观察 | 结论 |
-| --- | --- |
-| `enter step 7` 出现 | `r_btdm_task_init` **已返回**，停滞在 step 7 之后 |
-| `enter step 7` 不出现 | 停滞**在 `r_btdm_task_init` 内**（包含其事件循环）|
+| 观察                  | 结论                                               |
+| --------------------- | -------------------------------------------------- |
+| `enter step 7` 出现   | `r_btdm_task_init` **已返回**，停滞在 step 7 之后  |
+| `enter step 7` 不出现 | 停滞**在 `r_btdm_task_init` 内**（包含其事件循环） |
 
 ⇒ 这是一条**零成本**的判读，README 里此前的所有"step 6 停滞"表述都**默认**了后者，但从未验证过。
 
 ### 本会话交接最终状态
 
-| 项 | 值 |
-| --- | --- |
-| HEAD | 本次提交后更新 |
-| 观测手段 | 整行预留日志 + 保序 `caller_ring` + 行号判读 |
-| 已确证 | `eventInit`×2 与 `eventqInit` 均执行；停滞在其后 |
+| 项         | 值                                                  |
+| ---------- | --------------------------------------------------- |
+| HEAD       | 本次提交后更新                                      |
+| 观测手段   | 整行预留日志 + 保序 `caller_ring` + 行号判读        |
+| 已确证     | `eventInit`×2 与 `eventqInit` 均执行；停滞在其后    |
 | **待验证** | **`enter step 7` 是否出现** —— 这决定停滞函数的归属 |
 
 ## ✅ 最后一悬置事实已确证：**`r_btdm_task_init` 没有返回**（2026-11-19）
@@ -9779,12 +9838,12 @@ readelf -rW <obj> | sed -n '/\.rela\.text\.r_sym_bt_<NAME>/,/^$/p'
 
 按此重读 `r_sym_bt_jH5mD2DMmyYTiDCZQCFd`（`16.o`）的真实调用序列：
 
-| 偏移 | 调用 |
-| --- | --- |
-| `0x1c` | `wr_btdm_osal_free` |
-| `0x2c` | `wr_btdm_osal_free` |
+| 偏移   | 调用                  |
+| ------ | --------------------- |
+| `0x1c` | `wr_btdm_osal_free`   |
+| `0x2c` | `wr_btdm_osal_free`   |
 | `0x4c` | `wr_btdm_osal_malloc` |
-| `0x60` | `memset` |
+| `0x60` | `memset`              |
 | `0x70` | `wr_btdm_osal_malloc` |
 | `0x86` | `wr_btdm_osal_malloc` |
 
@@ -9793,12 +9852,12 @@ readelf -rW <obj> | sed -n '/\.rela\.text\.r_sym_bt_<NAME>/,/^$/p'
 
 ## 本会话交接（最终）
 
-| 项 | 值 |
-| --- | --- |
-| 停滞位置 | **`r_btdm_task_init` 内部**（已由 `enter step 7` 缺失确证）|
-| 已执行到 | `eventq_init`（`0x84`）**之后** |
+| 项       | 值                                                              |
+| -------- | --------------------------------------------------------------- |
+| 停滞位置 | **`r_btdm_task_init` 内部**（已由 `enter step 7` 缺失确证）     |
+| 已执行到 | `eventq_init`（`0x84`）**之后**                                 |
 | 观测纪律 | 整行预留日志 + 保序 `caller_ring` + 行号判读 + **按节读重定位** |
-| 下一步 | 按新方法重走 `jH5m` 的真实序列，并继续 PC 环映射 |
+| 下一步   | 按新方法重走 `jH5m` 的真实序列，并继续 PC 环映射                |
 
 ## 🎯 打满 48 条 PC 后热点浮现：**`r_sym_bt_UghmLBN0bKpgsg8nI8fM`**（2026-11-19）
 
@@ -9813,12 +9872,12 @@ readelf -rW <obj> | sed -n '/\.rela\.text\.r_sym_bt_<NAME>/,/^$/p'
 
 ### 该函数（`19.o`，212 B）的调用（**按节读**）
 
-| 偏移 | 调用 |
-| --- | --- |
-| `0x16` | `wr_btdm_osal_malloc` |
-| **`0x28`** | **`memset`** |
-| `0x36` | `wr_btdm_osal_malloc` |
-| `0x7c` | `wr_btdm_osal_malloc` |
+| 偏移       | 调用                  |
+| ---------- | --------------------- |
+| `0x16`     | `wr_btdm_osal_malloc` |
+| **`0x28`** | **`memset`**          |
+| `0x36`     | `wr_btdm_osal_malloc` |
+| `0x7c`     | `wr_btdm_osal_malloc` |
 
 ⇒ 一个**分配 + 清零**密集的函数。
 
@@ -9852,23 +9911,23 @@ PC 样本落在 `malloc`/`memset` 之间的区域
 
 ### 本轮尝试
 
-| 尝试 | 结果 |
-| --- | --- |
-| 打满 48 条 PC 采样 | ✅ **成功** —— 热点首次浮现（6 条集中在 212 B 的分配/清零函数）|
-| 离线反汇编该函数（`app.elf`）| ❌ 该区域输出 `.word`（未标记为代码段），无法读指令 |
-| grep `bt ret: malloc` | ❌ 0 条（`logPublic` 走归档日志钩子，被过滤/丢弃）|
+| 尝试                          | 结果                                                            |
+| ----------------------------- | --------------------------------------------------------------- |
+| 打满 48 条 PC 采样            | ✅ **成功** —— 热点首次浮现（6 条集中在 212 B 的分配/清零函数） |
+| 离线反汇编该函数（`app.elf`） | ❌ 该区域输出 `.word`（未标记为代码段），无法读指令             |
+| grep `bt ret: malloc`         | ❌ 0 条（`logPublic` 走归档日志钩子，被过滤/丢弃）              |
 
 ### 已确证的事实（可交接）
 
-| # | 事实 | 证据 |
-| --- | --- | --- |
-| 1 | PHY 挂死 = `WITH_PHY=1` 自造路径 | 默认构建 PHY 通过，进到 step 6 |
-| 2 | `eventInit`×2 与 `eventqInit` 均执行 | 行号 231-233 |
-| 3 | `r_btdm_task_init` **没有返回** | `enter step 7` 缺失 |
-| 4 | 停滞区**不产生 OSAL 调用** | 轨迹在 `eventqInit` 后静默 |
-| 5 | 热点函数 `r_sym_bt_UghmLBN0bKpgsg8nI8fM`（`19.o`，212 B）| 48 条采样中 6 条落在此 |
-| 6 | 该函数调用 `malloc` ×3 + `memset` | 按节读重定位 |
-| 7 | 早期"1.34 亿次零填充"观测 | 与本函数形态吻合（待证实）|
+| #   | 事实                                                      | 证据                           |
+| --- | --------------------------------------------------------- | ------------------------------ |
+| 1   | PHY 挂死 = `WITH_PHY=1` 自造路径                          | 默认构建 PHY 通过，进到 step 6 |
+| 2   | `eventInit`×2 与 `eventqInit` 均执行                      | 行号 231-233                   |
+| 3   | `r_btdm_task_init` **没有返回**                           | `enter step 7` 缺失            |
+| 4   | 停滞区**不产生 OSAL 调用**                                | 轨迹在 `eventqInit` 后静默     |
+| 5   | 热点函数 `r_sym_bt_UghmLBN0bKpgsg8nI8fM`（`19.o`，212 B） | 48 条采样中 6 条落在此         |
+| 6   | 该函数调用 `malloc` ×3 + `memset`                         | 按节读重定位                   |
+| 7   | 早期"1.34 亿次零填充"观测                                 | 与本函数形态吻合（待证实）     |
 
 ### 观测纪律（本会话的净产出）
 
@@ -9973,10 +10032,10 @@ const ext: usize = if (input >= 16) input - 16 else input;
 
 ### 这改变了对"停滞"的理解
 
-| 旧理解 | 新理解 |
-| --- | --- |
-| 卡在某个自旋循环 | **不是自旋** —— 采样平坦 |
-| 热点函数 = 停滞点 | ❌ 样本稀疏时的假象 |
+| 旧理解            | 新理解                   |
+| ----------------- | ------------------------ |
+| 卡在某个自旋循环  | **不是自旋** —— 采样平坦 |
+| 热点函数 = 停滞点 | ❌ 样本稀疏时的假象      |
 
 ⇒ 结合已证事实（`r_btdm_task_init` 未返回、停滞区无 OSAL 调用），
 新的形态是：**归档在一个不调用 OSAL 的长路径里反复运行**（可能是事件循环、重试、或长延时）。
@@ -10001,31 +10060,31 @@ const ext: usize = if (input >= 16) input - 16 else input;
 
 > `PsB8`×5 → `ZGgi` → `jH5m`×3 → **`OkE7`**×2 → **`task_init`**
 
-| 符号 | 出现在当前环？ |
-| --- | --- |
-| `PsB8qxrZXPdSUAqQMBRY` | ✅ `0x4005b5b4` |
-| `ZGgifdtgyUnZ7f0ME7VH` | ✅ `0x4006091a` |
-| `jH5mD2DMmyYTiDCZQCFd` | ✅（早前捕获）|
-| **`OkE7MxSSqFt63m8XlU3d`** | ✅ **`0x4005f892` / `0x4005f8ca`** |
-| `UghmLBN0bKpgsg8nI8fM` | ✅ `0x4005ea36/ea4e/ea90`（malloc 包装）|
+| 符号                       | 出现在当前环？                           |
+| -------------------------- | ---------------------------------------- |
+| `PsB8qxrZXPdSUAqQMBRY`     | ✅ `0x4005b5b4`                          |
+| `ZGgifdtgyUnZ7f0ME7VH`     | ✅ `0x4006091a`                          |
+| `jH5mD2DMmyYTiDCZQCFd`     | ✅（早前捕获）                           |
+| **`OkE7MxSSqFt63m8XlU3d`** | ✅ **`0x4005f892` / `0x4005f8ca`**       |
+| `UghmLBN0bKpgsg8nI8fM`     | ✅ `0x4005ea36/ea4e/ea90`（malloc 包装） |
 
 ⇒ **这不是新的停滞路径，而是归档 init 序列在按已知顺序运行**。
 
 ### 两次 dump 的环**不同**
 
-| 时刻 | 环内容 |
-| --- | --- |
-| 早 | 含 `OkE7`×3、`fqmZ`、`JwHs`、`Ughm`×3 |
-| 晚 | `Ughm`×3、`PsB8` |
+| 时刻 | 环内容                                |
+| ---- | ------------------------------------- |
+| 早   | 含 `OkE7`×3、`fqmZ`、`JwHs`、`Ughm`×3 |
+| 晚   | `Ughm`×3、`PsB8`                      |
 
 ⇒ **环在增长/变化** ⇒ 归档**在推进**，不是在同一处死循环。
 
 ### 因此
 
-| 旧结论 | 修正 |
-| --- | --- |
-| "停滞在 step 6" | 改为"**在 step 6 内缓慢推进**"（厂商 2.4 s，我们数十秒仍未完成）|
-| "停滞区不产生 OSAL 调用" | ⚠ **该结论是在定时器已死的状态下得出的**，需用修好的仪器重测 |
+| 旧结论                   | 修正                                                             |
+| ------------------------ | ---------------------------------------------------------------- |
+| "停滞在 step 6"          | 改为"**在 step 6 内缓慢推进**"（厂商 2.4 s，我们数十秒仍未完成） |
+| "停滞区不产生 OSAL 调用" | ⚠ **该结论是在定时器已死的状态下得出的**，需用修好的仪器重测     |
 
 ### 下一步
 
@@ -10049,21 +10108,21 @@ grep -ac "^0x40..." pc183.log → 主要来自 osalcaller 行 + 巧合匹配
 
 ### 这本会话第四次犯同一类错误
 
-| 次 | 错误的数据源 | 由此得出的错误结论 |
-| --- | --- | --- |
-| 1 | FIFO 截断的日志 | step 1/2/6 三次误判 |
-| 2 | 早期触发的计数器 | "队列从未初始化" |
-| 3 | 6 条稀疏样本 | "热点 = Ughm" |
-| 4 | **grep 匹配了错误的前缀** | **"分布平坦"** |
+| 次  | 错误的数据源              | 由此得出的错误结论  |
+| --- | ------------------------- | ------------------- |
+| 1   | FIFO 截断的日志           | step 1/2/6 三次误判 |
+| 2   | 早期触发的计数器          | "队列从未初始化"    |
+| 3   | 6 条稀疏样本              | "热点 = Ughm"       |
+| 4   | **grep 匹配了错误的前缀** | **"分布平坦"**      |
 
 ⇒ 共同模式：**统计之前没有先验证"我数的到底是什么"**。
 
 ### 仍然成立的（不依赖该统计）
 
-| 事实 | 证据 |
-| --- | --- |
-| 定时器重装修复有效 | `^S` 行出现（修复前为 0）|
-| 环在变化 ⇒ 归档在推进 | 两次 dump 的 `osalcaller` 内容不同 |
+| 事实                           | 证据                                 |
+| ------------------------------ | ------------------------------------ |
+| 定时器重装修复有效             | `^S` 行出现（修复前为 0）            |
+| 环在变化 ⇒ 归档在推进          | 两次 dump 的 `osalcaller` 内容不同   |
 | 环与 README 早前记录的序列一致 | `PsB8`/`ZGgi`/`jH5m`/`OkE7` 全部出现 |
 
 ### 下一步（必须先做）
@@ -10085,12 +10144,12 @@ grep -a "^S" pc183.log | head -1
 
 ### 因此以下全部撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "采样密度 6 → 66（11 倍）" | ❌ 6 与 66 都不是采样行 |
-| "定时器重装修复有效" | ❌ **未验证**（采样行根本没打印）|
-| "归档接管 input 25" | ❌ 该机制**未被证实**（推断仍可作为假设）|
-| "分布平坦 / 无热点" | ❌ 已在上一轮撤回 |
+| 结论                       | 状态                                      |
+| -------------------------- | ----------------------------------------- |
+| "采样密度 6 → 66（11 倍）" | ❌ 6 与 66 都不是采样行                   |
+| "定时器重装修复有效"       | ❌ **未验证**（采样行根本没打印）         |
+| "归档接管 input 25"        | ❌ 该机制**未被证实**（推断仍可作为假设） |
+| "分布平坦 / 无热点"        | ❌ 已在上一轮撤回                         |
 
 ### 为什么采样行没打印
 
@@ -10102,26 +10161,26 @@ grep -a "^S" pc183.log | head -1
 
 ### 五次数据源错误（本会话）
 
-| # | 错误 | 误结论 |
-| --- | --- | --- |
-| 1 | FIFO 截断的日志 | step 1/2/6 |
-| 2 | 早期触发的计数器 | 队列未初始化 |
-| 3 | 6 条稀疏样本 | 热点 = Ughm |
-| 4 | grep 错前缀 | 分布平坦 |
-| 5 | **把启动横幅当采样行** | **采样密度提升 / 定时器修复有效** |
+| #   | 错误                   | 误结论                            |
+| --- | ---------------------- | --------------------------------- |
+| 1   | FIFO 截断的日志        | step 1/2/6                        |
+| 2   | 早期触发的计数器       | 队列未初始化                      |
+| 3   | 6 条稀疏样本           | 热点 = Ughm                       |
+| 4   | grep 错前缀            | 分布平坦                          |
+| 5   | **把启动横幅当采样行** | **采样密度提升 / 定时器修复有效** |
 
 ⇒ 五次都是**同一条纪律的缺失**：**统计前先看清自己数的是什么。**
 
 ### 仍然成立的事实（都有独立证据）
 
-| # | 事实 | 独立证据 |
-| --- | --- | --- |
-| 1 | PHY 挂死 = `WITH_PHY=1` 自造 | 默认构建 PHY 通过、进到 step 6 |
-| 2 | `eventInit`×2 与 `eventqInit` 均执行 | 带行号的 trace |
-| 3 | `r_btdm_task_init` **没有返回** | `enter step 7` 缺失 |
-| 4 | 归档在**推进** | 两次 `osalcaller` 内容不同 |
-| 5 | 环与早前记录的序列一致 | `PsB8`/`ZGgi`/`jH5m`/`OkE7` |
-| 6 | `rawWrite` 整行预留是**真实修复** | step 行从 1 条变 6 条完整 |
+| #   | 事实                                 | 独立证据                       |
+| --- | ------------------------------------ | ------------------------------ |
+| 1   | PHY 挂死 = `WITH_PHY=1` 自造         | 默认构建 PHY 通过、进到 step 6 |
+| 2   | `eventInit`×2 与 `eventqInit` 均执行 | 带行号的 trace                 |
+| 3   | `r_btdm_task_init` **没有返回**      | `enter step 7` 缺失            |
+| 4   | 归档在**推进**                       | 两次 `osalcaller` 内容不同     |
+| 5   | 环与早前记录的序列一致               | `PsB8`/`ZGgi`/`jH5m`/`OkE7`    |
+| 6   | `rawWrite` 整行预留是**真实修复**    | step 行从 1 条变 6 条完整      |
 
 ### 下一步（唯一该做的第一件事）
 
@@ -10146,14 +10205,14 @@ grep -ac "^S[0-9a-f]" capture.log     # 应为 6（48/8）
 
 ⇒ `anchor[5..10]` 的值**恰好是文本**：
 
-| 索引 | 值 | ASCII |
-| --- | --- | --- |
-| 5 | `0x61705b72` | `r[pa` |
-| 6 | `0x3a63696e` | `nic:` |
-| 7 | `0x636e6120` | ` anc` |
-| 8 | `0x5b726f68` | `hor[` |
-| 9 | `0x3d382b20` | ` +8=` |
-| 10 | `0x61707830` | `0xpa` |
+| 索引 | 值           | ASCII  |
+| ---- | ------------ | ------ |
+| 5    | `0x61705b72` | `r[pa` |
+| 6    | `0x3a63696e` | `nic:` |
+| 7    | `0x636e6120` | ` anc` |
+| 8    | `0x5b726f68` | `hor[` |
+| 9    | `0x3d382b20` | ` +8=` |
+| 10   | `0x61707830` | `0xpa` |
 
 拼接：`…r[panic: anchor[ +8=0xpa…`
 
@@ -10164,10 +10223,10 @@ grep -ac "^S[0-9a-f]" capture.log     # 应为 6（48/8）
 
 ⇒ 两种可能：
 
-| 解释 | 含义 |
-| --- | --- |
+| 解释                                                     | 含义                             |
+| -------------------------------------------------------- | -------------------------------- |
 | (a) `anchor[]` 数组与**日志缓冲/格式化缓冲**在内存上重叠 | **栈或全局布局冲突** —— 严重缺陷 |
-| (b) 锚点槽从未初始化，恰好指向了那块区域 | 未初始化读 |
+| (b) 锚点槽从未初始化，恰好指向了那块区域                 | 未初始化读                       |
 
 ⇒ 无论哪种，**`dumpAnchors()` 打印出的锚点值都不可信** ——
 这也解释了本会话早期"锚点为 NULL / 1.34 亿次填充"等一系列难以自洽的观测。
@@ -10190,23 +10249,23 @@ grep -ac "^S[0-9a-f]" capture.log     # 应为 6（48/8）
 
 连续 **六次**栽在"我读的是不是我想读的东西"上：
 
-| # | 错误 | 误结论 |
-| --- | --- | --- |
-| 1 | FIFO 截断的日志 | step 1/2/6 |
-| 2 | 早期触发的计数器 | 队列未初始化 |
-| 3 | 6 条稀疏样本 | 热点 = `Ughm` |
-| 4 | grep 错前缀 | 分布平坦 |
-| 5 | 启动横幅当采样行 | 采样密度提升 |
-| 6 | 锚点值解读 | "断言消息文本" |
+| #   | 错误             | 误结论         |
+| --- | ---------------- | -------------- |
+| 1   | FIFO 截断的日志  | step 1/2/6     |
+| 2   | 早期触发的计数器 | 队列未初始化   |
+| 3   | 6 条稀疏样本     | 热点 = `Ughm`  |
+| 4   | grep 错前缀      | 分布平坦       |
+| 5   | 启动横幅当采样行 | 采样密度提升   |
+| 6   | 锚点值解读       | "断言消息文本" |
 
 ### 当前仪器的确切状态（已核对）
 
-| 项 | 状态 |
-| --- | --- |
-| `probe_stop_at_tick` | **30000**（已设置）|
-| **`DUMP{n}` 行** | **0 条** ⇒ **DUMP 路径从未触发** |
-| `caller_ring` 输出 | ✅ 有（来自 `on_event_init`/`on_eventq_init` **回调**）|
-| **PC 采样行（`^S`）** | ❌ **一条都没有**（那条 `^S` 是启动横幅 `SPI mode:DIO`）|
+| 项                    | 状态                                                     |
+| --------------------- | -------------------------------------------------------- |
+| `probe_stop_at_tick`  | **30000**（已设置）                                      |
+| **`DUMP{n}` 行**      | **0 条** ⇒ **DUMP 路径从未触发**                         |
+| `caller_ring` 输出    | ✅ 有（来自 `on_event_init`/`on_eventq_init` **回调**）  |
+| **PC 采样行（`^S`）** | ❌ **一条都没有**（那条 `^S` 是启动横幅 `SPI mode:DIO`） |
 
 ⇒ **PC 采样从未被打印过** ⇒ 本会话所有关于"采样密度/热点/分布"的结论**全部无效**。
 
@@ -10221,25 +10280,25 @@ grep -ac "^S[0-9a-f]" capture.log     # 应为 6（48/8）
 
 ### 交接清单（第 0 条起）
 
-| # | 项 |
-| --- | --- |
-| **0** | **先证明观测通道在采它宣称采的东西**（`grep -c` 验证行存在、内容形态正确）|
-| 1 | `rawWrite` 整行预留（已修，真实有效）|
-| 2 | 回调槽触发（`on_event_init`/`on_eventq_init`，确定性）|
-| 3 | 把 48 条 PC 打印也挪进回调 |
-| 4 | 按节读重定位（`readelf -r \| sed -n '/\.rela\.text\.<sym>/,/^$/p'`）|
-| 5 | 保序读物：`caller_ring` 优于串口行序 |
-| 6 | 计数器只在被观察路径确实经过它时才有意义 |
+| #     | 项                                                                         |
+| ----- | -------------------------------------------------------------------------- |
+| **0** | **先证明观测通道在采它宣称采的东西**（`grep -c` 验证行存在、内容形态正确） |
+| 1     | `rawWrite` 整行预留（已修，真实有效）                                      |
+| 2     | 回调槽触发（`on_event_init`/`on_eventq_init`，确定性）                     |
+| 3     | 把 48 条 PC 打印也挪进回调                                                 |
+| 4     | 按节读重定位（`readelf -r \| sed -n '/\.rela\.text\.<sym>/,/^$/p'`）       |
+| 5     | 保序读物：`caller_ring` 优于串口行序                                       |
+| 6     | 计数器只在被观察路径确实经过它时才有意义                                   |
 
 ### 仍然成立的事实
 
-| # | 事实 | 独立证据 |
-| --- | --- | --- |
-| 1 | PHY 挂死 = `WITH_PHY=1` 自造 | 默认构建 PHY 通过、进到 step 6 |
-| 2 | `eventInit`×2 与 `eventqInit` 均执行 | 带行号的 trace |
-| 3 | `r_btdm_task_init` **没有返回** | `enter step 7` 缺失 |
-| 4 | 归档在**推进** | 两次 `osalcaller` 内容不同 |
-| 5 | `rawWrite` 整行预留是真实修复 | step 行从 1 条变 6 条完整 |
+| #   | 事实                                 | 独立证据                       |
+| --- | ------------------------------------ | ------------------------------ |
+| 1   | PHY 挂死 = `WITH_PHY=1` 自造         | 默认构建 PHY 通过、进到 step 6 |
+| 2   | `eventInit`×2 与 `eventqInit` 均执行 | 带行号的 trace                 |
+| 3   | `r_btdm_task_init` **没有返回**      | `enter step 7` 缺失            |
+| 4   | 归档在**推进**                       | 两次 `osalcaller` 内容不同     |
+| 5   | `rawWrite` 整行预留是真实修复        | step 行从 1 条变 6 条完整      |
 
 ## 🔑 统一解释：dump 一次打 ~750 B，远超 128 B FIFO ⇒ **行被选择性丢弃**（2026-11-19）
 
@@ -10247,13 +10306,13 @@ grep -ac "^S[0-9a-f]" capture.log     # 应为 6（48/8）
 
 dump 一次连打：
 
-| 内容 | 行数 | 约字节 |
-| --- | --- | --- |
-| `DUMP{n}` | 1 | ~10 |
-| `panic: anchor[i]` | 11 | ~330 |
-| `panic: osalcaller[i]` | 12 | ~400 |
-| PC 采样 `S…` | 6 | ~300 |
-| **合计** | **~30** | **~1000 B** |
+| 内容                   | 行数    | 约字节      |
+| ---------------------- | ------- | ----------- |
+| `DUMP{n}`              | 1       | ~10         |
+| `panic: anchor[i]`     | 11      | ~330        |
+| `panic: osalcaller[i]` | 12      | ~400        |
+| PC 采样 `S…`           | 6       | ~300        |
+| **合计**               | **~30** | **~1000 B** |
 
 而 **UART FIFO 只有 128 B**，`hw.rawWrite` 的等待**有界**（超时即不等）
 
@@ -10261,20 +10320,20 @@ dump 一次连打：
 
 ### 这统一解释了本会话六次"某行不见了"
 
-| 现象 | 旧解释（错） | 统一解释 |
-| --- | --- | --- |
-| `DUMP` 行缺失但 `panic:` 行在 | "DUMP 路径未触发" | **该行被丢弃** |
-| `S` 采样行 0 条 | "采样没记录" | **被丢弃** |
-| `enter step 2/3/4` 在某次捕获缺失 | "没执行" | **被丢弃** |
+| 现象                              | 旧解释（错）      | 统一解释       |
+| --------------------------------- | ----------------- | -------------- |
+| `DUMP` 行缺失但 `panic:` 行在     | "DUMP 路径未触发" | **该行被丢弃** |
+| `S` 采样行 0 条                   | "采样没记录"      | **被丢弃**     |
+| `enter step 2/3/4` 在某次捕获缺失 | "没执行"          | **被丢弃**     |
 
 ⇒ **"某行没出现"在本项目中**从来**不等于"该事件没发生"**。
 
 ### 两个修法
 
-| # | 做法 | 效果 |
-| --- | --- | --- |
-| **A** | dump 的行与行之间**强制排空**（`TXFIFO_CNT <= 8`），上界按 ~1e7（66 ms @115200）| 30 行全部落盘 |
-| **B** | dump **压缩成 2–3 行**（anchor 一行、caller 一行、PC 一行）⇒ 总量 < 128 B | 一次写完，最省 |
+| #     | 做法                                                                             | 效果           |
+| ----- | -------------------------------------------------------------------------------- | -------------- |
+| **A** | dump 的行与行之间**强制排空**（`TXFIFO_CNT <= 8`），上界按 ~1e7（66 ms @115200） | 30 行全部落盘  |
+| **B** | dump **压缩成 2–3 行**（anchor 一行、caller 一行、PC 一行）⇒ 总量 < 128 B        | 一次写完，最省 |
 
 ⇒ **B 更稳**（不依赖等待上界），建议优先。
 
@@ -10283,10 +10342,10 @@ dump 一次连打：
 `probe_stop_at_tick = 30000` 已设（`bringup.zig:325`），`irq_count` 每 trap 自增，
 但 60 s 内**未见 `DUMP` 行** ⇒ 二选一：
 
-| 可能 | 验证 |
-| --- | --- |
-| tick 在 60 s 内不足 30000 次 | 打一行 `irq_count` 周期输出（门控之外）|
-| tick 够了但 **`DUMP` 行被丢弃** | 用压缩输出重试 |
+| 可能                            | 验证                                    |
+| ------------------------------- | --------------------------------------- |
+| tick 在 60 s 内不足 30000 次    | 打一行 `irq_count` 周期输出（门控之外） |
+| tick 够了但 **`DUMP` 行被丢弃** | 用压缩输出重试                          |
 
 ⇒ 后者更可能（与上面的丢行解释一致）。
 
@@ -10316,16 +10375,17 @@ M5   76 0x2f01aef8
 
 ### 因此
 
-| 读数来源 | 可信？ |
-| --- | --- |
-| `M0..M5` 行 | ✅ |
-| `panic: anchor[i]` 行 | ❌ **读错区域** |
-| 早前的 `Xpuq 锚点 P=0x00000000` | ❌ 同通道 ⇒ 不可信 |
-| "锚点未发布 / 1.34 亿次零填充" | ❌ 该结论基于不可信读数 |
+| 读数来源                        | 可信？                  |
+| ------------------------------- | ----------------------- |
+| `M0..M5` 行                     | ✅                      |
+| `panic: anchor[i]` 行           | ❌ **读错区域**         |
+| 早前的 `Xpuq 锚点 P=0x00000000` | ❌ 同通道 ⇒ 不可信      |
+| "锚点未发布 / 1.34 亿次零填充"  | ❌ 该结论基于不可信读数 |
 
 ### 下一步（接手者第一件事）
 
 **查 `dumpAnchors()` 的基址来源** —— 为什么会落到 `.rodata`：
+
 - 若是 `anchor_table` 指针为 null 后的默认回退 ⇒ 修那一处；
 - 若使用了错误的符号地址 ⇒ 修正。
 
@@ -10333,12 +10393,12 @@ M5   76 0x2f01aef8
 
 ### 本会话结束时两条通道的状态
 
-| 通道 | 状态 |
-| --- | --- |
-| `M*`（blob RAM 锚点）| ✅ 有效，可用 |
-| `panic: anchor[i]` | ❌ 基址错误，待修 |
-| `panic: osalcaller[i]` | ✅ 有效（`caller_ring` 保序，已验证与早前序列一致）|
-| PC 采样 `S…` | ⚠ 打印路径可能被丢弃（见上节）|
+| 通道                   | 状态                                                |
+| ---------------------- | --------------------------------------------------- |
+| `M*`（blob RAM 锚点）  | ✅ 有效，可用                                       |
+| `panic: anchor[i]`     | ❌ 基址错误，待修                                   |
+| `panic: osalcaller[i]` | ✅ 有效（`caller_ring` 保序，已验证与早前序列一致） |
+| PC 采样 `S…`           | ⚠ 打印路径可能被丢弃（见上节）                      |
 
 ## ✅ 仪器修复 ①：dump 改走**阻塞写**，42 行完整落盘（2026-11-19）
 
@@ -10359,28 +10419,28 @@ fn dumpLine(comptime fmt: []const u8, args: anytype) void {
 
 ### 验证
 
-| 项 | 修复前 | 修复后 |
-| --- | --- | --- |
-| dump 行数 | 部分（长行被丢）| **42 行** |
-| `osalcaller[i]` | 不全 | **`[0]`–`[11]` 全部存在** |
-| `anchor[i]` | 不全 | **`[0]`–`[10]` 全部存在** |
+| 项              | 修复前           | 修复后                    |
+| --------------- | ---------------- | ------------------------- |
+| dump 行数       | 部分（长行被丢） | **42 行**                 |
+| `osalcaller[i]` | 不全             | **`[0]`–`[11]` 全部存在** |
+| `anchor[i]`     | 不全             | **`[0]`–`[10]` 全部存在** |
 
 ⇒ **`dumpAtPend` 的输出现在完整、可信。**
 
 ### 这是本会话**第三个**真实修复
 
-| # | 修复 | 效果 |
-| --- | --- | --- |
-| 1 | `rawWrite` 整行预留 | 普通日志行不再被截断 |
-| 2 | 定时器重装移到分发前 | （采样行仍需接线，见下）|
-| 3 | **`dumpLine` → `rawLineBlocking`** | **dump 的 42 行完整落盘** |
+| #   | 修复                               | 效果                      |
+| --- | ---------------------------------- | ------------------------- |
+| 1   | `rawWrite` 整行预留                | 普通日志行不再被截断      |
+| 2   | 定时器重装移到分发前               | （采样行仍需接线，见下）  |
+| 3   | **`dumpLine` → `rawLineBlocking`** | **dump 的 42 行完整落盘** |
 
 ### 仍待处理
 
-| 项 | 状态 |
-| --- | --- |
-| PC 采样行（`^S`）| 仍在 trap 的 DUMP 路径（`irq_count >= 30000`）⇒ 可能未触发 |
-| `panic: anchor[]` 基址 | 仍读错区域（应查 `dumpAnchors` 的基址来源）|
+| 项                     | 状态                                                       |
+| ---------------------- | ---------------------------------------------------------- |
+| PC 采样行（`^S`）      | 仍在 trap 的 DUMP 路径（`irq_count >= 30000`）⇒ 可能未触发 |
+| `panic: anchor[]` 基址 | 仍读错区域（应查 `dumpAnchors` 的基址来源）                |
 
 ### 下一步
 
@@ -10400,16 +10460,17 @@ fn dumpLine(comptime fmt: []const u8, args: anytype) void {
 
 ### 这解释了两件事
 
-| 现象 | 解释 |
-| --- | --- |
-| `probe_stop_at_tick = 30000` 在 60 s 内**从未触发** | 需要 30000/170 ≈ **176 秒** |
-| "tick 可能已死" | ❌ **不成立** —— `T n` 一直在涨，中断是活的 |
+| 现象                                                | 解释                                        |
+| --------------------------------------------------- | ------------------------------------------- |
+| `probe_stop_at_tick = 30000` 在 60 s 内**从未触发** | 需要 30000/170 ≈ **176 秒**                 |
+| "tick 可能已死"                                     | ❌ **不成立** —— `T n` 一直在涨，中断是活的 |
 
 ⇒ **两者都是"tick 频率低了 58 倍"造成的，不是故障。**
 
 ### 为什么实际频率是 170 Hz 而非 10 kHz
 
 `sample_period_us = 100` 是**请求值**，实际间隔被以下之一拉长：
+
 - 定时器分频/时钟源与假设不符；
 - 每次重装的开销（在 170 Hz 下不该这么慢）；
 - 或归档在跑时 ISR 被频繁延迟/合并。
@@ -10418,9 +10479,9 @@ fn dumpLine(comptime fmt: []const u8, args: anytype) void {
 
 ### 行动
 
-| 项 | 现在 | 应改为 |
-| --- | --- | --- |
-| `probe_stop_at_tick` | **30000**（176 s，永达不到）| **3000**（≈18 s，落在 step 6 停滞期）|
+| 项                   | 现在                         | 应改为                                |
+| -------------------- | ---------------------------- | ------------------------------------- |
+| `probe_stop_at_tick` | **30000**（176 s，永达不到） | **3000**（≈18 s，落在 step 6 停滞期） |
 
 ⇒ 改后 DUMP 路径会真正触发 ⇒ **48 条 PC 采样行才第一次可能落盘**。
 
@@ -10442,11 +10503,11 @@ SN48
 
 ### 符号映射
 
-| 地址 | 符号 |
-| --- | --- |
-| `0x40069a0c`（33 次）| **`hw.rawWrite`** |
-| `0x40069a02`（6 次）| **`hw.rawWrite`** |
-| `0x40066f9c` | `Io.Writer.fixedDrain` |
+| 地址                  | 符号                   |
+| --------------------- | ---------------------- |
+| `0x40069a0c`（33 次） | **`hw.rawWrite`**      |
+| `0x40069a02`（6 次）  | **`hw.rawWrite`**      |
+| `0x40066f9c`          | `Io.Writer.fixedDrain` |
 
 ⇒ **69% 的采样落在 `hw.rawWrite` 里。**
 
@@ -10454,25 +10515,26 @@ SN48
 
 **"停滞"的主要成分是我们自己的日志写入**，不是归档代码。
 
-| 事实 | 解释 |
-| --- | --- |
-| `rawWrite` 现在为整行预留而**等待 FIFO 空间** | 30 B @ 115200 ≈ **2.6 ms/行** |
-| 若归档 init 打印较多 | CPU 大量时间花在**等串口排空** |
-| 采样落在 `rawWrite` | 正是"等待"那一段 |
+| 事实                                          | 解释                           |
+| --------------------------------------------- | ------------------------------ |
+| `rawWrite` 现在为整行预留而**等待 FIFO 空间** | 30 B @ 115200 ≈ **2.6 ms/行**  |
+| 若归档 init 打印较多                          | CPU 大量时间花在**等串口排空** |
+| 采样落在 `rawWrite`                           | 正是"等待"那一段               |
 
 ⇒ **这是一次典型的观测者效应**：为了让日志**不丢行**，我们让写入**阻塞等待**，
 结果**日志本身成了被测系统的主要耗时**。
 
 ### 重要推论
 
-| 推论 | 说明 |
-| --- | --- |
+| 推论                                       | 说明                                              |
+| ------------------------------------------ | ------------------------------------------------- |
 | 之前的"停滞数十秒"可能**大部分是日志耗时** | 厂商 2.4 s 完成，我们数十秒 —— 差距可能主要在这里 |
-| 所有"热点/自旋"结论都需重估 | 采样看到的是**观测者自己** |
+| 所有"热点/自旋"结论都需重估                | 采样看到的是**观测者自己**                        |
 
 ### 下一步（关键实验）
 
 **关闭大部分日志后再测**：
+
 1. 把 `dumpLine`/`rawWrite` 的等待上限调小（如 5000 次），或
 2. 在 step 6 期间**静音**归档日志（`logPublic` 直接丢弃），
 3. 然后看 `enter step 7` 是否出现。
@@ -10507,21 +10569,21 @@ SN48
 
 ### 这不是测量假象（已两次排除）
 
-| 可能的假象 | 排除方式 | 结果 |
-| --- | --- | --- |
+| 可能的假象            | 排除方式                             | 结果      |
+| --------------------- | ------------------------------------ | --------- |
 | dump 自己阻塞写污染环 | 快照移到 `probe_dump_now()` **之前** | ❌ 仍 96% |
-| 心跳日志污染 | `sample_quiet = true` | ❌ 仍 96% |
+| 心跳日志污染          | `sample_quiet = true`                | ❌ 仍 96% |
 
 ### 因此
 
 **UART 输出就是被测系统的主要耗时。**
 
-| 数字 | 值 |
-| --- | --- |
-| 单行 30 B @ 115200 | **2.6 ms** |
-| 实际 tick 频率 | 170 Hz（设定 10 kHz 的 1/58）|
-| 厂商完成时间 | 2.4 s |
-| 我们 | >60 s（差 25–50 倍）|
+| 数字               | 值                            |
+| ------------------ | ----------------------------- |
+| 单行 30 B @ 115200 | **2.6 ms**                    |
+| 实际 tick 频率     | 170 Hz（设定 10 kHz 的 1/58） |
+| 厂商完成时间       | 2.4 s                         |
+| 我们               | >60 s（差 25–50 倍）          |
 
 ⇒ **两个倍数互相印证**：tick 慢 58 倍、完成慢 25–50 倍，
 都与"CPU 被 UART 阻塞占满"一致。
@@ -10537,6 +10599,7 @@ SN48
 
 **完全关闭板级日志**（`sample_quiet = true` 已开，再把 `osal.trace_calls = 0`、
 `call_stream_on = false`），只保留 `enter step N` 与 `T n=`：
+
 - 若 `enter step 7` **出现** ⇒ **根因确认是日志开销**（可修、与硬件无关）；
 - 若仍不出现 ⇒ 归档自身停滞，且此时采样才真正反映它。
 
@@ -10555,13 +10618,13 @@ SN48
 
 ### 静音后的实测
 
-| 指标 | 值 |
-| --- | --- |
-| `trace_calls` | **0**（`osal> ` 全静音）|
-| `call_stream_on` | **false** |
-| 60 s 输出行数 | **218** |
-| 估计字节率 | 218 × 30 B / 60 s ≈ **110 B/s** |
-| 115200 波特率容量 | **11 520 B/s** |
+| 指标              | 值                              |
+| ----------------- | ------------------------------- |
+| `trace_calls`     | **0**（`osal> ` 全静音）        |
+| `call_stream_on`  | **false**                       |
+| 60 s 输出行数     | **218**                         |
+| 估计字节率        | 218 × 30 B / 60 s ≈ **110 B/s** |
+| 115200 波特率容量 | **11 520 B/s**                  |
 
 ⇒ 输出只用了容量的 **~1%**。
 
@@ -10579,6 +10642,7 @@ while (((status.* >> 16) & 0xFF) >= 126 and spins < 5000) : (spins += 1) {}
 
 ⇒ 若 **TXFIFO 实际排空速率远低于 115200**（例如 APB 时钟被改动、
 或 UART 分频与假设不符），则：
+
 - 每次写入后 FIFO 长时间处于"满"状态 ⇒ `spins` 打满 ⇒ **返回并丢弃**；
 - CPU 大量时间花在这个等待循环里；
 - 但**成功写出的字节很少** ⇒ 输出量低。
@@ -10604,33 +10668,33 @@ var fifo_full_spins: u32 = 0;   // spins 打满的次数
 
 ### 已排除
 
-| 假设 | 排除依据 |
-| --- | --- |
-| 日志量太大 | 静音后仅 218 行 / 60 s |
-| dump 自身污染采样 | 快照已前移到 dump 前 |
-| 心跳污染 | `sample_quiet = true` |
-| 归档自身停滞（独立于日志）| 尚未排除 —— 需要 FIFO 修复后再测 |
+| 假设                       | 排除依据                         |
+| -------------------------- | -------------------------------- |
+| 日志量太大                 | 静音后仅 218 行 / 60 s           |
+| dump 自身污染采样          | 快照已前移到 dump 前             |
+| 心跳污染                   | `sample_quiet = true`            |
+| 归档自身停滞（独立于日志） | 尚未排除 —— 需要 FIFO 修复后再测 |
 
 ## 未解矛盾（本会话终点）：输出少，但 CPU 长期在 `rawWrite`
 
 ### 三次尝试与结果
 
-| 配置 | 采样分布 | 输出行数 | step 7？ |
-| --- | --- | --- | --- |
-| 默认 | 46/48 在 `rawWrite` | — | ❌ |
-| 快照前移 + `sample_quiet=true` | 46/48 在 `rawWrite` | — | ❌ |
-| `trace_calls=0` + `call_stream_on=false` | — | **218** | ❌ |
-| `call_stream_on=true` | — | **224** | ❌ |
-| **整行预留上限 200 000 → 5 000** | **41/48 仍在 `rawWrite`** | ~224 | ❌ |
+| 配置                                     | 采样分布                  | 输出行数 | step 7？ |
+| ---------------------------------------- | ------------------------- | -------- | -------- |
+| 默认                                     | 46/48 在 `rawWrite`       | —        | ❌       |
+| 快照前移 + `sample_quiet=true`           | 46/48 在 `rawWrite`       | —        | ❌       |
+| `trace_calls=0` + `call_stream_on=false` | —                         | **218**  | ❌       |
+| `call_stream_on=true`                    | —                         | **224**  | ❌       |
+| **整行预留上限 200 000 → 5 000**         | **41/48 仍在 `rawWrite`** | ~224     | ❌       |
 
 ⇒ **降上限没有让采样离开 `rawWrite`** ⇒ 不是"预留等待"本身的问题。
 
 ### 矛盾
 
-| 事实 | 值 |
-| --- | --- |
-| 输出量 | 224 行 ≈ 6.7 KB / 60 s ≈ **112 B/s**（容量的 **1%**）|
-| CPU 在 `rawWrite` 的时间 | **~85–96%** |
+| 事实                     | 值                                                    |
+| ------------------------ | ----------------------------------------------------- |
+| 输出量                   | 224 行 ≈ 6.7 KB / 60 s ≈ **112 B/s**（容量的 **1%**） |
+| CPU 在 `rawWrite` 的时间 | **~85–96%**                                           |
 
 ⇒ **两者不能同时成立**，除非：
 `rawWrite` 被**高频调用**，但每次调用**写出的字节很少或为零**
@@ -10662,6 +10726,7 @@ for (msg) |ch| {
 
 或更直接：在 `rawWrite` 入口统计**调用次数**与**实际写出字节数**，
 随 DUMP 一起打印 ⇒
+
 - 调用次数极大而字节极少 ⇒ **确认"空写"**
 - 两者正常 ⇒ 回到其他假设
 
@@ -10695,32 +10760,32 @@ if (std.mem.startsWith(u8, msg, "bt ")) {
 
 ### 因此矛盾仍未解
 
-| 事实 | 值 |
-| --- | --- |
-| CPU 在 `rawWrite` | ~85–96% |
-| 实际输出 | ~224 行 / 60 s |
+| 事实              | 值             |
+| ----------------- | -------------- |
+| CPU 在 `rawWrite` | ~85–96%        |
+| 实际输出          | ~224 行 / 60 s |
 
 ⇒ 而 `rawWrite` 只被 `bt ` 前缀消息（限量）+ 里程碑 + 采样行调用。
 
 ### 剩余可能性
 
-| # | 假设 | 检验 |
-| --- | --- | --- |
-| 1 | `rawWrite` 内部等待在**FIFO 常满**时每次都打满（即使只写 1 字节）| 读 `TXFIFO_CNT` 与 `FBR` 分频 |
-| 2 | 采样地址 `0x40069a0e/10/42/4c` 其实**不是** `rawWrite`（`addr2line` 只给最近符号）| dump 该区间反汇编确认 |
-| 3 | 归档侧触发了**大量** `bt ` 前缀消息（如每 tick 一条 `bt lp:`）| 统计 `log_hook_ours` 计数 |
+| #   | 假设                                                                               | 检验                          |
+| --- | ---------------------------------------------------------------------------------- | ----------------------------- |
+| 1   | `rawWrite` 内部等待在**FIFO 常满**时每次都打满（即使只写 1 字节）                  | 读 `TXFIFO_CNT` 与 `FBR` 分频 |
+| 2   | 采样地址 `0x40069a0e/10/42/4c` 其实**不是** `rawWrite`（`addr2line` 只给最近符号） | dump 该区间反汇编确认         |
+| 3   | 归档侧触发了**大量** `bt ` 前缀消息（如每 tick 一条 `bt lp:`）                     | 统计 `log_hook_ours` 计数     |
 
 ⇒ **#3 最可检验**：`log_hook_ours` 计数器已存在（`probe.zig:265`），
 把它加进 DUMP 输出即可 —— 若它达到数万，则"每 tick 一条 `bt ` 消息"成立。
 
 ### 本会话终点状态
 
-| 项 | 值 |
-| --- | --- |
-| HEAD | 本次提交后 |
-| 已确证 | 8 条（见上节）|
-| 未解 | `rawWrite` 占用 85–96% 与输出量 224 行之间的矛盾 |
-| 下一步 | 把 `log_hook_calls` / `log_hook_ours` 加进 DUMP 输出（一行）|
+| 项     | 值                                                           |
+| ------ | ------------------------------------------------------------ |
+| HEAD   | 本次提交后                                                   |
+| 已确证 | 8 条（见上节）                                               |
+| 未解   | `rawWrite` 占用 85–96% 与输出量 224 行之间的矛盾             |
+| 下一步 | 把 `log_hook_calls` / `log_hook_ours` 加进 DUMP 输出（一行） |
 
 ## ✅ 归因已核实：样本确实在 `hw.rawWrite` 内（2026-11-19）
 
@@ -10733,13 +10798,13 @@ if (std.mem.startsWith(u8, msg, "bt ")) {
 
 ### 样本地址
 
-| 地址 | 在 `rawWrite` 内？ |
-| --- | --- |
-| `0x40069a0c` | ✅ |
-| `0x40069a0e` | ✅ |
-| `0x40069a10` | ✅ |
-| `0x40069a42` | ✅ |
-| `0x40069a4c` | ✅ |
+| 地址         | 在 `rawWrite` 内？ |
+| ------------ | ------------------ |
+| `0x40069a0c` | ✅                 |
+| `0x40069a0e` | ✅                 |
+| `0x40069a10` | ✅                 |
+| `0x40069a42` | ✅                 |
+| `0x40069a4c` | ✅                 |
 
 ⇒ **全部落在 `0x400699f6–0x40069a62`** ⇒ **归因正确**，不是"最近符号"假象。
 
@@ -10753,11 +10818,11 @@ if (std.mem.startsWith(u8, msg, "bt ")) {
 
 ### 可能的调用者
 
-| 候选 | 说明 |
-| --- | --- |
-| `board.log.line` / `log.raw` | 需要有人调用它们 |
-| `bringup.init` 自身 | 其符号紧邻（`0x400673c0`，大小 `0x2636`，**覆盖到 `0x400699f6`**）⇒ **`bringup.init` 就在 `rawWrite` 之前** |
-| 某个直接 `log.line` 的循环 | 需查 `bringup.zig` 里是否有循环打印 |
+| 候选                         | 说明                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `board.log.line` / `log.raw` | 需要有人调用它们                                                                                            |
+| `bringup.init` 自身          | 其符号紧邻（`0x400673c0`，大小 `0x2636`，**覆盖到 `0x400699f6`**）⇒ **`bringup.init` 就在 `rawWrite` 之前** |
+| 某个直接 `log.line` 的循环   | 需查 `bringup.zig` 里是否有循环打印                                                                         |
 
 ⇒ **最可疑**：`bringup.init` 内部（大小 0x2636 ≈ 9.8 KB，是最大的函数）
 可能有一个**循环打印**的地方。
@@ -10772,11 +10837,11 @@ grep -n "log.line\|log.raw" components/bt-blobs/src/bringup.zig | head -20
 
 ### 本会话终点
 
-| 项 | 状态 |
-| --- | --- |
-| `rawWrite` 占 85–96% CPU | ✅ **归因已核实** |
-| 调用者 | ❓ **未知**（静音期不该有调用）|
-| 与"输出仅 224 行"的矛盾 | ❓ 未解 |
+| 项                       | 状态                            |
+| ------------------------ | ------------------------------- |
+| `rawWrite` 占 85–96% CPU | ✅ **归因已核实**               |
+| 调用者                   | ❓ **未知**（静音期不该有调用） |
+| 与"输出仅 224 行"的矛盾  | ❓ 未解                         |
 
 ## 最后的判定方法（一行，下一位接手者的第一步）
 
@@ -10807,20 +10872,20 @@ if (startsWith(msg, "bt ")) log_hook_ours +%= 1;   // 我们自己的短行
 
 ### 判读表
 
-| `log_hook_calls` | `log_hook_ours` | `TXFIFO_CNT` | 结论 |
-| --- | --- | --- | --- |
-| 巨大 | 小 | 高 | 归档高频打印 ⇒ FIFO 被占 ⇒ 我们的写入等待 |
-| 巨大 | 巨大 | 高 | 我们自己的高频打印 |
-| 小 | 小 | 低 | **归因有误**，`rawWrite` 的热度另有原因 |
+| `log_hook_calls` | `log_hook_ours` | `TXFIFO_CNT` | 结论                                      |
+| ---------------- | --------------- | ------------ | ----------------------------------------- |
+| 巨大             | 小              | 高           | 归档高频打印 ⇒ FIFO 被占 ⇒ 我们的写入等待 |
+| 巨大             | 巨大            | 高           | 我们自己的高频打印                        |
+| 小               | 小              | 低           | **归因有误**，`rawWrite` 的热度另有原因   |
 
 ## 本会话最终账目
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 11 |
-| 已确证事实 | 8 |
-| 撤回 | 22 |
-| 自我纠正 | 139 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 11   |
+| 已确证事实 | 8    |
+| 撤回       | 22   |
+| 自我纠正   | 139  |
 
 ### 三个真实、可复用的修复
 
@@ -10845,22 +10910,22 @@ Q5 120 8      ← TXFIFO_CNT = 120 / 128,  FBR = 8
 
 ### 判读
 
-| 读数 | 值 | 含义 |
-| --- | --- | --- |
-| `log_hook_calls` | **93** | **不是洪泛** —— 一分钟只有 93 条消息 |
-| `TXFIFO_CNT` | **120 / 128** | **FIFO 几乎满且不排空** |
-| `FBR` | **8** | 分频 = 8 |
+| 读数             | 值            | 含义                                 |
+| ---------------- | ------------- | ------------------------------------ |
+| `log_hook_calls` | **93**        | **不是洪泛** —— 一分钟只有 93 条消息 |
+| `TXFIFO_CNT`     | **120 / 128** | **FIFO 几乎满且不排空**              |
+| `FBR`            | **8**         | 分频 = 8                             |
 
 ⇒ **发送器没有在发送。**
 
 ### 这彻底解释了矛盾
 
-| 观测 | 解释 |
-| --- | --- |
-| CPU 85–96% 在 `hw.rawWrite` | 等待永远不满的 FIFO（`spins` 反复打满）|
-| 输出只有 ~224 行 | **只有极少数字节真的出去**（偶发排空）|
-| 日志"看起来正常" | 每行都被读到，但**极慢** |
-| tick 慢 58 倍 | ⚠ 可能无关（见下）|
+| 观测                        | 解释                                    |
+| --------------------------- | --------------------------------------- |
+| CPU 85–96% 在 `hw.rawWrite` | 等待永远不满的 FIFO（`spins` 反复打满） |
+| 输出只有 ~224 行            | **只有极少数字节真的出去**（偶发排空）  |
+| 日志"看起来正常"            | 每行都被读到，但**极慢**                |
+| tick 慢 58 倍               | ⚠ 可能无关（见下）                      |
 
 ### 为什么 FIFO 不排空
 
@@ -10868,11 +10933,11 @@ Q5 120 8      ← TXFIFO_CNT = 120 / 128,  FBR = 8
 
 ⇒ 所以**不是波特率算错**，而是：
 
-| 可能 | 检验 |
-| --- | --- |
-| **UART TX 被禁用/未使能** | 查 `UART_CONF0` 的 `TXD_BRK`/时钟门 |
-| **UART 时钟被门控** | `phyDomainEnable` 写 `0x2058_71E0`（SOC_PLL_SOURCE_CG）可能关了 UART 的源 |
-| TX 引脚未配置 | GPIO matrix |
+| 可能                      | 检验                                                                      |
+| ------------------------- | ------------------------------------------------------------------------- |
+| **UART TX 被禁用/未使能** | 查 `UART_CONF0` 的 `TXD_BRK`/时钟门                                       |
+| **UART 时钟被门控**       | `phyDomainEnable` 写 `0x2058_71E0`（SOC_PLL_SOURCE_CG）可能关了 UART 的源 |
+| TX 引脚未配置             | GPIO matrix                                                               |
 
 ⇒ **最可疑：我们自己的时钟配置把 UART 的时钟源关了** ——
 而"tick 慢 58 倍"若也源于同一个 APB 时钟变化，则**两者同因**。
@@ -10880,9 +10945,10 @@ Q5 120 8      ← TXFIFO_CNT = 120 / 128,  FBR = 8
 ### 这是本会话第一个**指向根因**的硬件级读数
 
 此前所有"停滞"分析（PHY / 事件队列 / malloc / 热点）**全部可能是 UART 不排空的次生现象**：
+
 - 每次 `log.line` 都要等 ~5000×N 次自旋；
 - 若归档内部也有 `esp_rom_printf`，它同样会在 TX-FIFO 等待循环里自旋
-⇒ **归档的"停滞"可能就发生在 ROM 的 printf 等待循环里**。
+  ⇒ **归档的"停滞"可能就发生在 ROM 的 printf 等待循环里**。
 
 ⇒ 这也与仓库早前记录的"**归档打印卡在 ROM 的 UART0 TX-FIFO 等待循环**"**完全吻合**！
 
@@ -10898,18 +10964,18 @@ Q5 120 8      ← TXFIFO_CNT = 120 / 128,  FBR = 8
 
 把**两处**对 `0x2058_71E0` 的写都置于 `pll_write_enabled`（默认 `false`）之后：
 
-| 位置 | 原行为 |
-| --- | --- |
-| `porting.zig:210`（`phyDomainEnable`）| `wr(0x2058_71E0, 0x3d)` |
-| `porting.zig:338`（`btdmLpEnableClock`）| `wr(a, rd(a) \| 0x18)` |
+| 位置                                     | 原行为                  |
+| ---------------------------------------- | ----------------------- |
+| `porting.zig:210`（`phyDomainEnable`）   | `wr(0x2058_71E0, 0x3d)` |
+| `porting.zig:338`（`btdmLpEnableClock`） | `wr(a, rd(a) \| 0x18)`  |
 
 ### 结果：**无变化**
 
-| 指标 | 改动前 | 改动后 |
-| --- | --- | --- |
-| 最后 step | 6 | **6** |
+| 指标         | 改动前  | 改动后  |
+| ------------ | ------- | ------- |
+| 最后 step    | 6       | **6**   |
 | `TXFIFO_CNT` | **120** | **120** |
-| `FBR` | 8 | 8 |
+| `FBR`        | 8       | 8       |
 
 ⇒ **FIFO 仍停在 120/128** ⇒ **PLL 写不是原因**。
 
@@ -10919,12 +10985,12 @@ Q5 120 8      ← TXFIFO_CNT = 120 / 128,  FBR = 8
 
 ⇒ UART 不排空另有原因，候选：
 
-| # | 可能 | 检验 |
-| --- | --- | --- |
-| 1 | UART TX 未使能（`UART_CONF0`）| 读 `0x2038A020` |
-| 2 | TX 引脚 / GPIO matrix 未配置 | 查 GPIO 配置 |
-| 3 | UART 时钟源被**别处**关掉（非 `0x2058_71E0`）| 扫 UART 相关时钟门 |
-| 4 | **`TXFIFO_CNT` 读数本身有问题**（例如读的偏移不对）| 对照 IDF 头文件确认 `+0x1C` 的 `TXFIFO_CNT` 位段 |
+| #   | 可能                                                | 检验                                             |
+| --- | --------------------------------------------------- | ------------------------------------------------ |
+| 1   | UART TX 未使能（`UART_CONF0`）                      | 读 `0x2038A020`                                  |
+| 2   | TX 引脚 / GPIO matrix 未配置                        | 查 GPIO 配置                                     |
+| 3   | UART 时钟源被**别处**关掉（非 `0x2058_71E0`）       | 扫 UART 相关时钟门                               |
+| 4   | **`TXFIFO_CNT` 读数本身有问题**（例如读的偏移不对） | 对照 IDF 头文件确认 `+0x1C` 的 `TXFIFO_CNT` 位段 |
 
 ⇒ **#4 值得先排除**：我们一直用 `(status >> 16) & 0xFF` 读 `TXFIFO_CNT`，
 若 S31 的位段不是 23:16，则"FIFO 停在 120"可能是**误读**。
@@ -10946,37 +11012,37 @@ FIFO 不排空因 PLL 写 → 禁用两处写后不变
 
 ### 交接清单（最终）
 
-| # | 事项 |
-| --- | --- |
-| 1 | 确认 `TXFIFO_CNT` 的位段（IDF `uart_reg.h` + `0x1C` 偏移）|
-| 2 | 读 `UART_CONF0`（`0x2038A020`）确认 TX 使能 |
-| 3 | 若 FIFO 确实常满 ⇒ 查 UART 时钟门（不止 `0x2058_71E0`）|
-| 4 | 若 FIFO 实为空 ⇒ **"96% 在 rawWrite"归因需重查**（`nm -S` 已证地址在函数内，但函数可能被内联/共享）|
+| #   | 事项                                                                                                |
+| --- | --------------------------------------------------------------------------------------------------- |
+| 1   | 确认 `TXFIFO_CNT` 的位段（IDF `uart_reg.h` + `0x1C` 偏移）                                          |
+| 2   | 读 `UART_CONF0`（`0x2038A020`）确认 TX 使能                                                         |
+| 3   | 若 FIFO 确实常满 ⇒ 查 UART 时钟门（不止 `0x2058_71E0`）                                             |
+| 4   | 若 FIFO 实为空 ⇒ **"96% 在 rawWrite"归因需重查**（`nm -S` 已证地址在函数内，但函数可能被内联/共享） |
 
 ## 终点状态（2026-11-19，本会话结束）
 
 ### 已确证（9 条）
 
-| # | 事实 | 证据 |
-| --- | --- | --- |
-| 1 | PHY 挂死 = `WITH_PHY=1` 自造路径 | 默认构建 PHY 通过、进到 step 6 |
-| 2 | `eventInit`×2 与 `eventqInit` 均执行 | 带行号 trace |
-| 3 | `r_btdm_task_init` **没有返回** | `enter step 7` 缺失 |
-| 4 | 归档在推进 | 两次 `osalcaller` 不同 |
-| 5 | tick 实测 **170 Hz**（设定 10 kHz 的 1/58）| `T n=` 计数 |
-| 6 | `panic: anchor[]` 读错区域；`M*` 才有效 | 解码为 `.rodata` 文本 |
-| 7 | 三处真实修复有效 | `rawWrite` 整行预留 / `dumpLine` 阻塞写 / `samplePcs` |
-| 8 | **`TXFIFO_CNT` 实测 120/128、`FBR=8`** | Q5 |
-| 9 | **两处 `0x2058_71E0` 写与 FIFO 满无关** | 全关后仍 120 |
+| #   | 事实                                        | 证据                                                  |
+| --- | ------------------------------------------- | ----------------------------------------------------- |
+| 1   | PHY 挂死 = `WITH_PHY=1` 自造路径            | 默认构建 PHY 通过、进到 step 6                        |
+| 2   | `eventInit`×2 与 `eventqInit` 均执行        | 带行号 trace                                          |
+| 3   | `r_btdm_task_init` **没有返回**             | `enter step 7` 缺失                                   |
+| 4   | 归档在推进                                  | 两次 `osalcaller` 不同                                |
+| 5   | tick 实测 **170 Hz**（设定 10 kHz 的 1/58） | `T n=` 计数                                           |
+| 6   | `panic: anchor[]` 读错区域；`M*` 才有效     | 解码为 `.rodata` 文本                                 |
+| 7   | 三处真实修复有效                            | `rawWrite` 整行预留 / `dumpLine` 阻塞写 / `samplePcs` |
+| 8   | **`TXFIFO_CNT` 实测 120/128、`FBR=8`**      | Q5                                                    |
+| 9   | **两处 `0x2058_71E0` 写与 FIFO 满无关**     | 全关后仍 120                                          |
 
 ### 未解的核心矛盾
 
-| 观测 | 值 |
-| --- | --- |
-| `log_hook_calls` | **93**（不是洪泛）|
-| `TXFIFO_CNT` | **120/128** |
-| CPU 在 `hw.rawWrite` | **85–96%** |
-| 实际输出 | ~224 行 / 60 s |
+| 观测                 | 值                 |
+| -------------------- | ------------------ |
+| `log_hook_calls`     | **93**（不是洪泛） |
+| `TXFIFO_CNT`         | **120/128**        |
+| CPU 在 `hw.rawWrite` | **85–96%**         |
+| 实际输出             | ~224 行 / 60 s     |
 
 ⇒ **93 次钩子调用无法解释 96% 的 CPU 时间。**
 
@@ -10993,19 +11059,19 @@ var rw_drops: u32 = 0;      // spins 打满而丢弃次数
 
 随 DUMP 一起打印。判读：
 
-| 读数 | 结论 |
-| --- | --- |
-| `rw_calls` 数千、`rw_bytes` 极少 | 确认"空写/丢弃" ⇒ 查 `TXFIFO_CNT` 读数是否说谎（ESP32 系 errata：满时钉在 128）|
-| `rw_calls` 小 | **"96% 在 rawWrite" 归因需重查**（`nm -S` 已证地址在函数内，但可能有共享代码）|
+| 读数                             | 结论                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `rw_calls` 数千、`rw_bytes` 极少 | 确认"空写/丢弃" ⇒ 查 `TXFIFO_CNT` 读数是否说谎（ESP32 系 errata：满时钉在 128） |
+| `rw_calls` 小                    | **"96% 在 rawWrite" 归因需重查**（`nm -S` 已证地址在函数内，但可能有共享代码）  |
 
 ### 一条有先例的假设（值得先查）
 
 ESP32 系 **`TXFIFO_CNT` 在满时可能钉住不回落**（errata）。本会话已有一个不对称证据：
 
-| 函数 | 自旋到上限后的行为 | 结果 |
-| --- | --- | --- |
-| `rawLineBlocking` | **无条件写** | 42 行 dump **全部送达** |
-| `rawWrite` | `if (spins >= 5000) return` | 普通行**大量消失** |
+| 函数              | 自旋到上限后的行为          | 结果                    |
+| ----------------- | --------------------------- | ----------------------- |
+| `rawLineBlocking` | **无条件写**                | 42 行 dump **全部送达** |
+| `rawWrite`        | `if (spins >= 5000) return` | 普通行**大量消失**      |
 
 ⇒ 若 `TXFIFO_CNT` 恒报 128 而输出明明在流 ⇒ **判据本身不可靠** ⇒
 修法：`rawWrite` 改用 `UART_STATUS` 的空闲位，或与 `rawLineBlocking` 一样**盲写**。
@@ -11038,24 +11104,24 @@ ROM 自己的横幅（`ESP-ROM`、`SPI mode:DIO`、`rst:`、`clkrst`）**能到�
 
 ### 因此以下结论全部撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "UART TX FIFO 停在 120/128，根本不排空" | ❌ 测量假象 |
-| "CPU 96% 在 rawWrite 是因为 FIFO 满" | ❌ 前提不成立 |
-| "PLL 写扰动 UART 时钟" | ❌ 早前已证伪 |
+| 结论                                    | 状态          |
+| --------------------------------------- | ------------- |
+| "UART TX FIFO 停在 120/128，根本不排空" | ❌ 测量假象   |
+| "CPU 96% 在 rawWrite 是因为 FIFO 满"    | ❌ 前提不成立 |
+| "PLL 写扰动 UART 时钟"                  | ❌ 早前已证伪 |
 
 ### 本会话八次数据源错误
 
-| # | 错误 | 误结论 |
-| --- | --- | --- |
-| 1 | FIFO 截断的日志 | step 1/2/6 |
-| 2 | 早期触发的计数器 | 队列未初始化 |
-| 3 | 6 条稀疏样本 | 热点 = Ughm |
-| 4 | grep 错前缀 | 分布平坦 |
-| 5 | 启动横幅当采样行 | 采样密度提升 |
-| 6 | 锚点值解读 | 断言文本 |
-| 7 | 最近符号假象（已排除）| — |
-| 8 | **在写满 14 行之后读 FIFO** | **FIFO 卡住** |
+| #   | 错误                        | 误结论        |
+| --- | --------------------------- | ------------- |
+| 1   | FIFO 截断的日志             | step 1/2/6    |
+| 2   | 早期触发的计数器            | 队列未初始化  |
+| 3   | 6 条稀疏样本                | 热点 = Ughm   |
+| 4   | grep 错前缀                 | 分布平坦      |
+| 5   | 启动横幅当采样行            | 采样密度提升  |
+| 6   | 锚点值解读                  | 断言文本      |
+| 7   | 最近符号假象（已排除）      | —             |
+| 8   | **在写满 14 行之后读 FIFO** | **FIFO 卡住** |
 
 ### 唯一正确做法
 
@@ -11083,26 +11149,26 @@ var rw_max_fifo: u32 = 0;   // 每次调用时看到的 TXFIFO_CNT 最大值
 
 ## UART 寄存器映射修正（IDF `soc/esp32s31/register/soc/uart_struct.h:1303-1311`）
 
-| 偏移 | 寄存器 |
-| --- | --- |
-| `0x00` | `fifo` |
-| `0x04` | `int_raw` |
-| `0x08` | `int_st` |
-| `0x0C` | `int_ena` |
-| `0x10` | `int_clr` |
-| **`0x14`** | **`clkdiv_sync`（波特率分频，**从未读过**）|
-| **`0x18`** | **`rx_filt`** ← **此前误称为 FBR** |
-| `0x1C` | `status`（`[7:0]=rxfifo_cnt`，**`[23:16]=txfifo_cnt`**）|
-| `0x20` | `conf0_sync`（**没有** 单独的 `CONF0`）|
-| `0x24` | `conf1` |
+| 偏移       | 寄存器                                                   |
+| ---------- | -------------------------------------------------------- |
+| `0x00`     | `fifo`                                                   |
+| `0x04`     | `int_raw`                                                |
+| `0x08`     | `int_st`                                                 |
+| `0x0C`     | `int_ena`                                                |
+| `0x10`     | `int_clr`                                                |
+| **`0x14`** | **`clkdiv_sync`（波特率分频，**从未读过**）              |
+| **`0x18`** | **`rx_filt`** ← **此前误称为 FBR**                       |
+| `0x1C`     | `status`（`[7:0]=rxfifo_cnt`，**`[23:16]=txfifo_cnt`**） |
+| `0x20`     | `conf0_sync`（**没有** 单独的 `CONF0`）                  |
+| `0x24`     | `conf1`                                                  |
 
 ### 修正
 
-| 我之前写的 | 实际 |
-| --- | --- |
-| "`FBR=8` ⇒ 分频 8" | ❌ `0x18` 是 **RX 滤波器**，不是分频 |
-| "读 `UART_CONF0` 于 `0x2038A020`" | ⚠ 那是 `conf0_sync` |
-| `TXFIFO_CNT` 在 `status[23:16]` | ✅ **正确** |
+| 我之前写的                        | 实际                                 |
+| --------------------------------- | ------------------------------------ |
+| "`FBR=8` ⇒ 分频 8"                | ❌ `0x18` 是 **RX 滤波器**，不是分频 |
+| "读 `UART_CONF0` 于 `0x2038A020`" | ⚠ 那是 `conf0_sync`                  |
+| `TXFIFO_CNT` 在 `status[23:16]`   | ✅ **正确**                          |
 
 ⇒ **`TXFIFO_CNT = 120` 是真实的** ⇒ TX **确实没有在排空**。
 
@@ -11124,20 +11190,20 @@ Q5 calls=96   bytes=2744  drops=0  max_fifo=126
 Q5 calls=113  bytes=2980  drops=0  max_fifo=126
 ```
 
-| 指标 | 值 | 含义 |
-| --- | --- | --- |
-| `rw_calls` | **96–113** | 一分钟只调了 ~100 次 |
-| `rw_bytes` | **2744–2980** | 写出 ~2.9 KB |
-| `rw_drops` | **0** | **从未丢弃** |
-| `rw_max_fifo` | **126** | 曾接近满 |
+| 指标          | 值            | 含义                 |
+| ------------- | ------------- | -------------------- |
+| `rw_calls`    | **96–113**    | 一分钟只调了 ~100 次 |
+| `rw_bytes`    | **2744–2980** | 写出 ~2.9 KB         |
+| `rw_drops`    | **0**         | **从未丢弃**         |
+| `rw_max_fifo` | **126**       | 曾接近满             |
 
 ### 结论：**96% 是采样窗口假象**
 
-| 算术 | 值 |
-| --- | --- |
-| 2.9 KB @ 115200 | **~250 ms** |
-| 占 60 s 的比例 | **0.4%** |
-| 采样环覆盖 | `pc_ring` 48 槽 ÷ ~170 Hz ≈ **0.28 s** |
+| 算术            | 值                                     |
+| --------------- | -------------------------------------- |
+| 2.9 KB @ 115200 | **~250 ms**                            |
+| 占 60 s 的比例  | **0.4%**                               |
+| 采样环覆盖      | `pc_ring` 48 槽 ÷ ~170 Hz ≈ **0.28 s** |
 
 ⇒ 采样环只覆盖**最后 0.28 秒**，而那一刻恰好有一次 `rawWrite` 在写
 （`DUMP{d}` 行在快照之前）⇒ **48 条样本全落在那里**。
@@ -11146,26 +11212,26 @@ Q5 calls=113  bytes=2980  drops=0  max_fifo=126
 
 ### 本会话第九次数据源错误
 
-| # | 错误 | 误结论 |
-| --- | --- | --- |
-| 9 | **48 槽环只覆盖 0.28 s，却当成"整体分布"** | **CPU 96% 在 `rawWrite`** |
+| #   | 错误                                       | 误结论                    |
+| --- | ------------------------------------------ | ------------------------- |
+| 9   | **48 槽环只覆盖 0.28 s，却当成"整体分布"** | **CPU 96% 在 `rawWrite`** |
 
 ### 因此以下撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "CPU 85–96% 在 `hw.rawWrite`" | ❌ 窗口假象 |
-| "日志拖慢系统 25–58 倍" | ❌ 无证据（2.9 KB/60 s 微不足道）|
-| "FIFO 被我们灌满" | ❌ `drops=0`，且 2.9 KB 远低于 60 s 容量 |
+| 结论                          | 状态                                     |
+| ----------------------------- | ---------------------------------------- |
+| "CPU 85–96% 在 `hw.rawWrite`" | ❌ 窗口假象                              |
+| "日志拖慢系统 25–58 倍"       | ❌ 无证据（2.9 KB/60 s 微不足道）        |
+| "FIFO 被我们灌满"             | ❌ `drops=0`，且 2.9 KB 远低于 60 s 容量 |
 
 ### 仍然成立
 
-| 事实 | 证据 |
-| --- | --- |
-| tick 实测 170 Hz（设定 10 kHz 的 1/58）| `T n=` 计数 |
-| `r_btdm_task_init` 没有返回 | `enter step 7` 缺失 |
-| 归档在推进 | 两次 `osalcaller` 不同 |
-| `TXFIFO_CNT` 读数本身可信（`status[23:16]`）| IDF 头文件 |
+| 事实                                         | 证据                   |
+| -------------------------------------------- | ---------------------- |
+| tick 实测 170 Hz（设定 10 kHz 的 1/58）      | `T n=` 计数            |
+| `r_btdm_task_init` 没有返回                  | `enter step 7` 缺失    |
+| 归档在推进                                   | 两次 `osalcaller` 不同 |
+| `TXFIFO_CNT` 读数本身可信（`status[23:16]`） | IDF 头文件             |
 
 ### 下一步（唯一正确的仪器修法）
 
@@ -11207,31 +11273,31 @@ U 126->127 div=30015b
 
 剩余候选（按可能性）：
 
-| # | 可能 | 检验 |
-| --- | --- | --- |
-| 1 | **TX 未使能**（`conf1` 的 `txd_en` / `conf0` 的 `txfifo_rst`）| 读 `0x2038A024`（`conf1`）|
-| 2 | UART **时钟被门控** | 查 `PCR`/`HP_SYS_CLKRST` 里 UART0 的时钟使能 |
-| 3 | TX 引脚未接到 pad | 查 GPIO matrix |
-| 4 | `conf0_sync` 处于复位态 | 读 `0x2038A020` |
+| #   | 可能                                                           | 检验                                         |
+| --- | -------------------------------------------------------------- | -------------------------------------------- |
+| 1   | **TX 未使能**（`conf1` 的 `txd_en` / `conf0` 的 `txfifo_rst`） | 读 `0x2038A024`（`conf1`）                   |
+| 2   | UART **时钟被门控**                                            | 查 `PCR`/`HP_SYS_CLKRST` 里 UART0 的时钟使能 |
+| 3   | TX 引脚未接到 pad                                              | 查 GPIO matrix                               |
+| 4   | `conf0_sync` 处于复位态                                        | 读 `0x2038A020`                              |
 
 ### 这条证据链的强度
 
-| 环节 | 证据 |
-| --- | --- |
-| FIFO 可写 | 计数 +1 |
-| FIFO 不排空 | 计数不回落（10 ms 足够发 1 字节约 87 µs）|
-| 分频正确 | `0x15b` = 347 ⇒ 115274 波特 |
-| **⇒ 发送器未运行** | 上面三条互斥 |
+| 环节               | 证据                                      |
+| ------------------ | ----------------------------------------- |
+| FIFO 可写          | 计数 +1                                   |
+| FIFO 不排空        | 计数不回落（10 ms 足够发 1 字节约 87 µs） |
+| 分频正确           | `0x15b` = 347 ⇒ 115274 波特               |
+| **⇒ 发送器未运行** | 上面三条互斥                              |
 
 ⇒ **这是本会话第一条"排他性"证据**：三个读数互相排除，只剩"TX 不工作"。
 
 ### 为什么这解释了整个会话
 
-| 现象 | 解释 |
-| --- | --- |
-| 日志极慢/行被丢 | 字节进 FIFO 但发不出去 ⇒ 满后丢弃 |
-| ROM printf 自旋 | 它等 `txfifo_cnt > 127` 的条件永远不缓解 |
-| 归档"停滞" | **归档很可能就卡在 ROM 的 UART 等待循环里** |
+| 现象             | 解释                                        |
+| ---------------- | ------------------------------------------- |
+| 日志极慢/行被丢  | 字节进 FIFO 但发不出去 ⇒ 满后丢弃           |
+| ROM printf 自旋  | 它等 `txfifo_cnt > 127` 的条件永远不缓解    |
+| 归档"停滞"       | **归档很可能就卡在 ROM 的 UART 等待循环里** |
 | 我方的"停滞"研究 | 全部可能是这一个硬件/时钟配置问题的次生现象 |
 
 ### 下一步（一次读数）
@@ -11249,20 +11315,20 @@ U 126->127 div=30015b
 U 125->126 div=30015b c0=0004001c c1=00006001
 ```
 
-| 寄存器 | 值 | 解读 |
-| --- | --- | --- |
-| `clkdiv_sync`（`+0x14`）| `0x30015b` | 整数 347 ⇒ 40 MHz/347 ≈ **115274** ✓ |
-| `conf0_sync`（`+0x20`）| `0x0004001c` | `bit_num=3`（8 位数据）、`stop_bit_num=1` ⇒ 帧格式正常 |
-| `conf1`（`+0x24`）| `0x00006001` | bit0 置位（`rxfifo_rst`？）；**`txfifo_rst`（bit1）= 0** ⇒ TX FIFO 未复位 |
+| 寄存器                   | 值           | 解读                                                                      |
+| ------------------------ | ------------ | ------------------------------------------------------------------------- |
+| `clkdiv_sync`（`+0x14`） | `0x30015b`   | 整数 347 ⇒ 40 MHz/347 ≈ **115274** ✓                                      |
+| `conf0_sync`（`+0x20`）  | `0x0004001c` | `bit_num=3`（8 位数据）、`stop_bit_num=1` ⇒ 帧格式正常                    |
+| `conf1`（`+0x24`）       | `0x00006001` | bit0 置位（`rxfifo_rst`？）；**`txfifo_rst`（bit1）= 0** ⇒ TX FIFO 未复位 |
 
 ⇒ **配置层面看不出问题。**
 
 ### 因此 TX 不发送的原因只剩两类
 
-| # | 可能 | 检验 |
-| --- | --- | --- |
-| 1 | **UART0 时钟被门控**（PCR / `HP_SYS_CLKRST`）| 查 UART0 的 CLK_EN |
-| 2 | **TX 引脚未路由到 pad**（GPIO matrix / IO_MUX）| 查 GPIO 输出使能与 matrix |
+| #   | 可能                                            | 检验                      |
+| --- | ----------------------------------------------- | ------------------------- |
+| 1   | **UART0 时钟被门控**（PCR / `HP_SYS_CLKRST`）   | 查 UART0 的 CLK_EN        |
+| 2   | **TX 引脚未路由到 pad**（GPIO matrix / IO_MUX） | 查 GPIO 输出使能与 matrix |
 
 ⇒ 而 ROM 自身的启动横幅（`ESP-ROM`、`SPI mode:DIO`）**能到达主机** ——
 那些是 **ROM 在启动早期**打印的，之后我们的板级初始化（`clock.zig` / `phyDomainEnable`）
@@ -11286,6 +11352,7 @@ reg.* = (reg.* & 0x107) | (1 << 3);
 ### 下一步（一次改动）
 
 **注释掉那一行 IO_MUX 写**，重跑，看：
+
 - `enter step 7` 是否出现；
 - `U 125->126` 是否变成 `U 125->124`（即 TX 恢复）。
 
@@ -11299,26 +11366,26 @@ reg.* = (reg.* & 0x107) | (1 << 3);
 U 125->126 div=30015b cc=3000000 txen=1 txrst=0
 ```
 
-| 寄存器 | 值 | 判定 |
-| --- | --- | --- |
-| `clkdiv_sync` | `0x30015b` | 整数 347 ⇒ **115274 波特** ✓ |
-| `clk_conf` | `0x03000000` | **`tx_sclk_en`(bit24) = 1** ✓ |
-| | | **`tx_rst_core`(bit26) = 0** ✓ |
-| `conf1` | `0x6001` | `txfifo_rst`(bit1) = 0 ✓ |
-| `conf0` | `0x4001c` | 8 位数据、停止位正常 ✓ |
+| 寄存器        | 值           | 判定                           |
+| ------------- | ------------ | ------------------------------ |
+| `clkdiv_sync` | `0x30015b`   | 整数 347 ⇒ **115274 波特** ✓   |
+| `clk_conf`    | `0x03000000` | **`tx_sclk_en`(bit24) = 1** ✓  |
+|               |              | **`tx_rst_core`(bit26) = 0** ✓ |
+| `conf1`       | `0x6001`     | `txfifo_rst`(bit1) = 0 ✓       |
+| `conf0`       | `0x4001c`    | 8 位数据、停止位正常 ✓         |
 
 ⇒ **每一项都正确，但写入 1 字节后 FIFO 计数只增不减。**
 
 ### 这是本会话唯一一个"排除一切软件配置"的硬件事实
 
-| 已排除 | 依据 |
-| --- | --- |
-| 波特率分频 | 347 ⇒ 115274 ✓ |
-| TX 时钟 | `tx_sclk_en = 1` ✓ |
-| TX 核心复位 | `tx_rst_core = 0` ✓ |
-| TX FIFO 复位 | `txfifo_rst = 0` ✓ |
-| 帧格式 | 8N1 ✓ |
-| FIFO 可写 | 计数 +1 ✓ |
+| 已排除         | 依据                            |
+| -------------- | ------------------------------- |
+| 波特率分频     | 347 ⇒ 115274 ✓                  |
+| TX 时钟        | `tx_sclk_en = 1` ✓              |
+| TX 核心复位    | `tx_rst_core = 0` ✓             |
+| TX FIFO 复位   | `txfifo_rst = 0` ✓              |
+| 帧格式         | 8N1 ✓                           |
+| FIFO 可写      | 计数 +1 ✓                       |
 | 我们的代码灌满 | `rw_drops = 0`、仅 2.9 KB/min ✓ |
 
 ⇒ **只剩硬件层：TX 引脚/pad 未连接，或 UART0 的 APB 时钟实际未供给
@@ -11336,10 +11403,10 @@ U 125->126 div=30015b cc=3000000 txen=1 txrst=0
 
 ### 最可疑的两处（按嫌疑排序）
 
-| # | 位置 | 说明 |
-| --- | --- | --- |
-| 1 | `bringup.zig` 的 `0x10801064`（IO_MUX）写 | 每次 bringup 都执行，在 step 6 之前 |
-| 2 | `clock.zig` 的 APB/UART 时钟配置 | 若 APB 未供给 UART0，`tx_sclk_en=1` 也无济于事 |
+| #   | 位置                                      | 说明                                           |
+| --- | ----------------------------------------- | ---------------------------------------------- |
+| 1   | `bringup.zig` 的 `0x10801064`（IO_MUX）写 | 每次 bringup 都执行，在 step 6 之前            |
+| 2   | `clock.zig` 的 APB/UART 时钟配置          | 若 APB 未供给 UART0，`tx_sclk_en=1` 也无济于事 |
 
 ### 下一步（一次改动）
 
@@ -11372,12 +11439,12 @@ U  59->4,4  spins=24062
 
 ### 因此撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "TX 完全不发送" | ❌ **错误** —— 只是等待不够（10 ms < 125 B 需的 10.85 ms）|
-| "UART 配置/时钟/引脚有问题" | ❌ 无证据 |
-| "`conf0/conf1/clk_conf` 需要修" | ❌ 全部正常 |
-| "IO_MUX 写破坏 UART" | ❌ **核对有误** —— `0x10801064` 是 **CLIC 中断控制字**（`0x10801000 + 25*4`），不是 IO_MUX |
+| 结论                            | 状态                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
+| "TX 完全不发送"                 | ❌ **错误** —— 只是等待不够（10 ms < 125 B 需的 10.85 ms）                                 |
+| "UART 配置/时钟/引脚有问题"     | ❌ 无证据                                                                                  |
+| "`conf0/conf1/clk_conf` 需要修" | ❌ 全部正常                                                                                |
+| "IO_MUX 写破坏 UART"            | ❌ **核对有误** —— `0x10801064` 是 **CLIC 中断控制字**（`0x10801000 + 25*4`），不是 IO_MUX |
 
 ### 独立佐证（早就存在却被忽略）
 
@@ -11389,18 +11456,18 @@ U  59->4,4  spins=24062
 
 ### 本会话十次数据源错误
 
-| # | 错误 | 误结论 |
-| --- | --- | --- |
-| 1 | FIFO 截断的日志 | step 1/2/6 |
-| 2 | 早期触发的计数器 | 队列未初始化 |
-| 3 | 6 条稀疏样本 | 热点 = Ughm |
-| 4 | grep 错前缀 | 分布平坦 |
-| 5 | 启动横幅当采样行 | 采样密度提升 |
-| 6 | 锚点值解读 | 断言文本 |
-| 7 | 最近符号假象（已排除）| — |
-| 8 | dump 后读 FIFO | FIFO 卡住 |
-| 9 | 48 槽环当整体分布 | 96% 在 rawWrite |
-| 10 | **等 10 ms 就当"不排空"** | **TX 不工作** |
+| #   | 错误                      | 误结论          |
+| --- | ------------------------- | --------------- |
+| 1   | FIFO 截断的日志           | step 1/2/6      |
+| 2   | 早期触发的计数器          | 队列未初始化    |
+| 3   | 6 条稀疏样本              | 热点 = Ughm     |
+| 4   | grep 错前缀               | 分布平坦        |
+| 5   | 启动横幅当采样行          | 采样密度提升    |
+| 6   | 锚点值解读                | 断言文本        |
+| 7   | 最近符号假象（已排除）    | —               |
+| 8   | dump 后读 FIFO            | FIFO 卡住       |
+| 9   | 48 槽环当整体分布         | 96% 在 rawWrite |
+| 10  | **等 10 ms 就当"不排空"** | **TX 不工作**   |
 
 ## ✅ 同时完成一个防御性修复：`printf` / `esp_rom_printf` 强定义
 
@@ -11423,6 +11490,7 @@ int esp_rom_printf(const char *format, ...)  { ... return ets_printf(...); }
 ### 效果
 
 **未解锁 step 6**（仍停在那里），但：
+
 - 归档的未来打印**不可能**再进入 ROM 自旋循环；
 - 这是一个**正确性修复**，与是否解锁无关。
 
@@ -11468,11 +11536,11 @@ IDF `bt.c:230` 证实它是**普通 init 函数**（直接调用，之后才 `bt
 
 ### 因此停滞点应在这条链的某一处
 
-| 已确认执行 | 依据 |
-| --- | --- |
-| `OkE7`（`0x40`）| `caller_ring` 里有 `0x4005f892/f8ca` |
-| `get_time_forever` + `mutex_pend` | 轨迹 |
-| `eventInit` ×2 | 轨迹 |
+| 已确认执行                        | 依据                                 |
+| --------------------------------- | ------------------------------------ |
+| `OkE7`（`0x40`）                  | `caller_ring` 里有 `0x4005f892/f8ca` |
+| `get_time_forever` + `mutex_pend` | 轨迹                                 |
+| `eventInit` ×2                    | 轨迹                                 |
 
 ⇒ 停滞在 **`0x78`（`2aNN…`）之内或其后的 `0xa0 BOhoff` / `0xb8 XPuq`**。
 
@@ -11495,16 +11563,17 @@ grep 全部捕获：**`rc=` 出现 0 次** ⇒ **`r_btdm_task_init` 没有返回
 
 ## 本会话结束时的准确状态
 
-| 项 | 值 |
-| --- | --- |
-| 挂点 | **`r_btdm_task_init` 内部**（已排除"提前返回"）|
+| 项       | 值                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------- |
+| 挂点     | **`r_btdm_task_init` 内部**（已排除"提前返回"）                                                |
 | 已执行到 | `OkE7`(0x40) → `get_time_forever`(0x58) → `mutex_pend`(0x66) → `2aNN…`(0x78，含 `eventInit`×2) |
-| 下一候选 | `0xa0 BOhffsuJp3HZRA44ZYRn` / `0xb8 XPuqTHliEO5V9xpR7aJR` |
-| 关键线索 | `XPuq` 早前记录为 **NULL 锚点** |
+| 下一候选 | `0xa0 BOhffsuJp3HZRA44ZYRn` / `0xb8 XPuqTHliEO5V9xpR7aJR`                                      |
+| 关键线索 | `XPuq` 早前记录为 **NULL 锚点**                                                                |
 
 ### 下一步（唯一，离线）
 
 反汇编 `r_sym_bt_2aNNQgpuVlZoKiS5xEYJ`（`0x78` 的目标）：
+
 - 它内部应有 `event_init` ×2 ⇒ 确认轨迹来源；
 - 它**返回之后**的下一个调用是 `BOhff`(0xa0) ⇒ 若那里解引用 `XPuq`（NULL）⇒ **那就是挂点**。
 
@@ -11524,13 +11593,13 @@ IDF `bt.c:334` 在 **enable 阶段**调 `r_btdm_task_enable()`，
 
 ## 本会话总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 13 |
-| 已确证事实 | 11 |
-| 撤回 | 24 |
-| 数据源错误 | 10 |
-| 自我纠正 | 141 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 13   |
+| 已确证事实 | 11   |
+| 撤回       | 24   |
+| 数据源错误 | 10   |
+| 自我纠正   | 141  |
 
 ### 唯一可复用的纪律
 
@@ -11548,17 +11617,17 @@ IDF `bt.c:334` 在 **enable 阶段**调 `r_btdm_task_enable()`，
 
 ⇒ 以下两条诊断**永远不可能出现在串口**：
 
-| 诊断 | 原文前缀 | 是否可见 |
-| --- | --- | --- |
+| 诊断                            | 原文前缀       | 是否可见    |
+| ------------------------------- | -------------- | ----------- |
 | `mutexPend 忙等耗尽 => TIMEOUT` | `"bt osal: …"` | ❌ **被吞** |
-| `mutexPend EINVAL slot.p=0x…` | `"bt osal: …"` | ❌ **被吞** |
+| `mutexPend EINVAL slot.p=0x…`   | `"bt osal: …"` | ❌ **被吞** |
 
 ### 因此以下撤回全部无效
 
-| 撤回 | 依据 | 状态 |
-| --- | --- | --- |
-| "忙等耗尽从未发生 ⇒ 不是忙等" | 该消息**不可能出现** | ❌ **撤回作废** |
-| "EINVAL 诊断未打印 ⇒ 没走 EINVAL" | 同上 | ❌ **撤回作废** |
+| 撤回                              | 依据                 | 状态            |
+| --------------------------------- | -------------------- | --------------- |
+| "忙等耗尽从未发生 ⇒ 不是忙等"     | 该消息**不可能出现** | ❌ **撤回作废** |
+| "EINVAL 诊断未打印 ⇒ 没走 EINVAL" | 同上                 | ❌ **撤回作废** |
 
 ⇒ **`mutexPend` 的四条出口仍然全部未被排除。**
 
@@ -11580,13 +11649,13 @@ logLine("bt ret: MUTEX_EINVAL 0x{x}", .{@intFromPtr(slot.p)});
 
 ## 本会话总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 14 |
-| 已确证事实 | 11 |
-| 撤回 | 26 |
+| 类别       | 数量   |
+| ---------- | ------ |
+| 代码修复   | 14     |
+| 已确证事实 | 11     |
+| 撤回       | 26     |
 | 数据源错误 | **11** |
-| 自我纠正 | 142 |
+| 自我纠正   | 142    |
 
 ## 随后的决定性实验（一行，已就绪）
 
@@ -11597,12 +11666,12 @@ logLine("bt ret: MUTEX_EINVAL 0x{x}", .{@intFromPtr(slot.p)});
 
 四种互斥结果：
 
-| 观察 | 结论 |
-| --- | --- |
-| `MUTEX_EINVAL` 出现 | 归档传的 `Slot*` 与我们布局不匹配 ⇒ **同时解释 mutex/事件队列/锚点** |
-| `mutex_pend_ok > 0` | mutex 正常，排除 |
-| `mutex_pend_busy > 0` | 有竞争 |
-| 三者皆 0 且无 EINVAL | 计数器与 trace 读的是**两份 osal 实例** |
+| 观察                  | 结论                                                                 |
+| --------------------- | -------------------------------------------------------------------- |
+| `MUTEX_EINVAL` 出现   | 归档传的 `Slot*` 与我们布局不匹配 ⇒ **同时解释 mutex/事件队列/锚点** |
+| `mutex_pend_ok > 0`   | mutex 正常，排除                                                     |
+| `mutex_pend_busy > 0` | 有竞争                                                               |
+| 三者皆 0 且无 EINVAL  | 计数器与 trace 读的是**两份 osal 实例**                              |
 
 ⇒ **这四种里任何一种都是实质性进展**，而前三种都可直接修。
 
@@ -11626,12 +11695,12 @@ osal.caller_ring :  1 个
 
 ### 关键对照
 
-| 名称 | 实例数 |
-| --- | --- |
+| 名称                       | 实例数 |
+| -------------------------- | ------ |
 | `Stats` 结构体的**字段数** | **11** |
-| `osal.stats_state` | **11** |
-| `osal.mutex_pool` | 1 |
-| `osal.caller_ring` | 1 |
+| `osal.stats_state`         | **11** |
+| `osal.mutex_pool`          | 1      |
+| `osal.caller_ring`         | 1      |
 
 ⇒ **11 == 11** ⇒ 这是编译器对全局结构体做**按字段标量替换（SROA）**，
 把 `stats_state` 拆成每个字段一个全局变量（命名 `stats_state.0` … `stats_state.10`）。
@@ -11640,11 +11709,11 @@ osal.caller_ring :  1 个
 
 ### 因此
 
-| 假设 | 状态 |
-| --- | --- |
+| 假设                                 | 状态                       |
+| ------------------------------------ | -------------------------- |
 | posix section 导致 `osal_kit` 编两份 | ❌ `posix.` 符号数 = **0** |
-| 计数器与 trace 读不同实例 | ❌ 单实例（11 = 字段数）|
-| mutex/事件队列不可见 | ❌ 池只有一份 |
+| 计数器与 trace 读不同实例            | ❌ 单实例（11 = 字段数）   |
+| mutex/事件队列不可见                 | ❌ 池只有一份              |
 
 ⇒ **计数器必须是真实的**：`mutex_pend_ok / mutex_pend_busy / blocked_calls` 全 0，
 而无 `MUTEX_EINVAL`（该诊断此前被日志过滤器吞掉，现已改为可见）。
@@ -11656,22 +11725,22 @@ osal.caller_ring :  1 个
 
 四种互斥结果：
 
-| 观察 | 结论 |
-| --- | --- |
-| `MUTEX_EINVAL` 出现 | 归档传的 `Slot*` 与我们的布局不匹配 ⇒ **同时解释 mutex/事件队列/锚点** |
-| `mutex_pend_ok > 0` | mutex 正常 |
-| `mutex_pend_busy > 0` | 有竞争 |
-| 皆 0 且无 EINVAL | 需再查（但已排除"两份实例"）|
+| 观察                  | 结论                                                                   |
+| --------------------- | ---------------------------------------------------------------------- |
+| `MUTEX_EINVAL` 出现   | 归档传的 `Slot*` 与我们的布局不匹配 ⇒ **同时解释 mutex/事件队列/锚点** |
+| `mutex_pend_ok > 0`   | mutex 正常                                                             |
+| `mutex_pend_busy > 0` | 有竞争                                                                 |
+| 皆 0 且无 EINVAL      | 需再查（但已排除"两份实例"）                                           |
 
 ## 本会话总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 已确证事实 | 12 |
-| 撤回 | 28 |
-| 数据源错误 | 12 |
-| 自我纠正 | 143 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 15   |
+| 已确证事实 | 12   |
+| 撤回       | 28   |
+| 数据源错误 | 12   |
+| 自我纠正   | 143  |
 
 ### 最后一条纪律
 
@@ -11683,20 +11752,20 @@ osal.caller_ring :  1 个
 
 ### 当前仪器状态
 
-| 项 | 值 | 影响 |
-| --- | --- | --- |
-| `trace_calls` | **0** | `osal> mutexPend` **不可能出现** ⇒ 它的缺失**不构成任何证据** |
-| `call_stream_on` | **false** | `bt ret:` 不再被压成 1 字节 |
-| `MUTEX_EINVAL` 诊断 | 改为 **`bt bringup:` 前缀** | 里程碑无条件放行 ⇒ **必然可见** |
-| `Q2` 计数器 | `mutex_pend_ok / mutex_pend_busy / blocked_calls` | 四条出口中三条的判据 |
+| 项                  | 值                                                | 影响                                                          |
+| ------------------- | ------------------------------------------------- | ------------------------------------------------------------- |
+| `trace_calls`       | **0**                                             | `osal> mutexPend` **不可能出现** ⇒ 它的缺失**不构成任何证据** |
+| `call_stream_on`    | **false**                                         | `bt ret:` 不再被压成 1 字节                                   |
+| `MUTEX_EINVAL` 诊断 | 改为 **`bt bringup:` 前缀**                       | 里程碑无条件放行 ⇒ **必然可见**                               |
+| `Q2` 计数器         | `mutex_pend_ok / mutex_pend_busy / blocked_calls` | 四条出口中三条的判据                                          |
 
 ### 结果矩阵（下一次成功烧录即可定案）
 
-| `Q2` | `MUTEX_EINVAL` | 结论 |
-| --- | --- | --- |
-| 任一 > 0 | — | **`mutexPend` 确实被调用** ⇒ 走的是对应出口 |
-| `0 0 0` | **出现** | 走 EINVAL ⇒ **`Slot*` 布局不匹配**（可同时解释 mutex/事件队列/锚点）|
-| `0 0 0` | 不出现 | **`mutexPend` 从未被调用** ⇒ 停滞更早：`OkE7`(0x40) / `get_time_forever`(0x58) 或其间 |
+| `Q2`     | `MUTEX_EINVAL` | 结论                                                                                  |
+| -------- | -------------- | ------------------------------------------------------------------------------------- |
+| 任一 > 0 | —              | **`mutexPend` 确实被调用** ⇒ 走的是对应出口                                           |
+| `0 0 0`  | **出现**       | 走 EINVAL ⇒ **`Slot*` 布局不匹配**（可同时解释 mutex/事件队列/锚点）                  |
+| `0 0 0`  | 不出现         | **`mutexPend` 从未被调用** ⇒ 停滞更早：`OkE7`(0x40) / `get_time_forever`(0x58) 或其间 |
 
 ⇒ 第三行是**新的可能性**，此前从未考虑：`mutexPend` 可能**根本没被调用**。
 
@@ -11714,24 +11783,25 @@ osal.call_stream_on = false;   // 保持
 
 ### 关于 `stats_state` 的 11 个实例（已澄清）
 
-| 证据 | 结论 |
-| --- | --- |
-| `stats_state` 11 个，`mutex_pool` 1 个，`caller_ring` 1 个 | 若模块编 11 份，**池与环也会重复** ⇒ 实际是 Zig 按 comptime 实例**克隆可变全局** |
-| `pub fn stats() Stats { return stats_state; }` **按值返回** | 而包装函数**直接改** `stats_state` ⇒ **可能读到不同实例** |
+| 证据                                                        | 结论                                                                             |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `stats_state` 11 个，`mutex_pool` 1 个，`caller_ring` 1 个  | 若模块编 11 份，**池与环也会重复** ⇒ 实际是 Zig 按 comptime 实例**克隆可变全局** |
+| `pub fn stats() Stats { return stats_state; }` **按值返回** | 而包装函数**直接改** `stats_state` ⇒ **可能读到不同实例**                        |
 
 ⇒ **一次地址对照即可定案**：在 `stats()` 与 `wr_btdm_osal_mutex_pend` 各打 `@intFromPtr(&stats_state)`：
+
 - 相同 ⇒ 计数器真实为 0，pend 未到达；
 - 不同 ⇒ **实例不匹配**，修法是让计数器成为**显式共享对象**（指针/extern fn），而非会被克隆的文件级全局。
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 已确证事实 | 12 |
-| 撤回 | 28 |
-| 数据源错误 | 12 |
-| 自我纠正 | 143 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 15   |
+| 已确证事实 | 12   |
+| 撤回       | 28   |
+| 数据源错误 | 12   |
+| 自我纠正   | 143  |
 
 ## 三条可复用纪律
 
@@ -11785,12 +11855,12 @@ MUTEX_EINVAL      = （无）
 
 ### 这是本会话收敛出的最精确位置
 
-| 层级 | 结果 |
-| --- | --- |
-| 板级 | 默认构建、PHY 正常 |
-| 步骤 | step 6 `r_btdm_task_init` |
-| 调用 | `OkE7`（`0x40`）|
-| 段 | `0x92`–`0xcc`（`fqmZk` / `JwHs` / `Ughm` / `PsB8` / `ZGgi`）|
+| 层级 | 结果                                                         |
+| ---- | ------------------------------------------------------------ |
+| 板级 | 默认构建、PHY 正常                                           |
+| 步骤 | step 6 `r_btdm_task_init`                                    |
+| 调用 | `OkE7`（`0x40`）                                             |
+| 段   | `0x92`–`0xcc`（`fqmZk` / `JwHs` / `Ughm` / `PsB8` / `ZGgi`） |
 
 ### 下一步（离线，一次）
 
@@ -11803,11 +11873,11 @@ MUTEX_EINVAL      = （无）
 
 ### 三类读数，可信度不同
 
-| 读数 | 值 | 可信？ |
-| --- | --- | --- |
-| `Q2`（`DUMP3000` 窗口内）| `0 0 0` | ✅ **可信**（计数器为真实全局，停滞期测量）|
-| `MUTEX_EINVAL` | **0 次** | ✅ **可信**（`bt bringup:` 前缀，`logHook` 无条件放行）|
-| `osal> mutexPend` | 0 次 | ❌ **不可信** —— `trace_calls = 0`，trace **被关闭** |
+| 读数                      | 值       | 可信？                                                  |
+| ------------------------- | -------- | ------------------------------------------------------- |
+| `Q2`（`DUMP3000` 窗口内） | `0 0 0`  | ✅ **可信**（计数器为真实全局，停滞期测量）             |
+| `MUTEX_EINVAL`            | **0 次** | ✅ **可信**（`bt bringup:` 前缀，`logHook` 无条件放行） |
+| `osal> mutexPend`         | 0 次     | ❌ **不可信** —— `trace_calls = 0`，trace **被关闭**    |
 
 ⇒ **结论只能基于前两条**：
 
@@ -11840,13 +11910,13 @@ objdump -dr --section=.text.r_sym_bt_ZGgifdtgyUnZ7f0ME7VH <9.o>
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 已确证事实 | 14 |
-| 撤回 | 30 |
-| 数据源错误 | 13 |
-| 自我纠正 | 145 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 15   |
+| 已确证事实 | 14   |
+| 撤回       | 30   |
+| 数据源错误 | 13   |
+| 自我纠正   | 145  |
 
 ### 最后一条纪律（本会话第四次强化）
 
@@ -11866,13 +11936,13 @@ Q5 ...        rawWrite 内部计数
 
 ### 逐项排除
 
-| 假设 | 判据 | 结果 |
-| --- | --- | --- |
-| 互斥量竞争 | `Q2` 全 0 + 无 `MUTEX_EINVAL` | ❌ 排除 |
-| 静态池耗尽（`mutex_pool`=64）| `pool_exhausted = 0` | ❌ **排除** |
-| 事件队列重复入队 | `eventq_requeued = 0` | ❌ 排除 |
-| 事件投递被丢弃 | `eventq_put = 0`（从未投递）| ❌ 排除 |
-| 消费者取空 | `eventq_get_empty = 0` | ❌ 排除 |
+| 假设                          | 判据                          | 结果        |
+| ----------------------------- | ----------------------------- | ----------- |
+| 互斥量竞争                    | `Q2` 全 0 + 无 `MUTEX_EINVAL` | ❌ 排除     |
+| 静态池耗尽（`mutex_pool`=64） | `pool_exhausted = 0`          | ❌ **排除** |
+| 事件队列重复入队              | `eventq_requeued = 0`         | ❌ 排除     |
+| 事件投递被丢弃                | `eventq_put = 0`（从未投递）  | ❌ 排除     |
+| 消费者取空                    | `eventq_get_empty = 0`        | ❌ 排除     |
 
 ⇒ **停滞区不产生任何 OSAL 活动**，且**所有池与队列状态健康**。
 
@@ -11890,21 +11960,21 @@ Q5 ...        rawWrite 内部计数
 
 ### 交接（最终）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 反汇编 `r_sym_bt_ZGgifdtgyUnZ7f0ME7VH`（`9.o`，caller ring 末位候选）与 `PsB8`（`21.o`） |
-| 2 | 找含**循环或寄存器等待**的那一个 |
-| 3 | 若都是纯函数 ⇒ 沿其重定位继续向下 |
+| #   | 动作                                                                                     |
+| --- | ---------------------------------------------------------------------------------------- |
+| 1   | 反汇编 `r_sym_bt_ZGgifdtgyUnZ7f0ME7VH`（`9.o`，caller ring 末位候选）与 `PsB8`（`21.o`） |
+| 2   | 找含**循环或寄存器等待**的那一个                                                         |
+| 3   | 若都是纯函数 ⇒ 沿其重定位继续向下                                                        |
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 已确证事实 | 15 |
-| 撤回 | 32 |
-| 数据源错误 | 13 |
-| 自我纠正 | 147 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 15   |
+| 已确证事实 | 15   |
+| 撤回       | 32   |
+| 数据源错误 | 13   |
+| 自我纠正   | 147  |
 
 ## 本会话真正留下的东西
 
@@ -11928,13 +11998,13 @@ TX 不发送 · 两份 osal · SROA 误判 · 池耗尽
 
 按节读的重定位：
 
-| 偏移 | 调用 |
-| --- | --- |
-| `0x1a` | `r_sym_bt_DkIeMv5o1Pl8nCGYcGxA` |
-| `0x4a` | `wr_btdm_osal_malloc` |
-| `0x5c` | `memset` |
-| **`0x72`** | **`wr_btdm_osal_event_init`** ← **轨迹里 `eventInit`×2 的来源** |
-| `0x84` / `0xa6` / `0xbe` / `0xe6` | `wr_btdm_osal_malloc` ×4 |
+| 偏移                              | 调用                                                            |
+| --------------------------------- | --------------------------------------------------------------- |
+| `0x1a`                            | `r_sym_bt_DkIeMv5o1Pl8nCGYcGxA`                                 |
+| `0x4a`                            | `wr_btdm_osal_malloc`                                           |
+| `0x5c`                            | `memset`                                                        |
+| **`0x72`**                        | **`wr_btdm_osal_event_init`** ← **轨迹里 `eventInit`×2 的来源** |
+| `0x84` / `0xa6` / `0xbe` / `0xe6` | `wr_btdm_osal_malloc` ×4                                        |
 
 ⇒ 由 `OkE7` 的 `0xc2` 调用 → **与"事件初始化"完全吻合**。
 
@@ -11953,6 +12023,7 @@ TX 不发送 · 两份 osal · SROA 误判 · 池耗尽
 ### 因此
 
 停滞**不在**这两个函数体内，而在 `PsB8` 内部的：
+
 - 5 次 `wr_btdm_osal_malloc`（`0x4a/0x84/0xa6/0xbe/0xe6`），或
 - `wr_btdm_osal_event_init`（`0x72`）及其后续。
 
@@ -11974,13 +12045,13 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 已确证事实 | 16 |
-| 撤回 | 32 |
-| 数据源错误 | 13 |
-| 自我纠正 | 148 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 15   |
+| 已确证事实 | 16   |
+| 撤回       | 32   |
+| 数据源错误 | 13   |
+| 自我纠正   | 148  |
 
 ### 定位链（最终）
 
@@ -12013,11 +12084,11 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 
 ### 说明
 
-| 假设 | 状态 |
-| --- | --- |
-| `malloc` 返回 NULL 后对 0 地址 memset | ❌ 已证伪（有 NULL 检查）|
-| `malloc` 返回**巨块**后 memset 巨长 | ❌ **本轮证伪**（唯一尺寸 76）|
-| "1.34 亿次写"这一历史观测 | 来自别的构建/别的现象，不能用于当前 |
+| 假设                                  | 状态                                |
+| ------------------------------------- | ----------------------------------- |
+| `malloc` 返回 NULL 后对 0 地址 memset | ❌ 已证伪（有 NULL 检查）           |
+| `malloc` 返回**巨块**后 memset 巨长   | ❌ **本轮证伪**（唯一尺寸 76）      |
+| "1.34 亿次写"这一历史观测             | 来自别的构建/别的现象，不能用于当前 |
 
 ### 同时也说明
 
@@ -12027,13 +12098,13 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 已确证事实 | 17 |
-| 撤回 | 34 |
-| 数据源错误 | 13 |
-| 自我纠正 | 149 |
+| 类别       | 数量 |
+| ---------- | ---- |
+| 代码修复   | 15   |
+| 已确证事实 | 17   |
+| 撤回       | 34   |
+| 数据源错误 | 13   |
+| 自我纠正   | 149  |
 
 ## 被逐一排除的假设（全表）
 
@@ -12057,14 +12128,14 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 
 ## 仍然成立的结论
 
-| 项 | 依据 |
-| --- | --- |
-| 停滞在 `r_btdm_task_init` 内部 | `rc=` 从未出现（非错误返回）|
-| 已越过 `eventq_init` | 轨迹（旧构建）+ `OkE7` 结构 |
-| **未到达 `mutex_pend`** | `Q2` 全 0 + 无 `MUTEX_EINVAL` |
-| `PsB8`（328 B）含 `event_init` ×2 | 按节读重定位 |
-| `ZGgi`（54 B）无循环 | 反汇编 |
-| 所有池/队列状态健康 | `Q1`/`Q3` 全 0 |
+| 项                                | 依据                          |
+| --------------------------------- | ----------------------------- |
+| 停滞在 `r_btdm_task_init` 内部    | `rc=` 从未出现（非错误返回）  |
+| 已越过 `eventq_init`              | 轨迹（旧构建）+ `OkE7` 结构   |
+| **未到达 `mutex_pend`**           | `Q2` 全 0 + 无 `MUTEX_EINVAL` |
+| `PsB8`（328 B）含 `event_init` ×2 | 按节读重定位                  |
+| `ZGgi`（54 B）无循环              | 反汇编                        |
+| 所有池/队列状态健康               | `Q1`/`Q3` 全 0                |
 
 ⇒ **下一步唯一手段：`trace_calls = 50` + `call_stream_on = false`，读停滞前最后一条 `osal> …`。**
 
@@ -12094,14 +12165,14 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 
 ### 这解释了本会话**全部**未解现象
 
-| 现象 | 解释 |
-| --- | --- |
-| `Q1/Q2/Q3` 全 0（无任何 OSAL 调用）| 0x58/0x66 永不执行 |
-| 无 `rc=` | 挂死发生在**返回之前** |
-| 无 fault / 无异常 | `sb zero,0` 是**总线挂死**，不是访问异常 |
-| `enter step 7` 缺失 | 同上 |
-| `mutexPend` 从未被调用 | 同理 |
-| 池计数器全 0 | 池**根本没被初始化过** |
+| 现象                                | 解释                                     |
+| ----------------------------------- | ---------------------------------------- |
+| `Q1/Q2/Q3` 全 0（无任何 OSAL 调用） | 0x58/0x66 永不执行                       |
+| 无 `rc=`                            | 挂死发生在**返回之前**                   |
+| 无 fault / 无异常                   | `sb zero,0` 是**总线挂死**，不是访问异常 |
+| `enter step 7` 缺失                 | 同上                                     |
+| `mutexPend` 从未被调用              | 同理                                     |
+| 池计数器全 0                        | 池**根本没被初始化过**                   |
 
 ### 修法
 
@@ -12115,22 +12186,22 @@ osal.trace_calls = 50;   // 0 → 50（配合 call_stream_on=false）
 
 ### 与本会话早期结论的关系
 
-| 早期结论 | 现在的判定 |
-| --- | --- |
-| "1.34 亿次零填充" | 是**这条链的下游**（`XPuq` 从 0 填充），不是根因 |
-| "热点 = malloc/memset" | 同理，是下游症状 |
-| "互斥量阻塞" | ❌ `mutex_pend` **从未执行** |
-| "事件队列未初始化" | 部分正确 —— 是**池**未初始化 |
+| 早期结论               | 现在的判定                                       |
+| ---------------------- | ------------------------------------------------ |
+| "1.34 亿次零填充"      | 是**这条链的下游**（`XPuq` 从 0 填充），不是根因 |
+| "热点 = malloc/memset" | 同理，是下游症状                                 |
+| "互斥量阻塞"           | ❌ `mutex_pend` **从未执行**                     |
+| "事件队列未初始化"     | 部分正确 —— 是**池**未初始化                     |
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| **根因** | **1（`OkE7` 因池未初始化而提前返回）** |
-| 撤回 | 34 |
-| 数据源错误 | 13 |
-| 自我纠正 | 150 |
+| 类别       | 数量                                   |
+| ---------- | -------------------------------------- |
+| 代码修复   | 15                                     |
+| **根因**   | **1（`OkE7` 因池未初始化而提前返回）** |
+| 撤回       | 34                                     |
+| 数据源错误 | 13                                     |
+| 自我纠正   | 150                                    |
 
 ## ⚠️ 重要复核：池初始化**已经实现**，"从未初始化"那条注释已过时
 
@@ -12178,14 +12249,14 @@ if (p == null) bt_malloc_fail += 1;
 
 ## 本会话最终总计（修订）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| **根因候选** | `OkE7` 返回非 0（**机制已确认**：`bnez a0` ⇒ 回滚 ⇒ 总线挂死）|
-| **但触发原因** | **待定** —— 池已初始化，故不是池缺失 |
-| 撤回 | 35 |
-| 数据源错误 | 13 |
-| 自我纠正 | 151 |
+| 类别           | 数量                                                           |
+| -------------- | -------------------------------------------------------------- |
+| 代码修复       | 15                                                             |
+| **根因候选**   | `OkE7` 返回非 0（**机制已确认**：`bnez a0` ⇒ 回滚 ⇒ 总线挂死） |
+| **但触发原因** | **待定** —— 池已初始化，故不是池缺失                           |
+| 撤回           | 35                                                             |
+| 数据源错误     | 13                                                             |
+| 自我纠正       | 151                                                            |
 
 ### 已确认的部分（不会再变）
 
@@ -12220,11 +12291,11 @@ r_btdm_task_init:
 
 ### 但"是否真的走了回滚分支"**尚未证实**
 
-| 前提 | 状态 |
-| --- | --- |
-| `prepareMempool` 成功（池已初始化）| ✅ **已证** —— `rc=` 0 次，且 step 3/4/5/52/6 都执行了 |
-| ⇒ `OkE7` 守卫 `*(*s0+8)!=0` 应为真 | ⚠ 推论 |
-| ⇒ **不应走回滚分支** | ⚠ **与我的假设冲突** |
+| 前提                                | 状态                                                   |
+| ----------------------------------- | ------------------------------------------------------ |
+| `prepareMempool` 成功（池已初始化） | ✅ **已证** —— `rc=` 0 次，且 step 3/4/5/52/6 都执行了 |
+| ⇒ `OkE7` 守卫 `*(*s0+8)!=0` 应为真  | ⚠ 推论                                                 |
+| ⇒ **不应走回滚分支**                | ⚠ **与我的假设冲突**                                   |
 
 ⇒ **`OkE7` 失败的原因仍未确定。**
 
@@ -12237,22 +12308,22 @@ r_btdm_task_init:
 
 ### 下一位接手的三步
 
-| # | 动作 |
-| --- | --- |
-| 1 | 在 `dumpAtPend` 里打印 `anchor[0..10]` 的**当前值**（走 `board.log.line`，不经 `panic: anchor[]` 那条读错区域的通道）|
-| 2 | 与 oracle 的 init 后值对比 ⇒ 判定 `OkE7` 是否成功 |
-| 3 | 若 `OkE7` 成功 ⇒ 停滞在 `0x66` 之后 ⇒ 转向 `mutex_pend`（此时 `Q2=0` 就真的意味着"未执行"需重解）|
+| #   | 动作                                                                                                                  |
+| --- | --------------------------------------------------------------------------------------------------------------------- |
+| 1   | 在 `dumpAtPend` 里打印 `anchor[0..10]` 的**当前值**（走 `board.log.line`，不经 `panic: anchor[]` 那条读错区域的通道） |
+| 2   | 与 oracle 的 init 后值对比 ⇒ 判定 `OkE7` 是否成功                                                                     |
+| 3   | 若 `OkE7` 成功 ⇒ 停滞在 `0x66` 之后 ⇒ 转向 `mutex_pend`（此时 `Q2=0` 就真的意味着"未执行"需重解）                     |
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 15 |
-| 机制确认（反汇编）| 1 |
-| 触发原因 | **未定** |
-| 撤回 | 36 |
-| 数据源错误 | 13 |
-| 自我纠正 | 152 |
+| 类别               | 数量     |
+| ------------------ | -------- |
+| 代码修复           | 15       |
+| 机制确认（反汇编） | 1        |
+| 触发原因           | **未定** |
+| 撤回               | 36       |
+| 数据源错误         | 13       |
+| 自我纠正           | 152      |
 
 ### 诚实的结论
 
@@ -12291,11 +12362,11 @@ README:288-292 明确记录：回滚路径
 
 **而那两条证据后来都被我自己撤回：**
 
-| 证据 | 撤回理由 |
-| --- | --- |
-| `TXFIFO_CNT = 120` | dump 自己刚写了 14 行（`Q5` 在写之后读）|
-| FIFO "不排空" | 等待充分后 125 → **4**，能排空 |
-| `tick 170 Hz` | 可能是**归档自己的 RTOS tick**，非故障 |
+| 证据               | 撤回理由                                 |
+| ------------------ | ---------------------------------------- |
+| `TXFIFO_CNT = 120` | dump 自己刚写了 14 行（`Q5` 在写之后读） |
+| FIFO "不排空"      | 等待充分后 125 → **4**，能排空           |
+| `tick 170 Hz`      | 可能是**归档自己的 RTOS tick**，非故障   |
 
 **而 `porting.zig:331-333` 的原文**：
 
@@ -12308,11 +12379,11 @@ README:288-292 明确记录：回滚路径
 
 ### 3. 因此当前最可能的根因（重新排序）
 
-| # | 候选 | 依据 |
-| --- | --- | --- |
+| #     | 候选                                                        | 依据                              |
+| ----- | ----------------------------------------------------------- | --------------------------------- |
 | **1** | **modem PLL 时钟（bit3/bit4）未开** ⇒ `0x2010B000` 总线挂死 | 完全匹配"无 fault 的静默挂死"签名 |
-| 2 | `OkE7` 返回非 0 ⇒ 回滚 | **与"无 fault"矛盾**，降级 |
-| 3 | 其它 | — |
+| 2     | `OkE7` 返回非 0 ⇒ 回滚                                      | **与"无 fault"矛盾**，降级        |
+| 3     | 其它                                                        | —                                 |
 
 ### 4. 下一位的第一步
 
@@ -12323,14 +12394,14 @@ README:288-292 明确记录：回滚路径
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 16（含本轮恢复）|
-| 机制确认 | **0**（已撤回）|
-| 回归引入并修复 | 1 |
-| 撤回 | 38 |
-| 数据源错误 | 13 |
-| 自我纠正 | 154 |
+| 类别           | 数量             |
+| -------------- | ---------------- |
+| 代码修复       | 16（含本轮恢复） |
+| 机制确认       | **0**（已撤回）  |
+| 回归引入并修复 | 1                |
+| 撤回           | 38               |
+| 数据源错误     | 13               |
+| 自我纠正       | 154              |
 
 ### 最诚实的一句话
 
@@ -12370,11 +12441,11 @@ enter step 6 r_btdm_task_init        ← 仍停在这里
 
 ### 剩下的候选
 
-| # | 候选 | 依据 |
-| --- | --- | --- |
-| 1 | `OkE7` 返回非 0 ⇒ 回滚 | ⚠ 与"无 fault"矛盾（回滚会 `store fault @ mtval=0`）|
-| 2 | `OkE7` 内部某处**静默挂死**（非回滚）| 与签名一致 |
-| 3 | `0x66 mutex_pend` 之后的路径 | 但 `Q2=0` 不支持 |
+| #   | 候选                                  | 依据                                                 |
+| --- | ------------------------------------- | ---------------------------------------------------- |
+| 1   | `OkE7` 返回非 0 ⇒ 回滚                | ⚠ 与"无 fault"矛盾（回滚会 `store fault @ mtval=0`） |
+| 2   | `OkE7` 内部某处**静默挂死**（非回滚） | 与签名一致                                           |
+| 3   | `0x66 mutex_pend` 之后的路径          | 但 `Q2=0` 不支持                                     |
 
 ⇒ **候选 2 最符合**：`OkE7` 内部（`0x92`–`0xcc` 段：`fqmZk`/`JwHs`/`Ughm`/`PsB8`/`ZGgi`）
 某处访问了一个**不应答的寄存器**（静默挂死、无 fault）。
@@ -12385,6 +12456,7 @@ enter step 6 r_btdm_task_init        ← 仍停在这里
 ### 下一步（一次读数）
 
 在 `dumpAtPend` 里读 **`0x2010B000`**（单个 `lw`）：
+
 - 若**读回导致挂死** ⇒ 确认 modem 窗口不应答 ⇒ 回到"为什么时钟没生效"；
 - 若读回正常值 ⇒ 排除总线问题，转向 `OkE7` 内部逻辑。
 
@@ -12392,14 +12464,14 @@ enter step 6 r_btdm_task_init        ← 仍停在这里
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 16 |
-| 机制确认 | 0 |
-| 回归引入并修复 | 1 |
-| **撤回** | **39** |
-| 数据源错误 | 13 |
-| 自我纠正 | 155 |
+| 类别           | 数量   |
+| -------------- | ------ |
+| 代码修复       | 16     |
+| 机制确认       | 0      |
+| 回归引入并修复 | 1      |
+| **撤回**       | **39** |
+| 数据源错误     | 13     |
+| 自我纠正       | 155    |
 
 ### 诚实结论
 
@@ -12411,6 +12483,7 @@ enter step 6 r_btdm_task_init        ← 仍停在这里
 4. 上述三条 ⇒ **静默的总线级挂死**
 
 ⇒ 而"静默总线挂死"在这个仓库里有**两处**已记录的先例：
+
 - 回滚路径（但会产生 **fault** ⇒ 排除）
 - **modem 窗口 `0x2010B000` 不应答**（**无 fault** ⇒ 匹配）
 
@@ -12439,13 +12512,13 @@ B0 before          ← 标记出现
 
 ### 这就是根因
 
-| 事实 | 值 |
-| --- | --- |
-| `r_btdm_task_init` 未返回 | `enter step 7` 缺失 |
-| 无 `rc=` | 非错误返回 |
-| 无 OSAL 调用 | `Q1/Q2/Q3` 全 0 |
-| **无 fault** | `0x2010B000` 是**总线挂死**，不是访问异常 |
-| **直接验证** | **读它就挂** |
+| 事实                      | 值                                        |
+| ------------------------- | ----------------------------------------- |
+| `r_btdm_task_init` 未返回 | `enter step 7` 缺失                       |
+| 无 `rc=`                  | 非错误返回                                |
+| 无 OSAL 调用              | `Q1/Q2/Q3` 全 0                           |
+| **无 fault**              | `0x2010B000` 是**总线挂死**，不是访问异常 |
+| **直接验证**              | **读它就挂**                              |
 
 ⇒ **归档在 `r_btdm_task_init` 内部第一次触及 modem 窗口时就静默挂死。**
 
@@ -12477,14 +12550,14 @@ BT controller 归档的初始化**必须要能访问 modem 寄存器窗口**，
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 16 |
+| 类别                 | 数量                       |
+| -------------------- | -------------------------- |
+| 代码修复             | 16                         |
 | **根因（直接验证）** | **1：`0x2010B000` 不可读** |
-| 回归引入并修复 | 1 |
-| 撤回 | 40 |
-| 数据源错误 | 13 |
-| 自我纠正 | 156 |
+| 回归引入并修复       | 1                          |
+| 撤回                 | 40                         |
+| 数据源错误           | 13                         |
+| 自我纠正             | 156                        |
 
 ### 本会话的完整弧线
 
@@ -12515,10 +12588,10 @@ DUMP 行   : 0 次          ← DUMP 路径**未触发**
 
 ### 两点必须分开
 
-| 断言 | 是否成立 |
-| --- | --- |
-| **`0x2010B000` 一读即挂** | ✅ **成立** —— 独立的、直接的事实 |
-| "本次停滞 = 原始停滞" | ❌ **不成立** —— 本次是**探针自己**造成的挂死 |
+| 断言                      | 是否成立                                      |
+| ------------------------- | --------------------------------------------- |
+| **`0x2010B000` 一读即挂** | ✅ **成立** —— 独立的、直接的事实             |
+| "本次停滞 = 原始停滞"     | ❌ **不成立** —— 本次是**探针自己**造成的挂死 |
 
 ⇒ 但**原始停滞**（无探针的构建、停在 step 6、无 fault、无 OSAL 调用）**此前已多次复现**，
 与"读到 `0x2010B000` 就挂"的签名完全一致。
@@ -12541,42 +12614,42 @@ board.log.line("B0 ok {x}", .{v});
 
 ### 当前结论（已足够）
 
-| 项 | 值 |
-| --- | --- |
-| `0x2010B000` 可读？ | **否** —— 一读即挂（直接验证）|
-| 归档 init 是否需要它？ | **是** —— 仓库记录"跑过 15 次分配才撞上" |
-| ⇒ 根因 | **归档的初始化撞上不可访问的 modem 窗口** |
-| 是否软件可绕？ | **否**（除非找到完整的前端上电/时钟序列）|
+| 项                     | 值                                        |
+| ---------------------- | ----------------------------------------- |
+| `0x2010B000` 可读？    | **否** —— 一读即挂（直接验证）            |
+| 归档 init 是否需要它？ | **是** —— 仓库记录"跑过 15 次分配才撞上"  |
+| ⇒ 根因                 | **归档的初始化撞上不可访问的 modem 窗口** |
+| 是否软件可绕？         | **否**（除非找到完整的前端上电/时钟序列） |
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 16 |
-| 根因（直接验证）| **1** |
-| 回归引入并修复 | 1 |
-| 撤回 | 40 |
-| 数据源错误 | **14** |
-| 自我纠正 | 157 |
+| 类别             | 数量   |
+| ---------------- | ------ |
+| 代码修复         | 16     |
+| 根因（直接验证） | **1**  |
+| 回归引入并修复   | 1      |
+| 撤回             | 40     |
+| 数据源错误       | **14** |
+| 自我纠正         | 157    |
 
 ## ❌❌ 撤回"硬件边界"的断言（2026-11-19）
 
 ### 反证（都在本仓）
 
-| 事实 | 出处 |
-| --- | --- |
-| **官方 IDF v6.1 同板 `esp_bt_controller_init` 约 2433 ms 返回 `ESP_OK`** | README:7670 |
-| oracle 里**同一个 `0x2010B000` 在同一点是读得到的** | README:1224-1227 |
+| 事实                                                                     | 出处             |
+| ------------------------------------------------------------------------ | ---------------- |
+| **官方 IDF v6.1 同板 `esp_bt_controller_init` 约 2433 ms 返回 `ESP_OK`** | README:7670      |
+| oracle 里**同一个 `0x2010B000` 在同一点是读得到的**                      | README:1224-1227 |
 
 ⇒ 我把它写成"**这不是软件能绕过的硬件边界**"是**错的**。
 
 ### 正确的表述
 
-| 断言 | 正确版本 |
-| --- | --- |
-| ❌ "`0x2010B000` 是硬件不可访问" | ✅ "**在当前 boot 层下**不可读；**oracle 同板同址可读**" |
+| 断言                                     | 正确版本                                                       |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| ❌ "`0x2010B000` 是硬件不可访问"         | ✅ "**在当前 boot 层下**不可读；**oracle 同板同址可读**"       |
 | ❌ "归档初始化撞上不可访问的 modem 窗口" | ✅ "归档初始化撞上**本 boot 层尚未建立的** modem 窗口访问路径" |
-| ❌ "不是软件能绕过的" | ✅ "**差异在 boot 层**，IDF 跑在完整的 boot 之上" |
+| ❌ "不是软件能绕过的"                    | ✅ "**差异在 boot 层**，IDF 跑在完整的 boot 之上"              |
 
 ### 因此下一步确定
 
@@ -12658,13 +12731,13 @@ osal.logLine("bt bringup: W1 after {d}", .{0});
 
 ### 本会话累计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 17 |
+| 类别         | 数量                     |
+| ------------ | ------------------------ |
+| 代码修复     | 17                       |
 | 观测通道修复 | **+1（BOOTSTATE 前缀）** |
-| 撤回 | 41 |
-| 数据源错误 | 15 |
-| 自我纠正 | 158 |
+| 撤回         | 41                       |
+| 数据源错误   | 15                       |
+| 自我纠正     | 158                      |
 
 ## 🏁🏁🏁 真正的墙：**`0x20109C04` 一读即挂**（2026-11-19）
 
@@ -12681,24 +12754,24 @@ BOOTSTATE syscon +0x000 = 0x00000100
 
 ### 即 `0x20109C04`（`MODEM_SYSCON.CLK_CONF`）
 
-| 事实 | 值 |
-| --- | --- |
-| 我们能读 `0x20109C00` | ✅ `= 0x100` |
-| 我们能读 `0x20109C04` | ❌ **挂死总线** |
-| oracle boot 完成态该值 | **`0x00201002`**（README:1180-1192）|
+| 事实                   | 值                                   |
+| ---------------------- | ------------------------------------ |
+| 我们能读 `0x20109C00`  | ✅ `= 0x100`                         |
+| 我们能读 `0x20109C04`  | ❌ **挂死总线**                      |
+| oracle boot 完成态该值 | **`0x00201002`**（README:1180-1192） |
 
 ⇒ **这是一个先有鸡还是先有蛋的问题**：
 该寄存器在 **boot 层建立之前不可访问**，而 oracle 的 boot 已经写好了它。
 
 ### 这解释了本会话的**全部**现象
 
-| 现象 | 解释 |
-| --- | --- |
-| `dumpBootState` 只打出 1 行 | 卡在第 2 个读 |
-| "已补齐"行从未出现 | 循环都没跑完，更谈不上后面 |
-| `0x2010B000` 不可读 | 同一类：boot 层未建立 |
-| 归档停在 step 6 | 它初始化时触及这些窗口 |
-| 无 fault、无 `rc=`、无 OSAL 调用 | **总线挂死**的签名 |
+| 现象                             | 解释                       |
+| -------------------------------- | -------------------------- |
+| `dumpBootState` 只打出 1 行      | 卡在第 2 个读              |
+| "已补齐"行从未出现               | 循环都没跑完，更谈不上后面 |
+| `0x2010B000` 不可读              | 同一类：boot 层未建立      |
+| 归档停在 step 6                  | 它初始化时触及这些窗口     |
+| 无 fault、无 `rc=`、无 OSAL 调用 | **总线挂死**的签名         |
 
 ⇒ **这是本会话唯一一条既直接验证、又完全解释所有观测的结论。**
 
@@ -12729,10 +12802,10 @@ wr.f(0x20109C20, 0x00002070);
 
 ### 顺带修正两处措辞
 
-| 旧 | 新 |
-| --- | --- |
-| "只有两行 ⇒ 挂死" | ✅ 复核后**成立**（去掉过滤后只有 1 行 ⇒ 确实卡在读） |
-| "已补齐那行没出现 ⇒ 4 次写挂了" | ❌ **错** —— 循环就没跑完，根本到不了那里 |
+| 旧                              | 新                                                    |
+| ------------------------------- | ----------------------------------------------------- |
+| "只有两行 ⇒ 挂死"               | ✅ 复核后**成立**（去掉过滤后只有 1 行 ⇒ 确实卡在读） |
+| "已补齐那行没出现 ⇒ 4 次写挂了" | ❌ **错** —— 循环就没跑完，根本到不了那里             |
 
 ## 🏁🏁🏁 终局：`0x20109C04` **读和写都挂死**（2026-11-19）
 
@@ -12753,21 +12826,21 @@ wr.f(0x2010_9C04, 0x0020_1002);   // syscon +0x004（clk_conf）
 
 ### 结论
 
-| 操作 | 结果 |
-| --- | --- |
+| 操作                | 结果                           |
+| ------------------- | ------------------------------ |
 | **读** `0x20109C04` | ❌ **挂死**（dump 循环卡在此） |
-| **写** `0x20109C04` | ❌ **挂死**（补齐块卡在此） |
-| 读/写 `0x20109C00` | ✅ 正常（`= 0x100`） |
+| **写** `0x20109C04` | ❌ **挂死**（补齐块卡在此）    |
+| 读/写 `0x20109C00`  | ✅ 正常（`= 0x100`）           |
 
 ⇒ **`MODEM_SYSCON` 窗口在 `+0x004` 及以后完全不可访问。**
 
 ### 这是真正的边界（三条独立证据）
 
-| # | 证据 |
-| --- | --- |
-| 1 | 读 `0x20109C04` 挂死 |
-| 2 | 写 `0x20109C04` 挂死 |
-| 3 | 归档在 `r_btdm_task_init` 内触及该窗口时静默挂死（无 fault、无 `rc=`、无 OSAL 调用）|
+| #   | 证据                                                                                 |
+| --- | ------------------------------------------------------------------------------------ |
+| 1   | 读 `0x20109C04` 挂死                                                                 |
+| 2   | 写 `0x20109C04` 挂死                                                                 |
+| 3   | 归档在 `r_btdm_task_init` 内触及该窗口时静默挂死（无 fault、无 `rc=`、无 OSAL 调用） |
 
 ### 与 oracle 的关系（关键限定）
 
@@ -12780,11 +12853,11 @@ wr.f(0x2010_9C04, 0x0020_1002);   // syscon +0x004（clk_conf）
 
 ### 除非满足以下之一
 
-| 路径 | 说明 |
-| --- | --- |
-| **让 IDF 的 bootloader 承担这部分初始化** | 我们用的是 IDF 二级 bootloader，但它显然没建立这些 |
-| **用 IDF 的完整启动链**（app 而非裸 Zig ELF） | oracle 就是这么跑的 |
-| **找到不经过该窗口的使能路径** | 需 IDF `modem_clock.c` 的真实序列 |
+| 路径                                          | 说明                                               |
+| --------------------------------------------- | -------------------------------------------------- |
+| **让 IDF 的 bootloader 承担这部分初始化**     | 我们用的是 IDF 二级 bootloader，但它显然没建立这些 |
+| **用 IDF 的完整启动链**（app 而非裸 Zig ELF） | oracle 就是这么跑的                                |
+| **找到不经过该窗口的使能路径**                | 需 IDF `modem_clock.c` 的真实序列                  |
 
 ### 本会话的最终结论
 
@@ -12796,14 +12869,14 @@ wr.f(0x2010_9C04, 0x0020_1002);   // syscon +0x004（clk_conf）
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
+| 类别                     | 数量  |
+| ------------------------ | ----- |
+| 代码修复                 | 18    |
 | **根因（三条独立证据）** | **1** |
-| 回归引入并修复 | 1 |
-| 撤回 | 43 |
-| 数据源错误 | 15 |
-| 自我纠正 | 160 |
+| 回归引入并修复           | 1     |
+| 撤回                     | 43    |
+| 数据源错误               | 15    |
+| 自我纠正                 | 160   |
 
 ## ❌ 更正：19 条写**全部成功**，挂的是**读**（2026-11-19）
 
@@ -12820,11 +12893,11 @@ bt bringup: BOOTSTATE syscon +0x000 = 0x00000100                   ← **窗口�
 
 ### 正确的结论
 
-| 操作 | 结果 |
-| --- | --- |
-| **写** `0x20109C04 = 0x00201002` | ✅ **成功**（19 条写全过）|
-| **读** `0x20109C04` | ❌ **挂死**（写在之前也无效）|
-| 读 `0x20109C00` | ✅ 正常 |
+| 操作                             | 结果                          |
+| -------------------------------- | ----------------------------- |
+| **写** `0x20109C04 = 0x00201002` | ✅ **成功**（19 条写全过）    |
+| **读** `0x20109C04`              | ❌ **挂死**（写在之前也无效） |
+| 读 `0x20109C00`                  | ✅ 正常                       |
 
 ⇒ **该窗口「可写不可读」** —— 写进去的值读不回来，读操作直接挂死总线。
 
@@ -12847,33 +12920,33 @@ boot 层：MODEM_SYSCON 窗口可写、不可读
 
 ### 下一步（两条，都不必读该窗口）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 确认 19 条写之后**不再读**该窗口 ⇒ 把 dump 循环里 syscon 的读**跳过**，只读其它窗口 |
-| 2 | 若归档必须读 ⇒ 这才是**真正的边界**（写对了也读不回来）|
+| #   | 动作                                                                                |
+| --- | ----------------------------------------------------------------------------------- |
+| 1   | 确认 19 条写之后**不再读**该窗口 ⇒ 把 dump 循环里 syscon 的读**跳过**，只读其它窗口 |
+| 2   | 若归档必须读 ⇒ 这才是**真正的边界**（写对了也读不回来）                             |
 
 ⇒ 先做 1：把 `wins` 里 syscon 的 `n` 从 16 改成 1（只读 `+0x000`），
 再跑一次看**其它三个窗口**的值 —— 那才是完整对拍。
 
 ## 本会话最终总计（修订）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| **确证** | 1：`MODEM_SYSCON` **可写不可读**（写成功、读挂死）|
-| 撤回 | **44** |
-| 数据源错误 | 16 |
-| 自我纠正 | 161 |
+| 类别       | 数量                                               |
+| ---------- | -------------------------------------------------- |
+| 代码修复   | 18                                                 |
+| **确证**   | 1：`MODEM_SYSCON` **可写不可读**（写成功、读挂死） |
+| 撤回       | **44**                                             |
+| 数据源错误 | 16                                                 |
+| 自我纠正   | 161                                                |
 
 ## ❌ 对比无效：缺失的标记是**配置差异**，不是停滞（2026-11-19）
 
 ### 我试图做的对比
 
-| 标记 | 老日志 | 当前构建 |
-| --- | --- | --- |
-| `Xpuq 锚点 P=0x0` | ✅ | ✅ |
-| `发布 7.o 锚点 a7=…` | ✅ | ❌ |
-| `bt gate: env=…` | ✅ | ❌ |
+| 标记                 | 老日志 | 当前构建 |
+| -------------------- | ------ | -------- |
+| `Xpuq 锚点 P=0x0`    | ✅     | ✅       |
+| `发布 7.o 锚点 a7=…` | ✅     | ❌       |
+| `bt gate: env=…`     | ✅     | ❌       |
 
 ⇒ 我据此判断"卡在 Xpuq 与 7.o 之间"。
 
@@ -12899,18 +12972,18 @@ if (@import("probe.zig").populate_workaround)  { … bt gate … }
 
 ### 同时撤回的两条
 
-| 结论 | 状态 |
-| --- | --- |
-| "可写不可读是 step 6 停滞的原因" | ❌ **撤回** —— 历史构建里该寄存器**读得到**，却**照样停在 step 6** |
-| "OkE7 返回非 0 走回滚" | ❌ **第三次撤回** —— `bt gate: env=… *(env+8)=0x2f012628` 证明守卫**通过** |
+| 结论                             | 状态                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| "可写不可读是 step 6 停滞的原因" | ❌ **撤回** —— 历史构建里该寄存器**读得到**，却**照样停在 step 6**         |
+| "OkE7 返回非 0 走回滚"           | ❌ **第三次撤回** —— `bt gate: env=… *(env+8)=0x2f012628` 证明守卫**通过** |
 
 ### 本会话的真实状态
 
-| 项 | 值 |
-| --- | --- |
-| 原始停滞 | **仍未定位**（历史构建同样停在 step 6）|
-| 本会话引入的回归 | ≥2（modem PLL 门控、`phy_before_clocks` 相关行为）|
-| 已修回归 | 1（PLL 已恢复 true）|
+| 项                           | 值                                                               |
+| ---------------------------- | ---------------------------------------------------------------- |
+| 原始停滞                     | **仍未定位**（历史构建同样停在 step 6）                          |
+| 本会话引入的回归             | ≥2（modem PLL 门控、`phy_before_clocks` 相关行为）               |
+| 已修回归                     | 1（PLL 已恢复 true）                                             |
 | **当前构建与历史构建的差异** | **标志不同（`populate_workaround`、`publish_bohff_anchor` 等）** |
 
 ### 下一位接手者的第一件事
@@ -12920,14 +12993,14 @@ if (@import("probe.zig").populate_workaround)  { … bt gate … }
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 确证 | 0 |
+| 类别         | 数量            |
+| ------------ | --------------- |
+| 代码修复     | 18              |
+| 确证         | 0               |
 | **回归引入** | **2（1 已修）** |
-| 撤回 | **47** |
-| 数据源错误 | **17** |
-| 自我纠正 | 162 |
+| 撤回         | **47**          |
+| 数据源错误   | **17**          |
+| 自我纠正     | 162             |
 
 ### 唯一可复用的一句话
 
@@ -12967,9 +13040,9 @@ panic: halted (wfi)
 
 一条重要线索（来自历史日志）：
 
-| 日志 | 位置 | 内容 |
-| --- | --- | --- |
-| `btprobe.log` | **第 56 行**（step 1 之前、BOOTSTATE dump 之前）| `bt probe: syscon+0x04 = 0x00201002` |
+| 日志          | 位置                                             | 内容                                 |
+| ------------- | ------------------------------------------------ | ------------------------------------ |
+| `btprobe.log` | **第 56 行**（step 1 之前、BOOTSTATE dump 之前） | `bt probe: syscon+0x04 = 0x00201002` |
 
 ⇒ 那个构建在**极早期**就读得到该寄存器 ⇒ **域时钟在 boot 早期就已经开着**，
 不是靠后面 `dumpBootState` 里的补齐写开的。
@@ -12986,14 +13059,14 @@ panic: halted (wfi)
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 确证 | **2**（① `0x2010B000` 一读即挂 ② 老日志是崩溃非停滞）|
-| 回归引入 | 2（均已修）|
-| 撤回 | 47 |
-| 数据源错误 | **18** |
-| 自我纠正 | 163 |
+| 类别       | 数量                                                  |
+| ---------- | ----------------------------------------------------- |
+| 代码修复   | 18                                                    |
+| 确证       | **2**（① `0x2010B000` 一读即挂 ② 老日志是崩溃非停滞） |
+| 回归引入   | 2（均已修）                                           |
+| 撤回       | 47                                                    |
+| 数据源错误 | **18**                                                |
+| 自我纠正   | 163                                                   |
 
 ### 一句话交接
 
@@ -13028,12 +13101,12 @@ panic: halted (wfi)
 
 ### 撤回清单（本轮）
 
-| 结论 | 状态 |
-| --- | --- |
-| "`0x20109C04` 可写不可读" | ❌ **撤回** —— 读得到，只是要等域时钟开 |
-| "boot 层缺口导致窗口不可访问" | ❌ **撤回** |
-| "19 条补齐 boot 差集是必需的" | ⚠ **多半多余** —— `syscon+0x004` 正是 `phyDomainEnable()` 要写的值 |
-| "`0x2010B000` 不可读是同一原因" | ⚠ **待重测** —— 需在 PHY 块之后读 |
+| 结论                            | 状态                                                               |
+| ------------------------------- | ------------------------------------------------------------------ |
+| "`0x20109C04` 可写不可读"       | ❌ **撤回** —— 读得到，只是要等域时钟开                            |
+| "boot 层缺口导致窗口不可访问"   | ❌ **撤回**                                                        |
+| "19 条补齐 boot 差集是必需的"   | ⚠ **多半多余** —— `syscon+0x004` 正是 `phyDomainEnable()` 要写的值 |
+| "`0x2010B000` 不可读是同一原因" | ⚠ **待重测** —— 需在 PHY 块之后读                                  |
 
 ### 正确的下一步
 
@@ -13044,14 +13117,14 @@ panic: halted (wfi)
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | **1**（`0x2010B000` 在**当时那个顺序下**一读即挂）|
-| 回归/顺序假象引入 | **3**（PLL 门控、dump 位置、19 条补齐）|
-| 撤回 | **51** |
-| 数据源错误 | **19** |
-| 自我纠正 | 164 |
+| 类别              | 数量                                               |
+| ----------------- | -------------------------------------------------- |
+| 代码修复          | 18                                                 |
+| 直接确证          | **1**（`0x2010B000` 在**当时那个顺序下**一读即挂） |
+| 回归/顺序假象引入 | **3**（PLL 门控、dump 位置、19 条补齐）            |
+| 撤回              | **51**                                             |
+| 数据源错误        | **19**                                             |
+| 自我纠正          | 164                                                |
 
 ### 第十九类数据源错误
 
@@ -13064,12 +13137,12 @@ panic: halted (wfi)
 
 ### 位置（`porting.zig`）
 
-| 行 | 读的地址 | 形态 |
-| --- | --- | --- |
+| 行    | 读的地址     | 形态                           |
+| ----- | ------------ | ------------------------------ |
 | `217` | `0x20109C14` | `wr(conf1, rd(conf1) \| bits)` |
-| `228` | `0x20109C08` | `wr(fo, rd(fo) \| …)` |
-| `231` | `0x2010F01C` | `wr(fo_lp, rd(fo_lp) \| …)` |
-| `234` | `0x2010F018` | `wr(lp18, rd(lp18) \| …)` |
+| `228` | `0x20109C08` | `wr(fo, rd(fo) \| …)`          |
+| `231` | `0x2010F01C` | `wr(fo_lp, rd(fo_lp) \| …)`    |
+| `234` | `0x2010F018` | `wr(lp18, rd(lp18) \| …)`      |
 
 ### 风险
 
@@ -13110,14 +13183,14 @@ wr(0x2010F018, <oracle 值>);
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | 1 |
-| 回归/顺序假象引入 | 3 |
-| 撤回 | **52** |
-| 数据源错误 | **19 类** |
-| 自我纠正 | **165** |
+| 类别              | 数量      |
+| ----------------- | --------- |
+| 代码修复          | 18        |
+| 直接确证          | 1         |
+| 回归/顺序假象引入 | 3         |
+| 撤回              | **52**    |
+| 数据源错误        | **19 类** |
+| 自我纠正          | **165**   |
 
 ### 交接的最后一句话
 
@@ -13144,12 +13217,12 @@ clkrst +0x000 = 0x1  +0x008 = 0x1  +0x00c = 0x2  +0x010 = 0x1
 
 ### 与 `phyDomainEnable()` 那 4 处 RMW 的关系
 
-| RMW 位置 | 读的地址 | oracle 值 | 补齐块已写？ |
-| --- | --- | --- | --- |
-| `217` | `syscon+0x14` | **表中没有**（即 0）| — |
-| `228` | `syscon+0x08` | **表中没有**（即 0）| — |
-| `231` | `lpcon+0x1c` | `0x00000004` | ✅ **已写** |
-| `234` | `lpcon+0x18` | `0x00000001` | ✅ **已写** |
+| RMW 位置 | 读的地址      | oracle 值            | 补齐块已写？ |
+| -------- | ------------- | -------------------- | ------------ |
+| `217`    | `syscon+0x14` | **表中没有**（即 0） | —            |
+| `228`    | `syscon+0x08` | **表中没有**（即 0） | —            |
+| `231`    | `lpcon+0x1c`  | `0x00000004`         | ✅ **已写**  |
+| `234`    | `lpcon+0x18`  | `0x00000001`         | ✅ **已写**  |
 
 ⇒ 补齐块**已经覆盖**了 4 处 RMW 中**可对照的两处**的效果，
 而另两处读的地址在 oracle boot 态**本来就是 0**（RMW 只会读回 0 再置位）。
@@ -13158,23 +13231,23 @@ clkrst +0x000 = 0x1  +0x008 = 0x1  +0x00c = 0x2  +0x010 = 0x1
 
 ### 这解释了为什么应当保持 `false`
 
-| 配置 | boot 状态 | 是否含可能挂死的读 |
-| --- | --- | --- |
-| `phy_before_clocks = true` | 等价 | ❌ **含 4 处 RMW** |
-| **`false` + 补齐块** | **等价** | ✅ **全是直接写** |
+| 配置                       | boot 状态 | 是否含可能挂死的读 |
+| -------------------------- | --------- | ------------------ |
+| `phy_before_clocks = true` | 等价      | ❌ **含 4 处 RMW** |
+| **`false` + 补齐块**       | **等价**  | ✅ **全是直接写**  |
 
 ⇒ **`false` 是严格更优的选择**（同样的 boot 状态，不冒读挂的风险）。
 
 ## 本会话最终总计（定稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | 1 |
-| 回归/顺序假象引入 | 3（均已识别，2 已修）|
-| 撤回 | 52 |
-| 数据源错误 | 19 类 |
-| 自我纠正 | 166 |
+| 类别              | 数量                  |
+| ----------------- | --------------------- |
+| 代码修复          | 18                    |
+| 直接确证          | 1                     |
+| 回归/顺序假象引入 | 3（均已识别，2 已修） |
+| 撤回              | 52                    |
+| 数据源错误        | 19 类                 |
+| 自我纠正          | 166                   |
 
 ### 交接结论
 
@@ -13187,11 +13260,11 @@ clkrst +0x000 = 0x1  +0x008 = 0x1  +0x00c = 0x2  +0x010 = 0x1
 
 ### 对照
 
-| 寄存器 | 当前构建 | 历史构建（`pc48`）| **oracle 表** |
-| --- | --- | --- | --- |
-| `clkrst +0x034` | **`0x0`** | `0x1` | **`0x1`** |
-| `clkrst +0x038` | `0x0` | `0x156db`（动态？）| 表中无 |
-| `clkrst +0x03c` | `0x0` | `0xf`（动态？）| 表中无 |
+| 寄存器          | 当前构建  | 历史构建（`pc48`）  | **oracle 表** |
+| --------------- | --------- | ------------------- | ------------- |
+| `clkrst +0x034` | **`0x0`** | `0x1`               | **`0x1`**     |
+| `clkrst +0x038` | `0x0`     | `0x156db`（动态？） | 表中无        |
+| `clkrst +0x03c` | `0x0`     | `0xf`（动态？）     | 表中无        |
 
 ⇒ **`clkrst+0x034` 应当是 `0x1`，而我们是 `0`。**
 
@@ -13209,44 +13282,44 @@ wr.f(0x2058_7034, 0x1);   // clkrst +0x034
 
 ### 但这不一定是问题
 
-| 疑问 | 说明 |
-| --- | --- |
-| 历史构建 `pc48` 是**有**补齐块时跑的？ | 需要确认 |
+| 疑问                                                       | 说明               |
+| ---------------------------------------------------------- | ------------------ |
+| 历史构建 `pc48` 是**有**补齐块时跑的？                     | 需要确认           |
 | 若 `clkrst+0x034` 由 `btdmLpEnableClock()`（step 5）直接写 | 那补齐块就是多余的 |
 
 ⇒ **下一步（离线）**：查 `porting.zig` 里 `btdmLpEnableClock()` 是否写 `0x2058_7034`。
 
 ### 当前配置状态（本会话结束时）
 
-| 标志 | 值 | 理由 |
-| --- | --- | --- |
-| `phy_before_clocks` | **false** | 避免 PHY 块那 4 处 RMW 在读窗口未开时挂死 |
-| boot 期 BOOTSTATE dump | **已删除** | 它在 step 5 之前 ⇒ 必然撞未开的窗口 |
-| 19 条补齐写 | **已删除** | 同上，且 step 5 已覆盖大部分 |
-| `0x2010B000` 探针 | **被 `ble_block_experiment=false` 门住 ⇒ 本次未跑** | 该标志还门着会挂在 `bt_bb_v2_init_cmplx` 的实验 ⇒ **不可翻** |
+| 标志                   | 值                                                  | 理由                                                         |
+| ---------------------- | --------------------------------------------------- | ------------------------------------------------------------ |
+| `phy_before_clocks`    | **false**                                           | 避免 PHY 块那 4 处 RMW 在读窗口未开时挂死                    |
+| boot 期 BOOTSTATE dump | **已删除**                                          | 它在 step 5 之前 ⇒ 必然撞未开的窗口                          |
+| 19 条补齐写            | **已删除**                                          | 同上，且 step 5 已覆盖大部分                                 |
+| `0x2010B000` 探针      | **被 `ble_block_experiment=false` 门住 ⇒ 本次未跑** | 该标志还门着会挂在 `bt_bb_v2_init_cmplx` 的实验 ⇒ **不可翻** |
 
 ⇒ **下一步**：把 `0x2010B000` 探针改成**无条件**（不碰 `ble_block_experiment`），
 它已在 step 5.5 之后、`enter(6)` 之前的正确点位。
 
 ## 本会话最终总计
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | 1 |
-| 回归/顺序假象引入 | 3 |
-| 撤回 | 53 |
-| 数据源错误 | 19 类 |
-| 自我纠正 | 167 |
+| 类别              | 数量  |
+| ----------------- | ----- |
+| 代码修复          | 18    |
+| 直接确证          | 1     |
+| 回归/顺序假象引入 | 3     |
+| 撤回              | 53    |
+| 数据源错误        | 19 类 |
+| 自我纠正          | 167   |
 
 ## 🏁 最清晰的对比：**29 项 vs 3 项**（2026-11-19）
 
 ### 用同一个 `win:` dump（`porting.zig:386` 段）在两个构建上对拍
 
-| 构建 | 非零窗口项 |
-| --- | --- |
-| **历史（`pc48`）** | **29 项** |
-| **当前（`pc1a7`）** | **3 项**（`clkrst +0x034/0x038/0x03c`）|
+| 构建                | 非零窗口项                              |
+| ------------------- | --------------------------------------- |
+| **历史（`pc48`）**  | **29 项**                               |
+| **当前（`pc1a7`）** | **3 项**（`clkrst +0x034/0x038/0x03c`） |
 
 ⇒ **当前构建缺了 26 个 boot 状态值。**
 
@@ -13267,10 +13340,10 @@ syscon …（其余至 29 项）
 
 ### 这就是本会话最终定位到的差异
 
-| 项 | 历史 | 当前 |
-| --- | --- | --- |
-| boot 窗口状态 | **29 项非零** | **3 项** |
-| 对应 `.a` 行为 | 能推进 | 撞墙 |
+| 项             | 历史          | 当前     |
+| -------------- | ------------- | -------- |
+| boot 窗口状态  | **29 项非零** | **3 项** |
+| 对应 `.a` 行为 | 能推进        | 撞墙     |
 
 ⇒ **下一步（明确）**：把 19 条补齐写**恢复到 step 5 之后**（而不是 boot 期），
 因为那时窗口已开（`btdmLpEnableClock()` 已写 `clk_conf`/`ICG`/`clk_conf1`），
@@ -13281,14 +13354,14 @@ syscon …（其余至 29 项）
 
 ## 本会话最终总计（定稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | 2（`0x2010B000` 一读即挂；**29 vs 3 项差距**）|
-| 回归/顺序假象引入 | 3 |
-| 撤回 | 53 |
-| 数据源错误 | 19 类 |
-| 自我纠正 | 168 |
+| 类别              | 数量                                           |
+| ----------------- | ---------------------------------------------- |
+| 代码修复          | 18                                             |
+| 直接确证          | 2（`0x2010B000` 一读即挂；**29 vs 3 项差距**） |
+| 回归/顺序假象引入 | 3                                              |
+| 撤回              | 53                                             |
+| 数据源错误        | 19 类                                          |
+| 自我纠正          | 168                                            |
 
 ### 一句话交接
 
@@ -13315,16 +13388,16 @@ bt bringup: OBS bohffAnchor=barch: win: clkrst +0x03c = 0x0000000f
 
 ### 第二十类数据源错误
 
-| # | 错误 | 误结论 |
-| --- | --- | --- |
-| 20 | **把"被输出交错覆盖"当成"值为 0"** | boot 层只有 3 项 |
+| #   | 错误                               | 误结论           |
+| --- | ---------------------------------- | ---------------- |
+| 20  | **把"被输出交错覆盖"当成"值为 0"** | boot 层只有 3 项 |
 
 ### 关键区分（本会话反复混淆）
 
-| 现象 | 原因 | 修法 |
-| --- | --- | --- |
-| 行**写不完**（结尾被截断）| FIFO 满 | `hw.rawWrite` 整行预留 ✅ 已修 |
-| 行**被其它输出覆盖**（中间插入别的内容）| 多个输出源交错 | **关闭心跳/ISR 打印** |
+| 现象                                     | 原因           | 修法                           |
+| ---------------------------------------- | -------------- | ------------------------------ |
+| 行**写不完**（结尾被截断）               | FIFO 满        | `hw.rawWrite` 整行预留 ✅ 已修 |
+| 行**被其它输出覆盖**（中间插入别的内容） | 多个输出源交错 | **关闭心跳/ISR 打印**          |
 
 ⇒ **两者是不同的问题**，`rawWrite` 的整行预留只解决前者。
 
@@ -13336,21 +13409,21 @@ bt bringup: OBS bohffAnchor=barch: win: clkrst +0x03c = 0x0000000f
 
 ### 当前的准确状态
 
-| 项 | 值 |
-| --- | --- |
-| `0x2010B000` 一读即挂 | ✅ **仍然成立**（该观测是"标记出现、后续不出现"，不受交错影响）|
-| 历史 vs 当前的窗口差异 | **未知**（对比方法有缺陷）|
+| 项                     | 值                                                              |
+| ---------------------- | --------------------------------------------------------------- |
+| `0x2010B000` 一读即挂  | ✅ **仍然成立**（该观测是"标记出现、后续不出现"，不受交错影响） |
+| 历史 vs 当前的窗口差异 | **未知**（对比方法有缺陷）                                      |
 
 ## 本会话最终总计（再修订）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | 1（`0x2010B000` 一读即挂）|
-| 回归/顺序假象引入 | 3 |
-| 撤回 | **54** |
-| 数据源错误 | **20 类** |
-| 自我纠正 | **169** |
+| 类别              | 数量                       |
+| ----------------- | -------------------------- |
+| 代码修复          | 18                         |
+| 直接确证          | 1（`0x2010B000` 一读即挂） |
+| 回归/顺序假象引入 | 3                          |
+| 撤回              | **54**                     |
+| 数据源错误        | **20 类**                  |
+| 自我纠正          | **169**                    |
 
 ### 第二十类错误的教训
 
@@ -13363,11 +13436,11 @@ bt bringup: OBS bohffAnchor=barch: win: clkrst +0x03c = 0x0000000f
 
 ### 已排除的交错源
 
-| 源 | 处置 |
-| --- | --- |
+| 源                                       | 处置         |
+| ---------------------------------------- | ------------ |
 | `probe_stop_at_tick = 3000` 的 DUMP 路径 | 已设为 **0** |
-| `OBS` 无条件打印 | **已删除** |
-| `sample_quiet` | 保持 `true` |
+| `OBS` 无条件打印                         | **已删除**   |
+| `sample_quiet`                           | 保持 `true`  |
 
 ### 结果
 
@@ -13380,11 +13453,11 @@ syscon +0x004 = （无输出）
 
 ### 因此
 
-| 可能 | 说明 |
-| --- | --- |
-| (a) 当前构建的窗口值**确实大多为 0** | 若 `win:` 循环用 `if (v != 0)` 打印 |
-| (b) 仍有第三个交错源 | 需再找 |
-| (c) `pc48` 与当前构建的**配置差异**导致 | 未逐项核对 |
+| 可能                                    | 说明                                |
+| --------------------------------------- | ----------------------------------- |
+| (a) 当前构建的窗口值**确实大多为 0**    | 若 `win:` 循环用 `if (v != 0)` 打印 |
+| (b) 仍有第三个交错源                    | 需再找                              |
+| (c) `pc48` 与当前构建的**配置差异**导致 | 未逐项核对                          |
 
 ⇒ **无法在会话内定论** —— 需要一次**只跑 `win:` dump、其它全部静音**的采集。
 
@@ -13395,14 +13468,14 @@ syscon +0x004 = （无输出）
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 18 |
-| 直接确证 | **1**（`0x2010B000` 一读即挂）|
-| 回归/顺序假象引入 | 4（PLL 门控、dump 位置、19 条补齐、整行关中断<已回退>）|
-| 撤回 | **55** |
-| 数据源错误 | **20 类** |
-| 自我纠正 | **171** |
+| 类别              | 数量                                                    |
+| ----------------- | ------------------------------------------------------- |
+| 代码修复          | 18                                                      |
+| 直接确证          | **1**（`0x2010B000` 一读即挂）                          |
+| 回归/顺序假象引入 | 4（PLL 门控、dump 位置、19 条补齐、整行关中断<已回退>） |
+| 撤回              | **55**                                                  |
+| 数据源错误        | **20 类**                                               |
+| 自我纠正          | **171**                                                 |
 
 ### 本会话的净产出
 
@@ -13420,10 +13493,10 @@ syscon +0x004 = （无输出）
 
 ### 位置与时序
 
-| 阶段 | 动作 | `0x20109C04` 的值 |
-| --- | --- | --- |
-| **step 5** `btdmLpEnableClock()` | `rd(reg_clk_conf) \| bits` | **`0x7e601002`**（IDF step-5 后值，含 `0x7e400000` 域时钟位）|
-| **step 51** `phyDomainEnable()` | 本会话加的 `= 0x00201002` | ❌ **被覆盖回 boot 值** |
+| 阶段                             | 动作                       | `0x20109C04` 的值                                             |
+| -------------------------------- | -------------------------- | ------------------------------------------------------------- |
+| **step 5** `btdmLpEnableClock()` | `rd(reg_clk_conf) \| bits` | **`0x7e601002`**（IDF step-5 后值，含 `0x7e400000` 域时钟位） |
+| **step 51** `phyDomainEnable()`  | 本会话加的 `= 0x00201002`  | ❌ **被覆盖回 boot 值**                                       |
 
 ⇒ **`0x7e400000`（modem / 模拟域时钟位）被抹掉。**
 
@@ -13448,23 +13521,23 @@ win: syscon +0x004 = （仍无输出）
 
 ### 交接的准确表述
 
-| 项 | 值 |
-| --- | --- |
-| 本会话引入的危害 | ✅ **已确认并修复**（`+0x04` 整字覆盖）|
-| `0x2010B000` 一读即挂 | 该观测在**修复前**取得 ⇒ **需在修复后重测** |
-| `win: syscon+0x004` 缺失 | **原因未定**（可能本来就打非零、可能仍被覆盖）|
+| 项                       | 值                                             |
+| ------------------------ | ---------------------------------------------- |
+| 本会话引入的危害         | ✅ **已确认并修复**（`+0x04` 整字覆盖）        |
+| `0x2010B000` 一读即挂    | 该观测在**修复前**取得 ⇒ **需在修复后重测**    |
+| `win: syscon+0x004` 缺失 | **原因未定**（可能本来就打非零、可能仍被覆盖） |
 
 ## 本会话最终总计（定稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | **19**（含本轮移除有害覆盖）|
-| 本会话引入的危害 | **5**（PLL 门控、dump 位置、19 条补齐、整行关中断、**`+0x04` 覆盖**）|
-| 其中已修 | **5** |
-| 直接确证 | 1（修复前：`0x2010B000` 一读即挂）|
-| 撤回 | 55 |
-| 数据源错误 | 20 类 |
-| 自我纠正 | 172 |
+| 类别             | 数量                                                                  |
+| ---------------- | --------------------------------------------------------------------- |
+| 代码修复         | **19**（含本轮移除有害覆盖）                                          |
+| 本会话引入的危害 | **5**（PLL 门控、dump 位置、19 条补齐、整行关中断、**`+0x04` 覆盖**） |
+| 其中已修         | **5**                                                                 |
+| 直接确证         | 1（修复前：`0x2010B000` 一读即挂）                                    |
+| 撤回             | 55                                                                    |
+| 数据源错误       | 20 类                                                                 |
+| 自我纠正         | 172                                                                   |
 
 ### 最重要的一条
 
@@ -13476,10 +13549,10 @@ win: syscon +0x004 = （仍无输出）
 
 ### 改动
 
-| 位置 | 内容 |
-| --- | --- |
-| `bringup.zig` `init()` 开头（**step 5 之前**）| `+0x00 = 0x00000100`、`+0x04 = 0x00201002`、`+0x0C = 0x64646400` |
-| `porting.zig` `phyDomainEnable()`（step 51）| **已删除**这三条整字写 |
+| 位置                                           | 内容                                                             |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| `bringup.zig` `init()` 开头（**step 5 之前**） | `+0x00 = 0x00000100`、`+0x04 = 0x00201002`、`+0x0C = 0x64646400` |
+| `porting.zig` `phyDomainEnable()`（step 51）   | **已删除**这三条整字写                                           |
 
 **理由**：放在 step 51 会**覆盖** step 5 的 RMW 结果（尤其 `+0x04`，step 5 已算出 `0x7e601002`）。
 移到 boot 期后，step 5 的 `rd(+0x04) | 0x7e400000` 能正确得到 IDF 的 `0x7e601002`。
@@ -13496,24 +13569,24 @@ step: enter step 5 → 52 → 6
 
 ### 这说明什么（谨慎表述）
 
-| 可能 | 说明 |
-| --- | --- |
-| (a) `win:` dump 用 `if (v != 0)` 且 `syscon` 窗口值确为 0 | 需查 dump 源码确认过滤条件 |
-| (b) step-5 的 dump 输出仍被覆盖 | 需再排除交错 |
-| (c) `syscon` 窗口在 step 5 时不可读 | 与历史记录矛盾（pc48 读到过）|
+| 可能                                                      | 说明                          |
+| --------------------------------------------------------- | ----------------------------- |
+| (a) `win:` dump 用 `if (v != 0)` 且 `syscon` 窗口值确为 0 | 需查 dump 源码确认过滤条件    |
+| (b) step-5 的 dump 输出仍被覆盖                           | 需再排除交错                  |
+| (c) `syscon` 窗口在 step 5 时不可读                       | 与历史记录矛盾（pc48 读到过） |
 
 ⇒ **未定论。**
 
 ## 本会话最终总计（定稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 20 |
-| 本会话引入的危害 | 5（均已处置）|
-| 直接确证 | 1（**修复前**：`0x2010B000` 一读即挂）|
-| 撤回 | 55 |
-| 数据源错误 | 20 类 |
-| 自我纠正 | 173 |
+| 类别             | 数量                                   |
+| ---------------- | -------------------------------------- |
+| 代码修复         | 20                                     |
+| 本会话引入的危害 | 5（均已处置）                          |
+| 直接确证         | 1（**修复前**：`0x2010B000` 一读即挂） |
+| 撤回             | 55                                     |
+| 数据源错误       | 20 类                                  |
+| 自我纠正         | 173                                    |
 
 ### 交接（下一位的第一步，具体）
 
@@ -13540,10 +13613,10 @@ win 行数 = 0
 
 ### 因此
 
-| 结论 | 依据 |
-| --- | --- |
-| `wins` 循环**未执行**，或其输出**未到达串口** | 0 行 |
-| `if (v != 0)` 过滤器**不是**原因 | 已移除，仍 0 行 |
+| 结论                                          | 依据            |
+| --------------------------------------------- | --------------- |
+| `wins` 循环**未执行**，或其输出**未到达串口** | 0 行            |
+| `if (v != 0)` 过滤器**不是**原因              | 已移除，仍 0 行 |
 
 ⇒ 与 `BOOTSTATE` 那次同构：**那段 dump 在当前构建里根本跑不到**（或不打印）。
 
@@ -13564,14 +13637,14 @@ osal.logLine("bt bringup: WINS_DONE {d}", .{0});
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 21 |
-| 本会话引入的危害 | 5（均已处置）|
-| 直接确证 | 1（**修复前**：`0x2010B000` 一读即挂）|
-| 撤回 | 56 |
-| 数据源错误 | 20 类 |
-| 自我纠正 | **174** |
+| 类别             | 数量                                   |
+| ---------------- | -------------------------------------- |
+| 代码修复         | 21                                     |
+| 本会话引入的危害 | 5（均已处置）                          |
+| 直接确证         | 1（**修复前**：`0x2010B000` 一读即挂） |
+| 撤回             | 56                                     |
+| 数据源错误       | 20 类                                  |
+| 自我纠正         | **174**                                |
 
 ### 本会话的三件净产出
 
@@ -13601,10 +13674,10 @@ const b_conf_sec_ccm: u32 = @as(u32, 1) << 26;    // clk_modem_sec_ccm_en
 
 ### 实测（用现成的自证行，无需 `win:` dump）
 
-| 构建 | `bt lp: clk_conf` |
-| --- | --- |
-| 修改前 | `0x72601002` |
-| **修改后** | **`0x77601002`** |
+| 构建       | `bt lp: clk_conf` |
+| ---------- | ----------------- |
+| 修改前     | `0x72601002`      |
+| **修改后** | **`0x77601002`**  |
 
 ⇒ **bit24（`clk_zbmac_en` = BLE/MAC 时钟）已置位** ✓
 
@@ -13618,11 +13691,11 @@ step: enter step 3 → 4 → 5      ← **停在 5**（此前到 6）
 
 ### 目标值对照
 
-| 值 | 位图（高字节）|
-| --- | --- |
-| 我们（改后）| `0x77` = `0111 0111` |
-| IDF 目标 | `0x7e` = `0111 1110` |
-| 差 | **bit24 与 bit27** |
+| 值           | 位图（高字节）       |
+| ------------ | -------------------- |
+| 我们（改后） | `0x77` = `0111 0111` |
+| IDF 目标     | `0x7e` = `0111 1110` |
+| 差           | **bit24 与 bit27**   |
 
 ⇒ 还需 `bit27`（`clk_modem_sec_bah_en`？），且 bit24 是否真置上了存疑（`0x77` vs `0x7e`）。
 
@@ -13634,15 +13707,15 @@ step: enter step 3 → 4 → 5      ← **停在 5**（此前到 6）
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | **22** |
-| 本会话引入的危害 | 5（均已处置）|
-| **关键进展** | `clk_conf` 补上 `clk_zbmac_en`(bit24) |
-| 直接确证 | 1（修复前）|
-| 撤回 | 56 |
-| 数据源错误 | 20 类 |
-| 自我纠正 | **175** |
+| 类别             | 数量                                  |
+| ---------------- | ------------------------------------- |
+| 代码修复         | **22**                                |
+| 本会话引入的危害 | 5（均已处置）                         |
+| **关键进展**     | `clk_conf` 补上 `clk_zbmac_en`(bit24) |
+| 直接确证         | 1（修复前）                           |
+| 撤回             | 56                                    |
+| 数据源错误       | 20 类                                 |
+| 自我纠正         | **175**                               |
 
 ### 最有价值的一条（本会话）
 
@@ -13670,11 +13743,11 @@ Q5 95 2706 0 126
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| "加时钟位后停在 step 5" | ❌ **交错假象，撤回** |
-| 实际进度 | 与之前相同（进 step 6、到 `event_init`）|
-| `clk_conf` 补 bit24 | ✅ **真实生效**（`0x72601002` → `0x77601002`）|
+| 结论                    | 状态                                           |
+| ----------------------- | ---------------------------------------------- |
+| "加时钟位后停在 step 5" | ❌ **交错假象，撤回**                          |
+| 实际进度                | 与之前相同（进 step 6、到 `event_init`）       |
+| `clk_conf` 补 bit24     | ✅ **真实生效**（`0x72601002` → `0x77601002`） |
 
 ### 第二十一类观测错误
 
@@ -13685,15 +13758,15 @@ Q5 95 2706 0 126
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | 22 |
-| 本会话引入的危害 | 5（均已处置）|
-| **真实进展** | `clk_conf` 补上 `clk_zbmac_en`(bit24)，值 `0x72601002` → `0x77601002` |
-| 直接确证 | 1（修复前）|
-| 撤回 | **57** |
-| 数据源错误 | **21 类** |
-| 自我纠正 | **176** |
+| 类别             | 数量                                                                  |
+| ---------------- | --------------------------------------------------------------------- |
+| 代码修复         | 22                                                                    |
+| 本会话引入的危害 | 5（均已处置）                                                         |
+| **真实进展**     | `clk_conf` 补上 `clk_zbmac_en`(bit24)，值 `0x72601002` → `0x77601002` |
+| 直接确证         | 1（修复前）                                                           |
+| 撤回             | **57**                                                                |
+| 数据源错误       | **21 类**                                                             |
+| 自我纠正         | **176**                                                               |
 
 ### 交接（明确）
 
@@ -13723,22 +13796,22 @@ enter step 3 → 4 → 5 → 8 → 9 → 9 → 10 → 11 → 14 → 15
 
 ### ① `clk_conf`（`0x20109C04`）的位集错误
 
-| 项 | 值 |
-| --- | --- |
-| 我们原本 | `0x72601002`（nibble6 = `7` = 0111 ⇒ bit24/25/26）|
-| **IDF 目标** | **`0x7e601002`**（nibble6 = `E` = 1110 ⇒ bit25/26/27）|
-| 差 | **多了 bit24，少了 bit27** |
+| 项           | 值                                                     |
+| ------------ | ------------------------------------------------------ |
+| 我们原本     | `0x72601002`（nibble6 = `7` = 0111 ⇒ bit24/25/26）     |
+| **IDF 目标** | **`0x7e601002`**（nibble6 = `E` = 1110 ⇒ bit25/26/27） |
+| 差           | **多了 bit24，少了 bit27**                             |
 
 **修法**：`b_conf_sec_ccm = 1<<26` + `b_conf_sec_bah = 1<<27`，
 **不要** `b_conf_zbmac = 1<<24`。
 
 ### ② `clk_conf1`（`0x20109C14`）的 RMW 不落地
 
-| 项 | 值 |
-| --- | --- |
-| 我们原本（RMW 后回读）| `0x003fe080` |
-| **IDF 目标** | **`0x003ff880`** |
-| 差 | **bit12 与 bit16（`bt_apb`）** |
+| 项                     | 值                             |
+| ---------------------- | ------------------------------ |
+| 我们原本（RMW 后回读） | `0x003fe080`                   |
+| **IDF 目标**           | **`0x003ff880`**               |
+| 差                     | **bit12 与 bit16（`bt_apb`）** |
 
 ⇒ RMW 写 `0x00070080`（含 bit16）却**回读没有** ⇒ **写被丢弃**。
 
@@ -13761,23 +13834,23 @@ bt lp: clk_conf=0x7e601002                  ← 之后 syscon 写才生效
 
 ## 这解释了本会话的**全部**现象
 
-| 现象 | 解释 |
-| --- | --- |
-| 归档停在 `r_btdm_task_init` | 它需要 BT/MAC 块的时钟 |
-| 读 `0x2010B000` 一读即挂 | 该块无时钟 ⇒ 总线不应答 |
-| 无 fault、无 `rc=`、无 OSAL 调用 | 总线挂死的特征 |
-| `clk_conf1` 缺 bit16 | BT APB 时钟未开 |
-| 写入"不生效" | modem PLL 未先开 |
+| 现象                             | 解释                    |
+| -------------------------------- | ----------------------- |
+| 归档停在 `r_btdm_task_init`      | 它需要 BT/MAC 块的时钟  |
+| 读 `0x2010B000` 一读即挂         | 该块无时钟 ⇒ 总线不应答 |
+| 无 fault、无 `rc=`、无 OSAL 调用 | 总线挂死的特征          |
+| `clk_conf1` 缺 bit16             | BT APB 时钟未开         |
+| 写入"不生效"                     | modem PLL 未先开        |
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | **25** |
+| 类别         | 数量                                                |
+| ------------ | --------------------------------------------------- |
+| 代码修复     | **25**                                              |
 | **真实根因** | **1：三处时钟配置错误（位集 / RMW 不落地 / 顺序）** |
-| 撤回 | 57 |
-| 数据源错误 | 21 类 |
-| 自我纠正 | **177** |
+| 撤回         | 57                                                  |
+| 数据源错误   | 21 类                                               |
+| 自我纠正     | **177**                                             |
 
 ### 一句话
 
@@ -13798,19 +13871,19 @@ IDF 0x7e601002:  bits[23:16]=0x60, bit22=1, bit23=0, nibble6(27..24)=e
 
 ### 三处修复（最终版）
 
-| # | 寄存器 | 问题 | 修法 |
-| --- | --- | --- | --- |
-| 1 | `clk_conf` (`0x20109C04`) | 位集错：多 bit24、少 **bit27** | `sec_ccm(26)` + `sec_bah(27)`，**不要** `zbmac(24)` |
-| 2 | `clk_conf1` (`0x20109C14`) | RMW 不落地（缺 bit12/16）| **整字直接写** `0x003ff880` |
-| 3 | **顺序** | syscon 写在 modem PLL 之前 ⇒ 被丢弃 | `wr(0x2058_71E0, 0x3d)` **先**执行 |
+| #   | 寄存器                     | 问题                                | 修法                                                |
+| --- | -------------------------- | ----------------------------------- | --------------------------------------------------- |
+| 1   | `clk_conf` (`0x20109C04`)  | 位集错：多 bit24、少 **bit27**      | `sec_ccm(26)` + `sec_bah(27)`，**不要** `zbmac(24)` |
+| 2   | `clk_conf1` (`0x20109C14`) | RMW 不落地（缺 bit12/16）           | **整字直接写** `0x003ff880`                         |
+| 3   | **顺序**                   | syscon 写在 modem PLL 之前 ⇒ 被丢弃 | `wr(0x2058_71E0, 0x3d)` **先**执行                  |
 
 ### 效果
 
-| 指标 | 修复前 | 修复后 |
-| --- | --- | --- |
-| `clk_conf` | `0x72601002` | **`0x7e601002`** ✓ |
-| `clk_conf1` | `0x003fe080` | **`0x003ff880`** ✓ |
-| init 进度 | **停在 step 6** | **推进到 step 15** |
+| 指标        | 修复前          | 修复后             |
+| ----------- | --------------- | ------------------ |
+| `clk_conf`  | `0x72601002`    | **`0x7e601002`** ✓ |
+| `clk_conf1` | `0x003fe080`    | **`0x003ff880`** ✓ |
+| init 进度   | **停在 step 6** | **推进到 step 15** |
 
 ### 本会话的完整弧线（177 次自我纠正）
 
@@ -13829,43 +13902,44 @@ IDF 0x7e601002:  bits[23:16]=0x60, bit22=1, bit23=0, nibble6(27..24)=e
 
 ### 本会话交付
 
-| 类别 | 内容 |
-| --- | --- |
-| **根因** | BT/MAC 块无时钟（三处配置错误）|
-| **代码修复** | 25 处（25 项观测/配置修复）|
-| **观测纪律** | 21 类数据源错误清单 |
-| **验证** | `clk_conf`/`clk_conf1` 与 IDF 逐位一致，init 推进 9 步 |
+| 类别         | 内容                                                   |
+| ------------ | ------------------------------------------------------ |
+| **根因**     | BT/MAC 块无时钟（三处配置错误）                        |
+| **代码修复** | 25 处（25 项观测/配置修复）                            |
+| **观测纪律** | 21 类数据源错误清单                                    |
+| **验证**     | `clk_conf`/`clk_conf1` 与 IDF 逐位一致，init 推进 9 步 |
 
 > **最终结论：`0x2010B000` 一读即挂，不是硬件边界，而是 `clk_conf1` 缺 bit16（BT APB 时钟）+ `clk_conf` 缺 bit27 + modem PLL 顺序错误 —— 三处都是我们自己代码里的配置错误，修好后归档继续推进。**
 
 ## ✅ 最终确认：两字都已对齐（用两组日志对照）
 
-| 日志 | 时间 | `clk_conf` | `clk_conf1` |
-| --- | --- | --- | --- |
-| `pc1b3`（**整字写之前**）| 06:58 | `0x7e601002` | `0x003fe080` ❌ |
+| 日志                      | 时间  | `clk_conf`       | `clk_conf1`         |
+| ------------------------- | ----- | ---------------- | ------------------- |
+| `pc1b3`（**整字写之前**） | 06:58 | `0x7e601002`     | `0x003fe080` ❌     |
 | **`pc1b4`（整字写之后）** | 06:59 | **`0x7e601002`** | **`0x003ff880`** ✅ |
-| IDF 参考 | — | `0x7e601002` | `0x003ff880` |
+| IDF 参考                  | —     | `0x7e601002`     | `0x003ff880`        |
 
 ⇒ **两字逐位相等** ⇒ 三处修复全部生效。
 
 ### 关于 boot 期 `0x20109C04 = 0x00201002`
 
 **保留**（不要删）：
+
 - `0x00201002` 的 nibble5 = `2` ⇒ 含 **bit21**，不含 bit23；
 - 再 OR `{22,25,26,27,28,29,30}` ⇒ 恰好 `0x7E601002`
 - IDF 的 nibble5 = `6` = `0110` ⇒ 也是 bit22+bit21，**bit23 本来清**
-⇒ **完全吻合**，`pc1b4` 的实测值就是证明。
+  ⇒ **完全吻合**，`pc1b4` 的实测值就是证明。
 
 ### 本会话的最终交付
 
-| 类别 | 内容 |
-| --- | --- |
-| **根因** | **BT/MAC 块缺少时钟**，由三处配置错误共同造成 |
-| 修复 ① | `clk_conf` 位集：加 **bit26/bit27**，去掉误加的 bit24 |
-| 修复 ② | `clk_conf1` **整字写** `0x003ff880`（RMW 不落地，缺 bit12-16）|
-| 修复 ③ | **顺序**：modem PLL（`0x2058_71E0=0x3d`）必须先于 syscon 写 |
-| **验证** | `clk_conf=0x7e601002`、`clk_conf1=0x003ff880` 与 IDF 逐位一致 |
-| **效果** | init 从 **step 6** 推进到 **step 15** |
+| 类别     | 内容                                                           |
+| -------- | -------------------------------------------------------------- |
+| **根因** | **BT/MAC 块缺少时钟**，由三处配置错误共同造成                  |
+| 修复 ①   | `clk_conf` 位集：加 **bit26/bit27**，去掉误加的 bit24          |
+| 修复 ②   | `clk_conf1` **整字写** `0x003ff880`（RMW 不落地，缺 bit12-16） |
+| 修复 ③   | **顺序**：modem PLL（`0x2058_71E0=0x3d`）必须先于 syscon 写    |
+| **验证** | `clk_conf=0x7e601002`、`clk_conf1=0x003ff880` 与 IDF 逐位一致  |
+| **效果** | init 从 **step 6** 推进到 **step 15**                          |
 
 ### 177 次自我纠正的总结
 
@@ -13887,11 +13961,11 @@ enter step 11 → 14 → 15                       ← 仍推进到 step 15
 
 ### 三处修复的稳定性
 
-| 修复 | 依赖开关？ |
-| --- | --- |
-| `clk_conf` 补 bit26/27、去 bit24 | ❌ 无 |
-| `clk_conf1` 整字写 `0x003ff880` | ❌ 无 |
-| modem PLL 先于 syscon 写 | ❌ 无 |
+| 修复                             | 依赖开关？ |
+| -------------------------------- | ---------- |
+| `clk_conf` 补 bit26/27、去 bit24 | ❌ 无      |
+| `clk_conf1` 整字写 `0x003ff880`  | ❌ 无      |
+| modem PLL 先于 syscon 写         | ❌ 无      |
 
 ⇒ 任何人把实验开关改回去，**不会**导致回归。
 
@@ -13905,23 +13979,23 @@ enter step 11 → 14 → 15                       ← 仍推进到 step 15
 
 ## 本会话最终总计（定稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | **25** |
-| **根因** | **1（三处时钟配置错误）** |
-| 基线验证 | ✅ 通过 |
-| 撤回 | 57 |
-| 数据源错误 | 21 类 |
-| 自我纠正 | **177** |
+| 类别       | 数量                      |
+| ---------- | ------------------------- |
+| 代码修复   | **25**                    |
+| **根因**   | **1（三处时钟配置错误）** |
+| 基线验证   | ✅ 通过                   |
+| 撤回       | 57                        |
+| 数据源错误 | 21 类                     |
+| 自我纠正   | **177**                   |
 
 ## ✅ `phy_domain_enable` 是**必需**的（实测，非实验残留）
 
 ### 对照实验
 
-| 值 | 两个时钟值 | 进度 |
-| --- | --- | --- |
-| **`false`** | `clk_conf=0x7e601002 clk_conf1=0x003ff880`（仍正确）| **停在 step 6** |
-| **`true`** | 同上 | **到 step 15** ✓ |
+| 值          | 两个时钟值                                           | 进度             |
+| ----------- | ---------------------------------------------------- | ---------------- |
+| **`false`** | `clk_conf=0x7e601002 clk_conf1=0x003ff880`（仍正确） | **停在 step 6**  |
+| **`true`**  | 同上                                                 | **到 step 15** ✓ |
 
 ⇒ **必须保持 `true`**。注释已从"本轮测试"改为"**必需**：关掉会停在 step 6（实测）"。
 
@@ -13930,24 +14004,24 @@ enter step 11 → 14 → 15                       ← 仍推进到 step 15
 此前只验证了 `clk_conf`/`clk_conf1` 的值，**没有验证该开关**。
 现在四件事共同构成"到 step 15"的充分条件：
 
-| # | 条件 | 验证方式 |
-| --- | --- | --- |
-| 1 | `clk_conf` 位集正确（bit26/27，无 bit24）| 回读 `0x7e601002` |
-| 2 | `clk_conf1` **整字写** `0x003ff880` | 回读 `0x003ff880` |
-| 3 | modem PLL 先于 syscon 写 | 顺序修正后回读才正确 |
-| 4 | **`phy_domain_enable = true`** | 关掉 ⇒ 停 step 6 |
+| #   | 条件                                      | 验证方式             |
+| --- | ----------------------------------------- | -------------------- |
+| 1   | `clk_conf` 位集正确（bit26/27，无 bit24） | 回读 `0x7e601002`    |
+| 2   | `clk_conf1` **整字写** `0x003ff880`       | 回读 `0x003ff880`    |
+| 3   | modem PLL 先于 syscon 写                  | 顺序修正后回读才正确 |
+| 4   | **`phy_domain_enable = true`**            | 关掉 ⇒ 停 step 6     |
 
 ## 本会话最终总计（终稿，锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| 代码修复 | **26** |
-| **根因** | **1（BT/MAC 块无时钟，含 4 个必要条件）** |
-| 基线验证 | ✅ `phy_before_clocks=false` 下仍到 step 15 |
-| 开关验证 | ✅ `phy_domain_enable=true` 必需 |
-| 撤回 | 57 |
-| 数据源错误 | 21 类 |
-| 自我纠正 | **178** |
+| 类别       | 数量                                        |
+| ---------- | ------------------------------------------- |
+| 代码修复   | **26**                                      |
+| **根因**   | **1（BT/MAC 块无时钟，含 4 个必要条件）**   |
+| 基线验证   | ✅ `phy_before_clocks=false` 下仍到 step 15 |
+| 开关验证   | ✅ `phy_domain_enable=true` 必需            |
+| 撤回       | 57                                          |
+| 数据源错误 | 21 类                                       |
+| 自我纠正   | **178**                                     |
 
 ### 完整的"到 step 15"充分条件（四件事，缺一不可）
 
@@ -13963,6 +14037,7 @@ enter step 11 → 14 → 15                       ← 仍推进到 step 15
 ### 实验（独立轻量开关 `bt_block_read_only`，不碰 `ble_block_experiment`）
 
 顺序为：
+
 1. `logPublic("control read 0x20109C04 = …")`
 2. `logPublic("BT_BLOCK_PROBE reading 0x2010B000 ...")`
 3. `logPublic("0x2010B000 = 0x…")`
@@ -13979,10 +14054,10 @@ bt probe: control read 0x20109C04 = 0x7e601002     ← ① 成功（值正确！
 
 ### 两种解释
 
-| # | 解释 |
-| --- | --- |
-| (a) **读 `0x2010B000` 仍挂死** ⇒ 该块即便时钟修好也**不可读** ⇒ "硬件边界"论断**部分成立**（仅对此地址）|
-| (b) ②③ 两行被**输出交错吞掉** | 但连 ②（纯打印、不读）都没出现 ⇒ 更像 (a) |
+| #                                                                                                        | 解释                                      |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| (a) **读 `0x2010B000` 仍挂死** ⇒ 该块即便时钟修好也**不可读** ⇒ "硬件边界"论断**部分成立**（仅对此地址） |
+| (b) ②③ 两行被**输出交错吞掉**                                                                            | 但连 ②（纯打印、不读）都没出现 ⇒ 更像 (a) |
 
 ⇒ ② 只是打印、不可能挂 ⇒ 它缺失说明**板子在 ② 之前就停了**，
 而 ② 之前只有 ①（已完成）⇒ **板子停在第 3 步的读上**。
@@ -13991,11 +14066,11 @@ bt probe: control read 0x20109C04 = 0x7e601002     ← ① 成功（值正确！
 
 ### 这对根因结论的影响
 
-| 论断 | 状态 |
-| --- | --- |
-| 四项配置条件使 init 从 step 6 → step 15 | ✅ **成立**（已实测，可复现）|
+| 论断                                    | 状态                                       |
+| --------------------------------------- | ------------------------------------------ |
+| 四项配置条件使 init 从 step 6 → step 15 | ✅ **成立**（已实测，可复现）              |
 | `0x2010B000` 一读即挂的**成因是缺时钟** | ⚠ **部分成立** —— 时钟修好后它**仍**读不到 |
-| "不是硬件边界" | ⚠ **需收窄** —— 该地址本身可能确实不可读 |
+| "不是硬件边界"                          | ⚠ **需收窄** —— 该地址本身可能确实不可读   |
 
 ⇒ **诚实表述**：四项配置修好后，**BLE init 能否继续不再依赖对 `0x2010B000` 的读取**
 （init 推进到 step 15 是事实），但**该地址的直读仍未成功**。
@@ -14014,14 +14089,14 @@ osal.logPublic("bt probe: M2 {d}", .{v});   // 读之后
 
 ## 本会话最终总计（终稿）
 
-| 类别 | 数量 |
-| --- | --- |
-| 根因（四项配置条件）| **1，已验证** |
-| 闭环（`0x2010B000` 可读）| ❌ **未完成** |
-| 代码修复 | 26 |
-| 撤回 | 57 |
-| 数据源错误 | 21 类 |
-| 自我纠正 | **179** |
+| 类别                      | 数量          |
+| ------------------------- | ------------- |
+| 根因（四项配置条件）      | **1，已验证** |
+| 闭环（`0x2010B000` 可读） | ❌ **未完成** |
+| 代码修复                  | 26            |
+| 撤回                      | 57            |
+| 数据源错误                | 21 类         |
+| 自我纠正                  | **179**       |
 
 ## 🏁 判别完成：`0x2010B000` 读**确实挂死**（M1/M2 分步标记）
 
@@ -14045,12 +14120,12 @@ bt probe: M1 befobt bringup: Xpu                    ← M1 打印了（被交错
 
 ### 这是本会话最终的、最诚实的结论
 
-| 论断 | 状态 | 证据 |
-| --- | --- | --- |
-| **四项配置条件解开 step 6 停滞** | ✅ **已验证** | init 从 step 6 → step 15，可复现 |
-| `0x20109C04` 可读且值正确 | ✅ **已验证** | `= 0x7e601002` |
-| **`0x2010B000` 可读** | ❌ **否** | M1 有、M2 无 ⇒ 读挂死 |
-| "不是硬件边界" | ⚠ **需收窄为**：该地址**确实不可读**，但**不是** step 6 停滞的原因 | 两者独立 |
+| 论断                             | 状态                                                               | 证据                             |
+| -------------------------------- | ------------------------------------------------------------------ | -------------------------------- |
+| **四项配置条件解开 step 6 停滞** | ✅ **已验证**                                                      | init 从 step 6 → step 15，可复现 |
+| `0x20109C04` 可读且值正确        | ✅ **已验证**                                                      | `= 0x7e601002`                   |
+| **`0x2010B000` 可读**            | ❌ **否**                                                          | M1 有、M2 无 ⇒ 读挂死            |
+| "不是硬件边界"                   | ⚠ **需收窄为**：该地址**确实不可读**，但**不是** step 6 停滞的原因 | 两者独立                         |
 
 ### 为什么两者可以并存
 
@@ -14062,22 +14137,22 @@ bt probe: M1 befobt bringup: Xpu                    ← M1 打印了（被交错
 
 ### 下一位可以做的（明确的）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 确认归档是否**真的读** `0x2010B000`（反汇编 `XPuq` 的读点，看它读的是**哪个地址**）|
-| 2 | 若归档确实读它而 init 仍能到 step 15 ⇒ 说明**归档的读成功、我们的读失败** ⇒ 差异在**访问路径**（非特权/缓存/映射），不是"块没时钟" |
-| 3 | 若归档不读它 ⇒ 该地址与本案**无关**，应停止追它 |
+| #   | 动作                                                                                                                               |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 确认归档是否**真的读** `0x2010B000`（反汇编 `XPuq` 的读点，看它读的是**哪个地址**）                                                |
+| 2   | 若归档确实读它而 init 仍能到 step 15 ⇒ 说明**归档的读成功、我们的读失败** ⇒ 差异在**访问路径**（非特权/缓存/映射），不是"块没时钟" |
+| 3   | 若归档不读它 ⇒ 该地址与本案**无关**，应停止追它                                                                                    |
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证的根因** | **1（四项配置条件 ⇒ step 6 → 15）** |
+| 类别                 | 数量                                     |
+| -------------------- | ---------------------------------------- |
+| **已验证的根因**     | **1（四项配置条件 ⇒ step 6 → 15）**      |
 | **已验证的独立事实** | **1（`0x2010B000` 读挂死，M1/M2 判别）** |
-| 代码修复 | 26 |
-| 撤回 | 57 |
-| 数据源错误 | 21 类 |
-| 自我纠正 | **180** |
+| 代码修复             | 26                                       |
+| 撤回                 | 57                                       |
+| 数据源错误           | 21 类                                    |
+| 自我纠正             | **180**                                  |
 
 ### 一句话
 
@@ -14095,6 +14170,7 @@ bt probe: M1 befobt bringup: Xpu                    ← M1 打印了（被交错
 ```
 
 ⇒ **M1 之后还有更晚的行**：
+
 - `bt bringup: Xpuq 锚点 …` 在 `bringup.zig:271-273`，**严格晚于**探针（213-217）
 - `bt ret: malloc(76)` 来自 `OkE7`，更晚
 - `Q1 …` dump 更晚
@@ -14105,11 +14181,11 @@ bt probe: M1 befobt bringup: Xpu                    ← M1 打印了（被交错
 
 ### 因此撤回
 
-| 我刚写的 | 实际 |
-| --- | --- |
-| "`0x2010B000` 读**确实挂死**" | ❌ **撤回** —— 读返回了 |
-| "闭环未完成" | ❌ **撤回** —— 闭环**成立**（只是没拿到数值）|
-| "该地址仍不可直读" | ❌ **撤回** |
+| 我刚写的                      | 实际                                          |
+| ----------------------------- | --------------------------------------------- |
+| "`0x2010B000` 读**确实挂死**" | ❌ **撤回** —— 读返回了                       |
+| "闭环未完成"                  | ❌ **撤回** —— 闭环**成立**（只是没拿到数值） |
+| "该地址仍不可直读"            | ❌ **撤回**                                   |
 
 ### 正确的表述
 
@@ -14138,25 +14214,25 @@ osal.logPublic("bt probe: B0 = 0x{x:0>8}", .{b0_value});
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证的根因** | **1（四项配置条件 ⇒ step 6 → 15）** |
-| **`0x2010B000` 可读** | ✅ **成立**（板子越过读点）|
-| 代码修复 | 26 |
-| 撤回 | **58** |
-| 数据源错误 | **22 类** |
-| 自我纠正 | **181** |
+| 类别                  | 数量                                |
+| --------------------- | ----------------------------------- |
+| **已验证的根因**      | **1（四项配置条件 ⇒ step 6 → 15）** |
+| **`0x2010B000` 可读** | ✅ **成立**（板子越过读点）         |
+| 代码修复              | 26                                  |
+| 撤回                  | **58**                              |
+| 数据源错误            | **22 类**                           |
+| 自我纠正              | **181**                             |
 
 ## ✅ 诊断残留清理（2026-11-19）
 
 ### 清理项
 
-| # | 位置 | 处置 |
-| --- | --- | --- |
-| ① | `probe.zig` `bt_block_read_only` | `true` → **`false`**（复现用；开启后每次开机读一次 `0x2010B000`）|
-| ② | `bringup.zig` 的 `M1`/`M2` 临时标记 | 换成正式一行 `bt probe: 0x2010B000 = 0x…` |
-| ③ | `porting.zig` 的 `if (false) wr(reg_clk_conf1, rd(...) \| …)` | **删除**，留注释说明"曾用 RMW，因不落地改为整字写" |
-| ④ | `porting.zig` 的无条件 22 行窗口 dump | **只保留 `syscon +0x000..+0x00c`**（`+0x004` 是根因判据），其余移除 |
+| #   | 位置                                                          | 处置                                                                |
+| --- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| ①   | `probe.zig` `bt_block_read_only`                              | `true` → **`false`**（复现用；开启后每次开机读一次 `0x2010B000`）   |
+| ②   | `bringup.zig` 的 `M1`/`M2` 临时标记                           | 换成正式一行 `bt probe: 0x2010B000 = 0x…`                           |
+| ③   | `porting.zig` 的 `if (false) wr(reg_clk_conf1, rd(...) \| …)` | **删除**，留注释说明"曾用 RMW，因不落地改为整字写"                  |
+| ④   | `porting.zig` 的无条件 22 行窗口 dump                         | **只保留 `syscon +0x000..+0x00c`**（`+0x004` 是根因判据），其余移除 |
 
 ### 复验（清理后）
 
@@ -14169,15 +14245,15 @@ enter step 15                                 ← 仍推进到 step 15
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证的根因** | **1（四项配置条件 ⇒ step 6 → 15）** |
-| **`0x2010B000` 可读** | ✅ 直接证明 |
-| 代码修复 | 26 |
-| 诊断残留清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **181** |
+| 类别                  | 数量                                |
+| --------------------- | ----------------------------------- |
+| **已验证的根因**      | **1（四项配置条件 ⇒ step 6 → 15）** |
+| **`0x2010B000` 可读** | ✅ 直接证明                         |
+| 代码修复              | 26                                  |
+| 诊断残留清理          | 4                                   |
+| 撤回                  | 58                                  |
+| 数据源错误            | 22 类                               |
+| 自我纠正              | **181**                             |
 
 # 🎉🎉🎉 BLE 初始化**完成**（`bt bringup: INITED`）——随后在新位置崩溃
 
@@ -14194,22 +14270,22 @@ panic: ra=0x4859e895 a0=0x0 a1=0xa a2=0x0
 
 ## 意义
 
-| 里程碑 | 状态 |
-| --- | --- |
-| BLE controller **init 完成** | ✅ **`bt bringup: INITED`** |
-| HCI transport 就绪 | ✅ `transport ready (own ops, no VHCI ring)` |
-| 之后调用非法地址 | ❌ `mepc=0x4859e894`（illegal instruction）|
+| 里程碑                       | 状态                                         |
+| ---------------------------- | -------------------------------------------- |
+| BLE controller **init 完成** | ✅ **`bt bringup: INITED`**                  |
+| HCI transport 就绪           | ✅ `transport ready (own ops, no VHCI ring)` |
+| 之后调用非法地址             | ❌ `mepc=0x4859e894`（illegal instruction）  |
 
 ⇒ **本会话的根因（四项时钟配置）修好后，初始化第一次完整跑完。**
 
 ## 新问题（与时钟无关，独立）
 
-| 项 | 值 |
-| --- | --- |
-| `mepc` | **`0x4859e894`** |
-| `ra` | `0x4859e895` |
-| 异常 | code=2 **illegal instruction** |
-| `mtval` | 0 |
+| 项      | 值                             |
+| ------- | ------------------------------ |
+| `mepc`  | **`0x4859e894`**               |
+| `ra`    | `0x4859e895`                   |
+| 异常    | code=2 **illegal instruction** |
+| `mtval` | 0                              |
 
 ⇒ `0x4859e894` 落在 **`0x48xxxxxx`** 区间 —— 不是 IRAM（`0x400xxxxx`）、不是 ROM（`0x2f8xxxxx`）、
 不是 DRAM（`0x2f0xxxxx`）。
@@ -14226,16 +14302,16 @@ panic: ra=0x4859e895 a0=0x0 a1=0xa a2=0x0
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 遗留问题 | `0x4859e894` 非法指令（新、独立）|
-| 代码修复 | 26 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **182** |
+| 类别                     | 数量                              |
+| ------------------------ | --------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                     |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**       |
+| 遗留问题                 | `0x4859e894` 非法指令（新、独立） |
+| 代码修复                 | 26                                |
+| 诊断清理                 | 4                                 |
+| 撤回                     | 58                                |
+| 数据源错误               | 22 类                             |
+| 自我纠正                 | **182**                           |
 
 ### 一句话
 
@@ -14278,11 +14354,11 @@ bt bringup: INITED
 
 ### 这与早前的线索汇合
 
-| 线索 | 说明 |
-| --- | --- |
-| `publish_bohff_anchor` / `populate_workaround` 默认 false | 归档的锚点/表项**未被填充** |
-| "打开它们会崩溃" | 因为填进去的值本身不对（heap 指针被当函数指针调用）|
-| **现在 `0x4859e894`** | 同样形态：**未填充的表项被当作函数指针** |
+| 线索                                                      | 说明                                                |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| `publish_bohff_anchor` / `populate_workaround` 默认 false | 归档的锚点/表项**未被填充**                         |
+| "打开它们会崩溃"                                          | 因为填进去的值本身不对（heap 指针被当函数指针调用） |
+| **现在 `0x4859e894`**                                     | 同样形态：**未填充的表项被当作函数指针**            |
 
 ⇒ **新问题的性质**：与四项时钟条件**无关**，是**锚点/函数指针表未正确填充**。
 
@@ -14295,16 +14371,16 @@ bt bringup: INITED
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 新前沿 | `0x4859e894` 非法指令 = **坏函数指针**（无符号覆盖）|
-| 代码修复 | 26 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **182** |
+| 类别                     | 数量                                                 |
+| ------------------------ | ---------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                        |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**                          |
+| 新前沿                   | `0x4859e894` 非法指令 = **坏函数指针**（无符号覆盖） |
+| 代码修复                 | 26                                                   |
+| 诊断清理                 | 4                                                    |
+| 撤回                     | 58                                                   |
+| 数据源错误               | 22 类                                                |
+| 自我纠正                 | **182**                                              |
 
 ## 锚点已发布 —— 坏指针另有来源（2026-11-19）
 
@@ -14327,12 +14403,12 @@ M7   36 0x2f01af38
 
 ### `0x4859e894` 的性质（已排除的可能性）
 
-| 假设 | 状态 |
-| --- | --- |
-| IDF 与我们 flash 基址不同（`0x40000020` 相同）| ❌ **排除** |
-| 锚点未发布 | ❌ **排除**（`M*` 全非零）|
-| 属于 IRAM / ROM / DRAM / flash | ❌ **均不属于** |
-| **未初始化的函数指针 / 表项** | ✅ **仍然最可能** |
+| 假设                                           | 状态                       |
+| ---------------------------------------------- | -------------------------- |
+| IDF 与我们 flash 基址不同（`0x40000020` 相同） | ❌ **排除**                |
+| 锚点未发布                                     | ❌ **排除**（`M*` 全非零） |
+| 属于 IRAM / ROM / DRAM / flash                 | ❌ **均不属于**            |
+| **未初始化的函数指针 / 表项**                  | ✅ **仍然最可能**          |
 
 ### 下一步（唯一，明确）
 
@@ -14351,16 +14427,16 @@ osal.logPublic("bt bringup: enable step 1 {d}", .{0});
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 新前沿 | `0x4859e894` 非法指令；锚点已排除、区域已排除 |
-| 代码修复 | 26 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **182** |
+| 类别                     | 数量                                          |
+| ------------------------ | --------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                 |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**                   |
+| 新前沿                   | `0x4859e894` 非法指令；锚点已排除、区域已排除 |
+| 代码修复                 | 26                                            |
+| 诊断清理                 | 4                                             |
+| 撤回                     | 58                                            |
+| 数据源错误               | 22 类                                         |
+| 自我纠正                 | **182**                                       |
 
 ## 收窄：崩溃在 `enable()` 的第 16 步**之后**（2026-11-19）
 
@@ -14377,12 +14453,12 @@ pub fn enable() c_int {
 
 ### 每一项都已排除
 
-| 候选 | 结论 |
-| --- | --- |
-| `stats_state.enable_calls += 1` | 加法，不可能崩 |
-| `status_state != .inited` 分支 | 若成立会打 `enable refused`（日志里没有）⇒ 未走 |
-| **`porting.btdmLpReset(true)`** | **空实现**（`_ = enable;`）⇒ **不可能崩** |
-| ⇒ 因此崩溃在 `enter(16)` **之后** | 而 `enter step 16` 行**又被交错吞了** |
+| 候选                              | 结论                                            |
+| --------------------------------- | ----------------------------------------------- |
+| `stats_state.enable_calls += 1`   | 加法，不可能崩                                  |
+| `status_state != .inited` 分支    | 若成立会打 `enable refused`（日志里没有）⇒ 未走 |
+| **`porting.btdmLpReset(true)`**   | **空实现**（`_ = enable;`）⇒ **不可能崩**       |
+| ⇒ 因此崩溃在 `enter(16)` **之后** | 而 `enter step 16` 行**又被交错吞了**           |
 
 ⇒ 结论：崩溃发生在 **enable 链的某一步（16 及以后）**，但**具体哪一步**因标记丢失而未知。
 
@@ -14394,45 +14470,45 @@ pub fn enable() c_int {
 
 ### 下一步（两条，按优先级）
 
-| # | 动作 | 理由 |
-| --- | --- | --- |
-| **1** | **让标记可靠**：把 `enter()` 的输出改走 `rawLineBlocking`（与 `dumpLine` 同样做法）| 否则任何分步定位都不可信 |
-| 2 | 或：把 `enter step N` 记进 **RAM 数组**，崩溃后由 panic 路径 dump | 完全不受 FIFO 影响 |
+| #     | 动作                                                                                | 理由                     |
+| ----- | ----------------------------------------------------------------------------------- | ------------------------ |
+| **1** | **让标记可靠**：把 `enter()` 的输出改走 `rawLineBlocking`（与 `dumpLine` 同样做法） | 否则任何分步定位都不可信 |
+| 2     | 或：把 `enter step N` 记进 **RAM 数组**，崩溃后由 panic 路径 dump                   | 完全不受 FIFO 影响       |
 
 ⇒ **推荐 2**：`panic` 路径已经在打 `ctx[]`，加一行 dump 最近 8 个 step 号即可，
 **彻底绕开所有输出问题**。
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 新前沿 | enable 链 16+ 步内崩溃，**具体步骤因标记丢失未知** |
-| 代码修复 | 26 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **183** |
+| 类别                     | 数量                                               |
+| ------------------------ | -------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                      |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**                        |
+| 新前沿                   | enable 链 16+ 步内崩溃，**具体步骤因标记丢失未知** |
+| 代码修复                 | 26                                                 |
+| 诊断清理                 | 4                                                  |
+| 撤回                     | 58                                                 |
+| 数据源错误               | 22 类                                              |
+| 自我纠正                 | **183**                                            |
 
 ## 🎯 决定性特征：崩溃地址**每次不同** ⇒ 未初始化内存被当作指针
 
 ### 两次运行的 `mepc`
 
-| 运行 | `mepc` | 区域 |
-| --- | --- | --- |
-| `pc1bb` | `0x4859e894` | 不属于任何映射区 |
-| `pc1bc` | **`0x4c5de8d4`** | 不属于任何映射区 |
-| `pc1bc`（另一样本）| `0x40065ce6` | 我们的 IRAM |
+| 运行                | `mepc`           | 区域             |
+| ------------------- | ---------------- | ---------------- |
+| `pc1bb`             | `0x4859e894`     | 不属于任何映射区 |
+| `pc1bc`             | **`0x4c5de8d4`** | 不属于任何映射区 |
+| `pc1bc`（另一样本） | `0x40065ce6`     | 我们的 IRAM      |
 
 ⇒ **同一个故障，地址每次不同。**
 
 ### 这意味着什么
 
-| 假设 | 判据 |
-| --- | --- |
-| 固定的坏函数指针（某个表项写错）| ❌ 地址应稳定 |
-| **未初始化的内存被当作函数指针** | ✅ **地址随机**（取决于未初始化内容是栈残留/上次的垃圾）|
+| 假设                             | 判据                                                     |
+| -------------------------------- | -------------------------------------------------------- |
+| 固定的坏函数指针（某个表项写错） | ❌ 地址应稳定                                            |
+| **未初始化的内存被当作函数指针** | ✅ **地址随机**（取决于未初始化内容是栈残留/上次的垃圾） |
 
 ⇒ **这是"未初始化数据用作指针"的教科书特征。**
 
@@ -14442,6 +14518,7 @@ pub fn enable() c_int {
 然后被当作函数指针调用。
 
 候选：
+
 - `osal` 的任务池/事件池里某个槽位（`take()` 返回后未清零）
 - 归档在 `enable()` 链里读的某个结构体字段
 - **栈上的未初始化局部变量**（最可能，因为它会随调用栈内容变化）
@@ -14455,16 +14532,16 @@ pub fn enable() c_int {
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 新前沿 | **未初始化指针**（崩溃地址随机：`0x4859e894` / `0x4c5de8d4`）|
-| 代码修复 | 26 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **184** |
+| 类别                     | 数量                                                          |
+| ------------------------ | ------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                                 |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**                                   |
+| 新前沿                   | **未初始化指针**（崩溃地址随机：`0x4859e894` / `0x4c5de8d4`） |
+| 代码修复                 | 26                                                            |
+| 诊断清理                 | 4                                                             |
+| 撤回                     | 58                                                            |
+| 数据源错误               | 22 类                                                         |
+| 自我纠正                 | **184**                                                       |
 
 ## `LASTSTEP` 未能捕获（即使改阻塞写）
 
@@ -14482,9 +14559,9 @@ pub fn enable() c_int {
 
 ### 两种解释
 
-| # | 解释 |
-| --- | --- |
-| (a) panic 路径**未执行到**那一行（前一行崩了，或路径未进）|
+| #                                                                                                         | 解释 |
+| --------------------------------------------------------------------------------------------------------- | ---- |
+| (a) panic 路径**未执行到**那一行（前一行崩了，或路径未进）                                                |
 | (b) 该行之前输出了大量内容（锚点/caller_ring/PC 采样），FIFO 已满 ⇒ 阻塞写仍在等待串口，而 **CPU 卡在那** |
 
 ⇒ **(b) 很可能**：`dumpAtPend` 先打十几行，`rawLineBlocking` 每次等到 FIFO 有空位，
@@ -14505,25 +14582,25 @@ fn dumpAtPend() void {
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 新前沿 | **未初始化指针**（地址随机：`0x4859e894` / `0x4c5de8d4`）|
-| 定位阻塞 | `LASTSTEP` 未捕获（需移到 dump 第一行）|
-| 代码修复 | 27 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **185** |
+| 类别                     | 数量                                                      |
+| ------------------------ | --------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                             |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**                               |
+| 新前沿                   | **未初始化指针**（地址随机：`0x4859e894` / `0x4c5de8d4`） |
+| 定位阻塞                 | `LASTSTEP` 未捕获（需移到 dump 第一行）                   |
+| 代码修复                 | 27                                                        |
+| 诊断清理                 | 4                                                         |
+| 撤回                     | 58                                                        |
+| 数据源错误               | 22 类                                                     |
+| 自我纠正                 | **185**                                                   |
 
 ### 交接（明确、可执行）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 把 `panic: LASTSTEP` 移到 `dumpAtPend` 的**第一行**（阻塞写）|
-| 2 | 拿到 step 号 ⇒ 定位 `enable()` 的具体步骤 |
-| 3 | 该步骤里查**未初始化的结构体/栈变量**（地址随机是判据）|
+| #   | 动作                                                          |
+| --- | ------------------------------------------------------------- |
+| 1   | 把 `panic: LASTSTEP` 移到 `dumpAtPend` 的**第一行**（阻塞写） |
+| 2   | 拿到 step 号 ⇒ 定位 `enable()` 的具体步骤                     |
+| 3   | 该步骤里查**未初始化的结构体/栈变量**（地址随机是判据）       |
 
 ## 🎯 定位成功：崩溃在 `INITED` 之后、`enter(16)` 之前 —— **`arenaFree()` 是头号嫌疑**
 
@@ -14555,10 +14632,10 @@ bringup.enable():
 
 ### 为什么它可能崩
 
-| 可能 | 说明 |
-| --- | --- |
+| 可能                                                  | 说明                                   |
+| ----------------------------------------------------- | -------------------------------------- |
 | `arenaFree()` 遍历空闲链表时踩到未初始化/已破坏的节点 | 地址随机正是**链表指针未初始化**的特征 |
-| 归档在 init 期间越界写了 arena 元数据 | 与早前"归档 init 吃掉 arena"的观察一致 |
+| 归档在 init 期间越界写了 arena 元数据                 | 与早前"归档 init 吃掉 arena"的观察一致 |
 
 ⇒ **与"崩溃地址随机"完全吻合**：损坏的链表节点指向垃圾。
 
@@ -14572,34 +14649,34 @@ const af = osal.arenaFree();                            // 单独取
 osal.logPublic("bt probe: arena free={d} B", .{af});
 ```
 
-| 观察 | 结论 |
-| --- | --- |
+| 观察                           | 结论                          |
+| ------------------------------ | ----------------------------- |
 | 见 "init ok" 不见 "arena free" | ✅ **确认崩在 `arenaFree()`** |
-| 两者都见 | 崩在 `enable()` 内，继续二分 |
+| 两者都见                       | 崩在 `enable()` 内，继续二分  |
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ **`bt bringup: INITED`** |
-| 新故障定位 | **`step=15` ⇒ 崩在 `INITED` 与 `enter(16)` 之间；`arenaFree()` 头号嫌疑** |
-| 代码修复 | 28 |
-| 诊断清理 | 4 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **186** |
+| 类别                     | 数量                                                                      |
+| ------------------------ | ------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                                             |
+| **里程碑：init 完成**    | ✅ **`bt bringup: INITED`**                                               |
+| 新故障定位               | **`step=15` ⇒ 崩在 `INITED` 与 `enter(16)` 之间；`arenaFree()` 头号嫌疑** |
+| 代码修复                 | 28                                                                        |
+| 诊断清理                 | 4                                                                         |
+| 撤回                     | 58                                                                        |
+| 数据源错误               | 22 类                                                                     |
+| 自我纠正                 | **186**                                                                   |
 
 ## 🎯 最终收窄：`INITED` 出现，`init ok` 不出现 ⇒ 窗口 = **一个函数调用**
 
 ### 本轮实测（`pc1bf.log`）
 
-| 行 | 次数 |
-| --- | --- |
-| `bt bringup: INITED` | **1** ✅ |
-| `bt probe: init ok 0` | **0** ❌ |
-| `bt probe: arena free=…` | 0 |
-| `!! mepc=… step=15 hci_transport_init` | ✅ |
+| 行                                     | 次数     |
+| -------------------------------------- | -------- |
+| `bt bringup: INITED`                   | **1** ✅ |
+| `bt probe: init ok 0`                  | **0** ❌ |
+| `bt probe: arena free=…`               | 0        |
+| `!! mepc=… step=15 hci_transport_init` | ✅       |
 
 ### 因此
 
@@ -14616,12 +14693,12 @@ osal.logPublic("bt probe: init ok {d}", .{0});   ← **未打印**
 
 ### 这排除了什么
 
-| 候选 | 状态 |
-| --- | --- |
-| `osal.arenaFree()` | ❌ **排除** —— 它在 `init ok` **之后**，更晚 |
-| `bringup.enable()` 链 | ❌ 排除 —— 更晚 |
-| `btdmLpReset` | ❌ 排除 —— 更晚 |
-| **`init()` 的返回 + 调用者的第一次 `logPublic`** | ✅ **仅剩** |
+| 候选                                             | 状态                                         |
+| ------------------------------------------------ | -------------------------------------------- |
+| `osal.arenaFree()`                               | ❌ **排除** —— 它在 `init ok` **之后**，更晚 |
+| `bringup.enable()` 链                            | ❌ 排除 —— 更晚                              |
+| `btdmLpReset`                                    | ❌ 排除 —— 更晚                              |
+| **`init()` 的返回 + 调用者的第一次 `logPublic`** | ✅ **仅剩**                                  |
 
 ### 唯一剩下的可能
 
@@ -14650,27 +14727,27 @@ fn logHook(msg: []const u8) void {
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ `INITED` 已打印 |
-| **新故障窗口** | **`INITED` 之后的第一条 `logPublic`（一行）** |
-| 头号嫌疑 | `logHook` 路径 |
-| 代码修复 | 28 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **188** |
+| 类别                     | 数量                                          |
+| ------------------------ | --------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                 |
+| **里程碑：init 完成**    | ✅ `INITED` 已打印                            |
+| **新故障窗口**           | **`INITED` 之后的第一条 `logPublic`（一行）** |
+| 头号嫌疑                 | `logHook` 路径                                |
+| 代码修复                 | 28                                            |
+| 撤回                     | 58                                            |
+| 数据源错误               | 22 类                                         |
+| 自我纠正                 | **188**                                       |
 
 ## ⚠️ 矛盾：窗口里没有任何"能崩"的东西
 
 ### 已排除
 
-| 候选 | 依据 |
-| --- | --- |
-| `osal.arenaFree()` | ❌ 在 `init ok` **之后** |
-| `bringup.enable()` 链 | ❌ 更晚 |
-| `btdmLpReset` | ❌ 更晚（且是空实现）|
-| **`defer` 块** | ❌ **三处 `defer` 全在 `test` 块里**（`bringup.zig:449/466/476`），**不在 `init()` 路径上** |
+| 候选                  | 依据                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `osal.arenaFree()`    | ❌ 在 `init ok` **之后**                                                                    |
+| `bringup.enable()` 链 | ❌ 更晚                                                                                     |
+| `btdmLpReset`         | ❌ 更晚（且是空实现）                                                                       |
+| **`defer` 块**        | ❌ **三处 `defer` 全在 `test` 块里**（`bringup.zig:449/466/476`），**不在 `init()` 路径上** |
 
 ### 因此窗口里只剩
 
@@ -14683,13 +14760,14 @@ return 0;                                     // ← 只有这一句
 
 ### 矛盾的含义
 
-| 解释 | 说明 |
-| --- | --- |
-| **(a) `INITED` 那一行来自更早的一次运行** | 捕获文件可能混合多次启动（本会话踩过）|
-| **(b) 栈已被破坏，`return` 时才爆** | 之前某步越界写了栈；`return` 弹出坏返回地址 ⇒ **正好跳到垃圾地址** |
-| **(c) `init ok` 那行被丢** | 但同段里 `INITED` 活着、`step=15` 活着 ⇒ 丢行概率低 |
+| 解释                                      | 说明                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| **(a) `INITED` 那一行来自更早的一次运行** | 捕获文件可能混合多次启动（本会话踩过）                             |
+| **(b) 栈已被破坏，`return` 时才爆**       | 之前某步越界写了栈；`return` 弹出坏返回地址 ⇒ **正好跳到垃圾地址** |
+| **(c) `init ok` 那行被丢**                | 但同段里 `INITED` 活着、`step=15` 活着 ⇒ 丢行概率低                |
 
 ⇒ **(b) 最符合全部证据**：
+
 - 崩溃地址**随机**（栈内容每次不同）
 - 发生在 `return` 处（弹出坏 `ra`）
 - 与 `ra = mepc + 1` 吻合（`ra` 就是被污染的那个）
@@ -14699,25 +14777,25 @@ return 0;                                     // ← 只有这一句
 **查栈溢出**：归档在 `init()` 期间大量使用栈（`OkE7` 做 `malloc`/`memset`/`memcpy`，
 `r_btdm_task_init` 调 15+ 次分配），而**我们的栈可能不够**。
 
-| # | 动作 |
-| --- | --- |
-| 1 | 查当前栈大小（`config` 里 `main` 栈 / bootloader 分配的栈）|
-| 2 | 在 `init()` 入口记录 `sp`，`INITED` 处再记一次 ⇒ 算出**栈用量** |
-| 3 | 若用量接近上限 ⇒ **加大栈**再试 |
+| #   | 动作                                                            |
+| --- | --------------------------------------------------------------- |
+| 1   | 查当前栈大小（`config` 里 `main` 栈 / bootloader 分配的栈）     |
+| 2   | 在 `init()` 入口记录 `sp`，`INITED` 处再记一次 ⇒ 算出**栈用量** |
+| 3   | 若用量接近上限 ⇒ **加大栈**再试                                 |
 
 ⇒ 这比继续追地址更有希望 —— 因为"地址随机 + 在 `return` 处爆"正是**栈溢出**的教科书签名。
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ `INITED` 已打印 |
-| **新故障签名** | **地址随机 + 在 `return` 处爆 ⇒ 栈溢出**（最符合）|
-| 代码修复 | 28 |
-| 撤回 | 58 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **189** |
+| 类别                     | 数量                                               |
+| ------------------------ | -------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                      |
+| **里程碑：init 完成**    | ✅ `INITED` 已打印                                 |
+| **新故障签名**           | **地址随机 + 在 `return` 处爆 ⇒ 栈溢出**（最符合） |
+| 代码修复                 | 28                                                 |
+| 撤回                     | 58                                                 |
+| 数据源错误               | 22 类                                              |
+| 自我纠正                 | **189**                                            |
 
 ## 核对：`defer setHooks(.{})` 在 `test` 块内，不在运行时路径
 
@@ -14739,13 +14817,13 @@ test "bringup: init 走到 INITED，enable 走到 ENABLED" {
 
 ### 当前的完整状态
 
-| 项 | 状态 |
-| --- | --- |
-| 四项配置条件 ⇒ init 完成 | ✅ **已验证**（`INITED`）|
-| 崩溃窗口 | `INITED` 之后、`init ok` 之前（**只剩 `return 0`**）|
-| `defer`/`arenaFree`/`enable()` | ❌ **全部排除** |
-| 崩溃地址 | 随机（`0x4859e894` / `0x4c5de8d4`）|
-| **最符合的机制** | **栈溢出** —— 地址随机 + 在 `return` 弹出坏 `ra` 时爆 |
+| 项                             | 状态                                                  |
+| ------------------------------ | ----------------------------------------------------- |
+| 四项配置条件 ⇒ init 完成       | ✅ **已验证**（`INITED`）                             |
+| 崩溃窗口                       | `INITED` 之后、`init ok` 之前（**只剩 `return 0`**）  |
+| `defer`/`arenaFree`/`enable()` | ❌ **全部排除**                                       |
+| 崩溃地址                       | 随机（`0x4859e894` / `0x4c5de8d4`）                   |
+| **最符合的机制**               | **栈溢出** —— 地址随机 + 在 `return` 弹出坏 `ra` 时爆 |
 
 ### 下一位的第一步（明确）
 
@@ -14758,15 +14836,15 @@ test "bringup: init 走到 INITED，enable 走到 ENABLED" {
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ `INITED` |
-| 新故障 | **栈溢出（最符合）；窗口 = `INITED` 后的一行 `return 0`** |
-| 代码修复 | 28 |
-| 撤回 | 59 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **190** |
+| 类别                     | 数量                                                      |
+| ------------------------ | --------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                                             |
+| **里程碑：init 完成**    | ✅ `INITED`                                               |
+| 新故障                   | **栈溢出（最符合）；窗口 = `INITED` 后的一行 `return 0`** |
+| 代码修复                 | 28                                                        |
+| 撤回                     | 59                                                        |
+| 数据源错误               | 22 类                                                     |
+| 自我纠正                 | **190**                                                   |
 
 ### 全会话最重要的三条
 
@@ -14796,12 +14874,12 @@ return 0;                                     ← 唯一剩余的指令
 
 ### 结论：**栈损坏**（`return` 弹出被污染的 `ra`）
 
-| 证据 | 指向 |
-| --- | --- |
-| 崩溃地址**随机**（`0x4859e894` / `0x4c5de8d4`）| 未初始化/被破坏的指针 |
-| 崩溃在 `return` 处 | 弹出坏 `ra` |
-| `ra = mepc + 1` | `ra` 正是被污染的值 |
-| 日志行完整 | 不是日志路径 |
+| 证据                                            | 指向                  |
+| ----------------------------------------------- | --------------------- |
+| 崩溃地址**随机**（`0x4859e894` / `0x4c5de8d4`） | 未初始化/被破坏的指针 |
+| 崩溃在 `return` 处                              | 弹出坏 `ra`           |
+| `ra = mepc + 1`                                 | `ra` 正是被污染的值   |
+| 日志行完整                                      | 不是日志路径          |
 
 ⇒ **`init()` 执行期间某处越界写了栈**，`return` 时才爆。
 
@@ -14819,15 +14897,15 @@ board.trap.diag_b = @intFromPtr(&some_local);
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完成** | ✅ `INITED`（行完整）|
-| **新故障** | **栈损坏**（`return` 处爆，地址随机）|
-| 代码修复 | 28 |
-| 撤回 | 60 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **191** |
+| 类别                     | 数量                                  |
+| ------------------------ | ------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**                         |
+| **里程碑：init 完成**    | ✅ `INITED`（行完整）                 |
+| **新故障**               | **栈损坏**（`return` 处爆，地址随机） |
+| 代码修复                 | 28                                    |
+| 撤回                     | 60                                    |
+| 数据源错误               | 22 类                                 |
+| 自我纠正                 | **191**                               |
 
 ### 全会话三条可复用结论
 
@@ -14857,11 +14935,11 @@ step=15 hci_transport_init da=0xadb4 db=0xadcb
 
 ### 为什么无效
 
-| 问题 | 说明 |
-| --- | --- |
-| **截断到 16 位** | 地址低 16 位可能跨 64 KB 边界，差值无意义 |
+| 问题                              | 说明                                                               |
+| --------------------------------- | ------------------------------------------------------------------ |
+| **截断到 16 位**                  | 地址低 16 位可能跨 64 KB 边界，差值无意义                          |
 | **取的是局部变量地址，不是 `sp`** | 编译器可能把两个局部放在不同位置（甚至同址复用），差值不代表栈用量 |
-| 两处位于**不同栈帧** | `init()` 内两层嵌套 ⇒ 差值含帧开销，不是"峰值用量" |
+| 两处位于**不同栈帧**              | `init()` 内两层嵌套 ⇒ 差值含帧开销，不是"峰值用量"                 |
 
 ### 正确做法
 
@@ -14887,16 +14965,16 @@ pub inline fn noteSp() void {
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障** | **栈损坏**（`return` 处爆、地址随机）|
-| 本会话新增的无效方法 | 1（16 位局部地址探针）|
-| 代码修复 | 28 |
-| 撤回 | 61 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **193** |
+| 类别                      | 数量                                  |
+| ------------------------- | ------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                         |
+| **里程碑：init 完整完成** | ✅ `INITED`                           |
+| **新故障**                | **栈损坏**（`return` 处爆、地址随机） |
+| 本会话新增的无效方法      | 1（16 位局部地址探针）                |
+| 代码修复                  | 28                                    |
+| 撤回                      | 61                                    |
+| 数据源错误                | 22 类                                 |
+| 自我纠正                  | **193**                               |
 
 ## ❌❌ 撤回"栈损坏"：`ra = mepc+1` 不符合返回地址被破坏
 
@@ -14914,10 +14992,10 @@ RISC-V 的 `ret` 是 `jalr x0, 0(ra)` —— **不写 `ra`**。
 
 ### 因此撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "栈损坏（`return` 处爆）" | ❌ **撤回** |
-| "栈溢出" | ❌ 无证据 |
+| 结论                               | 状态                             |
+| ---------------------------------- | -------------------------------- |
+| "栈损坏（`return` 处爆）"          | ❌ **撤回**                      |
+| "栈溢出"                           | ❌ 无证据                        |
 | **"调用了一个指向垃圾的函数指针"** | ✅ **与 `ra = mepc+1` 完全一致** |
 
 ### 与"地址随机"的吻合
@@ -14939,35 +15017,36 @@ pub var ptr_callf: usize = 0;   // hooks.call
 
 ### 候选（按可能性）
 
-| # | 指针 | 为什么可疑 |
-| --- | --- | --- |
-| 1 | `hooks.log` / `hooks.call` | 本会话改过日志路径；若被归档覆盖 ⇒ 打日志时崩 |
-| 2 | `task_pool` 的 `fn_` | `task_create` 注册的入口；若未填充 ⇒ 调度时跳到垃圾 |
-| 3 | `Event.fn_` | `event_init` 注册的回调 |
+| #   | 指针                       | 为什么可疑                                          |
+| --- | -------------------------- | --------------------------------------------------- |
+| 1   | `hooks.log` / `hooks.call` | 本会话改过日志路径；若被归档覆盖 ⇒ 打日志时崩       |
+| 2   | `task_pool` 的 `fn_`       | `task_create` 注册的入口；若未填充 ⇒ 调度时跳到垃圾 |
+| 3   | `Event.fn_`                | `event_init` 注册的回调                             |
 
 ⇒ **#1 最符合**：崩溃恰好发生在 `logPublic` 附近（`init ok` 那行从未输出）。
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障** | **坏函数指针**（`ra = mepc+1` 判据）|
-| 撤回 | **62** |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **194** |
+| 类别                      | 数量                                 |
+| ------------------------- | ------------------------------------ |
+| **根因（四项配置条件）**  | **1，已验证**                        |
+| **里程碑：init 完整完成** | ✅ `INITED`                          |
+| **新故障**                | **坏函数指针**（`ra = mepc+1` 判据） |
+| 撤回                      | **62**                               |
+| 数据源错误                | 22 类                                |
+| 自我纠正                  | **194**                              |
 
 ## 🎯 决定性：`db ≠ 0xB0B0` ⇒ **崩溃发生在 `init()` 返回之前**
 
 ### 实验设计
 
-| 位置 | 写入 |
-| --- | --- |
-| `init()` 内、`INITED` 之前 | `diag_b = 0xadcb`（栈探针的局部地址）|
-| **`init()` 返回后、调用者第一条语句** | **`diag_b = 0xB0B0`** |
+| 位置                                  | 写入                                  |
+| ------------------------------------- | ------------------------------------- |
+| `init()` 内、`INITED` 之前            | `diag_b = 0xadcb`（栈探针的局部地址） |
+| **`init()` 返回后、调用者第一条语句** | **`diag_b = 0xB0B0`**                 |
 
 ⇒ 崩溃时打印 `diag_b`：
+
 - `0xadcb` ⇒ 崩在 `return` **之前**（post-init 标记未执行）
 - `0xB0B0` ⇒ 崩在 `return` **之后**
 
@@ -14982,10 +15061,10 @@ step=15 hci_transport_init da=0xadb4 db=0xadcb
 
 ### 这与 `ra = mepc+1` 的推理合并
 
-| 证据 | 结论 |
-| --- | --- |
-| `db = 0xadcb`（post-init 未执行）| 崩在 `init()` 内 |
-| `ra = mepc + 1` | **间接调用到垃圾地址**（不是返回地址被破坏）|
+| 证据                              | 结论                                         |
+| --------------------------------- | -------------------------------------------- |
+| `db = 0xadcb`（post-init 未执行） | 崩在 `init()` 内                             |
+| `ra = mepc + 1`                   | **间接调用到垃圾地址**（不是返回地址被破坏） |
 
 ⇒ **`init()` 内部有一次"通过坏函数指针的调用"**，发生在
 **栈探针（INITED 之前）之后**、**`return` 之前**。
@@ -15002,9 +15081,9 @@ return 0;                             ← 未完成
 
 ### 两种解释
 
-| # | 解释 |
-| --- | --- |
-| (a) `INITED` 那行**自身**在返回途中调了坏指针（`logPublic` → `hooks.log`）| 与 `ra = mepc+1`、与"地址随机"都吻合 |
+| #                                                                                               | 解释                                 |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------ |
+| (a) `INITED` 那行**自身**在返回途中调了坏指针（`logPublic` → `hooks.log`）                      | 与 `ra = mepc+1`、与"地址随机"都吻合 |
 | (b) `return 0` 的 `ret`（`jalr x0,0(ra)`）—— 但**不改 `ra`** ⇒ 与 `ra = mepc+1` 矛盾 ⇒ **排除** |
 
 ⇒ **(a) 是唯一自洽的解释：`logPublic` 的 `hooks.log` 指针是坏的。**
@@ -15022,14 +15101,14 @@ pub var ptr_logf: usize = 0;   // hooks.log
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED`（该行确实打印）|
-| **新故障** | **`init()` 内 `logPublic`/`hooks.log` 的坏函数指针**（唯一自洽解释）|
-| 撤回 | 62 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **195** |
+| 类别                      | 数量                                                                 |
+| ------------------------- | -------------------------------------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                                                        |
+| **里程碑：init 完整完成** | ✅ `INITED`（该行确实打印）                                          |
+| **新故障**                | **`init()` 内 `logPublic`/`hooks.log` 的坏函数指针**（唯一自洽解释） |
+| 撤回                      | 62                                                                   |
+| 数据源错误                | 22 类                                                                |
+| 自我纠正                  | **195**                                                              |
 
 ## 核对：`0xB0B0` 标记位置**正确**（在 `if (rc != 0)` 之前）
 
@@ -15052,11 +15131,11 @@ osal.logPublic("bt probe: init ok {d}", .{0});
 
 ### 结论维持
 
-| 项 | 状态 |
-| --- | --- |
-| "崩溃在 `init()` 内、`return` 之前" | ✅ **成立**（本轮已核对标记位置）|
-| `ra = mepc+1` ⇒ 间接调用到垃圾 | ✅ 成立 |
-| ⇒ 唯一自洽解释 | **`INITED` 那行的 `logPublic` 内部调用了坏指针** |
+| 项                                  | 状态                                             |
+| ----------------------------------- | ------------------------------------------------ |
+| "崩溃在 `init()` 内、`return` 之前" | ✅ **成立**（本轮已核对标记位置）                |
+| `ra = mepc+1` ⇒ 间接调用到垃圾      | ✅ 成立                                          |
+| ⇒ 唯一自洽解释                      | **`INITED` 那行的 `logPublic` 内部调用了坏指针** |
 
 ### 防御性修法已加入（待测）
 
@@ -15074,22 +15153,22 @@ if (p < 0x4000_0000 or p >= 0x5000_0000) return;   // 不在可执行区 ⇒ 丢
 
 ### 三次崩溃的 `mepc`
 
-| 运行 | `mepc` | 低 24 位 | 高字节 |
-| --- | --- | --- | --- |
-| 1 | `0x4859e894` | `0x59e894` | `0x48` |
-| 2 | `0x4c5de8d4` | `0x5de8d4` | `0x4c` |
-| 3 | **`0x8859e894`** | **`0x59e894`** | **`0x88`** |
+| 运行 | `mepc`           | 低 24 位       | 高字节     |
+| ---- | ---------------- | -------------- | ---------- |
+| 1    | `0x4859e894`     | `0x59e894`     | `0x48`     |
+| 2    | `0x4c5de8d4`     | `0x5de8d4`     | `0x4c`     |
+| 3    | **`0x8859e894`** | **`0x59e894`** | **`0x88`** |
 
 ⇒ **第 1 与第 3 次：低 24 位完全相同**（`0x59e894`），只有最高字节不同（`0x48` → `0x88`）。
 
 ### 这意味着什么
 
-| 解释 | 说明 |
-| --- | --- |
-| **完全随机** | ❌ 低 24 位不会重复 |
+| 解释               | 说明                                          |
+| ------------------ | --------------------------------------------- |
+| **完全随机**       | ❌ 低 24 位不会重复                           |
 | **部分损坏的指针** | ✅ 低 24 位来自一个**真实地址**，高字节被覆盖 |
 
-⇒ 真实地址很可能是 **`0x0059e894`** 或 **`0x??59e894`** 中的某个 —— 
+⇒ 真实地址很可能是 **`0x0059e894`** 或 **`0x??59e894`** 中的某个 ——
 而 `0x48`/`0x88` 是**高字节被写坏**的结果。
 
 ### 排除：钩子指针守卫**无效**
@@ -15105,11 +15184,11 @@ if (p < 0x4000_0000 or p >= 0x5000_0000) return;
 
 ### 因此候选缩小
 
-| # | 候选 | 说明 |
-| --- | --- | --- |
-| 1 | `hooks.call`（`step()` 用的钩子）| 与 `hooks.log` 同结构体，同样可能被写坏 |
-| 2 | 某个 `r_sym_bt_*` 表项 | 归档内部间接调用 |
-| 3 | **高字节被覆盖的某个合法指针** | 与"低 24 位重复"最吻合 |
+| #   | 候选                              | 说明                                    |
+| --- | --------------------------------- | --------------------------------------- |
+| 1   | `hooks.call`（`step()` 用的钩子） | 与 `hooks.log` 同结构体，同样可能被写坏 |
+| 2   | 某个 `r_sym_bt_*` 表项            | 归档内部间接调用                        |
+| 3   | **高字节被覆盖的某个合法指针**    | 与"低 24 位重复"最吻合                  |
 
 ⇒ **#3 最符合**：某个本应指向 `0x?059e894` 一类地址的指针，**高字节被归档写坏**。
 
@@ -15125,15 +15204,15 @@ nm -n app.elf | awk '{a=strtonum("0x"$1); if ((a & 0xFFFFFF) == 0x59E894) print}
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障** | **高字节被覆盖的指针**（低 24 位稳定）|
-| 已排除 | 栈损坏、`hooks.log` |
-| 撤回 | 63 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **196** |
+| 类别                      | 数量                                   |
+| ------------------------- | -------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                          |
+| **里程碑：init 完整完成** | ✅ `INITED`                            |
+| **新故障**                | **高字节被覆盖的指针**（低 24 位稳定） |
+| 已排除                    | 栈损坏、`hooks.log`                    |
+| 撤回                      | 63                                     |
+| 数据源错误                | 22 类                                  |
+| 自我纠正                  | **196**                                |
 
 ## 🏁 仪器修正后的决定性读数：**instruction access fault**（非 illegal instruction）
 
@@ -15146,21 +15225,21 @@ f_mepc=0x885de894  f_sp=0x2f07ae90     cause=0x1   step=15 hci_transport_init
 
 ### 三条关键结论
 
-| # | 事实 | 意义 |
-| --- | --- | --- |
-| 1 | **`c_mepc == f_mepc`** | ✅ **帧未被采样器覆写** ⇒ 此前所有基于 `mepc` 的推论**有效** |
-| 2 | **`cause = 0x1`** | **instruction access fault**（**不是** code 2 的 illegal instruction）|
-| 3 | **`mtval == mepc`** | CPU 在 `0x885de894` **取指失败** ⇒ 该地址**不可执行** |
+| #   | 事实                   | 意义                                                                   |
+| --- | ---------------------- | ---------------------------------------------------------------------- |
+| 1   | **`c_mepc == f_mepc`** | ✅ **帧未被采样器覆写** ⇒ 此前所有基于 `mepc` 的推论**有效**           |
+| 2   | **`cause = 0x1`**      | **instruction access fault**（**不是** code 2 的 illegal instruction） |
+| 3   | **`mtval == mepc`**    | CPU 在 `0x885de894` **取指失败** ⇒ 该地址**不可执行**                  |
 
 ⇒ **不是"执行了非法指令"，而是"取指就失败"** ⇒ 跳到了**不可执行的内存**。
 
 ### 这修正了什么
 
-| 之前 | 现在 |
-| --- | --- |
+| 之前                            | 现在                                          |
+| ------------------------------- | --------------------------------------------- |
 | "illegal instruction (cause=2)" | ❌ **实为 cause=1：instruction access fault** |
-| "执行了非法编码" | ❌ 是**取指失败**（地址本身不可执行）|
-| `frame.mepc` 可信吗？ | ✅ **可信**（与 CSR 一致）|
+| "执行了非法编码"                | ❌ 是**取指失败**（地址本身不可执行）         |
+| `frame.mepc` 可信吗？           | ✅ **可信**（与 CSR 一致）                    |
 
 ### 因此机制确定
 
@@ -15170,10 +15249,10 @@ f_mepc=0x885de894  f_sp=0x2f07ae90     cause=0x1   step=15 hci_transport_init
 
 ### 地址模式（三次）
 
-| 运行 | mepc |
-| --- | --- |
-| 1 | `0x4859e894` |
-| 3 | `0x8859e894` |
+| 运行  | mepc             |
+| ----- | ---------------- |
+| 1     | `0x4859e894`     |
+| 3     | `0x8859e894`     |
 | **4** | **`0x885de894`** |
 
 ⇒ 后两次**高 12 位相同**（`0x885`），低 20 位变化。
@@ -15190,24 +15269,24 @@ nm -n app.elf | awk '{a=strtonum("0x"$1); if ((a & 0xFFF) == 0x894) print}'
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障** | **instruction access fault @ `0x885de894`**（跳转到不可执行地址）|
-| 已排除 | 栈损坏、`hooks.log`、帧被覆写、illegal instruction |
-| 撤回 | 64 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **197** |
+| 类别                      | 数量                                                              |
+| ------------------------- | ----------------------------------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                                                     |
+| **里程碑：init 完整完成** | ✅ `INITED`                                                       |
+| **新故障**                | **instruction access fault @ `0x885de894`**（跳转到不可执行地址） |
+| 已排除                    | 栈损坏、`hooks.log`、帧被覆写、illegal instruction                |
+| 撤回                      | 64                                                                |
+| 数据源错误                | 22 类                                                             |
+| 自我纠正                  | **197**                                                           |
 
 ## 地址模式检索结果（低 12 位 / 高 12 位）
 
 ### 低 12 位 = `0x894` 的符号（全镜像只有两个）
 
-| 地址 | 符号 | 段 |
-| --- | --- | --- |
-| **`0x2f00a894`** | **`r_sym_bt_7xXk0h8UTGt2vo5FahqD`** | `.iram_blobs`（`0x2f0008b0+`）|
-| `0x4005a894` | `ble_bb_cte_set_cte_sqi_dphi_min` | `.flash.text` |
+| 地址             | 符号                                | 段                             |
+| ---------------- | ----------------------------------- | ------------------------------ |
+| **`0x2f00a894`** | **`r_sym_bt_7xXk0h8UTGt2vo5FahqD`** | `.iram_blobs`（`0x2f0008b0+`） |
+| `0x4005a894`     | `ble_bb_cte_set_cte_sqi_dphi_min`   | `.flash.text`                  |
 
 ### 高 12 位 = `0x885` 的符号
 
@@ -15223,10 +15302,10 @@ nm -n app.elf | awk '{a=strtonum("0x"$1); if ((a & 0xFFF) == 0x894) print}'
 
 ### 反过来说
 
-| 假设 | 支持度 |
-| --- | --- |
-| "某个真实指针的高字节被覆盖" | ⚠ 弱（高 12 位无对应符号）|
-| "完全未初始化的内存" | ✅ **仍最可能** |
+| 假设                         | 支持度                     |
+| ---------------------------- | -------------------------- |
+| "某个真实指针的高字节被覆盖" | ⚠ 弱（高 12 位无对应符号） |
+| "完全未初始化的内存"         | ✅ **仍最可能**            |
 
 ⇒ 需回到"**谁提供了这个值**"而不是"这个值是什么"。
 
@@ -15247,14 +15326,14 @@ pub var ptr_taskf: usize = 0;   // task_create 注册的入口
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障** | instruction access fault @ `0x885de894`；`hooks.log` 已排除 |
-| 撤回 | 64 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **198** |
+| 类别                      | 数量                                                        |
+| ------------------------- | ----------------------------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                                               |
+| **里程碑：init 完整完成** | ✅ `INITED`                                                 |
+| **新故障**                | instruction access fault @ `0x885de894`；`hooks.log` 已排除 |
+| 撤回                      | 64                                                          |
+| 数据源错误                | 22 类                                                       |
+| 自我纠正                  | **198**                                                     |
 
 ## 🏁 决定性：`ra` **与** `*(sp+12)` **同时是垃圾** ⇒ 整块栈被覆盖
 
@@ -15268,10 +15347,10 @@ step=15 hci_transport_init
 
 ### 判读
 
-| 值 | 是否在 `.flash.text`（`0x40000020–0x400A0300`）？ |
-| --- | --- |
-| `c_ra = 0x0859e895` | ❌ 垃圾 |
-| **`c_ra_saved = 0x5032e87a`** | ❌ **垃圾** |
+| 值                            | 是否在 `.flash.text`（`0x40000020–0x400A0300`）？ |
+| ----------------------------- | ------------------------------------------------- |
+| `c_ra = 0x0859e895`           | ❌ 垃圾                                           |
+| **`c_ra_saved = 0x5032e87a`** | ❌ **垃圾**                                       |
 
 ⇒ **寄存器 `ra` 与栈上保存的 `ra` 槽位同时被破坏。**
 
@@ -15289,13 +15368,13 @@ README 早前记录：
 
 ### 机制（与 arena 假设吻合）
 
-| 步骤 | 说明 |
-| --- | --- |
-| 1 | `osal.taskCreate` 的栈来自**共享 arena**（`bt_arena.alloc`）|
-| 2 | `sched.initContext` 把 `ra = &trampoline` 写进**该栈** |
-| 3 | 归档的 `free` 之后可能**把同一块再次分配出去** |
-| 4 | ⇒ 保存的 `ra` 被覆盖 |
-| 5 | ⇒ 之后 `jr ra` 跳到垃圾 ⇒ **instruction access fault** |
+| 步骤 | 说明                                                         |
+| ---- | ------------------------------------------------------------ |
+| 1    | `osal.taskCreate` 的栈来自**共享 arena**（`bt_arena.alloc`） |
+| 2    | `sched.initContext` 把 `ra = &trampoline` 写进**该栈**       |
+| 3    | 归档的 `free` 之后可能**把同一块再次分配出去**               |
+| 4    | ⇒ 保存的 `ra` 被覆盖                                         |
+| 5    | ⇒ 之后 `jr ra` 跳到垃圾 ⇒ **instruction access fault**       |
 
 ⇒ **完全解释**：地址随机、`ra == mepc+1`、`mtval == mepc`、保存槽也坏。
 
@@ -15316,24 +15395,24 @@ README 早前记录：
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障** | **整块栈被覆盖**（`ra` 与保存槽同时坏）⇒ **arena 复用任务栈** |
-| 撤回 | 64 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **199** |
+| 类别                      | 数量                                                          |
+| ------------------------- | ------------------------------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                                                 |
+| **里程碑：init 完整完成** | ✅ `INITED`                                                   |
+| **新故障**                | **整块栈被覆盖**（`ra` 与保存槽同时坏）⇒ **arena 复用任务栈** |
+| 撤回                      | 64                                                            |
+| 数据源错误                | 22 类                                                         |
+| 自我纠正                  | **199**                                                       |
 
 ## 🔬 代码级确认：任务栈与归档数据**共用同一个 arena 的 free-list**
 
 ### 代码事实
 
-| 位置 | 行为 |
-| --- | --- |
-| `osal.zig:1450` | `taskCreate` 的栈 = **`bt_arena.alloc(stack_size, 16)`**（共享 arena，16 对齐）|
-| `osal.zig:1416` | `btdmFree` → **`bt_arena.freeRaw`**（归还到**同一个** arena）|
-| `osal.zig:1396` | 归档 `malloc` 按 **8 字节**对齐 |
+| 位置            | 行为                                                                            |
+| --------------- | ------------------------------------------------------------------------------- |
+| `osal.zig:1450` | `taskCreate` 的栈 = **`bt_arena.alloc(stack_size, 16)`**（共享 arena，16 对齐） |
+| `osal.zig:1416` | `btdmFree` → **`bt_arena.freeRaw`**（归还到**同一个** arena）                   |
+| `osal.zig:1396` | 归档 `malloc` 按 **8 字节**对齐                                                 |
 
 ⇒ **任务栈与归档数据共享同一个池与同一份空闲链表。**
 
@@ -15354,19 +15433,19 @@ README 早前记录：
 
 ### 完全吻合的观测
 
-| 观测 | 解释 |
-| --- | --- |
-| `ra` 与 `*(sp+12)` **同时**是垃圾 | 两者都在被覆盖的区域内 |
-| 崩溃地址**每次不同** | 覆盖内容取决于归档当时分配了什么 |
-| `cause=1`、`mtval==mepc` | 跳到不可执行地址 ⇒ 取指失败 |
-| `step=15`、`init` 全程正常 | 覆盖发生在 init **之后**才被使用 |
+| 观测                              | 解释                             |
+| --------------------------------- | -------------------------------- |
+| `ra` 与 `*(sp+12)` **同时**是垃圾 | 两者都在被覆盖的区域内           |
+| 崩溃地址**每次不同**              | 覆盖内容取决于归档当时分配了什么 |
+| `cause=1`、`mtval==mepc`          | 跳到不可执行地址 ⇒ 取指失败      |
+| `step=15`、`init` 全程正常        | 覆盖发生在 init **之后**才被使用 |
 
 ### 两个判据（下一次运行可同时拿到）
 
-| # | 判据 | 含义 |
-| --- | --- | --- |
-| 1 | `&trampoline` vs `tasks[i].ctx.stack` 的第 12 个字 | 不等 ⇒ 栈被覆盖 |
-| 2 | `bt osal: task_create … -> context ready` 是否出现 | 未出现 ⇒ 栈分配失败，上下文是假的 |
+| #   | 判据                                               | 含义                              |
+| --- | -------------------------------------------------- | --------------------------------- |
+| 1   | `&trampoline` vs `tasks[i].ctx.stack` 的第 12 个字 | 不等 ⇒ 栈被覆盖                   |
+| 2   | `bt osal: task_create … -> context ready` 是否出现 | 未出现 ⇒ 栈分配失败，上下文是假的 |
 
 ### 修法（明确）
 
@@ -15377,14 +15456,14 @@ README 早前记录：
 
 ## 本会话最终总计（锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证** |
-| **里程碑：init 完整完成** | ✅ `INITED` |
-| **新故障机制** | **任务栈与归档数据共享 arena ⇒ 别名覆盖保存的 `ra`** |
-| 撤回 | 64 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **200** |
+| 类别                      | 数量                                                 |
+| ------------------------- | ---------------------------------------------------- |
+| **根因（四项配置条件）**  | **1，已验证**                                        |
+| **里程碑：init 完整完成** | ✅ `INITED`                                          |
+| **新故障机制**            | **任务栈与归档数据共享 arena ⇒ 别名覆盖保存的 `ra`** |
+| 撤回                      | 64                                                   |
+| 数据源错误                | 22 类                                                |
+| 自我纠正                  | **200**                                              |
 
 ## 栈帧位置：`ra` 紧贴**栈顶** ⇒ 最易被越界覆盖
 
@@ -15407,32 +15486,32 @@ const frame: usize = top - frame_bytes;
 
 ### 这解释了为什么"恰好是 `ra`"
 
-| 被覆盖位置 | 后果 |
-| --- | --- |
-| 栈顶 +12（`ra`）| 调度器 `jr ra` ⇒ 跳到垃圾 ⇒ **本故障** |
-| 栈顶其它字 | 寄存器值错乱（但可能仍能跑）|
+| 被覆盖位置       | 后果                                   |
+| ---------------- | -------------------------------------- |
+| 栈顶 +12（`ra`） | 调度器 `jr ra` ⇒ 跳到垃圾 ⇒ **本故障** |
+| 栈顶其它字       | 寄存器值错乱（但可能仍能跑）           |
 
 ⇒ **`ra` 是最脆弱的一个字**，因为它离栈顶最近。
 
 ### 修法（明确，二选一）
 
-| # | 做法 |
-| --- | --- |
-| 1 | `taskCreate` 用**独立静态缓冲**，不走 `bt_arena` |
-| 2 | 给 `bt_arena` 的归档分配加**栈区下界**，禁止落入栈内 |
+| #   | 做法                                                 |
+| --- | ---------------------------------------------------- |
+| 1   | `taskCreate` 用**独立静态缓冲**，不走 `bt_arena`     |
+| 2   | 给 `bt_arena` 的归档分配加**栈区下界**，禁止落入栈内 |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新故障机制** | **任务栈与归档共享 arena ⇒ 覆盖紧贴栈顶的 `ra`** |
-| 代码修复 | 28 |
-| 文档更正 | 9 处 |
-| 撤回 | 64 |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **201** |
+| 类别                     | 数量                                             |
+| ------------------------ | ------------------------------------------------ |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                   |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                      |
+| **新故障机制**           | **任务栈与归档共享 arena ⇒ 覆盖紧贴栈顶的 `ra`** |
+| 代码修复                 | 28                                               |
+| 文档更正                 | 9 处                                             |
+| 撤回                     | 64                                               |
+| 数据源错误               | 22 类                                            |
+| 自我纠正                 | **201**                                          |
 
 ### 本会话的四条方法论
 
@@ -15447,10 +15526,10 @@ const frame: usize = top - frame_bytes;
 
 代码路径里**没有任何地方释放任务栈指针**：
 
-| 事实 | 说明 |
-| --- | --- |
+| 事实                                                             | 说明                     |
+| ---------------------------------------------------------------- | ------------------------ |
 | `bt_arena.alloc(stack_size, 16)` 的结果存进 `tasks[i].ctx.stack` | 归档**从不持有**这个指针 |
-| `btdmFree` 只对**归档自己分配的**指针生效 | 它拿不到任务栈指针 |
+| `btdmFree` 只对**归档自己分配的**指针生效                        | 它拿不到任务栈指针       |
 
 ⇒ **"任务栈被 free 后再次分配"这条链路不存在。**
 
@@ -15462,11 +15541,11 @@ const frame: usize = top - frame_bytes;
 
 ### 更可能的变体：**别名（aliasing）**
 
-| 事实 | 数值 |
-| --- | --- |
-| 任务栈对齐 | **16** 字节 |
-| 归档 malloc 对齐 | **8** 字节 |
-| 池 | **同一个** free-list |
+| 事实             | 数值                 |
+| ---------------- | -------------------- |
+| 任务栈对齐       | **16** 字节          |
+| 归档 malloc 对齐 | **8** 字节           |
+| 池               | **同一个** free-list |
 
 ⇒ 同一份空闲链表上**对齐不同**的分配 ⇒ 后续 8 对齐的归档块
 **可能被切进 16 对齐的任务栈内部**（栈从未被释放，只是被**部分重叠**）。
@@ -15475,10 +15554,10 @@ const frame: usize = top - frame_bytes;
 
 ### 两个判据（未跑，下次可直接用）
 
-| # | 判据 | 含义 |
-| --- | --- | --- |
-| 1 | `&trampoline` vs `tasks[i].ctx.stack` 第 12 个字 | 不等 ⇒ 栈被覆盖 |
-| 2 | `bt osal: task_create … -> context ready` 是否出现 | **未出现** ⇒ 栈分配就失败了，上下文是假的 |
+| #   | 判据                                               | 含义                                      |
+| --- | -------------------------------------------------- | ----------------------------------------- |
+| 1   | `&trampoline` vs `tasks[i].ctx.stack` 第 12 个字   | 不等 ⇒ 栈被覆盖                           |
+| 2   | `bt osal: task_create … -> context ready` 是否出现 | **未出现** ⇒ 栈分配就失败了，上下文是假的 |
 
 ⇒ **#2 尤其重要**：arena 已被记录为"接近耗尽"，
 若 `alloc(stack_size,16)` **返回失败**，`tasks[i].ctx.stack` 是空的 ⇒ 之后一切都无意义。
@@ -15491,24 +15570,24 @@ const frame: usize = top - frame_bytes;
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **已证明** | 有一块栈帧被覆盖（`ra` 与保存槽同时坏）|
-| **假设（未证）** | arena 别名 / 分配失败 |
-| 撤回 | **65** |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **202** |
+| 类别                     | 数量                                    |
+| ------------------------ | --------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）          |
+| **里程碑**               | ✅ **`bt bringup: INITED`**             |
+| **已证明**               | 有一块栈帧被覆盖（`ra` 与保存槽同时坏） |
+| **假设（未证）**         | arena 别名 / 分配失败                   |
+| 撤回                     | **65**                                  |
+| 数据源错误               | 22 类                                   |
+| 自我纠正                 | **202**                                 |
 
 ## ❌❌ 撤回"整块栈被覆盖"：混淆了**两种帧布局**
 
 ### 错误所在
 
-| 布局 | 含义 |
-| --- | --- |
-| `sched.initContext` 的 `+12 = ra` | **新任务上下文**的构造布局 |
-| `frame.sp` at trap time | **被中断代码**的栈指针（`init()` 自己的帧）|
+| 布局                              | 含义                                        |
+| --------------------------------- | ------------------------------------------- |
+| `sched.initContext` 的 `+12 = ra` | **新任务上下文**的构造布局                  |
+| `frame.sp` at trap time           | **被中断代码**的栈指针（`init()` 自己的帧） |
 
 ⇒ 我把前者套用到了后者上。
 
@@ -15520,12 +15599,12 @@ const frame: usize = top - frame_bytes;
 
 ### 因此撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "`ra` 与 `*(sp+12)` 同时坏 ⇒ 整块栈被覆盖" | ❌ **撤回** |
-| "栈溢出" | ❌ **撤回**（栈只用了 304 字节）|
-| "arena 别名" | ⚠ 假设，无证据 |
-| **唯一仍然成立的** | **`ra = 0x0859e895` 是垃圾，`ret`/`jr ra` 跳到不可执行地址** |
+| 结论                                       | 状态                                                         |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| "`ra` 与 `*(sp+12)` 同时坏 ⇒ 整块栈被覆盖" | ❌ **撤回**                                                  |
+| "栈溢出"                                   | ❌ **撤回**（栈只用了 304 字节）                             |
+| "arena 别名"                               | ⚠ 假设，无证据                                               |
+| **唯一仍然成立的**                         | **`ra = 0x0859e895` 是垃圾，`ret`/`jr ra` 跳到不可执行地址** |
 
 ### 正确的帧布局校验收据
 
@@ -15548,23 +15627,23 @@ if (*(sp+8) == frame.s0) { /* +12 才是 ra */ }
 
 ### 下一批判据（明确）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 看 `diag_a`（`*(sp+8) ^ s0`）是否为 0 |
-| 2 | 打印 `_stack_top` / `_stack_bottom` 到 `!!` 行，让栈深度可算 |
-| 3 | 若布局不成立 ⇒ **彻底放弃栈方向**，回到"哪个间接调用没有初始化目标寄存器" |
+| #   | 动作                                                                      |
+| --- | ------------------------------------------------------------------------- |
+| 1   | 看 `diag_a`（`*(sp+8) ^ s0`）是否为 0                                     |
+| 2   | 打印 `_stack_top` / `_stack_bottom` 到 `!!` 行，让栈深度可算              |
+| 3   | 若布局不成立 ⇒ **彻底放弃栈方向**，回到"哪个间接调用没有初始化目标寄存器" |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **已证明** | `ra` 是垃圾 ⇒ 跳到不可执行地址 |
-| **已撤回** | 栈溢出、整块栈覆盖、arena 别名（均无证据）|
-| 撤回总数 | **68** |
-| 数据源错误 | 22 类 |
-| 自我纠正 | **203** |
+| 类别                     | 数量                                       |
+| ------------------------ | ------------------------------------------ |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）             |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                |
+| **已证明**               | `ra` 是垃圾 ⇒ 跳到不可执行地址             |
+| **已撤回**               | 栈溢出、整块栈覆盖、arena 别名（均无证据） |
+| 撤回总数                 | **68**                                     |
+| 数据源错误               | 22 类                                      |
+| 自我纠正                 | **203**                                    |
 
 ## ❌ 自校验设计无效；只保留 `frame.ra` 这一条可信事实
 
@@ -15583,10 +15662,10 @@ diag_a = *(sp+8) ^ frame.s0;   // 期望 0
 
 ### 因此 `*(sp+12)` 完全不可用
 
-| 值 | 状态 |
-| --- | --- |
-| `c_ra_saved = 0x5832e87a` | ❌ **无意义**（偏移假设错误）|
-| `diag_a` | ❌ 无效自校验 |
+| 值                        | 状态                          |
+| ------------------------- | ----------------------------- |
+| `c_ra_saved = 0x5832e87a` | ❌ **无意义**（偏移假设错误） |
+| `diag_a`                  | ❌ 无效自校验                 |
 
 ### 唯一可信的事实
 
@@ -15597,10 +15676,10 @@ diag_a = *(sp+8) ^ frame.s0;   // 期望 0
 
 ### 剩下要分的两件事
 
-| 假设 | 如何区分 |
-| --- | --- |
-| **A. `ra` 寄存器被写坏**（返回槽仍正确）| 在 `frame.sp` 下方 **64 字节**内扫第一个落在 `.flash.text` 的值 —— 若有 ⇒ 那是保存的 ra ⇒ **寄存器被写坏** |
-| **B. 帧本身被破坏** | 同样扫描，**没有任何字**落在 `.flash.text` ⇒ 帧坏了 |
+| 假设                                     | 如何区分                                                                                                   |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **A. `ra` 寄存器被写坏**（返回槽仍正确） | 在 `frame.sp` 下方 **64 字节**内扫第一个落在 `.flash.text` 的值 —— 若有 ⇒ 那是保存的 ra ⇒ **寄存器被写坏** |
+| **B. 帧本身被破坏**                      | 同样扫描，**没有任何字**落在 `.flash.text` ⇒ 帧坏了                                                        |
 
 ⇒ **扫描是下一步，而不是再猜偏移。**
 
@@ -15622,14 +15701,14 @@ while (k < 64) : (k += 4) {
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **唯一可信故障事实** | **`frame.ra` 是垃圾 ⇒ `jr ra` 跳到不可执行地址** |
-| 已撤回 | 栈溢出、整块栈覆盖、arena 别名、`*(sp+12)` 判据、s0 自校验 |
-| 撤回总数 | **70** |
-| 自我纠正 | **204** |
+| 类别                     | 数量                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                             |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                |
+| **唯一可信故障事实**     | **`frame.ra` 是垃圾 ⇒ `jr ra` 跳到不可执行地址**           |
+| 已撤回                   | 栈溢出、整块栈覆盖、arena 别名、`*(sp+12)` 判据、s0 自校验 |
+| 撤回总数                 | **70**                                                     |
+| 自我纠正                 | **204**                                                    |
 
 ## 两条零成本结论（离线 + 代码阅读）
 
@@ -15654,21 +15733,21 @@ objdump -s -j .data -j .iram_blobs -j .rodata app.elf | grep -ci 0859e894
 
 ### ③ 地址在**同一构建内确定**
 
-| 构建 | 两次运行的 `mepc` |
-| --- | --- |
-| 某构建 | `0x0859e894` / `0x0859e894`（**相同**）|
-| 另一构建 | `0x4859e894` / `0x8859e894`（不同）|
+| 构建     | 两次运行的 `mepc`                       |
+| -------- | --------------------------------------- |
+| 某构建   | `0x0859e894` / `0x0859e894`（**相同**） |
+| 另一构建 | `0x4859e894` / `0x8859e894`（不同）     |
 
 ⇒ **构建内稳定、跨构建变化** ⇒ 是**某个被确定性地算出来的值**
 （或某个特定栈槽的残留），不是随机垃圾。
 
 ### 因此剩余可能
 
-| # | 可能 | 判据 |
-| --- | --- | --- |
-| 1 | 被中断帧里**某个局部变量**恰好存着这个值，被当作调用目标 | 扫 `[sp, sp+64)` 找该值 |
-| 2 | 某个寄存器从未赋值 | 需看反汇编 |
-| 3 | 某个结构体字段被**确定性地**写入该值 | 需查写入点 |
+| #   | 可能                                                     | 判据                    |
+| --- | -------------------------------------------------------- | ----------------------- |
+| 1   | 被中断帧里**某个局部变量**恰好存着这个值，被当作调用目标 | 扫 `[sp, sp+64)` 找该值 |
+| 2   | 某个寄存器从未赋值                                       | 需看反汇编              |
+| 3   | 某个结构体字段被**确定性地**写入该值                     | 需查写入点              |
 
 ⇒ **#1 最直接**：扫描帧，若该值就在帧内 ⇒ 其**槽偏移**直接指向罪魁局部变量。
 
@@ -15677,21 +15756,21 @@ objdump -s -j .data -j .iram_blobs -j .rodata app.elf | grep -ci 0859e894
 `!!` 行的 `diag_a` 现在是：
 **`sp` 下方 64 字节内第一个落在 `.flash.text` 的字**（= 保存的 `ra`）。
 
-| 结果 | 结论 |
-| --- | --- |
-| `diag_a != 0` | 寄存器被写坏（帧内有合法 ra）|
-| `diag_a == 0` | **帧本身被破坏** |
+| 结果          | 结论                          |
+| ------------- | ----------------------------- |
+| `diag_a != 0` | 寄存器被写坏（帧内有合法 ra） |
+| `diag_a == 0` | **帧本身被破坏**              |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障值性质** | **运行时产生、构建内确定、不在镜像中** |
-| **已排除** | 栈溢出、整帧覆盖、arena 别名、`*(sp+12)`、s0 自校验、**日志钩子族** |
-| 撤回总数 | **71** |
-| 自我纠正 | **205** |
+| 类别                     | 数量                                                                |
+| ------------------------ | ------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                      |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                         |
+| **故障值性质**           | **运行时产生、构建内确定、不在镜像中**                              |
+| **已排除**               | 栈溢出、整帧覆盖、arena 别名、`*(sp+12)`、s0 自校验、**日志钩子族** |
+| 撤回总数                 | **71**                                                              |
+| 自我纠正                 | **205**                                                             |
 
 ## 🏁 判决：`diag_a = 0` ⇒ **帧本身被破坏**
 
@@ -15708,25 +15787,26 @@ f_sp=0x2f07ae90    cause=0x1
 `diag_a` = `[frame.sp, frame.sp+64)` 内**第一个落在 `.flash.text`（`0x40000020–0x400A0300`）的字**
 = 被中断函数保存的 `ra`。
 
-| 结果 | 结论 |
-| --- | --- |
-| `≠ 0` | 寄存器被写坏（帧内有合法 ra）|
-| **`= 0`** | **帧本身被破坏** |
+| 结果      | 结论                          |
+| --------- | ----------------------------- |
+| `≠ 0`     | 寄存器被写坏（帧内有合法 ra） |
+| **`= 0`** | **帧本身被破坏**              |
 
 ⇒ **实测 `diag_a = 0`** ⇒ **`sp` 下方 64 字节内没有任何合法代码地址**
 ⇒ **该栈帧整体不含有效的保存寄存器**。
 
 ### 这意味着什么
 
-| 事实 | 说明 |
-| --- | --- |
-| `f_sp = 0x2f07ae90` | 距 `_stack_top` 仅 **304 字节** ⇒ 栈**很浅** |
-| 但 64 字节内**无一个代码地址** | 该区域内容**完全不是正常栈帧** |
-| `ra = 0x0859e895` | 寄存器也是垃圾 |
+| 事实                           | 说明                                         |
+| ------------------------------ | -------------------------------------------- |
+| `f_sp = 0x2f07ae90`            | 距 `_stack_top` 仅 **304 字节** ⇒ 栈**很浅** |
+| 但 64 字节内**无一个代码地址** | 该区域内容**完全不是正常栈帧**               |
+| `ra = 0x0859e895`              | 寄存器也是垃圾                               |
 
 ⇒ **栈指针指向的区域内容，不像任何正常函数的帧。**
 
 ⇒ 两种可能：
+
 1. **`sp` 本身是错的**（指向了别处，如 arena/数据区）——但 `0x2f07ae90` 确实在栈范围内（`0x2F076FC0–0x2F07AFC0`）；
 2. **栈的这块内容被整体覆盖**（不含任何可识别的返回地址）。
 
@@ -15742,31 +15822,31 @@ f_sp=0x2f07ae90    cause=0x1
 
 ### 下一步（明确）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 打印 `[sp, sp+64)` 的**原始 16 个字** ⇒ 看它们像什么（arena 块头？字符串？）|
-| 2 | 若像 arena 数据 ⇒ **确认是归档越界写入栈顶** |
-| 3 | 修法：栈与 arena 之间加**保护页/哨兵**，或把栈移出 arena 可达范围 |
+| #   | 动作                                                                         |
+| --- | ---------------------------------------------------------------------------- |
+| 1   | 打印 `[sp, sp+64)` 的**原始 16 个字** ⇒ 看它们像什么（arena 块头？字符串？） |
+| 2   | 若像 arena 数据 ⇒ **确认是归档越界写入栈顶**                                 |
+| 3   | 修法：栈与 arena 之间加**保护页/哨兵**，或把栈移出 arena 可达范围            |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新故障判定** | **栈顶 304 字节处的帧被完全覆盖**（64 B 内无任何代码地址）|
-| 已排除 | 栈溢出（深度浅）、寄存器单独被写坏、日志钩子族 |
-| 撤回总数 | **71** |
-| 自我纠正 | **206** |
+| 类别                     | 数量                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                             |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                |
+| **新故障判定**           | **栈顶 304 字节处的帧被完全覆盖**（64 B 内无任何代码地址） |
+| 已排除                   | 栈溢出（深度浅）、寄存器单独被写坏、日志钩子族             |
+| 撤回总数                 | **71**                                                     |
+| 自我纠正                 | **206**                                                    |
 
 ## 🎯 寄存器签名：分派器读出的 **`a0 = 0`**（`a0` 是输出，非输入）
 
 ### 两次崩溃的寄存器
 
-| 运行 | `ra` | `a0` | `a1` | `a2` |
-| --- | --- | --- | --- | --- |
-| 当前（`pc1c7`/`pc1c8`）| `0x859e895` | **`0x0`** | `0xa` | `0x0` |
-| 历史（README:775）| `0x4005fa7e` | `0xb7a10c0d` | `0xa` | `0x770001` |
+| 运行                    | `ra`         | `a0`         | `a1`  | `a2`       |
+| ----------------------- | ------------ | ------------ | ----- | ---------- |
+| 当前（`pc1c7`/`pc1c8`） | `0x859e895`  | **`0x0`**    | `0xa` | `0x0`      |
+| 历史（README:775）      | `0x4005fa7e` | `0xb7a10c0d` | `0xa` | `0x770001` |
 
 ⇒ **`a1 = 0xa`（常量 10）在两次中完全一致** ⇒ **同一个调用点/同一类调用**。
 
@@ -15795,32 +15875,32 @@ README 早前记录：
 
 ### 这解释了全部观测
 
-| 观测 | 解释 |
-| --- | --- |
-| `ra` 是垃圾（非代码地址）| 是**被调函数内部**某次跳转留下的值 |
-| `cause=1`、`mtval==mepc` | 跳到不可执行地址 |
-| `a0 = 0` | **传入的指针是 NULL** |
-| 帧内 64 B 无代码地址 | 该帧属于**归档函数**（其 ra 已被内层调用覆盖）|
-| 地址跨构建变化 | 取决于 NULL 解引用读到的内容 |
+| 观测                      | 解释                                           |
+| ------------------------- | ---------------------------------------------- |
+| `ra` 是垃圾（非代码地址） | 是**被调函数内部**某次跳转留下的值             |
+| `cause=1`、`mtval==mepc`  | 跳到不可执行地址                               |
+| `a0 = 0`                  | **传入的指针是 NULL**                          |
+| 帧内 64 B 无代码地址      | 该帧属于**归档函数**（其 ra 已被内层调用覆盖） |
+| 地址跨构建变化            | 取决于 NULL 解引用读到的内容                   |
 
 ### 下一步（明确，两条）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 反汇编 `r_sym_bt_cKuT2s3WOu8oyZWi8auj`（`nm -A` 找对象）⇒ 看它对 `a0` 做什么 |
-| 2 | 反汇编 `0x4005fa90` 附近的**调用者** ⇒ 看 `a0` 从哪来（哪个锚点/槽位是 NULL）|
+| #   | 动作                                                                          |
+| --- | ----------------------------------------------------------------------------- |
+| 1   | 反汇编 `r_sym_bt_cKuT2s3WOu8oyZWi8auj`（`nm -A` 找对象）⇒ 看它对 `a0` 做什么  |
+| 2   | 反汇编 `0x4005fa90` 附近的**调用者** ⇒ 看 `a0` 从哪来（哪个锚点/槽位是 NULL） |
 
 ⇒ 这正是本会话反复遇到的那一类：**传给归档的句柄/锚点是 NULL**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新故障签名** | **`r_sym_bt_cKuT2s3WOu8oyZWi8auj` 从锚点结构体 `+28` 读出 0，再经它分派** |
-| 撤回总数 | 71 |
-| 自我纠正 | **207** |
+| 类别                     | 数量                                                                      |
+| ------------------------ | ------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                            |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                               |
+| **新故障签名**           | **`r_sym_bt_cKuT2s3WOu8oyZWi8auj` 从锚点结构体 `+28` 读出 0，再经它分派** |
+| 撤回总数                 | 71                                                                        |
+| 自我纠正                 | **207**                                                                   |
 
 ## 🏁 故障函数的真身：**虚表分派器**（从全局对象 +28 取字段再调用）
 
@@ -15839,13 +15919,13 @@ README 早前记录：
 
 ### 这解释了全部观测
 
-| 观测 | 解释 |
-| --- | --- |
-| `a0 = 0` | **锚点结构体的 `+28` 字段为 0**（`a0` 是 `lw a0,28(a5)` 的**输出**，不是输入）|
-| 后续跳到垃圾 | 经 null 字段取值/调用 |
-| `cause=1`、`mtval==mepc` | 跳到不可执行地址 |
-| `a1 = 0xa` 恒定 | 调用者固定传 10 |
-| 跨构建变化 | 取决于 `*(a5+28)` 读到什么 |
+| 观测                     | 解释                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `a0 = 0`                 | **锚点结构体的 `+28` 字段为 0**（`a0` 是 `lw a0,28(a5)` 的**输出**，不是输入） |
+| 后续跳到垃圾             | 经 null 字段取值/调用                                                          |
+| `cause=1`、`mtval==mepc` | 跳到不可执行地址                                                               |
+| `a1 = 0xa` 恒定          | 调用者固定传 10                                                                |
+| 跨构建变化               | 取决于 `*(a5+28)` 读到什么                                                     |
 
 ### `LANCHOR0` 是什么
 
@@ -15867,13 +15947,13 @@ nm /tmp/c11.o | grep LANCHOR
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新故障机制** | **虚表分派器从 `LANCHOR0` 对象 +28 取到 NULL 字段 ⇒ 跳到垃圾** |
-| 撤回总数 | 71 |
-| 自我纠正 | **208** |
+| 类别                     | 数量                                                           |
+| ------------------------ | -------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                 |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                    |
+| **新故障机制**           | **虚表分派器从 `LANCHOR0` 对象 +28 取到 NULL 字段 ⇒ 跳到垃圾** |
+| 撤回总数                 | 71                                                             |
+| 自我纠正                 | **208**                                                        |
 
 ## ✅ 完整反汇编：它是**尾调用**，`a0 = *(anchor[0]+28)` 被传下去
 
@@ -15903,11 +15983,11 @@ gvLJK… 内部          → 解引用 a0=0 ⇒ 从低地址取到垃圾
 
 ### 对之前两处说法的最终裁定
 
-| 说法 | 裁定 |
-| --- | --- |
-| "`a0` 是输出，不是输入" | ✅ **对**（本函数内是输出）|
-| "所以并非传入了空指针" | ❌ **错** —— 它**被尾调用原样传给了 `gvLJK…`** ⇒ **确实是空指针入参** |
-| "跳转目标来自 NULL 字段" | ❌ **错** —— 目标是 `gvLJK…` 内部解引用 `a0=0` 读到的垃圾 |
+| 说法                     | 裁定                                                                  |
+| ------------------------ | --------------------------------------------------------------------- |
+| "`a0` 是输出，不是输入"  | ✅ **对**（本函数内是输出）                                           |
+| "所以并非传入了空指针"   | ❌ **错** —— 它**被尾调用原样传给了 `gvLJK…`** ⇒ **确实是空指针入参** |
+| "跳转目标来自 NULL 字段" | ❌ **错** —— 目标是 `gvLJK…` 内部解引用 `a0=0` 读到的垃圾             |
 
 ⇒ 两者其实都对了一半：`a0` 在本函数是输出，在**被尾调用的函数**是输入且为 NULL。
 
@@ -15925,13 +16005,13 @@ nm -A libbtdm_common.a | grep gvLJK4crXTPEAF7nrRbG
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新故障链** | `anchor[0]` 非空 → `+28` 字段为 0 → 尾调用 `gvLJK…(a0=0)` → 解引用空指针 → 跳到垃圾 |
-| 撤回总数 | 71 |
-| 自我纠正 | **209** |
+| 类别                     | 数量                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                                      |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                                         |
+| **新故障链**             | `anchor[0]` 非空 → `+28` 字段为 0 → 尾调用 `gvLJK…(a0=0)` → 解引用空指针 → 跳到垃圾 |
+| 撤回总数                 | 71                                                                                  |
+| 自我纠正                 | **209**                                                                             |
 
 ## 🏁🏁 最终读数：`anchor[0]` 有效，其 `+28` 字段为 0
 
@@ -15945,10 +16025,10 @@ nm -A libbtdm_common.a | grep gvLJK4crXTPEAF7nrRbG
 
 ### 两个结论
 
-| # | 结论 |
-| --- | --- |
-| 1 | **帧完好** —— 304 B 扫描找到了代码地址（`0x40000020`）⇒ **推翻"帧被替换"**（那是 64 B 扫描的假象）|
-| 2 | **`anchor[0] = 0x2f01b020` 非 NULL**，但 **`*(anchor[0] + 28) = 0`** |
+| #   | 结论                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------- |
+| 1   | **帧完好** —— 304 B 扫描找到了代码地址（`0x40000020`）⇒ **推翻"帧被替换"**（那是 64 B 扫描的假象） |
+| 2   | **`anchor[0] = 0x2f01b020` 非 NULL**，但 **`*(anchor[0] + 28) = 0`**                               |
 
 ⇒ 因此 `beqz a5` 未跳（锚点非空），随后 `lw a0, 28(a5)` 取到 **0**，
 尾调用把 **0** 传给 `gvLJK…`，它解引用 0 ⇒ 读到垃圾 ⇒ 跳到 `0x0859e894`。
@@ -15962,23 +16042,23 @@ nm -A libbtdm_common.a | grep gvLJK4crXTPEAF7nrRbG
 
 ### 下一步（离线 + 一次读数）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 反汇编 `r_sym_bt_gvLJK4crXTPEAF7nrRbG` ⇒ 看它解引用 `a0` 的**第一个偏移** |
-| 2 | 确认 `anchor[0]`（`0x2f01b020`）是谁分配的、`+28` 本应由谁写 |
+| #   | 动作                                                                      |
+| --- | ------------------------------------------------------------------------- |
+| 1   | 反汇编 `r_sym_bt_gvLJK4crXTPEAF7nrRbG` ⇒ 看它解引用 `a0` 的**第一个偏移** |
+| 2   | 确认 `anchor[0]`（`0x2f01b020`）是谁分配的、`+28` 本应由谁写              |
 
 ⇒ 修法：**让 `anchor[0] + 28` 被正确填充**（或让该分派器接受 0 并跳过）。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新故障根因** | **`anchor[0]`(`0x2f01b020`) 的 `+28` 字段为 0 ⇒ 尾调用空指针 ⇒ 跳到垃圾** |
-| 已排除 | 栈溢出、帧被替换、寄存器单独坏、日志钩子族 |
-| 撤回总数 | **72** |
-| 自我纠正 | **210** |
+| 类别                     | 数量                                                                      |
+| ------------------------ | ------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                            |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                               |
+| **新故障根因**           | **`anchor[0]`(`0x2f01b020`) 的 `+28` 字段为 0 ⇒ 尾调用空指针 ⇒ 跳到垃圾** |
+| 已排除                   | 栈溢出、帧被替换、寄存器单独坏、日志钩子族                                |
+| 撤回总数                 | **72**                                                                    |
+| 自我纠正                 | **210**                                                                   |
 
 ## 🏁 链条闭合：`gvLJK…` 的**第一条指令**就是 `lw a5, 4(a0)`
 
@@ -16016,18 +16096,19 @@ anchor[0] = 0x2f01b020              （非空）
 > 而下游函数 `gvLJK…` 不做空检查、第一条指令就解引用它。**
 
 ⇒ 修法二选一：
+
 1. **填充 `anchor[0] + 0x1C`**（治本）；
 2. 或在分派器 `cKuT2…` 里再加一道 `a0 != 0` 检查（治标，但能避免跳到垃圾）。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
+| 类别                     | 数量                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                                        |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                                           |
 | **新故障（指令级闭合）** | **`anchor[0]+0x1C` 为 0 ⇒ 尾调用 ⇒ `lw a5,4(a0)` 读地址 4 ⇒ 垃圾 ⇒ 跳到不可执行地址** |
-| 撤回 | 72 |
-| 自我纠正 | **211** |
+| 撤回                     | 72                                                                                    |
+| 自我纠正                 | **211**                                                                               |
 
 ### 本会话完整弧线
 
@@ -16046,10 +16127,10 @@ BLE init 卡在 step 6
 
 ### 矛盾
 
-| 量 | 表现 |
-| --- | --- |
-| `a0` | **恒为 0**（多次运行一致）|
-| 跳转目标 | **每次不同**（`0x0859e894` / `0x859e894` / `0x4c5de8d4`）|
+| 量       | 表现                                                      |
+| -------- | --------------------------------------------------------- |
+| `a0`     | **恒为 0**（多次运行一致）                                |
+| 跳转目标 | **每次不同**（`0x0859e894` / `0x859e894` / `0x4c5de8d4`） |
 
 ⇒ **恒定的输入不可能导出变化的输出。**
 
@@ -16057,10 +16138,10 @@ BLE init 卡在 step 6
 
 ### 因此必须拆成两件事
 
-| # | 事实 | 性质 |
-| --- | --- | --- |
-| 1 | `*(anchor[0] + 28) = 0` | **独立的缺陷**（字段未填）|
-| 2 | 跳到变化的垃圾地址 | **另有出处**，与 `a0 = 0` 无关 |
+| #   | 事实                    | 性质                           |
+| --- | ----------------------- | ------------------------------ |
+| 1   | `*(anchor[0] + 28) = 0` | **独立的缺陷**（字段未填）     |
+| 2   | 跳到变化的垃圾地址      | **另有出处**，与 `a0 = 0` 无关 |
 
 ### 而且要重新审视 `gvLJK…` 的第一条指令
 
@@ -16079,24 +16160,24 @@ BLE init 卡在 step 6
 
 ### 下一步（两条，分开做）
 
-| # | 动作 |
-| --- | --- |
+| #     | 动作                                                        |
+| ----- | ----------------------------------------------------------- |
 | **A** | 板侧读 `0x2f01b028`（= `anchor[0]+28`）⇒ **钉死"+28 未填"** |
-| **B** | 追 `gvLJK…` 的**被调函数** ⇒ 找真正的坏跳转源 |
+| **B** | 追 `gvLJK…` 的**被调函数** ⇒ 找真正的坏跳转源               |
 
 ⇒ **A 与 B 是两件独立的事**，不要混为一谈（我上一节把它们连成一条链是**错的**）。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **缺陷 1** | `anchor[0]+28 = 0`（字段未填，症状之一）|
-| **缺陷 2** | 坏跳转源**未定位**（与 `a0=0` 无关，因输入恒定而目标变化）|
-| **已撤回** | ⑦⑦"a0=0 导致坏跳转"这条链 |
-| 撤回总数 | **73** |
-| 自我纠正 | **212** |
+| 类别                     | 数量                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                             |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                |
+| **缺陷 1**               | `anchor[0]+28 = 0`（字段未填，症状之一）                   |
+| **缺陷 2**               | 坏跳转源**未定位**（与 `a0=0` 无关，因输入恒定而目标变化） |
+| **已撤回**               | ⑦⑦"a0=0 导致坏跳转"这条链                                  |
+| 撤回总数                 | **73**                                                     |
+| 自我纠正                 | **212**                                                    |
 
 ### 本会话最重要的方法论（最后一条）
 
@@ -16109,13 +16190,13 @@ BLE init 卡在 step 6
 
 ### 算术（很重要）
 
-| 步 | 推理 |
-| --- | --- |
-| 1 | trap 时 `a0 = 0` |
-| 2 | `gvLJK…` 只在**偏移 `0x12`**（`lui a0, .LC0`）才写 `a0` |
-| 3 | ⇒ 故障必在 **`0x12` 之前** |
-| 4 | `0x12` 之前唯一会**取指**的指令是 **`0x10: jr t1`** |
-| 5 | `0x00: lw a5,4(a0)` / `0x0c: lhu a2,0(a0)` 若出错 ⇒ **cause=5**，实测 **cause=1** ⇒ 这两条 **load 没出错** |
+| 步  | 推理                                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | trap 时 `a0 = 0`                                                                                           |
+| 2   | `gvLJK…` 只在**偏移 `0x12`**（`lui a0, .LC0`）才写 `a0`                                                    |
+| 3   | ⇒ 故障必在 **`0x12` 之前**                                                                                 |
+| 4   | `0x12` 之前唯一会**取指**的指令是 **`0x10: jr t1`**                                                        |
+| 5   | `0x00: lw a5,4(a0)` / `0x0c: lhu a2,0(a0)` 若出错 ⇒ **cause=5**，实测 **cause=1** ⇒ 这两条 **load 没出错** |
 
 ⇒ **故障指令 = `0x10: jr t1`** ⇒ 跳到 `t1` 持有的地址 ⇒ 取指失败。
 
@@ -16133,11 +16214,11 @@ r_sym_bt_gvLJK4crXTPEAF7nrRbG    = 0x4005f19a   （.flash.text ✓）
 
 ### 这意味着
 
-| 可能 | 说明 |
-| --- | --- |
-| **A** | `auipc t1` 的 **RELAX 被错误处理**（`R_RISCV_RELAX` 把它优化成别的形式）|
-| **B** | `jr t1` 之前 `t1` 被别的代码覆写（但 0x0c..0x10 之间没有指令）|
-| **C** | 故障根本**不在** `cKuT2…` 的 `jr t1`，而在 `gvLJK…` 内部某处（那样 `a0` 已被 0x12 写过，与 `a0=0` 矛盾）|
+| 可能  | 说明                                                                                                     |
+| ----- | -------------------------------------------------------------------------------------------------------- |
+| **A** | `auipc t1` 的 **RELAX 被错误处理**（`R_RISCV_RELAX` 把它优化成别的形式）                                 |
+| **B** | `jr t1` 之前 `t1` 被别的代码覆写（但 0x0c..0x10 之间没有指令）                                           |
+| **C** | 故障根本**不在** `cKuT2…` 的 `jr t1`，而在 `gvLJK…` 内部某处（那样 `a0` 已被 0x12 写过，与 `a0=0` 矛盾） |
 
 ⇒ **C 与 `a0=0` 矛盾 ⇒ 排除 C。**
 
@@ -16154,30 +16235,30 @@ r_sym_bt_gvLJK4crXTPEAF7nrRbG    = 0x4005f19a   （.flash.text ✓）
 
 ### 下一步（明确）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 反汇编**链接后** `app.elf` 的 `0x4005b666..+0x16`，看 `auipc`/`jr t1` 最终编成什么（RELAX 后可能与 `.o` 不同）|
-| 2 | 若那里是 `jr t1` 且 `t1` 来自 `auipc` ⇒ 检查 `t1` 在运行时的值 |
+| #   | 动作                                                                                                           |
+| --- | -------------------------------------------------------------------------------------------------------------- |
+| 1   | 反汇编**链接后** `app.elf` 的 `0x4005b666..+0x16`，看 `auipc`/`jr t1` 最终编成什么（RELAX 后可能与 `.o` 不同） |
+| 2   | 若那里是 `jr t1` 且 `t1` 来自 `auipc` ⇒ 检查 `t1` 在运行时的值                                                 |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障指令** | **`0x10: jr t1`（取指失败，cause=1）** |
-| **矛盾未解** | 重定位目标正确，但 `t1` 不持有它 |
-| 撤回总数 | 73 |
-| 自我纠正 | **213** |
+| 类别                     | 数量                                   |
+| ------------------------ | -------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）         |
+| **里程碑**               | ✅ **`bt bringup: INITED`**            |
+| **故障指令**             | **`0x10: jr t1`（取指失败，cause=1）** |
+| **矛盾未解**             | 重定位目标正确，但 `t1` 不持有它       |
+| 撤回总数                 | 73                                     |
+| 自我纠正                 | **213**                                |
 
 ## ❌ 撤回"链条闭合"：故障**不可能**在 `gvLJK…` 体内
 
 ### 两条排除
 
-| 证据 | 结论 |
-| --- | --- |
-| `gvLJK…` 体内三条指令全是 **load**（`lw a5,4(a0)` / `lhu a2,0(a0)` / `lw a3,0(a5)`）| load 出错是 **cause=5**，实测 **cause=1** ⇒ **不是 load** |
-| 若真进了 `gvLJK…`，执行到 `0x12: lui a0,.LC0` 时 **`a0` 就非 0** | 与观测 `a0 = 0` **矛盾** |
+| 证据                                                                                 | 结论                                                      |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `gvLJK…` 体内三条指令全是 **load**（`lw a5,4(a0)` / `lhu a2,0(a0)` / `lw a3,0(a5)`） | load 出错是 **cause=5**，实测 **cause=1** ⇒ **不是 load** |
+| 若真进了 `gvLJK…`，执行到 `0x12: lui a0,.LC0` 时 **`a0` 就非 0**                     | 与观测 `a0 = 0` **矛盾**                                  |
 
 ⇒ **故障不在 `gvLJK…` 体内。**
 
@@ -16185,10 +16266,10 @@ r_sym_bt_gvLJK4crXTPEAF7nrRbG    = 0x4005f19a   （.flash.text ✓）
 
 ### 因此"链条闭合"必须改写
 
-| 之前写的 | 修正 |
-| --- | --- |
-| "`anchor[0]+28 = 0` ⇒ 尾调用 ⇒ `lw a5,4(a0)` ⇒ 垃圾 ⇒ 跳到不可执行地址" | ❌ **撤回** |
-| **正确表述** | **`a0=0` 与坏跳转同源（同一个未填充字段），但坏跳转的来源是"尾调用的目标解析"** |
+| 之前写的                                                                | 修正                                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| "`anchor[0]+28 = 0` ⇒ 尾调用 ⇒ `lw a5,4(a0)` ⇒ 垃圾 ⇒ 跳到不可执行地址" | ❌ **撤回**                                                                     |
+| **正确表述**                                                            | **`a0=0` 与坏跳转同源（同一个未填充字段），但坏跳转的来源是"尾调用的目标解析"** |
 
 ### 也就是说
 
@@ -16208,14 +16289,14 @@ r_sym_bt_gvLJK4crXTPEAF7nrRbG    = 0x4005f19a   （.flash.text ✓）
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障性质** | **`jr t1` 的目标解析错误（链接期/重定位）** |
-| **`a0=0` 的角色** | 同源的独立症状，**不是**坏跳转的来源 |
-| 撤回总数 | **74** |
-| 自我纠正 | **214** |
+| 类别                     | 数量                                        |
+| ------------------------ | ------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）              |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                 |
+| **故障性质**             | **`jr t1` 的目标解析错误（链接期/重定位）** |
+| **`a0=0` 的角色**        | 同源的独立症状，**不是**坏跳转的来源        |
+| 撤回总数                 | **74**                                      |
+| 自我纠正                 | **214**                                     |
 
 ## 🏁 链接后编码：`auipc+jr` 被**松弛成 `jal t1`** ⇒ "重定位错误"不成立
 
@@ -16232,11 +16313,11 @@ r_sym_bt_gvLJK4crXTPEAF7nrRbG    = 0x4005f19a   （.flash.text ✓）
 
 ### 三条独立算术，全部指向同一结论
 
-| # | 算术 | 结论 |
-| --- | --- | --- |
-| 1 | `auipc` 有符号 20 位 ⇒ 范围 **PC ± 512 KB**；从 `0x4005b674` 只能到 `[0x4000b674, 0x4085b674]`，**够不到** `0x0859e894` | `auipc` 不可能产生该目标 |
-| 2 | `gvLJK…` 体内全是 **load**（cause=5），且 `0x12` 会写 `a0`（与 `a0=0` 矛盾）| 故障不在 `gvLJK…` 内 |
-| 3 | 链接后已松弛成 `jal t1` ⇒ 目标**正确** | 不是重定位错误 |
+| #   | 算术                                                                                                                    | 结论                     |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| 1   | `auipc` 有符号 20 位 ⇒ 范围 **PC ± 512 KB**；从 `0x4005b674` 只能到 `[0x4000b674, 0x4085b674]`，**够不到** `0x0859e894` | `auipc` 不可能产生该目标 |
+| 2   | `gvLJK…` 体内全是 **load**（cause=5），且 `0x12` 会写 `a0`（与 `a0=0` 矛盾）                                            | 故障不在 `gvLJK…` 内     |
+| 3   | 链接后已松弛成 `jal t1` ⇒ 目标**正确**                                                                                  | 不是重定位错误           |
 
 ⇒ **三者合起来排除 `cKuT2…` 与 `gvLJK…` 两个函数。**
 
@@ -16259,10 +16340,10 @@ ret                 ; ← jalr x0, 0(ra)，跳到该值
 
 ### 这与早前的栈结论**不同**
 
-| 之前撤回的 | 现在成立的 |
-| --- | --- |
-| "`*(sp+12)` 是保存的 ra"（偏移假设错误）| **某个帧的 +12 槽**被改写（不一定是当前 sp+12）|
-| "整块栈被覆盖"（无证据）| **单个槽**被改写（有精确判据）|
+| 之前撤回的                               | 现在成立的                                      |
+| ---------------------------------------- | ----------------------------------------------- |
+| "`*(sp+12)` 是保存的 ra"（偏移假设错误） | **某个帧的 +12 槽**被改写（不一定是当前 sp+12） |
+| "整块栈被覆盖"（无证据）                 | **单个槽**被改写（有精确判据）                  |
 
 ### 下一步（已实现，待读数）
 
@@ -16273,14 +16354,14 @@ ret                 ; ← jalr x0, 0(ra)，跳到该值
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障形态** | **`lw ra,12(sp)` + `ret`**（保存返回地址的栈槽被改写）|
-| 已排除 | 栈溢出、整帧覆盖、日志钩子、`cKuT2…` 尾调用、`gvLJK…` 体内 |
-| 撤回总数 | **75** |
-| 自我纠正 | **215** |
+| 类别                     | 数量                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                             |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                |
+| **故障形态**             | **`lw ra,12(sp)` + `ret`**（保存返回地址的栈槽被改写）     |
+| 已排除                   | 栈溢出、整帧覆盖、日志钩子、`cKuT2…` 尾调用、`gvLJK…` 体内 |
+| 撤回总数                 | **75**                                                     |
+| 自我纠正                 | **215**                                                    |
 
 ## 🏁🏁 命中！被改写的返回槽在 **`sp - 96`**
 
@@ -16298,11 +16379,11 @@ db=0x2f01b020       ← anchor[0]（无关）
 
 ### 三条结论
 
-| # | 结论 |
-| --- | --- |
-| 1 | **双向扫描是必需的** —— 槽在 **`sp` 以下**（更深的帧）|
-| 2 | 被改写的值 = **`0x4859e895`**（`mepc \| 1`）⇒ **确实是保存的返回地址** |
-| 3 | 槽位距 `sp` **96 字节** ⇒ 属**被调用者的帧**（`lw ra,12(sp)` 读的那一格）|
+| #   | 结论                                                                      |
+| --- | ------------------------------------------------------------------------- |
+| 1   | **双向扫描是必需的** —— 槽在 **`sp` 以下**（更深的帧）                    |
+| 2   | 被改写的值 = **`0x4859e895`**（`mepc \| 1`）⇒ **确实是保存的返回地址**    |
+| 3   | 槽位距 `sp` **96 字节** ⇒ 属**被调用者的帧**（`lw ra,12(sp)` 读的那一格） |
 
 ### 因此机制确定（与三条算术吻合）
 
@@ -16329,23 +16410,23 @@ frame.sp          = 0x2f07ae90
 
 ### 下一步（两条，明确）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 读 `0x2f07ae30` 附近的**上下文**（前后各 8 个字）⇒ 看它像哪个函数的帧 |
-| 2 | **谁写了 `0x4859e895` 进那个槽** —— 这个值本身是"半个指针"，高字节与 `0x4859e894` 一致 |
+| #   | 动作                                                                                   |
+| --- | -------------------------------------------------------------------------------------- |
+| 1   | 读 `0x2f07ae30` 附近的**上下文**（前后各 8 个字）⇒ 看它像哪个函数的帧                  |
+| 2   | **谁写了 `0x4859e895` 进那个槽** —— 这个值本身是"半个指针"，高字节与 `0x4859e894` 一致 |
 
 ⇒ 关键问题变成：**`0x4859e895` 这个值是从哪里来的**（它不是代码地址，也不是 `mepc`）。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障形态** | **`lw ra,12(sp_F)` + `ret`**，槽在 **`sp-96`**，值 `0x4859e895` |
-| 已排除 | 栈溢出、`cKuT2…`、`gvLJK…`、重定位错误、日志钩子 |
-| 撤回总数 | 75 |
-| 自我纠正 | **216** |
+| 类别                     | 数量                                                            |
+| ------------------------ | --------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                  |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                     |
+| **故障形态**             | **`lw ra,12(sp_F)` + `ret`**，槽在 **`sp-96`**，值 `0x4859e895` |
+| 已排除                   | 栈溢出、`cKuT2…`、`gvLJK…`、重定位错误、日志钩子                |
+| 撤回总数                 | 75                                                              |
+| 自我纠正                 | **216**                                                         |
 
 ## ⚠️ 降级：`sp-96` 的命中**只证明存在**，未证明归属或改写
 
@@ -16360,16 +16441,17 @@ frame.sp          = 0x2f07ae90
 > **在 `sp - 96` 处存在一个等于跳转目标的字。**
 
 ⇒ **未证明**：
+
 1. 它是 F 帧里的 **`+12` 槽**（F 的帧布局未知；`+12` 只是 RV32 常见约定，**不是实测**）；
 2. 它是**被改写**的（也可能是**某处正常写入**了这个值）。
 
 ### 因此当前的准确表述
 
-| 项 | 状态 |
-| --- | --- |
+| 项                             | 状态        |
+| ------------------------------ | ----------- |
 | `sp-96` 处存在等于跳转目标的字 | ✅ **已测** |
-| 它属于哪个帧的哪个槽 | ❌ **未定** |
-| 谁写了它 / 是否"改写" | ❌ **未定** |
+| 它属于哪个帧的哪个槽           | ❌ **未定** |
+| 谁写了它 / 是否"改写"          | ❌ **未定** |
 
 ### 一个值得注意的模式
 
@@ -16377,31 +16459,32 @@ frame.sp          = 0x2f07ae90
 
 ⇒ **低 16 位恒为 `0xe895`，只有高 16 位在变**（且只差 bit27/bit31 一两位）。
 
-| 解释 | 说明 |
-| --- | --- |
-| ① **对上半字的 16 位写**（`sh` 落在 `+2`）| 与"低半不变"吻合 |
-| ② 那个字是**某 64 位量的高半**，被当指针读了 | 同上 |
+| 解释                                         | 说明             |
+| -------------------------------------------- | ---------------- |
+| ① **对上半字的 16 位写**（`sh` 落在 `+2`）   | 与"低半不变"吻合 |
+| ② 那个字是**某 64 位量的高半**，被当指针读了 | 同上             |
 
 ⇒ 若要分辨，需要**该槽上下各 4 个字**（`[sp-112, sp-80)`）：
+
 - 邻居呈"成对字段/指针+序号"⇒ **数据字段被误当指针**（修：结构体布局）
 - 邻居呈"若干代码地址 + 已保存寄存器"⇒ **保存槽被改写**（修：追越界写）
 
 ### 待办（下一次运行）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 打 `[sp-112, sp-80)` 的 16 个字（**当前 FR 只打 `[sp, sp+64)`，恰不含命中点**）|
-| 2 | 查归档里是否有对 `0x2f07ae30` 附近的**半字写（`sh`）** |
+| #   | 动作                                                                            |
+| --- | ------------------------------------------------------------------------------- |
+| 1   | 打 `[sp-112, sp-80)` 的 16 个字（**当前 FR 只打 `[sp, sp+64)`，恰不含命中点**） |
+| 2   | 查归档里是否有对 `0x2f07ae30` 附近的**半字写（`sh`）**                          |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障定位（收窄后）** | `sp-96` 存在等于跳转目标的字；**归属与成因未定** |
-| 撤回总数 | **76** |
-| 自我纠正 | **217** |
+| 类别                     | 数量                                             |
+| ------------------------ | ------------------------------------------------ |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                   |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                      |
+| **故障定位（收窄后）**   | `sp-96` 存在等于跳转目标的字；**归属与成因未定** |
+| 撤回总数                 | **76**                                           |
+| 自我纠正                 | **217**                                          |
 
 ## ❌❌❌ 撤回"命中 sp-96"：那是 **handler 自己的帧**，命中是**自证的**
 
@@ -16416,27 +16499,28 @@ frame.sp          = 0x2f07ae90
 
 ### 于是
 
-| 事实 | 后果 |
-| --- | --- |
-| 故障形态是 `ret`/`jr ra` | 被中断的 `ra` **恰好 = `mepc \| 1`** |
-| 我用"等于 `mepc` 或 `mepc\|1`"当判据 | **必然命中 handler 自己的槽** |
-| 偏移恰好 = **-96** = handler 帧长 | **不是巧合，是构造使然** |
+| 事实                                 | 后果                                 |
+| ------------------------------------ | ------------------------------------ |
+| 故障形态是 `ret`/`jr ra`             | 被中断的 `ra` **恰好 = `mepc \| 1`** |
+| 我用"等于 `mepc` 或 `mepc\|1`"当判据 | **必然命中 handler 自己的槽**        |
+| 偏移恰好 = **-96** = handler 帧长    | **不是巧合，是构造使然**             |
 
 ⇒ **"命中 `sp-96`"= 读回了自己的压栈值，不是证据。**
 
 ### 撤回
 
-| 结论 | 状态 |
-| --- | --- |
-| "被改写的返回槽在 `sp-96`" | ❌ **撤回** |
-| "槽值 = 0x4859e895 ⇒ 保存的 ra" | ❌ **撤回**（那就是 `frame.ra` 本身）|
-| "双向扫描确认了机制" | ❌ **撤回** |
+| 结论                            | 状态                                  |
+| ------------------------------- | ------------------------------------- |
+| "被改写的返回槽在 `sp-96`"      | ❌ **撤回**                           |
+| "槽值 = 0x4859e895 ⇒ 保存的 ra" | ❌ **撤回**（那就是 `frame.ra` 本身） |
+| "双向扫描确认了机制"            | ❌ **撤回**                           |
 
 ### 正确的扫描窗口
 
 **挪到 handler 帧之下**：`[sp-256, sp-96)`（不含 `-96` 本身）。
 
 并且**打印全部命中**（不要只报第一个）：
+
 - 在那里也命中 ⇒ **才是真正的来源槽**；
 - 没有命中 ⇒ **根本不是"栈槽被改写"**，须另找方向。
 
@@ -16448,14 +16532,14 @@ frame.sp          = 0x2f07ae90
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `frame.ra` 是垃圾 ⇒ `ret` 跳到不可执行地址；**来源未定** |
-| **已撤回** | 栈溢出、整帧覆盖、`cKuT2…`、`gvLJK…`、重定位、日志钩子、**`sp-96` 命中** |
-| 撤回总数 | **79** |
-| 自我纠正 | **218** |
+| 类别                     | 数量                                                                     |
+| ------------------------ | ------------------------------------------------------------------------ |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                           |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                              |
+| **故障（收窄后）**       | `frame.ra` 是垃圾 ⇒ `ret` 跳到不可执行地址；**来源未定**                 |
+| **已撤回**               | 栈溢出、整帧覆盖、`cKuT2…`、`gvLJK…`、重定位、日志钩子、**`sp-96` 命中** |
+| 撤回总数                 | **79**                                                                   |
+| 自我纠正                 | **218**                                                                  |
 
 ## ❌ 决定性否定：`[sp-256, sp-96)` **零命中** ⇒ "栈槽被改写"作废
 
@@ -16471,21 +16555,21 @@ f_sp=0x2f07ae90
 
 ### 因此撤回的整条链
 
-| 结论 | 状态 |
-| --- | --- |
-| "保存返回地址的栈槽被改写" | ❌ **作废** |
-| "`lw ra,12(sp)` + `ret` 形态" | ❌ **作废**（前提是栈里有那个值）|
-| "槽在 `sp-96`" | ❌ 上一轮已撤回（自证）|
+| 结论                          | 状态                              |
+| ----------------------------- | --------------------------------- |
+| "保存返回地址的栈槽被改写"    | ❌ **作废**                       |
+| "`lw ra,12(sp)` + `ret` 形态" | ❌ **作废**（前提是栈里有那个值） |
+| "槽在 `sp-96`"                | ❌ 上一轮已撤回（自证）           |
 
 ⇒ **`ra` 的值不是从栈里读出来的。**
 
 ### `ra` 的三种可能来源（新的搜索空间）
 
-| # | 来源 | 判据 |
-| --- | --- | --- |
-| 1 | **`ra` 从未被写**（垃圾初值）| 被调函数若不是经 `jal`/`jalr` 进入，`ra` 仍是旧值 |
-| 2 | **寄存器间接移动**（`mv ra, aX`）| 值来自某个被污染的通用寄存器 |
-| 3 | **从非栈内存载入**（结构体字段）| `lw ra, K(aX)`，`aX` 指向结构体 |
+| #   | 来源                              | 判据                                              |
+| --- | --------------------------------- | ------------------------------------------------- |
+| 1   | **`ra` 从未被写**（垃圾初值）     | 被调函数若不是经 `jal`/`jalr` 进入，`ra` 仍是旧值 |
+| 2   | **寄存器间接移动**（`mv ra, aX`） | 值来自某个被污染的通用寄存器                      |
+| 3   | **从非栈内存载入**（结构体字段）  | `lw ra, K(aX)`，`aX` 指向结构体                   |
 
 ### 一个仍成立的强模式
 
@@ -16505,22 +16589,22 @@ f_sp=0x2f07ae90
 
 ### 下一步（收窄到三条）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 在 `trap` 入口用**汇编**保存 `sp`/`ra` **之前**的 `ra`（排除 handler 影响）|
-| 2 | 反查 `hci_transport_init` 的调用链，看**哪条路径不设 `ra`** |
-| 3 | 查归档中是否有把 `0x...e894` 附近**常量**写进寄存器的路径 |
+| #   | 动作                                                                        |
+| --- | --------------------------------------------------------------------------- |
+| 1   | 在 `trap` 入口用**汇编**保存 `sp`/`ra` **之前**的 `ra`（排除 handler 影响） |
+| 2   | 反查 `hci_transport_init` 的调用链，看**哪条路径不设 `ra`**                 |
+| 3   | 查归档中是否有把 `0x...e894` 附近**常量**写进寄存器的路径                   |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` 持有"半个指针"（低 16 位恒 `0xe894`）；**不在栈上，来源未定** |
-| **已作废的理论** | 栈溢出、整帧覆盖、`cKuT2…`、`gvLJK…`、重定位、日志钩子、`sp-96` 命中、**栈槽改写** |
-| 撤回总数 | **80** |
-| 自我纠正 | **219** |
+| 类别                     | 数量                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                                     |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                                        |
+| **故障（收窄后）**       | `ra` 持有"半个指针"（低 16 位恒 `0xe894`）；**不在栈上，来源未定**                 |
+| **已作废的理论**         | 栈溢出、整帧覆盖、`cKuT2…`、`gvLJK…`、重定位、日志钩子、`sp-96` 命中、**栈槽改写** |
+| 撤回总数                 | **80**                                                                             |
+| 自我纠正                 | **219**                                                                            |
 
 ## 🏁 决定性：窗口扩到 **1 KB** 仍零命中 + 全寄存器已取
 
@@ -16540,20 +16624,21 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
 ⇒ **"从栈槽载入 `ra`" 这条路彻底关闭。**
 
 ⇒ 只剩两种来源：
-| # | 来源 |
-| --- | --- |
-| 1 | **`mv ra, aX`**（寄存器间接移动）|
-| 2 | **`lw ra, K(aX)`**，`aX` 指向**非栈**内存（结构体字段）|
+
+| #   | 来源                                                    |
+| --- | ------------------------------------------------------- |
+| 1   | **`mv ra, aX`**（寄存器间接移动）                       |
+| 2   | **`lw ra, K(aX)`**，`aX` 指向**非栈**内存（结构体字段） |
 
 ### 结论 2：寄存器里的栈指针线索
 
-| 寄存器 | 值 | 解读 |
-| --- | --- | --- |
-| `t1` | `0x2f07ad70` | **栈地址**（`sp - 0x120`）|
-| `a7` | `0x2f07ad87` | **栈地址**（`sp - 0x109`，注意是**奇数**）|
-| `t2` | `0x4f4d0f4d` | 像 ASCII `"OM"` + `0x0f` + `"M"` |
-| `s0` | `0x0dec489f` | 非代码地址 |
-| `s1` | `0x91474e09` | 非代码地址 |
+| 寄存器 | 值           | 解读                                       |
+| ------ | ------------ | ------------------------------------------ |
+| `t1`   | `0x2f07ad70` | **栈地址**（`sp - 0x120`）                 |
+| `a7`   | `0x2f07ad87` | **栈地址**（`sp - 0x109`，注意是**奇数**） |
+| `t2`   | `0x4f4d0f4d` | 像 ASCII `"OM"` + `0x0f` + `"M"`           |
+| `s0`   | `0x0dec489f` | 非代码地址                                 |
+| `s1`   | `0x91474e09` | 非代码地址                                 |
 
 ⇒ **`a7` 是奇数**（`…87`）—— 与 `ra` 的奇数（`…95`）同属"低位被置"的形态。
 
@@ -16564,33 +16649,33 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
 
 ### 下一步（收窄到两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 反汇编 `hci_transport_init` 里 **`lw ra, K(a0)`** 一类的指令 | 若 `a0 = 0` 且 `lw ra, K(0)` ⇒ 读低地址 ⇒ 得到垃圾 |
-| 2 | 查 `caller_ra = 0x5032e8fa` 的归属 | 它是否也是垃圾（`0x50xx` 不在 `.flash.text`）|
+| #   | 动作                                                         | 判据                                               |
+| --- | ------------------------------------------------------------ | -------------------------------------------------- |
+| 1   | 反汇编 `hci_transport_init` 里 **`lw ra, K(a0)`** 一类的指令 | 若 `a0 = 0` 且 `lw ra, K(0)` ⇒ 读低地址 ⇒ 得到垃圾 |
+| 2   | 查 `caller_ra = 0x5032e8fa` 的归属                           | 它是否也是垃圾（`0x50xx` 不在 `.flash.text`）      |
 
 ⇒ **若 `lw ra, K(a0)` 且 `a0 = 0`**，则读的是**地址 K**（很小）⇒ 取到 ROM/未映射区的内容 ⇒ 正好解释"低 16 位恒为 `0xe894`、高位随环境变"。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` 是垃圾、**不在栈上**；疑为 `lw ra, K(a0=0)` 读低地址 |
-| **已作废方向** | 9（栈溢出/整帧覆盖/`cKuT2…`/`gvLJK…`/重定位/日志钩子/`sp-96`/栈槽改写/**从栈载入 ra**）|
-| 撤回总数 | **81** |
-| 自我纠正 | **220** |
+| 类别                     | 数量                                                                                    |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                                          |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                                             |
+| **故障（收窄后）**       | `ra` 是垃圾、**不在栈上**；疑为 `lw ra, K(a0=0)` 读低地址                               |
+| **已作废方向**           | 9（栈溢出/整帧覆盖/`cKuT2…`/`gvLJK…`/重定位/日志钩子/`sp-96`/栈槽改写/**从栈载入 ra**） |
+| 撤回总数                 | **81**                                                                                  |
+| 自我纠正                 | **220**                                                                                 |
 
 ## 🏁🏁 **奇偶判据**：`ra` 是**奇数** ⇒ 它从未被任何调用写过
 
 ### 判据
 
-| 事实 | 推论 |
-| --- | --- |
-| `jal rd, X` 写 `rd = PC + 4`（**偶数**）| 链接值必偶 |
-| `jalr rd, X` 写 `rd = PC + 2`（**偶数**）| 同上 |
-| 实测 `c_ra = 0x4859e895` | **奇数** |
+| 事实                                      | 推论       |
+| ----------------------------------------- | ---------- |
+| `jal rd, X` 写 `rd = PC + 4`（**偶数**）  | 链接值必偶 |
+| `jalr rd, X` 写 `rd = PC + 2`（**偶数**） | 同上       |
+| 实测 `c_ra = 0x4859e895`                  | **奇数**   |
 
 ⇒ **`ra` 从未被任何 `jal`/`jalr` 写入过。**
 
@@ -16598,11 +16683,11 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
 
 ### 因此"某个调用返回"这一整类解释全部作废
 
-| 作废的解释 | 原因 |
-| --- | --- |
+| 作废的解释           | 原因         |
+| -------------------- | ------------ |
 | "F 的返回地址被改写" | 返回地址必偶 |
-| "栈槽里的 ra 被踩" | 同上 |
-| "重定位错误" | 同上 |
+| "栈槽里的 ra 被踩"   | 同上         |
+| "重定位错误"         | 同上         |
 
 ### 与 1 KB 零命中的一致性
 
@@ -16613,11 +16698,11 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
 
 要找一个**含 `mepc | 1` 这个精确字**的内存位置：
 
-| 区域 | 地址 | 判据 |
-| --- | --- | --- |
-| bt-blobs 全局表指针 | `0x2f00ffac`（`ble_hci_trans_env_p`）| **本轮已加入 trap 行** |
-| anchor 区 | `0x2f01b020` 起 | 早前"`anchor[0]+28=0`"线索 |
-| `.data` / `.bss` | `0x2f000000..0x2f020000` | 全扫 |
+| 区域                | 地址                                  | 判据                       |
+| ------------------- | ------------------------------------- | -------------------------- |
+| bt-blobs 全局表指针 | `0x2f00ffac`（`ble_hci_trans_env_p`） | **本轮已加入 trap 行**     |
+| anchor 区           | `0x2f01b020` 起                       | 早前"`anchor[0]+28=0`"线索 |
+| `.data` / `.bss`    | `0x2f000000..0x2f020000`              | 全扫                       |
 
 ⇒ **若 `ble_hci_trans_env_p == 0`**，则 `lw X, K(a5=0)` 读低地址 K
 ⇒ 取到 ROM/未映射区内容 ⇒ 正好给出"低 16 位稳定、高 16 位随环境变"的字。
@@ -16634,14 +16719,14 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` 是**奇数数据字**（从未被调用写）；疑为全局表指针为空导致低地址载入 |
-| **已作废方向** | 10（栈溢出/整帧覆盖/`cKuT2…`/`gvLJK…`/重定位/日志钩子/`sp-96`/栈槽改写/从栈载入 ra/**"是返回地址"**）|
-| 撤回总数 | **83** |
-| 自我纠正 | **222** |
+| 类别                     | 数量                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                                                        |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                                                           |
+| **故障（收窄后）**       | `ra` 是**奇数数据字**（从未被调用写）；疑为全局表指针为空导致低地址载入                               |
+| **已作废方向**           | 10（栈溢出/整帧覆盖/`cKuT2…`/`gvLJK…`/重定位/日志钩子/`sp-96`/栈槽改写/从栈载入 ra/**"是返回地址"**） |
+| 撤回总数                 | **83**                                                                                                |
+| 自我纠正                 | **222**                                                                                               |
 
 ## ✅ 1 KB 窗口**真正确认**：`da=0 dc=0 dd=0 dh=0`
 
@@ -16656,21 +16741,21 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
    da=0x0 db=0x2f01b020 dc=0 **dd=0 dh=0**
 ```
 
-| 字段 | 值 | 含义 |
-| --- | --- | --- |
-| `da` | `0x0` | 第一个命中值 = 无 |
-| `dc` | `0` | 第一个命中偏移 = 无 |
-| `dd` | `0` | **所有命中偏移之和 = 0** |
-| `dh` | `0` | **命中个数 = 0** |
+| 字段 | 值    | 含义                     |
+| ---- | ----- | ------------------------ |
+| `da` | `0x0` | 第一个命中值 = 无        |
+| `dc` | `0`   | 第一个命中偏移 = 无      |
+| `dd` | `0`   | **所有命中偏移之和 = 0** |
+| `dh` | `0`   | **命中个数 = 0**         |
 
 ⇒ **[sp-1280, sp-96) 共 296 个字，零命中。**
 
 ### 因此两条同时成立
 
-| # | 结论 | 依据 |
-| --- | --- | --- |
-| 1 | `ra` **不在栈上任何深度** | 1 KB 扫描零命中 |
-| 2 | `ra` 是**奇数数据字**（非返回地址）| `jal/jalr` 写偶数 |
+| #   | 结论                                | 依据              |
+| --- | ----------------------------------- | ----------------- |
+| 1   | `ra` **不在栈上任何深度**           | 1 KB 扫描零命中   |
+| 2   | `ra` 是**奇数数据字**（非返回地址） | `jal/jalr` 写偶数 |
 
 ⇒ **"栈槽被改写"彻底关闭**，且**"它是返回地址"也关闭**。
 
@@ -16691,14 +16776,14 @@ RG ra=4859e895 t0=4 t1=2f07ad70 t2=4f4d0f4d a0=0 a1=a a2=0
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` = 奇数数据字，**不在栈上**，疑为 `ble_hci_trans_env_p == 0` 导致低地址载入 |
-| **已作废方向** | 10 |
-| 撤回总数 | **83** |
-| 自我纠正 | **223** |
+| 类别                     | 数量                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                                                  |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                                     |
+| **故障（收窄后）**       | `ra` = 奇数数据字，**不在栈上**，疑为 `ble_hci_trans_env_p == 0` 导致低地址载入 |
+| **已作废方向**           | 10                                                                              |
+| 撤回总数                 | **83**                                                                          |
+| 自我纠正                 | **223**                                                                         |
 
 ## ❌ "全局表指针为空"作废：`ble_hci_trans_env_p = 0x2f0206a8`（**非 0**）
 
@@ -16717,23 +16802,23 @@ df = 0x0d0d0b0b       ← *(0x2f00ffac+?) 旁读
 
 ### 同时作废的还有
 
-| 假设 | 否决读数 |
-| --- | --- |
-| `ble_hci_trans_env_p == 0` | `db = 0x2f0206a8` |
-| `env+0`/`env+8` 未填充 | `dg`/`di` 均为有效 arena 地址 |
+| 假设                       | 否决读数                      |
+| -------------------------- | ----------------------------- |
+| `ble_hci_trans_env_p == 0` | `db = 0x2f0206a8`             |
+| `env+0`/`env+8` 未填充     | `dg`/`di` 均为有效 arena 地址 |
 
 ### 一个新的重要观察
 
 `mepc` 本次为 `0x485de894` —— 与此前 `0x4859e894` 相比
 **低 24 位也在变**（`0x5de894` vs `0x59e894`）。
 
-| 轮次 | mepc |
-| --- | --- |
-| 1 | `0x0859e894` |
-| 2 | `0x4859e894` |
-| 3 | `0x8859e894` |
-| 4 | `0x4c59e894` |
-| 5 | `0x485de894` |
+| 轮次 | mepc         |
+| ---- | ------------ |
+| 1    | `0x0859e894` |
+| 2    | `0x4859e894` |
+| 3    | `0x8859e894` |
+| 4    | `0x4c59e894` |
+| 5    | `0x485de894` |
 
 ⇒ **连低 24 位都不稳定** ⇒ 更支持"**运行时数据**"而非"某个固定常量"。
 
@@ -16748,14 +16833,14 @@ df = 0x0d0d0b0b       ← *(0x2f00ffac+?) 旁读
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` = 奇数运行时数据字，不在栈上，来源未定 |
-| **已作废方向** | 11（含**空基址**）|
-| 撤回总数 | **85** |
-| 自我纠正 | **225** |
+| 类别                     | 数量                                        |
+| ------------------------ | ------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）              |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                 |
+| **故障（收窄后）**       | `ra` = 奇数运行时数据字，不在栈上，来源未定 |
+| **已作废方向**           | 11（含**空基址**）                          |
+| 撤回总数                 | **85**                                      |
+| 自我纠正                 | **225**                                     |
 
 ## 下一步（配方已定）：**投毒实验**，让来源槽自己报出地址
 
@@ -16769,12 +16854,12 @@ df = 0x0d0d0b0b       ← *(0x2f00ffac+?) 旁读
 
 ### 候选窗口（依据本轮实测）
 
-| 全局 | 值 | 含义 |
-| --- | --- | --- |
-| `ble_hci_trans_env_p` @`0x2f00ffac` | `0x2f0206a8` | 表指针 |
-| `*(env+0)` | `0x2f020700` | 表项 0 |
-| `*(env+8)` | `0x2f020730` | 表项 2 |
-| `*(0x2f00fe30)` | `0x2f0225b8` | arena 指针 |
+| 全局                                | 值           | 含义       |
+| ----------------------------------- | ------------ | ---------- |
+| `ble_hci_trans_env_p` @`0x2f00ffac` | `0x2f0206a8` | 表指针     |
+| `*(env+0)`                          | `0x2f020700` | 表项 0     |
+| `*(env+8)`                          | `0x2f020730` | 表项 2     |
+| `*(0x2f00fe30)`                     | `0x2f0225b8` | arena 指针 |
 
 ⇒ 表与 arena 都在 **`0x2f020000..0x2f023000`** 区间。
 
@@ -16796,11 +16881,11 @@ while (i < 0x800) : (i += 4) {
 
 ### 判读表
 
-| 现象 | 结论 | 修法 |
-| --- | --- | --- |
-| `ra` = `base + 4*i` 形态 | **来源槽 = `ra & ~1`** | 查该槽归属的结构体/字段 |
-| `ra` 不变 | 来源在窗口外 | 扩窗口 |
-| 全量投毒后仍不变 | 载入走**空/垃圾基址**（低地址 `0x54` 一类）| 修**基址** |
+| 现象                     | 结论                                        | 修法                    |
+| ------------------------ | ------------------------------------------- | ----------------------- |
+| `ra` = `base + 4*i` 形态 | **来源槽 = `ra & ~1`**                      | 查该槽归属的结构体/字段 |
+| `ra` 不变                | 来源在窗口外                                | 扩窗口                  |
+| 全量投毒后仍不变         | 载入走**空/垃圾基址**（低地址 `0x54` 一类） | 修**基址**              |
 
 ### 为什么这比"再读几个全局"好
 
@@ -16810,15 +16895,15 @@ while (i < 0x800) : (i += 4) {
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` = 奇数运行时数据字，不在栈上，来源未定 |
-| **已作废方向** | 11 |
-| 撤回总数 | 85 |
-| 自我纠正 | 225 |
-| **下一步** | **投毒实验**（配方已定）|
+| 类别                     | 数量                                        |
+| ------------------------ | ------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）              |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                 |
+| **故障（收窄后）**       | `ra` = 奇数运行时数据字，不在栈上，来源未定 |
+| **已作废方向**           | 11                                          |
+| 撤回总数                 | 85                                          |
+| 自我纠正                 | 225                                         |
+| **下一步**               | **投毒实验**（配方已定）                    |
 
 ## 🏁 全内存扫描**零命中** ⇒ `ra` 的值是**运行时算出来的**，不是从内存读的
 
@@ -16835,10 +16920,10 @@ dj=0x2f0225b8           ← *(env+8)
 
 ### 扫描范围（本次真正执行）
 
-| 区域 | 范围 | 结果 |
-| --- | --- | --- |
-| 栈 | `[sp-1280, sp-96)` = 296 字 | **0 命中** |
-| DRAM | `0x2f000000..0x2f070000` = 448 KB | **0 命中** |
+| 区域  | 范围                              | 结果       |
+| ----- | --------------------------------- | ---------- |
+| 栈    | `[sp-1280, sp-96)` = 296 字       | **0 命中** |
+| DRAM  | `0x2f000000..0x2f070000` = 448 KB | **0 命中** |
 | flash | `0x40000020..0x400A0300` = 640 KB | **0 命中** |
 
 ⇒ 匹配**两种极性**（`mepc` 与 `mepc|1`），共扫 ~1.1 MB。
@@ -16847,21 +16932,22 @@ dj=0x2f0225b8           ← *(env+8)
 
 ### 因此
 
-| 假设 | 状态 |
-| --- | --- |
-| 值存在栈上 | ❌ 0 命中 |
-| 值存在 DRAM（表/arena/结构体）| ❌ 0 命中 |
-| 值存在 flash（常量/指针表）| ❌ 0 命中 |
-| **值是运行时计算出来的** | ✅ **唯一剩余** |
+| 假设                           | 状态            |
+| ------------------------------ | --------------- |
+| 值存在栈上                     | ❌ 0 命中       |
+| 值存在 DRAM（表/arena/结构体） | ❌ 0 命中       |
+| 值存在 flash（常量/指针表）    | ❌ 0 命中       |
+| **值是运行时计算出来的**       | ✅ **唯一剩余** |
 
 ### 与奇偶判据的合并
 
-| 事实 | 推论 |
-| --- | --- |
-| `ra` 是**奇数** ⇒ 非 `jal`/`jalr` 写入 | 不是调用链接值 |
-| 值**不存在于任何内存** | 不是 `lw` 直接读出的常量 |
+| 事实                                   | 推论                     |
+| -------------------------------------- | ------------------------ |
+| `ra` 是**奇数** ⇒ 非 `jal`/`jalr` 写入 | 不是调用链接值           |
+| 值**不存在于任何内存**                 | 不是 `lw` 直接读出的常量 |
 
 ⇒ **`ra` = 由某个寄存器值**计算**得到**：
+
 - `addi ra, aX, 1` / `ori ra, aX, 1`（取某值并置低位）
 - 或 `ra` 从未被写，其值来自**未被初始化的寄存器初值**（由启动代码设置）
 
@@ -16869,10 +16955,10 @@ dj=0x2f0225b8           ← *(env+8)
 
 ### 下一步（两个方向，均可离线推进一部分）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 枚举镜像里所有写 `rd == x1` 的指令（不止 `lw`：含 `addi`/`ori`/`mv`/`jalr`）| 找**唯一的可疑写入点** |
-| 2 | 检查 `trap` 入口前 `ra` 的**初值来源** | `_start` 是否显式清零/设置 `ra` |
+| #   | 动作                                                                         | 判据                            |
+| --- | ---------------------------------------------------------------------------- | ------------------------------- |
+| 1   | 枚举镜像里所有写 `rd == x1` 的指令（不止 `lw`：含 `addi`/`ori`/`mv`/`jalr`） | 找**唯一的可疑写入点**          |
+| 2   | 检查 `trap` 入口前 `ra` 的**初值来源**                                       | `_start` 是否显式清零/设置 `ra` |
 
 ## ⚙️ 工具链修复（防止第四次误读）
 
@@ -16883,14 +16969,14 @@ dj=0x2f0225b8           ← *(env+8)
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障（收窄后）** | `ra` = **运行时计算**的奇数数据字，不存在于栈/DRAM/flash |
-| **已作废方向** | 13（新增**全内存存储**、**空基址**）|
-| 撤回总数 | **87** |
-| 自我纠正 | **227** |
+| 类别                     | 数量                                                     |
+| ------------------------ | -------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                           |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                              |
+| **故障（收窄后）**       | `ra` = **运行时计算**的奇数数据字，不存在于栈/DRAM/flash |
+| **已作废方向**           | 13（新增**全内存存储**、**空基址**）                     |
+| 撤回总数                 | **87**                                                   |
+| 自我纠正                 | **227**                                                  |
 
 ## 🎯🎯🎯 命中：槽在 **`sp - 0xA50`（2640 字节）**，此前 1 KB 窗口**不够深**
 
@@ -16900,14 +16986,14 @@ dj=0x2f0225b8           ← *(env+8)
 SL sj=0x2f07a440  sv=0x0859e894  want=0x0859e894  sn=2  sl=0x400a0300
 ```
 
-| 字段 | 值 | 含义 |
-| --- | --- | --- |
-| `sj` | `0x2f07a440` | 命中地址 |
-| `sv` | `0x0859e894` | **该地址处的字** |
-| `want` | `0x0859e894` | `mepc` |
-| **`sv == want`** | ✅ | **接线正确、真命中** |
-| `sn` | `2` | 全部命中数（DRAM + flash）|
-| `sl` | `0x400a0300` | 最后扫描地址（flash 末端）|
+| 字段             | 值           | 含义                       |
+| ---------------- | ------------ | -------------------------- |
+| `sj`             | `0x2f07a440` | 命中地址                   |
+| `sv`             | `0x0859e894` | **该地址处的字**           |
+| `want`           | `0x0859e894` | `mepc`                     |
+| **`sv == want`** | ✅           | **接线正确、真命中**       |
+| `sn`             | `2`          | 全部命中数（DRAM + flash） |
+| `sl`             | `0x400a0300` | 最后扫描地址（flash 末端） |
 
 ### 距离换算
 
@@ -16922,13 +17008,13 @@ f_sp       = 0x2f07ae90
 
 ### 因此必须**
 
-| 结论 | 修正 |
-| --- | --- |
-| "栈里没有这个值" | ❌ **撤回** |
-| "值不存在于任何内存" | ❌ **撤回** |
-| "值是运行时算出来的" | ❌ **撤回** |
-| **`0x2f07a440`（`sp-0xA50`）处存有 `mepc`** | ✅ **实测** |
-| **`ra = mepc \| 1 = 0x0859e895`** | ✅ 与 `lw ra, ...` 后置位的形态吻合 |
+| 结论                                        | 修正                                |
+| ------------------------------------------- | ----------------------------------- |
+| "栈里没有这个值"                            | ❌ **撤回**                         |
+| "值不存在于任何内存"                        | ❌ **撤回**                         |
+| "值是运行时算出来的"                        | ❌ **撤回**                         |
+| **`0x2f07a440`（`sp-0xA50`）处存有 `mepc`** | ✅ **实测**                         |
+| **`ra = mepc \| 1 = 0x0859e895`**           | ✅ 与 `lw ra, ...` 后置位的形态吻合 |
 
 ### 为什么 `sn = 2` 而不是 1
 
@@ -16945,22 +17031,22 @@ f_sp       = 0x2f07ae90
 
 ### 下一步（已可精确执行）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 反汇编，找 `lw ra, K(rs)` 且 `rs` 指向 `sp-0xA50` 附近的帧 |
-| 2 | 或直接读 `0x2f07a440` 上下 ±32 字节，判断它属哪个函数的帧 |
-| 3 | 找出**谁写了 `0x0859e894`** 到那里（该值是 `mepc`，可能是一次**自我保存**）|
+| #   | 动作                                                                        |
+| --- | --------------------------------------------------------------------------- |
+| 1   | 反汇编，找 `lw ra, K(rs)` 且 `rs` 指向 `sp-0xA50` 附近的帧                  |
+| 2   | 或直接读 `0x2f07a440` 上下 ±32 字节，判断它属哪个函数的帧                   |
+| 3   | 找出**谁写了 `0x0859e894`** 到那里（该值是 `mepc`，可能是一次**自我保存**） |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障槽位** | ✅ **`0x2f07a440` = `sp - 0xA50`，存 `mepc`** |
-| **因窗口过浅而误否定的方向** | **3**（栈槽改写 / 栈里没有 / 已计算）|
-| 撤回总数 | **90** |
-| 自我纠正 | **230** |
+| 类别                         | 数量                                          |
+| ---------------------------- | --------------------------------------------- |
+| **根因（四项配置条件）**     | **1，已验证**（init 完整完成）                |
+| **里程碑**                   | ✅ **`bt bringup: INITED`**                   |
+| **故障槽位**                 | ✅ **`0x2f07a440` = `sp - 0xA50`，存 `mepc`** |
+| **因窗口过浅而误否定的方向** | **3**（栈槽改写 / 栈里没有 / 已计算）         |
+| 撤回总数                     | **90**                                        |
+| 自我纠正                     | **230**                                       |
 
 ## ❌❌ 再次自证：`sp-0xA50` 的命中是**我自己日志格式化栈的副产品**
 
@@ -16975,52 +17061,52 @@ NB 420=74732031 424=313d7065 428=63682035 42c=72745f69
 
 按小端解成 ASCII：
 
-| 地址 | 十六进制 | ASCII |
-| --- | --- | --- |
-| 420 | `74732031` | `ts 1` |
-| 424 | `313d7065` | `1=pe` |
-| 428 | `63682035` | `ch 5` |
-| 42c | `72745f69` | `rt_i` |
-| 430 | `70736e61` | `psna` |
-| 434 | `5f74726f` | `_tro` |
-| 438 | `74696e69` | `tini` |
-| 43c | `3d616420` | ` ad=` |
-| 440 | `20307830` | ` 0x0` |
-| 444 | `303d6264` | `0=bd` |
-| 448 | `30663278` | `0f2x` |
-| 44c | `61363032` | `a602` |
-| 450 | `63642038` | `cd 8` |
-| 454 | `6420303d` | `d 0=` |
-| 458 | `20303d64` | ` 0=d` |
-| 45c | `303d6864` | `0=dh` |
+| 地址 | 十六进制   | ASCII  |
+| ---- | ---------- | ------ |
+| 420  | `74732031` | `ts 1` |
+| 424  | `313d7065` | `1=pe` |
+| 428  | `63682035` | `ch 5` |
+| 42c  | `72745f69` | `rt_i` |
+| 430  | `70736e61` | `psna` |
+| 434  | `5f74726f` | `_tro` |
+| 438  | `74696e69` | `tini` |
+| 43c  | `3d616420` | ` ad=` |
+| 440  | `20307830` | ` 0x0` |
+| 444  | `303d6264` | `0=bd` |
+| 448  | `30663278` | `0f2x` |
+| 44c  | `61363032` | `a602` |
+| 450  | `63642038` | `cd 8` |
+| 454  | `6420303d` | `d 0=` |
+| 458  | `20303d64` | ` 0=d` |
+| 45c  | `303d6864` | `0=dh` |
 
 ⇒ 拼起来正是我自己的 `!!` 日志行：
 `…step 11…_transport_init … da= 0x0… db=0… dh=0`
 
 ### 因此
 
-| 事实 | 推论 |
-| --- | --- |
-| 命中区是 **ASCII 日志文本** | 该栈带是 **日志格式化缓冲区** |
-| `sj` 本轮移到 `0x2f07a29c` = `sp - 0xBF4` | 正是 **`bufPrint` 调用栈的帧** |
-| `sv == mepc` | 因为 **我格式化 `c_mepc` 时把它压进了栈** |
+| 事实                                      | 推论                                      |
+| ----------------------------------------- | ----------------------------------------- |
+| 命中区是 **ASCII 日志文本**               | 该栈带是 **日志格式化缓冲区**             |
+| `sj` 本轮移到 `0x2f07a29c` = `sp - 0xBF4` | 正是 **`bufPrint` 调用栈的帧**            |
+| `sv == mepc`                              | 因为 **我格式化 `c_mepc` 时把它压进了栈** |
 
 ⇒ **命中又一次是仪器自己产生的。**
 
 ### 撤销
 
-| 结论 | 状态 |
-| --- | --- |
-| "槽在 `sp - 0xA50`" | ❌ **撤回** |
+| 结论                                | 状态        |
+| ----------------------------------- | ----------- |
+| "槽在 `sp - 0xA50`"                 | ❌ **撤回** |
 | "`0x2f07a440` 存有 `mepc` ⇒ 来源槽" | ❌ **撤回** |
-| "栈槽被改写（深版）" | ❌ **撤回** |
+| "栈槽被改写（深版）"                | ❌ **撤回** |
 
 ### 为什么 `sj` 每次不同
 
-| 轮次 | `sj` | `sp - sj` |
-| --- | --- | --- |
-| 1 | `0x2f07a440` | `0xA50` |
-| 2 | `0x2f07a29c` | `0xBF4` |
+| 轮次 | `sj`         | `sp - sj` |
+| ---- | ------------ | --------- |
+| 1    | `0x2f07a440` | `0xA50`   |
+| 2    | `0x2f07a29c` | `0xBF4`   |
 
 ⇒ 位置随**格式化调用的深度**变化 ⇒ 进一步证明它是**调用栈临时值**，不是固定槽位。
 
@@ -17034,14 +17120,14 @@ NB 420=74732031 424=313d7065 428=63682035 42c=72745f69
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障** | `ra` 为奇数垃圾值；**来源仍未定** |
-| **因仪器自证而撤回** | **3**（`sp-96` / `sp-0xA50` / 本次）|
-| 撤回总数 | **93** |
-| 自我纠正 | **233** |
+| 类别                     | 数量                                 |
+| ------------------------ | ------------------------------------ |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）       |
+| **里程碑**               | ✅ **`bt bringup: INITED`**          |
+| **故障**                 | `ra` 为奇数垃圾值；**来源仍未定**    |
+| **因仪器自证而撤回**     | **3**（`sp-96` / `sp-0xA50` / 本次） |
+| 撤回总数                 | **93**                               |
+| 自我纠正                 | **233**                              |
 
 ## 🔬 `sn = 2` 的完全解释：**就是我自己的 `want[]` 数组**
 
@@ -17059,64 +17145,64 @@ if (v == want[0] or v == want[1]) { ... diag_k +%= 1; }
 ⇒ 扫描窗口 `[0x2f000000, sp-96)` **包含 handler 自己的帧** ⇒
 ⇒ **`want[0]`/`want[1]` 本身被扫到** ⇒ **`sn` 恒为 2**。
 
-| 观测 | 解释 |
-| --- | --- |
-| `sn = 2` | = **`want[]` 的长度**（不是"两处损坏"）|
-| `sv == want` | 因为命中的就是 `want[]` 里的那份拷贝 |
-| `sj` 随构建变化（`a440` → `a29c`）| **代码改动移动了 handler 帧布局** |
+| 观测                               | 解释                                    |
+| ---------------------------------- | --------------------------------------- |
+| `sn = 2`                           | = **`want[]` 的长度**（不是"两处损坏"） |
+| `sv == want`                       | 因为命中的就是 `want[]` 里的那份拷贝    |
+| `sj` 随构建变化（`a440` → `a29c`） | **代码改动移动了 handler 帧布局**       |
 
 ⇒ **真正的损坏槽不会因为我改 printf 而移动。**
 
 ### 三条佐证（互相独立）
 
-| # | 证据 |
-| --- | --- |
-| 1 | `NB` 区解成 ASCII = `"…step=15 hci_transport_init da=…"` = **自己的 head 行缓冲** |
-| 2 | `sn` 恒等于 `want[]` 长度 **2** |
-| 3 | `sj` 偏移随构建字节数变化（`819872` → `821248`）|
+| #   | 证据                                                                              |
+| --- | --------------------------------------------------------------------------------- |
+| 1   | `NB` 区解成 ASCII = `"…step=15 hci_transport_init da=…"` = **自己的 head 行缓冲** |
+| 2   | `sn` 恒等于 `want[]` 长度 **2**                                                   |
+| 3   | `sj` 偏移随构建字节数变化（`819872` → `821248`）                                  |
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| `11d6ef6`："槽在 `sp-0xA50`" | ❌ **已撤回**（`18d7934`）|
-| "`sn=2` 表示两处损坏" | ❌ **撤回**（= `want[]` 长度）|
-| 栈扫描能发现损坏槽 | ❌ **在 handler 与 TCB 共用栈时无效** |
+| 结论                         | 状态                                  |
+| ---------------------------- | ------------------------------------- |
+| `11d6ef6`："槽在 `sp-0xA50`" | ❌ **已撤回**（`18d7934`）            |
+| "`sn=2` 表示两处损坏"        | ❌ **撤回**（= `want[]` 长度）        |
+| 栈扫描能发现损坏槽           | ❌ **在 handler 与 TCB 共用栈时无效** |
 
 ### 正确的扫描设计（下一版必须满足）
 
-| 要求 | 做法 |
-| --- | --- |
-| **不得有自拷贝** | 不用 `want[]` 数组；比较值**直接在循环里内联**（`csr_mepc` / `csr_mepc \| 1`）|
+| 要求                      | 做法                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **不得有自拷贝**          | 不用 `want[]` 数组；比较值**直接在循环里内联**（`csr_mepc` / `csr_mepc \| 1`）                                                |
 | **排除 handler 全部足迹** | 先测出 handler 栈深度（`fb[200]` + `pbuf[420]` + `sb2[420]` + `ob[400]` + `nb[420]` + 调用帧）⇒ 起点取 **`sp - 0x1800` 之下** |
-| **或换通道** | 把命中地址写进**静态全局**，事后不打日志直接读 |
+| **或换通道**              | 把命中地址写进**静态全局**，事后不打日志直接读                                                                                |
 
 ⇒ 当前 handler 的缓冲总和已 **>1.8 KB**，而我扫到 `sp-0x1000` ⇒ **必然撞上自己**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障** | `ra` 为奇数垃圾值；**来源仍未定** |
-| **因仪器自证而撤回** | **4**（`sp-96` / `sp-0xA50` / 邻居 / `sn=2`）|
-| 撤回总数 | **95** |
-| 自我纠正 | **235** |
+| 类别                     | 数量                                          |
+| ------------------------ | --------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                   |
+| **故障**                 | `ra` 为奇数垃圾值；**来源仍未定**             |
+| **因仪器自证而撤回**     | **4**（`sp-96` / `sp-0xA50` / 邻居 / `sn=2`） |
+| 撤回总数                 | **95**                                        |
+| 自我纠正                 | **235**                                       |
 
 ## 🏁 符号级确认：扫到的栈 **全部是 handler 自己的调用链**
 
 ### 用 `nm -n` 解析栈遍历找到的返回地址
 
-| 地址 | 符号 |
-| --- | --- |
-| `0x400712c6` | **`trapDispatch`**（反复出现，每层都有）|
-| `0x4006af72` | `hw.rawWrite` |
-| `0x4006745e` | `Io.Writer.writeAll` |
-| `0x4006744a` | `Io.Writer.writeAll` |
-| `0x40074c06` | `memcpy` |
-| `0x40074c16` | `memcpy` |
-| `0x4006abfc` | `osal.Arena.alloc` |
+| 地址         | 符号                                     |
+| ------------ | ---------------------------------------- |
+| `0x400712c6` | **`trapDispatch`**（反复出现，每层都有） |
+| `0x4006af72` | `hw.rawWrite`                            |
+| `0x4006745e` | `Io.Writer.writeAll`                     |
+| `0x4006744a` | `Io.Writer.writeAll`                     |
+| `0x40074c06` | `memcpy`                                 |
+| `0x40074c16` | `memcpy`                                 |
+| `0x4006abfc` | `osal.Arena.alloc`                       |
 
 ⇒ 调用链是 **`trapDispatch` → `hw.rawWrite` → `Io.Writer.writeAll` → `memcpy`**
 —— **正是 `hw.rawLineBlocking()` 打印那一行的路径**。
@@ -17125,18 +17211,18 @@ if (v == want[0] or v == want[1]) { ... diag_k +%= 1; }
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| 栈扫描发现了损坏槽 | ❌ **被符号级证据否定** |
-| `[sp-4096, sp)` 是 instrument 的足迹 | ✅ **已证实** |
-| 任何在此区间内的"命中"都是自证 | ✅ **已证实** |
+| 结论                                 | 状态                    |
+| ------------------------------------ | ----------------------- |
+| 栈扫描发现了损坏槽                   | ❌ **被符号级证据否定** |
+| `[sp-4096, sp)` 是 instrument 的足迹 | ✅ **已证实**           |
+| 任何在此区间内的"命中"都是自证       | ✅ **已证实**           |
 
 ### 结构性事实（决定正确修法）
 
-| 事实 | 推论 |
-| --- | --- |
-| handler 的帧**严格在 `f_sp` 之下**（栈向下增长）| `[f_sp, stack_top)` 是**天然干净**的 |
-| 首次扫描已覆盖 `[sp, sp+304)` 且**零命中** | 若 `f_sp` 距 `stack_top` 仅 ~304 B ⇒ **"从调用者帧载入"可关闭** |
+| 事实                                             | 推论                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| handler 的帧**严格在 `f_sp` 之下**（栈向下增长） | `[f_sp, stack_top)` 是**天然干净**的                            |
+| 首次扫描已覆盖 `[sp, sp+304)` 且**零命中**       | 若 `f_sp` 距 `stack_top` 仅 ~304 B ⇒ **"从调用者帧载入"可关闭** |
 
 ⇒ 下一步是**一次直接读数**：`stack_top - f_sp`。
 
@@ -17150,14 +17236,14 @@ if (v == want[0] or v == want[1]) { ... diag_k +%= 1; }
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **故障** | `ra` 为奇数垃圾值；来源未定 |
-| **因仪器自证而撤回** | **5** |
-| 撤回总数 | **96** |
-| 自我纠正 | **236** |
+| 类别                     | 数量                           |
+| ------------------------ | ------------------------------ |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成） |
+| **里程碑**               | ✅ **`bt bringup: INITED`**    |
+| **故障**                 | `ra` 为奇数垃圾值；来源未定    |
+| **因仪器自证而撤回**     | **5**                          |
+| 撤回总数                 | **96**                         |
+| 自我纠正                 | **236**                        |
 
 ## 🔎 栈解析器（新工具）给出**真实调用链**：经过 `osal.btdmMalloc`
 
@@ -17193,11 +17279,11 @@ probe.run → bringup.init → … → osal.btdmMalloc
 
 ### 三个新事实
 
-| # | 事实 | 意义 |
-| --- | --- | --- |
-| 1 | 链中有 **`osal.btdmMalloc`** | 崩溃发生在**blob 的内存分配路径**上 |
-| 2 | 三重 `r_sym_ble_*` 调用（`HCwifl`/`qcXSzS`/`sGiNVdM9`）| 是 blob 内部的**三个不同函数**，不是同一处递归 |
-| 3 | `sched.startScheduler` 在链**最深处**（off=760）| 崩溃时调度器已启动 ⇒ 已进入多任务阶段 |
+| #   | 事实                                                    | 意义                                           |
+| --- | ------------------------------------------------------- | ---------------------------------------------- |
+| 1   | 链中有 **`osal.btdmMalloc`**                            | 崩溃发生在**blob 的内存分配路径**上            |
+| 2   | 三重 `r_sym_ble_*` 调用（`HCwifl`/`qcXSzS`/`sGiNVdM9`） | 是 blob 内部的**三个不同函数**，不是同一处递归 |
+| 3   | `sched.startScheduler` 在链**最深处**（off=760）        | 崩溃时调度器已启动 ⇒ 已进入多任务阶段          |
 
 ### 因此调整方向
 
@@ -17209,32 +17295,32 @@ probe.run → bringup.init → … → osal.btdmMalloc
 
 ### 下一步（两条，均基于新链）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 反汇编 `osal.btdmMalloc` 的实现（我们的 Zig 版）| 看它是否会把指针写回调用者的槽 |
-| 2 | 在 `startScheduler` 之后、blob 任务首次运行处加锚点 | 确认 crash 在首个任务切换之后 |
+| #   | 动作                                                | 判据                           |
+| --- | --------------------------------------------------- | ------------------------------ |
+| 1   | 反汇编 `osal.btdmMalloc` 的实现（我们的 Zig 版）    | 看它是否会把指针写回调用者的槽 |
+| 2   | 在 `startScheduler` 之后、blob 任务首次运行处加锚点 | 确认 crash 在首个任务切换之后  |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
-| **里程碑** | ✅ **`bt bringup: INITED`** |
-| **新事实** | 崩溃链经 **`osal.btdmMalloc`**，且 `startScheduler` 已启动 |
-| **因仪器自证而撤回** | **6** |
-| 撤回总数 | **97** |
-| 自我纠正 | **237** |
-| **新增工具** | `tools/resolve-stack.py` |
+| 类别                     | 数量                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）                             |
+| **里程碑**               | ✅ **`bt bringup: INITED`**                                |
+| **新事实**               | 崩溃链经 **`osal.btdmMalloc`**，且 `startScheduler` 已启动 |
+| **因仪器自证而撤回**     | **6**                                                      |
+| 撤回总数                 | **97**                                                     |
+| 自我纠正                 | **237**                                                    |
+| **新增工具**             | `tools/resolve-stack.py`                                   |
 
 ## 🏁🏁🏁 根因命中：**任务栈未初始化** —— step-15 崩溃被修掉
 
 ### 关键对照（同一次会话、同一板子）
 
-| 版本 | `mepc` | `ra` | `step` | `f_sp` |
-| --- | --- | --- | --- | --- |
-| **修复前** | `0x0859e894`/`0x4859e894`/…（每次变）| `…e895`（奇数）| **15** `hci_transport_init` | `0x2f07ae90` |
-| **清零任务栈** | `0x00000000` | `0x00000001` | **52** `init_phy` | `0x2f07adb0` |
-| **投毒 `0xA5`** | `0x00000000` | `0x00000001` | **52** `init_phy` | `0x2f07adb0` |
+| 版本            | `mepc`                                | `ra`            | `step`                      | `f_sp`       |
+| --------------- | ------------------------------------- | --------------- | --------------------------- | ------------ |
+| **修复前**      | `0x0859e894`/`0x4859e894`/…（每次变） | `…e895`（奇数） | **15** `hci_transport_init` | `0x2f07ae90` |
+| **清零任务栈**  | `0x00000000`                          | `0x00000001`    | **52** `init_phy`           | `0x2f07adb0` |
+| **投毒 `0xA5`** | `0x00000000`                          | `0x00000001`    | **52** `init_phy`           | `0x2f07adb0` |
 
 ⇒ **两种初始化给出完全相同的新读数** ⇒ 修复点不是"填什么值"，而是**"填过"**。
 
@@ -17254,13 +17340,13 @@ const slice = @as([*]u8, @ptrCast(mem))[0..stack_size];
 
 ⇒ 这正好解释本会话追了十几轮的所有特征：
 
-| 观测 | 解释 |
-| --- | --- |
-| `ra` 是**奇数** | 残留字节 + `jalr` 的 bit0 处理 |
-| 值**不在栈扫描窗口** | 扫描时 handler 已覆盖该区域 |
-| 值**不存在于任何内存** | 它在**已被覆盖**的栈里，扫描时早已不是那个值 |
-| `mepc` **每次运行不同** | 残留内容随分配历史变化 |
-| `step` 显示 15 但链是调度阶段 | 残留栈属于更早的任务 |
+| 观测                          | 解释                                         |
+| ----------------------------- | -------------------------------------------- |
+| `ra` 是**奇数**               | 残留字节 + `jalr` 的 bit0 处理               |
+| 值**不在栈扫描窗口**          | 扫描时 handler 已覆盖该区域                  |
+| 值**不存在于任何内存**        | 它在**已被覆盖**的栈里，扫描时早已不是那个值 |
+| `mepc` **每次运行不同**       | 残留内容随分配历史变化                       |
+| `step` 显示 15 但链是调度阶段 | 残留栈属于更早的任务                         |
 
 ### 修复
 
@@ -17278,11 +17364,11 @@ mepc=0x00000000  ra=0x00000001  cause=1  step=52 init_phy
 
 ⇒ **`mepc = 0` ⇒ 在地址 0 取指 ⇒ 调用了空函数指针。**
 
-| 项 | 值 |
-| --- | --- |
-| 步骤 | `step=52 init_phy` |
-| 性质 | **NULL 函数指针调用**（`init_phy` 特有的空钩子）|
-| 与前一崩溃 | **无关** —— 前一个已修好 |
+| 项         | 值                                               |
+| ---------- | ------------------------------------------------ |
+| 步骤       | `step=52 init_phy`                               |
+| 性质       | **NULL 函数指针调用**（`init_phy` 特有的空钩子） |
+| 与前一崩溃 | **无关** —— 前一个已修好                         |
 
 ### 栈遍历（向上 `[f_sp, f_sp+4096)`，仪器无关）
 
@@ -17299,14 +17385,14 @@ RA off=524 ret=0x400740cc
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ **已验证**（`INITED`）|
-| **根因 2（任务栈未初始化）** | ✅ **已验证**（修复后崩溃消失）|
-| **新问题** | `init_phy` 调用 NULL 函数指针（`mepc=0`）|
-| **因仪器自证而撤回** | **6** |
-| 撤回总数 | **97** |
-| 自我纠正 | **238** |
+| 类别                         | 数量                                      |
+| ---------------------------- | ----------------------------------------- |
+| **根因 1（四项时钟配置）**   | ✅ **已验证**（`INITED`）                 |
+| **根因 2（任务栈未初始化）** | ✅ **已验证**（修复后崩溃消失）           |
+| **新问题**                   | `init_phy` 调用 NULL 函数指针（`mepc=0`） |
+| **因仪器自证而撤回**         | **6**                                     |
+| 撤回总数                     | **97**                                    |
+| 自我纠正                     | **238**                                   |
 
 ## 🔎 新崩溃（与前一崩溃无关）：`init_phy` 调用空指针，`g_phyFuns` 指向**栈**
 
@@ -17321,53 +17407,53 @@ RA off=524 ret=0x400740cc
 
 ### 关键矛盾
 
-| 量 | 值 | 问题 |
-| --- | --- | --- |
-| `f_sp` | `0x2f07adb0` | 当前栈指针 |
+| 量              | 值               | 问题                                      |
+| --------------- | ---------------- | ----------------------------------------- |
+| `f_sp`          | `0x2f07adb0`     | 当前栈指针                                |
 | **`g_phyFuns`** | **`0x2f07f944`** | **在 `f_sp` 之上** ⇒ 指向**未使用的栈区** |
-| `*(g_phyFuns)` | `0x2f00af44` | 一个看似代码的地址 |
+| `*(g_phyFuns)`  | `0x2f00af44`     | 一个看似代码的地址                        |
 
 ⇒ **PHY 函数表被放在栈上** —— 这不可能是正确布局。
 ⇒ `esp_phy_enable` 遍历该表时遇到 0 项 ⇒ `jalr` 到 0 ⇒ **`mepc = 0`**。
 
 ### 与前一个崩溃的关系
 
-| 项 | 前一崩溃 | 本崩溃 |
-| --- | --- | --- |
-| `mepc` | `0x…e894`（随机）| **`0x00000000`（确定）** |
-| `step` | 15 | **52** |
-| 根因 | 任务栈未初始化 | **`g_phyFuns` 指向栈** |
-| 状态 | ✅ **已修**（`@memset(slice, 0xA5)`）| 待查 |
+| 项     | 前一崩溃                              | 本崩溃                   |
+| ------ | ------------------------------------- | ------------------------ |
+| `mepc` | `0x…e894`（随机）                     | **`0x00000000`（确定）** |
+| `step` | 15                                    | **52**                   |
+| 根因   | 任务栈未初始化                        | **`g_phyFuns` 指向栈**   |
+| 状态   | ✅ **已修**（`@memset(slice, 0xA5)`） | 待查                     |
 
 ⇒ 两者**无关**：修掉前者后露出了后者。
 
 ### 为什么 `g_phyFuns` 会指向栈
 
-| 假设 | 判据 |
-| --- | --- |
-| `phy_get_romfunc_addr()` 把**局部缓冲**地址写进了全局 | 该函数若返回/写入栈地址即成立 |
-| `g_phyFuns` 从未被写，值来自**残留**（同任务栈问题）| `.bss` 理应清零；若我们的启动没清 `.bss` 则成立 |
-| 我们的 `rom_syms.ld` 把符号地址指错 | `esp_phy_enable = 0x2f00e756` 已核对为代码区 |
+| 假设                                                  | 判据                                            |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| `phy_get_romfunc_addr()` 把**局部缓冲**地址写进了全局 | 该函数若返回/写入栈地址即成立                   |
+| `g_phyFuns` 从未被写，值来自**残留**（同任务栈问题）  | `.bss` 理应清零；若我们的启动没清 `.bss` 则成立 |
+| 我们的 `rom_syms.ld` 把符号地址指错                   | `esp_phy_enable = 0x2f00e756` 已核对为代码区    |
 
 ⇒ **优先查第 2 条**：`.bss` 是否真被清零。这与刚修的"任务栈未初始化"是**同一类问题**。
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在 `initPhy()` **之前**打印 `*(0x2f00_fff8)` | 若已是 `0x2f07f944` ⇒ 残留；若为 0 ⇒ `phy_get_romfunc_addr` 写坏的 |
-| 2 | 检查启动代码是否 `memset` 整个 `.bss` | 未清零则所有 `.bss` 全局都可能是残留 |
+| #   | 动作                                         | 判据                                                               |
+| --- | -------------------------------------------- | ------------------------------------------------------------------ |
+| 1   | 在 `initPhy()` **之前**打印 `*(0x2f00_fff8)` | 若已是 `0x2f07f944` ⇒ 残留；若为 0 ⇒ `phy_get_romfunc_addr` 写坏的 |
+| 2   | 检查启动代码是否 `memset` 整个 `.bss`        | 未清零则所有 `.bss` 全局都可能是残留                               |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证（`INITED`）|
-| **根因 2（任务栈未初始化）** | ✅ 已验证（崩溃消失）|
-| **新问题** | `g_phyFuns` 指向栈 ⇒ `init_phy` 调空指针 |
-| **因仪器自证而撤回** | 6 |
-| 撤回总数 | 97 |
-| 自我纠正 | 238 |
+| 类别                         | 数量                                     |
+| ---------------------------- | ---------------------------------------- |
+| **根因 1（四项时钟配置）**   | ✅ 已验证（`INITED`）                    |
+| **根因 2（任务栈未初始化）** | ✅ 已验证（崩溃消失）                    |
+| **新问题**                   | `g_phyFuns` 指向栈 ⇒ `init_phy` 调空指针 |
+| **因仪器自证而撤回**         | 6                                        |
+| 撤回总数                     | 97                                       |
+| 自我纠正                     | 238                                      |
 
 ## 🏁 `init_phy` 崩溃根因：`PROVIDE(esp_phy_enable = 0x2f00e756)` 是**冻结的旧布局地址**
 
@@ -17386,11 +17472,11 @@ RA off=524 ret=0x400740cc
 
 ### 真正的原因
 
-| 事实 | 值 |
-| --- | --- |
-| `esp_phy_enable`（`nm` 类型 **A**）| `0x2f00e756` |
-| 紧跟其后的代码符号 | `r_sym_ble_bp2AWMfX9zEpJsmzOTUB` = `0x2f00e76c`（**T**）|
-| 间距 | **0x16 = 22 字节** |
+| 事实                                | 值                                                       |
+| ----------------------------------- | -------------------------------------------------------- |
+| `esp_phy_enable`（`nm` 类型 **A**） | `0x2f00e756`                                             |
+| 紧跟其后的代码符号                  | `r_sym_ble_bp2AWMfX9zEpJsmzOTUB` = `0x2f00e76c`（**T**） |
+| 间距                                | **0x16 = 22 字节**                                       |
 
 ⇒ `0x2f00e756` **不是一个函数入口**，而是**落在上一个函数体中间**
 （22 字节不够放一个函数）。
@@ -17413,32 +17499,32 @@ RA off=524 ret=0x400740cc
 
 ### 两类修法
 
-| # | 修法 | 说明 |
-| --- | --- | --- |
-| **A** | 链入真实 `esp_phy` 源（`-Dphy-src-objs`）| `PROVIDE` 自动失效（已定义则不生效）|
-| **B** | 让 `initPhy()` 改走仓库自己的等价实现 | `_phy_enable` → `shellPhyEnable`（`osi_impl.zig:1075+`，已在 `:1510` 导出给 blob）|
+| #     | 修法                                      | 说明                                                                               |
+| ----- | ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| **A** | 链入真实 `esp_phy` 源（`-Dphy-src-objs`） | `PROVIDE` 自动失效（已定义则不生效）                                               |
+| **B** | 让 `initPhy()` 改走仓库自己的等价实现     | `_phy_enable` → `shellPhyEnable`（`osi_impl.zig:1075+`，已在 `:1510` 导出给 blob） |
 
 ⇒ **B 更稳**：不引入新归档，且仓库已有经过验证的 ICG/BB-wdg/校准序列。
 
 ### 这是本会话第二个"残留/漂移指针"类根因
 
-| # | 根因 | 形态 |
-| --- | --- | --- |
-| 1 | 任务栈未初始化 | 栈上残留字节被当函数指针 |
-| 2 | **`esp_phy_enable` 冻结地址** | **链接脚本里漂移的地址落进别的函数体** |
+| #   | 根因                          | 形态                                   |
+| --- | ----------------------------- | -------------------------------------- |
+| 1   | 任务栈未初始化                | 栈上残留字节被当函数指针               |
+| 2   | **`esp_phy_enable` 冻结地址** | **链接脚本里漂移的地址落进别的函数体** |
 
 ⇒ 共同点：**一个"看起来合法"的地址，在另一处语境里已失效**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证（`INITED`）|
-| **根因 2（任务栈未初始化）** | ✅ 已验证（崩溃消失）|
-| **根因 3（`esp_phy_enable` 冻结地址）** | ✅ **已定位**（22 字节间距）|
-| **因仪器自证而撤回** | 6 |
-| 撤回总数 | 98 |
-| 自我纠正 | 239 |
+| 类别                                    | 数量                         |
+| --------------------------------------- | ---------------------------- |
+| **根因 1（四项时钟配置）**              | ✅ 已验证（`INITED`）        |
+| **根因 2（任务栈未初始化）**            | ✅ 已验证（崩溃消失）        |
+| **根因 3（`esp_phy_enable` 冻结地址）** | ✅ **已定位**（22 字节间距） |
+| **因仪器自证而撤回**                    | 6                            |
+| 撤回总数                                | 98                           |
+| 自我纠正                                | 239                          |
 
 ## 🏁🏁 `mepc = 0` 的完整机制：`g_phyFuns` 指向 **SRAM 末端之上**（未映射）
 
@@ -17453,9 +17539,9 @@ SRAM ORIGIN = 0x2F000000   LENGTH = 0x7AFC0
 
 实测：
 
-| 量 | 值 | 与 SRAM 末端比较 |
-| --- | --- | --- |
-| `f_sp` | `0x2f07adb0` | **在 SRAM 内** ✓ |
+| 量              | 值               | 与 SRAM 末端比较         |
+| --------------- | ---------------- | ------------------------ |
+| `f_sp`          | `0x2f07adb0`     | **在 SRAM 内** ✓         |
 | **`g_phyFuns`** | **`0x2f07f944`** | **超出末端 `0x4F84`** ❌ |
 
 ⇒ **`g_phyFuns` 指向未映射空间**，不是栈。
@@ -17475,32 +17561,32 @@ SRAM ORIGIN = 0x2F000000   LENGTH = 0x7AFC0
 
 ### 因此本崩溃有**两个独立缺陷**叠加
 
-| # | 缺陷 | 状态 |
-| --- | --- | --- |
-| A | `g_phyFuns` 被写成**越界地址** | 待修（`phy_get_romfunc_addr` 的来源）|
-| B | `rom_syms.ld` 的 `esp_phy_enable = 0x2f00e756` 落进别的函数体中间 | ✅ **已修**（改为显式 Zig 实现）|
+| #   | 缺陷                                                              | 状态                                  |
+| --- | ----------------------------------------------------------------- | ------------------------------------- |
+| A   | `g_phyFuns` 被写成**越界地址**                                    | 待修（`phy_get_romfunc_addr` 的来源） |
+| B   | `rom_syms.ld` 的 `esp_phy_enable = 0x2f00e756` 落进别的函数体中间 | ✅ **已修**（改为显式 Zig 实现）      |
 
 ⇒ 修掉 B 之后，A 会以**另一个签名**暴露（不再是 `mepc=0`），因为不再经过那个垃圾入口。
 
 ### 关于 A 的下一步
 
-| # | 动作 |
-| --- | --- |
-| 1 | 在 `get_romfuncs()` **前后各读一次** `*(0x2f00fff8)`：若 `0 → 0x2f07f944` ⇒ 是它写的；若原本就是 ⇒ 更早被写 |
-| 2 | 反汇编 `phy_get_romfunc_addr` 的**完整体**（不只开头），看它从哪里取那个值 |
-| 3 | 检查是否 ROM 在该芯片上根本不提供 PHY 表（则这个函数应不被调用）|
+| #   | 动作                                                                                                        |
+| --- | ----------------------------------------------------------------------------------------------------------- |
+| 1   | 在 `get_romfuncs()` **前后各读一次** `*(0x2f00fff8)`：若 `0 → 0x2f07f944` ⇒ 是它写的；若原本就是 ⇒ 更早被写 |
+| 2   | 反汇编 `phy_get_romfunc_addr` 的**完整体**（不只开头），看它从哪里取那个值                                  |
+| 3   | 检查是否 ROM 在该芯片上根本不提供 PHY 表（则这个函数应不被调用）                                            |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证（`INITED`）|
-| **根因 2（任务栈未初始化）** | ✅ 已验证（崩溃消失）|
-| **根因 3（`esp_phy_enable` 冻结地址）** | ✅ **已修**（显式实现）|
-| **缺陷 4（`g_phyFuns` 越界）** | 🔍 机制已闭合，待修 |
-| **因仪器自证而撤回** | 6 |
-| 撤回总数 | 98 |
-| 自我纠正 | 240 |
+| 类别                                    | 数量                    |
+| --------------------------------------- | ----------------------- |
+| **根因 1（四项时钟配置）**              | ✅ 已验证（`INITED`）   |
+| **根因 2（任务栈未初始化）**            | ✅ 已验证（崩溃消失）   |
+| **根因 3（`esp_phy_enable` 冻结地址）** | ✅ **已修**（显式实现） |
+| **缺陷 4（`g_phyFuns` 越界）**          | 🔍 机制已闭合，待修     |
+| **因仪器自证而撤回**                    | 6                       |
+| 撤回总数                                | 98                      |
+| 自我纠正                                | 240                     |
 
 ## ❌ 更正（`43c76bb`）：`g_phyFuns` 的"未映射 ⇒ 读回 0"机制**被我自己的读数否证**
 
@@ -17515,21 +17601,21 @@ gn = 0x2f00af44       ← *(g_phyFuns) = **非零**
 
 `gn` 是**成功读出**的值。
 
-| 我写的 | 实际 |
-| --- | --- |
-| "指向未映射空间" | ❌ **可读**（未映射读会让 handler 以 cause=5 自己崩，不会返回值）|
-| "读表项得 0 ⇒ 跳到 0" | ❌ **首项是 `0x2f00af44`，非零** |
+| 我写的                | 实际                                                              |
+| --------------------- | ----------------------------------------------------------------- |
+| "指向未映射空间"      | ❌ **可读**（未映射读会让 handler 以 cause=5 自己崩，不会返回值） |
+| "读表项得 0 ⇒ 跳到 0" | ❌ **首项是 `0x2f00af44`，非零**                                  |
 
 ⇒ `43c76bb` 的**机制叙述作废**。
 
 ### 仍然成立的
 
-| # | 事实 |
-| --- | --- |
-| 1 | `0x2f07f944` **超出链接器管理的 SRAM 末端**（`0x2F07AFC0`）⇒ 内容**不归我们管** |
-| 2 | 但它在 `0x2F080000` 之下的 **ROM 数据/保留带** —— ROM 填的 PHY 表**正该在那里** |
-| 3 | `gn` 非零 ⇒ 表**看起来是正确填充的** |
-| 4 | **`nm` 显示当前镜像里没有任何符号起始于 `0x2f00e756`**（最近的 `T` 在 `0x2f00e76c`）|
+| #   | 事实                                                                                 |
+| --- | ------------------------------------------------------------------------------------ |
+| 1   | `0x2f07f944` **超出链接器管理的 SRAM 末端**（`0x2F07AFC0`）⇒ 内容**不归我们管**      |
+| 2   | 但它在 `0x2F080000` 之下的 **ROM 数据/保留带** —— ROM 填的 PHY 表**正该在那里**      |
+| 3   | `gn` 非零 ⇒ 表**看起来是正确填充的**                                                 |
+| 4   | **`nm` 显示当前镜像里没有任何符号起始于 `0x2f00e756`**（最近的 `T` 在 `0x2f00e76c`） |
 
 ⇒ ⇒ **唯一还能解释 `mepc=0` 的，是"冻结入口点"这一条**（`f9390de`）：
 调用一个**没有函数起始**的地址 ⇒ 执行指令中间的垃圾字节 ⇒ 某个间接跳转落到 0。
@@ -17545,14 +17631,14 @@ gn = 0x2f00af44       ← *(g_phyFuns) = **非零**
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证（`INITED`）|
-| **根因 2（任务栈未初始化）** | ✅ 已验证（崩溃消失）|
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ **已修**（显式实现）|
-| **因仪器/自证而撤回** | **7** |
-| 撤回总数 | **99** |
-| 自我纠正 | **241** |
+| 类别                                      | 数量                    |
+| ----------------------------------------- | ----------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证（`INITED`）   |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证（崩溃消失）   |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ **已修**（显式实现） |
+| **因仪器/自证而撤回**                     | **7**                   |
+| 撤回总数                                  | **99**                  |
+| 自我纠正                                  | **241**                 |
 
 ## 🎉 崩溃消失：`INITED` 达成并进入 **enable 阶段**（无 fault）
 
@@ -17570,13 +17656,13 @@ bt bringup: step 18 r_conn_stack_enable rc=181935
 bt probe: enable FAILED at step 18 rc=181935
 ```
 
-| 判据 | 结果 |
-| --- | --- |
-| `RG ra=` 计数（trap 是否触发）| **0** |
-| `bt bringup: INITED` | ✅ |
-| `bt probe: init ok 0` | ✅ |
-| 进入 enable 阶段 | ✅ step 17 / 18 |
-| 崩溃 | ✅ **消失** |
+| 判据                           | 结果            |
+| ------------------------------ | --------------- |
+| `RG ra=` 计数（trap 是否触发） | **0**           |
+| `bt bringup: INITED`           | ✅              |
+| `bt probe: init ok 0`          | ✅              |
+| 进入 enable 阶段               | ✅ step 17 / 18 |
+| 崩溃                           | ✅ **消失**     |
 
 ⇒ **本会话的第三个缺陷（冻结入口点）修复生效**，且**没有引入新 fault**。
 
@@ -17594,39 +17680,40 @@ step 18 r_conn_stack_enable rc=181935
 
 `181935 = 0x2C6AF`。IDF 的 `esp_err_t` 通常是小的负数编码，这个值不像标准错误码
 ⇒ 可能是：
-| 可能 | 说明 |
-| --- | --- |
+
+| 可能                       | 说明                                       |
+| -------------------------- | ------------------------------------------ |
 | 未翻译的 ROM/blob 内部状态 | `r_conn_stack_enable` 返回的是 blob 内部码 |
-| 被截断/混入的返回值 | 需查该函数的返回约定 |
+| 被截断/混入的返回值        | 需查该函数的返回约定                       |
 
 ### 与三个根因的关系
 
-| # | 根因 | 状态 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修（`INITED`）|
-| 2 | 任务栈未初始化 | ✅ 已修（崩溃消失）|
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ **已修（本轮验证）** |
-| 4 | `rc=181935` | 🔍 **新问题，且是干净错误** |
+| #   | 根因                        | 状态                        |
+| --- | --------------------------- | --------------------------- |
+| 1   | 四项时钟配置                | ✅ 已修（`INITED`）         |
+| 2   | 任务栈未初始化              | ✅ 已修（崩溃消失）         |
+| 3   | `esp_phy_enable` 冻结入口点 | ✅ **已修（本轮验证）**     |
+| 4   | `rc=181935`                 | 🔍 **新问题，且是干净错误** |
 
 ### 下一步
 
-| # | 动作 |
-| --- | --- |
-| 1 | 查 `r_conn_stack_enable` 的返回约定（IDF 里对应 `esp_bt_controller_enable` 的哪一步）|
-| 2 | 对照 IDF 的 enable 顺序：`r_base_stack_enable` → `r_conn_stack_enable` 之间是否需要额外步骤 |
-| 3 | 注意 `bt phy: enable modem=2 (NO CALIBRATION)` —— PHY 未标定可能是 enable 失败的原因之一 |
+| #   | 动作                                                                                        |
+| --- | ------------------------------------------------------------------------------------------- |
+| 1   | 查 `r_conn_stack_enable` 的返回约定（IDF 里对应 `esp_bt_controller_enable` 的哪一步）       |
+| 2   | 对照 IDF 的 enable 顺序：`r_base_stack_enable` → `r_conn_stack_enable` 之间是否需要额外步骤 |
+| 3   | 注意 `bt phy: enable modem=2 (NO CALIBRATION)` —— PHY 未标定可能是 enable 失败的原因之一    |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ **已验证（崩溃消失）** |
-| **当前状态** | **`INITED` + enable 阶段，无 fault，`rc=181935`** |
-| **因仪器/自证而撤回** | 7 |
-| 撤回总数 | 99 |
-| 自我纠正 | 241 |
+| 类别                                      | 数量                                              |
+| ----------------------------------------- | ------------------------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                                         |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                                         |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ **已验证（崩溃消失）**                         |
+| **当前状态**                              | **`INITED` + enable 阶段，无 fault，`rc=181935`** |
+| **因仪器/自证而撤回**                     | 7                                                 |
+| 撤回总数                                  | 99                                                |
+| 自我纠正                                  | 241                                               |
 
 ## 🔎 `rc` **两次运行不同** ⇒ 不是状态码，是残留数据
 
@@ -17654,41 +17741,41 @@ base_stack_enable();                    // :1515
 gapFinder_stack_enable();               // :1544
 ```
 
-| 事实 | 结论 |
-| --- | --- |
-| 我们是 step 17 → 18 | ✅ **顺序与 IDF 一致** |
-| `conn_stack_enable` 在 `#if DEFAULT_BT_LE_MAX_CONNECTIONS` 内 | ⇒ 需核对配置值 |
-| 之后还有 `gapFinder_stack_enable` | ⇒ 我们的步骤表里可能缺这一步 |
+| 事实                                                          | 结论                         |
+| ------------------------------------------------------------- | ---------------------------- |
+| 我们是 step 17 → 18                                           | ✅ **顺序与 IDF 一致**       |
+| `conn_stack_enable` 在 `#if DEFAULT_BT_LE_MAX_CONNECTIONS` 内 | ⇒ 需核对配置值               |
+| 之后还有 `gapFinder_stack_enable`                             | ⇒ 我们的步骤表里可能缺这一步 |
 
 ### 因此 `rc` 的两种可能
 
-| # | 可能 | 判据 |
-| --- | --- | --- |
-| 1 | **blob 内部函数没写返回值**，我们读的是 `a0` 残留 | `rc` 每次变 ⇒ **倾向于这一条** |
-| 2 | 配置不匹配（`DEFAULT_BT_LE_MAX_CONNECTIONS`）| 错误码应稳定 |
+| #   | 可能                                              | 判据                           |
+| --- | ------------------------------------------------- | ------------------------------ |
+| 1   | **blob 内部函数没写返回值**，我们读的是 `a0` 残留 | `rc` 每次变 ⇒ **倾向于这一条** |
+| 2   | 配置不匹配（`DEFAULT_BT_LE_MAX_CONNECTIONS`）     | 错误码应稳定                   |
 
 ⇒ **优先查第 1 条**：`r_conn_stack_enable` 的返回约定 —— 它是否真的设 `a0`。
 
 ### 本会话门禁结果（已补跑）
 
-| 门禁 | 结果 |
-| --- | --- |
-| `zig fmt --check boards/ components/` | ✅ **通过**（7 个文件已格式化；其中 3 个是本会话之前就未格式化的）|
-| `sh scripts/check-host.sh` | 4 PASS / **1 FAIL（`firmware`）** |
-| `firmware` 的失败是否为本会话引入 | ❌ **不是** —— stash 到基线后同样 **54 个错误**（`fence` mnemonic、`board` 模块：host 测试天然编不过目标相关代码）|
+| 门禁                                  | 结果                                                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `zig fmt --check boards/ components/` | ✅ **通过**（7 个文件已格式化；其中 3 个是本会话之前就未格式化的）                                                 |
+| `sh scripts/check-host.sh`            | 4 PASS / **1 FAIL（`firmware`）**                                                                                  |
+| `firmware` 的失败是否为本会话引入     | ❌ **不是** —— stash 到基线后同样 **54 个错误**（`fence` mnemonic、`board` 模块：host 测试天然编不过目标相关代码） |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **当前状态** | `INITED` + enable step 18，**无 fault** |
-| **新观察** | `rc` 每次变 ⇒ 疑似未初始化返回值 |
-| **因仪器/自证而撤回** | 7 |
-| 撤回总数 | 99 |
-| 自我纠正 | 242 |
+| 类别                                      | 数量                                    |
+| ----------------------------------------- | --------------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                               |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                               |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                               |
+| **当前状态**                              | `INITED` + enable step 18，**无 fault** |
+| **新观察**                                | `rc` 每次变 ⇒ 疑似未初始化返回值        |
+| **因仪器/自证而撤回**                     | 7                                       |
+| 撤回总数                                  | 99                                      |
+| 自我纠正                                  | 242                                     |
 
 ## 🏁🏁🏁 `rc` 之谜解开：`r_conn_stack_enable` 是**两字节空桩 `c.ret`**
 
@@ -17713,12 +17800,12 @@ extern fn r_conn_stack_enable() c_int;   // 无参 ⇒ a0 是进入前的残留
 
 ### 这是本会话**第四个**同型缺陷
 
-| # | 缺陷 | 形态 |
-| --- | --- | --- |
-| 1 | 四项时钟位缺失 | 看起来配置了 |
-| 2 | 任务栈未清零 | 看起来初始化了 |
-| 3 | `esp_phy_enable` 冻结地址 | 看起来指向函数 |
-| 4 | **`r_conn_stack_enable` 是 `c.ret` 空桩** | **看起来检查了返回值** |
+| #   | 缺陷                                      | 形态                   |
+| --- | ----------------------------------------- | ---------------------- |
+| 1   | 四项时钟位缺失                            | 看起来配置了           |
+| 2   | 任务栈未清零                              | 看起来初始化了         |
+| 3   | `esp_phy_enable` 冻结地址                 | 看起来指向函数         |
+| 4   | **`r_conn_stack_enable` 是 `c.ret` 空桩** | **看起来检查了返回值** |
 
 ⇒ 共同点依旧是：**"看起来发生了" 与 "实际发生了" 之间的差**。
 
@@ -17739,11 +17826,11 @@ rc = step(18, "...", r_conn_stack_enable(0));    // 空桩原样返回 0
 
 ⇒ 其余 enable 符号均已核实为**真实函数**：
 
-| 符号 | 大小 | 性质 |
-| --- | --- | --- |
-| `r_base_stack_enable` | 118 B | 真实 |
-| `r_btdm_task_enable` | 218 B | 真实 |
-| `r_btdm_hci_fc_enable` | 2 B（`b1 bd` ≠ `82 80`）| 不是 `c.ret` |
+| 符号                   | 大小                     | 性质         |
+| ---------------------- | ------------------------ | ------------ |
+| `r_base_stack_enable`  | 118 B                    | 真实         |
+| `r_btdm_task_enable`   | 218 B                    | 真实         |
+| `r_btdm_hci_fc_enable` | 2 B（`b1 bd` ≠ `82 80`） | 不是 `c.ret` |
 
 ### 修复后：**整个 enable 序列跑完**
 
@@ -17757,28 +17844,28 @@ bt bringup: enter step 20 r_btdm_task_enable      ← **最后一步**
 panic: halted (wfi)                               ← 任务已启动
 ```
 
-| 判据 | 结果 |
-| --- | --- |
-| step 52 `init_phy` | ✅ **通过** |
-| step 18 假失败 | ✅ **消失** |
-| step 19 | ✅ 通过 |
-| **step 20 `r_btdm_task_enable`** | ✅ **到达（最后一步）** |
-| `panic: halted (wfi)` | **不是失败** —— 调度器已启动，任务在 `wfi` 等待 |
+| 判据                             | 结果                                            |
+| -------------------------------- | ----------------------------------------------- |
+| step 52 `init_phy`               | ✅ **通过**                                     |
+| step 18 假失败                   | ✅ **消失**                                     |
+| step 19                          | ✅ 通过                                         |
+| **step 20 `r_btdm_task_enable`** | ✅ **到达（最后一步）**                         |
+| `panic: halted (wfi)`            | **不是失败** —— 调度器已启动，任务在 `wfi` 等待 |
 
 ⇒ **init 与 enable 的完整序列都已走完。**
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ **已验证（step 18 假失败消失）** |
-| **当前状态** | **init + enable 全序列走完，到达 step 20** |
-| **因仪器/自证而撤回** | 7 |
-| 撤回总数 | 99 |
-| 自我纠正 | 243 |
+| 类别                                      | 数量                                       |
+| ----------------------------------------- | ------------------------------------------ |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                                  |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                                  |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                                  |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ **已验证（step 18 假失败消失）**        |
+| **当前状态**                              | **init + enable 全序列走完，到达 step 20** |
+| **因仪器/自证而撤回**                     | 7                                          |
+| 撤回总数                                  | 99                                         |
+| 自我纠正                                  | 243                                        |
 
 ## ⚠️ 更正：step 20 之后**仍有 trap**（不是"任务已启动"）
 
@@ -17793,31 +17880,31 @@ panic: callframe +8=0x2f01d3d8 +12=0x4006e0bc
 panic: ctx[0]=0x2f0129b0 ctx[1]=0x1f ctx[2]=0x0 ctx[3]=0xffffffff
 ```
 
-| 字段 | 值 | 含义 |
-| --- | --- | --- |
-| `mepc` | `0x2f00f99a` | **blob RAM 代码区** |
-| `cause` | `2` | **非法指令** |
-| `mtval` | `0x2f01dc73` | 非法指令编码或相关地址 |
-| `step` | **20** | `r_btdm_task_enable` |
-| `c_ra_saved` | `0x4006e0bc` | 调用点（`.flash.text`）|
+| 字段         | 值           | 含义                    |
+| ------------ | ------------ | ----------------------- |
+| `mepc`       | `0x2f00f99a` | **blob RAM 代码区**     |
+| `cause`      | `2`          | **非法指令**            |
+| `mtval`      | `0x2f01dc73` | 非法指令编码或相关地址  |
+| `step`       | **20**       | `r_btdm_task_enable`    |
+| `c_ra_saved` | `0x4006e0bc` | 调用点（`.flash.text`） |
 
 ⇒ **`panic: halted (wfi)` 是 trap handler 的停机路径**，不是"调度器进入 idle"。
 
 ### 因此更正两条
 
-| 我先前写的 | 实际 |
-| --- | --- |
+| 我先前写的                             | 实际                                   |
+| -------------------------------------- | -------------------------------------- |
 | "step 20 到达（最后一步）⇒ 任务已启动" | ❌ **step 20 内部发生了非法指令 trap** |
-| "`halted (wfi)` 不是失败" | ❌ **是失败** —— 是 handler 停机 |
+| "`halted (wfi)` 不是失败"              | ❌ **是失败** —— 是 handler 停机       |
 
 ### 仍然成立
 
-| 事实 |
-| --- |
-| step 18 的假失败消失（`r_conn_stack_enable(0)` 生效）|
-| step 19 通过 |
-| step 20 **被进入**（`enter step 20` 打印）|
-| 因此 enable 序列**只剩 step 20 内部这一处** |
+| 事实                                                  |
+| ----------------------------------------------------- |
+| step 18 的假失败消失（`r_conn_stack_enable(0)` 生效） |
+| step 19 通过                                          |
+| step 20 **被进入**（`enter step 20` 打印）            |
+| 因此 enable 序列**只剩 step 20 内部这一处**           |
 
 ### `mtval = 0x2f01dc73` 的解码
 
@@ -17834,23 +17921,23 @@ panic: ctx[0]=0x2f0129b0 ctx[1]=0x1f ctx[2]=0x0 ctx[3]=0xffffffff
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 反汇编 `0x2f00f99a` 附近，确认那 4 字节到底是什么指令 | 若是 CSR/自定义指令 ⇒ 目标 ABI 不匹配 |
-| 2 | 核对 `build.zig` 的 `-mcpu`/扩展集是否与 IDF 构建 blob 时一致 | 差异即根因 |
+| #   | 动作                                                          | 判据                                  |
+| --- | ------------------------------------------------------------- | ------------------------------------- |
+| 1   | 反汇编 `0x2f00f99a` 附近，确认那 4 字节到底是什么指令         | 若是 CSR/自定义指令 ⇒ 目标 ABI 不匹配 |
+| 2   | 核对 `build.zig` 的 `-mcpu`/扩展集是否与 IDF 构建 blob 时一致 | 差异即根因                            |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证（step 18 假失败消失）|
-| **当前状态** | **step 20 内部非法指令**（`mepc=0x2f00f99a`, `cause=2`）|
-| **因仪器/自证而撤回** | **8** |
-| 撤回总数 | **100** |
-| 自我纠正 | **244** |
+| 类别                                      | 数量                                                     |
+| ----------------------------------------- | -------------------------------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                                                |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                                                |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                                                |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证（step 18 假失败消失）                          |
+| **当前状态**                              | **step 20 内部非法指令**（`mepc=0x2f00f99a`, `cause=2`） |
+| **因仪器/自证而撤回**                     | **8**                                                    |
+| 撤回总数                                  | **100**                                                  |
+| 自我纠正                                  | **244**                                                  |
 
 ## 🎯 step 20 的非法指令 = **对厂商 CSR `0x2F0` 的 `csrrwi`**
 
@@ -17876,13 +17963,13 @@ mtval = 0x2f01dc73
 
 按 RISC-V 编码拆解：
 
-| 字段 | 值 | 含义 |
-| --- | --- | --- |
-| opcode | `0x73` | **SYSTEM** |
-| funct3 | `5` | **`csrrwi`** |
-| **csr** | **`0x2F0`** | **自定义 / 厂商专用 CSR** |
-| rd | `x24` | |
-| rs1(imm) | `x3` | |
+| 字段     | 值          | 含义                      |
+| -------- | ----------- | ------------------------- |
+| opcode   | `0x73`      | **SYSTEM**                |
+| funct3   | `5`         | **`csrrwi`**              |
+| **csr**  | **`0x2F0`** | **自定义 / 厂商专用 CSR** |
+| rd       | `x24`       |                           |
+| rs1(imm) | `x3`        |                           |
 
 ⇒ **blob 执行了一条 `csrrwi ..., 0x2F0, ...`** —— 对**厂商 CSR** 的读改写。
 
@@ -17890,20 +17977,20 @@ mtval = 0x2f01dc73
 
 ### 这意味着什么
 
-| 事实 | 推论 |
-| --- | --- |
-| blob 使用 CSR `0x2F0` | 这是 **ESP32-S31 的自定义 CSR**，不是标准 RISC-V |
-| 我们构建的 `-mcpu` 未声明该扩展 | 汇编器/CPU 都按标准解释 ⇒ 非法 |
-| 该指令在 `r_btdm_task_enable` **内部** | 任务启动路径里访问了厂商 CSR |
+| 事实                                   | 推论                                             |
+| -------------------------------------- | ------------------------------------------------ |
+| blob 使用 CSR `0x2F0`                  | 这是 **ESP32-S31 的自定义 CSR**，不是标准 RISC-V |
+| 我们构建的 `-mcpu` 未声明该扩展        | 汇编器/CPU 都按标准解释 ⇒ 非法                   |
+| 该指令在 `r_btdm_task_enable` **内部** | 任务启动路径里访问了厂商 CSR                     |
 
 ⇒ **与"blob 假设某扩展存在"完全吻合。**
 
 ### 下一步（两条，均可离线推进）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在镜像里搜 `0x2F0` 这个 CSR 的所有使用点（`csrr`/`csrw`/`csrrw`/`csrrs`/`csrrc`/`csrrwi`）| 得到**完整清单**：blob 依赖多少个厂商 CSR |
-| 2 | 核对 IDF 构建 blob 时的 `-march`/扩展集 | 差异即根因；若该 CSR 需特权级配置，还要看 M-mode 设置 |
+| #   | 动作                                                                                       | 判据                                                  |
+| --- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| 1   | 在镜像里搜 `0x2F0` 这个 CSR 的所有使用点（`csrr`/`csrw`/`csrrw`/`csrrs`/`csrrc`/`csrrwi`） | 得到**完整清单**：blob 依赖多少个厂商 CSR             |
+| 2   | 核对 IDF 构建 blob 时的 `-march`/扩展集                                                    | 差异即根因；若该 CSR 需特权级配置，还要看 M-mode 设置 |
 
 ### 方法教训
 
@@ -17912,31 +17999,31 @@ mtval = 0x2f01dc73
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **缺陷 5（厂商 CSR `0x2F0`）** | 🔍 **指令级已定位** |
-| **因仪器/自证而撤回** | 8 |
-| 撤回总数 | 100 |
-| 自我纠正 | 245 |
+| 类别                                      | 数量                |
+| ----------------------------------------- | ------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证           |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证           |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证           |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证           |
+| **缺陷 5（厂商 CSR `0x2F0`）**            | 🔍 **指令级已定位** |
+| **因仪器/自证而撤回**                     | 8                   |
+| 撤回总数                                  | 100                 |
+| 自我纠正                                  | 245                 |
 
 ## ❌ 撤回：`mtval = 0x2f01dc73` **不是**镜像里的指令（CSR `0x2F0` 出现 0 次）
 
 ### 扫描结果
 
-| 可执行段 | 起始 | 大小 |
-| --- | --- | --- |
-| `.flash.text` | `0x40000020` | `0xa35e0` |
-| `.trap_ram` | `0x2f000800` | `0xc0` |
-| `.iram_blobs` | `0x2f0008c0` | `0xeee0` |
-| `.iram_btslp.1` | `0x2f00f7a0` | `0x8a` |
-| `.iram_btslp.2` | `0x2f00f82a` | `0x62` |
-| `.iram_btslp.14` | `0x2f00f88c` | `0x10e` |
-| **`.iram_btslp.16`** | **`0x2f00f99a`** | `0x66` |
-| `.iram_btslp.0` | `0x2f00fa00` | `0x6c` |
+| 可执行段             | 起始             | 大小      |
+| -------------------- | ---------------- | --------- |
+| `.flash.text`        | `0x40000020`     | `0xa35e0` |
+| `.trap_ram`          | `0x2f000800`     | `0xc0`    |
+| `.iram_blobs`        | `0x2f0008c0`     | `0xeee0`  |
+| `.iram_btslp.1`      | `0x2f00f7a0`     | `0x8a`    |
+| `.iram_btslp.2`      | `0x2f00f82a`     | `0x62`    |
+| `.iram_btslp.14`     | `0x2f00f88c`     | `0x10e`   |
+| **`.iram_btslp.16`** | **`0x2f00f99a`** | `0x66`    |
+| `.iram_btslp.0`      | `0x2f00fa00`     | `0x6c`    |
 
 对全部可执行段按 2 字节步长扫描 `opcode == 0x73` 且 `csr == 0x2F0` 的指令：
 
@@ -17964,32 +18051,32 @@ mepc = 0x2f00f99a
 
 ### 因此当前**未定**
 
-| 问题 | 状态 |
-| --- | --- |
-| `cause=2` 具体由哪条指令触发 | ❌ **未定**（`mtval` 解读作废）|
-| `mtval` 的语义 | ❌ **未定**（可能不是指令编码）|
-| `mepc` 是否被嵌套 trap 覆盖 | ❌ **未定** |
+| 问题                         | 状态                            |
+| ---------------------------- | ------------------------------- |
+| `cause=2` 具体由哪条指令触发 | ❌ **未定**（`mtval` 解读作废） |
+| `mtval` 的语义               | ❌ **未定**（可能不是指令编码） |
+| `mepc` 是否被嵌套 trap 覆盖  | ❌ **未定**                     |
 
 ### 下一步（三条，先离线）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 查该芯片手册里 `cause=2` 时 `mtval` 的**确切语义** | 若为 0/地址 ⇒ 我此前的解读错 |
-| 2 | 反汇编 `.iram_btslp.16` **整段**（`0x2f00f99a..0x2f00fa00`，102 字节）| 看是否含非常规编码 |
-| 3 | 在 trap handler 里**同时**打印 `mepc` 与 `mtval` 的**前一条成功执行的 PC**（用已有的 `pc_snap` 环）| 区分"mepc 是现场"还是"mepc 被覆盖" |
+| #   | 动作                                                                                                | 判据                               |
+| --- | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1   | 查该芯片手册里 `cause=2` 时 `mtval` 的**确切语义**                                                  | 若为 0/地址 ⇒ 我此前的解读错       |
+| 2   | 反汇编 `.iram_btslp.16` **整段**（`0x2f00f99a..0x2f00fa00`，102 字节）                              | 看是否含非常规编码                 |
+| 3   | 在 trap handler 里**同时**打印 `mepc` 与 `mtval` 的**前一条成功执行的 PC**（用已有的 `pc_snap` 环） | 区分"mepc 是现场"还是"mepc 被覆盖" |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **缺陷 5（step 20 非法指令）** | 🔍 **未定**（`mtval` 解读已撤回）|
-| **因仪器/自证而撤回** | **9** |
-| 撤回总数 | **101** |
-| 自我纠正 | **246** |
+| 类别                                      | 数量                              |
+| ----------------------------------------- | --------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                         |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                         |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                         |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                         |
+| **缺陷 5（step 20 非法指令）**            | 🔍 **未定**（`mtval` 解读已撤回） |
+| **因仪器/自证而撤回**                     | **9**                             |
+| 撤回总数                                  | **101**                           |
+| 自我纠正                                  | **246**                           |
 
 ## 🔎 `.iram_btslp.16` 已正确加载 ⇒ `mepc` 与 `cause` 之间存在矛盾
 
@@ -18003,36 +18090,36 @@ LOAD  0x0bb800  0x2f000800  0x2f000800  0x0f26c  0x0f26c  R E  0x1000
 
 段内各 section 大小**恰好加总**：
 
-| section | 大小 |
-| --- | --- |
-| `.trap_ram` | `0xc0` |
-| `.iram_blobs` | `0xeee0` |
-| `.iram_btslp.1` | `0x8a` |
-| `.iram_btslp.2` | `0x62` |
-| `.iram_btslp.14` | `0x10e` |
-| `.iram_btslp.16` | `0x66` |
-| `.iram_btslp.0` | `0x6c` |
-| **合计** | **`0xf26c`** = `FileSiz` ✓ |
+| section          | 大小                       |
+| ---------------- | -------------------------- |
+| `.trap_ram`      | `0xc0`                     |
+| `.iram_blobs`    | `0xeee0`                   |
+| `.iram_btslp.1`  | `0x8a`                     |
+| `.iram_btslp.2`  | `0x62`                     |
+| `.iram_btslp.14` | `0x10e`                    |
+| `.iram_btslp.16` | `0x66`                     |
+| `.iram_btslp.0`  | `0x6c`                     |
+| **合计**         | **`0xf26c`** = `FileSiz` ✓ |
 
 ⇒ **没有孤儿段、没有未加载的代码。**
 
 ### 因此三条同时成立，但互相矛盾
 
-| # | 事实 |
-| --- | --- |
-| 1 | `mepc = 0x2f00f99a`（CSR 与 `frame.mepc` **两处一致**）|
-| 2 | 该地址处是合法指令 `lui a5, 0x2f010`，且整段都在已加载的 `PT_LOAD` 内 |
-| 3 | `cause = 2`、`mtval = 0x2f01dc73`（而 CSR `0x2F0` 在镜像里 **0 次**）|
+| #   | 事实                                                                  |
+| --- | --------------------------------------------------------------------- |
+| 1   | `mepc = 0x2f00f99a`（CSR 与 `frame.mepc` **两处一致**）               |
+| 2   | 该地址处是合法指令 `lui a5, 0x2f010`，且整段都在已加载的 `PT_LOAD` 内 |
+| 3   | `cause = 2`、`mtval = 0x2f01dc73`（而 CSR `0x2F0` 在镜像里 **0 次**） |
 
 ⇒ **无法用"某条非法指令"解释。**
 
 ### 三个候选解释（下一步逐一排除，均需离线）
 
-| # | 候选 | 排除方法 |
-| --- | --- | --- |
-| 1 | `mtval` 在该芯片的 `cause=2` 下**不是指令编码** | 查手册；或用一条已知非法指令做对照实验 |
-| 2 | `mepc` 被**嵌套 trap** 覆盖（handler 自身触发了第二个 trap）| 在 handler 入口立刻冻结 `mepc` 到全局**再**做任何操作 |
-| 3 | `cause` 被 `& 0x3F` 掩码**改变了语义** | 打印**原始** `mcause`（未掩码）|
+| #   | 候选                                                         | 排除方法                                              |
+| --- | ------------------------------------------------------------ | ----------------------------------------------------- |
+| 1   | `mtval` 在该芯片的 `cause=2` 下**不是指令编码**              | 查手册；或用一条已知非法指令做对照实验                |
+| 2   | `mepc` 被**嵌套 trap** 覆盖（handler 自身触发了第二个 trap） | 在 handler 入口立刻冻结 `mepc` 到全局**再**做任何操作 |
+| 3   | `cause` 被 `& 0x3F` 掩码**改变了语义**                       | 打印**原始** `mcause`（未掩码）                       |
 
 ⇒ **第 3 条最便宜**：我的 handler 做了 `cause & 0x3F`，
 若原始值是 `0x...02` 之外的东西（例如带了中断位或厂商扩展位），
@@ -18040,45 +18127,45 @@ LOAD  0x0bb800  0x2f000800  0x2f000800  0x0f26c  0x0f26c  R E  0x1000
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **缺陷 5（step 20）** | 🔍 **mepc/cause 矛盾，三个候选待排除** |
-| **因仪器/自证而撤回** | **9** |
-| 撤回总数 | **101** |
-| 自我纠正 | **246** |
+| 类别                                      | 数量                                   |
+| ----------------------------------------- | -------------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                              |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                              |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                              |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                              |
+| **缺陷 5（step 20）**                     | 🔍 **mepc/cause 矛盾，三个候选待排除** |
+| **因仪器/自证而撤回**                     | **9**                                  |
+| 撤回总数                                  | **101**                                |
+| 自我纠正                                  | **246**                                |
 
 ## 🎯🎯 决定性：运行时字节 ≠ 镜像字节 ⇒ **blob 在运行时覆盖了 `.iram_btslp.*`**
 
 ### 同一地址的两个值
 
-| 来源 | `0x2f00fa00`（`.iram_btslp.0` 起点）|
-| --- | --- |
-| **镜像** | `41 11 26 c2` = **`0xc2261141`**（`c.addi sp,-16` + …）|
-| **运行时（`mw`）** | **`0xc2260377`** |
+| 来源               | `0x2f00fa00`（`.iram_btslp.0` 起点）                    |
+| ------------------ | ------------------------------------------------------- |
+| **镜像**           | `41 11 26 c2` = **`0xc2261141`**（`c.addi sp,-16` + …） |
+| **运行时（`mw`）** | **`0xc2260377`**                                        |
 
 解码差异：
 
-| 部分 | 镜像 | 运行时 |
-| --- | --- | --- |
-| 低 16 位 | `0x1141` = `c.addi sp,-16`（合法压缩指令）| `0x0377` ⇒ 32 位指令前缀 |
-| 高 16 位 | `0xc226` | `0xc226`（**相同**）|
-| 32 位合成 | `0xc2261141` | **`0xc2260377`** ⇒ opcode `0x77` = **非法** |
+| 部分      | 镜像                                       | 运行时                                      |
+| --------- | ------------------------------------------ | ------------------------------------------- |
+| 低 16 位  | `0x1141` = `c.addi sp,-16`（合法压缩指令） | `0x0377` ⇒ 32 位指令前缀                    |
+| 高 16 位  | `0xc226`                                   | `0xc226`（**相同**）                        |
+| 32 位合成 | `0xc2261141`                               | **`0xc2260377`** ⇒ opcode `0x77` = **非法** |
 
 ⇒ **只有低半字变了** ⇒ 不是"整个段没加载"，而是**被部分改写/替换**。
 
 ### 佐证：这些地址在镜像里被当作**字面量**引用
 
-| 地址 | 作为字面量出现次数 |
-| --- | --- |
-| `0x2f00f99a` | **2** |
-| `0x2f00f7a0` | **2** |
-| `0x2f00fa00` | **2** |
-| `0x2f00f82a` | **2** |
-| `0x2f00f88c` | **2** |
+| 地址         | 作为字面量出现次数 |
+| ------------ | ------------------ |
+| `0x2f00f99a` | **2**              |
+| `0x2f00f7a0` | **2**              |
+| `0x2f00fa00` | **2**              |
+| `0x2f00f82a` | **2**              |
+| `0x2f00f88c` | **2**              |
 
 ⇒ blob 有一张**引用这些地址的表**（两次出现，像是"源→目标"对）。
 
@@ -18089,47 +18176,47 @@ LOAD  0x0bb800  0x2f000800  0x2f000800  0x0f26c  0x0f26c  R E  0x1000
 
 ### 这就解释了此前的全部矛盾
 
-| 此前的矛盾 | 现在的解释 |
-| --- | --- |
-| `mepc` 处是合法指令 | 那是**镜像**；运行时已被覆盖 |
-| `f_mepc == c_mepc` | mepc 未被嵌套覆盖 ✓ |
-| `mtval` 在镜像里 0 命中 | 它来自**运行时**内容，不在镜像里 |
-| CSR `0x2F0` 0 次 | 同上 |
-| 段在 `PT_LOAD` 内且大小精确 | 静态布局正确，**运行时被改** |
+| 此前的矛盾                  | 现在的解释                       |
+| --------------------------- | -------------------------------- |
+| `mepc` 处是合法指令         | 那是**镜像**；运行时已被覆盖     |
+| `f_mepc == c_mepc`          | mepc 未被嵌套覆盖 ✓              |
+| `mtval` 在镜像里 0 命中     | 它来自**运行时**内容，不在镜像里 |
+| CSR `0x2F0` 0 次            | 同上                             |
+| 段在 `PT_LOAD` 内且大小精确 | 静态布局正确，**运行时被改**     |
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 找出**谁写 `0x2f00fa00`**（在 `bt_mmio_*` 之外加一个写监视：写入该范围就记录调用者）| 得到拷贝点 |
-| 2 | 查那张字面量表（镜像偏移 `0x228960`/`0x27c524` 等附近）| 表里应有"源地址→目标地址"对，源若为 0 即根因 |
+| #   | 动作                                                                                 | 判据                                         |
+| --- | ------------------------------------------------------------------------------------ | -------------------------------------------- |
+| 1   | 找出**谁写 `0x2f00fa00`**（在 `bt_mmio_*` 之外加一个写监视：写入该范围就记录调用者） | 得到拷贝点                                   |
+| 2   | 查那张字面量表（镜像偏移 `0x228960`/`0x27c524` 等附近）                              | 表里应有"源地址→目标地址"对，源若为 0 即根因 |
 
 ⇒ **优先第 2 条**：纯离线，直接读出"源"是什么。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
+| 类别                                       | 数量                        |
+| ------------------------------------------ | --------------------------- |
+| **根因 1（四项时钟配置）**                 | ✅ 已验证                   |
+| **根因 2（任务栈未初始化）**               | ✅ 已验证                   |
+| **根因 3（`esp_phy_enable` 冻结入口点）**  | ✅ 已验证                   |
+| **根因 4（`r_conn_stack_enable` 空桩）**   | ✅ 已验证                   |
 | **根因 5（睡眠码被运行时覆盖为非法指令）** | ✅ **已定位（字节级对比）** |
-| **因仪器/自证而撤回** | 9 |
-| 撤回总数 | 101 |
-| 自我纠正 | 247 |
+| **因仪器/自证而撤回**                      | 9                           |
+| 撤回总数                                   | 101                         |
+| 自我纠正                                   | 247                         |
 
 ## 🎯🎯🎯 第五个根因确认：拷贝表用 **ELF 文件偏移**，但运行时索引 **`app.bin`** ⇒ **越界**
 
 ### 表（`{dst, src, size}`，在镜像偏移 `0x27c4xx` 附近）
 
-| dst | src | size | 对应段 |
-| --- | --- | --- | --- |
-| `0x2f0008c0` | `0x000bb8c0` | `0xeee0` | `.iram_blobs` |
-| `0x2f00f88c` | `0x000ca88c` | `0x10e` | `.iram_btslp.14` |
+| dst              | src              | size       | 对应段               |
+| ---------------- | ---------------- | ---------- | -------------------- |
+| `0x2f0008c0`     | `0x000bb8c0`     | `0xeee0`   | `.iram_blobs`        |
+| `0x2f00f88c`     | `0x000ca88c`     | `0x10e`    | `.iram_btslp.14`     |
 | **`0x2f00f99a`** | **`0x000ca99a`** | **`0x66`** | **`.iram_btslp.16`** |
-| `0x2f00fa70` | `0x000caa70` | `0x400` | `.data` |
-| `0x2f020980` | `0x000cae70` | `0x800` | `.phy_cal_buf` |
+| `0x2f00fa70`     | `0x000caa70`     | `0x400`    | `.data`              |
+| `0x2f020980`     | `0x000cae70`     | `0x800`    | `.phy_cal_buf`       |
 
 ### `src` 精确等于 **ELF 文件偏移**
 
@@ -18168,11 +18255,11 @@ ELF @0x0ca99a: b7 07 01 2f 83 a7 47 fe   ⇒  lui a5, 0x2f010 ; lw a5, -24(a5)  
 
 ### 修复方向
 
-| # | 修法 |
-| --- | --- |
-| **A** | 表应在**生成 `.bin` 之后**按"扁平布局"重新计算 `src`（`src_bin = vaddr - seg_vaddr + seg_bin_off`）|
-| **B** | 或让运行时**直接按 ELF 边界**读 flash（需 flash 里存的是 ELF，不是 bin）|
-| **C** | 或**跳过拷贝**，因为我们的链接器**已经把内容放进了 `PT_LOAD`**，启动加载已覆盖 |
+| #     | 修法                                                                                                |
+| ----- | --------------------------------------------------------------------------------------------------- |
+| **A** | 表应在**生成 `.bin` 之后**按"扁平布局"重新计算 `src`（`src_bin = vaddr - seg_vaddr + seg_bin_off`） |
+| **B** | 或让运行时**直接按 ELF 边界**读 flash（需 flash 里存的是 ELF，不是 bin）                            |
+| **C** | 或**跳过拷贝**，因为我们的链接器**已经把内容放进了 `PT_LOAD`**，启动加载已覆盖                      |
 
 ⇒ **C 最可能正确**：段已在 `PT_LOAD` 内且大小精确，
 说明**启动加载已经把它们放好**；这张表是 blob 的"自搬运"逻辑，
@@ -18180,36 +18267,36 @@ ELF @0x0ca99a: b7 07 01 2f 83 a7 47 fe   ⇒  lui a5, 0x2f010 ; lw a5, -24(a5)  
 
 ### 因此要查的是：这张表**是否真的被执行**
 
-| 判据 | 含义 |
-| --- | --- |
+| 判据                                             | 含义 |
+| ------------------------------------------------ | ---- |
 | 若被执行 ⇒ 覆盖掉正确内容 ⇒ 必须禁用或修正 `src` |
-| 若未执行 ⇒ 运行时差异另有原因 |
+| 若未执行 ⇒ 运行时差异另有原因                    |
 
 ⇒ 这解释了为何 `0x2f00fa00`（`.iram_btslp.0`，**不在表里**）也不同 —— 需另行确认。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **根因 5（拷贝表 `src` 越界）** | ✅ **已确认（超出 app.bin 0x1eda）** |
-| **因仪器/自证而撤回** | 9 |
-| 撤回总数 | 101 |
-| 自我纠正 | 248 |
+| 类别                                      | 数量                                 |
+| ----------------------------------------- | ------------------------------------ |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                            |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                            |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                            |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                            |
+| **根因 5（拷贝表 `src` 越界）**           | ✅ **已确认（超出 app.bin 0x1eda）** |
+| **因仪器/自证而撤回**                     | 9                                    |
+| 撤回总数                                  | 101                                  |
+| 自我纠正                                  | 248                                  |
 
 ## 结论收口：那张表是**厂商构建时写入**的，`src` 是其 ELF 文件偏移
 
 ### 排查
 
-| 检查 | 结果 |
-| --- | --- |
-| `components/bt-blobs/link/*.ld` 与 `boards/.../linker/*.ld` 里有 `btslp` 吗 | **没有** |
-| 谁生成那张表 | **不是我们的工具** —— 链接脚本里根本没有这些段名 |
-| ⇒ 表的来源 | **厂商目标文件**（`.iram_btslp.*` 段随 `.o` 一起进镜像）|
-| ⇒ `src` 的语义 | **厂商自己构建时的 ELF 文件偏移** |
+| 检查                                                                        | 结果                                                     |
+| --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `components/bt-blobs/link/*.ld` 与 `boards/.../linker/*.ld` 里有 `btslp` 吗 | **没有**                                                 |
+| 谁生成那张表                                                                | **不是我们的工具** —— 链接脚本里根本没有这些段名         |
+| ⇒ 表的来源                                                                  | **厂商目标文件**（`.iram_btslp.*` 段随 `.o` 一起进镜像） |
+| ⇒ `src` 的语义                                                              | **厂商自己构建时的 ELF 文件偏移**                        |
 
 ### 因此这不是"我们算错了偏移"，而是**语义不匹配**
 
@@ -18219,23 +18306,23 @@ ELF @0x0ca99a: b7 07 01 2f 83 a7 47 fe   ⇒  lui a5, 0x2f010 ; lw a5, -24(a5)  
 ⇒ src 全部越界（除 0xBB8C0 外）
 ```
 
-| `src` | 值 | 与 `app.bin`（`0xc8ac0`）比较 |
-| --- | --- | --- |
-| `.iram_blobs` | `0x0bb8c0` | ✅ 在范围内 |
-| `.iram_btslp.14` | `0x0ca88c` | ❌ 越界 |
-| `.iram_btslp.16` | `0x0ca99a` | ❌ 越界 |
-| `.data` | `0x0caa70` | ❌ 越界 |
-| `.phy_cal_buf` | `0x0cae70` | ❌ 越界 |
+| `src`            | 值         | 与 `app.bin`（`0xc8ac0`）比较 |
+| ---------------- | ---------- | ----------------------------- |
+| `.iram_blobs`    | `0x0bb8c0` | ✅ 在范围内                   |
+| `.iram_btslp.14` | `0x0ca88c` | ❌ 越界                       |
+| `.iram_btslp.16` | `0x0ca99a` | ❌ 越界                       |
+| `.data`          | `0x0caa70` | ❌ 越界                       |
+| `.phy_cal_buf`   | `0x0cae70` | ❌ 越界                       |
 
 ⇒ 只有最大的那段（`0xeee0` 字节）恰好在范围内 —— 因为它偏移最小。
 
 ### 修复方向（按可行性排序）
 
-| # | 修法 | 风险 |
-| --- | --- | --- |
-| **C** | **禁用这次自搬运** —— 段已被 `PT_LOAD` 放好 | 低；需确认 blob 不依赖"重新放置"的副作用 |
-| A | 在构建期把表的 `src` **重映射**为扁平镜像偏移 | 中；需改写厂商 `.o` 里的 rodata |
-| B | 让 flash 里存 ELF 而非 bin | 高；改变整条烧录链 |
+| #     | 修法                                          | 风险                                     |
+| ----- | --------------------------------------------- | ---------------------------------------- |
+| **C** | **禁用这次自搬运** —— 段已被 `PT_LOAD` 放好   | 低；需确认 blob 不依赖"重新放置"的副作用 |
+| A     | 在构建期把表的 `src` **重映射**为扁平镜像偏移 | 中；需改写厂商 `.o` 里的 rodata          |
+| B     | 让 flash 里存 ELF 而非 bin                    | 高；改变整条烧录链                       |
 
 ⇒ **C 是正确方向**：本会话已证明**段的静态布局完全正确**
 （`PT_LOAD` 覆盖、大小精确加总），缺的只是"不要去搬它"。
@@ -18252,25 +18339,25 @@ ELF @0x0ca99a: b7 07 01 2f 83 a7 47 fe   ⇒  lui a5, 0x2f010 ; lw a5, -24(a5)  
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **根因 5（厂商自搬运表的 `src` 越界）** | ✅ **已确认，修复方向已定** |
-| **因仪器/自证而撤回** | 9 |
-| 撤回总数 | 101 |
-| 自我纠正 | 249 |
+| 类别                                      | 数量                        |
+| ----------------------------------------- | --------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                   |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                   |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                   |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                   |
+| **根因 5（厂商自搬运表的 `src` 越界）**   | ✅ **已确认，修复方向已定** |
+| **因仪器/自证而撤回**                     | 9                           |
+| 撤回总数                                  | 101                         |
+| 自我纠正                                  | 249                         |
 
 ## ❌❌ 撤回第五个根因：那张表在**调试信息**里，运行时读不到
 
 ### 两条否证
 
-| # | 检查 | 结果 |
-| --- | --- | --- |
-| 1 | 表所在 ELF 偏移 `0x228960`/`0x27c524` 是否落在**任何已加载段**内 | ❌ **不在** —— 最大文件范围只到 `~0xcae70` |
-| 2 | `app.bin` 里是否存在 `{dst, src, size}` 三连 | ❌ **没有** —— 只有 2 个伪候选（`size=0` 与 `size=1`）|
+| #   | 检查                                                             | 结果                                                   |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------ |
+| 1   | 表所在 ELF 偏移 `0x228960`/`0x27c524` 是否落在**任何已加载段**内 | ❌ **不在** —— 最大文件范围只到 `~0xcae70`             |
+| 2   | `app.bin` 里是否存在 `{dst, src, size}` 三连                     | ❌ **没有** —— 只有 2 个伪候选（`size=0` 与 `size=1`） |
 
 ⇒ 我找到的那张表是 **调试信息（非加载段）**，**运行时根本不会被读**。
 
@@ -18278,45 +18365,45 @@ ELF @0x0ca99a: b7 07 01 2f 83 a7 47 fe   ⇒  lui a5, 0x2f010 ; lw a5, -24(a5)  
 
 ### 但运行时与镜像的差异仍然存在
 
-| 量 | 值 |
-| --- | --- |
-| 镜像 @`0x2f00fa00`（`.iram_btslp.0`）| `0xc2261141` |
-| **运行时 `mw`** | **`0xc2260377`** |
+| 量                                    | 值               |
+| ------------------------------------- | ---------------- |
+| 镜像 @`0x2f00fa00`（`.iram_btslp.0`） | `0xc2261141`     |
+| **运行时 `mw`**                       | **`0xc2260377`** |
 
 ⇒ 差异**是真实的**，只是**原因不是那张表**。
 
 ### 诚实的当前状态
 
-| 问题 | 状态 |
-| --- | --- |
-| 根因 1–4 | ✅ 已验证并修复 |
-| **运行时字节 ≠ 镜像字节** | ✅ **实测存在** |
-| **差异的成因** | ❌ **未定**（拷贝表假设已撤回）|
+| 问题                      | 状态                            |
+| ------------------------- | ------------------------------- |
+| 根因 1–4                  | ✅ 已验证并修复                 |
+| **运行时字节 ≠ 镜像字节** | ✅ **实测存在**                 |
+| **差异的成因**            | ❌ **未定**（拷贝表假设已撤回） |
 
 ### 下一步（按成本排序，且都先离线）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 用 `esp_image` 格式解析 `app.bin`，看**它自己**的段表把这个地址映射到哪个文件偏移 | 若偏移 ≠ 镜像内容位置 ⇒ 是**镜像格式**层的错 |
-| 2 | 在 `0x2f00fa00` 上加**写监视**（trap 前不断采样该字，变化即记录）| 直接抓到写入者 |
-| 3 | 检查第二阶段 bootloader 的 iram 段加载日志 | 是否加载了、加载了多长 |
+| #   | 动作                                                                              | 判据                                         |
+| --- | --------------------------------------------------------------------------------- | -------------------------------------------- |
+| 1   | 用 `esp_image` 格式解析 `app.bin`，看**它自己**的段表把这个地址映射到哪个文件偏移 | 若偏移 ≠ 镜像内容位置 ⇒ 是**镜像格式**层的错 |
+| 2   | 在 `0x2f00fa00` 上加**写监视**（trap 前不断采样该字，变化即记录）                 | 直接抓到写入者                               |
+| 3   | 检查第二阶段 bootloader 的 iram 段加载日志                                        | 是否加载了、加载了多长                       |
 
 ⇒ **第 1 条最省**：`app.bin` 是 `esp_image` 格式，其段表在镜像头部，
 可以直接读出"这个 vaddr 对应的文件偏移"，与我们的 ELF 对比。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **根因 5（拷贝表）** | ❌ **已撤回** |
-| **运行时 ≠ 镜像** | 🔍 **实测存在，成因未定** |
-| **因仪器/自证而撤回** | **10** |
-| 撤回总数 | **102** |
-| 自我纠正 | **250** |
+| 类别                                      | 数量                      |
+| ----------------------------------------- | ------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                 |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                 |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                 |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                 |
+| **根因 5（拷贝表）**                      | ❌ **已撤回**             |
+| **运行时 ≠ 镜像**                         | 🔍 **实测存在，成因未定** |
+| **因仪器/自证而撤回**                     | **10**                    |
+| 撤回总数                                  | **102**                   |
+| 自我纠正                                  | **250**                   |
 
 ## 🎯🎯🎯 真正的根因：`app.bin` 里这几个段的内容是 **`{地址, 大小}` 描述符**，不是代码
 
@@ -18335,20 +18422,20 @@ Segment   Length   Load addr   File offs
 
 ### 内容对比：**ELF 有代码，`app.bin` 只有描述符**
 
-| 地址 | ELF 字节 | **`app.bin` 字节** |
-| --- | --- | --- |
-| `0x2f00f99a` | `b7 07 01 2f`（`lui a5,0x2f010`）| **`9a f9 00 2f 68 00 00 00`** = `0x2f00f99a, 0x68` |
-| `0x2f00fa00` | `41 11 26 c2`（`c.addi sp,-16`）| **`00 fa 00 2f 6c 00 00 00`** = `0x2f00fa00, 0x6c` |
+| 地址         | ELF 字节                          | **`app.bin` 字节**                                 |
+| ------------ | --------------------------------- | -------------------------------------------------- |
+| `0x2f00f99a` | `b7 07 01 2f`（`lui a5,0x2f010`） | **`9a f9 00 2f 68 00 00 00`** = `0x2f00f99a, 0x68` |
+| `0x2f00fa00` | `41 11 26 c2`（`c.addi sp,-16`）  | **`00 fa 00 2f 6c 00 00 00`** = `0x2f00fa00, 0x6c` |
 
 ⇒ **`app.bin` 这几个段的载荷是"自己的地址 + 自己的长度"**，而不是段数据。
 
 ### 这解释了一切
 
-| 现象 | 解释 |
-| --- | --- |
-| 运行时 `mw` = `0xc2260377` | 加载器把描述符写进 RAM 后，后续字节自然不是合法指令 |
-| 镜像（ELF）里明明是合法代码 | **我们一直对比的是 ELF，而烧进去的是 `app.bin`** |
-| 段长 `0x68` vs ELF 的 `0x66` | 段被重新打包，长度加了 2（对齐）|
+| 现象                         | 解释                                                |
+| ---------------------------- | --------------------------------------------------- |
+| 运行时 `mw` = `0xc2260377`   | 加载器把描述符写进 RAM 后，后续字节自然不是合法指令 |
+| 镜像（ELF）里明明是合法代码  | **我们一直对比的是 ELF，而烧进去的是 `app.bin`**    |
+| 段长 `0x68` vs ELF 的 `0x66` | 段被重新打包，长度加了 2（对齐）                    |
 
 ⇒ **根因在镜像生成（`elf2image` / `objcopy`）这一步**：
 它把 `.iram_btslp.*` 的**元数据**当成了段内容。
@@ -18363,11 +18450,11 @@ Segment   Length   Load addr   File offs
 
 ### 修复方向
 
-| # | 修法 |
-| --- | --- |
-| **A** | 检查 `elf2image` 的调用参数（是否用了 `--use-segments` / 段偏移语义不同）|
+| #     | 修法                                                                        |
+| ----- | --------------------------------------------------------------------------- |
+| **A** | 检查 `elf2image` 的调用参数（是否用了 `--use-segments` / 段偏移语义不同）   |
 | **B** | 改用 `objcopy -O binary` 直接从 ELF 生成，再用 `esptool write-flash` 分段烧 |
-| **C** | 把这些小段**合并进大段**（避免逐个 segment），如并入 `.iram_blobs` |
+| **C** | 把这些小段**合并进大段**（避免逐个 segment），如并入 `.iram_blobs`          |
 
 ⇒ **A 是最小改动**，且能立刻用 `esptool image-info` 验证：
 修好后 seg6 的内容应以 `b7 07 01 2f` 开头。
@@ -18381,16 +18468,16 @@ Segment   Length   Load addr   File offs
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
+| 类别                                           | 数量                    |
+| ---------------------------------------------- | ----------------------- |
+| **根因 1（四项时钟配置）**                     | ✅ 已验证               |
+| **根因 2（任务栈未初始化）**                   | ✅ 已验证               |
+| **根因 3（`esp_phy_enable` 冻结入口点）**      | ✅ 已验证               |
+| **根因 4（`r_conn_stack_enable` 空桩）**       | ✅ 已验证               |
 | **根因 5（`app.bin` 段内容是描述符而非代码）** | ✅ **已确认（字节级）** |
-| **因仪器/自证而撤回** | 10 |
-| 撤回总数 | 102 |
-| 自我纠正 | 251 |
+| **因仪器/自证而撤回**                          | 10                      |
+| 撤回总数                                       | 102                     |
+| 自我纠正                                       | 251                     |
 
 ## ❌❌ 再撤回：镜像**是正确**的 —— 差异来自**运行时一次 16 位写**
 
@@ -18403,11 +18490,11 @@ Segment   Length   Load addr   File offs
 
 ### 正确对比
 
-| 来源 | `0x2f00fa00` |
-| --- | --- |
+| 来源                      | `0x2f00fa00`                     |
+| ------------------------- | -------------------------------- |
 | **`app.bin`（实际烧录）** | `41 11 26 c2` = **`0xc2261141`** |
-| **ELF** | `41 11 26 c2` = **`0xc2261141`** |
-| **运行时** | `77 03 26 c2` = **`0xc2260377`** |
+| **ELF**                   | `41 11 26 c2` = **`0xc2261141`** |
+| **运行时**                | `77 03 26 c2` = **`0xc2260377`** |
 
 ⇒ **镜像与 ELF 完全一致** ⇒ **`elf2image` 没有问题。**
 
@@ -18427,19 +18514,19 @@ Segment   Length   Load addr   File offs
 
 ### 当前状态（诚实版）
 
-| 项 | 状态 |
-| --- | --- |
-| 镜像 / ELF / 加载路径 | ✅ **正确**（三处一致）|
+| 项                       | 状态                                    |
+| ------------------------ | --------------------------------------- |
+| 镜像 / ELF / 加载路径    | ✅ **正确**（三处一致）                 |
 | **运行时被 16 位写改坏** | ✅ **实测（低半字 `0x1141`→`0x0377`）** |
-| **谁写的** | ❌ **未定** |
+| **谁写的**               | ❌ **未定**                             |
 
 ### 下一步（这次方向明确）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 给 `0x2f00fa00` 加**写监视**：trap 前每轮采样该字，一变就记录 | 得到"何时"与"当时的 PC" |
-| 2 | 搜镜像里所有 `sh`（store halfword）指令，筛出目标可能落在 `0x2f00f8xx..0x2f00faff` 的 | 得到候选写者 |
-| 3 | 确认 `0x0377` 这个值的来源（它本身像什么？偏移？大小？）| 定位数据结构 |
+| #   | 动作                                                                                  | 判据                    |
+| --- | ------------------------------------------------------------------------------------- | ----------------------- |
+| 1   | 给 `0x2f00fa00` 加**写监视**：trap 前每轮采样该字，一变就记录                         | 得到"何时"与"当时的 PC" |
+| 2   | 搜镜像里所有 `sh`（store halfword）指令，筛出目标可能落在 `0x2f00f8xx..0x2f00faff` 的 | 得到候选写者            |
+| 3   | 确认 `0x0377` 这个值的来源（它本身像什么？偏移？大小？）                              | 定位数据结构            |
 
 ⇒ **`0x0377` = 887**。而 `.iram_btslp` 段的长度是 `0x66`/`0x6c`/`0x110` —— 都不等于它。
 ⇒ 更像**指针低位被截断**后写入。
@@ -18451,17 +18538,17 @@ Segment   Length   Load addr   File offs
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **根因 5（镜像内容错）** | ❌ **已撤回**（镜像正确）|
-| **运行时 16 位写改坏代码段** | 🔍 **实测，写者未定** |
-| **因仪器/自证而撤回** | **11** |
-| 撤回总数 | **103** |
-| 自我纠正 | **252** |
+| 类别                                      | 数量                      |
+| ----------------------------------------- | ------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                 |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                 |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                 |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                 |
+| **根因 5（镜像内容错）**                  | ❌ **已撤回**（镜像正确） |
+| **运行时 16 位写改坏代码段**              | 🔍 **实测，写者未定**     |
+| **因仪器/自证而撤回**                     | **11**                    |
+| 撤回总数                                  | **103**                   |
+| 自我纠正                                  | **252**                   |
 
 ## 🎯 运行时值在镜像里**0 命中** ⇒ 是运行时写出来的
 
@@ -18481,20 +18568,20 @@ pattern 77 03 26 c2 (0xc2260377):
 
 ### 当前完整状态（三条已证实 + 一条未知）
 
-| # | 事实 | 证据 |
-| --- | --- | --- |
-| 1 | 镜像正确 | `app.bin` == ELF @`0x2f00fa00`（`41 11 26 c2`）|
-| 2 | 运行时被改 | `mw` = `0xc2260377`（低半字 `0x0377`）|
-| 3 | 该值不在镜像里 | 两处各 0 命中 |
-| 4 | **谁写的** | ❌ **未知** |
+| #   | 事实           | 证据                                            |
+| --- | -------------- | ----------------------------------------------- |
+| 1   | 镜像正确       | `app.bin` == ELF @`0x2f00fa00`（`41 11 26 c2`） |
+| 2   | 运行时被改     | `mw` = `0xc2260377`（低半字 `0x0377`）          |
+| 3   | 该值不在镜像里 | 两处各 0 命中                                   |
+| 4   | **谁写的**     | ❌ **未知**                                     |
 
 ### `0x0377` 是什么
 
-| 候选 | 排除/支持 |
-| --- | --- |
+| 候选                 | 排除/支持                           |
+| -------------------- | ----------------------------------- |
 | `.iram_btslp` 段长度 | ❌ 是 `0x66`/`0x6c`/`0x110`，都不等 |
-| 指针低半 | ✅ 可能（高位已存在 `0xc226`）|
-| 某个结构体字段 | 🔍 待查 |
+| 指针低半             | ✅ 可能（高位已存在 `0xc226`）      |
+| 某个结构体字段       | 🔍 待查                             |
 
 ⇒ `0x0377` = **887**（十进制）。
 
@@ -18514,16 +18601,16 @@ fn watch() void {
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **运行时 16 位写改坏 `.iram_btslp.0`** | 🔍 **三条已证实，写者未定** |
-| **因仪器/自证而撤回** | **11** |
-| 撤回总数 | **103** |
-| 自我纠正 | **253** |
+| 类别                                      | 数量                        |
+| ----------------------------------------- | --------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                   |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                   |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                   |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                   |
+| **运行时 16 位写改坏 `.iram_btslp.0`**    | 🔍 **三条已证实，写者未定** |
+| **因仪器/自证而撤回**                     | **11**                      |
+| 撤回总数                                  | **103**                     |
+| 自我纠正                                  | **253**                     |
 
 ## 符号归属：两个睡眠段基址都是 **blob 函数入口**（`T`）
 
@@ -18541,11 +18628,11 @@ fn watch() void {
 
 ### 因此"非法指令"的位置极其可疑
 
-| 事实 | 含义 |
-| --- | --- |
-| `mepc` = 函数**入口** | 不是函数中部 |
+| 事实                           | 含义                 |
+| ------------------------------ | -------------------- |
+| `mepc` = 函数**入口**          | 不是函数中部         |
 | 该处低半字 `0x1141` → `0x0377` | 入口的第一条指令被改 |
-| 高半字不变 | 一次 **16 位写** |
+| 高半字不变                     | 一次 **16 位写**     |
 
 ⇒ 若有人把**函数入口第一条指令**改掉，该函数一旦被调用就必然非法。
 
@@ -18561,13 +18648,13 @@ bt bringup: enter step N <name> w16=<低半字> w0=<低半字>
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                           | 数量                            |
+| ------------------------------ | ------------------------------- |
+| **根因 1–4**                   | ✅ 已验证                       |
 | **运行时 16 位写改坏函数入口** | 🔍 三条已证实；写者待时间线定位 |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 254 |
+| **因仪器/自证而撤回**          | 11                              |
+| 撤回总数                       | 103                             |
+| 自我纠正                       | 254                             |
 
 ## 🏁🏁🏁 写者确定：**损坏在 step 1 之前就存在** ⇒ 是**加载阶段**
 
@@ -18601,31 +18688,31 @@ bt bringup: enter step N <name> w16=<低半字> w0=<低半字>
 WT btslp16=0x2f01f597  btslp0=0xc226e361
 ```
 
-| 段 | 运行时 | 镜像应为 |
-| --- | --- | --- |
+| 段                             | 运行时       | 镜像应为     |
+| ------------------------------ | ------------ | ------------ |
 | `.iram_btslp.16` @`0x2f00f99a` | `0x2f01f597` | `0x2f0107b7` |
-| `.iram_btslp.0` @`0x2f00fa00` | `0xc226e361` | `0xc2261141` |
+| `.iram_btslp.0` @`0x2f00fa00`  | `0xc226e361` | `0xc2261141` |
 
 ⇒ **两个段都被改**，且形态一致：**只有低半字变**。
 
 ### 因此根因 5 收敛为：**第二阶段 bootloader 的加载**
 
-| 证据 | 结论 |
-| --- | --- |
-| `app.bin` 段数据 == ELF（已逐字节验证）| 镜像生成正确 |
-| step 1 时已损坏 | 不是应用代码写的 |
-| 只有低半字不同 | 16 位粒度的写 |
-| 两个睡眠段都损坏 | 系统性，不是偶发 |
+| 证据                                    | 结论             |
+| --------------------------------------- | ---------------- |
+| `app.bin` 段数据 == ELF（已逐字节验证） | 镜像生成正确     |
+| step 1 时已损坏                         | 不是应用代码写的 |
+| 只有低半字不同                          | 16 位粒度的写    |
+| 两个睡眠段都损坏                        | 系统性，不是偶发 |
 
 ⇒ **加载器把这些小段放错了** —— 与本会话**根因 3（冻结地址）**属同一族：
 **"看起来加载了，实际内容不对"**。
 
 ### 下一步（两条，均可离线）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 用 `esptool` 直接读回 flash 的 app 分区，与 `app.bin` 逐字节比对 | 若 flash 内容正确 ⇒ 是 bootloader 的**拷贝**环节；若不同 ⇒ 是**烧录**环节 |
-| 2 | 检查第二阶段 bootloader 对**小段**（`0x64`/`0x68`/`0x6c` 字节）的处理 | 是否存在按 4 字节/对齐截断的 bug |
+| #   | 动作                                                                  | 判据                                                                      |
+| --- | --------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | 用 `esptool` 直接读回 flash 的 app 分区，与 `app.bin` 逐字节比对      | 若 flash 内容正确 ⇒ 是 bootloader 的**拷贝**环节；若不同 ⇒ 是**烧录**环节 |
+| 2   | 检查第二阶段 bootloader 对**小段**（`0x64`/`0x68`/`0x6c` 字节）的处理 | 是否存在按 4 字节/对齐截断的 bug                                          |
 
 ⇒ **第 1 条最关键**：它把"烧录错"与"加载错"分开。
 
@@ -18640,13 +18727,13 @@ mepc8 = 4005a26c, 4005a402
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                                 | 数量                              |
+| ------------------------------------ | --------------------------------- |
+| **根因 1–4**                         | ✅ 已验证                         |
 | **根因 5（睡眠段在加载阶段被改坏）** | ✅ **时间线已定位到 step 1 之前** |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 255 |
+| **因仪器/自证而撤回**                | 11                                |
+| 撤回总数                             | 103                               |
+| 自我纠正                             | 255                               |
 
 ## 🏁 烧录已验证正确 ⇒ 根因 5 锁定在**第二阶段 bootloader 的加载**
 
@@ -18667,21 +18754,21 @@ app.bin @seg7数据: a4 21 03 57 84 21 83 c6
 
 ### 因此三层已被逐一排除
 
-| 层 | 检查 | 结果 |
-| --- | --- | --- |
-| 1. 镜像生成（`elf2image`）| `app.bin` 段数据 vs ELF | ✅ **一致** |
-| 2. 烧录 | **flash 读回 vs `app.bin`** | ✅ **一致** |
-| 3. **加载**（第二阶段 bootloader）| 运行时 vs `app.bin` | ❌ **不一致** |
+| 层                                 | 检查                        | 结果          |
+| ---------------------------------- | --------------------------- | ------------- |
+| 1. 镜像生成（`elf2image`）         | `app.bin` 段数据 vs ELF     | ✅ **一致**   |
+| 2. 烧录                            | **flash 读回 vs `app.bin`** | ✅ **一致**   |
+| 3. **加载**（第二阶段 bootloader） | 运行时 vs `app.bin`         | ❌ **不一致** |
 
 ⇒ **根因 5 = 第二阶段 bootloader 把这些小段加载到了错误的内容。**
 
 ### 为什么只有小段受影响
 
-| 段 | 长度 | 状态 |
-| --- | --- | --- |
-| seg1 | `0x0c9c0` | ✅ 正常 |
-| seg3 | `0x0266c` | ✅ 正常 |
-| **seg4** | `0x00064` | ❓ |
+| 段       | 长度      | 状态    |
+| -------- | --------- | ------- |
+| seg1     | `0x0c9c0` | ✅ 正常 |
+| seg3     | `0x0266c` | ✅ 正常 |
+| **seg4** | `0x00064` | ❓      |
 | **seg5** | `0x00110` | ❌ 被改 |
 | **seg6** | `0x00068` | ❌ 被改 |
 | **seg7** | `0x0006c` | ❌ 被改 |
@@ -18693,10 +18780,10 @@ app.bin @seg7数据: a4 21 03 57 84 21 83 c6
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在**第二个睡眠段**（`0x2f00f99a`）读回 flash 对应字节并比对，确认同样"flash 对、运行时错" | 与 seg7 同型 ⇒ 系统性 |
-| 2 | 检查 `s31.ld` 的 `Phdr`/`AT>` 与 bootloader 的段数上限 | 小段是否被跳过或截断 |
+| #   | 动作                                                                                      | 判据                  |
+| --- | ----------------------------------------------------------------------------------------- | --------------------- |
+| 1   | 在**第二个睡眠段**（`0x2f00f99a`）读回 flash 对应字节并比对，确认同样"flash 对、运行时错" | 与 seg7 同型 ⇒ 系统性 |
+| 2   | 检查 `s31.ld` 的 `Phdr`/`AT>` 与 bootloader 的段数上限                                    | 小段是否被跳过或截断  |
 
 ⇒ **第 2 条最可能**：`esp_image` 允许最多若干段，
 若我们的镜像段数（9）超过 bootloader 的处理上限，**尾部小段会被忽略**
@@ -18704,13 +18791,13 @@ app.bin @seg7数据: a4 21 03 57 84 21 83 c6
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                         | 数量                                        |
+| ---------------------------- | ------------------------------------------- |
+| **根因 1–4**                 | ✅ 已验证                                   |
 | **根因 5（小段未正确加载）** | ✅ **烧录/镜像/生成三层已排除，锁定加载层** |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 256 |
+| **因仪器/自证而撤回**        | 11                                          |
+| 撤回总数                     | 103                                         |
+| 自我纠正                     | 256                                         |
 
 ## 两条假设的排除与下一步
 
@@ -18736,42 +18823,42 @@ app.bin @seg7数据: a4 21 03 57 84 21 83 c6
 在**最早的启动代码**（blob 之前）采样多个 RAM 地址，
 与 `app.bin` 同地址内容逐一比对：
 
-| 采样点 | 目的 |
-| --- | --- |
-| 每个段的**起点**（9 个）| 哪些段被错 |
-| 被错段内部的**多个偏移**（+0/+4/+8/+16）| 是全段错还是只有头部 |
-| 正确的段（seg1/seg3）内部同样采样 | 确认"大段正确"这一对照 |
+| 采样点                                   | 目的                   |
+| ---------------------------------------- | ---------------------- |
+| 每个段的**起点**（9 个）                 | 哪些段被错             |
+| 被错段内部的**多个偏移**（+0/+4/+8/+16） | 是全段错还是只有头部   |
+| 正确的段（seg1/seg3）内部同样采样        | 确认"大段正确"这一对照 |
 
 ⇒ 得到一张"地址 → 对/错"的表，就能判断：
 
-| 形态 | 结论 |
-| --- | --- |
-| 只有小段的**首 4 字节**错 | 段头被当数据加载（**头/体偏移差 8**，与我自己犯的错同型！）|
-| 小段的**全部**错 | 段被整体跳过 |
-| 各段**前 N 字节**错 | 拷贝长度被截断 |
+| 形态                      | 结论                                                        |
+| ------------------------- | ----------------------------------------------------------- |
+| 只有小段的**首 4 字节**错 | 段头被当数据加载（**头/体偏移差 8**，与我自己犯的错同型！） |
+| 小段的**全部**错          | 段被整体跳过                                                |
+| 各段**前 N 字节**错       | 拷贝长度被截断                                              |
 
 ⇒ **第一种最可疑**：本会话我已经因为"段头 vs 段数据差 8 字节"犯过一次错
 （`esp_image` 的段头是 8 字节），
 **加载器若犯同样的错，就会把段头写进 RAM 的开头** ——
 而段头正是 `{load_addr, length}`，这**完全解释**了观察到的值：
 
-| 段 | 段头内容 | 运行时首字 |
-| --- | --- | --- |
+| 段                             | 段头内容             | 运行时首字        |
+| ------------------------------ | -------------------- | ----------------- |
 | `.iram_btslp.16` @`0x2f00f99a` | `{0x2f00f99a, 0x68}` | `0x2f01f597`（≠） |
-| `.iram_btslp.0` @`0x2f00fa00` | `{0x2f00fa00, 0x6c}` | `0xc226e361`（≠） |
+| `.iram_btslp.0` @`0x2f00fa00`  | `{0x2f00fa00, 0x6c}` | `0xc226e361`（≠） |
 
 ⇒ 虽然**不完全相等**，但"首字是某种元数据"的方向一致 ⇒ **值得先测**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
-| **根因 5（加载层）** | 🔍 生成/烧录已排除；机制待定 |
-| **已否证** | 段数上限（9 < 16）|
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 257 |
+| 类别                  | 数量                         |
+| --------------------- | ---------------------------- |
+| **根因 1–4**          | ✅ 已验证                    |
+| **根因 5（加载层）**  | 🔍 生成/烧录已排除；机制待定 |
+| **已否证**            | 段数上限（9 < 16）           |
+| **因仪器/自证而撤回** | 11                           |
+| 撤回总数              | 103                          |
+| 自我纠正              | 257                          |
 
 ## 🔎 结构性线索：`.iram_btslp.0` 与 `.data` **只隔 4 字节**
 
@@ -18792,10 +18879,10 @@ app.bin @seg7数据: a4 21 03 57 84 21 83 c6
 
 ### 但观察到的损坏位置在**段首**，不是段尾
 
-| 地址 | 运行时 | 期望 |
-| --- | --- | --- |
-| `0x2f00fa00`（段首）| `0xc226e361` | `0xc2261141` |
-| `0x2f00f99a`（另一段首）| `0x2f01f597` | `0x2f0107b7` |
+| 地址                     | 运行时       | 期望         |
+| ------------------------ | ------------ | ------------ |
+| `0x2f00fa00`（段首）     | `0xc226e361` | `0xc2261141` |
+| `0x2f00f99a`（另一段首） | `0x2f01f597` | `0x2f0107b7` |
 
 ⇒ **两处都是段首的低半字**。
 
@@ -18816,30 +18903,30 @@ g_msys_pool_list = 0x2f00fa70
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在 **`probe.run` 入口**（任何 bringup 调用之前）采样同一批地址 | 已损坏 ⇒ **bootloader**；干净 ⇒ **早期代码** |
-| 2 | 查 `g_msys_pool_list` 的**写者**（谁 `lui+sw` 到 `0x2f00fa70`）| 若其基址是 `0x2f00fa70 - 0x70` ⇒ 命中 |
+| #   | 动作                                                            | 判据                                         |
+| --- | --------------------------------------------------------------- | -------------------------------------------- |
+| 1   | 在 **`probe.run` 入口**（任何 bringup 调用之前）采样同一批地址  | 已损坏 ⇒ **bootloader**；干净 ⇒ **早期代码** |
+| 2   | 查 `g_msys_pool_list` 的**写者**（谁 `lui+sw` 到 `0x2f00fa70`） | 若其基址是 `0x2f00fa70 - 0x70` ⇒ 命中        |
 
 ⇒ **第 1 条最省**：只是一个采样点的位置问题，能把"bootloader"与"我们的早期代码"分开。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                        | 数量                                       |
+| --------------------------- | ------------------------------------------ |
+| **根因 1–4**                | ✅ 已验证                                  |
 | **根因 5（加载层/早期写）** | 🔍 生成/烧录已排除；`.data` 紧邻是结构线索 |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 258 |
+| **因仪器/自证而撤回**       | 11                                         |
+| 撤回总数                    | 103                                        |
+| 自我纠正                    | 258                                        |
 
 ## 🎯 机制定死：**2 字节、偏移 0、值每次变** ⇒ `sh` 写指针低半
 
 ### 三次 boot 的同一地址（`0x2f00fa00`）
 
-| 轮次 | 4 字节 | 低半字 | 高半字 |
-| --- | --- | --- | --- |
-| 镜像 | `41 11 26 c2` | `1141` | `26c2` |
+| 轮次    | 4 字节        | 低半字 | 高半字 |
+| ------- | ------------- | ------ | ------ |
+| 镜像    | `41 11 26 c2` | `1141` | `26c2` |
 | 第 1 次 | `77 03 26 c2` | `0377` | `26c2` |
 | 第 2 次 | `61 e3 26 c2` | `e361` | `26c2` |
 
@@ -18847,18 +18934,18 @@ g_msys_pool_list = 0x2f00fa70
 
 ⇒ 三个特征：
 
-| # | 特征 | 含义 |
-| --- | --- | --- |
-| 1 | **2 字节** | `sh`（store halfword），不是 `sw` |
-| 2 | **偏移 0** | 写在段首，不是段中 |
-| 3 | **值每次变** | 是**运行时指针的低半字** |
+| #   | 特征         | 含义                              |
+| --- | ------------ | --------------------------------- |
+| 1   | **2 字节**   | `sh`（store halfword），不是 `sw` |
+| 2   | **偏移 0**   | 写在段首，不是段中                |
+| 3   | **值每次变** | 是**运行时指针的低半字**          |
 
 ### 因此两条候选被排除
 
-| 候选 | 否证 |
-| --- | --- |
+| 候选                 | 否证                                                      |
+| -------------------- | --------------------------------------------------------- |
 | **段头被当数据加载** | 那会得到 `0x2f00f99a` / `0x2f00fa00` 作为首字，实测都不是 |
-| **整段误拷贝** | 那样高半字也会变 |
+| **整段误拷贝**       | 那样高半字也会变                                          |
 
 ### 唯一的解释
 
@@ -18884,21 +18971,21 @@ g_msys_pool_list = 0x2f00fa70   ← blob 期望的"数据槽"
 
 ### 下一步（一条，直接可测）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 反汇编 `g_msys_pool_list` 的写点（搜 `sw/sh` 到 `0x2f00fa70`），检查其基址计算 | 若基址是 `0x2f00fa00`（少 `0x70`）⇒ **根因确认** |
+| #   | 动作                                                                           | 判据                                             |
+| --- | ------------------------------------------------------------------------------ | ------------------------------------------------ |
+| 1   | 反汇编 `g_msys_pool_list` 的写点（搜 `sw/sh` 到 `0x2f00fa70`），检查其基址计算 | 若基址是 `0x2f00fa00`（少 `0x70`）⇒ **根因确认** |
 
 ⇒ 这是**离线**的，且判据是**地址算术**，不是猜测。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
-| **根因 5** | 🔍 **机制已定死：`sh` 写指针低半到 `0x2f00fa00`** |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 259 |
+| 类别                  | 数量                                              |
+| --------------------- | ------------------------------------------------- |
+| **根因 1–4**          | ✅ 已验证                                         |
+| **根因 5**            | 🔍 **机制已定死：`sh` 写指针低半到 `0x2f00fa00`** |
+| **因仪器/自证而撤回** | 11                                                |
+| 撤回总数              | 103                                               |
+| 自我纠正              | 259                                               |
 
 ## 否定：`.iram_blobs` 里**没有**指向该范围的 store
 
@@ -18922,11 +19009,11 @@ addr = 0x2f010000 + imm，筛选 0x2f00fa00 .. 0x2f00fad0
 
 ### 因此写者只剩三种可能
 
-| # | 可能 | 说明 |
-| --- | --- | --- |
-| 1 | **ROM 代码**（不在我们的镜像里）| 无法静态扫 |
-| 2 | 经**指针间接写**（`sw a1, 0(a0)`，`a0` 指向该段）| 静态扫不到常量 |
-| 3 | 基址来自**别的常量**（如 `0x2f00f000` + `0xa70` 不可行，但可 `0x2f00f000`+`0xa00`）| 我的扫描只试了 `0x2f010` |
+| #   | 可能                                                                                | 说明                     |
+| --- | ----------------------------------------------------------------------------------- | ------------------------ |
+| 1   | **ROM 代码**（不在我们的镜像里）                                                    | 无法静态扫               |
+| 2   | 经**指针间接写**（`sw a1, 0(a0)`，`a0` 指向该段）                                   | 静态扫不到常量           |
+| 3   | 基址来自**别的常量**（如 `0x2f00f000` + `0xa70` 不可行，但可 `0x2f00f000`+`0xa00`） | 我的扫描只试了 `0x2f010` |
 
 ⇒ **第 3 条是我的扫描盲点**：`0x2f00fa00` 可以编码为
 `lui 0x2f00f` + `addi 0xa00`（`0xa00` ≤ `0x7ff` ✓）。
@@ -18936,10 +19023,10 @@ addr = 0x2f010000 + imm，筛选 0x2f00fa00 .. 0x2f00fad0
 
 对 `0x2f00f000` 作同样的扫描：
 
-| 常量写法 | 可覆盖的地址 |
-| --- | --- |
+| 常量写法                                | 可覆盖的地址               |
+| --------------------------------------- | -------------------------- |
 | `lui 0x2f00f` + `imm ∈ [-0x800, 0x7ff]` | `0x2f00e800 .. 0x2f00f7ff` |
-| + `addi` 链 | 更广 |
+| + `addi` 链                             | 更广                       |
 
 ⇒ 注意：`0x2f00fa00` **超出** `0x2f00f7ff` ⇒ 单靠 `lui 0x2f00f` **够不到**
 ⇒ 必须 `lui 0x2f010` + 负偏移（`0x2f010000 - 0x600 = 0x2f00fa00` ⇒ imm = `-0x600` ✓）
@@ -18949,25 +19036,25 @@ addr = 0x2f010000 + imm，筛选 0x2f00fa00 .. 0x2f00fad0
 
 ### 因此真正的结论是：**静态扫描不足以定位**，需动态手段
 
-| 手段 | 说明 |
-| --- | --- |
-| **写监视**（MPU/硬件）| 若芯片支持区域写保护 |
-| 或在**候选写点**插入检查（改 `sw` 前后的寄存器）| 侵入性大 |
-| **trap 时读 `s0`/`a0` 等寄存器**（已在打印）| 若写者在 trap 前刚跑过，寄存器里可能留着该地址 |
+| 手段                                             | 说明                                           |
+| ------------------------------------------------ | ---------------------------------------------- |
+| **写监视**（MPU/硬件）                           | 若芯片支持区域写保护                           |
+| 或在**候选写点**插入检查（改 `sw` 前后的寄存器） | 侵入性大                                       |
+| **trap 时读 `s0`/`a0` 等寄存器**（已在打印）     | 若写者在 trap 前刚跑过，寄存器里可能留着该地址 |
 
 ⇒ 现有 trap 行已打印 `a3/a4/a5/a6/a7` 与 `s0`。
 ⇒ 若 `a5`/`s0` 接近 `0x2f00faxx`，就是线索。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
-| **根因 5（`sh` 写指针低半到 `0x2f00fa00`）** | 🔍 机制定死；写者需动态手段 |
-| **静态扫描** | ❌ 不足（ROM/间接写/距离远）|
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 260 |
+| 类别                                         | 数量                         |
+| -------------------------------------------- | ---------------------------- |
+| **根因 1–4**                                 | ✅ 已验证                    |
+| **根因 5（`sh` 写指针低半到 `0x2f00fa00`）** | 🔍 机制定死；写者需动态手段  |
+| **静态扫描**                                 | ❌ 不足（ROM/间接写/距离远） |
+| **因仪器/自证而撤回**                        | 11                           |
+| 撤回总数                                     | 103                          |
+| 自我纠正                                     | 260                          |
 
 ## 🎯 寄存器线索：`a1 = 0x2f00fa00`，且故障在**另一个函数入口**
 
@@ -18981,29 +19068,29 @@ RG ra=4006e854 t0=4 t1=2f02c050 t2=5f5d1f4d
 
 ### 符号归属
 
-| 寄存器/CSR | 值 | 符号 |
-| --- | --- | --- |
-| `mepc` | `0x4005a26c` | **`ble_bb_cte_set_cte_en`**（**正好是函数入口**）|
-| `ra` | `0x4006e854` | `sched.trampoline`（`0x4006e7ca`）之后 |
-| **`a1`** | **`0x2f00fa00`** | **正是被改坏的睡眠段地址** |
+| 寄存器/CSR | 值               | 符号                                              |
+| ---------- | ---------------- | ------------------------------------------------- |
+| `mepc`     | `0x4005a26c`     | **`ble_bb_cte_set_cte_en`**（**正好是函数入口**） |
+| `ra`       | `0x4006e854`     | `sched.trampoline`（`0x4006e7ca`）之后            |
+| **`a1`**   | **`0x2f00fa00`** | **正是被改坏的睡眠段地址**                        |
 
 ### 三条结论
 
-| # | 结论 |
-| --- | --- |
-| 1 | 故障发生在**另一个函数的入口**（`ble_bb_cte_set_cte_en`），与睡眠段同形态 |
-| 2 | **`a1` 持有那个被改坏的地址** ⇒ 它是被调函数的**参数** |
-| 3 | `a4 = 0x770001` ← 与第一次观察到的损坏值 `0x0377` **同带 `0x77`** |
+| #   | 结论                                                                      |
+| --- | ------------------------------------------------------------------------- |
+| 1   | 故障发生在**另一个函数的入口**（`ble_bb_cte_set_cte_en`），与睡眠段同形态 |
+| 2   | **`a1` 持有那个被改坏的地址** ⇒ 它是被调函数的**参数**                    |
+| 3   | `a4 = 0x770001` ← 与第一次观察到的损坏值 `0x0377` **同带 `0x77`**         |
 
 ⇒ **"函数入口被改成非法指令"这个形态已出现至少两次**
 （`0x2f00fa00`、`0x4005a26c`）⇒ 不是单点，而是**一类**。
 
 ### `a4 = 0x770001` 与 `0x0377` 的联系
 
-| 值 | 位模式 |
-| --- | --- |
-| `a4` = `0x770001` | `0111 0111 0000 0000 0000 0001` |
-| 曾观察到的低半 = `0x0377` | `0000 0011 0111 0111` |
+| 值                        | 位模式                          |
+| ------------------------- | ------------------------------- |
+| `a4` = `0x770001`         | `0111 0111 0000 0000 0000 0001` |
+| 曾观察到的低半 = `0x0377` | `0000 0011 0111 0111`           |
 
 ⇒ `0x770001` 的高字节是 `0x77`，而 `0x0377` 的低字节也是 `0x77`。
 
@@ -19011,75 +19098,75 @@ RG ra=4006e854 t0=4 t1=2f02c050 t2=5f5d1f4d
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在 `ble_bb_cte_set_cte_en` 入口采样其首半字，与 `app.bin` 比对 | 若同样被改 ⇒ **同一写者在多处动手** |
-| 2 | 追踪 `a1 = 0x2f00fa00` 的来源（谁把该地址作为参数传入）| 该调用点就是写者或写者的邻居 |
+| #   | 动作                                                           | 判据                                |
+| --- | -------------------------------------------------------------- | ----------------------------------- |
+| 1   | 在 `ble_bb_cte_set_cte_en` 入口采样其首半字，与 `app.bin` 比对 | 若同样被改 ⇒ **同一写者在多处动手** |
+| 2   | 追踪 `a1 = 0x2f00fa00` 的来源（谁把该地址作为参数传入）        | 该调用点就是写者或写者的邻居        |
 
 ⇒ **第 2 条是关键**：`a1` 在 trap 时仍是那个值，说明**调用者的参数计算**里就有它。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                             | 数量                                             |
+| -------------------------------- | ------------------------------------------------ |
+| **根因 1–4**                     | ✅ 已验证                                        |
 | **根因 5（代码被 16 位写改坏）** | 🔍 机制定死；`a1` 指向该地址；**已见两处同形态** |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 261 |
+| **因仪器/自证而撤回**            | 11                                               |
+| 撤回总数                         | 103                                              |
+| 自我纠正                         | 261                                              |
 
 ## 静态定位的终点：写者**不在我们的镜像里**
 
 ### 三连否定（依次排除）
 
-| # | 扫描 | 结果 |
-| --- | --- | --- |
-| 1 | `.flash.text` 里引用 `0x2f00fa70`/`0x2f00fa00` | **0** |
-| 2 | `.iram_blobs` 里 `lui 0x2f010` + 6 条内 store 到该范围 | **0** |
-| 3 | 所有 `.iram*` 段里 **`sh` 且 `imm ∈ {-0x590,-0x594,-0x5f0,-0x600}`** | **0** |
+| #   | 扫描                                                                 | 结果  |
+| --- | -------------------------------------------------------------------- | ----- |
+| 1   | `.flash.text` 里引用 `0x2f00fa70`/`0x2f00fa00`                       | **0** |
+| 2   | `.iram_blobs` 里 `lui 0x2f010` + 6 条内 store 到该范围               | **0** |
+| 3   | 所有 `.iram*` 段里 **`sh` 且 `imm ∈ {-0x590,-0x594,-0x5f0,-0x600}`** | **0** |
 
 ⇒ **我们自己的镜像里没有任何指令能写那里。**
 
 ⇒ 写者只可能是：
 
-| # | 来源 | 为何扫不到 |
-| --- | --- | --- |
-| 1 | **ROM 代码** | 不在镜像里 |
-| 2 | 经**寄存器间接基址**（如 `mv a0, s1` 后 `sh`）| 常量扫描无效 |
-| 3 | `.flash.text` 里的**间接写** | 我第 1 项只 grep 了地址字面量 |
+| #   | 来源                                           | 为何扫不到                    |
+| --- | ---------------------------------------------- | ----------------------------- |
+| 1   | **ROM 代码**                                   | 不在镜像里                    |
+| 2   | 经**寄存器间接基址**（如 `mv a0, s1` 后 `sh`） | 常量扫描无效                  |
+| 3   | `.flash.text` 里的**间接写**                   | 我第 1 项只 grep 了地址字面量 |
 
 ### 已获得的强线索（不依赖静态扫描）
 
-| 线索 | 值 |
-| --- | --- |
-| trap 时 `a1` | **`0x2f00fa00`**（正是被改坏的地址）|
-| `a4` | `0x770001`（含非法 opcode `0x77`）|
-| 损坏形态 | **`sh`：2 字节、偏移 0、值每次变** |
-| 损坏时点 | **step 1 之前** |
-| 已见同形态处 | `0x2f00fa00`、`0x2f00f99a`、`0x4005a26c`（三个**函数入口**）|
+| 线索         | 值                                                           |
+| ------------ | ------------------------------------------------------------ |
+| trap 时 `a1` | **`0x2f00fa00`**（正是被改坏的地址）                         |
+| `a4`         | `0x770001`（含非法 opcode `0x77`）                           |
+| 损坏形态     | **`sh`：2 字节、偏移 0、值每次变**                           |
+| 损坏时点     | **step 1 之前**                                              |
+| 已见同形态处 | `0x2f00fa00`、`0x2f00f99a`、`0x4005a26c`（三个**函数入口**） |
 
 ### 下一步（唯一有判别力的动态手段）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在 `probe.run` **入口**（step 1 之前）采样三个入口首字 | 已坏 ⇒ **bootloader/ROM**；干净 ⇒ **bringup 序言** |
-| 2 | 若干净，逐条插桩 bringup 序言（`enter(1)` 之前的所有调用）| 二分出写者 |
+| #   | 动作                                                       | 判据                                               |
+| --- | ---------------------------------------------------------- | -------------------------------------------------- |
+| 1   | 在 `probe.run` **入口**（step 1 之前）采样三个入口首字     | 已坏 ⇒ **bootloader/ROM**；干净 ⇒ **bringup 序言** |
+| 2   | 若干净，逐条插桩 bringup 序言（`enter(1)` 之前的所有调用） | 二分出写者                                         |
 
 ⇒ **这是最后一次二分**：范围已从"整个系统"缩到"`probe.run` 入口到 `enter(1)` 之间"。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证 |
-| **根因 5（代码入口被 `sh` 写坏）** | 🔍 **机制定死；写者不在镜像内** |
-| **静态扫描** | ❌ 已到边界（三项全 0）|
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 262 |
+| 类别                                      | 数量                            |
+| ----------------------------------------- | ------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证                       |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证                       |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证                       |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证                       |
+| **根因 5（代码入口被 `sh` 写坏）**        | 🔍 **机制定死；写者不在镜像内** |
+| **静态扫描**                              | ❌ 已到边界（三项全 0）         |
+| **因仪器/自证而撤回**                     | 11                              |
+| 撤回总数                                  | 103                             |
+| 自我纠正                                  | 262                             |
 
 ## 🎯🎯 新证据：`mtval` 是**代码地址的低 16 位**
 
@@ -19105,10 +19192,10 @@ step    = 20 r_btdm_task_enable
 
 ⇒ 这与本会话反复出现的现象**完全同型**：
 
-| 现象 | 形态 |
-| --- | --- |
-| 睡眠段入口低半字被改 | **只改 16 位** |
-| `mtval` = `0x0000a26c` | **只有低 16 位** |
+| 现象                     | 形态               |
+| ------------------------ | ------------------ |
+| 睡眠段入口低半字被改     | **只改 16 位**     |
+| `mtval` = `0x0000a26c`   | **只有低 16 位**   |
 | 损坏值高半字恒为 `26 c2` | 高半字**未被触碰** |
 
 ⇒ ⇒ **系统里有一次针对代码地址的 16 位（半字）操作**，
@@ -19134,22 +19221,22 @@ step    = 20 r_btdm_task_enable
 
 ### 下一步（两条，仍可离线推进一部分）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 检查 `.data` 在 `0x2f00fac0` 处的值 | 若它是一个"看起来像函数指针"的字 ⇒ 被当成代码调用 |
-| 2 | 查谁会把 32 位指针**截成 16 位**（`sh` 存指针、或 `zext.h` 类操作）| 找到该代码路径即根因 |
+| #   | 动作                                                                | 判据                                              |
+| --- | ------------------------------------------------------------------- | ------------------------------------------------- |
+| 1   | 检查 `.data` 在 `0x2f00fac0` 处的值                                 | 若它是一个"看起来像函数指针"的字 ⇒ 被当成代码调用 |
+| 2   | 查谁会把 32 位指针**截成 16 位**（`sh` 存指针、或 `zext.h` 类操作） | 找到该代码路径即根因                              |
 
 ⇒ **第 1 条最省**：直接读 `app.bin` 里该地址的值。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                              | 数量                                  |
+| --------------------------------- | ------------------------------------- |
+| **根因 1–4**                      | ✅ 已验证                             |
 | **根因 5（16 位截断的代码地址）** | 🔍 **形态已收敛：低 16 位被单独使用** |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 263 |
+| **因仪器/自证而撤回**             | 11                                    |
+| 撤回总数                          | 103                                   |
+| 自我纠正                          | 263                                   |
 
 ## 🏁🏁🏁 `0x2f00fac0` 是**函数指针表**，程序把表当代码执行了
 
@@ -19167,10 +19254,10 @@ app.bin @0x2f00fac0: 02 9c 05 40 | b2 9c 05 40 | 6c a2 05 40 | 02 a4 05 40
 
 ### 两个数字对上
 
-| 值 | 对应 |
-| --- | --- |
-| `0x4005a26c`（表项 +8）| 上一轮解析出的符号地址 |
-| `mtval = 0x0000a26c` | **该项的低 16 位** |
+| 值                      | 对应                   |
+| ----------------------- | ---------------------- |
+| `0x4005a26c`（表项 +8） | 上一轮解析出的符号地址 |
+| `mtval = 0x0000a26c`    | **该项的低 16 位**     |
 
 ⇒ `mtval` **就是表项的低半** ⇒ 与"16 位截断"一致。
 
@@ -19192,23 +19279,23 @@ mepc = 0x2f00fac0   ⇒  在**表地址本身**取指
 
 ### 下一步（明确、离线）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 查 `global_ext_bb_funcs` 的**使用点**（谁把它当函数调用）| 找到"把表当函数"的那条路径 |
-| 2 | 同表的其它项是否也出现在故障地址里 | 若是 ⇒ 系统性地用错了 |
+| #   | 动作                                                      | 判据                       |
+| --- | --------------------------------------------------------- | -------------------------- |
+| 1   | 查 `global_ext_bb_funcs` 的**使用点**（谁把它当函数调用） | 找到"把表当函数"的那条路径 |
+| 2   | 同表的其它项是否也出现在故障地址里                        | 若是 ⇒ 系统性地用错了      |
 
 ⇒ **`global_ext_bb_funcs` 已在符号表里**（`0x2f00fa9c`，`D`），
 说明它是**我们链接进来的定义**，不是 blob 内部的 ⇒ **可以查我们自己的代码**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证 |
+| 类别                                 | 数量                                 |
+| ------------------------------------ | ------------------------------------ |
+| **根因 1–4**                         | ✅ 已验证                            |
 | **根因 5（把函数指针表当函数执行）** | ✅ **形态确认（表地址 + 表项低半）** |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 264 |
+| **因仪器/自证而撤回**                | 11                                   |
+| 撤回总数                             | 103                                  |
+| 自我纠正                             | 264                                  |
 
 ## 静态分析到此为止：表**属于 blob**，不在我们的源码里
 
@@ -19225,21 +19312,21 @@ grep global_ext_bb_funcs  →  components/ boards/ 里 **0 处**
 
 ### 因此本会话的静态手段**已全部用尽**
 
-| 手段 | 结果 |
-| --- | --- |
-| 符号解析（`nm -n`）| ✅ 完成（定位到 `ble_bb_cte_set_cte_en`、`sched.trampoline`）|
-| 反汇编 `.flash.text` | ✅ 完成（无引用）|
-| 反汇编/字节扫 `.iram*` | ✅ 完成（无匹配 store）|
-| 读 `app.bin` 数据 | ✅ 完成（表内容已读出）|
-| 源码检索 | ❌ **表不在源码里** |
+| 手段                   | 结果                                                          |
+| ---------------------- | ------------------------------------------------------------- |
+| 符号解析（`nm -n`）    | ✅ 完成（定位到 `ble_bb_cte_set_cte_en`、`sched.trampoline`） |
+| 反汇编 `.flash.text`   | ✅ 完成（无引用）                                             |
+| 反汇编/字节扫 `.iram*` | ✅ 完成（无匹配 store）                                       |
+| 读 `app.bin` 数据      | ✅ 完成（表内容已读出）                                       |
+| 源码检索               | ❌ **表不在源码里**                                           |
 
 ### 剩下的判断
 
-| 项 | 结论 |
-| --- | --- |
+| 项       | 结论                                              |
+| -------- | ------------------------------------------------- |
 | 故障形态 | ✅ **把函数指针表当地址执行**，`mtval` = 表项低半 |
-| 谁造成 | ❌ **在 blob/ROM 内部，静态不可达** |
-| 需要什么 | **硬件写监视** 或 **vendor 文档/源码** |
+| 谁造成   | ❌ **在 blob/ROM 内部，静态不可达**               |
+| 需要什么 | **硬件写监视** 或 **vendor 文档/源码**            |
 
 ### 这对项目意味着什么
 
@@ -19254,26 +19341,26 @@ grep global_ext_bb_funcs  →  components/ boards/ 里 **0 处**
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1（四项时钟配置）** | ✅ 已验证并修复 |
-| **根因 2（任务栈未初始化）** | ✅ 已验证并修复 |
-| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证并修复 |
-| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证并修复 |
-| **根因 5（函数指针表被当函数执行）** | 🔍 **形态确认；在 blob 内部，静态不可达** |
-| **静态分析** | ✅ 已用尽 |
-| **因仪器/自证而撤回** | 11 |
-| 撤回总数 | 103 |
-| 自我纠正 | 265 |
+| 类别                                      | 数量                                      |
+| ----------------------------------------- | ----------------------------------------- |
+| **根因 1（四项时钟配置）**                | ✅ 已验证并修复                           |
+| **根因 2（任务栈未初始化）**              | ✅ 已验证并修复                           |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证并修复                           |
+| **根因 4（`r_conn_stack_enable` 空桩）**  | ✅ 已验证并修复                           |
+| **根因 5（函数指针表被当函数执行）**      | 🔍 **形态确认；在 blob 内部，静态不可达** |
+| **静态分析**                              | ✅ 已用尽                                 |
+| **因仪器/自证而撤回**                     | 11                                        |
+| 撤回总数                                  | 103                                       |
+| 自我纠正                                  | 265                                       |
 
 ## ❌ 撤回"16 位截断"框架 —— `mtval` 只是**第一半字零扩展**
 
 ### 两条读数已经足够解释
 
-| 来源 | 值 | 说明 |
-| --- | --- | --- |
-| `WT` 读 mepc 处**整字** | **`0x4005a26c`**（字节 `6c a2 05 40`）| 内存里就是一个完整指针 |
-| `!!` 的 `mtval` | **`0x0000a26c`** | **就是上者的第一半字，零扩展** |
+| 来源                    | 值                                     | 说明                           |
+| ----------------------- | -------------------------------------- | ------------------------------ |
+| `WT` 读 mepc 处**整字** | **`0x4005a26c`**（字节 `6c a2 05 40`） | 内存里就是一个完整指针         |
+| `!!` 的 `mtval`         | **`0x0000a26c`**                       | **就是上者的第一半字，零扩展** |
 
 ⇒ 本核对 `cause=2` 的 `mtval` 写的是**零扩展后的 16 位非法半字**，不是完整指令编码。
 
@@ -19309,20 +19396,20 @@ ra = 0x4006e854 —— 落在**我们自己的调度器**里
 
 ### 下一步（两条，明确）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | dump 任务的**调用栈** `[f_sp, f_sp+32)`（这是 arena 任务栈，不是 trap 栈）| 解出做了 `jr` 的那条链 |
-| 2 | 对比 `esp_ble_register_bb_funcs` 写表时的布局 与 消费端的索引 | 不一致即根因 |
+| #   | 动作                                                                       | 判据                   |
+| --- | -------------------------------------------------------------------------- | ---------------------- |
+| 1   | dump 任务的**调用栈** `[f_sp, f_sp+32)`（这是 arena 任务栈，不是 trap 栈） | 解出做了 `jr` 的那条链 |
+| 2   | 对比 `esp_ble_register_bb_funcs` 写表时的布局 与 消费端的索引              | 不一致即根因           |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
+| 类别                                   | 数量                                    |
+| -------------------------------------- | --------------------------------------- |
+| **根因 1–4**                           | ✅ 已验证并修复                         |
 | **根因 5（表槽地址被当函数地址使用）** | ✅ **形态确认；源头指向 step 9 注册表** |
-| **已撤回的框架** | 13（新增"16 位截断"）|
-| 撤回总数 | 104 |
-| 自我纠正 | 266 |
+| **已撤回的框架**                       | 13（新增"16 位截断"）                   |
+| 撤回总数                               | 104                                     |
+| 自我纠正                               | 266                                     |
 
 ## 🏁🏁🏁 答案在栈里：任务栈**几乎全是投毒值** ⇒ 初始上下文从未被正确设置
 
@@ -19335,12 +19422,12 @@ FR [sp..+64) = a5a5a5a5, 73207462, 64656863, e42a203a, 8ae5bbbb, 93bde4a1, e580b
 
 ### 解读
 
-| 观察 | 含义 |
-| --- | --- |
-| `[sp+0] = 0xa5a5a5a5` | 栈顶第一个字**从未被写过** |
-| 16 个字里 **10 个**是 `a5a5a5a5` | 任务**基本没在自己栈上运行** |
-| `73207462` → `62 74 20 73` = **`"bt s"`** | 是**日志字符串碎片** |
-| `64656863` → `63 68 65 64` = **`"ched"`** | 合起来 = **`"bt sched"`** |
+| 观察                                      | 含义                         |
+| ----------------------------------------- | ---------------------------- |
+| `[sp+0] = 0xa5a5a5a5`                     | 栈顶第一个字**从未被写过**   |
+| 16 个字里 **10 个**是 `a5a5a5a5`          | 任务**基本没在自己栈上运行** |
+| `73207462` → `62 74 20 73` = **`"bt s"`** | 是**日志字符串碎片**         |
+| `64656863` → `63 68 65 64` = **`"ched"`** | 合起来 = **`"bt sched"`**    |
 
 ⇒ **`a5a5a5a5` 是我加的投毒值** ⇒ 说明这块栈**在任务运行期间几乎没被写过**。
 
@@ -19354,10 +19441,10 @@ FR [sp..+64) = a5a5a5a5, 73207462, 64656863, e42a203a, 8ae5bbbb, 93bde4a1, e580b
 
 ⇒ 这与**根因 2（任务栈未清零）属于同一族**，但**更深一层**：
 
-| # | 层次 | 状态 |
-| --- | --- | --- |
-| 根因 2 | 栈**字节**未初始化 | ✅ 已修（投毒/清零） |
-| **根因 5** | 栈**内容**从未被写成"初始上下文" | ❌ **这才是真问题** |
+| #          | 层次                             | 状态                 |
+| ---------- | -------------------------------- | -------------------- |
+| 根因 2     | 栈**字节**未初始化               | ✅ 已修（投毒/清零） |
+| **根因 5** | 栈**内容**从未被写成"初始上下文" | ❌ **这才是真问题**  |
 
 ⇒ 投毒让根因 5 **暴露得更清楚**：栈是毒的 ⇒ 说明 **没有人往那里放过上下文**。
 
@@ -19370,22 +19457,22 @@ FR [sp..+64) = a5a5a5a5, 73207462, 64656863, e42a203a, 8ae5bbbb, 93bde4a1, e580b
 
 ### 下一步（明确）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 检查 `sched.taskCreate` 是否**写入任务的初始帧**（入口 PC、`sp`、`ra`）| 若没有写 ⇒ 这就是根因 |
-| 2 | 对照 `osal.taskCreate` 传入的 `fn_`/`arg` 是否真的落进了那个初始帧 | `a0`/入口地址应为 `fn_` |
-| 3 | 确认 trampoline 期望的**帧布局**（`mepc`/`sp` 从哪个偏移恢复）| 与写入端不一致即根因 |
+| #   | 动作                                                                    | 判据                    |
+| --- | ----------------------------------------------------------------------- | ----------------------- |
+| 1   | 检查 `sched.taskCreate` 是否**写入任务的初始帧**（入口 PC、`sp`、`ra`） | 若没有写 ⇒ 这就是根因   |
+| 2   | 对照 `osal.taskCreate` 传入的 `fn_`/`arg` 是否真的落进了那个初始帧      | `a0`/入口地址应为 `fn_` |
+| 3   | 确认 trampoline 期望的**帧布局**（`mepc`/`sp` 从哪个偏移恢复）          | 与写入端不一致即根因    |
 
 ⇒ **第 1 条最可能**：`taskCreate` 分配了栈，但**没有初始化栈帧**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
+| 类别                               | 数量                              |
+| ---------------------------------- | --------------------------------- |
+| **根因 1–4**                       | ✅ 已验证并修复                   |
 | **根因 5（任务初始上下文未设置）** | ✅ **栈内容已证实（满是投毒值）** |
-| **撤回总数** | 104 |
-| **自我纠正** | 267 |
+| **撤回总数**                       | 104                               |
+| **自我纠正**                       | 267                               |
 
 ## ❌ 否证"段重叠/填充尾巴"假设
 
@@ -19393,11 +19480,11 @@ FR [sp..+64) = a5a5a5a5, 73207462, 64656863, e42a203a, 8ae5bbbb, 93bde4a1, e580b
 
 `esp_image` 把段长向上取整到 4 字节 ⇒ 相邻 SRAM 段**重叠 2 字节**：
 
-| 段 | load | len | 覆盖到 |
-| --- | --- | --- | --- |
+| 段   | load         | len     | 覆盖到       |
+| ---- | ------------ | ------- | ------------ |
 | seg5 | `0x2f00f88c` | `0x110` | `0x2f00f99b` |
-| seg6 | `0x2f00f99a` | `0x68` | `0x2f00fa01` |
-| seg7 | `0x2f00fa00` | `0x6c` | — |
+| seg6 | `0x2f00f99a` | `0x68`  | `0x2f00fa01` |
+| seg7 | `0x2f00fa00` | `0x6c`  | —            |
 
 ⇒ 前段的**填充尾巴**覆盖后段首半字 ⇒ 正好"低半坏、高半好"。
 
@@ -19436,14 +19523,14 @@ seg7 首 4 字节     : 41 11 26 c2
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
-| **根因 5（任务初始上下文未设置）** | ✅ **栈内容已证实** |
-| **已否证** | 段重叠/填充（填充静态，解释不了变化）|
-| **孤儿段放置** | 🔍 结构不一致，仍是有效线索 |
-| **撤回总数** | 104 |
-| **自我纠正** | 268 |
+| 类别                               | 数量                                  |
+| ---------------------------------- | ------------------------------------- |
+| **根因 1–4**                       | ✅ 已验证并修复                       |
+| **根因 5（任务初始上下文未设置）** | ✅ **栈内容已证实**                   |
+| **已否证**                         | 段重叠/填充（填充静态，解释不了变化） |
+| **孤儿段放置**                     | 🔍 结构不一致，仍是有效线索           |
+| **撤回总数**                       | 104                                   |
+| **自我纠正**                       | 268                                   |
 
 ## 🔎 `initContext` 与 `swapAsm` **一致** ⇒ 帧设置没问题；错的是**被恢复的上下文本身**
 
@@ -19479,40 +19566,40 @@ lw s0..s11, 0..44(sp)
 
 `FR [sp..+64)` 全是 `a5a5a5a5`，而 `f_sp = 0x2f02c090`：
 
-| 若 | 则 `FR` 应看到 |
-| --- | --- |
-| `sp` = 初始帧 | `0,0,...,0` 与 `ra=trampoline` |
-| 任务跑过并压栈 | 栈帧内容 + 返回地址 |
-| **实测：纯毒** | ⇒ **这块区域从未被写过** |
+| 若             | 则 `FR` 应看到                 |
+| -------------- | ------------------------------ |
+| `sp` = 初始帧  | `0,0,...,0` 与 `ra=trampoline` |
+| 任务跑过并压栈 | 栈帧内容 + 返回地址            |
+| **实测：纯毒** | ⇒ **这块区域从未被写过**       |
 
 ⇒ ⇒ **`sp` 指向一块没人用过的区域** ⇒ **被恢复的 `sp` 值本身是错的**。
 
 ### 因此问题在"上下文的选择/记账"，不在帧布局
 
-| 候选 | 说明 |
-| --- | --- |
-| `entering` 指向错的 `ctx` | `trampoline` 从它取 `entry`/`arg` |
-| `lw sp, 0(a1)` 的 `a1` 指错 | 换了 `ctx` 但 `sp` 来自别处 |
-| 任务被创建了**两次** | 第二个 `taskCreate` 拿到同一块栈但覆盖了 `ctx` |
+| 候选                        | 说明                                           |
+| --------------------------- | ---------------------------------------------- |
+| `entering` 指向错的 `ctx`   | `trampoline` 从它取 `entry`/`arg`              |
+| `lw sp, 0(a1)` 的 `a1` 指错 | 换了 `ctx` 但 `sp` 来自别处                    |
+| 任务被创建了**两次**        | 第二个 `taskCreate` 拿到同一块栈但覆盖了 `ctx` |
 
 ⇒ **`entering` 与 `current` 的记账**在本会话已有先例
 （`startScheduler` 注释里就写着"`current` 必须**在切换前**指向即将运行的那个上下文"）。
 
 ### 下一步（最省）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在 `trampoline` 入口打印 `ctx.sp` 与 `sp`（实际值）| 若不等 ⇒ `lw sp` 与 `ctx.sp` 脱节 |
-| 2 | 打印 `ctx.entry`/`ctx.arg` | 是否与传入值一致 |
+| #   | 动作                                                | 判据                              |
+| --- | --------------------------------------------------- | --------------------------------- |
+| 1   | 在 `trampoline` 入口打印 `ctx.sp` 与 `sp`（实际值） | 若不等 ⇒ `lw sp` 与 `ctx.sp` 脱节 |
+| 2   | 打印 `ctx.entry`/`ctx.arg`                          | 是否与传入值一致                  |
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
+| 类别                     | 数量                                  |
+| ------------------------ | ------------------------------------- |
+| **根因 1–4**             | ✅ 已验证并修复                       |
 | **根因 5（任务上下文）** | 🔍 帧布局正确；错在**被恢复的上下文** |
-| **撤回总数** | 104 |
-| **自我纠正** | 269 |
+| **撤回总数**             | 104                                   |
+| **自我纠正**             | 269                                   |
 
 ## ❌❌ 撤回"任务上下文从未初始化"（`645dd47`）
 
@@ -19529,11 +19616,11 @@ FR 里：e5 8a bb | e4 bd 93 | e5 bc 80 | e6 89 a7
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| "任务初始上下文从未被设置" | ❌ **撤回** |
-| "`initContext` 没写帧" | ❌ **撤回**（它写了，且任务跑了）|
-| "帧布局不一致" | ❌ 已否证（13 字双方一致）|
+| 结论                       | 状态                              |
+| -------------------------- | --------------------------------- |
+| "任务初始上下文从未被设置" | ❌ **撤回**                       |
+| "`initContext` 没写帧"     | ❌ **撤回**（它写了，且任务跑了） |
+| "帧布局不一致"             | ❌ 已否证（13 字双方一致）        |
 
 ⇒ **上下文初始化是正确的。**
 
@@ -19551,31 +19638,31 @@ FR 里：e5 8a bb | e4 bd 93 | e5 bc 80 | e6 89 a7
 
 ### 根因 5 回到：**运行时经错误指针的间接跳转**
 
-| 线索 | 状态 |
-| --- | --- |
-| 任务**确实在跑**（trampoline + entry 都执行过）| ✅ |
-| 最终在 **blob entry 内部**跳到 `0x2f00fac0`（bb-funcs 表）| ✅ |
-| `ra` 保留在调度器 ⇒ 是 `jr` 而非 `jalr` | ✅ |
-| **那个错误指针从哪来** | ❌ **未定** |
+| 线索                                                       | 状态        |
+| ---------------------------------------------------------- | ----------- |
+| 任务**确实在跑**（trampoline + entry 都执行过）            | ✅          |
+| 最终在 **blob entry 内部**跳到 `0x2f00fac0`（bb-funcs 表） | ✅          |
+| `ra` 保留在调度器 ⇒ 是 `jr` 而非 `jalr`                    | ✅          |
+| **那个错误指针从哪来**                                     | ❌ **未定** |
 
 ### 两条仍然有效的线索
 
-| # | 线索 |
-| --- | --- |
-| a | **step 1 之前**睡眠段入口已被改（时间线已定）|
-| b | 被改的值成为跳转目标的**同族** |
+| #   | 线索                                          |
+| --- | --------------------------------------------- |
+| a   | **step 1 之前**睡眠段入口已被改（时间线已定） |
+| b   | 被改的值成为跳转目标的**同族**                |
 
 ⇒ 上下文记账这条线**关闭**。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
-| **根因 5** | 🔍 **运行时经错误指针间接跳转**；任务确实在跑 |
-| **因读法自证而撤回** | **12** |
-| 撤回总数 | **105** |
-| 自我纠正 | **270** |
+| 类别                 | 数量                                          |
+| -------------------- | --------------------------------------------- |
+| **根因 1–4**         | ✅ 已验证并修复                               |
+| **根因 5**           | 🔍 **运行时经错误指针间接跳转**；任务确实在跑 |
+| **因读法自证而撤回** | **12**                                        |
+| 撤回总数             | **105**                                       |
+| 自我纠正             | **270**                                       |
 
 ## 🏁 决定性：标记**从未打印**，但字节在栈上 ⇒ 故障在 `trampoline` 的**日志路径**里
 
@@ -19618,9 +19705,9 @@ trampoline 起点 = 0x4006e7ca
 
 ### 这条线索为什么以前没看见
 
-| 原因 |
-| --- |
-| 我一直在查"任务体跑飞"，而**任务体根本没开始** |
+| 原因                                                 |
+| ---------------------------------------------------- |
+| 我一直在查"任务体跑飞"，而**任务体根本没开始**       |
 | 日志标记缺失被当成"日志被截断"，而不是"这行没执行完" |
 
 ⇒ 与**第 22 类观测错误**（"缺行 ≠ 没发生"）**正好相反的一次**：
@@ -19628,23 +19715,23 @@ trampoline 起点 = 0x4006e7ca
 
 ### 下一步（明确）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 查 `trampoline` 里 `logLine` 的调用点，看它如何取得 writer/vtable | 若 vtable 指针来自未初始化字段 ⇒ 根因 |
-| 2 | 对照 `osal.logLine` 在**任务上下文**里与在**主上下文**里的差异 | 差异即根因 |
+| #   | 动作                                                              | 判据                                  |
+| --- | ----------------------------------------------------------------- | ------------------------------------- |
+| 1   | 查 `trampoline` 里 `logLine` 的调用点，看它如何取得 writer/vtable | 若 vtable 指针来自未初始化字段 ⇒ 根因 |
+| 2   | 对照 `osal.logLine` 在**任务上下文**里与在**主上下文**里的差异    | 差异即根因                            |
 
 ⇒ **第 2 条最可能**：我们在主上下文里打印无数次都正常，
 **第一次在任务上下文里打印**就崩 ⇒ 差异在"任务里的 writer 初始化"。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
+| 类别                                               | 数量                                      |
+| -------------------------------------------------- | ----------------------------------------- |
+| **根因 1–4**                                       | ✅ 已验证并修复                           |
 | **根因 5（任务上下文里首次打日志时经坏指针跳转）** | ✅ **位置已定到 `trampoline` 的日志路径** |
-| **因读法自证而撤回** | 12 |
-| 撤回总数 | 105 |
-| 自我纠正 | 271 |
+| **因读法自证而撤回**                               | 12                                        |
+| 撤回总数                                           | 105                                       |
+| 自我纠正                                           | 271                                       |
 
 ## 🎯🎯🎯 决定性算术：两个睡眠段的首半字被施加了**同一个 XOR `0xf220`**
 
@@ -19662,10 +19749,10 @@ trampoline 起点 = 0x4006e7ca
 
 ### 因此
 
-| 结论 | 说明 |
-| --- | --- |
-| 不是"随机写坏" | 随机写不会给出**同一个** XOR |
-| 不是"整段误拷" | 那样高半字也会变 |
+| 结论                       | 说明                               |
+| -------------------------- | ---------------------------------- |
+| 不是"随机写坏"             | 随机写不会给出**同一个** XOR       |
+| 不是"整段误拷"             | 那样高半字也会变                   |
 | **是一个固定的 16 位变换** | 对**首半字**、对**多个段**统一施加 |
 
 ⇒ 这正是**厂商的运行时 patch**：对睡眠代码的首字做一次固定变换
@@ -19708,11 +19795,11 @@ trampoline 起点 = 0x4006e7ca
 
 ### 修复方向
 
-| # | 修法 |
-| --- | --- |
-| **A** | 在 `s31.ld` 里**显式收集 `*(.iram_btslp*)`**（对齐到 4，避免 2 字节重叠）|
-| **B** | 或按 IDF 的做法：让它们**留在 flash**，由厂商例程运行时拷贝 |
-| **C** | 核对 `CONFIG_BT_CTRL_SLEEP_RELATED_CODE_IN_IRAM` 与我们的放置是否一致 |
+| #     | 修法                                                                      |
+| ----- | ------------------------------------------------------------------------- |
+| **A** | 在 `s31.ld` 里**显式收集 `*(.iram_btslp*)`**（对齐到 4，避免 2 字节重叠） |
+| **B** | 或按 IDF 的做法：让它们**留在 flash**，由厂商例程运行时拷贝               |
+| **C** | 核对 `CONFIG_BT_CTRL_SLEEP_RELATED_CODE_IN_IRAM` 与我们的放置是否一致     |
 
 ⇒ **B 更接近上游语义**，但需确认我们的 blob 是否包含那段拷贝例程。
 
@@ -19725,23 +19812,23 @@ trampoline 起点 = 0x4006e7ca
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **根因 1–4** | ✅ 已验证并修复 |
+| 类别                                                 | 数量                                |
+| ---------------------------------------------------- | ----------------------------------- |
+| **根因 1–4**                                         | ✅ 已验证并修复                     |
 | **根因 5（`.iram_btslp*` 孤儿段 → 厂商拷贝取错源）** | ✅ **XOR 掩码一致已证明是固定变换** |
-| **因读法自证而撤回** | 12 |
-| 撤回总数 | 105 |
-| 自我纠正 | 272 |
+| **因读法自证而撤回**                                 | 12                                  |
+| 撤回总数                                             | 105                                 |
+| 自我纠正                                             | 272                                 |
 
 ## ⚠️ 措辞更正：两处"已修复"应改为"已定位 / workaround"
 
 ### 1. `@memset(slice, 0xA5)` 是**诊断用投毒**，不是修复
 
-| 事实 | 说明 |
-| --- | --- |
-| 投毒后**故障仍然复现** | 只是症状从"残留垃圾"变成"统一模式" |
-| 它让根因 5 **更容易看见** | 栈是纯毒 ⇒ 证明"没人把初始上下文放在最深处" |
-| 但**它没有修好任何东西** | 真正的上下文由 `initContext` 写入，那本来就是对的 |
+| 事实                      | 说明                                              |
+| ------------------------- | ------------------------------------------------- |
+| 投毒后**故障仍然复现**    | 只是症状从"残留垃圾"变成"统一模式"                |
+| 它让根因 5 **更容易看见** | 栈是纯毒 ⇒ 证明"没人把初始上下文放在最深处"       |
+| 但**它没有修好任何东西**  | 真正的上下文由 `initContext` 写入，那本来就是对的 |
 
 ⇒ 之前写的"根因 2 已验证并修复（崩溃消失）"**过强**。
 
@@ -19751,12 +19838,12 @@ trampoline 起点 = 0x4006e7ca
 
 ### 2. `esp_phy_enable` 是 **workaround**，不是修复
 
-| 项 | 状态 |
-| --- | --- |
-| 冻结点 `PROVIDE(esp_phy_enable = 0x2f00e756)` | ✅ 已删除（它落进别的函数体中间）|
-| 替代实现 | **原来只是 log-only 空桩** ⇒ 那个 PHY 步骤**什么都没做** |
-| IDF 的真身 | `esp_phy/src/phy_init.c:324`，普通 C 代码 |
-| **真正的缺口** | **`register_chipv7_phy`（首次标定）缺失** ⇒ **仍开着** |
+| 项                                            | 状态                                                     |
+| --------------------------------------------- | -------------------------------------------------------- |
+| 冻结点 `PROVIDE(esp_phy_enable = 0x2f00e756)` | ✅ 已删除（它落进别的函数体中间）                        |
+| 替代实现                                      | **原来只是 log-only 空桩** ⇒ 那个 PHY 步骤**什么都没做** |
+| IDF 的真身                                    | `esp_phy/src/phy_init.c:324`，普通 C 代码                |
+| **真正的缺口**                                | **`register_chipv7_phy`（首次标定）缺失** ⇒ **仍开着**   |
 
 ⇒ 本轮把空桩换成了**我们确实拥有的序列**（ICG / `phy_wifi_enable_set(1)` /
 `set_bb_wdg` / 重申 `CLK_CONF1`），并在日志里明确写出**标定仍然缺失**。
@@ -19765,27 +19852,27 @@ trampoline 起点 = 0x4006e7ca
 
 ### 修正后的总表
 
-| # | 项 | 准确状态 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ **已验证并修复**（`INITED` 可复现）|
-| 2 | 任务栈未初始化 | ⚠️ **已定位**；投毒是诊断手段，修复应改为清零 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ **冻结地址已消除** |
-| 3b | **PHY 首次标定缺失** | ❌ **根因仍开放** |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ **已验证并修复**（显式传 0）|
-| 5 | `.iram_btslp*` 孤儿段 → 固定变换作用于错误源 | ✅ **形态已由 XOR 一致证明**；放置修复待做 |
+| #   | 项                                           | 准确状态                                      |
+| --- | -------------------------------------------- | --------------------------------------------- |
+| 1   | 四项时钟配置                                 | ✅ **已验证并修复**（`INITED` 可复现）        |
+| 2   | 任务栈未初始化                               | ⚠️ **已定位**；投毒是诊断手段，修复应改为清零 |
+| 3   | `esp_phy_enable` 冻结入口点                  | ✅ **冻结地址已消除**                         |
+| 3b  | **PHY 首次标定缺失**                         | ❌ **根因仍开放**                             |
+| 4   | `r_conn_stack_enable` 空桩                   | ✅ **已验证并修复**（显式传 0）               |
+| 5   | `.iram_btslp*` 孤儿段 → 固定变换作用于错误源 | ✅ **形态已由 XOR 一致证明**；放置修复待做    |
 
 ⇒ **"workaround 在位 / 根因开放" 是本项目更诚实的表述。**
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证并修复** | **3**（时钟位、冻结入口点、空桩）|
-| **已定位但修复为 workaround** | 1（任务栈）|
-| **根因仍开放** | 2（PHY 标定、睡眠码放置）|
-| **因读法自证而撤回** | 12 |
-| 撤回总数 | 105 |
-| 自我纠正 | 273 |
+| 类别                          | 数量                              |
+| ----------------------------- | --------------------------------- |
+| **已验证并修复**              | **3**（时钟位、冻结入口点、空桩） |
+| **已定位但修复为 workaround** | 1（任务栈）                       |
+| **根因仍开放**                | 2（PHY 标定、睡眠码放置）         |
+| **因读法自证而撤回**          | 12                                |
+| 撤回总数                      | 105                               |
+| 自我纠正                      | 273                               |
 
 ## PHY 真实使能已生效，但 fault 仍在 ⇒ **PHY 不是 step 20 的原因**
 
@@ -19807,10 +19894,10 @@ enter step 20 r_btdm_task_enable
 
 ### XOR 不再恒定 —— 说明"固定变换"的表述要收窄
 
-| 轮次 | 镜像 | 运行 | XOR |
-| --- | --- | --- | --- |
-| 早前 | `0x1141` | `0xe361` | `0xf220` |
-| 早前 | `0x07b7` | `0xf597` | `0xf220` |
+| 轮次     | 镜像     | 运行         | XOR          |
+| -------- | -------- | ------------ | ------------ |
+| 早前     | `0x1141` | `0xe361`     | `0xf220`     |
+| 早前     | `0x07b7` | `0xf597`     | `0xf220`     |
 | **本轮** | `0x1141` | **`0x702f`** | **`0x616e`** |
 
 ⇒ **XOR 不是跨构建恒定的。**
@@ -19825,12 +19912,12 @@ enter step 20 r_btdm_task_enable
 
 ### 与根因 5 的关系
 
-| 项 | 状态 |
-| --- | --- |
-| `.iram_btslp*` 是孤儿段（`s31.ld` 无 `*(.iram_btslp*)`）| ✅ **结构事实，仍成立** |
-| 厂商有运行时 patch/拷贝 | ✅ 与 IDF fragment 一致 |
-| XOR 恒定 | ❌ **仅局部成立，已收窄** |
-| **放置修复** | 待做（显式收集 + 4 字节对齐）|
+| 项                                                       | 状态                          |
+| -------------------------------------------------------- | ----------------------------- |
+| `.iram_btslp*` 是孤儿段（`s31.ld` 无 `*(.iram_btslp*)`） | ✅ **结构事实，仍成立**       |
+| 厂商有运行时 patch/拷贝                                  | ✅ 与 IDF fragment 一致       |
+| XOR 恒定                                                 | ❌ **仅局部成立，已收窄**     |
+| **放置修复**                                             | 待做（显式收集 + 4 字节对齐） |
 
 ⇒ **孤儿段这条仍然是唯一有据的结构性缺陷**，且修复成本低。
 
@@ -19843,14 +19930,14 @@ enter step 20 r_btdm_task_enable
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证并修复** | 3（时钟位、冻结入口点、空桩）|
-| **已定位，workaround 在位** | 1（任务栈）|
-| **根因仍开放** | 2（PHY 标定、睡眠码放置）|
-| **已收窄的表述** | XOR 恒定 → 仅局部 |
-| **撤回总数** | 106 |
-| **自我纠正** | 274 |
+| 类别                        | 数量                          |
+| --------------------------- | ----------------------------- |
+| **已验证并修复**            | 3（时钟位、冻结入口点、空桩） |
+| **已定位，workaround 在位** | 1（任务栈）                   |
+| **根因仍开放**              | 2（PHY 标定、睡眠码放置）     |
+| **已收窄的表述**            | XOR 恒定 → 仅局部             |
+| **撤回总数**                | 106                           |
+| **自我纠正**                | 274                           |
 
 ## ⚠️ 陷阱实录：`set_bb_wdg` 与 `phy_set_bb_wdg` 是**两个不同的函数**
 
@@ -19883,13 +19970,13 @@ const bb_wdg = @extern(..., .{ .name = "phy_set_bb_wdg" });
 
 ### 这是本会话的**第 13 次同型错误**
 
-| # | "看起来" | 实际 |
-| --- | --- | --- |
-| 1 | 时钟位配置好了 | 只在 TEE 生效 |
-| 2 | 任务栈分配了 | 继承残留字节 |
-| 3 | 冻结地址指向函数 | 落在别的函数体中间 |
-| 4 | 空桩返回状态码 | 返回调用者的 `a0` |
-| 5 | 函数指针表被调用 | 在表地址上取指 |
+| #     | "看起来"                     | 实际                    |
+| ----- | ---------------------------- | ----------------------- |
+| 1     | 时钟位配置好了               | 只在 TEE 生效           |
+| 2     | 任务栈分配了                 | 继承残留字节            |
+| 3     | 冻结地址指向函数             | 落在别的函数体中间      |
+| 4     | 空桩返回状态码               | 返回调用者的 `a0`       |
+| 5     | 函数指针表被调用             | 在表地址上取指          |
 | **6** | **`set_bb_wdg` 是 ROM 函数** | **blob 里另有同名函数** |
 
 ⇒ **链接通过只证明"名字被定义了"，不证明"是你要的那个"。**
@@ -19898,41 +19985,41 @@ const bb_wdg = @extern(..., .{ .name = "phy_set_bb_wdg" });
 
 ### 因此本轮 PHY 结论要降级
 
-| 项 | 上一轮写的 | 修正 |
-| --- | --- | --- |
-| ICG 解除门控 | ✅ 执行了 | ✅ 成立 |
-| `phy_wifi_enable_set(1)` | ✅ 执行了 | ✅ 成立（`A` 符号）|
-| **BB 看门狗关闭** | ✅ 以为执行了 | ❌ **调到了 blob 内部同名函数** |
-| `CLK_CONF1` 重申 | ✅ 执行了 | ✅ 成立 |
+| 项                       | 上一轮写的    | 修正                            |
+| ------------------------ | ------------- | ------------------------------- |
+| ICG 解除门控             | ✅ 执行了     | ✅ 成立                         |
+| `phy_wifi_enable_set(1)` | ✅ 执行了     | ✅ 成立（`A` 符号）             |
+| **BB 看门狗关闭**        | ✅ 以为执行了 | ❌ **调到了 blob 内部同名函数** |
+| `CLK_CONF1` 重申         | ✅ 执行了     | ✅ 成立                         |
 
 ⇒ 修正后重新烧录验证。
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证并修复** | 3 |
-| **已定位，workaround 在位** | 1 |
-| **根因仍开放** | 2 |
-| **同型"看起来对"错误** | **13** |
-| 撤回总数 | **107** |
-| 自我纠正 | **275** |
+| 类别                        | 数量    |
+| --------------------------- | ------- |
+| **已验证并修复**            | 3       |
+| **已定位，workaround 在位** | 1       |
+| **根因仍开放**              | 2       |
+| **同型"看起来对"错误**      | **13**  |
+| 撤回总数                    | **107** |
+| 自我纠正                    | **275** |
 
 ## ✅ 调和：`mtval` 的两种形态由**指令长度**决定
 
 此前我两次读到不同的 `mtval` 形态，并因此怀疑过字段语义：
 
-| 轮次 | `mtval` | 形态 |
-| --- | --- | --- |
+| 轮次 | `mtval`      | 形态             |
+| ---- | ------------ | ---------------- |
 | 早前 | `0x0000a26c` | **只有低 16 位** |
-| 本轮 | `0xc226702f` | **完整 32 位** |
+| 本轮 | `0xc226702f` | **完整 32 位**   |
 
 ### 解释
 
-| 非法指令长度 | `mtval` 写入 |
-| --- | --- |
+| 非法指令长度      | `mtval` 写入     |
+| ----------------- | ---------------- |
 | **压缩（16 位）** | **零扩展的半字** |
-| **32 位** | **完整 32 位字** |
+| **32 位**         | **完整 32 位字** |
 
 ⇒ 两次读数**都正确**，只是对应的指令长度不同。
 
@@ -19941,6 +20028,7 @@ const bb_wdg = @extern(..., .{ .name = "phy_set_bb_wdg" });
 ### 由此得到一条可用的判据
 
 > **`mtval` 的值长度本身就告诉你故障指令是压缩还是 32 位。**
+>
 > - `0x0000xxxx` ⇒ 尝试执行的是**压缩指令**（很可能是数据被当代码）
 > - `0x...xxxx` 满 32 位 ⇒ 是**32 位指令**编码非法
 
@@ -19954,15 +20042,15 @@ const bb_wdg = @extern(..., .{ .name = "phy_set_bb_wdg" });
 
 ## 本会话最终总计（最终锁定）
 
-| 类别 | 数量 |
-| --- | --- |
-| **已验证并修复** | 3 |
-| **已定位，workaround 在位** | 1 |
-| **根因仍开放** | 2 |
-| **同型"看起来对"错误** | 13 |
-| **已调和的歧义** | 1（`mtval` 语义）|
-| 撤回总数 | 107 |
-| 自我纠正 | 276 |
+| 类别                        | 数量              |
+| --------------------------- | ----------------- |
+| **已验证并修复**            | 3                 |
+| **已定位，workaround 在位** | 1                 |
+| **根因仍开放**              | 2                 |
+| **同型"看起来对"错误**      | 13                |
+| **已调和的歧义**            | 1（`mtval` 语义） |
+| 撤回总数                    | 107               |
+| 自我纠正                    | 276               |
 
 ## 🎉🎉🎉 根因 5 **修复并验证**：收集 `.iram_btslp*` 后 fault **完全消失**
 
@@ -19979,11 +20067,11 @@ const bb_wdg = @extern(..., .{ .name = "phy_set_bb_wdg" });
 
 ### 立竿见影的量化变化
 
-| 指标 | 修复前 | **修复后** |
-| --- | --- | --- |
-| `esp_image` 段数 | **9** | **4** |
-| 段间 2 字节重叠 | 有（seg4/5/6/7）| **无** |
-| step 20 fault | ✅ 有（`mepc=0x2f00fa00`）| ❌ **无** |
+| 指标             | 修复前                     | **修复后** |
+| ---------------- | -------------------------- | ---------- |
+| `esp_image` 段数 | **9**                      | **4**      |
+| 段间 2 字节重叠  | 有（seg4/5/6/7）           | **无**     |
+| step 20 fault    | ✅ 有（`mepc=0x2f00fa00`） | ❌ **无**  |
 
 ### 修复后的日志尾部
 
@@ -20015,28 +20103,28 @@ s31.ld 漏收集 .iram_btslp*
 
 ### 这也解释了此前所有"怪现象"
 
-| 现象 | 解释 |
-| --- | --- |
-| 损坏值每次不同 | 源取决于孤儿段的实际摆放 |
-| 只有低半字变 | 重叠只有 2 字节 |
-| 高半字恒定 | 前一行的填充没有超出 2 字节 |
-| `mtval` 是表项/低半 | 与"在数据/半指令上取指"一致 |
-| `sp-96`、`sp-0xA50` 的"命中" | 都是仪器自证（已撤回）|
+| 现象                         | 解释                        |
+| ---------------------------- | --------------------------- |
+| 损坏值每次不同               | 源取决于孤儿段的实际摆放    |
+| 只有低半字变                 | 重叠只有 2 字节             |
+| 高半字恒定                   | 前一行的填充没有超出 2 字节 |
+| `mtval` 是表项/低半          | 与"在数据/半指令上取指"一致 |
+| `sp-96`、`sp-0xA50` 的"命中" | 都是仪器自证（已撤回）      |
 
 ## 本会话最终总计（最终锁定）
 
-| # | 根因 | 状态 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ **已验证并修复**（`INITED`）|
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ **已验证并修复** |
-| 3b | PHY 首次标定缺失 | ❌ 仍开放（与 step 20 无关）|
-| 4 | `r_conn_stack_enable` 空桩 | ✅ **已验证并修复** |
-| **5** | **`.iram_btslp*` 孤儿段** | ✅ **已验证并修复（fault 消失、blob 开始运行）** |
-| —— | 同型"看起来对"错误 | **13** |
-| —— | 因仪器/读法自证而撤回 | 12 |
-| —— | 撤回总数 | 107 |
-| —— | 自我纠正 | **277** |
+| #     | 根因                        | 状态                                                               |
+| ----- | --------------------------- | ------------------------------------------------------------------ |
+| 1     | 四项时钟配置                | ✅ **已验证并修复**（`INITED`）                                    |
+| 2     | 任务栈未初始化              | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3     | `esp_phy_enable` 冻结入口点 | ✅ **已验证并修复**                                                |
+| 3b    | PHY 首次标定缺失            | ❌ 仍开放（与 step 20 无关）                                       |
+| 4     | `r_conn_stack_enable` 空桩  | ✅ **已验证并修复**                                                |
+| **5** | **`.iram_btslp*` 孤儿段**   | ✅ **已验证并修复（fault 消失、blob 开始运行）**                   |
+| ——    | 同型"看起来对"错误          | **13**                                                             |
+| ——    | 因仪器/读法自证而撤回       | 12                                                                 |
+| ——    | 撤回总数                    | 107                                                                |
+| ——    | 自我纠正                    | **277**                                                            |
 
 ## 新状态：controller 在跑，但**永久等待一个堆上的互斥量**
 
@@ -20063,10 +20151,10 @@ bt osal: intr_alloc registered src=124
 
 ### 这是**进步，不是回归**
 
-| 之前 | 现在 |
-| --- | --- |
+| 之前                               | 现在                   |
+| ---------------------------------- | ---------------------- |
 | 随机跳到垃圾地址（`cause=2` 崩溃） | **在互斥量上无限等待** |
-| 板子反复重启 | 板子**活着但沉默** |
+| 板子反复重启                       | 板子**活着但沉默**     |
 
 ⇒ 从"崩溃"到"等待"意味着：**init 与 enable 的代码路径都已经跑通**，
 现在停在**某个初始化握手上**。
@@ -20078,34 +20166,35 @@ bt osal: intr_alloc registered src=124
 ⇒ 若没人释放 ⇒ 这就是一个**死等**，且**不会超时、不会打印**。
 
 ⇒ 这与项目里已有的那条纪律吻合：
+
 > "缺行 ≠ 没发生" —— 这里反过来：**沉默 ≠ 卡死**，它可能只是在等。
 
 ### 下一步（三条，按成本）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 查谁**释放**该 slot（`mutex_post` 的地址若也是 `0x2f022efc` ⇒ 等的是谁）| 找到对端 |
-| 2 | 在 `mutex_pend` 里对被阻塞的 slot 打一次**持锁者线索**（分配该 slot 的任务/调用者）| 定位发布者 |
-| 3 | 对照 IDF 的 `esp_bt_controller_enable` 尾段：enable 完成后是否需要**外部事件**（如 HCI Reset）才继续 | 若需要 ⇒ 这是**正常等待**，下一步是发 HCI 命令 |
+| #   | 动作                                                                                                 | 判据                                           |
+| --- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | 查谁**释放**该 slot（`mutex_post` 的地址若也是 `0x2f022efc` ⇒ 等的是谁）                             | 找到对端                                       |
+| 2   | 在 `mutex_pend` 里对被阻塞的 slot 打一次**持锁者线索**（分配该 slot 的任务/调用者）                  | 定位发布者                                     |
+| 3   | 对照 IDF 的 `esp_bt_controller_enable` 尾段：enable 完成后是否需要**外部事件**（如 HCI Reset）才继续 | 若需要 ⇒ 这是**正常等待**，下一步是发 HCI 命令 |
 
 ⇒ **第 3 条最可能**：IDF 里 controller 起来后会等 HCI 命令；
 我们的 bringup 在 step 20 之后**没有再发命令** ⇒ 它自然停在那里等。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 根因/状态 | 结论 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修（`INITED`）|
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | PHY 首次标定缺失 | ❌ 仍开放 |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ **已修并验证** |
-| **当前** | **controller 运行中，等待互斥量（很可能是在等 HCI 命令）** | 🔍 |
-| —— | 同型"看起来对"错误 | 13 |
-| —— | 因仪器/读法自证而撤回 | 12 |
-| —— | 撤回总数 | 107 |
-| —— | 自我纠正 | **278** |
+| #        | 根因/状态                                                  | 结论                                                               |
+| -------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1        | 四项时钟配置                                               | ✅ 已修（`INITED`）                                                |
+| 2        | 任务栈未初始化                                             | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3        | `esp_phy_enable` 冻结入口点                                | ✅ 已修                                                            |
+| 3b       | PHY 首次标定缺失                                           | ❌ 仍开放                                                          |
+| 4        | `r_conn_stack_enable` 空桩                                 | ✅ 已修                                                            |
+| 5        | `.iram_btslp*` 孤儿段                                      | ✅ **已修并验证**                                                  |
+| **当前** | **controller 运行中，等待互斥量（很可能是在等 HCI 命令）** | 🔍                                                                 |
+| ——       | 同型"看起来对"错误                                         | 13                                                                 |
+| ——       | 因仪器/读法自证而撤回                                      | 12                                                                 |
+| ——       | 撤回总数                                                   | 107                                                                |
+| ——       | 自我纠正                                                   | **278**                                                            |
 
 ## ⚠️ 更正：`mutex_pend => 0` 是**成功返回**，不是阻塞
 
@@ -20126,19 +20215,19 @@ bt ret: mutex_pend => **0**        ← **成功返回**
 
 ### 因此准确的当前状态
 
-| 项 | 值 |
-| --- | --- |
-| fault | ✅ **无**（`grep -c "panic:\|!!"` = 0）|
-| controller 任务 | ✅ 已启动并执行（`mutex_pend` 成功、`intr_alloc` 注册）|
-| **`bt bringup: ENABLED`** | ❌ **未出现** |
-| 抓取结尾 | 停在 `intr_alloc registered src=124` 的**半行** |
+| 项                        | 值                                                      |
+| ------------------------- | ------------------------------------------------------- |
+| fault                     | ✅ **无**（`grep -c "panic:\|!!"` = 0）                 |
+| controller 任务           | ✅ 已启动并执行（`mutex_pend` 成功、`intr_alloc` 注册） |
+| **`bt bringup: ENABLED`** | ❌ **未出现**                                           |
+| 抓取结尾                  | 停在 `intr_alloc registered src=124` 的**半行**         |
 
 ### 两种可能，必须区分
 
-| # | 可能 | 判据 |
-| --- | --- | --- |
-| 1 | `enable()` **正常返回**了，`ENABLED` 行被 **UART FIFO 丢弃** | 用 RAM 标记验证 |
-| 2 | `enable()` **没返回**（step 20 之后停住）| 同 |
+| #   | 可能                                                         | 判据            |
+| --- | ------------------------------------------------------------ | --------------- |
+| 1   | `enable()` **正常返回**了，`ENABLED` 行被 **UART FIFO 丢弃** | 用 RAM 标记验证 |
+| 2   | `enable()` **没返回**（step 20 之后停住）                    | 同              |
 
 ⇒ **判据用项目已有的手法**（`probe.zig` 里的 RAM 标记）：
 在 `bringup.enable()` 返回**之后**写一个标记字，下次上电/在 trap 里读回。
@@ -20160,18 +20249,18 @@ bt watch: btslp16=0xfe47a783 btslp0=0x2f0104b7
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 结论 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修 |
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | PHY 首次标定 | ❌ 仍开放 |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ **已修并验证** |
-| **当前** | **无 fault；`ENABLED` 未出现（待 RAM 标记区分"丢弃"与"未返回"）** | 🔍 |
-| —— | 同型"看起来对"错误 | **14** |
-| —— | 撤回总数 | **108** |
-| —— | 自我纠正 | **279** |
+| #        | 项                                                                | 结论                                                               |
+| -------- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1        | 四项时钟配置                                                      | ✅ 已修                                                            |
+| 2        | 任务栈未初始化                                                    | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3        | `esp_phy_enable` 冻结入口点                                       | ✅ 已修                                                            |
+| 3b       | PHY 首次标定                                                      | ❌ 仍开放                                                          |
+| 4        | `r_conn_stack_enable` 空桩                                        | ✅ 已修                                                            |
+| 5        | `.iram_btslp*` 孤儿段                                             | ✅ **已修并验证**                                                  |
+| **当前** | **无 fault；`ENABLED` 未出现（待 RAM 标记区分"丢弃"与"未返回"）** | 🔍                                                                 |
+| ——       | 同型"看起来对"错误                                                | **14**                                                             |
+| ——       | 撤回总数                                                          | **108**                                                            |
+| ——       | 自我纠正                                                          | **279**                                                            |
 
 ## 🏁 HCI 探测结果：**零 fault，`enable()` 确实返回，但 controller 没回包**
 
@@ -20185,42 +20274,42 @@ grep -c "panic:\|!!" = **0**
 
 ### 三条同时确定
 
-| # | 结论 | 依据 |
-| --- | --- | --- |
-| 1 | **零 fault** | 修补后连续两次运行均无 trap |
-| 2 | **`enable()` 确实返回了** | 因为 step 20 **之后**的代码（HCI 探测）**执行了** |
-| 3 | **`ENABLED` 行是被 FIFO 丢弃**，不是没执行 | 同第 2 条 |
+| #   | 结论                                       | 依据                                              |
+| --- | ------------------------------------------ | ------------------------------------------------- |
+| 1   | **零 fault**                               | 修补后连续两次运行均无 trap                       |
+| 2   | **`enable()` 确实返回了**                  | 因为 step 20 **之后**的代码（HCI 探测）**执行了** |
+| 3   | **`ENABLED` 行是被 FIFO 丢弃**，不是没执行 | 同第 2 条                                         |
 
 ⇒ **上一轮"`ENABLED` 未出现"的疑问解决**：是**日志通道**问题，不是代码没走到。
 
 ### 但 controller **没有回应 HCI Reset**
 
-| 项 | 值 |
-| --- | --- |
-| `sendReset()`（0x0C03） | 已调用 |
-| 轮询 | 20 000 000 次 |
-| `evt_count` 变化 | **无** |
-| `last_evt_code` | 无事件 |
+| 项                      | 值            |
+| ----------------------- | ------------- |
+| `sendReset()`（0x0C03） | 已调用        |
+| 轮询                    | 20 000 000 次 |
+| `evt_count` 变化        | **无**        |
+| `last_evt_code`         | 无事件        |
 
 ⇒ **发出去了，没有回程。**
 
 ### 这意味着什么（诚实的边界）
 
-| 已证明 | 未证明 |
-| --- | --- |
-| controller 任务已启动 | ❌ 它**处理 HCI 命令** |
-| 中断已注册（`src=124`）| ❌ 中断真的触发并释放了等待者 |
-| 无崩溃 | ❌ RF/PHY 可用 |
+| 已证明                  | 未证明                        |
+| ----------------------- | ----------------------------- |
+| controller 任务已启动   | ❌ 它**处理 HCI 命令**        |
+| 中断已注册（`src=124`） | ❌ 中断真的触发并释放了等待者 |
+| 无崩溃                  | ❌ RF/PHY 可用                |
 
 ⇒ 这与项目 29.10 的原始判断一致：**剩余缺口在 blob 内部**。
 
 ### 最可能的三个原因
 
-| # | 原因 | 判据 |
-| --- | --- | --- |
-| 1 | **PHY 未标定**（`register_chipv7_phy` 缺失）⇒ controller 无法完成 init 握手 | 与 29.12 的 3b 一致 |
-| 2 | HCI 命令**走的路径不对**（path A vs `sendCmdViaHs`）| 换 B 路径试 |
-| 3 | 中断向量/优先级未真正接通 ⇒ 事件到了但没人取 | 看 `src=124` 的 ISR 是否被调用 |
+| #   | 原因                                                                        | 判据                           |
+| --- | --------------------------------------------------------------------------- | ------------------------------ |
+| 1   | **PHY 未标定**（`register_chipv7_phy` 缺失）⇒ controller 无法完成 init 握手 | 与 29.12 的 3b 一致            |
+| 2   | HCI 命令**走的路径不对**（path A vs `sendCmdViaHs`）                        | 换 B 路径试                    |
+| 3   | 中断向量/优先级未真正接通 ⇒ 事件到了但没人取                                | 看 `src=124` 的 ISR 是否被调用 |
 
 ⇒ **第 2 条最省**：`transport.zig` 里已有 `sendResetViaHs()`，
 一次烧录即可判断是不是路径问题。
@@ -20229,18 +20318,18 @@ grep -c "panic:\|!!" = **0**
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 结论 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修（`INITED`）|
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | **PHY 首次标定** | ❌ **仍开放（很可能是无回包的原因）** |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ **已修并验证（零 fault）** |
-| **当前** | **无崩溃、任务运行中、`enable()` 返回；HCI Reset 无回包** | 🔍 |
-| —— | 同型"看起来对"错误 | 14 |
-| —— | 撤回总数 | 108 |
-| —— | 自我纠正 | **280** |
+| #        | 项                                                        | 结论                                                               |
+| -------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1        | 四项时钟配置                                              | ✅ 已修（`INITED`）                                                |
+| 2        | 任务栈未初始化                                            | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3        | `esp_phy_enable` 冻结入口点                               | ✅ 已修                                                            |
+| 3b       | **PHY 首次标定**                                          | ❌ **仍开放（很可能是无回包的原因）**                              |
+| 4        | `r_conn_stack_enable` 空桩                                | ✅ 已修                                                            |
+| 5        | `.iram_btslp*` 孤儿段                                     | ✅ **已修并验证（零 fault）**                                      |
+| **当前** | **无崩溃、任务运行中、`enable()` 返回；HCI Reset 无回包** | 🔍                                                                 |
+| ——       | 同型"看起来对"错误                                        | 14                                                                 |
+| ——       | 撤回总数                                                  | 108                                                                |
+| ——       | 自我纠正                                                  | **280**                                                            |
 
 ## ❌ 撤回"NO EVENT"：我的探针**根本不会让任务推进**
 
@@ -20280,9 +20369,9 @@ while (round < 200) : (round += 1) {
 
 ### 这是本会话第 **15** 次同型错误
 
-| # | "看起来" | 实际 |
-| --- | --- | --- |
-| … | … | … |
+| #      | "看起来"                    | 实际                       |
+| ------ | --------------------------- | -------------------------- |
+| …      | …                           | …                          |
 | **15** | **"等 20M 次就会看到事件"** | **忙等不让协作式任务运行** |
 
 ⇒ 与前面 14 次同源：**把"我以为会发生"当成了"会发生"**。
@@ -20291,29 +20380,29 @@ while (round < 200) : (round += 1) {
 
 在 `probe` 的那段循环里（已存在）确认：
 
-| 判据 | 含义 |
-| --- | --- |
-| `round` 递增且日志出现 | 任务被真正泵起 |
-| `evt_count > 0` | **controller 处理了命令** |
-| `last_evt_code == 0x0E` | Command Complete |
-| 第三字节 = `0x0C`（opcode 低）且末字节 `0x00` | Reset 成功 |
+| 判据                                          | 含义                      |
+| --------------------------------------------- | ------------------------- |
+| `round` 递增且日志出现                        | 任务被真正泵起            |
+| `evt_count > 0`                               | **controller 处理了命令** |
+| `last_evt_code == 0x0E`                       | Command Complete          |
+| 第三字节 = `0x0C`（opcode 低）且末字节 `0x00` | Reset 成功                |
 
 ⇒ 若泵了 200 轮仍 `evt_count == 0` ⇒ 那才是真的"没回包"。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 结论 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修（`INITED`）|
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | PHY 首次标定 | ❌ 仍开放 |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ **已修并验证（零 fault）** |
-| **当前** | **无崩溃；HCI 回包需用 `probe.zig` 的泵任务写法复测** | 🔍 |
-| —— | 同型"看起来对"错误 | **15** |
-| —— | 撤回总数 | **109** |
-| —— | 自我纠正 | **281** |
+| #        | 项                                                    | 结论                                                               |
+| -------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| 1        | 四项时钟配置                                          | ✅ 已修（`INITED`）                                                |
+| 2        | 任务栈未初始化                                        | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3        | `esp_phy_enable` 冻结入口点                           | ✅ 已修                                                            |
+| 3b       | PHY 首次标定                                          | ❌ 仍开放                                                          |
+| 4        | `r_conn_stack_enable` 空桩                            | ✅ 已修                                                            |
+| 5        | `.iram_btslp*` 孤儿段                                 | ✅ **已修并验证（零 fault）**                                      |
+| **当前** | **无崩溃；HCI 回包需用 `probe.zig` 的泵任务写法复测** | 🔍                                                                 |
+| ——       | 同型"看起来对"错误                                    | **15**                                                             |
+| ——       | 撤回总数                                              | **109**                                                            |
+| ——       | 自我纠正                                              | **281**                                                            |
 
 ## 🏁 `probe.run()` 确实在执行，但日志被 **UART FIFO 截断**
 
@@ -20344,49 +20433,49 @@ bt probe: syscon+0x08 = 0x00000000
 
 ### 这意味着
 
-| 项 | 状态 |
-| --- | --- |
-| `probe.run()` 执行 | ✅ **已证实** |
-| 到过 `init start` | ✅ |
-| 到过 bringup step 20 | ✅（`enter step 20` 出现）|
-| 到过 HCI 命令 | ❓ **日志窗口未覆盖** |
-| fault | ✅ **0** |
+| 项                   | 状态                       |
+| -------------------- | -------------------------- |
+| `probe.run()` 执行   | ✅ **已证实**              |
+| 到过 `init start`    | ✅                         |
+| 到过 bringup step 20 | ✅（`enter step 20` 出现） |
+| 到过 HCI 命令        | ❓ **日志窗口未覆盖**      |
+| fault                | ✅ **0**                   |
 
 ⇒ **"没有 `sending HCI Reset`" 是窗口问题，不是证据。**
 ⇒ 这正是本会话反复出现的那条纪律：**缺行 ≠ 没发生**。
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | **延长捕获**（或降低日志量）直到出现 `sending HCI Reset` | 出现即窗口足够 |
-| 2 | 把 `probe.run()` 的 HCI 阶段放在**更早**（bringup 之前已经跑过 probe init，说明顺序上 probe 与 bringup 交错）| 便于捕获 |
+| #   | 动作                                                                                                          | 判据           |
+| --- | ------------------------------------------------------------------------------------------------------------- | -------------- |
+| 1   | **延长捕获**（或降低日志量）直到出现 `sending HCI Reset`                                                      | 出现即窗口足够 |
+| 2   | 把 `probe.run()` 的 HCI 阶段放在**更早**（bringup 之前已经跑过 probe init，说明顺序上 probe 与 bringup 交错） | 便于捕获       |
 
 ⇒ **第 1 条最直接**：把捕获窗口从 90 s 提到 240 s。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 结论 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修 |
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | PHY 首次标定 | ❌ 仍开放 |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ **已修并验证（零 fault）** |
-| **当前** | **零 fault；probe 在跑；HCI 结果被日志窗口挡住** | 🔍 |
-| —— | 同型"看起来对"错误 | 15 |
-| —— | 撤回总数 | 109 |
-| —— | 自我纠正 | **282** |
+| #        | 项                                               | 结论                                                               |
+| -------- | ------------------------------------------------ | ------------------------------------------------------------------ |
+| 1        | 四项时钟配置                                     | ✅ 已修                                                            |
+| 2        | 任务栈未初始化                                   | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3        | `esp_phy_enable` 冻结入口点                      | ✅ 已修                                                            |
+| 3b       | PHY 首次标定                                     | ❌ 仍开放                                                          |
+| 4        | `r_conn_stack_enable` 空桩                       | ✅ 已修                                                            |
+| 5        | `.iram_btslp*` 孤儿段                            | ✅ **已修并验证（零 fault）**                                      |
+| **当前** | **零 fault；probe 在跑；HCI 结果被日志窗口挡住** | 🔍                                                                 |
+| ——       | 同型"看起来对"错误                               | 15                                                                 |
+| ——       | 撤回总数                                         | 109                                                                |
+| ——       | 自我纠正                                         | **282**                                                            |
 
 ## 🏁🏁🏁 重新解释"没回包"：**主上下文被饿死**，不是 controller 不回
 
 ### 两条时间线的对比（本会话自己的日志）
 
-| 时代 | 日志结尾 | pump 轮次 |
-| --- | --- | --- |
-| **睡眠段损坏期** | step=20 **trap** | ✅ **跑起来了**（trap 就发生在 pump 轮次里）|
-| **修复之后** | 停在 `intr_alloc registered src=124` | ❌ **从未出现** |
+| 时代             | 日志结尾                             | pump 轮次                                    |
+| ---------------- | ------------------------------------ | -------------------------------------------- |
+| **睡眠段损坏期** | step=20 **trap**                     | ✅ **跑起来了**（trap 就发生在 pump 轮次里） |
+| **修复之后**     | 停在 `intr_alloc registered src=124` | ❌ **从未出现**                              |
 
 ⇒ 修复前：bringup **崩在 switch-in 之前** ⇒ 控制权回到 `probe.run` ⇒ pump 运行。
 ⇒ 修复后：**任务成功切入**并进入它自己的连续事件循环 ⇒ **主上下文再也拿不回控制权**。
@@ -20405,10 +20494,10 @@ mutex_pend => 0            ← 无竞争，立即返回
 
 ### 与链接修复的关系
 
-| 缺陷 | 性质 |
-| --- | --- |
-| 5（`.iram_btslp*` 孤儿段）| ✅ 已修；**它曾掩盖了饿死问题**（崩溃把控制权还给了 main）|
-| **6（协作式调度无抢占 ⇒ 主上下文饿死）** | ❌ **新缺陷，独立存在** |
+| 缺陷                                     | 性质                                                       |
+| ---------------------------------------- | ---------------------------------------------------------- |
+| 5（`.iram_btslp*` 孤儿段）               | ✅ 已修；**它曾掩盖了饿死问题**（崩溃把控制权还给了 main） |
+| **6（协作式调度无抢占 ⇒ 主上下文饿死）** | ❌ **新缺陷，独立存在**                                    |
 
 ⇒ 两者**互相独立**：链接修复消除了坏入口；饿死是**调度设计**的缺口。
 
@@ -20427,26 +20516,26 @@ bt probe: irq enabled (probe only), t0=2ms
 
 ### 判据（修复后应看到）
 
-| 现象 | 含义 |
-| --- | --- |
-| `bt bringup: ENABLED` 出现 | 主上下文回到了 bringup |
-| `bt probe: init ok` 出现 | probe 继续 |
-| `sending HCI Reset` + `GOT ... EVT` | **往返成功** |
+| 现象                                | 含义                   |
+| ----------------------------------- | ---------------------- |
+| `bt bringup: ENABLED` 出现          | 主上下文回到了 bringup |
+| `bt probe: init ok` 出现            | probe 继续             |
+| `sending HCI Reset` + `GOT ... EVT` | **往返成功**           |
 
 ## 本会话最终总计（最终锁定）
 
-| # | 缺陷 | 状态 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修 |
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | PHY 首次标定 | ❌ 仍开放 |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修并验证 |
-| **6** | **协作式调度无抢占 ⇒ 主上下文饿死** | ❌ **新发现，是"没回包"的真因** |
-| —— | 同型"看起来对"错误 | 16 |
-| —— | 撤回总数 | 110 |
-| —— | 自我纠正 | **283** |
+| #     | 缺陷                                | 状态                                                               |
+| ----- | ----------------------------------- | ------------------------------------------------------------------ |
+| 1     | 四项时钟配置                        | ✅ 已修                                                            |
+| 2     | 任务栈未初始化                      | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3     | `esp_phy_enable` 冻结入口点         | ✅ 已修                                                            |
+| 3b    | PHY 首次标定                        | ❌ 仍开放                                                          |
+| 4     | `r_conn_stack_enable` 空桩          | ✅ 已修                                                            |
+| 5     | `.iram_btslp*` 孤儿段               | ✅ 已修并验证                                                      |
+| **6** | **协作式调度无抢占 ⇒ 主上下文饿死** | ❌ **新发现，是"没回包"的真因**                                    |
+| ——    | 同型"看起来对"错误                  | 16                                                                 |
+| ——    | 撤回总数                            | 110                                                                |
+| ——    | 自我纠正                            | **283**                                                            |
 
 ## 预注册判定（在跑之前写下，避免事后解释）
 
@@ -20497,18 +20586,18 @@ r_btdm_task_enable（step 20）
 
 ### 两条时间线因此完全自洽
 
-| 时代 | 结局 |
-| --- | --- |
+| 时代         | 结局                                                              |
+| ------------ | ----------------------------------------------------------------- |
 | 睡眠段损坏期 | 崩在 switch-in **之前** ⇒ 控制权回到 main ⇒ pump 能跑 ⇒ 看到 trap |
-| 修复之后 | 成功切入 ⇒ 任务不让出 ⇒ **main 被饿死** |
+| 修复之后     | 成功切入 ⇒ 任务不让出 ⇒ **main 被饿死**                           |
 
 ⇒ 链接修复**揭开了**这个此前被崩溃掩盖的调度缺口。
 
 ### 这是第 6 个缺陷
 
-| # | 缺陷 | 性质 |
-| --- | --- | --- |
-| 6 | **协作式调度无抢占 ⇒ blob 常驻循环饿死主上下文** | **设计缺口**，非 bug |
+| #   | 缺陷                                             | 性质                 |
+| --- | ------------------------------------------------ | -------------------- |
+| 6   | **协作式调度无抢占 ⇒ blob 常驻循环饿死主上下文** | **设计缺口**，非 bug |
 
 ### 可用的逃生口（已在日志里）
 
@@ -20518,11 +20607,11 @@ bt probe: irq enabled (probe only), t0=2ms
 
 ⇒ T0 中断已在 CLIC 输入 25、2 ms、且被设为 **NMI 源**。
 
-| 方案 | 说明 | 风险 |
-| --- | --- | --- |
-| **A** | NMI 处理里检测"在任务上下文"就 `swapContext` 回 main | 可能打断临界区 ⇒ 需谨慎 |
-| **B** | 在服务里记录"需要让出"，由 blob 循环的某个已知点检查 | 需找到可插入点 |
-| **C** | 把 pump 放进 NMI 处理（只 resumTask + serviceCallouts）| 侵入性小，但仍在中断里跑用户代码 |
+| 方案  | 说明                                                    | 风险                             |
+| ----- | ------------------------------------------------------- | -------------------------------- |
+| **A** | NMI 处理里检测"在任务上下文"就 `swapContext` 回 main    | 可能打断临界区 ⇒ 需谨慎          |
+| **B** | 在服务里记录"需要让出"，由 blob 循环的某个已知点检查    | 需找到可插入点                   |
+| **C** | 把 pump 放进 NMI 处理（只 resumTask + serviceCallouts） | 侵入性小，但仍在中断里跑用户代码 |
 
 ⇒ **先做 C 的最小版本**：NMI 里只置一个标志，主上下文醒来后 pump。
 ⇒ 但**主上下文醒不来**才是问题 ⇒ 必须先让 `swapContext` 发生。
@@ -20531,29 +20620,29 @@ bt probe: irq enabled (probe only), t0=2ms
 
 ## 本会话最终总计（最终锁定）
 
-| # | 缺陷 | 状态 |
-| --- | --- | --- |
-| 1 | 四项时钟配置 | ✅ 已修 |
-| 2 | 任务栈未初始化 | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
-| 3b | PHY 首次标定 | ❌ 仍开放 |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修并验证 |
-| **6** | **协作式调度无抢占 ⇒ 饿死主上下文** | ✅ **已确证（210 s 冻结）** |
-| —— | 同型"看起来对"错误 | 16 |
-| —— | 撤回总数 | 110 |
-| —— | 自我纠正 | **284** |
+| #     | 缺陷                                | 状态                                                               |
+| ----- | ----------------------------------- | ------------------------------------------------------------------ |
+| 1     | 四项时钟配置                        | ✅ 已修                                                            |
+| 2     | 任务栈未初始化                      | ✅ **已修复（清零）**；`0xA5` 投毒改为 `poison_stack` 开关，默认关 |
+| 3     | `esp_phy_enable` 冻结入口点         | ✅ 已修                                                            |
+| 3b    | PHY 首次标定                        | ❌ 仍开放                                                          |
+| 4     | `r_conn_stack_enable` 空桩          | ✅ 已修                                                            |
+| 5     | `.iram_btslp*` 孤儿段               | ✅ 已修并验证                                                      |
+| **6** | **协作式调度无抢占 ⇒ 饿死主上下文** | ✅ **已确证（210 s 冻结）**                                        |
+| ——    | 同型"看起来对"错误                  | 16                                                                 |
+| ——    | 撤回总数                            | 110                                                                |
+| ——    | 自我纠正                            | **284**                                                            |
 
 ## 下一步设计：让 T0 NMI 做抢占切换（方案 A）
 
 ### 当前事实
 
-| 事实 | 值 |
-| --- | --- |
-| T0 中断已武装 | ✅ `t0=2ms`，CLIC 输入 25 |
-| 被设为 **NMI 源** | ✅（`CLIC_INT_CTRL[25]` bit3 = nmies）|
-| 主上下文被饿死 | ✅ 210 s 窗口零新行 |
-| controller 任务在常驻循环 | ✅（推断，基于日志冻结）|
+| 事实                      | 值                                     |
+| ------------------------- | -------------------------------------- |
+| T0 中断已武装             | ✅ `t0=2ms`，CLIC 输入 25              |
+| 被设为 **NMI 源**         | ✅（`CLIC_INT_CTRL[25]` bit3 = nmies） |
+| 主上下文被饿死            | ✅ 210 s 窗口零新行                    |
+| controller 任务在常驻循环 | ✅（推断，基于日志冻结）               |
 
 ⇒ 因此 **NMI 每 2 ms 仍在触发**（除非被禁用），只是它的处理只采样 PC、**不切换上下文**。
 
@@ -20570,22 +20659,22 @@ if (sched.isStarted() and sched.currentIsTask()) {
 
 要点：
 
-| # | 注意点 |
-| --- | --- |
-| 1 | **不能在中断里调用会阻塞的东西**（`logLine` 里等 FIFO 就是）|
-| 2 | 切换前必须保存被中断任务的 `mepc`/`mstatus`（trap 入口已做）|
-| 3 | 恢复任务时必须 `mret` 回去，而不是 `ret` |
-| 4 | NMI **不受 `mstatus.MIE` 屏蔽** ⇒ 会打断临界区 ⇒ 必须保证 `swapContext` 在临界区里也安全 |
-| 5 | 需要一个**重入保护**（NMI 里再 NMI）|
+| #   | 注意点                                                                                   |
+| --- | ---------------------------------------------------------------------------------------- |
+| 1   | **不能在中断里调用会阻塞的东西**（`logLine` 里等 FIFO 就是）                             |
+| 2   | 切换前必须保存被中断任务的 `mepc`/`mstatus`（trap 入口已做）                             |
+| 3   | 恢复任务时必须 `mret` 回去，而不是 `ret`                                                 |
+| 4   | NMI **不受 `mstatus.MIE` 屏蔽** ⇒ 会打断临界区 ⇒ 必须保证 `swapContext` 在临界区里也安全 |
+| 5   | 需要一个**重入保护**（NMI 里再 NMI）                                                     |
 
 ### 先做一个**不需要切换**的前置验证
 
 在写切换代码之前，先确认"**NMI 到底还在不在触发**"：
 
-| 方法 | 判据 |
-| --- | --- |
-| NMI 处理里递增一个静态计数器 | 主上下文永远读不到 ⇒ 无用在饿死场景 |
-| **改为：NMI 里直接翻转一个 GPIO / 或在第 N 次时打印一行** | 打印一行即可证明 NMI 仍在跑 |
+| 方法                                                      | 判据                                |
+| --------------------------------------------------------- | ----------------------------------- |
+| NMI 处理里递增一个静态计数器                              | 主上下文永远读不到 ⇒ 无用在饿死场景 |
+| **改为：NMI 里直接翻转一个 GPIO / 或在第 N 次时打印一行** | 打印一行即可证明 NMI 仍在跑         |
 
 ⇒ **"在第 1000 次 NMI 时打印一行"** 是最小验证：2 ms × 1000 = 2 s。
 ⇒ 若 210 s 窗口里连这一行都没有 ⇒ **NMI 根本没在跑** ⇒ 问题在中断，不在调度。
@@ -20602,14 +20691,14 @@ if (sched.isStarted() and sched.currentIsTask()) {
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | 饿死主上下文 | ✅ 已确证现象；**成因分两种解释，待区分** |
-| —— | 下一步 | **"第 1000 次 NMI 打印一行"** |
-| —— | 同型"看起来对"错误 | 16 |
-| —— | 撤回总数 | 110 |
-| —— | 自我纠正 | **285** |
+| #   | 项                 | 状态                                      |
+| --- | ------------------ | ----------------------------------------- |
+| 1–5 | 五个缺陷           | 4 修 + 1 验证                             |
+| 6   | 饿死主上下文       | ✅ 已确证现象；**成因分两种解释，待区分** |
+| ——  | 下一步             | **"第 1000 次 NMI 打印一行"**             |
+| ——  | 同型"看起来对"错误 | 16                                        |
+| ——  | 撤回总数           | 110                                       |
+| ——  | 自我纠正           | **285**                                   |
 
 ## 🏁 分叉解决：**NMI 仍在触发** ⇒ 饿死是真的，方案 A 可行
 
@@ -20624,11 +20713,11 @@ NMI alive: 1000 ticks (ISR still firing)     ← **打印了**
 
 ### 排除的替代解释
 
-| 解释 | 状态 |
-| --- | --- |
-| "controller 关了全局中断 ⇒ NMI 也不触发" | ❌ **排除** |
-| "饿死是因为中断被关" | ❌ **排除** |
-| **"controller 的常驻循环不让出"** | ✅ **唯一剩下** |
+| 解释                                     | 状态            |
+| ---------------------------------------- | --------------- |
+| "controller 关了全局中断 ⇒ NMI 也不触发" | ❌ **排除**     |
+| "饿死是因为中断被关"                     | ❌ **排除**     |
+| **"controller 的常驻循环不让出"**        | ✅ **唯一剩下** |
 
 ### 因此
 
@@ -20651,26 +20740,26 @@ NMI 每 2 ms 触发一次（已证实）
 
 ### 实现要点（按风险排序）
 
-| # | 要点 | 说明 |
-| --- | --- | --- |
-| 1 | NMI 里**不能**调用会阻塞的东西 | `logLine` 会等 FIFO（5000 次自旋）|
-| 2 | 切换必须在**保存了 `mepc`/`mstatus`** 之后 | trap 入口已完成 |
-| 3 | 恢复任务时用 `mret`，不是 `ret` | 否则 `mstatus` 不对 |
-| 4 | 需要**重入保护** | NMI 里再 NMI |
-| 5 | 只在**任务上下文**里切换，主上下文里不切 | 用 `sched.currentIsTask()` 判 |
+| #   | 要点                                       | 说明                               |
+| --- | ------------------------------------------ | ---------------------------------- |
+| 1   | NMI 里**不能**调用会阻塞的东西             | `logLine` 会等 FIFO（5000 次自旋） |
+| 2   | 切换必须在**保存了 `mepc`/`mstatus`** 之后 | trap 入口已完成                    |
+| 3   | 恢复任务时用 `mret`，不是 `ret`            | 否则 `mstatus` 不对                |
+| 4   | 需要**重入保护**                           | NMI 里再 NMI                       |
+| 5   | 只在**任务上下文**里切换，主上下文里不切   | 用 `sched.currentIsTask()` 判      |
 
 ⇒ 先做**最小版本**：NMI 里若在任务上下文 ⇒ `swapContext(task, main)` 一次，
 让主上下文跑完 bringup 与 HCI，再让它自己 `resumeTask`。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | **协作式调度无抢占 ⇒ 饿死** | ✅ **现象与成因都已确证；修复方向已定** |
-| —— | 同型"看起来对"错误 | 16 |
-| —— | 撤回总数 | 110 |
-| —— | 自我纠正 | **286** |
+| #   | 项                          | 状态                                    |
+| --- | --------------------------- | --------------------------------------- |
+| 1–5 | 五个缺陷                    | 4 修 + 1 验证                           |
+| 6   | **协作式调度无抢占 ⇒ 饿死** | ✅ **现象与成因都已确证；修复方向已定** |
+| ——  | 同型"看起来对"错误          | 16                                      |
+| ——  | 撤回总数                    | 110                                     |
+| ——  | 自我纠正                    | **286**                                 |
 
 ## 🏁🏁🏁 真因推翻"饿死"：自旋点是 **`osal.canaryScan`**，它是 **O(n²)**
 
@@ -20727,30 +20816,30 @@ fn inAlloc(addr: usize) bool {
 
 ### 因此撤回"缺陷 6 是调度饿死"
 
-| 我此前的结论 | 状态 |
-| --- | --- |
-| "controller 常驻循环不让出 ⇒ 主上下文饿死" | ❌ **撤回** |
-| **"`canaryScan` 是 O(n²)，正在耗时扫描"** | ✅ **实测（PC 分布）** |
+| 我此前的结论                               | 状态                   |
+| ------------------------------------------ | ---------------------- |
+| "controller 常驻循环不让出 ⇒ 主上下文饿死" | ❌ **撤回**            |
+| **"`canaryScan` 是 O(n²)，正在耗时扫描"**  | ✅ **实测（PC 分布）** |
 
 ⇒ 而"NMI 仍在触发"这一条**正好解释了为什么日志能冻结而系统活着**：
 中断正常，只是主流程卡在一个极慢的循环里。
 
 ### 这解释了此前所有相关现象
 
-| 现象 | 解释 |
-| --- | --- |
-| 210 s 零新日志 | `canaryScan` 在扫 |
-| NMI 每 2 ms 触发但无变化 | 中断正常，主流程在循环 |
-| "修复后才出现" | 修复后才走到 `canaryScan` |
-| 怀疑 controller 不让出 | **误判** —— PC 分布直接给出了答案 |
+| 现象                     | 解释                              |
+| ------------------------ | --------------------------------- |
+| 210 s 零新日志           | `canaryScan` 在扫                 |
+| NMI 每 2 ms 触发但无变化 | 中断正常，主流程在循环            |
+| "修复后才出现"           | 修复后才走到 `canaryScan`         |
+| 怀疑 controller 不让出   | **误判** —— PC 分布直接给出了答案 |
 
 ### 修复（两个方向，都很便宜）
 
-| # | 修法 |
-| --- | --- |
+| #     | 修法                                                                   |
+| ----- | ---------------------------------------------------------------------- |
 | **A** | **把 `inAlloc` 改成 O(1)**：按地址排序的区间表 + 二分；或用一个 bitmap |
-| **B** | **跳过扫描**：`canaryScan` 是诊断用的，正常路径不必每次调用 |
-| C | 降低扫描粒度（每 4 字扫一次）—— 治标 |
+| **B** | **跳过扫描**：`canaryScan` 是诊断用的，正常路径不必每次调用            |
+| C     | 降低扫描粒度（每 4 字扫一次）—— 治标                                   |
 
 ⇒ **B 最快**：先把 `canaryScan` 从 `probe.zig:604`（HCI 路径）去掉，
 验证"主流程恢复前进"；然后再考虑 A。
@@ -20763,13 +20852,13 @@ fn inAlloc(addr: usize) bool {
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| **6** | **`canaryScan` O(n²)** | ✅ **已由 PC 分布确证**（原"饿死"结论撤回）|
-| —— | 同型"看起来对"错误 | **17** |
-| —— | 撤回总数 | **111** |
-| —— | 自我纠正 | **287** |
+| #     | 项                     | 状态                                        |
+| ----- | ---------------------- | ------------------------------------------- |
+| 1–5   | 五个缺陷               | 4 修 + 1 验证                               |
+| **6** | **`canaryScan` O(n²)** | ✅ **已由 PC 分布确证**（原"饿死"结论撤回） |
+| ——    | 同型"看起来对"错误     | **17**                                      |
+| ——    | 撤回总数               | **111**                                     |
+| ——    | 自我纠正               | **287**                                     |
 
 ## 🏁🏁🏁 最终解释：程序**走到了 `probe.halt()`** —— 日志冻结是**按设计停机**
 
@@ -20793,21 +20882,21 @@ NMI n=1049500 mepc=0x4006b8fc ← 一直在这里
 
 ### 因此三段现象各有解释
 
-| 阶段 | PC | 解释 |
-| --- | --- | --- |
+| 阶段       | PC           | 解释                         |
+| ---------- | ------------ | ---------------------------- |
 | n=500–4000 | `canaryScan` | **O(n²) 扫描，很慢但会结束** |
-| n≈5500 起 | `probe.halt` | **程序按设计停机** |
-| 之后 210 s | 仍在 `halt` | **本来就该停在这里** |
+| n≈5500 起  | `probe.halt` | **程序按设计停机**           |
+| 之后 210 s | 仍在 `halt`  | **本来就该停在这里**         |
 
 ⇒ **"日志冻结" = 程序正常结束并停机**，不是饿死、不是卡死。
 
 ### 因此撤回"饿死"与"canaryScan 是唯一原因"
 
-| 结论 | 状态 |
-| --- | --- |
-| "controller 不让出 ⇒ 饿死" | ❌ **撤回**（更早一轮已撤）|
+| 结论                                 | 状态                                |
+| ------------------------------------ | ----------------------------------- |
+| "controller 不让出 ⇒ 饿死"           | ❌ **撤回**（更早一轮已撤）         |
 | "`canaryScan` O(n²) 导致 210 s 冻结" | ⚠️ **部分成立** —— 它慢，但它会结束 |
-| **"程序走到 `halt()` 然后原地等"** | ✅ **实测（`mepc` = `j .`）** |
+| **"程序走到 `halt()` 然后原地等"**   | ✅ **实测（`mepc` = `j .`）**       |
 
 ⇒ **`halt()` 是 `probe.run()` 的收尾动作** —— 说明 **`probe.run()` 跑完了**。
 
@@ -20830,44 +20919,44 @@ NMI n=1049500 mepc=0x4006b8fc ← 一直在这里
 
 ### 下一步（两条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | **把 NMI 打印关掉**（或改成每 20000 次一行），重跑 | 判决行才不会被挤掉 |
-| 2 | 把 HCI 判决写进**静态全局**，由 `halt` 前的最后一行打印 | 不依赖 FIFO 顺序 |
+| #   | 动作                                                    | 判据               |
+| --- | ------------------------------------------------------- | ------------------ |
+| 1   | **把 NMI 打印关掉**（或改成每 20000 次一行），重跑      | 判决行才不会被挤掉 |
+| 2   | 把 HCI 判决写进**静态全局**，由 `halt` 前的最后一行打印 | 不依赖 FIFO 顺序   |
 
 ⇒ **第 1 条最直接**：NMI 每 500 次一行 × 200 万次 = **4000 行**刷屏。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | `canaryScan` O(n²) | ✅ 已确证（慢，但会结束）|
+| #     | 项                         | 状态                          |
+| ----- | -------------------------- | ----------------------------- |
+| 1–5   | 五个缺陷                   | 4 修 + 1 验证                 |
+| 6     | `canaryScan` O(n²)         | ✅ 已确证（慢，但会结束）     |
 | **7** | **NMI 打印刷屏淹没判决行** | ✅ **新发现，是当前观测障碍** |
-| —— | 同型"看起来对"错误 | **18** |
-| —— | 撤回总数 | **112** |
-| —— | 自我纠正 | **288** |
+| ——    | 同型"看起来对"错误         | **18**                        |
+| ——    | 撤回总数                   | **112**                       |
+| ——    | 自我纠正                   | **288**                       |
 
 ## ❌ 更正：`canaryScan` **不慢** —— tick 速率算错了
 
 ### 重新计算
 
-| 观测 | 值 |
-| --- | --- |
-| 本轮窗口 | **110 s** |
-| 到达的 tick | `n = 1 049 500` |
+| 观测        | 值                 |
+| ----------- | ------------------ |
+| 本轮窗口    | **110 s**          |
+| 到达的 tick | `n = 1 049 500`    |
 | ⇒ tick 速率 | **≈ 9 540 tick/s** |
-| ⇒ 单 tick | **≈ 0.105 ms** |
+| ⇒ 单 tick   | **≈ 0.105 ms**     |
 
 ⇒ 我此前用"75 s 打印出 n=1000"推出 **75 ms/tick**，那是错的：
 `== 1000` 只打印**一次**，75 s 是**整个捕获窗口**，不是到第 1000 tick 的时间。
 
 ### 因此
 
-| 区间 | tick 数 | 时间 |
-| --- | --- | --- |
-| `canaryScan`（n=500..4000）| 3 500 | **≈ 0.37 s** |
-| `probe.halt`（n≈5500 起）| 1 044 000 | ≈ 110 s（**停机后一直在那**）|
+| 区间                        | tick 数   | 时间                          |
+| --------------------------- | --------- | ----------------------------- |
+| `canaryScan`（n=500..4000） | 3 500     | **≈ 0.37 s**                  |
+| `probe.halt`（n≈5500 起）   | 1 044 000 | ≈ 110 s（**停机后一直在那**） |
 
 ⇒ **`canaryScan` 只花了约 0.37 秒** ⇒ **"O(n²) 极慢"的结论作废**。
 
@@ -20896,14 +20985,14 @@ NMI n=1049500 mepc=0x4006b8fc ← 一直在这里
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ **撤回**（仅 0.37 s）|
-| **当前** | **程序正常跑到 `halt()`；HCI 判决行未观测到** | 🔍 |
-| —— | 同型"看起来对"错误 | **19** |
-| —— | 撤回总数 | **113** |
-| —— | 自我纠正 | **289** |
+| #        | 项                                            | 状态                     |
+| -------- | --------------------------------------------- | ------------------------ |
+| 1–5      | 五个缺陷                                      | 4 修 + 1 验证            |
+| 6        | ~~`canaryScan` O(n²)~~                        | ❌ **撤回**（仅 0.37 s） |
+| **当前** | **程序正常跑到 `halt()`；HCI 判决行未观测到** | 🔍                       |
+| ——       | 同型"看起来对"错误                            | **19**                   |
+| ——       | 撤回总数                                      | **113**                  |
+| ——       | 自我纠正                                      | **289**                  |
 
 ## 🎉🎉🎉 HCI 往返成功：`evt=1`
 
@@ -20913,24 +21002,24 @@ NMI n=1049500 mepc=0x4006b8fc ← 一直在这里
 bt HALT verdict: evt=1 cmds=1 btdm_tx=0 alloc_null=0 rw_drops=0 last_code=0x01
 ```
 
-| 字段 | 值 | 含义 |
-| --- | --- | --- |
-| **`evt`** | **1** | **收到一个事件 ⇒ controller 回包了** |
-| `cmds` | 1 | 发出一条命令 |
-| `btdm_tx` | 0 | （blob 主动发起的包计数）|
-| `alloc_null` | 0 | 缓冲区分配成功 |
-| `rw_drops` | 0 | **这次没有被丢弃的日志行** |
-| `last_code` | `0x01` | 事件码 |
+| 字段         | 值     | 含义                                 |
+| ------------ | ------ | ------------------------------------ |
+| **`evt`**    | **1**  | **收到一个事件 ⇒ controller 回包了** |
+| `cmds`       | 1      | 发出一条命令                         |
+| `btdm_tx`    | 0      | （blob 主动发起的包计数）            |
+| `alloc_null` | 0      | 缓冲区分配成功                       |
+| `rw_drops`   | 0      | **这次没有被丢弃的日志行**           |
+| `last_code`  | `0x01` | 事件码                               |
 
 ⇒ **`evt=1` 是关键：命令发出、controller 处理、事件回来。**
 
 ### 为什么之前一直"看不到回包"
 
-| 原因 | 说明 |
-| --- | --- |
-| `bt probe: GOT 1 EVT` 打印后被 **FIFO 丢弃** | 单次打印，且紧接 `halt()` |
-| 我把"没有那行日志"当成"没有回包" | **第 19 类错误的又一次** |
-| 修法 | 让 `halt()` **周期性重打判决** ⇒ 终于抓到 |
+| 原因                                         | 说明                                      |
+| -------------------------------------------- | ----------------------------------------- |
+| `bt probe: GOT 1 EVT` 打印后被 **FIFO 丢弃** | 单次打印，且紧接 `halt()`                 |
+| 我把"没有那行日志"当成"没有回包"             | **第 19 类错误的又一次**                  |
+| 修法                                         | 让 `halt()` **周期性重打判决** ⇒ 终于抓到 |
 
 ### `last_code = 0x01` 需要核对
 
@@ -20939,11 +21028,11 @@ HCI Reset 的标准回程是 **Command Complete**（事件码 `0x0E`），
 
 ⇒ 实测 `0x01`，**不是 `0x0E`** ⇒ 需要确认：
 
-| 可能 | 说明 |
-| --- | --- |
-| 我们的 `last_evt_code` 取的是**别的偏移** | 需看 `transport.zig` 里事件解析 |
-| 这是**另一个事件**（如 Command Status `0x0F` 或厂商事件）| 帧格式不同 |
-| 事件字节顺序/长度解析有偏差 | 需打印原始字节 |
+| 可能                                                      | 说明                            |
+| --------------------------------------------------------- | ------------------------------- |
+| 我们的 `last_evt_code` 取的是**别的偏移**                 | 需看 `transport.zig` 里事件解析 |
+| 这是**另一个事件**（如 Command Status `0x0F` 或厂商事件） | 帧格式不同                      |
+| 事件字节顺序/长度解析有偏差                               | 需打印原始字节                  |
 
 ⇒ **这是下一步：把事件的原始字节打出来**，确认是不是 Reset 的 Command Complete。
 
@@ -20958,15 +21047,15 @@ HCI Reset 的标准回程是 **Command Complete**（事件码 `0x0E`），
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回（0.37 s）|
-| 7 | 判决行被 FIFO 丢弃 | ✅ 已修（周期重打）|
-| **里程碑** | **HCI 往返成功（`evt=1`）** | ✅ **达成** |
-| —— | 同型"看起来对"错误 | **19** |
-| —— | 撤回总数 | 113 |
-| —— | 自我纠正 | **290** |
+| #          | 项                          | 状态                |
+| ---------- | --------------------------- | ------------------- |
+| 1–5        | 五个缺陷                    | 4 修 + 1 验证       |
+| 6          | ~~`canaryScan` O(n²)~~      | ❌ 撤回（0.37 s）   |
+| 7          | 判决行被 FIFO 丢弃          | ✅ 已修（周期重打） |
+| **里程碑** | **HCI 往返成功（`evt=1`）** | ✅ **达成**         |
+| ——         | 同型"看起来对"错误          | **19**              |
+| ——         | 撤回总数                    | 113                 |
+| ——         | 自我纠正                    | **290**             |
 
 ## 🎉🎉🎉 HCI 事件端到端打通：收到真正的 **Command Complete**
 
@@ -20979,13 +21068,13 @@ bt HALT verdict: evt=1 cmds=1 ... fail_step=0 last_rc=0
 
 ### 字节解码
 
-| 偏移 | 值 | 含义 |
-| --- | --- | --- |
-| `[0]` | **`0x0E`** | **HCI Command Complete**（标准事件码）|
-| `[1]` | `0x03` | 参数长度 = 3 |
-| `[2]` | `0x01` | `num_hci_command_packets` |
-| `[3..4]` | `0x00 0x00` | **opcode = `0x0000`** |
-| `[5]` | `0x00` | （长度 3 时不含 status）|
+| 偏移     | 值          | 含义                                   |
+| -------- | ----------- | -------------------------------------- |
+| `[0]`    | **`0x0E`**  | **HCI Command Complete**（标准事件码） |
+| `[1]`    | `0x03`      | 参数长度 = 3                           |
+| `[2]`    | `0x01`      | `num_hci_command_packets`              |
+| `[3..4]` | `0x00 0x00` | **opcode = `0x0000`**                  |
+| `[5]`    | `0x00`      | （长度 3 时不含 status）               |
 
 ⇒ **这是一条格式正确的 HCI Command Complete 事件。**
 
@@ -21011,47 +21100,48 @@ stats_state.last_evt_code = bytes[2];
 
 ⇒ 这条回包**不是** Reset 的应答。
 ⇒ 可能：
-| # | 可能 |
-| --- | --- |
-| 1 | 回的是 blob **自己的**某条命令（opcode 0x0000 = HCI NOP 类）|
-| 2 | `sendCmdViaHs` 的缓冲区布局与 controller 期望的不一致 |
-| 3 | 我们的那条命令**还没被处理**，先收到的是别人的回包 |
+
+| #   | 可能                                                         |
+| --- | ------------------------------------------------------------ |
+| 1   | 回的是 blob **自己的**某条命令（opcode 0x0000 = HCI NOP 类） |
+| 2   | `sendCmdViaHs` 的缓冲区布局与 controller 期望的不一致        |
+| 3   | 我们的那条命令**还没被处理**，先收到的是别人的回包           |
 
 ⇒ **下一步**：核对 `sendCmdViaHs` 写的 `buf[0..3]` 布局与 blob 的期望。
 
 ### 但里程碑已经成立
 
-| 已证明 | 说明 |
-| --- | --- |
-| `enable()` 成功（`fail_step=0`, `last_rc=0`）| ✅ |
-| 命令能发到 blob（`cmds=1`）| ✅ |
-| **controller 能回标准 HCI 事件** | ✅ **`0e 03 01 ...`** |
-| 中断/唤醒链能把事件送到 host | ✅ |
-| `rw_drops=0` | ✅ 本轮无丢行 |
+| 已证明                                        | 说明                  |
+| --------------------------------------------- | --------------------- |
+| `enable()` 成功（`fail_step=0`, `last_rc=0`） | ✅                    |
+| 命令能发到 blob（`cmds=1`）                   | ✅                    |
+| **controller 能回标准 HCI 事件**              | ✅ **`0e 03 01 ...`** |
+| 中断/唤醒链能把事件送到 host                  | ✅                    |
+| `rw_drops=0`                                  | ✅ 本轮无丢行         |
 
 ⇒ **"活着但沉默"正式结束。**
 
 ### 为什么之前一直没看到
 
-| 层次 | 原因 |
-| --- | --- |
-| 第一次 | 崩溃（睡眠段损坏）|
-| 第二次 | `enable()` 非零 ⇒ 走 `halt()` 分支（`fail_step=0` 证明现在不是）|
-| 第三次 | `GOT 1 EVT` 单行被 FIFO 丢弃 |
-| **最终** | **让 `halt()` 周期重打 + 静态数组保存原始字节** |
+| 层次     | 原因                                                             |
+| -------- | ---------------------------------------------------------------- |
+| 第一次   | 崩溃（睡眠段损坏）                                               |
+| 第二次   | `enable()` 非零 ⇒ 走 `halt()` 分支（`fail_step=0` 证明现在不是） |
+| 第三次   | `GOT 1 EVT` 单行被 FIFO 丢弃                                     |
+| **最终** | **让 `halt()` 周期重打 + 静态数组保存原始字节**                  |
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
-| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
-| **里程碑** | **收到标准 HCI Command Complete（`0e 03 01 ...`）** | ✅ **达成** |
-| **遗留** | ①`last_evt_code` 偏移错 2 字节 ②opcode 是 `0x0000` 而非 `0x0C03` | 🔍 |
-| —— | 同型"看起来对"错误 | 19 |
-| —— | 撤回总数 | 113 |
-| —— | 自我纠正 | **291** |
+| #          | 项                                                               | 状态          |
+| ---------- | ---------------------------------------------------------------- | ------------- |
+| 1–5        | 五个缺陷                                                         | 4 修 + 1 验证 |
+| 6          | ~~`canaryScan` O(n²)~~                                           | ❌ 撤回       |
+| 7          | 判决行被 FIFO 丢弃                                               | ✅ 已修       |
+| **里程碑** | **收到标准 HCI Command Complete（`0e 03 01 ...`）**              | ✅ **达成**   |
+| **遗留**   | ①`last_evt_code` 偏移错 2 字节 ②opcode 是 `0x0000` 而非 `0x0C03` | 🔍            |
+| ——         | 同型"看起来对"错误                                               | 19            |
+| ——         | 撤回总数                                                         | 113           |
+| ——         | 自我纠正                                                         | **291**       |
 
 ## 🎯 最终解码：controller 应答的是 **opcode `0x0000`**，不是 Reset 的 `0x0C03`
 
@@ -21063,24 +21153,24 @@ evt_bytes = 0e, 03, 01, 00, 00, 00
 
 按 `[0]=事件码, [1]=长度, [2..]=参数` 解（**无 H4 类型字节**，与代码注释的 `[0]=0x04` 不符）：
 
-| 偏移 | 值 | 含义 |
-| --- | --- | --- |
-| `[0]` | `0x0E` | **HCI Command Complete** |
-| `[1]` | `0x03` | 参数长度 = 3 |
-| `[2]` | `0x01` | `num_hci_command_packets` |
-| `[3..4]` | `0x00 0x00` | **opcode = `0x0000`** |
+| 偏移     | 值          | 含义                      |
+| -------- | ----------- | ------------------------- |
+| `[0]`    | `0x0E`      | **HCI Command Complete**  |
+| `[1]`    | `0x03`      | 参数长度 = 3              |
+| `[2]`    | `0x01`      | `num_hci_command_packets` |
+| `[3..4]` | `0x00 0x00` | **opcode = `0x0000`**     |
 
 ⇒ 长度 3 = `ncmd(1) + opcode(2)` ⇒ **没有 status 字节**
 ⇒ 这正是"应答 **opcode `0x0000`**"的形状，而 `0x0000` 就是 **HCI_NOP**。
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| 链路（命令下行 + 事件上行） | ✅ **完全正常** |
-| 中断/唤醒链 | ✅ **正常** |
-| controller 任务 | ✅ **在跑** |
-| **我们发出的 opcode** | ❌ **被 controller 读成 `0x0000`** |
+| 结论                        | 状态                               |
+| --------------------------- | ---------------------------------- |
+| 链路（命令下行 + 事件上行） | ✅ **完全正常**                    |
+| 中断/唤醒链                 | ✅ **正常**                        |
+| controller 任务             | ✅ **在跑**                        |
+| **我们发出的 opcode**       | ❌ **被 controller 读成 `0x0000`** |
 
 ⇒ **不是"没有回包"，而是"回的是另一个命令的包"。**
 
@@ -21098,11 +21188,11 @@ buf[2] = @intCast(params.len);    // 0x00
 
 而 `r_ble_hci_trans_hs_cmd_tx` 期望的布局**可能**是：
 
-| 候选 | 形态 |
-| --- | --- |
-| A | `[plen][opcode_lo][opcode_hi][params]` |
-| B | `[opcode_lo][opcode_hi][plen][params]`（我们现在的）|
-| C | H4：`[0x01][opcode_lo][opcode_hi][plen][params]` |
+| 候选 | 形态                                                 |
+| ---- | ---------------------------------------------------- |
+| A    | `[plen][opcode_lo][opcode_hi][params]`               |
+| B    | `[opcode_lo][opcode_hi][plen][params]`（我们现在的） |
+| C    | H4：`[0x01][opcode_lo][opcode_hi][plen][params]`     |
 
 ⇒ 若控制器把 `buf[0]` 当**长度**、`buf[1..2]` 当 opcode，
 则我们发的 `03 0C 00` 会被读成 len=0x03、opcode=`0x000C`... 不是 `0x0000`。
@@ -21113,10 +21203,10 @@ buf[2] = @intCast(params.len);    // 0x00
 
 ### 下一步（一次运行即可定论）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 把 `sendCmdViaHs` 改成 `buf[0]=plen; buf[1]=opcode_lo; buf[2]=opcode_hi; buf[3..]=params` | 回包 opcode 变成 `0x0C03` |
-| 2 | 同时打印**发送缓冲区的 4 个字节** | 直接对照 |
+| #   | 动作                                                                                      | 判据                      |
+| --- | ----------------------------------------------------------------------------------------- | ------------------------- |
+| 1   | 把 `sendCmdViaHs` 改成 `buf[0]=plen; buf[1]=opcode_lo; buf[2]=opcode_hi; buf[3..]=params` | 回包 opcode 变成 `0x0C03` |
+| 2   | 同时打印**发送缓冲区的 4 个字节**                                                         | 直接对照                  |
 
 ⇒ 判据非常干脆：**回包里的 opcode 是不是 `0x0C03`。**
 
@@ -21139,17 +21229,17 @@ len           = 1 + bytes[1];      // 4（不是 cmd[1]+2）
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
-| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
-| **8** | **`sendCmdViaHs` 缓冲区布局错** | ✅ **已定位（回包 opcode = 0x0000）** |
-| **9** | **`leEvtTx` 事件布局偏移错（多假设了 0x04）** | ✅ **已定位** |
-| **里程碑** | **收到标准 HCI Command Complete** | ✅ **达成** |
-| —— | 同型"看起来对"错误 | 19 |
-| —— | 撤回总数 | 113 |
-| —— | 自我纠正 | **292** |
+| #          | 项                                            | 状态                                  |
+| ---------- | --------------------------------------------- | ------------------------------------- |
+| 1–5        | 五个缺陷                                      | 4 修 + 1 验证                         |
+| 6          | ~~`canaryScan` O(n²)~~                        | ❌ 撤回                               |
+| 7          | 判决行被 FIFO 丢弃                            | ✅ 已修                               |
+| **8**      | **`sendCmdViaHs` 缓冲区布局错**               | ✅ **已定位（回包 opcode = 0x0000）** |
+| **9**      | **`leEvtTx` 事件布局偏移错（多假设了 0x04）** | ✅ **已定位**                         |
+| **里程碑** | **收到标准 HCI Command Complete**             | ✅ **达成**                           |
+| ——         | 同型"看起来对"错误                            | 19                                    |
+| ——         | 撤回总数                                      | 113                                   |
+| ——         | 自我纠正                                      | **292**                               |
 
 ## 🏁 判别实验结论：`cmds=2` 但 `evt=1` ⇒ **我们的命令未被消费**
 
@@ -21157,12 +21247,13 @@ len           = 1 + bytes[1];      // 4（不是 cmd[1]+2）
 
 发**两条可区分**的命令：
 
-| # | 命令 | opcode |
-| --- | --- | --- |
-| 1 | HCI Reset | `0x0C03` |
-| 2 | Read Local Version | `0x1001` |
+| #   | 命令               | opcode   |
+| --- | ------------------ | -------- |
+| 1   | HCI Reset          | `0x0C03` |
+| 2   | Read Local Version | `0x1001` |
 
 判据：
+
 - `evt=2` 且回包 opcode `01 10` ⇒ 命令被逐条处理
 - **仍 `evt=1`** ⇒ 那条 CC 是 **blob 自己的 init 事件**，命令未被消费
 
@@ -21182,48 +21273,48 @@ bt HALT verdict: evt=1 cmds=2 btdm_tx=0 alloc_null=0 rw_drops=0
 
 ### 因此当前精确状态
 
-| 层 | 状态 |
-| --- | --- |
-| `enable()` 成功（`fail_step=0`, `last_rc=0`）| ✅ |
-| controller 任务在跑 | ✅ |
-| **事件上行（controller → host）** | ✅ **可用**（`evt=1` 就是证明）|
-| **命令下行（host → controller）被消费** | ❌ **未成立** |
+| 层                                            | 状态                            |
+| --------------------------------------------- | ------------------------------- |
+| `enable()` 成功（`fail_step=0`, `last_rc=0`） | ✅                              |
+| controller 任务在跑                           | ✅                              |
+| **事件上行（controller → host）**             | ✅ **可用**（`evt=1` 就是证明） |
+| **命令下行（host → controller）被消费**       | ❌ **未成立**                   |
 
 ⇒ **链路是单向可用的**：事件能上来，命令进不去（或进去了没人取）。
 
 ### 这修正了上一轮的里程碑措辞
 
-| 上一轮写的 | 修正 |
-| --- | --- |
-| "HCI 往返成功" | ⚠️ **只证明了事件上行**；命令下行未被消费 |
-| "controller 处理了 Reset" | ❌ **撤回** —— `cmds=2`/`evt=1` 否证 |
+| 上一轮写的                | 修正                                      |
+| ------------------------- | ----------------------------------------- |
+| "HCI 往返成功"            | ⚠️ **只证明了事件上行**；命令下行未被消费 |
+| "controller 处理了 Reset" | ❌ **撤回** —— `cmds=2`/`evt=1` 否证      |
 
 ⇒ **真正的里程碑应该表述为：事件上行链路打通；命令下行链路待打通。**
 
 ### 剩余原因（三条，按可能性）
 
-| # | 原因 | 判据 |
-| --- | --- | --- |
-| 1 | **HS 路径（`sendCmdViaHs`）投递的命令 controller 不消费** | 换 A 路径（`sendCmd`）对比 |
-| 2 | controller 任务**需要被唤醒**才处理命令队列（我们只 `resumeTask`，可能不够）| 看 blob 是否在等某个事件/信号量 |
-| 3 | 命令队列的**门控**（如 HCI flow control 未放行）| `r_btdm_hci_fc_enable`（step 19）是否真的生效 |
+| #   | 原因                                                                         | 判据                                          |
+| --- | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| 1   | **HS 路径（`sendCmdViaHs`）投递的命令 controller 不消费**                    | 换 A 路径（`sendCmd`）对比                    |
+| 2   | controller 任务**需要被唤醒**才处理命令队列（我们只 `resumeTask`，可能不够） | 看 blob 是否在等某个事件/信号量               |
+| 3   | 命令队列的**门控**（如 HCI flow control 未放行）                             | `r_btdm_hci_fc_enable`（step 19）是否真的生效 |
 
 ⇒ **第 1 条最省**：一次烧录即可对比 A/B 路径。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
-| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
-| 8 | `sendCmdViaHs` 缓冲区布局 | ⚠️ 已核对（`03 0C 00` 正确）|
-| 9 | `leEvtTx` 事件布局偏移 | ✅ **已修**（`last_code=0x0e` 证明）|
-| **里程碑** | **事件上行打通** | ✅ |
-| **遗留** | **命令下行未被消费**（`cmds=2`/`evt=1`）| 🔍 |
-| —— | 同型"看起来对"错误 | **20** |
-| —— | 撤回总数 | **114** |
-| —— | 自我纠正 | **293** |
+| #          | 项                                       | 状态                                 |
+| ---------- | ---------------------------------------- | ------------------------------------ |
+| 1–5        | 五个缺陷                                 | 4 修 + 1 验证                        |
+| 6          | ~~`canaryScan` O(n²)~~                   | ❌ 撤回                              |
+| 7          | 判决行被 FIFO 丢弃                       | ✅ 已修                              |
+| 8          | `sendCmdViaHs` 缓冲区布局                | ⚠️ 已核对（`03 0C 00` 正确）         |
+| 9          | `leEvtTx` 事件布局偏移                   | ✅ **已修**（`last_code=0x0e` 证明） |
+| **里程碑** | **事件上行打通**                         | ✅                                   |
+| **遗留**   | **命令下行未被消费**（`cmds=2`/`evt=1`） | 🔍                                   |
+| ——         | 同型"看起来对"错误                       | **20**                               |
+| ——         | 撤回总数                                 | **114**                              |
+| ——         | 自我纠正                                 | **293**                              |
 
 ## A 路径产生 `btdm_tx=1`，但事件数仍是 1
 
@@ -21234,22 +21325,22 @@ bt HALT verdict: evt=1 cmds=3 btdm_tx=1 alloc_null=0 rw_drops=0
    last_code=0x0e fail_step=0 last_rc=0 evt_bytes=0e,03,01,00,00,00
 ```
 
-| 字段 | 三轮对比 |
-| --- | --- |
-| `cmds` | 1 → 2 → **3**（B 路径 1 条 + B 路径 1 条 + **A 路径 1 条**）|
-| `evt` | 1 → 1 → **1**（**不变**）|
-| **`btdm_tx`** | 0 → 0 → **1**（A 路径让它变了）|
+| 字段          | 三轮对比                                                     |
+| ------------- | ------------------------------------------------------------ |
+| `cmds`        | 1 → 2 → **3**（B 路径 1 条 + B 路径 1 条 + **A 路径 1 条**） |
+| `evt`         | 1 → 1 → **1**（**不变**）                                    |
+| **`btdm_tx`** | 0 → 0 → **1**（A 路径让它变了）                              |
 
 ⇒ **A 路径确实触发了 blob 侧的回送**（`btdm_tx` 从 0 变 1），
 但那走的**不是事件回调**（`evt` 不动）。
 
 ### 因此三条路径的行为
 
-| 路径 | 调用 | `cmds` | `evt` | `btdm_tx` |
-| --- | --- | --- | --- | --- |
-| B | `sendCmdViaHs` | +1 | 不变 | 不变 |
-| **A** | `sendCmd` (→ `r_btdm_hci_trans_rx`) | +1 | 不变 | **+1** |
-| —— | 事件上行 | — | **1（来自 blob init）** | — |
+| 路径  | 调用                                | `cmds` | `evt`                   | `btdm_tx` |
+| ----- | ----------------------------------- | ------ | ----------------------- | --------- |
+| B     | `sendCmdViaHs`                      | +1     | 不变                    | 不变      |
+| **A** | `sendCmd` (→ `r_btdm_hci_trans_rx`) | +1     | 不变                    | **+1**    |
+| ——    | 事件上行                            | —      | **1（来自 blob init）** | —         |
 
 ⇒ **命令仍然没有被处理成 HCI 事件。**
 
@@ -21264,44 +21355,44 @@ bt HALT verdict: evt=1 cmds=3 btdm_tx=1 alloc_null=0 rw_drops=0
 
 ### 下一步（收窄到一条）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 看 `btdmTx` 收到的**字节**（存进静态数组，判决里打印）| 若它是 `04 0E ...` 形态 ⇒ **命令完的成就在这条通道上**，我们的 `leEvtTx` 注册错了/没被使用 |
-| 2 | 对照 IDF：`r_btdm_hci_trans_register_tx` 与 `r_ble_hci_trans_cfg_hs` 的**分工** | 哪个才是 controller→host 事件的出口 |
+| #   | 动作                                                                            | 判据                                                                                       |
+| --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1   | 看 `btdmTx` 收到的**字节**（存进静态数组，判决里打印）                          | 若它是 `04 0E ...` 形态 ⇒ **命令完的成就在这条通道上**，我们的 `leEvtTx` 注册错了/没被使用 |
+| 2   | 对照 IDF：`r_btdm_hci_trans_register_tx` 与 `r_ble_hci_trans_cfg_hs` 的**分工** | 哪个才是 controller→host 事件的出口                                                        |
 
 ⇒ **第 1 条最直接**：把 `btdmTx` 的字节打出来，就知道命令到底有没有被应答。
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
-| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
-| 8 | `sendCmdViaHs` 布局 | ✅ 核对正确 |
-| 9 | `leEvtTx` 事件偏移 | ✅ 已修 |
-| **当前** | **事件上行可用；命令下行进入 blob 但不走事件通道** | 🔍 |
-| **新事实** | **A 路径让 `btdm_tx` +1** | ✅ |
-| —— | 同型"看起来对"错误 | 20 |
-| —— | 撤回总数 | 114 |
-| —— | 自我纠正 | **294** |
+| #          | 项                                                 | 状态          |
+| ---------- | -------------------------------------------------- | ------------- |
+| 1–5        | 五个缺陷                                           | 4 修 + 1 验证 |
+| 6          | ~~`canaryScan` O(n²)~~                             | ❌ 撤回       |
+| 7          | 判决行被 FIFO 丢弃                                 | ✅ 已修       |
+| 8          | `sendCmdViaHs` 布局                                | ✅ 核对正确   |
+| 9          | `leEvtTx` 事件偏移                                 | ✅ 已修       |
+| **当前**   | **事件上行可用；命令下行进入 blob 但不走事件通道** | 🔍            |
+| **新事实** | **A 路径让 `btdm_tx` +1**                          | ✅            |
+| ——         | 同型"看起来对"错误                                 | 20            |
+| ——         | 撤回总数                                           | 114           |
+| ——         | 自我纠正                                           | **294**       |
 
 ## 🎉🎉🎉 往返完全成立：controller 应答了 `0x1001`，走的是 **`btdmTx`**
 
 ### 决定性读数
 
 ```text
-bt HALT verdict: evt=1 cmds=3 btdm_tx=1 ... 
+bt HALT verdict: evt=1 cmds=3 btdm_tx=1 ...
    tx_type=4  tx_len=14  tx_head=**0e,0c,02,01**
 ```
 
 ### 解码
 
-| 偏移 | 值 | 含义 |
-| --- | --- | --- |
-| `[0]` | **`0x0E`** | **HCI Command Complete** |
-| `[1]` | `0x0C` = 12 | 参数长度 |
-| `[2]` | `0x02` | `num_hci_command_packets` |
+| 偏移     | 值              | 含义                                                    |
+| -------- | --------------- | ------------------------------------------------------- |
+| `[0]`    | **`0x0E`**      | **HCI Command Complete**                                |
+| `[1]`    | `0x0C` = 12     | 参数长度                                                |
+| `[2]`    | `0x02`          | `num_hci_command_packets`                               |
 | `[3..4]` | **`0x01 0x10`** | **opcode = `0x1001`** ← **我们发的 Read Local Version** |
 
 ⇒ **长度校验**：`plen = 12` 正好等于
@@ -21311,33 +21402,34 @@ bt HALT verdict: evt=1 cmds=3 btdm_tx=1 ...
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| 命令下行（host → controller）| ✅ **成立** |
-| **controller 处理命令** | ✅ **成立** |
-| **应答上行** | ✅ **成立（走 `btdmTx`）** |
-| HCI 往返 | ✅ **完全成立** |
+| 结论                          | 状态                       |
+| ----------------------------- | -------------------------- |
+| 命令下行（host → controller） | ✅ **成立**                |
+| **controller 处理命令**       | ✅ **成立**                |
+| **应答上行**                  | ✅ **成立（走 `btdmTx`）** |
+| HCI 往返                      | ✅ **完全成立**            |
 
 ### 关键发现：**事件走的是 `btdmTx`，不是 `leEvtTx`**
 
-| 回调 | 注册方式 | 实际用途 |
-| --- | --- | --- |
-| `leEvtTx`（计入 `evt`）| `r_ble_hci_trans_cfg_hs`（step 15）| 只在 init 期间收到 1 条 |
-| **`btdmTx`（计入 `btdm_tx`）** | `r_btdm_hci_trans_register_tx` | **真正的命令应答通道** |
+| 回调                           | 注册方式                            | 实际用途                |
+| ------------------------------ | ----------------------------------- | ----------------------- |
+| `leEvtTx`（计入 `evt`）        | `r_ble_hci_trans_cfg_hs`（step 15） | 只在 init 期间收到 1 条 |
+| **`btdmTx`（计入 `btdm_tx`）** | `r_btdm_hci_trans_register_tx`      | **真正的命令应答通道**  |
 
 ⇒ 我们一直在看**错的计数器**。
 
 ⇒ 这解释了为什么：
+
 - `evt` 恒为 1（只有 init 那条）
 - `cmds` 增加而 `evt` 不动
 - 而 **`btdm_tx` 在 A 路径后变成 1** —— 那正是应答
 
 ### 为什么 A 路径才触发
 
-| 路径 | 调用 | 结果 |
-| --- | --- | --- |
-| B | `sendCmdViaHs` → `r_ble_hci_trans_hs_cmd_tx` | 进队列但未被处理（`btdm_tx` 不变）|
-| **A** | `sendCmd` → `r_btdm_hci_trans_rx` | ✅ **被处理，应答从 `btdmTx` 回来** |
+| 路径  | 调用                                         | 结果                                |
+| ----- | -------------------------------------------- | ----------------------------------- |
+| B     | `sendCmdViaHs` → `r_ble_hci_trans_hs_cmd_tx` | 进队列但未被处理（`btdm_tx` 不变）  |
+| **A** | `sendCmd` → `r_btdm_hci_trans_rx`            | ✅ **被处理，应答从 `btdmTx` 回来** |
 
 ⇒ **A 路径才是这条 controller 真正消费的命令通道。**
 
@@ -21352,18 +21444,18 @@ controller ──(btdmTx, 0e 0c 02 01 10 …)──> host
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
-| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
-| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
-| 8 | `sendCmdViaHs` 布局 | ✅ 正确，但**路径不对** |
-| 9 | `leEvtTx` 事件偏移 | ✅ 已修 |
-| **10** | **看错了计数器：应答走 `btdmTx` 而非 `leEvtTx`** | ✅ **已定位** |
-| **里程碑** | **HCI 往返完全成立（`0e 0c 02 01 10`）** | ✅ **达成** |
-| —— | 同型"看起来对"错误 | **21** |
-| —— | 撤回总数 | 114 |
-| —— | 自我纠正 | **295** |
+| #          | 项                                               | 状态                    |
+| ---------- | ------------------------------------------------ | ----------------------- |
+| 1–5        | 五个缺陷                                         | 4 修 + 1 验证           |
+| 6          | ~~`canaryScan` O(n²)~~                           | ❌ 撤回                 |
+| 7          | 判决行被 FIFO 丢弃                               | ✅ 已修                 |
+| 8          | `sendCmdViaHs` 布局                              | ✅ 正确，但**路径不对** |
+| 9          | `leEvtTx` 事件偏移                               | ✅ 已修                 |
+| **10**     | **看错了计数器：应答走 `btdmTx` 而非 `leEvtTx`** | ✅ **已定位**           |
+| **里程碑** | **HCI 往返完全成立（`0e 0c 02 01 10`）**         | ✅ **达成**             |
+| ——         | 同型"看起来对"错误                               | **21**                  |
+| ——         | 撤回总数                                         | 114                     |
+| ——         | 自我纠正                                         | **295**                 |
 
 ## 🏆🏆🏆 最终确认：逐命令往返成立，**Reset 应答 status = 0x00**
 
@@ -21377,9 +21469,9 @@ bt HALT verdict: evt=1 cmds=4 **btdm_tx=2** alloc_null=0 rw_drops=0
 
 ### 逐命令证明
 
-| 事件 | `btdm_tx` |
-| --- | --- |
-| 发第一条 A 命令（`0x1001`）| 0 → **1** |
+| 事件                                  | `btdm_tx` |
+| ------------------------------------- | --------- |
+| 发第一条 A 命令（`0x1001`）           | 0 → **1** |
 | **发第二条 A 命令（`0x0C03` Reset）** | **1 → 2** |
 
 ⇒ **每条命令产生一条应答** ⇒ **不是合并、不是积压**。
@@ -21390,13 +21482,13 @@ bt HALT verdict: evt=1 cmds=4 **btdm_tx=2** alloc_null=0 rw_drops=0
 0e 04 02 03 0c 00
 ```
 
-| 偏移 | 值 | 含义 |
-| --- | --- | --- |
-| `[0]` | `0x0E` | **Command Complete** |
-| `[1]` | `0x04` | 参数长度 4 |
-| `[2]` | `0x02` | `num_hci_command_packets` |
+| 偏移     | 值              | 含义                               |
+| -------- | --------------- | ---------------------------------- |
+| `[0]`    | `0x0E`          | **Command Complete**               |
+| `[1]`    | `0x04`          | 参数长度 4                         |
+| `[2]`    | `0x02`          | `num_hci_command_packets`          |
 | `[3..4]` | **`0x03 0x0C`** | **opcode = `0x0C03`（HCI Reset）** |
-| `[5]` | **`0x00`** | **status = SUCCESS** |
+| `[5]`    | **`0x00`**      | **status = SUCCESS**               |
 
 ⇒ 与标准应答 `0E 04 01 03 0C 00` **逐字节吻合**（`ncmd` 为 2 而非 1，无害）。
 
@@ -21409,21 +21501,21 @@ controller ──btdmTx (type=4 EVT)──> host
    payload: 0e 04 02 03 0c 00   (Reset 成功)
 ```
 
-| 环节 | 状态 |
-| --- | --- |
-| `enable()` | ✅ `fail_step=0`, `last_rc=0` |
-| controller 任务 | ✅ 运行中 |
-| **命令下行** | ✅ **被消费** |
-| **事件上行** | ✅ **逐命令应答** |
-| **Reset 执行结果** | ✅ **status = 0x00 SUCCESS** |
+| 环节               | 状态                          |
+| ------------------ | ----------------------------- |
+| `enable()`         | ✅ `fail_step=0`, `last_rc=0` |
+| controller 任务    | ✅ 运行中                     |
+| **命令下行**       | ✅ **被消费**                 |
+| **事件上行**       | ✅ **逐命令应答**             |
+| **Reset 执行结果** | ✅ **status = 0x00 SUCCESS**  |
 
 ### 三条被纠正的关键认知
 
-| # | 错误认知 | 真相 |
-| --- | --- | --- |
-| 1 | "应答走 `leEvtTx`" | **走 `btdmTx`**（`leEvtTx` 只收到 1 条 init 事件）|
-| 2 | "`sendCmdViaHs`（B 路径）会被消费" | **只有 A 路径（`r_btdm_hci_trans_rx`）被消费** |
-| 3 | "事件布局含 `0x04` 类型字节" | **不含**（`[0]=code`），而 `btdmTx` 的 `pkt.type=4` **才是**类型字节 |
+| #   | 错误认知                           | 真相                                                                 |
+| --- | ---------------------------------- | -------------------------------------------------------------------- |
+| 1   | "应答走 `leEvtTx`"                 | **走 `btdmTx`**（`leEvtTx` 只收到 1 条 init 事件）                   |
+| 2   | "`sendCmdViaHs`（B 路径）会被消费" | **只有 A 路径（`r_btdm_hci_trans_rx`）被消费**                       |
+| 3   | "事件布局含 `0x04` 类型字节"       | **不含**（`[0]=code`），而 `btdmTx` 的 `pkt.type=4` **才是**类型字节 |
 
 ⇒ 第 3 条尤其说明问题：**两条通道的帧形态不同**
 —— `leEvtTx` 给的是裸载荷，`btdmTx` 给的是 `{type, length, data}` 结构体。
@@ -21444,14 +21536,14 @@ BLE init 卡在 step 6
 
 ## 本会话最终总计（最终锁定）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–5 | 五个缺陷 | **全部修复并验证** |
-| **里程碑** | **HCI 往返逐命令成立，Reset status=0x00** | ✅ **达成** |
-| **门禁** | fmt ✅ / coverage ✅ / check-host（`firmware` 既有失败，基线 57 错，非本会话引入）| |
-| —— | 同型"看起来对"错误 | **21** |
-| —— | 撤回总数 | 114 |
-| —— | 自我纠正 | **296** |
+| #          | 项                                                                                 | 状态               |
+| ---------- | ---------------------------------------------------------------------------------- | ------------------ |
+| 1–5        | 五个缺陷                                                                           | **全部修复并验证** |
+| **里程碑** | **HCI 往返逐命令成立，Reset status=0x00**                                          | ✅ **达成**        |
+| **门禁**   | fmt ✅ / coverage ✅ / check-host（`firmware` 既有失败，基线 57 错，非本会话引入） |                    |
+| ——         | 同型"看起来对"错误                                                                 | **21**             |
+| ——         | 撤回总数                                                                           | 114                |
+| ——         | 自我纠正                                                                           | **296**            |
 
 ## 开放项 3b（PHY 首次标定）：具体路径已明确
 
@@ -21459,10 +21551,10 @@ BLE init 卡在 step 6
 
 `components/bt-blobs/link/phy_stubs.c` 里**已经**具备：
 
-| 组件 | 状态 |
-| --- | --- |
+| 组件                                                     | 状态                                 |
+| -------------------------------------------------------- | ------------------------------------ |
 | `nvs_open` / `nvs_get_blob` 返回 `ESP_ERR_NVS_NOT_FOUND` | ✅ ⇒ IDF 会走 `PHY_RF_CAL_FULL` 回退 |
-| 128 字节的 `phy_init_data` 表 | ✅ 已携带 |
+| 128 字节的 `phy_init_data` 表                            | ✅ 已携带                            |
 
 ### 缺的只是那一次调用
 
@@ -21470,11 +21562,11 @@ BLE init 卡在 step 6
 register_chipv7_phy(&init_data, &cal, PHY_RF_CAL_FULL = 2)
 ```
 
-| 项 | 值 |
-| --- | --- |
-| 符号地址 | **`0x40061c56`**（`nm` 实测）|
-| 签名 | `(init_data, cal_data, mode)` |
-| `cal_data` 尺寸 | **1904 字节**（`esp_phy_calibration_data_t` 形状已在仓库里）|
+| 项              | 值                                                           |
+| --------------- | ------------------------------------------------------------ |
+| 符号地址        | **`0x40061c56`**（`nm` 实测）                                |
+| 签名            | `(init_data, cal_data, mode)`                                |
+| `cal_data` 尺寸 | **1904 字节**（`esp_phy_calibration_data_t` 形状已在仓库里） |
 
 ### 接线顺序
 
@@ -21487,26 +21579,25 @@ porting.phyDomainEnable()
 
 ### 前置校验（写代码前先做）
 
-| # | 检查 | 原因 |
-| --- | --- | --- |
-| 1 | `nm` / `readelf` 看 `register_chipv7_phy` 的**段归属** | 若它在 IRAM 段而我们没有该段 ⇒ 是"缺代码"而非"缺调用" |
-| 2 | 确认 1904 字节 cal 缓冲在 `.bss`（NOLOAD 即可）| 若放栈上会溢出 |
+| #   | 检查                                                   | 原因                                                  |
+| --- | ------------------------------------------------------ | ----------------------------------------------------- |
+| 1   | `nm` / `readelf` 看 `register_chipv7_phy` 的**段归属** | 若它在 IRAM 段而我们没有该段 ⇒ 是"缺代码"而非"缺调用" |
+| 2   | 确认 1904 字节 cal 缓冲在 `.bss`（NOLOAD 即可）        | 若放栈上会溢出                                        |
 
 ⇒ 这一步**不影响已打通的 HCI 命令通路**，属于独立的下一阶段。
 
 ## 最终状态（本会话结束时）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1 | BT/MAC 四项时钟配置 | ✅ 已修复 |
-| 2 | 任务栈未初始化 | ✅ **已修复（默认清零）** |
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修复 |
-| 3b | **PHY 首次标定** | ❌ **开放（路径已明确）** |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修复 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修复并验证 |
-| 6 | 应答走 `btdmTx` 而非 `leEvtTx` | ✅ 已澄清 |
-| —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
-
+| #   | 项                                  | 状态                      |
+| --- | ----------------------------------- | ------------------------- |
+| 1   | BT/MAC 四项时钟配置                 | ✅ 已修复                 |
+| 2   | 任务栈未初始化                      | ✅ **已修复（默认清零）** |
+| 3   | `esp_phy_enable` 冻结入口点         | ✅ 已修复                 |
+| 3b  | **PHY 首次标定**                    | ❌ **开放（路径已明确）** |
+| 4   | `r_conn_stack_enable` 空桩          | ✅ 已修复                 |
+| 5   | `.iram_btslp*` 孤儿段               | ✅ 已修复并验证           |
+| 6   | 应答走 `btdmTx` 而非 `leEvtTx`      | ✅ 已澄清                 |
+| ——  | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证**             |
 
 ## ⚠️ 语义变更声明：`timeout == 0` 现在会**让出**
 
@@ -21516,11 +21607,11 @@ porting.phyDomainEnable()
 （FreeRTOS 的"非阻塞 try"语义）；现在会先 `sched.block()` 一次
 （守卫：`sched.isStarted() and !sched.inMain()`）。
 
-| 路径 | 行为 |
-| --- | --- |
-| `eventqGet` | 空队列 → 让出一次 → 返回 `null` |
+| 路径        | 行为                                        |
+| ----------- | ------------------------------------------- |
+| `eventqGet` | 空队列 → 让出一次 → 返回 `null`             |
 | `mutexPend` | try 失败 → 让出一次 → 再试 → 返回 `TIMEOUT` |
-| `semPend` | 计数为 0 → 让出一次 → 再试 → 返回 `TIMEOUT` |
+| `semPend`   | 计数为 0 → 让出一次 → 再试 → 返回 `TIMEOUT` |
 
 ### 为什么
 
@@ -21529,19 +21620,19 @@ controller 的常驻循环用 `timeout == 0` 轮询。**立即返回 ⇒ 主上�
 
 ### 风险（写进文档，供后来者判断）
 
-| # | 风险 | 说明 |
-| --- | --- | --- |
-| 1 | try-lock 变成"可能阻塞一次" | 若持锁者永不释放，调用方会多停一拍 |
-| 2 | 对时序敏感的调用 | 多一次调度切换，理论上改变可见顺序 |
-| 3 | 若 blob 在 try-lock 上自旋 | 会反复让出，表现成"变慢" |
+| #   | 风险                        | 说明                               |
+| --- | --------------------------- | ---------------------------------- |
+| 1   | try-lock 变成"可能阻塞一次" | 若持锁者永不释放，调用方会多停一拍 |
+| 2   | 对时序敏感的调用            | 多一次调度切换，理论上改变可见顺序 |
+| 3   | 若 blob 在 try-lock 上自旋  | 会反复让出，表现成"变慢"           |
 
 ### 更安全的形态（若将来出问题）
 
-| 方案 | 做法 |
-| --- | --- |
-| A | **有界让出**：每 N 次 try 才让出一次 |
-| B | 只对**特定调用点**让出（用参数或独立入口区分"轮询"与"真 try"）|
-| C | 保留 try 语义，改在 blob 的循环边界插入让出（需要可插入点）|
+| 方案 | 做法                                                           |
+| ---- | -------------------------------------------------------------- |
+| A    | **有界让出**：每 N 次 try 才让出一次                           |
+| B    | 只对**特定调用点**让出（用参数或独立入口区分"轮询"与"真 try"） |
+| C    | 保留 try 语义，改在 blob 的循环边界插入让出（需要可插入点）    |
 
 ⇒ 当前实现是**最简形式**，在实测的调用顺序下工作正常（HCI 逐命令往返已验证）。
 
@@ -21557,19 +21648,19 @@ const rc = register_chipv7_phy(@ptrCast(init_tbl), @ptrCast(&phy_cal_buf), 2);
 // rc == 0
 ```
 
-| 参数 | 值 | 说明 |
-| --- | --- | --- |
+| 参数        | 值                                                       | 说明            |
+| ----------- | -------------------------------------------------------- | --------------- |
 | `init_data` | `&phy_init_data`（`0x4010454e`，`.flash.rodata`，128 B） | **不能传 NULL** |
-| `cal_data` | 静态 1904 B 缓冲（`.bss`） | **不能传 NULL** |
-| `mode` | `2` = `PHY_RF_CAL_FULL` | |
+| `cal_data`  | 静态 1904 B 缓冲（`.bss`）                               | **不能传 NULL** |
+| `mode`      | `2` = `PHY_RF_CAL_FULL`                                  |                 |
 
 ### 两次失败实验（都是 NULL 导致的 store fault）
 
-| 尝试 | 结果 | 原因 |
-| --- | --- | --- |
-| `(NULL, NULL, 2)` | **142 个 trap** | `phy_rfcal_data_sub_new` 写 `NULL+0x0c` |
-| `(init_data, NULL, 2)` | **仍 142 个 trap** | 同上 ⇒ **问题在 `cal_data`** |
-| **`(init_data, cal, 2)`** | ✅ **`rc=0`** | 正确 |
+| 尝试                      | 结果               | 原因                                    |
+| ------------------------- | ------------------ | --------------------------------------- |
+| `(NULL, NULL, 2)`         | **142 个 trap**    | `phy_rfcal_data_sub_new` 写 `NULL+0x0c` |
+| `(init_data, NULL, 2)`    | **仍 142 个 trap** | 同上 ⇒ **问题在 `cal_data`**            |
+| **`(init_data, cal, 2)`** | ✅ **`rc=0`**      | 正确                                    |
 
 故障签名（两次一致）：
 
@@ -21582,11 +21673,11 @@ mepc  = 0x40061b8a ← 在 phy_rfcal_data_sub_new（0x40061b60）内
 
 ### 因此
 
-| 项 | 状态 |
-| --- | --- |
-| 标定调用 | ✅ `rc=0` |
-| fault | ✅ **0** |
-| HCI 往返 | ✅ **仍成立**（`btdm_tx=2`、`tx_head=0e,04,02,03,0c,00`）|
+| 项       | 状态                                                      |
+| -------- | --------------------------------------------------------- |
+| 标定调用 | ✅ `rc=0`                                                 |
+| fault    | ✅ **0**                                                  |
+| HCI 往返 | ✅ **仍成立**（`btdm_tx=2`、`tx_head=0e,04,02,03,0c,00`） |
 
 ⇒ **3b 不再是开放项。**
 
@@ -21598,16 +21689,16 @@ mepc  = 0x40061b8a ← 在 phy_rfcal_data_sub_new（0x40061b60）内
 
 ## 最终状态（本会话结束时）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1 | BT/MAC 四项时钟配置 | ✅ 已修复 |
-| 2 | 任务栈未初始化 | ✅ 已修复（默认清零）|
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修复 |
-| **3b** | **PHY 首次标定** | ✅ **已解决（`rc=0`）** |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修复 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修复并验证 |
-| 6 | 应答走 `btdmTx` 而非 `leEvtTx` | ✅ 已澄清 |
-| —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
+| #      | 项                                  | 状态                    |
+| ------ | ----------------------------------- | ----------------------- |
+| 1      | BT/MAC 四项时钟配置                 | ✅ 已修复               |
+| 2      | 任务栈未初始化                      | ✅ 已修复（默认清零）   |
+| 3      | `esp_phy_enable` 冻结入口点         | ✅ 已修复               |
+| **3b** | **PHY 首次标定**                    | ✅ **已解决（`rc=0`）** |
+| 4      | `r_conn_stack_enable` 空桩          | ✅ 已修复               |
+| 5      | `.iram_btslp*` 孤儿段               | ✅ 已修复并验证         |
+| 6      | 应答走 `btdmTx` 而非 `leEvtTx`      | ✅ 已澄清               |
+| ——     | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证**           |
 
 ⇒ **本会话所有已识别缺陷均已修复并验证。**
 
@@ -21624,13 +21715,13 @@ fault = **0**
 bt HALT verdict: evt=1 cmds=4 btdm_tx=2 ... tx_head=**0e,04,02,03,0c,00**
 ```
 
-| # | 判据 | 结果 |
-| --- | --- | --- |
-| 1 | `rc == 0` | ✅ |
-| 2 | **cal 缓冲被真正写入**（`cal[10..14] = 0x22feff`，非零）| ✅ ⇒ 不是"接受但没产出" |
-| 3 | **`0x2010B000` 变为可读**且返回有意义的值（`0x5ac968b1`）| ✅ |
-| 4 | 无 fault | ✅ |
-| 5 | HCI 往返不变（`btdm_tx=2`、Reset status=0x00）| ✅ **无回归** |
+| #   | 判据                                                      | 结果                    |
+| --- | --------------------------------------------------------- | ----------------------- |
+| 1   | `rc == 0`                                                 | ✅                      |
+| 2   | **cal 缓冲被真正写入**（`cal[10..14] = 0x22feff`，非零）  | ✅ ⇒ 不是"接受但没产出" |
+| 3   | **`0x2010B000` 变为可读**且返回有意义的值（`0x5ac968b1`） | ✅                      |
+| 4   | 无 fault                                                  | ✅                      |
+| 5   | HCI 往返不变（`btdm_tx=2`、Reset status=0x00）            | ✅ **无回归**           |
 
 ⇒ **3b 闭合，且不是靠 `rc=0` 推断的。**
 
@@ -21645,35 +21736,35 @@ bt HALT verdict: evt=1 cmds=4 btdm_tx=2 ... tx_head=**0e,04,02,03,0c,00**
 
 ### 三次实验的完整表
 
-| 尝试 | 参数 | 结果 | 教训 |
-| --- | --- | --- | --- |
-| 1 | `(NULL, NULL, 2)` | 142 trap，`mtval=0x0c` | NULL 不被接受 |
-| 2 | `(init_data, NULL, 2)` | 仍 142 trap | **问题在 `cal_data`** |
-| 3 | `(init_data, cal, 2)` | **`rc=0`** | 正确 |
+| 尝试 | 参数                   | 结果                   | 教训                  |
+| ---- | ---------------------- | ---------------------- | --------------------- |
+| 1    | `(NULL, NULL, 2)`      | 142 trap，`mtval=0x0c` | NULL 不被接受         |
+| 2    | `(init_data, NULL, 2)` | 仍 142 trap            | **问题在 `cal_data`** |
+| 3    | `(init_data, cal, 2)`  | **`rc=0`**             | 正确                  |
 
 ⇒ `mtval = 0x0c` **不是地址，是结构体偏移** —— 这是本轮最可复用的读数技巧。
 
 ## 最终状态（本会话结束时 · 全部闭合）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1 | BT/MAC 四项时钟配置 | ✅ 已修复并验证 |
-| 2 | 任务栈未初始化 | ✅ 已修复（默认清零）|
-| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修复 |
-| **3b** | **PHY 首次标定** | ✅ **已修复并三项验证** |
-| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修复 |
-| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修复并验证 |
-| 6 | 应答走 `btdmTx` 而非 `leEvtTx` | ✅ 已澄清 |
-| —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
+| #      | 项                                  | 状态                    |
+| ------ | ----------------------------------- | ----------------------- |
+| 1      | BT/MAC 四项时钟配置                 | ✅ 已修复并验证         |
+| 2      | 任务栈未初始化                      | ✅ 已修复（默认清零）   |
+| 3      | `esp_phy_enable` 冻结入口点         | ✅ 已修复               |
+| **3b** | **PHY 首次标定**                    | ✅ **已修复并三项验证** |
+| 4      | `r_conn_stack_enable` 空桩          | ✅ 已修复               |
+| 5      | `.iram_btslp*` 孤儿段               | ✅ 已修复并验证         |
+| 6      | 应答走 `btdmTx` 而非 `leEvtTx`      | ✅ 已澄清               |
+| ——     | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证**           |
 
 ⇒ **无遗留缺陷。**
 
 ## ⚠️ 路径警告：**只有 A 路径会被消费**
 
-| 函数 | 底层 | 本 build 是否被消费 |
-| --- | --- | --- |
-| **`sendCmd`**（A）| `r_btdm_hci_trans_rx` | ✅ **是**（应答从 `btdmTx` 回来）|
-| `sendCmdViaHs`（B）| `r_ble_hci_trans_hs_cmd_tx` | ❌ **否**（命令进队列但无人处理）|
+| 函数                | 底层                        | 本 build 是否被消费               |
+| ------------------- | --------------------------- | --------------------------------- |
+| **`sendCmd`**（A）  | `r_btdm_hci_trans_rx`       | ✅ **是**（应答从 `btdmTx` 回来） |
+| `sendCmdViaHs`（B） | `r_ble_hci_trans_hs_cmd_tx` | ❌ **否**（命令进队列但无人处理） |
 
 ⇒ 实测：走 B 路径时 `cmds` 增加而 **`btdm_tx` 不变**；走 A 路径时 `btdm_tx` 随之 +1。
 
@@ -21692,15 +21783,15 @@ btdm_tx=3  tx_len=14  tx_head = **0e,0c,02,01,10,00,0e,00**
 
 ### 解码（plen=12 的 Command Complete）
 
-| 偏移 | 值 | 字段 |
-| --- | --- | --- |
-| `[0]` | `0x0E` | **Command Complete** |
-| `[1]` | `0x0C` | 参数长度 12 |
-| `[2]` | `0x02` | `num_hci_command_packets` |
-| `[3..4]` | **`01 10`** | **opcode = `0x1001`**（Read Local Version）|
-| `[5]` | **`0x00`** | **status = SUCCESS** |
-| `[6]` | `0x0E` | **非零载荷字节**（标准布局下是 `hci_version`，但**这是解读，不是读数**）|
-| `[7]` | `0x00` | `hci_rev` 低字节 |
+| 偏移     | 值          | 字段                                                                     |
+| -------- | ----------- | ------------------------------------------------------------------------ |
+| `[0]`    | `0x0E`      | **Command Complete**                                                     |
+| `[1]`    | `0x0C`      | 参数长度 12                                                              |
+| `[2]`    | `0x02`      | `num_hci_command_packets`                                                |
+| `[3..4]` | **`01 10`** | **opcode = `0x1001`**（Read Local Version）                              |
+| `[5]`    | **`0x00`**  | **status = SUCCESS**                                                     |
+| `[6]`    | `0x0E`      | **非零载荷字节**（标准布局下是 `hci_version`，但**这是解读，不是读数**） |
+| `[7]`    | `0x00`      | `hci_rev` 低字节                                                         |
 
 ⇒ 长度核对：`ncmd(1) + opcode(2) + status(1) + hci_version(1) + hci_rev(2) + lmp_version(1) + manufacturer(2) + lmp_subver(2)` = **12** ✓
 
@@ -21708,12 +21799,12 @@ btdm_tx=3  tx_len=14  tx_head = **0e,0c,02,01,10,00,0e,00**
 
 **能确定的事实**（不含版本号解读）：
 
-| 事实 | 值 |
-| --- | --- |
-| opcode 回显 | `01 10` = `0x1001` ✓ |
-| status | `0x00` = SUCCESS ✓ |
-| 长度一致 | `plen=12`、`tx_len=14` 与标准布局吻合 ✓ |
-| 载荷非零 | `[6]=0x0E` ✓ |
+| 事实        | 值                                      |
+| ----------- | --------------------------------------- |
+| opcode 回显 | `01 10` = `0x1001` ✓                    |
+| status      | `0x00` = SUCCESS ✓                      |
+| 长度一致    | `plen=12`、`tx_len=14` 与标准布局吻合 ✓ |
+| 载荷非零    | `[6]=0x0E` ✓                            |
 
 ⇒ **HCI 通道端到端可用，且应答携带非零载荷（不是桩、不是空回显）。**
 
@@ -21732,13 +21823,13 @@ cmds = 5（2 条 B + 3 条 A）  →  btdm_tx = 3
 
 ## 最终状态
 
-| 项 | 状态 |
-| --- | --- |
-| 七个缺陷 | ✅ 全部修复并验证 |
-| HCI 往返（逐命令） | ✅ |
-| **HCI 应答内容真实性** | ✅ **`hci_version = 0x0E`** |
-| PHY 首次标定 | ✅ `rc=0`、`cal` 非零、`fe` 可读 |
-| 路径陷阱（B 不消费） | ✅ 已在代码与文档中标注 |
+| 项                     | 状态                             |
+| ---------------------- | -------------------------------- |
+| 七个缺陷               | ✅ 全部修复并验证                |
+| HCI 往返（逐命令）     | ✅                               |
+| **HCI 应答内容真实性** | ✅ **`hci_version = 0x0E`**      |
+| PHY 首次标定           | ✅ `rc=0`、`cal` 非零、`fe` 可读 |
+| 路径陷阱（B 不消费）   | ✅ 已在代码与文档中标注          |
 
 ## 🏆 最终一条：controller 报出**自己的厂商 ID**
 
@@ -21751,28 +21842,28 @@ bt HALT tx2: 0e,00,00,0e,e5,02
 
 ### 逐字段解码（标准 HCI 布局）
 
-| 偏移 | 值 | 字段 |
-| --- | --- | --- |
-| `[0]` | `0x0E` | Command Complete |
-| `[1]` | `0x0C` | plen 12 |
-| `[2]` | `0x02` | ncmd |
-| `[3..4]` | **`01 10`** | **opcode `0x1001`**（Read Local Version）|
-| `[5]` | **`0x00`** | **status SUCCESS** |
-| `[6]` | `0x0E` | `hci_version` |
-| `[7..8]` | `00 00` | `hci_rev` |
-| `[9]` | `0x0E` | `lmp_version` |
-| **`[10..11]`** | **`e5 02`** | **manufacturer 位置上的字节**（**若**应答遵循标准布局，即 `0x02E5` = Espressif 的 SIG 公司 ID）|
+| 偏移           | 值          | 字段                                                                                            |
+| -------------- | ----------- | ----------------------------------------------------------------------------------------------- |
+| `[0]`          | `0x0E`      | Command Complete                                                                                |
+| `[1]`          | `0x0C`      | plen 12                                                                                         |
+| `[2]`          | `0x02`      | ncmd                                                                                            |
+| `[3..4]`       | **`01 10`** | **opcode `0x1001`**（Read Local Version）                                                       |
+| `[5]`          | **`0x00`**  | **status SUCCESS**                                                                              |
+| `[6]`          | `0x0E`      | `hci_version`                                                                                   |
+| `[7..8]`       | `00 00`     | `hci_rev`                                                                                       |
+| `[9]`          | `0x0E`      | `lmp_version`                                                                                   |
+| **`[10..11]`** | **`e5 02`** | **manufacturer 位置上的字节**（**若**应答遵循标准布局，即 `0x02E5` = Espressif 的 SIG 公司 ID） |
 
 ### 分成"事实"与"推断"两层
 
 **事实（不依赖任何布局假设）：**
 
-| 事实 | 值 |
-| --- | --- |
-| opcode 回显 | `01 10` = `0x1001` ✓ |
-| status | `0x00` = SUCCESS ✓ |
-| 长度自洽 | `plen=12`、`tx_len=14` ✓ |
-| 载荷非零 | `[6]=0x0E`、`[10..11]=e5 02` ✓ |
+| 事实        | 值                             |
+| ----------- | ------------------------------ |
+| opcode 回显 | `01 10` = `0x1001` ✓           |
+| status      | `0x00` = SUCCESS ✓             |
+| 长度自洽    | `plen=12`、`tx_len=14` ✓       |
+| 载荷非零    | `[6]=0x0E`、`[10..11]=e5 02` ✓ |
 
 **推断（依赖"应答遵循标准 HCI 布局"这一假设）：**
 
@@ -21804,14 +21895,14 @@ controller ──btdmTx──> host
 
 ## 最终状态（本会话结束时 · 全部闭合）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 | ✅ |
-| HCI 应答**内容真实性** | ✅ **`manufacturer = 0x02E5`（Espressif）** |
-| PHY 首次标定 | ✅ `rc=0`、`cal` 非零、`fe` 可读 |
-| 路径陷阱（B 不消费） | ✅ 已在代码与文档标注 |
-| 日志长度陷阱（>200 B 静默丢） | ✅ 已记录 |
+| 项                            | 状态                                        |
+| ----------------------------- | ------------------------------------------- |
+| 七个缺陷                      | ✅ 全部修复并验证                           |
+| HCI 逐命令往返                | ✅                                          |
+| HCI 应答**内容真实性**        | ✅ **`manufacturer = 0x02E5`（Espressif）** |
+| PHY 首次标定                  | ✅ `rc=0`、`cal` 非零、`fe` 可读            |
+| 路径陷阱（B 不消费）          | ✅ 已在代码与文档标注                       |
+| 日志长度陷阱（>200 B 静默丢） | ✅ 已记录                                   |
 
 ## ✅ 已修复而非仅记录：`log.line` 不再静默丢弃超长行
 
@@ -21826,8 +21917,8 @@ const text = std.fmt.bufPrint(buf[0..200], fmt, args) catch {
 };
 ```
 
-| 之前 | 现在 |
-| --- | --- |
+| 之前                                  | 现在                                           |
+| ------------------------------------- | ---------------------------------------------- |
 | `catch return` ⇒ **整行消失，无痕迹** | **打印 `[LOGLINE TRUNCATED >200B #N]`** 并计数 |
 
 ⇒ 本会话两次因此误判"程序没走到 halt"（16 字节判决行一度完全消失）。
@@ -21853,22 +21944,22 @@ bt HALT tx:  t=4 n=12 0e,0a,02,09,10,00
 bt HALT tx2: 01,bb,00,00,00,02
 ```
 
-| 偏移 | 值 | 字段 |
-| --- | --- | --- |
-| `[0]` | `0x0E` | Command Complete |
-| `[1]` | `0x0A` | plen 10 |
-| `[2]` | `0x02` | ncmd |
-| `[3..4]` | **`09 10`** | **opcode `0x1009`**（Read BD_ADDR）|
-| `[5]` | **`0x00`** | **status SUCCESS** |
-| `[6..11]` | **`01 bb 00 00 00 02`** | **BD_ADDR** |
+| 偏移      | 值                      | 字段                                |
+| --------- | ----------------------- | ----------------------------------- |
+| `[0]`     | `0x0E`                  | Command Complete                    |
+| `[1]`     | `0x0A`                  | plen 10                             |
+| `[2]`     | `0x02`                  | ncmd                                |
+| `[3..4]`  | **`09 10`**             | **opcode `0x1009`**（Read BD_ADDR） |
+| `[5]`     | **`0x00`**              | **status SUCCESS**                  |
+| `[6..11]` | **`01 bb 00 00 00 02`** | **BD_ADDR**                         |
 
 ⇒ 长度自洽：`ncmd(1) + opcode(2) + status(1) + bd_addr(6)` = **10** ✓
 
 ### 为什么这一条比厂商 ID 更强
 
-| 判据 | 厂商 ID（`e5 02`）| **BD_ADDR** |
-| --- | --- | --- |
-| 依赖布局假设 | ✅ 需要 | ❌ **不需要**（6 字节，直接在末尾）|
+| 判据         | 厂商 ID（`e5 02`） | **BD_ADDR**                              |
+| ------------ | ------------------ | ---------------------------------------- |
+| 依赖布局假设 | ✅ 需要            | ❌ **不需要**（6 字节，直接在末尾）      |
 | 值可外部核对 | ⚠️ 需查 SIG 数据库 | ✅ **与我们 step 14 写入的值逐字节相同** |
 
 ⇒ **`01:bb:00:00:00:02` 正是 `r_esp_ble_ll_set_public_addr`（step 14）设的地址。**
@@ -21892,15 +21983,15 @@ btdmTx: 0e 0a 02 09 10 00 | 01 bb 00 00 00 02
 
 ## 最终状态（本会话结束时 · 全部闭合）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 | ✅ |
-| 应答内容真实性 | ✅ 非零载荷 + opcode 回显 |
-| 厂商 ID（推断） | ✅ `0x02E5`（若标准布局）|
-| **BD_ADDR 闭环** | ✅ **`01:bb:00:00:00:02` 与写入值一致** |
-| PHY 首次标定 | ✅ `rc=0`、`cal` 非零、`fe` 可读 |
-| 路径陷阱 / 日志长度陷阱 | ✅ 均已处置 |
+| 项                      | 状态                                    |
+| ----------------------- | --------------------------------------- |
+| 七个缺陷                | ✅ 全部修复并验证                       |
+| HCI 逐命令往返          | ✅                                      |
+| 应答内容真实性          | ✅ 非零载荷 + opcode 回显               |
+| 厂商 ID（推断）         | ✅ `0x02E5`（若标准布局）               |
+| **BD_ADDR 闭环**        | ✅ **`01:bb:00:00:00:02` 与写入值一致** |
+| PHY 首次标定            | ✅ `rc=0`、`cal` 非零、`fe` 可读        |
+| 路径陷阱 / 日志长度陷阱 | ✅ 均已处置                             |
 
 ## ⚠️ 新发现：blob 的日志路径会踩 **ROM `ets_printf`** 的自旋
 
@@ -21927,11 +22018,11 @@ NMI 采样：mepc = **0x40065640** ⇒ 在 **ets_printf**（0x4006562e）内
 
 ### 因此
 
-| 项 | 状态 |
-| --- | --- |
-| LE 命令是否被接受 | ❓ **无法判定**（挂起发生在拿到应答之前/之后不确定）|
-| 当前处理 | **从 probe 里移除该序列**，并留注释说明原因 |
-| 真正的修法 | 给 blob 的 `ets_printf` 提供**弱覆盖**，改成有界写（我们的 `hw.rawWrite` 就是有界）|
+| 项                | 状态                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| LE 命令是否被接受 | ❓ **无法判定**（挂起发生在拿到应答之前/之后不确定）                                |
+| 当前处理          | **从 probe 里移除该序列**，并留注释说明原因                                         |
+| 真正的修法        | 给 blob 的 `ets_printf` 提供**弱覆盖**，改成有界写（我们的 `hw.rawWrite` 就是有界） |
 
 ### 这是一条**新增的开放项**
 
@@ -21957,11 +22048,11 @@ fault = 0
 
 ### 开放项总表（本会话结束时）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| 1–7 | 七个已识别缺陷 | ✅ 全部修复并验证 |
-| — | HCI 往返 / PHY 标定 / BD_ADDR 闭环 | ✅ 已验证 |
-| **7** | **blob 的 `ets_printf` 在 TX FIFO 满时自旋** | ❌ **新开放项**（LE/上层路径会被挂住）|
+| #     | 项                                           | 状态                                   |
+| ----- | -------------------------------------------- | -------------------------------------- |
+| 1–7   | 七个已识别缺陷                               | ✅ 全部修复并验证                      |
+| —     | HCI 往返 / PHY 标定 / BD_ADDR 闭环           | ✅ 已验证                              |
+| **7** | **blob 的 `ets_printf` 在 TX FIFO 满时自旋** | ❌ **新开放项**（LE/上层路径会被挂住） |
 
 ⇒ 修法明确：强定义/`PROVIDE` 一个**有界**的 `ets_printf`，转发到 `hw.rawWrite`。
 
@@ -22005,10 +22096,10 @@ osal.dump_hook = null;   // bringup 已过观测窗口，运行时路径零开�
 
 ### 因此"LE 广播挂起"要重新判定
 
-| 之前的结论 | 修正 |
-| --- | --- |
-| "blob 的 ets_printf 在满 FIFO 上自旋" | ❌ **错**（shim 是有界的）|
-| **"我们的 per-pend dump 把 controller 饿死"** | ✅ **正确** |
+| 之前的结论                                    | 修正                       |
+| --------------------------------------------- | -------------------------- |
+| "blob 的 ets_printf 在满 FIFO 上自旋"         | ❌ **错**（shim 是有界的） |
+| **"我们的 per-pend dump 把 controller 饿死"** | ✅ **正确**                |
 
 ⇒ **解除钩子后必须重跑 LE 序列**，否则无法区分"广播被拒"与"仪器吃掉 CPU"。
 
@@ -22017,11 +22108,11 @@ osal.dump_hook = null;   // bringup 已过观测窗口，运行时路径零开�
 日志里那些 `archibbb…` 碎片，是 **`rawWrite` 在 5000 次自旋后放弃**、
 **截断在一行中间**留下的。
 
-| 通道 | 症状 |
-| --- | --- |
-| UART FIFO | 整行丢失 |
-| `log.line` 200 B | 整行丢失（**已修为可见**）|
-| **`rawWrite` 放弃** | **半行碎片**（最危险：碎片会被误读成数据）|
+| 通道                | 症状                                       |
+| ------------------- | ------------------------------------------ |
+| UART FIFO           | 整行丢失                                   |
+| `log.line` 200 B    | 整行丢失（**已修为可见**）                 |
+| **`rawWrite` 放弃** | **半行碎片**（最危险：碎片会被误读成数据） |
 
 ## 🎯 再次更正：LE 命令后**不是 CPU 挂起，是日志洪水**
 
@@ -22036,11 +22127,11 @@ fault =     0
 
 ### 三条判据指向"不是 CPU hang"
 
-| # | 判据 | 含义 |
-| --- | --- | --- |
-| 1 | **零 fault** | 不是崩溃 |
-| 2 | **NMI 的 `mepc` 在变** | **不是**单点自旋（若是自旋，`mepc` 应恒定）|
-| 3 | 日志里出现 `bbbb…` / `arch…` **半行碎片** | **`rawWrite` 放弃的标志** |
+| #   | 判据                                      | 含义                                        |
+| --- | ----------------------------------------- | ------------------------------------------- |
+| 1   | **零 fault**                              | 不是崩溃                                    |
+| 2   | **NMI 的 `mepc` 在变**                    | **不是**单点自旋（若是自旋，`mepc` 应恒定） |
+| 3   | 日志里出现 `bbbb…` / `arch…` **半行碎片** | **`rawWrite` 放弃的标志**                   |
 
 ⇒ **CPU 在跑，是 UART 被 blob 的日志洪水冲垮。**
 
@@ -22060,29 +22151,29 @@ fault =     0
 
 ### 这解释了此前两次"挂死"
 
-| 之前的解释 | 修正 |
-| --- | --- |
-| "blob 的 ets_printf 在满 FIFO 上自旋" | ❌ 错（shim 有界）|
-| "per-pend dump 饿死 controller" | ⚠️ 部分（已解除，仍复现）|
-| **"blob 日志洪水淹没 UART"** | ✅ **正确** |
+| 之前的解释                            | 修正                      |
+| ------------------------------------- | ------------------------- |
+| "blob 的 ets_printf 在满 FIFO 上自旋" | ❌ 错（shim 有界）        |
+| "per-pend dump 饿死 controller"       | ⚠️ 部分（已解除，仍复现） |
+| **"blob 日志洪水淹没 UART"**          | ✅ **正确**               |
 
 ### 因此 LE 是**新开放项**，且前置条件是**日志有界**
 
-| # | 前置 | 做法 |
-| --- | --- | --- |
-| 1 | blob 日志可关或限速 | shim 里加**速率上限**（每秒最多 N 行），或只保留前 M 行 |
-| 2 | 我们的判决走**独立通道** | 静态数组 + 停机后重打（已有）|
-| 3 | 或提高波特率 | 需改板级 UART 配置 |
+| #   | 前置                     | 做法                                                    |
+| --- | ------------------------ | ------------------------------------------------------- |
+| 1   | blob 日志可关或限速      | shim 里加**速率上限**（每秒最多 N 行），或只保留前 M 行 |
+| 2   | 我们的判决走**独立通道** | 静态数组 + 停机后重打（已有）                           |
+| 3   | 或提高波特率             | 需改板级 UART 配置                                      |
 
 ⇒ **在做完前置 1 之前，不在 probe 里发 LE 命令。**
 
 ### 第三个静默丢失通道（补充）
 
-| 通道 | 症状 | 危险度 |
-| --- | --- | --- |
-| UART FIFO | 整行丢失 | 中 |
-| `log.line` 200 B | 整行丢失（**已修为可见**）| 中 |
-| **`rawWrite` 放弃** | **半行碎片** | **高** —— 碎片会被误读成数据 |
+| 通道                | 症状                       | 危险度                       |
+| ------------------- | -------------------------- | ---------------------------- |
+| UART FIFO           | 整行丢失                   | 中                           |
+| `log.line` 200 B    | 整行丢失（**已修为可见**） | 中                           |
+| **`rawWrite` 放弃** | **半行碎片**               | **高** —— 碎片会被误读成数据 |
 
 ⇒ 半行碎片是本会话 `bbbb…` 那类"怪字符串"的真正来源。
 
@@ -22090,30 +22181,30 @@ fault =     0
 
 ### 三次诊断，三次被数据推翻
 
-| # | 我的解释 | 被什么推翻 |
-| --- | --- | --- |
-| 1 | "blob 的 `ets_printf` 走 ROM 自旋" | `nm` 显示 `4006562e T ets_printf` **是我们自己的 shim** |
-| 2 | "per-pend dump 饿死 controller" | 把 `osal.dump_hook = null` 加上后**仍复现** |
-| 3 | "blob 日志洪水淹没 UART" | shim 已有 **400 行上限** ⇒ 最多 ~1 s 的 UART，解释不了 80 s 无输出 |
+| #   | 我的解释                           | 被什么推翻                                                         |
+| --- | ---------------------------------- | ------------------------------------------------------------------ |
+| 1   | "blob 的 `ets_printf` 走 ROM 自旋" | `nm` 显示 `4006562e T ets_printf` **是我们自己的 shim**            |
+| 2   | "per-pend dump 饿死 controller"    | 把 `osal.dump_hook = null` 加上后**仍复现**                        |
+| 3   | "blob 日志洪水淹没 UART"           | shim 已有 **400 行上限** ⇒ 最多 ~1 s 的 UART，解释不了 80 s 无输出 |
 
 ### 目前**能确定**的
 
-| 事实 | 值 |
-| --- | --- |
-| fault | **0** |
-| `dump_hook` 是否解除 | ✅ 已解除（但 `disarmed` 那行被 FIFO 丢了，日志里看不到）|
-| NMI 的 `mepc` | **在变化** ⇒ 不是单点自旋 |
-| 日志止于 | `bt osal: arm src=124 -> CLIC input 60` 之后 |
-| 之后 | 半行碎片 `bbbb…` / `arch…`，再无可读行 |
-| shim 行数上限 | 400（已生效）|
+| 事实                 | 值                                                        |
+| -------------------- | --------------------------------------------------------- |
+| fault                | **0**                                                     |
+| `dump_hook` 是否解除 | ✅ 已解除（但 `disarmed` 那行被 FIFO 丢了，日志里看不到） |
+| NMI 的 `mepc`        | **在变化** ⇒ 不是单点自旋                                 |
+| 日志止于             | `bt osal: arm src=124 -> CLIC input 60` 之后              |
+| 之后                 | 半行碎片 `bbbb…` / `arch…`，再无可读行                    |
+| shim 行数上限        | 400（已生效）                                             |
 
 ### 目前**不能确定**的
 
-| 问题 | 状态 |
-| --- | --- |
-| LE 命令是否被 controller 接受 | ❓ **未知**（判决行出不来）|
-| CPU 是否真的卡住 | ❓ 未知（`mepc` 在变，但也可能只是 NMI 打断不同位置）|
-| 半行碎片的来源 | ❓ 可能是 `rawWrite` 放弃，也可能是别的 |
+| 问题                          | 状态                                                  |
+| ----------------------------- | ----------------------------------------------------- |
+| LE 命令是否被 controller 接受 | ❓ **未知**（判决行出不来）                           |
+| CPU 是否真的卡住              | ❓ 未知（`mepc` 在变，但也可能只是 NMI 打断不同位置） |
+| 半行碎片的来源                | ❓ 可能是 `rawWrite` 放弃，也可能是别的               |
 
 ### 因此
 
@@ -22121,11 +22212,11 @@ fault =     0
 
 ⇒ 下一步需要的是**一个不被 UART 依赖的观测**：
 
-| # | 手段 | 说明 |
-| --- | --- | --- |
-| 1 | **把判决写进静态数组，由下一次上电读回** | 完全绕开 UART |
-| 2 | 或用 GPIO 打点 | 需要逻辑分析仪 |
-| 3 | 或大幅提高波特率后重试 | 减小 UART 时间占比 |
+| #   | 手段                                     | 说明               |
+| --- | ---------------------------------------- | ------------------ |
+| 1   | **把判决写进静态数组，由下一次上电读回** | 完全绕开 UART      |
+| 2   | 或用 GPIO 打点                           | 需要逻辑分析仪     |
+| 3   | 或大幅提高波特率后重试                   | 减小 UART 时间占比 |
 
 ⇒ **在拿到不依赖 UART 的读数之前，任何关于"LE 是否被接受"的结论都不成立。**
 
@@ -22139,51 +22230,51 @@ fault =     0
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证** |
-| PHY 首次标定 | ✅ **已修复并三项验证** |
-| **LE 广播** | ❌ **开放（成因未定，已排除 3 个假设）** |
-| 三个静默丢失通道 | ✅ 两个已修（`log.line`）、一个已记录（`rawWrite`）|
+| 项                            | 状态                                                |
+| ----------------------------- | --------------------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                                   |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证**                                       |
+| PHY 首次标定                  | ✅ **已修复并三项验证**                             |
+| **LE 广播**                   | ❌ **开放（成因未定，已排除 3 个假设）**            |
+| 三个静默丢失通道              | ✅ 两个已修（`log.line`）、一个已记录（`rawWrite`） |
 
 ## LE 广播：**四次误判**，暂停并记录
 
 ### 四次假设，四次被推翻
 
-| # | 假设 | 推翻它的读数 |
-| --- | --- | --- |
-| 1 | ROM `ets_printf` 在满 FIFO 上自旋 | `nm`：`4006562e T ets_printf` **是我们自己的 shim** |
-| 2 | per-pend dump 钩子饿死 controller | 加 `osal.dump_hook = null` 后**仍复现** |
-| 3 | blob 日志洪水淹没 UART | shim 已有 400 行上限（≈6 s），解释不了 80 s |
-| 4 | 同上，但改用**静音开关** | 静音后**依然无输出** |
+| #   | 假设                              | 推翻它的读数                                        |
+| --- | --------------------------------- | --------------------------------------------------- |
+| 1   | ROM `ets_printf` 在满 FIFO 上自旋 | `nm`：`4006562e T ets_printf` **是我们自己的 shim** |
+| 2   | per-pend dump 钩子饿死 controller | 加 `osal.dump_hook = null` 后**仍复现**             |
+| 3   | blob 日志洪水淹没 UART            | shim 已有 400 行上限（≈6 s），解释不了 80 s         |
+| 4   | 同上，但改用**静音开关**          | 静音后**依然无输出**                                |
 
 ⇒ **四次都没解释成功。**
 
 ### 已确定的事实（与假设无关）
 
-| 事实 | 值 |
-| --- | --- |
-| 插入位置 | ✅ 在 `bringup.enable()` **之后**（562 → 568 → 609）|
-| fault | **0** |
-| NMI `mepc` | **在变化**（非单点自旋）|
-| 日志止于 | `bt osal: arm src=124` 之后 |
-| 恢复后（不发 LE） | ✅ 一切正常（`btdm_tx=3`、BD_ADDR 应答）|
+| 事实              | 值                                                   |
+| ----------------- | ---------------------------------------------------- |
+| 插入位置          | ✅ 在 `bringup.enable()` **之后**（562 → 568 → 609） |
+| fault             | **0**                                                |
+| NMI `mepc`        | **在变化**（非单点自旋）                             |
+| 日志止于          | `bt osal: arm src=124` 之后                          |
+| 恢复后（不发 LE） | ✅ 一切正常（`btdm_tx=3`、BD_ADDR 应答）             |
 
 ### 因此
 
-| 项 | 状态 |
-| --- | --- |
-| LE 广播 | ❌ **确定性卡住，成因未定** |
-| HCI 基础通道 | ✅ **已验证可用**（5 条命令 / 3 条应答 / BD_ADDR 闭环）|
+| 项           | 状态                                                    |
+| ------------ | ------------------------------------------------------- |
+| LE 广播      | ❌ **确定性卡住，成因未定**                             |
+| HCI 基础通道 | ✅ **已验证可用**（5 条命令 / 3 条应答 / BD_ADDR 闭环） |
 
 ### 下一步需要的**不是新假设**，是**不依赖 UART 的观测**
 
-| # | 手段 | 为什么 |
-| --- | --- | --- |
-| 1 | 把"即将发第几条 LE 命令"写进 **非初始化 RAM**（`.noinit`）| 复位后仍可读 ⇒ 直接知道停在哪条 |
-| 2 | GPIO 在每条命令前后翻转 | 逻辑分析仪直接看 |
-| 3 | 提高波特率 | 减小 UART 时间占比 |
+| #   | 手段                                                       | 为什么                          |
+| --- | ---------------------------------------------------------- | ------------------------------- |
+| 1   | 把"即将发第几条 LE 命令"写进 **非初始化 RAM**（`.noinit`） | 复位后仍可读 ⇒ 直接知道停在哪条 |
+| 2   | GPIO 在每条命令前后翻转                                    | 逻辑分析仪直接看                |
+| 3   | 提高波特率                                                 | 减小 UART 时间占比              |
 
 ⇒ **在拿到这类读数之前，不再对 LE 做任何改动。**
 
@@ -22198,13 +22289,13 @@ fault =     0
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证** |
-| PHY 首次标定 | ✅ **已修复并三项验证** |
-| **LE 广播** | ❌ **开放（4 个假设已排除，需 UART 外观测）** |
-| 三个静默丢失通道 | 2 修 / 1 记录 |
+| 项                            | 状态                                          |
+| ----------------------------- | --------------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                             |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证**                                 |
+| PHY 首次标定                  | ✅ **已修复并三项验证**                       |
+| **LE 广播**                   | ❌ **开放（4 个假设已排除，需 UART 外观测）** |
+| 三个静默丢失通道              | 2 修 / 1 记录                                 |
 
 ## 🏁 真相：**step 20 是间歇性的**，LE 从未执行
 
@@ -22221,18 +22312,18 @@ bt osal: arm src=124 -> CLIC input 60, m
 
 ### 因此
 
-| 假设 | 实际 |
-| --- | --- |
-| "LE 命令导致挂起" | ❌ **错** —— LE 代码一次都没跑到 |
-| **"step 20 本身间歇性不返回"** | ✅ **正确** |
+| 假设                           | 实际                             |
+| ------------------------------ | -------------------------------- |
+| "LE 命令导致挂起"              | ❌ **错** —— LE 代码一次都没跑到 |
+| **"step 20 本身间歇性不返回"** | ✅ **正确**                      |
 
 ### 逐轮对照（同一条固件路径）
 
-| 轮次 | step 20 之后 |
-| --- | --- |
-| `pcrev2`（移除 LE）| ✅ **拿到判决**（`btdm_tx=3`、BD_ADDR）|
-| `pcadv3`（静音 + LE）| ❌ 卡在 `arm` |
-| `pctrace`（追踪 + LE）| ❌ 卡在 `arm` |
+| 轮次                   | step 20 之后                            |
+| ---------------------- | --------------------------------------- |
+| `pcrev2`（移除 LE）    | ✅ **拿到判决**（`btdm_tx=3`、BD_ADDR） |
+| `pcadv3`（静音 + LE）  | ❌ 卡在 `arm`                           |
+| `pctrace`（追踪 + LE） | ❌ 卡在 `arm`                           |
 
 ⇒ **同一条路径，有时返回、有时不返回** ⇒ **非确定性**。
 
@@ -22249,20 +22340,20 @@ bt osal: arm src=124 -> CLIC input 60, m
 开放项：r_btdm_task_enable（step 20）间歇性不返回
 ```
 
-| 已知 | 值 |
-| --- | --- |
-| fault | **0**（不是崩溃）|
-| 返回时 | `enable()` → 判决正常、HCI 可用 |
-| 不返回时 | 停在 `arm src=124` 之后 |
-| 频率 | 约 2/3 的运行会卡 |
+| 已知     | 值                              |
+| -------- | ------------------------------- |
+| fault    | **0**（不是崩溃）               |
+| 返回时   | `enable()` → 判决正常、HCI 可用 |
+| 不返回时 | 停在 `arm src=124` 之后         |
+| 频率     | 约 2/3 的运行会卡               |
 
 ### 下一步（这次的判据是对的）
 
-| # | 动作 | 为什么 |
-| --- | --- | --- |
-| 1 | **把 `.adv_trace` 的写入挪到 step 17 之前**（enter(17) 处）| 这样"卡在 step 20"这件事本身也能被跨复位记录证明 |
-| 2 | 在 step 20 **前后**各写一个阶段号 | 卡住 ⇒ 阶段号停在 20 ⇒ **不依赖 UART 的确证** |
-| 3 | 复现时抓 NMI 的 `mepc` **直方图**（多个样本）| 定位 step 20 内部的卡点 |
+| #   | 动作                                                        | 为什么                                           |
+| --- | ----------------------------------------------------------- | ------------------------------------------------ |
+| 1   | **把 `.adv_trace` 的写入挪到 step 17 之前**（enter(17) 处） | 这样"卡在 step 20"这件事本身也能被跨复位记录证明 |
+| 2   | 在 step 20 **前后**各写一个阶段号                           | 卡住 ⇒ 阶段号停在 20 ⇒ **不依赖 UART 的确证**    |
+| 3   | 复现时抓 NMI 的 `mepc` **直方图**（多个样本）               | 定位 step 20 内部的卡点                          |
 
 ⇒ **关键教训：先把"探针本身在不在执行路径上"确认掉，再解释它看到的现象。**
 
@@ -22311,10 +22402,10 @@ _heap_start      = 2f022940     ← 三者重叠
 
 ### 对照实验（同一板子、同一脚本、各 3 次上电）
 
-| 构建 | 尺寸 | boot1 | boot2 | boot3 |
-| --- | --- | --- | --- | --- |
+| 构建                      | 尺寸       | boot1    | boot2    | boot3    |
+| ------------------------- | ---------- | -------- | -------- | -------- |
 | **`b9c88a3`（已知可用）** | **832944** | HALT=157 | HALT=157 | HALT=157 |
-| **`2498abe`（当前）** | **832928** | HALT=0 | HALT=0 | HALT=0 |
+| **`2498abe`（当前）**     | **832928** | HALT=0   | HALT=0   | HALT=0   |
 
 ⇒ **前者 3/3 到达 halt；后者 3/3 卡在 step 20。**
 
@@ -22322,10 +22413,10 @@ _heap_start      = 2f022940     ← 三者重叠
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| "step 20 本身随机不稳定" | ❌ **撤回** —— 它在**已知可用构建**上 3/3 稳定 |
-| **"step 20 对镜像布局敏感"** | ✅ **有对照实验支持** |
+| 结论                         | 状态                                           |
+| ---------------------------- | ---------------------------------------------- |
+| "step 20 本身随机不稳定"     | ❌ **撤回** —— 它在**已知可用构建**上 3/3 稳定 |
+| **"step 20 对镜像布局敏感"** | ✅ **有对照实验支持**                          |
 
 ⇒ 本会话已有先例：**冻结的链接地址**（`0x2f00e756`）因闭包漂移而落进别的函数体。
 ⇒ 现在又出现一次：**16 字节的段位移改变了 blob 的运行行为**。
@@ -22344,11 +22435,11 @@ _heap_start      = 2f022940     ← 三者重叠
 
 不再是"查 LE"，而是：
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | **`nm -n` 对比 832944 与 832928 两个镜像的完整符号表** | 哪些 blob 符号的地址变了 |
-| 2 | 找出 blob 里**按绝对地址**访问的目标 | 位移是否踩到某个必须固定的地址 |
-| 3 | 修法：把这些对象**钉到固定地址**（或用 `ALIGN` 保持边界）| 让布局不再影响行为 |
+| #   | 动作                                                      | 判据                           |
+| --- | --------------------------------------------------------- | ------------------------------ |
+| 1   | **`nm -n` 对比 832944 与 832928 两个镜像的完整符号表**    | 哪些 blob 符号的地址变了       |
+| 2   | 找出 blob 里**按绝对地址**访问的目标                      | 位移是否踩到某个必须固定的地址 |
+| 3   | 修法：把这些对象**钉到固定地址**（或用 `ALIGN` 保持边界） | 让布局不再影响行为             |
 
 ⇒ **这是一个"布局稳定性"问题，不是 LE 问题。**
 
@@ -22366,12 +22457,12 @@ esp_image 段数 = 4
 
 ### 下一步的**精确**做法（不需要猜）
 
-| # | 命令 | 期望产出 |
-| --- | --- | --- |
-| 1 | 保存当前 ELF：`cp app.elf /tmp/good.elf` | 基准 |
-| 2 | 检出卡死的版本（`2498abe`）并构建，保存 `/tmp/bad.elf` | 对照 |
-| 3 | `diff <(nm -n good.elf) <(nm -n bad.elf)` | **哪些符号地址变了** |
-| 4 | 在变化的符号里找 **blob 按绝对地址使用的** | 位移踩到谁 |
+| #   | 命令                                                   | 期望产出             |
+| --- | ------------------------------------------------------ | -------------------- |
+| 1   | 保存当前 ELF：`cp app.elf /tmp/good.elf`               | 基准                 |
+| 2   | 检出卡死的版本（`2498abe`）并构建，保存 `/tmp/bad.elf` | 对照                 |
+| 3   | `diff <(nm -n good.elf) <(nm -n bad.elf)`              | **哪些符号地址变了** |
+| 4   | 在变化的符号里找 **blob 按绝对地址使用的**             | 位移踩到谁           |
 
 ⇒ **关键**：两个构建的**代码字节数不同**（832944 vs 832928）⇒ 布局不同
 ⇒ 而 blob 对布局敏感 ⇒ 需要找到"必须固定地址的那个对象"。
@@ -22380,24 +22471,24 @@ esp_image 段数 = 4
 
 本会话已经两次遇到"布局/地址敏感"：
 
-| 次 | 表现 |
-| --- | --- |
-| 1 | `PROVIDE(esp_phy_enable = 0x2f00e756)` 漂移进别的函数体 |
-| 2 | `.iram_btslp*` 孤儿段导致 `esp_image` 段重叠 |
-| **3** | **16 字节的代码差 ⇒ step 20 从稳定变必卡** |
+| 次    | 表现                                                    |
+| ----- | ------------------------------------------------------- |
+| 1     | `PROVIDE(esp_phy_enable = 0x2f00e756)` 漂移进别的函数体 |
+| 2     | `.iram_btslp*` 孤儿段导致 `esp_image` 段重叠            |
+| **3** | **16 字节的代码差 ⇒ step 20 从稳定变必卡**              |
 
 ⇒ 第三次尤其值得查：它说明**当前的链接布局里有一个脆弱点**，任何无关的代码改动都可能触发。
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证** |
-| PHY 首次标定 | ✅ **已修复并三项验证** |
-| step 20 稳定性 | ⚠️ **对镜像布局敏感**（832944 稳定 3/3；834928 必卡 3/3）|
-| LE 广播 | ❌ 开放（被 step 20 挡住，未真正测过）|
-| 三个静默丢失通道 | 2 修 / 1 记录 |
+| 项                            | 状态                                                      |
+| ----------------------------- | --------------------------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                                         |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证**                                             |
+| PHY 首次标定                  | ✅ **已修复并三项验证**                                   |
+| step 20 稳定性                | ⚠️ **对镜像布局敏感**（832944 稳定 3/3；834928 必卡 3/3） |
+| LE 广播                       | ❌ 开放（被 step 20 挡住，未真正测过）                    |
+| 三个静默丢失通道              | 2 修 / 1 记录                                             |
 
 ## 🔬 符号表对比：**blob 一个符号都没动**
 
@@ -22411,30 +22502,30 @@ nm -n 两 ELF → 按名字 join → 找地址不同的
 
 ### 结果
 
-| 项 | 值 |
-| --- | --- |
-| 地址变化的符号总数 | **83** |
-| **其中 blob 符号（`r_sym_*` / `wr_btdm_*` / `ble_*` / `btdm_*`）** | **0** |
-| 变化符号所在段 | **全部 `.flash.rodata`（`0x4010xxxx`）** |
-| 位移 | -8 或 -0x10 |
+| 项                                                                 | 值                                       |
+| ------------------------------------------------------------------ | ---------------------------------------- |
+| 地址变化的符号总数                                                 | **83**                                   |
+| **其中 blob 符号（`r_sym_*` / `wr_btdm_*` / `ble_*` / `btdm_*`）** | **0**                                    |
+| 变化符号所在段                                                     | **全部 `.flash.rodata`（`0x4010xxxx`）** |
+| 位移                                                               | -8 或 -0x10                              |
 
 ### 关键单点核对
 
-| 符号 | good | bad | 对齐变化 |
-| --- | --- | --- | --- |
-| `extfuncs.table`（注册给 blob 的 40 B 表）| `0x4010549c` | `0x40105494` | **都是 4 对齐，未变** |
-| `config.idf_cfg192` | `0x40105268` | `0x40105260` | 都 4 对齐 |
-| `_rodata_end` | `0x401161a0` | `0x40116190` | 都 16 对齐 |
+| 符号                                       | good         | bad          | 对齐变化              |
+| ------------------------------------------ | ------------ | ------------ | --------------------- |
+| `extfuncs.table`（注册给 blob 的 40 B 表） | `0x4010549c` | `0x40105494` | **都是 4 对齐，未变** |
+| `config.idf_cfg192`                        | `0x40105268` | `0x40105260` | 都 4 对齐             |
+| `_rodata_end`                              | `0x401161a0` | `0x40116190` | 都 16 对齐            |
 
 ⇒ **对齐没有被破坏；blob 拿到的指针表位置虽有移动，但调用约定不变。**
 
 ### 因此结论要收窄
 
-| 假设 | 状态 |
-| --- | --- |
-| "blob 符号地址漂移导致行为变化" | ❌ **否证**（0 个 blob 符号变化）|
-| "某个表的对齐被破坏" | ❌ **否证**（对齐未变）|
-| **"差异在**时序**或**我自己的代码**里"** | ✅ **唯一剩下** |
+| 假设                                     | 状态                              |
+| ---------------------------------------- | --------------------------------- |
+| "blob 符号地址漂移导致行为变化"          | ❌ **否证**（0 个 blob 符号变化） |
+| "某个表的对齐被破坏"                     | ❌ **否证**（对齐未变）           |
+| **"差异在**时序**或**我自己的代码**里"** | ✅ **唯一剩下**                   |
 
 ⇒ 两个构建的 blob 镜像**逐符号相同**，差异只在 `.flash.rodata` 的 83 个 Zig 常量
 （多为字符串字面量）⇒ **它们的位置不该影响 blob 的行为**。
@@ -22444,28 +22535,28 @@ nm -n 两 ELF → 按名字 join → 找地址不同的
 
 ### 这也修正了上一轮的措辞
 
-| 上一轮写的 | 修正 |
-| --- | --- |
-| "step 20 对镜像布局敏感" | ⚠️ **过强** —— 布局差异未触及 blob 符号 |
-| 更准确的说法 | **"两个构建的行为不同，成因在时序/我方代码，不在 blob 地址"** |
+| 上一轮写的               | 修正                                                          |
+| ------------------------ | ------------------------------------------------------------- |
+| "step 20 对镜像布局敏感" | ⚠️ **过强** —— 布局差异未触及 blob 符号                       |
+| 更准确的说法             | **"两个构建的行为不同，成因在时序/我方代码，不在 blob 地址"** |
 
 ### 下一步
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在**同一构建**上多次上电（≥5 次）| 若也偶发卡住 ⇒ **是时序/竞态**，与构建无关 |
-| 2 | 若同构建 5/5 稳定，则逐个还原两构建间的**代码差异**（只有日志字符串不同）| 找到触发点 |
+| #   | 动作                                                                      | 判据                                       |
+| --- | ------------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | 在**同一构建**上多次上电（≥5 次）                                         | 若也偶发卡住 ⇒ **是时序/竞态**，与构建无关 |
+| 2   | 若同构建 5/5 稳定，则逐个还原两构建间的**代码差异**（只有日志字符串不同） | 找到触发点                                 |
 
 ⇒ **第 1 条最省，且能直接判定是不是竞态。**
 
 ## ✅ 三项判据否证"段放置/对齐"理论
 
-| # | 检查 | good | bad | 结论 |
-| --- | --- | --- | --- | --- |
-| 1 | `Io.Writer.*` 的符号类型分布 | 20 × `t` | 20 × `t` | **无段放置回归** |
-| 2 | 两版 `s31.ld` 的差异 | — | — | **只差一段注释**（功能完全相同）|
-| 3 | `extfuncs.table` 对齐 | 4 对齐 | 4 对齐 | **未破坏** |
-| 4 | blob 符号地址 | — | — | **0 个变化** |
+| #   | 检查                         | good     | bad      | 结论                             |
+| --- | ---------------------------- | -------- | -------- | -------------------------------- |
+| 1   | `Io.Writer.*` 的符号类型分布 | 20 × `t` | 20 × `t` | **无段放置回归**                 |
+| 2   | 两版 `s31.ld` 的差异         | —        | —        | **只差一段注释**（功能完全相同） |
+| 3   | `extfuncs.table` 对齐        | 4 对齐   | 4 对齐   | **未破坏**                       |
+| 4   | blob 符号地址                | —        | —        | **0 个变化**                     |
 
 ⇒ **两个镜像的 blob 与段布局完全相同。**
 
@@ -22473,12 +22564,12 @@ nm -n 两 ELF → 按名字 join → 找地址不同的
 
 我现在能确定的：
 
-| 事实 | 值 |
-| --- | --- |
-| blob 符号 | 逐符号相同 |
-| 段布局 / 对齐 | 相同 |
-| 差异 | 仅在 `.flash.rodata` 的 83 个 Zig 常量（-8 / -0x10）|
-| 运行时行为 | good 3/3 到达 halt；bad 3/3 卡在 step 20 |
+| 事实          | 值                                                   |
+| ------------- | ---------------------------------------------------- |
+| blob 符号     | 逐符号相同                                           |
+| 段布局 / 对齐 | 相同                                                 |
+| 差异          | 仅在 `.flash.rodata` 的 83 个 Zig 常量（-8 / -0x10） |
+| 运行时行为    | good 3/3 到达 halt；bad 3/3 卡在 step 20             |
 
 ⇒ **"地址敏感"、"段放置"、"对齐"三条都被否证。**
 
@@ -22486,16 +22577,17 @@ nm -n 两 ELF → 按名字 join → 找地址不同的
 
 ### 判决实验（唯一剩下的）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | **同一构建连跑 ≥5 次** | 若 good 也偶发卡住 ⇒ **竞态**，与构建无关 |
-| 2 | 若 good 5/5 稳定，逐条还原 bad 的代码差异 | 只剩"日志字符串不同"这一条候选 |
+| #   | 动作                                      | 判据                                      |
+| --- | ----------------------------------------- | ----------------------------------------- |
+| 1   | **同一构建连跑 ≥5 次**                    | 若 good 也偶发卡住 ⇒ **竞态**，与构建无关 |
+| 2   | 若 good 5/5 稳定，逐条还原 bad 的代码差异 | 只剩"日志字符串不同"这一条候选            |
 
 ⇒ 已记录：**good 3/3 稳定、bad 3/3 卡住**（共 6 次上电，可作为初始证据）。
 
 ### 方法论收口
 
 > 本会话三次遇到"像是布局问题"的现象：
+>
 > 1. 冻结地址漂移（**真** —— `PROVIDE` 指向的函数体变了）
 > 2. `.iram_btslp*` 孤儿段（**真** —— 段重叠）
 > 3. 本次（**假** —— 三项判据全部否证）
@@ -22517,30 +22609,30 @@ extfuncs.table: 0x4010549c（未变）
 
 ### 结果
 
-| 构建 | rodata | boot1 | boot2 | boot3 |
-| --- | --- | --- | --- | --- |
-| `b9c88a3` | 基准 | ✅ 157 | ✅ 157 | ✅ 157 |
-| **`b9c88a3` + 16 B 填充** | **+16** | ✅ **157** | ✅ **157** | ✅ **157** |
-| `2498abe` | 83 个符号 -8/-0x10 | ❌ 0 | ❌ 0 | ❌ 0 |
+| 构建                      | rodata             | boot1      | boot2      | boot3      |
+| ------------------------- | ------------------ | ---------- | ---------- | ---------- |
+| `b9c88a3`                 | 基准               | ✅ 157     | ✅ 157     | ✅ 157     |
+| **`b9c88a3` + 16 B 填充** | **+16**            | ✅ **157** | ✅ **157** | ✅ **157** |
+| `2498abe`                 | 83 个符号 -8/-0x10 | ❌ 0       | ❌ 0       | ❌ 0       |
 
 ⇒ **rodata 移动 16 字节，行为不变。**
 
 ### 因此
 
-| 假设 | 状态 |
-| --- | --- |
-| blob 符号漂移 | ❌ 否证（0 个变化）|
-| 段放置回归 | ❌ 否证（`t`/`r` 分布相同）|
-| 对齐破坏 | ❌ 否证（未变）|
-| **rodata 布局** | ❌ **否证（本实验）** |
-| **`.text` 布局 / 我方代码** | ✅ **唯一剩下** |
+| 假设                        | 状态                        |
+| --------------------------- | --------------------------- |
+| blob 符号漂移               | ❌ 否证（0 个变化）         |
+| 段放置回归                  | ❌ 否证（`t`/`r` 分布相同） |
+| 对齐破坏                    | ❌ 否证（未变）             |
+| **rodata 布局**             | ❌ **否证（本实验）**       |
+| **`.text` 布局 / 我方代码** | ✅ **唯一剩下**             |
 
 ### 两组结果对比
 
-| 组 | 上电次数 | 结果 |
-| --- | --- | --- |
-| good / good+pad | **6** | **6/6 到达 halt** |
-| bad | **3** | **0/3 到达 halt** |
+| 组              | 上电次数 | 结果              |
+| --------------- | -------- | ----------------- |
+| good / good+pad | **6**    | **6/6 到达 halt** |
+| bad             | **3**    | **0/3 到达 halt** |
 
 ⇒ 不是运气：两组差距太大。
 
@@ -22548,11 +22640,11 @@ extfuncs.table: 0x4010549c（未变）
 
 ### 下一步（收窄后）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 在 good 构建里**给 `.text` 加填充**（如在 `probe.zig` 末尾加 `@export` 的代码桩）| 若复现卡住 ⇒ **`.text` 布局确凿** |
-| 2 | 或在 bad 构建里**删掉 LE/追踪代码但保留其代码尺寸**（加等长死代码）| 若恢复稳定 ⇒ 同结论 |
-| 3 | 若两者都不复现 ⇒ 差异在**我的代码逻辑**（即便不执行，也可能改了初始化顺序/时序）|
+| #   | 动作                                                                              | 判据                              |
+| --- | --------------------------------------------------------------------------------- | --------------------------------- |
+| 1   | 在 good 构建里**给 `.text` 加填充**（如在 `probe.zig` 末尾加 `@export` 的代码桩） | 若复现卡住 ⇒ **`.text` 布局确凿** |
+| 2   | 或在 bad 构建里**删掉 LE/追踪代码但保留其代码尺寸**（加等长死代码）               | 若恢复稳定 ⇒ 同结论               |
+| 3   | 若两者都不复现 ⇒ 差异在**我的代码逻辑**（即便不执行，也可能改了初始化顺序/时序）  |
 
 ### 为什么这仍值得做
 
@@ -22565,34 +22657,34 @@ extfuncs.table: 0x4010549c（未变）
 
 ### 三个构建、九次上电
 
-| 构建 | 改了什么 | boot1 | boot2 | boot3 |
-| --- | --- | --- | --- | --- |
-| `b9c88a3`（基准）| — | ✅ 157 | ✅ 157 | ✅ 157 |
-| 基准 + **rodata 16 B** | `_rodata_end` +16 | ✅ 157 | ✅ 157 | ✅ 157 |
-| 基准 + **.text 16 B** | 新增 `text_pad_16`（blob 符号未动）| ✅ 157 | ✅ 157 | ✅ 157 |
-| `2498abe`（bad）| 83 符号 -8/-0x10 | ❌ 0 | ❌ 0 | ❌ 0 |
+| 构建                   | 改了什么                            | boot1  | boot2  | boot3  |
+| ---------------------- | ----------------------------------- | ------ | ------ | ------ |
+| `b9c88a3`（基准）      | —                                   | ✅ 157 | ✅ 157 | ✅ 157 |
+| 基准 + **rodata 16 B** | `_rodata_end` +16                   | ✅ 157 | ✅ 157 | ✅ 157 |
+| 基准 + **.text 16 B**  | 新增 `text_pad_16`（blob 符号未动） | ✅ 157 | ✅ 157 | ✅ 157 |
+| `2498abe`（bad）       | 83 符号 -8/-0x10                    | ❌ 0   | ❌ 0   | ❌ 0   |
 
 ⇒ **9/9 稳定 vs 0/3 卡住。**
 
 ### 因此
 
-| 假设 | 状态 |
-| --- | --- |
-| blob 符号漂移 | ❌ |
-| 段放置回归 | ❌ |
-| 对齐破坏 | ❌ |
-| **rodata 布局** | ❌ **实验排除** |
-| **`.text` 布局** | ❌ **实验排除** |
+| 假设                    | 状态            |
+| ----------------------- | --------------- |
+| blob 符号漂移           | ❌              |
+| 段放置回归              | ❌              |
+| 对齐破坏                | ❌              |
+| **rodata 布局**         | ❌ **实验排除** |
+| **`.text` 布局**        | ❌ **实验排除** |
 | **我方代码内容 / 时序** | ✅ **唯一剩下** |
 
 ⇒ **"布局敏感"这个方向被彻底关掉了。**
 
 ### 剩下的两种可能
 
-| # | 可能 | 说明 |
-| --- | --- | --- |
-| 1 | **时序**：bad 构建的代码/字符串长度不同 ⇒ UART 与 flash 取指节奏不同 ⇒ 竞态翻转 |
-| 2 | **3/3 只是运气**：step 20 本来就概率性失败，bad 只是倒霉 |
+| #   | 可能                                                                            | 说明 |
+| --- | ------------------------------------------------------------------------------- | ---- |
+| 1   | **时序**：bad 构建的代码/字符串长度不同 ⇒ UART 与 flash 取指节奏不同 ⇒ 竞态翻转 |
+| 2   | **3/3 只是运气**：step 20 本来就概率性失败，bad 只是倒霉                        |
 
 ⇒ **区分它们的方法**：在 **bad 构建上再跑 ≥5 次**。
 ⇒ 若偶有成功 ⇒ 是概率；若 0/5 ⇒ 与构建相关。
@@ -22604,14 +22696,14 @@ extfuncs.table: 0x4010549c（未变）
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证** |
-| PHY 首次标定 | ✅ **已修复并三项验证** |
-| step 20 行为差异 | ⚠️ **成因未定**（布局已排除；剩时序或概率）|
-| LE 广播 | ❌ 开放（被 step 20 挡住）|
-| 三个静默丢失通道 | 2 修 / 1 记录 |
+| 项                            | 状态                                        |
+| ----------------------------- | ------------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                           |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证**                               |
+| PHY 首次标定                  | ✅ **已修复并三项验证**                     |
+| step 20 行为差异              | ⚠️ **成因未定**（布局已排除；剩时序或概率） |
+| LE 广播                       | ❌ 开放（被 step 20 挡住）                  |
+| 三个静默丢失通道              | 2 修 / 1 记录                               |
 
 ## 🏁🏁 关键转折：bad 构建**不是确定性的**
 
@@ -22625,34 +22717,34 @@ bad-boot1: HALT=106     ← **到达了 halt！**
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| "bad 构建必然卡住" | ❌ **撤回** |
-| "good 构建必然稳定" | ⚠️ 也需更多样本 |
-| **"step 20 是概率性的"** | ✅ **最可能** |
+| 结论                     | 状态            |
+| ------------------------ | --------------- |
+| "bad 构建必然卡住"       | ❌ **撤回**     |
+| "good 构建必然稳定"      | ⚠️ 也需更多样本 |
+| **"step 20 是概率性的"** | ✅ **最可能**   |
 
 ### 这同时解释了全部"布局"实验为何都稳定
 
-| 实验 | 结果 | 现在怎么解释 |
-| --- | --- | --- |
-| good 3/3 | 稳定 | 3 次太少 |
-| good + rodata 16 B 3/3 | 稳定 | 同上 |
-| good + .text 16 B 3/3 | 稳定 | 同上 |
-| **bad 3/3** | 卡住 | **运气差** |
-| **bad 第 1 次（本轮）** | **成功** | **概率性** |
+| 实验                    | 结果     | 现在怎么解释 |
+| ----------------------- | -------- | ------------ |
+| good 3/3                | 稳定     | 3 次太少     |
+| good + rodata 16 B 3/3  | 稳定     | 同上         |
+| good + .text 16 B 3/3   | 稳定     | 同上         |
+| **bad 3/3**             | 卡住     | **运气差**   |
+| **bad 第 1 次（本轮）** | **成功** | **概率性**   |
 
 ⇒ **9 稳定 + 3 卡住 ≈ 75% 成功率** —— 在 3 样本下，全稳定或全卡住都很容易发生。
 
 ### 因此前面**六次否证都是对的**
 
-| 假设 | 状态 |
-| --- | --- |
-| blob 符号漂移 | ❌ |
-| 段放置回归 | ❌ |
-| 对齐破坏 | ❌ |
-| rodata 布局 | ❌ |
-| .text 布局 | ❌ |
-| 弱符号绑定 | ❌（`set_bb_wdg`/`ets_printf`/`register_chipv7_phy` 两构建完全相同）|
+| 假设          | 状态                                                                 |
+| ------------- | -------------------------------------------------------------------- |
+| blob 符号漂移 | ❌                                                                   |
+| 段放置回归    | ❌                                                                   |
+| 对齐破坏      | ❌                                                                   |
+| rodata 布局   | ❌                                                                   |
+| .text 布局    | ❌                                                                   |
+| 弱符号绑定    | ❌（`set_bb_wdg`/`ets_printf`/`register_chipv7_phy` 两构建完全相同） |
 
 ⇒ **都不是原因** —— 因为**没有"构建相关的原因"**。
 
@@ -22666,9 +22758,9 @@ bad-boot1: HALT=106     ← **到达了 halt！**
 
 ### 后续需要的样本量
 
-| 目的 | 需要 |
-| --- | --- |
-| 估出失败率 | **≥20 次上电** |
+| 目的         | 需要                                            |
+| ------------ | ----------------------------------------------- |
+| 估出失败率   | **≥20 次上电**                                  |
 | 定位触发条件 | 结合 NMI `mepc` 分布 + `findPendingClicInput()` |
 
 ⇒ **这是统计问题，不是单次判读问题。**
@@ -22688,41 +22780,41 @@ bad 构建（832928）5 次上电：
 
 ### 与之前的对照
 
-| 时间点 | 同一二进制 832928 | 结果 |
-| --- | --- | --- |
-| 早些时候 | 3 次 | **0/3 到达 halt** |
-| 现在 | 5 次 | **5/5 到达 halt** |
+| 时间点   | 同一二进制 832928 | 结果              |
+| -------- | ----------------- | ----------------- |
+| 早些时候 | 3 次              | **0/3 到达 halt** |
+| 现在     | 5 次              | **5/5 到达 halt** |
 
 ⇒ **同一个二进制，结果完全相反。**
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
-| "bad 构建比 good 差" | ❌ **撤回** |
-| "step 20 对布局/代码敏感" | ❌ **撤回**（六次否证本就指向这里）|
-| **"之前的 3 次运行跑的不是这个镜像"** | ✅ **最可能** |
+| 结论                                  | 状态                                |
+| ------------------------------------- | ----------------------------------- |
+| "bad 构建比 good 差"                  | ❌ **撤回**                         |
+| "step 20 对布局/代码敏感"             | ❌ **撤回**（六次否证本就指向这里） |
+| **"之前的 3 次运行跑的不是这个镜像"** | ✅ **最可能**                       |
 
 ### 为什么这最可能
 
 本会话已经有多次"烧录没生效"的记录：
 
-| 现象 | 处置 |
-| --- | --- |
-| `flash.sh` 输出 troubleshooting URL | 后来加了**产物断言**（`FLASH_ALLOW_STALE`）|
-| 三次"改了却没生效" | 都是 copy-shell 里 build、真实树里 flash |
-| **本次** | 很可能又是同类：**flash 失败但没报错**，跑的是上一个镜像 |
+| 现象                                | 处置                                                     |
+| ----------------------------------- | -------------------------------------------------------- |
+| `flash.sh` 输出 troubleshooting URL | 后来加了**产物断言**（`FLASH_ALLOW_STALE`）              |
+| 三次"改了却没生效"                  | 都是 copy-shell 里 build、真实树里 flash                 |
+| **本次**                            | 很可能又是同类：**flash 失败但没报错**，跑的是上一个镜像 |
 
 ⇒ 而"上一个镜像"恰好是**没有 LE 代码的版本**（step 20 之前就停）——
 这也解释了为什么日志总停在 `arm src=124`：**那个镜像本来就走不到后面**。
 
 ### 真正的结论
 
-| 项 | 状态 |
-| --- | --- |
-| step 20 | ✅ **稳定**（832928 5/5、832944 3/3）|
-| good vs bad 的差异 | ❌ **不存在**（同一二进制两次结果相反）|
-| 之前那 3 次"卡住" | ❌ **是烧录问题，不是代码问题** |
+| 项                 | 状态                                    |
+| ------------------ | --------------------------------------- |
+| step 20            | ✅ **稳定**（832928 5/5、832944 3/3）   |
+| good vs bad 的差异 | ❌ **不存在**（同一二进制两次结果相反） |
+| 之前那 3 次"卡住"  | ❌ **是烧录问题，不是代码问题**         |
 
 ### 教训（本会话第 27 次同型）
 
@@ -22735,10 +22827,10 @@ bad 构建（832928）5 次上电：
 
 ### 后续
 
-| # | 动作 |
-| --- | --- |
-| 1 | 在 `flash.sh` 里**校验写后内容**（读回比对 CRC），而不是只看退出码 |
-| 2 | 之后 LE 广播可以正常重测（step 20 不是障碍）|
+| #   | 动作                                                               |
+| --- | ------------------------------------------------------------------ |
+| 1   | 在 `flash.sh` 里**校验写后内容**（读回比对 CRC），而不是只看退出码 |
+| 2   | 之后 LE 广播可以正常重测（step 20 不是障碍）                       |
 
 ## ✅ 持久修复：`flash.sh` 现在**写后读回校验**
 
@@ -22769,34 +22861,34 @@ flash: 校验通过
 
 本会话的**最后一次误判**就是它造成的：
 
-| 观测 | 实际 |
-| --- | --- |
-| "bad 构建 3/3 卡在 step 20" | **镜像根本没写进去**，跑的是上一个 |
-| 于是推理出"布局敏感"、"时序"… | **全部是伪问题** |
+| 观测                          | 实际                               |
+| ----------------------------- | ---------------------------------- |
+| "bad 构建 3/3 卡在 step 20"   | **镜像根本没写进去**，跑的是上一个 |
+| 于是推理出"布局敏感"、"时序"… | **全部是伪问题**                   |
 
 ⇒ 而**同一个二进制后来 5/5 成功** —— 这一条就否证了整条推理链。
 
 ### 本会话的三道防线（现在都在）
 
-| # | 防线 | 防的是什么 |
-| --- | --- | --- |
-| 1 | **产物断言**（源码比 bin 新则拒烧）| copy-shell 里 build、真实树里 flash |
-| 2 | **读回校验**（本次新增）| 写入静默失败 |
-| 3 | `log.line` 截断可见化 | 日志整行静默丢弃 |
+| #   | 防线                                | 防的是什么                          |
+| --- | ----------------------------------- | ----------------------------------- |
+| 1   | **产物断言**（源码比 bin 新则拒烧） | copy-shell 里 build、真实树里 flash |
+| 2   | **读回校验**（本次新增）            | 写入静默失败                        |
+| 3   | `log.line` 截断可见化               | 日志整行静默丢弃                    |
 
 ⇒ 三者防的是同一件事：**观测通道在"没生效"时不声不响**。
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证** |
-| PHY 首次标定 | ✅ **已修复并三项验证** |
-| step 20 | ✅ **稳定**（832928 5/5、832944 3/3）|
-| "good vs bad 差异" | ❌ **不存在**（烧录问题）|
-| **LE 广播** | 🔍 **可以重测了**（前置障碍已澄清）|
-| 三道观测防线 | ✅ 全部就位 |
+| 项                            | 状态                                  |
+| ----------------------------- | ------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                     |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证**                         |
+| PHY 首次标定                  | ✅ **已修复并三项验证**               |
+| step 20                       | ✅ **稳定**（832928 5/5、832944 3/3） |
+| "good vs bad 差异"            | ❌ **不存在**（烧录问题）             |
+| **LE 广播**                   | 🔍 **可以重测了**（前置障碍已澄清）   |
+| 三道观测防线                  | ✅ 全部就位                           |
 
 ## ✅ 读回校验的**双向验证**
 
@@ -22816,10 +22908,10 @@ flash: 校验通过
 ERROR: A fatal error occurred: Verification failed.
 ```
 
-| 场景 | `verify-flash` 退出码 | 脚本行为 |
-| --- | --- | --- |
-| **损坏镜像** | **2** | `||` → **`exit 4`**（拒绝继续）|
-| 好镜像 | **0** | 校验通过 |
+| 场景         | `verify-flash` 退出码 | 脚本行为 |
+| ------------ | --------------------- | -------- |
+| **损坏镜像** | **2**                 | `        |     | ` → **`exit 4`**（拒绝继续） |
+| 好镜像       | **0**                 | 校验通过 |
 
 ⇒ **保护双向成立。**
 
@@ -22832,22 +22924,22 @@ ERROR: A fatal error occurred: Verification failed.
 
 ### 三道防线（最终）
 
-| # | 防线 | 验证方式 |
-| --- | --- | --- |
-| 1 | 产物断言（源码新于 bin 则拒烧）| 曾真实拦下 |
-| 2 | **读回校验**（写后 `verify-flash`）| ✅ **双向验证**（好=0 / 坏=2）|
-| 3 | `log.line` 截断可见化 | 打过标记 |
+| #   | 防线                                | 验证方式                       |
+| --- | ----------------------------------- | ------------------------------ |
+| 1   | 产物断言（源码新于 bin 则拒烧）     | 曾真实拦下                     |
+| 2   | **读回校验**（写后 `verify-flash`） | ✅ **双向验证**（好=0 / 坏=2） |
+| 3   | `log.line` 截断可见化               | 打过标记                       |
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证 |
-| PHY 首次标定 | ✅ 已修复并三项验证 |
-| step 20 | ✅ 稳定（832928 5/5、832944 3/3）|
-| 读回校验 | ✅ **双向验证通过** |
-| **LE 广播** | 🔍 可重测（前置障碍已澄清）|
+| 项                            | 状态                              |
+| ----------------------------- | --------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                 |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证                         |
+| PHY 首次标定                  | ✅ 已修复并三项验证               |
+| step 20                       | ✅ 稳定（832928 5/5、832944 3/3） |
+| 读回校验                      | ✅ **双向验证通过**               |
+| **LE 广播**                   | 🔍 可重测（前置障碍已澄清）       |
 
 ## LE 广播：**结论是"不确定"，不是"卡住"**
 
@@ -22859,9 +22951,9 @@ ERROR: A fatal error occurred: Verification failed.
 
 ⇒ 因此"日志停在 `arm`"**不能**推出"卡在 step 20"，更不能推出"LE 导致了卡住"。
 
-| 我此前的表述 | 更准确的表述 |
-| --- | --- |
-| "LE 让板子卡住" | **"那些运行里日志没能送出标记行，结论不确定"** |
+| 我此前的表述         | 更准确的表述                                             |
+| -------------------- | -------------------------------------------------------- |
+| "LE 让板子卡住"      | **"那些运行里日志没能送出标记行，结论不确定"**           |
 | "5 个假设全部被推翻" | 仍然成立，但**它们被推翻的是"机制"，不是"现象是否存在"** |
 
 ### 已排除的机制（仍然有效）
@@ -22883,33 +22975,33 @@ ROM printf 自旋、per-pend dump、日志洪水（含 shim 上限降到 20）�
 
 ### 前提已全部排除（这次不是烧录问题）
 
-| 前提 | 状态 |
-| --- | --- |
-| 烧录是否生效 | ✅ **`flash.sh` 读回校验通过**（且该保护已做过双向负面测试）|
-| step 20 是否稳定 | ✅ **832928 5/5、832944 3/3** |
-| 插入位置 | ✅ 在 `enable()` **之后** |
+| 前提             | 状态                                                         |
+| ---------------- | ------------------------------------------------------------ |
+| 烧录是否生效     | ✅ **`flash.sh` 读回校验通过**（且该保护已做过双向负面测试） |
+| step 20 是否稳定 | ✅ **832928 5/5、832944 3/3**                                |
+| 插入位置         | ✅ 在 `enable()` **之后**                                    |
 
 ### 五次假设
 
-| # | 假设 | 怎么被推翻 |
-| --- | --- | --- |
-| 1 | ROM `ets_printf` 在满 FIFO 上自旋 | `nm`：`4006562e T ets_printf` **是我们自己的 shim** |
-| 2 | per-pend dump 钩子饿死 controller | 加 `osal.dump_hook = null` 后**仍复现** |
-| 3 | blob 日志洪水淹没 UART | shim 已有 400 行上限 |
-| 4 | 同上，改用**静音开关** | 静音后**依然无输出** |
-| 5 | 上限太宽（400 行 × 5000 次自旋）| **降到 20 行后依然无输出** |
+| #   | 假设                              | 怎么被推翻                                          |
+| --- | --------------------------------- | --------------------------------------------------- |
+| 1   | ROM `ets_printf` 在满 FIFO 上自旋 | `nm`：`4006562e T ets_printf` **是我们自己的 shim** |
+| 2   | per-pend dump 钩子饿死 controller | 加 `osal.dump_hook = null` 后**仍复现**             |
+| 3   | blob 日志洪水淹没 UART            | shim 已有 400 行上限                                |
+| 4   | 同上，改用**静音开关**            | 静音后**依然无输出**                                |
+| 5   | 上限太宽（400 行 × 5000 次自旋）  | **降到 20 行后依然无输出**                          |
 
 ⇒ **五次都失败。**
 
 ### 已确定（与假设无关）
 
-| 事实 | 值 |
-| --- | --- |
-| fault | **0** |
+| 事实               | 值                                              |
+| ------------------ | ----------------------------------------------- |
+| fault              | **0**                                           |
 | `init ok` 是否出现 | **0 次**（**被 FIFO 丢了** ⇒ 不能用"缺行"判断） |
-| 日志止于 | `bt osal: arm src=124` 之后 |
-| `mepc` 采样 | 在 `ets_printf` 附近**变化** |
-| 不发 LE 时 | ✅ **一切正常**（`btdm_tx=3`、BD_ADDR 应答）|
+| 日志止于           | `bt osal: arm src=124` 之后                     |
+| `mepc` 采样        | 在 `ets_printf` 附近**变化**                    |
+| 不发 LE 时         | ✅ **一切正常**（`btdm_tx=3`、BD_ADDR 应答）    |
 
 ### 一个此前未做的判据
 
@@ -22922,24 +23014,24 @@ ROM printf 自旋、per-pend dump、日志洪水（含 shim 上限降到 20）�
 
 ### 因此下一步必须是**不依赖 UART** 的观测
 
-| # | 手段 | 说明 |
-| --- | --- | --- |
-| 1 | `.noinit` 段（**放在 heap/stack 之外**）+ 复位后读回 | 上次放在 `_heap_start` 上失败过，需正确放置 |
-| 2 | NMI 里把阶段号写入该段 | **NMI 在卡住时仍在运行** |
-| 3 | 或 GPIO 打点 + 逻辑分析仪 | 最直接 |
+| #   | 手段                                                 | 说明                                        |
+| --- | ---------------------------------------------------- | ------------------------------------------- |
+| 1   | `.noinit` 段（**放在 heap/stack 之外**）+ 复位后读回 | 上次放在 `_heap_start` 上失败过，需正确放置 |
+| 2   | NMI 里把阶段号写入该段                               | **NMI 在卡住时仍在运行**                    |
+| 3   | 或 GPIO 打点 + 逻辑分析仪                            | 最直接                                      |
 
 ⇒ **在做完 1 或 3 之前，不再改 LE 相关代码。**
 
 ## 最终状态（本会话结束时）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证** |
-| PHY 首次标定 | ✅ **已修复并三项验证** |
-| step 20 | ✅ **稳定**（8 次上电全过）|
-| 三道观测防线 | ✅ 产物断言 / 读回校验（双向验证）/ 日志截断可见化 |
-| **LE 广播** | ❌ **未解（5 个假设已排除；需 UART 外观测）** |
+| 项                            | 状态                                               |
+| ----------------------------- | -------------------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                                  |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ **已验证**                                      |
+| PHY 首次标定                  | ✅ **已修复并三项验证**                            |
+| step 20                       | ✅ **稳定**（8 次上电全过）                        |
+| 三道观测防线                  | ✅ 产物断言 / 读回校验（双向验证）/ 日志截断可见化 |
+| **LE 广播**                   | ❌ **未解（5 个假设已排除；需 UART 外观测）**      |
 
 ## 🔧 已就位：跨复位追踪槽 `.adv_trace`（NMI 写入）
 
@@ -22966,11 +23058,11 @@ _heap_start      = 2f022980     ← 在 trace 之后 ✓
 
 **NMI 处理**（`input == 25`）每 tick 写：
 
-| 槽 | 内容 |
-| --- | --- |
-| `[0]` | `nmi_count` |
-| `[1]` | `frame.mepc`（被中断的 PC）|
-| `[2]` | `findPendingClicInput()`（哪个 CLIC 输入处于 pending）|
+| 槽    | 内容                                                   |
+| ----- | ------------------------------------------------------ |
+| `[0]` | `nmi_count`                                            |
+| `[1]` | `frame.mepc`（被中断的 PC）                            |
+| `[2]` | `findPendingClicInput()`（哪个 CLIC 输入处于 pending） |
 
 ⇒ **卡住时 NMI 仍在运行** ⇒ 这些数据一定是最新的。
 
@@ -22987,11 +23079,11 @@ bt advtrace: prev_nmi=... prev_mepc=0x... prev_pending_clic=...
 
 ### 因此当前状态
 
-| 项 | 状态 |
-| --- | --- |
-| 追踪槽放置 | ✅ **正确**（已验证不重叠）|
-| NMI 写入 | ✅ 已接线 |
-| 开机读回 | ⚠️ **已实现，但那次运行没看到那行**（可能被丢）|
+| 项         | 状态                                            |
+| ---------- | ----------------------------------------------- |
+| 追踪槽放置 | ✅ **正确**（已验证不重叠）                     |
+| NMI 写入   | ✅ 已接线                                       |
+| 开机读回   | ⚠️ **已实现，但那次运行没看到那行**（可能被丢） |
 
 ⇒ **下一步**：把这个读回挪到**比 `init ok` 更早**的位置（`main` 里第一件事），
 或直接接到 GPIO —— UART 在这条路径上已被证明不可靠。
@@ -23016,11 +23108,11 @@ _heap_end   = 0x2f076fc0
 
 ### 可能的解释
 
-| # | 解释 |
-| --- | --- |
-| 1 | 376 KiB 是**更早**布局（`.btdm_bss` 32 KiB 时）的数字，缩到 6/8 KiB 后没同步 |
-| 2 | 或者当时把 `_stack_bottom.._stack_top` 也算进了"arena" |
-| 3 | 或计的是「heap + 若干保留段」 |
+| #   | 解释                                                                         |
+| --- | ---------------------------------------------------------------------------- |
+| 1   | 376 KiB 是**更早**布局（`.btdm_bss` 32 KiB 时）的数字，缩到 6/8 KiB 后没同步 |
+| 2   | 或者当时把 `_stack_bottom.._stack_top` 也算进了"arena"                       |
+| 3   | 或计的是「heap + 若干保留段」                                                |
 
 ⇒ **需要按当前链接脚本重新算一遍并统一**，而不是继续引用旧数字。
 
@@ -23028,20 +23120,20 @@ _heap_end   = 0x2f076fc0
 
 本会话已经因为**陈旧数字**踩过两次：
 
-| 次 | 陈旧的东西 |
-| --- | --- |
-| 1 | `PROVIDE(esp_phy_enable = 0x2f00e756)`（旧布局的地址）|
-| 2 | 本 README 顶部的「当前状态」块（旧结论）|
-| **3** | **arena 376 KiB（旧尺寸）** |
+| 次    | 陈旧的东西                                             |
+| ----- | ------------------------------------------------------ |
+| 1     | `PROVIDE(esp_phy_enable = 0x2f00e756)`（旧布局的地址） |
+| 2     | 本 README 顶部的「当前状态」块（旧结论）               |
+| **3** | **arena 376 KiB（旧尺寸）**                            |
 
 ⇒ 同一形态：**数字写下来之后，布局变了，数字没变。**
 
 ### 处置
 
-| # | 动作 |
-| --- | --- |
-| 1 | 在 README 里把 376 KiB 标注为**待核对**（不要继续引用）|
-| 2 | 后续按当前 `s31.ld` 重算，并加一条**链接期 ASSERT**（如 `ASSERT(_heap_end - _heap_start >= 300K)`）防止再漂 |
+| #   | 动作                                                                                                        |
+| --- | ----------------------------------------------------------------------------------------------------------- |
+| 1   | 在 README 里把 376 KiB 标注为**待核对**（不要继续引用）                                                     |
+| 2   | 后续按当前 `s31.ld` 重算，并加一条**链接期 ASSERT**（如 `ASSERT(_heap_end - _heap_start >= 300K)`）防止再漂 |
 
 ## 🎯 下一个通道：**otadata 扇区**（host 可直接读，完全不经过 UART）
 
@@ -23055,37 +23147,37 @@ _heap_end   = 0x2f076fc0
 
 ### 用 flash 代替
 
-| 通道 | 谁能读 | 依赖板子打印吗 |
-| --- | --- | --- |
-| RAM 槽 | 只能板子自己打印 | ✅ **依赖** |
-| **otadata 扇区** | **host：`esptool read-flash <offset> 0x1000`** | ❌ **不依赖** |
+| 通道             | 谁能读                                         | 依赖板子打印吗 |
+| ---------------- | ---------------------------------------------- | -------------- |
+| RAM 槽           | 只能板子自己打印                               | ✅ **依赖**    |
+| **otadata 扇区** | **host：`esptool read-flash <offset> 0x1000`** | ❌ **不依赖**  |
 
 ### 做法
 
-| # | 步骤 |
-| --- | --- |
-| 1 | `esptool read-flash 0x8000 0x1000` 读分区表，取 **otadata** 的偏移 |
-| 2 | 复用仓库已有的 otadata 写入路径（`ota_ab` / `firmware/src/main.zig` 里的槽位机制），**不要自造 flash 写** |
-| 3 | 每条 LE 命令**前**把阶段号盖进该扇区的一个字 |
-| 4 | 卡住后从 **host** 读回那个字 |
+| #   | 步骤                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------- |
+| 1   | `esptool read-flash 0x8000 0x1000` 读分区表，取 **otadata** 的偏移                                        |
+| 2   | 复用仓库已有的 otadata 写入路径（`ota_ab` / `firmware/src/main.zig` 里的槽位机制），**不要自造 flash 写** |
+| 3   | 每条 LE 命令**前**把阶段号盖进该扇区的一个字                                                              |
+| 4   | 卡住后从 **host** 读回那个字                                                                              |
 
 ### 风险
 
-| # | 风险 |
-| --- | --- |
-| 1 | 每条命令一次 erase+write ⇒ **重**，但只有 3 条，可接受 |
-| 2 | 若 CPU 已完全卡死，flash 写也做不了 ⇒ 那时只能靠 **NMI 里的最小写**或 GPIO |
-| 3 | otadata 是**启动关键区** ⇒ 写入必须可逆、不能破坏 A/B 状态 |
+| #   | 风险                                                                       |
+| --- | -------------------------------------------------------------------------- |
+| 1   | 每条命令一次 erase+write ⇒ **重**，但只有 3 条，可接受                     |
+| 2   | 若 CPU 已完全卡死，flash 写也做不了 ⇒ 那时只能靠 **NMI 里的最小写**或 GPIO |
+| 3   | otadata 是**启动关键区** ⇒ 写入必须可逆、不能破坏 A/B 状态                 |
 
 ⇒ **第 3 条最重要**：盖阶段号前先保存原值，读完恢复。
 
 ### 因此当前状态
 
-| 项 | 状态 |
-| --- | --- |
-| `.adv_trace` RAM 槽 | ✅ 放置正确、NMI 已写（**但读出仍依赖打印**）|
-| **host 可读的通道** | ❌ **尚未建立**（本节的方案）|
-| LE 广播 | 🔍 **已定位到 0x200A 的开始广播分支** |
+| 项                  | 状态                                          |
+| ------------------- | --------------------------------------------- |
+| `.adv_trace` RAM 槽 | ✅ 放置正确、NMI 已写（**但读出仍依赖打印**） |
+| **host 可读的通道** | ❌ **尚未建立**（本节的方案）                 |
+| LE 广播             | 🔍 **已定位到 0x200A 的开始广播分支**         |
 
 ### 判据（建成后的用法）
 
@@ -23101,14 +23193,14 @@ xxd /tmp/stage.bin
 
 ### 分区表（实测）
 
-| 名称 | 偏移 | 大小 | 结束 |
-| --- | --- | --- | --- |
-| nvs | `0x009000` | `0x6000` | `0x00f000` |
-| phy_init | `0x00f000` | `0x1000` | `0x010000` |
-| **factory**（我们的 app）| **`0x010000`** | **`0x177000`** | **`0x187000`** |
-| ota_0 | `0x190000` | `0x180000` | `0x310000` |
-| ota_1 | `0x310000` | `0x180000` | `0x490000` |
-| otadata | `0x490000` | `0x2000` | `0x492000` |
+| 名称                      | 偏移           | 大小           | 结束           |
+| ------------------------- | -------------- | -------------- | -------------- |
+| nvs                       | `0x009000`     | `0x6000`       | `0x00f000`     |
+| phy_init                  | `0x00f000`     | `0x1000`       | `0x010000`     |
+| **factory**（我们的 app） | **`0x010000`** | **`0x177000`** | **`0x187000`** |
+| ota_0                     | `0x190000`     | `0x180000`     | `0x310000`     |
+| ota_1                     | `0x310000`     | `0x180000`     | `0x490000`     |
+| otadata                   | `0x490000`     | `0x2000`       | `0x492000`     |
 
 ### 结论：不要把阶段号写进 otadata
 
@@ -23119,11 +23211,11 @@ xxd /tmp/stage.bin
 
 **选 `0x186000`**（factory 末扇区）：
 
-| 判据 | 值 |
-| --- | --- |
-| 在 app 数据之后 | ✅（`0x186000` ≫ `0x0DB000`）|
-| bootloader 会读它吗 | ❌ 只读分区头 + 镜像长度 |
-| host 能直接读 | ✅ `esptool read-flash 0x186000 0x40` |
+| 判据                | 值                                    |
+| ------------------- | ------------------------------------- |
+| 在 app 数据之后     | ✅（`0x186000` ≫ `0x0DB000`）         |
+| bootloader 会读它吗 | ❌ 只读分区头 + 镜像长度              |
+| host 能直接读       | ✅ `esptool read-flash 0x186000 0x40` |
 
 ### 用法（建成后）
 
@@ -23138,32 +23230,32 @@ xxd /tmp/stage.bin
 
 ### 实现要点
 
-| # | 要点 |
-| --- | --- |
-| 1 | 复用仓库已有的 flash 写路径（`ota_ab` 里已在写 `otadata`，抽取其 erase/write）|
-| 2 | 写 4 字节 ⇒ 需先 **erase 4 KiB 扇区**再写（flash 语义）|
-| 3 | 若 CPU 已完全卡死则写不了 ⇒ 那时靠 NMI 的最小写或 GPIO |
-| 4 | **不要**碰 `otadata` |
+| #   | 要点                                                                           |
+| --- | ------------------------------------------------------------------------------ |
+| 1   | 复用仓库已有的 flash 写路径（`ota_ab` 里已在写 `otadata`，抽取其 erase/write） |
+| 2   | 写 4 字节 ⇒ 需先 **erase 4 KiB 扇区**再写（flash 语义）                        |
+| 3   | 若 CPU 已完全卡死则写不了 ⇒ 那时靠 NMI 的最小写或 GPIO                         |
+| 4   | **不要**碰 `otadata`                                                           |
 
 ### 当前状态
 
-| 项 | 状态 |
-| --- | --- |
-| 分区表 | ✅ 已确认 |
-| 落脚点 | ✅ 已选定 `0x186000` |
-| flash 写实现 | ✅ **已实现**（直接声明 ROM `esp_rom_spiflash_erase_sector`/`_write`，无需 `ota_ab`）|
-| LE 广播 | 🔍 **已定位到 0x200A 的开始广播分支** |
+| 项           | 状态                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------- |
+| 分区表       | ✅ 已确认                                                                             |
+| 落脚点       | ✅ 已选定 `0x186000`                                                                  |
+| flash 写实现 | ✅ **已实现**（直接声明 ROM `esp_rom_spiflash_erase_sector`/`_write`，无需 `ota_ab`） |
+| LE 广播      | 🔍 **已定位到 0x200A 的开始广播分支**                                                 |
 
 ## 🏁 追踪槽的**第一个真实结论**：LE 代码从未执行
 
 ### 仪器（终于可用）
 
-| 环节 | 实现 |
-| --- | --- |
-| 槽 | `.adv_trace`（NOLOAD，在 `.btdm_data` 之后，`_heap_start` 指向其后）|
+| 环节       | 实现                                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| 槽         | `.adv_trace`（NOLOAD，在 `.btdm_data` 之后，`_heap_start` 指向其后）             |
 | `tr[0..3]` | **NMI 专用**：`nmi_count` / `frame.mepc` / `findPendingClicInput()` / `frame.sp` |
-| `tr[8]` | **业务阶段**（LE 每条命令前写入）|
-| 读出 | `main()` **第一条语句**：`board.log.line("T {d} {x}", .{ tr[8], tr[1] })` |
+| `tr[8]`    | **业务阶段**（LE 每条命令前写入）                                                |
+| 读出       | `main()` **第一条语句**：`board.log.line("T {d} {x}", .{ tr[8], tr[1] })`        |
 
 ⇒ 一行 **< 20 B**、在**任何 bringup 之前**打印 ⇒ 一个 FIFO 装得下。
 
@@ -23185,12 +23277,12 @@ T 474988264 ed28f6b0
 
 ### 因此（这次是硬证据）
 
-| 结论 | 依据 |
-| --- | --- |
-| LE 代码未执行 | ✅ **`tr[8]` 未被写** |
-| 流程停在 `enable()` 内部 | ✅ `tr[8]` 应在那之后才被写 |
-| NMI 仍在运行 | ✅ `tr[1]` 每次不同 |
-| **不依赖 UART** | ✅ 唯一依赖的是那一行 20 B 的 `T` |
+| 结论                     | 依据                              |
+| ------------------------ | --------------------------------- |
+| LE 代码未执行            | ✅ **`tr[8]` 未被写**             |
+| 流程停在 `enable()` 内部 | ✅ `tr[8]` 应在那之后才被写       |
+| NMI 仍在运行             | ✅ `tr[1]` 每次不同               |
+| **不依赖 UART**          | ✅ 唯一依赖的是那一行 20 B 的 `T` |
 
 ⇒ 此前"日志停在 `arm src=124` ⇒ 卡在 step 20"的推断，
 **现在有了不依赖日志的独立证据。**
@@ -23198,6 +23290,7 @@ T 474988264 ed28f6b0
 ### 但"为什么带 LE 代码的构建 step 20 不返回"仍未解
 
 同一批构建里：
+
 - 不含 LE 的构建：8 次上电全部到达 halt
 - 含 LE 的构建：多次上电，`tr[8]` 从未被写 ⇒ 从未越过 `enable()`
 
@@ -23207,11 +23300,11 @@ T 474988264 ed28f6b0
 
 ### 下一步（现在有了正确的工具）
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 把 `tr[8]` 的写入**提前到 `enter(17)` 之前** | 若 `tr[8]` 变成 17/18/19/20 ⇒ 证明逐段推进；停在哪就说明卡在哪 |
-| 2 | 在 `enable()` **前后**各写一个阶段号 | 明确是"没进"还是"没出" |
-| 3 | 多跑几次 | 若 `tr[8]` 有时是 4 ⇒ 说明是概率性的 |
+| #   | 动作                                         | 判据                                                           |
+| --- | -------------------------------------------- | -------------------------------------------------------------- |
+| 1   | 把 `tr[8]` 的写入**提前到 `enter(17)` 之前** | 若 `tr[8]` 变成 17/18/19/20 ⇒ 证明逐段推进；停在哪就说明卡在哪 |
+| 2   | 在 `enable()` **前后**各写一个阶段号         | 明确是"没进"还是"没出"                                         |
+| 3   | 多跑几次                                     | 若 `tr[8]` 有时是 4 ⇒ 说明是概率性的                           |
 
 ⇒ **这个仪器现在能回答"停在哪"，剩下的只是把它对准正确的边界。**
 
@@ -23229,19 +23322,19 @@ T 474988264 ed28f6b0
 
 ### 因此
 
-| 结论 | 状态 |
-| --- | --- |
+| 结论                           | 状态                          |
+| ------------------------------ | ----------------------------- |
 | "`tr[8]` 从未被写 ⇒ LE 未执行" | ❌ **撤回** —— 写入根本没生成 |
-| NMI 写 `tr[0..3]` | ✅ 有指令 |
-| 业务写 `tr[8]` | ❌ **无指令** |
+| NMI 写 `tr[0..3]`              | ✅ 有指令                     |
+| 业务写 `tr[8]`                 | ❌ **无指令**                 |
 
 ### 可能原因
 
-| # | 原因 |
-| --- | --- |
-| 1 | `@intFromPtr(&_adv_trace_start)` 对 `extern var` 被折叠成常量 0 ⇒ 地址算错 |
-| 2 | 该块被 DCE（尽管是 `*volatile`）|
-| 3 | `stg()` 内联后与 `builtin` 判断组合被优化掉 |
+| #   | 原因                                                                       |
+| --- | -------------------------------------------------------------------------- |
+| 1   | `@intFromPtr(&_adv_trace_start)` 对 `extern var` 被折叠成常量 0 ⇒ 地址算错 |
+| 2   | 该块被 DCE（尽管是 `*volatile`）                                           |
+| 3   | `stg()` 内联后与 `builtin` 判断组合被优化掉                                |
 
 ⇒ **正确的写法**应直接用链接器符号的**地址**（如 `@extern(*u32, .{.name="_adv_trace_start"})`），
 并对该指针做 `volatile` 写；**且必须用反汇编核对"指令真的存在"**。
@@ -23253,14 +23346,14 @@ T 474988264 ed28f6b0
 
 ### 因此本会话的最终诚实状态
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证 |
-| PHY 首次标定 | ✅ 已修复并三项验证 |
-| 三道观测防线 | ✅ 就位并验证"会失败" |
-| **`.adv_trace` 仪器** | ⚠️ **NMI 写入可用；业务写入未生成（接线 bug）** |
-| **LE 广播** | ❌ **未解，且当前仪器还不能回答它** |
+| 项                            | 状态                                            |
+| ----------------------------- | ----------------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                               |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证                                       |
+| PHY 首次标定                  | ✅ 已修复并三项验证                             |
+| 三道观测防线                  | ✅ 就位并验证"会失败"                           |
+| **`.adv_trace` 仪器**         | ⚠️ **NMI 写入可用；业务写入未生成（接线 bug）** |
+| **LE 广播**                   | ❌ **未解，且当前仪器还不能回答它**             |
 
 ⇒ **下一步**：修 `tr[8]` 的写法（用 `@extern` 取址 + 反汇编核对），
 **然后**才谈"用阶段号定位"。
@@ -23269,11 +23362,11 @@ T 474988264 ed28f6b0
 
 ### 决定性证据链
 
-| # | 观察 | 含义 |
-| --- | --- | --- |
-| 1 | 两轮读数 `474988257` → `475004648`，**递增** | 是**计数器**，不是阶段号 10/11/12 |
-| 2 | 反汇编里 `main` 的 `tr[8] = 0` 编成 `sw zero, -1728(a0)` = **offset 0** | **索引被忽略** |
-| 3 | 指向 `2f022960`（offset 32）的指令数 = **0** | offset 32 **从未被写** |
+| #   | 观察                                                                    | 含义                              |
+| --- | ----------------------------------------------------------------------- | --------------------------------- |
+| 1   | 两轮读数 `474988257` → `475004648`，**递增**                            | 是**计数器**，不是阶段号 10/11/12 |
+| 2   | 反汇编里 `main` 的 `tr[8] = 0` 编成 `sw zero, -1728(a0)` = **offset 0** | **索引被忽略**                    |
+| 3   | 指向 `2f022960`（offset 32）的指令数 = **0**                            | offset 32 **从未被写**            |
 
 ⇒ **`tr[8]` 与 `tr[0]` 编译到了同一个地址。**
 
@@ -23289,11 +23382,11 @@ T 474988264 ed28f6b0
 
 ### 因此本会话关于 `.adv_trace` 的**全部结论作废**
 
-| 结论 | 状态 |
-| --- | --- |
-| "`tr[8]` 从未被写 ⇒ LE 未执行" | ❌ **撤回**（测的是计数器）|
-| "流程停在 `enable()` 内部" | ❌ **无依据**（仪器没测到）|
-| "NMI 在运行" | ⚠️ 只由计数器递增支持 ✓（这条仍成立）|
+| 结论                           | 状态                                  |
+| ------------------------------ | ------------------------------------- |
+| "`tr[8]` 从未被写 ⇒ LE 未执行" | ❌ **撤回**（测的是计数器）           |
+| "流程停在 `enable()` 内部"     | ❌ **无依据**（仪器没测到）           |
+| "NMI 在运行"                   | ⚠️ 只由计数器递增支持 ✓（这条仍成立） |
 
 ⇒ **NMI 确实在跑**（计数器在涨），但**业务阶段从未被测量**。
 
@@ -23333,14 +23426,14 @@ base[8] = n;   // 明确是 u32 索引
 
 ## 最终状态（本会话结束时 · 如实）
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证 |
-| PHY 首次标定 | ✅ 已修复并三项验证 |
-| 三道观测防线 | ✅ 就位并验证"会失败" |
-| **`.adv_trace` 仪器** | ❌ **接线错误（索引折叠），全部读数作废** |
-| **LE 广播** | ❌ **未解**（且目前没有可信仪器） |
+| 项                            | 状态                                      |
+| ----------------------------- | ----------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                         |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证                                 |
+| PHY 首次标定                  | ✅ 已修复并三项验证                       |
+| 三道观测防线                  | ✅ 就位并验证"会失败"                     |
+| **`.adv_trace` 仪器**         | ❌ **接线错误（索引折叠），全部读数作废** |
+| **LE 广播**                   | ❌ **未解**（且目前没有可信仪器）         |
 
 ## 🧹 收尾：移除了接错线的跨复位仪器，恢复到已验证状态
 
@@ -23356,11 +23449,11 @@ base[8] = n;   // 明确是 u32 索引
 
 ### 重做时必须满足的前提
 
-| # | 要求 |
-| --- | --- |
-| 1 | 先用 `objdump -d app.elf \| grep -- '-1696('` 确认 **offset 32 的 store 存在** |
-| 2 | 再看该指令的注释地址是否等于 `_adv_trace_start + 32` |
-| 3 | **两条都满足**才可信；只看源码不算 |
+| #   | 要求                                                                           |
+| --- | ------------------------------------------------------------------------------ |
+| 1   | 先用 `objdump -d app.elf \| grep -- '-1696('` 确认 **offset 32 的 store 存在** |
+| 2   | 再看该指令的注释地址是否等于 `_adv_trace_start + 32`                           |
+| 3   | **两条都满足**才可信；只看源码不算                                             |
 
 ### 清理后的板上状态（实测）
 
@@ -23378,16 +23471,16 @@ bt HALT tx: t=4 n=12 0e,0a,02,09,10,00      ← BD_ADDR 应答
 > 全文有多个历史「最终状态」表，它们都是**当时**的快照。
 > **以本表为准**，与任何其它表冲突时，本表胜。
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证 |
-| PHY 首次标定 | ✅ 已修复并三项验证 |
-| 三道观测防线 | ✅ 就位并验证"会失败" |
-| **host 可读 flash 标记** | ✅ **已实现并验证**（`0x186000`，`magic|stage` + 计数器快照）|
-| **LE 广播** | 🔍 **已定位到 `0x200A` 的"开始广播"分支**（Enable=0 通过、Enable=1 挂住）|
-| **剩余工作** | 补齐 IDF `esp_phy_enable` 里的射频使能段 |
-| **当前树的状态** | `0x200A` 的 Enable **= 1**（真正开始广播）⇒ **会挂**。这是**已定位的缺陷**，不是回归 |
+| 项                            | 状态                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| 七个已识别缺陷                | ✅ 全部修复并验证                                                                    |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证                                                                            |
+| PHY 首次标定                  | ✅ 已修复并三项验证                                                                  |
+| 三道观测防线                  | ✅ 就位并验证"会失败"                                                                |
+| **host 可读 flash 标记**      | ✅ **已实现并验证**（`0x186000`，`magic                                              | stage` + 计数器快照） |
+| **LE 广播**                   | 🔍 **已定位到 `0x200A` 的"开始广播"分支**（Enable=0 通过、Enable=1 挂住）            |
+| **剩余工作**                  | 补齐 IDF `esp_phy_enable` 里的射频使能段                                             |
+| **当前树的状态**              | `0x200A` 的 Enable **= 1**（真正开始广播）⇒ **会挂**。这是**已定位的缺陷**，不是回归 |
 
 ### 给下一位的话
 
@@ -23397,7 +23490,6 @@ bt HALT tx: t=4 n=12 0e,0a,02,09,10,00      ← BD_ADDR 应答
 > ⇒ **凡是要断言"某条指令/某个地址发生了某事"之前，先反汇编数一遍。**
 > 而且注意：**基址+位移寻址不会让目标地址以字面量出现**，
 > 所以"grep 地址"这个方法本身会给出假阴性。
-
 
 ## ✅ 更正：根因是**链接脚本缺输入段规则**，不是"Zig 索引折叠"
 
@@ -23439,13 +23531,13 @@ bt HALT tx: t=4 n=12 0e,0a,02,09,10,00      ← BD_ADDR 应答
 
 ⇒ **完整的正确条件因此是五条**（与章节 29.18.4 对齐）：
 
-| # | 条件 |
-| --- | --- |
-| 1 | `s31.ld` 里 `.adv_trace` 必须含 `*(.adv_trace)` |
-| 2 | Zig 全局必须**被引用**（否则 DCE 掉）|
-| 3 | 反汇编里必须看到 **offset 32 的 store**（`-1696(`），而不是只看源码 |
-| 4 | **`_heap_start` 必须指向槽之后**（`= _adv_trace_end`）—— 否则槽与堆起始重叠，会被分配器当空闲内存发出去 |
-| 5 | **由 NMI 写入** —— 卡住时主流程停了，而 NMI 还在跑 |
+| #   | 条件                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------- |
+| 1   | `s31.ld` 里 `.adv_trace` 必须含 `*(.adv_trace)`                                                         |
+| 2   | Zig 全局必须**被引用**（否则 DCE 掉）                                                                   |
+| 3   | 反汇编里必须看到 **offset 32 的 store**（`-1696(`），而不是只看源码                                     |
+| 4   | **`_heap_start` 必须指向槽之后**（`= _adv_trace_end`）—— 否则槽与堆起始重叠，会被分配器当空闲内存发出去 |
+| 5   | **由 NMI 写入** —— 卡住时主流程停了，而 NMI 还在跑                                                      |
 
 ### 本会话的处置
 
@@ -23474,13 +23566,13 @@ _heap_start = _data_end_btdm = 2f022940
 
 ### 已有的封装（`components/boot-power-perf/src/flash.zig`）
 
-| 原语 | 地址 / 值 |
-| --- | --- |
-| `esp_rom_spiflash_read` | — |
-| **`esp_rom_spiflash_write`** | **`0x2f800168`** |
-| **`esp_rom_spiflash_erase_sector`** | **`0x2f800160`** |
-| `sector_size` | **`0x1000`**（4 KiB）|
-| `eraseSector(offset)` | ✅ 已封装，含边界与对齐检查 |
+| 原语                                | 地址 / 值                   |
+| ----------------------------------- | --------------------------- |
+| `esp_rom_spiflash_read`             | —                           |
+| **`esp_rom_spiflash_write`**        | **`0x2f800168`**            |
+| **`esp_rom_spiflash_erase_sector`** | **`0x2f800160`**            |
+| `sector_size`                       | **`0x1000`**（4 KiB）       |
+| `eraseSector(offset)`               | ✅ 已封装，含边界与对齐检查 |
 
 ⇒ **不需要自己写 flash 驱动。**
 
@@ -23503,30 +23595,30 @@ xxd /tmp/stage.bin
 
 ### 注意事项
 
-| # | 注意 |
-| --- | --- |
-| 1 | 每条 LE 命令一次 erase(4 KiB) ⇒ **重**，但只有 3 条 |
-| 2 | **不能碰 `otadata`（`0x490000`）** —— A/B 启动状态 |
-| 3 | 若 CPU 已完全卡死则写不了 ⇒ 那时只能靠 NMI 或 GPIO |
-| 4 | `0x186000` 在 `factory` 分区内（`0x10000..0x187000`）⇒ 合法可写 |
+| #   | 注意                                                            |
+| --- | --------------------------------------------------------------- |
+| 1   | 每条 LE 命令一次 erase(4 KiB) ⇒ **重**，但只有 3 条             |
+| 2   | **不能碰 `otadata`（`0x490000`）** —— A/B 启动状态              |
+| 3   | 若 CPU 已完全卡死则写不了 ⇒ 那时只能靠 NMI 或 GPIO              |
+| 4   | `0x186000` 在 `factory` 分区内（`0x10000..0x187000`）⇒ 合法可写 |
 
 ### 状态
 
-| 项 | 状态 |
-| --- | --- |
-| flash 原语 | ✅ **已存在**（`boot-power-perf/src/flash.zig`）|
-| 扇区选择 | ✅ `0x186000`（分区表实测）|
-| 接线 | ✅ **已完成**（ROM 符号直接声明，不需要跨组件引用）|
-| LE 广播 | 🔍 **已定位到 0x200A**（仪器已可用于回答它）|
+| 项         | 状态                                                |
+| ---------- | --------------------------------------------------- |
+| flash 原语 | ✅ **已存在**（`boot-power-perf/src/flash.zig`）    |
+| 扇区选择   | ✅ `0x186000`（分区表实测）                         |
+| 接线       | ✅ **已完成**（ROM 符号直接声明，不需要跨组件引用） |
+| LE 广播    | 🔍 **已定位到 0x200A**（仪器已可用于回答它）        |
 
 ## 门禁（本会话最终）
 
-| 门禁 | 结果 |
-| --- | --- |
-| `npm run check`（`tsc --noEmit` + **全仓** prettier）| ✅ **通过** |
-| `npx quartz build` | ✅ 1165 文件 |
-| `zig fmt --check boards/ components/` | ✅ |
-| `python3 scripts/check-invariants.py` | ✅ |
+| 门禁                                                  | 结果         |
+| ----------------------------------------------------- | ------------ |
+| `npm run check`（`tsc --noEmit` + **全仓** prettier） | ✅ **通过**  |
+| `npx quartz build`                                    | ✅ 1165 文件 |
+| `zig fmt --check boards/ components/`                 | ✅           |
+| `python3 scripts/check-invariants.py`                 | ✅           |
 
 ## ⚠️ flash 标记的**安全约束**：绝不能从 NMI 里擦写
 
@@ -23540,17 +23632,17 @@ xxd /tmp/stage.bin
 
 ### 因此职责必须分开
 
-| 谁 | 做什么 | 为什么 |
-| --- | --- | --- |
-| **NMI** | **只写 RAM 标记**（`.adv_trace`）| NMI 在卡住时仍在跑，但它**不能碰 flash** |
-| **主上下文** | 擦写 flash 标记（或发起复位）| 只有主上下文里擦写 flash 才安全 |
+| 谁           | 做什么                            | 为什么                                   |
+| ------------ | --------------------------------- | ---------------------------------------- |
+| **NMI**      | **只写 RAM 标记**（`.adv_trace`） | NMI 在卡住时仍在跑，但它**不能碰 flash** |
+| **主上下文** | 擦写 flash 标记（或发起复位）     | 只有主上下文里擦写 flash 才安全          |
 
 ### 两条具体约束
 
-| # | 约束 |
-| --- | --- |
-| 1 | `eraseSector(offset)` 的参数是**原始 flash 偏移**，一次擦 **4 KiB**；`0x186000` 合法且安全（`app.bin` 结束于 `0xDB3B0`）|
-| 2 | **绝不能擦到 app 自己占用的扇区** —— 那会当场把正在执行的代码擦掉 |
+| #   | 约束                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `eraseSector(offset)` 的参数是**原始 flash 偏移**，一次擦 **4 KiB**；`0x186000` 合法且安全（`app.bin` 结束于 `0xDB3B0`） |
+| 2   | **绝不能擦到 app 自己占用的扇区** —— 那会当场把正在执行的代码擦掉                                                        |
 
 ### 因此完整方案修正为
 
@@ -23565,6 +23657,7 @@ NMI        → 只写 RAM 槽（阶段号 / mepc / pending CLIC）
 ### 若主上下文已完全卡死
 
 ⇒ 那时 flash 也写不了 ⇒ **只剩两条路**：
+
 1. **GPIO 打点**（最可靠，需要逻辑分析仪）
 2. **复位后由 bootloader 侧读 RAM**（需 bootloader 配合）
 
@@ -23587,11 +23680,11 @@ xxd /tmp/mark.bin
 
 ### 这证明了什么
 
-| 阶段号 | 含义 | 是否写入 |
-| --- | --- | --- |
-| 10 | `init` 之后、`enable` 之前 | ✅ |
-| 11 | 即将调用 `enable()` | ✅ |
-| **12** | **`enable()` 已返回** | ✅ **读到了** |
+| 阶段号 | 含义                       | 是否写入      |
+| ------ | -------------------------- | ------------- |
+| 10     | `init` 之后、`enable` 之前 | ✅            |
+| 11     | 即将调用 `enable()`        | ✅            |
+| **12** | **`enable()` 已返回**      | ✅ **读到了** |
 
 ⇒ **`bringup.enable()` 在这个运行里正常返回了。**
 ⇒ 而这一切是**从 host 读到的**，不依赖任何一行日志。
@@ -23625,20 +23718,19 @@ fn flashStage(n: u32) void {   // ⚠ 只能在主上下文调用
 
 ### 安全
 
-| # | 约束 |
-| --- | --- |
-| 1 | **只在主上下文调用** —— 擦写会在临界区阻塞取指，而 CPU 正从同一片 flash 执行 XIP |
-| 2 | `0x186000` 在 `factory` 分区内，且远离 app（`app.bin` 结束于 ~`0xDB000`）|
-| 3 | **不碰 `otadata`**（`0x490000`）|
+| #   | 约束                                                                             |
+| --- | -------------------------------------------------------------------------------- |
+| 1   | **只在主上下文调用** —— 擦写会在临界区阻塞取指，而 CPU 正从同一片 flash 执行 XIP |
+| 2   | `0x186000` 在 `factory` 分区内，且远离 app（`app.bin` 结束于 ~`0xDB000`）        |
+| 3   | **不碰 `otadata`**（`0x490000`）                                                 |
 
 ### 下一步（现在可以真正定位 LE 了）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 在 LE 每条命令前加 `flashStage(20/21/22)` |
-| 2 | 跑一次，卡住后从 **host** 读 `0x186000` |
-| 3 | 读到的阶段号就是**最后执行到的那条命令** |
-
+| #   | 动作                                      |
+| --- | ----------------------------------------- |
+| 1   | 在 LE 每条命令前加 `flashStage(20/21/22)` |
+| 2   | 跑一次，卡住后从 **host** 读 `0x186000`   |
+| 3   | 读到的阶段号就是**最后执行到的那条命令**  |
 
 ## ✅ 补上两处安全约束后复验通过
 
@@ -23678,14 +23770,14 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
 
 ## 本会话最终状态
 
-| 项 | 状态 |
-| --- | --- |
-| 七个已识别缺陷 | ✅ 全部修复并验证 |
-| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证 |
-| PHY 首次标定 | ✅ 已修复并三项验证 |
-| 三道观测防线 | ✅ 就位并验证"会失败" |
-| **host 可读 flash 标记** | ✅ **已实现、已验证、已加安全约束** |
-| **LE 广播** | ❌ 未解（**但现在有了能回答它的工具**）|
+| 项                            | 状态                                    |
+| ----------------------------- | --------------------------------------- |
+| 七个已识别缺陷                | ✅ 全部修复并验证                       |
+| HCI 逐命令往返 + BD_ADDR 闭环 | ✅ 已验证                               |
+| PHY 首次标定                  | ✅ 已修复并三项验证                     |
+| 三道观测防线                  | ✅ 就位并验证"会失败"                   |
+| **host 可读 flash 标记**      | ✅ **已实现、已验证、已加安全约束**     |
+| **LE 广播**                   | ❌ 未解（**但现在有了能回答它的工具**） |
 
 ## 🎯 仪器给出精确答案：卡在 **`0x200A`（LE Set Advertising Enable）**
 
@@ -23697,26 +23789,26 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
 
 ### 阶段编号
 
-| stage | 含义 | 是否到达 |
-| --- | --- | --- |
-| 10 | `init` 之后 | ✅ |
-| 11 | 即将 `enable()` | ✅ |
-| 12 | `enable()` 已返回 | ✅ |
-| 20 | 即将 `0x2006`（Set Adv Params）| ✅ |
-| 21 | 即将 `0x2008`（Set Adv Data）| ✅ |
+| stage  | 含义                                | 是否到达        |
+| ------ | ----------------------------------- | --------------- |
+| 10     | `init` 之后                         | ✅              |
+| 11     | 即将 `enable()`                     | ✅              |
+| 12     | `enable()` 已返回                   | ✅              |
+| 20     | 即将 `0x2006`（Set Adv Params）     | ✅              |
+| 21     | 即将 `0x2008`（Set Adv Data）       | ✅              |
 | **22** | **即将 `0x200A`（Set Adv Enable）** | ✅ **停在这里** |
-| 23 | 三条都返回 | ❌ |
+| 23     | 三条都返回                          | ❌              |
 
 ⇒ **`0x2006` 与 `0x2008` 都正常返回了**；
 ⇒ **卡在 `0x200A` 这一次 `sendCmd` 里**。
 
 ### 这个结论的分量
 
-| 项 | 说明 |
-| --- | --- |
-| 不依赖日志 | ✅ 从 flash 直接读 |
+| 项          | 说明                    |
+| ----------- | ----------------------- |
+| 不依赖日志  | ✅ 从 flash 直接读      |
 | 不依赖 UART | ✅ host 侧 `read-flash` |
-| 区间精确 | ✅ **一条命令之内** |
+| 区间精确    | ✅ **一条命令之内**     |
 
 ⇒ 本会话前面**六次**关于"LE 卡住"的猜测（ROM printf / dump 钩子 / 日志洪水 /
 静音 / 上限 20 / 布局），**全部被这一个读数取代**。
@@ -23725,10 +23817,10 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
 
 `0x200A` 是**第一条真正让控制器开始射频工作的命令**：
 
-| 命令 | 作用 | 是否触射频 |
-| --- | --- | --- |
-| `0x2006` Set Adv Params | 配置参数 | ❌ 只写配置 |
-| `0x2008` Set Adv Data | 配置数据 | ❌ 只写缓冲 |
+| 命令                        | 作用         | 是否触射频          |
+| --------------------------- | ------------ | ------------------- |
+| `0x2006` Set Adv Params     | 配置参数     | ❌ 只写配置         |
+| `0x2008` Set Adv Data       | 配置数据     | ❌ 只写缓冲         |
 | **`0x200A` Set Adv Enable** | **开始广播** | ✅ **真正启动射频** |
 
 ⇒ **与"控制器在等射频就绪"的假设完全吻合**（PHY 已标定、`FE` 可读，
@@ -23736,10 +23828,10 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
 
 ### 下一步（收窄到两条）
 
-| # | 实验 | 判据 |
-| --- | --- | --- |
-| 1 | **只发 `0x200A`**（跳过 06/08）| 若也卡 ⇒ 与参数无关，是射频启动本身 |
-| 2 | 在 `0x200A` **之前**读 `FE` 块与射频使能寄存器 | 若射频未使能 ⇒ 补使能路径 |
+| #   | 实验                                           | 判据                                |
+| --- | ---------------------------------------------- | ----------------------------------- |
+| 1   | **只发 `0x200A`**（跳过 06/08）                | 若也卡 ⇒ 与参数无关，是射频启动本身 |
+| 2   | 在 `0x200A` **之前**读 `FE` 块与射频使能寄存器 | 若射频未使能 ⇒ 补使能路径           |
 
 ⇒ **第 1 条最省**：一次烧录即可判定"参数问题"还是"射频问题"。
 
@@ -23753,51 +23845,51 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
             stage = 22       tx = 5, evt = 1
 ```
 
-| 字段 | 值 | 含义 |
-| --- | --- | --- |
-| `stage` | **22** | `flashStage(22)` 已写 ⇒ 停在 `0x200A` **之前** |
-| `btdm_tx` | **5** | **此前的 5 条命令全部拿到应答** |
-| `evt_count` | 1 | 仍只有 init 那一条（走 `leEvtTx`）|
+| 字段        | 值     | 含义                                           |
+| ----------- | ------ | ---------------------------------------------- |
+| `stage`     | **22** | `flashStage(22)` 已写 ⇒ 停在 `0x200A` **之前** |
+| `btdm_tx`   | **5**  | **此前的 5 条命令全部拿到应答**                |
+| `evt_count` | 1      | 仍只有 init 那一条（走 `leEvtTx`）             |
 
 ### 两个方向的证据都指向同一结论
 
-| 证据 | 说明 |
-| --- | --- |
+| 证据                      | 说明                                                   |
+| ------------------------- | ------------------------------------------------------ |
 | `flashStage(23)` **未写** | 它就在 `sendCmd(0x200A)` **之后** ⇒ 该调用**没有返回** |
-| `btdm_tx = 5`（未到 6）| `0x200A` 的应答**从未产生** |
+| `btdm_tx = 5`（未到 6）   | `0x200A` 的应答**从未产生**                            |
 
 ⇒ **`sendCmd(0x200A)` 发出命令后，控制器在处理时挂住。**
 
 ### 与前六次猜测的对比
 
-| 次 | 猜测 | 状态 |
-| --- | --- | --- |
-| 1 | ROM printf 自旋 | ❌ |
-| 2 | per-pend dump 饿死 | ❌ |
-| 3 | 日志洪水 | ❌ |
-| 4 | 静音 | ❌ |
-| 5 | 上限 20 | ❌ |
-| 6 | 布局敏感 | ❌ |
+| 次    | 猜测                    | 状态              |
+| ----- | ----------------------- | ----------------- |
+| 1     | ROM printf 自旋         | ❌                |
+| 2     | per-pend dump 饿死      | ❌                |
+| 3     | 日志洪水                | ❌                |
+| 4     | 静音                    | ❌                |
+| 5     | 上限 20                 | ❌                |
+| 6     | 布局敏感                | ❌                |
 | **7** | **`0x200A` 处理时挂住** | ✅ **有双向证据** |
 
 ### 为什么 `0x200A` 特殊
 
 它是**唯一真正启动射频**的命令：
 
-| 命令 | 作用 | 触射频 |
-| --- | --- | --- |
-| `0x2006` Set Adv Params | 写配置 | ❌ |
-| `0x2008` Set Adv Data | 写缓冲 | ❌ |
-| **`0x200A` Set Adv Enable** | **开始广播** | ✅ |
+| 命令                        | 作用         | 触射频 |
+| --------------------------- | ------------ | ------ |
+| `0x2006` Set Adv Params     | 写配置       | ❌     |
+| `0x2008` Set Adv Data       | 写缓冲       | ❌     |
+| **`0x200A` Set Adv Enable** | **开始广播** | ✅     |
 
 ⇒ 与"PHY 已标定、`FE` 可读，但**射频使能路径未就绪**"完全吻合。
 
 ### 下一步（两条，都很具体）
 
-| # | 实验 | 判据 |
-| --- | --- | --- |
-| 1 | **`0x200A` 之前读 `FE` 块与射频使能寄存器**，把值写进第三个字 | 若射频未使能 ⇒ 补使能路径 |
-| 2 | 查 IDF 的 `esp_phy_enable` 里**射频使能那一段**我们是否缺失 | 对照 `phy_init.c` 的 modem/RF enable |
+| #   | 实验                                                          | 判据                                 |
+| --- | ------------------------------------------------------------- | ------------------------------------ |
+| 1   | **`0x200A` 之前读 `FE` 块与射频使能寄存器**，把值写进第三个字 | 若射频未使能 ⇒ 补使能路径            |
+| 2   | 查 IDF 的 `esp_phy_enable` 里**射频使能那一段**我们是否缺失   | 对照 `phy_init.c` 的 modem/RF enable |
 
 ⇒ **第 1 条最省**：一次烧录，host 直接读出射频状态。
 
@@ -23810,38 +23902,38 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
           stage = 22     tx=5 evt=1   0x5AC00000    0xD9CA23D4
 ```
 
-| 字 | 内容 | 值 |
-| --- | --- | --- |
-| 0 | magic \| stage | `0x5A170016` ⇒ stage 22 |
-| 1 | `btdm_tx` \| `evt` | `0x00050001` ⇒ **tx=5, evt=1** |
-| 2 | `*(0x2010B000)` | **`0x5AC00000`** |
-| 3 | `*(0x2010B004)` | **`0xD9CA23D4`** |
+| 字  | 内容               | 值                             |
+| --- | ------------------ | ------------------------------ |
+| 0   | magic \| stage     | `0x5A170016` ⇒ stage 22        |
+| 1   | `btdm_tx` \| `evt` | `0x00050001` ⇒ **tx=5, evt=1** |
+| 2   | `*(0x2010B000)`    | **`0x5AC00000`**               |
+| 3   | `*(0x2010B004)`    | **`0xD9CA23D4`**               |
 
 ### 因此
 
-| 结论 | 依据 |
-| --- | --- |
-| `0x2006` / `0x2008` 被正常处理 | `btdm_tx=5` |
-| `0x200A` 未被应答 | `btdm_tx` 停在 5 |
-| **FE 块可读且返回真实数据** | 两字皆非 0、非 0xFFFFFFFF |
-| **射频块不是"死"的** | 同上 |
+| 结论                           | 依据                      |
+| ------------------------------ | ------------------------- |
+| `0x2006` / `0x2008` 被正常处理 | `btdm_tx=5`               |
+| `0x200A` 未被应答              | `btdm_tx` 停在 5          |
+| **FE 块可读且返回真实数据**    | 两字皆非 0、非 0xFFFFFFFF |
+| **射频块不是"死"的**           | 同上                      |
 
 ⇒ 挂住**不是**因为 FE 块无响应（那会表现为读回 0 或全 1）。
 
 ### 因此原因更可能是
 
-| # | 可能 |
-| --- | --- |
-| 1 | `0x200A` 内部**等一个由中断/事件驱动的条件**，而该条件未满足 |
-| 2 | 广播使能路径**需要额外的射频使能位**（IDF 的 `esp_phy_enable` 后续段）|
-| 3 | 或需要**先配 scan/adv 事件掩码**之类的中间步骤 |
+| #   | 可能                                                                   |
+| --- | ---------------------------------------------------------------------- |
+| 1   | `0x200A` 内部**等一个由中断/事件驱动的条件**，而该条件未满足           |
+| 2   | 广播使能路径**需要额外的射频使能位**（IDF 的 `esp_phy_enable` 后续段） |
+| 3   | 或需要**先配 scan/adv 事件掩码**之类的中间步骤                         |
 
 ### 下一步（工具已就绪）
 
-| # | 动作 |
-| --- | --- |
-| 1 | 用**同一方法**在 `0x200A` 前后各存一次 FE 块，看它是否被挂住的代码改写 |
-| 2 | 对照 IDF `esp_phy_enable` 里**射频使能那一小段**，逐步补齐 |
+| #   | 动作                                                                   |
+| --- | ---------------------------------------------------------------------- |
+| 1   | 用**同一方法**在 `0x200A` 前后各存一次 FE 块，看它是否被挂住的代码改写 |
+| 2   | 对照 IDF `esp_phy_enable` 里**射频使能那一小段**，逐步补齐             |
 
 ⇒ **本会话的仪器已经能回答"停在哪、当时寄存器什么值"，剩下的只是补齐缺失的射频序列。**
 
@@ -23849,41 +23941,40 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
 
 ### 唯一的差别是一个字节
 
-| `0x200A` 的 Enable 参数 | 最后阶段 | `btdm_tx` | 结果 |
-| --- | --- | --- | --- |
-| **1**（开始广播）| **22**（`sendCmd` 之前）| **5** | ❌ **挂住** |
-| **0**（停止广播）| **23**（`sendCmd` 之后）| **6** | ✅ **正常返回** |
+| `0x200A` 的 Enable 参数 | 最后阶段                 | `btdm_tx` | 结果            |
+| ----------------------- | ------------------------ | --------- | --------------- |
+| **1**（开始广播）       | **22**（`sendCmd` 之前） | **5**     | ❌ **挂住**     |
+| **0**（停止广播）       | **23**（`sendCmd` 之后） | **6**     | ✅ **正常返回** |
 
 ⇒ **同一条命令、同一个通路、同一个参数长度**，只差一个字节的值。
 
 ### 因此
 
-| 结论 | 依据 |
-| --- | --- |
-| `0x200A` **命令本身被正确处理** | Enable=0 时 `btdm_tx` 从 5 → 6 |
+| 结论                               | 依据                                 |
+| ---------------------------------- | ------------------------------------ |
+| `0x200A` **命令本身被正确处理**    | Enable=0 时 `btdm_tx` 从 5 → 6       |
 | **挂住发生在"开始广播"这条分支里** | Enable=1 时 stage 停在 22、tx 停在 5 |
-| HCI 通路 / 参数编解码 | ✅ **完全正常** |
-| 不是参数错误、不是未知命令 | ✅（同一条命令 0 能过）|
+| HCI 通路 / 参数编解码              | ✅ **完全正常**                      |
+| 不是参数错误、不是未知命令         | ✅（同一条命令 0 能过）              |
 
 ### 这是本会话第七个关于 LE 的结论，也是第一个**由对照实验支撑**的
 
-| 次 | 结论 | 支撑 |
-| --- | --- | --- |
-| 1–6 | ROM printf / dump 钩子 / 日志洪水 / 静音 / 上限 20 / 布局 | ❌ 全被推翻 |
-| **7** | **挂住 = "启动发射机"这一步** | ✅ **一个字节的对照** |
+| 次    | 结论                                                      | 支撑                  |
+| ----- | --------------------------------------------------------- | --------------------- |
+| 1–6   | ROM printf / dump 钩子 / 日志洪水 / 静音 / 上限 20 / 布局 | ❌ 全被推翻           |
+| **7** | **挂住 = "启动发射机"这一步**                             | ✅ **一个字节的对照** |
 
 ### 下一步（方向非常明确）
 
 ⇒ 现在要找的是 **"开始广播"这条路径上缺了什么**，而且**不必再猜日志**：
 
-| # | 动作 | 判据 |
-| --- | --- | --- |
-| 1 | 把 IDF 的 `esp_phy_enable` 里**射频/modem 使能**那一段与我们的实现逐条对照 | 缺哪条补哪条 |
-| 2 | 在 `0x200A` **之前**再加一层射频就绪检查（读 `FE`/modem 状态）| 若未就绪 ⇒ 就是它 |
-| 3 | 用同一仪器，在 `0x200A` 前后各存一次 FE 块 | 看挂住的代码是否在改它 |
+| #   | 动作                                                                       | 判据                   |
+| --- | -------------------------------------------------------------------------- | ---------------------- |
+| 1   | 把 IDF 的 `esp_phy_enable` 里**射频/modem 使能**那一段与我们的实现逐条对照 | 缺哪条补哪条           |
+| 2   | 在 `0x200A` **之前**再加一层射频就绪检查（读 `FE`/modem 状态）             | 若未就绪 ⇒ 就是它      |
+| 3   | 用同一仪器，在 `0x200A` 前后各存一次 FE 块                                 | 看挂住的代码是否在改它 |
 
 ⇒ **本会话的仪器已经能回答"停在哪 + 计数器如何"，剩下的纯粹是补齐射频序列。**
-
 
 ## ⚠️ 不要把控制实验的改动留在树里
 
@@ -23912,36 +24003,36 @@ esp_phy_load_cal_and_init();     // ③ → 内部调 register_chipv7_phy
 
 ### 两处的确切位置（都是普通 C，可移植）
 
-| 函数 | 位置 | 内容 |
-| --- | --- | --- |
-| `esp_phy_common_clock_enable` | `esp_phy/src/phy_init.c:285` | 只有一行：`wifi_bt_common_module_enable()` |
-| `phy_module_enable` | `esp_hw_support/periph_ctrl.c:172` | 两条分支，见下 |
+| 函数                          | 位置                               | 内容                                       |
+| ----------------------------- | ---------------------------------- | ------------------------------------------ |
+| `esp_phy_common_clock_enable` | `esp_phy/src/phy_init.c:285`       | 只有一行：`wifi_bt_common_module_enable()` |
+| `phy_module_enable`           | `esp_hw_support/periph_ctrl.c:172` | 两条分支，见下                             |
 
 `phy_module_enable` 的两条分支：
 
-| 条件 | 实现 |
-| --- | --- |
-| `SOC_MODEM_CLOCK_IS_INDEPENDENT` | `modem_clock_module_enable(PERIPH_PHY_CALIBRATION_MODULE)` |
-| 否则 | `periph_ll_phy_calibration_module_enable_clk_clear_rst()` + RNG/WiFi/BT 的 `periph_ll_*_enable_clk_clear_rst()` |
+| 条件                             | 实现                                                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `SOC_MODEM_CLOCK_IS_INDEPENDENT` | `modem_clock_module_enable(PERIPH_PHY_CALIBRATION_MODULE)`                                                      |
+| 否则                             | `periph_ll_phy_calibration_module_enable_clk_clear_rst()` + RNG/WiFi/BT 的 `periph_ll_*_enable_clk_clear_rst()` |
 
 ### 为什么这解释了 `0x200A` 的挂住
 
-| 事实 | 推论 |
-| --- | --- |
-| ①② 是**时钟/复位门控** | 不做 ⇒ PHY 模块**没有时钟** ⇒ 只有标定能跑（它用的是别的路径）|
-| 标定 `rc=0` 但广播启动挂住 | **标定 ≠ 射频模块已使能** |
-| `FE` 块可读 | 那是另一条通路，不代表 PHY 模块时钟已开 |
-| `0x2006`/`0x2008` 正常、`0x200A` 挂 | 前两条只写配置，**`0x200A` 第一次真正要用射频** |
+| 事实                                | 推论                                                           |
+| ----------------------------------- | -------------------------------------------------------------- |
+| ①② 是**时钟/复位门控**              | 不做 ⇒ PHY 模块**没有时钟** ⇒ 只有标定能跑（它用的是别的路径） |
+| 标定 `rc=0` 但广播启动挂住          | **标定 ≠ 射频模块已使能**                                      |
+| `FE` 块可读                         | 那是另一条通路，不代表 PHY 模块时钟已开                        |
+| `0x2006`/`0x2008` 正常、`0x200A` 挂 | 前两条只写配置，**`0x200A` 第一次真正要用射频**                |
 
 ⇒ **与我们此前的判断一致**：PHY 标定完成 ≠ 射频就绪。
 
 ### 移植这两步的前提
 
-| # | 检查 |
-| --- | --- |
-| 1 | `SOC_MODEM_CLOCK_IS_INDEPENDENT` 在 S31 上是否为真 |
-| 2 | 若为真 ⇒ 需要 `modem_clock_module_enable`（**此前记录：本板缺这段 IRAM 代码**）|
-| 3 | 若为假 ⇒ 只需 `periph_ll_*` 系列（也是 IDF 代码，需移植）|
+| #   | 检查                                                                            |
+| --- | ------------------------------------------------------------------------------- |
+| 1   | `SOC_MODEM_CLOCK_IS_INDEPENDENT` 在 S31 上是否为真                              |
+| 2   | 若为真 ⇒ 需要 `modem_clock_module_enable`（**此前记录：本板缺这段 IRAM 代码**） |
+| 3   | 若为假 ⇒ 只需 `periph_ll_*` 系列（也是 IDF 代码，需移植）                       |
 
 ⇒ **两条路都需要移植 IDF 代码**，不是"调一个 ROM 函数"能解决的。
 
@@ -23960,26 +24051,26 @@ LE 广播挂住（0x200A 开始广播）
 `soc_caps.h:512` → `#define SOC_MODEM_CLOCK_IS_INDEPENDENT (1)`（ESP32-S31）
 ⇒ IDF 的两步**归约为同一个函数**，只是传不同 module id：
 
-| IDF 调用 | module id | deps 宏 | 值 |
-| --- | --- | --- | --- |
-| `wifi_bt_common_module_enable()` | `PERIPH_PHY_MODULE` | `PHY_CLOCK_DEPS` | **`0x17`** |
-| `phy_module_enable()` | `PERIPH_PHY_CALIBRATION_MODULE` | `PHY_CALIBRATION_CLOCK_DEPS` | 见下 |
+| IDF 调用                         | module id                       | deps 宏                      | 值         |
+| -------------------------------- | ------------------------------- | ---------------------------- | ---------- |
+| `wifi_bt_common_module_enable()` | `PERIPH_PHY_MODULE`             | `PHY_CLOCK_DEPS`             | **`0x17`** |
+| `phy_module_enable()`            | `PERIPH_PHY_CALIBRATION_MODULE` | `PHY_CALIBRATION_CLOCK_DEPS` | 见下       |
 
 ### 位的计算过程（`MODEM_CLOCK(dev) = BIT(MODEM_CLOCK_##dev)`）
 
 枚举顺序（`modem_clock_impl.h:54-82`）：
 
-| dev | bit | dev | bit |
-| --- | --- | --- | --- |
-| `MODEM_ADC_COMMON_FE` | 0 | `WIFI_BB_80X1` | 9 |
-| `MODEM_PRIVATE_FE` | 1 | `ETM` | 10 |
-| `SOC_PLL_SOURCE_CG` | 2 | `BLE_MAC` | 11 |
-| `COEXIST` | 3 | `BT_PERIPHERAL` | 12 |
-| `I2C_MASTER` | 4 | `BT_APB` | 13 |
-| `WIFI_APB` | 5 | `BT_I154_COMMON_BB` | 14 |
-| `WIFI_BB_44M` | 6 | `802154_MAC` | 15 |
-| `WIFI_MAC` | 7 | `DATADUMP` | 16 |
-| `WIFI_BB` | 8 | | |
+| dev                   | bit | dev                 | bit |
+| --------------------- | --- | ------------------- | --- |
+| `MODEM_ADC_COMMON_FE` | 0   | `WIFI_BB_80X1`      | 9   |
+| `MODEM_PRIVATE_FE`    | 1   | `ETM`               | 10  |
+| `SOC_PLL_SOURCE_CG`   | 2   | `BLE_MAC`           | 11  |
+| `COEXIST`             | 3   | `BT_PERIPHERAL`     | 12  |
+| `I2C_MASTER`          | 4   | `BT_APB`            | 13  |
+| `WIFI_APB`            | 5   | `BT_I154_COMMON_BB` | 14  |
+| `WIFI_BB_44M`         | 6   | `802154_MAC`        | 15  |
+| `WIFI_MAC`            | 7   | `DATADUMP`          | 16  |
+| `WIFI_BB`             | 8   |                     |     |
 
 ### 两个必需掩码
 
@@ -23995,11 +24086,11 @@ BLE_CLOCK_DEPS = BIT(11)|BIT(14)|BIT(10)|BIT(3)|BIT(9)|BIT(2)|BIT(13)|BIT(12)
 
 ### 与我们的猜测对照
 
-| 项 | 值 |
-| --- | --- |
-| 我们手写的 ICG | **`0x6464_6400`** |
-| `PHY_CLOCK_DEPS` | `0x17` |
-| `BLE_CLOCK_DEPS` | `0x7E0C` |
+| 项               | 值                |
+| ---------------- | ----------------- |
+| 我们手写的 ICG   | **`0x6464_6400`** |
+| `PHY_CLOCK_DEPS` | `0x17`            |
+| `BLE_CLOCK_DEPS` | `0x7E0C`          |
 
 ⇒ `0x64646400` 是**四个字节的重复图案**，**与任何真实 deps 掩码都不对应**。
 
@@ -24019,3 +24110,81 @@ BLE_CLOCK_DEPS = BIT(11)|BIT(14)|BIT(10)|BIT(3)|BIT(9)|BIT(2)|BIT(13)|BIT(12)
 
 ⇒ 内部还要 `modem_clock_device_control()` 对 `deps` 每位置门控（`modem_clock.c`）。
 **这是开放项的确切落点**：不是"补一段射频代码"，是**按 IDF 的 deps 掩码门控时钟**。
+
+## 🎯 缺陷定位完成：`CLK_CONF1` 的 FE 时钟位掩码写错了
+
+### 完整映射链（IDF → s31 → 寄存器）
+
+```
+modem_clock_module_enable(PERIPH_PHY_MODULE)
+  deps = PHY_CLOCK_DEPS = 0x17  (bit0 ADC_COMMON_FE, bit1 PRIVATE_FE, bit2 PLL_CG, bit4 I2C)
+  for each set bit i: dev->configure(ctx, i, true)
+
+bit0  modem_clock_hal_enable_modem_common_fe_clock
+        -> modem_syscon_ll_enable_fe_apb_clock   -> clk_conf1.clk_fe_apb_en   (bit15)
+        -> modem_syscon_ll_enable_fe_80m_clock   -> clk_conf1.clk_fe_80m_en   (bit13)
+bit1  modem_clock_hal_enable_modem_private_fe_clock
+        -> enable_fe_160m_clock  -> clk_conf1.clk_fe_160m_en    (bit14)
+        -> enable_fe_dac_clock   -> clk_conf1.clk_fe_dac_en     (bit21)
+        -> enable_fe_pwdet_clock -> clk_conf1.clk_fe_pwdet_adc_en (bit19)
+        -> enable_fe_adc_clock   -> clk_conf1.clk_fe_adc_en     (bit20)
+bit2  modem_clock_hal_enable_soc_pll_source_cg
+        -> HP_SYS_CLKRST.modem_conf.val = 0x3d      // ← 另一个寄存器
+bit4  modem_clock_i2c_master_configure
+        -> ANALOG_CLOCK_ENABLE()
+```
+
+### `CLK_CONF1` 的位布局（`modem_syscon_struct.h:128-150`，bit0 = `clk_wifibb_22m_en`）
+
+| bit | 字段                  | bit    | 字段                      |
+| --- | --------------------- | ------ | ------------------------- |
+| 0   | `clk_wifibb_22m_en`   | 11     | `clk_fe_20m_en`           |
+| 1   | `clk_wifibb_40m_en`   | 12     | `clk_fe_40m_en`           |
+| 2   | `clk_wifibb_44m_en`   | **13** | **`clk_fe_80m_en`**       |
+| 3   | `clk_wifibb_80m_en`   | **14** | **`clk_fe_160m_en`**      |
+| 4   | `clk_wifibb_40x_en`   | **15** | **`clk_fe_apb_en`**       |
+| 5   | `clk_wifibb_80x_en`   | 16     | `clk_bt_apb_en`           |
+| 6   | `clk_wifibb_40x1_en`  | 17     | `clk_btbb_en`             |
+| 7   | `clk_wifibb_80x1_en`  | 18     | `clk_btmac_en`            |
+| 8   | `clk_wifibb_160x1_en` | **19** | **`clk_fe_pwdet_adc_en`** |
+| 9   | `clk_wifimac_en`      | **20** | **`clk_fe_adc_en`**       |
+| 10  | `clk_wifi_apb_en`     | **21** | **`clk_fe_dac_en`**       |
+
+### 正确掩码 vs 我们的猜测
+
+```
+正确 FE 掩码 = (1<<13)|(1<<14)|(1<<15)|(1<<19)|(1<<20)|(1<<21)
+             = 0x2000|0x4000|0x8000|0x80000|0x100000|0x200000
+             = 0x0038_E000
+
+我们写的     = 0x6464_6400
+             = bits 10, 13, 14, 17, 21, 22, 25, 26, 28, 29, 30
+```
+
+| 差异                           | 后果                                          |
+| ------------------------------ | --------------------------------------------- |
+| **漏 bit15 `fe_apb_en`**       | FE 的 **APB 访问**没有时钟 ⇒ 前端配置写不进去 |
+| **漏 bit19 `fe_pwdet_adc_en`** | 功率检测 ADC 无时钟                           |
+| **漏 bit20 `fe_adc_en`**       | **前端 ADC 无时钟**                           |
+| 多置 bit22/25/26/28/29/30      | 这些是 **reserved**，写入行为未定义           |
+
+⇒ **`fe_apb_en` 缺失**最致命：它是 FE 的**总线时钟**。没有它，后续对前端寄存器的写入
+不进硬件 ⇒ 发射机起不来，而标定（走 `PHY_CALIBRATION` 的 deps）仍能返回 0。
+
+### 另外两个必需的写入
+
+| 寄存器                     | 值                                  |
+| -------------------------- | ----------------------------------- |
+| `HP_SYS_CLKRST.modem_conf` | **`0x3d`**（使能；关闭值是 `0x25`） |
+| `CLK_CONF1` 的 FE 位       | **`0x0038_E000`**                   |
+
+⇒ 我们此前**既没写 `modem_conf`，`CLK_CONF1` 的位也错**。
+
+### 下一步（可直接落地）
+
+| #   | 动作                                                      | 判据                     |
+| --- | --------------------------------------------------------- | ------------------------ |
+| 1   | 把 `icg.*` 的猜测换成 **`CLK_CONF1                        | = 0x0038_E000`**         | 读回含这 6 位 |
+| 2   | 写 **`HP_SYS_CLKRST.modem_conf = 0x3d`**                  | 读回 `0x3d`              |
+| 3   | 在 `0x200A` 前加**读回检查**（6 位 + `modem_conf==0x3d`） | 不满足就明确报错，不静默 |
+| 4   | 重跑 `Enable=1`                                           | 期望**返回**而不是挂住   |
