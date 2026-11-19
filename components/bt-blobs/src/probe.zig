@@ -708,14 +708,15 @@ pub fn run() noreturn {
     }
         // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
         // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
-        // STORE 观察点盯 PMU_RF_PWC(0x20704184)：BT blob / phy 的 vendor 段谁写它，
-        // 首个命中者的 auth_pc 就是写入者 PC。
+        // LOAD 观察点盯 0x2010047C（vendor FE 轮询反复读的地址，README 反汇编
+        // 2f828a76/78/7a 回跳重读 base+0x47C，s0=0x20100000）⇒ 命中 auth_pc = FE 轮询 PC。
+        // （上轮 STORE@0x20704184 已抓到 BT 链写电源寄存者 PC=0x2f00c3e2，提交 5e3979c。）
         // 命中记录：trap 处理器写 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000。
         asm volatile ("csrw 0x7a0, zero"); // tselect = 0
-        asm volatile ("li t0, 0x4a");
-        asm volatile ("csrw 0x7a1, t0"); // tdata1 = STORE|USER|MACHINE
-        asm volatile ("li t0, 0x20704184");
-        asm volatile ("csrw 0x7a2, t0"); // tdata2 = PMU_RF_PWC
+        asm volatile ("li t0, 0x49");
+        asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
+        asm volatile ("li t0, 0x2010047c");
+        asm volatile ("csrw 0x7a2, t0"); // tdata2 = FE 轮询读地址（vendor LOAD 循环）
         asm volatile ("li t0, 0x88");
         asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)
         // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
