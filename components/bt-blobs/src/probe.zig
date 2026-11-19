@@ -592,6 +592,72 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
     }
+        var r_scan: u32 = undefined;
+        var scan_r: [16]u32 = @splat(0);
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a2, t0");
+        asm volatile ("csrr %[v], 0x7a2" : [v] "=r" (r_scan));
+        scan_r[2] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a3, t0");
+        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (r_scan));
+        scan_r[3] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a4, t0");
+        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r_scan));
+        scan_r[4] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a6, t0");
+        asm volatile ("csrr %[v], 0x7a6" : [v] "=r" (r_scan));
+        scan_r[6] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a7, t0");
+        asm volatile ("csrr %[v], 0x7a7" : [v] "=r" (r_scan));
+        scan_r[7] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a8, t0");
+        asm volatile ("csrr %[v], 0x7a8" : [v] "=r" (r_scan));
+        scan_r[8] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a9, t0");
+        asm volatile ("csrr %[v], 0x7a9" : [v] "=r" (r_scan));
+        scan_r[9] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7aa, t0");
+        asm volatile ("csrr %[v], 0x7aa" : [v] "=r" (r_scan));
+        scan_r[10] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7ab, t0");
+        asm volatile ("csrr %[v], 0x7ab" : [v] "=r" (r_scan));
+        scan_r[11] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7ac, t0");
+        asm volatile ("csrr %[v], 0x7ac" : [v] "=r" (r_scan));
+        scan_r[12] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7ad, t0");
+        asm volatile ("csrr %[v], 0x7ad" : [v] "=r" (r_scan));
+        scan_r[13] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7ae, t0");
+        asm volatile ("csrr %[v], 0x7ae" : [v] "=r" (r_scan));
+        scan_r[14] = r_scan;
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7af, t0");
+        asm volatile ("csrr %[v], 0x7af" : [v] "=r" (r_scan));
+        scan_r[15] = r_scan;
+        var sbv: [17]u32 = @splat(0);
+        sbv[0] = 0xADC0_FEEA;
+        for (0..16) |k| sbv[1 + k] = scan_r[k];
+        _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18F000, &sbv, @intCast(@sizeOf(@TypeOf(sbv))));
+        // 恢复 tdata1/tdata2（扫描可能覆盖了它们）
+        asm volatile ("li t0, 0x4c");
+        asm volatile ("csrw 0x7a0, t0");
+        asm volatile ("li t0, 0x2f828a78");
+        asm volatile ("csrw 0x7a1, t0");
+
+    // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
     var rc = bringup.init(&cfg);
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
     // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
@@ -706,7 +772,9 @@ pub fn run() noreturn {
         asm volatile ("li t0, 0x4c");      // tdata1 = USER(bit3)|MACHINE(bit6)|EXECUTE(bit2)（Espressif 自定义布局，无 type 字段）
         asm volatile ("csrw 0x7a0, t0");
         asm volatile ("li t0, 0x2f828a78");
-        asm volatile ("csrw 0x7a1, t0");   // tdata2 = 目标地址
+                // **展开扫描 0x7a0..0x7af**（跳过 0x7a5/0x7a1/0x7a0）：逐 CSR 写 0x88 读回，
+        // 保留 0x88 的那个 = S31 的 tcontrol 等价物。结果落 0x18F000。
+asm volatile ("csrw 0x7a1, t0");   // tdata2 = 目标地址
         // 回读：tcontrol(0x7a3) 是否保持 0x88 + tdata1 是否保持 0x4c
         var r_ctl: u32 = undefined;
         var r_t1: u32 = undefined;

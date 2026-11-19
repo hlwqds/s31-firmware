@@ -25594,3 +25594,22 @@ tdata2 可写可读，但 tdata1/tcontrol 的写入不生效 ⇒ **触发器从�
 | 1 | **展开扫描 0x7a0..0x7af**（跳过 0x7a5/tselect 与 0x7a1/tdata2）：逐 CSR 写 `0x88` → 读回，找出保留 `0x88` 的那一个 = S31 的 tcontrol 等价物（CSR 号是汇编立即数，需逐条展开生成代码）|
 | 2 | 找到后：`tdata1 = 0x4c`（Espressif 布局）+ `tdata2 = 0x2f828a78`，跑 oracle |
 | 3 | 若扫描全零 ⇒ S31 无可用触发器 ⇒ 只剩 vendor oracle（esp-idf-hosted 栈）|
+
+## ⛔ CSR 扫描（0x7a2..0x7af 写 0x88）触发非法指令陷阱循环 —— 扫描法也需要前置核实
+
+| 项 | 结果 |
+| --- | --- |
+| 扫描（挪到 pmu_init 前的 flash 可用窗口）| `0x18F000` 全 ff ⇒ **结果从未落盘** |
+| 机制 | 写未实现的 CSR（如 0x7a2/0x7a3/0x7a4）= 非法指令异常（mcause=2）⇒ probe.run 陷阱循环 ⇒ 后续全停 |
+| marker 状态 | 待读（本轮最后一次成功写之前的值）|
+
+⇒ **扫描法也需要先知道哪些 CSR 存在** —— 而这恰是扫描要回答的问题（鸡生蛋）。
+⇒ 出路：查 Espressif S31 的 **CLIC/触发器文档或 OpenOCD 源**（esp-riscv-openocd 分支
+  对 S31 触发器的配置代码里有权威的 CSR 号与字段布局），拿到白名单后再扫描。
+
+### 会话终点（不变）
+
+`0x201098BC.bit2`（硬件 ready）永不置位 ⇒ 合成器未锁定；
+触发器路线在本场的四次尝试（type2 / type6 / 官方布局 / CSR 扫描）全部受阻于
+**S31 触发器 CSR 的未文档化布局**。vendor oracle（esp-idf-hosted 同板跑通广播）
+仍是唯一确定可行的入口。
