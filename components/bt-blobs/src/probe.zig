@@ -939,20 +939,11 @@ pub fn run() noreturn {
         // 它内部含我们手写版没有的完整射频使能段（含 analog/regi2c/PMU 路径）。
         // 若这一步之后轮询位能置 ⇒ 缺的就是它；若仍挂 ⇒ 连 IDF 都点不亮这块，
         // 问题在更上游（电源岛/晶振时钟路径）。
-        // **WiFi osi 栈前置**（wifi-blobs 配方：表 → initcfg → coex_init →
-        // esp_wifi_init_internal（∈ libnet80211.a，本轮已链）；bb_v2_init 跳过中）
-        {
-            const coex_init = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
-            coex_init();
-            osi_table = osi_impl.makeTable();
-            osi_table._log_write = s31_log_write;
-            const wcfg = init_config.defaults(&osi_table);
-            const esp_wifi_init_internal = @extern(*const fn (*const anyopaque) callconv(.c) c_int, .{ .name = "esp_wifi_init_internal" });
-            const wrc = esp_wifi_init_internal(&wcfg);
-            mark.put(0xa8, 0xADC0B120, @bitCast(wrc)); // M20: init_internal 返回码
-        }
+        // （WiFi osi 栈块已移除——该路径需要 esp_wifi 归档 = esp-idf 全系统栈）
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
         mark.put(0xa4, 0xADC0B112, 0); // **调用前标记** ⇒ hist=12 ⇒ 死在 esp_phy_enable 内；hist=11 ⇒ 死在本调用之前（LE 块前半段）
+        // **解锁 bb_v2_init_cmplx 回调等待**：写 c.ret 桩地址
+        @as(*volatile u32, @ptrFromInt(0x2f07_F99C)).* = 0x2f808078;
         esp_phy_enable(2); // PHY_MODEM_BT（判别轮的 modem=1 已回退——上轮判别因缺调用前标记而无效）
         mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);

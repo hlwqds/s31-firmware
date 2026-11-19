@@ -265,6 +265,7 @@ pub fn build(b: *std.Build) void {
         // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
         // 归档的日志必须走我们的丢弃实现，否则"打印"就是"挂死"。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{} });
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/wifi_probe_stubs.c"), .flags = &.{} });
         // WiFi osi 栈的 `_log_write`（C 变参）——同签名导出（wifi-blobs 的 shim）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
         // IDF `esp_phy`/`modem_clock` 源码对象的桩（NVS 故意返回 NOT_FOUND ⇒ 全量校准）
