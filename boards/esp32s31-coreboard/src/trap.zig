@@ -236,14 +236,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         );
         // **独占命中记录**：{FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000
         // —— 命中即自证当时 armed 的配置，杜绝"读到别处记录当命中"。
-        // **本轮新增**：命中瞬间读六寄存器真值（FE 环等待/出口/计数器 + 合成器侧）
-        const r8d0: u32 = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
-        const r47c: u32 = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
-        const r11ac: u32 = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
+        // **本轮新增**：命中瞬间读自旋条件寄存器活值（低 4 位）+ 合成器侧
+        const r1000: u32 = @as(*volatile u32, @ptrFromInt(0x2050_1000)).*;
+        const rfe4: u32 = @as(*volatile u32, @ptrFromInt(0x2050_0FE4)).*;
         const r98bc: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-        const r9880: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9880)).*;
         const rd800: u32 = @as(*volatile u32, @ptrFromInt(0x2010_D800)).*;
-        var tb: [11]u32 = .{ 0xADC0_FEF3, cause, auth_pc, t1rb, t2rb, r8d0, r47c, r11ac, r98bc, r9880, rd800 };
+        var tb: [11]u32 = .{ 0xADC0_FEFA, cause, auth_pc, t1rb, t2rb, r1000, rfe4, r1000 & 0xF, r98bc, rd800, 0x2050_1000 };
         {
             // **不屏蔽 MIE 直写**（2026-11-19 flashStage 教训：pmu_init 之后屏蔽 MIE 的
             // 擦写静默失败，直写才落地。窗口内唯一中断源是 2ms 采样器，ISR 不写 flash）。

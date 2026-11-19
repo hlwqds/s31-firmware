@@ -712,24 +712,36 @@ pub fn run() noreturn {
     }
     // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
     // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
-    // LOAD 观察点盯 0x201008D0（FE 轮询环的等待字，bit[21:20] 为等待条件；
-    // 环在 bringup PHY 标定期就跑 —— 对 BT 链挂点轮间波动免疫）。
-    // 命中 = FE 自旋瞬间，trap 记录 11 字：auth_pc + 六寄存器真值
-    // {0x201008D0, 0x2010047C, 0x201011AC, 0x201098BC, 0x20109880, 0x2010D800}
-    // ⇒ 一次回答"环卡在哪个数 + 出环位 + 合成器 ready 位 + busy 寄存器"。
-    // 注意跨复位残留：读数判读需轮内对照（前两轮命中见 5e3979c/32c5e33）。
+    // LOAD 观察点盯 0x20501000（**bb_init 自旋条件实测**：helper 0x2f80e450
+    // `lw a5,0(a4); andi a5,15; bnez` —— 等 (0x20501000 & 0xF)==0；
+    // 另一 helper 0x2f80e440 等全零。0x2f80e4d0/e4de 采样 PC 是路过点）。
+    // 命中 = 自旋环内，auth_pc 应为 0x2f80e450/e440；trap 快照读它的活值
+    // ⇒ 阻塞位到底是什么。
+    // **pre-BT 基线 + 自配置目标**：bb_init 的真自旋是等 [a4+36]!=0（函数指针表），
+    // a4 = *(0x2f07ffe4)（blob 数据，固定地址）⇒ [a4+36] 可静态算出。
+    // 读 a4 → 算 addr → 记录 {FEF9, a4, addr, *(addr)} → 武装 LOAD@addr。
+    // （0x20501000 那轮已证：FEFA 命中 vendor 读但值=0 ⇒ 该等待通过，非真挂点。）
+    const vfe4: u32 = @as(*volatile u32, @ptrFromInt(0x2f07_ffe4)).*;
+    const target_addr: u32 = vfe4 +% 36;
+    const cur_val: u32 = if (vfe4 != 0) @as(*volatile u32, @ptrFromInt(target_addr)).* else 0xDEAD_0000;
+    var base: [4]u32 = .{ 0xADC0_FEF9, vfe4, target_addr, cur_val };
+    _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+    _ = esp_rom_spiflash_write(0x189000, &base, 16);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
     asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
-    asm volatile ("li t0, 0x201008d0");
-    asm volatile ("csrw 0x7a2, t0"); // tdata2 先配地址（此刻无观察点在活）
+    asm volatile ("mv t0, %[addr]"
+        :
+        : [addr] "r" (target_addr),
+    );
+    asm volatile ("csrw 0x7a2, t0"); // tdata2 = target_addr（此刻无观察点在活）
     asm volatile ("li t0, 0x49");
     asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
     asm volatile ("li t0, 0x88");
     asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)（最后开）
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
-    // {FEF2, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
+    // {FEF5, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;
     var t2v: u32 = undefined;
     var tcv: u32 = undefined;
@@ -742,15 +754,15 @@ pub fn run() noreturn {
     asm volatile ("csrr %[v], 0x7a5"
         : [v] "=r" (tcv),
     );
-    var av: [4]u32 = .{ 0xADC0_FEF2, t1v, t2v, tcv };
-    _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x189000, &av, 16);
     // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：
     // fe_poll: 命中 PC 0x2f828a5c 所在轮询环；rf_pwr: 命中 PC 0x2f00c3e2 所在例程。
     dumpRom("fe_poll", 0x2f828a40, 0x60);
     dumpRom("rf_pwr", 0x2f00c3b0, 0x60);
-    // 本轮采样环新挂点：bt_bb_v2_init_cmplx 执行期 PC=0x2f80e4d0/e4de
-    dumpRom("bb_init", 0x2f80e4a0, 0x80);
+    // bb_init 尾调用目标与两个 helper（本轮自旋真挂点候选）
+    dumpRom("tc_tgt", 0x2f8210c0, 0x60);
+    dumpRom("helper", 0x2f80e420, 0x40);
+    // （bb_init 邻域 dump 已撤：pre-BT 读 0x2f80e4a0 疑似间歇 fault ⇒ 2s 重启循环；
+    //  窗口字节已捕获并解码，见 README 附记 1af128e。）
 
     // **直写进度标记**（post-pmu 可靠通道：FEE6 已擦 0x18C000 扇区，0x18C020 起空闲；
     // 各 8 字 {magic, 值}，不再擦除，host 按 magic 定位最后到达的步）
