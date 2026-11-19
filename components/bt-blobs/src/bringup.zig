@@ -445,6 +445,30 @@ pub fn enable() c_int {
 
     status_state = .enabled;
     osal.logPublic("bt bringup: ENABLED", .{});
+
+    // **HCI 往返**：controller 起来后会等第一条命令（`mutex_pend` 无限等是**正常空闲形态**）。
+    // 发 `HCI Reset`（0x0C03），然后**有界**轮询事件计数 —— 只有"ISR → 释放 → 唤醒 → 回包"
+    // 这一圈走通，才证明链路活着。
+    if (builtin.os.tag == .freestanding) {
+        const tr = @import("transport.zig");
+        const before = tr.stats();
+        const hci_rc = tr.sendReset();
+        osal.logPublic("bt hci: sendReset rc={d} evt_before={d}", .{ hci_rc, before.evt_count });
+        // 有界等待（不无限等：这是诊断，不是闭环）
+        var spin: u32 = 0;
+        while (spin < 20_000_000) : (spin += 1) {
+            const now = tr.stats();
+            if (now.evt_count != before.evt_count) {
+                osal.logPublic("bt hci: EVENT evt_count={d} last_code=0x{x:0>2} len={d}", .{
+                    now.evt_count, now.last_evt_code, now.last_evt_len,
+                });
+                break;
+            }
+        }
+        if (tr.stats().evt_count == before.evt_count) {
+            osal.logPublic("bt hci: NO EVENT（{d} 次轮询）—— 链路未回包", .{spin});
+        }
+    }
     return 0;
 }
 
