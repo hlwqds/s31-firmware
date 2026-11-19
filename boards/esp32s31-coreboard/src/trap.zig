@@ -202,6 +202,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     // 用途：vendor 在关中断段的 FE 轮询（0x2f828a78 一带）——普通采样器瞎，
     // 硬件触发器照样命中。首次命中：记录 PC 并**关掉触发器**（写 tdata1=0）
     // 让执行继续（不记录会无限重触发）。
+    // **cause=2 非法指令**：CSR 扫描写未实现的 CSR 会触发此异常。
+    // 记录 mepc（= 哪个 CSR 未实现的答案）+ mepc += 4 跳过这条 csrw 继续 ⇒
+    // 扫描能跑完全部 CSR，"鸡生蛋"被 trap 本身化解。
+    if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 2) {
+        if (frame.mepc != 0) recordPc(frame.mepc);
+        asm volatile ("csrr t0, mepc");
+        asm volatile ("addi t0, t0, 4");
+        asm volatile ("csrw mepc, t0");
+    }
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 3) {
         // **断点异常**（debug trigger 命中）：
         // ① `csrr mepc` 取**权威 PC**（frame.mepc 对断点异常可能不是正确槽位）
@@ -210,13 +219,19 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         var auth_pc: u32 = undefined;
         asm volatile ("csrr %[v], mepc" : [v] "=r" (auth_pc));
         if (auth_pc != 0) recordPc(auth_pc);
-        var tb: [3]u32 = .{ 0xADC0_FEE7, auth_pc, @truncate(frame.s0) };
+        // **5 字命中记录**：{FEE7, 权威mepc, s0, tdata1_rb, tdata2_rb}
+        // —— 命中即知核当时实际 armed 的 type/m/match 与地址（自证仪器）。
+        var rb_tdata1: u32 = undefined;
+        var rb_tdata2: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (rb_tdata1));
+        asm volatile ("csrr %[v], 0x7a1" : [v] "=r" (rb_tdata2));
+        var tb: [5]u32 = .{ 0xADC0_FEE7, auth_pc, @truncate(frame.s0), rb_tdata1, rb_tdata2 };
         {
             const prev = asm volatile ("csrrci %[v], mstatus, 8"
                 : [v] "=r" (-> usize),
             );
             _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x18D000, &tb, 12);
+            _ = esp_rom_spiflash_write(0x18D000, &tb, 20);
             _ = asm volatile ("csrw mstatus, %[v]"
                 :
                 : [v] "r" (prev),
