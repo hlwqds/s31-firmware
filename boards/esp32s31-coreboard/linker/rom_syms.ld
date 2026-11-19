@@ -1,3 +1,18 @@
+/* PHY 使能：**不再提供伪造地址**。
+ *
+ * 历史：这里曾是 `PROVIDE(esp_phy_enable = 0x2f00e756)`，声称是"ROM 回退"。
+ * 实测证明它不可能是 ROM 地址：
+ *   - `esp_phy_enable` 在 IDF 里是普通 C 函数（`esp_phy/src/phy_init.c:324`），
+ *     在任何 ROM ld 文件里 **0 处匹配**；
+ *   - 全文件只有它一个 `0x2f00...` 前缀，其余全是 `0x2f80...`（ROM）；
+ *   - 当前镜像里 **没有任何符号起始于 `0x2f00e756`**，最近的代码符号是
+ *     `r_sym_ble_bp2AWMfX9zEpJsmzOTUB @ 0x2f00e76c`（仅隔 22 字节）。
+ *
+ * 后果：blob 闭包漂移后，该地址静默落进**上一个函数体中间** ⇒ 执行垃圾字节
+ * ⇒ 某处间接跳转落到 0 ⇒ `mepc = 0`、`cause = 1`（实测）。
+ *
+ * ⇒ 由 `components/bt-blobs/src/probe_ptr.zig` 提供**显式 Zig 定义**。
+ */
 /* ESP32-S31 ROM 符号（只抄本仓引用到的那些）。
  *
  * 来源：ESP-IDF v6.1 `components/esp_rom/esp32s31/ld/` 下由 interface-esp32s31.yml
@@ -318,9 +333,6 @@ PROVIDE(ets_intr_unlock = 0x2f800774);
  * 本来就在 ROM 里——不必写桩，给地址即可。 */
 PROVIDE(abs = 0x2f800584);
 PROVIDE(ets_printf = 0x2f800024);
-/* PHY 使能的 **ROM 回退**：不给 `-Dphy-src-objs` 时用它（bringup 能跑到 step 6，
- * 可诊断）；给了 IDF 编好的对象时真实定义会覆盖本 PROVIDE。 */
-PROVIDE(esp_phy_enable = 0x2f00e756);
 PROVIDE(phy_set_chan_freq_sw_start = 0x2f801660);
 PROVIDE(printf = 0x2f8005c4);
 /* BLE 时基：controller 用它推所有超时/退避窗口，值必须是真频率（Hz）。

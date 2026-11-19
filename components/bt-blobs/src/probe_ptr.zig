@@ -75,7 +75,19 @@ pub fn populate() c_int {
 pub fn initPhy() void {
     if (!on_target) return;
     const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
-    const phy_enable = @extern(*const fn (u32) callconv(.c) void, .{ .name = "esp_phy_enable" });
-    get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）
-    phy_enable(2); // PHY_MODEM_BT
+    get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
+    espPhyEnable(2); // PHY_MODEM_BT
+}
+
+
+/// `esp_phy_enable(modem)` 的**显式实现**（替代 `rom_syms.ld` 里那个冻结的伪造地址）。
+///
+/// **它不做 PHY 标定** —— 真正的标定在 IDF 的 `libphy.a`（`esp_phy_load_cal_and_init`）
+/// 里，本构建没有链入。这里只做我们确实拥有的部分：
+/// PHY 域时钟已由 `porting.phyDomainEnable()` 打开，函数表已由 ROM 填好。
+///
+/// 保留为**真实函数**而不是空桩：日志说明"未标定"，让后续任何失败都是**真实失败**，
+/// 而不是继续追一个指向别人函数体中间的地址。
+pub fn espPhyEnable(modem: u32) callconv(.c) void {
+    @import("osal_kit").osal.logPublic("bt phy: enable modem={d} (NO CALIBRATION: libphy not linked)", .{modem});
 }
