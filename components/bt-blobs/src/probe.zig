@@ -695,33 +695,30 @@ pub fn run() noreturn {
             const old_c = nmi_reg.*;
             nmi_reg.* = (old_c & 0x107) | (1 << 3); // 保留 bit8(IE)+低3位，置 nmies(bit3)
         }
-        // **RISC-V debug trigger**：地址匹配 0x2f828a78（vendor FE 轮询环内的指令）。
-        // 断点异常是同步异常，不受 MIE 屏蔽 ⇒ 能看见 vendor 关中断段的自旋。
-        // 首次命中时 trap 处理器记录 PC 并自动禁用触发器（防无限重触发）。
+        // **RISC-V debug trigger（Espressif 官方编码，rv_utils.h:428-436）**：
+        // 目标 0x2f828a78（vendor FE 轮询环内的指令）。断点异常是同步异常，
+        // 不受 MIE 屏蔽 ⇒ 能命中 vendor 关中断段的自旋。
+        // 首次命中时 trap 处理器记录权威 mepc 并禁用触发器（防无限重触发）。
         asm volatile ("li t1, 1");
-        asm volatile ("csrw 0x7a5, t1"); // tselect = 1
-        // tdata1: type=2(mcontrol) << 28 | m-mode(bit3) | exec(bit0)，action=0(断点异常)，match=精确
-        // **tinfo=0x4 ⇒ type 2 不支持、type 6（mcontrol6）支持**：
-        // mcontrol6: type[31:28]=6、m=bit6、exec=bit4、action[15:12]=0（断点异常）、match[10:7]=0（精确）
-        // **exact match**（match[10:7]=0）：只命中执行 0x2f828a78 本身
-        asm volatile ("li t0, 0x60000010");
-        asm volatile ("csrw 0x7a0, t0"); // tdata1 (mcontrol6)
+        asm volatile ("csrw 0x7a5, t1");   // tselect = 1
+        asm volatile ("li t0, 0x88");      // tcontrol = MPTE(bit7) | MTE(bit3) —— 触发器总使能
+        asm volatile ("csrw 0x7a3, t0");   // ← 此前从未写过：没有它任何触发器都不响！
+        asm volatile ("li t0, 0x4c");      // tdata1 = USER(bit3)|MACHINE(bit6)|EXECUTE(bit2)（Espressif 自定义布局，无 type 字段）
+        asm volatile ("csrw 0x7a0, t0");
         asm volatile ("li t0, 0x2f828a78");
-        asm volatile ("csrw 0x7a1, t0"); // tdata2 = 目标地址
-        // **回读验证**：tinfo(0x7a4) 与 tdata1（type 字段是否保持 2）
-        var tv: [4]u32 = @splat(0);
-        tv[0] = 0xADC0_FEE9;
-        var r_tinfo: u32 = undefined;
-        var r_tdata1: u32 = undefined;
-        var r_tdata2: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r_tinfo));
-        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (r_tdata1));
-        asm volatile ("csrr %[v], 0x7a1" : [v] "=r" (r_tdata2));
-        tv[1] = r_tinfo;
-        tv[2] = r_tdata1;
-        tv[3] = r_tdata2;
+        asm volatile ("csrw 0x7a1, t0");   // tdata2 = 目标地址
+        // 回读：tcontrol(0x7a3) 是否保持 0x88 + tdata1 是否保持 0x4c
+        var r_ctl: u32 = undefined;
+        var r_t1: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (r_ctl));
+        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (r_t1));
+        var rvv: [4]u32 = @splat(0);
+        rvv[0] = 0xADC0_FEE9;
+        rvv[1] = r_ctl;
+        rvv[2] = r_t1;
+        rvv[3] = 0x2f828a78;
         _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x18F000, &tv, @intCast(@sizeOf(@TypeOf(tv))));
+        _ = esp_rom_spiflash_write(0x18F000, &rvv, @intCast(@sizeOf(@TypeOf(rvv))));
         flashStage(90); // wait 之后：样本 ≥90 ⇒ 采样活着
         // **等采样器的 ISR dump 完成**（72 次采样触发一次性落盘 0x187000）。
         // 否则 flashStage(64) 的擦写会与 ISR dump **撞车**（ROM spiflash 不可重入）

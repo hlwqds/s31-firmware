@@ -25575,3 +25575,22 @@ vendor FE 自旋需 **NMI 采样**才能定位；根因 = 官方栈启动深处�
 | 1 | `mcontrol6` 的 match 语义**必须先单独验证**（阳性对照：trigger 打在我们自己代码的已知地址，确认命中记录的 mepc 一致）|
 | 2 | 单臂/全臂的"跳飞"现象**存在**（两个独立运行都有 cause=3 + mepc=0xffff0000），但触发器的报告不可信 |
 | 3 | 最便宜的首查：**官方栈（esp-idf-hosted）同板跑通广播**，然后对拍 —— 仪器问题与根因问题可能一并解决 |
+
+## ⛔ 标准 tcontrol(0x7a3) 在 S31 上不存在（写 0x88 读回 0）
+
+| CSR | 写入 | 回读 | 判定 |
+| --- | --- | --- | --- |
+| `0x7a3`（标准 tcontrol）| `0x88`（MPTE\|MTE）| **`0x00000000`** | ⛔ **未实现** |
+| `0x7a0`（tdata1）| `0x4c`（Espressif 布局）| `0x00000003` | 残留早前值（Espressif 位布局写入也未保留）|
+| `0x7a1`（tdata2）| `0x2f828a78` | `0x2f828a78` | ✅ tdata2 可保留 |
+
+⇒ S31 的触发器 CSR 是 **Espressif 自定义布局**：标准 Debug 规范地址（tcontrol 0x7a3）不适用；
+tdata2 可写可读，但 tdata1/tcontrol 的写入不生效 ⇒ **触发器从未真正武装**。
+
+### 下一会话的前置课题（明确化）
+
+| # | 课题 |
+| --- | --- |
+| 1 | **展开扫描 0x7a0..0x7af**（跳过 0x7a5/tselect 与 0x7a1/tdata2）：逐 CSR 写 `0x88` → 读回，找出保留 `0x88` 的那一个 = S31 的 tcontrol 等价物（CSR 号是汇编立即数，需逐条展开生成代码）|
+| 2 | 找到后：`tdata1 = 0x4c`（Espressif 布局）+ `tdata2 = 0x2f828a78`，跑 oracle |
+| 3 | 若扫描全零 ⇒ S31 无可用触发器 ⇒ 只剩 vendor oracle（esp-idf-hosted 栈）|
