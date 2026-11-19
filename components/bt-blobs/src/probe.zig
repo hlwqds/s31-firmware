@@ -926,7 +926,7 @@ pub fn run() noreturn {
         // 若这一步之后轮询位能置 ⇒ 缺的就是它；若仍挂 ⇒ 连 IDF 都点不亮这块，
         // 问题在更上游（电源岛/晶振时钟路径）。
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
-        esp_phy_enable(2); // PHY_MODEM_BT
+        esp_phy_enable(1); // PHY_MODEM_WIFI —— 一行判别：modem 上下文差分
         mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
         mark.put(0x90, 0xADC0B10f, 0); // bb_v2_init 调用前 ⇒ M00f

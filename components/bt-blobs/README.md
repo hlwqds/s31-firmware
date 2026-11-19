@@ -26234,3 +26234,23 @@ bare esp_phy_enable 的首次使能分支（common_clock/module_enable/load_cal�
 ⇒ Path B 最终成本 = **窗口扩容（容纳 net80211 376K + libpp 170K）+ ~17 符号 FreeRTOS shim（osal 可实现）**。
 可 shim 的 17 个都有 osal 对应原语；不可 shim 的 12 个就是要跑的 vendor 代码本体。
 窗口配方见 s31-two-segment-window-expansion 技能（16MB flash 内可行）。
+
+## 🎯 modem 上下文判别结果（2026-11-20 终）：路线 A 对 Wall 1 不充分已实证
+
+一行判别实验（esp_phy_enable(2)→(1)，LP hist 判读，boot 22 次累积）：
+
+| 配置 | 结果 |
+| --- | --- |
+| modem=2（BT 上下文） | hist 恒 11（死在 esp_phy_enable 内 FE 环）|
+| **modem=1（WIFI 上下文 = 官方 station 同款）** | **hist 仍恒 11 —— FE 环照样自旋**|
+
+⇒ **modem 上下文差分无效** ⇒ FE 环的满足条件不在 modem 门控，而在
+**esp_wifi_init 级的硬件配置**（官方 station 的 `(phy)rate:0x17..` 表 dump
+= libphy 的 BB/FE rate 表写入——发生在 esp_wifi_init 阶段，裸调
+esp_phy_enable 永远缺它；这些表在 libpp/net80211 闭包里）。
+
+⇒ **路线 A（osi 移植）对 Wall 1 不充分【实证】**（osi 表 ≠ rate 表）。
+**Wall 1 修复 = 路线 B+C 定案**：窗口扩容容纳 net80211+libpp（546KB，
+16MB flash 内可行）+ 17 符号 FreeRTOS shim（osal 可实现）+ 链入
+wifi_init.c.obj/esp_coex_adapter（objs.csv 配方已实测）。
+Route A 的 osi 移植对 **Wall 2**（BT 回调注册）仍可能有用，独立推进。
