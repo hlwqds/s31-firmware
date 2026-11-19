@@ -26635,3 +26635,25 @@ FE3 仍 `98BC=0、08D0=0x000ff3fd（活）、11AC=0`，enable 20 步照常全通
    I2C0_CTRL，看 FE 自旋期 blob 是否写 LP 块（burst 函数用的是哪一个块也能从
    phy_i2c_master_command_mem_cfg 反汇编确认）；
 3. **est_phy_tables 接线**：RF 参数表是否真接到 libphy 读取处。
+
+### 事务状态判读 + est_phy_tables 排除（封板）
+
+FE3 加 `ST=STATUS0/CTRL` 字段后环上读数：
+
+```
+FE3 98BC=0x00000000 08D0=0x000cdaf1 11AC=0x00000000 mepc=0x2f828a78
+CLK=... SPI1=00000000 ST=00ffffdf/00650469
+```
+
+- `I2C0_CTRL bit25（BUSY）= 0` ⇒ ana I2C **无事务在飞**——burst/校准事务已完成，
+  配置已写入。传输层彻底排除。
+- `STATUS0[31:24]=0x00` 无错误标志。
+- `est_phy_tables.zig` = Wi-Fi 侧 libnet80211 的 FTM 补偿表（24×64B 全零占位），
+  与 BT FE 路径无关 ⇒ 排除。
+
+**收敛后的缺口表述**：BBPLL/RF 配置事务全部完成、时钟全开、模拟电源已置、
+传输层健康——**但 RF 合成器仍不锁定、FE 测量 FSM 不推进**。剩余假设只剩
+"配置值对该芯片/晶振不正确"（缺 chip-specific RF 常数或校准过程的某个
+物理前提），判定必须靠**官方同相位对账**（idf-bt-ctl 在 controller init/
+enable 前后以 ~1ms 环采 98BC/08D0/11AC 入 RAM 环，走出 11AC 递增的轨迹，
+再与我们的全 0 轨迹逐寄存器回 diff，锁定缺失的写序列）。
