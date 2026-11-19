@@ -279,10 +279,14 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     }
 
     // 1) 开时钟（读-改-写，别把别人的位清掉）
-    // **只置 IDF 在 step 5 后持有的位**：对拍实测 `clk_conf1 = 0x00070080`
-    // （bit7 wifibb_80x1 + bit16 bt_apb + bit17 btbb + bit18 btmac）。
-    // 此前的 `0x003ff880` 多置了 PHY-FE 一族（那是 wifi 侧的遗留 workaround）。
-    // **整字直接写**（RMW 回读证明写没落地：应为 0x003ff880，回读 0x003fe080）
+    // **整字写 `0x003ff880` = bits{7,11,12,13,14,15,20,21}**：
+    //   bit7  wifibb_80x1   bit11 fe_20m   bit12 fe_40m   bit13 fe_80m
+    //   bit14 fe_160m       bit15 fe_apb   bit20 fe_adc   bit21 fe_dac
+    // ⇒ **FE 一族已经覆盖在这里**（2.6 再用 RMW 补幂等，不是首次开启）。
+    // IDF 在 step 5 之后实测只持有 `0x00070080`（bit7/16/17/18）；
+    // 这里多置的 FE 位是**有意**的（PHY 需要），不是遗留 workaround。
+    // 注意 bit19 `fe_pwdet_adc` **不在这一个整字里**，由 2.6 的 RMW 补上。
+    // （曾用 RMW `rd(...) | 0x00070080`，因写不落地改为整字写。）
     _ = b_conf1_btmac;
     _ = b_conf1_btbb;
     wr(reg_clk_conf1, 0x003f_f880);
@@ -308,7 +312,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // 2.5) **SOC PLL 时钟源**：BT 与 PHY 的 deps 里都有它，但它不是门控位而是源选择
     //      ⇒ 只开门控而源没接上，MAC 读回恒 0/全 1，轮询它的状态位永远等不到。
     // **对照实验**：这一写疑似扰动了 UART/APB 时钟（板侧证据：ROM 在 `UART0_STATUS+0x1C`
-    // 上等 TX FIFO 排空，txfifo_cnt 恒 128 ⇒ FIFO 满且不动）。默认先不写，用 -Dbt-pll-write 打开。
+    // 上等 TX FIFO 排空，txfifo_cnt 恒 128 ⇒ FIFO 满且不动）。默认写；用 `-Dbt-pll-write=false` 关闭做对照。
     if (pll_write_enabled) wr(reg_hp_clkrst_modem_conf, modem_conf_on);
     const mc = rd(reg_hp_clkrst_modem_conf);
     osal.logPublic("bt lp: modem_conf=0x{x:0>8} (want 0x3d) pll_ok={}", .{ mc, (mc & 0x3F) == modem_conf_on });
