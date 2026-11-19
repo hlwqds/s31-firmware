@@ -25854,3 +25854,20 @@ ebreak/trap 写根本没被执行 ⇒ **"trap 内 flash 写在级联场景失效
 | --- | --- | --- |
 | s31-firmware | 79a42e5 | clean |
 | hl-ljj-quartz | a6a2ebe5 | clean |
+
+## ⚠ 位探测结论：CSR 0x7a0 写某些位会挂死 CPU（危险寄存器实锤）
+
+| 项 | 结果 |
+| --- | --- |
+| 逐位探测（32 位，写 1 位 → 读回）| **FEEC 魔数未落盘**（读到旧 FEEB 数据）⇒ 位探测中途 CPU 挂死 |
+| HEAD 更正 | `1ba894e`（前述 588e3cf 为早期 SHA，实际已推进）|
+
+⇒ **CSR 0x7a0 不是标准 tdata1**：写某些位 = 副作用/挂死 ⇒ Espressif 的触发器 CSR
+**布局与语义都需从厂商源码获取**（esp-riscv-openocd 分支），位探测路线也关闭。
+
+### 会话最终收口
+
+| 仓库 | HEAD | 树 |
+| --- | --- | --- |
+| s31-firmware | `1ba894e` | clean |
+| hl-ljj-quartz | a6a2ebe5 | clean |
