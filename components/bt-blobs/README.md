@@ -26217,3 +26217,20 @@ bare esp_phy_enable 的首次使能分支（common_clock/module_enable/load_cal�
 施工要点：osi_impl 的 shell*（C-ABI 壳）签名不变，函数体改调 osal；
 `event_bus.zig`（自旋源）**不移植**——它的 queue_recv forever 活锁就是 wifi-blobs 的墙。
 每个 shell 改完跑 `zig fmt` + 主机 `zig build test`（host_tests 已有 osi 用例）。
+
+### 路线 B 链接器实证（2026-11-20 尾三）：28 符号 shim + 546KB 闭包 + 窗口扩容
+
+把 `libesp_wifi.a(wifi_init.c.obj)` + `esp_coex_adapter.c.obj` 加入 objs.csv 实测，
+链接器给出 wifi init 路径的**完整未定义集（28 符号）**：
+
+| 类别 | 符号 | shim 方案 |
+| --- | --- | --- |
+| FreeRTOS 队列/信号量（7） | xQueueGenericSend / xQueueSemaphoreTake / xQueueCreateCountingSemaphore / vQueueDelete / xQueueGiveFromISR / xQueueReceiveFromISR / vPortYieldFromISR | **osal Slot 原语实现**（eventqPut/Get + semPend/Release + sched）|
+| ets_timer（4） | arm_us / disarm / done / setfn | osal time/timer 槽 |
+| heap（1） | heap_caps_malloc | mempool/静态堆 |
+| clock/log（2） | esp_clk_slowclk_cal_get / esp_log_level_set | 常量/空实现 |
+| **esp_wifi_internal 家族（9）+ supplicant（2）+ pm（1）** | esp_wifi_init_internal（**要跑的真函数**）/ connect·disconnect·deinit_internal / reg_rxcb / set_log_level / update_modem_sleep_default_params / set_keep_alive·sleep_* / esp_supplicant_init·deinit / pm_beacon_offset_funcs_empty_init | **不可 shim** —— 定义在 libpp/net80211 ⇒ **必须链 546KB wifi 核** |
+
+⇒ Path B 最终成本 = **窗口扩容（容纳 net80211 376K + libpp 170K）+ ~17 符号 FreeRTOS shim（osal 可实现）**。
+可 shim 的 17 个都有 osal 对应原语；不可 shim 的 12 个就是要跑的 vendor 代码本体。
+窗口配方见 s31-two-segment-window-expansion 技能（16MB flash 内可行）。
