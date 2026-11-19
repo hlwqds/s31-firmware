@@ -204,21 +204,19 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     // 让执行继续（不记录会无限重触发）。
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 3) {
         // **断点异常**（debug trigger 命中）：
-        // ① 直接把 {magic, mepc, s0} 落盘 0x18D000 —— 不依赖采样器
-        //    （采样器在 72 样本 dump 后已停，环看不见后续命中）。
-        // ② 记 RAM 环。③ 禁用触发器再继续（防无限重触发）。
-        if (frame.mepc != 0) recordPc(frame.mepc);
+        // ① `csrr mepc` 取**权威 PC**（frame.mepc 对断点异常可能不是正确槽位）
+        // ② {magic, pc, s0} 放**栈上 RAM**，MIE 屏蔽后擦写 0x18D000（不把 flash 当 RAM 指针）
+        // ③ 记 RAM 环。④ 禁用触发器再继续（防无限重触发）。
+        var auth_pc: u32 = undefined;
+        asm volatile ("csrr %[v], mepc" : [v] "=r" (auth_pc));
+        if (auth_pc != 0) recordPc(auth_pc);
+        var tb: [3]u32 = .{ 0xADC0_FEE7, auth_pc, @truncate(frame.s0) };
         {
-            const tb: *volatile [3]u32 = @ptrFromInt(0x18D000);
-            tb[0] = 0xADC0_FEE7;
-            tb[1] = @truncate(frame.mepc);
-            tb[2] = @truncate(frame.s0);
             const prev = asm volatile ("csrrci %[v], mstatus, 8"
                 : [v] "=r" (-> usize),
             );
             _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
-                        var words: [3]u32 = .{ tb[0], tb[1], tb[2] };
-            _ = esp_rom_spiflash_write(0x18D000, &words, 12);
+            _ = esp_rom_spiflash_write(0x18D000, &tb, 12);
             _ = asm volatile ("csrw mstatus, %[v]"
                 :
                 : [v] "r" (prev),
