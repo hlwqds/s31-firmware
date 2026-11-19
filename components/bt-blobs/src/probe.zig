@@ -904,8 +904,14 @@ pub fn run() noreturn {
         // 问题在更上游（电源岛/晶振时钟路径）。
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
         esp_phy_enable(2); // PHY_MODEM_BT
+        mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
-        const bbrc = bt_bb_v2_init_cmplx(1);
+        mark.put(0x90, 0xADC0B10f, 0); // bb_v2_init 调用前 ⇒ M00f
+        // **本轮跳过手动 bb_v2_init**（0328594 定案：顺序错误——
+        // 回调表项 [a4+36] 需注册步骤填充，手动提前调用 = 永等 + CPU_LOCKUP 循环。
+        // 官方链应经由 enable/esp_btbb_enable 在注册之后调用。）
+        const bbrc: c_int = -1; // -1 = skipped
+        mark.put(0x98, 0xADC0B110, @bitCast(bbrc)); // 跳过 ⇒ 记 -1 ⇒ M10
         flashStageExtra(65, @bitCast(bbrc), 0);
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
         // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
