@@ -778,7 +778,12 @@ pub fn run() noreturn {
         // `phy_ana_i2c_master_burst_bbpll_config`（零参、自足：command_mem_cfg +
         // burst_config(2)）就是官方链给 RF PLL 发车的 burst 序列。提前显式调一次，
         // 判据：FE3 行 98BC 是否开始变化 / FE spin 是否放行。
+        // **RF ON burst 先行**：burst_rf_onoff(a0) 带参（入口 mv s1,a0 实证），
+        // 官方链是 rf_onoff(1) → bbpll_config 的次序（RF 供电 burst 先于 PLL 配置）。
+        // 上一轮只调了 bbpll_config，缺 RF-ON 前置 ⇒ 合成器仍不锁。
+        const burst_rf_onoff = @extern(*const fn (on: c_int) callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_rf_onoff" });
         const burst_bbpll = @extern(*const fn () callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_bbpll_config" });
+        burst_rf_onoff(1);
         burst_bbpll();
         // **ana I2C master 块只读探测**（DR_REG_I2C_ANA_MST_BASE=0x2010F800）：
         // regi2c 写-回读的前哨——若三读全 FF/stall ⇒ 块不可访问（时钟/电源未到位），

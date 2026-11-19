@@ -26617,3 +26617,21 @@ post-pmu 只读探测（FEE7 扩到 7 字）：
    burst 前后各拍一次）；
 3. esp_phy_load_cal_and_init 的 NVS 路径已证走 FULL 校准——校准过程里
    regi2c 读（BBPLL 校准读回）是否完成（可在 burst 后读 ANA_STATUS0 高字节判事务状态）。
+
+### rf_onoff 前置实验（判负）+ 下一层拆解
+
+`phy_ana_i2c_master_burst_rf_onoff(1)` → `burst_bbpll_config()` 次序修正后重跑：
+FE3 仍 `98BC=0、08D0=0x000ff3fd（活）、11AC=0`，enable 20 步照常全通。
+**RF-ON burst 前置不是缺的那步**（判负，单变量）。
+
+已排除（累计）：时钟门控 / flash 通道 / ana master 块访问 / RF-ON burst 前置 /
+零校准数据 / UART 伪影（三假墙）。
+
+**下一会话拆解层级**（按序）：
+1. **ana I2C 事务完成状态**：FE3 行加 ANA_STATUS0（0x2010F81C，事务状态高字节）
+   + I2C0_BUSY（bit25）——burst/校准事务是否真的完成（status 干净 vs 错误码）；
+2. **两个 ana master 块归属**：DR_REG_LP_I2C_ANA_MST_BASE=0x20813000（LP 域）与
+   MODEM 块 0x2010F800 并存——STORE 观察点（mcontrol6）盯 0x20813000 的
+   I2C0_CTRL，看 FE 自旋期 blob 是否写 LP 块（burst 函数用的是哪一个块也能从
+   phy_i2c_master_command_mem_cfg 反汇编确认）；
+3. **est_phy_tables 接线**：RF 参数表是否真接到 libphy 读取处。
