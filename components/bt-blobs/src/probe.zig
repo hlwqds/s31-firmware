@@ -966,6 +966,11 @@ pub fn run() noreturn {
         const bbrc: c_int = -1; // -1 = skipped
         mark.put(0x98, 0xADC0B110, @bitCast(bbrc)); // 跳过 ⇒ 记 -1 ⇒ M10
         flashStageExtra(65, @bitCast(bbrc), 0);
+        // **解锁 bb_v2_init_cmplx 回调等待**：
+        // blob 的 controller task 在 bb_v2_init 里自旋等 [0x2f07f99c]!=0
+        // （PC 环实证 0x2f80e4cc/de 8+ 帧）。写入 c.ret 桩地址让等待解除。
+        // 写入时机：controller task 已在跑（enable 后），main context 写共享 SRAM。
+        @as(*volatile u32, @ptrFromInt(0x2f07_F99C)).* = 0x2f808078; // c.ret 桩
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
         // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
         // 结果：去掉 37 无变化 ⇒ 恢复标准的"三个信道全开"。
