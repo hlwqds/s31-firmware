@@ -25822,3 +25822,35 @@ ebreak/trap 写根本没被执行 ⇒ **"trap 内 flash 写在级联场景失效
 | 1 | **从 esp-riscv-openocd 源**（Espressif 的 OpenOCD 分支）找 S31 触发器的**真实 CSR 号与布局** |
 | 2 | 或从 `esp_cpu_set_breakpoint` 的实现（`rv_utils_set_breakpoint` → `RV_WRITE_CSR(tdata1...)`）追 `tdata1` 宏的 CSR 号（`csr.h` 里应有定义——上轮 grep 没找到 `tcontrol` 的号，再细查）|
 | 3 | 拿到真实 CSR 号后：写-回读自证 → oracle → 开放项定位 |
+
+## 🔬 触发器 CSR 三写三读的矛盾结果（厂商自定义布局实锤）+ 会话真终点
+
+| CSR | 写入 | 回读 | 判定 |
+| --- | --- | --- | --- |
+| 0x7a0（标准：tdata1/mcontrol）| 0x4C | **0x3** | ✗ 未保留 |
+| 0x7a1（标准：tdata2）| 0x2f828a78 | **0x21000058** | ✗ 未保留 |
+| 0x7a3（标准：tcontrol）| 0x88 | **0x88** | ✅ 保留（但 0x7a3 标准上是 tinfo——读 0x4；我们写 0x88 读回 0x88 ⇒ 布局与标准不同）|
+| 0x7a5（标准：tselect）| 1 | 0 | — |
+
+⇒ **S31 的触发器 CSR 地址/布局是厂商自定义的**：0x7a3 的行为（写啥读啥）与标准 tinfo
+（只读、type 掩码）不符 ⇒ 这组 CSR 的**地址映射与字段布局都非标准**。
+
+### 三个写-回读的一致解释（待下一会话验证）
+
+| # | 解释 |
+| --- | --- |
+| 1 | 0x7a0/0x7a1 在 S31 上是**别的寄存器**（非触发器）——写不保留或语义不同 |
+| 2 | S31 的真触发器 CSR 在**别的地址**（Espressif 自定义号）|
+| 3 | 触发器硬件存在（mcontrol6 那轮 trap 确实触发了）但 CSR 映射非标准 |
+
+### 权威答案的唯一来源
+
+**esp-riscv-openocd**（Espressif 的 OpenOCD 分支）对 S31 触发器的配置代码——
+里面有 CSR 号、字段布局、使能序列的完整权威实现。
+
+### 会话真终点
+
+| 仓库 | HEAD | 树 |
+| --- | --- | --- |
+| s31-firmware | 79a42e5 | clean |
+| hl-ljj-quartz | a6a2ebe5 | clean |
