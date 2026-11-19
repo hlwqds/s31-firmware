@@ -616,7 +616,11 @@ pub fn run() noreturn {
                 asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (rb));
                 if ((rb & bit) != 0) keep |= bit;
             }
-            flashStage(92); // 位探测完成 ⇒ 未挂死；keep 位图下次经数据扇区带出
+            flashStage(92); // 位探测完成 ⇒ 未挂死
+            // **keep 位图落盘**（独立扇区 0x189000）：{FEEC, keep}
+            var kp: [2]u32 = .{ 0xADC0_FEEC, keep };
+            _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+            _ = esp_rom_spiflash_write(0x189000, &kp, 8);
         }
         var v_t1: u32 = undefined;
         var v_t2: u32 = undefined;
@@ -664,6 +668,8 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
     }
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a3, t0"); // **tcontrol 先行**：触发器总使能，位探测才有效
         var r_scan: u32 = undefined;
         var scan_r: [16]u32 = @splat(0);
         asm volatile ("li t0, 0x88");

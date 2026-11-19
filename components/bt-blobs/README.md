@@ -25900,3 +25900,27 @@ CSR 0x7a0 仍非标准 tdata1（Espressif 自定义布局），**布局需从厂
 
 keep 位图在 RAM（本轮未落盘）。flashStage(92) 已证明 **pro 探测后 flash 写可用**
 ⇒ 下次把 keep 位图写进 0x18F000 即可拿到 S31 tdata1 的**真实可写位清单**。
+
+## 📏 稳定终态：tdata1 可写位 = LOAD/STORE（EXECUTE 不可经 CSR 写使能）
+
+| 轮 | 配置 | keep |
+| --- | --- | --- |
+| 1 | 无 tcontrol | `0x3` |
+| 2 | **tcontrol=0x88 先行** | **`0x3`（一致，可复现）** |
+
+⇒ **CSR 0x7a0（Espressif tdata1）的可写位 = bit0（LOAD）+ bit1（STORE）**；
+EXECUTE（bit2）**不可通过 CSR 写使能** —— 两种 tcontrol 状态下结果一致（可复现）。
+
+### 与 Espressif 自家断点路径的矛盾（下一会话课题）
+
+Espressif 的 `rv_utils_set_breakpoint` 写 `TDATA1_EXECUTE(1<<2)` 并用于自家断点
+⇒ 要么 EXECUTE 的使能另有其位/另有寄存器，要么他们的断点路径有额外步骤
+（我们的 CSR 扫描已排除 0x7a2-0x7af 的直写——但 Espressif 的写可能走
+**寄存器间接路径**或需要特定次序）。
+
+### 会话终账
+
+| 仓库 | HEAD | 树 |
+| --- | --- | --- |
+| s31-firmware | 本轮（tcontrol 先行 + 位探测）| clean |
+| hl-ljj-quartz | a6a2ebe5 | clean |
