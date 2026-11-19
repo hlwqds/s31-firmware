@@ -26273,3 +26273,23 @@ HCI 应答 → eventRun → **归档自己的内部 bb init 调用卡在同一�
 （queue send/recv → eventqPut/Get + sched 三层阻塞），esp_wifi_init_internal
 入口（已在树里，objs.csv 配方已实测）—— ppTask 在 bt-blobs 调度器上应能运行
 （r_btdm 任务已证可行）⇒ 回调注册者（blob 内部函数）获得调度 ⇒ 表项被填。
+
+### 路线 B 成本大幅下修（2026-11-20 终三）：不需要 shim —— IDF 自家内核就是 shim
+
+`nm libfreertos.a`（station oracle build，44KB）：xQueueGenericSend / xQueueSemaphoreTake /
+xQueueCreateCountingSemaphore / vQueueDelete / xQueueGiveFromISR / xQueueReceiveFromISR
+**全部提供**（vPortYieldFromISR 在 port.riscv 成员 portasm.S.obj/port.c.obj 里，同库）；
+libheap.a 提供 heap_caps_malloc。**station 示例已证明该内核在本板运行**
+（重试日志 = vTaskDelay 工作中）。
+
+⇒ 原"17 符号 shim"整个作废——直接链 **IDF 自家 freertos/heap 对象**
+（port.riscv 成员含 portasm.S.obj/port.c.obj）。
+剩余 ets_timer_*（4 个）：查 station elf 的定义成员（esp_timer compat 层或 libpp）。
+
+**架构决策（下一会话）**：blob 的 esp_wifi_init_internal 内部建队列/任务 =
+FreeRTOS 调用 ⇒ 探针需 xPortStartScheduler（station 已证可行）+ 我们的流程进
+FreeRTOS 任务（标准"app 进任务"模式）；与 bt-blobs 自有 sched（ch22）的共存
+关系需实验（CLIC tick vs T0 采样中断的分配）。
+**flash 成本**：net80211 376K + libpp 170K + freertos 44K + heap ≈ 600K，
+factory 分区余量 651K ⇒ **大概率不用窗口扩容**（RAM 才是要量的：从 station
+map 取 net80211/libpp/freertos 的 .bss/.data 合计 vs 探针 SRAM 余量）。
