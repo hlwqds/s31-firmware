@@ -794,18 +794,21 @@ pub fn run() noreturn {
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &base, 16);
     // **LP 逐轮历史转写**（落点在 FEFC 之后 —— 该窗口写可靠）：
-    // {FEFE, boot_n, hist[0..9], LP0x400, LP0x404, LP0x30} @0x18A000。
-    // [11]=盲复位写前哨兵(0xADDC0002)、[12]=写后存活(0003)/后半wait走完(0004)、
-    // [13]=blob LP 活动区对照（判 LP 0x30-0x38 是否被外部写）。
-    var lrec: [14]u32 = @splat(0);
+    // {FEFE, boot_n, hist[0..9], enable步号, 0x404, 0x30, FE三件套+mepc} @0x18A000。
+    // [14..17] = NMI 450k 时拍的 0x201098BC/0x201008D0/0x201011AC/mepc（FE 环定位判据）。
+    var lrec: [18]u32 = @splat(0);
     lrec[0] = 0xADC0_FEFE;
     lrec[1] = lp_boot_n;
     for (0..9) |k| lrec[2 + k] = lp_hist[k];
-    lrec[11] = @as(*volatile u32, @ptrFromInt(0x2E00_0420)).*; // enable() 走到的步号
+    lrec[11] = @as(*volatile u32, @ptrFromInt(0x2E00_002C)).*; // 最后 enter 步号（init+enable）
     lrec[12] = @as(*volatile u32, @ptrFromInt(0x2E00_0404)).*;
     lrec[13] = @as(*volatile u32, @ptrFromInt(0x2E00_0030)).*;
+    lrec[14] = @as(*volatile u32, @ptrFromInt(0x2E00_0440)).*;
+    lrec[15] = @as(*volatile u32, @ptrFromInt(0x2E00_0444)).*;
+    lrec[16] = @as(*volatile u32, @ptrFromInt(0x2E00_0448)).*;
+    lrec[17] = @as(*volatile u32, @ptrFromInt(0x2E00_044C)).*;
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x18A000, &lrec, 56);
+    _ = esp_rom_spiflash_write(0x18A000, &lrec, 72);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     // ⚠ **观察点已撤防**（2026-11-20 末）：它盯的 [0x2f07f99c] 回调槽写是我们
     // 自己 LE 块的 unlock 写——上一轮断点 mtval=0x2f07f99c（exception 3）就是
@@ -991,8 +994,6 @@ pub fn run() noreturn {
         // （WiFi osi 栈块已移除——该路径需要 esp_wifi 归档 = esp-idf 全系统栈）
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
         mark.put(0xa4, 0xADC0B112, 0); // **调用前标记** ⇒ hist=12 ⇒ 死在 esp_phy_enable 内；hist=11 ⇒ 死在本调用之前（LE 块前半段）
-        // **解锁 bb_v2_init_cmplx 回调等待**：写 c.ret 桩地址
-        @as(*volatile u32, @ptrFromInt(0x2f07_F99C)).* = 0x2f808078;
         esp_phy_enable(2); // PHY_MODEM_BT（判别轮的 modem=1 已回退——上轮判别因缺调用前标记而无效）
         mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
@@ -1003,11 +1004,6 @@ pub fn run() noreturn {
         const bbrc: c_int = -1; // -1 = skipped
         mark.put(0x98, 0xADC0B110, @bitCast(bbrc)); // 跳过 ⇒ 记 -1 ⇒ M10
         flashStageExtra(65, @bitCast(bbrc), 0);
-        // **解锁 bb_v2_init_cmplx 回调等待**：
-        // blob 的 controller task 在 bb_v2_init 里自旋等 [0x2f07f99c]!=0
-        // （PC 环实证 0x2f80e4cc/de 8+ 帧）。写入 c.ret 桩地址让等待解除。
-        // 写入时机：controller task 已在跑（enable 后），main context 写共享 SRAM。
-        @as(*volatile u32, @ptrFromInt(0x2f07_F99C)).* = 0x2f808078; // c.ret 桩
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
         // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
         // 结果：去掉 37 无变化 ⇒ 恢复标准的"三个信道全开"。

@@ -26539,3 +26539,19 @@ hist 推过 11 ⇒ 楔子全是我们的写（仪器设计错误，已修）；�
 bootloader 每 flash cycle 擦低区 LP）+ FE 计数器 0x201011AC/0x201008D0/0x201098BC。
 下一轮在干净窗口下重跑 FE 诊断（对照官方 692ms），侧重点是 modem_clock 门控在新
 冷态下是否需要显式 module_enable（旧轮依赖残留在零写窗口里已不可用）。
+
+### FE 环三件套定位数据（2026-11-20 封板）：全部为 0 —— 测量电路从未发车
+
+NMI 采样器在自旋稳定期（n=300k ≈ 37s，mepc=0x2f826484 = FE 轮询邻域）实读：
+
+```
+FE3 98BC=0x00000000 08D0=0x00000000 11AC=0x00000000 mepc=0x2f826484
+```
+
+合成器 ready、FE 等待位、FE 计数器**三读全 0** ⇒ FE 测量电路**没有启动**，
+不是"跑着但卡住"。esp_phy_enable 的轮询等的是一个从未开始的测量。
+
+下一会话判据（官方侧）：idf-bt-ctl 工程在 esp_bt_controller_init/enable 前后
+读同三寄存器——官方侧若非零，找官方链里谁"发车"（ modem_clock deps/ICG 或
+RF analog 序列），那一步就是裸机缺的最后一块。全部仪器就位：UART 读者协议、
+零 flash 写窗口、FEFE [11..17] 记录、FE3 UART 行、enter() LP 步号（0x2C）。

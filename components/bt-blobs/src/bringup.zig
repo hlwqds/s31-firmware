@@ -106,7 +106,7 @@ fn enter(n: u32, comptime what: []const u8) void {
     last_step_name = what;
     // **LP 深度槽**（0x2E000420）：跨复位可读，FEFE lrec[11] 带出。
     // enable() 内部挂死时 host 靠它定位卡在哪一步（UART 不可用时的唯一深度证据）。
-    @as(*volatile u32, @ptrFromInt(0x2E00_0420)).* = n;
+    @as(*volatile u32, @ptrFromInt(0x2E00_002C)).* = n;
     // 同步到 board 侧（panic 行会打印它）
     @import("board").trap.last_step = n;
     @import("board").trap.last_step_name = what;

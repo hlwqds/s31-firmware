@@ -491,6 +491,27 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     nmi_count, frame.mepc,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(nl);
+                // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
+                // 合成器 ready 0x201098BC / FE 等待位 0x201008D0 / FE 计数器 0x201011AC。
+                // 与官方 692ms 路径的同址值对账 = FE 环的最终定位判据。
+                // UART 打印为主通道（LP 0x440 会被下载阶段刮花），LP 为备份。
+                if (nmi_count == 300_000) {
+                    var fb: [120]u8 = undefined;
+                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8}", .{
+                        @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
+                        frame.mepc,
+                    }) catch "FE3 (fmt fail)";
+                    hw.rawLineBlocking(fl);
+                    @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
+                        @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+                    @as(*volatile u32, @ptrFromInt(0x2E00_0444)).* =
+                        @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
+                    @as(*volatile u32, @ptrFromInt(0x2E00_0448)).* =
+                        @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
+                    @as(*volatile u32, @ptrFromInt(0x2E00_044C)).* = frame.mepc;
+                }
             }
         }
         const ext: usize = if (input >= 16) input - 16 else input;
