@@ -26522,3 +26522,20 @@ helper 0x2f80e450 轮询条件 **`(0x20501000 & 0xF) == 0`**；FEFa 轮实测自
 若 PMU 恢复 ffff0000 持久化、lockup 循环回来，则在零 flash 写窗口下重跑：
 hist 推过 11 ⇒ 楔子全是我们的写（仪器设计错误，已修）；仍 11 ⇒ blob 自己的 flash 读
 发不完成 ⇒ 对拍 bootloader attach 后的 SPI1_CLOCK/CTRL/ADDR 配置。
+
+### 突破轮（同日最末）：三堵假墙清除，BT 窗口推进到真 FE 环
+
+| # | 发现 | 证据 |
+| --- | --- | --- |
+| 1 | **"enable() 挂死"是 UART 伪影** | hw.rawWrite（hw.zig:414-420）逐字节自旋 2,000,000 次（UART_STATUS 0x2038A01C，FIFO≥120）；无读者时 USB 桥缓冲满 ⇒ 45s 窗口走不到 b103。trap 快照 a0=0x2038a000(UART0)、a1=0x1e8480(2M)、PC=0x4006f014-20(rawWrite) 全吻合 |
+| 2 | **UART 有读者 ⇒ enable() 20 步全通** | pyserial 常驻读：`enter step 3…20` 全序列，step 20 r_btdm_task_enable 完成，task 活体（mutex_pend call/ret 可见） |
+| 3 | 盲 CTRL2.SYNC_RESET = 死点 | panic illegal @0x40069dba（s0=0xaddc0002 哨兵）——卡死态对 SPI1 块的 store 引发 vendor 异常。已整块删除 |
+| 4 | 陈旧 STORE 观察点打自己人 | panic exception 3 (breakpoint) mtval=0x2f07f99c、s1=0x2f808078(c.ret 桩) = LE 块自己的 unlock 写被旧观察点捕获。已撤防 |
+| 5 | ana_mst bit28/RF_PWC 残留丢失 | 新 cycle 冷态 0x02411290/0x0 ⇒ post-pmu 显式恢复 `F83C |= 1<<28`（FEE7 实证恢复后=0x12411290） |
+| 6 | **SPI1 楔子未再现** | 零 flash 写窗口（bt_window_no_flash）下，流程越过 unlock 写直达 esp_phy_enable FE 环，无 panic |
+| 7 | **当前唯一墙 = FE 环本体** | NMI PC 采样：mepc=0x2f828a78/0x2f828a64 反复出现 = 原 FE spin PC |
+
+当前判据链完整可用：UART 实时读（必须有读者！）+ FEFE hist（LP 深度，注意
+bootloader 每 flash cycle 擦低区 LP）+ FE 计数器 0x201011AC/0x201008D0/0x201098BC。
+下一轮在干净窗口下重跑 FE 诊断（对照官方 692ms），侧重点是 modem_clock 门控在新
+冷态下是否需要显式 module_enable（旧轮依赖残留在零写窗口里已不可用）。

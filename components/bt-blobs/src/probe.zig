@@ -765,6 +765,14 @@ pub fn run() noreturn {
         // 若仅此写就导致控制流跳飞（触发器 match≥0x2f828a78 会如实报告），
         // ⇒ 该写的副作用就是根因候选；判据：marker/ring 的位置。
         rd_.wr(0x2070_4184, 0xFFFF_0000);
+        // **ana mst 时钟 bit28 恢复**（2026-11-20 深夜新态）：马拉松时代官方链跑过
+        // 留下的残留时钟 0x12411290（bit28=1）在彻底断电式复位后被清成 0x02411290，
+        // 我们的最小链此前只读不写 ⇒ enable() 挂在模拟主时钟缺失（b103 不落）。
+        // 显式置回 bit28——这同时是当年 FE 环"官方 692ms 过、我们过不去"的候选实体。
+        {
+            const amst = rd_.r(0x2010_F83C);
+            if ((amst & (1 << 28)) == 0) rd_.wr(0x2010_F83C, amst | (1 << 28));
+        }
         var rc_: [3]u32 = .{ 0xADC0_FEE7, rd_.r(0x2070_4184), rd_.r(0x2010_F83C) };
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
@@ -793,24 +801,18 @@ pub fn run() noreturn {
     lrec[0] = 0xADC0_FEFE;
     lrec[1] = lp_boot_n;
     for (0..9) |k| lrec[2 + k] = lp_hist[k];
-    lrec[11] = @as(*volatile u32, @ptrFromInt(0x2E00_0400)).*;
+    lrec[11] = @as(*volatile u32, @ptrFromInt(0x2E00_0420)).*; // enable() 走到的步号
     lrec[12] = @as(*volatile u32, @ptrFromInt(0x2E00_0404)).*;
     lrec[13] = @as(*volatile u32, @ptrFromInt(0x2E00_0030)).*;
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
     _ = esp_rom_spiflash_write(0x18A000, &lrec, 56);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
-    asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
-    asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
+    // ⚠ **观察点已撤防**（2026-11-20 末）：它盯的 [0x2f07f99c] 回调槽写是我们
+    // 自己 LE 块的 unlock 写——上一轮断点 mtval=0x2f07f99c（exception 3）就是
+    // 这把陈旧武器打在自己人身上。观察点属于已废弃的 unlock 实验。
+    asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（全关，保持）
+    asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除，保持）
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
-    asm volatile ("mv t0, %[addr]"
-        :
-        : [addr] "r" (target_addr),
-    );
-    asm volatile ("csrw 0x7a2, t0"); // tdata2 = target_addr（此刻无观察点在活）
-    asm volatile ("li t0, 0x4a");
-    asm volatile ("csrw 0x7a1, t0"); // tdata1 = STORE|USER|MACHINE
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)（最后开）
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
     // {FEF5, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;
@@ -851,6 +853,19 @@ pub fn run() noreturn {
         }
     };
     // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
+    // **init/enable 窗口采样器**：72 样本（~36ms）后 ISR 落盘 0x187000。
+    // 此时 controller task 未启动（enable step 20 才建任务）⇒ 落盘无并发风险。
+    // 新 regime 下 enable() 内挂死且无 lockup（boot_n 恒 1）⇒ bootloader 会 scribble
+    // LP 槽（LP 书签全废），PC 环是唯一深度仪器。
+    board.trap.resetPcs();
+    board.trap.sample_quiet = true;
+    board.trap.pc_dump_at = 72;
+    if (!probe_irqs) {
+        probe_irqs = true;
+        board.hw.routeT0Interrupt(25);
+        board.hw.armT0Interrupt(2000);
+        board.hw.enableInterrupts();
+    }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
@@ -961,18 +976,13 @@ pub fn run() noreturn {
         // ⇒ marker 写静默失败（这正是 73 之后 64 不落地的机制）。
         // **定长等待**（~1.6s）：给采样器/触发器时间进入 esp_phy_enable 的挂段。
         // 不依赖 pcSampleCount —— 采样器在 72 样本 dump 后已停（活寄存器即可判读）。
-        // **SPI1 盲复位**：卡死态下 HP 对 SPI1 寄存器块**读写都挂死**（读 stall 回 FF、
-        // 写疑似同样 stall——上一轮写后 LP 哨兵未落地）。本轮判读手段：
-        // LP 槽 0x2E000400/404（远离 blob 的 LP 0x30-0x38 活动区）写前/写后哨兵，
-        // FEFE lrec[11..13] 带出：0x400=写前哨兵、0x404=写后存活 ⇒ 区分"写挂死"vs"写送达"。
-        @as(*volatile u32, @ptrFromInt(0x2E00_0400)).* = 0xADDC_0002; // pre-reset
-        @as(*volatile u32, @ptrFromInt(0x2050_1010)).* = 1 << 31; // CTRL2.SYNC_RESET (WT)
-        @as(*volatile u32, @ptrFromInt(0x2E00_0404)).* = 0xADDC_0003; // post-reset 存活
+        // ⚠ 盲 CTRL2.SYNC_RESET 已删（2026-11-20 末）：零 flash 写窗口下 SPI1 楔子
+        // 预期不再形成（楔子 = 我们的 post-enable flash 写撞出来的），盲复位是
+        // 唯一死点（panic illegal @0x40069dba，哨兵 s0=0xaddc0002 证明死在它旁边）。
         var wait_dumps: u32 = 0;
-        while (wait_dumps < 50_000_000) : (wait_dumps += 1) {
+        while (wait_dumps < 100_000_000) : (wait_dumps += 1) {
             asm volatile ("nop");
         }
-        @as(*volatile u32, @ptrFromInt(0x2E00_0404)).* = 0xADDC_0004; // 后半 wait 走完
         // **oracle 实验：IDF 本体的 `esp_phy_enable(PHY_MODEM_BT=2)`**
         // WITH_PHY=1 已把 IDF 的 phy_init.c 链进来（`esp_phy_enable` T 符号已确认）。
         // 它内部含我们手写版没有的完整射频使能段（含 analog/regi2c/PMU 路径）。
