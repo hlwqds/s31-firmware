@@ -1362,10 +1362,15 @@ IDF（esp32s31）这一函数做四件事，我们逐条对照：
 | 3   | `modem_clock_module_mac_reset(PERIPH_BT_MODULE)` → `reset_btmac / reset_btmac_apb / reset_ble_timer / reset_modem_sec`                                                                                                                                    | ✓ 四族都已做                                                                                                         |
 | 4   | `btdm_lp_timer_clk_init(cfg)`                                                                                                                                                                                                                             | ✓                                                                                                                    |
 
-**最强嫌疑（未做）**：`icg_map_init_all()` 覆盖**两个域** ——
-`MODEM_SYSCON.clk_conf_power_st`（我们写了 `0x64646400`）**和 `MODEM_LPCON` 自己的
-`clk_conf_power_st`**（`clk_coex_st_map / clk_i2c_mst_st_map / clk_lp_apb_st_map`），
-**后者我们一个字都没写**。
+**`icg_map_init_all()` 覆盖两个域 —— 两个我们都写了**：
+
+| 域                               | 寄存器        | 我们的值     | 与 IDF 默认 |
+| -------------------------------- | ------------- | ------------ | ----------- |
+| `MODEM_SYSCON.clk_conf_power_st` | `syscon+0x0c` | `0x64646400` | ✅ 逐域相同 |
+| `MODEM_LPCON.clk_conf_power_st`  | `LPCON+0x20`  | `0x66660000` | ✅ 逐域相同 |
+
+（`porting.zig:344` 的 `reg_lpcon_power_st`。此前这句写"后者我们一个字都没写"，
+是**过时残留** —— `porting.zig:184` 自己已标注过该说法已过时，这里同步改掉。）
 
 ### 🎯 二分完成：使能者是 **step 5 `btdm_lp_enable_clock`**
 
