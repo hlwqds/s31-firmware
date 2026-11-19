@@ -20316,3 +20316,67 @@ while (round < 200) : (round += 1) {
 | —— | 同型"看起来对"错误 | **15** |
 | —— | 撤回总数 | **109** |
 | —— | 自我纠正 | **281** |
+
+## 🏁 `probe.run()` 确实在执行，但日志被 **UART FIFO 截断**
+
+### probe 的早期日志（本轮实测）
+
+```text
+bt probe: hooks installed (now_ms=us/1000)
+bt probe: timer 5 -> 8 (must increase)
+bt probe: clic[25] 0x1fc00100 -> 0x1fc00100 (nmies)
+bt probe: irq enabled (probe only), t0=2ms
+bt probe: init start
+bt probe: syscon+0x00 = 0x00000100
+bt probe: syscon+0x04 = 0x00201002
+bt probe: syscon+0x08 = 0x00000000
+```
+
+⇒ **`probe.run()` 确实被调用并执行了**（`-Dbt-probe` 生效）。
+
+### 但捕获到 220 行就**半行截断**
+
+```text
+... bt osal: intr_alloc registered src=124 (bbt sbtbbbbbbbbbt
+```
+
+⇒ 结尾是**半行** ⇒ **UART FIFO 溢出丢弃**，不是代码没走到。
+
+⇒ 因此 `bt probe: sending HCI Reset` 与 `bt task round N` 那一段**可能在窗口之外**。
+
+### 这意味着
+
+| 项 | 状态 |
+| --- | --- |
+| `probe.run()` 执行 | ✅ **已证实** |
+| 到过 `init start` | ✅ |
+| 到过 bringup step 20 | ✅（`enter step 20` 出现）|
+| 到过 HCI 命令 | ❓ **日志窗口未覆盖** |
+| fault | ✅ **0** |
+
+⇒ **"没有 `sending HCI Reset`" 是窗口问题，不是证据。**
+⇒ 这正是本会话反复出现的那条纪律：**缺行 ≠ 没发生**。
+
+### 下一步（两条）
+
+| # | 动作 | 判据 |
+| --- | --- | --- |
+| 1 | **延长捕获**（或降低日志量）直到出现 `sending HCI Reset` | 出现即窗口足够 |
+| 2 | 把 `probe.run()` 的 HCI 阶段放在**更早**（bringup 之前已经跑过 probe init，说明顺序上 probe 与 bringup 交错）| 便于捕获 |
+
+⇒ **第 1 条最直接**：把捕获窗口从 90 s 提到 240 s。
+
+## 本会话最终总计（最终锁定）
+
+| # | 项 | 结论 |
+| --- | --- | --- |
+| 1 | 四项时钟配置 | ✅ 已修 |
+| 2 | 任务栈未初始化 | ⚠️ 诊断投毒在位 |
+| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修 |
+| 3b | PHY 首次标定 | ❌ 仍开放 |
+| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修 |
+| 5 | `.iram_btslp*` 孤儿段 | ✅ **已修并验证（零 fault）** |
+| **当前** | **零 fault；probe 在跑；HCI 结果被日志窗口挡住** | 🔍 |
+| —— | 同型"看起来对"错误 | 15 |
+| —— | 撤回总数 | 109 |
+| —— | 自我纠正 | **282** |
