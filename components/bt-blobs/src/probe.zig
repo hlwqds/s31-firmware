@@ -555,6 +555,12 @@ pub fn run() noreturn {
         halt();
     }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
+    // **解除 dump 钩子**：`dumpAtPend` 挂在 `dump_hook` 上，而它在**每次** `mutex_pend`
+    // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
+    // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
+    // bringup 已过观测窗口，这里解除，让运行时路径零开销。
+    osal.dump_hook = null;
+    osal.logPublic("bt probe: dump_hook disarmed", .{});
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 

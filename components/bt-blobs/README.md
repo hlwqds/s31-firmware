@@ -21978,3 +21978,59 @@ fault = 0
 ⇒ 修法明确：强定义/`PROVIDE` 一个**有界**的 `ets_printf`，转发到 `hw.rawWrite`。
 
 ⇒ 在此之前，**不在 probe 里发 LE 命令** —— 否则板子会挂。
+
+## ⚠️ 更正：自旋点是**我们自己的 `ets_printf` shim**，不是 ROM 的
+
+### 归属
+
+```text
+4006562e T ets_printf     ← **我们自己的**（components/bt-blobs/link/bt_printf_shim.c）
+                           在 `.flash.text`，已被 zig 链接进来
+ROM 的 printf 在 0x2f83efd2 → **从未进入**
+```
+
+⇒ shim **不碰 FIFO**：它格式化后调 `s31_bt_log_hook` → `osal.logLine`（有界写）。
+
+⇒ 所以"ROM printf 在满 FIFO 上自旋"这个说法**错**。
+
+### 真正的原因：**per-pend 的 dump 钩子重入**
+
+```text
+osal.zig:1059   mutex_pend → if (dump_hook) |f| f();     ← **每次 pend 都调**
+probe.zig       dumpAtPend: 2M 次 UART 排空自旋 + O(n²) canaryScan + ~10 行日志
+                ↓
+                它的 `if (dump_done) return;` 守卫在**函数末尾**才置位
+                ⇒ 一旦内部不返回，就会**每次 pend 重入**
+```
+
+⇒ LE 广播的 setup 会**频繁 pend** ⇒ 被我们的仪器**饿死**。
+
+⇒ NMI 采样落在 `ets_printf` 里，只说明**那一刻 CPU 在哪**，不说明卡在哪 ——
+blob 日志频繁、每行都很便宜，但**次数极多**。
+
+### 修法（已实施）
+
+```zig
+// probe.zig：init 成功后
+osal.dump_hook = null;   // bringup 已过观测窗口，运行时路径零开销
+```
+
+### 因此"LE 广播挂起"要重新判定
+
+| 之前的结论 | 修正 |
+| --- | --- |
+| "blob 的 ets_printf 在满 FIFO 上自旋" | ❌ **错**（shim 是有界的）|
+| **"我们的 per-pend dump 把 controller 饿死"** | ✅ **正确** |
+
+⇒ **解除钩子后必须重跑 LE 序列**，否则无法区分"广播被拒"与"仪器吃掉 CPU"。
+
+### 顺带：第三个静默丢失通道
+
+日志里那些 `archibbb…` 碎片，是 **`rawWrite` 在 5000 次自旋后放弃**、
+**截断在一行中间**留下的。
+
+| 通道 | 症状 |
+| --- | --- |
+| UART FIFO | 整行丢失 |
+| `log.line` 200 B | 整行丢失（**已修为可见**）|
+| **`rawWrite` 放弃** | **半行碎片**（最危险：碎片会被误读成数据）|
