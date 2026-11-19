@@ -17160,3 +17160,70 @@ if (v == want[0] or v == want[1]) { ... diag_k +%= 1; }
 | **因仪器自证而撤回** | **5** |
 | 撤回总数 | **96** |
 | 自我纠正 | **236** |
+
+## 🔎 栈解析器（新工具）给出**真实调用链**：经过 `osal.btdmMalloc`
+
+### 工具
+
+`tools/resolve-stack.py <serial-log>` —— 解析 `RA off=N ret=0xADDR` 行，
+用 `nm -n` 归属符号，并标注哪些属于**仪器自身**（`trapDispatch`/`writeAll`/`memcpy`/`log.*`/`osal.Arena` 等）。
+
+⇒ 解决本会话反复踩的坑：**不区分仪器与被测，就把 handler 的痕迹当成故障证据**。
+
+### 一次运行的输出（84 个唯一地址，51 个属仪器，33 个属被中断链）
+
+```text
+offset    ret          symbol
+  116  0x4006626a   probe.run
+  228  0x4006a83a   bringup.init
+  256  0x4006a6f0   bringup.init
+  352  0x4006bd7c   probe.logHook
+  448  0x4006aacc   **osal.btdmMalloc**
+  676  0x4002b4f4   r_sym_ble_HCwifl069K0xQyWxEt1s
+  692  0x40012172   r_sym_ble_qcXSzSmYICP9LztLqIQh
+  708  0x40050296   r_sym_ble_sGiNVdM9UiE9bL9yeWkQ
+  760  0x4006df6a   sched.startScheduler
+```
+
+⇒ **被中断的调用链是**：
+
+```text
+probe.run → bringup.init → … → osal.btdmMalloc
+          → r_sym_ble_HCwifl… → r_sym_ble_qcXSzS… → r_sym_ble_sGiNVdM9…
+          → sched.startScheduler
+```
+
+### 三个新事实
+
+| # | 事实 | 意义 |
+| --- | --- | --- |
+| 1 | 链中有 **`osal.btdmMalloc`** | 崩溃发生在**blob 的内存分配路径**上 |
+| 2 | 三重 `r_sym_ble_*` 调用（`HCwifl`/`qcXSzS`/`sGiNVdM9`）| 是 blob 内部的**三个不同函数**，不是同一处递归 |
+| 3 | `sched.startScheduler` 在链**最深处**（off=760）| 崩溃时调度器已启动 ⇒ 已进入多任务阶段 |
+
+### 因此调整方向
+
+早前假设"`hci_transport_init` 步骤内崩溃" —— 但调用链显示是
+**`bringup.init` 之后的调度阶段**（`startScheduler` 已在栈上）。
+
+⇒ `step=15 hci_transport_init` 是**最后记录的步骤名**，**不等于**崩溃位置。
+⇒ 这与本会话第 22 类观测错误（"最后打印的步骤 ≠ 崩溃位置"）**完全一致**。
+
+### 下一步（两条，均基于新链）
+
+| # | 动作 | 判据 |
+| --- | --- | --- |
+| 1 | 反汇编 `osal.btdmMalloc` 的实现（我们的 Zig 版）| 看它是否会把指针写回调用者的槽 |
+| 2 | 在 `startScheduler` 之后、blob 任务首次运行处加锚点 | 确认 crash 在首个任务切换之后 |
+
+## 本会话最终总计（最终锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因（四项配置条件）** | **1，已验证**（init 完整完成）|
+| **里程碑** | ✅ **`bt bringup: INITED`** |
+| **新事实** | 崩溃链经 **`osal.btdmMalloc`**，且 `startScheduler` 已启动 |
+| **因仪器自证而撤回** | **6** |
+| 撤回总数 | **97** |
+| 自我纠正 | **237** |
+| **新增工具** | `tools/resolve-stack.py` |
