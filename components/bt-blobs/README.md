@@ -26179,3 +26179,16 @@ esp_wifi_init 的前置序列（rate 表 dump 显示归档 wifi 配置可从 0x2
 
 **注意**：esp_wifi_init_internal 与 esp_phy_enable(2) 的顺序按 wifi-blobs
 （init_internal 在前、phy enable 在其内部/之后）。保留跳过 bb_v2_init 状态。
+
+### 路线成本实测（2026-11-20，station map 量化）
+
+| 路线 | 成本 | 充分性 |
+| --- | --- | --- |
+| A. WiFi osi 栈移植（2000 行 Zig） | 无窗口成本 | ⚠ 未知（WiFi osi ≠ libphy/bb_v2 必需项，待验）|
+| B. 链接 esp_wifi_init 闭包 | **net80211 376K + libpp 170K + glue 9K ≈ 555KB+**（station map 实测；esp_wifi_init 子集 ⊆ 此）| ✅ 高（官方路径原样过 FE 环）|
+| C. 窗口重划容纳 B | 两段窗口重规划（技能有配方）| 同 B |
+
+⇒ 决策点：A 先试（便宜、可能直接解锁）；不行则 C+B（贵但充分）。
+bare esp_phy_enable 的首次使能分支（common_clock/module_enable/load_cal）
+已在已链接源对象里 —— 自旋在 libphy 归档 register_chipv7_phy 内部，
+缺口 = WiFi 上下文（A 或 B 供给）。
