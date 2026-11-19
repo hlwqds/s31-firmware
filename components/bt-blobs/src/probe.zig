@@ -794,4 +794,11 @@ fn flashStage(n: u32) void {
     _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
     var w: [1]u32 = .{flash_mark_magic | (n & 0xFFFF)};
     _ = esp_rom_spiflash_write(flash_mark_off, &w, 4);
+    // 第二个字：**计数器快照**，让 host 一次读出"命令有没有被消费"。
+    // 高 16 = btdm_tx（应答数），低 16 = evt_count（leEvtTx 事件数）
+    {
+        const st = @import("transport.zig").stats();
+        var c: [1]u32 = .{(@as(u32, st.btdm_tx) << 16) | (st.evt_count & 0xFFFF)};
+        _ = esp_rom_spiflash_write(flash_mark_off + 4, &c, 4);
+    }
 }
