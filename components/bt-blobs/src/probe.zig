@@ -81,6 +81,12 @@ const init_config = @import("init_config.zig");
 const osi = @import("osi.zig");
 const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
 const libc_glue = @import("libc_glue.zig");
+const wifi_glue = @import("wifi_glue.zig");
+// **强制编译/发射**：Zig 惰性分析——未引用模块的 export fn 不会发射符号
+comptime {
+    _ = libc_glue;
+    _ = wifi_glue;
+}
 var osi_table: osi.Osi = undefined;
 
 /// **本轮最深步骤号**（mark.put 单调递增；LP-RAM 跨 boot 累积用）。

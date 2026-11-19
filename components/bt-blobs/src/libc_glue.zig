@@ -6,8 +6,11 @@ const osal = @import("osal_kit").osal;
 
 export fn putchar(c: c_int) c_int {
     const byte: u8 = @truncate(@as(u32, @bitCast(c)));
-    var one: [2]u8 = .{ byte, 0 };
-    osal.logPublic("{s}", .{@as([*:0]const u8, &one)});
+    if (byte >= 0x20 and byte < 0x7F) {
+        osal.logPublic("{c}", .{byte});
+    } else {
+        osal.logPublic("[0x{x:0>2}]", .{byte});
+    }
     return c;
 }
 
