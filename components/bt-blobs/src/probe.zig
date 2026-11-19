@@ -573,45 +573,35 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18B000, &pb, @intCast(@sizeOf(@TypeOf(pb))));
         flashStage(72);
-        // **CSR 扫描副本（pre-pmu，flash 可用窗口）**：0x7A2-0x7AF 逐个写 0x88 读回，
-        // 找保留 0x88 的 = S31 的 tcontrol 等价物。新变量名避免与后段冲突。
-        // 结果落 0x18F000（此窗口 flash 写可靠——stage 72 自己就落在这儿）。
-        var r_scan_p: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a2" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[2] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[3] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[4] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7a6" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[6] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7a7" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[7] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7a8" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[8] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7a9" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[9] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7aa" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[10] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7ab" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[11] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7ac" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[12] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7ad" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[13] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7ae" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[14] = r_scan_p;
-        asm volatile ("csrr %[v], 0x7af" : [v] "=r" (r_scan_p));
-        board.trap.bp_scan[15] = r_scan_p;
-        // **stage 74 判别**：读循环跑完 ⇒ 死点在 ebreak/trap 写；没到 74 ⇒ 死在读循环
-        flashStage(74);
-        {
-            var sb2: [17]u32 = @splat(0);
-            sb2[0] = 0xADC0_FEEA;
-            for (0..16) |k| sb2[1 + k] = board.trap.bp_scan[k];
-            _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x18D000, &sb2, 72);
-        }
+        // **干净触发器验证**（只碰已证可读的 CSR；pre-pmu 窗口 flash 可靠）：
+        // tinfo 回读；写 tdata1=0x4C → 回读；写 tdata2=0x2f828a78 → 回读；
+        // tcontrol(0x7a3)=0x88 写 → 回读（此前读 0 无陷阱）；tselect 回读。
+        // 结果 6 字落 0x18F000（此窗口 flash 可靠——stage 72 落地证实）。
+        var v_t1: u32 = undefined;
+        var v_t2: u32 = undefined;
+        var v_t3: u32 = undefined;
+        var v_t4: u32 = undefined;
+        var v_t5: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (v_t1)); // tinfo
+        asm volatile ("li t0, 0x4c");
+        asm volatile ("csrw 0x7a0, t0"); // tdata1 = 0x4C
+        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (v_t2)); // 回读
+        asm volatile ("li t0, 0x2f828a78");
+        asm volatile ("csrw 0x7a1, t0"); // tdata2 = 地址
+        asm volatile ("csrr %[v], 0x7a1" : [v] "=r" (v_t3)); // 回读
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a3, t0"); // tcontrol
+        asm volatile ("csrr %[v], 0x7a3" : [v] "=r" (v_t4)); // 回读
+        asm volatile ("csrr %[v], 0x7a5" : [v] "=r" (v_t5)); // tselect
+        var cv: [6]u32 = @splat(0);
+        cv[0] = 0xADC0_FEEB;
+        cv[1] = v_t1; // tinfo
+        cv[2] = v_t2; // tdata1 回读
+        cv[3] = v_t3; // tdata2 回读
+        cv[4] = v_t4; // tcontrol 回读
+        cv[5] = v_t5; // tselect 回读
+        _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18F000, &cv, @intCast(@sizeOf(@TypeOf(cv))));
         // **ebreak**：进断点分支（trap 上下文 flash 写已验证可行）把 bp_scan 落盘
         asm volatile ("ebreak");
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
