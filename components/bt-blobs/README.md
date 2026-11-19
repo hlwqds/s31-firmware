@@ -12,10 +12,14 @@
 > （注意：应答走 `btdmTx`，不是 `leEvtTx`）；**唯一开放项 = PHY 首次标定**
 > （路径已写入文末）。
 >
-> **一句话现状**：三个根因（`anchor[8]` 自伤、PHY 域时钟缺失、容量缺口）**全部已修**；
-> `carve-out` 已移除，`.btdm_bss` 32→6 KiB + 新增 2 KiB `.phy_cal_buf`（同源洞，校准专用，**不占 arena**）⇒ arena 保持 **376 KiB**、`_heap_start` 未动、carve-out 已移除、`phy_before_clocks=false`，`calloc(1,1904)` 从 arena 成功、**无 abort**。
-> 现状：**`enter step 1` 出现、无 abort**，PHY 校准在 ROM 中轮询 **FE 块**（`s0=0x20100000` = `DR_REG_FE_BASE`）。
-> 剩余原因**未定位**（不写成"硬件握手"——本会话已两次把自身缺口误判成硬件墙）。
+> **一句话现状（2026-11-19 终版）**：
+> **五个缺陷全部修复并验证** —— ① BT/MAC 四项时钟配置 ② 任务栈未初始化（现默认**清零**）
+> ③ `esp_phy_enable` 冻结入口点 ④ `r_conn_stack_enable` 是 `c.ret` 空桩
+> ⑤ `.iram_btslp*` 孤儿段导致 `esp_image` 段重叠。
+> **HCI Reset 逐命令应答 `status=0x00`**（应答走 `btdmTx`；`leEvtTx` 只收 init 事件）。
+> **唯一开放项：PHY 首次标定**（`register_chipv7_phy` @ `0x40061c82`，路径见文末）。
+>
+> （历史快照，已被上文取代：早期曾停在 `enter step 1` 并轮询 FE 块。）
 >
 > 相关技能：`s31-ble-probe-bringup`（构建与判读）、
 > `baremetal-instrument-selfcheck`（10 条仪器自检，读任何读数前先过一遍）。
