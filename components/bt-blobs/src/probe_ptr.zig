@@ -79,7 +79,6 @@ pub fn initPhy() void {
     espPhyEnable(2); // PHY_MODEM_BT
 }
 
-
 /// `esp_phy_enable(modem)` 的**显式实现**（替代 `rom_syms.ld` 里那个冻结的伪造地址）。
 ///
 /// **它不做 PHY 标定** —— 真正的标定在 IDF 的 `libphy.a`（`esp_phy_load_cal_and_init`）

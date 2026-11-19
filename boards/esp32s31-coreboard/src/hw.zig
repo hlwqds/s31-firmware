@@ -388,14 +388,17 @@ pub fn rawWrite(msg: []const u8) void {
     }
     const need: u32 = @intCast(msg.len);
     var w: u32 = 0;
-    while (w < 5_000) : (w += 1) {   // 上限压到 5 000（原来 200 000 会在 FIFO 被占时每次烧 ~1 ms）
+    while (w < 5_000) : (w += 1) { // 上限压到 5 000（原来 200 000 会在 FIFO 被占时每次烧 ~1 ms）
         const used = (status.* >> 16) & 0xFF;
         if (used + need <= 120) break;
     }
     for (msg) |ch| {
         var spins: u32 = 0;
         while ((((status.* >> 16) & 0xFF) >= 126) and spins < 5000) : (spins += 1) {}
-        if (spins >= 5000) { rw_drops +%= 1; return; }
+        if (spins >= 5000) {
+            rw_drops +%= 1;
+            return;
+        }
         fifo.* = ch;
         rw_bytes +%= 1;
     }

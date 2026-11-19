@@ -53,7 +53,7 @@ export fn bt_print_osal_stats() void {
 }
 
 export fn probe_dump_now() void {
-    dump_done = false;   // abort 时刻必须能再次导出（否则被 once-only 门挡住）
+    dump_done = false; // abort 时刻必须能再次导出（否则被 once-only 门挡住）
     // **OSAL 计数器**：判断"投递了但消费不到"还是"根本没投递"的关键
     {
         const st = osal.stats();
@@ -188,11 +188,14 @@ fn dumpAtPend() void {
         const cc = (@as(*volatile u32, @ptrFromInt(0x2038_A088))).*;
         board.log.line("U {d}->{d},{d} spins={d} cc={x}", .{ before, r1, r2, k, cc });
     }
-    dumpLine("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
+    dumpLine("A{x}/{d}", .{ g_abort_ra, osal.arenaFree() }); // 极短：调用者/空闲
     osal.canaryScan();
 
     osal.arenaWalk();
-    { var mi: u32 = 0; while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) dumpLine("M{d} {d} 0x{x}", .{mi, osal.mc_sizes[mi], osal.mc_rets[mi]}); }
+    {
+        var mi: u32 = 0;
+        while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) dumpLine("M{d} {d} 0x{x}", .{ mi, osal.mc_sizes[mi], osal.mc_rets[mi] });
+    }
     dumpLine("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
     dumpLine("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
     // **按字节预算**：1 行计数（~20 B）+ 3 条截断到 24 B 的消息，合计 < 110 B。
@@ -205,15 +208,18 @@ fn dumpAtPend() void {
     dump_done = true;
 }
 
-
 var flag_buf: [16]u8 = @splat(0);
 fn flagBuf() []const u8 {
     const n = std.fmt.bufPrint(&flag_buf, "<C{d}>", .{g_c_count}) catch return "<C>";
     return n;
 }
 
-pub fn ringCount() u32 { return log_ring_n; }
-pub fn logcCount() u32 { return log_hook_calls; }
+pub fn ringCount() u32 {
+    return log_ring_n;
+}
+pub fn logcCount() u32 {
+    return log_hook_calls;
+}
 
 pub fn ringAt(idx: u32) []const u8 {
     if (idx >= log_ring_n) return "";
@@ -293,11 +299,17 @@ fn logHook(msg: []const u8) void {
         if (call_stream_on) {
             if (std.mem.indexOf(u8, msg, "bt ret: ")) |k| {
                 const rest = msg[k + 8 ..];
-                if (rest.len > 0) { codePush(codeOf(rest)); return; }
+                if (rest.len > 0) {
+                    codePush(codeOf(rest));
+                    return;
+                }
             }
             if (std.mem.indexOf(u8, msg, "bt call: ")) |k| {
                 const rest = msg[k + 9 ..];
-                if (rest.len > 0) { codePush(codeOf(rest)); return; }
+                if (rest.len > 0) {
+                    codePush(codeOf(rest));
+                    return;
+                }
             }
             return; // 窗口内其它自身日志一律不发：把 21 字节留给码流
         }
@@ -542,7 +554,7 @@ pub fn run() noreturn {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
     }
-    osal.logPublic("bt probe: init ok {d}", .{0});   // 先打，不碰 arena
+    osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 
@@ -590,8 +602,11 @@ fn dumpOsalCallers() void {
     // **无条件**输出（不随 code_n 阈值）：这是本轮唯一必须拿到的读数。
     osal.canaryScan();
     osal.arenaWalk();
-    board.log.line("A{x}/{d}", .{g_abort_ra, osal.arenaFree()}); // 极短：调用者/空闲
-    { var mi: u32 = 0; while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) board.log.line("M{d} {d} 0x{x}", .{mi, osal.mc_sizes[mi], osal.mc_rets[mi]}); }
+    board.log.line("A{x}/{d}", .{ g_abort_ra, osal.arenaFree() }); // 极短：调用者/空闲
+    {
+        var mi: u32 = 0;
+        while (mi < @min(osal.malloc_calls, 8)) : (mi += 1) board.log.line("M{d} {d} 0x{x}", .{ mi, osal.mc_sizes[mi], osal.mc_rets[mi] });
+    }
     board.log.line("MC {d} sz={d} ret=0x{x}", .{ osal.malloc_calls, osal.last_req_size, osal.last_ret });
     board.log.line("CN 0x{x} 0x{x} {d}", .{ osal.canary_base + osal.canary_first_off, osal.canary_first_val, osal.canary_bad_words });
     // 分配结束（0x2f0206a0）之后 56 个字：区分"连续溢出"与"孤立结构化写入"。

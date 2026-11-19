@@ -1193,7 +1193,10 @@ pub const Arena = struct {
     }
 
     pub fn alloc(self: *Arena, size: usize, alignment: usize) ?*anyopaque {
-        if (!self.initialized) { putByte('!'); return null; }
+        if (!self.initialized) {
+            putByte('!');
+            return null;
+        }
         const align_to = @max(alignment, block_align);
         var need = std.mem.alignForward(usize, size + @sizeOf(BlockHeader), block_align);
         if (need < min_block) need = min_block;
@@ -1233,10 +1236,13 @@ pub const Arena = struct {
                 recAlloc(addr + @sizeOf(BlockHeader), need - @sizeOf(BlockHeader));
                 return @ptrFromInt(addr + @sizeOf(BlockHeader));
             }
-            if (next <= addr) { putByte('x'); return null; }
+            if (next <= addr) {
+                putByte('x');
+                return null;
+            }
             addr = next;
         }
-        putByte('#');   // 走完都没找到足够大的空闲块（碎片/链断）
+        putByte('#'); // 走完都没找到足够大的空闲块（碎片/链断）
         return null;
     }
 
@@ -1273,10 +1279,10 @@ pub var arena_init_magic: u32 = 0;
 pub var arena_init_size: u32 = 0;
 
 /// 堆区 canary 扫描结果（由导出读取，**不经过 UART**）。
-pub var canary_first_off: usize = 0;   // 第一个被改写的 4 字节偏移（相对堆起点）
-pub var canary_first_val: u32 = 0;     // 该处的实际值
-pub var canary_bad_words: usize = 0;   // 一共被改写的字数
-pub var canary_base: usize = 0;        // 堆起点（便于换算绝对地址）
+pub var canary_first_off: usize = 0; // 第一个被改写的 4 字节偏移（相对堆起点）
+pub var canary_first_val: u32 = 0; // 该处的实际值
+pub var canary_bad_words: usize = 0; // 一共被改写的字数
+pub var canary_base: usize = 0; // 堆起点（便于换算绝对地址）
 
 /// 已分配区间表（供扫描跳过）：(起点, 长度)
 pub const AllocRec = struct { ptr: usize = 0, len: usize = 0 };
@@ -1345,10 +1351,16 @@ pub fn arenaWalk() void {
     const end = (@intFromPtr(bt_arena.buf.ptr) + bt_arena.buf.len) & ~(Arena.block_align - 1);
     while (addr + @sizeOf(Arena.BlockHeader) <= end) {
         const hdr: *Arena.BlockHeader = @ptrFromInt(addr);
-        if (hdr.magic != Arena.headerMagic) { walk_stop = addr; return; }
+        if (hdr.magic != Arena.headerMagic) {
+            walk_stop = addr;
+            return;
+        }
         walk_blocks += 1;
         if (hdr.free) walk_free += hdr.size;
-        if (hdr.size == 0) { walk_stop = addr; return; }
+        if (hdr.size == 0) {
+            walk_stop = addr;
+            return;
+        }
         addr += hdr.size;
     }
     walk_stop = addr;
@@ -1395,7 +1407,7 @@ pub fn btdmMalloc(size: u32, _: c_int) ?*anyopaque {
     last_req_size = size;
     const r = bt_arena.alloc(size, 8);
     // **判据**：PHY 校准的 1904 字节请求 —— 成功打 '+'、失败打 '-'（单字节，不会被 FIFO 丢）。
-    last_ret = if (r) |v| @intFromPtr(v) else 0;   // **必须先赋值**（上一版在 dump 之后赋值 ⇒ 读到初值 0）
+    last_ret = if (r) |v| @intFromPtr(v) else 0; // **必须先赋值**（上一版在 dump 之后赋值 ⇒ 读到初值 0）
     if (malloc_calls <= 16) {
         mc_sizes[malloc_calls - 1] = size;
         mc_rets[malloc_calls - 1] = last_ret;

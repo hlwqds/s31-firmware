@@ -219,7 +219,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 var b: usize = 0;
                 while (b + 8 <= n) : (b += 8) {
                     log.line("{x},{x},{x},{x},{x},{x},{x},{x}", .{
-                        pcs[b], pcs[b + 1], pcs[b + 2], pcs[b + 3],
+                        pcs[b],     pcs[b + 1], pcs[b + 2], pcs[b + 3],
                         pcs[b + 4], pcs[b + 5], pcs[b + 6], pcs[b + 7],
                     });
                 }
@@ -279,13 +279,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // ctx[15]/使能位随时间变化：用于判断 b15 是在**进入 deinit 之前**还是之后翻的。
             const ctx15 = @as([*]volatile u8, @ptrFromInt(0x2f013d30))[15];
             // 每 64 tick 吐一条 RAM 环里的归档消息（短行，60 字节以内）。
-    if (irq_count % 64 == 0) {
-        if (ring_at) |f| {
-            const m = f((irq_count / 64) % 8);
-            if (m.len > 0) log.line("arch: {s}", .{m});
-        }
-    }
-    if (!sample_quiet and (irq_count % 4096 == 0)) log.line("irq#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
+            if (irq_count % 64 == 0) {
+                if (ring_at) |f| {
+                    const m = f((irq_count / 64) % 8);
+                    if (m.len > 0) log.line("arch: {s}", .{m});
+                }
+            }
+            if (!sample_quiet and (irq_count % 4096 == 0)) log.line("irq#{d} in={d} mepc=0x{x} mac=0x{x:0>8} b13={d} b14={d} ctx15={d} en={d} a0=0x{x:0>8} a1=0x{x:0>8} s0=0x{x:0>8} ra=0x{x:0>8}", .{
                 irq_count,
                 cause & 0x3F,
                 frame.mepc,
@@ -491,9 +491,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         var csr_mepc: usize = 0;
         var csr_mtval: usize = 0;
         var csr_mstatus: usize = 0;
-        asm volatile ("csrr %[m], mepc" : [m] "=r" (csr_mepc));
-        asm volatile ("csrr %[m], mtval" : [m] "=r" (csr_mtval));
-        asm volatile ("csrr %[m], mstatus" : [m] "=r" (csr_mstatus));
+        asm volatile ("csrr %[m], mepc"
+            : [m] "=r" (csr_mepc),
+        );
+        asm volatile ("csrr %[m], mtval"
+            : [m] "=r" (csr_mtval),
+        );
+        asm volatile ("csrr %[m], mstatus"
+            : [m] "=r" (csr_mstatus),
+        );
         // **调用者的保存 ra**（`*(sp+12)`）：判"ra 是被谁写坏的"。
         // sp 经范围检查后再解引用，避免二次 fault。
         var caller_ra: usize = 0;
@@ -519,7 +525,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const v = (@as(*const usize, @ptrFromInt(a))).*;
                 if (v == csr_mepc or v == (csr_mepc | 1)) {
                     // `off` 恒为负 ⇒ 必须 bitCast（@intCast 在 ReleaseSmall 下会 panic）
-                    if (hits == 0) { found = v; hit_off = @as(usize, @bitCast(off)); }
+                    if (hits == 0) {
+                        found = v;
+                        hit_off = @as(usize, @bitCast(off));
+                    }
                     // 把所有命中偏移（绝对值）累加进 diag_d，便于一次看出"有几个、大概在哪"
                     diag_d +%= @intCast(-off);
                     hits += 1;
@@ -532,7 +541,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 
             if (hits == 0) {
                 var a2: usize = 0x2f00_0000;
-                const dram_end: usize = frame.sp - 96;  // 私有栈已隔离 ⇒ 全带宽可扫
+                const dram_end: usize = frame.sp - 96; // 私有栈已隔离 ⇒ 全带宽可扫
                 while (a2 < dram_end) : (a2 += 4) {
                     const v = (@as(*const usize, @ptrFromInt(a2))).*;
                     if (v == csr_mepc or v == (csr_mepc | 1)) {
@@ -552,13 +561,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 diag_l = @truncate(@as(usize, 0x400A_0300));
             }
             diag_a = @truncate(found);
-            diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
+            diag_c = @truncate(hit_off); // 命中偏移（**独立字段**，不被 anchor 覆盖）
             diag_a = @truncate(found);
             // **anchor[0] 与其 +28 字段**（分派器读的就是这两个）
             {
                 const envp = (@as(*const usize, @ptrFromInt(0x2f00_ffac))).*;
                 // env_p 非 0 时读它的 +0/+4/+8，判断表是否已填充
-                var e0: usize = 0; var e4: usize = 0; var e8: usize = 0;
+                var e0: usize = 0;
+                var e4: usize = 0;
+                var e8: usize = 0;
                 if (envp != 0 and (envp & 3) == 0 and envp >= 0x2f00_0000 and envp < 0x2f09_0000) {
                     e0 = (@as(*const usize, @ptrFromInt(envp))).*;
                     e4 = (@as(*const usize, @ptrFromInt(envp + 4))).*;
@@ -567,7 +578,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // diag_b=env_p, diag_f=*(0x2f00fe30), diag_g=e0, diag_h=e4, diag_i=e8
                 diag_b = @truncate(envp);
                 diag_f = @truncate((@as(*const usize, @ptrFromInt(0x2f00_fe30))).*);
-                diag_g = @truncate(e0); diag_h = @truncate(e4); diag_i = @truncate(e8);
+                diag_g = @truncate(e0);
+                diag_h = @truncate(e4);
+                diag_i = @truncate(e8);
                 // **g_phyFuns**（0x2f00fff8）：PHY 函数表。为 0 或首项为 0
                 // ⇒ `esp_phy_enable` 调用空指针 ⇒ mepc = 0。
                 diag_m = @truncate((@as(*const usize, @ptrFromInt(0x2f00_fff8))).*);
@@ -604,9 +617,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         }
         var pbuf: [420]u8 = undefined;
         const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d} df=0x{x} dg=0x{x} di=0x{x} dj=0x{x} gm=0x{x} gn=0x{x}", .{
-            csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
-            last_step, last_step_name, diag_a, diag_b, diag_c, diag_d, diag_e,
-            diag_f, diag_g, diag_j, diag_i, diag_m, diag_n,
+            csr_mepc,  csr_mtval,      csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
+            last_step, last_step_name, diag_a,      diag_b,   diag_c,     diag_d,   diag_e,    diag_f,
+            diag_g,    diag_j,         diag_i,      diag_m,   diag_n,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
 
@@ -649,28 +662,28 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }) catch "NB (fmt fail)";
             hw.rawLineBlocking(nl);
 
-        // **穷栈遍历**：扫 [sp-0x1000, sp) 里落在代码段 (0x40000020..0x400A0300) 的字
-        // ⇒ 这些是**保存的返回地址**，离线用 nm 解析即得调用链。
-        // 排除 handler 自己的帧 [sp-96, sp) —— 那里是按定义保存的"被中断寄存器"。
-        {
-            // **向上遍历**：[f_sp, f_sp+4096) —— 被中断调用链的帧**只可能**在 f_sp 之上。
-            // f_sp 之下在 trap 时刻没有活数据（handler 也写在 f_sp 之下），
-            // 那里出现的返回地址都是**已返回调用**的残留，不能当故障链。
-            var k: isize = 0;
-            const lo: usize = 0x4000_0020;
-            const hi: usize = 0x400A_0300;
-            while (k < 4096) : (k += 4) {
-                const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + k));
-                const v = (@as(*const usize, @ptrFromInt(a))).*;
-                if (v >= lo and v < hi) {
-                    var cb: [96]u8 = undefined;
-                    const rc = std.fmt.bufPrint(&cb, "RA off={d} ret=0x{x:0>8}", .{
-                        k, v,
-                    }) catch "RA (fmt fail)";
-                    hw.rawLineBlocking(rc);
+            // **穷栈遍历**：扫 [sp-0x1000, sp) 里落在代码段 (0x40000020..0x400A0300) 的字
+            // ⇒ 这些是**保存的返回地址**，离线用 nm 解析即得调用链。
+            // 排除 handler 自己的帧 [sp-96, sp) —— 那里是按定义保存的"被中断寄存器"。
+            {
+                // **向上遍历**：[f_sp, f_sp+4096) —— 被中断调用链的帧**只可能**在 f_sp 之上。
+                // f_sp 之下在 trap 时刻没有活数据（handler 也写在 f_sp 之下），
+                // 那里出现的返回地址都是**已返回调用**的残留，不能当故障链。
+                var k: isize = 0;
+                const lo: usize = 0x4000_0020;
+                const hi: usize = 0x400A_0300;
+                while (k < 4096) : (k += 4) {
+                    const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + k));
+                    const v = (@as(*const usize, @ptrFromInt(a))).*;
+                    if (v >= lo and v < hi) {
+                        var cb: [96]u8 = undefined;
+                        const rc = std.fmt.bufPrint(&cb, "RA off={d} ret=0x{x:0>8}", .{
+                            k, v,
+                        }) catch "RA (fmt fail)";
+                        hw.rawLineBlocking(rc);
+                    }
                 }
             }
-        }
         }
 
         // **ops 表转储**：0x2f020700..0x2f020780，看多少项是有效指针。
@@ -701,10 +714,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         {
             var rbuf: [300]u8 = undefined;
             const rl = std.fmt.bufPrint(&rbuf, "RG ra={x} t0={x} t1={x} t2={x} a0={x} a1={x} a2={x} a3={x} a4={x} a5={x} a6={x} a7={x} s0={x} s1={x}", .{
-                frame.ra,  frame.t0,  frame.t1,  frame.t2,
-                frame.a0,  frame.a1,  frame.a2,  frame.a3,
-                frame.a4,  frame.a5,  frame.a6,  frame.a7,
-                frame.s0,  frame.s1,
+                frame.ra, frame.t0, frame.t1, frame.t2,
+                frame.a0, frame.a1, frame.a2, frame.a3,
+                frame.a4, frame.a5, frame.a6, frame.a7,
+                frame.s0, frame.s1,
             }) catch "RG (fmt fail)";
             hw.rawLineBlocking(rl);
         }
@@ -716,8 +729,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         frame.ra, frame.a0, frame.a1, frame.a2,
     });
     // 帧里的 mepc 可能被采样器/嵌套覆盖 ⇒ 直接从 CSR 再读一次，两个值并排比。
-    const live_mepc = asm volatile ("csrr %[v], mepc" : [v] "=r" (-> usize));
-    const live_mtval = asm volatile ("csrr %[v], mtval" : [v] "=r" (-> usize));
+    const live_mepc = asm volatile ("csrr %[v], mepc"
+        : [v] "=r" (-> usize),
+    );
+    const live_mtval = asm volatile ("csrr %[v], mtval"
+        : [v] "=r" (-> usize),
+    );
     log.line("panic: live mepc=0x{x} mtval=0x{x}", .{ live_mepc, live_mtval });
     log.line("panic: sp=0x{x} s0=0x{x} s1=0x{x}", .{ frame.sp, frame.s0, frame.s1 });
     log.line("panic: regs a3=0x{x} a4=0x{x} a5=0x{x} a6=0x{x} a7=0x{x}", .{ frame.a3, frame.a4, frame.a5, frame.a6, frame.a7 });
@@ -815,7 +832,9 @@ pub var probe_stop_at_tick: u32 = 0;
 pub var ring_at: ?*const fn (u32) []const u8 = null;
 /// 环写入计数与日志调用计数的读取器（同款函数指针，避免跨模块 import）。
 pub var ring_n_at: ?*const fn () u32 = null;
-pub fn logc_at() u32 { return if (probe_logc) |f| f() else 0; }
+pub fn logc_at() u32 {
+    return if (probe_logc) |f| f() else 0;
+}
 pub var probe_logc: ?*const fn () u32 = null;
 
 /// **panic 入口快照**：fault 分支的第一条语句就把采样环拷到这里。

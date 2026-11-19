@@ -283,7 +283,8 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // （bit7 wifibb_80x1 + bit16 bt_apb + bit17 btbb + bit18 btmac）。
     // 此前的 `0x003ff880` 多置了 PHY-FE 一族（那是 wifi 侧的遗留 workaround）。
     // **整字直接写**（RMW 回读证明写没落地：应为 0x003ff880，回读 0x003fe080）
-    _ = b_conf1_btmac; _ = b_conf1_btbb;
+    _ = b_conf1_btmac;
+    _ = b_conf1_btbb;
     wr(reg_clk_conf1, 0x003f_f880);
     // （曾用 RMW `rd(...) | 0x00070080`，因不落地改为整字写，见上）
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
