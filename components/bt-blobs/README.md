@@ -24263,3 +24263,52 @@ FE 一族是**有意**置的（PHY 需要），并标明 bit19 由 2.6 补。
 | ICG 位图                                                           | **与设备时钟是两套机制**                              |
 | 我们的 `0x64646400` 写入 `clk_conf_power_st`                       | 很可能就是**在摸这套**（四字节重复 = 每域一个相同值） |
 | 但它不是 `CLK_CONF1`，且内容未与 IDF 的 `ICG_NOGATING_ACTIVE` 对账 | ⇒ 仍属**未验证的猜测**                                |
+
+## 🔓 `0x64646400` 不是随手凑的：它是**打包的 ICG 默认 nibble**
+
+### IDF 的每域 ICG 默认值（`modem_clock_impl.c:371-391`）
+
+```c
+#define ICG_NOGATING_SLEEP  BIT(0) = 0x1
+#define ICG_NOGATING_MODEM  BIT(1) = 0x2
+#define ICG_NOGATING_ACTIVE BIT(2) = 0x4
+```
+
+| domain         | 组合          | 值      |
+| -------------- | ------------- | ------- |
+| `MODEM_APB`    | ACTIVE\|MODEM | **0x6** |
+| `MODEM_PERIPH` | ACTIVE        | **0x4** |
+| `WIFI`         | ACTIVE\|MODEM | **0x6** |
+| `BT`           | ACTIVE        | **0x4** |
+| `MODEM_FE`     | ACTIVE\|MODEM | **0x6** |
+| `IEEE802154`   | ACTIVE        | **0x4** |
+| `LP_APB`       | ACTIVE\|MODEM | **0x6** |
+| `I2C_MASTER`   | ACTIVE\|MODEM | **0x6** |
+| `COEX`         | ACTIVE\|MODEM | **0x6** |
+| `WIFIPWR`      | ACTIVE\|MODEM | **0x6** |
+
+### 对账
+
+```
+我们的 0x64646400  =  6,4,6,4,6,4,0,0  （按 nibble）
+IDF 前 6 个域      =  6,4,6,4,6,4
+```
+
+⇒ **前 6 个域完全一致**；后两个 nibble `0,0` = 域 6/7 关闭。
+
+### 因此我要修正自己此前两次的判断
+
+| 我说过                        | 实际                                                                 |
+| ----------------------------- | -------------------------------------------------------------------- |
+| "四字节重复图案 ⇒ 随手凑的数" | **是打包的 nibble，与 IDF 默认逐域吻合**                             |
+| "与任何真实掩码都不对应"      | **它对应 ICG 域值，不是 `CLK_CONF1` 的位掩码**（两者本就是不同机制） |
+
+⇒ **它写错了地方（`clk_conf_power_st` vs ICG 寄存器），但数值本身是有来源的。**
+
+### 仍然未验证的部分
+
+| 项                                                         | 状态                                                 |
+| ---------------------------------------------------------- | ---------------------------------------------------- |
+| nibble 值与 IDF 默认                                       | ✅ **已对上**                                        |
+| 该值应写到哪个寄存器                                       | ❓ 未确认（`clk_conf_power_st` 是否就是 ICG 的落点） |
+| 写入时机（`icg_map_init_all` 在 `module_enable` **之前**） | ❓ 未确认                                            |
