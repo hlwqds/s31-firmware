@@ -701,15 +701,34 @@ pub fn run() noreturn {
         asm volatile ("li t1, 1");
         asm volatile ("csrw 0x7a5, t1"); // tselect = 1
         // tdata1: type=2(mcontrol) << 28 | m-mode(bit3) | exec(bit0)，action=0(断点异常)，match=精确
-        asm volatile ("li t0, 0x2000000b");
-        asm volatile ("csrw 0x7a0, t0"); // tdata1
+        // **tinfo=0x4 ⇒ type 2 不支持、type 6（mcontrol6）支持**：
+        // mcontrol6: type[31:28]=6、m=bit6、exec=bit4、action[15:12]=0（断点异常）、match[10:7]=0（精确）
+        asm volatile ("li t0, 0x60000050");
+        asm volatile ("csrw 0x7a0, t0"); // tdata1 (mcontrol6)
         asm volatile ("li t0, 0x2f828a78");
         asm volatile ("csrw 0x7a1, t0"); // tdata2 = 目标地址
+        // **回读验证**：tinfo(0x7a4) 与 tdata1（type 字段是否保持 2）
+        var tv: [4]u32 = @splat(0);
+        tv[0] = 0xADC0_FEE9;
+        var r_tinfo: u32 = undefined;
+        var r_tdata1: u32 = undefined;
+        var r_tdata2: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r_tinfo));
+        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (r_tdata1));
+        asm volatile ("csrr %[v], 0x7a1" : [v] "=r" (r_tdata2));
+        tv[1] = r_tinfo;
+        tv[2] = r_tdata1;
+        tv[3] = r_tdata2;
+        _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18F000, &tv, @intCast(@sizeOf(@TypeOf(tv))));
+        flashStage(90); // wait 之后：样本 ≥90 ⇒ 采样活着
         // **等采样器的 ISR dump 完成**（72 次采样触发一次性落盘 0x187000）。
         // 否则 flashStage(64) 的擦写会与 ISR dump **撞车**（ROM spiflash 不可重入）
         // ⇒ marker 写静默失败（这正是 73 之后 64 不落地的机制）。
+        // **定长等待**（~1.6s）：给采样器/触发器时间进入 esp_phy_enable 的挂段。
+        // 不依赖 pcSampleCount —— 采样器在 72 样本 dump 后已停（活寄存器即可判读）。
         var wait_dumps: u32 = 0;
-        while (board.trap.pcSampleCount() < 80 and wait_dumps < 2_000_000) : (wait_dumps += 1) {
+        while (wait_dumps < 100_000_000) : (wait_dumps += 1) {
             asm volatile ("nop");
         }
         // **oracle 实验：IDF 本体的 `esp_phy_enable(PHY_MODEM_BT=2)`**
