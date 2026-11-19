@@ -25234,7 +25234,7 @@ README:12869 早已给出方向（"oracle 同板可访问 ⇒ 差异在 boot 层
 
 | # | 抓手 | 依据 |
 | --- | --- | --- |
-| 1 | **`esp_phy_load_cal_and_init` 需要 NVS**：它从 "phy" 分区读标定数据，裸机无 NVS ⇒ 挂死/异常。提供假 NVS 分区或 stub `esp_partition_read` 返回默认标定 | IDF `esp_phy_enable` 源码路径 |
+| 1 | ~~`esp_phy_load_cal_and_init` 需要 NVS~~ **不成立**：`link/phy_stubs.c` 故意让 NVS 返回 NOT_FOUND ⇒ IDF 走 `PHY_RF_CAL_FULL` 全量标定（128B init_data 旁路 + 1904B 标定缓冲已备）。**挂点就是 vendor FE 轮询本身**（`0x2f828a78`，busy 寄存器 `0x2010D800` 值跨运行变化 = 活的硬件状态）| 已核 `link/phy_stubs.c:12-20` |
 | 2 | pmu_init 后 flash 写静默失败的机制 | 对照 0x187000（ISR 成功）vs 0x186000（主流程失败）|
 | 3 | 双初始化叠加：IDF `esp_phy_enable` + 我们手写 `phyDomainEnable`/`register_chipv7_phy` —— oracle 构建应**用 IDF 序列取代**手写，而不是叠加 | 干净 oracle 原则 |
 | 4 | 物理重插 USB（POWERON 串口判别，读归档错误输出） | 一直待办 |
