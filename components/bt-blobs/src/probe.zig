@@ -582,8 +582,7 @@ pub fn run() noreturn {
     osal.logPublic("bt probe: sendReset rc={d}", .{rc});
 
     var round: u32 = 0;
-    while (round < 200) : (round += 1) {
-        if (round % 20 == 0) osal.logPublic("bt task round {d}", .{round});
+    while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         _ = osal.serviceCallouts(osal.timeGet());
         if (transport.stats().evt_count > 0) {
@@ -591,7 +590,9 @@ pub fn run() noreturn {
             halt();
         }
     }
-    osal.logPublic("bt probe: no EVT after {d} rounds (evt_count=0)", .{round});
+    osal.logPublic("bt probe: no EVT after {d} rounds (evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d})", .{
+        round, transport.stats().evt_count, transport.stats().cmds_sent, transport.stats().btdm_tx, transport.stats().cmd_alloc_null, @import("board").hw.rw_drops,
+    });
     halt();
 }
 
