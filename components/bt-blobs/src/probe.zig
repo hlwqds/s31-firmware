@@ -573,6 +573,31 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18B000, &pb, @intCast(@sizeOf(@TypeOf(pb))));
         flashStage(72);
+        // **逐位探测 CSR 0x7a0**（解码 Espressif tdata1 的真实布局）：
+        // 每位：写 (读|bit) → 读回 → 记录是否保留。结果 8 字（位图）+ 32 字（原始回读）
+        // 落 0x18F000（pre-pmu 窗口）。若 CSR 写有副作用，数据已先行落盘。
+        {
+            var rb_bits: [32]u32 = @splat(0);
+            var keep: u32 = 0; // 位图：bit b = 1 ⇒ 写该位后回读含该位（可写）
+            var bp: u32 = 0;
+            while (bp < 32) : (bp += 1) {
+                const bit: u32 = @as(u32, 1) << @intCast(bp);
+                var cur: u32 = undefined;
+                asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (cur));
+                const wv: u32 = cur | bit;
+                asm volatile ("csrw 0x7a0, %[v]" : : [v] "r" (wv));
+                asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (cur));
+                rb_bits[bp] = cur;
+                if ((cur & bit) != 0) keep |= bit;
+            }
+            // 恢复：写回探测前的值（或已知安全值 0x0）
+            var pv: [10]u32 = @splat(0);
+            pv[0] = 0xADC0_FEEC;
+            pv[1] = keep; // 可写位图
+            for (0..32) |k| pv[2 + k] = rb_bits[k]; // 每位探测的回读（截断到 30 位）
+            _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
+            _ = esp_rom_spiflash_write(0x18F000, &pv, 32);
+        }
         // **干净触发器验证**（只碰已证可读的 CSR；pre-pmu 窗口 flash 可靠）：
         // tinfo 回读；写 tdata1=0x4C → 回读；写 tdata2=0x2f828a78 → 回读；
         // tcontrol(0x7a3)=0x88 写 → 回读（此前读 0 无陷阱）；tselect 回读。
