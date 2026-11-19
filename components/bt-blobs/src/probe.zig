@@ -554,6 +554,14 @@ pub fn run() noreturn {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
     }
+    // **读回上次运行留下的现场**（不依赖 UART 的那条通道）。
+    {
+        const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
+        osal.logPublic("bt advtrace: prev_nmi={d} prev_mepc=0x{x:0>8} prev_pending_clic={d}", .{
+            tr[0], tr[1], tr[2],
+        });
+        tr[0] = 0;
+    }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
     // **解除 dump 钩子**：`dumpAtPend` 挂在 `dump_hook` 上，而它在**每次** `mutex_pend`
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
@@ -746,3 +754,5 @@ fn halt() noreturn {
         asm volatile ("" ::: .{ .memory = true });
     }
 }
+
+extern var _adv_trace_start: [16]u32;

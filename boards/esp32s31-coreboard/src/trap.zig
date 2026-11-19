@@ -193,6 +193,8 @@ comptime {
     @export(&trap_stack_buf_storage, .{ .name = "trap_stack_buf" });
 }
 
+extern var _adv_trace_start: [16]u32;
+
 pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
     if ((cause & 0x8000_0000) != 0) {
@@ -424,6 +426,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 第 1000 次 ≈ 2 s（周期 2 ms）。若长窗口里连这一行都没有
             // ⇒ NMI 根本没在跑（例如 controller 关了中断）⇒ "饿死"的原因要另找。
             nmi_count +%= 1;
+            // **跨复位追踪**：NMI 在卡住时仍在运行 ⇒ 把"最后一次中断时的现场"写进
+            // `.adv_trace`（NOLOAD，复位不清零）。下次上电读回即可知道卡在哪。
+            {
+                const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
+                tr[0] = nmi_count;
+                tr[1] = @truncate(frame.mepc);
+                tr[2] = @truncate(hw.findPendingClicInput() orelse 0xFFFF_FFFF);
+                tr[3] = @truncate(@as(usize, @bitCast(@as(isize, 0))));
+            }
             // 每 ~500 次打一行，**带上 `frame.mepc`** —— 饿死时每次中断都落在
             // blob 的常驻循环里 ⇒ 这些 PC 的分布就是"卡在哪"的直接答案。
             // 注意：input==25 的分支**不**走 `recordPc`（第 442 行显式排除），

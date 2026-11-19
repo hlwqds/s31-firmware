@@ -191,7 +191,8 @@ SECTIONS
      * 这两个段是 NOLOAD 但**占用真实地址**（32 KiB + 4 KiB），落在 `_bss_end` 之后。
      * 若 `_heap_start == _bss_end`，allocator 会覆盖归档自己的全局对象
      * （锚点槽/事件队列/链表头都在 .btdm_bss 内）—— 本会话已因此出现过多例"不可解释"现象。 */
-    _heap_start = _data_end_btdm;   /* 校准段在三段之内，不改变 _heap_start */
+    /* 校准段在三段之内；`.adv_trace` 在其后 ⇒ 堆从它之后开始（64 B 代价）*/
+    _heap_start = _adv_trace_end;
     _heap_end = _stack_bottom;
 
     /* ---------------------------------------------------------------------
@@ -236,6 +237,18 @@ SECTIONS
         . = . + 0x1000;   /* 4 KiB：减到 2 KiB 只让 free 涨 128 B（归档会吃光给它的空间）*/
         _data_end_btdm = .;
         _data_start_btdm_rom = _data_start_btdm;
+    } > sram
+
+    /* **跨复位的阶段追踪槽**（64 B，NOLOAD ⇒ `_start` 不清零）。
+     * ⚠ **必须放在 `.btdm_data` 之后**，并让 `_heap_start` 指向它之后 ——
+     * 上一次放在 `_heap_start` 原地，结果槽位与堆起始重叠，会被分配器当空闲内存发出。
+     * 用途：由 **NMI** 写入阶段号（卡住时 NMI 仍在跑），复位后读回，
+     * 从而在**完全不依赖 UART** 的前提下知道停在哪一步。 */
+    .adv_trace (NOLOAD) : ALIGN(16)
+    {
+        _adv_trace_start = .;
+        . = . + 0x40;   /* 64 B = 16 个 u32 */
+        _adv_trace_end = .;
     } > sram
 
 

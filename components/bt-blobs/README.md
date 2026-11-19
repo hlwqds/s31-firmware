@@ -22952,3 +22952,58 @@ ROM printf 自旋、per-pend dump、日志洪水（含 shim 上限降到 20）�
 | step 20 | ✅ **稳定**（8 次上电全过）|
 | 三道观测防线 | ✅ 产物断言 / 读回校验（双向验证）/ 日志截断可见化 |
 | **LE 广播** | ❌ **未解（5 个假设已排除；需 UART 外观测）** |
+
+## 🔧 已就位：跨复位追踪槽 `.adv_trace`（NMI 写入）
+
+### 放置（这次是对的）
+
+```ld
+/* s31.ld：在 .btdm_data 之后 */
+.adv_trace (NOLOAD) : ALIGN(16) { _adv_trace_start = .; . = . + 0x40; _adv_trace_end = .; } > sram
+_heap_start = _adv_trace_end;   /* ← 关键：堆从它之后开始 */
+```
+
+实测地址（**不再重叠**）：
+
+```text
+_data_end_btdm   = 2f022940
+_adv_trace_start = 2f022940
+_adv_trace_end   = 2f022980
+_heap_start      = 2f022980     ← 在 trace 之后 ✓
+```
+
+⇒ 代价：arena 少 64 B（376 KiB → 376 KiB - 64）。
+
+### 谁写入
+
+**NMI 处理**（`input == 25`）每 tick 写：
+
+| 槽 | 内容 |
+| --- | --- |
+| `[0]` | `nmi_count` |
+| `[1]` | `frame.mepc`（被中断的 PC）|
+| `[2]` | `findPendingClicInput()`（哪个 CLIC 输入处于 pending）|
+
+⇒ **卡住时 NMI 仍在运行** ⇒ 这些数据一定是最新的。
+
+### 谁读出
+
+开机最早处（`init ok` 之前）打印：
+
+```text
+bt advtrace: prev_nmi=... prev_mepc=0x... prev_pending_clic=...
+```
+
+⚠ **这一行本身可能被 FIFO 丢弃**（与 `init ok` 同因）⇒
+若看不到，说明**读回通道**同样不可靠，需改成更早打印或走 GPIO。
+
+### 因此当前状态
+
+| 项 | 状态 |
+| --- | --- |
+| 追踪槽放置 | ✅ **正确**（已验证不重叠）|
+| NMI 写入 | ✅ 已接线 |
+| 开机读回 | ⚠️ **已实现，但那次运行没看到那行**（可能被丢）|
+
+⇒ **下一步**：把这个读回挪到**比 `init ok` 更早**的位置（`main` 里第一件事），
+或直接接到 GPIO —— UART 在这条路径上已被证明不可靠。
