@@ -26362,3 +26362,18 @@ esp_rom/sha/ecc/event/uart/GPIO/efuse/NVS/esp_libc/rtos 时间...）。
    加触发器观察点 + LP 累积（不需要裸机探针——官方栈自带 FreeRTOS/heap/log）
 2. 目标：官方栈跑通广播后，用仪器找到我们裸机版缺的那一步
 3. 或：用官方栈的 sdkconfig/log 与我们逐项对拍（不需要上板）
+
+### 会话最终收口（2026-11-20 深夜）
+
+| 问题 | 结论 |
+| --- | --- |
+| bb_v2_init_cmplx 等待谁？ | `[0x2f07f99c]` 的函数指针（通过 `c.beqz` 自旋 + `c.jalr` 调用）|
+| 谁该填它？ | blob 运行时的某个 init 函数（不在 blob.bin 静态数据中）|
+| 为什么没填？ | 我们的 bare-metal bringup 缺少某个 esp-idf 系统初始化步骤 |
+| esp_ble_register_bb_funcs 做什么？ | 仅将 `.LANCHOR0` 指针写入 `r_sym_ble_GCc06GM`（一个全局变量赋值）|
+| esp_wifi_init_internal 路线？ | 需要 esp-idf 全系统栈（288+ 符号），裸机不可行 |
+| 官方 station 为什么行？ | esp-idf 全栈自带 FreeRTOS/heap/log/NVS，692ms 通过 FE 环 |
+
+**下一会话主线**：官方 esp-idf BT 示例（非 station——需要 BT_ENABLED=y 的工程）
++ 我们的触发器/LP 仪器 → 观察官方栈的 bb_v2_init_cmplx 调用路径中
+谁先填 [0x2f07f99c] → 反推我们裸机 bringup 缺的那一步。
