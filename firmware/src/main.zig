@@ -262,3 +262,7 @@ fn stageBoot(which: []const u8) noreturn {
     }
     board.hw.reset();
 }
+
+// 跨复位追踪槽的尝试已移除：`adv_trace[8]` 在这个 Zig 版本下仍被编成 offset 0
+// （反汇编只出现 `sw zero, -1728(a0)`，`-1696(` 无 store），
+// 说明数组索引被折叠。要重做必须先用反汇编确认 `-1696(` 出现。

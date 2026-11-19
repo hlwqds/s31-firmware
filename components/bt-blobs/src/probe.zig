@@ -554,29 +554,18 @@ pub fn run() noreturn {
         osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
     }
-    // **读回上次运行留下的现场**（不依赖 UART 的那条通道）。
-    {
-        const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
-        osal.logPublic("bt advtrace: prev_nmi={d} prev_mepc=0x{x:0>8} prev_pending_clic={d}", .{
-            tr[0], tr[1], tr[2],
-        });
-        tr[0] = 0;
-    }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
     // **解除 dump 钩子**：`dumpAtPend` 挂在 `dump_hook` 上，而它在**每次** `mutex_pend`
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
     // bringup 已过观测窗口，这里解除，让运行时路径零开销。
-    stg(10); // init 之后、enable 之前
     osal.dump_hook = null;
     osal.logPublic("bt probe: dump_hook disarmed", .{});
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 
     // 3) enable 链（6 步）
-    stg(11); // 即将调用 enable()
     rc = bringup.enable();
-    stg(12); // enable() 已返回
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
@@ -620,29 +609,7 @@ pub fn run() noreturn {
     // **LE 广播：四次假设全部被推翻，暂停尝试（见 README「LE 四次误判」）。**
     // 已排除：① ROM printf 自旋 ② per-pend dump 饿死 ③ 日志洪水 ④ 静音后仍卡。
     // 结论：这是**确定性**的卡住，成因未定；下一步需要**不依赖 UART** 的观测。
-    // **LE 广播：暂停**。五次假设全部被推翻（见 README「LE 五次误判」）：
-    // ① ROM printf 自旋 ② per-pend dump ③ 日志洪水 ④ 静音 ⑤ 上限降到 20。
-    // 且**烧录已校验**（flash.sh verify-flash 双向验证过）⇒ 不是镜像问题。
-    // ⇒ 这是**真实且确定性**的卡住，成因未定。
-    // **LE 三连 + 阶段号**：每条命令前把阶段写进 `.adv_trace`（NOLOAD，跨复位）。
-    // 卡住 → 复位 → `main()` 第一条打印 `T <stage> <pc>` ⇒ **不依赖 bringup 的日志**。
-    {
-        const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
-        var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
-        tr[8] = 1; // 即将发 0x2006（**不用 tr[0]**：那是 NMI 的计数器）
-        const r6 = transport.sendCmd(0x2006, &ap);
-        tr[8] = 2;
-        var ad: [32]u8 = @splat(0);
-        ad[0] = 3;
-        ad[1] = 2;
-        ad[2] = 0x06;
-        const r8 = transport.sendCmd(0x2008, &ad);
-        tr[8] = 3;
-        var ae: [1]u8 = .{1};
-        const ra2 = transport.sendCmd(0x200A, &ae);
-        tr[8] = 4;
-        osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
-    }
+    osal.logPublic("bt probe: LE adv PAUSED (4 hypotheses eliminated, needs uart-free probe)", .{});
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
@@ -774,13 +741,4 @@ fn halt() noreturn {
         }
         asm volatile ("" ::: .{ .memory = true });
     }
-}
-
-extern var _adv_trace_start: [16]u32;
-
-/// 写跨复位阶段号（`tr[8]`）。**不依赖 UART**。
-fn stg(n: u32) void {
-    if (@import("builtin").target.os.tag != .freestanding) return;
-    const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
-    tr[8] = n;
 }
