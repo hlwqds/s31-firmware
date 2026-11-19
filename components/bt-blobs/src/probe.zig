@@ -624,7 +624,10 @@ pub fn run() noreturn {
         // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
         // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
         flashStageExtra(22, (@as(*volatile u32, @ptrFromInt(0x2010_B000))).*, (@as(*volatile u32, @ptrFromInt(0x2010_B004))).*);
-        var ae: [1]u8 = .{0}; // **控制实验**：Enable=0（停止广播）
+        // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
+        // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
+        // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
+        var ae: [1]u8 = .{1};
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
