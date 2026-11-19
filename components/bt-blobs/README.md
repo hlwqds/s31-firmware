@@ -26127,3 +26127,12 @@ bb_v2_init 的回调表问题（0x2f07f99c 无人写）是更后面的第二堵�
 BT 线 = 回调注册缺失（找注册者/补注册）。步骤号映射：1=init-ok 2=enable-ok
 3=reset 4/5=0x1001 6/7=0x0C03 8/9=0x1009 10/11=0x2006 前后（注：11=M00b 在
 0x2006 之前的 esp_phy_enable 内死亡；M00e=phy 返回=14 从未到达）。
+
+## 下一会话入口补充（2026-11-20 尾二）
+
+vendor oracle 的"官方镜像"路线实测受阻：`/home/huanglin/esp/eh_host_s31/build`
+（esp-hosted MCU-host 工程）app 从未链接成功 —— ninja 补完时撞
+`esp_wifi_enable_tx_statistics` 双定义（esp_wifi_remote_glue 内部冲突）。
+修好该工程链接（或改用真正的 esp-idf BLE 示例工程）之后，oracle 对拍才能开跑。
+python 环境 shim：`~/.espressif/python_env/idf6.1_py3.14_env/bin/python` →
+ha-venv 包装脚本（pyparsing/kconfiglib 已补）。
