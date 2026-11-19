@@ -195,6 +195,18 @@ comptime {
 
 pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
+    // **RISC-V debug trigger 断点**（mcause=3，同步异常，不受 MIE 屏蔽）：
+    // 用途：vendor 在关中断段的 FE 轮询（0x2f828a78 一带）——普通采样器瞎，
+    // 硬件触发器照样命中。首次命中：记录 PC 并**关掉触发器**（写 tdata1=0）
+    // 让执行继续（不记录会无限重触发）。
+    if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 3) {
+        // **断点异常**（debug trigger 命中）：记录 PC 后禁用触发器再继续，
+        // 否则同一指令无限重触发。
+        if (frame.mepc != 0) recordPc(frame.mepc);
+        asm volatile ("li t1, 1");
+        asm volatile ("csrw 0x7a5, t1");   // tselect = 1
+        asm volatile ("csrw 0x7a0, zero"); // tdata1 = 0 ⇒ 触发器禁用
+    }
     if ((cause & 0x8000_0000) != 0) {
         // 数组只存前 `irq_samples.len` 个（判读用）；**打印独立限长**——之前把打印放在
         // `irq_count < irq_samples.len`（16）里面，于是"16 条之后没输出"被误读成"中断停了"，

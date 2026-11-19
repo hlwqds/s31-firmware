@@ -695,6 +695,16 @@ pub fn run() noreturn {
             const old_c = nmi_reg.*;
             nmi_reg.* = (old_c & 0x107) | (1 << 3); // 保留 bit8(IE)+低3位，置 nmies(bit3)
         }
+        // **RISC-V debug trigger**：地址匹配 0x2f828a78（vendor FE 轮询环内的指令）。
+        // 断点异常是同步异常，不受 MIE 屏蔽 ⇒ 能看见 vendor 关中断段的自旋。
+        // 首次命中时 trap 处理器记录 PC 并自动禁用触发器（防无限重触发）。
+        asm volatile ("li t1, 1");
+        asm volatile ("csrw 0x7a5, t1"); // tselect = 1
+        // tdata1: type=2(mcontrol) << 28 | m-mode(bit3) | exec(bit0)，action=0(断点异常)，match=精确
+        asm volatile ("li t0, 0x2000000b");
+        asm volatile ("csrw 0x7a0, t0"); // tdata1
+        asm volatile ("li t0, 0x2f828a78");
+        asm volatile ("csrw 0x7a1, t0"); // tdata2 = 目标地址
         // **等采样器的 ISR dump 完成**（72 次采样触发一次性落盘 0x187000）。
         // 否则 flashStage(64) 的擦写会与 ISR dump **撞车**（ROM spiflash 不可重入）
         // ⇒ marker 写静默失败（这正是 73 之后 64 不落地的机制）。

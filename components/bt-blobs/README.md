@@ -25437,3 +25437,24 @@ vendor FE 自旋需 **NMI 采样**才能定位；根因 = 官方栈启动深处�
 | PC 环/回读扇区 | 0x187000 / 0x188000（已验证可靠）|
 | 探测/日志扇区 | 0x18A-18E |
 | esptool | **5.4.0**（5.6.0 崩溃）|
+
+## ⚠ debug trigger 实验：未分辨的两假设（诚实的会话终点）
+
+| 项 | 状态 |
+| --- | --- |
+| mcontrol 触发器（瞄准 `0x2f828a78`）| 代码已落地（tselect=1、tdata1=`0x2000000b`、tdata2=目标地址）|
+| PC 环本轮读数 | n=72、PC=0x400695ca（probe.run 内）、**无 0x2f828a78** |
+| **假设 A：触发器未生效** | 核心（或编码）不支持该 trigger 类型 —— **未验证**：需读 `tinfo`(0x7a4) 与 `tdata1` 回读确认 type 字段是否保持 |
+| **假设 B：流程未走到 vendor 轮询** | 本构建 pmu_init 提前后，wait 循环（`pcSampleCount < 80`）可能永转 ⇒ `esp_phy_enable` 根本没被调用 ⇒ 触发器自然不命中 —— **未验证**：需 wait 上限放宽或流程分步标记 |
+
+⇒ **两个假设都未排除，本会话到此为止**（超出剩余预算）。下一会话先分辨 A/B（一个构建：wait 上限放宽 + tdata1 回读 + 分步 stage），再谈定位。
+
+### 顺手落地（已提交）
+
+| 项 | 状态 |
+| --- | --- |
+| `rom_gpio_get_input_level` / `PMU` / `EFUSE` PROVIDE | ✅（WITH_PHY 链接需要）|
+| build-probe.sh 链入 `pmu_init.c.obj` / `pmu_param.c.obj` | ✅ |
+| flashStage journal（0x18E000）+ rc 检查 | ✅ |
+| marker 扇区迁至 `0x185000` | ✅ |
+| 断点异常的 trap 分发（mcause=3：记录 mepc + 自动禁用触发器）| ✅ |
