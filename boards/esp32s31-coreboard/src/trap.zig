@@ -484,6 +484,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }
             // 每 256 次（≈0.5 s）打一行：**卡在 init 内部时只有 ISR 还能说话**，
             // 这一行直接指出死等发生在哪个地址。
+            // **一次性落盘**：采够 `pc_dump_at` 个（≈144 ms @2 ms）后把环写进 flash。
+            // 位置在 resetPcs() 之后 ⇒ 环里全是"挂住期间"的 PC。
+            if (!pc_dump_done and pc_ring_n >= pc_dump_at) {
+                pc_dump_done = true;
+                if (on_pc_ready) |f| f();
+            }
             if (!sample_quiet and pc_ring_n % 256 == 0) {
                 // 带上 s0：反汇编里那个轮询循环的 `s0` 就是"要读哪个寄存器"的实参，
                 // 靠它才能算出真正的轮询地址（`a0` 只是被掩码后的数据）。
@@ -835,6 +841,12 @@ pub var nmi_count: u32 = 0;
 
 /// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
 pub var extra_dump: ?*const fn () void = null;
+
+/// **一次性 PC 环落盘钩子**：由 probe 侧注册。ISR 采到第 `pc_dump_at` 次时调用**一次**，
+/// 之后不再调用（flash 同址只能写一次，重复写不会更新 ⇒ 必须只调一次）。
+pub var on_pc_ready: ?*const fn () void = null;
+pub var pc_dump_at: u32 = 72;
+var pc_dump_done: bool = false;
 
 /// 在指定 tick 处**故意 panic**，把计数器与采样经 panic 路径一次性导出
 /// （UART 平时被自身日志灌满，只有 panic 时刻是清空的）。
