@@ -26198,3 +26198,22 @@ init_probe.zig 的实验史：pp 泵活锁、pp_task_hdl 被 blob 清零等）�
 bare esp_phy_enable 的首次使能分支（common_clock/module_enable/load_cal）
 已在已链接源对象里 —— 自旋在 libphy 归档 register_chipv7_phy 内部，
 缺口 = WiFi 上下文（A 或 B 供给）。
+
+### 实现级映射表（osi_impl → components/osal，2026-11-20 施工图）
+
+移植 = 把 osi_impl.zig 的 Queue/Semphr/task 壳函数改接到 components/osal 的
+**Slot 基元 + sched**（BT 侧 HCI 全通的同套已验证机器，osal.zig 1919 行 + sched.zig 322 行）：
+
+| osi_impl 需求 | components/osal 提供 |
+| --- | --- |
+| Semphr.take/give | `osal.semInit/semPend/semRelease`（Slot 基，超时语义已验证）|
+| Queue.send/recv/sendFront | `osal.eventqPut/eventqGet/eventqPutToFront`（Slot 基事件队列）|
+| mutex pend/release | `osal.mutexInit/mutexPend/mutexRelease` |
+| event group / ISR 事件 | `osal.eventInit/eventq*`（带 fn 回调的事件槽）|
+| task create（ppTask！） | `sched.taskCreate`（**已证能跑 blob 任务**：r_btdm/HCI 全通）|
+| 临界区/time | `osal.hwEnterCritical/timeGet` |
+| malloc/free | `mempool_abi`（bt-blobs 已有）|
+
+施工要点：osi_impl 的 shell*（C-ABI 壳）签名不变，函数体改调 osal；
+`event_bus.zig`（自旋源）**不移植**——它的 queue_recv forever 活锁就是 wifi-blobs 的墙。
+每个 shell 改完跑 `zig fmt` + 主机 `zig build test`（host_tests 已有 osi 用例）。
