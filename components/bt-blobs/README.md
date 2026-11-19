@@ -17629,3 +17629,65 @@ step 18 r_conn_stack_enable rc=181935
 | **因仪器/自证而撤回** | 7 |
 | 撤回总数 | 99 |
 | 自我纠正 | 241 |
+
+## 🔎 `rc` **两次运行不同** ⇒ 不是状态码，是残留数据
+
+### 两次运行（格式化前后，代码等价）
+
+```text
+step 18 r_conn_stack_enable rc=**181935**   (0x2C6C7)
+step 18 r_conn_stack_enable rc=**181941**   (0x2C6F5)
+```
+
+⇒ **真正的错误码不会随运行变化。**
+
+⇒ 这与本会话已确认的**同一类问题**一致：**未初始化的返回值 / 残留数据字**。
+
+### 与 IDF 的对照（顺序本身是对的）
+
+IDF `components/bt/porting_btdm/controller/ble/src/ble.c`：
+
+```c
+base_stack_enable();                    // :1515
+#if DEFAULT_BT_LE_MAX_CONNECTIONS
+    conn_stack_enable();                // :1521
+#endif
+...
+gapFinder_stack_enable();               // :1544
+```
+
+| 事实 | 结论 |
+| --- | --- |
+| 我们是 step 17 → 18 | ✅ **顺序与 IDF 一致** |
+| `conn_stack_enable` 在 `#if DEFAULT_BT_LE_MAX_CONNECTIONS` 内 | ⇒ 需核对配置值 |
+| 之后还有 `gapFinder_stack_enable` | ⇒ 我们的步骤表里可能缺这一步 |
+
+### 因此 `rc` 的两种可能
+
+| # | 可能 | 判据 |
+| --- | --- | --- |
+| 1 | **blob 内部函数没写返回值**，我们读的是 `a0` 残留 | `rc` 每次变 ⇒ **倾向于这一条** |
+| 2 | 配置不匹配（`DEFAULT_BT_LE_MAX_CONNECTIONS`）| 错误码应稳定 |
+
+⇒ **优先查第 1 条**：`r_conn_stack_enable` 的返回约定 —— 它是否真的设 `a0`。
+
+### 本会话门禁结果（已补跑）
+
+| 门禁 | 结果 |
+| --- | --- |
+| `zig fmt --check boards/ components/` | ✅ **通过**（7 个文件已格式化；其中 3 个是本会话之前就未格式化的）|
+| `sh scripts/check-host.sh` | 4 PASS / **1 FAIL（`firmware`）** |
+| `firmware` 的失败是否为本会话引入 | ❌ **不是** —— stash 到基线后同样 **54 个错误**（`fence` mnemonic、`board` 模块：host 测试天然编不过目标相关代码）|
+
+## 本会话最终总计（最终锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因 1（四项时钟配置）** | ✅ 已验证 |
+| **根因 2（任务栈未初始化）** | ✅ 已验证 |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
+| **当前状态** | `INITED` + enable step 18，**无 fault** |
+| **新观察** | `rc` 每次变 ⇒ 疑似未初始化返回值 |
+| **因仪器/自证而撤回** | 7 |
+| 撤回总数 | 99 |
+| 自我纠正 | 242 |
