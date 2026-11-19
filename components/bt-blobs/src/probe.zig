@@ -585,7 +585,10 @@ pub fn run() noreturn {
     // `evt=2` 且回包 opcode 为 `01 10` ⇒ 命令被逐条处理（`0000` 是 init 遗留事件）；
     // 仍 `evt=1` ⇒ 我们抓到的那条是 blob 自己的 init 事件，命令未被消费。
     rc = transport.sendCmdViaHs(0x1001, &.{});
-    osal.logPublic("bt probe: sendReadVersion rc={d}", .{rc});
+    osal.logPublic("bt probe: B(hs) sendReadVersion rc={d} stats cmds={d} evt={d}", .{ rc, transport.stats().cmds_sent, transport.stats().evt_count });
+    // **A 路径对照**：`sendCmd` 走 `r_btdm_hci_trans_rx`，前置要求 status == ENABLED。
+    const a_rc = transport.sendCmd(0x1001, &.{});
+    osal.logPublic("bt probe: A(rx) sendReadVersion rc={d} stats cmds={d} evt={d}", .{ a_rc, transport.stats().cmds_sent, transport.stats().evt_count });
 
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
