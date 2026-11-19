@@ -1074,7 +1074,7 @@ build/esp-idf/esp_hw_support/.../periph_ctrl.c.obj
 | --- | --- |
 | `phy_get_romfunc_addr()` | ✅ 调用后 `g_phyFuns: 0x0 → 0x2f07f944` |
 | PHY 初始化表 | ✅ **128 字节**（`esp_phy_init_data_t`），从 IDF 的 ELF `.rodata` 抠出（`nm` 确认 `size=0x80`） |
-| `register_chipv7_phy` | ✅ 已在镜像（`0x40061c82`），签名 `(init_data, cal_data, mode)` |
+| `register_chipv7_phy` | ✅ 已在镜像（**`0x40061c56`**，`T`），签名 `(init_data, cal_data, mode)` |
 | `esp_phy_calibration_data_t` | ✅ **1904 B**（version[4] + mac[6] + opaque[1894]） |
 | 校准模式 | ✅ `PHY_RF_CAL_FULL = 2` |
 | NVS | ✅ **不需要**：`esp_phy_load_cal_data_from_nvs` 失败时 IDF 自带 `PHY_RF_CAL_FULL` fallback |
