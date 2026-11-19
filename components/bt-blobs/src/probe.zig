@@ -621,7 +621,9 @@ pub fn run() noreturn {
         ad[1] = 2;
         ad[2] = 0x06;
         const r8 = transport.sendCmd(0x2008, &ad);
-        flashStage(22);
+        // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
+        // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
+        flashStageExtra(22, (@as(*volatile u32, @ptrFromInt(0x2010_B000))).*, (@as(*volatile u32, @ptrFromInt(0x2010_B004))).*);
         var ae: [1]u8 = .{1};
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
@@ -801,4 +803,21 @@ fn flashStage(n: u32) void {
         var c: [1]u32 = .{(@as(u32, st.btdm_tx) << 16) | (st.evt_count & 0xFFFF)};
         _ = esp_rom_spiflash_write(flash_mark_off + 4, &c, 4);
     }
+}
+
+/// 同 `flashStage`，但额外把两个观察值写进标记扇区的第 3/4 个字。
+fn flashStageExtra(n: u32, a: u32, b: u32) void {
+    flashStage(n);
+    if (@import("builtin").target.os.tag != .freestanding) return;
+    const prev = asm volatile ("csrrci %[v], mstatus, 8"
+        : [v] "=r" (-> usize),
+    );
+    defer _ = asm volatile ("csrw mstatus, %[v]"
+        :
+        : [v] "r" (prev),
+        : .{ .memory = true });
+    var w1: [1]u32 = .{a};
+    var w2: [1]u32 = .{b};
+    _ = esp_rom_spiflash_write(flash_mark_off + 8, &w1, 4);
+    _ = esp_rom_spiflash_write(flash_mark_off + 12, &w2, 4);
 }
