@@ -782,6 +782,22 @@ pub fn run() noreturn {
         halt();
     }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
+    // **回调表填充状态 dump**（task_init 之后、enable 之前）：
+    // a4 = *(0x2f07ffe4)（bb_init 等的表基址），dump [a4+0..a4+40] 11 字
+    // ⇒ 哪些表项 task_init 已填、[a4+36] 缺谁填，一次看清。
+    {
+        const tbl_base: u32 = @as(*volatile u32, @ptrFromInt(0x2f07_FFE4)).*;
+        var td: [11]u32 = @splat(0);
+        td[0] = 0xADC0_FEFD;
+        td[1] = tbl_base;
+        if (tbl_base != 0) {
+            for (0..9) |k| {
+                td[2 + k] = @as(*volatile u32, @ptrFromInt(tbl_base + 4 * @as(u32, @intCast(k)))).*;
+            }
+        }
+        _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x188000, &td, 44);
+    }
     // **解除 dump 钩子**：`dumpAtPend` 挂在 `dump_hook` 上，而它在**每次** `mutex_pend`
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
