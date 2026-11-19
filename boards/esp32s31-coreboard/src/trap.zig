@@ -496,10 +496,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             var hits: u32 = 0;
             // 窗口扩到 **1 KB 之下**（[sp-1280, sp-96)）：`lw ra, N(sp)` 可能指向任意深度的调用者帧。
             var off: isize = -1280;
+            const want = [_]usize{ csr_mepc, csr_mepc | 1 };
             while (off < -96) : (off += 4) {
                 const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + off));
                 const v = (@as(*const usize, @ptrFromInt(a))).*;
-                if (v == csr_mepc or v == (csr_mepc | 1)) {
+                if (v == want[0] or v == want[1]) {
                     // `off` 恒为负 ⇒ 必须 bitCast（@intCast 在 ReleaseSmall 下会 panic）
                     if (hits == 0) { found = v; hit_off = @as(usize, @bitCast(off)); }
                     // 把所有命中偏移（绝对值）累加进 diag_d，便于一次看出"有几个、大概在哪"
@@ -508,6 +509,23 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 }
             }
             diag_e = hits;
+
+            // **全内存精确扫描**：DRAM `0x2f000000..0x2f070000` + flash `0x40000020..0x400A0300`。
+            // 匹配 `mepc` 与 `mepc|1` **两种极性**；记第一个命中地址到 diag_j（若栈上已命中则跳过）。
+            if (hits == 0) {
+                var a2: usize = 0x2f00_0000;
+                while (a2 < 0x2f07_0000) : (a2 += 4) {
+                    const v = (@as(*const usize, @ptrFromInt(a2))).*;
+                    if (v == want[0] or v == want[1]) { diag_j = @truncate(a2); hits += 1; break; }
+                }
+                if (hits == 0) {
+                    a2 = 0x4000_0020;
+                    while (a2 < 0x400A_0300) : (a2 += 4) {
+                        const v = (@as(*const usize, @ptrFromInt(a2))).*;
+                        if (v == want[0] or v == want[1]) { diag_j = @truncate(a2); hits += 1; break; }
+                    }
+                }
+            }
             diag_a = @truncate(found);
             diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
             diag_a = @truncate(found);
@@ -554,7 +572,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d} dd={d} dh={d} df=0x{x} dg=0x{x} di=0x{x} dj=0x{x}", .{
             csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
             last_step, last_step_name, diag_a, diag_b, diag_c, diag_d, diag_e,
-            diag_f, diag_g, diag_h, diag_i,
+            diag_f, diag_g, diag_j, diag_i,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
 
@@ -659,6 +677,7 @@ pub var diag_c: u32 = 0;
 pub var diag_d: u32 = 0;
 pub var diag_e: u32 = 0;
 pub var diag_i: u32 = 0;
+pub var diag_j: u32 = 0;
 pub var diag_h: u32 = 0;
 pub var diag_g: u32 = 0;
 pub var diag_f: u32 = 0;

@@ -27,6 +27,17 @@ set -eu
 PORT=${1:-}
 APP=${2:-zig-out/bin/app.bin}
 
+# **产物断言**：拒绝烧录比源码更旧的 app.bin（copy-shell 里 build 而此处用旧产物，
+# 曾导致三次"改了却没生效"的假读数）。可用 FLASH_ALLOW_STALE=1 显式跳过。
+if [ -f "$APP" ] && [ "${FLASH_ALLOW_STALE:-0}" != "1" ]; then
+    NEWER=$(find "$(dirname "$0")/.." -name '*.zig' -newer "$APP" 2>/dev/null | head -1)
+    if [ -n "$NEWER" ]; then
+        echo "flash: 拒绝烧录 —— 产物比源码旧（$NEWER 比 $APP 新）" >&2
+        echo "       先重新构建，或 FLASH_ALLOW_STALE=1 强制。" >&2
+        exit 3
+    fi
+fi
+
 if [ -z "$PORT" ]; then
     echo "用法: sh tools/flash.sh <PORT> [app.bin]" >&2
     exit 2
