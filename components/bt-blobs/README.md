@@ -26485,3 +26485,40 @@ helper 0x2f80e450 轮询条件 **`(0x20501000 & 0xF) == 0`**；FEFa 轮实测自
 已回滚本日的桩写入代码（probe 恢复纯观测），下一步唯一方向：
 **在 esp-idf 全栈里找谁清 [0x20501000] 低 4 位**（pmu/phy/regi2c 路径），
 再移植那一步。裸机侧不再有可单步试的内存写。
+
+> ⚠ **上一段"模拟/RF 同根因"的统一结论已撤回**（同日深夜）：
+> 0x20501000 = `DR_REG_FLASH_SPI1_BASE`（reg_base.h:51），该字 =
+> `SPI1_MEM_C_CMD_REG`。0x6992F 解码：MST_ST[3:0]=0xF（主 FSM 卡非法态）、
+> SLV_ST[7:4]=9（超出文档 0-8！）、bit17 FLASH_PE 与 bit18 USR 卡 1
+> （R/W/SC 自清位卡 1 = 有一条 user+program/erase 操作被触发后**永不完成**）。
+> vendor helper 等的是 **flash 空闲（MST_ST==0）**，不是模拟时序。
+> 官方给了 FSM 复位：CTRL2（0x20501010）bit31 `SYNC_RESET`（WT）。
+> 而且 SPI1 卡死的最大嫌疑是**探针自己 post-enable 的 flash 标记写**：
+> 0x185000/0x186000"写成功不落地"、FEE9 魔数被写坏、post-enable 写截断
+> ——全部同一现象（ROM flash 写与 blob 的 flash 操作相撞）。
+> 处置见下一节看门狗实验。
+
+### SPI1 楔子实验链（同日末三轮）：楔子确认 + 板子进入新 regime，线停
+
+| 轮 | 做法 | 读数 | 判读 |
+| --- | --- | --- | --- |
+| 看门狗（读 SPI1_CMD） | wait 循环每 ~1ms 读一次，持续忙 ~1.2s 则 SYNC_RESET | LP 槽留陈旧垃圾（0xfc5a76cc）、流程死在 wait 内 | **卡死态下 HP 对 SPI1 块读会总线挂死**（~1500 读必撞一次）；hist=11 是上轮指纹 |
+| 盲复位 v1 | wait 过半盲写 CTRL2.SYNC_RESET，LP0x30 写哨兵 | 哨兵未落地，hist 仍 11 | 写疑似同样 stall；LP 0x30-0x38 被外部 agent 持续改写（blob/ROM scratch） |
+| 零 flash 写窗口 + 盲复位 v2 | enable 后 mark/flashStage/ISR dump 全改 LP-only，盲复位改 LP0x400/404 哨兵 | **regime 变了**：boot_n=1（45s 无 lockup 循环）、hist=0、PMU_RF_PWC 读 0（历轮 ffff0000）、ana_mst=0x02411290（bit31 变 0）、b102 后死在 enable() 内 | 对照重跑同镜像完全复现 ⇒ 稳定新态，非一次性 |
+| CTRL2 语义核对 | spi1_mem_c_reg.h | CTRL2 只含 SYNC_RESET 一位 ⇒ 全字写无害 | regime 变化不是写坏配置 |
+
+**已确证的机制链**：
+1. 楔子 = 一条 **user+P/E flash 操作被触发后永不完成**（FLASH_PE/USR 自清位卡 1、
+   MST_ST 卡 0xF 非法态、SLV_ST=9 超出文档枚举）——不是模拟/RF 时序（撤回 d530062 判词）。
+2. 楔死后 **HP 对 SPI1 寄存器块读写全挂死**（读 stall 回 FF / 写疑似 stall）；
+   blob 侧（modem master）仍读到活值 0x6992f ⇒ 两条 APB 路径 asymmetric。
+3. 顶嫌：**post-enable 我们的 ROM flash 写（flashStage/mark/ISR dump）与 blob 自己的
+   flash 操作相撞**（0x185/186000 写成功不落地、FEE9 魔数写坏、post-enable 截断——同一现象）。
+   零 flash 写窗口已实装（bt_window_no_flash 门控 mark.put/flashStage/dumpPcRing/ISR dump）。
+4. 官方 FSM 复位 CTRL2.SYNC_RESET(bit31) 存在但**从 HP 侧投不进去**（卡死态写挂死）。
+
+**当前板态（两轮复现）**：enable() 内挂死、无 lockup-reboot、PMU_RF_PWC 跨复位不再保持。
+**下一步（需人工）**：**给板子彻底断电再上电**（拔插 USB/电源，esptool 复位不算）——
+若 PMU 恢复 ffff0000 持久化、lockup 循环回来，则在零 flash 写窗口下重跑：
+hist 推过 11 ⇒ 楔子全是我们的写（仪器设计错误，已修）；仍 11 ⇒ blob 自己的 flash 读
+发不完成 ⇒ 对拍 bootloader attach 后的 SPI1_CLOCK/CTRL/ADDR 配置。

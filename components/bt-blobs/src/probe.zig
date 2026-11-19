@@ -110,6 +110,12 @@ fn heapEnd() *const anyopaque {
 // ② ISR 每 2 ms 灌 UART ⇒ TX FIFO 打满（恒 128）⇒ 应用日志一行都出不来。
 // 这同时解释了"串口零字节"与"0x200A 挂住"两个症状。
 pub var probe_irqs: bool = false;
+/// **BT 窗口（enable 之后）禁止一切 flash 写**：post-enable 的 ROM flash 写与
+/// blob 自己的 flash 操作相撞会把 SPI1 主 FSM 楔死（MST_ST 卡 0xF、SLV_ST 卡 9、
+/// FLASH_PE/USR 自清位卡 1；此后 HP 对 SPI1 寄存器块的读写全部挂死）。
+/// 置位后：mark.put 只写 LP 槽、flashStage/Extra 空转、dumpPcRing 直接返回、
+/// 采样器 ISR 不再触发 0x187000 dump（pc_dump_at 改大）。深度经 LP hist 跨复位读出。
+pub var bt_window_no_flash: bool = false;
 
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
@@ -744,12 +750,15 @@ pub fn run() noreturn {
             }
             // flash 转写挪到 FEFC 证据块之后（紧跟 flashStage 的写会静默失败）
         }
-        var ab: [10]u32 = @splat(0);
+        var ab: [8]u32 = @splat(0);
         ab[0] = 0xADC0_FEE6;
         ab[1] = rd_.r(0x2070_4184);
         ab[2] = rd_.r(0x2010_F83C);
         ab[3] = rd_.r(0x2070_4014);
         ab[4] = rd_.r(0x2070_4054);
+        ab[5] = (@as(*volatile u32, @ptrFromInt(0x2050_1000))).*; // SPI1_CMD pre-BT 基线
+        ab[6] = (@as(*volatile u32, @ptrFromInt(0x2050_1010))).*; // CTRL2 对照
+        ab[7] = 0; // 保留（b101 标记槽从 0x18C020 起，必须留空）
         _ = esp_rom_spiflash_erase_sector(0x18C000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18C000, &ab, @intCast(@sizeOf(@TypeOf(ab))));
         // **单臂实验**：只写 PMU_RF_PWC（0x20704184 = 0xFFFF0000）一个使能。
@@ -777,13 +786,18 @@ pub fn run() noreturn {
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &base, 16);
     // **LP 逐轮历史转写**（落点在 FEFC 之后 —— 该窗口写可靠）：
-    // {FEFE, boot_n, hist[0..9]} @0x18A000（空闲扇区；0x188000 已被自旋期回读 buf2 占用）。
-    var lrec: [11]u32 = @splat(0);
+    // {FEFE, boot_n, hist[0..9], LP0x400, LP0x404, LP0x30} @0x18A000。
+    // [11]=盲复位写前哨兵(0xADDC0002)、[12]=写后存活(0003)/后半wait走完(0004)、
+    // [13]=blob LP 活动区对照（判 LP 0x30-0x38 是否被外部写）。
+    var lrec: [14]u32 = @splat(0);
     lrec[0] = 0xADC0_FEFE;
     lrec[1] = lp_boot_n;
     for (0..9) |k| lrec[2 + k] = lp_hist[k];
+    lrec[11] = @as(*volatile u32, @ptrFromInt(0x2E00_0400)).*;
+    lrec[12] = @as(*volatile u32, @ptrFromInt(0x2E00_0404)).*;
+    lrec[13] = @as(*volatile u32, @ptrFromInt(0x2E00_0030)).*;
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x18A000, &lrec, 44);
+    _ = esp_rom_spiflash_write(0x18A000, &lrec, 56);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
     asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
@@ -830,6 +844,8 @@ pub fn run() noreturn {
             // **直写 LP 槽**：本轮最深步骤号进 LP（RAM 直写，无 flash 失败问题）
             const slot: *volatile u32 = @ptrFromInt(0x2E00_0004 + 4 * ((lp_boot_n - 1) % 10));
             slot.* = seq;
+            // BT 窗口内零 flash 写（楔子预防），仅 LP 记深度
+            if (bt_window_no_flash) return;
             const pair: [2]u32 = .{ magic, v };
             _ = esp_rom_spiflash_write(0x18C000 + off, &pair, 8);
         }
@@ -861,12 +877,15 @@ pub fn run() noreturn {
     flashStageExtra(11, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // 即将调用 enable()
     mark.put(0x28, 0xADC0B102, @bitCast(rc));
     rc = bringup.enable();
-    mark.put(0x30, 0xADC0B103, @bitCast(rc));
-    flashStageExtra(12, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // enable() 已返回
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
     }
+    // **从此零 flash 写**：post-enable 的 ROM flash 写 = 与 blob 并发 flash 操作
+    // 相撞的楔子源头。标记深度只进 LP 槽（跨复位经 FEFE hist 带出）。
+    bt_window_no_flash = true;
+    board.trap.pc_dump_at = 0xFFFF_FFFF; // 采样器 ISR 不再触发 0x187000 dump
+    mark.put(0x30, 0xADC0B103, @bitCast(rc)); // 此刻起 LP-only
     osal.logPublic("bt probe: enabled (status={d})", .{bringup.getStatus()});
 
     // 4) 真正进任务（只有第一次用 startScheduler）
@@ -924,7 +943,7 @@ pub fn run() noreturn {
         // **采样窗口搬到此处**：esp_phy_enable 若挂，ISR 采 72 个样本后自动落盘 0x187000
         board.trap.resetPcs();
         board.trap.sample_quiet = true;
-        board.trap.pc_dump_at = 72;
+        board.trap.pc_dump_at = 0xFFFF_FFFF; // BT 窗口零 flash 写：环只留 RAM，不落盘
         if (!probe_irqs) {
             probe_irqs = true;
             board.hw.routeT0Interrupt(25);
@@ -942,10 +961,18 @@ pub fn run() noreturn {
         // ⇒ marker 写静默失败（这正是 73 之后 64 不落地的机制）。
         // **定长等待**（~1.6s）：给采样器/触发器时间进入 esp_phy_enable 的挂段。
         // 不依赖 pcSampleCount —— 采样器在 72 样本 dump 后已停（活寄存器即可判读）。
+        // **SPI1 盲复位**：卡死态下 HP 对 SPI1 寄存器块**读写都挂死**（读 stall 回 FF、
+        // 写疑似同样 stall——上一轮写后 LP 哨兵未落地）。本轮判读手段：
+        // LP 槽 0x2E000400/404（远离 blob 的 LP 0x30-0x38 活动区）写前/写后哨兵，
+        // FEFE lrec[11..13] 带出：0x400=写前哨兵、0x404=写后存活 ⇒ 区分"写挂死"vs"写送达"。
+        @as(*volatile u32, @ptrFromInt(0x2E00_0400)).* = 0xADDC_0002; // pre-reset
+        @as(*volatile u32, @ptrFromInt(0x2050_1010)).* = 1 << 31; // CTRL2.SYNC_RESET (WT)
+        @as(*volatile u32, @ptrFromInt(0x2E00_0404)).* = 0xADDC_0003; // post-reset 存活
         var wait_dumps: u32 = 0;
-        while (wait_dumps < 100_000_000) : (wait_dumps += 1) {
+        while (wait_dumps < 50_000_000) : (wait_dumps += 1) {
             asm volatile ("nop");
         }
+        @as(*volatile u32, @ptrFromInt(0x2E00_0404)).* = 0xADDC_0004; // 后半 wait 走完
         // **oracle 实验：IDF 本体的 `esp_phy_enable(PHY_MODEM_BT=2)`**
         // WITH_PHY=1 已把 IDF 的 phy_init.c 链进来（`esp_phy_enable` T 符号已确认）。
         // 它内部含我们手写版没有的完整射频使能段（含 analog/regi2c/PMU 路径）。
@@ -1038,7 +1065,7 @@ pub fn run() noreturn {
         // 那时还是 false ⇒ 只置 true 不会让定时器起来（第一次实测环里是垃圾数据）。
         board.trap.resetPcs();
         board.trap.sample_quiet = true;
-        board.trap.pc_dump_at = 72;
+        board.trap.pc_dump_at = 0xFFFF_FFFF; // BT 窗口零 flash 写：环只留 RAM，不落盘
         if (!probe_irqs) {
             probe_irqs = true;
             board.hw.routeT0Interrupt(25);
@@ -1207,6 +1234,27 @@ extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
 /// `esp_rom_spiflash_write` **不自动擦**（`esp_rom_spiflash.h:257-271`）⇒ 先擦。
 /// 只写一次：flash 同址只能 1→0，重复写不会更新。
 fn dumpPcRing() void {
+    // BT 窗口内零 flash 写（含采样器 ISR 回调路径）——直接返回。
+    if (bt_window_no_flash) return;
+    // **第零步（本轮新增）：SPI1 忙位采样——必须在任何 flash 擦写之前**。
+    // 上一版把三次读放在 FEE0 的擦写之后（µs 级尾随 + ~200ms）仍全 FF；
+    // 这里是 1.6s 等待后的第一个动作，窗口内零 flash 操作：若仍 FF ⇒ 忙不是
+    // 我们的 marker 写造成的，而是 blob 自己在反复发不完成的 flash 读。
+    {
+        var srec: [6]u32 = @splat(0);
+        srec[0] = 0xADC0_FEE8;
+        srec[1] = (@as(*volatile u32, @ptrFromInt(0x2050_1000))).*;
+        {
+            var d1: u32 = 0;
+            while (d1 < 6_250_000) : (d1 += 1) asm volatile ("nop"); // ~100ms 静默
+            srec[2] = (@as(*volatile u32, @ptrFromInt(0x2050_1000))).*;
+        }
+        srec[3] = (@as(*volatile u32, @ptrFromInt(0x2050_1004))).*;
+        srec[4] = (@as(*volatile u32, @ptrFromInt(0x2050_1008))).*;
+        srec[5] = board.trap.pcSampleCount(); // 窗口归属：>0 ⇒ 任务已自旋
+        _ = esp_rom_spiflash_erase_sector(0x18E000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x18E000, &srec, @intCast(@sizeOf(@TypeOf(srec))));
+    }
     // **两扇区分步**：第一步只落 PC 环 + 现场（不碰可疑块，绝对安全）；
     // 第二步才去读 0x20109xxx —— 若那一步把总线读挂，第一步的数据已安全落盘。
     {
@@ -1239,14 +1287,22 @@ fn dumpPcRing() void {
         buf2[11] = (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).*; // ana mst 块时钟（应含 bit28）
         buf2[12] = (@as(*volatile u32, @ptrFromInt(0x2070_4184))).*; // PMU_RF_PWC（RF 电路电源）
         buf2[13] = (@as(*volatile u32, @ptrFromInt(0x1080_1064))).*; // **CLIC[25] 读回**：bit3 nmies、bit8 IE —— 定责 NMI 未投递还是被清
-        // **BT modem clock 门控快照**（modem_clock_module_enable(6/14) 写入的 8+4 门）：
-        // SYSCON clk_conf(0x20109C04)：bit22=etm 25/28/29=modem_sec 30=ble_timer
-        // SYSCON clk_conf1(0x20109C14)：bit7=wifibb_80x1 16=bt_apb 17=btbb 18=btmac
-        // LPCON clk_conf(0x2010F018)：bit1=coex
-        buf2[14] = (@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*; // SYSCON clk_conf
-        buf2[15] = (@as(*volatile u32, @ptrFromInt(0x2010_9C14))).*; // SYSCON clk_conf1
-        buf2[16] = (@as(*volatile u32, @ptrFromInt(0x2010_F018))).*; // LPCON clk_conf
-        buf2[17] = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*; // SYSCON modem_rst_conf
+        // **SPI1 主 FSM 忙位采样**（0x20501000=SPI1_MEM_C_CMD_REG，MST_ST[3:0]/SLV_ST[7:4]）：
+        // 0x2f80e4cc 停点真轮询条件 = (该字 & 0xF)==0（1af128e 解码）。自旋期单点
+        // 实测 0x6992f（MST_ST=0xF、SLV_ST=2 send-cmd）。这里隔 ~100ms 连读三次，
+        // 判别"我们自己的 marker 写导致的瞬时忙"（三读应回 0）vs"FSM 卡死/门控"（恒 F）。
+        buf2[14] = (@as(*volatile u32, @ptrFromInt(0x2050_1000))).*;
+        {
+            var d1: u32 = 0;
+            while (d1 < 6_250_000) : (d1 += 1) asm volatile ("nop"); // ~100ms
+            buf2[15] = (@as(*volatile u32, @ptrFromInt(0x2050_1000))).*;
+        }
+        {
+            var d2: u32 = 0;
+            while (d2 < 6_250_000) : (d2 += 1) asm volatile ("nop"); // 再 ~100ms
+            buf2[16] = (@as(*volatile u32, @ptrFromInt(0x2050_1000))).*;
+        }
+        buf2[17] = (@as(*volatile u32, @ptrFromInt(0x2050_1004))).*; // 相邻寄存器对照
         _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
         _ = esp_rom_spiflash_write(0x188000, &buf2, @intCast(@sizeOf(@TypeOf(buf2))));
     }
@@ -1289,6 +1345,7 @@ const flash_mark_magic: u32 = 0x5A17_0000; // 高 16 位是 magic，低 16 位�
 /// 把阶段号写入 flash 标记槽。**只能在主上下文调用**。
 fn flashStage(n: u32) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
+    if (bt_window_no_flash) return; // BT 窗口零 flash 写（SPI1 楔子预防）
     // ⚠ **必须屏蔽中断**：ROM 的擦/写**不替我们屏蔽** MIE，
     // 而擦写期间 flash 控制器忙 ⇒ 此时进中断可能硬 fault 或写坏扇区，
     // 且症状与"LE 卡住"完全一样。`boot-power-perf/src/flash.zig` 的封装
