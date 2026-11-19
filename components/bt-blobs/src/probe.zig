@@ -764,6 +764,19 @@ const flash_mark_magic: u32 = 0x5A17_0000; // 高 16 位是 magic，低 16 位�
 /// 把阶段号写入 flash 标记槽。**只能在主上下文调用**。
 fn flashStage(n: u32) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
+    // ⚠ **必须屏蔽中断**：ROM 的擦/写**不替我们屏蔽** MIE，
+    // 而擦写期间 flash 控制器忙 ⇒ 此时进中断可能硬 fault 或写坏扇区，
+    // 且症状与"LE 卡住"完全一样。`boot-power-perf/src/flash.zig` 的封装
+    // 正是用 `Critical`（清 mstatus.MIE）做这件事。
+    // ⚠ `erase_sector` 的参数是**扇区号**，不是地址：
+    // 传地址会静默擦到无关位置且返回成功。
+    const prev = asm volatile ("csrrci %[v], mstatus, 8"
+        : [v] "=r" (-> usize),
+    );
+    defer _ = asm volatile ("csrw mstatus, %[v]"
+        :
+        : [v] "r" (prev),
+        : .{ .memory = true });
     _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);
     var w: [1]u32 = .{flash_mark_magic | (n & 0xFFFF)};
     _ = esp_rom_spiflash_write(flash_mark_off, &w, 4);
