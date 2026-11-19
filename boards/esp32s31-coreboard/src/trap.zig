@@ -512,19 +512,27 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 
             // **全内存精确扫描**：DRAM `0x2f000000..0x2f070000` + flash `0x40000020..0x400A0300`。
             // 匹配 `mepc` 与 `mepc|1` **两种极性**；记第一个命中地址到 diag_j（若栈上已命中则跳过）。
+
             if (hits == 0) {
                 var a2: usize = 0x2f00_0000;
-                while (a2 < 0x2f07_0000) : (a2 += 4) {
+                const dram_end: usize = frame.sp - 96;  // 扫到 handler 帧底（含更深的栈帧）
+                while (a2 < dram_end) : (a2 += 4) {
                     const v = (@as(*const usize, @ptrFromInt(a2))).*;
-                    if (v == want[0] or v == want[1]) { diag_j = @truncate(a2); hits += 1; break; }
-                }
-                if (hits == 0) {
-                    a2 = 0x4000_0020;
-                    while (a2 < 0x400A_0300) : (a2 += 4) {
-                        const v = (@as(*const usize, @ptrFromInt(a2))).*;
-                        if (v == want[0] or v == want[1]) { diag_j = @truncate(a2); hits += 1; break; }
+                    if (v == want[0] or v == want[1]) {
+                        if (diag_j == 0) diag_j = @truncate(a2);
+                        diag_k +%= 1;
                     }
                 }
+                diag_l = @truncate(dram_end);
+                a2 = 0x4000_0020;
+                while (a2 < 0x400A_0300) : (a2 += 4) {
+                    const v = (@as(*const usize, @ptrFromInt(a2))).*;
+                    if (v == want[0] or v == want[1]) {
+                        if (diag_j == 0) diag_j = @truncate(a2);
+                        diag_k +%= 1;
+                    }
+                }
+                diag_l = @truncate(@as(usize, 0x400A_0300));
             }
             diag_a = @truncate(found);
             diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
@@ -575,6 +583,47 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             diag_f, diag_g, diag_j, diag_i,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
+
+        // **自验证行**：sj=扫描命中地址，sv=该地址处的字（必须等于 mepc 或 mepc|1，
+        // 否则说明字段接线错误而不是命中）。sn=命中总数，sl=最后扫描到的地址。
+        {
+            var sb2: [420]u8 = undefined;
+            const sj: usize = diag_j;
+            var sv: usize = 0;
+            if (sj >= 0x2f00_0000 and sj < 0x2f09_0000) {
+                sv = (@as(*const usize, @ptrFromInt(sj))).*;
+            } else if (sj >= 0x4000_0020 and sj < 0x400A_0300) {
+                sv = (@as(*const usize, @ptrFromInt(sj))).*;
+            }
+            const sl = std.fmt.bufPrint(&sb2, "SL sj=0x{x:0>8} sv=0x{x:0>8} want=0x{x:0>8} sn={d} sl=0x{x:0>8}", .{
+                sj, sv, csr_mepc, diag_k, diag_l,
+            }) catch "SL (fmt fail)";
+            hw.rawLineBlocking(sl);
+        }
+
+        // **ops 表转储**：0x2f020700..0x2f020780，看多少项是有效指针。
+        {
+            var ob: [400]u8 = undefined;
+            const ol = std.fmt.bufPrint(&ob, "OP 700={x} 704={x} 708={x} 70c={x} 710={x} 714={x} 718={x} 71c={x} 720={x} 724={x} 728={x} 72c={x} 730={x} 734={x} 738={x} 73c={x}", .{
+                (@as(*const usize, @ptrFromInt(0x2f02_0700))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0704))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0708))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_070c))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0710))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0714))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0718))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_071c))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0720))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0724))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0728))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_072c))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0730))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0734))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_0738))).*,
+                (@as(*const usize, @ptrFromInt(0x2f02_073c))).*,
+            }) catch "OP (fmt fail)";
+            hw.rawLineBlocking(ol);
+        }
 
         // **全寄存器转储**（独立行）：找哪个寄存器持有与 ra 相同的 `…e894` 模式。
         {
@@ -678,6 +727,8 @@ pub var diag_d: u32 = 0;
 pub var diag_e: u32 = 0;
 pub var diag_i: u32 = 0;
 pub var diag_j: u32 = 0;
+pub var diag_l: u32 = 0;
+pub var diag_k: u32 = 0;
 pub var diag_h: u32 = 0;
 pub var diag_g: u32 = 0;
 pub var diag_f: u32 = 0;
