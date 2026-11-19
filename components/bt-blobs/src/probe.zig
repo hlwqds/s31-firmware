@@ -624,7 +624,7 @@ pub fn run() noreturn {
         // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
         // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
         flashStageExtra(22, (@as(*volatile u32, @ptrFromInt(0x2010_B000))).*, (@as(*volatile u32, @ptrFromInt(0x2010_B004))).*);
-        var ae: [1]u8 = .{1};
+        var ae: [1]u8 = .{0}; // **控制实验**：Enable=0（停止广播）
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
