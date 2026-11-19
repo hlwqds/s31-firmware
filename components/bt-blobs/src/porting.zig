@@ -260,6 +260,8 @@ pub fn phyDomainEnable() void {
     //    **写-回读自证**：写特征值 → 读回相等才算成功。
     {
         const wclk: usize = 0x2010_9400;
+        // 只置**已定义**的 bit0（`MODEM_WIDGETS_CLK_EN`），别写全 1 ——
+        // 该寄存器其余位保留，写 1 的后果未知（破坏性扫描的教训）。
         wr(wclk, rd(wclk) | (1 << 0));
         // 自证：写一个特征值到 W+0x480，读回比较
         const probe_addr: usize = 0x2010_9880;

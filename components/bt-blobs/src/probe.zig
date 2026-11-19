@@ -627,6 +627,11 @@ pub fn run() noreturn {
         // 试过「0x2005 写随机地址 + own_addr_type=0x01」⇒ marker 仍 `stage=22`
         // （`tx` 从 5 变 6 **只是因为多了一条 0x2005**，不是成功）。
         // ⚠ **判据必须是 `stage == 23`**；只看 `tx` 会把"多发一条命令"误判成"返回了"。
+        // ✅ **已实验判定：自置 bit2 无效**（2026-11-19：`0x201098BC |= 4` 后仍 22/5）。
+        //    我们的写被丢弃或在归档轮询前被清；而同一区域 0x20109400(CLK_EN) 写 1
+        //    能保留 ⇒ "块无时钟"不成立，0x201098BC.bit2 是**硬件状态位**（RF/BB ready）。
+        //    ⇒ 机制最终版：0x200A 写配置+启动选通 → 等 RF/BB ready → 位永不置位
+        //      （射频使能链不完整）→ 超时错误码 3。见 README「最终机制」。
         const r6 = transport.sendCmd(0x2006, &ap);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
         var ad: [32]u8 = @splat(0);
@@ -685,38 +690,11 @@ pub fn run() noreturn {
             board.hw.armT0Interrupt(2000);
             board.hw.enableInterrupts();
         }
-        // **门控扫描**：谁能让 0x20109880 的写"生效"？每个候选使能后写特征值→回读。
-        // 结果落 0x189000（独立扇区）；扫描前后各打阶段号（60/61），
-        // 若扫描本身挂死，marker 停在 60 ⇒ 知道是哪一步干的。
-        flashStage(60);
-        {
-            const target: usize = 0x2010_9880;
-            var res: [8]u32 = @splat(0);
-            res[0] = 0xADC0_FEE2;
-            // ① 基线（当前状态）
-            porting.wr(target, 0x1234_5678);
-            res[1] = porting.rd(target);
-            // ② HP_SYS_CLKRST.clk_en0 = 全 1（0x205871F8）
-            porting.wr(0x2058_71F8, 0xFFFF_FFFF);
-            porting.wr(target, 0x1234_5678);
-            res[2] = porting.rd(target);
-            // ③ HP_SYS_CLKRST.modem_ctrl0 |= 1（0x20587040）
-            porting.wr(0x2058_7040, porting.rd(0x2058_7040) | 1);
-            porting.wr(target, 0x1234_5678);
-            res[3] = porting.rd(target);
-            // ④ MODEM_WIDGETS_CLK_CONF = 全 1（0x20109400）
-            porting.wr(0x2010_9400, 0xFFFF_FFFF);
-            porting.wr(target, 0x1234_5678);
-            res[4] = porting.rd(target);
-            // ⑤ modem_rst_conf **不能乱脉冲**：写 1 = 整个 modem 域进复位且不会自动释放
-            //    （第一次跑：脉冲后控制器死掉，0x2006 都挂了，marker 停在 61）。
-            //    改为只读 0x20109400 看我们的 CLK_EN 是否仍在（作为"寄存器可写"对照）。
-            res[5] = porting.rd(0x2010_9400);
-            res[6] = 0x1234_5678; // 期望值放一起
-            _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x189000, &res, @intCast(@sizeOf(@TypeOf(res))));
-        }
-        flashStage(61);
+        // ⛔ **门控扫描已回退**（2026-11-19）：对 clk_en0/modem_ctrl0/widgets-conf 写全 1
+        //    会把 modem 搞死（marker 停在 61，0x2006 都挂）—— 这些寄存器的位语义
+        //    不是"全开"。且 0x20109880 读回恒 0 但总线正常 ⇒ **疑似只写寄存器**
+        //    （同 `modem_rst_conf`："读回恒 0, 只可写"）⇒ **写-回读探针对这块无效**，
+        //    判据只能用端到端（stage 23 / btdm_tx 6）。
         var ae: [1]u8 = .{1};
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
