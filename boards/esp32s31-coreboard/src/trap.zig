@@ -489,11 +489,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 之前扫的 [sp, sp+64) 是帧的**最低** 64 B，而保存的 ra 在帧**顶端**，
             // 且叶子函数根本没有保存的 ra ⇒ "64 B 内无代码地址"是正常形态，不是证据。
             var found: usize = 0;
-            var k: usize = 0;
-            while (k < 304) : (k += 4) {
-                const v = (@as(*const usize, @ptrFromInt(frame.sp + k))).*;
-                if (v >= 0x4000_0020 and v < 0x400A_0300) { found = v; break; }
+            var hit_off: usize = 0;
+            // **双向扫描**：栈向下增长 ⇒ 被调用者帧在低地址侧，必须往下扫。
+            var off: isize = -256;
+            while (off < 304) : (off += 4) {
+                const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + off));
+                const v = (@as(*const usize, @ptrFromInt(a))).*;
+                if (v == csr_mepc or v == (csr_mepc | 1)) { found = v; hit_off = @intCast(off); break; }
             }
+            diag_a = @truncate(found);
+            diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
             diag_a = @truncate(found);
             // **anchor[0] 与其 +28 字段**（分派器读的就是这两个）
             diag_b = @truncate((@as(*const usize, @ptrFromInt(0x2f00_ffd0))).*);
@@ -522,9 +527,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             hw.rawLineBlocking(w);
         }
         var pbuf: [280]u8 = undefined;
-        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x}", .{
+        const head = std.fmt.bufPrint(&pbuf, "!! c_mepc=0x{x:0>8} c_mtval=0x{x:0>8} c_ms=0x{x:0>8} c_ra=0x{x:0>8} f_mepc=0x{x:0>8} f_sp=0x{x:0>8} c_ra_saved=0x{x:0>8} cause=0x{x} step={d} {s} da=0x{x} db=0x{x} dc={d}", .{
             csr_mepc, csr_mtval, csr_mstatus, frame.ra, frame.mepc, frame.sp, caller_ra, cause & 0x3F,
-            last_step, last_step_name, diag_a, diag_b,
+            last_step, last_step_name, diag_a, diag_b, diag_c,
         }) catch "!! (fmt fail)";
         hw.rawLineBlocking(head);
         log.line("panic: exception code={d} ({s}) cause=0x{x}", .{
@@ -613,6 +618,7 @@ pub var extra_dump: ?*const fn () void = null;
 /// 因为它所在的 `!! mepc=…` 行是唯一被证明一定会出现的诊断。
 pub var diag_a: u32 = 0;
 pub var diag_b: u32 = 0;
+pub var diag_c: u32 = 0;
 pub var last_step: u32 = 0;
 pub var last_step_name: []const u8 = "none";
 
