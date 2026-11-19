@@ -21622,3 +21622,60 @@ mepc  = 0x40061b8a ← 在 phy_rfcal_data_sub_new（0x40061b60）内
 | —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
 
 ⇒ **本会话所有已识别缺陷均已修复并验证。**
+
+## 🏆 3b **完全验证**（不是"只有 rc=0"）
+
+### 三项判据全过
+
+```text
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0  cal[10..14]=**0x22feff**  fe_readable=**1**  fe=**0x5ac968b1**
+
+fault = **0**
+bt HALT verdict: evt=1 cmds=4 btdm_tx=2 ... tx_head=**0e,04,02,03,0c,00**
+```
+
+| # | 判据 | 结果 |
+| --- | --- | --- |
+| 1 | `rc == 0` | ✅ |
+| 2 | **cal 缓冲被真正写入**（`cal[10..14] = 0x22feff`，非零）| ✅ ⇒ 不是"接受但没产出" |
+| 3 | **`0x2010B000` 变为可读**且返回有意义的值（`0x5ac968b1`）| ✅ |
+| 4 | 无 fault | ✅ |
+| 5 | HCI 往返不变（`btdm_tx=2`、Reset status=0x00）| ✅ **无回归** |
+
+⇒ **3b 闭合，且不是靠 `rc=0` 推断的。**
+
+### 最终调用（顺序已按 IDF 修正）
+
+```text
+使能序列（ICG / phy_wifi_enable_set / phy_set_bb_wdg / CLK_CONF1）
+  → register_chipv7_phy(&phy_init_data, &phy_cal_buf, PHY_RF_CAL_FULL=2)
+```
+
+⇒ 标定在**使能之后**（IDF 的 `esp_phy_load_cal_and_init` 就在 `esp_phy_enable` 内部之后）。
+
+### 三次实验的完整表
+
+| 尝试 | 参数 | 结果 | 教训 |
+| --- | --- | --- | --- |
+| 1 | `(NULL, NULL, 2)` | 142 trap，`mtval=0x0c` | NULL 不被接受 |
+| 2 | `(init_data, NULL, 2)` | 仍 142 trap | **问题在 `cal_data`** |
+| 3 | `(init_data, cal, 2)` | **`rc=0`** | 正确 |
+
+⇒ `mtval = 0x0c` **不是地址，是结构体偏移** —— 这是本轮最可复用的读数技巧。
+
+## 最终状态（本会话结束时 · 全部闭合）
+
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1 | BT/MAC 四项时钟配置 | ✅ 已修复并验证 |
+| 2 | 任务栈未初始化 | ✅ 已修复（默认清零）|
+| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修复 |
+| **3b** | **PHY 首次标定** | ✅ **已修复并三项验证** |
+| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修复 |
+| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修复并验证 |
+| 6 | 应答走 `btdmTx` 而非 `leEvtTx` | ✅ 已澄清 |
+| —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
+
+⇒ **无遗留缺陷。**
