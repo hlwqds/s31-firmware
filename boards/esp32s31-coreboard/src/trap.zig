@@ -207,9 +207,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     // 扫描能跑完全部 CSR，"鸡生蛋"被 trap 本身化解。
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 2) {
         if (frame.mepc != 0) recordPc(frame.mepc);
-        asm volatile ("csrr t0, mepc");
-        asm volatile ("addi t0, t0, 4");
-        asm volatile ("csrw mepc, t0");
+        // **推进帧里的 mepc 槽**（trap 入口恢复时从槽位 csrw mepc ⇒
+        // 直接 csrw mepc 会被覆盖 ⇒ 必须改槽位才能跳过该指令）
+        frame.mepc +%= 4;
     }
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 3) {
         // **断点异常**（debug trigger 命中）：
