@@ -23534,3 +23534,45 @@ xxd /tmp/stage.bin
 | `npx quartz build` | ✅ 1165 文件 |
 | `zig fmt --check boards/ components/` | ✅ |
 | `python3 scripts/check-invariants.py` | ✅ |
+
+## ⚠️ flash 标记的**安全约束**：绝不能从 NMI 里擦写
+
+### 为什么
+
+`components/boot-power-perf/src/flash.zig` 的 `write`/`eraseSector` 跑在
+一个**清 `mstatus.MIE` 的临界区**里。
+
+⇒ 若在 **NMI 里**发起擦除/编程，而 CPU 正在从**同一片 SPI flash** 执行 XIP 代码
+⇒ **取指被自己阻塞** ⇒ **芯片硬挂**（比现在的"卡住"更糟）。
+
+### 因此职责必须分开
+
+| 谁 | 做什么 | 为什么 |
+| --- | --- | --- |
+| **NMI** | **只写 RAM 标记**（`.adv_trace`）| NMI 在卡住时仍在跑，但它**不能碰 flash** |
+| **主上下文** | 擦写 flash 标记（或发起复位）| 只有主上下文里擦写 flash 才安全 |
+
+### 两条具体约束
+
+| # | 约束 |
+| --- | --- |
+| 1 | `eraseSector(offset)` 的参数是**原始 flash 偏移**，一次擦 **4 KiB**；`0x186000` 合法且安全（`app.bin` 结束于 `0xDB3B0`）|
+| 2 | **绝不能擦到 app 自己占用的扇区** —— 那会当场把正在执行的代码擦掉 |
+
+### 因此完整方案修正为
+
+```text
+NMI        → 只写 RAM 槽（阶段号 / mepc / pending CLIC）
+主上下文    → 读 RAM 槽 → 写 flash 标记（0x186000）→ 继续
+卡住后      → host 读 0x186000（完全不经过 UART）
+```
+
+⇒ **NMI 与 flash 之间必须隔一层主上下文。**
+
+### 若主上下文已完全卡死
+
+⇒ 那时 flash 也写不了 ⇒ **只剩两条路**：
+1. **GPIO 打点**（最可靠，需要逻辑分析仪）
+2. **复位后由 bootloader 侧读 RAM**（需 bootloader 配合）
+
+⇒ 这也是为什么"NMI 直接写 flash"看起来诱人但**必须放弃**。
