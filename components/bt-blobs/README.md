@@ -21808,3 +21808,34 @@ controller ──btdmTx──> host
 | PHY 首次标定 | ✅ `rc=0`、`cal` 非零、`fe` 可读 |
 | 路径陷阱（B 不消费） | ✅ 已在代码与文档标注 |
 | 日志长度陷阱（>200 B 静默丢） | ✅ 已记录 |
+
+## ✅ 已修复而非仅记录：`log.line` 不再静默丢弃超长行
+
+### 改动（`boards/esp32s31-coreboard/src/log.zig`）
+
+```zig
+const text = std.fmt.bufPrint(buf[0..200], fmt, args) catch {
+    line_trunc += 1;                       // 可观测计数
+    const t = std.fmt.bufPrint(&buf, "[LOGLINE TRUNCATED >200B #{d}]\n", .{line_trunc}) catch return;
+    hw.rawWrite(buf[0 .. t.len :0]);
+    return;
+};
+```
+
+| 之前 | 现在 |
+| --- | --- |
+| `catch return` ⇒ **整行消失，无痕迹** | **打印 `[LOGLINE TRUNCATED >200B #N]`** 并计数 |
+
+⇒ 本会话两次因此误判"程序没走到 halt"（16 字节判决行一度完全消失）。
+⇒ 现在同样的错误会**立刻可见**。
+
+### 本轮的验证
+
+```text
+grep -c "LOGLINE TRUNCATED" = 0
+bt HALT: evt=1 cmds=5 btdm_tx=3 ...
+bt HALT evt: 0e,03,01,00,00,00
+bt HALT tx: t=4 n=14 0e,0c,02,01,10,00
+```
+
+⇒ 判决已拆成短行，**保险网没被用到**；标记为 0 说明当前没有行超长。

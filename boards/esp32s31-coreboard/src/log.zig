@@ -13,10 +13,22 @@ const std = @import("std");
 const hw = @import("hw.zig");
 // 不再用 ROM 的 esp_rom_printf：它在 TX FIFO 满时会无限自旋（PC 采样实测）。
 
-/// 一行输出。格式串不需要自带换行；超过 200 字节的行会被截断，不越界。
+/// 一行输出。格式串不需要自带换行。
+/// **超过 200 字节不再静默丢弃** —— 打印截断标记并计数（`line_trunc`）。
+/// 历史：曾用 `catch return` 整行吞掉，本会话两次因此误判"程序没走到"。
+/// 被截断的行数（可观测）。
+pub var line_trunc: u32 = 0;
+
 pub fn line(comptime fmt: []const u8, args: anytype) void {
     var buf: [202:0]u8 = undefined;
-    const text = std.fmt.bufPrint(buf[0..200], fmt, args) catch return;
+    const text = std.fmt.bufPrint(buf[0..200], fmt, args) catch {
+        // **不再静默丢弃**：超长的行以前会被整行吞掉且不留痕迹（本会话两次
+        // 因此误判"程序没走到"）。现在打印前缀 + 明确的截断标记。
+        line_trunc += 1;
+        const t = std.fmt.bufPrint(&buf, "[LOGLINE TRUNCATED >200B #{d}]\n", .{line_trunc}) catch return;
+        hw.rawWrite(buf[0..t.len :0]);
+        return;
+    };
     buf[text.len] = '\n';
     buf[text.len + 1] = 0;
     const out: [:0]const u8 = buf[0 .. text.len + 1 :0];
