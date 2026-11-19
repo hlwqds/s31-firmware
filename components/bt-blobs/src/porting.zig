@@ -243,6 +243,13 @@ pub fn phyDomainEnable() void {
     // 5) 确认 LPCON+0x18 的 bit2 保持（不要照抄 wifi 的 ←0x1）
     const lp18: usize = 0x2010_F018;
     wr(lp18, rd(lp18) | (1 << 2));
+
+    // ⛔ **不要调 `phy_open_fe_bb_clk`**（ROM `0x2f80131c`，符号在
+    //    `boards/esp32s31-coreboard/linker/rom_syms.ld:137`）：
+    //    ADR-001:2129-2131 实测它会 **stall**（日志停在 `write 0x20107C80`），
+    //    :2253-2255 结论是"相位对齐 IDF 这条路在裸机 bring-up 上不成立"，
+    //    且 wifi 路径的自旋点就在它内部（ADR:231-237）。
+    //    ⇒ BT 路径去跑它只会把 PHY 使能处 stall 掉，does not answer 0x200A.
     osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)", .{});
 }
 
