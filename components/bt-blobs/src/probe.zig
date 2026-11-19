@@ -712,22 +712,24 @@ pub fn run() noreturn {
     }
     // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
     // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
-    // LOAD 观察点盯 0x201098BC（BLE 归档轮询的合成器 ready 位 bit2；上游 .o 解码
-    // `lw a5,-1860(s1); andi a5,4; bnez`，上限 65536 次，超时错误码 3）。
-    // 命中时 trap 记录扩到 8 字：auth_pc + 轮询值 + 0x20109880 + 0x2010D800 真值
-    // ⇒ 直接回答 "bit2 为什么不置位"。（前两轮命中见提交 5e3979c/32c5e33。）
+    // LOAD 观察点盯 0x201008D0（FE 轮询环的等待字，bit[21:20] 为等待条件；
+    // 环在 bringup PHY 标定期就跑 —— 对 BT 链挂点轮间波动免疫）。
+    // 命中 = FE 自旋瞬间，trap 记录 11 字：auth_pc + 六寄存器真值
+    // {0x201008D0, 0x2010047C, 0x201011AC, 0x201098BC, 0x20109880, 0x2010D800}
+    // ⇒ 一次回答"环卡在哪个数 + 出环位 + 合成器 ready 位 + busy 寄存器"。
+    // 注意跨复位残留：读数判读需轮内对照（前两轮命中见 5e3979c/32c5e33）。
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
     asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
-    asm volatile ("li t0, 0x201098bc");
+    asm volatile ("li t0, 0x201008d0");
     asm volatile ("csrw 0x7a2, t0"); // tdata2 先配地址（此刻无观察点在活）
     asm volatile ("li t0, 0x49");
     asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
     asm volatile ("li t0, 0x88");
     asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)（最后开）
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
-    // {FEF1, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
+    // {FEF2, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;
     var t2v: u32 = undefined;
     var tcv: u32 = undefined;
@@ -740,7 +742,7 @@ pub fn run() noreturn {
     asm volatile ("csrr %[v], 0x7a5"
         : [v] "=r" (tcv),
     );
-    var av: [4]u32 = .{ 0xADC0_FEF1, t1v, t2v, tcv };
+    var av: [4]u32 = .{ 0xADC0_FEF2, t1v, t2v, tcv };
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &av, 16);
     // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：

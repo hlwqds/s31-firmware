@@ -236,16 +236,19 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         );
         // **独占命中记录**：{FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000
         // —— 命中即自证当时 armed 的配置，杜绝"读到别处记录当命中"。
-        // **本轮新增**：命中瞬间顺带读出轮询值与合成器邻近寄存器真值
+        // **本轮新增**：命中瞬间读六寄存器真值（FE 环等待/出口/计数器 + 合成器侧）
+        const r8d0: u32 = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
+        const r47c: u32 = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
+        const r11ac: u32 = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
         const r98bc: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
         const r9880: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9880)).*;
         const rd800: u32 = @as(*volatile u32, @ptrFromInt(0x2010_D800)).*;
-        var tb: [8]u32 = .{ 0xADC0_FEF0, cause, auth_pc, t1rb, t2rb, r98bc, r9880, rd800 };
+        var tb: [11]u32 = .{ 0xADC0_FEF3, cause, auth_pc, t1rb, t2rb, r8d0, r47c, r11ac, r98bc, r9880, rd800 };
         {
             // **不屏蔽 MIE 直写**（2026-11-19 flashStage 教训：pmu_init 之后屏蔽 MIE 的
             // 擦写静默失败，直写才落地。窗口内唯一中断源是 2ms 采样器，ISR 不写 flash）。
             _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x18B000, &tb, 32);
+            _ = esp_rom_spiflash_write(0x18B000, &tb, 44);
         }
         asm volatile ("li t1, 1");
         asm volatile ("csrw 0x7a5, t1"); // tselect = 1
