@@ -564,16 +564,16 @@ pub fn run() noreturn {
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
     // bringup 已过观测窗口，这里解除，让运行时路径零开销。
-    flashStage(10); // host 可读：init 之后、enable 之前
+    flashStageExtra(10, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // host 可读：init 之后、enable 之前
     osal.dump_hook = null;
     osal.logPublic("bt probe: dump_hook disarmed", .{});
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 
     // 3) enable 链（6 步）
-    flashStage(11); // 即将调用 enable()
+    flashStageExtra(11, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // 即将调用 enable()
     rc = bringup.enable();
-    flashStage(12); // enable() 已返回
+    flashStageExtra(12, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // enable() 已返回
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
@@ -620,7 +620,7 @@ pub fn run() noreturn {
         flashStage(20);
         var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
         const r6 = transport.sendCmd(0x2006, &ap);
-        flashStage(21);
+        flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
         var ad: [32]u8 = @splat(0);
         ad[0] = 3;
         ad[1] = 2;
@@ -634,7 +634,11 @@ pub fn run() noreturn {
         // ⇒ 一次改动可同时解释"0x200A 无应答"与"UART 哑"（后者至今未解释）。
         // 另外 word2/3 的 FE 快照**本是噪声**（同构建两次运行就不同），本来也不该当判据。
         // 判据：marker stage/tx（23/6 = 返回了）+ 串口是否恢复。
-        flashStage(22);
+        // **实验：把 `UART0_STATUS.TXFIFO_CNT` 写进标记**（word2），
+        // 以区分"FIFO 满且不排空（发送通道死）"与"FIFO 空（压根没写进去）"。
+        // UART0 = 0x2038_A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]。
+        const uart_st: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*;
+        flashStageExtra(22, (uart_st >> 16) & 0xFF, uart_st);
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
