@@ -623,12 +623,7 @@ pub fn run() noreturn {
         // （clk_conf1 缺 wifibb 位组）。本轮自旋期快照证实 clk_conf1 已被归档自己开到
         // `0x003FFA8C`（含 wifibb_44m/80m/160x1/wifimac）⇒ 前置条件已变。
         // 用 PC 采样器判读：若再 stall，直接拿挂点地址；端到端判据 marker stage 23 / tx 6。
-        flashStage(70);
-        // **oracle 前置：IDF 本体的 pmu_init()**（官方栈 app 启动必做、我们裸机从未做：
-        //   regi2c 上电 + HP/LP 全模式电源/时钟/模拟参数 + 电源域 force 默认清零）
-        flashStage(72);
-        const pmu_init = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
-        pmu_init();
+        // （pmu_init 已提前到 bringup 之前 —— IDF 次序；前/后 PMU 状态在 0x18B/18C 扇区）
         flashStage(73);
         // **采样窗口搬到此处**：esp_phy_enable 若挂，ISR 采 72 个样本后自动落盘 0x187000
         board.trap.resetPcs();
