@@ -477,6 +477,14 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     pulse.f(b_rst_btmac_apb); // 2. BT MAC APB
     pulse.f(b_rst_ble_timer); // 3. BLE timer
     pulse.f(b_rst_modem_ecb | b_rst_modem_ccm | b_rst_modem_bah | b_rst_modem_sec); // 4. modem sec
+    // ✅ **实验（2026-11-19）：脉冲 rst_btbb_apb(17)/rst_btbb(18)** —— 此前从未碰过。
+    //    位图（`modem_syscon_struct.h`，锚点 reserved3=bit3）：
+    //    btmac_apb=15 ✓ / btmac=16 ✓（现有常量正确）/ **btbb_apb=17 / btbb=18**。
+    //    我们的 MAC 复位族脉冲了 15/16/30/25/26/27/29，唯独没脉冲 17/18
+    //    ⇒ 若 BB 上电即在复位里，它从未被释放 ⇒ 写丢弃、轮询读 0、0x200A 错误码 3。
+    //    判据用端到端（marker stage 23 / btdm_tx 6）；rst_conf 读回恒 0 无信息。
+    pulse.f((1 << 17));
+    pulse.f((1 << 18));
     osal.logPublic("bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
     if (on_target) {
         osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
