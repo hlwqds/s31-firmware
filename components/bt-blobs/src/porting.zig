@@ -279,17 +279,19 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     }
 
     // 1) 开时钟（读-改-写，别把别人的位清掉）
-    // **整字写 `0x003ff880` = bits{7,11,12,13,14,15,20,21}**：
-    //   bit7  wifibb_80x1   bit11 fe_20m   bit12 fe_40m   bit13 fe_80m
-    //   bit14 fe_160m       bit15 fe_apb   bit20 fe_adc   bit21 fe_dac
-    // ⇒ **FE 一族已经覆盖在这里**（2.6 再用 RMW 补幂等，不是首次开启）。
-    // IDF 在 step 5 之后实测只持有 `0x00070080`（bit7/16/17/18）；
-    // 这里多置的 FE 位是**有意**的（PHY 需要），不是遗留 workaround。
-    // 注意 bit19 `fe_pwdet_adc` **不在这一个整字里**，由 2.6 的 RMW 补上。
+    // **整字写 `0x003fffff` = bits{0-21}**（wifibb 组 0-10 + FE 13-21 + BT 16-18）。
+    // 来源：`wifi-blobs/src/init_probe.zig:707` 的位集（IDF 的 WiFi+FE 正确值
+    // `0x0038E7FF`）并上 BT 侧原有的 `0x003FF880`：
+    //   0-6   wifibb_22m/40m/44m/80m/40x/80x/40x1
+    //   7     wifibb_80x1        8  wifibb_160x1      9  wifimac     10 wifi_apb
+    //   13-15 fe_80m/160m/apb    16 bt_apb   17 btbb   18 btmac
+    //   19    fe_pwdet_adc       20 fe_adc   21 fe_dac
+    // **必须整字一次写齐**：整字写会清掉此前任何位，所以这里不能只写 BT+FE 的子集，
+    // 否则 PHY 侧的 wifibb/wifimac/wifi_apb 会被抹掉（2.6 的 FE RMW 只是幂等补位）。
     // （曾用 RMW `rd(...) | 0x00070080`，因写不落地改为整字写。）
     _ = b_conf1_btmac;
     _ = b_conf1_btbb;
-    wr(reg_clk_conf1, 0x003f_f880);
+    wr(reg_clk_conf1, 0x003f_ffff);
     // （曾用 RMW `rd(...) | 0x00070080`，因不落地改为整字写，见上）
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
         b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |

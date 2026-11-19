@@ -24111,84 +24111,6 @@ BLE_CLOCK_DEPS = BIT(11)|BIT(14)|BIT(10)|BIT(3)|BIT(9)|BIT(2)|BIT(13)|BIT(12)
 ⇒ 内部还要 `modem_clock_device_control()` 对 `deps` 每位置门控（`modem_clock.c`）。
 **这是开放项的确切落点**：不是"补一段射频代码"，是**按 IDF 的 deps 掩码门控时钟**。
 
-## 🎯 缺陷定位完成：`CLK_CONF1` 的 FE 时钟位掩码写错了
-
-### 完整映射链（IDF → s31 → 寄存器）
-
-```
-modem_clock_module_enable(PERIPH_PHY_MODULE)
-  deps = PHY_CLOCK_DEPS = 0x17  (bit0 ADC_COMMON_FE, bit1 PRIVATE_FE, bit2 PLL_CG, bit4 I2C)
-  for each set bit i: dev->configure(ctx, i, true)
-
-bit0  modem_clock_hal_enable_modem_common_fe_clock
-        -> modem_syscon_ll_enable_fe_apb_clock   -> clk_conf1.clk_fe_apb_en   (bit15)
-        -> modem_syscon_ll_enable_fe_80m_clock   -> clk_conf1.clk_fe_80m_en   (bit13)
-bit1  modem_clock_hal_enable_modem_private_fe_clock
-        -> enable_fe_160m_clock  -> clk_conf1.clk_fe_160m_en    (bit14)
-        -> enable_fe_dac_clock   -> clk_conf1.clk_fe_dac_en     (bit21)
-        -> enable_fe_pwdet_clock -> clk_conf1.clk_fe_pwdet_adc_en (bit19)
-        -> enable_fe_adc_clock   -> clk_conf1.clk_fe_adc_en     (bit20)
-bit2  modem_clock_hal_enable_soc_pll_source_cg
-        -> HP_SYS_CLKRST.modem_conf.val = 0x3d      // ← 另一个寄存器
-bit4  modem_clock_i2c_master_configure
-        -> ANALOG_CLOCK_ENABLE()
-```
-
-### `CLK_CONF1` 的位布局（`modem_syscon_struct.h:128-150`，bit0 = `clk_wifibb_22m_en`）
-
-| bit | 字段                  | bit    | 字段                      |
-| --- | --------------------- | ------ | ------------------------- |
-| 0   | `clk_wifibb_22m_en`   | 11     | `clk_fe_20m_en`           |
-| 1   | `clk_wifibb_40m_en`   | 12     | `clk_fe_40m_en`           |
-| 2   | `clk_wifibb_44m_en`   | **13** | **`clk_fe_80m_en`**       |
-| 3   | `clk_wifibb_80m_en`   | **14** | **`clk_fe_160m_en`**      |
-| 4   | `clk_wifibb_40x_en`   | **15** | **`clk_fe_apb_en`**       |
-| 5   | `clk_wifibb_80x_en`   | 16     | `clk_bt_apb_en`           |
-| 6   | `clk_wifibb_40x1_en`  | 17     | `clk_btbb_en`             |
-| 7   | `clk_wifibb_80x1_en`  | 18     | `clk_btmac_en`            |
-| 8   | `clk_wifibb_160x1_en` | **19** | **`clk_fe_pwdet_adc_en`** |
-| 9   | `clk_wifimac_en`      | **20** | **`clk_fe_adc_en`**       |
-| 10  | `clk_wifi_apb_en`     | **21** | **`clk_fe_dac_en`**       |
-
-### 正确掩码 vs 我们的猜测
-
-```
-正确 FE 掩码 = (1<<13)|(1<<14)|(1<<15)|(1<<19)|(1<<20)|(1<<21)
-             = 0x2000|0x4000|0x8000|0x80000|0x100000|0x200000
-             = 0x0038_E000
-
-我们写的     = 0x6464_6400
-             = bits 10, 13, 14, 17, 21, 22, 25, 26, 28, 29, 30
-```
-
-| 差异                           | 后果                                          |
-| ------------------------------ | --------------------------------------------- |
-| **漏 bit15 `fe_apb_en`**       | FE 的 **APB 访问**没有时钟 ⇒ 前端配置写不进去 |
-| **漏 bit19 `fe_pwdet_adc_en`** | 功率检测 ADC 无时钟                           |
-| **漏 bit20 `fe_adc_en`**       | **前端 ADC 无时钟**                           |
-| 多置 bit22/25/26/28/29/30      | 这些是 **reserved**，写入行为未定义           |
-
-⇒ **`fe_apb_en` 缺失**最致命：它是 FE 的**总线时钟**。没有它，后续对前端寄存器的写入
-不进硬件 ⇒ 发射机起不来，而标定（走 `PHY_CALIBRATION` 的 deps）仍能返回 0。
-
-### 另外两个必需的写入
-
-| 寄存器                     | 值                                  |
-| -------------------------- | ----------------------------------- |
-| `HP_SYS_CLKRST.modem_conf` | **`0x3d`**（使能；关闭值是 `0x25`） |
-| `CLK_CONF1` 的 FE 位       | **`0x0038_E000`**                   |
-
-⇒ 我们此前**既没写 `modem_conf`，`CLK_CONF1` 的位也错**。
-
-### 下一步（可直接落地）
-
-| #   | 动作                                                      | 判据                     |
-| --- | --------------------------------------------------------- | ------------------------ |
-| 1   | 把 `icg.*` 的猜测换成 **`CLK_CONF1                        | = 0x0038_E000`**         | 读回含这 6 位 |
-| 2   | 写 **`HP_SYS_CLKRST.modem_conf = 0x3d`**                  | 读回 `0x3d`              |
-| 3   | 在 `0x200A` 前加**读回检查**（6 位 + `modem_conf==0x3d`） | 不满足就明确报错，不静默 |
-| 4   | 重跑 `Enable=1`                                           | 期望**返回**而不是挂住   |
-
 ## ⛔ 撤回：关于 `clk_conf1` 位掩码的"缺陷"结论是错的
 
 ### 我此前声称
@@ -24219,6 +24141,18 @@ wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_
 
 ⇒ 整字里唯一缺的 `fe_pwdet_adc`（bit19）**已被 2.6 的 RMW 补上**。
 
+### ⚠ 两个我没核对到的前提（这才是错误的根源）
+
+| 项                           | 事实                                                               |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `0x6464_6400` 写在哪         | **不是 `CLK_CONF1`**，是 `clk_conf_power_st`（`syscon_base+0x0c`） |
+| `CLK_CONF1` 在哪             | `reg_clk_conf1 = syscon_base+0x14`                                 |
+| FE 六位（13/14/15/19/20/21） | ✅ 早已在 `:283` 整字 `0x003f_f880` 里，`:317` 再 RMW 补           |
+| `modem_conf=0x3d`            | ✅ 早已写在 `:219` 与 `:312`（默认 true）                          |
+| 板侧日志                     | `clk_conf1=0x003ff880 fe_ok=true`、`MODEM_CONF=0x0000003d`         |
+
+⇒ **我拿 `clk_conf_power_st` 的写入值去和 `CLK_CONF1` 的位定义比较**，两处都不成立。
+
 ### 因此真实的净增量（两次 IDF 调用 vs 现有代码）
 
 | 项                              | 状态          |
@@ -24247,3 +24181,49 @@ wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_
 `:282-285` 的注释说"只置 IDF 在 step 5 后持有的位（`0x00070080`）"，
 紧接着写的却是 `0x003f_f880` —— **自我矛盾**。已改为：
 FE 一族是**有意**置的（PHY 需要），并标明 bit19 由 2.6 补。
+
+## ✅ 净增量已落地：`clk_conf1` 从 `0x003ff880` 扩到 `0x003fffff`
+
+### 改动
+
+```zig
+// 前: wr(reg_clk_conf1, 0x003f_f880);   // bits{7,11-21}
+// 后: wr(reg_clk_conf1, 0x003f_ffff);   // bits{0-21}
+```
+
+### 为什么必须是"一次整字写齐"
+
+整字写会**清掉此前任何位**，所以不能分两次写（第二次会把第一次的抹掉）。
+⇒ 把两类需求的并集合成一个常数：
+
+| 来源                                                 | 位集                          | 值               |
+| ---------------------------------------------------- | ----------------------------- | ---------------- |
+| bt-blobs 原有（BT + FE）                             | bits{7, 11-21}                | `0x003FF880`     |
+| wifi-blobs `init_probe.zig:707`（`WIFI_CLOCK_DEPS`） | bits{0-10, 13,14,15,19,20,21} | `0x0038E7FF`     |
+| **并集**                                             | **bits{0-21}**                | **`0x003FFFFF`** |
+
+### 位含义
+
+| bit   | 字段                                  |     | bit | 字段           |
+| ----- | ------------------------------------- | --- | --- | -------------- |
+| 0-6   | `wifibb_22m/40m/44m/80m/40x/80x/40x1` |     | 15  | `fe_apb`       |
+| 7     | `wifibb_80x1`                         |     | 16  | `bt_apb`       |
+| 8     | `wifibb_160x1`                        |     | 17  | `btbb`         |
+| 9     | `wifimac`                             |     | 18  | `btmac`        |
+| 10    | `wifi_apb`                            |     | 19  | `fe_pwdet_adc` |
+| 11-12 | `fe_20m/40m`                          |     | 20  | `fe_adc`       |
+| 13-14 | `fe_80m/160m`                         |     | 21  | `fe_dac`       |
+
+⇒ 新增的正是 **bits{0-6, 8, 9, 10}**：`wifibb` 组 + `wifimac` + `wifi_apb`。
+
+### 判据（按 ADR-001 的教训，换新判据）
+
+| 项      | 判据                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------- |
+| ❌ 不用 | `MAC_ST`（ADR-001 实验 9/10 已判负：`rst_wifibb` 脉冲 + `clk_conf1=0x17b` ⇒ mac 仍 `0x0000e000`） |
+| ✅ 用   | **`0x200A` 是否返回**（stage 23 / `btdm_tx` 6）                                                   |
+| ✅ 用   | **广播是否真的起来**（对端能否扫到）                                                              |
+
+### 读回自证
+
+日志里应有 `clk_conf1=0x003fffff`。
