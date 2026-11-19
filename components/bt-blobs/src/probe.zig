@@ -703,7 +703,8 @@ pub fn run() noreturn {
         // tdata1: type=2(mcontrol) << 28 | m-mode(bit3) | exec(bit0)，action=0(断点异常)，match=精确
         // **tinfo=0x4 ⇒ type 2 不支持、type 6（mcontrol6）支持**：
         // mcontrol6: type[31:28]=6、m=bit6、exec=bit4、action[15:12]=0（断点异常）、match[10:7]=0（精确）
-        asm volatile ("li t0, 0x60000050");
+        // **exact match**（match[10:7]=0）：只命中执行 0x2f828a78 本身
+        asm volatile ("li t0, 0x60000010");
         asm volatile ("csrw 0x7a0, t0"); // tdata1 (mcontrol6)
         asm volatile ("li t0, 0x2f828a78");
         asm volatile ("csrw 0x7a1, t0"); // tdata2 = 目标地址
