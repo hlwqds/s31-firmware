@@ -17555,3 +17555,77 @@ gn = 0x2f00af44       ← *(g_phyFuns) = **非零**
 | **因仪器/自证而撤回** | **7** |
 | 撤回总数 | **99** |
 | 自我纠正 | **241** |
+
+## 🎉 崩溃消失：`INITED` 达成并进入 **enable 阶段**（无 fault）
+
+### 读数
+
+```text
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst)
+bt phy: enable modem=2 (NO CALIBRATION: libphy not linked)
+bt bringup: INITED
+bt probe: init ok 0
+bt probe: arena free=310920
+bt bringup: enter step 17 r_base_stack_enable
+bt bringup: enter step 18 r_conn_stack_enable
+bt bringup: step 18 r_conn_stack_enable rc=181935
+bt probe: enable FAILED at step 18 rc=181935
+```
+
+| 判据 | 结果 |
+| --- | --- |
+| `RG ra=` 计数（trap 是否触发）| **0** |
+| `bt bringup: INITED` | ✅ |
+| `bt probe: init ok 0` | ✅ |
+| 进入 enable 阶段 | ✅ step 17 / 18 |
+| 崩溃 | ✅ **消失** |
+
+⇒ **本会话的第三个缺陷（冻结入口点）修复生效**，且**没有引入新 fault**。
+
+### 当前状态：**干净的失败**，不是崩溃
+
+```
+step 18 r_conn_stack_enable rc=181935
+```
+
+⇒ 程序**正常返回**了一个错误码，没有跳进不可执行地址。
+
+⇒ 这是**本质改善**：从"随机跳转到垃圾地址"变成"一个可查的错误码"。
+
+### `rc=181935` 的解读（待确认）
+
+`181935 = 0x2C6AF`。IDF 的 `esp_err_t` 通常是小的负数编码，这个值不像标准错误码
+⇒ 可能是：
+| 可能 | 说明 |
+| --- | --- |
+| 未翻译的 ROM/blob 内部状态 | `r_conn_stack_enable` 返回的是 blob 内部码 |
+| 被截断/混入的返回值 | 需查该函数的返回约定 |
+
+### 与三个根因的关系
+
+| # | 根因 | 状态 |
+| --- | --- | --- |
+| 1 | 四项时钟配置 | ✅ 已修（`INITED`）|
+| 2 | 任务栈未初始化 | ✅ 已修（崩溃消失）|
+| 3 | `esp_phy_enable` 冻结入口点 | ✅ **已修（本轮验证）** |
+| 4 | `rc=181935` | 🔍 **新问题，且是干净错误** |
+
+### 下一步
+
+| # | 动作 |
+| --- | --- |
+| 1 | 查 `r_conn_stack_enable` 的返回约定（IDF 里对应 `esp_bt_controller_enable` 的哪一步）|
+| 2 | 对照 IDF 的 enable 顺序：`r_base_stack_enable` → `r_conn_stack_enable` 之间是否需要额外步骤 |
+| 3 | 注意 `bt phy: enable modem=2 (NO CALIBRATION)` —— PHY 未标定可能是 enable 失败的原因之一 |
+
+## 本会话最终总计（最终锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因 1（四项时钟配置）** | ✅ 已验证 |
+| **根因 2（任务栈未初始化）** | ✅ 已验证 |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ **已验证（崩溃消失）** |
+| **当前状态** | **`INITED` + enable 阶段，无 fault，`rc=181935`** |
+| **因仪器/自证而撤回** | 7 |
+| 撤回总数 | 99 |
+| 自我纠正 | 241 |
