@@ -584,10 +584,10 @@ pub fn run() noreturn {
         ab[4] = rd_.r(0x2070_4054);
         _ = esp_rom_spiflash_erase_sector(0x18C000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18C000, &ab, @intCast(@sizeOf(@TypeOf(ab))));
-        // **重放使能**（pmu_init 默认值清掉了 RF 电源/时钟）：
-        porting.phyDomainEnable();
+        // **单臂实验**：只写 PMU_RF_PWC（0x20704184 = 0xFFFF0000）一个使能。
+        // 若仅此写就导致控制流跳飞（触发器 match≥0x2f828a78 会如实报告），
+        // ⇒ 该写的副作用就是根因候选；判据：marker/ring 的位置。
         rd_.wr(0x2070_4184, 0xFFFF_0000);
-        rd_.wr(0x2010_F83C, rd_.r(0x2010_F83C) | (1 << 28));
         var rc_: [3]u32 = .{ 0xADC0_FEE7, rd_.r(0x2070_4184), rd_.r(0x2010_F83C) };
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
