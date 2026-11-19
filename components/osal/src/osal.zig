@@ -190,6 +190,7 @@ pub const Stats = struct {
     eventq_put: u32 = 0,
     eventq_get_ok: u32 = 0,
     eventq_get_empty: u32 = 0,
+    cooperative_yields: u32 = 0,
     callout_fired: u32 = 0,
     /// 本可以阻塞等待、但没有任务可切换而直接返回失败的次数（**应当可见**）。
     blocked_calls: u32 = 0,
@@ -353,6 +354,16 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
             continue; // 被唤醒后重新检查计数
         }
         if (timeout != 0) stats_state.blocked_calls += 1;
+        // **协作式 yield**（同 eventqGet 的理由）：`timeout == 0` 的空轮询必须让出，
+        // 否则 blob 常驻循环会饿死主上下文。
+        if (timeout == 0 and sched.isStarted() and !sched.inMain()) {
+            stats_state.cooperative_yields += 1;
+            sched.block();
+            if (s.count != 0) {
+                s.count -= 1;
+                return OK;
+            }
+        }
         stats_state.sem_pend_timeout += 1;
         return TIMEOUT;
     }
@@ -431,6 +442,17 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
         return OK;
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
+    // **协作式 yield**：`timeout == 0` 的 try-lock 失败时也要让出。
+    if (timeout == 0 and sched.isStarted() and !sched.inMain()) {
+        stats_state.cooperative_yields += 1;
+        sched.block();
+        if (!m.locked) {
+            m.locked = true;
+            stats_state.mutex_pend_ok += 1;
+            logLine("bt hook: mutex_pend => OK (after yield)", .{});
+            return OK;
+        }
+    }
     stats_state.mutex_pend_busy += 1;
     logLine("bt hook: mutex_pend => TIMEOUT", .{});
     return TIMEOUT;
@@ -570,6 +592,17 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
             sched.block();
             q.waiter = null;
             continue;
+        }
+        // **协作式 yield**：`timeout == 0` 的轮询是 blob 常驻循环的主要形态。
+        // 若在**任务上下文**里空轮询就立即返回，blob 永远不会让出 ⇒ 主上下文被饿死
+        // （实测：210 s 窗口日志零新增，而定时器 NMI 仍在触发）。
+        // 因此在返回 null 之前先 `block()` 一次，把 CPU 还给主上下文 ——
+        // 主上下文下次 `resumeTask` 会从这里继续。
+        if (timeout == 0 and sched.isStarted() and !sched.inMain()) {
+            stats_state.cooperative_yields += 1;
+            sched.block();
+            // 回来后重新检查队列（可能期间已有事件）
+            if (q.head != null) break;
         }
         if (timeout != 0) stats_state.blocked_calls += 1;
         stats_state.eventq_get_empty += 1;
