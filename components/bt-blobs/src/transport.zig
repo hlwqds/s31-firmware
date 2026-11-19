@@ -81,6 +81,9 @@ pub const Stats = struct {
     last_evt_len: u8 = 0,
     last_evt: [8]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
     last_evt_len8: u8 = 0,
+    tx_type: u8 = 0,
+    tx_len: u8 = 0,
+    tx_head: [4]u8 = .{ 0, 0, 0, 0 },
 };
 var stats_state = Stats{};
 pub fn stats() Stats {
@@ -139,6 +142,16 @@ fn leAclTx(_: ?*anyopaque, _: ?*anyopaque) callconv(.c) c_int {
 /// BTDM 上行（BR/EDR 与 BTDMC2H 方向）。本轮只记录。
 fn btdmTx(pkt: *Packet) callconv(.c) c_int {
     stats_state.btdm_tx += 1;
+    // **保存这条通道的头部**：`btdm_tx` 与 `evt` 是两个不同的出站回调，
+    // 需要知道前者送回来的到底是 HCI 事件（`04 0E …`）还是别的。
+    stats_state.tx_type = @intCast(pkt.type & 0xff);
+    stats_state.tx_len = @intCast(@min(@as(usize, pkt.length), 255));
+    {
+        var i: usize = 0;
+        while (i < 4) : (i += 1) {
+            stats_state.tx_head[i] = if (i < pkt.length) pkt.data[i] else 0;
+        }
+    }
     if (fwd) |f| _ = f(@as(u32, pkt.type), pkt.data, pkt.length, @as(u32, 0x02), 0);
     if (freestanding) r_btdm_hci_trans_buf_free(pkt);
     return 0;

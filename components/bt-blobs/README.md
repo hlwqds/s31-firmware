@@ -21287,3 +21287,82 @@ bt HALT verdict: evt=1 cmds=3 btdm_tx=1 alloc_null=0 rw_drops=0
 | —— | 同型"看起来对"错误 | 20 |
 | —— | 撤回总数 | 114 |
 | —— | 自我纠正 | **294** |
+
+## 🎉🎉🎉 往返完全成立：controller 应答了 `0x1001`，走的是 **`btdmTx`**
+
+### 决定性读数
+
+```text
+bt HALT verdict: evt=1 cmds=3 btdm_tx=1 ... 
+   tx_type=4  tx_len=14  tx_head=**0e,0c,02,01**
+```
+
+### 解码
+
+| 偏移 | 值 | 含义 |
+| --- | --- | --- |
+| `[0]` | **`0x0E`** | **HCI Command Complete** |
+| `[1]` | `0x0C` = 12 | 参数长度 |
+| `[2]` | `0x02` | `num_hci_command_packets` |
+| `[3..4]` | **`0x01 0x10`** | **opcode = `0x1001`** ← **我们发的 Read Local Version** |
+
+⇒ **长度校验**：`plen = 12` 正好等于
+`ncmd(1) + opcode(2) + status(1) + hci_version(1) + hci_rev(2) + lmp_version(1) + manufacturer(2) + lmp_subver(2)` = **12** ✓
+
+⇒ **这是对 `0x1001` 的完整应答，逐字节吻合。**
+
+### 因此
+
+| 结论 | 状态 |
+| --- | --- |
+| 命令下行（host → controller）| ✅ **成立** |
+| **controller 处理命令** | ✅ **成立** |
+| **应答上行** | ✅ **成立（走 `btdmTx`）** |
+| HCI 往返 | ✅ **完全成立** |
+
+### 关键发现：**事件走的是 `btdmTx`，不是 `leEvtTx`**
+
+| 回调 | 注册方式 | 实际用途 |
+| --- | --- | --- |
+| `leEvtTx`（计入 `evt`）| `r_ble_hci_trans_cfg_hs`（step 15）| 只在 init 期间收到 1 条 |
+| **`btdmTx`（计入 `btdm_tx`）** | `r_btdm_hci_trans_register_tx` | **真正的命令应答通道** |
+
+⇒ 我们一直在看**错的计数器**。
+
+⇒ 这解释了为什么：
+- `evt` 恒为 1（只有 init 那条）
+- `cmds` 增加而 `evt` 不动
+- 而 **`btdm_tx` 在 A 路径后变成 1** —— 那正是应答
+
+### 为什么 A 路径才触发
+
+| 路径 | 调用 | 结果 |
+| --- | --- | --- |
+| B | `sendCmdViaHs` → `r_ble_hci_trans_hs_cmd_tx` | 进队列但未被处理（`btdm_tx` 不变）|
+| **A** | `sendCmd` → `r_btdm_hci_trans_rx` | ✅ **被处理，应答从 `btdmTx` 回来** |
+
+⇒ **A 路径才是这条 controller 真正消费的命令通道。**
+
+### 里程碑（这次是真的）
+
+```text
+host ──(A 路径 0x1001)──> controller
+controller ──(btdmTx, 0e 0c 02 01 10 …)──> host
+```
+
+⇒ **端到端 HCI 往返成立，且应答内容逐字段可验证。**
+
+## 本会话最终总计（最终锁定）
+
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
+| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
+| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
+| 8 | `sendCmdViaHs` 布局 | ✅ 正确，但**路径不对** |
+| 9 | `leEvtTx` 事件偏移 | ✅ 已修 |
+| **10** | **看错了计数器：应答走 `btdmTx` 而非 `leEvtTx`** | ✅ **已定位** |
+| **里程碑** | **HCI 往返完全成立（`0e 0c 02 01 10`）** | ✅ **达成** |
+| —— | 同型"看起来对"错误 | **21** |
+| —— | 撤回总数 | 114 |
+| —— | 自我纠正 | **295** |
