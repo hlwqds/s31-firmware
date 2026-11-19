@@ -638,18 +638,7 @@ pub fn run() noreturn {
         // 以区分"FIFO 满且不排空（发送通道死）"与"FIFO 空（压根没写进去）"。
         // UART0 = 0x2038_A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]。
         const uart_st: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*;
-        _ = uart_st;
-        // **两采样**：后值≈0 ⇒ 排空活着（120 只是在途）⇒ 问题在"字节没出芯片"那一层
-        // （TX pad / 输出信号路由 / 波特率源）；后值仍≈120 ⇒ 排空在 11→22 之间死了。
-        var d: u32 = 0;
-        while (d < 1_000_000) : (d += 1) asm volatile ("nop");
-        const uart_st2: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*;
-        // 同时读 `HP_SYS_CLKRST.uart0_ctrl0`（0x2058_7088）：
-        //   bit0 sys_clk_en / bit1 apb_clk_en / bit2 core_rst_en /
-        //   bit3 apb_rst_en / bits6:5 clk_src_sel / bit7 clk_en
-        // IDF 默认 = 1,1,0,0,0,1 ⇒ 若读回同此，UART0 的模块时钟没问题。
-        const u0c: u32 = (@as(*volatile u32, @ptrFromInt(0x2058_7088))).*;
-        flashStageExtra(22, (uart_st2 >> 16) & 0xFF, u0c);
+        flashStageExtra(22, (uart_st >> 16) & 0xFF, uart_st);
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
