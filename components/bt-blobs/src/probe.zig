@@ -744,7 +744,7 @@ pub fn run() noreturn {
             }
             // flash 转写挪到 FEFC 证据块之后（紧跟 flashStage 的写会静默失败）
         }
-        var ab: [5]u32 = @splat(0);
+        var ab: [10]u32 = @splat(0);
         ab[0] = 0xADC0_FEE6;
         ab[1] = rd_.r(0x2070_4184);
         ab[2] = rd_.r(0x2010_F83C);
@@ -1249,6 +1249,32 @@ fn dumpPcRing() void {
         buf2[17] = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*; // SYSCON modem_rst_conf
         _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
         _ = esp_rom_spiflash_write(0x188000, &buf2, @intCast(@sizeOf(@TypeOf(buf2))));
+    }
+    // **ROM SPI-flash legacy 函数表快照**（0x189000，纯观测）。
+    // esp32s31.rom.ld:198：rom_spiflash_legacy_funcs = 0x2f07ffe4。
+    // 注意：0x2f80e4cc 停点的真轮询是 [0x20501000]&0xF（1af128e 已解码），
+    // 此表与其无关，仅作 flash 驱动状态对照。
+    {
+        var buf3: [16]u32 = @splat(0);
+        buf3[0] = 0xADC0_FEE7;
+        const tbl: u32 = (@as(*volatile u32, @ptrFromInt(0x2f07_FFE4))).*;
+        buf3[1] = tbl; // 期望 0x2f07f978
+        if (tbl >= 0x2f00_0000 and tbl < 0x2f08_0000) {
+            buf3[2] = (@as(*volatile u32, @ptrFromInt(tbl + 0x0C))).*; // unlock
+            buf3[3] = (@as(*volatile u32, @ptrFromInt(tbl + 0x10))).*; // erase_sector
+            buf3[4] = (@as(*volatile u32, @ptrFromInt(tbl + 0x14))).*; // erase_block
+            buf3[5] = (@as(*volatile u32, @ptrFromInt(tbl + 0x18))).*; // read
+            buf3[6] = (@as(*volatile u32, @ptrFromInt(tbl + 0x1C))).*; // write
+            buf3[7] = (@as(*volatile u32, @ptrFromInt(tbl + 0x20))).*; // encrypt_write
+            buf3[8] = (@as(*volatile u32, @ptrFromInt(tbl + 0x24))).*;
+            buf3[9] = (@as(*volatile u32, @ptrFromInt(tbl + 0x28))).*; // wren
+            buf3[10] = (@as(*volatile u32, @ptrFromInt(tbl + 0x2C))).*; // wait_idle
+            buf3[11] = (@as(*volatile u32, @ptrFromInt(tbl + 0x30))).*; // erase_area
+            buf3[12] = (@as(*volatile u32, @ptrFromInt(tbl + 0x04))).*; // read_sub_len
+            buf3[13] = (@as(*volatile u32, @ptrFromInt(tbl + 0x08))).*; // write_sub_len
+        }
+        _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x189000, &buf3, @intCast(@sizeOf(@TypeOf(buf3))));
     }
 }
 
