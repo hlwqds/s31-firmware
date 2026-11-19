@@ -23896,3 +23896,59 @@ _ = esp_rom_spiflash_erase_sector(flash_mark_off / 0x1000);  // 0x186，不是 0
 > **一个通过关闭功能得到的成功读数。**
 
 ⇒ 树里现在是 `Enable = 1`（真正开始广播）⇒ **会挂** ⇒ 那是**已定位的缺陷**。
+
+## 🔎 开放项缺口定位：缺的是 IDF 的**两步普通 C**
+
+### IDF 的 `esp_phy_enable` 顺序（`phy_init.c:329-345`）
+
+```c
+esp_phy_common_clock_enable();   // ① → wifi_bt_common_module_enable()
+phy_module_enable();             // ② → modem_clock_module_enable(PHY_CALIB) 或 periph_ll_*
+assert(phy_module_has_clock_bits(...));
+esp_phy_load_cal_and_init();     // ③ → 内部调 register_chipv7_phy
+```
+
+⇒ **我们做了 ③（`register_chipv7_phy` 直接调），跳过了 ①②。**
+
+### 两处的确切位置（都是普通 C，可移植）
+
+| 函数 | 位置 | 内容 |
+| --- | --- | --- |
+| `esp_phy_common_clock_enable` | `esp_phy/src/phy_init.c:285` | 只有一行：`wifi_bt_common_module_enable()` |
+| `phy_module_enable` | `esp_hw_support/periph_ctrl.c:172` | 两条分支，见下 |
+
+`phy_module_enable` 的两条分支：
+
+| 条件 | 实现 |
+| --- | --- |
+| `SOC_MODEM_CLOCK_IS_INDEPENDENT` | `modem_clock_module_enable(PERIPH_PHY_CALIBRATION_MODULE)` |
+| 否则 | `periph_ll_phy_calibration_module_enable_clk_clear_rst()` + RNG/WiFi/BT 的 `periph_ll_*_enable_clk_clear_rst()` |
+
+### 为什么这解释了 `0x200A` 的挂住
+
+| 事实 | 推论 |
+| --- | --- |
+| ①② 是**时钟/复位门控** | 不做 ⇒ PHY 模块**没有时钟** ⇒ 只有标定能跑（它用的是别的路径）|
+| 标定 `rc=0` 但广播启动挂住 | **标定 ≠ 射频模块已使能** |
+| `FE` 块可读 | 那是另一条通路，不代表 PHY 模块时钟已开 |
+| `0x2006`/`0x2008` 正常、`0x200A` 挂 | 前两条只写配置，**`0x200A` 第一次真正要用射频** |
+
+⇒ **与我们此前的判断一致**：PHY 标定完成 ≠ 射频就绪。
+
+### 移植这两步的前提
+
+| # | 检查 |
+| --- | --- |
+| 1 | `SOC_MODEM_CLOCK_IS_INDEPENDENT` 在 S31 上是否为真 |
+| 2 | 若为真 ⇒ 需要 `modem_clock_module_enable`（**此前记录：本板缺这段 IRAM 代码**）|
+| 3 | 若为假 ⇒ 只需 `periph_ll_*` 系列（也是 IDF 代码，需移植）|
+
+⇒ **两条路都需要移植 IDF 代码**，不是"调一个 ROM 函数"能解决的。
+
+### 因此开放项的准确描述
+
+```
+LE 广播挂住（0x200A 开始广播）
+  ⇒ 缺 IDF 的「PHY 模块时钟/复位使能」两步
+  ⇒ 需要移植 periph_ctrl.c:172 与 phy_init.c:285 的等价实现
+```
