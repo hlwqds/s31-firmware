@@ -21454,3 +21454,57 @@ BLE init 卡在 step 6
 | —— | 同型"看起来对"错误 | **21** |
 | —— | 撤回总数 | 114 |
 | —— | 自我纠正 | **296** |
+
+## 开放项 3b（PHY 首次标定）：具体路径已明确
+
+### 已有的半成品
+
+`components/bt-blobs/link/phy_stubs.c` 里**已经**具备：
+
+| 组件 | 状态 |
+| --- | --- |
+| `nvs_open` / `nvs_get_blob` 返回 `ESP_ERR_NVS_NOT_FOUND` | ✅ ⇒ IDF 会走 `PHY_RF_CAL_FULL` 回退 |
+| 128 字节的 `phy_init_data` 表 | ✅ 已携带 |
+
+### 缺的只是那一次调用
+
+```text
+register_chipv7_phy(&init_data, &cal, PHY_RF_CAL_FULL = 2)
+```
+
+| 项 | 值 |
+| --- | --- |
+| 符号地址 | `0x40061c82`（README 已记录）|
+| 签名 | `(init_data, cal_data, mode)` |
+| `cal_data` 尺寸 | **1904 字节**（`esp_phy_calibration_data_t` 形状已在仓库里）|
+
+### 接线顺序
+
+```text
+porting.phyDomainEnable()
+  → I2C_ANA_MST / 模拟 I2C 时钟
+  → **register_chipv7_phy(&init_data, &zeroed_cal_1904, 2)**
+  → 读回 RF 块，看基带是否有应答
+```
+
+### 前置校验（写代码前先做）
+
+| # | 检查 | 原因 |
+| --- | --- | --- |
+| 1 | `nm` / `readelf` 看 `register_chipv7_phy` 的**段归属** | 若它在 IRAM 段而我们没有该段 ⇒ 是"缺代码"而非"缺调用" |
+| 2 | 确认 1904 字节 cal 缓冲在 `.bss`（NOLOAD 即可）| 若放栈上会溢出 |
+
+⇒ 这一步**不影响已打通的 HCI 命令通路**，属于独立的下一阶段。
+
+## 最终状态（本会话结束时）
+
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1 | BT/MAC 四项时钟配置 | ✅ 已修复 |
+| 2 | 任务栈未初始化 | ✅ **已修复（默认清零）** |
+| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修复 |
+| 3b | **PHY 首次标定** | ❌ **开放（路径已明确）** |
+| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修复 |
+| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修复并验证 |
+| 6 | 应答走 `btdmTx` 而非 `leEvtTx` | ✅ 已澄清 |
+| —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
