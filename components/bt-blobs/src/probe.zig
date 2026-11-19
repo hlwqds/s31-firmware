@@ -622,6 +622,10 @@ pub fn run() noreturn {
         // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
         // 结果：去掉 37 无变化 ⇒ 恢复标准的"三个信道全开"。
         var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
+        // ✅ **已实验判定：地址类型不是原因**（2026-11-19）
+        // 试过「0x2005 写随机地址 + own_addr_type=0x01」⇒ marker 仍 `stage=22`
+        // （`tx` 从 5 变 6 **只是因为多了一条 0x2005**，不是成功）。
+        // ⚠ **判据必须是 `stage == 23`**；只看 `tx` 会把"多发一条命令"误判成"返回了"。
         const r6 = transport.sendCmd(0x2006, &ap);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
         var ad: [32]u8 = @splat(0);
