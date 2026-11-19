@@ -618,7 +618,14 @@ pub fn run() noreturn {
     // **LE 广播 + flash 阶段标记**：每条命令前把阶段写进 `0x186000`，
     // 卡住后从 **host** 读回 —— 不依赖任何日志。
     {
-        flashStage(20);
+        // **实验：现在重试 `bt_bb_v2_init_cmplx(1)`**。
+        // ADR-001 旧记录：它 stall 在 `write 0x20107C80`（WIFI_BB 区）——但那是旧时钟状态
+        // （clk_conf1 缺 wifibb 位组）。本轮自旋期快照证实 clk_conf1 已被归档自己开到
+        // `0x003FFA8C`（含 wifibb_44m/80m/160x1/wifimac）⇒ 前置条件已变。
+        // 用 PC 采样器判读：若再 stall，直接拿挂点地址；端到端判据 marker stage 23 / tx 6。
+        flashStage(64);
+        const bbrc = bt_bb_v2_init_cmplx(1);
+        flashStageExtra(65, @bitCast(bbrc), 0);
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
         // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
         // 结果：去掉 37 无变化 ⇒ 恢复标准的"三个信道全开"。

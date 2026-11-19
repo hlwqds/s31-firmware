@@ -25238,3 +25238,36 @@ FE 门控 · ICG 双域 · `modem_conf` · `ANALOG_CLOCK` · widgets CLK_EN（�
 `clk_en0`/`modem_ctrl0`（污染性扫描，待干净重测=当前待烧版）· `rst_btbb/btbb_apb` 脉冲 ·
 信道 37 · 地址类型。**未排除且未试**：`MODEM_PWR` 电源岛、`bt_bb_v2_init_cmplx` 重试
 （现 clk_conf1 已含 wifibb 位组，前置条件已变）。
+
+## ✅ `bt_bb_v2_init_cmplx(1)` 重试结果（前置条件已变，init 不再 stall）
+
+| 项 | 结果 |
+| --- | --- |
+| 调用时机 | `enable()` 之后、LE 段之前（stage 64 → 调用 → 65 记 rc）|
+| stall？ | **不再 stall** —— ADR-001 旧记录的挂点（`write 0x20107C80`）未复现 |
+| 证据 | marker 被后续 stage 22 覆盖 ⇒ 流程走过了 init；PC 环采样窗仍落在 0x200A 轮询（n=72, s0=0x7421）|
+| 端到端 | **仍 `stage=22 / tx=5`** —— BB init 完成也没能让 `0x201098BC.bit2` 置位 |
+
+### 解码补充（`bt_bb_v2.o` 重定位表）
+
+该函数**不碰 `0x201098xx`**：修改 `0x20100870`（FE 块，OR `0x9600`）、`0x20102C00`（OR `0x19F0000`），
+其余全是 `bt_bb_*` 内部配置调用（tx/rx set、高斯系数、CCA、版本打印）。**没有模拟 I2C**（此前猜测有误）。
+
+### 至此的候选树
+
+```
+0x201098BC.bit2 不置位
+├─ ✗ 时钟/门控（11 项全排除）
+├─ ✗ BB init 缺失（本轮：init 能返回）
+└─ ? 剩余：RF 合成器/PHY 硬件状态
+     ⇒ 与"PHY 标定 ≠ 射频使能"的结论一致
+     ⇒ 需要官方 IDF app 在同一块板上跑通作对照（vendor oracle），
+       或等串口恢复（POWERON）读归档的错误输出
+```
+
+### 仪器维护说明
+
+| 工具 | 状态 |
+| --- | --- |
+| esptool 5.6.0 | ⛔ 本会话后期持续 `stack smashing` 崩溃（原因未查；换 **5.4.0** 即正常）|
+| esptool 5.4.0 | ✅ `flash.sh` 传 `ESPTOOL=<5.4.0 路径>` 即可 |
