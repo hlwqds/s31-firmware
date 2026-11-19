@@ -17781,3 +17781,75 @@ panic: halted (wfi)                               ← 任务已启动
 | **因仪器/自证而撤回** | 7 |
 | 撤回总数 | 99 |
 | 自我纠正 | 243 |
+
+## ⚠️ 更正：step 20 之后**仍有 trap**（不是"任务已启动"）
+
+### 读数（我先前只看了 `halted` 行）
+
+```text
+!! c_mepc=0x2f00f99a  c_mtval=0x2f01dc73  cause=0x2  step=20 r_btdm_task_enable
+   c_ra=0x2f00fa60  f_sp=0x2f02c090  c_ra_saved=0x4006e0bc
+panic: live mepc=0x2f00f99a mtval=0x2f01dc73
+panic: sp=0x2f02c090 s0=0x2f02484c s1=0x2f00ffe8
+panic: callframe +8=0x2f01d3d8 +12=0x4006e0bc
+panic: ctx[0]=0x2f0129b0 ctx[1]=0x1f ctx[2]=0x0 ctx[3]=0xffffffff
+```
+
+| 字段 | 值 | 含义 |
+| --- | --- | --- |
+| `mepc` | `0x2f00f99a` | **blob RAM 代码区** |
+| `cause` | `2` | **非法指令** |
+| `mtval` | `0x2f01dc73` | 非法指令编码或相关地址 |
+| `step` | **20** | `r_btdm_task_enable` |
+| `c_ra_saved` | `0x4006e0bc` | 调用点（`.flash.text`）|
+
+⇒ **`panic: halted (wfi)` 是 trap handler 的停机路径**，不是"调度器进入 idle"。
+
+### 因此更正两条
+
+| 我先前写的 | 实际 |
+| --- | --- |
+| "step 20 到达（最后一步）⇒ 任务已启动" | ❌ **step 20 内部发生了非法指令 trap** |
+| "`halted (wfi)` 不是失败" | ❌ **是失败** —— 是 handler 停机 |
+
+### 仍然成立
+
+| 事实 |
+| --- |
+| step 18 的假失败消失（`r_conn_stack_enable(0)` 生效）|
+| step 19 通过 |
+| step 20 **被进入**（`enter step 20` 打印）|
+| 因此 enable 序列**只剩 step 20 内部这一处** |
+
+### `mtval = 0x2f01dc73` 的解码
+
+按 RISC-V 指令编码看低 7 位：
+
+```text
+0x2f01dc73 & 0x7f = **0x73**  ⇒  opcode SYSTEM / CUSTOM
+```
+
+⇒ 非法指令很可能是**不支持的 SYSTEM/CUSTOM 指令**
+（CSR 访问或厂商扩展），而不是普通访存错误。
+
+⇒ 这与"blob 假设某个 RISC-V 扩展存在"完全吻合 —— 需核对编译目标是否启用了它。
+
+### 下一步（两条）
+
+| # | 动作 | 判据 |
+| --- | --- | --- |
+| 1 | 反汇编 `0x2f00f99a` 附近，确认那 4 字节到底是什么指令 | 若是 CSR/自定义指令 ⇒ 目标 ABI 不匹配 |
+| 2 | 核对 `build.zig` 的 `-mcpu`/扩展集是否与 IDF 构建 blob 时一致 | 差异即根因 |
+
+## 本会话最终总计（最终锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因 1（四项时钟配置）** | ✅ 已验证 |
+| **根因 2（任务栈未初始化）** | ✅ 已验证 |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
+| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ 已验证（step 18 假失败消失）|
+| **当前状态** | **step 20 内部非法指令**（`mepc=0x2f00f99a`, `cause=2`）|
+| **因仪器/自证而撤回** | **8** |
+| 撤回总数 | **100** |
+| 自我纠正 | **244** |
