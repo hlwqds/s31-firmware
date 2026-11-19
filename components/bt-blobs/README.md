@@ -25197,3 +25197,44 @@ widgets CLK_EN ✅（生效但不覆盖）、`clk_en0`/`modem_ctrl0` ✅、`rst_
 
 ⇒ 若 BB init 能走完 ⇒ BB 内部寄存器文件被映射 ⇒ `0x201098xx` 窗口可能随之可用
 ⇒ `0x200A` 的轮询就有源头了。
+
+## 📋 交接状态（会话结束点，2026-11-19 晚）
+
+### 待烧录
+
+| 项 | 值 |
+| --- | --- |
+| 构建 | `835200`（`md5` 见 `firmware/zig-out/bin/app.bin`）|
+| 内容 | `modem_ctrl0.bit0`(0x20587040) 使能 —— **唯一干净未测**的 modem 域主时钟臂 |
+| 阻塞 | **USB 桥需要物理重插**：esptool 持续 `stack smashing` 崩溃，设备节点 `22:09` 重新枚举过 |
+| 判据 | marker `stage==23 / tx==6` ⇒ 找到门；仍 22 ⇒ 该臂排除 |
+
+### 重插后第一步
+
+```bash
+cd firmware && ESPTOOL=…/esptool sh tools/flash.sh /dev/ttyUSB0
+sleep 20
+esptool read-flash 0x186000 0x8   # word0 低16位 = stage
+```
+
+### 当前开放项（最终形态）
+
+`0x200A` 的归档轮询等 **`0x201098BC.bit2`**（65536 次上限、超时错误码 3）。
+该位是硬件 ready 位；`0x201098xx` 窗口读写全死；九个门控候选已排除；
+**剩余候选：modem 埂电源/主时钟（`modem_ctrl0.bit0` 待烧）与 `MODEM_PWR` 电源岛（0x2010D000）**。
+
+### 仪器（已验证可用）
+
+| 工具 | 用法 |
+| --- | --- |
+| flash 标记 | `read-flash 0x186000 0x8`：`word0` 低 16 位 = stage |
+| PC 环 + 现场 | `read-flash 0x187000 0x1C`：`[magic, n, s0, a0, a1, ra, PC×48]` |
+| 自旋期读回 | `read-flash 0x188000 0x28`：`[magic, R9880, R98A8, R98B8, 期望0x0FFFFFFF, R9400, R98BC, SYSCON_EN, clk_conf1, LPCON_EN]` |
+| 上游 .o 反汇编 | `ar x libble_app.a`（esp-idf-hosted 或 esp_phy/lib/esp32s31）→ objdump 正常解码 |
+
+### 本会话九个排除项（各带证据）
+
+FE 门控 · ICG 双域 · `modem_conf` · `ANALOG_CLOCK` · widgets CLK_EN（生效但不覆盖窗口）·
+`clk_en0`/`modem_ctrl0`（污染性扫描，待干净重测=当前待烧版）· `rst_btbb/btbb_apb` 脉冲 ·
+信道 37 · 地址类型。**未排除且未试**：`MODEM_PWR` 电源岛、`bt_bb_v2_init_cmplx` 重试
+（现 clk_conf1 已含 wifibb 位组，前置条件已变）。

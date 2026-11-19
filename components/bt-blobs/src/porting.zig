@@ -270,6 +270,9 @@ pub fn phyDomainEnable() void {
         //    （注意 0x20109880/A8/B8/BC 就在 widgets 块空间 0x20109400..0x20109BFF 里。）
         wr(0x2010_9C00, rd(0x2010_9C00) | (1 << 0));
         wr(0x2010_F000, rd(0x2010_F000) | (1 << 0));
+        // 9) **modem 域主时钟**（`reg_modem_clk_en`，0x20587040 bit0）—— 单独干净测
+        //    （此前只在污染性扫描里测过，读数不可信）
+        wr(0x2058_7040, rd(0x2058_7040) | (1 << 0));
         osal.logPublic("bt phy: syscon/lpcon CLK_EN set (0x{x}/0x{x})", .{
             rd(0x2010_9C00), rd(0x2010_F000),
         });
