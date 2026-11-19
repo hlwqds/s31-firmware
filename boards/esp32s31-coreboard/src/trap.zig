@@ -488,15 +488,22 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **扫整段已用栈**：`f_sp` 距 `_stack_top` 约 304 B ⇒ 扫 [sp, sp+304)。
             // 之前扫的 [sp, sp+64) 是帧的**最低** 64 B，而保存的 ra 在帧**顶端**，
             // 且叶子函数根本没有保存的 ra ⇒ "64 B 内无代码地址"是正常形态，不是证据。
+            // **只扫 handler 帧之下**：[sp-256, sp-96) —— 排除自己的压栈值（frame.ra 就在 sp-96）。
+            // 打印**全部**命中（不只第一个）：da=第一个命中值，db=第一个命中偏移，
+            // dc=命中**个数**，另外把每个命中的偏移累加进 diag_d 的低字节便于核对。
             var found: usize = 0;
             var hit_off: usize = 0;
-            // **双向扫描**：栈向下增长 ⇒ 被调用者帧在低地址侧，必须往下扫。
+            var hits: u32 = 0;
             var off: isize = -256;
-            while (off < 304) : (off += 4) {
+            while (off < -96) : (off += 4) {
                 const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + off));
                 const v = (@as(*const usize, @ptrFromInt(a))).*;
-                if (v == csr_mepc or v == (csr_mepc | 1)) { found = v; hit_off = @intCast(off); break; }
+                if (v == csr_mepc or v == (csr_mepc | 1)) {
+                    if (hits == 0) { found = v; hit_off = @intCast(off); }
+                    hits += 1;
+                }
             }
+            diag_d = hits;
             diag_a = @truncate(found);
             diag_c = @truncate(hit_off);   // 命中偏移（**独立字段**，不被 anchor 覆盖）
             diag_a = @truncate(found);
@@ -619,6 +626,7 @@ pub var extra_dump: ?*const fn () void = null;
 pub var diag_a: u32 = 0;
 pub var diag_b: u32 = 0;
 pub var diag_c: u32 = 0;
+pub var diag_d: u32 = 0;
 pub var last_step: u32 = 0;
 pub var last_step_name: []const u8 = "none";
 
