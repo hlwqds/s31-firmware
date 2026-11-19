@@ -23476,3 +23476,61 @@ _heap_start = _data_end_btdm = 2f022940
 >
 > ⇒ 三次的共同点：**我只验证了自己想到的那一层。**
 > ⇒ 而正确做法是**三层都验证**：段规则、符号存在、指令存在。
+
+## ✅ host 可读通道的实现前提：**flash 原语已存在**
+
+### 已有的封装（`components/boot-power-perf/src/flash.zig`）
+
+| 原语 | 地址 / 值 |
+| --- | --- |
+| `esp_rom_spiflash_read` | — |
+| **`esp_rom_spiflash_write`** | **`0x2f800168`** |
+| **`esp_rom_spiflash_erase_sector`** | **`0x2f800160`** |
+| `sector_size` | **`0x1000`**（4 KiB）|
+| `eraseSector(offset)` | ✅ 已封装，含边界与对齐检查 |
+
+⇒ **不需要自己写 flash 驱动。**
+
+### 因此完整配方（三层都齐了）
+
+```zig
+// 1. 擦除 factory 尾扇区（app.bin 只到 ~0xDB000，0x186000 无人读）
+try flash.eraseSector(0x186000);
+
+// 2. 写阶段号（4 字节，需 4 字节对齐）
+const word: [1]u32 = .{ stage };
+try flash.write(0x186000, &word);
+```
+
+```bash
+# 3. host 读回 —— **完全不经过 UART**
+esptool -p /dev/ttyUSB0 read-flash 0x186000 0x40 /tmp/stage.bin
+xxd /tmp/stage.bin
+```
+
+### 注意事项
+
+| # | 注意 |
+| --- | --- |
+| 1 | 每条 LE 命令一次 erase(4 KiB) ⇒ **重**，但只有 3 条 |
+| 2 | **不能碰 `otadata`（`0x490000`）** —— A/B 启动状态 |
+| 3 | 若 CPU 已完全卡死则写不了 ⇒ 那时只能靠 NMI 或 GPIO |
+| 4 | `0x186000` 在 `factory` 分区内（`0x10000..0x187000`）⇒ 合法可写 |
+
+### 状态
+
+| 项 | 状态 |
+| --- | --- |
+| flash 原语 | ✅ **已存在**（`boot-power-perf/src/flash.zig`）|
+| 扇区选择 | ✅ `0x186000`（分区表实测）|
+| 接线 | ❌ **未做**（需从 bt-blobs 引用该组件）|
+| LE 广播 | ❌ 未解（等这个通道）|
+
+## 门禁（本会话最终）
+
+| 门禁 | 结果 |
+| --- | --- |
+| `npm run check`（`tsc --noEmit` + **全仓** prettier）| ✅ **通过** |
+| `npx quartz build` | ✅ 1165 文件 |
+| `zig fmt --check boards/ components/` | ✅ |
+| `python3 scripts/check-invariants.py` | ✅ |
