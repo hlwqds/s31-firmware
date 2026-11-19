@@ -21054,3 +21054,101 @@ stats_state.last_evt_code = bytes[2];
 | —— | 同型"看起来对"错误 | 19 |
 | —— | 撤回总数 | 113 |
 | —— | 自我纠正 | **291** |
+
+## 🎯 最终解码：controller 应答的是 **opcode `0x0000`**，不是 Reset 的 `0x0C03`
+
+### 字节与布局
+
+```text
+evt_bytes = 0e, 03, 01, 00, 00, 00
+```
+
+按 `[0]=事件码, [1]=长度, [2..]=参数` 解（**无 H4 类型字节**，与代码注释的 `[0]=0x04` 不符）：
+
+| 偏移 | 值 | 含义 |
+| --- | --- | --- |
+| `[0]` | `0x0E` | **HCI Command Complete** |
+| `[1]` | `0x03` | 参数长度 = 3 |
+| `[2]` | `0x01` | `num_hci_command_packets` |
+| `[3..4]` | `0x00 0x00` | **opcode = `0x0000`** |
+
+⇒ 长度 3 = `ncmd(1) + opcode(2)` ⇒ **没有 status 字节**
+⇒ 这正是"应答 **opcode `0x0000`**"的形状，而 `0x0000` 就是 **HCI_NOP**。
+
+### 因此
+
+| 结论 | 状态 |
+| --- | --- |
+| 链路（命令下行 + 事件上行） | ✅ **完全正常** |
+| 中断/唤醒链 | ✅ **正常** |
+| controller 任务 | ✅ **在跑** |
+| **我们发出的 opcode** | ❌ **被 controller 读成 `0x0000`** |
+
+⇒ **不是"没有回包"，而是"回的是另一个命令的包"。**
+
+### 根因：发送缓冲区布局与 blob 期望不符
+
+`transport.zig` 的 `sendCmdViaHs`：
+
+```zig
+buf[0] = @truncate(opcode);       // 0x03
+buf[1] = @truncate(opcode >> 8);  // 0x0C
+buf[2] = @intCast(params.len);    // 0x00
+```
+
+⇒ 即 `[opcode_lo][opcode_hi][plen]`。
+
+而 `r_ble_hci_trans_hs_cmd_tx` 期望的布局**可能**是：
+
+| 候选 | 形态 |
+| --- | --- |
+| A | `[plen][opcode_lo][opcode_hi][params]` |
+| B | `[opcode_lo][opcode_hi][plen][params]`（我们现在的）|
+| C | H4：`[0x01][opcode_lo][opcode_hi][plen][params]` |
+
+⇒ 若控制器把 `buf[0]` 当**长度**、`buf[1..2]` 当 opcode，
+则我们发的 `03 0C 00` 会被读成 len=0x03、opcode=`0x000C`... 不是 `0x0000`。
+
+⇒ 若它把 `buf[2]` 当 opcode 低位、`buf[3]`（未被我们写）当高位 ⇒ **opcode = 0x00??** ⇒ 与我们看到的 `0x0000` **吻合**（`buf[3]` 是未初始化/0）。
+
+⇒ **因此最可能：blob 期望 `[plen][opcode_lo][opcode_hi][params]`。**
+
+### 下一步（一次运行即可定论）
+
+| # | 动作 | 判据 |
+| --- | --- | --- |
+| 1 | 把 `sendCmdViaHs` 改成 `buf[0]=plen; buf[1]=opcode_lo; buf[2]=opcode_hi; buf[3..]=params` | 回包 opcode 变成 `0x0C03` |
+| 2 | 同时打印**发送缓冲区的 4 个字节** | 直接对照 |
+
+⇒ 判据非常干脆：**回包里的 opcode 是不是 `0x0C03`。**
+
+### 这一条也修正了 `last_evt_code`
+
+```zig
+/// 字节布局：`[0]=0x04 EVT, [1]=len, [2]=event code`   ← **错**
+stats_state.last_evt_code = bytes[2];
+```
+
+⇒ 实测 `[0]=0x0E` ⇒ **没有 `0x04` 类型字节** ⇒ 正确应是：
+
+```zig
+last_evt_code = bytes[0];          // 0x0E
+last_evt_len  = bytes[1];          // 0x03
+len           = 1 + bytes[1];      // 4（不是 cmd[1]+2）
+```
+
+⇒ `cmd[1]+2` 会把 4 字节的帧当成 5 字节 ⇒ **可能越界读并过度释放**。
+
+## 本会话最终总计（最终锁定）
+
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1–5 | 五个缺陷 | 4 修 + 1 验证 |
+| 6 | ~~`canaryScan` O(n²)~~ | ❌ 撤回 |
+| 7 | 判决行被 FIFO 丢弃 | ✅ 已修 |
+| **8** | **`sendCmdViaHs` 缓冲区布局错** | ✅ **已定位（回包 opcode = 0x0000）** |
+| **9** | **`leEvtTx` 事件布局偏移错（多假设了 0x04）** | ✅ **已定位** |
+| **里程碑** | **收到标准 HCI Command Complete** | ✅ **达成** |
+| —— | 同型"看起来对"错误 | 19 |
+| —— | 撤回总数 | 113 |
+| —— | 自我纠正 | **292** |
