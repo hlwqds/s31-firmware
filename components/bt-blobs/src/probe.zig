@@ -634,7 +634,19 @@ pub fn run() noreturn {
             _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
             _ = esp_rom_spiflash_write(0x189000, &kp, 8);
         }
-        var v_t1: u32 = undefined;
+        // **0x7a4/0x7a5 写-回读验证**（RISC-V Debug 规范 0.13 的 tdata1/tdata2 地址）：
+        // tdata1(0x7a4) ← 0x4C（Espressif 布局：USER|MACHINE|EXECUTE）
+        // tdata2(0x7a5) ← 0x2f828a78（目标地址）
+        // 回读相等 ⇒ 找到真触发器 CSR！
+        var r4: u32 = undefined;
+        var r5: u32 = undefined;
+        asm volatile ("li t0, 0x4c");
+        asm volatile ("csrw 0x7a4, t0"); // tdata1 = 0x4C
+        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r4));
+        asm volatile ("li t0, 0x2f828a78");
+        asm volatile ("csrw 0x7a5, t0"); // tdata2 = 地址
+        asm volatile ("csrr %[v], 0x7a5" : [v] "=r" (r5));
+                var v_t1: u32 = undefined;
         var v_t2: u32 = undefined;
         var v_t3: u32 = undefined;
         var v_t4: u32 = undefined;
@@ -660,17 +672,21 @@ pub fn run() noreturn {
         asm volatile ("csrr %[v], 0x7a5"
             : [v] "=r" (v_t5),
         ); // tselect
-        var cv: [6]u32 = @splat(0);
+        var cv: [8]u32 = @splat(0);
         cv[0] = 0xADC0_FEEB;
         cv[1] = v_t1; // tinfo
         cv[2] = v_t2; // tdata1 回读
         cv[3] = v_t3; // tdata2 回读
         cv[4] = v_t4; // tcontrol 回读
         cv[5] = v_t5; // tselect 回读
+        cv[6] = r4; // 0x7a4 回读（写 0x4C 后）
+        cv[7] = r5; // 0x7a5 回读（写地址后）
         _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18F000, &cv, @intCast(@sizeOf(@TypeOf(cv))));
-        // **ebreak**：进断点分支（trap 上下文 flash 写已验证可行）把 bp_scan 落盘
-        asm volatile ("ebreak");
+        // **正确武装序列**（Debug Spec v1.0 地址映射）：
+        // tselect(0x7a0) = 触发器 0 → tdata1(0x7a1) = EXECUTE|USER|MACHINE →
+        // tdata2(0x7a2) = 0x2f828a78（vendor FE 轮询地址）→ tcontrol(0x7a5) = MTE|MPTE
+        // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
         flashStage(73);
@@ -690,138 +706,35 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
     }
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a3, t0"); // **tcontrol 先行**：触发器总使能，位探测才有效
-    // **逐触发器位探测**：4 个触发器各自有独立 tdata1（tselect 选号）。
-    // tselect=1 已知可写位 = [0,1]（LOAD/STORE）；EXECUTE(bit2) 可能在其它号可写。
-    // 每触发器：清场→逐位写→读回→keep 位图。结果 3×32 位落 0x189000。
-    {
-        const rd2 = struct {
-            fn r(addr: usize) u32 {
-                return @as(*volatile u32, @ptrFromInt(addr)).*;
-            }
-            fn w(addr: usize, val: u32) void {
-                @as(*volatile u32, @ptrFromInt(addr)).* = val;
-            }
-        };
-        const tsel_bits = [_]u32{ 0, 2, 3 };
-        var all_keep: [3]u32 = @splat(0);
-        for (0..3) |ti| {
-            const tsel = tsel_bits[ti];
-            rd2.w(0x7a5, tsel); // tselect = 触发器号
-            rd2.w(0x7a3, 0x88); // tcontrol 每次重确认
-            var keep_t: u32 = 0;
-            var bp: u32 = 0;
-            while (bp < 32) : (bp += 1) {
-                const bit: u32 = @as(u32, 1) << @intCast(bp);
-                rd2.w(0x7a0, 0); // 清场
-                rd2.w(0x7a0, bit);
-                const rb: u32 = rd2.r(0x7a0);
-                if ((rb & bit) != 0) keep_t |= bit;
-            }
-            all_keep[ti] = keep_t;
-            board.trap.bp_keep[ti] = keep_t;
-        }
-        var kb: [4]u32 = @splat(0);
-        kb[0] = 0xADC0_FEED;
-        kb[1] = all_keep[0]; // tsel=0
-        kb[2] = all_keep[1]; // tsel=2
-        kb[3] = all_keep[2]; // tsel=3
-        // **ebreak**：进断点分支（trap 上下文 flash 写可靠）把 bp_keep/bp_scan 落盘 0x18D000
-        asm volatile ("ebreak");
+        // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
+        // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
+        // STORE 观察点盯 PMU_RF_PWC(0x20704184)：BT blob / phy 的 vendor 段谁写它，
+        // 首个命中者的 auth_pc 就是写入者 PC。
+        // 命中记录：trap 处理器写 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000。
+        asm volatile ("csrw 0x7a0, zero"); // tselect = 0
+        asm volatile ("li t0, 0x4a");
+        asm volatile ("csrw 0x7a1, t0"); // tdata1 = STORE|USER|MACHINE
+        asm volatile ("li t0, 0x20704184");
+        asm volatile ("csrw 0x7a2, t0"); // tdata2 = PMU_RF_PWC
+        asm volatile ("li t0, 0x88");
+        asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)
+        // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
+        // {FEE9, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活。
+        var t1v: u32 = undefined;
+        var t2v: u32 = undefined;
+        var tcv: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a1"
+            : [v] "=r" (t1v),
+        );
+        asm volatile ("csrr %[v], 0x7a2"
+            : [v] "=r" (t2v),
+        );
+        asm volatile ("csrr %[v], 0x7a5"
+            : [v] "=r" (tcv),
+        );
+        var av: [4]u32 = .{ 0xADC0_FEE9, t1v, t2v, tcv };
         _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x189000, &kb, 16);
-    }
-    var r_scan: u32 = undefined;
-    var scan_r: [16]u32 = @splat(0);
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a2, t0");
-    asm volatile ("csrr %[v], 0x7a2"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[2] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a3, t0");
-    asm volatile ("csrr %[v], 0x7a3"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[3] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a4, t0");
-    asm volatile ("csrr %[v], 0x7a4"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[4] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a6, t0");
-    asm volatile ("csrr %[v], 0x7a6"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[6] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a7, t0");
-    asm volatile ("csrr %[v], 0x7a7"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[7] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a8, t0");
-    asm volatile ("csrr %[v], 0x7a8"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[8] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a9, t0");
-    asm volatile ("csrr %[v], 0x7a9"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[9] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7aa, t0");
-    asm volatile ("csrr %[v], 0x7aa"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[10] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7ab, t0");
-    asm volatile ("csrr %[v], 0x7ab"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[11] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7ac, t0");
-    asm volatile ("csrr %[v], 0x7ac"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[12] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7ad, t0");
-    asm volatile ("csrr %[v], 0x7ad"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[13] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7ae, t0");
-    asm volatile ("csrr %[v], 0x7ae"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[14] = r_scan;
-    asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7af, t0");
-    asm volatile ("csrr %[v], 0x7af"
-        : [v] "=r" (r_scan),
-    );
-    scan_r[15] = r_scan;
-    var sbv: [17]u32 = @splat(0);
-    sbv[0] = 0xADC0_FEEA;
-    for (0..16) |k| sbv[1 + k] = scan_r[k];
-    _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x18F000, &sbv, @intCast(@sizeOf(@TypeOf(sbv))));
-    // 恢复 tdata1/tdata2（扫描可能覆盖了它们）
-    asm volatile ("li t0, 0x4c");
-    asm volatile ("csrw 0x7a0, t0");
-    asm volatile ("li t0, 0x2f828a78");
-    asm volatile ("csrw 0x7a1, t0");
+        _ = esp_rom_spiflash_write(0x189000, &av, 16);
 
     // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
     var rc = bringup.init(&cfg);
@@ -896,21 +809,6 @@ pub fn run() noreturn {
         // `0x003FFA8C`（含 wifibb_44m/80m/160x1/wifimac）⇒ 前置条件已变。
         // 用 PC 采样器判读：若再 stall，直接拿挂点地址；端到端判据 marker stage 23 / tx 6。
         // （pmu_init 已提前到 bringup 之前 —— IDF 次序；前/后 PMU 状态在 0x18B/18C 扇区）
-        // **单字二分 `0x2010D020..0x3C`**（MODEM_PWR 组 2 挂点边界）：每字独立阶段号 80-87，
-        // 读前写阶段号 ⇒ 挂哪个字 marker 停在哪；全幸存 ⇒ marker 到 90。
-        // 每字读后把 {magic2, 偏移, 值} 重写 0x18A000（同扇区反复擦写，诊断可接受）。
-        {
-            const p2: usize = 0x2010_D020;
-            var g2: u32 = 0;
-            while (g2 < 8) : (g2 += 1) {
-                flashStage(80 + g2);
-                const v2: u32 = (@as(*volatile u32, @ptrFromInt(p2 + 4 * g2))).*;
-                var sb: [3]u32 = .{ 0xADC0_FEE8, p2 + 4 * g2, v2 };
-                _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
-                _ = esp_rom_spiflash_write(0x18A000, &sb, 12);
-            }
-            flashStage(90);
-        }
         flashStage(73);
         // **采样窗口搬到此处**：esp_phy_enable 若挂，ISR 采 72 个样本后自动落盘 0x187000
         board.trap.resetPcs();
@@ -927,36 +825,6 @@ pub fn run() noreturn {
             const old_c = nmi_reg.*;
             nmi_reg.* = (old_c & 0x107) | (1 << 3); // 保留 bit8(IE)+低3位，置 nmies(bit3)
         }
-        // **RISC-V debug trigger（Espressif 官方编码，rv_utils.h:428-436）**：
-        // 目标 0x2f828a78（vendor FE 轮询环内的指令）。断点异常是同步异常，
-        // 不受 MIE 屏蔽 ⇒ 能命中 vendor 关中断段的自旋。
-        // 首次命中时 trap 处理器记录权威 mepc 并禁用触发器（防无限重触发）。
-        asm volatile ("li t1, 1");
-        asm volatile ("csrw 0x7a5, t1"); // tselect = 1
-        asm volatile ("li t0, 0x88"); // tcontrol = MPTE(bit7) | MTE(bit3) —— 触发器总使能
-        asm volatile ("csrw 0x7a3, t0"); // ← 此前从未写过：没有它任何触发器都不响！
-        asm volatile ("li t0, 0x4c"); // tdata1 = USER(bit3)|MACHINE(bit6)|EXECUTE(bit2)（Espressif 自定义布局，无 type 字段）
-        asm volatile ("csrw 0x7a0, t0");
-        asm volatile ("li t0, 0x2f828a78");
-        // **展开扫描 0x7a0..0x7af**（跳过 0x7a5/0x7a1/0x7a0）：逐 CSR 写 0x88 读回，
-        // 保留 0x88 的那个 = S31 的 tcontrol 等价物。结果落 0x18F000。
-        asm volatile ("csrw 0x7a1, t0"); // tdata2 = 目标地址
-        // 回读：tcontrol(0x7a3) 是否保持 0x88 + tdata1 是否保持 0x4c
-        var r_ctl: u32 = undefined;
-        var r_t1: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a3"
-            : [v] "=r" (r_ctl),
-        );
-        asm volatile ("csrr %[v], 0x7a0"
-            : [v] "=r" (r_t1),
-        );
-        var rvv: [4]u32 = @splat(0);
-        rvv[0] = 0xADC0_FEE9;
-        rvv[1] = r_ctl;
-        rvv[2] = r_t1;
-        rvv[3] = 0x2f828a78;
-        _ = esp_rom_spiflash_erase_sector(0x18F000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x18F000, &rvv, @intCast(@sizeOf(@TypeOf(rvv))));
         flashStage(90); // wait 之后：样本 ≥90 ⇒ 采样活着
         // **等采样器的 ISR dump 完成**（72 次采样触发一次性落盘 0x187000）。
         // 否则 flashStage(64) 的擦写会与 ISR dump **撞车**（ROM spiflash 不可重入）

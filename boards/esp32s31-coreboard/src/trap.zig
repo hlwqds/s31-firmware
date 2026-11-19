@@ -226,17 +226,22 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (auth_pc != 0) recordPc(auth_pc);
         // **5 字命中记录**：{FEE7, 权威mepc, s0, tdata1_rb, tdata2_rb}
         // —— 命中即知核当时实际 armed 的 type/m/match 与地址（自证仪器）。
-        var tb: [3]u32 = .{ 0xADC0_FEE7, auth_pc, @truncate(frame.s0) };
+        var t1rb: u32 = undefined;
+        var t2rb: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a1"
+            : [v] "=r" (t1rb),
+        );
+        asm volatile ("csrr %[v], 0x7a2"
+            : [v] "=r" (t2rb),
+        );
+        // **独占命中记录**：{FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000
+        // —— 命中即自证当时 armed 的配置，杜绝"读到别处记录当命中"。
+        var tb: [5]u32 = .{ 0xADC0_FEEF, cause, auth_pc, t1rb, t2rb };
         {
-            const prev = asm volatile ("csrrci %[v], mstatus, 8"
-                : [v] "=r" (-> usize),
-            );
-            _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x18D000, &tb, 12);
-            _ = asm volatile ("csrw mstatus, %[v]"
-                :
-                : [v] "r" (prev),
-                : .{ .memory = true });
+            // **不屏蔽 MIE 直写**（2026-11-19 flashStage 教训：pmu_init 之后屏蔽 MIE 的
+            // 擦写静默失败，直写才落地。窗口内唯一中断源是 2ms 采样器，ISR 不写 flash）。
+            _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
+            _ = esp_rom_spiflash_write(0x18B000, &tb, 20);
         }
         asm volatile ("li t1, 1");
         asm volatile ("csrw 0x7a5, t1"); // tselect = 1
