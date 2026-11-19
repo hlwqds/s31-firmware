@@ -628,7 +628,13 @@ pub fn run() noreturn {
         const r8 = transport.sendCmd(0x2008, &ad);
         // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
         // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
-        flashStageExtra(22, (@as(*volatile u32, @ptrFromInt(0x2010_B000))).*, (@as(*volatile u32, @ptrFromInt(0x2010_B004))).*);
+        // **实验：去掉 FE 快照读**。README 与 `tools/jtag-watch-modem-block.sh` 记的
+        // 根因症状是"访问 `0x2010B000` 后总线不再应答 —— 无异常、**中断停止、静默**"，
+        // 而这个 stage 22 恰好就在 `0x200A` 之前读那两个地址
+        // ⇒ 一次改动可同时解释"0x200A 无应答"与"UART 哑"（后者至今未解释）。
+        // 另外 word2/3 的 FE 快照**本是噪声**（同构建两次运行就不同），本来也不该当判据。
+        // 判据：marker stage/tx（23/6 = 返回了）+ 串口是否恢复。
+        flashStage(22);
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
