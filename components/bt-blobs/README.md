@@ -24160,14 +24160,14 @@ wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_
 
 ### 因此真实的净增量（两次 IDF 调用 vs 现有代码）
 
-| 项                              | 状态          |
-| ------------------------------- | ------------- |
-| FE 一族（bit13/14/15/19/20/21） | ✅ **已覆盖** |
-| `modem_conf = 0x3d`             | ✅ **已覆盖** |
-| **`clk_wifi_apb_en`（bit10）**  | ❌ 未开       |
-| **`clk_wifibb_44m_en`（bit2）** | ❌ 未开       |
-| **WIFI_BB 的 wifibb 位组**      | ❌ 未开       |
-| **`ANALOG_CLOCK_ENABLE()`**     | ❌ 未做       |
+| 项                              | 状态                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| FE 一族（bit13/14/15/19/20/21） | ✅ **已覆盖**                                                                                                 |
+| `modem_conf = 0x3d`             | ✅ **已覆盖**                                                                                                 |
+| **`clk_wifi_apb_en`（bit10）**  | ✅ 已开（并入 `0x003fffff`）                                                                                  |
+| **`clk_wifibb_44m_en`（bit2）** | ✅ 已开（并入 `0x003fffff`）                                                                                  |
+| **WIFI_BB 的 wifibb 位组**      | ✅ 已开（bits 0-6/8/9）                                                                                       |
+| **`ANALOG_CLOCK_ENABLE()`**     | ✅ **早已做过**（`phyDomainEnable()` step 51：`0x2010_F018 \| (1<<2)` = `clk_i2c_mst_en`，另有 `I2C_MST_FO`） |
 
 ⇒ 真正缺的是 **`PHY_CALIBRATION_CLOCK_DEPS` 里的 WIFI_APB / WIFI_BB / WIFI_BB_44M 那组**
 （现有 `btdmLpEnableClock` 只做了 BLE + BT_APB 组）。
