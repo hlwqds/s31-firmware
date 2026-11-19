@@ -642,11 +642,15 @@ pub fn run() noreturn {
         var r5: u32 = undefined;
         asm volatile ("li t0, 0x4c");
         asm volatile ("csrw 0x7a4, t0"); // tdata1 = 0x4C
-        asm volatile ("csrr %[v], 0x7a4" : [v] "=r" (r4));
+        asm volatile ("csrr %[v], 0x7a4"
+            : [v] "=r" (r4),
+        );
         asm volatile ("li t0, 0x2f828a78");
         asm volatile ("csrw 0x7a5, t0"); // tdata2 = 地址
-        asm volatile ("csrr %[v], 0x7a5" : [v] "=r" (r5));
-                var v_t1: u32 = undefined;
+        asm volatile ("csrr %[v], 0x7a5"
+            : [v] "=r" (r5),
+        );
+        var v_t1: u32 = undefined;
         var v_t2: u32 = undefined;
         var v_t3: u32 = undefined;
         var v_t4: u32 = undefined;
@@ -706,40 +710,40 @@ pub fn run() noreturn {
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 12);
     }
-        // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
-        // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
-        // LOAD 观察点盯 0x2010047C（vendor FE 轮询反复读的地址，README 反汇编
-        // 2f828a76/78/7a 回跳重读 base+0x47C，s0=0x20100000）⇒ 命中 auth_pc = FE 轮询 PC。
-        // （上轮 STORE@0x20704184 已抓到 BT 链写电源寄存者 PC=0x2f00c3e2，提交 5e3979c。）
-        // 命中记录：trap 处理器写 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000。
-        asm volatile ("csrw 0x7a0, zero"); // tselect = 0
-        asm volatile ("li t0, 0x49");
-        asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
-        asm volatile ("li t0, 0x2010047c");
-        asm volatile ("csrw 0x7a2, t0"); // tdata2 = FE 轮询读地址（vendor LOAD 循环）
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)
-        // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
-        // {FEE9, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活。
-        var t1v: u32 = undefined;
-        var t2v: u32 = undefined;
-        var tcv: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a1"
-            : [v] "=r" (t1v),
-        );
-        asm volatile ("csrr %[v], 0x7a2"
-            : [v] "=r" (t2v),
-        );
-        asm volatile ("csrr %[v], 0x7a5"
-            : [v] "=r" (tcv),
-        );
-        var av: [4]u32 = .{ 0xADC0_FEE9, t1v, t2v, tcv };
-        _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
-        _ = esp_rom_spiflash_write(0x189000, &av, 16);
-        // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：
-        // fe_poll: 命中 PC 0x2f828a5c 所在轮询环；rf_pwr: 命中 PC 0x2f00c3e2 所在例程。
-        dumpRom("fe_poll", 0x2f828a40, 0x60);
-        dumpRom("rf_pwr", 0x2f00c3b0, 0x60);
+    // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
+    // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
+    // LOAD 观察点盯 0x2010047C（vendor FE 轮询反复读的地址，README 反汇编
+    // 2f828a76/78/7a 回跳重读 base+0x47C，s0=0x20100000）⇒ 命中 auth_pc = FE 轮询 PC。
+    // （上轮 STORE@0x20704184 已抓到 BT 链写电源寄存者 PC=0x2f00c3e2，提交 5e3979c。）
+    // 命中记录：trap 处理器写 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000。
+    asm volatile ("csrw 0x7a0, zero"); // tselect = 0
+    asm volatile ("li t0, 0x49");
+    asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
+    asm volatile ("li t0, 0x2010047c");
+    asm volatile ("csrw 0x7a2, t0"); // tdata2 = FE 轮询读地址（vendor LOAD 循环）
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)
+    // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
+    // {FEE9, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活。
+    var t1v: u32 = undefined;
+    var t2v: u32 = undefined;
+    var tcv: u32 = undefined;
+    asm volatile ("csrr %[v], 0x7a1"
+        : [v] "=r" (t1v),
+    );
+    asm volatile ("csrr %[v], 0x7a2"
+        : [v] "=r" (t2v),
+    );
+    asm volatile ("csrr %[v], 0x7a5"
+        : [v] "=r" (tcv),
+    );
+    var av: [4]u32 = .{ 0xADC0_FEE9, t1v, t2v, tcv };
+    _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
+    _ = esp_rom_spiflash_write(0x189000, &av, 16);
+    // **PC 邻域反汇编 dump**（0x2f 区可直读，dumpRom 先例）：
+    // fe_poll: 命中 PC 0x2f828a5c 所在轮询环；rf_pwr: 命中 PC 0x2f00c3e2 所在例程。
+    dumpRom("fe_poll", 0x2f828a40, 0x60);
+    dumpRom("rf_pwr", 0x2f00c3b0, 0x60);
 
     // （CSR 扫描已挪到 bringup 之前 —— flash 可用窗口）
     var rc = bringup.init(&cfg);
