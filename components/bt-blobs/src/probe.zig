@@ -606,13 +606,10 @@ pub fn run() noreturn {
     const a4_rc = transport.sendCmd(0x1009, &.{});
     osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
 
-    // **LE 广播三连**：**不在此处执行**。
-    // 实测：一发 LE 命令，blob 就开始**大量打印**（走我们的 `ets_printf` shim），
-    // UART 立刻饱和 ⇒ 我们的日志变成 `bbbb…` / `arch…` 半行碎片（`rawWrite`
-    // 在 5000 次自旋后放弃），看起来像"挂死"，实则是**观测通道被冲垮**。
-    // ⇒ 这不是 CPU hang（零 fault、NMI 地址在变），而是**日志洪水**。
-    // 要做 LE，必须先让 blob 的日志有界或可关（见 README 的"第三个静默丢失通道"）。
-    osal.logPublic("bt probe: LE adv SKIPPED (blob log flood saturates UART, not a hang)", .{});
+    // **LE 广播：四次假设全部被推翻，暂停尝试（见 README「LE 四次误判」）。**
+    // 已排除：① ROM printf 自旋 ② per-pend dump 饿死 ③ 日志洪水 ④ 静音后仍卡。
+    // 结论：这是**确定性**的卡住，成因未定；下一步需要**不依赖 UART** 的观测。
+    osal.logPublic("bt probe: LE adv PAUSED (4 hypotheses eliminated, needs uart-free probe)", .{});
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);

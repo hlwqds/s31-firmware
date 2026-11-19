@@ -54,8 +54,14 @@ static char *put_uint(char *o, char *end, unsigned long v, unsigned base, int up
     return o;
 }
 
+/* **静音开关**：由 Zig 侧置位。跑功能验证（如 LE 广播）时关掉 blob 日志，
+ * 否则 400 行 × ~160 B ≈ 64 KB ≈ 6 秒的 UART 时间会把我们的判决行挤掉。 */
+int s31_bt_log_mute;
+unsigned s31_bt_log_dropped;
+
 int ets_printf(const char *format, ...)
 {
+    if (s31_bt_log_mute) { s31_bt_log_dropped++; return 0; }
     if (!format || s31_bt_fmt_lines >= S31_BT_FMT_LINES) return 0;
     char buf[S31_BT_FMT_MAX];
     char *o = buf, *end = buf + sizeof buf - 1;
