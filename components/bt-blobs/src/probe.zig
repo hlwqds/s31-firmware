@@ -716,13 +716,16 @@ pub fn run() noreturn {
     // 2f828a76/78/7a 回跳重读 base+0x47C，s0=0x20100000）⇒ 命中 auth_pc = FE 轮询 PC。
     // （上轮 STORE@0x20704184 已抓到 BT 链写电源寄存者 PC=0x2f00c3e2，提交 5e3979c。）
     // 命中记录：trap 处理器写 {FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000。
+    // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
+    asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
+    asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
+    asm volatile ("li t0, 0x2010047c");
+    asm volatile ("csrw 0x7a2, t0"); // tdata2 先配地址（此刻无观察点在活）
     asm volatile ("li t0, 0x49");
     asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
-    asm volatile ("li t0, 0x2010047c");
-    asm volatile ("csrw 0x7a2, t0"); // tdata2 = FE 轮询读地址（vendor LOAD 循环）
     asm volatile ("li t0, 0x88");
-    asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)
+    asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)（最后开）
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
     // {FEE9, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活。
     var t1v: u32 = undefined;
