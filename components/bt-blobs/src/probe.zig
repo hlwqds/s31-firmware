@@ -592,6 +592,11 @@ pub fn run() noreturn {
     // **第二条 A 路径命令**（唯一 opcode 0x0C03）：看 `btdm_tx` 是否 1 → 2。
     const a2_rc = transport.sendCmd(0x0C03, &.{});
     osal.logPublic("bt probe: A2(rx) sendReset rc={d} btdm_tx={d}", .{ a2_rc, transport.stats().btdm_tx });
+    // **第三条**：再发一次 Read Local Version，**让它成为最后一条** ⇒
+    // `tx_head` 捕获的就是它的 12 字节应答（hci_version / manufacturer 等），
+    // 用来确认 HCI 通道承载的是**真实数据**而不是桩。
+    const a3_rc = transport.sendCmd(0x1001, &.{});
+    osal.logPublic("bt probe: A3(rx) sendReadVersion(LAST) rc={d} btdm_tx={d}", .{ a3_rc, transport.stats().btdm_tx });
 
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {

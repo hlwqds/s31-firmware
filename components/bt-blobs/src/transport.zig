@@ -251,6 +251,9 @@ extern fn r_ble_hci_trans_hs_cmd_tx(cmd: [*]u8) c_int;
 pub const BLE_HCI_TRANS_BUF_CMD: c_int = 3;
 
 /// 用 host 层入口发一条命令（`buf` 里放 HCI 命令**不含 H4 类型字节**：opcode 小端 + plen + params）。
+/// ⚠ **本 build 不消费这条路径**：命令会进队列但 controller 从不处理
+/// （实测：`cmds` 增加而 `btdm_tx` 不变）。**请用 `sendCmd`（A 路径）。**
+/// 保留它只是为了对照实验。
 pub fn sendCmdViaHs(opcode: u16, params: []const u8) c_int {
     if (!inited) return -1;
     if (params.len > 250) return -2;
@@ -280,6 +283,7 @@ pub fn sendReset() c_int {
 }
 
 /// B 路径的 `HCI Reset`：期望回程是 `04 04 0E 03 0C 00`（最后那个 00 才是成功）。
+/// ⚠ **本 build 不消费这条路径** —— 见 `sendCmdViaHs`。请用 `sendReset()`。
 pub fn sendResetViaHs() c_int {
     return sendCmdViaHs(0x0C03, &.{});
 }
