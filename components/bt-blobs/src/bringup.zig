@@ -74,7 +74,11 @@ extern fn esp_ble_register_bb_funcs() c_int;
 extern fn r_base_stack_initEnv() c_int;
 extern fn r_conn_stack_initEnv() c_int;
 extern fn r_base_stack_enable() c_int;
-extern fn r_conn_stack_enable() c_int;
+/// ⚠ **这是一个空桩**：`0x4005764e` 处只有两个字节 `82 80` = `c.ret`，
+/// 它**原样返回调用者的 `a0`**。无参调用时 `a0` 是残留值 ⇒
+/// 我们曾把它读成 `rc=181935`/`rc=181941`（每次不同），误判为 enable 失败。
+/// 显式传 0 让它返回确定的 0。
+extern fn r_conn_stack_enable(_: c_int) c_int;
 extern fn r_esp_ble_ll_set_public_addr(addr: *const [6]u8) c_int;
 
 const freestanding = builtin.os.tag == .freestanding;
@@ -421,7 +425,7 @@ pub fn enable() c_int {
     rc = step(17, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
     if (rc != 0) return rc;
     enter(18, "r_conn_stack_enable");
-    rc = step(18, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable() else 0);
+    rc = step(18, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable(0) else 0);
     if (rc != 0) return rc;
 
     enter(19, "r_btdm_hci_fc_enable");

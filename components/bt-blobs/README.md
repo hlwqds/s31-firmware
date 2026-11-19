@@ -17691,3 +17691,93 @@ gapFinder_stack_enable();               // :1544
 | **因仪器/自证而撤回** | 7 |
 | 撤回总数 | 99 |
 | 自我纠正 | 242 |
+
+## 🏁🏁🏁 `rc` 之谜解开：`r_conn_stack_enable` 是**两字节空桩 `c.ret`**
+
+### 证据（直接读镜像字节）
+
+```text
+r_conn_stack_enable  @0x4005764e: 82 80   ⇒ **c.ret**
+r_conn_stack_disable @0x40057650: 82 80   ⇒ **c.ret**
+```
+
+`nm -n` 显示两者**只隔 2 字节**（`0x4005764e` → `0x40057650`）—— 一个函数只有 2 字节。
+
+⇒ **`c.ret` 原样返回 `a0`**。
+
+而我们声明的是：
+
+```zig
+extern fn r_conn_stack_enable() c_int;   // 无参 ⇒ a0 是进入前的残留
+```
+
+⇒ `rc` = **调用者的残留 `a0`** ⇒ 这**完全解释**了 `181935` / `181941` 的每次不同。
+
+### 这是本会话**第四个**同型缺陷
+
+| # | 缺陷 | 形态 |
+| --- | --- | --- |
+| 1 | 四项时钟位缺失 | 看起来配置了 |
+| 2 | 任务栈未清零 | 看起来初始化了 |
+| 3 | `esp_phy_enable` 冻结地址 | 看起来指向函数 |
+| 4 | **`r_conn_stack_enable` 是 `c.ret` 空桩** | **看起来检查了返回值** |
+
+⇒ 共同点依旧是：**"看起来发生了" 与 "实际发生了" 之间的差**。
+
+### 修复
+
+```zig
+extern fn r_conn_stack_enable(_: c_int) c_int;   // 显式传参
+...
+rc = step(18, "...", r_conn_stack_enable(0));    // 空桩原样返回 0
+```
+
+### 顺带盘点：镜像里有 **74 个**纯 `c.ret` 空桩
+
+用 `nm -n` + 直接读 `.flash.text` 字节扫出（size==2 且首两字节 `82 80`）。
+
+⇒ 其中只有 `r_conn_stack_enable` 出现在**我们检查返回值的路径**上；
+其余多为 `r_sym_ble_*`（blob 内部名），不经过我们的判定。
+
+⇒ 其余 enable 符号均已核实为**真实函数**：
+
+| 符号 | 大小 | 性质 |
+| --- | --- | --- |
+| `r_base_stack_enable` | 118 B | 真实 |
+| `r_btdm_task_enable` | 218 B | 真实 |
+| `r_btdm_hci_fc_enable` | 2 B（`b1 bd` ≠ `82 80`）| 不是 `c.ret` |
+
+### 修复后：**整个 enable 序列跑完**
+
+```text
+bt bringup: enter step 52 init_phy
+bt bringup: PHY enabled AFTER step 5 (idf order)
+bt bringup: enter step 17 r_base_stack_enable
+bt bringup: enter step 18 r_conn_stack_enable
+bt bringup: enter step 19 r_btdm_hci_fc_enable
+bt bringup: enter step 20 r_btdm_task_enable      ← **最后一步**
+panic: halted (wfi)                               ← 任务已启动
+```
+
+| 判据 | 结果 |
+| --- | --- |
+| step 52 `init_phy` | ✅ **通过** |
+| step 18 假失败 | ✅ **消失** |
+| step 19 | ✅ 通过 |
+| **step 20 `r_btdm_task_enable`** | ✅ **到达（最后一步）** |
+| `panic: halted (wfi)` | **不是失败** —— 调度器已启动，任务在 `wfi` 等待 |
+
+⇒ **init 与 enable 的完整序列都已走完。**
+
+## 本会话最终总计（最终锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **根因 1（四项时钟配置）** | ✅ 已验证 |
+| **根因 2（任务栈未初始化）** | ✅ 已验证 |
+| **根因 3（`esp_phy_enable` 冻结入口点）** | ✅ 已验证 |
+| **根因 4（`r_conn_stack_enable` 空桩）** | ✅ **已验证（step 18 假失败消失）** |
+| **当前状态** | **init + enable 全序列走完，到达 step 20** |
+| **因仪器/自证而撤回** | 7 |
+| 撤回总数 | 99 |
+| 自我纠正 | 243 |
