@@ -1450,6 +1450,14 @@ pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32,
         const raw = bt_arena.alloc(stack_size, 16);
         if (raw) |mem| {
             const slice = @as([*]u8, @ptrCast(mem))[0..stack_size];
+            // **投毒任务栈**。`bt_arena` 是静态缓冲上的 bump allocator，`Arena.alloc`
+            // 本身不清零（对比 `btdmMalloc` 会显式清零），所以新任务的栈可能落在
+            // 先前分配的残留字节上 —— 未初始化的保存-ra 槽会变成随运行变化的垃圾
+            // 指针，正是"ra 是奇数、且不来自任何已知内存"的形态。
+            //
+            // 用 **0xA5A5A5A5** 而不是 0：清零后回读 0/1 与"合法 NULL 指针"无法区分，
+            // 而投毒值一旦出现在 ra 里（或 A5A5A5A6，表示代码置了 bit0），来源立刻确定。
+            @memset(slice, 0xA5);
             if (sched.taskCreate(slice, f, arg)) |task| {
                 handle.* = @ptrCast(task);
                 // **模拟 FreeRTOS 的"新任务立即抢占创建者"**：

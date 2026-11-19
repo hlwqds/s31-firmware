@@ -108,8 +108,18 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        sw      s0, 76(sp)
         \\        sw      s1, 80(sp)   # 循环参数常存在 s1（实测：`mv s1,a0` 在函数入口）
         \\
+        \\        # **私有栈**：handler 的缓冲绝不能占用被中断的栈，否则它会覆盖
+        \\        # 自己要读的证据（实测：栈遍历到的返回地址全是 trapDispatch/hw.rawWrite）。
+        \\        # s2 是 callee-saved，用来跨调用保存 TrapFrame 指针；原 s2 存进 padding(84)。
+        \\        sw      s2, 84(sp)
+        \\        mv      s2, sp
         \\        mv      a0, sp
+        \\        la      sp, trap_stack_buf
+        \\        li      t0, 32768
+        \\        add     sp, sp, t0
         \\        call    trapDispatch
+        \\        mv      sp, s2
+        \\        lw      s2, 84(sp)
         \\
         \\        # a0 != 0 -> 链式转发到 ROM 的入口；否则正常恢复并 mret。
         \\        bnez    a0, 2f
@@ -174,6 +184,14 @@ pub var irq_count: u32 = 0;
 /// 我们的 `mtvec` 会遮蔽 bootloader/ROM 装的中断向量；blob 把 TIMG0_T0 当自己的 tick，
 /// 只采样不转发会让它永远等不到 tick。
 pub var chain_other_irqs: bool = false;
+
+/// trap handler 的私有栈。inline asm 里的 `la sp, trap_stack_buf` **不算 Zig 引用**，
+/// 会被 gc-sections 丢掉（实测 `ld.lld: undefined symbol: trap_stack_buf`），
+/// 所以用 `@export` 显式钉住导出的符号名。
+var trap_stack_buf_storage: [32768]u8 align(16) = undefined;
+comptime {
+    @export(&trap_stack_buf_storage, .{ .name = "trap_stack_buf" });
+}
 
 pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
@@ -514,7 +532,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 
             if (hits == 0) {
                 var a2: usize = 0x2f00_0000;
-                const dram_end: usize = frame.sp - 0x2000;  // **排除 handler 自身足迹**（缓冲>1.8KB）
+                const dram_end: usize = frame.sp - 96;  // 私有栈已隔离 ⇒ 全带宽可扫
                 while (a2 < dram_end) : (a2 += 4) {
                     const v = (@as(*const usize, @ptrFromInt(a2))).*;
                     if (v == csr_mepc or v == (csr_mepc | 1)) {
@@ -626,16 +644,19 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // ⇒ 这些是**保存的返回地址**，离线用 nm 解析即得调用链。
         // 排除 handler 自己的帧 [sp-96, sp) —— 那里是按定义保存的"被中断寄存器"。
         {
-            var k: isize = -4096;
+            // **向上遍历**：[f_sp, f_sp+4096) —— 被中断调用链的帧**只可能**在 f_sp 之上。
+            // f_sp 之下在 trap 时刻没有活数据（handler 也写在 f_sp 之下），
+            // 那里出现的返回地址都是**已返回调用**的残留，不能当故障链。
+            var k: isize = 0;
             const lo: usize = 0x4000_0020;
             const hi: usize = 0x400A_0300;
-            while (k < -96) : (k += 4) {
+            while (k < 4096) : (k += 4) {
                 const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + k));
                 const v = (@as(*const usize, @ptrFromInt(a))).*;
                 if (v >= lo and v < hi) {
                     var cb: [96]u8 = undefined;
                     const rc = std.fmt.bufPrint(&cb, "RA off={d} ret=0x{x:0>8}", .{
-                        -k, v,
+                        k, v,
                     }) catch "RA (fmt fail)";
                     hw.rawLineBlocking(rc);
                 }
