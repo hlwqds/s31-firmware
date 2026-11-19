@@ -21,17 +21,7 @@ typedef unsigned int u32;
  * 静默死循环，看不到任何线索。用 ROM 的 printf（标准 %s/%d，controller 就是这么调的）。 */
 extern int ets_printf(const char *format, ...);
 
-void __assert_func(const char *file, int line, const char *func, const char *expr) {
-    ets_printf("bt assert: %s:%d %s: %s\n", file, line, func ? func : "?", expr ? expr : "?");
-    for (;;) {
-    }
-}
-
 /* BLE 侧的打印走 PHY 的 C 变参函数；裸机上没有 vprintf 实现，丢弃。 */
-int phy_printf(const char *format, ...) {
-    (void)format;
-    return 0;
-}
 
 /* controller 内部用 sprintf 拼日志/版本串；给个最小实现，避免把 libc 拉进来。 */
 int sprintf(char *buf, const char *format, ...) {
@@ -45,7 +35,6 @@ int sprintf(char *buf, const char *format, ...) {
  * 只会变成"超时窗口大到离谱"这类静默错误 ⇒ 直接问 ROM，别自己填常数。 */
 extern u32 ets_clk_get_xtal_freq(void);
 
-u32 rtc_clk_xtal_freq_get(void) { return ets_clk_get_xtal_freq(); }
 
 /* 低功耗 modem 时钟开关：控制器在 lp 初始化时关一次（实参恒为 0）。
  * 我们的时钟树由 board 层统一管理，这里只记录不动作。 */

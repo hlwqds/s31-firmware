@@ -52,32 +52,7 @@ extern uint64_t s31_now_us(void);
  * 此前我们只给了 128B 裸参数 ⇒ vendor 读到的参数全错位 ⇒ RF 参数损坏 ⇒ 合成器不锁。
  * 布局依据：esp_phy/esp32s31/phy_init_data.c:14/150 与官方 map 里
  * `libesp_phy.a(phy_init.c.obj) (phy_init_data)` 的直接符号引用。 */
-const uint8_t phy_init_data[144] = {
-    /* phy_init_magic_pre = "PHYINIT\0" */
-    0x50, 0x48, 0x59, 0x49, 0x4E, 0x49, 0x54, 0x00,
-    /* params[128]（S31 官方表，MAX_TX 功率阶梯）*/
-    0x01, 0x00, 0x50, 0x50, 0x50, 0x50, 0x4c, 0x48,
-    0x50, 0x50, 0x4c, 0x48, 0x40, 0x3c, 0x3c, 0x3c,
-    0x4c, 0x4c, 0x48, 0x44,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    /* phy_init_magic_post = "PHYINIT\0" */
-    0x50, 0x48, 0x59, 0x49, 0x4E, 0x49, 0x54, 0x00,
-};
+/* phy_init_data 表已由 libesp_phy.a(phy_init_data.c.obj) 提供 ⇒ 移除本表副本（重复符号）*/
 
 /* 注：`modem_clock_device_context` / `modem_clock_domain_icg_config` 由
  * `modem_clock_impl.c.obj` 自己定义，这里不要再给（会 duplicate symbol）。 */
@@ -108,22 +83,9 @@ int nvs_set_u32(uint32_t h, const char *k, uint32_t v) { (void)h; (void)k; (void
 /* ------------------------------------------------------------------ */
 /* esp_timer：PHY 只用于温度跟踪，全部空实现                             */
 /* ------------------------------------------------------------------ */
-int esp_timer_get_time(void) { return (int)(s31_now_us() & 0x7fffffff); }
-int esp_timer_create(const void *args, void **out) { (void)args; if (out) *out = 0; return ESP_OK; }
-int esp_timer_start_periodic(void *t, uint64_t period) { (void)t; (void)period; return ESP_OK; }
-int esp_timer_stop(void *t) { (void)t; return ESP_OK; }
-int esp_timer_delete(void *t) { (void)t; return ESP_OK; }
-
 /* ------------------------------------------------------------------ */
 /* FreeRTOS 临界区 / 锁：转我们的 osal（这里用最简单的中断开关语义）       */
 /* ------------------------------------------------------------------ */
-unsigned xPortInIsrContext(void) { return 0; }
-int xPortEnterCriticalTimeout(void *mux, uint32_t timeout)
-{
-    (void)mux; (void)timeout;
-    return 1;
-}
-void vPortExitCriticalMultiCore(void *mux) { (void)mux; }
 void _lock_acquire(void **lock) { (void)lock; }
 void _lock_release(void **lock) { (void)lock; }
 
@@ -177,16 +139,8 @@ void free(void *p) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 日志                                                                */
+/* 日志（esp_log_timestamp/esp_log 由 liblog.a 提供 ⇒ 移除本桩）        */
 /* ------------------------------------------------------------------ */
-void esp_log(const char *tag, const char *fmt, ...)
-{
-    (void)fmt;
-    s31_phy_log(tag, fmt);
-}
-uint32_t esp_log_timestamp(void) { return (uint32_t)(s31_now_us() / 1000); }
-int esp_log_default_level = 0;
-
 /* ------------------------------------------------------------------ */
 /* 其余桩                                                              */
 /* ------------------------------------------------------------------ */
@@ -205,21 +159,5 @@ void abort(void) {
     for (;;) {}
 }
 
-void _esp_error_check_failed(int rc, const char *file, int line, const char *func, const char *expr)
-{
-    (void)rc; (void)file; (void)line; (void)func; (void)expr;
-}
-void esp_deep_sleep_register_phy_hook(void *fn, void *arg) { (void)fn; (void)arg; }
-int esp_sleep_pd_config(int pd, int opt) { (void)pd; (void)opt; return ESP_OK; }
-int esp_efuse_mac_get_default(uint8_t *mac)
-{
-    /* 与 bt-blobs 的 `readEfuseMac` 默认值一致（本地管理地址） */
-    mac[0] = 0x02; mac[1] = 0x00; mac[2] = 0x00;
-    mac[3] = 0x00; mac[4] = 0xBB; mac[5] = 0x01;
-    return ESP_OK;
-}
-int esp_gpio_is_reserved(int gpio) { (void)gpio; return 0; }
-int gpio_config(const void *cfg) { (void)cfg; return ESP_OK; }
 int esp_rom_gpio_connect_out_signal(int gpio, int sig, int inv, int oen) { (void)gpio; (void)sig; (void)inv; (void)oen; return ESP_OK; }
 int esp_rom_get_reset_reason(int core) { (void)core; return 0; }
-const char *get_phy_version_str(void) { return "s31-phy"; }

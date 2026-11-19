@@ -37,3 +37,26 @@ export fn strtok(s1: ?[*:0]u8, delim: [*:0]const u8) ?[*:0]u8 {
     strtok_state = start + 1;
     return start;
 }
+
+// ---------------- 系统时间（wifi 核需要 gettimeofday/sleep）----------------
+export fn gettimeofday(tv: ?*anyopaque, tz: ?*anyopaque) c_int {
+    // tv = struct timeval { sec, usec }；用 osal.timeGet()（ms）近似
+    const ms = osal.timeGet();
+    if (tv) |p| {
+        const t: [*]volatile u32 = @ptrCast(@alignCast(p));
+        t[0] = ms / 1000; // sec
+        t[1] = (ms % 1000) * 1000; // usec
+    }
+    _ = tz;
+    return 0;
+}
+
+export fn sleep(seconds: c_uint) c_uint {
+    // 忙等（探针环境无调度器可让出；仅 wifi 核的延时路径用）
+    var left = seconds;
+    while (left > 0) : (left -= 1) {
+        var spins: u32 = 0;
+        while (spins < 160_000) : (spins += 1) std.atomic.spinLoopHint();
+    }
+    return 0;
+}
