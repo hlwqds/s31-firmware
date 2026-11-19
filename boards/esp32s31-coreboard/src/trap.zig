@@ -496,11 +496,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             var hits: u32 = 0;
             // 窗口扩到 **1 KB 之下**（[sp-1280, sp-96)）：`lw ra, N(sp)` 可能指向任意深度的调用者帧。
             var off: isize = -1280;
-            const want = [_]usize{ csr_mepc, csr_mepc | 1 };
             while (off < -96) : (off += 4) {
                 const a = @as(usize, @bitCast(@as(isize, @intCast(frame.sp)) + off));
                 const v = (@as(*const usize, @ptrFromInt(a))).*;
-                if (v == want[0] or v == want[1]) {
+                if (v == csr_mepc or v == (csr_mepc | 1)) {
                     // `off` 恒为负 ⇒ 必须 bitCast（@intCast 在 ReleaseSmall 下会 panic）
                     if (hits == 0) { found = v; hit_off = @as(usize, @bitCast(off)); }
                     // 把所有命中偏移（绝对值）累加进 diag_d，便于一次看出"有几个、大概在哪"
@@ -515,10 +514,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
 
             if (hits == 0) {
                 var a2: usize = 0x2f00_0000;
-                const dram_end: usize = frame.sp - 96;  // 扫到 handler 帧底（含更深的栈帧）
+                const dram_end: usize = frame.sp - 0x2000;  // **排除 handler 自身足迹**（缓冲>1.8KB）
                 while (a2 < dram_end) : (a2 += 4) {
                     const v = (@as(*const usize, @ptrFromInt(a2))).*;
-                    if (v == want[0] or v == want[1]) {
+                    if (v == csr_mepc or v == (csr_mepc | 1)) {
                         if (diag_j == 0) diag_j = @truncate(a2);
                         diag_k +%= 1;
                     }
@@ -527,7 +526,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 a2 = 0x4000_0020;
                 while (a2 < 0x400A_0300) : (a2 += 4) {
                     const v = (@as(*const usize, @ptrFromInt(a2))).*;
-                    if (v == want[0] or v == want[1]) {
+                    if (v == csr_mepc or v == (csr_mepc | 1)) {
                         if (diag_j == 0) diag_j = @truncate(a2);
                         diag_k +%= 1;
                     }
