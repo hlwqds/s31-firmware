@@ -27,7 +27,7 @@ CLOSURE=${2:-/tmp/bt_all/flat}
 P=$IDF_BUILD/esp_phy/CMakeFiles/__idf_esp_phy.dir/src
 H=$IDF_BUILD/esp_hw_support/CMakeFiles/__idf_esp_hw_support.dir
 WITH_PHY=${WITH_PHY:-0}
-PHY="$P/phy_init.c.obj,$P/phy_common.c.obj,$P/btbb_init.c.obj,$H/modem/modem_clock.c.obj,$H/modem/port/esp32s31/modem_clock_impl.c.obj,$IDF_BUILD/hal/CMakeFiles/__idf_hal.dir/esp32s31/modem_clock_hal.c.obj,$H/periph_ctrl.c.obj"
+PHY="$P/phy_init.c.obj,$P/phy_common.c.obj,$P/btbb_init.c.obj,$H/modem/modem_clock.c.obj,$H/modem/port/esp32s31/modem_clock_impl.c.obj,$IDF_BUILD/hal/CMakeFiles/__idf_hal.dir/esp32s31/modem_clock_hal.c.obj,$H/periph_ctrl.c.obj,$H/port/esp32s31/pmu_init.c.obj,$H/port/esp32s31/pmu_param.c.obj"
 if [ "$WITH_PHY" = "1" ]; then
   for o in ${PHY//,/ }; do [ -f "$o" ] || { echo "缺少 PHY 对象：$o" >&2; exit 2; }; done
   PHY_FLAG="-Dphy-src-objs=$PHY"

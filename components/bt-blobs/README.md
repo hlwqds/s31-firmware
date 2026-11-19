@@ -25214,3 +25214,27 @@ README:12869 早已给出方向（"oracle 同板可访问 ⇒ 差异在 boot 层
 | 2 | 移植进 porting.zig（放在 phyDomainEnable 之前），每步带写-回读 | 本会话仪器 |
 | 3 | 每步后跑 oracle（stage 70→65→22→23 端到端） | flash 标记 |
 | 4 | 对照：官方 IDF app 同板跑通广播（WITH_PHY=1 + 完整 pmu_init 之后应当能走到）| 同上 |
+
+## 🏁 pmu_init 移植成功 + 两个新事实（会话最终记录）
+
+### 里程碑
+
+| 项 | 结果 |
+| --- | --- |
+| **IDF `pmu_init()` 在裸机上完整跑通** | marker=73（第一次！）—— 实例别名（`PROVIDE(PMU=0x20704000)` 等）+ 链入 `pmu_init.c.obj/pmu_param.c.obj` |
+| 副作用 | **pmu_init 之后 marker 的 stage 写静默失败**（73→64 未落地），而 ISR 上下文的 `0x187000` dump 成功 —— flash 写在 pmu 新电源态下的行为待查 |
+
+### oracle 结果
+
+| 项 | 结果 |
+| --- | --- |
+| `esp_phy_enable(2)`（pmu_init 之后调用）| **仍挂**，PC 环 = 同一 vendor FE 轮询（n=72、s0=0x20100000、PC=0x2f828a64/78）|
+
+### 下一步的具体抓手（按确定性排序）
+
+| # | 抓手 | 依据 |
+| --- | --- | --- |
+| 1 | **`esp_phy_load_cal_and_init` 需要 NVS**：它从 "phy" 分区读标定数据，裸机无 NVS ⇒ 挂死/异常。提供假 NVS 分区或 stub `esp_partition_read` 返回默认标定 | IDF `esp_phy_enable` 源码路径 |
+| 2 | pmu_init 后 flash 写静默失败的机制 | 对照 0x187000（ISR 成功）vs 0x186000（主流程失败）|
+| 3 | 双初始化叠加：IDF `esp_phy_enable` + 我们手写 `phyDomainEnable`/`register_chipv7_phy` —— oracle 构建应**用 IDF 序列取代**手写，而不是叠加 | 干净 oracle 原则 |
+| 4 | 物理重插 USB（POWERON 串口判别，读归档错误输出） | 一直待办 |
