@@ -291,7 +291,15 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // （曾用 RMW `rd(...) | 0x00070080`，因写不落地改为整字写。）
     _ = b_conf1_btmac;
     _ = b_conf1_btbb;
-    wr(reg_clk_conf1, 0x003f_ffff);
+    // ⚠ **`0x003f_ffff` 曾试过，板子完全静音（60 s 零字节）** ⇒ 已回退。
+    // 新增的 bits{0-6,8,9,10} 里有 `wifi_apb`(bit10)，它动 APB 门控，
+    // 与 UART0 共用 ⇒ 观测通道先断，实验无法判读。
+    // **要试这组位必须先保住 UART**（例如只加 bit0-6 不加 bit10，或先把日志搬到别的通道）。
+    // ✅ **已实验判定：`0x003f_ffff` 无效**（2026-11-19，flash 标记法）
+    //    加 bits{0-10} 后标记仍为 `stage=22 / btdm_tx=5`，与 `0x003ff880` **完全相同**。
+    //    ⇒ `wifibb` 组 / `wifimac` / `wifi_apb` **都不是** `0x200A` 挂住的原因。
+    //    因此保持 `0x003ff880`（BT + FE 已足够）。
+    wr(reg_clk_conf1, 0x003f_f880);
     // （曾用 RMW `rd(...) | 0x00070080`，因不落地改为整字写，见上）
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
         b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |
