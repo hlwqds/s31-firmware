@@ -19788,3 +19788,68 @@ trampoline 起点 = 0x4006e7ca
 | **因读法自证而撤回** | 12 |
 | 撤回总数 | 105 |
 | 自我纠正 | 273 |
+
+## PHY 真实使能已生效，但 fault 仍在 ⇒ **PHY 不是 step 20 的原因**
+
+### 本轮读数
+
+```text
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done (NO CALIBRATION: register_chipv7_phy absent)
+enter step 17 r_base_stack_enable
+enter step 18 r_conn_stack_enable
+enter step 19 r_btdm_hci_fc_enable
+enter step 20 r_btdm_task_enable
+!! c_mepc=0x2f00fa00  c_mtval=0xc226702f  c_ra=0x4006e98a
+   f_sp=0x2f02c080  cause=0x2  step=20
+```
+
+⇒ PHY 序列**真的执行了**（ICG / `phy_wifi_enable_set` / `set_bb_wdg` / `CLK_CONF1`）。
+
+⇒ **fault 仍在 step 20** ⇒ **PHY 未使能不是这一步的原因**（可能是后续 RF 问题的原因，但不是这个）。
+
+### XOR 不再恒定 —— 说明"固定变换"的表述要收窄
+
+| 轮次 | 镜像 | 运行 | XOR |
+| --- | --- | --- | --- |
+| 早前 | `0x1141` | `0xe361` | `0xf220` |
+| 早前 | `0x07b7` | `0xf597` | `0xf220` |
+| **本轮** | `0x1141` | **`0x702f`** | **`0x616e`** |
+
+⇒ **XOR 不是跨构建恒定的。**
+
+⇒ 之前"**同一个 XOR ⇒ 固定变换**"的结论**只在那两次之间成立**。
+
+⇒ 正确表述改为：
+
+> **故障值是对"首半字"做的某种 16 位替换，来源随构建/运行而变。**
+
+⇒ 而 `mtval` 本轮是**整字** `0xc226702f`（不是只低半）⇒ 与"`mtval` = mepc 处那个字"一致。
+
+### 与根因 5 的关系
+
+| 项 | 状态 |
+| --- | --- |
+| `.iram_btslp*` 是孤儿段（`s31.ld` 无 `*(.iram_btslp*)`）| ✅ **结构事实，仍成立** |
+| 厂商有运行时 patch/拷贝 | ✅ 与 IDF fragment 一致 |
+| XOR 恒定 | ❌ **仅局部成立，已收窄** |
+| **放置修复** | 待做（显式收集 + 4 字节对齐）|
+
+⇒ **孤儿段这条仍然是唯一有据的结构性缺陷**，且修复成本低。
+
+### 下一步（一条）
+
+在 `s31.ld` 里显式收集 `.iram_btslp*` 到 `.iram_blobs`（4 字节对齐），
+然后看 step 20 是否还 fault。
+
+⇒ 这是**最小、可验证、且不依赖进一步猜测**的一步。
+
+## 本会话最终总计（最终锁定）
+
+| 类别 | 数量 |
+| --- | --- |
+| **已验证并修复** | 3（时钟位、冻结入口点、空桩）|
+| **已定位，workaround 在位** | 1（任务栈）|
+| **根因仍开放** | 2（PHY 标定、睡眠码放置）|
+| **已收窄的表述** | XOR 恒定 → 仅局部 |
+| **撤回总数** | 106 |
+| **自我纠正** | 274 |
