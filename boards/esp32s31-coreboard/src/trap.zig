@@ -466,6 +466,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **PC 采样**：记下被中断的 PC。某个地方死等（spinning）时，把这里采到的地址
             // 打出来就直接指向那个循环，比逐层加日志快得多。
             recordPc(frame.mepc);
+            // **重写 nmies**（CLIC[25] bit3）：vendor/未知源会清它 ⇒ NMI 停摆。
+            // 每次采样时重置，保证 NMI 在 esp_phy_enable 关中断段持续穿透。
+            {
+                const nm: *volatile u32 = @ptrFromInt(0x1080_1064);
+                nm.* |= (1 << 3);
+            }
             // **定点探针**：只有当被中断的 PC 落在那个 ROM 轮询循环里时才计算轮询地址。
             // 反汇编给出：循环体 0x2f812216..0x2f812230，读字节的地址算式
             //   addr = ((s0 + 0x2038A) << 12) + 28，判定 while ((*(u32*)(addr) >> 16) & 0xFF) > 127
