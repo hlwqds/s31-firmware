@@ -638,7 +638,13 @@ pub fn run() noreturn {
         // 以区分"FIFO 满且不排空（发送通道死）"与"FIFO 空（压根没写进去）"。
         // UART0 = 0x2038_A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]。
         const uart_st: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*;
-        flashStageExtra(22, (uart_st >> 16) & 0xFF, uart_st);
+        _ = uart_st;
+        // **最后两个判据**：
+        //   `GPIO_FUNC58_OUT_SEL_CFG`(0x20583BDC)：GPIO matrix 是否把 pad58 改接到别的信号
+        //   `UART0.clkdiv_sync`(0x2038A014)：波特率分频（默认 694 = 80 MHz / 115200）
+        const osel: u32 = (@as(*volatile u32, @ptrFromInt(0x2058_3BDC))).*;
+        const cdiv: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A014))).*;
+        flashStageExtra(22, osel, cdiv);
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
