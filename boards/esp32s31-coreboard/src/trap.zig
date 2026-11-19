@@ -495,13 +495,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // 合成器 ready 0x201098BC / FE 等待位 0x201008D0 / FE 计数器 0x201011AC。
                 // 与官方 692ms 路径的同址值对账 = FE 环的最终定位判据。
                 // UART 打印为主通道（LP 0x440 会被下载阶段刮花），LP 为备份。
-                if (nmi_count == 300_000) {
-                    var fb: [120]u8 = undefined;
-                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8}", .{
+                // **按 mepc 条件捕获**：只在 CPU 真正处于 FE 环（0x2f828a00-0x2f828b00）
+                // 时采一次——固定计数点会采到主流程的其它位置（上轮 300k 采到 0x400a9026）。
+                const fe3_done = &@as(*volatile bool, @ptrFromInt(0x2E00_0450)).*;
+                if (!fe3_done.* and frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
+                    fe3_done.* = true;
+                    var fb: [180]u8 = undefined;
+                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} CLK={x:0>8}/{x:0>8}/{x:0>8}", .{
                         @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
                         frame.mepc,
+                        @as(*volatile u32, @ptrFromInt(0x2010_9C04)).*, // SYSCON clk_conf（PHY_CALIB deps 0x6364 落点）
+                        @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, // SYSCON clk_conf1
+                        @as(*volatile u32, @ptrFromInt(0x2010_F018)).*, // LPCON clk_conf
                     }) catch "FE3 (fmt fail)";
                     hw.rawLineBlocking(fl);
                     @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
