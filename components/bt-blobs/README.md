@@ -26332,3 +26332,33 @@ est_PHY→libphy.a 单成员提取；libcoexist.a→加链）。
 **RAM 判决**（station readelf）：dram0.data+bss ≈ 46KB ⇒ wifi 栈 RAM 需求小，
 sram 493KB 足够 ⇒ **RAM 不是约束**。flash：archive-pull 按需 ≈ 待最终链接定
 （分区余量 651KB，border-line）。
+
+## ⛔ 闭包级联终判（2026-11-20 尾六）：esp-idf 全系统栈依赖 —— 裸机路线到顶
+
+esp_phy_enable 提前 + osi 栈前置后，闭包级联到 **288 个未定义符号**：
+__assert_func/_lock_*_recursive/esp_sha_*/esp_ecc_*/esp_event_post/
+esp_rom_gpio_connect_in_signal/esp_rom_output_*/esp_rom_route_intr_matrix/
+esprv_int_*/ets_efuse_*/esp_set_time_from_rtc/esp_sync_timekeeping_timers/
+fprintf/fwrite/fflush/fputc/atoi/gmtime/mktime/esp_test_tx_duration/est_PHY FTM 表族...
+
+⇒ 这不是"缺桩"——是 **esp-idf 的整个系统栈**（heap/FreeRTOS/esp_timer/log/
+esp_rom/sha/ecc/event/uart/GPIO/efuse/NVS/esp_libc/rtos 时间...）。
+在裸机上补齐 = 在裸机上重建 esp-idf = 原始移植工程的全部工作量（数月）。
+
+### 本日成果总结
+
+| 成果 | 状态 |
+| --- | --- |
+| 触发器观察点系统（三次命中 + 自证记录） | ✅ 完整 |
+| LP-RAM 逐轮累积测量（跨 lockup 存活） | ✅ 完整 |
+| 两堵墙定性（FE/phy 硬件线 + BT 回调注册线） | ✅ 观察点级证据 |
+| Wall 1 oracle（官方 station 692ms 过 FE 环） | ✅ 实测 |
+| 裸机探针复现官方 FE 通过 | ⛔ 需 esp-idf 全栈（288 符号）|
+| Wall 1 修复 | 转入 esp-idf 框架内诊断（官方栈 + 我们的仪器）|
+
+### 下一会话入口
+
+1. **esp-idf 框架内加仪器**：在官方 esp-idf 构建的 BT 控制器初始化路径上
+   加触发器观察点 + LP 累积（不需要裸机探针——官方栈自带 FreeRTOS/heap/log）
+2. 目标：官方栈跑通广播后，用仪器找到我们裸机版缺的那一步
+3. 或：用官方栈的 sdkconfig/log 与我们逐项对拍（不需要上板）

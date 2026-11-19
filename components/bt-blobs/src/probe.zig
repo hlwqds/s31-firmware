@@ -713,6 +713,17 @@ pub fn run() noreturn {
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
         flashStage(73);
+        // **esp_phy_enable 提前**：controller task 在 enable() 后即跑 bb_v2_init
+        // 等待回路——modem 不上电它就死等 ⇒ CPU_LOCKUP 2s 循环。先上电再进等待。
+        {
+            const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
+            esp_phy_enable(2); // PHY_MODEM_BT
+            // 直写 flash 0x18C0A8（M12：phy enable 返回；FEE6 擦过的扇区空闲偏移）
+            {
+                const m12: [2]u32 = .{ 0xADC0B112, 0 };
+                _ = esp_rom_spiflash_write(0x18C000 + 0xa8, &m12, 8);
+            }
+        }
         // **LP-RAM 跨 boot 累积**（0x2E000000，CPU_LOCKUP 复位不清；pmu_init 后才可读）：
         // LP[0]=boot 计数；LP[1..10]=最近 10 轮各自的最深步骤号。
         // 每轮在此转写 flash 0x188000 ⇒ host 一次读到逐轮历史（循环下不再盲）。
@@ -951,9 +962,6 @@ pub fn run() noreturn {
             const wrc = esp_wifi_init_internal(&wcfg);
             mark.put(0xa8, 0xADC0B120, @bitCast(wrc)); // M20: init_internal 返回码
         }
-        const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
-        mark.put(0xa4, 0xADC0B112, 0); // **调用前标记** ⇒ hist=12 ⇒ 死在 esp_phy_enable 内；hist=11 ⇒ 死在本调用之前（LE 块前半段）
-        esp_phy_enable(2); // PHY_MODEM_BT（判别轮的 modem=1 已回退——上轮判别因缺调用前标记而无效）
         mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
         mark.put(0x90, 0xADC0B10f, 0); // bb_v2_init 调用前 ⇒ M00f
