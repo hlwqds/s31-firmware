@@ -26136,3 +26136,28 @@ vendor oracle 的"官方镜像"路线实测受阻：`/home/huanglin/esp/eh_host_
 修好该工程链接（或改用真正的 esp-idf BLE 示例工程）之后，oracle 对拍才能开跑。
 python 环境 shim：`~/.espressif/python_env/idf6.1_py3.14_env/bin/python` →
 ha-venv 包装脚本（pyparsing/kconfiglib 已补）。
+
+## 🏁 Wall 1 判决：官方栈同板跑通（2026-11-20，oracle 完成）
+
+官方 IDF 6.1 `examples/wifi/getting_started/station`（esp32s31，--preview）构建 22s、
+烧录三件套后 **单次启动、无 lockup、无循环**：
+
+| 里程碑 | 实测 |
+| --- | --- |
+| libphy rate 表 dump（wifi 配置阶段） | ✅ `(phy)rate:0x17..0x19` 全量打印 |
+| **esp_wifi_start 完成**（= FE 环通过！） | ✅ `wifi:mode : sta (1c:29:04:d1:99:28)` @692ms |
+| 连接 SSID | 失败但仅因 `myssid` 不存在（预期），重试正常运行 |
+| 稳定性 | 永续运行，无复位 |
+
+⇒ **Wall 1（esp_phy_enable 内 FE 环自旋）= 我们的移植缺口，非硬件**。
+同板同芯片官方栈 692ms 内通过我们卡死的 FE 环。差距 = **wifi 层初始化上下文**：
+官方走 esp_wifi_init（归档：rate 表 + phy 配置 + modem clock 全链），我们只裸调
+esp_phy_enable(2)（仅 PHY 电源/校准）。
+
+**下一会话主线（替换原 vendor oracle 入口）**：在我们的探针/bringup 里复刻
+esp_wifi_init 的前置序列（rate 表 dump 显示归档 wifi 配置可从 0x2f8xxxxx ROM/归档
+入口进入），或改为调用归档的 wifi_init 入口而非裸 esp_phy_enable。
+判读仪器已就绪（LP 逐轮历史 + 观察点 + 直写标记）。
+
+**板子当前状态**：运行官方 station 镜像（非探针）。恢复探针 =
+`components/bt-blobs/tools/build-probe.sh` + `firmware/tools/flash.sh`（配方不变）。
