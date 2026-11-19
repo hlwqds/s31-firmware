@@ -26377,3 +26377,15 @@ esp_rom/sha/ecc/event/uart/GPIO/efuse/NVS/esp_libc/rtos 时间...）。
 **下一会话主线**：官方 esp-idf BT 示例（非 station——需要 BT_ENABLED=y 的工程）
 + 我们的触发器/LP 仪器 → 观察官方栈的 bb_v2_init_cmplx 调用路径中
 谁先填 [0x2f07f99c] → 反推我们裸机 bringup 缺的那一步。
+
+### BT modem clock 实验结果（2026-11-20 最末）
+
+modem_clock_module_enable(6=BT) + (14=BT_APB) + mac_reset(6) 在 pmu_init 后调用。
+**LP hist 仍恒 11** ⇒ BT modem clock 门控使能不足以解除 FE 环自旋。
+
+FE 环等待的是 **FE 测量电路的硬件结果**，这需要 RF PLL 在正确频率上运行 + 
+FE 测量电路使能 + 测量完成。这些由 register_chipv7_phy（libphy 归档）内部的
+PHY 校准序列配置，但校准序列自身可能也在等待上层（esp_wifi_init 的 BB/FE 
+配置写入）提供的参数。
+
+⇒ 裸机 BT 探针在此问题上的可做实验已穷尽。

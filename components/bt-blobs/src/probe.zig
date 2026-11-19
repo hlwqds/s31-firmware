@@ -712,6 +712,18 @@ pub fn run() noreturn {
         // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
+        // **BT modem clock 使能**（btdm_lp_enable_clock 的核心——此前故意留空）
+        // modem_clock_module_enable(6=PERIPH_BT_MODULE) → BLE_CLOCK_DEPS 8 个门
+        // modem_clock_module_enable(14=PERIPH_BT_APB_MODULE) → BT_APB_CLOCK_DEPS 4 个门
+        // modem_clock_module_mac_reset(6) → BT MAC 复位
+        // ⇒ BT BB/RF 硬件获得时钟后 FE 环等待才可能解除
+        {
+            const mce = @extern(*const fn (u32) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
+            const mcmr = @extern(*const fn (u32) callconv(.c) void, .{ .name = "modem_clock_module_mac_reset" });
+            mce(6); // PERIPH_BT_MODULE
+            mce(14); // PERIPH_BT_APB_MODULE
+            mcmr(6); // BT MAC reset
+        }
         flashStage(73);
         // **LP-RAM 跨 boot 累积**（0x2E000000，CPU_LOCKUP 复位不清；pmu_init 后才可读）：
         // LP[0]=boot 计数；LP[1..10]=最近 10 轮各自的最深步骤号。
