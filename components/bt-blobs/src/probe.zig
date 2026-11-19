@@ -609,7 +609,11 @@ pub fn run() noreturn {
     // **LE 广播：四次假设全部被推翻，暂停尝试（见 README「LE 四次误判」）。**
     // 已排除：① ROM printf 自旋 ② per-pend dump 饿死 ③ 日志洪水 ④ 静音后仍卡。
     // 结论：这是**确定性**的卡住，成因未定；下一步需要**不依赖 UART** 的观测。
-    osal.logPublic("bt probe: LE adv PAUSED (4 hypotheses eliminated, needs uart-free probe)", .{});
+    // **LE 广播：暂停**。五次假设全部被推翻（见 README「LE 五次误判」）：
+    // ① ROM printf 自旋 ② per-pend dump ③ 日志洪水 ④ 静音 ⑤ 上限降到 20。
+    // 且**烧录已校验**（flash.sh verify-flash 双向验证过）⇒ 不是镜像问题。
+    // ⇒ 这是**真实且确定性**的卡住，成因未定。
+    osal.logPublic("bt probe: LE adv PAUSED (5 hypotheses eliminated, flash verified)", .{});
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
