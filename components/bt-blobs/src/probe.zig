@@ -567,13 +567,16 @@ pub fn run() noreturn {
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
     // bringup 已过观测窗口，这里解除，让运行时路径零开销。
+    stg(10); // init 之后、enable 之前
     osal.dump_hook = null;
     osal.logPublic("bt probe: dump_hook disarmed", .{});
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 
     // 3) enable 链（6 步）
+    stg(11); // 即将调用 enable()
     rc = bringup.enable();
+    stg(12); // enable() 已返回
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
@@ -774,3 +777,10 @@ fn halt() noreturn {
 }
 
 extern var _adv_trace_start: [16]u32;
+
+/// 写跨复位阶段号（`tr[8]`）。**不依赖 UART**。
+fn stg(n: u32) void {
+    if (@import("builtin").target.os.tag != .freestanding) return;
+    const tr: *volatile [16]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
+    tr[8] = n;
+}
