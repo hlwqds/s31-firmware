@@ -1475,6 +1475,10 @@ pub const TaskRec = struct {
 
 var task_pool: Pool(TaskRec, 8) = .{};
 
+/// 诊断开关：置 `true` 时把新任务栈填 `0xA5`（任何没被写过的槽都会留下魔数）。
+/// 默认 `false` ⇒ **清零**，这才是根因 2 的真正修复（栈必须被初始化，而不是"非残留"）。
+const poison_stack = false;
+
 pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32, core_id: u32, handle: *?*anyopaque) c_int {
     const t = task_pool.take() orelse return ENOMEM;
     t.fn_ = fn_;
@@ -1502,7 +1506,12 @@ pub fn taskCreate(fn_: TaskFn, stack_size: u32, arg: ?*anyopaque, priority: u32,
             //
             // 用 **0xA5A5A5A5** 而不是 0：清零后回读 0/1 与"合法 NULL 指针"无法区分，
             // 而投毒值一旦出现在 ra 里（或 A5A5A5A6，表示代码置了 bit0），来源立刻确定。
-            @memset(slice, 0xA5);
+            // **真正的修复是"初始化"，不是"填特殊值"**：
+            // `bt_arena` 是静态缓冲上的 bump allocator，`Arena.alloc` 从不清零
+            // ⇒ 任务栈会继承上一次分配的残留字节（根因 2）。
+            // 默认**清零**（这是修复）；诊断时可用 `-Dstack-poison` 换成 0xA5，
+            // 那样任何"没被写过的槽"都会留下可识别的魔数。
+            @memset(slice, if (poison_stack) 0xA5 else 0x00);
             if (sched.taskCreate(slice, f, arg)) |task| {
                 handle.* = @ptrCast(task);
                 // **模拟 FreeRTOS 的"新任务立即抢占创建者"**：
