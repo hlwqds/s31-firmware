@@ -193,6 +193,9 @@ comptime {
     @export(&trap_stack_buf_storage, .{ .name = "trap_stack_buf" });
 }
 
+extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
+extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
+
 pub export fn trapDispatch(frame: *TrapFrame) bool {
     const cause = hw.readMcause();
     // **RISC-V debug trigger 断点**（mcause=3，同步异常，不受 MIE 屏蔽）：
@@ -200,9 +203,27 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     // 硬件触发器照样命中。首次命中：记录 PC 并**关掉触发器**（写 tdata1=0）
     // 让执行继续（不记录会无限重触发）。
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 3) {
-        // **断点异常**（debug trigger 命中）：记录 PC 后禁用触发器再继续，
-        // 否则同一指令无限重触发。
+        // **断点异常**（debug trigger 命中）：
+        // ① 直接把 {magic, mepc, s0} 落盘 0x18D000 —— 不依赖采样器
+        //    （采样器在 72 样本 dump 后已停，环看不见后续命中）。
+        // ② 记 RAM 环。③ 禁用触发器再继续（防无限重触发）。
         if (frame.mepc != 0) recordPc(frame.mepc);
+        {
+            const tb: *volatile [3]u32 = @ptrFromInt(0x18D000);
+            tb[0] = 0xADC0_FEE7;
+            tb[1] = @truncate(frame.mepc);
+            tb[2] = @truncate(frame.s0);
+            const prev = asm volatile ("csrrci %[v], mstatus, 8"
+                : [v] "=r" (-> usize),
+            );
+            _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
+                        var words: [3]u32 = .{ tb[0], tb[1], tb[2] };
+            _ = esp_rom_spiflash_write(0x18D000, &words, 12);
+            _ = asm volatile ("csrw mstatus, %[v]"
+                :
+                : [v] "r" (prev),
+                : .{ .memory = true });
+        }
         asm volatile ("li t1, 1");
         asm volatile ("csrw 0x7a5, t1");   // tselect = 1
         asm volatile ("csrw 0x7a0, zero"); // tdata1 = 0 ⇒ 触发器禁用
