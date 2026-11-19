@@ -656,9 +656,16 @@ pub fn run() noreturn {
         //   bit9 `rst_wifimac` = 1 ⇒ MAC 一直在复位里 ⇒ 命令永不应答（trap.zig:331-333）
         //   bit8 `rst_wifibb`  = 1 ⇒ BB 在复位里
         const rst_conf: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
+        _ = rst_conf;
         _ = osel;
         _ = cdiv;
-        flashStageExtra(22, rst_conf, 0);
+        // **快照自旋环写/轮询的三个寄存器**（MODEM_WIDGETS=0x20109400 私有块）：
+        //   W+0x480 = 0x20109880（环里写 0x0FFFFFFF 的那个）
+        //   W+0x4A8 = 0x201098A8（写 0）
+        //   W+0x4B8 = 0x201098B8（写 a3）
+        const w480: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
+        const w4a8: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
+        flashStageExtra(22, w480, w4a8);
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
