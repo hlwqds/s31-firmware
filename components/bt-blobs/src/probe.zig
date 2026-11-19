@@ -598,7 +598,13 @@ pub fn run() noreturn {
     // **读 BD_ADDR**（`0x1009`）：controller 的公开地址。
     // 一条命令、确定回包（6 字节地址），且是后续 LE 广播的前提。
     const a4_rc = transport.sendCmd(0x1009, &.{});
-    osal.logPublic("bt probe: A4(rx) readBdAddr(LAST) rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
+    osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
+
+    // **LE 广播三连**已测试，但它会让 blob 走 `ets_printf`（ROM）
+    // ⇒ TX FIFO 满时**无限自旋**（实测挂死在 `0x40065640`，零 fault、无判决）。
+    // 这与 `log.zig` 里"不再用 ROM esp_rom_printf"的注释是同一个隐患。
+    // **在解决该隐患之前，不在这里发 LE 命令** —— 否则板子会挂。
+    osal.logPublic("bt probe: LE adv sequence SKIPPED (blob ets_printf spins on full TX FIFO)", .{});
 
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
