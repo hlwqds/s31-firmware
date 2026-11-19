@@ -21556,3 +21556,69 @@ controller 的常驻循环用 `timeout == 0` 轮询。**立即返回 ⇒ 主上�
 | C | 保留 try 语义，改在 blob 的循环边界插入让出（需要可插入点）|
 
 ⇒ 当前实现是**最简形式**，在实测的调用顺序下工作正常（HCI 逐命令往返已验证）。
+
+## 🏁 开放项 3b **已解决**：PHY 首次标定 `rc = 0`
+
+### 最终接线（可用）
+
+```zig
+const init_tbl = @extern(*const [128]u8, .{ .name = "phy_init_data" });
+var  phy_cal_buf: [1904]u8 align(16) = @splat(0);   // .bss，不占镜像
+
+const rc = register_chipv7_phy(@ptrCast(init_tbl), @ptrCast(&phy_cal_buf), 2);
+// rc == 0
+```
+
+| 参数 | 值 | 说明 |
+| --- | --- | --- |
+| `init_data` | `&phy_init_data`（`0x4010454e`，`.flash.rodata`，128 B） | **不能传 NULL** |
+| `cal_data` | 静态 1904 B 缓冲（`.bss`） | **不能传 NULL** |
+| `mode` | `2` = `PHY_RF_CAL_FULL` | |
+
+### 两次失败实验（都是 NULL 导致的 store fault）
+
+| 尝试 | 结果 | 原因 |
+| --- | --- | --- |
+| `(NULL, NULL, 2)` | **142 个 trap** | `phy_rfcal_data_sub_new` 写 `NULL+0x0c` |
+| `(init_data, NULL, 2)` | **仍 142 个 trap** | 同上 ⇒ **问题在 `cal_data`** |
+| **`(init_data, cal, 2)`** | ✅ **`rc=0`** | 正确 |
+
+故障签名（两次一致）：
+
+```text
+cause = 0x7（store access fault）  mtval = 0x0000000c
+mepc  = 0x40061b8a ← 在 phy_rfcal_data_sub_new（0x40061b60）内
+```
+
+⇒ **`mtval` 正好是结构体偏移**（`cal+0x0c`）⇒ NULL 基址 + 固定偏移。
+
+### 因此
+
+| 项 | 状态 |
+| --- | --- |
+| 标定调用 | ✅ `rc=0` |
+| fault | ✅ **0** |
+| HCI 往返 | ✅ **仍成立**（`btdm_tx=2`、`tx_head=0e,04,02,03,0c,00`）|
+
+⇒ **3b 不再是开放项。**
+
+### 关键教训
+
+> **IDF 里"某个变体传 NULL 也行"不等于"这个芯片也行"。**
+> `phy_init_esp32hxx.c:117` 用 `(NULL,NULL,FULL)`，而这个芯片两个都不接受 ——
+> 判据只能是**在这个芯片上实测**。
+
+## 最终状态（本会话结束时）
+
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1 | BT/MAC 四项时钟配置 | ✅ 已修复 |
+| 2 | 任务栈未初始化 | ✅ 已修复（默认清零）|
+| 3 | `esp_phy_enable` 冻结入口点 | ✅ 已修复 |
+| **3b** | **PHY 首次标定** | ✅ **已解决（`rc=0`）** |
+| 4 | `r_conn_stack_enable` 空桩 | ✅ 已修复 |
+| 5 | `.iram_btslp*` 孤儿段 | ✅ 已修复并验证 |
+| 6 | 应答走 `btdmTx` 而非 `leEvtTx` | ✅ 已澄清 |
+| —— | **HCI Reset `status=0x00`，逐命令** | ✅ **已验证** |
+
+⇒ **本会话所有已识别缺陷均已修复并验证。**

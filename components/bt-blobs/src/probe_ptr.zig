@@ -88,6 +88,25 @@ pub fn initPhy() void {
 /// 保留为**真实函数**而不是空桩：日志说明"未标定"，让后续任何失败都是**真实失败**，
 /// 而不是继续追一个指向别人函数体中间的地址。
 pub fn espPhyEnable(modem: u32) callconv(.c) void {
+    // **PHY 首次标定**（开放项 3b 的第一次实验）。
+    // IDF 的 hxx 变体就是 `register_chipv7_phy(NULL, NULL, PHY_RF_CAL_FULL)`
+    // （`phy_init_esp32hxx.c:117`）⇒ **NULL 是合法形式**，所以先试最便宜的那种。
+    // 符号在 `.flash.text`（`0x40061c56`，`T`）⇒ 代码已在镜像里，不是"缺 IRAM 代码"。
+    // 顺序按 IDF：标定**先于** `esp_phy_enable`。
+    const calib = @extern(
+        *const fn (?*const anyopaque, ?*anyopaque, u32) callconv(.c) c_int,
+        .{ .name = "register_chipv7_phy" },
+    );
+    // ⚠ **`init_data = NULL` 在本芯片上会崩**（实测：`register_chipv7_phy_init_param`
+    // 内部解引用 NULL 并对 `0x0C` 执行 store ⇒ cause=7 store access fault，`mepc=0x40061b8a`）。
+    // IDF 的 hxx 变体能用 NULL，但**这个芯片不行** ⇒ 必须传真实的 128 字节表。
+    const init_tbl = @extern(*const [128]u8, .{ .name = "phy_init_data" });
+    // ✅ **实测 rc=0（成功）**：`init_data` = `phy_init_data`（128 B），
+    // `cal_data` = 静态 1904 B 缓冲，mode = 2（`PHY_RF_CAL_FULL`）。
+    // ⚠ **`cal_data = NULL` 会崩**：`phy_rfcal_data_sub_new` 会对 `cal+0x0c` 执行 store
+    // ⇒ `mtval=0x0c`、cause=7。必须给一块真缓冲（1904 B = `esp_phy_calibration_data_t`）。
+    const cal_rc = calib(@ptrCast(init_tbl), @ptrCast(&phy_cal_buf), 2); // PHY_RF_CAL_FULL
+    @import("osal_kit").osal.logPublic("bt phy: register_chipv7_phy(init_data,cal_1904,FULL) rc={d}", .{cal_rc});
     // **真正的使能序列**（对齐 IDF `esp_phy_enable` 中我们确实拥有的部分）。
     // 只有首次标定（`register_chipv7_phy`，需要 phy_init_data/cal_data）保持缺失，
     // 这一条在日志里明确说出来，避免后续 RF 失败被误归因。
@@ -110,3 +129,7 @@ pub fn espPhyEnable(modem: u32) callconv(.c) void {
         .{modem},
     );
 }
+
+/// `esp_phy_calibration_data_t`（1904 B：`version[4] + mac[6] + opaque[1894]`）。
+/// 放在 `.bss`，**不能放栈上**。零初始化即可（`PHY_RF_CAL_FULL` 会重填）。
+var phy_cal_buf: [1904]u8 align(16) = @splat(0);
