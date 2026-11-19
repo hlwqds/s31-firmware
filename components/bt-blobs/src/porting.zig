@@ -263,6 +263,16 @@ pub fn phyDomainEnable() void {
         // 只置**已定义**的 bit0（`MODEM_WIDGETS_CLK_EN`），别写全 1 ——
         // 该寄存器其余位保留，写 1 的后果未知（破坏性扫描的教训）。
         wr(wclk, rd(wclk) | (1 << 0));
+        // 8) **两个块级 CLK_EN（+0x00）此前从未写过**：
+        //    `MODEM_SYSCON_CLK_EN` = 0x20109C00 bit0、
+        //    `MODEM_LPCON_CLK_EN` = 0x2010F000 bit0（**默认 0**）。
+        //    porting 写过 SYSCON +0x04..+0x14、LPCON +0x08..+0x20，唯独漏了 +0x00。
+        //    （注意 0x20109880/A8/B8/BC 就在 widgets 块空间 0x20109400..0x20109BFF 里。）
+        wr(0x2010_9C00, rd(0x2010_9C00) | (1 << 0));
+        wr(0x2010_F000, rd(0x2010_F000) | (1 << 0));
+        osal.logPublic("bt phy: syscon/lpcon CLK_EN set (0x{x}/0x{x})", .{
+            rd(0x2010_9C00), rd(0x2010_F000),
+        });
         // 自证：写一个特征值到 W+0x480，读回比较
         const probe_addr: usize = 0x2010_9880;
         wr(probe_addr, 0x1234_5678);
