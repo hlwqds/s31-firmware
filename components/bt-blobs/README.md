@@ -26431,3 +26431,34 @@ PHY 校准序列配置，但校准序列自身可能也在等待上层（esp_wif
 
 待办（下一会话）：定 post 消息结构（+76 = opcode u16 的完整布局）→
 bringup 加一条 opcode-99 消息 → 观察 bb_v2_init 是否走通、PC 环变化。
+
+### ⚠ 更正（同日稍后）：「opcode-99 注册」是误诊——真墙是 ROM SPI-flash legacy attach
+
+`esp32s31.rom.ld:198-199` 实锤：
+
+```
+rom_spiflash_legacy_funcs = 0x2f07ffe4;   ← 等待环解引用的指针
+rom_spiflash_legacy_data  = 0x2f07ffe0;
+```
+
+即 bb_v2_init_cmplx（0x2f80e4cc/de）等待的"[table+36]"= **ROM SPI-flash legacy
+函数表的第 36 偏移字段**（表体 0x2f07f978，ROM 数据区）。它 `jalr` 的是
+flash legacy API 里的某个函数——BT/BB 初始化要读 flash 里的 RF 校准数据，
+等的是"flash legacy 驱动已 attach"。
+
+- 官方栈：`spi_flash_init` → `esp_rom_spiflash_attach` → ROM `spi_flash_attach`
+  （0x2f800200）填充表 → 等待放行。
+- 我们的裸机探针：从没跑过 attach ⇒ [0x2f07f978+0x36] 恒 0 ⇒ 永等。
+  （探针自己的 esp_rom_spiflash_erase/write 能用，是因为 ROM 直调不受此表约束，
+  或 bootloader 已部分填充——待下一会话一条实验定。）
+
+**下一会话第一步（1 行实验）**：enable() 前调 ROM `spi_flash_attach`
+（或把 esp_rom_spiflash_attach 的等价填充写 0x2f07f978+36），看 PC 环是否离开
+{0x2f80e4cc,e4de}。离开了，BT 墙就通了。
+
+上文「opcode 99 经消息队列注册回调」一段**降级为未验证支线**：
+dispatcher（22.o NCXEqqU）对 a2==99 && a1==8 的 +32/+36 写确实存在，但
+(a2 是事件包长度还是 opcode、dispatcher 表指针与 ROM 槽是否同一变量)
+均未用 HI20/LO12 重定位对账——不能作为实现依据。主上下文直写 unlock
+失败的机制也不再是"zeroing 竞态"，而是**写了个无人消费的 RAM 槽**
+（真槽在 ROM 数据区，等的是 flash attach 填充）。
