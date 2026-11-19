@@ -26161,3 +26161,21 @@ esp_wifi_init 的前置序列（rate 表 dump 显示归档 wifi 配置可从 0x2
 
 **板子当前状态**：运行官方 station 镜像（非探针）。恢复探针 =
 `components/bt-blobs/tools/build-probe.sh` + `firmware/tools/flash.sh`（配方不变）。
+
+## 下一会话主线规格（2026-11-20 定稿）：WiFi osi 栈移植进 bt-blobs
+
+**目标**：用 wifi-blobs 已在本板验证的 init 序列（osi 表 → wifi_init_config_t →
+`esp_wifi_init_internal`）替换 LE 块里的裸 `esp_phy_enable(2)`，解锁 Wall 1。
+
+| 项 | 内容 |
+| --- | --- |
+| 参考实现 | `components/wifi-blobs/src/init_probe.zig`（本板跑通：装 osi 表 → 构造 initcfg → `esp_wifi_init_internal` → `_phy_enable` 内部按 IDF 顺序发生）|
+| 待移植文件 | `wifi-blobs/src/osi_impl.zig`（1567 行）+ 其依赖 `event_bus.zig` / `osi.zig` / `nvs_ram.zig` / `osi_stubs.zig`（共 5 文件 ~2000+ 行）|
+| 入口符号 | `esp_wifi_init_internal`（esp_private/wifi.h；libesp_wifi.a wifi_init.c.obj = 黑盒，但 IDF 侧 wrapper 可读）|
+| 接线点 | bt-blobs probe.zig LE 块：osi 表安装 → esp_wifi_init_internal(&cfg) → （blob 内部含 phy enable，替换裸调）|
+| 已有基础 | BT osi（wr_btdm_osi）已实现 HCI 全通（另一张表）；porting.zig 已借 wifi-blobs 位集（:346）|
+| 判读 | LP 逐轮历史步骤号应推进过 11（M00b/M00e+）——esp_wifi_init_internal 内部过 FE 环则 Wall 1 修复 |
+| 备选 | 若 WiFi osi 表与 BT 线无关（libble_app 用 BT osi），移植后仍卡同点 ⇒ Wall 1 与 WiFi osi 无关，转向"esp_wifi_init 的归档入口直调"（libesp_wifi.a wifi_init.c.obj 的 esp_wifi_init 地址 0x40019e94 在 oracle elf 里，闭包 = map 文件可查）|
+
+**注意**：esp_wifi_init_internal 与 esp_phy_enable(2) 的顺序按 wifi-blobs
+（init_internal 在前、phy enable 在其内部/之后）。保留跳过 bb_v2_init 状态。
