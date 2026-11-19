@@ -372,6 +372,7 @@ export fn probeSelftestAfterFence() void {
 
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
+    board.trap.on_pc_ready = dumpPcRing;
     board.trap.ring_at = ringAt;
     board.trap.ring_n_at = ringCount;
     osal.dump_hook = dumpAtPend;
@@ -661,6 +662,19 @@ pub fn run() noreturn {
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
         // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
+        // **开 PC 采样窗口**：清环 ⇒ 之后采到的都是"挂住期间"的 PC。
+        // `sample_quiet = true`：ISR 只记环不打印（UART 不可用，打印会自旋）。
+        // ⚠ 武装必须在**这里**做：`probe_irqs` 在 `:432` 的武装点读的是**当时**的值，
+        // 那时还是 false ⇒ 只置 true 不会让定时器起来（第一次实测环里是垃圾数据）。
+        board.trap.resetPcs();
+        board.trap.sample_quiet = true;
+        board.trap.pc_dump_at = 72;
+        if (!probe_irqs) {
+            probe_irqs = true;
+            board.hw.routeT0Interrupt(25);
+            board.hw.armT0Interrupt(2000);
+            board.hw.enableInterrupts();
+        }
         var ae: [1]u8 = .{1};
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
@@ -809,6 +823,18 @@ fn halt() noreturn {
 // 而 CPU 正从同一片 flash 执行 XIP ⇒ 会硬挂。只在**主上下文**里调用。
 // ---------------------------------------------------------------------------
 extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
+/// 把 `pc_ring` 一次性写到 **0x187000**（独立扇区，不碰标记的 0x186000）。
+/// `esp_rom_spiflash_write` **不自动擦**（`esp_rom_spiflash.h:257-271`）⇒ 先擦。
+/// 只写一次：flash 同址只能 1→0，重复写不会更新。
+fn dumpPcRing() void {
+    const off: u32 = 0x187000;
+    var buf: [1 + 48]u32 = @splat(0);
+    buf[0] = board.trap.pcSampleCount();
+    _ = board.trap.samplePcs(@ptrCast(buf[1..].ptr));
+    _ = esp_rom_spiflash_erase_sector(off / 0x1000);
+    _ = esp_rom_spiflash_write(off, &buf, @intCast(@sizeOf(@TypeOf(buf))));
+}
+
 extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
 
 const flash_mark_off: u32 = 0x18_6000;
