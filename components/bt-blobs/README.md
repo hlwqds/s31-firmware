@@ -26254,3 +26254,22 @@ esp_phy_enable 永远缺它；这些表在 libpp/net80211 闭包里）。
 16MB flash 内可行）+ 17 符号 FreeRTOS shim（osal 可实现）+ 链入
 wifi_init.c.obj/esp_coex_adapter（objs.csv 配方已实测）。
 Route A 的 osi 移植对 **Wall 2**（BT 回调注册）仍可能有用，独立推进。
+
+## ✅ 修正判读（2026-11-20 终二）：调用前标记 + PC 环双证据
+
+| 实验 | 结果 |
+| --- | --- |
+| 调用前标记（seq 12，esp_phy_enable 之前） | **hist 恒 11** ⇒ 每轮死在 `esp_phy_enable(2)` **调用之前**（上轮 modem 判别双重无效——根本没进调用）|
+| PC 环（0x187000，当前构建 72 帧） | **8+ 帧落在 `0x2f80e4cc/0x2f80e4de`（bb_init 回调等待区自旋环）** + probe.run 等待环（0x40069948/52）|
+
+⇒ **机制终局（PC 环实证）**：跳过手动 bb_v2_init 后，流程走到 `enabled (status=2)` →
+HCI 应答 → eventRun → **归档自己的内部 bb init 调用卡在同一回调等待环**
+（0x2f80e4cc/de = 与我们 STORE/LOAD 观察点定位的回调表等待同区）⇒
+**同一堵墙打在两处**：我们的手动调用 + 归档内部调用，都等
+`0x2f07f99c` 被填充 ⇒ modem 判别的"无效"不影响主线结论——
+**BT 线唯一必要修复 = 回调注册**（FE 线在更后面，与本轮无关）。
+
+**下一会话第一动作**：按实现级映射表执行 osi_impl→osal 移植切片 1
+（queue send/recv → eventqPut/Get + sched 三层阻塞），esp_wifi_init_internal
+入口（已在树里，objs.csv 配方已实测）—— ppTask 在 bt-blobs 调度器上应能运行
+（r_btdm 任务已证可行）⇒ 回调注册者（blob 内部函数）获得调度 ⇒ 表项被填。

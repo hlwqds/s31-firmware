@@ -926,7 +926,8 @@ pub fn run() noreturn {
         // 若这一步之后轮询位能置 ⇒ 缺的就是它；若仍挂 ⇒ 连 IDF 都点不亮这块，
         // 问题在更上游（电源岛/晶振时钟路径）。
         const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
-        esp_phy_enable(1); // PHY_MODEM_WIFI —— 一行判别：modem 上下文差分
+        mark.put(0xa0, 0xADC0B112, 0); // **调用前标记** ⇒ seq 12：hist=12 ⇒ 死在 esp_phy_enable 内；hist=11 ⇒ 死在本调用之前（LE 块前半段）
+        esp_phy_enable(2); // PHY_MODEM_BT（判别轮的 modem=1 已回退——上轮判别因缺调用前标记而无效）
         mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
         mark.put(0x90, 0xADC0B10f, 0); // bb_v2_init 调用前 ⇒ M00f
