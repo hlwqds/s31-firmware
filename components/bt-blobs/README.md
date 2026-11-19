@@ -25699,3 +25699,30 @@ tdata2 可写可读，但 tdata1/tcontrol 的写入不生效 ⇒ **触发器从�
 `0x201098BC.bit2` = 硬件 ready 位，合成器未锁定；
 vendor oracle（esp-idf-hosted 同板跑通广播对拍）= 唯一剩余路；
 物理重插 USB（POWERON 串口）= 辅助。
+
+## ⛔ 最终尝试：trap 上下文 dump 也未落地（级联陷阱改变假设）
+
+| 项 | 结果 |
+| --- | --- |
+| 设计 | CSR 扫描（13 连读）→ ebreak → 断点分支把 {FEE7, mepc, s0, CSR 映射} 落盘 0x18D000 |
+| 实测 | `0x18D000` 全 ff ⇒ **dump 未落地** |
+
+⇒ 之前"FEE7 从 trap 落盘成功"的案例是**单次断点 + 单次 flash 写**；
+本轮是 **13 连 cause-2 陷阱级联之后**的 flash 写 —— 级联可能破坏了 trap 内 flash 操作的前提。
+⇒ trap 内 flash 写的可靠性**不是无条件成立**——下一会话先验证：单次 ebreak（无级联）下
+FEE7 是否仍落盘（阳性对照），再决定级联场景的处理。
+
+## 会话终账
+
+| 仓库 | HEAD | 树 |
+| --- | --- | --- |
+| s31-firmware | fd817fc | clean |
+| hl-ljj-quartz | a6a2ebe5 | clean |
+
+### 下一会话入口（终版）
+
+| # | 事项 |
+| --- | --- |
+| 1 | **物理重插 USB**（POWERON 串口：读官方栈输出 + 我们仪器的串口判别）|
+| 2 | **vendor oracle**：esp-idf-hosted 栈跑通广播 → 对拍 `0x201098xx`/FE 真值 |
+| 3 | 仪器课题：trap 内 flash 写的可靠性边界（单次断点 vs 级联陷阱的对照实验）|
