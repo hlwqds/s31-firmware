@@ -602,6 +602,22 @@ pub fn run() noreturn {
         // tinfo 回读；写 tdata1=0x4C → 回读；写 tdata2=0x2f828a78 → 回读；
         // tcontrol(0x7a3)=0x88 写 → 回读（此前读 0 无陷阱）；tselect 回读。
         // 结果 6 字落 0x18F000（此窗口 flash 可靠——stage 72 落地证实）。
+        // **改进位探测**（兼容粘滞位语义）：每位先写 0 清场 → 写该位 → 读回 →
+        // (rb & bit) 判保留。write-1-to-set 与普通覆盖两种语义都能正确判定。
+        {
+            var keep: u32 = 0;
+            var bp: u32 = 0;
+            while (bp < 32) : (bp += 1) {
+                const bit: u32 = @as(u32, 1) << @intCast(bp);
+                asm volatile ("csrw 0x7a0, zero"); // 清场
+                const wv: u32 = bit;
+                asm volatile ("csrw 0x7a0, %[v]" : : [v] "r" (wv));
+                var rb: u32 = undefined;
+                asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (rb));
+                if ((rb & bit) != 0) keep |= bit;
+            }
+            flashStage(92); // 位探测完成 ⇒ 未挂死；keep 位图下次经数据扇区带出
+        }
         var v_t1: u32 = undefined;
         var v_t2: u32 = undefined;
         var v_t3: u32 = undefined;

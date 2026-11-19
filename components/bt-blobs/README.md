@@ -25874,3 +25874,29 @@ CSR 0x7a0 仍非标准 tdata1（Espressif 自定义布局），**布局需从厂
 | --- | --- | --- |
 | s31-firmware | `1ba894e` | clean |
 | hl-ljj-quartz | a6a2ebe5 | clean |
+
+## ✅ 改进位探测完整跑通：CSR 0x7a0 无挂死、flash 无损坏（双重定论）
+
+| 项 | 结果 |
+| --- | --- |
+| marker = **92**（32 轮清场→写位→读回之后）| ✅ **位探测完整跑通，未挂死** |
+| flashStage(92) 本身落地 | ✅ **32 轮 CSR 写之后 flash 路径仍正常**（"CSR 写破坏 flash"对该 CSR 不成立）|
+
+⇒ 双重定论：
+1. **CSR 0x7a0 不是危险寄存器**（32 轮清/写/读全部幸存）——此前"写某些位挂死"彻底撤回。
+2. **CSR 0x7a0 写不破坏 flash 路径**——本轮 flash 写照常落地。
+
+### 改进版探测（最终版）
+
+```zig
+每位：csrw 0x7a0, zero    // 清场（兼容 write-1-to-set 粘滞语义）
+      csrw 0x7a0, bit     // 写该位
+      csrr → rb
+      if ((rb & bit) != 0) keep |= bit  // 按位与判保留
+```
+⇒ 两种寄存器语义（粘滞/覆盖）都能正确判定可写位。
+
+### 待补（下次会话一行）
+
+keep 位图在 RAM（本轮未落盘）。flashStage(92) 已证明 **pro 探测后 flash 写可用**
+⇒ 下次把 keep 位图写进 0x18F000 即可拿到 S31 tdata1 的**真实可写位清单**。
