@@ -606,10 +606,35 @@ pub fn run() noreturn {
     const a4_rc = transport.sendCmd(0x1009, &.{});
     osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
 
-    // **LE 广播：四次假设全部被推翻，暂停尝试（见 README「LE 四次误判」）。**
-    // 已排除：① ROM printf 自旋 ② per-pend dump 饿死 ③ 日志洪水 ④ 静音后仍卡。
-    // 结论：这是**确定性**的卡住，成因未定；下一步需要**不依赖 UART** 的观测。
-    osal.logPublic("bt probe: LE adv PAUSED (4 hypotheses eliminated, needs uart-free probe)", .{});
+    // **跨复位追踪**：先读上一次留下的阶段号（不依赖 UART）。
+    {
+        const tr: *volatile [4]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
+        osal.logPublic("bt advtrace: prev[0]={d} prev[1]=0x{x}", .{ tr[0], tr[1] });
+        tr[0] = 0; // 本次开始，先清零
+    }
+
+    // **LE 广播（带跨复位追踪）**：每条命令前把阶段号写进 `.adv_trace`，
+    // 卡住后**复位**再读回 `prev[0]` 就知道停在哪条 —— 完全不依赖 UART。
+    {
+        const tr: *volatile [4]u32 = @ptrFromInt(@intFromPtr(&_adv_trace_start));
+        var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
+        tr[0] = 1; // 即将发 0x2006
+        const r6 = transport.sendCmd(0x2006, &ap);
+        tr[0] = 2; // 0x2006 已返回
+        tr[1] = @bitCast(@as(i32, r6));
+        var ad: [32]u8 = @splat(0);
+        ad[0] = 3;
+        ad[1] = 2;
+        ad[2] = 0x06;
+        const r8 = transport.sendCmd(0x2008, &ad);
+        tr[0] = 3;
+        tr[2] = @bitCast(@as(i32, r8));
+        var ae: [1]u8 = .{1};
+        const ra2 = transport.sendCmd(0x200A, &ae);
+        tr[0] = 4; // 三条都返回了
+        tr[3] = @bitCast(@as(i32, ra2));
+        osal.logPublic("bt probe: LE done rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
+    }
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
@@ -742,3 +767,5 @@ fn halt() noreturn {
         asm volatile ("" ::: .{ .memory = true });
     }
 }
+
+extern var _adv_trace_start: [4]u32;

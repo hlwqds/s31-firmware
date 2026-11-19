@@ -230,6 +230,16 @@ SECTIONS
         _phy_cal_buf_end = .;
     } > sram
 
+    /* **跨复位的 LE 追踪槽**（16 B，NOLOAD 且不在 .bss 内 ⇒ `_start` 不清零）。
+     * 用途：把"即将发第几条 LE 命令"写在这里；卡住后**复位**再读回，
+     * 就能在**不依赖 UART** 的前提下知道停在哪一步。 */
+    .adv_trace (NOLOAD) : ALIGN(16)
+    {
+        _adv_trace_start = .;
+        . = . + 16;
+        _adv_trace_end = .;
+    } > sram
+
     .btdm_data (NOLOAD) : ALIGN(16)
     {
         _data_start_btdm = .;
