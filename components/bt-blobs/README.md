@@ -17,7 +17,7 @@
 > ③ `esp_phy_enable` 冻结入口点 ④ `r_conn_stack_enable` 是 `c.ret` 空桩
 > ⑤ `.iram_btslp*` 孤儿段导致 `esp_image` 段重叠。
 > **HCI Reset 逐命令应答 `status=0x00`**（应答走 `btdmTx`；`leEvtTx` 只收 init 事件）。
-> **唯一开放项：PHY 首次标定**（`register_chipv7_phy` @ `0x40061c82`，路径见文末）。
+> **唯一开放项：PHY 首次标定**（`register_chipv7_phy` @ **`0x40061c56`**（`T`, `.flash.text`；`register_chipv7_phy_init_param` @ `0x40061ac0`），路径见文末）。
 >
 > （历史快照，已被上文取代：早期曾停在 `enter step 1` 并轮询 FE 块。）
 >
@@ -110,13 +110,14 @@
 > `patch_bail_field=false`、`pmu_dump=false`、`anchors_enabled=false`、`phy_before_clocks=true`、
 > `probe_stop_at_tick=0`、`log_hook_silent=false`。
 >
-> **~~唯一剩余工作~~（已完成，2026-11-19）**：
+> **当时的剩余工作**（**已在本会话完成**：频域使能四项条件 → `bt bringup: INITED`）：
 > （`0x2058_71E0←0x3d` + CLK_CONF1 的 FE_* 位 + `I2C_ANA_MST`），**不要照抄 wifi 的 `LPCON+0x18←0x1`**
 > （会清掉 bit2 `clk_i2c_mst_fo`，BLE 的 PHY 正走模拟 I2C）；材料见
 > `phy_init_data.zig`、`init_probe.zig:686-700`、`osi_impl.zig`（`grep -n 'shellPhyEnable'`）。
 > 判据：`initPhy()` 之后能否打印那行 "PHY enabled"，以及随后 `0x2010B000` 是否可读。
+> **（以上两项判据均已满足；`LPCON+0x18←0x1` 会清 bit2 的警告是真实经验，改 `btdmLpEnableClock` 的人仍需遵守。）**
 >
-> 以下历史章节按时间追加。**凡与文末「## 最终状态（本会话结束时）」表冲突的，以文末表为准。**
+> 以上为历史快照；**当前状态见文末「## 最终状态（本会话结束时）」表**。
 
 # bt-blobs —— BLE controller 归档在裸机镜像里的适配面
 
