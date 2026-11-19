@@ -717,14 +717,13 @@ pub fn run() noreturn {
     // 另一 helper 0x2f80e440 等全零。0x2f80e4d0/e4de 采样 PC 是路过点）。
     // 命中 = 自旋环内，auth_pc 应为 0x2f80e450/e440；trap 快照读它的活值
     // ⇒ 阻塞位到底是什么。
-    // **pre-BT 基线 + 自配置目标**：bb_init 的真自旋是等 [a4+36]!=0（函数指针表），
-    // a4 = *(0x2f07ffe4)（blob 数据，固定地址）⇒ [a4+36] 可静态算出。
-    // 读 a4 → 算 addr → 记录 {FEF9, a4, addr, *(addr)} → 武装 LOAD@addr。
-    // （0x20501000 那轮已证：FEFA 命中 vendor 读但值=0 ⇒ 该等待通过，非真挂点。）
+    // **STORE 观察点**：目标 0x2f07f99c（bb_init 真等待点，实测基线 0、自旋时仍 0）。
+    // 命中 ⇒ auth_pc = 注册者 PC；不命中 ⇒ 本流程无人写它。
+    // （FEFA 轮 LOAD@0x20501000 已证 0x20501000 pre-BT=0、自旋时=0x6992f。）
     const vfe4: u32 = @as(*volatile u32, @ptrFromInt(0x2f07_ffe4)).*;
     const target_addr: u32 = vfe4 +% 36;
     const cur_val: u32 = if (vfe4 != 0) @as(*volatile u32, @ptrFromInt(target_addr)).* else 0xDEAD_0000;
-    var base: [4]u32 = .{ 0xADC0_FEF9, vfe4, target_addr, cur_val };
+    var base: [4]u32 = .{ 0xADC0_FEFC, vfe4, target_addr, cur_val };
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &base, 16);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
@@ -736,8 +735,8 @@ pub fn run() noreturn {
         : [addr] "r" (target_addr),
     );
     asm volatile ("csrw 0x7a2, t0"); // tdata2 = target_addr（此刻无观察点在活）
-    asm volatile ("li t0, 0x49");
-    asm volatile ("csrw 0x7a1, t0"); // tdata1 = LOAD|USER|MACHINE
+    asm volatile ("li t0, 0x4a");
+    asm volatile ("csrw 0x7a1, t0"); // tdata1 = STORE|USER|MACHINE
     asm volatile ("li t0, 0x88");
     asm volatile ("csrw 0x7a5, t0"); // tcontrol = MTE(bit3)|MPTE(bit7)（最后开）
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
