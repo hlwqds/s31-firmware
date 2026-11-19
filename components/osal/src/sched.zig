@@ -132,6 +132,18 @@ var main_context: ?*Context = null;
 fn trampoline() callconv(.c) void {
     // **任务体入口**：这一行是否出现，直接回答"任务体在 init 期间跑过没有"
     // —— 锚点由归档的任务体自己写，任务是它唯一的写者候选。
+    // **上下文自校验**：实际 sp 是否等于 `ctx.sp`。
+    // 若不等 ⇒ `lw sp, 0(a1)` 与 `ctx.sp` 脱节（记账错误），
+    // 而不是帧布局问题（两侧已核对为一致的 13 字）。
+    {
+        const live_sp = asm volatile ("mv %[v], sp"
+            : [v] "=r" (-> usize),
+        );
+        const cs = if (entering) |c| c.sp else 0;
+        @import("osal.zig").logLine("bt sched: 任务体开始 sp=0x{x} ctx.sp=0x{x} same={d}", .{
+            live_sp, cs, @intFromBool(live_sp == cs),
+        });
+    }
     @import("osal.zig").logLine("bt sched: *任务体开始执行*", .{});
     const ctx = entering orelse return;
     const entry = ctx.entry orelse return;
