@@ -224,17 +224,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         if (auth_pc != 0) recordPc(auth_pc);
         // **5 字命中记录**：{FEE7, 权威mepc, s0, tdata1_rb, tdata2_rb}
         // —— 命中即知核当时实际 armed 的 type/m/match 与地址（自证仪器）。
-        var rb_tdata1: u32 = undefined;
-        var rb_tdata2: u32 = undefined;
-        asm volatile ("csrr %[v], 0x7a0" : [v] "=r" (rb_tdata1));
-        asm volatile ("csrr %[v], 0x7a1" : [v] "=r" (rb_tdata2));
-        var tb: [5]u32 = .{ 0xADC0_FEE7, auth_pc, @truncate(frame.s0), rb_tdata1, rb_tdata2 };
+        var tb: [3]u32 = .{ 0xADC0_FEE7, auth_pc, @truncate(frame.s0) };
         {
             const prev = asm volatile ("csrrci %[v], mstatus, 8"
                 : [v] "=r" (-> usize),
             );
             _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x18D000, &tb, 20);
+            _ = esp_rom_spiflash_write(0x18D000, &tb, 12);
             _ = asm volatile ("csrw mstatus, %[v]"
                 :
                 : [v] "r" (prev),
