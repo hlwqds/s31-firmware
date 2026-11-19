@@ -26407,3 +26407,27 @@ PHY 校准序列配置，但校准序列自身可能也在等待上层（esp_wif
 ⇒ 真正的解锁需要**中断级注入**（NMI 强制切上下文）或**任务让出后的写**。
 前者已在早期实验中尝试失败（CLIC nmies 被清）。
 ⇒ BT 线修复确认需要 esp-idf 框架（FreeRTOS 调度器天然处理跨上下文可见性）。
+
+### [0x2f07f99c] 谁填——终答（2026-11-20 二进制考古）
+
+对 `esp32s31-bt-lib` 三个 .a 全量反汇编 + 重定位扫描，闭环：
+
+1. **等待者**：bb_v2_init_cmplx（0x2f80e4cc/de，22.o）自旋读 `[table+36]`
+   （table 基址 = 0x2f07f978，槽地址 0x2f07f99c），非零则 `jalr` 调它。
+2. **注册者**：dispatcher `r_sym_ble_NCXEqqUNLDihy3AjNcOa`（22.o）——
+   HCI 内部命令分发器（opcode 比较值 53/73/**99**/123/124/131）。
+   **opcode 99** 分支把 8 字节 payload 拼成两个 u32：
+   `word0 → [table+32]`，`word1 → [table+36]`（回调地址！）。证据：`sw a5,36(a6)`。
+3. **泵**：100.o `r_sym_ble_Ww5yQJMeRQYYEVEdNAJD` 从队列取消息，
+   u16 opcode 在消息结构 **+76** 处，调 dispatcher（a1=161 常量、a3=长度）。
+   同 .o 还有 `r_hci_stack_initEnv/enable/disable` —— 这就是 HCI 栈胶水。
+4. **竞态**：zeroing 函数 `r_sym_ble_vLUQfNx4F7DdlcTGQmhl`（22.o）在初始化中
+   把 `[table+36]` 写 0——我们直接 SRAM 写的 unlock 被它清掉 = 之前 unlock
+   无效的**真正机制**（不是"主上下文写不可见"，单核对同地址无此问题）。
+5. **缺的一步**：bringup 需在 zeroing 之后、bb_v2_init 自旋之前，
+   经 blob 自己的消息队列（r_btdm_task_post 同一路径）投一条
+   **opcode=99、payload=[word0, 回调地址]** 的消息。回调地址可用 c.ret 桩
+   （0x2f808078）起步——这次由 blob 自己的状态机按时序写入，竞态消失。
+
+待办（下一会话）：定 post 消息结构（+76 = opcode u16 的完整布局）→
+bringup 加一条 opcode-99 消息 → 观察 bb_v2_init 是否走通、PC 环变化。
