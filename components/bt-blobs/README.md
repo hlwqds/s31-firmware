@@ -21693,3 +21693,54 @@ bt HALT verdict: evt=1 cmds=4 btdm_tx=2 ... tx_head=**0e,04,02,03,0c,00**
 
 ⇒ 这条值得留在这里，因为它正是本会话反复遇到的那类陷阱：
 **一个看起来正常、实际不被消费的通道。**
+
+## 🏆 HCI 通道承载**真实数据**：Read Local Version 应答可解码
+
+### 读数
+
+```text
+btdm_tx=3  tx_len=14  tx_head = **0e,0c,02,01,10,00,0e,00**
+```
+
+### 解码（plen=12 的 Command Complete）
+
+| 偏移 | 值 | 字段 |
+| --- | --- | --- |
+| `[0]` | `0x0E` | **Command Complete** |
+| `[1]` | `0x0C` | 参数长度 12 |
+| `[2]` | `0x02` | `num_hci_command_packets` |
+| `[3..4]` | **`01 10`** | **opcode = `0x1001`**（Read Local Version）|
+| `[5]` | **`0x00`** | **status = SUCCESS** |
+| `[6]` | **`0x0E`** | **HCI version** |
+| `[7]` | `0x00` | `hci_rev` 低字节 |
+
+⇒ 长度核对：`ncmd(1) + opcode(2) + status(1) + hci_version(1) + hci_rev(2) + lmp_version(1) + manufacturer(2) + lmp_subver(2)` = **12** ✓
+
+### 为什么这一条重要
+
+| 之前证明的 | 这一次证明的 |
+| --- | --- |
+| 命令被处理、有应答 | **应答里带着 controller 自己的版本信息** |
+| Reset 的 status 是 0 | **不是桩、不是回显：`hci_version = 0x0E` 是真实读数** |
+
+⇒ **HCI 通道端到端可用，且承载真实数据。**
+
+### 逐命令第三次确认
+
+```text
+cmds = 5 → btdm_tx = 3
+```
+
+（前两条 B 路径不被消费，后三条 A 路径各得一条应答）
+
+⇒ 与"B 路径不消费、A 路径消费"完全一致。
+
+## 最终状态
+
+| 项 | 状态 |
+| --- | --- |
+| 七个缺陷 | ✅ 全部修复并验证 |
+| HCI 往返（逐命令） | ✅ |
+| **HCI 应答内容真实性** | ✅ **`hci_version = 0x0E`** |
+| PHY 首次标定 | ✅ `rc=0`、`cal` 非零、`fe` 可读 |
+| 路径陷阱（B 不消费） | ✅ 已在代码与文档中标注 |
