@@ -682,8 +682,19 @@ fn findFirstTask() ?*sched.Task {
     return sched.firstTask();
 }
 
+/// 停机。**周期性重打判决**：单次打印很容易被 128 B 的 UART FIFO 丢弃，
+/// 而停机后没有别的输出可以对照 ⇒ 每 ~2 s 重复一次，保证一定能抓到。
 fn halt() noreturn {
-    while (true) {
+    const tr = transport.stats();
+    var n: u32 = 0;
+    while (true) : (n +%= 1) {
+        if (n % 2_000_000 == 1) {
+            const bs = bringup.stats();
+            @import("board").log.line(
+                "bt HALT verdict: evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d} last_code=0x{x:0>2} fail_step={d} last_rc={d}",
+                .{ tr.evt_count, tr.cmds_sent, tr.btdm_tx, tr.cmd_alloc_null, @import("board").hw.rw_drops, tr.last_evt_code, bs.failed_step, bs.last_rc },
+            );
+        }
         asm volatile ("" ::: .{ .memory = true });
     }
 }
