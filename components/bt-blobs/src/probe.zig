@@ -837,22 +837,33 @@ extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
 /// `esp_rom_spiflash_write` **不自动擦**（`esp_rom_spiflash.h:257-271`）⇒ 先擦。
 /// 只写一次：flash 同址只能 1→0，重复写不会更新。
 fn dumpPcRing() void {
-    const off: u32 = 0x187000;
-    var buf: [8 + 48]u32 = @splat(0);
-    buf[0] = board.trap.pcSampleCount();
-    buf[1] = board.trap.dump_s0;
-    buf[2] = board.trap.dump_a0;
-    buf[3] = board.trap.dump_a1;
-    buf[4] = board.trap.dump_ra;
-    // **此刻（自旋环已在跑、已写过）读回环写的三个寄存器**：
-    //   0x20109880（环写 0x0FFFFFFF）/ 0x201098A8（写 0）/ 0x201098B8（写 a3）
-    // 之前的快照取在 stage 22（0x200A 之前）⇒ 环还没写过 ⇒ 读 0 只是初值，不能当证据。
-    buf[5] = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
-    buf[6] = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
-    buf[7] = (@as(*volatile u32, @ptrFromInt(0x2010_98B8))).*;
-    _ = board.trap.samplePcs(@ptrCast(buf[8..].ptr));
-    _ = esp_rom_spiflash_erase_sector(off / 0x1000);
-    _ = esp_rom_spiflash_write(off, &buf, @intCast(@sizeOf(@TypeOf(buf))));
+    // **两扇区分步**：第一步只落 PC 环 + 现场（不碰可疑块，绝对安全）；
+    // 第二步才去读 0x20109xxx —— 若那一步把总线读挂，第一步的数据已安全落盘。
+    {
+        var buf: [7 + 48]u32 = @splat(0);
+        // buf[0] = magic（判布局用）
+        buf[0] = 0xADC0_FEE0;
+        buf[1] = board.trap.pcSampleCount();
+        buf[2] = board.trap.dump_s0;
+        buf[3] = board.trap.dump_a0;
+        buf[4] = board.trap.dump_a1;
+        buf[5] = board.trap.dump_ra;
+        _ = board.trap.samplePcs(@ptrCast(buf[6..].ptr));
+        _ = esp_rom_spiflash_erase_sector(0x187000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x187000, &buf, @intCast(@sizeOf(@TypeOf(buf))));
+    }
+    // 第二步：**此刻环已在自旋、已写过** ⇒ 读回才是"写了是否生效"的真判据。
+    {
+        var buf2: [6]u32 = @splat(0);
+        buf2[0] = 0xADC0_FEE1;
+        buf2[1] = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
+        buf2[2] = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
+        buf2[3] = (@as(*volatile u32, @ptrFromInt(0x2010_98B8))).*;
+        buf2[4] = 0x0FFF_FFFF; // 环里写出去的期望值，放一起方便比对
+        buf2[5] = (@as(*volatile u32, @ptrFromInt(0x2010_9400))).*; // 我们写过的 CLK_EN（bit0）回读
+        _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000);
+        _ = esp_rom_spiflash_write(0x188000, &buf2, @intCast(@sizeOf(@TypeOf(buf2))));
+    }
 }
 
 extern fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, len_bytes: u32) c_int;
