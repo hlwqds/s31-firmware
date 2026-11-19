@@ -606,10 +606,10 @@ pub fn run() noreturn {
     const a4_rc = transport.sendCmd(0x1009, &.{});
     osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
 
-    // **LE 广播：暂停**。跨复位追踪槽（`.adv_trace`）已移除 ——
-    // 它被链接到 `_heap_start` 上（与 `_data_end_btdm` 同址），会被分配器当空闲内存
-    // 发出 ⇒ 会损坏。要重做必须先解决放置问题（heap/stack 之外，或同步移动堆边界）。
-    osal.logPublic("bt probe: LE adv PAUSED (trace slot collided with heap, removed)", .{});
+    // **LE 广播：四次假设全部被推翻，暂停尝试（见 README「LE 四次误判」）。**
+    // 已排除：① ROM printf 自旋 ② per-pend dump 饿死 ③ 日志洪水 ④ 静音后仍卡。
+    // 结论：这是**确定性**的卡住，成因未定；下一步需要**不依赖 UART** 的观测。
+    osal.logPublic("bt probe: LE adv PAUSED (4 hypotheses eliminated, needs uart-free probe)", .{});
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);

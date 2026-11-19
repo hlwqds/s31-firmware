@@ -238,9 +238,6 @@ SECTIONS
         _data_start_btdm_rom = _data_start_btdm;
     } > sram
 
-    /* （`.adv_trace` 已移除：它落在 `_heap_start` 上，会被分配器当空闲内存发出 ⇒ 损坏。
-     *  若要跨复位追踪，必须放在 heap/stack 之外，或把保留总量 +16 并同步堆边界。） */
-
 
 
 
