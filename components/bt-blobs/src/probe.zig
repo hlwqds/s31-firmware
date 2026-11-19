@@ -838,13 +838,19 @@ extern fn esp_rom_spiflash_erase_sector(sector_number: u32) c_int;
 /// 只写一次：flash 同址只能 1→0，重复写不会更新。
 fn dumpPcRing() void {
     const off: u32 = 0x187000;
-    var buf: [5 + 48]u32 = @splat(0);
+    var buf: [8 + 48]u32 = @splat(0);
     buf[0] = board.trap.pcSampleCount();
     buf[1] = board.trap.dump_s0;
     buf[2] = board.trap.dump_a0;
     buf[3] = board.trap.dump_a1;
     buf[4] = board.trap.dump_ra;
-    _ = board.trap.samplePcs(@ptrCast(buf[5..].ptr));
+    // **此刻（自旋环已在跑、已写过）读回环写的三个寄存器**：
+    //   0x20109880（环写 0x0FFFFFFF）/ 0x201098A8（写 0）/ 0x201098B8（写 a3）
+    // 之前的快照取在 stage 22（0x200A 之前）⇒ 环还没写过 ⇒ 读 0 只是初值，不能当证据。
+    buf[5] = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
+    buf[6] = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
+    buf[7] = (@as(*volatile u32, @ptrFromInt(0x2010_98B8))).*;
+    _ = board.trap.samplePcs(@ptrCast(buf[8..].ptr));
     _ = esp_rom_spiflash_erase_sector(off / 0x1000);
     _ = esp_rom_spiflash_write(off, &buf, @intCast(@sizeOf(@TypeOf(buf))));
 }
