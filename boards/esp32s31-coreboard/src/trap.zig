@@ -662,6 +662,18 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             }) catch "NB (fmt fail)";
             hw.rawLineBlocking(nl);
 
+            // **双段采样**：两个睡眠段基址 + mepc 处 8 字节（看是否只动了一个半字）。
+            {
+                var wb: [300]u8 = undefined;
+                const wl = std.fmt.bufPrint(&wb, "WT btslp16=0x{x:0>8} btslp0=0x{x:0>8} mepc8={x},{x}", .{
+                    (@as(*align(1) const u32, @ptrFromInt(0x2f00_f99a))).*,
+                    (@as(*align(1) const u32, @ptrFromInt(0x2f00_fa00))).*,
+                    (@as(*align(1) const u32, @ptrFromInt(csr_mepc & ~@as(usize, 3)))).*,
+                    (@as(*align(1) const u32, @ptrFromInt((csr_mepc & ~@as(usize, 3)) + 4))).*,
+                }) catch "WT (fmt fail)";
+                hw.rawLineBlocking(wl);
+            }
+
             // **穷栈遍历**：扫 [sp-0x1000, sp) 里落在代码段 (0x40000020..0x400A0300) 的字
             // ⇒ 这些是**保存的返回地址**，离线用 nm 解析即得调用链。
             // 排除 handler 自己的帧 [sp-96, sp) —— 那里是按定义保存的"被中断寄存器"。

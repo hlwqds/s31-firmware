@@ -107,7 +107,13 @@ fn enter(n: u32, comptime what: []const u8) void {
     // 同步到 board 侧（panic 行会打印它）
     @import("board").trap.last_step = n;
     @import("board").trap.last_step_name = what;
-    osal.logPublic("bt bringup: enter step {d} " ++ what, .{n});
+    // **写监视**：把两个睡眠段基址的低半字挂在同一行 ⇒ 整条 boot 自带时间线，
+    // 无需额外日志行。`1141` 变 `0377` 的那一步就是写者。
+    const watch = if (@import("builtin").target.os.tag == .freestanding) .{
+        (@as(*align(1) const u16, @ptrFromInt(0x2f00_f99a))).*,
+        (@as(*align(1) const u16, @ptrFromInt(0x2f00_fa00))).*,
+    } else .{ @as(u16, 0), @as(u16, 0) };
+    osal.logPublic("bt bringup: enter step {d} " ++ what ++ " w16={x} w0={x}", .{ n, watch[0], watch[1] });
     // 让 UART FIFO 排空：step 1..5 在同一瞬间连发，5×~30 B > 128 B FIFO
     // ⇒ 溢出时 hw.rawWrite **按设计丢弃** ⇒ 只剩第一行可见（误判为"没执行"）。
     // 这里等 ~2 ms，足以让一行（30 B / 115200 ≈ 2.6 ms... 取保守值）排空。
@@ -397,6 +403,12 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
 
     status_state = .inited;
+    // **时间界定**：在 enable 之前采样两个睡眠段基址。
+    // 若此处已被改 ⇒ 写入发生在 init 之前（bootloader/加载）；否则在 enable 路径里。
+    osal.logPublic("bt watch: btslp16=0x{x:0>8} btslp0=0x{x:0>8}", .{
+        (@as(*align(1) const u32, @ptrFromInt(0x2f00_f99a))).*,
+        (@as(*align(1) const u32, @ptrFromInt(0x2f00_fa00))).*,
+    });
     {
         var probe_local2: u8 = 0;
         @import("board").trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
