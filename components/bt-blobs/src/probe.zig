@@ -702,6 +702,9 @@ pub fn run() noreturn {
         //    不是"全开"。且 0x20109880 读回恒 0 但总线正常 ⇒ **疑似只写寄存器**
         //    （同 `modem_rst_conf`："读回恒 0, 只可写"）⇒ **写-回读探针对这块无效**，
         //    判据只能用端到端（stage 23 / btdm_tx 6）。
+        // ⛔ **MODEM_PWR 窗口 dump 已回退**（2026-11-19）：读 `0x2010D000..+0x80`
+        //    得到全 0 后**总线随之死掉**（marker 停在 stage 66，0x2006 都到不了）
+        //    —— 与 `0x2010B000` 的"读挂"同类。该区域对软件不可安全访问。
         var ae: [1]u8 = .{1};
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
