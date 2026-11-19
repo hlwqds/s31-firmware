@@ -606,12 +606,13 @@ pub fn run() noreturn {
     const a4_rc = transport.sendCmd(0x1009, &.{});
     osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
 
-    // **LE 广播三连**已测试，但它会让 blob 走 `ets_printf`（ROM）
-    // ⇒ TX FIFO 满时**无限自旋**（实测挂死在 `0x40065640`，零 fault、无判决）。
-    // 这与 `log.zig` 里"不再用 ROM esp_rom_printf"的注释是同一个隐患。
-    // **在解决该隐患之前，不在这里发 LE 命令** —— 否则板子会挂。
-    osal.logPublic("bt probe: LE adv sequence SKIPPED (blob ets_printf spins on full TX FIFO)", .{});
-
+    // **LE 广播三连**：**不在此处执行**。
+    // 实测：一发 LE 命令，blob 就开始**大量打印**（走我们的 `ets_printf` shim），
+    // UART 立刻饱和 ⇒ 我们的日志变成 `bbbb…` / `arch…` 半行碎片（`rawWrite`
+    // 在 5000 次自旋后放弃），看起来像"挂死"，实则是**观测通道被冲垮**。
+    // ⇒ 这不是 CPU hang（零 fault、NMI 地址在变），而是**日志洪水**。
+    // 要做 LE，必须先让 blob 的日志有界或可关（见 README 的"第三个静默丢失通道"）。
+    osal.logPublic("bt probe: LE adv SKIPPED (blob log flood saturates UART, not a hang)", .{});
     var round: u32 = 0;
     while (round < 2000) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
