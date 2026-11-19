@@ -500,8 +500,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const fe3_done = &@as(*volatile bool, @ptrFromInt(0x2E00_0450)).*;
                 if (!fe3_done.* and frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
                     fe3_done.* = true;
-                    var fb: [180]u8 = undefined;
-                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} CLK={x:0>8}/{x:0>8}/{x:0>8}", .{
+                    var fb: [200]u8 = undefined;
+                    const fl = std.fmt.bufPrint(&fb, "FE3 98BC=0x{x:0>8} 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} CLK={x:0>8}/{x:0>8}/{x:0>8} SPI1={x:0>8}", .{
                         @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
                         @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
@@ -509,6 +509,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         @as(*volatile u32, @ptrFromInt(0x2010_9C04)).*, // SYSCON clk_conf（PHY_CALIB deps 0x6364 落点）
                         @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, // SYSCON clk_conf1
                         @as(*volatile u32, @ptrFromInt(0x2010_F018)).*, // LPCON clk_conf
+                        @as(*volatile u32, @ptrFromInt(0x2050_1000)).*, // SPI1_CMD：MST_ST≠0 ⇒ 等 flash 空闲
                     }) catch "FE3 (fmt fail)";
                     hw.rawLineBlocking(fl);
                     @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
@@ -518,6 +519,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     @as(*volatile u32, @ptrFromInt(0x2E00_0448)).* =
                         @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
                     @as(*volatile u32, @ptrFromInt(0x2E00_044C)).* = frame.mepc;
+                    // **SPI1_CMD 同拍快照**：MST_ST≠0 ⇒ FE 环也在等 flash 空闲
+                    //（与"XIP/缓存读没发车"统一）；=0 ⇒ 等的是测量发车，FE3 全 0 独立成立。
+                    @as(*volatile u32, @ptrFromInt(0x2E00_0454)).* =
+                        @as(*volatile u32, @ptrFromInt(0x2050_1000)).*;
                 }
             }
         }

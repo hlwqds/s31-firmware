@@ -796,7 +796,7 @@ pub fn run() noreturn {
     // **LP 逐轮历史转写**（落点在 FEFC 之后 —— 该窗口写可靠）：
     // {FEFE, boot_n, hist[0..9], enable步号, 0x404, 0x30, FE三件套+mepc} @0x18A000。
     // [14..17] = NMI 450k 时拍的 0x201098BC/0x201008D0/0x201011AC/mepc（FE 环定位判据）。
-    var lrec: [18]u32 = @splat(0);
+    var lrec: [19]u32 = @splat(0);
     lrec[0] = 0xADC0_FEFE;
     lrec[1] = lp_boot_n;
     for (0..9) |k| lrec[2 + k] = lp_hist[k];
@@ -807,8 +807,9 @@ pub fn run() noreturn {
     lrec[15] = @as(*volatile u32, @ptrFromInt(0x2E00_0444)).*;
     lrec[16] = @as(*volatile u32, @ptrFromInt(0x2E00_0448)).*;
     lrec[17] = @as(*volatile u32, @ptrFromInt(0x2E00_044C)).*;
+    lrec[18] = @as(*volatile u32, @ptrFromInt(0x2E00_0454)).*; // SPI1_CMD 同拍
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x18A000, &lrec, 72);
+    _ = esp_rom_spiflash_write(0x18A000, &lrec, 76);
     // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
     // ⚠ **观察点已撤防**（2026-11-20 末）：它盯的 [0x2f07f99c] 回调槽写是我们
     // 自己 LE 块的 unlock 写——上一轮断点 mtval=0x2f07f99c（exception 3）就是

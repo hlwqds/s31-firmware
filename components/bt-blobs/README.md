@@ -26571,3 +26571,26 @@ CLK= 7e601002 / 003fffff / 0000000f
 - 结论：门控齐备、FSM 不动 ⇒ 缺的是**启动触发写**（官方链 register_chipv7_phy
   里发车 FE FSM 的那个寄存器写，或其前置校准数据）。下一会话：官方 idf-bt-ctl
   同相位对账（或在 libphy 反汇编里找 08D0/11AC 的写者）。
+
+### 世界线分岔定案 + regi2c 假设（2026-11-20 真终）
+
+FE3 加 SPI1_CMD 字段后的环上读数（可复现，三轮一致）：
+
+```
+FE3 98BC=0x00000000 08D0=0x00000ffd 11AC=0x00000000 mepc=0x2f828a64
+CLK=7e601002/003fffff/0000000f SPI1=0x00000000
+```
+
+- **SPI1=0（MST_ST=0，flash 空闲）** ⇒ "FE 环等 flash/XIP"世界线**排除**。
+- 08D0 动态（0xffd/0xfb065/0xfffff）= 活状态机；11AC=0（FSM 不推进）、
+  98BC=0（合成器永不锁）稳定复现。
+- "零校准数据"假设排除：nvs_ram 首 boot 对 `phy_cal_data` 返回 not-found
+  ⇒ esp_phy_load_cal_and_init 走 PHY_RF_CAL_FULL 全校准分支（max_blob=2048
+  已修过 INVALID_LENGTH，:25 注释）。
+
+**剩余唯一候选链**：FULL 校准内部靠 regi2c（模拟 I2C 主控）编程 RF PLL。
+合成器不锁 ⇒ regi2c 写没有落到模拟域。下一会话单变量实验：
+**regi2c 写-回读测试**（write-readback-block-aliveness 配方）——用 WITH_PHY=1
+已链接的 regi2c 写一个已知寄存器再读回；写不落 ⇒ ana I2C master 块没使能
+（PERIPH_ANA_I2C_MASTER_MODULE=10，modem_clock deps 表里 ANALOG_CLOCK_ENABLE()
+那条路由没走通）；写落 ⇒ 问题在更深的 RF analog 序列，需对照官方链抓 regi2c 事务。
