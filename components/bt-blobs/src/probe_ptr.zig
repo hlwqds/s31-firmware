@@ -96,7 +96,10 @@ pub fn espPhyEnable(modem: u32) callconv(.c) void {
     const wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
     wifi_enable_set(1);
     // BB idle check/看门狗默认开（139 ms 超时会复位 BB，MAC 状态机永不排空）。
-    const bb_wdg = @extern(*const fn (bool, bool, u16, u16, bool, bool, bool) callconv(.c) void, .{ .name = "set_bb_wdg" });
+    // ⚠ **必须用 ROM 名 `phy_set_bb_wdg`**（`rom_syms.ld:425` = `0x2f801478`）。
+    // 裸名 `set_bb_wdg` 在 blob 里**另有一个函数**（`T 0x40060af4`）——
+    // 链接会成功，但调到的不是 ROM 那个 ⇒ BB 看门狗根本没关。
+    const bb_wdg = @extern(*const fn (bool, bool, u16, u16, bool, bool, bool) callconv(.c) void, .{ .name = "phy_set_bb_wdg" });
     bb_wdg(true, false, 0x18, 0xaa, false, false, false);
     // 重申 PHY 时钟位（MODEM_SYSCON.CLK_CONF1）
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
