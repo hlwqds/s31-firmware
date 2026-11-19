@@ -417,7 +417,17 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **定时器重装移到分发之前**：归档若用 `intr_handler_set` 接管 input 25，
         // 原实现（只在 `h.fn_` 分支里重装）会让定时器再也不重装 ⇒ 中断枯竭 ⇒ 采样变稀。
         // 这里无条件重装（仅按 input 判断），与是否装了 handler 无关。
-        if (input == 25) hw.ackT0Interrupt(sample_period_us);
+        if (input == 25) {
+            hw.ackT0Interrupt(sample_period_us);
+            // **前置验证**：NMI 到底还在不在触发？
+            // 主上下文被饿死时读不到任何计数器 ⇒ 只能在 ISR 里**自己打印**。
+            // 第 1000 次 ≈ 2 s（周期 2 ms）。若长窗口里连这一行都没有
+            // ⇒ NMI 根本没在跑（例如 controller 关了中断）⇒ "饿死"的原因要另找。
+            nmi_count +%= 1;
+            if (nmi_count == 1000) {
+                hw.rawLineBlocking("NMI alive: 1000 ticks (ISR still firing)");
+            }
+        }
         const ext: usize = if (input >= 16) input - 16 else input;
         var h = getHandler(ext);
         // 其次看 **ROM 的表**：blob 若直接调 ROM 的 `intr_handler_set` 装 handler，就会落在这张表里。
@@ -813,6 +823,7 @@ pub var sample_quiet: bool = false;
 
 /// ISR 重装用的周期（µs）。**不能用硬编码 2000**：调用方设的短周期会在第一个 tick 后失效。
 pub var sample_period_us: u32 = 2000;
+pub var nmi_count: u32 = 0;
 
 /// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
 pub var extra_dump: ?*const fn () void = null;
