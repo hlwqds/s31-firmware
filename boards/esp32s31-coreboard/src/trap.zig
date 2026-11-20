@@ -304,6 +304,27 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         );
         bp_last_tsel = cur_tsel;
         asm volatile ("csrw 0x7a1, zero"); // 命中触发器 tdata1=0 禁用
+        // **清全部 4 触发器 + 摘 watch**（udiv 命中非致命化：除法链输出会毁
+        // 帧链，resume 后任何二次异常都不可恢复 ⇒ 一次可读现场后必须彻底
+        // 断开触发器，防止同址重触发）。
+        if (udiv_watch_on and auth_pc == udiv_addr) {
+            asm volatile ("csrw 0x7a0, %[n]"
+                :
+                : [n] "r" (cur_tsel & 3),
+            );
+            for (0..4) |ti| {
+                asm volatile ("csrw 0x7a0, %[i]"
+                    :
+                    : [i] "r" (ti),
+                );
+                asm volatile ("csrw 0x7a1, zero");
+            }
+            asm volatile ("csrw 0x7a0, %[i]"
+                :
+                : [i] "r" (cur_tsel),
+            );
+            udiv_watch_on = false;
+        }
         // **mepc 推进（仅断点分支）**：EXEC 断点在指令执行前触发，不推进会立刻
         // 重触发同一指令。按指令长度推进：读 mepc 处 16 位半字，(hw & 3) != 3
         // ⇒ RVC 2 字节；否则 4 字节。⚠ 必须在 cause==3 分支内——放在外层会

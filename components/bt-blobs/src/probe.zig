@@ -174,8 +174,22 @@ fn osiOnIdle() void {
     sched.block();
 }
 
+// **零除法 ms 时基**（2026-11-21）：`nowUs()/1000` 的 u64 软件除法链被 blob
+// 调度器每 tick 轮询 ⇒ CPU 钉死在 __udivmoddi4（NMI 实证）。改累加器：
+// Δµs 分块进 ms 桶，轮询高频时每调用仅 0-1 次减法，无除法。
+var nowms_last_us: u64 = 0;
+var nowms_rem: u64 = 0;
+var nowms_acc: u32 = 0;
 fn nowMs() u32 {
-    return @intCast(board.hw.nowUs() / 1000);
+    const now = board.hw.nowUs();
+    const delta = now -% nowms_last_us;
+    nowms_last_us = now;
+    nowms_rem +%= delta;
+    while (nowms_rem >= 1000) {
+        nowms_acc +%= 1;
+        nowms_rem -= 1000;
+    }
+    return nowms_acc;
 }
 /// **实验脚手架开关**（全部默认关）：这些是排查"卡在 0x2010B000"时用的一次性装置，
 /// 保留是为了可复现，但默认不干扰正常 bring-up。
@@ -1082,8 +1096,19 @@ pub fn run() noreturn {
     @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
-    // **udiv 入口 EXEC 断点武装**（调用者/除数判别）：运行期解析符号地址
-    // （免构建移位）；one-shot——trap 命中后禁用触发器、记录 ra/a2/a3。
+    var rc = bringup.init(&cfg);
+    mark.put(0x20, 0xADC0B101, @bitCast(rc));
+    // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
+    // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
+    @import("board").trap.diag_b = 0xB0B0;
+    if (rc != 0) {
+        osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
+        halt();
+    }
+    osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
+    // **udiv 入口 EXEC 断点武装（相位正确版）**：此刻 init_phy 的
+    // phy_xtal_duty_cal 除法已过（断点不撞它），LE 块分发等待的磨 CPU
+    // 除法尚未开始 ⇒ 命中即磨 CPU 热点本体。one-shot：命中即全清触发器。
     {
         const f: *const fn () callconv(.c) void = @extern(*const fn () callconv(.c) void, .{ .name = "__udivmoddi4" });
         const addr: u32 = @intFromPtr(f);
@@ -1100,16 +1125,6 @@ pub fn run() noreturn {
         asm volatile ("csrw 0x7a5, t4");
         osal.logPublic("bt probe: udiv watch armed @0x{x:0>8}", .{addr});
     }
-    var rc = bringup.init(&cfg);
-    mark.put(0x20, 0xADC0B101, @bitCast(rc));
-    // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
-    // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
-    @import("board").trap.diag_b = 0xB0B0;
-    if (rc != 0) {
-        osal.logPublic("bt probe: init FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
-        halt();
-    }
-    osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
     // （FEFD 回调表 dump 已删：一次性实验已完成并提交 0328594；
     //  0x188000 现由 LP 逐轮历史 FEFE 使用，勿再写此扇区。）
     // **解除 dump 钩子**：`dumpAtPend` 挂在 `dump_hook` 上，而它在**每次** `mutex_pend`

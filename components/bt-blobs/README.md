@@ -27703,3 +27703,10 @@ phy_rf_init ← register_chipv7_phy ← espPhyEnable ← initPhy ← bringup.ini
 （校准数学分钟级）/ 轮询永不满足（§29.19 的墙，此时除法只是校准循环的
 伴随计算）。长窗观察：若 NMI 长期钉在 phy_xtal_duty_cal ⇒ 校准轮询墙；
 若 mepc 前进/离开 ⇒ 校准完成继续走。
+
+**零除法 nowMs 验证（2026-11-21 收口）**：`nowUs()/1000` 的 u64 软件除法链
+（每 tick 被调度器轮询 = 之前 udivmod 热点的真实来源，**分支②我们自己的
+nowMs**，非 blob 调度器时间换算）改累加器后——**除法风暴消失**（180/188
+NMI 干净停在 blob 分发环 .L54），wait_dumps 环 a0 递减至 0 正常退出，流程
+进 esp_phy_enable 段。⇒ 0x2008 停驻期的"u64 除法链磨 CPU"实为我们的
+nowMs 税（每 tick 一次），已修。
