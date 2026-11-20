@@ -27542,3 +27542,18 @@ esp_bt_controller_init 链的某步（我们绕过的路径）；②未链接的
 （符号闭包查漏）；③需我们 osal 层建立（对象布局可从 32 个读点推断：
 p[0] 旗标、p[12]=q、q[0]=state——读点归属函数反汇编即布局）。找到写者/
 建对象 ⇒ p 非空 ⇒ 检查器走到 state 机 ⇒ 配合 BB 链给事件 ⇒ 环退出。
+
+**scheduler 对象 NULL 根因收敛（2026-11-21，NMI3 判别轮）**：板载 **cb=0x2f024cb8
+恒定**（controller init 核心 OkE7MxSSqFt63m8XlU3d @0x40061a10 已跑：
+malloc(76) 建 btdm_cb 存 0x2f011038、mutex/eventq/list 全过）+ p(NULL) ⇒
+**init 序列走到 sleep/scheduler 对象创建步（0x40061aca，错误码 -12）时被
+early-out**：Zth2Weu2E0fObk9rakgd 入口 `if (*arg==0) return 0`——arg =
+栈上 2 字节，值来自 config（cb+24 起的 20B 配置拷贝）**偏移 10 的 u16 低
+字节**。字节==0 ⇒ 不建对象 ⇒ 0x2f011034 永 NULL ⇒ 检查器入口短路恒返回 1
+⇒ 环永旋（全套板载数据自洽）。
+**修法候选（下轮，二选一）**：①核对我们 btcfg 镜像结构体偏移 10 的字段
+（sleep/时钟旗标？）并置非零——⚠ 若官方同偏移非零而我们为 0，即 config
+镜像错位（对照 zig-mirror-idf-config-struct 布局断言）；②controller init
+后我们直调 Zth2Weu2E0fObk9rakgd({1,0}) 手动补建（绕过 config）。
+**仪器状态**：NMI 行（mepc/ra + 门控 st + gate）+ NMI2（p/flag/q/state）+
+NMI3（cb）全活；mute=1；板驻 0x2008 环。

@@ -578,6 +578,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         const l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8}(oob)", .{p}) catch "";
                         hw.rawLineBlocking(l2);
                     }
+                    // btdm_cb 指针（controller init 核心所建）：非空=init 核心跑过
+                    const cbp: *volatile u32 = @ptrFromInt(0x2f01_1038);
+                    const cbv = cbp.*;
+                    var s3b: [48]u8 = undefined;
+                    const l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}", .{cbv}) catch "";
+                    hw.rawLineBlocking(l3);
                 }
                 // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
                 // 合成器 ready 0x201098BC / FE 等待位 0x201008D0 / FE 计数器 0x201011AC。
