@@ -78,8 +78,36 @@ pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
 // trap 入口：`linksection(".trap_ram")` + `naked`，自己压 80 字节帧。
 // 只保存 caller-saved 与两个 CSR；callee-saved 由调用约定保证。
 // ---------------------------------------------------------------------------
+export var flash_fault_mepc: u32 = 0;
+export var flash_fault_cause: u32 = 0;
+
 pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
+    // flash 写窗口检查（最顶）：窗口内 XIP 取指失败 → 进 trapDispatch（flash）
+    // = 嵌套 fault → CPU_LOCKUP。改为记录 mepc/cause 到 SRAM 后 mret 重试
+    // （写窗口结束 cache 恢复后重试成功）。t3/t4/t5 压栈/恢复，双路径各归各位。
     asm volatile (
+        \\        addi    sp, sp, -12
+        \\        sw      t3, 0(sp)
+        \\        sw      t4, 4(sp)
+        \\        sw      t5, 8(sp)
+        \\        la      t3, flash_op_window
+        \\        lw      t3, 0(t3)
+        \\        beqz    t3, 9f          # 窗口外 ⇒ 恢复+正常 dispatch
+        \\        csrr    t4, mepc
+        \\        la      t5, flash_fault_mepc
+        \\        sw      t4, 0(t5)
+        \\        csrr    t4, mcause
+        \\        la      t5, flash_fault_cause
+        \\        sw      t4, 0(t5)
+        \\        lw      t4, 4(sp)
+        \\        lw      t5, 8(sp)
+        \\        addi    sp, sp, 12
+        \\        mret
+        \\9:
+        \\        lw      t3, 0(sp)
+        \\        lw      t4, 4(sp)
+        \\        lw      t5, 8(sp)
+        \\        addi    sp, sp, 12
         \\        addi    sp, sp, -96
         \\        sw      ra, 0(sp)
         \\        sw      t0, 4(sp)
