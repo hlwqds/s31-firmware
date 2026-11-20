@@ -27823,3 +27823,13 @@ sleep_en=1 探针态；全套仪器活。
 boot 的前置）⇒ step17 间歇性来源另找（**PHY/时序 boot 依赖嫌疑最大**——
 前几 boot 校准未完成 ⇒ 后续 boot 的 stack_enable 失败；第 7 boot 起 PHY
 状态齐 ⇒ 过）。观测纪律不变（按 boot 分段/ZU-A0 标 dump 相位）。
+
+**blob 睡眠时间源排查（2026-11-21 末，RTC_TIMER 线排除）**：blob 侧
+`# 20800xxx` 引用全部 = **日志 ID 常数**（r_ble_log_internal_x2(ID) 按表查，
+ID 数值恰落 0x20800xxx 区——objdump 注释伪命中）；真 RTC 访问（+0x3FC
+date 读 @0x4006c6ae）= 我们自己的 ch23 遗留代码。⇒ **blob 的睡眠时间源 ≠
+RTC_TIMER(0x20800000)**（该定时器是我们 ch23 可信时钟的，与 blob 无关）。
+候选收窄：①0x2070_0C00 区（历史"未探"区）；②BB 块内部定时器
+（0x2010B/Dxxx 私有域）。与 0x2010D020"blob 自写自读"结论合并：睡眠时间
+源在 blob 私有域，我们 porting 未接入 ⇒ 调度器时间换算除零的根源字段
+（obj[24/28] rtc_freq=0）同期待补。
