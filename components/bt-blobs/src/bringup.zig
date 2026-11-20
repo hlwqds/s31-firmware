@@ -639,14 +639,15 @@ pub fn bridgeDrain() void {
 fn intrArm(src: c_int) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     const hw = @import("board").hw;
-    // **路由目标改判（ROM 表扫描 + 布局线索）**：blob 直注 intr_handler_set 的
-    // handler 落在 ROM 表 ext 34/35/37（fn 候选 0x2f81281e 奇数=疑似 arg 交错，
-    // 布局待校）——它们期望的 CLIC 输入 = ext+16 = **50/51/53**。此前 src&63=60
-    // 的猜错输入使源触发后落进空表（洪水轮 39×probe.run 重入的候选机制）。
-    // 源 → blob handler 所在输入：
+    // **路由目标改判 v2（ROM 表布局解码）**：ext34 fn 槽=0x2f81281e **奇数**
+    // （RISC-V 函数指针不合法 ⇒ 该槽是 arg/数据）；真 fn 在相邻槽：
+    // ext35=0x2f815258（偶 ✓）、ext37=0x2f07f19c（wrapper ✓）。blob 期望的
+    // CLIC 输入 = 对应 ext+16：**MAC(src124) → 51、BB(src125) → 53**。
+    // （前轮路由 124→50：源触发→桥压环→drain 跳奇地址崩→复位循环 ×6 实证——
+    // 路由本身通了，只是 fn 槽选错。）
     const routed_input: usize = switch (src) {
-        124 => 50, // MODEM_BT_MAC → ext 34
-        125 => 51, // MODEM_BT_BB → ext 35
+        124 => 51, // MODEM_BT_MAC → ext 35（fn 0x2f815258）
+        125 => 53, // MODEM_BT_BB → ext 37（fn 0x2f07f19c）
         else => @intCast(@as(u32, @intCast(src)) & 63),
     };
     // **路由（此前整段缺失 = FE 冻结根因）**：S31 的中断源 ≠ CPU 输入号，每源一个

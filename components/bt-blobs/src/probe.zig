@@ -67,6 +67,7 @@ export fn probe_dump_now() void {
 }
 const config = @import("config.zig");
 const bringup = @import("bringup.zig");
+const osi_impl_timerStats = @import("osi_impl.zig").timerStats;
 const transport = @import("transport.zig");
 const sched = @import("osal_kit").sched;
 const porting = @import("porting.zig");
@@ -1301,10 +1302,9 @@ pub fn run() noreturn {
             const rtc = @as(*volatile u32, @ptrFromInt(rtcb + 0x14)).*;
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值，txphase 已稳定=1 多轮）
             _ = @as(*volatile u32, @ptrFromInt(0x2070_1004)).*; // PO_EN（RC32K OEN 已置，活值不再进诊断行）
-            const mac_map = @as(*volatile u32, @ptrFromInt(0x2058_5000 + 0x1F0)).*;
-            const c50 = @as(*volatile u32, @ptrFromInt(0x1080_1000 + 50 * 4)).*; // intctl[50]：prio[31:24]+trig[18:17]+IE bit8+IP[31:24]
-            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} mac_map=0x{x:0>8} c50=0x{x:0>8}", .{
-                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, mac_map, c50,
+            const ts = osi_impl_timerStats();
+            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d}", .{
+                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)),
             });
             // **ROM 表全扫描（第 3 次 diag 起，避 FIFO 早期流量）**：找 blob 直注
             // intr_handler_set 的真 ISR
