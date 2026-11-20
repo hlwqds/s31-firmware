@@ -545,8 +545,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     const st: *volatile u8 = @ptrFromInt(frame.s0 + 32);
                     const mask: *volatile u16 = @ptrFromInt(frame.s0 + 34);
                     const cnt: *volatile u16 = @ptrFromInt(frame.s0 + 36);
-                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4}", .{
-                        st.*, mask.*, cnt.*,
+                    // 0x2010107C = 分发函数入口门（bltz 即整函数跳过=no-op 分发）
+                    const gate: *volatile u32 = @ptrFromInt(0x2010_107C);
+                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4} gate=0x{x:0>8}", .{
+                        st.*, mask.*, cnt.*, gate.*,
                     }) catch "";
                 } else nl = "";
                 const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8}{s}", .{
