@@ -1,0 +1,520 @@
+# [host-side annotation] official app ana-I2C-master transaction trace (200us sampling)
+# regs: I2C0_CTRL(0x2010F800) CONF0(+18) STATUS0(+1C) + 0x201098BC
+# window: before esp_bt_controller_init through enable+2s; 17 change-entries
+# KEY: 98BC=0 in EVERY sample (official too!) - bit2 never sets in BLE-only flow
+# => the 29.18 'synth ready' poll times out (cap 65536, error 3) officially and is
+#    tolerated; our step-20 hang lacks that timeout/tolerance path.
+# captured 2026-11-20; sampler in tools/idf-bt-ctl-main.c (ana_sampler_task)
+øxøxø€€x€x€xxx€xxx€€xøxøxxxx€€€xxxøx€øx€¥½¹é v0þESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 17 2026 21:27:04
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (78) boot: End of partition table
+I (81) esp_image: segment 0: paddr=00010020 vaddr=40090020 size=0f9f0h ( 63984) map
+I (100) esp_image: segment 1: paddr=0001fa18 vaddr=2f000000 size=00600h (  1536) load
+I (102) esp_image: segment 2: paddr=00020020 vaddr=40000020 size=808d0h (526544) map
+I (190) esp_image: segment 3: paddr=000a08f8 vaddr=2f000600 size=13114h ( 78100) load
+I (207) esp_image: segment 4: paddr=000b3a14 vaddr=2f013780 size=033a4h ( 13220) load
+I (215) boot: Loaded app from partition at offset 0x10000
+I (216) boot: Disabling RNG early entropy source...
+I (226) cpu_start: Multicore app
+I (234) cpu_start: GPIO 59 and 58 are used as console UART I/O pins
+I (235) cpu_start: Pro cpu start user code
+I (235) cpu_start: cpu freq: 320000000 Hz
+I (237) app_init: Application information:
+I (241) app_init: Project name:     idf-bt-ctl
+I (245) app_init: App version:      1
+I (248) app_init: Compile time:     Nov 17 2026 21:26:57
+I (253) app_init: ELF file SHA256:  164e59fef...
+I (258) app_init: ESP-IDF:          v6.1
+I (261) efuse_init: Min chip rev:     v0.0
+I (265) efuse_init: Max chip rev:     v0.99 
+I (269) efuse_init: Chip rev:         v0.0
+I (273) heap_init: Initializing. RAM available for dynamic allocation:
+I (279) heap_init: At 2F028740 len 00052870 (330 KiB): RAM
+I (284) heap_init: At 2F07AFB0 len 000041C0 (16 KiB): RAM
+I (290) heap_init: At 2E000000 len 00007FE8 (31 KiB): RTCRAM
+I (296) spi_flash: detected chip: generic
+I (299) spi_flash: flash io: dio
+I (302) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (308) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (314) coexist: coex firmware version: a830d28
+I (319) coexist: coexist rom version cdcf52b
+I (323) main_task: Started on CPU0
+I (343) main_task: Calling app_main()
+W (343) BOOTSTATE: syscon +0x000 = 0x00000100
+W (343) BOOTSTATE: syscon +0x004 = 0x00201002
+W (343) BOOTSTATE: syscon +0x020 = 0x00002070
+W (353) BOOTSTATE: syscon +0x02c = 0x00000044
+W (353) BOOTSTATE: syscon +0x030 = 0x02508080
+W (353) BOOTSTATE: lpcon +0x008 = 0x00000314
+W (363) BOOTSTATE: lpcon +0x00c = 0x00000001
+W (363) BOOTSTATE: lpcon +0x018 = 0x00000001
+W (373) BOOTSTATE: lpcon +0x01c = 0x00000004
+W (373) BOOTSTATE: lpcon +0x028 = 0x00000027
+W (373) BOOTSTATE: lpcon +0x02c = 0x08888888
+W (383) BOOTSTATE: lpcon +0x030 = 0x00002070
+W (383) BOOTSTATE: clkrst +0x000 = 0x00000001
+W (393) BOOTSTATE: clkrst +0x008 = 0x00000001
+W (393) BOOTSTATE: clkrst +0x00c = 0x00000002
+W (393) BOOTSTATE: clkrst +0x010 = 0x00000001
+W (403) BOOTSTATE: clkrst +0x01c = 0x00000003
+W (403) BOOTSTATE: clkrst +0x020 = 0x00000003
+W (413) BOOTSTATE: clkrst +0x028 = 0x00000003
+W (413) BOOTSTATE: clkrst +0x034 = 0x00000001
+W (423) BOOTSTATE: clkrst +0x038 = 0x000156db
+W (423) BOOTSTATE: clkrst +0x03c = 0x0000000f
+W (423) BOOTSTATE: clkrst +0x040 = 0x00000001
+W (433) BOOTSTATE: clkrst +0x044 = 0x0000000f
+W (433) BOOTSTATE: clkrst +0x048 = 0x00000011
+W (443) BOOTSTATE: clkrst +0x058 = 0x00200000
+W (443) BOOTSTATE: clkrst +0x05c = 0x00000005
+W (443) BOOTSTATE: clkrst +0x064 = 0x00000ba1
+I (453) idfbt: boot, idf=v6.1
+I (453) idfbt: beat 0
+I (1453) idfbt: beat 1
+I (2453) idfbt: == init first, then probe the block ==
+I (2453) idfbt: controller_init ...
+I (2453) BTDM_INIT: BTDM version [39ed4dc]
+W (2453) BTDM_SLEEP: Using 136 kHz RC as clock source, use with caution as it may not maintain ACL or Sync process due to low clock accuracy!
+I (2463) BLE_INIT: BLE controller compile version [b8b0e63:1]
+
+I (2473) BLE_INIT: Bluetooth MAC: 1c:29:04:d1:99:29
+I (2473) BTDM_INIT: BTDM controller init OK
+I (2473) idfbt: controller_init -> ESP_OK (0x0)
+I (2483) idfbt: controller_enable(BLE) ...
+W (2483) idfbt: [after_init] MODEM_CTRL0=0x00000001 MODEM_CONF=0x0000003d CLK_EN0=0x00000001
+W (2493) idfbt: [after_init] syscon+0x00 = 0x00000100
+W (2493) idfbt: [after_init] syscon+0x04 = 0x7e601002
+W (2503) idfbt: [after_init] syscon+0x08 = 0x00000000
+W (2503) idfbt: [after_init] syscon+0x0c = 0x64646400
+W (2513) idfbt: [after_init] syscon+0x10 = 0x00000000
+W (2513) idfbt: [after_init] syscon+0x14 = 0x00070080
+W (2523) idfbt: [after_init] syscon+0x18 = 0x00000000
+W (2523) idfbt: [after_init] syscon+0x1c = 0x00000000
+W (2533) idfbt: [after_init] syscon+0x20 = 0x00002070
+W (2533) idfbt: [after_init] syscon+0x24 = 0x00000000
+W (2543) idfbt: [after_init] syscon+0x28 = 0x00000000
+W (2543) idfbt: [after_init] syscon+0x2c = 0x00000044
+W (2553) idfbt: [after_init] syscon+0x30 = 0x02508080
+W (2553) idfbt: [after_init] syscon+0x34 = 0x00000000
+W (2563) idfbt: [after_init] syscon+0x38 = 0x00000000
+W (2563) idfbt: [after_init] syscon+0x3c = 0x00000000
+W (2573) oracle: clkrst+0x000 = 0x00000001
+W (2573) oracle: clkrst+0x008 = 0x00000001
+W (2573) oracle: clkrst+0x00c = 0x00000002
+W (2583) oracle: clkrst+0x010 = 0x00000001
+W (2583) oracle: clkrst+0x01c = 0x00000003
+W (2583) oracle: clkrst+0x020 = 0x00000003
+W (2593) oracle: clkrst+0x028 = 0x00000003
+W (2593) oracle: clkrst+0x034 = 0x00000001
+W (2603) oracle: clkrst+0x038 = 0x000156db
+W (2603) oracle: clkrst+0x03c = 0x0000000f
+W (2603) oracle: clkrst+0x040 = 0x00000001
+W (2613) oracle: clkrst+0x044 = 0x0000000f
+W (2613) oracle: clkrst+0x048 = 0x00000011
+W (2613) oracle: clkrst+0x058 = 0x00200000
+W (2623) oracle: clkrst+0x05c = 0x00000005
+W (2623) oracle: clkrst+0x064 = 0x00000ba1
+W (2633) oracle: clkrst+0x088 = 0x00000083
+W (2633) oracle: clkrst+0x0d8 = 0x00000001
+W (2633) oracle: clkrst+0x114 = 0x00000801
+W (2643) oracle: clkrst+0x118 = 0x00000011
+W (2643) oracle: clkrst+0x11c = 0x00000801
+W (2653) oracle: clkrst+0x120 = 0x00000011
+W (2653) oracle: clkrst+0x134 = 0x00000001
+W (2653) oracle: clkrst+0x144 = 0x00000001
+W (2663) oracle: clkrst+0x154 = 0x00000009
+W (2663) oracle: clkrst+0x15c = 0x00000011
+W (2663) oracle: clkrst+0x160 = 0x00001011
+W (2673) oracle: clkrst+0x164 = 0x00001011
+W (2673) oracle: clkrst+0x168 = 0x0000012c
+W (2683) oracle: clkrst+0x16c = 0x00000002
+W (2683) oracle: clkrst+0x170 = 0x00000002
+W (2683) oracle: clkrst+0x174 = 0x0000004d
+W (2693) oracle: clkrst+0x17c = 0x00000101
+W (2693) oracle: clkrst+0x180 = 0x00000102
+W (2693) oracle: clkrst+0x184 = 0x00000103
+W (2703) oracle: clkrst+0x188 = 0x00000505
+W (2703) oracle: clkrst+0x18c = 0x00000107
+W (2713) oracle: clkrst+0x190 = 0x00000117
+W (2713) oracle: clkrst+0x194 = 0x00000105
+W (2713) oracle: clkrst+0x198 = 0x0000010b
+W (2723) oracle: clkrst+0x1a0 = 0x000003ff
+W (2723) oracle: clkrst+0x1a4 = 0x000003ff
+W (2733) oracle: clkrst+0x1a8 = 0x000003ff
+W (2733) oracle: clkrst+0x1cc = 0x00000001
+W (2733) oracle: clkrst+0x1d8 = 0x00000001
+W (2743) oracle: clkrst+0x1dc = 0x00000001
+W (2743) oracle: clkrst+0x1e0 = 0x0000003d
+W (2743) oracle: clkrst+0x1e8 = 0x00000107
+W (2753) oracle: clkrst+0x1ec = 0x0000000c
+W (2753) oracle: clkrst+0x1f0 = 0x00000004
+W (2763) oracle: clkrst+0x1f4 = 0x00000004
+W (2763) oracle: clkrst+0x1f8 = 0x00000001
+W (2763) oracle: clkrst+0x1fc = 0x02509110
+W (2773) idfbt: [after_init] *(0x2010B000)=0xdac00000  -> READABLE
+W (2773) idfbt: [after_init] a21=0x2f07ca58 (*(+8)=0x2f07c7e8)  a2=0x2f07ce24  **a7=0x2f07ce34**
+W (2783) oracle: X[0]=0x00000001
+W (2783) oracle: X[1]=0x2f07ca24
+W (2793) oracle: X[2]=0x2f07c7e8
+W (2793) oracle: X[3]=0x00000000
+W (2793) oracle: X[4]=0x2f07ca8c
+W (2803) oracle: X[5]=0x2f07ca98
+W (2803) oracle: X[6]=0x20260127
+W (2803) oracle: X[7]=0x00171000
+W (2813) oracle: Y[0]=0x2f07cb00
+W (2813) oracle: Y[1]=0x2f07c7f0
+W (2813) oracle: Y[2]=0x2f07c7f4
+W (2813) oracle: Y[3]=0x2f07c7f8
+W (2823) oracle: Y[4]=0x2f07c7fc
+W (2823) oracle: Y[5]=0x2f07c800
+W (2823) oracle: Y[6]=0x2f07c804
+W (2833) oracle: Y[7]=0x2f07c808
+W (2833) ANCHOR_TABLE: == after_init ==
+W (2833) ANCHOR_TABLE:   [0] pSy5Wex1v0iXw5RdWtwL = 0x2f07cea0
+W (2843) ANCHOR_TABLE:   [1] WDq2rzn4KRWP5mort5eS = 0x2f07d50c
+W (2843) ANCHOR_TABLE:   [2] YnZmsxu068uuC3PC4iu8 = 0x2f07ce5c
+W (2853) ANCHOR_TABLE:   [3] kfu8vf8dQgqwEzvqhb3d = 0x2f07bf88
+W (2853) ANCHOR_TABLE:   [4] d3D3sk5KewclELfrD5xa = 0x2f07ce24
+W (2863) ANCHOR_TABLE:   [5] sitBB3SrXn0IePgsPrBY = 0x00000000
+W (2873) ANCHOR_TABLE:   [6] r4auAKWSAFwgQarMHZCc = 0x2f07ca58
+W (2873) ANCHOR_TABLE:   [7] lRdavKxt45o0gicEyznn = 0x2f07d580
+W (2883) ANCHOR_TABLE:   [8] 6Q68KSwuQQP4VjQGqiWa = 0x2f07ce34
+W (2883) ANCHOR_TABLE:   [9] y5Dip5N8bwiiGRcrWzBO = 0x2f07d4e8
+I (2893) phy_init: phy_version 100,dd4c590,Jul 14 2026,10:33:03
+E (2893) phy_init: esp_phy_load_cal_data_from_nvs: NVS has not been initialized. Call nvs_flash_init before starting WiFi/BT.
+W (2903) phy_init: failed to load RF calibration data (0x1101), falling back to full calibration
+I (2983) phy: libbtbb version: d5590f7, Jul 14 2026, 10:33:07
+I (2983) idfbt: controller_enable -> ESP_OK (0x0)
+I (4983) idfbt: == ana ring: 17 entries ==
+I (4983) idfbt: AN[0000] CTRL=00000000 CONF0=2100e408 ST=00fffeff 98BC=00000000
+I (4983) idfbt: AN[0001] CTRL=012f0669 CONF0=2100e448 ST=00fffff7 98BC=00000000
+I (4983) idfbt: AN[0002] CTRL=012f0669 CONF0=2900e448 ST=00fffff7 98BC=00000000
+I (4993) idfbt: AN[0003] CTRL=01700266 CONF0=2900e448 ST=00ffffdf 98BC=00000000
+I (5003) idfbt: AN[0004] CTRL=01780369 CONF0=2900e448 ST=00fff7ff 98BC=00000000
+I (5003) idfbt: AN[0005] CTRL=01780369 CONF0=2900e448 ST=00ffffdf 98BC=00000000
+I (5013) idfbt: AN[0006] CTRL=01780369 CONF0=2100e448 ST=00ffffdf 98BC=00000000
+I (5023) idfbt: AN[0007] CTRL=01780369 CONF0=2900e448 ST=00ffffdf 98BC=00000000
+I (5023) idfbt: AN[0008] CTRL=01780369 CONF0=2900e448 ST=00ffffef 98BC=00000000
+I (5033) idfbt: AN[0009] CTRL=01780369 CONF0=2900e448 ST=00ffffdf 98BC=00000000
+I (5043) idfbt: AN[0010] CTRL=01780369 CONF0=2900e448 ST=00ffffef 98BC=00000000
+I (5053) idfbt: AN[0011] CTRL=01780369 CONF0=2900e448 ST=00fffffb 98BC=00000000
+I (5053) idfbt: AN[0012] CTRL=01780369 CONF0=2900e448 ST=00fffff7 98BC=00000000
+I (5063) idfbt: AN[0013] CTRL=012f0669 CONF0=2900e448 ST=00fff7ff 98BC=00000000
+I (5073) idfbt: AN[0014] CTRL=012f0669 CONF0=2900e448 ST=00ffffdf 98BC=00000000
+I (5073) idfbt: AN[0015] CTRL=012f0669 CONF0=2900e448 ST=00fffffb 98BC=00000000
+I (5083) idfbt: AN[0016] CTRL=012f0669 CONF0=2900e444 ST=00ffffef 98BC=00000000
+W (5093) idfbt: [after_enable] MODEM_CTRL0=0x00000001 MODEM_CONF=0x0000003d CLK_EN0=0x00000001
+W (5103) idfbt: [after_enable] syscon+0x00 = 0x00000100
+W (5103) idfbt: [after_enable] syscon+0x04 = 0x7e601002
+W (5113) idfbt: [after_enable] syscon+0x08 = 0x00000000
+W (5113) idfbt: [after_enable] syscon+0x0c = 0x64646400
+W (5123) idfbt: [after_enable] syscon+0x10 = 0x00000000
+W (5123) idfbt: [after_enable] syscon+0x14 = 0x003fe080
+W (5133) idfbt: [after_enable] syscon+0x18 = 0x10003802
+W (5133) idfbt: [after_enable] syscon+0x1c = 0x00000000
+W (5143) idfbt: [after_enable] syscon+0x20 = 0x00002070
+W (5143) idfbt: [after_enable] syscon+0x24 = 0x00000000
+W (5153) idfbt: [after_enable] syscon+0x28 = 0x00000000
+W (5153) idfbt: [after_enable] syscon+0x2c = 0x00000044
+W (5163) idfbt: [after_enable] syscon+0x30 = 0x02508080
+W (5163) idfbt: [after_enable] syscon+0x34 = 0x00000000
+W (5163) idfbt: [after_enable] syscon+0x38 = 0x00000000
+W (5173) idfbt: [after_enable] syscon+0x3c = 0x00000000
+W (5173) oracle: clkrst+0x000 = 0x00000001
+W (5183) oracle: clkrst+0x008 = 0x00000001
+W (5183) oracle: clkrst+0x00c = 0x00000002
+W (5193) oracle: clkrst+0x010 = 0x00000001
+W (5193) oracle: clkrst+0x01c = 0x00000003
+W (5193) oracle: clkrst+0x020 = 0x00000003
+W (5203) oracle: clkrst+0x028 = 0x00000003
+W (5203) oracle: clkrst+0x034 = 0x00000001
+W (5213) oracle: clkrst+0x038 = 0x000156db
+W (5213) oracle: clkrst+0x03c = 0x0000000f
+W (5213) oracle: clkrst+0x040 = 0x00000001
+W (5223) oracle: clkrst+0x044 = 0x0000000f
+W (5223) oracle: clkrst+0x048 = 0x00000011
+W (5223) oracle: clkrst+0x058 = 0x00200000
+W (5233) oracle: clkrst+0x05c = 0x00000005
+W (5233) oracle: clkrst+0x064 = 0x00000ba1
+W (5243) oracle: clkrst+0x088 = 0x00000083
+W (5243) oracle: clkrst+0x0d8 = 0x00000001
+W (5243) oracle: clkrst+0x114 = 0x00000801
+W (5253) oracle: clkrst+0x118 = 0x00000011
+W (5253) oracle: clkrst+0x11c = 0x00000801
+W (5263) oracle: clkrst+0x120 = 0x00000011
+W (5263) oracle: clkrst+0x134 = 0x00000001
+W (5263) oracle: clkrst+0x144 = 0x00000001
+W (5273) oracle: clkrst+0x154 = 0x00000009
+W (5273) oracle: clkrst+0x15c = 0x00000011
+W (5273) oracle: clkrst+0x160 = 0x00001011
+W (5283) oracle: clkrst+0x164 = 0x00001011
+W (5283) oracle: clkrst+0x168 = 0x0000012c
+W (5293) oracle: clkrst+0x16c = 0x00000002
+W (5293) oracle: clkrst+0x170 = 0x00000002
+W (5293) oracle: clkrst+0x174 = 0x0000044d
+W (5303) oracle: clkrst+0x17c = 0x00000101
+W (5303) oracle: clkrst+0x180 = 0x00000102
+W (5303) oracle: clkrst+0x184 = 0x00000103
+W (5313) oracle: clkrst+0x188 = 0x00000505
+W (5313) oracle: clkrst+0x18c = 0x00000107
+W (5323) oracle: clkrst+0x190 = 0x00000117
+W (5323) oracle: clkrst+0x194 = 0x00000105
+W (5323) oracle: clkrst+0x198 = 0x0000010b
+W (5333) oracle: clkrst+0x1a0 = 0x000003ff
+W (5333) oracle: clkrst+0x1a4 = 0x000003ff
+W (5343) oracle: clkrst+0x1a8 = 0x000003ff
+W (5343) oracle: clkrst+0x1cc = 0x00000001
+W (5343) oracle: clkrst+0x1d8 = 0x00000001
+W (5353) oracle: clkrst+0x1dc = 0x00000001
+W (5353) oracle: clkrst+0x1e0 = 0x0000003d
+W (5353) oracle: clkrst+0x1e8 = 0x00000107
+W (5363) oracle: clkrst+0x1ec = 0x0000000c
+W (5363) oracle: clkrst+0x1f0 = 0x00000004
+W (5373) oracle: clkrst+0x1f4 = 0x00000004
+W (5373) oracle: clkrst+0x1f8 = 0x00000001
+W (5373) oracle: clkrst+0x1fc = 0x02509110
+W (5383) idfbt: [after_enable] *(0x2010B000)=0xdac00000  -> READABLE
+W (5383) idfbt: [after_enable] a21=0x2f07ca58 (*(+8)=0x2f07c7e8)  a2=0x2f07ce24  **a7=0x2f07ce34**
+W (5393) oracle: X[0]=0x00000002
+W (5393) oracle: X[1]=0x2f07ca24
+W (5403) oracle: X[2]=0x2f07c7e8
+W (5403) oracle: X[3]=0x2f032aac
+W (5403) oracle: X[4]=0x2f07ca8c
+W (5413) oracle: X[5]=0x2f07ca98
+W (5413) oracle: X[6]=0x20260127
+W (5413) oracle: X[7]=0x00171000
+W (5423) oracle: Y[0]=0x2f07cb00
+W (5423) oracle: Y[1]=0x2f07c7f0
+W (5423) oracle: Y[2]=0x2f07c7f4
+W (5423) oracle: Y[3]=0x2f07c7f8
+W (5433) oracle: Y[4]=0x2f07c7fc
+W (5433) oracle: Y[5]=0x2f07c800
+W (5433) oracle: Y[6]=0x2f07c804
+W (5443) oracle: Y[7]=0x2f07c808
+I (5443) idfbt: beat 2
+I (6443) idfbt: beat 3
+I (7443) idfbt: beat 4
+E (7443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (7443) task_wdt:  - IDLE1 (CPU 1)
+E (7443) task_wdt: Tasks currently running:
+E (7443) task_wdt: CPU 0: IDLE0
+E (7443) task_wdt: CPU 1: ana3
+E (7443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0x89ce633a  A5      : 0x89cf1bec  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (8443) idfbt: beat 5
+I (9443) idfbt: beat 6
+I (10443) idfbt: beat 7
+I (11443) idfbt: beat 8
+I (12443) idfbt: beat 9
+E (12443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (12443) task_wdt:  - IDLE1 (CPU 1)
+E (12443) task_wdt: Tasks currently running:
+E (12443) task_wdt: CPU 0: IDLE0
+E (12443) task_wdt: CPU 1: ana3
+E (12443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0xe92f6184  A5      : 0xe92f99f0  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (13443) idfbt: beat 10
+I (14443) idfbt: beat 11
+I (15443) idfbt: beat 12
+I (16443) idfbt: beat 13
+I (17443) idfbt: beat 14
+E (17443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (17443) task_wdt:  - IDLE1 (CPU 1)
+E (17443) task_wdt: Tasks currently running:
+E (17443) task_wdt: CPU 0: IDLE0
+E (17443) task_wdt: CPU 1: ana3
+E (17443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0x488d955c  A5      : 0x488da9e6  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (18443) idfbt: beat 15
+I (19443) idfbt: beat 16
+I (20443) idfbt: beat 17
+I (21443) idfbt: beat 18
+I (22443) idfbt: beat 19
+E (22443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (22443) task_wdt:  - IDLE1 (CPU 1)
+E (22443) task_wdt: Tasks currently running:
+E (22443) task_wdt: CPU 0: IDLE0
+E (22443) task_wdt: CPU 1: ana3
+E (22443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0xa7eba55e  A5      : 0xa7ebb9f4  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (23443) idfbt: beat 20
+I (24443) idfbt: beat 21
+I (25443) idfbt: beat 22
+I (26443) idfbt: beat 23
+I (27443) idfbt: beat 24
+E (27443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (27443) task_wdt:  - IDLE1 (CPU 1)
+E (27443) task_wdt: Tasks currently running:
+E (27443) task_wdt: CPU 0: IDLE0
+E (27443) task_wdt: CPU 1: ana3
+E (27443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0x0749b55a  A5      : 0x0749c9e4  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (28443) idfbt: beat 25
+I (29443) idfbt: beat 26
+I (30443) idfbt: beat 27
+I (31443) idfbt: beat 28
+I (32443) idfbt: beat 29
+E (32443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (32443) task_wdt:  - IDLE1 (CPU 1)
+E (32443) task_wdt: Tasks currently running:
+E (32443) task_wdt: CPU 0: IDLE0
+E (32443) task_wdt: CPU 1: ana3
+E (32443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036ce  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0x66a7c552  A5      : 0x00001490  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (33443) idfbt: beat 30
+I (34443) idfbt: beat 31
+I (35443) idfbt: beat 32
+I (36443) idfbt: beat 33
+I (37443) idfbt: beat 34
+E (37443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (37443) task_wdt:  - IDLE1 (CPU 1)
+E (37443) task_wdt: Tasks currently running:
+E (37443) task_wdt: CPU 0: IDLE0
+E (37443) task_wdt: CPU 1: ana3
+E (37443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036ce  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0xc605d554  A5      : 0x0000146c  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (38443) idfbt: beat 35
+I (39443) idfbt: beat 36
+I (40443) idfbt: beat 37
+I (41443) idfbt: beat 38
+I (42443) idfbt: beat 39
+E (42443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (42443) task_wdt:  - IDLE1 (CPU 1)
+E (42443) task_wdt: Tasks currently running:
+E (42443) task_wdt: CPU 0: IDLE0
+E (42443) task_wdt: CPU 1: ana3
+E (42443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0x2563e55a  A5      : 0x2563f9c6  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (43443) idfbt: beat 40
+I (44443) idfbt: beat 41
+I (45443) idfbt: beat 42
+I (46443) idfbt: beat 43
+I (47443) idfbt: beat 44
+E (47443) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (47443) task_wdt:  - IDLE1 (CPU 1)
+E (47443) task_wdt: Tasks currently running:
+E (47443) task_wdt: CPU 0: IDLE0
+E (47443) task_wdt: CPU 1: ana3
+E (47443) task_wdt: Print CPU 1 registers
+Core  1 register dump:
+MEPC    : 0x2f8036cc  RA      : 0x4000f9b8  SP      : 0x2f07be70  GP      : 0x2f013f88  
+TP      : 0x2f07bec0  T0      : 0x00000000  T1      : 0x00000000  T2      : 0x00000000  
+S0/FP   : 0x012f0669  S1      : 0x2900e444  A0      : 0x0000fa00  A1      : 0x00000000  
+A2      : 0x00000011  A3      : 0x00000000  A4      : 0x84c1f55c  A5      : 0x84c209ec  
+A6      : 0x00000000  A7      : 0x00000000  S2      : 0x00000000  S3      : 0x00000000  
+S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+MSTATUS : 0x00001889  MTVEC   : 0x2f000003  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
+MHARTID : 0x00000001  
+Please enable CONFIG_ESP_SYSTEM_USE_FRAME_POINTER option to have a full backtrace.
+I (48443) idfbt: beat 45
+I (49443) idfbt: beat 46
