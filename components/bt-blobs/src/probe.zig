@@ -1106,6 +1106,9 @@ pub fn run() noreturn {
         halt();
     }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
+    // **rtc_freq 补丁（已回退，2026-11-21）**：写 obj[24]=32000 后 step 17
+    // r_base_stack_enable rc=-3 ⇒ HALT（ sleep_en=1+注册 轮曾过 step17 ⇒
+    // 归因未定，回退保稳定态）。补丁代码保留备查，条件启用待下轮判别。
     // **udiv 入口 EXEC 断点武装（相位正确版）**：此刻 init_phy 的
     // phy_xtal_duty_cal 除法已过（断点不撞它），LE 块分发等待的磨 CPU
     // 除法尚未开始 ⇒ 命中即磨 CPU 热点本体。one-shot：命中即全清触发器。
