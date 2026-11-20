@@ -621,8 +621,13 @@ const chain_args = [3]?*anyopaque{
     @ptrFromInt(0x03),
     @ptrFromInt(0x84),
 };
+var chain_fires: u32 = 0;
 fn chainIsr(_: ?*anyopaque) callconv(.c) void {
-    for (chain_fns, chain_args) |f, a| f(a);
+    // ⚠ **暂不代跑三 handler**：它们操作 ROM 状态结构（0x2f07f1F4 槽指向的
+    // ctx），而 ctx 槽=全 0（未初始化）⇒ 首调即解引用空指针 → CPU lockup
+    // → rst:0x1a boot 循环（uart_hscan.log 实证 ×22）。ctx 建立后（ROM init
+    // 函数找到/自建 ctx）再恢复代跑。
+    chain_fires +%= 1;
 }
 
 /// 主泵循环每轮调用：代跑桥里积压的 blob handler（主上下文，调度器安全）。
