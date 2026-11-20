@@ -27162,6 +27162,23 @@ load_cal done 史上首次打印 → enable 步 16-20 全通 → blob 任务 mut
 真实时钟已还原（每调用 +1ms），`phy_track_pll_internal` 真 regi2c 不再卡流程
 （泵循环 135s+ 无挂）。
 
+**BB 调度前置核查（同夜后续轮次）：**
+
+| 步 | 结果 |
+|---|---|
+| 任务驻停 PC（swapContext 帧 words[12]=ra 直读） | `osal.eventqGet`——任务活着，**在等事件队列投递** |
+| osal Q 统计（diag 并入） | `qput=8 qok=8 qempty=0`——8 条 HCI 应答全部投递并消费 ✓ |
+| 中断路由（此前**整段缺失**） | MAP 表基 `0x2058_5000 + src*4`（源124=MODEM_BT_MAC@+0x1F0、源125=MODEM_BT_BB@+0x1F4，interrupts.h 枚举核对）；`pass_level<<8` 非零才启用；已补写 |
+| CLIC intctl | prio[31:24] **必须非零**（prio=0 电平输入永不触发）+ IE bit8；已补写 |
+| blob ISR handler | `intrAlloc` 收下后只存池子从未挂 trap 分发表——已补 `osal.intrHandlerOf` + `trap.setHandler(input, f, arg)` |
+| RTC 计数器（BT 调度时基候选） | `date.bit31=clk_en` 复位 0 ⇒ counter 冻结；已使能，实测 ≈137 kHz 走动 ✓ |
+| 结果 | fe=0、qput=8 **依旧**——MAC/BB 中断源仍不触发，RTC 计数器不是（唯一）时基 |
+
+剩余嫌疑（按优先级）：①BT 的 LP/sleep 时钟选择（LP_CLKRST slow-clock 源未选/
+未使能——controller 读的时基不是这个 RTC 计数器）；②BB timer 本身未被任务武装
+（controller 任务在等第一个调度 tick，而 tick 源头没人开）；③MAC/BB 源的
+peripheral 级 int_ena（源使能位在 modem 域，未开）。
+
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 
 ```

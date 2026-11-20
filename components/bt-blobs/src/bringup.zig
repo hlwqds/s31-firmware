@@ -178,6 +178,14 @@ fn dumpBootState() void {
 }
 
 pub fn init(cfg: *config.Config) c_int {
+    // **RTC 计数器 clk_en（BT 调度时基）**：date.bit31 复位=0 ⇒ counter 冻结在 0。
+    // controller 的 BB 调度以 sleep-class 时基为准——时基不走 ⇒ 永不判定"事件到期"
+    // ⇒ BB 中断不发 ⇒ FE 冻结（2026-11-20 fe=0 全窗冻结的候选根因）。
+    // 写 date 必须保留 bit31（skill: s31-rtc-timer-probe，counter ≈137 kHz）。
+    {
+        const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
+        d.* |= 0x8000_0000;
+    }
     // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
     // 必须**先**存在，step 5 的 `rd(reg_clk_conf) | 0x7e400000` 才会得到 IDF 的 `0x7e601002`。
@@ -554,11 +562,24 @@ fn intrArm(src: c_int) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     const hw = @import("board").hw;
     const input: usize = @intCast(@as(u32, @intCast(src)) & 63);
-    hw.enableClicInput(input);
+    // **路由（此前整段缺失 = FE 冻结根因）**：S31 的中断源 ≠ CPU 输入号，每源一个
+    // MAP 寄存器（表基 0x2058_5000，源 0=SYS_ICM 于 +0x0、源 124=MODEM_BT_MAC 于
+    // +0x1F0、源 125=MODEM_BT_BB 于 +0x1F4——blob 的 src=124 是 MAC，BB 调度是
+    // 125&63=input 61）。不写 MAP，CLIC 里永远看不到 pending（routeT0Interrupt
+    // 同款教训，见 hw.zig 注释）。bits[5:0]=input，bits[9:8]=pass_level（非零才启用）。
+    hw.writeReg(0x2058_5000 + @as(usize, @intCast(src)) * 4, (input & 0x3F) | (1 << 8));
+    // CLIC intctl：prio [31:24] **必须非零**（prio=0 的电平输入永不触发）+ IE bit8。
+    hw.writeReg(0x1080_1000 + input * 4, (1 << 24) | (1 << 8));
+    // **把 blob 在 intrAlloc 里登记的 ISR 挂上 trap 分发表**（输入号口径，
+    // setHandler 内部归一化 n-16）。此前 handler 只存池子从未挂表——中断
+    // 触发也被 trapDispatch 静默忽略（无 handler 分支），任务队列永远等不到事件。
+    if (@import("osal_kit").osal.intrHandlerOf(src)) |h| {
+        @import("board").trap.setHandler(input, h.f, h.arg);
+    }
     const bit: u32 = @as(u32, 1) << @intCast(input & 31);
     asm volatile ("csrs mie, %[b]"
         :
         : [b] "r" (bit),
     );
-    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d}, mie|=0x{x}", .{ src, input, bit });
+    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d} (routed), mie|=0x{x}", .{ src, input, bit });
 }

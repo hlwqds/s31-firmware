@@ -1237,10 +1237,22 @@ pub fn run() noreturn {
             diag_at = now;
             const r98 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
             const conf0 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
-            const ctrl = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            _ = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*; // I2C0_CTRL（活值：本轮诊断行不加，见 burst 快照）
             const fe_cnt = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
-            osal.logPublic("bt diag: 98BC=0x{x:0>8} rfready={d} conf0=0x{x:0>8} txphase={d} ctrl=0x{x:0>8} fe={d}", .{
-                r98, (r98 >> 2) & 1, conf0, (conf0 >> 27) & 1, ctrl, fe_cnt,
+            // 任务驻停 PC：swapContext 帧布局 words[12]=ra（sched.zig frame_bytes=64，
+            // initContext 对称写 words[12]=trampoline）——任务每轮让出点直接可见。
+            const tpc: u32 = if (ctrl_task) |t|
+                @as(*volatile u32, @ptrFromInt(t.ctx.sp + 48)).*
+            else
+                0;
+            // CLIC input 60（=BT src 124 的武装入口）原始 intctl 字：
+            // bits[31:24]=IP（pending），bit8=IE——看 BB 中断到底有没有提出。
+            const st = osal.stats();
+            const rtcb: usize = 0x2080_0000;
+            @as(*volatile u32, @ptrFromInt(rtcb + 0x10)).* = 1 << 27; // 锁存
+            const rtc = @as(*volatile u32, @ptrFromInt(rtcb + 0x14)).*;
+            osal.logPublic("bt diag: rfready={d} txphase={d} fe={d} taskpc=0x{x:0>8} qput={d} qok={d} rtc={d}", .{
+                (r98 >> 2) & 1, (conf0 >> 27) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, rtc,
             });
         }
         if (evt_at == null and transport.stats().evt_count > 0) {
