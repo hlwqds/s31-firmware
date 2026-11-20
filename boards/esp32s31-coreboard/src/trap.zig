@@ -290,9 +290,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             udiv_hit_n +%= 1;
         }
         {
-            var pb: [120]u8 = undefined;
-            const pl = std.fmt.bufPrint(&pb, "BP! n={d} mepc=0x{x:0>8} cause={d} t2=0x{x:0>8}", .{
-                bp_hit_count, auth_pc, cause & 0x3F, t2rb,
+            var pb: [160]u8 = undefined;
+            const pl = std.fmt.bufPrint(&pb, "BP! n={d} mepc=0x{x:0>8} cause={d} t2=0x{x:0>8} ra=0x{x:0>8} a2=0x{x:0>8} a3=0x{x:0>8} udiv={d}", .{
+                bp_hit_count, auth_pc, cause & 0x3F, t2rb, frame.ra, frame.a2, frame.a3, udiv_hit_n,
             }) catch "BP! (fmt fail)";
             hw.rawLineBlocking(pl);
         }
