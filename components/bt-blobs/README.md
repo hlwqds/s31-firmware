@@ -27264,6 +27264,23 @@ r_btdm_task_init 传给 taskCreate 的任务入口 **fn = 0x2f000000 = blob 链�
 维持为最终硬数据：**源 124 静默**。仪器清单相应修订：intctl 读回类判据全部
 作废，改用 trap 侧计数器（bridge_w）+ MAP 读回（interrupt_core0 域读回正常）。
 
+**btdm task 主循环完整解码（同夜最末轮，ROM 表 ext5 handler 顺藤）**：
+
+```
+btdm_task（40006fe8）主循环 .L125/.L127:
+  eventq_get(∞) → event_run（osal）→ jalr 2f00b03c（blob schedule/dispatch）
+  → eventq_is_empty? → 非空回 .L125 / 空 → jalr 2f0107a0 → 无限循环
+```
+
+⇒ 8 事件（HCI 应答）消费后 task 回 eventq_get 等待；**BB 中断不触发** ⇒
+调度器 tick 不来 ⇒ task 饿死在 eventq_get（taskpc 实证）。
+
+**时基假设修正**：S31 可能有**两个 LP timer**——我使能的 RTC_TIMER
+（0x20800000，counter 137kHz 走动 ✓）未必是 controller 读的那个。
+C6 家族 LP_TIMER 在 LP 域（C6=0x600B0C00 ⇒ S31 对应 **0x2070_0C00 区**）——
+controller 的 sleep time 读这个。**下轮首查**：dump/使能 0x2070_0C00 区
+LP_TIMER counter，验证走动后 BB 调度是否活（fe 走动 = 活）。
+
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 
 ```
