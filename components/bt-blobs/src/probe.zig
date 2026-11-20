@@ -620,6 +620,10 @@ pub fn run() noreturn {
     });
     cfg = config.defaults();
     osal.logPublic("bt probe: init start", .{});
+    // ⚠ **0x2070_0C00 读挂总线（2026-11-21 实证 rst ×5）**：首字读取即挂
+    // （前 5 boot 全死在该读，rst:0x1a ×5；末 boot 越过但 dump 行被 FIFO 丢）
+    // ⇒ 该区列入**读挂毒区**（与 0x2010D020 同型）。LP timer 探测改用
+    // flash 标记法或 NMI 内单字读（下轮）。
     // **syscon 窗口对拍**：与 IDF 成功镜像的 `[after_init]` 逐字比较
     {
         var k: usize = 0;
