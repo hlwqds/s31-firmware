@@ -1226,6 +1226,8 @@ pub fn run() noreturn {
     var round: u32 = 0;
     var evt_at: ?u32 = null;
     var diag_at: u32 = 0;
+    var rom_scanned: bool = false;
+    var diag_round: u32 = 0;
     while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
@@ -1253,12 +1255,41 @@ pub fn run() noreturn {
             @as(*volatile u32, @ptrFromInt(rtcb + 0x10)).* = 1 << 27; // 锁存
             const rtc = @as(*volatile u32, @ptrFromInt(rtcb + 0x14)).*;
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值，txphase 已稳定=1 多轮）
-            const poen = @as(*volatile u32, @ptrFromInt(0x2070_1004)).*;
-            const romh = @import("board").trap.romHandler(44); // input 60 → ext 44
-            const romf: usize = if (romh.fn_) |f| @intFromPtr(f) else 0;
-            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} poen=0x{x:0>8} brg={d}/{d}/{d} romh=0x{x:0>8}", .{
-                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, poen, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, romf,
+            _ = @as(*volatile u32, @ptrFromInt(0x2070_1004)).*; // PO_EN（RC32K OEN 已置，活值不再进诊断行）
+            const mac_map = @as(*volatile u32, @ptrFromInt(0x2058_5000 + 0x1F0)).*;
+            const bb_map = @as(*volatile u32, @ptrFromInt(0x2058_5000 + 0x1F4)).*;
+            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} mac_map=0x{x:0>8} bb_map=0x{x:0>8}", .{
+                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, mac_map, bb_map,
             });
+            // **ROM 表全扫描（第 3 次 diag 起，避 FIFO 早期流量）**：找 blob 直注
+            // intr_handler_set 的真 ISR
+            diag_round +%= 1;
+            if (!rom_scanned and diag_round >= 3) {
+                rom_scanned = true;
+                var buf: [160]u8 = undefined;
+                var n: usize = 0;
+                var out: usize = 0;
+                const head = "bt romscan:";
+                @memcpy(buf[out..][0..head.len], head);
+                out += head.len;
+                var e: usize = 0;
+                while (e < 48) : (e += 1) {
+                    const rh = @import("board").trap.romHandler(e);
+                    if (rh.fn_) |f| {
+                        const fp: usize = @intFromPtr(f);
+                        const written = std.fmt.bufPrint(buf[out..], " {d}=0x{x:0>8}", .{ e, fp }) catch break;
+                        out += written.len;
+                        n += 1;
+                        if (n >= 6) break;
+                    }
+                }
+                if (n == 0) {
+                    const none = " (all empty)";
+                    @memcpy(buf[out..][0..none.len], none);
+                    out += none.len;
+                }
+                osal.logPublic("{s}", .{buf[0..out]});
+            }
         }
         if (evt_at == null and transport.stats().evt_count > 0) {
             evt_at = now;

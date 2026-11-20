@@ -27205,9 +27205,23 @@ LP_CLK_PO_EN 与 counter 无关。
 - `esp_btbb_enable()` 已补进 enable 链头（官方序：phy_enable → btbb_enable →
   ble_stack_enable）——内部 `bt_bb_v2_init_cmplx` 首次经正式入口运行 ✓ 无挂。
 
-剩余嫌疑（按优先级）：①blob 真 ISR 的注册位置（ROM 表扫描）；②BB timer 本身
-未被任务武装（controller 任务在等第一个调度 tick，而 tick 源头没人开）；③MAC/BB
-源的 peripheral 级 int_ena（源使能位在 modem 域，未开）。
+**ROM 表扫描 + MAP 读回（同夜最末）：**
+
+- ROM 表非零项：`ext34=0x2f81281e ext35=0x2f815258 ext37=0x2f07f19c`（BT 域）
+  + ext38/39/40 小值（表内 arg 字段）——**ext 44 不在**（romHandler(44)=垃圾
+  0x0078003a 与扫描一致）。blob 真 ISR 挂在 ext 34/35/37，即 blob 自己的
+  CLIC 输入编号体系，与我们 src&63=60 的猜测体系**不同**。
+- MAP 读回验证：`mac_map=0x13C`（=60|pass ✓ 与写入一致，普通 R/W 读回可信）
+  ——**软件路由层完全正确**。
+- 终判：fe=0 + brg=0/0/0（源 124 从未触发）+ 任务驻停 eventqGet ⇒
+  **BT MAC/BB 硬件从未产生中断 = BB 调度器从未武装任何事件**。
+  esp_btbb_enable/bb_v2_init_cmplx 已正式运行仍如此 ⇒ 缺口在 blob 私有调度域：
+  task 的 adv-enable 处理里 BB schedule arm 的寄存器写（需反汇编 task 路径
+  定位，或对照官方 trace 的 BB timer 寄存器）。
+
+剩余嫌疑（按优先级）：①反汇编 task 的 adv-enable 处理路径找 BB schedule arm
+的寄存器写；②官方 oracle trace 的 BB timer 寄存器对拍；③MAC/BB 源的
+peripheral 级 int_ena（源使能位在 modem 域，未开）。
 
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 
