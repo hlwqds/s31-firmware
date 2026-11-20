@@ -27446,3 +27446,26 @@ store access fault @0xe0788000 panic 一次；改回 `c_int` + 直接赋值后�
 放大器。另：mute 轮 boot1 在 load_cal 后 rst:0x1a 一次（单例未归因，boot2
 全程正常）。⚠ mute 现常置 1（stage 10 处）= blob 日志观察通道关闭；需恢复
 blob 日志时撤 stage10 处置位。
+
+**0x2008 停驻环静态解码（2026-11-21，离线反汇编闭合）**：板驻点
+mepc=0x400056a8（`.L54` 的 `lbu a4,25(s2)`，紧随 r_ble_log_internal_x1
+调用）落在 blob 函数 **r_sym_ble_mrucwvpRHVsLLccQveKl**（0x40005512-0x585e）
+内。函数结构（s0=全局状态、s2=队列项）：
+- `.L27/.L34`：链表出队（12/16/20 = next/prev/count 字段）；
+- `.L44/.L45/.L91`：入队 + **计数环**（`lbu 32(s0)` = 槽数上限，s1 递增）；
+- `.L89`：**位环**——mask=34(s0)，`__ctzsi2` 找最低置位、清位、
+  `r_sym_bt_vibwBXogwGafrHSYUbon(ctz, mem[s2+4])` 分发；出口 = `bgeu
+  counter(36), 阈值 → .L50`（计数器 36 仅在 flag `25(s2)==0` 时自增）；
+- `.L54/.L58/.L31`：三级 log（fmt 基址 0x20240031/32、0x2064002b）→ 返回。
+**外层调用者 = r_sym_ble_NyMX982L7kibzUZANgsU**（0x40005e0e，4 个调用点
+之一 0x40005e98；其余 0x40005a0c/5b06/5fe6 属同族函数）：**位掩码事件泵**
+——迭代处理高位掩码字 `0(s0)`（`lui 0xfff00` 取 bit12-31、测 bit22），每轮
+`r_sym_bt_KrvfcwDw4eZoaTPVdFj5`（+0xfeced300 魔数表查找）后调
+`r_sym_ble_mrucwvpRHVsLLccQveKl(&ctx)`，**return==8 才退出**（.L281），否则
+log 继续 ⇒ 无限环 = 返回值永远≠8 且掩码位不清。
+**候选机制（未定案）**：①分发路径依赖 BB/MAC 硬件完成事件（我们的 BB 链
+是死的）⇒ 返回值永远非完成码；②flag `25(s2)` 恒置位 ⇒ 计数器 36 不增 ⇒
+`.L89` 出口永不满足。**下轮 A/B（board 一轮）**：撤 stage10 的 mute 置位
+（pad 修复已在 shim 内，洪水成本已除）→ 抓 blob 日志内容（log_ring/
+`bt-log hex` 0x2f024e54 区）+ flashStage 记 counter(36)/flag(25)/返回值，
+即可判 ①/② 并拿到环在报什么错。
