@@ -497,35 +497,50 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // UART 打印为主通道（LP 0x440 会被下载阶段刮花），LP 为备份。
                 // **按 mepc 条件捕获**：只在 CPU 真正处于 FE 环（0x2f828a00-0x2f828b00）
                 // 时采一次——固定计数点会采到主流程的其它位置（上轮 300k 采到 0x400a9026）。
-                const fe3_done = &@as(*volatile bool, @ptrFromInt(0x2E00_0450)).*;
-                if (!fe3_done.* and frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
-                    fe3_done.* = true;
+                // **时间序列采样**（每 64 次命中一行，≤10 行）：a5=0x20100450（环内
+                // 轮询计数器，上限 t0=0x10000）+ 47C 锁存 + 11AC——a5 增长 ⇒ 只是慢；
+                // a5 不变 ⇒ 单次迭代卡死。参数簇一次性打印保留在首行。
+                // ⚠ 一次性旗子必须放 .bss（每次 boot 归零）——LP 槽被下载阶段刮花，
+                // 垃圾非零字节会把整个条件块短路（本轮 0x450 槽教训）。
+                @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
+                    @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0444)).* =
+                    @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0448)).* =
+                    @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
+                @as(*volatile u32, @ptrFromInt(0x2E00_044C)).* = frame.mepc;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0454)).* =
+                    @as(*volatile u32, @ptrFromInt(0x2050_1000)).*;
+            }
+            // **FE3 时间序列**（tick 级，每 64 次命中一行 ≤10 行）：
+            // a5=0x20100450（环内轮询计数器，cap 0x10000）增长 ⇒ 只是慢；不变 ⇒ 卡死。
+            // 参数簇（FE3P）一次性打印在门内。一次性旗子必须放 .bss。
+            if (frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
+                if (!fe3_params_done) {
+                    fe3_params_done = true;
                     var fb: [200]u8 = undefined;
-                    const fl = std.fmt.bufPrint(&fb, "FE3 08D0=0x{x:0>8} 11AC=0x{x:0>8} mepc=0x{x:0>8} P={x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}/{x:0>8}", .{
-                        @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
-                        frame.mepc,
-                        // **FE 测量参数簇**（函数入口 setup 写序列解码自 fe_poll dump）：
-                        @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, // = a2&3
-                        @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, // = a4+3（周期参数）
-                        @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, // 掩码值
-                        @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, // 掩码值
-                        @as(*volatile u32, @ptrFromInt(0x2010_0444)).*, // 环内写目标
-                        @as(*volatile u32, @ptrFromInt(0x2010_0450)).*, // 环内读
-                        @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, // 出环锁存
-                    }) catch "FE3 (fmt fail)";
+                    const fl = std.fmt.bufPrint(&fb, "FE3P 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8} 450={x:0>8} 47C={x:0>8}", .{
+                        @as(*volatile u32, @ptrFromInt(0x2010_0408)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_040C)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_041C)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_0420)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_0444)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_0450)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_047C)).*,
+                    }) catch "FE3P (fmt fail)";
                     hw.rawLineBlocking(fl);
-                    @as(*volatile u32, @ptrFromInt(0x2E00_0440)).* =
-                        @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-                    @as(*volatile u32, @ptrFromInt(0x2E00_0444)).* =
-                        @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
-                    @as(*volatile u32, @ptrFromInt(0x2E00_0448)).* =
-                        @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
-                    @as(*volatile u32, @ptrFromInt(0x2E00_044C)).* = frame.mepc;
-                    // **SPI1_CMD 同拍快照**：MST_ST≠0 ⇒ FE 环也在等 flash 空闲
-                    //（与"XIP/缓存读没发车"统一）；=0 ⇒ 等的是测量发车，FE3 全 0 独立成立。
-                    @as(*volatile u32, @ptrFromInt(0x2E00_0454)).* =
-                        @as(*volatile u32, @ptrFromInt(0x2050_1000)).*;
+                }
+                fe3_hits +%= 1;
+                if (fe3_hits % 64 == 0 and (fe3_hits / 64) <= 10) {
+                    var fb2: [160]u8 = undefined;
+                    const fl2 = std.fmt.bufPrint(&fb2, "FE3[{d}] a5/450={x:0>8} 47C={x:0>8} 11AC={x:0>8} 08D0={x:0>8}", .{
+                        fe3_hits / 64,
+                        @as(*volatile u32, @ptrFromInt(0x2010_0450)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_047C)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
+                        @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
+                    }) catch "FE3 (fmt fail)";
+                    hw.rawLineBlocking(fl2);
                 }
             }
         }
@@ -941,6 +956,8 @@ pub var sample_quiet: bool = false;
 /// ISR 重装用的周期（µs）。**不能用硬编码 2000**：调用方设的短周期会在第一个 tick 后失效。
 pub var sample_period_us: u32 = 2000;
 pub var nmi_count: u32 = 0;
+var fe3_hits: u32 = 0;
+var fe3_params_done: bool = false;
 
 /// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
 pub var extra_dump: ?*const fn () void = null;
