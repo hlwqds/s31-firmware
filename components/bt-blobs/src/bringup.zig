@@ -194,6 +194,9 @@ fn dumpBootState() void {
     // （见 pc48.log:263-291），那里 `0x20109C04` 是可读的。
 }
 
+pub var rtc_patch_rb: u32 = 0;
+pub var rtc_patch_done: bool = false;
+
 pub fn init(cfg: *config.Config) c_int {
     // **时钟实验（compile-time 门控，默认关）**：RTC clk_en + RC32K OEN 两项
     // 使能后 boot 行为改变（实证：流程卡死在 enable step 20 task_enable、
@@ -430,7 +433,13 @@ pub fn init(cfg: *config.Config) c_int {
         if (slotv.* >= 0x2f00_0000 and slotv.* < 0x2f10_0000) {
             @as(*volatile u32, @ptrFromInt(slotv.* + 24)).* = 32000;
             @as(*volatile u32, @ptrFromInt(slotv.* + 28)).* = 0;
-            osal.logPublic("bt probe: rtc_freq patch early obj=0x{x:0>8} +24=32000", .{slotv.*});
+            // **回读验证**：写后立即读 obj+24——rb==32000 ⇒ 写成功（step17
+            // 失败另有因）；否则写异常/不可写。短行（FIFO 丢行风险最低）。
+            const rb: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + 24)).*;
+            board.trap.rtc_freq_rb = rb;
+            rtc_patch_rb = rb;
+            rtc_patch_done = true;
+            osal.logPublic("bt p: rf rb={x}", .{rb});
         }
     }
     if (rc != 0) return rc;

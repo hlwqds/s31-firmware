@@ -27875,3 +27875,11 @@ BIT31 清挂起；③中断路由（INTERRUPT_CORE0_MAP 或我们直接轮询 IN
 **归因待下轮**（改极短行打印或 NMI 带出 patch 状态）。工具改进已入库：
 断点 hit 后清全部 4 触发器 + 摘 watch（非致命化）+ 武装点移至磨 CPU 相位
 （init_phy 除法不再抢命中）。
+
+**早补丁回读轮（2026-11-21 末，873312）**：`bt p: rf rb=` 行打印（写路径
+执行完毕未挂，后续 public addr 行正常 ⇒ 写成功）；**step 17 rc=-3 仍发生**
+⇒ **rtc_freq=32000 写入不充分**——sleep 配置对象另有零字段（96B memset 后
+仅部分被 blob init 填充），或 rtc_freq 需其它值。⚠ 本轮 NMI3 行消失
+（7 字段扩展后 bufPrint 异常待查——下轮修）。
+**下轮**：①dump 整个 96B 对象（obj+0..95 经 NMI 或 LP 槽）对照官方对象的
+非零字段清单 ⇒ 找出其余零字段；②修 NMI3 行 bufPrint（或拆两行）。
