@@ -53,7 +53,7 @@ static char *put_uint(char *o, char *end, unsigned long v, unsigned base, int up
     const char *dig = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     if (v == 0) tmp[n++] = '0';
     while (v && n < (int)sizeof tmp) { tmp[n++] = dig[v % base]; v /= base; }
-    for (int i = n; i < width; i++) if (o < end) *o++ = pad;
+    for (int i = n; i < width && o < end; i++) *o++ = pad;
     while (n > 0 && o < end) *o++ = tmp[--n];
     return o;
 }

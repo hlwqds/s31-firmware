@@ -27425,3 +27425,22 @@ RF/BB 校准-时序转储环。⇒ 当前画像：**blob 在 0x2006 分发内进
 循环（日志洪水经我们 shim 格式化，UART 静默因泵停、环未排）**；洪水环的
 出口条件（是否依赖 BB 硬件就绪）未定案。下步：解码 r_sym_ble… 循环结构
 与 0x20240031 格式串内容（ROM 数据区，需板载 dump 或对拍 oracle）。
+
+**终极定案：formatter 自旋 = shim pad 环无界（2026-11-21，mute 决定性实验）**：
+f9fe9ee 的「日志洪水环」措辞再修正——算术上 400 行 × 160 字符 = 毫秒级总工作量，
+解释不了 170s 钉死 ⇒ **单次调用内部自旋**。唯一无界构造 = put_uint 的 pad 环
+`for (i = n; i < width; i++)`（上界是 width 不是缓冲余量；width 可被格式串撑到
+1e9——blob 经 r_ble_log_internal 传的格式串基址 0x20240031 内容未解码，含巨宽
+spec/垃圾字节即触发）。**修复**：`i < width && o < end`。
+**决定性实验**（板载复验，uart_mute2.log）：置 `s31_bt_log_mute=1`（mute 判定
+在格式循环之前，绕过自旋）⇒ **0x2006 forward ret=0 ✓ → post21 ✓ → 0x2008
+发出 ✓**——170s 钉死挂点被 shim 侧修复直接打通，自旋确在 shim 格式化层。
+（接线插曲：Zig extern 误声明 `*volatile c_int` 把 C int 当指针二次解引用 →
+store access fault @0xe0788000 panic 一次；改回 `c_int` + 直接赋值后正确。）
+**新暴露的底层 blocker**：0x2008 分发内 blob 函数 r_sym_ble_mrucwvpRHVsLLccQveKl
+内部循环不退出（NMI 采样 mepc=0x400056a8 恒定、ra=0x400057c8 同调用链；shim
+瞬时返回后 CPU 钉在 blob 自身循环 = ctz/位清除 + 逐次 log 调用环）。其出口
+条件未解码——这才是原「0x2006 无应答」的更深一层：shim 自旋是叠加在其上的
+放大器。另：mute 轮 boot1 在 load_cal 后 rst:0x1a 一次（单例未归因，boot2
+全程正常）。⚠ mute 现常置 1（stage 10 处）= blob 日志观察通道关闭；需恢复
+blob 日志时撤 stage10 处置位。

@@ -75,6 +75,8 @@ const porting = @import("porting.zig");
 const board = @import("board");
 
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
+extern var s31_bt_log_mute: c_int;
+
 extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
 
 // **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
@@ -1090,6 +1092,10 @@ pub fn run() noreturn {
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
     // bringup 已过观测窗口，这里解除，让运行时路径零开销。
+    // **blob 日志静音（决定性实验）**：shim 的 mute 判定在格式循环之前，
+    // 置位即绕过疑似 put_uint pad 环（width 未设上界）的单次调用自旋。
+    // 若 forward 因此返回 ⇒ 坐实 printf 自旋是本轮 blocker。
+    s31_bt_log_mute = 1;
     flashStageExtra(10, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // host 可读：init 之后、enable 之前
     osal.dump_hook = null;
     osal.logPublic("bt probe: dump_hook disarmed", .{});
