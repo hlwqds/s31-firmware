@@ -278,11 +278,13 @@ pub fn defaults() Config {
         .task_run_cpu = 0,
         .hci_cmd_num = 2, // CONFIG_BT_CTRL_HCI_CMD_NUM 默认
         .hci_conn_num = 3, // max_connections + iso_cis + iso_bis
-        // **sleep_en=1（2026-11-21 根因修复试验）**：BtdmCfg+10 = r_btdm_task_init
-        // 核心里 sleep/scheduler 对象创建（Zth2）的 early-out 门（，返回 0 被调用方当成功 ⇒ rc=0 无痕）——为 0 时调度对象不建
-        // ⇒ 完成检查器 p==NULL 恒返回 1 ⇒ 0x2008 分发环永旋（板载 p=0 167/167）。
-        // 官方链路该旗标由 BT_CONTROLLER_INIT_CONFIG_DEFAULT 的 sleep 字段给出。
-        .sleep_en = 1,
+        // **sleep_en=0 回退（2026-11-21 试验终判）**：=1 时对象建成 ✓ 但 blob
+        // 时间换算（koby0AUV/H2OWtZ 系）每 ticks↔µs 一次 64 位软件除法
+        // （__udivdi3，除 rtc_freq=32000 非 2 幂），调度器高频调用 ⇒ CPU 钉死
+        // 在除法（NMI 202/202 钉 udivmod）⇒ 睡眠路径需要**睡眠时基基础设施**
+        // （RTC timer 接入/换算优化），裸机暂缓。=0 时 early-out 保护性跳过
+        // （官方 oracle idf_cfg192[178]=0 同值 ⇒ 非差异点）。
+        .sleep_en = 0,
         .version_num = 0,
         .bluetooth_mode = BTDM_CONTROLLER_MODE_BLE,
         .magic = BTDM_CONFIG_MAGIC_VALUE,

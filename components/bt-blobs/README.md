@@ -27618,3 +27618,12 @@ assert(684) ⇒ jalr 0 ⇒ lockup。
 `r_btdm_sleep_set_sleep_cb(cb=stub_fn, arg=&ctx, a2=0, a3=0)` 注册桩回调
 （Zig `callconv(.c)` no-op + 打印即可）——sleep_en 保持 1。若调度器随后
 要求真实睡眠硬件（RTC timer 等），再按其桩需求逐个补。
+
+**回退验证（2026-11-21 终态）**：sleep_en=0 + slot 门控注册（槽 NULL 跳过、
+非空才注册——cfg 字段会被归档回写不可作条件，load fault @0xc panic 实证）
++ trap cause=2 修复。板态：`sleep_cb skip (slot null)` ✓ 无 panic，流程
+step20 → 0x2006 → fwd06 → post21 → 0x2008 稳定停驻（与 mute=1 历史形态
+一致；早期 rst:0x1a ×5 = deferred IE 前 arm 窗口的已知 trap 风暴）。仪器
+全活（NMI 三行制 + slot 探针）。**下轮**：①sleep 回调注册路径（官方
+esp_bt_sleep_enable 调用序对照——注册了它才能安全开 sleep_en=1）；②BB
+事件链缺口（仍是 0x2008 环上游根因）。

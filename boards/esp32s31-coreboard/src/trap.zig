@@ -535,7 +535,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 注意：input==25 的分支**不**走 `recordPc`（第 442 行显式排除），
             // 所以这个环在饿死期间看不到任何东西 —— 只能靠这里打。
             if (nmi_count % 5_000 == 0) {
-                var nb: [160]u8 = undefined;
+                var nb: [224]u8 = undefined;
                 // **s0 + blob state 三字段直读**：0x2008 停驻环判据——
                 // s0=state 指针（循环内自 -284(s4) 取）；34=u16 位掩码
                 // （递减=真位扫 / 恒 0=空转等事件位）、36=u16 计数（.L89
@@ -557,8 +557,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         st.*, mask.*, cnt.*, gate.*,
                     }) catch "";
                 } else nl = "";
-                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8}{s}", .{
-                    nmi_count, frame.mepc, frame.ra, nl,
+                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} a1=0x{x:0>8} a2=0x{x:0>8} a3=0x{x:0>8}{s}", .{
+                    nmi_count, frame.mepc, frame.ra, frame.a0, frame.a1, frame.a2, frame.a3, nl,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(ln);
                 // **第二行：RAM 侧调度器四字**（固定锚点 0x2f011034，不碰毒区）：

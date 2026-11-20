@@ -70,6 +70,20 @@ extern fn r_btdm_hci_fc_env_init() c_int;
 extern fn r_btdm_hci_fc_enable() c_int;
 extern fn r_btdm_task_enable() c_int;
 extern fn r_ble_controller_init(cfg: *config.BleCfg) c_int;
+// 5 参：(cb, arg, q[88], q[92], a4=额外 init token——传 0 跳过 .L79 的附加初始化
+// （垃圾值会让它 jal 垃圾指针）。反汇编 0x4006162c 实证。
+extern fn r_btdm_sleep_set_sleep_cb(cb: ?*const anyopaque, arg: ?*anyopaque, a2: u32, a3: u32, a4: u32) c_int;
+var sleep_cb_n: u32 = 0;
+fn btSleepCb(a0: u32) callconv(.c) void {
+    _ = a0;
+    // **桩 sleep 回调**（btdm_sleep.c 的真实实现会做 RTC timer 武装等）：
+    // 裸机先计数 + 把参数记进 mark，观察调度器是否推进/还需要什么。
+    sleep_cb_n +%= 1;
+    // **LP 槽直记**：回调参数留痕（无 flash、无 UART 丢行风险）
+    const probe = @import("probe.zig");
+    const lp: *volatile u32 = @ptrFromInt(0x2E00_0004 + 4 * ((probe.lp_boot_n -| 1) % 10));
+    lp.* = 0xADC0B110 +% sleep_cb_n;
+}
 extern fn esp_ble_register_bb_funcs() c_int;
 extern fn r_base_stack_initEnv() c_int;
 extern fn r_conn_stack_initEnv() c_int;
@@ -511,6 +525,24 @@ pub fn enable() c_int {
     if (rc != 0) return rc;
 
     // **最后一步**：controller 任务在这里才真正启动
+    // **注册桩 sleep 回调**（sleep_en=1 ⇒ 调度器会调 obj[4]；未注册 ⇒
+    // btdm_sleep.c:684 assert 后 jalr 0 ⇒ lockup，板载实证）。槽在 step 10
+    // 已建 ✓ 此刻注册安全。
+    if (freestanding) {
+        // ⚠ 条件**不能**用 cfg.btdm.sleep_en——归档在 task_init 会回写该字段
+        // （sleep_en=0 轮实证：step20 前已非 0 ⇒ 注册器被调 ⇒ 槽 NULL ⇒
+        // load fault @0xc panic）。以**槽本身**为准：非空才注册。
+        const slot_chk: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        if (slot_chk.* != 0) {
+            // a1=null 会命中 beqz a1 → .L75 整体跳过（obj[4] 不写）⇒
+            // arg 用非空占位（桩不读它）。a4=0 跳过 .L79 附加初始化。
+            const sleep_arg: usize = @intFromPtr(&btSleepCb);
+            const rc_slp = r_btdm_sleep_set_sleep_cb(&btSleepCb, @ptrFromInt(sleep_arg), 0, 0, 0);
+            osal.logPublic("bt probe: sleep_cb reg => {d}", .{rc_slp});
+        } else {
+            osal.logPublic("bt probe: sleep_cb skip (slot null)", .{});
+        }
+    }
     enter(20, "r_btdm_task_enable");
     rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
