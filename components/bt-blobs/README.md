@@ -27247,14 +27247,15 @@ words 74,75 = ext37: fn=0x2f07f19c（=表内链表头）, arg=0x2f81280e
   task 的 adv-enable 处理里 BB schedule arm 的寄存器写（需反汇编 task 路径
   定位，或对照官方 trace 的 BB timer 寄存器）。
 
-**⚠ 任务入口 fn=0x2f000000 异常（2026-11-21，待验证）**：r_btdm_task_init
-传给 taskCreate 的任务入口 **fn = 0x2f000000 = blob 链接基址本身**（nm 实证：
-0x2f000000-0x2f00090c 是我们自己的 trapEntry，blob 代码从 0x2f000910 起）。
-**反证**：taskpc 采样显示任务驻停 osal eventqGet（0x4007xxxx = 本地编译代码）
-且消费了 8 事件 ⇒ 任务确实跑到了 eventqGet——fn=0x2f000000 并未阻止任务运行
-（0x2f000000 处运行时可能存在可执行内容，或该值语义并非任务入口）。
-**待验证**：①0x2f000000 处运行时内容 dump；②该值是任务入口还是基址标记。
-非定案，勿当作已证根因。
+**⚠ 任务入口 fn=0x2f000000 异常（2026-11-21，待验证+base0 dump 定案）**：
+r_btdm_task_init 传给 taskCreate 的任务入口 **fn = 0x2f000000 = blob 链接基址
+本身**。**base0 运行时 dump 定案**：0x2f000000+0x40 = **高熵数据非代码**
+（反汇编全为垃圾指令、无零字、可打印占比 0.4 ⇒ 数据段特征）——fn 指向数据。
+**未解矛盾**：任务却确实跑到了 osal eventqGet 并消费 8 事件（taskpc 实证）
+⇒ **我们的 sched/taskCreate 路径里 fn 并未按字面用作入口**（sched trampoline
+可能忽略/覆盖了 fn，或任务入口另有其人）——**追查 sched 的 trampoline/任务
+首跑路径 = 下轮第一问**（弄清 fn 去哪了 = 弄清 blob 任务的真实入口 = step20
+挂死链的最后一环）。非定案，勿当作已证根因。
 
 **CLIC intctl 读-as-zero 定案（2026-11-20 末，仪器注记）**：`c50`（intctl[50]
 原始字）在 IE+prio 写入后跨两次 boot 恒读 0——与 NMI 路径（intctl[25] 读 0 时
