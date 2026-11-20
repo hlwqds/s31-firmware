@@ -582,6 +582,18 @@ pub fn run() noreturn {
     }
 
     // 2) init 链（15 步）
+    // **osi_impl hooks 接线（此前从未调用 setHooks ⇒ now_us 等全 null）**：
+    // now_us = T0 µs 时基——esp_timer_get_time/deadline/serviceTimers 的唯一
+    // 时间源（"时基缺口"的 osi 层最后一块）。
+    @import("osi_impl.zig").setHooks(.{
+        .now_us = @import("board").hw.nowUs,
+        .fill_random = null,
+        .mac = null,
+        .on_idle = null,
+        .on_phy_enable = null,
+        .on_note = null,
+        .on_budget_exhausted = null,
+    });
     cfg = config.defaults();
     osal.logPublic("bt probe: init start", .{});
     // **syscon 窗口对拍**：与 IDF 成功镜像的 `[after_init]` 逐字比较
