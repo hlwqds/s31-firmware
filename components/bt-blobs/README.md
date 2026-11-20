@@ -27726,3 +27726,13 @@ EabYtUaAIR05LXw3qZSA@0x4005fcfe、6wSHUtNRioHeB7CKjVJA@0x4005ffa8、
 M9nG353V0svWrv1l1zGw@0x40060064/600a8、qkNMymdnaJnYUfzpKgEp@0x40060e52
 同类访问。⇒ 0x2010Bxxx 阵列 = BLE 通道/调度结构（可写 ✓ 非毒区），BB
 INT_EN 不在此区（仍在 mac_isr/LL 反汇编域）。
+
+**EabYtUaAIR05LXw3qZSA 结构解码（2026-11-21 末，当前 ELF 全反汇编）**：
+入口三连调（0eozxYq5hbG5r38u4fdy → **C0B6WsJES1DZlVd8Ki6D 完成检查器** →
+state==0 返回 3）→ 读 0x2010107C 门（bgez 分支）→ **0x20101254 RMW 清
+bit0**（旗标清零）→ `1<<s1` 16 位掩码调 rPoPGH6BBYjZaunDU5FV →
+**`0x2010B000 + (1<<s1)*16` 读阵列项** → **低 12 位 = blob 堆指针
+（0x2f000000 | (val&0xFFF)<<2）** → 读该对象 80 偏移 → 日志/遍历链。
+⇒ **0x2010B000+idx*16 阵列 = blob 对象描述符表**（每项 16B，低 12 位存
+blob 堆指针 <<2；与 vibw ready-bit 写同族）——**非 INT_EN 寄存器**。BB
+INT_EN 仍在 mac_isr/LL 反汇编域（①线开放）。
