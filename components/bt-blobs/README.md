@@ -27022,3 +27022,18 @@ LP 转写通道失效）。
 ——两通道合读即可重建 ana 状态时间线，与官方轨迹 diff。
 
 **正经修复路线不变**：esp-idf PMU 功率序列（pmu*.c）寄存器级移植。
+
+### 真墙锁定（2026-11-20 终）：跳过的 bt_bb_v2_init_cmplx = step 20 互等死锁的缺件
+
+干净基线（tick+NMI+零 init flash 写+CLIC 门控标记）下完整流程：
+calib rc=0 ✓ → steps 8-15 ✓ → transport ready ✓ → **step 20（r_btdm_task_enable）
+内部主上下文自旋**（blob 区 mepc 0x2f8036cc/ce，NMI 采到 FE 后台循环=任务活着）。
+
+⇒ 任务已跑起来（FE 后台循环=它的正常工作），但 bb init（bt_bb_v2_init_cmplx）
+被 probe.zig 标成 skipped（`bbrc=-1`）——旧 skip 理由（"回调表项需注册步骤填充"）
+已被 step 9 `esp_ble_register_bb_funcs` 消除 ⇒ bb_v2_init 从未执行 ⇒ 控制器
+永不就绪 ⇒ main 的 task_enable 永等 ⇒ 互等死锁。
+
+**下一会话唯一动作**：取消 bb_v2_init_cmplx 的 skip（probe.zig 里 `bbrc=-1`
+→ 真调用 `bb_v2_init_cmplx(1)`），EXEC 断点盯其入口/出口。
+判据：`ENABLED` 出现 → HCI 三命令 → BT 全链通。
