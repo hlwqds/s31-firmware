@@ -27269,3 +27269,22 @@ bt diag: 98BC=0x00000004 rfready=1 conf0=0x2900e444 txphase=1 ctrl=0x01700266 fe
   活着，但 BB 事件调度的前置没接上）。
 ②98BC.bit2 / 合成器锁定：FE 仪器链（下一会话）。
 ③net-bt 生产 section 对齐本探针序列。
+
+**ROM 表头解码 + ctx 槽定案（同夜最末轮）**：
+
+ROM 表（0x2f07f070，{fn,arg} 对 @n*8，n=外部号）非零 handler 在 ext 34/35/37
+（0x2f81281e/0x2f815258/0x2f07f19c）。ext35=0x2f815258 经 isr35 dump 离线
+objdecode 实证为真代码但定性为 **intr 管理 API**（校验 src/type 后写
+0x2f07f404 区），非硬件 ISR。表头完整字（0x2f07f188 起）解出 **ext37 =
+链表头 0x2f07f19c**，链表节点 = 三条 blob handler（全偶地址可调用）：
+0x2f81280e(arg 0x85) / 0x2f81289a(arg 0x03) / 0x2f8127ec(arg 0x84)。
+
+**ctx 槽定案**：0x2f07f1F4（ROM BT 分发 ctx 指针槽）= **全 0**（ctx 追踪
+dump 实证）——h_c 尾部 `lw a0,[0x1F4]; jr [a0+4]` 依赖的 ROM 分发上下文
+**从未初始化**。⇒ blob 直调 r_btdm_* 系列函数跳过了 ROM 侧 BT 入口的 ctx
+建立（官方链 = esp_bt_controller_init → ROM 包装 → 设 ctx → 分发表生效）。
+
+**下轮首查**：找 ROM 里写 0x2f07f1F4 的初始化函数（反汇编 ROM BT init 区，
+找 `sw …,0x1F4(a?)` 模式），或对照 esp32c6/bt.c / btdm_lp.c 的 ROM 调用序
+（esp_btbb_enable 前后是否夹着 ROM ctx init 调用）。路由正解 = src124/125
+→ CLIC input 53（ext37 链表头）+ ctx 建立后 ROM 分发器遍历三 handler。
