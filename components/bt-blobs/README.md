@@ -26926,3 +26926,18 @@ step 3/4/5/51/52 + mce(9)/mce(13) + load_cal 调用，全部到达。
 的 ESP_LOG 会打印进度——load_cal 内部日志（"phy_version"/cal 段）会显示卡在
 哪个子步）；②若它静默挂死，nm+objdump register_chipv7_phy 找内部轮询环，
 EXEC 断点逐个钉（仪器已全验证）。
+
+### 终局复验（全触发解除，2026-11-20 收官）
+
+EXEC 断点全部解除后 load_cal 自由跑：仍静默挂死于 register_chipv7_phy
+FULL 校准内部（60s+），**无重启循环**（CLIC 门控/ISR 关闭修复持久有效）。
+
+⇒ 挂死与观测（断点/打印/标记）完全无关——**真墙实锤**：
+register_chipv7_phy 的校准轮询等 ana I2C/RF 前端响应，裸机最小 PMU 序列
+没有完成 RF 模拟域完整上电。esp-idf 的 RF 上电是状态机（pmu 模块），
+非单寄存器开关——这就是 BT 线的最终墙。
+
+**下一会话**：移植 esp-idf pmu 模块 RF 上电状态机
+（esp_hw_support/port/esp32s31/pmu*.c 的 RF power sequence 表）
+为裸机寄存器序列。所有仪器（EXEC 断点 0x4C/0x58 双编码验证可用、
+CLIC 门控、per-step LP 标记、安全 trap 分支）在位。
