@@ -26726,3 +26726,24 @@ FE3[1..8] a5/450=00104003（恒定！） 47C=00000000 11AC=00000000 08D0=0xffffc
 `0x400xxxxx`=主上下文探针码、`0x2f80xxxx`=blob、FE 环特定=任务后台；
 主上下文的挂死 PC（非 FE 环、重复出现的 blob 地址，如已见 `0x2f8036ce`）
 即 step 20 内挂点，反汇编它找轮询与 cap 计数器，对齐官方的退出路径。
+
+### 真墙定位（NMI PC 区域直方图，2026-11-20 收官）：主上下文从未恢复
+
+```
+HIST[1] ticks=100000 fe=28890 blob=70652(last 0x2f824252) main=0 other=458
+HIST[2] ticks=200000 fe=79581 blob=119186(last 0x2f8036ce) main=0 other=1233
+HIST[3] ticks=300000 fe=130655 blob=167271(last 0x2f8036cc) main=0 other=2074
+```
+
+**main=0 于 30 万 tick** ⇒ step 20 的 `r_btdm_task_enable` 经调度器切入
+controller task 后，**CPU 从未回到主上下文代码**——不是"卡在某个轮询"，
+而是 blob 任务的阻塞等待（`mutex_pend tmo=4294967295` 无限等）在任务内
+自旋，协作式调度下 main_ctx 永不恢复。FE 环 = 任务后台活儿（与墙无关）。
+
+**缺口 = 协作调度器的阻塞等待让出**：osi 的 mutex/sem/event 等待原语
+在阻塞（尤其 tmo=无限）时必须 `swapContext` 回 main_ctx（让 main 泵事件/
+推进），唤醒时再切回任务。这正是 posix-compat socket 层已实现的
+sync/waitq 模式——BT 线缺的就是这块调度集成。
+
+**下一会话**：osi_impl 的 mutex_pend/sem_wait（tmo 路径）加阻塞让出；
+判据 = step 20 返回、`bt bringup: ENABLED` 出现、HCI 序列推进。

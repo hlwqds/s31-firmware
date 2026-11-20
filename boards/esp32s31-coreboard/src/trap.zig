@@ -512,36 +512,30 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 @as(*volatile u32, @ptrFromInt(0x2E00_0454)).* =
                     @as(*volatile u32, @ptrFromInt(0x2050_1000)).*;
             }
-            // **FE3 时间序列**（tick 级，每 64 次命中一行 ≤10 行）：
-            // a5=0x20100450（环内轮询计数器，cap 0x10000）增长 ⇒ 只是慢；不变 ⇒ 卡死。
-            // 参数簇（FE3P）一次性打印在门内。一次性旗子必须放 .bss。
-            if (frame.mepc >= 0x2f82_8a00 and frame.mepc < 0x2f82_8b00) {
-                if (!fe3_params_done) {
-                    fe3_params_done = true;
-                    var fb: [200]u8 = undefined;
-                    const fl = std.fmt.bufPrint(&fb, "FE3P 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8} 450={x:0>8} 47C={x:0>8}", .{
-                        @as(*volatile u32, @ptrFromInt(0x2010_0408)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_040C)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_041C)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_0420)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_0444)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_0450)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_047C)).*,
-                    }) catch "FE3P (fmt fail)";
-                    hw.rawLineBlocking(fl);
+            // **PC 区域直方图**（长窗挂死定位）：FE 环是任务后台循环（不算挂死证据）；
+            // 主上下文挂死 PC = 非 FE 环的 blob/探针地址重复出现。每 100k tick 打一行。
+            hist_ticks +%= 1;
+            {
+                const pc = frame.mepc;
+                if (pc >= 0x2f82_8a00 and pc < 0x2f82_8b00) {
+                    hist_fe +%= 1;
+                } else if (pc >= 0x2f80_0000 and pc < 0x2f830_0000) {
+                    hist_blob +%= 1;
+                    hist_last_blob_pc = pc;
+                } else if (pc >= 0x4000_0000 and pc < 0x400b_0000) {
+                    hist_main +%= 1;
+                    hist_last_main_pc = pc;
+                } else {
+                    hist_other +%= 1;
                 }
-                fe3_hits +%= 1;
-                if (fe3_hits % 64 == 0 and (fe3_hits / 64) <= 10) {
-                    var fb2: [160]u8 = undefined;
-                    const fl2 = std.fmt.bufPrint(&fb2, "FE3[{d}] a5/450={x:0>8} 47C={x:0>8} 11AC={x:0>8} 08D0={x:0>8}", .{
-                        fe3_hits / 64,
-                        @as(*volatile u32, @ptrFromInt(0x2010_0450)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_047C)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*,
-                        @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*,
-                    }) catch "FE3 (fmt fail)";
-                    hw.rawLineBlocking(fl2);
-                }
+            }
+            if (hist_ticks % 100_000 == 0 and (hist_ticks / 100_000) <= 8) {
+                var hb: [180]u8 = undefined;
+                const hl = std.fmt.bufPrint(&hb, "HIST[{d}] ticks={d} fe={d} blob={d}(last 0x{x:0>8}) main={d}(last 0x{x:0>8}) other={d}", .{
+                    hist_ticks / 100_000, hist_ticks,        hist_fe,    hist_blob, hist_last_blob_pc,
+                    hist_main,            hist_last_main_pc, hist_other,
+                }) catch "HIST (fmt fail)";
+                hw.rawLineBlocking(hl);
             }
         }
         const ext: usize = if (input >= 16) input - 16 else input;
@@ -958,6 +952,13 @@ pub var sample_period_us: u32 = 2000;
 pub var nmi_count: u32 = 0;
 var fe3_hits: u32 = 0;
 var fe3_params_done: bool = false;
+var hist_ticks: u32 = 0;
+var hist_fe: u32 = 0;
+var hist_blob: u32 = 0;
+var hist_main: u32 = 0;
+var hist_other: u32 = 0;
+var hist_last_blob_pc: u32 = 0;
+var hist_last_main_pc: u32 = 0;
 
 /// panic 时调用的**外部导出钩子**（`osal` 零 `board` 依赖，所以由 probe 侧注册）。
 pub var extra_dump: ?*const fn () void = null;
