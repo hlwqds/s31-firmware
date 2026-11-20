@@ -27119,9 +27119,30 @@ esptool --before no_reset 无法重连（零串口数据）⇒ 需要手动拔�
 
 ### NMI hist PC 解密（2026-11-20 最终）
 
+（此节判读已被下文「破墙终局」推翻——保留作判读修正史。）
 addr2line 实证卡住的 mepc：0x400009e4 = `phy_track_pll`（phy_common.c:68）、
-0x40000b68 = `phy_set_modem_flag`（phy_common.c:149）。**不是挂死点**——
-是 esp_phy_enable 校准完成后的正常调用路径（esp_timer_get_time 已接
-hooks.now_us ✓、phy_set_modem_flag 纯内存写 ✓）。
+0x40000b68 = `phy_set_modem_flag`（phy_common.c:149）。当时误判为"正常调用路径"：
+esp_timer_get_time 并未接 hooks.now_us（hooks.now_us 从未被赋值；C 符号绑定的是
+wifi_probe_stubs.c 的假时钟桩）。
 ⇒ CPU 正常执行 esp_phy_enable 的 post-cal 序列；**真挂点在 enable 步 16-20**
 （task_enable / bb_v2_init / 协作调度互等）——与之前判读一致。
+
+
+### 破墙终局（2026-11-20 深夜二更）：esp_deep_sleep_register_phy_hook 桩签名错误
+
+判别链：fake-clock 饱和（钳 999_999 < PLL_PERIOD=1s）⇒ hist PC 离开
+phy_track_pll ⇒ PLL-track 假说证实一半；NMI 加 ra 捕获 ⇒ `ra=0x40000744`
+= esp_phy_enable 入口 ⇒ 反汇编揭示 0x40000740 是 load_cal（phy_init.c:985/989）
+ESP_ERROR_CHECK 失败块的 `jal _esp_error_check_failed`，其返回地址恰好落在
+esp_phy_enable 入口 ⇒ 桩返回 void ⇒ a0 垃圾 ⇒ rc 非零 ⇒ 失败块"返回"跌落
+esp_phy_enable ⇒ ret 回同一入口 = 无限自循环。register_chipv7_phy(FULL) 每轮
+都跑完返回了——"load_cal 内部挂死"是这一个死循环的投影。
+
+修复（签名改 `int esp_deep_sleep_register_phy_hook(void *fn)` 返回 0）后同板：
+load_cal done 史上首次打印 → enable 步 16-20 全通 → blob 任务 mutex_pend 经
+自研 osal 成功 → HCI 往复（LE Set Advertising Parameters → Enable）→
+**Command Complete Status=0x00（SUCCESS）**。五轮判读的
+"协作互等/FE FSM/合成器未锁/校准轮询等 ana I2C" 全部作废。
+
+留档待办：①空中验证（扫描 02:00:00:00:BB:01）；②恢复真实时钟路径观察
+phy_track_pll_internal 真 regi2c 行为；③net-bt 生产 section 对齐本探针序列。
