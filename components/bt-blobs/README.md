@@ -27557,3 +27557,18 @@ early-out**：Zth2Weu2E0fObk9rakgd 入口 `if (*arg==0) return 0`——arg =
 后我们直调 Zth2Weu2E0fObk9rakgd({1,0}) 手动补建（绕过 config）。
 **仪器状态**：NMI 行（mepc/ra + 门控 st + gate）+ NMI2（p/flag/q/state）+
 NMI3（cb）全活；mute=1；板驻 0x2008 环。
+
+**config 偏移 10 假说证伪 + 描述符真实来源（2026-11-21 终）**：NMI3 直读
+cfg.ble 字节 10-11 = **0x0105**（=defaults 的 05 01 ✓ 非零）⇒ "config 偏移
+10 旗标为 0 ⇒ early-out"假说**证伪**。细读 0x40061ac0：`addi s1,sp,72`——
+**s1 在调用 Zth2 前被重载为栈指针** ⇒ 描述符 `lhu 10(s1)` 读的是**栈上
+sp+82**，由 -9/-10/-11 中间步（PsB8qxrZXPdSUAqQMBRY @0x4005d71c /
+ZGgifdtgyUnZ7f0ME7VH @0x40062abc，配 bnez→-10/-11）填写的结构 offset 10。
+**该字段==0 ⇒ Zth2 early-out（返回 0=成功语义）⇒ rc=0、p=NULL**——与
+step10 rc=0、无 malloc(32) 日志、板载 p=0 全自洽。
+**因果链最终形态**：-9/-10/-11 步的上游产出（BB 调度/校准计数）为 0 ⇒
+描述符 offset 10 = 0 ⇒ 调度对象不建 ⇒ 检查器 p==NULL 恒 1 ⇒ 0x2008 环
+永旋。**缺口回到 BB 事件链**（与多轮前定位一致，但现已精确到函数级：
+PsB8qxrZXPdSUAqQMBRY/ZGgifdtgyUnZ7f0ME7VH 为下轮反汇编对象——它们向
+sp+72 结构 offset 10 写什么、数据源是什么硬件事件，就是 BB 链缺口的
+最后落点）。

@@ -578,11 +578,22 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         const l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8}(oob)", .{p}) catch "";
                         hw.rawLineBlocking(l2);
                     }
-                    // btdm_cb 指针（controller init 核心所建）：非空=init 核心跑过
+                    // btdm_cb 指针（controller init 核心所建）：非空=init 核心跑过；
+                    // cb+4=mutex 槽、cb+8=eventq 槽（归档查 slot.p!=0，池耗尽则静默 NULL）
                     const cbp: *volatile u32 = @ptrFromInt(0x2f01_1038);
                     const cbv = cbp.*;
-                    var s3b: [48]u8 = undefined;
-                    const l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}", .{cbv}) catch "";
+                    var s3b: [96]u8 = undefined;
+                    var l3: []const u8 = undefined;
+                    if (cbv >= 0x2f00_0000 and cbv < 0x2f10_0000) {
+                        const mu: *volatile u32 = @ptrFromInt(cbv + 4);
+                        const evq: *volatile u32 = @ptrFromInt(cbv + 8);
+                        // cfg.ble 字节 10-11（sleep 对象描述符源；defaults 应为 05 01）
+                        const cfg10: *volatile u16 = @ptrFromInt(0x2f01_f448 + 10); // cfg.ble 在 cfg+0（@offsetOf==112 的是 bredr）
+                        const c10 = cfg10.*;
+                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4}", .{ cbv, mu.*, evq.*, c10 }) catch "";
+                    } else {
+                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}(oob)", .{cbv}) catch "";
+                    }
                     hw.rawLineBlocking(l3);
                 }
                 // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
