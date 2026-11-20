@@ -999,6 +999,7 @@ pub fn run() noreturn {
     // arm 写）：0x2f815258（偶对齐）/0x2f07f19c（wrapper 域）各 0x80。
     dumpRom("isr35", 0x2f815258, 0x80);
     dumpRom("isr37h", 0x2f07f188, 0x60); // 表头完整字：定位 blob handler 条目的外部号
+
     // （bb_init 邻域 dump 已撤：pre-BT 读 0x2f80e4a0 疑似间歇 fault ⇒ 2s 重启循环；
     //  窗口字节已捕获并解码，见 README 附记 1af128e。）
 
