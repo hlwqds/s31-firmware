@@ -999,6 +999,17 @@ pub fn run() noreturn {
     // arm 写）：0x2f815258（偶对齐）/0x2f07f19c（wrapper 域）各 0x80。
     dumpRom("isr35", 0x2f815258, 0x80);
     dumpRom("isr37h", 0x2f07f188, 0x60); // 表头完整字：定位 blob handler 条目的外部号
+    // **ctx 追踪（BB 调度真 ISR 定位）**：h_c 尾部 `jr [ctx+4]`（a1=-3）跳真正
+    // 主 ISR——ctx 指针槽在 0x2f07f1F4（h_c 的 lw a0,0x1F4(a5)）。
+    {
+        const ctxp = @as(*volatile u32, @ptrFromInt(0x2f07f_1F4)).*;
+        dumpRom("ctxp", 0x2f07f_1F4, 0x10);
+        if (ctxp != 0 and (ctxp & 0x3) == 0) {
+            dumpRom("ctx", ctxp, 0x40); // ctx[0..16]：ctx[4]=真主 ISR 地址
+            const real_isr = @as(*volatile u32, @ptrFromInt(ctxp + 4)).*;
+            osal.logPublic("bt ctx: ctxp=0x{x:0>8} real_isr=0x{x:0>8}", .{ ctxp, real_isr });
+        }
+    }
 
     // （bb_init 邻域 dump 已撤：pre-BT 读 0x2f80e4a0 疑似间歇 fault ⇒ 2s 重启循环；
     //  窗口字节已捕获并解码，见 README 附记 1af128e。）
