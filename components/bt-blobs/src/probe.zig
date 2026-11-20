@@ -620,6 +620,24 @@ pub fn run() noreturn {
     });
     cfg = config.defaults();
     osal.logPublic("bt probe: init start", .{});
+    // **RTC 比较路径端到端硬件测试**（零 blob 依赖）：counter+5s → target0
+    // → TAR_EN0 触发 → INT_ENA bit31/28 使能 → NMI 轮询 INT_RAW 是否到点
+    // 置位。到点 ⇒ RTC 比较路径全通（blob 睡眠唤醒的硬件前提就位）。
+    {
+        const rtb: usize = 0x2080_0000;
+        // 锁存 counter
+        @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
+        const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+        // target0 = counter + 5s（137kHz × 5 ≈ 686k）
+        @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 5);
+        @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x08)).* = 1 << 31; // TAR_EN0 触发
+        @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = (1 << 31) | (1 << 28); // INT_CLR
+        @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = (1 << 31) | (1 << 28); // INT_ENA
+        osal.logPublic("bt probe: rtc cmp armed cnt=0x{x:0>8} tgt=0x{x:0>8}", .{ cnt, cnt +% (137_271 * 5) });
+        // **NMI 行带 INT_RAW 读数**：bit31=SOC_WAKEUP（到点置位？）、bit28=tick
+        // （INT_RAW 经 NMI 行 ir= 字段观测，无需标志）
+    }
     // **LP timer 时钟门扫描（安全协议）**：①LP_CON 基线 dump（8 字）；
     // ②clk_conf(+0x18) 置高位候选门（保低 4 位已确认）；③LP 槽记录 mask；
     // ④读 0x2070_0C00（挂 ⇒ rst ⇒ LP 槽存证 mask，rst 后可判）；⑤恢复。

@@ -592,8 +592,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         st.*, mask.*, cnt.*, gate.*,
                     }) catch "";
                 } else nl = "";
-                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} a1=0x{x:0>8} a2=0x{x:0>8} a3=0x{x:0>8}{s}", .{
-                    nmi_count, frame.mepc, frame.ra, frame.a0, frame.a1, frame.a2, frame.a3, nl,
+                // **INT_RAW 读数**（RTC_TIMER+0x28：bit31=SOC_WAKEUP 到点？bit28=tick）
+                const int_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2080_0028)).*;
+                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} a1=0x{x:0>8} a2=0x{x:0>8} a3=0x{x:0>8} ir=0x{x:0>8}{s}", .{
+                    nmi_count, frame.mepc, frame.ra, frame.a0, frame.a1, frame.a2, frame.a3, int_raw, nl,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(ln);
                 // **第二行：RAM 侧调度器四字**（固定锚点 0x2f011034，不碰毒区）：
