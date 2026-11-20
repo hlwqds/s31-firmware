@@ -27410,3 +27410,18 @@ IE 前移试验（IE 块挪到首个 sendCmd 之前）不改变挂点 ⇒ 非中
 流程稳定停驻在 0x2006 forward（同步等待 BB 链活）。唯一剩余 blocker 仍是
 BB/MAC 块调度链推进（peripheral INT_EN / BB timer 武装），与 ctx/契约问题
 （chainIsr 三条目代跑即崩，机制未定案）并列待查。
+
+**⚠ forward 挂点措辞修正（2026-11-21，NMI 采样推翻「同根」推断）**：2c3210f
+写的「任务等 BB 硬件 ⇒ 主上下文死等」**未成立**——uart_pin.log 采样 main=
+98968/100000（98.97%）且 last PC 恒 0x400679d2（ets_printf 格式化环），blob
+仅 856（0.86%）：若是静默等待，PC 应停在 blob/osi 等待环而非 formatter。
+**实证链（全部落地）**：①forward 未返回（fwd06 不打印）；②CPU 钉在 app 侧
+ets_printf；③调用者 ra=0x400057c8 = blob 函数 r_sym_ble_mrucwvpRHVsLLccQveKl，
+调用点紧跟 `jalr r_ble_log_internal_x1`（a0=0x20240031=格式串基址、a1=级别
+0/31）；④nm 实证 ets_printf/printf/esp_rom_printf 三名均为 app 侧强定义
+（0x400677b8/acc/af0），**无 ROM 绑定**（0x2f800024 场景未发生）；⑤邻近
+字符串词汇（bb=0x%x,…/bt cal:%d,%d/rf_on_bb_delay/bb_tx_on_delay）指向
+RF/BB 校准-时序转储环。⇒ 当前画像：**blob 在 0x2006 分发内进入逐次打印的
+循环（日志洪水经我们 shim 格式化，UART 静默因泵停、环未排）**；洪水环的
+出口条件（是否依赖 BB 硬件就绪）未定案。下步：解码 r_sym_ble… 循环结构
+与 0x20240031 格式串内容（ROM 数据区，需板载 dump 或对拍 oracle）。
