@@ -26932,10 +26932,9 @@ EXEC 断点逐个钉（仪器已全验证）。
 EXEC 断点全部解除后 load_cal 自由跑：仍静默挂死于 register_chipv7_phy
 FULL 校准内部（60s+），**无重启循环**（CLIC 门控/ISR 关闭修复持久有效）。
 
-⇒ 挂死与观测（断点/打印/标记）完全无关——**真墙实锤**：
-register_chipv7_phy 的校准轮询等 ana I2C/RF 前端响应，裸机最小 PMU 序列
-没有完成 RF 模拟域完整上电。esp-idf 的 RF 上电是状态机（pmu 模块），
-非单寄存器开关——这就是 BT 线的最终墙。
+⇒ ~~挂死与观测完全无关~~ **已修正**：burst 后 I2C0_CTRL=0x002f0669 非零
+（事务配置已写），CONF0 进事务相位 2900e444——**不是无事务**。真墙待
+UART1 双通道下 load_cal 内部进度观测后重判。
 
 **下一会话**：移植 esp-idf pmu 模块 RF 上电状态机
 （esp_hw_support/port/esp32s31/pmu*.c 的 RF power sequence 表）
@@ -27045,8 +27044,9 @@ calib rc=0 ✓ → steps 8-15 ✓ → transport ready ✓ → **step 20（r_btdm
 发的 ana I2C 事务。我们探针的 rc=0（自写路径）走的是 register_chipv7_phy(NULL,NULL)
 ——但 **burst 序列没有被触发**（FEE7 实测 I2C0_CTRL=0、CONF0 停在 2100e408）。
 
-⇒ bb_init 互等的缺件不是 bb_v2_init 本身，而是 **bb_v2_init 的前置（ana I2C
-burst/BBPLL 配置）从未运行**。已链接的 T 符号（nm 实证）：
+⇒ bb_init 互等的缺件是 **ana I2C burst 序列的前置**。
+（已更正：burst 后快照实测 CONF0=0x2900e444 事务相位已启动 ✓、
+I2C0_CTRL=0x002f0669 事务配置已写入 ✓——burst 已发车，事务是否完成待确认。）已链接的 T 符号（nm 实证）：
 - `phy_ana_i2c_master_burst_bbpll_config` @0x40000580（零参，自足）
 - `phy_ana_i2c_master_burst_config` @0x4000083a
 - `phy_ana_i2c_master_burst_rf_onoff` @0x40000e48（带参 a0）
