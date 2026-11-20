@@ -27219,9 +27219,12 @@ LP_CLK_PO_EN 与 counter 无关。
   task 的 adv-enable 处理里 BB schedule arm 的寄存器写（需反汇编 task 路径
   定位，或对照官方 trace 的 BB timer 寄存器）。
 
-剩余嫌疑（按优先级）：①反汇编 task 的 adv-enable 处理路径找 BB schedule arm
-的寄存器写；②官方 oracle trace 的 BB timer 寄存器对拍；③MAC/BB 源的
-peripheral 级 int_ena（源使能位在 modem 域，未开）。
+**CLIC intctl 读-as-zero 定案（2026-11-20 末，仪器注记）**：`c50`（intctl[50]
+原始字）在 IE+prio 写入后跨两次 boot 恒读 0——与 NMI 路径（intctl[25] 读 0 时
+"保留 0x107|置 nmies" 的写依然生效）完全自洽 ⇒ **本芯片 CLIC intctl 写有效、
+读恒 0**，IE/IP 状态不可经读观测。brg=0/0/0（bridge_w=0，trap 侧桥零触发）
+维持为最终硬数据：**源 124 静默**。仪器清单相应修订：intctl 读回类判据全部
+作废，改用 trap 侧计数器（bridge_w）+ MAP 读回（interrupt_core0 域读回正常）。
 
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 
