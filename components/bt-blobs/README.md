@@ -27149,5 +27149,17 @@ load_cal done 史上首次打印 → enable 步 16-20 全通 → blob 任务 mut
 **Command Complete Status=0x00（SUCCESS）**。五轮判读的
 "协作互等/FE FSM/合成器未锁/校准轮询等 ana I2C" 全部作废。
 
-留档待办：①空中验证（扫描 02:00:00:00:BB:01）；②恢复真实时钟路径观察
-phy_track_pll_internal 真 regi2c 行为；③net-bt 生产 section 对齐本探针序列。
+留档待办（①已做，空中判定为否）：
+
+①**空中验证（2026-11-20 深夜，判定：未辐射）**——probe 首事件后不再 halt，
+改泵 600s OTA 观测窗（`OTA window done (evt=1 cmds=8)` 实证）。宿主机 hci0
+（bluetoothctl --timeout scan，sanity 可见手机/音箱/体重秤）与板子泵窗同步
+两轮，`01:BB:00:00:00:02` 零命中 ⇒ **Command Complete SUCCESS ≠ 空中有包**，
+与 burst 快照 `0x201098BC=0`（合成器未锁定）自洽：软件链完整，模拟/RF 完成度
+是剩余缺口。仪器注意：本机 btusb 扫描每轮 daemon 重启后只有第一次能用，之后
+即使 Discovery started 也零设备（btusb 重载无效）；pyserial 打开串口的 DTR
+脉冲会复位板子（每次抓取=一次重启，boot+3×校准 ≈45s 后才进泵窗）。
+真实时钟已还原（每调用 +1ms），`phy_track_pll_internal` 真 regi2c 不再卡流程
+（泵循环 135s+ 无挂）。
+②98BC.bit2 / 合成器锁定：FE 仪器链（下一会话）。
+③net-bt 生产 section 对齐本探针序列。

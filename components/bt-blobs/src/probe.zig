@@ -1224,16 +1224,31 @@ pub fn run() noreturn {
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
     }
     var round: u32 = 0;
-    while (round < 2000) : (round += 1) {
+    var evt_at: ?u32 = null;
+    while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         _ = osal.serviceCallouts(osal.timeGet());
-        if (transport.stats().evt_count > 0) {
-            osal.logPublic("bt probe: GOT {d} EVT, last code=0x{x:0>2}", .{ transport.stats().evt_count, transport.stats().last_evt_code });
+        const now = osal.timeGet();
+        if (evt_at == null and transport.stats().evt_count > 0) {
+            evt_at = now;
+            // ⚠ 旧版在此直接 halt ⇒ 广告只开了几毫秒，空中扫描器永远来不及看
+            // （Command Complete SUCCESS ≠ 空中有包）。首事件后**继续泵 600 s**
+            // 让 BB 广播引擎保持调度，OTA 观测窗留给宿主机/手机 BLE scan。
+            osal.logPublic("bt probe: GOT {d} EVT last=0x{x:0>2} — keep pumping 600 s (OTA window)", .{
+                transport.stats().evt_count, transport.stats().last_evt_code,
+            });
+        }
+        if (evt_at) |evt_t0| {
+            if (now -% evt_t0 > 600_000) break; // timeGet 单位 = ms（tick 驱动）
+        } else if (round >= 2000) {
+            osal.logPublic("bt probe: no EVT after {d} rounds (evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d})", .{
+                round, transport.stats().evt_count, transport.stats().cmds_sent, transport.stats().btdm_tx, transport.stats().cmd_alloc_null, @import("board").hw.rw_drops,
+            });
             halt();
         }
     }
-    osal.logPublic("bt probe: no EVT after {d} rounds (evt={d} cmds={d} btdm_tx={d} alloc_null={d} rw_drops={d})", .{
-        round, transport.stats().evt_count, transport.stats().cmds_sent, transport.stats().btdm_tx, transport.stats().cmd_alloc_null, @import("board").hw.rw_drops,
+    osal.logPublic("bt probe: OTA window done (evt={d} cmds={d} btdm_tx={d} rw_drops={d})", .{
+        transport.stats().evt_count, transport.stats().cmds_sent, transport.stats().btdm_tx, @import("board").hw.rw_drops,
     });
     halt();
 }

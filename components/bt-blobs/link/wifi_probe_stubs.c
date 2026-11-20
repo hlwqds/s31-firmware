@@ -1,14 +1,13 @@
 //! WiFi/BT 闭包最小桩——budding blob 引用的 esp-idf 系统符号最小供给。
 //! 每个桩仅返回成功/零值，保证链接通过；行为语义待逐项验证。
 long long esp_timer_get_time(void) {
-    // 判别实验（2026-11-20）：钳在 999_999（< PLL_TRACK_PERIOD=1_000_000us）⇒
-    // phy_common.c 的 (now - prev) > PERIOD 永假 ⇒ phy_track_pll_internal 永不运行。
-    // 若墙消失/PC 移位 ⇒ 墙 = PLL-track 的 regi2c 停滞；若纹丝不动 ⇒ 墙在别处
-    // （enable 步调度互等），双通道观测照原计划。esp_phy 内该符号无超时循环，冻结安全。
+    // 2026-11-20 晚二转：饱和实验（钳 999_999）已完成判别使命——旧"PLL-track
+    // regi2c 卡死"实为 deep_sleep_register_phy_hook 桩签名自循环的误读。现还原
+    // 递增时钟（每调用 +1ms）：phy_track_pll_internal 会真正跑 regi2c PLL 跟踪，
+    // 这正是合成器锁定（0x201098BC.bit2）与空中辐射可能缺的最后一步。
+    // 若 phy_track_pll 再成卡点 ⇒ regi2c 停滞为真，交给 FE 仪器链。
     static unsigned long long t;
-    t += 1000;
-    if (t > 999999) t = 999999;
-    return (long long)t;
+    return (long long)(t += 1000); // 每次调用 +1ms，避免"永不超时"或天文数字
 }
 int esp_timer_create(const void *a, void **o) { (void)a; (void)o; return 0; }
 int esp_timer_start_periodic(void *t, unsigned long long p) { (void)t; (void)p; return 0; }
