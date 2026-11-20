@@ -27174,6 +27174,23 @@ load_cal done 史上首次打印 → enable 步 16-20 全通 → blob 任务 mut
 | RTC 计数器（BT 调度时基候选） | `date.bit31=clk_en` 复位 0 ⇒ counter 冻结；已使能，实测 ≈137 kHz 走动 ✓ |
 | 结果 | fe=0、qput=8 **依旧**——MAC/BB 中断源仍不触发，RTC 计数器不是（唯一）时基 |
 
+**中断路由 + handler 实证（同夜终轮，A/B 判定）：**
+
+- 路由补齐后，把 blob ISR 挂上 trap 分发表 ⇒ **boot 循环**（80s 35 次
+  POWERON 复位，单次连续抓取内发生，无 trap 行 = handler 内锁死）；
+- 同环境 A/B：只藏 IE+handler（MAP 路由保留）⇒ **boot 稳定**（1 banner、
+  73 行 diag、RTC 走动、qput=8）。
+
+⇒ **BT MAC 中断确实触发**（路由修复实证——handler 一挂即触发）；剩余缺口
+精确为 **ISR 桥**：blob handler 在 trap 上下文不安全（其内 eventqPut→
+resumeTask 破坏调度器，"唤醒只能发生在主上下文"既定规则）。代码里
+`isr_bridge=false` compile-time 旗双藏 IE+handler（带完整证据注释），
+桥完成后置 true。
+
+**修正过的负结果**：RC32K_OEN 写不粘住（读回恒 0）；SLOW_CLK_SEL=1 会
+**杀死原本走动的 RTC 计数器源**（292395 恒定实测）——已回退 sel=0。
+LP_CLK_PO_EN 与 counter 无关。
+
 剩余嫌疑（按优先级）：①BT 的 LP/sleep 时钟选择（LP_CLKRST slow-clock 源未选/
 未使能——controller 读的时基不是这个 RTC 计数器）；②BB timer 本身未被任务武装
 （controller 任务在等第一个调度 tick，而 tick 源头没人开）；③MAC/BB 源的

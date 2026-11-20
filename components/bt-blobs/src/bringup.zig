@@ -186,6 +186,16 @@ pub fn init(cfg: *config.Config) c_int {
         const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
         d.* |= 0x8000_0000;
     }
+    // **RC32K 输出使能实验（回退保留负结果）**：SLOW_CLK_SEL=1 会**杀死原本
+    // 走动的 RTC 计数器源**（292395 恒定实测）；RC32K_OEN bit7 的写不粘住
+    //（读回恒 0）。已回退 sel=0（默认源，counter 137 kHz 走动）。BT sleep clock
+    // 的真实取数路径仍未定位——diag 继续读 counter+rootc 对照。
+    {
+        const root: *volatile u32 = @ptrFromInt(0x2070_1000);
+        root.* = (root.* & ~@as(u32, 7 << 23)); // SLOW_CLK_SEL 回默认 0
+        const po: *volatile u32 = @ptrFromInt(0x2070_1004);
+        _ = po; // LP_CLK_PO_EN 不再动（本轮证明与 counter 无关）
+    }
     // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
     // 必须**先**存在，step 5 的 `rd(reg_clk_conf) | 0x7e400000` 才会得到 IDF 的 `0x7e601002`。
@@ -569,12 +579,19 @@ fn intrArm(src: c_int) void {
     // 同款教训，见 hw.zig 注释）。bits[5:0]=input，bits[9:8]=pass_level（非零才启用）。
     hw.writeReg(0x2058_5000 + @as(usize, @intCast(src)) * 4, (input & 0x3F) | (1 << 8));
     // CLIC intctl：prio [31:24] **必须非零**（prio=0 的电平输入永不触发）+ IE bit8。
-    hw.writeReg(0x1080_1000 + input * 4, (1 << 24) | (1 << 8));
-    // **把 blob 在 intrAlloc 里登记的 ISR 挂上 trap 分发表**（输入号口径，
-    // setHandler 内部归一化 n-16）。此前 handler 只存池子从未挂表——中断
-    // 触发也被 trapDispatch 静默忽略（无 handler 分支），任务队列永远等不到事件。
-    if (@import("osal_kit").osal.intrHandlerOf(src)) |h| {
-        @import("board").trap.setHandler(input, h.f, h.arg);
+    // ⚠ **IE 与 handler 必须同开同关**：IE 置位而不挂 handler（或不挂清理源的电平
+    // ISR）⇒ CPU 取中断 → dispatch 忽略 → IP 永不清 → 风暴循环（CPU 饿死）。
+    // ⚠ **挂 handler 已实证 boot 循环**（2026-11-20：80s 35 次 POWERON 复位，
+    // 无 trap 行 = handler 内锁死）——中断**确实触发**（挂上才循环），但 blob
+    // handler 在 trap 上下文不安全（eventqPut→resumeTask 破坏调度器）。
+    // ⇒ ISR 桥完成前**双藏**（compile-time 旗默认 false）：只留 MAP 路由，
+    // 源触发后 IP 在 intctl bits[31:24] 里 pend，CPU 不取，稳定可读。
+    const isr_bridge = false;
+    if (comptime isr_bridge) {
+        if (@import("osal_kit").osal.intrHandlerOf(src)) |h| {
+            hw.writeReg(0x1080_1000 + input * 4, (1 << 24) | (1 << 8));
+            @import("board").trap.setHandler(input, h.f, h.arg);
+        }
     }
     const bit: u32 = @as(u32, 1) << @intCast(input & 31);
     asm volatile ("csrs mie, %[b]"

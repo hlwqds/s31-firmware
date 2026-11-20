@@ -1251,8 +1251,9 @@ pub fn run() noreturn {
             const rtcb: usize = 0x2080_0000;
             @as(*volatile u32, @ptrFromInt(rtcb + 0x10)).* = 1 << 27; // 锁存
             const rtc = @as(*volatile u32, @ptrFromInt(rtcb + 0x14)).*;
-            osal.logPublic("bt diag: rfready={d} txphase={d} fe={d} taskpc=0x{x:0>8} qput={d} qok={d} rtc={d}", .{
-                (r98 >> 2) & 1, (conf0 >> 27) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, rtc,
+            const rootc = @as(*volatile u32, @ptrFromInt(0x2070_1000)).*;
+            osal.logPublic("bt diag: rfready={d} txphase={d} fe={d} taskpc=0x{x:0>8} qput={d} qok={d} rtc={d} rootc=0x{x:0>8}", .{
+                (r98 >> 2) & 1, (conf0 >> 27) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, rtc, rootc,
             });
         }
         if (evt_at == null and transport.stats().evt_count > 0) {
