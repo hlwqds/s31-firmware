@@ -230,6 +230,7 @@ pub fn init(cfg: *config.Config) c_int {
         rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F018)).*;
         rec[3] = @as(*volatile u32, @ptrFromInt(0x2058_7040)).*;
         _ = ese(0x18E000 / 0x1000);
+        board.hw.flashOpBegin();
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
@@ -237,6 +238,7 @@ pub fn init(cfg: *config.Config) c_int {
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
 
         _ = esw(0x18E000, &rec, 16);
+        board.hw.flashOpEnd();
     }
     enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);

@@ -259,9 +259,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         );
         bp_last_tsel = cur_tsel;
         asm volatile ("csrw 0x7a1, zero"); // 命中触发器 tdata1=0 禁用
-        // mepc 推进已移除：触发器就地禁用后，同址重执行不会再命中（无 armed
-        // 触发器）⇒ 执行自然继续。推进逻辑（+2/+4 按指令长）曾在错误上下文
-        // 破坏控制流（mepc 落进指令中间 → cause=2 级联），教训入档。
+        // **mepc 推进（仅断点分支）**：EXEC 断点在指令执行前触发，不推进会立刻
+        // 重触发同一指令。按指令长度推进：读 mepc 处 16 位半字，(hw & 3) != 3
+        // ⇒ RVC 2 字节；否则 4 字节。⚠ 必须在 cause==3 分支内——放在外层会
+        // 让每次普通中断返回都跳 4 字节，破坏全部控制流与 PC 采样。
+        const inst_hw: u16 = @as(*volatile u16, @ptrFromInt(auth_pc)).*;
+        if ((inst_hw & 3) != 3) frame.mepc +%= 2 else frame.mepc +%= 4;
     }
     if ((cause & 0x8000_0000) != 0) {
         // 数组只存前 `irq_samples.len` 个（判读用）；**打印独立限长**——之前把打印放在
@@ -533,8 +536,6 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 } else if (pc >= 0x2f80_0000 and pc < 0x2f830_0000) {
                     hist_blob +%= 1;
                     hist_last_blob_pc = pc;
-                    // **非 FE blob PC → LP 0x4A0**（连续覆盖，host 经下一轮 FEFE 读出）
-                    @as(*volatile u32, @ptrFromInt(0x2E00_04A0)).* = pc;
                 } else if (pc >= 0x4000_0000 and pc < 0x400b_0000) {
                     hist_main +%= 1;
                     hist_last_main_pc = pc;

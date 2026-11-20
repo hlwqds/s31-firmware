@@ -26992,3 +26992,19 @@ PHY enabled AFTER step 5 → steps 8/9/10/11/14/15 → transport ready
    （trapDispatch + log.line 到 .trap_ram），或 trap 内禁日志（只记 RAM）。
 2. trap SRAM 化后，enable 阶段的真挂点（若有）才会显形——
    之前的"挂死"可能全是 trap 嵌套 lockup 的重启循环伪影。
+
+### 本轮两发现（2026-11-20 最末）：load_cal 到达 ✓ + 诊断路径自身 bug
+
+1. **流程到达 `esp_phy_load_cal_and_init` 入口**（EXEC 断点 BP! n=1 mepc=0x40000580
+   cause=3 ✓）——BT 软件侧（bringup/mce/锁绕行）全部走通。
+2. **新 bug（诊断路径鲁棒性）**：load_cal 执行期间一个 load access fault
+   （exception 5，mtval=0xa0）→ trap panic 路径 dumpOsalCallers →
+   `osal.canaryScan` 自身再 fault（mtval=0xa0 ⇒ canary_base=0 时 guard
+   `if (base==0) return` 未生效或竞态）→ panic 路径自崩 → halt。
+   ⇒ 修复（下一会话）：canaryScan 的 base==0 guard 复核 + panic 路径去
+   canaryScan（异常上下文的堆扫描本身危险）。
+
+**断点已解除**（triggers 全 disarm），load_cal 自由跑 + tick 在 + NMI 在 +
+零 flash 碰撞 = 最接近可运行的配置。下一会话在此配置上：
+①修 canaryScan guard ②看 load_cal 是否真挂（还是能走完）③若走完 →
+ENABLED → BT 全链通。

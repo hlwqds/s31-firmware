@@ -6,6 +6,10 @@
 //! NimBLE **host** 侧的扫描去重（controller-only 构建没有 host，归档里也从不引用它），
 //! `ble_msys_init` 只是转调归档里的 `r_esp_ble_msys_init`。
 const std = @import("std");
+extern var flash_op_window: u32;
+fn flashOpSet(v: u32) void {
+    flash_op_window = v;
+}
 const osal = @import("osal_kit").osal;
 const mempool_abi = @import("mempool_abi.zig");
 const builtin = @import("builtin");
@@ -240,6 +244,7 @@ pub fn phyDomainEnable() void {
         var rec: [4]u32 = .{ 0xADC0_5F7D, 0x2010_9C08, 0x2010_9C14, 0x2010_F018 };
         rec[1] = rd(0x2010_9C08);
         _ = ese(0x18E000 / 0x1000);
+        flashOpSet(1);
         // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
@@ -248,6 +253,7 @@ pub fn phyDomainEnable() void {
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
 
         _ = esw(0x18E000, &rec, 16);
+        flashOpSet(0);
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
     const fo: usize = 0x2010_9C08;
@@ -330,6 +336,7 @@ pub fn phyDomainEnable() void {
         const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
         var rec: [4]u32 = .{ 0xADC0_5F7C, rd(0x2010_9C00), rd(0x2010_F000), rd(0x2010_F83C) };
         _ = ese(0x18E000 / 0x1000);
+        flashOpSet(1);
         // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
@@ -338,6 +345,7 @@ pub fn phyDomainEnable() void {
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
 
         _ = esw(0x18E000, &rec, 16);
+        flashOpSet(0);
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
 }
