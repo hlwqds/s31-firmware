@@ -27637,3 +27637,17 @@ canaryScan/inAlloc 是 dump 磨 CPU，**末段 140/149 样本干净落在 blob �
 sleep_cb skip ✓ 无 panic。⚠ 本轮抓包早段风暴无 `!!` 场景行（trap 读数
 路径待下轮改进——s31-trap-xip 域）。观测纪律：**抓包判读必须按 boot 分段**
 （banner/rst 边界），ZU/A0 行标记 dump 相位，采样归属以段为单位。
+
+**按 rst 分段的逐 boot 表（2026-11-21 末，uart_cap.log 7 段）**：boot 1-6
+全部在 **"sched slot after step10 = 0" 打印后、step 20 前 lockup**（rst:0x1a
+×6），每 boot dumpAtPend 触发 **2 次**（ZU/A0 ×2——早期 `!!`-less trap 各
+一次 abort，probe_dump_now 被调两次）；**boot 7 才走到 0x2008 稳定停驻**
+（末段 NMI 152、140 钉 blob 环 .L54 = 等待期 blob 环运行的真实样本）。
+**持久态假说（待验）**：RTC/LP 域跨 rst:0x1a 保留 ⇒ 早段 btdmLpEnableClock
+时钟门逐 boot 累积 ⇒ 第 7 个 boot 门齐才过（历史各轮"数次风暴后稳定停驻"
+同形态，此前未命名）。**口径降级**：0x2008 环"永旋/机械性不终止"证据被
+探针 2000 轮放弃上限截断——成立的事实 = **无 Command Complete + 等待期
+blob 环运行（140 样本）+ st 冻结（167/167）**；环是否真无限未证。
+**观测纪律**：抓包判读按 boot 分段（banner/rst 边界），采样归属以段为
+单位；ZU/A0 行标记 dump 相位（每 boot ×2）；dump 相位的样本不得归给
+blob 环。

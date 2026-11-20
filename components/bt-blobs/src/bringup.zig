@@ -81,14 +81,11 @@ export fn s31_bt_raw_line(s: [*:0]const u8) void {
 extern fn r_btdm_sleep_set_sleep_cb(cb: ?*const anyopaque, arg: ?*anyopaque, a2: u32, a3: u32, a4: u32) c_int;
 var sleep_cb_n: u32 = 0;
 fn btSleepCb(a0: u32) callconv(.c) void {
+    // **桩 sleep 回调**（btdm_sleep.c 的真实实现会做 RTC timer 武装等）。
+    // 回调纪律：未知上下文（可能 trap/ISR）被 jalr ⇒ 纯 RAM 计数自增，
+    // 不打日志/不写外设/不碰 flash（本仓反复实证的 trap 上下文不安全类）。
     _ = a0;
-    // **桩 sleep 回调**（btdm_sleep.c 的真实实现会做 RTC timer 武装等）：
-    // 裸机先计数 + 把参数记进 mark，观察调度器是否推进/还需要什么。
     sleep_cb_n +%= 1;
-    // **LP 槽直记**：回调参数留痕（无 flash、无 UART 丢行风险）
-    const probe = @import("probe.zig");
-    const lp: *volatile u32 = @ptrFromInt(0x2E00_0004 + 4 * ((probe.lp_boot_n -| 1) % 10));
-    lp.* = 0xADC0B110 +% sleep_cb_n;
 }
 extern fn esp_ble_register_bb_funcs() c_int;
 extern fn r_base_stack_initEnv() c_int;
