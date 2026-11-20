@@ -74,6 +74,25 @@ pub fn populate() c_int {
 /// 调 **IDF 真实实现** 的 PHY 使能链（由 `-Dphy-src-objs` 链入）。
 pub fn initPhy() void {
     if (!on_target) return;
+    // **5F7E 入口标记**：initPhy 已进入（get_romfuncs 之前）
+    {
+        const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+        const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+        var rec: [4]u32 = .{ 0xADC0_5F7E, 0x2010_9C08, 0x2010_F01C, 0x2010_9400 };
+        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_9C08)).*;
+        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F01C)).*;
+        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_9400)).*;
+        _ = ese(0x18E000 / 0x1000);
+        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
+        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
+        // 不门控则与 ms 级 flash 擦写必然相撞。
+        const clic25: usize = 0x1080_1000 + 25 * 4;
+        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+
+        _ = esw(0x18E000, &rec, 16);
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
+    }
     const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
     get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
     // **锁绕行**（2026-11-20 单变量）：esp_phy_enable 入口 _lock_acquire（FreeRTOS
@@ -94,7 +113,15 @@ pub fn initPhy() void {
         rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*; // clk_conf1（FE 位自证）
         rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
         _ = ese(0x18E000 / 0x1000);
+        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
+        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
+        // 不门控则与 ms 级 flash 擦写必然相撞。
+        const clic25: usize = 0x1080_1000 + 25 * 4;
+        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+
         _ = esw(0x18E000, &rec, 16);
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
     // **UART 无关 flash 标记**（pre-enable 窗口安全）：哪个 mce/load_cal 没回来，
     // 0x18E000 的标记就停在哪个编号（80=mce9 后 81=mce13 后 82=load_cal 后）。
@@ -105,7 +132,15 @@ pub fn initPhy() void {
         rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
         rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
         _ = ese(0x18E000 / 0x1000);
+        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
+        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
+        // 不门控则与 ms 级 flash 擦写必然相撞。
+        const clic25: usize = 0x1080_1000 + 25 * 4;
+        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+
         _ = esw(0x18E000, &rec, 16);
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
     mce(13);
     {

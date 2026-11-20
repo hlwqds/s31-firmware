@@ -461,6 +461,10 @@ pub fn run() noreturn {
         board.hw.routeT0Interrupt(25);
         board.hw.armT0Interrupt(2000);
         board.hw.enableInterrupts();
+        // ⚠ **ISR 的 0x187000 dump 必须在此关掉**：dump 在采样满 72 次（~144ms）
+        // 时擦写 flash——与本轮 step 5 的 flash 标记写同窗相撞（ROM spiflash
+        // 不可重入 ⇒ 双方挂死）。历史上所有"静默挂死"都可能是这个竞争。
+        board.trap.pc_dump_at = 0xFFFF_FFFF;
         // **把 T0 的 CLIC 输入变成 NMI 源**：NMI 不受 `mstatus.MIE` 屏蔽，
         // 所以即使归档进了临界区（关中断）也照样能打断它、拿到 PC。
         // `CLIC_INT_CTRL_REG(i) = 0x10801000 + i*4`；bit3 = nmies、bits[7:4] = nmithres。
@@ -869,14 +873,14 @@ pub fn run() noreturn {
     asm volatile ("csrw 0x7a0, zero");
     asm volatile ("li t0, 0x40000580");
     asm volatile ("csrw 0x7a2, t0");
-    asm volatile ("li t0, 0x58");
+    asm volatile ("li t0, 0x4C"); // EXEC(bit2)|U(bit3)|M(bit6)——0x58 缺 EXEC 位
     asm volatile ("csrw 0x7a1, t0");
     // trig1: register_chipv7_phy @0x40063e32（load_cal 的深层调用）
     asm volatile ("li t0, 1");
     asm volatile ("csrw 0x7a0, t0");
     asm volatile ("li t0, 0x40063e32");
     asm volatile ("csrw 0x7a2, t0");
-    asm volatile ("li t0, 0x58");
+    asm volatile ("li t0, 0x4C"); // EXEC(bit2)|U(bit3)|M(bit6)——0x58 缺 EXEC 位
     asm volatile ("csrw 0x7a1, t0");
     asm volatile ("csrw 0x7a0, zero"); // 回 trig0
     // tdata1 读回自证（写 0x58 后应读回含 0x58 的值；全 FF/0 ⇒ 触发器不存在）
@@ -955,7 +959,7 @@ pub fn run() noreturn {
     // LP 槽（LP 书签全废），PC 环是唯一深度仪器。
     board.trap.resetPcs();
     board.trap.sample_quiet = true;
-    board.trap.pc_dump_at = 72;
+    board.trap.pc_dump_at = 0xFFFF_FFFF; // ISR 落盘永久关（撞车根因，2026-11-20）
     if (!probe_irqs) {
         probe_irqs = true;
         board.hw.routeT0Interrupt(25);

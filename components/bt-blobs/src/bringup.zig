@@ -221,6 +221,25 @@ pub fn init(cfg: *config.Config) c_int {
     @import("osal_kit").osal.on_event_init = &@import("probe.zig").bt_hook_event_init;
     @import("osal_kit").osal.on_eventq_init = &@import("probe.zig").bt_hook_eventq_init;
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
+    // **5F70 step5 入口标记**（UART 无关）：区分"没进 step 5"vs"step 5 内挂"
+    {
+        const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+        const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+        var rec: [4]u32 = .{ 0xADC0_5F70, 0x20109C14, 0x2010F018, 0x20587040 };
+        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*;
+        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F018)).*;
+        rec[3] = @as(*volatile u32, @ptrFromInt(0x2058_7040)).*;
+        _ = ese(0x18E000 / 0x1000);
+        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
+        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
+        // 不门控则与 ms 级 flash 擦写必然相撞。
+        const clic25: usize = 0x1080_1000 + 25 * 4;
+        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+
+        _ = esw(0x18E000, &rec, 16);
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
+    }
     enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);
     // **正确顺序**（对齐 IDF）：BT/LP 模块时钟已使能之后，再做 PHY 使能/校准。

@@ -233,6 +233,23 @@ pub fn phyDomainEnable() void {
     // 2b 的两条整字写已**移到 boot 期**（`bringup.zig` 的 `init()` 开头）：
     // 放在这里（step 51）会覆盖 step 5 的 RMW 结果。
     // 3) SYSCON_FORCE_ON：WIFI_APB_FO(2) | FE_FO(3) | FE_APB_FO(4)
+    // **5F7D 入口标记**（UART 无关）：phyDomainEnable 已进入
+    {
+        const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+        const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+        var rec: [4]u32 = .{ 0xADC0_5F7D, 0x2010_9C08, 0x2010_9C14, 0x2010_F018 };
+        rec[1] = rd(0x2010_9C08);
+        _ = ese(0x18E000 / 0x1000);
+        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
+        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
+        // 不门控则与 ms 级 flash 擦写必然相撞。
+        const clic25: usize = 0x1080_1000 + 25 * 4;
+        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+
+        _ = esw(0x18E000, &rec, 16);
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
+    }
     const fo: usize = 0x2010_9C08;
     // **补 bit6 `clk_btmac_fo` 与 bit7 `clk_bt_apb_fo`**（IDF `clk_conf_force_on` 位序）：
     // `0x2010B000` 是私有 BLE/MAC 块，缺这两个 force-on ⇒ 无时钟 ⇒ 不应答。
@@ -307,6 +324,22 @@ pub fn phyDomainEnable() void {
         osal.logPublic("bt phy: widgets clk on, W+0x480 write/readback 0x12345678=0x{x:0>8} ok={}", .{ rb, rb == 0x1234_5678 });
     }
     osal.logPublic("bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets)", .{});
+    // **5F7C 出口标记**：phyDomainEnable 全序列完成（widgets 自证也已过）
+    {
+        const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+        const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+        var rec: [4]u32 = .{ 0xADC0_5F7C, rd(0x2010_9C00), rd(0x2010_F000), rd(0x2010_F83C) };
+        _ = ese(0x18E000 / 0x1000);
+        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
+        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
+        // 不门控则与 ms 级 flash 擦写必然相撞。
+        const clic25: usize = 0x1080_1000 + 25 * 4;
+        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+
+        _ = esw(0x18E000, &rec, 16);
+        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
+    }
 }
 
 /// 强制重开时钟门控（复位脉冲之后用：复位可能清掉时钟配置）。

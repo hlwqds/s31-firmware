@@ -26824,3 +26824,21 @@ step 51（phyDomainEnable）末尾到 initPhy 起始之间。UART 日志截断�
 ② 若挂点在 get_romfuncs：读 g_phyFuns 表内容与 ROM 函数指针有效性
 （phy_get_romfunc_addr 是 libphy 入口，其依赖的前置可能与 esp_phy_enable 同源）；
 ③ 上述全部走 flash 标记 + host 读盘协议（读者协议仅作辅助）。
+
+### CLIC 门控修复后（2026-11-20 真终）：mce 双返、模拟落地、卡在 FULL 校准内部
+
+per-step 标记 + CLIC[25] 门控（防 flash 写期 XIP trap 挂死）修复后：
+
+- 5F70/5F7D/5F7C/5F7E/5F7F/mce9/mce13 **全部按序落地** ⇒ mce 锁理论推翻，
+  早期"静默"全部 = ISR dump 竞争（pc_dump_at 已永久关）。
+- FEE6/FEE7：RF_PWC ffff0000 ✓、F83C bit28 0x12411290 ✓（模拟准备落地）。
+- **5F82（load_cal 返回）100s 未落** ⇒ `esp_phy_load_cal_and_init` 挂在
+  register_chipv7_phy FULL 校准内部——FE 时钟已开（mce9/13 的 deps），
+  模拟电源已置，卡在**校准环本身**。
+
+**与官方的唯一剩余差异**：官方 register_chipv7_phy 的 init_data 来自
+`esp_phy_get_init_data()`（芯片 RF 参数表，编译期常量表/分区数据），
+我们走 NULL/FULL-from-scratch。下一会话：把官方 init_data 表（idf-bt-ctl
+的 `.rodata` 里 esp_phy_init_data 段，dump 后以指针传入
+register_chipv7_phy(init_data, cal_data, mode)）替代 NULL——这是最后一个
+未对齐的输入。EXEC 断点（load_cal/chipv7 入口）与 per-step 标记在位可验。
