@@ -27797,3 +27797,13 @@ sw + 多处读），找 obj+24/28 的填充点，接 rtc_freq=32000；②或 ini
 零除法 nowMs 的组合下，**流程首次以完整 sleep 链走到 0x2008**（rst:0x1a
 ×4 = 早期 arm 窗已知风暴；banner 2 = boot 循环后稳定）。配置树保持
 sleep_en=1 探针态；全套仪器活。
+
+**step 17 rc=-3 间歇性（2026-11-21 末，rtc_freq 补丁轮）**：同配置
+（sleep_en=1+注册门控+补丁重启用）下——上轮走到 0x2006/0x2008（step 17
+过），本轮 **step 17 r_base_stack_enable rc=-3 ⇒ FAILED ⇒ HALT**（补丁行
+未达 ⇒ 补丁非因；HALT 后 NMI 钉 halt 打印路径 192 样本）。⇒ **间歇性 =
+脏 RAM 残留的 boot 依赖形态**（每 boot 残留不同 ⇒ step 结果不同）⇒ 三槽
+清零不够，**需全量 blob BSS 清零**：0x2f011xxx 的 r_sym_bt_*/r_sym_ble_*
+'b' 型符号可枚举（nm）⇒ 逐个清零（**避开我们自己的符号**：s31_bt_log_mute
+@0x2f011050、probe.cfg @0x2f01f448 等在删区边缘，需精确清单）⇒ 全 boot
+一致 ⇒ 间歇性消失 ⇒ 下轮专项。
