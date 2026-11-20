@@ -998,6 +998,9 @@ pub fn run() noreturn {
     // **ROM 表 ext35/37 的真 fn 候选**（blob 的 BT MAC/BB ISR——顺藤摸 schedule
     // arm 写）：0x2f815258（偶对齐）/0x2f07f19c（wrapper 域）各 0x80。
     dumpRom("isr35", 0x2f815258, 0x80);
+    // **任务入口 fn=0x2f000000 之谜**：blob 基址处是什么？可执行代码还是空 RAM？
+    dumpRom("base0", 0x2f000000, 0x40);
+    dumpRom("base800", 0x2f000800, 0x20); // 对照：trapEntry 在位（我们自己的代码）
     dumpRom("isr37h", 0x2f07f188, 0x60); // 表头完整字：定位 blob handler 条目的外部号
     // **ROM BT init 区 dump**：找写 0x2f07f1F4（ctx 指针槽）的初始化函数——
     // 离线 grep `lui 0x2f07f` + `sw 500(` 定位 ctx 建立调用。
