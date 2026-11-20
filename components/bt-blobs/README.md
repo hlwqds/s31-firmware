@@ -26847,3 +26847,23 @@ register_chipv7_phy(init_data, cal_data, mode)）替代 NULL——这是最后�
 `mce13 后` 正点复现 ⇒ "load_cal 挂在 register_chipv7_phy FULL 校准内部"
 在可信仪器下**成立**（此前判读非竞争伪影）。下一会话按上节注入官方
 init_data 表即可。
+
+### 结构级定案（2026-11-20 PC 环混采）：协作式互等死锁
+
+0x187000 PC 环（48 样本跨时间混采）解析：
+- `2f80e4de/cc/d0` ×13 = controller task 的 FE 后台循环（任务活着且在跑）
+- `4006d246` ×3 = **bringup.init +0x206c**（主上下文，enable 步区域）
+- `40063cf4` ×1 = **register_chipv7_phy_init_param +0x58**（chipv7 的 init_param
+  表拷贝环——有界循环，非挂点）
+- `40066970` ×1 = compiler_rt 邻域
+
+⇒ **无单一挂点**——这是**协作式互等死锁**：main 在 step 20 内
+（mutex_pend 已返回 0）之后的 ready-flag 等待；task 已进后台 FE 循环、
+等 main 的事件泵。两个上下文互等 = BT 全链停摆的机制本体。
+
+**修复方向（下一会话，posix-compat 层有现成模式）**：
+osi 阻塞原语（mutex_pend/sem/event，tmo=无限）在**任务上下文**阻塞时
+`swapContext(task→main)` 让回主上下文；主上下文泵（resumeTask）任务推进；
+事件到达再切回。参照 posix-compat socket 层的 waitq 模式
+（"RX 泵必须在主上下文、等待者必须是任务"方向约定）。
+判据：step 20 返回 → `bt bringup: ENABLED` → HCI 三命令 btdm_tx 1→2→3。

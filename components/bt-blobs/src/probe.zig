@@ -959,7 +959,7 @@ pub fn run() noreturn {
     // LP 槽（LP 书签全废），PC 环是唯一深度仪器。
     board.trap.resetPcs();
     board.trap.sample_quiet = true;
-    board.trap.pc_dump_at = 0xFFFF_FFFF; // ISR 落盘永久关（撞车根因，2026-11-20）
+    board.trap.pc_dump_at = 72; // 恢复 0x187000 dump：load_cal 挂点 PC 直接点名（本轮唯一判据）
     if (!probe_irqs) {
         probe_irqs = true;
         board.hw.routeT0Interrupt(25);
