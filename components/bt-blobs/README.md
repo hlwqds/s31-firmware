@@ -27883,3 +27883,11 @@ BIT31 清挂起；③中断路由（INTERRUPT_CORE0_MAP 或我们直接轮询 IN
 （7 字段扩展后 bufPrint 异常待查——下轮修）。
 **下轮**：①dump 整个 96B 对象（obj+0..95 经 NMI 或 LP 槽）对照官方对象的
 非零字段清单 ⇒ 找出其余零字段；②修 NMI3 行 bufPrint（或拆两行）。
+
+**早补丁+读回轮（2026-11-21 末，874096）**：写 obj+24=32000/obj+28=0 **成功**
+（rb 行打印 + public addr 行正常续流 = 写/读回无异常）；**step 17 rc=-3 仍
+发生** ⇒ **rtc_freq 修复不充分**——sleep 配置对象（96B memset 后）另有零
+字段或其它缺配置。96B dump 行（bt o00-03）**全被 FIFO 丢**（rb 与 public
+addr 之间无 bt o 行——4 行 ×40 字符在 FIFO 满段）⇒ 换通道：NMI 行带出
+（每 NMI 打 4 字）或 LP 槽（分轮读）或 NMI5 栈窗位（对象在堆，地址已知
+可经 NMI 逐字带出）。
