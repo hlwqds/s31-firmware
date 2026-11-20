@@ -577,10 +577,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 }
             }
             if (hist_ticks % 100_000 == 0 and (hist_ticks / 100_000) <= 8) {
-                var hb: [180]u8 = undefined;
-                const hl = std.fmt.bufPrint(&hb, "HIST[{d}] ticks={d} fe={d} blob={d}(last 0x{x:0>8}) main={d}(last 0x{x:0>8}) other={d}", .{
+                var hb: [220]u8 = undefined;
+                const hl = std.fmt.bufPrint(&hb, "HIST[{d}] ticks={d} fe={d} blob={d}(last 0x{x:0>8}) main={d}(last 0x{x:0>8}) other={d} tim={d}/{d} fn=0x{x:0>8}", .{
                     hist_ticks / 100_000, hist_ticks,        hist_fe,    hist_blob, hist_last_blob_pc,
-                    hist_main,            hist_last_main_pc, hist_other,
+                    hist_main,            hist_last_main_pc, hist_other, dbg_tim_armed, dbg_tim_fires, dbg_tim_fn,
                 }) catch "HIST (fmt fail)";
                 hw.rawLineBlocking(hl);
             }
@@ -1004,6 +1004,9 @@ var bp_hit_count: u32 = 0;
 var bp_last_tsel: u32 = 0xFFFF_FFFF;
 var fe3_params_done: bool = false;
 var hist_ticks: u32 = 0;
+extern var dbg_tim_armed: u32;
+extern var dbg_tim_fires: u32;
+extern var dbg_tim_fn: usize;
 var hist_fe: u32 = 0;
 var hist_blob: u32 = 0;
 var hist_main: u32 = 0;

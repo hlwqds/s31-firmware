@@ -966,6 +966,11 @@ const TimerEntry = struct {
 };
 var timers: [16]TimerEntry = @splat(TimerEntry{});
 var timer_fires: u32 = 0;
+/// **ISR 可读诊断**（trap.zig HIST 行经 extern 读）——主循环卡死在 timer fn
+/// 自旋时，NMI/T0 ISR 也能看到 armed/fires/最后 fire 的 fn 指针。
+export var dbg_tim_armed: u32 = 0;
+export var dbg_tim_fires: u32 = 0;
+export var dbg_tim_fn: usize = 0;
 /// 诊断：`Queue.send` 成功次数（只走计数器；`note(17)` 已被 `timer_setfn` 占用，不要复用）。
 var send_probe: u32 = 0;
 /// 诊断：`Queue.send` 成功次数 / `Queue.recv` 成功次数 / 最近一次 recv 时的 count。
@@ -1039,6 +1044,7 @@ fn armTimerCommon(ptimer: ?*anyopaque, us: u64, repeat: bool) usize {
     t.deadline_us = now + us;
     t.period_us = if (repeat) us else 0;
     t.armed = true;
+    dbg_tim_armed +%= 1;
     return 0;
 }
 
@@ -1073,6 +1079,8 @@ pub fn serviceTimers() void {
             t.armed = false;
         }
         timer_fires +%= 1;
+        dbg_tim_fires = timer_fires;
+        dbg_tim_fn = @intFromPtr(t.fn_.?);
         note(16, @intFromPtr(t.ptimer), timer_fires);
         t.fn_.?(t.arg);
     }
