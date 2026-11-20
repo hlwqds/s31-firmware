@@ -279,6 +279,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         bp_hit_mepc = auth_pc;
         bp_hit_cause = cause & 0x3F;
         bp_hit_count +%= 1;
+        // **udiv 入口监视命中**：记录入口瞬间 ra（=调用者返回地址，完好）与
+        // a2/a3（=除数参数，完好）——一次命中同时回答"调用者是谁"与"真除数"。
+        if (udiv_watch_on and auth_pc == udiv_addr) {
+            udiv_hit_ra = frame.ra;
+            udiv_hit_a0 = frame.a0;
+            udiv_hit_a1 = frame.a1;
+            udiv_hit_a2 = frame.a2;
+            udiv_hit_a3 = frame.a3;
+            udiv_hit_n +%= 1;
+        }
         {
             var pb: [120]u8 = undefined;
             const pl = std.fmt.bufPrint(&pb, "BP! n={d} mepc=0x{x:0>8} cause={d} t2=0x{x:0>8}", .{
@@ -298,8 +308,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 重触发同一指令。按指令长度推进：读 mepc 处 16 位半字，(hw & 3) != 3
         // ⇒ RVC 2 字节；否则 4 字节。⚠ 必须在 cause==3 分支内——放在外层会
         // 让每次普通中断返回都跳 4 字节，破坏全部控制流与 PC 采样。
-        const inst_hw: u16 = @as(*volatile u16, @ptrFromInt(auth_pc)).*;
-        if ((inst_hw & 3) != 3) frame.mepc +%= 2 else frame.mepc +%= 4;
+        // udiv 入口命中：**不推进**——断点在指令执行前触发，触发器已禁用 ⇒
+        // 原地恢复即正常执行除法序言（跳过会毁栈帧）。其余 EXEC 断点维持推进。
+        if (!(udiv_watch_on and auth_pc == udiv_addr)) {
+            const inst_hw: u16 = @as(*volatile u16, @ptrFromInt(auth_pc)).*;
+            if ((inst_hw & 3) != 3) frame.mepc +%= 2 else frame.mepc +%= 4;
+        }
     }
     if ((cause & 0x8000_0000) != 0) {
         // 数组只存前 `irq_samples.len` 个（判读用）；**打印独立限长**——之前把打印放在
@@ -1105,7 +1119,17 @@ var fe3_hits: u32 = 0;
 var bp_hit_mepc: u32 = 0;
 var bp_hit_cause: u32 = 0;
 var bp_hit_count: u32 = 0;
-var bp_last_tsel: u32 = 0xFFFF_FFFF;
+var bp_last_tsel: u32 = 0;
+
+// **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：
+pub var udiv_watch_on: bool = false;
+pub var udiv_addr: u32 = 0;
+pub var udiv_hit_n: u32 = 0;
+pub var udiv_hit_ra: u32 = 0;
+pub var udiv_hit_a0: u32 = 0;
+pub var udiv_hit_a1: u32 = 0;
+pub var udiv_hit_a2: u32 = 0;
+pub var udiv_hit_a3: u32 = 0;
 var fe3_params_done: bool = false;
 var hist_ticks: u32 = 0;
 extern var dbg_tim_armed: u32;

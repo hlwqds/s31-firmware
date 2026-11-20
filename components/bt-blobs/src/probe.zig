@@ -1082,6 +1082,24 @@ pub fn run() noreturn {
     @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
+    // **udiv 入口 EXEC 断点武装**（调用者/除数判别）：运行期解析符号地址
+    // （免构建移位）；one-shot——trap 命中后禁用触发器、记录 ra/a2/a3。
+    {
+        const f: *const fn () callconv(.c) void = @extern(*const fn () callconv(.c) void, .{ .name = "__udivmoddi4" });
+        const addr: u32 = @intFromPtr(f);
+        board.trap.udiv_addr = addr;
+        board.trap.udiv_watch_on = true;
+        asm volatile ("csrw 0x7a0, zero"); // tselect=0
+        asm volatile ("csrw 0x7a2, %[a]"
+            :
+            : [a] "r" (addr),
+        ); // tdata2=入口
+        asm volatile ("li t4, 0x4c"); // EXEC|U|M（skill 实测布局）
+        asm volatile ("csrw 0x7a1, t4");
+        asm volatile ("li t4, 0x88"); // MTE 使能
+        asm volatile ("csrw 0x7a5, t4");
+        osal.logPublic("bt probe: udiv watch armed @0x{x:0>8}", .{addr});
+    }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；

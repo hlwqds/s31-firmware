@@ -27693,3 +27693,13 @@ compiler_rt 区的返回地址 = 真实调用者 ⇒ addr2line 即定分支。
 **mcontrol6 断点在 `__udivmoddi4` 入口（0x400ab8e0）**（esp32s31-mcontrol6-
 breakpoint-probe 配方）——首次命中即抓真实调用者 ra（ Entry 处 ra 完好）
 ⇒ 一次命中即定分支（blob 调度器时间换算 vs std.fmt u64 日志）。
+
+**udiv 断点命中全链点名（2026-11-21，mcontrol6 EXEC@__udivmoddi4 一次命中）**：
+BP! @step52 init_phy（esp_phy_enable(2) 判别支线内）⇒ 调用链（栈窗 RA 链 +
+addr2line 全部有名字）：**phy_xtal_duty_cal** ← phy_xtal_duty_cal_init ←
+phy_rf_init ← register_chipv7_phy ← espPhyEnable ← initPhy ← bringup.init
+⇒ **除法热点 = 晶振占空比校准的 u64 数学**（非调度器时间换算、非日志）——
+即 esp_phy_enable 内部的 RF 校准段在磨除法。两种可能待长窗判定：慢而有限
+（校准数学分钟级）/ 轮询永不满足（§29.19 的墙，此时除法只是校准循环的
+伴随计算）。长窗观察：若 NMI 长期钉在 phy_xtal_duty_cal ⇒ 校准轮询墙；
+若 mepc 前进/离开 ⇒ 校准完成继续走。
