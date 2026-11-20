@@ -26333,7 +26333,12 @@ est_PHY→libphy.a 单成员提取；libcoexist.a→加链）。
 sram 493KB 足够 ⇒ **RAM 不是约束**。flash：archive-pull 按需 ≈ 待最终链接定
 （分区余量 651KB，border-line）。
 
-## ⛔ 闭包级联终判（2026-11-20 尾六）：esp-idf 全系统栈依赖 —— 裸机路线到顶
+## ⛔ ~~闭包级联终判（2026-11-20 尾六）：esp-idf 全系统栈依赖 —— 裸机路线到顶~~
+
+> **已被同夜「破墙终局」推翻**：真凶是 `esp_deep_sleep_register_phy_hook` 桩签名错误
+> （不是"缺全系统栈"）；修复一行后裸机路线直通 HCI Command Complete SUCCESS。
+> 本节保留作判读修正史。原文：
+
 
 esp_phy_enable 提前 + osi 栈前置后，闭包级联到 **288 个未定义符号**：
 __assert_func/_lock_*_recursive/esp_sha_*/esp_ecc_*/esp_event_post/

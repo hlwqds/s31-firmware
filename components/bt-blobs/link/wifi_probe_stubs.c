@@ -29,7 +29,22 @@ void esprv_int_enable(int x) { (void)x; }
 void esprv_int_set_priority(int a, int b) { (void)a;(void)b; }
 void esprv_int_set_threshold(int a) { (void)a; }
 int esprv_int_set_type(int a, int b) { (void)a;(void)b; return 0; }
-void _esp_error_check_failed(int rc, const char *file, int line, const char *func, const char *expr) { (void)rc;(void)file;(void)line;(void)func;(void)expr; }
+void _esp_error_check_failed(int rc, const char *file, int line, const char *func, const char *expr) {
+    // ⚠ 本桩曾被写成"直接返回"——ESP_ERROR_CHECK 失败后执行从失败块的 jal
+    // 落到链接器排在其后的下一个函数入口（本轮恰好是 esp_phy_enable），
+    // 制造出整场五轮判读都在解的幽灵自循环。现镜像 abort 桩：记录 rc+ra、
+    // 落盘、原地自旋——失败必须可见，不得静默跌落。
+    volatile extern unsigned g_esperr_rc;
+    volatile extern unsigned g_esperr_ra;
+    extern unsigned g_flag_a;
+    g_esperr_rc = (unsigned)rc;
+    __asm__ volatile ("mv %0, ra" : "=r"(g_esperr_ra));
+    g_flag_a = 2;
+    { extern void probe_dump_now(void); probe_dump_now(); }
+    for (;;) {}
+}
+volatile unsigned g_esperr_rc = 0;
+volatile unsigned g_esperr_ra = 0;
 // ⚠ IDF 原型 = esp_err_t esp_deep_sleep_register_phy_hook(handler)——**1 参、返回
 // esp_err_t**。曾写成 (fn,arg) 返回 void ⇒ a0 残留垃圾 ⇒ phy_init.c:985/989 的
 // ESP_ERROR_CHECK 判失败 ⇒ 失败块 jal 的返回地址恰好落在 esp_phy_enable 入口

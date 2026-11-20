@@ -562,7 +562,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const pc = frame.mepc;
                 if (pc >= 0x2f82_8a00 and pc < 0x2f82_8b00) {
                     hist_fe +%= 1;
-                } else if (pc >= 0x2f80_0000 and pc < 0x2f830_0000) {
+                // ⚠ 旧上界写成 0x2f830_0000（=0x2F8300000，超出 u32，比较恒真）⇒
+                // blob 桶吞掉一切 ≥0x2f800000（含全部 0x4000xxxx）⇒ "main=0" 是
+                // 结构性伪影。现改为物理区间：0x2f000000-0x2f900000 = BT 核 blob
+                // （0x2f8xxxxx，FE 环所在）+ wrapper 闭包 blob（0x2f00xxxx）。
+                } else if (pc >= 0x2f00_0000 and pc < 0x2f90_0000) {
                     hist_blob +%= 1;
                     hist_last_blob_pc = pc;
                 } else if (pc >= 0x4000_0000 and pc < 0x400b_0000) {
