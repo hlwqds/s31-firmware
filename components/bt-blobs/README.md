@@ -27063,7 +27063,11 @@ ana burst 调用（rf_onoff(1)+bbpll_config）已装进 initPhy（espPhyEnable �
 其后全部盲区：FEFE 的 LP 读值 = 下载刮花（每轮不同），无法判断 load_cal
 是否完成/挂死/走到 ENABLED。
 
-**下一会话唯一可判别仪器：UART1/LP-UART（0x20810000，跨 mce(13) 时钟域）**。
+**下一会话首动作（零成本，~30s）：读 0x18E000**（burst 后快照已写入：CONF0=0x2900e444
+事务相位启动 ✓ + I2C0_CTRL=0x002f0669 ✓，esptool read-flash 直读，不依赖 UART）——
+确认 burst 效果持续后，再进入长跑观测（看 98BC 是否从 0 变非 0 / 流程推进到 ENABLED）。
+
+**长跑观测仪器：UART1/LP-UART（0x20810000，跨 mce(13) 时钟域）**。
 寄存器研究已就绪：DATA +0x00、STATUS +0x1C（RXFIFO_CNT bits[7:3]）、
 CLKDIV_SYNC +0x14、CLK_CONF +0x88（TX_SCLK_EN bit24 default 1）、
 CONF0_SYNC +0x20；LP_UART_TXD_PAD_OUT_IDX=2（LP_IOMUX MCU_SEL bits[14:12]）。
