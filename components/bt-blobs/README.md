@@ -27868,3 +27868,10 @@ target0=唤醒时刻 + TAR_EN0 触发 + INT_ENA bit31 使能 ⇒ 到点 INT_RAW 
 BIT31 清挂起；③中断路由（INTERRUPT_CORE0_MAP 或我们直接轮询 INT_RAW）；
 ④target0=counter+睡眠时长，+0x08 写 TAR_EN0 触发。轮询 INT_RAW 亦可作
 无中断判别。
+
+**早补丁轮（2026-11-21 末，873264）**：rtc_freq 补丁前移至 step10 后（对象
+刚建成、注册未发生）——结果混合：rst 风暴减轻（×1）、step17 rc=-3 间歇
+仍现（FAILED ×1）、**补丁行未打印**（疑 FIFO 丢行或 obj+24 写异常）⇒
+**归因待下轮**（改极短行打印或 NMI 带出 patch 状态）。工具改进已入库：
+断点 hit 后清全部 4 触发器 + 摘 watch（非致命化）+ 武装点移至磨 CPU 相位
+（init_phy 除法不再抢命中）。

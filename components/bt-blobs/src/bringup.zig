@@ -423,6 +423,15 @@ pub fn init(cfg: *config.Config) c_int {
     {
         const slotv: *volatile u32 = @ptrFromInt(0x2f01_1034);
         osal.logPublic("bt probe: sched slot after step10 = 0x{x:0>8}", .{slotv.*});
+        // **rtc_freq 补丁（除零修复，前移版）**：sleep 配置对象的 obj[24/28]
+        // rtc_freq u64 = 0 ⇒ 注册期间 tEePDas 的 (us×1e6)/0 除零 ⇒ rst 风暴
+        // （BP! 入口 a2/a3=0 实测）。此刻对象刚建成（controller_init 内
+        // malloc）⇒ 写 32000（RTC 32k，同 cfg.ble.rtc_freq）/0 即修复。
+        if (slotv.* >= 0x2f00_0000 and slotv.* < 0x2f10_0000) {
+            @as(*volatile u32, @ptrFromInt(slotv.* + 24)).* = 32000;
+            @as(*volatile u32, @ptrFromInt(slotv.* + 28)).* = 0;
+            osal.logPublic("bt probe: rtc_freq patch early obj=0x{x:0>8} +24=32000", .{slotv.*});
+        }
     }
     if (rc != 0) return rc;
     stats_state.ext_funcs_registered += 1;

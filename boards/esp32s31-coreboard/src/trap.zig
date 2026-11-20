@@ -631,13 +631,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         // cfg.ble 字节 10-11（sleep 对象描述符源；defaults 应为 05 01）
                         const cfg10: *volatile u16 = @ptrFromInt(0x2f01_f448 + 10); // cfg.ble 在 cfg+0（@offsetOf==112 的是 bredr）
                         const c10 = cfg10.*;
-                        // LP/HP 时钟门活值（持久态假说判据：跨 rst:0x1a 累积则逐 boot 变化）
-                        const clk_conf: *volatile u32 = @ptrFromInt(0x2010_9C04); // reg_clk_conf（porting 同址）
-                        const clk_conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-                        const lpcon_clk: *volatile u32 = @ptrFromInt(0x2010_F018);
-                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4} cc=0x{x:0>8} cc1=0x{x:0>8} lp=0x{x:0>8}", .{
-                            cbv, mu.*, evq.*, c10, clk_conf.*, clk_conf1.*, lpcon_clk.*,
-                        }) catch "";
+                        // ⚠ **MMIO 读扩展（cc/cc1/lp）已回退**：BT 窗内 NMI 上下文
+                        // 读 LP_CON/SYSCON 与 steps 11-19 停摆相关（2026-11-21 实测
+                        // 归因未定）；时钟门读数改主上下文 dump 路径（下轮）。
+                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4}", .{ cbv, mu.*, evq.*, c10 }) catch "";
                     } else {
                         l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}(oob)", .{cbv}) catch "";
                     }
