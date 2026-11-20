@@ -27406,10 +27406,12 @@ IE 前移试验（IE 块挪到首个 sendCmd 之前）不改变挂点 ⇒ 非中
 任务处理等 BB/MAC 硬件事件（调度链不推进 ⇒ 永不触发）⇒ 主上下文死等。
 稳定轮（73 diag、marker 22/5/23=6）任务未跑 ⇒ fire-and-forget 能返回——
 两个现象同根，不矛盾。
-**阶段状态**：boot 循环已根除（chainIsr 计数 no-op，多轮 1 banner/0 lockup）；
-流程稳定停驻在 0x2006 forward（同步等待 BB 链活）。唯一剩余 blocker 仍是
-BB/MAC 块调度链推进（peripheral INT_EN / BB timer 武装），与 ctx/契约问题
-（chainIsr 三条目代跑即崩，机制未定案）并列待查。
+**阶段状态**（2c3210f 时点，531fc3d 已推翻——保留原文并更正）：boot 循环
+已根除（chainIsr 计数 no-op，多轮 1 banner/0 lockup）。~~流程稳定停驻在
+0x2006 forward（同步等待 BB 链活）。唯一剩余 blocker 仍是 BB/MAC 块调度链
+推进~~ → 实际：shim pad 环自旋（已修复）+ 0x2008 分发内 blob 内部环（当前
+停驻点，出口条件未解码）；mute 常置 1 ⇒ blob 日志通道关闭（下轮撤 stage10
+处置位恢复）。chainIsr 三条目契约问题并列待查。
 
 **⚠ forward 挂点措辞修正（2026-11-21，NMI 采样推翻「同根」推断）**：2c3210f
 写的「任务等 BB 硬件 ⇒ 主上下文死等」**未成立**——uart_pin.log 采样 main=
