@@ -27205,6 +27205,20 @@ LP_CLK_PO_EN 与 counter 无关。
 - `esp_btbb_enable()` 已补进 enable 链头（官方序：phy_enable → btbb_enable →
   ble_stack_enable）——内部 `bt_bb_v2_init_cmplx` 首次经正式入口运行 ✓ 无挂。
 
+**ROM 表头解码完成（终极定案，0x2f07f188 起完整字）**：
+
+```
+words 70,71 = ext35: fn=0x2f815258, arg=0        （偶对齐真函数 ✓，isr35 dump 实证为真代码）
+words 74,75 = ext37: fn=0x2f07f19c（=表内链表头）, arg=0x2f81280e
+链表节点: handler 0x2f81280e(0x85) / 0x2f81289a(0x03) / 0x2f8127ec(0x84)
+```
+
+⇒ blob 的三条 BT 中断处理（全偶地址 ✓ 可调用）挂在 **ext37 的链表头
+0x2f07f19c** 下，ROM 分发器遍历调用。**路由正解 = src124/125 → CLIC input
+53**；或桥 v3 直接顺序代跑三 handler。前轮 input50（奇 fn 槽）与 input51
+（空体系）的失败由此全部解释。ext34 的 fn 槽值 0x2f81281e 为奇数（非函数，
+疑似 arg/数据）——"ext34=真 ISR" 判读作废。
+
 **ROM 表扫描 + MAP 读回（同夜最末）：**
 
 - ROM 表非零项：`ext34=0x2f81281e ext35=0x2f815258 ext37=0x2f07f19c`（BT 域）
