@@ -238,10 +238,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
     // 记录 mepc（= 哪个 CSR 未实现的答案）+ mepc += 4 跳过这条 csrw 继续 ⇒
     // 扫描能跑完全部 CSR，"鸡生蛋"被 trap 本身化解。
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 2) {
-        if (frame.mepc != 0) recordPc(frame.mepc);
-        // **推进帧里的 mepc 槽**（trap 入口恢复时从槽位 csrw mepc ⇒
-        // 直接 csrw mepc 会被覆盖 ⇒ 必须改槽位才能跳过该指令）
-        frame.mepc +%= 4;
+        // **mepc==0（NULL 调用）不跳过**：跳过会把 mepc 改成 4 并从地址 4
+        // 续跑 ⇒ 立刻二次 fault ⇒ double fault ⇒ lockup 风暴（sleep_en=1 轮
+        // 实证 rst:0x1a ×35）。mepc==0 时让它落到常规 fault/panic 路径，
+        // 换一次带 c_mepc/c_ra 的可读现场。
+        if (frame.mepc != 0) {
+            recordPc(frame.mepc);
+            // **推进帧里的 mepc 槽**（trap 入口恢复时从槽位 csrw mepc ⇒
+            // 直接 csrw mepc 会被覆盖 ⇒ 必须改槽位才能跳过该指令）
+            frame.mepc +%= 4;
+        }
     }
     if ((cause & 0x8000_0000) == 0 and (cause & 0x3F) == 3) {
         // **断点异常**（debug trigger 命中）：

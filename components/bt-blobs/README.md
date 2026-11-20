@@ -27592,3 +27592,14 @@ sp+72 结构 offset 10 写什么、数据源是什么硬件事件，就是 BB �
 - **下轮首查**：①obj[4]/obj[0..1] 的注册函数（32zs9 的对象来源 = 0x2f025140
   的 96B 子对象布局，从 32zs9 全函数反汇编推）；②官方链路在哪一步注册
   sleep 回调（对照 esp_bt_sleep_enable / btdm sleep init 调用序）。
+
+**⚠ 撤回：sp+72/-9-10-11 叙事系错位解码伪影（2026-11-21 终）**：0a5f2df 写的
+"描述符=栈 sp+72 结构、offset10 由 -9/-10/-11 步填写、源于 BB 链无产出"
+来自从指令中间（0x40061ac0）起的转储——`addi s1,sp,72` 是 `lhu a5,10(s1)`
+(0x40061abe) 的后半解码。正确对齐后：**s1 = &cfg.btdm 全程未被重载**，
+描述符 = BtdmCfg+10 的 u16 = {sleep_en=0, version_num=0}（defaults 与官方
+oracle 一致），arg[0]=0 ⇒ Zth2 early-out（返回 0）⇒ 槽 NULL、rc=0。-9/-10/-11
+步是普通顺序 init 步，未失败（失败会 rc=-N 在 step20 前中止，板上已到
+step20）。**仪器修复**：trap 的 cause=2 分支原对 mepc==0 仍无条件 `mepc%=4`
+⇒ NULL 调用被放大成 double fault 风暴（sleep_en=1 轮 rst:0x1a ×35）；已改
+为 mepc!=0 才跳过 ⇒ 下轮 NULL 调用 = 一次带 c_mepc/c_ra 的可读 panic。
