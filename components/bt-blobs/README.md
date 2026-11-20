@@ -26842,3 +26842,8 @@ per-step 标记 + CLIC[25] 门控（防 flash 写期 XIP trap 挂死）修复后
 的 `.rodata` 里 esp_phy_init_data 段，dump 后以指针传入
 register_chipv7_phy(init_data, cal_data, mode)）替代 NULL——这是最后一个
 未对齐的输入。EXEC 断点（load_cal/chipv7 入口）与 per-step 标记在位可验。
+
+**干净构建复现**（全修复版 bin 860800：CLIC 门控 + 括号 + pc_dump 永久关）：
+`mce13 后` 正点复现 ⇒ "load_cal 挂在 register_chipv7_phy FULL 校准内部"
+在可信仪器下**成立**（此前判读非竞争伪影）。下一会话按上节注入官方
+init_data 表即可。
