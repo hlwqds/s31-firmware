@@ -1106,9 +1106,23 @@ pub fn run() noreturn {
         halt();
     }
     osal.logPublic("bt probe: init ok {d}", .{0}); // 先打，不碰 arena
-    // **rtc_freq 补丁（已回退，2026-11-21）**：写 obj[24]=32000 后 step 17
-    // r_base_stack_enable rc=-3 ⇒ HALT（ sleep_en=1+注册 轮曾过 step17 ⇒
-    // 归因未定，回退保稳定态）。补丁代码保留备查，条件启用待下轮判别。
+    // **rtc_freq 补丁（重新启用，2026-11-21）**：sleep 配置对象（*/0x2f011044）
+    // 的 obj[24/28] rtc_freq u64 = 0 ⇒ 调度器时间换算 (us×1e6)/0 除零
+    // （mcontrol6 入口断点实测：入口 a2/a3=全零）。controller_init 已建对象
+    // ⇒ 此刻写 32000（RTC 32k，同 cfg.ble.rtc_freq）/0 即修复除零。
+    // （注：本补丁在 init 返回后执行，不可能影响 step 17 的 rc——此前
+    // "step17 rc=-3 归咎补丁"系误读，step17 失败另有原因。）
+    {
+        const slp: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        const obj = slp.*;
+        if (obj >= 0x2f00_0000 and obj < 0x2f10_0000) {
+            @as(*volatile u32, @ptrFromInt(obj + 24)).* = 32000;
+            @as(*volatile u32, @ptrFromInt(obj + 28)).* = 0;
+            osal.logPublic("bt probe: rtc_freq patch obj=0x{x:0>8} +24=32000", .{obj});
+        } else {
+            osal.logPublic("bt probe: rtc_freq patch skip (obj oob=0x{x:0>8})", .{obj});
+        }
+    }
     // **udiv 入口 EXEC 断点武装（相位正确版）**：此刻 init_phy 的
     // phy_xtal_duty_cal 除法已过（断点不撞它），LE 块分发等待的磨 CPU
     // 除法尚未开始 ⇒ 命中即磨 CPU 热点本体。one-shot：命中即全清触发器。
