@@ -27116,3 +27116,12 @@ esptool --before no_reset 无法重连（零串口数据）⇒ 需要手动拔�
 - per-step LP 标记（init 零 flash 写）
 - calib rc=0 回归实证（自写路径+tick+零 flash 碰撞）
 - 安全 trap 分支（UART 一行 + mepc 按指令长推进 + RAM 命中记录）
+
+### NMI hist PC 解密（2026-11-20 最终）
+
+addr2line 实证卡住的 mepc：0x400009e4 = `phy_track_pll`（phy_common.c:68）、
+0x40000b68 = `phy_set_modem_flag`（phy_common.c:149）。**不是挂死点**——
+是 esp_phy_enable 校准完成后的正常调用路径（esp_timer_get_time 已接
+hooks.now_us ✓、phy_set_modem_flag 纯内存写 ✓）。
+⇒ CPU 正常执行 esp_phy_enable 的 post-cal 序列；**真挂点在 enable 步 16-20**
+（task_enable / bb_v2_init / 协作调度互等）——与之前判读一致。
