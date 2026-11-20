@@ -99,6 +99,7 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        csrr    t4, mcause
         \\        la      t5, flash_fault_cause
         \\        sw      t4, 0(t5)
+        \\        lw      t3, 0(sp)
         \\        lw      t4, 4(sp)
         \\        lw      t5, 8(sp)
         \\        addi    sp, sp, 12
