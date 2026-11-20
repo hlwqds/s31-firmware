@@ -139,6 +139,18 @@ const rtc_wdt_flashboot: u32 = 1 << 12;
 
 pub const WdtAttempt = struct { before: u32, after: u32, tries: u32 };
 
+/// **flash 写窗口旗**（trap 入口裸机检查）：flash 擦写期间 cache 关闭，
+/// 任何 XIP 取指（含中断打进 trapDispatch/log）都会取指失败 → 嵌套异常 →
+/// CPU_LOCKUP 重启循环（rst:0x1a，23 轮实证）。旗子置位期间 trap 入口
+/// 只记录 mepc/cause 后 mret 重试（写窗口结束 ⇒ 重试成功 ⇒ 流程无感）。
+export var flash_op_window: u32 = 0;
+pub fn flashOpBegin() void {
+    flash_op_window = 1;
+}
+pub fn flashOpEnd() void {
+    flash_op_window = 0;
+}
+
 pub fn disableRtcWdt() WdtAttempt {
     const before = readReg(rtc_wdt_config0);
     const clear = rtc_wdt_en | rtc_wdt_stage_mask | rtc_wdt_flashboot;
