@@ -26771,9 +26771,9 @@ stub（照实记录）。
 ### mce(9) 也挂死（收官判读）：esp-idf C helper 的锁在裸机全面不可用
 
 锁绕行首样本轮：step 52 直调 `mce(9)` 仍静默挂死（无 lock-free 行、无 NMI、无 BP）。
-⇒ `modem_clock_module_enable` 内部同样走 critical/lock（modem_clk_lock），
-**所有 esp-idf 帮助函数（带锁的）在协作式裸机环境都不可调用**——
-mce(6)/mce(14) 早轮"能用"是当时上下文特殊（post-pmu 早期窗口），不可外推。
+- ⚠ **"带锁 helper 全面不可用"降级为待证**：fee8 残留只能说明挂在
+  get_romfuncs 或 mce(9)（前置标记 5F7F 本轮补上以分离）；mce(6)/mce(14)
+  早轮能用说明该函数本身可返回，"锁不可用"结论待 5F7F 定性后重判。
 
 **下一会话的正路（无 C helper 依赖）**：
 按 modem_clock_impl.c 表**手写寄存器序列**给 FE 测量供时钟——
@@ -26805,3 +26805,22 @@ ANALOG_CLOCK_ENABLE()=0x2010F83C.bit28 已知 / icg power st），逐 route 手�
 参照值 clk_conf=0x7e601002、clk_conf1=0x003fffff（官方实测）。写完跑
 load_cal（EXEC 断点在位）→ FE 测量应发车（450 振荡/47C 脉冲）→ bb init 过 →
 ENABLED → HCI 推进。
+
+### 5F7F 前置标记未落（2026-11-20 终局）：挂点窗口 = step 51 尾 / 52 初
+
+带 5F7F 前置标记的构建（859952）重跑：0x18E000 仍是 fee8 残留 ⇒ 5F7F 写未执行
+⇒ 挂点在 get_romfuncs（phy_get_romfunc_addr，libphy 函数）**之前**——即
+step 51（phyDomainEnable）末尾到 initPhy 起始之间。UART 日志截断在
+"widgets syscon/b0"（非任何已知完整行）⇒ UART 通道在该窗口的状态未知
+（死亡/交织/截断三说不清）。
+
+**诚实边界**：本会话到此处为止的每一层判读都已被更深的观测修正过一轮。
+下一会话必须先用**与 UART 无关且跨复位保留**的通道重建可信度
+（flash per-step 标记已是最可靠的一层——它本轮给出"5F7F 未落"的硬事实），
+再谈 esp_phy_enable/mce 的内部行为。
+
+**下一会话首动作**：① per-step 标记加密——step 51 enter/exit 各一记
+（phyDomainEnable 前后），分离"step 51 内挂"vs"get_romfuncs 挂"；
+② 若挂点在 get_romfuncs：读 g_phyFuns 表内容与 ROM 函数指针有效性
+（phy_get_romfunc_addr 是 libphy 入口，其依赖的前置可能与 esp_phy_enable 同源）；
+③ 上述全部走 flash 标记 + host 读盘协议（读者协议仅作辅助）。

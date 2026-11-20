@@ -86,6 +86,16 @@ pub fn initPhy() void {
     const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
     const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
     const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+    // **5F7F 前置标记**：get_romfuncs 之后、mce(9) 之前——分离"get_romfuncs 挂"
+    // 与"mce(9) 挂"（上一轮 0x18E000 残留 fee8，两者不可分）。
+    {
+        var rec: [4]u32 = .{ 0xADC0_5F7F, 0x20100450, 0x20109C14, 0x201098BC };
+        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
+        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*; // clk_conf1（FE 位自证）
+        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+        _ = ese(0x18E000 / 0x1000);
+        _ = esw(0x18E000, &rec, 16);
+    }
     // **UART 无关 flash 标记**（pre-enable 窗口安全）：哪个 mce/load_cal 没回来，
     // 0x18E000 的标记就停在哪个编号（80=mce9 后 81=mce13 后 82=load_cal 后）。
     _ = mce(9);
