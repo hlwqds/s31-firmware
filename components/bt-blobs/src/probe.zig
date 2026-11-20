@@ -1225,10 +1225,24 @@ pub fn run() noreturn {
     }
     var round: u32 = 0;
     var evt_at: ?u32 = null;
+    var diag_at: u32 = 0;
     while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();
+        // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
+        // 墙的位）；F818.CONF0 bit27 = ana 事务相位（官方在事务完成后清）。
+        // 泵窗内的活读数，不经 LP/flash，无下载刮花问题。
+        if (now -% diag_at > 1000) {
+            diag_at = now;
+            const r98 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const conf0 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
+            const ctrl = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            const fe_cnt = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
+            osal.logPublic("bt diag: 98BC=0x{x:0>8} rfready={d} conf0=0x{x:0>8} txphase={d} ctrl=0x{x:0>8} fe={d}", .{
+                r98, (r98 >> 2) & 1, conf0, (conf0 >> 27) & 1, ctrl, fe_cnt,
+            });
+        }
         if (evt_at == null and transport.stats().evt_count > 0) {
             evt_at = now;
             // ⚠ 旧版在此直接 halt ⇒ 广告只开了几毫秒，空中扫描器永远来不及看

@@ -27161,5 +27161,19 @@ load_cal done 史上首次打印 → enable 步 16-20 全通 → blob 任务 mut
 脉冲会复位板子（每次抓取=一次重启，boot+3×校准 ≈45s 后才进泵窗）。
 真实时钟已还原（每调用 +1ms），`phy_track_pll_internal` 真 regi2c 不再卡流程
 （泵循环 135s+ 无挂）。
+
+**合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
+
+```
+bt diag: 98BC=0x00000004 rfready=1 conf0=0x2900e444 txphase=1 ctrl=0x01700266 fe=0
+```
+
+- `98BC.bit2=1`：RF/BB ready **已置位**（旧 stage-22"位永不置位"已成历史）；
+- `I2C0_CTRL=0x01700266`：与官方轨迹第二笔事务值**逐字一致**——ana I2C 事务
+  确实在发；
+- **`FE 计数器(0x201011AC)=0` 全窗冻结**：FE 前端零活动 ⇒ BB 事件调度器从未
+  调度广播包，"Command Complete SUCCESS"只是软件状态机收货。剩余缺口精确化：
+  **BB 层 adv 调度未运行**（即旧 bb_v2_init 协作模型的层面——controller 任务
+  活着，但 BB 事件调度的前置没接上）。
 ②98BC.bit2 / 合成器锁定：FE 仪器链（下一会话）。
 ③net-bt 生产 section 对齐本探针序列。
