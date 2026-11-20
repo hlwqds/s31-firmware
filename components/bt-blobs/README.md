@@ -27852,3 +27852,19 @@ F00-F20=0、**F24=4、F28=4**（+0x24/+0x28 有预置值 4=bit2）。下轮候�
 ①+0x24/+0x28 的 bit2（预置 4 的语义待查）；②lpcon_power_st(+0x20)；
 ③AON 域门控（0x2010_1000 区 CLIC 之外的 LP_AON 域）；④读挂也可能非门控
 问题而是 LP timer 域需复位/上电序列（参照 PMU 移植经验）。
+
+**S31 RTC_TIMER 完整寄存器图（2026-11-21 末，IDF esp32s31 soc 头解出）**：
+- 主定时器 target[0]：`+0x00`(TAR_LOW0)/`+0x04`(TAR_HIGH0[15:0])/**`+0x08`
+  TAR_EN0 bit31（WT 写触发武装）**；target[1] = +0x0C/0x10/0x14
+- counter：+0x1C(lo)/+0x18(hi)；update 触发 = **+0x10 bit27**
+- date/clk_en：+0x3FC bit31
+- **中断：INT_RAW +0x28（bit28=tick、bit31=SOC_WAKEUP=target 比较唤醒）、
+  INT_ST +0x2C、INT_ENA +0x30、INT_CLR +0x34**
+⇒ **blob 睡眠唤醒链 = RTC_TIMER target0 比较中断**：睡眠时 LL 写
+target0=唤醒时刻 + TAR_EN0 触发 + INT_ENA bit31 使能 ⇒ 到点 INT_RAW bit31
+⇒ 中断唤醒。**我们缺的 = INT_ENA 使能 + 中断路由（该 IRQ 未接 CLIC input）**
+——官方 IDF 走 INTERRUPT_CORE0_MODEM_LP_TIMER_INTR_MAP（+0x1fc）路由。
+⇒ sleep 路径修复配方（下轮）：①INT_ENA(+0x30)=BIT31；②INT_CLR(+0x34)=
+BIT31 清挂起；③中断路由（INTERRUPT_CORE0_MAP 或我们直接轮询 INT_RAW）；
+④target0=counter+睡眠时长，+0x08 写 TAR_EN0 触发。轮询 INT_RAW 亦可作
+无中断判别。
