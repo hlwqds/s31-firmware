@@ -26963,3 +26963,32 @@ C6 CONFIG0 位布局与经典 ESP32 不同（STG0 action 非位 30:29）——`0
 精确 CONFIG0 位图（STG0 action/timeout 字段），或抄 `esp_private/rtc_wdt.c`
 的 `rtc_wdt_enable()` 实现。WDT 起来后：挂死 → 9s 复位（LP 保留）→ 下一轮
 FEFE 转写挂死轮的步号（0x2C）+ 自旋 PC（0x4A0）→ 主上下文挂点直接点名。
+
+### 回归实验收官（2026-11-20 最末轮）：rc=0 复现，墙定位到 enable 后的互等+异常嵌套
+
+回归到自写 espPhyEnable(2)（tick 恢复 + 零 init flash 写 + EXEC 断点解除）：
+
+```
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0 cal[10..14]=0x26feff fe_readable=1 fe=0x5ac968b1  ← rc=0 复现！
+PHY enabled AFTER step 5 → steps 8/9/10/11/14/15 → transport ready
+→ LE block（uart0 采样/clkrst dump/step 52/Xpuq）→ CPU_LOCKUP（rst:0x1a）
+   1st Exception: PCAddr 0x40076828 Cause 0x1（= trapDispatch+0x17e4，flash XIP）
+   2nd Exception: PCAddr 0x40077890/c0 Cause 0x1（= trapDispatch 的 Writer.print）
+   × 23 轮循环（~3s/轮）
+```
+
+⇒ ① **register_chipv7_phy(FULL) rc=0 复现**（模拟链/时钟/tick 全部没问题——
+"PMU 序列缺失"判词撤销）②流程推进到 enable 步区域后 **CPU_LOCKUP 循环**：
+机制 = 某异常在 flash 写/cache 关窗口内触发 → trapDispatch（flash XIP）取指
+失败（1st fault）→ 其 UART 打印路径再失败（2nd fault）→ 嵌套 → lockup。
+23 轮一致（确定性，非时序竞态）。
+
+**下一会话两步**：
+1. `addr2line 0x40076828 0x40077890`（已完成：trapDispatch/log 路径）→
+   找 1st fault 的**触发源**（哪个地址访问在 cache 关窗口内）：
+   addr2line 0x40076828 = trap.zig:492 附近的 log.line——即**异常发生时
+   trap 先打日志**（flash XIP）⇒ 嵌套。根修 = **trap 路径 SRAM 化**
+   （trapDispatch + log.line 到 .trap_ram），或 trap 内禁日志（只记 RAM）。
+2. trap SRAM 化后，enable 阶段的真挂点（若有）才会显形——
+   之前的"挂死"可能全是 trap 嵌套 lockup 的重启循环伪影。

@@ -79,25 +79,12 @@ pub fn initPhy() void {
         // （标记改 LP 槽，init 零 flash 写）
         const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
         get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
-        // **锁绕行**（2026-11-20 单变量）：esp_phy_enable 入口 _lock_acquire（FreeRTOS
-        // 临界锁）与协作式裸机不兼容（EXEC 断点实证：未到 common_clock 即挂死）。
-        // 改为直调其有效内部步骤——均为纯寄存器写，无锁：
-        //   ① modem_clock_module_enable(9)=PERIPH_PHY_MODULE（deps 含 FE/ADC/I2C_ANA_MST）
-        //   ② modem_clock_module_enable(13)=PERIPH_PHY_CALIBRATION_MODULE
-        //   ③ esp_phy_load_cal_and_init()（内部 register_chipv7_phy FULL 校准，
-        //      含 FE 测量环——此刻 FE 时钟已在①②打开）
-        const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
-        // （标记改 LP 槽，init 零 flash 写）
-        // **UART 无关 flash 标记**（pre-enable 窗口安全）：哪个 mce/load_cal 没回来，
-        // 0x18E000 的标记就停在哪个编号（80=mce9 后 81=mce13 后 82=load_cal 后）。
-        _ = mce(9);
-        @as(*volatile u32, @ptrFromInt(0x2e000484)).* = 0xADC0_5F80; // LP 标记
-        mce(13);
-        @as(*volatile u32, @ptrFromInt(0x2e000488)).* = 0xADC0_5F81; // LP 标记
-        const load_cal = @extern(*const fn () callconv(.c) void, .{ .name = "esp_phy_load_cal_and_init" });
-        load_cal();
-        @as(*volatile u32, @ptrFromInt(0x2e00048c)).* = 0xADC0_5F82; // LP 标记
-        @import("osal_kit").osal.logPublic("bt phy: lock-free path done (mce 9/13 + load_cal)", .{});
+        // **回归自写路径**（2026-11-20 判别实验）：bb2/bt1/clean.log 实证
+        // espPhyEnable(2) → register_chipv7_phy(NULL,NULL,FULL) 曾返回 rc=0、
+        // fe_readable=1（同一块板）——当前 init 期有 tick（T0 已回 pre-init）、
+        // 零 flash 写（标记全走 LP 槽），若 rc=0 复现 ⇒ 墙在 IDF load_cal
+        // 包装层（NVS/efuse-MAC/calloc）；若仍挂 ⇒ 回归在共享时钟/树改动。
+        espPhyEnable(2);
     }
 }
 
