@@ -26880,3 +26880,25 @@ osi 阻塞原语（mutex_pend/sem/event，tmo=无限）在**任务上下文**阻
   load_cal 入口 EXEC 保持武装 ⇒ 若 BP! 命中 load_cal ⇒ 是寄存器读挂总线
   （FE 块在 mce13 后不可读——与 §29.18 的"组 2 一读即挂"同族）；
   若仍无命中 ⇒ load_cal 未被调（logPublic/log 路径挂，需查）。
+
+### 真正干净基线达成（2026-11-20 终）：init 零中断，挂点精确 = load_cal 内部
+
+T0 武装移到 init 之后（init 期零中断源）+ 标记块去寄存器读/CLIC 门控后：
+
+```
+step 3 ✓ → 4 ✓ → 5 ✓ → 51 ✓ → 52 ✓ → mce(9) ✓ → mce(13) ✓
+→ 【load_cal 内部挂死：register_chipv7_phy FULL 校准】
+0x18E000 = adc05f81（mce13 后）✓ 落地；UART 完整（"enter step 52"全行 ✓）
+```
+
+⇒ ①碰撞理论**证实并修复**（ISR dump 竞争 = 全部静默/标记不落的机制本体）；
+②"mce 锁挂死"理论**证伪**（门控修复后 mce 双返）；
+③FE 参数簇与官方逐位一致（两构建同码同配置）——**剩余差异 = 模拟链本体**：
+register_chipv7_phy 的校准轮询等 ana I2C/RF 前端响应，而裸机最小 PMU 序列
+没有完成 RF 模拟域的完整上电（官方有 esp-idf PMU 功率管理层的完整序列）。
+
+**收官判断**：BT 墙 = **esp-idf PMU/功率序列层缺失**（模拟域不是"开关"而是
+"序列"）。这不是单轮寄存器写能补的——需要把 esp-idf `pmu_` 模块的 RF 上电
+状态机（PMU_RF_PWC/SDIO_POWER/ANA_PERI 的完整 sequence + 时序）移植为
+裸机寄存器序列。工作量：一个专门的移植会话（pmu 模块源码在
+esp_hw_support/port/esp32s31/pmu*.c，含状态机表）。

@@ -959,13 +959,11 @@ pub fn run() noreturn {
     // LP 槽（LP 书签全废），PC 环是唯一深度仪器。
     board.trap.resetPcs();
     board.trap.sample_quiet = true;
-    board.trap.pc_dump_at = 72; // 恢复 0x187000 dump：load_cal 挂点 PC 直接点名（本轮唯一判据）
-    if (!probe_irqs) {
-        probe_irqs = true;
-        board.hw.routeT0Interrupt(25);
-        board.hw.armT0Interrupt(2000);
-        board.hw.enableInterrupts();
-    }
+    board.trap.pc_dump_at = 0xFFFF_FFFF; // ISR 落盘永久关（撞车根因，2026-11-20）
+    // ⚠ **T0 武装移到 init 之后**（2026-11-20 终）：init 期有 ms 级 flash 擦写
+    // （per-step 标记），T0（125µs）期间打进 XIP trap ⇒ flash-cache 关闭窗口内
+    // 取指失败 → trapDispatch（也在 flash）→ 嵌套异常 → CPU_LOCKUP 重启循环。
+    // init 期零中断源 = 标记写无碰撞；enable 期（16-20）无 flash 写，T0 安全。
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
@@ -991,6 +989,16 @@ pub fn run() noreturn {
     // 3) enable 链（6 步）
     flashStageExtra(11, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // 即将调用 enable()
     mark.put(0x28, 0xADC0B102, @bitCast(rc));
+    // **T0 武装（init 后）**：NMI 转换让 enable 期（关中断段）仍可观测
+    if (!probe_irqs) {
+        probe_irqs = true;
+        board.hw.routeT0Interrupt(25);
+        board.hw.armT0Interrupt(2000);
+        board.hw.enableInterrupts();
+        const nmi_reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
+        const old_c = nmi_reg.*;
+        nmi_reg.* = (old_c & 0x107) | (1 << 3); // nmies 置位（NMI 不受 MIE 屏蔽）
+    }
     rc = bringup.enable();
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });

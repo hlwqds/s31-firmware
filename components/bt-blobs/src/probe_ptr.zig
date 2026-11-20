@@ -83,7 +83,6 @@ pub fn initPhy() void {
         rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F01C)).*;
         rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_9400)).*;
         _ = ese(0x18E000 / 0x1000);
-        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
@@ -91,7 +90,6 @@ pub fn initPhy() void {
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
 
         _ = esw(0x18E000, &rec, 16);
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
     const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
     get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
@@ -113,7 +111,6 @@ pub fn initPhy() void {
         rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*; // clk_conf1（FE 位自证）
         rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
         _ = ese(0x18E000 / 0x1000);
-        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
@@ -121,7 +118,6 @@ pub fn initPhy() void {
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
 
         _ = esw(0x18E000, &rec, 16);
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
     // **UART 无关 flash 标记**（pre-enable 窗口安全）：哪个 mce/load_cal 没回来，
     // 0x18E000 的标记就停在哪个编号（80=mce9 后 81=mce13 后 82=load_cal 后）。
@@ -132,7 +128,6 @@ pub fn initPhy() void {
         rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
         rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
         _ = ese(0x18E000 / 0x1000);
-        // **CLIC[25] 门控**（防 flash 写期中断打进 XIP trap ⇒ 缓存关 ⇒ 挂死）：
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
@@ -140,7 +135,6 @@ pub fn initPhy() void {
         @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
 
         _ = esw(0x18E000, &rec, 16);
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
     }
     mce(13);
     {
