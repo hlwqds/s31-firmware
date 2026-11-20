@@ -794,7 +794,7 @@ pub fn run() noreturn {
             rd_.r(0x2010_F83C),
             0x5BB1_11C4, // burst bbpll 已调标记
             rd_.r(0x2010_F818), // ANA_CONF0
-            rd_.r(0x2010_F81C), // ANA_STATUS0（RO）
+            rd_.r(0x2010_F81C), // ANA_CONF1（STATUS1 在其 bits31:24）
             rd_.r(0x2010_F800), // I2C0_CTRL
         };
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);

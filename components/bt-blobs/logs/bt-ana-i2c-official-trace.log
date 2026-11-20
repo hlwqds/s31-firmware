@@ -1,5 +1,5 @@
 # [host-side annotation] official app ana-I2C-master transaction trace (200us sampling)
-# regs: I2C0_CTRL(0x2010F800) CONF0(+18) STATUS0(+1C) + 0x201098BC
+# regs: I2C0_CTRL(+0) CONF0(+18) CONF1(+1C, STATUS1 in bits31:24) + 0x201098BC
 # window: before esp_bt_controller_init through enable+2s; 17 change-entries
 # KEY: 98BC=0 in EVERY sample (official too!) - bit2 never sets in BLE-only flow
 # => the 29.18 'synth ready' poll times out (cap 65536, error 3) officially and is
