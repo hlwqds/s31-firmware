@@ -26767,3 +26767,20 @@ mepc 按指令长度推进 + RAM 命中记录，不再 flash 擦写）重跑：*
 判据：FE3 450 振荡 / 47C 脉冲 / ENABLED 出现 / bb init 完成后 HCI 推进。
 若 register_chipv7_phy 内部还有别的锁原语 ⇒ 换用其"已校准"短路径或逐步
 stub（照实记录）。
+
+### mce(9) 也挂死（收官判读）：esp-idf C helper 的锁在裸机全面不可用
+
+锁绕行首样本轮：step 52 直调 `mce(9)` 仍静默挂死（无 lock-free 行、无 NMI、无 BP）。
+⇒ `modem_clock_module_enable` 内部同样走 critical/lock（modem_clk_lock），
+**所有 esp-idf 帮助函数（带锁的）在协作式裸机环境都不可调用**——
+mce(6)/mce(14) 早轮"能用"是当时上下文特殊（post-pmu 早期窗口），不可外推。
+
+**下一会话的正路（无 C helper 依赖）**：
+按 modem_clock_impl.c 表**手写寄存器序列**给 FE 测量供时钟——
+PERIPH_PHY_MODULE deps=0x17 的路由（modem_syscon_ll_enable_*_clock /
+modem_lpcon_ll / ANALOG_CLOCK_ENABLE()=ana i2c master clk / icg power st），
+再 `esp_phy_load_cal_and_init`（若其内部 register_chipv7_phy 无锁则可调；
+有锁则需提取 libphy 校准序列逐寄存器复刻）。
+modem-phy skill 的 deps/ICG 表 + `clk_conf1=0x003fffff` 已证可行的目标值是全部依据。
+EFISE：本轮 EXEC 断点 + 安全 trap 分支（UART 一行/mepc 按长推进/RAM 命中记录）
+是新仪器，已验证可用（MIE 屏蔽下命中可观测）。
