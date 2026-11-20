@@ -71,13 +71,15 @@ int ets_printf(const char *format, ...)
     char *o = buf, *end = buf + sizeof buf - 1;
     __builtin_va_list ap;
     __builtin_va_start(ap, format);
-    for (const char *p = format; *p && o < end; p++) {
+    unsigned scan = 0;
+for (const char *p = format; *p && o < end && scan++ < 256; p++) {
         if (*p != '%') { *o++ = *p; continue; }
         p++;
         char pad = ' ';
         if (*p == '0') { pad = '0'; p++; }
         int width = 0;
-        while (*p >= '0' && *p <= '9') { width = width * 10 + (*p - '0'); p++; }
+        int nd = 0;
+while (*p >= '0' && *p <= '9' && nd++ < 9) { width = width * 10 + (*p - '0'); p++; }
         if (*p == 'l') p++;                      /* %ld/%lu：忽略长度修饰 */
         switch (*p) {
             case 's': o = put_str(o, end, __builtin_va_arg(ap, const char *)); break;

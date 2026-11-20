@@ -555,6 +555,30 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     nmi_count, frame.mepc, frame.ra, nl,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(ln);
+                // **第二行：RAM 侧调度器四字**（固定锚点 0x2f011034，不碰毒区）：
+                // p=调度器对象、flag=p[0]（恒 0=未完成持续路径）、q=p[12]、
+                // state=q[0]（恒 2 / 2↔3 交替 / 恒 3 = 三种自旋形态判据）。
+                if (frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e) {
+                    const pp: *volatile u32 = @ptrFromInt(0x2f01_1034);
+                    const p = pp.*;
+                    var s2b: [96]u8 = undefined;
+                    if (p >= 0x2f00_0000 and p < 0x2f10_0000) {
+                        const flag: *volatile u8 = @ptrFromInt(p);
+                        const qp: *volatile u32 = @ptrFromInt(p + 12);
+                        const q = qp.*;
+                        var l2: []const u8 = undefined;
+                        if (q >= 0x2f00_0000 and q < 0x2f10_0000) {
+                            const statew: *volatile u32 = @ptrFromInt(q);
+                            l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8} state={d}", .{ p, flag.*, q, statew.* }) catch "";
+                        } else {
+                            l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8}(oob)", .{ p, flag.*, q }) catch "";
+                        }
+                        hw.rawLineBlocking(l2);
+                    } else {
+                        const l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8}(oob)", .{p}) catch "";
+                        hw.rawLineBlocking(l2);
+                    }
+                }
                 // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
                 // 合成器 ready 0x201098BC / FE 等待位 0x201008D0 / FE 计数器 0x201011AC。
                 // 与官方 692ms 路径的同址值对账 = FE 环的最终定位判据。
