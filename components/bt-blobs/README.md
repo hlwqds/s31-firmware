@@ -27247,6 +27247,17 @@ words 74,75 = ext37: fn=0x2f07f19c（=表内链表头）, arg=0x2f81280e
   task 的 adv-enable 处理里 BB schedule arm 的寄存器写（需反汇编 task 路径
   定位，或对照官方 trace 的 BB timer 寄存器）。
 
+**⚠ 任务入口 fn=0x2f000000 定案（2026-11-21，全夜最大发现）**：r_btdm_task_init
+传给 taskCreate 的任务入口 **fn = 0x2f000000 = blob 链接基址本身**（nm 实证：
+0x2f000000-0x2f00090c 是我们自己的 trapEntry，blob 代码从 0x2f000910 起——
+原始 blob 布局的 base+0 任务入口在重排后的镜像里**未重定位**）。⇒ 任务首次
+被 resume 即跳进基址（trap 区中间）⇒ 全链死亡。**下轮首修**：找到 blob 的
+btdm_task 真实地址（对照原始 esp32c6 blob 的 base+0 函数 = 我们镜像里
+0x2f000910 起的对应函数，或从 blob 反汇编找调度环入口），在
+`wr_btdm_osal_task_create` 里对 fn_==0x2f000000 打补丁（fn_ += 偏移）。
+**这可能就是整场 bring-up 的唯一真根因**（前夜全部"挂死/静默"都发生在任务
+首跑跳进错误入口之后——此前所有仪器读数都是在错误的任务上下文里采的）。
+
 **CLIC intctl 读-as-zero 定案（2026-11-20 末，仪器注记）**：`c50`（intctl[50]
 原始字）在 IE+prio 写入后跨两次 boot 恒读 0——与 NMI 路径（intctl[25] 读 0 时
 "保留 0x107|置 nmies" 的写依然生效）完全自洽 ⇒ **本芯片 CLIC intctl 写有效、
