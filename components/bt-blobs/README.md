@@ -27205,7 +27205,21 @@ LP_CLK_PO_EN 与 counter 无关。
 - `esp_btbb_enable()` 已补进 enable 链头（官方序：phy_enable → btbb_enable →
   ble_stack_enable）——内部 `bt_bb_v2_init_cmplx` 首次经正式入口运行 ✓ 无挂。
 
-**ROM 表头解码完成（终极定案，0x2f07f188 起完整字）**：
+**⚠ 0x2f815258 解码定性反转（isr35 dump 离线 objdecode）**：该地址是 ROM 的
+**中断管理函数**（校验 src&31==1、type==11 后写 ROM 表 0x2f07f404 区）——
+**不是硬件 ISR** ⇒ ROM 表 ext34/35/37 槽 = ROM 管理 API 表（intr_alloc/
+disable 类），**非硬件中断分发表**；"ext34/35/37=真 ISR" 判读作废。
+**真 MAC ISR 的位置：我们自己的 handlers 表**——blob 调 `intr_handler_set(50,
+mac_isr, arg)`（ROM 符号）→ shellSetIsr → `trap.setHandler(50, mac_isr)` →
+存 handlers[50-16=34]。**dispatch 对 input 50 的查找：getHandler(34) →
+mac_isr ✓ 已在表内**！前轮 input50 桥版 boot 循环 = **mac_isr 真的执行了**
+（39×probe.run 重入 = 其内 resumeTask-from-trap 的副作用）⇒ 中断链已通，
+fe=0 仅说明 FE 前端未轮询（MAC 层在跑、RF 前端未动）。
+**修正方向**：桥的 f 不取 ROM fn——改取 **trap.getHandler(34).fn_**（即
+mac_isr 本体），drain 代跑 ✓；或直接在 mac_isr 外再包一层"只计数+标记，
+真跑放主泵"的双层桥。
+
+**ROM 表头解码（历史保留，0x2f07f188 起完整字）**：
 
 ```
 words 70,71 = ext35: fn=0x2f815258, arg=0        （偶对齐真函数 ✓，isr35 dump 实证为真代码）
