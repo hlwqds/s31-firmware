@@ -27677,3 +27677,12 @@ rst:0x1a 仅剩早期 1 次）⇒ "数次风暴后才过"= **rst:0x1a 不清 RAM
 基础条件"。与 ch29 §29.19 的"唯一真墙"结论互证。
 ⇒ 下一步方向（PHY 线）：esp-idf pmu_ 模块的 RF 上电状态机移植（时序链），
 或 IEEE80211 目标下用 `porting_btdm` 的睡眠路径绕开（sleep_en=1 线）。
+
+**⚠ 修正（esp_phy_enable 判别轮的归因）**：10b334a "IDF 本体也点不亮/墙升级
+到电源岛"是**未证因果**——除法链（507/515 样本钉 __udivmoddi4）的**调用者
+未定位**（全部 jalr/jr 调用点都在 compiler_rt 内部 128 位族 = 间接进入）。
+本轮 build 同开 sleep_en=1 + 已注册回调 ⇒ 两个候选分支：①blob 调度器时间
+换算（sleep 路径在跑，koby0AUV/H2OWtZ 已知做 u64 除法）；②我们的
+std.fmt 打 u64 十进制的热路径日志（每行一次 __udivdi3 链）。两者都与 PHY
+墙无必然关系。**判别器已加**：NMI 主行加栈窗口（sp+0..+28），第一个落出
+compiler_rt 区的返回地址 = 真实调用者 ⇒ addr2line 即定分支。
