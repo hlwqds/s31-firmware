@@ -26867,3 +26867,16 @@ osi 阻塞原语（mutex_pend/sem/event，tmo=无限）在**任务上下文**阻
 事件到达再切回。参照 posix-compat socket 层的 waitq 模式
 （"RX 泵必须在主上下文、等待者必须是任务"方向约定）。
 判据：step 20 返回 → `bt bringup: ENABLED` → HCI 三命令 btdm_tx 1→2→3。
+
+### 挂点最终收窄（nm 核对后）：mce13 标记落地与 load_cal 之间
+
+- 触发地址核对：0x40000580 ∈ esp_phy_load_cal_and_init +0x0（当前 bin）✓
+  ⇒ "旧址失效"不成立，EXEC 断点瞄准正确但零命中。
+- 标记 81（mce13 后）落地 ⇒ 流程过了 mce(13)；其标记块**先读后写**
+  （读 450/47C/98BC → ese → esw）⇒ 读写都完成。
+- load_cal 入口 EXEC 零命中 ⇒ 挂点 ∈
+  {mce13 后的 450/47C 寄存器读（FE 块时钟被 mce13 重配后读挂总线？）, load_cal 入口}。
+- **下一会话单变量**：删掉 mce13 后标记块里的寄存器读（只写 magic），
+  load_cal 入口 EXEC 保持武装 ⇒ 若 BP! 命中 load_cal ⇒ 是寄存器读挂总线
+  （FE 块在 mce13 后不可读——与 §29.18 的"组 2 一读即挂"同族）；
+  若仍无命中 ⇒ load_cal 未被调（logPublic/log 路径挂，需查）。
