@@ -27008,3 +27008,17 @@ PHY enabled AFTER step 5 → steps 8/9/10/11/14/15 → transport ready
 零 flash 碰撞 = 最接近可运行的配置。下一会话在此配置上：
 ①修 canaryScan guard ②看 load_cal 是否真挂（还是能走完）③若走完 →
 ENABLED → BT 全链通。
+
+### 重排轮判读（2026-11-20 极终）：LP 转写通道在 WDT 复位下失效——改用 NMI 时间序列
+
+step15 后 mce(13)+load_cal：45s 无 5FC0 标记（load_cal 未返回或返回后标记未落）
+且 boot_n=1（无 WDT 复位循环——CHIP_LP_WDT_RESET(rst:0x10) 会连 LP 域一起复位，
+LP 转写通道失效）。
+
+**下一会话观测协议（NMI 时间序列，已半实装）**：trap 的 tick 分支加
+周期性 ana 采样（每 200k tick 采 ANA_CONF0/I2C0_CTRL/98BC → LP 0x490-49C
+滚动覆盖），load_cal 挂多久采多久；host 周期性 esptool 复位读取时虽丢 LP，
+但可改为**每次 tick 都直接覆盖**+主上下文侧若 load_cal 完成则写 flash 正向标记
+——两通道合读即可重建 ana 状态时间线，与官方轨迹 diff。
+
+**正经修复路线不变**：esp-idf PMU 功率序列（pmu*.c）寄存器级移植。

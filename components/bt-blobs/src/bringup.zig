@@ -418,6 +418,17 @@ pub fn init(cfg: *config.Config) c_int {
     //     ⇒ Command Complete 永远到不了 `leEvtTx` ⇒ 症状是"init 全绿、命令发了、就是没回包"，
     //     极易被误判成时钟/中断/任务没做。
     enter(15, "hci_transport_init");
+    // **load_cal 前移**（UART 存活期完成 FULL 校准——mce(13) 会关 UART0 时钟）：
+    // mce(13)=PERIPH_PHY_CALIBRATION（deps 0x6364：FE 测量时钟）→ load_cal
+    // （register_chipv7_phy FULL——此刻 tick 在、UART 在、模拟 prep 在）。
+    {
+        const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
+        mce(13);
+        const load_cal = @extern(*const fn () callconv(.c) void, .{ .name = "esp_phy_load_cal_and_init" });
+        load_cal();
+        @as(*volatile u32, @ptrFromInt(0x2E00_0490)).* = 0xADC0_5FC0; // LP：load_cal 已返回
+        osal.logPublic("bt bringup: load_cal done (pre-mce13-uart-window)", .{});
+    }
     rc = step(15, "hci_transport_init", transport.init());
     if (rc != 0) return rc;
 
