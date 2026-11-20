@@ -424,6 +424,11 @@ pub fn init(cfg: *config.Config) c_int {
     {
         const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
         mce(13);
+        // ⚠ **清 bit10（wifi_apb）**：mce(13) 的 deps 置此位 ⇒ UART0 APB 时钟被门控
+        // ⇒ 观测通道死亡。FE 测量在自写路径实测不需要 bit10（clk_conf1=0x003ff880
+        // 时期校准完成 rc=0）⇒ 清回后 UART 恢复且不影响校准。
+        const c1p: *volatile u32 = @ptrFromInt(0x2010_9C14);
+        c1p.* &= ~@as(u32, 1 << 10);
         const load_cal = @extern(*const fn () callconv(.c) void, .{ .name = "esp_phy_load_cal_and_init" });
         load_cal();
         @as(*volatile u32, @ptrFromInt(0x2E00_0490)).* = 0xADC0_5FC0; // LP：load_cal 已返回

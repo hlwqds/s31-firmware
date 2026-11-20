@@ -977,10 +977,17 @@ pub fn run() noreturn {
         const cfg0: *volatile u32 = @ptrFromInt(0x2080_1000);
         const feed: *volatile u32 = @ptrFromInt(0x2080_1014);
         const wp: *volatile u32 = @ptrFromInt(0x2080_1018);
+        asm volatile ("fence iorw, iorw");
         wp.* = 0x50D8_3AA1;
         feed.* = 0x8000_0000;
+        asm volatile ("fence iorw, iorw");
         cfg0.* = (cfg0.* & 0x87FF_FFFF) | 0xA000_0000; // EN(bit31) + STG0=010b(bits30:28)=复位 CPU
+        asm volatile ("fence iorw, iorw");
         wp.* = 0;
+        asm volatile ("fence iorw, iorw");
+        // 自证：读回 CONFIG0 确认 EN+STG0 已置
+        const rb = cfg0.*;
+        @import("osal_kit").osal.logPublic("bt wdt: config0=0x{x:0>8} en={d} stg0={d}", .{ rb, (rb >> 31) & 1, (rb >> 28) & 7 });
     }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));

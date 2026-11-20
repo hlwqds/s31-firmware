@@ -27103,3 +27103,16 @@ RTC WDT 计数器依赖 **RTC 32kHz 慢时钟**——裸机 start 代码可能�
 
 **burst 效果判定协议已闭环**：CONF0 事务相位 ✓ 实证持续 →
 下一会话在此配置跑更长 + UART1 双通道读 register_chipv7 内部日志。
+
+### 会话极限（2026-11-20 最末）：芯片 wfi 卡死需手动复位
+
+WDT fence+readback 轮后：芯片 stuck in wfi halt（trap panic halt），
+esptool --before no_reset 无法重连（零串口数据）⇒ 需要手动拔插 USB 或按
+复位按钮恢复。下一会话从此状态继续。
+
+**仪器与协议全部在位**——下一会话开机即可用：
+- flash 窗口重试入口（trap 最顶，flash_op_window）
+- EXEC 断点（0x4C/0x58 双编码命中实证）
+- per-step LP 标记（init 零 flash 写）
+- calib rc=0 回归实证（自写路径+tick+零 flash 碰撞）
+- 安全 trap 分支（UART 一行 + mepc 按指令长推进 + RAM 命中记录）
