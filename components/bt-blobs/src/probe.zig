@@ -1309,8 +1309,10 @@ pub fn run() noreturn {
         // 期间源一触发，blob handler 就在 trap 上下文跑（boot 循环实证）。
         if (!bt_ie_on and round >= 8) {
             bt_ie_on = true;
-            const ie_reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
-            ie_reg.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 的 MAC 中断）
+            const ie21: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
+            ie21.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 的 MAC 中断）
+            const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
+            ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 的 BB 链）
         }
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();

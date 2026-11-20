@@ -607,6 +607,24 @@ fn bridgeIsr(raw_arg: ?*anyopaque) callconv(.c) void {
     }
 }
 
+// **BB 中断链（src125 → input53 → 链表头 0x2f07f19c 的三 handler）**：
+// ROM 表 ext37 条目 = {0x2f07f19c（链表头）, 0x2f81280e}——链表节点即
+// 三条 blob handler（全偶地址可调用，args 0x85/0x03/0x84）。
+// 桥语义：trap 内只入环（chainIsr），主泵 bridgeDrain 代跑（调度器安全）。
+const chain_fns = [3]*const fn (?*anyopaque) callconv(.c) void{
+    @ptrFromInt(0x2f81280e),
+    @ptrFromInt(0x2f81289a),
+    @ptrFromInt(0x2f8127ec),
+};
+const chain_args = [3]?*anyopaque{
+    @ptrFromInt(0x85),
+    @ptrFromInt(0x03),
+    @ptrFromInt(0x84),
+};
+fn chainIsr(_: ?*anyopaque) callconv(.c) void {
+    for (chain_fns, chain_args) |f, a| f(a);
+}
+
 /// 主泵循环每轮调用：代跑桥里积压的 blob handler（主上下文，调度器安全）。
 pub var bridge_logged: bool = false;
 pub fn bridgeDrain() void {
@@ -643,7 +661,7 @@ fn intrArm(src: c_int) void {
     // （ext6 无 handler 时不置 IE，风暴安全）。
     const routed_input: usize = switch (src) {
         124 => 21, // MODEM_BT_MAC → ext 5（blob handler 经 shellSetIsr 在位）
-        125 => 22, // MODEM_BT_BB → ext 6（仅路由，handler 缺则不置 IE）
+        125 => 53, // MODEM_BT_BB → ext 37（链表头 0x2f07f19c：三 blob handler）
         else => @intCast(@as(u32, @intCast(src)) & 63),
     };
     // **路由（此前整段缺失 = FE 冻结根因）**：S31 的中断源 ≠ CPU 输入号，每源一个
@@ -669,6 +687,12 @@ fn intrArm(src: c_int) void {
         if (@import("osal_kit").osal.intrHandlerOf(src)) |h| {
             hf = h.f;
             harg = h.arg;
+        } else if (src == 125) {
+            // **src125（BB）特例**：blob 的 BB handler 三条挂在 ext37 链表头
+            // 0x2f07f19c 下（见上方 ROM 表头解码）——直接用 chainIsr 桥
+            // （trap 内只入环，主泵 bridgeDrain 顺序代跑三条）。
+            hf = chainIsr;
+            harg = null;
         } else {
             // **优先自有表**：blob 经 intr_handler_set(21, mac_isr, arg) 直注——
             // shellSetIsr 归一化存 handlers[21-16=5]（hscan 实证非空）。
@@ -685,7 +709,8 @@ fn intrArm(src: c_int) void {
                     s.* = .{ .in_use = true, .input = routed_input, .f = f, .arg = harg };
                     // ⚠ **IE 不在这里置**：enable 期间置 IE，源一触发 handler 就在
                     // trap 上下文跑（boot 循环实证）——IE 由 probe 泵循环在
-                    // bridgeDrain 激活后才开（见 probe.zig "ISR 桥 IE 延迟使能"）。
+                    // bridgeDrain 激活后才开（见 probe.zig "ISR 桥 IE 延迟使能"，
+                    // 对 input 21 与 input 53 同时生效）。
                     hw.writeReg(0x1080_1000 + routed_input * 4, 1 << 24); // 仅 prio
                     @import("board").trap.setHandler(routed_input, bridgeIsr, s);
                     break;
