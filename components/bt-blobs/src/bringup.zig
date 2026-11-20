@@ -635,21 +635,28 @@ pub fn bridgeDrain() void {
 fn intrArm(src: c_int) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     const hw = @import("board").hw;
-    const input: usize = @intCast(@as(u32, @intCast(src)) & 63);
+    // **路由目标改判（ROM 表扫描 + 布局线索）**：blob 直注 intr_handler_set 的
+    // handler 落在 ROM 表 ext 34/35/37（fn 候选 0x2f81281e 奇数=疑似 arg 交错，
+    // 布局待校）——它们期望的 CLIC 输入 = ext+16 = **50/51/53**。此前 src&63=60
+    // 的猜错输入使源触发后落进空表（洪水轮 39×probe.run 重入的候选机制）。
+    // 源 → blob handler 所在输入：
+    const routed_input: usize = switch (src) {
+        124 => 50, // MODEM_BT_MAC → ext 34
+        125 => 51, // MODEM_BT_BB → ext 35
+        else => @intCast(@as(u32, @intCast(src)) & 63),
+    };
     // **路由（此前整段缺失 = FE 冻结根因）**：S31 的中断源 ≠ CPU 输入号，每源一个
     // MAP 寄存器（表基 0x2058_5000，源 0=SYS_ICM 于 +0x0、源 124=MODEM_BT_MAC 于
-    // +0x1F0、源 125=MODEM_BT_BB 于 +0x1F4——blob 的 src=124 是 MAC，BB 调度是
-    // 125&63=input 61）。不写 MAP，CLIC 里永远看不到 pending（routeT0Interrupt
-    // 同款教训，见 hw.zig 注释）。bits[5:0]=input，bits[9:8]=pass_level（非零才启用）。
-    hw.writeReg(0x2058_5000 + @as(usize, @intCast(src)) * 4, (input & 0x3F) | (1 << 8));
+    // +0x1F0、源 125=MODEM_BT_BB 于 +0x1F4）。不写 MAP，CLIC 里永远看不到 pending
+    // （routeT0Interrupt 同款教训，见 hw.zig 注释）。bits[5:0]=input，bits[9:8]=
+    // pass_level（非零才启用）。
+    hw.writeReg(0x2058_5000 + @as(usize, @intCast(src)) * 4, (routed_input & 0x3F) | (1 << 8));
     // CLIC intctl：prio [31:24] **必须非零**（prio=0 的电平输入永不触发）+ IE bit8。
     // ⚠ **IE 与 handler 必须同开同关**：IE 置位而不挂 handler（或不挂清理源的电平
     // ISR）⇒ CPU 取中断 → dispatch 忽略 → IP 永不清 → 风暴循环（CPU 饿死）。
-    // ⚠ **挂 handler 已实证 boot 循环**（2026-11-20：80s 35 次 POWERON 复位，
-    // 无 trap 行 = handler 内锁死）——中断**确实触发**（挂上才循环），但 blob
-    // handler 在 trap 上下文不安全（eventqPut→resumeTask 破坏调度器）。
-    // ⇒ ISR 桥完成前**双藏**（compile-time 旗默认 false）：只留 MAP 路由，
-    // 源触发后 IP 在 intctl bits[31:24] 里 pend，CPU 不取，稳定可读。
+    // ⚠ **挂 blob handler 原样已实证 boot 循环**（trap 上下文不安全）——本桥
+    // （bridgeIsr）只把 (f,arg) 压环立即返回，blob handler 由主泵 bridgeDrain
+    // 代跑（调度器安全）。目标输入上 dispatch 将命中：我们的桥 → 主泵代跑。
     const isr_bridge = true;
     var bridged = false;
     if (comptime isr_bridge) {
@@ -662,7 +669,7 @@ fn intrArm(src: c_int) void {
             hf = h.f;
             harg = h.arg;
         } else {
-            const rh = @import("board").trap.romHandler(input);
+            const rh = @import("board").trap.romHandler(routed_input - 16);
             if (rh.fn_) |f| {
                 hf = f;
                 harg = rh.arg;
@@ -672,18 +679,18 @@ fn intrArm(src: c_int) void {
             bridged = true;
             for (&bridge_srcs) |*s| {
                 if (!s.in_use) {
-                    s.* = .{ .in_use = true, .input = input, .f = f, .arg = harg };
-                    hw.writeReg(0x1080_1000 + input * 4, (1 << 24) | (1 << 8)); // prio+IE
-                    @import("board").trap.setHandler(input, bridgeIsr, s);
+                    s.* = .{ .in_use = true, .input = routed_input, .f = f, .arg = harg };
+                    hw.writeReg(0x1080_1000 + routed_input * 4, (1 << 24) | (1 << 8)); // prio+IE
+                    @import("board").trap.setHandler(routed_input, bridgeIsr, s);
                     break;
                 }
             }
         }
     }
-    const bit: u32 = @as(u32, 1) << @intCast(input & 31);
+    const bit: u32 = @as(u32, 1) << @intCast(routed_input & 31);
     asm volatile ("csrs mie, %[b]"
         :
         : [b] "r" (bit),
     );
-    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d} (routed, bridged={}) mie|=0x{x}", .{ src, input, bridged, bit });
+    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d} (routed, bridged={}) mie|=0x{x}", .{ src, routed_input, bridged, bit });
 }
