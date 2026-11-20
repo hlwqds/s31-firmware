@@ -529,9 +529,9 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 注意：input==25 的分支**不**走 `recordPc`（第 442 行显式排除），
             // 所以这个环在饿死期间看不到任何东西 —— 只能靠这里打。
             if (nmi_count % 50_000 == 0) {
-                var nb: [96]u8 = undefined;
-                const nl = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8}", .{
-                    nmi_count, frame.mepc,
+                var nb: [112]u8 = undefined;
+                const nl = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8}", .{
+                    nmi_count, frame.mepc, frame.ra,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(nl);
                 // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
