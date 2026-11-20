@@ -1345,8 +1345,13 @@ pub fn canaryScan() void {
     canary_first_off = 0;
     canary_first_val = 0;
     canary_bad_words = 0;
+    // **封顶 8192 字（32KB）**：全 arena 扫描（335KB × inAlloc O(n)）一次磨
+    // 数分钟 CPU，把 abort dump 之后的整个采样窗口吃掉（2026-11-21 实证：
+    // 早段两次 trap abort 各触发一次 dump，NMI 采样全落在 canaryScan）。
+    // 前 32KB 已覆盖早期堆破坏检测；再往上交给 arenaWalk 的块头遍历。
+    const scan_words = @min(bt_arena.buf.len / 4, 8192);
     var i: usize = 0;
-    while (i < bt_arena.buf.len / 4) : (i += 1) {
+    while (i < scan_words) : (i += 1) {
         const w: *volatile u32 = @ptrFromInt(base + i * 4);
         const addr = base + i * 4;
         if (inAlloc(addr) or (i * 4) < 16) continue;

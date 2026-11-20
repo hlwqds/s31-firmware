@@ -27627,3 +27627,13 @@ step20 → 0x2006 → fwd06 → post21 → 0x2008 稳定停驻（与 mute=1 历�
 全活（NMI 三行制 + slot 探针）。**下轮**：①sleep 回调注册路径（官方
 esp_bt_sleep_enable 调用序对照——注册了它才能安全开 sleep_en=1）；②BB
 事件链缺口（仍是 0x2008 环上游根因）。
+
+**canaryScan 封顶 + 终态复验（2026-11-21 末）**：canaryScan 封顶 8192 字
+（32KB；全 arena 335KB × inAlloc O(n) 一次磨数分钟，早期 boot 的两次
+abort dump 曾把整个采样窗口吃掉——按 boot 分段后定位：早段样本落在
+canaryScan/inAlloc 是 dump 磨 CPU，**末段 140/149 样本干净落在 blob 分发
+环本体 0x400056a8** ⇒ "0x2008 环永旋"对最终 boot 成立（dump 污染只影响
+早段）。终态复验：rst:0x1a ×6（早期 arm 窗已知风暴）后稳定停驻 0x2008，
+sleep_cb skip ✓ 无 panic。⚠ 本轮抓包早段风暴无 `!!` 场景行（trap 读数
+路径待下轮改进——s31-trap-xip 域）。观测纪律：**抓包判读必须按 boot 分段**
+（banner/rst 边界），ZU/A0 行标记 dump 相位，采样归属以段为单位。
