@@ -27719,3 +27719,10 @@ RTC timer 使其到期并调注册回调——esp32s31-rtc-timer-probe 域）；
 sleep_en=0 + 检查器 state=0 通过 + 探针 2000 轮放弃上限共同界定观测。
 终态：稳定停驻 0x2008，全部仪器活（NMI 主行/NMI2/NMI3 含时钟门/NMI5 栈窗
 +slot 探针+断言直写+udiv 入口断点），双仓 clean。
+
+**0x2010Bxxx 访问点清单（2026-11-21 离线，当前 ELF）**：XPuq（0x40060cde）
+清零 0x2010B100 起 16 字节步进阵列（掩码 0xfff00000 保高位）+ 读 8B 配置；
+EabYtUaAIR05LXw3qZSA@0x4005fcfe、6wSHUtNRioHeB7CKjVJA@0x4005ffa8、
+M9nG353V0svWrv1l1zGw@0x40060064/600a8、qkNMymdnaJnYUfzpKgEp@0x40060e52
+同类访问。⇒ 0x2010Bxxx 阵列 = BLE 通道/调度结构（可写 ✓ 非毒区），BB
+INT_EN 不在此区（仍在 mac_isr/LL 反汇编域）。
