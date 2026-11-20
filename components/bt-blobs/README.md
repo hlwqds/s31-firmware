@@ -27572,3 +27572,23 @@ step10 rc=0、无 malloc(32) 日志、板载 p=0 全自洽。
 PsB8qxrZXPdSUAqQMBRY/ZGgifdtgyUnZ7f0ME7VH 为下轮反汇编对象——它们向
 sp+72 结构 offset 10 写什么、数据源是什么硬件事件，就是 BB 链缺口的
 最后落点）。
+
+**sleep_en=1 判别轮结果（2026-11-21，突破 + 新墙）**：
+- **突破**：`c.btdm.sleep_en = 1` ⇒ Zth2 走 malloc 路径 ⇒ **调度器对象建成**
+  （slot=0x2f025140，35/35 恒定）——NULL 对象墙拆除。s1 归属同时钉死 =
+  **BtdmCfg**（OkE7 = r_btdm_task_init 核心，step 6 传 &cfg.btdm；
+  `@offsetOf(BtdmCfg,"sleep_en")==10` comptime 实证），此前"config 偏移 10
+  旗标"的字段名更正为 **BtdmCfg.sleep_en**。
+- ⚠ **官方 oracle idf_cfg192[178]（=btdm+10）= 0x00** ⇒ 官方同样 sleep_en=0
+  ⇒ "对象不建"在官方也是常态 ⇒ **p==NULL 不是我们与官方的差异点**，官方
+  在该分支有别的出口（未链接成员/运行时注册路径）。sleep_en=1 是**判别
+  探针**（结果=推进成功），不是根因修复，勿照此改代码方向。
+- **新墙**：对象建成后，调度器在 r_sym_bt_32zs9B7Gv9vHIVpsl2A7 内
+  `lw a5,4(obj); beqz→跳过; lw a0,88(s2); jalr a5` **跳 0**（c_mepc=0、
+  c_ra=0x2f00a9b6）⇒ rst:0x1a boot 循环 ×35。beqz 守卫通过但 a5 为垃圾
+  非零值 ⇒ **obj[4] 回调槽从未被注册**——注册者 = r_btdm_sleep_set_sleep_cb
+  一族（0x40061614 OB0cbi2Do7nZ1O7EuAjf，其 .L72/.L79 写 cb 字段），
+  我们的 bringup 未调它。
+- **下轮首查**：①obj[4]/obj[0..1] 的注册函数（32zs9 的对象来源 = 0x2f025140
+  的 96B 子对象布局，从 32zs9 全函数反汇编推）；②官方链路在哪一步注册
+  sleep 回调（对照 esp_bt_sleep_enable / btdm sleep init 调用序）。

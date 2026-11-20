@@ -401,6 +401,12 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
     enter(10, "r_ble_controller_init");
     rc = step(10, "r_ble_controller_init", if (freestanding) r_ble_controller_init(&cfg.ble) else 0);
+    // **调度器槽值追踪**：sleep/scheduler 对象指针（0x2f011034）——NMI2 读 0
+    // 但 rc=0 要求 Zth2 的 malloc(32) 成功 ⇒ 有谁在 init 后清零，按步定位。
+    {
+        const slotv: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        osal.logPublic("bt probe: sched slot after step10 = 0x{x:0>8}", .{slotv.*});
+    }
     if (rc != 0) return rc;
     stats_state.ext_funcs_registered += 1;
     // `ble_controller_scan_duplicate_config` 是 host 侧 ⇒ 空操作
@@ -508,6 +514,10 @@ pub fn enable() c_int {
     enter(20, "r_btdm_task_enable");
     rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
+    {
+        const slotv: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        osal.logPublic("bt probe: sched slot after step20 = 0x{x:0>8}", .{slotv.*});
+    }
 
     status_state = .enabled;
     osal.logPublic("bt bringup: ENABLED", .{});
