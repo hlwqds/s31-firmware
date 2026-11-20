@@ -27296,6 +27296,32 @@ RTC_TIMER（0x20800000）就是唯一 LP 时基（已使能走动 ✓）。“�
 其活动计数器（FE 0x201011AC）冻结 = **MAC 块时钟门未开或 BB timer 未武装**——
 MAC 块的 INT_EN/BB timer 寄存器在私有域，需从 mac_isr/LL 反汇编定位。
 
+**ctx 追踪终极定案（2026-11-21 凌晨，双轮交叉+读对照排除）**：
+
+```
+0x2f07f1F4（ROM BT 分发 ctx 指针槽）双轮 8+ 次读 = 全 0
+（同 dumpRom 工具链读同区 ext35=0x2f815258 非零 ✓ 排除读-as-zero）
+```
+
+⇒ **ROM BT 分发上下文（ctx 结构）从未初始化**——h_c 尾部 `lw a0,[0x1F4];
+jr [a0+4]`（a1=-3 跳真主 ISR）执行时 a0=0 ⇒ 跳地址 4 ⇒ 崩溃——**ROM 分发
+链在其最底层断裂**。因果闭环（全部仪器实证）：
+
+```
+blob 直调 r_btdm_* 系列（跳过官方 esp_bt_controller_init → ROM 包装路径）
+→ ROM 侧 BT ctx 建立（写 0x2f07f1F4）从未执行
+→ ROM 分发链表（0x2f81280e/89a/7ec 三 handler）无法到达
+→ BB 中断无处理者 + BB 调度器无时基推进
+→ task_enable 真实等待永不完成（bb_v2_init 虽构建了 BB 结构）
+→ ENABLED 空洞 / FE 冻结 / HCI 无应答
+```
+
+**下轮首查**：①反汇编 ROM BT init 区找写 0x2f07f1F4 的函数（`sw …,500(a?)`
+模式，ROM 区 0x2f81xxxx 可 dumpRom 采样后离线 objdecode）；②对照
+esp32c6/bt.c / btdm_lp.c 的 ROM 调用序找 ctx 建立调用；③ctx 值 = ROM BT
+控制块指针（handler 读 [ctx+4] 回调 / [ctx+8][ctx+10] 旗标 / [ctx+94]）——
+找到结构布局后可自建 ctx 或调用 ROM 建立函数。
+
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 
 ```
