@@ -27055,3 +27055,22 @@ burst/BBPLL 配置）从未运行**。已链接的 T 符号（nm 实证）：
 `burst_rf_onoff(1)` → `burst_bbpll_config()`（官方序 rf_on → bbpll_config），
 然后照常走 bringup 步骤 8-20。判据：FE3 450 振荡 / 47C 脉冲 / CONF0 0x2900e448 /
 I2C0_CTRL 非零 / ENABLED 出现——任一即证明 ana 事务已启动。
+
+### ana burst 轮（2026-11-20 极终）：burst 已装、流程进 step15+ 后盲区——需 UART1
+
+ana burst 调用（rf_onoff(1)+bbpll_config）已装进 initPhy（espPhyEnable 后），
+构建烧录成功。但 mce(13)（bit10 关 UART0）在 step15+ 块中先于 load_cal ⇒
+其后全部盲区：FEFE 的 LP 读值 = 下载刮花（每轮不同），无法判断 load_cal
+是否完成/挂死/走到 ENABLED。
+
+**下一会话唯一可判别仪器：UART1/LP-UART（0x20810000，跨 mce(13) 时钟域）**。
+寄存器研究已就绪：DATA +0x00、STATUS +0x1C（RXFIFO_CNT bits[7:3]）、
+CLKDIV_SYNC +0x14、CLK_CONF +0x88（TX_SCLK_EN bit24 default 1）、
+CONF0_SYNC +0x20；LP_UART_TXD_PAD_OUT_IDX=2（LP_IOMUX MCU_SEL bits[14:12]）。
+时钟源待查（LP_CLKRST 或 CLK_CONF 内部，XTAL40M/CLKDIV=347 ≈ 115200）。
+
+**下一会话步骤**：
+1. 找 LP UART 时钟源选择寄存器（LP_CLKRST lp_clk_conf0 或等价）→ 设 XTAL40M
+2. LP_IOMUX：目标 GPIO 的 MCU_SEL=2（LP_UART_TXD）+ 使能输出
+3. probe 的 log 双路：mce(13) 后的 logPublic 追加写 LP_UART FIFO
+4. load_cal 进度全程可见 → 精确卡点一步定位

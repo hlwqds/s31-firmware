@@ -85,6 +85,28 @@ pub fn initPhy() void {
         // 零 flash 写（标记全走 LP 槽），若 rc=0 复现 ⇒ 墙在 IDF load_cal
         // 包装层（NVS/efuse-MAC/calloc）；若仍挂 ⇒ 回归在共享时钟/树改动。
         espPhyEnable(2);
+        // **ana I2C burst 发车**（官方序 rf_on → bbpll_config）：
+        // register_chipv7_phy(rc=0) 不含 ana burst ⇒ CONF0 停 2100e408/CTRL=0
+        // ⇒ bb_init 等合成器 → 互等死锁。burst 后 CONF0 应变 0x2900e448。
+        const rf_onoff = @extern(*const fn (c_int) callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_rf_onoff" });
+        const bbpll_cfg = @extern(*const fn () callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_bbpll_config" });
+        _ = rf_onoff(1);
+        bbpll_cfg();
+        {
+            const hw = struct {
+                extern var flash_op_window: u32;
+            };
+            hw.flash_op_window = 1;
+            var rec: [4]u32 = .{ 0xADC0_5F90, 0x2010_F818, 0x2010_F800, 0x201098BC };
+            rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
+            rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const eser = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+            const eswr = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            _ = eser(0x18E000 / 0x1000);
+            _ = eswr(0x18E000, &rec, 16);
+            hw.flash_op_window = 0;
+        }
     }
 }
 
