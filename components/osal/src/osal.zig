@@ -1546,6 +1546,15 @@ pub const IntrRec = struct {
 
 var intr_pool: Pool(IntrRec, 8) = .{};
 
+/// **按源号查已登记的 ISR**：`intrAlloc` 收下 handler 后只存池子里，CLIC 需要把
+/// 它挂到 trap 分发表（输入号 = src & 63）。查不到返回 null（未登记源）。
+pub fn intrHandlerOf(src: c_int) ?struct { f: *const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque } {
+    for (&intr_pool.records) |*r| {
+        if (r.in_use and r.src == src and r.fn_ != null) return .{ .f = r.fn_.?, .arg = r.arg };
+    }
+    return null;
+}
+
 pub fn intrAlloc(src: c_int, flags: c_int, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque, handle: *?*anyopaque) c_int {
     const r = intr_pool.take() orelse return ENOMEM;
     r.src = src;
