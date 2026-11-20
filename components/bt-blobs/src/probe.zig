@@ -1098,6 +1098,14 @@ pub fn run() noreturn {
     @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
+    // ⚠ **btdm_bss/十字块清零均已否决**（2026-11-21 板载 A/B ×2）：清任何
+    // blob 状态区（十字 0x2f011020-047 或 btdm_bss 6KB）都导致更差（无 boot
+    // 能过 step 20）⇒ **blob 依赖 rst:0x1a 保留 RAM 的跨 boot 接力**（前几
+    // boot 的 PHY 校准/调度状态是后续 boot 的前置）。step17 间歇性的来源
+    // 另找（PHY/时序 boot 依赖嫌疑最大——前几 boot 校准未完成）。
+    @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；

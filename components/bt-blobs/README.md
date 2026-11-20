@@ -27814,3 +27814,12 @@ sleep_en=1 探针态；全套仪器活。
 ⇒ **十字里 7 个非槽全局（0x2f011020/24/2c/30/3c/40/44）是 blob 跨 boot
 依赖的合法状态**（非纯脏残留）——全清破坏 ⇒ 三槽清零为正确粒度。教训：
 "残留=脏"不成立，blob 状态机的部分持久化是合法设计；逐槽判别才能区分。
+
+**btdm_bss 清零否决（2026-11-21 末，板载 A/B 第二轮）**：.btdm_bss
+[0x2f020F80, 0x2f022780)（6KB）清零后——rst:0x1a ×10、无 boot 过 step 20
+（与十字全清同型，更差）⇒ **btdm_bss 也含 blob 跨 boot 依赖状态**。⇒ **两
+轮 A/B 合并结论：blob 的 RAM 状态区（十字 + btdm_bss）都不能清——rst:0x1a
+保留 RAM = blob 跨 boot 接力机制**（前几 boot 的 PHY 校准/调度状态是后续
+boot 的前置）⇒ step17 间歇性来源另找（**PHY/时序 boot 依赖嫌疑最大**——
+前几 boot 校准未完成 ⇒ 后续 boot 的 stack_enable 失败；第 7 boot 起 PHY
+状态齐 ⇒ 过）。观测纪律不变（按 boot 分段/ZU-A0 标 dump 相位）。
