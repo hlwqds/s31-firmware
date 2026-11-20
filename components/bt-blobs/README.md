@@ -27092,3 +27092,14 @@ magic=0xadc05f90 | ANA_CONF0=0x2900e444 | I2C0_CTRL=0x002f0669 | 98BC=0
 
 **下一轮**：burst 已装版本跑更长（60s→120s），看 98BC 是否从 0 变非 0
 （合成器锁 = FE 测量可发车），或流程推进到 ENABLED/HCI。
+
+### burst 效果持久性 + WDT 不触发根因（2026-11-20 真终补注）
+
+burst 后快照复验 ✓（CONF0=0x2900e444 事务相位持续）。WDT 未触发根因：
+RTC WDT 计数器依赖 **RTC 32kHz 慢时钟**——裸机 start 代码可能未使能该时钟
+（仅用主 XTAL/PLL）⇒ WDT 计数器永不递减 ⇒ 永不触发。
+下一会话：先读 LP_CLKRST 时钟状态确认 32kHz 是否在跑，不在则使能后重试；
+或改用 TIMG0 WDT（APB 时钟域，已在跑）。
+
+**burst 效果判定协议已闭环**：CONF0 事务相位 ✓ 实证持续 →
+下一会话在此配置跑更长 + UART1 双通道读 register_chipv7 内部日志。
