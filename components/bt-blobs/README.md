@@ -27377,15 +27377,22 @@ dump blob 寄存器现场（一次 instrumentation 轮）；②BB 中断源静�
 src124/125 的 peripheral 级 int_ena（BT 块内 INT_EN 寄存器，地址未知需从
 mac_isr/LL 反汇编找）；③BB timer 时钟门。
 
-**boot 循环根因定案 + 稳定化（2026-11-21，hscan 轮）**：uart_hscan.log 全解码——
-同二进制反复 rst:0x1a（CPU_LOCKUP）×7 周期，每周期死点一致：probe_irqs 块的
-enableInterrupts（MIE 全开）瞬间，input53 挂着的 chainIsr 被待决源触发 →
-chainIsr 代跑三 handler（0x2f81280e/89a/7ec）→ 它们操作 ROM 状态结构（ctx 槽
-0x2f07f1F4=全 0）→ 解引用空指针 → lockup。PCAddr 0x40077740=trapDispatch 内
-log.line（Writer.print）=异常处理中再异常（双重 fault）⇒ ROM 报 rst:0x1a。
-7 次崩溃 PC 全一致（0x40077740/0x400785fe）⇒ 机制确定非偶发。
-**修复**：chainIsr 改计数 no-op（ctx 未建前不代跑；chain_fires 槽位留观测）。
-**验证**：同流程重烧 866752，**1 banner / 0 rst:0x1a**——boot 循环根除 ✓。
-90s 窗流程至 step20（0x2006 已发出、任务 eventRun 已跑、mutex_pend=0），泵窗
-diag 未及出现。剩余链：应答路径需 MAC 中断链活（BB 调度武装），仍是 ctx 建立
-这一主线的前置。
+**boot 循环稳定化（2026-11-21，hscan 轮；⚠ 机制未定案，撤回声明见下）**：
+uart_hscan.log 全解码——同二进制反复 rst:0x1a（CPU_LOCKUP）×7 周期，每周期死点
+一致：probe_irqs 块的 enableInterrupts（MIE 全开）瞬间，input53 挂着的 chainIsr
+被待决源触发，**chainIsr 代跑三条目（0x2f81280e/89a/7ec，args 0x85/0x03/0x84）
+⇒ 首次 invoke 即 lockup**。7 次崩溃 PC 全一致（0x40077740=trapDispatch 内
+log.line=异常处理中再异常的双重 fault / 0x400785fe）⇒「代跑即崩」这一层实证
+确定；**为何崩未定案**。
+**⚠ 撤回声明**：本段初稿与 59124dd/72c9a19 的提交措辞把机制写成「ctx 槽
+0x2f07f1F4=全 0 ⇒ 解引用空指针」——该前提已被 b9d6a19 实证撤回（0x2f07f1F4
+属 ROM 数据区，ELF 全量 grep 无 blob/app 写者；ROM 表 ext34-40 是 intr 管理
+API 表非硬件分发表）。5521df1 亦解码三条目为 intr 管理 API 家族（置旗/回调
+调用）而非硬件 ISR——**拿 0x85/0x03/0x84 当 ISR 参数代跑本身可能是契约误用**，
+这同样只是候选机制之一，未验证。
+**修复（作为稳定化，不作为机制结论）**：chainIsr 改计数 no-op。
+**验证**：同流程重烧 866752，**1 banner / 0 rst:0x1a**——boot 循环根除 ✓；
+90s 窗流程至 step20（0x2006 已发出、任务 eventRun 已跑），泵窗 diag 未及出现。
+**下步（替代旧的「建 ctx 主线」）**：①离线反汇编三条目自身代码路径，定清
+各自契约（期望参数/返回/副作用）——在此之前**不恢复代跑**；②泵窗长抓确认
+diag/洪水内容（零成本，UART 已有数据）。
