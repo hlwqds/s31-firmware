@@ -999,6 +999,9 @@ pub fn run() noreturn {
     // arm 写）：0x2f815258（偶对齐）/0x2f07f19c（wrapper 域）各 0x80。
     dumpRom("isr35", 0x2f815258, 0x80);
     dumpRom("isr37h", 0x2f07f188, 0x60); // 表头完整字：定位 blob handler 条目的外部号
+    // **ROM BT init 区 dump**：找写 0x2f07f1F4（ctx 指针槽）的初始化函数——
+    // 离线 grep `lui 0x2f07f` + `sw 500(` 定位 ctx 建立调用。
+    dumpRom("btini", 0x2f814000, 0x400);
     // **ctx 追踪（BB 调度真 ISR 定位）**：h_c 尾部 `jr [ctx+4]`（a1=-3）跳真正
     // 主 ISR——ctx 指针槽在 0x2f07f1F4（h_c 的 lw a0,0x1F4(a5)）。
     {
