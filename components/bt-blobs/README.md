@@ -27191,10 +27191,23 @@ resumeTask 破坏调度器，"唤醒只能发生在主上下文"既定规则）�
 **杀死原本走动的 RTC 计数器源**（292395 恒定实测）——已回退 sel=0。
 LP_CLK_PO_EN 与 counter 无关。
 
-剩余嫌疑（按优先级）：①BT 的 LP/sleep 时钟选择（LP_CLKRST slow-clock 源未选/
-未使能——controller 读的时基不是这个 RTC 计数器）；②BB timer 本身未被任务武装
-（controller 任务在等第一个调度 tick，而 tick 源头没人开）；③MAC/BB 源的
-peripheral 级 int_ena（源使能位在 modem 域，未开）。
+**RC32K 正确地址 + handler 溯源（同夜末轮）：**
+
+- `CLK_RC32K_OEN` 正确地址 = **LP_CLK_PO_EN（0x20701000+0x4）bit7**（bitpos[7]
+  落在 PO_EN 区间；此前误写 +0x0 bit7，负结果作废）。使能后 `poen=0x80` 读回
+  粘住 ✓，RTC counter 继续走 ✓——**fe=0 依旧**：sleep clock 振荡器不是（唯一）缺口。
+- **blob 传给 osal `intr_alloc` 的 `fn_=null`**（IDF 语义：handler 另行注册）——
+  `intrHandlerOf` 的 `fn_ != null` 过滤正确跳过 IE+桥 ⇒ brg=0/0/0 稳定。
+  blob 的真 handler 注册位置未知：`trap.romHandler(44)`（input60→ext44）读回
+  `0x0078003a` = 垃圾（非 0x2f8xxxxx 代码域）⇒ 不在 ext 44 或表布局不同。
+  **下轮首动作**：ROM 表全扫描（ext 0..63 非零项）定位 blob 真 ISR，
+  桥 v2 包装它（trap 内只入环，主泵代跑）。
+- `esp_btbb_enable()` 已补进 enable 链头（官方序：phy_enable → btbb_enable →
+  ble_stack_enable）——内部 `bt_bb_v2_init_cmplx` 首次经正式入口运行 ✓ 无挂。
+
+剩余嫌疑（按优先级）：①blob 真 ISR 的注册位置（ROM 表扫描）；②BB timer 本身
+未被任务武装（controller 任务在等第一个调度 tick，而 tick 源头没人开）；③MAC/BB
+源的 peripheral 级 int_ena（源使能位在 modem 域，未开）。
 
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 

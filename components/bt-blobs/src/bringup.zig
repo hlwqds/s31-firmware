@@ -186,15 +186,14 @@ pub fn init(cfg: *config.Config) c_int {
         const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
         d.* |= 0x8000_0000;
     }
-    // **RC32K 输出使能实验（回退保留负结果）**：SLOW_CLK_SEL=1 会**杀死原本
-    // 走动的 RTC 计数器源**（292395 恒定实测）；RC32K_OEN bit7 的写不粘住
-    //（读回恒 0）。已回退 sel=0（默认源，counter 137 kHz 走动）。BT sleep clock
-    // 的真实取数路径仍未定位——diag 继续读 counter+rootc 对照。
+    // **RC32K 输出使能（正确地址）**：`CLK_RC32K_OEN` 在 **LP_CLK_PO_EN_REG
+    // （0x20701000+0x4）bit7**（bitpos[7] 落在 PO_EN 区间；此前误写 +0x0 bit7
+    // =别的字段，"写不粘住"结论作废）。rtc_freq=32000 走 RC32K 路径——振荡器
+    // 输出不开，sleep clock 死 ⇒ 调度器永不判定到期 ⇒ fe 冻结。SLOW_CLK_SEL
+    // 保持默认 0（=1 会杀死走动的 RTC counter 源，已实测回退）。
     {
-        const root: *volatile u32 = @ptrFromInt(0x2070_1000);
-        root.* = (root.* & ~@as(u32, 7 << 23)); // SLOW_CLK_SEL 回默认 0
         const po: *volatile u32 = @ptrFromInt(0x2070_1004);
-        _ = po; // LP_CLK_PO_EN 不再动（本轮证明与 counter 无关）
+        po.* |= (1 << 7); // CLK_RC32K_OEN
     }
     // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
@@ -482,6 +481,18 @@ pub fn enable() c_int {
     }
 
     porting.btdmLpReset(true);
+    // **esp_btbb_enable（官方链：phy_enable → btbb_enable → ble_stack_enable）**：
+    // 内部 `bt_bb_v2_init_cmplx(BTBB_ENABLE_VERSION_PRINT)`——BB 调度器构建，
+    // 经 step 9 注册的 bb funcs 回调（[a4+36]）走正式入口。此前整段缺失 ⇒
+    // bb_v2_init 从未运行 ⇒ BB 调度器不存在 ⇒ 中断不触发/FE 冻结/无广播。
+    // （旧"手动 bb_v2_init = 永等"是顺序错误：在注册前的 init 阶段手动调；
+    // 此刻注册已完成、phy 已使能，与官方时序一致。）
+    {
+        const esp_btbb_enable = @extern(*const fn () callconv(.c) void, .{ .name = "esp_btbb_enable" });
+        osal.logPublic("bt bringup: calling esp_btbb_enable", .{});
+        esp_btbb_enable();
+        osal.logPublic("bt bringup: esp_btbb_enable done", .{});
+    }
     enter(16, "btdm_coex_enable");
     var rc = step(16, "btdm_coex_enable", porting.btdmCoexEnable());
     if (rc != 0) return rc;
@@ -566,6 +577,59 @@ test "bringup: 未 init 时 enable 被拒" {
 }
 
 /// 把外设源号对应的 CLIC 输入使能，并置 `mie` 位。
+// ---------------------------------------------------------------------------
+// **ISR 桥**（2026-11-20）：blob handler 在 trap 上下文不安全（其内
+// eventqPut→resumeTask 破坏调度器，实证 boot 循环）。桥两半：
+// - trap 半 `bridgeIsr`：只把 (f,arg) 压环、立即返回——trap 安全；
+// - 主泵半 `bridgeDrain`（probe 泵循环每轮调用）：主上下文逐个代跑——
+//   "唤醒只能在主上下文"的正解。
+// ---------------------------------------------------------------------------
+const BridgeEntry = struct {
+    f: *const fn (?*anyopaque) callconv(.c) void,
+    arg: ?*anyopaque,
+};
+const BridgeSrc = struct {
+    in_use: bool = false,
+    input: usize = 0,
+    f: *const fn (?*anyopaque) callconv(.c) void = undefined,
+    arg: ?*anyopaque = null,
+};
+var bridge_srcs: [4]BridgeSrc = @splat(.{});
+var bridge_ring: [16]BridgeEntry = undefined;
+pub var bridge_w: u32 = 0;
+var bridge_r: u32 = 0;
+pub var bridge_ran: u32 = 0;
+pub var bridge_dropped: u32 = 0;
+
+fn bridgeIsr(raw_arg: ?*anyopaque) callconv(.c) void {
+    const s: *BridgeSrc = @ptrCast(@alignCast(raw_arg orelse return));
+    if (bridge_w -% bridge_r < bridge_ring.len) {
+        bridge_ring[bridge_w % bridge_ring.len] = .{ .f = s.f, .arg = s.arg };
+        bridge_w +%= 1;
+    } else {
+        bridge_dropped +%= 1;
+    }
+}
+
+/// 主泵循环每轮调用：代跑桥里积压的 blob handler（主上下文，调度器安全）。
+pub var bridge_logged: bool = false;
+pub fn bridgeDrain() void {
+    var guard: u32 = 0;
+    while (bridge_r != bridge_w and guard < 64) : (guard += 1) {
+        const e = bridge_ring[bridge_r % bridge_ring.len];
+        bridge_r +%= 1;
+        bridge_ran +%= 1;
+        if (!bridge_logged) {
+            bridge_logged = true;
+            const fp: usize = @intFromPtr(e.f);
+            const ap: usize = if (e.arg) |a| @intFromPtr(a) else 0;
+            @import("osal_kit").osal.logPublic("bt bridge: first fn=0x{x:0>8} arg=0x{x:0>8}", .{ fp, ap });
+        }
+        e.f(e.arg);
+    }
+}
+
+/// 把外设源号对应的 CLIC 输入使能，并置 `mie` 位。
 /// ⚠ `src` 是**源号**，未必等于 CPU 输入号 ⇒ 同时尝试 `src & 63`，
 /// 并在日志里给出可用 `findPendingClicInput()` 校正的入口。
 fn intrArm(src: c_int) void {
@@ -586,11 +650,34 @@ fn intrArm(src: c_int) void {
     // handler 在 trap 上下文不安全（eventqPut→resumeTask 破坏调度器）。
     // ⇒ ISR 桥完成前**双藏**（compile-time 旗默认 false）：只留 MAP 路由，
     // 源触发后 IP 在 intctl bits[31:24] 里 pend，CPU 不取，稳定可读。
-    const isr_bridge = false;
+    const isr_bridge = true;
+    var bridged = false;
     if (comptime isr_bridge) {
+        // handler 优先级：intrAlloc 登记（罕见）→ **ROM 表**（blob 直注
+        // intr_handler_set 的真 ISR——IDF 语义 osal intr_alloc 可传 fn_=null，
+        // handler 另经 ROM 表注册；romHandler = dispatch 兜底的同一来源）。
+        var hf: ?*const fn (?*anyopaque) callconv(.c) void = null;
+        var harg: ?*anyopaque = null;
         if (@import("osal_kit").osal.intrHandlerOf(src)) |h| {
-            hw.writeReg(0x1080_1000 + input * 4, (1 << 24) | (1 << 8));
-            @import("board").trap.setHandler(input, h.f, h.arg);
+            hf = h.f;
+            harg = h.arg;
+        } else {
+            const rh = @import("board").trap.romHandler(input);
+            if (rh.fn_) |f| {
+                hf = f;
+                harg = rh.arg;
+            }
+        }
+        if (hf) |f| {
+            bridged = true;
+            for (&bridge_srcs) |*s| {
+                if (!s.in_use) {
+                    s.* = .{ .in_use = true, .input = input, .f = f, .arg = harg };
+                    hw.writeReg(0x1080_1000 + input * 4, (1 << 24) | (1 << 8)); // prio+IE
+                    @import("board").trap.setHandler(input, bridgeIsr, s);
+                    break;
+                }
+            }
         }
     }
     const bit: u32 = @as(u32, 1) << @intCast(input & 31);
@@ -598,5 +685,5 @@ fn intrArm(src: c_int) void {
         :
         : [b] "r" (bit),
     );
-    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d} (routed), mie|=0x{x}", .{ src, input, bit });
+    @import("osal_kit").osal.logPublic("bt osal: arm src={d} -> CLIC input {d} (routed, bridged={}) mie|=0x{x}", .{ src, input, bridged, bit });
 }

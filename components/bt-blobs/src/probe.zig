@@ -1228,6 +1228,7 @@ pub fn run() noreturn {
     var diag_at: u32 = 0;
     while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
+        bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
@@ -1236,7 +1237,7 @@ pub fn run() noreturn {
         if (now -% diag_at > 1000) {
             diag_at = now;
             const r98 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-            const conf0 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
+            _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值：txphase 已稳定=1 多轮）
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*; // I2C0_CTRL（活值：本轮诊断行不加，见 burst 快照）
             const fe_cnt = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
             // 任务驻停 PC：swapContext 帧布局 words[12]=ra（sched.zig frame_bytes=64，
@@ -1251,9 +1252,12 @@ pub fn run() noreturn {
             const rtcb: usize = 0x2080_0000;
             @as(*volatile u32, @ptrFromInt(rtcb + 0x10)).* = 1 << 27; // 锁存
             const rtc = @as(*volatile u32, @ptrFromInt(rtcb + 0x14)).*;
-            const rootc = @as(*volatile u32, @ptrFromInt(0x2070_1000)).*;
-            osal.logPublic("bt diag: rfready={d} txphase={d} fe={d} taskpc=0x{x:0>8} qput={d} qok={d} rtc={d} rootc=0x{x:0>8}", .{
-                (r98 >> 2) & 1, (conf0 >> 27) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, rtc, rootc,
+            _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值，txphase 已稳定=1 多轮）
+            const poen = @as(*volatile u32, @ptrFromInt(0x2070_1004)).*;
+            const romh = @import("board").trap.romHandler(44); // input 60 → ext 44
+            const romf: usize = if (romh.fn_) |f| @intFromPtr(f) else 0;
+            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} poen=0x{x:0>8} brg={d}/{d}/{d} romh=0x{x:0>8}", .{
+                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, poen, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, romf,
             });
         }
         if (evt_at == null and transport.stats().evt_count > 0) {
