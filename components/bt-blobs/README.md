@@ -27074,3 +27074,17 @@ CONF0_SYNC +0x20；LP_UART_TXD_PAD_OUT_IDX=2（LP_IOMUX MCU_SEL bits[14:12]）�
 2. LP_IOMUX：目标 GPIO 的 MCU_SEL=2（LP_UART_TXD）+ 使能输出
 3. probe 的 log 双路：mce(13) 后的 logPublic 追加写 LP_UART FIFO
 4. load_cal 进度全程可见 → 精确卡点一步定位
+
+### burst 后快照正判读（2026-11-20 补）：ana I2C 事务已启动！
+
+0x18E000（burst 后快照，`0x18E000` 独占扇区非多方写者）：
+```
+magic=0xadc05f90 | ANA_CONF0=0x2900e444 | I2C0_CTRL=0x002f0669 | 98BC=0
+```
+- CONF0 **2100e408 → 2900e444**（bit27+bit6 置位 = 事务阶段启动）✓
+- I2C0_CTRL = **0x002f0669**（事务配置写入 ✓，与官方首笔 012f0669 同族）
+- ⇒ **ana burst（rf_onoff+bbpll_config）发车成功**——此前"burst 无效果"的
+  判读来自 FEFE 的 LP 刮花值（非实测），本扇区才是真读数。
+
+**下一轮**：burst 已装版本跑更长（60s→120s），看 98BC 是否从 0 变非 0
+（合成器锁 = FE 测量可发车），或流程推进到 ENABLED/HCI。
