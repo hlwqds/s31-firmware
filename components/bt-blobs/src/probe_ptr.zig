@@ -76,86 +76,29 @@ pub fn initPhy() void {
     if (!on_target) return;
     // **5F7E 入口标记**：initPhy 已进入（get_romfuncs 之前）
     {
-        const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
-        const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
-        var rec: [4]u32 = .{ 0xADC0_5F7E, 0x2010_9C08, 0x2010_F01C, 0x2010_9400 };
-        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_9C08)).*;
-        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F01C)).*;
-        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_9400)).*;
-        _ = ese(0x18E000 / 0x1000);
-        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
-        // 不门控则与 ms 级 flash 擦写必然相撞。
-        const clic25: usize = 0x1080_1000 + 25 * 4;
-        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
-
-        _ = esw(0x18E000, &rec, 16);
+        // （标记改 LP 槽，init 零 flash 写）
+        const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
+        get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
+        // **锁绕行**（2026-11-20 单变量）：esp_phy_enable 入口 _lock_acquire（FreeRTOS
+        // 临界锁）与协作式裸机不兼容（EXEC 断点实证：未到 common_clock 即挂死）。
+        // 改为直调其有效内部步骤——均为纯寄存器写，无锁：
+        //   ① modem_clock_module_enable(9)=PERIPH_PHY_MODULE（deps 含 FE/ADC/I2C_ANA_MST）
+        //   ② modem_clock_module_enable(13)=PERIPH_PHY_CALIBRATION_MODULE
+        //   ③ esp_phy_load_cal_and_init()（内部 register_chipv7_phy FULL 校准，
+        //      含 FE 测量环——此刻 FE 时钟已在①②打开）
+        const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
+        // （标记改 LP 槽，init 零 flash 写）
+        // **UART 无关 flash 标记**（pre-enable 窗口安全）：哪个 mce/load_cal 没回来，
+        // 0x18E000 的标记就停在哪个编号（80=mce9 后 81=mce13 后 82=load_cal 后）。
+        _ = mce(9);
+        @as(*volatile u32, @ptrFromInt(0x2e000484)).* = 0xADC0_5F80; // LP 标记
+        mce(13);
+        @as(*volatile u32, @ptrFromInt(0x2e000488)).* = 0xADC0_5F81; // LP 标记
+        const load_cal = @extern(*const fn () callconv(.c) void, .{ .name = "esp_phy_load_cal_and_init" });
+        load_cal();
+        @as(*volatile u32, @ptrFromInt(0x2e00048c)).* = 0xADC0_5F82; // LP 标记
+        @import("osal_kit").osal.logPublic("bt phy: lock-free path done (mce 9/13 + load_cal)", .{});
     }
-    const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
-    get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
-    // **锁绕行**（2026-11-20 单变量）：esp_phy_enable 入口 _lock_acquire（FreeRTOS
-    // 临界锁）与协作式裸机不兼容（EXEC 断点实证：未到 common_clock 即挂死）。
-    // 改为直调其有效内部步骤——均为纯寄存器写，无锁：
-    //   ① modem_clock_module_enable(9)=PERIPH_PHY_MODULE（deps 含 FE/ADC/I2C_ANA_MST）
-    //   ② modem_clock_module_enable(13)=PERIPH_PHY_CALIBRATION_MODULE
-    //   ③ esp_phy_load_cal_and_init()（内部 register_chipv7_phy FULL 校准，
-    //      含 FE 测量环——此刻 FE 时钟已在①②打开）
-    const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
-    const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
-    const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
-    // **5F7F 前置标记**：get_romfuncs 之后、mce(9) 之前——分离"get_romfuncs 挂"
-    // 与"mce(9) 挂"（上一轮 0x18E000 残留 fee8，两者不可分）。
-    {
-        var rec: [4]u32 = .{ 0xADC0_5F7F, 0x20100450, 0x20109C14, 0x201098BC };
-        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
-        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*; // clk_conf1（FE 位自证）
-        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-        _ = ese(0x18E000 / 0x1000);
-        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
-        // 不门控则与 ms 级 flash 擦写必然相撞。
-        const clic25: usize = 0x1080_1000 + 25 * 4;
-        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
-
-        _ = esw(0x18E000, &rec, 16);
-    }
-    // **UART 无关 flash 标记**（pre-enable 窗口安全）：哪个 mce/load_cal 没回来，
-    // 0x18E000 的标记就停在哪个编号（80=mce9 后 81=mce13 后 82=load_cal 后）。
-    _ = mce(9);
-    {
-        var rec: [4]u32 = .{ 0xADC0_5F80, 0x20100450, 0x201008D0, 0x201098BC };
-        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
-        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
-        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-        _ = ese(0x18E000 / 0x1000);
-        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
-        // 不门控则与 ms 级 flash 擦写必然相撞。
-        const clic25: usize = 0x1080_1000 + 25 * 4;
-        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
-
-        _ = esw(0x18E000, &rec, 16);
-    }
-    mce(13);
-    {
-        var rec: [4]u32 = .{ 0xADC0_5F81, 0x20100450, 0x2010047C, 0x201098BC };
-        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
-        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
-        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-        _ = ese(0x18E000 / 0x1000);
-        _ = esw(0x18E000, &rec, 16);
-    }
-    const load_cal = @extern(*const fn () callconv(.c) void, .{ .name = "esp_phy_load_cal_and_init" });
-    load_cal();
-    {
-        var rec: [4]u32 = .{ 0xADC0_5F82, 0x20100450, 0x2010047C, 0x201098BC };
-        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
-        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
-        rec[3] = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-        _ = ese(0x18E000 / 0x1000);
-        _ = esw(0x18E000, &rec, 16);
-    }
-    @import("osal_kit").osal.logPublic("bt phy: lock-free path done (mce 9/13 + load_cal)", .{});
 }
 
 /// `esp_phy_enable(modem)` 的**显式实现**（替代 `rom_syms.ld` 里那个冻结的伪造地址）。

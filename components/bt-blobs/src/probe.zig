@@ -960,10 +960,18 @@ pub fn run() noreturn {
     board.trap.resetPcs();
     board.trap.sample_quiet = true;
     board.trap.pc_dump_at = 0xFFFF_FFFF; // ISR 落盘永久关（撞车根因，2026-11-20）
-    // ⚠ **T0 武装移到 init 之后**（2026-11-20 终）：init 期有 ms 级 flash 擦写
-    // （per-step 标记），T0（125µs）期间打进 XIP trap ⇒ flash-cache 关闭窗口内
-    // 取指失败 → trapDispatch（也在 flash）→ 嵌套异常 → CPU_LOCKUP 重启循环。
-    // init 期零中断源 = 标记写无碰撞；enable 期（16-20）无 flash 写，T0 安全。
+    // **init 窗口 T0 + NMI**（tick 是 vendor 校准依赖，不能撤）：
+    // ISR 的 0x187000 dump 已永久关（pc_dump_at=0xFFFF_FFFF）⇒ 无 flash 竞争。
+    // NMI 转换让 register_chipv7_phy 关中断段仍可观测。
+    if (!probe_irqs) {
+        probe_irqs = true;
+        board.hw.routeT0Interrupt(25);
+        board.hw.armT0Interrupt(2000);
+        board.hw.enableInterrupts();
+        const nmi_reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
+        const old_c = nmi_reg.*;
+        nmi_reg.* = (old_c & 0x107) | (1 << 3); // nmies 置位（NMI 不受 MIE 屏蔽）
+    }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；

@@ -26902,3 +26902,27 @@ register_chipv7_phy 的校准轮询等 ana I2C/RF 前端响应，而裸机最小
 状态机（PMU_RF_PWC/SDIO_POWER/ANA_PERI 的完整 sequence + 时序）移植为
 裸机寄存器序列。工作量：一个专门的移植会话（pmu 模块源码在
 esp_hw_support/port/esp32s31/pmu*.c，含状态机表）。
+
+### EXEC 断点全链验证（2026-11-20 真终）：仪器链完整可用，流程到达 load_cal
+
+修正 mepc 推进误伤（移除推进——触发器就地禁用即无重触发）后：
+
+```
+BP! n=1 mepc=0x40000580 cause=3 t2=0x40000580   ← EXEC 断点命中 load_cal 入口 ✓
+!! c_mepc=0x40000580 ... c_ra=0x4006d3bc ... cause=0x3 step=52 init_phy
+SL sj=0x2f01d498 sv=0x00000034 want=0x40000580 sn=6   ← 触发自证（want=tdata2 ✓）
+panic: halted (wfi)                                    ← 诊断停机（断点设计行为）
+```
+
+⇒ **EXEC 断点链完整可用**（MIE 屏蔽下命中 → BP! 行 → 自证 → 停机）。
+流程已实证到达 `esp_phy_load_cal_and_init` 入口——**BT 线的软件侧全通**：
+step 3/4/5/51/52 + mce(9)/mce(13) + load_cal 调用，全部到达。
+
+**真墙最终定位**：`load_cal` 内部（register_chipv7_phy FULL 校准）挂死/慢，
+60s 未返回。此前判读修正链：FE 环=任务后台循环（非墙）、SPI1 wedge=竞争伪影、
+98BC/11AC=官方同值（非判据）、mce=正常返回（非墙）。
+
+**下一会话**：①移除 EXEC 断点让 load_cal 跑（UART 读者在场，register_chipv7_phy
+的 ESP_LOG 会打印进度——load_cal 内部日志（"phy_version"/cal 段）会显示卡在
+哪个子步）；②若它静默挂死，nm+objdump register_chipv7_phy 找内部轮询环，
+EXEC 断点逐个钉（仪器已全验证）。
