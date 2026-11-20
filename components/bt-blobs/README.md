@@ -26747,3 +26747,23 @@ sync/waitq 模式——BT 线缺的就是这块调度集成。
 
 **下一会话**：osi_impl 的 mutex_pend/sem_wait（tmo 路径）加阻塞让出；
 判据 = step 20 返回、`bt bringup: ENABLED` 出现、HCI 序列推进。
+
+### IDF esp_phy_enable 挂点收窄（2026-11-20 末）：挂在 _lock_acquire，绕行方案已定
+
+EXEC 断点（common_clock_enable 入口 0x2f000932）+ 安全 trap 分支（UART 一行 +
+mepc 按指令长度推进 + RAM 命中记录，不再 flash 擦写）重跑：**零命中**，
+流程仍停在 step 52（"domain clocks on" 之后静默、无 panic、无 BP 行）。
+
+⇒ IDF `esp_phy_enable(2)` 在**入口 _lock_acquire**（FreeRTOS 临界锁）处挂死，
+未到达任何内部 helper。锁路径与协作式裸机环境不兼容（官方 app 有 FreeRTOS
+所以同代码可跑）。
+
+**下一会话单变量（绕行方案）**：step 52 不调 esp_phy_enable，改为直接调
+1. `modem_clock_module_enable(9)`（PERIPH_PHY_MODULE，deps 含 FE/ADC/I2C_ANA_MST）
+2. `modem_clock_module_enable(13)`（PERIPH_PHY_CALIBRATION_MODULE）
+3. `esp_phy_load_cal_and_init()`（T@0x40000580，已链接；内部
+   register_chipv7_phy FULL 校准——纯寄存器写，无锁）
+
+判据：FE3 450 振荡 / 47C 脉冲 / ENABLED 出现 / bb init 完成后 HCI 推进。
+若 register_chipv7_phy 内部还有别的锁原语 ⇒ 换用其"已校准"短路径或逐步
+stub（照实记录）。

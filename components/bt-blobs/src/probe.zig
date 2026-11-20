@@ -788,7 +788,23 @@ pub fn run() noreturn {
         // **ana I2C master 块只读探测**（DR_REG_I2C_ANA_MST_BASE=0x2010F800）：
         // regi2c 写-回读的前哨——若三读全 FF/stall ⇒ 块不可访问（时钟/电源未到位），
         // burst 写自然 no-op；若可读 ⇒ 块活着，regi2c 死因在事务层。
-        var rc_: [7]u32 = .{
+        // **触发器武装读回**：tselect=0/1/2 的 tdata1——若 chip 只有 1-2 个触发器，
+        // 高位 tselect 写会饱和/忽略，读回即知三触发武装是否真实成立。
+
+        var td1: [3]u32 = @splat(0);
+        for (0..3) |ti| {
+            const t = @as(u32, @intCast(ti));
+            asm volatile ("csrw 0x7a0, %[t]"
+                :
+                : [t] "r" (t),
+            );
+            var tmp: u32 = 0;
+            asm volatile ("csrr %[v], 0x7a1"
+                : [v] "=r" (tmp),
+            );
+            td1[ti] = tmp; // asm 输出操作数不允许下标表达式
+        }
+        var rc_: [10]u32 = .{
             0xADC0_FEE7,
             rd_.r(0x2070_4184),
             rd_.r(0x2010_F83C),
@@ -796,7 +812,14 @@ pub fn run() noreturn {
             rd_.r(0x2010_F818), // ANA_CONF0
             rd_.r(0x2010_F81C), // ANA_CONF1（STATUS1 在其 bits31:24）
             rd_.r(0x2010_F800), // I2C0_CTRL
+            td1[0],
+            td1[1],
+            td1[2],
         };
+        // 恢复 tselect=2（武装的 register_chipv7_phy 触发）
+        asm volatile ("li t0, 2");
+        asm volatile ("csrw 0x7a0, t0");
+
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 28);
     }
@@ -833,13 +856,50 @@ pub fn run() noreturn {
     lrec[18] = @as(*volatile u32, @ptrFromInt(0x2E00_0454)).*; // SPI1_CMD 同拍
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
     _ = esp_rom_spiflash_write(0x18A000, &lrec, 76);
-    // **安全次序：先关后配最后开** —— 中间态绝不带着陈旧 tdata2 武装活观察点：
-    // ⚠ **观察点已撤防**（2026-11-20 末）：它盯的 [0x2f07f99c] 回调槽写是我们
-    // 自己 LE 块的 unlock 写——上一轮断点 mtval=0x2f07f99c（exception 3）就是
-    // 这把陈旧武器打在自己人身上。观察点属于已废弃的 unlock 实验。
-    asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（全关，保持）
-    asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除，保持）
+    // **EXEC 断点武装**（2026-11-20 终）：0x2f828a64 = FE 环内指令。MIE 屏蔽下
+    // NMI/T0 全哑（上一轮 IDL esp_phy_enable 挂死时零 NMI 行 = MIE 关），而
+    // mcontrol6 EXEC match 不受 MIE 影响 ⇒ 若 CPU 在 MIE=0 下执行 FE 环，
+    // 断点异常（cause 3）穿透屏蔽，trap 处理器的 "!!" dump 直接给出 mepc/现场。
+    asm volatile ("csrw 0x7a5, zero"); // tcontrol = 0（先全关）
+    asm volatile ("csrw 0x7a1, zero"); // tdata1 = 0（解除）
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
+    // **单触发（消除数量未知互覆）+ 饱和探测**：只武装 common_clock 入口
+    // （esp_phy_enable 内第一个 helper）。UART 直打探测结果（MIE 前置，可靠）。
+    asm volatile ("csrw 0x7a0, zero");
+    asm volatile ("li t0, 0x2f000932");
+    asm volatile ("csrw 0x7a2, t0");
+    asm volatile ("li t0, 0x58");
+    asm volatile ("csrw 0x7a1, t0");
+    // tdata1 读回自证（写 0x58 后应读回含 0x58 的值；全 FF/0 ⇒ 触发器不存在）
+    var tdl: u32 = 0;
+    asm volatile ("csrr %[v], 0x7a1"
+        : [v] "=r" (tdl),
+    );
+    // tselect 饱和探测：写 3 读回——读回 3 ⇒ ≥4 个触发器；读回 <3 ⇒ 更少
+    var ts3: u32 = 0;
+    asm volatile ("li t0, 3");
+    asm volatile ("csrw 0x7a0, t0");
+    asm volatile ("csrr %[v], 0x7a0"
+        : [v] "=r" (ts3),
+    );
+    asm volatile ("csrw 0x7a0, zero"); // 回 tselect=0
+    asm volatile ("li t0, 0x88");
+    asm volatile ("csrw 0x7a5, t0"); // tcontrol（最后开）
+    @import("board").hw.rawWrite("bt probe: trig armed tdl=0x");
+    // 十六进制后缀（rawWrite 无格式化，分三段拼）
+    const hexd = "0123456789abcdef";
+    var hx: [8]u8 = undefined;
+    var hi: usize = 8;
+    var vv = tdl;
+    while (hi > 0) : (hi -= 1) {
+        hx[hi - 1] = hexd[vv & 0xF];
+        vv >>= 4;
+    }
+    @import("board").hw.rawWrite(&hx);
+    @import("board").hw.rawWrite(" tsat3=");
+    var hx2: [2]u8 = .{ hexd[(ts3 >> 4) & 0xF], hexd[ts3 & 0xF] };
+    @import("board").hw.rawWrite(&hx2);
+    @import("board").hw.rawWrite("\n");
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
     // {FEF5, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;

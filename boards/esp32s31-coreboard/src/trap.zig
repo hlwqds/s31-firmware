@@ -237,20 +237,34 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **独占命中记录**：{FEEF, mcause, auth_pc, tdata1_rb, tdata2_rb} @0x18B000
         // —— 命中即自证当时 armed 的配置，杜绝"读到别处记录当命中"。
         // **本轮新增**：命中瞬间读回调表项活值（被写上了吗）+ 基址指针 + 合成器侧
-        const r99c: u32 = @as(*volatile u32, @ptrFromInt(0x2f07_F99C)).*;
-        const rffe4: u32 = @as(*volatile u32, @ptrFromInt(0x2f07_FFE4)).*;
-        const r98bc: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-        const rd800: u32 = @as(*volatile u32, @ptrFromInt(0x2010_D800)).*;
-        var tb: [10]u32 = .{ 0xADC0_FEFB, cause, auth_pc, t1rb, t2rb, r99c, rffe4, r98bc, rd800, 0x2f07_F99C };
+        // ⚠ **断点分支禁止 flash 擦写**（2026-11-20 教训：XIP 下 trap 内擦写 flash
+        // = 阻塞取指 = 硬挂；"零命中+静默"即断点命中后自擦除冻结的假象）。
+        // 改为：UART 一行（读者在场即可见）+ **mepc += 4 推进**（跨过 match 指令，
+        // 防同一指令立即重触发）+ 命中信息存 RAM 全局（host 经下一轮 dump 读）。
+        bp_hit_mepc = auth_pc;
+        bp_hit_cause = cause & 0x3F;
+        bp_hit_count +%= 1;
         {
-            // **不屏蔽 MIE 直写**（2026-11-19 flashStage 教训：pmu_init 之后屏蔽 MIE 的
-            // 擦写静默失败，直写才落地。窗口内唯一中断源是 2ms 采样器，ISR 不写 flash）。
-            _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
-            _ = esp_rom_spiflash_write(0x18B000, &tb, 40);
+            var pb: [120]u8 = undefined;
+            const pl = std.fmt.bufPrint(&pb, "BP! n={d} mepc=0x{x:0>8} cause={d} t2=0x{x:0>8}", .{
+                bp_hit_count, auth_pc, cause & 0x3F, t2rb,
+            }) catch "BP! (fmt fail)";
+            hw.rawLineBlocking(pl);
         }
-        asm volatile ("li t1, 1");
-        asm volatile ("csrw 0x7a5, t1"); // tselect = 1
-        asm volatile ("csrw 0x7a0, zero"); // tdata1 = 0 ⇒ 触发器禁用
+        // **禁用命中触发器**（矩阵：0x7a0=tselect、0x7a1=tdata1）。
+        // 命中时 tselect 就是命中的触发器号 ⇒ 读 tselect → tdata1=0 禁用它。
+        var cur_tsel: u32 = 0;
+        asm volatile ("csrr %[v], 0x7a0"
+            : [v] "=r" (cur_tsel),
+        );
+        bp_last_tsel = cur_tsel;
+        asm volatile ("csrw 0x7a1, zero"); // 命中触发器 tdata1=0 禁用
+        // **mepc 推进（仅断点分支）**：EXEC 断点在指令执行前触发，不推进会立刻
+        // 重触发同一指令。按指令长度推进：读 mepc 处 16 位半字，(hw & 3) != 3
+        // ⇒ RVC 2 字节；否则 4 字节。⚠ 必须在 cause==3 分支内——放在外层会
+        // 让每次普通中断返回都跳 4 字节，破坏全部控制流与 PC 采样。
+        const inst_hw: u16 = @as(*volatile u16, @ptrFromInt(auth_pc)).*;
+        if ((inst_hw & 3) != 3) frame.mepc +%= 2 else frame.mepc +%= 4;
     }
     if ((cause & 0x8000_0000) != 0) {
         // 数组只存前 `irq_samples.len` 个（判读用）；**打印独立限长**——之前把打印放在
@@ -951,6 +965,10 @@ pub var sample_quiet: bool = false;
 pub var sample_period_us: u32 = 2000;
 pub var nmi_count: u32 = 0;
 var fe3_hits: u32 = 0;
+var bp_hit_mepc: u32 = 0;
+var bp_hit_cause: u32 = 0;
+var bp_hit_count: u32 = 0;
+var bp_last_tsel: u32 = 0xFFFF_FFFF;
 var fe3_params_done: bool = false;
 var hist_ticks: u32 = 0;
 var hist_fe: u32 = 0;

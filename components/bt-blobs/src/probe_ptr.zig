@@ -76,7 +76,15 @@ pub fn initPhy() void {
     if (!on_target) return;
     const get_romfuncs = @extern(*const fn () callconv(.c) void, .{ .name = "phy_get_romfunc_addr" });
     get_romfuncs(); // 填 `g_phyFuns`（PHY 函数表）—— 实测确实被填写
-    espPhyEnable(2); // PHY_MODEM_BT
+    // **IDF 真身替换自写版**（2026-11-20 单变量）：esp_phy_enable 内部含
+    // esp_phy_common_clock_enable + phy_module_enable → modem_clock_module_enable
+    // (PERIPH_PHY_MODULE，deps 含 MODEM_ADC_COMMON_FE/PRIVATE_FE/I2C_ANA_MST/
+    // SOC_PLL_SOURCE_CG——正是 FE 测量与 ana I2C 的时钟) + esp_phy_load_cal_and_init
+    // → register_chipv7_phy（FULL 校准）。自写版从不使能这些 deps ⇒ BB init 的
+    // FE 测量从未发车。判据：FE3 450 振荡 / 47C 脉冲 / ENABLED 出现；
+    // 若 assert(phy_module_has_clock_bits(0x38E5FF)) 或 NVS 空数据 abort，照实记录。
+    const esp_phy_enable_idf = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
+    esp_phy_enable_idf(2); // PHY_MODEM_BT
 }
 
 /// `esp_phy_enable(modem)` 的**显式实现**（替代 `rom_syms.ld` 里那个冻结的伪造地址）。
