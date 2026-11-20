@@ -27664,3 +27664,16 @@ rst:0x1a 仅剩早期 1 次）⇒ "数次风暴后才过"= **rst:0x1a 不清 RAM
 行为非故障**（PHY 判别支线的遗留等待段，其后是 esp_phy_enable(2) 判别）。
 **下轮**：esp_phy_enable 判别结果（0xa4/0x88 标记：hist=12 ⇒ 死在其内/hist=11
 ⇒ 死在调用前）→ PHY 上电链是 BT sleep 路径的下一块基础设施。
+
+**esp_phy_enable 判别轮结果（2026-11-21，uart_dirty.log 515 NMI）**：
+流程经 wait_dumps 定长环（8 样本 @0x4006a6cc ✓）后进入 **esp_phy_enable(2)
+（IDF 本体，WITH_PHY=1 链入）**——此后 507/515 样本（98.4%）钉在
+`__udivmoddi4` 内部（divwide_generic/divwide 循环，ra=0x400aba20 = 其自身
+调用帧），持续分钟级不返 ⇒ **IDF 自己的 esp_phy_enable 在我们的最小 PMU
+序列上也点不亮**（内部校准/换算以 u64 除法链为主导，轮询永不满足）。
+⇒ **判别命题兑现**："若仍挂 ⇒ 连 IDF 都点不亮这块，问题在更上游（电源岛/
+晶振时钟路径）"——WiFi/BT PHY 线的墙从"我们的手写序列缺步骤"升级为
+"esp-idf PMU 功率管理状态机（RF 上电是时序链非开关）在该裸机环境缺
+基础条件"。与 ch29 §29.19 的"唯一真墙"结论互证。
+⇒ 下一步方向（PHY 线）：esp-idf pmu_ 模块的 RF 上电状态机移植（时序链），
+或 IEEE80211 目标下用 `porting_btdm` 的睡眠路径绕开（sleep_en=1 线）。
