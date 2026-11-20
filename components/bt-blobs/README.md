@@ -27279,12 +27279,21 @@ objdecode 实证为真代码但定性为 **intr 管理 API**（校验 src/type �
 链表头 0x2f07f19c**，链表节点 = 三条 blob handler（全偶地址可调用）：
 0x2f81280e(arg 0x85) / 0x2f81289a(arg 0x03) / 0x2f8127ec(arg 0x84)。
 
-**ctx 槽定案**：0x2f07f1F4（ROM BT 分发 ctx 指针槽）= **全 0**（ctx 追踪
-dump 实证）——h_c 尾部 `lw a0,[0x1F4]; jr [a0+4]` 依赖的 ROM 分发上下文
-**从未初始化**。⇒ blob 直调 r_btdm_* 系列函数跳过了 ROM 侧 BT 入口的 ctx
-建立（官方链 = esp_bt_controller_init → ROM 包装 → 设 ctx → 分发表生效）。
+**⚠ ctx 槽判读反转（ELF 全量 grep 定案）**：`0x4004d48x`（
+r_sym_ble_DeW6gnXXMwIjWEmDQH8m 内）的 `sw a3,500(a5)` 操作对象是
+**0x201011F4（app 侧表）**——objdump 注释行被我误读为 0x2f07f1F4（a5 基址
+是 0x20101000 系，非 0x2f07f000）。**ROM 表 ext34/35/37 槽 = intr 管理 API
+表**（0x2f815258=intr 管理 API、ext37 链表头+三 handler=ROM 侧管理结构），
+**非硬件中断分发表**；0x2f07f1F4 属 ROM 数据区，blob/app 不写它。
 
-**下轮首查**：找 ROM 里写 0x2f07f1F4 的初始化函数（反汇编 ROM BT init 区，
-找 `sw …,0x1F4(a?)` 模式），或对照 esp32c6/bt.c / btdm_lp.c 的 ROM 调用序
-（esp_btbb_enable 前后是否夹着 ROM ctx init 调用）。路由正解 = src124/125
-→ CLIC input 53（ext37 链表头）+ ctx 建立后 ROM 分发器遍历三 handler。
+**修正后的中断注册真相**：blob 的真 MAC ISR 经 **intr_handler_set(21,
+mac_isr, arg)** 直注 → shellSetIsr → 自有表 handlers[21-16=5]（hscan 实证
+非空 ✓）⇒ **路由 src124→input21 本就正确**（dispatch input21→ext5→
+getHandler(5)=mac_isr ✓ 链路无断点）。缺的不是路由也不是 handler 注册——
+是 **mac_isr 没被触发**（BB 中断源静默）或触发了但 mac_isr 首调即崩
+（input50 桥版 boot 循环 = mac_isr 经桥跑过但行为异常的候选实证）。
+
+剩余嫌疑（按优先级）：①mac_isr 首调行为——桥的 drain 跳 mac_isr 时
+dump blob 寄存器现场（一次 instrumentation 轮）；②BB 中断源静默——
+src124/125 的 peripheral 级 int_ena（BT 块内 INT_EN 寄存器，地址未知需从
+mac_isr/LL 反汇编找）；③BB timer 时钟门。
