@@ -27760,3 +27760,15 @@ obj[78] 旗标/obj[68] 时间比对），**无任何寄存器写** ⇒ EabY 族�
 **mac_isr 身份未定**：`intr_handler_set(21, mac_isr)` 的 blob 调用点未
 找到（`li reg,21` 常数搜索无命中，常数嵌入形态待专项）⇒ INT_EN 定位留下
 一轮专项（搜索 blob 区 0x15 常数 + 注册导出调用点）。
+
+**热点未知块归属完（2026-11-21 末，当前 ELF addr2line）**：
+- **0x201021xx 16B 步进阵列**（124/28/2c/50/54/58/5c/60/64/68/6c 各 8×）=
+  **blob BLE 通道寄存器组**（访问者 HMLMZPGDFKHQBGsbW7FL/q4fRanBdVgftXY2ep3Zs
+  等 BLE 符号）——非 INT_EN。
+- **0x20101090（28×）** = r_sym_bt_KrvfcwDw4eZoaTPVdFj5（vibw 同族调度器
+  ready-list 域字段）——非 INT_EN。
+- 0x20101400（40×）= 我们自己的 trap/采样器路径（已排除）。
+⇒ 静态反汇编**无 INT_EN 式写**（使能掩码/读清模式零命中）⇒ INT_EN 定位
+转运行时法：①mcontrol6 STORE 眼睛看调度器写哪个寄存器置位；②停驻态对
+BB 块寄存器区做前后差分（哪些字被 LL 写过）。mac_isr 身份专项（0x15 常数
++注册导出调用点）不变。
