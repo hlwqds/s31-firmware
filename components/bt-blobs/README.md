@@ -26941,3 +26941,17 @@ register_chipv7_phy 的校准轮询等 ana I2C/RF 前端响应，裸机最小 PM
 （esp_hw_support/port/esp32s31/pmu*.c 的 RF power sequence 表）
 为裸机寄存器序列。所有仪器（EXEC 断点 0x4C/0x58 双编码验证可用、
 CLIC 门控、per-step LP 标记、安全 trap 分支）在位。
+
+### UART 静默真因（2026-11-20 终）：mce(13) 关了 UART0 的 APB 时钟
+
+`mce(13)`（PERIPH_PHY_CALIBRATION）deps 含 WIFI_APB → 落地写
+`clk_conf1.bit10`（wifi_apb）= **UART0 的 APB 时钟位** ⇒ step 52 后 UART 静默
+= **观测通道被被测操作（时钟使能）关闭**，非流程挂死。
+
+证据链：①UART 日志截断在半句（TX 通道时钟被切）；②porting.zig 早有同类记录
+（0x003fffff 全开曾试 ⇒ 60s 零字节）；③本轮 step 52 后静默 + 无 reboot 循环
+（= 流程可能仍在推进，只是全盲）。
+
+**下一会话**：配置 **UART1**（独立 APB 时钟域）在 load_cal 之前，log 双路输出
+——mce(13) 杀 UART0 不影响 UART1 ⇒ load_cal/register_chipv7 内部的
+ESP_LOG（"phy_version"/校准进度）全程可见，墙的精确定位一步可得。

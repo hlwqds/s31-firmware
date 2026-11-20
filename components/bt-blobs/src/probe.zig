@@ -846,7 +846,7 @@ pub fn run() noreturn {
     // **LP 逐轮历史转写**（落点在 FEFC 之后 —— 该窗口写可靠）：
     // {FEFE, boot_n, hist[0..9], enable步号, 0x404, 0x30, FE三件套+mepc} @0x18A000。
     // [14..17] = NMI 450k 时拍的 0x201098BC/0x201008D0/0x201011AC/mepc（FE 环定位判据）。
-    var lrec: [19]u32 = @splat(0);
+    var lrec: [24]u32 = @splat(0);
     lrec[0] = 0xADC0_FEFE;
     lrec[1] = lp_boot_n;
     for (0..9) |k| lrec[2 + k] = lp_hist[k];
@@ -858,8 +858,13 @@ pub fn run() noreturn {
     lrec[16] = @as(*volatile u32, @ptrFromInt(0x2E00_0448)).*;
     lrec[17] = @as(*volatile u32, @ptrFromInt(0x2E00_044C)).*;
     lrec[18] = @as(*volatile u32, @ptrFromInt(0x2E00_0454)).*; // SPI1_CMD 同拍
+    lrec[19] = @as(*volatile u32, @ptrFromInt(0x2E00_0490)).*; // ANA_CONF0 @load_cal
+    lrec[20] = @as(*volatile u32, @ptrFromInt(0x2E00_0494)).*; // I2C0_CTRL @load_cal
+    lrec[21] = @as(*volatile u32, @ptrFromInt(0x2E00_0498)).*; // ANA_CONF1 @load_cal
+    lrec[22] = @as(*volatile u32, @ptrFromInt(0x2E00_049C)).*; // 98BC @load_cal
+    lrec[23] = 0xADC0_5FE9; // 格式标记（本扩展版）
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x18A000, &lrec, 76);
+    _ = esp_rom_spiflash_write(0x18A000, &lrec, 92);
     // **EXEC 断点武装**（2026-11-20 终）：0x2f828a64 = FE 环内指令。MIE 屏蔽下
     // NMI/T0 全哑（上一轮 IDL esp_phy_enable 挂死时零 NMI 行 = MIE 关），而
     // mcontrol6 EXEC match 不受 MIE 影响 ⇒ 若 CPU 在 MIE=0 下执行 FE 环，
