@@ -865,11 +865,20 @@ pub fn run() noreturn {
     asm volatile ("csrw 0x7a0, zero"); // tselect = 0
     // **单触发（消除数量未知互覆）+ 饱和探测**：只武装 common_clock 入口
     // （esp_phy_enable 内第一个 helper）。UART 直打探测结果（MIE 前置，可靠）。
+    // trig0: esp_phy_load_cal_and_init @0x40000580（当前流程 step 52 直调）
     asm volatile ("csrw 0x7a0, zero");
-    asm volatile ("li t0, 0x2f000932");
+    asm volatile ("li t0, 0x40000580");
     asm volatile ("csrw 0x7a2, t0");
     asm volatile ("li t0, 0x58");
     asm volatile ("csrw 0x7a1, t0");
+    // trig1: register_chipv7_phy @0x40063e32（load_cal 的深层调用）
+    asm volatile ("li t0, 1");
+    asm volatile ("csrw 0x7a0, t0");
+    asm volatile ("li t0, 0x40063e32");
+    asm volatile ("csrw 0x7a2, t0");
+    asm volatile ("li t0, 0x58");
+    asm volatile ("csrw 0x7a1, t0");
+    asm volatile ("csrw 0x7a0, zero"); // 回 trig0
     // tdata1 读回自证（写 0x58 后应读回含 0x58 的值；全 FF/0 ⇒ 触发器不存在）
     var tdl: u32 = 0;
     asm volatile ("csrr %[v], 0x7a1"

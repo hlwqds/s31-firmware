@@ -26784,3 +26784,24 @@ modem_lpcon_ll / ANALOG_CLOCK_ENABLE()=ana i2c master clk / icg power st），
 modem-phy skill 的 deps/ICG 表 + `clk_conf1=0x003fffff` 已证可行的目标值是全部依据。
 EFISE：本轮 EXEC 断点 + 安全 trap 分支（UART 一行/mepc 按长推进/RAM 命中记录）
 是新仪器，已验证可用（MIE 屏蔽下命中可观测）。
+
+### mce(9) 挂死实锤（flash 标记法，2026-11-20 真终）
+
+0x18E000 per-step 标记（UART 无关、pre-enable 安全窗）：三标记（mce9 后/mce13 后/
+load_cal 后）**一个都没落** ⇒ 挂死点 = **modem_clock_module_enable(9)**
+（PERIPH_PHY_MODULE）内部——其 deps=0x17 的路由含 ANALOG_CLOCK_ENABLE()
+（ana i2c master 时钟），该 C 路径在本板挂。
+
+**BT 墙完整因果链（终版）**：
+自写 espPhyEnable 不使能 FE/ADC/I2C_ANA 时钟 deps → BB init 的 FE 测量无时钟
+→ bb_init 试图配置合成器（ana I2C 事务）但事务依赖的时钟/前序未就绪 →
+bb_init 内部轮询永不满足 → r_btdm_task_enable（step 20）在归档轮询里等 bb_init
+→ 主上下文永不返回 → ENABLED 永不出现。
+
+**下一会话（纯寄存器移植，无 esp-idf helper）**：按 modem_clock_impl.c
+PHY_CLOCK_DEPS=0x17（bits 0/1/2/4 → WIFI/BT/I2C_ANA_MASTER/? 的路由表）与
+modem_clock_hal.c 的每-route 寄存器落地（modem_syscon_ll_enable_*_clock /
+ANALOG_CLOCK_ENABLE()=0x2010F83C.bit28 已知 / icg power st），逐 route 手写；
+参照值 clk_conf=0x7e601002、clk_conf1=0x003fffff（官方实测）。写完跑
+load_cal（EXEC 断点在位）→ FE 测量应发车（450 振荡/47C 脉冲）→ bb init 过 →
+ENABLED → HCI 推进。
