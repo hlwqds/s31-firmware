@@ -620,6 +620,36 @@ pub fn run() noreturn {
     });
     cfg = config.defaults();
     osal.logPublic("bt probe: init start", .{});
+    // **LP timer 时钟门扫描（安全协议）**：①LP_CON 基线 dump（8 字）；
+    // ②clk_conf(+0x18) 置高位候选门（保低 4 位已确认）；③LP 槽记录 mask；
+    // ④读 0x2070_0C00（挂 ⇒ rst ⇒ LP 槽存证 mask，rst 后可判）；⑤恢复。
+    {
+        // ①基线 dump
+        var bb: [200]u8 = undefined;
+        var bi: usize = 0;
+        var rw: usize = 0;
+        while (rw < 8) : (rw += 1) {
+            const v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F000 + rw * 4)).*;
+            const pc = std.fmt.bufPrint(bb[bi..], "F{d:0>2}={x:0>8} ", .{ rw * 4, v }) catch break;
+            bi += pc.len;
+        }
+        bb[bi] = 0;
+        board.hw.rawLineBlocking(bb[0..bi :0]);
+        // ②置高位候选门（0xFFF0：bit4-15 全试）
+        const lpc: *volatile u32 = @ptrFromInt(0x2010_F018);
+        const orig = lpc.*;
+        const mask: u32 = 0x0000_FFF0;
+        lpc.* = orig | mask;
+        // ③LP 槽存证（slot9 = mask，slot10 占位）
+        @as(*volatile u32, @ptrFromInt(0x2E00_0024)).* = mask;
+        @as(*volatile u32, @ptrFromInt(0x2E00_0028)).* = 0xDEAD_BEEF;
+        // ④读尝试
+        const v: u32 = @as(*volatile u32, @ptrFromInt(0x2070_0C00)).*;
+        @as(*volatile u32, @ptrFromInt(0x2E00_0028)).* = v;
+        // ⑤恢复 + 打印（未挂才走到这）
+        lpc.* = orig;
+        osal.logPublic("bt probe: lptimer read ok 0x20700c00=0x{x:0>8} (mask=0x{x:0>4})", .{ v, mask });
+    }
     // ⚠ **0x2070_0C00 读挂总线（2026-11-21 实证 rst ×5）**：首字读取即挂
     // （前 5 boot 全死在该读，rst:0x1a ×5；末 boot 越过但 dump 行被 FIFO 丢）
     // ⇒ 该区列入**读挂毒区**（与 0x2010D020 同型）。LP timer 探测改用
