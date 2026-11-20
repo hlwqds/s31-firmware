@@ -658,35 +658,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                             obj_dump_k = (obj_dump_k + 4) % 96;
                         }
                     }
-                }
-                // **NMI5：栈窗口回溯**（sp+0..+24 六字，RAM 读）——第一个落在
-                // app 代码区（非 compiler_rt 0x400ab000-0x400ad000）的返回地址
-                // = 除法链的真实调用者。
-                {
-                    // **sp+24..+88**：除法输出缓冲占 sp+8..+40（商/余数落栈），
-                    // 调用者帧在其上方——从 +24 起打印 16 字找完好的返回地址链。
-                    var s5b: [256]u8 = undefined;
-                    const spv = frame.sp;
-                    const l5 = std.fmt.bufPrint(&s5b, "NMI5 sp=0x{x:0>8} w24={x:0>8},{x:0>8},{x:0>8},{x:0>8} w40={x:0>8},{x:0>8},{x:0>8},{x:0>8} w56={x:0>8},{x:0>8},{x:0>8},{x:0>8} w72={x:0>8},{x:0>8},{x:0>8},{x:0>8}", .{
-                        spv,
-                        @as(*volatile u32, @ptrFromInt(spv + 24)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 28)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 32)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 36)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 40)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 44)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 48)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 52)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 56)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 60)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 64)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 68)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 72)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 76)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 80)).*,
-                        @as(*volatile u32, @ptrFromInt(spv + 84)).*,
-                    }) catch "";
-                    hw.rawLineBlocking(l5);
+                    {
+                        // **NMI5 打印禁用**（2026-11-21 末）：16 字行 ≈190 字符/NMI
+                        // 是 UART 流量大头；使命已完结（栈回溯到头=除法 scratch
+                        // 毁帧，README 已录），禁用后 boot 可达 park ⇒ NMI6 带出
+                        // sleep 对象内容。
+                    }
                 }
                 // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
                 // 合成器 ready 0x201098BC / FE 等待位 0x201008D0 / FE 计数器 0x201011AC。

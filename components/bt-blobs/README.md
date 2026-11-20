@@ -27891,3 +27891,11 @@ BIT31 清挂起；③中断路由（INTERRUPT_CORE0_MAP 或我们直接轮询 IN
 addr 之间无 bt o 行——4 行 ×40 字符在 FIFO 满段）⇒ 换通道：NMI 行带出
 （每 NMI 打 4 字）或 LP 槽（分轮读）或 NMI5 栈窗位（对象在堆，地址已知
 可经 NMI 逐字带出）。
+
+**lite 轮（NMI5 禁用）否证（2026-11-21 真收官）**：NMI5 打印禁用后——
+step 17 rc=-3 **仍每 boot 出现**（FAILED ×1 + rst ×4）⇒ **NMI5 流量非
+step17 失败成因**（失败是 sleep_en=1 构建的内在间歇，871376 起即现）。
+NMI6=0：失败 boot 未达 cbv 门（stall 于 steps 11-19 halt 磨环）⇒ 96B 对象
+内容仍待带出。**下轮工具链齐备**：①NMI6 轮转窗（已入库，需到达 park 的
+boot）；②step17 失败根因（sleep_en=1 构建的 step17 间歇——与脏 RAM
+boot 依赖合并分析）。
