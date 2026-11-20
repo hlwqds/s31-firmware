@@ -27507,3 +27507,23 @@ stage10 恢复置位）；blob 日志观察与流程推进互斥，除非下一�
 **下轮方向**：r_sym_bt_vibwBXogwGafrHSYUbon（0x40061178）反汇编——它的
 "完成效果"写哪个硬件事件位/寄存器，对回我们的 BB 链缺口（INT_EN/BB timer
 武装）；这是把层 2 环解开的唯一路径。
+
+**分发→完成链全解码（2026-11-21 收口）**：vibwBXogwGafrHSYUbon
+（0x40061178）= ①读 0x2010107C 门（板载实测 **gate=0x00000000**，非负 ⇒
+正常执行，非死因）；②置调度器 ready-bit（u16 @ [*(0x2f011028)+20] 第
+idx 位）；③kick 0x2f00a1d2；④写 **0x2010B000+idx*16** BB 寄存器阵列；
+⑤调完成检查器 C0B6WsJES1DZlVd8Ki6D（0x2f00a634）。
+**完成检查器状态机**：p=*(0x2f011034)（空→返回 1）；*p==0 → 返回 1；
+sub=p[12]；enter_critical；state=*sub：**state==2 ⇒ 等字节 0x2010D020
+非零**（`lw 0x2010D000+32; zext.b; beqz → 返回 0（完成）`），非零则调
+8vsaW1r7vBA6atycX0nr、置 state=3、返回 1（本轮已调度）；state==3/0 ⇒
+返回 0；其它 ⇒ wr_btdm_assert。
+⇒ **全链等待的硬件事件位 = 字节 0x2010D020**（BT BB/MAC 私有块
+0x2010D000 区）。它永不变非零 ⇒ state 恒 2 ⇒ 检查器恒返回 1 ⇒ handler
+环永旋（mask 冻结/counter 恒零）——与门控 st 轮的板载数据完全吻合。
+**因果链终点**：BB 块事件源未使能（INT_EN/BB timer，多轮前定位的原始
+blocker）⇒ 0x2010D020 恒 0。
+**下轮（收敛到单寄存器群）**：①NMI 行/snapshot 白名单加 0x2010D020
+（及 0x2010D000-0x40 邻域）读活值；②在 0x2010Dxxx 块内找事件使能寄存器
+（写-回读纪律，参照 baremetal-write-readback 配方）；③找到后写使能 ⇒
+0x2010D020 变非零 ⇒ state→3 ⇒ 环退出 ⇒ ENABLED 真。
