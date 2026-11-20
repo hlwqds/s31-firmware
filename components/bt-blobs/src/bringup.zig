@@ -182,22 +182,14 @@ pub fn init(cfg: *config.Config) c_int {
     // 使能后 boot 行为改变（实证：流程卡死在 enable step 20 task_enable、
     // blob intr_alloc 未到达）——与基线（fe=0 但 ENABLED ✓）冲突。隔离重测
     // 前保持关闭；RTC counter 走动实验另行单独做（当前基线 counter 冻结）。
-    const rtc_clock_experiment = false;
-    if (comptime rtc_clock_experiment) {
-        // **RTC 计数器 clk_en（BT 调度时基）**：date.bit31 复位=0 ⇒ counter 冻结。
-        // 写 date 必须保留 bit31（skill: s31-rtc-timer-probe，counter ≈137 kHz）。
-        {
-            const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
-            d.* |= 0x8000_0000;
-        }
-        // **RC32K 输出使能（正确地址）**：`CLK_RC32K_OEN` 在 **LP_CLK_PO_EN_REG
-        // （0x20701000+0x4）bit7**（此前误写 +0x0 bit7 =别的字段）。rtc_freq=32000
-        // 走 RC32K 路径。SLOW_CLK_SEL 保持默认 0（=1 会杀死走动的 RTC counter
-        // 源，已实测回退）。
-        {
-            const po: *volatile u32 = @ptrFromInt(0x2070_1004);
-            po.* |= (1 << 7); // CLK_RC32K_OEN
-        }
+    // **RTC 计数器 clk_en（BT 调度时基）**：date.bit31 复位=0 ⇒ counter 冻结。
+    // controller 读的正是这个 LP 计数器——冻结 ⇒ 时间永不推进 ⇒ task_enable
+    // 永等（本轮 A/B 组合：RTC ON + esp_btbb_enable + IE 延迟）。
+    // 写 date 必须保留 bit31（skill: s31-rtc-timer-probe，counter ≈137 kHz）。
+    // RC32K OEN（+0x4 bit7）已实证非缺口（开/关 fe 均 0），不在此块。
+    {
+        const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
+        d.* |= 0x8000_0000;
     }
     // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
@@ -645,9 +637,13 @@ fn intrArm(src: c_int) void {
     // CLIC 输入 = 对应 ext+16：**MAC(src124) → 51、BB(src125) → 53**。
     // （前轮路由 124→50：源触发→桥压环→drain 跳奇地址崩→复位循环 ×6 实证——
     // 路由本身通了，只是 fn 槽选错。）
+    // **路由目标 v3（hscan 实证）**：blob 经 intr_handler_set(**21**, handler)
+    // 注册——截断的 hscan 首命中 handlers[5]（=ext5，即 CLIC input 21）非空。
+    // ⇒ blob 期望 MAC 中断到达 **input 21**（ext 5）。125（BB）→ 22 仅路由
+    // （ext6 无 handler 时不置 IE，风暴安全）。
     const routed_input: usize = switch (src) {
-        124 => 51, // MODEM_BT_MAC → ext 35（fn 0x2f815258）
-        125 => 53, // MODEM_BT_BB → ext 37（fn 0x2f07f19c）
+        124 => 21, // MODEM_BT_MAC → ext 5（blob handler 经 shellSetIsr 在位）
+        125 => 22, // MODEM_BT_BB → ext 6（仅路由，handler 缺则不置 IE）
         else => @intCast(@as(u32, @intCast(src)) & 63),
     };
     // **路由（此前整段缺失 = FE 冻结根因）**：S31 的中断源 ≠ CPU 输入号，每源一个
@@ -674,9 +670,8 @@ fn intrArm(src: c_int) void {
             hf = h.f;
             harg = h.arg;
         } else {
-            // **优先自有表**：blob 经 intr_handler_set(n=50, mac_isr, arg) 直注——
-            // shellSetIsr 已归一化存 handlers[50-16=34]；romHandler(34) 是 ROM
-            // 管理 API 表（0x2f81281e 奇值垃圾），不是硬件分发表。
+            // **优先自有表**：blob 经 intr_handler_set(21, mac_isr, arg) 直注——
+            // shellSetIsr 归一化存 handlers[21-16=5]（hscan 实证非空）。
             const gh = @import("board").trap.getHandler(routed_input - 16);
             if (gh.fn_) |f| {
                 hf = f;
@@ -688,7 +683,10 @@ fn intrArm(src: c_int) void {
             for (&bridge_srcs) |*s| {
                 if (!s.in_use) {
                     s.* = .{ .in_use = true, .input = routed_input, .f = f, .arg = harg };
-                    hw.writeReg(0x1080_1000 + routed_input * 4, (1 << 24) | (1 << 8)); // prio+IE
+                    // ⚠ **IE 不在这里置**：enable 期间置 IE，源一触发 handler 就在
+                    // trap 上下文跑（boot 循环实证）——IE 由 probe 泵循环在
+                    // bridgeDrain 激活后才开（见 probe.zig "ISR 桥 IE 延迟使能"）。
+                    hw.writeReg(0x1080_1000 + routed_input * 4, 1 << 24); // 仅 prio
                     @import("board").trap.setHandler(routed_input, bridgeIsr, s);
                     break;
                 }

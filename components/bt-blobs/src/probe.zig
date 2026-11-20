@@ -1278,11 +1278,20 @@ pub fn run() noreturn {
     var evt_at: ?u32 = null;
     var diag_at: u32 = 0;
     var rom_scanned: bool = false;
+    var hscan_done: bool = false;
     var diag_round: u32 = 0;
+    var bt_ie_on: bool = false;
     while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
+        // **ISR 桥 IE 延迟使能**：泵循环（drain）已激活后才开 IE——否则 enable
+        // 期间源一触发，blob handler 就在 trap 上下文跑（boot 循环实证）。
+        if (!bt_ie_on and round >= 8) {
+            bt_ie_on = true;
+            const ie_reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
+            ie_reg.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 的 MAC 中断）
+        }
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
@@ -1317,9 +1326,47 @@ pub fn run() noreturn {
             osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h34=0x{x:0>8} h35=0x{x:0>8}", .{
                 (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h34f, h35f,
             });
+            // **自有 handlers 表全扫描（第 4 次 diag 起）**：blob 经
+            // intr_handler_set(n,…) 直注的真 ISR 落在哪个外部号——路由正解钥匙。
+            diag_round +%= 1;
+            if (!hscan_done and diag_round >= 4) {
+                hscan_done = true;
+                var buf2: [180]u8 = undefined;
+                var o2: usize = 0;
+                const h2 = "bt hscan:";
+                @memcpy(buf2[o2..][0..h2.len], h2);
+                o2 += h2.len;
+                var cnt2: u32 = 0;
+                var ei: usize = 0;
+                while (ei < 64 and cnt2 < 6) : (ei += 1) {
+                    const hh = trap.getHandler(ei);
+                    if (hh.fn_) |f| {
+                        const w2 = std.fmt.bufPrint(buf2[o2..], " {d}=0x{x:0>8}", .{ ei, @intFromPtr(f) }) catch break;
+                        o2 += w2.len;
+                        cnt2 += 1;
+                    }
+                }
+                if (cnt2 == 0) {
+                    const none2 = " (all empty)";
+                    @memcpy(buf2[o2..][0..none2.len], none2);
+                    o2 += none2.len;
+                }
+                osal.logPublic("{s}", .{buf2[0..o2]});
+            }
             // **ROM 表全扫描（第 3 次 diag 起，避 FIFO 早期流量）**：找 blob 直注
             // intr_handler_set 的真 ISR
             diag_round +%= 1;
+            if (!hscan_done and diag_round >= 6) {
+                hscan_done = true;
+                var ei: usize = 0;
+                while (ei < 64) : (ei += 1) {
+                    const hh = trap.getHandler(ei);
+                    if (hh.fn_) |f| {
+                        osal.logPublic("bt hscan: ext{d}=0x{x:0>8}", .{ ei, @intFromPtr(f) });
+                    }
+                }
+                osal.logPublic("bt hscan: done", .{});
+            }
             if (!rom_scanned and diag_round >= 3) {
                 rom_scanned = true;
                 var buf: [160]u8 = undefined;
