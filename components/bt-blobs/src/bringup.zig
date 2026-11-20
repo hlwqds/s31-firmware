@@ -609,24 +609,16 @@ fn bridgeIsr(raw_arg: ?*anyopaque) callconv(.c) void {
 
 // **BB 中断链（src125 → input53 → 链表头 0x2f07f19c 的三 handler）**：
 // ROM 表 ext37 条目 = {0x2f07f19c（链表头）, 0x2f81280e}——链表节点即
-// 三条 blob handler（全偶地址可调用，args 0x85/0x03/0x84）。
-// 桥语义：trap 内只入环（chainIsr），主泵 bridgeDrain 代跑（调度器安全）。
-const chain_fns = [3]*const fn (?*anyopaque) callconv(.c) void{
-    @ptrFromInt(0x2f81280e),
-    @ptrFromInt(0x2f81289a),
-    @ptrFromInt(0x2f8127ec),
-};
-const chain_args = [3]?*anyopaque{
-    @ptrFromInt(0x85),
-    @ptrFromInt(0x03),
-    @ptrFromInt(0x84),
-};
+// 三条 blob handler（全偶地址，args 0x85/0x03/0x84）。
+// ⚠ **三条目代跑即崩（机制未定案）**：uart_hscan.log 实证——代跑首次
+// invoke 即 CPU lockup，×7 周期死点一致（0x40077740=trapDispatch 内
+// log.line 双重 fault）。'ctx 槽 0x2f07f1F4=0 ⇒ 空指针解引用'系 b9d6a19
+// 已撤回的前提，勿复用；三条目被 5521df1 解码为 intr 管理 API 家族而非
+// 硬件 ISR，拿 0x85/0x03/0x84 当 ISR 参数代跑本身可能是契约误用。
+// ⇒ chainIsr 现为纯计数 no-op；chain_fns/chain_args 已删（地址留 README），
+// **恢复代跑前必须先反汇编三条目定契约**。
 var chain_fires: u32 = 0;
 fn chainIsr(_: ?*anyopaque) callconv(.c) void {
-    // ⚠ **暂不代跑三 handler**：它们操作 ROM 状态结构（0x2f07f1F4 槽指向的
-    // ctx），而 ctx 槽=全 0（未初始化）⇒ 首调即解引用空指针 → CPU lockup
-    // → rst:0x1a boot 循环（uart_hscan.log 实证 ×22）。ctx 建立后（ROM init
-    // 函数找到/自建 ctx）再恢复代跑。
     chain_fires +%= 1;
 }
 
@@ -694,8 +686,8 @@ fn intrArm(src: c_int) void {
             harg = h.arg;
         } else if (src == 125) {
             // **src125（BB）特例**：blob 的 BB handler 三条挂在 ext37 链表头
-            // 0x2f07f19c 下（见上方 ROM 表头解码）——直接用 chainIsr 桥
-            // （trap 内只入环，主泵 bridgeDrain 顺序代跑三条）。
+            // 0x2f07f19c 下（见上方 ROM 表头解码）——chainIsr 桥现为纯计数
+            // （代跑即崩 ×7 实证、契约未定前不代跑，见上方与 README）。
             hf = chainIsr;
             harg = null;
         } else {
