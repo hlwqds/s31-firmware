@@ -27376,3 +27376,16 @@ getHandler(5)=mac_isr ✓ 链路无断点）。缺的不是路由也不是 handl
 dump blob 寄存器现场（一次 instrumentation 轮）；②BB 中断源静默——
 src124/125 的 peripheral 级 int_ena（BT 块内 INT_EN 寄存器，地址未知需从
 mac_isr/LL 反汇编找）；③BB timer 时钟门。
+
+**boot 循环根因定案 + 稳定化（2026-11-21，hscan 轮）**：uart_hscan.log 全解码——
+同二进制反复 rst:0x1a（CPU_LOCKUP）×7 周期，每周期死点一致：probe_irqs 块的
+enableInterrupts（MIE 全开）瞬间，input53 挂着的 chainIsr 被待决源触发 →
+chainIsr 代跑三 handler（0x2f81280e/89a/7ec）→ 它们操作 ROM 状态结构（ctx 槽
+0x2f07f1F4=全 0）→ 解引用空指针 → lockup。PCAddr 0x40077740=trapDispatch 内
+log.line（Writer.print）=异常处理中再异常（双重 fault）⇒ ROM 报 rst:0x1a。
+7 次崩溃 PC 全一致（0x40077740/0x400785fe）⇒ 机制确定非偶发。
+**修复**：chainIsr 改计数 no-op（ctx 未建前不代跑；chain_fires 槽位留观测）。
+**验证**：同流程重烧 866752，**1 banner / 0 rst:0x1a**——boot 循环根除 ✓。
+90s 窗流程至 step20（0x2006 已发出、任务 eventRun 已跑、mutex_pend=0），泵窗
+diag 未及出现。剩余链：应答路径需 MAC 中断链活（BB 调度武装），仍是 ctx 建立
+这一主线的前置。
