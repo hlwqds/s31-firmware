@@ -27037,3 +27037,21 @@ calib rc=0 ✓ → steps 8-15 ✓ → transport ready ✓ → **step 20（r_btdm
 **下一会话唯一动作**：取消 bb_v2_init_cmplx 的 skip（probe.zig 里 `bbrc=-1`
 → 真调用 `bb_v2_init_cmplx(1)`），EXEC 断点盯其入口/出口。
 判据：`ENABLED` 出现 → HCI 三命令 → BT 全链通。
+
+### 精确下一步（2026-11-20 定案）：ana I2C burst 缺失是 bb_init 互等的前置
+
+官方 ana 轨迹（CONF0 2100e408→2900e448 + I2C0_CTRL 012f0669→01700266→01780369）
+= register_chipv7_phy 内部的 **phy_ana_i2c_master_burst_config + burst_bbpll_config**
+发的 ana I2C 事务。我们探针的 rc=0（自写路径）走的是 register_chipv7_phy(NULL,NULL)
+——但 **burst 序列没有被触发**（FEE7 实测 I2C0_CTRL=0、CONF0 停在 2100e408）。
+
+⇒ bb_init 互等的缺件不是 bb_v2_init 本身，而是 **bb_v2_init 的前置（ana I2C
+burst/BBPLL 配置）从未运行**。已链接的 T 符号（nm 实证）：
+- `phy_ana_i2c_master_burst_bbpll_config` @0x40000580（零参，自足）
+- `phy_ana_i2c_master_burst_config` @0x4000083a
+- `phy_ana_i2c_master_burst_rf_onoff` @0x40000e48（带参 a0）
+
+**下一会话单变量**：initPhy 的 espPhyEnable(2) 之后、bb init 之前，插
+`burst_rf_onoff(1)` → `burst_bbpll_config()`（官方序 rf_on → bbpll_config），
+然后照常走 bringup 步骤 8-20。判据：FE3 450 振荡 / 47C 脉冲 / CONF0 0x2900e448 /
+I2C0_CTRL 非零 / ENABLED 出现——任一即证明 ana 事务已启动。
