@@ -440,6 +440,22 @@ pub fn init(cfg: *config.Config) c_int {
             rtc_patch_rb = rb;
             rtc_patch_done = true;
             osal.logPublic("bt p: rf rb={x}", .{rb});
+            // **96B 对象全量 dump**（4 行 × 8 字）：对照官方字段找剩余零字段。
+            var q: usize = 0;
+            while (q < 96) : (q += 24) {
+                var ob: [128]u8 = undefined;
+                var oi: usize = 0;
+                const pc0 = std.fmt.bufPrint(ob[oi..], "bt o{d:0>2} +{d:0>3}:", .{ q / 24, q }) catch break;
+                oi += pc0.len;
+                var b: usize = 0;
+                while (b < 24) : (b += 4) {
+                    const w: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + q + b)).*;
+                    const pc1 = std.fmt.bufPrint(ob[oi..], " {x:0>8}", .{w}) catch break;
+                    oi += pc1.len;
+                }
+                ob[oi] = 0;
+                osal.logPublic("{s}", .{@as([*:0]const u8, @ptrCast(&ob))});
+            }
         }
     }
     if (rc != 0) return rc;

@@ -634,7 +634,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         // ⚠ **MMIO 读扩展（cc/cc1/lp）已回退**：BT 窗内 NMI 上下文
                         // 读 LP_CON/SYSCON 与 steps 11-19 停摆相关（2026-11-21 实测
                         // 归因未定）；时钟门读数改主上下文 dump 路径（下轮）。
-                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4} rf=0x{x:0>8}", .{ cbv, mu.*, evq.*, c10, rtc_freq_rb }) catch "";
+                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4}", .{ cbv, mu.*, evq.*, c10 }) catch "";
                     } else {
                         l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}(oob)", .{cbv}) catch "";
                     }
