@@ -27275,11 +27275,11 @@ btdm_task（40006fe8）主循环 .L125/.L127:
 ⇒ 8 事件（HCI 应答）消费后 task 回 eventq_get 等待；**BB 中断不触发** ⇒
 调度器 tick 不来 ⇒ task 饿死在 eventq_get（taskpc 实证）。
 
-**时基假设修正**：S31 可能有**两个 LP timer**——我使能的 RTC_TIMER
-（0x20800000，counter 137kHz 走动 ✓）未必是 controller 读的那个。
-C6 家族 LP_TIMER 在 LP 域（C6=0x600B0C00 ⇒ S31 对应 **0x2070_0C00 区**）——
-controller 的 sleep time 读这个。**下轮首查**：dump/使能 0x2070_0C00 区
-LP_TIMER counter，验证走动后 BB 调度是否活（fe 走动 = 活）。
+**时基假设修正（reg_base.h 定案）**：S31 **无独立 LP_TIMER**——
+RTC_TIMER（0x20800000）就是唯一 LP 时基（已使能走动 ✓）。“双 timer”假说
+证伪。⇒ 时基走动而调度器仍死 ⇒ 缺口最终收敛到 **BT MAC/BB 块自身**：
+其活动计数器（FE 0x201011AC）冻结 = **MAC 块时钟门未开或 BB timer 未武装**——
+MAC 块的 INT_EN/BB timer 寄存器在私有域，需从 mac_isr/LL 反汇编定位。
 
 **合成器/FE 活值诊断（diag 行接入泵窗后，2026-11-20 末）：**
 
