@@ -1232,10 +1232,23 @@ pub fn run() noreturn {
         //    能保留 ⇒ "块无时钟"不成立，0x201098BC.bit2 是**硬件状态位**（RF/BB ready）。
         //    ⇒ 机制最终版：0x200A 写配置+启动选通 → 等 RF/BB ready → 位永不置位
         //      （射频使能链不完整）→ 超时错误码 3。见 README「最终机制」。
+        var bt_ie_on: bool = false;
+        // **ISR 桥 IE 使能（LE 块之前）**：MAC 应答靠 input21 中断投递——
+        // IE 若留在泵循环（LE 块之后）⇒ 0x2006 发出后应答永远不来 ⇒ 死等。
+        // enable 已返回（任务已启动、桥已挂），此刻开 IE 安全。
+        if (!bt_ie_on) {
+            bt_ie_on = true;
+            const ie21: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
+            ie21.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 MAC 应答）
+            const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
+            ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 BB 链）
+        }
         mark.put(0x78, 0xADC0B10c, 0);
         const r6 = transport.sendCmd(0x2006, &ap);
+        osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
+        osal.logPublic("bt probe: post21", .{});
         var ad: [32]u8 = @splat(0);
         ad[0] = 3;
         ad[1] = 2;
@@ -1303,18 +1316,7 @@ pub fn run() noreturn {
         //    在 +0x20 处有锋利的可访问性边界；且总线中毒后连 flash 写都不可靠
         //    （组 1 数据扇区 0x18A000 回读全 ff ⇒ 写未落地）。探测已回退，
         //    基线回到 22/5。下次若要继续，从组 2 的第一个字 +0x20 单字探测。
-        var bt_ie_on: bool = false;
         var ae: [1]u8 = .{1};
-        // **ISR 桥 IE 使能（LE 块之前）**：MAC 应答靠 input21 中断投递——
-        // IE 若留在泵循环（LE 块之后）⇒ 0x2006 发出后应答永远不来 ⇒ 死等。
-        // enable 已返回（任务已启动、桥已挂），此刻开 IE 安全。
-        if (!bt_ie_on) {
-            bt_ie_on = true;
-            const ie21: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
-            ie21.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 MAC 应答）
-            const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
-            ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 BB 链）
-        }
         // **寄存器快照（0x200A 发送前，白名单稀疏）**：evt 到达后差分 ⇒
         // "BB schedule arm 是否发生、动了哪些寄存器"直接可见。
         snapshotRegs();

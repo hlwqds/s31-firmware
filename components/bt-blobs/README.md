@@ -27396,3 +27396,17 @@ API 表非硬件分发表）。5521df1 亦解码三条目为 intr 管理 API 家
 **下步（替代旧的「建 ctx 主线」）**：①离线反汇编三条目自身代码路径，定清
 各自契约（期望参数/返回/副作用）——在此之前**不恢复代跑**；②泵窗长抓确认
 diag/洪水内容（零成本，UART 已有数据）。
+
+**0x2006 forward 挂点判别（2026-11-21，fwd06/post21 插桩轮）**：判别结果——
+`bt hci >> CMD 0x2006` 打印、`fwd06`（sendCmd 返回后第一行）**不打印** ⇒
+挂点 = `forward` → `r_btdm_hci_trans_rx` 内部；flashStageExtra(21) 无关（未执行到）。
+IE 前移试验（IE 块挪到首个 sendCmd 之前）不改变挂点 ⇒ 非中断门控问题。
+**机制（与既有 ENABLED 空洞同根）**：任务真正跑起来（eventRun 实证）之后，
+`r_btdm_hci_trans_rx` 对命令的处理从「入队即返回」变为「同步等待任务完成」；
+任务处理等 BB/MAC 硬件事件（调度链不推进 ⇒ 永不触发）⇒ 主上下文死等。
+稳定轮（73 diag、marker 22/5/23=6）任务未跑 ⇒ fire-and-forget 能返回——
+两个现象同根，不矛盾。
+**阶段状态**：boot 循环已根除（chainIsr 计数 no-op，多轮 1 banner/0 lockup）；
+流程稳定停驻在 0x2006 forward（同步等待 BB 链活）。唯一剩余 blocker 仍是
+BB/MAC 块调度链推进（peripheral INT_EN / BB timer 武装），与 ctx/契约问题
+（chainIsr 三条目代跑即崩，机制未定案）并列待查。
