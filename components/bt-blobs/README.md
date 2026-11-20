@@ -27710,3 +27710,12 @@ nowMs**，非 blob 调度器时间换算）改累加器后——**除法风暴�
 NMI 干净停在 blob 分发环 .L54），wait_dumps 环 a0 递减至 0 正常退出，流程
 进 esp_phy_enable 段。⇒ 0x2008 停驻期的"u64 除法链磨 CPU"实为我们的
 nowMs 税（每 tick 一次），已修。
+
+**收官注记（2026-11-21）**：分发环重试的机制性解释——队列项的完成标志
+（item+25，.L54 读的那个）只能由**真实 sleep 回调完成睡眠**后置位（sleep
+操作经 RTC timer ISR 路径完成），纯计数桩无法完成项 ⇒ 环按设计重试（检查
+器 state=0 通过也不改变项状态）。⇒ **下轮前置 = RTC timer 基础设施**（武装
+RTC timer 使其到期并调注册回调——esp32s31-rtc-timer-probe 域）；在那之前
+sleep_en=0 + 检查器 state=0 通过 + 探针 2000 轮放弃上限共同界定观测。
+终态：稳定停驻 0x2008，全部仪器活（NMI 主行/NMI2/NMI3 含时钟门/NMI5 栈窗
++slot 探针+断言直写+udiv 入口断点），双仓 clean。
