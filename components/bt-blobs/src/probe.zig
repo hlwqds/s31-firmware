@@ -1092,9 +1092,9 @@ pub fn run() noreturn {
     // 里被调用（`osal.zig:1059`）；它的 `dump_done` 守卫在函数**末尾**才置位 ⇒
     // 一旦内部不返回就会**每次 pend 重入** ⇒ 把 controller 饿死。
     // bringup 已过观测窗口，这里解除，让运行时路径零开销。
-    // **blob 日志静音（决定性实验）**：shim 的 mute 判定在格式循环之前，
-    // 置位即绕过疑似 put_uint pad 环（width 未设上界）的单次调用自旋。
-    // 若 forward 因此返回 ⇒ 坐实 printf 自旋是本轮 blocker。
+    // **mute=1（层 2 判据轮）**：mute=0 时 0x2006 分发环巨预算 × 每迭代一次
+    // log（~µs）⇒ 走不完；mute=1 迭代 µs 级可完成并推进到 0x2008，采样钉
+    // blob 区 ⇒ 门控 st 行才有数据。日志内容观察让位给 state 轨迹判据。
     s31_bt_log_mute = 1;
     flashStageExtra(10, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // host 可读：init 之后、enable 之前
     osal.dump_hook = null;

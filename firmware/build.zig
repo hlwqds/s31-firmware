@@ -264,7 +264,7 @@ pub fn build(b: *std.Build) void {
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe) &.{"-DBT_ASSERT_RETURNS=1"} else &.{} });
         // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
         // 归档的日志必须走我们的丢弃实现，否则"打印"就是"挂死"。
-        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{} });
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{"-DS31_BT_FMT_LINES=40000"} });
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/wifi_probe_stubs.c"), .flags = &.{} });
         // WiFi osi 栈的 `_log_write`（C 变参）——同签名导出（wifi-blobs 的 shim）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
@@ -364,7 +364,7 @@ pub fn build(b: *std.Build) void {
     // 探针构建保留符号：panic 的 PC 才能 addr2line 回函数名（生产镜像保持 strip）。
     if (bt_probe) app.root_module.strip = false;
     app.setLinkerScript(b.path("../boards/esp32s31-coreboard/linker/s31.ld"));
-        // WiFi/BT 预编译归档引用的外设基址符号（121 个 PROVIDE）
+    // WiFi/BT 预编译归档引用的外设基址符号（121 个 PROVIDE）
 
     const install = b.addInstallArtifact(app, .{ .dest_sub_path = "app.elf" });
     b.getInstallStep().dependOn(&install.step);

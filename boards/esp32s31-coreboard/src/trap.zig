@@ -528,12 +528,31 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // blob 的常驻循环里 ⇒ 这些 PC 的分布就是"卡在哪"的直接答案。
             // 注意：input==25 的分支**不**走 `recordPc`（第 442 行显式排除），
             // 所以这个环在饿死期间看不到任何东西 —— 只能靠这里打。
-            if (nmi_count % 50_000 == 0) {
-                var nb: [112]u8 = undefined;
-                const nl = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8}", .{
-                    nmi_count, frame.mepc, frame.ra,
+            if (nmi_count % 5_000 == 0) {
+                var nb: [160]u8 = undefined;
+                // **s0 + blob state 三字段直读**：0x2008 停驻环判据——
+                // s0=state 指针（循环内自 -284(s4) 取）；34=u16 位掩码
+                // （递减=真位扫 / 恒 0=空转等事件位）、36=u16 计数（.L89
+                // 出口）、32=u8 槽限。范围校验防野指针解引用。
+                var nl: []const u8 = undefined;
+                var sbuf: [64]u8 = undefined;
+                // **门控：仅当 mepc 落在 blob 停驻环函数内**（r_sym_ble_mrucwvp
+                // RHVsLLccQveKl = 0x40005512-0x4000585e）s0 才是 state 基址；
+                // mepc 在 shim（0x40067xxx）时 s0 是 shim 自己的帧变量，读出无意义。
+                if (frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e and
+                    frame.s0 >= 0x2f00_0000 and frame.s0 < 0x2f10_0000)
+                {
+                    const st: *volatile u8 = @ptrFromInt(frame.s0 + 32);
+                    const mask: *volatile u16 = @ptrFromInt(frame.s0 + 34);
+                    const cnt: *volatile u16 = @ptrFromInt(frame.s0 + 36);
+                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4}", .{
+                        st.*, mask.*, cnt.*,
+                    }) catch "";
+                } else nl = "";
+                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8}{s}", .{
+                    nmi_count, frame.mepc, frame.ra, nl,
                 }) catch "NMI (fmt fail)";
-                hw.rawLineBlocking(nl);
+                hw.rawLineBlocking(ln);
                 // **FE 环三件套快照**（300k 次 ≈ 37s，落在读者窗口内，只采一次）：
                 // 合成器 ready 0x201098BC / FE 等待位 0x201008D0 / FE 计数器 0x201011AC。
                 // 与官方 692ms 路径的同址值对账 = FE 环的最终定位判据。

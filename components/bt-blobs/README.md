@@ -27486,3 +27486,24 @@ log 继续 ⇒ 无限环 = 返回值永远≠8 且掩码位不清。
    0x2007=Read Adv Ch TX Power（0 参）、**0x2008=LE Set Advertising Data**
    （len+31B）、0x200A=Adv Enable（1 参）；probe 的 15/32/1 plen 全对齐，
    且稳定轮同三条命令拿到过 tx=5/6 应答（错位则当时即败）。
+
+**层 2 判据数据（2026-11-21，mute=1 + 门控 st 轮，uart_ab3.log）**：222/231
+门控行**全部恒定** `st=0x0d/0x1ffe/0x0000`（mepc=0x400056a8、ra=0x400057c8
+不变）：
+- **mask(34)=0x1ffe 冻结** ⇒ .L89 位扫从未推进（ctz 清位路径在采样相位外
+  一次都没走到）；
+- **counter(36)=0x0000 恒零** ⇒ .L54 的计数自增（flag 25(s2)==0 分支）从未
+  发生 ⇒ .L89 出口（counter ≥ 阈值）**永不满足**——环机械性不终止 ✓
+  （候选 ② 的机理坐实，且比预想更彻底：连第一次自增都没有）；
+- 同一队列项被反复处理：s2 的 flag 已置位 ⇒ 每轮 log → 查 flag → 跳过计数
+  → log x3 → 返回 → 外层泵再次调 handler → 同一 item。**完成路径（清位 +
+  出队 + counter++）依赖分发 r_sym_bt_vibwBXogwGafrHSYUbon 的硬件效果**——
+  即 BB/MAC 事件位，回到 BB 链（原始 blocker）。
+**层 1 同轮确认**（uart_ab.log/ab2.log，mute=0）：96.2% 钉 shim 格式主环
+（0x400679d0）、blob 区零采样、fwd06 缺 ⇒ 0x2006 分发环 = **巨预算有界**，
+mute=1 时迭代 µs 级能走完（flow 推进到 0x2008），mute=0 时每迭代一次真实
+log（格式化+hook）⇒ 预算走不完 = 假挂。**mute=1 保持为进度前提**（已在
+stage10 恢复置位）；blob 日志观察与流程推进互斥，除非下一步把环出口修通。
+**下轮方向**：r_sym_bt_vibwBXogwGafrHSYUbon（0x40061178）反汇编——它的
+"完成效果"写哪个硬件事件位/寄存器，对回我们的 BB 链缺口（INT_EN/BB timer
+武装）；这是把层 2 环解开的唯一路径。
