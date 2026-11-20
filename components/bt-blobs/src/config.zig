@@ -284,7 +284,7 @@ pub fn defaults() Config {
         // 在除法（NMI 202/202 钉 udivmod）⇒ 睡眠路径需要**睡眠时基基础设施**
         // （RTC timer 接入/换算优化），裸机暂缓。=0 时 early-out 保护性跳过
         // （官方 oracle idf_cfg192[178]=0 同值 ⇒ 非差异点）。
-        .sleep_en = 1, // 探针（2026-11-21：对象建成 + 完整仪器轮）
+        .sleep_en = 0, // 回退稳定态（sleep_en=1 判别已完成：见 32caf33/34a754e 注释）
         .version_num = 0,
         .bluetooth_mode = BTDM_CONTROLLER_MODE_BLE,
         .magic = BTDM_CONFIG_MAGIC_VALUE,
