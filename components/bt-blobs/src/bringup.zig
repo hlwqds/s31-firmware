@@ -72,6 +72,12 @@ extern fn r_btdm_task_enable() c_int;
 extern fn r_ble_controller_init(cfg: *config.BleCfg) c_int;
 // 5 参：(cb, arg, q[88], q[92], a4=额外 init token——传 0 跳过 .L79 的附加初始化
 // （垃圾值会让它 jal 垃圾指针）。反汇编 0x4006162c 实证。
+/// **断言直写通道**（C 侧 wr_btdm_assert 调用）：绕过 ets_printf shim
+/// （mute 会吞、FIFO 会丢）与 UART 有界写——断言文本必须可见。
+export fn s31_bt_raw_line(s: [*:0]const u8) void {
+    board.hw.rawLineBlocking(std.mem.span(s));
+}
+
 extern fn r_btdm_sleep_set_sleep_cb(cb: ?*const anyopaque, arg: ?*anyopaque, a2: u32, a3: u32, a4: u32) c_int;
 var sleep_cb_n: u32 = 0;
 fn btSleepCb(a0: u32) callconv(.c) void {

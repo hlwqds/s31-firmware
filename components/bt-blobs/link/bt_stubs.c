@@ -62,16 +62,35 @@ extern int ets_printf(const char *format, ...);
  * 命中次数记在 `bt_assert_hits`，便于事后统计。 */
 unsigned bt_assert_hits = 0;
 
+/* **2026-11-21 改版**：直写 + 恒 halt。旧探针档（打印后返回）在 btdm_sleep.c:684
+ * 实证为害：blob 的断言点不检查返回值，直接 `jalr obj[4]（NULL）` ⇒ 取指 fault @0
+ * ⇒ double fault ⇒ rst:0x1a ×35 风暴。断言是终止性的（IDF 语义），返回没有意义。
+ * 直写走 s31_bt_raw_line（bringup.zig 导出，绕 shim 的 mute/FIFO 丢弃）——
+ * 断言文本必须可见（本次靠手挖 .rodata 才拿到 btdm_sleep.c:684）。 */
+extern void s31_bt_raw_line(const char *s);
+
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
     bt_assert_hits++;
-#if !BT_LOG_SILENT
-    ets_printf("bt-blob-strong-assert %s:%d p0=%d p1=%d type=%d\n",
-               file ? file : "?", line, p0, p1, (int)type);
-#endif
-#ifndef BT_ASSERT_RETURNS
+    char buf[128];
+    int n = 0;
+    const char *src = "bt-blob-strong-assert ";
+    while (*src && n < (int)sizeof buf - 1) buf[n++] = *src++;
+    src = file ? file : "?";
+    while (*src && n < (int)sizeof buf - 1) buf[n++] = *src++;
+    {
+        /* 手写十进制（freestanding 无 snprintf）；:line p0=.. type=.. 全保留 */
+        buf[n++] = ':';
+        if (line < 0) { buf[n++] = '-'; line = -line; }
+        char tmp[12]; int t = 0;
+        do { tmp[t++] = (char)('0' + line % 10); line /= 10; } while (line && t < 12);
+        while (t && n < (int)sizeof buf - 1) buf[n++] = tmp[--t];
+        const char *sfx = " p0=? type=?";
+        while (*sfx && n < (int)sizeof buf - 1) buf[n++] = *sfx++;
+    }
+    buf[n] = 0;
+    s31_bt_raw_line(buf);
     for (;;) {
     }
-#endif
 }
 
 /* ---------------------------------------------------------------------------
