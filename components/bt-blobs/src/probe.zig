@@ -1303,7 +1303,18 @@ pub fn run() noreturn {
         //    在 +0x20 处有锋利的可访问性边界；且总线中毒后连 flash 写都不可靠
         //    （组 1 数据扇区 0x18A000 回读全 ff ⇒ 写未落地）。探测已回退，
         //    基线回到 22/5。下次若要继续，从组 2 的第一个字 +0x20 单字探测。
+        var bt_ie_on: bool = false;
         var ae: [1]u8 = .{1};
+        // **ISR 桥 IE 使能（LE 块之前）**：MAC 应答靠 input21 中断投递——
+        // IE 若留在泵循环（LE 块之后）⇒ 0x2006 发出后应答永远不来 ⇒ 死等。
+        // enable 已返回（任务已启动、桥已挂），此刻开 IE 安全。
+        if (!bt_ie_on) {
+            bt_ie_on = true;
+            const ie21: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
+            ie21.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 MAC 应答）
+            const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
+            ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 BB 链）
+        }
         // **寄存器快照（0x200A 发送前，白名单稀疏）**：evt 到达后差分 ⇒
         // "BB schedule arm 是否发生、动了哪些寄存器"直接可见。
         snapshotRegs();
@@ -1318,19 +1329,16 @@ pub fn run() noreturn {
     var rom_scanned: bool = false;
     var hscan_done: bool = false;
     var diag_round: u32 = 0;
-    var bt_ie_on: bool = false;
     while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
-        // **ISR 桥 IE 延迟使能**：泵循环（drain）已激活后才开 IE——否则 enable
-        // 期间源一触发，blob handler 就在 trap 上下文跑（boot 循环实证）。
-        if (!bt_ie_on and round >= 8) {
-            bt_ie_on = true;
-            const ie21: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
-            ie21.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 的 MAC 中断）
-            const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
-            ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 的 BB 链）
+        // **RTC counter 锁存触发**：RTC_TIMER 的 counter 读数需要 update 位
+        // （+0x10 bit27）触发才刷新——不触发则 controller 读到的 sleep time
+        // 恒为陈旧值 ⇒ BB 调度永不到期（fe=0 冻结的候选根因）。每轮锁存一次。
+        {
+            const rtu: *volatile u32 = @ptrFromInt(0x2080_0010);
+            rtu.* = 1 << 27;
         }
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();
