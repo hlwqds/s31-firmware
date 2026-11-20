@@ -167,6 +167,11 @@ fn printRegDiff() void {
 
 /// ⚠ 单位是**毫秒**：注入 `nowUs()/1000`。直接注入 `nowUs()` 会让所有超时窗口大 1000 倍，
 /// 症状是"起来了但永远不超时/不动作"，极难归因。
+fn osiOnIdle() void {
+    // 任务上下文调用：驻停任务、切回主上下文（主泵下一轮 resumeTask 再切入）。
+    sched.block();
+}
+
 fn nowMs() u32 {
     return @intCast(board.hw.nowUs() / 1000);
 }
@@ -589,7 +594,10 @@ pub fn run() noreturn {
         .now_us = @import("board").hw.nowUs,
         .fill_random = null,
         .mac = null,
-        .on_idle = null,
+        // **on_idle = 任务让出原语**：blob 阻塞路径（sem/queue 等待）的"合作式
+        // 让出点"——不接线则任务自旋不让出 ⇒ 主循环永远泵不到 ⇒ step 20 挂死。
+        // sched.block = 驻停当前（任务）切回主（osal eventqGet 同款原语）。
+        .on_idle = osiOnIdle,
         .on_phy_enable = null,
         .on_note = null,
         .on_budget_exhausted = null,
@@ -1331,12 +1339,10 @@ pub fn run() noreturn {
             _ = @as(*volatile u32, @ptrFromInt(0x2070_1004)).*; // PO_EN（RC32K OEN 已置，活值不再进诊断行）
             const ts = osi_impl_timerStats();
             const trap = @import("board").trap;
-            const h34 = trap.getHandler(34);
-            const h35 = trap.getHandler(35);
-            const h34f: usize = if (h34.fn_) |f| @intFromPtr(f) else 0;
-            const h35f: usize = if (h35.fn_) |f| @intFromPtr(f) else 0;
-            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h34=0x{x:0>8} h35=0x{x:0>8}", .{
-                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h34f, h35f,
+            const h5 = trap.getHandler(5);
+            const h5f: usize = if (h5.fn_) |f| @intFromPtr(f) else 0;
+            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
+                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
             });
             // **自有 handlers 表全扫描（第 4 次 diag 起）**：blob 经
             // intr_handler_set(n,…) 直注的真 ISR 落在哪个外部号——路由正解钥匙。
