@@ -27736,3 +27736,9 @@ bit0**（旗标清零）→ `1<<s1` 16 位掩码调 rPoPGH6BBYjZaunDU5FV →
 ⇒ **0x2010B000+idx*16 阵列 = blob 对象描述符表**（每项 16B，低 12 位存
 blob 堆指针 <<2；与 vibw ready-bit 写同族）——**非 INT_EN 寄存器**。BB
 INT_EN 仍在 mac_isr/LL 反汇编域（①线开放）。
+
+**EabY 族写点排查完（2026-11-21 末）**：ghgYwwMEv7TsR03c6n8X（0x4005fc7a，
+EabY 在 .L82 调的唯一子调用）= **纯链表遍历**（obj[84] 子链头 → obj[80] 链 →
+obj[78] 旗标/obj[68] 时间比对），**无任何寄存器写** ⇒ EabY 族确认无 BB
+寄存器写点（其 0x2010b 访问仅阵列读）⇒ BB INT_EN 定位继续指向 mac_isr/LL
+反汇编域（①线不变）。
