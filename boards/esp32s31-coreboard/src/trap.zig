@@ -639,6 +639,25 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}(oob)", .{cbv}) catch "";
                     }
                     hw.rawLineBlocking(l3);
+                    // **NMI6：sleep 对象内容轮转窗**（96B=24 字，每 NMI3 4 字
+                    // 轮转 ⇒ 数十行覆盖全量；字段级对照找剩余零字段）
+                    {
+                        const op: *volatile u32 = @ptrFromInt(0x2f01_1034);
+                        const ov = op.*;
+                        if (ov >= 0x2f00_0000 and ov < 0x2f10_0000) {
+                            const k: u32 = obj_dump_k % 24;
+                            const w0: *volatile u32 = @ptrFromInt(ov + k * 4);
+                            const w1: *volatile u32 = @ptrFromInt(ov + k * 4 + 4);
+                            const w2: *volatile u32 = @ptrFromInt(ov + k * 4 + 8);
+                            const w3: *volatile u32 = @ptrFromInt(ov + k * 4 + 12);
+                            var s6b: [128]u8 = undefined;
+                            const l6 = std.fmt.bufPrint(&s6b, "NMI6 k={d:0>2} obj={x:0>8},{x:0>8},{x:0>8},{x:0>8}", .{
+                                k * 4, w0.*, w1.*, w2.*, w3.*,
+                            }) catch "";
+                            hw.rawLineBlocking(l6);
+                            obj_dump_k = (obj_dump_k + 4) % 96;
+                        }
+                    }
                 }
                 // **NMI5：栈窗口回溯**（sp+0..+24 六字，RAM 读）——第一个落在
                 // app 代码区（非 compiler_rt 0x400ab000-0x400ad000）的返回地址
@@ -1142,6 +1161,7 @@ var bp_last_tsel: u32 = 0;
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：
 pub var udiv_watch_on: bool = false;
 pub var rtc_freq_rb: u32 = 0; // bringup 早补丁回读（0=补丁未跑/对象 OOB）
+var obj_dump_k: u32 = 0; // sleep 对象轮转窗偏移（每次 NMI3 +4，模 96）
 pub var udiv_addr: u32 = 0;
 pub var udiv_hit_n: u32 = 0;
 pub var udiv_hit_ra: u32 = 0;
