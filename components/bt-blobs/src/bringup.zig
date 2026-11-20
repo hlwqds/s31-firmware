@@ -178,22 +178,26 @@ fn dumpBootState() void {
 }
 
 pub fn init(cfg: *config.Config) c_int {
-    // **RTC 计数器 clk_en（BT 调度时基）**：date.bit31 复位=0 ⇒ counter 冻结在 0。
-    // controller 的 BB 调度以 sleep-class 时基为准——时基不走 ⇒ 永不判定"事件到期"
-    // ⇒ BB 中断不发 ⇒ FE 冻结（2026-11-20 fe=0 全窗冻结的候选根因）。
-    // 写 date 必须保留 bit31（skill: s31-rtc-timer-probe，counter ≈137 kHz）。
-    {
-        const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
-        d.* |= 0x8000_0000;
-    }
-    // **RC32K 输出使能（正确地址）**：`CLK_RC32K_OEN` 在 **LP_CLK_PO_EN_REG
-    // （0x20701000+0x4）bit7**（bitpos[7] 落在 PO_EN 区间；此前误写 +0x0 bit7
-    // =别的字段，"写不粘住"结论作废）。rtc_freq=32000 走 RC32K 路径——振荡器
-    // 输出不开，sleep clock 死 ⇒ 调度器永不判定到期 ⇒ fe 冻结。SLOW_CLK_SEL
-    // 保持默认 0（=1 会杀死走动的 RTC counter 源，已实测回退）。
-    {
-        const po: *volatile u32 = @ptrFromInt(0x2070_1004);
-        po.* |= (1 << 7); // CLK_RC32K_OEN
+    // **时钟实验（compile-time 门控，默认关）**：RTC clk_en + RC32K OEN 两项
+    // 使能后 boot 行为改变（实证：流程卡死在 enable step 20 task_enable、
+    // blob intr_alloc 未到达）——与基线（fe=0 但 ENABLED ✓）冲突。隔离重测
+    // 前保持关闭；RTC counter 走动实验另行单独做（当前基线 counter 冻结）。
+    const rtc_clock_experiment = false;
+    if (comptime rtc_clock_experiment) {
+        // **RTC 计数器 clk_en（BT 调度时基）**：date.bit31 复位=0 ⇒ counter 冻结。
+        // 写 date 必须保留 bit31（skill: s31-rtc-timer-probe，counter ≈137 kHz）。
+        {
+            const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
+            d.* |= 0x8000_0000;
+        }
+        // **RC32K 输出使能（正确地址）**：`CLK_RC32K_OEN` 在 **LP_CLK_PO_EN_REG
+        // （0x20701000+0x4）bit7**（此前误写 +0x0 bit7 =别的字段）。rtc_freq=32000
+        // 走 RC32K 路径。SLOW_CLK_SEL 保持默认 0（=1 会杀死走动的 RTC counter
+        // 源，已实测回退）。
+        {
+            const po: *volatile u32 = @ptrFromInt(0x2070_1004);
+            po.* |= (1 << 7); // CLK_RC32K_OEN
+        }
     }
     // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）

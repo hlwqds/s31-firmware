@@ -120,6 +120,47 @@ pub var bt_window_no_flash: bool = false;
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
 
+// **寄存器稀疏快照/差分**（0x200A 前后对比）：
+// ⚠ 只读**已知可读白名单**——盲读区域会挂总线（0x20109800+128B 实测 boot 循环，
+// 同 MODEM_PWR 组 2 的"读挂"型）。白名单 = 全部有先前成功读据的地址。
+const snap_addrs = [7]usize{
+    0x2010_98BC, // 合成器 ready（bit2）
+    0x2010_11AC, // FE 计数器（fe）
+    0x2010_08D0, // FE 等待位
+    0x2010_F818, // ANA_CONF0（事务相位）
+    0x2010_F800, // I2C0_CTRL
+    0x2010_9C04, // modem clk conf
+    0x2010_9C14, // modem clk conf1
+};
+var snap_regs: [7]u32 = @splat(0);
+var snap_valid: bool = false;
+var snap_diff_done: bool = false;
+
+fn snapshotRegs() void {
+    for (&snap_regs, &snap_addrs) |*w, *a| {
+        w.* = @as(*volatile u32, @ptrFromInt(a.*)).*;
+    }
+}
+
+/// 差分打印：白名单寄存器 0x200A 前后对比，列出变化项（最多 7 项）。
+fn printRegDiff() void {
+    var buf: [180]u8 = undefined;
+    var out: usize = 0;
+    const head = "bt diff:";
+    @memcpy(buf[out..][0..head.len], head);
+    out += head.len;
+    for (&snap_regs, &snap_addrs, 0..) |*old, *a, i| {
+        const now = @as(*volatile u32, @ptrFromInt(a.*)).*;
+        if (now != old.*) {
+            const w = std.fmt.bufPrint(buf[out..], " +{x}=0x{x:0>8}", .{ a.* & 0xFFFF, now }) catch break;
+            out += w.len;
+            old.* = now;
+        }
+        _ = i;
+    }
+    osal.logPublic("{s}", .{buf[0..out]});
+}
+
 // ---- 钩子：**必须在 init 链之前装**，否则最关键的观测手段就没了 ----
 
 /// ⚠ 单位是**毫秒**：注入 `nowUs()/1000`。直接注入 `nowUs()` 会让所有超时窗口大 1000 倍，
@@ -1219,6 +1260,10 @@ pub fn run() noreturn {
         //    （组 1 数据扇区 0x18A000 回读全 ff ⇒ 写未落地）。探测已回退，
         //    基线回到 22/5。下次若要继续，从组 2 的第一个字 +0x20 单字探测。
         var ae: [1]u8 = .{1};
+        // **寄存器快照（0x200A 发送前，白名单稀疏）**：evt 到达后差分 ⇒
+        // "BB schedule arm 是否发生、动了哪些寄存器"直接可见。
+        snapshotRegs();
+        snap_valid = true;
         const ra2 = transport.sendCmd(0x200A, &ae);
         flashStage(23);
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
@@ -1293,6 +1338,8 @@ pub fn run() noreturn {
         }
         if (evt_at == null and transport.stats().evt_count > 0) {
             evt_at = now;
+            // **寄存器差分（白名单 vs 活值）**：schedule arm 是否发生直接可见。
+            printRegDiff();
             // ⚠ 旧版在此直接 halt ⇒ 广告只开了几毫秒，空中扫描器永远来不及看
             // （Command Complete SUCCESS ≠ 空中有包）。首事件后**继续泵 600 s**
             // 让 BB 广播引擎保持调度，OTA 观测窗留给宿主机/手机 BLE scan。
