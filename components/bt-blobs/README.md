@@ -27257,7 +27257,22 @@ r_btdm_task_init 传给 taskCreate 的任务入口 **fn = 0x2f000000 = blob 链�
 首跑路径 = 下轮第一问**（弄清 fn 去哪了 = 弄清 blob 任务的真实入口 = step20
 挂死链的最后一环）。非定案，勿当作已证根因。
 
-**CLIC intctl 读-as-zero 定案（2026-11-20 末，仪器注记）**：`c50`（intctl[50]
+**⚠ 时序大解码（2026-11-21，路由 v3 + deferred IE 轮，bin 865296）**：
+
+```
+enter step 20 task_enable → mutex_pend ⇒ 0
+→ arm src=124 → input 21（blob 在 task_enable 内部 intr_alloc——hook 接住）
+→ bt hci >> CMD opcode=0x2006（HCI 首命令发出！）
+→ osal> eventRun（任务 eventRun 循环跑起来了！）
+→ 静默（无 Command Complete 应答 ⇒ 等应答挂死）
+```
+
+⇒ 三件此前从未发生的事同轮出现：①intr_alloc 在 task_enable 内部完成；
+②HCI 首命令发出；③任务 eventRun 循环跑起来。**路由 v3 + deferred IE 是
+转折点**。当前挂点：**0x2006 后无应答** ⇒ MAC 中断应答链未闭合（BB 中断源
+静默/INT_EN 未开/BB timer 未武装三选一）。
+
+`c50`（intctl[50]
 原始字）在 IE+prio 写入后跨两次 boot 恒读 0——与 NMI 路径（intctl[25] 读 0 时
 "保留 0x107|置 nmies" 的写依然生效）完全自洽 ⇒ **本芯片 CLIC intctl 写有效、
 读恒 0**，IE/IP 状态不可经读观测。brg=0/0/0（bridge_w=0，trap 侧桥零触发）
