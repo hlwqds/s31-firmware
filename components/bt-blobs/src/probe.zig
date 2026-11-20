@@ -857,7 +857,7 @@ pub fn run() noreturn {
     lrec[15] = @as(*volatile u32, @ptrFromInt(0x2E00_0444)).*;
     lrec[16] = @as(*volatile u32, @ptrFromInt(0x2E00_0448)).*;
     lrec[17] = @as(*volatile u32, @ptrFromInt(0x2E00_044C)).*;
-    lrec[18] = @as(*volatile u32, @ptrFromInt(0x2E00_0454)).*; // SPI1_CMD 同拍
+    lrec[18] = @as(*volatile u32, @ptrFromInt(0x2E00_04A0)).*; // 主上下文最后自旋 PC
     lrec[19] = @as(*volatile u32, @ptrFromInt(0x2E00_0490)).*; // ANA_CONF0 @load_cal
     lrec[20] = @as(*volatile u32, @ptrFromInt(0x2E00_0494)).*; // I2C0_CTRL @load_cal
     lrec[21] = @as(*volatile u32, @ptrFromInt(0x2E00_0498)).*; // ANA_CONF1 @load_cal
@@ -968,6 +968,18 @@ pub fn run() noreturn {
         const nmi_reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
         const old_c = nmi_reg.*;
         nmi_reg.* = (old_c & 0x107) | (1 << 3); // nmies 置位（NMI 不受 MIE 屏蔽）
+    }
+    // **RTC WDT 重臂**（9s 超时，STG0=复位）：init/enable 挂死时 9s 后复位，
+    // LP 槽（步号 0x2C + 自旋 PC 0x4A0）跨复位保留，下一轮 FEFE 转写给 host。
+    // start.zig 在开机时已禁用 WDT（避免自检 9s 被咬）——这里在 init 前重新武装。
+    {
+        const cfg0: *volatile u32 = @ptrFromInt(0x2080_1000);
+        const feed: *volatile u32 = @ptrFromInt(0x2080_1014);
+        const wp: *volatile u32 = @ptrFromInt(0x2080_1018);
+        wp.* = 0x50D8_3AA1;
+        feed.* = 0x8000_0000;
+        cfg0.* = (cfg0.* & 0x0007_FFFF) | 0xB000_0000; // EN(bit31) + STG0=3(全复位, bits30:29) + STG1=3(bits28:27)
+        wp.* = 0;
     }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));

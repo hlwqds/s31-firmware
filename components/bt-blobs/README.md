@@ -26955,3 +26955,11 @@ CLIC 门控、per-step LP 标记、安全 trap 分支）在位。
 **下一会话**：配置 **UART1**（独立 APB 时钟域）在 load_cal 之前，log 双路输出
 ——mce(13) 杀 UART0 不影响 UART1 ⇒ load_cal/register_chipv7 内部的
 ESP_LOG（"phy_version"/校准进度）全程可见，墙的精确定位一步可得。
+
+### RTC WDT 自复挂尝试（未成功，下一会话首修）
+
+C6 CONFIG0 位布局与经典 ESP32 不同（STG0 action 非位 30:29）——`0xB0000000`
+写法未生效（40s 无复位）。下一会话首动作：读 `rtc_wdt_struct.h` 拿 S31 的
+精确 CONFIG0 位图（STG0 action/timeout 字段），或抄 `esp_private/rtc_wdt.c`
+的 `rtc_wdt_enable()` 实现。WDT 起来后：挂死 → 9s 复位（LP 保留）→ 下一轮
+FEFE 转写挂死轮的步号（0x2C）+ 自旋 PC（0x4A0）→ 主上下文挂点直接点名。
