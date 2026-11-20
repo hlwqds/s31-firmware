@@ -78,8 +78,28 @@ pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
 // trap 入口：`linksection(".trap_ram")` + `naked`，自己压 80 字节帧。
 // 只保存 caller-saved 与两个 CSR；callee-saved 由调用约定保证。
 // ---------------------------------------------------------------------------
+/// flash 写窗口异常记录（SRAM .bss）：trap 入口在窗口内命中时写入，
+/// 主上下文窗口结束后读取（诊断用）。export 使 `la` 可链接。
+export var flash_fault_mepc: u32 = 0;
+export var flash_fault_cause: u32 = 0;
+
 pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
+    // flash 写窗口检查（最顶、不碰 caller 寄存器）：窗口内 XIP 取指失败，
+    // 进 trapDispatch（也在 flash）= 嵌套 fault → CPU_LOCKUP 重启循环。
+    // 改为：记录 mepc/cause 到 SRAM 后 mret 重试——写窗口结束（cache 恢复）
+    // 后重试成功，流程无感。flash_op_window 由 flash 擦写方设/清（hw.zig）。
     asm volatile (
+        \\        la      t3, flash_op_window
+        \\        lw      t3, 0(t3)
+        \\        beqz    t3, 7f          # 窗口外 ⇒ 正常 trap 路径
+        \\        csrr    t4, mepc
+        \\        la      t5, flash_fault_mepc
+        \\        sw      t4, 0(t5)
+        \\        csrr    t4, mcause
+        \\        la      t5, flash_fault_cause
+        \\        sw      t4, 0(t5)
+        \\        mret                    # 重试（窗口结束后该指令可正常取指）
+        \\7:
         \\        addi    sp, sp, -96
         \\        sw      ra, 0(sp)
         \\        sw      t0, 4(sp)

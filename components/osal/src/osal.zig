@@ -1341,6 +1341,7 @@ fn inAlloc(addr: usize) bool {
 pub fn canaryScan() void {
     const base = canary_base;
     if (base == 0) return;
+    if (base < 0x2f00_0000) return; // 未初始化的 arena 基址（异常上下文）
     canary_first_off = 0;
     canary_first_val = 0;
     canary_bad_words = 0;
