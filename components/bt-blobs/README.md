@@ -27603,3 +27603,18 @@ oracle 一致），arg[0]=0 ⇒ Zth2 early-out（返回 0）⇒ 槽 NULL、rc=0�
 step20）。**仪器修复**：trap 的 cause=2 分支原对 mepc==0 仍无条件 `mepc%=4`
 ⇒ NULL 调用被放大成 double fault 风暴（sleep_en=1 轮 rst:0x1a ×35）；已改
 为 mepc!=0 才跳过 ⇒ 下轮 NULL 调用 = 一次带 c_mepc/c_ra 的可读 panic。
+
+**跳 0 机制 + 修法落地（2026-11-21 终，零板时）**：`.L272` = assert 失败
+路径——断言串实测 **`/builds/ble/btdm_common/components/sleep/src/
+btdm_sleep.c` 行 684**（a1=684）⇒ **sleep 子系统确认**。assert 后重载
+obj[4]（仍 0）→ `j .L240` → `jalr a5(=0)` ⇒ 跳 0 控制流闭合 ✓（beqz 守卫
+经 .L272 绕回调用点，NULL 必然执行）。
+**回调槽写入者 = `r_btdm_sleep_set_sleep_cb`（0x4006162c）**：签名为
+4 参 `(cb, arg, sub?, sub_arg?)`——a0 非空且 a1 非空才写入：**obj[4]=a0
+（sleep 回调）、obj[8]=a1、q[88]=a2、q[92]=a3**（q=obj[12] 96B 子对象）。
+我们的 bringup 从未调用 ⇒ obj[4]=0 ⇒ sleep_en=1 后调度器首次睡眠回调 ⇒
+assert(684) ⇒ jalr 0 ⇒ lockup。
+**下轮修法（一行级）**：bringup 在 sleep_en=1 路径（task_enable 前后）调
+`r_btdm_sleep_set_sleep_cb(cb=stub_fn, arg=&ctx, a2=0, a3=0)` 注册桩回调
+（Zig `callconv(.c)` no-op + 打印即可）——sleep_en 保持 1。若调度器随后
+要求真实睡眠硬件（RTC timer 等），再按其桩需求逐个补。
