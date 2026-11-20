@@ -533,6 +533,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 } else if (pc >= 0x2f80_0000 and pc < 0x2f830_0000) {
                     hist_blob +%= 1;
                     hist_last_blob_pc = pc;
+                    // **非 FE blob PC → LP 0x4A0**（连续覆盖，host 经下一轮 FEFE 读出）
+                    @as(*volatile u32, @ptrFromInt(0x2E00_04A0)).* = pc;
                 } else if (pc >= 0x4000_0000 and pc < 0x400b_0000) {
                     hist_main +%= 1;
                     hist_last_main_pc = pc;
