@@ -597,7 +597,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                         const cfg10: *volatile u16 = @ptrFromInt(0x2f01_f448 + 10); // cfg.ble 在 cfg+0（@offsetOf==112 的是 bredr）
                         const c10 = cfg10.*;
                         // LP/HP 时钟门活值（持久态假说判据：跨 rst:0x1a 累积则逐 boot 变化）
-                        const clk_conf: *volatile u32 = @ptrFromInt(0x2010_9C10);
+                        const clk_conf: *volatile u32 = @ptrFromInt(0x2010_9C04); // reg_clk_conf（porting 同址）
                         const clk_conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
                         const lpcon_clk: *volatile u32 = @ptrFromInt(0x2010_F018);
                         l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4} cc=0x{x:0>8} cc1=0x{x:0>8} lp=0x{x:0>8}", .{

@@ -1076,6 +1076,12 @@ pub fn run() noreturn {
         const rb = cfg0.*;
         @import("osal_kit").osal.logPublic("bt wdt: config0=0x{x:0>8} en={d} stg0={d}", .{ rb, (rb >> 31) & 1, (rb >> 28) & 7 });
     }
+    // **脏 RAM 判别**：rst:0x1a 不清 RAM ⇒ blob 全局槽（调度 ready 掩码/
+    // sleep 对象指针/btdm_cb 指针）跨 boot 残留。清零后若首 boot 直达
+    // 0x2008 park ⇒ “boot7 才过”是残留状态所致（非时钟门累积）。
+    @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；

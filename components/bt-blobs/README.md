@@ -27651,3 +27651,16 @@ blob 环运行（140 样本）+ st 冻结（167/167）**；环是否真无限未
 **观测纪律**：抓包判读按 boot 分段（banner/rst 边界），采样归属以段为
 单位；ZU/A0 行标记 dump 相位（每 boot ×2）；dump 相位的样本不得归给
 blob 环。
+
+**脏 RAM 判别轮终判（2026-11-21，清三槽 + sleep_en=1 + 全仪器）**：
+① **脏 RAM 残留假说证实**——bringup.init 前清三槽（0x2f011028/34/38）后，
+**首 boot 直达 0x2008 park**（此前 7-boot 循环 boot1-6 step10 后 lockup 消失，
+rst:0x1a 仅剩早期 1 次）⇒ "数次风暴后才过"= **rst:0x1a 不清 RAM ⇒ blob 槽
+跨 boot 残留**所致（非时钟门累积；持久态假说的时钟门版证伪）。清槽已固化
+进 probe（每 boot init 前）。
+② sleep_cb 注册 rc=0 ✓、槽=0x2f025140 ✓（sleep_en=1 + 门控 + 注册全链工作）。
+③ 流程推进后停于 **probe.zig:1213 的 wait_dumps 定长环**（a0=wait_dumps 递减
+0x05a3e560→0x041ade74，~83s nop 等待 NMI 采样器 ISR dump 落盘）——**预期
+行为非故障**（PHY 判别支线的遗留等待段，其后是 esp_phy_enable(2) 判别）。
+**下轮**：esp_phy_enable 判别结果（0xa4/0x88 标记：hist=12 ⇒ 死在其内/hist=11
+⇒ 死在调用前）→ PHY 上电链是 BT sleep 路径的下一块基础设施。
