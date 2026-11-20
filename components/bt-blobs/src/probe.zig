@@ -68,6 +68,7 @@ export fn probe_dump_now() void {
 const config = @import("config.zig");
 const bringup = @import("bringup.zig");
 const osi_impl_timerStats = @import("osi_impl.zig").timerStats;
+const osi_impl_serviceTimers = @import("osi_impl.zig").serviceTimers;
 const transport = @import("transport.zig");
 const sched = @import("osal_kit").sched;
 const porting = @import("porting.zig");
@@ -1277,6 +1278,7 @@ pub fn run() noreturn {
     while (true) : (round += 1) {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
+        osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
