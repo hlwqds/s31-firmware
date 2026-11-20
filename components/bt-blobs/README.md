@@ -27469,3 +27469,20 @@ log 继续 ⇒ 无限环 = 返回值永远≠8 且掩码位不清。
 （pad 修复已在 shim 内，洪水成本已除）→ 抓 blob 日志内容（log_ring/
 `bt-log hex` 0x2f024e54 区）+ flashStage 记 counter(36)/flag(25)/返回值，
 即可判 ①/② 并拿到环在报什么错。
+
+**A/B 配方修正 + 读数限定（2026-11-21 补）**：
+1. **撤 mute 前先抬行上限**：shim 的 `s31_bt_fmt_lines >= S31_BT_FMT_LINES(400)`
+   判定早于 hook 调用——洪水瞬间耗光 400 行后稳态报错**根本不进 log_ring**
+   （未格式化，非覆盖）。构建时 `-DS31_BT_FMT_LINES=N`（头文件明写支持）抬到
+   数万再撤 mute。
+2. **环吐字稀疏**：trap drain 每 64 次 IRQ 才吐 1 槽（T0=2000µs ⇒ ~128ms/行）
+   = 稀疏抽样；判读时当采样不当全量，必要时提密 drain。
+3. **counter(36)/flag(25)/返回值走 NMI 行**：flashStage 是固定偏移读，state
+   指针是运行期 s0 ⇒ trap.zig 的 NMI 行加 s0 并直读 s0+32/34/36 三个字。
+4. **恒定 mepc 有混叠风险**：NMI 周期采样与环相位相容时 22/22 落同点不代表
+   自旋就在该指令——.L54 是相位落点；判据用 pc_ring 直方图分布（40 桶）+
+   s0+34 掩码递减（真位扫）vs 恒 0（空转等事件位）。
+5. **0x2008 opcode 错位说不成立**（查证后拒绝）：BLE Core spec OGF 0x08——
+   0x2007=Read Adv Ch TX Power（0 参）、**0x2008=LE Set Advertising Data**
+   （len+31B）、0x200A=Adv Enable（1 参）；probe 的 15/32/1 plen 全对齐，
+   且稳定轮同三条命令拿到过 tx=5/6 应答（错位则当时即败）。
