@@ -1309,8 +1309,13 @@ pub fn run() noreturn {
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值，txphase 已稳定=1 多轮）
             _ = @as(*volatile u32, @ptrFromInt(0x2070_1004)).*; // PO_EN（RC32K OEN 已置，活值不再进诊断行）
             const ts = osi_impl_timerStats();
-            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d}", .{
-                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)),
+            const trap = @import("board").trap;
+            const h34 = trap.getHandler(34);
+            const h35 = trap.getHandler(35);
+            const h34f: usize = if (h34.fn_) |f| @intFromPtr(f) else 0;
+            const h35f: usize = if (h35.fn_) |f| @intFromPtr(f) else 0;
+            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h34=0x{x:0>8} h35=0x{x:0>8}", .{
+                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h34f, h35f,
             });
             // **ROM 表全扫描（第 3 次 diag 起，避 FIFO 早期流量）**：找 blob 直注
             // intr_handler_set 的真 ISR

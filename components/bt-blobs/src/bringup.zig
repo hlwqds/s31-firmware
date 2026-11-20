@@ -674,10 +674,13 @@ fn intrArm(src: c_int) void {
             hf = h.f;
             harg = h.arg;
         } else {
-            const rh = @import("board").trap.romHandler(routed_input - 16);
-            if (rh.fn_) |f| {
+            // **优先自有表**：blob 经 intr_handler_set(n=50, mac_isr, arg) 直注——
+            // shellSetIsr 已归一化存 handlers[50-16=34]；romHandler(34) 是 ROM
+            // 管理 API 表（0x2f81281e 奇值垃圾），不是硬件分发表。
+            const gh = @import("board").trap.getHandler(routed_input - 16);
+            if (gh.fn_) |f| {
                 hf = f;
-                harg = rh.arg;
+                harg = gh.arg;
             }
         }
         if (hf) |f| {
