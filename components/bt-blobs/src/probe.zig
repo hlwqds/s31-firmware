@@ -120,6 +120,99 @@ pub var probe_irqs: bool = false;
 /// 置位后：mark.put 只写 LP 槽、flashStage/Extra 空转、dumpPcRing 直接返回、
 /// 采样器 ISR 不再触发 0x187000 dump（pc_dump_at 改大）。深度经 LP hist 跨复位读出。
 pub var bt_window_no_flash: bool = false;
+/// 实验：fwd06 前把 clk_conf1/0x20109C08 回写成官方 BLE-only 值。
+pub var align_clk_conf1: bool = true;
+
+/// **盲区诊断块**（2026-11-21）：UART/T0 失声后唯一的读出通道。泵（主上下文）
+/// 每轮尝试把现场写进 flash 扇区 0x186000 并用 ROM `spiflash_read` 回读校验，
+/// 成功即止（主上下文写曾被视为不可靠 ⇒ 带校验重试）。主机
+/// `esptool read-flash 0x186000 256` 解码。
+extern fn esp_rom_spiflash_read(src_addr: u32, des_addr: [*]u32, len: u32) c_int;
+const diag_blk_magic: u32 = 0xD1A6_B007;
+const diag_blk_off: u32 = 0x186_000;
+var diag_blk_tries: u32 = 0;
+var diag_blk_ok: bool = false;
+fn rd32(addr: usize) u32 {
+    return @as(*volatile u32, @ptrFromInt(addr)).*;
+}
+/// 返回是否已成功落盘并校验。
+fn diagFlashBlock(round: u32) bool {
+    var b: [64]u32 = @splat(0);
+    var i: usize = 0;
+    b[i] = diag_blk_magic;
+    i += 1;
+    b[i] = round;
+    i += 1;
+    // UART0：STATUS/CLKDIV/CONF0
+    b[i] = rd32(0x2038_A01C);
+    i += 1;
+    b[i] = rd32(0x2038_A014);
+    i += 1;
+    b[i] = rd32(0x2038_A038);
+    i += 1;
+    // HP_SYS_CLKRST
+    for ([_]usize{ 0x00, 0x04, 0x08, 0x0C, 0x40, 0x88, 0x1E0 }) |o| {
+        b[i] = rd32(0x2058_7000 + o);
+        i += 1;
+    }
+    // TIMG0 原始 13 字
+    for (0..13) |k| {
+        b[i] = rd32(0x2058_0000 + 4 * k);
+        i += 1;
+    }
+    // MODEM_SYSCON 16 字
+    for (0..16) |k| {
+        b[i] = rd32(0x2010_9C00 + 4 * k);
+        i += 1;
+    }
+    // FE / 计数
+    b[i] = rd32(0x2010_0450);
+    i += 1;
+    const st = osal.stats();
+    b[i] = st.eventq_put;
+    i += 1;
+    b[i] = st.eventq_get_ok;
+    i += 1;
+    b[i] = st.event_run_count;
+    i += 1;
+    b[i] = bringup.bridge_w;
+    i += 1;
+    b[i] = bringup.bridge_ran;
+    i += 1;
+    b[i] = bringup.stub_blocks;
+    i += 1;
+    const tr = @import("board").trap;
+    b[i] = tr.irq_count;
+    i += 1;
+    b[i] = tr.nmi_count;
+    i += 1;
+    b[i] = tr.uart_stuck_n;
+    i += 1;
+    b[i] = @import("board").hw.rw_drops;
+    i += 1;
+    // CSRs（主上下文）
+    b[i] = asm volatile ("csrr %[v], 0x300"
+        : [v] "=r" (-> u32),
+    );
+    i += 1;
+    b[i] = asm volatile ("csrr %[v], 0x304"
+        : [v] "=r" (-> u32),
+    );
+    i += 1;
+    b[i] = asm volatile ("csrr %[v], 0x305"
+        : [v] "=r" (-> u32),
+    );
+    i += 1;
+    b[i] = asm volatile ("csrr %[v], 0x307"
+        : [v] "=r" (-> u32),
+    );
+    i += 1;
+    _ = esp_rom_spiflash_erase_sector(diag_blk_off / 0x1000);
+    _ = esp_rom_spiflash_write(diag_blk_off, &b, @intCast(4 * i));
+    var chk: [1]u32 = .{0};
+    _ = esp_rom_spiflash_read(diag_blk_off, &chk, 4);
+    return chk[0] == diag_blk_magic;
+}
 
 /// **UART0 快照/恢复**（2026-11-21）：首条 HCI 命令处理期间 UART0 TX 死亡
 /// （FIFO 卡满、所有输出被丢弃——"UART 哑"）。fwd06 前拍快照，泵每轮比对+恢复
@@ -1261,7 +1354,7 @@ pub fn run() noreturn {
         @as(*volatile u32, @ptrFromInt(rtb + 0x08)).* = 1 << 31;
         @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31;
         @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31;
-        osal.logPublic("bt probe: rtc wake routed in={d} (def=0x{x:0>6}) armed cnt=0x{x:0>8}", .{ wake_input, map_def, cnt });
+        _ = map_def; // （"rtc wake routed" 行已回收：镜像容量紧张；wake_input 别处仍用）
     }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
@@ -1295,7 +1388,8 @@ pub fn run() noreturn {
                     phi.* = 0;
                     osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=32000", .{ tag, obj });
                 } else {
-                    osal.logPublic("bt probe: rtc_freq nz @{s} obj=0x{x:0>8} +24=0x{x:0>8} +28=0x{x:0>8}", .{ tag, obj, plo.*, phi.* });
+                    _ = phi.*;
+                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=32000", .{ tag, obj });
                 }
             } else {
                 osal.logPublic("bt probe: rtc_freq oob @{s} ptr=0x{x:0>8}", .{ tag, obj });
@@ -1520,13 +1614,18 @@ pub fn run() noreturn {
             }
         }
         mark.put(0x78, 0xADC0B10c, 0);
-        // **隔离实验武装**（2026-11-21）：task 建立且首轮事件消费完毕后，把
-        // semPend FOREVER 真阻塞换成有界让出——判"park 的 sem 是否唯一堵点"。
-        osal.sem_park_bounded = false; // 隔离实验已结案（2026-11-21）：关闭，减少变量
-        uartSnapshot(); // UART 仍活：此刻拍基线
-        board.log.line("bt probe: uart baseline ctrl0=0x{x:0>8} soc_clk=0x{x:0>8} txfifo={d}", .{
-            uart_ctrl0_snap, uart_soc_snap, (@as(*volatile u32, @ptrFromInt(UART0 + 0x1C)).* >> 16) & 0xFF,
-        });
+        // （FE 簇 + SYSCON 窗口一次性快照已回收——对拍结论见 README：FE 8/9 同值、
+        //  仅 0x450 异（0x00110000 vs 官方 0x00102000）；镜像容量紧张。）
+        // **时钟集合对齐官方 BLE-only**（实验，2026-11-21）：官方 enable 后
+        // `clk_conf1(0x20109C14)=0x003FE080`、`0x20109C08=0`；我们的 Wi-Fi 风格
+        // PHY 使能多开了 bit2/3(WIFI_BB 44M/80M)、bit9(WIFI_MAC)、bit11(FE_20M)
+        // 与 9C08 的 bit2/3/4。fwd06 前按官方值回写，观察 UART/T0 是否仍失声。
+        if (align_clk_conf1) {
+            const c14: *volatile u32 = @ptrFromInt(0x2010_9C14);
+            const c08: *volatile u32 = @ptrFromInt(0x2010_9C08);
+            c14.* = 0x003F_E080;
+            c08.* = 0;
+        }
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
@@ -1619,20 +1718,11 @@ pub fn run() noreturn {
         // **RTC SOC_WAKEUP 旗**：主上下文调已注册的 sleep 回调（trap 只置旗）
         // **park 相位寄存器读出**（每 300 轮）：MAP 路由 + CLIC in6/in25 门控
         // ——SOC_WAKEUP 旗未置时的三查（路由保留？in6 IE/prio vs in25 形态？）
-        if (round % 300 == 299) {
-            const mapv: u32 = @as(*volatile u32, @ptrFromInt(0x2058_5000 + 0x1FC)).*;
-            const in6: u32 = @as(*volatile u32, @ptrFromInt(0x1080_1000 + 6 * 4)).*;
-            const in25: u32 = @as(*volatile u32, @ptrFromInt(0x1080_1000 + 25 * 4)).*;
-            osal.logPublic("bt probe: REGMAP={x:0>6} IN6={x:0>8} IN25={x:0>8} wk={d}", .{ mapv, in6, in25, board.trap.rtc_wake_n });
-        }
         if (board.trap.rtc_wake_flag != 0) {
             board.trap.rtc_wake_flag = 0;
             osal.logPublic("bt probe: rtc wake cb fired n={d}", .{board.trap.rtc_wake_n});
             bringup.btSleepCb(0);
         }
-        // **UART0 自愈**：每轮比对+恢复配置寄存器（死因若是被改写 ⇒ 输出复现）。
-        var udiff: [3]u32 = .{ 0, 0, 0 };
-        const und = uartRestore(&udiff);
         // 单次 kick/轮：配合桩的 256 次限速让出 ⇒ 每轮推进 256 个日志调用
         // （批量 200 kick 版实测 fwd06 后崩溃复位，已回退，见 bringup 桩注释）。
         // **sink 自愈重发布**：每轮重写 [2f010fb4]+[+12]，对冲任何覆写。
@@ -1688,7 +1778,8 @@ pub fn run() noreturn {
             _ = rtc; // 原走已删的 logPublic diag 行（死通道）
             _ = ts;
             _ = h5f;
-            osal.logPublic("bt probe: bb 47C=0x{x:0>4} 450=0x{x:0>6}", .{ m47c & 0xFFFF, m450 & 0xFFFFFF });
+            _ = m47c; // （泵内 bb 47C/450 行已回收：fwd06 前有 FE 簇完整快照）
+            _ = m450;
             // **BB 私有块探读（once）**：0x2010B000。时钟全开后首读——挂死 =
             // BB 块仍被门控（本身就是答案）；可读 = 对照调度寄存器找 arm 差集。
             if (!bb0_done) {
@@ -1701,11 +1792,7 @@ pub fn run() noreturn {
             }
             // **ana 对拍（官方轨迹：CONF0 2100e408→2900e448、I2C0_CTRL 012f0669
             // →01780369）**：静态=ana I2C 路径死；变化=事务在发。
-            const f818v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
-            const f800v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
-            // RF_PWC 电源岛（PMU 0x20704000+0x184 bits31:16 = XPD_RF_CIRCUIT）
-            const rfpwc: u32 = @as(*volatile u32, @ptrFromInt(0x2070_4184)).*;
-            osal.logPublic("bt probe: ana f818=0x{x:0>8} f800=0x{x:0>8} rfpwc=0x{x:0>8}", .{ f818v, f800v, rfpwc });
+            // （ana f818/f800/rfpwc 诊断行已回收：镜像容量紧张，读数历次恒定。）
             // ⚠ pmut 读（0x2010F020 LP 域 power_st）已移除——该读在 round200
             // 触发 LP 域总线挂死（盲读 LP 域 = 已知危险）。仅保留 syscon 域读。
             // **ICG 修复实验**：bt_st_map 0x4→0x6（补 MODEM 态不门控，官方
@@ -1726,20 +1813,27 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} c0=0x{x:0>8} c32=0x{x:0>8} pk=0x{x:0>8} pc=0x{x:0>8} sb={d} c28={d} u={d}/0x{x:0>2}:0x{x:0>8}>0x{x:0>8} brg={d}/{d}/{d}", .{
-                icg_bt,           icg_after,          (r98 >> 2) & 1,         fe_cnt,   st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, c0, c32, osal.last_park_sem, tpc, bringup.stub_blocks,
-                und,              udiff[0],           udiff[1],               udiff[2],
-                blk: {
-                    // ctx+28 命令派发链首节点（空链 ⇒ 命令被静默 free，无回包）。
-                    const ctxp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
-                    if (ctxp2 < 0x2f00_0000 or ctxp2 >= 0x2f90_0000) break :blk @as(u32, 0);
-                    const head: usize = @as(*volatile usize, @ptrFromInt(ctxp2 + 28)).*;
-                    if (head < 0x2f00_0000 or head >= 0x2f90_0000) break :blk @as(u32, @truncate(head));
-                    const h4: usize = @as(*volatile usize, @ptrFromInt(head + 4)).*;
-                    break :blk @as(u32, @truncate(h4));
-                },
-                bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped,
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} c28={d} brg={d}/{d}/{d}", .{
+                icg_bt,
+                icg_after,
+                (r98 >> 2) & 1,
+                fe_cnt,
+                st.eventq_put,
+                st.eventq_get_ok,
+                st.event_run_count,
+                st.event_run_no_slot,
+                tpc,
+                bringup.stub_blocks,
+                @as(u32, 0),
+                bringup.bridge_w,
+                bringup.bridge_ran,
+                bringup.bridge_dropped,
             });
+            // **盲区诊断块**：UART 失声后仍每轮尝试，成功即止（最多 40 轮）。
+            if (!diag_blk_ok and diag_blk_tries < 40) {
+                diag_blk_tries += 1;
+                diag_blk_ok = diagFlashBlock(@intCast(round));
+            }
             // （已删）logPublic diag 行：泵期实测 0 输出（死通道），其读数已并入上方 icg 板载行。
             // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。

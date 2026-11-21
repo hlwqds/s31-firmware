@@ -607,63 +607,38 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     const cnt: *volatile u16 = @ptrFromInt(frame.s0 + 36);
                     // 0x2010107C = 分发函数入口门（bltz 即整函数跳过=no-op 分发）
                     const gate: *volatile u32 = @ptrFromInt(0x2010_107C);
-                    // db = [0x20101074] 派发基址（oracle=0x2f000000；0 ⇒ 句柄解码出裸偏移）
-                    const dbase: *volatile u32 = @ptrFromInt(0x2010_1074);
-                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4} gate=0x{x:0>8} db=0x{x:0>8}", .{
-                        st.*, mask.*, cnt.*, gate.*, dbase.*,
+                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4} gate=0x{x:0>8}", .{
+                        st.*, mask.*, cnt.*, gate.*,
                     }) catch "";
                 } else nl = "";
                 // **INT_RAW 读数**（RTC_TIMER+0x28：bit31=SOC_WAKEUP 到点？bit28=tick）
                 const int_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2080_0028)).*;
-                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} a1=0x{x:0>8} a2=0x{x:0>8} a3=0x{x:0>8} ir=0x{x:0>8}{s}", .{
-                    nmi_count, frame.mepc, frame.ra, frame.a0, frame.a1, frame.a2, frame.a3, int_raw, nl,
+                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} ir=0x{x:0>8}{s}", .{
+                    nmi_count, frame.mepc, frame.ra, frame.a0, int_raw, nl,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(ln);
                 nmi_last_pc = frame.mepc;
                 // **第二行：RAM 侧调度器四字**（固定锚点 0x2f011034，不碰毒区）：
                 // p=调度器对象、flag=p[0]（恒 0=未完成持续路径）、q=p[12]、
                 // state=q[0]（恒 2 / 2↔3 交替 / 恒 3 = 三种自旋形态判据）。
-                // **mepc 变化门控**（2026-11-21）：固定 PC 的采样重复打 3 行
-                // 会占满 FIFO 淹没 diag——只在 PC 与上次不同时打对象 dump。
-                // **mepc 变化门控**（2026-11-21）：固定 PC 的采样重复打 3 行
-                // 会占满 FIFO 淹没 diag——只在 PC 与上次不同时打对象 dump。
-                if (frame.mepc != nmi_last_pc and frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e) {
-                    const pp: *volatile u32 = @ptrFromInt(0x2f01_1034);
-                    const p = pp.*;
-                    var s2b: [96]u8 = undefined;
-                    if (p >= 0x2f00_0000 and p < 0x2f10_0000) {
-                        const flag: *volatile u8 = @ptrFromInt(p);
-                        const qp: *volatile u32 = @ptrFromInt(p + 12);
-                        const q = qp.*;
-                        var l2: []const u8 = undefined;
-                        if (q >= 0x2f00_0000 and q < 0x2f10_0000) {
-                            const statew: *volatile u32 = @ptrFromInt(q);
-                            l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8} state={d}", .{ p, flag.*, q, statew.* }) catch "";
-                        } else {
-                            l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8}(oob)", .{ p, flag.*, q }) catch "";
-                        }
-                        hw.rawLineBlocking(l2);
-                    } else {
-                        const l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8}(oob)", .{p}) catch "";
-                        hw.rawLineBlocking(l2);
-                    }
-                    // btdm_cb 指针（controller init 核心所建）：非空=init 核心跑过；
-                    // cb+4=mutex 槽、cb+8=eventq 槽（归档查 slot.p!=0，池耗尽则静默 NULL）
-                    const cbp: *volatile u32 = @ptrFromInt(0x2f01_1038);
-                    const cbv = cbp.*;
-                    var s3b: [192]u8 = undefined;
-                    var l3: []const u8 = undefined;
-                    if (cbv >= 0x2f00_0000 and cbv < 0x2f10_0000) {
-                        const mu: *volatile u32 = @ptrFromInt(cbv + 4);
-                        const evq: *volatile u32 = @ptrFromInt(cbv + 8);
-                        // cfg.ble 字节 10-11（sleep 对象描述符源；defaults 应为 05 01）
-                        const cfg10: *volatile u16 = @ptrFromInt(0x2f01_f448 + 10); // cfg.ble 在 cfg+0（@offsetOf==112 的是 bredr）
-                        const c10 = cfg10.*;
-                        // ⚠ **MMIO 读扩展（cc/cc1/lp）已回退**：BT 窗内 NMI 上下文
-                        // 读 LP_CON/SYSCON 与 steps 11-19 停摆相关（2026-11-21 实测
-                        // 归因未定）；时钟门读数改主上下文 dump 路径（下轮）。
-                        l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4}", .{ cbv, mu.*, evq.*, c10 }) catch "";
-                    } else {
+                // （NMI2 对象行已移除：mrucwvp 楔点已由路由/SHV/基址修复越过，该行不再提供信息。）
+                // btdm_cb 指针（controller init 核心所建）：非空=init 核心跑过；
+                // cb+4=mutex 槽、cb+8=eventq 槽（归档查 slot.p!=0，池耗尽则静默 NULL）
+                const cbp: *volatile u32 = @ptrFromInt(0x2f01_1038);
+                const cbv = cbp.*;
+                var s3b: [192]u8 = undefined;
+                var l3: []const u8 = undefined;
+                if (cbv >= 0x2f00_0000 and cbv < 0x2f10_0000) {
+                    const mu: *volatile u32 = @ptrFromInt(cbv + 4);
+                    const evq: *volatile u32 = @ptrFromInt(cbv + 8);
+                    // cfg.ble 字节 10-11（sleep 对象描述符源；defaults 应为 05 01）
+                    const cfg10: *volatile u16 = @ptrFromInt(0x2f01_f448 + 10); // cfg.ble 在 cfg+0（@offsetOf==112 的是 bredr）
+                    const c10 = cfg10.*;
+                    // ⚠ **MMIO 读扩展（cc/cc1/lp）已回退**：BT 窗内 NMI 上下文
+                    // 读 LP_CON/SYSCON 与 steps 11-19 停摆相关（2026-11-21 实测
+                    // 归因未定）；时钟门读数改主上下文 dump 路径（下轮）。
+                    l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8} mu=0x{x:0>8} evq=0x{x:0>8} c10=0x{x:0>4}", .{ cbv, mu.*, evq.*, c10 }) catch "";
+                    {
                         l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}(oob)", .{cbv}) catch "";
                     }
                     hw.rawLineBlocking(l3);
@@ -1166,7 +1141,7 @@ pub var nmi_count: u32 = 0;
 /// 然后 UART0{0x00,04,08,0C,14,1C,20,24,28,38,3C,40}、
 /// HP_SYS_CLKRST{0x00,04,08,0C,40,88,1E0}、MODEM_SYSCON{0x9C04..9C14}、
 /// {0x2010F01C, 0x2010107C, 0x20101074}。
-var uart_stuck_n: u32 = 0;
+pub var uart_stuck_n: u32 = 0;
 /// 落盘改为 RAM 记录后的快照（主机不可见，供 UART 恢复后的 diag 行读）。
 pub var uart_diag_blk: [40]u32 = @splat(0);
 pub var uart_diag_len: usize = 0;
