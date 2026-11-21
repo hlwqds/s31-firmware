@@ -722,7 +722,10 @@ pub fn init(cfg: *config.Config) c_int {
                 const idn2: u32 = mmioRdN(u16, relink_p16);
                 const nx2: usize = rdUsz(relink_p16 + 8);
                 const idn5: u32 = if (relink_p20 >= 0x2f00_0000 and relink_p20 < 0x2f10_0000) mmioRdN(u16, relink_p20) else 0xFF;
-                osal.logPublic("bt probe: n2=0x{x:0>8} id={d} nx=0x{x:0>8} | n5 id={d} k4=0x{x:0>8}", .{ relink_p16, idn2, nx2, idn5, k4_addr });
+                // （n2/n5 relink 读数行已回收：镜像容量紧张。）
+                _ = idn2;
+                _ = nx2;
+                _ = idn5;
             }
             // **判别打印**：env→p16（节点2缓冲）现状 + 链尾 next。若 [p16] 仍=2
             // 而 node6.next 不指 p16 ⇒ 摘链；若 [p16]=0 ⇒ 内存被清（memset 型）。

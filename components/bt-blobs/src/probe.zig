@@ -233,11 +233,18 @@ pub fn lpBlackBoxReport() void {
         const n: u32 = if (t[0] < 24) t[0] else 24;
         var k: u32 = 0;
         while (k < n) : (k += 1) {
-            const e = ring[(t[0] - n + k) % 24];
+            const e = ring[(t[0] + 1 - n + k) % 24]; // 最新事件在 (seq % 24)
             board.log.line("BBR {d} t{d} 0x{x:0>7}", .{ k, e >> 28, e & 0x0FFF_FFFF });
         }
     }
     // （BBT phase==0xD2C7 且上一条复位原因是 WDT ⇒ 对照通过。）
+    {
+        // 冻结点 PC 采样（NMI 每 tick 写）：last/prev 相同 ⇒ 自旋在同一条指令附近。
+        const pc0: *volatile u32 = @ptrFromInt(0x2E00_0380);
+        const pc1: *volatile u32 = @ptrFromInt(0x2E00_0384);
+        const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
+        board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.* });
+    }
     const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
     if (lp[0] != diag_blk_magic) return;
     var r: usize = 0;
@@ -1158,8 +1165,10 @@ pub fn run() noreturn {
         asm volatile ("li t0, 2");
         asm volatile ("csrw 0x7a0, t0");
 
+        board.hw.flashOpBegin(); // 窗口旗：NMI 打进擦写期时 trap 入口只记录并重试（2026-11-21 实测此处间歇 lockup）
         _ = esp_rom_spiflash_erase_sector(0x18D000 / 0x1000);
         _ = esp_rom_spiflash_write(0x18D000, &rc_, 28);
+        board.hw.flashOpEnd();
     }
     // **RISC-V debug trigger（Debug Spec v1.0 映射，写-回读已验证）**——提前到 BT 探测之前：
     // BT 段（bringup.enable/HCI）是已知挂死点，放它后面永远跑不到。
@@ -1175,8 +1184,10 @@ pub fn run() noreturn {
     const target_addr: u32 = vfe4 +% 36;
     const cur_val: u32 = if (vfe4 != 0) @as(*volatile u32, @ptrFromInt(target_addr)).* else 0xDEAD_0000;
     var base: [4]u32 = .{ 0xADC0_FEFC, vfe4, target_addr, cur_val };
+    board.hw.flashOpBegin(); // 窗口旗：NMI 打进擦写期时 trap 入口只记录并重试（2026-11-21 实测此处间歇 lockup）
     _ = esp_rom_spiflash_erase_sector(0x189000 / 0x1000);
     _ = esp_rom_spiflash_write(0x189000, &base, 16);
+    board.hw.flashOpEnd();
     // **LP 逐轮历史转写**（落点在 FEFC 之后 —— 该窗口写可靠）：
     // {FEFE, boot_n, hist[0..9], enable步号, 0x404, 0x30, FE三件套+mepc} @0x18A000。
     // [14..17] = NMI 450k 时拍的 0x201098BC/0x201008D0/0x201011AC/mepc（FE 环定位判据）。
@@ -1198,8 +1209,10 @@ pub fn run() noreturn {
     lrec[22] = @as(*volatile u32, @ptrFromInt(0x2E00_049C)).*; // 98BC @load_cal
     lrec[23] = 0xADC0_5FE9; // 格式标记（本扩展版）
     lrec[24] = @as(*volatile u32, @ptrFromInt(0x2E00_0490)).*; // load_cal 返回标记
+    board.hw.flashOpBegin(); // 窗口旗：NMI 打进擦写期时 trap 入口只记录并重试（2026-11-21 实测此处间歇 lockup）
     _ = esp_rom_spiflash_erase_sector(0x18A000 / 0x1000);
     _ = esp_rom_spiflash_write(0x18A000, &lrec, 96);
+    board.hw.flashOpEnd();
     // **EXEC 断点武装**（2026-11-20 终）：0x2f828a64 = FE 环内指令。MIE 屏蔽下
     // NMI/T0 全哑（上一轮 IDL esp_phy_enable 挂死时零 NMI 行 = MIE 关），而
     // mcontrol6 EXEC match 不受 MIE 影响 ⇒ 若 CPU 在 MIE=0 下执行 FE 环，

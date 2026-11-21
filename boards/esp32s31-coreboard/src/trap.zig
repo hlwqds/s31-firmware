@@ -572,6 +572,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 第 1000 次 ≈ 2 s（周期 2 ms）。若长窗口里连这一行都没有
             // ⇒ NMI 根本没在跑（例如 controller 关了中断）⇒ "饿死"的原因要另找。
             nmi_count +%= 1;
+            // **冻结点采样**：每 tick 把被打断的 PC 记进 LP（跨数字复位保留）。
+            {
+                const pc0: *volatile u32 = @ptrFromInt(0x2E00_0380);
+                const pc1: *volatile u32 = @ptrFromInt(0x2E00_0384);
+                pc1.* = pc0.*;
+                pc0.* = @truncate(frame.mepc);
+            }
             if (nmi_count % 5_000 == 0) {
                 var nb: [224]u8 = undefined;
                 // **s0 + blob state 三字段直读**：0x2008 停驻环判据——

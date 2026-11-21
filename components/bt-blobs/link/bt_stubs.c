@@ -71,6 +71,7 @@ extern void s31_bt_raw_line(const char *s);
 
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
     bt_assert_hits++;
+    *(volatile unsigned int *)0x2E000388 = (unsigned int)line; /* LP: 跨复位可读（探针 BBP 行） */
     char buf[128];
     int n = 0;
     const char *src = "bt-blob-strong-assert ";
