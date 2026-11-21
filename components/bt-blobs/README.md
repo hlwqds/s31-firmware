@@ -28105,3 +28105,10 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
 coex→lp_clk(4 调用已展开)→task_init→lp_init→hci_fc_env→ble_stack(9-13)→
 hci_transport→enable 链 16-20）。缺步排除 ⇒ BB 不转的差异在 blob 内部对
 RF/PHY 域状态的消费（47C 测量通道未启动的上游 = PMU 状态机/RF 电源岛）。
+
+**whitelist 快照定读（2026-11-21 收尾轮）**：wl1 短行（置 diag 头位）稳定
+落地：**98BC=0x0、11AC=0x0**（post-enable，与官方 oracle 同相位一致=非判据）。
+wl2 行（9C04/9C14/08D0 = BB/MAC 中断状态）持续被截——但 BB 事件链断点已由
+47C/450 判据独立定案（BB 引擎未启动），9C04 状态读数优先级降低。
+仪器纪律终版：短行置头位 + 无门控每轮打 = FIFO 竞争下唯一可靠形态；
+once-per-boot 门控会在 init 洪峰期丢失唯一机会（实测）。

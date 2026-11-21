@@ -41,6 +41,7 @@ pub var skip_task_init: bool = false;
 pub var relink_p16: usize = 0;
 pub var relink_p20: usize = 0;
 pub var watch_node6: usize = 0;
+pub var wl_printed: bool = false;
 
 /// blob log sink 的让出桩：task 上下文每次 log 调用让出到主上下文一次。
 /// 由 [2f010fb4] sink 的 +12/+28 槽引用（log_internal `jalr`）。

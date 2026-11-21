@@ -1566,6 +1566,11 @@ pub fn run() noreturn {
             // + 0x450 振荡 = BB 测量在跑；两者静止 = BB 未启动。
             const m47c: u32 = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
             const m450: u32 = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
+            const w98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const w11ac: u32 = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
+            const w9c04: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9C04)).*;
+            const w9c14: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*;
+            const w08d0: u32 = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
             const r98 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值：txphase 已稳定=1 多轮）
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*; // I2C0_CTRL（活值：本轮诊断行不加，见 burst 快照）
@@ -1588,7 +1593,16 @@ pub fn run() noreturn {
             const trap = @import("board").trap;
             const h5 = trap.getHandler(5);
             const h5f: usize = if (h5.fn_) |f| @intFromPtr(f) else 0;
+            osal.logPublic("bt probe: wl1 98BC=0x{x:0>8} 11AC=0x{x:0>8}", .{ w98, w11ac });
+            osal.logPublic("bt probe: wl2 9C04=0x{x:0>8} 9C14=0x{x:0>8} 08D0=0x{x:0>8}", .{ w9c04, w9c14, w08d0 });
             osal.logPublic("bt probe: bb 47C=0x{x:0>4} 450=0x{x:0>6}", .{ m47c & 0xFFFF, m450 & 0xFFFFFF });
+            // **ana 对拍（官方轨迹：CONF0 2100e408→2900e448、I2C0_CTRL 012f0669
+            // →01780369）**：静态=ana I2C 路径死；变化=事务在发。
+            const f818v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
+            const f800v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            // RF_PWC 电源岛（PMU 0x20704000+0x184 bits31:16 = XPD_RF_CIRCUIT）
+            const rfpwc: u32 = @as(*volatile u32, @ptrFromInt(0x2070_4184)).*;
+            osal.logPublic("bt probe: ana f818=0x{x:0>8} f800=0x{x:0>8} rfpwc=0x{x:0>8}", .{ f818v, f800v, rfpwc });
             osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
                 (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
             });
