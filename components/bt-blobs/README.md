@@ -28320,3 +28320,21 @@ semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑
 4. 真 BT ISR = `r_sym_bt_R9GZfnUbtn7k6mHtoZbv`（0x2f008aa2），由
    `vJfrsAScC3Qj3QevwArc` 经 `intr_alloc(124, 0, fn, NULL, &anchor8[16])`
    注册 ⇒ 我们 `intrHandlerOf(124)` 即得，桥直接挂它。
+
+**当前前沿（2026-11-21 末）：系统稳定但 enable 后约 80–100 s 输出失声**：
+- 路由 v4 + 去 SHV + LP 槽 no-op 之后：**LOCKUP 归零**（单 boot 稳定运行），
+  blob 任务消费事件（eventRun ×2）、真 BT ISR（`R9GZfnUbtn7k6mHtoZbv`）已挂桥。
+- 失声机制：`logPublic`/`log.line` 走有界 `rawWrite`（FIFO≥126 即丢）⇒ 主上下文
+  **不楔**、照常进泵，但 UART0 TX FIFO 停止排空 ⇒ 全部输出被硬件丢弃。
+  截断点轮次间有抖动（"bt hci >> CMD o" / "fwd06 ret=0" 之后），与具体语句
+  无关、与时间相关（step 20 后 blob 有一段 ≥80 s 的忙等倒计时
+  `mepc=0x4006b84x`，a0 递减至 0）。
+- **已排除**：UART0 配置寄存器被改写（fwd06 前快照 + 泵每轮恢复 24 个配置
+  寄存器，无差分且不复活）；`HP_SYS_CLKRST_UART0_CTRL0`（基线 0x83 = 官方
+  pre/post 值）、`SOC_CLK_SEL`（0x1 = 官方）、UART0 CLKDIV（官方 0x0030015b）；
+  官方 enable 前后时钟树对照（oracle `CLK-pre/post`）只有 MODEM_CONF 0x25→0x3d
+  变化（我们也写 0x3d）；sleep 回调是纯计数桩；assert 桩未触发。
+- **剩余假说**：上游时钟/电源域在超时点被切换（PMU/ICG 状态迁移；与 NMI
+  采样同时停止吻合）——需要非 UART 通道读 PMU/时钟寄存器，或锁住电源态。
+- 仪器就位：`uartSnapshot/uartRestore`（probe.zig，含 CLKRST 快照）、icg 行
+  `u=<恢复字数>/0x<偏移>:<原值>><现值>`。

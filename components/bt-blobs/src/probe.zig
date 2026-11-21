@@ -131,9 +131,17 @@ var uart_snap_ok: bool = false;
 var uart_restored: u32 = 0;
 /// 可安全回写的配置偏移（不含 0x00 FIFO/CONF0 同址、0x10 INT_CLR、0x1C STATUS）。
 const uart_restore_offs = [_]usize{ 0x14, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x3C, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54, 0x58, 0x5C, 0x60, 0x64, 0x68, 0x6C, 0x70, 0x74, 0x78, 0x7C };
+/// HP_SYS_CLKRST_UART0_CTRL0（0x2058_7088）：bit7 UART0_CLK_EN、bit1 APB_CLK_EN、
+/// bit0 SYS_CLK_EN、bit3/2 APB/CORE_RST_EN、bits[6:5] 时钟源；SOC_CLK_SEL（+0x00）。
+const CLKRST_UART0_CTRL0: usize = 0x2058_7000 + 0x88;
+const CLKRST_SOC_CLK_SEL: usize = 0x2058_7000 + 0x00;
+var uart_ctrl0_snap: u32 = 0;
+var uart_soc_snap: u32 = 0;
 fn uartSnapshot() void {
     var i: usize = 0;
     while (i < uart_cmp_words) : (i += 1) uart_snap[i] = @as(*volatile u32, @ptrFromInt(UART0 + 4 * i)).*;
+    uart_ctrl0_snap = @as(*volatile u32, @ptrFromInt(CLKRST_UART0_CTRL0)).*;
+    uart_soc_snap = @as(*volatile u32, @ptrFromInt(CLKRST_SOC_CLK_SEL)).*;
     uart_snap_ok = true;
 }
 /// 恢复并返回恢复的字数；首个差分 (offset, was, now) 写入 out。
@@ -152,6 +160,17 @@ fn uartRestore(out: *[3]u32) usize {
             r.* = uart_snap[off / 4];
             n += 1;
         }
+    }
+    // 时钟控制寄存器：被改写则整字恢复（覆盖门控/复位/源切换三类假说）。
+    const c0: *volatile u32 = @ptrFromInt(CLKRST_UART0_CTRL0);
+    if (c0.* != uart_ctrl0_snap) {
+        if (n == 0) {
+            out[0] = 0x100; // 标记：差分在 CLKRST+0x88
+            out[1] = uart_ctrl0_snap;
+            out[2] = c0.*;
+        }
+        c0.* = uart_ctrl0_snap;
+        n += 1;
     }
     uart_restored += @intCast(n);
     return n;
@@ -1505,6 +1524,9 @@ pub fn run() noreturn {
         // semPend FOREVER 真阻塞换成有界让出——判"park 的 sem 是否唯一堵点"。
         osal.sem_park_bounded = false; // 隔离实验已结案（2026-11-21）：关闭，减少变量
         uartSnapshot(); // UART 仍活：此刻拍基线
+        board.log.line("bt probe: uart baseline ctrl0=0x{x:0>8} soc_clk=0x{x:0>8} txfifo={d}", .{
+            uart_ctrl0_snap, uart_soc_snap, (@as(*volatile u32, @ptrFromInt(UART0 + 0x1C)).* >> 16) & 0xFF,
+        });
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
