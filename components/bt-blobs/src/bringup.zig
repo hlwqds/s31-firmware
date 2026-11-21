@@ -605,6 +605,15 @@ pub fn init(cfg: *config.Config) c_int {
                 node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
             }
             osal.logPublic("bt probe: cb14 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+            // **LPCON 回读（clean zone）**：BLE RTC timer 时钟链三寄存器粘性
+            // 判别——值保持 ⇒ 写入生效（缺的不是这段）；值漂 ⇒ LP 域写问题。
+            {
+                const lp: usize = 0x2010_F000;
+                const lpt: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x08)).*;
+                const m32k: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x18)).*;
+                const cc: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x1C)).*;
+                osal.logPublic("bt probe: lpcon lpt=0x{x:0>8} m32k=0x{x:0>8} cc=0x{x:0>8}", .{ lpt, m32k, cc });
+            }
             // **yield 注入（2026-11-21）**：task 空转轮询环 125ms/迭代从不让出
             // ⇒ 主上下文饿死。发布我们自己的 log sink（[2f010fb4]=obj，fn@+12/+28
             // = 让出桩）——task 的 log_internal 每迭代必查此 sink ⇒ 每迭代一次

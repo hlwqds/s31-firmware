@@ -28088,3 +28088,14 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
   （controller/esp32s31/bt.c 369 行官方 init 序列全在）⇒ 按官方序列逐行
   对拍我们的 bringup（esp_phy_enable(2) 已调，RF_PWC 之外还有
   pmu_ 状态机步骤待移植）。
+
+**BLE RTC timer 时钟链落地 + 判别（2026-11-21）**：
+- 官方 btdm_lp_timer_clk_init 寄存器级展开已实现（porting.btdmLpEnableClock
+  内）：+0x18 modem_32k_sel=RC32K、+0x08 lp_timer sel_xtal32k+div=1、
+  +0x1C clk_lp_timer_en=1。**cb14 回读：lpt=0x1C/m32k=0xD 全部生效保持** ✓。
+- 但 47C/450 仍静止 ⇒ BB 不转的原因**不止 timer 时钟**——还有更深的
+  RF 上电前提（官方 pmu 状态机层/RF 电源岛），与 §29.19 结论一致。
+- 官方源码对照基线已备：esp-idf controller/esp32s31/bt.c（369 行）+
+  btdm_lp.c（474 行，含 wake_up_cb/retention/modem_clock 全调用链）。
+- 下轮：逐行对拍官方 enable 路径（esp_bt_controller_enable → 内部 BB 启动）
+  与我们的 probe 步骤差集；或先核 47C 寄存器写敏感的前置（写-回读纪律）。

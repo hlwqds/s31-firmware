@@ -568,6 +568,23 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     pulse.f((1 << 17));
     pulse.f((1 << 18));
     osal.logPublic("bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
+
+    // **BLE RTC timer 时钟链（官方 btdm_lp_enable_clock 第 4 调用
+    // btdm_lp_timer_clk_init 的寄存器级展开，2026-11-21）**：
+    // MODEM_LPCON(0x2010F000)：+0x18 modem_32k_clk_conf.bits[1:0]=1(RC32K)、
+    // +0x08 lp_timer_conf.bit3=1(sel_xtal32k 路径)+bits[15:4]=1(div)，
+    // +0x1C clk_conf.clk_lp_timer_en(bit10)=1。此前缺失 ⇒ BLE RTC timer
+    // 无时钟 ⇒ BB 调度器无时基 ⇒ 47C 静止 ⇒ 无事件 ⇒ 无回包。
+    {
+        const lp: usize = 0x2010_F000;
+        const m32k: *volatile u32 = @ptrFromInt(lp + 0x18);
+        m32k.* = (m32k.* & ~@as(u32, 3)) | 1; // clk_modem_32k_sel = RC32K
+        const lpt: *volatile u32 = @ptrFromInt(lp + 0x08);
+        lpt.* = (lpt.* & ~@as(u32, 0xFFF3)) | (1 << 3) | (1 << 4); // sel_xtal32k + div=1
+        const cc: *volatile u32 = @ptrFromInt(lp + 0x1C);
+        cc.* = cc.* | (1 << 10); // clk_lp_timer_en
+        osal.logPublic("bt lp: rtc timer clk chain: m32k=0x{x:0>8} lpt=0x{x:0>8} cc=0x{x:0>8}", .{ m32k.*, lpt.*, cc.* });
+    }
     if (on_target) {
         osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
     }
