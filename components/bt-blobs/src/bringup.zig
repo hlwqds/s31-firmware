@@ -856,6 +856,18 @@ pub fn enable() c_int {
             osal.logPublic("bt probe: sleep_cb skip (slot null)", .{});
         }
     }
+    // **anchor[8]+12 = SRAM 窗口基址**（2026-11-21 oracle 对拍）：官方描述符
+    // `[anchor8+12]=0x2f000000`；`r_btdm_task_enable → vJfrsAScC → 4S888Ay →
+    // aGdrujd2` 据此写 `[0x20101074] = base & 0xFFC00000`（blob 的紧凑句柄
+    // 解码基址：`ptr = base | (idx<<2)`）。我们这边 +12=0 ⇒ 基址 0 ⇒ 解码出
+    // 裸偏移（实测 mepc=0x60 = 0x18<<2）⇒ 取指 fault。task_enable 前置为官方值。
+    {
+        const a8: usize = @as(*volatile usize, @ptrFromInt(0x2f01_8720)).*;
+        if (a8 >= 0x2f00_0000 and a8 < 0x2f10_0000 and a8 % 4 == 0) {
+            const mb: *volatile u32 = @ptrFromInt(a8 + 12);
+            if (mb.* == 0) mb.* = 0x2f00_0000;
+        }
+    }
     enter(20, "r_btdm_task_enable");
     rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;

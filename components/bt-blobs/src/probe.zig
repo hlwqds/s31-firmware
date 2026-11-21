@@ -1437,10 +1437,14 @@ pub fn run() noreturn {
         // enable 已返回（任务已启动、桥已挂），此刻开 IE 安全。
         if (!bt_ie_on) {
             bt_ie_on = true;
-            // **oracle 精确值**（2026-11-21）：官方 `intctl[24]=0x7fc10100`
-            // （prio=0x7f + bits14-15 + IE）；输入 53 官方未配置 ⇒ 不写。
+            // **官方值去掉 SHV 位**（2026-11-21 修正）：官方 `intctl[24]=0x7fc10100`
+            // 的 bits14-15 = CLIC 选择性硬件向量化——硬件经 `mtvt[input]` 取入口，
+            // IDF 启动代码把 mtvt 指向 SRAM 基址的 `_mtvt_table`（0x2f000040）。
+            // 我们裸机链接在该处无表 ⇒ `mtvt[24]` 取到垃圾（实测跳 0x60，被中断
+            // 上下文 ra=vibwBXog 调用点）⇒ LOCKUP。改走软件分发（mtvec →
+            // trapDispatch → handler[24]），只保留官方优先级 0x7f + IE。
             const ie24: *volatile u32 = @ptrFromInt(0x1080_1000 + 24 * 4);
-            ie24.* = 0x7fc1_0100;
+            ie24.* = 0x7f00_0100;
         }
         // **rx/buf_alloc 共用的 ENABLED 旗**（rx .L50 = li a0,-3 出口；buf_alloc
         // 同门前置）——ctx = [2f011020]，旗 = byte[ctx] bit0。官方由

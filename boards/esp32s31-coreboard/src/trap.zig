@@ -583,7 +583,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // （递减=真位扫 / 恒 0=空转等事件位）、36=u16 计数（.L89
                 // 出口）、32=u8 槽限。范围校验防野指针解引用。
                 var nl: []const u8 = undefined;
-                var sbuf: [64]u8 = undefined;
+                var sbuf: [80]u8 = undefined;
                 // **门控：仅当 mepc 落在 blob 停驻环函数内**（r_sym_ble_mrucwvp
                 // RHVsLLccQveKl = 0x40005512-0x4000585e）s0 才是 state 基址；
                 // mepc 在 shim（0x40067xxx）时 s0 是 shim 自己的帧变量，读出无意义。
@@ -595,8 +595,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     const cnt: *volatile u16 = @ptrFromInt(frame.s0 + 36);
                     // 0x2010107C = 分发函数入口门（bltz 即整函数跳过=no-op 分发）
                     const gate: *volatile u32 = @ptrFromInt(0x2010_107C);
-                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4} gate=0x{x:0>8}", .{
-                        st.*, mask.*, cnt.*, gate.*,
+                    // db = [0x20101074] 派发基址（oracle=0x2f000000；0 ⇒ 句柄解码出裸偏移）
+                    const dbase: *volatile u32 = @ptrFromInt(0x2010_1074);
+                    nl = std.fmt.bufPrint(&sbuf, " st=0x{x:0>2}/0x{x:0>4}/0x{x:0>4} gate=0x{x:0>8} db=0x{x:0>8}", .{
+                        st.*, mask.*, cnt.*, gate.*, dbase.*,
                     }) catch "";
                 } else nl = "";
                 // **INT_RAW 读数**（RTC_TIMER+0x28：bit31=SOC_WAKEUP 到点？bit28=tick）
@@ -611,30 +613,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // state=q[0]（恒 2 / 2↔3 交替 / 恒 3 = 三种自旋形态判据）。
                 // **mepc 变化门控**（2026-11-21）：固定 PC 的采样重复打 3 行
                 // 会占满 FIFO 淹没 diag——只在 PC 与上次不同时打对象 dump。
-                // **恒 PC 楔死期也周期打**（2026-11-21）：主上下文楔在 mrucwvp 时
-                // PC 恒定 ⇒ 原"mepc 变化"门控永不触发 ⇒ 泵状态不可见。
-                // 改为：PC 变化时照打；PC 恒定时每 524288（2^19）次 NMI 打一行。
-                const in_pump = frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e;
-                const pc_changed = frame.mepc != nmi_last_pc;
-                if (in_pump and (pc_changed or nmi_count % 524_288 == 0)) {
+                // **mepc 变化门控**（2026-11-21）：固定 PC 的采样重复打 3 行
+                // 会占满 FIFO 淹没 diag——只在 PC 与上次不同时打对象 dump。
+                if (frame.mepc != nmi_last_pc and frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e) {
                     const pp: *volatile u32 = @ptrFromInt(0x2f01_1034);
                     const p = pp.*;
-                    var s2b: [160]u8 = undefined;
+                    var s2b: [96]u8 = undefined;
                     if (p >= 0x2f00_0000 and p < 0x2f10_0000) {
                         const flag: *volatile u8 = @ptrFromInt(p);
                         const qp: *volatile u32 = @ptrFromInt(p + 12);
                         const q = qp.*;
                         var l2: []const u8 = undefined;
-                        // **mrucwvp 四状态字**（p 即其 env/s0）：byte25=入口标志、
-                        // byte32=槽上限、u16@34=事件位掩码、u32@36=位环计数器
-                        // （仅在队列项 byte25==0 时自增；`bgeu cnt,阈值` 为出口）。
                         if (q >= 0x2f00_0000 and q < 0x2f10_0000) {
-                            const p25: *volatile u8 = @ptrFromInt(p + 25);
-                            const p32: *volatile u8 = @ptrFromInt(p + 32);
-                            const p34: *volatile u16 = @ptrFromInt(p + 34);
-                            const p36: *volatile u32 = @ptrFromInt(p + 36);
                             const statew: *volatile u32 = @ptrFromInt(q);
-                            l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8} state={d} f25={d} n32={d} mask34=0x{x:0>4} cnt36={d}", .{ p, flag.*, q, statew.*, p25.*, p32.*, p34.*, p36.* }) catch "";
+                            l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8} state={d}", .{ p, flag.*, q, statew.* }) catch "";
                         } else {
                             l2 = std.fmt.bufPrint(&s2b, "NMI2 p=0x{x:0>8} flag={d} q=0x{x:0>8}(oob)", .{ p, flag.*, q }) catch "";
                         }
