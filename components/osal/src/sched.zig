@@ -273,12 +273,65 @@ pub noinline fn block() void {
 
 /// **恢复**某个被阻塞的任务（`resume` 是 Zig 关键字，故命名 `resumeTask`），并把控制权交给它（直到它再次阻塞）。
 /// ⚠ **必须 noinline**，理由同 `swapContext`。
+/// 延迟唤醒队列。**任务上下文里触发 `resumeTask` 不能立刻 swap**（2026-11-21）：
+/// blob 的 handler 在任务里 `eventqPut`/`semRelease` 唤醒别的等待者是 FreeRTOS
+/// 下的常态；协作内核若当场 `swapContext(&main_ctx, t)`，会把**主上下文的保存
+/// 现场覆盖成任务现场** ⇒ 主上下文永久丢失（实测：泵再不运行、T0 NMI 同停、
+/// 整机"失声"）。入队，等控制权回到主上下文再补做。
+var pending: [16]?*Context = @splat(null);
+var pending_head: u8 = 0;
+var pending_len: u8 = 0;
+pub var deferred_resumes: u32 = 0;
+pub var self_resume_dropped: u32 = 0;
+
+fn enqueuePending(t: *Context) void {
+    if (pending_len >= pending.len) return; // 队满：丢弃（等待者会按条件重查）
+    const idx: u8 = (pending_head + pending_len) % @as(u8, pending.len);
+    pending[idx] = t;
+    pending_len += 1;
+}
+
+/// 把延迟的唤醒补做完。**只能在主上下文调用**（`resumeTask` 返回后自动做；
+/// 若有 ISR 上下文入的队，由主循环每轮显式调一次）。
+pub fn drainPending() void {
+    while (pending_len > 0) {
+        const t = pending[pending_head].?;
+        pending[pending_head] = null;
+        pending_head = (pending_head + 1) % @as(u8, pending.len);
+        pending_len -= 1;
+        resumeTask(t);
+    }
+}
+
+/// `resumeTask` 的处置决策（纯函数，便于主机测试）。
+pub const WakeAction = enum { swap_now, defer_to_main, drop_self };
+pub fn wakeAction(cur: *Context, target: *Context) WakeAction {
+    if (cur == &main_ctx) return .swap_now;
+    // 正在任务里：延迟到回到主上下文。自唤醒（target == cur）只可能是陈旧
+    // waiter 登记，切换到它自己的旧现场会破坏上下文 ⇒ 丢弃。
+    if (target == cur) return .drop_self;
+    return .defer_to_main;
+}
+
 pub noinline fn resumeTask(t: *Context) void {
     if (!started) return;
+    switch (wakeAction(current, t)) {
+        .swap_now => {},
+        .defer_to_main => {
+            deferred_resumes += 1;
+            enqueuePending(t);
+            return;
+        },
+        .drop_self => {
+            self_resume_dropped += 1;
+            return;
+        },
+    }
     stats_state.resumes += 1;
     current = t; // 即将在任务里运行
     swapContext(&main_ctx, t);
     current = &main_ctx; // 任务阻塞回来 ⇒ 主上下文
+    drainPending();
 }
 
 /// 任务侧：`t` 是不是主上下文。
@@ -305,6 +358,21 @@ test "sched: initContext 在栈内最后一个 16 对齐地址上建帧" {
     // ra 已指向 trampoline（非零）
     try std.testing.expect(frameWord(&ctx, 12) != 0);
     try std.testing.expectEqual(frame_bytes, @as(usize, 64));
+}
+
+test "sched: 任务上下文里的唤醒必须延迟，自唤醒丢弃，主上下文才当场切换" {
+    // 回归：blob handler 在任务里唤醒别的等待者时，当场 swap 会把主上下文
+    // 现场覆盖成任务现场（板上实测：泵再不运行、整机失声）。
+    var task_ctx: Context = .{};
+    var other_ctx: Context = .{};
+    const saved = current;
+    defer current = saved;
+    current = &main_ctx;
+    try std.testing.expectEqual(WakeAction.swap_now, wakeAction(&main_ctx, &task_ctx));
+    current = &task_ctx;
+    try std.testing.expectEqual(WakeAction.defer_to_main, wakeAction(&task_ctx, &other_ctx));
+    try std.testing.expectEqual(WakeAction.drop_self, wakeAction(&task_ctx, &task_ctx));
+    current = saved;
 }
 
 test "sched: 任务表登记/复用/耗尽可见" {

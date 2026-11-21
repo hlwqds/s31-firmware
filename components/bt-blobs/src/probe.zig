@@ -190,6 +190,10 @@ fn diagFlashBlock(round: u32) bool {
     i += 1;
     b[i] = @import("board").hw.rw_drops;
     i += 1;
+    b[i] = sched.deferred_resumes;
+    i += 1;
+    b[i] = sched.self_resume_dropped;
+    i += 1;
     // CSRs（主上下文）
     b[i] = asm volatile ("csrr %[v], 0x300"
         : [v] "=r" (-> u32),
@@ -1732,6 +1736,7 @@ pub fn run() noreturn {
             @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
             @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
         }
+        sched.drainPending(); // 任务/ISR 上下文里延迟的唤醒在这里补做
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
