@@ -28228,3 +28228,15 @@ eventqPut 成功入队 ✓）。**剩余墙：ctx+12 队列无人消费**——�
 - 判读规则：sb= 每 pump 轮 +256 ⇒ 任务真推进；getok>2 ⇒ 命令被消费；
   sb 涨而 getok 卡 2 ⇒ handler 死循环（桩改返 1 一次可让它打印单条
   指认等待对象）。
+
+**CPU_LOCKUP 根因定位（2026-11-21 trap 线取证）**：`!! c_mepc=0x0 c_ra=
+0x2f0087a4 cause=0x1`（每轮 boot 同一现场）⇒ 跳 NULL 的调用正是
+`r_ble_log_internal_x1` 的 `jalr a4`（a4=[sink+12]=让出桩），返回地址
+0x2f0087a4 = 紧随的 `bnez`。**根因：sink 对象 0x2f026000 被 blob 堆覆写**
+（"arena 高位空白区堆不会到达"假设为假，+12 归零）⇒ jalr→0 ⇒ LOCKUP
+复位环（此前 20-38 次/轮贯穿所有轮，非本轮改动引入）。
+**修复**：sink 移入自有 .bss（`bringup.log_sink_storage`，堆不可达）+
+泵每轮重发布（[2f010fb4]/+12/+28 三写自愈）。
+**待验证丢弃点**（advisor）：命令派发 0x4005e01e 遍历 ctx+28 回调链，
+链空返 0x10000 ⇒ buf_free 静默丢包无回包——icg 行已加 c28=（链首节点
+[h4]，0=链空）；若空链坐实，在 transport.init 补挂命令 handler 节点。

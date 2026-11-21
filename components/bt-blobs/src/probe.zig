@@ -1565,6 +1565,13 @@ pub fn run() noreturn {
         }
         // 单次 kick/轮：配合桩的 256 次限速让出 ⇒ 每轮推进 256 个日志调用
         // （批量 200 kick 版实测 fwd06 后崩溃复位，已回退，见 bringup 桩注释）。
+        // **sink 自愈重发布**：每轮重写 [2f010fb4]+[+12]，对冲任何覆写。
+        {
+            const sink: usize = @intFromPtr(&bringup.log_sink_storage);
+            @as(*volatile usize, @ptrFromInt(0x2f01_0fb4)).* = sink;
+            @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
+            @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
+        }
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
@@ -1646,8 +1653,18 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} c0=0x{x:0>8} c32=0x{x:0>8} pk=0x{x:0>8} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d}", .{
-                icg_bt, icg_after, (r98 >> 2) & 1, fe_cnt, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, c0, c32, osal.last_park_sem, tpc, bringup.stub_blocks, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped,
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} c0=0x{x:0>8} c32=0x{x:0>8} pk=0x{x:0>8} pc=0x{x:0>8} sb={d} c28={d} brg={d}/{d}/{d}", .{
+                icg_bt,           icg_after,          (r98 >> 2) & 1,         fe_cnt, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, c0, c32, osal.last_park_sem, tpc, bringup.stub_blocks,
+                blk: {
+                    // ctx+28 命令派发链首节点（空链 ⇒ 命令被静默 free，无回包）。
+                    const ctxp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
+                    if (ctxp2 < 0x2f00_0000 or ctxp2 >= 0x2f90_0000) break :blk @as(u32, 0);
+                    const head: usize = @as(*volatile usize, @ptrFromInt(ctxp2 + 28)).*;
+                    if (head < 0x2f00_0000 or head >= 0x2f90_0000) break :blk @as(u32, @truncate(head));
+                    const h4: usize = @as(*volatile usize, @ptrFromInt(head + 4)).*;
+                    break :blk @as(u32, @truncate(h4));
+                },
+                bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped,
             });
             osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} getok={d} evrun={d}/{d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
                 (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,

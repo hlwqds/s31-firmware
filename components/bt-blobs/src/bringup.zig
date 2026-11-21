@@ -48,12 +48,15 @@ pub var wl_printed: bool = false;
 /// 让出桩计数（判读"任务每轮是否真推进"：icg 行 sb= 每轮增量）。
 pub var stub_blocks: u32 = 0;
 
+/// blob log sink 对象存储（自有 .bss，堆不可达；槽布局见 yield 注入段）。
+pub var log_sink_storage: [64]usize align(4) = undefined;
+
 /// **返回 0 + 限速让出**（2026-11-21 终版）：
 /// - 返 0 ⇒ log_internal `bnez a0 → .L30` 跳过格式化+输出（日志成本归零）；
 /// - 每 256 次调用才 block 一次 ⇒ 单次泵 kick 推进 256 个日志调用，
 ///   上下文切换率降 256×。**背景**：批量 200 次 kick/轮的版本实测
 ///   fwd06 后即崩溃复位（7 连循环），高切换率与 CLIC 武装后的中断路径竞争。
-export fn btLogYieldStub() callconv(.c) c_int {
+pub export fn btLogYieldStub() callconv(.c) c_int {
     stub_blocks +%= 1;
     if (stub_blocks % 256 == 0) @import("osal_kit").sched.block();
     return 0;
@@ -630,7 +633,10 @@ pub fn init(cfg: *config.Config) c_int {
             // = 让出桩）——task 的 log_internal 每迭代必查此 sink ⇒ 每迭代一次
             // sched.block() 让出 ⇒ 泵环恢复（diag/bridgeDrain/eventRun 活）。
             {
-                const sink: usize = 0x2f02_6000; // arena 高位空白区（堆不会到达）
+                // **sink 移入自有 .bss**（2026-11-21 终）：0x2f026000"堆不会到达"
+                // 假设为假——trap 线实证 [sink+12] 被覆写成 0 后 jalr→NULL
+                // （cause=1 取指 fault，ra=0x2f0087a4=bnez）⇒ CPU_LOCKUP 复位环。
+                const sink: usize = @intFromPtr(&log_sink_storage);
                 const yield_fn: usize = @intFromPtr(&btLogYieldStub);
                 const ret_stub: usize = 0x4006_1554; // IC9 ret 桩
                 var k7: usize = 0;
