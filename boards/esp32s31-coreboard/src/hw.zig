@@ -194,6 +194,39 @@ pub fn feedRtcWdt() void {
     writeReg(rtc_wdt_feed, 0x8000_0000);
 }
 
+/// **TIMG1 MWDT（HP 域看门狗）**：时钟来自 APB（约 5 MHz tick，IDF 任务 WDT 同源），
+/// 不依赖 LP 慢时钟——CPU 冻结在总线访问上时它照样计数并复位 CPU。
+/// `timg_dev_t`（`reserved_084` 推得每个 hw_timer 占 9 个寄存器 = 0x24）：
+/// WDT CONFIG0@+0x48（EN bit31、STG0 [30:29]、CPU 复位脉宽 [20:18]）、
+/// STG0_HOLD@+0x4C、FEED@+0x60、WPROTECT@+0x64（key 0x50D83AA1）。
+/// ⚠ 首版把偏移算成 +0x40/+0x44/+0x58/+0x5C，实际写到了 TIMG1 timer1 的
+/// txconfig（读回 0x00040000 即该 txconfig）——读回校验是唯一能发现这类错误的手段。
+const mwdt1: usize = 0x2058_1000;
+const mwdt_wkey: u32 = 0x50D8_3AA1;
+pub fn mwdt1Arm(hold_ticks: u32) void {
+    writeReg(mwdt1 + 0x40, 0); // 清掉首版误写并启动的 TIMG1 timer1（tx_en=0）
+    writeReg(mwdt1 + 0x64, mwdt_wkey);
+    fence();
+    writeReg(mwdt1 + 0x60, 1); // feed
+    writeReg(mwdt1 + 0x4C, hold_ticks);
+    writeReg(mwdt1 + 0x48, (1 << 31) | (2 << 29) | (1 << 18)); // EN | STG0=CPU 复位 | 脉宽 1
+    fence();
+    writeReg(mwdt1 + 0x64, 0);
+}
+pub fn mwdt1Feed() void {
+    writeReg(mwdt1 + 0x60, 1);
+}
+/// 立即触发 MWDT1 CPU 复位（泵自陷：交出 LP 黑匣子）。
+pub fn mwdt1Suicide() void {
+    writeReg(mwdt1 + 0x64, mwdt_wkey);
+    writeReg(mwdt1 + 0x4C, 0x100);
+    writeReg(mwdt1 + 0x48, (1 << 31) | (2 << 29) | (1 << 18));
+    writeReg(mwdt1 + 0x60, 1);
+}
+pub fn mwdt1Config0() u32 {
+    return readReg(mwdt1 + 0x48);
+}
+
 pub fn rtcWdtConfig0() u32 {
     return readReg(rtc_wdt_config0);
 }

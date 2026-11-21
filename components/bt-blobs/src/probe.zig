@@ -130,6 +130,7 @@ const diag_blk_magic: u32 = 0xD1A6_B007;
 /// LP RAM 黑匣子地址（0x2E000200 起 64 字；现有 LP 槽只用到 0x0000-0x002C 与 0x0440-0x04A0）。
 const lp_blk_addr: usize = 0x2E00_0200;
 var diag_blk_tries: u32 = 0;
+var wdt_suicide: bool = false;
 var diag_blk_ok: bool = false;
 fn rd32(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
@@ -1649,7 +1650,8 @@ pub fn run() noreturn {
         _ = diagFlashBlock(0xF00D); // 阳性对照：fwd06 前写一次黑匣子（下次开机必须可见）
         // **存活探针**：武装 RTC WDT（STG0=CPU 复位，约 8–33 s 视慢时钟）。泵每轮喂狗。
         board.hw.armRtcWdt(true, 0x10_0000);
-        board.log.line("wdt armed cfg0=0x{x:0>8} hold=0x{x:0>8}", .{ board.hw.rtcWdtConfig0(), @as(*volatile u32, @ptrFromInt(0x2080_1004)).* });
+        board.hw.mwdt1Arm(0x300_0000); // HP 域看门狗（约 10 s）：主上下文冻结也能复位
+        board.log.line("wdt armed rtc=0x{x:0>8} mwdt1=0x{x:0>8}", .{ board.hw.rtcWdtConfig0(), board.hw.mwdt1Config0() });
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         osal.lpTrace(3, 0xF001);
@@ -1759,7 +1761,8 @@ pub fn run() noreturn {
             @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
             @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
         }
-        board.hw.feedRtcWdt(); // 存活探针：主上下文在泵里 ⇒ 不复位
+        if (!wdt_suicide) board.hw.feedRtcWdt(); // 存活探针：主上下文在泵里 ⇒ 不复位
+        if (!wdt_suicide) board.hw.mwdt1Feed();
         sched.drainPending(); // 任务/ISR 上下文里延迟的唤醒在这里补做
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
@@ -1864,6 +1867,14 @@ pub fn run() noreturn {
                 diag_blk_ok = diagFlashBlock(@intCast(round));
             }
             osal.lpTrace(3, @as(u32, 0x1_0000) +% @as(u32, @truncate(round)));
+            // **自陷复位**：本块每 200 轮执行一次（round 0/200 各写过一次黑匣子）；
+            // round≥200 时把 WDT 调成极短超时并停喂 ⇒ 数字复位（LP RAM 保留）
+            // ⇒ 下次开机首段打印现场。UART 死了也能交出状态。
+            if (round >= 200 and !wdt_suicide) {
+                wdt_suicide = true;
+                osal.lpTrace(3, 0xD1E0);
+                board.hw.mwdt1Suicide();
+            }
             // （已删）logPublic diag 行：泵期实测 0 输出（死通道），其读数已并入上方 icg 板载行。
             // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。
