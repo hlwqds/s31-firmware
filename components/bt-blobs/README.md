@@ -28528,3 +28528,10 @@ CHIP_LP_WDT_RESET`），ROM 输出 **`Core0 Saved PC:0x2f80d1bc`** —— 冻结
 ——所有历史烧录从未保持（写入校验过但数据消退）⇒ **flash 芯片编程/保持单元损坏**
 （与适配器 wedged 同源电气事件）。恢复 = 换 flash 芯片/换板；烧录仍可工作（校验过
 = 编程单元当时正确），保持不住 = 单元失效。
+
+**regi2c/LP_ADI 审计结论（2026-11-22）**：S31 的 FOSC/RC 振荡器模拟核心**不在** regi2c
+空间（该空间仅 BOD 0x61/APLL/BBPLL/BIAS 0x6A/SARADC/DIG_REG 六设备，BIAS 仅 bias
+DREG 字段）也**不在** LP_ADI 空间（0x2080_5000 仅 DCDC TOP-2/PM TOP 稳压器字段）。
+剩余嫌疑空间 = **PMU ana（0x2070_4200-500，ana peri pwr 已由我方上电）**——下轮枚举
+该区全部寄存器（esp32s31 pmu_reg.h 的 ana peri 段 + 实测对照），锁定 blob PHY init
+触碰的 LP 域时钟/电源关断位。
