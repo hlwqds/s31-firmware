@@ -1221,6 +1221,17 @@ pub fn run() noreturn {
             @as(*volatile u32, @ptrFromInt(obj + 24)).* = 32000;
             @as(*volatile u32, @ptrFromInt(obj + 28)).* = 0;
             osal.logPublic("bt probe: rtc_freq patch obj=0x{x:0>8} +24=32000", .{obj});
+            // **RTC 比较武装（软件半环闭合）**：target0 = counter + 2s ⇒
+            // SOC_WAKEUP（INT_ENA+MAP input6 已路由）⇒ trap 置旗 ⇒ 泵调
+            // btSleepCb ⇒ sleep 唤醒软件半环闭环。
+            const rtb: usize = 0x2080_0000;
+            @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
+            const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+            @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0x8000_0000; // HIGH0=0 | TAR_EN0=1
+            @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 2); // +2s
+            @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31; // INT_CLR
+            @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31; // INT_ENA
+            osal.logPublic("bt probe: rtc cmp armed2 cnt=0x{x:0>8}", .{cnt});
         } else {
             osal.logPublic("bt probe: rtc_freq patch skip (obj oob=0x{x:0>8})", .{obj});
         }
@@ -1497,8 +1508,17 @@ pub fn run() noreturn {
     var diag_round: u32 = 0;
     while (true) : (round += 1) {
         // **RTC SOC_WAKEUP 旗**：主上下文调已注册的 sleep 回调（trap 只置旗）
+        // **park 相位寄存器读出**（每 300 轮）：MAP 路由 + CLIC in6/in25 门控
+        // ——SOC_WAKEUP 旗未置时的三查（路由保留？in6 IE/prio vs in25 形态？）
+        if (round % 300 == 299) {
+            const mapv: u32 = @as(*volatile u32, @ptrFromInt(0x2058_5000 + 0x1FC)).*;
+            const in6: u32 = @as(*volatile u32, @ptrFromInt(0x1080_1000 + 6 * 4)).*;
+            const in25: u32 = @as(*volatile u32, @ptrFromInt(0x1080_1000 + 25 * 4)).*;
+            osal.logPublic("bt probe: REGMAP={x:0>6} IN6={x:0>8} IN25={x:0>8} wk={d}", .{ mapv, in6, in25, board.trap.rtc_wake_n });
+        }
         if (board.trap.rtc_wake_flag != 0) {
             board.trap.rtc_wake_flag = 0;
+            osal.logPublic("bt probe: rtc wake cb fired n={d}", .{board.trap.rtc_wake_n});
             bringup.btSleepCb(0);
         }
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);

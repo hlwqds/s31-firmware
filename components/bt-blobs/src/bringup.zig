@@ -399,6 +399,25 @@ pub fn init(cfg: *config.Config) c_int {
         }
     }
     if (rc != 0) return rc;
+    // **cblist 遍历（step6 后）**：id 节点在 task_init 内创建；早 panic 的 boot 也出数。
+    {
+        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
+            var a0v: u64 = 0;
+            var a1v: u64 = 0;
+            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var k: usize = 0;
+            while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
+                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const sh: u6 = @intCast(16 * (3 - (k % 4))); // 48,32,16,0 —— 每组 4 id，零叠写
+                if (k < 4) a0v |= op << sh else a1v |= op << sh;
+                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+            }
+            osal.logPublic("bt probe: cblist6 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+        } else {
+            osal.logPublic("bt probe: cblist6 head oob=0x{x:0>8}", .{p0});
+        }
+    }
 
     // 5. lp init（空实现）
     enter(7, "btdm_lp_init");
@@ -550,8 +569,53 @@ pub fn enable() c_int {
     var rc = step(16, "btdm_coex_enable", porting.btdmCoexEnable());
     if (rc != 0) return rc;
 
+    // **rc=-3 根因探针**：base_stack_enable 第三段在 2f011030 注册链里找
+    // 操作码 46（0x2E），扫完未命中返回 -1 ⇒ 传导 -3。遍历打印前 12 节点。
+    {
+        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
+            // 紧凑单行（双组 u64，各 8 个 16-bit id，零叠写；FIFO 撞行免疫）
+            var a0v: u64 = 0;
+            var a1v: u64 = 0;
+            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var k: usize = 0;
+            while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
+                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const sh: u6 = @intCast(16 * (3 - (k % 4))); // 48,32,16,0 —— 每组 4 id，零叠写
+                if (k < 4) a0v |= op << sh else a1v |= op << sh;
+                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+            }
+            const tailc: usize = @as(*volatile usize, @ptrFromInt(p0 + 4)).*;
+            osal.logPublic("bt probe: cblist A=0x{x:0>16} B=0x{x:0>16} n={d} p0=0x{x:0>8} tail=+{d}", .{ a0v, a1v, k, p0, tailc - p0 });
+        } else {
+            osal.logPublic("bt probe: cblist head oob=0x{x:0>8}", .{p0});
+        }
+    }
     enter(17, "r_base_stack_enable");
     rc = step(17, "r_base_stack_enable", if (freestanding) r_base_stack_enable() else 0);
+    // **post-17 混叠探针**：slot 指针（s0 结构 +0/+4/+8）+ 链表复扫。若 slot1 与
+    // id-2 节点同缓冲，handler 存入(0x4001511a)把节点 id 覆成 0x511a ⇒ 复扫缺 2。
+    {
+        const s0p: usize = @as(*volatile usize, @ptrFromInt(0x2f01_0f14)).*;
+        const sl0: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(s0p)).* else 0;
+        const sl1: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(s0p + 4)).* else 0;
+        const sl2: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(s0p + 8)).* else 0;
+        osal.logPublic("bt probe: slots s0=0x{x:0>8} +0=0x{x:0>8} +4=0x{x:0>8} +8=0x{x:0>8} rc17={d}", .{ s0p, sl0, sl1, sl2, rc });
+        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
+            var a0v: u64 = 0;
+            var a1v: u64 = 0;
+            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var k: usize = 0;
+            while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
+                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const sh: u6 = @intCast(16 * (3 - (k % 4)));
+                if (k < 4) a0v |= op << sh else a1v |= op << sh;
+                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+            }
+            osal.logPublic("bt probe: cblist17 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+        }
+    }
     if (rc != 0) return rc;
     enter(18, "r_conn_stack_enable");
     rc = step(18, "r_conn_stack_enable", if (freestanding) r_conn_stack_enable(0) else 0);
