@@ -26300,10 +26300,10 @@ map 取 net80211/libpp/freertos 的 .bss/.data 合计 vs 探针 SRAM 余量）�
 ### esp_wifi 闭包级联量化（2026-11-20 尾四）：466 符号面 = 多会话工程
 
 链入 wifi*init.c.obj + esp_coex_adapter + net80211/libpp 归档后，
-未定义符号级联到 **466 个**（esp_log impl 族 / esp_timer 子集 / ets*_ /
+未定义符号级联到 **466 个**（esp_log impl 族 / esp_timer 子集 / ets*\_ /
 heap multi\__ 族 / wifi 胶水（WIFI*EVENT、ant 表、GetUartDevice、g*_ 全局）/
 coex 核心（libcoexist.a 待链）/ esp*ble_register_bb_funcs / pp·net80211 内部
-glue（pp_printf、net80211_printf、r_filter*_）/ libc 4 件（已实现 libc_glue.zig））。
+glue（pp_printf、net80211_printf、r_filter*\_）/ libc 4 件（已实现 libc_glue.zig））。
 
 | 发现               | 内容                                                                                                                                                                              |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
