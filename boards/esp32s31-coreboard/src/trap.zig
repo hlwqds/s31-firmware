@@ -598,10 +598,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 b2[1] = ck[0x114 / 4];
                 b2[2] = ck[0x118 / 4];
                 b2[3] = ck[0x11C / 4];
-                b2[4] = ck[0x120 / 4];
-                b2[5] = ck[0x124 / 4];
-                b2[6] = ck[0x128 / 4];
-                b2[7] = ck[0x12C / 4];
+                // **MWDT1 现场**(TIMG1 @0x2058_1000):哑火时 MWDT1 不咬的头号嫌疑
+                // 是 blob 的 esp_task_wdt 一族解除/重写它——死前最后采样即铁证。
+                const w1: [*]volatile u32 = @ptrFromInt(0x2058_1000);
+                b2[4] = w1[0x48 / 4]; // CONFIG0(EN/STG 域)
+                b2[5] = w1[0x4C / 4]; // STG0_HOLD
+                b2[6] = w1[0x50 / 4]; // STG1_HOLD(复位级)
+                b2[7] = w1[0x64 / 4]; // WPROTECT(被锁=持有者写过后未解锁)
                 // 32 项 PC 环（0x2E0003A0）：回放最近 32 个 tick 的被打断 PC。
                 const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
                 const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
