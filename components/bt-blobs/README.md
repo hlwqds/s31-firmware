@@ -28256,3 +28256,26 @@ eventqPut 成功入队 ✓）。**剩余墙：ctx+12 队列无人消费**——�
 **下轮入口**（与「BB 引擎未启动」会师）：官方 oracle（idf-bt-ctl）跑
 真 BB 的 schedule/anchor 寄存器 dump 对拍——README「终态」节既定路径；
 辅以撤 mute（stage10）+ -DS31_BT_FMT_LINES 抬行上限的 A/B 配方（上文）。
+
+**官方 oracle 对拍——硬件对等达成，两道假墙退役（2026-11-21）**：
+oracle = `~/esp/bt-ctl-oracle`（IDF v6.1，`esp_bt_controller_init/enable`
+后每 2 s 自读寄存器；`idf.py --preview set-target esp32s31`，需
+`sdkconfig.defaults` 开 `BT_ENABLED/CONTROLLER_ENABLED/CONTROLLER_ONLY`，
+环境变量 `ESP_ROM_ELF_DIR` 手动导出）。**官方控制器 enable 后空闲态**：
+
+| 寄存器 | oracle | 我们 | 结论 |
+|---|---|---|---|
+| B000 / B47C / B450 | 0x5ac00000 / 0 / 0 | 同值 | **"BB 活性判据 47C/450" 是空闲正常值，非墙** |
+| 0x2010_1090 | 0x00000003 | — | bit14=0（Krvfcw 的 &0x4000 自旋位在官方也为 0） |
+| 98BC / 11AC | 0 / 0 | rfready=0 / fe=0 | **rfready=0、fe=0 官方同值** |
+| 9C04 | 0x7e601002 | 同值 | 时钟配置对等 |
+| 9C0C | 0x64646400 | 被我们强改 6→(4) | **st_map=4 才是官方值，4→6 实验应回退** |
+| 9C14 | 0x003fe080 | （截断未得） | 官方空闲态即有挂起位 |
+| DCTX [2f07f1F4] | **0** | 0 | **"ROM BT 分发 ctx 未初始化"非缺口** |
+| HP768/76C/76A | **0/0/0** | 0/0/0 | **"BB ISR fn 缺口"非缺口** |
+
+⇒ **「BB 引擎未启动」结论退役**：硬件面与官方逐寄存器对等。剩余差异
+纯在软件运行时语义——控制器任务事件泵（mrucwvp/NyMX982）不返回 8
+（"队列空去阻塞"），即任务认为永远有事件待处理。下轮：把泵状态字
+（mask 0(s0)/34(s0)、counter 36(s0)、flag 25(s2)）接进 NMI 行（主上下文
+楔在泵内时唯一活通道），定位哪个事件位永不清。
