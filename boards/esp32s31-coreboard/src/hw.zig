@@ -171,6 +171,33 @@ pub fn disableRtcWdt() WdtAttempt {
     return .{ .before = before, .after = after, .tries = tries + 1 };
 }
 
+/// **武装 RTC WDT 做存活探针**（2026-11-21）：STG0 = 复位（`cpu_reset=true` 只复位
+/// CPU 核，LP RAM 保留 ⇒ 黑匣子可跨这次复位读出），超时 = `cycles` 个慢时钟周期。
+/// 正常流程由泵每轮 `feedRtcWdt()`；主上下文冻结（如卡死在不应答的总线访问上，
+/// 那种情况 NMI 也取不了、无 trap、整机静默）⇒ 超时复位 ⇒ 下次开机看复位原因
+/// 与黑匣子。`rst:0x10/0x14 RTCWDT_*` 本身就是"主上下文当时没在喂"的 1 bit 证据。
+pub fn armRtcWdt(cpu_reset: bool, cycles: u32) void {
+    const stg0: u32 = if (cpu_reset) 2 else 3; // 2=CPU 复位 3=系统复位
+    writeReg(rtc_wdt_wprotect, rtc_wdt_wkey);
+    writeReg(rtc_wdt_swd_wprotect, rtc_wdt_wkey);
+    fence();
+    writeReg(rtc_wdt_feed, 0x8000_0000);
+    writeReg(rtc_wdt_config0 + 4, cycles); // CONFIG1.STG0_HOLD
+    const procpu: u32 = if (cpu_reset) (1 << 11) else 0;
+    writeReg(rtc_wdt_config0, rtc_wdt_en | procpu | (stg0 << 28) | (1 << 16));
+    fence();
+    writeReg(rtc_wdt_wprotect, 0);
+    writeReg(rtc_wdt_swd_wprotect, 0);
+}
+
+pub fn feedRtcWdt() void {
+    writeReg(rtc_wdt_feed, 0x8000_0000);
+}
+
+pub fn rtcWdtConfig0() u32 {
+    return readReg(rtc_wdt_config0);
+}
+
 /// 小端打包（MAC 地址 / 描述符用）。
 pub fn leU32(bytes: []const u8) u32 {
     var v: u32 = 0;

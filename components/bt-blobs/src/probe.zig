@@ -221,6 +221,9 @@ fn diagFlashBlock(round: u32) bool {
 
 /// 开机首段：若黑匣子 magic 在，则逐字打印（每行 4 字）并清 magic。
 pub fn lpBlackBoxReport() void {
+    // LP 追踪槽（0x2E000300）：最后 OSAL 调用者 ra / log-sink 的 blob ra / 探针阶段标记。
+    const t: [*]volatile u32 = @ptrFromInt(0x2E00_0300);
+    board.log.line("BBT seq={d} osal_ra=0x{x:0>8} sink_ra=0x{x:0>8} phase=0x{x:0>8}", .{ t[0], t[1], t[2], t[3] });
     const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
     if (lp[0] != diag_blk_magic) return;
     var r: usize = 0;
@@ -1643,8 +1646,13 @@ pub fn run() noreturn {
             c14.* = 0x003F_E080;
             c08.* = 0;
         }
+        _ = diagFlashBlock(0xF00D); // 阳性对照：fwd06 前写一次黑匣子（下次开机必须可见）
+        // **存活探针**：武装 RTC WDT（STG0=CPU 复位，约 8–33 s 视慢时钟）。泵每轮喂狗。
+        board.hw.armRtcWdt(true, 0x10_0000);
+        board.log.line("wdt armed cfg0=0x{x:0>8} hold=0x{x:0>8}", .{ board.hw.rtcWdtConfig0(), @as(*volatile u32, @ptrFromInt(0x2080_1004)).* });
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
+        osal.lpTrace(3, 0xF001);
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
         osal.logPublic("bt probe: post21", .{});
@@ -1652,7 +1660,9 @@ pub fn run() noreturn {
         ad[0] = 3;
         ad[1] = 2;
         ad[2] = 0x06;
+        osal.lpTrace(3, 0xF002);
         const r8 = transport.sendCmd(0x2008, &ad);
+        osal.lpTrace(3, 0xF003);
         // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
         // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
         // **实验：去掉 FE 快照读**。README 与 `tools/jtag-watch-modem-block.sh` 记的
@@ -1749,6 +1759,7 @@ pub fn run() noreturn {
             @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
             @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
         }
+        board.hw.feedRtcWdt(); // 存活探针：主上下文在泵里 ⇒ 不复位
         sched.drainPending(); // 任务/ISR 上下文里延迟的唤醒在这里补做
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
@@ -1852,6 +1863,7 @@ pub fn run() noreturn {
                 diag_blk_tries += 1;
                 diag_blk_ok = diagFlashBlock(@intCast(round));
             }
+            osal.lpTrace(3, @as(u32, 0x1_0000) +% @as(u32, @truncate(round)));
             // （已删）logPublic diag 行：泵期实测 0 输出（死通道），其读数已并入上方 icg 板载行。
             // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。

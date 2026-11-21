@@ -112,6 +112,15 @@ pub var log_sink_storage: [64]usize align(4) = undefined;
 ///   .L43 的输出槽已全槽 ret 桩（零成本），格式化是唯一残留成本；
 /// - 每 256 次调用 block 一次 ⇒ 单次泵 kick 推进 256 个日志调用。
 pub export fn btLogYieldStub() callconv(.c) c_int {
+    // **blob 执行位置追踪**：`r_ble_log_internal_x1` 的帧是 `addi sp,sp,-48; sw ra,44(sp)`，
+    // 入口 sp（= 本函数的 @frameAddress）+44 即 blob 调用点的 ra。只记代码区内的值。
+    {
+        const cfa: usize = @frameAddress();
+        const blob_ra = @as(*volatile u32, @ptrFromInt(cfa + 44)).*;
+        if ((blob_ra >= 0x4000_0020 and blob_ra < 0x400B_0000) or (blob_ra >= 0x2f00_0000 and blob_ra < 0x2f01_0000)) {
+            osal.lpTrace(2, blob_ra);
+        }
+    }
     stub_blocks +%= 1;
     if (stub_blocks % 256 == 0) @import("osal_kit").sched.block();
     return 1;
