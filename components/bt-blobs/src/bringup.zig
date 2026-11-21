@@ -37,6 +37,10 @@ pub const Status = enum(u8) { idle = 0, inited = 1, enabled = 2 };
 /// HCI 传输**从未在板上执行过**。跳过它即可验证那一大片。
 pub var skip_task_init: bool = false;
 
+/// cb7 相位捕获的 id2/id5 节点缓冲（task_deinit 摘链后原内存仍在，供重挂）。
+pub var relink_p16: usize = 0;
+pub var relink_p20: usize = 0;
+
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
 pub var phy_before_clocks: bool = false; // 实验：PHY 初始化放到 step 5 之后
 
@@ -91,6 +95,7 @@ extern fn esp_ble_register_bb_funcs() c_int;
 extern fn r_base_stack_initEnv() c_int;
 extern fn r_conn_stack_initEnv() c_int;
 extern fn r_base_stack_enable() c_int;
+extern fn r_sym_bt_kNIbP2qfZqaMNyimIzAy(buf: *anyopaque, id: c_int) void;
 /// ⚠ **这是一个空桩**：`0x4005764e` 处只有两个字节 `82 80` = `c.ret`，
 /// 它**原样返回调用者的 `a0`**。无参调用时 `a0` 是残留值 ⇒
 /// 我们曾把它读成 `rc=181935`/`rc=181941`（每次不同），误判为 enable 失败。
@@ -422,6 +427,37 @@ pub fn init(cfg: *config.Config) c_int {
     // 5. lp init（空实现）
     enter(7, "btdm_lp_init");
     rc = step(7, "btdm_lp_init", porting.btdmLpInit());
+    // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。
+    // 链状态 step6 已定（task_init 内 OkE7 重建 + 尾插），step7 无关。
+    {
+        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
+            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var k: usize = 0;
+            var a0v: u64 = 0;
+            var a1v: u64 = 0;
+            while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
+                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const sh: u6 = @intCast(16 * (3 - (k % 4)));
+                if (k < 4) a0v |= op << sh else a1v |= op << sh;
+                // 链上捕获 id2/id5 节点地址（此刻仍在链上；env 全局已被置 1 不可用）
+                if (op == 2) relink_p16 = node;
+                if (op == 5) relink_p20 = node;
+                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+            }
+            osal.logPublic("bt probe: cb7 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+
+            const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;
+            if (envp >= 0x2f00_0000 and envp < 0x2f10_0000) {
+                const e0: usize = @as(*volatile usize, @ptrFromInt(envp)).*;
+                const e16: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(e0 + 16)).* else 0;
+                const e20: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(e0 + 20)).* else 0;
+                osal.logPublic("bt probe: env=0x{x:0>8} +16=0x{x:0>8} +20=0x{x:0>8}", .{ e0, e16, e20 });
+            } else {
+                osal.logPublic("bt probe: env oob=0x{x:0>8}", .{envp});
+            }
+        }
+    }
     if (rc != 0) return rc;
 
     // 6. 归档：HCI 流控环境
@@ -440,6 +476,25 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
     enter(10, "r_ble_controller_init");
     rc = step(10, "r_ble_controller_init", if (freestanding) r_ble_controller_init(&cfg.ble) else 0);
+
+    {
+        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
+            var a0v: u64 = 0;
+            var a1v: u64 = 0;
+            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var k: usize = 0;
+            while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
+                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const sh: u6 = @intCast(16 * (3 - (k % 4)));
+                if (k < 4) a0v |= op << sh else a1v |= op << sh;
+                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+            }
+            osal.logPublic("bt probe: cb10 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+        } else {
+            osal.logPublic("bt probe: cb10 head oob=0x{x:0>8}", .{p0});
+        }
+    }
     // **调度器槽值追踪**：sleep/scheduler 对象指针（0x2f011034）——NMI2 读 0
     // 但 rc=0 要求 Zth2 的 malloc(32) 成功 ⇒ 有谁在 init 后清零，按步定位。
     {
@@ -500,6 +555,55 @@ pub fn init(cfg: *config.Config) c_int {
     });
     enter(14, "r_esp_ble_ll_set_public_addr");
     rc = step(14, "r_esp_ble_ll_set_public_addr", if (freestanding) r_esp_ble_ll_set_public_addr(&mac) else 0);
+
+    {
+        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
+            var a0v: u64 = 0;
+            var a1v: u64 = 0;
+            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var k: usize = 0;
+            while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
+                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const sh: u6 = @intCast(16 * (3 - (k % 4)));
+                if (k < 4) a0v |= op << sh else a1v |= op << sh;
+                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+            }
+            osal.logPublic("bt probe: cb14 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+            // **判别打印**：env→p16（节点2缓冲）现状 + 链尾 next。若 [p16] 仍=2
+            // 而 node6.next 不指 p16 ⇒ 摘链；若 [p16]=0 ⇒ 内存被清（memset 型）。
+            const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;
+            if (envp >= 0x2f00_0000 and envp < 0x2f10_0000) {
+                const e0: usize = @as(*volatile usize, @ptrFromInt(envp)).*;
+                if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) {
+                    const p16: usize = @as(*volatile usize, @ptrFromInt(e0 + 16)).*;
+                    const p20: usize = @as(*volatile usize, @ptrFromInt(e0 + 20)).*;
+                    const id16: u32 = if (p16 >= 0x2f00_0000 and p16 < 0x2f10_0000) @as(*volatile u16, @ptrFromInt(p16)).* else 0xFFFF;
+                    const nx16: usize = if (p16 >= 0x2f00_0000 and p16 < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(p16 + 8)).* else 0;
+                    const id20: u32 = if (p20 >= 0x2f00_0000 and p20 < 0x2f10_0000) @as(*volatile u16, @ptrFromInt(p20)).* else 0xFFFF;
+                    osal.logPublic("bt probe: env+16=0x{x:0>8} id={d} nx=0x{x:0>8} | env+20=0x{x:0>8} id={d}", .{ p16, id16, nx16, p20, id20 });
+                }
+            }
+            // 链尾节点（第 n 个）的 next 值
+            if (k > 0) {
+                var last: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+                var j: usize = 1;
+                while (j < k) : (j += 1) last = @as(*volatile usize, @ptrFromInt(last + 8)).*;
+                const nxt: usize = @as(*volatile usize, @ptrFromInt(last + 8)).*;
+                const lid: u32 = @as(*volatile u16, @ptrFromInt(last)).*;
+                osal.logPublic("bt probe: last=0x{x:0>8} id={d} next=0x{x:0>8}", .{ last, lid, nxt });
+            }
+            // **deinit 判据**：task_deinit 尾部把 env[0] 清 0（state=1 为在位）。
+            const envp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;
+            if (envp2 >= 0x2f00_0000 and envp2 < 0x2f10_0000) {
+                const e0: usize = @as(*volatile usize, @ptrFromInt(envp2)).*;
+                const st: u8 = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) @as(*volatile u8, @ptrFromInt(e0)).* else 0xFF;
+                osal.logPublic("bt probe: env state={d}", .{st});
+            }
+        } else {
+            osal.logPublic("bt probe: cb14 head oob=0x{x:0>8}", .{p0});
+        }
+    }
     if (rc != 0) return rc;
 
     // 15. **HCI 传输层**（IDF 里是 `esp_bt_controller_init` 的最后一步、enable 之前）。
@@ -589,6 +693,19 @@ pub fn enable() c_int {
             osal.logPublic("bt probe: cblist A=0x{x:0>16} B=0x{x:0>16} n={d} p0=0x{x:0>8} tail=+{d}", .{ a0v, a1v, k, p0, tailc - p0 });
         } else {
             osal.logPublic("bt probe: cblist head oob=0x{x:0>8}", .{p0});
+        }
+    }
+    // **重挂 id2/id5**（实证：step10-14 间 blob 侧 task_deinit 摘走 [env+16]/[env+20]
+    // 两节点 ⇒ step17 的 Hl337(2) 扫描未命中 ⇒ rc=-3）。节点内存未被清，原样重链。
+    if (freestanding and relink_p16 != 0 and relink_p20 != 0) {
+        const id16: u32 = @as(*volatile u16, @ptrFromInt(relink_p16)).*;
+        const id20: u32 = @as(*volatile u16, @ptrFromInt(relink_p20)).*;
+        if (id16 == 2 and id20 == 5) {
+            r_sym_bt_kNIbP2qfZqaMNyimIzAy(@ptrFromInt(relink_p16), 2);
+            r_sym_bt_kNIbP2qfZqaMNyimIzAy(@ptrFromInt(relink_p20), 5);
+            osal.logPublic("bt probe: relink 2/5 ok", .{});
+        } else {
+            osal.logPublic("bt probe: relink skip id16={d} id20={d}", .{ id16, id20 });
         }
     }
     enter(17, "r_base_stack_enable");

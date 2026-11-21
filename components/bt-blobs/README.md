@@ -27935,3 +27935,20 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
   未达（返回 0 的替代路径待查），要么 4/6 建者**重建/尾插了别的集合**。
 - 下一步：全镜像搜 kNIbP2qf 调用者建 id=4/6 的点 ⇒ 拼完整注册图 ⇒ 定 id2
   缺席的机制（谁应该建 2、它在我们的 boot 序里为何没跑）。
+
+**rc=-3 全机制板载实证（2026-11-21 三点快照版）**：
+- 三点链表快照（step7/10/14 后）实证：**step7 = {1,0,3,4,6,2,5}（n=7，完整）→
+  step10 同 → step14 = {1,0,3,4,6}（n=5，id2/5 被摘）** ⇒ rc=-3 = step17 的
+  `Hl337(2)` 扫描未命中，坐实（每 boot 确定性复现）。
+- **摘链者非 env-deinit**：`[2f011038]` 在 step7 已被置 1（非指针，e07 bad 实证），
+  `r_btdm_task_deinit`（unlink [env+16]/[env+20]）需要 env 指针 ⇒ 不能是它。
+  gvLJK4 其余调用者：`conn/nrtIsr_stack_deinitEnv`、`08UuK67`（unlink
+  [2f011028]+24/+8，仅 task_deinit 尾部调用）。静态链断在 blob-ROM 分派（非 ELF 段）。
+- **重挂实验**：cb7 链上捕获 id2/5 地址 → step17 前校验 [p]==id 仍 2/5（内存未被清）
+  → `kNIbP2qf` 重挂成功（16/16 boot "relink 2/5 ok"）→ **step17 仍 rc=-3 ×16**。
+- ⇒ 摘链发生在重挂之后、Hl337(2) 之前的微秒窗 ⇒ **异步并发摘链**（controller
+  task 自 task_init 创建即运行，其状态机周期性清理"过期注册"）。
+- 下轮判别：①cblist walk 移到 relink 之后（若 enter17 前 n=7 而 rc=-3 ⇒ 并发坐实）；
+  ②mcontrol6 EXEC 断点钉 `gvLJK4`（40061376）入口，one-shot 抓 caller ra ⇒ 摘链
+  调用者直接显形；③根治方向 = 摘链触发条件（task 状态机的 cleanup 判据）。
+- 工程化：`scripts/build-probe.sh` 失败已 gate flash（stale-image 循环终止）。
