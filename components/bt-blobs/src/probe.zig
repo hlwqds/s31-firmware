@@ -121,6 +121,42 @@ pub var probe_irqs: bool = false;
 /// 采样器 ISR 不再触发 0x187000 dump（pc_dump_at 改大）。深度经 LP hist 跨复位读出。
 pub var bt_window_no_flash: bool = false;
 
+/// **UART0 快照/恢复**（2026-11-21）：首条 HCI 命令处理期间 UART0 TX 死亡
+/// （FIFO 卡满、所有输出被丢弃——"UART 哑"）。fwd06 前拍快照，泵每轮比对+恢复
+/// 可安全回写的配置寄存器；恢复成功则输出复现，且差分字直接指认改写者。
+const UART0: usize = 0x2038_A000;
+const uart_cmp_words = 32; // 0x00..0x7C
+var uart_snap: [uart_cmp_words]u32 = undefined;
+var uart_snap_ok: bool = false;
+var uart_restored: u32 = 0;
+/// 可安全回写的配置偏移（不含 0x00 FIFO/CONF0 同址、0x10 INT_CLR、0x1C STATUS）。
+const uart_restore_offs = [_]usize{ 0x14, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x3C, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54, 0x58, 0x5C, 0x60, 0x64, 0x68, 0x6C, 0x70, 0x74, 0x78, 0x7C };
+fn uartSnapshot() void {
+    var i: usize = 0;
+    while (i < uart_cmp_words) : (i += 1) uart_snap[i] = @as(*volatile u32, @ptrFromInt(UART0 + 4 * i)).*;
+    uart_snap_ok = true;
+}
+/// 恢复并返回恢复的字数；首个差分 (offset, was, now) 写入 out。
+fn uartRestore(out: *[3]u32) usize {
+    if (!uart_snap_ok) return 0;
+    var n: usize = 0;
+    for (uart_restore_offs) |off| {
+        const r: *volatile u32 = @ptrFromInt(UART0 + off);
+        const cur = r.*;
+        if (cur != uart_snap[off / 4]) {
+            if (n == 0) {
+                out[0] = @intCast(off);
+                out[1] = uart_snap[off / 4];
+                out[2] = cur;
+            }
+            r.* = uart_snap[off / 4];
+            n += 1;
+        }
+    }
+    uart_restored += @intCast(n);
+    return n;
+}
+
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
 
@@ -1467,7 +1503,8 @@ pub fn run() noreturn {
         mark.put(0x78, 0xADC0B10c, 0);
         // **隔离实验武装**（2026-11-21）：task 建立且首轮事件消费完毕后，把
         // semPend FOREVER 真阻塞换成有界让出——判"park 的 sem 是否唯一堵点"。
-        osal.sem_park_bounded = true;
+        osal.sem_park_bounded = false; // 隔离实验已结案（2026-11-21）：关闭，减少变量
+        uartSnapshot(); // UART 仍活：此刻拍基线
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
@@ -1571,6 +1608,9 @@ pub fn run() noreturn {
             osal.logPublic("bt probe: rtc wake cb fired n={d}", .{board.trap.rtc_wake_n});
             bringup.btSleepCb(0);
         }
+        // **UART0 自愈**：每轮比对+恢复配置寄存器（死因若是被改写 ⇒ 输出复现）。
+        var udiff: [3]u32 = .{ 0, 0, 0 };
+        const und = uartRestore(&udiff);
         // 单次 kick/轮：配合桩的 256 次限速让出 ⇒ 每轮推进 256 个日志调用
         // （批量 200 kick 版实测 fwd06 后崩溃复位，已回退，见 bringup 桩注释）。
         // **sink 自愈重发布**：每轮重写 [2f010fb4]+[+12]，对冲任何覆写。
@@ -1664,8 +1704,9 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} c0=0x{x:0>8} c32=0x{x:0>8} pk=0x{x:0>8} pc=0x{x:0>8} sb={d} c28={d} brg={d}/{d}/{d}", .{
-                icg_bt,           icg_after,          (r98 >> 2) & 1,         fe_cnt, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, c0, c32, osal.last_park_sem, tpc, bringup.stub_blocks,
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} c0=0x{x:0>8} c32=0x{x:0>8} pk=0x{x:0>8} pc=0x{x:0>8} sb={d} c28={d} u={d}/0x{x:0>2}:0x{x:0>8}>0x{x:0>8} brg={d}/{d}/{d}", .{
+                icg_bt,           icg_after,          (r98 >> 2) & 1,         fe_cnt,   st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, c0, c32, osal.last_park_sem, tpc, bringup.stub_blocks,
+                und,              udiff[0],           udiff[1],               udiff[2],
                 blk: {
                     // ctx+28 命令派发链首节点（空链 ⇒ 命令被静默 free，无回包）。
                     const ctxp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
