@@ -591,6 +591,17 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 bx[1] = ck[1];
                 bx[2] = ck[2];
                 bx[3] = ck[3];
+                // **计时器组时钟门控嫌疑区**(+0x110..+0x12C ⇒ lp[56..63],BBX row14/15):
+                // 哑火时 T0(NMI 源)与 MWDT1 同时停 ⇒ 最后采样即死前状态。
+                const b2: [*]volatile u32 = @ptrFromInt(0x2E00_02E0);
+                b2[0] = ck[0x110 / 4];
+                b2[1] = ck[0x114 / 4];
+                b2[2] = ck[0x118 / 4];
+                b2[3] = ck[0x11C / 4];
+                b2[4] = ck[0x120 / 4];
+                b2[5] = ck[0x124 / 4];
+                b2[6] = ck[0x128 / 4];
+                b2[7] = ck[0x12C / 4];
                 // 32 项 PC 环（0x2E0003A0）：回放最近 32 个 tick 的被打断 PC。
                 const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
                 const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);

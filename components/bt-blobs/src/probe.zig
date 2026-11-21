@@ -282,6 +282,9 @@ pub fn lpBlackBoxReport() void {
         while (evi < 16) : (evi += 2) {
             if (et[evi] != 0) board.log.line("EVH {x:0>8}/{d}", .{ et[evi], et[evi + 1] });
         }
+        // **UAR 行**:UART0 compare/restore 差分(0=从未差分;off=0x100 ⇒ CLKRST+0x88)
+        const ub2: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
+        if (ub2[3] != 0) board.log.line("UAR off={x} was={x} now={x} rd={d}", .{ ub2[0], ub2[1], ub2[2], ub2[3] });
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
         board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d} cpufreq=0x{x:0>8}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.*, @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* });
         {
@@ -327,7 +330,7 @@ fn uartSnapshot() void {
     uart_snap_ok = true;
 }
 /// 恢复并返回恢复的字数；首个差分 (offset, was, now) 写入 out。
-fn uartRestore(out: *[3]u32) usize {
+fn uartRestore(out: *[3]u32, dry: bool) usize {
     if (!uart_snap_ok) return 0;
     var n: usize = 0;
     for (uart_restore_offs) |off| {
@@ -339,7 +342,9 @@ fn uartRestore(out: *[3]u32) usize {
                 out[1] = uart_snap[off / 4];
                 out[2] = cur;
             }
-            r.* = uart_snap[off / 4];
+            // **dry=true 只比较**:实测泵内回写会把总线打挂(连 MWDT1/RTC WDT
+            // 复位都不再来)——写 UART0 在哑火期是危险动作,证据先行。
+            if (!dry) r.* = uart_snap[off / 4];
             n += 1;
         }
     }
@@ -351,7 +356,7 @@ fn uartRestore(out: *[3]u32) usize {
             out[1] = uart_ctrl0_snap;
             out[2] = c0.*;
         }
-        c0.* = uart_ctrl0_snap;
+        if (!dry) c0.* = uart_ctrl0_snap;
         n += 1;
     }
     uart_restored += @intCast(n);
@@ -1441,6 +1446,10 @@ pub fn run() noreturn {
     }
     // **EVH 计数表清零**(0x2E000500):per-boot 活锁归因。
     @memset(@as([*]u32, @ptrFromInt(0x2E00_0500))[0..17], 0);
+    @memset(@as([*]u32, @ptrFromInt(0x2E00_0548))[0..6], 0); // UAR 差分槽
+    // **收集旗**(0x2E00055C,跨 MWDT1 数字复位保留):0xC0DEC0DE=本上电周期已
+    // 自陷上交过 ⇒ 泵自由长跑;否则 round 4000 时 MWDT1 自陷交出差分。
+    const collect_flag: *volatile u32 = @ptrFromInt(0x2E00_055C);
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
@@ -1731,7 +1740,12 @@ pub fn run() noreturn {
             // 没复位 ⇒ 本行之后流程继续（BBT 的 phase 仍为 0xD2C7 即"对照失败"）。
         }
         board.hw.mwdt1Arm(0x9C40_0000); // HP 域看门狗 10 s（tick=262.144 MHz）：主上下文冻结也能复位
+        // **RTC WDT 兜底**（RTC 时钟域,独立于 HP TIMERGRP 时钟——哑火时 T0+MWDT1
+        // 同时停 ⇒ 怀疑计时器域被门控,MWDT1 可能随之失效）：cpu_reset=true 只复位
+        // CPU 核,LP 保留 ⇒ 差分证据可回读。137kHz × 360s ≈ 49.3M cycles。
+        board.hw.armRtcWdt(true, 49_300_000);
         // （ICG 全 1 A/B 已做：无效果，代码撤除。）
+        uartSnapshot(); // **快照**:泵每轮 compare/restore 的基线(UART0 32 字+CLKRST)
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         osal.lpTrace(3, 0xF001);
@@ -1829,6 +1843,28 @@ pub fn run() noreturn {
     var bb0_done: bool = false;
     var diag_round: u32 = 0;
     while (true) : (round += 1) {
+        // **UART0 compare-only**:差分写 LP(0x2E000548..),下 boot 打印——泵内
+        // 回写实测把总线打挂(看门狗复位全失),故只读。有差分或 round>=50 即
+        // 自陷上交,不留恋。
+        {
+            var ud: [3]u32 = .{ 0, 0, 0 };
+            const rn = uartRestore(&ud, true);
+            const ub: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
+            if (rn != 0 and ub[3] == 0) {
+                ub[0] = ud[0];
+                ub[1] = ud[1];
+                ub[2] = ud[2];
+                ub[3] = round;
+                ub[4] +%= 1;
+            }
+            if (rn != 0 or round >= 50) {
+                if (collect_flag.* != 0xC0DE_C0DE) {
+                    collect_flag.* = 0xC0DE_C0DE;
+                    osal.lpTrace(3, 0xD3C1);
+                    board.hw.mwdt1Suicide(); // 数字复位:LP 保留 ⇒ 下 boot 打印差分
+                }
+            }
+        }
         // **RTC SOC_WAKEUP 旗**：主上下文调已注册的 sleep 回调（trap 只置旗）
         // **park 相位寄存器读出**（每 300 轮）：MAP 路由 + CLIC in6/in25 门控
         // ——SOC_WAKEUP 旗未置时的三查（路由保留？in6 IE/prio vs in25 形态？）
@@ -1846,7 +1882,10 @@ pub fn run() noreturn {
             @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
             @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
         }
-        if (!wdt_suicide) board.hw.mwdt1Feed();
+        if (!wdt_suicide) {
+            board.hw.mwdt1Feed();
+            board.hw.feedRtcWdt();
+        }
         sched.drainPending(); // 任务/ISR 上下文里延迟的唤醒在这里补做
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
