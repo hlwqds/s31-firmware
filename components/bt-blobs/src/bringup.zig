@@ -673,8 +673,8 @@ pub fn enable() c_int {
     var rc = step(16, "btdm_coex_enable", porting.btdmCoexEnable());
     if (rc != 0) return rc;
 
-    // **rc=-3 根因探针**：base_stack_enable 第三段在 2f011030 注册链里找
-    // 操作码 46（0x2E），扫完未命中返回 -1 ⇒ 传导 -3。遍历打印前 12 节点。
+    // **rc=-3 根因探针**：base_stack_enable 第二段注册 Hl337(id=2) 在
+    // [2f011030] 链表扫 u16 id==2，未命中返回 -1 ⇒ 传导 -3。遍历打印链节点。
     {
         const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
