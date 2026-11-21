@@ -783,6 +783,30 @@ pub fn eventDeinit(slot: *Slot) void {
     slot.p = null;
 }
 
+/// **处理器活锁计数**(LP 0x2E000300,8 槽 {fn_ptr, count} + 溢出槽):
+/// blob 任务若在 event_run 上活锁,这里能看出是哪个 handler 在反复触发。
+/// 只在 freestanding(LP RAM 存在)时记录。
+fn bumpEvtCounter(f: *const fn (?*anyopaque) callconv(.c) void) void {
+    if (@import("builtin").cpu.arch != .riscv32) return;
+    // 0x2E000500:8 槽 {fn_ptr, count} + 0x2E000540 溢出槽(probe 开机清零,
+    // 冻结后 lpBlackBoxReport 读回——活锁归因)。
+    const tbl: [*]volatile u32 = @ptrFromInt(0x2E00_0500);
+    const p: u32 = @truncate(@intFromPtr(f));
+    var i: usize = 0;
+    while (i < 16) : (i += 2) {
+        if (tbl[i] == p) {
+            tbl[i + 1] +%= 1;
+            return;
+        }
+        if (tbl[i] == 0) {
+            tbl[i] = p;
+            tbl[i + 1] = 1;
+            return;
+        }
+    }
+    tbl[16] +%= 1;
+}
+
 pub fn eventRun(slot: *Slot) void {
     trace("eventRun", .{});
     const e = slotGet(Event, slot) orelse {
@@ -790,7 +814,10 @@ pub fn eventRun(slot: *Slot) void {
         return;
     };
     stats_state.event_run_count += 1;
-    if (e.fn_) |f| f(e.arg);
+    if (e.fn_) |f| {
+        bumpEvtCounter(f);
+        f(e.arg);
+    }
 }
 
 pub fn eventIsQueued(slot: *const Slot) bool {

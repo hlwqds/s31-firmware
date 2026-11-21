@@ -580,6 +580,17 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     pc1.* = pc0.*;
                     pc0.* = @truncate(frame.mepc);
                 }
+                // **CPU 时钟分频现场**（0x2E00038C）：blob 任务循环里的
+                // `e_btdm_lp_modem_clock_set` 若改了 CPU_CLK_DIV，这里立刻可见。
+                @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* = @as(*volatile u32, @ptrFromInt(0x2058_7004)).*;
+                // **clkrst +0x00..+0x0C 进黑盒 lp[52..55]**:SOC_CLK_SEL 慢 100x 嫌疑
+                // (WDT 复位后 BBX row13 读回最后采样)。
+                const ck: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+                const bx: [*]volatile u32 = @ptrFromInt(0x2E00_02D0); // 盒子基址 0x2E000200 + lp[52..55]
+                bx[0] = ck[0];
+                bx[1] = ck[1];
+                bx[2] = ck[2];
+                bx[3] = ck[3];
                 // 32 项 PC 环（0x2E0003A0）：回放最近 32 个 tick 的被打断 PC。
                 const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
                 const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
@@ -714,7 +725,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     hist_other +%= 1;
                 }
             }
-            if (hist_ticks % 100_000 == 0 and (hist_ticks / 100_000) <= 8) {
+            if (hist_ticks % 2_000 == 0 and (hist_ticks / 2_000) <= 10) { // 加快:10ms 采样下 20s/行
                 const tim_armed: u32 = if (bt_linked.present) dbg_tim_armed else 0;
                 const tim_fires: u32 = if (bt_linked.present) dbg_tim_fires else 0;
                 const tim_fn: usize = if (bt_linked.present) dbg_tim_fn else 0;
@@ -733,6 +744,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // （实测：自旋锚定 + 哨兵验证下运行期这张表除自装哨兵外为空，所以 blob 目前没这么做。）
         if (h.fn_ == null) h = romHandler(ext);
         if (h.fn_) |f| {
+            last_input = input;
             // 自旋期间没有任何让出点，只有 tick 在跑 —— 在这里推进软件定时器（等价于 esp_timer 的
             // alarm ISR 派发到期回调）。
             if (timer_service_hook) |svc| svc();
@@ -741,7 +753,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 会 panic（`mepc=0xffffffa0`）。要在自旋期间泵，必须先让任务上下文处于可安全恢复状态。
             if (input == 25) hw.ackT0Interrupt(sample_period_us);
             rom_handler_calls += 1;
-            if (!sample_quiet and rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x}", .{ rom_handler_calls, @intFromPtr(f) });
+            if (!sample_quiet and rom_handler_calls % 1024 == 0) log.line("romhandler calls={d} fn=0x{x} inp={d}", .{ rom_handler_calls, @intFromPtr(f), last_input });
             f(h.arg);
             return false;
         }
@@ -1307,6 +1319,7 @@ pub var give_stats_hook: ?*const fn () u64 = null;
 /// 打包 4 个 16-bit 的 `_semphr_create` 参数（max<<16|init）。
 pub var sem_args_hook: ?*const fn () u64 = null;
 var rom_handler_calls: usize = 0;
+var last_input: u32 = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。
 fn sentinelIsr(_: ?*anyopaque) callconv(.c) void {}

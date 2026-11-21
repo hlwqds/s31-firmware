@@ -220,14 +220,18 @@ pub fn feedRtcWdt() void {
 /// FEED@+0x60、WPROTECT@+0x64（key 0x50D83AA1）。本封装用 STG0=系统复位。
 const mwdt1: usize = 0x2058_1000;
 const mwdt_wkey: u32 = 0x50D8_3AA1;
-const mwdt_cfg_sysreset: u32 = (1 << 31) | (3 << 29) | (7 << 15);
+/// 官方 oracle 实测值：STG0=中断、STG1=系统复位、复位脉宽 7。
+/// 自编 (1<<31)|(3<<29)|(7<<15)=0xC0007800 的 STG 编码不对 ⇒ 复位级
+/// 落在从未写过的 STG1_HOLD(垃圾默认)上——有效超时 ~2s 而非 hold 的 10s。
+const mwdt_cfg_sysreset: u32 = 0xb81f_8000;
 pub fn mwdt1Arm(hold_ticks: u32) void {
     writeReg(0x2058_7000 + 0x11C, readReg(0x2058_7000 + 0x11C) | (1 << 0) | (1 << 11));
     writeReg(mwdt1 + 0x40, 0); // 清掉首版误写并启动的 TIMG1 timer1（tx_en=0）
     writeReg(mwdt1 + 0x64, mwdt_wkey);
     fence();
     writeReg(mwdt1 + 0x60, 1); // feed
-    writeReg(mwdt1 + 0x4C, hold_ticks);
+    writeReg(mwdt1 + 0x4C, hold_ticks); // STG0_HOLD
+    writeReg(mwdt1 + 0x50, hold_ticks); // STG1_HOLD(复位级)——不写则用垃圾默认 ⇒ 超时漂移
     writeReg(mwdt1 + 0x48, mwdt_cfg_sysreset);
     fence();
     writeReg(mwdt1 + 0x64, 0);

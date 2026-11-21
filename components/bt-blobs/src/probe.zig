@@ -134,7 +134,10 @@ var wdt_suicide: bool = false;
 var uart_stuck_rounds: u32 = 0;
 var uart_mute_done: bool = false;
 /// 实验：fwd06 前做一次 MWDT1 阳性对照（短超时不喂 ⇒ 必须复位）。
-pub var mwdt_ctrl: bool = true;
+/// MWDT1 阳性对照开关。**默认关**：对照早已通过，而它的 LP 旗标槽(0x2E000310)
+/// 会被下载阶段刮花——垃圾值让 `ctrl_flag != 0x1234` 恒真 ⇒ 对照每个 boot 重跑,
+/// 0.1 s WDT + 1.5 s delay ⇒ 每 boot 必咬(实测 rst:0x8 × 46/110s 的真身)。
+pub var mwdt_ctrl: bool = false;
 var diag_blk_ok: bool = false;
 fn rd32(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
@@ -273,8 +276,14 @@ pub fn lpBlackBoxReport() void {
         // 冻结点 PC 采样（NMI 每 tick 写）：last/prev 相同 ⇒ 自旋在同一条指令附近。
         const pc0: *volatile u32 = @ptrFromInt(0x2E00_0380);
         const pc1: *volatile u32 = @ptrFromInt(0x2E00_0384);
+        // **EVH 行**:活锁计数表(per-boot,开机清零)。
+        const et: [*]volatile u32 = @ptrFromInt(0x2E00_0500);
+        var evi: usize = 0;
+        while (evi < 16) : (evi += 2) {
+            if (et[evi] != 0) board.log.line("EVH {x:0>8}/{d}", .{ et[evi], et[evi + 1] });
+        }
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
-        board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.* });
+        board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d} cpufreq=0x{x:0>8}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.*, @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* });
         {
             const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
             const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
@@ -922,13 +931,6 @@ pub fn run() noreturn {
     // ⇒ 该区列入**读挂毒区**（与 0x2010D020 同型）。LP timer 探测改用
     // flash 标记法或 NMI 内单字读（下轮）。
     // **syscon 窗口对拍**：与 IDF 成功镜像的 `[after_init]` 逐字比较
-    {
-        var k: usize = 0;
-        while (k < 16) : (k += 1) {
-            const a: usize = 0x2010_9C00 + k * 4;
-            board.log.line("bt probe: syscon+0x{x:0>2} = 0x{x:0>8}", .{ k * 4, (@as(*volatile u32, @ptrFromInt(a))).* });
-        }
-    }
     // hp_sys_clkrst 全窗口（与 IDF 成功镜像的程序化对拍）
     {
         var k: usize = 0;
@@ -936,15 +938,6 @@ pub fn run() noreturn {
             const a: usize = 0x2058_7000 + k * 4;
             const v = (@as(*volatile u32, @ptrFromInt(a))).*;
             if (v != 0) board.log.line("clkrst+0x{x:0>3} = 0x{x:0>8}", .{ k * 4, v });
-        }
-    }
-    // **UART0 排水能力判定**：同一地址连采 4 次，间隔约 100 ms。
-    // 递减 ⇒ 只是排得慢（查波特率/时钟）；恒定 ⇒ 真的停住。
-    {
-        var k: usize = 0;
-        while (k < 4) : (k += 1) {
-            board.log.line("uart0 采样[{d}] 0x{x:0>8}", .{ k, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* });
-            board.hw.delayUs(100_000);
         }
     }
     // PMU 窗口（0x20704000..+0x200）非零项 —— 与 IDF oracle 的同类 dump 逐字对拍
@@ -1446,6 +1439,8 @@ pub fn run() noreturn {
         @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31;
         _ = map_def; // （"rtc wake routed" 行已回收：镜像容量紧张；wake_input 别处仍用）
     }
+    // **EVH 计数表清零**(0x2E000500):per-boot 活锁归因。
+    @memset(@as([*]u32, @ptrFromInt(0x2E00_0500))[0..17], 0);
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
@@ -1621,7 +1616,7 @@ pub fn run() noreturn {
         if (!probe_irqs) {
             probe_irqs = true;
             board.hw.routeT0Interrupt(25);
-            board.hw.armT0Interrupt(2000);
+            board.hw.armT0Interrupt(10_000); // 2ms 的 handler 开销会饿慢主循环(MWDT1 因此提前咬)
             board.hw.enableInterrupts();
             // **NMI 转换**（与 boot 期 :438-444 相同）：esp_phy_enable 会关中断，
             // 只有 NMI 能看见它关中断后的自旋 —— 这是本窗口的目的所在。
@@ -1639,7 +1634,7 @@ pub fn run() noreturn {
         // 预期不再形成（楔子 = 我们的 post-enable flash 写撞出来的），盲复位是
         // 唯一死点（panic illegal @0x40069dba，哨兵 s0=0xaddc0002 证明死在它旁边）。
         var wait_dumps: u32 = 0;
-        while (wait_dumps < 100_000_000) : (wait_dumps += 1) {
+        while (wait_dumps < 1_000_000) : (wait_dumps += 1) { // 100M 在 CPU 慢 100x 时要分钟级;降到 1M 让主循环过循环点
             asm volatile ("nop");
         }
         // **oracle 实验：IDF 本体的 `esp_phy_enable(PHY_MODEM_BT=2)`**

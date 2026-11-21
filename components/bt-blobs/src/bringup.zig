@@ -227,7 +227,7 @@ fn enter(n: u32, comptime what: []const u8) void {
     if (freestanding) {
         const st: *volatile u32 = mmioPtr(u32, 0x2038_A01C);
         var guard: u32 = 0;
-        while (guard < 200_000) : (guard += 1) {
+        while (guard < 2_000) : (guard += 1) { // FIFO 卡满时 200k 次迭代吃掉 82% CPU(HIST 实测),上限砍到 2k
             if (((st.* >> 16) & 0xFF) <= 8) break;
         }
     }
