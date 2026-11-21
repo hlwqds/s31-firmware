@@ -28355,3 +28355,25 @@ semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑
 实测上行契约（无类型字节，`[0]=event code,[1]=plen`）更新。
 **判读纪律**：bt-blobs 里新增裸 MMIO/汇编/board 引用时，同步放进
 `if (freestanding)` 或走上述 helper，否则主机门禁即红。
+
+**失声根因链收官（2026-11-21 深夜）——冻结点精确定位 + 存活探针体系建成**：
+- **仪器终态**（全部可信、确定性复现）：①HP 域 MWDT1 存活探针（照官方配置：
+  CORE0 GLOBAL_RST_EN=0、STG0=系统复位、tick=262.144 MHz〔官方 5 s=0x4e200000 实测〕、
+  fwd06 前武装 10 s、泵每轮喂）；②LP 黑匣子+事件环+PC 环（跨数字复位保留，
+  EN 复位不保留——阳性对照实证）；③LP 执行追踪（log-sink RA + OSAL 调用者 RA）。
+- **确定性结论**：fwd06 后主上下文冻结在 blob LL 调度循环（`lecwwE0K↔YRnBzKl`
+  之间往返、无 OSAL/无日志/无进展），10 s 后 MWDT1 复位（`rst:0x8
+  HP_SYS_HP_WDT1_RESET`），21+ 周期逐字一致。UART/NMI **没有坏**——"失声"
+  只是冻结期恰无输出（NMI 行 10 s 一条，落在 WDT 复位窗口内看不到）。
+- **本轮修复**（每个都有板级证据）：①任务上下文 `resumeTask` 延迟到主上下文
+  （此前当场 swap 会把主上下文现场覆盖成任务现场——协作内核正确性 bug，
+  `wakeAction` 纯函数+主机用例）；②init 后段三处 flash 擦写补窗口旗
+  （NMI 打进擦写期 ⇒ 取指 fault ⇒ CPU_LOCKUP 间歇环，43/45 实测）；
+  ③flash 窗口改停 T0 闹钟（窗口旗+电平挂起 NMI ⇒ 零进展静默挂死，实测）；
+  ④MWDT1 配置照官方（首版偏移错写 TIMG1 timer1 txconfig——读回校验发现）；
+  ⑤NMI 每 tick 触发 RTC 计数器锁存（控制器时间源）。
+- **剩余唯一疑点（下轮入口）**：LL 调度等不到的东西。线索：`FE450` 静态值
+  官方 `0x00102000`（bit13=1）vs 我们 `0x00110000`（bit16=1）——bit13 疑似
+  "BB/RF ready" 类标志；以及 bb_funcs PHY 钩子链（`esp_ble_register_bb_funcs`
+  无参，blob 内部自取 PHY 钩子 ⇒ 检查我们镜像里 `esp_phy_enable` 家族的
+  弱符号解析）。工具已就位：改完即可单轮验证。

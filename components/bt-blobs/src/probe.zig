@@ -1923,14 +1923,7 @@ pub fn run() noreturn {
                 diag_blk_ok = diagFlashBlock(@intCast(round));
             }
             osal.lpTrace(3, @as(u32, 0x1_0000) +% @as(u32, @truncate(round)));
-            // **自陷复位**：本块每 200 轮执行一次（round 0/200 各写过一次黑匣子）；
-            // round≥200 时把 WDT 调成极短超时并停喂 ⇒ 数字复位（LP RAM 保留）
-            // ⇒ 下次开机首段打印现场。UART 死了也能交出状态。
-            if (round >= 200 and !wdt_suicide) {
-                wdt_suicide = true;
-                osal.lpTrace(3, 0xD1E0);
-                board.hw.mwdt1Suicide();
-            }
+            // （自陷复位仪器已结案：确认泵活着/主上下文冻结解除，正式轮不再复位。）
             // （已删）logPublic diag 行：泵期实测 0 输出（死通道），其读数已并入上方 icg 板载行。
             // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。
