@@ -28377,3 +28377,27 @@ semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑
   "BB/RF ready" 类标志；以及 bb_funcs PHY 钩子链（`esp_ble_register_bb_funcs`
   无参，blob 内部自取 PHY 钩子 ⇒ 检查我们镜像里 `esp_phy_enable` 家族的
   弱符号解析）。工具已就位：改完即可单轮验证。
+
+**复位风暴三连根因收官（2026-11-21 深夜二）——rst:0x8 归零，单 boot 存活 5min+**：
+上一节的"主上下文 10s 冻结 + MWDT1 10s 咬"叙事被本轮仪表推翻重写：
+- **MWDT1 CONFIG0 编码错**（自编 `0xC0007800` vs 官方 oracle `0xb81f8000`）⇒ 复位级
+  落在从未写过的 **STG1_HOLD 垃圾默认**上，有效超时 ~2s 而非 hold 的 10s。铁证：
+  drain 等待砍 10 倍（main 速度 ×10）死亡节拍仍 ~2.2s/boot。对齐 oracle + 补写
+  STG1_HOLD(+0x50) 后 **rst:0x8 = 0**，单 boot 存活 5min+。
+- **enter() UART 排空等待 200k 迭代**：FIFO 卡满时每条 step 日志烧 200k 圈，HIST
+  直方图实测 main 占 82% 采样全落在这一个循环 ⇒ boot 链路拖慢 10 倍。上限砍到 2k。
+- **MWDT1 阳性对照每 boot 重跑**：LP 旗标槽 0x2E000310 被下载阶段刮花 ⇒
+  `ctrl_flag != 0x1234` 恒真 ⇒ 0.1s WDT + 1.5s delay（必咬）无限重放。默认关。
+- 另：step4→5 的 `ese`(擦除 ~40ms) 移到 clic25 屏蔽**之后**——T0 NMI 已武装且不受
+  mstatus 屏蔽，擦除期打进 XIP ⇒ 取指 fault ⇒ CPU_LOCKUP 环（1st=trapDispatch jal
+  ackT0、2nd=嵌套）。
+- **新仪表**：EVH 处理器活锁计数（LP 0x2E000500，8 槽 {fn,cnt}+溢出，开机清零，
+  lpBlackBoxReport 读回——每 boot 事件处理器仅 6 次，证伪"handler 洪泛"）；HIST
+  直方图节奏 100k→2k tick；clkrst +0x00..+0x0C 进黑盒 lp[52..55]（冻结点读回 =
+  boot 期值，SOC_CLK_SEL 未被改 ⇒ "CPU 慢 100×"实为 NMI 内 blob tick 楔进
+  ets_printf 的采样假象）；BBP 行增 cpufreq；romhandler 行增最后分发输入号。
+- **当前态**：bringup **INITED + fwd06 每 boot 必达**（enable 链首次确定性走通）。
+- **下轮入口**：①泵推进——存活 boot 里 `bt probe: icg`（round%200）尚未出现，
+  首个 `resumeTask` 后任务侧是否独占 CPU 待判（EVH=6 已证伪 handler 洪泛，
+  FE 环占采样 10%）；②UART0 TX 卡满的原writer 仍未抓到（泵的 compare/restore
+  差分尚未跑过一轮）；③LL 调度等的东西 = FE450 bit13 假说不变。
