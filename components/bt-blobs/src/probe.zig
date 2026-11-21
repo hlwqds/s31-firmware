@@ -1254,9 +1254,12 @@ pub fn run() noreturn {
     // ⚠ 2026-11-21 关闭：cyclic 9/9 boot 在 step15 后确定性 panic——cblist
     // u64 打印走 __udivmoddi4(ROM 0x400ad7a6)，tdata2 只比对低 32 位入口
     // ⇒ 每轮 logPublic(u64) 即撞断点 ⇒ cause=3 死停。cblist 取证优先。
+    // 🔁 2026-11-21 二次改造：init 期武装取消（0x40061c2a 零命中 ×16 ⇒
+    // task_deinit 的 unlink 对未执行 ⇒ 摘链者走 blob-ROM）。武装点移至
+    // bringup cb14 块（step14 后）：EXEC one-shot 盯 gvLJK4 入口 0x40061376
+    // ——step14 后的第一次 unlink 必命中，trap ra = 调用者显形。
     if (false) {
-        const f: *const fn () callconv(.c) void = @extern(*const fn () callconv(.c) void, .{ .name = "__udivmoddi4" });
-        const addr: u32 = @intFromPtr(f);
+        const addr: u32 = 0x4006_1c2a;
         board.trap.udiv_addr = addr;
         board.trap.udiv_watch_on = true;
         asm volatile ("csrw 0x7a0, zero"); // tselect=0

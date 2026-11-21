@@ -40,6 +40,7 @@ pub var skip_task_init: bool = false;
 /// cb7 相位捕获的 id2/id5 节点缓冲（task_deinit 摘链后原内存仍在，供重挂）。
 pub var relink_p16: usize = 0;
 pub var relink_p20: usize = 0;
+pub var watch_node6: usize = 0;
 
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
 pub var phy_before_clocks: bool = false; // 实验：PHY 初始化放到 step 5 之后
@@ -486,11 +487,30 @@ pub fn init(cfg: *config.Config) c_int {
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
                 const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                if (op == 6) watch_node6 = node;
                 const sh: u6 = @intCast(16 * (3 - (k % 4)));
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
                 node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
             }
             osal.logPublic("bt probe: cb10 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+
+            // **STORE 观察点**：gvLJK4 EXEC 零命中 ⇒ 摘链 = ROM 直接写
+            // predecessor.next=0。捕获 id6 节点（=未来 predecessor）地址，
+            // STORE 观察点钉其 +8——ROM 写 0 瞬间 trap，ra 经 trap dump 显形。
+            {
+                const waddr: u32 = @truncate(watch_node6 + 8);
+                @import("board").trap.udiv_addr = waddr;
+                @import("board").trap.udiv_watch_on = true;
+                asm volatile ("csrw 0x7a0, zero"); // tselect=0
+                asm volatile ("csrw 0x7a2, %[a]"
+                    :
+                    : [a] "r" (waddr),
+                );
+                asm volatile ("li t4, 0x4a"); // STORE|U|M
+                asm volatile ("csrw 0x7a1, t4");
+                asm volatile ("li t4, 0x88"); // MTE 使能
+                asm volatile ("csrw 0x7a5, t4");
+            }
         } else {
             osal.logPublic("bt probe: cb10 head oob=0x{x:0>8}", .{p0});
         }
@@ -561,15 +581,25 @@ pub fn init(cfg: *config.Config) c_int {
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
+            var k4_addr: usize = 0;
             var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
                 const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                if (k == 4) k4_addr = node;
                 const sh: u6 = @intCast(16 * (3 - (k % 4)));
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
                 node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
             }
             osal.logPublic("bt probe: cb14 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+            // **判别读数**：cb7 捕获的 id2/5 节点地址（=env+52/+64）此刻的 id 值
+            // 与链上第 5 节点地址比对——同址且 id=6 ⇒ 原地篡改；异址或 id=2 ⇒ 纯摘链。
+            if (relink_p16 != 0 and relink_p16 % 4 == 0 and relink_p16 >= 0x2f00_0000 and relink_p16 < 0x2f10_0000) {
+                const idn2: u32 = @as(*volatile u16, @ptrFromInt(relink_p16)).*;
+                const nx2: usize = @as(*volatile usize, @ptrFromInt(relink_p16 + 8)).*;
+                const idn5: u32 = if (relink_p20 >= 0x2f00_0000 and relink_p20 < 0x2f10_0000) @as(*volatile u16, @ptrFromInt(relink_p20)).* else 0xFF;
+                osal.logPublic("bt probe: n2=0x{x:0>8} id={d} nx=0x{x:0>8} | n5 id={d} k4=0x{x:0>8}", .{ relink_p16, idn2, nx2, idn5, k4_addr });
+            }
             // **判别打印**：env→p16（节点2缓冲）现状 + 链尾 next。若 [p16] 仍=2
             // 而 node6.next 不指 p16 ⇒ 摘链；若 [p16]=0 ⇒ 内存被清（memset 型）。
             const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;

@@ -27964,3 +27964,17 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
   env 地址已可推算（tail=+33384 ⇒ env≈0x2f02CF78 ⇒ env+52=0x2f02CFAC）。
 - 下轮一刀：clean zone（step14 后）读 `u16@[0x2f02CFAC]`——若 =2 ⇒ 节点健在纯摘链；
   若 =6 ⇒ id 篡改论坐实，找写 6 的 eventq 路径。同时把 rtc 双候选打印挪进 clean zone。
+
+**STORE 观察点轮（2026-11-21，命中不可判读=仪器自证失败）**：
+- EXEC 盯 gvLJK4（cb10 后武装）零命中 ×16 ⇒ task_deinit 的 unlink 对未执行、
+  ELF 内无其他 unlink 调用 ⇒ 摘链 = blob-ROM 直接指针拼接（写 predecessor.next=0）。
+- STORE 观察点（watch_node6+8，tdata1=0x4a）命中 ×33 但命中瞬间 mepc/ra 落在
+  **bringup.init 自己的 Writer/print 路径**（0x400715a8/0x40071578）且 panic ×1815
+  ⇒ ①命中来源未排除自写（relink 的 `sw zero,8` 正中同址——watch_node6 捕获与
+  relink_p16 疑似同址）；②STORE 变体 one-shot 清除未生效 ⇒ 重触发风暴。
+- 判读按 baremetal-instrument-selfcheck 纪律作废：命中必须先排除仪器自写。
+- 下轮纯净设计：①arm 移到 relink **之后**（自身写完再观测，排除自写）；②先在
+  主机单测/一次性受控写上验证 STORE 变体的 one-shot 清除（负面测试）；③
+  watch 地址与 relink 目标显式断言互斥（`assert(watch != relink_p16+8)`）。
+- 已确定的事实链（不变）：id2/5 内存完好（id=2/5、n2.next→n5）；cb10→cb14 间
+  predecessor.next 被清；env-deinit 的 unlink 对未执行；摘链不经 ELF 内 gvLJK4。
