@@ -124,12 +124,11 @@ pub var bt_window_no_flash: bool = false;
 pub var align_clk_conf1: bool = true;
 
 /// **盲区诊断块**（2026-11-21）：UART/T0 失声后唯一的读出通道。泵（主上下文）
-/// 每轮尝试把现场写进 flash 扇区 0x186000 并用 ROM `spiflash_read` 回读校验，
-/// 成功即止（主上下文写曾被视为不可靠 ⇒ 带校验重试）。主机
-/// `esptool read-flash 0x186000 256` 解码。
-extern fn esp_rom_spiflash_read(src_addr: u32, des_addr: [*]u32, len: u32) c_int;
+/// 每轮把现场写进 LP RAM 黑匣子（跨复位保留），下次开机首段 `lpBlackBoxReport`
+/// 读出。flash 路径已弃用（BT enable 后 ROM flash 写不可靠，实测扇区始终 0xFF）。
 const diag_blk_magic: u32 = 0xD1A6_B007;
-const diag_blk_off: u32 = 0x186_000;
+/// LP RAM 黑匣子地址（0x2E000200 起 64 字；现有 LP 槽只用到 0x0000-0x002C 与 0x0440-0x04A0）。
+const lp_blk_addr: usize = 0x2E00_0200;
 var diag_blk_tries: u32 = 0;
 var diag_blk_ok: bool = false;
 fn rd32(addr: usize) u32 {
@@ -211,11 +210,24 @@ fn diagFlashBlock(round: u32) bool {
         : [v] "=r" (-> u32),
     );
     i += 1;
-    _ = esp_rom_spiflash_erase_sector(diag_blk_off / 0x1000);
-    _ = esp_rom_spiflash_write(diag_blk_off, &b, @intCast(4 * i));
-    var chk: [1]u32 = .{0};
-    _ = esp_rom_spiflash_read(diag_blk_off, &chk, 4);
-    return chk[0] == diag_blk_magic;
+    // **写 LP RAM 黑匣子**（跨复位保留；下次开机首段读出打印）。magic 最后写，
+    // 半截数据不会被误认。BT enable 后 ROM flash 写不可靠（档案）⇒ 不走 flash。
+    const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
+    var k: usize = 1;
+    while (k < i) : (k += 1) lp[k] = b[k];
+    lp[0] = diag_blk_magic;
+    return true;
+}
+
+/// 开机首段：若黑匣子 magic 在，则逐字打印（每行 4 字）并清 magic。
+pub fn lpBlackBoxReport() void {
+    const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
+    if (lp[0] != diag_blk_magic) return;
+    var r: usize = 0;
+    while (r < 16) : (r += 1) {
+        board.log.line("BBX {d}: {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{ r, lp[4 * r], lp[4 * r + 1], lp[4 * r + 2], lp[4 * r + 3] });
+    }
+    lp[0] = 0;
 }
 
 /// **UART0 快照/恢复**（2026-11-21）：首条 HCI 命令处理期间 UART0 TX 死亡
@@ -1053,6 +1065,7 @@ pub fn run() noreturn {
             }
             lp_boot_n = @as(*volatile u32, @ptrFromInt(0x2E00_0000)).* +% 1;
             @as(*volatile u32, @ptrFromInt(0x2E00_0000)).* = lp_boot_n;
+            lpBlackBoxReport(); // 上一轮失声前的最后现场
             for (0..9) |k| {
                 lp_hist[k] = @as(*volatile u32, @ptrFromInt(0x2E00_0004 + 4 * k)).*;
             }
