@@ -28442,3 +28442,13 @@ RTC 慢时钟域一起打断。tcflush(TCIFLUSH) 清端点旗无效（ioctl 成�
 纪律：跑过 e2e --host 后，必须重跑 `components/bt-blobs/tools/build-probe.sh`
 （bin: 886656 = 全仪表栈）再烧探针；判别法 = `ls -la zig-out/bin/app.bin`
 （探针 ~886KB，生产 ~473KB）。
+
+**硬阻塞终局（2026-11-22）**：早武装 RTC WDT 在多个 25+ 分钟被动窗口 **0 触发**（与
+MWDT1 同判读）⇒ 冻结态下芯片内无任何自愈复位源：T0 NMI 停、MWDT1 停、RTC WDT 停。
+死亡现场（MWDT1 CONFIG0/门控位）在 LP 里，但唯一可达它的宿主 EN 复位刮 LP ⇒ 死锁。
+**下轮设计方向（已定案）**：死亡状态写入 **flash**（0x186000 标记扇区）而非 LP——
+NMI 在哑火窗口内若仍存活则执行 flashOpBegin+flashStage 式落盘（冻结期主核无 flash
+操作 = 无撞车）；若 T0 已死（部分哑火形态），用 RTC WDT 的**短超时档**（60 s 而非
+25 min，碎片化覆盖也够）兜底触发复位。flash 证据跨一切复位形态存活。
+前置条件：物理插拔适配器（唯一能打断当前死锁的动作），通道恢复后立即烧
+`dd3a9f8+fe6372e` 全仪表栈镜像（zig-out 已重建就绪）。
