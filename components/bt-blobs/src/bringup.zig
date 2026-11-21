@@ -80,7 +80,7 @@ export fn s31_bt_raw_line(s: [*:0]const u8) void {
 
 extern fn r_btdm_sleep_set_sleep_cb(cb: ?*const anyopaque, arg: ?*anyopaque, a2: u32, a3: u32, a4: u32) c_int;
 var sleep_cb_n: u32 = 0;
-fn btSleepCb(a0: u32) callconv(.c) void {
+pub fn btSleepCb(a0: u32) callconv(.c) void {
     // **桩 sleep 回调**（btdm_sleep.c 的真实实现会做 RTC timer 武装等）。
     // 回调纪律：未知上下文（可能 trap/ISR）被 jalr ⇒ 纯 RAM 计数自增，
     // 不打日志/不写外设/不碰 flash（本仓反复实证的 trap 上下文不安全类）。

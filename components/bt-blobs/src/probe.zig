@@ -1158,6 +1158,30 @@ pub fn run() noreturn {
     @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
     @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
+    // **RTC SOC_WAKEUP 中断路由 + handler**（sleep 唤醒软件半环）：
+    // MAP(+0x1fc) 把 MODEM_LP_TIMER 源路由到 CLIC input 6 ⇒ trap 置旗 ⇒
+    // 泵循环调已注册的 sleep 回调（主上下文安全）⇒ sleep 完成 ⇒ 分发环退出。
+    {
+        const intcore: usize = 0x2058_5000;
+        const map_reg: *volatile u32 = @ptrFromInt(intcore + 0x1fc);
+        const map_def = map_reg.*;
+        const wake_input: u32 = 6;
+        map_reg.* = wake_input;
+        board.trap.rtc_wake_on = true;
+        // CLIC input 6 门控：IE(bit8) + prio(bit30:28)=1
+        const clic6: *volatile u32 = @ptrFromInt(0x1080_1000 + wake_input * 4);
+        clic6.* = (clic6.* & ~@as(u32, 0xFFFF_FFFF)) | (1 << 8) | (1 << 30);
+        // RTC 比较武装：target0 = counter + 2s，TAR_EN0 触发，INT_ENA bit31
+        const rtb: usize = 0x2080_0000;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
+        const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 2);
+        @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x08)).* = 1 << 31;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31;
+        osal.logPublic("bt probe: rtc wake routed in={d} (def=0x{x:0>6}) armed cnt=0x{x:0>8}", .{ wake_input, map_def, cnt });
+    }
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
@@ -1456,6 +1480,11 @@ pub fn run() noreturn {
     var hscan_done: bool = false;
     var diag_round: u32 = 0;
     while (true) : (round += 1) {
+        // **RTC SOC_WAKEUP 旗**：主上下文调已注册的 sleep 回调（trap 只置旗）
+        if (board.trap.rtc_wake_flag != 0) {
+            board.trap.rtc_wake_flag = 0;
+            bringup.btSleepCb(0);
+        }
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）

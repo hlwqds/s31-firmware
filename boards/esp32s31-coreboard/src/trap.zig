@@ -558,6 +558,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // **定时器重装移到分发之前**：归档若用 `intr_handler_set` 接管 input 25，
         // 原实现（只在 `h.fn_` 分支里重装）会让定时器再也不重装 ⇒ 中断枯竭 ⇒ 采样变稀。
         // 这里无条件重装（仅按 input 判断），与是否装了 handler 无关。
+        // **RTC SOC_WAKEUP**（MAP 路由 input 6）：置旗+清挂起，主循环调回调
+        if (input == 6 and rtc_wake_on) {
+            rtc_wake_flag +%= 1;
+            rtc_wake_n +%= 1;
+            @as(*volatile u32, @ptrFromInt(0x2080_0034)).* = 1 << 31; // INT_CLR bit31
+        }
         if (input == 25) {
             hw.ackT0Interrupt(sample_period_us);
             // **前置验证**：NMI 到底还在不在触发？
@@ -1139,6 +1145,11 @@ var bp_last_tsel: u32 = 0;
 
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：
 pub var udiv_watch_on: bool = false;
+// **RTC SOC_WAKEUP 中断**（MAP 路由到 CLIC input 6）：trap 上下文只置旗+
+// 清挂起，主上下文泵循环调 sleep 回调（trap 内不打日志/不调函数——安全纪律）
+pub var rtc_wake_on: bool = false;
+pub var rtc_wake_flag: u32 = 0;
+pub var rtc_wake_n: u32 = 0;
 pub var rtc_freq_rb: u32 = 0; // bringup 早补丁回读（0=补丁未跑/对象 OOB）
 var obj_dump_k: u32 = 0; // sleep 对象轮转窗偏移（每次 NMI3 +4，模 96）
 pub var udiv_addr: u32 = 0;
