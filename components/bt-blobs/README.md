@@ -28166,3 +28166,15 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
    `6->6` 恒定 ⇒ **位图静态、无活体重写器**（若 PMU 状态机实时改写，后续轮
    会读回 4——数据为反）⇒ ICG 层排除结论加强。
 3. 提交信息勘误：f47bf10 的"PMU 实时改写 ICG 位图实证"措辞与数据相反，以本条为准。
+
+**rx 旗门实验证伪 + 真断点定位（2026-11-21 末轮）**：
+- `rx flag 1->1 ctx=0x2f024f20`——旗在 fwd06 前**已是 1** ⇒ 旗门理论亦证伪
+  （status 语义/旗门/缓冲三层全证伪）。**真断点 = `r_btdm_hci_trans_buf_alloc
+  (TYPE_CMD)` 返回 null**（fwd06 ret=-3 的实际来源，"buf_alloc returned null"
+  行实证）。TYPE_CMD 池按 hci_cmd_num=2 配置——首条命令即 null ⇒ 池未填充
+  （hci_trans 的 pool alloc init 步骤缺失？官方 hci_transport_init 内部含池
+  创建——我们调了 r_btdm_hci_trans_register_tx 但可能漏了池 alloc/init 调用）
+  或池被此前 B 路径实验（r_ble_hci_trans_buf_alloc，type 3，另一池）耗尽。
+- 下轮入口：反汇编 `r_btdm_hci_trans_buf_alloc`（0x4005e518）读其池选择/
+  门控逻辑；对照官方 hci_transport_init 的池创建调用清单（漏调用 = 补调用；
+  池被耗尽 = 查泄漏）。
