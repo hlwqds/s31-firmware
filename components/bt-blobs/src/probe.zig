@@ -285,9 +285,6 @@ pub fn lpBlackBoxReport() void {
                 board.hw.delayUs(5000); // FIFO 只有 128B,报告行间不排空 ⇒ 后续行被丢
             }
         }
-        // **UAR 行**:UART0 compare/restore 差分(0=从未差分;off=0x100 ⇒ CLKRST+0x88)
-        const ub2: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
-        if (ub2[3] != 0) board.log.line("UAR off={x} was={x} now={x} rd={d}", .{ ub2[0], ub2[1], ub2[2], ub2[3] });
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
         board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d} cpufreq=0x{x:0>8}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.*, @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* });
         board.hw.delayUs(5000);
@@ -1461,6 +1458,15 @@ pub fn run() noreturn {
     // （看门狗原武装点 fwd06 前覆盖不到）。cpu_reset 保 LP ⇒ 任何冻结 ≤25 min
     // 内数字复位 ⇒ 下 boot 打印黑匣子。fwd06 前的再武装只是续期。
     board.hw.armRtcWdt(true, 49_300_000);
+
+    // **RTC 慢时钟源钉死 RC_SLOW**(ROOT_CLK_CONF bits[25:23]=0)：默认源含
+    // 外部 32.768k 晶振——本板未焊 ⇒ blob 时钟代码切到该源时 RTC 域整体停摆
+    // (ULP/RTC WDT 全死,25min 窗 0 触发的根因理论)。RC_SLOW 为片内振荡器。
+    {
+        const ra: usize = 0x2070_1000;
+        const v = @as(*volatile u32, @ptrFromInt(ra)).*;
+        @as(*volatile u32, @ptrFromInt(ra)).* = v & ~(@as(u32, 7) << 23);
+    }
 
     // **ULP 守护者载入+启动**：RTC 慢时钟域的 RV32 内核，HP 域全门控仍运行。
     // 程序 = 周期性重使能 RTC WDT(CONFIG0/CONFIG1,不碰 FEED ⇒ 计数不清零)

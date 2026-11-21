@@ -607,6 +607,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 b2[7] = ck[0x88 / 4]; // **UART0 时钟门控**(HP 域安全位;清零=门控实锤)
                 // **时钟永活回写**(每 tick):blob 时钟代码反复门控 UART0/TIMERGRP
                 // ⇒ 哑火+看门狗全哑。泵回写一轮输一次,这里 2 ms 一次 ⇒ 永活。
+                // **RTC 慢时钟源重申 RC_SLOW**(bits[25:23]=0):blob 再切外部
+                // 32k(未焊)也被 2ms 内压回 ⇒ RTC 域(ULP/RTC WDT)永不死。
+                {
+                    const ra2: usize = 0x2070_1000;
+                    const v2 = @as(*volatile u32, @ptrFromInt(ra2)).*;
+                    @as(*volatile u32, @ptrFromInt(ra2)).* = v2 & ~(@as(u32, 7) << 23);
+                }
                 const cs2: [*]volatile u32 = @ptrFromInt(0x2E00_0560);
                 if (cs2[3] == 0xCAFE_0001) {
                     ck[0x88 / 4] = cs2[0];
