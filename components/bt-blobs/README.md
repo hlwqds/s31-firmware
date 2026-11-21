@@ -28099,3 +28099,9 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
   btdm_lp.c（474 行，含 wake_up_cb/retention/modem_clock 全调用链）。
 - 下轮：逐行对拍官方 enable 路径（esp_bt_controller_enable → 内部 BB 启动）
   与我们的 probe 步骤差集；或先核 47C 寄存器写敏感的前置（写-回读纪律）。
+
+**官方对拍完成（2026-11-21）**：esp32s31/bt.c 官方 init+enable 调用序列与
+我们的 bringup 步骤**完全对齐**（elem_mempool→log_init(0)→external_init(0)→
+coex→lp_clk(4 调用已展开)→task_init→lp_init→hci_fc_env→ble_stack(9-13)→
+hci_transport→enable 链 16-20）。缺步排除 ⇒ BB 不转的差异在 blob 内部对
+RF/PHY 域状态的消费（47C 测量通道未启动的上游 = PMU 状态机/RF 电源岛）。
