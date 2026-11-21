@@ -489,6 +489,11 @@ pub fn run() noreturn {
     if (dump_rom) {
         dumpRom("A", 0x2f83efb0, 96);
         dumpRom("B", 0x2f812180, 160);
+        // **ROM BB 分发考古（2026-11-21）**：链头 handler 0x2f8127ec（ctx[4] 间接跳）
+        // 与链表成员——找 ctx（0x2f07f1F4）的惰性初始化或真 ISR 线索。
+        dumpRom("CH", 0x2f8127c0, 0x140);
+        // ctx 表区：0x2f07f190-0x2f07f210（链表头 0x2f07f19c + ctx 槽 0x2f07f1F4）
+        dumpRom("CT", 0x2f07f190, 0x80);
         dumpRom("U", 0x2038A000, 64);
     }
 
@@ -1085,7 +1090,8 @@ pub fn run() noreturn {
     // **任务入口 fn=0x2f000000 之谜**：blob 基址处是什么？可执行代码还是空 RAM？
     dumpRom("base0", 0x2f000000, 0x40);
     dumpRom("base800", 0x2f000800, 0x20); // 对照：trapEntry 在位（我们自己的代码）
-    dumpRom("isr37h", 0x2f07f188, 0x60); // 表头完整字：定位 blob handler 条目的外部号
+    dumpRom("isr37h", 0x2f07f188, 0xB0);
+    dumpRom("chead", 0x2f8127ec, 0x50); // 链头 handler 本体：解码 ctx 期望与真 ISR 线索 // 表头完整字 + ctx 槽 0x2f07f1F4（+0x6C）⇒ 覆盖到 0x2f07f238
     // **ROM BT init 区 dump**：找写 0x2f07f1F4（ctx 指针槽）的初始化函数——
     // 离线 grep `lui 0x2f07f` + `sw 500(` 定位 ctx 建立调用。
     dumpRom("btini", 0x2f814000, 0x400);

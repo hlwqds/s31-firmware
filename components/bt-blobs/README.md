@@ -28054,3 +28054,16 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
 - 下轮：按 write-readback 纪律核 98BC bit2 的置位前提（RF 电源/时钟门），
   或直接移植 esp-idf esp32s31 的 pmu RF 上电序列（controller/esp32s31/
   bt.c 官方源码已在 IDF 树确认存在）。
+
+**ROM BB 分发 ctx 解码（2026-11-21，chead dump 轮）**：
+- 链头 handler（0x2f8127ec，48B）完整解码（tools/rom-chead.asm）：
+  `a0=[0x2f07f1F4]`（ctx 指针）→ `[a0+8]=1`（状态）→ `a5=[a0+4]`（真 ISR）→
+  `[a0+95]=0` → `a5!=0 && byte[a0+10]!=0` 才 `jr a5(a1=-3)`，否则安全 ret。
+- **ctx 结构布局定案**：+4=真 ISR、+8=状态旗、+10=使能旗、≥96B（+95 scratch）。
+- **当前 [0x2f07f1F4] = 0x02010764（非零！旧"全零"结论作废）**——指向硬件
+  寄存器区 ⇒ handler 写 HW reg + `jr [0x02010768]` 读寄存器值当跳转目标 =
+  "代跑即崩 ×7"的精确机制。
+- **下轮修复配方**：静态 128B ctx（+4=真 BB ISR——ROM 深挖或 blob 符号扫描；
+  +10=1 使能；[0x2f07f1F4]=ctx 地址）⇒ input53 IE 开 ⇒ BB 事件进链。
+- 配套 dump：rom-btini.asm（0x2f814000+1KB，引用 0x2f07f1fc 结构——另一
+  ROM 分发结构，与 ctx 相邻 8B）；isr37h 扩展到 0xB0（ctx 槽 +0x6C 覆盖）。
