@@ -28157,3 +28157,12 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
   ——Event 包装器加 `raw: ?usize` 字段（裸指针直通），Get 时归还池对象并
   返回裸指针；unlinkIfQueued 对包装器不变（只碰 next/queued）。主机测试加
   裸指针 roundtrip 用例。零回归面：此前裸 put 全部静默 no-op。
+
+**rx ENABLED 旗门发现 + 两点勘误（2026-11-21 收官补注）**：
+1. `fwd06 ret=-3` = rx（`r_btdm_hci_trans_rx`）的 **ENABLED 旗门出口**
+   （.L50 `li a0,-3`，byte[ctx] bit0 未置，ctx=[2f011020]）——**不是缓冲耗尽**
+   （耗尽会打 "buf_alloc returned null"）。修复 = `[2f011020]+0 |= 1`（已入 probe）。
+2. ICG 位图勘误：`icg 4->6` 每 boot 恰一次（diag 重修 boot 写的 0x4），其后
+   `6->6` 恒定 ⇒ **位图静态、无活体重写器**（若 PMU 状态机实时改写，后续轮
+   会读回 4——数据为反）⇒ ICG 层排除结论加强。
+3. 提交信息勘误：f47bf10 的"PMU 实时改写 ICG 位图实证"措辞与数据相反，以本条为准。

@@ -1442,6 +1442,20 @@ pub fn run() noreturn {
             const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
             ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 BB 链）
         }
+        // **rx/buf_alloc 共用的 ENABLED 旗**（rx .L50 = li a0,-3 出口；buf_alloc
+        // 同门前置）——ctx = [2f011020]，旗 = byte[ctx] bit0。官方由
+        // esp_bt_controller_enable 置位；我们直调 r_* 从未置 ⇒ 注入/分配全被拒。
+        {
+            const hctx: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
+            if (hctx >= 0x2f00_0000 and hctx < 0x2f10_0000) {
+                const fp: *volatile u8 = @ptrFromInt(hctx);
+                const before: u8 = fp.*;
+                fp.* |= 1;
+                osal.logPublic("bt probe: rx flag {d}->1 ctx=0x{x:0>8}", .{ before, hctx });
+            } else {
+                osal.logPublic("bt probe: rx ctx oob=0x{x:0>8}", .{hctx});
+            }
+        }
         mark.put(0x78, 0xADC0B10c, 0);
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
