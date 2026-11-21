@@ -494,23 +494,9 @@ pub fn init(cfg: *config.Config) c_int {
             }
             osal.logPublic("bt probe: cb10 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
 
-            // **STORE 观察点**：gvLJK4 EXEC 零命中 ⇒ 摘链 = ROM 直接写
-            // predecessor.next=0。捕获 id6 节点（=未来 predecessor）地址，
-            // STORE 观察点钉其 +8——ROM 写 0 瞬间 trap，ra 经 trap dump 显形。
-            {
-                const waddr: u32 = @truncate(watch_node6 + 8);
-                @import("board").trap.udiv_addr = waddr;
-                @import("board").trap.udiv_watch_on = true;
-                asm volatile ("csrw 0x7a0, zero"); // tselect=0
-                asm volatile ("csrw 0x7a2, %[a]"
-                    :
-                    : [a] "r" (waddr),
-                );
-                asm volatile ("li t4, 0x4a"); // STORE|U|M
-                asm volatile ("csrw 0x7a1, t4");
-                asm volatile ("li t4, 0x88"); // MTE 使能
-                asm volatile ("csrw 0x7a5, t4");
-            }
+            // STORE 观察点已拆除（2026-11-21）：写者已抓到（=step10 后 rtc_freq
+            // 补丁，已修复）；留置会在 post-enable 区误命中 ⇒ trap 风暴 ⇒
+            // rst:0x1a lockup ⇒ 毒化后续 boot（80-boot 窗 69/80 死 step4）。
         } else {
             osal.logPublic("bt probe: cb10 head oob=0x{x:0>8}", .{p0});
         }

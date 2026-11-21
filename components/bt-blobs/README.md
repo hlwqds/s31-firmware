@@ -27997,3 +27997,13 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
   （a0 递减、a2/a3=0x2f01f3c0）＝下一阶段起点。
 - **方法论**：STORE 观察点第一次命中因写者=自身补丁而"仪器自证失败"——
   但写者身份恰是答案；判读纪律 = 命中后先 addr2line 写者指令再定性。
+
+**破墙后新态（2026-11-21，store-watch 拆除后 clean 窗口 3/3 boot 一致）**：
+- 全 init（step1-20+）通过、分发环活、**HCI 0x2006（Reset）+0x2008 送出、
+  fwd06 ret=0**、`osal> eventRun` 泵活、panic=0。
+- **新前沿：`hci <<` 回包 = 0**——sleep 轮"0x2006 无 Command Complete"悬案
+  在新层重现 = **BB 事件链未送达**（BB 中断→eventq→分发的 INT_EN 运行时），
+  即三线规划的第 ② 线入口。
+- 教训追加：诊断观察点用完即拆——STORE watch 留置在 post-enable 区被
+  BT 任务/ROM 的正常写误命中 ⇒ trap 风暴 ⇒ rst:0x1a lockup ⇒ 80-boot 窗
+  69/80 死 step4 的假回归（拆后 3/3 boot 全过 init）。
