@@ -28178,3 +28178,15 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
 - 下轮入口：反汇编 `r_btdm_hci_trans_buf_alloc`（0x4005e518）读其池选择/
   门控逻辑；对照官方 hci_transport_init 的池创建调用清单（漏调用 = 补调用；
   池被耗尽 = 查泄漏）。
+
+**buf_alloc 链路定案（2026-11-21 真末轮）**：
+- hci ctx（[2f011020]=0x2f024f20）**非空且旗=1**（rx flag 1->1 读数）——ctx 由
+  OkE7→PsB8→DkIe 链在 task_init 内建立 ✓（静态核证：OkE7 @40061ab0 调
+  PsB8(4005d71c)→DkIe(4005d6c2)→写 [2f011020]）。
+- 真断点 = `r_btdm_hci_trans_buf_alloc(TYPE_CMD)` 返回 null：cmd 池按
+  hci_cmd_num=2 创建——首条 fwd06 即 null ⇒ 池空/创建失败/被 blob 内部消费。
+  TYPE_CMD 路径走 ctx+28 的池引用（.L29 后分支），CMD 专池分支在 .L40
+  （0x4005e576，未反汇编）。
+- 下轮入口：反汇编 .L40（0x4005e576）读 CMD 专池取缓冲逻辑；对照
+  hci_transport_init（step 15）内部的池创建调用（hci_cmd_num=2 池是否真的
+  建了/建在哪）。这是纯 blob 内部分配器行为，环境面已全排除。
