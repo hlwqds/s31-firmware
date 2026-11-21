@@ -288,7 +288,6 @@ pub fn lpBlackBoxReport() void {
         // **UAR 行**:UART0 compare/restore 差分(0=从未差分;off=0x100 ⇒ CLKRST+0x88)
         const ub2: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
         if (ub2[3] != 0) board.log.line("UAR off={x} was={x} now={x} rd={d}", .{ ub2[0], ub2[1], ub2[2], ub2[3] });
-        board.hw.delayUs(5000);
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
         board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d} cpufreq=0x{x:0>8}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.*, @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* });
         board.hw.delayUs(5000);
@@ -1758,6 +1757,8 @@ pub fn run() noreturn {
             clk_snap[0] = c[0x88 / 4];
             clk_snap[1] = c[0x114 / 4];
             clk_snap[2] = c[0x11C / 4];
+            // NMI 看门狗重武装使能旗(0x570:与 clk_snap 0x560-0x56C 不冲突)
+            @as(*volatile u32, @ptrFromInt(0x2E00_0570)).* = 0xBEEF_0001;
             // 传给 NMI(NMI 每 tick 据此回写——主核冻结后仍保时钟活)
             const cs: [*]volatile u32 = @ptrFromInt(0x2E00_0560);
             cs[0] = clk_snap[0];

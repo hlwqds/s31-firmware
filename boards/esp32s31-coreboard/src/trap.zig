@@ -616,19 +616,19 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // **看门狗重武装**(每 tick):blob task_init 会解除 TIMG1 MWDT
                 // (esp_task_wdt,握 WPROTECT key)——2ms 内重写 CONFIG0 使能,
                 // 计数不清零 ⇒ 超时必然到来 ⇒ 冻结必有 rst:0x8。
-                const wd_flag: *volatile u32 = @ptrFromInt(0x2E00_0564);
+                const wd_flag: *volatile u32 = @ptrFromInt(0x2E00_0570);
                 if (wd_flag.* == 0xBEEF_0001) {
                     const w: [*]volatile u32 = @ptrFromInt(0x2058_1000);
                     w[0x64 / 4] = 0x50D8_3AA1; // WPROTECT 解锁
                     w[0x48 / 4] = 0xb81f_8000; // CONFIG0(oracle: STG0=中断 STG1=系统复位)
                     w[0x4C / 4] = 0x9C40_0000; // STG0_HOLD 10s
                     w[0x50 / 4] = 0x9C40_0000; // STG1_HOLD
-                    w[0x64 / 4] = 0;           // 上锁
+                    w[0x64 / 4] = 0; // 上锁
                     const rw: [*]volatile u32 = @ptrFromInt(0x2080_1000);
                     rw[0x18 / 4] = 0x50D8_3AA1; // WPROTECT
                     rw[0x20 / 4] = 0x50D8_3AA1; // SWD WPROTECT
                     rw[0x00 / 4] = 0xA001_0800; // CONFIG0: EN+PROCPU+STG0=2+bit16
-                    rw[0x04 / 4] = 49_300_000;  // CONFIG1.STG0_HOLD(360s@137kHz)
+                    rw[0x04 / 4] = 49_300_000; // CONFIG1.STG0_HOLD(360s@137kHz)
                     rw[0x18 / 4] = 0;
                     rw[0x20 / 4] = 0;
                 }
