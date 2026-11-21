@@ -185,6 +185,16 @@ pub fn resetStats() void {
     stats_state = .{};
 }
 var stats_state = Stats{};
+/// 任务真阻塞所在的信号量槽（一次登记；判读"谁该 post 它"用）。
+pub var last_park_sem: usize = 0;
+var sem_park_logged: bool = false;
+/// **隔离实验**（2026-11-21）：置位后 semPend 的 FOREVER 真阻塞改为
+/// 有界让出自旋（约 100 万次协作让出），到期返 TIMEOUT。用途：判"任务
+/// park 的 sem 是否是唯一堵点"——若任务回到循环能处理已入队 HCI 命令
+/// （出回包），墙在 BB 就绪链；仍无回包则墙更靠前。init 期不受影响
+/// （置位时机由调用方控制）。
+pub var sem_park_bounded: bool = false;
+var sem_park_spins: u32 = 0;
 
 pub const Stats = struct {
     sem_pend_ok: u32 = 0,
@@ -193,6 +203,8 @@ pub const Stats = struct {
     mutex_pend_busy: u32 = 0,
     eventq_put: u32 = 0,
     eventq_get_ok: u32 = 0,
+    event_run_count: u32 = 0,
+    event_run_no_slot: u32 = 0,
     raw_q_dropped: u32 = 0,
     eventq_get_empty: u32 = 0,
     cooperative_yields: u32 = 0,
@@ -354,6 +366,25 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
         if (timeout == forever and sched.isStarted() and s.waiter == null) {
             stats_state.blocked_calls += 1;
             s.waiter = sched.currentContext();
+            // **park 身份一次性打印**（2026-11-21）：任务停在哪个信号量上。
+            if (!sem_park_logged) {
+                sem_park_logged = true;
+                last_park_sem = @intFromPtr(slot);
+                logPublic("bt osal: task parked sem=0x{x} ctx=0x{x}", .{ last_park_sem, @intFromPtr(s.waiter.?) });
+            }
+            if (sem_park_bounded) {
+                // 有界替代：让出 + 重新检查，超界返 TIMEOUT。
+                sched.block();
+                sem_park_spins += 1;
+                if (sem_park_spins >= 1_000_000) {
+                    sem_park_spins = 0;
+                    s.waiter = null;
+                    stats_state.sem_pend_timeout += 1;
+                    return TIMEOUT;
+                }
+                s.waiter = null;
+                continue;
+            }
             sched.block();
             s.waiter = null;
             continue; // 被唤醒后重新检查计数
@@ -755,7 +786,11 @@ pub fn eventDeinit(slot: *Slot) void {
 
 pub fn eventRun(slot: *Slot) void {
     trace("eventRun", .{});
-    const e = slotGet(Event, slot) orelse return;
+    const e = slotGet(Event, slot) orelse {
+        stats_state.event_run_no_slot += 1;
+        return;
+    };
+    stats_state.event_run_count += 1;
     if (e.fn_) |f| f(e.arg);
 }
 

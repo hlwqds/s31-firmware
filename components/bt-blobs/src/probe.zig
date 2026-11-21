@@ -1457,6 +1457,9 @@ pub fn run() noreturn {
             }
         }
         mark.put(0x78, 0xADC0B10c, 0);
+        // **隔离实验武装**（2026-11-21）：task 建立且首轮事件消费完毕后，把
+        // semPend FOREVER 真阻塞换成有界让出——判"park 的 sem 是否唯一堵点"。
+        osal.sem_park_bounded = true;
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
@@ -1560,7 +1563,14 @@ pub fn run() noreturn {
             osal.logPublic("bt probe: rtc wake cb fired n={d}", .{board.trap.rtc_wake_n});
             bringup.btSleepCb(0);
         }
-        if (ctrl_task) |t| sched.resumeTask(&t.ctx);
+        // **批量让出**（2026-11-21）：log-internal 洪水期任务每次 resume 只前进
+        // 一个日志调用（tpc 恒定于 r_ble_log_internal_x0 的 sink 调用点），
+        // 单次 kick 进展率冻结 ⇒ 每轮批 200 次（每次一个让出点，任务在
+        // handler 内推进 200 个日志调用/轮）。
+        if (ctrl_task) |t| {
+            var kick: u32 = 0;
+            while (kick < 200) : (kick += 1) sched.resumeTask(&t.ctx);
+        }
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
         // **RTC counter 锁存触发**：RTC_TIMER 的 counter 读数需要 update 位
@@ -1629,11 +1639,23 @@ pub fn run() noreturn {
             const icg_bt: u32 = (icgreg.* >> 16) & 0xF;
             if (icg_bt == 0x4) icgreg.* = (icgreg.* & ~@as(u32, 0xF0000)) | (0x6 << 16);
             const icg_after: u32 = (icgreg.* >> 16) & 0xF;
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} brg={d}/{d}/{d}", .{
-                icg_bt, icg_after, (r98 >> 2) & 1, fe_cnt, st.eventq_put, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped,
+            // **槽位/闸门判读行**（2026-11-21）：getok/evrun 判"任务是否消费+
+            // handler 是否被调"；c0=ctx[0]（bit0=启用、bit1=BLE 标志）、
+            // c32=ctx[32]（回包回调指针）判派发器 .L365 静默闸门。
+            var c0: u32 = 0;
+            var c32: u32 = 0;
+            {
+                const ctxp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
+                if (ctxp >= 0x2f00_0000 and ctxp < 0x2f90_0000 and ctxp % 4 == 0) {
+                    c0 = @as(*volatile u32, @ptrFromInt(ctxp)).*;
+                    c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
+                }
+            }
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} c0=0x{x:0>8} c32=0x{x:0>8} pk=0x{x:0>8} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d}", .{
+                icg_bt, icg_after, (r98 >> 2) & 1, fe_cnt, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, c0, c32, osal.last_park_sem, tpc, bringup.stub_blocks, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped,
             });
-            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
-                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
+            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} getok={d} evrun={d}/{d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
+                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
             });
             // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。
