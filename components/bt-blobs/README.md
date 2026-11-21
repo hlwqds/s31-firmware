@@ -27899,3 +27899,11 @@ NMI6=0：失败 boot 未达 cbv 门（stall 于 steps 11-19 halt 磨环）⇒ 96
 内容仍待带出。**下轮工具链齐备**：①NMI6 轮转窗（已入库，需到达 park 的
 boot）；②step17 失败根因（sleep_en=1 构建的 step17 间歇——与脏 RAM
 boot 依赖合并分析）。
+
+**RTC 比较未触发新线索（2026-11-21 真收官）**：长窗（260s）boot 落 step17
+失败形态（整窗 halt 磨环）；NMI 主行 **ir=0x20000000**（bit31=SOC_WAKEUP
+=0、bit28=tick=1）⇒ **target0 写入（cnt+2s）后比较未发生**——候选：①
+TAR_EN0/INT_ENA 写入未保留（读回待验）；②counter 未真走动（137kHz 标定
+是 ch23 构建实测，BT 探针构建的 clk_en 位状态未验）；③比较事件条件另有
+使能位。下轮寄存器级核对（一轮）：读回 target0/TAR_EN0/INT_ENA + 两次
+锁存读 counter 差值（走动判据）⇒ 定位后补上 ⇒ sleep 唤醒链闭合。
