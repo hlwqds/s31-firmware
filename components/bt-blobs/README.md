@@ -28535,3 +28535,11 @@ DREG 字段）也**不在** LP_ADI 空间（0x2080_5000 仅 DCDC TOP-2/PM TOP �
 剩余嫌疑空间 = **PMU ana（0x2070_4200-500，ana peri pwr 已由我方上电）**——下轮枚举
 该区全部寄存器（esp32s31 pmu_reg.h 的 ana peri 段 + 实测对照），锁定 blob PHY init
 触碰的 LP 域时钟/电源关断位。
+
+**blob 二进制补丁方向（2026-11-22 最终定案）**：全部在片防御（NMI 保活/重武装/ULP/
+RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一剩余手段 = **NOP 掉 blob
+镜像中的看门狗解除调用**（本仓已建立 blob 镜像补丁技术）。符号入口已定位：
+
+- `bt_bb_wdt_init @ 0x4005bbd0`、`bb_wdt_get_status/int_enable/rst_enable/timeout_clear @ 0x40062c2a-3a`（app.elf 符号表 ✓）
+- **PHY 归档 WDT 函数表 @ 0x2f801484-490**：`phy_bb_wdt_int_enable(488)/rst_enable(48c)/timeout_clear(490)` 绝对指针——blob 运行时的 WDT 控制走这张表
+  下轮：反汇编 bt_bb_wdt_init 与 PHY 表调用点 → 定位 disarm 调用序列 → NOP → 重烧。
