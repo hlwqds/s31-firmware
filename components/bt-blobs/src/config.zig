@@ -227,7 +227,7 @@ test "config: 默认值可填、魔数落位" {
     c.btdm.task_stack_size = 4096; // **照 IDF**：实测 env+28 与 oracle 的唯一差异就在这里（8192 vs 4096）
     c.ble.controller_task_stack_size = 8192; // 两处保持一致
     c.btdm.task_prio = 23;
-    c.btdm.hci_cmd_num = 5;
+    c.btdm.hci_cmd_num = 8; // 2026-11-21：线性区 5 次 A 路径诊断发送 + fwd06 ⇒ 2/5 必耗尽；官方默认 5，取 8 留裕量
     c.btdm.hci_conn_num = 3;
     std.testing.expectEqual(@as(u32, 0x5A5AA5A5), c.ble.config_magic) catch unreachable;
     std.testing.expectEqual(@as(u64, 32_000), c.ble.rtc_freq) catch unreachable;
@@ -276,7 +276,7 @@ pub fn defaults() Config {
         .task_stack_size = 4096, // **照 IDF**（实测 env+28 的唯一差异就在此：8192 vs 4096）
         .task_prio = 23,
         .task_run_cpu = 0,
-        .hci_cmd_num = 2, // CONFIG_BT_CTRL_HCI_CMD_NUM 默认
+        .hci_cmd_num = 8, // 2026-11-21：2 ⇒ 线性区 5 次 A 路径诊断发送即耗尽；取 8
         .hci_conn_num = 3, // max_connections + iso_cis + iso_bis
         // **sleep_en=0 回退（2026-11-21 试验终判）**：=1 时对象建成 ✓ 但 blob
         // 时间换算（koby0AUV/H2OWtZ 系）每 ticks↔µs 一次 64 位软件除法

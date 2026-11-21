@@ -28204,3 +28204,11 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
 - 下轮入口：①核我们 Packet.type 字段的偏移是否 = blob 读的 byte[11]
   （@offsetOf(Packet,"type") vs 11）；②若对齐，则 blob task 处理 Reset 时
   的内部前置（RF/BB ready 检查？）逐层对照官方 hci 处理路径。
+
+**hci_cmd_num 修复生效（2026-11-21 终）**：defaults hci_cmd_num 2→8
+（config.zig:279）后 **fwd06 ret=0 ×10**——HCI 命令首次被 blob 接受；
+`bt hci >> CMD opcode=0x2006 plen=15` 打印 ✓；qput 3→7（4 条 A 路径命令
+eventqPut 成功入队 ✓）。**剩余墙：ctx+12 队列无人消费**——命令入的队列
+（hci_trans env+12）≠ 任务 park 的队列（env+8），btdm_tx/evt_count 仍 0。
+下轮：pump diag 行加 eventq_get_ok 计数 + put 队列身份打印，一轮分辨
+"孤儿队列" vs "任务收到未处理"。
