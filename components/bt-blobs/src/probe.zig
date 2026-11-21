@@ -1869,16 +1869,6 @@ pub fn run() noreturn {
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
         // 墙的位）；F818.CONF0 bit27 = ana 事务相位（官方在事务完成后清）。
         // 泵窗内的活读数，不经 LP/flash，无下载刮花问题。
-        // **UART 失声检测**：TXFIFO 卡 ≥120 达 2 轮 ⇒ 写 LP 快照 + 软复位交出证据。
-        {
-            const txcnt = (@as(*volatile u32, @ptrFromInt(0x2038_A01C)).* >> 16) & 0xFF;
-            if (txcnt >= 120) uart_stuck_rounds +%= 1 else uart_stuck_rounds = 0;
-            if (uart_stuck_rounds >= 2 and !uart_mute_done) {
-                uart_mute_done = true;
-                uartMuteSnapshot(@intCast(round));
-                @import("board").hw.softwareResetPub();
-            }
-        }
         if (round % 200 == 0) {
             diag_at = now;
             // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲

@@ -351,13 +351,13 @@ pub fn init(cfg: *config.Config) c_int {
         rec[1] = mmioRd(0x2010_9C14);
         rec[2] = mmioRd(0x2010_F018);
         rec[3] = mmioRd(0x2058_7040);
-        _ = ese(0x18E000 / 0x1000);
-        if (freestanding) board.hw.flashOpBegin();
-        // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
-        // 不门控则与 ms 级 flash 擦写必然相撞。
+        // **先屏蔽 T0（clic25 nmies+IE）再擦写**——擦除 ~40 ms，T0 NMI 2 ms 一发，
+        // 顺序反了 ⇒ 擦除期 NMI 打进 XIP ⇒ 取指 fault ⇒ CPU_LOCKUP（实测）。
         const clic25: usize = 0x1080_1000 + 25 * 4;
         const gsaved: u32 = mmioRd(clic25);
         mmioWr(clic25, gsaved & ~@as(u32, 0x108));
+        _ = ese(0x18E000 / 0x1000);
+        if (freestanding) board.hw.flashOpBegin();
 
         _ = esw(0x18E000, &rec, 16);
         if (freestanding) board.hw.flashOpEnd();
