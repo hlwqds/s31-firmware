@@ -27978,3 +27978,22 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
   watch 地址与 relink 目标显式断言互斥（`assert(watch != relink_p16+8)`）。
 - 已确定的事实链（不变）：id2/5 内存完好（id=2/5、n2.next→n5）；cb10→cb14 间
   predecessor.next 被清；env-deinit 的 unlink 对未执行；摘链不经 ELF 内 gvLJK4。
+
+**rc=-3 根因定案 + 破墙（2026-11-21 终版，STORE 观察点抓到写者）**：
+- **根因 = bringup step10 后的"前移版 rtc_freq 补丁"自伤**：它无条件写
+  `[2f011034]obj+24=32000、obj+28=0`，而 obj+20 起是注册链节点
+  （obj+24=节点 cb 指针、obj+28=next→id2）⇒ node6.next 被清 ⇒ 链截断
+  ⇒ step17 `Hl337(2)` 扫不到 ⇒ rc=-3。STORE 观察点命中瞬间 mepc/ra
+  （0x400715a8/78 = 该补丁的内联代码，`sw zero,28(a0)`）一锤定音。
+- **一个写解释全部谜团**：id6"节点"=obj+20 字段读数；next=0；relink 无效
+  （kNIbP2qf 按尾格 [p0+4]=n5+8 追加 ⇒ 2/5 挂上已被 node6.next=0 孤立的
+  老尾段，主链不可达）；确定性（补丁每 boot 无条件执行）。
+- **修复**：该块重写为只写真 sleep 对象 `[2f011044]`（y5Dip）且仅
+  obj[24]==0&&obj[28]==0 时；probe.zig 的双候选版本保持（pre-chain 安全）。
+- **验证（修复后首个 capture）**：cb14 = `{1,0,3,4,6,2,5,0x4003}`（n=8，含
+  steps12/13 的 0x4003——截断时代从未见过）⇒ **step17 通过** ⇒ boot 首次
+  进入 step18→19→**20**（`r_btdm_task_enable`、mutex_pend OK、**BT IRQ
+  路由武装 src=124→CLIC input21**）⇒ 此后停在 0x4006b812 倒计时环
+  （a0 递减、a2/a3=0x2f01f3c0）＝下一阶段起点。
+- **方法论**：STORE 观察点第一次命中因写者=自身补丁而"仪器自证失败"——
+  但写者身份恰是答案；判读纪律 = 命中后先 addr2line 写者指令再定性。

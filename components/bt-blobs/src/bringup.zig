@@ -520,35 +520,56 @@ pub fn init(cfg: *config.Config) c_int {
     {
         const slotv: *volatile u32 = @ptrFromInt(0x2f01_1034);
         osal.logPublic("bt probe: sched slot after step10 = 0x{x:0>8}", .{slotv.*});
-        // **rtc_freq 补丁（除零修复，前移版）**：sleep 配置对象的 obj[24/28]
-        // rtc_freq u64 = 0 ⇒ 注册期间 tEePDas 的 (us×1e6)/0 除零 ⇒ rst 风暴
-        // （BP! 入口 a2/a3=0 实测）。此刻对象刚建成（controller_init 内
-        // malloc）⇒ 写 32000（RTC 32k，同 cfg.ble.rtc_freq）/0 即修复。
-        if (slotv.* >= 0x2f00_0000 and slotv.* < 0x2f10_0000) {
-            @as(*volatile u32, @ptrFromInt(slotv.* + 24)).* = 32000;
-            @as(*volatile u32, @ptrFromInt(slotv.* + 28)).* = 0;
-            // **回读验证**：写后立即读 obj+24——rb==32000 ⇒ 写成功（step17
-            // 失败另有因）；否则写异常/不可写。短行（FIFO 丢行风险最低）。
-            const rb: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + 24)).*;
-            board.trap.rtc_freq_rb = rb;
-            rtc_patch_rb = rb;
-            rtc_patch_done = true;
-            osal.logPublic("bt p: rf rb={x}", .{rb});
-            // **96B 对象全量 dump**（4 行 × 8 字）：对照官方字段找剩余零字段。
-            var q: usize = 0;
-            while (q < 96) : (q += 24) {
-                var ob: [128]u8 = undefined;
-                var oi: usize = 0;
-                const pc0 = std.fmt.bufPrint(ob[oi..], "bt o{d:0>2} +{d:0>3}:", .{ q / 24, q }) catch break;
-                oi += pc0.len;
-                var b: usize = 0;
-                while (b < 24) : (b += 4) {
-                    const w: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + q + b)).*;
-                    const pc1 = std.fmt.bufPrint(ob[oi..], " {x:0>8}", .{w}) catch break;
-                    oi += pc1.len;
+        // **rtc_freq 补丁（2026-11-21 重写）**：⚠ 旧版无条件写 [2f011034]obj+24/28
+        // ——obj+20 起是注册链节点（obj+24=节点 cb 指针、obj+28=next）⇒ 该写
+        // 把 node6.next 清零截断链 ⇒ id2/5 脱链 ⇒ step17 Hl337(2) 未命中 rc=-3
+        // （STORE 观察点抓到写者=本补丁）。真 sleep 对象在 [2f011044]。
+        // 现只写 [2f011044] 的对象，且仅 obj[24]==0&&obj[28]==0（零除活体）时。
+        const slp44: *volatile u32 = @ptrFromInt(0x2f01_1044);
+        const obj44: u32 = slp44.*;
+        if (obj44 >= 0x2f00_0000 and obj44 < 0x2f10_0000 and obj44 % 4 == 0) {
+            const lo44: *volatile u32 = @ptrFromInt(@as(usize, obj44) + 24);
+            const hi44: *volatile u32 = @ptrFromInt(@as(usize, obj44) + 28);
+            if (lo44.* == 0 and hi44.* == 0) {
+                lo44.* = 32000;
+                hi44.* = 0;
+                board.trap.rtc_freq_rb = lo44.*;
+                rtc_patch_rb = lo44.*;
+                rtc_patch_done = true;
+                osal.logPublic("bt probe: rtc_freq patch @1044 obj=0x{x:0>8}", .{obj44});
+            } else {
+                osal.logPublic("bt probe: rtc_freq nz @1044 +24=0x{x:0>8} +28=0x{x:0>8}", .{ lo44.*, hi44.* });
+            }
+        } else {
+            osal.logPublic("bt probe: rtc_freq oob @1044 ptr=0x{x:0>8}", .{obj44});
+        }
+        if (false) {
+            if (slotv.* >= 0x2f00_0000 and slotv.* < 0x2f10_0000) {
+                @as(*volatile u32, @ptrFromInt(slotv.* + 24)).* = 32000;
+                @as(*volatile u32, @ptrFromInt(slotv.* + 28)).* = 0;
+                // **回读验证**：写后立即读 obj+24——rb==32000 ⇒ 写成功（step17
+                // 失败另有因）；否则写异常/不可写。短行（FIFO 丢行风险最低）。
+                const rb: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + 24)).*;
+                board.trap.rtc_freq_rb = rb;
+                rtc_patch_rb = rb;
+                rtc_patch_done = true;
+                osal.logPublic("bt p: rf rb={x}", .{rb});
+                // **96B 对象全量 dump**（4 行 × 8 字）：对照官方字段找剩余零字段。
+                var q: usize = 0;
+                while (q < 96) : (q += 24) {
+                    var ob: [128]u8 = undefined;
+                    var oi: usize = 0;
+                    const pc0 = std.fmt.bufPrint(ob[oi..], "bt o{d:0>2} +{d:0>3}:", .{ q / 24, q }) catch break;
+                    oi += pc0.len;
+                    var b: usize = 0;
+                    while (b < 24) : (b += 4) {
+                        const w: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + q + b)).*;
+                        const pc1 = std.fmt.bufPrint(ob[oi..], " {x:0>8}", .{w}) catch break;
+                        oi += pc1.len;
+                    }
+                    ob[oi] = 0;
+                    osal.logPublic("{s}", .{@as([*:0]const u8, @ptrCast(&ob))});
                 }
-                ob[oi] = 0;
-                osal.logPublic("{s}", .{@as([*:0]const u8, @ptrCast(&ob))});
             }
         }
     }
