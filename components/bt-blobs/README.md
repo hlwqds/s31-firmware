@@ -27917,3 +27917,8 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
 ⇒ 停驻态（FAILED halt 磨环）泵停 ⇒ 旗挂起无人消费 ⇒ 下轮：halt dump 前
 消费 flag 调回调（或 RTC 中断直接路由到 blob 的唤醒 handler）⇒ sleep 完成
 ⇒ 分发环退出 ⇒ ENABLED。
+
+**rc=-3 根因状态（2026-11-21 修正）**：`3aba009` 提交信息里"混叠假说"措辞**已被驳回**，勿当结论继承：
+- 驳回依据：`ffxQrzmp`(4002c6d6)=`malloc(a1*a2)` 存回 a0 字段——`base_stack_initEnv`(step12) 的三个 slot 块是**独立 8B 分配**；`OkE7` 的 env(76B) 内 id-2/id-5 节点在 env+52/+64 **内联**，两者无重叠路径。
+- 仍未决的矛盾：`r_btdm_task_init` 返回 0 必经 `.L104`（建 id2/5）⇒ 到 step17 的 boot 链表必含 id2 ⇒ `Hl337(2)` 应命中；实测却 rc=-3（唯一 -1 源=扫描耗尽）。
+- 板侧四点打印（cblist6/pre17/post17+slots）已烧录待好 boot 取证；pre17 若含 2 而 post17 失 2 ⇒ step17 内变更；pre17 若缺 2 ⇒ 该 boot 的 task_init 未跑 .L104（脏 RAM 早期返回嫌疑）。
