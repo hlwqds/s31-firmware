@@ -28112,3 +28112,14 @@ wl2 行（9C04/9C14/08D0 = BB/MAC 中断状态）持续被截——但 BB 事件
 47C/450 判据独立定案（BB 引擎未启动），9C04 状态读数优先级降低。
 仪器纪律终版：短行置头位 + 无门控每轮打 = FIFO 竞争下唯一可靠形态；
 once-per-boot 门控会在 init 洪峰期丢失唯一机会（实测）。
+
+**ICG 修复实验排除（2026-11-21 收官）**：bt_st_map 0x4→0x6（补 MODEM 态）写
+入成功保持（阻塞通道行 `icg 4->6` 稳定），但 BB 引擎仍不启动（47C=0/fe=0/
+qput=3/brg=0/0/0 全不变）⇒ **ICG MODEM 态门控非根因**（排除项）。
+时钟面完备性终确认：SYSCON clk_conf=0x7e601002（bit30 ble timer ✓）+
+clk_conf1 BT 位组（apb/bb/mac）✓ + LPCON RTC timer 链（RC32K mux/div/en）✓
++ ICG bt_st_map=0x6 ✓——全对拍官方。
+**缺口收敛至 BB schedule arm**：controller task park 于 eventqGet 前应编程
+BB anchor/schedule 寄存器（若未写或写错，BB 引擎无调度可执行）。下轮：
+NMI6 对象窗扩抓 task park 前的 BB 寄存器写集，或官方 oracle 运行的 BB
+schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。

@@ -610,10 +610,10 @@ pub fn init(cfg: *config.Config) c_int {
             // 判别——值保持 ⇒ 写入生效（缺的不是这段）；值漂 ⇒ LP 域写问题。
             {
                 const lp: usize = 0x2010_F000;
-                const lpt: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x08)).*;
-                const m32k: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x18)).*;
-                const cc: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x1C)).*;
-                osal.logPublic("bt probe: lpcon lpt=0x{x:0>8} m32k=0x{x:0>8} cc=0x{x:0>8}", .{ lpt, m32k, cc });
+                const lpt04: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x04)).*;
+                const m32k: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x14)).*;
+                const cc18: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x18)).*;
+                osal.logPublic("bt probe: lpcon lpt04=0x{x:0>8} m32k=0x{x:0>8} cc18=0x{x:0>8}", .{ lpt04, m32k, cc18 });
             }
             // **yield 注入（2026-11-21）**：task 空转轮询环 125ms/迭代从不让出
             // ⇒ 主上下文饿死。发布我们自己的 log sink（[2f010fb4]=obj，fn@+12/+28
