@@ -284,7 +284,12 @@ pub fn defaults() Config {
         // 在除法（NMI 202/202 钉 udivmod）⇒ 睡眠路径需要**睡眠时基基础设施**
         // （RTC timer 接入/换算优化），裸机暂缓。=0 时 early-out 保护性跳过
         // （官方 oracle idf_cfg192[178]=0 同值 ⇒ 非差异点）。
-        .sleep_en = 1, // 判别轮②：udiv 断点已武装(post-init)+BP! 行带 ra/a2/a3 ⇒ 命中即出调用者+真除数
+        // **sleep_en=0（2026-11-21 post-enable 实验终判）**：=1 时 enable 后
+        // controller 进睡眠路径 ⇒ BT 域门控 ⇒ 任务自己的下一次读挂总线
+        // （单 boot 50s+ mepc 钉死 0x400056a8 lbu，a0/a3 全 0）⇒ 主上下文
+        // 卡死 ⇒ 泵停 ⇒ 唤醒回调无人跑 ⇒ 永久停顿。睡眠唤醒需不经泵的
+        // trap 内直处理——裸机暂缓，=0 先走通 HCI 事件面。
+        .sleep_en = 0,
         .version_num = 0,
         .bluetooth_mode = BTDM_CONTROLLER_MODE_BLE,
         .magic = BTDM_CONFIG_MAGIC_VALUE,

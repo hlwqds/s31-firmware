@@ -28027,3 +28027,18 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
 让出。下一阶段两条：①write-readback 找轮询环的退出位（0x2024/0x2064 域）；
 ②NMI 协作抢占（task 超时强制 swap 回主上下文）。仪器教训再录：NMI 采样
 dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其它通道。
+
+**yield 注入成功 + 事件链入口锁定（2026-11-21 深夜轮）**：
+- **yield 注入生效**：发布自有 log sink（[2f010fb4]=0x2f026000 静态区，fn@+12/+28
+  = btLogYieldStub→sched.block）⇒ task 每 125ms 空转迭代让出一次 ⇒ 饿死解除
+  （mepc 钉死 0x400056a8 → 0 次）、step17 rc17=0 每 boot、step20+ 进入分发环。
+- **新墙 = HCI 缓冲耗尽循环**：`hci_cmd_num=2` ⇒ 两轮 sendCmd 后 buf_alloc null
+  （fwd06 ret=-3）⇒ 某处 null 解引用 ⇒ PC=0 lockup ⇒ rst 循环（70× Exception 报告）。
+  缓冲不还 = Command Complete 永不处理 = 事件链未通。
+- **事件链缺失环节锁定（skill 既有记录对齐）**：`ctx 槽 0x2f07f1F4 = 全 0` =
+  ROM BT 分发上下文未初始化——blob 直调 r_btdm_* 跳过官方 esp_bt_controller_init
+  的 ROM 包装 ⇒ BB IRQ 触发后 ext37 链表 handler 读 ctx 全零无法派发 ⇒ 无事件。
+  下轮：反汇编 ROM BT init 区（0x2f81xxxx）找 `sw …,0x1F4` 写者，或对照
+  esp32c6 bt.c/btdm_lp.c 的 ROM 调用序补 ctx 建立。
+- 附：sleep_en 已回 0（睡眠门控论证伪——=0 仍同样空转，task 空闲轮询与 sleep
+  无关）；probe.zig 双候选 rtc_freq 补丁保持（pre-chain 安全）。
