@@ -1562,6 +1562,10 @@ pub fn run() noreturn {
         // 泵窗内的活读数，不经 LP/flash，无下载刮花问题。
         if (round % 200 == 0) {
             diag_at = now;
+            // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲
+            // + 0x450 振荡 = BB 测量在跑；两者静止 = BB 未启动。
+            const m47c: u32 = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
+            const m450: u32 = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
             const r98 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值：txphase 已稳定=1 多轮）
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*; // I2C0_CTRL（活值：本轮诊断行不加，见 burst 快照）
@@ -1584,6 +1588,7 @@ pub fn run() noreturn {
             const trap = @import("board").trap;
             const h5 = trap.getHandler(5);
             const h5f: usize = if (h5.fn_) |f| @intFromPtr(f) else 0;
+            osal.logPublic("bt probe: bb 47C=0x{x:0>4} 450=0x{x:0>6}", .{ m47c & 0xFFFF, m450 & 0xFFFFFF });
             osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
                 (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
             });
@@ -1591,8 +1596,19 @@ pub fn run() noreturn {
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。
             {
                 const ctxp: usize = @as(*volatile usize, @ptrFromInt(0x2f07_f1F4)).*;
-                const c4: usize = if (ctxp >= 0x2f00_0000 and ctxp < 0x2f90_0000) @as(*volatile usize, @ptrFromInt(ctxp + 4)).* else 0;
-                osal.logPublic("bt diag: ctxp=0x{x:0>8} ctx4=0x{x:0>8}", .{ ctxp, c4 });
+                osal.logPublic("bt diag: ctxp=0x{x:0>8}", .{ctxp});
+                // **HP_SYS ctx 区四字**：0x768 = BB ISR fn（缺口本体）；
+                // 0x76C = 状态、0x76A = 使能。写者=官方 init 的 ROM 绑定调用。
+                if (ctxp >= 0x0200_0000 and ctxp < 0x0202_0000 and ctxp % 4 == 0) {
+                    const w0: u32 = @as(*volatile u32, @ptrFromInt(ctxp + 0x60)).*;
+                    const w8: u32 = @as(*volatile u32, @ptrFromInt(ctxp + 0x68)).*;
+                    const wfn: usize = @as(*volatile usize, @ptrFromInt(ctxp + 0x68)).*;
+                    const wst: u32 = @as(*volatile u32, @ptrFromInt(ctxp + 0x6C)).*;
+                    _ = w0;
+                    osal.logPublic("bt diag: hpsys+68=0x{x:0>8} fn=0x{x:0>8} st=0x{x:0>8}", .{ w8, wfn, wst });
+                } else {
+                    osal.logPublic("bt diag: ctxp oob", .{});
+                }
             }
             // **自有 handlers 表全扫描（第 4 次 diag 起）**：blob 经
             // intr_handler_set(n,…) 直注的真 ISR 落在哪个外部号——路由正解钥匙。

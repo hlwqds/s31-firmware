@@ -28075,3 +28075,16 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
 方案：缺口收敛为 HP_SYS+0x768 处的 BB ISR fn 未填（读出=垃圾 ⇒ jr 即崩）。
 下轮：diag 加读 HP_SYS 0x760-0x790 四字，确认 0x768 现值；并从 ROM API 族
 （0x2f815258 家族）或 blob 的 BB ISR 注册调用反查应写入的 fn。
+
+**BB 引擎未启动定案（2026-11-21，47C/450 判据轮）**：
+- diag 短行读数（多 boot 一致）：**47C=0x0000（应 0↔0x10000 脉冲）、
+  450=0x110000 恒定（应振荡）** ⇒ BB 测量引擎从未启动（skill 判据双向用）。
+- 因果链终版：**RF/BB 引擎未启动 ⇒ 无 BB 中断（brg=0/0/0）⇒ 无事件
+  （evt_count=0）⇒ 无 Command Complete ⇒ HCI 缓冲不还（cmd_num=2 耗尽，
+  fwd06 ret=-3）⇒ 分发环停**。yield 注入后的一切观测与此自洽。
+- 上溯 = PMU RF 上电序列深层缺失（s31-pmu-rf-power-porting：RF_PWC/FE
+  全组/ICG 落地后校准仍挂 ⇒ "官方 pmu 状态机层"）。
+- 下轮入口：esp-idf esp32s31 controller 源码已确认在树
+  （controller/esp32s31/bt.c 369 行官方 init 序列全在）⇒ 按官方序列逐行
+  对拍我们的 bringup（esp_phy_enable(2) 已调，RF_PWC 之外还有
+  pmu_ 状态机步骤待移植）。
