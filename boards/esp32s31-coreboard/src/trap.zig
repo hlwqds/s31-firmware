@@ -604,7 +604,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 b2[4] = w1[0x48 / 4]; // CONFIG0(EN/STG 域)
                 b2[5] = w1[0x4C / 4]; // STG0_HOLD
                 b2[6] = w1[0x50 / 4]; // STG1_HOLD(复位级)
-                b2[7] = w1[0x64 / 4]; // WPROTECT(被锁=持有者写过后未解锁)
+                b2[7] = ck[0x88 / 4]; // **UART0 时钟门控**(HP 域安全位;清零=门控实锤)
                 // 32 项 PC 环（0x2E0003A0）：回放最近 32 个 tick 的被打断 PC。
                 const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
                 const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);

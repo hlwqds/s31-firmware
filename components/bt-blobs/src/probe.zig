@@ -280,13 +280,18 @@ pub fn lpBlackBoxReport() void {
         const et: [*]volatile u32 = @ptrFromInt(0x2E00_0500);
         var evi: usize = 0;
         while (evi < 16) : (evi += 2) {
-            if (et[evi] != 0) board.log.line("EVH {x:0>8}/{d}", .{ et[evi], et[evi + 1] });
+            if (et[evi] != 0) {
+                board.log.line("EVH {x:0>8}/{d}", .{ et[evi], et[evi + 1] });
+                board.hw.delayUs(5000); // FIFO 只有 128B,报告行间不排空 ⇒ 后续行被丢
+            }
         }
         // **UAR 行**:UART0 compare/restore 差分(0=从未差分;off=0x100 ⇒ CLKRST+0x88)
         const ub2: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
         if (ub2[3] != 0) board.log.line("UAR off={x} was={x} now={x} rd={d}", .{ ub2[0], ub2[1], ub2[2], ub2[3] });
+        board.hw.delayUs(5000);
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
         board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d} cpufreq=0x{x:0>8}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.*, @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* });
+        board.hw.delayUs(5000);
         {
             const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
             const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
@@ -294,6 +299,7 @@ pub fn lpBlackBoxReport() void {
             while (k < 16) : (k += 1) {
                 const e = ring[(cnt.* + 32 - 16 + k) % 32];
                 board.log.line("BBQ {d} 0x{x:0>8}", .{ k, e });
+                board.hw.delayUs(5000);
             }
         }
     }
@@ -302,6 +308,7 @@ pub fn lpBlackBoxReport() void {
     var r: usize = 0;
     while (r < 16) : (r += 1) {
         board.log.line("BBX {d}: {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{ r, lp[4 * r], lp[4 * r + 1], lp[4 * r + 2], lp[4 * r + 3] });
+        board.hw.delayUs(5000);
     }
     lp[0] = 0;
 }
@@ -321,6 +328,8 @@ const uart_restore_offs = [_]usize{ 0x14, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x
 const CLKRST_UART0_CTRL0: usize = 0x2058_7000 + 0x88;
 const CLKRST_SOC_CLK_SEL: usize = 0x2058_7000 + 0x00;
 var uart_ctrl0_snap: u32 = 0;
+/// **时钟门控基线**(mwdt1Arm 后拍):泵每轮回写,直接检验"哑火=时钟门控"假设。
+var clk_snap: [3]u32 = .{ 0, 0, 0 };
 var uart_soc_snap: u32 = 0;
 fn uartSnapshot() void {
     var i: usize = 0;
@@ -1740,6 +1749,12 @@ pub fn run() noreturn {
             // 没复位 ⇒ 本行之后流程继续（BBT 的 phase 仍为 0xD2C7 即"对照失败"）。
         }
         board.hw.mwdt1Arm(0x9C40_0000); // HP 域看门狗 10 s（tick=262.144 MHz）：主上下文冻结也能复位
+        {
+            const c: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+            clk_snap[0] = c[0x88 / 4];
+            clk_snap[1] = c[0x114 / 4];
+            clk_snap[2] = c[0x11C / 4];
+        }
         // **RTC WDT 兜底**（RTC 时钟域,独立于 HP TIMERGRP 时钟——哑火时 T0+MWDT1
         // 同时停 ⇒ 怀疑计时器域被门控,MWDT1 可能随之失效）：cpu_reset=true 只复位
         // CPU 核,LP 保留 ⇒ 差分证据可回读。137kHz × 360s ≈ 49.3M cycles。
@@ -1843,26 +1858,25 @@ pub fn run() noreturn {
     var bb0_done: bool = false;
     var diag_round: u32 = 0;
     while (true) : (round += 1) {
-        // **UART0 compare-only**:差分写 LP(0x2E000548..),下 boot 打印——泵内
-        // 回写实测把总线打挂(看门狗复位全失),故只读。有差分或 round>=50 即
-        // 自陷上交,不留恋。
+        // **时钟回写**(泵顶):CLKRST UART0/TIMERGRP 门控恢复 boot 基线——
+        // 若哑火=时钟门控,此回写让输出复活 ⇒ 因果链闭合。回写目标是 HP 域
+        // 系统控制器(永有时钟),读它安全;UART0 本体仍禁碰。
         {
-            var ud: [3]u32 = .{ 0, 0, 0 };
-            const rn = uartRestore(&ud, true);
-            const ub: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
-            if (rn != 0 and ub[3] == 0) {
-                ub[0] = ud[0];
-                ub[1] = ud[1];
-                ub[2] = ud[2];
-                ub[3] = round;
-                ub[4] +%= 1;
-            }
-            if (rn != 0 or round >= 50) {
-                if (collect_flag.* != 0xC0DE_C0DE) {
-                    collect_flag.* = 0xC0DE_C0DE;
-                    osal.lpTrace(3, 0xD3C1);
-                    board.hw.mwdt1Suicide(); // 数字复位:LP 保留 ⇒ 下 boot 打印差分
-                }
+            const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+            c2[0x88 / 4] = clk_snap[0];
+            c2[0x114 / 4] = clk_snap[1];
+            c2[0x11C / 4] = clk_snap[2];
+            const cc: [*]volatile u32 = @ptrFromInt(0x2E00_0548);
+            cc[5] +%= 1; // 回写轮数(LP 可观测)
+        }
+        // **泵内禁止触碰 UART0**:哑火(时钟被门控)后读其寄存器即挂总线
+        // ——52 boot 全冻在泵头几轮的实测根因。差分只能走 NMI 的 CLKRST
+        // +0x88 采样(HP 域,读它安全)。round 50 自陷交出黑匣子。
+        if (round >= 50) {
+            if (collect_flag.* != 0xC0DE_C0DE) {
+                collect_flag.* = 0xC0DE_C0DE;
+                osal.lpTrace(3, 0xD3C1);
+                board.hw.mwdt1Suicide(); // 数字复位:LP 保留 ⇒ 下 boot 打印黑匣子
             }
         }
         // **RTC SOC_WAKEUP 旗**：主上下文调已注册的 sleep 回调（trap 只置旗）
