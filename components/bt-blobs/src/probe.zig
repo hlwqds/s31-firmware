@@ -1754,6 +1754,12 @@ pub fn run() noreturn {
             clk_snap[0] = c[0x88 / 4];
             clk_snap[1] = c[0x114 / 4];
             clk_snap[2] = c[0x11C / 4];
+            // 传给 NMI(NMI 每 tick 据此回写——主核冻结后仍保时钟活)
+            const cs: [*]volatile u32 = @ptrFromInt(0x2E00_0560);
+            cs[0] = clk_snap[0];
+            cs[1] = clk_snap[1];
+            cs[2] = clk_snap[2];
+            cs[3] = 0xCAFE_0001; // 有效旗
         }
         // **RTC WDT 兜底**（RTC 时钟域,独立于 HP TIMERGRP 时钟——哑火时 T0+MWDT1
         // 同时停 ⇒ 怀疑计时器域被门控,MWDT1 可能随之失效）：cpu_reset=true 只复位
