@@ -1615,6 +1615,9 @@ pub fn run() noreturn {
             const trap = @import("board").trap;
             const h5 = trap.getHandler(5);
             const h5f: usize = if (h5.fn_) |f| @intFromPtr(f) else 0;
+            _ = rtc; // 原走已删的 logPublic diag 行（死通道）
+            _ = ts;
+            _ = h5f;
             osal.logPublic("bt probe: bb 47C=0x{x:0>4} 450=0x{x:0>6}", .{ m47c & 0xFFFF, m450 & 0xFFFFFF });
             // **BB 私有块探读（once）**：0x2010B000。时钟全开后首读——挂死 =
             // BB 块仍被门控（本身就是答案）；可读 = 对照调度寄存器找 arm 差集。
@@ -1666,9 +1669,7 @@ pub fn run() noreturn {
                 },
                 bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped,
             });
-            osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} getok={d} evrun={d}/{d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
-                (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, st.eventq_get_ok, st.event_run_count, st.event_run_no_slot, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
-            });
+            // （已删）logPublic diag 行：泵期实测 0 输出（死通道），其读数已并入上方 icg 板载行。
             // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
             // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。
             {
