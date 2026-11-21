@@ -614,6 +614,11 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     const v2 = @as(*volatile u32, @ptrFromInt(ra2)).*;
                     @as(*volatile u32, @ptrFromInt(ra2)).* = v2 & ~(@as(u32, 7) << 23);
                 }
+                // **时钟 force-on 重申**(LP_CLK_PO_EN 0x20701004):防 sleep 门控。
+                {
+                    const pc2: usize = 0x2070_1004;
+                    @as(*volatile u32, @ptrFromInt(pc2)).* |= (1 << 1) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
+                }
                 const cs2: [*]volatile u32 = @ptrFromInt(0x2E00_0560);
                 if (cs2[3] == 0xCAFE_0001) {
                     ck[0x88 / 4] = cs2[0];

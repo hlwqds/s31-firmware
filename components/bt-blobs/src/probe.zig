@@ -1475,6 +1475,11 @@ pub fn run() noreturn {
         _ = ulp_flash_erase(0x187000 / 4096);
         @as(*volatile u32, @ptrFromInt(0x2E00_0574)).* = 0; // 计数重置,本轮重新收集
     }
+    // **时钟 force-on**(LP_CLK_PO_EN bits: LP_BUS/AON_SLOW/SLOW/FAST/FOSC/RC32K):
+    // 默认 0 = 时钟在 PMU sleep 请求时自动门控。blob 触发 sleep ⇒ 芯片睡死
+    // (CPU waiti/时钟门控/WDT 停摆/UART 停——全部观测自洽)。置位 ⇒ 时钟永不
+    // 门控 ⇒ 睡眠中 MWDT1 照走 ⇒ 10s 必咬 ⇒ 冻结变复位。
+    @as(*volatile u32, @ptrFromInt(0x2070_1004)).* |= (1 << 1) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
     board.hw.armRtcWdt(true, 49_300_000);
 
     // **RTC 慢时钟源钉死 RC_SLOW**(ROOT_CLK_CONF bits[25:23]=0)：默认源含
