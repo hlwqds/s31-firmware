@@ -2058,8 +2058,13 @@ fn flashStage(n: u32) void {
 
 /// 同 `flashStage`，但额外把两个观察值写进标记扇区的第 3/4 个字。
 fn flashStageExtra(n: u32, a: u32, b: u32) void {
-    flashStage(n);
     if (@import("builtin").target.os.tag != .freestanding) return;
+    // **窗口守卫补全**（2026-11-21）：此前只挡了 flashStage（擦+首写），
+    // 本函数自己的两次 esp_rom_spiflash_write 照写——BT 窗口（任务活了之后）
+    // 实测楔死在第一条 write（标记扇区 0xFF + NMI 采样仍响应 = 楔在 masked
+    // 写内）。零写窗口纪律覆盖到本函数。
+    if (bt_window_no_flash) return;
+    flashStage(n);
     const prev = asm volatile ("csrrci %[v], mstatus, 8"
         : [v] "=r" (-> usize),
     );

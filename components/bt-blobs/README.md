@@ -28240,3 +28240,19 @@ eventqPut 成功入队 ✓）。**剩余墙：ctx+12 队列无人消费**——�
 **待验证丢弃点**（advisor）：命令派发 0x4005e01e 遍历 ctx+28 回调链，
 链空返 0x10000 ⇒ buf_free 静默丢包无回包——icg 行已加 c28=（链首节点
 [h4]，0=链空）；若空链坐实，在 transport.init 补挂命令 handler 节点。
+
+**墙的最终汇合（2026-11-21 HCI 侧闭环）**：post-fwd06 楔点 = mrucwvp
+（位掩码事件泵，见上文静态解码）——HCI 命令被接受后 blob 分发路径
+即入此泵，出口 return==8 永不满足（候选①：BB/MAC 硬件完成事件死 ⇒
+与「BB 引擎未启动」同根因）。本轮新增修复与仪器（全部提交）：
+1. hci_cmd_num 2→8（池耗尽修复，fwd06 首次 ret=0）；
+2. sink 0x2f026000→自有 .bss + 泵每轮重发布（CPU_LOCKUP 复位环根除，
+   trap 线 mepc=0/ra=bnez 实证 jalr [sink+12] 被堆覆写）；
+3. flashStageExtra 补窗口守卫（post-enable flash 写楔子，标记扇区 0xFF
+   + NMI 仍响应实证楔在 masked 写内）；
+4. 让出桩终版=返 1+每 256 次让出（返 0 实证跳过 .L43 出队后 mrucwvp
+   双上下文同旋；返 1 仍楔 = 泵环非 FIFO 问题，是出口条件永不满足）；
+5. getok/evrun/c0/c32/pk/pc/sb/c28 八读数判读链（icg 板载行）。
+**下轮入口**（与「BB 引擎未启动」会师）：官方 oracle（idf-bt-ctl）跑
+真 BB 的 schedule/anchor 寄存器 dump 对拍——README「终态」节既定路径；
+辅以撤 mute（stage10）+ -DS31_BT_FMT_LINES 抬行上限的 A/B 配方（上文）。
