@@ -43,6 +43,10 @@ pub const TIMEOUT: c_int = 6;
 /// `portMAX_DELAY`（FreeRTOS）= `0xFFFFFFFF`；IDF 的 `get_time_forever()` 直接返回它。
 pub const forever: u32 = 0xFFFF_FFFF;
 
+/// mutexPend FOREVER 真阻塞时的等待任务（当前仅 controller task 一个现实用户；
+/// 多任务并发 pend 同一把锁超出本镜像的调度现实，暂记单个槽位）。
+var mutex_waiter: ?*@import("sched.zig").Context = null;
+
 /// C 侧的句柄结构体：`struct btdm_osal_{event,eventq,callout,mutex,sem} { void *x; }`。
 /// **必须**逐字镜像成 4 字节——controller 把这 4 个字节内嵌在自己的结构体里。
 pub const Slot = extern struct {
@@ -422,6 +426,20 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
     // 返回 TIMEOUT 会让它拿到没预期的错误码。调度器没启动时没有可切换的任务
     // ⇒ 用**有界忙等**代替真阻塞（忙等期间不打印）。
     if (m.locked and timeout == forever) {
+        // **真阻塞（2026-11-21 修复）**：controller task 在 bringup 期间 pend
+        // FOREVER 时，2M 自旋→TIMEOUT 逃逸让它走 blob 失败路径自 deinit
+        // （摘 id2/5 注册节点 + 把 [2f011038] 踩成 1）⇒ step17 rc=-3 根因。
+        // 调度器已启动且在任务上下文 ⇒ park 直到持有者释放（不变量：
+        // "FOREVER 必须'等到拿到'"）。调度器未启动 ⇒ 保留有界忙等后备。
+        if (sched.isStarted() and !sched.inMain()) {
+            stats_state.blocked_calls += 1;
+            mutex_waiter = sched.currentContext();
+            while (m.locked) sched.block();
+            mutex_waiter = null;
+            m.locked = true;
+            stats_state.mutex_pend_ok += 1;
+            return OK;
+        }
         var spins: u32 = 0;
         while (m.locked and spins < 2_000_000) : (spins += 1) std.atomic.spinLoopHint();
         stats_state.blocked_calls += 1;
@@ -464,6 +482,11 @@ pub fn mutexRelease(slot: *Slot) c_int {
     trace("mutexRelease tmo=" ++ (if (comptime std.mem.indexOf(u8, "mutexRelease", "end") != null) "{d}" else "-"), .{});
     const m = slotGet(Mutex, slot) orelse return EINVAL;
     m.locked = false;
+    // 唤醒 park 在这把锁上的任务（与 mutexPend 的真阻塞配对）
+    if (mutex_waiter) |w| {
+        mutex_waiter = null;
+        sched.resumeTask(w);
+    }
     return OK;
 }
 

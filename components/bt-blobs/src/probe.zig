@@ -1215,26 +1215,38 @@ pub fn run() noreturn {
     // （注：本补丁在 init 返回后执行，不可能影响 step 17 的 rc——此前
     // "step17 rc=-3 归咎补丁"系误读，step17 失败另有原因。）
     {
-        const slp: *volatile u32 = @ptrFromInt(0x2f01_1034);
-        const obj = slp.*;
-        if (obj >= 0x2f00_0000 and obj < 0x2f10_0000) {
-            @as(*volatile u32, @ptrFromInt(obj + 24)).* = 32000;
-            @as(*volatile u32, @ptrFromInt(obj + 28)).* = 0;
-            osal.logPublic("bt probe: rtc_freq patch obj=0x{x:0>8} +24=32000", .{obj});
-            // **RTC 比较武装（软件半环闭合）**：target0 = counter + 2s ⇒
-            // SOC_WAKEUP（INT_ENA+MAP input6 已路由）⇒ trap 置旗 ⇒ 泵调
-            // btSleepCb ⇒ sleep 唤醒软件半环闭环。
-            const rtb: usize = 0x2080_0000;
-            @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
-            const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
-            @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0x8000_0000; // HIGH0=0 | TAR_EN0=1
-            @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 2); // +2s
-            @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31; // INT_CLR
-            @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31; // INT_ENA
-            osal.logPublic("bt probe: rtc cmp armed2 cnt=0x{x:0>8}", .{cnt});
-        } else {
-            osal.logPublic("bt probe: rtc_freq patch skip (obj oob=0x{x:0>8})", .{obj});
+        // **双候选判别（2026-11-21）**：真 sleep 对象指针 = [0x2f011044]
+        // （y5Dip...，blob 于 40062ba2 写 obj+24/28）；[0x2f011034] 为旧假设。
+        // 两处都查：仅当 obj[24]==0 且 obj[28]==0（零除活体）才补 32000。
+        const cands = [_]usize{ 0x2f01_1044, 0x2f01_1034 };
+        for (cands) |cp| {
+            const obj: u32 = @as(*volatile u32, @ptrFromInt(cp)).*;
+            const tag: []const u8 = if (cp == 0x2f01_1044) "1044" else "1034";
+            if (obj >= 0x2f00_0000 and obj < 0x2f10_0000 and obj % 4 == 0) {
+                const plo: *volatile u32 = @ptrFromInt(@as(usize, obj) + 24);
+                const phi: *volatile u32 = @ptrFromInt(@as(usize, obj) + 28);
+                if (plo.* == 0 and phi.* == 0) {
+                    plo.* = 32000;
+                    phi.* = 0;
+                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=32000", .{ tag, obj });
+                } else {
+                    osal.logPublic("bt probe: rtc_freq nz @{s} obj=0x{x:0>8} +24=0x{x:0>8} +28=0x{x:0>8}", .{ tag, obj, plo.*, phi.* });
+                }
+            } else {
+                osal.logPublic("bt probe: rtc_freq oob @{s} ptr=0x{x:0>8}", .{ tag, obj });
+            }
         }
+        // **RTC 比较武装（软件半环闭合）**：target0 = counter + 2s ⇒
+        // SOC_WAKEUP（INT_ENA+MAP input6 已路由）⇒ trap 置旗 ⇒ 泵调
+        // btSleepCb ⇒ sleep 唤醒软件半环闭环。（无条件：不依赖补丁命中）
+        const rtb: usize = 0x2080_0000;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
+        const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+        @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0x8000_0000; // HIGH0=0 | TAR_EN0=1
+        @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 2); // +2s
+        @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31; // INT_CLR
+        @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31; // INT_ENA
+        osal.logPublic("bt probe: rtc cmp armed2 cnt=0x{x:0>8}", .{cnt});
     }
     // **udiv 入口 EXEC 断点武装（相位正确版）**：此刻 init_phy 的
     // phy_xtal_duty_cal 除法已过（断点不撞它），LE 块分发等待的磨 CPU

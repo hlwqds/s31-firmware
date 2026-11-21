@@ -27952,3 +27952,15 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
   ②mcontrol6 EXEC 断点钉 `gvLJK4`（40061376）入口，one-shot 抓 caller ra ⇒ 摘链
   调用者直接显形；③根治方向 = 摘链触发条件（task 状态机的 cleanup 判据）。
 - 工程化：`scripts/build-probe.sh` 失败已 gate flash（stale-image 循环终止）。
+
+**mutexPend 真阻塞修复实验（2026-11-21，理论证伪）**：
+- 修复内容：`mutexPend` FOREVER+locked 在调度器启动后真阻塞（park+release 唤醒，
+  替换 2M 自旋→TIMEOUT 逃逸）。
+- 结果：cb14 仍 n=5、step17 仍 rc=-3 ×13、panic=0 ⇒ **该理论非主因**（或该路径
+  未被触发——park 是否 engage 未观测）。
+- 幸存假说：①eventq/sem 的 `!isStarted` 忙等分支（若 task 运行早于调度器启动）；
+  ②blob-ROM 分派的 deinit；③**id 篡改论**：链上第 5 节点=id6 本就是 env+52
+  （id-2 节点）被 eventq/mutex 运行时路径原地改写 id（2→6）且 next 同毁——
+  env 地址已可推算（tail=+33384 ⇒ env≈0x2f02CF78 ⇒ env+52=0x2f02CFAC）。
+- 下轮一刀：clean zone（step14 后）读 `u16@[0x2f02CFAC]`——若 =2 ⇒ 节点健在纯摘链；
+  若 =6 ⇒ id 篡改论坐实，找写 6 的 eventq 路径。同时把 rtc 双候选打印挪进 clean zone。
