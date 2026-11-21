@@ -286,8 +286,7 @@ pub fn lpBlackBoxReport() void {
             }
         }
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
-        board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d} cpufreq=0x{x:0>8}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.*, @as(*volatile u32, @ptrFromInt(0x2E00_038C)).* });
-        board.hw.delayUs(5000);
+        board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.* });
         {
             const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
             const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
@@ -303,7 +302,6 @@ pub fn lpBlackBoxReport() void {
     var r: usize = 0;
     while (r < 16) : (r += 1) {
         board.log.line("BBX {d}: {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{ r, lp[4 * r], lp[4 * r + 1], lp[4 * r + 2], lp[4 * r + 3] });
-        board.hw.delayUs(5000);
     }
     lp[0] = 0;
 }
@@ -1457,6 +1455,26 @@ pub fn run() noreturn {
     // **RTC WDT 死人开关提前**（bringup 前）：冻结点漂移实测可早至 step 6
     // （看门狗原武装点 fwd06 前覆盖不到）。cpu_reset 保 LP ⇒ 任何冻结 ≤25 min
     // 内数字复位 ⇒ 下 boot 打印黑匣子。fwd06 前的再武装只是续期。
+    // **死亡现场取证扇区读回**(0x187000):上一个冻结周期由 NMI 写入的
+    // 解除证据(MWDT1 CONFIG0/HOLD/UART 门控),此 boot 打印后擦除重置。
+    {
+        const esp_rom_spiflash_read: *const fn (u32, [*]u32, u32) callconv(.c) c_int =
+            @extern(*const fn (u32, [*]u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_read" });
+        const ulp_flash_erase: *const fn (u32) callconv(.c) c_int =
+            @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+        const slot = @as(*volatile u32, @ptrFromInt(0x2E00_0574)).*;
+        if (slot > 0 and slot <= 200) {
+            var k: u32 = 0;
+            while (k < slot) : (k += 1) {
+                var rec: [4]u32 = .{ 0, 0, 0, 0 };
+                _ = esp_rom_spiflash_read(0x187000 + k * 16, &rec, 16);
+                board.log.line("DEATH[{d}] {x} {x} {x} {x}", .{ k, rec[0], rec[1], rec[2], rec[3] });
+                board.hw.delayUs(5000);
+            }
+        }
+        _ = ulp_flash_erase(0x187000 / 4096);
+        @as(*volatile u32, @ptrFromInt(0x2E00_0574)).* = 0; // 计数重置,本轮重新收集
+    }
     board.hw.armRtcWdt(true, 49_300_000);
 
     // **RTC 慢时钟源钉死 RC_SLOW**(ROOT_CLK_CONF bits[25:23]=0)：默认源含

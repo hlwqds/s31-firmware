@@ -626,6 +626,20 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 const wd_flag: *volatile u32 = @ptrFromInt(0x2E00_0570);
                 if (wd_flag.* == 0xBEEF_0001) {
                     const w: [*]volatile u32 = @ptrFromInt(0x2058_1000);
+                    // **解除检测**:CONFIG0 bit31(EN) 被 blob 清零 = 解除现行。
+                    // 2ms 窗口内:解除证据写入 flash 0x187000 取证扇区(N+1 槽)
+                    // ⇒ 跨一切复位存活 ⇒ 下 boot 读回 = 解除看门狗的 flash 铁证。
+                    const cfg0 = w[0x48 / 4];
+                    if ((cfg0 & (1 << 31)) == 0) {
+                        const slotp: *volatile u32 = @ptrFromInt(0x2E00_0574);
+                        const slot = slotp.*;
+                        if (slot < 200) {
+                            const rec: [4]u32 = .{ 0xDEAD_0000 | (slot & 0xFF), cfg0, w[0x4C / 4], ck[0x88 / 4] };
+                            w[0x64 / 4] = 0; // 上锁 MWDT1(避免与 flash 写交叠的任何副作用)
+                            _ = esp_rom_spiflash_write(0x187000 + slot * 16, &rec, 16);
+                            slotp.* = slot + 1;
+                        }
+                    }
                     w[0x64 / 4] = 0x50D8_3AA1; // WPROTECT 解锁
                     w[0x48 / 4] = 0xb81f_8000; // CONFIG0(oracle: STG0=中断 STG1=系统复位)
                     w[0x4C / 4] = 0x9C40_0000; // STG0_HOLD 10s
