@@ -1167,6 +1167,9 @@ pub var nmi_count: u32 = 0;
 /// HP_SYS_CLKRST{0x00,04,08,0C,40,88,1E0}、MODEM_SYSCON{0x9C04..9C14}、
 /// {0x2010F01C, 0x2010107C, 0x20101074}。
 var uart_stuck_n: u32 = 0;
+/// 落盘改为 RAM 记录后的快照（主机不可见，供 UART 恢复后的 diag 行读）。
+pub var uart_diag_blk: [40]u32 = @splat(0);
+pub var uart_diag_len: usize = 0;
 var uart_diag_dumped: bool = false;
 fn uartDiagFlashDump(mepc: usize, ra: usize) void {
     var buf: [40]u32 = undefined;
@@ -1200,8 +1203,11 @@ fn uartDiagFlashDump(mepc: usize, ra: usize) void {
     i += 1;
     buf[i] = @as(*volatile u32, @ptrFromInt(0x2010_1074)).*;
     i += 1;
-    _ = esp_rom_spiflash_erase_sector(0x187000 / 0x1000);
-    _ = esp_rom_spiflash_write(0x187000, &buf, @intCast(4 * i));
+    // **只存 RAM，不擦写 flash**（2026-11-21 收口）：XIP 下 trap 内擦写 = 阻塞
+    // 取指 = 硬挂（本文件断点分支的既有教训）。失声期 NMI 多半已停，本记录
+    // 仅在"UART 活着但 FIFO 短暂满"时可用；真正的盲区通道仍是待补仪器。
+    uart_diag_len = i;
+    @memcpy(uart_diag_blk[0..i], buf[0..i]);
 }
 var fe3_hits: u32 = 0;
 var bp_hit_mepc: u32 = 0;

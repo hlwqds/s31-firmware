@@ -136,9 +136,10 @@ fn trampoline() callconv(.c) void {
     // 若不等 ⇒ `lw sp, 0(a1)` 与 `ctx.sp` 脱节（记账错误），
     // 而不是帧布局问题（两侧已核对为一致的 13 字）。
     {
-        const live_sp = asm volatile ("mv %[v], sp"
+        // RISC-V 专用读 sp；主机测试上为 0（只影响一条诊断行的 same 位）。
+        const live_sp: usize = if (comptime @import("builtin").cpu.arch.isRiscv()) asm volatile ("mv %[v], sp"
             : [v] "=r" (-> usize),
-        );
+        ) else 0;
         const cs = if (entering) |c| c.sp else 0;
         @import("osal.zig").logLine("bt sched: 任务体开始 sp=0x{x} ctx.sp=0x{x} same={d}", .{
             live_sp, cs, @intFromBool(live_sp == cs),

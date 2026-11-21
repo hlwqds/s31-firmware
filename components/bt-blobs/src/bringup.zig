@@ -21,7 +21,55 @@
 //! controller 侧的 `_malloc`/`_free`/`_os_random`/`_osi_assert`，跳过就等于 controller 没有分配器，
 //! `r_ble_controller_init` 必然失败。ECC 三项照 IDF 在 SM 未开时那样给返回 -1 的桩。
 const std = @import("std");
-const board = @import("board");
+/// 板级模块只在目标板上存在；主机测试图里没有 `board`，给一个同名空壳并
+/// 把所有板级写入用 `freestanding` 门控（此前主机门禁因 `no module named
+/// 'board'` 与 RISC-V 内联汇编在 x86 上编译失败而红）。
+const board = if (@import("builtin").os.tag == .freestanding) @import("board") else struct {};
+/// 主机安全的 32 位 MMIO 写/置位/清位：init/enable 在主机测试里用 Hooks 跑，
+/// 路径上的裸寄存器访问必须变成空操作（此前直接段错误 ⇒ 3 个 bringup 用例 ABRT）。
+inline fn mmioWr(addr: usize, v: u32) void {
+    if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* = v;
+}
+inline fn mmioSet(addr: usize, bits: u32) void {
+    if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* |= bits;
+}
+inline fn mmioClr(addr: usize, bits: u32) void {
+    if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* &= ~bits;
+}
+/// 定宽 MMIO 读（主机 0）。
+inline fn mmioRdN(comptime T: type, addr: usize) T {
+    return if (freestanding) @as(*volatile T, @ptrFromInt(addr)).* else 0;
+}
+/// 非 4 字节对齐地址的 u32 读（align(1)）。
+inline fn mmioRdA1(addr: usize) u32 {
+    return if (freestanding) @as(*align(1) const u32, @ptrFromInt(addr)).* else 0;
+}
+var mmio_scratch: [16]u8 align(4) = @splat(0);
+/// 目标板：该地址的易失指针；主机测试：指向 dummy（读写落到 RAM）。
+/// 供"先取指针再多次读写"的寄存器块使用。
+inline fn mmioPtr(comptime T: type, addr: usize) *volatile T {
+    if (freestanding) return @ptrFromInt(addr);
+    return @ptrCast(&mmio_scratch);
+}
+inline fn mmioRd(addr: usize) u32 {
+    return if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* else 0;
+}
+/// 32 位 MMIO 读并放宽为 usize（目标板指针 32 位；主机 64 位上 `*usize` 对 4 字节
+/// 对齐地址会编译失败）。
+inline fn rdUsz(addr: usize) usize {
+    return mmioRd(addr);
+}
+/// `probe.zig` 是板级探针（66 处 RISC-V 汇编 + 裸 MMIO），只在目标板存在。
+/// 主机测试图里给同签名的空壳：钩子不装、实验开关全关。
+const probe_mod = if (@import("builtin").os.tag == .freestanding) @import("probe.zig") else struct {
+    pub fn bt_hook_event_init(_: u32) void {}
+    pub fn bt_hook_eventq_init(_: u32) void {}
+    pub const ble_block_experiment: bool = false;
+    pub const bt_block_read_only: bool = false;
+    pub const populate_workaround: bool = false;
+    pub const publish_bohff_anchor: bool = false;
+    pub var call_stream_on: bool = false;
+};
 const builtin = @import("builtin");
 const osal = @import("osal_kit").osal;
 const config = @import("config.zig");
@@ -107,7 +155,7 @@ extern fn r_ble_controller_init(cfg: *config.BleCfg) c_int;
 /// **断言直写通道**（C 侧 wr_btdm_assert 调用）：绕过 ets_printf shim
 /// （mute 会吞、FIFO 会丢）与 UART 有界写——断言文本必须可见。
 export fn s31_bt_raw_line(s: [*:0]const u8) void {
-    board.hw.rawLineBlocking(std.mem.span(s));
+    if (freestanding) board.hw.rawLineBlocking(std.mem.span(s));
 }
 
 extern fn r_btdm_sleep_set_sleep_cb(cb: ?*const anyopaque, arg: ?*anyopaque, a2: u32, a3: u32, a4: u32) c_int;
@@ -156,10 +204,10 @@ fn enter(n: u32, comptime what: []const u8) void {
     last_step_name = what;
     // **LP 深度槽**（0x2E000420）：跨复位可读，FEFE lrec[11] 带出。
     // enable() 内部挂死时 host 靠它定位卡在哪一步（UART 不可用时的唯一深度证据）。
-    @as(*volatile u32, @ptrFromInt(0x2E00_002C)).* = n;
+    mmioWr(0x2E00_002C, n);
     // 同步到 board 侧（panic 行会打印它）
-    @import("board").trap.last_step = n;
-    @import("board").trap.last_step_name = what;
+    if (freestanding) board.trap.last_step = n;
+    if (freestanding) board.trap.last_step_name = what;
     osal.logPublic("bt bringup: enter step {d} " ++ what, .{n});
     // 让 UART FIFO 排空：step 1..5 在同一瞬间连发，5×~30 B > 128 B FIFO
     // ⇒ 溢出时 hw.rawWrite **按设计丢弃** ⇒ 只剩第一行可见（误判为"没执行"）。
@@ -167,10 +215,12 @@ fn enter(n: u32, comptime what: []const u8) void {
     // 等 UART0 TX FIFO 排空（**有界**），再返回 —— 否则 5 行 step 日志连发会溢出
     // 128 B FIFO，`hw.rawWrite` 按设计丢弃，只剩第一行可见（会误判为"没执行"）。
     // UART0 = 0x2038A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]（见 phy_stubs.c 的 put1）。
-    const st: *volatile u32 = @ptrFromInt(0x2038_A01C);
-    var guard: u32 = 0;
-    while (guard < 200_000) : (guard += 1) {
-        if (((st.* >> 16) & 0xFF) <= 8) break;
+    if (freestanding) {
+        const st: *volatile u32 = mmioPtr(u32, 0x2038_A01C);
+        var guard: u32 = 0;
+        while (guard < 200_000) : (guard += 1) {
+            if (((st.* >> 16) & 0xFF) <= 8) break;
+        }
     }
 }
 
@@ -218,7 +268,7 @@ fn dumpBootState() void {
         // ⚠️ `0x2f00fff8` **不是** `g_phyFuns`：它在锚点块里（`0x2f00ffd0 + 0x28`，第 11 个槽）。
         // 之前的标签把它当成 `g_phyFuns`，由此推出的"rom_phyFuns(0x2f07fc3c) ≠ g_phyFuns"是**误读**。
         osal.logLine("bt bringup: BOOTSTATE esp_phy_enable(BT) done, anchor[+0x28]=0x{x}", .{
-            (@as(*volatile u32, @ptrFromInt(0x2f00_fff8))).*,
+            (mmioRd(0x2f00_fff8)),
         });
     }
 
@@ -240,10 +290,7 @@ pub fn init(cfg: *config.Config) c_int {
     // 永等（本轮 A/B 组合：RTC ON + esp_btbb_enable + IE 延迟）。
     // 写 date 必须保留 bit31（skill: s31-rtc-timer-probe，counter ≈137 kHz）。
     // RC32K OEN（+0x4 bit7）已实证非缺口（开/关 fe 均 0），不在此块。
-    {
-        const d: *volatile u32 = @ptrFromInt(0x2080_03FC);
-        d.* |= 0x8000_0000;
-    }
+    mmioSet(0x2080_03FC, 0x8000_0000);
     // **boot 期一次性写入**（在 step 5 的 RMW 之前）：
     // `0x20109C04` 的 `0x00201002`（bit1/12/21 = pwdet/adc/dac 模拟前端时钟）
     // 必须**先**存在，step 5 的 `rd(reg_clk_conf) | 0x7e400000` 才会得到 IDF 的 `0x7e601002`。
@@ -251,15 +298,15 @@ pub fn init(cfg: *config.Config) c_int {
     // **顺序关键**：参考构建先写 modem PLL（`0x2058_71E0 = 0x3d`），
     // 之后 `0x20109C04/0x20109C14` 的写才生效（参考日志次序：
     // `MODEM_CONF=0x3d` → `clk_conf=0x7e601002`）。我们此前顺序反了 ⇒ 写被丢弃。
-    @as(*volatile u32, @ptrFromInt(0x2058_71E0)).* = 0x3d;
+    mmioWr(0x2058_71E0, 0x3d);
     // **栈用量探针**：入口与 INITED 处各取一次近似 sp（局部变量地址）
     {
         var probe_local: u8 = 0;
-        @import("board").trap.diag_a = @intCast(@intFromPtr(&probe_local) & 0xFFFF);
+        if (freestanding) board.trap.diag_a = @intCast(@intFromPtr(&probe_local) & 0xFFFF);
     }
-    @as(*volatile u32, @ptrFromInt(0x2010_9C04)).* = 0x0020_1002;
-    @as(*volatile u32, @ptrFromInt(0x2010_9C00)).* = 0x0000_0100;
-    @as(*volatile u32, @ptrFromInt(0x2010_9C0C)).* = 0x6464_6400;
+    mmioWr(0x2010_9C04, 0x0020_1002);
+    mmioWr(0x2010_9C00, 0x0000_0100);
+    mmioWr(0x2010_9C0C, 0x6464_6400);
     dumpBootState();
     stats_state = .{};
     stats_state.init_calls += 1;
@@ -284,27 +331,27 @@ pub fn init(cfg: *config.Config) c_int {
     // **中断使能钩子**：`intr_alloc` 只记录 handler 不够 —— controller 等的信号量由
     // ISR 释放，中断没使能 ⇒ 回包永远到不了。这里把 CLIC 输入 IE + mie 位置起来。
     @import("osal_kit").osal.on_intr_arm = &intrArm;
-    @import("osal_kit").osal.on_event_init = &@import("probe.zig").bt_hook_event_init;
-    @import("osal_kit").osal.on_eventq_init = &@import("probe.zig").bt_hook_eventq_init;
+    @import("osal_kit").osal.on_event_init = &probe_mod.bt_hook_event_init;
+    @import("osal_kit").osal.on_eventq_init = &probe_mod.bt_hook_eventq_init;
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
     // **5F70 step5 入口标记**（UART 无关）：区分"没进 step 5"vs"step 5 内挂"
     {
         const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
         const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
         var rec: [4]u32 = .{ 0xADC0_5F70, 0x20109C14, 0x2010F018, 0x20587040 };
-        rec[1] = @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*;
-        rec[2] = @as(*volatile u32, @ptrFromInt(0x2010_F018)).*;
-        rec[3] = @as(*volatile u32, @ptrFromInt(0x2058_7040)).*;
+        rec[1] = mmioRd(0x2010_9C14);
+        rec[2] = mmioRd(0x2010_F018);
+        rec[3] = mmioRd(0x2058_7040);
         _ = ese(0x18E000 / 0x1000);
-        board.hw.flashOpBegin();
+        if (freestanding) board.hw.flashOpBegin();
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
-        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+        const gsaved: u32 = mmioRd(clic25);
+        mmioWr(clic25, gsaved & ~@as(u32, 0x108));
 
         _ = esw(0x18E000, &rec, 16);
-        board.hw.flashOpEnd();
+        if (freestanding) board.hw.flashOpEnd();
     }
     enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);
@@ -323,16 +370,16 @@ pub fn init(cfg: *config.Config) c_int {
     // **对照读 + 目标读**（仅目标侧：主机上这些地址不存在）
     // ⚠ **必须受开关控制**：`0x2010B000` 不可访问时会挂住整个系统，
     // 若无条件执行，**每一次正常运行都会死在它上面**（本轮就是这样，白白丢了几轮板测）。
-    if (@import("builtin").target.os.tag == .freestanding and (@import("probe.zig").ble_block_experiment or @import("probe.zig").bt_block_read_only)) {
-        osal.logPublic("bt probe: control read 0x20109C04 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_9C04))).*});
-        osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2010_B000))).*});
+    if (@import("builtin").target.os.tag == .freestanding and (probe_mod.ble_block_experiment or probe_mod.bt_block_read_only)) {
+        osal.logPublic("bt probe: control read 0x20109C04 = 0x{x:0>8}", .{(mmioRd(0x2010_9C04))});
+        osal.logPublic("bt probe: 0x2010B000 = 0x{x:0>8}", .{(mmioRd(0x2010_B000))});
     }
     // **静默高频采样窗口**：step 6 里归档不打印，而我们自己的打印会占满采样
     //（本板 TX FIFO 停在 128）⇒ 先静默、把 T0 提到 ~100 µs，只把 PC 记进环。
     enter(6, "r_btdm_task_init");
     {
         const pp = @import("probe_ptr.zig");
-        if (@import("probe.zig").populate_workaround and pp.get() == 0) {
+        if (probe_mod.populate_workaround and pp.get() == 0) {
             const pr = pp.populate();
             osal.logPublic("bt bringup: Xpuq 锚点为 NULL => 补调写者 rc={d}, 现在 P=0x{x:0>8}", .{ pr, pp.get() });
         } else {
@@ -340,7 +387,7 @@ pub fn init(cfg: *config.Config) c_int {
         }
     }
     // **只发布 7.o 锚点**：给 `BOhff` 的守卫一块可读内存（入口只判非空）。
-    if (@import("probe.zig").publish_bohff_anchor) {
+    if (probe_mod.publish_bohff_anchor) {
         const pp7 = @import("probe_ptr.zig");
         if (pp7.bohffAnchor() == 0) {
             if (osal.btdmMalloc(16, 0)) |a7| {
@@ -349,7 +396,7 @@ pub fn init(cfg: *config.Config) c_int {
             }
         }
     }
-    if (@import("probe.zig").populate_workaround) {
+    if (probe_mod.populate_workaround) {
         // **发布 OkE7 锚点**（受 `populate_workaround` 控制，默认关）。
         //
         // 形状取自 oracle 的实测（`X[0..7]`）：
@@ -407,22 +454,22 @@ pub fn init(cfg: *config.Config) c_int {
         // 走 `osal.logPublic`（不受 `trace_hooks` 过滤），会在开窗后再打，把采样槽占满。
         // 窗口内还要**撤掉 gate 钩子**：归档取到互斥锁时它会打 15 行锚点表，每行都走 UART 自旋，
         // 采样会全部落在 `probe.logHook` 上（实测 48 条全是它）。
-        board.hw.mmio_off = true; // 关掉寄存器记录（否则它是热路径）
-        board.trap.sample_period_us = 100; // ISR 重装也用 100 µs（否则窗口只活一个 tick）
-        board.trap.resetPcs(); // 只保留本窗口的采样
-        board.trap.sample_quiet = true;
-        board.trap.probe_stop_at_tick = 0; // 干净采集：关掉 DUMP 路径（它的输出会与 win: dump 交错） // 100us/tick ⇒ ~3 s，落在 step 6 停滞之后 // 关闭：它会从开机起算并 halt，吃掉整轮实验 // 约 2 s 后故意 panic，一次性导出计数器 // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
+        if (freestanding) board.hw.mmio_off = true; // 关掉寄存器记录（否则它是热路径）
+        if (freestanding) board.trap.sample_period_us = 100; // ISR 重装也用 100 µs（否则窗口只活一个 tick）
+        if (freestanding) board.trap.resetPcs(); // 只保留本窗口的采样
+        if (freestanding) board.trap.sample_quiet = true;
+        if (freestanding) board.trap.probe_stop_at_tick = 0; // 干净采集：关掉 DUMP 路径（它的输出会与 win: dump 交错） // 100us/tick ⇒ ~3 s，落在 step 6 停滞之后 // 关闭：它会从开机起算并 halt，吃掉整轮实验 // 约 2 s 后故意 panic，一次性导出计数器 // 存活探针：让 ISR 自己打印 PC，静默时用它判定"自旋 vs 总线挂死"
         osal.trace_hooks = false; // "bt hook: " 逐调用日志也会走 logHook
         osal.clearMutexHook(); // gate 钩子会打 15 行锚点表，每行都走 UART 自旋
-        board.hw.armT0Interrupt(100);
+        if (freestanding) board.hw.armT0Interrupt(100);
         // ⚠️ `armT0Interrupt` 会把 CLIC 控制字整字重写（`(1<<24)|(1<<8)`），**清掉** probe.zig
         // 给 T0 设的 `nmies`(bit3) ⇒ NMI 采样在 step 6 期间根本不触发（实测：48 条采样全落在
         // 我们自己的 `logHook`，没有一条在归档里）。这里把 nmies 补回去。
         {
-            const reg: *volatile u32 = @ptrFromInt(0x1080_1000 + 25 * 4);
+            const reg: *volatile u32 = mmioPtr(u32, 0x1080_1000 + 25 * 4);
             reg.* = (reg.* & 0x107) | (1 << 3);
         }
-        @import("probe.zig").call_stream_on = false; // 保持 false：true 会把 bt ret:/bt call: 压成 1 字节
+        probe_mod.call_stream_on = false; // 保持 false：true 会把 bt ret:/bt call: 压成 1 字节
         rc = step(6, "r_btdm_task_init", if (freestanding) r_btdm_task_init(&cfg.btdm) else 0);
         // not-ready 协议判据：若第一次只"发布对象"并返回 not-ready，第二次应能继续。
         // 只在第一次非零时重试一次，且不吞掉原始 rc 的日志。
@@ -434,17 +481,17 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
     // **cblist 遍历（step6 后）**：id 节点在 task_init 内创建；早 panic 的 boot 也出数。
     {
-        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
-            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var node: usize = rdUsz(p0);
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
-                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const op: u64 = mmioRdN(u16, node);
                 const sh: u6 = @intCast(16 * (3 - (k % 4))); // 48,32,16,0 —— 每组 4 id，零叠写
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
-                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+                node = rdUsz(node + 8);
             }
             osal.logPublic("bt probe: cblist6 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
         } else {
@@ -458,28 +505,28 @@ pub fn init(cfg: *config.Config) c_int {
     // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。
     // 链状态 step6 已定（task_init 内 OkE7 重建 + 尾插），step7 无关。
     {
-        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
-            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var node: usize = rdUsz(p0);
             var k: usize = 0;
             var a0v: u64 = 0;
             var a1v: u64 = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
-                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const op: u64 = mmioRdN(u16, node);
                 const sh: u6 = @intCast(16 * (3 - (k % 4)));
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
                 // 链上捕获 id2/id5 节点地址（此刻仍在链上；env 全局已被置 1 不可用）
                 if (op == 2) relink_p16 = node;
                 if (op == 5) relink_p20 = node;
-                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+                node = rdUsz(node + 8);
             }
             osal.logPublic("bt probe: cb7 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
 
-            const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;
+            const envp: usize = rdUsz(0x2f01_1038);
             if (envp >= 0x2f00_0000 and envp < 0x2f10_0000) {
-                const e0: usize = @as(*volatile usize, @ptrFromInt(envp)).*;
-                const e16: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(e0 + 16)).* else 0;
-                const e20: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(e0 + 20)).* else 0;
+                const e0: usize = rdUsz(envp);
+                const e16: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) rdUsz(e0 + 16) else 0;
+                const e20: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) rdUsz(e0 + 20) else 0;
                 osal.logPublic("bt probe: env=0x{x:0>8} +16=0x{x:0>8} +20=0x{x:0>8}", .{ e0, e16, e20 });
             } else {
                 osal.logPublic("bt probe: env oob=0x{x:0>8}", .{envp});
@@ -506,18 +553,18 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(10, "r_ble_controller_init", if (freestanding) r_ble_controller_init(&cfg.ble) else 0);
 
     {
-        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
-            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var node: usize = rdUsz(p0);
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
-                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const op: u64 = mmioRdN(u16, node);
                 if (op == 6) watch_node6 = node;
                 const sh: u6 = @intCast(16 * (3 - (k % 4)));
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
-                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+                node = rdUsz(node + 8);
             }
             osal.logPublic("bt probe: cb10 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
 
@@ -531,22 +578,22 @@ pub fn init(cfg: *config.Config) c_int {
     // **调度器槽值追踪**：sleep/scheduler 对象指针（0x2f011034）——NMI2 读 0
     // 但 rc=0 要求 Zth2 的 malloc(32) 成功 ⇒ 有谁在 init 后清零，按步定位。
     {
-        const slotv: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        const slotv: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
         osal.logPublic("bt probe: sched slot after step10 = 0x{x:0>8}", .{slotv.*});
         // **rtc_freq 补丁（2026-11-21 重写）**：⚠ 旧版无条件写 [2f011034]obj+24/28
         // ——obj+20 起是注册链节点（obj+24=节点 cb 指针、obj+28=next）⇒ 该写
         // 把 node6.next 清零截断链 ⇒ id2/5 脱链 ⇒ step17 Hl337(2) 未命中 rc=-3
         // （STORE 观察点抓到写者=本补丁）。真 sleep 对象在 [2f011044]。
         // 现只写 [2f011044] 的对象，且仅 obj[24]==0&&obj[28]==0（零除活体）时。
-        const slp44: *volatile u32 = @ptrFromInt(0x2f01_1044);
+        const slp44: *volatile u32 = mmioPtr(u32, 0x2f01_1044);
         const obj44: u32 = slp44.*;
         if (obj44 >= 0x2f00_0000 and obj44 < 0x2f10_0000 and obj44 % 4 == 0) {
-            const lo44: *volatile u32 = @ptrFromInt(@as(usize, obj44) + 24);
-            const hi44: *volatile u32 = @ptrFromInt(@as(usize, obj44) + 28);
+            const lo44: *volatile u32 = mmioPtr(u32, @as(usize, obj44) + 24);
+            const hi44: *volatile u32 = mmioPtr(u32, @as(usize, obj44) + 28);
             if (lo44.* == 0 and hi44.* == 0) {
                 lo44.* = 32000;
                 hi44.* = 0;
-                board.trap.rtc_freq_rb = lo44.*;
+                if (freestanding) board.trap.rtc_freq_rb = lo44.*;
                 rtc_patch_rb = lo44.*;
                 rtc_patch_done = true;
                 osal.logPublic("bt probe: rtc_freq patch @1044 obj=0x{x:0>8}", .{obj44});
@@ -558,12 +605,12 @@ pub fn init(cfg: *config.Config) c_int {
         }
         if (false) {
             if (slotv.* >= 0x2f00_0000 and slotv.* < 0x2f10_0000) {
-                @as(*volatile u32, @ptrFromInt(slotv.* + 24)).* = 32000;
-                @as(*volatile u32, @ptrFromInt(slotv.* + 28)).* = 0;
+                mmioWr(slotv.* + 24, 32000);
+                mmioWr(slotv.* + 28, 0);
                 // **回读验证**：写后立即读 obj+24——rb==32000 ⇒ 写成功（step17
                 // 失败另有因）；否则写异常/不可写。短行（FIFO 丢行风险最低）。
-                const rb: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + 24)).*;
-                board.trap.rtc_freq_rb = rb;
+                const rb: u32 = mmioRd(slotv.* + 24);
+                if (freestanding) board.trap.rtc_freq_rb = rb;
                 rtc_patch_rb = rb;
                 rtc_patch_done = true;
                 osal.logPublic("bt p: rf rb={x}", .{rb});
@@ -576,7 +623,7 @@ pub fn init(cfg: *config.Config) c_int {
                     oi += pc0.len;
                     var b: usize = 0;
                     while (b < 24) : (b += 4) {
-                        const w: u32 = @as(*volatile u32, @ptrFromInt(slotv.* + q + b)).*;
+                        const w: u32 = mmioRd(slotv.* + q + b);
                         const pc1 = std.fmt.bufPrint(ob[oi..], " {x:0>8}", .{w}) catch break;
                         oi += pc1.len;
                     }
@@ -611,28 +658,28 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(14, "r_esp_ble_ll_set_public_addr", if (freestanding) r_esp_ble_ll_set_public_addr(&mac) else 0);
 
     {
-        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
             var k4_addr: usize = 0;
-            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var node: usize = rdUsz(p0);
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
-                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const op: u64 = mmioRdN(u16, node);
                 if (k == 4) k4_addr = node;
                 const sh: u6 = @intCast(16 * (3 - (k % 4)));
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
-                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+                node = rdUsz(node + 8);
             }
             osal.logPublic("bt probe: cb14 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
             // **LPCON 回读（clean zone）**：BLE RTC timer 时钟链三寄存器粘性
             // 判别——值保持 ⇒ 写入生效（缺的不是这段）；值漂 ⇒ LP 域写问题。
             {
                 const lp: usize = 0x2010_F000;
-                const lpt04: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x04)).*;
-                const m32k: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x14)).*;
-                const cc18: u32 = @as(*volatile u32, @ptrFromInt(lp + 0x18)).*;
+                const lpt04: u32 = mmioRd(lp + 0x04);
+                const m32k: u32 = mmioRd(lp + 0x14);
+                const cc18: u32 = mmioRd(lp + 0x18);
                 osal.logPublic("bt probe: lpcon lpt04=0x{x:0>8} m32k=0x{x:0>8} cc18=0x{x:0>8}", .{ lpt04, m32k, cc18 });
             }
             // **yield 注入（2026-11-21）**：task 空转轮询环 125ms/迭代从不让出
@@ -650,49 +697,49 @@ pub fn init(cfg: *config.Config) c_int {
                 while (k7 < 64) : (k7 += 4) {
                     // **全槽 ret 桩**（修复 PC=0 lockup）：blob 会调用 sink 的
                     // 其它 fn 槽——半零结构 = 调 0。默认全部 ret，再叠让出桩。
-                    @as(*volatile usize, @ptrFromInt(sink + k7)).* = ret_stub;
+                    mmioWr(sink + k7, @truncate(ret_stub)); // 32 位槽写（主机 64 位对齐）
                 }
-                @as(*volatile usize, @ptrFromInt(sink + 12)).* = yield_fn;
-                @as(*volatile usize, @ptrFromInt(sink + 28)).* = yield_fn;
-                @as(*volatile usize, @ptrFromInt(0x2f01_0fb4)).* = sink;
+                mmioWr(sink + 12, @truncate(yield_fn)); // 32 位槽写（主机 64 位对齐）
+                mmioWr(sink + 28, @truncate(yield_fn)); // 32 位槽写（主机 64 位对齐）
+                mmioWr(0x2f01_0fb4, @truncate(sink)); // 32 位槽写（主机 64 位对齐）
                 osal.logPublic("bt probe: yield sink published obj=0x{x:0>8} fn=0x{x:0>8}", .{ sink, yield_fn });
             }
             // **判别读数**：cb7 捕获的 id2/5 节点地址（=env+52/+64）此刻的 id 值
             // 与链上第 5 节点地址比对——同址且 id=6 ⇒ 原地篡改；异址或 id=2 ⇒ 纯摘链。
             if (relink_p16 != 0 and relink_p16 % 4 == 0 and relink_p16 >= 0x2f00_0000 and relink_p16 < 0x2f10_0000) {
-                const idn2: u32 = @as(*volatile u16, @ptrFromInt(relink_p16)).*;
-                const nx2: usize = @as(*volatile usize, @ptrFromInt(relink_p16 + 8)).*;
-                const idn5: u32 = if (relink_p20 >= 0x2f00_0000 and relink_p20 < 0x2f10_0000) @as(*volatile u16, @ptrFromInt(relink_p20)).* else 0xFF;
+                const idn2: u32 = mmioRdN(u16, relink_p16);
+                const nx2: usize = rdUsz(relink_p16 + 8);
+                const idn5: u32 = if (relink_p20 >= 0x2f00_0000 and relink_p20 < 0x2f10_0000) mmioRdN(u16, relink_p20) else 0xFF;
                 osal.logPublic("bt probe: n2=0x{x:0>8} id={d} nx=0x{x:0>8} | n5 id={d} k4=0x{x:0>8}", .{ relink_p16, idn2, nx2, idn5, k4_addr });
             }
             // **判别打印**：env→p16（节点2缓冲）现状 + 链尾 next。若 [p16] 仍=2
             // 而 node6.next 不指 p16 ⇒ 摘链；若 [p16]=0 ⇒ 内存被清（memset 型）。
-            const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;
+            const envp: usize = rdUsz(0x2f01_1038);
             if (envp >= 0x2f00_0000 and envp < 0x2f10_0000) {
-                const e0: usize = @as(*volatile usize, @ptrFromInt(envp)).*;
+                const e0: usize = rdUsz(envp);
                 if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) {
-                    const p16: usize = @as(*volatile usize, @ptrFromInt(e0 + 16)).*;
-                    const p20: usize = @as(*volatile usize, @ptrFromInt(e0 + 20)).*;
-                    const id16: u32 = if (p16 >= 0x2f00_0000 and p16 < 0x2f10_0000) @as(*volatile u16, @ptrFromInt(p16)).* else 0xFFFF;
-                    const nx16: usize = if (p16 >= 0x2f00_0000 and p16 < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(p16 + 8)).* else 0;
-                    const id20: u32 = if (p20 >= 0x2f00_0000 and p20 < 0x2f10_0000) @as(*volatile u16, @ptrFromInt(p20)).* else 0xFFFF;
+                    const p16: usize = rdUsz(e0 + 16);
+                    const p20: usize = rdUsz(e0 + 20);
+                    const id16: u32 = if (p16 >= 0x2f00_0000 and p16 < 0x2f10_0000) mmioRdN(u16, p16) else 0xFFFF;
+                    const nx16: usize = if (p16 >= 0x2f00_0000 and p16 < 0x2f10_0000) rdUsz(p16 + 8) else 0;
+                    const id20: u32 = if (p20 >= 0x2f00_0000 and p20 < 0x2f10_0000) mmioRdN(u16, p20) else 0xFFFF;
                     osal.logPublic("bt probe: env+16=0x{x:0>8} id={d} nx=0x{x:0>8} | env+20=0x{x:0>8} id={d}", .{ p16, id16, nx16, p20, id20 });
                 }
             }
             // 链尾节点（第 n 个）的 next 值
             if (k > 0) {
-                var last: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+                var last: usize = rdUsz(p0);
                 var j: usize = 1;
-                while (j < k) : (j += 1) last = @as(*volatile usize, @ptrFromInt(last + 8)).*;
-                const nxt: usize = @as(*volatile usize, @ptrFromInt(last + 8)).*;
-                const lid: u32 = @as(*volatile u16, @ptrFromInt(last)).*;
+                while (j < k) : (j += 1) last = rdUsz(last + 8);
+                const nxt: usize = rdUsz(last + 8);
+                const lid: u32 = mmioRdN(u16, last);
                 osal.logPublic("bt probe: last=0x{x:0>8} id={d} next=0x{x:0>8}", .{ last, lid, nxt });
             }
             // **deinit 判据**：task_deinit 尾部把 env[0] 清 0（state=1 为在位）。
-            const envp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1038)).*;
+            const envp2: usize = rdUsz(0x2f01_1038);
             if (envp2 >= 0x2f00_0000 and envp2 < 0x2f10_0000) {
-                const e0: usize = @as(*volatile usize, @ptrFromInt(envp2)).*;
-                const st: u8 = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) @as(*volatile u8, @ptrFromInt(e0)).* else 0xFF;
+                const e0: usize = rdUsz(envp2);
+                const st: u8 = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) mmioRdN(u8, e0) else 0xFF;
                 osal.logPublic("bt probe: env state={d}", .{st});
             }
         } else {
@@ -715,11 +762,11 @@ pub fn init(cfg: *config.Config) c_int {
         // ⚠ **清 bit10（wifi_apb）**：mce(13) 的 deps 置此位 ⇒ UART0 APB 时钟被门控
         // ⇒ 观测通道死亡。FE 测量在自写路径实测不需要 bit10（clk_conf1=0x003ff880
         // 时期校准完成 rc=0）⇒ 清回后 UART 恢复且不影响校准。
-        const c1p: *volatile u32 = @ptrFromInt(0x2010_9C14);
+        const c1p: *volatile u32 = mmioPtr(u32, 0x2010_9C14);
         c1p.* &= ~@as(u32, 1 << 10);
         const load_cal = @extern(*const fn () callconv(.c) void, .{ .name = "esp_phy_load_cal_and_init" });
         load_cal();
-        @as(*volatile u32, @ptrFromInt(0x2E00_0490)).* = 0xADC0_5FC0; // LP：load_cal 已返回
+        mmioWr(0x2E00_0490, 0xADC0_5FC0); // LP：load_cal 已返回
         osal.logPublic("bt bringup: load_cal done (pre-mce13-uart-window)", .{});
     }
     rc = step(15, "hci_transport_init", transport.init());
@@ -729,12 +776,12 @@ pub fn init(cfg: *config.Config) c_int {
     // **时间界定**：在 enable 之前采样两个睡眠段基址。
     // 若此处已被改 ⇒ 写入发生在 init 之前（bootloader/加载）；否则在 enable 路径里。
     osal.logPublic("bt watch: btslp16=0x{x:0>8} btslp0=0x{x:0>8}", .{
-        (@as(*align(1) const u32, @ptrFromInt(0x2f00_f99a))).*,
-        (@as(*align(1) const u32, @ptrFromInt(0x2f00_fa00))).*,
+        (mmioRdA1(0x2f00_f99a)),
+        (mmioRdA1(0x2f00_fa00)),
     });
     {
         var probe_local2: u8 = 0;
-        @import("board").trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
+        if (freestanding) board.trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
     }
     osal.logPublic("bt bringup: INITED", .{});
     return 0;
@@ -771,20 +818,20 @@ pub fn enable() c_int {
     // **rc=-3 根因探针**：base_stack_enable 第二段注册 Hl337(id=2) 在
     // [2f011030] 链表扫 u16 id==2，未命中返回 -1 ⇒ 传导 -3。遍历打印链节点。
     {
-        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             // 紧凑单行（双组 u64，各 8 个 16-bit id，零叠写；FIFO 撞行免疫）
             var a0v: u64 = 0;
             var a1v: u64 = 0;
-            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var node: usize = rdUsz(p0);
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
-                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const op: u64 = mmioRdN(u16, node);
                 const sh: u6 = @intCast(16 * (3 - (k % 4))); // 48,32,16,0 —— 每组 4 id，零叠写
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
-                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+                node = rdUsz(node + 8);
             }
-            const tailc: usize = @as(*volatile usize, @ptrFromInt(p0 + 4)).*;
+            const tailc: usize = rdUsz(p0 + 4);
             osal.logPublic("bt probe: cblist A=0x{x:0>16} B=0x{x:0>16} n={d} p0=0x{x:0>8} tail=+{d}", .{ a0v, a1v, k, p0, tailc - p0 });
         } else {
             osal.logPublic("bt probe: cblist head oob=0x{x:0>8}", .{p0});
@@ -793,8 +840,8 @@ pub fn enable() c_int {
     // **重挂 id2/id5**（实证：step10-14 间 blob 侧 task_deinit 摘走 [env+16]/[env+20]
     // 两节点 ⇒ step17 的 Hl337(2) 扫描未命中 ⇒ rc=-3）。节点内存未被清，原样重链。
     if (freestanding and relink_p16 != 0 and relink_p20 != 0) {
-        const id16: u32 = @as(*volatile u16, @ptrFromInt(relink_p16)).*;
-        const id20: u32 = @as(*volatile u16, @ptrFromInt(relink_p20)).*;
+        const id16: u32 = mmioRdN(u16, relink_p16);
+        const id20: u32 = mmioRdN(u16, relink_p20);
         if (id16 == 2 and id20 == 5) {
             r_sym_bt_kNIbP2qfZqaMNyimIzAy(@ptrFromInt(relink_p16), 2);
             r_sym_bt_kNIbP2qfZqaMNyimIzAy(@ptrFromInt(relink_p20), 5);
@@ -808,22 +855,23 @@ pub fn enable() c_int {
     // **post-17 混叠探针**：slot 指针（s0 结构 +0/+4/+8）+ 链表复扫。若 slot1 与
     // id-2 节点同缓冲，handler 存入(0x4001511a)把节点 id 覆成 0x511a ⇒ 复扫缺 2。
     {
-        const s0p: usize = @as(*volatile usize, @ptrFromInt(0x2f01_0f14)).*;
-        const sl0: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(s0p)).* else 0;
-        const sl1: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(s0p + 4)).* else 0;
-        const sl2: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) @as(*volatile usize, @ptrFromInt(s0p + 8)).* else 0;
+        const s0p: usize = mmioRd(0x2f01_0f14);
+        // 32 位字读（主机 64 位上 `*usize` 对 +4 地址会对齐失败）。
+        const sl0: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p) else 0;
+        const sl1: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p + 4) else 0;
+        const sl2: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p + 8) else 0;
         osal.logPublic("bt probe: slots s0=0x{x:0>8} +0=0x{x:0>8} +4=0x{x:0>8} +8=0x{x:0>8} rc17={d}", .{ s0p, sl0, sl1, sl2, rc });
-        const p0: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1030)).*;
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
-            var node: usize = @as(*volatile usize, @ptrFromInt(p0)).*;
+            var node: usize = rdUsz(p0);
             var k: usize = 0;
             while (node >= 0x2f00_0000 and node < 0x2f10_0000 and k < 8) : (k += 1) {
-                const op: u64 = @as(*volatile u16, @ptrFromInt(node)).*;
+                const op: u64 = mmioRdN(u16, node);
                 const sh: u6 = @intCast(16 * (3 - (k % 4)));
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
-                node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
+                node = rdUsz(node + 8);
             }
             osal.logPublic("bt probe: cblist17 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
         }
@@ -845,7 +893,7 @@ pub fn enable() c_int {
         // ⚠ 条件**不能**用 cfg.btdm.sleep_en——归档在 task_init 会回写该字段
         // （sleep_en=0 轮实证：step20 前已非 0 ⇒ 注册器被调 ⇒ 槽 NULL ⇒
         // load fault @0xc panic）。以**槽本身**为准：非空才注册。
-        const slot_chk: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        const slot_chk: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
         if (slot_chk.* != 0) {
             // a1=null 会命中 beqz a1 → .L75 整体跳过（obj[4] 不写）⇒
             // arg 用非空占位（桩不读它）。a4=0 跳过 .L79 附加初始化。
@@ -862,9 +910,9 @@ pub fn enable() c_int {
     // 解码基址：`ptr = base | (idx<<2)`）。我们这边 +12=0 ⇒ 基址 0 ⇒ 解码出
     // 裸偏移（实测 mepc=0x60 = 0x18<<2）⇒ 取指 fault。task_enable 前置为官方值。
     {
-        const a8: usize = @as(*volatile usize, @ptrFromInt(0x2f01_8720)).*;
+        const a8: usize = rdUsz(0x2f01_8720);
         if (a8 >= 0x2f00_0000 and a8 < 0x2f10_0000 and a8 % 4 == 0) {
-            const mb: *volatile u32 = @ptrFromInt(a8 + 12);
+            const mb: *volatile u32 = mmioPtr(u32, a8 + 12);
             if (mb.* == 0) mb.* = 0x2f00_0000;
         }
     }
@@ -872,7 +920,7 @@ pub fn enable() c_int {
     rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
     {
-        const slotv: *volatile u32 = @ptrFromInt(0x2f01_1034);
+        const slotv: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
         osal.logPublic("bt probe: sched slot after step20 = 0x{x:0>8}", .{slotv.*});
     }
 
@@ -1012,7 +1060,10 @@ pub fn bridgeDrain() void {
 /// 并在日志里给出可用 `findPendingClicInput()` 校正的入口。
 fn intrArm(src: c_int) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
-    const hw = @import("board").hw;
+    // 主机测试（refAllDecls）图里没有 `board`：给同签名的空壳。
+    const hw = if (freestanding) @import("board").hw else struct {
+        pub fn writeReg(_: usize, _: u32) void {}
+    };
     // **路由目标改判 v2（ROM 表布局解码）**：ext34 fn 槽=0x2f81281e **奇数**
     // （RISC-V 函数指针不合法 ⇒ 该槽是 arg/数据）；真 fn 在相邻槽：
     // ext35=0x2f815258（偶 ✓）、ext37=0x2f07f19c（wrapper ✓）。blob 期望的
@@ -1068,14 +1119,14 @@ fn intrArm(src: c_int) void {
                     // bridgeDrain 激活后才开（见 probe.zig "ISR 桥 IE 延迟使能"，
                     // 对 input 21 与 input 53 同时生效）。
                     hw.writeReg(0x1080_1000 + routed_input * 4, 1 << 24); // 仅 prio
-                    @import("board").trap.setHandler(routed_input, bridgeIsr, s);
+                    if (freestanding) board.trap.setHandler(routed_input, bridgeIsr, s);
                     break;
                 }
             }
         }
     }
     const bit: u32 = @as(u32, 1) << @intCast(routed_input & 31);
-    asm volatile ("csrs mie, %[b]"
+    if (comptime @import("builtin").cpu.arch.isRiscv()) asm volatile ("csrs mie, %[b]"
         :
         : [b] "r" (bit),
     );

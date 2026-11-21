@@ -1080,9 +1080,14 @@ test "callout: 到期投进 eventq，serviceCallouts 只投一次" {
 
 const EventFn = ?*const fn (?*anyopaque) callconv(.c) void;
 
+/// RISC-V I/O 栅栏（导出层每个 `wr_btdm_osal_*` 入口用）；主机测试（x86）上为空。
+inline fn fenceIo() void {
+    if (comptime @import("builtin").cpu.arch.isRiscv()) asm volatile ("fence iorw, iorw");
+}
+
 export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
     logPublic("bt ret: eventq_init done", .{});
@@ -1092,7 +1097,7 @@ export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
     // 直接写它，不做任何地址推算。
     if (patch_bail_field) {
         const w: *volatile u32 = @ptrCast(evq); // 槽的首字（归档检查的就是它）
-        w.* = @intFromPtr(&bail_sentinel);
+        w.* = @truncate(@intFromPtr(&bail_sentinel));
         logPublic("bt patch: evq=0x{x} -> 0x{x}", .{ @intFromPtr(evq), w.* });
     }
 }
@@ -1102,7 +1107,7 @@ export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
 export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
     logPublic("bt call: eventq_get", .{});
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: eventq_get", .{});
     const _r = eventqGet(evq, tmo);
     logLine("bt hook: eventq_get => {x}", .{if (_r) |v| @intFromPtr(v) else @as(usize, 0)});
@@ -1115,7 +1120,7 @@ export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
         logLine("bt osal: eventq_put UNREG q=0x{x} ev=0x{x}", .{ @intFromPtr(evq), @intFromPtr(ev) });
     }
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: eventq_put", .{});
     eventqPut(evq, ev);
 }
@@ -1131,19 +1136,19 @@ export fn wr_btdm_osal_eventq_is_empty(evq: *Slot) callconv(.c) bool {
 
 export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: event_run", .{});
     eventRun(ev);
 }
 export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: event_init", .{});
     eventInit(ev, fn_, arg);
 }
 export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     eventDeinit(ev);
 }
 export fn wr_btdm_osal_event_reset(ev: *Slot) callconv(.c) void {
@@ -1161,20 +1166,20 @@ export fn wr_btdm_osal_event_set_arg(ev: *Slot, arg: ?*anyopaque) callconv(.c) v
 
 export fn wr_btdm_osal_mutex_init(mu: *Slot) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     const _r = mutexInit(mu);
     logPublic("bt ret: mutex_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_mutex_deinit(mu: *Slot) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     return mutexDeinit(mu);
 }
 export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
     logPublic("bt call: mutex_pend slot=0x{x} tmo={d}", .{ @intFromPtr(mu), timeout });
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     const __r = mutexPend(mu, timeout);
     logPublic("bt ret: mutex_pend => {d}", .{__r});
     if (dump_hook) |f| f(); // 事件触发：此刻已过观测窗口，FIFO 也空出来了
@@ -1182,26 +1187,26 @@ export fn wr_btdm_osal_mutex_pend(mu: *Slot, timeout: u32) callconv(.c) c_int {
 }
 export fn wr_btdm_osal_mutex_release(mu: *Slot) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: mutex_release", .{});
     return mutexRelease(mu);
 }
 
 export fn wr_btdm_osal_sem_init(sem: *Slot, tokens: u16) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     const _r = semInit(sem, tokens);
     logLine("bt hook: sem_init => {d}", .{_r});
     return _r;
 }
 export fn wr_btdm_osal_sem_deinit(sem: *Slot) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     return semDeinit(sem);
 }
 export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: sem_pend", .{});
     const _r = semPend(sem, timeout);
     logLine("bt hook: sem_pend => {d}", .{_r});
@@ -1209,7 +1214,7 @@ export fn wr_btdm_osal_sem_pend(sem: *Slot, timeout: u32) callconv(.c) c_int {
 }
 export fn wr_btdm_osal_sem_release(sem: *Slot) callconv(.c) c_int {
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: sem_release", .{});
     return semRelease(sem);
 }
@@ -1736,7 +1741,7 @@ export fn wr_btdm_osal_free(ptr: ?*anyopaque) callconv(.c) void {
 export fn wr_btdm_osal_task_create(fn_: TaskFn, name: ?[*:0]const u8, stack_size: u32, arg: ?*anyopaque, priority: u32, task_handle: *?*anyopaque, core_id: u32) callconv(.c) c_int {
     logPublic("bt call: task_create", .{});
     noteCaller();
-    asm volatile ("fence iorw, iorw");
+    fenceIo();
     logLine("bt hook: task_create", .{});
     _ = name;
     return taskCreate(fn_, stack_size, arg, priority, core_id, task_handle);

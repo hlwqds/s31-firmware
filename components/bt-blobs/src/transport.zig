@@ -297,11 +297,9 @@ pub fn sendReadLocalVersion() c_int {
 // 主机用例
 // ---------------------------------------------------------------------------
 
-/// 主机侧模拟 controller 的回程。
+/// 主机侧模拟 controller 的回程（**实测上行布局**：无 H4 类型字节，
+/// `[0]=event code, [1]=parameter length`——调用方给的就是完整事件帧）。
 pub fn injectEvent(bytes: []u8) void {
-    if (bytes.len >= 2) {
-        bytes[1] = @intCast(bytes.len - 2);
-    }
     _ = leEvtTx(bytes.ptr, null);
 }
 
@@ -316,13 +314,15 @@ test "transport: 包布局与枚举值" {
     try std.testing.expectEqual(@as(u32, 0x03), DIR_H2C);
 }
 
-test "transport: 事件回调按 cmd[1]+2 切长度、记下 event code" {
+test "transport: 事件回调按 cmd[1]+1 切长度（无 H4 类型字节）、记下 event code" {
     resetStats();
-    var buf = [_]u8{ 0x04, 0, 0x0E, 0xAA, 0xBB }; // 0x0E = Command Complete
+    // 实测样本：Command Complete / plen 3 / ncmd 1 / opcode 0x0000
+    var buf = [_]u8{ 0x0E, 0x03, 0x01, 0x00, 0x00 };
     injectEvent(&buf);
     try std.testing.expectEqual(@as(u32, 1), stats().evt_count);
     try std.testing.expectEqual(@as(u8, 0x0E), stats().last_evt_code);
     try std.testing.expectEqual(@as(u8, 3), stats().last_evt_len);
+    try std.testing.expectEqual(@as(u32, 4), stats().evt_bytes); // 帧长 = 1 + plen
 }
 
 test "transport: B 路径同样受 init 门禁，type 常量与 A 路径不同" {

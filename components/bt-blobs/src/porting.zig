@@ -250,13 +250,13 @@ pub fn phyDomainEnable() void {
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
-        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+        const gsaved: u32 = rd(clic25);
+        wr(clic25, gsaved & ~@as(u32, 0x108));
 
         _ = esw(0x18E000, &rec, 16);
         flashOpSet(0);
         flashOpSet(0);
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
+        wr(clic25, gsaved);
     }
     const fo: usize = 0x2010_9C08;
     // **补 bit6 `clk_btmac_fo` 与 bit7 `clk_bt_apb_fo`**（IDF `clk_conf_force_on` 位序）：
@@ -344,13 +344,13 @@ pub fn phyDomainEnable() void {
         // 清 nmies(bit3)+IE(bit8)，写完恢复。T0 采样器已武装、125µs 一发，
         // 不门控则与 ms 级 flash 擦写必然相撞。
         const clic25: usize = 0x1080_1000 + 25 * 4;
-        const gsaved: u32 = @as(*volatile u32, @ptrFromInt(clic25)).*;
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved & ~@as(u32, 0x108);
+        const gsaved: u32 = rd(clic25);
+        wr(clic25, gsaved & ~@as(u32, 0x108));
 
         _ = esw(0x18E000, &rec, 16);
         flashOpSet(0);
         flashOpSet(0);
-        @as(*volatile u32, @ptrFromInt(clic25)).* = gsaved;
+        wr(clic25, gsaved);
     }
 }
 

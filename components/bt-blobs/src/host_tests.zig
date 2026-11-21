@@ -7,6 +7,8 @@
 const std = @import("std");
 
 test {
+    // 目标侧 extern 的空实现（ROM/libphy/归档/板级符号）——主机目标不链归档。
+    _ = @import("host_stubs.zig");
     _ = @import("config.zig");
     _ = @import("est_phy_tables.zig");
 
