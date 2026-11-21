@@ -244,6 +244,15 @@ pub fn lpBlackBoxReport() void {
         const pc1: *volatile u32 = @ptrFromInt(0x2E00_0384);
         const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
         board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.* });
+        {
+            const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
+            const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
+            var k: u32 = 0;
+            while (k < 16) : (k += 1) {
+                const e = ring[(cnt.* + 32 - 16 + k) % 32];
+                board.log.line("BBQ {d} 0x{x:0>8}", .{ k, e });
+            }
+        }
     }
     const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
     if (lp[0] != diag_blk_magic) return;
@@ -2279,6 +2288,8 @@ const flash_mark_magic: u32 = 0x5A17_0000; // 高 16 位是 magic，低 16 位�
 fn flashStage(n: u32) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     if (bt_window_no_flash) return; // BT 窗口零 flash 写（SPI1 楔子预防）
+    board.hw.flashOpBegin(); // 窗口旗（见 flashStageExtra 的说明）；幂等，嵌套安全
+    defer board.hw.flashOpEnd();
     // ⚠ **必须屏蔽中断**：ROM 的擦/写**不替我们屏蔽** MIE，
     // 而擦写期间 flash 控制器忙 ⇒ 此时进中断可能硬 fault 或写坏扇区，
     // 且症状与"LE 卡住"完全一样。`boot-power-perf/src/flash.zig` 的封装
@@ -2318,6 +2329,12 @@ fn flashStageExtra(n: u32, a: u32, b: u32) void {
     // 实测楔死在第一条 write（标记扇区 0xFF + NMI 采样仍响应 = 楔在 masked
     // 写内）。零写窗口纪律覆盖到本函数。
     if (bt_window_no_flash) return;
+    // **窗口旗包住整段擦写**（2026-11-21）：T0 已配成 NMI（mstatus.MIE 屏蔽不了它），
+    // 擦写期打进 trapDispatch（flash XIP）= 取指 fault ⇒ CPU_LOCKUP。旗置位期间
+    // trap 入口只记录并 mret 重试（入口在 .trap_ram）。是否命中取决于 NMI 重装节拍
+    // 与写窗口的相对时序——同一 build 要么全中要么全不中（实测 43/45 vs 0）。
+    board.hw.flashOpBegin();
+    defer board.hw.flashOpEnd();
     flashStage(n);
     const prev = asm volatile ("csrrci %[v], mstatus, 8"
         : [v] "=r" (-> usize),

@@ -144,11 +144,29 @@ pub const WdtAttempt = struct { before: u32, after: u32, tries: u32 };
 /// CPU_LOCKUP 重启循环（rst:0x1a，23 轮实证）。旗子置位期间 trap 入口
 /// 只记录 mepc/cause 后 mret 重试（写窗口结束 ⇒ 重试成功 ⇒ 流程无感）。
 export var flash_op_window: u32 = 0;
+/// 窗口嵌套计数（`flashStageExtra` 内部还调 `flashStage`）。
+var flash_op_nest: u32 = 0;
+/// T0 闹钟周期（`armT0Interrupt` 记下，供 flash 窗口结束后重装）。
+pub var t0_period_us: u32 = 2000;
+/// **进窗口先停 T0 闹钟**（2026-11-21 实测）：T0 已配成 NMI（mstatus.MIE 屏蔽不了），
+/// 只靠 `flash_op_window` 让入口"记录后 mret 重试"不够——NMI 是电平挂起，`mret` 后
+/// 立刻再入，被打断的 ROM 擦除代码一条指令都前进不了 ⇒ 零进展静默挂死。
+/// 不设窗口旗时更糟：NMI 打进 trapDispatch（XIP）取指 fault ⇒ CPU_LOCKUP。
 pub fn flashOpBegin() void {
-    flash_op_window = 1;
+    flash_op_nest += 1;
+    if (flash_op_nest == 1) {
+        writeReg(t0config, readReg(t0config) & ~@as(u32, 1 << 10)); // alarm_en=0
+        writeReg(timg0 + 0x7C, 1); // 清可能已挂起的 T0
+        flash_op_window = 1;
+    }
 }
 pub fn flashOpEnd() void {
-    flash_op_window = 0;
+    if (flash_op_nest == 0) return;
+    flash_op_nest -= 1;
+    if (flash_op_nest == 0) {
+        flash_op_window = 0;
+        ackT0Interrupt(t0_period_us); // ack + 重装（alarm_en=1）
+    }
 }
 
 pub fn disableRtcWdt() WdtAttempt {
@@ -326,6 +344,7 @@ pub fn routeT0Interrupt(input: usize) void {
 }
 
 pub fn armT0Interrupt(period_us: u32) void {
+    t0_period_us = period_us;
     // 关键：T0 的 alarm 必须**显式使能**（config 的 bit10），否则计数到点也不会触发。
     writeReg(t0config, readReg(t0config) | (1 << 10));
     const now = nowUs();

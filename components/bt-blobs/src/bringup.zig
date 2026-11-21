@@ -748,7 +748,8 @@ pub fn init(cfg: *config.Config) c_int {
                 while (j < k) : (j += 1) last = rdUsz(last + 8);
                 const nxt: usize = rdUsz(last + 8);
                 const lid: u32 = mmioRdN(u16, last);
-                osal.logPublic("bt probe: last=0x{x:0>8} id={d} next=0x{x:0>8}", .{ last, lid, nxt });
+                _ = nxt; // （last=/btslp16 读数行已回收：镜像容量紧张。）
+                _ = lid;
             }
             // **deinit 判据**：task_deinit 尾部把 env[0] 清 0（state=1 为在位）。
             const envp2: usize = rdUsz(0x2f01_1038);
@@ -790,10 +791,7 @@ pub fn init(cfg: *config.Config) c_int {
     status_state = .inited;
     // **时间界定**：在 enable 之前采样两个睡眠段基址。
     // 若此处已被改 ⇒ 写入发生在 init 之前（bootloader/加载）；否则在 enable 路径里。
-    osal.logPublic("bt watch: btslp16=0x{x:0>8} btslp0=0x{x:0>8}", .{
-        (mmioRdA1(0x2f00_f99a)),
-        (mmioRdA1(0x2f00_fa00)),
-    });
+    // （last=/btslp16 读数行已回收：镜像容量紧张。）
     {
         var probe_local2: u8 = 0;
         if (freestanding) board.trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
