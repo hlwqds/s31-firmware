@@ -1437,10 +1437,10 @@ pub fn run() noreturn {
         // enable 已返回（任务已启动、桥已挂），此刻开 IE 安全。
         if (!bt_ie_on) {
             bt_ie_on = true;
-            const ie21: *volatile u32 = @ptrFromInt(0x1080_1000 + 21 * 4);
-            ie21.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src124→input21 MAC 应答）
-            const ie53: *volatile u32 = @ptrFromInt(0x1080_1000 + 53 * 4);
-            ie53.* |= (1 << 24) | (1 << 8); // prio=1 + IE（src125→input53 BB 链）
+            // **oracle 精确值**（2026-11-21）：官方 `intctl[24]=0x7fc10100`
+            // （prio=0x7f + bits14-15 + IE）；输入 53 官方未配置 ⇒ 不写。
+            const ie24: *volatile u32 = @ptrFromInt(0x1080_1000 + 24 * 4);
+            ie24.* = 0x7fc1_0100;
         }
         // **rx/buf_alloc 共用的 ENABLED 旗**（rx .L50 = li a0,-3 出口；buf_alloc
         // 同门前置）——ctx = [2f011020]，旗 = byte[ctx] bit0。官方由

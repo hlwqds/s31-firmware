@@ -28279,3 +28279,22 @@ oracle = `~/esp/bt-ctl-oracle`（IDF v6.1，`esp_bt_controller_init/enable`
 （"队列空去阻塞"），即任务认为永远有事件待处理。下轮：把泵状态字
 （mask 0(s0)/34(s0)、counter 36(s0)、flag 25(s2)）接进 NMI 行（主上下文
 楔在泵内时唯一活通道），定位哪个事件位永不清。
+
+**oracle 中断路由真值 + 路由 v4（2026-11-21）**：官方固件 enable 后
+`MAP[124]=0x18`（BT_MAC → CLIC 输入 **24**，bit8 清）、`intctl[24]=
+0x7fc10100`（prio=0x7f + bits14-15 + IE）、`MAP[125]=0`（BT_BB **不映射**）、
+`MAP[27]=0x15`（输入 21 属 src27，非 BT）、输入 53 未配置、`MSTATUS.MIE=1`、
+`intctl` **可读非零**（"读恒 0"不成立于官方路径）。旧 v3（124→21/125→53）
+三处偏离；v3 的 hscan 证据疑为自证污染（命中的是我们自己登记的 bridgeIsr）。
+**v4**：只路由 124→24、MAP 不置 bit8、延迟 IE 写 oracle 精确值、fn 取
+`intrHandlerOf(124)`（缺失则纯计数桩 `countOnlyIsr`）。
+**v4 效果（板级实证）**：中断疏通后 blob **首次**越过 .L48 楔点走进真实调度
+派发——新 trap 线 `mepc=0x60 ra=0x400057c8`（= `jal vibwBXog` 返回地址）：
+派发器 `vibwBXog(evt, arg)` 遍历 `[0x20101074]` 为头的节点链（node[+56]=
+next）并查 BB 块 `[0x2010B000+evt*16]`，取到的 fn=**0x60**（非函数指针）
+⇒ 调 0x60 取指 fault ⇒ 复位环 25 次。**下轮**：对拍 oracle 的 `[0x20101070..90]`
+与节点链内容、BB 块 16 项，定我们链上坏节点的来源（注册阶段缺失 or 布局）。
+**架构级结论（待实施）**：IDF 下 blob ISR **抢占式**运行（任务自旋期间投递
+事件使其继续）；我们的 ISR 桥推迟到主上下文 ⇒ 主上下文楔在 blob 代码内时
+drain 永不运行 ⇒ 结构性死锁。终局修法 = osal ISR 安全变体（in_isr 标志下
+semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑。

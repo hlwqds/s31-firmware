@@ -48,6 +48,12 @@ pub var wl_printed: bool = false;
 /// 让出桩计数（判读"任务每轮是否真推进"：icg 行 sb= 每轮增量）。
 pub var stub_blocks: u32 = 0;
 
+/// 纯计数 ISR 桩（oracle 路由 v4：blob 未经 intr_alloc 传 fn 时的占位）。
+pub var count_only: u32 = 0;
+fn countOnlyIsr(_: ?*anyopaque) callconv(.c) void {
+    count_only += 1;
+}
+
 /// blob log sink 对象存储（自有 .bss，堆不可达；槽布局见 yield 注入段）。
 pub var log_sink_storage: [64]usize align(4) = undefined;
 
@@ -1005,17 +1011,19 @@ fn intrArm(src: c_int) void {
     // 注册——截断的 hscan 首命中 handlers[5]（=ext5，即 CLIC input 21）非空。
     // ⇒ blob 期望 MAC 中断到达 **input 21**（ext 5）。125（BB）→ 22 仅路由
     // （ext6 无 handler 时不置 IE，风暴安全）。
-    const routed_input: usize = switch (src) {
-        124 => 21, // MODEM_BT_MAC → ext 5（blob handler 经 shellSetIsr 在位）
-        125 => 53, // MODEM_BT_BB → ext 37（链表头 0x2f07f19c：三 blob handler）
-        else => @intCast(@as(u32, @intCast(src)) & 63),
-    };
+    // **路由 v4 = 官方 oracle 对拍（2026-11-21）**：IDF v6.1 官方固件
+    // enable 后实测 `MAP[124]=0x00000018`（BT_MAC → CLIC 输入 **24**，bit8 清）、
+    // `intctl[24]=0x7fc10100`（prio=0x7f + bits14-15 + IE）、`MAP[125]=0`
+    // （BT_BB **不映射**）、输入 21 属 src27（非 BT）、输入 53 未配置。
+    // 旧 v3 的 124→21/125→53 与官方三处偏离（输入号/intctl 值/MAP bit8）。
+    if (src != 124) return; // 官方只映射 124（125 不映射）
+    const routed_input: usize = 24; // MODEM_BT_MAC → 官方输入 24
     // **路由（此前整段缺失 = FE 冻结根因）**：S31 的中断源 ≠ CPU 输入号，每源一个
     // MAP 寄存器（表基 0x2058_5000，源 0=SYS_ICM 于 +0x0、源 124=MODEM_BT_MAC 于
     // +0x1F0、源 125=MODEM_BT_BB 于 +0x1F4）。不写 MAP，CLIC 里永远看不到 pending
     // （routeT0Interrupt 同款教训，见 hw.zig 注释）。bits[5:0]=input，bits[9:8]=
     // pass_level（非零才启用）。
-    hw.writeReg(0x2058_5000 + @as(usize, @intCast(src)) * 4, (routed_input & 0x3F) | (1 << 8));
+    hw.writeReg(0x2058_5000 + @as(usize, @intCast(src)) * 4, routed_input & 0x3F); // 官方值 0x18（bit8 清）
     // CLIC intctl：prio [31:24] **必须非零**（prio=0 的电平输入永不触发）+ IE bit8。
     // ⚠ **IE 与 handler 必须同开同关**：IE 置位而不挂 handler（或不挂清理源的电平
     // ISR）⇒ CPU 取中断 → dispatch 忽略 → IP 永不清 → 风暴循环（CPU 饿死）。
@@ -1033,21 +1041,11 @@ fn intrArm(src: c_int) void {
         if (@import("osal_kit").osal.intrHandlerOf(src)) |h| {
             hf = h.f;
             harg = h.arg;
-        } else if (src == 125) {
-            // **src125（BB）特例**：blob 的 BB handler 三条挂在 ext37 链表头
-            // 0x2f07f19c 下（见上方 ROM 表头解码）——chainIsr 桥现为纯计数
-            // （代跑即崩 ×7 实证、契约未定前不代跑，见上方与 README）。
-            hf = chainIsr;
-            harg = null;
-        } else {
-            // **优先自有表**：blob 经 intr_handler_set(21, mac_isr, arg) 直注——
-            // shellSetIsr 归一化存 handlers[21-16=5]（hscan 实证非空）。
-            const gh = @import("board").trap.getHandler(routed_input - 16);
-            if (gh.fn_) |f| {
-                hf = f;
-                harg = gh.arg;
-            }
         }
+        // **oracle 路由下不回退到自有表/链表头**：v3 的 `getHandler(21-16)` 命中
+        // 的很可能是我们自己登记的 bridgeIsr（自证污染）。fn 缺失 ⇒ 纯计数桩
+        // 仍挂桥（bridgeDrain 代跑只计数不触碰 blob；bridge_w>0 即证"源在发"）。
+        if (hf == null) hf = countOnlyIsr;
         if (hf) |f| {
             bridged = true;
             for (&bridge_srcs) |*s| {
