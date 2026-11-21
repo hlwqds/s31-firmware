@@ -28401,3 +28401,19 @@ semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑
   首个 `resumeTask` 后任务侧是否独占 CPU 待判（EVH=6 已证伪 handler 洪泛，
   FE 环占采样 10%）；②UART0 TX 卡满的原writer 仍未抓到（泵的 compare/restore
   差分尚未跑过一轮）；③LL 调度等的东西 = FE450 bit13 假说不变。
+
+**UART0 哑火差分狩猎轮（2026-11-21 深夜三）——仪表布防完成，抓捕未遂**：
+- **泵内回写 UART0 = 总线打挂实锤**：接上 per-round restore 的所有 build 在泵启动数秒内
+  全系统冻结（MWDT1/RTC WDT 复位全部消失），无 restore 的 build 存活 26 min ⇒ 改为
+  **compare-only**（只读比较，差分写 LP 0x2E000548，首个差分立即 MWDT1 数字自陷上交）。
+- **RTC WDT 兜底**：`armRtcWdt(true, 49.3M)`（CPU 复位、LP 保留、360 s）在 MWDT1 武装处
+  同时武装，泵每轮双喂——哑火停泵 ⇒ 8.5 min 后保 LP 数字复位 ⇒ 下 boot 读差分。
+- **冻结点逐轮漂移**：有的 boot 冻在 post-fwd06（eventRun 后静默），有的冻在 pre-fwd06
+  （"public adv" 区，看门狗尚未武装）——时序依赖，非单点代码路径。
+- **未解之谜（下轮入口）**：post-fwd06 冻结里 MWDT1（已武装 10 s）与 RTC WDT（已武装
+  360 s）双双不咬 ⇒ 嫌疑收敛到 **blob 侧重写/解除看门狗**（esp_task_wdt 一族握有
+  WPROTECT key；esp_task_wdt_deinit 会关 TIMG1 WDT）。验证器已布好：NMI 黑盒
+  lp[56..63] 每 tick 采 HP_SYS_CLKRST +0x110..12C（计时器组时钟门控），下一步加采
+  0x2058_1048/4C/50（MWDT1 CONFIG0/STG0_HOLD/STG1_HOLD）——哑火前最后采样即铁证。
+- 本轮提交 ba2aafa。USB 串口适配器在密集 RTS 翻转后进入掉线态（"device reports
+  readiness"即断连语义），复插前 board 侧工作暂停。
