@@ -28007,3 +28007,16 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
 - 教训追加：诊断观察点用完即拆——STORE watch 留置在 post-enable 区被
   BT 任务/ROM 的正常写误命中 ⇒ trap 风暴 ⇒ rst:0x1a lockup ⇒ 80-boot 窗
   69/80 死 step4 的假回归（拆后 3/3 boot 全过 init）。
+
+**post-enable 饿死定性（2026-11-21，mute 实验轮）**：
+- sink 全局 `[2f010fb4]` 在 step14 时 = 0（注册发生在 enable 后 task 内）⇒
+  mute 实验无的就；`bt archive>` 全历史 0 ⇒ ets_printf 不是 BLE 日志通道。
+- NMI2/3/6 的 592 次命中（PC∈0x40005512-585e，mrucwvp 区）解码：该函数轮询/
+  写 **MODEM_LPCON（0x20240031/32）与 HP_SYS_CLKRST（0x2064002b）** 并把日志
+  字节写硬件 console 寄存器（0x2064002b = log_internal_x1 的 fmt 指针实为
+  硬件 console 端口）= **RF/时钟配置轮询环**，task 在其中永不 yield。
+- ⇒ 主上下文饿死（diag/bridgeDrain/eventRun 全停）⇒ BB 事件无人处理 ⇒
+  `hci <<` = 0。形式 = baremetal-cooperative-scheduler-starvation。
+- 下轮两条：①定位轮询环的退出位（write-readback 配方：0x2024/0x2064 写-
+  回读，找没使能的上游时钟）；②强制让出（NMI 里超时 swap 回主上下文的
+  协作抢占，或给 task 的 resumeTask 加时长预算）。

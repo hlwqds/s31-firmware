@@ -599,6 +599,22 @@ pub fn init(cfg: *config.Config) c_int {
                 node = @as(*volatile usize, @ptrFromInt(node + 8)).*;
             }
             osal.logPublic("bt probe: cb14 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+            // **BLE log sink mute 实验**：task 全程自旋在 blob 日志限流区
+            // （NMI 592 次命中 PC∈0x40005512-585e），sink 从未达 ets_printf
+            // （archive 行全历史 0）⇒ 消息不可见。dump sink 结构后把 fn@+12
+            // 改写成 ret 桩（0x40061554）⇒ 日志环变空转，task 应继续前行。
+            {
+                const lgp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_0fb4)).*;
+                if (lgp >= 0x2f00_0000 and lgp < 0x2f10_0000 and lgp % 4 == 0) {
+                    const f12: usize = @as(*volatile usize, @ptrFromInt(lgp + 12)).*;
+                    const f28: usize = @as(*volatile usize, @ptrFromInt(lgp + 28)).*;
+                    osal.logPublic("bt probe: lgs=0x{x:0>8} f12=0x{x:0>8} f28=0x{x:0>8}", .{ lgp, f12, f28 });
+                    @as(*volatile usize, @ptrFromInt(lgp + 12)).* = 0x4006_1554; // IC9 ret 桩
+                    osal.logPublic("bt probe: log sink muted", .{});
+                } else {
+                    osal.logPublic("bt probe: lgs oob=0x{x:0>8}", .{lgp});
+                }
+            }
             // **判别读数**：cb7 捕获的 id2/5 节点地址（=env+52/+64）此刻的 id 值
             // 与链上第 5 节点地址比对——同址且 id=6 ⇒ 原地篡改；异址或 id=2 ⇒ 纯摘链。
             if (relink_p16 != 0 and relink_p16 % 4 == 0 and relink_p16 >= 0x2f00_0000 and relink_p16 < 0x2f10_0000) {
