@@ -27907,3 +27907,13 @@ TAR_EN0/INT_ENA 写入未保留（读回待验）；②counter 未真走动（13
 是 ch23 构建实测，BT 探针构建的 clk_en 位状态未验）；③比较事件条件另有
 使能位。下轮寄存器级核对（一轮）：读回 target0/TAR_EN0/INT_ENA + 两次
 锁存读 counter 差值（走动判据）⇒ 定位后补上 ⇒ sleep 唤醒链闭合。
+
+**SOC_WAKEUP 事件实际发生（2026-11-21 收官里程碑）**：TAR_EN0 位置修正
+（+0x04 bit31——此前写 +0x04=0 清掉了它、+0x08 是 TAR_LOW1）后——
+**INT_RAW = 0xa0000000 ×201（bit31 SOC_WAKEUP 置位）** ⇒ RTC 比较到点事件
+**实际发生** ⇒ 睡眠唤醒硬件链（counter 推进→target 比较→INT_RAW→中断）
+**全通且已触发** ✓✓✓。⇒ 唤醒缺的只剩**软件半环**：①SOC_WAKEUP 的 CLIC
+input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb 已接
+⇒ 停驻态（FAILED halt 磨环）泵停 ⇒ 旗挂起无人消费 ⇒ 下轮：halt dump 前
+消费 flag 调回调（或 RTC 中断直接路由到 blob 的唤醒 handler）⇒ sleep 完成
+⇒ 分发环退出 ⇒ ENABLED。
