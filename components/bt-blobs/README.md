@@ -28190,3 +28190,17 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
 - 下轮入口：反汇编 .L40（0x4005e576）读 CMD 专池取缓冲逻辑；对照
   hci_transport_init（step 15）内部的池创建调用（hci_cmd_num=2 池是否真的
   建了/建在哪）。这是纯 blob 内部分配器行为，环境面已全排除。
+
+**HCI 命令处理边界（2026-11-21 终读数）**：
+- BB 块全开可读（B000=0x5ac00000 官方值）；RawQ 投递路径在位（未注册队列 ⇒
+  RawQ 直通 + 唤醒；Get RawQ 优先）；task 正常 park 于 eventqGet
+  （taskpc=0x40078bea = eventqGet 区）⇒ task 活着且让出正常。
+- **剩余墙**：`btdm_tx=0`（blob 从未生成任何回包）⇒ task 收到命令后未完成
+  处理。两个已命名的 blob 内部嫌疑（均有 NMI/日志实证）：
+  ① log-internal 自旋区（0x40005512-585e，task 曾在此钉死 592 采样——
+  yield sink 让出后该区为非阻塞轮询形态）；
+  ② ble_hci_transport 的 type-byte 强断言（`lbu a2,11(a0); bne 1 → assert`，
+  our sendCmd 已置 pkt.type=TYPE_CMD=1，但 blob 侧 pkt 布局对齐（+11）需核）。
+- 下轮入口：①核我们 Packet.type 字段的偏移是否 = blob 读的 byte[11]
+  （@offsetOf(Packet,"type") vs 11）；②若对齐，则 blob task 处理 Reset 时
+  的内部前置（RF/BB ready 检查？）逐层对照官方 hci 处理路径。
