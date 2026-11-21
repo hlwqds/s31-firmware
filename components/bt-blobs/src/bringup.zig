@@ -48,9 +48,15 @@ pub var wl_printed: bool = false;
 /// 让出桩计数（判读"任务每轮是否真推进"：icg 行 sb= 每轮增量）。
 pub var stub_blocks: u32 = 0;
 
-export fn btLogYieldStub() callconv(.c) void {
-    stub_blocks += 1;
-    @import("osal_kit").sched.block();
+/// **返回 0 + 限速让出**（2026-11-21 终版）：
+/// - 返 0 ⇒ log_internal `bnez a0 → .L30` 跳过格式化+输出（日志成本归零）；
+/// - 每 256 次调用才 block 一次 ⇒ 单次泵 kick 推进 256 个日志调用，
+///   上下文切换率降 256×。**背景**：批量 200 次 kick/轮的版本实测
+///   fwd06 后即崩溃复位（7 连循环），高切换率与 CLIC 武装后的中断路径竞争。
+export fn btLogYieldStub() callconv(.c) c_int {
+    stub_blocks +%= 1;
+    if (stub_blocks % 256 == 0) @import("osal_kit").sched.block();
+    return 0;
 }
 
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。

@@ -28212,3 +28212,19 @@ eventqPut 成功入队 ✓）。**剩余墙：ctx+12 队列无人消费**——�
 （hci_trans env+12）≠ 任务 park 的队列（env+8），btdm_tx/evt_count 仍 0。
 下轮：pump diag 行加 eventq_get_ok 计数 + put 队列身份打印，一轮分辨
 "孤儿队列" vs "任务收到未处理"。
+
+**泵推进链定案 + 崩溃事故（2026-11-21 末轮）**：
+- getok/evrun 七读数判读链（icg 板载行）：任务消费 2 条 init 事件后停摆，
+  getok 卡 2——**停点 = `r_ble_log_internal_x0` 的让出桩调用点**
+  （pc=0x2f00873c 恒定），非任何 sem/queue。
+- 机制：blob handler 每 handler 千级日志调用，桩每调用 block 一次 ⇒
+  单 kick/轮只前进 1 个调用 ⇒ 进展率冻结（getok 恒 2）。
+- **事故**：批量 200 kick/轮版本 fwd06 后即 `rst:0x1a CPU_LOCKUP_RESET`
+  复位环（20 连）——高上下文切换率 × CLIC 武装后中断路径竞争（trap 嵌套
+  fault 族），已回退。
+- **终版桩**（bringup.btLogYieldStub）：恒返 0（log_internal `bnez a0`
+  ⇒ 跳过格式化+输出，UART 洪水归零）+ 每 256 次调用才 block 一次
+  ⇒ 单 kick 推进 256 调用，切换率降 256×。
+- 判读规则：sb= 每 pump 轮 +256 ⇒ 任务真推进；getok>2 ⇒ 命令被消费；
+  sb 涨而 getok 卡 2 ⇒ handler 死循环（桩改返 1 一次可让它打印单条
+  指认等待对象）。

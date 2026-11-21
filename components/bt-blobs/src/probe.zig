@@ -1563,14 +1563,9 @@ pub fn run() noreturn {
             osal.logPublic("bt probe: rtc wake cb fired n={d}", .{board.trap.rtc_wake_n});
             bringup.btSleepCb(0);
         }
-        // **批量让出**（2026-11-21）：log-internal 洪水期任务每次 resume 只前进
-        // 一个日志调用（tpc 恒定于 r_ble_log_internal_x0 的 sink 调用点），
-        // 单次 kick 进展率冻结 ⇒ 每轮批 200 次（每次一个让出点，任务在
-        // handler 内推进 200 个日志调用/轮）。
-        if (ctrl_task) |t| {
-            var kick: u32 = 0;
-            while (kick < 200) : (kick += 1) sched.resumeTask(&t.ctx);
-        }
+        // 单次 kick/轮：配合桩的 256 次限速让出 ⇒ 每轮推进 256 个日志调用
+        // （批量 200 kick 版实测 fwd06 后崩溃复位，已回退，见 bringup 桩注释）。
+        if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
         // **RTC counter 锁存触发**：RTC_TIMER 的 counter 读数需要 update 位
