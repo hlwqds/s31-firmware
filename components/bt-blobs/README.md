@@ -28435,3 +28435,10 @@ EN 复位刮 LP，MWDT1/RTC WDT 在冻结后不咬，尚无保 LP 的复位源�
 RTC 慢时钟域一起打断。tcflush(TCIFLUSH) 清端点旗无效（ioctl 成功但零数据）。
 **物理插拔是唯一出路**；重插后第一动作 = 纯被动 os 读（绝不 EN 复位——刮 LP），
 等 RTC 周期把 BBX 14/15 送出。
+
+**镜像身份混淆陷阱（2026-11-22）**：`tests/e2e/run_e2e.py --host` 会把
+`firmware/zig-out/bin/app.bin` **覆盖成生产镜像**（473712B）——之后任何 flash.sh
+烧的都是生产固件，"bt probe:" 行消失、boot 行为完全不同（曾误判为探针新冻结点）。
+纪律：跑过 e2e --host 后，必须重跑 `components/bt-blobs/tools/build-probe.sh`
+（bin: 886656 = 全仪表栈）再烧探针；判别法 = `ls -la zig-out/bin/app.bin`
+（探针 ~886KB，生产 ~473KB）。
