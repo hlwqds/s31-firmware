@@ -28298,3 +28298,25 @@ next）并查 BB 块 `[0x2010B000+evt*16]`，取到的 fn=**0x60**（非函数�
 事件使其继续）；我们的 ISR 桥推迟到主上下文 ⇒ 主上下文楔在 blob 代码内时
 drain 永不运行 ⇒ 结构性死锁。终局修法 = osal ISR 安全变体（in_isr 标志下
 semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑。
+
+**oracle 驱动修复链（2026-11-21 续）**——每步都以官方固件读数为参照：
+1. **派发基址**：`r_btdm_task_enable → vJfrsAScC → 4S888Ay → aGdrujd2` 写
+   `[0x20101074] = [anchor8+12] & 0xFFC00000`（blob 紧凑句柄解码基址
+   `ptr = base | (idx<<2)`）。官方描述符 `[anchor8+12]=0x2f000000`（36 字节：
+   +0 尺度、+4 指针、+8 大小 2000、+12 基址、+16 intr_alloc 句柄、+20 链头）。
+   我们 task_enable 前置为官方值（`bringup.zig`）。
+2. **SHV 位**：官方 `intctl[24]=0x7fc10100` 的 bits14-15 = CLIC 选择性硬件
+   向量化 ⇒ 硬件经 `mtvt[input]` 取入口；IDF 启动代码把 mtvt 指向 SRAM 基址
+   的 `_mtvt_table`（官方链接实证：`0x2f000040`，各项 `j 0x2f000010`）。
+   我们裸机链接该处无表 ⇒ `mtvt[24]` 取到垃圾（实测跳 **0x60**，trap 行
+   `mepc=mtval=0x60`、ra=被中断上下文 vibwBXog 的 0x400057c8）⇒ LOCKUP 环。
+   修：`intctl[24]=0x7f000100`（去 SHV，走 mtvec→trapDispatch→handler[24]
+   软件分发，与输入 25 同款）。**教训：oracle 的 intctl 值不能照抄——SHV
+   依赖 mtvt 表这一启动期前提。**
+3. **LP 槽直写**：`mark.put` 在 enable 后仍写 LP RAM `0x2E00_0004`，LP 域
+   状态已变 ⇒ 总线挂死。fwd06 后首条语句即 `mark.put(0x80,…)`，而紧随的
+   "post21" 在**所有**轮次从未打印——这个楔点此前被归因给 flashStageExtra。
+   修：BT 窗口内 `mark.put` 纯 no-op。
+4. 真 BT ISR = `r_sym_bt_R9GZfnUbtn7k6mHtoZbv`（0x2f008aa2），由
+   `vJfrsAScC3Qj3QevwArc` 经 `intr_alloc(124, 0, fn, NULL, &anchor8[16])`
+   注册 ⇒ 我们 `intrHandlerOf(124)` 即得，桥直接挂它。
