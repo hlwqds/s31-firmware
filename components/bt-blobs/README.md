@@ -28417,3 +28417,13 @@ semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑
   0x2058_1048/4C/50（MWDT1 CONFIG0/STG0_HOLD/STG1_HOLD）——哑火前最后采样即铁证。
 - 本轮提交 ba2aafa。USB 串口适配器在密集 RTS 翻转后进入掉线态（"device reports
   readiness"即断连语义），复插前 board 侧工作暂停。
+
+**被动长采统计补遗（同日）**：passive_long.log 845 KB / 122 boot（pyserial open 断言驱动的
+复位循环）——97% 的 boot 冻在 bringup step 5 之前（只有 3 次 INITED / 2 次 fwd06）；
+uar_final2.log 的 52 boot 则全部到达 INITED+fwd06 后冻在泵头。**冻结点逐轮漂移、
+跨 build 分布完全不同** = 时序依赖，非单一代码路径。UAR 差分行（13+ 条）全部是 LP
+刮擦残渣（`off=5f02xxxx` 不是合法偏移；`now=0xfcb438a8/0xf4b438a8` 高位模式重复出现
+但来源不可信）。**死亡现场（BBX 14/15 的 MWDT1 CONFIG0/HOLD + UART0 门控位）取证器
+已就位（NMI 每 tick 采、LP 0x2E0002E0-2FF），读取通道（数字复位）仍未打通**——
+EN 复位刮 LP，MWDT1/RTC WDT 在冻结后不咬，尚无保 LP 的复位源；NMI 时钟保活
+（dd3a9f8）若生效则 MWDT1 恢复咬合 ⇒ 循环自证 ⇒ 黑匣子可读。
