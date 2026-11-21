@@ -1529,6 +1529,7 @@ pub fn run() noreturn {
     var diag_at: u32 = 0;
     var rom_scanned: bool = false;
     var hscan_done: bool = false;
+    var bb0_done: bool = false;
     var diag_round: u32 = 0;
     while (true) : (round += 1) {
         // **RTC SOC_WAKEUP 旗**：主上下文调已注册的 sleep 回调（trap 只置旗）
@@ -1589,6 +1590,16 @@ pub fn run() noreturn {
             const h5 = trap.getHandler(5);
             const h5f: usize = if (h5.fn_) |f| @intFromPtr(f) else 0;
             osal.logPublic("bt probe: bb 47C=0x{x:0>4} 450=0x{x:0>6}", .{ m47c & 0xFFFF, m450 & 0xFFFFFF });
+            // **BB 私有块探读（once）**：0x2010B000。时钟全开后首读——挂死 =
+            // BB 块仍被门控（本身就是答案）；可读 = 对照调度寄存器找 arm 差集。
+            if (!bb0_done) {
+                bb0_done = true;
+                const b0: u32 = @as(*volatile u32, @ptrFromInt(0x2010_B000)).*;
+                const b4: u32 = @as(*volatile u32, @ptrFromInt(0x2010_B004)).*;
+                const b8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_B008)).*;
+                const bc: u32 = @as(*volatile u32, @ptrFromInt(0x2010_B00C)).*;
+                board.log.line("bt probe: bb0 B000={x:0>8} B004={x:0>8} B008={x:0>8} B00C={x:0>8}", .{ b0, b4, b8, bc });
+            }
             // **ana 对拍（官方轨迹：CONF0 2100e408→2900e448、I2C0_CTRL 012f0669
             // →01780369）**：静态=ana I2C 路径死；变化=事务在发。
             const f818v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;

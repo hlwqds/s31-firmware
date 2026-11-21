@@ -28138,3 +28138,16 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
   剩余差异在 **blob 内部调度链**（BB schedule arm 写入集/锚点计算）或更深硬件
   前提（RF 前端测量通道的启动命令）。下一入口：oracle（idf-bt-ctl）运行的
   BB 寄存器 dump 对拍 task park 前的写集。
+
+**BB 块探读 + HCI 注入路径定位（2026-11-21 收官轮）**：
+- BB 私有块 0x2010B000 post-enable 可读（B000=0x5ac00000 = IDF 对照 init 后
+  同值；B004-B00C 非零）⇒ BB 块时钟全开、无门控，硬件在位。
+- ICG 修复 4→6 写入保持但 BB 仍不转 ⇒ ICG MODEM 态门控排除（追加确认）。
+- **缺口最终收敛 = HCI 命令注入 → blob 任务队列路径**：fwd06/sendCmd ret=0
+  （buf_alloc ✓ 命令写入 ✓）但 `qput=3` 恒定（task 队列零新事件）⇒ 命令
+  被 hci_trans 收下后**从未投递到 controller task 的事件队列** ⇒ task park
+  于 eventqGet ⇒ 不处理 ⇒ 无回包 ⇒ 缓冲不还。
+- 下轮入口：反汇编 blob 的 hci_trans rx → task 投递路径（找
+  wr_btdm_osal_eventq_put 的调用者），核对我们注入时缺的前置状态
+  （status=ENABLED 由 esp_bt_controller_enable 设置——我们直调 r_* 内部
+  从未设置 blob 的 s_btdm_controller_status ⇒ rx 路径的状态机闸门）。
