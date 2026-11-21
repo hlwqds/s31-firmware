@@ -168,8 +168,11 @@ pub var caller_n: u32 = 0;
 /// 无 trap）时唯一的"最后执行位置"记录。下次开机由探针打印。
 /// [0]=seq [1]=最后一次 OSAL 调用者的 ra [2]=最后一次 log-sink 调用的 blob ra [3]=探针阶段标记。
 pub var lp_trace_seq: u32 = 0;
+/// pmu_init 后才置位（LP RAM 之前不可访问）。由探针设置。
+pub var lp_trace_en: bool = false;
 pub inline fn lpTrace(slot: u32, v: u32) void {
     if (comptime @import("builtin").os.tag != .freestanding) return;
+    if (!lp_trace_en) return;
     const seq: *volatile u32 = @ptrFromInt(0x2E00_0300);
     seq.* +%= 1;
     lp_trace_seq = seq.*;

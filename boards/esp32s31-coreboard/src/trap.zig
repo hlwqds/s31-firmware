@@ -576,13 +576,17 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             {
                 const pc0: *volatile u32 = @ptrFromInt(0x2E00_0380);
                 const pc1: *volatile u32 = @ptrFromInt(0x2E00_0384);
-                pc1.* = pc0.*;
-                pc0.* = @truncate(frame.mepc);
+                if (lp_pc_en) {
+                    pc1.* = pc0.*;
+                    pc0.* = @truncate(frame.mepc);
+                }
                 // 32 项 PC 环（0x2E0003A0）：回放最近 32 个 tick 的被打断 PC。
                 const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
                 const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
-                ring[cnt.* % 32] = @truncate(frame.mepc);
-                cnt.* +%= 1;
+                if (lp_pc_en) {
+                    ring[cnt.* % 32] = @truncate(frame.mepc);
+                    cnt.* +%= 1;
+                }
             }
             // **RTC 计数器锁存（每 tick）**：controller 的调度时间读 RTC_TIMER，其读数
             // 需要 update 位触发才刷新。此前只在泵里触发——主上下文被任务占住时
@@ -1135,6 +1139,8 @@ pub var sample_quiet: bool = false;
 /// ISR 重装用的周期（µs）。**不能用硬编码 2000**：调用方设的短周期会在第一个 tick 后失效。
 pub var sample_period_us: u32 = 2000;
 pub var nmi_count: u32 = 0;
+/// pmu_init 后才置位：LP RAM 之前不可访问（访问挂总线）。
+pub var lp_pc_en: bool = false;
 
 var fe3_hits: u32 = 0;
 var bp_hit_mepc: u32 = 0;

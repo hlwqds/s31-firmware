@@ -131,6 +131,8 @@ const diag_blk_magic: u32 = 0xD1A6_B007;
 const lp_blk_addr: usize = 0x2E00_0200;
 var diag_blk_tries: u32 = 0;
 var wdt_suicide: bool = false;
+var uart_stuck_rounds: u32 = 0;
+var uart_mute_done: bool = false;
 /// 实验：fwd06 前做一次 MWDT1 阳性对照（短超时不喂 ⇒ 必须复位）。
 pub var mwdt_ctrl: bool = true;
 var diag_blk_ok: bool = false;
@@ -220,6 +222,35 @@ fn diagFlashBlock(round: u32) bool {
     while (k < i) : (k += 1) lp[k] = b[k];
     lp[0] = diag_blk_magic;
     return true;
+}
+
+/// **UART 失声快照**（0x2E000400，LP RAM）：泵检测到 TXFIFO 卡满时写入并软复位，
+/// 下次开机 UART 恢复后读出真实寄存器态（0x2E000400，40 字）。
+const uart_mute_magic: u32 = 0xD1A6_4000;
+const uart_mute_addr: usize = 0x2E00_0400;
+fn uartMuteSnapshot(round: u32) void {
+    var b: [40]u32 = @splat(0);
+    b[0] = uart_mute_magic;
+    b[1] = round;
+    for (0..12) |k| b[2 + k] = @as(*volatile u32, @ptrFromInt(0x2038_A000 + 4 * k)).*;
+    for (0..7) |k| b[14 + k] = @as(*volatile u32, @ptrFromInt(0x2058_7000 + 4 * k)).*;
+    for (0..16) |k| b[21 + k] = @as(*volatile u32, @ptrFromInt(0x2010_9C00 + 4 * k)).*;
+    b[37] = @import("board").hw.rw_drops;
+    const lp: [*]volatile u32 = @ptrFromInt(uart_mute_addr);
+    var k: usize = 1;
+    while (k < 40) : (k += 1) lp[k] = b[k];
+    lp[0] = uart_mute_magic;
+}
+
+/// 开机打印 UART 失声快照（软复位后 UART 已恢复）。
+pub fn uartMuteReport() void {
+    const lp: [*]volatile u32 = @ptrFromInt(uart_mute_addr);
+    if (lp[0] != uart_mute_magic) return;
+    board.log.line("BBU round={d}", .{lp[1]});
+    for (1..10) |r| {
+        board.log.line("BBU {d}: {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{ r, lp[4 * r], lp[4 * r + 1], lp[4 * r + 2], lp[4 * r + 3] });
+    }
+    lp[0] = 0;
 }
 
 /// 开机首段：若黑匣子 magic 在，则逐字打印（每行 4 字）并清 magic。
@@ -1071,6 +1102,8 @@ pub fn run() noreturn {
         // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
+        board.trap.lp_pc_en = true; // pmu_init 后 LP RAM 才可访问：开 NMI PC 环/采样
+        osal.lp_trace_en = true;
         // **BT modem clock 使能**（btdm_lp_enable_clock 的核心——此前故意留空）
         // modem_clock_module_enable(6=PERIPH_BT_MODULE) → BLE_CLOCK_DEPS 8 个门
         // modem_clock_module_enable(14=PERIPH_BT_APB_MODULE) → BT_APB_CLOCK_DEPS 4 个门
@@ -1098,6 +1131,7 @@ pub fn run() noreturn {
             }
             lp_boot_n = @as(*volatile u32, @ptrFromInt(0x2E00_0000)).* +% 1;
             @as(*volatile u32, @ptrFromInt(0x2E00_0000)).* = lp_boot_n;
+            uartMuteReport(); // 上一轮 UART 失声时的寄存器快照（复位后 UART 已恢复）
             lpBlackBoxReport(); // 上一轮失声前的最后现场
             for (0..9) |k| {
                 lp_hist[k] = @as(*volatile u32, @ptrFromInt(0x2E00_0004 + 4 * k)).*;
@@ -1500,7 +1534,6 @@ pub fn run() noreturn {
     s31_bt_log_mute = 1;
     flashStageExtra(10, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // host 可读：init 之后、enable 之前
     osal.dump_hook = null;
-    osal.logPublic("bt probe: dump_hook disarmed", .{});
     const af = osal.arenaFree();
     osal.logPublic("bt probe: arena free={d} B", .{af});
 
@@ -1836,6 +1869,16 @@ pub fn run() noreturn {
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
         // 墙的位）；F818.CONF0 bit27 = ana 事务相位（官方在事务完成后清）。
         // 泵窗内的活读数，不经 LP/flash，无下载刮花问题。
+        // **UART 失声检测**：TXFIFO 卡 ≥120 达 2 轮 ⇒ 写 LP 快照 + 软复位交出证据。
+        {
+            const txcnt = (@as(*volatile u32, @ptrFromInt(0x2038_A01C)).* >> 16) & 0xFF;
+            if (txcnt >= 120) uart_stuck_rounds +%= 1 else uart_stuck_rounds = 0;
+            if (uart_stuck_rounds >= 2 and !uart_mute_done) {
+                uart_mute_done = true;
+                uartMuteSnapshot(@intCast(round));
+                @import("board").hw.softwareResetPub();
+            }
+        }
         if (round % 200 == 0) {
             diag_at = now;
             // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲
@@ -2107,15 +2150,7 @@ fn dumpPcs() void {
 fn dumpRom(tag: []const u8, base: usize, len: usize) void {
     board.log.line("rom {s} @0x{x}", .{ tag, base });
     var off: usize = 0;
-    while (off < len) : (off += 32) {
-        board.log.line("rom {s} +{d:0>2}: {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{
-            tag,                                    off,
-            board.hw.bt_mmio_read(base + off),      board.hw.bt_mmio_read(base + off + 4),
-            board.hw.bt_mmio_read(base + off + 8),  board.hw.bt_mmio_read(base + off + 12),
-            board.hw.bt_mmio_read(base + off + 16), board.hw.bt_mmio_read(base + off + 20),
-            board.hw.bt_mmio_read(base + off + 24), board.hw.bt_mmio_read(base + off + 28),
-        });
-    }
+    while (off < len) : (off += 32) {}
 }
 
 fn findFirstTask() ?*sched.Task {

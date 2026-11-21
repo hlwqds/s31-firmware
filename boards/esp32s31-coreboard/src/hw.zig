@@ -291,6 +291,11 @@ pub fn delayUs(us: u32) void {
 }
 
 extern fn software_reset() void;
+pub fn softwareResetPub() noreturn {
+    delayUs(100_000);
+    software_reset();
+    while (true) {}
+}
 
 /// 软复位。调用前先把 UART 排空：证据行被复位掐掉半行是最常见的"日志丢了"。
 ///
