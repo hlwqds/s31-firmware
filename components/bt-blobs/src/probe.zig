@@ -1459,6 +1459,10 @@ pub fn run() noreturn {
     // **收集旗**(0x2E00055C,跨 MWDT1 数字复位保留):0xC0DEC0DE=本上电周期已
     // 自陷上交过 ⇒ 泵自由长跑;否则 round 4000 时 MWDT1 自陷交出差分。
     const collect_flag: *volatile u32 = @ptrFromInt(0x2E00_055C);
+    // **RTC WDT 死人开关提前**（bringup 前）：冻结点漂移实测可早至 step 6
+    // （看门狗原武装点 fwd06 前覆盖不到）。cpu_reset 保 LP ⇒ 任何冻结 ≤25 min
+    // 内数字复位 ⇒ 下 boot 打印黑匣子。fwd06 前的再武装只是续期。
+    board.hw.armRtcWdt(true, 49_300_000);
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
