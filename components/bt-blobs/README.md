@@ -27922,3 +27922,16 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
 - 驳回依据：`ffxQrzmp`(4002c6d6)=`malloc(a1*a2)` 存回 a0 字段——`base_stack_initEnv`(step12) 的三个 slot 块是**独立 8B 分配**；`OkE7` 的 env(76B) 内 id-2/id-5 节点在 env+52/+64 **内联**，两者无重叠路径。
 - 仍未决的矛盾：`r_btdm_task_init` 返回 0 必经 `.L104`（建 id2/5）⇒ 到 step17 的 boot 链表必含 id2 ⇒ `Hl337(2)` 应命中；实测却 rc=-3（唯一 -1 源=扫描耗尽）。
 - 板侧四点打印（cblist6/pre17/post17+slots）已烧录待好 boot 取证；pre17 若含 2 而 post17 失 2 ⇒ step17 内变更；pre17 若缺 2 ⇒ 该 boot 的 task_init 未跑 .L104（脏 RAM 早期返回嫌疑）。
+
+**rc=-3 板载实证（2026-11-21，udiv 断点风暴修复后）**：
+- **风暴根因**：早前武装的 udiv 入口 mcontrol6 断点（tdata2=0x400ad59e）在 cblist 的
+  u64 打印走 ROM `__udivmoddi4`(0x400ad7a6) 时命中 ⇒ cause=3 panic 死停。cyclic
+  9/9 boot 确定性复现；`if (false)` 关闭武装后 panic=0。
+- **链表实证**（每 boot 稳定）：`[2f011030]` 链 = **{1, 0, 3, 4, 6}**（n=5，
+  p0=0x2f024d58 堆区）——**无 id=2/5** ⇒ rc=-3 = Hl337(2) 扫描未命中，坐实。
+- slots 独立分配（s0=0x2f02ce00，+0/+4/+8=ce20/ce40/…）⇒ 混叠假说确证驳回。
+- **新事实**：链里有 4/6——静态分析未解的建者（已知建者：id1=早期 ble 侧、
+  0/3=XPuq、2/5=task_init .L104）。task_init rc=0 但链里无 2/5 ⇒ 要么 .L104
+  未达（返回 0 的替代路径待查），要么 4/6 建者**重建/尾插了别的集合**。
+- 下一步：全镜像搜 kNIbP2qf 调用者建 id=4/6 的点 ⇒ 拼完整注册图 ⇒ 定 id2
+  缺席的机制（谁应该建 2、它在我们的 boot 序里为何没跑）。

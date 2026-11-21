@@ -1239,7 +1239,10 @@ pub fn run() noreturn {
     // **udiv 入口 EXEC 断点武装（相位正确版）**：此刻 init_phy 的
     // phy_xtal_duty_cal 除法已过（断点不撞它），LE 块分发等待的磨 CPU
     // 除法尚未开始 ⇒ 命中即磨 CPU 热点本体。one-shot：命中即全清触发器。
-    {
+    // ⚠ 2026-11-21 关闭：cyclic 9/9 boot 在 step15 后确定性 panic——cblist
+    // u64 打印走 __udivmoddi4(ROM 0x400ad7a6)，tdata2 只比对低 32 位入口
+    // ⇒ 每轮 logPublic(u64) 即撞断点 ⇒ cause=3 死停。cblist 取证优先。
+    if (false) {
         const f: *const fn () callconv(.c) void = @extern(*const fn () callconv(.c) void, .{ .name = "__udivmoddi4" });
         const addr: u32 = @intFromPtr(f);
         board.trap.udiv_addr = addr;
