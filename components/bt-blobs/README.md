@@ -28123,3 +28123,18 @@ clk_conf1 BT 位组（apb/bb/mac）✓ + LPCON RTC timer 链（RC32K mux/div/en�
 BB anchor/schedule 寄存器（若未写或写错，BB 引擎无调度可执行）。下轮：
 NMI6 对象窗扩抓 task park 前的 BB 寄存器写集，或官方 oracle 运行的 BB
 schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
+
+**时钟/ICG/pmu 层全面验证收口（2026-11-21 终）**：
+- pmu_init ✓（probe 早段调用，esp_hw_support pmu_init.c.obj 在链接闭包）；
+- SYSCON clk_conf=0x7e601002（bit30 ble_timer ✓）、clk_conf1 BT 位组 ✓；
+- LPCON RTC timer 时钟链（RC32K mux/div/en）✓ 回读保持；
+- ICG bt_st_map 0x4→0x6 修复写成功保持 ⇒ 门控排除；
+- rtc_freq=32000 ✓（step10 补丁回读）；task 让出 ✓；HCI 命令送出 ✓。
+- ⚠ 一次回归事故记录：2026-11-21 曾在 step5 后追加"xtal32k+div5"重写块
+  （选了板上不存在的时钟源）⇒ lp timer 冻结 ⇒ 全系统 tick 饿死（diag 全停）。
+  已回滚（git checkout）。教训：共享时钟寄存器改动前必须对照本文件既有对拍值
+  （+0x04=0x41/+0x08=0x314/+0x0C=0x01/+0x18=0x0B/+0x20=0x66660000 为 IDF 实测）。
+- **终态**：环境面（时钟/电源/ICG/pmu/task/命令）全验证通过 ⇒ BB 引擎不启动的
+  剩余差异在 **blob 内部调度链**（BB schedule arm 写入集/锚点计算）或更深硬件
+  前提（RF 前端测量通道的启动命令）。下一入口：oracle（idf-bt-ctl）运行的
+  BB 寄存器 dump 对拍 task park 前的写集。
