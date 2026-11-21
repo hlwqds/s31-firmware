@@ -28020,3 +28020,10 @@ input 6 handler 已装（trap 置 rtc_wake_flag）+ ②泵循环调 btSleepCb �
 - 下轮两条：①定位轮询环的退出位（write-readback 配方：0x2024/0x2064 写-
   回读，找没使能的上游时钟）；②强制让出（NMI 里超时 swap 回主上下文的
   协作抢占，或给 task 的 resumeTask 加时长预算）。
+
+**节流轮（2026-11-21）**：NMI2/3/6 加 mepc 变化门控（固定 PC 重复采样不再
+刷 3 行）——FIFO 洪水解除（总行数 4015→1108），diag 仍 0 ⇒ **饿死实锤**：
+泵环卡在 `resumeTask`，controller task 的 RF/时钟配置环（mrucwvp 区）永不
+让出。下一阶段两条：①write-readback 找轮询环的退出位（0x2024/0x2064 域）；
+②NMI 协作抢占（task 超时强制 swap 回主上下文）。仪器教训再录：NMI 采样
+dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其它通道。

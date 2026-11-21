@@ -605,10 +605,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     nmi_count, frame.mepc, frame.ra, frame.a0, frame.a1, frame.a2, frame.a3, int_raw, nl,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(ln);
+                nmi_last_pc = frame.mepc;
                 // **第二行：RAM 侧调度器四字**（固定锚点 0x2f011034，不碰毒区）：
                 // p=调度器对象、flag=p[0]（恒 0=未完成持续路径）、q=p[12]、
                 // state=q[0]（恒 2 / 2↔3 交替 / 恒 3 = 三种自旋形态判据）。
-                if (frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e) {
+                // **mepc 变化门控**（2026-11-21）：固定 PC 的采样重复打 3 行
+                // 会占满 FIFO 淹没 diag——只在 PC 与上次不同时打对象 dump。
+                if (frame.mepc != nmi_last_pc and frame.mepc >= 0x4000_5512 and frame.mepc < 0x4000_585e) {
                     const pp: *volatile u32 = @ptrFromInt(0x2f01_1034);
                     const p = pp.*;
                     var s2b: [96]u8 = undefined;
@@ -1168,6 +1171,7 @@ var hist_ticks: u32 = 0;
 extern var dbg_tim_armed: u32;
 extern var dbg_tim_fires: u32;
 extern var dbg_tim_fn: usize;
+var nmi_last_pc: u32 = 0;
 var hist_fe: u32 = 0;
 var hist_blob: u32 = 0;
 var hist_main: u32 = 0;
