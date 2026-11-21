@@ -28067,3 +28067,11 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
   +10=1 使能；[0x2f07f1F4]=ctx 地址）⇒ input53 IE 开 ⇒ BB 事件进链。
 - 配套 dump：rom-btini.asm（0x2f814000+1KB，引用 0x2f07f1fc 结构——另一
   ROM 分发结构，与 ctx 相邻 8B）；isr37h 扩展到 0xB0（ctx 槽 +0x6C 覆盖）。
+
+**ctx 槽时间线修正（2026-11-21 收尾）**：[0x2f07f1F4] 在旧构建=0，新构建
+（yield 注入后 blob 走得更远）= **0x02010764（HP_SYS 区基址，ROM 已绑定）**。
+链头 handler 的读写（[a0+8]=1、[a0+4]=fn、[a0+10] 使能）全部落在 HP_SYS
+寄存器 0x76C/0x768/0x76A ⇒ **BB 事件派发 = 硬件寄存器持有 ISR 指针** 的
+方案：缺口收敛为 HP_SYS+0x768 处的 BB ISR fn 未填（读出=垃圾 ⇒ jr 即崩）。
+下轮：diag 加读 HP_SYS 0x760-0x790 四字，确认 0x768 现值；并从 ROM API 族
+（0x2f815258 家族）或 blob 的 BB ISR 注册调用反查应写入的 fn。
