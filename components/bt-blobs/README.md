@@ -28338,3 +28338,13 @@ semRelease/eventqPut 不 resumeTask）+ blob 真 ISR 直接在 trap 上下文跑
   采样同时停止吻合）——需要非 UART 通道读 PMU/时钟寄存器，或锁住电源态。
 - 仪器就位：`uartSnapshot/uartRestore`（probe.zig，含 CLKRST 快照）、icg 行
   `u=<恢复字数>/0x<偏移>:<原值>><现值>`。
+
+**主机门禁修复（2026-11-21 收尾）**：`firmware` 项目的 `check-host` 自 BT 探针工作
+起一直是红的（15 处 RISC-V `fence`/`mv`/`csrs` 内联汇编在 x86 上、`board`/
+`probe.zig` 模块不在主机图、`*usize` 对齐、非 pub 表变量、7 个目标侧 extern
+无定义、init/enable 路径裸 MMIO 段错误）。修法全部是 comptime 门控，目标板
+语义不变：`fenceIo()`、`mmioWr/Set/Clr/Rd/RdN/RdA1/Ptr`（主机为空/dummy）、
+`board`/`probe_mod` 门控导入、`host_stubs.zig`。transport 的 H4 形态旧用例按
+实测上行契约（无类型字节，`[0]=event code,[1]=plen`）更新。
+**判读纪律**：bt-blobs 里新增裸 MMIO/汇编/board 引用时，同步放进
+`if (freestanding)` 或走上述 helper，否则主机门禁即红。
