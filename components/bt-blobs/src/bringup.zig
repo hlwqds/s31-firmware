@@ -612,9 +612,12 @@ pub fn init(cfg: *config.Config) c_int {
             {
                 const sink: usize = 0x2f02_6000; // arena 高位空白区（堆不会到达）
                 const yield_fn: usize = @intFromPtr(&btLogYieldStub);
+                const ret_stub: usize = 0x4006_1554; // IC9 ret 桩
                 var k7: usize = 0;
                 while (k7 < 64) : (k7 += 4) {
-                    @as(*volatile u32, @ptrFromInt(sink + k7)).* = 0;
+                    // **全槽 ret 桩**（修复 PC=0 lockup）：blob 会调用 sink 的
+                    // 其它 fn 槽——半零结构 = 调 0。默认全部 ret，再叠让出桩。
+                    @as(*volatile usize, @ptrFromInt(sink + k7)).* = ret_stub;
                 }
                 @as(*volatile usize, @ptrFromInt(sink + 12)).* = yield_fn;
                 @as(*volatile usize, @ptrFromInt(sink + 28)).* = yield_fn;

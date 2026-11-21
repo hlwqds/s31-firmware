@@ -1554,7 +1554,7 @@ pub fn run() noreturn {
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
         // 墙的位）；F818.CONF0 bit27 = ana 事务相位（官方在事务完成后清）。
         // 泵窗内的活读数，不经 LP/flash，无下载刮花问题。
-        if (now -% diag_at > 1000) {
+        if (round % 200 == 0) {
             diag_at = now;
             const r98 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值：txphase 已稳定=1 多轮）
@@ -1581,6 +1581,13 @@ pub fn run() noreturn {
             osal.logPublic("bt diag: rfready={d} fe={d} taskpc=0x{x:0>8} qput={d} rtc={d} brg={d}/{d}/{d} tim={d}/{d} h5=0x{x:0>8}", .{
                 (r98 >> 2) & 1, fe_cnt, tpc, st.eventq_put, rtc, bringup.bridge_w, bringup.bridge_ran, bringup.bridge_dropped, @as(u32, @intCast(ts >> 32)), @as(u32, @intCast(ts & 0xFFFF_FFFF)), h5f,
             });
+            // **ROM 分发 ctx 槽读数**：0x2f07f1F4 → ctx；ctx[4]=真 ISR（全 0 =
+            // ROM BT 分发上下文未初始化 = BB 事件链缺口的既有定案，当轮复核）。
+            {
+                const ctxp: usize = @as(*volatile usize, @ptrFromInt(0x2f07_f1F4)).*;
+                const c4: usize = if (ctxp >= 0x2f00_0000 and ctxp < 0x2f90_0000) @as(*volatile usize, @ptrFromInt(ctxp + 4)).* else 0;
+                osal.logPublic("bt diag: ctxp=0x{x:0>8} ctx4=0x{x:0>8}", .{ ctxp, c4 });
+            }
             // **自有 handlers 表全扫描（第 4 次 diag 起）**：blob 经
             // intr_handler_set(n,…) 直注的真 ISR 落在哪个外部号——路由正解钥匙。
             diag_round +%= 1;

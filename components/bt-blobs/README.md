@@ -28042,3 +28042,15 @@ dump 必须按 PC 变化门控，否则 3 行/次 × 高频 = 系统性淹没其
   esp32c6 bt.c/btdm_lp.c 的 ROM 调用序补 ctx 建立。
 - 附：sleep_en 已回 0（睡眠门控论证伪——=0 仍同样空转，task 空闲轮询与 sleep
   无关）；probe.zig 双候选 rtc_freq 补丁保持（pre-chain 安全）。
+
+**诊断通道全通 + 事件链断点定位（2026-11-21，全槽 ret 桩轮）**：
+- sink 64B 全槽 ret 桩（+12/+28 叠让出桩）修复 PC=0 lockup（70+→4）；diag 复活
+  （6605 行）——taskpc 驻停 yield 桩、REGMAP/IN6 读数上线。
+- **决定性读数：`brg=0/0/0`（BB/MAC 中断源零触发）+ `rfready=0`（0x201098BC
+  bit2 恒 0）** ⇒ 因果链闭合：RF 未 ready ⇒ BB 不调度 ⇒ 无中断 ⇒ 无事件 ⇒
+  无 Command Complete ⇒ HCI 缓冲（cmd_num=2）耗尽 ⇒ PC=0 lockup 循环。
+- rfready=0 = **Wi-Fi blob 时代旧 stage-22 墙同款位** ⇒ 入口 = PMU RF 上电
+  序列（s31-pmu-rf-power-porting 配方：RF 电源链 + BB/RF 时钟）。
+- 下轮：按 write-readback 纪律核 98BC bit2 的置位前提（RF 电源/时钟门），
+  或直接移植 esp-idf esp32s31 的 pmu RF 上电序列（controller/esp32s31/
+  bt.c 官方源码已在 IDF 树确认存在）。
