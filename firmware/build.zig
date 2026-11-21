@@ -69,6 +69,20 @@ pub fn build(b: *std.Build) void {
     const ab_revert = b.option(bool, "ab-revert", "mark the running slot INVALID and reset (C8 revert-to-old)") orelse false;
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
+    // **trap↔BT 耦合门控**：trap.zig 引用 bt_print_osal_stats/dbg_tim_*（BT 轮次加的
+    // extern），非 BT profile（net-wire 等）不链 bt 对象 ⇒ undefined symbol。此 shim
+    // 以 comptime bool 交给 trap，false 时调用点被死代码消除，extern 不再被引用。
+    {
+        const bt_linked_src = if (bt_blob_dir.len > 0)
+            "pub const present = true;\n"
+        else
+            "pub const present = false;\n";
+        const bt_linked = b.createModule(.{ .root_source_file = b.addWriteFiles().add(
+            "bt_linked.zig",
+            bt_linked_src,
+        ) });
+        board.addImport("bt_linked", bt_linked);
+    }
 
     var src: []const u8 = "pub const entries = .{\n";
     for (all_modules) |m| {

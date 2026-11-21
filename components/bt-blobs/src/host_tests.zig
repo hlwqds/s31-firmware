@@ -8,6 +8,8 @@ const std = @import("std");
 
 test {
     _ = @import("config.zig");
+    _ = @import("est_phy_tables.zig");
+
     _ = @import("porting.zig");
     _ = @import("bringup.zig");
     _ = @import("extfuncs.zig");
@@ -22,4 +24,27 @@ test {
     std.testing.refAllDecls(@import("extfuncs.zig"));
     std.testing.refAllDecls(@import("transport.zig"));
     std.testing.refAllDecls(@import("gate.zig"));
+}
+
+test "est_phy_tables: 24 张 FTM 补偿表各 64B 且全零" {
+    const t = @import("est_phy_tables.zig");
+    const names = [_][]const u8{
+        "est_PHY_INIT_FTM_COMP_20_20D_MHZ", "est_PHY_INIT_FTM_COMP_20_20D_MHZ_DIS",
+        "est_PHY_INIT_FTM_COMP_20_20U_MHZ", "est_PHY_INIT_FTM_COMP_20_20U_MHZ_DIS",
+        "est_PHY_INIT_FTM_COMP_20_40D_MHZ", "est_PHY_INIT_FTM_COMP_20_40D_MHZ_DIS",
+        "est_PHY_INIT_FTM_COMP_20_40U_MHZ", "est_PHY_INIT_FTM_COMP_20_40U_MHZ_DIS",
+        "est_PHY_INIT_FTM_COMP_40_40D_MHZ", "est_PHY_INIT_FTM_COMP_40_40D_MHZ_DIS",
+        "est_PHY_INIT_FTM_COMP_40_40U_MHZ", "est_PHY_INIT_FTM_COMP_40_40U_MHZ_DIS",
+        "est_PHY_RESP_FTM_COMP_20_20D_MHZ", "est_PHY_RESP_FTM_COMP_20_20D_MHZ_DIS",
+        "est_PHY_RESP_FTM_COMP_20_20U_MHZ", "est_PHY_RESP_FTM_COMP_20_20U_MHZ_DIS",
+        "est_PHY_RESP_FTM_COMP_20_40D_MHZ", "est_PHY_RESP_FTM_COMP_20_40D_MHZ_DIS",
+        "est_PHY_RESP_FTM_COMP_20_40U_MHZ", "est_PHY_RESP_FTM_COMP_20_40U_MHZ_DIS",
+        "est_PHY_RESP_FTM_COMP_40_40D_MHZ", "est_PHY_RESP_FTM_COMP_40_40D_MHZ_DIS",
+        "est_PHY_RESP_FTM_COMP_40_40U_MHZ", "est_PHY_RESP_FTM_COMP_40_40U_MHZ_DIS",
+    };
+    inline for (names) |nm| {
+        const tbl = @field(t, nm);
+        try std.testing.expectEqual(@as(usize, 64), tbl.len);
+        for (tbl) |b| try std.testing.expectEqual(@as(u8, 0), b);
+    }
 }

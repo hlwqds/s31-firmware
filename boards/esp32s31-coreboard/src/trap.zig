@@ -12,6 +12,7 @@
 //! 同步异常的异常码也只取低 6 位（S31 在高位带 CLIC 附加字段）。
 
 extern fn probe_dump_now() callconv(.c) void;
+const bt_linked = @import("bt_linked");
 extern fn bt_print_osal_stats() callconv(.c) void;
 const std = @import("std");
 const hw = @import("hw.zig");
@@ -375,7 +376,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             if (irq_count % 512 == 0) log.raw(".");
             // **无条件** tick 计数（先把 sample_quiet 放开才可见）：定位 tick 何时停
             if (irq_count % 4096 == 0) log.line("T n={d}", .{irq_count});
-            if (irq_count % 4096 == 0) bt_print_osal_stats();
+            if (bt_linked.present and irq_count % 4096 == 0) bt_print_osal_stats();
             // **一次性读**三个寄存器：若 FE 域被门控，读本身会挂住 ⇒ 心跳在此之后停止**也是信号**。
             if (irq_count >= 2000 and irq_count < 2001 + 512) {
                 const fe = (@as(*volatile u32, @ptrFromInt(0x20100800))).*;
@@ -716,11 +717,14 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 }
             }
             if (hist_ticks % 100_000 == 0 and (hist_ticks / 100_000) <= 8) {
+                const tim_armed: u32 = if (bt_linked.present) dbg_tim_armed else 0;
+                const tim_fires: u32 = if (bt_linked.present) dbg_tim_fires else 0;
+                const tim_fn: usize = if (bt_linked.present) dbg_tim_fn else 0;
                 var hb: [220]u8 = undefined;
                 const hl = std.fmt.bufPrint(&hb, "HIST[{d}] ticks={d} fe={d} blob={d}(last 0x{x:0>8}) main={d}(last 0x{x:0>8}) other={d} tim={d}/{d} fn=0x{x:0>8}", .{
-                    hist_ticks / 100_000, hist_ticks,        hist_fe,    hist_blob,     hist_last_blob_pc,
-                    hist_main,            hist_last_main_pc, hist_other, dbg_tim_armed, dbg_tim_fires,
-                    dbg_tim_fn,
+                    hist_ticks / 100_000, hist_ticks,        hist_fe,    hist_blob, hist_last_blob_pc,
+                    hist_main,            hist_last_main_pc, hist_other, tim_armed, tim_fires,
+                    tim_fn,
                 }) catch "HIST (fmt fail)";
                 hw.rawLineBlocking(hl);
             }
