@@ -204,6 +204,10 @@ pub fn feedRtcWdt() void {
 const mwdt1: usize = 0x2058_1000;
 const mwdt_wkey: u32 = 0x50D8_3AA1;
 pub fn mwdt1Arm(hold_ticks: u32) void {
+    // **前置使能**（对照实验发现不计数后补）：TIMERGRP1 的 APB/WDT 时钟
+    // （HP_SYS_CLKRST +0x11C bit0/bit11）与 CORE0 全局复位通路（+0x1C bit2）。
+    writeReg(0x2058_7000 + 0x11C, readReg(0x2058_7000 + 0x11C) | (1 << 0) | (1 << 11));
+    writeReg(0x2058_7000 + 0x1C, readReg(0x2058_7000 + 0x1C) | (1 << 2));
     writeReg(mwdt1 + 0x40, 0); // 清掉首版误写并启动的 TIMG1 timer1（tx_en=0）
     writeReg(mwdt1 + 0x64, mwdt_wkey);
     fence();
@@ -225,6 +229,17 @@ pub fn mwdt1Suicide() void {
 }
 pub fn mwdt1Config0() u32 {
     return readReg(mwdt1 + 0x48);
+}
+/// MWDT1 相关时钟/复位通路寄存器快照（对照实验读回用）。
+pub const MwdtRegs = struct { tg1: u32, core0: u32, regclk: u32, cfg0: u32, hold: u32 };
+pub fn mwdt1Regs() MwdtRegs {
+    return .{
+        .tg1 = readReg(0x2058_7000 + 0x11C),
+        .core0 = readReg(0x2058_7000 + 0x1C),
+        .regclk = readReg(mwdt1 + 0xF4),
+        .cfg0 = readReg(mwdt1 + 0x48),
+        .hold = readReg(mwdt1 + 0x4C),
+    };
 }
 
 pub fn rtcWdtConfig0() u32 {

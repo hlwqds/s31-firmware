@@ -572,22 +572,6 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 第 1000 次 ≈ 2 s（周期 2 ms）。若长窗口里连这一行都没有
             // ⇒ NMI 根本没在跑（例如 controller 关了中断）⇒ "饿死"的原因要另找。
             nmi_count +%= 1;
-            // **UART 失声盲区诊断落盘**（2026-11-21）：TXFIFO 连续 ≥120 达 256 次 NMI
-            // （≈0.5 s）且尚未落盘 ⇒ 一次性把寄存器快照写进 0x187000 扇区。
-            // trap 上下文 = pmu_init 之后唯一可靠的 flash 通道（主上下文写不可靠，
-            // 见 README「跨复位仪器」）。主机 `esptool read-flash 0x187000 192` 读回。
-            {
-                const ust: u32 = @as(*volatile u32, @ptrFromInt(0x2038_A01C)).*;
-                if (((ust >> 16) & 0xFF) >= 120) uart_stuck_n +%= 1;
-                if (uart_stuck_n >= 256 and !uart_diag_dumped) {
-                    uart_diag_dumped = true;
-                    uartDiagFlashDump(frame.mepc, frame.ra);
-                }
-            }
-            // 每 ~500 次打一行，**带上 `frame.mepc`** —— 饿死时每次中断都落在
-            // blob 的常驻循环里 ⇒ 这些 PC 的分布就是"卡在哪"的直接答案。
-            // 注意：input==25 的分支**不**走 `recordPc`（第 442 行显式排除），
-            // 所以这个环在饿死期间看不到任何东西 —— 只能靠这里打。
             if (nmi_count % 5_000 == 0) {
                 var nb: [224]u8 = undefined;
                 // **s0 + blob state 三字段直读**：0x2008 停驻环判据——
@@ -1136,54 +1120,6 @@ pub var sample_quiet: bool = false;
 pub var sample_period_us: u32 = 2000;
 pub var nmi_count: u32 = 0;
 
-/// UART 失声盲区诊断（见 NMI 分支）：落盘扇区 0x187000，格式：
-/// [0]=0xD1A60001 [1]=nmi_count [2]=被打断上下文 mepc [3]=ra，
-/// 然后 UART0{0x00,04,08,0C,14,1C,20,24,28,38,3C,40}、
-/// HP_SYS_CLKRST{0x00,04,08,0C,40,88,1E0}、MODEM_SYSCON{0x9C04..9C14}、
-/// {0x2010F01C, 0x2010107C, 0x20101074}。
-pub var uart_stuck_n: u32 = 0;
-/// 落盘改为 RAM 记录后的快照（主机不可见，供 UART 恢复后的 diag 行读）。
-pub var uart_diag_blk: [40]u32 = @splat(0);
-pub var uart_diag_len: usize = 0;
-var uart_diag_dumped: bool = false;
-fn uartDiagFlashDump(mepc: usize, ra: usize) void {
-    var buf: [40]u32 = undefined;
-    var i: usize = 0;
-    buf[i] = 0xD1A6_0001;
-    i += 1;
-    buf[i] = nmi_count;
-    i += 1;
-    buf[i] = @truncate(mepc);
-    i += 1;
-    buf[i] = @truncate(ra);
-    i += 1;
-    const uart_off = [_]usize{ 0x00, 0x04, 0x08, 0x0C, 0x14, 0x1C, 0x20, 0x24, 0x28, 0x38, 0x3C, 0x40 };
-    for (uart_off) |o| {
-        buf[i] = @as(*volatile u32, @ptrFromInt(0x2038_A000 + o)).*;
-        i += 1;
-    }
-    const clk_off = [_]usize{ 0x00, 0x04, 0x08, 0x0C, 0x40, 0x88, 0x1E0 };
-    for (clk_off) |o| {
-        buf[i] = @as(*volatile u32, @ptrFromInt(0x2058_7000 + o)).*;
-        i += 1;
-    }
-    const mdm_off = [_]usize{ 0x04, 0x08, 0x0C, 0x10, 0x14 };
-    for (mdm_off) |o| {
-        buf[i] = @as(*volatile u32, @ptrFromInt(0x2010_9C00 + o)).*;
-        i += 1;
-    }
-    buf[i] = @as(*volatile u32, @ptrFromInt(0x2010_F01C)).*;
-    i += 1;
-    buf[i] = @as(*volatile u32, @ptrFromInt(0x2010_107C)).*;
-    i += 1;
-    buf[i] = @as(*volatile u32, @ptrFromInt(0x2010_1074)).*;
-    i += 1;
-    // **只存 RAM，不擦写 flash**（2026-11-21 收口）：XIP 下 trap 内擦写 = 阻塞
-    // 取指 = 硬挂（本文件断点分支的既有教训）。失声期 NMI 多半已停，本记录
-    // 仅在"UART 活着但 FIFO 短暂满"时可用；真正的盲区通道仍是待补仪器。
-    uart_diag_len = i;
-    @memcpy(uart_diag_blk[0..i], buf[0..i]);
-}
 var fe3_hits: u32 = 0;
 var bp_hit_mepc: u32 = 0;
 var bp_hit_cause: u32 = 0;

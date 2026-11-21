@@ -131,6 +131,8 @@ const diag_blk_magic: u32 = 0xD1A6_B007;
 const lp_blk_addr: usize = 0x2E00_0200;
 var diag_blk_tries: u32 = 0;
 var wdt_suicide: bool = false;
+/// 实验：fwd06 前做一次 MWDT1 阳性对照（短超时不喂 ⇒ 必须复位）。
+pub var mwdt_ctrl: bool = true;
 var diag_blk_ok: bool = false;
 fn rd32(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
@@ -186,7 +188,7 @@ fn diagFlashBlock(round: u32) bool {
     i += 1;
     b[i] = tr.nmi_count;
     i += 1;
-    b[i] = tr.uart_stuck_n;
+    b[i] = 0; // （uart_stuck_n 已随 NMI UART 诊断移除）
     i += 1;
     b[i] = @import("board").hw.rw_drops;
     i += 1;
@@ -225,6 +227,7 @@ pub fn lpBlackBoxReport() void {
     // LP 追踪槽（0x2E000300）：最后 OSAL 调用者 ra / log-sink 的 blob ra / 探针阶段标记。
     const t: [*]volatile u32 = @ptrFromInt(0x2E00_0300);
     board.log.line("BBT seq={d} osal_ra=0x{x:0>8} sink_ra=0x{x:0>8} phase=0x{x:0>8}", .{ t[0], t[1], t[2], t[3] });
+    // （BBT phase==0xD2C7 且上一条复位原因是 WDT ⇒ 对照通过。）
     const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
     if (lp[0] != diag_blk_magic) return;
     var r: usize = 0;
@@ -1649,9 +1652,21 @@ pub fn run() noreturn {
         }
         _ = diagFlashBlock(0xF00D); // 阳性对照：fwd06 前写一次黑匣子（下次开机必须可见）
         // **存活探针**：武装 RTC WDT（STG0=CPU 复位，约 8–33 s 视慢时钟）。泵每轮喂狗。
-        board.hw.armRtcWdt(true, 0x10_0000);
-        board.hw.mwdt1Arm(0x300_0000); // HP 域看门狗（约 10 s）：主上下文冻结也能复位
-        board.log.line("wdt armed rtc=0x{x:0>8} mwdt1=0x{x:0>8}", .{ board.hw.rtcWdtConfig0(), board.hw.mwdt1Config0() });
+        // （RTC WDT 探针已撤：LP 慢时钟在失声态下是否在走未知，改由 HP 域 MWDT1 承担。）
+        // **MWDT1 阳性对照**（2026-11-21）：短超时 + 故意 1.5 s 不喂 ⇒ 必须复位并打
+        // `rst:0x.. (TG1WDT..)` 旗标；否则此看门狗不可信，"失声后无复位"不构成证据。
+        // 复位前在 LP 留旗（跨数字复位保留则下次开机打印 MWDTCTRL OK）。
+        if (mwdt_ctrl) {
+            osal.lpTrace(3, 0xD2C7);
+            const r0 = board.hw.mwdt1Regs();
+            board.hw.mwdt1Arm(0x4_0000); // ≈0.1 s（tick≈XTAL/16=2.5 MHz：ROM 默认 26000000≈9 s 反推）
+            const r1 = board.hw.mwdt1Regs();
+            board.log.line("mwdt: tg1 0x{x:0>8}>0x{x:0>8} core0 0x{x:0>8}>0x{x:0>8} regclk=0x{x:0>8} cfg0=0x{x:0>8}", .{ r0.tg1, r1.tg1, r0.core0, r1.core0, r0.regclk, r1.cfg0 });
+            board.hw.delayUs(1_500_000);
+            // 没复位 ⇒ 本行之后流程继续（BBT 的 phase 仍为 0xD2C7 即"对照失败"）。
+        }
+        board.hw.mwdt1Arm(0x190_0000); // HP 域看门狗 ≈10 s（tick≈2.5 MHz）：主上下文冻结也能复位
+        // （ICG 全 1 A/B 已做：无效果，代码撤除。）
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         osal.lpTrace(3, 0xF001);
@@ -1761,11 +1776,11 @@ pub fn run() noreturn {
             @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
             @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
         }
-        if (!wdt_suicide) board.hw.feedRtcWdt(); // 存活探针：主上下文在泵里 ⇒ 不复位
         if (!wdt_suicide) board.hw.mwdt1Feed();
         sched.drainPending(); // 任务/ISR 上下文里延迟的唤醒在这里补做
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         bringup.bridgeDrain(); // ISR 桥主泵半：主上下文代跑 blob handler
+        bringup.bridgeReenable(); // 代跑后开回被屏蔽的桥接输入（电平中断的协作闭环）
         osi_impl_serviceTimers(); // ets_timer 协作泵：blob 的调度 tick 源（此前只挂在 osi 内部等待路径，泵循环不经过 ⇒ 定时器永不推进）
         // **RTC counter 锁存触发**：RTC_TIMER 的 counter 读数需要 update 位
         // （+0x10 bit27）触发才刷新——不触发则 controller 读到的 sleep time
@@ -1845,7 +1860,7 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} c28={d} brg={d}/{d}/{d}", .{
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d}", .{
                 icg_bt,
                 icg_after,
                 (r98 >> 2) & 1,
@@ -1856,7 +1871,6 @@ pub fn run() noreturn {
                 st.event_run_no_slot,
                 tpc,
                 bringup.stub_blocks,
-                @as(u32, 0),
                 bringup.bridge_w,
                 bringup.bridge_ran,
                 bringup.bridge_dropped,

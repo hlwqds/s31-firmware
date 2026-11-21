@@ -841,7 +841,7 @@ pub fn enable() c_int {
                 node = rdUsz(node + 8);
             }
             const tailc: usize = rdUsz(p0 + 4);
-            osal.logPublic("bt probe: cblist A=0x{x:0>16} B=0x{x:0>16} n={d} p0=0x{x:0>8} tail=+{d}", .{ a0v, a1v, k, p0, tailc - p0 });
+            _ = tailc; // （cblist 行已回收：镜像容量紧张；读数历次稳定）
         } else {
             osal.logPublic("bt probe: cblist head oob=0x{x:0>8}", .{p0});
         }
@@ -869,7 +869,10 @@ pub fn enable() c_int {
         const sl0: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p) else 0;
         const sl1: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p + 4) else 0;
         const sl2: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p + 8) else 0;
-        osal.logPublic("bt probe: slots s0=0x{x:0>8} +0=0x{x:0>8} +4=0x{x:0>8} +8=0x{x:0>8} rc17={d}", .{ s0p, sl0, sl1, sl2, rc });
+        // （slots 行已回收：镜像容量紧张）
+        _ = sl0;
+        _ = sl1;
+        _ = sl2;
         const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
@@ -1023,11 +1026,26 @@ pub var bridge_dropped: u32 = 0;
 
 fn bridgeIsr(raw_arg: ?*anyopaque) callconv(.c) void {
     const s: *BridgeSrc = @ptrCast(@alignCast(raw_arg orelse return));
+    // **入环即屏蔽该输入**（2026-11-21，结构性修复）：BT_MAC 中断是**电平型**，
+    // 真正 ack 源的是被延迟到主上下文代跑的 blob ISR。trap 半只入环不屏蔽 ⇒
+    // `mret` 后立刻重入（中断风暴，主上下文饿死）；2 ms 后 T0 NMI 嵌套进风暴，
+    // 而 trap 入口用的是**固定顶部的私有栈、不支持嵌套** ⇒ 嵌套 handler 覆盖外层
+    // 栈 ⇒ 整机静默脱轨（"路由 v4 后失声"的机制）。`bridgeReenable()` 在代跑后开回。
+    if (freestanding and s.input < 64) hw.writeReg(0x1080_1000 + @as(usize, @intCast(s.input)) * 4, 0x7f00_0000);
+    bridge_masked +%= 1;
     if (bridge_w -% bridge_r < bridge_ring.len) {
         bridge_ring[bridge_w % bridge_ring.len] = .{ .f = s.f, .arg = s.arg };
         bridge_w +%= 1;
     } else {
         bridge_dropped +%= 1;
+    }
+}
+
+/// 代跑结束后把桥接输入的 IE 开回（主上下文，每轮调用，幂等）。
+pub fn bridgeReenable() void {
+    if (!freestanding) return;
+    for (&bridge_srcs) |*s| {
+        if (s.in_use and s.input < 64) hw.writeReg(0x1080_1000 + @as(usize, @intCast(s.input)) * 4, 0x7f00_0100);
     }
 }
 
@@ -1041,6 +1059,11 @@ fn bridgeIsr(raw_arg: ?*anyopaque) callconv(.c) void {
 // 硬件 ISR，拿 0x85/0x03/0x84 当 ISR 参数代跑本身可能是契约误用。
 // ⇒ chainIsr 现为纯计数 no-op；chain_fns/chain_args 已删（地址留 README），
 // **恢复代跑前必须先反汇编三条目定契约**。
+/// 板级寄存器写（trap 半用；主机测试图里为空）。
+const hw = if (@import("builtin").os.tag == .freestanding) @import("board").hw else struct {
+    pub fn writeReg(_: usize, _: u32) void {}
+};
+pub var bridge_masked: u32 = 0;
 var chain_fires: u32 = 0;
 fn chainIsr(_: ?*anyopaque) callconv(.c) void {
     chain_fires +%= 1;
@@ -1069,10 +1092,7 @@ pub fn bridgeDrain() void {
 /// 并在日志里给出可用 `findPendingClicInput()` 校正的入口。
 fn intrArm(src: c_int) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
-    // 主机测试（refAllDecls）图里没有 `board`：给同签名的空壳。
-    const hw = if (freestanding) @import("board").hw else struct {
-        pub fn writeReg(_: usize, _: u32) void {}
-    };
+    // （`hw` 用文件级的门控别名：主机测试图里是同签名空壳。）
     // **路由目标改判 v2（ROM 表布局解码）**：ext34 fn 槽=0x2f81281e **奇数**
     // （RISC-V 函数指针不合法 ⇒ 该槽是 arg/数据）；真 fn 在相邻槽：
     // ext35=0x2f815258（偶 ✓）、ext37=0x2f07f19c（wrapper ✓）。blob 期望的
