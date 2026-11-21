@@ -298,7 +298,6 @@ pub fn lpBlackBoxReport() void {
             while (k < 16) : (k += 1) {
                 const e = ring[(cnt.* + 32 - 16 + k) % 32];
                 board.log.line("BBQ {d} 0x{x:0>8}", .{ k, e });
-                board.hw.delayUs(5000);
             }
         }
     }
@@ -1462,6 +1461,20 @@ pub fn run() noreturn {
     // （看门狗原武装点 fwd06 前覆盖不到）。cpu_reset 保 LP ⇒ 任何冻结 ≤25 min
     // 内数字复位 ⇒ 下 boot 打印黑匣子。fwd06 前的再武装只是续期。
     board.hw.armRtcWdt(true, 49_300_000);
+
+    // **ULP 守护者载入+启动**：RTC 慢时钟域的 RV32 内核，HP 域全门控仍运行。
+    // 程序 = 周期性重使能 RTC WDT(CONFIG0/CONFIG1,不碰 FEED ⇒ 计数不清零)
+    // 对抗 blob 的 WPROTECT 解除 ⇒ 冻结后必然超时复位(rst:0x10)⇒ 黑匣子可读。
+    // 载入 0x2E001000(LP RAM,避开盒结构 0x2E000200-0x570);boot 地址指向之;
+    // LP_PERI_CLKRST CPU_CTRL: bit30 时钟强开, bit31 复位脉冲(WT)。
+    const ulp_prog = [_]u8{ 0x37, 0x1e, 0x80, 0x20, 0xb7, 0x4e, 0xd8, 0x50, 0x93, 0x8e, 0x1e, 0xaa, 0x37, 0x1f, 0x01, 0xa0, 0x13, 0x0f, 0x0f, 0x80, 0xb7, 0x3f, 0xf0, 0x02, 0x93, 0x8f, 0x0f, 0xf4, 0xb7, 0x8d, 0x1e, 0x00, 0x93, 0x8d, 0x0d, 0x48, 0x23, 0x2c, 0xde, 0x01, 0x23, 0x20, 0xde, 0x03, 0x23, 0x20, 0xee, 0x01, 0x23, 0x22, 0xfe, 0x01, 0x23, 0x2c, 0x0e, 0x00, 0x23, 0x20, 0x0e, 0x02, 0x01, 0x4d, 0x05, 0x0d, 0xe3, 0x1f, 0xbd, 0xff, 0xc5, 0xb7 };
+    for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
+    @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS boot addr
+    const lpc: usize = 0x2071_0000; // LP_PERI_CLKRST
+    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* |= 1; // lp_intr_clk_en
+    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* |= (1 << 30); // clk force on
+    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 31) | (1 << 30); // 复位脉冲
+    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 30); // 释放复位
     var rc = bringup.init(&cfg);
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
