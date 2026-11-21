@@ -193,6 +193,7 @@ pub const Stats = struct {
     mutex_pend_busy: u32 = 0,
     eventq_put: u32 = 0,
     eventq_get_ok: u32 = 0,
+    raw_q_dropped: u32 = 0,
     eventq_get_empty: u32 = 0,
     cooperative_yields: u32 = 0,
     callout_fired: u32 = 0,
@@ -515,6 +516,33 @@ pub const EventQ = struct {
 var event_pool: Pool(Event, 384) = .{};
 var eventq_pool: Pool(EventQ, 96) = .{};
 
+// **裸指针 FIFO**（2026-11-21）：HCI 注入路径投递裸 mempool 缓冲（非注册
+// Event 槽）。.bss 静态区——池外 ⇒ arena 布局零漂移（Event 加字段曾触发
+// blob 布局敏感断言）。blob 语义 = FreeRTOS 队列存指针 ⇒ Get 原样返回。
+const raw_q_slots: usize = 64;
+var raw_q_buf: [raw_q_slots]usize = undefined;
+var raw_q_head: usize = 0;
+var raw_q_tail: usize = 0;
+var raw_q_dropped: u32 = 0;
+
+fn rawEnqueue(ptr: usize) bool {
+    const next = (raw_q_tail + 1) % raw_q_slots;
+    if (next == raw_q_head) {
+        raw_q_dropped += 1;
+        return false;
+    }
+    raw_q_buf[raw_q_tail] = ptr;
+    raw_q_tail = next;
+    return true;
+}
+
+fn rawDequeue() ?usize {
+    if (raw_q_head == raw_q_tail) return null;
+    const ptr = raw_q_buf[raw_q_head];
+    raw_q_head = (raw_q_head + 1) % raw_q_slots;
+    return ptr;
+}
+
 pub fn eventqInit(slot: *Slot) void {
     trace("eventqInit", .{});
     evq_init_n += 1;
@@ -586,7 +614,16 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
 
 pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
     const q = slotGet(EventQ, qslot) orelse return;
-    const e = slotGet(Event, eslot) orelse return;
+    if (slotGet(Event, eslot) == null) {
+        _ = rawEnqueue(@intFromPtr(eslot));
+        stats_state.eventq_put += 1;
+        if (q.waiter) |w| {
+            q.waiter = null;
+            sched.resumeTask(w);
+        }
+        return;
+    }
+    const e = slotGet(Event, eslot).?;
     unlinkIfQueued(q, e);
     e.next = q.head;
     e.queued = true;
@@ -1016,6 +1053,11 @@ export fn wr_btdm_osal_eventq_get(evq: *Slot, tmo: u32) callconv(.c) ?*Slot {
     return _r;
 }
 export fn wr_btdm_osal_eventq_put(evq: *Slot, ev: *Slot) callconv(.c) void {
+    // **队列注册判别**（2026-11-21）：slotGet(EventQ) 失败 ⇒ hci_trans 的
+    // 队列从未经 eventqInit 注册（阻断通道一行，安全体积）。
+    if (slotGet(EventQ, evq) == null) {
+        logLine("bt osal: eventq_put UNREG q=0x{x} ev=0x{x}", .{ @intFromPtr(evq), @intFromPtr(ev) });
+    }
     noteCaller();
     asm volatile ("fence iorw, iorw");
     logLine("bt hook: eventq_put", .{});

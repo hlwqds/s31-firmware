@@ -28147,7 +28147,13 @@ schedule 寄存器 dump 对拍（esp-idf idf-bt-ctl 参考运行）。
   （buf_alloc ✓ 命令写入 ✓）但 `qput=3` 恒定（task 队列零新事件）⇒ 命令
   被 hci_trans 收下后**从未投递到 controller task 的事件队列** ⇒ task park
   于 eventqGet ⇒ 不处理 ⇒ 无回包 ⇒ 缓冲不还。
-- 下轮入口：反汇编 blob 的 hci_trans rx → task 投递路径（找
-  wr_btdm_osal_eventq_put 的调用者），核对我们注入时缺的前置状态
-  （status=ENABLED 由 esp_bt_controller_enable 设置——我们直调 r_* 内部
-  从未设置 blob 的 s_btdm_controller_status ⇒ rx 路径的状态机闸门）。
+- **状态理论已证伪（fwd06 ret=0 实证）**：rx 的唯一 0 退出口在全部门控
+  （flag bit0/type/memblock）之后 ⇒ status 已置、闸门已过。**修正后根因 =
+  rx 末尾 `wr_btdm_osal_eventq_put(ctx+12, raw pkt)` 命中 osal.eventqPut
+  的 slotGet 静默守卫（osal.zig:568-570）**——pkt 是裸 mempool 缓冲而非注册
+  Event 槽 ⇒ 静默 return（无统计/无入队/无唤醒）⇒ qput 冻结。队列注册状态
+  待 [2f011020]/[2f01102C] 板上读数分判。
+- **修复设计（契约级，纯增量）**：eventqPut/Get 增 validate-else-passthrough
+  ——Event 包装器加 `raw: ?usize` 字段（裸指针直通），Get 时归还池对象并
+  返回裸指针；unlinkIfQueued 对包装器不变（只碰 next/queued）。主机测试加
+  裸指针 roundtrip 用例。零回归面：此前裸 put 全部静默 no-op。
