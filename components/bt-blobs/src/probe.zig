@@ -227,6 +227,16 @@ pub fn lpBlackBoxReport() void {
     // LP 追踪槽（0x2E000300）：最后 OSAL 调用者 ra / log-sink 的 blob ra / 探针阶段标记。
     const t: [*]volatile u32 = @ptrFromInt(0x2E00_0300);
     board.log.line("BBT seq={d} osal_ra=0x{x:0>8} sink_ra=0x{x:0>8} phase=0x{x:0>8}", .{ t[0], t[1], t[2], t[3] });
+    // 事件环回放：最近的 24 条（tag<<28|value），按发生顺序。
+    {
+        const ring: [*]volatile u32 = @ptrFromInt(0x2E00_0320);
+        const n: u32 = if (t[0] < 24) t[0] else 24;
+        var k: u32 = 0;
+        while (k < n) : (k += 1) {
+            const e = ring[(t[0] - n + k) % 24];
+            board.log.line("BBR {d} t{d} 0x{x:0>7}", .{ k, e >> 28, e & 0x0FFF_FFFF });
+        }
+    }
     // （BBT phase==0xD2C7 且上一条复位原因是 WDT ⇒ 对照通过。）
     const lp: [*]volatile u32 = @ptrFromInt(lp_blk_addr);
     if (lp[0] != diag_blk_magic) return;
@@ -1656,16 +1666,21 @@ pub fn run() noreturn {
         // **MWDT1 阳性对照**（2026-11-21）：短超时 + 故意 1.5 s 不喂 ⇒ 必须复位并打
         // `rst:0x.. (TG1WDT..)` 旗标；否则此看门狗不可信，"失声后无复位"不构成证据。
         // 复位前在 LP 留旗（跨数字复位保留则下次开机打印 MWDTCTRL OK）。
-        if (mwdt_ctrl) {
+        // 对照只做一次：LP 旗标（跨数字复位保留）。0xC7C7=对照进行中（被 WDT1 复位后
+        // 读到它即"通过"）；0x1234=已通过。EN 复位后 LP 是垃圾 ⇒ 重做对照（无害）。
+        const ctrl_flag: *volatile u32 = @ptrFromInt(0x2E00_0310);
+        if (ctrl_flag.* == 0xC7C7) ctrl_flag.* = 0x1234;
+        if (mwdt_ctrl and ctrl_flag.* != 0x1234) {
+            ctrl_flag.* = 0xC7C7;
             osal.lpTrace(3, 0xD2C7);
             const r0 = board.hw.mwdt1Regs();
-            board.hw.mwdt1Arm(0x4_0000); // ≈0.1 s（tick≈XTAL/16=2.5 MHz：ROM 默认 26000000≈9 s 反推）
+            board.hw.mwdt1Arm(0x190_0000); // 0.1 s（tick=262.144 MHz，官方 5 s=0x4e200000 实测）
             const r1 = board.hw.mwdt1Regs();
             board.log.line("mwdt: tg1 0x{x:0>8}>0x{x:0>8} core0 0x{x:0>8}>0x{x:0>8} regclk=0x{x:0>8} cfg0=0x{x:0>8}", .{ r0.tg1, r1.tg1, r0.core0, r1.core0, r0.regclk, r1.cfg0 });
             board.hw.delayUs(1_500_000);
             // 没复位 ⇒ 本行之后流程继续（BBT 的 phase 仍为 0xD2C7 即"对照失败"）。
         }
-        board.hw.mwdt1Arm(0x190_0000); // HP 域看门狗 ≈10 s（tick≈2.5 MHz）：主上下文冻结也能复位
+        board.hw.mwdt1Arm(0x9C40_0000); // HP 域看门狗 10 s（tick=262.144 MHz）：主上下文冻结也能复位
         // （ICG 全 1 A/B 已做：无效果，代码撤除。）
         const r6 = transport.sendCmd(0x2006, &ap);
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
@@ -1709,8 +1724,11 @@ pub fn run() noreturn {
         //   W+0x480 = 0x20109880（环里写 0x0FFFFFFF 的那个）
         //   W+0x4A8 = 0x201098A8（写 0）
         //   W+0x4B8 = 0x201098B8（写 a3）
+        osal.lpTrace(3, 0xF011); // 读 MODEM_WIDGETS W+0x480/0x4A8 之前
         const w480: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
+        osal.lpTrace(3, 0xF012); // W+0x480 已读
         const w4a8: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
+        osal.lpTrace(3, 0xF013); // W+0x4A8 已读
         flashStageExtra(22, w480, w4a8);
         // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
         // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
@@ -1746,8 +1764,10 @@ pub fn run() noreturn {
         // **寄存器快照（0x200A 发送前，白名单稀疏）**：evt 到达后差分 ⇒
         // "BB schedule arm 是否发生、动了哪些寄存器"直接可见。
         snapshotRegs();
+        osal.lpTrace(3, 0xF014); // snapshotRegs 之后
         snap_valid = true;
         const ra2 = transport.sendCmd(0x200A, &ae);
+        osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
         flashStage(23);
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
     }

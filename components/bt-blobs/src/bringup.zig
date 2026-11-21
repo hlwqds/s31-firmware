@@ -681,7 +681,7 @@ pub fn init(cfg: *config.Config) c_int {
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
                 node = rdUsz(node + 8);
             }
-            osal.logPublic("bt probe: cb14 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+            // （cb14/lpcon/cblist17 行已回收：镜像容量紧张，读数历次稳定。）
             // **LPCON 回读（clean zone）**：BLE RTC timer 时钟链三寄存器粘性
             // 判别——值保持 ⇒ 写入生效（缺的不是这段）；值漂 ⇒ LP 域写问题。
             {
@@ -689,7 +689,10 @@ pub fn init(cfg: *config.Config) c_int {
                 const lpt04: u32 = mmioRd(lp + 0x04);
                 const m32k: u32 = mmioRd(lp + 0x14);
                 const cc18: u32 = mmioRd(lp + 0x18);
-                osal.logPublic("bt probe: lpcon lpt04=0x{x:0>8} m32k=0x{x:0>8} cc18=0x{x:0>8}", .{ lpt04, m32k, cc18 });
+                _ = lpt04;
+                _ = m32k;
+                _ = cc18;
+                // （本行已回收：镜像容量紧张。）
             }
             // **yield 注入（2026-11-21）**：task 空转轮询环 125ms/迭代从不让出
             // ⇒ 主上下文饿死。发布我们自己的 log sink（[2f010fb4]=obj，fn@+12/+28
@@ -885,7 +888,7 @@ pub fn enable() c_int {
                 if (k < 4) a0v |= op << sh else a1v |= op << sh;
                 node = rdUsz(node + 8);
             }
-            osal.logPublic("bt probe: cblist17 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
+            // （本行已回收：镜像容量紧张。）
         }
     }
     if (rc != 0) return rc;

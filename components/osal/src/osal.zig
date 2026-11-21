@@ -174,6 +174,9 @@ pub inline fn lpTrace(slot: u32, v: u32) void {
     seq.* +%= 1;
     lp_trace_seq = seq.*;
     @as(*volatile u32, @ptrFromInt(0x2E00_0300 + 4 * @as(usize, slot))).* = v;
+    // 事件环（0x2E000320，24 项，tag<<28|value）：开机按序回放，定位冻结前最后几步。
+    const idx: usize = seq.* % 24;
+    @as(*volatile u32, @ptrFromInt(0x2E00_0320 + 4 * idx)).* = (slot << 28) | (v & 0x0FFF_FFFF);
 }
 
 pub inline fn noteCaller() void {

@@ -194,37 +194,34 @@ pub fn feedRtcWdt() void {
     writeReg(rtc_wdt_feed, 0x8000_0000);
 }
 
-/// **TIMG1 MWDT（HP 域看门狗）**：时钟来自 APB（约 5 MHz tick，IDF 任务 WDT 同源），
-/// 不依赖 LP 慢时钟——CPU 冻结在总线访问上时它照样计数并复位 CPU。
-/// `timg_dev_t`（`reserved_084` 推得每个 hw_timer 占 9 个寄存器 = 0x24）：
-/// WDT CONFIG0@+0x48（EN bit31、STG0 [30:29]、CPU 复位脉宽 [20:18]）、
-/// STG0_HOLD@+0x4C、FEED@+0x60、WPROTECT@+0x64（key 0x50D83AA1）。
-/// ⚠ 首版把偏移算成 +0x40/+0x44/+0x58/+0x5C，实际写到了 TIMG1 timer1 的
-/// txconfig（读回 0x00040000 即该 txconfig）——读回校验是唯一能发现这类错误的手段。
+/// **TIMG1 MWDT（HP 域看门狗）**——IDF 的任务 WDT 就是它，配置照官方 oracle 实测：
+/// `CORE0CTRL(0x2058701C)=0x3`（GLOBAL_RST_EN=0，勿置 1）、`TG1CTRL(0x2058711C)=0x801`、
+/// `WDT CONFIG0=0xb81f8000`（STG0=中断、STG1=系统复位、复位脉宽 7）、
+/// `STG0_HOLD=0x4e200000` = 5 s ⇒ **tick = 262.144 MHz**（不是 XTAL/16）。
+/// `timg_dev_t`（每个 hw_timer 占 9 个寄存器）：WDT CONFIG0@+0x48、STG0_HOLD@+0x4C、
+/// FEED@+0x60、WPROTECT@+0x64（key 0x50D83AA1）。本封装用 STG0=系统复位。
 const mwdt1: usize = 0x2058_1000;
 const mwdt_wkey: u32 = 0x50D8_3AA1;
+const mwdt_cfg_sysreset: u32 = (1 << 31) | (3 << 29) | (7 << 15);
 pub fn mwdt1Arm(hold_ticks: u32) void {
-    // **前置使能**（对照实验发现不计数后补）：TIMERGRP1 的 APB/WDT 时钟
-    // （HP_SYS_CLKRST +0x11C bit0/bit11）与 CORE0 全局复位通路（+0x1C bit2）。
     writeReg(0x2058_7000 + 0x11C, readReg(0x2058_7000 + 0x11C) | (1 << 0) | (1 << 11));
-    writeReg(0x2058_7000 + 0x1C, readReg(0x2058_7000 + 0x1C) | (1 << 2));
     writeReg(mwdt1 + 0x40, 0); // 清掉首版误写并启动的 TIMG1 timer1（tx_en=0）
     writeReg(mwdt1 + 0x64, mwdt_wkey);
     fence();
     writeReg(mwdt1 + 0x60, 1); // feed
     writeReg(mwdt1 + 0x4C, hold_ticks);
-    writeReg(mwdt1 + 0x48, (1 << 31) | (2 << 29) | (1 << 18)); // EN | STG0=CPU 复位 | 脉宽 1
+    writeReg(mwdt1 + 0x48, mwdt_cfg_sysreset);
     fence();
     writeReg(mwdt1 + 0x64, 0);
 }
 pub fn mwdt1Feed() void {
     writeReg(mwdt1 + 0x60, 1);
 }
-/// 立即触发 MWDT1 CPU 复位（泵自陷：交出 LP 黑匣子）。
+/// 立即触发 MWDT1 系统复位（泵自陷：交出 LP 黑匣子）。
 pub fn mwdt1Suicide() void {
     writeReg(mwdt1 + 0x64, mwdt_wkey);
-    writeReg(mwdt1 + 0x4C, 0x100);
-    writeReg(mwdt1 + 0x48, (1 << 31) | (2 << 29) | (1 << 18));
+    writeReg(mwdt1 + 0x4C, 0x400_0000);
+    writeReg(mwdt1 + 0x48, mwdt_cfg_sysreset);
     writeReg(mwdt1 + 0x60, 1);
 }
 pub fn mwdt1Config0() u32 {
@@ -240,10 +237,6 @@ pub fn mwdt1Regs() MwdtRegs {
         .cfg0 = readReg(mwdt1 + 0x48),
         .hold = readReg(mwdt1 + 0x4C),
     };
-}
-
-pub fn rtcWdtConfig0() u32 {
-    return readReg(rtc_wdt_config0);
 }
 
 /// 小端打包（MAC 地址 / 描述符用）。
