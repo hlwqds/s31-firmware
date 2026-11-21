@@ -1116,11 +1116,15 @@ pub fn run() noreturn {
         var seq: u32 = 0;
         fn put(off: u32, magic: u32, v: u32) void {
             seq +%= 1;
+            // **BT 窗口内纯 no-op**（2026-11-21）：enable 之后 LP 域状态已变
+            // （modem-sleep/LP 时钟门控），对 LP RAM 槽 0x2E00_0004 的直写会把
+            // 总线挂死——所有轮次 "fwd06 ret=0" 之后的第一条语句就是
+            // `mark.put(0x80, …)`，而紧随其后的 "post21" 从未打印 ⇒ 楔点即此。
+            // 深度标记在 BT 窗口内不再需要（UART + NMI 行足够）。
+            if (bt_window_no_flash) return;
             // **直写 LP 槽**：本轮最深步骤号进 LP（RAM 直写，无 flash 失败问题）
             const slot: *volatile u32 = @ptrFromInt(0x2E00_0004 + 4 * ((lp_boot_n - 1) % 10));
             slot.* = seq;
-            // BT 窗口内零 flash 写（楔子预防），仅 LP 记深度
-            if (bt_window_no_flash) return;
             const pair: [2]u32 = .{ magic, v };
             _ = esp_rom_spiflash_write(0x18C000 + off, &pair, 8);
         }
