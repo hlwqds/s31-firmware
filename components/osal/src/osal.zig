@@ -524,6 +524,7 @@ var raw_q_buf: [raw_q_slots]usize = undefined;
 var raw_q_head: usize = 0;
 var raw_q_tail: usize = 0;
 var raw_q_dropped: u32 = 0;
+var raw_waiter: ?*sched.Context = null;
 
 fn rawEnqueue(ptr: usize) bool {
     const next = (raw_q_tail + 1) % raw_q_slots;
@@ -594,8 +595,20 @@ fn unlinkIfQueued(q: *EventQ, e: *Event) void {
 }
 
 pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
-    const q = slotGet(EventQ, qslot) orelse return;
-    const e = slotGet(Event, eslot) orelse return;
+    // **未注册队列直通（2026-11-21）**：hci_trans ctx+12 队列未经 eventqInit
+    // （blob 唯一 init 点是 OkE7 的 env+8）⇒ slotGet 必失败 ⇒ 裸 pkt 落 RawQ
+    // 并唤醒驻停任务（task park 于 eventqGet 的 FOREVER 分支时登记 raw_waiter）。
+    if (slotGet(EventQ, qslot) == null or slotGet(Event, eslot) == null) {
+        _ = rawEnqueue(@intFromPtr(eslot));
+        stats_state.eventq_put += 1;
+        if (raw_waiter) |w| {
+            raw_waiter = null;
+            sched.resumeTask(w);
+        }
+        return;
+    }
+    const q = slotGet(EventQ, qslot).?;
+    const e = slotGet(Event, eslot).?;
     unlinkIfQueued(q, e);
     e.next = null;
     e.queued = true;
@@ -635,6 +648,12 @@ pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
 pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
     const q = slotGet(EventQ, qslot) orelse return null;
     while (true) {
+        // **RawQ 优先**：HCI 注入的裸事件先于常规队列出队（原指针原样返回）。
+        if (rawDequeue()) |ptr| {
+            raw_waiter = null;
+            stats_state.eventq_get_ok += 1;
+            return @ptrFromInt(ptr);
+        }
         if (q.head != null) break;
         if (timeout == forever and !sched.isStarted()) {
             var spins: u32 = 0;
@@ -649,8 +668,10 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
         if (timeout == forever and sched.isStarted() and q.waiter == null) {
             stats_state.blocked_calls += 1;
             q.waiter = sched.currentContext();
+            raw_waiter = sched.currentContext(); // 供未注册队列 put 唤醒
             sched.block();
             q.waiter = null;
+            raw_waiter = null;
             continue;
         }
         // **协作式 yield**：`timeout == 0` 的轮询是 blob 常驻循环的主要形态。
