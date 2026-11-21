@@ -625,16 +625,32 @@ pub fn run() noreturn {
     // 置位。到点 ⇒ RTC 比较路径全通（blob 睡眠唤醒的硬件前提就位）。
     {
         const rtb: usize = 0x2080_0000;
-        // 锁存 counter
+        // ①clk_en 必须置位（ch23 实证：bit31 不置 counter 一个 tick 都不走）
+        const date0: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x3FC)).*;
+        if ((date0 >> 31) & 1 == 0) {
+            @as(*volatile u32, @ptrFromInt(rtb + 0x3FC)).* = (date0 & 0x7FFF_FFFF) | 0x8000_0000;
+        }
+        // ②counter 锁存 #1 → 50ms nop 环 → 锁存 #2（走动判据：Δ≈137×50=6850）
         @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
-        const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
-        // target0 = counter + 5s（137kHz × 5 ≈ 686k）
-        @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 5);
-        @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0;
-        @as(*volatile u32, @ptrFromInt(rtb + 0x08)).* = 1 << 31; // TAR_EN0 触发
+        const cnt1: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+        var nops: u32 = 0;
+        while (nops < 4_000_000) : (nops += 1) asm volatile ("nop");
+        @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
+        const cnt2: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+        // ③target0：⚠ **TAR_EN0 = +0x04 的 bit31**（IDF 头：TAR_HIGH0[15:0]
+        // 在 +0x04[15:0]，TAR_EN0 在 +0x04[31]——此前写 +0x04=0 清掉了它、
+        // +0x08 是 TAR_LOW1 ⇒ 武装从未生效）。写序：HIGH0(含 EN)先、LOW0 后。
+        @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0x8000_0000; // HIGH0=0 | TAR_EN0=1
+        @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt2 +% (137_271 * 2);
         @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = (1 << 31) | (1 << 28); // INT_CLR
         @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = (1 << 31) | (1 << 28); // INT_ENA
-        osal.logPublic("bt probe: rtc cmp armed cnt=0x{x:0>8} tgt=0x{x:0>8}", .{ cnt, cnt +% (137_271 * 5) });
+        // 读回（写入保留判据）
+        const t_lo: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x00)).*;
+        const t_en: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x08)).*;
+        const ena: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x30)).*;
+        osal.logPublic("bt probe: rtc chk c1=0x{x:0>8} c2=0x{x:0>8} d={d} t_lo=0x{x:0>8} t_en={x:0>8} ena={x:0>8} date={x:0>8}", .{
+            cnt1, cnt2, cnt2 -% cnt1, t_lo, t_en, ena, date0,
+        });
         // **NMI 行带 INT_RAW 读数**：bit31=SOC_WAKEUP（到点置位？）、bit28=tick
         // （INT_RAW 经 NMI 行 ir= 字段观测，无需标志）
     }
