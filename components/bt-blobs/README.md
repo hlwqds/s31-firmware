@@ -28427,3 +28427,11 @@ uar_final2.log 的 52 boot 则全部到达 INITED+fwd06 后冻在泵头。**冻�
 已就位（NMI 每 tick 采、LP 0x2E0002E0-2FF），读取通道（数字复位）仍未打通**——
 EN 复位刮 LP，MWDT1/RTC WDT 在冻结后不咬，尚无保 LP 的复位源；NMI 时钟保活
 （dd3a9f8）若生效则 MWDT1 恢复咬合 ⇒ 循环自证 ⇒ 黑匣子可读。
+
+**死人开关同样失效定案（2026-11-22）**：RTC WDT 死人开关（bringup 前武装、cpu_reset
+保 LP、fe6372e 已上板）在多轮 25+ 分钟被动窗口实测 **0 次 rst:0x10** ⇒ 与 MWDT1 同判读：
+冻结态下 HP 域(MWDT1)与 LP 域(RTC WDT)看门狗双双不咬 ⇒ blob 侧具备双域解除/门控能力
+（esp_task_wdt 关 TIMG1 + LP WDT disable，均握 WPROTECT key 0x50D83AA1），或冻结连
+RTC 慢时钟域一起打断。tcflush(TCIFLUSH) 清端点旗无效（ioctl 成功但零数据）。
+**物理插拔是唯一出路**；重插后第一动作 = 纯被动 os 读（绝不 EN 复位——刮 LP），
+等 RTC 周期把 BBX 14/15 送出。
