@@ -853,9 +853,8 @@ fn writeLightMarker(phase: u32) void {
     const oL = @import("osal_kit").osal.stats();
     @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
     const cntL: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
-    // **轮 94-final**：+2 字 = 98BC / F800（ADV-enable 结果离线判据）
-    const post98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-    const postf8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+    // **轮 118**：[8]/[9] = FF（NOR 只能 1→0；post-send 用 esp_rom_spiflash_write
+    // 把实际 98BC/F800 写入这两个槽——FF 槽接受任意值）
     var recL: [10]u32 = .{
         0xADC0_BBF4,
         cntL,
@@ -865,8 +864,8 @@ fn writeLightMarker(phase: u32) void {
         oL.eventq_get_ok,
         @intFromPtr(&cfg.btdm),
         phase,
-        post98,
-        postf8,
+        0xFFFF_FFFF,
+        0xFFFF_FFFF,
     };
     const clicL: usize = 0x1080_1000 + 25 * 4;
     const gL: u32 = @as(*volatile u32, @ptrFromInt(clicL)).*;
@@ -2530,6 +2529,14 @@ pub fn run() noreturn {
                 lp608.* = s_first;
                 lp60c.* = s_last;
                 lp600.* = f_last;
+                // **轮 118**：post-send 结果落 [8]/[9]——NOR 编码：每字写
+                // ~(值)（全 1 中清位）⇒ 读回取反即原值。esp_rom_spiflash_write
+                // 页编程等待=寄存器轮询（SYS_TIMER 门控不影响该轮询路径）。
+                const esw118 = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+                const r98n: u32 = ~s_last;
+                const rf8n: u32 = ~f_last;
+                _ = esw118(0x18F000 + 32, @ptrCast(&r98n), 4);
+                _ = esw118(0x18F000 + 36, @ptrCast(&rf8n), 4);
                 // **轮 113**：ADVRES 环（含每轮时钟回写）之后，SYS_TIMER 已被 ULP+
                 // 回写救活 ⇒ ROM flash API 的内部延迟能走完 ⇒ writeLightMarker(3)
                 // 不再楔死 ⇒ ADV-enable 结果（phase=3 + 98BC/F800）落 flash。
