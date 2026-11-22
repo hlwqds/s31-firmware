@@ -28923,3 +28923,24 @@ bt hci >> CMD opcode=0x2008 plen=32
 ### 下一征途
 - 0x200A（Set Adv Enable）是否发出（capture 50s 截止于 0x2008，需更长窗口）
 - 三大判据：FE450/47C 振荡 / 98BC.bit2 翻转 / LE Set Advertising Enable 后广播包
+
+---
+
+## 📍 轮 46 终态（2026-11-22，120s 长窗实测 /tmp/arena2.log）
+
+### 生存面
+- `evrun=8/0`（blob 事件循环 8 事件已跑 0 挂起 ✓ 活着）
+- `pc=0x4007b184`（blob task PC 在 .flash.text 正常区 ✓）
+- `icg 6->6`（MODEM 供电 bt_st_map=6 保持 ✓）
+- 命令链：ReadVersion rc=0 evt=1 → 0x2006 fwd06 ret=0 → **0x2008 已发出**
+- **sleep_cb fault 完全消失**（arena stub 修复）✓
+
+### 新卡点（单一、清晰）
+- 0x2008 之后 blob 等 **Command Complete** 事件，`fe=0 rfready=0` = BT 控制器 RF 路径未振荡
+- `qput=8 getok=8` = probe→blob 队列健康；`hci <<` 无 = **控制器侧无响应回注**
+- 即：blob 主机侧活了，卡在**控制器 RF init**（FE450/47C 振荡的前置条件未满足）
+
+### 下一 session 征途（优先级）
+1. **0x2008 Command Complete 合成回注**（probe HCI 桥加控制器响应路径——ReadVersion 已有先例）→ 看 blob 是否前进到 0x200A
+2. 若前进 ⇒ FE450/47C 判据重测（可能需要 0x200A 先行）
+3. 若不前进 ⇒ blob task PC 0x4007b184 反汇编，看等待点
