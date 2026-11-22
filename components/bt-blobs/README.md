@@ -28804,3 +28804,22 @@ phy 校准 ✓、blob INITED ✓、HCI 命令收发 ✓、FE 可读 ✓——唯
 ① 用 ORACLE 镜像同板对比 RF synth 使能序列（MMU 页表/时钟树/电源域差异）
 ② 联系 Espressif FAE 获取 S31 RF synth bringup vendor 文档
 ③ 或接受 BLE INITED 作为当前 milestone，将 synth 锁定列为后续优化项
+
+### 🔒 布局手术/仪表链状态澄清（2026-11-22 追加）
+- **布局手术已回滚**（s31.ld 无 0x2F022B00 标记，grep 实测）——现行布局 = 回退版（flag @0x2f010f80）
+- **BP! 判读作废**（capture 来自旧二进制——源码 arm 块在 if(false) 内不可达但打印出现 = 板上是陈旧产物）
+- **"synth 下游=已知边界"降级为"主假设（待 mf_pre 一轮验证）"**
+
+### 🏁 破墙里程碑（2026-11-22）：calflag = 1 首次观测！
+
+`calflag 0→1→1 modem_flag 0→2 flag_addr=0x2f010f80`
+
+**s_is_phy_calibrated = true 首次被观测**——35 轮以来所有 flag=0 读数都是仪器伪影（观察点吞写/误瞄准/地址漂移）。撤除观察点 + nm 验证地址 + elf2image 新产物上板 = 首次干净测量。
+
+⇒ **phy 校准完成 ✓**（flag=1 = calibrated=true 物证）
+⇒ **墙不在校准**——synth 不锁（ready=0）的原因在**校准下游**：
+  - btdm 参数表与 RF 校准参数的匹配
+  - RF 前端使能序列的其余环节
+  - blob 调度器与 RF synth 的时序配合
+
+**下 session 首项**：FE450/47C 振荡检查 + 98BC.bit2 状态 + btdm 参数表与 oracle 逐字段对照。
