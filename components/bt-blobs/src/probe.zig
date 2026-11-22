@@ -2305,6 +2305,16 @@ pub fn run() noreturn {
             const pref8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
             const prem1: u32 = @as(*volatile u32, @ptrFromInt(0x2058_71E0)).*;
             board.log.line("PRE200A 98BC={x:0>8} f800={x:0>8} m1e0={x:0>8}", .{ pre98, pref8, prem1 });
+            // **轮 92b 决定性实验**：手动置 F800 bit24（oracle=0x012f0669 我们=0x002f0669
+            // 的唯一差异），轮询 98BC 10×500ms——若 bit2 跟随，synth 墙缩成一个 bit。
+            const f800p: *volatile u32 = @ptrFromInt(0x2010_F800);
+            f800p.* = pref8 | 0x0100_0000;
+            var poll: u32 = 0;
+            while (poll < 10) : (poll += 1) {
+                const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8}", .{ poll, s, f800p.* });
+                board.hw.delayUs(500_000);
+            }
         }
         if (rf_ok) {
             ra2 = transport.sendCmdViaHs(0x200A, &ae);

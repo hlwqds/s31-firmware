@@ -30460,3 +30460,27 @@ flashStage(22/23) marker（esptool read-flash，不经过 UART）：
 2. 或 trap 行（rawLineBlocking 唯一通道）把 cause/mepc 编码进 trap 处理器；
 3. 对照假设：oracle 的 0x200A 走 HW-ERR（不等待）；我们某分支在等 RF-ready 类
    硬件位——从 hang PC 反查是哪个等待环。
+
+---
+
+## 🎯 轮 92b：F800 bit24 决定性否定实验（2026-11-23）
+
+### 实验（决定性否定）
+```text
+PRE200A f800=002f0669 → 手动置 bit24 → POLL00-09（5s）：
+f800=012f0669 恒定（锁存 ✓）但 98BC=00000000 ×10
+```
+⇒ **synth 不由任何单 bit 写启动**——它是 ADV-enable 命令处理链的副作用
+（oracle 时序：发 0x200A → HW-ERR 事件 → synth 上电）。
+⇒ 整堵墙精确站在：**我们的 ADV-enable handler 挂死**（oracle 的返回 HW-ERR 继续）。
+
+### 墙的状态总结（排除法完备）
+| 层 | 状态 |
+| --- | --- |
+| osal/命令分发/CC 投递/LE handler/ADV 参数 | ✅ status=0 全通 |
+| 校准/BB init/时钟树/modem-clock 桩 | ✅ 全部健康 |
+| synth（98BC.bit2） | ❌ 只随 ADV-enable 处理启动，而我们的 handler 挂死 |
+
+### 轮 93 首项：hang PC 定位（pc 采样器/trap 行武装于 F3 窗口）
+抓到自旋 PC 后反查：ADV-enable handler 在等什么（对照 oracle 同分支不等待）。
+打通 ⇒ 98BC=4 ⇒ F3 rc=0（或 HW-ERR）⇒ **BLE 广播上线**。
