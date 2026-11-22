@@ -2446,10 +2446,14 @@ pub fn run() noreturn {
             // 的唯一差异），轮询 98BC 10×500ms——若 bit2 跟随，synth 墙缩成一个 bit。
             const f800p: *volatile u32 = @ptrFromInt(0x2010_F800);
             f800p.* = pref8 | 0x0100_0000;
+            // **轮 118-final**：ULP keeper 在 LP_CLK_CONF（0x2010f018）bit10 每
+            // ~0.25s 翻转。主上下文在 RF-ON 门控下活（mcycle 忙等）⇒ 10 次 POLL
+            // 读 bit10 序列：交替 0/1 = ULP 活；恒定 = ULP 死/时钟被门控。
+            const f018p: *volatile u32 = @ptrFromInt(0x2010_F018);
             var poll: u32 = 0;
             while (poll < 10) : (poll += 1) {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8}", .{ poll, s, f800p.* });
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8}", .{ poll, s, f800p.*, f018p.* });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。

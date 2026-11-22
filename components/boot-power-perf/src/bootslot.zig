@@ -76,8 +76,8 @@ pub fn encodeEntry(out: []u8, e: Entry) Error!usize {
     if (out.len < entry_len) return error.BufferTooSmall;
     @memcpy(out[0..4], &entry_magic);
     writeU32Le(out[4..8], e.seq);
-    out[8] = @backingInt(e.slot);
-    out[9] = @backingInt(e.state);
+    out[8] = @intFromEnum(e.slot);
+    out[9] = @intFromEnum(e.state);
     out[10] = 0;
     out[11] = 0;
     writeU32Le(out[12..16], crc32(out[0..12]));
@@ -89,7 +89,7 @@ pub fn decodeEntry(bytes: []const u8) Error!Entry {
     if (!std.mem.eql(u8, bytes[0..4], &entry_magic)) return error.BadMagic;
     if (bytes[10] != 0 or bytes[11] != 0) return error.BadReserved;
     if (bytes[8] > 1) return error.BadSlot;
-    if (bytes[9] > @backingInt(ota.SlotState.aborted) and bytes[9] != 0xFF) return error.BadState;
+    if (bytes[9] > @intFromEnum(ota.SlotState.aborted) and bytes[9] != 0xFF) return error.BadState;
     if (readU32Le(bytes[12..16]) != crc32(bytes[0..12])) return error.BadCrc;
     return .{
         .seq = readU32Le(bytes[4..8]),

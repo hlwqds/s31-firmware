@@ -88,6 +88,9 @@ int nvs_set_u32(uint32_t h, const char *k, uint32_t v) { (void)h; (void)k; (void
 /* ------------------------------------------------------------------ */
 void _lock_acquire(void **lock) { (void)lock; }
 void _lock_release(void **lock) { (void)lock; }
+/* **轮 118**：WithPHY=1 链入 sar_periph/rts objs 后新增引用；IDF locks.c.obj 的
+ * 真身会与本文件上面两条空桩强冲突，这里补齐同语义空桩（裸机无竞争 ⇒ 恒成功）。 */
+int _lock_try_acquire(void **lock) { (void)lock; return 1; }
 
 /* ------------------------------------------------------------------ */
 /* 内存：转我们的 arena                                                */
@@ -161,3 +164,18 @@ void abort(void) {
 
 int esp_rom_gpio_connect_out_signal(int gpio, int sig, int inv, int oen) { (void)gpio; (void)sig; (void)inv; (void)oen; return ESP_OK; }
 int esp_rom_get_reset_reason(int core) { (void)core; return 0; }
+
+/* ------------------------------------------------------------------ */
+/* **轮 118**：WithPHY=1 obj 闭包（sar_periph/rtc_module/tsens_hal）引用的
+ * log 后端钩子。裸机路径 phy_printf 已由 wifi_probe_stubs 转发 raw-line，
+ * 这些 cache/level 钩子空实现即可（IDF 语义：cache 未启用时直接落地）。 */
+/* ------------------------------------------------------------------ */
+int esp_log_default_level = 3;
+uint32_t esp_log_level_get_timeout(const char *tag) { (void)tag; return 3; }
+void esp_log_cache_add(unsigned int level, const char *tag) { (void)level; (void)tag; }
+void esp_log_cache_clean(void) {}
+uint32_t esp_log_cache_get_level(void) { return 3; }
+void esp_log_cache_set_level(uint32_t level) { (void)level; }
+void esp_log_impl_lock(void) {}
+void esp_log_impl_unlock(void) {}
+int esp_log_impl_lock_timeout(void) { return 1; }

@@ -74,9 +74,9 @@ const unsigned char phy_init_data[144] = {
 
 /* **轮 27**：phy_override.c.obj（强符号，提供 regi2c 真临界区与 efuse 读取）引入的
  * 依赖。baremetal 下无其他模块竞争 ADC 电源 ⇒ 空实现即正确语义（IDF 注释明言
- * "only required on ESP32"）。 */
-void sar_periph_ctrl_pwdet_power_acquire(void) {}
-void sar_periph_ctrl_pwdet_power_release(void) {}
+ * "only required on ESP32"）。
+ * **轮 118**：这两条空桩删除——WithPHY=1 链入 IDF sar_periph_ctrl.c.obj 的真定义
+ * （同符号强冲突）。空桩语义与真身一致（baremetal 无 ADC 竞争），保留真身即可。 */
 /* **轮 87c**：转发格式串到 bringup 的 raw-line sink（原为纯空桩 ⇒ blob 全部
  * 打印被吞，libbtbb version 等 60+ 轮关键判据行从未见过）。变参不展开，
  * 只打 format（与 wifi-blobs printf_shim.c 同模式）。 */
