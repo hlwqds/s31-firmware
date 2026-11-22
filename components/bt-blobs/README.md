@@ -29677,3 +29677,31 @@ hang 点 = fwd06（0x2006 LE Set Advertising Parameters，B 路径 sendCmdViaHs�
 
 ### 轮 75 首项
 反汇编分发器 0x400181e6 的 OCF 分支表（0x40061802-0x40061850 区域——OCF>>10 分组跳转）：确认 0x2006（OGF=0x08 LE 类）落在哪个分支、该分支读哪些状态字段；对照我们的 env 状态找出 ADV 类前置缺口。
+
+---
+
+## 🔬 轮 75：env 头 6 字 dump（OkE7 返回后，2026-11-23 终版）
+
+### 数据（board.log 直写，UART 可靠）
+```text
+env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
++0  = 0        ← mutex 容器 .p = 0（mutexInit 空操作没写回 ✓ 预期内）
++4  = 0        ← 同上
++8  = 0x2f02daf0 ← eventq 容器 .p = EventQ 池对象 ✓（eventqInit 写回 ✓）
++12 = 0x2f0156cc ← 事件容器 .p = osal 池 Event ✓（eventInit 写回 ✓）
++16 = 0x1f = 31  ← 值字段（cfg 拷贝段）
++20 = 0        ← 值字段
+```
+
+### 状态总结
+- OkE7 lazy malloc ✓ → env 容器 +8/+12 的写回 ✓（eventqInit/eventInit 承重写生效）
+- mutex 容器 +0/+4 = 0：mutexInit 是空操作所以没写回——**预期内**（我们的 mutexInit = 空桩）
+- 分发器 fn(env+12) = 正确的容器 ✓；CC 回流（evt=4 ✓）
+- sleep_set_sleep_cb 不再崩（slot 守卫 ✓）
+
+### 剩余 hang（fwd06 0x2006）
+** OkE7 完整跑完后 hang 在 fwd06**——LL 分发器处理 0x2006 时卡住。evt=4 稳定 = Reset/ReadVersion 的 CC 回来了但 0x2006 的没回来。
+⇒ 0x2006 的处理需要 ADV 子系统的前置状态（OkE7 内部 env+16/20 的子 init = 那 6 个 JwHsRJf87 家族）。子 init 的失败 = 我们 osal 的某个行为与官方不同（比如 mutexInit 空操作导致依赖 mutex 的子 init 走不同路径）。
+
+### 轮 76 方向
+补 mutexInit 实现或确认 6 子 init 中哪个依赖 mutex——从 oracle OkE7 反汇编（0x4006a3ac）的 6 子 init 调用点看它们读 impl 的哪些偏移。

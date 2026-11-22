@@ -1695,6 +1695,25 @@ pub fn run() noreturn {
     @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 31) | (1 << 30); // 复位脉冲
     @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 30); // 释放复位
     var rc = bringup.init(&cfg);
+
+    // **轮 75：env 头 dump**（OkE7 返回后——env+0/4/8/12/16/20 全景）
+    {
+        const evp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
+        if (evp2 >= 0x2f00_0000 and evp2 < 0x2f90_0000 and evp2 % 4 == 0) {
+            const w0: u32 = @as(*volatile u32, @ptrFromInt(evp2)).*;
+            const w4: u32 = @as(*volatile u32, @ptrFromInt(evp2 + 4)).*;
+            const w8: u32 = @as(*volatile u32, @ptrFromInt(evp2 + 8)).*;
+            const w12: u32 = @as(*volatile u32, @ptrFromInt(evp2 + 12)).*;
+            const w16: u32 = @as(*volatile u32, @ptrFromInt(evp2 + 16)).*;
+            const w20: u32 = @as(*volatile u32, @ptrFromInt(evp2 + 20)).*;
+            board.log.line(
+                "bt probe: env hdr 0x{x:0>8}: +0={x:0>8} +4={x:0>8} +8={x:0>8} +12={x:0>8} +16={x:0>8} +20={x:0>8}",
+                .{ evp2, w0, w4, w8, w12, w16, w20 },
+            );
+        } else {
+            osal.logPublic("bt probe: env hdr ptr oob=0x{x:0>8}", .{evp2});
+        }
+    }
     mark.put(0x20, 0xADC0B101, @bitCast(rc));
     // **不写日志的标记**：init 返回后立刻置位。崩溃时若该值仍为 0 ⇒ 崩在 return 路径；
     // 已置位 ⇒ 崩在更晚处。（日志行在本故障下会丢，故用纯 RAM。）
