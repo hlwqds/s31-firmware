@@ -29578,3 +29578,13 @@ echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 终态——ygu 链未�
 
 ### 全 session 稳定成果（已入库，130/130 host 绿）
 osal 布局对齐官方 {queued,fn,arg} + fn(容器) + 双路解析 + eventInit/eventqInit 承重写 + c_int 0 + OkE7 lazy 语义确认（0x2f011138 不可预填）+ oracle OkE7 完整序列解密 + sleep env prefill 承重实证
+
+---
+
+## 🔬 轮 72a：r_btdm_os_memblock_get 解码（离线，2026-11-23）
+
+### memblock 函数族（镜像 nm 已确认全链接）
+`r_btdm_os_memblock_get/from/put/num_free/put_from_cb` @ 2f009d1a-9e52
+
+### impl 块布局推断（下一步反汇编验证）
+`r_btdm_os_memblock_get(pool)` 返回块指针；块内含池链字段（prev/next 或单链）——deinit walk 读 impl+16/+20 的确切语义需反汇编 r_btdm_task_deinit（当前构建 nm 地址）中 gvLJK4 调用前后的完整指令序（lw a5,0(s0) 的 s0 到底是哪个容器基址——本轮的 0x2f011138/0x2f011134 归属仍未钉死，下轮 nm+反汇编一次性确认）。
