@@ -2510,6 +2510,18 @@ pub fn run() noreturn {
                     const capv2: u8 = phy_i2c_readReg(99, 1, 6);
                     osal.lpTrace(3, 0xA005);
                     board.log.line("bt probe: mstclk before={x:0>8} regi2c=0x{x:0>2}", .{ before, capv2 });
+                    // **轮 53**：DEVICE_EN 位图（bits[11:0] 每模拟设备一位）
+                    const deven: u32 = @as(*volatile u32, @ptrFromInt(0x2081_3014)).*;
+                    const ctrl0: u32 = @as(*volatile u32, @ptrFromInt(0x2081_3000)).*;
+                    board.log.line("bt probe: deven={x:0>8} lpctrl0={x:0>8}", .{ deven, ctrl0 });
+                    // **轮 53 判别**：deven=0 = 全设备掉电。全置 0xFFF 再读：
+                    // 非零 ⇒ 设备电源 = 真墙（之后二分定位 RF 位）；仍 0 ⇒ 设备位
+                    // 不是电源门，回到 PMU 域审计。
+                    @as(*volatile u32, @ptrFromInt(0x2081_3014)).* = 0xFFF;
+                    osal.lpTrace(3, 0xA006);
+                    const capv3: u8 = phy_i2c_readReg(99, 1, 6);
+                    osal.lpTrace(3, 0xA007);
+                    board.log.line("bt probe: deven->FFF regi2c=0x{x:0>2} deven_now={x:0>8}", .{ capv3, @as(*volatile u32, @ptrFromInt(0x2081_3014)).* });
                 }
             }
             // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲

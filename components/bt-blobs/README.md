@@ -29080,3 +29080,19 @@ RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = mode
 1. 泵内打印 `0x20813014`（DEVICE_EN 位图）+ 对拍 oracle 同址
 2. HP_SYS_CLKRST MODEM_APB 源位检查/置位
 3. oracle 侧 esp_phy_enable 返回时刻六寄存器快照：{0x20813000, 0x20813014, 0x208133fc, 0x2010F800, 0x2010F818, HP_SYS_CLKRST 相关位}
+
+---
+
+## ⚡ 轮 53：DEVICE_EN 位图实锤 + 判别器红鲱鱼警示（2026-11-22）
+
+### 实测（/tmp/deven.log + /tmp/devfff.log）
+- `deven=00000000`（12 个模拟设备使能位全零）+ `lpctrl0=00000000`（LP 视图 I2C0_CTRL 独立于 syscon F800）
+- 强制 `DEVICE_EN=0xFFF`（写入保持 deven_now=00000fff）⇒ 读**仍 0x00**
+- 加上轮 52 master clock BIT28：三道门（master clock / device enable / MODEM_APB-不存在）全部强制后读值不变
+
+### ⚠ 红鲱鱼警示（重要勘误）
+**(99,1,6) = RF PLL cap 寄存器——PLL 未配置/未起时本来就读 0**。轮 51-53 的 0x00 可能是合法空闲值，"域掉电"结论要打折扣。**真正站得住的硬事实只有一条**：
+> **F800（syscon ana ctrl）校准后静止在轨迹起点值 = 校准后没有任何 ana I2C 事务被发出**（官方轨迹 012f0669→01780369 证明官方有）。
+
+### 下 session 主实验（唯一可靠判别器）
+**oracle 侧轨迹仪**：oracle 是完整 IDF 工程（main.c 可改）——在 esp_phy_enable 后 / esp_bt_controller_enable 后 / ADV 前三点打印 {0x2010F800, 0x2010F818, 0x208133fc, 0x20813014}，烧 oracle 抓真实轨迹 ⇒ 直接回答"官方谁在何时发事务、改了哪些寄存器"，再对拍我们缺的那一步。比继续盲试寄存器位信息量大一个量级。
