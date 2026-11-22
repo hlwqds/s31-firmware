@@ -277,31 +277,10 @@ pub fn sendCmdViaHs(opcode: u16, params: []const u8) c_int {
     for (params, 0..) |b, i| buf[3 + i] = b;
     stats_state.cmds_sent += 1;
     osal.logPublic("bt hci(hs) >> CMD opcode=0x{x:0>4} plen={d}", .{ opcode, params.len });
-    const rc = r_ble_hci_trans_hs_cmd_tx(buf);
-    r_ble_hci_trans_buf_free(buf);
-    return rc;
-}
-
-/// **轮 16b：B 路径不释放变体**——`hs_cmd_tx` 的缓冲所有权移交控制器
-/// （立即 free = 队列中命令被回收 = "controller 不消费"的疑似根因）。
-/// 探针对照实验用：每调用泄漏一个 type-3 缓冲（一次性序列可接受）。
-pub fn sendCmdViaHsNoFree(opcode: u16, params: []const u8) c_int {
-    if (!inited) return -1;
-    if (!freestanding) {
-        stats_state.cmds_sent += 1;
-        return 0;
-    }
-    const buf = r_ble_hci_trans_buf_alloc(BLE_HCI_TRANS_BUF_CMD) orelse {
-        stats_state.cmd_alloc_null += 1;
-        osal.logPublic("bt hci(hs): buf_alloc returned null", .{});
-        return -3;
-    };
-    buf[0] = @truncate(opcode);
-    buf[1] = @truncate(opcode >> 8);
-    buf[2] = @intCast(params.len);
-    for (params, 0..) |b, i| buf[3 + i] = b;
-    stats_state.cmds_sent += 1;
-    osal.logPublic("bt hci(hs,nf) >> CMD opcode=0x{x:0>4} plen={d}", .{ opcode, params.len });
+    // **轮 89b 双重释放修复**：B 路径 env[32]=FJxPPD 同步分发，buf 被复用为
+    // CC 事件缓冲并经 ll_evt_tx→leEvtTx 释放（所有权随 hs_cmd_tx 移交控制器）。
+    // 此前的 buf_free 是第二次释放 ⇒ 每条命令腐蚀一次 type-3 池。
+    // （轮 16b 的 NoFree 变体因此存在；本函数已并入该语义，NoFree 变体删除。）
     return r_ble_hci_trans_hs_cmd_tx(buf);
 }
 

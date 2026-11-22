@@ -30313,3 +30313,25 @@ handler 前段无直接 phy/rf/i2cmst 调用 ⇒ **RF init ana 写由更深层�
 ### 轮 89b 首项
 1. STORE 观察点（轮 33/64 仪器）盯 0x2010F800/F818——活捉 RF init 写帧的 PC；
 2. 若 task 首轮不写 ⇒ 反汇编 PxePdGIO 的完整 dispatch 表找 RF init 事件分支。
+
+---
+
+## ✅ 轮 89b：双重释放修复 + ADV 参数被接受（2026-11-23）
+
+### 修复
+- **sendCmdViaHs 双重释放**（60+ 轮潜伏 bug）：B 路径同步分发后 buf 已变 CC 事件
+  并被 leEvtTx 释放，本函数又 free 一次 ⇒ 每条命令腐蚀一次 type-3 池。已删除该
+  free 并入 NoFree 语义，NoFree 变体随之删除（0x200A 调用点迁移）。
+- 逐条 CC status 打点（CC2006 行）。
+
+### 板上验证（修复后）
+```text
+FWD06 rc=0 evt=5 / FWD8 rc=0 evt=6 / F1 rc=0 evt=7（plen=15 确认，旧"plen=1"是 UART 交错）
+CC2006 0e 04 op=2006 status=00   ← ADV 参数被接受！
+F2 rc=0 evt=8 / LASTCC RSSI status=00
+```
+
+### 协议栈终态
+LE 命令全链（发送→分发→handler→CC 构造→投递→status=0）+ ADV 参数已写入 controller。
+**唯一剩余 = synth 上电（98BC.bit2）** ⇒ 轮 89c = F800/F818 STORE 观察点活捉
+task body RF init 写帧 PC（轮 89a 已定位 pump 循环与仪器入口）。

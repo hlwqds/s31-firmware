@@ -2259,6 +2259,11 @@ pub fn run() noreturn {
         board.log.line("F0 {x:0>8}", .{f83c_before});
         const r6b = transport.sendCmdViaHs(0x2006, &ap);
         board.log.line("F1 rc={d} evt={d}", .{ r6b, transport.stats().evt_count });
+        {
+            // **轮 89b**：0x2006 的 CC status（last_evt 静态副本，[5]=status）
+            const le = transport.stats();
+            board.log.line("CC2006 {x:0>2} {x:0>2} op={x:0>2}{x:0>2} status={x:0>2}", .{ le.last_evt[0], le.last_evt[1], le.last_evt[4], le.last_evt[3], le.last_evt[5] });
+        }
         // **轮 78：LE 活性探测**——发 Read RSSI (0x1405，无副作用)
         // CC 回来（evt→5）= LE 分支活，hang 是 ADV enable 特有（RF 依赖）
         // CC 不来 = 整个 LE 分发死
@@ -2293,7 +2298,7 @@ pub fn run() noreturn {
         const rf_ok = ((@as(*volatile u32, @ptrFromInt(0x2010_98BC)).* >> 2) & 1) != 0;
         var ra2: c_int = -100; // 跳过标记
         if (rf_ok) {
-            ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
+            ra2 = transport.sendCmdViaHs(0x200A, &ae);
             board.log.line("F3 rc={d}", .{ra2});
         } else {
             board.log.line("F3 SKIP rfready=0", .{});
