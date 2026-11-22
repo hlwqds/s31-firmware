@@ -925,7 +925,13 @@ pub fn enable() c_int {
     // （bit24=1）+ rfready/evt 链。
     if (btbb_early_enable) {
         const esp_btbb_enable = @extern(*const fn () callconv(.c) void, .{ .name = "esp_btbb_enable" });
+        // **轮 91**：oracle btdm_lp_reset 对 = esp_phy_enable(2)+esp_btbb_enable 成对
+        // （asm 解密：lp_reset(true) = if(!s_bt_active){phy_enable(2);btbb_enable();active=1}）。
+        // 第二次 phy_enable（init 相后）= RF 上电机会（F800 bit24 写者嫌疑）。
+        const esp_phy_enable2 = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
         anaSnap(); // 轮 51 槽 0：btbb 前
+        osal.logPublic("bt bringup: enable-phase esp_phy_enable(2)", .{});
+        esp_phy_enable2(2);
         osal.logPublic("bt bringup: calling esp_btbb_enable", .{});
         esp_btbb_enable();
         anaSnap(); // 轮 51 槽 1：btbb 后

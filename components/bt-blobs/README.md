@@ -30422,3 +30422,25 @@ phy_printf 修复生效（"Jul 14 2026"= libbtbb version 日期参数首次可�
 trap 行/marker 仪器现成（esp32s31-cross-reset-instrumentation）。嫌疑：
 ADV enable handler 等待的 RF 上电完成位在我们环境永不置位（oracle 的 HW-ERR
 响应 = 它不等、报错继续——我们可能卡在一个 oracle 没有的等待分支）。
+
+---
+
+## 🔬 轮 91：enable 相 phy 对 + pre-send 快照 + hang 复现（2026-11-23）
+
+### 执行（按阻断排序）
+1. enable 相 `esp_phy_enable(2)+esp_btbb_enable` 成对（oracle lp_reset 语义）——跑了（"enable-phase esp_phy_enable(2)" 行）；
+2. pre-send 快照移到 0x200A 之前——**hang 时 UART 留住了发送前状态**：
+   `PRE200A 98BC=00000000 f800=002f0669 m1e0=0000003d`
+3. 0x200A 尾发——**hang 复现**（无 F3 rc 行，UART 静默）。
+
+### 判定（按顾问分支树）
+- pre-send F800 bit24 = 0 ⇒ **成对二次 phy_enable 未写 F800**（IDF 引用计数：
+  第二次调用 = ref bump + 内部跳过 ⇒ 非 RF 上电机会）。"成对调用"假设出队。
+- hang 前状态干净（时钟树 ✓、98BC=0 与 oracle 发送时一致）⇒ hang 本身 =
+  ADV-enable handler 内部等待，与 pre-send 状态无关。
+
+### 轮 92 首项：非 UART 通道定位 hang 点
+flashStage(22/23) marker（esptool read-flash，不经过 UART）：
+- F3 发送后主循环是否还跑（marker 23 落盘与否）⇒ 区分"死在 send 内"vs"死在 send 后"
+- 若 marker 停在 22 ⇒ 0x200A 的 hs_cmd_tx/handler 内部自旋（trap 行/mcontrol6 待命）
+- 对照：oracle 的 0x200A 响应是 HW-ERR 事件而非 CC（不等待）——我们某分支在等

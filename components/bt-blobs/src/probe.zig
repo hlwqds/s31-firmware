@@ -2299,6 +2299,13 @@ pub fn run() noreturn {
         // 命令处理的结果而非前置条件。rfready 守卫逻辑恰好反了，移除。
         const rf_ok = true;
         var ra2: c_int = -100;
+        // **轮 91**：pre-send 快照（hang 时 UART 仍留有发送前状态）
+        {
+            const pre98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const pref8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            const prem1: u32 = @as(*volatile u32, @ptrFromInt(0x2058_71E0)).*;
+            board.log.line("PRE200A 98BC={x:0>8} f800={x:0>8} m1e0={x:0>8}", .{ pre98, pref8, prem1 });
+        }
         if (rf_ok) {
             ra2 = transport.sendCmdViaHs(0x200A, &ae);
             board.log.line("F3 rc={d}", .{ra2});
