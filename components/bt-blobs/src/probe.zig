@@ -2043,6 +2043,12 @@ pub fn run() noreturn {
         rst_conf_pre_200A = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
         (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).* = 0;
         rst_conf_post_200A = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
+        // **轮 22b：F83C 对齐官方值**——ana 域硬 diff 恰一位：probe=0x12411290
+        // （bit28=1）vs 官方=0x02411290（bit28=0）。bit28 误开的时钟源若挂在
+        // regi2c 路径上，模拟写会静默失效。一行成本的对齐实验。
+        const f83c_before = (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).*;
+        (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).* = 0x0241_1290;
+        osal.logPublic("bt probe: F83C 0x{x:0>8} -> 0x02411290 (mirror official)", .{f83c_before});
         // **轮 16b：0x200A 改走 B 路径不释放变体**——A 路径 rx 主上下文同步直调
         // 在队列临界态死锁（轮 14/15 实锤）；B 路径异步入队=oracle 同构。
         const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
