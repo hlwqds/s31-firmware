@@ -29660,3 +29660,20 @@ evt=4 = ReadVersion CC + Reset CC + readBdAddr CC + 1 init 事件 = **每命令�
 
 ### 下 session（标准 ADV 链续跑，全部基础设施已就位）
 capture 窗口加长到 120s（fwd06 后段需要更多时间）+ evt 计数持续监控。剩余 = 标准 pre-200A → 0x2006/0x2008/0x200A 链（轮 49 时代的 f06 流程代码完整保留 ✓ 零改动直跑）。
+
+---
+
+## 📌 轮 74：可复现确认——1:1 CC 链活 + hang 移至 0x2006（2026-11-23）
+
+### 可复现性（两次独立 capture 完全一致）
+- 267 行、INITED ✓、evt=4 稳定、hang 在 F83C mirror 后
+- 3 命令（ReadVersion/Reset/readBdAddr）全 rc=0 + 各自 CC 回流 = **1:1 应答链活了**
+
+### 剩余 hang 定性
+hang 点 = fwd06（0x2006 LE Set Advertising Parameters，B 路径 sendCmdViaHs）
+- 命令经 B 路径 → hs_cmd_tx → env[32]=FJxPPD → 事件 → task → 分发器
+- evt 未破 4 ⇒ 0x2006 的 CC 未回流 ⇒ 分发器对 ADV 类 OCF（0x2007 组）的分支卡住或缺前置
+- **不同于旧墙**：旧墙 = 分发器连 Reset 都不处理（零 CC）；现在 Reset/ReadVersion CC 全回流，仅 ADV 类卡
+
+### 轮 75 首项
+反汇编分发器 0x400181e6 的 OCF 分支表（0x40061802-0x40061850 区域——OCF>>10 分组跳转）：确认 0x2006（OGF=0x08 LE 类）落在哪个分支、该分支读哪些状态字段；对照我们的 env 状态找出 ADV 类前置缺口。
