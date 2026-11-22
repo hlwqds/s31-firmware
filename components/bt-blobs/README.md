@@ -29207,3 +29207,22 @@ bb funcs 回调链（step 9 注册的 [a4+36]，esp_btbb_enable → bt_bb_v2_ini
 
 ### 轮 62 首项（STORE 观察点一击必杀）
 对命令事件的 `fn_` 字段（池 Event 地址运行时已知 = *(eo)，eo = *(0x2f01101c)+12）下 **STORE 观察点**（mcontrol6，轮 33 配方）：捕获**所有写者**（init 写 fn=0x400181e6 / 某处写字符串指针 / reset 写 0）+ 写者 PC ⇒ 布局错位的精确位置一次定案。
+
+---
+
+## 🔍 轮 62：fn_ 观察点零命中 ⇒ 毒化机制 = Slot 重绑定（2026-11-22）
+
+### 实验（两 boot 协议）
+- Boot A：enable 前武装 STORE 观察点 @池 Event fn_（`fn_ STORE watch armed @0x2f014a18` ✓）
+- Boot B：lpBlackBoxReport 读 LP 槽 0x2E0004D0 三元组 ⇒ **count 无增量、pc/ra = 下载刮擦噪声**
+
+### 判决
+- idx26 的 event_init 写的 fn=0x400181e6 落在池事件 A 上；运行期**没有任何写者碰过 A.fn_**（观察点零命中）
+- 但运行时 S.p（Slot 桩指针）= **B ≠ A** 且 B.fn_ = 0
+- ⇒ **"清零"不在 A 上发生 = Slot 重绑定**：eventDeinit(S)（give A、S.p=null）→ 后续 take() 把新池事件 B（fn_=null）绑回 S——且 45 条 init ring 里 **eo 只有 idx26 一次** ⇒ 重绑定**没走 event_init**（直接 slotSet 或 deinit 后未 re-init 的路径）
+- 事件被 task 取走 → event_run → fn_=NULL → 我们的 osal null 早退 → 命令无声消失 ✓ 全部症状闭环
+
+### 轮 63 首项
+1. 观察点改盯 **eo+0（Slot.p 字段）**：抓"谁把 S.p 从 A 改写"（deinit 写 null / 直接 slotSet 写 B）+ 写者 PC
+2. 同时 diag 增加每轮 S.p 值——确认重绑定发生在 bringup 哪一步（对照 flashStage 相位）
+3. 找到重绑定者后：核对官方 btdm_osal 的容器生命周期（FreeRTOS 版 deinit 语义 vs 我们的）——大概率我们 eventDeinit 的"give+null"语义官方并不存在（官方容器由 blob 直接管理）

@@ -322,6 +322,11 @@ pub fn lpBlackBoxReport() void {
     // LP 追踪槽（0x2E000300）：最后 OSAL 调用者 ra / log-sink 的 blob ra / 探针阶段标记。
     const t: [*]volatile u32 = @ptrFromInt(0x2E00_0300);
     board.log.line("BBT seq={d} osal_ra=0x{x:0>8} sink_ra=0x{x:0>8} phase=0x{x:0>8}", .{ t[0], t[1], t[2], t[3] });
+    // **轮 62**：fn_ 字段 STORE 观察点命中槽（0x2E0004D0=PC/4D4=ra/4D8=count）
+    {
+        const w: [*]volatile u32 = @ptrFromInt(0x2E00_04D0);
+        board.log.line("BBT wp2 pc=0x{x:0>8} ra=0x{x:0>8} count={d}", .{ w[0], w[1], w[2] });
+    }
     // 事件环回放：最近的 24 条（tag<<28|value），按发生顺序。
     {
         const ring: [*]volatile u32 = @ptrFromInt(0x2E00_0320);
@@ -1810,6 +1815,36 @@ pub fn run() noreturn {
             osal.logPublic("bt probe: STORE watch armed @0x{x:0>8} (fastpath)", .{watch_addr});
             // **轮 38：c.ebreak 自证已删**——它是 panic 源（mepc=ra=ebreak 地址，resume 无推进 → 双重异常）。
         } // if (false) end
+    }
+    // **轮 62：命令事件 fn_ 字段 STORE 观察点**——env+12 槽（*(0x2f01101c)+12）
+    // → 池 Event fn_ 在 init(idx26, fn=0x400181e6) 与运行时(evcb=0) 之间被清。
+    // 武装 STORE 观察点抓清零写者（trapEntry 快路径 → LP 槽 0x2E0004D0 三元组，
+    // 下次开机 lpBlackBoxReport 读出）。
+    {
+        const ep2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
+        if (ep2 >= 0x2f00_0000 and ep2 < 0x2f90_0000 and ep2 % 4 == 0) {
+            const eo: usize = ep2 + 12;
+            const evp: usize = @as(*volatile usize, @ptrFromInt(eo)).*;
+            if (evp >= 0x2f00_0000 and evp < 0x2f90_0000) {
+                const watch_addr: u32 = @truncate(evp + 4); // Event.fn_
+                @import("board").trap.wp_watch_on = 1;
+                asm volatile ("csrw 0x7a5, zero");
+                asm volatile ("csrw 0x7a0, zero");
+                asm volatile ("csrw 0x7a2, %[a]"
+                    :
+                    : [a] "r" (watch_addr),
+                );
+                asm volatile ("li t0, 0x4a"); // STORE|U|M
+                asm volatile ("csrw 0x7a1, t0");
+                asm volatile ("li t0, 0x88"); // MTE
+                asm volatile ("csrw 0x7a5, t0");
+                osal.logPublic("bt probe: fn_ STORE watch armed @0x{x:0>8}", .{watch_addr});
+            } else {
+                osal.logPublic("bt probe: fn_ watch skip evp=0x{x:0>8}", .{evp});
+            }
+        } else {
+            osal.logPublic("bt probe: fn_ watch skip ep2=0x{x:0>8}", .{ep2});
+        }
     }
     rc = bringup.enable();
     if (rc != 0) {
