@@ -76,7 +76,7 @@ const board = @import("board");
 
 /// **轮 32 撤回**：@extern 引用 s_is_phy_calibrated 会激活 phy_init.c.obj 的
 /// .sbss → 级联拉出 pmu_init/modem_clock/closed-libphy burst 调用链（全部
-/// 未定义死路）。回到 nm 硬编码地址 0x2f010f80（本构建布局稳定，见 nm）。
+/// 未定义死路）。回到 nm 硬编码地址 0x2f023400（本构建布局稳定，见 nm）。
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
 /// **blob 台词行环（Zig 侧，安全 .bss）**：bt_printf_shim 经 export 回调写入。
 pub var bt_ring: [16][48]u8 align(4) linksection(".bt_lp_data") = @splat(@splat(0));
@@ -1412,6 +1412,13 @@ pub fn run() noreturn {
     var hx2: [2]u8 = .{ hexd[(ts3 >> 4) & 0xF], hexd[ts3 & 0xF] };
     @import("board").hw.rawWrite(&hx2);
     @import("board").hw.rawWrite("\n");
+    // **轮 36：诊断触发器解除**——武装后紧跟着的 FEF5 flash 写（0x189000）窗口内，
+    // FE 轮询代码访问 0x2f828a78 命中本触发器 → trap → flash-busy 下取指 fault
+    // → 嵌套 panic（bpboot7 实测：boot 期 panic 前无任何 BT 流程行）。诊断完成
+    // 即解除（双映射都清：本块用的旧映射 0x7a4 + 标准映射 0x7a1）。
+    asm volatile ("csrw 0x7a4, zero");
+    asm volatile ("csrw 0x7a1, zero");
+    asm volatile ("csrw 0x7a0, zero");
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
     // {FEF5, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;
@@ -1522,17 +1529,17 @@ pub fn run() noreturn {
     // btdm_cb 指针）清零后首 boot 直达 0x2008 park ✓。
     // ⚠ **全块清零（0x2f011020-047）已否决**（2026-11-21）：十字里 7 个非
     // 槽全局是 blob 跨 boot 依赖的合法状态 ⇒ 全清后无 boot 能过（rst ×12）。
-    @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
-    @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
-    @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f023200)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f02320c)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f023210)).* = 0;
     // ⚠ **btdm_bss/十字块清零均已否决**（2026-11-21 板载 A/B ×2）：清任何
     // blob 状态区（十字 0x2f011020-047 或 btdm_bss 6KB）都导致更差（无 boot
     // 能过 step 20）⇒ **blob 依赖 rst:0x1a 保留 RAM 的跨 boot 接力**（前几
     // boot 的 PHY 校准/调度状态是后续 boot 的前置）。step17 间歇性的来源
     // 另找（PHY/时序 boot 依赖嫌疑最大——前几 boot 校准未完成）。
-    @as(*volatile u32, @ptrFromInt(0x2f01_1028)).* = 0;
-    @as(*volatile u32, @ptrFromInt(0x2f01_1034)).* = 0;
-    @as(*volatile u32, @ptrFromInt(0x2f01_1038)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f023200)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f02320c)).* = 0;
+    @as(*volatile u32, @ptrFromInt(0x2f023210)).* = 0;
     // **RTC SOC_WAKEUP 中断路由 + handler**（sleep 唤醒软件半环）：
     // MAP(+0x1fc) 把 MODEM_LP_TIMER 源路由到 CLIC input 6 ⇒ trap 置旗 ⇒
     // 泵循环调已注册的 sleep 回调（主上下文安全）⇒ sleep 完成 ⇒ 分发环退出。
@@ -1635,10 +1642,10 @@ pub fn run() noreturn {
         // **双候选判别（2026-11-21）**：真 sleep 对象指针 = [0x2f011044]
         // （y5Dip...，blob 于 40062ba2 写 obj+24/28）；[0x2f011034] 为旧假设。
         // 两处都查：仅当 obj[24]==0 且 obj[28]==0（零除活体）才补 100000。
-        const cands = [_]usize{ 0x2f01_1044, 0x2f01_1034 };
+        const cands = [_]usize{ 0x2f02321c, 0x2f02320c };
         for (cands) |cp| {
             const obj: u32 = @as(*volatile u32, @ptrFromInt(cp)).*;
-            const tag: []const u8 = if (cp == 0x2f01_1044) "1044" else "1034";
+            const tag: []const u8 = if (cp == 0x2f02321c) "1044" else "1034";
             if (obj >= 0x2f00_0000 and obj < 0x2f10_0000 and obj % 4 == 0) {
                 const plo: *volatile u32 = @ptrFromInt(@as(usize, obj) + 24);
                 const phi: *volatile u32 = @ptrFromInt(@as(usize, obj) + 28);
@@ -1723,7 +1730,7 @@ pub fn run() noreturn {
         const old_c = nmi_reg.*;
         nmi_reg.* = (old_c & 0x107) | (1 << 3); // nmies 置位（NMI 不受 MIE 屏蔽）
     }
-    // **轮 26：STORE 观察点武装**——盯 s_is_phy_calibrated(0x2f010f80) 的写者：
+    // **轮 26：STORE 观察点武装**——盯 s_is_phy_calibrated(0x2f023400) 的写者：
     // 轮 25 实证该字节被持续踩（enable 后 230 → 冻结 136，源码只写 1）⇒ 有无符号
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
@@ -1732,10 +1739,12 @@ pub fn run() noreturn {
         // trapEntry 的 SRAM 快路径（零 flash 取指），XIP panic 类已根除。
         // 目标地址用链接符号取（跨构建稳健）：s_is_phy_calibrated（IDF 胶水静态，
         // 轮 24-29 链条：它被某指针持续写非零 ⇒ enable 入口恒 skip load_cal）。
-        // **轮 34：目标 = tasks[0].ctx.sp（saved-sp 槽 0x2f010cec）**——合法写者
+        // **轮 34：目标 = tasks[0].ctx.sp（saved-sp 槽 0x2f022b44）**——合法写者
         // 只有 bt_swap_context 的 0x40078380；非该 PC 的命中 = 把坏 sp 写进任务
         // 上下文的原始踩踏者（比 flag 写者更上游）。
-        const watch_addr: u32 = 0x2F01_0CEC;
+        // **轮 37：擦除后裁决实验**——0x2f023400 = 本构建真 flag（nm 实测）。
+        // 陈旧 oracle 尾部已擦除：命中 ⇒ 踩踏者是活代码；零命中 ⇒ 擦除已修。
+        const watch_addr: u32 = 0x2F01_0F80;
         @import("board").trap.wp_watch_on = 1;
         asm volatile ("csrw 0x7a5, zero");
         asm volatile ("csrw 0x7a0, zero");
@@ -1748,7 +1757,9 @@ pub fn run() noreturn {
         asm volatile ("li t0, 0x88"); // MTE
         asm volatile ("csrw 0x7a5, t0");
         osal.logPublic("bt probe: STORE watch armed @0x{x:0>8} (fastpath)", .{watch_addr});
-        // **轮 38：c.ebreak 自证已删**——它是 panic 源（mepc=ra=ebreak 地址，resume 无推进 → 双重异常）。
+        // **轮 31 仪器自证**：已知地址的 c.ebreak —— 快路径应捕获 mepc=本指令
+        // 地址（构建后 objdump 定位）。rec[508]==该地址 ⇒ 捕获链可信；不等 ⇒
+        // 快路径 mepc 语义坏（CLIC 影子寄存器），仪器推倒重来。
     }
     rc = bringup.enable();
     if (rc != 0) {
@@ -1913,7 +1924,7 @@ pub fn run() noreturn {
         // 同门前置）——ctx = [2f011020]，旗 = byte[ctx] bit0。官方由
         // esp_bt_controller_enable 置位；我们直调 r_* 从未置 ⇒ 注入/分配全被拒。
         {
-            const hctx: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
+            const hctx: usize = @as(*volatile usize, @ptrFromInt(0x2f0231f8)).*;
             if (hctx >= 0x2f00_0000 and hctx < 0x2f10_0000) {
                 const fp: *volatile u8 = @ptrFromInt(hctx);
                 const before: u8 = fp.*;
@@ -2225,7 +2236,7 @@ pub fn run() noreturn {
             // phy_module_has_clock_bits(modem)，为假则整段 load_cal 被跳过
             // （rc 仍 0）⇒ 校准从未运行 ⇒ synth 永不锁。两个字节钉死：
             //   rec[508] = s_is_phy_calibrated（esp_phy_enable 内部读的全局，
-            //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010f80）
+            //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f023400）
             //   rec[509] = phy_module_has_clock_bits(2)（PHY_MODEM_BT）直调结果
             // **轮 30**：rec[508..511] = 观察点四元组 {写者 PC, 写者 ra, 命中数, calflag}
             // **轮 31**：观察点四元组改读 **LP 槽副本**（0x2E0004A0..4AC，快路径
@@ -2235,7 +2246,7 @@ pub fn run() noreturn {
             rec[509] = @as(*volatile u32, @ptrFromInt(0x2E00_04A4)).*;
             rec[510] = @as(*volatile u32, @ptrFromInt(0x2E00_04A8)).*;
             // **rec[511] = 冻结时刻 flag 字节**（nm 地址直读；本构建布局见 nm）
-            rec[511] = @as(*volatile u8, @ptrFromInt(0x2F01_0F40)).*; // flag@0x2f010f80（s_is_phy_calibrated 本构建地址）
+            rec[511] = @as(*volatile u8, @ptrFromInt(0x2F01_0F40)).*; // flag@0x2f023400（s_is_phy_calibrated 本构建地址）
             // **轮 33：ra 链**（快路径 LP 0x2E0004B0..4CC，命中时刻 sp 向上的
             // 8 个文本段候选返回地址）——定位别名跳转的上游调用者。
             rec[512] = @as(*volatile u32, @ptrFromInt(0x2E00_04B0)).*;
@@ -2355,7 +2366,7 @@ pub fn run() noreturn {
         // **sink 自愈重发布**：每轮重写 [2f010fb4]+[+12]，对冲任何覆写。
         {
             const sink: usize = @intFromPtr(&bringup.log_sink_storage);
-            @as(*volatile usize, @ptrFromInt(0x2f01_0fb4)).* = sink;
+            @as(*volatile usize, @ptrFromInt(0x2f022_d8c)).* = sink;
             @as(*volatile usize, @ptrFromInt(sink + 12)).* = @intFromPtr(&bringup.btLogYieldStub);
             @as(*volatile usize, @ptrFromInt(sink + 28)).* = @intFromPtr(&bringup.btLogYieldStub);
         }
@@ -2440,14 +2451,17 @@ pub fn run() noreturn {
             var c0: u32 = 0;
             var c32: u32 = 0;
             {
-                const ctxp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
+                const ctxp: usize = @as(*volatile usize, @ptrFromInt(0x2f0231f8)).*;
                 if (ctxp >= 0x2f00_0000 and ctxp < 0x2f90_0000 and ctxp % 4 == 0) {
                     c0 = @as(*volatile u32, @ptrFromInt(ctxp)).*;
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d}", .{
+            // **轮 36**：真校准标志实时读出（stage-22 挂死 boot 的唯一通道）
+            const cal_flag_live: u8 = @as(*volatile u8, @ptrFromInt(0x2F01_0F80)).*;
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d} calflag={d}", .{
                 icg_bt,
+                cal_flag_live,
                 icg_after,
                 (r98 >> 2) & 1,
                 fe_cnt,
