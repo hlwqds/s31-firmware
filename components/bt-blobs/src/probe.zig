@@ -877,6 +877,40 @@ fn writeLightMarker(phase: u32) void {
     @as(*volatile u32, @ptrFromInt(clicL)).* = gL;
 }
 
+/// **轮 119d**：ULP keeper 武装（幂等，可在 bringup.init 前后各调一次）。
+/// init 内部的 LP 域动作会把 boot addr 清 0（BOOTADDR 回读实证）⇒ init 后必须重装。
+fn ulpKeeperArm() void {
+    const ulp_prog = [_]u8{
+        // v13 56B 魔数计数器（objdump 核对 ✓）：count=0xC0DE0000|(n&0xFFFF)
+        // @0x2E000F00、phase=0xFADE0000|((n+1)&15) @0x2E000F20。
+        0x37, 0x1e, 0x80, 0x20, 0x13, 0x0e, 0xf0, 0x0e,
+        0x93, 0x0e, 0x0e, 0x02, 0x37, 0x08, 0xde, 0xc0,
+        0xb7, 0x08, 0xde, 0xfa, 0x83, 0x25, 0x0e, 0x00,
+        0x05, 0x85, 0x1a, 0x05, 0x81, 0xc1, 0x1e, 0x5e,
+        0xb3, 0xe5, 0x05, 0x01, 0x23, 0x20, 0xbe, 0x00,
+        0x83, 0xa7, 0x0e, 0x00, 0x85, 0x07, 0xbd, 0x8b,
+        0xb3, 0xe7, 0x17, 0x01, 0x23, 0xa0, 0xfe, 0x00,
+    };
+    for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
+    // **轮 119f 勘误**：reg.h 权威 = base+0x18（0x10/0x14 是保留洞，struct 枚举
+    // 有空洞不可信）。r119c-e 的 0x10 写进黑洞 = 我的误修，撤回。
+    @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS lp_core_boot_addr
+    const lpc: usize = 0x2071_0000; // LP_PERI_CLKRST
+    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* |= (1 << 30); // cpu_ctrl.lp_core_clk_force_on
+    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* |= (1 << 30); // intr_ctrl.lp_intr_clk_en(bit30)
+    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 31) | (1 << 30); // cpu 复位脉冲(WT)
+    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* |= (1 << 31); // intr_ctrl.lp_intr_rst_en
+    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 30); // 释放 cpu 复位
+    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* &= ~@as(u32, 1 << 31); // 释放 intr 复位
+    // **轮 119i**：LP 根时钟源 force-on（LP_AONCLKRST root_clk_conf @0x20701000：
+    // bit28 pll80m / bit29 xtal / bit30 fosc）。裸机跳过 IDF rtc_clk_init，
+    // 源全默认 force-on=0 ⇒ 睡眠门控可能把 LP 核唯一时钟源关死。
+    @as(*volatile u32, @ptrFromInt(0x2070_1000)).* |= (1 << 28) | (1 << 29) | (1 << 30);
+    // **轮 119g**：PMU HP→LP CPU 触发（lp_core_ll_hp_wake_lp）——boot addr/
+    // 时钟/复位三件齐后核仍未执行 ⇒ PMU 可能持 LP CPU 在等 HP 唤醒触发。
+    @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // PMU_HP_TRIGGER_LP(WT)
+}
+
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.on_pc_ready = dumpPcRing;
@@ -1313,6 +1347,38 @@ pub fn run() noreturn {
             // = 通路活；=初值/0 = 写不通。
             const cfg1v: u32 = @as(*volatile u32, @ptrFromInt(0x2080_1004)).*;
             board.log.line("ULPPATH cfg1=0x{x:0>8} (初值 0x29cc40, 递增=通路活)", .{cfg1v});
+            // **轮 119**：LP 核心跳（v12 纯 LP-RAM 自增）。boot2 读的是 boot1
+            // 整个挂死窗口的累计值；计数>0 = LP 核活，恒 0 = LP 核没在执行。
+            const hbcnt: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0F00)).*;
+            const hbph: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0F20)).*;
+            board.log.line("LPCNT hb={x:0>8} phase={x:0>8} (>0 = LP 核活)", .{ hbcnt, hbph });
+            // **轮 119c 判据**：① boot addr 回读（应 0x2E001000；0x2E000000 =
+            // IDF 默认 = 我们的写没落地或被 blob init 覆盖）；② LP RAM 扫魔数
+            // （0xC0DE/0xFADE 前缀落点 = LP 核真在写 + HP/LP 视图偏移量）。
+            const ba: u32 = @as(*volatile u32, @ptrFromInt(0x2070_0018)).*;
+            board.log.line("BOOTADDR=0x{x:0>8} (期望 0x2E001000)", .{ba});
+            // **轮 119h**：LP 核复位原因（LP_AONCLKRST+0x38）。flag=1 = 核曾运行
+            // 并自我复位（崩溃环）；flag=0 cause=0 = 核从未离开过复位态。
+            const lprc: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
+            board.log.line("LPCORST raw=0x{x:0>8} (bit0=flag, [6:1]=cause, bit29=pmu_mask)", .{lprc});
+            {
+                // boot 序号：LP RAM 跨数字复位保留 ⇒ 每次本读出块执行 = 一个 boot
+                const bseq: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0F40)).* + 1;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0F40)).* = bseq;
+                board.log.line("BOOTSEQ={d}", .{bseq});
+            }
+            {
+                var hits: usize = 0;
+                var addr: usize = 0x2E00_0000;
+                while (addr < 0x2E00_4000 and hits < 6) : (addr += 4) {
+                    const v = @as(*volatile u32, @ptrFromInt(addr)).*;
+                    if ((v & 0xFFFF_0000) == 0xC0DE_0000 or (v & 0xFFFF_0000) == 0xFADE_0000) {
+                        board.log.line("MAGIC 0x{x:0>8} @0x{x:0>8} (HP/LP 视图偏移 = 0x{x})", .{ v, addr, addr -% 0x2E00_0F00 });
+                        hits += 1;
+                    }
+                }
+                if (hits == 0) board.log.line("MAGIC none in 0x0000-0x3FFF (LP 核未写或视图在别处)", .{});
+            }
             const h610: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0610)).*;
             const h614: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0614)).*;
             const h618: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0618)).*;
@@ -1736,40 +1802,15 @@ pub fn run() noreturn {
         @as(*volatile u32, @ptrFromInt(ra)).* = v & ~(@as(u32, 7) << 23);
     }
 
-    // **ULP 守护者载入+启动**：RTC 慢时钟域的 RV32 内核，HP 域全门控仍运行。
-    // 程序 = 周期性重使能 RTC WDT(CONFIG0/CONFIG1,不碰 FEED ⇒ 计数不清零)
-    // 对抗 blob 的 WPROTECT 解除 ⇒ 冻结后必然超时复位(rst:0x10)⇒ 黑匣子可读。
-    // 载入 0x2E001000(LP RAM,避开盒结构 0x2E000200-0x570);boot 地址指向之;
-    // LP_PERI_CLKRST CPU_CTRL: bit30 时钟强开, bit31 复位脉冲(WT)。
-    const ulp_prog = [_]u8{
-        // **轮 118d（v11 124B，从 v10 二进制改 hold 字段生成）**：t6=0x01000000
-        // = 16.78M ticks ≈ 122s @137kHz（v8 实测火焰 20s ⇒ 137kHz 模型定案）——
-        // T+130s 火焰 ⇒ boot2 读 LP 槽/PREVHANG。环字节与 r118c 上板版一致。
-        0x37, 0x1e, 0x80, 0x20, 0xb7, 0x4e, 0xd8, 0x50,
-        0x93, 0x8e, 0x1e, 0xaa, 0x37, 0x1f, 0x01, 0xa0,
-        0x13, 0x0f, 0x0f, 0x80, 0xb7, 0x0f, 0x10, 0x00,
-        0x13, 0x0f, 0x0f, 0x00, 0xb7, 0x8d, 0x1e, 0x00,
-        0x93, 0x8d, 0x0d, 0x48, 0x37, 0x0d, 0x80, 0x20,
-        0x41, 0x0d, 0x37, 0x07, 0x00, 0x08, 0xb7, 0x78,
-        0x58, 0x20, 0x93, 0x88, 0x08, 0x12, 0xb7, 0xf6,
-        0x10, 0x20, 0xe1, 0x06, 0x37, 0xf8, 0x7f, 0xfc,
-        0x7d, 0x18, 0x23, 0x2c, 0xde, 0x01, 0x23, 0x20,
-        0xde, 0x03, 0x23, 0x22, 0xfe, 0x01, 0x23, 0x20,
-        0xee, 0x01, 0x23, 0x2c, 0x0e, 0x00, 0x23, 0x20,
-        0x0e, 0x02, 0x23, 0x20, 0xed, 0x00, 0x83, 0xa5,
-        0x08, 0x00, 0x93, 0xe5, 0x15, 0x01, 0x23, 0xa0,
-        0xb8, 0x00, 0x90, 0x42, 0x13, 0x46, 0x06, 0x40,
-        0x90, 0xc2, 0x01, 0x46, 0x05, 0x06, 0xe3, 0x4f,
-        0xb6, 0xff, 0xc5, 0xb7,
-    };
-    for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
-    @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS boot addr
-    const lpc: usize = 0x2071_0000; // LP_PERI_CLKRST
-    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* |= 1; // lp_intr_clk_en
-    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* |= (1 << 30); // clk force on
-    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 31) | (1 << 30); // 复位脉冲
-    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 30); // 释放复位
+    // **轮 119d**：keeper 预武装（幂等；init 内 LP 域动作会清 boot addr ⇒ init 后重装）
+    ulpKeeperArm();
     var rc = bringup.init(&cfg);
+    // **轮 119d**：init 后重武装（init 的 LP 域动作清了 boot addr——回读实证）
+    ulpKeeperArm();
+    {
+        const ba: u32 = @as(*volatile u32, @ptrFromInt(0x2070_0018)).*;
+        board.log.line("REARM BOOTADDR=0x{x:0>8} (期望 0x2E001000)", .{ba});
+    }
 
     // **轮 103b**：sleep 字段清零前移——task_init 已消费配置并填 sleep 对象
     // （0x2f011044 系），此刻清零 ⇒ ADV-enable 路径读到的就是禁用值。
@@ -2437,10 +2478,12 @@ pub fn run() noreturn {
             // ~0.25s 翻转。主上下文在 RF-ON 门控下活（mcycle 忙等）⇒ 10 次 POLL
             // 读 bit10 序列：交替 0/1 = ULP 活；恒定 = ULP 死/时钟被门控。
             const f018p: *volatile u32 = @ptrFromInt(0x2010_F018);
+            const hbp: *volatile u32 = @ptrFromInt(0x2E00_0F00);
+            const hpp: *volatile u32 = @ptrFromInt(0x2E00_0F20);
             var poll: u32 = 0;
             while (poll < 10) : (poll += 1) {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8}", .{ poll, s, f800p.*, f018p.* });
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>8} ph={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.*, hpp.* });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
