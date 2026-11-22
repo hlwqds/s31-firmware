@@ -916,12 +916,9 @@ fn ulpKeeperArm(comptime tag: u8) void {
     // bit28 pll80m / bit29 xtal / bit30 fosc）。裸机跳过 IDF rtc_clk_init，
     // 源全默认 force-on=0 ⇒ 睡眠门控可能把 LP 核唯一时钟源关死。
     @as(*volatile u32, @ptrFromInt(0x2070_1000)).* |= (1 << 28) | (1 << 29) | (1 << 30);
-    // **轮 119g→119m**：PMU HP→LP 触发两件套——lp_core_ll_hp_wake_lp 生效的
-    // 前置 = PMU_LP_CPU_PWR2.WAKEUP_EN.BIT(1)（LP_CORE_LL_WAKEUP_SOURCE_HP_CPU
-    // =SW_WAKEUP_HP，lp_core_ll_set_wakeup_source 写的就是 pwr2.wakeup_en）。
-    // 只写 trigger 不设 en ⇒ 触发被忽略（此前各轮无效的候选根因）。
-    @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1); // PWR2.WAKEUP_EN bit1
-    @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // HP_TRIGGER_LP(WT)
+    // **轮 119n 撤回**：PMU 触发两件套移除——r119m 实测触发后 HP 取指被扰动
+    //（ROM 窗口回垃圾 → 非法指令 @0x2f000000 崩），HP_TRIGGER_LP 是毒。
+    // 纯「时钟+复位释放+boot addr」路径重测（正确寄存器地图 + 无 PMU 干扰）。
     // **轮 119k**：写后即时回读——分离「写没落地」vs「后被 blob 清」
     const c: u32 = @as(*volatile u32, @ptrFromInt(ccp)).*;
     const r: u32 = @as(*volatile u32, @ptrFromInt(rcp)).*;
@@ -1814,7 +1811,10 @@ pub fn run() noreturn {
     // 默认 0 = 时钟在 PMU sleep 请求时自动门控。blob 触发 sleep ⇒ 芯片睡死
     // (CPU waiti/时钟门控/WDT 停摆/UART 停——全部观测自洽)。置位 ⇒ 时钟永不
     // 门控 ⇒ 睡眠中 MWDT1 照走 ⇒ 10s 必咬 ⇒ 冻结变复位。
-    @as(*volatile u32, @ptrFromInt(0x2070_1004)).* |= (1 << 1) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
+    // **轮 119o**：补 bit3 clk_aon_fast_oen（LP 核时钟源域！此前 1,2,4-7 全开
+    // 独漏 3）与 bit0 clk_core_efuse_oen——位图不齐 = 源被门控，CPU_CTRL
+    // force-on 只防睡眠门控不创造源。
+    @as(*volatile u32, @ptrFromInt(0x2070_1004)).* |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
     board.hw.armRtcWdt(true, 49_300_000);
 
     // **RTC 慢时钟源钉死 RC_SLOW**(ROOT_CLK_CONF bits[25:23]=0)：默认源含
@@ -2513,10 +2513,11 @@ pub fn run() noreturn {
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000;
-                // **轮 119l→m**：blob 经 PMU 复位 LP CPU（cause=0xA）⇒ 每次迭代
-                // 补 PWR2.WAKEUP_EN + HP 触发两件套。
-                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1);
-                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31);
+                // **轮 119n**：时钟位重断言之后补复位脉冲——PMU 级复位(cause=0xA，
+                // blob 干的)后核可能仍被持在复位态，CPU_CTRL 脉冲是该核的硬件复位线。
+                const ccp2: usize = 0x2071_0004;
+                @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 31) | (1 << 30);
+                @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 30);
                 const lprcp: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
                 board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>8} ph={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.*, hpp.*, lprcp });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
