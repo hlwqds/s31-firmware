@@ -28944,3 +28944,23 @@ bt hci >> CMD opcode=0x2008 plen=32
 1. **0x2008 Command Complete 合成回注**（probe HCI 桥加控制器响应路径——ReadVersion 已有先例）→ 看 blob 是否前进到 0x200A
 2. 若前进 ⇒ FE450/47C 判据重测（可能需要 0x200A 先行）
 3. 若不前进 ⇒ blob task PC 0x4007b184 反汇编，看等待点
+
+---
+
+## 🔄 轮 47 归因修正（2026-11-22）
+
+**轮 46"卡在 0x2008"结论错误**：diag 打印点（probe.zig:2484）在 0x200A 发送点（:2128）**之后**——diag 持续刷屏 ⇒ 代码流已过 0x200A，F83C/LE 两条日志只是 UART FIFO 丢弃（"bbbt"交错实锤）。
+
+### 修正后状态
+- 命令链**完整走完**：0x2006 → 0x2008 → **0x200A（LE Set Advertising Enable）已发出** ✓
+- probe 在 600s 监控泵（diag 每秒：`pc=0x4007b184 = wr_btdm_osal_eventq_get+0xd8` = blob task 正常 idle-park）
+- `evt=1` 不变 = 控制器 LL 对三条 ADV 命令**不下发 Command Complete**——RF/BB 未 ready 时 LL 扣住应答（与"机制最终版"注释一致）
+- 真墙 = **RF 使能链**：`fe=0 rfready=0`（FE450/47C 不振荡、0x201098BC.bit2 不置位）
+
+### 关键新事实（轮 45 带来的）
+**calflag=1 = 校准首次完成** ⇒ synth 在校准期**锁过**！校准路径走 PMU force；校毕 synth 归还 LL 控制，LL 的 RF enable 链不完整 ⇒ rfready=0。
+
+### 下 session 首项（证据驱动）
+对拍**校准期间 vs 校准后**的 RF/regi2c/FE 块状态：校准路径设了什么 LL 路径没设。锚点：
+- 校准回调里（calflag 0→1 时刻）快照 FE 块 + 0x201098BC + regi2c 值
+- 与 diag 泵里的同地址值 diff ⇒ 缺的那个寄存器 = RF enable 链断点
