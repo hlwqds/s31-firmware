@@ -117,6 +117,9 @@ extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
 /// a0=0x80000002(BLE) → j yTwwy5 → `r_ble_hci_trans_cfg_ll` 注册 env[32]/[48]。
 /// step 17 链只注册不调用 ⇒ 此处按官方语义亲自分发。
 extern fn r_sym_ble_FzTWy2M5WtXtifB7Pwt4(mode: u32) callconv(.c) u32;
+/// **轮 50**：LL 命令处理入口（cfg_ll 注册对——cmd 入口 / arg=0）；取址镜像写
+/// 进 btdm ctx[32]（A 路径门）。ACL 入口 = r_sym_ble_roXDjbaluQmUuwn9uMP8。
+extern fn r_sym_ble_FJxPPDsfsgFzTvO2VwlU() callconv(.c) void;
 
 // **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
 const osi_impl = @import("osi_impl.zig");
@@ -1812,6 +1815,21 @@ pub fn run() noreturn {
     // enable 语义亲自分发 BLE mode（0x80000002）。
     _ = r_sym_ble_FzTWy2M5WtXtifB7Pwt4(0x8000_0002);
     osal.logPublic("bt probe: mode dispatch 2 (BLE) done", .{});
+    // **轮 50：A 路径门镜像开**——btdm ctx[32]（A 路径 r_btdm_hci_trans_rx 的
+    // 分发槽）仍 0；cfg_ll 已证明 LL cmd 处理器对（e32=0x400183a6）。把同一对
+    // 入口镜像写进 btdm ctx（ctxp 运行时读 *0x2f011020，arena 分配地址漂移）。
+    // 一次 boot 双判据：B 路径切换（fwd06/0x2008）+ A 路径门开 ⇒ evt 演化定位
+    // 剩余闸门。若 evt 仍不涨 ⇒ ctx[32] 语义不同，上 STORE 观察点抓官方写者。
+    {
+        const cp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_1020)).*;
+        if (cp >= 0x2f00_0000 and cp < 0x2f90_0000 and cp % 4 == 0) {
+            @as(*volatile u32, @ptrFromInt(cp + 32)).* = @intFromPtr(&r_sym_ble_FJxPPDsfsgFzTvO2VwlU);
+            @as(*volatile u32, @ptrFromInt(cp + 36)).* = 0;
+            osal.logPublic("bt probe: ctx32 mirror -> 0x{x:0>8}", .{@intFromPtr(&r_sym_ble_FJxPPDsfsgFzTvO2VwlU)});
+        } else {
+            osal.logPublic("bt probe: ctx32 mirror skip cp=0x{x:0>8}", .{cp});
+        }
+    }
     // **轮 18：0x20100438 补齐缺失 7 位**（BB 窗口 diff 唯一差异：官方 0xffc00000
     // vs 我们 0xe0000000——缺 bits[28:22]）。判据链任一出现即破墙：FE450 振荡/
     // 47C 脉冲/98BC.bit2 置位/rcA+POST/evt 增量。
@@ -2034,7 +2052,10 @@ pub fn run() noreturn {
         board.hw.armRtcWdt(true, 49_300_000);
         // （ICG 全 1 A/B 已做：无效果，代码撤除。）
         uartSnapshot(); // **快照**:泵每轮 compare/restore 的基线(UART0 32 字+CLKRST)
-        const r6 = transport.sendCmd(0x2006, &ap);
+        // **轮 50：A→B 路径切换**——env[32]=FJxPPD 已注册（e32=0x400183a6 实证），
+        // B 路径（hs_cmd_tx→jr env[32]）命令下行打通；A 路径（r_btdm_hci_trans_rx
+        // → btdm ctx[32]=0）仍是死门。ADV 命令改走 B 路径直测 LL 处理能力。
+        const r6 = transport.sendCmdViaHs(0x2006, &ap);
         // **轮 15 协作让出**：任务消费积压命令/腾队列——裸忙等连发会在队列临界态
         // 死锁（轮 14 实锤：0x200A 的 rx 阻塞等任务=任务等泵）。
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
@@ -2048,7 +2069,7 @@ pub fn run() noreturn {
         ad[1] = 2;
         ad[2] = 0x06;
         osal.lpTrace(3, 0xF002);
-        const r8 = transport.sendCmd(0x2008, &ad);
+        const r8 = transport.sendCmdViaHs(0x2008, &ad);
         osal.lpTrace(3, 0xF003);
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();

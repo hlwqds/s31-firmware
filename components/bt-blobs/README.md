@@ -29012,3 +29012,22 @@ bt hci >> CMD opcode=0x2008 plen=32
 - `evt=2` 恒定：LL 入口（FJxPPD）收到命令后**不排队不回 CC**（qput=8 恒定）
 - = 控制器内部状态机扣住命令，等 BB/RF 硬件就绪（rfready=0 fe=0 原墙会师）
 - 命令路径三层仪器已就位：下一层破墙点 = BB/RF 内核 init（esp_btbb_enable 已调、bt_bb_v2_init_cmplx 已跑——下一个怀疑 = BB 调度器时钟源/RTC counter 触发链）
+
+---
+
+## ⛏ 轮 50：双门实验——墙收敛到 LL 入口内部（2026-11-22）
+
+### 实验（同一构建）
+1. **B 路径切换**：fwd06/0x2008 从 sendCmd(A) 改 sendCmdViaHs(B)——env[32]=FJxPPD 已注册（轮 49 e32 实证）
+2. **A 路径门镜像开**：mode dispatch 后 `ctx[32]=&FJxPPD, ctx[36]=0`（ctxp 运行时读 *0x2f011020）
+
+### 判决（/tmp/round50.log）
+**evt 恒 2、qput 恒 8**——两条命令下行门全开，LL 入口（FJxPPD）仍不排队不回 CC。
+
+### 定性
+命令下行链已**端到端贯通**（host→transport→env[32]/ctx[32]→FJxPPD 入口），墙在 **FJxPPD 内部**：控制器状态机扣住命令，等 BB/RF 就绪（rfready=0 fe=0）——与 ana 域墙会师。
+
+### 轮 51 首项（两个现成判别器，按序）
+1. **四点 ana 快照**：esp_btbb_enable 前后 / INITED / 泵首轮，存 {F818,F800,11AC,0450} 四件套——定位 ana 域死亡的确切一步（esp_btbb_enable 是头号嫌疑：官方 RF init owner，我们调了但从没查它做了什么）
+2. **regi2c 读实验**（轮 22/23 既定未跑）：泵期 `phy_i2c_readReg` 读已知模拟寄存器——0/0xFF ⇒ ana 总线死（追 i2c_mst 时钟门）；真值 ⇒ 模拟域活，缺口在 analog-ok→rfready 之间 = LL RF init 例程未执行
+- 卫生项已完成：/tmp/full_disasm.txt 已从当前 app.elf 重生成（round-44 旧布局弃用）
