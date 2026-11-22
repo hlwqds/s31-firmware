@@ -30253,3 +30253,37 @@ rf_onoff 排除（仅我们的代码调用；IDF 里属 sleep 路径）。`phy_i
 ### 轮 88 首项：task body rf-init 守卫追猎（轮 57 首项恢复执行）
 oracle.asm 全符号 → 找 blob task init 体里调用 `phy_rf_init`/`phy_i2cmst_reg_init`
 的分支与其守卫变量 →板上读守卫 → 补触发条件。
+
+---
+
+## 🔬 轮 88：时钟树对拍通过 + btdm_lp_reset 真身解密（2026-11-23）
+
+### oracle CLK 三件对拍（R6 实测）
+| 寄存器 | 我们 | oracle8 | 判定 |
+| --- | --- | --- | --- |
+| m1e0 (0x205871E0) | **0x0000003d** | 0x3d | ✓ 一致（MODEM_CONF 已对齐；`pll_write_enabled` 默认即 true、line 236 早已直写 0x3d） |
+| st1c (0x2038A01C) | 0xe07e8000 | 0x60448000/0xe0448000 | UART FIFO 状态噪声（oracle 两次自身不同；main.c 注释自证为 UART 调试用） |
+| 98BC | 0x00000000 | 0x00000004 | ✗ synth 未启动——唯一实质差异 |
+
+⇒ **时钟树不是墙**。
+
+### btdm_lp_reset 真身（oracle asm 解密）
+```c
+btdm_lp_reset(en): if (!en) {btbb_disable; if(active) phy_disable(2), active=0}
+                   else { if (s_bt_active) assert(440);
+                          esp_phy_enable(2); esp_btbb_enable(); s_bt_active=1; }
+```
+⇒ oracle 的 phy_enable+btbb_enable 发生在 **init 相**（esp_bt_controller_init 内部；
+oracle8.log 时序实证：full cal → libbtbb version → 之后才 enable rc=0）——与我们当前
+init 相结构一致。我们 enable 相的 btbb_early_enable 调用与之等效、无害。
+
+### 剩余差异（精确定位）
+1. **任务体 RF init ana 写**：oracle task 首调度异步发写（轮 56 已见）；我们 task
+   泵运行（evrun=9）但 F800 恒 0x002f0669 无写帧。
+2. phy_rf_init 在 register_chipv7_phy 里两分支必经（oracle asm：skip 路径只多走
+   recovery 再汇合）——calflag 0→1 说明它已跑；但 DEVICE_EN 位图仍全零。
+
+### 轮 89 首项
+用 oracle.asm 全符号解剖 blob task 入口的 init body：找 `phy_rf_init`/RF-I2C 写帧
+的调用点与守卫（round 57 首项的 oracle 符号版），板上读守卫变量 + pc_ring 高频采样
+task 首轮窗口。

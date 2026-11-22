@@ -2312,8 +2312,12 @@ pub fn run() noreturn {
             // （bits[15:8] |= 0x96）与 0x20102c00（|= 0x19f_000）；非默认值 = BB init 跑过。
             const bb870: u32 = @as(*volatile u32, @ptrFromInt(0x2010_0870)).*;
             const bbc00: u32 = @as(*volatile u32, @ptrFromInt(0x2010_2C00)).*;
+            // **轮 88**：oracle CLK-post 对拍三件——m1e0 应=0x3d、st 应=0x60448000、98BC 应=4
+            const m1e0: u32 = @as(*volatile u32, @ptrFromInt(0x2058_71E0)).*;
+            const st1c: u32 = @as(*volatile u32, @ptrFromInt(0x2038_A01C)).*;
             board.log.line("R1 98BC={x:0>8} R2 mst={x:0>8} den={x:0>8} R4 fe={x:0>8} f800={x:0>8}", .{ r98bc, mstclk, deven, fe8d0, f800 });
             board.log.line("R5 bb870={x:0>8} bbc00={x:0>8}", .{ bb870, bbc00 });
+            board.log.line("R6 m1e0={x:0>8} st1c={x:0>8} (oracle: 3d / 60448000)", .{ m1e0, st1c });
             // **轮 87b**：签名修正后重跑——(reg=99, hostid=1, block=6) = PLL cap 自环
             phy_i2c_writeReg(99, 1, 6, 0x5A);
             const loopback: u8 = phy_i2c_readReg(99, 1, 6);
