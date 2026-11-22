@@ -429,6 +429,10 @@ fn schedPatchset() void {
     osal.logPublic("bt probe: sched patchset written (22 regs) pre-200A", .{});
 }
 
+/// **轮 21b：modem_rst_conf 在 0x200A 前后的值**（冻结点转存进 rec[506..508]）。
+pub var rst_conf_pre_200A: u32 = 0;
+pub var rst_conf_post_200A: u32 = 0;
+
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
 
@@ -1742,6 +1746,16 @@ pub fn run() noreturn {
     }
 
     // 5) 发第一条命令并泵任务
+    // **轮 21：modem_rst_conf(9C10) 释放**——oracle 端点 0x00000000 vs probe 残留
+    // 0x001870c0（2026-11-22 ANA 硬 diff）。解码：bit12 rst_fe_adc / bit13
+    // rst_fe_ahb / bit14 rst_fe = **RF 前端整块按在复位里** ⇒ synth 物理上锁不上
+    // ⇒ 98BC.bit2 恒 0。IDF 链路 esp_phy_enable 断言、modem_clock_device_control
+    // per-device 释放；我们的移植缺释放半边。现在在 phy/btbb 都完成后统一清零。
+    {
+        const before = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
+        (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).* = 0;
+        osal.logPublic("bt probe: modem_rst_conf 0x{x:0>8} -> 0 (FE/btmac/zbmac released)", .{before});
+    }
     osal.logPublic("bt probe: sending HCI Reset", .{});
     mark.put(0x38, 0xADC0B104, 0);
     rc = transport.sendResetViaHs();
@@ -2021,6 +2035,14 @@ pub fn run() noreturn {
         // 处理期清除（SC 054 存活、0f0+ 全灭实证）；官方值由 RF init/调度器在
         // 清除之后写入。现在在清除动作之后再补写一次。
         schedPatchset();
+        // **轮 21b：modem_rst_conf 释放推迟到 0x200A 前**——armed 后清零被
+        // 命令处理期复断言（0x188000 终值回到 0x001870c0 实证）：blob/phy 路径
+        // 在命令期重按 FE 复位。官方同代 phy 的 phy_module_enable 负责释放，
+        // 我们链接的 IDF v6.1 版本不释放（modem_flag 机制=期望别的 owner）。
+        // 现在所有复断言之后、ADV 选通之前清零，rec[506..508] 记前后值。
+        rst_conf_pre_200A = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
+        (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).* = 0;
+        rst_conf_post_200A = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
         // **轮 16b：0x200A 改走 B 路径不释放变体**——A 路径 rx 主上下文同步直调
         // 在队列临界态死锁（轮 14/15 实锤）；B 路径异步入队=oracle 同构。
         const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
@@ -2153,6 +2175,8 @@ pub fn run() noreturn {
             while (hk < 10) : (hk += 1) {
                 rec[496 + hk] = @as(*volatile u32, @ptrFromInt(0x2E00_0004 + 4 * hk)).*;
             }
+            rec[506] = rst_conf_pre_200A;
+            rec[507] = rst_conf_post_200A;
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];
