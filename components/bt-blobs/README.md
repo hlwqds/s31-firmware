@@ -28989,3 +28989,26 @@ bt hci >> CMD opcode=0x2008 plen=32
 
 ### 剩余唯一主嫌
 **LL/BB init 链自身未走完**：ROM 分发 ctx 槽 0x2f07f1F4=0（既有定案 = BB 事件链缺口）+ ana CONF0 静态（泵期无事务；校准期 regi2c 明确活着）。下轮首项：在 r_btdm_enable 反汇编里定位 0x2f07f1F4 的写者与所属分支，回溯哪个前置条件跳过了它。
+
+---
+
+## ⛏ 轮 49：HCI 命令链两层真修复（2026-11-22）
+
+### 修复 1：BT MAC 中断路由（intrArm 死钩子）
+- `osal.on_intr_arm` 只被赋值无调用点 ⇒ `intrArm`（MAP[124]=0x18 + 桥 handler + mie）**从未执行** ⇒ 中断源 124 从未路由
+- 修复：probe 里 IE 武装块直调 `bringup.intrArm(124)`（路由先于 IE）
+- 板测：`arm src=124 -> CLIC input 24 (routed, bridged=true) mie|=0x1000000` ✓ 无 boot 循环
+
+### 修复 2：cfg_ll 注册（官方 mode 分发器）
+- 反汇编链：`hs_cmd_tx` 尾部 `t1=env[32]; jr t1` ⇒ env[32]=LL cmd 入口；cfg_ll 唯一官方调用者 = **mode 分发器** `r_sym_ble_FzTWy2M5WtXtifB7Pwt4(0x80000002→j yTwwy5→cfg_ll)`
+- step 17 官方链只**注册**分发器到槽[4]，从未**调用** ⇒ cfg_ll 永不执行（kZvEj 兄弟函数直调会 NULL 崩——依赖 env 未建，弃用）
+- 修复：probe 在 enable 后直调分发器（`_ = r_sym_ble_FzTWy2M5WtXtifB7Pwt4(0x8000_0002)`）
+- 板测：**`e32=0x400183a6`**（LL cmd 入口注册成功 ✓）+ evt 1→2（多一个 init 事件）+ sendReset/readBdAddr rc=0
+
+### 诊断行升级
+`icg/rfready/fe/rst/qput/getok/evrun/evt/e32/pc/brg`——evt=transport evt_count、e32=ble_hci_trans_env[32]
+
+### 剩余单墙（第三层）
+- `evt=2` 恒定：LL 入口（FJxPPD）收到命令后**不排队不回 CC**（qput=8 恒定）
+- = 控制器内部状态机扣住命令，等 BB/RF 硬件就绪（rfready=0 fe=0 原墙会师）
+- 命令路径三层仪器已就位：下一层破墙点 = BB/RF 内核 init（esp_btbb_enable 已调、bt_bb_v2_init_cmplx 已跑——下一个怀疑 = BB 调度器时钟源/RTC counter 触发链）

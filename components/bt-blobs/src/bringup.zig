@@ -1135,7 +1135,7 @@ pub fn bridgeDrain() void {
 /// 把外设源号对应的 CLIC 输入使能，并置 `mie` 位。
 /// ⚠ `src` 是**源号**，未必等于 CPU 输入号 ⇒ 同时尝试 `src & 63`，
 /// 并在日志里给出可用 `findPendingClicInput()` 校正的入口。
-fn intrArm(src: c_int) void {
+pub fn intrArm(src: c_int) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     // （`hw` 用文件级的门控别名：主机测试图里是同签名空壳。）
     // **路由目标改判 v2（ROM 表布局解码）**：ext34 fn 槽=0x2f81281e **奇数**

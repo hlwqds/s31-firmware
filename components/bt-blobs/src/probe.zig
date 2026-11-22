@@ -113,6 +113,10 @@ export fn s31_bt_ring_put(line: [*:0]const u8) void {
 }
 
 extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
+/// **轮 49**：官方 mode 分发器（oracle 实证 = enable 语义边界）——
+/// a0=0x80000002(BLE) → j yTwwy5 → `r_ble_hci_trans_cfg_ll` 注册 env[32]/[48]。
+/// step 17 链只注册不调用 ⇒ 此处按官方语义亲自分发。
+extern fn r_sym_ble_FzTWy2M5WtXtifB7Pwt4(mode: u32) callconv(.c) u32;
 
 // **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
 const osi_impl = @import("osi_impl.zig");
@@ -1799,6 +1803,15 @@ pub fn run() noreturn {
     board.trap.pc_dump_at = 0xFFFF_FFFF; // 采样器 ISR 不再触发 0x187000 dump
     mark.put(0x30, 0xADC0B103, @bitCast(rc)); // 此刻起 LP-only
     osal.logPublic("bt probe: enabled (status={d})", .{bringup.getStatus()});
+    // **轮 49 根修 2**：ble_hci_trans_env[32]=0 ⇒ host 命令进 transport 后 LL
+    // 处理入口缺失，全部静默丢弃（hs_cmd_tx 尾部 `jr env[32]` 实锤；板测 c32=0）。
+    // env[32] 由 cfg_ll 注册，cfg_ll 的唯一官方调用者 = mode 分发器
+    // `r_sym_ble_FzTWy2M5WtXtifB7Pwt4(mode)`（oracle 实证：a0=0x80000002 →
+    // j yTwwy5 → cfg_ll(LL cmd=0x400183a6, ACL=0x40018418)）。step 17 官方链
+    // 只**注册**分发器到槽[4]、从未**调用** ⇒ cfg_ll 永不执行。此处按官方
+    // enable 语义亲自分发 BLE mode（0x80000002）。
+    _ = r_sym_ble_FzTWy2M5WtXtifB7Pwt4(0x8000_0002);
+    osal.logPublic("bt probe: mode dispatch 2 (BLE) done", .{});
     // **轮 18：0x20100438 补齐缺失 7 位**（BB 窗口 diff 唯一差异：官方 0xffc00000
     // vs 我们 0xe0000000——缺 bits[28:22]）。判据链任一出现即破墙：FE450 振荡/
     // 47C 脉冲/98BC.bit2 置位/rcA+POST/evt 增量。
@@ -1945,6 +1958,12 @@ pub fn run() noreturn {
             // 上下文 ra=vibwBXog 调用点）⇒ LOCKUP。改走软件分发（mtvec →
             // trapDispatch → handler[24]），只保留官方优先级 0x7f + IE。
             const ie24: *volatile u32 = @ptrFromInt(0x1080_1000 + 24 * 4);
+            // **轮 49 根修**：intrArm 从未被执行——blob 走 ROM intr_handler_set
+            // 直注册（捕获里无 intr_alloc 日志），osal on_intr_arm 钩子死代码 ⇒
+            // MAP[124] 从未写入 ⇒ BT MAC 中断源从未路由 ⇒ brg=0、BB/MAC 事件链
+            // 死、RF ready 永不置位。此处直接补路由（MAP=0x18 + 桥 handler +
+            // mie 位），随后 ie24 才开 IE——顺序：路由/handler 先于 IE。
+            bringup.intrArm(124);
             ie24.* = 0x7f00_0100;
         }
         // **rx/buf_alloc 共用的 ENABLED 旗**（rx .L50 = li a0,-3 出口；buf_alloc
@@ -2495,7 +2514,16 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} rst={x:0>8} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} brg={d}/{d}/{d}", .{
+            // **轮 49**：e32 = ble_hci_trans_env[32]（cfg_ll 注册的 LL cmd 入口）
+            // 与 c32（btdm ctx[32]）不同层——A 路径走后者，B 路径走前者。
+            var e32: u32 = 0;
+            {
+                const ep: usize = @as(*volatile usize, @ptrFromInt(0x2f01_10fc)).*;
+                if (ep >= 0x2f00_0000 and ep < 0x2f90_0000 and ep % 4 == 0) {
+                    e32 = @as(*volatile u32, @ptrFromInt(ep + 32)).*;
+                }
+            }
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} rst={x:0>8} qput={d} getok={d} evrun={d}/{d} evt={d} e32=0x{x:0>8} pc=0x{x:0>8} brg={d}/{d}/{d}", .{
                 icg_bt,
                 icg_after,
                 (r98 >> 2) & 1,
@@ -2505,6 +2533,8 @@ pub fn run() noreturn {
                 st.eventq_get_ok,
                 st.event_run_count,
                 st.event_run_no_slot,
+                transport.stats().evt_count,
+                e32,
                 tpc,
                 bringup.bridge_w,
                 bringup.bridge_ran,
