@@ -28579,6 +28579,8 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
 - **第十四轮（同日，相位字 + pre-forward 钩子）**：transport 加 `pre_forward_hook`（probe 专属，生产恒 null 零开销）+ 轻量标记改相位字（0=pre-0x200A / 1=pre-forward）。判读：**phase=1 到达**、cmds=8（计数已过）、**put=7（0x200A 入队未发生）**、cnt 走动 ⇒ **冻结实锤 = `r_btdm_hci_trans_rx(0x200A)` 内部阻塞**（非自旋——cnt 在走）。
 - **机制闭环**：命令序列在泵启动前主上下文连发，前 7 条侥幸入队（队列临界）；0x200A 的 rx 阻塞语义等任务消费 ⇒ 任务等泵（主上下文卡在 rx）⇒ **协作死锁**。bringup 尾注早有答案："HCI 往返必须每轮 resumeTask + serviceCallouts 才能推进——裸忙等不会让它运行"，而命令序列恰是裸忙等连发。
 - **轮 15 修法**：命令序列每条 sendCmd 之间插 `sched.resumeTask()` + `serviceTimers`（让任务消费积压）；判据 = rcA 返回 + LE 日志行 + POST 完整版（0x18E000）出现 + FE450 进官方振荡集 ⇒ 广播真启动。
+- **轮 16b 状态重读（rx 反汇编解码后修正）**：`r_btdm_hci_trans_rx` @0x4005e5d2 路径 = 解析 → memblock → hw临界区 → **核心投递 `r_sym_bt_bj5zQad`（SRAM 0x2f00b03c）** → `osal eventq_put` → 错误 assert×2。泵 icg 行实证 **qput=8/evrun=8** ⇒ **rx(0x200A) 完整走完**（风暴间隙完成）——「rx 挂死」修正为「rx 完成但风暴持续」。**新状态精确定义 = BB 中断风暴**：input21 ISR 在 trapDispatch 内自循环（NMI PC 恒 0x4007aa3c=trapDispatch+0xee）、brg=0（桥接零消费）、Complete 不达 host、主循环每轮仅碎片时间。
+- **下一 session 首项**：mcontrol6 断点捕获风暴源（input21 handler 入口地址 = trapDispatch 内 0x4007aa3c 附近；既有 udiv_watch 改装即用 + tools/jtag-watch-modem-block.sh 配方），或离线反汇编 0x4007aa3c 处的 ISR 分发路径定位未 ack 的中断源。
 - **第十一轮（同日，markA/B 双扇区）**：marker 头带 `tx_type/tx_first[16]`（transport.stats 既有字段，零新代码）+ **0x200A 后第二份标记**（0x18F000）。判读：
   - **tx_first = `0e0c 08 011000 …`** = Command Complete / ncmd=8 / opcode **0x1001（Read Local Version）** ⇒ **HCI 完成流走 btdmTx 通道（5 次）而非 leEvtTx（1 次）**——诊断命令（sendReadVersion）真实处理完成。两个出站回调分工现形：btdmTx=完成事件流、leEvtTx=另一条早期事件。probe 的泵序列若只盯 leEvtTx 侧，会误判"完成流断"。
   - **POST 扇区 magic=0xadc0feeb（旧实验残留）⇒ 0x200A（LE Set Adv Enable=1）挂住确认**——主上下文冻结在其内部"写配置+启动选通 → 等 RF/BB ready 位"，位永不置位（与 1768 行机制注记吻合）。FE450=0x102000/47C=0（BB 测量仍未启动）。
