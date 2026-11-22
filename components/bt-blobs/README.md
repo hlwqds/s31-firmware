@@ -28622,5 +28622,12 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
 - **⚠ 占窗事故**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
 - **⚠ 占窗事故**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
 - 同源排查：wifi-blobs `init_probe.zig` 的 LPCON 写（TEST_CONF@0x00 bit0、CLK_CONF@0x18）偏移**正确**，无同病。**教训**：正确布局知识一直在 wifi 侧（0x2010F018 注释连位义都记了）——**跨 blob 写 MODEM_LPCON 前先抄 `wifi-blobs/init_probe.zig` 的既有对拍**，并对照 `soc/esp32s31/include/modem/modem_lpcon_struct.h` 逐字段核偏移，不要发明偏移。
+- **✅ 轮 19 终审完成（串口恢复 + SCHED 哈希对账 + BB 窗口 21/21 零差异）**：
+  - BBHEAD: xor=0x0 nz=120 ✅
+  - **SCHED (0x20101000-1200): 我们 xor=0x2307981a nz=17 vs 官方 xor=0x458cae30 nz=37 ✗——缺 20 个非零初始化写**
+  - WIDGET: nz 差异 = probe 仪表额外写入（非 blob 差异，排除）
+  - BB 窗口: 21/21 零差异 ✅
+  - ⇒ **SCHED 区（锚点/调度配置区，含轮 8 的 [0x20101074] anchor 写）就是缺失写集的精确位置**——20 个寄存器官方写了但我们的 probe 未写。
+  - **下一 session 首项**：dump SCHED 区 128 字逐字对照（oracle BW 扩展到 SCHED 区）→ 找出 20 个缺失寄存器的精确偏移 → 在 probe 中补写 → FE450/47C 振荡 + 98BC.bit2 置位 = 破墙判据。
 - **⚠ 镜像三态混淆（2026-11-22 新增）**：板子现行三种镜像——生产（473KB，e2e --host 会覆写）/bt 探针（~887KB，build-probe.sh）/**oracle**（683KB，`~/esp/bt-ctl-oracle/build/bt-ctl-oracle.bin`，bootloader@0x2000+app@0x10000——**S31 bootloader 偏移是 0x2000 不是 0x0**，idf 直写 0x0 会覆盖 bootloader 区致 `invalid header` 启动环）。轮 11 末板子运行 **oracle** 镜像——下一 session 判读裸机侧前必须先 `build-probe.sh` 重烧探针；判别 = `ls -la zig-out/bin/app.bin`（887KB）vs oracle bin（683KB）vs 生产（473KB）。
 - **轮 13 后补（cfg 地址已入 marker rec[43]=0x2f01f870）**：下一轮可加「冻结读 *0x2f01f870 的 sleep_en 字段」进 marker——直接验证 blob 是否回写钳制值（区分「钳制被覆写」vs「钳制生效但另有卡点」）。
