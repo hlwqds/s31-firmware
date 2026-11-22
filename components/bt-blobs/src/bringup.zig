@@ -874,8 +874,16 @@ pub fn enable() c_int {
     // **FE450 bit13 实验（2026-11-22，ch29 §29.24 下一入口）**：0x20100450 静态值
     // 官方 0x00102000（bit13=1，疑似 BB/RF ready）vs 我们 0x00110000（bit16=1）。
     // enable 前对齐官方值；若 LL 调度器在等 bit13，泵应越过 fwd06 后的下一条锚点。
+    // **轮 56 默认 false**：抢先 btbb init 毒化假说（见下方 if 块注释）。
+    const btbb_early_enable = false;
     mmioPtr(u32, 0x2010_0450).* = 0x0010_2000;
-    {
+    // **轮 56：抢先 btbb init 毒化假说**——oracle 侧 esp_btbb_enable 首次真跑
+    // 发生在 enable 相（btdm_lp_reset 内），blob task 的 init 体在自己的时间线
+    // 做 RF init ana 写；我们 bringup 抢先调 esp_btbb_enable ⇒ bt_bb_v2_init_cmplx
+    // 置"bb 已初始化"静态 ⇒ task init 体跳过 RF init（F800 零写、fe=0）。
+    // 本实验默认关掉抢先调用，让 task 自己跑完整 init。判据 = F800 写帧
+    // （bit24=1）+ rfready/evt 链。
+    if (btbb_early_enable) {
         const esp_btbb_enable = @extern(*const fn () callconv(.c) void, .{ .name = "esp_btbb_enable" });
         anaSnap(); // 轮 51 槽 0：btbb 前
         osal.logPublic("bt bringup: calling esp_btbb_enable", .{});

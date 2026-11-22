@@ -29122,3 +29122,24 @@ post-cmds:   （稳定）
 oracle main.c 链接同款 blob lib ⇒ init 后**手动逐个调用链步骤**、每步后 ANASET：
 r_base_stack_enable → ANASET → r_conn_stack_enable → ANASET → r_btdm_hci_fc_enable → ANASET → r_btdm_task_enable → ANASET ⇒ 直接指出哪一步发写事务；再对拍我们同步骤缺的前置。
 （oracle 重烧注意：ninja flash 会截断，须 esptool 全量三段 + verify；已验证可复现。）
+
+---
+
+## ⚡ 轮 56：抢先 btbb 毒化假说否证（2026-11-22）
+
+### 实验（/tmp/nobb.log）
+`btbb_early_enable=false`（门控掉 bringup 的抢先 esp_btbb_enable）⇒ ana[0..1] F800 帧不变、rfready=0 fe=0 evt=2 一切照旧、无回归。
+
+### 判决
+- **假说否证**：task init 体在我们板上无论抢先调用与否都不发 ana 写
+- 保守处理：抢先调用保持关闭（无害且更贴近官方时序）
+
+### 50-56 轮证据链终态（全部站得住）
+1. 命令路径三闸全开：env[32]=FJxPPD ✓（e32 实证）、ctx[32] 镜像 ✓、路由 ✓（brg 仍 0 = 源硬件侧静默）
+2. LL 入口收命令不处理（qput 恒 8）
+3. blob task init 体**完成**（park eventq_get）但零 ana 事务——oracle 同 body 异步发写
+4. mst clock / DEVICE_EN / rf_onoff / 抢先 btbb —— 四个候选全否证
+5. oracle 判别器已建成（ANASET 轨迹仪 + 分步 bisect 可复现，ninja 1.5s 构建）
+
+### 轮 57 首项：task init 体路径追踪
+task 第一波 pump 的 init body 走了哪条分支 = 最后黑盒。仪器：pc_ring 采样器（已有）在 task init 窗口（bringup 完成后前 ~10 个 pump round）高频采样 tpc；或 STORE/EXEC 观察点盯 task init 的关键分支变量。备选：对照 oracle 反汇编 task 入口函数的 init 体（oracle elf 有全符号，我们镜像 r_sym 重名可映射）找"rf_init 跳过"分支的守卫变量地址，板上读它。
