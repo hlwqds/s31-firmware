@@ -28612,6 +28612,11 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 31（2026-11-22）：LP 权威副本拿下执行逃逸证据——机制定格**：
+  1. 快路径增加 **LP 槽副本**（0x2E0004A0=PC/4A4=ra/4A8=count；bss 全局可能同踩，LP 在踩踏域之外）；冻结读数改读 LP 权威副本。
+  2. **事实**：写者 PC = 0x08a638e3（跨 boot 漂移 +0x7F5 = 同一区域不同指令），ra = 0xc4d9e387（**跨 boot 恒定**），count 跨 boot 累积（LP 持久性 ✓）。
+  3. **机制定格**：blob 经**被污染的间接指针**调用（ra 恒定垃圾值），执行逃逸到 0x08a63xxx 区（镜像之外的陈旧字节，非 16MB flash 范围——未知别名窗），逃逸代码序言 store 踩中 0x2f010e80 = s_is_phy_calibrated ⇒ enable 入口恒 skip load_cal ⇒ rc=0 假象 ⇒ synth 永不锁。**轮 24-29 布局碰撞链条与此完全自洽**。
+  - **修法不变（下 session 首项）**：s31.ld 布局手术——胶水 bss 挪出 blob 烘焙指针窗口（0x2f010e80-0x2f022a80），或全量审计 porting 硬编码指针地址。判据：修后 STORE 观察点零命中（wp_hit_count=0）+ FE450/47C 振荡 + 98BC.bit2=1。
 - **轮 30（2026-11-22）：trapEntry 快路径 + HIT 位验证——判据仍不一致，状态未定**：
   1. **已落地**（保留）：① trapEntry cause-3 快路径（SRAM/CSR 零 flash 取指 + mcontrol6 bit30 HIT 位验证防 IRQ#3 误触发——CLIC IRQ ID 3 会撞 cause 判据）；② 观察点目标地址改 `@extern("s_is_phy_calibrated")` 符号化（跨构建稳健）；③ bringup 清零同改符号化。
   2. **判据不一致**：mark44/45 逐位相同（0x08a630ee/0xc4d9e387/count=4153684168）⇒ 两 boot 均未落新标记（panic 复发）或 capture 链仍不可靠；且 count=40 亿非递增语义。**0x08a630ee 不匹配任何历史轮读数**——既非陈旧也非显然有效。

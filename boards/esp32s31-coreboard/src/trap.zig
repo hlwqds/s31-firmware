@@ -109,12 +109,25 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        csrr    t5, mepc
         \\        la      t3, wp_hit_pc
         \\        sw      t5, 0(t3)
+        \\        # **LP 槽副本（0x2E0004A0..4AC）**——bss 全局可能被同一神秘写者踩
+        \\        # （轮 30：count 恒 20 亿且跨构建恒定=被覆写非递增）；LP 域在踩踏
+        \\        # 域之外且 post-pmu 可写（此刻在标定期=pmu 后）。ra 存 +4、计数 +8。
+        \\        li      t4, 0x2E0004A0
+        \\        sw      t5, 0(t4)
+        \\        sw      ra, 4(t4)
         \\        la      t3, wp_hit_ra
         \\        sw      ra, 0(t3)
         \\        la      t3, wp_hit_count
         \\        lw      t5, 0(t3)
         \\        addi    t5, t5, 1
         \\        sw      t5, 0(t3)
+        \\        lw      t5, 0(t4)
+        \\        addi    t5, t5, 1
+        \\        sw      t5, 4(t4)
+        \\        # **显式 tselect=0 再解除**——本芯片命中不自动置 tselect（轮 31：
+        \\        # count 爆 20 亿 = 解除写错槽，触发器持续命中）；主代码 tselect
+        \\        # 停留在不确定值，必须先归零再写 tdata1。
+        \\        csrw    0x7a0, zero
         \\        csrw    0x7a1, zero
         \\        lw      t3, 0(sp)
         \\        lw      t4, 4(sp)

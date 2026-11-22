@@ -1743,6 +1743,13 @@ pub fn run() noreturn {
         asm volatile ("li t0, 0x88"); // MTE
         asm volatile ("csrw 0x7a5, t0");
         osal.logPublic("bt probe: STORE watch armed @0x{x:0>8} (fastpath)", .{watch_addr});
+        // **轮 31 仪器自证**：已知地址的 c.ebreak —— 快路径应捕获 mepc=本指令
+        // 地址（构建后 objdump 定位）。rec[508]==该地址 ⇒ 捕获链可信；不等 ⇒
+        // 快路径 mepc 语义坏（CLIC 影子寄存器），仪器推倒重来。
+        asm volatile (".option push");
+        asm volatile (".option rvc");
+        asm volatile ("c.ebreak");
+        asm volatile (".option pop");
     }
     rc = bringup.enable();
     if (rc != 0) {
@@ -2222,9 +2229,12 @@ pub fn run() noreturn {
             //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010e80）
             //   rec[509] = phy_module_has_clock_bits(2)（PHY_MODEM_BT）直调结果
             // **轮 30**：rec[508..511] = 观察点四元组 {写者 PC, 写者 ra, 命中数, calflag}
-            rec[508] = board.trap.wp_hit_pc; // 0x2f010e80 写者 PC（快路径捕获）
-            rec[509] = board.trap.wp_hit_ra;
-            rec[510] = board.trap.wp_hit_count;
+            // **轮 31**：观察点四元组改读 **LP 槽副本**（0x2E0004A0..4AC，快路径
+            // 直写）——bss 全局可能被同一写者踩（count 恒 20 亿跨构建恒定的
+            // 解释），LP 域在踩踏域之外。
+            rec[508] = @as(*volatile u32, @ptrFromInt(0x2E00_04A0)).*;
+            rec[509] = @as(*volatile u32, @ptrFromInt(0x2E00_04A4)).*;
+            rec[510] = @as(*volatile u32, @ptrFromInt(0x2E00_04A8)).*;
             rec[511] = bringup.phy_cal_flag_post; // enable 返回时
             {
                 const has_bits = @extern(*const fn (modem: c_int) callconv(.c) c_int, .{ .name = "phy_module_has_clock_bits" });
