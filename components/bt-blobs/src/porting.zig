@@ -529,9 +529,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         wr(pmu + 0x100, rd(pmu + 0x100) | (@as(u32, 1) << 31));
         wr(pmu + 0x104, rd(pmu + 0x104) | (@as(u32, 1) << 31));
         wr(pmu + 0xf8, rd(pmu + 0xf8) | (@as(u32, 1) << 28));
-        osal.logPublic("bt lp: PMU ICG apply done func=0x{x:0>8} apb=0x{x:0>8} modem=0x{x:0>8} slp=0x{x:0>8}", .{
-            rd(pmu + 0xfc), rd(pmu + 0x100), rd(pmu + 0x104), rd(pmu + 0xf8),
-        });
+        // （ICG apply done 日志已删：镜像容量紧张，轮 5 标记通道接管判据。）
     }
 
     if (!on_target) return; // 主机侧无 MMIO：窗口 dump 与后续写入都跳过
@@ -597,9 +595,6 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     // ✅ 修复 = 整块删除：+0x08/+0x18/+0x1C 回到 oracle 对拍值 0x314/0x0b/0x04。
     //    （"lpcon 回读"日志已删：落在 FIFO 丢失区打不出来，判据已由离线反汇编取得；
     //    第一轮上板已证 oracle 对齐后泵头仍冻结，LPCON 划出嫌疑清单。）
-    if (on_target) {
-        osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
-    }
 }
 
 /// `btdm_lp_reset(true)`：低功耗子系统复位。当前无状态可复位。
