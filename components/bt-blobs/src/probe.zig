@@ -1725,17 +1725,21 @@ pub fn run() noreturn {
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
     {
-        const watch_addr: u32 = 0x2F01_0E80;
-        // tdata2 用操作数形式（编译器不能假设 t0 幸存）；其余照 udiv 块先例。
+        // **轮 28：EXEC 入口断点改盯 esp_phy_load_cal_and_init(0x40000bcc)**——
+        // 回答"校准到底跑没跑"。复用 udiv 机制（入口命中、不推进、抓 ra/参数、
+        // 命中即全拆触发器）：udiv_watch_on=true 时 trap 侧走专用分支。
+        const watch_addr: u32 = 0x4000_0BCC;
+        board.trap.udiv_addr = watch_addr;
+        board.trap.udiv_watch_on = true;
         asm volatile ("csrw 0x7a2, %[a]"
             :
             : [a] "r" (watch_addr),
         );
-        asm volatile ("li t0, 0x4a");
+        asm volatile ("li t0, 0x4c"); // EXEC|U|M
         asm volatile ("csrw 0x7a1, t0");
         asm volatile ("li t0, 0x88");
         asm volatile ("csrw 0x7a5, t0");
-        osal.logPublic("bt probe: STORE watch armed @0x2f010e80 (slot0 only)", .{});
+        osal.logPublic("bt probe: EXEC watch armed @esp_phy_load_cal_and_init", .{});
     }
     rc = bringup.enable();
     if (rc != 0) {
@@ -2214,9 +2218,9 @@ pub fn run() noreturn {
             //   rec[508] = s_is_phy_calibrated（esp_phy_enable 内部读的全局，
             //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010e80）
             //   rec[509] = phy_module_has_clock_bits(2)（PHY_MODEM_BT）直调结果
-            rec[508] = bringup.phy_cal_flag_post; // enable 返回时
-            rec[510] = @as(*volatile u8, @ptrFromInt(0x2F01_0E80)).*; // 冻结点现值（blob 是否踩）
-            rec[511] = board.trap.wp_hit_pc; // **轮 26**：第一个踩 0x2f010e80 的写者 PC
+            rec[508] = board.trap.udiv_hit_ra; // **轮 28**：load_cal 的调用者 ra（0=从未运行）
+            rec[509] = board.trap.udiv_hit_n; // 命中计数
+            rec[510] = bringup.phy_cal_flag_post; // enable 返回时的 calflag
             {
                 const has_bits = @extern(*const fn (modem: c_int) callconv(.c) c_int, .{ .name = "phy_module_has_clock_bits" });
                 rec[509] = @bitCast(has_bits(2));
