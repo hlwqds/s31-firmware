@@ -29059,3 +29059,24 @@ RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = mode
 1. 对拍 oracle：esp_phy_enable 返回时刻的 LP/PMU RF 域状态寄存器（0x2E00_xxxx，pmu RF LDO/switch）——skill 记录 pmu_init.c.obj 已链入，含 phy RF power 寄存器
 2. 我们 esp_phy_enable(2) 完成后同寄存器 diff ⇒ 找"被关掉"的确切一位
 3. 保持_on 的官方 owner（modem_flag 期望的"别的 owner"）极可能 = esp_bt_controller_enable 内部的 phy_conn_keep_on 等价调用——FzTWy2 分发器之后 LL init 链里找
+
+---
+
+## ⚡ 轮 52：ana master clock 门控实锤但非唯一闸（2026-11-22）
+
+### 发现
+- `I2C_MAT_CLK_EN = BIT(28)` @ `0x208133fc`（LP_I2C_ANA_MST DATE_REG，HP 可安全读写）
+- 板上实测 `before=02007301` ⇒ **bit28=0，master clock 确实被门**（bootloader force-enable 常开 → app 期引用计数掉零）
+- 置位后重读 `phy_i2c_readReg(99,1,6)` ⇒ **仍 0x00**（读快速完成，未挂死）
+
+### 推理
+- 读事务机器活着（快读不挂）+ 值恒 0 ⇒ 门不止一个，剩余候选：
+  1. `LP_I2C_ANA_MST_DEVICE_EN`（0x20813014，bits[11:0] 设备使能位图）——RF 设备位被清
+  2. `ANA_I2C_SRC_CLOCK_ENABLE`（SOC_CLK_ANA_I2C_MST_DEPENDS_ON_MODEM_APB ⇒ MODEM_APB 源时钟）——HP_SYS_CLKRST 里对应位
+  3. RF 模拟电源域掉电（轮 51 主判——PMU 域审计仍未做）
+- esp_phy_enable 源码实锤：`phy_module_disable()` 尾部无条件执行（官方同款）⇒ modem clock bits 官方也关 ⇒ 关电者不在 module bits，在 PMU 域或 ana 配置
+
+### 轮 53 判据（同法依次排除）
+1. 泵内打印 `0x20813014`（DEVICE_EN 位图）+ 对拍 oracle 同址
+2. HP_SYS_CLKRST MODEM_APB 源位检查/置位
+3. oracle 侧 esp_phy_enable 返回时刻六寄存器快照：{0x20813000, 0x20813014, 0x208133fc, 0x2010F800, 0x2010F818, HP_SYS_CLKRST 相关位}

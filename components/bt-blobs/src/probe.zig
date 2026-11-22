@@ -2498,6 +2498,19 @@ pub fn run() noreturn {
                 const capv: u8 = phy_i2c_readReg(99, 1, 6);
                 osal.lpTrace(3, 0xA002);
                 board.log.line("bt probe: regi2c(99,1,6)=0x{x:0>2}", .{capv});
+                // **轮 52：ana master clock 判别**——bootloader 用 force_enable
+                // 常开 ⇒ app 期引用计数可掉零 ⇒ master clock 停 ⇒ ROM readReg
+                // 带超时快速返回 0（与读 0x00 未挂死吻合）。BIT28@0x208133fc
+                // （HP 可安全读写域）置位后再读：非零 ⇒ 墙 = master clock 门控。
+                {
+                    const dreg: *volatile u32 = @ptrFromInt(0x2081_33fc);
+                    const before: u32 = dreg.*;
+                    dreg.* = before | (1 << 28);
+                    osal.lpTrace(3, 0xA004);
+                    const capv2: u8 = phy_i2c_readReg(99, 1, 6);
+                    osal.lpTrace(3, 0xA005);
+                    board.log.line("bt probe: mstclk before={x:0>8} regi2c=0x{x:0>2}", .{ before, capv2 });
+                }
             }
             // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲
             // + 0x450 振荡 = BB 测量在跑；两者静止 = BB 未启动。
