@@ -30814,3 +30814,31 @@ v4（RC_SLOW 压回挪进内层延迟环，占空比 ~50%）——RTC WDT 仍不
    另一个更早的问题）；差分正常 ⇒ 计数器活 ⇒ 挂死中停止的原因在 blob 的
    高频重压（ADV-enable 处理每循环切源，ULP 压回输掉竞速）⇒ 加压频率或
    改用 WDT 源选择位直接钉死（不走 ROOT_CLK_CONF 多路选择器）。
+
+---
+
+## 💎 轮 105 关键数据：SYS_TIMER 活 @2MHz、RC_SLOW 压回理论推翻（2026-11-23）
+
+### CLKCHK（挂死前活性验证，UART 活性期）
+```text
+CLKCHK c0=0003b529 c1=0012f8ef delta=1000390  ← 0.5s 忙等差分 ≈ 2MHz 计数率
+PRESCHK v0=04000000 v1=04000000                ← bits[25:23] 本来就 0！
+```
+
+### 两个理论级修正
+1. **0x2080 块 = SYS_TIMER，计数时钟 ≈2MHz（HP 快时钟域）且挂死前活着**
+   ⇒ "RTC 慢时钟域"叙事作废；MWDT1/该块 WDT 的 hold 按 2MHz 算：
+   2_740_000 ticks = **1.37 秒**（非 20s）！16_440_000 = 8.2s。
+2. **RC_SLOW 压回理论推翻**：bits[25:23] 本来就是 0（片内源），从未被切。
+   ULP 压回 = 无操作。此前 PRESCHK 从未测过基线值（0x20701000 初值未知）。
+
+### 挂死机制再收敛（用 2MHz 重算）
+ADV-enable 门控 0x2080 块时钟 ⇒ SYS_TIMER 冻结 ⇒ esp_rom_delay_us（ROM delay
+轮询该计数器）永转 ✓（NMI mepc 实测一致）。MWDT1 计数亦冻结 ⇒ 不咬 ✓。
+RTC WDT"未咬"= 计数冻结 ✓。全模型自洽，无需 RC_SLOW 假设。
+
+### 轮 106 方向
+SYS_TIMER 时钟门控位定位（HP_SYS_CLKRST 里 0x2080 块的 gate 位——ck[0x110]
+系已观测但未对应到位）⇒ NMI（若 T0 死则 ULP）每 tick 强制置位 ⇒ SYS_TIMER
+活 ⇒ esp_rom_delay_us 正常 ⇒ 全链解锁。或 post-send 零 ROM 依赖路线继续
+（裸 SPI 直写 flash 记录）。

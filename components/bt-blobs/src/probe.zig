@@ -2405,6 +2405,31 @@ pub fn run() noreturn {
             }
             // **轮 103b**：SLPFIX 清零已前移至 bringup.init 之后（task_init 消费
             // 配置后立即执行——F3 时点清零被证明太晚或非该时点的决策输入）。
+            // **轮 101**：RTC/SYS_TIMER 活性三步验证（UART 活性期，无挂死干扰）
+            // ① latch → 读计数 → 忙等 ~1s → latch → 读 ⇒ 差分=每秒计数
+            // ② 与 ULP 相同的 RC_SLOW 压回序列 ⇒ 读回核实 bits[25:23] 清零
+            {
+                const latched: *volatile u32 = @ptrFromInt(0x2080_0010);
+                const cnt: *volatile u32 = @ptrFromInt(0x2080_001C);
+                latched.* = 1 << 27;
+                const c0: u32 = cnt.*;
+                var spin: u32 = 0;
+                while (spin < 150) : (spin += 1) {
+                    var inner: u32 = 0;
+                    while (inner < 1_000_000) : (inner += 1) {
+                        asm volatile ("nop");
+                    }
+                }
+                latched.* = 1 << 27;
+                const c1: u32 = cnt.*;
+                board.log.line("CLKCHK c0={x:0>8} c1={x:0>8} delta={d} (≈21700/0.15s 为活)", .{ c0, c1, c1 -% c0 });
+                const rcv: *volatile u32 = @ptrFromInt(0x2070_1000);
+                const v0: u32 = rcv.*;
+                rcv.* = v0 & ~@as(u32, 0x0380_0000);
+                const v1: u32 = rcv.*;
+                board.log.line("PRESCHK v0={x:0>8} v1={x:0>8} (v1 无 03800000=压回写生效)", .{ v0, v1 });
+                rcv.* = v0; // 还原
+            }
             // **轮 92b 决定性实验**：手动置 F800 bit24（oracle=0x012f0669 我们=0x002f0669
             // 的唯一差异），轮询 98BC 10×500ms——若 bit2 跟随，synth 墙缩成一个 bit。
             const f800p: *volatile u32 = @ptrFromInt(0x2010_F800);
@@ -2413,7 +2438,16 @@ pub fn run() noreturn {
             while (poll < 10) : (poll += 1) {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
                 board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8}", .{ poll, s, f800p.* });
-                board.hw.delayUs(500_000);
+                // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
+                // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
+                // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
+                var mw: u32 = 0;
+                while (mw < 150) : (mw += 1) {
+                    var mi: u32 = 0;
+                    while (mi < 1_000_000) : (mi += 1) {
+                        asm volatile ("nop");
+                    }
+                }
             }
         }
         if (rf_ok) {
