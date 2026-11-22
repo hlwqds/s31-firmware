@@ -1026,6 +1026,22 @@ pub fn run() noreturn {
         const sleep_env_slot: *volatile u32 = @ptrFromInt(0x2f01_1134);
         sleep_env_slot.* = @truncate(stub_base);
         osal.logPublic("bt probe: sleep env prefilled arena stub @0x{x:0>8} -> slot 0x2f011134", .{stub_base});
+        // **轮 65：任务注册链表头 init**（官方 fqmZkUKg：osal_malloc(8) 哨兵
+        // {+0:0, +4:self} 发布到 0x2f011130）——gvLJK4 追加循环的前置条件，
+        // 此前缺失 ⇒ step 6 `lw a5,0(a3)` 读 NULL 崩（哨兵在镜像里从未被调）。
+        // （轮 65b：task list init 已挪至 bringup.init step 6 前——probe 早期
+        // 调用会被后续 blob mempool 初始化清零，tlinit.log 实录。）
+        // **轮 65b**：sleep cb 容器（0x2f011138 = 轮 43 家族第二槽）scratch 预置——
+        // 注册链 store 回调经容器内指针，容器未初始化 ⇒ store to 0 fault
+        // （tlinit.log 实录：mepc=0x4005d842 mtval=0）。
+        const cb_stub = osal.btdmMalloc(256, 0) orelse {
+            osal.logPublic("bt probe: FATAL sleep cb malloc failed", .{});
+            halt();
+        };
+        const cb_bytes: [*]u8 = @ptrCast(cb_stub);
+        @memset(cb_bytes[0..256], 0);
+        @as(*volatile u32, @ptrFromInt(0x2f01_1138)).* = @truncate(@intFromPtr(cb_stub));
+        osal.logPublic("bt probe: sleep cb container prefilled @0x{x:0>8} -> slot 0x2f011138", .{@intFromPtr(cb_stub)});
     }
 
     // 2) init 链（15 步）

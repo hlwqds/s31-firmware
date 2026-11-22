@@ -409,6 +409,14 @@ pub fn init(cfg: *config.Config) c_int {
     }
     // **静默高频采样窗口**：step 6 里归档不打印，而我们自己的打印会占满采样
     //（本板 TX FIFO 停在 128）⇒ 先静默、把 T0 提到 ~100 µs，只把 PC 记进环。
+    // **轮 65b：任务注册链表头 init**（官方 fqmZkUKg：osal_malloc(8) 哨兵
+    // {+0:0, +4:self} 发布到 0x2f011130）——gvLJK4 追加循环前置条件。必须在
+    // mempool init 之后（probe 早期调用会被 mempool 初始化清零，tlinit 实录）。
+    if (freestanding) {
+        const task_list_init = @extern(*const fn () callconv(.c) void, .{ .name = "r_sym_bt_fqmZkUKgd5GE6m7i2YFG" });
+        task_list_init();
+        osal.logPublic("bt bringup: task list head init *(0x2f011130)=0x{x:0>8}", .{mmioRd(0x2f01_1130)});
+    }
     enter(6, "r_btdm_task_init");
     {
         const pp = @import("probe_ptr.zig");

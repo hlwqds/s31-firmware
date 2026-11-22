@@ -665,6 +665,11 @@ pub fn eventqInit(slot: *Slot) void {
     }
     const q = eventq_pool.take() orelse return;
     qByAddrSet(addr, q);
+    // **轮 64b 承重写**：官方契约 container.p = 队列实现句柄。OkE7 在
+    // eventq_init 后检查 *(container.p)+8 非空 ⇒ 不写 = OkE7 bail(rc=-6)
+    // ⇒ fqmZkUKg 哨兵不发布 ⇒ 任务列表头 = 0 ⇒ 分发器查址崩（tlinit2 实录）。
+    slot.p = @ptrCast(q);
+    q.buf[2] = 1; // +8 偏移非空填充（官方 null-check 通过位）
 }
 
 pub fn eventqDeinit(slot: *Slot) void {

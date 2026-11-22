@@ -29296,3 +29296,25 @@ lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc0
 3. 假设：池 init 依赖 arena 起点/对齐（blob 假设池区紧跟某结构）——位移后叠到未初始化区
    ⇒ 修法 = arena 预留/对齐补偿（把我们的增量 bss 挪出 heapStart 之前），或 probe 里 heapStart 前
    预填池头结构
+
+---
+
+## ⚙ 轮 65 终态：任务栈损坏（arena 位移次生效应，2026-11-23 凌晨）
+
+### 崩溃定性（/tmp/tlinit2.log）
+- `mepc=0x4006137a`（gvLJK4 prologue `sw s0,8(sp)`）fault ⇒ **sp = 垃圾（≈0）**
+- ra=0x40061c2e = task_init 内 gvLJK4 调用点 ⇒ blob task **被正确 resume**（init body 在跑 ✓）
+- 但任务恢复时 **sp 已损坏** ⇒ 上下文切换/栈区冲突
+
+### 前置修复全部生效
+- task list head init（fqmZkUKg 挪至 pre-step-6，mempool 清零问题规避 ✓ 哨兵发布可见 0x2f0111bb）
+- sleep cb 容器 scratch 预置 ✓
+- side-table 重构 130/130 host 绿 ✓
+
+### 根因方向：arena 位移次生效应
+- 轮 45 stub @0x2f0243d0 → 本轮 @0x2f02a910（**+0x6540**：我们的 osal 地址映射/bss 扩容推挤 heapStart）
+- blob task 的栈分配自 arena ⇒ 位移后与其余区重叠/冲突 ⇒ resume 时 sp 损坏
+
+### 轮 66 首项（单变量实验）
+1. probe.run arena 块开头加 **64B dummy 预分配**（btdmMalloc(64) 丢弃）⇒ blob 后续分配整体位移 64B
+2. 若 crash 签名变化/消失 ⇒ 布局冲突实锤，扫 64B 步进找安全窗口；若不变 ⇒ 转任务栈分配路径审计（sched 帧 64B 假设 vs arena 布局）
