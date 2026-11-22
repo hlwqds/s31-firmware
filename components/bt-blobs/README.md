@@ -30775,3 +30775,27 @@ SLPFIX（word5/6/8 清零 = sleep 全禁用）在 F3 时点生效 ✓（SLPFIX w
 SLPFIX 三清零移到 bringup.init 之后立即执行（task_init 消费配置后、
 F 相位前）+ 同时清 0x2f011038 btdm_cb 邻域的 sleep 相邻对象 ⇒ 若仍挂 ⇒
 门控输入在别处（coex 状态位/调度器 tick 配置），转 oracle bisect 对照。
+
+---
+
+## 🔒 轮 103b 终判：sleep 配置方向排除 + ULP↔HP 通路未验（2026-11-23）
+
+### 实验
+SLPFIX 三清零**前移至 bringup.init 之后**（task_init 消费配置后立即）——
+0x200A 仍挂（两个 boot 周期重现，MWDT1 20s 复位机器工作）。
+
+### 判定
+**ADV-enable 挂死不受 sleep 配置对象门控**（早期清零负结果）——sleep 配置
+对拍方向出队。
+
+### 更深的发现：ULP keeper 从未被验证
+- ULP keeper（0x20801000 RTC WDT 重使能）设计预期 = 冻结后 rst:0x10 复位
+- **实测历史：rst:0x10 从未出现**（25min 窗 0 触发——轮 95 期记录）
+- ⇒ ULP→0x2080 写通路**从未被验证可达**（ULP 总线到 HP RTC WDT 块的可达性
+  是假设；可能 LP master 根本够不到该块，或写被 HP 时钟门控静默丢弃）
+- 本轮的 latch 触发写（0x20800010）同样基于该未验假设 ⇒ 时间源喂法从未生效
+
+### 轮 104 首项（下 session）：ULP→HP 写通路验证
+ULP 程序改为：向 RTC WDT CONFIG1（0x20801004，无害字段）写**递增计数器**
+（每循环 +1）⇒ 下 boot（任意复位后）HP 侧读 0x20801004 ⇒ 值>初始 = 通路活；
+值不变 = ULP→HP 写不通（keeper 设计从头就无效）⇒ LP 域兜底方向重估。

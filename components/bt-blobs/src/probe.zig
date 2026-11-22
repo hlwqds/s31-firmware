@@ -1772,6 +1772,17 @@ pub fn run() noreturn {
     @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 30); // 释放复位
     var rc = bringup.init(&cfg);
 
+    // **轮 103b**：sleep 字段清零前移——task_init 已消费配置并填 sleep 对象
+    // （0x2f011044 系），此刻清零 ⇒ ADV-enable 路径读到的就是禁用值。
+    // oracle 对拍：word5(0x6c64 vs 0)、word6(0x46c60 vs 0)、word8(1 vs 0)。
+    {
+        const sp: [*]volatile u32 = @ptrFromInt(0x2f01_1044);
+        sp[5] = 0;
+        sp[6] = 0;
+        sp[8] = 0;
+        board.log.line("SLPFIX-early w5=0 w6=0 w8=0 (sleep disabled)", .{});
+    }
+
     // **轮 75：env 头 dump**（OkE7 返回后——env+0/4/8/12/16/20 全景）
     {
         const evp2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
@@ -2388,17 +2399,8 @@ pub fn run() noreturn {
                 const u0fifo: u32 = @as(*volatile u32, @ptrFromInt(0x2058_7058)).*;
                 board.log.line("UARTST 088={x:0>8} 058={x:0>8}", .{ u0st, u0fifo });
             }
-            // **轮 102 根修**：oracle 对拍三字段差异 = sleep 配置：
-            // word5(0x6c64 vs 0)、word6(0x46c60 vs 0)、word8(1 vs 0=sleep 禁用)。
-            // oracle 以 sleep DISABLED 运行 ⇒ ADV-enable 不进深睡时钟收缩。
-            // 清零三字段 = sleep 全禁用 ⇒ ADV-enable 正常返回 ⇒ synth 上电。
-            {
-                const sp: [*]volatile u32 = @ptrFromInt(0x2f01_1044);
-                sp[5] = 0;
-                sp[6] = 0;
-                sp[8] = 0;
-                board.log.line("SLPFIX w5={x:0>8} w6={x:0>8} w8={x:0>8}", .{ sp[5], sp[6], sp[8] });
-            }
+            // **轮 103b**：SLPFIX 清零已前移至 bringup.init 之后（task_init 消费
+            // 配置后立即执行——F3 时点清零被证明太晚或非该时点的决策输入）。
             // **轮 92b 决定性实验**：手动置 F800 bit24（oracle=0x012f0669 我们=0x002f0669
             // 的唯一差异），轮询 98BC 10×500ms——若 bit2 跟随，synth 墙缩成一个 bit。
             const f800p: *volatile u32 = @ptrFromInt(0x2010_F800);
