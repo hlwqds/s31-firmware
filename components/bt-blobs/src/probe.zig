@@ -1737,7 +1737,7 @@ pub fn run() noreturn {
         // 上下文的原始踩踏者（比 flag 写者更上游）。
         // **轮 40 判决实验**：完全撤装观察点（轮 37-39 的 watch 命中 = 仪器吞 flag 写）
         if (false) {
-            const watch_addr: u32 = 0x2F01_0CEC;
+            const watch_addr: u32 = 0x2F01_0F80;
             @import("board").trap.wp_watch_on = 1;
             asm volatile ("csrw 0x7a5, zero");
             asm volatile ("csrw 0x7a0, zero");

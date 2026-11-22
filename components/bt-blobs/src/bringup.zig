@@ -523,22 +523,27 @@ pub fn init(cfg: *config.Config) c_int {
     // 现按官方时序：phy 先于 btbb。返回判据：98BC 快照进日志与 hist。
     {
         if (freestanding) {
-            // **轮 25：s_is_phy_calibrated 清零**——胶水 .bss 落在 blob 绝对寻址区
-            // （nm 实锤 0x2f010f80 紧邻 blob 数据，读值跨 boot 非布尔）⇒ enable
-            // 入口 `bnez → skip load_cal` 可能从未运行校准。清零强制走全量标定。
-            const cal_flag: *volatile u8 = @ptrFromInt(0x2F01_0F40); // nm 本构建地址
+            // **轮 25/41**：s_is_phy_calibrated 清零 + 合并判决读出。
+            // s_is_phy_calibrated = local b 符号（@extern 不可用）⇒ nm 硬编码
+            // **每次构建后必须 nm 比对**（布局每构建漂移——轮 35 铁律显式化）。
+            const cal_flag: *volatile u8 = @ptrFromInt(0x2F01_0F80); // nm 0x2f010f80
             phy_cal_flag_before = cal_flag.*;
             cal_flag.* = 0;
             const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
-            // **轮 27：MIE off 包住整个校准**——FULL 校准数千次 regi2c 读改写，
-            // 2ms T0 一次打断在事务中间即损坏模拟写（弱临界区无保护）。协作
-            // 单核下关 MIE = 语义等价于真临界区保护全部事务。校准 ~百 ms，
-            // 期间无 T0 tick（blob 时基暂停，可接受）。
+            const get_modem_flag = @extern(*const fn () callconv(.c) u32, .{ .name = "phy_get_modem_flag" });
+            // **轮 27：MIE off 包住整个校准**（防 assert 风暴——协作单核下语义
+            // 等价于真临界区保护全部事务）。
+            const mf_pre = get_modem_flag();
             board.hw.disableInterrupts();
             esp_phy_enable(2);
             board.hw.enableInterrupts();
             phy_cal_flag_post = cal_flag.*;
-            osal.logPublic("bt bringup: esp_phy_enable(2) done (MIE-off) calflag {d}->{d}->{d} ready=0x{x:0>8}", .{ phy_cal_flag_before, phy_cal_flag_post, cal_flag.*, mmioRd(0x2010_98BC) });
+            const mf_post = get_modem_flag();
+            const flag_addr: usize = @intFromPtr(cal_flag);
+            osal.logPublic(
+                "bt bringup: esp_phy_enable(2) done calflag {d}->{d}->{d} modem_flag {d}->{d} flag_addr=0x{x:0>8} ready=0x{x:0>8}",
+                .{ phy_cal_flag_before, phy_cal_flag_post, cal_flag.*, mf_pre, mf_post, flag_addr, mmioRd(0x2010_98BC) },
+            );
         }
     }
     // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。
