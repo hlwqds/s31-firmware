@@ -30705,3 +30705,23 @@ ULP v2（工具链汇编 110B：loop 内仅 CONFIG1=20s 重申 + latch 正确地
 2. **RC_SLOW 计数器活性**：ULP 读 RTC timer 计数值两拍差分写 LP 槽
    （与 1 同机制）⇒ 区分"计数冻结"vs"EN 被清"vs"压回失败"。
 两个 LP 槽在**下一次 MWDT1/RTC 复位**后可读（若 RTC 域真死则不可读=本身即判据）。
+
+---
+
+## 🔒 轮 99-final：计数器冻结终证（2026-11-23）
+
+v3 counter+margin（CONFIG1=counter+20s，工具链汇编 112B，寄存器分配修正）——
+无 insta-fire ✓（counter-relative 设计正确）但也无复位 ⇒ **counter 在挂死中冻结**
+⇒ counter-relative hold 永不到 ⇒ RTC 域兜底路径关闭。
+
+### 最终结论（100 轮会话）
+0x200A ADV-enable 处理 = blob 进入"modem 深睡式时钟收缩"状态：
+HP 全域（TIMERGRP/UART0/SYS_TIMER/MWDT1/RTC 计数）+ RC_SLOW 源全停，
+ULP 压回（LP 域，0.25s 周期）不足以维持计数连续性 ⇒ 一切计时兜底失效。
+唯一恢复 = 外部复位。radio 未广播（F800 RF-ON 已武装但未执行）。
+
+### 根修方向（下 session，唯一路径）
+**阻止门控发生**：blob ADV-enable 的门控决策输入 = sleep/clock 配置对象
+（sleep_en 0x2f011044 系、cfg.ble bytes 10-11、coex 状态）——对拍 oracle 的
+这些对象字段 ⇒ 改我们的配置使 blob 不进入深睡式收缩 ⇒ ADV-enable 正常返回
+⇒ synth 上电 ⇒ 广播。不再尝试挂死后恢复（已证不可行）。
