@@ -28771,3 +28771,36 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
 - MIE-off 包校准 ✓（防 assert 风暴）
 - calflag 轮询打印 ✓（stage-22 boot 唯一实时 flag 读出通道）
 - phy_init_data 真表替换 ✓（轮 19-28 确认 phy_init_data 常量表正确）
+
+---
+
+## 🔒 轮 41 终局定论（2026-11-22 追加——IDF 源码审计）
+
+### flag=0 = IDF 设计行为（双调用防护），不是墙
+
+`esp_phy_enable(modem)` 的真实流程（phy_init.c:324-396）：
+1. `phy_get_modem_flag() == 0` → 首次调用：进入校准块 → `load_cal` → `flag=true`
+2. `phy_get_modem_flag() != 0` → 已调用过：**整个校准块跳过** → 直接返回
+
+probe 流程：bringup init_phy（step 52）**先行直调了 phy 校准**（"calib rc=0 fe_readable=1" = 物证）→ step 7 `esp_phy_enable(2)` = **第二通** → modem_flag ≠ 0 → 跳过 → flag = 0 ✓ **IDF 设计**。
+
+### 40 轮调查总结
+
+| 已修复/排除 | 证据 |
+|---|---|
+| MMIO 全对齐 | 轮 8-15 多轮比对 ✓ |
+| phy_init_data 真表替换 | 轮 19-28 ✓ |
+| 布局手术（bss 移出 blob 窗口） | 轮 38 s31.ld closure-first ✓ |
+| 观察点仪表链完整工作 | 轮 42 BP! 捕获 ✓ |
+| MIE-off 防 assert 风暴 | 轮 32-40 ✓ |
+| flag = 0 = 正常行为 | 轮 41 IDF 源码审计 ✓ |
+
+### 真墙 = RF synth 下游（已知边界）
+
+phy 校准 ✓、blob INITED ✓、HCI 命令收发 ✓、FE 可读 ✓——唯一不通 = RF synth 硬件锁定。这已到达**裸机 BT 移植的已知边界**——需要 RF 硬件文档（Espressif FAE）或 oracle RF 寄存器 trace 才能继续。
+
+### 建议路径
+
+① 用 ORACLE 镜像同板对比 RF synth 使能序列（MMU 页表/时钟树/电源域差异）
+② 联系 Espressif FAE 获取 S31 RF synth bringup vendor 文档
+③ 或接受 BLE INITED 作为当前 milestone，将 synth 锁定列为后续优化项
