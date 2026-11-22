@@ -29979,3 +29979,11 @@ LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slo
 
 ### 下 session 首项
 反汇编 hiASs12KrrctGZf2rIzS 函数（当前构建 nm 重定位），看它检查什么 → 追到缺失的 LE 基础设施初始化 → 补齐 → LE CC 回流 → RF bring-up。
+
+---
+
+## ⚠ 轮 82 未证标记（下 session 反汇编时先钉死）
+
+1. **hiASs12K "就绪检查、0=未就绪"是推断**——函数体未解码、.L516 行为（静默 vs 错误 CC）未解码
+2. **a2 到 .L673 时到底是 OCF 还是 buf 指针没钉死**——分发器链最早 `andi a2,s1,1023` 把 a2 当 OCF，但 .L673 的传参 `(buf+3, OCF, buf, buf, sp+11, sp+12)` 里 a2 = 分发器当时 a0 的残留值；若 s0=buf 指针，65/99 的比较不是 OCF switch，整段解读要重排
+3. **好/坏 handler 结构 diff**（0x40018350 vs 0x40018324）——好分支直接回 CC（5tNpjR/CbfWEs 类），坏分支走 6o6qvjp（LE handler）→ 65/99 比较 → hiASs。结构 diff 本身 = 定位缺口的钥匙
