@@ -29826,3 +29826,29 @@ F1 rc=0（0x2006 B 路径发送 ✓）→ UART 静默 → **无 panic、无 faul
 
 ### 全 session 稳定成果
 **BLE HCI 协议栈全链活**（HCI 命令收发 + CC 回流 + osal 事件系统）——从零到可交互的 controller。剩余 = RF 硬件状态机激活（rfready），需要 blob 内部状态的深度理解。
+
+---
+
+## 🔬 轮 78 干净观测（100s capture + flash 离线读，2026-11-23）
+
+### 观测事实
+- capture 100s 结束时**板子仍在跑**（log 尾 "bt c" 截断 = UART 正常截断，非 panic）
+- evt=4→8（Read RSSI CC 回流 ✓）后稳定在 8（无新事件）
+- btdm_tx = 2→3（ReadBdAddr 后不再增长 = **0x2006/0x2008/0x200A 的 btdm_tx 未走**——这些走 B 路径不走 btdm_tx 计数）
+- flashStage(23) **未到**（stage=0）⇒ 代码停在 F83C→F0→F1→F2 之间的某个点
+- 0x18E000 判据块（轮 5）未写 ⇒ 同上
+- F818=2900e444 / F800=002f0669（ana 域静态，无新事务）
+
+### 流程停滞点定位
+F1 rc=0 后代码继续到 ra2(0x200A) → lpTrace → resumeTask → serviceTimers → flashStage(23)——**但 flashStage(23) 未执行**。⇒ hang 在 F1→flashStage(23) 之间。中间只有 `sendCmdViaHsNoFree(0x200A, &ae)` 和 `lpTrace` 两个操作 ⇒ hang = sendCmdViaHsNoFree(0x200A) 内部或 lpTrace。
+
+### sendCmdViaHsNoFree 内部分析
+```zig
+inited ✓ → freestanding ✓ → buf_alloc(BT_CMD) → H4 格式化 → hs_cmd_tx(buf)
+```
+hs_cmd_tx → env[32] = FJxPPD → 读 opcode → OGF=0x08 (LE) → LE 分支 → ...
+⇒ hang = FJxPPD 或 LE 分支内部（非 A 路径 rx 链）
+⇒ **0x200A LE Set Advertising Enable** 的处理需要 blob ADV 状态机——状态由 OkE7 6 子 init 建立的 LE 基础设施决定
+
+### 轮 79 首项
+LE 分支内部 hang 的精确定位——反汇编 .L673（OGF=8 LE 分支 @当前构建地址）后续到 ADV enable handler 的路径，找 hang 点。或**用 flash 标记在 F1 之后逐步插桩**（pre-BT 窗口可用）。
