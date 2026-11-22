@@ -90,8 +90,21 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
     }
     buf[n] = 0;
     s31_bt_raw_line(buf);
+    /* **轮 16（2026-11-22）：探针构建恢复「打印后返回」**。11-21 的恒 halt 是对
+     * btdm_sleep.c:684（NULL 回调 jalr）的过激反应——该风险已被 step20 的
+     * 「sleep 槽非空才注册」规避。而 0x200A 的 synth-ready 轮询超时（cap 65536
+     * → wr_btdm_assert）在官方同样发生（trace 实证官方 98BC=0 恒定 + 45s
+     * trace 跑完不挂）⇒ 官方语义 = 打印后返回、error 3 被容忍、广播继续。
+     * 恒 halt 让 0x200A 处理器把整系统冻死在其轮询里（轮 11-12 marker 实锤）。
+     * **作用域**：BT_ASSERT_RETURNS=1（build-probe.sh 探针档）→ 返回；
+     * 生产默认（未定义）保持恒 halt——未知断言点的返回语义未经验证。
+     * 命中计数 bt_assert_hits 与 LP 0x2E000388=line 保留可观测。 */
+#ifdef BT_ASSERT_RETURNS
+    return; /* 探针档：返回让 0x200A 超时按官方语义被容忍 */
+#else
     for (;;) {
     }
+#endif
 }
 
 /* ---------------------------------------------------------------------------
