@@ -365,7 +365,6 @@ pub fn init(cfg: *config.Config) c_int {
     @import("osal_kit").osal.on_event_init = &probe_mod.bt_hook_event_init;
     @import("osal_kit").osal.on_eventq_init = &probe_mod.bt_hook_eventq_init;
     @import("osal_kit").osal.on_event_init3 = &probe_mod.bt_hook_event_init3;
-    @import("osal_kit").osal.on_event_init3 = &probe_mod.bt_hook_event_init3;
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
     // **5F70 step5 入口标记**（UART 无关）：区分"没进 step 5"vs"step 5 内挂"
     {
@@ -413,8 +412,6 @@ pub fn init(cfg: *config.Config) c_int {
     // {+0:0, +4:self} 发布到 0x2f011130）——gvLJK4 追加循环前置条件。必须在
     // mempool init 之后（probe 早期调用会被 mempool 初始化清零，tlinit 实录）。
     if (freestanding) {
-        const task_list_init = @extern(*const fn () callconv(.c) void, .{ .name = "r_sym_bt_fqmZkUKgd5GE6m7i2YFG" });
-        task_list_init();
         // **轮 65b**：fqmZkUKg 哨兵后立即跑 yGU6cF4（清回调标志）——防 task_init
         // 后段的 reset 路径读到 flag≠0 走 .L79 清理分支（该分支解引用 chain，
         // 在我们环境 NULL store 崩，ok67 实录 mepc=0x40061654）。

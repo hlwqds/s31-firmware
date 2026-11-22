@@ -29559,3 +29559,22 @@ sleep_set_sleep_cb @0x40061652：`lw s0,12(a4)` 读 *(0x2f011134)+12 = NULL—�
 ⇒ **0x2f011134 与 0x2f011138 是两个不同 env 族**（134=sleep env、138=OkE7 env）——sleep env（134）的 impl+12 需要的值 = OkE7 mutex 的句柄传透……轮 71 = 对拍 oracle 的 0x2f011134/0x2f011138 双槽生命周期（oracle ANASET 加读双槽），确定 sleep env impl+12 的官方填充者。
 HEREDOG
 echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 终态——ygu 链未消解（sleep_cb impl+12=NULL 另有来源）；轮 71=oracle 双槽（134/138）生命周期对拍" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l; cd /home/huanglin/code/hl-ljj-quartz && git status --short | wc -l
+
+---
+
+## ⚙ 轮 71 终态：prefill 双向矛盾 + session 收口（2026-11-23）
+
+### 实验判决
+- **删 0x2f011138 prefill** ✓ → INITED 恢复（OkE7 lazy env 正确）但新崩 = **task_deinit 的节点遍历**（mepc=0x4006164a mtval=0xc：*(0x2f011134)=NULL → impl+12 load）
+- **删 0x2f011134 prefill** ✗ → 回退到 bpboot5 已文档化崩（set_sleep_cb NULL+0xC，调用者无空守卫）⇒ **prefill 是承重的**
+
+### 矛盾
+有 prefill：walk 崩于 env+16/20 未注册；无 prefill：set_sleep_cb 崩于 env+12 NULL。两个方向的修复（scratch 预置 / 删除）都不能同时满足 ⇒ **剩余缺口 = 一个真正的 OkE7 家族 impl 分配器**（blob 自家 memblock 语义，轮 70 的 r_btdm_os_memblock_get 路线 = 唯一未试的结构性修复）。
+
+### 轮 72 首项（精确、离线起手）
+1. 反汇编当前构建的 `r_btdm_os_memblock_get`（nm @2f009d7e）——拿 memblock 块布局（池链字段偏移）
+2. `wr_btdm_osal_event_init` 改用该池分配 impl（对齐官方 BTDM_MEMPOOL_ALLOC 路径），container.p = impl
+3. 判据：task_deinit walk 走通 ⇒ step 6 完成 ⇒ INITED ⇒ evt/CC ⇒ rfready
+
+### 全 session 稳定成果（已入库，130/130 host 绿）
+osal 布局对齐官方 {queued,fn,arg} + fn(容器) + 双路解析 + eventInit/eventqInit 承重写 + c_int 0 + OkE7 lazy 语义确认（0x2f011138 不可预填）+ oracle OkE7 完整序列解密 + sleep env prefill 承重实证

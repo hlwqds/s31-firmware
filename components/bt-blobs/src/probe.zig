@@ -1023,38 +1023,15 @@ pub fn run() noreturn {
     // 读 NULL+0xC fault。修法 = 从 blob arena 分配 256B（OkE7 锚点历史路径），
     // 写自引用（offset 12 指回 stub），发布到槽 ⇒ blob 读到受保护内存 ✓。
     // **时机 = arena 初始化后、task_init(步 6) 前** ⇒ 赶在 blob 首次读槽之前。
-    // **轮 66：64B dummy 预分配（单变量实验）**——blob 后续分配整体位移，
-    // 检测 task resume sp 损坏 = arena 位移敏感（轮 65）。
-    if (osal.btdmMalloc(64, 0) == null) {
-        osal.logPublic("bt probe: FATAL dummy alloc failed", .{});
-        halt();
-    }
-    {
-        const stub = osal.btdmMalloc(256, 0) orelse {
-            osal.logPublic("bt probe: FATAL sleep env malloc failed", .{});
-            halt();
-        };
-        // **轮 64：全字自引用填充**——stub 256B 全部填自身地址：任何指针字段
-        // 解引用都落在合法 RAM（stub 内零值），NULL/野指针链全部消解。
-        // （此前 undefined 垃圾 + 单点自引用在 osal 布局漂移后失效——step 6
-        // sleep env 链读 NULL 崩，side64.log 实录。）
-        const stub_base: usize = @intFromPtr(stub);
-        const word: u32 = @truncate(stub_base);
-        var wi: usize = 0;
-        while (wi < 64) : (wi += 1) {
-            @as(*volatile u32, @ptrFromInt(stub_base + wi * 4)).* = word;
-        }
-        // 发布到槽
-        const sleep_env_slot: *volatile u32 = @ptrFromInt(0x2f01_1134);
-        sleep_env_slot.* = @truncate(stub_base);
-        osal.logPublic("bt probe: sleep env prefilled arena stub @0x{x:0>8} -> slot 0x2f011134", .{stub_base});
-        // **轮 67 终判（撤销 0x2f011130/0x2f011138 双预填）**：
-        // ① 0x2f011138 = **OkE7 自管理的 env 指针槽（lazy-init）**——入口检查
-        //   `*(slot)==0 → malloc(76)+发布`；非零 = "已存在" ⇒ bail -1！
-        //   我们的 cb 容器预填 = 让 OkE7 入口即 bail ⇒ 零 event_init（hook=0 实证）。
-        // ② 0x2f011130 任务链表哨兵同理撤销（OkE7 内部 fqmZkUKg 自己管理）。
-        // 正确姿势 = 不碰这些槽，让 OkE7 完整跑（lazy malloc + 全部内嵌 init）。
-    }
+    // **轮 71 撤销全部容器预填（0x2f011134/0x2f011138/0x2f011130）**——
+    // 官方语义（OB0cbi2 反汇编实证）：*(0x2f011134)==0 = sleep OFF（beqz
+    // 直接返回 0），非零 = 谎报 ON ⇒ post-INITED 链走进 set_sleep_cb ⇒
+    // sleep ctx NULL store 崩（cfg sleep_en=0 本就不该跑 sleep init）。
+    // 0x2f011138 = OkE7 自管理 env 槽（lazy malloc），非零 = 入口 bail -1。
+    // 0x2f011130 哨兵 = OkE7 内部 fqmZkUKg 自管（外部预发 = 干扰链）。
+    // 槽全让给 blob 自管，轮 71 判据：无 sleep crash ⇒ INITED ⇒ evt/CC 链。
+    // （轮 67 终判撤销记录：0x2f011138 = OkE7 自管理 env 槽 lazy-init；0x2f011130
+    //  哨兵 = OkE7 内部 fqmZkUKg 自管；0x2f011134 = sleep OFF 判定槽，非零谎报 ON。）
 
     // 2) init 链（15 步）
     // **osi_impl hooks 接线（此前从未调用 setHooks ⇒ now_us 等全 null）**：
