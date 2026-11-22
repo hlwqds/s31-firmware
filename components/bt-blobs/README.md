@@ -29459,3 +29459,24 @@ JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
 （本次 osal 布局对齐——Event{queued,fn,arg} + fn(容器)——是官方语义的正确基础，保留 ✓）
 HEREDOG
 echo "---"; git add -A && git commit -m "bt-blobs: 轮 68b——触底：S31 blob osal=私有变体（impl+16/20=kNIbP2 链节点字段）；轮 69=手补 OkE7 尾部 event_init+kNIbP2 注册序列（oracle 源可得）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
+
+---
+
+## 🧭 轮 68c：oracle OkE7 完整序列到手（2026-11-23 深夜终版）
+
+### oracle OkE7（0x4006a3ac-0x4006a3f8）精确序列
+```c
+laR9(container+8, ...);                       // eventq_init(container+8)
+wr_btdm_osal_event_init(env+84, name_fn, 0);  // 事件容器 = env+84！
+a5 = *(env);                                  // impl（event_init 写回的池对象）
+a0 = *(impl + 16);                            // = 我们 osal Event 的 slot 字段偏移！
+kNIbP2(a0, 6);                                // 链入全局链表 id=6（= 轮 62 分析的 kNIbP2！）
+```
+
+### 三个结论
+1. **官方 = 同款 Slot.p 间接模式**（container{p} → 池 Event，Event+16 = slot 反查字段）——轮 63b"所有权冲突"理论**推翻**（blob 的 0xc03 状态写另有来源/另有容器）
+2. **kNIbP2 = gvLJK4 家族的注册侧**：gvLJK4(walk) 遍历的链表 = kNIbP2 链入的 id=6 链表
+3. **oracle 事件容器 = env+84**；我们镜像 task_init 的遍历容器 = env+16/20——**偏移不一致**（不同 blob 构建家族或不同对象组）= 下轮对拍点
+
+### 真崩溃源（修正）
+task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
