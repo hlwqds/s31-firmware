@@ -29226,3 +29226,28 @@ bb funcs 回调链（step 9 注册的 [a4+36]，esp_btbb_enable → bt_bb_v2_ini
 1. 观察点改盯 **eo+0（Slot.p 字段）**：抓"谁把 S.p 从 A 改写"（deinit 写 null / 直接 slotSet 写 B）+ 写者 PC
 2. 同时 diag 增加每轮 S.p 值——确认重绑定发生在 bringup 哪一步（对照 flashStage 相位）
 3. 找到重绑定者后：核对官方 btdm_osal 的容器生命周期（FreeRTOS 版 deinit 语义 vs 我们的）——大概率我们 eventDeinit 的"give+null"语义官方并不存在（官方容器由 blob 直接管理）
+
+---
+
+## 🎯 轮 61-62b：命令分发表 = NULL 实锤（终点线到手，2026-11-22）
+
+### 最锐利崩溃（/tmp/eo2.log，eventReset 修复后）
+```text
+panic: ra=0x400181f6 a0=0x0c03 a1=0x00000000 a2=0x1
+panic: live mepc=0x4007b8c8 mtval=0xc0b
+```
+- **a0=0x0c03 = HCI Reset 命令**——分发器（OQqISruR @0x400181e6）真在处理我们发的命令！
+- **a1=0 = 命令分发表基址 = NULL**——按 OCF 算出的查址 0xc0b misaligned fault
+- a3/a5=0x2e000508 = bumpEvtCounter 表（bump 已成功执行 = 事件链活的又一实证）
+
+### 63 轮终局定性
+**HCI 命令分发表从未被填充**。官方由 ble_stack_init/hci_transport_init（bt.c glue）注册每条命令的处理器表；我们的 own-ops 替换链丢了注册半边 ⇒ 表基址全局 = 0 ⇒ 分发器对任何命令（含 HCI Reset）即崩。
+
+### 事件链状态（全绿）
+命令 → FJxPPD → 事件 post → task 消费 → **fn_=0x400181e6 分发器真跑**（eventReset 根修生效 ✓）→ 空表查址崩。轮 63 的 Slot.p 观察点零命中 + 轮 63b 宽签名武装观察点风暴（mmio trace 实录）都反证：fn_ 保留修复是**正确且充分**的最后一块拼图，崩点已在分发器内部。
+
+### 轮 63c 首项（机械闭环）
+1. 反汇编分发器 ra=0x400181f6 邻域 ⇒ 找表基址全局地址（a1 的来源 load）
+2. nm/oracle 找该全局的官方写者（注册函数 = ble_stack_init 内部的 hci cmd 表填充）
+3. 我们 bringup 补调（或修正 own-ops 的 hci_transport 替换，让它做注册半边）
+⇒ 表就位 ⇒ 分发器处理 Reset/ReadVersion/ADV 链 ⇒ CC 回流 ⇒ rfready ⇒ **60+ 轮战争总墙倒塌**

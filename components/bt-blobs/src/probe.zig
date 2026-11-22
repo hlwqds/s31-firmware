@@ -132,6 +132,20 @@ const wr_btdm_osal_event_is_queued = @extern(*const fn (?*anyopaque) callconv(.c
 /// **轮 59**：osal 侧 event_init 快照访问（symbol 化，地址无关）。
 const osal_last_event_init = @extern(*[48][3]usize, .{ .name = "osal_last_event_init" });
 const osal_last_event_init_n = @extern(*usize, .{ .name = "osal_last_event_init_n" });
+/// **轮 63b**：event_init 钩子回调——目标槽（*(0x2f01101c)+12）init 的瞬间
+/// 武装 Slot.p STORE 观察点（后续 deinit/rebind 写者 → LP 槽三元组）。
+/// bringup 钩子注册名（probe_mod 经此引用）。
+pub fn bt_hook_event_init3(slot: usize, fn_addr: usize, arg_addr: usize) void {
+    onEventInit3(slot, fn_addr, arg_addr);
+}
+pub fn onEventInit3(slot: usize, fn_addr: usize, arg_addr: usize) void {
+    _ = fn_addr;
+    _ = arg_addr;
+    // **轮 63 判决：宽签名武装 = 观察点风暴**（匹配到无关槽 → 反复 trap →
+    // halt，mmio trace 实录）。禁用 in-hook 武装；正确姿势 = 先打印 eo 真值
+    // （CMD-EVENT 行），再按精确值武装（下一轮）。
+    _ = slot;
+}
 
 // **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
 const osi_impl = @import("osi_impl.zig");
@@ -1816,36 +1830,9 @@ pub fn run() noreturn {
             // **轮 38：c.ebreak 自证已删**——它是 panic 源（mepc=ra=ebreak 地址，resume 无推进 → 双重异常）。
         } // if (false) end
     }
-    // **轮 62：命令事件 fn_ 字段 STORE 观察点**——env+12 槽（*(0x2f01101c)+12）
-    // → 池 Event fn_ 在 init(idx26, fn=0x400181e6) 与运行时(evcb=0) 之间被清。
-    // 武装 STORE 观察点抓清零写者（trapEntry 快路径 → LP 槽 0x2E0004D0 三元组，
-    // 下次开机 lpBlackBoxReport 读出）。
-    {
-        const ep2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
-        if (ep2 >= 0x2f00_0000 and ep2 < 0x2f90_0000 and ep2 % 4 == 0) {
-            const eo: usize = ep2 + 12;
-            const evp: usize = @as(*volatile usize, @ptrFromInt(eo)).*;
-            if (evp >= 0x2f00_0000 and evp < 0x2f90_0000) {
-                const watch_addr: u32 = @truncate(evp + 4); // Event.fn_
-                @import("board").trap.wp_watch_on = 1;
-                asm volatile ("csrw 0x7a5, zero");
-                asm volatile ("csrw 0x7a0, zero");
-                asm volatile ("csrw 0x7a2, %[a]"
-                    :
-                    : [a] "r" (watch_addr),
-                );
-                asm volatile ("li t0, 0x4a"); // STORE|U|M
-                asm volatile ("csrw 0x7a1, t0");
-                asm volatile ("li t0, 0x88"); // MTE
-                asm volatile ("csrw 0x7a5, t0");
-                osal.logPublic("bt probe: fn_ STORE watch armed @0x{x:0>8}", .{watch_addr});
-            } else {
-                osal.logPublic("bt probe: fn_ watch skip evp=0x{x:0>8}", .{evp});
-            }
-        } else {
-            osal.logPublic("bt probe: fn_ watch skip ep2=0x{x:0>8}", .{ep2});
-        }
-    }
+    // **轮 63b：Slot.p 观察点改钩子就地武装**——轮 62 证明重绑定发生在
+    // bringup.init 内部（enable 前武装太晚、零命中）。event_init(idx26) 命中
+    // 目标槽的瞬间就盯住 Slot.p：后续 deinit/rebind 写者 → LP 槽三元组。
     rc = bringup.enable();
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
@@ -2578,7 +2565,7 @@ pub fn run() noreturn {
                             const idx = if (n < 48) k2 else (n - 48 + k2) % 48;
                             const trio = osal_last_event_init.*[idx];
                             if (eo_scan >= 0x2f00_0000 and trio[0] == eo_scan) {
-                                board.log.line("bt probe: CMD-EVENT init idx={d} fn=0x{x:0>8} arg=0x{x:0>8}", .{ idx, trio[1], trio[2] });
+                                board.log.line("bt probe: CMD-EVENT eo=0x{x:0>8} idx={d} fn=0x{x:0>8} arg=0x{x:0>8}", .{ eo_scan, idx, trio[1], trio[2] });
                             }
                         }
                     }

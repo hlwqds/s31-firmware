@@ -754,6 +754,8 @@ pub fn eventqRemove(qslot: *Slot, eslot: *Slot) void {
 
 /// 事件初始化回调（**运行期槽**，零链接耦合；bt-blobs 侧可挂调试钩子）。
 pub var on_event_init: ?*const fn (u32) void = null;
+/// **轮 63**：带 (slot, fn, arg) 的 init 钩子——probe 侧按槽匹配就地武装观察点。
+pub var on_event_init3: ?*const fn (usize, usize, usize) void = null;
 /// 事件队列初始化回调（第几次）。
 pub var on_eventq_init: ?*const fn (u32) void = null;
 var evq_init_n: u32 = 0;
@@ -780,6 +782,8 @@ pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, a
             if (arg) |a| @intFromPtr(a) else 0,
         };
         last_event_init_n += 1;
+        // **轮 63**：三参钩子——probe 侧在目标槽 init 的瞬间就地武装观察点
+        if (on_event_init3) |f| f(last_event_init[k][0], last_event_init[k][1], last_event_init[k][2]);
     }
     // 槽位里可能已经有状态（重复 init）——复用，否则新建。
     const e = slotGet(Event, slot) orelse blk: {

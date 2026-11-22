@@ -80,6 +80,7 @@ inline fn rdUsz(addr: usize) usize {
 /// 主机测试图里给同签名的空壳：钩子不装、实验开关全关。
 const probe_mod = if (@import("builtin").os.tag == .freestanding) @import("probe.zig") else struct {
     pub fn bt_hook_event_init(_: u32) void {}
+    pub fn bt_hook_event_init3(_: usize, _: usize, _: usize) void {}
     pub fn bt_hook_eventq_init(_: u32) void {}
     pub const ble_block_experiment: bool = false;
     pub const bt_block_read_only: bool = false;
@@ -363,6 +364,8 @@ pub fn init(cfg: *config.Config) c_int {
     @import("osal_kit").osal.on_intr_arm = &intrArm;
     @import("osal_kit").osal.on_event_init = &probe_mod.bt_hook_event_init;
     @import("osal_kit").osal.on_eventq_init = &probe_mod.bt_hook_eventq_init;
+    @import("osal_kit").osal.on_event_init3 = &probe_mod.bt_hook_event_init3;
+    @import("osal_kit").osal.on_event_init3 = &probe_mod.bt_hook_event_init3;
     // 3. 时钟门控（真实现：12 个门 + MAC 复位，内部读回自证）
     // **5F70 step5 入口标记**（UART 无关）：区分"没进 step 5"vs"step 5 内挂"
     {
