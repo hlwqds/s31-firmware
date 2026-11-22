@@ -30629,3 +30629,11 @@ RTC WDT 20s 兜底未咬（RC_SLOW 压回已加，效应待更多窗口观察）
 1. 延长 capture 至 3min（RTC WDT/兜底若咬，boot2 PREVHANG 将带 LP 数据）
 2. 主机 BLE 扫描贯穿 boot→0x200A→挂死窗口（RF-ON 已武装，广播可能瞬态出现）
 3. blob 内 RF-wait 环解码（从 FJxPPD OCF=10 handler 顺调用链）
+
+---
+
+## 🔍 轮 97b：60s BLE 扫描终判（2026-11-23）
+
+F800 bit24 已武装（RF-ON 命令入列）但 60s 扫描（含 board reset 完整窗口）板 MAC 未出现 ⇒ radio 未完成启动。ADV-enable RF-wait 段阻塞 = 最后边界。
+
+下 session：RF-wait 环解码（blob ADV-start 内部调度路径）+ 时间源喂法（ULP latch 每 0.25s 已就位，验证其是否真被等待环读到——可能读的是另一个时间寄存器）。
