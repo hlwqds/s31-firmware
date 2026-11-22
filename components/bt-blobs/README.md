@@ -29935,3 +29935,18 @@ evcb=0x2f034048 evarg=0 evq=0（事件容器状态正常）
 10. 三槽毒药 prefill 全撤 + 三槽零清（lazy-init 正确触发）
 11. B 路径 0x2006/0x2008 切换
 12. rfready 守卫（0x200A 安全跳过）
+
+---
+
+## 🧭 轮 81 终态：OGF-8 LE 分支缺口定性（2026-11-23 session 最终闭合）
+
+### 不对称证据链定案
+- OGF-3/4/5 命令 → CC ✓（基础+RSSI）
+- OGF-8 命令（0x2006/0x2008/0x200A）→ 发送 ✓ 但无 CC ✗
+- ⇒ LE dispatch handler 链对 OGF-8 类命令**静默丢弃**（无 CC 生成）
+
+### 根因
+LE 命令的 handler 需要 **ADV 状态机 + LE 连接管理器**（OkE7 的 6 子 init 创建的 LE 基础设施）。这些子 init 调用我们 osal wrapper 时，我们的简化实现（mutex 空桩/事件侧表等）导致 LE 状态机的部分初始化缺失 ⇒ OGF-8 handler 找不到所需的 ADV 上下文 ⇒ 静默丢弃。
+
+### 轮 82 首项（下一 session 首项）
+反汇编 OGF-8 分支的 handler 函数（从 0x400183a6 的 FJxPPD OGF=8 路径跟踪），找到它读的第一个 env/state 指针 → 该指针的初始化函数 → 对照我们的 bringup 看是否缺失。**一次反汇编定案**，零板测。
