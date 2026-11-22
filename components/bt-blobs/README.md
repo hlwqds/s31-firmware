@@ -29480,3 +29480,23 @@ kNIbP2(a0, 6);                                // 链入全局链表 id=6（= 轮
 
 ### 真崩溃源（修正）
 task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
+
+---
+
+## ⚠ 轮 69 纪律条目：每构建重定位（2026-11-23）
+
+本轮多次反汇编引用旧构建地址（task_init @0x40061cde、OkE7 @0x40061a10、gvLJK4 @0x40061376——全部随 bss/代码增量漂移）。
+**铁律**：每次 build 后必须 `nm zig-out/bin/app.elf | grep "<symbol>"` 重取地址再反汇编（轮 35 铁律的显式扩展——本轮在 gvLJK4/hook_fired 的矛盾解读上浪费了 2 轮）。
+
+### 稳定事实（不受漂移影响）
+- osal 布局已对齐官方（Event={queued,fn,arg}、fn(容器) 官方语义）✓ 130/130 host 绿 ✓
+- OkE7 尾部 event_init(env+84-类偏移) + kNIbP2(Event.slot, 6) 链表注册 = 官方序列 ✓（源码级，布局漂移不改序列）
+- 崩点族 = task_deinit 的节点遍历（读容器 impl+16/20 = 0）——**顺序：task_init 头部先跑 task_deinit**（清场），walk 命中的是清场后未重注册的容器
+
+### 轮 69 首项（流程已明确）
+1. nm 重定位：r_btdm_task_init / r_sym_bt_OkE7* / gvLJK4
+2. 反汇编当前构建的 task_init 头部：确认 deinit→OkE7→walk 的真实执行序
+3. 若 walk 在 OkE7 前：env+16/20 容器需**更早**的注册者（找 controller_init 的哪一步——cfg 构造时？）
+4. 修复后判据不变：task_init 走通 ⇒ step 7-15 ⇒ enable ⇒ evt/rfready/ADV
+HEREDOG
+echo "---"; git add -A; git commit -m "bt-blobs: 轮 69 纪律——每构建 nm 重定位铁律显式化（本轮 2 轮浪费于旧地址）；稳定事实与轮 69 流程入库" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
