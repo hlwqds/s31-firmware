@@ -1712,6 +1712,22 @@ pub fn run() noreturn {
         const old_c = nmi_reg.*;
         nmi_reg.* = (old_c & 0x107) | (1 << 3); // nmies 置位（NMI 不受 MIE 屏蔽）
     }
+    // **轮 26：STORE 观察点武装**——盯 s_is_phy_calibrated(0x2f010e80) 的写者：
+    // 轮 25 实证该字节被持续踩（enable 后 230 → 冻结 136，源码只写 1）⇒ 有无符号
+    // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
+    // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
+    {
+        asm volatile ("csrw 0x7a5, zero");
+        asm volatile ("csrw 0x7a1, zero");
+        asm volatile ("csrw 0x7a0, zero");
+        asm volatile ("li t0, 0x2F010E80");
+        asm volatile ("csrw 0x7a2, t0");
+        asm volatile ("li t0, 0x4a"); // STORE|U|M
+        asm volatile ("csrw 0x7a1, t0");
+        asm volatile ("li t0, 0x88"); // MTE
+        asm volatile ("csrw 0x7a5, t0");
+        osal.logPublic("bt probe: STORE watch armed @0x2f010e80", .{});
+    }
     rc = bringup.enable();
     if (rc != 0) {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
@@ -2183,6 +2199,19 @@ pub fn run() noreturn {
             }
             rec[506] = rst_conf_pre_200A;
             rec[507] = rst_conf_post_200A;
+            // **轮 24：校准运行判据**——oracle 版 esp_phy_enable 先调
+            // phy_module_has_clock_bits(modem)，为假则整段 load_cal 被跳过
+            // （rc 仍 0）⇒ 校准从未运行 ⇒ synth 永不锁。两个字节钉死：
+            //   rec[508] = s_is_phy_calibrated（esp_phy_enable 内部读的全局，
+            //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010e80）
+            //   rec[509] = phy_module_has_clock_bits(2)（PHY_MODEM_BT）直调结果
+            rec[508] = bringup.phy_cal_flag_post; // enable 返回时
+            rec[510] = @as(*volatile u8, @ptrFromInt(0x2F01_0E80)).*; // 冻结点现值（blob 是否踩）
+            rec[511] = board.trap.wp_hit_pc; // **轮 26**：第一个踩 0x2f010e80 的写者 PC
+            {
+                const has_bits = @extern(*const fn (modem: c_int) callconv(.c) c_int, .{ .name = "phy_module_has_clock_bits" });
+                rec[509] = @bitCast(has_bits(2));
+            }
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];

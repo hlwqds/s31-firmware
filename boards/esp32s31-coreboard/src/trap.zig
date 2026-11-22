@@ -290,6 +290,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             udiv_hit_a3 = frame.a3;
             udiv_hit_n +%= 1;
         }
+        // **轮 26：STORE 观察点命中现场**（udiv 未武装时，cause=3 即数据观察点
+        // 命中）——写者 PC + ra 进全局，probe 冻结点转存 rec[511]。
+        if (!udiv_watch_on) {
+            wp_hit_pc = auth_pc;
+            wp_hit_ra = frame.ra;
+            wp_hit_count +%= 1;
+        }
         {
             var pb: [160]u8 = undefined;
             const pl = std.fmt.bufPrint(&pb, "BP! n={d} mepc=0x{x:0>8} cause={d} t2=0x{x:0>8} ra=0x{x:0>8} a2=0x{x:0>8} a3=0x{x:0>8} udiv={d}", .{
@@ -332,10 +339,16 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         // 让每次普通中断返回都跳 4 字节，破坏全部控制流与 PC 采样。
         // udiv 入口命中：**不推进**——断点在指令执行前触发，触发器已禁用 ⇒
         // 原地恢复即正常执行除法序言（跳过会毁栈帧）。其余 EXEC 断点维持推进。
-        if (!(udiv_watch_on and auth_pc == udiv_addr)) {
+        if (udiv_watch_on and auth_pc == udiv_addr) {
+            // udiv 入口命中：不推进（原地恢复执行除法序言，触发器已禁用）。
+        } else if ((t1rb & 4) != 0) {
+            // EXEC 断点：按指令长度推进（触发器已禁用，防重触发）。
             const inst_hw: u16 = @as(*volatile u16, @ptrFromInt(auth_pc)).*;
             if ((inst_hw & 3) != 3) frame.mepc +%= 2 else frame.mepc +%= 4;
         }
+        // **数据观察点（LOAD/STORE）：不推进**——异常在访问执行前触发，原地
+        // 恢复 = 该次访问正常完成，数据流零丢失。轮 26 的 +=4 推进曾把跳过的
+        // store 丢了且去同步（fetch fault @0x400760f2 实证）。
     }
     if ((cause & 0x8000_0000) != 0) {
         // 数组只存前 `irq_samples.len` 个（判读用）；**打印独立限长**——之前把打印放在
@@ -1225,6 +1238,10 @@ var fe3_hits: u32 = 0;
 var bp_hit_mepc: u32 = 0;
 var bp_hit_cause: u32 = 0;
 var bp_hit_count: u32 = 0;
+/// **轮 26**：STORE 观察点命中现场（写者 PC + ra），probe 冻结点转存 rec[511..512]。
+pub var wp_hit_pc: u32 = 0;
+pub var wp_hit_ra: u32 = 0;
+pub var wp_hit_count: u32 = 0;
 var bp_last_tsel: u32 = 0;
 
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：

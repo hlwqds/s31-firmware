@@ -190,6 +190,10 @@ extern fn r_esp_ble_ll_set_public_addr(addr: *const [6]u8) c_int;
 
 const freestanding = builtin.os.tag == .freestanding;
 
+/// **轮 25**：esp_phy_enable 前后的 s_is_phy_calibrated 快照（probe 冻结点转存 rec）。
+pub var phy_cal_flag_before: u8 = 0;
+pub var phy_cal_flag_post: u8 = 0;
+
 /// 主机测试注入点：把归档调用替换成可观察的假动作。
 pub const Hooks = struct {
     call: ?*const fn (step: u32) c_int = null,
@@ -519,9 +523,16 @@ pub fn init(cfg: *config.Config) c_int {
     // 现按官方时序：phy 先于 btbb。返回判据：98BC 快照进日志与 hist。
     {
         if (freestanding) {
+            // **轮 25：s_is_phy_calibrated 清零**——胶水 .bss 落在 blob 绝对寻址区
+            // （nm 实锤 0x2f010e80 紧邻 blob 数据，读值跨 boot 非布尔）⇒ enable
+            // 入口 `bnez → skip load_cal` 可能从未运行校准。清零强制走全量标定。
+            const cal_flag: *volatile u8 = @ptrFromInt(0x2F01_0E80);
+            phy_cal_flag_before = cal_flag.*;
+            cal_flag.* = 0;
             const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
             esp_phy_enable(2);
-            osal.logPublic("bt bringup: esp_phy_enable(2) done ready=0x{x:0>8}", .{mmioRd(0x2010_98BC)});
+            phy_cal_flag_post = cal_flag.*;
+            osal.logPublic("bt bringup: esp_phy_enable(2) done calflag {d}->{d}->{d} ready=0x{x:0>8}", .{ phy_cal_flag_before, phy_cal_flag_post, cal_flag.*, mmioRd(0x2010_98BC) });
         }
     }
     // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。

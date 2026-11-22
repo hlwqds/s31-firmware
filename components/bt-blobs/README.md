@@ -28612,6 +28612,14 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 24-26（2026-11-22）：运行态内存碰撞定责——墙的结构性根因候选**：
+  1. **regi2c/时钟/efuse 输入核查（零烧录）**：XTAL 双方 sdkconfig 均 40MHz（桩无害）；`register_chipv7_phy` 函数体尺寸两侧一致（无残缺）；调用目标逐一同源（无混链）。
+  2. **calflag 门实验**（轮 25）：enable 前清零 `s_is_phy_calibrated` → 门通过（load_cal 路径进入）→ **enable 返回时标志已被踩成 230、冻结点 136**（源码只写 1，且跨 boot 确定性）⇒ 校准运行期间与之后，胶水 bss 被持续踩踏 ⇒ 校准工作静态（modem_clock_context/pmu_context/s_phy_access_lock 全在受害区）本身被污染。
+  3. **STORE 观察点抓写者**（轮 26）：mcontrol6 STORE|U|M @0x2f010e80 → **写者 PC=0x74046f9b（跨 boot 逐位相同）**。别名映射 0x74000000↔0x40000000 还原 = **0x40046f9b = `r_sym_ble_un2bHTzwMxLoo4aqy5K4` 序言的 `sw ra,60(sp)`**，反推 sp=0x2f010e44——**该地址无任何合法栈**（主栈 0x2f076fc0+/arena 栈 0x2f024280+/trap 栈 0x2f016df0 全部排除；trap_stack_buf 理论被 nm 证伪）。
+  4. **结构性碰撞**：blob 锚点/malloc 区（0x2f015058/0x2f0150b8/0x2f011044/cfg@0x2f01f870 等 porting 硬编码地址）与胶水+闭包 bss（0x2f010e80-0x2f021280）区域重叠 ⇒ blob 运行态指针落在胶水 bss 里互踩；带损坏 sp 的 blob 代码把寄存器存进 `s_is_phy_calibrated` ⇒ **enable 入口 bnez 恒走 skip-load_cal** ⇒ rc=0 假象/真表无用/全对齐不锁全部闭环。
+  5. **仪器语义修复**：数据观察点命中**不推进 mepc**（原地恢复=store 正常完成）；旧 +=4 推进丢 store + 去同步（fetch fault @0x400760f2 panic 实证，现每 boot 复现于 trap 栈上下文 sp=0x2f01dc90）。
+  - **结构性修法（下 session 首项）**：s31.ld 手术——把胶水+闭包 bss 挪出 blob 保留区（0x2f010e80-0x2f022a80）→ 放到 0x2f022a80 之后并同步上移 _heap_start；同步修正 porting 硬编码锚点（0x2f011044/0x2f01f870/0x2f0150xx 系）与 trap 侧全部按地址引用的仪表。判据不变：FE450/47C 振荡 + 98BC.bit2=1 + evt=2。
+  - 注：mcontrol6 命中记录现于 RAM 全局（board.trap.wp_hit_pc/ra/count）+ 冻结 rec[511]；PANIC 每轮复现（trap 栈内 fetch fault）与本实验叠加，修 bss 布局时一并复核。
 - **轮 23（2026-11-22）：oracle 粘合对象换血成功 + 调用目标同源确认——墙仍在**：
   1. **换血判定法**：esp_phy_enable 地址不变（0x40000744，函数体恰好同尺寸）≠ 未换入；**必须反汇编函数体**。首轮 build-probe.sh 传 oracle 路径实际没换入（疑 zig 选项缓存）；从 firmware/ 手动 `zig build -Dphy-src-objs=<oracle 9 对象>` 换入成功——函数体从 `load_cal`-first（eh 版）变为 `esp_phy_common_clock_enable → phy_module_enable`（oracle 版）。
   2. **组合实验**（oracle 粘合 + 真 phy_init_data 表，首次同时生效）：**ready 仍 0x0、FE450 仍冻结** ⇒ Kconfig/粘合分支假设证伪。
