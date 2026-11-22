@@ -1011,6 +1011,7 @@ pub fn enable() c_int {
         // 槽=NULL ⇒ sleep OFF（OB0cbi2 同判据）⇒ 跳过注册 = 官方正确行为。
         const slot_chk: *volatile u32 = mmioPtr(u32, 0x2f01_1134);
         if (slot_chk.* != 0) {
+            board.log.line("S1 slot134={x:0>8}", .{slot_chk.*});
             // a1=null 会命中 beqz a1 → .L75 整体跳过（obj[4] 不写）⇒
             // arg 用非空占位（桩不读它）。a4=0 跳过 .L79 附加初始化。
             const sleep_arg: usize = @intFromPtr(&btSleepCb);
