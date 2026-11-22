@@ -30444,3 +30444,19 @@ flashStage(22/23) marker（esptool read-flash，不经过 UART）：
 - F3 发送后主循环是否还跑（marker 23 落盘与否）⇒ 区分"死在 send 内"vs"死在 send 后"
 - 若 marker 停在 22 ⇒ 0x200A 的 hs_cmd_tx/handler 内部自旋（trap 行/mcontrol6 待命）
 - 对照：oracle 的 0x200A 响应是 HW-ERR 事件而非 CC（不等待）——我们某分支在等
+
+---
+
+## 🔍 轮 92a：marker 通道判读（2026-11-23）
+
+- 0x185000 stage 标记：stage=11、tx=0/evt=0 —— `bt_window_no_flash` 守卫在 BT 任务
+  存活后**故意压制全部 stage 写**（SPI1 楔子预防），F 相位的 stage 通道本来就死。
+- 0x18F000 轻量标记只写 phase=0（pre-send）——挂死时无后续写，区分度不足。
+- **结论：0x200A hang 点定位必须上 trap 行/pc 采样器**（s31-baremetal-irq-pc-sampler、
+  baremetal-trap-line-as-sole-channel 仪器齐备，需一次 instrument 构建）。
+
+### 轮 92b 首项
+1. T0 pc 采样器（已有）武装于 F3 前窗口，抓 0x200A hang 的自旋 PC；
+2. 或 trap 行（rawLineBlocking 唯一通道）把 cause/mepc 编码进 trap 处理器；
+3. 对照假设：oracle 的 0x200A 走 HW-ERR（不等待）；我们某分支在等 RF-ready 类
+   硬件位——从 hang PC 反查是哪个等待环。
