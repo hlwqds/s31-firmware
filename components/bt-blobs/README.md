@@ -30091,3 +30091,39 @@ blob 的 OkE7 里有**多级间接**：
 3. 在 OkE7 之前的 init 里把 impl 发布到正确槽位 → 上板看 0x2006 是否回流 CC。
 
 仪器与技能全部保留（oracle 轨迹仪 / flash 双扇区标记 / EXEC 断点 / 3 个 bt skill），零重建成本。
+
+---
+
+## 🎯 轮 83：`*(0x2f01101c)` 写者找到——"容器错位"定性解构（2026-11-23）
+
+### 发布链（全部 nm/反汇编实证）
+```text
+r_ble_controller_init (0x40006630, 我们 bringup 已调)
+  → r_sym_ble_Td5N8gt (0x400078c4, master env init：HCI env 池 + … + LE env)
+    → r_sym_ble_Ha55Zy4 (0x40018428, LE env init)：
+        ffxQrzmp(&0x2f01101c, 64, 1)   → 发布主容器指针进槽 ✓
+        ffxQrzmp(container+8, 48, 1)   → 子池 A
+        ffxQrzmp(container+52, 97, 1)  → 子池 B
+      失败返回 -1/-2/-3
+  孪生 deinit = r_sym_ble_oP1soR9Rkivvwhf4ceR1（对称释放 +52/+8/槽）
+  ffxQrzmp = elem_calc 发布模式（全镜像 134 个调用点）
+```
+
+### "多级容器地址错位"定性解构（82c 推断框架被推翻）
+0x2f011 页上**并存三个独立 env**，各归各、不是错位：
+| 槽 | env | 发布者 | 我们谁在写 |
+| --- | --- | --- | --- |
+| `0x2f010fd8` | HCI env | `r_hci_stack_initEnv`(step 12) | ffxQrzmp 发布 |
+| `0x2f01101c` | **LE env**（hiASs 状态机宿主） | controller_init→Ha55Zy4 | ffxQrzmp 发布 ✓ 已非空 |
+| `0x2f011138` | OkE7 task env | OkE7 lazy malloc | 我们的 mutex/eventq/event slotSet ✓ |
+
+- 我们的 `mutex_init(OkE7 env+4)` 写对了自己的容器——**没有错位**；
+- 实测 `LE env+4 = 0`（init 后、发命令前）= **正常初值**，不是"写没落位"；
+- 姊妹槽全有写者、+28 唯一无直写 —— 因为它由 ffxQrzmp 间接发布（参数传 &slot），此前紧窗扫描漏掉 `addi a0,a5,28` 传参形态。
+
+### 新前沿（轮 84）
+LE env+4 是 LE 命令状态机字段：hiASs(OCF∈[6,13]) 会做 `==2 ? 0 : 写1返回1`。
+**缺的测量**：发 0x2006 **之后** dump LE env+4——
+- 仍 0 ⇒ 命令没到 .L673（分发器上游断）；
+- 变 1 ⇒ hiASs 跑了、handler 在后续路径丢 CC（反汇编 6o6qvjp 分发体）；
+- 变 2 ⇒ 状态机已迁移（首条即 2，语义待查）。
