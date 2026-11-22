@@ -29920,6 +29920,7 @@ evcb=0x2f034048 evarg=0 evq=0（事件容器状态正常）
 | LE 分发链（非 RF 类） | ✅ Read RSSI CC ✓ |
 | sleep 路径安全 | ✅ slot 守卫修复 |
 | **ADV enable（需 RF）** | ⏳ rfready=0 = 正确跳过 |
+| **OGF-8 不对称** | 0x1405(RSSI,OGF-5) CC ✓ / 0x2006+0x2008(OGF-8) 发送✓ CC✗ ⇒ .L673 LE 分支对 OGF-8 特有缺口 |
 
 ### 80 轮全部真修复（12 项，全部板级实证+入库）
 1. intrArm 路由直调
