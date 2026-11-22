@@ -29351,3 +29351,25 @@ init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（�
 1. oracle 侧 dump `BT_CONTROLLER_INIT_CONFIG_DEFAULT` 宏展开后的完整字节（esp_bt.h / esp_bt_configs.h 静态分析 + 编译产物 .data 段对比）
 2. 我们的 init_config.zig 镜像逐字段 diff（已有"双工具校验"轮的基础）
 3. 差异字段 → 修正镜像 → boot：预期 env+16/20 非零 ⇒ walk 通过 ⇒ task_init 完成 ⇒ 全链下游复活
+
+---
+
+## 🔬 轮 67b 仪器与未决（2026-11-23）
+
+### 本轮新增仪器（全部保留）
+- `evByAddr/qByAddr` 地址键控映射 + `evFromSlot` 双路解析（container.p 池合法优先 / 地址侧表兜底）
+- eventInit/eventqInit 承重写恢复（container.p = 池对象）
+- **wr_btdm_osal_eventq_init/event_init 改返 c_int 0**（OkE7 无条件读 a0 做 rc 检查——void 残留 0 = 误 bail；官方 FreeRTOS 实现碰巧 a0 残留非零）
+- hook BSS 诊断（hook_fired/hook_last_slot/fn，泵期读出）+ flash 直写流水（0x18C140，16 条轮转）
+- env+16/20 预读（pre-step-6；LP 槽方案被下载刮花否决 → flash 通道 0x18C100）
+
+### 未决核心谜团（轮 68 起）
+**task_init 前置 walk**（0x40061c1c-0x40061c42，`lbu a3,0(a5)` count 守卫 + `lw a0,16/20(a5)` 节点遍历 → gvLJK4）：
+- container.p 解引用后 +16/+20 = 0 ⇒ gvLJK4(NULL) ⇒ lw 4(0) fault
+- 该 walk 语义 = 遍历**已注册任务节点**——官方流此节点非空
+- 我们 45 次 event_init 的绑定 = **地址键控侧表**（container 内存不再承载绑定）⇒ **blob 读 container 字段 = 读不到我们的绑定**（0x2f011138 cb 容器 prefill 后 task list init 哨兵 0x2f0111bb 也一样）
+- ⇒ 矛盾核心：**blob 期望 container 字段持节点指针（其自有布局），我们改成了地址键控——两种布局不可共存**
+
+### 轮 68 方向：mirror 官方 btdm_osal_event 容器布局
+官方 FreeRTOS 版：`btdm_osal_event` 容器 = `{void *event}` 仅一个指针（指向 impl）——**它就是我们的 Slot.p 模式**！⇒ 布局本身没错；错在 **impl 对象内容**：官方 mutex impl {handle}、我们的 Mutex = {locked,...}——blob 在 mutex impl 上做的操作（+16/+20 读）**不是 mutex 语义** ⇒ 该 container 不是 mutex 而是**别的对象**（env 容器误被我们绑成 mutex？或 OkE7 的 s0 参数不是 env+12）。
+⇒ 下轮 = **OkE7 全量反汇编**（oracle 0x4006a3ac 起）：确认 s0 指向哪个容器、mutex_init/eventq_init 的确切实参、+16/+20 的写入者。
