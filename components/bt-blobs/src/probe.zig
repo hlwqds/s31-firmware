@@ -2133,6 +2133,7 @@ pub fn run() noreturn {
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
+        board.log.line("FWD06 rc={d} evt={d}", .{ r6, transport.stats().evt_count });
         osal.lpTrace(3, 0xF001);
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
@@ -2145,6 +2146,7 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF003);
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
+        board.log.line("FWD8 rc={d} evt={d}", .{ r8, transport.stats().evt_count });
         // **轮 84**：ADV 类命令发送**之后** dump LE env（hiASs 状态机宿主）——
         // 判据：+4 仍 0 ⇒ 命令没到 .L673（分发上游断）；变 1 ⇒ hiASs 跑过、
         // 状态迁移了（CC 丢在 handler 后段）；变 2 ⇒ 状态机已迁移（轮 82c 三件套①）。
@@ -2253,13 +2255,37 @@ pub fn run() noreturn {
         // **轮 76：F83C 写前后二分**（board.log 直写 UART 可靠——FIFO 免疫）
         board.log.line("F0 {x:0>8}", .{f83c_before});
         const r6b = transport.sendCmdViaHs(0x2006, &ap);
-        board.log.line("F1 rc={d}", .{r6b});
+        board.log.line("F1 rc={d} evt={d}", .{ r6b, transport.stats().evt_count });
         // **轮 78：LE 活性探测**——发 Read RSSI (0x1405，无副作用)
         // CC 回来（evt→5）= LE 分支活，hang 是 ADV enable 特有（RF 依赖）
         // CC 不来 = 整个 LE 分发死
         const rrssi = transport.sendCmdViaHs(0x1405, &.{});
         board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
         board.log.line("F2S btdm_tx={d} evt={d}", .{ transport.stats().btdm_tx, transport.stats().evt_count });
+        // **轮 86**：HCI 传输 env 对账——LE CC 的分发器内构造已完成（.L672），
+        // 事件应在 kAQT9Bbw→ll_evt_tx 后抵达 env+24（cfg_hs 注册的 leEvtTx）。
+        // 判据：+24 必须 = nm 里 leEvtTx 的符号地址；credits(env+64) 供 kAQT9Bbw
+        // 的 avail 判定（<len+2 会走 assert(113) 路径——我们的 assert 若不 halt
+        // 仍会尾跳 ll_evt_tx，不会吞事件）。
+        {
+            const hep: usize = @as(*volatile usize, @ptrFromInt(0x2f011_0FC)).*;
+            if (hep >= 0x2f00_0000 and hep < 0x2f90_0000 and hep % 4 == 0) {
+                const cb24: u32 = @as(*volatile u32, @ptrFromInt(hep + 24)).*;
+                const ar28: u32 = @as(*volatile u32, @ptrFromInt(hep + 28)).*;
+                const credits: u16 = @as(*volatile u16, @ptrFromInt(hep + 64)).*;
+                board.log.line("HCIEVN env={x:0>8} +24={x:0>8} +28={x:0>8} credits={d}", .{ hep, cb24, ar28, credits });
+                // **轮 86b**：last_evt[8] = 最后一条 CC 的原始字节（leEvtTx 存的静态副本）。
+                // CC 布局：[0]=0x0E [1]=len [2]=ncmd [3..4]=opcode [5]=status。
+                // status=0 ⇒ ADV 参数被接受；18/12 ⇒ handler 拒绝（参数/状态机）。
+                const le = transport.stats();
+                board.log.line("LASTCC {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2}", .{
+                    le.last_evt[0], le.last_evt[1], le.last_evt[2], le.last_evt[3],
+                    le.last_evt[4], le.last_evt[5], le.last_evt[6], le.last_evt[7],
+                });
+            } else {
+                board.log.line("HCIEVN env invalid {x:0>8}", .{hep});
+            }
+        }
         // **轮 80**：rfready=0 时跳过 0x200A（ADV enable 需 RF 上电，否则 blob 内部 hang）
         const rf_ok = ((@as(*volatile u32, @ptrFromInt(0x2010_98BC)).* >> 2) & 1) != 0;
         var ra2: c_int = -100; // 跳过标记

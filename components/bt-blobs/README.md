@@ -30058,7 +30058,7 @@ blob 的 OkE7 里有**多级间接**：
 | 基础命令 CC（OGF-3/4/5） | 1:1 回流（Reset/ReadVersion/ReadBdAddr） | `evt=4` |
 | Read RSSI（OGF-5, B 路径） | CC 回流 | `evt 4→8` |
 | LE 分发链 | 活（OGF=8 分支可达，0x2006/0x2008 已发送） | `evt=8` 稳定 |
-| ADV 类命令（0x2006/0x2008/0x200A） | 发送成功但**无 CC** —— 当前唯一缺口 | 无 `LE rc` 行 |
+| LE 命令 CC（0x2006/0x2008/RSSI） | ✅ **全部投递**（轮 86 per-send evt 4→5→6→7→8，RSSI status=0） | FWD06/FWD8/F1/F2 行 + LASTCC |
 | rfready 守卫 | 生效（RF 未就绪时跳过 0x200A，不再挂死） | `F3 SKIP rfready=0` |
 | 零清修复（`*(0x2f011138)=0` before task_init） | 生效 | 轮 73 起 evt=4 稳定复现 |
 
@@ -30187,3 +30187,36 @@ LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 1. 计数 leEvtTx 入口命中（LE CC 应 +1，实测没动 ⇒ 断在 .L681 之前或 ll_evt_tx 入口判据）；
 2. dump env+64（avail credits）与 assert 是否触发（113 号）；
 3. 对照 RSSI CC（已通）与 LE CC（丢）在 ll_evt_tx 入参/出口的差分。
+
+---
+
+## 🏆 轮 86 终判：LE CC 端到端全通——"OGF-8 无 CC"系日志误读（2026-11-23）
+
+### 决定性测量（per-send evt 轨迹）
+```text
+FWD06 rc=0 evt=5   ← 0x2006 CC 送达（4→5）
+FWD8  rc=0 evt=6   ← 0x2008 CC 送达（5→6）
+F1    rc=0 evt=7   ← F 相位 0x2006 CC 送达（6→7）
+F2    rc=0 evt=8   ← RSSI CC 送达（7→8）
+LASTCC 0e 04 01 05 14 00 = Read RSSI CC：0x0E/len4/ncmd1/opcode 0x1405/status=0 ✓
+HCIEVN env+24 = leEvtTx(0x40076992/76c08) ✓ credits 充足 ✓
+```
+
+### 根因重构：三轮叙事作废
+- ❌ "OGF-8 命令无 CC"（轮 80-85b）—— **evt=8 是 boot 尾最终总数，被当成冻结值**；
+  历史 grep 只见尾部周期行（打的是最终计数），无 per-send 轨迹 ⇒ 误读。
+- ❌ "host 栈未初始化/ADV 状态机未就绪/容器错位"（轮 81-82c）—— 全部是给这个
+  误读找的解释框架；轮 83（三 env 并存）、轮 85b（分发器 .L672 CC 构造链解码）
+  的**结构性成果依然成立且现在被行为证实**。
+- ✅ 真实状态：**BLE controller 协议栈端到端完全可用**（含 LE 命令 CC、status=0）。
+- 唯一真缺口回到轮 80 的定位：**rfready=0 ⇒ 0x200A 跳过 = RF 硬件 bring-up**。
+
+### 教训入库（baremetal-reading-provenance 案例）
+周期性判决行打的是**最终计数**——把"最后一次采样"当"持续不变"正是该 skill 的
+第一反模式。per-send 打点（本轮新增 FWD06/FWD8/F1-evt）才是因果判据。
+
+### 修正后的剩余工作
+1. （小）0x2006 CC 的 status 字节未逐条确认（LASTCC 只存最后一条 = RSSI）——
+   需要时把 LASTCC 打点挪到每条发送后即可；
+2. （唯一大项）**RF bring-up**：rfready 位（0x201098BC.bit2）永不置位 ⇒ 0x200A
+   超时错误码 3 —— 工具链全部保留（oracle 轨迹仪/flash 标记/EXEC 断点/3 skill）。
