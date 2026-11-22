@@ -2230,9 +2230,10 @@ pub fn run() noreturn {
         // regi2c 路径上，模拟写会静默失效。一行成本的对齐实验。
         const f83c_before = (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).*;
         (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).* = 0x0241_1290;
-        osal.logPublic("bt probe: F83C 0x{x:0>8} -> 0x02411290 (mirror official)", .{f83c_before});
-        // **轮 16b：0x200A 改走 B 路径不释放变体**——A 路径 rx 主上下文同步直调
-        // 在队列临界态死锁（轮 14/15 实锤）；B 路径异步入队=oracle 同构。
+        // **轮 76：F83C 写前后二分**（board.log 直写 UART 可靠——FIFO 免疫）
+        board.log.line("F0 {x:0>8}", .{f83c_before});
+        const r6b = transport.sendCmdViaHs(0x2006, &ap);
+        board.log.line("F1 rc={d}", .{r6b});
         const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
         osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);

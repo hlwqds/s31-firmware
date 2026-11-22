@@ -29705,3 +29705,21 @@ env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
 
 ### 轮 76 方向
 补 mutexInit 实现或确认 6 子 init 中哪个依赖 mutex——从 oracle OkE7 反汇编（0x4006a3ac）的 6 子 init 调用点看它们读 impl 的哪些偏移。
+
+---
+
+## 📊 轮 75 终态：1:1 CC 链确认 + hang 收窄至 ADV 类（2026-11-23）
+
+### 稳定复现（两 boot 一致）
+- INITED ✓ 无 panic ✓
+- ReadVersion/Reset/readBdAddr 三命令 **1:1 CC 回流** ✓（evt=4 稳定）
+- 0x2006 B 路径发送成功（F1 rc=0 ✓）但无 CC ⇒ **hang 收窄至 ADV 类命令**
+
+### 60+ 轮 → 本轮状态跃迁
+```text
+此前：evt≤2 冻结（连 Reset 都无 CC）⇒ "总墙"
+现在：evt=4（基础 CC 全通）⇒ 仅 ADV 类命令处理不完整 ⇒ " ADV 子系统缺件"
+```
+
+### 轮 76 方向
+分发器 OGF 分支（.L673 @0x400619a0 = OGF 8 = LE 类）走通后需要 LE 命令子分发表——表由 OkE7 的 6 子 init 之一创建。反汇编 .L673 后续，找 LE 命令 handler 注册的表基址，对照 6 子 init 的产出。也可试：**跳过 0x2006/0x2008，直接发 0x200A（ADV enable）**看是否也卡（如果是，说明整个 LE 分支缺表；如果不是，说明只有 0x2006 特有路径卡）。
