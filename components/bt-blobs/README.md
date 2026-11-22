@@ -29435,3 +29435,27 @@ JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
 - 它们失败 ⇒ env+16/20 = 0 ⇒ task_init walk ⇒ gvLJK4(NULL) ⇒ 全套症状
 - **为什么现在失败而早期 45 次成功**：与 side-table 重构同期 ⇒ 最可疑 = eventq_init 的新副作用（slot.p 写回 buf[2]=1 填充）改变了某个子 init 依赖的状态
 - **回退实验（轮 68 首项）**：临时注释 eventqInit 的 `slot.p = @ptrCast(q); q.buf[2] = 1;` 两行 → boot → 若 45 次恢复 ⇒ 写回引入的副作用定位，改为兼容式（写回但不动 buf）
+
+---
+
+## 🧭 轮 68b：触底——blob 私有事件链布局（2026-11-23）
+
+### 当前崩点终解（当前构建反汇编）
+- 崩指令 = gvLJK4 首条 `lw a5,4(a0)`，a0 = *(container+20) = 0（我们的 cb scratch 零填充）
+- caller（task_deinit walk）：`a5=*(s0)`=container.event=cb_stub ✓ → `lbu a3,0(a5)`=0 → `if(1<0)` false → `lw a0,20(a5)`=scratch+20=0 → gvLJK4(0)
+- **官方 impl 布局对照（btdm_osal_freertos.h:35）**：`{queued@0, fn@4, arg@8}` 仅 12 字节 ⇒ +20 越出官方 impl ⇒ **S31 blob 的 osal 是私有变体**（impl+16/+20 = kNIbP2 链表注册节点字段）
+
+### 链条闭合（全历史会师）
+- OkE7 尾部：`kNIbP2(*(impl+16), 6)`——把 impl 注册进 **id-6 全局链**（链指针在 impl+16！）
+- task_deinit walk：遍历 env+16/20 容器 → impl → **impl+16/+20 = 链表节点字段** → gvLJK4 处理
+- 我们：container.event = cb_stub（零填充 scratch，未注册）⇒ impl+16/20 = 0 ⇒ gvLJK4(0) 崩
+- eventReset 修复 ✓ / eventqInit 写回 ✓ 都对，但 **cb_stub 不是经 OkE7/kNIbP2 正规注册的 impl**
+
+### 轮 69 首项（结构性修复，方向已明）
+**0x2f011138 容器的 impl = 必须经 OkE7 正规创建**（OkE7 自己 malloc(76) env 并对 env+16/20 容器做 event_init + kNIbP2 注册）。我们不需要伪造 cb_stub：
+1. 读 OkE7 源（oracle）确认 env+16/20 容器的 event_init 调用（fn/arg 是什么）
+2. 在我们的 bringup 里于 task_init 前手动完成 OkE7 尾部的 event_init+kNIbP2 序列（对 env+16/20）
+3. task_deinit walk 即可遍历真注册节点 ⇒ 不崩 ⇒ 走通 step 6 ⇒ 全链复活
+（本次 osal 布局对齐——Event{queued,fn,arg} + fn(容器)——是官方语义的正确基础，保留 ✓）
+HEREDOG
+echo "---"; git add -A && git commit -m "bt-blobs: 轮 68b——触底：S31 blob osal=私有变体（impl+16/20=kNIbP2 链节点字段）；轮 69=手补 OkE7 尾部 event_init+kNIbP2 注册序列（oracle 源可得）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l

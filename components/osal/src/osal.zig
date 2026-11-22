@@ -525,13 +525,15 @@ pub fn mutexRelease(slot: *Slot) c_int {
 // 事件与事件队列（状态对象在池里，槽位只存指针）
 // ---------------------------------------------------------------------------
 
+/// **轮 65**：impl 布局对齐官方 `btdm_osal_event_freertos`：
+/// {queued(bool)@0, fn@4, arg@8}——blob 的 deinit/遍历按此布局直接读 impl。
+/// 官方 fn 的参数 = **容器指针**（不是 arg）；arg 仅作附加上下文。
+/// 我们的队列链字段排在官方字段之后（blob 不读它们）。
 pub const Event = struct {
-    next: ?*Event = null,
+    queued: bool = false,
     fn_: ?*const fn (?*anyopaque) callconv(.c) void = null,
     arg: ?*anyopaque = null,
-    queued: bool = false,
-    /// 反查回 controller 自己的那个 4 字节槽位（`eventq_get` 必须返回槽位指针）。
-    slot: ?*Slot = null,
+    next: ?*Event = null,
     in_use: bool = false,
 };
 
@@ -556,7 +558,7 @@ var eventq_pool: Pool(EventQ, 96) = .{};
 // 我们池对象。blob 想写容器随意，我们的事件函数只认地址映射。
 // ---------------------------------------------------------------------------
 const EvAddrEnt = struct { addr: usize = 0, e: ?*Event = null };
-var ev_addr_map: [64]EvAddrEnt = @splat(.{});
+var ev_addr_map: [400]EvAddrEnt = @splat(.{});
 
 fn evByAddr(addr: usize) ?*Event {
     for (&ev_addr_map) |*m| {
@@ -668,8 +670,10 @@ pub fn eventqInit(slot: *Slot) void {
     // **轮 64b 承重写**：官方契约 container.p = 队列实现句柄。OkE7 在
     // eventq_init 后检查 *(container.p)+8 非空 ⇒ 不写 = OkE7 bail(rc=-6)
     // ⇒ fqmZkUKg 哨兵不发布 ⇒ 任务列表头 = 0 ⇒ 分发器查址崩（tlinit2 实录）。
+    // **轮 68 回退实验**：此二行（写回+填充）与 side-table 重构同期引入，
+    // 恰与"env+16/20 注册子 init 从 45→0"同期 ⇒ 嫌疑副作用。回退验证：
     slot.p = @ptrCast(q);
-    q.buf[2] = 1; // +8 偏移非空填充（官方 null-check 通过位）
+    // q.buf[2] = 1;
 }
 
 pub fn eventqDeinit(slot: *Slot) void {
@@ -914,7 +918,9 @@ pub fn eventRun(slot: *Slot) void {
     stats_state.event_run_count += 1;
     if (e.fn_) |f| {
         bumpEvtCounter(f);
-        f(e.arg);
+        // **官方语义**：fn 的参数 = 容器指针（btdm_osal_event_run: event->fn(ev)），
+        // 不是 e.arg。回调从容器反查自己的 impl（轮 65 布局对齐配套）。
+        f(slot);
     }
 }
 
@@ -1148,18 +1154,20 @@ test "eventq: FIFO、put_to_front、remove、is_empty" {
     eventDeinit(&se2);
 }
 
-test "event: run 调到回调，arg 可取可设，is_queued 跟随队列" {
+test "event: run 调到回调（参数=容器指针），arg 可取可设，is_queued 跟随队列" {
     var hit: u32 = 0;
-    const cb = struct {
-        fn f(arg: ?*anyopaque) callconv(.c) void {
-            const p: *u32 = @ptrCast(@alignCast(arg.?));
-            p.* += 1;
+    const Cb = struct {
+        var count: u32 = 0;
+        fn f(container: ?*anyopaque) callconv(.c) void {
+            _ = container; // 官方语义：fn(容器)；测试只验证调用发生
+            count += 1;
         }
-    }.f;
+    };
+    const cb = Cb.f;
     var s: Slot = .{};
     eventInit(&s, cb, &hit);
     eventRun(&s);
-    try testing.expectEqual(@as(u32, 1), hit);
+    try testing.expectEqual(@as(u32, 1), Cb.count);
     try testing.expectEqual(@as(?*anyopaque, &hit), eventGetArg(&s));
     eventSetArg(&s, &hit);
     var q: Slot = .{};
