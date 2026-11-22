@@ -120,6 +120,11 @@ extern fn r_sym_ble_FzTWy2M5WtXtifB7Pwt4(mode: u32) callconv(.c) u32;
 /// **轮 50**：LL 命令处理入口（cfg_ll 注册对——cmd 入口 / arg=0）；取址镜像写
 /// 进 btdm ctx[32]（A 路径门）。ACL 入口 = r_sym_ble_roXDjbaluQmUuwn9uMP8。
 extern fn r_sym_ble_FJxPPDsfsgFzTvO2VwlU() callconv(.c) void;
+/// **轮 51**：regi2c 读原语（ROM 绝对地址 0x2f8012ec，两镜像同址）。
+/// 板上实测调用形如 (reg_add, block_hostid, block)——RF PLL cap = (99,1,6)。
+extern fn phy_i2c_readReg(reg: u8, hostid: u8, block: u8) callconv(.c) u8;
+/// **轮 51**：RF 电源域开关（ana burst 原语，probe F83C 块尾部已有同款调用）。
+extern fn phy_ana_i2c_master_burst_rf_onoff(on: u32) callconv(.c) void;
 
 // **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
 const osi_impl = @import("osi_impl.zig");
@@ -184,6 +189,8 @@ var diag_blk_ok: bool = false;
 /// **轮 48**：modem_rst_conf(0x2010_9C10) 复断言 OR 锁存——两次诊断行之间
 /// 泵每轮读一次并清零释放，锁存 OR 值供诊断行判读"谁在复断言、清了活不活"。
 var rst_or: u32 = 0;
+/// 轮 51：ana 四件套快照泵首轮打印旗。
+var ana_dumped: bool = false;
 fn rd32(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
 }
@@ -2471,6 +2478,27 @@ pub fn run() noreturn {
         // 泵窗内的活读数，不经 LP/flash，无下载刮花问题。
         if (round % 200 == 0) {
             diag_at = now;
+            if (!ana_dumped) {
+                ana_dumped = true;
+                bringup.anaSnap(); // 轮 51 槽 3：泵首轮
+                for (0..bringup.ana_snap_n) |k| {
+                    const s4 = bringup.ana_snap[k];
+                    board.log.line("bt probe: ana[{d}] F818={x:0>8} F800={x:0>8} 11AC={x:0>8} 0450={x:0>8}", .{ k, s4[0], s4[1], s4[2], s4[3] });
+                }
+                // **regi2c 读判别**（读 cal 期写过的 PLL cap 寄存器，同三元组）：
+                // 真值 ⇒ ana 总线活（缺口 = 没人发 RF init 事务）；0/0xFF ⇒ 总线死
+                // （追 i2c_mst 时钟门）。lpTrace 相位包夹：0xA001 打 0xA002 不打 =
+                // 挂死在总线等待内部。
+                // **轮 51 追加**：首轮读回 0x00 + calflag=1 ⇒ RF 电源域校准后被关。
+                // 此处重调 rf_onoff(1) 再读：非零 ⇒ 有人在校准后关 RF（抓关者）；
+                // 仍 0 ⇒ rf_onoff 自身未生效（前置缺失）。
+                osal.lpTrace(3, 0xA001);
+                phy_ana_i2c_master_burst_rf_onoff(1);
+                osal.lpTrace(3, 0xA003);
+                const capv: u8 = phy_i2c_readReg(99, 1, 6);
+                osal.lpTrace(3, 0xA002);
+                board.log.line("bt probe: regi2c(99,1,6)=0x{x:0>2}", .{capv});
+            }
             // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲
             // + 0x450 振荡 = BB 测量在跑；两者静止 = BB 未启动。
             const m47c: u32 = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;

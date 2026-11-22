@@ -29031,3 +29031,31 @@ bt hci >> CMD opcode=0x2008 plen=32
 1. **四点 ana 快照**：esp_btbb_enable 前后 / INITED / 泵首轮，存 {F818,F800,11AC,0450} 四件套——定位 ana 域死亡的确切一步（esp_btbb_enable 是头号嫌疑：官方 RF init owner，我们调了但从没查它做了什么）
 2. **regi2c 读实验**（轮 22/23 既定未跑）：泵期 `phy_i2c_readReg` 读已知模拟寄存器——0/0xFF ⇒ ana 总线死（追 i2c_mst 时钟门）；真值 ⇒ 模拟域活，缺口在 analog-ok→rfready 之间 = LL RF init 例程未执行
 - 卫生项已完成：/tmp/full_disasm.txt 已从当前 app.elf 重生成（round-44 旧布局弃用）
+
+---
+
+## ⚡ 轮 51：ana 域死亡定位——RF 电源域校准后被关（2026-11-22）
+
+### 四点快照（/tmp/ana51.log，槽 = btbb前/btbb后/INITED/泵首轮）
+```text
+F818=2900e444 F800=002f0669 11AC=00000000 0450=0011→00102000（四点全静止）
+```
+- F800 = 官方轨迹**起点值**（012f0669 同族，无 bit8）跨四点不变 ⇒ **校准后零 ana 事务**
+- esp_btbb_enable 对 ana 域零效果；0450 对齐写生效且无人改回
+
+### regi2c 判别（/tmp/regi2c.log）
+- `phy_i2c_readReg(99,1,6)`（RF PLL cap，cal 期写过）**快速完成**（未挂死，0xA002 相位过）返回 **0x00**
+- ⇒ **总线活、目标域读 0** = RF 模拟电源域掉电（非总线时钟死）
+- 呼应 calflag=1：校准期域活着（fe_readable=1, cal 有真值），**校准结束被 PHY 关电**
+
+### rf_onoff 重试（/tmp/rfon.log）
+- 泵内重调 `phy_ana_i2c_master_burst_rf_onoff(1)` 再读 ⇒ **仍 0x00**
+- ⇒ burst 开关不够：恢复需要 **PMU RF 电源序列**（LP 域电源状态机，非 ana burst）
+
+### 终局定性（41+ 轮战争的地基墙）
+RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = modem_flag/keep-on 机制（轮 21b 记录"官方 phy_module_enable 负责释放、我们链接的 IDF v6.1 不释放"）+ PMU RF 上电序列（s31-pmu-rf-power-porting skill 领域）。
+
+### 轮 52 首项：PMU 电源域审计
+1. 对拍 oracle：esp_phy_enable 返回时刻的 LP/PMU RF 域状态寄存器（0x2E00_xxxx，pmu RF LDO/switch）——skill 记录 pmu_init.c.obj 已链入，含 phy RF power 寄存器
+2. 我们 esp_phy_enable(2) 完成后同寄存器 diff ⇒ 找"被关掉"的确切一位
+3. 保持_on 的官方 owner（modem_flag 期望的"别的 owner"）极可能 = esp_bt_controller_enable 内部的 phy_conn_keep_on 等价调用——FzTWy2 分发器之后 LL init 链里找

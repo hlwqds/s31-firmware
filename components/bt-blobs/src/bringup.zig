@@ -54,6 +54,23 @@ inline fn mmioPtr(comptime T: type, addr: usize) *volatile T {
 inline fn mmioRd(addr: usize) u32 {
     return if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* else 0;
 }
+
+/// **轮 51：ana 四件套时序快照**——定位 ana 域死亡的确切一步。
+/// 槽位：0=esp_btbb_enable 前 / 1=后 / 2=INITED / 3=泵首轮。
+/// 读数 {F818(ana CONF0), F800(I2C0_CTRL), 11AC(FE cnt), 0450(FE cfg)}。
+pub var ana_snap: [8][4]u32 = @splat(@splat(0));
+pub var ana_snap_n: usize = 0;
+pub fn anaSnap() void {
+    if (!freestanding) return;
+    if (ana_snap_n >= ana_snap.len) return;
+    ana_snap[ana_snap_n] = .{
+        mmioRd(0x2010_F818),
+        mmioRd(0x2010_F800),
+        mmioRd(0x2010_11AC),
+        mmioRd(0x2010_0450),
+    };
+    ana_snap_n += 1;
+}
 /// 32 位 MMIO 读并放宽为 usize（目标板指针 32 位；主机 64 位上 `*usize` 对 4 字节
 /// 对齐地址会编译失败）。
 inline fn rdUsz(addr: usize) usize {
@@ -831,6 +848,7 @@ pub fn init(cfg: *config.Config) c_int {
         var probe_local2: u8 = 0;
         if (freestanding) board.trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
     }
+    anaSnap(); // 轮 51 槽 2：INITED
     osal.logPublic("bt bringup: INITED", .{});
     return 0;
 }
@@ -859,8 +877,10 @@ pub fn enable() c_int {
     mmioPtr(u32, 0x2010_0450).* = 0x0010_2000;
     {
         const esp_btbb_enable = @extern(*const fn () callconv(.c) void, .{ .name = "esp_btbb_enable" });
+        anaSnap(); // 轮 51 槽 0：btbb 前
         osal.logPublic("bt bringup: calling esp_btbb_enable", .{});
         esp_btbb_enable();
+        anaSnap(); // 轮 51 槽 1：btbb 后
         osal.logPublic("bt bringup: esp_btbb_enable done", .{});
         // 回读：若被 enable 内部改回，说明写点要移到 enable 之后（别急着判死）。
         osal.logPublic("bt probe: fe450=0x{x:0>8}", .{mmioRd(0x2010_0450)});
