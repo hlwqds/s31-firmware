@@ -107,6 +107,9 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        csrr    t3, 0x7a1
         \\        slli    t3, t3, 1
         \\        bgez    t3, .Lwpdone
+        \\        # **先取权威 mepc**（轮 35 修复：过滤器 t5 此前为残留垃圾，
+        \\        # 解引用即 fault ⇒ 冻结不落盘 ⇒ 轮 31-32 垃圾捕获总根因）。
+        \\        csrr    t5, mepc
         \\        # **c.ebreak 过滤**：HIT 位粘滞（命中一次后恒 1）——blob 内部
         \\        # assert 的 c.ebreak(0x9002) 会被误入快路径无限循环（轮 31
         \\        # count 爆 20 亿根因）。mepc 处半字 == 0x9002 ⇒ 走 dispatch
