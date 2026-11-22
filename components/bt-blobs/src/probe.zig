@@ -1942,19 +1942,28 @@ pub fn run() noreturn {
             rec[40] = bt_ring_head;
             rec[41] = bt_log_dropped;
             rec[42] = bt_raw_head;
-            rec[43] = 0;
+            rec[43] = st6.tx_type; // 出站首包类型（btdmTx 计 5 ≈ 5 条 Complete）
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];
-            // **最后一条日志的载荷**（p2 指针 ≤48B，rec[92..104]）——HCI 级真内容。
+            // **最后一条日志的载荷**（p2 指针 ≤32B，rec[92..100]）——HCI 级真内容。
             {
                 const last = bt_raw[(bt_raw_head +% 15) % 16];
-                const plen: usize = @min(last[1], 48);
+                const plen: usize = @min(last[1], 32);
                 const dst9: [*]u8 = @ptrCast(&rec[92]);
                 const src9: [*]volatile u8 = @ptrFromInt(last[2]);
                 var b9: usize = 0;
                 while (b9 < plen) : (b9 += 1) dst9[b9] = src9[b9];
             }
+            // **出站首包头 16B**（btdmTx 的 tx_first，5 次 btdm_tx ≈ 5 条 Complete 的第一条）。
+            rec[100] = @as(u32, st6.tx_first[0]) | @as(u32, st6.tx_first[1]) << 8 |
+                @as(u32, st6.tx_first[2]) << 16 | @as(u32, st6.tx_first[3]) << 24;
+            rec[101] = @as(u32, st6.tx_first[4]) | @as(u32, st6.tx_first[5]) << 8 |
+                @as(u32, st6.tx_first[6]) << 16 | @as(u32, st6.tx_first[7]) << 24;
+            rec[102] = @as(u32, st6.tx_first[8]) | @as(u32, st6.tx_first[9]) << 8 |
+                @as(u32, st6.tx_first[10]) << 16 | @as(u32, st6.tx_first[11]) << 24;
+            rec[103] = @as(u32, st6.tx_first[12]) | @as(u32, st6.tx_first[13]) << 8 |
+                @as(u32, st6.tx_first[14]) << 16 | @as(u32, st6.tx_first[15]) << 24;
             // **文本行环整环**（768B ⇒ rec[104..296]；裸三元组/载荷已先行落位，勿覆盖）。
             const dst: [*]u8 = @ptrCast(&rec[104]);
             const src2: [*]const u8 = @ptrCast(&bt_ring);
@@ -2044,6 +2053,31 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
         flashStage(23);
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
+        // **轮 11：0x200A 后第二份标记（0x18F000）**——若本记录存在 ⇒ 0x200A 返回了；
+        // FE450/47C 判「广播真在跑（450 进官方振荡集/47C 脉冲）」vs「RF 未发车（仍静止）」。
+        {
+            const esw6 = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            const ese6 = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+            const stA = transport.stats();
+            var recA: [8]u32 = .{
+                0xADC0_BBA2,
+                @as(*volatile u32, @ptrFromInt(0x2010_0450)).*,
+                @as(*volatile u32, @ptrFromInt(0x2010_047C)).*,
+                stA.evt_count,
+                stA.btdm_tx,
+                @bitCast(ra2),
+                @as(*volatile u32, @ptrFromInt(0x2080_001C)).*, // LP counter 现值
+                stA.tx_type,
+            };
+            const clic25c: usize = 0x1080_1000 + 25 * 4;
+            const g6: u32 = @as(*volatile u32, @ptrFromInt(clic25c)).*;
+            @as(*volatile u32, @ptrFromInt(clic25c)).* = g6 & ~@as(u32, 0x108);
+            _ = ese6(0x18F000 / 0x1000);
+            if (builtin.target.os.tag == .freestanding) board.hw.flashOpBegin();
+            _ = esw6(0x18F000, &recA, @sizeOf(@TypeOf(recA)));
+            if (builtin.target.os.tag == .freestanding) board.hw.flashOpEnd();
+            @as(*volatile u32, @ptrFromInt(clic25c)).* = g6;
+        }
     }
     var round: u32 = 0;
     var evt_at: ?u32 = null;
