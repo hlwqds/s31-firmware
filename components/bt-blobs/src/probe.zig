@@ -879,7 +879,7 @@ fn writeLightMarker(phase: u32) void {
 
 /// **轮 119d**：ULP keeper 武装（幂等，可在 bringup.init 前后各调一次）。
 /// init 内部的 LP 域动作会把 boot addr 清 0（BOOTADDR 回读实证）⇒ init 后必须重装。
-fn ulpKeeperArm() void {
+fn ulpKeeperArm(comptime tag: u8) void {
     const ulp_prog = [_]u8{
         // v13 56B 魔数计数器（objdump 核对 ✓）：count=0xC0DE0000|(n&0xFFFF)
         // @0x2E000F00、phase=0xFADE0000|((n+1)&15) @0x2E000F20。
@@ -895,13 +895,23 @@ fn ulpKeeperArm() void {
     // **轮 119f 勘误**：reg.h 权威 = base+0x18（0x10/0x14 是保留洞，struct 枚举
     // 有空洞不可信）。r119c-e 的 0x10 写进黑洞 = 我的误修，撤回。
     @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS lp_core_boot_addr
+    // **轮 119j 全表勘误**（lp_peri_clkrst_reg.h 权威，base=0x20710000）：
+    //   CPU_CTRL=+0x4(bit30 clk_force_on/bit31 rst_en)、RAM_CTRL=+0xc(bit30
+    //   ram_clk_en 默认1/bit31 ram_rst_en)、INTR_CTRL=+0x28(bit30 intr_clk_en/
+    //   bit31 intr_rst_en)。旧代码 intr 写落 CPU_CTRL=无害重复、+0x0 写=保留洞。
     const lpc: usize = 0x2071_0000; // LP_PERI_CLKRST
-    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* |= (1 << 30); // cpu_ctrl.lp_core_clk_force_on
-    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* |= (1 << 30); // intr_ctrl.lp_intr_clk_en(bit30)
-    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 31) | (1 << 30); // cpu 复位脉冲(WT)
-    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* |= (1 << 31); // intr_ctrl.lp_intr_rst_en
-    @as(*volatile u32, @ptrFromInt(lpc + 0x0)).* = (1 << 30); // 释放 cpu 复位
-    @as(*volatile u32, @ptrFromInt(lpc + 0x4)).* &= ~@as(u32, 1 << 31); // 释放 intr 复位
+    const ccp: usize = lpc + 0x4; // CPU_CTRL
+    const rcp: usize = lpc + 0xc; // RAM_CTRL
+    const icp: usize = lpc + 0x28; // INTR_CTRL
+    @as(*volatile u32, @ptrFromInt(rcp)).* |= (1 << 30); // lp_ram_clk_en
+    @as(*volatile u32, @ptrFromInt(ccp)).* |= (1 << 30); // lp_core_clk_force_on
+    @as(*volatile u32, @ptrFromInt(icp)).* |= (1 << 30); // lp_intr_clk_en
+    @as(*volatile u32, @ptrFromInt(ccp)).* = (1 << 31) | (1 << 30); // cpu 复位脉冲(WT)
+    @as(*volatile u32, @ptrFromInt(icp)).* |= (1 << 31); // intr 复位脉冲(与 cpu 同步)
+    @as(*volatile u32, @ptrFromInt(ccp)).* = (1 << 30); // 释放 cpu 复位
+    @as(*volatile u32, @ptrFromInt(icp)).* &= ~@as(u32, 1 << 31); // 释放 intr 复位
+    // 清 LP 核复位原因旗（下次 LPCORST 读数只反映本 boot 之后的事件）
+    @as(*volatile u32, @ptrFromInt(0x2070_1038)).* = 0;
     // **轮 119i**：LP 根时钟源 force-on（LP_AONCLKRST root_clk_conf @0x20701000：
     // bit28 pll80m / bit29 xtal / bit30 fosc）。裸机跳过 IDF rtc_clk_init，
     // 源全默认 force-on=0 ⇒ 睡眠门控可能把 LP 核唯一时钟源关死。
@@ -909,6 +919,12 @@ fn ulpKeeperArm() void {
     // **轮 119g**：PMU HP→LP CPU 触发（lp_core_ll_hp_wake_lp）——boot addr/
     // 时钟/复位三件齐后核仍未执行 ⇒ PMU 可能持 LP CPU 在等 HP 唤醒触发。
     @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // PMU_HP_TRIGGER_LP(WT)
+    // **轮 119k**：写后即时回读——分离「写没落地」vs「后被 blob 清」
+    const c: u32 = @as(*volatile u32, @ptrFromInt(ccp)).*;
+    const r: u32 = @as(*volatile u32, @ptrFromInt(rcp)).*;
+    const i: u32 = @as(*volatile u32, @ptrFromInt(icp)).*;
+    const ba: u32 = @as(*volatile u32, @ptrFromInt(0x2070_0018)).*;
+    board.log.line("ARM{d} cpu={x:0>8} ram={x:0>8} intr={x:0>8} ba={x:0>8}", .{ tag, c, r, i, ba });
 }
 
 pub fn run() noreturn {
@@ -1361,6 +1377,11 @@ pub fn run() noreturn {
             // 并自我复位（崩溃环）；flag=0 cause=0 = 核从未离开过复位态。
             const lprc: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
             board.log.line("LPCORST raw=0x{x:0>8} (bit0=flag, [6:1]=cause, bit29=pmu_mask)", .{lprc});
+            // **轮 119j**：LP_PERI_CLKRST 三寄存器回读（清旗后 re-arm 已跑）
+            const clkr: u32 = @as(*volatile u32, @ptrFromInt(0x2071_0004)).*;
+            const ramr: u32 = @as(*volatile u32, @ptrFromInt(0x2071_000c)).*;
+            const intrr: u32 = @as(*volatile u32, @ptrFromInt(0x2071_0028)).*;
+            board.log.line("LPCLK cpu={x:0>8} ram={x:0>8} intr={x:0>8} (cpu[30]=1 ram[30]=1 intr[30]=1 期望)", .{ clkr, ramr, intrr });
             {
                 // boot 序号：LP RAM 跨数字复位保留 ⇒ 每次本读出块执行 = 一个 boot
                 const bseq: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0F40)).* + 1;
@@ -1803,10 +1824,10 @@ pub fn run() noreturn {
     }
 
     // **轮 119d**：keeper 预武装（幂等；init 内 LP 域动作会清 boot addr ⇒ init 后重装）
-    ulpKeeperArm();
+    ulpKeeperArm(0);
     var rc = bringup.init(&cfg);
     // **轮 119d**：init 后重武装（init 的 LP 域动作清了 boot addr——回读实证）
-    ulpKeeperArm();
+    ulpKeeperArm(1);
     {
         const ba: u32 = @as(*volatile u32, @ptrFromInt(0x2070_0018)).*;
         board.log.line("REARM BOOTADDR=0x{x:0>8} (期望 0x2E001000)", .{ba});
@@ -2483,7 +2504,17 @@ pub fn run() noreturn {
             var poll: u32 = 0;
             while (poll < 10) : (poll += 1) {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>8} ph={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.*, hpp.* });
+                // **轮 119k 根修**：blob 在处理中清 LP_PERI_CLKRST CPU_CTRL.bit30/
+                // INTR_CTRL.bit30（LP 核时钟坍缩真身，上一 boot 遗留读数实证）。
+                // 主上下文 mcycle 环活着 ⇒ 每次迭代重断言，核时钟被清即恢复。
+                @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
+                @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
+                @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000;
+                // **轮 119l**：LPCORST 实捕 cause=0xA（PMU LP CPU reset）= blob 经
+                // PMU 层复位 LP CPU ⇒ 每次迭代补 PMU 级唤醒触发。
+                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31);
+                const lprcp: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>8} ph={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.*, hpp.*, lprcp });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
