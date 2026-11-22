@@ -29783,3 +29783,27 @@ F2 rc=0 evt=8 ← **evt 从 4 翻倍到 8！Read RSSI CC 回流！**
 ✗ ADV enable → RF/synth 硬件依赖（rfready=0）
 ```
 **从"controller 不会动"到"BLE 协议栈全链通、只剩 RF 硬件 bring-up"**
+
+---
+
+## 🏁 78 轮战争最终定局（2026-11-23 session 完整闭合）
+
+### 走到最远的位置
+```text
+boot → INITED → ReadVersion CC ✓ → Reset CC ✓ → readBdAddr CC ✓
+→ F83C ✓ → 0x2006 B 路径 ✓ → Read RSSI(0x1405) ✓ → **evt=8**
+→ [capture 60s 截止，board 活着继续跑，无 panic 无 hang]
+→ 0x200A 发送 → RF 依赖（rfready=0 FE=0）= 唯一剩余硬件级缺口
+```
+
+### BLE 协议栈状态
+| 层 | 状态 |
+|---|---|
+| osal 底座（mutex/eventq/event/memblock） | ✅ 全通 |
+| OkE7 env init（lazy 76B + 内嵌容器） | ✅ 全通 |
+| HCILL 命令分发（OGF 解码→分支→处理） | ✅ 全通 |
+| CC 回流（ll_evt_tx → transport → evt_count） | ✅ 全通 |
+| **RF 硬件（synth/FE450/98BC/rfready）** | ❌ 未上电 |
+
+### 下 session 唯一任务
+**RF 硬件 bring-up**（这是硬件层问题，非软件/协议）——rfready=0 FE=0 的 6 子 init 前置链。已有工具链（oracle ANASET/flash 标记/diag 全字段）完整保留。
