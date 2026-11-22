@@ -1305,6 +1305,10 @@ pub fn run() noreturn {
             const h60c: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_060C)).*;
             board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d} h600={x:0>8}", .{ pc0, pc1, nmic, h600 });
             board.log.line("ADVRES magic={x:0>8} first={x:0>8} last={x:0>8}", .{ h604, h608, h60c });
+            const h610: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0610)).*;
+            const h614: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0614)).*;
+            const h618: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0618)).*;
+            board.log.line("ADVRES2 9C10={x:0>8} 98B8={x:0>8} 98C0={x:0>8}", .{ h610, h614, h618 });
             // **轮 95**：LP PC 环 dump（0x2E0003A0，32 项——上一轮挂死 boot 的
             // NMI 每 2ms 采样序列）⇒ 挂死自旋 PC 直接可见
             {
@@ -2405,9 +2409,8 @@ pub fn run() noreturn {
             // = 同步死锁。A 路径入队 ⇒ controller task 在自己上下文处理 ⇒
             // 内部等待可满足（基础命令 A 路径已证通：A(rx) sendReadVersion）。
             ra2 = transport.sendCmd(0x200A, &ae);
-            // **轮 94-final**：writeLightMarker(3)=post-ADV-enable；recL[8]=98BC、
-            // recL[9]=F800（CLIC[25] 门+flashOpBegin 通道齐备）
-            writeLightMarker(3);
+            // **轮 100**：post-send 不再用 writeLightMarker（ROM 擦除内部
+            // esp_rom_delay_us = 楔点，会挡住后面的 mcycle 观测块）。观测全走 LP。
             // **轮 96**：post-send 观测全走非 ROM 通道——0x200A 后 blob 楔死
             // ROM 的 flash-erase 等待与 esp_rom_delay_us（SYS_TIMER 时钟被门控）。
             // mcycle 忙等轮询 98BC 15s，首/末值 + F800 写远处 LP 槽
@@ -2437,6 +2440,14 @@ pub fn run() noreturn {
                 lp608.* = s_first;
                 lp60c.* = s_last;
                 lp600.* = f_last;
+                // **轮 101**：MODEM_SYSCON 复位/时钟寄存器挂死快照——9C10
+                // （modem_rst_conf：blob ADV-enable 可能重断言 FE 复位位）
+                const r9c10: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*;
+                const r98b8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98B8)).*;
+                const r98c0: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98C0)).*;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0610)).* = r9c10;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0614)).* = r98b8;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0618)).* = r98c0;
             }
         } else {
             board.log.line("F3 SKIP rfready=0", .{});

@@ -30725,3 +30725,32 @@ ULP 压回（LP 域，0.25s 周期）不足以维持计数连续性 ⇒ 一切�
 （sleep_en 0x2f011044 系、cfg.ble bytes 10-11、coex 状态）——对拍 oracle 的
 这些对象字段 ⇒ 改我们的配置使 blob 不进入深睡式收缩 ⇒ ADV-enable 正常返回
 ⇒ synth 上电 ⇒ 广播。不再尝试挂死后恢复（已证不可行）。
+
+---
+
+## 🔒 轮 101 终判：挂死期观测通道穷尽（2026-11-23）
+
+F3 重构（mcycle 观测前置、删 writeLightMarker(3) ROM 楔点）+ ADVRES2（9C10/98B8/98C0
+复位位快照）落地。boot2 软复位读 LP 槽 = 全零 ⇒ **本板 EN 接线使 esptool 复位 =
+全掉电域复位 ⇒ LP 槽不跨 esptool 复位** ⇒ LP 通道仅本 boot 内有效（boot2 读不到
+boot1 的写入）。
+
+### 0x200A 后观测通道终局清单
+| 通道 | 状态 |
+| --- | --- |
+| UART（任何形式） | ❌ ROM FIFO 排空环（SYS_TIMER 门控） |
+| ROM flash 写（writeLightMarker/裸 spiflash） | ❌ esp_rom_delay_us 内部自旋 |
+| LP 槽跨 boot 读回 | ❌ esptool 复位=全掉电，LP 清零 |
+| RTC WDT 兜底复位 | ❌ RC_SLOW 被切（ULP 压回间隙断续） |
+| MWDT1 | ❌ 0x2080 块时钟门控 |
+| NMI 打印 | ❌ T0（TIMERGRP）门控 |
+
+### 唯一活通道：挂死**前**的写（post-send 0.5s 内 mcycle 轮询 + LP 写 ✓ 已做）
+⇒ 下 session 若需挂死后数据：mcycle 轮询块内**直接写 flash 的裸寄存器路径**
+（WPROTECT+CMD erase/write+mcycle 等 done——绕开 esp_rom_delay_us；SPI 寄存器
+基址从 ROM 反汇编提取）。或接受 boot 内 LP 快照 + 单复位窗口手工时序读出。
+
+### 0x200A 状态最新快照（本轮）
+F800=0x012f0669 武装 ✓（静默组合解锁）、coex 位置 ✓、post-send mcycle 轮询
+15s 内 98BC 无变化（hang 窗口内 synth 未起）。ADV-enable 完成判定仍缺
+（post-send 记录通道待轮 99 的裸 SPI 路径）。
