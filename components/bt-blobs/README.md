@@ -28617,6 +28617,17 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   2. **写者跟随 flag 的重定位地址** ⇒ 写者持有的是**重定位正确**的 flag 指针（= 我们自己链接的 phy 胶水代码 phy_init.c.obj 的合法 `s_is_phy_calibrated` 写！），但**执行发生在别名窗 PC** ⇒ 有人经**别名地址的函数指针**跳进了 phy 代码。
   3. **谁持别名函数指针**：候选 = porting 注册表（g_phyFuns/ext_funcs 表项被别名地址污染）、或 phy 代码内的间接调用表被 bss 头部踩踏波及。抓法（下轮）：快路径加 sp 向上 ra 链扫描（LP 记 8 层）→ 别名跳转的**上游调用者**现形；或对 `wp_hit_ra` 的候选存储区做 STORE 观察点（谁写入了别名指针）。
   - build.zig 输入顺序调整（closure-first）**暂缓**：先抓别名指针的宿主，避免多变量同时动。
+- **🏁🏁 轮 35 终局定案（2026-11-22）：整段 bss 铺在 blob 烘焙指针窗口里——26 轮战争的总根因**：
+  1. **误观察纠正**：0x2f010f00 = `pmu_hal.16`（phy 函数表 .data 静态，合法更新 = "64 次命中/ASCII 值"的真解释）；真 flag `s_is_phy_calibrated` @ **0x2f010f40**（bss 头，nm 本构建实测）。
+  2. **真 flag 确认被踩**（STORE 观察点 @0x2f010f40）：命中 PC=0x09a638e3（别名窗），ra=0xc4d9e3c7，LP count=41.3 亿（每 boot 数千次 store）⇒ **flag 被非布尔数据持续覆写**（0x5B=91 非布尔）⇒ enable 入口恒 skip load_cal。
+  3. **空间核算（终局）**：SRAM 512KB = blob 闭包原布局窗口 0x2f000800-0x2f022a80（**137KB 不可动**——闭包重定位后内部引用自洽，但其与胶水/zig bss 的**窗口重叠区互踩**）+ 栈 16KB + 剩余 375KB。我们的 data(1.5KB)+bss(66KB)+heap(300KB)=368KB ✓ **恰好装进 0x2f022a80 后的 375KB（7KB 富余）**。
+  4. **⇒ 32 轮全部反常的统一解释**：整个 zig bss（event_pool/trap_stack/task_pool/胶水静态）与 blob 窗口重叠 ⇒ 双向互踩 ⇒ 任务上下文/校准静态/日志环全在战区 ⇒ synth 永不锁只是症状之一。
+  - **下 session 首项 = s31.ld 布局手术（终版方案）**：
+    ① `.data`/.bss 输入规则改为 **closure-first**：`*/flat/*(.data ...)` 先收（闭包原布局 0x2f000800-0x2f022a80 不动，烘焙指针一致），其余（zig+胶水）收到 **0x2f022a80 之后**；
+    ② `_heap_start = _bss_end`（自动跟随，heap ≈ 300KB ✓）；
+    ③ 重 nm 更新三处硬编码（flag 观察地址/bringup 清零/冻结读——全部符号化改为 nm 流程）；
+    ④ 判据：观察点**零命中** + FE450/47C 振荡 + 98BC.bit2=1。
+    ⑤ 已知硬编码风险：0x2f011044 sleep-cfg poke（闭包区 ✓ 不动）、mcontrol 时代地址（已弃用）。
 - **🏁 轮 33（2026-11-22）：踩踏者现形——`__floatuneixf` 序言 + 坏栈指针**：
   1. 观察点瞄准修正后的 flag 地址（0x2f010f00，本构建 nm 实测；轮 30 的教训=地址必须随构建 nm 重取）→ **单次干净命中**（tselect=0 显式解除修复生效，无级联）。
   2. **写者 PC = 0x400a63eb = `__floatuneixf` 序言的 sp 相对保存指令**（compiler_rt 整数→f80 软浮点转换——**浮点格式化打印路径**！）；反推 **sp ≈ 0x2f010eb4**（sp+72 = flag）——**该栈地址在 bss 跨度内，无任何合法栈居住**。

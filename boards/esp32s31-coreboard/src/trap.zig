@@ -87,10 +87,14 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
     // = 嵌套 fault → CPU_LOCKUP。改为记录 mepc/cause 到 SRAM 后 mret 重试
     // （写窗口结束 cache 恢复后重试成功）。t3/t4/t5 压栈/恢复，双路径各归各位。
     asm volatile (
-        \\        addi    sp, sp, -12
+        \\        addi    sp, sp, -28
         \\        sw      t3, 0(sp)
         \\        sw      t4, 4(sp)
         \\        sw      t5, 8(sp)
+        \\        sw      t0, 12(sp)
+        \\        sw      t1, 16(sp)
+        \\        sw      t2, 20(sp)
+        \\        sw      ra, 24(sp)
         \\        # **轮 29 快路径**：cause=3（观察点命中）+ 武装 ⇒ 全 SRAM/CSR 处理
         \\        # （零 flash 取指——flash 写窗口内命中也不崩），原地恢复=store 正常
         \\        # 重执行，触发器已禁 ⇒ 不重触发。
@@ -114,32 +118,60 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        lw      t3, 0(t3)
         \\        beqz    t3, .Lwpdone
         \\        csrr    t5, mepc
-        \\        la      t3, wp_hit_pc
+        \\        # **swap 过滤**：mepc == 0x40078380（bt_swap_context 的合法
+        \\        # saved-sp 写入，每轮换栈都命中）⇒ 清 HIT 位原地恢复（store 正常
+        \\        # 执行、后续命中继续走本路径——不解除、不捕获、上下文切换无恙）。
+        \\        li      t4, 0x40078380
+        \\        beq     t5, t4, .Lwpswap
+        \\        # **非 swap 写者 = 污染写入者**：wp2 三元组 + LP2 槽捕获，
+        \\        # 解除触发器后原地恢复（污染写执行一次，诊断语义）。
+        \\        la      t3, wp2_hit_pc
         \\        sw      t5, 0(t3)
-        \\        # **LP 槽副本（0x2E0004A0..4AC）**——bss 全局可能被同一神秘写者踩
-        \\        # （轮 30：count 恒 20 亿且跨构建恒定=被覆写非递增）；LP 域在踩踏
-        \\        # 域之外且 post-pmu 可写（此刻在标定期=pmu 后）。ra 存 +4、计数 +8。
-        \\        li      t4, 0x2E0004A0
-        \\        sw      t5, 0(t4)
-        \\        sw      ra, 4(t4)
-        \\        la      t3, wp_hit_ra
+        \\        la      t3, wp2_hit_ra
         \\        sw      ra, 0(t3)
-        \\        la      t3, wp_hit_count
+        \\        la      t3, wp2_hit_count
         \\        lw      t5, 0(t3)
         \\        addi    t5, t5, 1
         \\        sw      t5, 0(t3)
-        \\        lw      t5, 0(t4)
-        \\        addi    t5, t5, 1
-        \\        sw      t5, 4(t4)
-        \\        # **显式 tselect=0 再解除**——本芯片命中不自动置 tselect（轮 31：
-        \\        # count 爆 20 亿 = 解除写错槽，触发器持续命中）；主代码 tselect
-        \\        # 停留在不确定值，必须先归零再写 tdata1。
         \\        csrw    0x7a0, zero
         \\        csrw    0x7a1, zero
+        \\        j       .Lwprestore
+        \\.Lwpswap:
+        \\        # 合法 swap：清 HIT 位（bit30），tdata1 其余位保持武装。
+        \\        csrr    t3, 0x7a1
+        \\        lui     t4, 0xBFFFF
+        \\        and     t3, t3, t4
+        \\        csrw    0x7a1, t3
+        \\.Lwprestore:
+        \\        # **ra 链扫描（轮 33 计划）**：从被中断 sp 向上收集文本段候选
+        \\        # 返回地址 ×8 → LP 0x2E0004B0..4CC（定位别名跳转的上游调用者）。
+        \\        addi    t3, sp, 28
+        \\        li      t4, 0x2E0004B0
+        \\        li      t5, 8
+        \\        addi    t0, t3, 96
+        \\.Lwpscan:
+        \\        bgeu    t3, t0, .Lwpsdone
+        \\        lw      t1, 0(t3)
+        \\        li      t2, 0x40000020
+        \\        bltu    t1, t2, .Lwpskip
+        \\        li      t2, 0x400B2000
+        \\        bgeu    t1, t2, .Lwpskip
+        \\        sw      t1, 0(t4)
+        \\        addi    t4, t4, 4
+        \\        addi    t5, t5, -1
+        \\        beqz    t5, .Lwpsdone
+        \\.Lwpskip:
+        \\        addi    t3, t3, 4
+        \\        j       .Lwpscan
+        \\.Lwpsdone:
+        \\        lw      t0, 12(sp)
+        \\        lw      t1, 16(sp)
+        \\        lw      t2, 20(sp)
+        \\        lw      ra, 24(sp)
         \\        lw      t3, 0(sp)
         \\        lw      t4, 4(sp)
         \\        lw      t5, 8(sp)
-        \\        addi    sp, sp, 12
+        \\        addi    sp, sp, 28
         \\        mret
         \\.Lwpdone:
         \\        la      t3, flash_op_window
@@ -157,10 +189,14 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        addi    sp, sp, 12
         \\        mret
         \\9:
+        \\        lw      t0, 12(sp)
+        \\        lw      t1, 16(sp)
+        \\        lw      t2, 20(sp)
+        \\        lw      ra, 24(sp)
         \\        lw      t3, 0(sp)
         \\        lw      t4, 4(sp)
         \\        lw      t5, 8(sp)
-        \\        addi    sp, sp, 12
+        \\        addi    sp, sp, 28
         \\        addi    sp, sp, -96
         \\        sw      ra, 0(sp)
         \\        sw      t0, 4(sp)
@@ -1298,6 +1334,12 @@ pub export var wp_hit_ra: u32 = 0;
 pub export var wp_hit_count: u32 = 0;
 /// **轮 29**：观察点武装旗子——trapEntry 快路径的开关（SRAM .bss，asm `la` 直达）。
 pub export var wp_watch_on: u32 = 0;
+/// **轮 34**：saved-sp 槽（tasks[0].ctx.sp @0x2f010cec）的**非 swap 写者**——
+/// 合法写者只有 bt_swap_context 的 `sw sp,0(a0)`（0x40078380），其余命中 =
+/// 污染写入者（原始踩踏者）。
+pub export var wp2_hit_pc: u32 = 0;
+pub export var wp2_hit_ra: u32 = 0;
+pub export var wp2_hit_count: u32 = 0;
 var bp_last_tsel: u32 = 0;
 
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：
