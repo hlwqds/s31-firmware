@@ -28741,3 +28741,33 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   - **下一 session 首项**：dump SCHED 区 128 字逐字对照（oracle BW 扩展到 SCHED 区）→ 找出 20 个缺失寄存器的精确偏移 → 在 probe 中补写 → FE450/47C 振荡 + 98BC.bit2 置位 = 破墙判据。
 - **⚠ 镜像三态混淆（2026-11-22 新增）**：板子现行三种镜像——生产（473KB，e2e --host 会覆写）/bt 探针（~887KB，build-probe.sh）/**oracle**（683KB，`~/esp/bt-ctl-oracle/build/bt-ctl-oracle.bin`，bootloader@0x2000+app@0x10000——**S31 bootloader 偏移是 0x2000 不是 0x0**，idf 直写 0x0 会覆盖 bootloader 区致 `invalid header` 启动环）。轮 11 末板子运行 **oracle** 镜像——下一 session 判读裸机侧前必须先 `build-probe.sh` 重烧探针；判别 = `ls -la zig-out/bin/app.bin`（887KB）vs oracle bin（683KB）vs 生产（473KB）。
 - **轮 13 后补（cfg 地址已入 marker rec[43]=0x2f01f870）**：下一轮可加「冻结读 *0x2f01f870 的 sleep_en 字段」进 marker——直接验证 blob 是否回写钳制值（区分「钳制被覆写」vs「钳制生效但另有卡点」）。
+
+---
+
+## 🔒 勘误与终态（2026-11-22 追加——以上轮 25-39 中部分判读作废）
+
+### 1. 轮 39 "phy_multiple_init_data.bin 缺失"论证伪
+- sdkconfig:2628 `CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION is not set` ⇒ MULTIPLE_INIT_DATA_BIN 依赖链断 ⇒ phy_init.c:717-720 走简版 `return &phy_init_data;`（直接返回 .rodata 表）——**"_binary_..._start 引用"和"memcpy 从地址 0"不存在**。
+- 该 .rodata 表 = 轮 19-28 已换真并 disassembly 验证过的表 ✓ 无问题。
+
+### 2. 轮 40 "modem_flag==0 跳过校准块"极性反了
+- phy_init.c:335 `if (phy_get_modem_flag() == 0)` —— **==0 是进入校准的条件，≠0 才走 else**。
+- 轮 40 提交信息和 lesson 写的"modem_flag=0 ⇒ 跳过校准块"极性反了。
+
+### 3. 轮 25-37 "flag 踩踏"全部误瞄准
+- 旧 watch 地址 0x2f010f40 = r_sym_ble_P8WE 内部（blob 自家数据）——blob 写自己的结构 = "数千次踩踏"的全部真相。
+- 真 flag `s_is_phy_calibrated` 在不同构建分别位于 0x2f010e80/0f40/0f80——每次构建都移位。
+- calflag 0→0→0 读数（bg_2857/clean.log）= 从**nm 验证的正确地址**读的 ✓ **真 flag = 0**。但 0x4006ab10 panic（无 watch 也有）= 独立问题。
+
+### 4. flag=0 的两个自洽假设 + 一轮合并判决
+- ① 外层门：step 7 enable 入口 modem_flag ≠ 0 ⇒ 含 flag 写的整块未执行
+- ② flag 写与读不同址（布局漂移/duplicate 符号）
+- **判决**：calflag 打印改 `modem_flag={d} flag_addr={x}`——modem_flag = `@extern` 直调 `phy_get_modem_flag`，flag_addr = `@intFromPtr(@extern(*volatile u8, .{.name="s_is_phy_calibrated"}))`（符号未混淆可直接 extern，永久消灭硬编码漂移）
+
+### 5. 保留的有效改进（不受勘误影响）
+- trapEntry cause-3 快路径 ✓（SRAM/CSR 零 flash 取指 + bit30 HIT 验证 + c.ebreak 0x9002 过滤）
+- LP 权威副本模式 ✓（bss 全局可能被踩时唯一可靠通道）
+- export var 保活 ✓（asm `la` 引用的全局）
+- MIE-off 包校准 ✓（防 assert 风暴）
+- calflag 轮询打印 ✓（stage-22 boot 唯一实时 flag 读出通道）
+- phy_init_data 真表替换 ✓（轮 19-28 确认 phy_init_data 常量表正确）
