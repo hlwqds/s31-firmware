@@ -174,6 +174,9 @@ var uart_mute_done: bool = false;
 /// 0.1 s WDT + 1.5 s delay ⇒ 每 boot 必咬(实测 rst:0x8 × 46/110s 的真身)。
 pub var mwdt_ctrl: bool = false;
 var diag_blk_ok: bool = false;
+/// **轮 48**：modem_rst_conf(0x2010_9C10) 复断言 OR 锁存——两次诊断行之间
+/// 泵每轮读一次并清零释放，锁存 OR 值供诊断行判读"谁在复断言、清了活不活"。
+var rst_or: u32 = 0;
 fn rd32(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
 }
@@ -2410,6 +2413,17 @@ pub fn run() noreturn {
             const rtu: *volatile u32 = @ptrFromInt(0x2080_0010);
             rtu.* = 1 << 27;
         }
+        // **轮 48 实验**：modem_rst_conf 每轮读+清（释放 FE 复位）。先证：
+        // 清零被命令处理期复断言（终值回 0x001870c0），官方由 phy_module_enable
+        // 释放、我们路径不释放 ⇒ FE 憋复位 ⇒ RF 永不 ready。清了活不活看 evt。
+        {
+            const rsten: *volatile u32 = @ptrFromInt(0x2010_9C10);
+            const rv: u32 = rsten.*;
+            if (rv != 0) {
+                rst_or |= rv;
+                rsten.* = 0;
+            }
+        }
         _ = osal.serviceCallouts(osal.timeGet());
         const now = osal.timeGet();
         // **合成器/事务活值采样**（每 ~1s）：98BC.bit2 = RF/BB ready（旧 stage-22
@@ -2481,21 +2495,22 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d}", .{
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} rst={x:0>8} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} brg={d}/{d}/{d}", .{
                 icg_bt,
                 icg_after,
                 (r98 >> 2) & 1,
                 fe_cnt,
+                rst_or,
                 st.eventq_put,
                 st.eventq_get_ok,
                 st.event_run_count,
                 st.event_run_no_slot,
                 tpc,
-                bringup.stub_blocks,
                 bringup.bridge_w,
                 bringup.bridge_ran,
                 bringup.bridge_dropped,
             });
+            rst_or = 0;
             // **盲区诊断块**：UART 失声后仍每轮尝试，成功即止（最多 40 轮）。
             if (!diag_blk_ok and diag_blk_tries < 40) {
                 diag_blk_tries += 1;
