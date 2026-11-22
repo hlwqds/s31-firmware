@@ -29096,3 +29096,29 @@ RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = mode
 
 ### 下 session 主实验（唯一可靠判别器）
 **oracle 侧轨迹仪**：oracle 是完整 IDF 工程（main.c 可改）——在 esp_phy_enable 后 / esp_bt_controller_enable 后 / ADV 前三点打印 {0x2010F800, 0x2010F818, 0x208133fc, 0x20813014}，烧 oracle 抓真实轨迹 ⇒ 直接回答"官方谁在何时发事务、改了哪些寄存器"，再对拍我们缺的那一步。比继续盲试寄存器位信息量大一个量级。
+
+---
+
+## 🎯 轮 54：oracle 轨迹仪落地——分野定位到"enable 链内的 ana 写"（2026-11-22）
+
+### oracle 侧四点轨迹（/tmp/oracle_ana2.log，main.c 已加 ANASET 仪器，ninja 增量构建 1.5s）
+```text
+pre-init:    F800=00000000 F818=2100e408 mst=02007301 deven=00000000
+post-init:   （不变）
+post-enable: F800=012f0669 F818=2900e444   ← esp_bt_controller_enable 内写入！
+post-cmds:   （稳定）
+```
+
+### BIT24 解码（i2c_ana_mst_reg.h）
+`REGI2C_RTC_WR_CNTL = BIT(24)`——F800 是 ana 事务**帧寄存器**：
+- oracle 尾帧 `012f0669` = **写事务**（data=0x2f→reg=0x06@dev=0x69，RF init 配置写）
+- 我们的尾帧 `002f0669` = **读事务**（= 校准期最后一次读的原帧，至今未变）
+- mst/deven 两寄存器 oracle 同样全关 ⇒ **轮 52/53 的"门"全部排除**（oracle 带着同样的"关"态照常工作）
+
+### 分野定性
+官方 enable 链（ble_stack_enable = r_base_stack_enable→conn→fc→task）内有一部发 ana **写**（RF init）；我们同构步骤 rc=0 却没发。esp_phy_enable 官方也在 controller_init 内调（oracle 0x400105cc）⇒ module_disable 官方同样发生 ⇒ **分野不在 phy/module 层，在 blob 链内部某步的条件**。
+
+### 轮 55 首项：oracle 分步 bisect（仪器已就绪）
+oracle main.c 链接同款 blob lib ⇒ init 后**手动逐个调用链步骤**、每步后 ANASET：
+r_base_stack_enable → ANASET → r_conn_stack_enable → ANASET → r_btdm_hci_fc_enable → ANASET → r_btdm_task_enable → ANASET ⇒ 直接指出哪一步发写事务；再对拍我们同步骤缺的前置。
+（oracle 重烧注意：ninja flash 会截断，须 esptool 全量三段 + verify；已验证可复现。）
