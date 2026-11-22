@@ -2235,11 +2235,9 @@ pub fn run() noreturn {
             rec[508] = @as(*volatile u32, @ptrFromInt(0x2E00_04A0)).*;
             rec[509] = @as(*volatile u32, @ptrFromInt(0x2E00_04A4)).*;
             rec[510] = @as(*volatile u32, @ptrFromInt(0x2E00_04A8)).*;
-            rec[511] = bringup.phy_cal_flag_post; // enable 返回时
-            {
-                const has_bits = @extern(*const fn (modem: c_int) callconv(.c) c_int, .{ .name = "phy_module_has_clock_bits" });
-                rec[509] = @bitCast(has_bits(2));
-            }
+            // **rec[511] = 冻结时刻 flag 字节**（extern 符号直读）——与 post 值的差
+            // = enable-返回到冻结之间的写入活动维度。
+            rec[511] = @as(*volatile u8, @extern(*volatile u8, .{ .name = "s_is_phy_calibrated" })).*;
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];

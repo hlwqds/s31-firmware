@@ -28612,6 +28612,11 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 32（2026-11-22）：端到端可信四元组到手——执行逃逸区随镜像尺寸漂移实锤**：
+  1. LP 权威四元组：写者 PC=0x18a638e6（上轮 0x08a638e3——**别名窗与偏移都随镜像尺寸漂移** = 执行发生在**我们镜像末尾之后的陈旧 flash 字节**）；ra=污染间接调用；count 数千/轮（陈旧代码循环 store 我们的 flag 区）；冻结 flag=89（enable 的 true 被覆写）。
+  2. **机制终版**：被污染的间接指针 → 调用逃逸进镜像尾部陈旧字节 → 陈旧循环持续 store `s_is_phy_calibrated` ⇒ enable 入口恒 skip load_cal ⇒ rc=0 假象 ⇒ synth 永不锁。**26 轮全部反常统一**。
+  3. marker 三改落地：rec[508..510]=LP 权威副本、rec[511]=冻结时刻 flag 字节（extern 直读）、has_bits 覆写块删除（曾毁掉 rec[509] 四元组）。
+  - **修法不变（下 session 首项）**：s31.ld 布局手术（胶水 bss 挪出 blob 烘焙指针窗口）/ 审计污染指针来源。修后判据：观察点零命中 + FE450/47C 振荡 + 98BC.bit2=1。
 - **轮 31（2026-11-22）：LP 权威副本拿下执行逃逸证据——机制定格**：
   1. 快路径增加 **LP 槽副本**（0x2E0004A0=PC/4A4=ra/4A8=count；bss 全局可能同踩，LP 在踩踏域之外）；冻结读数改读 LP 权威副本。
   2. **事实**：写者 PC = 0x08a638e3（跨 boot 漂移 +0x7F5 = 同一区域不同指令），ra = 0xc4d9e387（**跨 boot 恒定**），count 跨 boot 累积（LP 持久性 ✓）。
