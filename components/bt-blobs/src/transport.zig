@@ -205,6 +205,9 @@ pub fn init() c_int {
 }
 
 /// 发一条 HCI 命令。**必须 status == ENABLED**，否则 `r_btdm_hci_trans_rx` 的前置检查会拒掉。
+/// bt 探针的 pre-forward 判据钩子（probe.zig 注册；生产恒 null）。
+pub var pre_forward_hook: ?*const fn () void = null;
+
 pub fn sendCmd(opcode: u16, params: []const u8) c_int {
     if (!inited) return -1;
     if (params.len > 250) return -2;
@@ -233,6 +236,8 @@ pub fn sendCmd(opcode: u16, params: []const u8) c_int {
     stats_state.cmds_sent += 1;
     osal.logPublic("bt hci >> CMD opcode=0x{x:0>4} plen={d}", .{ opcode, params.len });
     const f = fwd orelse return -4;
+    // **bt 探针专属 pre-forward 钩子**（轮 14 判据）：生产路径恒 null 零开销。
+    if (pre_forward_hook) |h| h();
     return f(TYPE_CMD, @ptrCast(pkt), total, DIR_H2C, 0);
 }
 

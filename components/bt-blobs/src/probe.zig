@@ -735,6 +735,39 @@ export fn probeSelftestAfterFence() void {
     q.* = 0x1234;
 }
 
+
+fn preForwardMark() void {
+    writeLightMarker(1);
+}
+
+/// 轮 13/14：轻量标记（0x18F000，7 字）——phase=0 pre-0x200A / phase=1 pre-forward。
+fn writeLightMarker(phase: u32) void {
+    const eswL = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+    const eseL = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+    const stL = transport.stats();
+    const oL = @import("osal_kit").osal.stats();
+    @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+    const cntL: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
+    var recL: [8]u32 = .{
+        0xADC0_BBF4,
+        cntL,
+        stL.evt_count,
+        stL.cmds_sent,
+        oL.eventq_put,
+        oL.eventq_get_ok,
+        @intFromPtr(&cfg.btdm),
+        phase,
+    };
+    const clicL: usize = 0x1080_1000 + 25 * 4;
+    const gL: u32 = @as(*volatile u32, @ptrFromInt(clicL)).*;
+    @as(*volatile u32, @ptrFromInt(clicL)).* = gL & ~@as(u32, 0x108);
+    _ = eseL(0x18F000 / 0x1000);
+    if (@import("builtin").target.os.tag == .freestanding) board.hw.flashOpBegin();
+    _ = eswL(0x18F000, &recL, @sizeOf(@TypeOf(recL)));
+    if (@import("builtin").target.os.tag == .freestanding) board.hw.flashOpEnd();
+    @as(*volatile u32, @ptrFromInt(clicL)).* = gL;
+}
+
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.on_pc_ready = dumpPcRing;
@@ -1659,6 +1692,9 @@ pub fn run() noreturn {
     // （cfg 写 0 被回写实证）；Enable=1 启动广播后 LL 首次空闲进 sleep ⇒ 裸机
     // 无 light-sleep+LP 唤醒源 ⇒ 睡死（轮 12 机制终版）。序列发出前清零。
     cfg.btdm.sleep_en = 0;
+    // **轮 14 pre-forward 钩子**：最后一条 sendCmd 的 forward 之前重写轻量标记
+    //（phase=1）——到达而冻结 ⇒ rx 内部死锁；未到 ⇒ 挂在日志/更早。
+    transport.pre_forward_hook = &preForwardMark;
 
     // 4) 真正进任务（只有第一次用 startScheduler）
     ctrl_task = findFirstTask();
@@ -1866,34 +1902,9 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF002);
         const r8 = transport.sendCmd(0x2008, &ad);
         osal.lpTrace(3, 0xF003);
-        // **轮 13 轻量 pre-0x200A 标记（0x18F000，写入 20B）**：命令序列末、0x200A 之前
-        // 的 osal/transport 状态——与 POST 扇区（0x18E000 完整版）配对，无论挂在哪都有挂前读数。
-        {
-            const eswL = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
-            const eseL = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
-            const stL = transport.stats();
-            const oL = @import("osal_kit").osal.stats();
-            // LP counter 锁存读（该变量属 target-only 块，host 图里不存在）。
-            @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
-            const cntL: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
-            var recL: [7]u32 = .{
-                0xADC0_BBF4,
-                cntL,
-                stL.evt_count,
-                stL.cmds_sent,
-                oL.eventq_put,
-                oL.eventq_get_ok,
-                @intFromPtr(&cfg.btdm),
-            };
-            const clicL: usize = 0x1080_1000 + 25 * 4;
-            const gL: u32 = @as(*volatile u32, @ptrFromInt(clicL)).*;
-            @as(*volatile u32, @ptrFromInt(clicL)).* = gL & ~@as(u32, 0x108);
-            _ = eseL(0x18F000 / 0x1000);
-            if (builtin.target.os.tag == .freestanding) board.hw.flashOpBegin();
-            _ = eswL(0x18F000, &recL, @sizeOf(@TypeOf(recL)));
-            if (builtin.target.os.tag == .freestanding) board.hw.flashOpEnd();
-            @as(*volatile u32, @ptrFromInt(clicL)).* = gL;
-        }
+        // **轮 13/14 轻量标记（0x18F000，相位字）**：phase=0=pre-0x200A；phase=1=
+        // pre-forward（最后一条 sendCmd 的 forward 之前——经 transport.pre_forward_hook）。
+        writeLightMarker(0);
         // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
         // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
         // **实验：去掉 FE 快照读**。README 与 `tools/jtag-watch-modem-block.sh` 记的
