@@ -29588,3 +29588,26 @@ osal 布局对齐官方 {queued,fn,arg} + fn(容器) + 双路解析 + eventInit/
 
 ### impl 块布局推断（下一步反汇编验证）
 `r_btdm_os_memblock_get(pool)` 返回块指针；块内含池链字段（prev/next 或单链）——deinit walk 读 impl+16/+20 的确切语义需反汇编 r_btdm_task_deinit（当前构建 nm 地址）中 gvLJK4 调用前后的完整指令序（lw a5,0(s0) 的 s0 到底是哪个容器基址——本轮的 0x2f011138/0x2f011134 归属仍未钉死，下轮 nm+反汇编一次性确认）。
+
+---
+
+## 🔄 轮 72b：执行序解码 + 双容器矛盾记录（2026-11-23）
+
+### task_deinit 精确流程（当前构建 nm+反汇编）
+```text
+s0 = 0x2f011138（OkE7 env 槽）；s1 = *(s0) = env
+if env == 0 → skip 整个 deinit（.L76 ✓ 有空守卫！）
+mutex_pend(env+4, forever)
+a5 = *(env)；a3 = env[0] byte；if (1 < a3) → .L80（跳过 walk）
+a0 = *(env+20) → gvLJK4；a0 = *(env+16) → gvLJK4
+…其余 deinit（mutex_release(env+4) 收尾）
+```
+
+### 双容器矛盾（未解，下 session 主线）
+- OkE7 写 env+16 = env+52、env+20 = env+64（内嵌容器地址 ✓ 非零）
+- walk 读 env+20 → gvLJK4(env+64) ⇒ 读 env+68 = 0（零填充区）→ beqz → .L4 ret？——**但实测 mtval=4 crash** ⇒ gvLJK4 收到的 a0=0 ⇒ env+20 处的值 = 0 ≠ env+64
+- ⇒ **执行时序矛盾**：walk 若在 OkE7 前（env+16/20 未写 = 0 ✓ 吻合），则 task_deinit 在 OkE7 前被调——但 task_init 里 deinit 调用点在 OkE7 之前仅 .L93 失败路径 ⇒ **OkE7 失败 bail → .L93 → deinit(walk env+16/20=0) → gvLJK4(0) → 崩** ✓✓ 完全吻合！
+- ⇒ **定案：OkE7 bail（6 子 init 之一失败）→ task_deinit 的 walk 在未初始化 env 上跑 ⇒ 崩。事件顺序全通。**
+
+### 真问题回归
+= 轮 67c 的"6 子 init 之一失败"（非内存布局问题）。子 init 身份 = JwHsRJf87 等 6 个 blob 私有函数（非 osal wrapper）⇒ 它们的失败前置条件 = cfg 派生状态（memcpy(env+24, cfg+24, 20) 的 20 字节里某字段）⇒ **cfg+24..44 的 20 字节段 = 逐字节 diff oracle**（轮 68 已有 idf_cfg192 全 dump，偏移 24..44 对照即可）。
