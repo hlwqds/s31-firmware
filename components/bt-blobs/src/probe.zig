@@ -1735,20 +1735,23 @@ pub fn run() noreturn {
         // **轮 34：目标 = tasks[0].ctx.sp（saved-sp 槽 0x2f010cec）**——合法写者
         // 只有 bt_swap_context 的 0x40078380；非该 PC 的命中 = 把坏 sp 写进任务
         // 上下文的原始踩踏者（比 flag 写者更上游）。
-        const watch_addr: u32 = 0x2F01_0CEC;
-        @import("board").trap.wp_watch_on = 1;
-        asm volatile ("csrw 0x7a5, zero");
-        asm volatile ("csrw 0x7a0, zero");
-        asm volatile ("csrw 0x7a2, %[a]"
-            :
-            : [a] "r" (watch_addr),
-        );
-        asm volatile ("li t0, 0x4a"); // STORE|U|M（mcontrol 语义；芯片实现 mcontrol6）
-        asm volatile ("csrw 0x7a1, t0");
-        asm volatile ("li t0, 0x88"); // MTE
-        asm volatile ("csrw 0x7a5, t0");
-        osal.logPublic("bt probe: STORE watch armed @0x{x:0>8} (fastpath)", .{watch_addr});
-        // **轮 38：c.ebreak 自证已删**——它是 panic 源（mepc=ra=ebreak 地址，resume 无推进 → 双重异常）。
+        // **轮 40 判决实验**：完全撤装观察点（轮 37-39 的 watch 命中 = 仪器吞 flag 写）
+        if (false) {
+            const watch_addr: u32 = 0x2F01_0CEC;
+            @import("board").trap.wp_watch_on = 1;
+            asm volatile ("csrw 0x7a5, zero");
+            asm volatile ("csrw 0x7a0, zero");
+            asm volatile ("csrw 0x7a2, %[a]"
+                :
+                : [a] "r" (watch_addr),
+            );
+            asm volatile ("li t0, 0x4a"); // STORE|U|M（mcontrol 语义；芯片实现 mcontrol6）
+            asm volatile ("csrw 0x7a1, t0");
+            asm volatile ("li t0, 0x88"); // MTE
+            asm volatile ("csrw 0x7a5, t0");
+            osal.logPublic("bt probe: STORE watch armed @0x{x:0>8} (fastpath)", .{watch_addr});
+            // **轮 38：c.ebreak 自证已删**——它是 panic 源（mepc=ra=ebreak 地址，resume 无推进 → 双重异常）。
+        } // if (false) end
     }
     rc = bringup.enable();
     if (rc != 0) {
