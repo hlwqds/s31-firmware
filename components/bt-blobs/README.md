@@ -29520,3 +29520,20 @@ echo "---"; git add -A; git commit -m "bt-blobs: 轮 69 纪律——每构建 nm
 
 ### 保留成果（本轮全部已入库）
 osal 布局对齐官方 {queued,fn,arg} + fn(容器) 官方语义 + 双路解析 + eventqInit/eventInit 承重写 + c_int 0 修复（130/130 host 绿）
+
+---
+
+## 🔧 轮 70 首项落地路径（已确认可行性，2026-11-23）
+
+### blob 自家 memblock API 已链接
+`r_btdm_os_memblock_get/from/put/num_free/put_from_cb` 全部在镜像（nm ✓）——blob deinit walk 期望的 impl = **这个池的块布局**（+16/+20 = 池链字段）。
+
+### 实施（下 session 首项）
+1. 找 blob 的 ev pool 对象地址：反汇编 r_btdm_task_deinit 同族或 grep `memblock_get` 调用点传的池参数（对照 oracle OkE7 的 `btdm_memblock_get(&s_btdm_osal_ev_pool)` 池地址语义）
+2. wr_btdm_osal_event_init 改：`impl = r_btdm_os_memblock_get(&ev_pool)` → 写 fn/arg/queued（对齐官方 freertos 布局 {queued@0,fn@4,arg@8}）→ container.p = impl
+3. 判据：task_deinit walk 走通（impl+16/20 = 池链合法）⇒ task_init 完成 ⇒ INITED ⇒ evt/CC ⇒ rfready/ADV
+
+### 本轮已入库终态
+osal 布局对齐官方 {queued,fn,arg} + fn(容器) 语义 + 双路解析 + 全部承重写 + c_int 0 修复（130/130 host 绿）+ 完整诊断仪器栈
+HEREDOG
+echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 落地路径——blob 自家 r_btdm_os_memblock_* 池 API 可直调（impl 布局与 deinit walk 对齐的结构性终修）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
