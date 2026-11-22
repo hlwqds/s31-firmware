@@ -30157,3 +30157,33 @@ LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 ### 轮 85b 首项
 1. 解码 O6z7W6eJ 成功尾部（.L303/.L315 后段）——事件经哪个队列/回调发出；
 2. 查 *(0x2f011008) 链上板值（p1/ p1+8 / *p2 / 首字节）——handler bail vs 走通的判据。
+
+---
+
+## 🎯 轮 85b：CC 生成器定位 + 两墙合流（2026-11-23）
+
+### 完整 CC 链（全部反汇编实证）
+```text
+.L673 → 6o6qvjp(rc=0，handler 只写 adv 上下文不发光) → j .L676
+.L676: rc==0xFFFF→静默free；rc<0→.L692；rc∈[0,255]→.L693 ✓
+.L693: len = *(sp+11)+4; status=rc&0xFF → j .L672
+.L672: buf[0]=0x0E(Command Complete)、[1]=len、[2]=packets(env+48)、[3..4]=opcode、[5]=status
+.L681 → kAQT9Bbw(buf)：
+    len+2 ≤ lhu(env+64) ? 直接发 : wr_btdm_assert(113,...)
+    两路都尾跳 r_ble_hci_trans_ll_evt_tx
+→ [轮 19 定性的 LL→host 事件投递墙] ✗ evt 停在 8
+```
+
+### 修正 .L429 误读
+.L429 不是"CC 构造"——它是 rc==1→+256 的错误标记路径。CC 构造在**分发器** .L672，与 handler rc 无关（rc∈[0,255] 全发）。
+
+### 两墙合流（轮 19 = 轮 84 同一堵墙）
+- 当年（轮 19）："btdmTx=5 vs leEvtTx=1，5 条 Complete 只到 1 条" —— 当时只有 A 路径基础命令可对照；
+- 现在（轮 84）：LE 命令 CC 也在**分发器内构造完毕**、交 leEvtTx —— ADV 类"无 CC"与 RSSI 之前的墙是**同一入口**；
+- ⇒ "OGF-8 缺口/host 栈/ADV 状态机"三类旧假设全部退场，唯一活墙 = **LL 入口 → host 事件投递**（轮 19/50 已有仪器：轨迹仪、leEvtTx 计数、cfg_hs 路径）。
+
+### 轮 86 首项
+用轮 50+ 轨迹仪对准 **LE CC 的 ll_evt_tx 调用**（区别于 RSSI CC 那条已通路径）：
+1. 计数 leEvtTx 入口命中（LE CC 应 +1，实测没动 ⇒ 断在 .L681 之前或 ll_evt_tx 入口判据）；
+2. dump env+64（avail credits）与 assert 是否触发（113 号）；
+3. 对照 RSSI CC（已通）与 LE CC（丢）在 ll_evt_tx 入参/出口的差分。
