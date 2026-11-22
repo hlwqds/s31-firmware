@@ -2025,7 +2025,7 @@ pub fn run() noreturn {
             const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
             const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
             const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
-            var rec: [362]u32 = undefined;
+            var rec: [369]u32 = undefined;
             const ready_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*; // 读挂 ⇒ 本记录不出现
             rec[0] = 0xADC0_BBF4;
             rec[1] = osi_impl.event_count;
@@ -2086,6 +2086,24 @@ pub fn run() noreturn {
             var bw: usize = 0;
             while (bw < 64) : (bw += 1) {
                 rec[298 + bw] = @as(*volatile u32, @ptrFromInt(0x2010_0400 + bw * 4)).*;
+            }
+            // **轮 19：分区哈希（XOR+非零计数）**——rec[362..368]＝BBHEAD/SCHED/WIDGET。
+            const segs = [_]struct { base: usize, words: usize }{
+                .{ .base = 0x2010_0000, .words = 256 },
+                .{ .base = 0x2010_1000, .words = 128 },
+                .{ .base = 0x2010_9400, .words = 80 },
+            };
+            for (segs, 0..) |sg, si| {
+                var x: u32 = 0;
+                var nz: u32 = 0;
+                var i: usize = 0;
+                while (i < sg.words) : (i += 1) {
+                    const v = @as(*volatile u32, @ptrFromInt(sg.base + i * 4)).*;
+                    x ^= v;
+                    if (v != 0) nz += 1;
+                }
+                rec[362 + si * 2] = x;
+                rec[363 + si * 2] = nz;
             }
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
