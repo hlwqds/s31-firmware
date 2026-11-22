@@ -28612,6 +28612,11 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 29（2026-11-22）：干净基线复测——观察点撤装 + 全 4 触发器清零**：
+  1. 观察点武装撤除（XIP panic 根因），武装块改为**全 4 触发器清零**（含 boot 期 slot1 脏 LOAD 触发器），仪表待 trap SRAM 化后恢复。
+  2. 干净基线（无观察点 + MIE-off 包校准 + 真表 + oracle 粘合）复测：**calflag = 200 (0xC8) 非 1** ⇒ 关中断也拦不住——写者是**校准调用链内部的指针写**（blob 侧把 0x2f010e80 当自己的暂存槽用），不是中断踩踏。
+  3. **收敛后的机制画像**：`s_is_phy_calibrated` 落在 0x2f010e80 = blob 侧某指针的既有写入目标 ⇒ enable 入口 bnez 恒读非零 ⇒ load_cal 从未运行（rc=0 假象）⇒ synth 永不锁。**该指针的来源 = 最后一个未解问题**。
+  - **下 session 首项（按序）**：① trap 处理器 SRAM 化（s31-trap-xip-nested-fault 的根修，解锁一切 trap 类仪表）；② mcontrol6 STORE 观察点重武装（flash 静默窗内）活捉写者 PC；③ 顺指针来源修 cfg/porting。修好前判据读数一律走 UART 实时行或 LP 槽，不信 flash 冻结标记。
 - **🔴 轮 28 仪器失效自白（2026-11-22，UART 全程捕获实锤）**：
   1. **带观察点的构建每 boot 确定性 panic**：`instruction access fault @0x400760f2`，sp=0x2f01dc90（trap_stack_buf 内）——观察点命中落进 flash 写窗口 ⇒ **trap 路径 XIP 嵌套取指 fault**（s31-trap-xip-nested-fault 已知机制；trap 文本在 flash，命中处理时 SPI 忙 ⇒ 取指崩）。
   2. **⇒ panic boot 不写冻结标记 ⇒ mark41/42 的 rec 值全部是陈旧 boot 残留**——轮 25/26 的"calflag=230/235/136、写者 PC=0x74046f9b/0x74556b5b"证据**全部作废**（我当时把 stale 标记当成了本轮读数）。UART BP! 行在这些 boot 里也从未出现（panic 在打印前）。

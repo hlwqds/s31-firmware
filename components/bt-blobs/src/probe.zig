@@ -1725,21 +1725,26 @@ pub fn run() noreturn {
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
     {
-        // **轮 28：EXEC 入口断点改盯 esp_phy_load_cal_and_init(0x40000bcc)**——
-        // 回答"校准到底跑没跑"。复用 udiv 机制（入口命中、不推进、抓 ra/参数、
-        // 命中即全拆触发器）：udiv_watch_on=true 时 trap 侧走专用分支。
-        const watch_addr: u32 = 0x4000_0BCC;
-        board.trap.udiv_addr = watch_addr;
-        board.trap.udiv_watch_on = true;
-        asm volatile ("csrw 0x7a2, %[a]"
-            :
-            : [a] "r" (watch_addr),
-        );
-        asm volatile ("li t0, 0x4c"); // EXEC|U|M
-        asm volatile ("csrw 0x7a1, t0");
-        asm volatile ("li t0, 0x88");
-        asm volatile ("csrw 0x7a5, t0");
-        osal.logPublic("bt probe: EXEC watch armed @esp_phy_load_cal_and_init", .{});
+        // **轮 29：观察点撤装（回干净基线）**——带观察点的构建每 boot XIP 嵌套
+        // 取指 fault panic（轮 28 自白），mark41/42 已证实为陈旧残留读数。
+        // 只保留触发器卫生：全 4 触发器清零（清掉 boot 期 slot1 脏 LOAD 触发器
+        // 与任何残留），不武装任何新触发器。trap SRAM 化完成后再恢复仪表。
+        asm volatile ("csrw 0x7a5, zero");
+        asm volatile ("li t0, 0");
+        asm volatile ("csrw 0x7a0, t0");
+        asm volatile ("csrw 0x7a1, zero");
+        asm volatile ("li t0, 1");
+        asm volatile ("csrw 0x7a0, t0");
+        asm volatile ("csrw 0x7a1, zero");
+        asm volatile ("li t0, 2");
+        asm volatile ("csrw 0x7a0, t0");
+        asm volatile ("csrw 0x7a1, zero");
+        asm volatile ("li t0, 3");
+        asm volatile ("csrw 0x7a0, t0");
+        asm volatile ("csrw 0x7a1, zero");
+        asm volatile ("csrw 0x7a0, zero");
+        asm volatile ("csrw 0x7a5, zero");
+        osal.logPublic("bt probe: all 4 triggers cleared (watch disarmed)", .{});
     }
     rc = bringup.enable();
     if (rc != 0) {
