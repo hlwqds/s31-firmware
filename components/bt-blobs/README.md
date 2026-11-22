@@ -28898,3 +28898,28 @@ lw  s0, 12(a4)   # ← mtval=0xC fault：a4=0（槽值=NULL）
 1. **swapContext 入口 EXEC 断点**（0x40078364）→ 抓 `lw sp,0(a1)` 时 a1 的值 → 定位污染 sp 的**读取来源**（哪个 ctx 被踩）
 2. **反向追踪**：从 saved-sp 的垃圾值（0x2f010eb4）反查谁写了它 → STORE 观察点 @saved-sp 槽地址 → 捕获原始踩踏者
 3. **布局手术 + 43 处 poke 全部 @extern 符号化**（一次大改但终修）→ blob 在安全区运行 → sleep env 槽不再被踩
+
+---
+
+## 🎯 轮 45 破墙（2026-11-22）：arena 分配 sleep env stub
+
+### 修复
+- **btdmMalloc(256) 从 blob arena 分配 stub**（OkE7 锚点历史路径）→ 写自引用（offset 12 指回自身）→ 发布到 0x2f011134
+- **时机 = arena init 后、task_init(步 6) 前** ⇒ blob 首次读槽前已就绪
+- 旧 bss stub（0x2f01f434，落在闭包 .bss 跨度内被 blob 运行时抹回）弃用
+
+### 实测（/tmp/arena.log）
+```text
+bt probe: sleep env prefilled arena stub @0x2f0243d0 -> slot 0x2f011134
+bt bringup: esp_phy_enable(2) done calflag 0->1->1 modem_flag 0->2 flag_addr=0x2f010f80 ready=0x00000000
+bt bringup: INITED
+bt probe: A(rx) sendReadVersion rc=0 stats cmds=3 evt=1
+bt hci >> CMD opcode=0x2006 plen=15
+bt probe: fwd06 ret=0
+bt hci >> CMD opcode=0x2008 plen=32
+```
+**sleep_cb NULL fault 消失 ✓ 40+ 轮最深进度**：HCI 命令链活跃（ReadVersion → 0x2006 → fwd06 ret=0 → 0x2008）。
+
+### 下一征途
+- 0x200A（Set Adv Enable）是否发出（capture 50s 截止于 0x2008，需更长窗口）
+- 三大判据：FE450/47C 振荡 / 98BC.bit2 翻转 / LE Set Advertising Enable 后广播包

@@ -957,6 +957,28 @@ pub fn run() noreturn {
         halt();
     }
 
+    // **轮 45：sleep env stub 预填（blob arena 分配）**——0x2f011134 = blob sleep
+    // 子系统 env 指针槽。sleep_en 钳制使 blob 跳过 sleep init ⇒ 槽值 0 ⇒ sleep_cb
+    // 读 NULL+0xC fault。修法 = 从 blob arena 分配 256B（OkE7 锚点历史路径），
+    // 写自引用（offset 12 指回 stub），发布到槽 ⇒ blob 读到受保护内存 ✓。
+    // **时机 = arena 初始化后、task_init(步 6) 前** ⇒ 赶在 blob 首次读槽之前。
+    {
+        const stub = osal.btdmMalloc(256, 0) orelse {
+            osal.logPublic("bt probe: FATAL sleep env malloc failed", .{});
+            halt();
+        };
+        // 清零
+        const bytes: [*]u8 = @ptrCast(stub);
+        @memset(bytes[0..256], 0);
+        const stub_base: usize = @intFromPtr(stub);
+        // 自引用：offset 12 = stub 自身地址 → 嵌套解引用不越界
+        @as(*volatile u32, @ptrFromInt(stub_base + 12)).* = @truncate(stub_base);
+        // 发布到槽
+        const sleep_env_slot: *volatile u32 = @ptrFromInt(0x2f01_1134);
+        sleep_env_slot.* = @truncate(stub_base);
+        osal.logPublic("bt probe: sleep env prefilled arena stub @0x{x:0>8} -> slot 0x2f011134", .{stub_base});
+    }
+
     // 2) init 链（15 步）
     // **osi_impl hooks 接线（此前从未调用 setHooks ⇒ now_us 等全 null）**：
     // now_us = T0 µs 时基——esp_timer_get_time/deadline/serviceTimers 的唯一
@@ -1735,17 +1757,7 @@ pub fn run() noreturn {
         // = blob sleep 子系统的 env 指针槽。sleep_en 钳制（轮 13）使 blob 跳过
         // sleep init ⇒ 槽值 0 ⇒ sleep_cb 读 NULL+0xC fault（bpboot5 实测）。
         // 修法 = 预填一个静态零结构指针（blob 读到非零 = 安全访问零字段）。
-        const sleep_env_slot: *volatile u32 = @ptrFromInt(0x2f01_1134);
-        if (sleep_env_slot.* == 0) {
-            // **自引用**：stub+12 = stub 自身地址 → blob 嵌套指针解引用后
-            // 所有偏移落在 256B stub 内 ⇒ 安全读写。stub 前 20B = sp/ra/参数
-            // 保存区（blob sleep 子系统的调用约定）。
-            const stub_base: usize = @intFromPtr(&sleep_env_stub);
-            sleep_env_slot.* = stub_base;
-            // offset 12 = 嵌套指针 → 指回 stub 自身
-            @as(*volatile u32, @ptrFromInt(stub_base + 12)).* = @truncate(stub_base);
-            osal.logPublic("bt probe: sleep env prefilled self-ref @0x{x:0>8}", .{stub_base});
-        }
+
     }
     {
         // **轮 30：STORE 观察点重武装（trapEntry 快路径版）**——cause-3 命中走
