@@ -29373,3 +29373,24 @@ init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（�
 ### 轮 68 方向：mirror 官方 btdm_osal_event 容器布局
 官方 FreeRTOS 版：`btdm_osal_event` 容器 = `{void *event}` 仅一个指针（指向 impl）——**它就是我们的 Slot.p 模式**！⇒ 布局本身没错；错在 **impl 对象内容**：官方 mutex impl {handle}、我们的 Mutex = {locked,...}——blob 在 mutex impl 上做的操作（+16/+20 读）**不是 mutex 语义** ⇒ 该 container 不是 mutex 而是**别的对象**（env 容器误被我们绑成 mutex？或 OkE7 的 s0 参数不是 env+12）。
 ⇒ 下轮 = **OkE7 全量反汇编**（oracle 0x4006a3ac 起）：确认 s0 指向哪个容器、mutex_init/eventq_init 的确切实参、+16/+20 的写入者。
+
+---
+
+## 💡 轮 68：oracle OkE7 全量解密——"所有权冲突"理论推翻（2026-11-23）
+
+### oracle OkE7（0x4006a3ac 起）逐条解码
+```c
+laR9(container+8, ...)                    // eventq_init(env+8)
+wr_btdm_osal_event_init(env+84, name_fn, 0)  // 事件容器 = env+84！
+a5 = *(env)                                // impl 对象（event_init 写回的池 Event ✓）
+a0 = *(impl + 16)                          // = 我们 osal Event 的 slot 字段偏移！
+kNIbP2(a0, 6)                              // 链入全局链表 id=6（= 轮 62 分析的 kNIbP2！）
+```
+
+### 三个结论
+1. **官方 = 同款 Slot.p 间接模式**（container{p} → 池 Event，Event+16 = slot 反查字段）——轮 63b"所有权冲突"理论**推翻**（blob 的 0xc03 状态写另有来源/另有容器）
+2. **kNIbP2 = gvLJK4 家族的注册侧**：gvLJK4(walk) 遍历的链表 = kNIbP2 链入的 id=6 链表
+3. **oracle 事件容器 = env+84**；我们镜像 task_init 的遍历容器 = env+16/20——**偏移不一致**（不同 blob 构建家族或不同对象组）= 下轮对拍点
+
+### 真崩溃源（修正）
+task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
