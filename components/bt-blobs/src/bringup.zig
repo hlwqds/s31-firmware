@@ -494,7 +494,7 @@ pub fn init(cfg: *config.Config) c_int {
     if (rc != 0) return rc;
     // **cblist 遍历（step6 后）**：id 节点在 task_init 内创建；早 panic 的 boot 也出数。
     {
-        const p0: usize = rdUsz(0x2f023208);
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
@@ -524,7 +524,7 @@ pub fn init(cfg: *config.Config) c_int {
     {
         if (freestanding) {
             // **轮 25：s_is_phy_calibrated 清零**——胶水 .bss 落在 blob 绝对寻址区
-            // （nm 实锤 0x2f023400 紧邻 blob 数据，读值跨 boot 非布尔）⇒ enable
+            // （nm 实锤 0x2f010f80 紧邻 blob 数据，读值跨 boot 非布尔）⇒ enable
             // 入口 `bnez → skip load_cal` 可能从未运行校准。清零强制走全量标定。
             const cal_flag: *volatile u8 = @ptrFromInt(0x2F01_0F40); // nm 本构建地址
             phy_cal_flag_before = cal_flag.*;
@@ -544,7 +544,7 @@ pub fn init(cfg: *config.Config) c_int {
     // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。
     // 链状态 step6 已定（task_init 内 OkE7 重建 + 尾插），step7 无关。
     {
-        const p0: usize = rdUsz(0x2f023208);
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var node: usize = rdUsz(p0);
             var k: usize = 0;
@@ -561,7 +561,7 @@ pub fn init(cfg: *config.Config) c_int {
             }
             osal.logPublic("bt probe: cb7 A=0x{x:0>16} B=0x{x:0>16} n={d}", .{ a0v, a1v, k });
 
-            const envp: usize = rdUsz(0x2f023210);
+            const envp: usize = rdUsz(0x2f01_1038);
             if (envp >= 0x2f00_0000 and envp < 0x2f10_0000) {
                 const e0: usize = rdUsz(envp);
                 const e16: usize = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) rdUsz(e0 + 16) else 0;
@@ -592,7 +592,7 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(10, "r_ble_controller_init", if (freestanding) r_ble_controller_init(&cfg.ble) else 0);
 
     {
-        const p0: usize = rdUsz(0x2f023208);
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
@@ -617,14 +617,14 @@ pub fn init(cfg: *config.Config) c_int {
     // **调度器槽值追踪**：sleep/scheduler 对象指针（0x2f011034）——NMI2 读 0
     // 但 rc=0 要求 Zth2 的 malloc(32) 成功 ⇒ 有谁在 init 后清零，按步定位。
     {
-        const slotv: *volatile u32 = mmioPtr(u32, 0x2f02320c);
+        const slotv: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
         osal.logPublic("bt probe: sched slot after step10 = 0x{x:0>8}", .{slotv.*});
         // **rtc_freq 补丁（2026-11-21 重写）**：⚠ 旧版无条件写 [2f011034]obj+24/28
         // ——obj+20 起是注册链节点（obj+24=节点 cb 指针、obj+28=next）⇒ 该写
         // 把 node6.next 清零截断链 ⇒ id2/5 脱链 ⇒ step17 Hl337(2) 未命中 rc=-3
         // （STORE 观察点抓到写者=本补丁）。真 sleep 对象在 [2f011044]。
         // 现只写 [2f011044] 的对象，且仅 obj[24]==0&&obj[28]==0（零除活体）时。
-        const slp44: *volatile u32 = mmioPtr(u32, 0x2f02321c);
+        const slp44: *volatile u32 = mmioPtr(u32, 0x2f01_1044);
         const obj44: u32 = slp44.*;
         if (obj44 >= 0x2f00_0000 and obj44 < 0x2f10_0000 and obj44 % 4 == 0) {
             const lo44: *volatile u32 = mmioPtr(u32, @as(usize, obj44) + 24);
@@ -697,7 +697,7 @@ pub fn init(cfg: *config.Config) c_int {
     rc = step(14, "r_esp_ble_ll_set_public_addr", if (freestanding) r_esp_ble_ll_set_public_addr(&mac) else 0);
 
     {
-        const p0: usize = rdUsz(0x2f023208);
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
@@ -743,7 +743,7 @@ pub fn init(cfg: *config.Config) c_int {
                 }
                 mmioWr(sink + 12, @truncate(yield_fn)); // 32 位槽写（主机 64 位对齐）
                 mmioWr(sink + 28, @truncate(yield_fn)); // 32 位槽写（主机 64 位对齐）
-                mmioWr(0x2f022_d8c, @truncate(sink)); // 32 位槽写（主机 64 位对齐）
+                mmioWr(0x2f01_0fb4, @truncate(sink)); // 32 位槽写（主机 64 位对齐）
                 osal.logPublic("bt probe: yield sink published obj=0x{x:0>8} fn=0x{x:0>8}", .{ sink, yield_fn });
             }
             // **判别读数**：cb7 捕获的 id2/5 节点地址（=env+52/+64）此刻的 id 值
@@ -759,7 +759,7 @@ pub fn init(cfg: *config.Config) c_int {
             }
             // **判别打印**：env→p16（节点2缓冲）现状 + 链尾 next。若 [p16] 仍=2
             // 而 node6.next 不指 p16 ⇒ 摘链；若 [p16]=0 ⇒ 内存被清（memset 型）。
-            const envp: usize = rdUsz(0x2f023210);
+            const envp: usize = rdUsz(0x2f01_1038);
             if (envp >= 0x2f00_0000 and envp < 0x2f10_0000) {
                 const e0: usize = rdUsz(envp);
                 if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) {
@@ -782,7 +782,7 @@ pub fn init(cfg: *config.Config) c_int {
                 _ = lid;
             }
             // **deinit 判据**：task_deinit 尾部把 env[0] 清 0（state=1 为在位）。
-            const envp2: usize = rdUsz(0x2f023210);
+            const envp2: usize = rdUsz(0x2f01_1038);
             if (envp2 >= 0x2f00_0000 and envp2 < 0x2f10_0000) {
                 const e0: usize = rdUsz(envp2);
                 const st: u8 = if (e0 >= 0x2f00_0000 and e0 < 0x2f10_0000) mmioRdN(u8, e0) else 0xFF;
@@ -867,7 +867,7 @@ pub fn enable() c_int {
     // **rc=-3 根因探针**：base_stack_enable 第二段注册 Hl337(id=2) 在
     // [2f011030] 链表扫 u16 id==2，未命中返回 -1 ⇒ 传导 -3。遍历打印链节点。
     {
-        const p0: usize = rdUsz(0x2f023208);
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             // 紧凑单行（双组 u64，各 8 个 16-bit id，零叠写；FIFO 撞行免疫）
             var a0v: u64 = 0;
@@ -904,7 +904,7 @@ pub fn enable() c_int {
     // **post-17 混叠探针**：slot 指针（s0 结构 +0/+4/+8）+ 链表复扫。若 slot1 与
     // id-2 节点同缓冲，handler 存入(0x4001511a)把节点 id 覆成 0x511a ⇒ 复扫缺 2。
     {
-        const s0p: usize = mmioRd(0x2f022_cec);
+        const s0p: usize = mmioRd(0x2f01_0f14);
         // 32 位字读（主机 64 位上 `*usize` 对 +4 地址会对齐失败）。
         const sl0: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p) else 0;
         const sl1: usize = if (s0p >= 0x2f00_0000 and s0p < 0x2f10_0000) mmioRd(s0p + 4) else 0;
@@ -913,7 +913,7 @@ pub fn enable() c_int {
         _ = sl0;
         _ = sl1;
         _ = sl2;
-        const p0: usize = rdUsz(0x2f023208);
+        const p0: usize = rdUsz(0x2f01_1030);
         if (p0 >= 0x2f00_0000 and p0 < 0x2f10_0000) {
             var a0v: u64 = 0;
             var a1v: u64 = 0;
@@ -945,7 +945,7 @@ pub fn enable() c_int {
         // ⚠ 条件**不能**用 cfg.btdm.sleep_en——归档在 task_init 会回写该字段
         // （sleep_en=0 轮实证：step20 前已非 0 ⇒ 注册器被调 ⇒ 槽 NULL ⇒
         // load fault @0xc panic）。以**槽本身**为准：非空才注册。
-        const slot_chk: *volatile u32 = mmioPtr(u32, 0x2f02320c);
+        const slot_chk: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
         if (slot_chk.* != 0) {
             // a1=null 会命中 beqz a1 → .L75 整体跳过（obj[4] 不写）⇒
             // arg 用非空占位（桩不读它）。a4=0 跳过 .L79 附加初始化。
@@ -972,7 +972,7 @@ pub fn enable() c_int {
     rc = step(20, "r_btdm_task_enable", if (freestanding) r_btdm_task_enable() else 0);
     if (rc != 0) return rc;
     {
-        const slotv: *volatile u32 = mmioPtr(u32, 0x2f02320c);
+        const slotv: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
         osal.logPublic("bt probe: sched slot after step20 = 0x{x:0>8}", .{slotv.*});
     }
 
