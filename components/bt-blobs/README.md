@@ -30335,3 +30335,31 @@ F2 rc=0 evt=8 / LASTCC RSSI status=00
 LE 命令全链（发送→分发→handler→CC 构造→投递→status=0）+ ADV 参数已写入 controller。
 **唯一剩余 = synth 上电（98BC.bit2）** ⇒ 轮 89c = F800/F818 STORE 观察点活捉
 task body RF init 写帧 PC（轮 89a 已定位 pump 循环与仪器入口）。
+
+---
+
+## 🔬 轮 89c-e：modem clock 桩真身实现 + 三层判定（2026-11-23）
+
+### 实现（wall 修复）
+`e_btdm_lp_modem_clock_set` 原为 2 指令空桩（`li a0,0; ret`）——task pump 每次
+eventq_get 返回都调它(1)，oracle 实体 = modem_clock_module_enable(6)。已在
+bt_stubs.c 实现真身（含 clk_en latch；disable 路径按 oracle 的 s_bt_active==1 门为 no-op）。
+
+### 三层判定（板上实测）
+| 层 | 读数 | 判定 |
+| --- | --- | --- |
+| latch (0x2f01114c) | 1 | 我们的 enable 分支跑了 ✓ |
+| ctx 懒初始化 (0x2f010e70/74) | 2f010e9c / 2f010e90 | device_control 懒初始化完成 ✓ |
+| hal 表 (0x2f010e88/8c) | 20109c00 / 2010f000 | **hal 基址表 = HP_CLK(0x20109c00) + MODEM_SYSCON(0x2010f000)** ✓ |
+| den wr-rb (0x20813014) | latch=YES | 无写保护 |
+
+### 认知修正：`den(0x20813014)` 是错误监视目标
+device_control 跑到底 + 寄存器可写，但 den 仍 0 ⇒ **0x20813014 不是 BT 模块时钟
+使能寄存器**（轮 54 oracle main.c 宏选的地址≠per-module ICG）。hal 表指向的两块
+（0x20109c00 HP_SYS_CLKRST / 0x2010f000 MODEM_SYSCON）才是 device_control 的
+实际写目标。
+
+### 轮 89f 首项
+反汇编 device_control 的 hal 调用（jalr a5 @0x2f000b3c 一带的 a5 来源）→ 找到
+实际写的 ICG 寄存器 → 上板读该寄存器判定 module 6 时钟是否已开 → 若已开，synth
+墙与 modem clock 无关，回 98BC 写者侧（轮 89b 的 F800/F818 观察点）。

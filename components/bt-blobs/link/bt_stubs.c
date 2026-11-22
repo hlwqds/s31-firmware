@@ -36,10 +36,23 @@ int sprintf(char *buf, const char *format, ...) {
 extern u32 ets_clk_get_xtal_freq(void);
 
 
-/* 低功耗 modem 时钟开关：控制器在 lp 初始化时关一次（实参恒为 0）。
- * 我们的时钟树由 board 层统一管理，这里只记录不动作。 */
+/* **轮 89c 真身实现**（oracle asm 解密，原为 no-op = 60+ 轮 synth 墙）：
+ * task pump 每次 eventq_get 返回后调 e_btdm_lp_modem_clock_set(1)——
+ * oracle 实体 = modem_clock_module_enable(6)（BT modem 时钟模块）→
+ * device_control → DEVICE_EN/ICG 写。原注释"实参恒为 0"是旧误读
+ * （泵在队列非空时才传 0，且 disable 路径被 oracle 的 s_bt_active==1 门住）。 */
+extern int modem_clock_module_enable(int module);
+extern int modem_clock_module_disable(int module);
+static unsigned char s_btdm_lp_modem_clk_en = 0;
+
 int e_btdm_lp_modem_clock_set(int enable) {
-    (void)enable;
+    if (enable) {
+        if (!s_btdm_lp_modem_clk_en) {
+            modem_clock_module_enable(6);
+            s_btdm_lp_modem_clk_en = 1;
+        }
+    }
+    /* enable==0：oracle 需 s_bt_active==0 才真关；enable 相后恒 active ⇒ no-op */
     return 0;
 }
 

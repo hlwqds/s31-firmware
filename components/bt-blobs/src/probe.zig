@@ -2323,6 +2323,23 @@ pub fn run() noreturn {
             board.log.line("R1 98BC={x:0>8} R2 mst={x:0>8} den={x:0>8} R4 fe={x:0>8} f800={x:0>8}", .{ r98bc, mstclk, deven, fe8d0, f800 });
             board.log.line("R5 bb870={x:0>8} bbc00={x:0>8}", .{ bb870, bbc00 });
             board.log.line("R6 m1e0={x:0>8} st1c={x:0>8} (oracle: 3d / 60448000)", .{ m1e0, st1c });
+            // **轮 89d**：modem clock 链四层判定——latch=1? dev_list/icg 懒初始化过?
+            // hal[1] 被写 0x2010f000? （全非零 = device_control 跑到底，写被丢；
+            // latch=0 = pump 没调 enable 分支）
+            const latch: u8 = @as(*volatile u8, @ptrFromInt(0x2f011_14C)).*;
+            const ctx12: u32 = @as(*volatile u32, @ptrFromInt(0x2f010_E70)).*;
+            const ctx16: u32 = @as(*volatile u32, @ptrFromInt(0x2f010_E74)).*;
+            const hal0: u32 = @as(*volatile u32, @ptrFromInt(0x2f010_E88)).*;
+            const hal4: u32 = @as(*volatile u32, @ptrFromInt(0x2f010_E8C)).*;
+            board.log.line("R7 latch={d} ctx12={x:0>8} ctx16={x:0>8} hal0={x:0>8} hal4={x:0>8}", .{ latch, ctx12, ctx16, hal0, hal4 });
+            // **轮 89e**：0x20813014 写-回读活性测试（写保护判据）
+            const den_addr: usize = 0x2081_3014;
+            const d0: u32 = @as(*volatile u32, @ptrFromInt(den_addr)).*;
+            @as(*volatile u32, @ptrFromInt(den_addr)).* = d0 | 0x20;
+            const d1: u32 = @as(*volatile u32, @ptrFromInt(den_addr)).*;
+            @as(*volatile u32, @ptrFromInt(den_addr)).* = d0;
+            const d2: u32 = @as(*volatile u32, @ptrFromInt(den_addr)).*;
+            board.log.line("R8 den wr-rb: pre={x:0>8} set={x:0>8} restore={x:0>8} latch={s}", .{ d0, d1, d2, if (d1 & 0x20 != 0) "YES" else "NO" });
             // **轮 87b**：签名修正后重跑——(reg=99, hostid=1, block=6) = PLL cap 自环
             phy_i2c_writeReg(99, 1, 6, 0x5A);
             const loopback: u8 = phy_i2c_readReg(99, 1, 6);
