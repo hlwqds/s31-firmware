@@ -30680,3 +30680,28 @@ LP 环/slots（blob ADV-enable 竞区写覆盖）。
 2. LP_CLK_PO_EN 位图扩展：force-on 全位（含未列位）+ ULP 高频压回 RC_SLOW（每循环而非每 0.25s）；
 3. 若 RC_SLOW 真活 ⇒ RTC WDT 20s 咬 ⇒ 数字复位 ⇒ LP 数据链通；
 4. 数据链通后：0x200A 后 ADVRES（98BC first/last）终于可读 ⇒ synth 判定。
+
+---
+
+## 🔒 轮 100 终判：LP 域兜底亦未咬（2026-11-23）
+
+ULP v2（工具链汇编 110B：loop 内仅 CONFIG1=20s 重申 + latch 正确地址 0x20800010
++ RC_SLOW 压回；CONFIG0 仅预循环一次武装避免 0→1 计数清零）——RTC WDT 仍未在
+100s 窗口内咬合（无 boot2），主机扫描无板 MAC。
+
+### 挂死期间时钟域状态（最终清单）
+| 域 | 状态 |
+| --- | --- |
+| HP TIMERGRP（T0/NMI/TIMG1） | ❌ 门控 |
+| HP UART0 | ❌ 门控 |
+| HP SYS_TIMER/0x2080（esp_rom_delay_us/MWDT1/latch） | ❌ 门控 |
+| HP MODEM（F800 已武装 ✓ 但 98BC 不起） | 武装后静止 |
+| LP RC_SLOW（RTC WDT 计数时钟） | ⚠ ULP 压回间隙断续/或 WDT EN 被清 |
+| LP ULP core（LP_CLK force-on） | ⚠ 推测运行中（无法观测） |
+
+### 下 session 两个决定性实验
+1. **EN 清除行为**：NMI keeper 的 0x187000 解除检测在挂死窗口能否工作
+   （NMI 死则改 ULP 侧检测——ULP 读 RTC WDT CONFIG0.EN 两拍差分写 LP 槽）；
+2. **RC_SLOW 计数器活性**：ULP 读 RTC timer 计数值两拍差分写 LP 槽
+   （与 1 同机制）⇒ 区分"计数冻结"vs"EN 被清"vs"压回失败"。
+两个 LP 槽在**下一次 MWDT1/RTC 复位**后可读（若 RTC 域真死则不可读=本身即判据）。
