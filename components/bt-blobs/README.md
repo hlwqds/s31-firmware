@@ -30507,3 +30507,23 @@ keeper 已把 MWDT1 配为 STG0=中断(360s)/STG1=复位。改造：
    每 5000 tick 打印恢复（含采样 PC）⇒ 挂死自旋 PC 上 UART；
 3. 若 MIE 被屏蔽 ⇒ STG0 不来 ⇒ STG1(360s) 硬复位也会把板子救回（可观测 banner）。
    两个分支都可观测。
+
+---
+
+## 🔍 轮 94b：hang 位置收窄至 sendCmdViaHs 内部 + 时间源假设（2026-11-23）
+
+### 实测链
+1. UART mute 生效（0x200A 后无打印卡死——mute 挡住了我们自己的打印路径）；
+2. `CMD opcode=0x200a plen=1` 出现（logPublic 环先出）+ coex status_bit_set（blob coex 钩子已跑）；
+3. **0x18F000 marker 未写**（仍旧格式）⇒ hang 在 sendCmdViaHs **内部**——B 路径同步分发，
+   ADV-enable 处理（含"等 RF/BB ready"）发生在本次调用里，post-send 代码不可达。
+
+### 时间源假设（高置信，待轮 95 解码确认）
+oracle 的 0x200A 返回 rc=3（超时）⇒ oracle 的等待环有活时间源（FreeRTOS tick）。
+我们：等待环的时间源 = 泵驱动的软件 tick / RTC latch（"update 位只在泵里触发"）
+⇒ 泵阻塞在本次调用内 ⇒ 时间源冻结 ⇒ 超时永不到 ⇒ 无限等待。
+
+### 轮 95 首项
+1. 从分发器 OGF=8/0x200A 路径解码真等待环（62uOMiw 已排除=表迭代器）；
+2. 确认其轮询输入（98BC.bit2 + 哪个时间寄存器/软件 tick）；
+3. 修法候选：NMI 里替它触发时间源 update 位 / 直接喂 NMI 计数 / 短路等待条件。

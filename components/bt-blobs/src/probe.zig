@@ -2314,6 +2314,16 @@ pub fn run() noreturn {
             const pref8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
             const prem1: u32 = @as(*volatile u32, @ptrFromInt(0x2058_71E0)).*;
             board.log.line("PRE200A 98BC={x:0>8} f800={x:0>8} m1e0={x:0>8}", .{ pre98, pref8, prem1 });
+            // **轮 94b**：ROM 自旋环指令字节（0x2f8036c0..e0，8 字）——解码轮询条件
+            {
+                const rp: [*]volatile u32 = @ptrFromInt(0x2f80_36C0);
+                board.log.line("ROMC0 {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{ rp[0], rp[1], rp[2], rp[3] });
+                board.log.line("ROMD0 {x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{ rp[4], rp[5], rp[6], rp[7] });
+                // 轮询目标寄存器也一并打：ROM 环通常 lw 自 UART0 块（0x20587000 系）
+                const u0st: u32 = @as(*volatile u32, @ptrFromInt(0x2058_7088)).*;
+                const u0fifo: u32 = @as(*volatile u32, @ptrFromInt(0x2058_7058)).*;
+                board.log.line("UARTST 088={x:0>8} 058={x:0>8}", .{ u0st, u0fifo });
+            }
             // **轮 92b 决定性实验**：手动置 F800 bit24（oracle=0x012f0669 我们=0x002f0669
             // 的唯一差异），轮询 98BC 10×500ms——若 bit2 跟随，synth 墙缩成一个 bit。
             const f800p: *volatile u32 = @ptrFromInt(0x2010_F800);
@@ -2326,8 +2336,19 @@ pub fn run() noreturn {
             }
         }
         if (rf_ok) {
+            // **轮 94b**：0x200A 后 blob 门控 UART0 ⇒ 任何打印都会卡死主上下文
+            // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。
+            // 静默一切 UART 输出，ADV-enable 结果直写 0x18F000 marker 离线判读。
+            board.log.muted = true;
             ra2 = transport.sendCmdViaHs(0x200A, &ae);
-            board.log.line("F3 rc={d}", .{ra2});
+            const p98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const pf8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            const pevt: u32 = transport.stats().evt_count;
+            const rec94: [4]u32 = .{ 0xAD94_0003, p98, pf8, (@as(u32, @intCast(ra2 & 0xFFFF)) << 16) | (pevt & 0xFFFF) };
+            const eseM = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+            const eswM = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            _ = eseM(0x18F000 / 0x1000);
+            _ = eswM(0x18F000, &rec94, @sizeOf(@TypeOf(rec94)));
         } else {
             board.log.line("F3 SKIP rfready=0", .{});
             // **轮 87**：osal 修复后的 RF 墙基线重测（轮 51-56 分析先于 osal 重写）。

@@ -19,7 +19,13 @@ const hw = @import("hw.zig");
 /// 被截断的行数（可观测）。
 pub var line_trunc: u32 = 0;
 
+/// **轮 94b**：UART 静默开关——0x200A 后 blob 门控 UART0 时钟 ⇒ 任何打印
+/// 都会卡死在 ROM FIFO 等待环（0x2f8036cc，NMI 实测）。置位后 line() 直接
+/// no-op，结果经 flash marker（0x18F000）离线判读。
+pub var muted: bool = false;
+
 pub fn line(comptime fmt: []const u8, args: anytype) void {
+    if (muted) return;
     var buf: [202:0]u8 = undefined;
     const text = std.fmt.bufPrint(buf[0..200], fmt, args) catch {
         // **不再静默丢弃**：超长的行以前会被整行吞掉且不留痕迹（本会话两次

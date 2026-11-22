@@ -715,6 +715,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 b2[5] = w1[0x4C / 4]; // STG0_HOLD
                 b2[6] = w1[0x50 / 4]; // STG1_HOLD(复位级)
                 b2[7] = ck[0x88 / 4]; // **UART0 时钟门控**(HP 域安全位;清零=门控实锤)
+                // **轮 94**：UART0 时钟 **OR 强制保持**——ADV-enable 途中 blob 门控
+                // UART0 ⇒ 主上下文卡死在 ROM UART FIFO 排空环（NMI 实测 mepc=
+                // 0x2f8036ce、ra=0x4006e7f2）。泵侧恢复者自己就在环里 ⇒ 只能由
+                // NMI 每 2ms OR 回写（只置位不清位，不覆盖 blob 的其它意图）。
+                // oracle 的 u0(0x20587088) 恒 0x83（FreeRTOS 不门控）。
+                ck[0x88 / 4] = 0x83; // 直写 oracle 值（OR 不够 ⇒ blob 可能改源/分频字段）
                 // **时钟永活回写**(每 tick):blob 时钟代码反复门控 UART0/TIMERGRP
                 // ⇒ 哑火+看门狗全哑。泵回写一轮输一次,这里 2 ms 一次 ⇒ 永活。
                 // **RTC 慢时钟源重申 RC_SLOW**(bits[25:23]=0):blob 再切外部
@@ -805,8 +811,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 } else nl = "";
                 // **INT_RAW 读数**（RTC_TIMER+0x28：bit31=SOC_WAKEUP 到点？bit28=tick）
                 const int_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2080_0028)).*;
-                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} ir=0x{x:0>8}{s}", .{
-                    nmi_count, frame.mepc, frame.ra, frame.a0, int_raw, nl,
+                const ln = std.fmt.bufPrint(&nb, "NMI n={d} mepc=0x{x:0>8} ra=0x{x:0>8} a0=0x{x:0>8} a1={x:0>8} a4={x:0>8} a5={x:0>8} a6={x:0>8} a7={x:0>8} s1={x:0>8} ir=0x{x:0>8}{s}", .{
+                    nmi_count, frame.mepc, frame.ra, frame.a0, frame.a1, frame.a4, frame.a5, frame.a6, frame.a7, frame.s1, int_raw, nl,
                 }) catch "NMI (fmt fail)";
                 hw.rawLineBlocking(ln);
                 nmi_last_pc = frame.mepc;
