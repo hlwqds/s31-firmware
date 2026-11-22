@@ -916,9 +916,12 @@ fn ulpKeeperArm(comptime tag: u8) void {
     // bit28 pll80m / bit29 xtal / bit30 fosc）。裸机跳过 IDF rtc_clk_init，
     // 源全默认 force-on=0 ⇒ 睡眠门控可能把 LP 核唯一时钟源关死。
     @as(*volatile u32, @ptrFromInt(0x2070_1000)).* |= (1 << 28) | (1 << 29) | (1 << 30);
-    // **轮 119g**：PMU HP→LP CPU 触发（lp_core_ll_hp_wake_lp）——boot addr/
-    // 时钟/复位三件齐后核仍未执行 ⇒ PMU 可能持 LP CPU 在等 HP 唤醒触发。
-    @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // PMU_HP_TRIGGER_LP(WT)
+    // **轮 119g→119m**：PMU HP→LP 触发两件套——lp_core_ll_hp_wake_lp 生效的
+    // 前置 = PMU_LP_CPU_PWR2.WAKEUP_EN.BIT(1)（LP_CORE_LL_WAKEUP_SOURCE_HP_CPU
+    // =SW_WAKEUP_HP，lp_core_ll_set_wakeup_source 写的就是 pwr2.wakeup_en）。
+    // 只写 trigger 不设 en ⇒ 触发被忽略（此前各轮无效的候选根因）。
+    @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1); // PWR2.WAKEUP_EN bit1
+    @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // HP_TRIGGER_LP(WT)
     // **轮 119k**：写后即时回读——分离「写没落地」vs「后被 blob 清」
     const c: u32 = @as(*volatile u32, @ptrFromInt(ccp)).*;
     const r: u32 = @as(*volatile u32, @ptrFromInt(rcp)).*;
@@ -2510,8 +2513,9 @@ pub fn run() noreturn {
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000;
-                // **轮 119l**：LPCORST 实捕 cause=0xA（PMU LP CPU reset）= blob 经
-                // PMU 层复位 LP CPU ⇒ 每次迭代补 PMU 级唤醒触发。
+                // **轮 119l→m**：blob 经 PMU 复位 LP CPU（cause=0xA）⇒ 每次迭代
+                // 补 PWR2.WAKEUP_EN + HP 触发两件套。
+                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1);
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31);
                 const lprcp: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
                 board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>8} ph={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.*, hpp.*, lprcp });

@@ -1,0 +1,504 @@
+loader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=b47a0h (739232) map
+I (233) esp_image: segment 1: paddr=000c47c8 vaddr=2e000600 size=003c8h (   968) load
+I (235) esp_image: segment 2: paddr=000c4b98 vaddr=2f000800 size=00214h (   532) load
+I (238) esp_image: segment 3: paddr=000c4db4 vaddr=2f000a20 size=0b264h ( 45668) load
+I (254) esp_image: segment 4: paddr=000d0020 vaddr=40100020 size=182d0h ( 99024) map
+I (272) esp_image: segment 5: paddr=000e82f8 vaddr=2f00bc84 size=043fch ( 17404) load
+I (280) boot: Loaded app from partition at offset 0x10000
+I (281) boot: Disabling RNG early entropy source...
+bt probe: hooks installed (now_ms=us/1000)
+bt probe: timer 9 -> 12 (must increase)
+bt probe: irqs OFF (control run)
+A308K
+bt probe: init start
+bt probe: rtc chk c1=0x00003e50 c2=0x0000a31b d=25803 t_lo=0x0004d389 t_en=00000000 ena=90000000 date=02508050
+F00=00000000 F04=00000000 F08=00000000 F12=00000000 F16=00000000 F20=00000000 F24=00000004 F28=00000004 
+clkrst+0x000 = 0x00000001
+clkrst+0x004 = 0x00000003
+clkrst+0x010 = 0x00000001
+clkrst+0x01c = 0x00000003
+clkrst+0x020 = 0x00000004
+clkrst+0x024 = 0x00000003
+clkrst+0x028 = 0x00000003
+clkrst+0x034 = 0x00000001
+clkrst+0x038 = 0x000156db
+clkrst+0x03c = 0x0000000f
+clkrst+0x040 = 0x00000001
+clkrst+0x044 = 0x0000000f
+clkrst+0x048 = 0x00000011
+clkrst+0x058 = 0x00415555
+clkrst+0x05c = 0x00000005
+clkrst+0x064 = 0x00000ba1
+clkrst+0x068 = 0x00000181
+clkrst+0x06c = 0x00800043
+clkrst+0x070 = 0x00800043
+clkrst+0x078 = 0x00000001
+clkrst+0x07c = 0x00000001
+clkrst+0x080 = 0x00000001
+clkrst+0x088 = 0x00000083
+clkrst+0x08c = 0x00000083
+clkrst+0x090 = 0x00000083
+clkrst+0x094 = 0x00000083
+clkrst+0x0a8 = 0x00000040
+clkrst+0x0d8 = 0x00000001
+clkrst+0x114 = 0x00000921
+clkrst+0x118 = 0x00000011
+clkrst+0x11c = 0x00000921
+clkrst+0x134 = 0x00000001
+clkrst+0x144 = 0x00000001
+clkrst+0x15c = 0x00000011
+clkrst+0x160 = 0x00001011
+clkrst+0x164 = 0x00001011
+clkrst+0x168 = 0x0000012c
+clkrst+0x16c = 0x0000001a
+clkrst+0x170 = 0x00000002
+clkrst+0x174 = 0x0000004d
+clkrst+0x17c = 0x00000101
+clkrst+0x180 = 0x00000102
+clkrst+0x184 = 0x00000103
+clkrst+0x188 = 0x00000505
+clkrst+0x18c = 0x00000107
+clkrst+0x190 = 0x00000117
+clkrst+0x194 = 0x00000105
+clkrst+0x198 = 0x0000010b
+clkrst+0x1a0 = 0x000003ff
+clkrst+0x1a4 = 0x000003ff
+clkrst+0x1a8 = 0x000003ff
+clkrst+0x1b0 = 0x00000001
+clkrst+0x1cc = 0x00000001
+clkrst+0x1d0 = 0x00000001
+clkrst+0x1d8 = 0x00000001
+clkrst+0x1dc = 0x00000001
+clkrst+0x1e0 = 0x00000025
+clkrst+0x1e8 = 0x00000107
+clkrst+0x1ec = 0x0000000c
+clkrst+0x1f0 = 0x00000004
+clkrst+0x1f4 = 0x00000004
+clkrst+0x1f8 = 0x00000001
+clkrst+0x1fc = 0x02509110
+FE800=1
+PREVHANG pc0=0x5d10e5fd pc1=0x70f2968d nmi_this=0 h600=00000000
+ADVRES magic=00000000 first=00000000 last=00000000
+HANGDUR feed=80000 (×0.25s = 挂死秒数)
+ULPPATH cfg1=0x000956a0 (初值 0x29cc40, 递增=通路活)
+LPCNT hb=4a4a35be phase=b2c28662 (>0 = LP 核活)
+BOOTADDR=0x2e000000 (期望 0x2E001000)
+LPCORST raw=0x20000003 (bit0=flag, [6:1]=cause, bit29=pmu_mask)
+LPCLK cpu=00000000 ram=40000000 intr=00000000 (cpu[30]=1 ram[30]=1 intr[30]=1 期望)
+BOOTSEQ=1727719338
+MAGIC none in 0x0000-0x3FFF (LP 核未写或视图在别处)
+ADVRES2 9C10=00000000 98B8=00000000 98C0=00000000
+CANARY CLK_CONF1=00000000 LP_CLK18=00000004 (bit1=1 ⇒ ULP 可达)
+RING n=3663751290
+RING[00]
+ PC00=0xec89cc70
+ PC01=0x1b635e4b
+ PC02=0xd45df774
+ PC03=0xbefff879
+RING[04]
+ PC04=0x66b76016
+ PC05=0x65e4f47c
+ PC06=0x46ea86c1
+ PC07=0xcc3b048b
+RING[08]
+ PC08=0x1a2ab48a
+ PC09=0x54f75e96
+ PC10=0x0c7f1a40
+ PC11=0x9d81f9e7
+RING[12]
+ PC12=0x01aff0e2
+ PC13=0x8745c152
+ PC14=0x2e54e046
+ PC15=0xb87792d1
+RING[16]
+ PC16=0xd92aeb7b
+ PC17=0x519ec47f
+ PC18=0x07e97d1e
+ PC19=0x6879e857
+RING[20]
+ PC20=0x3cbb8612
+ PC21=0x04c0faec
+ PC22=0x6bb42621
+ PC23=0xf0b2b832
+RING[24]
+ PC24=0x241aa637
+ PC25=0x7766e323
+ PC26=0x504f7fd2
+ PC27=0xf6c51928
+RING[28]
+ PC28=0x3d9823e0
+ PC29=0xda674a7f
+ PC30=0xb23604ca
+ PC31=0x3cf53f13
+BBT seq=1549598499 osal_ra=0x0c08f91b sink_ra=0x9d276d29 phase=0x9d1de19f
+BBT wp2 pc=0x4dbbf581 ra=0x5a695c7d count=4266248523
+BBT env16=0xe60e11e4 env20=0x261ea304
+BBT hook fired=0 slot=0x00000000 fn=0x00000000 n=0
+BBR 0 t14 0x180b8ad
+BBR 1 t10 0x62c9e0f
+BBR 2 t10 0xa744f24
+BBR 3 t7 0x927d050
+BBR 4 t7 0xc2ae0eb
+BBR 5 t0 0x3c1866a
+BBR 6 t12 0xb801cce
+BBR 7 t2 0xe217302
+BBR 8 t3 0x3f32ff1
+BBR 9 t14 0xddb15f6
+BBR 10 t11 0x4e1d231
+BBR 11 t9 0x0f3ab9f
+BBR 12 t2 0xe54f917
+BBR 13 t1 0x34b7308
+BBR 14 t3 0xf86ea67
+BBR 15 t5 0x328e86f
+BBR 16 t7 0xfea3b22
+BBR 17 t14 0x573820b
+BBR 18 t11 0x96e6916
+BBR 19 t6 0x6062b32
+BBR 20 t4 0xbb95597
+BBR 21 t6 0xd8fc515
+BBR 22 t10 0x448057b
+BBR 23 t7 0x033f26b
+EVH e436e288/3672061670
+EVH 040e4154/2147460588
+EVH 4404393a/216754982
+EVH 99106e5f/1094145921
+EVH b56f9cda/574844294
+EVH 60190e0b/1305116411
+EVH 76c234c4/3677231383
+EVH 653d8cd0/2317181398
+BBP last=0x5d10e5fd prev=0x70f2968d nmi=0 assert_line=1744685489
+BBQ 0 0xb87792d1
+BBQ 1 0x2e54e046
+BBQ 2 0x8745c152
+BBQ 3 0x01aff0e2
+BBQ 4 0x9d81f9e7
+BBQ 5 0x0c7f1a40
+BBQ 6 0x54f75e96
+BBQ 7 0x1a2ab48a
+BBQ 8 0xcc3b048b
+BBQ 9 0x46ea86c1
+BBQ 10 0x65e4f47c
+BBQ 11 0x66b76016
+BBQ 12 0xbefff879
+BBQ 13 0xd45df774
+BBQ 14 0x1b635e4b
+BBQ 15 0xec89cc70
+bt probe: trig armed tdl=0x2100000a tsat3=03
+rom fe_poll @0x2f828840
+rom rf_pwr @0x2f00c3b0
+rom tc_tgt @0x2f8210c0
+rom helper @0x2f80e420
+rom isr35 @0x2f815258
+rom base0 @0x2f000000
+rom base800 @0x2f000800
+rom isr37h @0x2f07f188
+rom chead @0x2f8127ec
+rom btini @0x2f814000
+rom ctxp @0x2f07f1f4
+ARM0 cpu=40000000 ram=40000000 intr=40000000 ba=2e001000
+bbtbt bbbbbt brbt bribt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 lpcon=0x00000006
+bt lp: gates conf_bbbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbbt bringup: enter step 52 init_phy
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0 cal[10..14]=0x22feff fe_readable=1 fe=0x5ac968b1
+bt bringup: PHY enabled AFTER step 5 (idf order)
+bt bringup: task list head init *(0x2f011130)=0x00000000
+bt bringup: env pbt bribt bQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 61 60
+Q5 195 4672 0 126
+ZU 122->4,4 spins=36864 cc=3000000
+A0/312168
+
+M0 2244 0x2f029e90
+
+M1 132 0x2f02a768
+
+M2 820 0x2f02a800
+
+M3 80 0x2f02ab48
+
+M4 64 0x2f02aba8
+
+M5 76 0x2f02abf8
+
+MC 6 sz=76 ret=0x2f02abf8
+
+CN 0x2f02a758 0x98 24
+
+D61.3
+
+Mosal> eventqInit
+
+bbbbbt bt bbbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 78 75
+Q5 201 4758 0 126
+ZU 122->4,4 spins=36860 cc=3000000
+A0/309352
+
+M0 2244 0x2f029e90
+
+M1 132 0x2f02a768
+
+M2 820 0x2f02a800
+
+M3 80 0x2f02ab48
+
+M4 64 0x2f02aba8
+
+M5 76 0x2f02abf8
+
+M6 8 0x2f02ac58
+
+M7 36 0x2f02ac78
+
+MC 20 sz=8 ret=0x2f02b738
+
+CN 0x2f02a758 0x98 80
+
+D78.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+bt bbt osbtbbbt bringup: esbt ret:bbbt brinbt brinbt coex: register_ble_cb type=0
+bt coex: register_ble_cb type=1
+bt probe: cb10 head oob=0x00000000
+bt probe: sched slot aftbbt bringup: public addbbt probbbt bringup: load_cal done (pre-mce13-uart-window)
+bt hci: transport ready (own ops, no VHCI ring)
+bt bringup: INITED
+ARM1 cpu=40000000 ram=40000000 intr=40000000 ba=2e001000
+REARM BOOTADDR=0x2e001000 (期望 0x2E001000)
+SLPFIX-early w5=0 w6=0 w8=0 sleep_en=0 (all disabled)
+bt probe: arena free=277288 B
+FR [sp..+64) = 43b28,2038a000,40079820,4006b4e6,62352ec7,941aba12,421de6d7,3f90b7bc | 4e130616,6328771,d419ec4f,fcae0a57,6aefb314,7752fb0d,8cd7aab1,ec29bdfb
+!! c_mepc=0x2f000002 c_mtval=0x0000202e c_ms=0x00003881 c_ra=0x2f000000 f_mepc=0x2f000006 f_sp=0x2f07a0d0 c_ra_saved=0x4006b4e6 cause=0x2 step=15 hci_transport_init da=0x0 db=0x0 dc=0 dd=0 dh=0 df=0x0 dg=0x0 di=0x2f024e40 dj=0x0 gm=0x0 gn=0x0
+SL sj=0x2f024e40 sv=0x2f000002 want=0x2f000002 sn=2 sl=0x400a0300 mw=0x202e8e19
+NB 420=4b8e60a8 424=64f0885b 428=18b6c137 42c=80ce54e1 430=f5988cb7 434=210e18ac 438=690c1279 43c=c1c49b1f | 440=2493f5cb 444=75addcea 448=e24a23e6 44c=c85ae3ef 450=506413e3 454=afc266c1 458=cdac53e5 45c=7e2c6f6d
+WT btslp16=0x8082853e btslp0=0x5fd402d6 mepc8=202e8e19,13026d2d
+RA off=8 ret=0x40079820
+RA off=12 ret=0x4006b4e6
+RA off=2252 ret=0x4008b658
+RA off=3768 ret=0x40000020
+RA off=3784 ret=0x40085304
+RA off=3804 ret=0x40066acc
+RA off=3820 ret=0x400853c2
+OP 700=0 704=0 708=0 70c=0 710=0 714=0 718=0 71c=0 720=0 724=0 728=0 72c=0 730=0 734=0 738=0 73c=0
+RG ra=2f000000 t0=2f80e38a t1=400787f6 t2=5f4d1f4d a0=c0050400 a1=0 a2=dfaff271 a3=0 a4=20501000 a5=20501000 a6=300 a7=2f07a0b7 s0=2f011000 s1=2f0244d0
+panic: exception code=2 (illegal instruction) cause=0x38000002
+panic: ra=0x2f000000 a0=0xc0050400 a1=0x0 a2=0xdfaff271
+panic: live mepc=0x2f000002 mtval=0x202e
+panic: sp=0x2f07a0d0 s0=0x2f011000 s1=0x2f0244d0
+panic: regs a3=0x0 a4=0x20501000 a5=0x20501000 a6=0x300 a7=0x2f07a0b7
+panic: callframe +8=0x40079820 +12=0x4006b4e6
+panic: tregs t0=0x2f80e38a t1=0x400787f6 t2=0x5f4d1f4d t3=0x4 t4=0x40104e58 t5=0x2f07a0af t6=0x6c00
+panic: ctx[0]=0x0 ctx[1]=0x0 ctx[2]=0x0 ctx[3]=0x0
+panic: pc[0]=0x4007879e
+panic: pc[1]=0x400787a0
+panic: pc[2]=0x4007879e
+panic: pc[3]=0x4007879e
+panic: pc[4]=0x400787a0
+panic: pc[5]=0x4007879e
+panic: pc[6]=0x4007876e
+panic: pc[7]=0x4007876e
+panic: pc[8]=0x40078768
+panic: pc[9]=0x40078768
+panic: pc[10]=0x40078768
+panic: pc[11]=0x40078768
+panic: pc[12]=0x40078768
+panic: pc[13]=0x40078768
+panic: pc[14]=0x40078768
+panic: pc[15]=0x40078768
+panic: pc[16]=0x40078768
+panic: pc[17]=0x4007879e
+panic: pc[18]=0x4007879e
+panic: pc[19]=0x4007879e
+panic: pc[20]=0x4007879e
+panic: pc[21]=0x400787a8
+panic: pc[22]=0x4007879e
+panic: pc[23]=0x400787a0
+panic: pc[24]=0x4007879e
+panic: pc[25]=0x4007879e
+panic: pc[26]=0x400787a0
+panic: pc[27]=0x4007879e
+panic: pc[28]=0x400787a8
+panic: pc[29]=0x4007879e
+panic: pc[30]=0x4007879e
+panic: pc[31]=0x400787a8
+panic: pc[32]=0x4007879e
+panic: pc[33]=0x400787a0
+panic: pc[34]=0x4007879e
+panic: pc[35]=0x400787a8
+panic: pc[36]=0x4007879a
+panic: pc[37]=0x4007879e
+panic: pc[38]=0x4007879e
+panic: pc[39]=0x400787a0
+panic: pc[40]=0x4007879e
+panic: pc[41]=0x400787a8
+panic: pc[42]=0x4007879a
+panic: pc[43]=0x4007879e
+panic: pc[44]=0x400787a8
+panic: pc[45]=0x2f80e870
+panic: pc[46]=0x400798c0
+panic: pc[47]=0x2f000002
+panic: caller[0]=0x40077600
+panic: caller[1]=0x400776c8
+panic: caller[2]=0x4007774e
+panic: caller[3]=0x4006b050
+panic: caller[4]=0x4006b114
+panic: caller[5]=0x4006b266
+panic: caller[6]=0x4006b266
+panic: caller[7]=0x4006b4d2
+A0/277288
+M0 2244 0x2f029e90
+M1 132 0x2f02a768
+M2 820 0x2f02a800
+M3 80 0x2f02ab48
+M4 64 0x2f02aba8
+M5 76 0x2f02abf8
+M6 8 0x2f02ac58
+M7 36 0x2f02ac78
+MC 243 sz=12 ret=0x2f033478
+CN 0x2f02a758 0x98 6410
+W 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+AM b7a10c0d
+panic: lc ours=106 other=80 total=186
+panic: LASTSTEP 15 hci_transport_init
+
+panic: osaldump reached n=32
+panic: anchor[0]=0x2f01020c +8=0x2f02acb0
+panic: anchor[1]=0x696e6170
+panic: anchor[2]=0x6f203a63
+panic: anchor[3]=0x636c6173
+panic: anchor[4]=0x656c6c61
+panic: anchor[5]=0x61705b72
+panic: anchor[6]=0x3a63696e
+panic: anchor[7]=0x636e6120
+panic: anchor[8]=0x5b726f68
+panic: anchor[9]=0x3d382b20
+panic: anchor[10]=0x61707830
+panic: osalcaller[0]=0x4006091c
+panic: osalcaller[1]=0x4005f942
+panic: osalcaller[2]=0x4005df42
+panic: osalcaller[3]=0x40060998
+panic: osalcaller[4]=0x40060b08
+panic: osalcaller[5]=0x40060b1e
+panic: osalcaller[6]=0x4004bbc4
+panic: osalcaller[7]=0x4000691e
+panic: osalcaller[8]=0x40006930
+panic: osalcaller[9]=0x40006942
+panic: osalcaller[10]=0x40006946
+panic: osalcaller[11]=0x4000cc58
+panic: mmiocaller[0]=0x40074bb4
+panic: mmiocaller[1]=0x40074bbe
+panic: mmiocaller[2]=0x40074cfc
+panic: mmiocaller[3]=0x40074d0a
+panic: mmiocaller[4]=0x40074d1c
+panic: mmiocaller[5]=0x40074d46
+panic: mmiocaller[6]=0x40074d56
+panic: mmiocaller[7]=0x40074d76
+A0/277288
+M0 2244 0x2f029e90
+M1 132 0x2f02a768
+M2 820 0x2f02a800
+M3 80 0x2f02ab48
+M4 64 0x2f02aba8
+M5 76 0x2f02abf8
+M6 8 0x2f02ac58
+M7 36 0x2f02ac78
+MC 243 sz=12 ret=0x2f033478
+CN 0x2f02a758 0x98 6410
+W 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+AM b7a10c0d
+panic: lc ours=106 other=80 total=186
+panic: LASTSTEP 15 hci_transport_init
+
+panic: osaldump reached n=32
+panic: anchor[0]=0x2f01020c +8=0x2f02acb0
+panic: anchor[1]=0x696e6170
+panic: anchor[2]=0x6f203a63
+panic: anchor[3]=0x636c6173
+panic: anchor[4]=0x656c6c61
+panic: anchor[5]=0x61705b72
+panic: anchor[6]=0x3a63696e
+panic: anchor[7]=0x636e6120
+panic: anchor[8]=0x5b726f68
+panic: anchor[9]=0x3d382b20
+panic: anchor[10]=0x61707830
+panic: osalcaller[0]=0x4006091c
+panic: osalcaller[1]=0x4005f942
+panic: osalcaller[2]=0x4005df42
+panic: osalcaller[3]=0x40060998
+panic: osalcaller[4]=0x40060b08
+panic: osalcaller[5]=0x40060b1e
+panic: osalcaller[6]=0x4004bbc4
+panic: osalcaller[7]=0x4000691e
+panic: osalcaller[8]=0x40006930
+panic: osalcaller[9]=0x40006942
+panic: osalcaller[10]=0x40006946
+panic: osalcaller[11]=0x4000cc58
+panic: mmio[0] W 0x20109c10 = 0x00040000
+panic: mmio[1] W 0x20109c10 = 0x00000000
+panic: mmio[2] W 0x205871e0 = 0x0000003d
+panic: mmio[3] R 0x20109c14 = 0x003ff880
+panic: mmio[4] W 0x20109c14 = 0x003ff880
+panic: mmio[5] R 0x20109c08 = 0x00000000
+panic: mmio[6] R 0x10801064 = 0x1fc00001
+panic: mmio[7] W 0x10801064 = 0x1fc00001
+panic: mmio[8] W 0x10801064 = 0x1fc00001
+panic: mmio[9] R 0x20109c08 = 0x00000000
+panic: mmio[10] W 0x20109c08 = 0x000000dc
+panic: mmio[11] R 0x2010f01c = 0x00000004
+panic: mmio[12] W 0x2010f01c = 0x00000005
+panic: mmio[13] R 0x2010f018 = 0x0000000b
+panic: mmio[14] W 0x2010f018 = 0x0000000f
+panic: mmio[15] R 0x20704208 = 0xc0000000
+panic: mmio[16] W 0x20704208 = 0x40000000
+panic: mmio[17] R 0x20704208 = 0x40000000
+panic: mmio[18] W 0x20704208 = 0xc0000000
+panic: mmio[19] R 0x20704208 = 0xc0000000
+panic: mmio[20] R 0x20109400 = 0x00000000
+panic: mmio[21] W 0x20109400 = 0x00000001
+panic: mmio[22] R 0x20109c00 = 0x00000100
+panic: mmio[23] W 0x20109c00 = 0x00000101
+panic: mmio[24] R 0x2010f000 = 0x00000000
+panic: mmio[25] W 0x2010f000 = 0x00000001
+panic: mmio[26] R 0x2010f83c = 0x12411290
+panic: mmio[27] W 0x2010f83c = 0x12411290
+panic: mmio[28] R 0x20587040 = 0x00000001
+panic: mmio[29] W 0x20587040 = 0x00000001
+panic: mmio[30] R 0x20109c00 = 0x00000101
+panic: mmio[31] R 0x2010f000 = 0x00000001
+panic: mmio[32] W 0x20109880 = 0x12345678
+panic: mmio[33] R 0x20109880 = 0x00000000
+panic: mmio[34] R 0x20109c00 = 0x00000101
+panic: mmio[35] R 0x2010f000 = 0x00000001
+panic: mmio[36] R 0x2010f83c = 0x12411290
+panic: mmio[37] R 0x10801064 = 0x1fc00001
+panic: mmio[38] W 0x10801064 = 0x1fc00001
+panic: mmio[39] W 0x10801064 = 0x1fc00001
+panic: halted (wfi)
