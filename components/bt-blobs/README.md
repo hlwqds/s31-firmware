@@ -30360,6 +30360,6 @@ device_control 跑到底 + 寄存器可写，但 den 仍 0 ⇒ **0x20813014 不�
 实际写目标。
 
 ### 轮 89f 首项
-反汇编 device_control 的 hal 调用（jalr a5 @0x2f000b3c 一带的 a5 来源）→ 找到
-实际写的 ICG 寄存器 → 上板读该寄存器判定 module 6 时钟是否已开 → 若已开，synth
-墙与 modem clock 无关，回 98BC 写者侧（轮 89b 的 F800/F818 观察点）。
+hal 调用已定位：`a5 = *(*(icg_list)+68)`（ICG 配置 fn，args=(s2,s1,s3,config_wrapper)），
+写目标在 0x2010F8xx 块。**我们 R 系列一直只读 F800 漏了 F818**（oracle ANASET 两个都打）
+⇒ 89f 第一动作 = R 行补读 0x2010F818 + 反汇编 config_wrapper/ICG fn 定名写目标。
