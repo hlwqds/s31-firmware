@@ -103,6 +103,13 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        csrr    t3, 0x7a1
         \\        slli    t3, t3, 1
         \\        bgez    t3, .Lwpdone
+        \\        # **c.ebreak 过滤**：HIT 位粘滞（命中一次后恒 1）——blob 内部
+        \\        # assert 的 c.ebreak(0x9002) 会被误入快路径无限循环（轮 31
+        \\        # count 爆 20 亿根因）。mepc 处半字 == 0x9002 ⇒ 走 dispatch
+        \\        # （打印 BP! + mepc+2 推进），让 assert 位置现形。
+        \\        lhu     t3, 0(t5)
+        \\        li      t4, 0x9002
+        \\        beq     t3, t4, .Lwpdone
         \\        la      t3, wp_watch_on
         \\        lw      t3, 0(t3)
         \\        beqz    t3, .Lwpdone
@@ -1282,12 +1289,15 @@ var fe3_hits: u32 = 0;
 var bp_hit_mepc: u32 = 0;
 var bp_hit_cause: u32 = 0;
 var bp_hit_count: u32 = 0;
-/// **轮 26**：STORE 观察点命中现场（写者 PC + ra），probe 冻结点转存 rec[511..512]。
-pub var wp_hit_pc: u32 = 0;
-pub var wp_hit_ra: u32 = 0;
-pub var wp_hit_count: u32 = 0;
+/// **轮 26**：STORE 观察点命中现场（写者 PC + ra），probe 冻结点转存 rec。
+/// **必须 export var**：这四个全局被 trapEntry 的裸 asm `la` 引用（Zig 引擎
+/// 不可见，pub var 会被 --gc-sections 裁掉 → ld.lld undefined；flash_fault_mepc
+/// 同款先例）。export = 强制发射，asm `la` 与 probe 读数双通道可靠。
+pub export var wp_hit_pc: u32 = 0;
+pub export var wp_hit_ra: u32 = 0;
+pub export var wp_hit_count: u32 = 0;
 /// **轮 29**：观察点武装旗子——trapEntry 快路径的开关（SRAM .bss，asm `la` 直达）。
-pub var wp_watch_on: u32 = 0;
+pub export var wp_watch_on: u32 = 0;
 var bp_last_tsel: u32 = 0;
 
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：

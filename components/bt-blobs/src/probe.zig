@@ -74,6 +74,9 @@ const sched = @import("osal_kit").sched;
 const porting = @import("porting.zig");
 const board = @import("board");
 
+/// **轮 32 撤回**：@extern 引用 s_is_phy_calibrated 会激活 phy_init.c.obj 的
+/// .sbss → 级联拉出 pmu_init/modem_clock/closed-libphy burst 调用链（全部
+/// 未定义死路）。回到 nm 硬编码地址 0x2f010f00（本构建布局稳定，见 nm）。
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
 /// **blob 台词行环（Zig 侧，安全 .bss）**：bt_printf_shim 经 export 回调写入。
 pub var bt_ring: [16][48]u8 align(4) linksection(".bt_lp_data") = @splat(@splat(0));
@@ -1720,7 +1723,7 @@ pub fn run() noreturn {
         const old_c = nmi_reg.*;
         nmi_reg.* = (old_c & 0x107) | (1 << 3); // nmies 置位（NMI 不受 MIE 屏蔽）
     }
-    // **轮 26：STORE 观察点武装**——盯 s_is_phy_calibrated(0x2f010e80) 的写者：
+    // **轮 26：STORE 观察点武装**——盯 s_is_phy_calibrated(0x2f010f00) 的写者：
     // 轮 25 实证该字节被持续踩（enable 后 230 → 冻结 136，源码只写 1）⇒ 有无符号
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
@@ -1729,9 +1732,8 @@ pub fn run() noreturn {
         // trapEntry 的 SRAM 快路径（零 flash 取指），XIP panic 类已根除。
         // 目标地址用链接符号取（跨构建稳健）：s_is_phy_calibrated（IDF 胶水静态，
         // 轮 24-29 链条：它被某指针持续写非零 ⇒ enable 入口恒 skip load_cal）。
-        const cal_flag: *volatile u8 = @extern(*volatile u8, .{ .name = "s_is_phy_calibrated" });
-        const watch_addr: u32 = @intFromPtr(cal_flag);
-        board.trap.wp_watch_on = 1;
+        const watch_addr: u32 = 0x2F01_0F00; // nm 本构建 s_is_phy_calibrated 地址
+        @import("board").trap.wp_watch_on = 1;
         asm volatile ("csrw 0x7a5, zero");
         asm volatile ("csrw 0x7a0, zero");
         asm volatile ("csrw 0x7a2, %[a]"
@@ -1746,10 +1748,12 @@ pub fn run() noreturn {
         // **轮 31 仪器自证**：已知地址的 c.ebreak —— 快路径应捕获 mepc=本指令
         // 地址（构建后 objdump 定位）。rec[508]==该地址 ⇒ 捕获链可信；不等 ⇒
         // 快路径 mepc 语义坏（CLIC 影子寄存器），仪器推倒重来。
-        asm volatile (".option push");
-        asm volatile (".option rvc");
-        asm volatile ("c.ebreak");
-        asm volatile (".option pop");
+        asm volatile (
+            \\.option push
+            \\.option rvc
+            \\c.ebreak
+            \\.option pop
+        );
     }
     rc = bringup.enable();
     if (rc != 0) {
@@ -2127,7 +2131,7 @@ pub fn run() noreturn {
             const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
             const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
             const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
-            var rec: [512]u32 = undefined;
+            var rec: [528]u32 = undefined;
             const ready_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*; // 读挂 ⇒ 本记录不出现
             rec[0] = 0xADC0_BBF4;
             rec[1] = osi_impl.event_count;
@@ -2226,7 +2230,7 @@ pub fn run() noreturn {
             // phy_module_has_clock_bits(modem)，为假则整段 load_cal 被跳过
             // （rc 仍 0）⇒ 校准从未运行 ⇒ synth 永不锁。两个字节钉死：
             //   rec[508] = s_is_phy_calibrated（esp_phy_enable 内部读的全局，
-            //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010e80）
+            //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010f00）
             //   rec[509] = phy_module_has_clock_bits(2)（PHY_MODEM_BT）直调结果
             // **轮 30**：rec[508..511] = 观察点四元组 {写者 PC, 写者 ra, 命中数, calflag}
             // **轮 31**：观察点四元组改读 **LP 槽副本**（0x2E0004A0..4AC，快路径
@@ -2235,9 +2239,33 @@ pub fn run() noreturn {
             rec[508] = @as(*volatile u32, @ptrFromInt(0x2E00_04A0)).*;
             rec[509] = @as(*volatile u32, @ptrFromInt(0x2E00_04A4)).*;
             rec[510] = @as(*volatile u32, @ptrFromInt(0x2E00_04A8)).*;
-            // **rec[511] = 冻结时刻 flag 字节**（extern 符号直读）——与 post 值的差
-            // = enable-返回到冻结之间的写入活动维度。
-            rec[511] = @as(*volatile u8, @extern(*volatile u8, .{ .name = "s_is_phy_calibrated" })).*;
+            // **rec[511] = 冻结时刻 flag 字节**（nm 地址直读；本构建布局见 nm）
+            rec[511] = @as(*volatile u8, @ptrFromInt(0x2F01_0F00)).*;
+            // **轮 33：污染指针扫描**——观察点 ra=0xc499e3c7（跨 boot 恒定垃圾）
+            // = blob 经它调用的坏指针。全堆 + bss 关键区扫描该常量，命中地址进
+            // rec[512..519]（≤8 处），rec[520] = 命中总数 → 符号化即污染源结构。
+            {
+                const target: u32 = board.trap.wp_hit_ra;
+                var hits: u32 = 0;
+                var si: usize = 0;
+                const ranges = [_][2]usize{
+                    .{ 0x2f01_0e80, 0x2f02_2a80 }, // bss 全跨度（含闭包+胶水）
+                    .{ @intFromPtr(heapStart()), @intFromPtr(heapEnd()) }, // 堆（blob arena）
+                };
+                inline for (ranges) |rg| {
+                    var a = rg[0];
+                    while (a + 4 <= rg[1] and hits < 8) : (a += 4) {
+                        const v = @as(*volatile u32, @ptrFromInt(a)).*;
+                        if (v == target) {
+                            rec[512 + si] = @intCast(a);
+                            si += 1;
+                            hits += 1;
+                        }
+                    }
+                }
+                while (hits < 8) : (hits += 1) rec[512 + hits] = 0;
+                rec[520] = si;
+            }
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];

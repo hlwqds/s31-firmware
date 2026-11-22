@@ -28612,6 +28612,13 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **🏁 轮 33（2026-11-22）：踩踏者现形——`__floatuneixf` 序言 + 坏栈指针**：
+  1. 观察点瞄准修正后的 flag 地址（0x2f010f00，本构建 nm 实测；轮 30 的教训=地址必须随构建 nm 重取）→ **单次干净命中**（tselect=0 显式解除修复生效，无级联）。
+  2. **写者 PC = 0x400a63eb = `__floatuneixf` 序言的 sp 相对保存指令**（compiler_rt 整数→f80 软浮点转换——**浮点格式化打印路径**！）；反推 **sp ≈ 0x2f010eb4**（sp+72 = flag）——**该栈地址在 bss 跨度内，无任何合法栈居住**。
+  3. ⇒ 踩踏者 = **某个上下文带着坏栈指针（sp 落在 bss）跑浮点打印转换**。候选：栈溢出/递归打印路径/上下文 sp 损坏——非 blob、非 mcontrol 误触发、非中断，**是我们自己的打印/调用链越界**。
+  4. LP count=4153684168（跨 boot 累积）⇒ 该路径每 boot 数千次命中（每次都写穿 flag）。
+  - **下 session 首项**：① 抓命中时刻的完整栈回溯（sp 向上扫 ra 链——LP 快路径可加），定位谁在坏栈上调浮点打印；② grep 流程中 `%f`/float 打印（osal logPublic 浮点参数？）；③ 修好后判据不变：观察点零命中 + FE450/47C 振荡 + 98BC.bit2=1。
+  - **本轮真正解锁**：观察点仪表链（trapEntry 快路径 + HIT 验证 + c.ebreak 过滤 + 显式解除 + LP 权威副本 + 符号化地址）首次产出**可信单命中捕获**——30 轮以来第一次拿到可符号化的写者 PC。
 - **轮 32（2026-11-22）：端到端可信四元组到手——执行逃逸区随镜像尺寸漂移实锤**：
   1. LP 权威四元组：写者 PC=0x18a638e6（上轮 0x08a638e3——**别名窗与偏移都随镜像尺寸漂移** = 执行发生在**我们镜像末尾之后的陈旧 flash 字节**）；ra=污染间接调用；count 数千/轮（陈旧代码循环 store 我们的 flag 区）；冻结 flag=89（enable 的 true 被覆写）。
   2. **机制终版**：被污染的间接指针 → 调用逃逸进镜像尾部陈旧字节 → 陈旧循环持续 store `s_is_phy_calibrated` ⇒ enable 入口恒 skip load_cal ⇒ rc=0 假象 ⇒ synth 永不锁。**26 轮全部反常统一**。
