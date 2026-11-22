@@ -34,7 +34,7 @@ export fn esp_rom_spiflash_write(target_address: u32, src_data: [*]const u32, le
 }
 
 /// bt_printf_shim 的行环（轮 8 flash 标记判据）：主机测试目标不链 shim C，给空定义。
-export var s31_bt_log_mute: c_int = 0;
+export var s31_bt_log_mute: c_int = 1; // **轮 94-final**：0x200A 后 UART0 被门控，默认静默
 export var s31_bt_ring: [16][48]u8 = @splat(@splat(0));
 export var s31_bt_ring_head: c_uint = 0;
 export var s31_bt_log_dropped: c_uint = 0;

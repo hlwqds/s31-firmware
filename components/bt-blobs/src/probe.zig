@@ -2371,14 +2371,10 @@ pub fn run() noreturn {
             // = 同步死锁。A 路径入队 ⇒ controller task 在自己上下文处理 ⇒
             // 内部等待可满足（基础命令 A 路径已证通：A(rx) sendReadVersion）。
             ra2 = transport.sendCmd(0x200A, &ae);
-            const p98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
-            const pf8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
-            const pevt: u32 = transport.stats().evt_count;
-            const rec94: [4]u32 = .{ 0xAD94_0003, p98, pf8, (@as(u32, @intCast(ra2 & 0xFFFF)) << 16) | (pevt & 0xFFFF) };
-            const eseM = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
-            const eswM = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
-            _ = eseM(0x18F000 / 0x1000);
-            _ = eswM(0x18F000, &rec94, @sizeOf(@TypeOf(rec94)));
+            // **轮 94-final**：writeLightMarker 通道落盘（CLIC[25] 门+flashOpBegin
+            // 齐备；此前裸 eseM/eswM 无门护 = XIP 锁死根因）。
+            // recL[8]=98BC、recL[9]=F800、phase=3=post-ADV-enable。
+            writeLightMarker(3);
         } else {
             board.log.line("F3 SKIP rfready=0", .{});
             // **轮 87**：osal 修复后的 RF 墙基线重测（轮 51-56 分析先于 osal 重写）。

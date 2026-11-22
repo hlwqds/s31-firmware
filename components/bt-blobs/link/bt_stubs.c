@@ -140,7 +140,9 @@ void wr_btdm_log_reset_flags(unsigned char p0) { (void)p0; s_log_flags = 0; }
  * 动机：板侧显示 UART0_STATUS.TXFIFO_CNT 恒 128（FIFO 满且不排空），
  * 且 OSAL 调用序列只打出一行就再无输出 ⇒ 先排除"controller 的日志把 UART 灌死"。 */
 #ifndef BT_LOG_SILENT
-#define BT_LOG_SILENT 0
+#define BT_LOG_SILENT 1 /* **轮 94-final**：0x200A 后 blob 门控 UART0 ⇒ 任何 blob 打印
+                         * 都卡死 ROM 排空环（0x2f8036cc）。编译期全静默（README 27452
+                         * 的 mute 实验已证静默让 ADV 序列完整跑通）。 */
 #endif
 
 void wr_btdm_log_internal_x0(unsigned int p0) {

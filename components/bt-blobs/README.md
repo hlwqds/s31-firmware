@@ -30550,3 +30550,30 @@ blob ADV-enable：写配置+启动选通（coex 位置 ✓）→ 门控 TIMERGRP
 1. **HP 时钟门控位回写竞速**：NMI（T0 死后不可用）⇒ 改 MWDT1 STG0=中断（MASKED 时改配 STG0=reset 即自动恢复）双保险；
 2. **ULP 直写 HP 时钟门控寄存器**（0x20587110 系）——LP master 能否写 HP_CLKRST 待一测；
 3. **对照 oracle 的门控序列**：oracle adv-enable 期间 0x20587110/88 的值轨迹（oracle main.c 补打点，ninja 1.5s）。
+
+---
+
+## 🔬 轮 94-final/96：静默全套落地 + hang 收窄至 rx 路径分叉（2026-11-23）
+
+### 落地（在树）
+1. `BT_LOG_SILENT=1`（bt_stubs.c 编译期全静默——README 27452 的 mute 实验先例）
+2. `s31_bt_log_mute=1`（运行时默认静默）
+3. writeLightMarker recL 8→10 字（+98BC/F800）+ F3 后调用 writeLightMarker(3)
+4. 删除裸 eseM/eswM 块（无门护 = XIP 锁死根因，改走 battle-tested 通道）
+
+### 实测
+marker 仍 8 字旧格式（phase=1 pre-forward，未到 3）⇒ **hang 在
+r_btdm_hci_trans_rx 内部**（cmds_sent++ 之后、marker 之前）。
+
+### 关键对照（收敛出分叉点）
+- A 路径基础命令（ReadVersion/Reset/ReadBdAddr）：同样走 rx ⇒ 不挂，CC 正常（evt=4）
+- A 路径 0x200A（ADV-enable）：rx 内挂死
+⇒ **rx 路径对 ADV-enable 类命令有分叉**：ADV-enable 的处理触发 RF-wait/时钟收缩
+（门控 TIMERGRP/UART0/SYS_TIMER），而基础命令不触发。
+
+### 轮 96 首项
+反汇编 `r_btdm_hci_trans_rx`（nm 取址）找 0x200A 的处理分叉：
+- rx → 同步 dispatch（同 B 路径死锁）？
+- rx → 队列满阻塞（前序命令事件未消费）？
+- rx → ADV-enable 专用 RF-wait？
+定位后修法：把 ADV-enable 处理挪进 task 上下文（泵 resume 时序）或给等待环喂时间源。
