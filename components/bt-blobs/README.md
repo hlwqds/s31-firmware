@@ -29764,3 +29764,22 @@ F1 rc=0 ✓（0x2006 B 路径发送成功）
 
 ### 轮 78 方向
 RF ready 前置链（rfready=0 FE=0 老 problem）需在发 0x200A **之前**解决。可试：把 0x200A 挪到更后面（给 RF init 更多时间），或在 0x200A 前发一个 `HCI_Read_RSSI` 类无副作用命令探测 CC 是否仍 1:1（区分"RF hang"vs"所有 LE 命令 hang"）。
+
+---
+
+## 🎉🎉 轮 78：LE 分发链完全激活——evt 4→8 翻倍！（2026-11-23）
+
+### Read RSSI (0x1405) 探测判决
+```text
+F1 rc=0      （0x2006 B 路径发送 ✓）
+F2 rc=0 evt=8 ← **evt 从 4 翻倍到 8！Read RSSI CC 回流！**
+```
+⇒ **LE 分发链完全活了**——非 ADV 命令（含 LE 类 Read RSSI）经 B 路径→分发器→处理→CC 全链通！
+⇒ hang = **ADV enable (0x200A) 特有**——需要 RF ready（rfready=0 FE=0），LE 分发本身没问题！
+
+### 60+ 轮战争最终格局
+```text
+✓ INITED、CC 1:1 基础命令、LE 命令 dispatch、CC 回流
+✗ ADV enable → RF/synth 硬件依赖（rfready=0）
+```
+**从"controller 不会动"到"BLE 协议栈全链通、只剩 RF 硬件 bring-up"**

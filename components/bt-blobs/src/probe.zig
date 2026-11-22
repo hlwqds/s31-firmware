@@ -2234,6 +2234,11 @@ pub fn run() noreturn {
         board.log.line("F0 {x:0>8}", .{f83c_before});
         const r6b = transport.sendCmdViaHs(0x2006, &ap);
         board.log.line("F1 rc={d}", .{r6b});
+        // **轮 78：LE 活性探测**——发 Read RSSI (0x1405，无副作用)
+        // CC 回来（evt→5）= LE 分支活，hang 是 ADV enable 特有（RF 依赖）
+        // CC 不来 = 整个 LE 分发死
+        const rrssi = transport.sendCmdViaHs(0x1405, &.{});
+        board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
         const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
         osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
