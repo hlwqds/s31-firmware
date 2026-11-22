@@ -28592,6 +28592,7 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   - **POST 未到**（残留 5F90）⇒ 冻结 ∈ **sendCmd(0x200A) 的 logPublic("bt hci >> CMD 200a") 或 forward(→`r_btdm_hci_trans_rx`)**——alloc 已过（cmd_alloc_null 未触发，rcA 未返回）。
   - vendor 环 5 对 = 命令 1-5（0x2006 等）已处理；0x2008/0x200A 无处理记录 ⇒ 任务停用新事件。
   - **clamp 后仍挂** ⇒ sleep_en 钳制无效（被 blob 覆写待验）或挂点非 sleep 决策。
-- **主嫌疑（轮 14 判据已定）**：**协作死锁**——`forward(→r_btdm_hci_trans_rx)` 在主上下文同步执行，0x200A 入队若触发阻塞语义（队列满/等任务消费）⇒ 主等任务、任务等泵 ⇒ 死锁；备选 = 该区日志的 UART 等待。**轮 14 仪器 = 轻量标记插到 `f(TYPE_CMD,…)` 调用前一行**：到达而冻结 ⇒ rx 内部死锁实锤；未到 ⇒ 挂在日志路径。transport.zig:232-234（log 在 cmds_sent++ 后、forward 前）。
+- **第十五轮（同日，协作让出对照）**：命令序列每条 sendCmd 后插 `sched.resumeTask` + `serviceTimers`。判读：**PRE 仍 phase=1**、put=7（0x200A 未入队）、cnt 走动 ⇒ 让出无效——rx 等的不是「任务腾队列」而是**永不到来的 BB 中断/ready 信号**（sem_pend waiter 由 ISR 唤醒；BB 中断零触发 = §29.23 原墙 brg=0）。
+- **阶梯到顶（轮 1-15 总结）**：环境配置（LPCON/rtc_freq/FE450/RTC clk_en）、时钟（clk_en/counter 走动）、协作（让出/钳制）、总线（98BC 可读）全部排除；**剩余唯一解释 = blob 的 BB 启动依赖缺失的初始化写集** ⇒ 下一 session 首项 = **oracle BB write-set 对拍**（烧 `~/esp/bt-ctl-oracle/build/bt-ctl-oracle.bin`，BB 寄存器 dump 对照我们 park 前写集；oracle main.c 已含 FE 采样与 dump 循环）。本轮同时建立的可复用资产：flash 双扇区标记（0x18E000 完整/0x18F000 相位字）、blob 台词环+裸三元组环（LP RAM）、irom 0xC0000 窗口、compiler_rt 193KB 死重发现。
 - **⚠ 占窗事故**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
 - 同源排查：wifi-blobs `init_probe.zig` 的 LPCON 写（TEST_CONF@0x00 bit0、CLK_CONF@0x18）偏移**正确**，无同病。**教训**：正确布局知识一直在 wifi 侧（0x2010F018 注释连位义都记了）——**跨 blob 写 MODEM_LPCON 前先抄 `wifi-blobs/init_probe.zig` 的既有对拍**，并对照 `soc/esp32s31/include/modem/modem_lpcon_struct.h` 逐字段核偏移，不要发明偏移。

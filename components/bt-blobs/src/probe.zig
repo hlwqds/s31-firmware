@@ -1891,6 +1891,10 @@ pub fn run() noreturn {
         // （ICG 全 1 A/B 已做：无效果，代码撤除。）
         uartSnapshot(); // **快照**:泵每轮 compare/restore 的基线(UART0 32 字+CLKRST)
         const r6 = transport.sendCmd(0x2006, &ap);
+        // **轮 15 协作让出**：任务消费积压命令/腾队列——裸忙等连发会在队列临界态
+        // 死锁（轮 14 实锤：0x200A 的 rx 阻塞等任务=任务等泵）。
+        if (ctrl_task) |t| sched.resumeTask(&t.ctx);
+        osi_impl_serviceTimers();
         osal.logPublic("bt probe: fwd06 ret={d}", .{r6});
         osal.lpTrace(3, 0xF001);
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
@@ -1902,6 +1906,8 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF002);
         const r8 = transport.sendCmd(0x2008, &ad);
         osal.lpTrace(3, 0xF003);
+        if (ctrl_task) |t| sched.resumeTask(&t.ctx);
+        osi_impl_serviceTimers();
         // **轮 13/14 轻量标记（0x18F000，相位字）**：phase=0=pre-0x200A；phase=1=
         // pre-forward（最后一条 sendCmd 的 forward 之前——经 transport.pre_forward_hook）。
         writeLightMarker(0);
@@ -1978,6 +1984,8 @@ pub fn run() noreturn {
         snap_valid = true;
         const ra2 = transport.sendCmd(0x200A, &ae);
         osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
+        if (ctrl_task) |t| sched.resumeTask(&t.ctx);
+        osi_impl_serviceTimers();
         flashStage(23);
         osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
 
