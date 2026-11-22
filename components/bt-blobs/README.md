@@ -29611,3 +29611,14 @@ a0 = *(env+20) → gvLJK4；a0 = *(env+16) → gvLJK4
 
 ### 真问题回归
 = 轮 67c 的"6 子 init 之一失败"（非内存布局问题）。子 init 身份 = JwHsRJf87 等 6 个 blob 私有函数（非 osal wrapper）⇒ 它们的失败前置条件 = cfg 派生状态（memcpy(env+24, cfg+24, 20) 的 20 字节里某字段）⇒ **cfg+24..44 的 20 字节段 = 逐字节 diff oracle**（轮 68 已有 idf_cfg192 全 dump，偏移 24..44 对照即可）。
+
+---
+
+## ✅ 轮 72c：cfg+24..44 逐字段核对通过（2026-11-23）
+
+cfg 镜像 20B 段（offset 24..44）与 esp_bt.h 逐字段吻合：rtc_freq(u64)=32000 ✓、ble_ll_sca=60 ✓、scan_phy=2 ✓、auth_tmo=3000 ✓、jitter=16 ✓、sched_adv_usecs ✓。⇒ **cfg 镜像正确**，OkE7 bail 前置不在 cfg 20B 段。
+
+### 回归定位（新证据 chain）
+clean71 boot（无 prefill）的 crash = **set_sleep_cb NULL+12**（mtval=0xc）——与轮 71 有 prefill 时的 gvLJK4 walk 崩不同。两个 crash 的分叉点 = OkE7 入口检查 *(0x2f011138)：有 prefill（非零）= OkE7 bail -1 → walk crash；无 prefill（=0）= OkE7 lazy malloc ✓ → 但 sleep_set_sleep_cb 仍被调（调用者无槽空守卫，bpboot5 已文档化）→ *(0x2f011134)=NULL+12 崩。
+
+⇒ **两条路径都通向睡眠链**——真正的开关 = `OB0cbi2`（0x2f011134 槽判 sleep ON/OFF）与 OkE7 入口检查共用 0x2f011138。**轮 73 首项 = 在 bringup 的 sleep_en 路径上显式置 sleep=OFF**：即确保 OB0cbi2 的输入（0x2f011134 槽 + env[0] byte）走 OFF 路径——具体 = **0x2f011134 槽保持 NULL（不加 prefill ✓ 已做）+ 调用 set_sleep_cb 的上游加守卫（需反汇编调用者的判据）**。下轮从 clean71.log 的 ra=0x4006b850 反汇编定位调用者判据。
