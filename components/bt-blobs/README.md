@@ -28838,3 +28838,22 @@ s31.ld 布局手术把我们的 .data/.bss 移出了 blob 窗口（0x2f010cdc-0x
 
 ### 修法
 43 处硬编码逐一改为 **`@extern` + 闭包符号名**（nm 新表可查每个地址对应的 r_sym_ble_* 符号），零硬编码依赖。或者更简单：在 s31.ld 里加 `.porting_slots (NOLOAD)` 段固定在 0x2f010cdc（blob 窗口起始处），host_stubs 的 export var 用 `linksection(".porting_slots")` 约束——硬编码地址零修改。
+
+---
+
+## 🔒 轮 43 补充（回退布局确认 + OkE7 锚点 = 0 根因定位）
+
+### 布局确认
+- s31.ld = 回退版（无手术标记，grep 0x2F022B00 = 0 ✓）
+- 闭包 .data/bss 在原位 ✓（r_sym_ble_Haqf @ 0x2f010f24 等）
+- 锚点槽 0x2f0150b8 = 有效地址 ✓（闭包 .bss 原位）
+
+### OkE7 锚点 P=0 根因
+- "Xpuq 锚点 P=0x00000000"（step 6 打印）= OkE7 锚点**发布被门控/跳过**（bringup.zig OkE7 发布块有多个门控条件：`prepublish_bohff`、arena 分配成功检查等）
+- 非布局问题——回退布局下锚点槽地址有效，只是**指针值 = 0**（发布未执行或 malloc 返回 NULL）
+- `r_btdm_sleep_set_sleep_cb` 读 NULL+0xC = **sleep 回调配置对象 = NULL**（锚点链断裂）
+
+### 下 session 首项
+1. bringup step 6 前**加打印 OkE7 锚点值**（`pp.okE7Anchor()`）→ 确认 P=0 的时机（发布前 vs 发布失败）
+2. 检查 OkE7 发布块的 arena 分配（`osal2.btdmMalloc(32, 0)`）是否返回 NULL（arena free=300520 ✓ 应该不缺）
+3. 如果 malloc ✓ 但锚点 = 0 ⇒ `pp.setOkE7Anchor()` 的写入地址漂移（老问题）
