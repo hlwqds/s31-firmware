@@ -30908,3 +30908,33 @@ ADV-enable 的第一步（已证）⇒ blob 收缩决策在其后。两条：
    的返回语义——oracle 的 coex 模块可能回写某状态使 blob 跳过收缩；
 2. 或 NOP 掉 blob 内对该函数的调用点（patch blob RAM 副本——命令内存 F800
    机制已证可写，同法 patch 调用点）。
+
+---
+
+## 🏁 轮 111 终极定案：MODEM MMIO 读停顿 1s/条（时间线精确吻合，2026-11-23）
+
+145s 捕获时间线解码：ADVRES 环 t=149/150 @ T+145s，poll 起点 ~T+2s
+⇒ **150 条 0x201098BC 读 × ~1s 停顿 = 150s，精确吻合**。
+（每条 MODEM MMIO 读停 ~1s = 总线等待超时值。）
+
+### blob ADV-enable 的行为终版
+ADV-enable（task 上下文）：
+1. coex_schm_status_bit_set(1,1)（记账，我们 stub）
+2. 门控 MODEM 块时钟（收缩）⇒ 之后 HP 对 MODEM 块任何读 = 1s 总线超时停顿
+3. 门控 TIMERGRP/SYS_TIMER/UART0 ⇒ 全计时观测死
+4. RF-ON 命令已武装（F800 bit24）但 burst 执行器（I2C master）在同一门控域 ⇒ 永不执行
+⇒ radio 永不广播；主上下文以 1s/MMIO 读的速率蠕动
+
+### sleep_en=0 钳制（task_init 后）= 负结果
+ADV-enable 仍收缩 ⇒ 决策非 sleep_en（或 blob 在更早处置了副本）。
+
+### 根修唯一路径（下 session，需 blob 反汇编）
+**定位 blob ADV-enable 路径里写时钟门控寄存器的那条指令**（r_sym 调用链：
+btdm_lp_modem_clock_set(0) → modem_clock_module_disable(6) → 设备控制表），
+二选一：
+a. **patch blob flash 副本**：将该门控写 NOP 化（blob 在 flash，可 patch——
+   F800 机制已证 MODEM 块可写，flash 块同理用 ROM SPI 写）；
+b. **HP 侧高频回写竞速**：门控写后立即回写（回写点=我们的 mcycle 轮询环，
+   每轮先回写时钟门再读 98BC ⇒ 读不再停顿（时钟已被救活）⇒ 98BC 演化可读）。
+b 更简单：把门控寄存器回写加进现有 ADVRES 轮询环（当前轮询环每条读停 1s
+= 时钟被关；若先回写时钟门再读 ⇒ 读瞬时完成 ⇒ 环加速 ⇒ 实时演化可见）。
