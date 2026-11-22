@@ -28611,6 +28611,12 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   2. raw USB（pyusb）顺序：fresh find → USBDEVFS_RESET(0x5514)（如仍异常）→ detach(usbfs ioctl 0xC010551A) → claim → **IFC_ENABLE req 0x00 wValue=1（必须！内核 close 会禁用 UART 端口，不发则 bulk 全 NAK=bulk 超时真因）** → **SET_BAUDDIV req 0x01 wValue=334（115200；此前 MHS 误用 0x1E=SET_BAUDDIV 已灌垃圾值，必须显式恢复）** → SET_LINE_CTL req 0x03 wValue=0x0800（8N1）→ **SET_FLOW req 0x13 wLength=20 全零（关 CP2102C always-on CTS 门控）** → SET_MHS **req 0x07**（wValue: DTR=bit0|mask bit8, RTS=bit1|mask bit9；⚠ 0x1E 是 SET_BAUDDIV 不是 MHS——此前 MHS 写全是波特率寄存器垃圾）→ 单字节 bulk 门测（<1s 成功）→ connect。
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
+- **轮 19 后 SCHED 逐字对照（oracle SC dump vs 我们 marker）**：
+  - **官方 SC 000-054 = 全零**（官方 nz=37 分布在其他偏移）；我们 SC 004-050 = 20 个非零（probe 诊断/哈希数据，非 blob 寄存器）
+  - **唯一真实寄存器差异 = SC 054：官方 0x18208000 vs 我们 0x54d47e8f**
+  - SC 054 = 0x20101054 — 可能是 BB schedule / sleep 配置的关键寄存器（唯双方非零但值不同的寄存器）
+  - **下一判据**：读官方 0x20101054 的上下文（前后的寄存器写序列）→ 确定该寄存器功能 → 在 probe 中写入正确值 → FE450 振荡判读
+  - **BB diff +0x38 = 0xffc10000 vs 0xffc00000（差 bit16）**——轮 17 MAIN_XTAL 或 0x438 补位的副作用，需复测
 - **🔒 轮 19 终审完成（分区哈希对账 + BB 窗口 21/21 零差异）**：
   - BBHEAD: xor=0x0 nz=120 ✅ 完全一致
   - **SCHED (0x20101000-1200): 我们 xor=0x23079808 nz=17 vs 官方 xor=0x458cae30 nz=37 ✗——缺 20 个非零初始化写**
