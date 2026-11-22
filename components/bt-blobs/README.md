@@ -30005,3 +30005,19 @@ LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slo
 
 ### 下 session 方向重定向
 **不是**追 blob 内部 dispatch 表——而是**评估是否需要/如何最小化跑 NimBLE host 栈初始化**（ble_stack_init 我们已在 step 17 调过——但 NimBLE host 初始化可能需要更多步骤）。对照 oracle 的 ble_stack_init 完整调用链。
+
+---
+
+## 🔧 轮 82c：hiASs 状态机迁移函数纠正（2026-11-23）
+
+### 正确解读（顾问校正后）
+hiASs12KrrctGZf2rIzS(OCF) = **状态机查表/迁移函数**：
+- OCF∈[6,13]（0x2006 的 OCF=6 正中射程）→ 读全局状态对象 `*(0x2f01101c)` = 24oNY5JG 槽
+- `state+4 == 2 ? 返回 0 : (写 1 到 state+4, 返回 1)`
+- handler 里 `beqz → .L516` = **state 已是 2 时才进 .L516**（= 已迁移过 = 继续走分发）
+- 返回 1（刚迁移）也继续走分发（非静默丢弃）
+
+### 三件套（下 session 首项）
+1. 一条 boot 行 dump `*(0x2f01101c)` 和它的 +4 字节（钉死当前状态值）
+2. 反汇编 .L516 体（确认是静默丢弃还是正常出 CC）
+3. nm 24oNY5JG 的全体用户找 state+4 的写者（谁负责把它推到 2）
