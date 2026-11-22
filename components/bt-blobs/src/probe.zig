@@ -2392,7 +2392,7 @@ pub fn run() noreturn {
             // mcycle 忙等轮询 98BC 15s，首/末值 + F800 写远处 LP 槽
             // （0x2E000600 系，RTC WDT 20s 数字复位后下 boot PREVHANG 读出）。
             {
-                board.hw.armRtcWdt(true, 2_740_000); // ≈20s @137kHz（现成封装）
+                board.hw.armRtcWdt(true, 16_440_000); // ≈120s——ADV-enable 需完整自然运行时间（20s 会中途咬断处理）
                 const lp600: *volatile u32 = @ptrFromInt(0x2E00_0600);
                 const lp604: *volatile u32 = @ptrFromInt(0x2E00_0604);
                 const lp608: *volatile u32 = @ptrFromInt(0x2E00_0608);

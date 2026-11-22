@@ -30637,3 +30637,25 @@ RTC WDT 20s 兜底未咬（RC_SLOW 压回已加，效应待更多窗口观察）
 F800 bit24 已武装（RF-ON 命令入列）但 60s 扫描（含 board reset 完整窗口）板 MAC 未出现 ⇒ radio 未完成启动。ADV-enable RF-wait 段阻塞 = 最后边界。
 
 下 session：RF-wait 环解码（blob ADV-start 内部调度路径）+ 时间源喂法（ULP latch 每 0.25s 已就位，验证其是否真被等待环读到——可能读的是另一个时间寄存器）。
+
+---
+
+## 🎯 轮 98 终判：0x200A 后 SYS_TIMER 门控 = 所有 ROM 延迟原语永久自旋（2026-11-23）
+
+### 180s 捕获终判
+- ADV-enable 处理（task 侧）**门控 SYS_TIMER 时钟**（0x2080 块）
+- ⇒ 之后任何 `esp_rom_delay_us` 调用永久自旋（NMI 实测 mepc=0x2f8036ce
+  = ROM delay 内部轮询环；ra=writeLightMarker(3) 的 erase 调用点 0x4006f12a）
+- ⇒ writeLightMarker(3) 的 flash 擦除永不完成（ROM SPI API 内部用 esp_rom_delay_us）
+- ⇒ RTC WDT 120s 也不咬（RTC 慢时钟域 RC_SLOW 同被切，ULP 压回节奏待验证）
+- ⇒ 板子永久假死，只能外部复位
+
+### 修复方向（轮 99，明确）
+post-send flash 记录改**裸 SPI 寄存器路径**（WPROTECT+erase+page-write 直写
+0x60003000 系 SPI 寄存器，等待用 mcycle 忙等——绕开 esp_rom_delay_us）。
+或 post-send 完全零写，结果经 LP 远槽 + RTC WDT 修复（先修 RC_SLOW 压回）。
+
+### 轮 98 状态收口
+0x200A 已入队/处理（coex ✓）、F800 bit24 武装 ✓（静默组合解锁了处理前段）、
+post-send 全观测死（SYS_TIMER 门控）——**synth 是否上电仍未观测到**（需要一个
+能在 SYS_TIMER 门控后存活的记录通道：裸 SPI 直写或 LP 路径修复）。
