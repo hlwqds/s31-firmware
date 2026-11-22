@@ -28581,5 +28581,9 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   - **tx_first = `0e0c 08 011000 …`** = Command Complete / ncmd=8 / opcode **0x1001（Read Local Version）** ⇒ **HCI 完成流走 btdmTx 通道（5 次）而非 leEvtTx（1 次）**——诊断命令（sendReadVersion）真实处理完成。两个出站回调分工现形：btdmTx=完成事件流、leEvtTx=另一条早期事件。probe 的泵序列若只盯 leEvtTx 侧，会误判"完成流断"。
   - **POST 扇区 magic=0xadc0feeb（旧实验残留）⇒ 0x200A（LE Set Adv Enable=1）挂住确认**——主上下文冻结在其内部"写配置+启动选通 → 等 RF/BB ready 位"，位永不置位（与 1768 行机制注记吻合）。FE450=0x102000/47C=0（BB 测量仍未启动）。
   - **收敛后的问题重述**：命令面通（含诊断 Complete）、ADV 包组装活（35B）、但 **RF/BB ready 位永不置位 ⇒ 0x200A 挂**。下一判据 = 挂住时刻的 RF ready 位身份（0x200A 等的那个寄存器/位——反汇编 0x200A 处理器的等待循环拿地址，FE 环绕 0x20100400-5FF 的 marker 已可采）。
+- **第十二轮（同日，mark12 = ready 位冻结读）**：marker 加 `0x201098BC` 冻结读（读挂 ⇒ 记录消失 = 总线停摆实锤）。**判读：记录完整出现、`ready_raw=0x00000000`（bit2 CLEAR）** ⇒ 0x201098BC 冻结时刻可读、CPU/总线活着——**总线停摆假说否决**。
+- **轮询循环反汇编全解码（同日）**：`.L135` 循环 = **纯 CPU 迭代计数**（s0 vs 0x10000，无任何定时器参与）⇒ 65536 次迭代必然退出 → `a4=3`（超时错误码）→ **官方容忍 error 3 并继续**（trace 头部实证：官方 98BC 同样永不置位）。⇒ 我们的冻结**不在 0x200A 轮询里**。
+- **重定位 + 机制终版**：marker（已跑）→ `sendCmd(0x200A)` → **LE rc 行从未打印** ⇒ 冻结在 **0x200A 的 rx 内部**（buf_alloc→`r_btdm_hci_trans_rx`）。历史对照：Enable=0 时 rcA=0 正常返回 ⇒ **挂 = Enable=1 特有 = 启动广播后 LL 首次空闲进 modem sleep**——裸机 PMU 缺 light-sleep+LP-timer 唤醒源 ⇒ 睡死（与「时钟被门控但 blob 零时钟写入」的审计结论自洽：门控是 PMU 硬件对 sleep 请求的自动执行）。
+- **下一单变量（轮 13）**：钳制 modem sleep 请求 = sleep 对象（[2f011044] 同族）的 enable 位清零，或拦截 blob→PMU 的 sleep 请求路径。判据：0x200A 返回 rcA + LE 日志行出现 ⇒ 广播启动。
 - **⚠ 占窗事故**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
 - 同源排查：wifi-blobs `init_probe.zig` 的 LPCON 写（TEST_CONF@0x00 bit0、CLK_CONF@0x18）偏移**正确**，无同病。**教训**：正确布局知识一直在 wifi 侧（0x2010F018 注释连位义都记了）——**跨 blob 写 MODEM_LPCON 前先抄 `wifi-blobs/init_probe.zig` 的既有对拍**，并对照 `soc/esp32s31/include/modem/modem_lpcon_struct.h` 逐字段核偏移，不要发明偏移。

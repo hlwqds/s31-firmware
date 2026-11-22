@@ -1892,7 +1892,8 @@ pub fn run() noreturn {
             const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
             const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
             const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
-            var rec: [296]u32 = undefined;
+            var rec: [298]u32 = undefined;
+            const ready_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*; // 读挂 ⇒ 本记录不出现
             rec[0] = 0xADC0_BBF4;
             rec[1] = osi_impl.event_count;
             rec[2] = st5.evt_count;
@@ -1913,9 +1914,12 @@ pub fn run() noreturn {
                 @as(u32, st6.last_evt[2]) << 16 | @as(u32, st6.last_evt[3]) << 24;
             rec[17] = @as(u32, st6.last_evt[4]) | @as(u32, st6.last_evt[5]) << 8 |
                 @as(u32, st6.last_evt[6]) << 16 | @as(u32, st6.last_evt[7]) << 24;
+            rec[18] = o1.eventq_put;
             // **osal 唤醒链双相快照**（200ms 窗口内 put/get 增量直接指认断点）：
             // P1 = [18..28]，P2 = [29..39]。
-            rec[18] = o1.eventq_put;
+            // **轮 12 决定性一测**：0x201098BC（0x200A 轮询的 ready 位）在冻结时刻
+            // 是否可读。若本记录仍完整出现 ⇒ 读可完成（CPU 活着）；若记录消失
+            // ⇒ CPU 卡在 blob 轮询的那条 lw 上（MODEM 总线停摆 = 死因实锤）。
             rec[19] = o1.eventq_get_ok;
             rec[20] = o1.eventq_get_empty;
             rec[21] = o1.event_run_count;
@@ -1942,7 +1946,8 @@ pub fn run() noreturn {
             rec[40] = bt_ring_head;
             rec[41] = bt_log_dropped;
             rec[42] = bt_raw_head;
-            rec[43] = st6.tx_type; // 出站首包类型（btdmTx 计 5 ≈ 5 条 Complete）
+            rec[296] = ready_raw; // 0x201098BC 冻结值（bit2=RF/BB ready）
+            rec[297] = st6.tx_type; // 出站首包类型
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];
