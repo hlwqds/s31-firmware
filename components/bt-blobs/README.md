@@ -29987,3 +29987,21 @@ LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slo
 1. **hiASs12K "就绪检查、0=未就绪"是推断**——函数体未解码、.L516 行为（静默 vs 错误 CC）未解码
 2. **a2 到 .L673 时到底是 OCF 还是 buf 指针没钉死**——分发器链最早 `andi a2,s1,1023` 把 a2 当 OCF，但 .L673 的传参 `(buf+3, OCF, buf, buf, sp+11, sp+12)` 里 a2 = 分发器当时 a0 的残留值；若 s0=buf 指针，65/99 的比较不是 OCF switch，整段解读要重排
 3. **好/坏 handler 结构 diff**（0x40018350 vs 0x40018324）——好分支直接回 CC（5tNpjR/CbfWEs 类），坏分支走 6o6qvjp（LE handler）→ 65/99 比较 → hiASs。结构 diff 本身 = 定位缺口的钥匙
+
+---
+
+## ⚠ 轮 82b：hiASs 误解码纠正（2026-11-23）
+
+### hiASs12KrrctGZf2rIzS 真实语义（反汇编纠正）
+**不是**"LE 子系统就绪检查"。是 **LE 事件码分类器**（binary search OCF 范围），按 LE sub-event code 分发到子 handler。65/99 比较 = LE 事件码范围判断（不是"就绪"）。
+
+### 连锁修正
+- .L673 → 6o6qvjp(env+84, ...) → hiASs(OCF) → 按 LE sub-event 分发 → 正常路径
+- 此前推断"hiASs 返回 0 = 未就绪 = 静默丢弃" = **错误**（0 = 正常的"未找到匹配"路径）
+- ⇒ **OGF-8 无 CC 的真因不在 hiASs**，在更深层（可能 = LE 命令处理需要 NimBLE host 栈的状态而我们没有跑 NimBLE init）
+
+### 核心认知修正
+**我们跑的是裸 controller（HCI 传输层 + controller 层），没有跑 NimBLE host 栈**。controller 收到 LE 命令后需要 NimBLE host 的支持函数来处理——这些函数在 blob 内部但需要 NimBLE 初始化才能正确响应。基础命令（OGF-3/4/5）由 controller 独立处理所以有 CC；LE 类命令（OGF-8）需要 host 栈配合所以没有 CC。
+
+### 下 session 方向重定向
+**不是**追 blob 内部 dispatch 表——而是**评估是否需要/如何最小化跑 NimBLE host 栈初始化**（ble_stack_init 我们已在 step 17 调过——但 NimBLE host 初始化可能需要更多步骤）。对照 oracle 的 ble_stack_init 完整调用链。
