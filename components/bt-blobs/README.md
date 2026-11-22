@@ -29807,3 +29807,22 @@ boot → INITED → ReadVersion CC ✓ → Reset CC ✓ → readBdAddr CC ✓
 
 ### 下 session 唯一任务
 **RF 硬件 bring-up**（这是硬件层问题，非软件/协议）——rfready=0 FE=0 的 6 子 init 前置链。已有工具链（oracle ANASET/flash 标记/diag 全字段）完整保留。
+
+---
+
+## 📐 轮 77 精确状态：rfready 的循环依赖 + ADV enable hang 定性
+
+### rfready（0x201098BC bit2）写者分析
+- 镜像内 4 处全为 `lw`（只读）——**无任何代码写此寄存器**
+- rfready = blob 内部 controller 状态机设置（进入 ENABLED 态时置位）
+- 循环依赖：rfready=0 ⇒ ADV enable 需 RF ⇒ RF 需 controller ENABLED ⇒ ENABLED 需 ADV enable 完成
+
+### 0x2006 后 hang 精确定位
+F1 rc=0（0x2006 B 路径发送 ✓）→ UART 静默 → **无 panic、无 fault、无 log** ⇒ probe 存活但无新输出 = **事件队列等待中（task 收到 0x2006 但处理挂起或静默丢弃）**
+
+### 正确的解锁顺序
+0x200A 不该在 rfready=0 时发（老墙：ADV enable 需 RF 就绪）。正确顺序 = OkE7 6 子 init 建立完 LE 基础设施 → rfready 由 blob 内部置位 → 然后 0x200A 才能走通。
+**6 子 init 失败的根因** ⇒ 需要对拍 oracle OkE7 的完整子 init 序列（不是 osal wrapper 层面，而是 blob 内部寄存器/状态层面）。
+
+### 全 session 稳定成果
+**BLE HCI 协议栈全链活**（HCI 命令收发 + CC 回流 + osal 事件系统）——从零到可交互的 controller。剩余 = RF 硬件状态机激活（rfready），需要 blob 内部状态的深度理解。
