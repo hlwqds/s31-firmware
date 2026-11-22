@@ -767,7 +767,6 @@ export fn probeSelftestAfterFence() void {
     q.* = 0x1234;
 }
 
-
 fn preForwardMark() void {
     writeLightMarker(1);
 }
