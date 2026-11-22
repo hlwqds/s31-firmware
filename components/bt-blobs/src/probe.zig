@@ -2255,9 +2255,10 @@ pub fn run() noreturn {
             rec[518] = @as(*volatile u32, @ptrFromInt(0x2E00_04C8)).*;
             rec[519] = @as(*volatile u32, @ptrFromInt(0x2E00_04CC)).*;
             // **轮 34**：saved-sp 槽的非 swap 写者三元组（0 = 无污染写者）
-            rec[520] = @import("board").trap.wp2_hit_pc;
-            rec[521] = @import("board").trap.wp2_hit_ra;
-            rec[522] = @import("board").trap.wp2_hit_count;
+            // **轮 36**：wp2 读 LP 权威副本（bss 全局在窗口内会被踩）
+            rec[520] = @as(*volatile u32, @ptrFromInt(0x2E00_04D0)).*;
+            rec[521] = @as(*volatile u32, @ptrFromInt(0x2E00_04D4)).*;
+            rec[522] = @as(*volatile u32, @ptrFromInt(0x2E00_04D8)).*;
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];

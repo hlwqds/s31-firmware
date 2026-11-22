@@ -28623,6 +28623,12 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. **但写的是垃圾值**（0x5B/0x59/0xDB 非 0/1，PC=别名窗 0x08/09/1a）⇒ phy 胶水的 store 路径**数据寄存器/执行状态在上游被污染**（blob 窗口互踩波及）——或者别名窗执行的"代码"非我们的页（MMU 页表按分区映射，别名窗映射不同页）。
   4. saved-sp 槽（0x2f010cec）观察 = **零非 swap 命中**（wp2=0）⇒ 任务保存 sp 未被 errant 写 ⇒ 坏 sp 的来源 = 任务**运行中** sp 被（栈溢出/上下文 bug）改写，非保存槽被踩。
   - **修法唯一收敛 = 布局手术**（zig bss 66KB 移出 blob 窗口 0x2f010e80-0x2f022a80；closure-first 输入规则；heap 自动跟随）。本轮起的观察点读数规则：**mepc 取序修复后 PC 才开始可信**（本轮 0x08a638e6 = 首个跨 boot 稳定的非垃圾 PC）。
+- **轮 34 收尾注记（观察点地址纪律终版）**：
+  1. saved-sp watch（0x2f010cec）构建的 boot = 跑到 stage-22 合成器等待循环后**永不返回** ⇒ 冻结标记永不写 ⇒ 该构建的 marker 读数恒为陈旧（wp2=0xffffffff×3=擦除态，非"零命中"）。
+  2. **stage-22 挂死 boot 的取数通道只有两条**：UART 实时行（capture.py）或 LP 槽（下一 boot 带出）。flash 冻结标记对 stage-22 boot 无效。
+  3. flag 地址已随轮 34 构建移至 **0x2f010f80**（nm 实测）——观察点/清零/冻结读三处硬编码**必须每次构建后 nm 重取**（本轮再次实证）。
+  4. saved-sp watch 静默过滤 swap 运行正常（boot 无 panic 跑到 stage-22）⇒ 快路径的 swap 过滤 + HIT 清除语义**验证有效** ✓（带 28 字节帧扩 + t0-t2/ra 保存恢复）。
+  - **下 session 首项不变**：① trap SRAM 化/flash 静默窗（解锁 trap 类仪表在 stage-22 挂死 boot 的使用）；② **LP 槽观察点方案**——把观察点命中捕获搬到 LP（绕过 flash），在 stage-22 boot 也能取数；③ 布局手术（closure-first）仍是终修。
 - **🏁🏁 轮 35 终局定案（2026-11-22）：整段 bss 铺在 blob 烘焙指针窗口里——26 轮战争的总根因**：
   1. **误观察纠正**：0x2f010f00 = `pmu_hal.16`（phy 函数表 .data 静态，合法更新 = "64 次命中/ASCII 值"的真解释）；真 flag `s_is_phy_calibrated` @ **0x2f010f40**（bss 头，nm 本构建实测）。
   2. **真 flag 确认被踩**（STORE 观察点 @0x2f010f40）：命中 PC=0x09a638e3（别名窗），ra=0xc4d9e3c7，LP count=41.3 亿（每 boot 数千次 store）⇒ **flag 被非布尔数据持续覆写**（0x5B=91 非布尔）⇒ enable 入口恒 skip load_cal。

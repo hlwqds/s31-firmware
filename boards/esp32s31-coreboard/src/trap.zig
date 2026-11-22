@@ -126,8 +126,15 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        # 执行、后续命中继续走本路径——不解除、不捕获、上下文切换无恙）。
         \\        li      t4, 0x40078380
         \\        beq     t5, t4, .Lwpswap
-        \\        # **非 swap 写者 = 污染写入者**：wp2 三元组 + LP2 槽捕获，
-        \\        # 解除触发器后原地恢复（污染写执行一次，诊断语义）。
+        \\        # **非 swap 写者 = 污染写入者**：wp2 三元组捕获。bss 全局在
+        \\        # blob 窗口内会被同域踩 ⇒ **LP 权威副本**（0x2E0004D0=PC/
+        \\        # 4D4=ra/4D8=count，踩踏域之外）+ 解除触发器后原地恢复。
+        \\        li      t4, 0x2E0004D0
+        \\        sw      t5, 0(t4)
+        \\        sw      ra, 4(t4)
+        \\        lw      t3, 8(t4)
+        \\        addi    t3, t3, 1
+        \\        sw      t3, 8(t4)
         \\        la      t3, wp2_hit_pc
         \\        sw      t5, 0(t3)
         \\        la      t3, wp2_hit_ra
@@ -142,7 +149,7 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\.Lwpswap:
         \\        # 合法 swap：清 HIT 位（bit30），tdata1 其余位保持武装。
         \\        csrr    t3, 0x7a1
-        \\        lui     t4, 0xBFFFF
+        \\        li      t4, 0xBFFFFFFF
         \\        and     t3, t3, t4
         \\        csrw    0x7a1, t3
         \\.Lwprestore:
