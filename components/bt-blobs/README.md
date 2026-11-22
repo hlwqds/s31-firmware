@@ -29739,3 +29739,28 @@ OkE7 的 6 子 init（fqmZkUKg 后的 JwHsRJf87 等 6 个 blob 私有函数）�
 
 ### 本 session 全部已入库 ✓ 两仓 clean ✓
 75 轮仪器/修复/解密/分析全部在 git 历史中可追溯。
+
+---
+
+## 📍 轮 77 flash 判据终审（2026-11-23 session 最终闭合）
+
+### flash 证据
+- 0x18E000：仅 ana 快照（adc05f90 magic，轮 51 的）——**轮 5 判据块从未写入**
+- 0x185000：stage=0（无 stage 23 记录）
+- ⇒ hang = **F1 后 → flashStage(23) 前**的区间
+
+### 区间内容
+```zig
+F1 rc=0 ✓（0x2006 B 路径发送成功）
+→ sendCmdViaHsNoFree(0x200A, &ae)   ← **0x200A ADV enable——hang 在此**
+→ lpTrace / resumeTask / serviceTimers / flashStage(23) / LE rc6 / criteria block
+```
+
+### 定性
+**0x200A（LE Set Advertising Enable）发送后 blob 内部 ADV enable 路径 hang**——blob 尝试启动 RF 发射但 RF/synth 未 ready（rfready=0 老墙）⇒ 内部硬件等待死循环。
+
+### 与 60+ 轮老墙的关系
+**不是同一个墙**：老墙 = "分发器不处理任何命令"（evt≤2 冻结）。现在 = "基础命令 1:1 CC ✓，ADV enable 的 RF 依赖 hang" ⇒ **已从基础设施层推进到 RF 层**。
+
+### 轮 78 方向
+RF ready 前置链（rfready=0 FE=0 老 problem）需在发 0x200A **之前**解决。可试：把 0x200A 挪到更后面（给 RF init 更多时间），或在 0x200A 前发一个 `HCI_Read_RSSI` 类无副作用命令探测 CC 是否仍 1:1（区分"RF hang"vs"所有 LE 命令 hang"）。
