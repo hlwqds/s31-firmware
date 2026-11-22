@@ -2332,6 +2332,11 @@ pub fn run() noreturn {
             const hal0: u32 = @as(*volatile u32, @ptrFromInt(0x2f010_E88)).*;
             const hal4: u32 = @as(*volatile u32, @ptrFromInt(0x2f010_E8C)).*;
             board.log.line("R7 latch={d} ctx12={x:0>8} ctx16={x:0>8} hal0={x:0>8} hal4={x:0>8}", .{ latch, ctx12, ctx16, hal0, hal4 });
+            // **轮 89f**：hal 表指向的两块实际时钟寄存器 + 漏读的 F818
+            const hp9c00: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9C00)).*;
+            const hp9c04: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9C04)).*;
+            const f818: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
+            board.log.line("R9 hp9c00={x:0>8} hp9c04={x:0>8} f800={x:0>8} f818={x:0>8}", .{ hp9c00, hp9c04, f800, f818 });
             // **轮 89e**：0x20813014 写-回读活性测试（写保护判据）
             const den_addr: usize = 0x2081_3014;
             const d0: u32 = @as(*volatile u32, @ptrFromInt(den_addr)).*;

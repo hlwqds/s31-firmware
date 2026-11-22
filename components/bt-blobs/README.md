@@ -30363,3 +30363,28 @@ device_control 跑到底 + 寄存器可写，但 den 仍 0 ⇒ **0x20813014 不�
 hal 调用已定位：`a5 = *(*(icg_list)+68)`（ICG 配置 fn，args=(s2,s1,s3,config_wrapper)），
 写目标在 0x2010F8xx 块。**我们 R 系列一直只读 F800 漏了 F818**（oracle ANASET 两个都打）
 ⇒ 89f 第一动作 = R 行补读 0x2010F818 + 反汇编 config_wrapper/ICG fn 定名写目标。
+
+---
+
+## 🔬 轮 89f：modem-clock 链健康确认 + den 红鲱鱼定案（2026-11-23）
+
+### R9 实测
+| 寄存器 | 值 | 判定 |
+| --- | --- | --- |
+| hp9c00 (0x20109C00) | 0x00000101 | HP clk 块有配置 |
+| hp9c04 (0x20109C04) | **0x7e601002** | **= IDF 目标值精确一致**（我们此前逐字对拍的 clk_conf）✓ |
+| f818 (0x2010F818) | 0x2900e444 | MODEM_SYSCON ana 域有状态（非零） |
+| f800 | 0x002f0669（恒） | task RF init 写帧缺失（bit24=0） |
+
+⇒ modem-clock 链（桩修复 → enable → 懒初始化 → hal → HP 块）**全链健康**；
+den=0 红鲱鱼定案（该地址非 BT ICG）；hp9c04 精确匹配证明时钟配置无误。
+
+### 收窄后的唯一差异
+oracle：task 首调度写 F800 帧（bit24=1）→ synth 启动（98BC=4）。
+我们：task 泵运行但 F800 恒不变 ⇒ synth 不启动。
+（BB init、校准、时钟、modem-clock 全部已排除。）
+
+### 轮 90 首项：oracle 参照捕获
+oracle main.c 的 ANASET 宏带 F800/F818/mst/den（含 98BC 需补一行）——
+ninja 1.5s 重建 → flash oracle → 抓 boot（对照 98BC 何时变 4 + F800 任务写帧值）
+→ flash probe 回。拿到参照后 diff 出我们缺的那一写。
