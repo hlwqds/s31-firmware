@@ -1655,6 +1655,10 @@ pub fn run() noreturn {
     board.trap.pc_dump_at = 0xFFFF_FFFF; // 采样器 ISR 不再触发 0x187000 dump
     mark.put(0x30, 0xADC0B103, @bitCast(rc)); // 此刻起 LP-only
     osal.logPublic("bt probe: enabled (status={d})", .{bringup.getStatus()});
+    // **轮 13：广播序列前钳 modem sleep**——blob 在 task_init 强制 sleep_en 非 0
+    // （cfg 写 0 被回写实证）；Enable=1 启动广播后 LL 首次空闲进 sleep ⇒ 裸机
+    // 无 light-sleep+LP 唤醒源 ⇒ 睡死（轮 12 机制终版）。序列发出前清零。
+    cfg.btdm.sleep_en = 0;
 
     // 4) 真正进任务（只有第一次用 startScheduler）
     ctrl_task = findFirstTask();
@@ -1862,6 +1866,110 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF002);
         const r8 = transport.sendCmd(0x2008, &ad);
         osal.lpTrace(3, 0xF003);
+        // **轮 13 轻量 pre-0x200A 标记（0x18F000，写入 20B）**：命令序列末、0x200A 之前
+        // 的 osal/transport 状态——与 POST 扇区（0x18E000 完整版）配对，无论挂在哪都有挂前读数。
+        {
+            const eswL = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            const eseL = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+            const stL = transport.stats();
+            const oL = @import("osal_kit").osal.stats();
+            // LP counter 锁存读（该变量属 target-only 块，host 图里不存在）。
+            @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+            const cntL: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
+            var recL: [7]u32 = .{
+                0xADC0_BBF4,
+                cntL,
+                stL.evt_count,
+                stL.cmds_sent,
+                oL.eventq_put,
+                oL.eventq_get_ok,
+                @intFromPtr(&cfg.btdm),
+            };
+            const clicL: usize = 0x1080_1000 + 25 * 4;
+            const gL: u32 = @as(*volatile u32, @ptrFromInt(clicL)).*;
+            @as(*volatile u32, @ptrFromInt(clicL)).* = gL & ~@as(u32, 0x108);
+            _ = eseL(0x18F000 / 0x1000);
+            if (builtin.target.os.tag == .freestanding) board.hw.flashOpBegin();
+            _ = eswL(0x18F000, &recL, @sizeOf(@TypeOf(recL)));
+            if (builtin.target.os.tag == .freestanding) board.hw.flashOpEnd();
+            @as(*volatile u32, @ptrFromInt(clicL)).* = gL;
+        }
+        // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
+        // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
+        // **实验：去掉 FE 快照读**。README 与 `tools/jtag-watch-modem-block.sh` 记的
+        // 根因症状是"访问 `0x2010B000` 后总线不再应答 —— 无异常、**中断停止、静默**"，
+        // 而这个 stage 22 恰好就在 `0x200A` 之前读那两个地址
+        // ⇒ 一次改动可同时解释"0x200A 无应答"与"UART 哑"（后者至今未解释）。
+        // 另外 word2/3 的 FE 快照**本是噪声**（同构建两次运行就不同），本来也不该当判据。
+        // 判据：marker stage/tx（23/6 = 返回了）+ 串口是否恢复。
+        // **实验：把 `UART0_STATUS.TXFIFO_CNT` 写进标记**（word2），
+        // 以区分"FIFO 满且不排空（发送通道死）"与"FIFO 空（压根没写进去）"。
+        // UART0 = 0x2038_A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]。
+        const uart_st: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*;
+        _ = uart_st;
+        // **最后两个判据**：
+        //   `GPIO_FUNC58_OUT_SEL_CFG`(0x20583BDC)：GPIO matrix 是否把 pad58 改接到别的信号
+        //   `UART0.clkdiv_sync`(0x2038A014)：波特率分频（默认 694 = 80 MHz / 115200）
+        const osel: u32 = (@as(*volatile u32, @ptrFromInt(0x2058_3BDC))).*;
+        const cdiv: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A014))).*;
+        // **判据**：`MODEM_SYSCON.modem_rst_conf`(0x20109C10)
+        //   bit9 `rst_wifimac` = 1 ⇒ MAC 一直在复位里 ⇒ 命令永不应答（trap.zig:331-333）
+        //   bit8 `rst_wifibb`  = 1 ⇒ BB 在复位里
+        const rst_conf: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
+        _ = rst_conf;
+        _ = osel;
+        _ = cdiv;
+        // **快照自旋环写/轮询的三个寄存器**（MODEM_WIDGETS=0x20109400 私有块）：
+        //   W+0x480 = 0x20109880（环里写 0x0FFFFFFF 的那个）
+        //   W+0x4A8 = 0x201098A8（写 0）
+        //   W+0x4B8 = 0x201098B8（写 a3）
+        osal.lpTrace(3, 0xF011); // 读 MODEM_WIDGETS W+0x480/0x4A8 之前
+        const w480: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
+        osal.lpTrace(3, 0xF012); // W+0x480 已读
+        const w4a8: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
+        osal.lpTrace(3, 0xF013); // W+0x4A8 已读
+        flashStageExtra(22, w480, w4a8);
+        // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
+        // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
+        // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
+        // （采样窗口已提前到 esp_phy_enable 之前 —— 见 stage 64 处注释）
+        // **诊断仪器，出厂/生产构建绝不能开**：
+        // 1. 它把 T0 武装到 CLIC input 25（BT 归档的 tick 源）；
+        // 2. ISR 会在挂住时**擦写 flash 扇区 0x187000**；
+        // 3. 这两者都会改变出厂行为 —— 本文件是 bt-blobs 探针，不含在生产固件里。
+        // `sample_quiet = true`：ISR 只记环不打印（UART 不可用，打印会自旋）。
+        // ⚠ 武装必须在**这里**做：`probe_irqs` 在 `:432` 的武装点读的是**当时**的值，
+        // 那时还是 false ⇒ 只置 true 不会让定时器起来（第一次实测环里是垃圾数据）。
+        board.trap.resetPcs();
+        board.trap.sample_quiet = true;
+        board.trap.pc_dump_at = 0xFFFF_FFFF; // BT 窗口零 flash 写：环只留 RAM，不落盘
+        if (!probe_irqs) {
+            probe_irqs = true;
+            board.hw.routeT0Interrupt(25);
+            board.hw.armT0Interrupt(2000);
+            board.hw.enableInterrupts();
+        }
+        // ⛔ **门控扫描已回退**（2026-11-19）：对 clk_en0/modem_ctrl0/widgets-conf 写全 1
+        //    会把 modem 搞死（marker 停在 61，0x2006 都挂）—— 这些寄存器的位语义
+        //    不是"全开"。且 0x20109880 读回恒 0 但总线正常 ⇒ **疑似只写寄存器**
+        //    （同 `modem_rst_conf`："读回恒 0, 只可写"）⇒ **写-回读探针对这块无效**，
+        //    判据只能用端到端（stage 23 / btdm_tx 6）。
+        // ✅ **MODEM_PWR 分组探测结论**（2026-11-19）：组 1（+0x00..+0x1C，读全 0）能完成，
+        //    **组 2（+0x20..+0x3C）把总线读挂**（marker 精确停在 67）⇒ 该电源控制区
+        //    在 +0x20 处有锋利的可访问性边界；且总线中毒后连 flash 写都不可靠
+        //    （组 1 数据扇区 0x18A000 回读全 ff ⇒ 写未落地）。探测已回退，
+        //    基线回到 22/5。下次若要继续，从组 2 的第一个字 +0x20 单字探测。
+        var ae: [1]u8 = .{1};
+        // **寄存器快照（0x200A 发送前，白名单稀疏）**：evt 到达后差分 ⇒
+        // "BB schedule arm 是否发生、动了哪些寄存器"直接可见。
+        snapshotRegs();
+        osal.lpTrace(3, 0xF014); // snapshotRegs 之后
+        snap_valid = true;
+        const ra2 = transport.sendCmd(0x200A, &ae);
+        osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
+        flashStage(23);
+        osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
+
         // **轮 5 判据（2026-11-22，flash 标记通道——UART 在本区 4/4 全丢，盲区免疫）**：
         // 冻结时刻把唤醒链计数器 {事件环计数, evt 回调数, btdm_tx, events_dropped,
         // undispatched} + cnt 双采样（走动 ⇒ Δ>0，同时判定 RTC clk_en 是否生效）+
@@ -1946,6 +2054,7 @@ pub fn run() noreturn {
             rec[40] = bt_ring_head;
             rec[41] = bt_log_dropped;
             rec[42] = bt_raw_head;
+            rec[43] = @intFromPtr(&cfg.btdm); // 冻结读：blob 是否回写 sleep_en
             rec[296] = ready_raw; // 0x201098BC 冻结值（bit2=RF/BB ready）
             rec[297] = st6.tx_type; // 出站首包类型
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
@@ -1983,81 +2092,6 @@ pub fn run() noreturn {
             if (builtin.target.os.tag == .freestanding) board.hw.flashOpEnd();
             @as(*volatile u32, @ptrFromInt(clic25b)).* = g5;
         }
-        // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
-        // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
-        // **实验：去掉 FE 快照读**。README 与 `tools/jtag-watch-modem-block.sh` 记的
-        // 根因症状是"访问 `0x2010B000` 后总线不再应答 —— 无异常、**中断停止、静默**"，
-        // 而这个 stage 22 恰好就在 `0x200A` 之前读那两个地址
-        // ⇒ 一次改动可同时解释"0x200A 无应答"与"UART 哑"（后者至今未解释）。
-        // 另外 word2/3 的 FE 快照**本是噪声**（同构建两次运行就不同），本来也不该当判据。
-        // 判据：marker stage/tx（23/6 = 返回了）+ 串口是否恢复。
-        // **实验：把 `UART0_STATUS.TXFIFO_CNT` 写进标记**（word2），
-        // 以区分"FIFO 满且不排空（发送通道死）"与"FIFO 空（压根没写进去）"。
-        // UART0 = 0x2038_A000，STATUS = +0x1C，TXFIFO_CNT = bit[23:16]。
-        const uart_st: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*;
-        _ = uart_st;
-        // **最后两个判据**：
-        //   `GPIO_FUNC58_OUT_SEL_CFG`(0x20583BDC)：GPIO matrix 是否把 pad58 改接到别的信号
-        //   `UART0.clkdiv_sync`(0x2038A014)：波特率分频（默认 694 = 80 MHz / 115200）
-        const osel: u32 = (@as(*volatile u32, @ptrFromInt(0x2058_3BDC))).*;
-        const cdiv: u32 = (@as(*volatile u32, @ptrFromInt(0x2038_A014))).*;
-        // **判据**：`MODEM_SYSCON.modem_rst_conf`(0x20109C10)
-        //   bit9 `rst_wifimac` = 1 ⇒ MAC 一直在复位里 ⇒ 命令永不应答（trap.zig:331-333）
-        //   bit8 `rst_wifibb`  = 1 ⇒ BB 在复位里
-        const rst_conf: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9C10))).*;
-        _ = rst_conf;
-        _ = osel;
-        _ = cdiv;
-        // **快照自旋环写/轮询的三个寄存器**（MODEM_WIDGETS=0x20109400 私有块）：
-        //   W+0x480 = 0x20109880（环里写 0x0FFFFFFF 的那个）
-        //   W+0x4A8 = 0x201098A8（写 0）
-        //   W+0x4B8 = 0x201098B8（写 a3）
-        osal.lpTrace(3, 0xF011); // 读 MODEM_WIDGETS W+0x480/0x4A8 之前
-        const w480: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_9880))).*;
-        osal.lpTrace(3, 0xF012); // W+0x480 已读
-        const w4a8: u32 = (@as(*volatile u32, @ptrFromInt(0x2010_98A8))).*;
-        osal.lpTrace(3, 0xF013); // W+0x4A8 已读
-        flashStageExtra(22, w480, w4a8);
-        // ⚠ **当前是 Enable=1（真正开始广播）**，会挂住 —— 这是**已定位的缺陷**，不是回归。
-        // 控制实验（Enable=0）能正常返回（`btdm_tx` 6），那次改动**绝不能留在树里**：
-        // 否则烧这个构建会看到"rcA=0、tx=6"，误以为广播通了。
-        // （采样窗口已提前到 esp_phy_enable 之前 —— 见 stage 64 处注释）
-        // **诊断仪器，出厂/生产构建绝不能开**：
-        // 1. 它把 T0 武装到 CLIC input 25（BT 归档的 tick 源）；
-        // 2. ISR 会在挂住时**擦写 flash 扇区 0x187000**；
-        // 3. 这两者都会改变出厂行为 —— 本文件是 bt-blobs 探针，不含在生产固件里。
-        // `sample_quiet = true`：ISR 只记环不打印（UART 不可用，打印会自旋）。
-        // ⚠ 武装必须在**这里**做：`probe_irqs` 在 `:432` 的武装点读的是**当时**的值，
-        // 那时还是 false ⇒ 只置 true 不会让定时器起来（第一次实测环里是垃圾数据）。
-        board.trap.resetPcs();
-        board.trap.sample_quiet = true;
-        board.trap.pc_dump_at = 0xFFFF_FFFF; // BT 窗口零 flash 写：环只留 RAM，不落盘
-        if (!probe_irqs) {
-            probe_irqs = true;
-            board.hw.routeT0Interrupt(25);
-            board.hw.armT0Interrupt(2000);
-            board.hw.enableInterrupts();
-        }
-        // ⛔ **门控扫描已回退**（2026-11-19）：对 clk_en0/modem_ctrl0/widgets-conf 写全 1
-        //    会把 modem 搞死（marker 停在 61，0x2006 都挂）—— 这些寄存器的位语义
-        //    不是"全开"。且 0x20109880 读回恒 0 但总线正常 ⇒ **疑似只写寄存器**
-        //    （同 `modem_rst_conf`："读回恒 0, 只可写"）⇒ **写-回读探针对这块无效**，
-        //    判据只能用端到端（stage 23 / btdm_tx 6）。
-        // ✅ **MODEM_PWR 分组探测结论**（2026-11-19）：组 1（+0x00..+0x1C，读全 0）能完成，
-        //    **组 2（+0x20..+0x3C）把总线读挂**（marker 精确停在 67）⇒ 该电源控制区
-        //    在 +0x20 处有锋利的可访问性边界；且总线中毒后连 flash 写都不可靠
-        //    （组 1 数据扇区 0x18A000 回读全 ff ⇒ 写未落地）。探测已回退，
-        //    基线回到 22/5。下次若要继续，从组 2 的第一个字 +0x20 单字探测。
-        var ae: [1]u8 = .{1};
-        // **寄存器快照（0x200A 发送前，白名单稀疏）**：evt 到达后差分 ⇒
-        // "BB schedule arm 是否发生、动了哪些寄存器"直接可见。
-        snapshotRegs();
-        osal.lpTrace(3, 0xF014); // snapshotRegs 之后
-        snap_valid = true;
-        const ra2 = transport.sendCmd(0x200A, &ae);
-        osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
-        flashStage(23);
-        osal.logPublic("bt probe: LE rc6={d} rc8={d} rcA={d} tx={d}", .{ r6, r8, ra2, transport.stats().btdm_tx });
         // **轮 11：0x200A 后第二份标记（0x18F000）**——若本记录存在 ⇒ 0x200A 返回了；
         // FE450/47C 判「广播真在跑（450 进官方振荡集/47C 脉冲）」vs「RF 未发车（仍静止）」。
         {
