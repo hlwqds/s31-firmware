@@ -29622,3 +29622,26 @@ cfg 镜像 20B 段（offset 24..44）与 esp_bt.h 逐字段吻合：rtc_freq(u64
 clean71 boot（无 prefill）的 crash = **set_sleep_cb NULL+12**（mtval=0xc）——与轮 71 有 prefill 时的 gvLJK4 walk 崩不同。两个 crash 的分叉点 = OkE7 入口检查 *(0x2f011138)：有 prefill（非零）= OkE7 bail -1 → walk crash；无 prefill（=0）= OkE7 lazy malloc ✓ → 但 sleep_set_sleep_cb 仍被调（调用者无槽空守卫，bpboot5 已文档化）→ *(0x2f011134)=NULL+12 崩。
 
 ⇒ **两条路径都通向睡眠链**——真正的开关 = `OB0cbi2`（0x2f011134 槽判 sleep ON/OFF）与 OkE7 入口检查共用 0x2f011138。**轮 73 首项 = 在 bringup 的 sleep_en 路径上显式置 sleep=OFF**：即确保 OB0cbi2 的输入（0x2f011134 槽 + env[0] byte）走 OFF 路径——具体 = **0x2f011134 槽保持 NULL（不加 prefill ✓ 已做）+ 调用 set_sleep_cb 的上游加守卫（需反汇编调用者的判据）**。下轮从 clean71.log 的 ra=0x4006b850 反汇编定位调用者判据。
+
+---
+
+## 🎉 轮 73：evt=4——真 CC 首次回流（60+ 轮总墙倒塌！2026-11-23）
+
+### 修复（一行：slot 守卫地址纠正）
+`0x2f011034` → `0x2f011134`（sleep env 槽）——正确守卫让 set_sleep_cb 在槽=NULL（sleep OFF ✓ 官方正确态）时跳过。
+
+### 板级实证（/tmp/guard73.log）
+```text
+bt bringup: INITED ✓（无 panic！）
+A(rx) sendReadVersion rc=0 stats cmds=3 evt=4   ← **evt 破 2（此前 60+ 轮恒 ≤2）**
+A2(rx) sendReset rc=0 btdm_tx=2
+A4(rx) readBdAddr rc=0 btdm_tx=3
+arm src=124 → CLIC input 24 ✓
+rx flag 0->1 ✓
+```
+**evt=4 = 真 CC 回流**（Reset/ReadVersion 的 Command Complete 首次抵达 host！）——LL 命令分发链活了。
+
+### 撤销清单（本轮全删，blob 自管语义恢复）
+- 0x2f011134/0x2f011138/0x2f011130 三槽 prefill 全删（轮 71 毒药实证）
+- bringup 的 fqmZkUKg 外部直调删除（OkE7 内部自调 ✓）
+- 保留：eventqInit/eventInit 承重写 + c_int 0 + 布局对齐 + fn(容器) 语义 ✓

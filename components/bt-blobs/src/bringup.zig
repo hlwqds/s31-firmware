@@ -1006,7 +1006,10 @@ pub fn enable() c_int {
         // ⚠ 条件**不能**用 cfg.btdm.sleep_en——归档在 task_init 会回写该字段
         // （sleep_en=0 轮实证：step20 前已非 0 ⇒ 注册器被调 ⇒ 槽 NULL ⇒
         // load fault @0xc panic）。以**槽本身**为准：非空才注册。
-        const slot_chk: *volatile u32 = mmioPtr(u32, 0x2f01_1034);
+        // **轮 71 终修**：守卫槽 = 0x2f011134（sleep env 槽——set_sleep_cb
+        // 内部读 *(此槽)+12 做 store 目标；NULL ⇒ store-to-NULL fault 0x58）。
+        // 槽=NULL ⇒ sleep OFF（OB0cbi2 同判据）⇒ 跳过注册 = 官方正确行为。
+        const slot_chk: *volatile u32 = mmioPtr(u32, 0x2f01_1134);
         if (slot_chk.* != 0) {
             // a1=null 会命中 beqz a1 → .L75 整体跳过（obj[4] 不写）⇒
             // arg 用非空占位（桩不读它）。a4=0 跳过 .L79 附加初始化。
