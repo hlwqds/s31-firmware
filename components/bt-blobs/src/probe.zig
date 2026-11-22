@@ -2294,9 +2294,11 @@ pub fn run() noreturn {
                 board.log.line("HCIEVN env invalid {x:0>8}", .{hep});
             }
         }
-        // **轮 80**：rfready=0 时跳过 0x200A（ADV enable 需 RF 上电，否则 blob 内部 hang）
-        const rf_ok = ((@as(*volatile u32, @ptrFromInt(0x2010_98BC)).* >> 2) & 1) != 0;
-        var ra2: c_int = -100; // 跳过标记
+        // **轮 90 守卫反转**：oracle90b 时序实证——esp_bt_controller_enable 完成时
+        // 98BC 仍=0，发完 0x2006/0x2008/0x200A 后才变 4 ⇒ synth 上电是 ADV-enable
+        // 命令处理的结果而非前置条件。rfready 守卫逻辑恰好反了，移除。
+        const rf_ok = true;
+        var ra2: c_int = -100;
         if (rf_ok) {
             ra2 = transport.sendCmdViaHs(0x200A, &ae);
             board.log.line("F3 rc={d}", .{ra2});
@@ -2345,6 +2347,13 @@ pub fn run() noreturn {
             @as(*volatile u32, @ptrFromInt(den_addr)).* = d0;
             const d2: u32 = @as(*volatile u32, @ptrFromInt(den_addr)).*;
             board.log.line("R8 den wr-rb: pre={x:0>8} set={x:0>8} restore={x:0>8} latch={s}", .{ d0, d1, d2, if (d1 & 0x20 != 0) "YES" else "NO" });
+            // **轮 90**：RF-ON burst 直驱（oracle 在 lp_reset 相由 esp_phy_enable 内部
+            // 执行；我们的 F800 bit24=0 说明 burst 没跑/没生效）。此刻 PHY/BB/时钟
+            // 全就绪，从 probe 直接驱动一次并读 98BC/F800。
+            phy_ana_i2c_master_burst_rf_onoff(1);
+            const s98_after: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const f800_after: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            board.log.line("R10 rf_onoff done 98BC={x:0>8} f800={x:0>8}", .{ s98_after, f800_after });
             // **轮 87b**：签名修正后重跑——(reg=99, hostid=1, block=6) = PLL cap 自环
             phy_i2c_writeReg(99, 1, 6, 0x5A);
             const loopback: u8 = phy_i2c_readReg(99, 1, 6);

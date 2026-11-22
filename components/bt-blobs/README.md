@@ -30388,3 +30388,37 @@ oracle：task 首调度写 F800 帧（bit24=1）→ synth 启动（98BC=4）。
 oracle main.c 的 ANASET 宏带 F800/F818/mst/den（含 98BC 需补一行）——
 ninja 1.5s 重建 → flash oracle → 抓 boot（对照 98BC 何时变 4 + F800 任务写帧值）
 → flash probe 回。拿到参照后 diff 出我们缺的那一写。
+
+---
+
+## 🏆 轮 90：oracle 时序参照 + 守卫反转 + 0x200A 首次无守卫发出（2026-11-23）
+
+### oracle90b 参照时序（bisect 块关闭后 = oracle8 完整流程）
+```text
+enable rc=0 status=2
+ANA-post-enable  F800=0x012f0669  98BC=0x00000000   ← enable 完成 synth 仍未上电！
+CMD 0x2006 (Set Random Addr) → HW-ERR evt 04 05 06 20
+CMD 0x2008 (Set Adv Params)  → HW-ERR evt 04 05 08 20
+CMD 0x200A (Adv Enable=1)    → HW-ERR evt 04 05 0a 20
+ANA-post-cmds    98BC=0x00000004                     ← 发完 0x200A 后 synth 上电！
+```
+
+### 颠覆性结论
+**synth 上电是 ADV-enable 命令处理的结果，不是前置条件。**
+oracle 拿着 98BC=0 照发 0x200A（响应=Hardware Error 事件而非 CC），RF 作为结果启动。
+我们的 rfready 守卫（轮 80 起"98BC=0 则跳过 0x200A"）逻辑**恰好反了**——已反转删除。
+
+### F800 对照（次要差异）
+oracle lp_reset 步即写 0x012f0669（bit24=1，I2C master 命令内存 RF-ON 武装字）；
+我们 0x002f0669。两镜像均无 CPU 直写 ⇒ bit24 由 burst 执行时硬件写入。
+轮 90 R10：INITED 后直驱 rf_onoff(1) 无效（98BC 不变）⇒ burst 非 synth 启动器。
+
+### 首次无守卫 0x200A 结果
+phy_printf 修复生效（"Jul 14 2026"= libbtbb version 日期参数首次可见）；
+0x200A 发出后**板子全静默**（周期行消失 = 主上下文冻结）——旧"0x200A hang"在新
+底座上重现。evt 停在 8（无 CC）。
+
+### 轮 91 首项：0x200A hang 定位
+trap 行/marker 仪器现成（esp32s31-cross-reset-instrumentation）。嫌疑：
+ADV enable handler 等待的 RF 上电完成位在我们环境永不置位（oracle 的 HW-ERR
+响应 = 它不等、报错继续——我们可能卡在一个 oracle 没有的等待分支）。
