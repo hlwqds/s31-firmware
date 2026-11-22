@@ -29251,3 +29251,24 @@ panic: live mepc=0x4007b8c8 mtval=0xc0b
 2. nm/oracle 找该全局的官方写者（注册函数 = ble_stack_init 内部的 hci cmd 表填充）
 3. 我们 bringup 补调（或修正 own-ops 的 hci_transport 替换，让它做注册半边）
 ⇒ 表就位 ⇒ 分发器处理 Reset/ReadVersion/ADV 链 ⇒ CC 回流 ⇒ rfready ⇒ **60+ 轮战争总墙倒塌**
+
+---
+
+## 🏁 轮 63b：env+12 内存所有权冲突 = 最终根因（2026-11-22 夜）
+
+### 崩溃点反汇编（wr_btdm_osal_event_get_arg @0x4007b8c4）
+```c
+lw a0, 0(a0)      // slot->p
+beqz a0, ret      // 只挡 NULL
+lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc03+8 = 0xc0b misaligned
+```
+- slot.p = **0xc03 = HCI Reset opcode**（分发器正在处理的命令）——**blob 把自己的控制器状态写进了 env+12 区域**（它的容器字段布局含 opcode 存储），覆写了我们 Slot.p 间接指针
+
+### 最终根因（所有权冲突）
+官方 btdm_osal 事件 = **字段内联**在 env+12（无间接层），blob 对 env+12 有完整读写所有权（含 opcode 等状态字段）；我们的 Slot = {p 间接指针 → osal 池 Event}——blob 的状态写毁掉 slot.p ⇒ 我们的事件函数全部解引用垃圾。
+（回看：轮 62 的"重绑定"= blob 的状态写！轮 62 观察点零命中 = 观察的是旧池事件 A，而冲突发生在 Slot 桩本身。）
+
+### 轮 63c 终修方向（结构性）
+**osal 事件层去间接化**：wr_btdm_osal_event_* 包装改为**带外映射**（slot 地址 → 我们静态池 Event，用 (ns,key) 句柄之外的 side-table），env+12 内存完全让给 blob 自由读写；我们的 fn_/arg/queued 存 side-table。
+- 影响面：osal.zig Event/Slot 池设计 + 全部 wr_btdm_osal_event_* 包装（init/deinit/reset/queued/get_arg/set_arg/put/get/run）
+- 判据：wr5a + HCI Reset 不崩 + CC 回流（evt 破 2）→ rfready → ADV
