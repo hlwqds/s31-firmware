@@ -1536,8 +1536,7 @@ pub fn run() noreturn {
                     phi.* = 0;
                     osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=27200", .{ tag, obj });
                 } else {
-                    _ = phi.*;
-                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=27200", .{ tag, obj });
+                    _ = phi.*; // （else 分支日志已删：与 if 分支同串重复，镜像容量紧张。）
                 }
             } else {
                 osal.logPublic("bt probe: rtc_freq oob @{s} ptr=0x{x:0>8}", .{ tag, obj });
@@ -1558,7 +1557,7 @@ pub fn run() noreturn {
         @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 * 2); // +2s
         @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31; // INT_CLR
         @as(*volatile u32, @ptrFromInt(rtb + 0x30)).* = 1 << 31; // INT_ENA
-        osal.logPublic("bt probe: rtc cmp armed2 cnt=0x{x:0>8}", .{cnt});
+        // （armed2 行已删：FIFO 死区 4/4 全丢，cnt 判据已进 flash 标记。）
     }
     // **udiv 入口 EXEC 断点武装（相位正确版）**：此刻 init_phy 的
     // phy_xtal_duty_cal 除法已过（断点不撞它），LE 块分发等待的磨 CPU
@@ -1824,7 +1823,6 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF001);
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
-        osal.logPublic("bt probe: post21", .{});
         var ad: [32]u8 = @splat(0);
         ad[0] = 3;
         ad[1] = 2;
@@ -1832,6 +1830,90 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF002);
         const r8 = transport.sendCmd(0x2008, &ad);
         osal.lpTrace(3, 0xF003);
+        // **轮 5 判据（2026-11-22，flash 标记通道——UART 在本区 4/4 全丢，盲区免疫）**：
+        // 冻结时刻把唤醒链计数器 {事件环计数, evt 回调数, btdm_tx, events_dropped,
+        // undispatched} + cnt 双采样（走动 ⇒ Δ>0，同时判定 RTC clk_en 是否生效）+
+        // FE450/47C 值 + osi 事件环尾 8 条写 0x18E000 扇区；宿主机
+        // `esptool read-flash 0x18E000` 离线判读，指认断点 ∈ {入队未处理,
+        // 事件无订阅者, 队列 send/recv 断}（5F70/5F7D 门控模式照抄）。
+        {
+            const esw5 = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            const ese5 = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+            const st5 = transport.stats();
+            @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+            const cnt1: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
+            const o1 = @import("osal_kit").osal.stats(); // 相位 1（fwd06 后即时）
+            var spins: u32 = 0;
+            while (spins < 4_000_000) : (spins += 1) {
+                @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+                if (@as(*volatile u32, @ptrFromInt(0x2080_001C)).* != cnt1) break;
+            }
+            const cnt2: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
+            // **第二采样相位（~200ms 后）**：完成流是否仍在走（evt/cmds 增量）
+            // + last_evt 字节。区分「完成流断在第二条命令」vs「只卡 0x200A」。
+            var spins3: u32 = 0;
+            while (spins3 < 40_000_000) : (spins3 += 1) {
+                @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+                const now: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
+                if (now -% cnt2 >= 27_000) break; // ≈200ms @137 kHz
+            }
+            const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
+            const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
+            const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
+            var rec: [44]u32 = undefined;
+            rec[0] = 0xADC0_BBF4;
+            rec[1] = osi_impl.event_count;
+            rec[2] = st5.evt_count;
+            rec[3] = st5.btdm_tx;
+            rec[4] = osi_impl.events_dropped;
+            rec[5] = @import("event_bus.zig").undispatched;
+            rec[6] = cnt1;
+            rec[7] = cnt2;
+            rec[8] = @as(*volatile u32, @ptrFromInt(0x2010_0450)).*;
+            rec[9] = @as(*volatile u32, @ptrFromInt(0x2010_047C)).*;
+            rec[10] = @bitCast(r6);
+            rec[11] = @bitCast(r8);
+            rec[12] = cnt3;
+            rec[13] = st6.evt_count; // 相位 2（相位 1 在 rec[2]）
+            rec[14] = st6.cmds_sent;
+            rec[15] = @as(u32, st6.last_evt_code);
+            rec[16] = @as(u32, st6.last_evt[0]) | @as(u32, st6.last_evt[1]) << 8 |
+                @as(u32, st6.last_evt[2]) << 16 | @as(u32, st6.last_evt[3]) << 24;
+            rec[17] = @as(u32, st6.last_evt[4]) | @as(u32, st6.last_evt[5]) << 8 |
+                @as(u32, st6.last_evt[6]) << 16 | @as(u32, st6.last_evt[7]) << 24;
+            // **osal 唤醒链双相快照**（200ms 窗口内 put/get 增量直接指认断点）：
+            // P1 = [18..28]，P2 = [29..39]。
+            rec[18] = o1.eventq_put;
+            rec[19] = o1.eventq_get_ok;
+            rec[20] = o1.eventq_get_empty;
+            rec[21] = o1.event_run_count;
+            rec[22] = o1.event_run_no_slot;
+            rec[23] = o1.raw_q_dropped;
+            rec[24] = o1.pool_exhausted;
+            rec[25] = o1.eventq_requeued;
+            rec[26] = o1.blocked_calls;
+            rec[27] = o1.sem_pend_ok;
+            rec[28] = o1.sem_pend_timeout;
+            rec[29] = o2.eventq_put;
+            rec[30] = o2.eventq_get_ok;
+            rec[31] = o2.eventq_get_empty;
+            rec[32] = o2.event_run_count;
+            rec[33] = o2.event_run_no_slot;
+            rec[34] = o2.raw_q_dropped;
+            rec[35] = o2.pool_exhausted;
+            rec[36] = o2.eventq_requeued;
+            rec[37] = o2.blocked_calls;
+            rec[38] = o2.sem_pend_ok;
+            rec[39] = o2.sem_pend_timeout;
+            const clic25b: usize = 0x1080_1000 + 25 * 4;
+            const g5: u32 = @as(*volatile u32, @ptrFromInt(clic25b)).*;
+            @as(*volatile u32, @ptrFromInt(clic25b)).* = g5 & ~@as(u32, 0x108);
+            _ = ese5(0x18E000 / 0x1000);
+            if (builtin.target.os.tag == .freestanding) board.hw.flashOpBegin();
+            _ = esw5(0x18E000, &rec, @sizeOf(@TypeOf(rec)));
+            if (builtin.target.os.tag == .freestanding) board.hw.flashOpEnd();
+            @as(*volatile u32, @ptrFromInt(clic25b)).* = g5;
+        }
         // **射频状态快照**：`0x200A` 之前把 FE 块的值也存进 flash，
         // 让 host 一次读出"射频是否就绪"，而不只是"停在哪"。
         // **实验：去掉 FE 快照读**。README 与 `tools/jtag-watch-modem-block.sh` 记的
