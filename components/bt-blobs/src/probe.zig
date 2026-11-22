@@ -2509,6 +2509,10 @@ pub fn run() noreturn {
                 lp608.* = s_first;
                 lp60c.* = s_last;
                 lp600.* = f_last;
+                // **轮 113**：ADVRES 环（含每轮时钟回写）之后，SYS_TIMER 已被 ULP+
+                // 回写救活 ⇒ ROM flash API 的内部延迟能走完 ⇒ writeLightMarker(3)
+                // 不再楔死 ⇒ ADV-enable 结果（phase=3 + 98BC/F800）落 flash。
+                writeLightMarker(3);
                 // **轮 101**：MODEM_SYSCON 复位/时钟寄存器挂死快照——9C10
                 // （modem_rst_conf：blob ADV-enable 可能重断言 FE 复位位）
                 const r9c10: u32 = @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*;

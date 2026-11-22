@@ -30951,3 +30951,27 @@ RF-ON 武装 ≠ 执行，synth 启动还需 blob 调度器实际跑 ADV 事件�
 1. 轮询环内同时记录 evt/98BC/完成速率 ⇒ 定位 ADV-enable 处理卡在哪个子步
 2. 对照 oracle：esp_bt_controller_enable 后 FreeRTOS tick + coex 调度如何推进
    blob 从"武装"到"执行"的剩余步骤（⾄少还差 I2C master burst 触发）
+
+---
+
+## 🔒 轮 113 终判：ULP 在 ADV-enable 窗口内未生效（2026-11-23）
+
+marker 解码（10 字新格式 ✓ 通道工作）：{magic, tick 0x03993d, evt=6, cmds=10,
+put=9, get=9, cfg=0x2f025f08, **phase=1**, 98BC=0, F800=0x002f0669}。
+⇒ writeLightMarker(3)（post-ADVRES）未执行——ROM 擦除仍楔死 ⇒ **ULP keeper 在
+ADV-enable 处理窗口内未运行或其 0x2080 写未生效**（最后的未知数）。
+
+### 佐证链
+- SYS_TIMER 挂死前活 @2MHz ✓（CLKCHK）
+- ULP v5 修好寄存器虫（a7/s10 不再被毁）✓
+- 但 v5 首次在 ADV-enable 窗口的实测 = marker 停在 phase=1 ⇒ ULP 服务缺席
+- 假设：blob ADV-enable 门控 TIMERGRP 之外**同时门控 LP 核时钟**（LP_CLK_PO_EN
+  force-on 位图未覆盖实际用的位），或 ULP 的 0x20801000 页写在 HP 时钟门控下
+  被 bus bridge 静默丢弃
+
+### 轮 115 首项（下 session）：ULP 活性三值判层
+ULP 程序改为：CONFIG1 写**自增计数器**（跨数字复位保留）+ 每 64 循环翻转
+LP_CLK_CONF 保留位（bit10，无害位）——下 boot 读三值：
+1. CONFIG1 递增 ⇒ ULP 活 + 写通 ⇒ 问题在别处（回写内容/时序）
+2. CONFIG1 恒定 + LP_CLK_CONF bit10 翻转 ⇒ ULP 活但 0x2080 写丢失（bus bridge）
+3. 两者都死 ⇒ LP 核时钟被门控（LP_CLK_PO 位图补全）
