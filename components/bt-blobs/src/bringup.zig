@@ -415,6 +415,11 @@ pub fn init(cfg: *config.Config) c_int {
     if (freestanding) {
         const task_list_init = @extern(*const fn () callconv(.c) void, .{ .name = "r_sym_bt_fqmZkUKgd5GE6m7i2YFG" });
         task_list_init();
+        // **轮 65b**：fqmZkUKg 哨兵后立即跑 yGU6cF4（清回调标志）——防 task_init
+        // 后段的 reset 路径读到 flag≠0 走 .L79 清理分支（该分支解引用 chain，
+        // 在我们环境 NULL store 崩，ok67 实录 mepc=0x40061654）。
+        const ygu = @extern(*const fn () callconv(.c) void, .{ .name = "r_sym_bt_yGU6cF4ldGd8WlytaSqf" });
+        ygu();
         osal.logPublic("bt bringup: task list head init *(0x2f011130)=0x{x:0>8}", .{mmioRd(0x2f01_1130)});
         // **轮 67**：env_obj[16]/[20] 注册节点预读（task_init 遍历表 = 崩点源）
         const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;

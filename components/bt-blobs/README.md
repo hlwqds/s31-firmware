@@ -29537,3 +29537,25 @@ osal 布局对齐官方 {queued,fn,arg} + fn(容器) 官方语义 + 双路解析
 osal 布局对齐官方 {queued,fn,arg} + fn(容器) 语义 + 双路解析 + 全部承重写 + c_int 0 修复（130/130 host 绿）+ 完整诊断仪器栈
 HEREDOG
 echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 落地路径——blob 自家 r_btdm_os_memblock_* 池 API 可直调（impl 布局与 deinit walk 对齐的结构性终修）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
+
+---
+
+## ⚙ 轮 70 终态（2026-11-23 收口）
+
+### ygu 链实验判决
+fqmZkUKg 后链调 yGU6cF4（清标志）——crash 原样（mepc=0x40061652 mtval=0x58）⇒ sleep_set_sleep_cb 的 store fault 非标志路径问题。
+
+### 累计有效修复（本 session 全部已入库）
+1. intrArm 路由直调（轮 49）
+2. mode dispatch cfg_ll（轮 49，e32 实证）
+3. eventReset 官方语义（轮 59）
+4. osal Event 布局对齐官方 {queued,fn,arg} + fn(容器) 语义（轮 64-65，130/130 host 绿）
+5. wr_btdm_osal_eventq_init/event_init 改 c_int 返回 0（OkE7 rc 链）
+6. eventInit/eventqInit 承重写（container.p = 池对象）
+7. OkE7 双预填撤销（0x2f011138 = OkE7 自管理 env 槽，prefill = 入口 bail -1 实证）
+
+### 剩余单墙（轮 71 首项）
+sleep_set_sleep_cb @0x40061652：`lw s0,12(a4)` 读 *(0x2f011134)+12 = NULL——sleep env 容器的 impl+12 字段。impl = OkE7 malloc(76) env 本体（*(0x2f011138)）——**env+12 = OkE7 mutex_init 写的互斥锁句柄**！mutexInit 的 slotSet 写 container.p（env+4 处的槽？）……不对：mutex_init(env+4) 收到 env+4 容器，写 env+4.p——而 sleep_cb 读的是 *(0x2f011134)=env2 指针+12……
+⇒ **0x2f011134 与 0x2f011138 是两个不同 env 族**（134=sleep env、138=OkE7 env）——sleep env（134）的 impl+12 需要的值 = OkE7 mutex 的句柄传透……轮 71 = 对拍 oracle 的 0x2f011134/0x2f011138 双槽生命周期（oracle ANASET 加读双槽），确定 sleep env impl+12 的官方填充者。
+HEREDOG
+echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 终态——ygu 链未消解（sleep_cb impl+12=NULL 另有来源）；轮 71=oracle 双槽（134/138）生命周期对拍" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l; cd /home/huanglin/code/hl-ljj-quartz && git status --short | wc -l
