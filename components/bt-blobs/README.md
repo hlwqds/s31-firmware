@@ -29420,3 +29420,18 @@ JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
 ### 轮 68 首项（单 boot 隔离）
 6 个子 init 各自 flash 直写标记（0x18C200 起 phase=41..46，interval 现成）⇒ 一次 boot 定位第一个 rc≠0 的子 init；随后反汇编该子 init 找它的前置条件。
 （本轮已新增的 flash 直写通道 0x18C140 流水 = event_init 专用；新标记用不同偏移免覆盖。）
+
+---
+
+## 🔬 轮 67d：橙味修正 + oracle 同名陷阱（2026-11-23 深夜）
+
+### 两个判定修正
+1. **"OkE7 6 个子 init rc 检查链" = 过度解读**：oracle OkE7（0x4006a3ac）与我们的 OkE7（0x40061a10）**同源同构**（mutex→eventq→+8 检查→fqmZkUKg→kNIbP2(impl.slot,6)→event_init(env+84)），oracle 里 fqmZkUKg **无 rc 检查**（直落 kNIbP2）。"6 个子 init rc 链" = 我们镜像的不同函数（0x40061a94-0x40061ad4 的 JwHsRJf87 等 6 个）在 OkE7 **event_init 之前**——它们是 env+16/20 的真正注册者！
+2. **oracle 同名陷阱**：`r_sym_bt_*` 名 = 按构建哈希，**oracle 与我们镜像的同名符号 ≠ 同源函数**（nm 交叉查全部落空）。对拍必须按**调用图/偏移**而非符号名。
+
+### 重定性
+- hook_fired=0 + n=0：OkE7 event_init(env+84) 未达 = env+84 之前的 6 个注册子 init 之一卡 rc
+- 这 6 个 = env+16/20 注册节点的**真正创建者**（我们早期轮的 45 次 init = 这些！）
+- 它们失败 ⇒ env+16/20 = 0 ⇒ task_init walk ⇒ gvLJK4(NULL) ⇒ 全套症状
+- **为什么现在失败而早期 45 次成功**：与 side-table 重构同期 ⇒ 最可疑 = eventq_init 的新副作用（slot.p 写回 buf[2]=1 填充）改变了某个子 init 依赖的状态
+- **回退实验（轮 68 首项）**：临时注释 eventqInit 的 `slot.p = @ptrCast(q); q.buf[2] = 1;` 两行 → boot → 若 45 次恢复 ⇒ 写回引入的副作用定位，改为兼容式（写回但不动 buf）
