@@ -123,8 +123,15 @@ extern fn r_sym_ble_FJxPPDsfsgFzTvO2VwlU() callconv(.c) void;
 /// **轮 51**：regi2c 读原语（ROM 绝对地址 0x2f8012ec，两镜像同址）。
 /// 板上实测调用形如 (reg_add, block_hostid, block)——RF PLL cap = (99,1,6)。
 extern fn phy_i2c_readReg(reg: u8, hostid: u8, block: u8) callconv(.c) u8;
+/// **轮 57**：ana 写原语（ROM 绝对地址，与 readReg 同族）。
+extern fn phy_i2c_writeReg(block: u8, hostid: u8, reg: u8, val: u8) callconv(.c) void;
 /// **轮 51**：RF 电源域开关（ana burst 原语，probe F83C 块尾部已有同款调用）。
 extern fn phy_ana_i2c_master_burst_rf_onoff(on: u32) callconv(.c) void;
+/// **轮 58**：读 LL 命令静态事件的排队态（wr_ 包装 = 我们镜像内具名符号）。
+const wr_btdm_osal_event_is_queued = @extern(*const fn (?*anyopaque) callconv(.c) c_int, .{ .name = "wr_btdm_osal_event_is_queued" });
+/// **轮 59**：osal 侧 event_init 快照访问（symbol 化，地址无关）。
+const osal_last_event_init = @extern(*[48][3]usize, .{ .name = "osal_last_event_init" });
+const osal_last_event_init_n = @extern(*usize, .{ .name = "osal_last_event_init_n" });
 
 // **WiFi osi 栈**（wifi-blobs 移植件，本次综合的主线）
 const osi_impl = @import("osi_impl.zig");
@@ -191,6 +198,8 @@ var diag_blk_ok: bool = false;
 var rst_or: u32 = 0;
 /// 轮 51：ana 四件套快照泵首轮打印旗。
 var ana_dumped: bool = false;
+/// 轮 59：event_init 快照打印旗。
+var evinit_dumped: bool = false;
 fn rd32(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
 }
@@ -2522,6 +2531,22 @@ pub fn run() noreturn {
                     const capv3: u8 = phy_i2c_readReg(99, 1, 6);
                     osal.lpTrace(3, 0xA007);
                     board.log.line("bt probe: deven->FFF regi2c=0x{x:0>2} deven_now={x:0>8}", .{ capv3, @as(*volatile u32, @ptrFromInt(0x2081_3014)).* });
+                    // **轮 59**：blob 的 event_init 快照（是否给 LL 命令事件注册过回调）
+                    if (!evinit_dumped) {
+                        evinit_dumped = true;
+                        const n = osal_last_event_init_n.*;
+                        board.log.line("bt probe: evinit total={d}", .{n});
+                        // 按槽匹配：命令事件槽（*(0x2f01101c)+12）的 init 记录
+                        const eo_scan: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).* + 12;
+                        var k2: usize = 0;
+                        while (k2 < @min(n, 48)) : (k2 += 1) {
+                            const idx = if (n < 48) k2 else (n - 48 + k2) % 48;
+                            const trio = osal_last_event_init.*[idx];
+                            if (eo_scan >= 0x2f00_0000 and trio[0] == eo_scan) {
+                                board.log.line("bt probe: CMD-EVENT init idx={d} fn=0x{x:0>8} arg=0x{x:0>8}", .{ idx, trio[1], trio[2] });
+                            }
+                        }
+                    }
                 }
             }
             // **BB 测量活性判据**（skill：98BC 非判据）：0x47C 0↔0x10000 脉冲
@@ -2532,12 +2557,6 @@ pub fn run() noreturn {
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*; // ANA_CONF0（活值：txphase 已稳定=1 多轮）
             _ = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*; // I2C0_CTRL（活值：本轮诊断行不加，见 burst 快照）
             const fe_cnt = @as(*volatile u32, @ptrFromInt(0x2010_11AC)).*;
-            // 任务驻停 PC：swapContext 帧布局 words[12]=ra（sched.zig frame_bytes=64，
-            // initContext 对称写 words[12]=trampoline）——任务每轮让出点直接可见。
-            const tpc: u32 = if (ctrl_task) |t|
-                @as(*volatile u32, @ptrFromInt(t.ctx.sp + 48)).*
-            else
-                0;
             // CLIC input 60（=BT src 124 的武装入口）原始 intctl 字：
             // bits[31:24]=IP（pending），bit8=IE——看 BB 中断到底有没有提出。
             const st = osal.stats();
@@ -2588,8 +2607,26 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            // **轮 49**：e32 = ble_hci_trans_env[32]（cfg_ll 注册的 LL cmd 入口）
+            // **轮 57**：e32 = ble_hci_trans_env[32]（cfg_ll 注册的 LL cmd 入口）
             // 与 c32（btdm ctx[32]）不同层——A 路径走后者，B 路径走前者。
+            // **轮 58**：LL 命令事件排队态——FJxPPD 把命令包进 *(0x2f01101c)+12
+            // 的单一静态事件，is_queued≠0 时一切后续命令返回 7 丢弃。读它！
+            var evq: u32 = 0;
+            var evcb: u32 = 0;
+            var evarg: u32 = 0;
+            {
+                const ep2: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
+                if (ep2 >= 0x2f00_0000 and ep2 < 0x2f90_0000 and ep2 % 4 == 0) {
+                    const eo: usize = ep2 + 12;
+                    evq = @bitCast(wr_btdm_osal_event_is_queued(@ptrFromInt(eo)));
+                    // **轮 58b**：eo = Slot 桩（+0 = 池 Event 指针）；fn_/arg 在池对象里
+                    const evp: usize = @as(*volatile usize, @ptrFromInt(eo)).*;
+                    if (evp >= 0x2f00_0000 and evp < 0x2f90_0000 and evp % 4 == 0) {
+                        evcb = @as(*volatile u32, @ptrFromInt(evp + 4)).*; // Event.fn_
+                        evarg = @as(*volatile u32, @ptrFromInt(evp + 8)).*; // Event.arg
+                    }
+                }
+            }
             var e32: u32 = 0;
             {
                 const ep: usize = @as(*volatile usize, @ptrFromInt(0x2f01_10fc)).*;
@@ -2597,7 +2634,7 @@ pub fn run() noreturn {
                     e32 = @as(*volatile u32, @ptrFromInt(ep + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} rst={x:0>8} qput={d} getok={d} evrun={d}/{d} evt={d} e32=0x{x:0>8} pc=0x{x:0>8} brg={d}/{d}/{d}", .{
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} rst={x:0>8} qput={d} getok={d} evrun={d}/{d} evt={d} e32=0x{x:0>8} evq={d} evcb=0x{x:0>8} evarg=0x{x:0>8} brg={d}/{d}/{d}", .{
                 icg_bt,
                 icg_after,
                 (r98 >> 2) & 1,
@@ -2609,7 +2646,9 @@ pub fn run() noreturn {
                 st.event_run_no_slot,
                 transport.stats().evt_count,
                 e32,
-                tpc,
+                evq,
+                evcb,
+                evarg,
                 bringup.bridge_w,
                 bringup.bridge_ran,
                 bringup.bridge_dropped,

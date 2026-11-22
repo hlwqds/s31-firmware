@@ -759,10 +759,28 @@ pub var on_eventq_init: ?*const fn (u32) void = null;
 var evq_init_n: u32 = 0;
 var ev_init_n: u32 = 0;
 
+/// **轮 59**：最后三次 event_init 的 (slot, fn, arg) 快照——板级 diag 直接读，
+/// 判 blob 是否给 LL 命令事件注册过回调。
+pub var last_event_init: [48][3]usize = @splat(@splat(0));
+pub var last_event_init_n: usize = 0;
+comptime {
+    @export(&last_event_init, .{ .name = "osal_last_event_init" });
+    @export(&last_event_init_n, .{ .name = "osal_last_event_init_n" });
+}
+
 pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) void {
     trace("eventInit", .{});
     ev_init_n += 1;
     if (on_event_init) |f| f(ev_init_n);
+    if (@import("builtin").cpu.arch == .riscv32) {
+        const k = last_event_init_n % 48;
+        last_event_init[k] = .{
+            @intFromPtr(slot),
+            if (fn_) |f| @intFromPtr(f) else 0,
+            if (arg) |a| @intFromPtr(a) else 0,
+        };
+        last_event_init_n += 1;
+    }
     // 槽位里可能已经有状态（重复 init）——复用，否则新建。
     const e = slotGet(Event, slot) orelse blk: {
         const fresh = event_pool.take() orelse {
@@ -837,9 +855,9 @@ pub fn eventSetArg(slot: *Slot, arg: ?*anyopaque) void {
 
 pub fn eventReset(slot: *Slot) void {
     const e = slotGet(Event, slot) orelse return;
-    e.fn_ = null;
-    e.arg = null;
-    e.next = null;
+    // **轮 59 根修**：官方 FreeRTOS 版 = `event->queued = 0;`（仅此一行）——
+    // fn_/arg 全保留。此前我们连 fn_ 一起清 ⇒ LL 命令事件回调丢失 ⇒ 命令消费
+    // 后无声消失（evt 冻结真因）。
     e.queued = false;
 }
 

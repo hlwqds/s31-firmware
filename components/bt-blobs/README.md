@@ -29143,3 +29143,31 @@ r_base_stack_enable → ANASET → r_conn_stack_enable → ANASET → r_btdm_hci
 
 ### 轮 57 首项：task init 体路径追踪
 task 第一波 pump 的 init body 走了哪条分支 = 最后黑盒。仪器：pc_ring 采样器（已有）在 task init 窗口（bringup 完成后前 ~10 个 pump round）高频采样 tpc；或 STORE/EXEC 观察点盯 task init 的关键分支变量。备选：对照 oracle 反汇编 task 入口函数的 init 体（oracle elf 有全符号，我们镜像 r_sym 重名可映射）找"rf_init 跳过"分支的守卫变量地址，板上读它。
+
+---
+
+## 🎯 轮 57-59：ana 红鲱鱼排除 + LL 事件回调丢失根修（2026-11-22）
+
+### 轮 57：写-回读自环（终极活性判别）
+`phy_i2c_writeReg(99,1,6,0x5A)` → 读回 `0x5a` ⇒ **ana 总线+设备完全存活**！轮 51-53 的"域掉电"全是红鲱鱼（PLL cap 空闲本读 0）。
+
+### 轮 58：FJxPPD 解码 + 事件对象追踪
+- FJxPPD（LL cmd 入口）= 把命令包进 env+12 的**单一静态事件**，`is_queued` 时返回 7 丢弃
+- 板测 `evq=0` = 事件不卡队（被消费）但零 CC ⇒ 消费后无声消失
+- 事件对象：Slot 桩（eo+0=池 Event 指针）→ 池 Event {next,fn_,arg,...}
+
+### 轮 59：**根因 = 我们的 eventReset 清掉了 fn_**
+- osal 侧 event_init 快照环（48 条，@export 固定符号名）：blob 共调 event_init **45 次**，其中 idx=26 就是命令事件：**fn=0x400181e6（LL 分发器，注册过！）**
+- 但运行时 `evcb=0x00000000` ⇒ init 之后被清——清零者 = 我们的 `eventReset`（`e.fn_ = null`——官方 FreeRTOS 版只有 `event->queued = 0;` 一行！）
+- **根修（osal.zig eventReset）**：对齐官方语义，只清 queued，fn_/arg 保留
+
+### 修复后新状态（质变 + 新 crash）
+- INITED ✓ 事件链首次端到端运行：命令 → FJxPPD → 事件 → task 消费 → **分发器真跑了**
+- 新 crash：`mepc=0x401038a8 mtval=0x2b9`（a1=0 基址 + 0x2b9 偏移 = 未初始化指针字段）
+- s1=0x4007755c（我们镜像 bringup.init 区）、a0=0xc0050400
+- 解读：分发器已运行但读到未初始化的 LL 状态（0x401038a8 区域归属待查——不在我们 0x4000xxxx 镜像窗内）
+
+### 轮 60 首项
+1. 定位 0x401038a8 属于哪个映射窗（我们 objdump 全部 VMA 无此地址 ⇒ 第二 flash 窗/未映射）
+2. 反汇编 fn=0x400181e6（LL 分发器）头部，找它读的指针字段（a1 链）
+3. 该字段 = LL init 应建未建的结构（conn/timer 池？）→ 回到 task init 体跳过问题，但这次有精确指针链
