@@ -1209,21 +1209,16 @@ inline fn fenceIo() void {
     if (comptime @import("builtin").cpu.arch.isRiscv()) asm volatile ("fence iorw, iorw");
 }
 
-export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) void {
+export fn wr_btdm_osal_eventq_init(evq: *Slot) callconv(.c) c_int {
     noteCaller();
     fenceIo();
     logLine("bt hook: eventq_init", .{});
     eventqInit(evq);
     logPublic("bt ret: eventq_init done", .{});
-    // 判据补丁（实验）：必须在 `eventqInit` **之后**——`evq` 就是 `obj+8`（`c.addi a0,8`），
-    // `eventqInit` 会写槽首字，放在前面会被它覆盖。
-    // 判据补丁（实验）：`evq` 形参**就是**被检查的那个字（归档传的是 `obj+8`），
-    // 直接写它，不做任何地址推算。
-    if (patch_bail_field) {
-        const w: *volatile u32 = @ptrCast(evq); // 槽的首字（归档检查的就是它）
-        w.* = @truncate(@intFromPtr(&bail_sentinel));
-        logPublic("bt patch: evq=0x{x} -> 0x{x}", .{ @intFromPtr(evq), w.* });
-    }
+    // （轮 63 时代的 patch_bail_field 实验已删：有害且被 disable，见 README；
+    //   **轮 67**：真正修法 = 返回 0——OkE7 无条件读 a0 做 rc 检查，void 残留
+    //   0 值 = 误 bail = fqmZkUKg 哨兵不发布 = 任务列表头 NULL。）
+    return 0;
 }
 export fn wr_btdm_osal_eventq_deinit(evq: *Slot) callconv(.c) void {
     eventqDeinit(evq);
@@ -1264,11 +1259,12 @@ export fn wr_btdm_osal_event_run(ev: *Slot) callconv(.c) void {
     logLine("bt hook: event_run", .{});
     eventRun(ev);
 }
-export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) void {
+export fn wr_btdm_osal_event_init(ev: *Slot, fn_: EventFn, arg: ?*anyopaque) callconv(.c) c_int {
     noteCaller();
     fenceIo();
     logLine("bt hook: event_init", .{});
     eventInit(ev, fn_, arg);
+    return 0; // **轮 67**：同上，OkE7 rc 链
 }
 export fn wr_btdm_osal_event_deinit(ev: *Slot) callconv(.c) void {
     noteCaller();

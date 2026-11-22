@@ -29333,3 +29333,21 @@ crash 签名**逐字不变**（mepc=0x4006137a mtval=4 ra=0x40061c2e）⇒ arena
 
 ### 轮 67 首项（一命令）
 **当前构建**（dummy66 的 app.elf）反汇编 0x4006137a ±0x20：读出确切指令与基址寄存器装载链 → 槽地址 → 加入预填清单 → 重跑。循环直到 task_init 全链通过（每次迭代 = "解码→预填→boot"，仪器/流程已全就绪）。
+
+---
+
+## 🎯 轮 67 终态：env+16/20 = cfg 拷贝字段——init_config 镜像差异成为总根源候选（2026-11-23）
+
+### 关键事实链
+1. hook_fired=0 + n=0 ⇒ **本次 boot 零 event_init**（45 次 = 历史轮；本次流程在前置阶段就崩）
+2. crash walk 在 task_init **内部**（task_deinit/OkE7 之前执行——线性地址序 ≠ 执行序，分支保护：仅 `env_obj[0] count <= 1` 时走）
+3. env_obj = **从 cfg->btdm memcpy 而来** ⇒ env+16/20 = **cfg 字段的拷贝**
+4. walk 读 env_obj[20] = 0 ⇒ **我们的 cfg 镜像在对应偏移 = 0**（官方 BT_CONTROLLER_INIT_CONFIG_DEFAULT 非零/含指针）
+
+### 60 轮现象的统一解释候选
+init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（字段错位、缺段、默认值 0）⇒ env 拷贝即错 ⇒ 事件/任务注册链全部异常 ⇒ 一切下游症状（FC 表、锚点、sleep env、注册节点 NULL……）。
+
+### 轮 68 首项（全离线，一锤定音）
+1. oracle 侧 dump `BT_CONTROLLER_INIT_CONFIG_DEFAULT` 宏展开后的完整字节（esp_bt.h / esp_bt_configs.h 静态分析 + 编译产物 .data 段对比）
+2. 我们的 init_config.zig 镜像逐字段 diff（已有"双工具校验"轮的基础）
+3. 差异字段 → 修正镜像 → boot：预期 env+16/20 非零 ⇒ walk 通过 ⇒ task_init 完成 ⇒ 全链下游复活

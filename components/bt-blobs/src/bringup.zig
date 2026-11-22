@@ -416,6 +416,21 @@ pub fn init(cfg: *config.Config) c_int {
         const task_list_init = @extern(*const fn () callconv(.c) void, .{ .name = "r_sym_bt_fqmZkUKgd5GE6m7i2YFG" });
         task_list_init();
         osal.logPublic("bt bringup: task list head init *(0x2f011130)=0x{x:0>8}", .{mmioRd(0x2f01_1130)});
+        // **轮 67**：env_obj[16]/[20] 注册节点预读（task_init 遍历表 = 崩点源）
+        const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
+        if (envp >= 0x2f00_0000 and envp < 0x2f90_0000 and envp % 4 == 0) {
+            const n16: usize = @as(*volatile usize, @ptrFromInt(envp + 16)).*;
+            const n20: usize = @as(*volatile usize, @ptrFromInt(envp + 20)).*;
+            // **flash 直写通道**（LP 槽被下载刮花；mark.put 是 probe 私有）：
+            // 0x18C100/0x18C108 = 空闲偏移，{magic, value} 8B 对，host esptool 读。
+            const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            const pair16: [2]u32 = .{ 0xADC0D001, @truncate(n16) };
+            const pair20: [2]u32 = .{ 0xADC0D002, @truncate(n20) };
+            _ = esw(0x18C000 + 0x100, &pair16, 8);
+            _ = esw(0x18C000 + 0x108, &pair20, 8);
+        } else {
+            osal.logPublic("bt bringup: env ptr oob=0x{x:0>8}", .{envp});
+        }
     }
     enter(6, "r_btdm_task_init");
     {

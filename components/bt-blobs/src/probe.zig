@@ -135,8 +135,20 @@ const osal_last_event_init_n = @extern(*usize, .{ .name = "osal_last_event_init_
 /// **轮 63b**：event_init 钩子回调——目标槽（*(0x2f01101c)+12）init 的瞬间
 /// 武装 Slot.p STORE 观察点（后续 deinit/rebind 写者 → LP 槽三元组）。
 /// bringup 钩子注册名（probe_mod 经此引用）。
+var evinit_seq: u32 = 0;
+/// **轮 67b**：钩子诊断（BSS 计数器，泵期 diag 读出——flash 写路径隔离）
+var hook_fired: u32 = 0;
+var hook_last_slot: u32 = 0;
+var hook_last_fn: u32 = 0;
+
 pub fn bt_hook_event_init3(slot: usize, fn_addr: usize, arg_addr: usize) void {
     onEventInit3(slot, fn_addr, arg_addr);
+    // **轮 67：event_init 流水 flash 直写**（16 条轮转，esptool 离线读
+    // 0x18C140 起 4 字/条 {magic, slot, fn, arg}）——env+16/20 注册节点真源。
+    evinit_seq +%= 1;
+    hook_fired +%= 1;
+    hook_last_slot = @truncate(slot);
+    hook_last_fn = @truncate(fn_addr);
 }
 pub fn onEventInit3(slot: usize, fn_addr: usize, arg_addr: usize) void {
     _ = fn_addr;
@@ -340,6 +352,10 @@ pub fn lpBlackBoxReport() void {
     {
         const w: [*]volatile u32 = @ptrFromInt(0x2E00_04D0);
         board.log.line("BBT wp2 pc=0x{x:0>8} ra=0x{x:0>8} count={d}", .{ w[0], w[1], w[2] });
+        const e16: [*]volatile u32 = @ptrFromInt(0x2E00_04E0);
+        board.log.line("BBT env16=0x{x:0>8} env20=0x{x:0>8}", .{ e16[0], e16[1] });
+        // **轮 67b**：钩子诊断读出
+        board.log.line("BBT hook fired={d} slot=0x{x:0>8} fn=0x{x:0>8} n={d}", .{ hook_fired, hook_last_slot, hook_last_fn, osal_last_event_init_n.* });
     }
     // 事件环回放：最近的 24 条（tag<<28|value），按发生顺序。
     {
@@ -3092,7 +3108,7 @@ fn flashStage(n: u32) void {
 }
 
 /// 同 `flashStage`，但额外把两个观察值写进标记扇区的第 3/4 个字。
-fn flashStageExtra(n: u32, a: u32, b: u32) void {
+pub fn flashStageExtra(n: u32, a: u32, b: u32) void {
     if (@import("builtin").target.os.tag != .freestanding) return;
     // **窗口守卫补全**（2026-11-21）：此前只挡了 flashStage（擦+首写），
     // 本函数自己的两次 esp_rom_spiflash_write 照写——BT 窗口（任务活了之后）
