@@ -891,10 +891,12 @@ fn ulpKeeperArm(comptime tag: u8) void {
         0x83, 0xa7, 0x0e, 0x00, 0x85, 0x07, 0xbd, 0x8b,
         0xb3, 0xe7, 0x17, 0x01, 0x23, 0xa0, 0xfe, 0x00,
     };
-    for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
-    // **轮 119f 勘误**：reg.h 权威 = base+0x18（0x10/0x14 是保留洞，struct 枚举
-    // 有空洞不可信）。r119c-e 的 0x10 写进黑洞 = 我的误修，撤回。
-    @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS lp_core_boot_addr
+    // **轮 119p 根因定案**：S31 LP RAM = 4KB（oracle example RESERVE_MEM=4096；
+    // oracle 终态 boot_addr=0x2E000080=LP RAM 起+0x80 向量表后）。此前程序放
+    // 0x2E001000 = 偏移 4KB = LP RAM 之外 ⇒ 取指必死——118+ 轮「核从未执行」
+    // 的真根因。blob 盒最低 0x2E000200，0x80-0xB8 无冲突。
+    for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E000080 + i)).* = b;
+    @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E000080; // LP_SYS lp_core_boot_addr
     // **轮 119j 全表勘误**（lp_peri_clkrst_reg.h 权威，base=0x20710000）：
     //   CPU_CTRL=+0x4(bit30 clk_force_on/bit31 rst_en)、RAM_CTRL=+0xc(bit30
     //   ram_clk_en 默认1/bit31 ram_rst_en)、INTR_CTRL=+0x28(bit30 intr_clk_en/
@@ -2512,7 +2514,7 @@ pub fn run() noreturn {
                 // 主上下文 mcycle 环活着 ⇒ 每次迭代重断言，核时钟被清即恢复。
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
-                @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000;
+                @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E000080;
                 // **轮 119n**：时钟位重断言之后补复位脉冲——PMU 级复位(cause=0xA，
                 // blob 干的)后核可能仍被持在复位态，CPU_CTRL 脉冲是该核的硬件复位线。
                 const ccp2: usize = 0x2071_0004;
