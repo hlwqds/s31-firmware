@@ -28823,3 +28823,18 @@ phy 校准 ✓、blob INITED ✓、HCI 命令收发 ✓、FE 可读 ✓——唯
   - blob 调度器与 RF synth 的时序配合
 
 **下 session 首项**：FE450/47C 振荡检查 + 98BC.bit2 状态 + btdm 参数表与 oracle 逐字段对照。
+
+---
+
+## 🔒 轮 43 终局（2026-11-22 追加）：布局手术后 blob 硬编码地址全面断裂
+
+### 症状
+- INITED ✓ → `r_btdm_sleep_set_sleep_cb` 写 NULL+0xC → load access fault → halt
+- "Xpuq 锚点 P=0x00000000"（旧布局曾为 0x2f0150b8 ✓ 非零）
+- arena free=300520 ✓（blob 自身运行正常）
+
+### 根因
+s31.ld 布局手术把我们的 .data/.bss 移出了 blob 窗口（0x2f010cdc-0x2f022a80 ✓），**但 probe/bringup 里 43 处硬编码 blob 数据区地址（0x2f015058/0x2f0150b8/0x2f015038/0x2f011020/0x2f011044/0x2f010fb4 等）没有跟着搬** ⇒ 这些地址在新布局中 = 空窗（无符号、无映射）⇒ blob 从空窗读到 0 ⇒ 锚点/配置对象 = NULL ⇒ 崩溃。
+
+### 修法
+43 处硬编码逐一改为 **`@extern` + 闭包符号名**（nm 新表可查每个地址对应的 r_sym_ble_* 符号），零硬编码依赖。或者更简单：在 s31.ld 里加 `.porting_slots (NOLOAD)` 段固定在 0x2f010cdc（blob 窗口起始处），host_stubs 的 export var 用 `linksection(".porting_slots")` 约束——硬编码地址零修改。
