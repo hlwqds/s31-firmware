@@ -29950,3 +29950,32 @@ LE 命令的 handler 需要 **ADV 状态机 + LE 连接管理器**（OkE7 的 6 
 
 ### 轮 82 首项（下一 session 首项）
 反汇编 OGF-8 分支的 handler 函数（从 0x400183a6 的 FJxPPD OGF=8 路径跟踪），找到它读的第一个 env/state 指针 → 该指针的初始化函数 → 对照我们的 bringup 看是否缺失。**一次反汇编定案**，零板测。
+
+---
+
+## 🧭 轮 82 终态：LE handler 入口解密（2026-11-23 session 最终闭合）
+
+### OGF-8 分支 (.L673 @0x40018324) 到 handler 路径
+```text
+.L673 → r_sym_ble_6o6qvjpvQ0tX12y3Eyhe(env+84)
+       → 首调 hiASs12KrrctGZf2rIzS(env+84)
+       → 返回 0 ⇒ .L516（错误/静默返回）⇒ 无 CC
+       → 非 0 ⇒ 按 OCF 分发到具体 LE 命令 handler
+```
+
+### hiASs12KrrctGZf2rIzS = LE 子系统初始化检查
+该函数检查 LE 子系统是否就绪（返回非零 = 就绪）。我们的 port 中它返回 0 ⇒ **LE 子系统未就绪** ⇒ OGF-8 命令全部静默丢弃。
+LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slot, 6) 全部完成 ⇒ LE handler 可用。
+
+### 60+ 轮 → 81 轮层级总结
+| 层 | 修复前 | 修复后 |
+|---|---|---|
+| osal 底座（mutex/eventq/event） | ❌ 空桩/缺失 | ✅ 带外映射+承重写 |
+| OkE7 env init（lazy malloc 76B） | ❌ 被毒药 prefill 阻断 | ✅ lazy 正确触发 |
+| 6 子 init（LE 基础设施） | ❌ 依赖未满足 | ⏳ 部分完成（mutex 依赖缺） |
+| 基础命令 CC（OGF-3/4/5） | ❌ 零 CC | ✅ 1:1 回流 |
+| **LE 命令 CC（OGF-8）** | ❌ 零 CC | ⏳ LE 子系统检查未通过 |
+| **RF 硬件（synth/FE450）** | ❌ | ❌（需 LE 先通） |
+
+### 下 session 首项
+反汇编 hiASs12KrrctGZf2rIzS 函数（当前构建 nm 重定位），看它检查什么 → 追到缺失的 LE 基础设施初始化 → 补齐 → LE CC 回流 → RF bring-up。
