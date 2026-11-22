@@ -1287,6 +1287,15 @@ pub fn run() noreturn {
         // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
+        // **轮 93**：lp_pc_en 武装前读 LP 槽——里面是**上一轮 boot 挂死时**的冻结
+        // mepc（NMI 每 2ms 写，挂死后不再更新，LP 跨复位保留）。确定性 hang ⇒
+        // 每轮打印的都是同一挂死 PC。上轮 boot 在 0x200A 后全静默 ⇒ 此值即死点。
+        {
+            const pc0: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0380)).*;
+            const pc1: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0384)).*;
+            const nmic: u32 = board.trap.nmi_count;
+            board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d}", .{ pc0, pc1, nmic });
+        }
         board.trap.lp_pc_en = true; // pmu_init 后 LP RAM 才可访问：开 NMI PC 环/采样
         osal.lp_trace_en = true;
         // **BT modem clock 使能**（btdm_lp_enable_clock 的核心——此前故意留空）

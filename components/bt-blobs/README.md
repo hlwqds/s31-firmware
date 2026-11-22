@@ -30484,3 +30484,26 @@ f800=012f0669 恒定（锁存 ✓）但 98BC=00000000 ×10
 ### 轮 93 首项：hang PC 定位（pc 采样器/trap 行武装于 F3 窗口）
 抓到自旋 PC 后反查：ADV-enable handler 在等什么（对照 oracle 同分支不等待）。
 打通 ⇒ 98BC=4 ⇒ F3 rc=0（或 HW-ERR）⇒ **BLE 广播上线**。
+
+---
+
+## 🔍 轮 93：挂死通道全灭判定 + 轮 94 方案（2026-11-23）
+
+### 实测（adv90/adv91 捕获 + PREVHANG 实验）
+- 挂死窗口（~40s）内：无 NMI 行（打印门=每 5000 tick=10s，应出现 ~4 次）⇒ **T0/NMI 已死**；
+- 无第二次 boot banner（MWDT1 STG1=360s，捕获窗远不够）⇒ failsafe 太远；
+- PREVHANG 读 LP 槽 = 垃圾 ⇒ LP 槽被 blob ADV-enable 路径挪用（0x2E0003xx 竞区）；
+- UART0 静默 = blob 门控其时钟（keeper 每 2ms 永活回写——但 keeper 住 NMI，NMI 死 ⇒ keeper 死）。
+
+### 判定
+**0x200A hang = blob 门控 TIMERGRP（杀 T0→NMI→keeper 链）+ UART0 时钟 ⇒ 全观测通道连坐死亡。**
+这是已知"blob 时钟代码反复门控 UART0/TIMERGRP"行为的极端表现：keeper 依赖被门控的对象自己。
+
+### 轮 94 方案：MWDT1-STG0 中断辅助的通道复活
+keeper 已把 MWDT1 配为 STG0=中断(360s)/STG1=复位。改造：
+1. 0x200A 发送前把 MWDT1 CONFIG1.STG0_HOLD 改短（如 5s）——挂死时 STG0 中断
+   （若 MIE 未屏蔽）进 MWDT1 handler；
+2. MWDT1 handler（新增）：恢复 TIMERGRP/UART0 时钟门控 + 重装 T0 ⇒ NMI 复活 ⇒
+   每 5000 tick 打印恢复（含采样 PC）⇒ 挂死自旋 PC 上 UART；
+3. 若 MIE 被屏蔽 ⇒ STG0 不来 ⇒ STG1(360s) 硬复位也会把板子救回（可观测 banner）。
+   两个分支都可观测。
