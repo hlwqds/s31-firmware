@@ -28612,6 +28612,7 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **⚠ 轮 26 证据存疑注记（自查）**：写者 PC 0x74046f9b 为**奇数地址**——RVC 下已执行指令不可能落在奇数边界 ⇒ mepc 不是已执行 store 的 PC，该 trap 更可能是 blob 堆内代码执行的 `c.ebreak`（vendor assert 路径，别名 0x74000000↔0x40000000 还原出 0x40046f9b=un2bHT 起点+9 仅为巧合吻合）。STORE 命中应给出偶数 mepc。**判定降级**：sp=0x2f010e44/非法栈/胶水 bss 踩踏链的每一步都依赖这个 mepc 解读，全线降为「待复核」。复核方案：watchpoint 再命中时以 UART BP! 行的 t2rb/寄存器现场交叉验证（该行已实现），或改用 mcontrol6 的 MTCM 匹配位精确化。
 - **轮 24-26（2026-11-22）：运行态内存碰撞定责——墙的结构性根因候选**：
   1. **regi2c/时钟/efuse 输入核查（零烧录）**：XTAL 双方 sdkconfig 均 40MHz（桩无害）；`register_chipv7_phy` 函数体尺寸两侧一致（无残缺）；调用目标逐一同源（无混链）。
   2. **calflag 门实验**（轮 25）：enable 前清零 `s_is_phy_calibrated` → 门通过（load_cal 路径进入）→ **enable 返回时标志已被踩成 230、冻结点 136**（源码只写 1，且跨 boot 确定性）⇒ 校准运行期间与之后，胶水 bss 被持续踩踏 ⇒ 校准工作静态（modem_clock_context/pmu_context/s_phy_access_lock 全在受害区）本身被污染。
