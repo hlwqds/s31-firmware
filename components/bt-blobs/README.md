@@ -28879,3 +28879,22 @@ lw  s0, 12(a4)   # ← mtval=0xC fault：a4=0（槽值=NULL）
 1. bringup step 6 前打印 OkE7 锚点值 + btdmMalloc 返回值 → 定位发布链断裂点
 2. 检查 `prepublish_bohff` 门控变量在当前构建中的值
 3. 如果 malloc ✓ 但锚点 = 0 ⇒ `setOkE7Anchor` 写入地址漂移
+
+---
+
+## 🔒 轮 44 状态总结（2026-11-22 追加）
+
+### 已确认的突破
+- **calflag=1**（phy 校准完成，35 轮首次观测 ✓）
+- **观察点仪表链端到端工作**（BP! 捕获 + mepc/ra/t2 全帧转存 ✓）
+- **blob 运行到 stage-22 后 deeper**（过了 calflag/INITED/transport ready，到了 step 19 hci_fc_enable → sleep_cb 崩溃 = **有史以来最深处**）
+
+### sleep env 链式 NULL 问题
+- stub 预填 ✓ → blob 读到非零 ✓ → 但 stub 内嵌套指针（offset 12）= 0 ⇒ 嵌套 store 到 0x58 fault
+- 自引用修复尝试 = blob init 期间清了预填（task_init 清 sleep env 区域）
+- **根因**：blob sleep 子系统需要**链式初始化**（多级指针结构），stub 方法只能修一层
+
+### 下 session 修法（按优先级）
+1. **swapContext 入口 EXEC 断点**（0x40078364）→ 抓 `lw sp,0(a1)` 时 a1 的值 → 定位污染 sp 的**读取来源**（哪个 ctx 被踩）
+2. **反向追踪**：从 saved-sp 的垃圾值（0x2f010eb4）反查谁写了它 → STORE 观察点 @saved-sp 槽地址 → 捕获原始踩踏者
+3. **布局手术 + 43 处 poke 全部 @extern 符号化**（一次大改但终修）→ blob 在安全区运行 → sleep env 槽不再被踩

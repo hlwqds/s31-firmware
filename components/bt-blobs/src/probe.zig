@@ -436,6 +436,9 @@ fn schedPatchset() void {
 pub var rst_conf_pre_200A: u32 = 0;
 pub var rst_conf_post_200A: u32 = 0;
 
+/// **轮 43**：sleep env 占位结构（blob sleep 子系统 env 指针的合法 NULL 等价物）
+var sleep_env_stub: [256]u8 = undefined;
+
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
 
@@ -1727,6 +1730,23 @@ pub fn run() noreturn {
     // 轮 25 实证该字节被持续踩（enable 后 230 → 冻结 136，源码只写 1）⇒ 有无符号
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
+    {
+        // **轮 43 修复：sleep env 槽预填**——0x2f011134（r_sym_bt_sitBB3...）
+        // = blob sleep 子系统的 env 指针槽。sleep_en 钳制（轮 13）使 blob 跳过
+        // sleep init ⇒ 槽值 0 ⇒ sleep_cb 读 NULL+0xC fault（bpboot5 实测）。
+        // 修法 = 预填一个静态零结构指针（blob 读到非零 = 安全访问零字段）。
+        const sleep_env_slot: *volatile u32 = @ptrFromInt(0x2f01_1134);
+        if (sleep_env_slot.* == 0) {
+            // **自引用**：stub+12 = stub 自身地址 → blob 嵌套指针解引用后
+            // 所有偏移落在 256B stub 内 ⇒ 安全读写。stub 前 20B = sp/ra/参数
+            // 保存区（blob sleep 子系统的调用约定）。
+            const stub_base: usize = @intFromPtr(&sleep_env_stub);
+            sleep_env_slot.* = stub_base;
+            // offset 12 = 嵌套指针 → 指回 stub 自身
+            @as(*volatile u32, @ptrFromInt(stub_base + 12)).* = @truncate(stub_base);
+            osal.logPublic("bt probe: sleep env prefilled self-ref @0x{x:0>8}", .{stub_base});
+        }
+    }
     {
         // **轮 30：STORE 观察点重武装（trapEntry 快路径版）**——cause-3 命中走
         // trapEntry 的 SRAM 快路径（零 flash 取指），XIP panic 类已根除。
