@@ -29500,3 +29500,23 @@ task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从
 4. 修复后判据不变：task_init 走通 ⇒ step 7-15 ⇒ enable ⇒ evt/rfready/ADV
 HEREDOG
 echo "---"; git add -A; git commit -m "bt-blobs: 轮 69 纪律——每构建 nm 重定位铁律显式化（本轮 2 轮浪费于旧地址）；稳定事实与轮 69 流程入库" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
+
+---
+
+## 🧭 轮 69b：deinit walk = memblock 池链遍历（2026-11-23 终版定性）
+
+### 崩点重新定性（fn(容器) 语义修复后同点崩）
+- eventRun 官方语义修复（fn(容器)）✓ 已上板——crash 同点 = **崩点在 task_deinit（先于一切事件分发）**
+- walk：`a5 = container.event`（= cb_stub）→ `lbu a3, cb_stub[0]` = 0 → `lw a0, cb_stub[20]` = 0 → gvLJK4(0) → `lw a5, 4(0)` fault
+- **官方 impl 从 `s_btdm_osal_ev_pool` memblock 池分配**，+20 = **池内部链字段**；官方 deinit 的 gvLJK4 = 池链遍历操作
+- 我们的 cb_stub（btdmMalloc scratch）没有官方池链布局 ⇒ walk 读 0 ⇒ 崩
+
+### 轮 70 首项（结构性正确解）
+实现 `btdm_memblock_get/from/put`（`s_btdm_osal_ev_pool`）的官方链布局：
+- memblock 节点 = {next@20 或官方偏移, ...}——从 oracle 反汇编 `btdm_memblock_get`（或 grep blob .o）拿节点布局
+- 我们的 wr_btdm_osal_event_init 改从该池分配 impl（替代 btdmMalloc scratch/池 Event 混用）
+- 判据：task_deinit walk 走通 ⇒ task_init 完成 ⇒ INITED ⇒ evt/CC 链复活
+（另一个更便宜选项：monkey-patch deinit 的 walk 目标——但结构性修复才是一劳永逸）
+
+### 保留成果（本轮全部已入库）
+osal 布局对齐官方 {queued,fn,arg} + fn(容器) 官方语义 + 双路解析 + eventqInit/eventInit 承重写 + c_int 0 修复（130/130 host 绿）
