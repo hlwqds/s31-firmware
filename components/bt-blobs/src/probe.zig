@@ -1517,13 +1517,13 @@ pub fn run() noreturn {
     // **rtc_freq 补丁（重新启用，2026-11-21）**：sleep 配置对象（*/0x2f011044）
     // 的 obj[24/28] rtc_freq u64 = 0 ⇒ 调度器时间换算 (us×1e6)/0 除零
     // （mcontrol6 入口断点实测：入口 a2/a3=全零）。controller_init 已建对象
-    // ⇒ 此刻写 32000（RTC 32k，同 cfg.ble.rtc_freq）/0 即修复除零。
+    // ⇒ 此刻写 27200（RC_SLOW 136k÷5，官方 btdm_lp_init 覆写口径）/0 即修复除零。
     // （注：本补丁在 init 返回后执行，不可能影响 step 17 的 rc——此前
     // "step17 rc=-3 归咎补丁"系误读，step17 失败另有原因。）
     {
         // **双候选判别（2026-11-21）**：真 sleep 对象指针 = [0x2f011044]
         // （y5Dip...，blob 于 40062ba2 写 obj+24/28）；[0x2f011034] 为旧假设。
-        // 两处都查：仅当 obj[24]==0 且 obj[28]==0（零除活体）才补 32000。
+        // 两处都查：仅当 obj[24]==0 且 obj[28]==0（零除活体）才补 27200。
         const cands = [_]usize{ 0x2f01_1044, 0x2f01_1034 };
         for (cands) |cp| {
             const obj: u32 = @as(*volatile u32, @ptrFromInt(cp)).*;
@@ -1532,12 +1532,12 @@ pub fn run() noreturn {
                 const plo: *volatile u32 = @ptrFromInt(@as(usize, obj) + 24);
                 const phi: *volatile u32 = @ptrFromInt(@as(usize, obj) + 28);
                 if (plo.* == 0 and phi.* == 0) {
-                    plo.* = 32000;
+                    plo.* = 27200;
                     phi.* = 0;
-                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=32000", .{ tag, obj });
+                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=27200", .{ tag, obj });
                 } else {
                     _ = phi.*;
-                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=32000", .{ tag, obj });
+                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=27200", .{ tag, obj });
                 }
             } else {
                 osal.logPublic("bt probe: rtc_freq oob @{s} ptr=0x{x:0>8}", .{ tag, obj });
@@ -1547,6 +1547,11 @@ pub fn run() noreturn {
         // SOC_WAKEUP（INT_ENA+MAP input6 已路由）⇒ trap 置旗 ⇒ 泵调
         // btSleepCb ⇒ sleep 唤醒软件半环闭环。（无条件：不依赖补丁命中）
         const rtb: usize = 0x2080_0000;
+        // **隔离 RTC clk_en（2026-11-22，单变量轮）**：date(+0x3FC).bit31=clk_en，
+        // 不置位 counter 一个 tick 都不走（skill s31-rtc-timer-probe 结论 3）——
+        // BT 调度时基冻结 ⇒ LL 调度器永等 ⇒ 泵头冻结，且任何 rtc_freq 值都无效
+        //（完整解释 btfix1/2 两轮零变化）。RMW 保留 bits[30:0]（写 date 丢 bit31=关钟）。
+        @as(*volatile u32, @ptrFromInt(rtb + 0x3FC)).* |= 1 << 31;
         @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27;
         const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
         @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0x8000_0000; // HIGH0=0 | TAR_EN0=1

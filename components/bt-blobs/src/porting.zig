@@ -35,10 +35,24 @@ pub fn btdmCoexInit() c_int {
     return 0;
 }
 
-/// `btdm_lp.c`：`UC_BT_CTRL_SLEEP_ENABLE=0` 且无 `CONFIG_PM_ENABLE` ⇒ 两个分支都不进，`return ESP_OK;`
+/// `btdm_lp.c:374`：sleep_cb/pm_lock 两分支确实不进（`UC_BT_CTRL_SLEEP_ENABLE=0`、无
+/// `CONFIG_PM_ENABLE`），但函数**尾行 `r_btdm_hal_rtc_freq_set` 是无条件的**——此前漏做。
 pub fn btdmLpInit() c_int {
-    return 0;
+    if (@import("builtin").os.tag != .freestanding) return 0;
+    // 官方 `btdm_lp_init`（btdm_lp.c:374）的最后一步：`r_btdm_hal_rtc_freq_set(s_bt_lpclk_freq)`。
+    // 官方值 = RC_SLOW 实测/5（oracle sdkconfig `RTC_CLK_SRC_INT_RC=y` → RC_SLOW 路径，
+    // lp_timer_conf=0x41 即 sel_osc_slow + div4 ⇒ tick=RC_SLOW/(4+1)）；这里取标称
+    // SOC_CLK_RC_SLOW_FREQ_APPROX=136000/5=27200（clk_tree_defs.h:52）。
+    // **disasm 实证全镜像 0 调用者**——blob 从不自己设，官方由本胶水负责；此前 sleep
+    // 对象 rtc_freq u64 一直靠 step10 补丁的 32000（RC32K 口径，与实际 tick 差 17.6%）。
+    // 写点（0x40062b98，**双参 u64 对**）：a0=obj[24]、a1=obj[28]；槽空返回 1。
+    // （obj[+4]=freq<<24 是隔壁 9yM12TlY@0x40062bb8 的另一个 export，别混。）
+    return r_btdm_hal_rtc_freq_set(rtc_freq_lp, 0);
 }
+
+/// LP timer 实际 tick（lp_timer_conf=0x41：sel_osc_slow + div_num=4 ⇒ RC_SLOW/(4+1)）。
+pub const rtc_freq_lp: u32 = 27200;
+extern fn r_btdm_hal_rtc_freq_set(freq_lo: u32, freq_hi: u32) c_int;
 
 /// `ble.c` 的扫描去重：调的是 `ble_vhci_disc_duplicate_mode_disable/enable` 与
 /// `ble_vhci_disc_duplicate_set_max_cache_size` —— 那是 **NimBLE host 侧**的过滤器，
@@ -567,24 +581,22 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     //    判据用端到端（marker stage 23 / btdm_tx 6）；rst_conf 读回恒 0 无信息。
     pulse.f((1 << 17));
     pulse.f((1 << 18));
-    osal.logPublic("bt lp: mac reset族 done (btmac/btmac_apb/ble_timer/mod_sec), rst_conf=0x{x:0>8}", .{rd(reg_rst_conf)});
+    // （"mac reset族 done" 日志已删：rst_conf 读回恒 0 无信息，镜像容量紧张。）
 
-    // **BLE RTC timer 时钟链（官方 btdm_lp_enable_clock 第 4 调用
-    // btdm_lp_timer_clk_init 的寄存器级展开，2026-11-21）**：
-    // MODEM_LPCON(0x2010F000)：+0x18 modem_32k_clk_conf.bits[1:0]=1(RC32K)、
-    // +0x08 lp_timer_conf.bit3=1(sel_xtal32k 路径)+bits[15:4]=1(div)，
-    // +0x1C clk_conf.clk_lp_timer_en(bit10)=1。此前缺失 ⇒ BLE RTC timer
-    // 无时钟 ⇒ BB 调度器无时基 ⇒ 47C 静止 ⇒ 无事件 ⇒ 无回包。
-    {
-        const lp: usize = 0x2010_F000;
-        const m32k: *volatile u32 = @ptrFromInt(lp + 0x18);
-        m32k.* = (m32k.* & ~@as(u32, 3)) | 1; // clk_modem_32k_sel = RC32K
-        const lpt: *volatile u32 = @ptrFromInt(lp + 0x08);
-        lpt.* = (lpt.* & ~@as(u32, 0xFFF3)) | (1 << 3) | (1 << 4); // sel_xtal32k + div=1
-        const cc: *volatile u32 = @ptrFromInt(lp + 0x1C);
-        cc.* = cc.* | (1 << 10); // clk_lp_timer_en
-        osal.logPublic("bt lp: rtc timer clk chain: m32k=0x{x:0>8} lpt=0x{x:0>8} cc=0x{x:0>8}", .{ m32k.*, lpt.*, cc.* });
-    }
+    // ⛔ **"BLE RTC timer 时钟链"块已删除（2026-11-22 反汇编根因定案）**。该块
+    //    （2026-11-21）按**错误偏移**写了三个 MODEM_LPCON 寄存器。`modem_lpcon_struct.h`
+    //    的真实布局：lp_timer_conf=+0x04、coex_lp_clk_conf=+0x08、wifi_lp_clk_conf=+0x0C、
+    //    modem_32k_clk_conf=**+0x14**、clk_conf=**+0x18**、clk_conf_force_on=+0x1C——
+    //    该块却按 "+0x18=32k、+0x08=lp_timer、+0x1C=clk_conf" 写。净效果（oracle 对拍
+    //    值 → 块后实际值）：+0x08 coex LP 时钟 **0x314 → 0x01C**（xtal+xtal32k 双源同时
+    //    选通 + div=1 的未定义混选）、+0x18 clk_conf **0x0b → 0x09**（**clk_coex_en 被清**）、
+    //    +0x1C **0x04 → 0x404**。板上无 XTAL32K ⇒ 这是已回滚的 xtal32k 回归事故的变体复发
+    //    （2026-11-21 的"寄存器级展开"把它重新引入）。coex LP 时钟链被打断 ⇒ blob 的
+    //    coex/LL 调度等不到 tick ⇒ 泵头冻结、BB 永不启动（47C/450 静止）——与 §29.23/29.24
+    //    终版定性吻合。32k conf 的正主写入在上方 `reg_lpcon_32k_conf`（+0x14），从未缺失。
+    // ✅ 修复 = 整块删除：+0x08/+0x18/+0x1C 回到 oracle 对拍值 0x314/0x0b/0x04。
+    //    （"lpcon 回读"日志已删：落在 FIFO 丢失区打不出来，判据已由离线反汇编取得；
+    //    第一轮上板已证 oracle 对齐后泵头仍冻结，LPCON 划出嫌疑清单。）
     if (on_target) {
         osal.logPublic("bt lp: uart0 status after = 0x{x:0>8}", .{(@as(*volatile u32, @ptrFromInt(0x2038_A01C))).*});
     }

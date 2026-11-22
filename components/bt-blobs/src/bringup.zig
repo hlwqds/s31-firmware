@@ -6,7 +6,7 @@
 //! | --- | --- | --- |
 //! | init 1 | `btdm_osal_elem_mempool_init(&elem)` | 我们（`porting.elemMempoolInit`，容量校验） |
 //! | init 2 | `btdm_log_init` / `btdm_external_init` / `btdm_coex_init` | 我们（都 `return 0`） |
-//! | init 3 | `btdm_lp_enable_clock(&cfg.btdm)` | 我们（**空实现 + 日志**） |
+//! | init 3 | `btdm_lp_enable_clock(&cfg.btdm)` | 我们（已完整实现：门控+FE+MAC 复位族+LP timer；2026-11-22 删除过曾错位覆盖 coex/clk_conf 的"RTC timer clock chain"块） |
 //! | init 4 | `r_btdm_task_init(&cfg.btdm)` | 归档 |
 //! | init 5 | `btdm_lp_init` | 我们（`return 0`） |
 //! | init 6 | `r_btdm_hci_fc_env_init` | 归档（`CONN_FC_ENABLE` 硬编码 1 ⇒ 必调） |
@@ -818,11 +818,17 @@ pub fn enable() c_int {
     // bb_v2_init 从未运行 ⇒ BB 调度器不存在 ⇒ 中断不触发/FE 冻结/无广播。
     // （旧"手动 bb_v2_init = 永等"是顺序错误：在注册前的 init 阶段手动调；
     // 此刻注册已完成、phy 已使能，与官方时序一致。）
+    // **FE450 bit13 实验（2026-11-22，ch29 §29.24 下一入口）**：0x20100450 静态值
+    // 官方 0x00102000（bit13=1，疑似 BB/RF ready）vs 我们 0x00110000（bit16=1）。
+    // enable 前对齐官方值；若 LL 调度器在等 bit13，泵应越过 fwd06 后的下一条锚点。
+    mmioPtr(u32, 0x2010_0450).* = 0x0010_2000;
     {
         const esp_btbb_enable = @extern(*const fn () callconv(.c) void, .{ .name = "esp_btbb_enable" });
         osal.logPublic("bt bringup: calling esp_btbb_enable", .{});
         esp_btbb_enable();
         osal.logPublic("bt bringup: esp_btbb_enable done", .{});
+        // 回读：若被 enable 内部改回，说明写点要移到 enable 之后（别急着判死）。
+        osal.logPublic("bt probe: fe450=0x{x:0>8}", .{mmioRd(0x2010_0450)});
     }
     enter(16, "btdm_coex_enable");
     var rc = step(16, "btdm_coex_enable", porting.btdmCoexEnable());

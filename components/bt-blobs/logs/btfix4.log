@@ -1,0 +1,255 @@
+ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=affd0h (720848) map
+I (230) esp_image: segment 1: paddr=000bfff8 vaddr=2f000800 size=00020h (    32) load
+I (232) esp_image: segment 2: paddr=000c0020 vaddr=40100020 size=181a0h ( 98720) map
+I (251) esp_image: segment 3: paddr=000d81c8 vaddr=2f000820 size=000ech (   236) load
+I (253) esp_image: segment 4: paddr=000d82bc vaddr=2f000910 size=10540h ( 66880) load
+I (272) boot: Loaded app from partition at offset 0x10000
+I (272) boot: Disabling RNG early entropy source...
+bt probe: hooks installed (now_ms=us/1000)
+bt probe: timer 7 -> 10 (must increase)
+bt probe: irqs OFF (control run)
+A331K
+bt probe: init start
+bt probe: rtc chk c1=0x00003eab c2=0x00009f84 d=24793 t_lo=0x0004cff2 t_en=00000000 ena=90000000 date=02508050
+F00=00000000 F04=00000000 F08=00000000 F12=00000000 F16=00000000 F20=00000000 F24=00000004 F28=00000004 
+clkrst+0x000 = 0x00000001
+clkrst+0x004 = 0x00000003
+clkrst+0x010 = 0x00000001
+clkrst+0x01c = 0x00000003
+clkrst+0x020 = 0x00000004
+clkrst+0x024 = 0x00000003
+clkrst+0x028 = 0x00000003
+clkrst+0x034 = 0x00000001
+clkrst+0x038 = 0x000156db
+clkrst+0x03c = 0x0000000f
+clkrst+0x040 = 0x00000001
+clkrst+0x044 = 0x0000000f
+clkrst+0x048 = 0x00000011
+clkrst+0x058 = 0x00415555
+clkrst+0x05c = 0x00000005
+clkrst+0x064 = 0x00000ba1
+clkrst+0x068 = 0x00000181
+clkrst+0x06c = 0x00800043
+clkrst+0x070 = 0x00800043
+clkrst+0x078 = 0x00000001
+clkrst+0x07c = 0x00000001
+clkrst+0x080 = 0x00000001
+clkrst+0x088 = 0x00000083
+clkrst+0x08c = 0x00000083
+clkrst+0x090 = 0x00000083
+clkrst+0x094 = 0x00000083
+clkrst+0x0a8 = 0x00000040
+clkrst+0x0d8 = 0x00000001
+clkrst+0x114 = 0x00000921
+clkrst+0x118 = 0x00000011
+clkrst+0x11c = 0x00000921
+clkrst+0x134 = 0x00000001
+clkrst+0x144 = 0x00000001
+clkrst+0x15c = 0x00000011
+clkrst+0x160 = 0x00001011
+clkrst+0x164 = 0x00001011
+clkrst+0x168 = 0x0000012c
+clkrst+0x16c = 0x0000001a
+clkrst+0x170 = 0x00000002
+clkrst+0x174 = 0x0000004d
+clkrst+0x17c = 0x00000101
+clkrst+0x180 = 0x00000102
+clkrst+0x184 = 0x00000103
+clkrst+0x188 = 0x00000505
+clkrst+0x18c = 0x00000107
+clkrst+0x190 = 0x00000117
+clkrst+0x194 = 0x00000105
+clkrst+0x198 = 0x0000010b
+clkrst+0x1a0 = 0x000003ff
+clkrst+0x1a4 = 0x000003ff
+clkrst+0x1a8 = 0x000003ff
+clkrst+0x1b0 = 0x00000001
+clkrst+0x1cc = 0x00000001
+clkrst+0x1d0 = 0x00000001
+clkrst+0x1d8 = 0x00000001
+clkrst+0x1dc = 0x00000001
+clkrst+0x1e0 = 0x00000025
+clkrst+0x1e8 = 0x00000107
+clkrst+0x1ec = 0x0000000c
+clkrst+0x1f0 = 0x00000004
+clkrst+0x1f4 = 0x00000004
+clkrst+0x1f8 = 0x00000001
+clkrst+0x1fc = 0x02509110
+FE800=1
+BBT seq=1548549923 osal_ra=0x0c08f91f sink_ra=0x9d276d39 phase=0x1c1d619f
+BBR 0 t2 0x3f32bf0
+BBR 1 t14 0xdcb15f7
+BBR 2 t11 0xcc1d231
+BBR 3 t9 0x0f3a39f
+BBR 4 t2 0xe56f917
+BBR 5 t1 0x37fe308
+BBR 6 t3 0xf8ec867
+BBR 7 t5 0x328f86f
+BBR 8 t7 0xee23b22
+BBR 9 t10 0x553820b
+BBR 10 t11 0x96e7916
+BBR 11 t2 0x6063f32
+BBR 12 t4 0xb994597
+BBR 13 t7 0xf8fc535
+BBR 14 t10 0x448057b
+BBR 15 t5 0x433f26b
+BBR 16 t14 0x18098ad
+BBR 17 t2 0x72c9e4f
+BBR 18 t10 0xa544724
+BBR 19 t7 0x9277050
+BBR 20 t6 0xc2af2e3
+BBR 21 t0 0x3c3826a
+BBR 22 t12 0xb8019ce
+BBR 23 t2 0xe61730a
+EVH e436a288/3672057574
+EVH 000e5154/2147460588
+EVH 0404393a/164326180
+EVH 89106e5f/1094145925
+EVH b56f9c52/2856545670
+EVH 61190e0b/1305149179
+EVH 7682a4c6/3676723478
+EVH a53d8cd0/2325570006
+BBP last=0x5d10e5fd prev=0x6072d669 nmi=0 assert_line=1744669109
+BBQ 0 0xb8779251
+BBQ 1 0x0e44e046
+BBQ 2 0x8745c352
+BBQ 3 0x05aff0f2
+BBQ 4 0x9dc1fde3
+BBQ 5 0x4c7f1a05
+BBQ 6 0x5cf75c96
+BBQ 7 0xba2ab082
+BBQ 8 0xcc3b04cb
+BBQ 9 0x46fa86c5
+BBQ 10 0x61e4f474
+BBQ 11 0x66d7623e
+BBQ 12 0xbefff969
+BBQ 13 0xd45df774
+BBQ 14 0x1b631ecf
+BBQ 15 0xfc88dc78
+bt probe: trig armed tdl=0x2100000a tsat3=03
+rom fe_poll @0x2f828840
+rom rf_pwr @0x2f00c3b0
+rom tc_tgt @0x2f8210c0
+rom helper @0x2f80e420
+rom isr35 @0x2f815258
+rom base0 @0x2f000000
+rom base800 @0x2f000800
+rom isr37h @0x2f07f188
+rom chead @0x2f8127ec
+rom btini @0x2f814000
+rom ctxp @0x2f07f1f4
+bt bringup: BOOTSTATE esp_phy_enable(BT) bbt mempbbt bbbbbt bribt bribt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 lpcon=0x00000006
+bt lp: gates confbbbbbbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbbt bringup: enter step 52 init_phy
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0 cal[10..14]=0x1dfeff fe_readable=1 fe=0x5ac968b1
+bt bringup: PHY enabled AFTER step 5 (idf order)
+bt bringup: enter step 6 r_btdm_task_init
+bt bringup: Xpuq 锚点 P=0x00000000 bt bQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 61 60
+Q5 138 3182 0 126
+ZU 122->4,4 spins=37416 cc=3000000
+A0/335848
+
+M0 2244 0x2f024210
+
+M1 132 0x2f024ae8
+
+M2 820 0x2f024b80
+
+M3 80 0x2f024ec8
+
+M4 64 0x2f024f28
+
+M5 76 0x2f024f78
+
+MC 6 sz=76 ret=0x2f024f78
+
+CN 0x2f024ad8 0x98 24
+
+D61.3
+
+Mosal> eventqInit
+
+bbbbbbbt bbbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 78 75
+Q5 144 3268 0 126
+ZU 122->4,4 spins=37395 cc=3000000
+A0/333032
+
+M0 2244 0x2f024210
+
+M1 132 0x2f024ae8
+
+M2 820 0x2f024b80
+
+M3 80 0x2f024ec8
+
+M4 64 0x2f024f28
+
+M5 76 0x2f024f78
+
+M6 8 0x2f024fd8
+
+M7 36 0x2f024ff8
+
+MC 20 sz=8 ret=0x2f025ab8
+
+CN 0x2f024ad8 0x98 80
+
+D78.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+bbbt obbt bbt probe:bbt ret: bbt brinbt brinbt coex: register_ble_cb type=0
+bt coex: register_ble_cb type=1
+bt probe: cb10 A=0x0001000000030004 B=0x0002000500000000 n=6
+bbt bringup: public adbbt probbbbt bringup: load_cal done (pre-mce13-uart-window)
+bt hci: transport ready (own ops, no VHCI ring)
+bt bringup: INITED
+bt probbbbt probe: arena free=300968 B
+bt bringup: calling esp_btbb_enable
+bt bringup: esp_btbb_enable done
+bt probe: fe450=0x00102000
+bt bringup: enter step 16 btdm_bt probbbt bringbt brinbt probbbt callbbt bbbt schbbtbbbbbbbbbbbbtbbbtbtbbbt call: evebbtarch: osal> eventRun
+bt probe: rx flag 1->1 ctx=0x2f0250a0
+bt hci >> CMD opcode=0x2006 plen=15
+bt call: eventq_get
+bt probe: fwd06 ret=0
+bt probe: pbbt callbarch: osal> eventRun

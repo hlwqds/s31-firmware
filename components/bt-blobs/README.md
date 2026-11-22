@@ -28543,3 +28543,30 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
 - `bt_bb_wdt_init @ 0x4005bbd0`、`bb_wdt_get_status/int_enable/rst_enable/timeout_clear @ 0x40062c2a-3a`（app.elf 符号表 ✓）
 - **PHY 归档 WDT 函数表 @ 0x2f801484-490**：`phy_bb_wdt_int_enable(488)/rst_enable(48c)/timeout_clear(490)` 绝对指针——blob 运行时的 WDT 控制走这张表
   下轮：反汇编 bt_bb_wdt_init 与 PHY 表调用点 → 定位 disarm 调用序列 → NOP → 重烧。
+
+**反汇编终判（2026-11-22）：「NOP 看门狗解除」方向被否决——解除调用不存在**。按定案执行了反汇编，证据链：
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| `bt_bb_wdt_init`（0x4005bbd0，68 B，**在 .flash.text 内 = flash 代码非 ROM**） | 全镜像 objdump 调用点扫描 | **0 个调用者**（仅符号定义本身） |
+| `bb_wdt_*` 四个跳板（0x40062c2a-42，`auipc+jr` 进 PHY 表槽） | 同上 | **0 个调用者** |
+| WDT 表槽 0x2f801484-490 的直接引用 | auipc 解析注释直方图（0x2f801xxx 全窗口） | 周围表槽（0x2f801400-15f0）大量命中，**唯独 484-490 零命中** |
+| 五函数地址的**数据引用**（表初始化/函数指针） | ELF 各 LOAD 段全字节扫描 | **0 处** |
+| blob 对 TIMG WDT / HP_SYS_CLKRST / PMU 的寄存器**写** | `# 2058xxxx/# 2070xxxx` 命中点逐一归属所属函数 | **全部是我方代码**（probe.run 的 uart 快照/恢复、trapDispatch 的 MWDT1 重武装、bringup.init 仪表）；blob 对 PMU+0x184/+0x208 只读 |
+
+⇒ 本镜像里 BB WDT 无人上膛、无人解除、无人指向；「blob 原子化解除看门狗」模型**错误**。WDT 停摆只能是**时钟域硬件级死亡**（sleep 态），与 6ed6789 的 waiti 证据自洽。
+
+**真根因（同日，静态对拍官方 `btdm_lp.c` 命中）：LPCON 偏移写错——我们自己的第 7 步块打断了 coex/时钟链**。
+
+- 官方 `porting_btdm/controller/btdm_common/src/btdm_lp.c` 与 `soc/esp32s31/include/modem/modem_lpcon_struct.h` 的真实布局：`lp_timer_conf=+0x04`（oracle 0x41 = **RC_SLOW + div4**，对应 sdkconfig `RTC_CLK_SRC_INT_RC=y`）、`coex_lp_clk_conf=+0x08`（oracle 0x314 = xtal + div49）、`wifi_lp_clk_conf=+0x0C`（0x01）、`modem_32k_clk_conf=**+0x14**`、`clk_conf=**+0x18**`（oracle 0x0b）、`clk_conf_force_on=+0x1C`（0x04）、`clk_conf_power_st=+0x20`（0x66660000）。命名常量（`reg_lpcon_*`）全部正确，主写序与 oracle 逐字对齐。
+- 但 2026-11-21 的"BLE RTC timer 时钟链"块按 **+0x18=32k、+0x08=lp_timer、+0x1C=clk_conf** 的错误认知又写了三个寄存器，净效果：**+0x08 0x314→0x01C**（xtal+xtal32k 双源同时选通+div1 的未定义混选）、**+0x18 0x0b→0x09**（**clk_coex_en 被清**）、**+0x1C 0x04→0x404**。板上无 XTAL32K ⇒ 这是已回滚的 xtal32k 回归事故的变体复发。
+- 因果链：coex LP 时钟链被打断 ⇒ blob coex/LL 调度等不到 tick ⇒ 泵头冻结、BB 永不启动（47C/450 静止、brg=0、无回包）——与 §29.23/29.24「环境面全通过、差异在 blob 内部 BB schedule arm」的终版定性吻合（回读"保持"发生在块写入前，终态早已被破坏）。
+- **修复**：整块删除（`porting.zig`），替换为一行 oracle 终值判读日志（`bt lp: lpcon 41/314/b/4`）；32k conf 的正主写入（`reg_lpcon_32k_conf`=+0x14）原本就在。主机门禁 PASS（firmware 548），探针镜像 886896 B（WITH_PHY=1，`env -u LD_LIBRARY_PATH`——check-host 裸跑会踩 zig 的 glibc 2.44 坑）。
+- **待板判**：单次捕获判读 ①lpcon 行 = 41/314/b/4；②boot 是否越过泵头（BB 启动 → HCI 事件 → 47C/450 振荡）。
+- **第一轮板判（2026-11-22，btfix1）**：判据①的 lpcon 回读行落在 FIFO 丢失区没打出来，改用**离线铁证**——新格式串在 app.elf rodata（Zig 编译期剥离 `{x}` 占位符，strings 直接搜 `{x}` 会假阴）、旧错位写三处已消失 ⇒ 修复确实落板；判据②：**INITED → fwd06 ret=0 → 泵头（eventq_get/eventRun 后静默）480 s，与既往签名逐字一致** ⇒ oracle 对齐后墙仍在，**LPCON 划出嫌疑清单**。
+- **第二轮（同日，btfix2，单变量 = rtc_freq 口径）**：`btdm_lp_init` 不再是 `return 0` 桩——补上官方无条件尾行 `r_btdm_hal_rtc_freq_set(27200, 0)`（**双参 u64 对**：a0=obj[24]、a1=obj[28]，槽空返回 1；disasm 实证全镜像 0 调用者，blob 从不自己设）。27200 = SOC_CLK_RC_SLOW_FREQ_APPROX 136k/5（clk_tree_defs.h:52；lp_timer_conf=0x41 即 sel_osc_slow+div4 ⇒ tick=RC_SLOW/5≈27.2 kHz，板上 RTC 系统计数器实测 137271 Hz 同源自洽）。step10 除零护栏补丁值同步 32000→27200（同字段同口径，btdmLpInit 先写、护栏只在仍为零时兜底）。容量回收：删"mac reset族 done"（rst_conf 恒 0 无信息）与第一轮 lpcon 回读行（FIFO 丢失区打不出）。判据：泵是否过 fwd06/47C-450 是否振荡；仍冻则 rtc_freq 口径也划掉，下一候选 = FE450 bit13 写入实验。
+- **第三轮板判（2026-11-22，btfix3）**：`bt probe: fe450=0x00102000`——写入落板且 enable 未改写；冻结签名逐字不变（7222 B）⇒ **FE450 bit13 假说否决**（静态值差是症状/无关，不是 LL 等待的原因）。写入保留（对齐官方无副作用）。
+- **第四轮板判（同日，btfix4）**：冻结签名照旧（7226 B，噪声带内）⇒ 无突破。且 armed2/cnt 判读行仍被 FIFO 吞掉，**counter 是否走动不可判**——留两个开口：①疑点=开错钟：`0x2080_0000` 是**系统 RTC_TIMER**（ch23 lab 标定 137 kHz 的那个），而 BLE LL 调度的时基候选是 **modem LP 域的 BLE RTC timer**（lp_timer_conf=0x41 选中的那个，S31 的 lp_timer 驱动在 IDF 树无 esp32s31 专属文件，真地址/使能位未定）；②判读通道=flash 标记（cnt 哨兵写 0x186000 标记扇区，esptool 读回，绕开 UART FIFO 盲区）。
+- **单变量阶梯至此清空**：LPCON 对齐 / rtc_freq=27200 官方 / FE450=官方 / RTC clk_en——四轮全部落板、签名逐字不变 ⇒ **环境配置补全路线到顶**。冻结是确定性 park（eventqGet），剩余协议=§29.24 既定「oracle BB write-set 对拍」：oracle 镜像在 `~/esp/bt-ctl-oracle/build/bt-ctl-oracle.bin`（682896 B，main.c 已含 FE 9 点 5 s 采样 + B000/B47C/B450/1090/TG0-1CTRL 周期 dump），重跑采官方 BB-start 行为 → 与我们 task park 前写集对账。注意：库内两份 official-trace 只有 after_init/after_enable 的 B000 值，FE/dump 行是后续加的、未入库。
+- **⚠ 占窗事故（2026-11-22，连续三次）**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
+- 同源排查：wifi-blobs `init_probe.zig` 的 LPCON 写（TEST_CONF@0x00 bit0、CLK_CONF@0x18）偏移**正确**，无同病。**教训**：正确布局知识一直在 wifi 侧（0x2010F018 注释连位义都记了）——**跨 blob 写 MODEM_LPCON 前先抄 `wifi-blobs/init_probe.zig` 的既有对拍**，并对照 `soc/esp32s31/include/modem/modem_lpcon_struct.h` 逐字段核偏移，不要发明偏移。
