@@ -75,7 +75,39 @@ const porting = @import("porting.zig");
 const board = @import("board");
 
 /// 归档里的 BT 基带初始化（`libbtbb.a` 提供；IDF 的 `esp_btbb_enable` 就是调它）。
-extern var s31_bt_log_mute: c_int;
+/// **blob 台词行环（Zig 侧，安全 .bss）**：bt_printf_shim 经 export 回调写入。
+pub var bt_ring: [16][48]u8 align(4) linksection(".bt_lp_data") = @splat(@splat(0));
+pub var bt_ring_head: u32 linksection(".bt_lp_data") = 0;
+var bt_log_mute: c_int = 0;
+var bt_log_dropped: u32 = 0;
+
+export fn s31_bt_log_mute_get() c_int {
+    return bt_log_mute;
+}
+
+export fn s31_bt_log_dropped_inc() void {
+    bt_log_dropped += 1;
+}
+
+/// **裸三元组环**（wr_btdm_log_internal_hex 的 (type,len,ptr)——轮 9）。
+pub var bt_raw: [16][3]u32 align(4) linksection(".bt_lp_data") = @splat(@splat(0));
+pub var bt_raw_head: u32 linksection(".bt_lp_data") = 0;
+
+export fn s31_bt_raw_put(p0: u32, p1: u32, p2: u32) void {
+    const slot = &bt_raw[bt_raw_head % bt_raw.len];
+    slot[0] = p0;
+    slot[1] = p1;
+    slot[2] = p2;
+    bt_raw_head +%= 1;
+}
+
+export fn s31_bt_ring_put(line: [*:0]const u8) void {
+    const slot = &bt_ring[bt_ring_head % bt_ring.len];
+    var i: usize = 0;
+    while (line[i] != 0 and i < slot.len - 1) : (i += 1) slot[i] = line[i];
+    slot[i] = 0;
+    bt_ring_head +%= 1;
+}
 
 extern fn bt_bb_v2_init_cmplx(version_print: c_int) c_int;
 
@@ -1593,7 +1625,7 @@ pub fn run() noreturn {
     // **mute=1（层 2 判据轮）**：mute=0 时 0x2006 分发环巨预算 × 每迭代一次
     // log（~µs）⇒ 走不完；mute=1 迭代 µs 级可完成并推进到 0x2008，采样钉
     // blob 区 ⇒ 门控 st 行才有数据。日志内容观察让位给 state 轨迹判据。
-    s31_bt_log_mute = 1;
+    bt_log_mute = 1;
     flashStageExtra(10, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0); // host 可读：init 之后、enable 之前
     osal.dump_hook = null;
     const af = osal.arenaFree();
@@ -1860,7 +1892,7 @@ pub fn run() noreturn {
             const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
             const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
             const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
-            var rec: [44]u32 = undefined;
+            var rec: [296]u32 = undefined;
             rec[0] = 0xADC0_BBF4;
             rec[1] = osi_impl.event_count;
             rec[2] = st5.evt_count;
@@ -1905,6 +1937,29 @@ pub fn run() noreturn {
             rec[37] = o2.blocked_calls;
             rec[38] = o2.sem_pend_ok;
             rec[39] = o2.sem_pend_timeout;
+            // **blob 台词行环**（bt_printf_shim 的 s31_bt_ring，mute 期也在记）：
+            // HCI 分发器对每条命令的内部判词，16×48B = 192 字，rec[44..236]。
+            rec[40] = bt_ring_head;
+            rec[41] = bt_log_dropped;
+            rec[42] = bt_raw_head;
+            rec[43] = 0;
+            // 裸三元组环 16×3 = 48 字（rec[44..92]）。
+            var r9: usize = 0;
+            while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];
+            // **最后一条日志的载荷**（p2 指针 ≤48B，rec[92..104]）——HCI 级真内容。
+            {
+                const last = bt_raw[(bt_raw_head +% 15) % 16];
+                const plen: usize = @min(last[1], 48);
+                const dst9: [*]u8 = @ptrCast(&rec[92]);
+                const src9: [*]volatile u8 = @ptrFromInt(last[2]);
+                var b9: usize = 0;
+                while (b9 < plen) : (b9 += 1) dst9[b9] = src9[b9];
+            }
+            // **文本行环整环**（768B ⇒ rec[104..296]；裸三元组/载荷已先行落位，勿覆盖）。
+            const dst: [*]u8 = @ptrCast(&rec[104]);
+            const src2: [*]const u8 = @ptrCast(&bt_ring);
+            var bi: usize = 0;
+            while (bi < 768) : (bi += 1) dst[bi] = src2[bi];
             const clic25b: usize = 0x1080_1000 + 25 * 4;
             const g5: u32 = @as(*volatile u32, @ptrFromInt(clic25b)).*;
             @as(*volatile u32, @ptrFromInt(clic25b)).* = g5 & ~@as(u32, 0x108);

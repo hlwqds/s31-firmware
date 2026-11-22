@@ -58,14 +58,23 @@ static char *put_uint(char *o, char *end, unsigned long v, unsigned base, int up
     return o;
 }
 
-/* **静音开关**：由 Zig 侧置位。跑功能验证（如 LE 广播）时关掉 blob 日志，
- * 否则 400 行 × ~160 B ≈ 64 KB ≈ 6 秒的 UART 时间会把我们的判决行挤掉。 */
-int s31_bt_log_mute;
-unsigned s31_bt_log_dropped;
+/* **静音开关**：由 Zig 侧置位（mute 期台词仍进行环）。 */
+/* mute/环/丢包计数全部住在 Zig 侧（.bss 安全区）——此前的 C 全局落在 blob
+ * 运行时数据区（0x2f011054+，紧邻 sleep_en 槽/g_phyFuns），被 blob 活数据踩掉。 */
+extern int s31_bt_log_mute_get(void);
+extern void s31_bt_log_dropped_inc(void);
+extern void s31_bt_ring_put(const char *line);
+
+/* **RAM 行环（2026-11-22，轮 8）**：blob 台词在 UART mute 期被丢——但 HCI 分发器
+ * 对每条命令的内部判词正在其中（轮 7 定位：6/7 命令中止于响应 TX 前）。
+ * 格式化后、mute 判定前抄进行环（16×48B .bss，零 irom 成本）；冻结时刻
+ * probe 的 flash 标记块把整环抄进 0x18E000 扇区，宿主机 read-flash 离线判读。 */
+#define S31_BT_RING_LINES 16
+#define S31_BT_RING_LINE  48
 
 int ets_printf(const char *format, ...)
 {
-    if (s31_bt_log_mute) { s31_bt_log_dropped++; return 0; }
+    const int muted = s31_bt_log_mute_get();
     if (!format || s31_bt_fmt_lines >= S31_BT_FMT_LINES) return 0;
     char buf[S31_BT_FMT_MAX];
     char *o = buf, *end = buf + sizeof buf - 1;
@@ -102,6 +111,8 @@ while (*p >= '0' && *p <= '9' && nd++ < 9) { width = width * 10 + (*p - '0'); p+
     __builtin_va_end(ap);
     *o = 0;
     s31_bt_fmt_lines++;
+    s31_bt_ring_put(buf); /* mute 期也进环（flash 标记判据源） */
+    if (muted) { s31_bt_log_dropped_inc(); return 0; }
     s31_bt_log_hook(buf);
     return (int)(o - buf);
 }

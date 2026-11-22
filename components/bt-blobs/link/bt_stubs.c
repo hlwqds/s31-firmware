@@ -146,6 +146,8 @@ void wr_btdm_log_internal_x3(unsigned int p0, unsigned int p1, unsigned int p2, 
 #endif
 }
 void wr_btdm_log_internal_hex(unsigned int p0, unsigned int p1, unsigned int p2) {
+    extern void s31_bt_raw_put(unsigned, unsigned, unsigned);
+    s31_bt_raw_put(p0, p1, p2); /* 裸三元组环：冻结 marker 据此拷载荷（轮 9） */
 #if !BT_LOG_SILENT
     ets_printf("bt-log hex %u %x %x\n", p0, p1, p2);
 #else

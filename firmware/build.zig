@@ -172,6 +172,10 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    // （注：compiler_rt 在本镜像占 193KB/492 符号的 f128/long-double 软浮点死重
+    // （nm 实测：tanq 6932B 等，gc-sections 剥不动、岛内自洽无活根）——0.17.1 的
+    // Build API 没有开关字段，正式裁剪留作后续（需扩 s31.ld 窗口以外的研究）。
+    // irom 窗口已按 s31-two-segment-window-expansion 技能扩到 0xC0000。
     // 用 `@splat` 而不是 `[_]u8{0x5a} ** N`：后者在 Zig 0.17 里会报 `**` 的空格错误。
     // 必须经由一个 export 函数引用：`@export(&const 数组)` 在 0.17 不会 emit 数据。
     const fat_src = b.fmt(
