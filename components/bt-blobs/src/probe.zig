@@ -397,6 +397,38 @@ fn uartRestore(out: *[3]u32, dry: bool) usize {
     return n;
 }
 
+/// **轮 20：SCHED 区补写集**（原 armed 后 → 0x200A 前调用）。
+fn schedPatchset() void {
+    const wr = struct {
+        fn w(addr: usize, val: u32) void {
+            @as(*volatile u32, @ptrFromInt(addr)).* = val;
+        }
+    }.w;
+    wr(0x2010_1054, 0x1820_8000);
+    wr(0x2010_107c, 0x8000_0000);
+    wr(0x2010_10f0, 0x0030_87d0);
+    wr(0x2010_10f4, 0x0060_7643);
+    wr(0x2010_10f8, 0x0030_74ba);
+    wr(0x2010_10fc, 0x0000_087e);
+    wr(0x2010_1100, 0x0010_0000);
+    wr(0x2010_1104, 0x0000_0011);
+    wr(0x2010_1108, 0xffdf_7fff);
+    wr(0x2010_1110, 0x0006_b409);
+    wr(0x2010_1174, 0x0000_771e);
+    wr(0x2010_1178, 0x0000_771e);
+    wr(0x2010_117c, 0x0000_8857);
+    wr(0x2010_1180, 0x0000_88aa);
+    wr(0x2010_1184, 0x0070_0000);
+    wr(0x2010_1188, 0x0c00_0041);
+    wr(0x2010_11a8, 0x0020_0000);
+    wr(0x2010_11ac, 0xa900_0000);
+    wr(0x2010_11b8, 0x004e_0000);
+    wr(0x2010_11d4, 0x0101_0101);
+    wr(0x2010_11e4, 0x0101_0101);
+    wr(0x2010_11ec, 0x0101_0101);
+    osal.logPublic("bt probe: sched patchset written (22 regs) pre-200A", .{});
+}
+
 var cfg: config.Config = .{};
 var ctrl_task: ?*sched.Task = null;
 
@@ -1786,10 +1818,10 @@ pub fn run() noreturn {
         // 若这一步之后轮询位能置 ⇒ 缺的就是它；若仍挂 ⇒ 连 IDF 都点不亮这块，
         // 问题在更上游（电源岛/晶振时钟路径）。
         // （WiFi osi 栈块已移除——该路径需要 esp_wifi 归档 = esp-idf 全系统栈）
-        const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
-        mark.put(0xa4, 0xADC0B112, 0); // **调用前标记** ⇒ hist=12 ⇒ 死在 esp_phy_enable 内；hist=11 ⇒ 死在本调用之前（LE 块前半段）
-        esp_phy_enable(2); // PHY_MODEM_BT（判别轮的 modem=1 已回退——上轮判别因缺调用前标记而无效）
-        mark.put(0x88, 0xADC0B10e, 0); // esp_phy_enable 返回 ⇒ M00e
+        // **轮 20d 移除**：esp_phy_enable 已按官方时序移入 bringup.init step7
+        // （btdm_lp_init 位）。此处原调用晚于 enable 阶段的 esp_btbb_enable，
+        // 顺序错误（BB init 先于 RF enable）；实证 cmds=8 每轮都穿过且返回但
+        // bit2 不置——时序错位正是疑点，现由 bringup 内的调用判别。
         flashStageExtra(71, @bitCast(@as(c_int, 0)), 0);
         mark.put(0x90, 0xADC0B10f, 0); // bb_v2_init 调用前 ⇒ M00f
         // **本轮跳过手动 bb_v2_init**（0328594 定案：顺序错误——
@@ -1986,6 +2018,10 @@ pub fn run() noreturn {
         snapshotRegs();
         osal.lpTrace(3, 0xF014); // snapshotRegs 之后
         snap_valid = true;
+        // **轮 20b：SCHED 补写推迟到 0x200A 前**——armed 后写被 blob 在命令
+        // 处理期清除（SC 054 存活、0f0+ 全灭实证）；官方值由 RF init/调度器在
+        // 清除之后写入。现在在清除动作之后再补写一次。
+        schedPatchset();
         // **轮 16b：0x200A 改走 B 路径不释放变体**——A 路径 rx 主上下文同步直调
         // 在队列临界态死锁（轮 14/15 实锤）；B 路径异步入队=oracle 同构。
         const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
@@ -2025,7 +2061,7 @@ pub fn run() noreturn {
             const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
             const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
             const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
-            var rec: [369]u32 = undefined;
+            var rec: [512]u32 = undefined;
             const ready_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*; // 读挂 ⇒ 本记录不出现
             rec[0] = 0xADC0_BBF4;
             rec[1] = osi_impl.event_count;
@@ -2104,6 +2140,19 @@ pub fn run() noreturn {
                 }
                 rec[362 + si * 2] = x;
                 rec[363 + si * 2] = nz;
+            }
+            // **轮 20：SCHED 区逐字 dump（0x20101000-1200，128 字）**——rec[368..496]。
+            // 注意 rec[362..368] 是哈希，勿混淆；本段才是逐字值。
+            var scw: usize = 0;
+            while (scw < 128) : (scw += 1) {
+                rec[368 + scw] = @as(*volatile u32, @ptrFromInt(0x2010_1000 + scw * 4)).*;
+            }
+            // **轮 20e：LP hist 槽并入大 rec**（advisor 2026-11-22）——mark.put 写
+            // LP RAM(0x2E00_0004+4k)，FEFE 记录只走 LP boot 路径落盘；主路径冻结式
+            // boot 从不过那个点 ⇒ hist 离线恒 0。现在随大 rec 每轮落盘，可判读。
+            var hk: usize = 0;
+            while (hk < 10) : (hk += 1) {
+                rec[496 + hk] = @as(*volatile u32, @ptrFromInt(0x2E00_0004 + 4 * hk)).*;
             }
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;

@@ -28611,6 +28611,13 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   2. raw USB（pyusb）顺序：fresh find → USBDEVFS_RESET(0x5514)（如仍异常）→ detach(usbfs ioctl 0xC010551A) → claim → **IFC_ENABLE req 0x00 wValue=1（必须！内核 close 会禁用 UART 端口，不发则 bulk 全 NAK=bulk 超时真因）** → **SET_BAUDDIV req 0x01 wValue=334（115200；此前 MHS 误用 0x1E=SET_BAUDDIV 已灌垃圾值，必须显式恢复）** → SET_LINE_CTL req 0x03 wValue=0x0800（8N1）→ **SET_FLOW req 0x13 wLength=20 全零（关 CP2102C always-on CTS 门控）** → SET_MHS **req 0x07**（wValue: DTR=bit0|mask bit8, RTS=bit1|mask bit9；⚠ 0x1E 是 SET_BAUDDIV 不是 MHS——此前 MHS 写全是波特率寄存器垃圾）→ 单字节 bulk 门测（<1s 成功）→ connect。
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
+- **轮 20（2026-11-22）：SCHED 写集证伪 + 98BC.bit2 硬件定性 + phy 时序证伪**：
+  1. **SCHED 逐字 dump**（rec[368..496]）：真实差异 = 17 vs 37 非零；缺失组 SC 0f0-110/174-184/1d4-1ec。
+  2. **SCHED 补写证伪**：0x200A 前写 22 寄存器，只有 SC 054 存活，其余被 blob 清零——**SCHED 区是调度器自有工作区，官方值是运行输出不是输入**；外部补写是死路。
+  3. **98BC.bit2 无软件写入者**：全镜像反汇编唯一相关 = 轮询环 `r_sym_ble_NZbbpXEXzbgRpDNnAbBu`（16M 次读 bit2）与 `bt_agc_restart_set`（写 bit19）⇒ **bit2 = 硬件 synth 锁定位**。
+  4. **phy 时序证伪**：esp_phy_enable(2) 移到官方位置（bringup step7，btdm_lp_init 位，先于 esp_btbb_enable）——每轮运行且返回，ready 仍 0x0、FE450 冻结。IDF v6.1 通用版 esp_phy_enable（含 esp_phy_load_cal_and_init）与官方 blob 区版本（phy_module_enable/phy_wakeup_init/esp_phy_common_clock_enable）函数体不同但都"成功返回"。
+  5. **轮 20e**：LP hist 槽（0x2E00_0004+4k）并入大 rec[496..506]——主路径冻结 boot 也能离线判读 hist。
+  - **墙的当前定义**：RF 合成器不锁定（bit2 硬件位恒 0）⇒ 0x200A 轮询超时错误 3 ⇒ 无 ADV。嫌疑 = 模拟域（regi2c 校准/ana 时钟 F83C.bit28/PMU_RF_PWC 电源岛/参考时钟）。**下一步**：oracle vs probe 在冻结点等价时刻的模拟域状态对拍（F83C/PMU_RF_PWC/regi2c），或直接调官方 phy 路径缺的 phy_module_enable/esp_phy_common_clock_enable。
 - **轮 19 后 SCHED 逐字对照（oracle SC dump vs 我们 marker）**：
   - **官方 SC 000-054 = 全零**（官方 nz=37 分布在其他偏移）；我们 SC 004-050 = 20 个非零（probe 诊断/哈希数据，非 blob 寄存器）
   - **唯一真实寄存器差异 = SC 054：官方 0x18208000 vs 我们 0x54d47e8f**

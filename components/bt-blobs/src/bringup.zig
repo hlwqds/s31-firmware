@@ -511,6 +511,19 @@ pub fn init(cfg: *config.Config) c_int {
     // 5. lp init（空实现）
     enter(7, "btdm_lp_init");
     rc = step(7, "btdm_lp_init", porting.btdmLpInit());
+    // **轮 20d：esp_phy_enable(PHY_MODEM_BT=2)——官方 controller_init 的第 9 步
+    // `btdm_lp_init` 内部调用 esp_phy_enable（oracle 0x400105cc 反汇编实锤），
+    // 位于 task_init 之后、hci_fc_env_init 之前。此前 probe 的 phy_enable 在 LE
+    // 块（0x2005 前才调，晚于 enable 阶段的 esp_btbb_enable）⇒ BB 调度器对着
+    // 未校准 RF 构建 ⇒ synth-ready(98BC.bit2) 永不置位 ⇒ 0x200A 错误 3。
+    // 现按官方时序：phy 先于 btbb。返回判据：98BC 快照进日志与 hist。
+    {
+        if (freestanding) {
+            const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
+            esp_phy_enable(2);
+            osal.logPublic("bt bringup: esp_phy_enable(2) done ready=0x{x:0>8}", .{mmioRd(0x2010_98BC)});
+        }
+    }
     // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。
     // 链状态 step6 已定（task_init 内 OkE7 重建 + 尾插），step7 无关。
     {
