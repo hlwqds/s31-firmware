@@ -30754,3 +30754,24 @@ boot1 的写入）。
 F800=0x012f0669 武装 ✓（静默组合解锁）、coex 位置 ✓、post-send mcycle 轮询
 15s 内 98BC 无变化（hang 窗口内 synth 未起）。ADV-enable 完成判定仍缺
 （post-send 记录通道待轮 99 的裸 SPI 路径）。
+
+---
+
+## 🔬 轮 103：sleep 字段根修 = 负结果；MWDT1 复位机器验证 ✓（2026-11-23）
+
+### 实验
+SLPFIX（word5/6/8 清零 = sleep 全禁用）在 F3 时点生效 ✓（SLPFIX w5/6/8=0 打印）。
+结果：**hang 依旧**（0x200A 后静默），radio 仍未广播。
+
+### 两个结论
+1. **负结果**：ADV-enable 的门控/挂死决策输入 ≠（仅）sleep 对象三字段，
+   或字段在 task_init 时已被快照（F3 时点清零太晚）⇒ 轮 103b = 移到
+   cfg 构造时/task_init 后立即清。
+2. **正结果**：MWDT1 262MHz 短 hold 数字复位机器**验证工作**——
+   70s 捕获两个 boot 周期（~30s/周期 = hang ~18s + MWDT1 ~20.3s）⇒
+   挂死不再永久，重试循环成立。
+
+### 轮 103b 首项
+SLPFIX 三清零移到 bringup.init 之后立即执行（task_init 消费配置后、
+F 相位前）+ 同时清 0x2f011038 btdm_cb 邻域的 sleep 相邻对象 ⇒ 若仍挂 ⇒
+门控输入在别处（coex 状态位/调度器 tick 配置），转 oracle bisect 对照。

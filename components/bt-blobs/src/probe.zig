@@ -2388,6 +2388,17 @@ pub fn run() noreturn {
                 const u0fifo: u32 = @as(*volatile u32, @ptrFromInt(0x2058_7058)).*;
                 board.log.line("UARTST 088={x:0>8} 058={x:0>8}", .{ u0st, u0fifo });
             }
+            // **轮 102 根修**：oracle 对拍三字段差异 = sleep 配置：
+            // word5(0x6c64 vs 0)、word6(0x46c60 vs 0)、word8(1 vs 0=sleep 禁用)。
+            // oracle 以 sleep DISABLED 运行 ⇒ ADV-enable 不进深睡时钟收缩。
+            // 清零三字段 = sleep 全禁用 ⇒ ADV-enable 正常返回 ⇒ synth 上电。
+            {
+                const sp: [*]volatile u32 = @ptrFromInt(0x2f01_1044);
+                sp[5] = 0;
+                sp[6] = 0;
+                sp[8] = 0;
+                board.log.line("SLPFIX w5={x:0>8} w6={x:0>8} w8={x:0>8}", .{ sp[5], sp[6], sp[8] });
+            }
             // **轮 92b 决定性实验**：手动置 F800 bit24（oracle=0x012f0669 我们=0x002f0669
             // 的唯一差异），轮询 98BC 10×500ms——若 bit2 跟随，synth 墙缩成一个 bit。
             const f800p: *volatile u32 = @ptrFromInt(0x2010_F800);
