@@ -1007,6 +1007,12 @@ pub fn run() noreturn {
     // 读 NULL+0xC fault。修法 = 从 blob arena 分配 256B（OkE7 锚点历史路径），
     // 写自引用（offset 12 指回 stub），发布到槽 ⇒ blob 读到受保护内存 ✓。
     // **时机 = arena 初始化后、task_init(步 6) 前** ⇒ 赶在 blob 首次读槽之前。
+    // **轮 66：64B dummy 预分配（单变量实验）**——blob 后续分配整体位移，
+    // 检测 task resume sp 损坏 = arena 位移敏感（轮 65）。
+    if (osal.btdmMalloc(64, 0) == null) {
+        osal.logPublic("bt probe: FATAL dummy alloc failed", .{});
+        halt();
+    }
     {
         const stub = osal.btdmMalloc(256, 0) orelse {
             osal.logPublic("bt probe: FATAL sleep env malloc failed", .{});
