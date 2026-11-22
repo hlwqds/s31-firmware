@@ -30880,3 +30880,31 @@ CLLKCHK 实测 SYS_TIMER 活 @2MHz（0x2080001C），但 RTC WDT（0x20801000 �
 HP 侧写 RTC WDT 装置前，先读 **0x20801004（CONFIG1）+ 0x20801008（FEED）+
 计数器寄存器（TRM 定位）** 三个值打 UART ⇒ 确认 ULP 写是否真落地、计数器
 是否真走。三值齐 ⇒ WDT 不咬的层级立判（没写上/写了没走/走了没到）。
+
+---
+
+## 🔒 轮 108-final：post-send MMIO 读=总线停顿（2026-11-23 终极发现）
+
+boot2 读 ADVRES 全零 + boot1 流程重构分析 ⇒ **post-send 对 MODEM 寄存器
+（0x201098BC 等）的 MMIO 读 = 总线停顿**（blob 门控 MODEM 块时钟后，
+HP 对该块任何读访问挂总线）⇒ 主上下文死在轮询的第一条读，
+后续 LP 写永不执行。此前所有"卡在 delayUs/print"的归因全部修正：
+mepc=ROM delay 环的样本是**挂死前的最后一拍**，真正死点是进 poll 后的
+第一条 MMIO 读。
+
+### 0x200A 后观测终极结论
+| 通道 | 判定 |
+| --- | --- |
+| UART/flash/LP 跨 boot/RTC WDT/MWDT1/NMI | 全灭（已证） |
+| **post-send MODEM 块 MMIO 读** | ❌ **总线停顿**（新发现，终极死点） |
+| post-send LP 写（MODEM 读之前） | ✅ 唯一可用（写完即死，数据留 LP 但 esptool 复位清 LP ⇒ 不可达） |
+
+⇒ 0x200A 结果在此板**物理不可观测**（除非 RTC WDT 兜底先修活）。
+
+### 下 session 唯一根修路径
+**阻止 blob 进入收缩态**：coex_schm_status_bit_set(type=1,status=1) 是
+ADV-enable 的第一步（已证）⇒ blob 收缩决策在其后。两条：
+1. 找 oracle 的 coex_schm_status_bit_set 实现（真实 coex 模块）对比我们 stub
+   的返回语义——oracle 的 coex 模块可能回写某状态使 blob 跳过收缩；
+2. 或 NOP 掉 blob 内对该函数的调用点（patch blob RAM 副本——命令内存 F800
+   机制已证可写，同法 patch 调用点）。
