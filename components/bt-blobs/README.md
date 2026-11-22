@@ -30287,3 +30287,29 @@ init 相结构一致。我们 enable 相的 btbb_early_enable 调用与之等效
 用 oracle.asm 全符号解剖 blob task 入口的 init body：找 `phy_rf_init`/RF-I2C 写帧
 的调用点与守卫（round 57 首项的 oracle 符号版），板上读守卫变量 + pc_ring 高频采样
 task 首轮窗口。
+
+---
+
+## 🔬 轮 89a：BT task 入口闭环定位（oracle 全符号，2026-11-23）
+
+### task 创建链（oracle asm 实证）
+```text
+r_btdm_task_enable(我们 step 20) → wr_btdm_osal_task_create(
+    entry = r_sym_bt_UcYENg1R6iLtJMFYwNLq @0x4007c3bc,
+    name  = "btdm…" @0x4008e330)
+```
+
+### task pump 循环（0x4007c3bc）
+```text
+init: env+1816(r4au env) → 3DcjgYC1(eventq, 0x80000002, …)
+loop: eventq_is_empty? → PxePdGIO1nILThDDDbE1(分发,0x4007c21a)
+      → e_btdm_lp_modem_clock_set → get_time_forever → eventq_get(阻塞)
+      → e_btdm_lp_modem_clock_set → TCHk4TWcbxhI2YzTmly2 → event_run → 循环
+```
+handler 前段无直接 phy/rf/i2cmst 调用 ⇒ **RF init ana 写由更深层事件触发**
+（嫌疑：某个 init/事件回调里的守卫分支——轮 89b 用 pc_ring 高频采样 task 首轮
+窗口 + STORE 观察点盯 F800/F818 写帧）。
+
+### 轮 89b 首项
+1. STORE 观察点（轮 33/64 仪器）盯 0x2010F800/F818——活捉 RF init 写帧的 PC；
+2. 若 task 首轮不写 ⇒ 反汇编 PxePdGIO 的完整 dispatch 表找 RF init 事件分支。
