@@ -29852,3 +29852,26 @@ hs_cmd_tx → env[32] = FJxPPD → 读 opcode → OGF=0x08 (LE) → LE 分支 �
 
 ### 轮 79 首项
 LE 分支内部 hang 的精确定位——反汇编 .L673（OGF=8 LE 分支 @当前构建地址）后续到 ADV enable handler 的路径，找 hang 点。或**用 flash 标记在 F1 之后逐步插桩**（pre-BT 窗口可用）。
+
+---
+
+## 📊 轮 79 终态：零清修复确认 + 稳定 evt=8（2026-11-23）
+
+### 零清三槽效果
+- 0x2f011130 哨兵槽清零 → fqmZkUKg malloc(8) 发布（readback=0 可能是 FIFO 时序）
+- 0x2f011134 sleep env 槽清零 → OkE7 lazy init 正确触发 ✓
+- 0x2f011138 env 槽清零 → OkE7 lazy malloc(76) 正确触发 ✓
+- INITED ✓ + evt=8 ✓ + 无 panic ✓——零清不损害链路
+
+### 全 session BLE 控制器能力总结（78 轮成果）
+| 能力 | 状态 | 前置修复 |
+|---|---|---|
+| controller init (INITED) | ✅ | OkE7 lazy malloc + 全部9项修复 |
+| HCI 命令 A 路径（rx 直接） | ✅ 1:1 CC | intrArm + cfg_ll + eventReset |
+| HCI 命令 B 路径（event queue） | ✅ 发送成功 | cfg_ll mode dispatch |
+| CC 回流（evt 计数） | ✅ evt=8 | eventReset + fn(容器) + 布局对齐 |
+| sleep 路径安全 | ✅ 不崩 | slot 守卫 0x2f011134 |
+| **ADV enable → RF** | ❌ | rfready=0 FE=0（硬件层） |
+
+### 轮 80 方向（新 session）
+RF 硬件 bring-up——rfready 置位需要的 PHY 深层 init。已有全部仪器和 oracle 工具。

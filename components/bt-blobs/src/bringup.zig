@@ -408,6 +408,15 @@ pub fn init(cfg: *config.Config) c_int {
     }
     // **静默高频采样窗口**：step 6 里归档不打印，而我们自己的打印会占满采样
     //（本板 TX FIFO 停在 128）⇒ 先静默、把 T0 提到 ~100 µs，只把 PC 记进环。
+    // **轮 78 终修：清零 0x2f011138 = OkE7 env 指针槽**——OkE7 入口检查
+    // *(slot)==0 → lazy malloc(76) env 并发布。冷启动 RAM 残留非零 ⇒ OkE7
+    // 误判"已存在" ⇒ bail -1 ⇒ env 不创建 ⇒ task_deinit walk 读未初始化容器
+    // ⇒ gvLJK4(NULL) ⇒ mtval=4 fault（60+ 轮总墙的最终根因）。
+    // 同理清零 0x2f011134（sleep env 槽）和 0x2f011130（任务链表哨兵槽）——
+    // 这些也是 lazy-init 槽，残留非零会导致相应 init 函数误 bail。
+    mmioPtr(u32, 0x2f01_1130).* = 0;
+    mmioPtr(u32, 0x2f01_1134).* = 0;
+    mmioPtr(u32, 0x2f01_1138).* = 0;
     // **轮 65b：任务注册链表头 init**（官方 fqmZkUKg：osal_malloc(8) 哨兵
     // {+0:0, +4:self} 发布到 0x2f011130）——gvLJK4 追加循环前置条件。必须在
     // mempool init 之后（probe 早期调用会被 mempool 初始化清零，tlinit 实录）。
