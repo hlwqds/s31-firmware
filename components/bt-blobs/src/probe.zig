@@ -2240,7 +2240,7 @@ pub fn run() noreturn {
         const rrssi = transport.sendCmdViaHs(0x1405, &.{});
         board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
         const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
-        osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
+        board.log.line("F3 rc={d} evt={d}", .{ ra2, transport.stats().evt_count });
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
         flashStage(23);

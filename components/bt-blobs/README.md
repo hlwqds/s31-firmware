@@ -29875,3 +29875,25 @@ LE 分支内部 hang 的精确定位——反汇编 .L673（OGF=8 LE 分支 @当
 
 ### 轮 80 方向（新 session）
 RF 硬件 bring-up——rfready 置位需要的 PHY 深层 init。已有全部仪器和 oracle 工具。
+
+---
+
+## 🎯 轮 80 终判：0x200A ADV enable = 最终缺口精确锁定（2026-11-23）
+
+### F0/F1/F2/F3 四探针判决
+```text
+F0 ✓（F83C 写前值）→ 0x2006 B 路径 rc=0 ✓ → F1 rc=0 ✓
+→ 0x1405 Read RSSI rc=0 ✓ → F2 rc=0 evt=8 ✓
+→ 0x200A sendCmdViaHsNoFree → **F3 未打印 = hang 在此** ✗
+```
+
+### 终局定性
+- **LE 分发链活 ✓**（Read RSSI CC 回流 evt 4→8）
+- **基础命令 1:1 CC ✓**（ReadVersion/Reset/readBdAddr）
+- **ADV enable (0x200A) = blob 内部 hang**（ADV enable 需 RF 上电，rfready=0 FE=0）
+- 崩/hang 不是 osal/dispatch 问题——是 **RF 硬件层**的最后缺口
+
+### 79 轮战争终局
+BLE HCI 协议栈从零到**全链活**（osal→OkE7→dispatch→CC 1:1→LE 命令处理）。
+唯一剩余 = **RF 硬件 bring-up**（rfready=0 FE=0），需 blob 内部 RF 状态机激活。
+全部仪器/分析/skill 已入库（git 可追溯），两仓 clean。
