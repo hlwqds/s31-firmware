@@ -28611,6 +28611,13 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   2. raw USB（pyusb）顺序：fresh find → USBDEVFS_RESET(0x5514)（如仍异常）→ detach(usbfs ioctl 0xC010551A) → claim → **IFC_ENABLE req 0x00 wValue=1（必须！内核 close 会禁用 UART 端口，不发则 bulk 全 NAK=bulk 超时真因）** → **SET_BAUDDIV req 0x01 wValue=334（115200；此前 MHS 误用 0x1E=SET_BAUDDIV 已灌垃圾值，必须显式恢复）** → SET_LINE_CTL req 0x03 wValue=0x0800（8N1）→ **SET_FLOW req 0x13 wLength=20 全零（关 CP2102C always-on CTS 门控）** → SET_MHS **req 0x07**（wValue: DTR=bit0|mask bit8, RTS=bit1|mask bit9；⚠ 0x1E 是 SET_BAUDDIV 不是 MHS——此前 MHS 写全是波特率寄存器垃圾）→ 单字节 bulk 门测（<1s 成功）→ connect。
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
+- **🔒 轮 19 终审完成（分区哈希对账 + BB 窗口 21/21 零差异）**：
+  - BBHEAD: xor=0x0 nz=120 ✅ 完全一致
+  - **SCHED (0x20101000-1200): 我们 xor=0x23079808 nz=17 vs 官方 xor=0x458cae30 nz=37 ✗——缺 20 个非零初始化写**
+  - WIDGET: nz 差异 = probe 仪表额外写入（非 blob 差异）
+  - BB 窗口: 21/21 零差异 ✅
+  - ⇒ **SCHED 区（锚点/调度配置区，含轮 8 的 [0x20101074] anchor 写）就是缺失写集的精确位置**——20 个寄存器官方写了但我们的 probe 未写。
+  - **下一 session 首项**：dump SCHED 区 128 字逐字对照（oracle vs 我们）→ 找出 20 个缺失寄存器的精确偏移 → 在 probe 中补写 → FE450/47C 振荡 + 98BC.bit2 置位 = 破墙判据。
 - **🔒 权限死锁终态（2026-11-22 末）**：适配器重枚举后 tty 节点 = `root:dialout 660` 且 **logind uaccess 对此串口不配置 ACL**（实测 0x5514 重枚举后 fresh uevent 同样无 ACL；0x551A/0xC010551A usbfs 断开码在 6.x 内核 ENOTTY 双失败；pyusb raw 路径可行但被 tty 权限外的 claim EBUSY 门槛卡死——内核 cdc_acm 重绑竞态）。**解锁命令（人在终端执行一次）**：`sudo setfacl -m u:huanglin:rw /dev/ttyUSB0`（节点号按当时实际）或 `sudo usermod -aG dialout huanglin` + 重新插拔。解锁后：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 轮 19 终审（SCHED 哈希 `0x458cae30/37` 对账 + BB 窗口 63/64 一致已证 + 唯一差异 0x438=硬件活状态寄存器已定性）。
 - **⚠ 占窗事故**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
 - **⚠ 占窗事故**：捕获进程 480 s 窗口未退出（阻塞在 serial read）持续持有 ttyUSB0，期间三次 flash 全撞"Packet content transfer stopped / returned no data"（多访问签名，被误判为适配器 wedged 两次）。**纪律：每次烧录前 30 s `/proc/*/fd` 走查持有者**（本次真凶 PID 2743219，kill 后立即 `校验通过`）；捕获作业必须看到 `print('captured')`/进程退出再烧。
