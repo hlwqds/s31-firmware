@@ -30975,3 +30975,27 @@ LP_CLK_CONF 保留位（bit10，无害位）——下 boot 读三值：
 1. CONFIG1 递增 ⇒ ULP 活 + 写通 ⇒ 问题在别处（回写内容/时序）
 2. CONFIG1 恒定 + LP_CLK_CONF bit10 翻转 ⇒ ULP 活但 0x2080 写丢失（bus bridge）
 3. 两者都死 ⇒ LP 核时钟被门控（LP_CLK_PO 位图补全）
+
+---
+
+## 🔒 轮 117 终局：0x200A 后即刻全楔（2026-11-23 最终记录）
+
+完整遥测构建（marker 10 字 + writeLightMarker(3) + mute + A 路径）实测：
+marker 终态 = **phase=0、evt=6、cmds=7** = writeLightMarker(0)（0x200A 发送前
+最后一次）⇒ 之后的 writeLightMarker(1)（pre-forward 内）与 (3)（post-ADVRES）
+**均未落盘** ⇒ 0x200A 的 logPublic/forward 之后一切立刻楔死（task 并发时钟
+收缩赢得与主上下文的竞速）。
+
+### 主机 BLE 扫描终判
+60-100s 扫描窗口（覆盖 hang 前后）：板 MAC 1c:29:04:d1:99:29 从未出现
+⇒ ADV 从未实际启动发送。
+
+### 机制终极版
+blob ADV-enable 处理（task 并发）：前置记账（coex bit/F800 武装 ✓）→
+**时钟收缩几乎立即发生** ⇒ 与主上下文的任何后续 ROM 依赖调用（打印/flash/
+延迟）竞速 ⇒ 主上下文必败（task 先门控）⇒ 一切观测死。
+
+### 会话最终结论（110+ 轮）
+ADV-enable 的时钟收缩不受 sleep 配置控制（early 清零负结果）⇒ 根修 =
+blob 内部收缩决策点的定位与中和（blob 反汇编级 patch）或 FreeRTOS 环境
+模拟（tick 替代品使 oracle 行为复现）。两者皆超本轮预算，完整状态入库。

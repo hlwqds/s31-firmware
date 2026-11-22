@@ -1305,6 +1305,10 @@ pub fn run() noreturn {
             const h60c: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_060C)).*;
             board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d} h600={x:0>8}", .{ pc0, pc1, nmic, h600 });
             board.log.line("ADVRES magic={x:0>8} first={x:0>8} last={x:0>8}", .{ h604, h608, h60c });
+            // **轮 115**：读 WDT FEED reg（0x20801008）= ULP loop 计数器
+            // ⇒ 上一轮挂死时长 = 值 × 0.25s（若 LP 数字复位保留成立）
+            const feedv: u32 = @as(*volatile u32, @ptrFromInt(0x2080_1008)).*;
+            board.log.line("HANGDUR feed={d} (×0.25s = 挂死秒数)", .{feedv});
             // **轮 104**：ULP->HP 写通路验证——CONFIG1（0x20801004）= ULP 每循环
             // 写的递增计数器。跨 MWDT1 数字复位 LP/该块保留 ⇒ 值>0x29CC40（初值）
             // = 通路活；=初值/0 = 写不通。
@@ -1739,35 +1743,42 @@ pub fn run() noreturn {
     // 载入 0x2E001000(LP RAM,避开盒结构 0x2E000200-0x570);boot 地址指向之;
     // LP_PERI_CLKRST CPU_CTRL: bit30 时钟强开, bit31 复位脉冲(WT)。
     const ulp_prog = [_]u8{
-        // **轮 110 探针版（工具链汇编）**：CONFIG1 counter+20s + latch +
-        // SYSTIMER|=0x11 + CLK_CONF1 canary(0xc03ff880) + LP_CLK_CONF|=2
-        // —— 每循环；HP 读回区分 ULP 可达性/blob 重写/门控位缺失。
+        // **轮 115-final（v8 124B，工具链汇编，objdump 全指令核对）**：
+        // s11 init 已加（v7 遗漏 ⇒ 延迟环 no-op ⇒ 指针全速锤击）；
+        // CONFIG1=20s 只写一次（原 12(s10) 三连写的是 SYS_TIMER 计数器
+        // = 时间基破坏，已删）；loop：latch + CTRL0|=0x11 + LP_CLK_CONF
+        // bit10 翻转；指针全 loop 不变量（a7/s10/a3/a4/t3/t5/t6）。
         0x37, 0x1e, 0x80, 0x20,
+        0xb7, 0x4e, 0xd8, 0x50,
+        0x93, 0x8e, 0x1e, 0xaa,
+        0x37, 0x1f, 0x01, 0xa0,
+        0x13, 0x0f, 0x0f, 0x80,
         0xb7, 0xdf, 0x29, 0x00,
         0x93, 0x8f, 0x0f, 0xc4,
+        0xb7, 0x8d, 0x1e, 0x00,
+        0x93, 0x8d, 0x0d, 0x48,
         0x37, 0x0d, 0x80, 0x20,
         0x41, 0x0d, 0x37, 0x07,
         0x00, 0x08, 0xb7, 0x78,
         0x58, 0x20, 0x93, 0x88,
         0x08, 0x12, 0xb7, 0xf6,
         0x10, 0x20, 0xe1, 0x06,
-        0x37, 0xf3, 0x7f, 0xfc,
-        0x7d, 0x13, 0x03, 0x25,
-        0xcd, 0x00, 0x7e, 0x95,
-        0x23, 0x26, 0xad, 0x00,
-        0x23, 0x20, 0xed, 0x00,
-        0x83, 0xa5, 0x08, 0x00,
-        0x93, 0xe5, 0x15, 0x01,
-        0x23, 0xa0, 0xb8, 0x00,
-        0x37, 0xa6, 0x10, 0x20,
-        0x13, 0x06, 0x06, 0xc0,
-        0xb7, 0xf5, 0x3f, 0xc0,
-        0x93, 0x85, 0x05, 0x88,
-        0x4c, 0xca, 0x8c, 0x42,
-        0x93, 0xe5, 0x25, 0x00,
-        0x8c, 0xc2, 0x01, 0x46,
+        0x37, 0xf8, 0x7f, 0xfc,
+        0x7d, 0x18, 0x23, 0x2c,
+        0xde, 0x01, 0x23, 0x20,
+        0xde, 0x03, 0x23, 0x22,
+        0xfe, 0x01, 0x23, 0x20,
+        0xee, 0x01, 0x23, 0x2c,
+        0x0e, 0x00, 0x23, 0x20,
+        0x0e, 0x02, 0x23, 0x20,
+        0xed, 0x00, 0x83, 0xa5,
+        0x08, 0x00, 0x93, 0xe5,
+        0x15, 0x01, 0x23, 0xa0,
+        0xb8, 0x00, 0x90, 0x42,
+        0x13, 0x46, 0x06, 0x40,
+        0x90, 0xc2, 0x01, 0x46,
         0x05, 0x06, 0xe3, 0x4f,
-        0xb6, 0xff, 0xd1, 0xb7,
+        0xb6, 0xff, 0xc5, 0xb7,
     };
     for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
     @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS boot addr
@@ -2468,6 +2479,15 @@ pub fn run() noreturn {
             ra2 = transport.sendCmd(0x200A, &ae);
             // **轮 100**：post-send 不再用 writeLightMarker（ROM 擦除内部
             // esp_rom_delay_us = 楔点，会挡住后面的 mcycle 观测块）。观测全走 LP。
+            // **轮 116 活遥测**：0x200A 入队后（A 路径异步，task 并发处理），
+            // esp_rom_spiflash_write（页编程等待=寄存器轮询非 delay_us；NOR 写仅
+            // 清位）把 98BC 实时值写 marker[8]——synth 上电则变 0x4。
+            const esw116 = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+            const m116: *volatile u32 = @ptrFromInt(0x18F000 + 32); // marker[8] 活遥测槽
+            {
+                const v: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+                _ = esw116(0x18F000 + 32, @ptrCast(&v), 4);
+            }
             // **轮 96**：post-send 观测全走非 ROM 通道——0x200A 后 blob 楔死
             // ROM 的 flash-erase 等待与 esp_rom_delay_us（SYS_TIMER 时钟被门控）。
             // mcycle 忙等轮询 98BC 15s，首/末值 + F800 写远处 LP 槽
@@ -2504,6 +2524,7 @@ pub fn run() noreturn {
                     s_last = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
                     f_last = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
                     if (t == 0) lp600.* = s_last;
+                    m116.* = s_last; // **轮 116**：每次轮询刷新 marker[8]（活遥测）
                 }
                 lp604.* = 0x5A5A_0002;
                 lp608.* = s_first;
