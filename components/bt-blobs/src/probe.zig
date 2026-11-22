@@ -2145,6 +2145,20 @@ pub fn run() noreturn {
         osal.lpTrace(3, 0xF003);
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
+        // **轮 84**：ADV 类命令发送**之后** dump LE env（hiASs 状态机宿主）——
+        // 判据：+4 仍 0 ⇒ 命令没到 .L673（分发上游断）；变 1 ⇒ hiASs 跑过、
+        // 状态迁移了（CC 丢在 handler 后段）；变 2 ⇒ 状态机已迁移（轮 82c 三件套①）。
+        {
+            const le_env: usize = @as(*volatile usize, @ptrFromInt(0x2f011_01C)).*;
+            if (le_env >= 0x2f00_0000 and le_env < 0x2f90_0000 and le_env % 4 == 0) {
+                const f4: u32 = @as(*volatile u32, @ptrFromInt(le_env + 4)).*;
+                const pa8: u32 = @as(*volatile u32, @ptrFromInt(le_env + 8)).*;
+                const pb52: u32 = @as(*volatile u32, @ptrFromInt(le_env + 52)).*;
+                board.log.line("LEENV {x:0>8} +4={x:0>8} +8={x:0>8} +52={x:0>8}", .{ le_env, f4, pa8, pb52 });
+            } else {
+                board.log.line("LEENV slot invalid {x:0>8}", .{le_env});
+            }
+        }
         // **轮 13/14 轻量标记（0x18F000，相位字）**：phase=0=pre-0x200A；phase=1=
         // pre-forward（最后一条 sendCmd 的 forward 之前——经 transport.pre_forward_hook）。
         writeLightMarker(0);
