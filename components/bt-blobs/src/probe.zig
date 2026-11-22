@@ -2140,6 +2140,7 @@ pub fn run() noreturn {
             if (builtin.target.os.tag == .freestanding) board.hw.flashOpEnd();
             @as(*volatile u32, @ptrFromInt(clic25b)).* = g5;
         }
+
         // **轮 11：0x200A 后第二份标记（0x18F000）**——若本记录存在 ⇒ 0x200A 返回了；
         // FE450/47C 判「广播真在跑（450 进官方振荡集/47C 脉冲）」vs「RF 未发车（仍静止）」。
         {
