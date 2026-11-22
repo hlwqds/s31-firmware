@@ -72,6 +72,11 @@ const unsigned char phy_init_data[144] = {
  * RF 参数错 ⇒ register_chipv7_phy 全量校准跑在坏表上 ⇒ 合成器永不锁定 =
  * 98BC.bit2 恒 0 的终局根因候选）。 */
 
+/* **轮 27**：phy_override.c.obj（强符号，提供 regi2c 真临界区与 efuse 读取）引入的
+ * 依赖。baremetal 下无其他模块竞争 ADC 电源 ⇒ 空实现即正确语义（IDF 注释明言
+ * "only required on ESP32"）。 */
+void sar_periph_ctrl_pwdet_power_acquire(void) {}
+void sar_periph_ctrl_pwdet_power_release(void) {}
 void phy_printf(unsigned int level, const char *tag, const char *format, ...) { (void)level;(void)tag;(void)format; }
 int rtc_clk_xtal_freq_get(void) { return 40; }
 void s31_printf_hook(unsigned int level, const char *tag, const char *format, ...) { (void)level;(void)tag;(void)format; }

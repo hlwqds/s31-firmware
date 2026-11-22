@@ -28612,6 +28612,12 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 27（2026-11-22）：脏触发器清除 + MIE-off 校准实验**：
+  1. **早期诊断触发器解除**——boot 期 slot1 残留 STORE|U 无 M 触发器（tdl=0x2100000a）会抢命中污染 wp_hit_pc（单命中下无法区分谁的命中）；诊断块尾部现在显式解除 slot1。武装块 tdata2 改操作数形式。
+  2. **phy_override.c.obj 尝试链**（强符号 regi2c 真临界区 + efuse 读取）：级联出 sar_periph_ctrl_pwdet（已补空桩=正确语义）→ regi2c_enter/exit_critical、temperature_sensor、regi2c_impl 一串未定义 ⇒ 撤回。**等价方案**：bringup step 7 用 **MIE off 包住整个 esp_phy_enable(2)**（协作单核下语义等价于真临界区保护全部 regi2c 事务；校准期百 ms 无 T0 tick 可接受）。桩与 build-probe.sh 注释保留供后续真链方案。
+  3. **结果**：MIE-off 下 calflag 仍=235（非 1），写者 PC 变为 0x74556b5b（每轮不同，blob 区别名地址）⇒ 踩踏者**在校准调用链内部**（非中断），或校准在闭源内部提前失败（从未写 true）。
+  4. **排除项补充**：cfg.btdm(0x2f01f878, BtdmCfg=20B) 与 osal.task_pool(0x2f01f8a0=cfg 末尾) **无重叠**（链接器顺序保证）；task 栈来自 arena=heap（0x2f024280+）⇒ sp=0x2f010e44 非法栈的来源仍未定位。
+  - **下轮首项**：mcontrol6 EXEC 单命中盯 `esp_phy_load_cal_and_init` 入口（0x40000bcc，本轮反汇编实测 jal 目标）——回答"load_cal 到底跑没跑"。跑了 ⇒ register_chipv7_phy 内部 bail（换 init_data/cal 路径实验）；没跑 ⇒ enable 内部条件分支（读 t1rb==0x4a 的 store 观察点已证伪，EXEC 版再取证）。
 - **⚠ 轮 26 证据存疑注记（自查）**：写者 PC 0x74046f9b 为**奇数地址**——RVC 下已执行指令不可能落在奇数边界 ⇒ mepc 不是已执行 store 的 PC，该 trap 更可能是 blob 堆内代码执行的 `c.ebreak`（vendor assert 路径，别名 0x74000000↔0x40000000 还原出 0x40046f9b=un2bHT 起点+9 仅为巧合吻合）。STORE 命中应给出偶数 mepc。**判定降级**：sp=0x2f010e44/非法栈/胶水 bss 踩踏链的每一步都依赖这个 mepc 解读，全线降为「待复核」。复核方案：watchpoint 再命中时以 UART BP! 行的 t2rb/寄存器现场交叉验证（该行已实现），或改用 mcontrol6 的 MTCM 匹配位精确化。
 - **轮 24-26（2026-11-22）：运行态内存碰撞定责——墙的结构性根因候选**：
   1. **regi2c/时钟/efuse 输入核查（零烧录）**：XTAL 双方 sdkconfig 均 40MHz（桩无害）；`register_chipv7_phy` 函数体尺寸两侧一致（无残缺）；调用目标逐一同源（无混链）。

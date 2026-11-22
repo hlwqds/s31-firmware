@@ -1384,6 +1384,14 @@ pub fn run() noreturn {
         : [v] "=r" (ts3),
     );
     asm volatile ("csrw 0x7a0, zero"); // 回 tselect=0
+    // **轮 27：解除 slot1 的诊断触发器**——它带着历史 tdata2（STORE|U 无 M）
+    // 一直活着，会抢在正式观察点之前命中并污染 wp_hit_pc（单命中设计下
+    // 第一个 cause=3 是谁的命中无法区分）。诊断完成即解除。
+    asm volatile ("csrw 0x7a0, t0");
+    asm volatile ("li t0, 1");
+    asm volatile ("csrw 0x7a0, t0");
+    asm volatile ("csrw 0x7a1, zero");
+    asm volatile ("csrw 0x7a0, zero"); // 回 tselect=0
     asm volatile ("li t0, 0x88");
     asm volatile ("csrw 0x7a5, t0"); // tcontrol（最后开）
     @import("board").hw.rawWrite("bt probe: trig armed tdl=0x");
@@ -1717,16 +1725,17 @@ pub fn run() noreturn {
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
     {
-        asm volatile ("csrw 0x7a5, zero");
-        asm volatile ("csrw 0x7a1, zero");
-        asm volatile ("csrw 0x7a0, zero");
-        asm volatile ("li t0, 0x2F010E80");
-        asm volatile ("csrw 0x7a2, t0");
-        asm volatile ("li t0, 0x4a"); // STORE|U|M
+        const watch_addr: u32 = 0x2F01_0E80;
+        // tdata2 用操作数形式（编译器不能假设 t0 幸存）；其余照 udiv 块先例。
+        asm volatile ("csrw 0x7a2, %[a]"
+            :
+            : [a] "r" (watch_addr),
+        );
+        asm volatile ("li t0, 0x4a");
         asm volatile ("csrw 0x7a1, t0");
-        asm volatile ("li t0, 0x88"); // MTE
+        asm volatile ("li t0, 0x88");
         asm volatile ("csrw 0x7a5, t0");
-        osal.logPublic("bt probe: STORE watch armed @0x2f010e80", .{});
+        osal.logPublic("bt probe: STORE watch armed @0x2f010e80 (slot0 only)", .{});
     }
     rc = bringup.enable();
     if (rc != 0) {

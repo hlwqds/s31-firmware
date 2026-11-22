@@ -530,9 +530,15 @@ pub fn init(cfg: *config.Config) c_int {
             phy_cal_flag_before = cal_flag.*;
             cal_flag.* = 0;
             const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });
+            // **轮 27：MIE off 包住整个校准**——FULL 校准数千次 regi2c 读改写，
+            // 2ms T0 一次打断在事务中间即损坏模拟写（弱临界区无保护）。协作
+            // 单核下关 MIE = 语义等价于真临界区保护全部事务。校准 ~百 ms，
+            // 期间无 T0 tick（blob 时基暂停，可接受）。
+            board.hw.disableInterrupts();
             esp_phy_enable(2);
+            board.hw.enableInterrupts();
             phy_cal_flag_post = cal_flag.*;
-            osal.logPublic("bt bringup: esp_phy_enable(2) done calflag {d}->{d}->{d} ready=0x{x:0>8}", .{ phy_cal_flag_before, phy_cal_flag_post, cal_flag.*, mmioRd(0x2010_98BC) });
+            osal.logPublic("bt bringup: esp_phy_enable(2) done (MIE-off) calflag {d}->{d}->{d} ready=0x{x:0>8}", .{ phy_cal_flag_before, phy_cal_flag_post, cal_flag.*, mmioRd(0x2010_98BC) });
         }
     }
     // **链表细节（step7 后）**：远离 step17 HALT 洪流，FIFO 从容排空。
