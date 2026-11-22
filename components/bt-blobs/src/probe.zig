@@ -1582,13 +1582,13 @@ pub fn run() noreturn {
     // **rtc_freq 补丁（重新启用，2026-11-21）**：sleep 配置对象（*/0x2f011044）
     // 的 obj[24/28] rtc_freq u64 = 0 ⇒ 调度器时间换算 (us×1e6)/0 除零
     // （mcontrol6 入口断点实测：入口 a2/a3=全零）。controller_init 已建对象
-    // ⇒ 此刻写 27200（RC_SLOW 136k÷5，官方 btdm_lp_init 覆写口径）/0 即修复除零。
+    // ⇒ 此刻写 100000（RC_SLOW 136k÷5，官方 btdm_lp_init 覆写口径）/0 即修复除零。
     // （注：本补丁在 init 返回后执行，不可能影响 step 17 的 rc——此前
     // "step17 rc=-3 归咎补丁"系误读，step17 失败另有原因。）
     {
         // **双候选判别（2026-11-21）**：真 sleep 对象指针 = [0x2f011044]
         // （y5Dip...，blob 于 40062ba2 写 obj+24/28）；[0x2f011034] 为旧假设。
-        // 两处都查：仅当 obj[24]==0 且 obj[28]==0（零除活体）才补 27200。
+        // 两处都查：仅当 obj[24]==0 且 obj[28]==0（零除活体）才补 100000。
         const cands = [_]usize{ 0x2f01_1044, 0x2f01_1034 };
         for (cands) |cp| {
             const obj: u32 = @as(*volatile u32, @ptrFromInt(cp)).*;
@@ -1597,9 +1597,9 @@ pub fn run() noreturn {
                 const plo: *volatile u32 = @ptrFromInt(@as(usize, obj) + 24);
                 const phi: *volatile u32 = @ptrFromInt(@as(usize, obj) + 28);
                 if (plo.* == 0 and phi.* == 0) {
-                    plo.* = 27200;
+                    plo.* = 100000;
                     phi.* = 0;
-                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=27200", .{ tag, obj });
+                    osal.logPublic("bt probe: rtc_freq patch @{s} obj=0x{x:0>8} +24=100000", .{ tag, obj });
                 } else {
                     _ = phi.*; // （else 分支日志已删：与 if 分支同串重复，镜像容量紧张。）
                 }
@@ -2021,7 +2021,7 @@ pub fn run() noreturn {
             const cnt3: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
             const st6 = transport.stats(); // 相位 2 新读（stats 按值返回）
             const o2 = @import("osal_kit").osal.stats(); // 相位 2 新读（o1 在 cnt1 处）
-            var rec: [298]u32 = undefined;
+            var rec: [362]u32 = undefined;
             const ready_raw: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*; // 读挂 ⇒ 本记录不出现
             rec[0] = 0xADC0_BBF4;
             rec[1] = osi_impl.event_count;
@@ -2078,6 +2078,11 @@ pub fn run() noreturn {
             rec[43] = @intFromPtr(&cfg.btdm); // 冻结读：blob 是否回写 sleep_en
             rec[296] = ready_raw; // 0x201098BC 冻结值（bit2=RF/BB ready）
             rec[297] = st6.tx_type; // 出站首包类型
+            // **轮 18：BB 窗口（0x20100400-5FF，64 字）**——与官方 BW dump 对照找缺失写集。
+            var bw: usize = 0;
+            while (bw < 64) : (bw += 1) {
+                rec[298 + bw] = @as(*volatile u32, @ptrFromInt(0x2010_0400 + bw * 4)).*;
+            }
             // 裸三元组环 16×3 = 48 字（rec[44..92]）。
             var r9: usize = 0;
             while (r9 < 48) : (r9 += 1) rec[44 + r9] = bt_raw[r9 / 3][r9 % 3];

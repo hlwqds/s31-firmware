@@ -40,9 +40,8 @@ pub fn btdmCoexInit() c_int {
 pub fn btdmLpInit() c_int {
     if (@import("builtin").os.tag != .freestanding) return 0;
     // 官方 `btdm_lp_init`（btdm_lp.c:374）的最后一步：`r_btdm_hal_rtc_freq_set(s_bt_lpclk_freq)`。
-    // 官方值 = RC_SLOW 实测/5（oracle sdkconfig `RTC_CLK_SRC_INT_RC=y` → RC_SLOW 路径，
-    // lp_timer_conf=0x41 即 sel_osc_slow + div4 ⇒ tick=RC_SLOW/(4+1)）；这里取标称
-    // SOC_CLK_RC_SLOW_FREQ_APPROX=136000/5=27200（clk_tree_defs.h:52）。
+    // **轮 17 起：MAIN_XTAL 口径 100000**（sel_xtal + div399 ⇒ 40M/400=100kHz）。
+    // 旧 RC_SLOW 口径 27200（oracle sdkconfig 路径）实证 synth-ready 双双失败，弃用。
     // **disasm 实证全镜像 0 调用者**——blob 从不自己设，官方由本胶水负责；此前 sleep
     // 对象 rtc_freq u64 一直靠 step10 补丁的 32000（RC32K 口径，与实际 tick 差 17.6%）。
     // 写点（0x40062b98，**双参 u64 对**）：a0=obj[24]、a1=obj[28]；槽空返回 1。
@@ -50,8 +49,8 @@ pub fn btdmLpInit() c_int {
     return r_btdm_hal_rtc_freq_set(rtc_freq_lp, 0);
 }
 
-/// LP timer 实际 tick（lp_timer_conf=0x41：sel_osc_slow + div_num=4 ⇒ RC_SLOW/(4+1)）。
-pub const rtc_freq_lp: u32 = 27200;
+/// LP timer 实际 tick（lp_timer_conf=0x18F4：sel_xtal + div_num=399 ⇒ 40MHz/400=100kHz）。
+pub const rtc_freq_lp: u32 = 100000;
 extern fn r_btdm_hal_rtc_freq_set(freq_lo: u32, freq_hi: u32) c_int;
 
 /// `ble.c` 的扫描去重：调的是 `ble_vhci_disc_duplicate_mode_disable/enable` 与
@@ -458,7 +457,12 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     osal.logPublic("bt lp: clk_conf1=0x{x:0>8} fe_ok={}", .{ c1b, (c1b & fe_need) == fe_need });
 
     // 2.7) **LP timer 时钟**（IDF 放在 mac_reset 之后；我们紧随其后，顺序同样满足"门控先于复位"）
-    wr(reg_lpcon_lp_timer_conf, rd(reg_lpcon_lp_timer_conf) & ~@as(u32, 0xF) | @as(u32, 1)); // 选 32k 源 + div=0
+    // **轮 17（2026-11-22）：RC_SLOW → MAIN_XTAL**。RC_SLOW 口径下官方与我们的
+    // synth-ready（0x201098BC.bit2）双双永不置位、FE450 静止、0x200A error 3——
+    // RF 合成器校准需要 40MHz 晶振参考，136k RC 无法驱动。btdm_lp.c 的
+    // MAIN_XTAL 分支：sel_xtal(bit2=1) + div=40M/100k-1=399 ⇒ lp_timer_conf=0x18F4
+    //（100kHz tick），rtc_freq=100000。
+    wr(reg_lpcon_lp_timer_conf, 0x18F4); // sel_xtal(bit2) + div_num=399 ⇒ 40M/400=100kHz
     wr(reg_lpcon_32k_conf, (rd(reg_lpcon_32k_conf) & ~@as(u32, 0x3)) | @as(u32, 1)); // 32k 选内部 RC32K
     // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
     // 对拍：IDF step 5 后 `lpcon+0x18 = 0x0b`（bit0 wifipwr + bit1 coex + bit3 lp_timer）。
