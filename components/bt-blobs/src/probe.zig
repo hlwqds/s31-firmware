@@ -2483,8 +2483,20 @@ pub fn run() noreturn {
                 var t: u32 = 0;
                 var s_last: u32 = s_first;
                 var f_last: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+                // **轮 112**：轮询环内先回写时钟门四件套 + SYSTIMER 使能 ⇒
+                // 对抗 blob ADV-enable 的时钟收缩 ⇒ 98BC 读瞬时完成（不再 1s 停顿）
+                // ⇒ SYS_TIMER 活 ⇒ blob task 的时间源活 ⇒ RF-wait 能超时 ⇒ 返回。
+                const mc: [*]volatile u32 = @ptrFromInt(0x2010_9C00);
+                const lpc18: [*]volatile u32 = @ptrFromInt(0x2010_F018);
+                const mcconf: [*]volatile u32 = @ptrFromInt(0x2058_71E0);
+                const stc: [*]volatile u32 = @ptrFromInt(0x2058_7120);
                 // mcycle 忙等 15s，分片轮询
                 while (t < 150) : (t += 1) {
+                    mc[5] = 0x003f_f880; // CLK_CONF1（MODEM SYSCON +0x14）
+                    mc[0] = 0x7e60_1002; // CLK_CONF
+                    lpc18[0] |= 2; // LP_CLK_CONF |= coex/i2c_mst
+                    mcconf[0] = 0x3d; // MODEM_CONF
+                    stc[0] |= 0x11; // SYSTIMER_CTRL0 apb+clk en
                     var spin: u32 = 0;
                     while (spin < 1_000_000) : (spin += 1) {
                         asm volatile ("nop");
