@@ -1305,6 +1305,11 @@ pub fn run() noreturn {
             const h60c: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_060C)).*;
             board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d} h600={x:0>8}", .{ pc0, pc1, nmic, h600 });
             board.log.line("ADVRES magic={x:0>8} first={x:0>8} last={x:0>8}", .{ h604, h608, h60c });
+            // **轮 104**：ULP->HP 写通路验证——CONFIG1（0x20801004）= ULP 每循环
+            // 写的递增计数器。跨 MWDT1 数字复位 LP/该块保留 ⇒ 值>0x29CC40（初值）
+            // = 通路活；=初值/0 = 写不通。
+            const cfg1v: u32 = @as(*volatile u32, @ptrFromInt(0x2080_1004)).*;
+            board.log.line("ULPPATH cfg1=0x{x:0>8} (初值 0x29cc40, 递增=通路活)", .{cfg1v});
             const h610: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0610)).*;
             const h614: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0614)).*;
             const h618: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0618)).*;
@@ -1730,10 +1735,7 @@ pub fn run() noreturn {
     // 载入 0x2E001000(LP RAM,避开盒结构 0x2E000200-0x570);boot 地址指向之;
     // LP_PERI_CLKRST CPU_CTRL: bit30 时钟强开, bit31 复位脉冲(WT)。
     const ulp_prog = [_]u8{
-        // **轮 99-final**：counter+margin 设计（112B，工具链汇编）——
-        // CONFIG1 = counter + 20s（每次写相对当前计数 ⇒ 无 insta-fire；
-        // 计数器若活 ⇒ 挂死 20s 后有界数字复位 ⇒ LP 数据下 boot 可读）。
-        // v2 虫修正：延迟计数改用 a2（原 s10 复用会毁 latch 地址）。
+        // **轮 100-final**：RC_SLOW 压回挪进内层延迟环（压回占空比 ~50% => RTC WDT 计数连续 => 20s hold 挂死中必咬 => 有界数字复位 => LP 数据下 boot 可读）。120B 工具链汇编。
         0x37, 0x1e, 0x80, 0x20,
         0xb7, 0x4e, 0xd8, 0x50,
         0x93, 0x8e, 0x1e, 0xaa,
@@ -1751,17 +1753,19 @@ pub fn run() noreturn {
         0x23, 0x2c, 0xde, 0x01,
         0x23, 0x20, 0xde, 0x03,
         0x23, 0x20, 0xee, 0x01,
-        0x23, 0x26, 0xfd, 0x01,
-        0x23, 0x2c, 0x0e, 0x00,
-        0x23, 0x20, 0x0e, 0x02,
         0x03, 0x25, 0xcd, 0x00,
         0x7e, 0x95, 0x23, 0x26,
-        0xad, 0x00, 0x23, 0x20,
-        0xed, 0x00, 0x8c, 0x43,
-        0xb3, 0xf5, 0x05, 0x01,
-        0x8c, 0xc3, 0x01, 0x46,
-        0x05, 0x06, 0xe3, 0x4f,
-        0xb6, 0xff, 0xcd, 0xb7,
+        0xad, 0x00, 0x23, 0x2c,
+        0x0e, 0x00, 0x23, 0x20,
+        0x0e, 0x02, 0x03, 0x25,
+        0xcd, 0x00, 0x7e, 0x95,
+        0x23, 0x26, 0xad, 0x00,
+        0x23, 0x20, 0xed, 0x00,
+        0x83, 0xa8, 0x07, 0x00,
+        0xb3, 0xf8, 0x08, 0x01,
+        0x23, 0xa0, 0x17, 0x01,
+        0x05, 0x06, 0xe3, 0x49,
+        0xb6, 0xff, 0xc5, 0xb7,
     };
     for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
     @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS boot addr
