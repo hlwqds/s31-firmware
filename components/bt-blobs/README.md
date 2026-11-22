@@ -29271,4 +29271,6 @@ lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc0
 ### 轮 63c 终修方向（结构性）
 **osal 事件层去间接化**：wr_btdm_osal_event_* 包装改为**带外映射**（slot 地址 → 我们静态池 Event，用 (ns,key) 句柄之外的 side-table），env+12 内存完全让给 blob 自由读写；我们的 fn_/arg/queued 存 side-table。
 - 影响面：osal.zig Event/Slot 池设计 + 全部 wr_btdm_osal_event_* 包装（init/deinit/reset/queued/get_arg/set_arg/put/get/run）
+- **重构回归红线**：eventqGet 的 **RawQ 优先语义必须保留**（裸事件先于常规队列出队——0x200A 的时序依赖它）
 - 判据：wr5a + HCI Reset 不崩 + CC 回流（evt 破 2）→ rfready → ADV
+- （备注：transport 的 sendCmdViaHs 已实证遵循 NimBLE 契约——buf_alloc + H4 格式化；崩溃签名 0xc03 来自 blob 自身状态写，非我方契约违背）
