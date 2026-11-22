@@ -1982,7 +1982,9 @@ pub fn run() noreturn {
         snapshotRegs();
         osal.lpTrace(3, 0xF014); // snapshotRegs 之后
         snap_valid = true;
-        const ra2 = transport.sendCmd(0x200A, &ae);
+        // **轮 16b：0x200A 改走 B 路径不释放变体**——A 路径 rx 主上下文同步直调
+        // 在队列临界态死锁（轮 14/15 实锤）；B 路径异步入队=oracle 同构。
+        const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
         osal.lpTrace(3, 0xF015); // sendCmd(0x200A) 之后
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();

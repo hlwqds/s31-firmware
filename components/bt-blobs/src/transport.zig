@@ -282,6 +282,29 @@ pub fn sendCmdViaHs(opcode: u16, params: []const u8) c_int {
     return rc;
 }
 
+/// **轮 16b：B 路径不释放变体**——`hs_cmd_tx` 的缓冲所有权移交控制器
+/// （立即 free = 队列中命令被回收 = "controller 不消费"的疑似根因）。
+/// 探针对照实验用：每调用泄漏一个 type-3 缓冲（一次性序列可接受）。
+pub fn sendCmdViaHsNoFree(opcode: u16, params: []const u8) c_int {
+    if (!inited) return -1;
+    if (!freestanding) {
+        stats_state.cmds_sent += 1;
+        return 0;
+    }
+    const buf = r_ble_hci_trans_buf_alloc(BLE_HCI_TRANS_BUF_CMD) orelse {
+        stats_state.cmd_alloc_null += 1;
+        osal.logPublic("bt hci(hs): buf_alloc returned null", .{});
+        return -3;
+    };
+    buf[0] = @truncate(opcode);
+    buf[1] = @truncate(opcode >> 8);
+    buf[2] = @intCast(params.len);
+    for (params, 0..) |b, i| buf[3 + i] = b;
+    stats_state.cmds_sent += 1;
+    osal.logPublic("bt hci(hs,nf) >> CMD opcode=0x{x:0>4} plen={d}", .{ opcode, params.len });
+    return r_ble_hci_trans_hs_cmd_tx(buf);
+}
+
 /// `HCI Reset`（0x0C03，无参数）—— 里程碑的第一条命令。
 pub fn sendReset() c_int {
     return sendCmd(0x0C03, &.{});
