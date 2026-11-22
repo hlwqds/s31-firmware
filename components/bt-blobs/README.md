@@ -29188,3 +29188,22 @@ bb funcs 回调链（step 9 注册的 [a4+36]，esp_btbb_enable → bt_bb_v2_ini
 1. 反汇编分发器 0x400181e6 全体，定位垃圾表项的基址寄存器（哪个 ops 表、表基址 = 哪个全局槽）
 2. 板上读该表槽 ⇒ 确认 0 值项
 3. 追官方该槽的写者（oracle 反汇编同函数对拍）⇒ 找到"该跑未跑"的那个 init 函数
+
+---
+
+## 🔍 轮 61：crash 跳转目标终极解密（2026-11-22）
+
+### rodata 落点内容（objdump -s 0x40103880-0x401038e0）
+```text
+40103880  "evcb=0x c_ms=0x t_lo=0x f_sp=0x BBT seq=, total= c_ra=0x blocks= prev=0x"
+401038a8  4410012f 3410012f   ← 0x2f010044 / 0x2f001034（嵌在字符串区的两个值）
+```
+⇒ **0x401038a8 = trap.zig 的 dump 格式串/表区**（我们自己 trap 处理器的打印碎片）！
+
+### crash 语义重定性
+- `mepc == ra == 0x401038a8`：`jalr ra` 经一个**装着字符串区指针**的回调槽跳进去，数据当指令执行 ⇒ misaligned load (0x2b9)
+- 即：某回调字段被写入了 **rodata 字符串指针**（assert 的 file 指针族——wr_btdm_assert(file=0x4010103c,...) 这类）= **结构字段偏移错位的注册**
+- 与我们 osal 的事件/槽布局对照：我们的 Slot{p} 间接 + 官方 btdm_osal_event 容器语义 = 最可能的错位源
+
+### 轮 62 首项（STORE 观察点一击必杀）
+对命令事件的 `fn_` 字段（池 Event 地址运行时已知 = *(eo)，eo = *(0x2f01101c)+12）下 **STORE 观察点**（mcontrol6，轮 33 配方）：捕获**所有写者**（init 写 fn=0x400181e6 / 某处写字符串指针 / reset 写 0）+ 写者 PC ⇒ 布局错位的精确位置一次定案。
