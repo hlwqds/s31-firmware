@@ -775,10 +775,12 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     w[0x64 / 4] = 0x50D8_3AA1; // WPROTECT 解锁
                     w[0x48 / 4] = 0xb81f_8000; // CONFIG0(oracle: STG0=中断 STG1=系统复位)
                     if (hang_armed) {
-                        // **轮 95b**：挂死探针——短 hold（STG0≈20s 中断，STG1≈再 10s
-                        // 数字复位）⇒ LP 带挂死 PC 进入下 boot
-                        w[0x4C / 4] = 2_740_000;
-                        w[0x50 / 4] = 1_400_000;
+                        // **轮 99 修正**：MWDT1 tick = 262.144MHz（skill 实测，非 137kHz）！
+                        // 旧值 2_740_000 实际只有 10.4ms。新值：STG0_HOLD=4G≈15.3s
+                        // （中断），STG1_HOLD=1.31G≈5s 后系统复位 ⇒ 挂死 ~20s 数字
+                        // 复位（LP 保留）⇒ 下 boot PREVHANG/ADVRES 读挂死窗口数据。
+                        w[0x4C / 4] = 4_000_000_000;
+                        w[0x50 / 4] = 1_310_000_000;
                     } else {
                         w[0x4C / 4] = 0x9C40_0000; // STG0_HOLD 10s
                         w[0x50 / 4] = 0x9C40_0000; // STG1_HOLD

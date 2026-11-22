@@ -30659,3 +30659,24 @@ post-send flash 记录改**裸 SPI 寄存器路径**（WPROTECT+erase+page-write
 0x200A 已入队/处理（coex ✓）、F800 bit24 武装 ✓（静默组合解锁了处理前段）、
 post-send 全观测死（SYS_TIMER 门控）——**synth 是否上电仍未观测到**（需要一个
 能在 SYS_TIMER 门控后存活的记录通道：裸 SPI 直写或 LP 路径修复）。
+
+---
+
+## 🔒 轮 99 终判：HP 域看门狗全灭确认（2026-11-23）
+
+MWDT1 修正为 262MHz 算术（15.3s+5s）后仍无数字复位 banner ⇒：
+- blob ADV-enable 解除 MWDT1.EN（keeper 2ms 回写 vs blob 连续清除——竞速败），
+- 或 TIMG1/0x2080 块时钟被门控 ⇒ WDT 计数器冻结（写仍可达但计数停）。
+RTC WDT（LP 域）20s 亦未咬 ⇒ RC_SLOW 源压回（ULP 每 0.25s）不足以维持
+（压回间隙计数停 + 或 LP_CLK_PO 位图未覆盖实际使用的时钟树分支）。
+
+### HP 观测手段清单（全部穷尽）
+T0/NMI（TIMERGRP 时钟）、MWDT1（262MHz HP 时钟）、UART0（HP 时钟）、
+SYS_TIMER/esp_rom_delay_us（0x2080 时钟）、RTC WDT（RC_SLOW 源，ULP 压回间隙断续）、
+LP 环/slots（blob ADV-enable 竞区写覆盖）。
+
+### 下 session 方向（LP 域时钟审计）
+1. ULP 程序内联验证：读 RC_SLOW 计数器（RTC timer 计数值）两拍差分 ⇒ 计数是否真停；
+2. LP_CLK_PO_EN 位图扩展：force-on 全位（含未列位）+ ULP 高频压回 RC_SLOW（每循环而非每 0.25s）；
+3. 若 RC_SLOW 真活 ⇒ RTC WDT 20s 咬 ⇒ 数字复位 ⇒ LP 数据链通；
+4. 数据链通后：0x200A 后 ADVRES（98BC first/last）终于可读 ⇒ synth 判定。
