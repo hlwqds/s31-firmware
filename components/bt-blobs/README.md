@@ -29394,3 +29394,29 @@ kNIbP2(a0, 6)                              // 链入全局链表 id=6（= 轮 62
 
 ### 真崩溃源（修正）
 task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
+
+---
+
+## 🔬 轮 67c：OkE7 bail 链精确解码（2026-11-23）
+
+### 我们镜像 OkE7（0x40061a10）完整流程
+```text
+入口：a5 = *(0x2f011138)；=0 ⇒ bail -1     （cb 容器 ✓ 我们预填过）
+malloc(76) → env；*(0x2f011138) = env       （env 指针写回槽 ✓）
+memcpy(env+24, cfg+24, 20)                  （cfg btdm 段 20 字节）
+env+16 = env+52；env+20 = env+64            （内嵌容器地址自举）
+mutex_init(env+4)                           （我们的 mutexInit ✓ OK）
+eventq_init(*(0x2f011138)+8)                （cb_stub+8 ✓）
+检查 *(env... container.p)+8 ≠ 0            （q.buf[2]=1 ✓）
+fqmZkUKg()                                  （哨兵 ✓ rc=0 ✓）
+JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
+→ ZGgifdtgy → rc? → Zth2Weu2 → rc? → jH5mD2DM（beqz 反向门）
+→ event_init(env+84, name, 0) ← 从未到达（hook_fired=0 实证）
+```
+
+### 结论
+6 个子 init 之一 rc≠0 ⇒ OkE7 bail ⇒ env+84 事件从未注册 ⇒ task_init 后段遍历 env+16/20 容器（内嵌事件指针 = 各子 init 创建）读到 NULL ⇒ gvLJK4(NULL) ⇒ lw 4(0) fault。**evt/CC/rfready 全链冻结的总闸 = 这 6 个子 init 之一的失败**。
+
+### 轮 68 首项（单 boot 隔离）
+6 个子 init 各自 flash 直写标记（0x18C200 起 phase=41..46，interval 现成）⇒ 一次 boot 定位第一个 rc≠0 的子 init；随后反汇编该子 init 找它的前置条件。
+（本轮已新增的 flash 直写通道 0x18C140 流水 = event_init 专用；新标记用不同偏移免覆盖。）
