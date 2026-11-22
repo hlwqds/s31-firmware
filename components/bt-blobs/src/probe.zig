@@ -1294,7 +1294,25 @@ pub fn run() noreturn {
             const pc0: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0380)).*;
             const pc1: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0384)).*;
             const nmic: u32 = board.trap.nmi_count;
-            board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d}", .{ pc0, pc1, nmic });
+            const h600: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0600)).*;
+            board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d} h600=0x{x:0>8}", .{ pc0, pc1, nmic, h600 });
+            // **轮 95**：LP PC 环 dump（0x2E0003A0，32 项——上一轮挂死 boot 的
+            // NMI 每 2ms 采样序列）⇒ 挂死自旋 PC 直接可见
+            {
+                const ring: [*]volatile u32 = @ptrFromInt(0x2E00_03A0);
+                const cnt: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_039C)).*;
+                board.log.line("RING n={d}", .{cnt});
+                var k: u32 = 0;
+                while (k < 32) : (k += 1) {
+                    const idx = (cnt +% 32 - 1 - k) % 32; // 从最新往回
+                    const v = ring[idx];
+                    if (k % 4 == 0) {
+                        // 每行首打印序号（行内 4 个 PC 同行续）
+                        board.log.line("RING[{d:0>2}]", .{k});
+                    }
+                    board.log.line(" PC{d:0>2}=0x{x:0>8}", .{ k, v });
+                }
+            }
         }
         board.trap.lp_pc_en = true; // pmu_init 后 LP RAM 才可访问：开 NMI PC 环/采样
         osal.lp_trace_en = true;
@@ -1698,7 +1716,15 @@ pub fn run() noreturn {
     // 对抗 blob 的 WPROTECT 解除 ⇒ 冻结后必然超时复位(rst:0x10)⇒ 黑匣子可读。
     // 载入 0x2E001000(LP RAM,避开盒结构 0x2E000200-0x570);boot 地址指向之;
     // LP_PERI_CLKRST CPU_CTRL: bit30 时钟强开, bit31 复位脉冲(WT)。
-    const ulp_prog = [_]u8{ 0x37, 0x1e, 0x80, 0x20, 0xb7, 0x4e, 0xd8, 0x50, 0x93, 0x8e, 0x1e, 0xaa, 0x37, 0x1f, 0x01, 0xa0, 0x13, 0x0f, 0x0f, 0x80, 0xb7, 0x3f, 0xf0, 0x02, 0x93, 0x8f, 0x0f, 0xf4, 0xb7, 0x8d, 0x1e, 0x00, 0x93, 0x8d, 0x0d, 0x48, 0x23, 0x2c, 0xde, 0x01, 0x23, 0x20, 0xde, 0x03, 0x23, 0x20, 0xee, 0x01, 0x23, 0x22, 0xfe, 0x01, 0x23, 0x2c, 0x0e, 0x00, 0x23, 0x20, 0x0e, 0x02, 0x01, 0x4d, 0x05, 0x0d, 0xe3, 0x1f, 0xbd, 0xff, 0xc5, 0xb7 };
+    const ulp_prog = [_]u8{
+        // **轮 95c**：keeper loop 头插入 RTC_TIMER latch 触发（sw 1<<27 → 0x20800010）
+        // ——挂死期间（HP TIMERGRP 被门控 ⇒ T0/NMI 死 ⇒ HP 侧 latch 停）由 LP 域 ULP
+        // 代触发 ⇒ controller 等待环时间前进 ⇒ 超时正常返回（oracle 行为）。
+        // 尾 c.j 重编码为 jal（loop 头移位）。
+        0x37, 0x1e, 0x80, 0x20, 0xb7, 0x4e, 0xd8, 0x50, 0x93, 0x8e, 0x1e, 0xaa, 0x37, 0x1f, 0x01, 0xa0, 0x13, 0x0f, 0x0f, 0x80, 0xb7, 0x3f, 0xf0, 0x02, 0x93, 0x8f, 0x0f, 0xf4, 0xb7, 0x8d, 0x1e, 0x00, 0x93, 0x8d, 0x0d, 0x48,
+        0x37, 0x03, 0x00, 0x08, 0x23, 0x28, 0x7f, 0x00, 0x23, 0x2c, 0xde, 0x01, 0x23, 0x20, 0xde, 0x03, 0x23, 0x20, 0xee, 0x01, 0x23, 0x22, 0xfe, 0x01, 0x23, 0x2c, 0x0e, 0x00, 0x23, 0x20, 0x0e, 0x02, 0x01, 0x4d, 0x05, 0x0d,
+        0xe3, 0x1f, 0xbd, 0xff, 0x6f, 0xf0, 0xbf, 0xfe,
+    };
     for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
     @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS boot addr
     const lpc: usize = 0x2071_0000; // LP_PERI_CLKRST
@@ -2340,7 +2366,11 @@ pub fn run() noreturn {
             // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。
             // 静默一切 UART 输出，ADV-enable 结果直写 0x18F000 marker 离线判读。
             board.log.muted = true;
-            ra2 = transport.sendCmdViaHs(0x200A, &ae);
+            // **轮 95d**：0x200A 改走 A 路径（异步队列）——B 路径同步分发下
+            // ADV-enable handler 内部等待的事件需要泵投递而泵正阻塞在本调用里
+            // = 同步死锁。A 路径入队 ⇒ controller task 在自己上下文处理 ⇒
+            // 内部等待可满足（基础命令 A 路径已证通：A(rx) sendReadVersion）。
+            ra2 = transport.sendCmd(0x200A, &ae);
             const p98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
             const pf8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
             const pevt: u32 = transport.stats().evt_count;

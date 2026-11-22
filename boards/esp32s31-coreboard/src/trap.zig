@@ -689,6 +689,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 if (lp_pc_en) {
                     pc1.* = pc0.*;
                     pc0.* = @truncate(frame.mepc);
+                    // **轮 95**：hang_arm 时把被采样 PC 写进远处 LP 槽
+                    // （0x2E000600，blob ADV-enable 竞区外；跨复位保留）
+                    const ha: *volatile u32 = @ptrFromInt(0x2E00_0604);
+                    if (ha.* == 0xC0DE_0001) {
+                        const dst: *volatile u32 = @ptrFromInt(0x2E00_0600);
+                        dst.* = @truncate(frame.mepc);
+                    }
                 }
                 // **CPU 时钟分频现场**（0x2E00038C）：blob 任务循环里的
                 // `e_btdm_lp_modem_clock_set` 若改了 CPU_CLK_DIV，这里立刻可见。
@@ -745,6 +752,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // (esp_task_wdt,握 WPROTECT key)——2ms 内重写 CONFIG0 使能,
                 // 计数不清零 ⇒ 超时必然到来 ⇒ 冻结必有 rst:0x8。
                 const wd_flag: *volatile u32 = @ptrFromInt(0x2E00_0570);
+                // **轮 95b**：hang_arm 期间 keeper 停止回写 MWDT1（让短 hold 生效，
+                // 挂死 20s 后数字复位，LP 带着挂死 PC 进入下 boot）
+                const ha_lp: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0604)).*;
+                const hang_armed = ha_lp == 0xC0DE_0001;
                 if (wd_flag.* == 0xBEEF_0001) {
                     const w: [*]volatile u32 = @ptrFromInt(0x2058_1000);
                     // **解除检测**:CONFIG0 bit31(EN) 被 blob 清零 = 解除现行。
@@ -763,8 +774,15 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     }
                     w[0x64 / 4] = 0x50D8_3AA1; // WPROTECT 解锁
                     w[0x48 / 4] = 0xb81f_8000; // CONFIG0(oracle: STG0=中断 STG1=系统复位)
-                    w[0x4C / 4] = 0x9C40_0000; // STG0_HOLD 10s
-                    w[0x50 / 4] = 0x9C40_0000; // STG1_HOLD
+                    if (hang_armed) {
+                        // **轮 95b**：挂死探针——短 hold（STG0≈20s 中断，STG1≈再 10s
+                        // 数字复位）⇒ LP 带挂死 PC 进入下 boot
+                        w[0x4C / 4] = 2_740_000;
+                        w[0x50 / 4] = 1_400_000;
+                    } else {
+                        w[0x4C / 4] = 0x9C40_0000; // STG0_HOLD 10s
+                        w[0x50 / 4] = 0x9C40_0000; // STG1_HOLD
+                    }
                     w[0x64 / 4] = 0; // 上锁
                     const rw: [*]volatile u32 = @ptrFromInt(0x2080_1000);
                     rw[0x18 / 4] = 0x50D8_3AA1; // WPROTECT
@@ -786,7 +804,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 需要 update 位触发才刷新。此前只在泵里触发——主上下文被任务占住时
             // 永远到不了泵 ⇒ 控制器时间冻结 ⇒ LL 调度器无限重排（lecwwE0K↔YRnBzKl）。
             @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
-            if (nmi_count % 5_000 == 0) {
+            // **轮 94c**：mute 时 NMI 不再打印——UART0 时钟被 blob 门控后，NMI 打印
+            // 会回灌 FIFO ⇒ ROM 排空环（0x2f8036cc）永不退出 ⇒ 主上下文永久卡死。
+            // 静默让 FIFO 排空 ⇒ ROM 环退出 ⇒ 主上下文恢复。
+            if (nmi_count % 5_000 == 0 and !@import("log.zig").muted) {
                 var nb: [224]u8 = undefined;
                 // **s0 + blob state 三字段直读**：0x2008 停驻环判据——
                 // s0=state 指针（循环内自 -284(s4) 取）；34=u16 位掩码
@@ -824,7 +845,10 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 // cb+4=mutex 槽、cb+8=eventq 槽（归档查 slot.p!=0，池耗尽则静默 NULL）
                 const cbp: *volatile u32 = @ptrFromInt(0x2f01_1038);
                 const cbv = cbp.*;
+                // **轮 94c**：mute ⇒ NMI3/NMI6 也闭嘴（同 FIFO 回灌问题）——
+                // 门控加在下方两个 rawLineBlocking 调用点。
                 var s3b: [192]u8 = undefined;
+                const nmi_silent = @import("log.zig").muted;
                 var l3: []const u8 = undefined;
                 if (cbv >= 0x2f00_0000 and cbv < 0x2f10_0000) {
                     const mu: *volatile u32 = @ptrFromInt(cbv + 4);
@@ -839,7 +863,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                     {
                         l3 = std.fmt.bufPrint(&s3b, "NMI3 cb=0x{x:0>8}(oob)", .{cbv}) catch "";
                     }
-                    hw.rawLineBlocking(l3);
+                    if (!nmi_silent) hw.rawLineBlocking(l3);
                     // **NMI6：sleep 对象内容轮转窗**（96B=24 字，每 NMI3 4 字
                     // 轮转 ⇒ 数十行覆盖全量；字段级对照找剩余零字段）
                     {
@@ -855,7 +879,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                             const l6 = std.fmt.bufPrint(&s6b, "NMI6 k={d:0>2} obj={x:0>8},{x:0>8},{x:0>8},{x:0>8}", .{
                                 k * 4, w0.*, w1.*, w2.*, w3.*,
                             }) catch "";
-                            hw.rawLineBlocking(l6);
+                            if (!nmi_silent) hw.rawLineBlocking(l6);
                             obj_dump_k = (obj_dump_k + 4) % 96;
                         }
                     }

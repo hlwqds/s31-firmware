@@ -30527,3 +30527,26 @@ oracle 的 0x200A 返回 rc=3（超时）⇒ oracle 的等待环有活时间源�
 1. 从分发器 OGF=8/0x200A 路径解码真等待环（62uOMiw 已排除=表迭代器）；
 2. 确认其轮询输入（98BC.bit2 + 哪个时间寄存器/软件 tick）；
 3. 修法候选：NMI 里替它触发时间源 update 位 / 直接喂 NMI 计数 / 短路等待条件。
+
+---
+
+## 🔬 轮 95d：A 路径切换 + 主机 BLE 扫描端到端（2026-11-23）
+
+### 改动（在树）
+1. **0x200A 切 A 路径**（异步队列）——B 路径同步分发下 ADV-enable 内部等待的事件需要泵投递而泵阻塞在本调用内=同步死锁；A 路径让 controller task 在自己上下文处理。
+2. **ULP keeper 扩展**：loop 头插入 RTC_TIMER latch 触发（sw 1<<27 → 0x20800010，同页 0x20801000 已证 ULP 可写）——挂死期间 LP 域代 HP 触发时间锁存；尾 c.j 重编码 jal（loop 移位）。
+3. UART mute（board.log + NMI 三处打印门控）——0x200A 后 blob 门控 UART0，任何打印都卡死 ROM FIFO 排空环（NMI 实测 mepc=0x2f8036cc）。
+4. MWDT1 keeper：hang_arm 时短 hold（20s/10s）保持武装（整体门控会让 blob 的解除直接得手）。
+
+### 实测
+- A 路径命令已推进 blob（light-marker phase=1 pre-forward + coex status_bit_set ✓）
+- 主上下文卡点 = **esp_rom_delay_us**（ROM 延迟轮询的 SYS_TIMER 时钟被同一次门控冻结）
+- 主机 BLE 扫描 30s（含 board reset 后完整窗口）：邻居设备可见、**板 MAC 未出现** ⇒ radio 未完成启动
+
+### ADV-enable 处理的真实行为（当前最佳模型）
+blob ADV-enable：写配置+启动选通（coex 位置 ✓）→ 门控 TIMERGRP/UART0（modem 深睡式时钟收缩）→ 等 RF/BB ready——时间源（SYS_TIMER 0x2080 块）同被门控 ⇒ 超时永不到 ⇒ HP 域永久假死。oracle 同路径不假死 ⇒ oracle 的时钟门控策略不同（FreeRTOS tick 时钟源独立）。
+
+### 轮 96 候选（按性价比排序）
+1. **HP 时钟门控位回写竞速**：NMI（T0 死后不可用）⇒ 改 MWDT1 STG0=中断（MASKED 时改配 STG0=reset 即自动恢复）双保险；
+2. **ULP 直写 HP 时钟门控寄存器**（0x20587110 系）——LP master 能否写 HP_CLKRST 待一测；
+3. **对照 oracle 的门控序列**：oracle adv-enable 期间 0x20587110/88 的值轨迹（oracle main.c 补打点，ninja 1.5s）。
