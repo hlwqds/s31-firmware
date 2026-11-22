@@ -29897,3 +29897,40 @@ F0 ✓（F83C 写前值）→ 0x2006 B 路径 rc=0 ✓ → F1 rc=0 ✓
 BLE HCI 协议栈从零到**全链活**（osal→OkE7→dispatch→CC 1:1→LE 命令处理）。
 唯一剩余 = **RF 硬件 bring-up**（rfready=0 FE=0），需 blob 内部 RF 状态机激活。
 全部仪器/分析/skill 已入库（git 可追溯），两仓 clean。
+
+---
+
+## ✅ 轮 80 终态：BLE controller 稳定运行（2026-11-23 session 最终定局）
+
+### 稳定状态（bg_2968 capture 实证）
+```text
+INITED ✓ 无 panic ✓
+evt=8 稳定（CC 1:1 回流 ✓）
+rfready=0 → F3 SKIP（0x200A 跳过 ✓ 守卫生效）
+F3 SKIP rfready=0（ADV enable 正确跳过）
+evcb=0x2f034048 evarg=0 evq=0（事件容器状态正常）
+```
+
+### 80 轮 BLE 移植能力总结
+| 能力 | 状态 |
+|---|---|
+| controller init → INITED | ✅ |
+| HCI 命令 A/B 双路径发送 | ✅ |
+| CC 1:1 回流 | ✅ evt=8 |
+| LE 分发链（非 RF 类） | ✅ Read RSSI CC ✓ |
+| sleep 路径安全 | ✅ slot 守卫修复 |
+| **ADV enable（需 RF）** | ⏳ rfready=0 = 正确跳过 |
+
+### 80 轮全部真修复（12 项，全部板级实证+入库）
+1. intrArm 路由直调
+2. mode dispatch cfg_ll
+3. eventReset 官方语义
+4. Event 布局对齐官方 {queued,fn,arg}
+5. fn(容器指针) 官方语义
+6. eventqInit 承重写
+7. eventInit 承重写
+8. c_int 返回 0（a0 残留陷阱）
+9. slot 守卫地址 0x2f011034→0x2f011134
+10. 三槽毒药 prefill 全撤 + 三槽零清（lazy-init 正确触发）
+11. B 路径 0x2006/0x2008 切换
+12. rfready 守卫（0x200A 安全跳过）

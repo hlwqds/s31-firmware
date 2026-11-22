@@ -2239,8 +2239,16 @@ pub fn run() noreturn {
         // CC 不来 = 整个 LE 分发死
         const rrssi = transport.sendCmdViaHs(0x1405, &.{});
         board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
-        const ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
-        board.log.line("F3 rc={d} evt={d}", .{ ra2, transport.stats().evt_count });
+        board.log.line("F2S btdm_tx={d} evt={d}", .{ transport.stats().btdm_tx, transport.stats().evt_count });
+        // **轮 80**：rfready=0 时跳过 0x200A（ADV enable 需 RF 上电，否则 blob 内部 hang）
+        const rf_ok = ((@as(*volatile u32, @ptrFromInt(0x2010_98BC)).* >> 2) & 1) != 0;
+        var ra2: c_int = -100; // 跳过标记
+        if (rf_ok) {
+            ra2 = transport.sendCmdViaHsNoFree(0x200A, &ae);
+            board.log.line("F3 rc={d}", .{ra2});
+        } else {
+            board.log.line("F3 SKIP rfready=0", .{});
+        }
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
         flashStage(23);
