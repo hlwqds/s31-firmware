@@ -1412,6 +1412,13 @@ pub fn run() noreturn {
     var hx2: [2]u8 = .{ hexd[(ts3 >> 4) & 0xF], hexd[ts3 & 0xF] };
     @import("board").hw.rawWrite(&hx2);
     @import("board").hw.rawWrite("\n");
+    // **轮 36：诊断触发器解除**——武装后紧跟着的 FEF5 flash 写（0x189000）窗口内，
+    // FE 轮询代码访问 0x2f828a78 命中本触发器 → trap → flash-busy 下取指 fault
+    // → 嵌套 panic（bpboot7 实测：boot 期 panic 前无任何 BT 流程行）。诊断完成
+    // 即解除（双映射都清：本块用的旧映射 0x7a4 + 标准映射 0x7a1）。
+    asm volatile ("csrw 0x7a4, zero");
+    asm volatile ("csrw 0x7a1, zero");
+    asm volatile ("csrw 0x7a0, zero");
     // **武装证据**（直写，不屏蔽 MIE —— pmu 后 flashStage 类写不落地，直写才落地）：
     // {FEF5, tdata1_rb, tdata2_rb, tcontrol_rb} @0x189000。在 ⇒ 观察点已活（本轮独有 magic）。
     var t1v: u32 = undefined;
@@ -1735,7 +1742,9 @@ pub fn run() noreturn {
         // **轮 34：目标 = tasks[0].ctx.sp（saved-sp 槽 0x2f010cec）**——合法写者
         // 只有 bt_swap_context 的 0x40078380；非该 PC 的命中 = 把坏 sp 写进任务
         // 上下文的原始踩踏者（比 flag 写者更上游）。
-        const watch_addr: u32 = 0x2F01_0CEC;
+        // **轮 37：擦除后裁决实验**——0x2f010f80 = 本构建真 flag（nm 实测）。
+        // 陈旧 oracle 尾部已擦除：命中 ⇒ 踩踏者是活代码；零命中 ⇒ 擦除已修。
+        const watch_addr: u32 = 0x2F01_0F80;
         @import("board").trap.wp_watch_on = 1;
         asm volatile ("csrw 0x7a5, zero");
         asm volatile ("csrw 0x7a0, zero");
@@ -2454,8 +2463,11 @@ pub fn run() noreturn {
                     c32 = @as(*volatile u32, @ptrFromInt(ctxp + 32)).*;
                 }
             }
-            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d}", .{
+            // **轮 36**：真校准标志实时读出（stage-22 挂死 boot 的唯一通道）
+            const cal_flag_live: u8 = @as(*volatile u8, @ptrFromInt(0x2F01_0F80)).*;
+            board.log.line("bt probe: icg {x}->{x} rfready={d} fe={d} qput={d} getok={d} evrun={d}/{d} pc=0x{x:0>8} sb={d} brg={d}/{d}/{d} calflag={d}", .{
                 icg_bt,
+                cal_flag_live,
                 icg_after,
                 (r98 >> 2) & 1,
                 fe_cnt,
