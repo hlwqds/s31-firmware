@@ -29723,3 +29723,19 @@ env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
 
 ### 轮 76 方向
 分发器 OGF 分支（.L673 @0x400619a0 = OGF 8 = LE 类）走通后需要 LE 命令子分发表——表由 OkE7 的 6 子 init 之一创建。反汇编 .L673 后续，找 LE 命令 handler 注册的表基址，对照 6 子 init 的产出。也可试：**跳过 0x2006/0x2008，直接发 0x200A（ADV enable）**看是否也卡（如果是，说明整个 LE 分支缺表；如果不是，说明只有 0x2006 特有路径卡）。
+
+---
+
+## 📌 轮 76 确认：ADV 类 hang 可复现（2026-11-23 session 终态）
+
+两次独立 120s capture 完全一致：evt=4 稳定、F83C 后 F1 rc=0（0x2006 B 路径发送 ✓）后 UART 静默。
+⇒ **B 路径（event queue → task → dispatch）对 LE 命令不产出 CC**。A 路径（r_btdm_hci_trans_rx）对基础命令产出 CC ✓。
+
+### 根因定性
+OkE7 的 6 子 init（fqmZkUKg 后的 JwHsRJf87 等 6 个 blob 私有函数）创建 LE 子系统的 dispatch 表。这些子 init 调用我们的 osal wrapper（mutex/sem/event），我们的空桩/简化实现导致 LE dispatch 表不完整 ⇒ B 路径进来的 LE 命令进队列但 handler 链断裂 ⇒ 无 CC。
+
+### 下 session 唯一首项
+逐个反汇编 6 子 init（当前构建 nm 重定位后），每个调用了哪些 wr_btdm_osal_* → 对照我们的实现，找第一个行为差异。可用的 oracle 工具：ANASET 轨迹仪（ninja 1.5s 增量）+ main.c 修改自由。
+
+### 本 session 全部已入库 ✓ 两仓 clean ✓
+75 轮仪器/修复/解密/分析全部在 git 历史中可追溯。
