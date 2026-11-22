@@ -1688,6 +1688,10 @@ pub fn run() noreturn {
     board.trap.pc_dump_at = 0xFFFF_FFFF; // 采样器 ISR 不再触发 0x187000 dump
     mark.put(0x30, 0xADC0B103, @bitCast(rc)); // 此刻起 LP-only
     osal.logPublic("bt probe: enabled (status={d})", .{bringup.getStatus()});
+    // **轮 18：0x20100438 补齐缺失 7 位**（BB 窗口 diff 唯一差异：官方 0xffc00000
+    // vs 我们 0xe0000000——缺 bits[28:22]）。判据链任一出现即破墙：FE450 振荡/
+    // 47C 脉冲/98BC.bit2 置位/rcA+POST/evt 增量。
+    @as(*volatile u32, @ptrFromInt(0x2010_0438)).* |= 0x1FC0_0000;
     // **轮 13：广播序列前钳 modem sleep**——blob 在 task_init 强制 sleep_en 非 0
     // （cfg 写 0 被回写实证）；Enable=1 启动广播后 LL 首次空闲进 sleep ⇒ 裸机
     // 无 light-sleep+LP 唤醒源 ⇒ 睡死（轮 12 机制终版）。序列发出前清零。
