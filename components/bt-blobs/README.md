@@ -30220,3 +30220,36 @@ HCIEVN env+24 = leEvtTx(0x40076992/76c08) ✓ credits 充足 ✓
    需要时把 LASTCC 打点挪到每条发送后即可；
 2. （唯一大项）**RF bring-up**：rfready 位（0x201098BC.bit2）永不置位 ⇒ 0x200A
    超时错误码 3 —— 工具链全部保留（oracle 轨迹仪/flash 标记/EXEC 断点/3 skill）。
+
+---
+
+## 🔬 轮 87：RF 墙基线重测（osal 修复后）+ 三项修复（2026-11-23）
+
+### 基线重测结论（旧轮 51-56 分析需在新基座上重验）
+| 项 | 值 | 判读 |
+| --- | --- | --- |
+| R1 98BC | 0x00000000 全零 | synth 未启动（oracle8 实证应 = 0x00000004） |
+| R2 mst(0x208133fc) | 0x02007301，bit28=0 | ana master clock 仍被门 |
+| R2 den(0x20813014) | 0x00000000 | DEVICE_EN 位图全零 |
+| R3 自环 | **0x5A**（签名修正后） | **ana 总线活**（轮 57 结论保持） |
+| R5 bb870(0x20100870) | 0x0a0e9608，bits[15:8]=0x96 | **bt_bb_v2_init_cmplx 真跑过**（HW 实锤） |
+| R5 bbc00(0x20102c00) | 0x0019f00c | 同上 ✓ |
+| calflag | 0→1，load_cal done，rc=0，FE 可读 0x5ac968f1 | 校准链在新底座完整跑通（不再挂） |
+
+### 三项修复
+1. **`phy_i2c_writeReg` extern 签名**：reg-first（RMW 对实证），原 block-first 错误
+   ⇒ 轮 87 R3 的 0x00 是参数序 bug 非回归；轮 57 的 alive 判定有效。
+2. **`phy_printf` 吞字修复**：原为纯空桩（60+ 轮 blob 打印全部不可见！），现转发
+   格式串到 `s31_bt_raw_line`。bt_bb_v2_version 行因 FIFO 交错未见，但 R5 HW 证据替代。
+3. **esp_btbb_enable 复位到 enable 相**（轮 56 关闭，其毒化证据出自 osal 修复前）——
+   调用了且无回归，BB init HW 证实跑通。
+
+### 仍缺：synth 启动（98BC=4）
+BB init ≠ synth start。oracle 时序：libbtbb version → enable rc=0 status=2 → 98BC=4。
+rf_onoff 排除（仅我们的代码调用；IDF 里属 sleep 路径）。`phy_i2cmst_reg_init` 链
+（phy_rf_init 内，管 ana mst clock+device_en）仍未跑——它是 blob task body 的
+异步 RF init（轮 56 已见 oracle 有、我们无）。
+
+### 轮 88 首项：task body rf-init 守卫追猎（轮 57 首项恢复执行）
+oracle.asm 全符号 → 找 blob task init 体里调用 `phy_rf_init`/`phy_i2cmst_reg_init`
+的分支与其守卫变量 →板上读守卫 → 补触发条件。

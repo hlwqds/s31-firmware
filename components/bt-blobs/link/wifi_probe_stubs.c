@@ -77,6 +77,14 @@ const unsigned char phy_init_data[144] = {
  * "only required on ESP32"）。 */
 void sar_periph_ctrl_pwdet_power_acquire(void) {}
 void sar_periph_ctrl_pwdet_power_release(void) {}
-void phy_printf(unsigned int level, const char *tag, const char *format, ...) { (void)level;(void)tag;(void)format; }
+/* **轮 87c**：转发格式串到 bringup 的 raw-line sink（原为纯空桩 ⇒ blob 全部
+ * 打印被吞，libbtbb version 等 60+ 轮关键判据行从未见过）。变参不展开，
+ * 只打 format（与 wifi-blobs printf_shim.c 同模式）。 */
+extern void s31_bt_raw_line(const char *s);
+void phy_printf(unsigned int level, const char *tag, const char *format, ...) {
+    (void)level;
+    (void)tag;
+    s31_bt_raw_line(format);
+}
 int rtc_clk_xtal_freq_get(void) { return 40; }
 void s31_printf_hook(unsigned int level, const char *tag, const char *format, ...) { (void)level;(void)tag;(void)format; }

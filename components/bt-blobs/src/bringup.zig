@@ -912,7 +912,10 @@ pub fn enable() c_int {
     // 官方 0x00102000（bit13=1，疑似 BB/RF ready）vs 我们 0x00110000（bit16=1）。
     // enable 前对齐官方值；若 LL 调度器在等 bit13，泵应越过 fwd06 后的下一条锚点。
     // **轮 56 默认 false**：抢先 btbb init 毒化假说（见下方 if 块注释）。
-    const btbb_early_enable = false;
+    // **轮 87c 重启**：毒化证据出自 osal 修复前；oracle8.log 实证官方序列
+    // （init rc=0 → phy full cal → libbtbb version → enable rc=0 → 98BC=4）
+    // 里 esp_btbb_enable 就在 enable 相触发。A/B 重测。
+    const btbb_early_enable = true;
     mmioPtr(u32, 0x2010_0450).* = 0x0010_2000;
     // **轮 56：抢先 btbb init 毒化假说**——oracle 侧 esp_btbb_enable 首次真跑
     // 发生在 enable 相（btdm_lp_reset 内），blob task 的 init 体在自己的时间线

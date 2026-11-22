@@ -124,7 +124,10 @@ extern fn r_sym_ble_FJxPPDsfsgFzTvO2VwlU() callconv(.c) void;
 /// 板上实测调用形如 (reg_add, block_hostid, block)——RF PLL cap = (99,1,6)。
 extern fn phy_i2c_readReg(reg: u8, hostid: u8, block: u8) callconv(.c) u8;
 /// **轮 57**：ana 写原语（ROM 绝对地址，与 readReg 同族）。
-extern fn phy_i2c_writeReg(block: u8, hostid: u8, reg: u8, val: u8) callconv(.c) void;
+/// **轮 87b 签名修正**：reg-first（与 readReg 同序）——RMW 对实证
+/// （phy_bt_tx_pwctrl_init：readReg_Mask(reg=103) 后 writeReg(a0=103,a1=1,a2=28,a3=2)，
+/// 读改写必须同寄存器 ⇒ (reg, hostid, block, val)，不是 (block, hostid, reg, val)）。
+extern fn phy_i2c_writeReg(reg: u8, hostid: u8, block: u8, val: u8) callconv(.c) void;
 /// **轮 51**：RF 电源域开关（ana burst 原语，probe F83C 块尾部已有同款调用）。
 extern fn phy_ana_i2c_master_burst_rf_onoff(on: u32) callconv(.c) void;
 /// **轮 58**：读 LL 命令静态事件的排队态（wr_ 包装 = 我们镜像内具名符号）。
@@ -2294,6 +2297,27 @@ pub fn run() noreturn {
             board.log.line("F3 rc={d}", .{ra2});
         } else {
             board.log.line("F3 SKIP rfready=0", .{});
+            // **轮 87**：osal 修复后的 RF 墙基线重测（轮 51-56 分析先于 osal 重写）。
+            // 全部被动读/自环，不发 0x200A：
+            //  R1: synth ready 全字（bit2 是 RF/BB ready 硬件位）
+            //  R2: ana master clock（0x208133fc bit28）+ DEVICE_EN 位图（0x20813014）
+            //  R3: ana 自环 write 0x5A→readback（轮 57 已证活——post-fix 再证一次）
+            //  R4: FE/PLL 关键寄存器 0x201008D0（FE 环判据）与 0x2010F800/F818
+            const r98bc: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+            const mstclk: u32 = @as(*volatile u32, @ptrFromInt(0x2081_33fc)).*;
+            const deven: u32 = @as(*volatile u32, @ptrFromInt(0x2081_3014)).*;
+            const fe8d0: u32 = @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*;
+            const f800: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+            // **轮 87c**：BB init HW 验证——bt_bb_v2_init_cmplx 写 0x20100870
+            // （bits[15:8] |= 0x96）与 0x20102c00（|= 0x19f_000）；非默认值 = BB init 跑过。
+            const bb870: u32 = @as(*volatile u32, @ptrFromInt(0x2010_0870)).*;
+            const bbc00: u32 = @as(*volatile u32, @ptrFromInt(0x2010_2C00)).*;
+            board.log.line("R1 98BC={x:0>8} R2 mst={x:0>8} den={x:0>8} R4 fe={x:0>8} f800={x:0>8}", .{ r98bc, mstclk, deven, fe8d0, f800 });
+            board.log.line("R5 bb870={x:0>8} bbc00={x:0>8}", .{ bb870, bbc00 });
+            // **轮 87b**：签名修正后重跑——(reg=99, hostid=1, block=6) = PLL cap 自环
+            phy_i2c_writeReg(99, 1, 6, 0x5A);
+            const loopback: u8 = phy_i2c_readReg(99, 1, 6);
+            board.log.line("R3 ana loopback={x:0>2} (0x5A=alive)", .{loopback});
         }
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
