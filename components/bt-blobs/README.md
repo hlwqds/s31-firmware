@@ -29645,3 +29645,18 @@ rx flag 0->1 ✓
 - 0x2f011134/0x2f011138/0x2f011130 三槽 prefill 全删（轮 71 毒药实证）
 - bringup 的 fqmZkUKg 外部直调删除（OkE7 内部自调 ✓）
 - 保留：eventqInit/eventInit 承重写 + c_int 0 + 布局对齐 + fn(容器) 语义 ✓
+
+---
+
+## 📊 轮 73 完整流程位置（capture 窗口终点）
+
+boot 走到 **F83C mirror（pre-200A 阶段）**= 60+ 轮来最深位置：
+```text
+INITED → ReadVersion(3cmd) → Reset ✓ → readBdAddr ✓ → arm src=124 ✓
+→ rx flag 0->1 ✓ → sched patchset ✓ → F83C mirror ←【capture 60s 截止于此】
+→ [下一段] fwd06 → 0x2008 → 0x200A → FE450/98BC → 广播
+```
+evt=4 = ReadVersion CC + Reset CC + readBdAddr CC + 1 init 事件 = **每命令都有真 CC 回流**（1:1 应答链活了！）
+
+### 下 session（标准 ADV 链续跑，全部基础设施已就位）
+capture 窗口加长到 120s（fwd06 后段需要更多时间）+ evt 计数持续监控。剩余 = 标准 pre-200A → 0x2006/0x2008/0x200A 链（轮 49 时代的 f06 流程代码完整保留 ✓ 零改动直跑）。
