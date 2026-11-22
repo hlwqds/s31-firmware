@@ -28611,6 +28611,12 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   2. raw USB（pyusb）顺序：fresh find → USBDEVFS_RESET(0x5514)（如仍异常）→ detach(usbfs ioctl 0xC010551A) → claim → **IFC_ENABLE req 0x00 wValue=1（必须！内核 close 会禁用 UART 端口，不发则 bulk 全 NAK=bulk 超时真因）** → **SET_BAUDDIV req 0x01 wValue=334（115200；此前 MHS 误用 0x1E=SET_BAUDDIV 已灌垃圾值，必须显式恢复）** → SET_LINE_CTL req 0x03 wValue=0x0800（8N1）→ **SET_FLOW req 0x13 wLength=20 全零（关 CP2102C always-on CTS 门控）** → SET_MHS **req 0x07**（wValue: DTR=bit0|mask bit8, RTS=bit1|mask bit9；⚠ 0x1E 是 SET_BAUDDIV 不是 MHS——此前 MHS 写全是波特率寄存器垃圾）→ 单字节 bulk 门测（<1s 成功）→ connect。
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
+- **轮 22（2026-11-22）：phy_init_data 假表修复——必修卫生项，非破墙开关**：
+  1. **假表定位**：probe ELF 的 `phy_init_data`（0x40105676）由 `wifi_probe_stubs.c:59` 的手搓 144B 桩表提供（`02 00 00 00 B4…`，RF 参数全错）——bt-blobs/link/phy_stubs.c 侧 2026-11-19 已删副本，但 wifi_probe_stubs.c 这份一直在链路里。**register_chipv7_phy 的全量校准一直跑在坏表上**。
+  2. **真表提取**：oracle ELF `phy_init_data`（本轮实测地址 0x4009395c；注意 oracle 今天重建过、旧 0x40093920 已失效）= 128B params（20 个非零：`01 00 50 50 50 50 4C 48 50 50 4C 48 40 3C 3C 3C 4C 4C 48 44`，params[127]=0x51）。vendor `register_chipv7_phy` 以符号为 `esp_phy_init_data_t{params[128]}` 基址，probe_ptr 的 `[128]u8` 读取口径一致。
+  3. **结果**：真表进镜像（objdump 逐字节核对）后 **ready 仍 0x0、FE450 仍冻结** ⇒ 假表是必修卫生项但非墙本体。
+  4. **轮 1-22 累计排除清单**：BB 窗口配置 ✓、SCHED 区（运行输出）✓、FE 复位（ADV 窗口全释放）✓、PMU_RF_PWC 电源岛（两侧一致）✓、phy_init_data（真表）✓、esp_phy_enable 时序（两种顺序均跑通返回）✓。
+  - **剩余嫌疑 = 模拟域写入本身**：regi2c/ana 域的校准写是否真的到达模拟 die 不可直接观测；候选 = F83C bit28（probe 置 1 / 官方 0，XOR 恰一位）误开的时钟源、regi2c 时钟配置、或 0x2010B000 RF 块在 phy 校准后的可读性验证（历史判据）。下轮 = EXEC 断点抓 I2C master 写序列对拍 oracle，或先试 F83C 对齐官方值（一行成本）。
 - **轮 21（2026-11-22）：模拟域硬 diff + FE 复位假设双重证伪**：
   1. **ANA 真值对拍**（oracle main.c 补打印 vs probe 冻结点）：PMU_RF_PWC=0xffff0000 **两侧一致**（电源岛嫌疑清除）；F83C probe=0x12411290(bit28=1) vs 官方 0x02411290(bit28=0)（反转早前"bit28 必须开"的猜测）；**9C10 modem_rst_conf：probe 残留 0x001870c0（bit12 rst_fe_adc/13 rst_fe_ahb/14 rst_fe=RF 前端整块按复位）vs 官方 0**。
   2. **FE 复位释放双重实验**：HCI Reset 前清零（mark30）→ 冻结点回到 0x1870c0（复断言）；0x200A 前清零（mark32，rec[506..508] 落盘）→ **pre=0 post=0**（ADV 窗口全程 FE 释放）**但 ready 仍 0x0、FE450 仍冻结**。
