@@ -28857,3 +28857,25 @@ s31.ld 布局手术把我们的 .data/.bss 移出了 blob 窗口（0x2f010cdc-0x
 1. bringup step 6 前**加打印 OkE7 锚点值**（`pp.okE7Anchor()`）→ 确认 P=0 的时机（发布前 vs 发布失败）
 2. 检查 OkE7 发布块的 arena 分配（`osal2.btdmMalloc(32, 0)`）是否返回 NULL（arena free=300520 ✓ 应该不缺）
 3. 如果 malloc ✓ 但锚点 = 0 ⇒ `pp.setOkE7Anchor()` 的写入地址漂移（老问题）
+
+---
+
+## 🔒 轮 43 补充 2（2026-11-22 追加）：sleep_cb 崩溃精确机制
+
+### 反汇编定位（0x40061614-0x40061664）
+```
+lw  a4, 308(a4)  # 2f011134 = r_sym_bt_sitBB3SrXn0IePgsPrBY（闭包 .data 槽）
+lw  s0, 12(a4)   # ← mtval=0xC fault：a4=0（槽值=NULL）
+```
+⇒ `r_sym_bt_sitBB3SrXn0IePgsPrBY` 槽值 = 0 = **blob 的 sleep 环境指针未初始化**。
+
+### 与 OkE7 锚点链的关系
+- 0x2f011134 槽值 = OkE7 malloc 发布链的产物（OkE7 malloc 32B → store 指针到槽）
+- "Xpuq 锚点 P=0x00000000"（step 6 打印）= 同一问题：OkE7 发布未产出非零锚点
+- **非布局问题**——回退布局下 0x2f011134 = 闭包 .data 原位 ✓ 有效地址
+- **OkE7 发布的门控条件**在当前构建中阻止了发布（`prepublish_bohff`/arena malloc/等 gate）
+
+### 下 session 首项
+1. bringup step 6 前打印 OkE7 锚点值 + btdmMalloc 返回值 → 定位发布链断裂点
+2. 检查 `prepublish_bohff` 门控变量在当前构建中的值
+3. 如果 malloc ✓ 但锚点 = 0 ⇒ `setOkE7Anchor` 写入地址漂移
