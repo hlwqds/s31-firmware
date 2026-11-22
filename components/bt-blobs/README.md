@@ -28612,6 +28612,11 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 30（2026-11-22）：trapEntry 快路径 + HIT 位验证——判据仍不一致，状态未定**：
+  1. **已落地**（保留）：① trapEntry cause-3 快路径（SRAM/CSR 零 flash 取指 + mcontrol6 bit30 HIT 位验证防 IRQ#3 误触发——CLIC IRQ ID 3 会撞 cause 判据）；② 观察点目标地址改 `@extern("s_is_phy_calibrated")` 符号化（跨构建稳健）；③ bringup 清零同改符号化。
+  2. **判据不一致**：mark44/45 逐位相同（0x08a630ee/0xc4d9e387/count=4153684168）⇒ 两 boot 均未落新标记（panic 复发）或 capture 链仍不可靠；且 count=40 亿非递增语义。**0x08a630ee 不匹配任何历史轮读数**——既非陈旧也非显然有效。
+  3. **状态定格**：快路径 + HIT 验证的组合在逻辑上完备，但读数链（trap→全局→冻结→flash→esptool）仍未给出一次可复现的干净捕获。**不再继续烧录试错**——下一刀是结构性取证：一次 UART 全程捕获同时看（a）"STORE watch armed" 行（b）BP!/快路径 UART 行（c）panic 行，三者相对位置直接定位失效环节，而非逐位猜 rec。
+  - 修正规则（轮 28 的延伸）：每次 marker 读数必须同时报出**该构建的 boot 是否完成**（UART verdict 行在位），否则读数无效。
 - **轮 29（2026-11-22）：干净基线复测——观察点撤装 + 全 4 触发器清零**：
   1. 观察点武装撤除（XIP panic 根因），武装块改为**全 4 触发器清零**（含 boot 期 slot1 脏 LOAD 触发器），仪表待 trap SRAM 化后恢复。
   2. 干净基线（无观察点 + MIE-off 包校准 + 真表 + oracle 粘合）复测：**calflag = 200 (0xC8) 非 1** ⇒ 关中断也拦不住——写者是**校准调用链内部的指针写**（blob 侧把 0x2f010e80 当自己的暂存槽用），不是中断踩踏。

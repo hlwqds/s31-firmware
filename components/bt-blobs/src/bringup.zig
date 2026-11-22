@@ -526,7 +526,7 @@ pub fn init(cfg: *config.Config) c_int {
             // **轮 25：s_is_phy_calibrated 清零**——胶水 .bss 落在 blob 绝对寻址区
             // （nm 实锤 0x2f010e80 紧邻 blob 数据，读值跨 boot 非布尔）⇒ enable
             // 入口 `bnez → skip load_cal` 可能从未运行校准。清零强制走全量标定。
-            const cal_flag: *volatile u8 = @ptrFromInt(0x2F01_0E80);
+            const cal_flag: *volatile u8 = @extern(*volatile u8, .{ .name = "s_is_phy_calibrated" }); // 符号化（跨构建稳健）
             phy_cal_flag_before = cal_flag.*;
             cal_flag.* = 0;
             const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });

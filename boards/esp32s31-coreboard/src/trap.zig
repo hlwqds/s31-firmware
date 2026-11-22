@@ -91,6 +91,37 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
         \\        sw      t3, 0(sp)
         \\        sw      t4, 4(sp)
         \\        sw      t5, 8(sp)
+        \\        # **轮 29 快路径**：cause=3（观察点命中）+ 武装 ⇒ 全 SRAM/CSR 处理
+        \\        # （零 flash 取指——flash 写窗口内命中也不崩），原地恢复=store 正常
+        \\        # 重执行，触发器已禁 ⇒ 不重触发。
+        \\        csrr    t3, mcause
+        \\        andi    t3, t3, 0x0ff
+        \\        li      t4, 3
+        \\        bne     t3, t4, .Lwpdone
+        \\        # **HIT 位验证**：真触发命中时硬件置 tdata1.bit30；IRQ#3 等
+        \\        # 同号中断没有它（轮 30 教训：CLIC IRQ ID 3 撞 cause 判据）。
+        \\        csrr    t3, 0x7a1
+        \\        slli    t3, t3, 1
+        \\        bgez    t3, .Lwpdone
+        \\        la      t3, wp_watch_on
+        \\        lw      t3, 0(t3)
+        \\        beqz    t3, .Lwpdone
+        \\        csrr    t5, mepc
+        \\        la      t3, wp_hit_pc
+        \\        sw      t5, 0(t3)
+        \\        la      t3, wp_hit_ra
+        \\        sw      ra, 0(t3)
+        \\        la      t3, wp_hit_count
+        \\        lw      t5, 0(t3)
+        \\        addi    t5, t5, 1
+        \\        sw      t5, 0(t3)
+        \\        csrw    0x7a1, zero
+        \\        lw      t3, 0(sp)
+        \\        lw      t4, 4(sp)
+        \\        lw      t5, 8(sp)
+        \\        addi    sp, sp, 12
+        \\        mret
+        \\.Lwpdone:
         \\        la      t3, flash_op_window
         \\        lw      t3, 0(t3)
         \\        beqz    t3, 9f          # 窗口外 ⇒ 恢复+正常 dispatch
@@ -1242,6 +1273,8 @@ var bp_hit_count: u32 = 0;
 pub var wp_hit_pc: u32 = 0;
 pub var wp_hit_ra: u32 = 0;
 pub var wp_hit_count: u32 = 0;
+/// **轮 29**：观察点武装旗子——trapEntry 快路径的开关（SRAM .bss，asm `la` 直达）。
+pub var wp_watch_on: u32 = 0;
 var bp_last_tsel: u32 = 0;
 
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：

@@ -1725,26 +1725,24 @@ pub fn run() noreturn {
     // 指针写者污染胶水 bss。单命中：第一个写它的指令被 trap 抓 PC（trap 侧推进
     // mepc 后系统继续）。武装窗口 = bringup.enable 之前（踩踏从标定期就开始）。
     {
-        // **轮 29：观察点撤装（回干净基线）**——带观察点的构建每 boot XIP 嵌套
-        // 取指 fault panic（轮 28 自白），mark41/42 已证实为陈旧残留读数。
-        // 只保留触发器卫生：全 4 触发器清零（清掉 boot 期 slot1 脏 LOAD 触发器
-        // 与任何残留），不武装任何新触发器。trap SRAM 化完成后再恢复仪表。
+        // **轮 30：STORE 观察点重武装（trapEntry 快路径版）**——cause-3 命中走
+        // trapEntry 的 SRAM 快路径（零 flash 取指），XIP panic 类已根除。
+        // 目标地址用链接符号取（跨构建稳健）：s_is_phy_calibrated（IDF 胶水静态，
+        // 轮 24-29 链条：它被某指针持续写非零 ⇒ enable 入口恒 skip load_cal）。
+        const cal_flag: *volatile u8 = @extern(*volatile u8, .{ .name = "s_is_phy_calibrated" });
+        const watch_addr: u32 = @intFromPtr(cal_flag);
+        board.trap.wp_watch_on = 1;
         asm volatile ("csrw 0x7a5, zero");
-        asm volatile ("li t0, 0");
-        asm volatile ("csrw 0x7a0, t0");
-        asm volatile ("csrw 0x7a1, zero");
-        asm volatile ("li t0, 1");
-        asm volatile ("csrw 0x7a0, t0");
-        asm volatile ("csrw 0x7a1, zero");
-        asm volatile ("li t0, 2");
-        asm volatile ("csrw 0x7a0, t0");
-        asm volatile ("csrw 0x7a1, zero");
-        asm volatile ("li t0, 3");
-        asm volatile ("csrw 0x7a0, t0");
-        asm volatile ("csrw 0x7a1, zero");
         asm volatile ("csrw 0x7a0, zero");
-        asm volatile ("csrw 0x7a5, zero");
-        osal.logPublic("bt probe: all 4 triggers cleared (watch disarmed)", .{});
+        asm volatile ("csrw 0x7a2, %[a]"
+            :
+            : [a] "r" (watch_addr),
+        );
+        asm volatile ("li t0, 0x4a"); // STORE|U|M（mcontrol 语义；芯片实现 mcontrol6）
+        asm volatile ("csrw 0x7a1, t0");
+        asm volatile ("li t0, 0x88"); // MTE
+        asm volatile ("csrw 0x7a5, t0");
+        osal.logPublic("bt probe: STORE watch armed @0x{x:0>8} (fastpath)", .{watch_addr});
     }
     rc = bringup.enable();
     if (rc != 0) {
@@ -2223,9 +2221,11 @@ pub fn run() noreturn {
             //   rec[508] = s_is_phy_calibrated（esp_phy_enable 内部读的全局，
             //              反汇编 0x4000077e: lui 0x2f011; lbu -384 = 0x2f010e80）
             //   rec[509] = phy_module_has_clock_bits(2)（PHY_MODEM_BT）直调结果
-            rec[508] = board.trap.udiv_hit_ra; // **轮 28**：load_cal 的调用者 ra（0=从未运行）
-            rec[509] = board.trap.udiv_hit_n; // 命中计数
-            rec[510] = bringup.phy_cal_flag_post; // enable 返回时的 calflag
+            // **轮 30**：rec[508..511] = 观察点四元组 {写者 PC, 写者 ra, 命中数, calflag}
+            rec[508] = board.trap.wp_hit_pc; // 0x2f010e80 写者 PC（快路径捕获）
+            rec[509] = board.trap.wp_hit_ra;
+            rec[510] = board.trap.wp_hit_count;
+            rec[511] = bringup.phy_cal_flag_post; // enable 返回时
             {
                 const has_bits = @extern(*const fn (modem: c_int) callconv(.c) c_int, .{ .name = "phy_module_has_clock_bits" });
                 rec[509] = @bitCast(has_bits(2));
