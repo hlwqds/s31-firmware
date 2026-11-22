@@ -30577,3 +30577,30 @@ r_btdm_hci_trans_rx 内部**（cmds_sent++ 之后、marker 之前）。
 - rx → 队列满阻塞（前序命令事件未消费）？
 - rx → ADV-enable 专用 RF-wait？
 定位后修法：把 ADV-enable 处理挪进 task 上下文（泵 resume 时序）或给等待环喂时间源。
+
+---
+
+## 🔬 轮 95d-96：0x200A 后假死机制定案 + 观测尝试全记录（2026-11-23）
+
+### 定案（本轮实测链）
+ADV-enable 处理路径门控 **TIMERGRP（T0/NMI 死）+ UART0（打印死）+ SYS_TIMER/0x2080 块
+（esp_rom_delay_us 死、MWDT1 冻结、RTC latch 停）** ⇒ HP 域全域假死。RTC WDT 20s
+兜底未咬 ⇒ RC_SLOW 源也被切（ULP RC_SLOW 压回已加，90s 窗口仍未观察到 boot2）。
+
+### 已落地的观测/防御（全部在树，下轮直接用）
+| 项 | 状态 |
+| --- | --- |
+| UART 全通道 mute（board.log/BT_LOG_SILENT/log_mute/NMI 三打印） | ✅ 生效（0x200A 后无卡死打印） |
+| 0x200A A 路径切换（同步死锁根因消除） | ✅ 命令入队+coex 钩子跑 |
+| writeLightMarker recL+2（98BC/F800）+phase=3 调用 | ✅ 在树（post-send flash 写被楔，改 LP 通道） |
+| LP 远槽 0x600-60C（post-send 98BC first/last/F800） | ✅ 在树（等 RTC WDT 咬后下 boot 读） |
+| ULP keeper：RTC latch 触发 + RC_SLOW 压回（104B） | ✅ 在树 |
+| MWDT1 keeper：hang_arm 短 hold 分支 | ✅ 在树（0x2080 块时钟被门控 ⇒ 未咬） |
+
+### 下 session 方向（修正后）
+blob ADV-enable 的时钟门控**决策输入** = 它的 sleep/clock 配置对象（sleep_en、
+cfg.ble bytes 10-11 等）。oracle 同路径不门控 ⇒ **配置对照**：
+1. dump 我们的 sleep_en 对象（0x2f011044 系 96B）与 oracle 对拍（字段级）；
+2. 特别看 sleep_en / rtc_freq / lpclk 源选择——blob 由此决定 ADV-enable 期间
+   门控哪些时钟域；
+3. 改我们的配置使 blob 不门控（或门控后有时间源幸存）⇒ ADV-enable 正常返回。

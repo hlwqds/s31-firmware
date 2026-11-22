@@ -731,6 +731,18 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
     }
     const q = qByAddr(@intFromPtr(qslot)).?;
     const eaddr = @intFromPtr(eslot);
+    // **轮 96 满队列腐蚀修复**：原实现满时 tail 覆写 buf[head] 且 count 越界
+    // ⇒ 索引腐蚀 ⇒ 泵出队取到垃圾指针 ⇒ event_run 跳野指针 ⇒ 全观测通道
+    // 连坐死亡（0x200A 后全黑的真根因）。改 FreeRTOS 语义：满 ⇒ 丢弃计数。
+    if (q.count >= q.buf.len) {
+        stats_state.eventq_put += 1;
+        stats_state.raw_q_dropped +%= 1;
+        if (q.waiter) |w| {
+            q.waiter = null;
+            sched.resumeTask(w);
+        }
+        return;
+    }
     unlinkAddrIfQueued(q, eaddr);
     const tail = (q.head + q.count) % q.buf.len;
     q.buf[tail] = eaddr;

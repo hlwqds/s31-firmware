@@ -1295,7 +1295,11 @@ pub fn run() noreturn {
             const pc1: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0384)).*;
             const nmic: u32 = board.trap.nmi_count;
             const h600: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0600)).*;
-            board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d} h600=0x{x:0>8}", .{ pc0, pc1, nmic, h600 });
+            const h604: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0604)).*;
+            const h608: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0608)).*;
+            const h60c: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_060C)).*;
+            board.log.line("PREVHANG pc0=0x{x:0>8} pc1=0x{x:0>8} nmi_this={d} h600={x:0>8}", .{ pc0, pc1, nmic, h600 });
+            board.log.line("ADVRES magic={x:0>8} first={x:0>8} last={x:0>8}", .{ h604, h608, h60c });
             // **轮 95**：LP PC 环 dump（0x2E0003A0，32 项——上一轮挂死 boot 的
             // NMI 每 2ms 采样序列）⇒ 挂死自旋 PC 直接可见
             {
@@ -1722,8 +1726,12 @@ pub fn run() noreturn {
         // 代触发 ⇒ controller 等待环时间前进 ⇒ 超时正常返回（oracle 行为）。
         // 尾 c.j 重编码为 jal（loop 头移位）。
         0x37, 0x1e, 0x80, 0x20, 0xb7, 0x4e, 0xd8, 0x50, 0x93, 0x8e, 0x1e, 0xaa, 0x37, 0x1f, 0x01, 0xa0, 0x13, 0x0f, 0x0f, 0x80, 0xb7, 0x3f, 0xf0, 0x02, 0x93, 0x8f, 0x0f, 0xf4, 0xb7, 0x8d, 0x1e, 0x00, 0x93, 0x8d, 0x0d, 0x48,
-        0x37, 0x03, 0x00, 0x08, 0x23, 0x28, 0x7f, 0x00, 0x23, 0x2c, 0xde, 0x01, 0x23, 0x20, 0xde, 0x03, 0x23, 0x20, 0xee, 0x01, 0x23, 0x22, 0xfe, 0x01, 0x23, 0x2c, 0x0e, 0x00, 0x23, 0x20, 0x0e, 0x02, 0x01, 0x4d, 0x05, 0x0d,
-        0xe3, 0x1f, 0xbd, 0xff, 0x6f, 0xf0, 0xbf, 0xfe,
+        0x37, 0x03, 0x00, 0x08, 0x23, 0x28, 0x7f, 0x00,
+        // **轮 96**：RC_SLOW 源压回（lw t1,0(t2); andi t1,t1,~0x700; sw 回写
+        // ——ROOT_CLK_CONF bits[25:23] 清零 ⇒ RC_SLOW 片内源钉死。blob ADV-enable
+        // 切源到未焊 32k ⇒ RTC 域同死 ⇒ 20s 兜底失效；ULP 每周期压回。）
+        0x37, 0x13, 0x70, 0x20, 0x03, 0xa3, 0x00, 0x00, 0xb7, 0x03, 0x80, 0x03, 0x33, 0x73, 0x53, 0x00, 0x23, 0xd0, 0x31, 0x00, 0x23, 0x2c, 0xde, 0x01, 0x23, 0x20, 0xde, 0x03,
+        0x23, 0x20, 0xee, 0x01, 0x23, 0x22, 0xfe, 0x01, 0x23, 0x2c, 0x0e, 0x00, 0x23, 0x20, 0x0e, 0x02, 0x01, 0x4d, 0x05, 0x0d, 0xe3, 0x1f, 0xbd, 0xff, 0x6f, 0xf0, 0xbf, 0xfe,
     };
     for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E001000 + i)).* = b;
     @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E001000; // LP_SYS boot addr
@@ -2371,10 +2379,36 @@ pub fn run() noreturn {
             // = 同步死锁。A 路径入队 ⇒ controller task 在自己上下文处理 ⇒
             // 内部等待可满足（基础命令 A 路径已证通：A(rx) sendReadVersion）。
             ra2 = transport.sendCmd(0x200A, &ae);
-            // **轮 94-final**：writeLightMarker 通道落盘（CLIC[25] 门+flashOpBegin
-            // 齐备；此前裸 eseM/eswM 无门护 = XIP 锁死根因）。
-            // recL[8]=98BC、recL[9]=F800、phase=3=post-ADV-enable。
-            writeLightMarker(3);
+            // **轮 96**：post-send 观测全走非 ROM 通道——0x200A 后 blob 楔死
+            // ROM 的 flash-erase 等待与 esp_rom_delay_us（SYS_TIMER 时钟被门控）。
+            // mcycle 忙等轮询 98BC 15s，首/末值 + F800 写远处 LP 槽
+            // （0x2E000600 系，RTC WDT 20s 数字复位后下 boot PREVHANG 读出）。
+            {
+                board.hw.armRtcWdt(true, 2_740_000); // ≈20s @137kHz（现成封装）
+                const lp600: *volatile u32 = @ptrFromInt(0x2E00_0600);
+                const lp604: *volatile u32 = @ptrFromInt(0x2E00_0604);
+                const lp608: *volatile u32 = @ptrFromInt(0x2E00_0608);
+                const lp60c: *volatile u32 = @ptrFromInt(0x2E00_060C);
+                lp604.* = 0x5A5A_0001; // "96 轮询数据" magic
+                const s_first: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+                var t: u32 = 0;
+                var s_last: u32 = s_first;
+                var f_last: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+                // mcycle 忙等 15s，分片轮询
+                while (t < 150) : (t += 1) {
+                    var spin: u32 = 0;
+                    while (spin < 1_000_000) : (spin += 1) {
+                        asm volatile ("nop");
+                    }
+                    s_last = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+                    f_last = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+                    if (t == 0) lp600.* = s_last;
+                }
+                lp604.* = 0x5A5A_0002;
+                lp608.* = s_first;
+                lp60c.* = s_last;
+                lp600.* = f_last;
+            }
         } else {
             board.log.line("F3 SKIP rfready=0", .{});
             // **轮 87**：osal 修复后的 RF 墙基线重测（轮 51-56 分析先于 osal 重写）。
