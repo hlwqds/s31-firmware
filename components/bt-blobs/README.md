@@ -30842,3 +30842,23 @@ SYS_TIMER 时钟门控位定位（HP_SYS_CLKRST 里 0x2080 块的 gate 位——
 系已观测但未对应到位）⇒ NMI（若 T0 死则 ULP）每 tick 强制置位 ⇒ SYS_TIMER
 活 ⇒ esp_rom_delay_us 正常 ⇒ 全链解锁。或 post-send 零 ROM 依赖路线继续
 （裸 SPI 直写 flash 记录）。
+
+---
+
+## 🐛 轮 107 定案：主上下文"ULP 节奏爬行"模式（2026-11-23）
+
+190s 长窗：单 boot，主上下文以 **ULP 唤醒节奏（0.25s/ROM 延迟）缓慢爬行**——
+每个打印/延迟楔入 ROM 环，ULP 的 SYSTIMER_CTRL0|=0x11 + latch 周期性解锁让它
+推进一步，下一个打印立刻再楔。evt 停 8，radio 未广播（60s+ 扫描）。
+
+### 机制终版
+ADV-enable 门控 UART0/SYS_TIMER 后，**一切输出与延迟原语都变成 0.25s/步的慢动作**。
+修复必须**在发送前静默所有输出**（含 osal.logPublic 的 UART 路径）并**禁用一切
+ROM 延迟调用**（post-send 只允许 mcycle 忙等与 MMIO 直写）。
+
+### 轮 107-final 清单（下 session 一次性落地）
+1. log hook 加 muted 门控（logPublic 的 "bt " 行也停）
+2. transport sendCmd/recv 的 logPublic 调用点加 muted 检查
+3. post-send 禁 writeLightMarker（已删 ✓ 保持）
+4. ADVRES mcycle 块前移至 send 后立即（已有 ✓）——但注意其输出靠下 boot LP 读
+5. esp_rom_delay_us 的所有调用点（POLL delayUs 已改 mcycle ✓）
