@@ -28612,6 +28612,11 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. 判读：`esptool read-flash 0x18E000 1536 /tmp/mark22.bin` → 三段哈希 vs 官方（SCHED `0x458cae30/37`）→ 轮 19 终审。
 - **轮 19 后离线分析（事件投递链追踪）**：`ble_hci_trans_env_p`(0x2f010ffc) 访问仅在 `r_ble_hci_trans_cfg_hs/cfg_ll/env_init/env_deinit` 注册函数中出现（0x400598xx-0x400599xx）。**callback 调用方不通过 env_p 寻址**（使用 blob 内部副本或参数传递）⇒ 静态分析无法定位 leEvtTx 调用点 ⇒ **需要 mcontrol6 板上断点**（leEvtTx 入口 0x2f014550 或 env+24 间接调用点）才能追踪 Complete→leEvtTx 的投递链断点。**下一 session 首项** = mcontrol6 断点在 leEvtTx 入口，一次板跑即断点计数 5 vs 1 的投递链差距。
 - **轮 22b：F83C bit28 对齐官方值实验——未破墙**（probe=0x12411290 → 0x02411290 镜像官方后 ready 仍 0x0）。
+- **轮 33 追加事实（同日二次命中，地址重定位一致性）**：
+  1. flag 地址随构建移位（0x2f010e80→0x2f010f00，轮 30 符号化教训落实）后**观察点立刻再次命中**——写者 PC = 0x0aa638eb（另一别名窗 0x0a），偏移 0xa638eb 与此前命中（0xa638e3/0xa638e6）同区微移。
+  2. **写者跟随 flag 的重定位地址** ⇒ 写者持有的是**重定位正确**的 flag 指针（= 我们自己链接的 phy 胶水代码 phy_init.c.obj 的合法 `s_is_phy_calibrated` 写！），但**执行发生在别名窗 PC** ⇒ 有人经**别名地址的函数指针**跳进了 phy 代码。
+  3. **谁持别名函数指针**：候选 = porting 注册表（g_phyFuns/ext_funcs 表项被别名地址污染）、或 phy 代码内的间接调用表被 bss 头部踩踏波及。抓法（下轮）：快路径加 sp 向上 ra 链扫描（LP 记 8 层）→ 别名跳转的**上游调用者**现形；或对 `wp_hit_ra` 的候选存储区做 STORE 观察点（谁写入了别名指针）。
+  - build.zig 输入顺序调整（closure-first）**暂缓**：先抓别名指针的宿主，避免多变量同时动。
 - **🏁 轮 33（2026-11-22）：踩踏者现形——`__floatuneixf` 序言 + 坏栈指针**：
   1. 观察点瞄准修正后的 flag 地址（0x2f010f00，本构建 nm 实测；轮 30 的教训=地址必须随构建 nm 重取）→ **单次干净命中**（tselect=0 显式解除修复生效，无级联）。
   2. **写者 PC = 0x400a63eb = `__floatuneixf` 序言的 sp 相对保存指令**（compiler_rt 整数→f80 软浮点转换——**浮点格式化打印路径**！）；反推 **sp ≈ 0x2f010eb4**（sp+72 = flag）——**该栈地址在 bss 跨度内，无任何合法栈居住**。
