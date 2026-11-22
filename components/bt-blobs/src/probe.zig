@@ -853,7 +853,10 @@ fn writeLightMarker(phase: u32) void {
     const oL = @import("osal_kit").osal.stats();
     @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
     const cntL: u32 = @as(*volatile u32, @ptrFromInt(0x2080_001C)).*;
-    var recL: [8]u32 = .{
+    // **轮 94-final**：+2 字 = 98BC / F800（ADV-enable 结果离线判据）
+    const post98: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+    const postf8: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F800)).*;
+    var recL: [10]u32 = .{
         0xADC0_BBF4,
         cntL,
         stL.evt_count,
@@ -862,6 +865,8 @@ fn writeLightMarker(phase: u32) void {
         oL.eventq_get_ok,
         @intFromPtr(&cfg.btdm),
         phase,
+        post98,
+        postf8,
     };
     const clicL: usize = 0x1080_1000 + 25 * 4;
     const gL: u32 = @as(*volatile u32, @ptrFromInt(clicL)).*;
@@ -2379,6 +2384,9 @@ pub fn run() noreturn {
             // = 同步死锁。A 路径入队 ⇒ controller task 在自己上下文处理 ⇒
             // 内部等待可满足（基础命令 A 路径已证通：A(rx) sendReadVersion）。
             ra2 = transport.sendCmd(0x200A, &ae);
+            // **轮 94-final**：writeLightMarker(3)=post-ADV-enable；recL[8]=98BC、
+            // recL[9]=F800（CLIC[25] 门+flashOpBegin 通道齐备）
+            writeLightMarker(3);
             // **轮 96**：post-send 观测全走非 ROM 通道——0x200A 后 blob 楔死
             // ROM 的 flash-erase 等待与 esp_rom_delay_us（SYS_TIMER 时钟被门控）。
             // mcycle 忙等轮询 98BC 15s，首/末值 + F800 写远处 LP 槽

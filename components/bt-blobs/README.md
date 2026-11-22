@@ -30604,3 +30604,28 @@ cfg.ble bytes 10-11 等）。oracle 同路径不门控 ⇒ **配置对照**：
 2. 特别看 sleep_en / rtc_freq / lpclk 源选择——blob 由此决定 ADV-enable 期间
    门控哪些时钟域；
 3. 改我们的配置使 blob 不门控（或门控后有时间源幸存）⇒ ADV-enable 正常返回。
+
+---
+
+## 🏆 轮 97：F800 bit24 首次武装成功（RF-ON 命令入列！2026-11-23）
+
+### 关键读数（离线 marker，完整编辑集构建）
+```text
+recL = {magic, tick 0x0e1cde, evt=8, cmds=10(含 0x200A), put=9, get=9,
+        cfg, phase=1(pre-forward), 98BC=0x00000000, F800=0x012f0669}
+```
+**F800 = 0x012f0669 = oracle 值精确一致（bit24 RF-ON 命令已武装进 I2C master 命令内存）！**
+
+### 机理（为什么现在才通）
+此前 F800 bit24 恒 0 的原因 = blob ADV-enable 处理途中的自身打印楔死在
+ROM UART 排空环（UART0 被 blob 自己门控）⇒ 处理流程根本走不到 RF-ON 武装。
+BT_LOG_SILENT + 全通道 mute 移除楔点 ⇒ 处理推进到 RF-ON 武装 ✓。
+
+### 当前挂点（最后一个）
+ADV-enable 处理内部（RF-wait 段）仍阻塞（writeLightMarker(3) phase=3 未落）。
+RTC WDT 20s 兜底未咬（RC_SLOW 压回已加，效应待更多窗口观察）。
+
+### 轮 98 候选
+1. 延长 capture 至 3min（RTC WDT/兜底若咬，boot2 PREVHANG 将带 LP 数据）
+2. 主机 BLE 扫描贯穿 boot→0x200A→挂死窗口（RF-ON 已武装，广播可能瞬态出现）
+3. blob 内 RF-wait 环解码（从 FJxPPD OCF=10 handler 顺调用链）
