@@ -1710,6 +1710,12 @@ pub fn run() noreturn {
                 "bt probe: env hdr 0x{x:0>8}: +0={x:0>8} +4={x:0>8} +8={x:0>8} +12={x:0>8} +16={x:0>8} +20={x:0>8}",
                 .{ evp2, w0, w4, w8, w12, w16, w20 },
             );
+            // **轮 82**：state+4 读数（hiASs 状态机检查的字段）——env+4 子对象的 +4 偏移
+            const mptr: usize = @as(*volatile usize, @ptrFromInt(evp2 + 4)).*;
+            if (mptr >= 0x2f00_0000 and mptr < 0x2f90_0000 and mptr % 4 == 0) {
+                const state4: u32 = @as(*volatile u32, @ptrFromInt(mptr + 4)).*;
+                board.log.line("bt probe: state_obj={x:0>8} state+4={x:0>8}", .{ mptr, state4 });
+            }
         } else {
             osal.logPublic("bt probe: env hdr ptr oob=0x{x:0>8}", .{evp2});
         }
