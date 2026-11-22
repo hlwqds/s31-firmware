@@ -536,8 +536,10 @@ pub const Event = struct {
 };
 
 pub const EventQ = struct {
-    head: ?*Event = null,
-    tail: ?*Event = null,
+    /// **轮 64**：容器地址 FIFO（blob 内存零依赖——所有权冲突终修）。
+    buf: [64]usize = undefined,
+    head: usize = 0,
+    count: usize = 0,
     in_use: bool = false,
     /// 等事件的任务上下文。
     waiter: ?*sched.Context = null,
@@ -545,6 +547,83 @@ pub const EventQ = struct {
 
 var event_pool: Pool(Event, 384) = .{};
 var eventq_pool: Pool(EventQ, 96) = .{};
+
+// ---------------------------------------------------------------------------
+// **轮 64：地址键控带外映射（所有权冲突终修）**
+// env+12 等容器 = blob 自由读写区（blob 会把自己的状态字段——如当前 opcode——
+// 写进去，轮 63b 实测覆写我们 Slot.p=0xc03 ⇒ 分发器查址崩）。事件/队列状态
+// 全部迁出 blob 内存：键 = 容器地址（blob 传给 wr_ 包装的指针原样），值 =
+// 我们池对象。blob 想写容器随意，我们的事件函数只认地址映射。
+// ---------------------------------------------------------------------------
+const EvAddrEnt = struct { addr: usize = 0, e: ?*Event = null };
+var ev_addr_map: [64]EvAddrEnt = @splat(.{});
+
+fn evByAddr(addr: usize) ?*Event {
+    for (&ev_addr_map) |*m| {
+        if (m.addr == addr) return m.e;
+    }
+    return null;
+}
+
+/// **轮 64b**：事件解析双路——container.p 若指向本池合法事件则优先（官方
+/// 契约路径），否则回退地址侧表（blob 状态写覆写 container.p 时的兜底）。
+fn evFromSlot(slot: *Slot) ?*Event {
+    const p = slot.p orelse return evByAddr(@intFromPtr(slot));
+    const cand: *Event = @ptrCast(@alignCast(p));
+    // 池所有权校验：指针须落在 event_pool 数组范围内且对齐
+    const base = @intFromPtr(&event_pool.records);
+    const ok = @intFromPtr(cand) >= base and @intFromPtr(cand) < base + event_pool.records.len * @sizeOf(Event);
+    if (ok and @intFromPtr(cand) % @alignOf(Event) == 0) return cand;
+    return evByAddr(@intFromPtr(slot));
+}
+
+fn evByAddrSet(addr: usize, e: ?*Event) void {
+    for (&ev_addr_map) |*m| {
+        if (m.addr == addr) {
+            m.e = e;
+            if (e == null) m.addr = 0; // 解绑释放键位
+            return;
+        }
+    }
+    if (e) |ev| {
+        for (&ev_addr_map) |*m| {
+            if (m.addr == 0) {
+                m.addr = addr;
+                m.e = ev;
+                return;
+            }
+        }
+    }
+}
+
+const QAddrEnt = struct { addr: usize = 0, q: ?*EventQ = null };
+var q_addr_map: [16]QAddrEnt = @splat(.{});
+
+fn qByAddr(addr: usize) ?*EventQ {
+    for (&q_addr_map) |*m| {
+        if (m.addr == addr) return m.q;
+    }
+    return null;
+}
+
+fn qByAddrSet(addr: usize, q: ?*EventQ) void {
+    for (&q_addr_map) |*m| {
+        if (m.addr == addr) {
+            m.q = q;
+            if (q == null) m.addr = 0;
+            return;
+        }
+    }
+    if (q) |qq| {
+        for (&q_addr_map) |*m| {
+            if (m.addr == 0) {
+                m.addr = addr;
+                m.q = qq;
+                return;
+            }
+        }
+    }
+}
 
 // **裸指针 FIFO**（2026-11-21）：HCI 注入路径投递裸 mempool 缓冲（非注册
 // Event 槽）。.bss 静态区——池外 ⇒ arena 布局零漂移（Event 加字段曾触发
@@ -578,57 +657,61 @@ pub fn eventqInit(slot: *Slot) void {
     trace("eventqInit", .{});
     evq_init_n += 1;
     if (on_eventq_init) |f| f(evq_init_n);
-    // 槽位已有状态就**复用**（IDF 的语义是 memblock 已属于本池就复用）——
-    // 否则对同一槽位二次 init 会白漏一个池记录。
-    if (slotGet(EventQ, slot)) |q| {
+    // **轮 64**：键 = 容器地址。已有绑定就复用。
+    const addr = @intFromPtr(slot);
+    if (qByAddr(addr)) |q| {
         q.* = .{ .in_use = true };
         return;
     }
     const q = eventq_pool.take() orelse return;
-    slotSet(EventQ, slot, q);
+    qByAddrSet(addr, q);
 }
 
 pub fn eventqDeinit(slot: *Slot) void {
-    const q = slotGet(EventQ, slot) orelse return;
+    const addr = @intFromPtr(slot);
+    const q = qByAddr(addr) orelse return;
     eventq_pool.give(q);
-    slot.p = null;
+    qByAddrSet(addr, null);
 }
 
 pub fn eventqIsEmpty(slot: *const Slot) bool {
-    const q = slotGet(EventQ, @constCast(slot)) orelse return true;
-    return q.head == null;
+    const q = qByAddr(@intFromPtr(slot)) orelse return true;
+    return q.count == 0;
 }
 
 /// 入队前先把"已在队列里"的那个摘掉——否则旧前驱的 `next` 仍指向它，
 /// 同一个事件在链表里出现两次 ⇒ `eventqGet`/`eventqRemove` 遍历成环**死循环**。
 /// IDF 那边是 FreeRTOS 队列（存指针、允许重复入队），controller 完全可能重复 put。
-fn unlinkIfQueued(q: *EventQ, e: *Event) void {
-    if (!e.queued) return;
-    var prev: ?*Event = null;
-    var cur = q.head;
-    while (cur) |c| {
-        if (c == e) {
-            if (prev) |pr| pr.next = c.next else q.head = c.next;
-            if (q.tail == c) q.tail = prev;
-            c.next = null;
-            c.queued = false;
+/// **轮 64 地址版**：把已标记 queued 的容器地址从队列环形缓冲里摘除。
+fn unlinkAddrIfQueued(q: *EventQ, addr: usize) void {
+    // **官方语义**：未 queued 的事件 put = 首次入队，不触发 requeued 计数
+    if (evByAddr(addr)) |e| {
+        if (!e.queued) return;
+    }
+    var k: usize = 0;
+    while (k < q.count) : (k += 1) {
+        const idx = (q.head + k) % q.buf.len;
+        if (q.buf[idx] == addr) {
+            // 挤掉：idx 到最后占用槽之间的元素整体前移一位
+            const last = (q.head + q.count - 1) % q.buf.len;
+            var j = idx;
+            while (j != last) : (j = (j + 1) % q.buf.len) {
+                q.buf[j] = q.buf[(j + 1) % q.buf.len];
+            }
+            q.count -= 1;
+            if (evByAddr(addr)) |e| e.queued = false;
             stats_state.eventq_requeued += 1;
             return;
         }
-        prev = c;
-        cur = c.next;
     }
-    // 标着 queued 但不在本队列里（跨队列移动）——只清标志，避免永久卡住。
-    e.queued = false;
-    e.next = null;
+    if (evByAddr(addr)) |e| e.queued = false;
     stats_state.eventq_requeued += 1;
 }
 
 pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
     // **未注册队列直通（2026-11-21）**：hci_trans ctx+12 队列未经 eventqInit
-    // （blob 唯一 init 点是 OkE7 的 env+8）⇒ slotGet 必失败 ⇒ 裸 pkt 落 RawQ
-    // 并唤醒驻停任务（task park 于 eventqGet 的 FOREVER 分支时登记 raw_waiter）。
-    if (slotGet(EventQ, qslot) == null or slotGet(Event, eslot) == null) {
+    // ⇒ 裸 pkt 落 RawQ 并唤醒驻停任务。**RawQ 优先语义保留（重构红线）**。
+    if (qByAddr(@intFromPtr(qslot)) == null or evByAddr(@intFromPtr(eslot)) == null) {
         _ = rawEnqueue(@intFromPtr(eslot));
         stats_state.eventq_put += 1;
         if (raw_waiter) |w| {
@@ -637,17 +720,13 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
         }
         return;
     }
-    const q = slotGet(EventQ, qslot).?;
-    const e = slotGet(Event, eslot).?;
-    unlinkIfQueued(q, e);
-    e.next = null;
-    e.queued = true;
-    if (q.tail) |t| {
-        t.next = e;
-    } else {
-        q.head = e;
-    }
-    q.tail = e;
+    const q = qByAddr(@intFromPtr(qslot)).?;
+    const eaddr = @intFromPtr(eslot);
+    unlinkAddrIfQueued(q, eaddr);
+    const tail = (q.head + q.count) % q.buf.len;
+    q.buf[tail] = eaddr;
+    q.count += 1;
+    if (evByAddr(eaddr)) |e| e.queued = true;
     stats_state.eventq_put += 1;
     if (q.waiter) |w| {
         q.waiter = null;
@@ -656,9 +735,10 @@ pub fn eventqPut(qslot: *Slot, eslot: *Slot) void {
 }
 
 pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
-    const q = slotGet(EventQ, qslot) orelse return;
-    if (slotGet(Event, eslot) == null) {
-        _ = rawEnqueue(@intFromPtr(eslot));
+    const q = qByAddr(@intFromPtr(qslot)) orelse return;
+    const eaddr = @intFromPtr(eslot);
+    if (evByAddr(eaddr) == null) {
+        _ = rawEnqueue(eaddr);
         stats_state.eventq_put += 1;
         if (q.waiter) |w| {
             q.waiter = null;
@@ -666,17 +746,16 @@ pub fn eventqPutToFront(qslot: *Slot, eslot: *Slot) void {
         }
         return;
     }
-    const e = slotGet(Event, eslot).?;
-    unlinkIfQueued(q, e);
-    e.next = q.head;
-    e.queued = true;
-    q.head = e;
-    if (q.tail == null) q.tail = e;
+    unlinkAddrIfQueued(q, eaddr);
+    q.head = (q.head + q.buf.len - 1) % q.buf.len;
+    q.buf[q.head] = eaddr;
+    q.count += 1;
+    if (evByAddr(eaddr)) |e| e.queued = true;
     stats_state.eventq_put += 1;
 }
 
 pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
-    const q = slotGet(EventQ, qslot) orelse return null;
+    const q = qByAddr(@intFromPtr(qslot)) orelse return null;
     while (true) {
         // **RawQ 优先**：HCI 注入的裸事件先于常规队列出队（原指针原样返回）。
         if (rawDequeue()) |ptr| {
@@ -684,12 +763,12 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
             stats_state.eventq_get_ok += 1;
             return @ptrFromInt(ptr);
         }
-        if (q.head != null) break;
+        if (q.count != 0) break;
         if (timeout == forever and !sched.isStarted()) {
             var spins: u32 = 0;
-            while (q.head == null and spins < 2_000_000) : (spins += 1) std.atomic.spinLoopHint();
+            while (q.count == 0 and spins < 2_000_000) : (spins += 1) std.atomic.spinLoopHint();
             stats_state.blocked_calls += 1;
-            if (q.head == null) {
+            if (q.count == 0) {
                 stats_state.eventq_get_empty += 1;
                 return null;
             }
@@ -713,21 +792,20 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
             stats_state.cooperative_yields += 1;
             sched.block();
             // 回来后重新检查队列（可能期间已有事件）
-            if (q.head != null) break;
+            if (q.count != 0) break;
         }
         if (timeout != 0) stats_state.blocked_calls += 1;
         stats_state.eventq_get_empty += 1;
         return null;
     }
-    if (q.head) |e| {
-        q.head = e.next;
-        if (q.head == null) q.tail = null;
-        e.next = null;
-        e.queued = false;
+    if (q.count != 0) {
+        const addr = q.buf[q.head];
+        q.head = (q.head + 1) % q.buf.len;
+        q.count -= 1;
+        if (evByAddr(addr)) |e| e.queued = false;
         stats_state.eventq_get_ok += 1;
-        // C 侧 `eventq_get` 返回的是 `struct btdm_osal_event *`——即**槽位指针**，
-        // 所以状态对象必须能反查回它的槽位。
-        return e.slot;
+        // C 侧 `eventq_get` 返回的是 `struct btdm_osal_event *`——即容器指针原样。
+        return @ptrFromInt(addr);
     }
     if (timeout != 0) stats_state.blocked_calls += 1;
     stats_state.eventq_get_empty += 1;
@@ -735,21 +813,8 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
 }
 
 pub fn eventqRemove(qslot: *Slot, eslot: *Slot) void {
-    const q = slotGet(EventQ, qslot) orelse return;
-    const target = slotGet(Event, eslot) orelse return;
-    var prev: ?*Event = null;
-    var cur = q.head;
-    while (cur) |c| {
-        if (c == target) {
-            if (prev) |p| p.next = c.next else q.head = c.next;
-            if (q.tail == c) q.tail = prev;
-            c.next = null;
-            c.queued = false;
-            return;
-        }
-        prev = c;
-        cur = c.next;
-    }
+    const q = qByAddr(@intFromPtr(qslot)) orelse return;
+    unlinkAddrIfQueued(q, @intFromPtr(eslot));
 }
 
 /// 事件初始化回调（**运行期槽**，零链接耦合；bt-blobs 侧可挂调试钩子）。
@@ -785,23 +850,29 @@ pub fn eventInit(slot: *Slot, fn_: ?*const fn (?*anyopaque) callconv(.c) void, a
         // **轮 63**：三参钩子——probe 侧在目标槽 init 的瞬间就地武装观察点
         if (on_event_init3) |f| f(last_event_init[k][0], last_event_init[k][1], last_event_init[k][2]);
     }
-    // 槽位里可能已经有状态（重复 init）——复用，否则新建。
-    const e = slotGet(Event, slot) orelse blk: {
+    // **轮 64**：键 = 容器地址（blob 内存不再承载我们的绑定——所有权冲突终修）
+    const addr = @intFromPtr(slot);
+    const e = evByAddr(addr) orelse blk: {
         const fresh = event_pool.take() orelse {
             trace("eventInit< FAILED (pool exhausted)", .{});
             return;
         };
-        slotSet(Event, slot, fresh);
+        evByAddrSet(addr, fresh);
         break :blk fresh;
     };
     e.fn_ = fn_;
     e.arg = arg;
-    e.slot = slot;
+    // **轮 64b：承重写恢复**——官方契约：osal_event_init 必须写 container.event =
+    // 实现句柄（blob 读它做非空校验/使用；round 63b 的 side-table 版漏了这写
+    // ⇒ blob 读 NULL ⇒ step 6 崩）。
+    slot.p = @ptrCast(e);
 }
 
 pub fn eventDeinit(slot: *Slot) void {
-    const e = slotGet(Event, slot) orelse return;
+    const addr = @intFromPtr(slot);
+    const e = evFromSlot(slot) orelse return;
     event_pool.give(e);
+    evByAddrSet(addr, null);
     slot.p = null;
 }
 
@@ -831,7 +902,7 @@ fn bumpEvtCounter(f: *const fn (?*anyopaque) callconv(.c) void) void {
 
 pub fn eventRun(slot: *Slot) void {
     trace("eventRun", .{});
-    const e = slotGet(Event, slot) orelse {
+    const e = evFromSlot(slot) orelse {
         stats_state.event_run_no_slot += 1;
         return;
     };
@@ -843,22 +914,22 @@ pub fn eventRun(slot: *Slot) void {
 }
 
 pub fn eventIsQueued(slot: *const Slot) bool {
-    const e = slotGet(Event, @constCast(slot)) orelse return false;
+    const e = evFromSlot(@constCast(slot)) orelse return false;
     return e.queued;
 }
 
 pub fn eventGetArg(slot: *Slot) ?*anyopaque {
-    const e = slotGet(Event, slot) orelse return null;
+    const e = evFromSlot(slot) orelse return null;
     return e.arg;
 }
 
 pub fn eventSetArg(slot: *Slot, arg: ?*anyopaque) void {
-    const e = slotGet(Event, slot) orelse return;
+    const e = evFromSlot(slot) orelse return;
     e.arg = arg;
 }
 
 pub fn eventReset(slot: *Slot) void {
-    const e = slotGet(Event, slot) orelse return;
+    const e = evFromSlot(slot) orelse return;
     // **轮 59 根修**：官方 FreeRTOS 版 = `event->queued = 0;`（仅此一行）——
     // fn_/arg 全保留。此前我们连 fn_ 一起清 ⇒ LL 命令事件回调丢失 ⇒ 命令消费
     // 后无声消失（evt 冻结真因）。

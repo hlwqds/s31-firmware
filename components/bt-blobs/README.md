@@ -29274,3 +29274,25 @@ lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc0
 - **重构回归红线**：eventqGet 的 **RawQ 优先语义必须保留**（裸事件先于常规队列出队——0x200A 的时序依赖它）
 - 判据：wr5a + HCI Reset 不崩 + CC 回流（evt 破 2）→ rfready → ADV
 - （备注：transport 的 sendCmdViaHs 已实证遵循 NimBLE 契约——buf_alloc + H4 格式化；崩溃签名 0xc03 来自 blob 自身状态写，非我方契约违背）
+
+---
+
+## ⚙ 轮 64：osal 事件层地址键控重构落地 + 新前沿（2026-11-22 深夜）
+
+### 重构完成（130/130 host 测试绿）
+- Event/EventQ 状态全部迁出 blob 内存（地址键控带外映射 `evByAddr/qByAddr`）
+- 队列改容器地址环形 FIFO（复制 RawQ 先例）；RawQ 优先语义保留 ✓
+- eventReset 官方语义保留 ✓；eventInit 写回 container.p（承重写恢复 ✓）+ evFromSlot 双路解析（container.p 池合法优先 / 地址侧表兜底）
+
+### 新前沿：step 6 池构建循环 NULL load
+- 崩点：`mepc=0x400613b8`（gvLJK4 函数 .L3 自由链表构建循环）、`ra=0x40061c2e`（调用者遍历 a5=*(s0) 后 lw 16/20(a5)）
+- **arena 分配点漂移**：轮 45 stub @0x2f0243d0 → 本轮 @0x2f02a910（我们 osal 侧表扩容推挤 heapStart）
+- 池构建循环从地址 0 load ⇒ 池区某节点内容 = 0 被当指针
+- 自引用填充 / handle 回写均未消解 ⇒ NULL 不是经 stub 链来的
+
+### 轮 65 首项
+1. 对拍 arena 布局：旧（0x2f0243d0 时代）vs 新（0x2f02a910）——heapStart 位移 +0x6540 的来源（我们的 osal bss 增量清单）
+2. 反汇编 gvLJK4 .L3 循环头（0x40061376-0x400613b8）：确认 NULL load 的基址寄存器与偏移
+3. 假设：池 init 依赖 arena 起点/对齐（blob 假设池区紧跟某结构）——位移后叠到未初始化区
+   ⇒ 修法 = arena 预留/对齐补偿（把我们的增量 bss 挪出 heapStart 之前），或 probe 里 heapStart 前
+   预填池头结构

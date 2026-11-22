@@ -1012,12 +1012,16 @@ pub fn run() noreturn {
             osal.logPublic("bt probe: FATAL sleep env malloc failed", .{});
             halt();
         };
-        // 清零
-        const bytes: [*]u8 = @ptrCast(stub);
-        @memset(bytes[0..256], 0);
+        // **轮 64：全字自引用填充**——stub 256B 全部填自身地址：任何指针字段
+        // 解引用都落在合法 RAM（stub 内零值），NULL/野指针链全部消解。
+        // （此前 undefined 垃圾 + 单点自引用在 osal 布局漂移后失效——step 6
+        // sleep env 链读 NULL 崩，side64.log 实录。）
         const stub_base: usize = @intFromPtr(stub);
-        // 自引用：offset 12 = stub 自身地址 → 嵌套解引用不越界
-        @as(*volatile u32, @ptrFromInt(stub_base + 12)).* = @truncate(stub_base);
+        const word: u32 = @truncate(stub_base);
+        var wi: usize = 0;
+        while (wi < 64) : (wi += 1) {
+            @as(*volatile u32, @ptrFromInt(stub_base + wi * 4)).* = word;
+        }
         // 发布到槽
         const sleep_env_slot: *volatile u32 = @ptrFromInt(0x2f01_1134);
         sleep_env_slot.* = @truncate(stub_base);
