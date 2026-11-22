@@ -30862,3 +30862,21 @@ ROM 延迟调用**（post-send 只允许 mcycle 忙等与 MMIO 直写）。
 3. post-send 禁 writeLightMarker（已删 ✓ 保持）
 4. ADVRES mcycle 块前移至 send 后立即（已有 ✓）——但注意其输出靠下 boot LP 读
 5. esp_rom_delay_us 的所有调用点（POLL delayUs 已改 mcycle ✓）
+
+---
+
+## ⚠ 轮 108 待解疑点：RTC WDT 计数器/阈值互作（2026-11-23 观测矛盾记录）
+
+CLLKCHK 实测 SYS_TIMER 活 @2MHz（0x2080001C），但 RTC WDT（0x20801000 块，
+计数钟 RC_SLOW 137kHz）20s hold 未咬（90s 无 rst）。矛盾候选：
+1. armRtcWdt(cycles) 的 cycles 参数实际单位/基准与假设不符（需读实现里
+   CONFIG1 写前后的计数器寄存器互作）；
+2. blob ADV-enable 对 RTC WDT 的处置 = WPROTECT 锁 + CONFIG0 EN=0（ULP
+   CONFIG1 写在锁下静默失败——ULP 写 0x20801004 落地 ✓ 但 CONFIG0 在锁内）；
+3. RC_SLOW 实际频率 ≠ 137kHz（计数差分 2MHz 是 SYS_TIMER，非 RC_SLOW——
+   RTC WDT 计数钟从未实测）。
+
+### 轮 109 首项（一次性理清）
+HP 侧写 RTC WDT 装置前，先读 **0x20801004（CONFIG1）+ 0x20801008（FEED）+
+计数器寄存器（TRM 定位）** 三个值打 UART ⇒ 确认 ULP 写是否真落地、计数器
+是否真走。三值齐 ⇒ WDT 不咬的层级立判（没写上/写了没走/走了没到）。
