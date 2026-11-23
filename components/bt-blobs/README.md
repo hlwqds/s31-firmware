@@ -31373,3 +31373,12 @@ blob 内部收缩决策点的定位与中和（blob 反汇编级 patch）或 Fre
 IDF 全树 grep：MODEM_WIDGETS/DIAG_BUS 零驱动使用——diag 信号编码表不在离线可达范围
 （需 BTBB TRM）。通道关闭，不做无表盲射。剩余唯一硬差异（0x20109888 单写保留性）的
 解码 = 需外部资料（Espressif TRM/BTBB 内部架构文档）或支持渠道。
+
+### 轮 135b 补充：988x 语义改判（bt_bb_v2_init_cmplx 反汇编）
+
+`bt_bb_v2_init_cmplx`（0x4005afb8，116B）只写 0x20101xxx/0x20102xxx/0x20103xxx
+（SCHED/BB 配置页）——不触碰 0x201098xx。全 blob 中 988x 唯一写者 = NZbbpX（调度臂）。
+⇒ 988x = **BB 命令接口端口**（HP 写 = 命令闩锁并由 BB 硬件执行，读回 = 最后命令）：
+oracle 写保留 = 命令被闩锁接受 ✓；我们写丢失 = **命令接口拒收**（BB 未处于接受态）。
+接受态的使能条件在 BB 内部（离线不可达，需 TRM）。此改判替代轮 128b 的
+「BB 总线可见性」与轮 130 的「BB 核死/活」两种表述。
