@@ -75,88 +75,10 @@ int nvs_erase_all(uint32_t handle) { (void)handle; return ESP_OK; }
 /* 校准数据 blob：返回 NOT_FOUND ⇒ IDF 走全量校准。
  * 注：PHY 初始化表**不经过 NVS** —— `esp_phy_get_init_data()` 是返回静态表
  * `phy_init_data`(0x40104fef) 的 thunk（size 10，不可能失败），镜像里本来就带着它。 */
-/* **轮 156（cal 持久化池）**：按键存取的 RAM 池（.bss，软复位保留）。
- * 破解真 pmu 态 cal 重入循环：boot1 load NOT_FOUND → FULL → store 落池；
- * boot2+ load OK → PARTIAL → 跳过 FULL 重校准 = 重入循环消失。
- * 数据 = blob 生成的 esp_phy_calibration_data_t（1904B，checksum blob 自算自验）。 */
-static uint8_t nvs_cal_pool[4][2200];
-static size_t nvs_cal_len[4];
-static int nvs_cal_valid[4];
-static const char *nvs_cal_keys[4] = { "cal_data", "cal_version", "cal_mac", "" };
-
-static int nvs_key_eq(const char *a, const char *b)
-{
-    while (*a && *b && *a == *b) { a++; b++; }
-    return *a == *b;
-}
-
-static int nvs_slot_of(const char *k)
-{
-    int i;
-    if (!k) return -1;
-    for (i = 0; i < 4; i++)
-        if (nvs_cal_keys[i][0] && nvs_key_eq(k, nvs_cal_keys[i])) return i;
-    return -1;
-}
-
-static void nvscpy(void *d, const void *s, unsigned n)
-{
-    unsigned char *dd = (unsigned char *)d;
-    const unsigned char *ss = (const unsigned char *)s;
-    while (n--) *dd++ = *ss++;
-}
-
-int nvs_get_blob(uint32_t h, const char *k, void *o, size_t *len)
-{
-    int si = nvs_slot_of(k);
-    (void)h;
-    if (si >= 0 && nvs_cal_valid[si]) {
-        size_t n = nvs_cal_len[si];
-        if (len) {
-            if (!o || *len < n) { *len = n; return ESP_ERR_NVS_INVALID_LENGTH; }
-            nvscpy(o, nvs_cal_pool[si], n);
-        }
-        return ESP_OK;
-    }
-    return ESP_ERR_NVS_NOT_FOUND;
-}
-
-int nvs_set_blob(uint32_t h, const char *k, const void *v, size_t l)
-{
-    int si = nvs_slot_of(k);
-    (void)h;
-    if (si >= 0 && v && l <= sizeof(nvs_cal_pool[0])) {
-        nvscpy(nvs_cal_pool[si], v, l);
-        nvs_cal_len[si] = l;
-        nvs_cal_valid[si] = 1;
-        return ESP_OK;
-    }
-    return ESP_ERR_NVS_NOT_FOUND;
-}
-
-int nvs_get_u32(uint32_t h, const char *k, uint32_t *o)
-{
-    int si = nvs_slot_of(k);
-    (void)h;
-    if (si >= 2 && nvs_cal_valid[si] && nvs_cal_len[si] == 4) {
-        if (o) nvscpy(o, nvs_cal_pool[si], 4);
-        return ESP_OK;
-    }
-    return ESP_ERR_NVS_NOT_FOUND;
-}
-
-int nvs_set_u32(uint32_t h, const char *k, uint32_t v)
-{
-    int si = nvs_slot_of(k);
-    (void)h;
-    if (si >= 2) {
-        nvscpy(nvs_cal_pool[si], &v, 4);
-        nvs_cal_len[si] = 4;
-        nvs_cal_valid[si] = 1;
-        return ESP_OK;
-    }
-    return ESP_ERR_NVS_NOT_FOUND;
-}
+int nvs_get_blob(uint32_t h, const char *k, void *o, size_t *len) { (void)h; (void)k; (void)o; (void)len; return ESP_ERR_NVS_NOT_FOUND; }
+int nvs_set_blob(uint32_t h, const char *k, const void *v, size_t l) { (void)h; (void)k; (void)v; (void)l; return ESP_ERR_NVS_NOT_FOUND; }
+int nvs_get_u32(uint32_t h, const char *k, uint32_t *o) { (void)h; (void)k; (void)o; return ESP_ERR_NVS_NOT_FOUND; }
+int nvs_set_u32(uint32_t h, const char *k, uint32_t v) { (void)h; (void)k; (void)v; return ESP_ERR_NVS_NOT_FOUND; }
 
 /* ------------------------------------------------------------------ */
 /* esp_timer：PHY 只用于温度跟踪，全部空实现                             */

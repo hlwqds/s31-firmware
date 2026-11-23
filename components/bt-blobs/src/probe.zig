@@ -995,7 +995,6 @@ pub fn run() noreturn {
         // 现在由本组件注册 —— 内核不该知道 `0x2f00ffd0` 和 `probe_ptr`。
         .on_mutex_acquired = @import("gate.zig").probeAnchors,
     });
-    osal.trace_hooks = true; // 轮 158：callout 链取证（"bt hook: callout_*" 行）
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
 
@@ -1239,7 +1238,6 @@ pub fn run() noreturn {
         pb[3] = rd_.r(0x2070_4014);
         pb[4] = rd_.r(0x2070_4054);
         _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
-        _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000); // 轮 148：trap 环扇区预擦（主上下文安全）
         _ = esp_rom_spiflash_write(0x18B000, &pb, @intCast(@sizeOf(@TypeOf(pb))));
         flashStage(72);
         // **逐位探测 CSR 0x7a0**（解码 Espressif tdata1 的真实布局）：
@@ -1362,62 +1360,11 @@ pub fn run() noreturn {
         // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
-        // **轮 157b（双互锁根修）**：pmu_init 重置 modem/PHY 时钟全家 ⇒
-        // ana burst 永等（burst_config ×99）+ I2C_ANA_MST 钟死。立即重放
-        // porting.phyDomainEnable（门+钟全套恢复，IDF 语义 = pmu 后重放使能）。
-        porting.phyDomainEnable();
         // **轮 138（r134b 挂死根修）**：pmu_init 杀 UART0 时钟 ⇒ 后续阻塞写
         // （log/sendCmdViaHs 路径）永挂 = r134b「GATE 后静默」真因。立即从
         // uartSnapshot 恢复 CTRL0（bit7 UART0_CLK_EN/bit1 APB_CLK_EN）。
-        // **轮 153**：差分+安全集恢复——post-pmu 读 UART0 块 diff 快照并打印，
-        // 仅恢复配置核心段偏移 {0x14,0x18,0x1C,0x20,0x24}（CONF0/1/2/CLKDIV/
-        // RX_FILT；跳过 0x00 FIFO、0x04-0x10 中断组、写敏感偏移）。
         @as(*volatile u32, @ptrFromInt(CLKRST_UART0_CTRL0)).* = uart_ctrl0_snap;
         @as(*volatile u32, @ptrFromInt(CLKRST_SOC_CLK_SEL)).* = uart_soc_snap;
-        // **轮 160（PMU modem 域隔离/电源控制）**：reg.h 权威——
-        // PMU_POWER_PD_MODEM_PWR_CNTL(0x20704128): bit1=ISO, bit2=PU
-        // PMU_HP_MODEM_HP_CK_POWER(0x2070405C): bit20=I2C_ISO_EN
-        // 若 ISO=1 或 PU=0 ⇒ modem 域隔离/未上电 ⇒ 988x 写全丢 = WMAP 全 D！
-        {
-            const cntl: *volatile u32 = @ptrFromInt(0x2070_4128);
-            const ckpw: *volatile u32 = @ptrFromInt(0x2070_405C);
-            const dig: *volatile u32 = @ptrFromInt(0x2070_4040);
-            board.log.line("PMU_ISO pre cntl={x:0>8} ckpw={x:0>8} dig={x:0>8}", .{ cntl.*, ckpw.*, dig.* });
-            // 撤隔离 + 强制上电
-            cntl.* &= ~@as(u32, 1 << 1); // 清 FORCE_MODEM_PWR_ISO
-            cntl.* |= (1 << 2) | (1 << 0); // 设 FORCE_MODEM_PWR_PU | NO_RESET
-            ckpw.* &= ~@as(u32, 1 << 20); // 清 I2C_ISO_EN
-            board.log.line("PMU_ISO post cntl={x:0>8} ckpw={x:0>8}", .{ cntl.*, ckpw.* });
-        }
-        {
-            const safe_offs = [_]u32{ 0x14, 0x18, 0x1C, 0x20, 0x24 };
-            var dstr: [112]u8 = undefined;
-            var dn: u32 = 0;
-            for (safe_offs) |off| {
-                const cur: u32 = @as(*volatile u32, @ptrFromInt(UART0 + off)).*;
-                const want: u32 = uart_snap[off / 4];
-                if (cur != want) {
-                    @as(*volatile u32, @ptrFromInt(UART0 + off)).* = want;
-                    dn += (std.fmt.bufPrint(dstr[dn..], "[{x:0>2}]{x:0>8}->{x:0>8} ", .{ off, cur, want }) catch break).len;
-                }
-            }
-            board.log.line("UARTDIFF {s}", .{dstr[0..dn]});
-            // **轮 154**：剩余偏移 diff 只读打印（UART 已活）——0x00 FIFO 与
-            // 0x04-0x10 中断组写敏感只读不写；任何偏移 post-pmu 仍 ≠ 快照 =
-            // pmu 触碰清单 = 精修恢复的靶点。
-            var rn: u32 = 0;
-            var rstr: [160]u8 = undefined;
-            var off: u32 = 0;
-            while (off < uart_cmp_words * 4) : (off += 4) {
-                const cur: u32 = @as(*volatile u32, @ptrFromInt(UART0 + off)).*;
-                const want: u32 = uart_snap[off / 4];
-                if (cur != want) {
-                    rn += (std.fmt.bufPrint(rstr[rn..], "[{x:0>2}]{x:0>8}", .{ off, cur }) catch break).len;
-                }
-                if (rn > (rstr.len - 24)) break;
-            }
-            board.log.line("UARTREST {s}", .{rstr[0..rn]});
-        }
         // **轮 93**：lp_pc_en 武装前读 LP 槽——里面是**上一轮 boot 挂死时**的冻结
         // mepc（NMI 每 2ms 写，挂死后不再更新，LP 跨复位保留）。确定性 hang ⇒
         // 每轮打印的都是同一挂死 PC。上轮 boot 在 0x200A 后全静默 ⇒ 此值即死点。
@@ -2392,7 +2339,7 @@ pub fn run() noreturn {
         // **轮 50：A→B 路径切换**——env[32]=FJxPPD 已注册（e32=0x400183a6 实证），
         // B 路径（hs_cmd_tx→jr env[32]）命令下行打通；A 路径（r_btdm_hci_trans_rx
         // → btdm ctx[32]=0）仍是死门。ADV 命令改走 B 路径直测 LL 处理能力。
-        const r6 = transport.sendCmdViaHs(0x2005, &mac6); // 轮 154：0x2005=Set Random Address（6B）
+        const r6 = transport.sendCmdViaHs(0x2006, &mac6);
         // **轮 15 协作让出**：任务消费积压命令/腾队列——裸忙等连发会在队列临界态
         // 死锁（轮 14 实锤：0x200A 的 rx 阻塞等任务=任务等泵）。
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
@@ -2405,10 +2352,7 @@ pub fn run() noreturn {
         var ad: [32]u8 = @splat(0);
         @memcpy(ad[0..advp15.len], &advp15);
         osal.lpTrace(3, 0xF002);
-        const r8 = transport.sendCmdViaHs(0x2006, &advp15); // 轮 154：0x2006=Set Adv Parameters（15B）
-        const advd: [4]u8 = .{ 3, 2, 0x06, 0 }; // 轮 154：AdvData len=2 flags BR/EDR+LE
-        const r8d = transport.sendCmdViaHs(0x2008, &advd);
-        _ = r8d; // 轮 154：0x2008=Set Adv Data
+        const r8 = transport.sendCmdViaHs(0x2008, &advp15);
         osal.lpTrace(3, 0xF003);
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
@@ -2530,11 +2474,7 @@ pub fn run() noreturn {
             for (0..16) |i| dst[i] = srcp[i];
             const g: *volatile u32 = @ptrFromInt(0x2f010_15c);
             g.* = 0x2f07_ea18;
-            // **轮 158（镜像撤销）**：轮 157 的内容拷贝 = **每轮用 0x2f02cd58 的
-            // 空数据覆盖 blob 在 0x2f07ea18 已填的参数**（指针重定向后 blob 自洽
-            // 于新地址，我们的反向拷贝 = 每轮破坏其调度体！）撤销拷贝，只留
-            // 指针重定向（blob 自洽）+ 9888 观测。
-            board.log.line("CTXMIRROR-off g={x:0>8} w9888={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).* });
+            board.log.line("CTXMIRROR g={x:0>8} w9888={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).* });
         }
         // **轮 132（README 候选门 1+2 + 写-回读自证）**：modem_ctrl0(0x20587040)
         // bit0 reg_modem_clk_en + clk_en0(0x205871F8) 读数；判据 = 写 0x12345678
@@ -2645,9 +2585,7 @@ pub fn run() noreturn {
         const rrssi = transport.sendCmdViaHs(0x1405, &.{});
         board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
         board.log.line("F2S btdm_tx={d} evt={d}", .{ transport.stats().btdm_tx, transport.stats().evt_count });
-        // **轮 149**：窗旗保持开启（不清）——楔死发生在 F2S 之后，环需继续
-        // 采样楔死面 mepc；POSTPOLL 后主循环清（见下）。
-        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 149：移至 POSTPOLL 后清（暂留）
+        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 148：捕获窗旗关
         // **轮 86**：HCI 传输 env 对账——LE CC 的分发器内构造已完成（.L672），
         // 事件应在 kAQT9Bbw→ll_evt_tx 后抵达 env+24（cfg_hs 注册的 leEvtTx）。
         // 判据：+24 必须 = nm 里 leEvtTx 的符号地址；credits(env+64) 供 kAQT9Bbw
@@ -2938,7 +2876,6 @@ pub fn run() noreturn {
         // **轮 121z6**：post-POLL evt/btdm_tx 判读——0x200A 处理器若完成则
         // CC 事件入队（evt≥9）且命令已发（btdm_tx≥4）。
         board.log.line("POSTPOLL evt={d} btdm_tx={d}", .{ transport.stats().evt_count, transport.stats().btdm_tx });
-        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 149：捕获窗旗关（POSTPOLL 后）
         if (rf_ok) {
             // **轮 94b**：0x200A 后 blob 门控 UART0 ⇒ 任何打印都会卡死主上下文
             // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。

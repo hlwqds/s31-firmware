@@ -420,16 +420,7 @@ pub fn init(cfg: *config.Config) c_int {
     }
     enter(5, "btdm_lp_enable_clock");
     porting.btdmLpEnableClock(&cfg.btdm);
-    // **正确顺序**（对齐 IDF bt.c:1120-1121）：modem 钟使能 + mac_reset 先于
-    // register_chipv7_phy——oracle 中此步在 controller_init 内、initPhy 前。
-    // 无此步 = 全量校准在 BT 钟关态跑 = PLL/RF 配置写不完整 = synth 永不锁。
-    {
-        const mce6 = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
-        const mcr6 = @extern(*const fn (domain: c_int) callconv(.c) void, .{ .name = "modem_clock_module_mac_reset" });
-        mce6(6);
-        mcr6(6);
-        osal.logPublic("bt bringup: mce(6)+mac_reset pre-phy (bt.c:1120 order)", .{});
-    }
+    // **正确顺序**（对齐 IDF）：BT/LP 模块时钟已使能之后，再做 PHY 使能/校准。
     if (!phy_before_clocks) {
         enter(51, "phy_domain_enable");
         porting.phyDomainEnable();
