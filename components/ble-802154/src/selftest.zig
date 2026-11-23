@@ -1,15 +1,18 @@
-//! ble-802154：板侧自检（12 条判据）。
+//! ble-802154：板侧自检（19 条判据）。
 //!
 //! 本组件板侧**不碰射频**：没有扫描、没有连接、没有读特征值、没有 Thread 入网。
 //! controller 归档（libble_app.a 等）一个字节都没链接（见 `tools/symbols.sh`
-//! 的产物与`docs/history/` 的历史说明/27.11）。被测对象是四段纯逻辑：
+//! 的产物与`docs/history/` 的历史说明/27.11）。被测对象全是纯逻辑：
 //!
 //!   `hci.zig`      —— HCI 分帧（ACL / Command / Event / LE Meta）
 //!   `att.zig`      —— ATT 8 个操作码的字节布局与 MTU 截断
 //!   `gatt.zig`     —— 定长特征表、句柄分配、权限、CCCD 订阅
 //!   `fifteen4.zig` —— 802.15.4 FCF/地址 + 6LoWPAN IPHC 解压
+//!   `hci_cmd.zig` / `hci_evt.zig` —— HCI 控制命令、事件分发、命令与 ACL 额度
+//!   `acl.zig` / `l2cap.zig` —— ACL 分片重组、L2CAP 信令与 credit based 通道
+//!   `gap_adv.zig` / `ipsp.zig` —— 广播数据与设备地址、IPv6 over BLE
 //!
-//! 12 条判据（每条一行 `check: ... ok=1/0`，数字全部来自实际比较）：
+//! 19 条判据（每条一行 `check: ... ok=1/0`，数字全部来自实际比较）：
 //!
 //!   ① ACL 头编码 = 42 30 05 00，且 decode 往返一致
 //!   ② ACL 251 字节上限：252 字节被拒（rejected=1），251 字节通过
@@ -23,6 +26,13 @@
 //!   ⑩ 短/长地址模式：头长 9 / 15 字节，地址类型可判别
 //!   ⑪ 6LoWPAN 解压：两个无状态案例（SAM/DAM=10 与 =11）
 //!   ⑫ 不支持的压缩（SAC=1、P≠00、非 IPHC）被拒，rejected 计数准确
+//!   ⑬ HCI 控制命令：3 条编码器 KAT + 返回参数；未知 OpCode / 截断被拒
+//!   ⑭ 事件分发 + host 状态：命令额度 Busy、ACL 包额度取尽与还回、未知子事件
+//!   ⑮ ACL：61 字节 PDU 切成 27/27/7 再重组；续片先到被拒
+//!   ⑯ L2CAP：连接参数更新两个角色；credit based 通道收发与额度耗尽
+//!   ⑰ 广播数据：AD 构造 = 旧 KAT、31 字节上限、解析、坏结构被拒
+//!   ⑱ 地址：AES-128 FIPS-197 KAT、RPA 生成与解析（对的/错的 IRK）
+//!   ⑲ IPv6 over BLE：IID 与 RFC 7668 §3.2.4.1 的压缩字节、组播监听表
 //!
 //! 所有状态都在 `.bss` 的静态变量里：板侧没有堆，自检也不依赖分配失败。
 
@@ -32,6 +42,13 @@ const att = @import("att.zig");
 const fifteen4 = @import("fifteen4.zig");
 const gatt = @import("gatt.zig");
 const hci = @import("hci.zig");
+const acl = @import("acl.zig");
+const cmd = @import("hci_cmd.zig");
+const evt = @import("hci_evt.zig");
+const gap = @import("gap_adv.zig");
+const ipsp = @import("ipsp.zig");
+const l2cap = @import("l2cap.zig");
+const vectors = @import("vectors.zig");
 const board = @import("board");
 const log = board.log;
 
@@ -79,7 +96,7 @@ fn checkAclHeader() void {
     hci_stats.reset();
     const hdr = hci.AclHeader{
         .handle = 0x042,
-        .pb = .complete,
+        .pb = .previously_used,
         .bc = .point_to_point,
         .data_len = 5,
     };
@@ -87,14 +104,14 @@ fn checkAclHeader() void {
     hdr.encode(&bytes);
     const back = hci.AclHeader.decode(&bytes) catch hci.AclHeader{
         .handle = 0,
-        .pb = .complete,
+        .pb = .previously_used,
         .bc = .point_to_point,
         .data_len = 0,
     };
     const ok = eql(&bytes, &hci.kat_acl_header) and
         back.handle == 0x042 and
         back.data_len == 5 and
-        back.pb == .complete;
+        back.pb == .previously_used;
 
     var hex_buf: [12]u8 = undefined;
     const hex = std.fmt.bufPrint(&hex_buf, "{x:0>2}{x:0>2}{x:0>2}{x:0>2}", .{
@@ -115,12 +132,12 @@ fn checkAclMax() void {
 
     const big: [hci.acl_max_payload + 1]u8 = @splat(0xaa);
     var over_err: ?hci.Error = null;
-    if (hci.encodeAcl(&buf, 0x042, .complete, &big, &hci_stats)) |_| {} else |e| over_err = e;
+    if (hci.encodeAcl(&buf, 0x042, .previously_used, &big, &hci_stats)) |_| {} else |e| over_err = e;
     const rejected = hci_stats.rejected;
     const encoded_after_over = hci_stats.acl_encoded;
 
     const ok_payload: [hci.acl_max_payload]u8 = @splat(0x55);
-    const total = hci.encodeAcl(&buf, 0x042, .complete, &ok_payload, &hci_stats) catch 0;
+    const total = hci.encodeAcl(&buf, 0x042, .previously_used, &ok_payload, &hci_stats) catch 0;
     const back = hci.decodeAcl(buf[0..total], &hci_stats) catch null;
 
     // 再解一次被砍掉尾巴的包：必须计入 truncated，而不是静默通过。
@@ -596,6 +613,298 @@ fn checkRejections() void {
 }
 
 // ---------------------------------------------------------------------------
+// ⑬ HCI 控制命令：编码器 KAT + 返回参数解析
+// ---------------------------------------------------------------------------
+
+var cmd_buf: [40]u8 = undefined;
+var g_host: evt.Host = .{};
+var acl_sdu: [61]u8 = undefined;
+var acl_copy: [61]u8 = undefined;
+var acl_pkt_buf: [hci.acl_buf_size]u8 = undefined;
+var ipsp_pkt: [96]u8 = undefined;
+var ipsp_out: [96]u8 = undefined;
+var g_ctxs: ipsp.Contexts = .{};
+var g_listeners: ipsp.ListenerTable = .{};
+
+const prefix_2001_db8: [8]u8 = .{ 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0 };
+const prefix_2001_db8_1: [8]u8 = .{ 0x20, 0x01, 0x0d, 0xb8, 0, 1, 0, 0 };
+
+/// 某个调用是否以指定的错误失败（按错误名比较）。
+fn failsWith(result: anytype, comptime name: []const u8) bool {
+    if (result) |_| {
+        return false;
+    } else |e| {
+        return std.mem.eql(u8, @errorName(e), name);
+    }
+}
+
+fn checkHciCommandKat() void {
+    const n1 = cmd.leSetAdvertisingParameters(&cmd_buf, .{}) catch 0;
+    const kat1 = eql(cmd_buf[0..n1], &vectors.hci_le_set_adv_params);
+    const n2 = cmd.leCreateConnection(&cmd_buf, .{
+        .peer_addr_type = 0x01,
+        .peer_addr = .{ .bytes = vectors.dev_addr },
+    }) catch 0;
+    const kat2 = eql(cmd_buf[0..n2], &vectors.hci_le_create_connection);
+    const n3 = cmd.leEnableEncryption(&cmd_buf, 0x0042, vectors.enc_random, 0x1234, vectors.fips197_b_key) catch 0;
+    const kat3 = eql(cmd_buf[0..n3], &vectors.hci_le_enable_encryption);
+    var len: u16 = 0;
+    var count: u8 = 0;
+    if (cmd.parseReturn(cmd.op_le_read_buffer_size_v1, &vectors.ret_le_read_buffer_size_v1)) |r| {
+        len = r.le_buffer_size_v1.le_acl_data_packet_length;
+        count = r.le_buffer_size_v1.total_num_le_acl_packets;
+    } else |_| {}
+    // 负例：不认识的 OpCode、截断的返回参数。
+    const bad_op = failsWith(cmd.parseReturn(0xFCFF, &[_]u8{0}), "UnknownOpcode");
+    const bad_len = failsWith(cmd.parseReturn(cmd.op_read_bd_addr, vectors.ret_read_bd_addr[0..5]), "Short");
+    const ok = kat1 and kat2 and kat3 and len == 27 and count == 8 and bad_op and bad_len;
+    check(ok, "hci cmd adv={d} create={d} enc={d} ret={d}/{d} unknown={d} short={d}", .{
+        @intFromBool(kat1),   @intFromBool(kat2),    @intFromBool(kat3), len, count,
+        @intFromBool(bad_op), @intFromBool(bad_len),
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ⑭ 事件分发 + host 状态：命令额度与 ACL 包额度
+// ---------------------------------------------------------------------------
+
+fn checkHciEventDemux() void {
+    g_host = .{};
+    var out: [16]u8 = undefined;
+    const sent = g_host.send(&out, cmd.op_le_read_buffer_size_v1, &.{}) catch 0;
+    const busy = failsWith(g_host.send(&out, cmd.op_reset, &.{}), "Busy");
+    var cc_ok = false;
+    if (g_host.onEvent(&vectors.evt_cc_le_read_buffer_size)) |ev| {
+        cc_ok = ev == .command_complete;
+    } else |_| {}
+    const total = g_host.credits.total;
+    var handle: u16 = 0;
+    if (g_host.onEvent(&vectors.evt_le_conn_complete)) |ev| {
+        if (ev == .le_connection_complete) handle = ev.le_connection_complete.handle;
+    } else |_| {}
+    var i: usize = 0;
+    while (i < 8) : (i += 1) g_host.credits.take() catch {};
+    const no_credit = failsWith(g_host.credits.take(), "NoCredits");
+    _ = g_host.onEvent(&vectors.evt_number_of_completed_packets) catch {};
+    const free = g_host.credits.free;
+    const unknown = failsWith(g_host.onEvent(&vectors.evt_le_unknown_subevent), "UnknownSubevent");
+    const ok = sent == 4 and busy and cc_ok and total == 8 and handle == 0x0042 and
+        no_credit and free == 4 and unknown;
+    check(ok, "hci host sent={d} busy={d} cc={d} total={d} handle=0x{x:0>4} nocredit={d} free={d} unknown={d}", .{
+        sent,                    @intFromBool(busy), @intFromBool(cc_ok),   total, handle,
+        @intFromBool(no_credit), free,               @intFromBool(unknown),
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ⑮ ACL 分片 / 重组
+// ---------------------------------------------------------------------------
+
+fn checkAclFragmentation() void {
+    std.mem.writeInt(u16, acl_sdu[0..2], 57, .little);
+    std.mem.writeInt(u16, acl_sdu[2..4], l2cap.cid_att, .little);
+    var x: u32 = 0x1234_5678;
+    for (acl_sdu[4..]) |*b| {
+        x = x *% 1664525 +% 1013904223;
+        b.* = @truncate(x >> 24);
+    }
+    var seg = acl.Segmenter.init(0x0002, &acl_sdu, 27) catch
+        acl.Segmenter{ .handle = 0, .sdu = &.{}, .pkt_len = 1 };
+    const AclR = acl.Reassembler(2, 96);
+    var r: AclR = .{};
+    var frags: usize = 0;
+    var got: usize = 0;
+    var first_ok = false;
+    while (true) {
+        const n = (seg.next(&acl_pkt_buf) catch null) orelse break;
+        if (frags == 0) first_ok = eql(acl_pkt_buf[0..4], &vectors.acl_hdr_first);
+        frags += 1;
+        const pushed = r.push(acl_pkt_buf[0..n]) catch acl.Pushed.partial;
+        switch (pushed) {
+            .complete => |p| {
+                got = p.len;
+                if (p.len <= acl_copy.len) @memcpy(acl_copy[0..p.len], p);
+            },
+            .partial => {},
+        }
+    }
+    // 负例：续片先到（句柄 7 上没有开始过的 PDU）。
+    const no_start = failsWith(r.push(&[_]u8{ 0x07, 0x10, 0x02, 0x00, 1, 2 }), "NoStart");
+    const same = got == 61 and eql(acl_copy[0..got], &acl_sdu);
+    const ok = frags == 3 and first_ok and same and no_start;
+    check(ok, "acl frags={d} first={d} reassembled={d} equal={d} nostart={d}", .{
+        frags, @intFromBool(first_ok), got, @intFromBool(same), @intFromBool(no_start),
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ⑯ L2CAP：信令两个角色 + LE credit based 通道
+// ---------------------------------------------------------------------------
+
+fn checkL2cap() void {
+    var buf: [64]u8 = undefined;
+    const n = l2cap.encodeSig(&buf, 0x01, .{ .conn_param_update_req = .{
+        .interval_min = 0x0006,
+        .interval_max = 0x000C,
+        .latency = 0,
+        .timeout = 0x00C8,
+    } }) catch 0;
+    const kat = eql(buf[0..n], &vectors.l2cap_cpu_req);
+    var accepted: u16 = 0xFFFF;
+    var rejected = false;
+    if (l2cap.decodeSig(buf[0..n])) |req| {
+        const ra = l2cap.connParamUpdateOnReq(&buf, .central, req.identifier, true) catch 0;
+        if (l2cap.decodeSig(buf[0..ra])) |rsp| {
+            accepted = l2cap.connParamUpdateOnRsp(.peripheral, rsp) catch 0xFFFF;
+        } else |_| {}
+        const rj = l2cap.connParamUpdateOnReq(&buf, .peripheral, req.identifier, true) catch 0;
+        if (l2cap.decodeSig(buf[0..rj])) |rej| {
+            rejected = rej.sig == .command_reject and
+                rej.sig.command_reject == l2cap.reject.command_not_understood;
+        } else |_| {}
+    } else |_| {}
+
+    const Chan = l2cap.Channel(32);
+    var a = Chan.init(0x0040, 0x0041, 32, 23, 32, 23, 2, 2) catch
+        return check(false, "l2cap chan init failed", .{});
+    var b = Chan.init(0x0041, 0x0040, 32, 23, 32, 23, 2, 2) catch
+        return check(false, "l2cap chan init failed", .{});
+    var sdu: [30]u8 = undefined;
+    var x: u32 = 7;
+    for (&sdu) |*p| {
+        x = x *% 1664525 +% 1013904223;
+        p.* = @truncate(x >> 24);
+    }
+    a.startSend(&sdu) catch {};
+    const k1 = (a.sendNext(&buf) catch null) orelse 0;
+    const part = b.receive(buf[0..k1]) catch Chan.Rx.partial;
+    const k2 = (a.sendNext(&buf) catch null) orelse 0;
+    var got: usize = 0;
+    const done = b.receive(buf[0..k2]) catch Chan.Rx.partial;
+    switch (done) {
+        .complete => |p| got = p.len,
+        .partial => {},
+    }
+    a.startSend(&sdu) catch {};
+    const no_credit = failsWith(a.sendNext(&buf), "NoCredits");
+    const ok = kat and accepted == l2cap.param_update_accepted and rejected and
+        part == .partial and got == 30 and no_credit;
+    check(ok, "l2cap kat={d} accepted=0x{x:0>4} rejected={d} partial={d} sdu={d} nocredit={d}", .{
+        @intFromBool(kat), accepted,                @intFromBool(rejected), @intFromBool(part == .partial),
+        got,               @intFromBool(no_credit),
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ⑰ 广播数据：构造 + 31 字节上限 + 解析
+// ---------------------------------------------------------------------------
+
+fn checkAdvData() void {
+    var b: gap.Builder = .{};
+    var ok = true;
+    b.flags(0x06) catch {
+        ok = false;
+    };
+    b.uuids16(&[_]u16{0x180A}, true) catch {
+        ok = false;
+    };
+    b.name("ch27", true) catch {
+        ok = false;
+    };
+    const kat = ok and eql(b.data(), &hci.kat_adv_data);
+    const big: [20]u8 = @splat('x');
+    const no_space = failsWith(b.append(0x99, &big), "NoSpace");
+    const unchanged = b.len == 13;
+    var name_ok = false;
+    if (gap.localName(b.data()) catch null) |ln| {
+        name_ok = ln.complete and eql(ln.name, "ch27");
+    }
+    var out: [1 + gap.adv_data_max]u8 = undefined;
+    b.packHci(&out);
+    // out 是 Length(1) + 31 字节定长，对应向量的 [4..]（共 32 字节），不是 [1..] 对 [4..]。
+    const hci_ok = eql(&out, vectors.hci_le_set_adv_data[4..]);
+    // 负例：Length 越过缓冲末尾。
+    var bad = gap.iterate(&[_]u8{ 0x05, 0x01, 0x06 });
+    const malformed = failsWith(bad.next(), "BadLength");
+    check(kat and no_space and unchanged and name_ok and hci_ok and malformed, "gap adv kat={d} nospace={d} name={d} hci={d} malformed={d}", .{
+        @intFromBool(kat),    @intFromBool(no_space),  @intFromBool(name_ok),
+        @intFromBool(hci_ok), @intFromBool(malformed),
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ⑱ 地址哈希与可解析私有地址
+// ---------------------------------------------------------------------------
+
+fn checkRandomAddress() void {
+    const enc = gap.e(vectors.fips197_b_key, vectors.fips197_b_input);
+    const aes_ok = eql(&enc, &vectors.fips197_b_output);
+    const rpa = gap.generateRpa(vectors.rpa_irk, vectors.rpa_prand) catch gap.Addr{};
+    const generated = eql(&rpa.bytes, &vectors.rpa_addr);
+    const resolved = gap.resolve(rpa, vectors.rpa_irk);
+    const wrong = gap.resolve(rpa, vectors.wrong_irk);
+    const bad_prand = failsWith(gap.generateRpa(vectors.rpa_irk, .{ 0x21, 0x3C, 0x9A }), "BadParam");
+    const static_ok = (gap.Addr{ .bytes = vectors.dev_addr }).randomKind() == .static;
+    check(aes_ok and generated and resolved and !wrong and bad_prand and static_ok, "addr aes={d} rpa={d} resolved={d} wrong={d} bad_prand={d} static={d}", .{
+        @intFromBool(aes_ok),    @intFromBool(generated), @intFromBool(resolved), @intFromBool(wrong),
+        @intFromBool(bad_prand), @intFromBool(static_ok),
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ⑲ IPv6 over BLE：IID 与 RFC 7668 §3.2.4.1 的压缩结果
+// ---------------------------------------------------------------------------
+
+fn addr6(groups: [8]u16) [16]u8 {
+    var a: [16]u8 = undefined;
+    for (groups, 0..) |g, i| std.mem.writeInt(u16, a[2 * i ..][0..2], g, .big);
+    return a;
+}
+
+/// 一个 UDP/IPv6 包（Hop Limit 64、端口 5683、校验和 0x1234）。
+fn mkUdp6(src: [16]u8, dst: [16]u8, data: []const u8, out: []u8) usize {
+    @memset(out[0..48], 0);
+    out[0] = 0x60;
+    out[6] = 17;
+    out[7] = 64;
+    std.mem.writeInt(u16, out[4..6], @intCast(8 + data.len), .big);
+    @memcpy(out[8..24], &src);
+    @memcpy(out[24..40], &dst);
+    std.mem.writeInt(u16, out[40..42], 5683, .big);
+    std.mem.writeInt(u16, out[42..44], 5683, .big);
+    std.mem.writeInt(u16, out[44..46], @intCast(8 + data.len), .big);
+    std.mem.writeInt(u16, out[46..48], 0x1234, .big);
+    @memcpy(out[48 .. 48 + data.len], data);
+    return 48 + data.len;
+}
+
+fn checkIpsp() void {
+    const got_iid = ipsp.iid(vectors.ipsp_addr_6ln);
+    const iid_ok = eql(&got_iid, &vectors.ipsp_iid_6ln);
+    g_ctxs = .{};
+    const zeros8: [8]u8 = @splat(0);
+    g_ctxs.setWithIid(0, prefix_2001_db8 ++ zeros8, 64, vectors.ipsp_iid_6ln) catch {};
+    g_ctxs.set(1, prefix_2001_db8_1 ++ zeros8, 64) catch {};
+    const link = ipsp.Link{ .local = vectors.ipsp_addr_6ln, .peer = vectors.ipsp_addr_6lbr };
+    const src = prefix_2001_db8 ++ vectors.ipsp_iid_6ln;
+    const dst = prefix_2001_db8_1 ++ [8]u8{ 0, 0, 0, 0, 0, 0, 0, 5 };
+    const n = mkUdp6(src, dst, "coap", &ipsp_pkt);
+    const m = ipsp.compress(&ipsp_out, ipsp_pkt[0..n], link, &g_ctxs) catch 0;
+    const kat = eql(ipsp_out[0..m], &vectors.iphc_7668_6ln_to_remote_dam01);
+    // 组播监听表按链路记录；单播地址不能登记。
+    g_listeners = .{};
+    const all_nodes = addr6(.{ 0xFF02, 0, 0, 0, 0, 0, 0, 1 });
+    g_listeners.add(1, all_nodes) catch {};
+    g_listeners.add(2, all_nodes) catch {};
+    var links: [4]u12 = undefined;
+    const count = g_listeners.linksFor(all_nodes, &links) catch 0;
+    const bad_group = failsWith(g_listeners.add(3, src), "BadParam");
+    check(iid_ok and kat and count == 2 and bad_group, "ipsp iid={d} rfc7668={d} listeners={d} badgroup={d}", .{
+        @intFromBool(iid_ok), @intFromBool(kat), count, @intFromBool(bad_group),
+    });
+}
+
+// ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
 
@@ -612,6 +921,13 @@ fn runChecks() bool {
     checkAddressModes();
     checkLowpan();
     checkRejections();
+    checkHciCommandKat();
+    checkHciEventDemux();
+    checkAclFragmentation();
+    checkL2cap();
+    checkAdvData();
+    checkRandomAddress();
+    checkIpsp();
     return g_failed == 0;
 }
 

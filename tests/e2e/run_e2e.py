@@ -58,6 +58,7 @@ PROFILES = {
     "wifi": {"flags": {"boot": True, "net": True, "tls": False, "apps": False, "wifi": True},
              "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
                           "net_sockets", "net_ethernet", "wifi_boundary", "wifi_connect", "ble_802154",
+                          "wifi_mlme", "ble_security", "radio_coex",
                           "boot_power_perf", "posix"], "expect": "ok"},
     "tls": {"flags": {"boot": True, "net": True, "tls": True, "apps": False, "wifi": False},
             "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
@@ -67,7 +68,8 @@ PROFILES = {
     "full": {"flags": {"boot": True, "net": True, "tls": True, "apps": True, "wifi": True},
              "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
                            "net_sockets", "net_ethernet", "net_tls_http", "app_mqtt_ota", "wifi_boundary",
-                           "wifi_connect", "ble_802154", "boot_power_perf", "posix"], "expect": "ok"},
+                          "wifi_connect", "ble_802154", "wifi_mlme", "ble_security",
+                          "radio_coex", "boot_power_perf", "posix"], "expect": "ok"},
 }
 
 

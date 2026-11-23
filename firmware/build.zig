@@ -16,6 +16,9 @@ const all_modules = [_]Mod{
     .{ .name = "wifi_boundary", .path = "../components/wifi-boundary/src/selftest.zig", .group = .wifi },
     .{ .name = "wifi_connect", .path = "../components/wifi-connect/src/selftest.zig", .group = .wifi },
     .{ .name = "ble_802154", .path = "../components/ble-802154/src/selftest.zig", .group = .wifi },
+    .{ .name = "wifi_mlme", .path = "../components/wifi-mlme/src/selftest.zig", .group = .wifi },
+    .{ .name = "ble_security", .path = "../components/ble-security/src/selftest.zig", .group = .wifi },
+    .{ .name = "radio_coex", .path = "../components/radio-coex/src/selftest.zig", .group = .wifi },
     .{ .name = "boot_power_perf", .path = "../components/boot-power-perf/src/selftest.zig", .group = .boot },
     .{ .name = "posix", .path = "../components/posix-compat/src/selftest.zig", .group = .net },
 };

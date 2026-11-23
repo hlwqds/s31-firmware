@@ -24,6 +24,13 @@
 //!     Vol 4, Part E, §7.7.65.1；
 //!   * Command Complete（Event_Code 0x0E）
 //!     Vol 4, Part E, §7.7.14。
+//!   *   Command Status（Event_Code 0x0F）Vol 4, Part E, §7.7.15；Disconnection
+//!       Complete（0x05）§7.7.5；Hardware Error（0x10）§7.7.16；Number Of Completed
+//!       Packets（0x13）§7.7.19；
+//!   *   Packet_Boundary_Flag 在 LE-U 上的允许方向：Vol 4, Part E, §5.4.2。
+//!
+//! 这个文件只管**分帧**（字节级原语）。命令编码/返回参数在 `hci_cmd.zig`，
+//! 事件分发在 `hci_evt.zig`，ACL 分片/重组在 `acl.zig`，AD 结构在 `gap_adv.zig`。
 //!
 //! 本机可对拍的实现证据（IDF v6.1 源码，行号为 `grep -n` 实测）：
 //!   components/bt/host/nimble/nimble/nimble/host/include/host/ble_att.h:124…
@@ -42,12 +49,19 @@ pub const h4_acl: u8 = 0x02;
 pub const h4_event: u8 = 0x04;
 
 /// 事件码。Vol 4, Part E, §7.7。
-pub const evt_command_complete: u8 = 0x0e;
-pub const evt_le_meta: u8 = 0x3e;
+pub const evt_disconnection_complete: u8 = 0x05; // §7.7.5
+pub const evt_command_complete: u8 = 0x0e; // §7.7.14
+pub const evt_command_status: u8 = 0x0f; // §7.7.15
+pub const evt_hardware_error: u8 = 0x10; // §7.7.16
+pub const evt_number_of_completed_packets: u8 = 0x13; // §7.7.19
+pub const evt_le_meta: u8 = 0x3e; // §7.7.65
 
-/// LE Meta 子事件码。Vol 4, Part E, §7.7.65。
-pub const le_connection_complete: u8 = 0x01;
-pub const le_advertising_report: u8 = 0x02;
+/// LE Meta 子事件码（事件参数的第一字节）。Vol 4, Part E, §7.7.65.x。
+pub const le_connection_complete: u8 = 0x01; // §7.7.65.1
+pub const le_advertising_report: u8 = 0x02; // §7.7.65.2
+pub const le_connection_update_complete: u8 = 0x03; // §7.7.65.3
+pub const le_long_term_key_request: u8 = 0x05; // §7.7.65.5
+pub const le_data_length_change: u8 = 0x07; // §7.7.65.7
 
 /// ACL 头固定 4 字节：Handle(12b)+PB(2b)+BC(2b)，Data_Length(16b)。
 pub const acl_header_len: usize = 4;
@@ -85,21 +99,25 @@ pub const Stats = struct {
     }
 };
 
-/// PB 标志（ACL 分片）。Vol 4, Part E, §5.4.2 表 5.2。
+/// PB 标志（ACL 分片）。Vol 4, Part E, §5.4.2 的 Packet_Boundary_Flag 表。
 ///
-/// 位值是规范钉死的，且与 Linux `include/net/bluetooth/hci.h` 的
-/// `ACL_START_NO_FLUSH 0x00` / `ACL_CONT 0x01` / `ACL_START 0x02` /
-/// `ACL_COMPLETE 0x03` 一致：**0b00 是“不可自动 flush 的首片”，
-/// 0b10 才是“可自动 flush 的首片”**。这一对最容易写反。
+/// 位值是规范钉死的：**0b00 是“不可自动 flush 的首片”，0b10 才是“可自动
+/// flush 的首片”**。这一对最容易写反。LE-U 逻辑链路上各方向的允许值：
+///
+///   * Host → Controller：首片 `0b00`、续片 `0b01`；`0b10` 是 "Not Allowed"。
+///   * Controller → Host：首片 `0b10`、续片 `0b01`；`0b00` 是 "Not allowed"。
+///
+/// 所以 LE 的 host 发首片一律用 `first_non_flushable`，不要用 `first_flushable`。
 pub const Pb = enum(u2) {
-    /// 0b00：L2CAP PDU 的首片，host 不得自动 flush。
+    /// 0b00：L2CAP PDU 首片（不可自动 flush）。LE-U Host→Controller 的首片。
     first_non_flushable = 0b00,
     /// 0b01：续片。
     continuation = 0b01,
-    /// 0b10：L2CAP PDU 的首片，host 可自动 flush。
+    /// 0b10：L2CAP PDU 首片（可自动 flush）。LE-U Controller→Host 的首片。
     first_flushable = 0b10,
-    /// 0b11：整包（未分片）。
-    complete = 0b11,
+    /// 0b11：5.4 的表里写的是 "Previously used"，**不是**“整包”。新代码不要
+    /// 发这个值；`kat_acl_header` 用它只为钉住位布局。
+    previously_used = 0b11,
 };
 
 /// BC 标志（ACL 的广播位）。LE 的 ACL 只用 `0b00`（点对点）；另外三个位值在
@@ -224,22 +242,23 @@ pub const ogf_le_controller: u6 = 0x08;
 pub const ocf_le_set_adv_enable: u10 = 0x000a;
 
 /// Command 包 = H4(1) + OpCode(2, LE) + Parameter_Total_Length(1) + 参数。
-pub fn encodeCommand(out: []u8, op: u16, params: []const u8, stats: *Stats) Error!usize {
-    if (params.len > 255) {
-        stats.rejected += 1;
-        return error.Oversize;
-    }
+/// 不带计数的版本：`hci_cmd.zig` 的每个编码器都落到这里。
+pub fn packCommand(out: []u8, op: u16, params: []const u8) Error!usize {
+    if (params.len > 255) return error.Oversize;
     const total = 4 + params.len;
-    if (out.len < total) {
-        stats.rejected += 1;
-        return error.NoSpace;
-    }
+    if (out.len < total) return error.NoSpace;
     out[0] = h4_command;
-    out[1] = @truncate(op);
-    out[2] = @truncate(op >> 8);
+    std.mem.writeInt(u16, out[1..3], op, .little);
     out[3] = @intCast(params.len);
     @memcpy(out[4..total], params);
     return total;
+}
+
+pub fn encodeCommand(out: []u8, op: u16, params: []const u8, stats: *Stats) Error!usize {
+    return packCommand(out, op, params) catch |e| {
+        stats.rejected += 1;
+        return e;
+    };
 }
 
 /// Command 包解析结果。
@@ -251,7 +270,14 @@ pub fn decodeCommand(bytes: []const u8, stats: *Stats) Error!Command {
         return error.Short;
     }
     const plen = @as(usize, bytes[3]);
-    if (bytes.len != 4 + plen) {
+    const total = 4 + plen;
+    // 声明 3 个参数却只来 2 个字节是“截断”（Short + truncated），不是 Trailing。
+    if (bytes.len < total) {
+        stats.rejected += 1;
+        stats.truncated += 1;
+        return error.Short;
+    }
+    if (bytes.len > total) {
         stats.rejected += 1;
         return error.Trailing;
     }
@@ -318,23 +344,6 @@ pub fn decodeAdvReport(bytes: []const u8, stats: *Stats) Error!AdvReport {
     };
 }
 
-/// 在 AD 结构里找 Complete Local Name（AD Type 0x09）。
-/// Vol 3, Part C, §11（GAP 的 AD 类型）与 §12（AD 数据格式）。
-///
-/// 每个 AD 结构是 Length(1) + Type(1) + Data(Length-1)。Length 为 0 表示
-/// 后面的全 0 填充，直接停。
-pub fn findLocalName(ad: []const u8) ?[]const u8 {
-    var i: usize = 0;
-    while (i < ad.len) {
-        const len = @as(usize, ad[i]);
-        if (len == 0) return null;
-        if (i + 1 + len > ad.len) return null;
-        if (ad[i + 1] == 0x09) return ad[i + 2 .. i + 1 + len];
-        i += 1 + len;
-    }
-    return null;
-}
-
 /// LE Connection Complete：status(1) handle(2,LE) role(1) peer_addr_type(1)
 /// peer_addr(6) interval(2) latency(2) supervision_timeout(2) mca(1)。
 /// Vol 4, Part E, §7.7.65.1。
@@ -395,10 +404,39 @@ pub fn encodeEvent(out: []u8, code: u8, params: []const u8, stats: *Stats) Error
 }
 
 // ---------------------------------------------------------------------------
+// 事件帧（完整 H4 帧 → 事件码 + 参数块）
+// ---------------------------------------------------------------------------
+
+/// 一段事件参数：`code` 是 Event_Code（LE Meta 时为 0x3E），`params` 指向
+/// `Parameter_Total_Length` 之后的全部字节。
+pub const EventParams = struct { code: u8, params: []const u8 };
+
+/// 解析完整事件帧：H4(1) + Event_Code(1) + Parameter_Total_Length(1) + 参数。
+/// Vol 4, Part E, §5.4.4。严格长度：比声明短 → `Short`（并计 truncated），
+/// 比声明长 → `Trailing`。子事件码留在 `params[0]`，由 `hci_evt.zig` 分发。
+pub fn decodeEventFrame(frame: []const u8, stats: *Stats) Error!EventParams {
+    if (frame.len < 3 or frame[0] != h4_event) {
+        stats.rejected += 1;
+        return error.Short;
+    }
+    const total = 3 + @as(usize, frame[2]);
+    if (frame.len < total) {
+        stats.rejected += 1;
+        stats.truncated += 1;
+        return error.Short;
+    }
+    if (frame.len > total) {
+        stats.rejected += 1;
+        return error.Trailing;
+    }
+    return .{ .code = frame[1], .params = frame[3..] };
+}
+
+// ---------------------------------------------------------------------------
 // KAT 用的固定字节串（判据 ①② 拿它们逐字节比对）
 // ---------------------------------------------------------------------------
 
-/// ACL 头 KAT：handle=0x0042、PB=complete(0b11)、BC=point-to-point、
+/// ACL 头 KAT：handle=0x0042、PB=previously_used(0b11)、BC=point-to-point、
 /// Data_Length=5 → 42 30 05 00。
 ///
 /// 为什么第二字节是 0x30：handle 占低 12 位（0x042），PB 左移 12（0b11 << 12
@@ -419,10 +457,9 @@ pub const kat_adv_data = [13]u8{
     '7',
 };
 
-/// 一条完整的 LE Advertising Report 参数（含 num_reports）：
-///   02 | 00 00 E0 E1 E2 E3 E4 E5 | 0D | <13 字节 AD> | C0
-/// num_reports=1（0x02 是 LE Meta 子事件码，这里刻意让读者注意：
-/// 子事件码 0x02 与 num_reports 各占一字节，事件参数里是子事件码在前）。
+/// LE Advertising Report 的参数（**不含**子事件码，从 num_reports 开始）：
+///   01 | 00 00 E0 E1 E2 E3 E4 E5 | 0D | <13 字节 AD> | C0
+/// 即 num_reports=1、一条报告。完整事件帧见 `vectors.kat_le_adv_report_one`。
 pub const kat_adv_event_params = blk: {
     var p: [1 + 10 + kat_adv_data.len]u8 = undefined;
     p[0] = 0x01; // num_reports

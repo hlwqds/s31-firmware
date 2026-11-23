@@ -358,6 +358,68 @@ fn writeIid(hdr: *[40]u8, off: usize, iid: [8]u8) void {
     @memcpy(hdr[off .. off + 8], &iid);
 }
 
+/// UDP NHC（11110CPP，RFC 6282 §4.3.3）的解码结果。`rest` 是 NHC 之后的载荷。
+pub const UdpNhc = struct {
+    src_port: u16,
+    dst_port: u16,
+    checksum: u16,
+    /// false 表示校验和被省略（C=1），值为 0。
+    checksum_present: bool,
+    rest: []const u8,
+};
+
+/// 解一个 UDP NHC 头（从 11110CPP 字节开始）。与链路层无关，`ipsp.zig` 也用它。
+/// 四种 P、两种 C 都解；端口与校验和按网络序。可压缩的端口段：0xf000–0xf0ff
+/// 压掉高 8 位，0xf0b0–0xf0bf 压掉高 12 位（RFC 6282 §4.3.1、§4.3.3）。
+pub fn decodeUdpNhc(bytes: []const u8) Error!UdpNhc {
+    if (bytes.len < 1) return error.Short;
+    const nhc = bytes[0];
+    if ((nhc & 0xf8) != 0xf0) return error.UnsupportedCompression;
+    const checksum_present = (nhc & 0x04) == 0;
+    const p: u2 = @truncate(nhc & 0x03);
+    var i: usize = 1;
+    var sport: u16 = 0;
+    var dport: u16 = 0;
+    if (p == 0b11) {
+        if (bytes.len < i + 1) return error.Short;
+        sport = 0xf0b0 | @as(u16, bytes[i] >> 4);
+        dport = 0xf0b0 | @as(u16, bytes[i] & 0x0f);
+        i += 1;
+    } else {
+        if (p == 0b00 or p == 0b01) {
+            if (bytes.len < i + 2) return error.Short;
+            sport = getU16Be(bytes[i .. i + 2]);
+            i += 2;
+        } else {
+            if (bytes.len < i + 1) return error.Short;
+            sport = 0xf000 | @as(u16, bytes[i]);
+            i += 1;
+        }
+        if (p == 0b00 or p == 0b10) {
+            if (bytes.len < i + 2) return error.Short;
+            dport = getU16Be(bytes[i .. i + 2]);
+            i += 2;
+        } else {
+            if (bytes.len < i + 1) return error.Short;
+            dport = 0xf000 | @as(u16, bytes[i]);
+            i += 1;
+        }
+    }
+    var csum: u16 = 0;
+    if (checksum_present) {
+        if (bytes.len < i + 2) return error.Short;
+        csum = getU16Be(bytes[i .. i + 2]);
+        i += 2;
+    }
+    return .{
+        .src_port = sport,
+        .dst_port = dport,
+        .checksum = csum,
+        .checksum_present = checksum_present,
+        .rest = bytes[i..],
+    };
+}
+
 /// 解压一个无状态 IPHC 报文。
 ///
 /// 支持的组合（全部 RFC 6282 §3.1.1 无状态列）：
@@ -458,7 +520,8 @@ pub fn decompress(lowpan: []const u8, mac: *const MacHeader, stats: *Stats) Erro
         else => unreachable,
     }
 
-    // NHC：11110CPP，只接受 P=00（两个端口都 16 位内联）。
+    // NHC：11110CPP。本文件的解压器只接受 P=00（判据 ⑫ 拿 P=01 当拒绝用例）；
+    // 头本身的解码是通用的（`decodeUdpNhc`），`ipsp.zig` 复用它。
     if (i >= lowpan.len) {
         stats.rejected += 1;
         return error.Short;
@@ -468,28 +531,19 @@ pub fn decompress(lowpan: []const u8, mac: *const MacHeader, stats: *Stats) Erro
         stats.rejected += 1;
         return error.UnsupportedCompression;
     }
-    const c = (nhc & 0x04) != 0;
-    const p: u2 = @truncate(nhc & 0x03);
-    if (p != 0x00) {
+    if ((nhc & 0x03) != 0x00) {
         stats.rejected += 1;
         return error.UnsupportedCompression;
     }
-    i += 1;
-    // 端口 4 字节 + 校验和（C=0 时 2 字节）。
-    const need = 4 + (if (c) @as(usize, 0) else 2);
-    if (lowpan.len < i + need) {
-        stats.rejected += 1;
-        return error.Short;
-    }
-    const sport = getU16Be(lowpan[i .. i + 2]);
-    const dport = getU16Be(lowpan[i + 2 .. i + 4]);
-    i += 4;
-    var csum: u16 = 0;
-    if (!c) {
-        csum = getU16Be(lowpan[i .. i + 2]);
-        i += 2;
-    }
-    const payload = lowpan[i..];
+    const udp = decodeUdpNhc(lowpan[i..]) catch |e| {
+        if (e == error.Short) stats.rejected += 1;
+        return e;
+    };
+    const c = !udp.checksum_present;
+    const sport = udp.src_port;
+    const dport = udp.dst_port;
+    const csum = udp.checksum;
+    const payload = udp.rest;
 
     // IPv6 Payload Length = UDP 头 8 字节 + 数据。
     putU16(hdr[4..6], 8 + @as(u16, @intCast(payload.len)));

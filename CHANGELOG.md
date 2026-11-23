@@ -29,12 +29,39 @@
   验证：`scripts/check-bt-link.sh` → `bt 链接门禁：OK（116 个对象，镜像 950756 字节）`，
   `.flash.text` 745 056 B；`build-image.sh firmware` → `image: OK`。探针镜像与不带 blob 的镜像不编译该文件。
 
+- **两条本地门禁的既有失败（2026-11-24）**：在 `3194bf6` 上 `scripts/check-all.sh` 本来就过不了，与本轮改动无关。
+  `check-capacity.py`：基线停在 2026-11-18，之后六个 profile 的 irom 已有 21 504 到 31 504 B 的漂移（镜像 `net` +59 936 B、
+  `net-wire` +66 704 B）。`update_matrix.py --check`：`2d431d0` 恢复 `logs/e2e-net-wire-boot.log` 之后，矩阵 W1–W3 没有跟着刷新。
+  两处都用脚本自带的再生成对齐到已提交的代码与日志，没有手改数字。
+
 ### Removed
 - `firmware/build.zig`：删掉 152b92a 给 net-tcp / net-ipv4 / net-udp-dhcp-dns / net-sockets 四个模块
   多加的 `net_ethernet` 导入。那是一次没生效的模块冲突修复尝试（真正的冲突是 `wire` 与 `net`
   两个 group 同开），四个组件的源码都不引用它。`build.zig` 由此回到 2f156fa 的状态。
 
 ### Added
+- **Wi-Fi 与 BLE 的离线可验证特性（2026-11-24）**：按规范条款实现的纯逻辑组件，不依赖射频；空口没有任何证据。
+  - 新增 `components/wifi-mlme`（61 项）：IEEE Std 802.11-2016 非 AP STA 侧的帧格式（9.2）、管理帧（9.3.3）、
+    信息元素（9.4.2 的子集）、robust 判定（12.2.8、12.6.20）、MLME（11.3）、扫描（11.1.4）。FCS 按 9.2.4.8
+    的原文推出反射式 CRC-32。向量：Wireshark wiki 的公开抓包、Annex J.9、按条款手工构造。
+  - `components/wifi-connect` 扩展（20 → 57 项）：PSK、PMKID、PTK、GTK（12.7.1），完整的请求方 4 次握手与
+    组密钥握手（12.7.6、12.7.7、12.7.10），密钥数据封装与 AES Key Wrap（12.7.2；RFC 3394），RSNA 选择
+    （12.6），CCMP-128、GCMP-128、BIP-CMAC-128（12.5.3、12.5.5、12.5.4），管理帧保护与 SA Query。
+    官方向量：Annex J.3、J.4、J.6.4、J.7、J.8、J.9.1、J.9.2、J.11。
+  - `components/ble-802154` 扩展（20 → 68 项）：HCI 控制命令与事件（Vol 4 Part E）、ACL 分段重组、L2CAP
+    （Vol 3 Part A）、广播数据与地址（Vol 3 Part C）、IPv6 over BLE（RFC 7668）。
+  - 新增 `components/ble-security`（51 项）：SMP 密码学工具箱（Vol 3 Part H 2.2），legacy 与 LE Secure
+    Connections 的全部配对方法（双角色），密钥分发与绑定存储，链路层 AES-CCM、CRC-24 与白化（Vol 6 Part B）。
+  - 验证：主机测试、与独立 Python 参照实现的差分（全部一致）；第一次上板（`wifi` profile）各自检
+    16/28/18/25/10，`ble-802154` 失败的一条是自检自身的差一错误，已修，板级复验待做。
+    报告在 `docs/verification/`；`tests/baselines.json` 合计 572 → 814。
+- **BLE 与 Wi-Fi 共存的 glue（2026-11-24）**：设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`。新增
+  `components/radio-coex`（45 项），对照 IDF 的 `esp_adapter.c` 与 `btdm_coex.c` 实现 Wi-Fi 侧 23 个包装函数、
+  BLE 侧 16 个钩子加 4 个生命周期函数、20 表项的适配表；真核心经 `bind.zig` 绑定，尚未接入两套 blob 适配层。
+  默认镜像逐字节不变：`3194bf6` 与本轮改动后各自构建的 `app.bin`（243 488 B）、`app.elf`（223 280 B）SHA-256 相同，
+  `min`、`net`、`tls`、`net-wire` 四个 profile 的镜像尺寸不变；只有 `wifi`（irom +176 848 B）与 `full`（irom +142 832 B）变大。
+  `scripts/check-all.sh` 全绿（主机测试 858 项、容量、e2e host 6 个 profile）。
+
 - **生产 A/B 与回滚（矩阵 C5，2026-11-18）**：`firmware/idf-bootstrap/partitions.csv` 追加
   `ota_0`(0x190000) / `ota_1`(0x310000) / `otadata`(0x490000, 8K)，factory 仍在 0x10000。
   新增真实落盘层 `components/boot-power-perf/src/{flash,partition,slot}.zig`：按 IDF

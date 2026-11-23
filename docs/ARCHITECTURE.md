@@ -18,6 +18,9 @@ components/
   ├── wifi-blobs             真实 blob 链接 + osi 适配层（init/任务/合作式让出）
   ├── wifi-connect           扫描/连接状态机、WPA2/WPA3 派生
   ├── ble-802154             HCI/ATT/GATT、802.15.4 FCF/6LoWPAN
+  ├── wifi-mlme              IEEE 802.11 帧格式、管理帧、信息元素、MLME、扫描（纯逻辑）
+  ├── ble-security           SMP 配对、密钥分发、链路层 AES-CCM（纯逻辑）
+  ├── radio-coex             BLE + Wi-Fi 共存 glue（对照 IDF 的 coex 钩子，纯逻辑；设计见 ADR-003）
   └── boot-power-perf        otadata 选槽、A/B、功耗/性能模型
 tools/s31-production/        生产化组件（netmgr/ota/provisioning/recovery/基线/HIL）
 ```
