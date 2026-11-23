@@ -197,6 +197,27 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
                 vb[vm] = 0;
                 s31_bt_raw_line(vb);
             }
+            /* **轮 128**：ctx 结构 dump——p0 = s3 = 0x2f02cd58（全局 0x2f01015c）。
+             * 16 词两行：全零 = 上游未填充；有值 = 结构活、指针错位。 */
+            {
+                const volatile unsigned int *cp = (const volatile unsigned int *)(unsigned)p0;
+                char cbuf[112];
+                for (int half = 0; half < 2; half++) {
+                    int cm = 0;
+                    const char *ch2 = half == 0 ? "CTX00=" : "CTX08=";
+                    while (ch2[cm]) { cbuf[cm] = ch2[cm]; cm++; }
+                    for (int wi = 0; wi < 8; wi++) {
+                        unsigned v = cp[half * 8 + wi];
+                        cbuf[cm++] = ' ';
+                        for (int sh3 = 28; sh3 >= 0; sh3 -= 4) {
+                            unsigned d = (v >> sh3) & 0xF;
+                            cbuf[cm++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+                        }
+                    }
+                    cbuf[cm] = 0;
+                    s31_bt_raw_line(cbuf);
+                }
+            }
         }
     }
     {
