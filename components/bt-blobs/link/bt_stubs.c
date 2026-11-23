@@ -137,6 +137,13 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
     /* **轮 126**：hits N → block N 全表 chunk（regs60-110，51 值/行），8 hits
      * 覆盖 blocks1-8，与 oracle 一次性全表（/tmp/oracle_atable.txt 基线）逐行对拍
      * 找 XTAL cap trim / PLL 参考差异。 */
+    if (bt_assert_hits == 1) {
+        /* **轮 127（环内 trim 重写）**：synth 编程每次尝试用本机 cal 回写覆盖
+         * reg97-b5（两处预写实验均被覆盖 = 未在环内测试过）。hits==1 = 编程后
+         * 轮询前 ⇒ 此刻写入 0x07（oracle 值）在 PLL 调谐期间保持生效。 */
+        extern unsigned char phy_i2c_writeReg(unsigned char reg, unsigned char hostid, unsigned char block, unsigned char data);
+        phy_i2c_writeReg(97, 1, 5, 0x07);
+    }
     {
         extern unsigned char phy_i2c_readReg(unsigned char reg, unsigned char hostid, unsigned char block);
         char ab[192];
