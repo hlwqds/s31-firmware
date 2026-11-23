@@ -985,6 +985,14 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // **PC 采样**：记下被中断的 PC。某个地方死等（spinning）时，把这里采到的地址
             // 打出来就直接指向那个循环，比逐层加日志快得多。
             recordPc(frame.mepc);
+            // **轮 129**：等锁环现场捕获（只采第一次）。
+            if (frame.mepc >= 0x4000_1b8c and frame.mepc <= 0x4000_1ba0 and pollcap_n == 0) {
+                pollcap_n = 1;
+                pollcap_mepc = frame.mepc;
+                pollcap_a3 = frame.a3;
+                pollcap_a4 = frame.a4;
+                pollcap_s1 = frame.s1;
+            }
             // **重写 nmies**（CLIC[25] bit3）：vendor/未知源会清它 ⇒ NMI 停摆。
             // 每次采样时重置，保证 NMI 在 esp_phy_enable 关中断段持续穿透。
             {
@@ -1389,6 +1397,14 @@ pub export var wp_watch_on: u32 = 0;
 pub export var wp2_hit_pc: u32 = 0;
 pub export var wp2_hit_ra: u32 = 0;
 pub export var wp2_hit_count: u32 = 0;
+/// **轮 129**：synth 等锁环（mepc∈[0x40001b8c,0x40001ba0]）现场寄存器一次性捕获：
+/// a3 = 传入的写入基址（c.mv a4,a3 ⇒ 写目标 = [a4±off]），a4 = 其副本，s1 = 轮询基址
+/// （0x2010A000 预期）。由 input-25 采样分支填，probe POLL 行读。
+pub export var pollcap_n: u32 = 0;
+pub export var pollcap_mepc: u32 = 0;
+pub export var pollcap_a3: u32 = 0;
+pub export var pollcap_a4: u32 = 0;
+pub export var pollcap_s1: u32 = 0;
 var bp_last_tsel: u32 = 0;
 
 // **udiv 入口监视**（sleep_en=1 除法链调用者/除数判别）：

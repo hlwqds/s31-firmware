@@ -2648,6 +2648,15 @@ pub fn run() noreturn {
                     board.log.line("BB 450={x:0>8} 47C={x:0>8} 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8}", .{ bbr[0], @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, @as(*volatile u32, @ptrFromInt(0x2010_0444)).* });
                     board.log.line("BB 100C={x:0>8} 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_100C)).*, bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
                     board.log.line("SC 1254={x:0>8} 1258={x:0>8} 107C={x:0>8} 1000={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_1254)).*, @as(*volatile u32, @ptrFromInt(0x2010_1258)).*, @as(*volatile u32, @ptrFromInt(0x2010_107C)).*, @as(*volatile u32, @ptrFromInt(0x2010_1000)).* });
+                    // **轮 129**：等锁环现场寄存器（trap 一次捕获）。
+                    {
+                        const pa3 = @extern(*volatile u32, .{ .name = "pollcap_a3" });
+                        const pa4 = @extern(*volatile u32, .{ .name = "pollcap_a4" });
+                        const ps1 = @extern(*volatile u32, .{ .name = "pollcap_s1" });
+                        const pn = @extern(*volatile u32, .{ .name = "pollcap_n" });
+                        const pc_mepc = @extern(*volatile u32, .{ .name = "pollcap_mepc" });
+                        board.log.line("POLLCAP n={d} mepc=0x{x:0>8} a3={x:0>8} a4={x:0>8} s1={x:0>8}", .{ pn.*, pc_mepc.*, pa3.*, pa4.*, ps1.* });
+                    }
                     // **轮 124d**：ana 芯片内部对拍——reg99 横扫 blocks 1-6 + B6 regs
                     // 92-106（oracle 基线：R99 b1=ab b3=32 b4=11 b5=11；B6=ff*5 80 3f 00 ff ff 63 0a ff 2f 00）
                     {
