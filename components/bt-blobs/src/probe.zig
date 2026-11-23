@@ -2558,6 +2558,12 @@ pub fn run() noreturn {
                 for (0..ulp_prog_snapshot.len) |pi| {
                     @as(*volatile u8, @ptrFromInt(0x2E00_0080 + pi)).* = ulp_prog_snapshot[pi];
                 }
+                // **轮 120q**：全量时钟重断言——blob init 可能清 PO_EN 位图/根时钟
+                // force-on/RAM clk（ARM0 后从未重写过）。corst=0x29 证复位线通，
+                // 缺的是时钟链全量。
+                @as(*volatile u32, @ptrFromInt(0x2070_1004)).* |= 0xFF; // lp_clk_po_en 全位
+                @as(*volatile u32, @ptrFromInt(0x2070_1000)).* |= (1 << 28) | (1 << 29) | (1 << 30); // root force
+                @as(*volatile u32, @ptrFromInt(0x2071_000c)).* |= (1 << 30); // ram clk
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B0)).* = (1 << 31); // SLEEP_REQ(WT)
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
