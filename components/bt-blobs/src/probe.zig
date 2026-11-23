@@ -2459,6 +2459,31 @@ pub fn run() noreturn {
         (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).* = 0x0241_1290;
         // **轮 76：F83C 写前后二分**（board.log 直写 UART 可靠——FIFO 免疫）
         board.log.line("F0 {x:0>8}", .{f83c_before});
+        // **轮 131（oracle 指针镜像实验）**：引擎疑似校验指针落点区域（oracle
+        // 0x2f07ea18 接受，我们 0x2f02cd58 拒清）。0x2f07ea18 在我们布局 = 栈顶
+        // 之后空隙区（_stack_top=0x2f07afc0 与 rom_phyFuns=0x2f07fc3c 之间）= 可
+        // 安全占用。镜像 ctx 64B + 覆写全局指针 → 0x200A → 98BC 判决。
+        {
+            const dst: [*]volatile u32 = @ptrFromInt(0x2f07_ea18);
+            const srcp: [*]const volatile u32 = @ptrFromInt(0x2f02_cd58);
+            for (0..16) |i| dst[i] = srcp[i];
+            const g: *volatile u32 = @ptrFromInt(0x2f010_15c);
+            g.* = 0x2f07_ea18;
+            board.log.line("CTXMIRROR g={x:0>8} w9888={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).* });
+        }
+        // **轮 132（README 候选门 1+2 + 写-回读自证）**：modem_ctrl0(0x20587040)
+        // bit0 reg_modem_clk_en + clk_en0(0x205871F8) 读数；判据 = 写 0x12345678
+        // 到 0x20109880 读回相等 ⇒ 门找到。
+        {
+            const mc0: *volatile u32 = @ptrFromInt(0x2058_7040);
+            mc0.* |= 1;
+            const ce0v: u32 = @as(*volatile u32, @ptrFromInt(0x2058_71F8)).*;
+            const tgt: *volatile u32 = @ptrFromInt(0x2010_9880);
+            tgt.* = 0x1234_5678;
+            const rb: u32 = tgt.*;
+            const verdict: []const u8 = if (rb == 0x1234_5678) "GATE-FOUND" else "still-gated";
+                        board.log.line("GATE mc0={x:0>8} ce0={x:0>8} w9880={x:0>8} {s}", .{ mc0.*, ce0v, rb, verdict });
+        }
         // **轮 123k**：F1 改发 0x200A（此前 = 第二次 0x2006+params，enable 全程缺失）
         const adv_en: [1]u8 = .{0x01};
         const r6b = transport.sendCmdViaHs(0x200A, &adv_en);
