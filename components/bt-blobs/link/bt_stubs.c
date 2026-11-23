@@ -87,6 +87,15 @@ extern void s31_bt_raw_line(const char *s);
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
     bt_assert_hits++;
     *(volatile unsigned int *)0x2E000388 = (unsigned int)line; /* LP: 跨复位可读（探针 BBP 行） */
+    /* **轮 124f（自持死锁解锁——必须在限流 return 之前）**：NMI trace 实证
+     * 98BC 轮询与断言无限交替 = 任务内无界自旋 ⇒ 主循环饿死 ⇒
+     * osi_impl_serviceTimers 停摆 ⇒ synth 预热定时器永不触发 ⇒ RF-ready
+     * 永不置位。hits>4 后每 64 次让出一次 = 主循环得以泵定时器（oracle 无此
+     * 问题 = FreeRTOS tick 天然喂泵）。 */
+    if (bt_assert_hits > 4 && (bt_assert_hits & 63) == 0) {
+        extern void s31AssertYield(void);
+        s31AssertYield();
+    }
     /* **轮 124e**：限流——synth 等锁路径每轮断言打印一次，16 次轮询 × 反复重进
      * = UART 饱和（1.1MB 刷屏），把探针的 R99/ana 对拍行全挤掉。前 4 次打印保
      * 现场，之后静默（hits/LP 槽照记）。 */
@@ -122,6 +131,30 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
     }
     buf[n] = 0;
     s31_bt_raw_line(buf);
+    /* **轮 124f-2**：首次断言即 post-ADV 现场——任务上下文活着、UART 未淹，
+     * 顺势拼 ana 芯片内部读值（reg99 横扫 blocks 1-7，RF PLL cap = (99,1,6)），
+     * 与 oracle post-cmds 基线（R99 b1=ab b3=32 b4=11 b5=11）直接对拍。 */
+    if (bt_assert_hits == 1) {
+        extern unsigned char phy_i2c_readReg(unsigned char reg, unsigned char hostid, unsigned char block);
+        char ab[128];
+        int m = 0;
+        const char *hdr = "R99 b1=";
+        while (*hdr && m < (int)sizeof ab - 1) ab[m++] = *hdr++;
+        for (unsigned char b = 1; b <= 7 && m < (int)sizeof ab - 6; b++) {
+            unsigned char v = phy_i2c_readReg(99, 1, b);
+            for (int sh = 4; sh >= 0; sh -= 4) {
+                unsigned d = (v >> sh) & 0xF;
+                ab[m++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+            }
+            if (b < 7) { ab[m++] = ' '; ab[m++] = 'b'; }
+            else break;
+            /* 下一个 block 号（1 位数） */
+            ab[m++] = (char)('0' + b + 1);
+            ab[m++] = '=';
+        }
+        ab[m] = 0;
+        s31_bt_raw_line(ab);
+    }
     /* **轮 16（2026-11-22）：探针构建恢复「打印后返回」**。11-21 的恒 halt 是对
      * btdm_sleep.c:684（NULL 回调 jalr）的过激反应——该风险已被 step20 的
      * 「sleep 槽非空才注册」规避。而 0x200A 的 synth-ready 轮询超时（cap 65536

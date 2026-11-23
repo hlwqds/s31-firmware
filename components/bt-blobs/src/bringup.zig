@@ -144,6 +144,14 @@ pub export fn btLogYieldStub() callconv(.c) c_int {
     return 1;
 }
 
+/// **轮 124f**：断言环协作让出——NMI trace 实证 mepc 在 0x40001b9a（98BC 轮询）
+/// 与 0x400662fc（wr_btdm_assert）无限交替 = 任务内无界自旋 ⇒ 主循环饿死 ⇒
+/// osi_impl_serviceTimers 停摆 ⇒ synth 预热定时器永不触发 ⇒ RF-ready 永不置位
+/// ⇒ 自持死锁。wr_btdm_assert（环内必经）每 64 次 block 一次 = 让主循环泵定时器。
+pub export fn s31AssertYield() callconv(.c) void {
+    @import("osal_kit").sched.block();
+}
+
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
 pub var phy_before_clocks: bool = false; // 实验：PHY 初始化放到 step 5 之后
 
