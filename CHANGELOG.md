@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+### Fixed
+- **bt-blobs 主机门禁（2026-11-23）**：`scripts/check-host.sh` 自 BLE 实验轮次起在 `firmware` 上
+  失败（`zig build test`：`1df82d5` 通过，`c50a763` 及其后每个被测提交失败；`ci.yml` 的 `host`
+  job 跑的正是这一步，`image`/`e2e` 依赖它）。两处补齐，依据是 bt-blobs README 的判读纪律
+  （新增目标侧引用必须让主机门禁保持绿）：
+  ① `bringup.zig` 新增引用的 `esp_phy_enable`、`phy_i2c_writeReg`/`phy_i2c_readReg`、
+  `modem_clock_module_mac_reset` 没有主机桩 ⇒ 链接期 4 个未定义符号；补进只被
+  `host_tests.zig` 导入的 `host_stubs.zig`（不进镜像）。
+  ② `init` 路径上 4 处裸 MMIO（`enter()` 的 LP 复位原因槽，轮 120t；轮 123g/123i/130 的三个
+  实验块）没走同文件的 `mmioRd`/`mmioWr`/`mmioSet` ⇒ 主机上 3 条 bringup 用例段错误；改走助手，
+  它们在目标上展开成同样的 volatile 访问。
+  验证：`scripts/check-host.sh` → `pass=5 fail=0`（firmware 548，bt-blobs 18/18），
+  `build-image.sh firmware` 与 `run_e2e.py --host`（6 个 profile）通过；probe 镜像与父提交逐段
+  比对，`.flash.text`/`.flash.rodata`/`.iram_blobs`/`.data`/`.trap_ram`/`.bt_lp_data` 六段
+  SHA-256 全部相同（板上机器码不变；未重新上板）。
+
 ### Added
 - **生产 A/B 与回滚（矩阵 C5，2026-11-18）**：`firmware/idf-bootstrap/partitions.csv` 追加
   `ota_0`(0x190000) / `ota_1`(0x310000) / `otadata`(0x490000, 8K)，factory 仍在 0x10000。

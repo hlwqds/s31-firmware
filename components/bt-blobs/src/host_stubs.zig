@@ -17,6 +17,31 @@ export fn modem_clock_module_enable(modem: c_int) callconv(.c) void {
     _ = modem;
 }
 
+/// BT MAC 复位族（板上由 `link/modem_clock_light.c` 提供）。
+export fn modem_clock_module_mac_reset(domain: c_int) callconv(.c) void {
+    _ = domain;
+}
+
+/// PHY 使能（板上默认由 ROM 提供，见 `rom_syms.ld`）。
+export fn esp_phy_enable(modem: c_int) callconv(.c) void {
+    _ = modem;
+}
+
+/// RF 寄存器 I2C 读写原语（ROM）；`bringup.init` 的晶振 trim 读回用到。
+export fn phy_i2c_writeReg(reg: u8, hostid: u8, blk: u8, data: u8) callconv(.c) void {
+    _ = reg;
+    _ = hostid;
+    _ = blk;
+    _ = data;
+}
+
+export fn phy_i2c_readReg(reg: u8, hostid: u8, blk: u8) callconv(.c) u8 {
+    _ = reg;
+    _ = hostid;
+    _ = blk;
+    return 0;
+}
+
 export fn esp_phy_load_cal_and_init() callconv(.c) void {}
 
 export fn esp_btbb_enable() callconv(.c) void {}

@@ -259,9 +259,10 @@ fn enter(n: u32, comptime what: []const u8) void {
     last_step_name = what;
     // **轮 120t**：LP 核复位原因追踪——找 blob init 的杀核步骤（cause 翻 0xA 的步）。
     // 写 0x2E0003B0 = {step, cause}（跨复位可读，POLL/boot 读出对比）。
-    const lprc: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
-    @as(*volatile u32, @ptrFromInt(0x2E00_03B0)).* = n;
-    @as(*volatile u32, @ptrFromInt(0x2E00_03B4)).* = lprc;
+    // 主机门禁：走 mmio 助手（目标上展开成同样的 volatile 访问，主机为空操作）。
+    const lprc: u32 = mmioRd(0x2070_1038);
+    mmioWr(0x2E00_03B0, n);
+    mmioWr(0x2E00_03B4, lprc);
     if ((lprc & 0x3F) == (0xA << 1) and !lp_kill_seen) {
         lp_kill_seen = true;
         osal.logPublic("bt bringup: LPKILL at step {d} {s} corst=0x{x:0>8}", .{ n, what, lprc });
@@ -503,26 +504,24 @@ pub fn init(cfg: *config.Config) c_int {
         // 独立门，此前从未写过 ⇒ sw s3→0x20109888 被丢（轮 129f POLLCAP 地面
         // 真值）⇒ synth 永不编程 ⇒ 98BC=0。
         {
-            const wclk: *volatile u32 = @ptrFromInt(0x2010_9400);
-            wclk.* |= 1;
-            osal.logPublic("widgets clk en = 0x{x:0>8}", .{wclk.*});
+            // 主机门禁：经 mmio 助手访问（目标上表达式不变，主机为空操作/读 0）。
+            mmioSet(0x2010_9400, 1);
+            osal.logPublic("widgets clk en = 0x{x:0>8}", .{mmioRd(0x2010_9400)});
         }
         // **判决实验（轮 123g）**：此刻门已开——写 1254（schedule anchor，
         // blob task_init 稍后会用自己的值覆盖）并立即读回。回读=写入值 ⇒
         // SCHED 页可写，11AC=0 另有原因；回读=0 ⇒ 门模型对 SCHED 页不成立。
         {
-            const anchor: *volatile u32 = @ptrFromInt(0x2010_1254);
-            anchor.* = 0xC0DE_1234;
-            osal.logPublic("sched 1254 writeback=0x{x:0>8}", .{anchor.*});
+            mmioWr(0x2010_1254, 0xC0DE_1234);
+            osal.logPublic("sched 1254 writeback=0x{x:0>8}", .{mmioRd(0x2010_1254)});
         }
         // **轮 123i（守卫开锁实验）**：1254 写者守卫 = `107C < 0`（bit31=armed，
         // oracle=0x80000000、我们=0）+ `[ctx+80]!=0`。1258 已对拍一字不差 = 部分
         // 写入链正常，唯一缺 armed 旗。写 0x80000000 经验开锁：若 bit31 可写
         // ⇒ task_init 的 1254/11AC 守卫路径放行 ⇒ 调度武装 ⇒ BB 引擎起。
         {
-            const armed: *volatile u32 = @ptrFromInt(0x2010_107C);
-            armed.* = 0x8000_0000;
-            osal.logPublic("sched 107C writeback=0x{x:0>8}", .{armed.*});
+            mmioWr(0x2010_107C, 0x8000_0000);
+            osal.logPublic("sched 107C writeback=0x{x:0>8}", .{mmioRd(0x2010_107C)});
         }
         osal.logPublic("bt bringup: mce(6)+mac_reset done pre-task-init", .{});
     }
