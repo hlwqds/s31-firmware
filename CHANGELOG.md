@@ -20,6 +20,11 @@
   比对，`.flash.text`/`.flash.rodata`/`.iram_blobs`/`.data`/`.trap_ram`/`.bt_lp_data` 六段
   SHA-256 全部相同（板上机器码不变；未重新上板）。
 
+### Removed
+- `firmware/build.zig`：删掉 152b92a 给 net-tcp / net-ipv4 / net-udp-dhcp-dns / net-sockets 四个模块
+  多加的 `net_ethernet` 导入。那是一次没生效的模块冲突修复尝试（真正的冲突是 `wire` 与 `net`
+  两个 group 同开），四个组件的源码都不引用它。`build.zig` 由此回到 2f156fa 的状态。
+
 ### Added
 - **生产 A/B 与回滚（矩阵 C5，2026-11-18）**：`firmware/idf-bootstrap/partitions.csv` 追加
   `ota_0`(0x190000) / `ota_1`(0x310000) / `otadata`(0x490000, 8K)，factory 仍在 0x10000。
