@@ -464,6 +464,36 @@ pub fn init(cfg: *config.Config) c_int {
             osal.logPublic("bt bringup: env ptr oob=0x{x:0>8}", .{envp});
         }
     }
+    // **轮 123f（根因修复）**：官方 esp32c6/bt.c:1120-1121 顺序——mce(6) +
+    // mac_reset **先于** r_btdm_task_init。此前 mce(6) 只能等任务首个事件
+    // （enable 中段 FWD06）才跑 ⇒ task_init 期 SCHED 页全部写入
+    // （1254/1258/11AC/100C）在门关闭下静默丢弃（oracle 对拍：9C14 一字不差、
+    // 唯一 BB 差 = 11AC=bf000000 vs 0）。现在 mce(6) 是真实现（轮 123），
+    // 在此提前开门。mac_reset = btmac/btmac_apb 复位脉冲（modem_syscon_ll 同款）。
+    {
+        const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
+        const mcr = @extern(*const fn (domain: c_int) callconv(.c) void, .{ .name = "modem_clock_module_mac_reset" });
+        mce(6); // PERIPH_BT_MODULE：BLE_CLOCK_DEPS 12 门
+        mcr(6); // rst_btmac_apb/rst_btmac 脉冲
+        // **判决实验（轮 123g）**：此刻门已开——写 1254（schedule anchor，
+        // blob task_init 稍后会用自己的值覆盖）并立即读回。回读=写入值 ⇒
+        // SCHED 页可写，11AC=0 另有原因；回读=0 ⇒ 门模型对 SCHED 页不成立。
+        {
+            const anchor: *volatile u32 = @ptrFromInt(0x2010_1254);
+            anchor.* = 0xC0DE_1234;
+            osal.logPublic("sched 1254 writeback=0x{x:0>8}", .{anchor.*});
+        }
+        // **轮 123i（守卫开锁实验）**：1254 写者守卫 = `107C < 0`（bit31=armed，
+        // oracle=0x80000000、我们=0）+ `[ctx+80]!=0`。1258 已对拍一字不差 = 部分
+        // 写入链正常，唯一缺 armed 旗。写 0x80000000 经验开锁：若 bit31 可写
+        // ⇒ task_init 的 1254/11AC 守卫路径放行 ⇒ 调度武装 ⇒ BB 引擎起。
+        {
+            const armed: *volatile u32 = @ptrFromInt(0x2010_107C);
+            armed.* = 0x8000_0000;
+            osal.logPublic("sched 107C writeback=0x{x:0>8}", .{armed.*});
+        }
+        osal.logPublic("bt bringup: mce(6)+mac_reset done pre-task-init", .{});
+    }
     enter(6, "r_btdm_task_init");
     {
         const pp = @import("probe_ptr.zig");

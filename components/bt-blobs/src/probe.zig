@@ -2225,7 +2225,14 @@ pub fn run() noreturn {
         // ✅ **已实验判定：信道 37 不是原因**（2026-11-19，`0x07` → `0x03` 后 marker 仍 22/5）。
         // 曾怀疑信道 37 = 2402 MHz 走 26 MHz 路径、本板没使能 ⇒ 调谐就挂。
         // 结果：去掉 37 无变化 ⇒ 恢复标准的"三个信道全开"。
-        var ap: [15]u8 = .{ 0xA0, 0x00, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 };
+        // **轮 123k（oracle 命令序列逐字节复刻——此前 0x200A 从未发出）**：
+        // oracle（bt-ctl-oracle/main.c 轮 15）时序实证：0x2006(MAC) → 0x2008(15B
+        // params 字节) → 0x200A([01]) 后引擎才自臂 107C=80000000、11AC 跳动、
+        // 98BC=4。我们的旧序列 = 0x2006 发了 15B params（OCF/payload 错位）、
+        // F2 = 0x1405（Read RSSI）——0x200A 全程缺失 = 引擎永不武装的油门。
+        // 字节 = oracle_send_cmd 的 buf 逐字节同款（H4 0x01 前缀在 transport 层）。
+        const mac6: [6]u8 = .{ 0x02, 0x00, 0x00, 0x00, 0x20, 0x01 }; // 与 oracle p_addr 同
+        const advp15: [15]u8 = .{ 0x00, 0x20, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00 }; // 与 oracle p_advp 同
         // ✅ **已实验判定：地址类型不是原因**（2026-11-19）
         // 试过「0x2005 写随机地址 + own_addr_type=0x01」⇒ marker 仍 `stage=22`
         // （`tx` 从 5 变 6 **只是因为多了一条 0x2005**，不是成功）。
@@ -2327,7 +2334,7 @@ pub fn run() noreturn {
         // **轮 50：A→B 路径切换**——env[32]=FJxPPD 已注册（e32=0x400183a6 实证），
         // B 路径（hs_cmd_tx→jr env[32]）命令下行打通；A 路径（r_btdm_hci_trans_rx
         // → btdm ctx[32]=0）仍是死门。ADV 命令改走 B 路径直测 LL 处理能力。
-        const r6 = transport.sendCmdViaHs(0x2006, &ap);
+        const r6 = transport.sendCmdViaHs(0x2006, &mac6);
         // **轮 15 协作让出**：任务消费积压命令/腾队列——裸忙等连发会在队列临界态
         // 死锁（轮 14 实锤：0x200A 的 rx 阻塞等任务=任务等泵）。
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
@@ -2338,11 +2345,9 @@ pub fn run() noreturn {
         mark.put(0x80, 0xADC0B10d, transport.stats().btdm_tx);
         flashStageExtra(21, (@as(*volatile u32, @ptrFromInt(0x2038_A01C))).* >> 16 & 0xFF, 0);
         var ad: [32]u8 = @splat(0);
-        ad[0] = 3;
-        ad[1] = 2;
-        ad[2] = 0x06;
+        @memcpy(ad[0..advp15.len], &advp15);
         osal.lpTrace(3, 0xF002);
-        const r8 = transport.sendCmdViaHs(0x2008, &ad);
+        const r8 = transport.sendCmdViaHs(0x2008, &advp15);
         osal.lpTrace(3, 0xF003);
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
@@ -2454,7 +2459,9 @@ pub fn run() noreturn {
         (@as(*volatile u32, @ptrFromInt(0x2010_F83C))).* = 0x0241_1290;
         // **轮 76：F83C 写前后二分**（board.log 直写 UART 可靠——FIFO 免疫）
         board.log.line("F0 {x:0>8}", .{f83c_before});
-        const r6b = transport.sendCmdViaHs(0x2006, &ap);
+        // **轮 123k**：F1 改发 0x200A（此前 = 第二次 0x2006+params，enable 全程缺失）
+        const adv_en: [1]u8 = .{0x01};
+        const r6b = transport.sendCmdViaHs(0x200A, &adv_en);
         board.log.line("F1 rc={d} evt={d}", .{ r6b, transport.stats().evt_count });
         {
             // **轮 89b**：0x2006 的 CC status（last_evt 静态副本，[5]=status）
@@ -2640,6 +2647,7 @@ pub fn run() noreturn {
                     const bb2: [*]volatile u32 = @ptrFromInt(0x2010_11AC);
                     board.log.line("BB 450={x:0>8} 47C={x:0>8} 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8}", .{ bbr[0], @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, @as(*volatile u32, @ptrFromInt(0x2010_0444)).* });
                     board.log.line("BB 100C={x:0>8} 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_100C)).*, bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
+                    board.log.line("SC 1254={x:0>8} 1258={x:0>8} 107C={x:0>8} 1000={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_1254)).*, @as(*volatile u32, @ptrFromInt(0x2010_1258)).*, @as(*volatile u32, @ptrFromInt(0x2010_107C)).*, @as(*volatile u32, @ptrFromInt(0x2010_1000)).* });
                     var m2: usize = 0;
                     var ma: usize = 0x2E00_0000;
                     while (ma < 0x2E00_1000 and m2 < 4) : (ma += 4) {
@@ -2652,6 +2660,18 @@ pub fn run() noreturn {
                     if (m2 == 0) board.log.line("POLLSCAN none (核死或视图超 4KB 窗)", .{});
                 }
                 board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} i11ac={x:0>8} f818={x:0>8} bst={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, bbp.*, f818v, bst, lprcp });
+                // **轮 123d**：时钟门全指纹 + 桥活动——clk_conf(9C04) 22/25/28/29/30、
+                // LPCON clk(0x2010F018) bit1(coex)、bridge_w/r/d（input24 源活动）。
+                board.log.line("CLKG 9C04={x:0>8} 9C08={x:0>8} 9C14={x:0>8} LP018={x:0>8} bw={d}/{d}/{d} rtcwk={d}", .{
+                    @as(*volatile u32, @ptrFromInt(0x2010_9C04)).*,
+                    @as(*volatile u32, @ptrFromInt(0x2010_9C08)).*,
+                    @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*,
+                    @as(*volatile u32, @ptrFromInt(0x2010_F018)).*,
+                    bringup.bridge_w,
+                    bringup.bridge_ran,
+                    bringup.bridge_dropped,
+                    board.trap.rtc_wake_flag,
+                });
                 // **轮 121z9 关键修复**：POLL 环让出 CPU——mcycle 忙等 7.5s 饿死
                 // blob 任务 ⇒ ADV-enable 内部超时过期 ⇒ 永不完成（evt 恒 8 的
                 // 最简解释）。每次迭代让出一次 ⇒ blob 任务获得 90%+ CPU 时间。
