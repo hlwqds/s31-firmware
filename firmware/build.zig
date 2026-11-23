@@ -106,9 +106,13 @@ pub fn build(b: *std.Build) void {
     const ipv4_mod = b.createModule(.{ .root_source_file = b.path("../components/net-ipv4/src/api.zig") });
     const udp_mod = b.createModule(.{ .root_source_file = b.path("../components/net-udp-dhcp-dns/src/api.zig") });
     const tcp_mod = b.createModule(.{ .root_source_file = b.path("../components/net-tcp/src/api.zig") });
+    tcp_mod.addImport("net_ethernet", eth_mod);
+    ipv4_mod.addImport("net_ethernet", eth_mod);
+    udp_mod.addImport("net_ethernet", eth_mod);
     // socket 层（R2.2d）：net-wire 也要能驱动它，不只是 net 组的自检。
     const socks_mod = b.createModule(.{ .root_source_file = b.path("../components/net-sockets/src/api.zig") });
     socks_mod.addImport("net_tcp", tcp_mod);
+    socks_mod.addImport("net_ethernet", eth_mod);
 
     // OSAL（任务/调度器 + 同步原语）：从 bt-blobs 抽出来的独立组件。
     // 依赖面只有 std + builtin（时间/临界区/随机数是注入钩子），所以没有 board 依赖。
