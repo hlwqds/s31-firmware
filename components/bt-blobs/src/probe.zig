@@ -2581,6 +2581,9 @@ pub fn run() noreturn {
                 // **轮 121d**：BB 引擎启动写重断言——r_btdm_task_enable 写的
                 // [0x2010100C]=1 被 ADV-enable 坍缩抹除（BB dump 实证 100C=0）
                 @as(*volatile u32, @ptrFromInt(0x2010_100C)).* = 1;
+                // **轮 121z9 仪器**：BURST_STATUS(+0x14) 读回——bit0 = MST_BURST_DONE
+                //（burst 执行完成标志）。写 BURST_CONF 后 DONE=1 = I2C 事务完成。
+                const bst: u32 = @as(*volatile u32, @ptrFromInt(0x2010_F814)).*;
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B0)).* = (1 << 31); // SLEEP_REQ(WT)
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
@@ -2648,7 +2651,7 @@ pub fn run() noreturn {
                     }
                     if (m2 == 0) board.log.line("POLLSCAN none (核死或视图超 4KB 窗)", .{});
                 }
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} i11ac={x:0>8} f818={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, bbp.*, f818v, lprcp });
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} i11ac={x:0>8} f818={x:0>8} bst={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, bbp.*, f818v, bst, lprcp });
                 // **轮 121z9 关键修复**：POLL 环让出 CPU——mcycle 忙等 7.5s 饿死
                 // blob 任务 ⇒ ADV-enable 内部超时过期 ⇒ 永不完成（evt 恒 8 的
                 // 最简解释）。每次迭代让出一次 ⇒ blob 任务获得 90%+ CPU 时间。
