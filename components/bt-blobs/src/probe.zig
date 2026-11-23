@@ -2695,6 +2695,9 @@ pub fn run() noreturn {
                 }
             }
             if (found == 0) board.log.line("QFOUND none in pool (waiter 指针不匹配)", .{});
+            // **轮 121z9b**：ctrl_task 入口地址——找到 blob controller task 的
+            // 入口函数 ⇒ 反汇编找 BB schedule arm 写集。
+            if (t.ctx.entry) |e| board.log.line("TASKENTRY=0x{x:0>8}", .{@intFromPtr(e)});
         }
         // **轮 121z6**：post-POLL evt/btdm_tx 判读——0x200A 处理器若完成则
         // CC 事件入队（evt≥9）且命令已发（btdm_tx≥4）。
