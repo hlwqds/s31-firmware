@@ -31397,3 +31397,10 @@ r134b（真 pmu）时序：GATE 行打印后 **`sendCmdViaHs(0x200A)` 自身挂�
 命令处理路径打楔），不是 988x 写保留性的修复方向。「接受门」假说须另寻使能路径：
 候选 = ①真 pmu_init 完整跑通后重放全部使能寄存器（当前仅部分重放）②pmu_init
 内部挂死点定位（ISR dump 通道，README 25238 同族）③维持空桩 + TRM 路线。
+
+### 轮 138b 补充：DIAG_BUS 扫描判决
+
+DIAG_BUS_EXCHANGE(0x20109408, 4bit×4 全 16 组合) + DIAG_BUS_FIX_SEL(0x20109404,
+5bit×2 全 31 值 + LOW_EN) 盲扫 = **9888 视图零变化（hit=0）**——diag mux 不影响
+BB 私区 HP 视图。F800 bit24（RF-ON arm）复确认：轮 92b 专设实验已测（手动+burst
+双路径），非未置位项。DIAG 路线 = 无表盲射空间穷尽，正式关闭。

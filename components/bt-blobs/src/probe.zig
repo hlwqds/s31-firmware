@@ -2488,6 +2488,39 @@ pub fn run() noreturn {
             const rb: u32 = tgt.*;
             const verdict: []const u8 = if (rb == 0x1234_5678) "GATE-FOUND" else "still-gated";
             board.log.line("GATE mc0={x:0>8} ce0={x:0>8} w9880={x:0>8} {s}", .{ mc0.*, ce0v, rb, verdict });
+            // **轮 138**：DIAG_BUS_EXCHANGE 视图交换扫描——4-bit×4 mux 全组合
+            // （0x20109408：SEL0-3 各 4bit），每次写后读 9888：非零/变化 = 交换
+            // 改变了 BB 私区视图 = 机制发现。FIX_SEL(0x20109404) 同法 5bit×2。
+            {
+                const exc: *volatile u32 = @ptrFromInt(0x2010_9408);
+                const fix: *volatile u32 = @ptrFromInt(0x2010_9404);
+                const fix0 = fix.*;
+                exc.* = 0;
+                fix.* = 0;
+                var hit: u32 = 0;
+                var sel: u32 = 0;
+                while (sel < 16 and hit < 6) : (sel += 1) {
+                    exc.* = sel | (sel << 4) | (sel << 8) | (sel << 12);
+                    const v = @as(*volatile u32, @ptrFromInt(0x2010_9888)).*;
+                    if (v != 0) {
+                        board.log.line("EXC sel={d} w9888={x:0>8}", .{ sel, v });
+                        hit += 1;
+                    }
+                }
+                exc.* = 0;
+                var fs: u32 = 1;
+                while (fs < 32 and hit < 8) : (fs += 1) {
+                    fix.* = (fs << 5) | fs | (1 << 10);
+                    const v = @as(*volatile u32, @ptrFromInt(0x2010_9888)).*;
+                    if (v != 0) {
+                        board.log.line("FIX sel={d} w9888={x:0>8}", .{ fs, v });
+                        hit += 1;
+                    }
+                }
+                exc.* = 0;
+                fix.* = fix0;
+                board.log.line("DIAG sweep done hit={d}", .{hit});
+            }
             // **轮 136**：0x20109800-98FF 保留性地图（逐 16B 写魔数读回）
             // R=retain / L=live（硬件值滚动）/ D=drop（写丢）
             {
