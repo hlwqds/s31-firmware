@@ -421,6 +421,11 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     //    ⇒ `wifibb` 组 / `wifimac` / `wifi_apb` **都不是** `0x200A` 挂住的原因。
     //    因此保持 `0x003ff880`（BT + FE 已足够）。
     wr(reg_clk_conf1, 0x003f_f880);
+    // **轮 121v 根修**：FORCE_ON 写（+0x08）——clk_conf1 = 使能位可被 ICG 门控；
+    // FORCE_ON 位（bits 0-7 WIFIBB/WIFIMAC/WIFI_APB/FE/FE_APB/BTBB/BTMAC/BT_APB）
+    // = 不可门控的强开位。SCHED 页（0x20101000）写入不落地 = BT_APB 时钟被
+    // ICG 门控（force_on 未写）。写全 0xFF = 全部 modem 子块时钟 force-on。
+    wr(syscon_base + 0x08, 0x0000_00FF);
     // （曾用 RMW `rd(...) | 0x00070080`，因不落地改为整字写，见上）
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
         b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |
