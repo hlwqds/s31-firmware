@@ -2645,6 +2645,10 @@ pub fn run() noreturn {
                     if (m2 == 0) board.log.line("POLLSCAN none (核死或视图超 4KB 窗)", .{});
                 }
                 board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} i11ac={x:0>8} f818={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, bbp.*, f818v, lprcp });
+                // **轮 121z9 关键修复**：POLL 环让出 CPU——mcycle 忙等 7.5s 饿死
+                // blob 任务 ⇒ ADV-enable 内部超时过期 ⇒ 永不完成（evt 恒 8 的
+                // 最简解释）。每次迭代让出一次 ⇒ blob 任务获得 90%+ CPU 时间。
+                if (ctrl_task) |t| sched.resumeTask(&t.ctx);
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
