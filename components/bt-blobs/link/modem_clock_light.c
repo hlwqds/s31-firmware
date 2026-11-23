@@ -107,4 +107,10 @@ int wifi_bt_common_module_disable(int module) { (void)module; return 0; }
 int phy_module_enable(int module, bool enable) { (void)module; (void)enable; return 0; }
 int phy_module_disable(int module) { (void)module; return 0; }
 bool phy_module_has_clock_bits(int module) { (void)module; return false; }
+/* **轮 135**：pmu_init 恢复空桩（默认构建态）。真 pmu_init（pmu_init.c.obj +
+ * pmu_param.c.obj 随 -Dphy-src-objs 追加）已实证：**裸机可执行至 F1 前块 GATE
+ * 行**（较 bg_3049 崩 ROM 时代大幅前进 = PMU 移植可行性实证，r134b.log），但
+ * 随后在 0x200A 发送路径内挂死（GATE 后 60s+ 全静默）——与 README 25238
+ * item#2「pmu 后 flash 写静默失败 + FE 轮询挂」同族 = 独立课题。重新链入方法 =
+ * 删本空桩 + -Dphy-src-objs 追加 esp_hw_support 的 pmu_init.c.obj,pmu_param.c.obj。 */
 void pmu_init(void) {}

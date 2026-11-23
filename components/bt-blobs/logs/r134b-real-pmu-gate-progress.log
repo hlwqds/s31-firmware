@@ -1,0 +1,325 @@
+loader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=ba2f0h (762608) map
+I (236) esp_image: segment 1: paddr=000ca318 vaddr=2e000600 size=003c8h (   968) load
+I (239) esp_image: segment 2: paddr=000ca6e8 vaddr=2f000800 size=00214h (   532) load
+I (242) esp_image: segment 3: paddr=000ca904 vaddr=2f000a20 size=05714h ( 22292) load
+I (253) esp_image: segment 4: paddr=000d0020 vaddr=40100020 size=18a70h (100976) map
+I (273) esp_image: segment 5: paddr=000e8a98 vaddr=2f006134 size=0a00ch ( 40972) load
+I (286) boot: Loaded app from partition at offset 0x10000
+I (286) boot: Disabling RNG early entropy source...
+bt probe: hooks installed (now_ms=us/1000)
+bt probe: timer 4 -> 10 (must increase)
+bt probe: irqs OFF (control run)
+A308K
+bt probe: init start
+bt probe: rtc chk c1=0x00003e5b c2=0x0000a617 d=26556 t_lo=0x0004d685 t_en=00000000 ena=90000000 date=02508050
+F00=00000000 F04=00000000 F08=00000000 F12=00000000 F16=00000000 F20=00000000 F24=00000004 F28=00000004 
+clkrst+0x000 = 0x00000001
+clkrst+0x004 = 0x00000003
+clkrst+0x010 = 0x00000001
+clkrst+0x01c = 0x00000003
+clkrst+0x020 = 0x00000004
+clkrst+0x024 = 0x00000003
+clkrst+0x028 = 0x00000003
+clkrst+0x034 = 0x00000001
+clkrst+0x038 = 0x000156db
+clkrst+0x03c = 0x0000000f
+clkrst+0x040 = 0x00000001
+clkrst+0x044 = 0x0000000f
+clkrst+0x048 = 0x00000011
+clkrst+0x058 = 0x00415555
+clkrst+0x05c = 0x00000005
+clkrst+0x064 = 0x00000ba1
+clkrst+0x068 = 0x00000181
+clkrst+0x06c = 0x00800043
+clkrst+0x070 = 0x00800043
+clkrst+0x078 = 0x00000001
+clkrst+0x07c = 0x00000001
+clkrst+0x080 = 0x00000001
+clkrst+0x088 = 0x00000083
+clkrst+0x08c = 0x00000083
+clkrst+0x090 = 0x00000083
+clkrst+0x094 = 0x00000083
+clkrst+0x0a8 = 0x00000040
+clkrst+0x0d8 = 0x00000001
+clkrst+0x114 = 0x00000921
+clkrst+0x118 = 0x00000011
+clkrst+0x11c = 0x00000921
+clkrst+0x134 = 0x00000001
+clkrst+0x144 = 0x00000001
+clkrst+0x15c = 0x00000011
+clkrst+0x160 = 0x00001011
+clkrst+0x164 = 0x00001011
+clkrst+0x168 = 0x0000012c
+clkrst+0x16c = 0x0000001a
+clkrst+0x170 = 0x00000002
+clkrst+0x174 = 0x0000004d
+clkrst+0x17c = 0x00000101
+clkrst+0x180 = 0x00000102
+clkrst+0x184 = 0x00000103
+clkrst+0x188 = 0x00000505
+clkrst+0x18c = 0x00000107
+clkrst+0x190 = 0x00000117
+clkrst+0x194 = 0x00000105
+clkrst+0x198 = 0x0000010b
+clkrst+0x1a0 = 0x000003ff
+clkrst+0x1a4 = 0x000003ff
+clkrst+0x1a8 = 0x000003ff
+clkrst+0x1b0 = 0x00000001
+clkrst+0x1cc = 0x00000001
+clkrst+0x1d0 = 0x00000001
+clkrst+0x1d8 = 0x00000001
+clkrst+0x1dc = 0x00000001
+clkrst+0x1e0 = 0x00000025
+clkrst+0x1e8 = 0x00000107
+clkrst+0x1ec = 0x0000000c
+clkrst+0x1f0 = 0x00000004
+clkrst+0x1f4 = 0x00000004
+clkrst+0x1f8 = 0x00000001
+clkrst+0x1fc = 0x02509110
+FE800=1
+PREVHANG pc0=0x4d10e5fd pc1=0x60729669 nmi_this=0 h600=00000000
+ADVRES magic=00000000 first=00000000 last=00000000
+HANGDUR feed=80000 (×0.25s = 挂死秒数)
+ULPPATH cfg1=0x000956a0 (初值 0x29cc40, 递增=通路活)
+LPCNT hb=000040ed phase=0000f3dc (>0 = LP 核活)
+BOOTADDR=0x2e000000 (期望 0x2E001000)
+LPCORST raw=0x20000003 (bit0=flag, [6:1]=cause, bit29=pmu_mask)
+LPCLK cpu=00000000 ram=40000000 intr=00000000 (cpu[30]=1 ram[30]=1 intr[30]=1 期望)
+BOOTSEQ=1660610474
+MAGIC none in 0x0000-0x3FFF (LP 核未写或视图在别处)
+GPTR none in 0x2f000000-0x2f080000
+ADVRES2 9C10=00000000 98B8=00000000 98C0=00000000
+CANARY CLK_CONF1=00000000 LP_CLK18=00000004 (bit1=1 ⇒ ULP 可达)
+RING n=2585815162
+RING[00]
+ PC00=0xec88cc70
+ PC01=0x1b635a4f
+ PC02=0xd45df774
+ PC03=0xbebff9ed
+RING[04]
+ PC04=0x76b76036
+ PC05=0x64e4f474
+ PC06=0x46da86c1
+ PC07=0xc43b008b
+RING[08]
+ PC08=0x1a0aa09a
+ PC09=0x54f64e96
+ PC10=0x4c7f1a64
+ PC11=0x9dc1f9e7
+RING[12]
+ PC12=0x01aff0e2
+ PC13=0xc741c152
+ PC14=0x0e50e047
+ PC15=0xb87792d1
+RING[16]
+ PC16=0xd92a6b7b
+ PC17=0x519ac47f
+ PC18=0x07e93d1a
+ PC19=0x6879f817
+RING[20]
+ PC20=0x1cbb8612
+ PC21=0x04c0eaed
+ PC22=0x6ab42631
+ PC23=0xe032b832
+RING[24]
+ PC24=0x243aa6b7
+ PC25=0x7766e323
+ PC26=0x580e6fd2
+ PC27=0x76c51908
+RING[28]
+ PC28=0x3d9823c0
+ PC29=0xde674b7e
+ PC30=0xb23604ca
+ PC31=0x3de53f13
+BBT seq=1482489635 osal_ra=0x0c08d813 sink_ra=0x8d226d39 phase=0x1d1d419f
+BBT wp2 pc=0x4dbbf581 ra=0x1a6958fd count=4132028747
+BBT env16=0xe60e31f4 env20=0x261ea104
+BBT hook fired=0 slot=0x00000000 fn=0x00000000 n=0
+BBR 0 t2 0x3f30ff8
+BBR 1 t14 0xdcb15f6
+BBR 2 t11 0xce35271
+BBR 3 t9 0x0f3a39f
+BBR 4 t6 0xe54f517
+BBR 5 t1 0x34f7388
+BBR 6 t11 0xf86c86f
+BBR 7 t5 0x328fc67
+BBR 8 t7 0xfe03b22
+BBR 9 t14 0x553820b
+BBR 10 t11 0x96e7916
+BBR 11 t2 0x61e2b32
+BBR 12 t4 0xbb85597
+BBR 13 t7 0xd8fc517
+BBR 14 t10 0x448057b
+BBR 15 t7 0x432f26b
+BBR 16 t15 0x18098ad
+BBR 17 t2 0x76c9e4f
+BBR 18 t10 0xa744f24
+BBR 19 t7 0x927d050
+BBR 20 t6 0xc2af2eb
+BBR 21 t0 0x3c7822a
+BBR 22 t13 0x9801cce
+BBR 23 t2 0xe217302
+EVH e43e22a9/3537843942
+EVH 040e4154/2147460588
+EVH 0204393a/149646118
+EVH 89106e5f/1093754757
+EVH a56f9cd2/709061894
+EVH 61190e0b/1305116411
+EVH 76c224c6/3677231382
+EVH 253d8cd0/2317312470
+BBP last=0x4d10e5fd prev=0x60729669 nmi=0 assert_line=3892152753
+BBQ 0 0xb87792d1
+BBQ 1 0x0e50e047
+BBQ 2 0xc741c152
+BBQ 3 0x01aff0e2
+BBQ 4 0x9dc1f9e7
+BBQ 5 0x4c7f1a64
+BBQ 6 0x54f64e96
+BBQ 7 0x1a0aa09a
+BBQ 8 0xc43b008b
+BBQ 9 0x46da86c1
+BBQ 10 0x64e4f474
+BBQ 11 0x76b76036
+BBQ 12 0xbebff9ed
+BBQ 13 0xd45df774
+BBQ 14 0x1b635a4f
+BBQ 15 0xec88cc70
+bt probe: trig armed tdl=0x2100000a tsat3=03
+rom fe_poll @0x2f828840
+rom rf_pwr @0x2f00c3b0
+rom tc_tgt @0x2f8210c0
+rom helper @0x2f80e420
+rom isr35 @0x2f815258
+rom base0 @0x2f000000
+rom base800 @0x2f000800
+rom isr37h @0x2f07f188
+rom chead @0x2f8127ec
+rom btini @0x2f814000
+rom ctxp @0x2f07f1f4
+ARM0 cpu=40000000 ram=40000000 intr=40000000 ba=2e000080
+bbbt mbbbbbt bribt bribt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 lpcon=0x00000006
+bt lp: gates confbbbbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbbt bringup: enter step 52 init_phy
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0 cal[10..14]=0x23feff fe_readable=1 fe=0x5ac968b1
+bt bringup: PHY enabled AFTER step 5 (idf order)
+bt bringup: task list head init *(0x2f011130)=0x00000000
+bt bringup: env pbbt briarch: sched 107C writeback=0x00000000
+Q1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 66 61
+Q5 197 4745 0 126
+ZU 122->4,4 spins=36885 cc=3000000
+A0/311848
+
+M0 2244 0x2f029fd0
+
+M1 132 0x2f02a8a8
+
+M2 820 0x2f02a940
+
+M3 80 0x2f02ac88
+
+M4 64 0x2f02ace8
+
+M5 76 0x2f02ad38
+
+MC 6 sz=76 ret=0x2f02ad38
+
+CN 0x2f02a898 0x98 24
+
+D66.3
+
+Mosal> eventqInit
+
+Msched 107C writeback=0x0
+
+Msched 1254 writeback=0x8
+
+bbbbbbtbt bbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 83 76
+Q5 203 4831 0 126
+ZU 122->4,4 spins=36873 cc=3000000
+A0/309032
+
+M0 2244 0x2f029fd0
+
+M1 132 0x2f02a8a8
+
+M2 820 0x2f02a940
+
+M3 80 0x2f02ac88
+
+M4 64 0x2f02ace8
+
+M5 76 0x2f02ad38
+
+M6 8 0x2f02ad98
+
+M7 36 0x2f02adb8
+
+MC 20 sz=8 ret=0x2f02b878
+
+CN 0x2f02a898 0x98 80
+
+D83.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+bt bbt obtbbbt bringup: ebbt ret:bbt bringbt brinbt coex: register_ble_cb type=0
+bt coex: register_ble_cb type=1
+bt probe: cb10 head oob=0x00000000
+bt probe: sched slot aftbbbt bringup: public addbt probebt bringup: load_cal done (pre-mce13-uart-window)
+bt hci: transport ready (own ops, no VHCI ring)
+bt bringup: INITED
+ARM1 cpu=40000000 ram=40000000 intr=40000000 ba=2e000080
+REARM BOOTADDR=0x2e000080 (期望 0x2E000080)
+SLPFIX-early w5=0 w6=0 w8=0 sleep_en=0 (all disabled)
+bt probe: arena free=276968 B
+bt bringup: enable-phase esp_phy_enable(2)
+bt bringup: calling esp_btbb_enable
+Jul 14 2026
+bt bringup: esp_btbb_enable done
+bt pbbt probbbt bringupbt brinbt probebbt callbbt bbbt schebtbtbbbtbbbbbbbbbbbbt hci << EVT bbbtbtbbbbbbbtbt call: eventq_get
+bt probe: A(rx) sendReadVersion rc=0 stats cmds=3 evt=4
+bt hci >> CMD opcode=0x0c03 plen=0
+bt call: eventq_get
+bt probe: A2(rx) sendReset rc=0 btdm_tx=2
+bt hci >> CMD opcode=0x1009 plen=0
+bt call: eventq_get
+bt probe: A4(rx) readBdAddr rc=0 btdm_tx=3
+arch: osal> eventRun
+HIST[0] ticks=2000 fe=179 blob=145(last 0x2f009b90) main=1675(last 0x4006eea2) other=1 tim=0/0 fn=0x00000000
+bt osal: arm src=124 -> CLIC input 24 (routed, bridged=true) mie|=bbbt bbbbFWD06 rc=0 evt=5
+btbbbFWD8 rc=0 evt=6
+LEENV slot invalid 00000000
+bt probe: sched patchset written (22 regs) pre-200A
+arch: osal> eventRun
+F0 12411290
+CTXMIRROR g=2f07ea18 w9888=00000000
+GATE mc0=00000001 ce0=00000001 w9880=00000000 still-gated
