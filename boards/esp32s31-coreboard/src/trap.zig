@@ -675,6 +675,13 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             rtc_wake_n +%= 1;
             @as(*volatile u32, @ptrFromInt(0x2080_0034)).* = 1 << 31; // INT_CLR bit31
         }
+        if (input == 7 and pmu_wake_on) {
+            // **轮 120o**：PMU SW_WAKEUP_HP（src141→input7）——LP 核被 HP_TRIGGER_LP
+            // 唤醒后向 HP 举手的中断。清 PMU SW INT 挂起（PMU_HP_INT_CLR bit29
+            // WT），计数自证（intctl 读恒 0 只能 trap 侧判读）。
+            pmu_wake_flag +%= 1;
+            @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x198)).* = 1 << 29;
+        }
         if (input == 25) {
             hw.ackT0Interrupt(sample_period_us);
             // **前置验证**：NMI 到底还在不在触发？
@@ -1389,6 +1396,8 @@ pub var udiv_watch_on: bool = false;
 // **RTC SOC_WAKEUP 中断**（MAP 路由到 CLIC input 6）：trap 上下文只置旗+
 // 清挂起，主上下文泵循环调 sleep 回调（trap 内不打日志/不调函数——安全纪律）
 pub var rtc_wake_on: bool = false;
+pub var pmu_wake_on: bool = false;
+pub var pmu_wake_flag: u32 = 0;
 pub var rtc_wake_flag: u32 = 0;
 pub var rtc_wake_n: u32 = 0;
 pub var rtc_freq_rb: u32 = 0; // bringup 早补丁回读（0=补丁未跑/对象 OOB）

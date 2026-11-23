@@ -1793,6 +1793,7 @@ pub fn run() noreturn {
         const wake_input: u32 = 6;
         map_reg.* = wake_input;
         board.trap.rtc_wake_on = true;
+        board.trap.pmu_wake_on = true; // 轮 120o：PMU SW_WAKEUP_HP（src141→input7）
         // CLIC input 6 门控：IE(bit8) + prio(bit30:28)=1
         const clic6: *volatile u32 = @ptrFromInt(0x1080_1000 + wake_input * 4);
         clic6.* = (clic6.* & ~@as(u32, 0xFFFF_FFFF)) | (1 << 8) | (1 << 30);
@@ -2574,6 +2575,17 @@ pub fn run() noreturn {
             // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。
             // 静默一切 UART 输出，ADV-enable 结果直写 0x18F000 marker 离线判读。
             board.log.muted = true;
+            // **轮 120o 根修**：SW_WAKEUP_HP INT 路由三件套——HP_TRIGGER_LP 唤醒
+            // LP CPU 后 LP 经 SW_WAKEUP_HP（PWR2 bit1 使能的源）向 HP 举手；source
+            // 141（ETS_PMT/PMU_INTR）未路由 = CLIC 硬件向量跳 base 0x10801000 = 崩
+            //（r119m/120l 两族 crash 同机制）。MAP→input7 + intctl IE+prio +
+            // PMU INT_ENA/CLR bit29（PMU_HP_INT_ENA/CLR = PMU base+0x194/0x198）。
+            @as(*volatile u32, @ptrFromInt(0x2058_5000 + 141 * 4)).* = 7; // MAP: src141→input7
+            {
+                const clic7: *volatile u32 = @ptrFromInt(0x1080_1000 + 7 * 4);
+                clic7.* = (1 << 8) | (1 << 30); // IE + prio=1（写有效读恒 0）
+            }
+            @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x194)).* |= (1 << 29); // PMU INT_ENA sw
             // **轮 120k**：STORE 观察点盯 SYSTIMER_CTRL0（0x20587120）——坍缩期间
             // 谁写它（blob 门控 SYS_TIMER 的写点）→ trap cause=3 → wp 槽给出 mepc。
             // tdata1=0x4A（STORE|M|U）；tselect=1（0 号留给历史武装）。
