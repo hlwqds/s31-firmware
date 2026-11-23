@@ -31444,3 +31444,19 @@ oracle 侧 WMAP（同区逐 16B 写魔数读回）= **三态混合**：R（写�
 `r_sym_bt_bj5zQadXwPhvFNU4tqfe`）。这对「真 pmu 后 0x200A 路径挂死」给出了
 结构性候选解释：pmu 的关键工作被延迟到 callout，而 callout 的触发依赖
 osi 定时器链（我们已修但可能仍有缺口）。
+
+## 轮 146-147（2026-11-23 续）：区域可写翻转 + 新等待面
+
+| 项 | 结果 |
+|---|---|
+| **三件套组合**（真 pmu_init + s31AssertYield callout 泵 + mc0\|=0x15） | **0x201098xx 区域从全 D 翻转为 RRRR 可写**（r146a WMAP，对照轮 136 全 D = 域上电 callout 实证生效） |
+| 0x200A 后 blob | 进入**无断言紧等待环**（yield 注入只覆盖 wr_btdm_assert 面）→ CPU 饿死全静默（90s 零字节连 NMI 行都无 = 环疑似关中断） |
+| UART 恢复 | pmu_init 后立即恢复 CTRL0 快照 = 挂死根修 ✓（r138a 流程首次全程存活） |
+| 真 pmu 判决 | 0x200A 无 CC + 0x1405 rc-3 = 控制器楔得更死（净效应负，但可写翻转让「域上电」课题复活） |
+| 已恢复 | 空桩工作态（r146c = POSTPOLL ✓） |
+
+### 下 session 首项
+
+真 pmu 态 NMI mepc 采样定位新等待面（注意：pollcap 旧区间 [0x40001b22-1bf0] 不适用
+= 新面地址未知；pc_ring 通用记录可用但 flash dump 通道 post-pmu 不可靠——
+**ISR 0x187000 通道** = README 实证 post-pmu 可靠）。环定位后复刻轮 125 模式加让出。
