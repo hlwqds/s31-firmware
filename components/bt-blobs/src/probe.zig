@@ -1364,12 +1364,40 @@ pub fn run() noreturn {
         // **轮 138（r134b 挂死根修）**：pmu_init 杀 UART0 时钟 ⇒ 后续阻塞写
         // （log/sendCmdViaHs 路径）永挂 = r134b「GATE 后静默」真因。立即从
         // uartSnapshot 恢复 CTRL0（bit7 UART0_CLK_EN/bit1 APB_CLK_EN）。
-        // **轮 152b**：回退到 CTRL0-only（轮 152 全块恢复 = 写入 FIFO/测试等
-        // 写敏感寄存器 → trapDispatch 二重异常 → CPU_LOCKUP，r152a 实证）。
-        // 下一步 = post-pmu 先读 UART0 块 diff 快照，只恢复变化的**配置寄存器**
-        // （跳过 FIFO/status/测试偏移），UART 钟相关位再精修。
+        // **轮 153**：差分+安全集恢复——post-pmu 读 UART0 块 diff 快照并打印，
+        // 仅恢复配置核心段偏移 {0x14,0x18,0x1C,0x20,0x24}（CONF0/1/2/CLKDIV/
+        // RX_FILT；跳过 0x00 FIFO、0x04-0x10 中断组、写敏感偏移）。
         @as(*volatile u32, @ptrFromInt(CLKRST_UART0_CTRL0)).* = uart_ctrl0_snap;
         @as(*volatile u32, @ptrFromInt(CLKRST_SOC_CLK_SEL)).* = uart_soc_snap;
+        {
+            const safe_offs = [_]u32{ 0x14, 0x18, 0x1C, 0x20, 0x24 };
+            var dstr: [112]u8 = undefined;
+            var dn: u32 = 0;
+            for (safe_offs) |off| {
+                const cur: u32 = @as(*volatile u32, @ptrFromInt(UART0 + off)).*;
+                const want: u32 = uart_snap[off / 4];
+                if (cur != want) {
+                    @as(*volatile u32, @ptrFromInt(UART0 + off)).* = want;
+                    dn += (std.fmt.bufPrint(dstr[dn..], "[{x:0>2}]{x:0>8}->{x:0>8} ", .{ off, cur, want }) catch break).len;
+                }
+            }
+            board.log.line("UARTDIFF {s}", .{dstr[0..dn]});
+            // **轮 154**：剩余偏移 diff 只读打印（UART 已活）——0x00 FIFO 与
+            // 0x04-0x10 中断组写敏感只读不写；任何偏移 post-pmu 仍 ≠ 快照 =
+            // pmu 触碰清单 = 精修恢复的靶点。
+            var rn: u32 = 0;
+            var rstr: [160]u8 = undefined;
+            var off: u32 = 0;
+            while (off < uart_cmp_words * 4) : (off += 4) {
+                const cur: u32 = @as(*volatile u32, @ptrFromInt(UART0 + off)).*;
+                const want: u32 = uart_snap[off / 4];
+                if (cur != want) {
+                    rn += (std.fmt.bufPrint(rstr[rn..], "[{x:0>2}]{x:0>8}", .{ off, cur }) catch break).len;
+                }
+                if (rn > (rstr.len - 24)) break;
+            }
+            board.log.line("UARTREST {s}", .{rstr[0..rn]});
+        }
         // **轮 93**：lp_pc_en 武装前读 LP 槽——里面是**上一轮 boot 挂死时**的冻结
         // mepc（NMI 每 2ms 写，挂死后不再更新，LP 跨复位保留）。确定性 hang ⇒
         // 每轮打印的都是同一挂死 PC。上轮 boot 在 0x200A 后全静默 ⇒ 此值即死点。
