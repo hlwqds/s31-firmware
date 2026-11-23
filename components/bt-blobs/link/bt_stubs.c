@@ -80,26 +80,41 @@ unsigned bt_assert_hits = 0;
  * ⇒ double fault ⇒ rst:0x1a ×35 风暴。断言是终止性的（IDF 语义），返回没有意义。
  * 直写走 s31_bt_raw_line（bringup.zig 导出，绕 shim 的 mute/FIFO 丢弃）——
  * 断言文本必须可见（本次靠手挖 .rodata 才拿到 btdm_sleep.c:684）。 */
+
+
 extern void s31_bt_raw_line(const char *s);
 
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
     bt_assert_hits++;
     *(volatile unsigned int *)0x2E000388 = (unsigned int)line; /* LP: 跨复位可读（探针 BBP 行） */
-    char buf[128];
+    /* **轮 120e**：buf 128→256（ble_hw.c 全路径 86 字符把 p0/type 挤掉——占位符
+     * 之谜），并打全 p0/p1/type/RA（一次 boot 拿到断言点全现场）。 */
+    char buf[256];
     int n = 0;
     const char *src = "bt-blob-strong-assert ";
     while (*src && n < (int)sizeof buf - 1) buf[n++] = *src++;
     src = file ? file : "?";
     while (*src && n < (int)sizeof buf - 1) buf[n++] = *src++;
     {
-        /* 手写十进制（freestanding 无 snprintf）；:line p0=.. type=.. 全保留 */
         buf[n++] = ':';
         if (line < 0) { buf[n++] = '-'; line = -line; }
         char tmp[12]; int t = 0;
         do { tmp[t++] = (char)('0' + line % 10); line /= 10; } while (line && t < 12);
         while (t && n < (int)sizeof buf - 1) buf[n++] = tmp[--t];
-        const char *sfx = " p0=? type=?";
-        while (*sfx && n < (int)sizeof buf - 1) buf[n++] = *sfx++;
+        unsigned ra = (unsigned)__builtin_return_address(0);
+        const char *sfx2 = " p0=0x";
+        while (*sfx2 && n < (int)sizeof buf - 1) buf[n++] = *sfx2++;
+        unsigned vals[4] = { (unsigned)p0, (unsigned)p1, (unsigned)type, ra };
+        const char *sep[4] = { " p1=0x", " type=0x", " ra=0x", "" };
+        for (int vi = 0; vi < 4; vi++) {
+            /* 每值 8 位 hex（freestanding 无 snprintf；type 值小，前导零可容忍） */
+            for (int sh = 28; sh >= 0 && n < (int)sizeof buf - 1; sh -= 4) {
+                unsigned d = (vals[vi] >> sh) & 0xF;
+                buf[n++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+            }
+            const char *sx = sep[vi];
+            while (*sx && n < (int)sizeof buf - 1) buf[n++] = *sx++;
+        }
     }
     buf[n] = 0;
     s31_bt_raw_line(buf);
