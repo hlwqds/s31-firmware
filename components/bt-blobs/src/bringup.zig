@@ -149,7 +149,11 @@ pub export fn btLogYieldStub() callconv(.c) c_int {
 /// osi_impl_serviceTimers 停摆 ⇒ synth 预热定时器永不触发 ⇒ RF-ready 永不置位
 /// ⇒ 自持死锁。wr_btdm_assert（环内必经）每 64 次 block 一次 = 让主循环泵定时器。
 pub export fn s31AssertYield() callconv(.c) void {
+    // **轮 146**：让出窗口同时泵两套延迟机制——①serviceCallouts（真 pmu 的
+    // 域上电 callout 在 enable 阶段注册，主循环泵未达 ⇒ 不在此泵 = 域永不
+    // 上电 = 0x200A 发送自挂，r134b 实证）②osi 定时器（同族泵缺口）。
     @import("osal_kit").sched.block();
+    _ = osal.serviceCallouts(osal.timeGet());
 }
 
 /// 是否沿用旧顺序（PHY 早于 step 5 的时钟使能）。默认 false = 按 IDF 顺序。
