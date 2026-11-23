@@ -493,6 +493,16 @@ pub fn init(cfg: *config.Config) c_int {
         const mcr = @extern(*const fn (domain: c_int) callconv(.c) void, .{ .name = "modem_clock_module_mac_reset" });
         mce(6); // PERIPH_BT_MODULE：BLE_CLOCK_DEPS 12 门
         mcr(6); // rst_btmac_apb/rst_btmac 脉冲
+        // **轮 130（根因修复终章）**：MODEM_WIDGETS_CLK_CONF_REG(0x20109400)
+        // bit0 = MODEM_WIDGETS_CLK_EN（reg_base.h/modem_widgets_reg.h 权威）——
+        // widgets 块（0x20109400-0x9BFF，含 synth 编程窗 0x20109880-98BC）自带
+        // 独立门，此前从未写过 ⇒ sw s3→0x20109888 被丢（轮 129f POLLCAP 地面
+        // 真值）⇒ synth 永不编程 ⇒ 98BC=0。
+        {
+            const wclk: *volatile u32 = @ptrFromInt(0x2010_9400);
+            wclk.* |= 1;
+            osal.logPublic("widgets clk en = 0x{x:0>8}", .{wclk.*});
+        }
         // **判决实验（轮 123g）**：此刻门已开——写 1254（schedule anchor，
         // blob task_init 稍后会用自己的值覆盖）并立即读回。回读=写入值 ⇒
         // SCHED 页可写，11AC=0 另有原因；回读=0 ⇒ 门模型对 SCHED 页不成立。
