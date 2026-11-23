@@ -2657,6 +2657,27 @@ pub fn run() noreturn {
                         const pc_mepc = @extern(*volatile u32, .{ .name = "pollcap_mepc" });
                         board.log.line("POLLCAP n={d} mepc=0x{x:0>8} a3={x:0>8} a4={x:0>8} s1={x:0>8}", .{ pn.*, pc_mepc.*, pa3.*, pa4.*, ps1.* });
                     }
+                    // **轮 129b**：栈区调度槽扫描——a4 = Deeq 的 sp+15（确定性），
+                    // [a4-1912] = s3 = ctx ptr 落栈槽。parked sp 向下扫 1000 词找
+                    // 0x2f02cd58，命中打印邻域 16 词（调度字段非零 = 武装已写栈）。
+                    if (ctrl_task) |t| {
+                        const sp0: usize = t.ctx.sp;
+                        var hits3: u32 = 0;
+                        var qq: usize = sp0 - 4000;
+                        while (qq < sp0 + 4000 and hits3 < 3) : (qq += 4) {
+                            const svv = @as(*volatile u32, @ptrFromInt(qq)).*;
+                            if (svv == 0x2f02_cd58) {
+                                hits3 += 1;
+                                board.log.line("CTXSLOT @0x{x:0>8} (sp-{})", .{ qq, sp0 - qq });
+                                var wi: u32 = 0;
+                                while (wi < 12) : (wi += 1) {
+                                    const wa = qq - 64 + wi * 4;
+                                    board.log.line("S{d:0>2} {x:0>8} = {x:0>8}", .{ wi, wa, @as(*volatile u32, @ptrFromInt(wa)).* });
+                                }
+                            }
+                        }
+                        if (hits3 == 0) board.log.line("CTXSLOT none in [sp-4000,sp+4000)", .{});
+                    }
                     // **轮 124d**：ana 芯片内部对拍——reg99 横扫 blocks 1-6 + B6 regs
                     // 92-106（oracle 基线：R99 b1=ab b3=32 b4=11 b5=11；B6=ff*5 80 3f 00 ff ff 63 0a ff 2f 00）
                     {

@@ -986,8 +986,8 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
             // 打出来就直接指向那个循环，比逐层加日志快得多。
             recordPc(frame.mepc);
             // **轮 129**：等锁环现场捕获（只采第一次）。
-            if (frame.mepc >= 0x4000_1b8c and frame.mepc <= 0x4000_1ba0 and pollcap_n == 0) {
-                pollcap_n = 1;
+            if (frame.mepc >= 0x4000_1b22 and frame.mepc <= 0x4000_1bf0 and pollcap_n < 200) {
+                pollcap_n += 1;
                 pollcap_mepc = frame.mepc;
                 pollcap_a3 = frame.a3;
                 pollcap_a4 = frame.a4;
