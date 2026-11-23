@@ -31382,3 +31382,9 @@ IDF 全树 grep：MODEM_WIDGETS/DIAG_BUS 零驱动使用——diag 信号编码�
 oracle 写保留 = 命令被闩锁接受 ✓；我们写丢失 = **命令接口拒收**（BB 未处于接受态）。
 接受态的使能条件在 BB 内部（离线不可达，需 TRM）。此改判替代轮 128b 的
 「BB 总线可见性」与轮 130 的「BB 核死/活」两种表述。
+
+### 轮 136b 终审注记（防同族假说重启）
+
+blob 自身函数对 0x2E00xxxx（HP/LP 共享私区）**零引用**——BB↔LP 通信走硬件专用
+总线，与该区无关。**任何「LP RAM 践踏/碰撞影响 BB」假说 = 结构性不可能，勿再开**。
+（全镜像 disasm 常量 grep 权威实证，r136b-full-disasm-lp-authoritative.txt）
