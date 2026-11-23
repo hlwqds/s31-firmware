@@ -2629,6 +2629,12 @@ pub fn run() noreturn {
                 clic7.* = (1 << 8) | (1 << 30); // IE + prio=1（写有效读恒 0）
             }
             @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x194)).* |= (1 << 29); // PMU INT_ENA sw
+            // **轮 120y**：synth-waiter 补丁——r_sym_ble_NZbbpXEXzbgRpDNnAbBu
+            //（0x40001b22）入口写 c.ret（0x8082）：synth 永不上电 ⇒ 等待器超时
+            // ⇒ 断言 ⇒ 调用者无限重试（BT_ASSERT_RETURNS 语义差）。补丁 = 立即
+            // 返回 ⇒ blob 跳过等待继续推进（官方 rc=3 容忍路径）。
+            @as(*volatile u16, @ptrFromInt(0x4000_1B22)).* = 0x8082;
+            asm volatile ("fence.i");
             // **轮 120k**：STORE 观察点盯 SYSTIMER_CTRL0（0x20587120）——坍缩期间
             // 谁写它（blob 门控 SYS_TIMER 的写点）→ trap cause=3 → wp 槽给出 mepc。
             // tdata1=0x4A（STORE|M|U）；tselect=1（0 号留给历史武装）。
