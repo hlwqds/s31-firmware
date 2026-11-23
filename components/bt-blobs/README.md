@@ -31367,3 +31367,9 @@ blob 内部收缩决策点的定位与中和（blob 反汇编级 patch）或 Fre
 - 移交 RF/电源硬件域：头号嫌疑 = pmu_init 后时钟/电源异常族（UART 钟/flash 写）；次级 = DIAG_BUS_FIX_SEL 官方调试通道（BB 内部信号 → GPIO）
 - 仪器落库：POLLCAP（trap input-25 全函数窗口 200 样本）/WRB 写-回读/SYNTH 快照/CTX dump/断言 chunk（每 hit 51 寄存器）/双向栈扫描
 - 纪律强化：探针地址正锚（nm 对方 ELF）/RVC 从符号头解码/动手前 grep 本总账查先例
+
+### 轮 134c 补充（DIAG 通道关闭）
+
+IDF 全树 grep：MODEM_WIDGETS/DIAG_BUS 零驱动使用——diag 信号编码表不在离线可达范围
+（需 BTBB TRM）。通道关闭，不做无表盲射。剩余唯一硬差异（0x20109888 单写保留性）的
+解码 = 需外部资料（Espressif TRM/BTBB 内部架构文档）或支持渠道。
