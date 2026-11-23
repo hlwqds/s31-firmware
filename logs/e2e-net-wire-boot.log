@@ -1,15 +1,4 @@
-
-I (2öESP-ROM:esp32s31-20251218
-Build:Dec 18 2025
-rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
-SPI mode:DIO, clock div:1
-load:0x2f0740c0,len:0x168c
-load:0x2f06a2b0,len:0xc7c
-load:0x2f06cfb0,len:0x3368
-entry 0x2f06a2ba
-I (26) boot: ESP-IDF v6.1 2nd stage bootloader
-I (26) boot: compile time Nov 13 2026 21:42:42
-I (26) boot: Multicore bootloader
+loader
 I (28) boot: chip revision: v0.0
 I (29) boot: efuse block revision: v0.2
 I (32) boot.esp32s31: SPI Speed      : 80MHz
@@ -26,13 +15,13 @@ I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
 I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
 I (98) boot: End of partition table
 I (101) boot: Defaulting to factory image
-I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=0fd80h ( 64896) map
-I (123) esp_image: segment 1: paddr=0001fda8 vaddr=2f000800 size=0010ch (   268) load
-I (126) esp_image: segment 2: paddr=0001febc vaddr=2f000910 size=0015ch (   348) load
-I (129) esp_image: segment 3: paddr=00020020 vaddr=40100020 size=036e0h ( 14048) map
-I (138) esp_image: segment 4: paddr=00023708 vaddr=2f000a6c size=02a14h ( 10772) load
-I (146) boot: Loaded app from partition at offset 0x10000
-I (147) boot: Disabling RNG early entropy source...
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=10080h ( 65664) map
+I (124) esp_image: segment 1: paddr=000200a8 vaddr=2f000800 size=00214h (   532) load
+I (126) esp_image: segment 2: paddr=000202c4 vaddr=2f000a20 size=02b70h ( 11120) load
+I (131) esp_image: segment 3: paddr=00022e3c vaddr=00000000 size=0d1dch ( 53724) 
+I (145) esp_image: segment 4: paddr=00030020 vaddr=40100020 size=036e0h ( 14048) map
+I (150) boot: Loaded app from partition at offset 0x10000
+I (150) boot: Disabling RNG early entropy source...
 s31-firmware boot
 ota: crc32 mine=0x4743989a rom=0x4743989a -> match
 ota: table n=6 factory=0x10000 ota0=0x190000 ota1=0x310000 otadata=0x490000
@@ -47,9 +36,9 @@ check: dhcp bound ip=10.42.0.139 ok=1
 wire: arp host mac learned
 check: arp host mac ok=1
 wire: tcp SYN sent iss=0x20263111 fd=0
-wire: socket peer_iss=0xa17f3cc4 local_iss=0x20263112
+wire: socket peer_iss=0x9ba2db31 local_iss=0x20263112
 check: tcp handshake ok=1
-wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112 rcv_nxt=0xa17f3cc4
+wire: tcp ESTABLISHED state=ESTABLISHED snd_una=0x20263112 rcv_nxt=0x9ba2db31
 check: socket layer established ok=1
 check: socket send accepted ok=1
 check: socket tx acked ok=1
