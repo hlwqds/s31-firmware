@@ -2772,7 +2772,7 @@ pub fn run() noreturn {
                     mc[5] = 0x003f_f880; // CLK_CONF1（MODEM SYSCON +0x14）
                     mc[1] = 0x7e60_1002; // CLK_CONF（+0x04，原 mc[0]=TEST_CONF 写错位！）
                     mc[2] = 0x0000_00FF; // FORCE_ON（+0x08）全 FO
-                    mc[3] |= 0x0000_03FF; // POWER_ST(+0x0C) 全 power bit RMW
+                    mc[3] |= 0xFFFF_F000; // POWER_ST(+0x0C) 六域 ST_MAP 全 0xF=常开（bits[31:12]，bits[11:0] reserved 勿触）
                     lpc18[0] |= 2; // LP_CLK_CONF |= coex/i2c_mst
                     mcconf[0] = 0x3d; // MODEM_CONF
                     stc[0] |= 0x11; // SYSTIMER_CTRL0 apb+clk en
