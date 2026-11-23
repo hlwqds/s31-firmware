@@ -143,6 +143,61 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
          * 轮询前 ⇒ 此刻写入 0x07（oracle 值）在 PLL 调谐期间保持生效。 */
         extern unsigned char phy_i2c_writeReg(unsigned char reg, unsigned char hostid, unsigned char block, unsigned char data);
         phy_i2c_writeReg(97, 1, 5, 0x07);
+        /* 回读打印（拼进 chunk 行首）：07 = 写保持（cal 回写覆盖假设证伪）；00 = 编程路径确实每轮回写 */
+        extern unsigned char phy_i2c_readReg(unsigned char reg, unsigned char hostid, unsigned char block);
+        char tb[16];
+        int tm = 0;
+        const char *th = 'T' == 'T' ? "TRIM97=" : "";
+        while (th[tm]) { tb[tm] = th[tm]; tm++; }
+        {
+            unsigned char v = phy_i2c_readReg(97, 1, 5);
+            for (int sh = 4; sh >= 0; sh -= 4) {
+                unsigned d = (v >> sh) & 0xF;
+                tb[tm++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+            }
+        }
+        tb[tm] = 0;
+        s31_bt_raw_line(tb);
+        /* **轮 127b**：synth 编程块现场——oracle post-cmds = 9888=2f07ea18
+         * 988C=0f07d854 98B8=400(1024) 98A8=0 9880=1；POLL 采样=0 与 s3=0x2f02cd58
+         * 矛盾未解，此处在环内直采 5 寄存器。 */
+        {
+            volatile unsigned int *w = (volatile unsigned int *)0x20109880;
+            char sb[96];
+            int sm = 0;
+            const char *sh2 = 'S' == 'S' ? "SYNTH 9880=" : "";
+            while (sh2[sm]) { sb[sm] = sh2[sm]; sm++; }
+            static const unsigned int offs[5] = { 0x9880, 0x9888, 0x988C, 0x98A8, 0x98B8 };
+            for (int vi = 0; vi < 5; vi++) {
+                unsigned v = w[(offs[vi] - 0x9880) / 4];
+                sb[sm++] = ' ';
+                for (int sh3 = 28; sh3 >= 0; sh3 -= 4) {
+                    unsigned d = (v >> sh3) & 0xF;
+                    sb[sm++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+                }
+            }
+            sb[sm] = 0;
+            s31_bt_raw_line(sb);
+            /* **轮 127c（写-回读活性判定）**：编程写入全零 + s3 非零矛盾 ⇒ 块可能
+             * 门控死。写魔数到 0x20109884（块内空位）立即读回：相等 = 块活（写入
+             * 被后续清）≠ 块死（时钟门控/复位保持）。 */
+            {
+                volatile unsigned int *pr = (volatile unsigned int *)0x20109884;
+                pr[0] = 0xC0DE5A5A;
+                unsigned rb = pr[0];
+                char vb[48];
+                int vm = 0;
+                const char *vh = 'W' == 'W' ? "WRB 9884=" : "";
+                while (vh[vm]) { vb[vm] = vh[vm]; vm++; }
+                sb[0] = 0;
+                for (int sh3 = 28; sh3 >= 0; sh3 -= 4) {
+                    unsigned d = (rb >> sh3) & 0xF;
+                    vb[vm++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+                }
+                vb[vm] = 0;
+                s31_bt_raw_line(vb);
+            }
+        }
     }
     {
         extern unsigned char phy_i2c_readReg(unsigned char reg, unsigned char hostid, unsigned char block);
