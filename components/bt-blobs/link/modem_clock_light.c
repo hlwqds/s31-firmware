@@ -123,3 +123,7 @@ bool phy_module_has_clock_bits(int module) { (void)module; return false; }
  * 存活至 POSTPOLL）但 **0x200A 无 CC**（evt 恒 6，0x1405=rc-3 LE 分发死）⇒
  * 控制器楔得更死（空桩态 = 全命令有 CC）。真 pmu 净效应 = 负 ×2 确认。
  * OTA 终验：5min 自跑无发射（扫描器对照 6 设备 ✓）。默认态 = 空桩。 */
+
+/* **轮 149b**：空桩补回（轮 149 恢复编辑误删，本次 cat 追加防再丢）。
+ * pmu_init 空桩 = 默认构建态；真 pmu 课题重链方法见上注释块。 */
+void pmu_init(void) {}

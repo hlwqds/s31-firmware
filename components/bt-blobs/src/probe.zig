@@ -2586,7 +2586,9 @@ pub fn run() noreturn {
         const rrssi = transport.sendCmdViaHs(0x1405, &.{});
         board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
         board.log.line("F2S btdm_tx={d} evt={d}", .{ transport.stats().btdm_tx, transport.stats().evt_count });
-        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 148：捕获窗旗关
+        // **轮 149**：窗旗保持开启（不清）——楔死发生在 F2S 之后，环需继续
+        // 采样楔死面 mepc；POSTPOLL 后主循环清（见下）。
+        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 149：移至 POSTPOLL 后清（暂留）
         // **轮 86**：HCI 传输 env 对账——LE CC 的分发器内构造已完成（.L672），
         // 事件应在 kAQT9Bbw→ll_evt_tx 后抵达 env+24（cfg_hs 注册的 leEvtTx）。
         // 判据：+24 必须 = nm 里 leEvtTx 的符号地址；credits(env+64) 供 kAQT9Bbw
@@ -2877,6 +2879,7 @@ pub fn run() noreturn {
         // **轮 121z6**：post-POLL evt/btdm_tx 判读——0x200A 处理器若完成则
         // CC 事件入队（evt≥9）且命令已发（btdm_tx≥4）。
         board.log.line("POSTPOLL evt={d} btdm_tx={d}", .{ transport.stats().evt_count, transport.stats().btdm_tx });
+        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 149：捕获窗旗关（POSTPOLL 后）
         if (rf_ok) {
             // **轮 94b**：0x200A 后 blob 门控 UART0 ⇒ 任何打印都会卡死主上下文
             // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。
