@@ -86,7 +86,7 @@ extern void s31_bt_raw_line(const char *s);
 
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
     bt_assert_hits++;
-    *(volatile unsigned int *)0x2E000388 = (unsigned int)line; /* LP: 跨复位可读（探针 BBP 行） */
+    *(volatile unsigned int *)0x2E002388 = (unsigned int)line; /* LP: 跨复位可读（探针 BBP 行） */
     /* **轮 124f（自持死锁解锁——必须在限流 return 之前）**：NMI trace 实证
      * 98BC 轮询与断言无限交替 = 任务内无界自旋 ⇒ 主循环饿死 ⇒
      * osi_impl_serviceTimers 停摆 ⇒ synth 预热定时器永不触发 ⇒ RF-ready
@@ -264,7 +264,7 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
      * 恒 halt 让 0x200A 处理器把整系统冻死在其轮询里（轮 11-12 marker 实锤）。
      * **作用域**：BT_ASSERT_RETURNS=1（build-probe.sh 探针档）→ 返回；
      * 生产默认（未定义）保持恒 halt——未知断言点的返回语义未经验证。
-     * 命中计数 bt_assert_hits 与 LP 0x2E000388=line 保留可观测。 */
+     * 命中计数 bt_assert_hits 与 LP 0x2E002388=line 保留可观测。 */
 #ifdef BT_ASSERT_RETURNS
     return; /* 探针档：返回让 0x200A 超时按官方语义被容忍 */
 #else

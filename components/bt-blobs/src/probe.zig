@@ -384,7 +384,7 @@ pub fn lpBlackBoxReport() void {
                 board.hw.delayUs(5000); // FIFO 只有 128B,报告行间不排空 ⇒ 后续行被丢
             }
         }
-        const al: *volatile u32 = @ptrFromInt(0x2E00_0388);
+        const al: *volatile u32 = @ptrFromInt(0x2E00_2388);
         board.log.line("BBP last=0x{x:0>8} prev=0x{x:0>8} nmi={d} assert_line={d}", .{ pc0.*, pc1.*, @import("board").trap.nmi_count, al.* });
         {
             const cnt: *volatile u32 = @ptrFromInt(0x2E00_039C);
@@ -2483,6 +2483,23 @@ pub fn run() noreturn {
             const rb: u32 = tgt.*;
             const verdict: []const u8 = if (rb == 0x1234_5678) "GATE-FOUND" else "still-gated";
             board.log.line("GATE mc0={x:0>8} ce0={x:0>8} w9880={x:0>8} {s}", .{ mc0.*, ce0v, rb, verdict });
+            // **轮 136**：0x20109800-98FF 保留性地图（逐 16B 写魔数读回）
+            // R=retain / L=live（硬件值滚动）/ D=drop（写丢）
+            {
+                var wbase: u32 = 0x2010_9800;
+                while (wbase < 0x2010_9900) : (wbase += 16) {
+                    var mi: u32 = 0;
+                    var marks: [4]u8 = .{ 'D', 'D', 'D', 'D' };
+                    while (mi < 4) : (mi += 1) {
+                        const a: *volatile u32 = @ptrFromInt(wbase + mi * 4);
+                        const before: u32 = a.*;
+                        a.* = 0xDEAD_0000 +% mi +% wbase;
+                        const after: u32 = a.*;
+                        marks[mi] = if (after == 0xDEAD_0000 +% mi +% wbase) 'R' else if (after != before) 'L' else 'D';
+                    }
+                    board.log.line("WMAP {x:0>8} {c}{c}{c}{c}", .{ wbase, marks[0], marks[1], marks[2], marks[3] });
+                }
+            }
         }
         // **轮 123k**：F1 改发 0x200A（此前 = 第二次 0x2006+params，enable 全程缺失）
         const adv_en: [1]u8 = .{0x01};
@@ -2628,13 +2645,13 @@ pub fn run() noreturn {
                 // **轮 121e**：全注册队列投递——osal.q_addr_map（已 pub）逐项
                 // eventqPut 假事件（Slot{p=0x2E000B40}，载荷 LP 0x2E000B40 全零+
                 // magic）。某一队列 = ADV-enable 的等待队列 ⇒ 任务推进。
-                @as(*volatile u32, @ptrFromInt(0x2E00_0B00)).* = 0x2E00_0B40;
-                @as(*volatile u32, @ptrFromInt(0x2E00_0B40)).* = 0xC0DE_0000 +% feed_seq;
+                @as(*volatile u32, @ptrFromInt(0x2E00_2B00)).* = 0x2E00_2B40;
+                @as(*volatile u32, @ptrFromInt(0x2E00_2B40)).* = 0xC0DE_0000 +% feed_seq;
                 feed_seq +%= 1;
                 {
                     for (&osal.q_addr_map) |*m| {
                         if (m.addr != 0 and m.q != null) {
-                            var es2: osal.Slot = .{ .p = @ptrFromInt(0x2E00_0B40) };
+                            var es2: osal.Slot = .{ .p = @ptrFromInt(0x2E00_2B40) };
                             osal.eventqPut(@ptrCast(@constCast(&m.addr)), &es2);
                         }
                     }
