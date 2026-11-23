@@ -1361,6 +1361,10 @@ pub fn run() noreturn {
         // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
+        // **轮 157b（双互锁根修）**：pmu_init 重置 modem/PHY 时钟全家 ⇒
+        // ana burst 永等（burst_config ×99）+ I2C_ANA_MST 钟死。立即重放
+        // porting.phyDomainEnable（门+钟全套恢复，IDF 语义 = pmu 后重放使能）。
+        porting.phyDomainEnable();
         // **轮 138（r134b 挂死根修）**：pmu_init 杀 UART0 时钟 ⇒ 后续阻塞写
         // （log/sendCmdViaHs 路径）永挂 = r134b「GATE 后静默」真因。立即从
         // uartSnapshot 恢复 CTRL0（bit7 UART0_CLK_EN/bit1 APB_CLK_EN）。
@@ -2510,14 +2514,11 @@ pub fn run() noreturn {
             for (0..16) |i| dst[i] = srcp[i];
             const g: *volatile u32 = @ptrFromInt(0x2f010_15c);
             g.* = 0x2f07_ea18;
-            // **轮 157（ctx 内容全镜像）**：引擎从 BB 固定地址 0x2f07ea18 读
-            // 调度结构——仅镜像指针不够，把 64B ctx 内容也拷到 0x2f07ea18
-            // （oracle 引擎活态 = 该处含其调度体）。每轮 POLL00 重拷（活同步）。
-            const csrc: [*]const volatile u32 = @ptrFromInt(0x2f02_cd58);
-            const cdst: [*]volatile u32 = @ptrFromInt(0x2f07_ea18);
-            var ci: u32 = 0;
-            while (ci < 16) : (ci += 1) cdst[ci] = csrc[ci];
-            board.log.line("CTXMIRROR g={x:0>8} w9888={x:0>8} ctx0={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, csrc[0] });
+            // **轮 158（镜像撤销）**：轮 157 的内容拷贝 = **每轮用 0x2f02cd58 的
+            // 空数据覆盖 blob 在 0x2f07ea18 已填的参数**（指针重定向后 blob 自洽
+            // 于新地址，我们的反向拷贝 = 每轮破坏其调度体！）撤销拷贝，只留
+            // 指针重定向（blob 自洽）+ 9888 观测。
+            board.log.line("CTXMIRROR-off g={x:0>8} w9888={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).* });
         }
         // **轮 132（README 候选门 1+2 + 写-回读自证）**：modem_ctrl0(0x20587040)
         // bit0 reg_modem_clk_en + clk_en0(0x205871F8) 读数；判据 = 写 0x12345678
