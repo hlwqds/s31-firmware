@@ -1364,6 +1364,10 @@ pub fn run() noreturn {
         // **轮 138（r134b 挂死根修）**：pmu_init 杀 UART0 时钟 ⇒ 后续阻塞写
         // （log/sendCmdViaHs 路径）永挂 = r134b「GATE 后静默」真因。立即从
         // uartSnapshot 恢复 CTRL0（bit7 UART0_CLK_EN/bit1 APB_CLK_EN）。
+        // **轮 152b**：回退到 CTRL0-only（轮 152 全块恢复 = 写入 FIFO/测试等
+        // 写敏感寄存器 → trapDispatch 二重异常 → CPU_LOCKUP，r152a 实证）。
+        // 下一步 = post-pmu 先读 UART0 块 diff 快照，只恢复变化的**配置寄存器**
+        // （跳过 FIFO/status/测试偏移），UART 钟相关位再精修。
         @as(*volatile u32, @ptrFromInt(CLKRST_UART0_CTRL0)).* = uart_ctrl0_snap;
         @as(*volatile u32, @ptrFromInt(CLKRST_SOC_CLK_SEL)).* = uart_soc_snap;
         // **轮 93**：lp_pc_en 武装前读 LP 槽——里面是**上一轮 boot 挂死时**的冻结
