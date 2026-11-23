@@ -2574,6 +2574,9 @@ pub fn run() noreturn {
                 @as(*volatile u32, @ptrFromInt(0x2070_1004)).* |= 0xFF; // lp_clk_po_en 全位
                 @as(*volatile u32, @ptrFromInt(0x2070_1000)).* |= (1 << 28) | (1 << 29) | (1 << 30); // root force
                 @as(*volatile u32, @ptrFromInt(0x2071_000c)).* |= (1 << 30); // ram clk
+                // **轮 121d**：BB 引擎启动写重断言——r_btdm_task_enable 写的
+                // [0x2010100C]=1 被 ADV-enable 坍缩抹除（BB dump 实证 100C=0）
+                @as(*volatile u32, @ptrFromInt(0x2010_100C)).* = 1;
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B0)).* = (1 << 31); // SLEEP_REQ(WT)
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
@@ -2629,7 +2632,7 @@ pub fn run() noreturn {
                     const bbr: [*]volatile u32 = @ptrFromInt(0x2010_0450);
                     const bb2: [*]volatile u32 = @ptrFromInt(0x2010_11AC);
                     board.log.line("BB 450={x:0>8} 47C={x:0>8} 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8}", .{ bbr[0], @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, @as(*volatile u32, @ptrFromInt(0x2010_0444)).* });
-                    board.log.line("BB 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
+                    board.log.line("BB 100C={x:0>8} 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_100C)).*, bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
                     var m2: usize = 0;
                     var ma: usize = 0x2E00_0000;
                     while (ma < 0x2E00_1000 and m2 < 4) : (ma += 4) {
