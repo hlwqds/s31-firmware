@@ -2766,9 +2766,13 @@ pub fn run() noreturn {
                 const mcconf: [*]volatile u32 = @ptrFromInt(0x2058_71E0);
                 const stc: [*]volatile u32 = @ptrFromInt(0x2058_7120);
                 // mcycle 忙等 15s，分片轮询
+                // **轮 121w 修正**：mc[0]=TEST_CONF(+0x00) 非 CLK_CONF(+0x04)！
+                // mc[1]=CLK_CONF(+0x04)、mc[3]=POWER_ST(+0x0C)、mc[2]=FORCE_ON(+0x08)
                 while (t < 150) : (t += 1) {
                     mc[5] = 0x003f_f880; // CLK_CONF1（MODEM SYSCON +0x14）
-                    mc[0] = 0x7e60_1002; // CLK_CONF
+                    mc[1] = 0x7e60_1002; // CLK_CONF（+0x04，原 mc[0]=TEST_CONF 写错位！）
+                    mc[2] = 0x0000_00FF; // FORCE_ON（+0x08）全 FO
+                    mc[3] |= 0x0000_03FF; // POWER_ST(+0x0C) 全 power bit RMW
                     lpc18[0] |= 2; // LP_CLK_CONF |= coex/i2c_mst
                     mcconf[0] = 0x3d; // MODEM_CONF
                     stc[0] |= 0x11; // SYSTIMER_CTRL0 apb+clk en
