@@ -197,6 +197,26 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
                 vb[vm] = 0;
                 s31_bt_raw_line(vb);
             }
+            /* **轮 128c（可见性证伪）**：覆写全局 bss 格（0x2f01015c）为魔数，
+             * 读 9888 窗口：= 魔数 ⇒ 窗口活跟踪我们的 bss（可见性成立，指针 BB
+             * 可读）；≠ 魔数（恒 0）⇒ BB 视图不镜像我们的区（可见性实锤）。 */
+            {
+                volatile unsigned int *gcell = (volatile unsigned int *)0x2f01015c;
+                unsigned saved = gcell[0];
+                gcell[0] = 0xC0DE4242;
+                unsigned win = *(volatile unsigned int *)0x20109888;
+                gcell[0] = saved;
+                char wb2[40];
+                int wm2 = 0;
+                const char *wh = "VIS 9888=";
+                while (wh[wm2]) { wb2[wm2] = wh[wm2]; wm2++; }
+                for (int sh3 = 28; sh3 >= 0; sh3 -= 4) {
+                    unsigned d = (win >> sh3) & 0xF;
+                    wb2[wm2++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+                }
+                wb2[wm2] = 0;
+                s31_bt_raw_line(wb2);
+            }
             /* **轮 128**：ctx 结构 dump——p0 = s3 = 0x2f02cd58（全局 0x2f01015c）。
              * 16 词两行：全零 = 上游未填充；有值 = 结构活、指针错位。 */
             {
