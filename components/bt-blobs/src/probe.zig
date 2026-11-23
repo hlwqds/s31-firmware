@@ -2482,7 +2482,7 @@ pub fn run() noreturn {
             tgt.* = 0x1234_5678;
             const rb: u32 = tgt.*;
             const verdict: []const u8 = if (rb == 0x1234_5678) "GATE-FOUND" else "still-gated";
-                        board.log.line("GATE mc0={x:0>8} ce0={x:0>8} w9880={x:0>8} {s}", .{ mc0.*, ce0v, rb, verdict });
+            board.log.line("GATE mc0={x:0>8} ce0={x:0>8} w9880={x:0>8} {s}", .{ mc0.*, ce0v, rb, verdict });
         }
         // **轮 123k**：F1 改发 0x200A（此前 = 第二次 0x2006+params，enable 全程缺失）
         const adv_en: [1]u8 = .{0x01};
@@ -2741,15 +2741,15 @@ pub fn run() noreturn {
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
-                 var mw: u32 = 0;
-                 while (mw < 150) : (mw += 1) {
-                     var mi: u32 = 0;
-                     while (mi < 1_000_000) : (mi += 1) {
-                         asm volatile ("nop");
-                     }
-                 }
-             }
-         }
+                var mw: u32 = 0;
+                while (mw < 150) : (mw += 1) {
+                    var mi: u32 = 0;
+                    while (mi < 1_000_000) : (mi += 1) {
+                        asm volatile ("nop");
+                    }
+                }
+            }
+        }
         // **轮 120z2**：blob 任务挂起帧 dump——POLL 结束后泵已代跑若干轮，
         // 帧内 = 处理器当前挂起点（第二等待面的真实 PC）。
         if (ctrl_task) |t| {

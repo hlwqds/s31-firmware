@@ -234,27 +234,27 @@ pub const Rollback = struct {
     }
 
     pub fn activeState(self: *const Rollback) SlotState {
-        return self.slots[@intFromEnum(self.active)].state;
+        return self.slots[@backingInt(self.active)].state;
     }
 
     /// 把新镜像写进“非活动槽”（真实实现里是 `esp_ota_begin/esp_ota_write`
     /// 写到另一个分区）。这里只翻状态位：新镜像还没启动过，所以是 NEW。
     pub fn stage(self: *Rollback, target: Slot) Error!void {
         if (target == self.active) return error.SlotIsActive;
-        self.slots[@intFromEnum(target)] = .{ .state = .new };
+        self.slots[@backingInt(target)] = .{ .state = .new };
     }
 
     /// 设下一次启动的槽位（真实实现是 `esp_ota_set_boot_partition`，写 otadata）。
     pub fn setBootSlot(self: *Rollback, target: Slot) Error!void {
-        const st = self.slots[@intFromEnum(target)].state;
+        const st = self.slots[@backingInt(target)].state;
         if (st != .new and st != .pending_verify) return error.NotStaged;
         self.active = target;
-        self.slots[@intFromEnum(target)] = .{ .state = .pending_verify, .boot_attempts = 1 };
+        self.slots[@backingInt(target)] = .{ .state = .pending_verify, .boot_attempts = 1 };
     }
 
     /// 应用自检通过 → 确认（`esp_ota_mark_app_valid_cancel_rollback`）。
     pub fn markValid(self: *Rollback) void {
-        const s = &self.slots[@intFromEnum(self.active)];
+        const s = &self.slots[@backingInt(self.active)];
         s.state = .valid;
         s.boot_attempts = 0;
         s.failures = 0;
@@ -267,7 +267,7 @@ pub const Rollback = struct {
     /// 看门狗策略对齐：看门狗只负责“把死循环变成一次复位”，
     /// 计数与决策必须由应用自己做，否则“偶发一次超时”就会把好固件回滚掉。
     pub fn noteFailure(self: *Rollback) void {
-        const s = &self.slots[@intFromEnum(self.active)];
+        const s = &self.slots[@backingInt(self.active)];
         s.failures +|= 1;
         if (s.failures >= self.cfg.max_runtime_failures and s.state == .pending_verify) {
             s.state = .invalid;
@@ -276,7 +276,7 @@ pub const Rollback = struct {
     }
 
     pub fn noteHealthy(self: *Rollback) void {
-        self.slots[@intFromEnum(self.active)].failures = 0;
+        self.slots[@backingInt(self.active)].failures = 0;
     }
 
     /// 模拟一次复位后的启动计数（真实实现里由 bootloader 读 otadata 完成）。
@@ -284,7 +284,7 @@ pub const Rollback = struct {
     /// 语义与 bootloader 一致：处于 `pending_verify` 的槽位每启动一次计数 +1，
     /// 超过预算仍未被确认 → `aborted` + 回滚。`valid` 槽位不计数。
     pub fn onBoot(self: *Rollback) void {
-        const s = &self.slots[@intFromEnum(self.active)];
+        const s = &self.slots[@backingInt(self.active)];
         switch (s.state) {
             .pending_verify => {
                 s.boot_attempts +|= 1;
@@ -305,7 +305,7 @@ pub const Rollback = struct {
     /// 本状态机写入，`undefined_` 只出现在“B 从未写过”的初始态。
     pub fn rollback(self: *Rollback) void {
         self.active = otherSlot(self.active);
-        const s = &self.slots[@intFromEnum(self.active)];
+        const s = &self.slots[@backingInt(self.active)];
         if (s.state != .valid) s.state = .valid;
         s.boot_attempts = 0;
         self.rollbacks += 1;
