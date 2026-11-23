@@ -31418,3 +31418,11 @@ BB 私区 HP 视图。F800 bit24（RF-ON arm）复确认：轮 92b 专设实验�
 quartz `content/zig-esp32-s31/ch29-modem-wall-postmortem.md` 已加终局指针补记
 （CC SUCCESS 之后仍有 synth 墙 = BB 命令接口接受门），指向本总账轮 111-139；
 本章测量方法与纪律 = 全部后续排查基石（双向引用收口）。
+
+### 轮 142 终判：oracle MC0 对照——CTRL0 位红鲱鱼确认
+
+oracle（工作态）MC0=0x00000001/CE0=0x00000001 与我们**全同**——bit2/4（MODEM
+CLK/PLL，reg.h default=1）在工作 oracle 上也是 0 ⇒ 这些位 ≠ 接受门（S31 头文件
+位 = 红鲱鱼/未实现），轮 140「MODEM PLL 解锁」理论关闭。**HP 寄存器空间含 CTRL0
+= 全部对称**，差异唯一收敛点 = BTBB 内部（0x20109888 闩锁接受条件）= 需 TRM/
+Espressif 渠道。终局。
