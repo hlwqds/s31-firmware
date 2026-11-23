@@ -31412,3 +31412,9 @@ BB 私区 HP 视图。F800 bit24（RF-ON arm）复确认：轮 92b 专设实验�
 写入其 ctx 指针；oracle 引擎活已闩 = 2f07ea18，我们引擎从未被接受 = 恒 0）。
 至此 0x20109888 语义三改判定案：非 SRAM 别名（139）、非 widgets 寄存器（130）、
 非普通 RAM（136 地图全 D）——= BB 命令接口闩锁，接受条件 = BB 内部（需 TRM）。
+
+### 互引（2026-11-23）
+
+quartz `content/zig-esp32-s31/ch29-modem-wall-postmortem.md` 已加终局指针补记
+（CC SUCCESS 之后仍有 synth 墙 = BB 命令接口接受门），指向本总账轮 111-139；
+本章测量方法与纪律 = 全部后续排查基石（双向引用收口）。
