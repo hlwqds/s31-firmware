@@ -599,7 +599,7 @@ fn evByAddrSet(addr: usize, e: ?*Event) void {
 }
 
 const QAddrEnt = struct { addr: usize = 0, q: ?*EventQ = null };
-var q_addr_map: [16]QAddrEnt = @splat(.{});
+pub var q_addr_map: [16]QAddrEnt = @splat(.{});
 
 fn qByAddr(addr: usize) ?*EventQ {
     for (&q_addr_map) |*m| {
@@ -637,7 +637,7 @@ var raw_q_tail: usize = 0;
 var raw_q_dropped: u32 = 0;
 var raw_waiter: ?*sched.Context = null;
 
-fn rawEnqueue(ptr: usize) bool {
+pub fn rawEnqueue(ptr: usize) bool {
     const next = (raw_q_tail + 1) % raw_q_slots;
     if (next == raw_q_head) {
         raw_q_dropped += 1;

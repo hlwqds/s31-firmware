@@ -880,6 +880,7 @@ fn writeLightMarker(phase: u32) void {
 /// **轮 119d**：ULP keeper 武装（幂等，可在 bringup.init 前后各调一次）。
 /// init 内部的 LP 域动作会把 boot addr 清 0（BOOTADDR 回读实证）⇒ init 后必须重装。
 var ulp_prog_snapshot: [60]u8 = @splat(0);
+var feed_seq: u32 = 0;
 
 fn ulpKeeperArm(comptime tag: u8) void {
     const ulp_prog = [_]u8{
@@ -2582,15 +2583,21 @@ pub fn run() noreturn {
                 @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1); // WAKEUP_EN bit1
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // TRIGGER(WT)
-                // **轮 121c**：事件强制投递——任务 park eventq_get 等自己后续才会
-                // 产生的事件（次序死锁）。校验帧[1] 候选队列结构合法后投递零事件
-                // ⇒ 打破次序死锁，观察处理器推进去向。
-                const q = @as(*osi_impl.Queue, @ptrFromInt(0x2f01_5ea0));
-                if (q.item_size >= 4 and q.item_size <= 64 and q.cap >= 4 and q.cap <= 64 and q.count < q.cap) {
-                    var item: [64]u8 = @splat(0);
-                    item[0] = 0xA5; // 标记字节（区分真事件）
-                    _ = q.send(item[0..q.item_size], 0);
+                // **轮 121e**：全注册队列投递——osal.q_addr_map（已 pub）逐项
+                // eventqPut 假事件（Slot{p=0x2E000B40}，载荷 LP 0x2E000B40 全零+
+                // magic）。某一队列 = ADV-enable 的等待队列 ⇒ 任务推进。
+                @as(*volatile u32, @ptrFromInt(0x2E00_0B00)).* = 0x2E00_0B40;
+                @as(*volatile u32, @ptrFromInt(0x2E00_0B40)).* = 0xC0DE_0000 +% feed_seq;
+                feed_seq +%= 1;
+                {
+                    for (&osal.q_addr_map) |*m| {
+                        if (m.addr != 0 and m.q != null) {
+                            var es2: osal.Slot = .{ .p = @ptrFromInt(0x2E00_0B40) };
+                            osal.eventqPut(@ptrCast(@constCast(&m.addr)), &es2);
+                        }
+                    }
                 }
+                // 旧 Queue 结构路径已证无效（池基址=指针表非队列，121d）
                 // **轮 120u**：FORCE_STALL 检查+解除——PWR0(+0x1AC) bit18 = 强制停滞
                 //（oracle 终态 bit18=0、bit1=0）。若 blob 置位 = 核停而不死（ Stall！）。
                 const pwr0p: *volatile u32 = @ptrFromInt(0x2070_4000 + 0x1AC);
@@ -2648,9 +2655,25 @@ pub fn run() noreturn {
             while (fi < 14) : (fi += 1) {
                 board.log.line("TCTX[{d:0>2}] = 0x{x:0>8}", .{ fi, sched.frameWord(&t.ctx, fi) });
             }
-            // **轮 121d**：候选队列头 dump（item_size/cap/count/head/tail/waiter）
-            const qh: [*]volatile u32 = @ptrFromInt(0x2f01_5ea0);
-            board.log.line("QHDR item={d} cap={d} count={d} head={d} tail={d} waiter=0x{x:0>8}", .{ qh[0], qh[1], qh[2], qh[3], qh[4], qh[5] });
+            // **轮 121e**：eventq_pool 扫描——找 waiter == &t.ctx 的 Queue
+            //（= 任务挂起等待的真队列）⇒ 直接 send 解锁。
+            const myctx: u32 = @intFromPtr(&t.ctx);
+            var qp2: usize = 0x2f01_5ea0;
+            const qend: usize = 0x2f01_5ea0 + 0x6604; // 池真实大小（nm -S）
+            var found: usize = 0;
+            while (qp2 < qend) : (qp2 += 4) {
+                const w0 = @as(*volatile u32, @ptrFromInt(qp2)).*;
+                if (w0 >= 4 and w0 <= 64) {
+                    const w1 = @as(*volatile u32, @ptrFromInt(qp2 + 4)).*;
+                    const w2 = @as(*volatile u32, @ptrFromInt(qp2 + 8)).*;
+                    const w5 = @as(*volatile u32, @ptrFromInt(qp2 + 20)).*;
+                    if (w1 >= 4 and w1 <= 64 and w2 <= w1 and w5 == myctx) {
+                        board.log.line("QFOUND @0x{x:0>8} item={d} cap={d} count={d}", .{ qp2, w0, w1, w2 });
+                        found += 1;
+                    }
+                }
+            }
+            if (found == 0) board.log.line("QFOUND none in pool (waiter 指针不匹配)", .{});
         }
         if (rf_ok) {
             // **轮 94b**：0x200A 后 blob 门控 UART0 ⇒ 任何打印都会卡死主上下文
