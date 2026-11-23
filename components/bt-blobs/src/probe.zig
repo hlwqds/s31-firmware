@@ -2551,6 +2551,34 @@ pub fn run() noreturn {
                 const w84b = @as(*volatile u32, @ptrFromInt(0x2010_9884)).*;
                 board.log.line("AON flip sel={} w84={x:0>8}→{x:0>8} w88={x:0>8}", .{ (orig >> 31) & 1, w84, w84b, w88 });
             }
+            // **轮 158z（SYSTIMER 钟使能——reg.h 权威 default:0 从未写过！）**
+            // HP_SYS_CLKRST_SYSTIMER_CTRL0(0x20587120) bit4 = reg_systimer_clk_en
+            // default:0 ⇒ 系统定时器不计数 ⇒ BB 调度永不推进 ⇒ synth 永不锁！
+            {
+                const stc: *volatile u32 = @ptrFromInt(0x2058_7120);
+                const pre = stc.*;
+                stc.* |= (1 << 4) | (1 << 0); // reg_systimer_clk_en + reg_systimer_apb_clk_en
+                board.log.line("SYSTIMER pre={x:0>8} post={x:0>8} en={d}", .{ pre, stc.*, (stc.* >> 4) & 1 });
+            }
+            // **轮 161（写使能解锁键扫描）**：0x20109500-97FF 逐字写 1 → 检查
+            // 9880 是否变为可写。任何写入导致 9880 解锁 = 找到写使能门。
+            {
+                const tgt: *volatile u32 = @ptrFromInt(0x2010_9880);
+                var scan: u32 = 0x2010_9500;
+                var found: u32 = 0;
+                while (scan < 0x2010_9800 and found == 0) : (scan += 4) {
+                    const cell: *volatile u32 = @ptrFromInt(scan);
+                    const sv = cell.*;
+                    cell.* = 1;
+                    const chk = @as(*volatile u32, @ptrFromInt(0x2010_9880)).*;
+                    if (chk != 0) {
+                        board.log.line("UNLOCK found @0x{x:0>8} (wrote 1, 9880={x:0>8})", .{ scan, chk });
+                        found = 1;
+                    }
+                    cell.* = sv;
+                }
+                if (found == 0) board.log.line("UNLOCK none in 9500-9800", .{});
+            }
             // **轮 136**：0x20109800-98FF 保留性地图（逐 16B 写魔数读回）
             // R=retain / L=live（硬件值滚动）/ D=drop（写丢）
             {
