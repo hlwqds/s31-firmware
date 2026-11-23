@@ -879,6 +879,8 @@ fn writeLightMarker(phase: u32) void {
 
 /// **轮 119d**：ULP keeper 武装（幂等，可在 bringup.init 前后各调一次）。
 /// init 内部的 LP 域动作会把 boot addr 清 0（BOOTADDR 回读实证）⇒ init 后必须重装。
+var ulp_prog_snapshot: [56]u8 = @splat(0);
+
 fn ulpKeeperArm(comptime tag: u8) void {
     const ulp_prog = [_]u8{
         // v13 56B 魔数计数器（objdump 核对 ✓）：count=0xC0DE0000|(n&0xFFFF)
@@ -904,6 +906,7 @@ fn ulpKeeperArm(comptime tag: u8) void {
     // 0x2E001000 = 偏移 4KB = LP RAM 之外 ⇒ 取指必死——118+ 轮「核从未执行」
     // 的真根因。blob 盒最低 0x2E000200，0x80-0xB8 无冲突。
     for (ulp_prog, 0..) |b, i| @as(*volatile u8, @ptrFromInt(0x2E000080 + i)).* = b;
+    ulp_prog_snapshot = ulp_prog; // 快照供 POLL 环重写（轮 120p）
     @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E000080; // LP_SYS lp_core_boot_addr
     // **轮 119j 全表勘误**（lp_peri_clkrst_reg.h 权威，base=0x20710000）：
     //   CPU_CTRL=+0x4(bit30 clk_force_on/bit31 rst_en)、RAM_CTRL=+0xc(bit30
@@ -2545,8 +2548,16 @@ pub fn run() noreturn {
                 // **轮 119k 根修**：blob 在处理中清 LP_PERI_CLKRST CPU_CTRL.bit30/
                 // INTR_CTRL.bit30（LP 核时钟坍缩真身，上一 boot 遗留读数实证）。
                 // 主上下文 mcycle 环活着 ⇒ 每次迭代 oracle 全配对（轮 120d）：
-                // SLEEP_REQ → boot addr → 时钟位 → 复位脉冲 → WAKEUP_EN → TRIGGER。
-                // 核每 1ms 被 blob 超时杀死，环内反复复活 ⇒ hb 计数跨 POLL 演化 = 实证。
+                // **轮 120p**：先重写程序+向量表（blob init memset LP RAM ⇒ 只配对
+                // 唤醒的核从全零取指即死 = 此前 POLL 配对无效的最简解释），
+                // 然后 SLEEP_REQ → boot addr → 时钟位 → 复位脉冲 → WAKEUP_EN → TRIGGER。
+                var vw2: usize = 0;
+                while (vw2 < 0x80) : (vw2 += 4) {
+                    @as(*volatile u32, @ptrFromInt(0x2E00_0000 + vw2)).* = 0x3020_0073;
+                }
+                for (0..ulp_prog_snapshot.len) |pi| {
+                    @as(*volatile u8, @ptrFromInt(0x2E00_0080 + pi)).* = ulp_prog_snapshot[pi];
+                }
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B0)).* = (1 << 31); // SLEEP_REQ(WT)
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
