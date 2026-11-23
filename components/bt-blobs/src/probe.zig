@@ -2537,6 +2537,20 @@ pub fn run() noreturn {
                 fix.* = fix0;
                 board.log.line("DIAG sweep done hit={d}", .{hit});
             }
+            // **轮 144（AON modem 钟源实验）**：HP_ALIVE_SYS_MODEM_CLK_AON_REG
+            // （0x20589020，bit31 SEL: 0=foscl 1=xtal, default 1）。读当前值 →
+            // 翻 SEL → 读 9884/9888（BB 域苏醒判）→ 恢复。三判据一次烧录。
+            {
+                const aon: *volatile u32 = @ptrFromInt(0x2058_9020);
+                const orig = aon.*;
+                board.log.line("AON orig={x:0>8} w9888={x:0>8}", .{ orig, @as(*volatile u32, @ptrFromInt(0x2010_9888)).* });
+                aon.* = orig ^ (1 << 31);
+                const w84 = @as(*volatile u32, @ptrFromInt(0x2010_9884)).*;
+                const w88 = @as(*volatile u32, @ptrFromInt(0x2010_9888)).*;
+                aon.* = orig;
+                const w84b = @as(*volatile u32, @ptrFromInt(0x2010_9884)).*;
+                board.log.line("AON flip sel={} w84={x:0>8}→{x:0>8} w88={x:0>8}", .{ (orig >> 31) & 1, w84, w84b, w88 });
+            }
             // **轮 136**：0x20109800-98FF 保留性地图（逐 16B 写魔数读回）
             // R=retain / L=live（硬件值滚动）/ D=drop（写丢）
             {
