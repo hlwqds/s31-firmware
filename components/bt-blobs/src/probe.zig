@@ -2582,6 +2582,15 @@ pub fn run() noreturn {
                 @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1); // WAKEUP_EN bit1
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // TRIGGER(WT)
+                // **轮 121c**：事件强制投递——任务 park eventq_get 等自己后续才会
+                // 产生的事件（次序死锁）。校验帧[1] 候选队列结构合法后投递零事件
+                // ⇒ 打破次序死锁，观察处理器推进去向。
+                const q = @as(*osi_impl.Queue, @ptrFromInt(0x2f01_5ea0));
+                if (q.item_size >= 4 and q.item_size <= 64 and q.cap >= 4 and q.cap <= 64 and q.count < q.cap) {
+                    var item: [64]u8 = @splat(0);
+                    item[0] = 0xA5; // 标记字节（区分真事件）
+                    _ = q.send(item[0..q.item_size], 0);
+                }
                 // **轮 120u**：FORCE_STALL 检查+解除——PWR0(+0x1AC) bit18 = 强制停滞
                 //（oracle 终态 bit18=0、bit1=0）。若 blob 置位 = 核停而不死（ Stall！）。
                 const pwr0p: *volatile u32 = @ptrFromInt(0x2070_4000 + 0x1AC);
@@ -2639,6 +2648,9 @@ pub fn run() noreturn {
             while (fi < 14) : (fi += 1) {
                 board.log.line("TCTX[{d:0>2}] = 0x{x:0>8}", .{ fi, sched.frameWord(&t.ctx, fi) });
             }
+            // **轮 121d**：候选队列头 dump（item_size/cap/count/head/tail/waiter）
+            const qh: [*]volatile u32 = @ptrFromInt(0x2f01_5ea0);
+            board.log.line("QHDR item={d} cap={d} count={d} head={d} tail={d} waiter=0x{x:0>8}", .{ qh[0], qh[1], qh[2], qh[3], qh[4], qh[5] });
         }
         if (rf_ok) {
             // **轮 94b**：0x200A 后 blob 门控 UART0 ⇒ 任何打印都会卡死主上下文
