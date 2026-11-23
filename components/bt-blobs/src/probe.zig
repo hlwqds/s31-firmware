@@ -2481,7 +2481,10 @@ pub fn run() noreturn {
         // 到 0x20109880 读回相等 ⇒ 门找到。
         {
             const mc0: *volatile u32 = @ptrFromInt(0x2058_7040);
-            mc0.* |= 1;
+            // **轮 140（MODEM PLL 钟解锁）**：reg.h 权威——CTRL0 bit2 = MODEM_CLK_EN、
+            // bit4 = MODEM_PLL_CLK_EN（MODEM 域 PLL 核钟！）。轮 132 只置 bit0 ⇒
+            // BB 域核心钟关 = 988x 全惰/9884 冻结的完整解释。
+            mc0.* |= 1 | (1 << 2) | (1 << 4);
             const ce0v: u32 = @as(*volatile u32, @ptrFromInt(0x2058_71F8)).*;
             const tgt: *volatile u32 = @ptrFromInt(0x2010_9880);
             tgt.* = 0x1234_5678;

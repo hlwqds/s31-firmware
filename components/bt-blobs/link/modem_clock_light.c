@@ -114,6 +114,10 @@ bool phy_module_has_clock_bits(int module) { (void)module; return false; }
  * item#2「pmu 后 flash 写静默失败 + FE 轮询挂」同族 = 独立课题。重新链入方法 =
  * 删本空桩 + -Dphy-src-objs 追加 esp_hw_support 的 pmu_init.c.obj,pmu_param.c.obj。 */
 void pmu_init(void) {}
+/* **轮 141 终判**：三因子（真 pmu_init 域上电 + mc0|=0x15 MODEM CLK/PLL +
+ * UART 恢复）同测 = CTRL0 bit2/4 **写后仍读 0**（电源钳制假说也否，硬件级顽固）
+ * + 流程照旧死于 0x200A。恢复空桩默认态。
+ * r138a 先例：真 pmu + UART CTRL0 恢复 = 挂死根修 ✓（流程存活至 POSTPOLL）。 */
 /* 轮 138 终判：真 pmu_init + UART CTRL0 恢复（r138a）= 挂死根修 ✓（流程全程
  * 存活至 POSTPOLL）但 **0x200A 无 CC**（evt 恒 6，0x1405=rc-3 LE 分发死）⇒
  * 控制器楔得更死（空桩态 = 全命令有 CC）。真 pmu 净效应 = 负 ×2 确认。
