@@ -2510,7 +2510,14 @@ pub fn run() noreturn {
             for (0..16) |i| dst[i] = srcp[i];
             const g: *volatile u32 = @ptrFromInt(0x2f010_15c);
             g.* = 0x2f07_ea18;
-            board.log.line("CTXMIRROR g={x:0>8} w9888={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).* });
+            // **轮 157（ctx 内容全镜像）**：引擎从 BB 固定地址 0x2f07ea18 读
+            // 调度结构——仅镜像指针不够，把 64B ctx 内容也拷到 0x2f07ea18
+            // （oracle 引擎活态 = 该处含其调度体）。每轮 POLL00 重拷（活同步）。
+            const csrc: [*]const volatile u32 = @ptrFromInt(0x2f02_cd58);
+            const cdst: [*]volatile u32 = @ptrFromInt(0x2f07_ea18);
+            var ci: u32 = 0;
+            while (ci < 16) : (ci += 1) cdst[ci] = csrc[ci];
+            board.log.line("CTXMIRROR g={x:0>8} w9888={x:0>8} ctx0={x:0>8}", .{ g.*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, csrc[0] });
         }
         // **轮 132（README 候选门 1+2 + 写-回读自证）**：modem_ctrl0(0x20587040)
         // bit0 reg_modem_clk_en + clk_en0(0x205871F8) 读数；判据 = 写 0x12345678
