@@ -521,19 +521,18 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     }
 
     // 2.9) **PMU 的 ICG 应用触发**（IDF 在 `rtc_clk_init` 里做，我们此前从未做）。
-    //   只写 `clk_conf_power_st` 位图是**惰性**的：必须再打 apply 位，PMU 才会把
-    //   新的 clock-gating 图应用下去。位定义（`soc/esp32s31/register/soc/pmu_reg.h`）：
-    //     PMU_IMM_HP_FUNC_ICG   (+0xfc)  bit31 UPDATE_DIG_ICG_FUNC_EN
-    //     PMU_IMM_HP_APB_ICG    (+0x100) bit31 UPDATE_DIG_ICG_APB_EN
-    //     PMU_IMM_MODEM_ICG     (+0x104) bit31 UPDATE_DIG_ICG_MODEM_EN
-    //     PMU_IMM_SLEEP_SYSCLK  (+0xf8)  bit28 UPDATE_DIG_ICG_SWITCH
+    // **轮 120s 拔除**：apply 位 = PMU 状态机动作（应用 ICG 位图下硬件），疑似
+    // 瞬时门控/状态迁移 = LP 核 1ms 死亡时刻候选。单变量验证：
+    // 若核活过 1ms/0x200A 推进 ⇒ 我们的 ICG apply = 坍缩触发件（IDF rtc_clk_init
+    // 在时钟树未起时调用安全，我们在 task 上下文调用语义不同）。
     {
-        const pmu: usize = 0x2070_4000;
-        wr(pmu + 0xfc, rd(pmu + 0xfc) | (@as(u32, 1) << 31));
-        wr(pmu + 0x100, rd(pmu + 0x100) | (@as(u32, 1) << 31));
-        wr(pmu + 0x104, rd(pmu + 0x104) | (@as(u32, 1) << 31));
-        wr(pmu + 0xf8, rd(pmu + 0xf8) | (@as(u32, 1) << 28));
-        // （ICG apply done 日志已删：镜像容量紧张，轮 5 标记通道接管判据。）
+        _ = rd;
+        _ = wr;
+        // const pmu: usize = 0x2070_4000;
+        // wr(pmu + 0xfc, rd(pmu + 0xfc) | (@as(u32, 1) << 31));
+        // wr(pmu + 0x100, rd(pmu + 0x100) | (@as(u32, 1) << 31));
+        // wr(pmu + 0x104, rd(pmu + 0x104) | (@as(u32, 1) << 31));
+        // wr(pmu + 0xf8, rd(pmu + 0xf8) | (@as(u32, 1) << 28));
     }
 
     if (!on_target) return; // 主机侧无 MMIO：窗口 dump 与后续写入都跳过
