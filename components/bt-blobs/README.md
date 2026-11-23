@@ -28546,13 +28546,13 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
 
 **反汇编终判（2026-11-22）：「NOP 看门狗解除」方向被否决——解除调用不存在**。按定案执行了反汇编，证据链：
 
-| 检查 | 方法 | 结果 |
-| --- | --- | --- |
-| `bt_bb_wdt_init`（0x4005bbd0，68 B，**在 .flash.text 内 = flash 代码非 ROM**） | 全镜像 objdump 调用点扫描 | **0 个调用者**（仅符号定义本身） |
-| `bb_wdt_*` 四个跳板（0x40062c2a-42，`auipc+jr` 进 PHY 表槽） | 同上 | **0 个调用者** |
-| WDT 表槽 0x2f801484-490 的直接引用 | auipc 解析注释直方图（0x2f801xxx 全窗口） | 周围表槽（0x2f801400-15f0）大量命中，**唯独 484-490 零命中** |
-| 五函数地址的**数据引用**（表初始化/函数指针） | ELF 各 LOAD 段全字节扫描 | **0 处** |
-| blob 对 TIMG WDT / HP_SYS_CLKRST / PMU 的寄存器**写** | `# 2058xxxx/# 2070xxxx` 命中点逐一归属所属函数 | **全部是我方代码**（probe.run 的 uart 快照/恢复、trapDispatch 的 MWDT1 重武装、bringup.init 仪表）；blob 对 PMU+0x184/+0x208 只读 |
+| 检查                                                                           | 方法                                           | 结果                                                                                                                              |
+| ------------------------------------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `bt_bb_wdt_init`（0x4005bbd0，68 B，**在 .flash.text 内 = flash 代码非 ROM**） | 全镜像 objdump 调用点扫描                      | **0 个调用者**（仅符号定义本身）                                                                                                  |
+| `bb_wdt_*` 四个跳板（0x40062c2a-42，`auipc+jr` 进 PHY 表槽）                   | 同上                                           | **0 个调用者**                                                                                                                    |
+| WDT 表槽 0x2f801484-490 的直接引用                                             | auipc 解析注释直方图（0x2f801xxx 全窗口）      | 周围表槽（0x2f801400-15f0）大量命中，**唯独 484-490 零命中**                                                                      |
+| 五函数地址的**数据引用**（表初始化/函数指针）                                  | ELF 各 LOAD 段全字节扫描                       | **0 处**                                                                                                                          |
+| blob 对 TIMG WDT / HP_SYS_CLKRST / PMU 的寄存器**写**                          | `# 2058xxxx/# 2070xxxx` 命中点逐一归属所属函数 | **全部是我方代码**（probe.run 的 uart 快照/恢复、trapDispatch 的 MWDT1 重武装、bringup.init 仪表）；blob 对 PMU+0x184/+0x208 只读 |
 
 ⇒ 本镜像里 BB WDT 无人上膛、无人解除、无人指向；「blob 原子化解除看门狗」模型**错误**。WDT 停摆只能是**时钟域硬件级死亡**（sleep 态），与 6ed6789 的 waiti 证据自洽。
 
@@ -28685,7 +28685,7 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   3. **STORE 观察点抓写者**（轮 26）：mcontrol6 STORE|U|M @0x2f010e80 → **写者 PC=0x74046f9b（跨 boot 逐位相同）**。别名映射 0x74000000↔0x40000000 还原 = **0x40046f9b = `r_sym_ble_un2bHTzwMxLoo4aqy5K4` 序言的 `sw ra,60(sp)`**，反推 sp=0x2f010e44——**该地址无任何合法栈**（主栈 0x2f076fc0+/arena 栈 0x2f024280+/trap 栈 0x2f016df0 全部排除；trap_stack_buf 理论被 nm 证伪）。
   4. **结构性碰撞**：blob 锚点/malloc 区（0x2f015058/0x2f0150b8/0x2f011044/cfg@0x2f01f870 等 porting 硬编码地址）与胶水+闭包 bss（0x2f010e80-0x2f021280）区域重叠 ⇒ blob 运行态指针落在胶水 bss 里互踩；带损坏 sp 的 blob 代码把寄存器存进 `s_is_phy_calibrated` ⇒ **enable 入口 bnez 恒走 skip-load_cal** ⇒ rc=0 假象/真表无用/全对齐不锁全部闭环。
   5. **仪器语义修复**：数据观察点命中**不推进 mepc**（原地恢复=store 正常完成）；旧 +=4 推进丢 store + 去同步（fetch fault @0x400760f2 panic 实证，现每 boot 复现于 trap 栈上下文 sp=0x2f01dc90）。
-  - **结构性修法（下 session 首项）**：s31.ld 手术——把胶水+闭包 bss 挪出 blob 保留区（0x2f010e80-0x2f022a80）→ 放到 0x2f022a80 之后并同步上移 _heap_start；同步修正 porting 硬编码锚点（0x2f011044/0x2f01f870/0x2f0150xx 系）与 trap 侧全部按地址引用的仪表。判据不变：FE450/47C 振荡 + 98BC.bit2=1 + evt=2。
+  - **结构性修法（下 session 首项）**：s31.ld 手术——把胶水+闭包 bss 挪出 blob 保留区（0x2f010e80-0x2f022a80）→ 放到 0x2f022a80 之后并同步上移 \_heap_start；同步修正 porting 硬编码锚点（0x2f011044/0x2f01f870/0x2f0150xx 系）与 trap 侧全部按地址引用的仪表。判据不变：FE450/47C 振荡 + 98BC.bit2=1 + evt=2。
   - 注：mcontrol6 命中记录现于 RAM 全局（board.trap.wp_hit_pc/ra/count）+ 冻结 rec[511]；PANIC 每轮复现（trap 栈内 fetch fault）与本实验叠加，修 bss 布局时一并复核。
 - **轮 23（2026-11-22）：oracle 粘合对象换血成功 + 调用目标同源确认——墙仍在**：
   1. **换血判定法**：esp_phy_enable 地址不变（0x40000744，函数体恰好同尺寸）≠ 未换入；**必须反汇编函数体**。首轮 build-probe.sh 传 oracle 路径实际没换入（疑 zig 选项缓存）；从 firmware/ 手动 `zig build -Dphy-src-objs=<oracle 9 对象>` 换入成功——函数体从 `load_cal`-first（eh 版）变为 `esp_phy_common_clock_enable → phy_module_enable`（oracle 版）。
@@ -28740,31 +28740,36 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
   - ⇒ **SCHED 区（锚点/调度配置区，含轮 8 的 [0x20101074] anchor 写）就是缺失写集的精确位置**——20 个寄存器官方写了但我们的 probe 未写。
   - **下一 session 首项**：dump SCHED 区 128 字逐字对照（oracle BW 扩展到 SCHED 区）→ 找出 20 个缺失寄存器的精确偏移 → 在 probe 中补写 → FE450/47C 振荡 + 98BC.bit2 置位 = 破墙判据。
 - **⚠ 镜像三态混淆（2026-11-22 新增）**：板子现行三种镜像——生产（473KB，e2e --host 会覆写）/bt 探针（~887KB，build-probe.sh）/**oracle**（683KB，`~/esp/bt-ctl-oracle/build/bt-ctl-oracle.bin`，bootloader@0x2000+app@0x10000——**S31 bootloader 偏移是 0x2000 不是 0x0**，idf 直写 0x0 会覆盖 bootloader 区致 `invalid header` 启动环）。轮 11 末板子运行 **oracle** 镜像——下一 session 判读裸机侧前必须先 `build-probe.sh` 重烧探针；判别 = `ls -la zig-out/bin/app.bin`（887KB）vs oracle bin（683KB）vs 生产（473KB）。
-- **轮 13 后补（cfg 地址已入 marker rec[43]=0x2f01f870）**：下一轮可加「冻结读 *0x2f01f870 的 sleep_en 字段」进 marker——直接验证 blob 是否回写钳制值（区分「钳制被覆写」vs「钳制生效但另有卡点」）。
+- **轮 13 后补（cfg 地址已入 marker rec[43]=0x2f01f870）**：下一轮可加「冻结读 \*0x2f01f870 的 sleep_en 字段」进 marker——直接验证 blob 是否回写钳制值（区分「钳制被覆写」vs「钳制生效但另有卡点」）。
 
 ---
 
 ## 🔒 勘误与终态（2026-11-22 追加——以上轮 25-39 中部分判读作废）
 
 ### 1. 轮 39 "phy_multiple_init_data.bin 缺失"论证伪
-- sdkconfig:2628 `CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION is not set` ⇒ MULTIPLE_INIT_DATA_BIN 依赖链断 ⇒ phy_init.c:717-720 走简版 `return &phy_init_data;`（直接返回 .rodata 表）——**"_binary_..._start 引用"和"memcpy 从地址 0"不存在**。
+
+- sdkconfig:2628 `CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION is not set` ⇒ MULTIPLE*INIT_DATA_BIN 依赖链断 ⇒ phy_init.c:717-720 走简版 `return &phy_init_data;`（直接返回 .rodata 表）——\*\*"\_binary*...\_start 引用"和"memcpy 从地址 0"不存在\*\*。
 - 该 .rodata 表 = 轮 19-28 已换真并 disassembly 验证过的表 ✓ 无问题。
 
 ### 2. 轮 40 "modem_flag==0 跳过校准块"极性反了
+
 - phy_init.c:335 `if (phy_get_modem_flag() == 0)` —— **==0 是进入校准的条件，≠0 才走 else**。
 - 轮 40 提交信息和 lesson 写的"modem_flag=0 ⇒ 跳过校准块"极性反了。
 
 ### 3. 轮 25-37 "flag 踩踏"全部误瞄准
+
 - 旧 watch 地址 0x2f010f40 = r_sym_ble_P8WE 内部（blob 自家数据）——blob 写自己的结构 = "数千次踩踏"的全部真相。
 - 真 flag `s_is_phy_calibrated` 在不同构建分别位于 0x2f010e80/0f40/0f80——每次构建都移位。
 - calflag 0→0→0 读数（bg_2857/clean.log）= 从**nm 验证的正确地址**读的 ✓ **真 flag = 0**。但 0x4006ab10 panic（无 watch 也有）= 独立问题。
 
 ### 4. flag=0 的两个自洽假设 + 一轮合并判决
+
 - ① 外层门：step 7 enable 入口 modem_flag ≠ 0 ⇒ 含 flag 写的整块未执行
 - ② flag 写与读不同址（布局漂移/duplicate 符号）
 - **判决**：calflag 打印改 `modem_flag={d} flag_addr={x}`——modem_flag = `@extern` 直调 `phy_get_modem_flag`，flag_addr = `@intFromPtr(@extern(*volatile u8, .{.name="s_is_phy_calibrated"}))`（符号未混淆可直接 extern，永久消灭硬编码漂移）
 
 ### 5. 保留的有效改进（不受勘误影响）
+
 - trapEntry cause-3 快路径 ✓（SRAM/CSR 零 flash 取指 + bit30 HIT 验证 + c.ebreak 0x9002 过滤）
 - LP 权威副本模式 ✓（bss 全局可能被踩时唯一可靠通道）
 - export var 保活 ✓（asm `la` 引用的全局）
@@ -28779,6 +28784,7 @@ RTC 源钉死）被 blob 的**原子化解除+门控**（<2ms）击败。唯一�
 ### flag=0 = IDF 设计行为（双调用防护），不是墙
 
 `esp_phy_enable(modem)` 的真实流程（phy_init.c:324-396）：
+
 1. `phy_get_modem_flag() == 0` → 首次调用：进入校准块 → `load_cal` → `flag=true`
 2. `phy_get_modem_flag() != 0` → 已调用过：**整个校准块跳过** → 直接返回
 
@@ -28786,14 +28792,14 @@ probe 流程：bringup init_phy（step 52）**先行直调了 phy 校准**（"ca
 
 ### 40 轮调查总结
 
-| 已修复/排除 | 证据 |
-|---|---|
-| MMIO 全对齐 | 轮 8-15 多轮比对 ✓ |
-| phy_init_data 真表替换 | 轮 19-28 ✓ |
+| 已修复/排除                    | 证据                         |
+| ------------------------------ | ---------------------------- |
+| MMIO 全对齐                    | 轮 8-15 多轮比对 ✓           |
+| phy_init_data 真表替换         | 轮 19-28 ✓                   |
 | 布局手术（bss 移出 blob 窗口） | 轮 38 s31.ld closure-first ✓ |
-| 观察点仪表链完整工作 | 轮 42 BP! 捕获 ✓ |
-| MIE-off 防 assert 风暴 | 轮 32-40 ✓ |
-| flag = 0 = 正常行为 | 轮 41 IDF 源码审计 ✓ |
+| 观察点仪表链完整工作           | 轮 42 BP! 捕获 ✓             |
+| MIE-off 防 assert 风暴         | 轮 32-40 ✓                   |
+| flag = 0 = 正常行为            | 轮 41 IDF 源码审计 ✓         |
 
 ### 真墙 = RF synth 下游（已知边界）
 
@@ -28806,6 +28812,7 @@ phy 校准 ✓、blob INITED ✓、HCI 命令收发 ✓、FE 可读 ✓——唯
 ③ 或接受 BLE INITED 作为当前 milestone，将 synth 锁定列为后续优化项
 
 ### 🔒 布局手术/仪表链状态澄清（2026-11-22 追加）
+
 - **布局手术已回滚**（s31.ld 无 0x2F022B00 标记，grep 实测）——现行布局 = 回退版（flag @0x2f010f80）
 - **BP! 判读作废**（capture 来自旧二进制——源码 arm 块在 if(false) 内不可达但打印出现 = 板上是陈旧产物）
 - **"synth 下游=已知边界"降级为"主假设（待 mf_pre 一轮验证）"**
@@ -28818,9 +28825,10 @@ phy 校准 ✓、blob INITED ✓、HCI 命令收发 ✓、FE 可读 ✓——唯
 
 ⇒ **phy 校准完成 ✓**（flag=1 = calibrated=true 物证）
 ⇒ **墙不在校准**——synth 不锁（ready=0）的原因在**校准下游**：
-  - btdm 参数表与 RF 校准参数的匹配
-  - RF 前端使能序列的其余环节
-  - blob 调度器与 RF synth 的时序配合
+
+- btdm 参数表与 RF 校准参数的匹配
+- RF 前端使能序列的其余环节
+- blob 调度器与 RF synth 的时序配合
 
 **下 session 首项**：FE450/47C 振荡检查 + 98BC.bit2 状态 + btdm 参数表与 oracle 逐字段对照。
 
@@ -28829,31 +28837,37 @@ phy 校准 ✓、blob INITED ✓、HCI 命令收发 ✓、FE 可读 ✓——唯
 ## 🔒 轮 43 终局（2026-11-22 追加）：布局手术后 blob 硬编码地址全面断裂
 
 ### 症状
+
 - INITED ✓ → `r_btdm_sleep_set_sleep_cb` 写 NULL+0xC → load access fault → halt
 - "Xpuq 锚点 P=0x00000000"（旧布局曾为 0x2f0150b8 ✓ 非零）
 - arena free=300520 ✓（blob 自身运行正常）
 
 ### 根因
+
 s31.ld 布局手术把我们的 .data/.bss 移出了 blob 窗口（0x2f010cdc-0x2f022a80 ✓），**但 probe/bringup 里 43 处硬编码 blob 数据区地址（0x2f015058/0x2f0150b8/0x2f015038/0x2f011020/0x2f011044/0x2f010fb4 等）没有跟着搬** ⇒ 这些地址在新布局中 = 空窗（无符号、无映射）⇒ blob 从空窗读到 0 ⇒ 锚点/配置对象 = NULL ⇒ 崩溃。
 
 ### 修法
-43 处硬编码逐一改为 **`@extern` + 闭包符号名**（nm 新表可查每个地址对应的 r_sym_ble_* 符号），零硬编码依赖。或者更简单：在 s31.ld 里加 `.porting_slots (NOLOAD)` 段固定在 0x2f010cdc（blob 窗口起始处），host_stubs 的 export var 用 `linksection(".porting_slots")` 约束——硬编码地址零修改。
+
+43 处硬编码逐一改为 **`@extern` + 闭包符号名**（nm 新表可查每个地址对应的 r*sym_ble*\* 符号），零硬编码依赖。或者更简单：在 s31.ld 里加 `.porting_slots (NOLOAD)` 段固定在 0x2f010cdc（blob 窗口起始处），host_stubs 的 export var 用 `linksection(".porting_slots")` 约束——硬编码地址零修改。
 
 ---
 
 ## 🔒 轮 43 补充（回退布局确认 + OkE7 锚点 = 0 根因定位）
 
 ### 布局确认
+
 - s31.ld = 回退版（无手术标记，grep 0x2F022B00 = 0 ✓）
 - 闭包 .data/bss 在原位 ✓（r_sym_ble_Haqf @ 0x2f010f24 等）
 - 锚点槽 0x2f0150b8 = 有效地址 ✓（闭包 .bss 原位）
 
 ### OkE7 锚点 P=0 根因
+
 - "Xpuq 锚点 P=0x00000000"（step 6 打印）= OkE7 锚点**发布被门控/跳过**（bringup.zig OkE7 发布块有多个门控条件：`prepublish_bohff`、arena 分配成功检查等）
 - 非布局问题——回退布局下锚点槽地址有效，只是**指针值 = 0**（发布未执行或 malloc 返回 NULL）
 - `r_btdm_sleep_set_sleep_cb` 读 NULL+0xC = **sleep 回调配置对象 = NULL**（锚点链断裂）
 
 ### 下 session 首项
+
 1. bringup step 6 前**加打印 OkE7 锚点值**（`pp.okE7Anchor()`）→ 确认 P=0 的时机（发布前 vs 发布失败）
 2. 检查 OkE7 发布块的 arena 分配（`osal2.btdmMalloc(32, 0)`）是否返回 NULL（arena free=300520 ✓ 应该不缺）
 3. 如果 malloc ✓ 但锚点 = 0 ⇒ `pp.setOkE7Anchor()` 的写入地址漂移（老问题）
@@ -28863,19 +28877,23 @@ s31.ld 布局手术把我们的 .data/.bss 移出了 blob 窗口（0x2f010cdc-0x
 ## 🔒 轮 43 补充 2（2026-11-22 追加）：sleep_cb 崩溃精确机制
 
 ### 反汇编定位（0x40061614-0x40061664）
+
 ```
 lw  a4, 308(a4)  # 2f011134 = r_sym_bt_sitBB3SrXn0IePgsPrBY（闭包 .data 槽）
 lw  s0, 12(a4)   # ← mtval=0xC fault：a4=0（槽值=NULL）
 ```
+
 ⇒ `r_sym_bt_sitBB3SrXn0IePgsPrBY` 槽值 = 0 = **blob 的 sleep 环境指针未初始化**。
 
 ### 与 OkE7 锚点链的关系
+
 - 0x2f011134 槽值 = OkE7 malloc 发布链的产物（OkE7 malloc 32B → store 指针到槽）
 - "Xpuq 锚点 P=0x00000000"（step 6 打印）= 同一问题：OkE7 发布未产出非零锚点
 - **非布局问题**——回退布局下 0x2f011134 = 闭包 .data 原位 ✓ 有效地址
 - **OkE7 发布的门控条件**在当前构建中阻止了发布（`prepublish_bohff`/arena malloc/等 gate）
 
 ### 下 session 首项
+
 1. bringup step 6 前打印 OkE7 锚点值 + btdmMalloc 返回值 → 定位发布链断裂点
 2. 检查 `prepublish_bohff` 门控变量在当前构建中的值
 3. 如果 malloc ✓ 但锚点 = 0 ⇒ `setOkE7Anchor` 写入地址漂移
@@ -28885,16 +28903,19 @@ lw  s0, 12(a4)   # ← mtval=0xC fault：a4=0（槽值=NULL）
 ## 🔒 轮 44 状态总结（2026-11-22 追加）
 
 ### 已确认的突破
+
 - **calflag=1**（phy 校准完成，35 轮首次观测 ✓）
 - **观察点仪表链端到端工作**（BP! 捕获 + mepc/ra/t2 全帧转存 ✓）
 - **blob 运行到 stage-22 后 deeper**（过了 calflag/INITED/transport ready，到了 step 19 hci_fc_enable → sleep_cb 崩溃 = **有史以来最深处**）
 
 ### sleep env 链式 NULL 问题
+
 - stub 预填 ✓ → blob 读到非零 ✓ → 但 stub 内嵌套指针（offset 12）= 0 ⇒ 嵌套 store 到 0x58 fault
 - 自引用修复尝试 = blob init 期间清了预填（task_init 清 sleep env 区域）
 - **根因**：blob sleep 子系统需要**链式初始化**（多级指针结构），stub 方法只能修一层
 
 ### 下 session 修法（按优先级）
+
 1. **swapContext 入口 EXEC 断点**（0x40078364）→ 抓 `lw sp,0(a1)` 时 a1 的值 → 定位污染 sp 的**读取来源**（哪个 ctx 被踩）
 2. **反向追踪**：从 saved-sp 的垃圾值（0x2f010eb4）反查谁写了它 → STORE 观察点 @saved-sp 槽地址 → 捕获原始踩踏者
 3. **布局手术 + 43 处 poke 全部 @extern 符号化**（一次大改但终修）→ blob 在安全区运行 → sleep env 槽不再被踩
@@ -28904,11 +28925,13 @@ lw  s0, 12(a4)   # ← mtval=0xC fault：a4=0（槽值=NULL）
 ## 🎯 轮 45 破墙（2026-11-22）：arena 分配 sleep env stub
 
 ### 修复
+
 - **btdmMalloc(256) 从 blob arena 分配 stub**（OkE7 锚点历史路径）→ 写自引用（offset 12 指回自身）→ 发布到 0x2f011134
 - **时机 = arena init 后、task_init(步 6) 前** ⇒ blob 首次读槽前已就绪
 - 旧 bss stub（0x2f01f434，落在闭包 .bss 跨度内被 blob 运行时抹回）弃用
 
 ### 实测（/tmp/arena.log）
+
 ```text
 bt probe: sleep env prefilled arena stub @0x2f0243d0 -> slot 0x2f011134
 bt bringup: esp_phy_enable(2) done calflag 0->1->1 modem_flag 0->2 flag_addr=0x2f010f80 ready=0x00000000
@@ -28918,9 +28941,11 @@ bt hci >> CMD opcode=0x2006 plen=15
 bt probe: fwd06 ret=0
 bt hci >> CMD opcode=0x2008 plen=32
 ```
+
 **sleep_cb NULL fault 消失 ✓ 40+ 轮最深进度**：HCI 命令链活跃（ReadVersion → 0x2006 → fwd06 ret=0 → 0x2008）。
 
 ### 下一征途
+
 - 0x200A（Set Adv Enable）是否发出（capture 50s 截止于 0x2008，需更长窗口）
 - 三大判据：FE450/47C 振荡 / 98BC.bit2 翻转 / LE Set Advertising Enable 后广播包
 
@@ -28929,6 +28954,7 @@ bt hci >> CMD opcode=0x2008 plen=32
 ## 📍 轮 46 终态（2026-11-22，120s 长窗实测 /tmp/arena2.log）
 
 ### 生存面
+
 - `evrun=8/0`（blob 事件循环 8 事件已跑 0 挂起 ✓ 活着）
 - `pc=0x4007b184`（blob task PC 在 .flash.text 正常区 ✓）
 - `icg 6->6`（MODEM 供电 bt_st_map=6 保持 ✓）
@@ -28936,11 +28962,13 @@ bt hci >> CMD opcode=0x2008 plen=32
 - **sleep_cb fault 完全消失**（arena stub 修复）✓
 
 ### 新卡点（单一、清晰）
+
 - 0x2008 之后 blob 等 **Command Complete** 事件，`fe=0 rfready=0` = BT 控制器 RF 路径未振荡
 - `qput=8 getok=8` = probe→blob 队列健康；`hci <<` 无 = **控制器侧无响应回注**
 - 即：blob 主机侧活了，卡在**控制器 RF init**（FE450/47C 振荡的前置条件未满足）
 
 ### 下一 session 征途（优先级）
+
 1. **0x2008 Command Complete 合成回注**（probe HCI 桥加控制器响应路径——ReadVersion 已有先例）→ 看 blob 是否前进到 0x200A
 2. 若前进 ⇒ FE450/47C 判据重测（可能需要 0x200A 先行）
 3. 若不前进 ⇒ blob task PC 0x4007b184 反汇编，看等待点
@@ -28952,16 +28980,20 @@ bt hci >> CMD opcode=0x2008 plen=32
 **轮 46"卡在 0x2008"结论错误**：diag 打印点（probe.zig:2484）在 0x200A 发送点（:2128）**之后**——diag 持续刷屏 ⇒ 代码流已过 0x200A，F83C/LE 两条日志只是 UART FIFO 丢弃（"bbbt"交错实锤）。
 
 ### 修正后状态
+
 - 命令链**完整走完**：0x2006 → 0x2008 → **0x200A（LE Set Advertising Enable）已发出** ✓
 - probe 在 600s 监控泵（diag 每秒：`pc=0x4007b184 = wr_btdm_osal_eventq_get+0xd8` = blob task 正常 idle-park）
 - `evt=1` 不变 = 控制器 LL 对三条 ADV 命令**不下发 Command Complete**——RF/BB 未 ready 时 LL 扣住应答（与"机制最终版"注释一致）
 - 真墙 = **RF 使能链**：`fe=0 rfready=0`（FE450/47C 不振荡、0x201098BC.bit2 不置位）
 
 ### 关键新事实（轮 45 带来的）
+
 **calflag=1 = 校准首次完成** ⇒ synth 在校准期**锁过**！校准路径走 PMU force；校毕 synth 归还 LL 控制，LL 的 RF enable 链不完整 ⇒ rfready=0。
 
 ### 下 session 首项（证据驱动）
+
 对拍**校准期间 vs 校准后**的 RF/regi2c/FE 块状态：校准路径设了什么 LL 路径没设。锚点：
+
 - 校准回调里（calflag 0→1 时刻）快照 FE 块 + 0x201098BC + regi2c 值
 - 与 diag 泵里的同地址值 diff ⇒ 缺的那个寄存器 = RF enable 链断点
 
@@ -28970,24 +29002,28 @@ bt hci >> CMD opcode=0x2008 plen=32
 ## 🔄 轮 48：modem_rst_conf 复断言假说否证（2026-11-22）
 
 ### 实验
+
 - 泵每轮读+清 0x2010_9C10，OR 锁存进诊断行（`rst={x}` 字段，镜像 +112B = 894544）
 - 100s 窗（/tmp/rst48b.log）：**`rst=00000000` 全程**，无任何复断言
 
 ### 判决
+
 - 轮 21b"命令处理期复断言（终值回 0x001870c0）"**在当前流程不成立**——pre-0x200A 清零一直保持
 - 静态反汇编佐证：镜像内**无 blob 函数写 9C10**（仅 probe 清零 / bringup.init 写 0x10000→0 / 采样器读）——复断言者若存在必走间接/ROM 路径，但板上实测根本没发生
 - FE 憋复位假说出局：FE 不在复位里
 
 ### RF 墙排除清单（至此）
-| 候选 | 判决 |
-|---|---|
-| FE 复位门控 | ✗ 轮 48 本轮否证 |
-| MODEM 时钟门控 | ✗ icg=6 保持 |
-| PHY 校准未完成 | ✗ calflag=1（synth 校准期锁过）|
-| FE450 静态值差 | ✗ btfix3 写入落板、冻结签名不变 |
-| 官方空闲态 FE 振荡 | ✗ 官方空闲同样不振荡（不可判据）|
+
+| 候选               | 判决                             |
+| ------------------ | -------------------------------- |
+| FE 复位门控        | ✗ 轮 48 本轮否证                 |
+| MODEM 时钟门控     | ✗ icg=6 保持                     |
+| PHY 校准未完成     | ✗ calflag=1（synth 校准期锁过）  |
+| FE450 静态值差     | ✗ btfix3 写入落板、冻结签名不变  |
+| 官方空闲态 FE 振荡 | ✗ 官方空闲同样不振荡（不可判据） |
 
 ### 剩余唯一主嫌
+
 **LL/BB init 链自身未走完**：ROM 分发 ctx 槽 0x2f07f1F4=0（既有定案 = BB 事件链缺口）+ ana CONF0 静态（泵期无事务；校准期 regi2c 明确活着）。下轮首项：在 r_btdm_enable 反汇编里定位 0x2f07f1F4 的写者与所属分支，回溯哪个前置条件跳过了它。
 
 ---
@@ -28995,20 +29031,24 @@ bt hci >> CMD opcode=0x2008 plen=32
 ## ⛏ 轮 49：HCI 命令链两层真修复（2026-11-22）
 
 ### 修复 1：BT MAC 中断路由（intrArm 死钩子）
+
 - `osal.on_intr_arm` 只被赋值无调用点 ⇒ `intrArm`（MAP[124]=0x18 + 桥 handler + mie）**从未执行** ⇒ 中断源 124 从未路由
 - 修复：probe 里 IE 武装块直调 `bringup.intrArm(124)`（路由先于 IE）
 - 板测：`arm src=124 -> CLIC input 24 (routed, bridged=true) mie|=0x1000000` ✓ 无 boot 循环
 
 ### 修复 2：cfg_ll 注册（官方 mode 分发器）
+
 - 反汇编链：`hs_cmd_tx` 尾部 `t1=env[32]; jr t1` ⇒ env[32]=LL cmd 入口；cfg_ll 唯一官方调用者 = **mode 分发器** `r_sym_ble_FzTWy2M5WtXtifB7Pwt4(0x80000002→j yTwwy5→cfg_ll)`
 - step 17 官方链只**注册**分发器到槽[4]，从未**调用** ⇒ cfg_ll 永不执行（kZvEj 兄弟函数直调会 NULL 崩——依赖 env 未建，弃用）
 - 修复：probe 在 enable 后直调分发器（`_ = r_sym_ble_FzTWy2M5WtXtifB7Pwt4(0x8000_0002)`）
 - 板测：**`e32=0x400183a6`**（LL cmd 入口注册成功 ✓）+ evt 1→2（多一个 init 事件）+ sendReset/readBdAddr rc=0
 
 ### 诊断行升级
+
 `icg/rfready/fe/rst/qput/getok/evrun/evt/e32/pc/brg`——evt=transport evt_count、e32=ble_hci_trans_env[32]
 
 ### 剩余单墙（第三层）
+
 - `evt=2` 恒定：LL 入口（FJxPPD）收到命令后**不排队不回 CC**（qput=8 恒定）
 - = 控制器内部状态机扣住命令，等 BB/RF 硬件就绪（rfready=0 fe=0 原墙会师）
 - 命令路径三层仪器已就位：下一层破墙点 = BB/RF 内核 init（esp_btbb_enable 已调、bt_bb_v2_init_cmplx 已跑——下一个怀疑 = BB 调度器时钟源/RTC counter 触发链）
@@ -29018,18 +29058,23 @@ bt hci >> CMD opcode=0x2008 plen=32
 ## ⛏ 轮 50：双门实验——墙收敛到 LL 入口内部（2026-11-22）
 
 ### 实验（同一构建）
+
 1. **B 路径切换**：fwd06/0x2008 从 sendCmd(A) 改 sendCmdViaHs(B)——env[32]=FJxPPD 已注册（轮 49 e32 实证）
-2. **A 路径门镜像开**：mode dispatch 后 `ctx[32]=&FJxPPD, ctx[36]=0`（ctxp 运行时读 *0x2f011020）
+2. **A 路径门镜像开**：mode dispatch 后 `ctx[32]=&FJxPPD, ctx[36]=0`（ctxp 运行时读 \*0x2f011020）
 
 ### 判决（/tmp/round50.log）
+
 **evt 恒 2、qput 恒 8**——两条命令下行门全开，LL 入口（FJxPPD）仍不排队不回 CC。
 
 ### 定性
+
 命令下行链已**端到端贯通**（host→transport→env[32]/ctx[32]→FJxPPD 入口），墙在 **FJxPPD 内部**：控制器状态机扣住命令，等 BB/RF 就绪（rfready=0 fe=0）——与 ana 域墙会师。
 
 ### 轮 51 首项（两个现成判别器，按序）
+
 1. **四点 ana 快照**：esp_btbb_enable 前后 / INITED / 泵首轮，存 {F818,F800,11AC,0450} 四件套——定位 ana 域死亡的确切一步（esp_btbb_enable 是头号嫌疑：官方 RF init owner，我们调了但从没查它做了什么）
 2. **regi2c 读实验**（轮 22/23 既定未跑）：泵期 `phy_i2c_readReg` 读已知模拟寄存器——0/0xFF ⇒ ana 总线死（追 i2c_mst 时钟门）；真值 ⇒ 模拟域活，缺口在 analog-ok→rfready 之间 = LL RF init 例程未执行
+
 - 卫生项已完成：/tmp/full_disasm.txt 已从当前 app.elf 重生成（round-44 旧布局弃用）
 
 ---
@@ -29037,39 +29082,47 @@ bt hci >> CMD opcode=0x2008 plen=32
 ## ⚡ 轮 51：ana 域死亡定位——RF 电源域校准后被关（2026-11-22）
 
 ### 四点快照（/tmp/ana51.log，槽 = btbb前/btbb后/INITED/泵首轮）
+
 ```text
 F818=2900e444 F800=002f0669 11AC=00000000 0450=0011→00102000（四点全静止）
 ```
+
 - F800 = 官方轨迹**起点值**（012f0669 同族，无 bit8）跨四点不变 ⇒ **校准后零 ana 事务**
 - esp_btbb_enable 对 ana 域零效果；0450 对齐写生效且无人改回
 
 ### regi2c 判别（/tmp/regi2c.log）
+
 - `phy_i2c_readReg(99,1,6)`（RF PLL cap，cal 期写过）**快速完成**（未挂死，0xA002 相位过）返回 **0x00**
 - ⇒ **总线活、目标域读 0** = RF 模拟电源域掉电（非总线时钟死）
 - 呼应 calflag=1：校准期域活着（fe_readable=1, cal 有真值），**校准结束被 PHY 关电**
 
 ### rf_onoff 重试（/tmp/rfon.log）
+
 - 泵内重调 `phy_ana_i2c_master_burst_rf_onoff(1)` 再读 ⇒ **仍 0x00**
 - ⇒ burst 开关不够：恢复需要 **PMU RF 电源序列**（LP 域电源状态机，非 ana burst）
 
 ### 终局定性（41+ 轮战争的地基墙）
+
 RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = modem_flag/keep-on 机制（轮 21b 记录"官方 phy_module_enable 负责释放、我们链接的 IDF v6.1 不释放"）+ PMU RF 上电序列（s31-pmu-rf-power-porting skill 领域）。
 
 ### 轮 52 首项：PMU 电源域审计
+
 1. 对拍 oracle：esp_phy_enable 返回时刻的 LP/PMU RF 域状态寄存器（0x2E00_xxxx，pmu RF LDO/switch）——skill 记录 pmu_init.c.obj 已链入，含 phy RF power 寄存器
 2. 我们 esp_phy_enable(2) 完成后同寄存器 diff ⇒ 找"被关掉"的确切一位
-3. 保持_on 的官方 owner（modem_flag 期望的"别的 owner"）极可能 = esp_bt_controller_enable 内部的 phy_conn_keep_on 等价调用——FzTWy2 分发器之后 LL init 链里找
+3. 保持\_on 的官方 owner（modem_flag 期望的"别的 owner"）极可能 = esp_bt_controller_enable 内部的 phy_conn_keep_on 等价调用——FzTWy2 分发器之后 LL init 链里找
 
 ---
 
 ## ⚡ 轮 52：ana master clock 门控实锤但非唯一闸（2026-11-22）
 
 ### 发现
+
 - `I2C_MAT_CLK_EN = BIT(28)` @ `0x208133fc`（LP_I2C_ANA_MST DATE_REG，HP 可安全读写）
 - 板上实测 `before=02007301` ⇒ **bit28=0，master clock 确实被门**（bootloader force-enable 常开 → app 期引用计数掉零）
 - 置位后重读 `phy_i2c_readReg(99,1,6)` ⇒ **仍 0x00**（读快速完成，未挂死）
 
 ### 推理
+
 - 读事务机器活着（快读不挂）+ 值恒 0 ⇒ 门不止一个，剩余候选：
   1. `LP_I2C_ANA_MST_DEVICE_EN`（0x20813014，bits[11:0] 设备使能位图）——RF 设备位被清
   2. `ANA_I2C_SRC_CLOCK_ENABLE`（SOC_CLK_ANA_I2C_MST_DEPENDS_ON_MODEM_APB ⇒ MODEM_APB 源时钟）——HP_SYS_CLKRST 里对应位
@@ -29077,6 +29130,7 @@ RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = mode
 - esp_phy_enable 源码实锤：`phy_module_disable()` 尾部无条件执行（官方同款）⇒ modem clock bits 官方也关 ⇒ 关电者不在 module bits，在 PMU 域或 ana 配置
 
 ### 轮 53 判据（同法依次排除）
+
 1. 泵内打印 `0x20813014`（DEVICE_EN 位图）+ 对拍 oracle 同址
 2. HP_SYS_CLKRST MODEM_APB 源位检查/置位
 3. oracle 侧 esp_phy_enable 返回时刻六寄存器快照：{0x20813000, 0x20813014, 0x208133fc, 0x2010F800, 0x2010F818, HP_SYS_CLKRST 相关位}
@@ -29086,15 +29140,19 @@ RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = mode
 ## ⚡ 轮 53：DEVICE_EN 位图实锤 + 判别器红鲱鱼警示（2026-11-22）
 
 ### 实测（/tmp/deven.log + /tmp/devfff.log）
+
 - `deven=00000000`（12 个模拟设备使能位全零）+ `lpctrl0=00000000`（LP 视图 I2C0_CTRL 独立于 syscon F800）
 - 强制 `DEVICE_EN=0xFFF`（写入保持 deven_now=00000fff）⇒ 读**仍 0x00**
 - 加上轮 52 master clock BIT28：三道门（master clock / device enable / MODEM_APB-不存在）全部强制后读值不变
 
 ### ⚠ 红鲱鱼警示（重要勘误）
+
 **(99,1,6) = RF PLL cap 寄存器——PLL 未配置/未起时本来就读 0**。轮 51-53 的 0x00 可能是合法空闲值，"域掉电"结论要打折扣。**真正站得住的硬事实只有一条**：
+
 > **F800（syscon ana ctrl）校准后静止在轨迹起点值 = 校准后没有任何 ana I2C 事务被发出**（官方轨迹 012f0669→01780369 证明官方有）。
 
 ### 下 session 主实验（唯一可靠判别器）
+
 **oracle 侧轨迹仪**：oracle 是完整 IDF 工程（main.c 可改）——在 esp_phy_enable 后 / esp_bt_controller_enable 后 / ADV 前三点打印 {0x2010F800, 0x2010F818, 0x208133fc, 0x20813014}，烧 oracle 抓真实轨迹 ⇒ 直接回答"官方谁在何时发事务、改了哪些寄存器"，再对拍我们缺的那一步。比继续盲试寄存器位信息量大一个量级。
 
 ---
@@ -29102,6 +29160,7 @@ RF 模拟电源域在 esp_phy_enable 尾部被关电。官方保持方式 = mode
 ## 🎯 轮 54：oracle 轨迹仪落地——分野定位到"enable 链内的 ana 写"（2026-11-22）
 
 ### oracle 侧四点轨迹（/tmp/oracle_ana2.log，main.c 已加 ANASET 仪器，ninja 增量构建 1.5s）
+
 ```text
 pre-init:    F800=00000000 F818=2100e408 mst=02007301 deven=00000000
 post-init:   （不变）
@@ -29110,15 +29169,19 @@ post-cmds:   （稳定）
 ```
 
 ### BIT24 解码（i2c_ana_mst_reg.h）
+
 `REGI2C_RTC_WR_CNTL = BIT(24)`——F800 是 ana 事务**帧寄存器**：
+
 - oracle 尾帧 `012f0669` = **写事务**（data=0x2f→reg=0x06@dev=0x69，RF init 配置写）
 - 我们的尾帧 `002f0669` = **读事务**（= 校准期最后一次读的原帧，至今未变）
 - mst/deven 两寄存器 oracle 同样全关 ⇒ **轮 52/53 的"门"全部排除**（oracle 带着同样的"关"态照常工作）
 
 ### 分野定性
+
 官方 enable 链（ble_stack_enable = r_base_stack_enable→conn→fc→task）内有一部发 ana **写**（RF init）；我们同构步骤 rc=0 却没发。esp_phy_enable 官方也在 controller_init 内调（oracle 0x400105cc）⇒ module_disable 官方同样发生 ⇒ **分野不在 phy/module 层，在 blob 链内部某步的条件**。
 
 ### 轮 55 首项：oracle 分步 bisect（仪器已就绪）
+
 oracle main.c 链接同款 blob lib ⇒ init 后**手动逐个调用链步骤**、每步后 ANASET：
 r_base_stack_enable → ANASET → r_conn_stack_enable → ANASET → r_btdm_hci_fc_enable → ANASET → r_btdm_task_enable → ANASET ⇒ 直接指出哪一步发写事务；再对拍我们同步骤缺的前置。
 （oracle 重烧注意：ninja flash 会截断，须 esptool 全量三段 + verify；已验证可复现。）
@@ -29128,13 +29191,16 @@ r_base_stack_enable → ANASET → r_conn_stack_enable → ANASET → r_btdm_hci
 ## ⚡ 轮 56：抢先 btbb 毒化假说否证（2026-11-22）
 
 ### 实验（/tmp/nobb.log）
+
 `btbb_early_enable=false`（门控掉 bringup 的抢先 esp_btbb_enable）⇒ ana[0..1] F800 帧不变、rfready=0 fe=0 evt=2 一切照旧、无回归。
 
 ### 判决
+
 - **假说否证**：task init 体在我们板上无论抢先调用与否都不发 ana 写
 - 保守处理：抢先调用保持关闭（无害且更贴近官方时序）
 
 ### 50-56 轮证据链终态（全部站得住）
+
 1. 命令路径三闸全开：env[32]=FJxPPD ✓（e32 实证）、ctx[32] 镜像 ✓、路由 ✓（brg 仍 0 = 源硬件侧静默）
 2. LL 入口收命令不处理（qput 恒 8）
 3. blob task init 体**完成**（park eventq_get）但零 ana 事务——oracle 同 body 异步发写
@@ -29142,6 +29208,7 @@ r_base_stack_enable → ANASET → r_conn_stack_enable → ANASET → r_btdm_hci
 5. oracle 判别器已建成（ANASET 轨迹仪 + 分步 bisect 可复现，ninja 1.5s 构建）
 
 ### 轮 57 首项：task init 体路径追踪
+
 task 第一波 pump 的 init body 走了哪条分支 = 最后黑盒。仪器：pc_ring 采样器（已有）在 task init 窗口（bringup 完成后前 ~10 个 pump round）高频采样 tpc；或 STORE/EXEC 观察点盯 task init 的关键分支变量。备选：对照 oracle 反汇编 task 入口函数的 init 体（oracle elf 有全符号，我们镜像 r_sym 重名可映射）找"rf_init 跳过"分支的守卫变量地址，板上读它。
 
 ---
@@ -29149,25 +29216,30 @@ task 第一波 pump 的 init body 走了哪条分支 = 最后黑盒。仪器：p
 ## 🎯 轮 57-59：ana 红鲱鱼排除 + LL 事件回调丢失根修（2026-11-22）
 
 ### 轮 57：写-回读自环（终极活性判别）
+
 `phy_i2c_writeReg(99,1,6,0x5A)` → 读回 `0x5a` ⇒ **ana 总线+设备完全存活**！轮 51-53 的"域掉电"全是红鲱鱼（PLL cap 空闲本读 0）。
 
 ### 轮 58：FJxPPD 解码 + 事件对象追踪
+
 - FJxPPD（LL cmd 入口）= 把命令包进 env+12 的**单一静态事件**，`is_queued` 时返回 7 丢弃
 - 板测 `evq=0` = 事件不卡队（被消费）但零 CC ⇒ 消费后无声消失
-- 事件对象：Slot 桩（eo+0=池 Event 指针）→ 池 Event {next,fn_,arg,...}
+- 事件对象：Slot 桩（eo+0=池 Event 指针）→ 池 Event {next,fn\_,arg,...}
 
-### 轮 59：**根因 = 我们的 eventReset 清掉了 fn_**
+### 轮 59：**根因 = 我们的 eventReset 清掉了 fn\_**
+
 - osal 侧 event_init 快照环（48 条，@export 固定符号名）：blob 共调 event_init **45 次**，其中 idx=26 就是命令事件：**fn=0x400181e6（LL 分发器，注册过！）**
 - 但运行时 `evcb=0x00000000` ⇒ init 之后被清——清零者 = 我们的 `eventReset`（`e.fn_ = null`——官方 FreeRTOS 版只有 `event->queued = 0;` 一行！）
-- **根修（osal.zig eventReset）**：对齐官方语义，只清 queued，fn_/arg 保留
+- **根修（osal.zig eventReset）**：对齐官方语义，只清 queued，fn\_/arg 保留
 
 ### 修复后新状态（质变 + 新 crash）
+
 - INITED ✓ 事件链首次端到端运行：命令 → FJxPPD → 事件 → task 消费 → **分发器真跑了**
 - 新 crash：`mepc=0x401038a8 mtval=0x2b9`（a1=0 基址 + 0x2b9 偏移 = 未初始化指针字段）
 - s1=0x4007755c（我们镜像 bringup.init 区）、a0=0xc0050400
 - 解读：分发器已运行但读到未初始化的 LL 状态（0x401038a8 区域归属待查——不在我们 0x4000xxxx 镜像窗内）
 
 ### 轮 60 首项
+
 1. 定位 0x401038a8 属于哪个映射窗（我们 objdump 全部 VMA 无此地址 ⇒ 第二 flash 窗/未映射）
 2. 反汇编 fn=0x400181e6（LL 分发器）头部，找它读的指针字段（a1 链）
 3. 该字段 = LL init 应建未建的结构（conn/timer 池？）→ 回到 task init 体跳过问题，但这次有精确指针链
@@ -29177,14 +29249,17 @@ task 第一波 pump 的 init body 走了哪条分支 = 最后黑盒。仪器：p
 ## 🎯 轮 60：分发器真跑 + 垃圾表项跳转定位（2026-11-22 终态）
 
 ### fix 后新 crash 精确解读
+
 - `mepc=0x401038a8` = **DROM 只读数据窗**（rodata `_rodata_start+0x38a8`）——不是代码地址！
 - 分发器 0x400181e6 真跑了（可见 OCF 分组解码：OCF∈{8,63,5,4,14,...} 分支 ✓ HCI 命令调度器本体）
 - 内部经 **未初始化的函数表项** jalr → 跳进 rodata 当代码执行 → misaligned load fault（mtval=0x2b9）
 
 ### 表项应由谁填
+
 bb funcs 回调链（step 9 注册的 [a4+36]，esp_btbb_enable → bt_bb_v2_init_cmplx 正式入口）= BB/LL 的 ops 表注册。表项垃圾 ⇒ **深层 init（task init 体 / bb 调度器挂接）仍未跑完**——与轮 56 结论会师，但现在有精确指针链。
 
 ### 轮 61 首项
+
 1. 反汇编分发器 0x400181e6 全体，定位垃圾表项的基址寄存器（哪个 ops 表、表基址 = 哪个全局槽）
 2. 板上读该表槽 ⇒ 确认 0 值项
 3. 追官方该槽的写者（oracle 反汇编同函数对拍）⇒ 找到"该跑未跑"的那个 init 函数
@@ -29194,35 +29269,42 @@ bb funcs 回调链（step 9 注册的 [a4+36]，esp_btbb_enable → bt_bb_v2_ini
 ## 🔍 轮 61：crash 跳转目标终极解密（2026-11-22）
 
 ### rodata 落点内容（objdump -s 0x40103880-0x401038e0）
+
 ```text
 40103880  "evcb=0x c_ms=0x t_lo=0x f_sp=0x BBT seq=, total= c_ra=0x blocks= prev=0x"
 401038a8  4410012f 3410012f   ← 0x2f010044 / 0x2f001034（嵌在字符串区的两个值）
 ```
+
 ⇒ **0x401038a8 = trap.zig 的 dump 格式串/表区**（我们自己 trap 处理器的打印碎片）！
 
 ### crash 语义重定性
+
 - `mepc == ra == 0x401038a8`：`jalr ra` 经一个**装着字符串区指针**的回调槽跳进去，数据当指令执行 ⇒ misaligned load (0x2b9)
 - 即：某回调字段被写入了 **rodata 字符串指针**（assert 的 file 指针族——wr_btdm_assert(file=0x4010103c,...) 这类）= **结构字段偏移错位的注册**
 - 与我们 osal 的事件/槽布局对照：我们的 Slot{p} 间接 + 官方 btdm_osal_event 容器语义 = 最可能的错位源
 
 ### 轮 62 首项（STORE 观察点一击必杀）
-对命令事件的 `fn_` 字段（池 Event 地址运行时已知 = *(eo)，eo = *(0x2f01101c)+12）下 **STORE 观察点**（mcontrol6，轮 33 配方）：捕获**所有写者**（init 写 fn=0x400181e6 / 某处写字符串指针 / reset 写 0）+ 写者 PC ⇒ 布局错位的精确位置一次定案。
+
+对命令事件的 `fn_` 字段（池 Event 地址运行时已知 = _(eo)，eo = _(0x2f01101c)+12）下 **STORE 观察点**（mcontrol6，轮 33 配方）：捕获**所有写者**（init 写 fn=0x400181e6 / 某处写字符串指针 / reset 写 0）+ 写者 PC ⇒ 布局错位的精确位置一次定案。
 
 ---
 
-## 🔍 轮 62：fn_ 观察点零命中 ⇒ 毒化机制 = Slot 重绑定（2026-11-22）
+## 🔍 轮 62：fn\_ 观察点零命中 ⇒ 毒化机制 = Slot 重绑定（2026-11-22）
 
 ### 实验（两 boot 协议）
-- Boot A：enable 前武装 STORE 观察点 @池 Event fn_（`fn_ STORE watch armed @0x2f014a18` ✓）
+
+- Boot A：enable 前武装 STORE 观察点 @池 Event fn*（`fn* STORE watch armed @0x2f014a18` ✓）
 - Boot B：lpBlackBoxReport 读 LP 槽 0x2E0004D0 三元组 ⇒ **count 无增量、pc/ra = 下载刮擦噪声**
 
 ### 判决
-- idx26 的 event_init 写的 fn=0x400181e6 落在池事件 A 上；运行期**没有任何写者碰过 A.fn_**（观察点零命中）
-- 但运行时 S.p（Slot 桩指针）= **B ≠ A** 且 B.fn_ = 0
-- ⇒ **"清零"不在 A 上发生 = Slot 重绑定**：eventDeinit(S)（give A、S.p=null）→ 后续 take() 把新池事件 B（fn_=null）绑回 S——且 45 条 init ring 里 **eo 只有 idx26 一次** ⇒ 重绑定**没走 event_init**（直接 slotSet 或 deinit 后未 re-init 的路径）
-- 事件被 task 取走 → event_run → fn_=NULL → 我们的 osal null 早退 → 命令无声消失 ✓ 全部症状闭环
+
+- idx26 的 event*init 写的 fn=0x400181e6 落在池事件 A 上；运行期\*\*没有任何写者碰过 A.fn*\*\*（观察点零命中）
+- 但运行时 S.p（Slot 桩指针）= **B ≠ A** 且 B.fn\_ = 0
+- ⇒ **"清零"不在 A 上发生 = Slot 重绑定**：eventDeinit(S)（give A、S.p=null）→ 后续 take() 把新池事件 B（fn\_=null）绑回 S——且 45 条 init ring 里 **eo 只有 idx26 一次** ⇒ 重绑定**没走 event_init**（直接 slotSet 或 deinit 后未 re-init 的路径）
+- 事件被 task 取走 → event*run → fn*=NULL → 我们的 osal null 早退 → 命令无声消失 ✓ 全部症状闭环
 
 ### 轮 63 首项
+
 1. 观察点改盯 **eo+0（Slot.p 字段）**：抓"谁把 S.p 从 A 改写"（deinit 写 null / 直接 slotSet 写 B）+ 写者 PC
 2. 同时 diag 增加每轮 S.p 值——确认重绑定发生在 bringup 哪一步（对照 flashStage 相位）
 3. 找到重绑定者后：核对官方 btdm_osal 的容器生命周期（FreeRTOS 版 deinit 语义 vs 我们的）——大概率我们 eventDeinit 的"give+null"语义官方并不存在（官方容器由 blob 直接管理）
@@ -29232,45 +29314,55 @@ bb funcs 回调链（step 9 注册的 [a4+36]，esp_btbb_enable → bt_bb_v2_ini
 ## 🎯 轮 61-62b：命令分发表 = NULL 实锤（终点线到手，2026-11-22）
 
 ### 最锐利崩溃（/tmp/eo2.log，eventReset 修复后）
+
 ```text
 panic: ra=0x400181f6 a0=0x0c03 a1=0x00000000 a2=0x1
 panic: live mepc=0x4007b8c8 mtval=0xc0b
 ```
+
 - **a0=0x0c03 = HCI Reset 命令**——分发器（OQqISruR @0x400181e6）真在处理我们发的命令！
 - **a1=0 = 命令分发表基址 = NULL**——按 OCF 算出的查址 0xc0b misaligned fault
 - a3/a5=0x2e000508 = bumpEvtCounter 表（bump 已成功执行 = 事件链活的又一实证）
 
 ### 63 轮终局定性
+
 **HCI 命令分发表从未被填充**。官方由 ble_stack_init/hci_transport_init（bt.c glue）注册每条命令的处理器表；我们的 own-ops 替换链丢了注册半边 ⇒ 表基址全局 = 0 ⇒ 分发器对任何命令（含 HCI Reset）即崩。
 
 ### 事件链状态（全绿）
-命令 → FJxPPD → 事件 post → task 消费 → **fn_=0x400181e6 分发器真跑**（eventReset 根修生效 ✓）→ 空表查址崩。轮 63 的 Slot.p 观察点零命中 + 轮 63b 宽签名武装观察点风暴（mmio trace 实录）都反证：fn_ 保留修复是**正确且充分**的最后一块拼图，崩点已在分发器内部。
+
+命令 → FJxPPD → 事件 post → task 消费 → **fn\_=0x400181e6 分发器真跑**（eventReset 根修生效 ✓）→ 空表查址崩。轮 63 的 Slot.p 观察点零命中 + 轮 63b 宽签名武装观察点风暴（mmio trace 实录）都反证：fn\_ 保留修复是**正确且充分**的最后一块拼图，崩点已在分发器内部。
 
 ### 轮 63c 首项（机械闭环）
+
 1. 反汇编分发器 ra=0x400181f6 邻域 ⇒ 找表基址全局地址（a1 的来源 load）
 2. nm/oracle 找该全局的官方写者（注册函数 = ble_stack_init 内部的 hci cmd 表填充）
 3. 我们 bringup 补调（或修正 own-ops 的 hci_transport 替换，让它做注册半边）
-⇒ 表就位 ⇒ 分发器处理 Reset/ReadVersion/ADV 链 ⇒ CC 回流 ⇒ rfready ⇒ **60+ 轮战争总墙倒塌**
+   ⇒ 表就位 ⇒ 分发器处理 Reset/ReadVersion/ADV 链 ⇒ CC 回流 ⇒ rfready ⇒ **60+ 轮战争总墙倒塌**
 
 ---
 
 ## 🏁 轮 63b：env+12 内存所有权冲突 = 最终根因（2026-11-22 夜）
 
 ### 崩溃点反汇编（wr_btdm_osal_event_get_arg @0x4007b8c4）
+
 ```c
 lw a0, 0(a0)      // slot->p
 beqz a0, ret      // 只挡 NULL
 lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc03+8 = 0xc0b misaligned
 ```
+
 - slot.p = **0xc03 = HCI Reset opcode**（分发器正在处理的命令）——**blob 把自己的控制器状态写进了 env+12 区域**（它的容器字段布局含 opcode 存储），覆写了我们 Slot.p 间接指针
 
 ### 最终根因（所有权冲突）
+
 官方 btdm_osal 事件 = **字段内联**在 env+12（无间接层），blob 对 env+12 有完整读写所有权（含 opcode 等状态字段）；我们的 Slot = {p 间接指针 → osal 池 Event}——blob 的状态写毁掉 slot.p ⇒ 我们的事件函数全部解引用垃圾。
 （回看：轮 62 的"重绑定"= blob 的状态写！轮 62 观察点零命中 = 观察的是旧池事件 A，而冲突发生在 Slot 桩本身。）
 
 ### 轮 63c 终修方向（结构性）
-**osal 事件层去间接化**：wr_btdm_osal_event_* 包装改为**带外映射**（slot 地址 → 我们静态池 Event，用 (ns,key) 句柄之外的 side-table），env+12 内存完全让给 blob 自由读写；我们的 fn_/arg/queued 存 side-table。
-- 影响面：osal.zig Event/Slot 池设计 + 全部 wr_btdm_osal_event_* 包装（init/deinit/reset/queued/get_arg/set_arg/put/get/run）
+
+**osal 事件层去间接化**：wr*btdm_osal_event*\* 包装改为**带外映射**（slot 地址 → 我们静态池 Event，用 (ns,key) 句柄之外的 side-table），env+12 内存完全让给 blob 自由读写；我们的 fn\_/arg/queued 存 side-table。
+
+- 影响面：osal.zig Event/Slot 池设计 + 全部 wr*btdm_osal_event*\* 包装（init/deinit/reset/queued/get_arg/set_arg/put/get/run）
 - **重构回归红线**：eventqGet 的 **RawQ 优先语义必须保留**（裸事件先于常规队列出队——0x200A 的时序依赖它）
 - 判据：wr5a + HCI Reset 不崩 + CC 回流（evt 破 2）→ rfready → ADV
 - （备注：transport 的 sendCmdViaHs 已实证遵循 NimBLE 契约——buf_alloc + H4 格式化；崩溃签名 0xc03 来自 blob 自身状态写，非我方契约违背）
@@ -29280,17 +29372,20 @@ lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc0
 ## ⚙ 轮 64：osal 事件层地址键控重构落地 + 新前沿（2026-11-22 深夜）
 
 ### 重构完成（130/130 host 测试绿）
+
 - Event/EventQ 状态全部迁出 blob 内存（地址键控带外映射 `evByAddr/qByAddr`）
 - 队列改容器地址环形 FIFO（复制 RawQ 先例）；RawQ 优先语义保留 ✓
 - eventReset 官方语义保留 ✓；eventInit 写回 container.p（承重写恢复 ✓）+ evFromSlot 双路解析（container.p 池合法优先 / 地址侧表兜底）
 
 ### 新前沿：step 6 池构建循环 NULL load
-- 崩点：`mepc=0x400613b8`（gvLJK4 函数 .L3 自由链表构建循环）、`ra=0x40061c2e`（调用者遍历 a5=*(s0) 后 lw 16/20(a5)）
+
+- 崩点：`mepc=0x400613b8`（gvLJK4 函数 .L3 自由链表构建循环）、`ra=0x40061c2e`（调用者遍历 a5=\*(s0) 后 lw 16/20(a5)）
 - **arena 分配点漂移**：轮 45 stub @0x2f0243d0 → 本轮 @0x2f02a910（我们 osal 侧表扩容推挤 heapStart）
 - 池构建循环从地址 0 load ⇒ 池区某节点内容 = 0 被当指针
 - 自引用填充 / handle 回写均未消解 ⇒ NULL 不是经 stub 链来的
 
 ### 轮 65 首项
+
 1. 对拍 arena 布局：旧（0x2f0243d0 时代）vs 新（0x2f02a910）——heapStart 位移 +0x6540 的来源（我们的 osal bss 增量清单）
 2. 反汇编 gvLJK4 .L3 循环头（0x40061376-0x400613b8）：确认 NULL load 的基址寄存器与偏移
 3. 假设：池 init 依赖 arena 起点/对齐（blob 假设池区紧跟某结构）——位移后叠到未初始化区
@@ -29302,20 +29397,24 @@ lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc0
 ## ⚙ 轮 65 终态：任务栈损坏（arena 位移次生效应，2026-11-23 凌晨）
 
 ### 崩溃定性（/tmp/tlinit2.log）
+
 - `mepc=0x4006137a`（gvLJK4 prologue `sw s0,8(sp)`）fault ⇒ **sp = 垃圾（≈0）**
 - ra=0x40061c2e = task_init 内 gvLJK4 调用点 ⇒ blob task **被正确 resume**（init body 在跑 ✓）
 - 但任务恢复时 **sp 已损坏** ⇒ 上下文切换/栈区冲突
 
 ### 前置修复全部生效
+
 - task list head init（fqmZkUKg 挪至 pre-step-6，mempool 清零问题规避 ✓ 哨兵发布可见 0x2f0111bb）
 - sleep cb 容器 scratch 预置 ✓
 - side-table 重构 130/130 host 绿 ✓
 
 ### 根因方向：arena 位移次生效应
+
 - 轮 45 stub @0x2f0243d0 → 本轮 @0x2f02a910（**+0x6540**：我们的 osal 地址映射/bss 扩容推挤 heapStart）
 - blob task 的栈分配自 arena ⇒ 位移后与其余区重叠/冲突 ⇒ resume 时 sp 损坏
 
 ### 轮 66 首项（单变量实验）
+
 1. probe.run arena 块开头加 **64B dummy 预分配**（btdmMalloc(64) 丢弃）⇒ blob 后续分配整体位移 64B
 2. 若 crash 签名变化/消失 ⇒ 布局冲突实锤，扫 64B 步进找安全窗口；若不变 ⇒ 转任务栈分配路径审计（sched 帧 64B 假设 vs arena 布局）
 
@@ -29324,14 +29423,17 @@ lw a0, 8(a0)      // ← fault：slot->p = 0xc03（非 NULL 通过！）→ 0xc0
 ## ⚙ 轮 66 判决：非布局敏感——确定性 NULL 基址（2026-11-23）
 
 ### 实验（64B dummy 预分配）
+
 crash 签名**逐字不变**（mepc=0x4006137a mtval=4 ra=0x40061c2e）⇒ arena 位移假说出局。
 
 ### 重新定性
+
 - mtval=4 = `lw X, 4(基址=0)` 家族 = **确定性 NULL 基址解引用**（非布局/非对齐问题）
 - 注意：每轮构建地址漂移 ⇒ 0x4006137a 在新构建 = 另一条指令（本轮的 = 某个 `lw X,4(0)` ）
 - 注册序列（task list → sleep cb → …）每前进一步就命中**下一个未初始化槽**——0x2f0111xx 家族还有未预置成员
 
 ### 轮 67 首项（一命令）
+
 **当前构建**（dummy66 的 app.elf）反汇编 0x4006137a ±0x20：读出确切指令与基址寄存器装载链 → 槽地址 → 加入预填清单 → 重跑。循环直到 task_init 全链通过（每次迭代 = "解码→预填→boot"，仪器/流程已全就绪）。
 
 ---
@@ -29339,15 +29441,18 @@ crash 签名**逐字不变**（mepc=0x4006137a mtval=4 ra=0x40061c2e）⇒ arena
 ## 🎯 轮 67 终态：env+16/20 = cfg 拷贝字段——init_config 镜像差异成为总根源候选（2026-11-23）
 
 ### 关键事实链
+
 1. hook_fired=0 + n=0 ⇒ **本次 boot 零 event_init**（45 次 = 历史轮；本次流程在前置阶段就崩）
 2. crash walk 在 task_init **内部**（task_deinit/OkE7 之前执行——线性地址序 ≠ 执行序，分支保护：仅 `env_obj[0] count <= 1` 时走）
 3. env_obj = **从 cfg->btdm memcpy 而来** ⇒ env+16/20 = **cfg 字段的拷贝**
 4. walk 读 env_obj[20] = 0 ⇒ **我们的 cfg 镜像在对应偏移 = 0**（官方 BT_CONTROLLER_INIT_CONFIG_DEFAULT 非零/含指针）
 
 ### 60 轮现象的统一解释候选
+
 init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（字段错位、缺段、默认值 0）⇒ env 拷贝即错 ⇒ 事件/任务注册链全部异常 ⇒ 一切下游症状（FC 表、锚点、sleep env、注册节点 NULL……）。
 
 ### 轮 68 首项（全离线，一锤定音）
+
 1. oracle 侧 dump `BT_CONTROLLER_INIT_CONFIG_DEFAULT` 宏展开后的完整字节（esp_bt.h / esp_bt_configs.h 静态分析 + 编译产物 .data 段对比）
 2. 我们的 init_config.zig 镜像逐字段 diff（已有"双工具校验"轮的基础）
 3. 差异字段 → 修正镜像 → boot：预期 env+16/20 非零 ⇒ walk 通过 ⇒ task_init 完成 ⇒ 全链下游复活
@@ -29357,6 +29462,7 @@ init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（�
 ## 🔬 轮 67b 仪器与未决（2026-11-23）
 
 ### 本轮新增仪器（全部保留）
+
 - `evByAddr/qByAddr` 地址键控映射 + `evFromSlot` 双路解析（container.p 池合法优先 / 地址侧表兜底）
 - eventInit/eventqInit 承重写恢复（container.p = 池对象）
 - **wr_btdm_osal_eventq_init/event_init 改返 c_int 0**（OkE7 无条件读 a0 做 rc 检查——void 残留 0 = 误 bail；官方 FreeRTOS 实现碰巧 a0 残留非零）
@@ -29364,13 +29470,16 @@ init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（�
 - env+16/20 预读（pre-step-6；LP 槽方案被下载刮花否决 → flash 通道 0x18C100）
 
 ### 未决核心谜团（轮 68 起）
+
 **task_init 前置 walk**（0x40061c1c-0x40061c42，`lbu a3,0(a5)` count 守卫 + `lw a0,16/20(a5)` 节点遍历 → gvLJK4）：
+
 - container.p 解引用后 +16/+20 = 0 ⇒ gvLJK4(NULL) ⇒ lw 4(0) fault
 - 该 walk 语义 = 遍历**已注册任务节点**——官方流此节点非空
 - 我们 45 次 event_init 的绑定 = **地址键控侧表**（container 内存不再承载绑定）⇒ **blob 读 container 字段 = 读不到我们的绑定**（0x2f011138 cb 容器 prefill 后 task list init 哨兵 0x2f0111bb 也一样）
 - ⇒ 矛盾核心：**blob 期望 container 字段持节点指针（其自有布局），我们改成了地址键控——两种布局不可共存**
 
 ### 轮 68 方向：mirror 官方 btdm_osal_event 容器布局
+
 官方 FreeRTOS 版：`btdm_osal_event` 容器 = `{void *event}` 仅一个指针（指向 impl）——**它就是我们的 Slot.p 模式**！⇒ 布局本身没错；错在 **impl 对象内容**：官方 mutex impl {handle}、我们的 Mutex = {locked,...}——blob 在 mutex impl 上做的操作（+16/+20 读）**不是 mutex 语义** ⇒ 该 container 不是 mutex 而是**别的对象**（env 容器误被我们绑成 mutex？或 OkE7 的 s0 参数不是 env+12）。
 ⇒ 下轮 = **OkE7 全量反汇编**（oracle 0x4006a3ac 起）：确认 s0 指向哪个容器、mutex_init/eventq_init 的确切实参、+16/+20 的写入者。
 
@@ -29379,6 +29488,7 @@ init_config.zig 镜像若与官方 cfg 布局/默认值存在系统性差异（�
 ## 💡 轮 68：oracle OkE7 全量解密——"所有权冲突"理论推翻（2026-11-23）
 
 ### oracle OkE7（0x4006a3ac 起）逐条解码
+
 ```c
 laR9(container+8, ...)                    // eventq_init(env+8)
 wr_btdm_osal_event_init(env+84, name_fn, 0)  // 事件容器 = env+84！
@@ -29388,18 +29498,21 @@ kNIbP2(a0, 6)                              // 链入全局链表 id=6（= 轮 62
 ```
 
 ### 三个结论
+
 1. **官方 = 同款 Slot.p 间接模式**（container{p} → 池 Event，Event+16 = slot 反查字段）——轮 63b"所有权冲突"理论**推翻**（blob 的 0xc03 状态写另有来源/另有容器）
 2. **kNIbP2 = gvLJK4 家族的注册侧**：gvLJK4(walk) 遍历的链表 = kNIbP2 链入的 id=6 链表
 3. **oracle 事件容器 = env+84**；我们镜像 task_init 的遍历容器 = env+16/20——**偏移不一致**（不同 blob 构建家族或不同对象组）= 下轮对拍点
 
 ### 真崩溃源（修正）
-task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
+
+task_init 里 gvLJK4(NULL) 的 node = \*(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
 
 ---
 
 ## 🔬 轮 67c：OkE7 bail 链精确解码（2026-11-23）
 
 ### 我们镜像 OkE7（0x40061a10）完整流程
+
 ```text
 入口：a5 = *(0x2f011138)；=0 ⇒ bail -1     （cb 容器 ✓ 我们预填过）
 malloc(76) → env；*(0x2f011138) = env       （env 指针写回槽 ✓）
@@ -29415,9 +29528,11 @@ JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
 ```
 
 ### 结论
+
 6 个子 init 之一 rc≠0 ⇒ OkE7 bail ⇒ env+84 事件从未注册 ⇒ task_init 后段遍历 env+16/20 容器（内嵌事件指针 = 各子 init 创建）读到 NULL ⇒ gvLJK4(NULL) ⇒ lw 4(0) fault。**evt/CC/rfready 全链冻结的总闸 = 这 6 个子 init 之一的失败**。
 
 ### 轮 68 首项（单 boot 隔离）
+
 6 个子 init 各自 flash 直写标记（0x18C200 起 phase=41..46，interval 现成）⇒ 一次 boot 定位第一个 rc≠0 的子 init；随后反汇编该子 init 找它的前置条件。
 （本轮已新增的 flash 直写通道 0x18C140 流水 = event_init 专用；新标记用不同偏移免覆盖。）
 
@@ -29426,10 +29541,12 @@ JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
 ## 🔬 轮 67d：橙味修正 + oracle 同名陷阱（2026-11-23 深夜）
 
 ### 两个判定修正
+
 1. **"OkE7 6 个子 init rc 检查链" = 过度解读**：oracle OkE7（0x4006a3ac）与我们的 OkE7（0x40061a10）**同源同构**（mutex→eventq→+8 检查→fqmZkUKg→kNIbP2(impl.slot,6)→event_init(env+84)），oracle 里 fqmZkUKg **无 rc 检查**（直落 kNIbP2）。"6 个子 init rc 链" = 我们镜像的不同函数（0x40061a94-0x40061ad4 的 JwHsRJf87 等 6 个）在 OkE7 **event_init 之前**——它们是 env+16/20 的真正注册者！
 2. **oracle 同名陷阱**：`r_sym_bt_*` 名 = 按构建哈希，**oracle 与我们镜像的同名符号 ≠ 同源函数**（nm 交叉查全部落空）。对拍必须按**调用图/偏移**而非符号名。
 
 ### 重定性
+
 - hook_fired=0 + n=0：OkE7 event_init(env+84) 未达 = env+84 之前的 6 个注册子 init 之一卡 rc
 - 这 6 个 = env+16/20 注册节点的**真正创建者**（我们早期轮的 45 次 init = 这些！）
 - 它们失败 ⇒ env+16/20 = 0 ⇒ task_init walk ⇒ gvLJK4(NULL) ⇒ 全套症状
@@ -29441,30 +29558,35 @@ JwHsRJf87 → rc? → UghmLBN → rc? → PsB8qxr → rc?
 ## 🧭 轮 68b：触底——blob 私有事件链布局（2026-11-23）
 
 ### 当前崩点终解（当前构建反汇编）
-- 崩指令 = gvLJK4 首条 `lw a5,4(a0)`，a0 = *(container+20) = 0（我们的 cb scratch 零填充）
+
+- 崩指令 = gvLJK4 首条 `lw a5,4(a0)`，a0 = \*(container+20) = 0（我们的 cb scratch 零填充）
 - caller（task_deinit walk）：`a5=*(s0)`=container.event=cb_stub ✓ → `lbu a3,0(a5)`=0 → `if(1<0)` false → `lw a0,20(a5)`=scratch+20=0 → gvLJK4(0)
 - **官方 impl 布局对照（btdm_osal_freertos.h:35）**：`{queued@0, fn@4, arg@8}` 仅 12 字节 ⇒ +20 越出官方 impl ⇒ **S31 blob 的 osal 是私有变体**（impl+16/+20 = kNIbP2 链表注册节点字段）
 
 ### 链条闭合（全历史会师）
+
 - OkE7 尾部：`kNIbP2(*(impl+16), 6)`——把 impl 注册进 **id-6 全局链**（链指针在 impl+16！）
 - task_deinit walk：遍历 env+16/20 容器 → impl → **impl+16/+20 = 链表节点字段** → gvLJK4 处理
 - 我们：container.event = cb_stub（零填充 scratch，未注册）⇒ impl+16/20 = 0 ⇒ gvLJK4(0) 崩
 - eventReset 修复 ✓ / eventqInit 写回 ✓ 都对，但 **cb_stub 不是经 OkE7/kNIbP2 正规注册的 impl**
 
 ### 轮 69 首项（结构性修复，方向已明）
+
 **0x2f011138 容器的 impl = 必须经 OkE7 正规创建**（OkE7 自己 malloc(76) env 并对 env+16/20 容器做 event_init + kNIbP2 注册）。我们不需要伪造 cb_stub：
+
 1. 读 OkE7 源（oracle）确认 env+16/20 容器的 event_init 调用（fn/arg 是什么）
 2. 在我们的 bringup 里于 task_init 前手动完成 OkE7 尾部的 event_init+kNIbP2 序列（对 env+16/20）
 3. task_deinit walk 即可遍历真注册节点 ⇒ 不崩 ⇒ 走通 step 6 ⇒ 全链复活
-（本次 osal 布局对齐——Event{queued,fn,arg} + fn(容器)——是官方语义的正确基础，保留 ✓）
-HEREDOG
-echo "---"; git add -A && git commit -m "bt-blobs: 轮 68b——触底：S31 blob osal=私有变体（impl+16/20=kNIbP2 链节点字段）；轮 69=手补 OkE7 尾部 event_init+kNIbP2 注册序列（oracle 源可得）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
+   （本次 osal 布局对齐——Event{queued,fn,arg} + fn(容器)——是官方语义的正确基础，保留 ✓）
+   HEREDOG
+   echo "---"; git add -A && git commit -m "bt-blobs: 轮 68b——触底：S31 blob osal=私有变体（impl+16/20=kNIbP2 链节点字段）；轮 69=手补 OkE7 尾部 event_init+kNIbP2 注册序列（oracle 源可得）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
 
 ---
 
 ## 🧭 轮 68c：oracle OkE7 完整序列到手（2026-11-23 深夜终版）
 
 ### oracle OkE7（0x4006a3ac-0x4006a3f8）精确序列
+
 ```c
 laR9(container+8, ...);                       // eventq_init(container+8)
 wr_btdm_osal_event_init(env+84, name_fn, 0);  // 事件容器 = env+84！
@@ -29474,12 +29596,14 @@ kNIbP2(a0, 6);                                // 链入全局链表 id=6（= 轮
 ```
 
 ### 三个结论
+
 1. **官方 = 同款 Slot.p 间接模式**（container{p} → 池 Event，Event+16 = slot 反查字段）——轮 63b"所有权冲突"理论**推翻**（blob 的 0xc03 状态写另有来源/另有容器）
 2. **kNIbP2 = gvLJK4 家族的注册侧**：gvLJK4(walk) 遍历的链表 = kNIbP2 链入的 id=6 链表
 3. **oracle 事件容器 = env+84**；我们镜像 task_init 的遍历容器 = env+16/20——**偏移不一致**（不同 blob 构建家族或不同对象组）= 下轮对拍点
 
 ### 真崩溃源（修正）
-task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
+
+task_init 里 gvLJK4(NULL) 的 node = \*(env+16/20) = 0 ⇒ **env+16/20 容器从未被 event_init**（hook_fired=0 实证）⇒ OkE7 在更早处 bail ⇒ **OkE7 的 bail 点 = 下轮唯一靶点**（oracle OkE7 序列：mutex→eventq→event84→kNIbP2——逐步对拍我们镜像 OkE7 0x40061a10 的执行路径，找 bail 分支）
 
 ---
 
@@ -29489,36 +29613,42 @@ task_init 里 gvLJK4(NULL) 的 node = *(env+16/20) = 0 ⇒ **env+16/20 容器从
 **铁律**：每次 build 后必须 `nm zig-out/bin/app.elf | grep "<symbol>"` 重取地址再反汇编（轮 35 铁律的显式扩展——本轮在 gvLJK4/hook_fired 的矛盾解读上浪费了 2 轮）。
 
 ### 稳定事实（不受漂移影响）
+
 - osal 布局已对齐官方（Event={queued,fn,arg}、fn(容器) 官方语义）✓ 130/130 host 绿 ✓
 - OkE7 尾部 event_init(env+84-类偏移) + kNIbP2(Event.slot, 6) 链表注册 = 官方序列 ✓（源码级，布局漂移不改序列）
 - 崩点族 = task_deinit 的节点遍历（读容器 impl+16/20 = 0）——**顺序：task_init 头部先跑 task_deinit**（清场），walk 命中的是清场后未重注册的容器
 
 ### 轮 69 首项（流程已明确）
-1. nm 重定位：r_btdm_task_init / r_sym_bt_OkE7* / gvLJK4
+
+1. nm 重定位：r_btdm_task_init / r_sym_bt_OkE7\* / gvLJK4
 2. 反汇编当前构建的 task_init 头部：确认 deinit→OkE7→walk 的真实执行序
 3. 若 walk 在 OkE7 前：env+16/20 容器需**更早**的注册者（找 controller_init 的哪一步——cfg 构造时？）
 4. 修复后判据不变：task_init 走通 ⇒ step 7-15 ⇒ enable ⇒ evt/rfready/ADV
-HEREDOG
-echo "---"; git add -A; git commit -m "bt-blobs: 轮 69 纪律——每构建 nm 重定位铁律显式化（本轮 2 轮浪费于旧地址）；稳定事实与轮 69 流程入库" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
+   HEREDOG
+   echo "---"; git add -A; git commit -m "bt-blobs: 轮 69 纪律——每构建 nm 重定位铁律显式化（本轮 2 轮浪费于旧地址）；稳定事实与轮 69 流程入库" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
 
 ---
 
 ## 🧭 轮 69b：deinit walk = memblock 池链遍历（2026-11-23 终版定性）
 
 ### 崩点重新定性（fn(容器) 语义修复后同点崩）
+
 - eventRun 官方语义修复（fn(容器)）✓ 已上板——crash 同点 = **崩点在 task_deinit（先于一切事件分发）**
 - walk：`a5 = container.event`（= cb_stub）→ `lbu a3, cb_stub[0]` = 0 → `lw a0, cb_stub[20]` = 0 → gvLJK4(0) → `lw a5, 4(0)` fault
 - **官方 impl 从 `s_btdm_osal_ev_pool` memblock 池分配**，+20 = **池内部链字段**；官方 deinit 的 gvLJK4 = 池链遍历操作
 - 我们的 cb_stub（btdmMalloc scratch）没有官方池链布局 ⇒ walk 读 0 ⇒ 崩
 
 ### 轮 70 首项（结构性正确解）
+
 实现 `btdm_memblock_get/from/put`（`s_btdm_osal_ev_pool`）的官方链布局：
+
 - memblock 节点 = {next@20 或官方偏移, ...}——从 oracle 反汇编 `btdm_memblock_get`（或 grep blob .o）拿节点布局
 - 我们的 wr_btdm_osal_event_init 改从该池分配 impl（替代 btdmMalloc scratch/池 Event 混用）
 - 判据：task_deinit walk 走通 ⇒ task_init 完成 ⇒ INITED ⇒ evt/CC 链复活
-（另一个更便宜选项：monkey-patch deinit 的 walk 目标——但结构性修复才是一劳永逸）
+  （另一个更便宜选项：monkey-patch deinit 的 walk 目标——但结构性修复才是一劳永逸）
 
 ### 保留成果（本轮全部已入库）
+
 osal 布局对齐官方 {queued,fn,arg} + fn(容器) 官方语义 + 双路解析 + eventqInit/eventInit 承重写 + c_int 0 修复（130/130 host 绿）
 
 ---
@@ -29526,26 +29656,31 @@ osal 布局对齐官方 {queued,fn,arg} + fn(容器) 官方语义 + 双路解析
 ## 🔧 轮 70 首项落地路径（已确认可行性，2026-11-23）
 
 ### blob 自家 memblock API 已链接
+
 `r_btdm_os_memblock_get/from/put/num_free/put_from_cb` 全部在镜像（nm ✓）——blob deinit walk 期望的 impl = **这个池的块布局**（+16/+20 = 池链字段）。
 
 ### 实施（下 session 首项）
+
 1. 找 blob 的 ev pool 对象地址：反汇编 r_btdm_task_deinit 同族或 grep `memblock_get` 调用点传的池参数（对照 oracle OkE7 的 `btdm_memblock_get(&s_btdm_osal_ev_pool)` 池地址语义）
 2. wr_btdm_osal_event_init 改：`impl = r_btdm_os_memblock_get(&ev_pool)` → 写 fn/arg/queued（对齐官方 freertos 布局 {queued@0,fn@4,arg@8}）→ container.p = impl
 3. 判据：task_deinit walk 走通（impl+16/20 = 池链合法）⇒ task_init 完成 ⇒ INITED ⇒ evt/CC ⇒ rfready/ADV
 
 ### 本轮已入库终态
-osal 布局对齐官方 {queued,fn,arg} + fn(容器) 语义 + 双路解析 + 全部承重写 + c_int 0 修复（130/130 host 绿）+ 完整诊断仪器栈
+
+osal 布局对齐官方 {queued,fn,arg} + fn(容器) 语义 + 双路解析 + 全部承重写 + c*int 0 修复（130/130 host 绿）+ 完整诊断仪器栈
 HEREDOG
-echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 落地路径——blob 自家 r_btdm_os_memblock_* 池 API 可直调（impl 布局与 deinit walk 对齐的结构性终修）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
+echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 落地路径——blob 自家 r_btdm_os_memblock*\* 池 API 可直调（impl 布局与 deinit walk 对齐的结构性终修）" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l
 
 ---
 
 ## ⚙ 轮 70 终态（2026-11-23 收口）
 
 ### ygu 链实验判决
+
 fqmZkUKg 后链调 yGU6cF4（清标志）——crash 原样（mepc=0x40061652 mtval=0x58）⇒ sleep_set_sleep_cb 的 store fault 非标志路径问题。
 
 ### 累计有效修复（本 session 全部已入库）
+
 1. intrArm 路由直调（轮 49）
 2. mode dispatch cfg_ll（轮 49，e32 实证）
 3. eventReset 官方语义（轮 59）
@@ -29555,7 +29690,8 @@ fqmZkUKg 后链调 yGU6cF4（清标志）——crash 原样（mepc=0x40061652 mt
 7. OkE7 双预填撤销（0x2f011138 = OkE7 自管理 env 槽，prefill = 入口 bail -1 实证）
 
 ### 剩余单墙（轮 71 首项）
-sleep_set_sleep_cb @0x40061652：`lw s0,12(a4)` 读 *(0x2f011134)+12 = NULL——sleep env 容器的 impl+12 字段。impl = OkE7 malloc(76) env 本体（*(0x2f011138)）——**env+12 = OkE7 mutex_init 写的互斥锁句柄**！mutexInit 的 slotSet 写 container.p（env+4 处的槽？）……不对：mutex_init(env+4) 收到 env+4 容器，写 env+4.p——而 sleep_cb 读的是 *(0x2f011134)=env2 指针+12……
+
+sleep_set_sleep_cb @0x40061652：`lw s0,12(a4)` 读 _(0x2f011134)+12 = NULL——sleep env 容器的 impl+12 字段。impl = OkE7 malloc(76) env 本体（_(0x2f011138)）——**env+12 = OkE7 mutex_init 写的互斥锁句柄**！mutexInit 的 slotSet 写 container.p（env+4 处的槽？）……不对：mutex_init(env+4) 收到 env+4 容器，写 env+4.p——而 sleep_cb 读的是 \*(0x2f011134)=env2 指针+12……
 ⇒ **0x2f011134 与 0x2f011138 是两个不同 env 族**（134=sleep env、138=OkE7 env）——sleep env（134）的 impl+12 需要的值 = OkE7 mutex 的句柄传透……轮 71 = 对拍 oracle 的 0x2f011134/0x2f011138 双槽生命周期（oracle ANASET 加读双槽），确定 sleep env impl+12 的官方填充者。
 HEREDOG
 echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 终态——ygu 链未消解（sleep_cb impl+12=NULL 另有来源）；轮 71=oracle 双槽（134/138）生命周期对拍" 2>&1 | tail -1; git log --oneline -1; git status --short | wc -l; cd /home/huanglin/code/hl-ljj-quartz && git status --short | wc -l
@@ -29565,18 +29701,22 @@ echo "---"; git add -A; git commit -m "bt-blobs: 轮 70 终态——ygu 链未�
 ## ⚙ 轮 71 终态：prefill 双向矛盾 + session 收口（2026-11-23）
 
 ### 实验判决
-- **删 0x2f011138 prefill** ✓ → INITED 恢复（OkE7 lazy env 正确）但新崩 = **task_deinit 的节点遍历**（mepc=0x4006164a mtval=0xc：*(0x2f011134)=NULL → impl+12 load）
+
+- **删 0x2f011138 prefill** ✓ → INITED 恢复（OkE7 lazy env 正确）但新崩 = **task_deinit 的节点遍历**（mepc=0x4006164a mtval=0xc：\*(0x2f011134)=NULL → impl+12 load）
 - **删 0x2f011134 prefill** ✗ → 回退到 bpboot5 已文档化崩（set_sleep_cb NULL+0xC，调用者无空守卫）⇒ **prefill 是承重的**
 
 ### 矛盾
+
 有 prefill：walk 崩于 env+16/20 未注册；无 prefill：set_sleep_cb 崩于 env+12 NULL。两个方向的修复（scratch 预置 / 删除）都不能同时满足 ⇒ **剩余缺口 = 一个真正的 OkE7 家族 impl 分配器**（blob 自家 memblock 语义，轮 70 的 r_btdm_os_memblock_get 路线 = 唯一未试的结构性修复）。
 
 ### 轮 72 首项（精确、离线起手）
+
 1. 反汇编当前构建的 `r_btdm_os_memblock_get`（nm @2f009d7e）——拿 memblock 块布局（池链字段偏移）
 2. `wr_btdm_osal_event_init` 改用该池分配 impl（对齐官方 BTDM_MEMPOOL_ALLOC 路径），container.p = impl
 3. 判据：task_deinit walk 走通 ⇒ step 6 完成 ⇒ INITED ⇒ evt/CC ⇒ rfready
 
 ### 全 session 稳定成果（已入库，130/130 host 绿）
+
 osal 布局对齐官方 {queued,fn,arg} + fn(容器) + 双路解析 + eventInit/eventqInit 承重写 + c_int 0 + OkE7 lazy 语义确认（0x2f011138 不可预填）+ oracle OkE7 完整序列解密 + sleep env prefill 承重实证
 
 ---
@@ -29584,9 +29724,11 @@ osal 布局对齐官方 {queued,fn,arg} + fn(容器) + 双路解析 + eventInit/
 ## 🔬 轮 72a：r_btdm_os_memblock_get 解码（离线，2026-11-23）
 
 ### memblock 函数族（镜像 nm 已确认全链接）
+
 `r_btdm_os_memblock_get/from/put/num_free/put_from_cb` @ 2f009d1a-9e52
 
 ### impl 块布局推断（下一步反汇编验证）
+
 `r_btdm_os_memblock_get(pool)` 返回块指针；块内含池链字段（prev/next 或单链）——deinit walk 读 impl+16/+20 的确切语义需反汇编 r_btdm_task_deinit（当前构建 nm 地址）中 gvLJK4 调用前后的完整指令序（lw a5,0(s0) 的 s0 到底是哪个容器基址——本轮的 0x2f011138/0x2f011134 归属仍未钉死，下轮 nm+反汇编一次性确认）。
 
 ---
@@ -29594,6 +29736,7 @@ osal 布局对齐官方 {queued,fn,arg} + fn(容器) + 双路解析 + eventInit/
 ## 🔄 轮 72b：执行序解码 + 双容器矛盾记录（2026-11-23）
 
 ### task_deinit 精确流程（当前构建 nm+反汇编）
+
 ```text
 s0 = 0x2f011138（OkE7 env 槽）；s1 = *(s0) = env
 if env == 0 → skip 整个 deinit（.L76 ✓ 有空守卫！）
@@ -29604,12 +29747,14 @@ a0 = *(env+20) → gvLJK4；a0 = *(env+16) → gvLJK4
 ```
 
 ### 双容器矛盾（未解，下 session 主线）
+
 - OkE7 写 env+16 = env+52、env+20 = env+64（内嵌容器地址 ✓ 非零）
 - walk 读 env+20 → gvLJK4(env+64) ⇒ 读 env+68 = 0（零填充区）→ beqz → .L4 ret？——**但实测 mtval=4 crash** ⇒ gvLJK4 收到的 a0=0 ⇒ env+20 处的值 = 0 ≠ env+64
 - ⇒ **执行时序矛盾**：walk 若在 OkE7 前（env+16/20 未写 = 0 ✓ 吻合），则 task_deinit 在 OkE7 前被调——但 task_init 里 deinit 调用点在 OkE7 之前仅 .L93 失败路径 ⇒ **OkE7 失败 bail → .L93 → deinit(walk env+16/20=0) → gvLJK4(0) → 崩** ✓✓ 完全吻合！
 - ⇒ **定案：OkE7 bail（6 子 init 之一失败）→ task_deinit 的 walk 在未初始化 env 上跑 ⇒ 崩。事件顺序全通。**
 
 ### 真问题回归
+
 = 轮 67c 的"6 子 init 之一失败"（非内存布局问题）。子 init 身份 = JwHsRJf87 等 6 个 blob 私有函数（非 osal wrapper）⇒ 它们的失败前置条件 = cfg 派生状态（memcpy(env+24, cfg+24, 20) 的 20 字节里某字段）⇒ **cfg+24..44 的 20 字节段 = 逐字节 diff oracle**（轮 68 已有 idf_cfg192 全 dump，偏移 24..44 对照即可）。
 
 ---
@@ -29619,7 +29764,8 @@ a0 = *(env+20) → gvLJK4；a0 = *(env+16) → gvLJK4
 cfg 镜像 20B 段（offset 24..44）与 esp_bt.h 逐字段吻合：rtc_freq(u64)=32000 ✓、ble_ll_sca=60 ✓、scan_phy=2 ✓、auth_tmo=3000 ✓、jitter=16 ✓、sched_adv_usecs ✓。⇒ **cfg 镜像正确**，OkE7 bail 前置不在 cfg 20B 段。
 
 ### 回归定位（新证据 chain）
-clean71 boot（无 prefill）的 crash = **set_sleep_cb NULL+12**（mtval=0xc）——与轮 71 有 prefill 时的 gvLJK4 walk 崩不同。两个 crash 的分叉点 = OkE7 入口检查 *(0x2f011138)：有 prefill（非零）= OkE7 bail -1 → walk crash；无 prefill（=0）= OkE7 lazy malloc ✓ → 但 sleep_set_sleep_cb 仍被调（调用者无槽空守卫，bpboot5 已文档化）→ *(0x2f011134)=NULL+12 崩。
+
+clean71 boot（无 prefill）的 crash = **set_sleep_cb NULL+12**（mtval=0xc）——与轮 71 有 prefill 时的 gvLJK4 walk 崩不同。两个 crash 的分叉点 = OkE7 入口检查 _(0x2f011138)：有 prefill（非零）= OkE7 bail -1 → walk crash；无 prefill（=0）= OkE7 lazy malloc ✓ → 但 sleep_set_sleep_cb 仍被调（调用者无槽空守卫，bpboot5 已文档化）→ _(0x2f011134)=NULL+12 崩。
 
 ⇒ **两条路径都通向睡眠链**——真正的开关 = `OB0cbi2`（0x2f011134 槽判 sleep ON/OFF）与 OkE7 入口检查共用 0x2f011138。**轮 73 首项 = 在 bringup 的 sleep_en 路径上显式置 sleep=OFF**：即确保 OB0cbi2 的输入（0x2f011134 槽 + env[0] byte）走 OFF 路径——具体 = **0x2f011134 槽保持 NULL（不加 prefill ✓ 已做）+ 调用 set_sleep_cb 的上游加守卫（需反汇编调用者的判据）**。下轮从 clean71.log 的 ra=0x4006b850 反汇编定位调用者判据。
 
@@ -29628,9 +29774,11 @@ clean71 boot（无 prefill）的 crash = **set_sleep_cb NULL+12**（mtval=0xc）
 ## 🎉 轮 73：evt=4——真 CC 首次回流（60+ 轮总墙倒塌！2026-11-23）
 
 ### 修复（一行：slot 守卫地址纠正）
+
 `0x2f011034` → `0x2f011134`（sleep env 槽）——正确守卫让 set_sleep_cb 在槽=NULL（sleep OFF ✓ 官方正确态）时跳过。
 
 ### 板级实证（/tmp/guard73.log）
+
 ```text
 bt bringup: INITED ✓（无 panic！）
 A(rx) sendReadVersion rc=0 stats cmds=3 evt=4   ← **evt 破 2（此前 60+ 轮恒 ≤2）**
@@ -29639,9 +29787,11 @@ A4(rx) readBdAddr rc=0 btdm_tx=3
 arm src=124 → CLIC input 24 ✓
 rx flag 0->1 ✓
 ```
+
 **evt=4 = 真 CC 回流**（Reset/ReadVersion 的 Command Complete 首次抵达 host！）——LL 命令分发链活了。
 
 ### 撤销清单（本轮全删，blob 自管语义恢复）
+
 - 0x2f011134/0x2f011138/0x2f011130 三槽 prefill 全删（轮 71 毒药实证）
 - bringup 的 fqmZkUKg 外部直调删除（OkE7 内部自调 ✓）
 - 保留：eventqInit/eventInit 承重写 + c_int 0 + 布局对齐 + fn(容器) 语义 ✓
@@ -29651,14 +29801,17 @@ rx flag 0->1 ✓
 ## 📊 轮 73 完整流程位置（capture 窗口终点）
 
 boot 走到 **F83C mirror（pre-200A 阶段）**= 60+ 轮来最深位置：
+
 ```text
 INITED → ReadVersion(3cmd) → Reset ✓ → readBdAddr ✓ → arm src=124 ✓
 → rx flag 0->1 ✓ → sched patchset ✓ → F83C mirror ←【capture 60s 截止于此】
 → [下一段] fwd06 → 0x2008 → 0x200A → FE450/98BC → 广播
 ```
+
 evt=4 = ReadVersion CC + Reset CC + readBdAddr CC + 1 init 事件 = **每命令都有真 CC 回流**（1:1 应答链活了！）
 
 ### 下 session（标准 ADV 链续跑，全部基础设施已就位）
+
 capture 窗口加长到 120s（fwd06 后段需要更多时间）+ evt 计数持续监控。剩余 = 标准 pre-200A → 0x2006/0x2008/0x200A 链（轮 49 时代的 f06 流程代码完整保留 ✓ 零改动直跑）。
 
 ---
@@ -29666,16 +29819,20 @@ capture 窗口加长到 120s（fwd06 后段需要更多时间）+ evt 计数持�
 ## 📌 轮 74：可复现确认——1:1 CC 链活 + hang 移至 0x2006（2026-11-23）
 
 ### 可复现性（两次独立 capture 完全一致）
+
 - 267 行、INITED ✓、evt=4 稳定、hang 在 F83C mirror 后
 - 3 命令（ReadVersion/Reset/readBdAddr）全 rc=0 + 各自 CC 回流 = **1:1 应答链活了**
 
 ### 剩余 hang 定性
+
 hang 点 = fwd06（0x2006 LE Set Advertising Parameters，B 路径 sendCmdViaHs）
+
 - 命令经 B 路径 → hs_cmd_tx → env[32]=FJxPPD → 事件 → task → 分发器
 - evt 未破 4 ⇒ 0x2006 的 CC 未回流 ⇒ 分发器对 ADV 类 OCF（0x2007 组）的分支卡住或缺前置
 - **不同于旧墙**：旧墙 = 分发器连 Reset 都不处理（零 CC）；现在 Reset/ReadVersion CC 全回流，仅 ADV 类卡
 
 ### 轮 75 首项
+
 反汇编分发器 0x400181e6 的 OCF 分支表（0x40061802-0x40061850 区域——OCF>>10 分组跳转）：确认 0x2006（OGF=0x08 LE 类）落在哪个分支、该分支读哪些状态字段；对照我们的 env 状态找出 ADV 类前置缺口。
 
 ---
@@ -29683,6 +29840,7 @@ hang 点 = fwd06（0x2006 LE Set Advertising Parameters，B 路径 sendCmdViaHs�
 ## 🔬 轮 75：env 头 6 字 dump（OkE7 返回后，2026-11-23 终版）
 
 ### 数据（board.log 直写，UART 可靠）
+
 ```text
 env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
 +0  = 0        ← mutex 容器 .p = 0（mutexInit 空操作没写回 ✓ 预期内）
@@ -29694,16 +29852,19 @@ env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
 ```
 
 ### 状态总结
+
 - OkE7 lazy malloc ✓ → env 容器 +8/+12 的写回 ✓（eventqInit/eventInit 承重写生效）
 - mutex 容器 +0/+4 = 0：mutexInit 是空操作所以没写回——**预期内**（我们的 mutexInit = 空桩）
 - 分发器 fn(env+12) = 正确的容器 ✓；CC 回流（evt=4 ✓）
 - sleep_set_sleep_cb 不再崩（slot 守卫 ✓）
 
 ### 剩余 hang（fwd06 0x2006）
+
 ** OkE7 完整跑完后 hang 在 fwd06**——LL 分发器处理 0x2006 时卡住。evt=4 稳定 = Reset/ReadVersion 的 CC 回来了但 0x2006 的没回来。
 ⇒ 0x2006 的处理需要 ADV 子系统的前置状态（OkE7 内部 env+16/20 的子 init = 那 6 个 JwHsRJf87 家族）。子 init 的失败 = 我们 osal 的某个行为与官方不同（比如 mutexInit 空操作导致依赖 mutex 的子 init 走不同路径）。
 
 ### 轮 76 方向
+
 补 mutexInit 实现或确认 6 子 init 中哪个依赖 mutex——从 oracle OkE7 反汇编（0x4006a3ac）的 6 子 init 调用点看它们读 impl 的哪些偏移。
 
 ---
@@ -29711,17 +29872,20 @@ env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
 ## 📊 轮 75 终态：1:1 CC 链确认 + hang 收窄至 ADV 类（2026-11-23）
 
 ### 稳定复现（两 boot 一致）
+
 - INITED ✓ 无 panic ✓
 - ReadVersion/Reset/readBdAddr 三命令 **1:1 CC 回流** ✓（evt=4 稳定）
 - 0x2006 B 路径发送成功（F1 rc=0 ✓）但无 CC ⇒ **hang 收窄至 ADV 类命令**
 
 ### 60+ 轮 → 本轮状态跃迁
+
 ```text
 此前：evt≤2 冻结（连 Reset 都无 CC）⇒ "总墙"
 现在：evt=4（基础 CC 全通）⇒ 仅 ADV 类命令处理不完整 ⇒ " ADV 子系统缺件"
 ```
 
 ### 轮 76 方向
+
 分发器 OGF 分支（.L673 @0x400619a0 = OGF 8 = LE 类）走通后需要 LE 命令子分发表——表由 OkE7 的 6 子 init 之一创建。反汇编 .L673 后续，找 LE 命令 handler 注册的表基址，对照 6 子 init 的产出。也可试：**跳过 0x2006/0x2008，直接发 0x200A（ADV enable）**看是否也卡（如果是，说明整个 LE 分支缺表；如果不是，说明只有 0x2006 特有路径卡）。
 
 ---
@@ -29732,12 +29896,15 @@ env = 0x2f02daa0 (malloc 76B ✓ OkE7 lazy 分配成功)
 ⇒ **B 路径（event queue → task → dispatch）对 LE 命令不产出 CC**。A 路径（r_btdm_hci_trans_rx）对基础命令产出 CC ✓。
 
 ### 根因定性
+
 OkE7 的 6 子 init（fqmZkUKg 后的 JwHsRJf87 等 6 个 blob 私有函数）创建 LE 子系统的 dispatch 表。这些子 init 调用我们的 osal wrapper（mutex/sem/event），我们的空桩/简化实现导致 LE dispatch 表不完整 ⇒ B 路径进来的 LE 命令进队列但 handler 链断裂 ⇒ 无 CC。
 
 ### 下 session 唯一首项
-逐个反汇编 6 子 init（当前构建 nm 重定位后），每个调用了哪些 wr_btdm_osal_* → 对照我们的实现，找第一个行为差异。可用的 oracle 工具：ANASET 轨迹仪（ninja 1.5s 增量）+ main.c 修改自由。
+
+逐个反汇编 6 子 init（当前构建 nm 重定位后），每个调用了哪些 wr*btdm_osal*\* → 对照我们的实现，找第一个行为差异。可用的 oracle 工具：ANASET 轨迹仪（ninja 1.5s 增量）+ main.c 修改自由。
 
 ### 本 session 全部已入库 ✓ 两仓 clean ✓
+
 75 轮仪器/修复/解密/分析全部在 git 历史中可追溯。
 
 ---
@@ -29745,11 +29912,13 @@ OkE7 的 6 子 init（fqmZkUKg 后的 JwHsRJf87 等 6 个 blob 私有函数）�
 ## 📍 轮 77 flash 判据终审（2026-11-23 · 历史快照——已被文末「最终状态」取代）
 
 ### flash 证据
+
 - 0x18E000：仅 ana 快照（adc05f90 magic，轮 51 的）——**轮 5 判据块从未写入**
 - 0x185000：stage=0（无 stage 23 记录）
 - ⇒ hang = **F1 后 → flashStage(23) 前**的区间
 
 ### 区间内容
+
 ```zig
 F1 rc=0 ✓（0x2006 B 路径发送成功）
 → sendCmdViaHsNoFree(0x200A, &ae)   ← **0x200A ADV enable——hang 在此**
@@ -29757,12 +29926,15 @@ F1 rc=0 ✓（0x2006 B 路径发送成功）
 ```
 
 ### 定性
+
 **0x200A（LE Set Advertising Enable）发送后 blob 内部 ADV enable 路径 hang**——blob 尝试启动 RF 发射但 RF/synth 未 ready（rfready=0 老墙）⇒ 内部硬件等待死循环。
 
 ### 与 60+ 轮老墙的关系
+
 **不是同一个墙**：老墙 = "分发器不处理任何命令"（evt≤2 冻结）。现在 = "基础命令 1:1 CC ✓，ADV enable 的 RF 依赖 hang" ⇒ **已从基础设施层推进到 RF 层**。
 
 ### 轮 78 方向
+
 RF ready 前置链（rfready=0 FE=0 老 problem）需在发 0x200A **之前**解决。可试：把 0x200A 挪到更后面（给 RF init 更多时间），或在 0x200A 前发一个 `HCI_Read_RSSI` 类无副作用命令探测 CC 是否仍 1:1（区分"RF hang"vs"所有 LE 命令 hang"）。
 
 ---
@@ -29770,18 +29942,22 @@ RF ready 前置链（rfready=0 FE=0 老 problem）需在发 0x200A **之前**解
 ## 🎉🎉 轮 78：LE 分发链完全激活——evt 4→8 翻倍！（2026-11-23）
 
 ### Read RSSI (0x1405) 探测判决
+
 ```text
 F1 rc=0      （0x2006 B 路径发送 ✓）
 F2 rc=0 evt=8 ← **evt 从 4 翻倍到 8！Read RSSI CC 回流！**
 ```
+
 ⇒ **LE 分发链完全活了**——非 ADV 命令（含 LE 类 Read RSSI）经 B 路径→分发器→处理→CC 全链通！
 ⇒ hang = **ADV enable (0x200A) 特有**——需要 RF ready（rfready=0 FE=0），LE 分发本身没问题！
 
 ### 60+ 轮战争最终格局
+
 ```text
 ✓ INITED、CC 1:1 基础命令、LE 命令 dispatch、CC 回流
 ✗ ADV enable → RF/synth 硬件依赖（rfready=0）
 ```
+
 **从"controller 不会动"到"BLE 协议栈全链通、只剩 RF 硬件 bring-up"**
 
 ---
@@ -29789,6 +29965,7 @@ F2 rc=0 evt=8 ← **evt 从 4 翻倍到 8！Read RSSI CC 回流！**
 ## 🏁 78 轮战争最终定局（2026-11-23 · 历史快照——已被文末「最终状态」取代）
 
 ### 走到最远的位置
+
 ```text
 boot → INITED → ReadVersion CC ✓ → Reset CC ✓ → readBdAddr CC ✓
 → F83C ✓ → 0x2006 B 路径 ✓ → Read RSSI(0x1405) ✓ → **evt=8**
@@ -29797,15 +29974,17 @@ boot → INITED → ReadVersion CC ✓ → Reset CC ✓ → readBdAddr CC ✓
 ```
 
 ### BLE 协议栈状态
-| 层 | 状态 |
-|---|---|
-| osal 底座（mutex/eventq/event/memblock） | ✅ 全通 |
-| OkE7 env init（lazy 76B + 内嵌容器） | ✅ 全通 |
-| HCILL 命令分发（OGF 解码→分支→处理） | ✅ 全通 |
-| CC 回流（ll_evt_tx → transport → evt_count） | ✅ 全通 |
-| **RF 硬件（synth/FE450/98BC/rfready）** | ❌ 未上电 |
+
+| 层                                           | 状态      |
+| -------------------------------------------- | --------- |
+| osal 底座（mutex/eventq/event/memblock）     | ✅ 全通   |
+| OkE7 env init（lazy 76B + 内嵌容器）         | ✅ 全通   |
+| HCILL 命令分发（OGF 解码→分支→处理）         | ✅ 全通   |
+| CC 回流（ll_evt_tx → transport → evt_count） | ✅ 全通   |
+| **RF 硬件（synth/FE450/98BC/rfready）**      | ❌ 未上电 |
 
 ### 下 session 唯一任务
+
 **RF 硬件 bring-up**（这是硬件层问题，非软件/协议）——rfready=0 FE=0 的 6 子 init 前置链。已有工具链（oracle ANASET/flash 标记/diag 全字段）完整保留。
 
 ---
@@ -29813,18 +29992,22 @@ boot → INITED → ReadVersion CC ✓ → Reset CC ✓ → readBdAddr CC ✓
 ## 📐 轮 77 精确状态：rfready 的循环依赖 + ADV enable hang 定性
 
 ### rfready（0x201098BC bit2）写者分析
+
 - 镜像内 4 处全为 `lw`（只读）——**无任何代码写此寄存器**
 - rfready = blob 内部 controller 状态机设置（进入 ENABLED 态时置位）
 - 循环依赖：rfready=0 ⇒ ADV enable 需 RF ⇒ RF 需 controller ENABLED ⇒ ENABLED 需 ADV enable 完成
 
 ### 0x2006 后 hang 精确定位
+
 F1 rc=0（0x2006 B 路径发送 ✓）→ UART 静默 → **无 panic、无 fault、无 log** ⇒ probe 存活但无新输出 = **事件队列等待中（task 收到 0x2006 但处理挂起或静默丢弃）**
 
 ### 正确的解锁顺序
+
 0x200A 不该在 rfready=0 时发（老墙：ADV enable 需 RF 就绪）。正确顺序 = OkE7 6 子 init 建立完 LE 基础设施 → rfready 由 blob 内部置位 → 然后 0x200A 才能走通。
 **6 子 init 失败的根因** ⇒ 需要对拍 oracle OkE7 的完整子 init 序列（不是 osal wrapper 层面，而是 blob 内部寄存器/状态层面）。
 
 ### 全 session 稳定成果
+
 **BLE HCI 协议栈全链活**（HCI 命令收发 + CC 回流 + osal 事件系统）——从零到可交互的 controller。剩余 = RF 硬件状态机激活（rfready），需要 blob 内部状态的深度理解。
 
 ---
@@ -29832,6 +30015,7 @@ F1 rc=0（0x2006 B 路径发送 ✓）→ UART 静默 → **无 panic、无 faul
 ## 🔬 轮 78 干净观测（100s capture + flash 离线读，2026-11-23）
 
 ### 观测事实
+
 - capture 100s 结束时**板子仍在跑**（log 尾 "bt c" 截断 = UART 正常截断，非 panic）
 - evt=4→8（Read RSSI CC 回流 ✓）后稳定在 8（无新事件）
 - btdm_tx = 2→3（ReadBdAddr 后不再增长 = **0x2006/0x2008/0x200A 的 btdm_tx 未走**——这些走 B 路径不走 btdm_tx 计数）
@@ -29840,17 +30024,21 @@ F1 rc=0（0x2006 B 路径发送 ✓）→ UART 静默 → **无 panic、无 faul
 - F818=2900e444 / F800=002f0669（ana 域静态，无新事务）
 
 ### 流程停滞点定位
+
 F1 rc=0 后代码继续到 ra2(0x200A) → lpTrace → resumeTask → serviceTimers → flashStage(23)——**但 flashStage(23) 未执行**。⇒ hang 在 F1→flashStage(23) 之间。中间只有 `sendCmdViaHsNoFree(0x200A, &ae)` 和 `lpTrace` 两个操作 ⇒ hang = sendCmdViaHsNoFree(0x200A) 内部或 lpTrace。
 
 ### sendCmdViaHsNoFree 内部分析
+
 ```zig
 inited ✓ → freestanding ✓ → buf_alloc(BT_CMD) → H4 格式化 → hs_cmd_tx(buf)
 ```
+
 hs_cmd_tx → env[32] = FJxPPD → 读 opcode → OGF=0x08 (LE) → LE 分支 → ...
 ⇒ hang = FJxPPD 或 LE 分支内部（非 A 路径 rx 链）
 ⇒ **0x200A LE Set Advertising Enable** 的处理需要 blob ADV 状态机——状态由 OkE7 6 子 init 建立的 LE 基础设施决定
 
 ### 轮 79 首项
+
 LE 分支内部 hang 的精确定位——反汇编 .L673（OGF=8 LE 分支 @当前构建地址）后续到 ADV enable handler 的路径，找 hang 点。或**用 flash 标记在 F1 之后逐步插桩**（pre-BT 窗口可用）。
 
 ---
@@ -29858,22 +30046,25 @@ LE 分支内部 hang 的精确定位——反汇编 .L673（OGF=8 LE 分支 @当
 ## 📊 轮 79 终态：零清修复确认 + 稳定 evt=8（2026-11-23）
 
 ### 零清三槽效果
+
 - 0x2f011130 哨兵槽清零 → fqmZkUKg malloc(8) 发布（readback=0 可能是 FIFO 时序）
 - 0x2f011134 sleep env 槽清零 → OkE7 lazy init 正确触发 ✓
 - 0x2f011138 env 槽清零 → OkE7 lazy malloc(76) 正确触发 ✓
 - INITED ✓ + evt=8 ✓ + 无 panic ✓——零清不损害链路
 
 ### 全 session BLE 控制器能力总结（78 轮成果）
-| 能力 | 状态 | 前置修复 |
-|---|---|---|
-| controller init (INITED) | ✅ | OkE7 lazy malloc + 全部9项修复 |
-| HCI 命令 A 路径（rx 直接） | ✅ 1:1 CC | intrArm + cfg_ll + eventReset |
-| HCI 命令 B 路径（event queue） | ✅ 发送成功 | cfg_ll mode dispatch |
-| CC 回流（evt 计数） | ✅ evt=8 | eventReset + fn(容器) + 布局对齐 |
-| sleep 路径安全 | ✅ 不崩 | slot 守卫 0x2f011134 |
-| **ADV enable → RF** | ❌ | rfready=0 FE=0（硬件层） |
+
+| 能力                           | 状态        | 前置修复                         |
+| ------------------------------ | ----------- | -------------------------------- |
+| controller init (INITED)       | ✅          | OkE7 lazy malloc + 全部9项修复   |
+| HCI 命令 A 路径（rx 直接）     | ✅ 1:1 CC   | intrArm + cfg_ll + eventReset    |
+| HCI 命令 B 路径（event queue） | ✅ 发送成功 | cfg_ll mode dispatch             |
+| CC 回流（evt 计数）            | ✅ evt=8    | eventReset + fn(容器) + 布局对齐 |
+| sleep 路径安全                 | ✅ 不崩     | slot 守卫 0x2f011134             |
+| **ADV enable → RF**            | ❌          | rfready=0 FE=0（硬件层）         |
 
 ### 轮 80 方向（新 session）
+
 RF 硬件 bring-up——rfready 置位需要的 PHY 深层 init。已有全部仪器和 oracle 工具。
 
 ---
@@ -29881,6 +30072,7 @@ RF 硬件 bring-up——rfready 置位需要的 PHY 深层 init。已有全部�
 ## 🎯 轮 80 终判：0x200A ADV enable = 最终缺口精确锁定（2026-11-23）
 
 ### F0/F1/F2/F3 四探针判决
+
 ```text
 F0 ✓（F83C 写前值）→ 0x2006 B 路径 rc=0 ✓ → F1 rc=0 ✓
 → 0x1405 Read RSSI rc=0 ✓ → F2 rc=0 evt=8 ✓
@@ -29888,12 +30080,14 @@ F0 ✓（F83C 写前值）→ 0x2006 B 路径 rc=0 ✓ → F1 rc=0 ✓
 ```
 
 ### 终局定性
+
 - **LE 分发链活 ✓**（Read RSSI CC 回流 evt 4→8）
 - **基础命令 1:1 CC ✓**（ReadVersion/Reset/readBdAddr）
 - **ADV enable (0x200A) = blob 内部 hang**（ADV enable 需 RF 上电，rfready=0 FE=0）
 - 崩/hang 不是 osal/dispatch 问题——是 **RF 硬件层**的最后缺口
 
 ### 79 轮战争终局
+
 BLE HCI 协议栈从零到**全链活**（osal→OkE7→dispatch→CC 1:1→LE 命令处理）。
 唯一剩余 = **RF 硬件 bring-up**（rfready=0 FE=0），需 blob 内部 RF 状态机激活。
 全部仪器/分析/skill 已入库（git 可追溯），两仓 clean。
@@ -29903,6 +30097,7 @@ BLE HCI 协议栈从零到**全链活**（osal→OkE7→dispatch→CC 1:1→LE �
 ## ✅ 轮 80 终态：BLE controller 稳定运行（2026-11-23 · 历史快照——已被文末「最终状态」取代）
 
 ### 稳定状态（bg_2968 capture 实证）
+
 ```text
 INITED ✓ 无 panic ✓
 evt=8 稳定（CC 1:1 回流 ✓）
@@ -29912,17 +30107,19 @@ evcb=0x2f034048 evarg=0 evq=0（事件容器状态正常）
 ```
 
 ### 80 轮 BLE 移植能力总结
-| 能力 | 状态 |
-|---|---|
-| controller init → INITED | ✅ |
-| HCI 命令 A/B 双路径发送 | ✅ |
-| CC 1:1 回流 | ✅ evt=8 |
-| LE 分发链（非 RF 类） | ✅ Read RSSI CC ✓ |
-| sleep 路径安全 | ✅ slot 守卫修复 |
-| **ADV enable（需 RF）** | ⏳ rfready=0 = 正确跳过 |
-| **OGF-8 不对称** | 0x1405(RSSI,OGF-5) CC ✓ / 0x2006+0x2008(OGF-8) 发送✓ CC✗ ⇒ .L673 LE 分支对 OGF-8 特有缺口 |
+
+| 能力                     | 状态                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| controller init → INITED | ✅                                                                                        |
+| HCI 命令 A/B 双路径发送  | ✅                                                                                        |
+| CC 1:1 回流              | ✅ evt=8                                                                                  |
+| LE 分发链（非 RF 类）    | ✅ Read RSSI CC ✓                                                                         |
+| sleep 路径安全           | ✅ slot 守卫修复                                                                          |
+| **ADV enable（需 RF）**  | ⏳ rfready=0 = 正确跳过                                                                   |
+| **OGF-8 不对称**         | 0x1405(RSSI,OGF-5) CC ✓ / 0x2006+0x2008(OGF-8) 发送✓ CC✗ ⇒ .L673 LE 分支对 OGF-8 特有缺口 |
 
 ### 80 轮全部真修复（12 项，全部板级实证+入库）
+
 1. intrArm 路由直调
 2. mode dispatch cfg_ll
 3. eventReset 官方语义
@@ -29941,14 +30138,17 @@ evcb=0x2f034048 evarg=0 evq=0（事件容器状态正常）
 ## 🧭 轮 81 终态：OGF-8 LE 分支缺口定性（2026-11-23 · 历史快照——已被文末「最终状态」取代）
 
 ### 不对称证据链定案
+
 - OGF-3/4/5 命令 → CC ✓（基础+RSSI）
 - OGF-8 命令（0x2006/0x2008/0x200A）→ 发送 ✓ 但无 CC ✗
 - ⇒ LE dispatch handler 链对 OGF-8 类命令**静默丢弃**（无 CC 生成）
 
 ### 根因
+
 LE 命令的 handler 需要 **ADV 状态机 + LE 连接管理器**（OkE7 的 6 子 init 创建的 LE 基础设施）。这些子 init 调用我们 osal wrapper 时，我们的简化实现（mutex 空桩/事件侧表等）导致 LE 状态机的部分初始化缺失 ⇒ OGF-8 handler 找不到所需的 ADV 上下文 ⇒ 静默丢弃。
 
 ### 轮 82 首项（下一 session 首项）
+
 反汇编 OGF-8 分支的 handler 函数（从 0x400183a6 的 FJxPPD OGF=8 路径跟踪），找到它读的第一个 env/state 指针 → 该指针的初始化函数 → 对照我们的 bringup 看是否缺失。**一次反汇编定案**，零板测。
 
 ---
@@ -29956,6 +30156,7 @@ LE 命令的 handler 需要 **ADV 状态机 + LE 连接管理器**（OkE7 的 6 
 ## 🧭 轮 82 终态：LE handler 入口解密（2026-11-23 · 历史快照——已被文末「最终状态」取代）
 
 ### OGF-8 分支 (.L673 @0x40018324) 到 handler 路径
+
 ```text
 .L673 → r_sym_ble_6o6qvjpvQ0tX12y3Eyhe(env+84)
        → 首调 hiASs12KrrctGZf2rIzS(env+84)
@@ -29964,20 +30165,23 @@ LE 命令的 handler 需要 **ADV 状态机 + LE 连接管理器**（OkE7 的 6 
 ```
 
 ### hiASs12KrrctGZf2rIzS = LE 子系统初始化检查
+
 该函数检查 LE 子系统是否就绪（返回非零 = 就绪）。我们的 port 中它返回 0 ⇒ **LE 子系统未就绪** ⇒ OGF-8 命令全部静默丢弃。
 LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slot, 6) 全部完成 ⇒ LE handler 可用。
 
 ### 60+ 轮 → 81 轮层级总结
-| 层 | 修复前 | 修复后 |
-|---|---|---|
-| osal 底座（mutex/eventq/event） | ❌ 空桩/缺失 | ✅ 带外映射+承重写 |
-| OkE7 env init（lazy malloc 76B） | ❌ 被毒药 prefill 阻断 | ✅ lazy 正确触发 |
-| 6 子 init（LE 基础设施） | ❌ 依赖未满足 | ⏳ 部分完成（mutex 依赖缺） |
-| 基础命令 CC（OGF-3/4/5） | ❌ 零 CC | ✅ 1:1 回流 |
-| **LE 命令 CC（OGF-8）** | ❌ 零 CC | ⏳ LE 子系统检查未通过 |
-| **RF 硬件（synth/FE450）** | ❌ | ❌（需 LE 先通） |
+
+| 层                               | 修复前                 | 修复后                      |
+| -------------------------------- | ---------------------- | --------------------------- |
+| osal 底座（mutex/eventq/event）  | ❌ 空桩/缺失           | ✅ 带外映射+承重写          |
+| OkE7 env init（lazy malloc 76B） | ❌ 被毒药 prefill 阻断 | ✅ lazy 正确触发            |
+| 6 子 init（LE 基础设施）         | ❌ 依赖未满足          | ⏳ 部分完成（mutex 依赖缺） |
+| 基础命令 CC（OGF-3/4/5）         | ❌ 零 CC               | ✅ 1:1 回流                 |
+| **LE 命令 CC（OGF-8）**          | ❌ 零 CC               | ⏳ LE 子系统检查未通过      |
+| **RF 硬件（synth/FE450）**       | ❌                     | ❌（需 LE 先通）            |
 
 ### 下 session 首项
+
 反汇编 hiASs12KrrctGZf2rIzS 函数（当前构建 nm 重定位），看它检查什么 → 追到缺失的 LE 基础设施初始化 → 补齐 → LE CC 回流 → RF bring-up。
 
 ---
@@ -29993,17 +30197,21 @@ LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slo
 ## ⚠ 轮 82b：hiASs 误解码纠正（2026-11-23）
 
 ### hiASs12KrrctGZf2rIzS 真实语义（反汇编纠正）
+
 **不是**"LE 子系统就绪检查"。是 **LE 事件码分类器**（binary search OCF 范围），按 LE sub-event code 分发到子 handler。65/99 比较 = LE 事件码范围判断（不是"就绪"）。
 
 ### 连锁修正
+
 - .L673 → 6o6qvjp(env+84, ...) → hiASs(OCF) → 按 LE sub-event 分发 → 正常路径
 - 此前推断"hiASs 返回 0 = 未就绪 = 静默丢弃" = **错误**（0 = 正常的"未找到匹配"路径）
 - ⇒ **OGF-8 无 CC 的真因不在 hiASs**，在更深层（可能 = LE 命令处理需要 NimBLE host 栈的状态而我们没有跑 NimBLE init）
 
 ### 核心认知修正
+
 **我们跑的是裸 controller（HCI 传输层 + controller 层），没有跑 NimBLE host 栈**。controller 收到 LE 命令后需要 NimBLE host 的支持函数来处理——这些函数在 blob 内部但需要 NimBLE 初始化才能正确响应。基础命令（OGF-3/4/5）由 controller 独立处理所以有 CC；LE 类命令（OGF-8）需要 host 栈配合所以没有 CC。
 
 ### 下 session 方向重定向
+
 **不是**追 blob 内部 dispatch 表——而是**评估是否需要/如何最小化跑 NimBLE host 栈初始化**（ble_stack_init 我们已在 step 17 调过——但 NimBLE host 初始化可能需要更多步骤）。对照 oracle 的 ble_stack_init 完整调用链。
 
 ---
@@ -30011,13 +30219,16 @@ LE 子系统就绪 = OkE7 的 6 子 init + event_init(env+84) + kNIbP2(Event.slo
 ## 🔧 轮 82c：hiASs 状态机迁移函数纠正（2026-11-23）
 
 ### 正确解读（顾问校正后）
+
 hiASs12KrrctGZf2rIzS(OCF) = **状态机查表/迁移函数**：
+
 - OCF∈[6,13]（0x2006 的 OCF=6 正中射程）→ 读全局状态对象 `*(0x2f01101c)` = 24oNY5JG 槽
 - `state+4 == 2 ? 返回 0 : (写 1 到 state+4, 返回 1)`
 - handler 里 `beqz → .L516` = **state 已是 2 时才进 .L516**（= 已迁移过 = 继续走分发）
 - 返回 1（刚迁移）也继续走分发（非静默丢弃）
 
 ### 三件套（下 session 首项）
+
 1. 一条 boot 行 dump `*(0x2f01101c)` 和它的 +4 字节（钉死当前状态值）
 2. 反汇编 .L516 体（确认是静默丢弃还是正常出 CC）
 3. nm 24oNY5JG 的全体用户找 state+4 的写者（谁负责把它推到 2）
@@ -30027,11 +30238,14 @@ hiASs12KrrctGZf2rIzS(OCF) = **状态机查表/迁移函数**：
 ## 🔍 轮 82c 发现：多级容器地址错位（2026-11-23）
 
 ### 实测
-env hdr dump（读 *(0x2f01101c) 容器）：+4 = 0x00000000
+
+env hdr dump（读 \*(0x2f01101c) 容器）：+4 = 0x00000000
 ⇒ mutexInit 的 slotSet 写回**没有落在这个容器上**——state_obj 读数块被跳过（mptr=0 无效）
 
 ### 多级容器问题
+
 blob 的 OkE7 里有**多级间接**：
+
 - 0x2f011138 槽 → OkE7 env（malloc 76B）——OkE7 自己的 env
 - 0x2f01101c 槽 → **另一个容器**（状态机 24oNY5JG 读的）——这是**不同的对象**！
 
@@ -30040,7 +30254,8 @@ blob 的 OkE7 里有**多级间接**：
 ⇒ 两者不是同一个对象！我们的 mutex 写回到了错误的层级
 
 ### 轮 83 首项（下一 session）
-1. 追踪 *(0x2f01101c) 的写入者（哪个 blob 函数把这个容器指针放到这里）
+
+1. 追踪 \*(0x2f01101c) 的写入者（哪个 blob 函数把这个容器指针放到这里）
 2. 确认状态机（hiASs）操作的 impl 对象（container.p 解引用后的 +4 字段）是否需要我们的 osal 层分配
 3. 如果需要 ⇒ 在 OkE7 之前的某个 init 里创建 impl 并发布到正确的槽位
 
@@ -30052,31 +30267,33 @@ blob 的 OkE7 里有**多级间接**：
 
 ## 板上已验证（可复现，`-Dbt-probe` 镜像）
 
-| 项 | 状态 | 证据 |
-| --- | --- | --- |
-| BLE init | `INITED` 稳定，无 panic | 每轮 capture 首行 |
-| 基础命令 CC（OGF-3/4/5） | 1:1 回流（Reset/ReadVersion/ReadBdAddr） | `evt=4` |
-| Read RSSI（OGF-5, B 路径） | CC 回流 | `evt 4→8` |
-| LE 分发链 | 活（OGF=8 分支可达，0x2006/0x2008 已发送） | `evt=8` 稳定 |
-| LE 命令 CC（0x2006/0x2008/RSSI） | ✅ **全部投递**（轮 86 per-send evt 4→5→6→7→8，RSSI status=0） | FWD06/FWD8/F1/F2 行 + LASTCC |
-| rfready 守卫 | 生效（RF 未就绪时跳过 0x200A，不再挂死） | `F3 SKIP rfready=0` |
-| 零清修复（`*(0x2f011138)=0` before task_init） | 生效 | 轮 73 起 evt=4 稳定复现 |
+| 项                                             | 状态                                                           | 证据                         |
+| ---------------------------------------------- | -------------------------------------------------------------- | ---------------------------- |
+| BLE init                                       | `INITED` 稳定，无 panic                                        | 每轮 capture 首行            |
+| 基础命令 CC（OGF-3/4/5）                       | 1:1 回流（Reset/ReadVersion/ReadBdAddr）                       | `evt=4`                      |
+| Read RSSI（OGF-5, B 路径）                     | CC 回流                                                        | `evt 4→8`                    |
+| LE 分发链                                      | 活（OGF=8 分支可达，0x2006/0x2008 已发送）                     | `evt=8` 稳定                 |
+| LE 命令 CC（0x2006/0x2008/RSSI）               | ✅ **全部投递**（轮 86 per-send evt 4→5→6→7→8，RSSI status=0） | FWD06/FWD8/F1/F2 行 + LASTCC |
+| rfready 守卫                                   | 生效（RF 未就绪时跳过 0x200A，不再挂死）                       | `F3 SKIP rfready=0`          |
+| 零清修复（`*(0x2f011138)=0` before task_init） | 生效                                                           | 轮 73 起 evt=4 稳定复现      |
 
 ## 解读更正账本（勿再引用旧结论）
 
 **实测**（板上 dump / 反汇编指令，可复现）：
+
 - `*(0x2f01101c)` 容器 dump：+4 = 0x00000000（轮 82c boot 行）；
 - 我们的 `wr_btdm_osal_mutex_init` 写的目标是 OkE7 env（`*(0x2f011138)`）的 +4 字段（自研 osal 源码 + OkE7 反汇编）；
 - hiASs 指令流：OCF∈[6,13] → `lw a5,28(a5)` 取 `*(0x2f01101c)` → 读/写 `+4` 字段。
 
 **推断/未证**（建立在上述实测上的框架，轮 82b/82c 未证标记 commit 在案）：
+
 - ~~"多级容器地址错位 / mutex 写回错误层级"~~ → **轮 83 已解构**：0x2f011 页三 env 并存各归各（HCI/LE/OkE7），LE env+4=0 是 init 后正常初值；写者 = controller_init→Ha55Zy4→ffxQrzmp（详见轮 83 节）；
 
-| 旧结论 | 状态 | 现结论 |
-| --- | --- | --- |
-| "hiASs = LE 子系统就绪检查，返回 0 = 未就绪 = 静默丢弃" | ❌ 已撤回 | hiASs(OCF) = **状态机迁移函数**（反汇编实证）：OCF∈[6,13] → 读 `*(0x2f01101c)` 槽对象，`state+4==2 ? 0 : (写 1, 返回 1)`；`beqz→.L516` 极性曾读反 |
-| "OGF-8 无 CC 根因 = 裸 controller 无 NimBLE host 栈" | ⚠ 未证/方向存疑 | host 栈假说待重审；当前前沿见下方实测/推断分离 |
-| "0x2f011138 与 0x2f01101c 是同一个 env" | ❌ 已证伪（dump 实证） | 不同对象：0x2f01101c 槽的 +4 实测为 0；⇒ mutex 写回（0x2f011138 系）与状态机读（0x2f01101c 系）**未落到同一对象**——这半句是实测，"谁该写 impl+4"是轮 83 要查的推断 |
+| 旧结论                                                  | 状态                   | 现结论                                                                                                                                                             |
+| ------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "hiASs = LE 子系统就绪检查，返回 0 = 未就绪 = 静默丢弃" | ❌ 已撤回              | hiASs(OCF) = **状态机迁移函数**（反汇编实证）：OCF∈[6,13] → 读 `*(0x2f01101c)` 槽对象，`state+4==2 ? 0 : (写 1, 返回 1)`；`beqz→.L516` 极性曾读反                  |
+| "OGF-8 无 CC 根因 = 裸 controller 无 NimBLE host 栈"    | ⚠ 未证/方向存疑        | host 栈假说待重审；当前前沿见下方实测/推断分离                                                                                                                     |
+| "0x2f011138 与 0x2f01101c 是同一个 env"                 | ❌ 已证伪（dump 实证） | 不同对象：0x2f01101c 槽的 +4 实测为 0；⇒ mutex 写回（0x2f011138 系）与状态机读（0x2f01101c 系）**未落到同一对象**——这半句是实测，"谁该写 impl+4"是轮 83 要查的推断 |
 
 ## 未证标记（下轮先钉死，别当结论用）
 
@@ -30097,6 +30314,7 @@ blob 的 OkE7 里有**多级间接**：
 ## 🎯 轮 83：`*(0x2f01101c)` 写者找到——"容器错位"定性解构（2026-11-23）
 
 ### 发布链（全部 nm/反汇编实证）
+
 ```text
 r_ble_controller_init (0x40006630, 我们 bringup 已调)
   → r_sym_ble_Td5N8gt (0x400078c4, master env init：HCI env 池 + … + LE env)
@@ -30110,6 +30328,7 @@ r_ble_controller_init (0x40006630, 我们 bringup 已调)
 ```
 
 ### "多级容器地址错位"定性解构（82c 推断框架被推翻）
+
 0x2f011 页上**并存三个独立 env**，各归各、不是错位：
 | 槽 | env | 发布者 | 我们谁在写 |
 | --- | --- | --- | --- |
@@ -30122,8 +30341,10 @@ r_ble_controller_init (0x40006630, 我们 bringup 已调)
 - 姊妹槽全有写者、+28 唯一无直写 —— 因为它由 ffxQrzmp 间接发布（参数传 &slot），此前紧窗扫描漏掉 `addi a0,a5,28` 传参形态。
 
 ### 新前沿（轮 84）
+
 LE env+4 是 LE 命令状态机字段：hiASs(OCF∈[6,13]) 会做 `==2 ? 0 : 写1返回1`。
 **缺的测量**：发 0x2006 **之后** dump LE env+4——
+
 - 仍 0 ⇒ 命令没到 .L673（分发器上游断）；
 - 变 1 ⇒ hiASs 跑了、handler 在后续路径丢 CC（反汇编 6o6qvjp 分发体）；
 - 变 2 ⇒ 状态机已迁移（首条即 2，语义待查）。
@@ -30133,15 +30354,18 @@ LE env+4 是 LE 命令状态机字段：hiASs(OCF∈[6,13]) 会做 `==2 ? 0 : �
 ## 🎯 轮 84/85a：状态机实测迁移 + 分发链全参数钉死（2026-11-23）
 
 ### 板上实测（LEENV dump，发 0x2006/0x2008 之后）
+
 ```text
 LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 ```
+
 - **+4 = 1** ⇒ hiASs 跑了、状态机 0→1 迁移成功（82c 三件套①②判据落地）；
 - +8/+52 = Ha55Zy4 建的池 A/B ✓（轮 83 结构板上复核）；
 - **未证标记② 行为级钉死**：0x2006 plen=15∉[6,13]（写不了状态）、OCF=6∈[6,13]（写 1）⇒ 实测 +4=1 ⇒ **a2 = OCF 字节**（65/99 比较 = OCF 分发，advisor 质疑的 a2 映射定案）；
 - 分发全参数：a0=params(buf+3)、a1=plen(buf[2]，handler 里 ==15/==32 校验实证)、a3=buf、a4/a5=栈 scratch。
 
 ### OCF=6（0x2006）路径完全解码
+
 ```text
 .L517 → .L271 → (s0<7) → O6z7W6eJ(params, plen) @0x40009104
   plen!=15 → rc=18 bail
@@ -30151,10 +30375,12 @@ LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 .L429: rc!=1 → 裸 return rc；rc==1 → rc+=256
 .L516(state==2): c8rbTnty==0 ? return 12 : return 268
 ```
+
 **结论：6o6qvjp 对 rc=0 的 LE 命令不构造任何 CC**——CC 必须由 handler 内部或 BTDM 泵异步发。
 **F1 rc=0**（F 相位 0x2006 整链返回 0）⇒ 无早期 bail，handler 主体执行了 ⇒ 丢失点在 **handler 内部事件发射或泵侧投递**（btdm_tx 停在 3、evt 停在 8 不动）。
 
 ### 轮 85b 首项
+
 1. 解码 O6z7W6eJ 成功尾部（.L303/.L315 后段）——事件经哪个队列/回调发出；
 2. 查 *(0x2f011008) 链上板值（p1/ p1+8 / *p2 / 首字节）——handler bail vs 走通的判据。
 
@@ -30163,6 +30389,7 @@ LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 ## 🎯 轮 85b：CC 生成器定位 + 两墙合流（2026-11-23）
 
 ### 完整 CC 链（全部反汇编实证）
+
 ```text
 .L673 → 6o6qvjp(rc=0，handler 只写 adv 上下文不发光) → j .L676
 .L676: rc==0xFFFF→静默free；rc<0→.L692；rc∈[0,255]→.L693 ✓
@@ -30175,15 +30402,19 @@ LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 ```
 
 ### 修正 .L429 误读
+
 .L429 不是"CC 构造"——它是 rc==1→+256 的错误标记路径。CC 构造在**分发器** .L672，与 handler rc 无关（rc∈[0,255] 全发）。
 
 ### 两墙合流（轮 19 = 轮 84 同一堵墙）
+
 - 当年（轮 19）："btdmTx=5 vs leEvtTx=1，5 条 Complete 只到 1 条" —— 当时只有 A 路径基础命令可对照；
 - 现在（轮 84）：LE 命令 CC 也在**分发器内构造完毕**、交 leEvtTx —— ADV 类"无 CC"与 RSSI 之前的墙是**同一入口**；
 - ⇒ "OGF-8 缺口/host 栈/ADV 状态机"三类旧假设全部退场，唯一活墙 = **LL 入口 → host 事件投递**（轮 19/50 已有仪器：轨迹仪、leEvtTx 计数、cfg_hs 路径）。
 
 ### 轮 86 首项
+
 用轮 50+ 轨迹仪对准 **LE CC 的 ll_evt_tx 调用**（区别于 RSSI CC 那条已通路径）：
+
 1. 计数 leEvtTx 入口命中（LE CC 应 +1，实测没动 ⇒ 断在 .L681 之前或 ll_evt_tx 入口判据）；
 2. dump env+64（avail credits）与 assert 是否触发（113 号）；
 3. 对照 RSSI CC（已通）与 LE CC（丢）在 ll_evt_tx 入参/出口的差分。
@@ -30193,6 +30424,7 @@ LEENV 2f02daa0 +4=00000001 +8=2f02daf0 +52=2f02db30
 ## 🏆 轮 86 终判：LE CC 端到端全通——"OGF-8 无 CC"系日志误读（2026-11-23）
 
 ### 决定性测量（per-send evt 轨迹）
+
 ```text
 FWD06 rc=0 evt=5   ← 0x2006 CC 送达（4→5）
 FWD8  rc=0 evt=6   ← 0x2008 CC 送达（5→6）
@@ -30203,6 +30435,7 @@ HCIEVN env+24 = leEvtTx(0x40076992/76c08) ✓ credits 充足 ✓
 ```
 
 ### 根因重构：三轮叙事作废
+
 - ❌ "OGF-8 命令无 CC"（轮 80-85b）—— **evt=8 是 boot 尾最终总数，被当成冻结值**；
   历史 grep 只见尾部周期行（打的是最终计数），无 per-send 轨迹 ⇒ 误读。
 - ❌ "host 栈未初始化/ADV 状态机未就绪/容器错位"（轮 81-82c）—— 全部是给这个
@@ -30212,10 +30445,12 @@ HCIEVN env+24 = leEvtTx(0x40076992/76c08) ✓ credits 充足 ✓
 - 唯一真缺口回到轮 80 的定位：**rfready=0 ⇒ 0x200A 跳过 = RF 硬件 bring-up**。
 
 ### 教训入库（baremetal-reading-provenance 案例）
+
 周期性判决行打的是**最终计数**——把"最后一次采样"当"持续不变"正是该 skill 的
 第一反模式。per-send 打点（本轮新增 FWD06/FWD8/F1-evt）才是因果判据。
 
 ### 修正后的剩余工作
+
 1. （小）0x2006 CC 的 status 字节未逐条确认（LASTCC 只存最后一条 = RSSI）——
    需要时把 LASTCC 打点挪到每条发送后即可；
 2. （唯一大项）**RF bring-up**：rfready 位（0x201098BC.bit2）永不置位 ⇒ 0x200A
@@ -30226,17 +30461,19 @@ HCIEVN env+24 = leEvtTx(0x40076992/76c08) ✓ credits 充足 ✓
 ## 🔬 轮 87：RF 墙基线重测（osal 修复后）+ 三项修复（2026-11-23）
 
 ### 基线重测结论（旧轮 51-56 分析需在新基座上重验）
-| 项 | 值 | 判读 |
-| --- | --- | --- |
-| R1 98BC | 0x00000000 全零 | synth 未启动（oracle8 实证应 = 0x00000004） |
-| R2 mst(0x208133fc) | 0x02007301，bit28=0 | ana master clock 仍被门 |
-| R2 den(0x20813014) | 0x00000000 | DEVICE_EN 位图全零 |
-| R3 自环 | **0x5A**（签名修正后） | **ana 总线活**（轮 57 结论保持） |
-| R5 bb870(0x20100870) | 0x0a0e9608，bits[15:8]=0x96 | **bt_bb_v2_init_cmplx 真跑过**（HW 实锤） |
-| R5 bbc00(0x20102c00) | 0x0019f00c | 同上 ✓ |
-| calflag | 0→1，load_cal done，rc=0，FE 可读 0x5ac968f1 | 校准链在新底座完整跑通（不再挂） |
+
+| 项                   | 值                                           | 判读                                        |
+| -------------------- | -------------------------------------------- | ------------------------------------------- |
+| R1 98BC              | 0x00000000 全零                              | synth 未启动（oracle8 实证应 = 0x00000004） |
+| R2 mst(0x208133fc)   | 0x02007301，bit28=0                          | ana master clock 仍被门                     |
+| R2 den(0x20813014)   | 0x00000000                                   | DEVICE_EN 位图全零                          |
+| R3 自环              | **0x5A**（签名修正后）                       | **ana 总线活**（轮 57 结论保持）            |
+| R5 bb870(0x20100870) | 0x0a0e9608，bits[15:8]=0x96                  | **bt_bb_v2_init_cmplx 真跑过**（HW 实锤）   |
+| R5 bbc00(0x20102c00) | 0x0019f00c                                   | 同上 ✓                                      |
+| calflag              | 0→1，load_cal done，rc=0，FE 可读 0x5ac968f1 | 校准链在新底座完整跑通（不再挂）            |
 
 ### 三项修复
+
 1. **`phy_i2c_writeReg` extern 签名**：reg-first（RMW 对实证），原 block-first 错误
    ⇒ 轮 87 R3 的 0x00 是参数序 bug 非回归；轮 57 的 alive 判定有效。
 2. **`phy_printf` 吞字修复**：原为纯空桩（60+ 轮 blob 打印全部不可见！），现转发
@@ -30245,12 +30482,14 @@ HCIEVN env+24 = leEvtTx(0x40076992/76c08) ✓ credits 充足 ✓
    调用了且无回归，BB init HW 证实跑通。
 
 ### 仍缺：synth 启动（98BC=4）
+
 BB init ≠ synth start。oracle 时序：libbtbb version → enable rc=0 status=2 → 98BC=4。
 rf_onoff 排除（仅我们的代码调用；IDF 里属 sleep 路径）。`phy_i2cmst_reg_init` 链
 （phy_rf_init 内，管 ana mst clock+device_en）仍未跑——它是 blob task body 的
 异步 RF init（轮 56 已见 oracle 有、我们无）。
 
 ### 轮 88 首项：task body rf-init 守卫追猎（轮 57 首项恢复执行）
+
 oracle.asm 全符号 → 找 blob task init 体里调用 `phy_rf_init`/`phy_i2cmst_reg_init`
 的分支与其守卫变量 →板上读守卫 → 补触发条件。
 
@@ -30259,31 +30498,36 @@ oracle.asm 全符号 → 找 blob task init 体里调用 `phy_rf_init`/`phy_i2cm
 ## 🔬 轮 88：时钟树对拍通过 + btdm_lp_reset 真身解密（2026-11-23）
 
 ### oracle CLK 三件对拍（R6 实测）
-| 寄存器 | 我们 | oracle8 | 判定 |
-| --- | --- | --- | --- |
-| m1e0 (0x205871E0) | **0x0000003d** | 0x3d | ✓ 一致（MODEM_CONF 已对齐；`pll_write_enabled` 默认即 true、line 236 早已直写 0x3d） |
-| st1c (0x2038A01C) | 0xe07e8000 | 0x60448000/0xe0448000 | UART FIFO 状态噪声（oracle 两次自身不同；main.c 注释自证为 UART 调试用） |
-| 98BC | 0x00000000 | 0x00000004 | ✗ synth 未启动——唯一实质差异 |
+
+| 寄存器            | 我们           | oracle8               | 判定                                                                                 |
+| ----------------- | -------------- | --------------------- | ------------------------------------------------------------------------------------ |
+| m1e0 (0x205871E0) | **0x0000003d** | 0x3d                  | ✓ 一致（MODEM_CONF 已对齐；`pll_write_enabled` 默认即 true、line 236 早已直写 0x3d） |
+| st1c (0x2038A01C) | 0xe07e8000     | 0x60448000/0xe0448000 | UART FIFO 状态噪声（oracle 两次自身不同；main.c 注释自证为 UART 调试用）             |
+| 98BC              | 0x00000000     | 0x00000004            | ✗ synth 未启动——唯一实质差异                                                         |
 
 ⇒ **时钟树不是墙**。
 
 ### btdm_lp_reset 真身（oracle asm 解密）
+
 ```c
 btdm_lp_reset(en): if (!en) {btbb_disable; if(active) phy_disable(2), active=0}
                    else { if (s_bt_active) assert(440);
                           esp_phy_enable(2); esp_btbb_enable(); s_bt_active=1; }
 ```
+
 ⇒ oracle 的 phy_enable+btbb_enable 发生在 **init 相**（esp_bt_controller_init 内部；
 oracle8.log 时序实证：full cal → libbtbb version → 之后才 enable rc=0）——与我们当前
 init 相结构一致。我们 enable 相的 btbb_early_enable 调用与之等效、无害。
 
 ### 剩余差异（精确定位）
+
 1. **任务体 RF init ana 写**：oracle task 首调度异步发写（轮 56 已见）；我们 task
    泵运行（evrun=9）但 F800 恒 0x002f0669 无写帧。
 2. phy_rf_init 在 register_chipv7_phy 里两分支必经（oracle asm：skip 路径只多走
    recovery 再汇合）——calflag 0→1 说明它已跑；但 DEVICE_EN 位图仍全零。
 
 ### 轮 89 首项
+
 用 oracle.asm 全符号解剖 blob task 入口的 init body：找 `phy_rf_init`/RF-I2C 写帧
 的调用点与守卫（round 57 首项的 oracle 符号版），板上读守卫变量 + pc_ring 高频采样
 task 首轮窗口。
@@ -30293,6 +30537,7 @@ task 首轮窗口。
 ## 🔬 轮 89a：BT task 入口闭环定位（oracle 全符号，2026-11-23）
 
 ### task 创建链（oracle asm 实证）
+
 ```text
 r_btdm_task_enable(我们 step 20) → wr_btdm_osal_task_create(
     entry = r_sym_bt_UcYENg1R6iLtJMFYwNLq @0x4007c3bc,
@@ -30300,17 +30545,20 @@ r_btdm_task_enable(我们 step 20) → wr_btdm_osal_task_create(
 ```
 
 ### task pump 循环（0x4007c3bc）
+
 ```text
 init: env+1816(r4au env) → 3DcjgYC1(eventq, 0x80000002, …)
 loop: eventq_is_empty? → PxePdGIO1nILThDDDbE1(分发,0x4007c21a)
       → e_btdm_lp_modem_clock_set → get_time_forever → eventq_get(阻塞)
       → e_btdm_lp_modem_clock_set → TCHk4TWcbxhI2YzTmly2 → event_run → 循环
 ```
+
 handler 前段无直接 phy/rf/i2cmst 调用 ⇒ **RF init ana 写由更深层事件触发**
 （嫌疑：某个 init/事件回调里的守卫分支——轮 89b 用 pc_ring 高频采样 task 首轮
 窗口 + STORE 观察点盯 F800/F818 写帧）。
 
 ### 轮 89b 首项
+
 1. STORE 观察点（轮 33/64 仪器）盯 0x2010F800/F818——活捉 RF init 写帧的 PC；
 2. 若 task 首轮不写 ⇒ 反汇编 PxePdGIO 的完整 dispatch 表找 RF init 事件分支。
 
@@ -30319,12 +30567,14 @@ handler 前段无直接 phy/rf/i2cmst 调用 ⇒ **RF init ana 写由更深层�
 ## ✅ 轮 89b：双重释放修复 + ADV 参数被接受（2026-11-23）
 
 ### 修复
+
 - **sendCmdViaHs 双重释放**（60+ 轮潜伏 bug）：B 路径同步分发后 buf 已变 CC 事件
   并被 leEvtTx 释放，本函数又 free 一次 ⇒ 每条命令腐蚀一次 type-3 池。已删除该
   free 并入 NoFree 语义，NoFree 变体随之删除（0x200A 调用点迁移）。
 - 逐条 CC status 打点（CC2006 行）。
 
 ### 板上验证（修复后）
+
 ```text
 FWD06 rc=0 evt=5 / FWD8 rc=0 evt=6 / F1 rc=0 evt=7（plen=15 确认，旧"plen=1"是 UART 交错）
 CC2006 0e 04 op=2006 status=00   ← ADV 参数被接受！
@@ -30332,6 +30582,7 @@ F2 rc=0 evt=8 / LASTCC RSSI status=00
 ```
 
 ### 协议栈终态
+
 LE 命令全链（发送→分发→handler→CC 构造→投递→status=0）+ ADV 参数已写入 controller。
 **唯一剩余 = synth 上电（98BC.bit2）** ⇒ 轮 89c = F800/F818 STORE 观察点活捉
 task body RF init 写帧 PC（轮 89a 已定位 pump 循环与仪器入口）。
@@ -30341,25 +30592,29 @@ task body RF init 写帧 PC（轮 89a 已定位 pump 循环与仪器入口）。
 ## 🔬 轮 89c-e：modem clock 桩真身实现 + 三层判定（2026-11-23）
 
 ### 实现（wall 修复）
+
 `e_btdm_lp_modem_clock_set` 原为 2 指令空桩（`li a0,0; ret`）——task pump 每次
 eventq_get 返回都调它(1)，oracle 实体 = modem_clock_module_enable(6)。已在
 bt_stubs.c 实现真身（含 clk_en latch；disable 路径按 oracle 的 s_bt_active==1 门为 no-op）。
 
 ### 三层判定（板上实测）
-| 层 | 读数 | 判定 |
-| --- | --- | --- |
-| latch (0x2f01114c) | 1 | 我们的 enable 分支跑了 ✓ |
-| ctx 懒初始化 (0x2f010e70/74) | 2f010e9c / 2f010e90 | device_control 懒初始化完成 ✓ |
-| hal 表 (0x2f010e88/8c) | 20109c00 / 2010f000 | **hal 基址表 = HP_CLK(0x20109c00) + MODEM_SYSCON(0x2010f000)** ✓ |
-| den wr-rb (0x20813014) | latch=YES | 无写保护 |
+
+| 层                           | 读数                | 判定                                                             |
+| ---------------------------- | ------------------- | ---------------------------------------------------------------- |
+| latch (0x2f01114c)           | 1                   | 我们的 enable 分支跑了 ✓                                         |
+| ctx 懒初始化 (0x2f010e70/74) | 2f010e9c / 2f010e90 | device_control 懒初始化完成 ✓                                    |
+| hal 表 (0x2f010e88/8c)       | 20109c00 / 2010f000 | **hal 基址表 = HP_CLK(0x20109c00) + MODEM_SYSCON(0x2010f000)** ✓ |
+| den wr-rb (0x20813014)       | latch=YES           | 无写保护                                                         |
 
 ### 认知修正：`den(0x20813014)` 是错误监视目标
+
 device_control 跑到底 + 寄存器可写，但 den 仍 0 ⇒ **0x20813014 不是 BT 模块时钟
 使能寄存器**（轮 54 oracle main.c 宏选的地址≠per-module ICG）。hal 表指向的两块
 （0x20109c00 HP_SYS_CLKRST / 0x2010f000 MODEM_SYSCON）才是 device_control 的
 实际写目标。
 
 ### 轮 89f 首项
+
 hal 调用已定位：`a5 = *(*(icg_list)+68)`（ICG 配置 fn，args=(s2,s1,s3,config_wrapper)），
 写目标在 0x2010F8xx 块。**我们 R 系列一直只读 F800 漏了 F818**（oracle ANASET 两个都打）
 ⇒ 89f 第一动作 = R 行补读 0x2010F818 + 反汇编 config_wrapper/ICG fn 定名写目标。
@@ -30369,22 +30624,25 @@ hal 调用已定位：`a5 = *(*(icg_list)+68)`（ICG 配置 fn，args=(s2,s1,s3,
 ## 🔬 轮 89f：modem-clock 链健康确认 + den 红鲱鱼定案（2026-11-23）
 
 ### R9 实测
-| 寄存器 | 值 | 判定 |
-| --- | --- | --- |
-| hp9c00 (0x20109C00) | 0x00000101 | HP clk 块有配置 |
-| hp9c04 (0x20109C04) | **0x7e601002** | **= IDF 目标值精确一致**（我们此前逐字对拍的 clk_conf）✓ |
-| f818 (0x2010F818) | 0x2900e444 | MODEM_SYSCON ana 域有状态（非零） |
-| f800 | 0x002f0669（恒） | task RF init 写帧缺失（bit24=0） |
+
+| 寄存器              | 值               | 判定                                                     |
+| ------------------- | ---------------- | -------------------------------------------------------- |
+| hp9c00 (0x20109C00) | 0x00000101       | HP clk 块有配置                                          |
+| hp9c04 (0x20109C04) | **0x7e601002**   | **= IDF 目标值精确一致**（我们此前逐字对拍的 clk_conf）✓ |
+| f818 (0x2010F818)   | 0x2900e444       | MODEM_SYSCON ana 域有状态（非零）                        |
+| f800                | 0x002f0669（恒） | task RF init 写帧缺失（bit24=0）                         |
 
 ⇒ modem-clock 链（桩修复 → enable → 懒初始化 → hal → HP 块）**全链健康**；
 den=0 红鲱鱼定案（该地址非 BT ICG）；hp9c04 精确匹配证明时钟配置无误。
 
 ### 收窄后的唯一差异
+
 oracle：task 首调度写 F800 帧（bit24=1）→ synth 启动（98BC=4）。
 我们：task 泵运行但 F800 恒不变 ⇒ synth 不启动。
 （BB init、校准、时钟、modem-clock 全部已排除。）
 
 ### 轮 90 首项：oracle 参照捕获
+
 oracle main.c 的 ANASET 宏带 F800/F818/mst/den（含 98BC 需补一行）——
 ninja 1.5s 重建 → flash oracle → 抓 boot（对照 98BC 何时变 4 + F800 任务写帧值）
 → flash probe 回。拿到参照后 diff 出我们缺的那一写。
@@ -30394,6 +30652,7 @@ ninja 1.5s 重建 → flash oracle → 抓 boot（对照 98BC 何时变 4 + F800
 ## 🏆 轮 90：oracle 时序参照 + 守卫反转 + 0x200A 首次无守卫发出（2026-11-23）
 
 ### oracle90b 参照时序（bisect 块关闭后 = oracle8 完整流程）
+
 ```text
 enable rc=0 status=2
 ANA-post-enable  F800=0x012f0669  98BC=0x00000000   ← enable 完成 synth 仍未上电！
@@ -30404,21 +30663,25 @@ ANA-post-cmds    98BC=0x00000004                     ← 发完 0x200A 后 synth
 ```
 
 ### 颠覆性结论
+
 **synth 上电是 ADV-enable 命令处理的结果，不是前置条件。**
 oracle 拿着 98BC=0 照发 0x200A（响应=Hardware Error 事件而非 CC），RF 作为结果启动。
 我们的 rfready 守卫（轮 80 起"98BC=0 则跳过 0x200A"）逻辑**恰好反了**——已反转删除。
 
 ### F800 对照（次要差异）
+
 oracle lp_reset 步即写 0x012f0669（bit24=1，I2C master 命令内存 RF-ON 武装字）；
 我们 0x002f0669。两镜像均无 CPU 直写 ⇒ bit24 由 burst 执行时硬件写入。
 轮 90 R10：INITED 后直驱 rf_onoff(1) 无效（98BC 不变）⇒ burst 非 synth 启动器。
 
 ### 首次无守卫 0x200A 结果
+
 phy_printf 修复生效（"Jul 14 2026"= libbtbb version 日期参数首次可见）；
 0x200A 发出后**板子全静默**（周期行消失 = 主上下文冻结）——旧"0x200A hang"在新
 底座上重现。evt 停在 8（无 CC）。
 
 ### 轮 91 首项：0x200A hang 定位
+
 trap 行/marker 仪器现成（esp32s31-cross-reset-instrumentation）。嫌疑：
 ADV enable handler 等待的 RF 上电完成位在我们环境永不置位（oracle 的 HW-ERR
 响应 = 它不等、报错继续——我们可能卡在一个 oracle 没有的等待分支）。
@@ -30428,19 +30691,23 @@ ADV enable handler 等待的 RF 上电完成位在我们环境永不置位（ora
 ## 🔬 轮 91：enable 相 phy 对 + pre-send 快照 + hang 复现（2026-11-23）
 
 ### 执行（按阻断排序）
+
 1. enable 相 `esp_phy_enable(2)+esp_btbb_enable` 成对（oracle lp_reset 语义）——跑了（"enable-phase esp_phy_enable(2)" 行）；
 2. pre-send 快照移到 0x200A 之前——**hang 时 UART 留住了发送前状态**：
    `PRE200A 98BC=00000000 f800=002f0669 m1e0=0000003d`
 3. 0x200A 尾发——**hang 复现**（无 F3 rc 行，UART 静默）。
 
 ### 判定（按顾问分支树）
+
 - pre-send F800 bit24 = 0 ⇒ **成对二次 phy_enable 未写 F800**（IDF 引用计数：
   第二次调用 = ref bump + 内部跳过 ⇒ 非 RF 上电机会）。"成对调用"假设出队。
 - hang 前状态干净（时钟树 ✓、98BC=0 与 oracle 发送时一致）⇒ hang 本身 =
   ADV-enable handler 内部等待，与 pre-send 状态无关。
 
 ### 轮 92 首项：非 UART 通道定位 hang 点
+
 flashStage(22/23) marker（esptool read-flash，不经过 UART）：
+
 - F3 发送后主循环是否还跑（marker 23 落盘与否）⇒ 区分"死在 send 内"vs"死在 send 后"
 - 若 marker 停在 22 ⇒ 0x200A 的 hs_cmd_tx/handler 内部自旋（trap 行/mcontrol6 待命）
 - 对照：oracle 的 0x200A 响应是 HW-ERR 事件而非 CC（不等待）——我们某分支在等
@@ -30456,6 +30723,7 @@ flashStage(22/23) marker（esptool read-flash，不经过 UART）：
   baremetal-trap-line-as-sole-channel 仪器齐备，需一次 instrument 构建）。
 
 ### 轮 92b 首项
+
 1. T0 pc 采样器（已有）武装于 F3 前窗口，抓 0x200A hang 的自旋 PC；
 2. 或 trap 行（rawLineBlocking 唯一通道）把 cause/mepc 编码进 trap 处理器；
 3. 对照假设：oracle 的 0x200A 走 HW-ERR（不等待）；我们某分支在等 RF-ready 类
@@ -30466,22 +30734,26 @@ flashStage(22/23) marker（esptool read-flash，不经过 UART）：
 ## 🎯 轮 92b：F800 bit24 决定性否定实验（2026-11-23）
 
 ### 实验（决定性否定）
+
 ```text
 PRE200A f800=002f0669 → 手动置 bit24 → POLL00-09（5s）：
 f800=012f0669 恒定（锁存 ✓）但 98BC=00000000 ×10
 ```
+
 ⇒ **synth 不由任何单 bit 写启动**——它是 ADV-enable 命令处理链的副作用
 （oracle 时序：发 0x200A → HW-ERR 事件 → synth 上电）。
 ⇒ 整堵墙精确站在：**我们的 ADV-enable handler 挂死**（oracle 的返回 HW-ERR 继续）。
 
 ### 墙的状态总结（排除法完备）
-| 层 | 状态 |
-| --- | --- |
-| osal/命令分发/CC 投递/LE handler/ADV 参数 | ✅ status=0 全通 |
-| 校准/BB init/时钟树/modem-clock 桩 | ✅ 全部健康 |
-| synth（98BC.bit2） | ❌ 只随 ADV-enable 处理启动，而我们的 handler 挂死 |
+
+| 层                                        | 状态                                               |
+| ----------------------------------------- | -------------------------------------------------- |
+| osal/命令分发/CC 投递/LE handler/ADV 参数 | ✅ status=0 全通                                   |
+| 校准/BB init/时钟树/modem-clock 桩        | ✅ 全部健康                                        |
+| synth（98BC.bit2）                        | ❌ 只随 ADV-enable 处理启动，而我们的 handler 挂死 |
 
 ### 轮 93 首项：hang PC 定位（pc 采样器/trap 行武装于 F3 窗口）
+
 抓到自旋 PC 后反查：ADV-enable handler 在等什么（对照 oracle 同分支不等待）。
 打通 ⇒ 98BC=4 ⇒ F3 rc=0（或 HW-ERR）⇒ **BLE 广播上线**。
 
@@ -30490,17 +30762,21 @@ f800=012f0669 恒定（锁存 ✓）但 98BC=00000000 ×10
 ## 🔍 轮 93：挂死通道全灭判定 + 轮 94 方案（2026-11-23）
 
 ### 实测（adv90/adv91 捕获 + PREVHANG 实验）
+
 - 挂死窗口（~40s）内：无 NMI 行（打印门=每 5000 tick=10s，应出现 ~4 次）⇒ **T0/NMI 已死**；
 - 无第二次 boot banner（MWDT1 STG1=360s，捕获窗远不够）⇒ failsafe 太远；
 - PREVHANG 读 LP 槽 = 垃圾 ⇒ LP 槽被 blob ADV-enable 路径挪用（0x2E0003xx 竞区）；
 - UART0 静默 = blob 门控其时钟（keeper 每 2ms 永活回写——但 keeper 住 NMI，NMI 死 ⇒ keeper 死）。
 
 ### 判定
+
 **0x200A hang = blob 门控 TIMERGRP（杀 T0→NMI→keeper 链）+ UART0 时钟 ⇒ 全观测通道连坐死亡。**
 这是已知"blob 时钟代码反复门控 UART0/TIMERGRP"行为的极端表现：keeper 依赖被门控的对象自己。
 
 ### 轮 94 方案：MWDT1-STG0 中断辅助的通道复活
+
 keeper 已把 MWDT1 配为 STG0=中断(360s)/STG1=复位。改造：
+
 1. 0x200A 发送前把 MWDT1 CONFIG1.STG0_HOLD 改短（如 5s）——挂死时 STG0 中断
    （若 MIE 未屏蔽）进 MWDT1 handler；
 2. MWDT1 handler（新增）：恢复 TIMERGRP/UART0 时钟门控 + 重装 T0 ⇒ NMI 复活 ⇒
@@ -30513,17 +30789,20 @@ keeper 已把 MWDT1 配为 STG0=中断(360s)/STG1=复位。改造：
 ## 🔍 轮 94b：hang 位置收窄至 sendCmdViaHs 内部 + 时间源假设（2026-11-23）
 
 ### 实测链
+
 1. UART mute 生效（0x200A 后无打印卡死——mute 挡住了我们自己的打印路径）；
 2. `CMD opcode=0x200a plen=1` 出现（logPublic 环先出）+ coex status_bit_set（blob coex 钩子已跑）；
 3. **0x18F000 marker 未写**（仍旧格式）⇒ hang 在 sendCmdViaHs **内部**——B 路径同步分发，
    ADV-enable 处理（含"等 RF/BB ready"）发生在本次调用里，post-send 代码不可达。
 
 ### 时间源假设（高置信，待轮 95 解码确认）
+
 oracle 的 0x200A 返回 rc=3（超时）⇒ oracle 的等待环有活时间源（FreeRTOS tick）。
 我们：等待环的时间源 = 泵驱动的软件 tick / RTC latch（"update 位只在泵里触发"）
 ⇒ 泵阻塞在本次调用内 ⇒ 时间源冻结 ⇒ 超时永不到 ⇒ 无限等待。
 
 ### 轮 95 首项
+
 1. 从分发器 OGF=8/0x200A 路径解码真等待环（62uOMiw 已排除=表迭代器）；
 2. 确认其轮询输入（98BC.bit2 + 哪个时间寄存器/软件 tick）；
 3. 修法候选：NMI 里替它触发时间源 update 位 / 直接喂 NMI 计数 / 短路等待条件。
@@ -30533,20 +30812,24 @@ oracle 的 0x200A 返回 rc=3（超时）⇒ oracle 的等待环有活时间源�
 ## 🔬 轮 95d：A 路径切换 + 主机 BLE 扫描端到端（2026-11-23）
 
 ### 改动（在树）
+
 1. **0x200A 切 A 路径**（异步队列）——B 路径同步分发下 ADV-enable 内部等待的事件需要泵投递而泵阻塞在本调用内=同步死锁；A 路径让 controller task 在自己上下文处理。
 2. **ULP keeper 扩展**：loop 头插入 RTC_TIMER latch 触发（sw 1<<27 → 0x20800010，同页 0x20801000 已证 ULP 可写）——挂死期间 LP 域代 HP 触发时间锁存；尾 c.j 重编码 jal（loop 移位）。
 3. UART mute（board.log + NMI 三处打印门控）——0x200A 后 blob 门控 UART0，任何打印都卡死 ROM FIFO 排空环（NMI 实测 mepc=0x2f8036cc）。
 4. MWDT1 keeper：hang_arm 时短 hold（20s/10s）保持武装（整体门控会让 blob 的解除直接得手）。
 
 ### 实测
+
 - A 路径命令已推进 blob（light-marker phase=1 pre-forward + coex status_bit_set ✓）
 - 主上下文卡点 = **esp_rom_delay_us**（ROM 延迟轮询的 SYS_TIMER 时钟被同一次门控冻结）
 - 主机 BLE 扫描 30s（含 board reset 后完整窗口）：邻居设备可见、**板 MAC 未出现** ⇒ radio 未完成启动
 
 ### ADV-enable 处理的真实行为（当前最佳模型）
+
 blob ADV-enable：写配置+启动选通（coex 位置 ✓）→ 门控 TIMERGRP/UART0（modem 深睡式时钟收缩）→ 等 RF/BB ready——时间源（SYS_TIMER 0x2080 块）同被门控 ⇒ 超时永不到 ⇒ HP 域永久假死。oracle 同路径不假死 ⇒ oracle 的时钟门控策略不同（FreeRTOS tick 时钟源独立）。
 
 ### 轮 96 候选（按性价比排序）
+
 1. **HP 时钟门控位回写竞速**：NMI（T0 死后不可用）⇒ 改 MWDT1 STG0=中断（MASKED 时改配 STG0=reset 即自动恢复）双保险；
 2. **ULP 直写 HP 时钟门控寄存器**（0x20587110 系）——LP master 能否写 HP_CLKRST 待一测；
 3. **对照 oracle 的门控序列**：oracle adv-enable 期间 0x20587110/88 的值轨迹（oracle main.c 补打点，ninja 1.5s）。
@@ -30556,50 +30839,59 @@ blob ADV-enable：写配置+启动选通（coex 位置 ✓）→ 门控 TIMERGRP
 ## 🔬 轮 94-final/96：静默全套落地 + hang 收窄至 rx 路径分叉（2026-11-23）
 
 ### 落地（在树）
+
 1. `BT_LOG_SILENT=1`（bt_stubs.c 编译期全静默——README 27452 的 mute 实验先例）
 2. `s31_bt_log_mute=1`（运行时默认静默）
 3. writeLightMarker recL 8→10 字（+98BC/F800）+ F3 后调用 writeLightMarker(3)
 4. 删除裸 eseM/eswM 块（无门护 = XIP 锁死根因，改走 battle-tested 通道）
 
 ### 实测
+
 marker 仍 8 字旧格式（phase=1 pre-forward，未到 3）⇒ **hang 在
 r_btdm_hci_trans_rx 内部**（cmds_sent++ 之后、marker 之前）。
 
 ### 关键对照（收敛出分叉点）
+
 - A 路径基础命令（ReadVersion/Reset/ReadBdAddr）：同样走 rx ⇒ 不挂，CC 正常（evt=4）
 - A 路径 0x200A（ADV-enable）：rx 内挂死
-⇒ **rx 路径对 ADV-enable 类命令有分叉**：ADV-enable 的处理触发 RF-wait/时钟收缩
-（门控 TIMERGRP/UART0/SYS_TIMER），而基础命令不触发。
+  ⇒ **rx 路径对 ADV-enable 类命令有分叉**：ADV-enable 的处理触发 RF-wait/时钟收缩
+  （门控 TIMERGRP/UART0/SYS_TIMER），而基础命令不触发。
 
 ### 轮 96 首项
+
 反汇编 `r_btdm_hci_trans_rx`（nm 取址）找 0x200A 的处理分叉：
+
 - rx → 同步 dispatch（同 B 路径死锁）？
 - rx → 队列满阻塞（前序命令事件未消费）？
 - rx → ADV-enable 专用 RF-wait？
-定位后修法：把 ADV-enable 处理挪进 task 上下文（泵 resume 时序）或给等待环喂时间源。
+  定位后修法：把 ADV-enable 处理挪进 task 上下文（泵 resume 时序）或给等待环喂时间源。
 
 ---
 
 ## 🔬 轮 95d-96：0x200A 后假死机制定案 + 观测尝试全记录（2026-11-23）
 
 ### 定案（本轮实测链）
+
 ADV-enable 处理路径门控 **TIMERGRP（T0/NMI 死）+ UART0（打印死）+ SYS_TIMER/0x2080 块
 （esp_rom_delay_us 死、MWDT1 冻结、RTC latch 停）** ⇒ HP 域全域假死。RTC WDT 20s
 兜底未咬 ⇒ RC_SLOW 源也被切（ULP RC_SLOW 压回已加，90s 窗口仍未观察到 boot2）。
 
 ### 已落地的观测/防御（全部在树，下轮直接用）
-| 项 | 状态 |
-| --- | --- |
-| UART 全通道 mute（board.log/BT_LOG_SILENT/log_mute/NMI 三打印） | ✅ 生效（0x200A 后无卡死打印） |
-| 0x200A A 路径切换（同步死锁根因消除） | ✅ 命令入队+coex 钩子跑 |
-| writeLightMarker recL+2（98BC/F800）+phase=3 调用 | ✅ 在树（post-send flash 写被楔，改 LP 通道） |
-| LP 远槽 0x600-60C（post-send 98BC first/last/F800） | ✅ 在树（等 RTC WDT 咬后下 boot 读） |
-| ULP keeper：RTC latch 触发 + RC_SLOW 压回（104B） | ✅ 在树 |
-| MWDT1 keeper：hang_arm 短 hold 分支 | ✅ 在树（0x2080 块时钟被门控 ⇒ 未咬） |
+
+| 项                                                              | 状态                                          |
+| --------------------------------------------------------------- | --------------------------------------------- |
+| UART 全通道 mute（board.log/BT_LOG_SILENT/log_mute/NMI 三打印） | ✅ 生效（0x200A 后无卡死打印）                |
+| 0x200A A 路径切换（同步死锁根因消除）                           | ✅ 命令入队+coex 钩子跑                       |
+| writeLightMarker recL+2（98BC/F800）+phase=3 调用               | ✅ 在树（post-send flash 写被楔，改 LP 通道） |
+| LP 远槽 0x600-60C（post-send 98BC first/last/F800）             | ✅ 在树（等 RTC WDT 咬后下 boot 读）          |
+| ULP keeper：RTC latch 触发 + RC_SLOW 压回（104B）               | ✅ 在树                                       |
+| MWDT1 keeper：hang_arm 短 hold 分支                             | ✅ 在树（0x2080 块时钟被门控 ⇒ 未咬）         |
 
 ### 下 session 方向（修正后）
+
 blob ADV-enable 的时钟门控**决策输入** = 它的 sleep/clock 配置对象（sleep_en、
 cfg.ble bytes 10-11 等）。oracle 同路径不门控 ⇒ **配置对照**：
+
 1. dump 我们的 sleep_en 对象（0x2f011044 系 96B）与 oracle 对拍（字段级）；
 2. 特别看 sleep_en / rtc_freq / lpclk 源选择——blob 由此决定 ADV-enable 期间
    门控哪些时钟域；
@@ -30610,22 +30902,27 @@ cfg.ble bytes 10-11 等）。oracle 同路径不门控 ⇒ **配置对照**：
 ## 🏆 轮 97：F800 bit24 首次武装成功（RF-ON 命令入列！2026-11-23）
 
 ### 关键读数（离线 marker，完整编辑集构建）
+
 ```text
 recL = {magic, tick 0x0e1cde, evt=8, cmds=10(含 0x200A), put=9, get=9,
         cfg, phase=1(pre-forward), 98BC=0x00000000, F800=0x012f0669}
 ```
+
 **F800 = 0x012f0669 = oracle 值精确一致（bit24 RF-ON 命令已武装进 I2C master 命令内存）！**
 
 ### 机理（为什么现在才通）
+
 此前 F800 bit24 恒 0 的原因 = blob ADV-enable 处理途中的自身打印楔死在
 ROM UART 排空环（UART0 被 blob 自己门控）⇒ 处理流程根本走不到 RF-ON 武装。
 BT_LOG_SILENT + 全通道 mute 移除楔点 ⇒ 处理推进到 RF-ON 武装 ✓。
 
 ### 当前挂点（最后一个）
+
 ADV-enable 处理内部（RF-wait 段）仍阻塞（writeLightMarker(3) phase=3 未落）。
 RTC WDT 20s 兜底未咬（RC_SLOW 压回已加，效应待更多窗口观察）。
 
 ### 轮 98 候选
+
 1. 延长 capture 至 3min（RTC WDT/兜底若咬，boot2 PREVHANG 将带 LP 数据）
 2. 主机 BLE 扫描贯穿 boot→0x200A→挂死窗口（RF-ON 已武装，广播可能瞬态出现）
 3. blob 内 RF-wait 环解码（从 FJxPPD OCF=10 handler 顺调用链）
@@ -30643,6 +30940,7 @@ F800 bit24 已武装（RF-ON 命令入列）但 60s 扫描（含 board reset 完
 ## 🎯 轮 98 终判：0x200A 后 SYS_TIMER 门控 = 所有 ROM 延迟原语永久自旋（2026-11-23）
 
 ### 180s 捕获终判
+
 - ADV-enable 处理（task 侧）**门控 SYS_TIMER 时钟**（0x2080 块）
 - ⇒ 之后任何 `esp_rom_delay_us` 调用永久自旋（NMI 实测 mepc=0x2f8036ce
   = ROM delay 内部轮询环；ra=writeLightMarker(3) 的 erase 调用点 0x4006f12a）
@@ -30651,11 +30949,13 @@ F800 bit24 已武装（RF-ON 命令入列）但 60s 扫描（含 board reset 完
 - ⇒ 板子永久假死，只能外部复位
 
 ### 修复方向（轮 99，明确）
+
 post-send flash 记录改**裸 SPI 寄存器路径**（WPROTECT+erase+page-write 直写
 0x60003000 系 SPI 寄存器，等待用 mcycle 忙等——绕开 esp_rom_delay_us）。
 或 post-send 完全零写，结果经 LP 远槽 + RTC WDT 修复（先修 RC_SLOW 压回）。
 
 ### 轮 98 状态收口
+
 0x200A 已入队/处理（coex ✓）、F800 bit24 武装 ✓（静默组合解锁了处理前段）、
 post-send 全观测死（SYS_TIMER 门控）——**synth 是否上电仍未观测到**（需要一个
 能在 SYS_TIMER 门控后存活的记录通道：裸 SPI 直写或 LP 路径修复）。
@@ -30665,17 +30965,20 @@ post-send 全观测死（SYS_TIMER 门控）——**synth 是否上电仍未观�
 ## 🔒 轮 99 终判：HP 域看门狗全灭确认（2026-11-23）
 
 MWDT1 修正为 262MHz 算术（15.3s+5s）后仍无数字复位 banner ⇒：
+
 - blob ADV-enable 解除 MWDT1.EN（keeper 2ms 回写 vs blob 连续清除——竞速败），
 - 或 TIMG1/0x2080 块时钟被门控 ⇒ WDT 计数器冻结（写仍可达但计数停）。
-RTC WDT（LP 域）20s 亦未咬 ⇒ RC_SLOW 源压回（ULP 每 0.25s）不足以维持
-（压回间隙计数停 + 或 LP_CLK_PO 位图未覆盖实际使用的时钟树分支）。
+  RTC WDT（LP 域）20s 亦未咬 ⇒ RC_SLOW 源压回（ULP 每 0.25s）不足以维持
+  （压回间隙计数停 + 或 LP_CLK_PO 位图未覆盖实际使用的时钟树分支）。
 
 ### HP 观测手段清单（全部穷尽）
+
 T0/NMI（TIMERGRP 时钟）、MWDT1（262MHz HP 时钟）、UART0（HP 时钟）、
 SYS_TIMER/esp_rom_delay_us（0x2080 时钟）、RTC WDT（RC_SLOW 源，ULP 压回间隙断续）、
 LP 环/slots（blob ADV-enable 竞区写覆盖）。
 
 ### 下 session 方向（LP 域时钟审计）
+
 1. ULP 程序内联验证：读 RC_SLOW 计数器（RTC timer 计数值）两拍差分 ⇒ 计数是否真停；
 2. LP_CLK_PO_EN 位图扩展：force-on 全位（含未列位）+ ULP 高频压回 RC_SLOW（每循环而非每 0.25s）；
 3. 若 RC_SLOW 真活 ⇒ RTC WDT 20s 咬 ⇒ 数字复位 ⇒ LP 数据链通；
@@ -30686,25 +30989,28 @@ LP 环/slots（blob ADV-enable 竞区写覆盖）。
 ## 🔒 轮 100 终判：LP 域兜底亦未咬（2026-11-23）
 
 ULP v2（工具链汇编 110B：loop 内仅 CONFIG1=20s 重申 + latch 正确地址 0x20800010
-+ RC_SLOW 压回；CONFIG0 仅预循环一次武装避免 0→1 计数清零）——RTC WDT 仍未在
-100s 窗口内咬合（无 boot2），主机扫描无板 MAC。
+
+- RC_SLOW 压回；CONFIG0 仅预循环一次武装避免 0→1 计数清零）——RTC WDT 仍未在
+  100s 窗口内咬合（无 boot2），主机扫描无板 MAC。
 
 ### 挂死期间时钟域状态（最终清单）
-| 域 | 状态 |
-| --- | --- |
-| HP TIMERGRP（T0/NMI/TIMG1） | ❌ 门控 |
-| HP UART0 | ❌ 门控 |
-| HP SYS_TIMER/0x2080（esp_rom_delay_us/MWDT1/latch） | ❌ 门控 |
-| HP MODEM（F800 已武装 ✓ 但 98BC 不起） | 武装后静止 |
-| LP RC_SLOW（RTC WDT 计数时钟） | ⚠ ULP 压回间隙断续/或 WDT EN 被清 |
-| LP ULP core（LP_CLK force-on） | ⚠ 推测运行中（无法观测） |
+
+| 域                                                  | 状态                              |
+| --------------------------------------------------- | --------------------------------- |
+| HP TIMERGRP（T0/NMI/TIMG1）                         | ❌ 门控                           |
+| HP UART0                                            | ❌ 门控                           |
+| HP SYS_TIMER/0x2080（esp_rom_delay_us/MWDT1/latch） | ❌ 门控                           |
+| HP MODEM（F800 已武装 ✓ 但 98BC 不起）              | 武装后静止                        |
+| LP RC_SLOW（RTC WDT 计数时钟）                      | ⚠ ULP 压回间隙断续/或 WDT EN 被清 |
+| LP ULP core（LP_CLK force-on）                      | ⚠ 推测运行中（无法观测）          |
 
 ### 下 session 两个决定性实验
+
 1. **EN 清除行为**：NMI keeper 的 0x187000 解除检测在挂死窗口能否工作
    （NMI 死则改 ULP 侧检测——ULP 读 RTC WDT CONFIG0.EN 两拍差分写 LP 槽）；
 2. **RC_SLOW 计数器活性**：ULP 读 RTC timer 计数值两拍差分写 LP 槽
    （与 1 同机制）⇒ 区分"计数冻结"vs"EN 被清"vs"压回失败"。
-两个 LP 槽在**下一次 MWDT1/RTC 复位**后可读（若 RTC 域真死则不可读=本身即判据）。
+   两个 LP 槽在**下一次 MWDT1/RTC 复位**后可读（若 RTC 域真死则不可读=本身即判据）。
 
 ---
 
@@ -30715,12 +31021,14 @@ v3 counter+margin（CONFIG1=counter+20s，工具链汇编 112B，寄存器分配
 ⇒ counter-relative hold 永不到 ⇒ RTC 域兜底路径关闭。
 
 ### 最终结论（100 轮会话）
+
 0x200A ADV-enable 处理 = blob 进入"modem 深睡式时钟收缩"状态：
 HP 全域（TIMERGRP/UART0/SYS_TIMER/MWDT1/RTC 计数）+ RC_SLOW 源全停，
 ULP 压回（LP 域，0.25s 周期）不足以维持计数连续性 ⇒ 一切计时兜底失效。
 唯一恢复 = 外部复位。radio 未广播（F800 RF-ON 已武装但未执行）。
 
 ### 根修方向（下 session，唯一路径）
+
 **阻止门控发生**：blob ADV-enable 的门控决策输入 = sleep/clock 配置对象
 （sleep_en 0x2f011044 系、cfg.ble bytes 10-11、coex 状态）——对拍 oracle 的
 这些对象字段 ⇒ 改我们的配置使 blob 不进入深睡式收缩 ⇒ ADV-enable 正常返回
@@ -30736,21 +31044,24 @@ F3 重构（mcycle 观测前置、删 writeLightMarker(3) ROM 楔点）+ ADVRES2
 boot1 的写入）。
 
 ### 0x200A 后观测通道终局清单
-| 通道 | 状态 |
-| --- | --- |
-| UART（任何形式） | ❌ ROM FIFO 排空环（SYS_TIMER 门控） |
-| ROM flash 写（writeLightMarker/裸 spiflash） | ❌ esp_rom_delay_us 内部自旋 |
-| LP 槽跨 boot 读回 | ❌ esptool 复位=全掉电，LP 清零 |
-| RTC WDT 兜底复位 | ❌ RC_SLOW 被切（ULP 压回间隙断续） |
-| MWDT1 | ❌ 0x2080 块时钟门控 |
-| NMI 打印 | ❌ T0（TIMERGRP）门控 |
+
+| 通道                                         | 状态                                 |
+| -------------------------------------------- | ------------------------------------ |
+| UART（任何形式）                             | ❌ ROM FIFO 排空环（SYS_TIMER 门控） |
+| ROM flash 写（writeLightMarker/裸 spiflash） | ❌ esp_rom_delay_us 内部自旋         |
+| LP 槽跨 boot 读回                            | ❌ esptool 复位=全掉电，LP 清零      |
+| RTC WDT 兜底复位                             | ❌ RC_SLOW 被切（ULP 压回间隙断续）  |
+| MWDT1                                        | ❌ 0x2080 块时钟门控                 |
+| NMI 打印                                     | ❌ T0（TIMERGRP）门控                |
 
 ### 唯一活通道：挂死**前**的写（post-send 0.5s 内 mcycle 轮询 + LP 写 ✓ 已做）
+
 ⇒ 下 session 若需挂死后数据：mcycle 轮询块内**直接写 flash 的裸寄存器路径**
 （WPROTECT+CMD erase/write+mcycle 等 done——绕开 esp_rom_delay_us；SPI 寄存器
 基址从 ROM 反汇编提取）。或接受 boot 内 LP 快照 + 单复位窗口手工时序读出。
 
 ### 0x200A 状态最新快照（本轮）
+
 F800=0x012f0669 武装 ✓（静默组合解锁）、coex 位置 ✓、post-send mcycle 轮询
 15s 内 98BC 无变化（hang 窗口内 synth 未起）。ADV-enable 完成判定仍缺
 （post-send 记录通道待轮 99 的裸 SPI 路径）。
@@ -30760,10 +31071,12 @@ F800=0x012f0669 武装 ✓（静默组合解锁）、coex 位置 ✓、post-send
 ## 🔬 轮 103：sleep 字段根修 = 负结果；MWDT1 复位机器验证 ✓（2026-11-23）
 
 ### 实验
+
 SLPFIX（word5/6/8 清零 = sleep 全禁用）在 F3 时点生效 ✓（SLPFIX w5/6/8=0 打印）。
 结果：**hang 依旧**（0x200A 后静默），radio 仍未广播。
 
 ### 两个结论
+
 1. **负结果**：ADV-enable 的门控/挂死决策输入 ≠（仅）sleep 对象三字段，
    或字段在 task_init 时已被快照（F3 时点清零太晚）⇒ 轮 103b = 移到
    cfg 构造时/task_init 后立即清。
@@ -30772,6 +31085,7 @@ SLPFIX（word5/6/8 清零 = sleep 全禁用）在 F3 时点生效 ✓（SLPFIX w
    挂死不再永久，重试循环成立。
 
 ### 轮 103b 首项
+
 SLPFIX 三清零移到 bringup.init 之后立即执行（task_init 消费配置后、
 F 相位前）+ 同时清 0x2f011038 btdm_cb 邻域的 sleep 相邻对象 ⇒ 若仍挂 ⇒
 门控输入在别处（coex 状态位/调度器 tick 配置），转 oracle bisect 对照。
@@ -30781,14 +31095,17 @@ F 相位前）+ 同时清 0x2f011038 btdm_cb 邻域的 sleep 相邻对象 ⇒ �
 ## 🔒 轮 103b 终判：sleep 配置方向排除 + ULP↔HP 通路未验（2026-11-23）
 
 ### 实验
+
 SLPFIX 三清零**前移至 bringup.init 之后**（task_init 消费配置后立即）——
 0x200A 仍挂（两个 boot 周期重现，MWDT1 20s 复位机器工作）。
 
 ### 判定
+
 **ADV-enable 挂死不受 sleep 配置对象门控**（早期清零负结果）——sleep 配置
 对拍方向出队。
 
 ### 更深的发现：ULP keeper 从未被验证
+
 - ULP keeper（0x20801000 RTC WDT 重使能）设计预期 = 冻结后 rst:0x10 复位
 - **实测历史：rst:0x10 从未出现**（25min 窗 0 触发——轮 95 期记录）
 - ⇒ ULP→0x2080 写通路**从未被验证可达**（ULP 总线到 HP RTC WDT 块的可达性
@@ -30796,6 +31113,7 @@ SLPFIX 三清零**前移至 bringup.init 之后**（task_init 消费配置后立
 - 本轮的 latch 触发写（0x20800010）同样基于该未验假设 ⇒ 时间源喂法从未生效
 
 ### 轮 104 首项（下 session）：ULP→HP 写通路验证
+
 ULP 程序改为：向 RTC WDT CONFIG1（0x20801004，无害字段）写**递增计数器**
 （每循环 +1）⇒ 下 boot（任意复位后）HP 侧读 0x20801004 ⇒ 值>初始 = 通路活；
 值不变 = ULP→HP 写不通（keeper 设计从头就无效）⇒ LP 域兜底方向重估。
@@ -30806,6 +31124,7 @@ ULP 程序改为：向 RTC WDT CONFIG1（0x20801004，无害字段）写**递增
 
 v4（RC_SLOW 压回挪进内层延迟环，占空比 ~50%）——RTC WDT 仍不咬（90s 无 rst:0x10）。
 盲试压回编码到此为止。**下一实验改在发送前活性验证**（UART 活性期，无挂死干扰）：
+
 1. probe 触发 latch → 读 RTC 计数器 → 忙等 1s → 再 latch → 再读 ⇒ 差分 = 每秒计数
    （预期 ~137k/2M×循环...实测即知）⇒ 验证计数器活着与真实速率；
 2. probe 执行与 ULP 相同的压回序列（lw/andi/sw 0x20701000）⇒ 再测差分
@@ -30820,12 +31139,14 @@ v4（RC_SLOW 压回挪进内层延迟环，占空比 ~50%）——RTC WDT 仍不
 ## 💎 轮 105 关键数据：SYS_TIMER 活 @2MHz、RC_SLOW 压回理论推翻（2026-11-23）
 
 ### CLKCHK（挂死前活性验证，UART 活性期）
+
 ```text
 CLKCHK c0=0003b529 c1=0012f8ef delta=1000390  ← 0.5s 忙等差分 ≈ 2MHz 计数率
 PRESCHK v0=04000000 v1=04000000                ← bits[25:23] 本来就 0！
 ```
 
 ### 两个理论级修正
+
 1. **0x2080 块 = SYS_TIMER，计数时钟 ≈2MHz（HP 快时钟域）且挂死前活着**
    ⇒ "RTC 慢时钟域"叙事作废；MWDT1/该块 WDT 的 hold 按 2MHz 算：
    2_740_000 ticks = **1.37 秒**（非 20s）！16_440_000 = 8.2s。
@@ -30833,11 +31154,13 @@ PRESCHK v0=04000000 v1=04000000                ← bits[25:23] 本来就 0！
    ULP 压回 = 无操作。此前 PRESCHK 从未测过基线值（0x20701000 初值未知）。
 
 ### 挂死机制再收敛（用 2MHz 重算）
+
 ADV-enable 门控 0x2080 块时钟 ⇒ SYS_TIMER 冻结 ⇒ esp_rom_delay_us（ROM delay
 轮询该计数器）永转 ✓（NMI mepc 实测一致）。MWDT1 计数亦冻结 ⇒ 不咬 ✓。
 RTC WDT"未咬"= 计数冻结 ✓。全模型自洽，无需 RC_SLOW 假设。
 
 ### 轮 106 方向
+
 SYS_TIMER 时钟门控位定位（HP_SYS_CLKRST 里 0x2080 块的 gate 位——ck[0x110]
 系已观测但未对应到位）⇒ NMI（若 T0 死则 ULP）每 tick 强制置位 ⇒ SYS_TIMER
 活 ⇒ esp_rom_delay_us 正常 ⇒ 全链解锁。或 post-send 零 ROM 依赖路线继续
@@ -30852,11 +31175,13 @@ SYS_TIMER 时钟门控位定位（HP_SYS_CLKRST 里 0x2080 块的 gate 位——
 推进一步，下一个打印立刻再楔。evt 停 8，radio 未广播（60s+ 扫描）。
 
 ### 机制终版
+
 ADV-enable 门控 UART0/SYS_TIMER 后，**一切输出与延迟原语都变成 0.25s/步的慢动作**。
 修复必须**在发送前静默所有输出**（含 osal.logPublic 的 UART 路径）并**禁用一切
 ROM 延迟调用**（post-send 只允许 mcycle 忙等与 MMIO 直写）。
 
 ### 轮 107-final 清单（下 session 一次性落地）
+
 1. log hook 加 muted 门控（logPublic 的 "bt " 行也停）
 2. transport sendCmd/recv 的 logPublic 调用点加 muted 检查
 3. post-send 禁 writeLightMarker（已删 ✓ 保持）
@@ -30869,6 +31194,7 @@ ROM 延迟调用**（post-send 只允许 mcycle 忙等与 MMIO 直写）。
 
 CLLKCHK 实测 SYS_TIMER 活 @2MHz（0x2080001C），但 RTC WDT（0x20801000 块，
 计数钟 RC_SLOW 137kHz）20s hold 未咬（90s 无 rst）。矛盾候选：
+
 1. armRtcWdt(cycles) 的 cycles 参数实际单位/基准与假设不符（需读实现里
    CONFIG1 写前后的计数器寄存器互作）；
 2. blob ADV-enable 对 RTC WDT 的处置 = WPROTECT 锁 + CONFIG0 EN=0（ULP
@@ -30877,6 +31203,7 @@ CLLKCHK 实测 SYS_TIMER 活 @2MHz（0x2080001C），但 RTC WDT（0x20801000 �
    RTC WDT 计数钟从未实测）。
 
 ### 轮 109 首项（一次性理清）
+
 HP 侧写 RTC WDT 装置前，先读 **0x20801004（CONFIG1）+ 0x20801008（FEED）+
 计数器寄存器（TRM 定位）** 三个值打 UART ⇒ 确认 ULP 写是否真落地、计数器
 是否真走。三值齐 ⇒ WDT 不咬的层级立判（没写上/写了没走/走了没到）。
@@ -30893,17 +31220,20 @@ mepc=ROM delay 环的样本是**挂死前的最后一拍**，真正死点是进 
 第一条 MMIO 读。
 
 ### 0x200A 后观测终极结论
-| 通道 | 判定 |
-| --- | --- |
-| UART/flash/LP 跨 boot/RTC WDT/MWDT1/NMI | 全灭（已证） |
-| **post-send MODEM 块 MMIO 读** | ❌ **总线停顿**（新发现，终极死点） |
-| post-send LP 写（MODEM 读之前） | ✅ 唯一可用（写完即死，数据留 LP 但 esptool 复位清 LP ⇒ 不可达） |
+
+| 通道                                    | 判定                                                             |
+| --------------------------------------- | ---------------------------------------------------------------- |
+| UART/flash/LP 跨 boot/RTC WDT/MWDT1/NMI | 全灭（已证）                                                     |
+| **post-send MODEM 块 MMIO 读**          | ❌ **总线停顿**（新发现，终极死点）                              |
+| post-send LP 写（MODEM 读之前）         | ✅ 唯一可用（写完即死，数据留 LP 但 esptool 复位清 LP ⇒ 不可达） |
 
 ⇒ 0x200A 结果在此板**物理不可观测**（除非 RTC WDT 兜底先修活）。
 
 ### 下 session 唯一根修路径
+
 **阻止 blob 进入收缩态**：coex_schm_status_bit_set(type=1,status=1) 是
 ADV-enable 的第一步（已证）⇒ blob 收缩决策在其后。两条：
+
 1. 找 oracle 的 coex_schm_status_bit_set 实现（真实 coex 模块）对比我们 stub
    的返回语义——oracle 的 coex 模块可能回写某状态使 blob 跳过收缩；
 2. 或 NOP 掉 blob 内对该函数的调用点（patch blob RAM 副本——命令内存 F800
@@ -30918,24 +31248,28 @@ ADV-enable 的第一步（已证）⇒ blob 收缩决策在其后。两条：
 （每条 MODEM MMIO 读停 ~1s = 总线等待超时值。）
 
 ### blob ADV-enable 的行为终版
+
 ADV-enable（task 上下文）：
+
 1. coex_schm_status_bit_set(1,1)（记账，我们 stub）
 2. 门控 MODEM 块时钟（收缩）⇒ 之后 HP 对 MODEM 块任何读 = 1s 总线超时停顿
 3. 门控 TIMERGRP/SYS_TIMER/UART0 ⇒ 全计时观测死
 4. RF-ON 命令已武装（F800 bit24）但 burst 执行器（I2C master）在同一门控域 ⇒ 永不执行
-⇒ radio 永不广播；主上下文以 1s/MMIO 读的速率蠕动
+   ⇒ radio 永不广播；主上下文以 1s/MMIO 读的速率蠕动
 
 ### sleep_en=0 钳制（task_init 后）= 负结果
+
 ADV-enable 仍收缩 ⇒ 决策非 sleep_en（或 blob 在更早处置了副本）。
 
 ### 根修唯一路径（下 session，需 blob 反汇编）
+
 **定位 blob ADV-enable 路径里写时钟门控寄存器的那条指令**（r_sym 调用链：
 btdm_lp_modem_clock_set(0) → modem_clock_module_disable(6) → 设备控制表），
 二选一：
 a. **patch blob flash 副本**：将该门控写 NOP 化（blob 在 flash，可 patch——
-   F800 机制已证 MODEM 块可写，flash 块同理用 ROM SPI 写）；
+F800 机制已证 MODEM 块可写，flash 块同理用 ROM SPI 写）；
 b. **HP 侧高频回写竞速**：门控写后立即回写（回写点=我们的 mcycle 轮询环，
-   每轮先回写时钟门再读 98BC ⇒ 读不再停顿（时钟已被救活）⇒ 98BC 演化可读）。
+每轮先回写时钟门再读 98BC ⇒ 读不再停顿（时钟已被救活）⇒ 98BC 演化可读）。
 b 更简单：把门控寄存器回写加进现有 ADVRES 轮询环（当前轮询环每条读停 1s
 = 时钟被关；若先回写时钟门再读 ⇒ 读瞬时完成 ⇒ 环加速 ⇒ 实时演化可见）。
 
@@ -30948,6 +31282,7 @@ POLL 环内加时钟门回写四件套+SYSTIMER 使能后：**10 条 POLL 全部
 RF-ON 武装 ≠ 执行，synth 启动还需 blob 调度器实际跑 ADV 事件（深层）。
 
 ### 下 session
+
 1. 轮询环内同时记录 evt/98BC/完成速率 ⇒ 定位 ADV-enable 处理卡在哪个子步
 2. 对照 oracle：esp_bt_controller_enable 后 FreeRTOS tick + coex 调度如何推进
    blob 从"武装"到"执行"的剩余步骤（⾄少还差 I2C master burst 触发）
@@ -30962,6 +31297,7 @@ put=9, get=9, cfg=0x2f025f08, **phase=1**, 98BC=0, F800=0x002f0669}。
 ADV-enable 处理窗口内未运行或其 0x2080 写未生效**（最后的未知数）。
 
 ### 佐证链
+
 - SYS_TIMER 挂死前活 @2MHz ✓（CLKCHK）
 - ULP v5 修好寄存器虫（a7/s10 不再被毁）✓
 - 但 v5 首次在 ADV-enable 窗口的实测 = marker 停在 phase=1 ⇒ ULP 服务缺席
@@ -30970,8 +31306,10 @@ ADV-enable 处理窗口内未运行或其 0x2080 写未生效**（最后的未�
   被 bus bridge 静默丢弃
 
 ### 轮 115 首项（下 session）：ULP 活性三值判层
+
 ULP 程序改为：CONFIG1 写**自增计数器**（跨数字复位保留）+ 每 64 循环翻转
 LP_CLK_CONF 保留位（bit10，无害位）——下 boot 读三值：
+
 1. CONFIG1 递增 ⇒ ULP 活 + 写通 ⇒ 问题在别处（回写内容/时序）
 2. CONFIG1 恒定 + LP_CLK_CONF bit10 翻转 ⇒ ULP 活但 0x2080 写丢失（bus bridge）
 3. 两者都死 ⇒ LP 核时钟被门控（LP_CLK_PO 位图补全）
@@ -30987,15 +31325,45 @@ marker 终态 = **phase=0、evt=6、cmds=7** = writeLightMarker(0)（0x200A 发�
 收缩赢得与主上下文的竞速）。
 
 ### 主机 BLE 扫描终判
+
 60-100s 扫描窗口（覆盖 hang 前后）：板 MAC 1c:29:04:d1:99:29 从未出现
 ⇒ ADV 从未实际启动发送。
 
 ### 机制终极版
+
 blob ADV-enable 处理（task 并发）：前置记账（coex bit/F800 武装 ✓）→
 **时钟收缩几乎立即发生** ⇒ 与主上下文的任何后续 ROM 依赖调用（打印/flash/
 延迟）竞速 ⇒ 主上下文必败（task 先门控）⇒ 一切观测死。
 
 ### 会话最终结论（110+ 轮）
+
 ADV-enable 的时钟收缩不受 sleep 配置控制（early 清零负结果）⇒ 根修 =
 blob 内部收缩决策点的定位与中和（blob 反汇编级 patch）或 FreeRTOS 环境
 模拟（tick 替代品使 oracle 行为复现）。两者皆超本轮预算，完整状态入库。
+
+## 轮 123-135（2026-11-23 session）：0x200A 油门 + 全链贯通 + 门穷尽 + 真 pmu 实验
+
+### 里程碑（按提交锚）
+
+| 轮      | 提交            | 事件                                                                                                                                                                                                                        |
+| ------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 123     | 50674ee         | **SCHED 页 oracle 读回对拍**：两侧 100C=0 ⇒ write-only 特性，此前「写入不落」判读修正；oracle 1254/1258/107C = anchor 数据可读                                                                                              |
+| 123     | 7aa4859         | 架构级定案（后被轮 125 修正）：协作调度器 vs 实时 BLE                                                                                                                                                                       |
+| 123b    | —               | 0x200A 缺失发现（F2=0x1405 非 AdvEnable；0x2006 发错 15B params 两次）                                                                                                                                                      |
+| 124     | 3a08a60         | **0x200A 油门踩下**：oracle 命令序列逐字节复刻（0x2006+MAC6B → 0x2008+15B → 0x200A+[01]）+ mce(6) 真 12 门寄存器直写 + mac_reset + 前移 task_init 前；实捕引擎自臂 → synth 编程（9888/988C/98B8/98A8/9880）→ 98BC.bit2 等锁 |
+| 125     | cc5fc8c         | **自持死锁解锁**：wr_btdm_assert 限流 return 前每 64 次 s31AssertYield（NMI mepc 实证无界自旋饿死主循环 → osi 定时器停 → RF-ready 永不置）；R99 ana 全同 oracle（ab/00/32/11/11/00/00）                                     |
+| 126     | 9128660         | ana 全表对拍（blocks1-8 × regs60-110）：唯一差异 reg97 b4（只读状态）/b5（可写 trim）；XTAL trim 三时机（0x200A 前/initPhy 后/环内）全排除                                                                                  |
+| 128     | 6703a36/9dcb38e | CTX 空壳判决 + **oracle ctx 对照**（OCTX 与我们逐字同 = 内容非差异；OGLOB=0x2f07ea18 vs 我们 0x2f02cd58）；教训：**探针地址不可跨构建**（正锚 = nm 对方 ELF，oracle 全局 = 0x2f0185e4）                                     |
+| 128c    | cbc4657         | **可见性证伪**：覆写我们 bss 格 → 9888 窗口恒 0；oracle 同窗 = 镜像其 OGLOB                                                                                                                                                 |
+| 129     | e34399f→9a2abb8 | POLLCAP 地面真值（n=162）：**a4=0x2010A000（widgets 窗口基址）**，`sw s3→0x20109888` 我们被丢、oracle 保持 = 第一个硬件分叉单点                                                                                             |
+| 130     | 3b1e6c2         | reg.h 权威修正：MODEM_WIDGETS 块仅 4 寄存器（0x9400-0x940F），0x201098xx = 块外未文档 BB 私有区；CLK_EN 开启仍写丢                                                                                                          |
+| 132     | dca7e3a         | README 候选门 1+2 判负（modem_ctrl0 可写生效、clk_en0 默认 1，9880 仍 0）；**HP 侧 7 类门全穷尽**                                                                                                                           |
+| 133     | 3ac4e22         | OTA 空口扫描终局：阳性对照 6 设备 ✓、目标双字节序 0 命中 = 无空口发射（负结果为真）                                                                                                                                         |
+| 134-135 | 5d3c171         | **真 pmu_init 链入实证**（裸机执行至 GATE，较崩 ROM 时代前进）；0x200A 路径挂死 + UART 静默（README 25238 同族）→ 回退空桩，重链方法入 modem_clock_light.c 注释                                                             |
+
+### 最终状态与移交
+
+- 软件杠杆全清算（门/镜像/trim/桥接）；OTA 无发射（仪器有效）
+- 移交 RF/电源硬件域：头号嫌疑 = pmu_init 后时钟/电源异常族（UART 钟/flash 写）；次级 = DIAG_BUS_FIX_SEL 官方调试通道（BB 内部信号 → GPIO）
+- 仪器落库：POLLCAP（trap input-25 全函数窗口 200 样本）/WRB 写-回读/SYNTH 快照/CTX dump/断言 chunk（每 hit 51 寄存器）/双向栈扫描
+- 纪律强化：探针地址正锚（nm 对方 ELF）/RVC 从符号头解码/动手前 grep 本总账查先例
