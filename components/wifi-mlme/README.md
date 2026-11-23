@@ -2,7 +2,7 @@
 
 IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6.20 的纯逻辑实现。
 不做密钥与加解密（归 `wifi-connect`）、不做 SAE 报文内容、不做 AP 行为、PHY、QoS 流量行为与省电。
-主机测试 **61 项**，板侧自检 **16 条判据**（本回合只在主机上用 `board` 桩跑过，见「验证状态」）。
+主机测试 **61 项**，板侧自检 **16 条判据**（2026-11-24 随 `wifi` profile 上板一次，16/16；见「验证状态」）。
 
 ## 范围与来源
 
@@ -34,9 +34,9 @@ IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6
 - L3 板侧：2026-11-24 随 `wifi` profile 第一次上板，自检 16/16。日志 `logs/wifi-selftest-prefix-boot.log`。
 - L1 主机：2026-11-24，61 项（`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6），全部通过；
   `zig fmt --check src/` 干净。
-- 板侧自检 `selftest.run()`：2026-11-24 在主机上以 `board` 桩模块（`log.line` → `std.debug.print`）
-  编译并运行，16 条判据 `passed=16 failed=0`。**尚未在板上运行**，也未接入 `firmware/build.zig`
-  （归主代理）。
+- 接入：`firmware/build.zig` 的 `wifi` 组已挂上本组件的 `selftest.zig`，`wifi` 与 `full` 两个 profile 带它。
+  上板之前，自检先在主机上以 `board` 桩模块（`log.line` → `std.debug.print`）编译并运行过，
+  16 条判据 `passed=16 failed=0`。
 - 差分对拍（`/tmp/s31-oracle/wifi_oracle.py`，一次性测试，跑完已删）：
   `bip_protect` 40 条（4 种 BIP × Key ID 4/5 × 随机 IPN）的 MME 经 `ie.parseMmie` 解出的 Key ID / IPN / MIC 全部相等；
   `ccmp_encapsulate` 40 条随机管理帧 / 数据帧（含 3 条四地址、12 条 QoS、15 条 HT Control）的 AAD 长度与 QoS TID

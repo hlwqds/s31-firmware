@@ -36,13 +36,7 @@ IPv6 over BLE，加上原有的 ATT/GATT、802.15.4 FCF、6LoWPAN 无状态解�
 - L1 主机：2026-11-24，68 项（原有 20 项全部保留 + 新增 48 项），`zig fmt --check src/` 干净。
 - 差分：`/tmp/s31-oracle/ble_oracle.py`（seed 7）各 20 条随机向量，`ah` 20/20、`e` 20/20 相等
   （一次性测试，跑完已删除）。
-- rv32 交叉编译：`src/selftest.zig` 用固件同一组参数（`riscv32-freestanding-eabihf`、
-  `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）配真实的 `boards` 模块（只把
-  `bt_linked` 桩成 `present = false`）编译通过；只证明能编译，未上板。
-- 板侧：**未运行**。自检条数 12 → 19，新增 7 条（⑬–⑲）。
-- 基线未动：`tests/baselines.json` 里 `ble-802154` 仍是 20，仓库 README / ROADMAP /
-  `docs/TESTING.md` 的前门总数也没改（这些文件不在本组件的改动范围内），需要仓库
-  所有者抬到 68。
+- 自检条数 12 → 19，新增 7 条（⑬–⑲）；`tests/baselines.json` 里 `ble-802154` 已随本轮抬到 68。
 
 ## 快速开始
 

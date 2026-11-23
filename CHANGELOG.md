@@ -30,9 +30,11 @@
   `.flash.text` 745 056 B；`build-image.sh firmware` → `image: OK`。探针镜像与不带 blob 的镜像不编译该文件。
 
 - **两条本地门禁的既有失败（2026-11-24）**：在 `3194bf6` 上 `scripts/check-all.sh` 本来就过不了，与本轮改动无关。
-  `check-capacity.py`：基线停在 2026-11-18，之后六个 profile 的 irom 已有 21 504 到 31 504 B 的漂移（镜像 `net` +59 936 B、
-  `net-wire` +66 704 B）。`update_matrix.py --check`：`2d431d0` 恢复 `logs/e2e-net-wire-boot.log` 之后，矩阵 W1–W3 没有跟着刷新。
-  两处都用脚本自带的再生成对齐到已提交的代码与日志，没有手改数字。
+  `check-capacity.py`：基线停在 2026-11-18（`a59e5d7`），之后六个 profile 的 irom 已有 21 504 到 31 504 B 的漂移。
+  漂移的来源量过：`boards/esp32s31-coreboard/src/trap.zig` 在 BLE 调试期间累积的诊断代码让 `trapDispatch`
+  从约 5 350 B 长到约 25 600 B，并带进 5 160 B 浮点格式化；它没有构建开关，所有 profile 都编进去，本轮没有动它。
+  `update_matrix.py --check`：`2d431d0` 恢复 `logs/e2e-net-wire-boot.log` 之后，矩阵 W1–W3 没有跟着刷新。
+  两处都用脚本自带的再生成对齐到已提交的代码与日志，没有手改数字。细目见 `docs/verification/README.md`。
 
 ### Removed
 - `firmware/build.zig`：删掉 152b92a 给 net-tcp / net-ipv4 / net-udp-dhcp-dns / net-sockets 四个模块
@@ -54,12 +56,13 @@
     Connections 的全部配对方法（双角色），密钥分发与绑定存储，链路层 AES-CCM、CRC-24 与白化（Vol 6 Part B）。
   - 验证：主机测试、与独立 Python 参照实现的差分（全部一致）；第一次上板（`wifi` profile）各自检
     16/28/18/25/10，`ble-802154` 失败的一条是自检自身的差一错误，已修，板级复验待做。
-    报告在 `docs/verification/`；`tests/baselines.json` 合计 572 → 814。
+    报告在 `docs/verification/`；`tests/baselines.json` 合计 572 → 816（其中 `bt-blobs` 17 → 18、`osal` 20 → 21
+    是把此前已有的用例数补记进基线，前门总数随之改为 816）。
 - **BLE 与 Wi-Fi 共存的 glue（2026-11-24）**：设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`。新增
   `components/radio-coex`（45 项），对照 IDF 的 `esp_adapter.c` 与 `btdm_coex.c` 实现 Wi-Fi 侧 23 个包装函数、
   BLE 侧 16 个钩子加 4 个生命周期函数、20 表项的适配表；真核心经 `bind.zig` 绑定，尚未接入两套 blob 适配层。
-  默认镜像逐字节不变：`3194bf6` 与本轮改动后各自构建的 `app.bin`（243 488 B）、`app.elf`（223 280 B）SHA-256 相同，
-  `min`、`net`、`tls`、`net-wire` 四个 profile 的镜像尺寸不变；只有 `wifi`（irom +176 848 B）与 `full`（irom +142 832 B）变大。
+  默认镜像逐字节不变：`3194bf6` 与本轮改动后，`min`、`net`、`tls`、`net-wire` 四个 profile 的 `app.bin` 与 `app.elf`
+  SHA-256 全部相同（默认镜像即 `net`：`app.bin` 243 488 B、`app.elf` 223 280 B）；只有 `wifi`（irom +176 848 B）与 `full`（irom +142 832 B）变大。
   `scripts/check-all.sh` 全绿（主机测试 858 项、容量、e2e host 6 个 profile）。
 
 - **生产 A/B 与回滚（矩阵 C5，2026-11-18）**：`firmware/idf-bootstrap/partitions.csv` 追加

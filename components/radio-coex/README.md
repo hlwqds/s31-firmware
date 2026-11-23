@@ -51,7 +51,7 @@
 | L1 布局实测 | esp-gcc 15.2 用本仓 `sdkconfig.h` 编译 IDF 头：`sizeof(coex_adapter_funcs_t)`=80、偏移 0,4,…,76；`sizeof(wifi_osi_funcs_t)`=512、共存字段在 384–484（即下标 96–121）；枚举 0/1/2、0..4、位图 1 | 与 `adapter.zig` / `core.zig` 一致 |
 | L1 布局实测 | 同一 C 结构在 x86_64（`zig cc -target x86_64-linux-gnu`）：160 字节、`_magic`@152 | 与主机上的 `AdapterTable` 一致 |
 | L2 布局实测 | RV32 上导出 `AdapterTable` 变量，`nm -S` 读到 80 字节；导出常量读到 `_magic`@76、`_env_is_chip`@48、`_esp_timer_get_time`@44 | 一致 |
-| L3 板侧自检 | 未上板。`selftest.run()` 只在主机上用桩 `board.log` 跑过（一次性副本）：10/10 | 待真机验证 |
+| L3 板侧自检 | 2026-11-24 随 `wifi` profile 上板一次，对着假核心：`checks: passed=10 failed=0 total=10`（上板前也在主机上用桩 `board.log` 跑过 10/10） | 假核心通过；真核心待验证 |
 | 差分 | 未做：`/tmp/s31-oracle/wifi_oracle.py` 只覆盖 RSNA 密码学构造，没有 coex；本组件也没有密码学构造 | — |
 
 关于命令：`zig test … --summary all` 在本机 Zig 0.17.1 上不被识别（`error: unrecognized parameter: --summary`，

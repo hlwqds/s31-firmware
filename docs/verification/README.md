@@ -43,20 +43,22 @@ harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓
 
 ## 默认镜像不变（L2）
 
-新 section 只挂在 `wifi` 组，`firmware/build.zig` 的默认选项不含 `wifi`。在集成前的提交 `3194bf6` 上建 worktree，与集成后的工作树用同一命令各构建一次，逐段比 SHA-256：`min`、`net-wire`、`net`、`tls` 四个 profile 的全部可加载段（各 6 段）逐字节相同。
+新 section 只挂在 `wifi` 组，`firmware/build.zig` 的默认选项不含 `wifi`。在集成前的提交 `3194bf6` 上建 worktree，与集成后的工作树用同一组构建参数（`tests/e2e/run_e2e.py` 里各 profile 的 `-D` 开关）各构建一次，整文件比 SHA-256，两边在不同目录：
 
-默认镜像（`scripts/build-image.sh firmware`，不带任何 `-D` 开关）另外做了整文件对比，两边在不同目录构建：
+| profile | `app.bin` | SHA-256（`app.bin`） | SHA-256（`app.elf`） |
+| --- | --- | --- | --- |
+| `min` | 76 240 B | `c6a2d1cc8d17d845c86a847c04c607ae1ed6e6238677da5a6983c74b8c9a3b99` | `0ede552acb9a44200dfec097c8b01122a01714704d56a2e0491561ecafe84444` |
+| `net-wire` | 145 200 B | `0dfcd421ce035abd27b10e2d660bb29e39189be0e65872b2a0ccfafdc590ab9b` | `fd1988231a0ce0bed1e3f5e90ed58ad05a6ef9a6a5d6d9426e91af953bc79077` |
+| `net`（即默认镜像） | 243 488 B | `7ff950143c0cb646898e63fc139c6b0d51959e6ee7837ad4de0d7904043dfa2e` | `ac5b407e7f28302ff716774970fa1bbdfb9994d078d47f52b17d5fa7f2653243` |
+| `tls` | 333 600 B | `785daaefd87ec140b2204433410d770f8c8bdfabf84af88acc6e8689e687ed20` | `6a1b02376bf706c3f76a88dc0b7bfd1aedff9485ed944cf1d8e0f9f483416134` |
 
-| 文件 | 大小 | SHA-256（两边相同） |
-| --- | --- | --- |
-| `app.bin` | 243 488 B | `7ff950143c0cb646898e63fc139c6b0d51959e6ee7837ad4de0d7904043dfa2e` |
-| `app.elf` | 223 280 B | `ac5b407e7f28302ff716774970fa1bbdfb9994d078d47f52b17d5fa7f2653243` |
+四个 profile 的 `app.bin` 与 `app.elf` 两边逐字节相同。默认镜像另用 `scripts/build-image.sh firmware`（不带任何 `-D` 开关）单独构建对比过一次，结果与表中 `net` 一行一致。
 
 ## 容量（L2）
 
 `3194bf6` 与本轮改动后各跑一次 `scripts/check-capacity.py`，取其表格相减：
 
-| profile | 镜像增长 | irom 增长 | drom 增长 | 说明 |
+| profile | `app.bin` 增长 | irom 增长 | drom 增长 | 说明 |
 | --- | --- | --- | --- | --- |
 | `wifi` | +193 232 B | +176 848 B | +50 784 B | 三个新 section 加两个扩展的 section |
 | `full` | +192 032 B | +142 832 B | +46 160 B | 同上 |
@@ -64,4 +66,13 @@ harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓
 
 本轮之后：`wifi` 的 irom 余量 411 056 B，`full` 的 irom 余量 276 528 B，factory 分区余量分别为 1 024 128 B 与 869 904 B。
 
-基线文件 `tools/s31-production/baseline/capacity.json` 上次刷新是 2026-11-18。到 `3194bf6` 为止已有一批与本轮无关的漂移，所以 **`3194bf6` 上 `check-capacity.py` 本来就是失败的**（退出码 1）：六个 profile 的 irom 增长 21 504 到 31 504 B；镜像增长 `net` +59 936 B、`net-wire` +66 704 B、`wifi` +67 328 B、`tls` +10 912 B、`full` +1 792 B、`min` +1 152 B。本轮用 `check-capacity.py --update` 把这些一并写进基线，复核通过。
+基线文件 `tools/s31-production/baseline/capacity.json` 上次刷新是 2026-11-18（`a59e5d7`）。到 `3194bf6` 为止已有一批与本轮无关的漂移，所以 **`3194bf6` 上 `check-capacity.py` 本来就是失败的**（退出码 1）：六个 profile 的 irom 增长 21 504 到 31 504 B（`min` 21 504、`net-wire` 22 848，其余四个 31 072 到 31 504）。本轮用 `check-capacity.py --update` 把这些一并写进基线，复核通过。
+
+`app.bin` 的大小不代表真实占用：esptool 在 IROM 段之后插一个填充段，把 DROM 段对齐到 64 KiB。同一批漂移，`min` 的 `app.bin` 只大了 1 152 B，`net` 的却大了 59 936 B。看占用要用 irom 与 drom 两列。
+
+这批漂移的来源（`a59e5d7` 与 `3194bf6` 各构建一次 `min`、`net`、`net-wire`，在临时检出里关掉 strip 后按符号比较函数字节）：
+
+- `boards/esp32s31-coreboard/src/trap.zig` 的 `trapDispatch` 在三个 profile 里都从约 5 350 B 长到 25 454 到 25 694 B（+20 104 到 +20 344 B），并带进 5 160 B 的浮点格式化代码。该文件同期从 517 行长到 1620 行，中间 159 个提交动过，单次最多加 55 行，是 BLE 调试期间累积的诊断代码。它没有构建开关，所有 profile 都编进去。`wifi`、`tls`、`full` 没有单独量。
+- `net` 另外多出一个约 9.7 KB 的自检入口（`selftest.run.8`）、日志 2 922 B、osal 1 848 B。
+
+是否给这些诊断代码加开关由仓库所有者决定，本轮没有动 `trap.zig`。中间大多数提交在默认 `min` 配置下构建失败（`071a8fc` 的提交说明提到当时非 BT profile 的链接回归），所以 `git bisect` 无法逐个提交定位；上面的数字是两端各构建一次量出来的。

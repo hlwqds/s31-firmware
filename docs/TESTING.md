@@ -4,7 +4,7 @@
 
 | 层 | 内容 | 命令 | 门禁 |
 | --- | --- | --- | --- |
-| L1 单元 | 19 个测试项目的 `test` 块（814 项） | `scripts/check-host.sh` | 合并前必须绿 |
+| L1 单元 | 19 个测试项目的 `test` 块（816 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
 | L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
@@ -173,6 +173,7 @@ python3 tests/e2e/run_e2e.py --board --profile net     # 需要板子与 idf-boo
 | **过期的"预期失败"** | 步骤名写 `xfail tls`，而命令其实跑全部 profile 且 tls 已通过 | 审计时逐个核对步骤名与实际命令 |
 | **缺键的基线** | `tests/baselines.json` 里没有某组件的键 ⇒ 基线按 0 算 ⇒ 它的用例**完全不受保护**（`bt-blobs` 曾有 36 项如此） | 加组件时同步加键；改完用 `check-coverage.py` 看 `actual` 与 `baseline` 是否相等 |
 | **文档里的数字** | 表格/README 引用的是旧的或别的单元的计数（三处 `14/14` 实为 28；`net-wire` README 曾把 lab 的计数当成组件的） | 改完代码后核对：主机用例数、板侧 checks 数、lab 用例数**是三个不同的数**，别混用 |
+| **Debug 下比较可选的错误值** | Zig 0.17.1 的 Debug 构建里 `?E == ?E` 恒为假，ReleaseSafe、ReleaseSmall、ReleaseFast 才正确。主机测试是 Debug、板上固件是 ReleaseSmall ⇒ 断言相等的用例莫名失败，断言不相等的莫名通过 | 先解包再比：`if (opt) \|v\| v == error.X else false`；排查时把合取条件逐项单独打印。最小复现见 `docs/verification/coex-verification.md` §3.5 |
 
 本仓的入口清单（`check-all` 覆盖前 8 项）：
 

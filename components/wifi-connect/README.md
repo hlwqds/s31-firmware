@@ -4,7 +4,7 @@
 密钥数据封装（AES Key Wrap）、安全关联与密钥管理状态机、RSNA 策略选择、
 管理帧保护与 SA Query、每帧保护（CCMP-128 / GCMP-128 / BIP-CMAC-128），以及 SAE 的字节级子集。
 
-- 主机测试：**57 项**（`zig test src/host_tests.zig`；基线文件 `tests/baselines.json` 仍记 20，需随本次更新）
+- 主机测试：**57 项**（`zig test src/host_tests.zig`；`tests/baselines.json` 已随本轮抬到 57）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 28 行 `check:` 与 `checks: passed=N failed=M total=N+M`
 - 依赖方向：逻辑模块只 import `std` 与同组件文件；仅 `selftest.zig` import `boards` 的 `board`（只用 `board.log`）
 - 不依赖其它组件，不做 802.11 帧编解码（归 `wifi-mlme`），不含 SAE 椭圆曲线运算
@@ -57,8 +57,7 @@ psk 120、prf 120、ptk 37、pmkid 120、gtk 51、key_wrap 48、key_unwrap 96、
 ccmp_decapsulate 98、gcmp_encapsulate 41、gcmp_decapsulate 96、bip_protect 20、bip_verify 60
 （含篡改类：解包、解封装、BIP 校验必须失败）。
 
-**没有跑的**：`firmware/` 的 `zig build`、`scripts/check-*.py|sh`、`tests/e2e`（不在本切片的写权限内）；
-板侧自检在真板子上的输出；任何空口行为。
+**没有跑的**：任何空口行为。集成项（`firmware/` 的 `zig build`、`scripts/check-*.py|sh`、`tests/e2e`、真板上的自检输出）不在本切片的写权限内，已由集成方补跑，见「待验证项」。
 
 ## 快速开始
 
