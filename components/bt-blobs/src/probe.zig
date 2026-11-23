@@ -2648,6 +2648,13 @@ pub fn run() noreturn {
                     board.log.line("BB 450={x:0>8} 47C={x:0>8} 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8}", .{ bbr[0], @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, @as(*volatile u32, @ptrFromInt(0x2010_0444)).* });
                     board.log.line("BB 100C={x:0>8} 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_100C)).*, bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
                     board.log.line("SC 1254={x:0>8} 1258={x:0>8} 107C={x:0>8} 1000={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_1254)).*, @as(*volatile u32, @ptrFromInt(0x2010_1258)).*, @as(*volatile u32, @ptrFromInt(0x2010_107C)).*, @as(*volatile u32, @ptrFromInt(0x2010_1000)).* });
+                    // **轮 124d**：ana 芯片内部对拍——reg99 横扫 blocks 1-6 + B6 regs
+                    // 92-106（oracle 基线：R99 b1=ab b3=32 b4=11 b5=11；B6=ff*5 80 3f 00 ff ff 63 0a ff 2f 00）
+                    {
+                        const rd = @extern(*const fn (reg: u8, hostid: u8, blk: u8) callconv(.c) u8, .{ .name = "phy_i2c_readReg" });
+                        board.log.line("R99 b1={x:0>2} b2={x:0>2} b3={x:0>2} b4={x:0>2} b5={x:0>2} b6={x:0>2} b7={x:0>2}", .{ rd(99, 1, 1), rd(99, 1, 2), rd(99, 1, 3), rd(99, 1, 4), rd(99, 1, 5), rd(99, 1, 6), rd(99, 1, 7) });
+                        board.log.line("B6 {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2}", .{ rd(92, 1, 6), rd(93, 1, 6), rd(94, 1, 6), rd(95, 1, 6), rd(96, 1, 6), rd(97, 1, 6), rd(98, 1, 6), rd(99, 1, 6), rd(100, 1, 6), rd(101, 1, 6), rd(102, 1, 6), rd(103, 1, 6), rd(104, 1, 6), rd(105, 1, 6), rd(106, 1, 6) });
+                    }
                     var m2: usize = 0;
                     var ma: usize = 0x2E00_0000;
                     while (ma < 0x2E00_1000 and m2 < 4) : (ma += 4) {

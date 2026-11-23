@@ -87,6 +87,10 @@ extern void s31_bt_raw_line(const char *s);
 void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char type) {
     bt_assert_hits++;
     *(volatile unsigned int *)0x2E000388 = (unsigned int)line; /* LP: 跨复位可读（探针 BBP 行） */
+    /* **轮 124e**：限流——synth 等锁路径每轮断言打印一次，16 次轮询 × 反复重进
+     * = UART 饱和（1.1MB 刷屏），把探针的 R99/ana 对拍行全挤掉。前 4 次打印保
+     * 现场，之后静默（hits/LP 槽照记）。 */
+    if (bt_assert_hits > 4) return;
     /* **轮 120e**：buf 128→256（ble_hw.c 全路径 86 字符把 p0/type 挤掉——占位符
      * 之谜），并打全 p0/p1/type/RA（一次 boot 拿到断言点全现场）。 */
     char buf[256];
