@@ -2570,6 +2570,7 @@ pub fn run() noreturn {
             }
         }
         // **轮 123k**：F1 改发 0x200A（此前 = 第二次 0x2006+params，enable 全程缺失）
+        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0xC0DE_9F2C; // 轮 148：trap 捕获窗旗开
         const adv_en: [1]u8 = .{0x01};
         const r6b = transport.sendCmdViaHs(0x200A, &adv_en);
         board.log.line("F1 rc={d} evt={d}", .{ r6b, transport.stats().evt_count });
@@ -2584,6 +2585,7 @@ pub fn run() noreturn {
         const rrssi = transport.sendCmdViaHs(0x1405, &.{});
         board.log.line("F2 rc={d} evt={d}", .{ rrssi, transport.stats().evt_count });
         board.log.line("F2S btdm_tx={d} evt={d}", .{ transport.stats().btdm_tx, transport.stats().evt_count });
+        @as(*volatile u32, @ptrFromInt(0x2E00_057C)).* = 0; // 轮 148：捕获窗旗关
         // **轮 86**：HCI 传输 env 对账——LE CC 的分发器内构造已完成（.L672），
         // 事件应在 kAQT9Bbw→ll_evt_tx 后抵达 env+24（cfg_hs 注册的 leEvtTx）。
         // 判据：+24 必须 = nm 里 leEvtTx 的符号地址；credits(env+64) 供 kAQT9Bbw

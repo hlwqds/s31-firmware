@@ -993,6 +993,17 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
                 pollcap_a4 = frame.a4;
                 pollcap_s1 = frame.s1;
             }
+            // **轮 148**：捕获窗内（0x2E00057C==0xC0DE_9F2C）mepc 环形落盘
+            // 0x1870_0100+(n%64)*16——真 pmu 楔死点取证（UART 静默期的独立通道）。
+            if (@as(*volatile u32, @ptrFromInt(0x2E00_057C)).* == 0xC0DE_9F2C) {
+                const wdg: [*]volatile u32 = @ptrFromInt(0x2058_1000);
+                const pfn: *volatile u32 = @ptrFromInt(0x2E00_0578);
+                const pslot = pfn.* % 64;
+                const prec: [4]u32 = .{ 0xC0DE_9F2C | pslot, frame.mepc, frame.a3, frame.a4 };
+                wdg[0x64 / 4] = 0;
+                _ = esp_rom_spiflash_write(0x1870_0100 + pslot * 16, &prec, 16);
+                pfn.* = pslot + 1;
+            }
             // **重写 nmies**（CLIC[25] bit3）：vendor/未知源会清它 ⇒ NMI 停摆。
             // 每次采样时重置，保证 NMI 在 esp_phy_enable 关中断段持续穿透。
             {
