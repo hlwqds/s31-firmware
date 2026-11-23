@@ -2488,6 +2488,19 @@ pub fn run() noreturn {
             const rb: u32 = tgt.*;
             const verdict: []const u8 = if (rb == 0x1234_5678) "GATE-FOUND" else "still-gated";
             board.log.line("GATE mc0={x:0>8} ce0={x:0>8} w9880={x:0>8} {s}", .{ mc0.*, ce0v, rb, verdict });
+            // **轮 139（别名假说终验）**：0x20109888 = SRAM 固定地址 0x2f0185e4
+            // 的硬件别名窗（oracle OGLOB 值 = 窗口值 ✓、我们全局地址不同 = 不镜像 ✓
+            // 两条观测的唯一自洽解释）。写魔数到裸地址 0x2f0185e4 → 读窗口：
+            // 镜像 ⇒ 写我们 ctx ptr 进去 = 引擎读到有效指针 = 接受态解锁。
+            {
+                const slot: *volatile u32 = @ptrFromInt(0x2f018_5e4);
+                const saved = slot.*;
+                slot.* = 0xC0DE_4242;
+                const win = @as(*volatile u32, @ptrFromInt(0x2010_9888)).*;
+                const av: []const u8 = if (win == 0xC0DE_4242) "MIRROR" else "none";
+                board.log.line("ALIAS slot={x:0>8} win9888={x:0>8} {s}", .{ slot.*, win, av });
+                slot.* = saved;
+            }
             // **轮 138**：DIAG_BUS_EXCHANGE 视图交换扫描——4-bit×4 mux 全组合
             // （0x20109408：SEL0-3 各 4bit），每次写后读 9888：非零/变化 = 交换
             // 改变了 BB 私区视图 = 机制发现。FIX_SEL(0x20109404) 同法 5bit×2。
