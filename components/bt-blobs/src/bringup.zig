@@ -907,6 +907,8 @@ pub fn init(cfg: *config.Config) c_int {
         if (freestanding) board.trap.diag_b = @intCast(@intFromPtr(&probe_local2) & 0xFFFF);
     }
     anaSnap(); // 轮 51 槽 2：INITED
+    // **轮 120z4**：11AC 补写移至 POLL00（此处 logPublic 行被 FIFO 交错吞——
+    // 11AC before=0x 行实证被吃）。oracle 基准 = 0xa9000000，我们 = 0。
     osal.logPublic("bt bringup: INITED", .{});
     return 0;
 }

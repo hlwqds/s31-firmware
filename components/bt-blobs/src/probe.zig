@@ -2548,6 +2548,7 @@ pub fn run() noreturn {
             const hpp: *volatile u32 = @ptrFromInt(0x2E00_3718);
             const hbp2: *volatile u32 = @ptrFromInt(0x2E00_0F8C); // -0xE74: 0xE80→0x8C
             const hpp2: *volatile u32 = @ptrFromInt(0x2E00_0FAC); // 0xEA0→0xAC
+            const bbp: *volatile u32 = @ptrFromInt(0x2010_11AC);
             var poll: u32 = 0;
             while (poll < 10) : (poll += 1) {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
@@ -2589,6 +2590,8 @@ pub fn run() noreturn {
                 // **轮 120w**：POLL00 全 4KB 魔数扫描——blob init 后 HP/LP 视图偏移
                 // 可能变化（魔数落点漂移）⇒ 本次 boot 内实时扫描。
                 if (poll == 0) {
+                    // **轮 120z4**：11AC（BB 引擎使能）补写——oracle=0xa9000000
+                    if (bbp.* == 0) bbp.* = 0xA900_0000;
                     var m2: usize = 0;
                     var ma: usize = 0x2E00_0000;
                     while (ma < 0x2E00_1000 and m2 < 4) : (ma += 4) {
@@ -2600,7 +2603,7 @@ pub fn run() noreturn {
                     }
                     if (m2 == 0) board.log.line("POLLSCAN none (核死或视图超 4KB 窗)", .{});
                 }
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, lprcp });
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} i11ac={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, bbp.*, lprcp });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
