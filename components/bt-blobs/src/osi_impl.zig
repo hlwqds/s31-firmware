@@ -1280,11 +1280,11 @@ fn shellWifiClockDisable() callconv(.c) usize {
         const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
         icg20.* = 0;
     }
-    // 2) SOC_PLL_SOURCE_CG off —— IDF disable 值是 0x25
-    {
-        const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
-        modconf.* = 0x25;
-    }
+    // 2) SOC_PLL_SOURCE_CG off —— **轮 120g 拔除**：0x205871E0 在 HP_SYS_CLKRST 页
+    //（SYSTIMER_CTRL0=0x20587120 同页）——若该位实际门 SYS_TIMER 源（头文件/
+    // 硅片错位史重演），ADV-enable 里第一个需要 SYS_TIMER 的 ROM delay 就永转
+    // = 坍缩。先拔此行单变量验证。
+    // modconf(0x2058_71E0) 写 0x25 已移除。
     return 0;
 }
 
