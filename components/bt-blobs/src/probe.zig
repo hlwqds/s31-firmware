@@ -1374,6 +1374,21 @@ pub fn run() noreturn {
         // RX_FILT；跳过 0x00 FIFO、0x04-0x10 中断组、写敏感偏移）。
         @as(*volatile u32, @ptrFromInt(CLKRST_UART0_CTRL0)).* = uart_ctrl0_snap;
         @as(*volatile u32, @ptrFromInt(CLKRST_SOC_CLK_SEL)).* = uart_soc_snap;
+        // **轮 160（PMU modem 域隔离/电源控制）**：reg.h 权威——
+        // PMU_POWER_PD_MODEM_PWR_CNTL(0x20704128): bit1=ISO, bit2=PU
+        // PMU_HP_MODEM_HP_CK_POWER(0x2070405C): bit20=I2C_ISO_EN
+        // 若 ISO=1 或 PU=0 ⇒ modem 域隔离/未上电 ⇒ 988x 写全丢 = WMAP 全 D！
+        {
+            const cntl: *volatile u32 = @ptrFromInt(0x2070_4128);
+            const ckpw: *volatile u32 = @ptrFromInt(0x2070_405C);
+            const dig: *volatile u32 = @ptrFromInt(0x2070_4040);
+            board.log.line("PMU_ISO pre cntl={x:0>8} ckpw={x:0>8} dig={x:0>8}", .{ cntl.*, ckpw.*, dig.* });
+            // 撤隔离 + 强制上电
+            cntl.* &= ~@as(u32, 1 << 1); // 清 FORCE_MODEM_PWR_ISO
+            cntl.* |= (1 << 2) | (1 << 0); // 设 FORCE_MODEM_PWR_PU | NO_RESET
+            ckpw.* &= ~@as(u32, 1 << 20); // 清 I2C_ISO_EN
+            board.log.line("PMU_ISO post cntl={x:0>8} ckpw={x:0>8}", .{ cntl.*, ckpw.* });
+        }
         {
             const safe_offs = [_]u32{ 0x14, 0x18, 0x1C, 0x20, 0x24 };
             var dstr: [112]u8 = undefined;
