@@ -879,19 +879,21 @@ fn writeLightMarker(phase: u32) void {
 
 /// **轮 119d**：ULP keeper 武装（幂等，可在 bringup.init 前后各调一次）。
 /// init 内部的 LP 域动作会把 boot addr 清 0（BOOTADDR 回读实证）⇒ init 后必须重装。
-var ulp_prog_snapshot: [56]u8 = @splat(0);
+var ulp_prog_snapshot: [60]u8 = @splat(0);
 
 fn ulpKeeperArm(comptime tag: u8) void {
     const ulp_prog = [_]u8{
-        // v13 56B 魔数计数器（objdump 核对 ✓）：count=0xC0DE0000|(n&0xFFFF)
-        // @0x2E000F00、phase=0xFADE0000|((n+1)&15) @0x2E000F20。
-        0x37, 0x1e, 0x80, 0x20, 0x13, 0x0e, 0xf0, 0x0e,
+        // **轮 120v（v14 60B waiti 模式）**：每轮计数/相位更新后 wfi 等
+        // TRIGGER 唤醒——oracle 同款停等模式（waiti 态才能被 HP_TRIGGER_LP
+        // 唤醒；spinning 核不吃触发）。每次 POLL 应见 hb +1。
+        0x37, 0x1e, 0x00, 0x2e, 0x13, 0x0e, 0x0e, 0xf0,
         0x93, 0x0e, 0x0e, 0x02, 0x37, 0x08, 0xde, 0xc0,
         0xb7, 0x08, 0xde, 0xfa, 0x83, 0x25, 0x0e, 0x00,
-        0x05, 0x85, 0x1a, 0x05, 0x81, 0xc1, 0x1e, 0x5e,
-        0xb3, 0xe5, 0x05, 0x01, 0x23, 0x20, 0xbe, 0x00,
-        0x83, 0xa7, 0x0e, 0x00, 0x85, 0x07, 0xbd, 0x8b,
-        0xb3, 0xe7, 0x17, 0x01, 0x23, 0xa0, 0xfe, 0x00,
+        0x85, 0x05, 0xc2, 0x05, 0xc1, 0x81, 0xb3, 0xe5,
+        0x05, 0x01, 0x23, 0x20, 0xbe, 0x00, 0x83, 0xa7,
+        0x0e, 0x00, 0x85, 0x07, 0xbd, 0x8b, 0xb3, 0xe7,
+        0x17, 0x01, 0x23, 0xa0, 0xfe, 0x00, 0x73, 0x00,
+        0x50, 0x10, 0xe9, 0xbf,
     };
     // **轮 120b**：向量表！oracle 加载完整 ULP 镜像（0x2E000000-0x7F 向量表
     // +0x80 程序）。裸核 mtvec=0，LP 域任何中断（我们自己 arm 的 RTC timer
@@ -2573,8 +2575,13 @@ pub fn run() noreturn {
                 @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1); // WAKEUP_EN bit1
                 @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // TRIGGER(WT)
+                // **轮 120u**：FORCE_STALL 检查+解除——PWR0(+0x1AC) bit18 = 强制停滞
+                //（oracle 终态 bit18=0、bit1=0）。若 blob 置位 = 核停而不死（ Stall！）。
+                const pwr0p: *volatile u32 = @ptrFromInt(0x2070_4000 + 0x1AC);
+                const p0v: u32 = pwr0p.*;
+                if ((p0v & (1 << 18)) != 0) pwr0p.* = p0v & ~@as(u32, 1 << 18);
                 const lprcp: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} magic={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, @as(*align(2) volatile u32, @ptrFromInt(0x2E00_36FA)).*, lprcp });
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} pwr0={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, p0v, lprcp });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
