@@ -2527,15 +2527,18 @@ pub fn run() noreturn {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
                 // **轮 119k 根修**：blob 在处理中清 LP_PERI_CLKRST CPU_CTRL.bit30/
                 // INTR_CTRL.bit30（LP 核时钟坍缩真身，上一 boot 遗留读数实证）。
-                // 主上下文 mcycle 环活着 ⇒ 每次迭代重断言，核时钟被清即恢复。
+                // 主上下文 mcycle 环活着 ⇒ 每次迭代 oracle 全配对（轮 120d）：
+                // SLEEP_REQ → boot addr → 时钟位 → 复位脉冲 → WAKEUP_EN → TRIGGER。
+                // 核每 1ms 被 blob 超时杀死，环内反复复活 ⇒ hb 计数跨 POLL 演化 = 实证。
+                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B0)).* = (1 << 31); // SLEEP_REQ(WT)
                 @as(*volatile u32, @ptrFromInt(0x2071_0004)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2071_0028)).* |= (1 << 30);
                 @as(*volatile u32, @ptrFromInt(0x2070_0018)).* = 0x2E000080;
-                // **轮 119n**：时钟位重断言之后补复位脉冲——PMU 级复位(cause=0xA，
-                // blob 干的)后核可能仍被持在复位态，CPU_CTRL 脉冲是该核的硬件复位线。
                 const ccp2: usize = 0x2071_0004;
                 @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 31) | (1 << 30);
                 @as(*volatile u32, @ptrFromInt(ccp2)).* = (1 << 30);
+                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B4)).* |= (1 << 1); // WAKEUP_EN bit1
+                @as(*volatile u32, @ptrFromInt(0x2070_4000 + 0x1B8)).* = (1 << 31); // TRIGGER(WT)
                 const lprcp: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
                 board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} magic={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, @as(*align(2) volatile u32, @ptrFromInt(0x2E00_36FA)).*, lprcp });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
