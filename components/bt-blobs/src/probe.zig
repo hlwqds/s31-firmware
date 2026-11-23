@@ -2610,6 +2610,13 @@ pub fn run() noreturn {
                 if (poll == 0) {
                     // **轮 120z4**：11AC（BB 引擎使能）补写——oracle=0xa9000000
                     if (bbp.* == 0) bbp.* = 0xA900_0000;
+                    // **轮 121f**：q_addr_map 全 dump——任务 qslot=0x2f015ea0 是否
+                    // 在注册表内（内=我们的投递应达；外=注册表满/未走 eventqInit）。
+                    for (&osal.q_addr_map, 0..) |*m, mi| {
+                        if (m.addr != 0) {
+                            board.log.line("QMAP[{d:0>2}] addr=0x{x:0>8} q=0x{x:0>8}", .{ mi, m.addr, @intFromPtr(m.q.?) });
+                        }
+                    }
                     // **轮 121a**：ana 域对拍——F83C bit28（我们=1/oracle=0）翻转；
                     // F818 读入（oracle=2900e444）
                     const f83c: *volatile u32 = @ptrFromInt(0x2010_F83C);
