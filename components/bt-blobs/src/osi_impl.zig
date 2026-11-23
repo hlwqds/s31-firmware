@@ -1276,10 +1276,9 @@ fn shellWifiClockDisable() callconv(.c) usize {
     // 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
     conf1.* = conf1.* & ~@as(u32, (1 << 2) | (1 << 10));
     // 3) COEXIST off —— LPCON ICG 位图清零
-    {
-        const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
-        icg20.* = 0;
-    }
+    // **轮 120h 拔除**：ICG20=0 清 LP 域 ICG 位图——时序吻合核死点（ARM0 起
+    // 核 → blob init 跑到本函数 → ICG20=0 → LP 时钟门控 → 核死在 ~1ms）。
+    // icg20(0x2010_F020) 写 0 已移除，单变量验证。
     // 2) SOC_PLL_SOURCE_CG off —— **轮 120g 拔除**：0x205871E0 在 HP_SYS_CLKRST 页
     //（SYSTIMER_CTRL0=0x20587120 同页）——若该位实际门 SYS_TIMER 源（头文件/
     // 硅片错位史重演），ADV-enable 里第一个需要 SYS_TIMER 的 ROM delay 就永转
