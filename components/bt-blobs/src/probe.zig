@@ -995,6 +995,7 @@ pub fn run() noreturn {
         // 现在由本组件注册 —— 内核不该知道 `0x2f00ffd0` 和 `probe_ptr`。
         .on_mutex_acquired = @import("gate.zig").probeAnchors,
     });
+    osal.trace_hooks = true; // 轮 158：callout 链取证（"bt hook: callout_*" 行）
     osal.setMacHook(macHook);
     board.log.line("{s}", .{"bt probe: hooks installed (now_ms=us/1000)"});
 
