@@ -1528,10 +1528,14 @@ pub fn run() noreturn {
         // **RF ON burst 先行**：burst_rf_onoff(a0) 带参（入口 mv s1,a0 实证），
         // 官方链是 rf_onoff(1) → bbpll_config 的次序（RF 供电 burst 先于 PLL 配置）。
         // 上一轮只调了 bbpll_config，缺 RF-ON 前置 ⇒ 合成器仍不锁。
-        const burst_rf_onoff = @extern(*const fn (on: c_int) callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_rf_onoff" });
-        const burst_bbpll = @extern(*const fn () callconv(.c) void, .{ .name = "phy_ana_i2c_master_burst_bbpll_config" });
-        burst_rf_onoff(1);
-        burst_bbpll();
+        const burst_rf_onoff = @extern(*const fn (on: c_int) callconv(.c) u32, .{ .name = "phy_ana_i2c_master_burst_rf_onoff" });
+        const burst_bbpll = @extern(*const fn () callconv(.c) u32, .{ .name = "phy_ana_i2c_master_burst_bbpll_config" });
+        // **轮 121z8 根修**：burst 返回值写入 I2C_BURST_CONF_REG（0x2010F810）——
+        // burst 函数只返回配置值不写硬件！调用者必须写到 I2C_ANA_MST_I2C_BURST_CONF_REG
+        // 才触发 I2C 事务（→ 合成器编程 → synth 锁定 → 98BC.bit2 置位）。
+        // 此前 probe 丢弃返回值 ⇒ 合成器从未收到编程 ⇒ 118 轮挂死真根因！
+        @as(*volatile u32, @ptrFromInt(0x2010_F810)).* = burst_rf_onoff(1);
+        @as(*volatile u32, @ptrFromInt(0x2010_F810)).* = burst_bbpll();
         // **ana I2C master 块只读探测**（DR_REG_I2C_ANA_MST_BASE=0x2010F800）：
         // regi2c 写-回读的前哨——若三读全 FF/stall ⇒ 块不可访问（时钟/电源未到位），
         // burst 写自然 no-op；若可读 ⇒ 块活着，regi2c 死因在事务层。
