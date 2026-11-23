@@ -31460,3 +31460,16 @@ osi 定时器链（我们已修但可能仍有缺口）。
 真 pmu 态 NMI mepc 采样定位新等待面（注意：pollcap 旧区间 [0x40001b22-1bf0] 不适用
 = 新面地址未知；pc_ring 通用记录可用但 flash dump 通道 post-pmu 不可靠——
 **ISR 0x187000 通道** = README 实证 post-pmu 可靠）。环定位后复刻轮 125 模式加让出。
+
+### 轮 155 终极定位：楔死环 = cal 加载重入循环（真 pmu 态）
+
+0x188000 环（真 pmu 组合态）22+ 槽新鲜 mepc 解码 = **`load_cal_data_from_nvs_handle`
+（0x40000120-258）+ r_os_memblock_get + blob 处理函数分布** = 系统在无限重跑 cal
+加载链：真 pmu callout → blob 延迟工作 → esp_phy_enable 重入 → register_chipv7 →
+NVS loader → ……（每 boot 循环）。
+
+**破解方向 = NVS 校准数据持久化**：phy_stubs.c 的 nvs_open/get_blob 现故意返回
+NOT_FOUND ⇒ 每回 FULL 校准 + 重入循环。改为真实存取（RAM NVS 池存 1904B
+esp_phy_calibration_data_t + 正确 checksum）⇒ 后续 boot 加载持久 cal = 跳过
+FULL = 重入循环消失。轮 95b「故意 NOT_FOUND」决策 = 在无重入循环认知下做出，
+现需重新评估（loop 的存在 = 本次环取证新证）。

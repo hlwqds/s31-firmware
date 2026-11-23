@@ -2372,7 +2372,7 @@ pub fn run() noreturn {
         // **轮 50：A→B 路径切换**——env[32]=FJxPPD 已注册（e32=0x400183a6 实证），
         // B 路径（hs_cmd_tx→jr env[32]）命令下行打通；A 路径（r_btdm_hci_trans_rx
         // → btdm ctx[32]=0）仍是死门。ADV 命令改走 B 路径直测 LL 处理能力。
-        const r6 = transport.sendCmdViaHs(0x2006, &mac6);
+        const r6 = transport.sendCmdViaHs(0x2005, &mac6); // 轮 154：0x2005=Set Random Address（6B）
         // **轮 15 协作让出**：任务消费积压命令/腾队列——裸忙等连发会在队列临界态
         // 死锁（轮 14 实锤：0x200A 的 rx 阻塞等任务=任务等泵）。
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
@@ -2385,7 +2385,10 @@ pub fn run() noreturn {
         var ad: [32]u8 = @splat(0);
         @memcpy(ad[0..advp15.len], &advp15);
         osal.lpTrace(3, 0xF002);
-        const r8 = transport.sendCmdViaHs(0x2008, &advp15);
+        const r8 = transport.sendCmdViaHs(0x2006, &advp15); // 轮 154：0x2006=Set Adv Parameters（15B）
+        const advd: [4]u8 = .{ 3, 2, 0x06, 0 }; // 轮 154：AdvData len=2 flags BR/EDR+LE
+        const r8d = transport.sendCmdViaHs(0x2008, &advd);
+        _ = r8d; // 轮 154：0x2008=Set Adv Data
         osal.lpTrace(3, 0xF003);
         if (ctrl_task) |t| sched.resumeTask(&t.ctx);
         osi_impl_serviceTimers();
