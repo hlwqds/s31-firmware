@@ -188,10 +188,21 @@ export fn s31_bt_raw_line(s: [*:0]const u8) void {
 extern fn r_btdm_sleep_set_sleep_cb(cb: ?*const anyopaque, arg: ?*anyopaque, a2: u32, a3: u32, a4: u32) c_int;
 var sleep_cb_n: u32 = 0;
 pub fn btSleepCb(a0: u32) callconv(.c) void {
-    // **桩 sleep 回调**（btdm_sleep.c 的真实实现会做 RTC timer 武装等）。
-    // 回调纪律：未知上下文（可能 trap/ISR）被 jalr ⇒ 纯 RAM 计数自增，
-    // 不打日志/不写外设/不碰 flash（本仓反复实证的 trap 上下文不安全类）。
-    _ = a0;
+    _ = a0; // 睡眠时长参数——语义未定（oracle btdm_sleep.c 闭源），用固定 10ms
+    // **轮 120j**：真武装 RTC timer 唤醒源。旘认知 = 纯计数桩（trap 上下文
+    // 不安全类）；但本回调由 blob 任务在 ADV-enable 的睡眠进入路径调用
+    //（非 trap）⇒ 任务上下文里做寄存器写安全。blob 的睡眠 = 门控时钟 +
+    // waiti，唤醒源 = RTC timer 比较中断——我们不武装 ⇒ 睡后永不醒 =
+    // 0x200A 时钟坍缩永卡的候选根因（oracle 里 btdm_sleep.c 真回调会武装）。
+    // 序列 = probe 已验证的 RTC timer 武装（+0x3FC clk_en / +0x10 INT_ENA
+    // bit27 / +0x00 compare=now+10ms / +0x04 TAR_EN / +0x34 INT_CLR）。
+    const rtb: usize = 0x2080_0000;
+    @as(*volatile u32, @ptrFromInt(rtb + 0x3FC)).* |= 1 << 31; // clk_en（RMW 保 bit31）
+    @as(*volatile u32, @ptrFromInt(rtb + 0x10)).* = 1 << 27; // INT_ENA bit27
+    const cnt: u32 = @as(*volatile u32, @ptrFromInt(rtb + 0x1C)).*;
+    @as(*volatile u32, @ptrFromInt(rtb + 0x04)).* = 0x8000_0000; // HIGH0=0 | TAR_EN0=1
+    @as(*volatile u32, @ptrFromInt(rtb + 0x00)).* = cnt +% (137_271 / 100); // +10ms
+    @as(*volatile u32, @ptrFromInt(rtb + 0x34)).* = 1 << 31; // INT_CLR
     sleep_cb_n +%= 1;
 }
 extern fn esp_ble_register_bb_funcs() c_int;
