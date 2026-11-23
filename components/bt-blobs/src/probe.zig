@@ -2599,6 +2599,14 @@ pub fn run() noreturn {
                     const f83c: *volatile u32 = @ptrFromInt(0x2010_F83C);
                     f83c.* &= ~@as(u32, 1 << 28);
                     f818v = @as(*volatile u32, @ptrFromInt(0x2010_F818)).*;
+                    // **轮 121b**：BB dump（oracle bb_dump_task 同寄存器同格式）
+                    // oracle 基准（/tmp/oracle_bb.log）：450=00102000 47C=0 408=a0000000
+                    // 40C=7 41C=34020 420=0 444=0 11AC=a9000000 08D0=0 9C10=0
+                    // 9C14=3fe080 9888=2f07ea18 988C=f07d854 98B8=0 98BC=4
+                    const bbr: [*]volatile u32 = @ptrFromInt(0x2010_0450);
+                    const bb2: [*]volatile u32 = @ptrFromInt(0x2010_11AC);
+                    board.log.line("BB 450={x:0>8} 47C={x:0>8} 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8}", .{ bbr[0], @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, @as(*volatile u32, @ptrFromInt(0x2010_0444)).* });
+                    board.log.line("BB 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
                     var m2: usize = 0;
                     var ma: usize = 0x2E00_0000;
                     while (ma < 0x2E00_1000 and m2 < 4) : (ma += 4) {
@@ -2652,7 +2660,12 @@ pub fn run() noreturn {
             //（0x40001b22）入口写 c.ret（0x8082）：synth 永不上电 ⇒ 等待器超时
             // ⇒ 断言 ⇒ 调用者无限重试（BT_ASSERT_RETURNS 语义差）。补丁 = 立即
             // 返回 ⇒ blob 跳过等待继续推进（官方 rc=3 容忍路径）。
-            @as(*volatile u16, @ptrFromInt(0x4000_1B22)).* = 0x8082;
+            // **轮 121c 修正**：补丁从 c.ret@入口 改为 伪成功@轮询环——保留等待器
+            // 的 RF 配置写（9888/988C = synth 启动触发，BB dump 实证缺它！），仅
+            // 跳过 16.7M 轮询（0x40001b72 处 lw → li a5,4 = 伪 bit2 置位 →
+            // .L145 成功路径）。oracle 流程复刻：ADV 完成 → synth 后续上电。
+            @as(*volatile u16, @ptrFromInt(0x4000_1B72)).* = 0x0545; // c.li a5,4
+            @as(*volatile u16, @ptrFromInt(0x4000_1B74)).* = 0x0001; // c.nop（原 lw 尾 2B）
             asm volatile ("fence.i");
             // **轮 120k**：STORE 观察点盯 SYSTIMER_CTRL0（0x20587120）——坍缩期间
             // 谁写它（blob 门控 SYS_TIMER 的写点）→ trap cause=3 → wp 槽给出 mepc。
