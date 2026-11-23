@@ -128,4 +128,4 @@ bool phy_module_has_clock_bits(int module) { (void)module; return false; }
  * pmu_init 空桩 = 默认构建态；真 pmu 课题重链方法见上注释块。 */
 // 轮 150：真 pmu 楔死点钉（PREVHANG 通道）——实验态，验证后恢复。
 // 轮 151：真 pmu 楔死环重试（通道地址已修正 0x188000，上轮 0x18700100 = 越界废写）。
-// void pmu_init(void) {} // 轮 150：恢复工作态（楔死 PC 已在 LP 保留）
+void pmu_init(void) {} // 轮 151b：恢复默认工作态（真 pmu 组合课题移交，通道就绪）
