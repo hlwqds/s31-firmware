@@ -20,6 +20,15 @@
   比对，`.flash.text`/`.flash.rodata`/`.iram_blobs`/`.data`/`.trap_ram`/`.bt_lp_data` 六段
   SHA-256 全部相同（板上机器码不变；未重新上板）。
 
+- **非探针 BLE 闭包链接（2026-11-24）**：`scripts/check-bt-link.sh` 自 BLE 实验轮次起链接失败，11 个未定义
+  符号都是只在 `-Dbt-probe` 构建里编译的诊断导出（`probe_dump_now`、`bt_print_osal_stats`、`dbg_tim_*`、
+  `s31AssertYield`、`s31_bt_*`），而 `trap.zig` 在 `bt_linked.present` 为真时、
+  `components/bt-blobs/link/*.c` 无条件引用它们。非探针的闭包链接是共存的合并镜像要用的形态（ADR-003）。
+  新增 `components/bt-blobs/link/closure_stubs.zig` 给出与探针默认行为一致的空实现，经
+  `firmware/build.zig` 的非探针分支挂进 app 的模块树；不能单独成对象，否则会把 `board` 的导出再编一份。
+  验证：`scripts/check-bt-link.sh` → `bt 链接门禁：OK（116 个对象，镜像 950756 字节）`，
+  `.flash.text` 745 056 B；`build-image.sh firmware` → `image: OK`。探针镜像与不带 blob 的镜像不编译该文件。
+
 ### Removed
 - `firmware/build.zig`：删掉 152b92a 给 net-tcp / net-ipv4 / net-udp-dhcp-dns / net-sockets 四个模块
   多加的 `net_ethernet` 导入。那是一次没生效的模块冲突修复尝试（真正的冲突是 `wire` 与 `net`

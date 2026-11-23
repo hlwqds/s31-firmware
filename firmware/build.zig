@@ -320,11 +320,21 @@ pub fn build(b: *std.Build) void {
             // 归档要的 5 个 `s31_*` 在 osal.zig 里；没人引用就不会发射（惰性分析）。
             // 根引用必须挂在**会被引用的模块**上：main 引用 `bt_probe.enabled` ⇒ 本模块被分析
             // ⇒ 下面这行 comptime 生效。单独 import 一个锚点模块不会分析它（试过，5 个仍未定义）。
+            // 非探针闭包构建里，trap.zig（bt_linked.present 为真时）与 link/*.c 引用的探针
+            // 诊断符号只存在于 bt_core（仅 -Dbt-probe 编译）⇒ 11 个未定义符号
+            // （2026-11-24 check-bt-link.sh 实测）。空实现在 closure_stubs.zig，同样挂在这里：
+            // 不能 addObject，单独成对象会把 board 的导出再编一份，链接期撞名。
+            const closure_stubs = b.createModule(.{
+                .root_source_file = b.path("../components/bt-blobs/link/closure_stubs.zig"),
+            });
+            closure_stubs.addImport("board", board);
             const off_src = "const k = @import(\"osal_kit\");\n" ++
-                "comptime {\n    k.forceExports();\n}\n" ++
+                "const cs = @import(\"bt_closure_stubs\");\n" ++
+                "comptime {\n    k.forceExports();\n    cs.forceExports();\n}\n" ++
                 "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
             const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("bt_probe_off.zig", off_src) });
             off_mod.addImport("osal_kit", osal_mod);
+            off_mod.addImport("bt_closure_stubs", closure_stubs);
             app.root_module.addImport("bt_probe", off_mod);
         }
     }
