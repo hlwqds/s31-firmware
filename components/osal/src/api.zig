@@ -16,6 +16,9 @@
 pub const osal = @import("osal.zig");
 pub const sched = @import("sched.zig");
 
+/// 共存核的 18 个 OS 层适配钩子（`-Dcoex` 时由 BLE 侧接线层取用）。惰性：没人引用就不编译。
+pub const coex_hooks = @import("coex_hooks.zig");
+
 /// 让 `osal.zig` 里那 5 个 `export fn` 真正发射。**由消费者在 comptime 调一次**：
 ///
 /// ```zig

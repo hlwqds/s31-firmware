@@ -117,7 +117,7 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   - 窗口与分区扩大后，factory `0x10000`、ota_0 `0x190000` 这些偏移要跟着改，已有日志里的偏移成为历史值。
   - 共存的真实效果（L4）在两个射频打通前无法验证。本设计能保证的是胶水正确、两个控制器能同镜像启动。
 - 需要跟进：
-  1. `radio-coex` 接进 `wifi-blobs`、`osal`、`bt-blobs`（在 `-Dcoex` 开关后面）。
+  1. `radio-coex` 接进 `wifi-blobs`、`osal`、`bt-blobs`（在 `-Dcoex` 开关后面）。**已完成 2026-11-24**（路线图 C2）：三种 coex 镜像链接通过，四种非 coex 镜像逐字节不变，BLE 探针与 Wi-Fi 探针各自带着真核心上板。证据与偏离见 `docs/verification/coex-verification.md` §4。第 5 节验证表里的 L3 判据已满足前四行；"随后合并镜像启动"属于第 4 项。
   2. 运行时统一：调度器、osi、导出、堆、tick、trap 钩子六项。
   3. 窗口与分区扩大及板级证明；compiler_rt 死重。
   4. 合并镜像启动（L3）。

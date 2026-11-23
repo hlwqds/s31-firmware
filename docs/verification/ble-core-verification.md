@@ -15,7 +15,7 @@
 | HCI 命令布局对 NimBLE 头文件 | L1 | 三条逐字段一致 | §5 |
 | RV32 目标编译 | L2 | 两个自检都能以固件参数编译 | §5 |
 | 板侧自检（第一次上板） | L3 | `ble_security` 25/25；`ble_802154` 18/19，失败的那条是自检自身的差一错误，已修 | `logs/wifi-selftest-prefix-boot.log` |
-| 修复后的板级复验 | L3 | 未做 | — |
+| 修复后的板级复验 | L3 | `ble_802154` 19/19；整份判决 `main: verdict=pass` | `logs/e2e-wifi-boot.log` |
 | 与真实 controller 的 HCI 一致性 | L3 | 未做 | — |
 
 ## 2. 逐特性对照
@@ -86,6 +86,7 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - 仓库门禁（格式、`check-host.sh`、`check-coverage.py`、`check-invariants.py`）全绿。
 - 两个自检以固件参数（`riscv32-freestanding-eabihf`、`generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）编译通过；用桩 `board` 模块在主机上执行 `selftest.run()`，19/19 与 25/25（`ble-802154` 的 19 是修复之后的数）。
 - 板侧第一次上板时 `ble-802154` 为 18/19：`check: gap adv kat=1 nospace=1 name=1 hci=0 malformed=1 ok=0`。原因是自检把 32 字节的 HCI 参数与向量的 31 字节切片比较，恒为假；与目标无关，已改为整段比较。这次失败也说明该 agent 只对自检做了交叉编译、从未执行过它。
+- 复验：同一条命令（`run_e2e.py --board --profile wifi`）再跑一次，`ble_802154` 19/19，14 个 section 全过。
 
 ## 6. 实现偏离
 
@@ -98,7 +99,6 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 
 ## 7. 未验证
 
-- 修复后的板级复验（`ble-802154` 19 条）。
 - 空口互通：配对、加密、重连、签名写；CRC 八位组的线上打包要先对一次真实字节。
 - P-256 点乘在 rv32 上的耗时和栈占用。
 - Number Of Completed Packets 的实际布局、PB = 0b11 是否出现、失败命令是否只回 Status。

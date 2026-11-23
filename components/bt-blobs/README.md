@@ -1905,6 +1905,22 @@ BLE/MAC 寄存器块，位于 SYSCON +0x9C00 与 MODEM_PWR +0xD000 之间）的 
 采样中断一个都不来；② OSAL 的 `now_ms` 恒 0 ⇒ 任何"等到某时刻"的条件永不成立。
 ADR-001:729 已因同一个原因记过一次。
 
+## 共存接线（`-Dcoex`，2026-11-24）
+
+开关默认关；关着时探针镜像与改动前逐字节相同。开着时本组件多出四样东西，细目与板级读数在
+`docs/verification/coex-verification.md` §4：
+
+| 文件 | 作用 |
+| --- | --- |
+| `src/coex_wiring.zig` | `bringup.init` 之前启动共存核（注入"是否在中断里"的判定：`mstatus.MIE`），init / enable 之后各打三行 `coex[…]` 诊断 |
+| `src/porting.zig` | `btdmCoexInit()`、`btdmCoexEnable()` 转给胶水；调用点原本就在 IDF 对应的位置（init 第 4 步、enable 第 16 步） |
+| `src/probe.zig` | 上述两处调用点；泵循环里的定时器推进顺带推进共存定时器 |
+| `src/wifi_glue.zig` | `esp_coex_rom_version_get`、`coex_core_ble_conn_dyn_prio_get` 两个桩经链接脚本的别名转给 ROM 真函数（此前恒为 `"0"` 与 0）；`coexist_printf` 把格式串转给日志 |
+
+上板结果（`logs/coex-ble-probe-boot.log`）：`param=0x2f00ffe4`、`fw=2.0.0 rom=cdcf52b`、`coa` 等于适配表地址、
+两个 BLE 回调都已登记、三个阶段 `rej=0`。不开共存的对照镜像（`logs/coex-ble-probe-control.log`）走到同一处：
+`INITED`、HCI 三条命令 `rc=0`、`sched patchset written`、停在 `ble_hw.c:506` 断言。
+
 ## 待验证项
 
 1. **`esp_btdm_controller_config_t` 逐字段镜像**（含结尾的 `magic`，`esp_bt.h:239`）+ `bluetooth_mode` 不能是 IDLE。

@@ -68,11 +68,21 @@ export fn probe_dump_now() void {
 const config = @import("config.zig");
 const bringup = @import("bringup.zig");
 const osi_impl_timerStats = @import("osi_impl.zig").timerStats;
-const osi_impl_serviceTimers = @import("osi_impl.zig").serviceTimers;
+/// 泵循环里的 ets_timer 推进。开 `-Dcoex` 时顺带推进共存核的软件定时器——同一个让出点，
+/// 不另加调用；关着时仍是原来的函数，非 coex 探针镜像不变。
+const osi_impl_serviceTimers = if (coex_gate.enabled) serviceTimersWithCoex else @import("osi_impl.zig").serviceTimers;
 const transport = @import("transport.zig");
 const sched = @import("osal_kit").sched;
 const porting = @import("porting.zig");
 const board = @import("board");
+const coex_gate = @import("coex_gate");
+/// 共存接线（`-Dcoex`）：`bringup.init` 之前启动共存核，之后各阶段打诊断行。关着时都是空函数。
+const coex_wiring = @import("coex_wiring.zig");
+
+fn serviceTimersWithCoex() void {
+    @import("osi_impl.zig").serviceTimers();
+    @import("osal_kit").coex_hooks.service();
+}
 
 /// **轮 32 撤回**：@extern 引用 s_is_phy_calibrated 会激活 phy_init.c.obj 的
 /// .sbss → 级联拉出 pmu_init/modem_clock/closed-libphy burst 调用链（全部
@@ -1872,6 +1882,9 @@ pub fn run() noreturn {
     }
 
     // **轮 119d**：keeper 预武装（幂等；init 内 LP 域动作会清 boot addr ⇒ init 后重装）
+    // `-Dcoex`：启动共存核（IDF 的 `init_coexist`）。必须在 bringup.init 之前——
+    // BLE 的 init 第 4 步 `btdm_coex_init` 与 controller 登记 BLE 回调都在其后。
+    coex_wiring.boot();
     ulpKeeperArm(0);
     var rc = bringup.init(&cfg);
     // **轮 119d**：init 后重武装（init 的 LP 域动作清了 boot addr——回读实证）
@@ -1885,6 +1898,7 @@ pub fn run() noreturn {
         const ba: u32 = @as(*volatile u32, @ptrFromInt(0x2070_0018)).*;
         board.log.line("REARM BOOTADDR=0x{x:0>8} (期望 0x2E000080)", .{ba});
     }
+    coex_wiring.report(.init);
 
     // **轮 103b**：sleep 字段清零前移——task_init 已消费配置并填 sleep 对象
     // （0x2f011044 系），此刻清零 ⇒ ADV-enable 路径读到的就是禁用值。
@@ -2077,6 +2091,7 @@ pub fn run() noreturn {
         osal.logPublic("bt probe: enable FAILED at step {d} rc={d}", .{ bringup.stats().failed_step, rc });
         halt();
     }
+    coex_wiring.report(.enable);
     // **从此零 flash 写**：post-enable 的 ROM flash 写 = 与 blob 并发 flash 操作
     // 相撞的楔子源头。标记深度只进 LP 槽（跨复位经 FEFE hist 带出）。
     bt_window_no_flash = true;

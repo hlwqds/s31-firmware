@@ -27,18 +27,18 @@ pub const magic: i32 = @bitCast(@as(u32, 0xDEAD_BEAF));
 /// 为什么需要它：本课题**三次**假线索都源于"名字/表项错位"（ring 起点、`note` id 与 `hook_ids`、
 /// IDF `_wifi_malloc` vs 我们 `_malloc_internal`）。以后两侧对照**一律用下标**，不再靠名字。
 pub fn indexOf(comptime name: []const u8) comptime_int {
-    const fields = @typeInfo(Osi).@"struct".fields;
-    inline for (fields, 0..) |f, i| {
-        if (@import("std").mem.eql(u8, f.name, name)) return i;
+    const field_names = @typeInfo(Osi).@"struct".field_names;
+    inline for (field_names, 0..) |fname, i| {
+        if (@import("std").mem.eql(u8, fname, name)) return i;
     }
     @compileError("no such Osi field: " ++ name);
 }
 
 /// 运行期也可查：给定下标返回字段名（越界返回 `"?"`）。
 pub fn nameOf(i: usize) []const u8 {
-    const fields = @typeInfo(Osi).@"struct".fields;
-    inline for (fields, 0..) |f, k| {
-        if (k == i) return f.name;
+    const field_names = @typeInfo(Osi).@"struct".field_names;
+    inline for (field_names, 0..) |fname, k| {
+        if (k == i) return fname;
     }
     return "?";
 }

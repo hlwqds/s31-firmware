@@ -9,6 +9,8 @@ test {
     _ = @import("sched.zig");
     // 模块根：导入它覆盖门禁才看得到 `api.zig`
     _ = @import("api.zig");
+    // 共存钩子（`-Dcoex` 的 BLE 侧）：文件里自带 7 项，覆盖门禁也靠这一行看到它。
+    _ = @import("coex_hooks.zig");
     std.testing.refAllDecls(@import("osal.zig"));
     std.testing.refAllDecls(@import("sched.zig"));
 }

@@ -406,6 +406,69 @@ pub export fn s31_printf_hook(msg: ?[*:0]const u8) void {
     log.line("wifi-blob: {s}", .{std.mem.span(m)});
 }
 
+// ---------------------------------------------------------------------------
+// `-Dcoex`：共存核在 Wi-Fi 探针里的接线。关着时 `coexBoot`/`coexReport` 没有调用点，整段不生成代码。
+// ---------------------------------------------------------------------------
+const coex_gate = @import("coex_gate");
+const coex_hooks = @import("coex_hooks.zig");
+const radio_coex = if (coex_gate.enabled) @import("radio_coex") else struct {};
+const on_target = @import("builtin").os.tag == .freestanding;
+
+/// ROM 槽位（`boards/esp32s31-coreboard/linker/rom_syms.ld`）：核把参数块的指针存在
+/// `g_coex_param_ptr`，把它收下的适配表指针存在 `g_coa_funcs_p`。
+extern var g_coex_param_ptr: usize;
+extern var g_coa_funcs_p: usize;
+
+/// `components/radio-coex/link/coex_printf_shim.c` 的出口（共存库的日志整行）。只在 `-Dcoex` 时发射。
+const CoexExports = struct {
+    export fn s31_coex_log_hook(msg: [*:0]const u8) callconv(.c) void {
+        log.line("coex> {s}", .{std.mem.span(msg)});
+    }
+};
+comptime {
+    if (coex_gate.enabled) _ = CoexExports;
+}
+
+/// "当前是否在中断上下文"：`mstatus.MIE == 0`。trap 入口由硬件清 MIE，临界区也清 MIE——
+/// 那种情况按"在中断里"作答是安全的一侧（核走不睡眠的 ISR 分支）。
+fn coexInIsr() bool {
+    if (!on_target) return false;
+    const mstatus: usize = asm volatile ("csrr %[v], mstatus"
+        : [v] "=r" (-> usize),
+    );
+    return (mstatus & 0x8) == 0;
+}
+
+/// 启动共存核（IDF 的 `init_coexist`：系统初始化 SECONDARY 级，早于 `app_main`）。
+///
+/// 真正做初始化的是它调的 `coex_pre_init`（`coex_core_pre_init`：方案表、ROM 版本打印、把参数块的
+/// 指针写进 `g_coex_param_ptr`、硬件定时器分频）；`coex_init`（`coex_core_init`）在核里是 `li a0,0; ret`。
+/// 所以板上判据（参数指针非零、版本行）看的是这一步。必须在 arena 与时基钩子就位之后
+/// （核会建信号量、读时间），在 `esp_wifi_init_internal` 之前。
+fn coexBoot() void {
+    if (!on_target) return;
+    coex_hooks.in_isr_hook = coexInIsr;
+    radio_coex.bind.boot(coex_hooks.hooks(), .{}) catch |e| {
+        const g = radio_coex.instance();
+        const rc: u32 = @bitCast(g.last_core_rc);
+        const rej = g.rejected[@backingInt(radio_coex.Hook.boot)];
+        log.line("coex[boot]: FAILED {s} rc=0x{x} rejected={d}", .{ @errorName(e), rc, rej });
+        return;
+    };
+    coexReport("boot");
+}
+
+/// 诊断行（两行）。`coa` 应等于 `table`：那就是"核心收下了我们的适配表"。
+fn coexReport(stage: []const u8) void {
+    if (!on_target) return;
+    const g = radio_coex.instance();
+    const fw: [*:0]const u8 = if (g.core.version_get) |f| (f() orelse "?") else "?";
+    var rej: u32 = 0;
+    for (g.rejected) |r| rej += r;
+    log.line("coex[{s}]: booted={} wifi={s} ble={s} param=0x{x:0>8} coa=0x{x:0>8} table=0x{x:0>8} rej={d}", .{ stage, g.state.booted, @tagName(g.state.wifi), @tagName(g.state.ble), g_coex_param_ptr, g_coa_funcs_p, @intFromPtr(radio_coex.adapterTable()), rej });
+    log.line("coex[{s}]: fw={s} en={d} req={d} rel={d} sta={d} startcb={d} intset={d}", .{ stage, std.mem.span(fw), radio_coex.calls(.coex_enable_wrapper), radio_coex.calls(.coex_wifi_request_wrapper), radio_coex.calls(.coex_wifi_release_wrapper), radio_coex.calls(.coex_status_get_wrapper), radio_coex.calls(.coex_register_start_cb_wrapper), radio_coex.calls(.coex_schm_interval_set_wrapper) });
+}
+
 /// `_log_write` 的 C 实现（变参），取地址填进表。
 const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
 
@@ -444,6 +507,8 @@ pub fn run() noreturn {
     @import("board").trap.queue_stats_hook = &queueStats;
     @import("board").trap.give_stats_hook = &giveStats;
     @import("board").trap.sem_args_hook = &semArgs;
+    // `-Dcoex`：启动共存核（IDF 的 `init_coexist`）。放在 arena 与时基钩子就位之后、建表与 init 之前。
+    if (coex_gate.enabled) coexBoot();
     // 自旋期 tick 泵实验已测（无推进），已回滚。
     // tick 泵实验已回滚。
 
@@ -452,6 +517,9 @@ pub fn run() noreturn {
     // 栈上（`run()` 的局部变量）的表在返回后就失效——生产路径同理，所以放文件作用域。
     osi_table = impl.makeTable();
     osi_table._log_write = s31_log_write; // C 变参 shim
+    // `-Dcoex`：把 24 个共存表项换成胶水的包装函数。必须在 `makeTable()`（它末尾是 `stubs.fill`）之后：
+    // 否则 IDF 留空的 `_coex_condition_set` 会被通用桩填上。
+    if (coex_gate.enabled) radio_coex.wifi.fill(&osi_table);
     const table = &osi_table;
     const cfg = initcfg.defaults(table);
     log.line("wifi-init-probe: table=0x{x:0>8} cfg magic=0x{x:0>8} crypto size={d}", .{
@@ -464,7 +532,15 @@ pub fn run() noreturn {
     //    （实测 exception code=5）。
     // IDF 的 `esp_wifi_init` wrapper 在 `esp_wifi_init_internal` **之前**调 `coex_init()`
     // （wifi_init.c），我们一直没做；`g_coex_param_ptr` 为 0 也与此吻合。
-    {
+    if (coex_gate.enabled) {
+        // 同一个位置，经胶水：`glue.wifiInit` 把 Wi-Fi 侧记成 inited，之后 blob 的 `wifi_hw_start`
+        // 调 `_coex_enable` 才不会被拒（0x103）。两个分支只编一个。
+        const rc = radio_coex.wifiInit(null) catch |e| wc: {
+            log.line("wifi-init-probe: coex wifiInit FAILED {s} rejected={d}", .{ @errorName(e), radio_coex.rejected(.wifi_init) });
+            break :wc @as(c_int, -1);
+        };
+        log.line("wifi-init-probe: coex wifiInit rc={d}", .{rc});
+    } else {
         const coex_init = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
         log.raw("wifi-init-probe: calling coex_init() (IDF wrapper 顺序)\n");
         coex_init();
@@ -543,6 +619,7 @@ pub fn run() noreturn {
     // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
     const init_rc = esp_wifi_init_internal(&cfg);
     dumpClockRegs("after-init");
+    if (coex_gate.enabled) coexReport("init");
     {
         const h = macWindowHash();
         log.line("wifi-init-probe: MACWIN xor=0x{x:0>8} sum=0x{x:0>8}", .{ h.x, h.s });

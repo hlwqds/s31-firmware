@@ -34,6 +34,12 @@
 //!    （`wifi-blobs/src/osi_impl.zig` 做的是同一件事，但那套对象形状也不能直接搬。）
 const std = @import("std");
 const sched = @import("sched.zig");
+/// 共存开关（`firmware/build.zig` 用 `-Dcoex` 生成）。关着时本文件里所有共存转发都不生成代码，
+/// 不带 `-Dcoex` 的镜像与改动前逐字节相同。
+const coex_gate = @import("coex_gate");
+/// 共存胶水（`components/radio-coex`）。只在 `-Dcoex` 时有内容；关着时是空结构体，
+/// 引用它的代码全在 comptime 假分支里，不会被分析。
+const radio_coex = if (coex_gate.enabled) @import("radio_coex") else struct {};
 
 pub const OK: c_int = 0;
 pub const ENOMEM: c_int = 1;
@@ -1985,6 +1991,10 @@ test "导出层：归档会调的 36 个逐个点名都在" {
 // 空桩返回 0 会被当成"可用"或"信道 0"。我们的做法是**维持一个真实的状态位图 +
 // 存下回调**，并按 IDF 在"未开软件共存"分支下的返回值作答（`wifi_channel_get` → -1、
 // `iso_protect_frame_thres_get` → 0）。日志只在有限次数内打印，热路径只计数。
+///
+/// **`-Dcoex` 打开时**（C2 接线）：这 11 个导出改为转发 `radio-coex` 的同名函数，
+/// 由胶水交给真正的共存核（`libcoexist.a` + ROM）；另外补上 IDF 有、本文件原本没有的 5 个
+/// 强定义（见下面的 `CoexOnly`）。关着时行为与此前完全一致。
 // ---------------------------------------------------------------------------
 
 pub const CoexStats = struct {
@@ -2023,12 +2033,15 @@ pub fn coexStatusBits() u64 {
 }
 
 export fn wr_btdm_coex_schm_status_bit_set(btype: u32, status: u32) callconv(.c) void {
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_schm_status_bit_set(btype, status);
     coexStatusBitSet(btype, status);
 }
 export fn wr_btdm_coex_schm_status_bit_clear(btype: u32, status: u32) callconv(.c) void {
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_schm_status_bit_clear(btype, status);
     coexStatusBitClear(btype, status);
 }
 export fn wr_btdm_coex_schm_register_btdm_callback(cb: ?*anyopaque) callconv(.c) c_int {
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_schm_register_btdm_callback(cb);
     coex_btdm_cb = cb;
     coex_stats_state.register_calls += 1;
     logLine("bt coex: register_btdm_callback", .{});
@@ -2038,6 +2051,7 @@ export fn wr_btdm_coex_schm_register_btdm_callback(cb: ?*anyopaque) callconv(.c)
 /// （同文件里 `schm_register_btdm_callback` 与 `register_ble_cb` 却是 0，
 /// 三个注册函数的 disabled 分支返回值**不一致**，只能逐个照抄。）
 export fn wr_btdm_coex_register_wifi_channel_change_callback(cb: ?*anyopaque) callconv(.c) c_int {
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_register_wifi_channel_change_callback(cb);
     coex_wifi_channel_cb = cb;
     coex_stats_state.register_calls += 1;
     logLine("bt coex: register_wifi_channel_change_callback (unsupported -> -1)", .{});
@@ -2046,39 +2060,70 @@ export fn wr_btdm_coex_register_wifi_channel_change_callback(cb: ?*anyopaque) ca
 /// IDF 在未开软件共存时返回 **-1**（`btdm_coex.c:106-114`）——照抄，别返回 0
 /// （0 会被读成"拿到信道了"，于是 primary/secondary 是未初始化垃圾）。
 export fn wr_btdm_coex_wifi_channel_get(primary: ?*u8, secondary: ?*u8) callconv(.c) c_int {
-    _ = primary;
-    _ = secondary;
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_wifi_channel_get(primary, secondary);
     return -1;
 }
 export fn wr_btdm_coex_iso_start(info: ?*anyopaque) callconv(.c) c_int {
-    _ = info;
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_iso_start(info);
     coex_stats_state.iso_start += 1;
     return 0;
 }
 export fn wr_btdm_coex_iso_stop(handle: u16) callconv(.c) c_int {
-    _ = handle;
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_iso_stop(handle);
     coex_stats_state.iso_stop += 1;
     return 0;
 }
 export fn wr_btdm_coex_iso_end_int_handle(handle: u16, duration: u32) callconv(.c) void {
-    _ = handle;
-    _ = duration;
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_iso_end_int_handle(handle, duration);
     coex_stats_state.iso_end_int += 1;
 }
 /// 同 IDF 的非共存分支：返回 0（`btdm_coex.c:153-162`）。
 export fn wr_btdm_coex_iso_protect_frame_thres_get() callconv(.c) u16 {
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_iso_protect_frame_thres_get();
     return 0;
 }
 export fn wr_btdm_coex_ble_idle_time_inform(start_offset: u32, duration: u32) callconv(.c) void {
-    _ = start_offset;
-    _ = duration;
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_ble_idle_time_inform(start_offset, duration);
     coex_stats_state.idle_inform += 1;
 }
 export fn wr_btdm_coex_register_ble_cb(cb_type: u32, func: ?*anyopaque) callconv(.c) c_int {
+    if (coex_gate.enabled) return radio_coex.ble.wr_btdm_coex_register_ble_cb(cb_type, func);
     coex_ble_cb = func;
     coex_stats_state.register_calls += 1;
     logLine("bt coex: register_ble_cb type={d}", .{cb_type});
     return 0;
+}
+
+/// 只在 `-Dcoex` 时发射的强定义：
+///
+/// * IDF `btdm_coex.c` 有、本文件原本没有的 5 个钩子。esp32s31 的 BLE 归档不引用它们，
+///   不开共存时让归档里的弱断言桩兜着（与改动前一致）；开了共存就必须有强定义，
+///   否则哪天归档引用到，落到 `wr_btdm_assert` 上只会留下一行断言。
+/// * `s31_coex_log_hook`：`components/radio-coex/link/coex_printf_shim.c` 的出口。
+///   同一个镜像里只能有一份，带 Wi-Fi blob 的镜像由 `wifi-blobs` 提供。
+const CoexOnly = struct {
+    export fn wr_btdm_coex_schm_interval_get() callconv(.c) u32 {
+        return radio_coex.ble.wr_btdm_coex_schm_interval_get();
+    }
+    export fn wr_btdm_coex_schm_curr_period_get() callconv(.c) u8 {
+        return radio_coex.ble.wr_btdm_coex_schm_curr_period_get();
+    }
+    export fn wr_btdm_coex_schm_curr_phase_get() callconv(.c) ?*anyopaque {
+        return radio_coex.ble.wr_btdm_coex_schm_curr_phase_get();
+    }
+    export fn wr_btdm_coex_version_get(major: ?*c_uint, minor: ?*c_uint, path: ?*c_uint) callconv(.c) c_int {
+        return radio_coex.ble.wr_btdm_coex_version_get(major, minor, path);
+    }
+    export fn wr_btdm_coex_iso_start_int_handle(handle: u16, duration: u32) callconv(.c) void {
+        return radio_coex.ble.wr_btdm_coex_iso_start_int_handle(handle, duration);
+    }
+    export fn s31_coex_log_hook(msg: [*:0]const u8) callconv(.c) void {
+        logLine("bt coex> {s}", .{std.mem.span(msg)});
+    }
+};
+
+comptime {
+    if (coex_gate.enabled) _ = CoexOnly;
 }
 
 test "coex: 状态位图可置可清，未开共存时按 IDF 的返回值作答" {

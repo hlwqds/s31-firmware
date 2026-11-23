@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const osal = @import("osal_kit").osal;
+const coex_gate = @import("coex_gate");
 
 // ---------------- log 族 ----------------
 // 已由 liblog.a（station 归档）提供 ⇒ 本文件不再重复。
@@ -30,14 +31,33 @@ export fn GetUartDevice() ?*anyopaque {
 // esp_register_ext_funcs / esp_ble_register_bb_funcs 由 blob 自带（新拉入成员定义）
 // ⇒ 不再由宿主导出（否则双定义）；宿主侧如需注册走 osi 表。
 // ---------------- 最小桩 ----------------
+// 三个共存相关的桩保持文件顶层的 `export fn`、保持原有先后：它们在探针镜像里的位置由此不变
+// （挪进嵌套结构体会让它们与邻居在 .flash.text 里换位——2026-11-24 逐段对比实测）。
+//
+// * 不开 `-Dcoex`：与此前完全一致（恒 0 / 丢弃 / "0"）。
+// * 开 `-Dcoex`：
+//   - `coex_core_ble_conn_dyn_prio_get` 与 `esp_coex_rom_version_get` 转给 ROM 的真函数。
+//     这两个桩原本强定义、遮住了 `s31.ld` 的 PROVIDE，官方固件启动时那行 "coex: ROM version"
+//     在我们这里恒为 "0"。真身经同地址的别名（`rom_*`）引用，桩的名字不用变。
+//   - `coexist_printf` 是 `libcoexist.a` 的日志入口（C 变参）。Zig 读不到变参，只能把
+//     **格式串本身**转给日志（与 `wifi-blobs/src/printf_shim.c` 同一做法）。参数展开的版本
+//     见探针的 `coex_wiring.report()`；不带探针的镜像里没有本文件，由
+//     `components/radio-coex/link/coex_printf_shim.c` 真格式化。
+extern fn rom_coex_core_ble_conn_dyn_prio_get() c_int;
+extern fn rom_esp_coex_rom_version_get() ?[*:0]const u8;
+
 export fn coex_core_ble_conn_dyn_prio_get() c_int {
+    if (coex_gate.enabled) return rom_coex_core_ble_conn_dyn_prio_get();
     return 0;
 }
 export fn coexist_printf(fmt: ?[*:0]const u8, ...) c_int {
-    _ = fmt;
+    if (coex_gate.enabled) {
+        if (fmt) |f| @import("board").log.line("bt coex> {s}", .{std.mem.span(f)});
+    }
     return 0;
 }
 export fn esp_coex_rom_version_get() ?[*:0]const u8 {
+    if (coex_gate.enabled) return rom_esp_coex_rom_version_get();
     return "0";
 }
 export fn esp_rom_get_cpu_ticks_per_us() c_int {

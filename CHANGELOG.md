@@ -35,6 +35,12 @@
   从约 5 350 B 长到约 25 600 B，并带进 5 160 B 浮点格式化；它没有构建开关，所有 profile 都编进去，本轮没有动它。
   `update_matrix.py --check`：`2d431d0` 恢复 `logs/e2e-net-wire-boot.log` 之后，矩阵 W1–W3 没有跟着刷新。
   两处都用脚本自带的再生成对齐到已提交的代码与日志，没有手改数字。细目见 `docs/verification/README.md`。
+- **`wifi-blobs` 的主机测试从没被跑过（2026-11-24）**：它没有自检 section，`firmware/build.zig` 的通用循环
+  建不出它的测试目标；`check-coverage.py` 只数 `test` 的文本个数，照样判 OK。补上目标后连报：
+  `host_tests.zig` 里 `testNowUs` 定义两次、一个用例访问私有的 `impl.hooks`、`osi.zig` 的 `indexOf`/`nameOf`
+  用了 0.17 已改名的 `.fields`、`osi_impl.zig` 的 `shellSetIntr`/`shellSetIsr`/`shellIntsOn/Off` 在主机上
+  直接写 MMIO 并执行 RISC-V 汇编、链接期缺 5 个板级符号。修法：显式测试目标、`host_stubs.zig` 给替身、
+  四个壳在非 freestanding 目标上提前返回、`.fields` 改 `.field_names`。26 个旧用例加 5 个新用例，31/31。
 
 ### Removed
 - `firmware/build.zig`：删掉 152b92a 给 net-tcp / net-ipv4 / net-udp-dhcp-dns / net-sockets 四个模块
@@ -54,16 +60,31 @@
     （Vol 3 Part A）、广播数据与地址（Vol 3 Part C）、IPv6 over BLE（RFC 7668）。
   - 新增 `components/ble-security`（51 项）：SMP 密码学工具箱（Vol 3 Part H 2.2），legacy 与 LE Secure
     Connections 的全部配对方法（双角色），密钥分发与绑定存储，链路层 AES-CCM、CRC-24 与白化（Vol 6 Part B）。
-  - 验证：主机测试、与独立 Python 参照实现的差分（全部一致）；第一次上板（`wifi` profile）各自检
-    16/28/18/25/10，`ble-802154` 失败的一条是自检自身的差一错误，已修，板级复验待做。
-    报告在 `docs/verification/`；`tests/baselines.json` 合计 572 → 816（其中 `bt-blobs` 17 → 18、`osal` 20 → 21
-    是把此前已有的用例数补记进基线，前门总数随之改为 816）。
+  - 验证：主机测试、与独立 Python 参照实现的差分（全部一致）；板级自检跑了两次。第一次（`wifi` profile）
+    `ble-802154` 18/19，失败的一条是自检自身的差一错误；修复后复验 14/14 个 section 全过
+    （`logs/e2e-wifi-boot.log`，整体判决 pass）。
+    报告在 `docs/verification/`；`tests/baselines.json` 合计 572 → 830（其中 `bt-blobs` 17 → 19、`osal` 20 → 29、
+    `wifi-blobs` 26 → 31，含此前已有或从未被跑的用例；前门总数随之改为 830）。
 - **BLE 与 Wi-Fi 共存的 glue（2026-11-24）**：设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`。新增
   `components/radio-coex`（45 项），对照 IDF 的 `esp_adapter.c` 与 `btdm_coex.c` 实现 Wi-Fi 侧 23 个包装函数、
-  BLE 侧 16 个钩子加 4 个生命周期函数、20 表项的适配表；真核心经 `bind.zig` 绑定，尚未接入两套 blob 适配层。
+  BLE 侧 16 个钩子加 4 个生命周期函数、20 表项的适配表；真核心经 `bind.zig` 绑定。接进两套适配层见下一条。
   默认镜像逐字节不变：`3194bf6` 与本轮改动后，`min`、`net`、`tls`、`net-wire` 四个 profile 的 `app.bin` 与 `app.elf`
   SHA-256 全部相同（默认镜像即 `net`：`app.bin` 243 488 B、`app.elf` 223 280 B）；只有 `wifi`（irom +176 848 B）与 `full`（irom +142 832 B）变大。
-  `scripts/check-all.sh` 全绿（主机测试 858 项、容量、e2e host 6 个 profile）。
+- **共存 glue 接进两套适配层（路线图 C2，2026-11-24）**：构建开关 `-Dcoex`，配 `-Dcoex-objs` 给 `libcoexist.a`
+  的成员；默认关。
+  - BLE 侧：`components/osal/src/osal.zig` 的 11 个 `wr_btdm_coex_*` 开关打开时转发给胶水，另补 5 个缺失的强定义；
+    适配表的 18 个 OS 钩子在 `components/osal/src/coex_hooks.zig`（8 项用例）；`bt-blobs` 的 `btdmCoexInit/Enable`
+    转发，`src/coex_wiring.zig` 在 `bringup.init` 之前启动核并打诊断。
+  - Wi-Fi 侧：`components/wifi-blobs/src/coex_hooks.zig` 给 18 个钩子（4 项用例）；探针在 arena 就位后启动核，
+    `makeTable()` 之后把 24 个共存表项换成胶水的包装函数，原位置上的裸 `coex_init()` 改经胶水。
+  - 链接层：`components/radio-coex/link/coex_printf_shim.c` 补上库唯一缺的两个符号（`coexist_printf`、`puts`）；
+    `s31.ld` 把 `.coexiram*` 收进 `.iram_blobs`（此前是 12 个孤儿段，落在 LP RAM 里），并给两个被探针桩遮住的
+    ROM 函数加别名。`firmware/build.zig` 另加辅助开关 `-Dkeep-symbols`（只用来核对符号，镜像不等同于 strip 的）。
+  - 验证：开 `-Dcoex` 时 BLE 闭包、BLE 探针、Wi-Fi 探针三种镜像链接通过且恰好两段；关着时默认、BLE 闭包、
+    BLE 探针、Wi-Fi 探针四种镜像与 `3f4e575` 逐字节相同。板级（`logs/coex-{ble,wifi}-probe-{boot,control}.log`）：
+    BLE 探针读到 `g_coex_param_ptr=0x2f00ffe4`、`fw=2.0.0 rom=cdcf52b`、适配表被核心收下、两个 BLE 回调都已登记；
+    Wi-Fi 探针读到共存库自己打的两行版本、`wifiInit rc=0`、`INIT OK`。两次实验各带不开共存的对照。
+    两个 blob 同镜（C3、C4）与空口未做。细目见 `docs/verification/coex-verification.md` §4。
 
 - **生产 A/B 与回滚（矩阵 C5，2026-11-18）**：`firmware/idf-bootstrap/partitions.csv` 追加
   `ota_0`(0x190000) / `ota_1`(0x310000) / `otadata`(0x490000, 8K)，factory 仍在 0x10000。

@@ -15,6 +15,9 @@ const mempool_abi = @import("mempool_abi.zig");
 const builtin = @import("builtin");
 const on_target = builtin.target.os.tag == .freestanding;
 const config = @import("config.zig");
+/// 共存开关（`firmware/build.zig` 用 `-Dcoex` 生成）。关着时下面两个生命周期函数仍是 `return 0`。
+const coex_gate = @import("coex_gate");
+const radio_coex = if (coex_gate.enabled) @import("radio_coex") else struct {};
 
 // ---------------------------------------------------------------------------
 // 4 个 `return 0`（IDF 原文：日志/外部/共存/低功耗的"初始化"在没有对应子系统时是空实现）
@@ -30,8 +33,10 @@ pub fn btdmExternalInit() c_int {
     return 0;
 }
 
-/// `btdm_coex.c`：`CONFIG_SW_COEXIST_ENABLE` 关时 `return ESP_OK;`（我们不开软件共存）
+/// `btdm_coex.c:203-211`：开了软件共存是 `coex_init()`（经共存胶水交给核），否则 `return ESP_OK;`。
+/// `-Dcoex` 打开时转发 `radio-coex`。核必须已由 `coex_wiring.boot()` 启动，否则胶水回 `ESP_OK` 并计一次拒绝。
 pub fn btdmCoexInit() c_int {
+    if (coex_gate.enabled) return radio_coex.ble.btdm_coex_init();
     return 0;
 }
 
@@ -610,8 +615,9 @@ pub fn btdmLpReset(enable: bool) void {
     _ = enable;
 }
 
-/// `btdm_coex_enable()`：软件共存未开 ⇒ 直接成功。
+/// `btdm_coex_enable()`：软件共存未开 ⇒ 直接成功；开了 ⇒ `coex_enable()`（使能计数里属于 BLE 的那一次加一）。
 pub fn btdmCoexEnable() c_int {
+    if (coex_gate.enabled) return radio_coex.ble.btdm_coex_enable();
     return 0;
 }
 

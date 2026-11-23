@@ -60,6 +60,18 @@ pub fn build(b: *std.Build) void {
     // `modem_clock_module_enable` —— 这些是 IRAM 代码，我们板上没有。
     const phy_src_objs = b.option([]const u8, "phy-src-objs", "comma-separated absolute paths of IDF PHY objects") orelse "";
     const bt_probe = b.option(bool, "bt-probe", "run the BLE controller probe instead of the normal self-test") orelse false;
+    // R5/C2：共存。把 `components/radio-coex` 的胶水链进镜像并绑到真实核心（`libcoexist.a` 与 ROM）。
+    // 默认关；关闭时默认镜像与 BT/Wi-Fi 探针镜像逐字节不变（`docs/verification/coex-verification.md`）。
+    const coex = b.option(bool, "coex", "link the BLE/Wi-Fi coexistence glue and bind it to the real coex core") orelse false;
+    // 逗号分隔的 `libcoexist.a` 成员（解包后的 .o 绝对路径），写法同 phy-src-objs。
+    const coex_objs = b.option([]const u8, "coex-objs", "comma-separated absolute paths of the unpacked libcoexist.a members (required by -Dcoex)") orelse "";
+    if (coex and coex_objs.len == 0) @panic("-Dcoex 需要 -Dcoex-objs：给出 libcoexist.a 解包出的 11 个 .o");
+    if (coex and g_wifi) @panic("-Dcoex 不能与 -Dwifi（自检 section）同开：radio_coex 的 section 模块与胶水模块不能同时含 glue.zig");
+    if (coex and wifi_blob_dir.len > 0 and bt_blob_dir.len > 0) @panic("-Dcoex 目前一次只接一个射频的适配层：两个 blob 同链要等 ADR-003 的运行时统一（C3）");
+    // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
+    const coex_gate_src = if (coex) "pub const enabled = true;\n" else "pub const enabled = false;\n";
+    const coex_gate = b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_gate.zig", coex_gate_src) });
+    const coex_mod = b.createModule(.{ .root_source_file = b.path("../components/radio-coex/src/glue.zig") });
     // C5 回滚链路：注入一条必然失败的自检，用来制造"连续 3 次失败"。
     const ab_fail = b.option(bool, "ab-fail", "inject a failing self-test entry (C5 rollback trigger)") orelse false;
     // C5 切槽：启动时把下次引导切到 ota_0/ota_1（写 otadata 后复位）。
@@ -120,6 +132,9 @@ pub fn build(b: *std.Build) void {
     const posix_mod = b.createModule(.{ .root_source_file = b.path("../components/posix-compat/src/api.zig") });
     posix_mod.addImport("osal_kit", osal_mod);
     posix_mod.addImport("net_sockets", socks_mod);
+    // 共存：开关常驻；胶水模块只在 -Dcoex 时给（关着时 osal.zig 里引用它的分支不会被分析）。
+    osal_mod.addImport("coex_gate", coex_gate);
+    if (coex) osal_mod.addImport("radio_coex", coex_mod);
 
     const wf = b.addWriteFiles();
     const enabled_file = wf.add("enabled.zig", src);
@@ -239,6 +254,8 @@ pub fn build(b: *std.Build) void {
     if (wifi_init_probe and wifi_blob_dir.len > 0) {
         const probe_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/init_probe.zig") });
         probe_mod.addImport("board", board);
+        probe_mod.addImport("coex_gate", coex_gate);
+        if (coex) probe_mod.addImport("radio_coex", coex_mod);
         // C 变参 shim：Zig 定义不了变参函数，驱动的报错偏偏走它们。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
         app.root_module.addImport("wifi_init_probe", probe_mod);
@@ -259,6 +276,21 @@ pub fn build(b: *std.Build) void {
             if (path.len == 0) continue;
             app.root_module.addObjectFile(.{ .cwd_relative = path });
         }
+    }
+
+    // 共存核的对象、C 侧 shim 与胶水模块。只在 -Dcoex 时进链接。
+    // 入口（`firmware/src/main.zig`）在 comptime 里引用 `radio_coex.bind`，
+    // 于是 bind.zig 的 37 个 extern 与 43 个钩子函数体都被分析、进镜像。
+    app.root_module.addImport("coex_gate", coex_gate);
+    if (coex) {
+        var coex_it = std.mem.splitScalar(u8, coex_objs, ',');
+        while (coex_it.next()) |path| {
+            if (path.len == 0) continue;
+            app.root_module.addObjectFile(.{ .cwd_relative = path });
+        }
+        // `coexist_printf`（C 变参）与 `puts`（弱定义；Wi-Fi 侧的 link_stubs.zig 有强定义）。
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/radio-coex/link/coex_printf_shim.c"), .flags = &.{} });
+        app.root_module.addImport("radio_coex", coex_mod);
     }
 
     if (phy_lib_dir.len > 0 and phy_objs.len > 0) {
@@ -304,6 +336,8 @@ pub fn build(b: *std.Build) void {
         });
         bt_core.addImport("board", board);
         bt_core.addImport("osal_kit", osal_mod);
+        bt_core.addImport("coex_gate", coex_gate);
+        if (coex) bt_core.addImport("radio_coex", coex_mod);
         // **只在 probe 镜像里编 bt_core**（探针要跑 bringup/transport）。非 probe 的闭包
         // 构建只需要 osal 的 5 个 `s31_*` 导出给归档解析 —— 用下面那个 comptime 根引用触发。
         // 把 bt_core 整个编进来会多 ~2 KB：blob 构建关了 gc-sections，`.flash.text` 会溢出
@@ -378,6 +412,23 @@ pub fn build(b: *std.Build) void {
             .target = b.graph.host,
             .optimize = .Debug,
         }) });
+        // `coex_hooks.zig` 的适配表类型来自 radio_coex；开关在主机测试里恒为关。
+        t.root_module.addImport("coex_gate", coex_gate);
+        t.root_module.addImport("radio_coex", coex_mod);
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+
+    // wifi-blobs 的主机测试（`-Dcoex` 的 Wi-Fi 侧钩子在里面）。它没有自检 section，上面的循环
+    // 遍历不到——此前这 26+4 个用例没有任何门禁跑过（覆盖率门禁只按文本计数）。
+    {
+        const t = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("../components/wifi-blobs/src/host_tests.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
+        t.root_module.addImport("radio_coex", coex_mod);
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 
@@ -391,12 +442,18 @@ pub fn build(b: *std.Build) void {
                 .optimize = .Debug,
             }),
         });
+        bt_tests.root_module.addImport("coex_gate", coex_gate);
         bt_tests.root_module.addImport("osal_kit", osal_mod);
         test_step.dependOn(&b.addRunArtifact(bt_tests).step);
     }
 
     // 探针构建保留符号：panic 的 PC 才能 addr2line 回函数名（生产镜像保持 strip）。
-    if (bt_probe) app.root_module.strip = false;
+    // 辅助开关 `-Dkeep-symbols`：给其它构建也保留符号表，用来核对"某个符号到底进没进镜像"
+    // （strip 过的 ELF 连必然存在的符号都列不出来）。默认关。**它的镜像不等同于 strip 的镜像**：
+    // `trapDispatch` 按"有没有符号信息"选诊断路径，实测 `.flash.text` 里有 4 个字节随之变化
+    // （大小不变）。所以只拿它核对符号，不拿它做逐字节对比，也不拿它上板取证。
+    const keep_symbols = b.option(bool, "keep-symbols", "keep app.elf's symbol table (verification aid; loaded image is unchanged)") orelse false;
+    if (bt_probe or keep_symbols) app.root_module.strip = false;
     app.setLinkerScript(b.path("../boards/esp32s31-coreboard/linker/s31.ld"));
     // WiFi/BT 预编译归档引用的外设基址符号（121 个 PROVIDE）
 

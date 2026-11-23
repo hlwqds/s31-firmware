@@ -9,9 +9,10 @@
 
 | 级别 | 结果 | 证据 |
 | --- | --- | --- |
-| 主机测试 | **20/20** | `tests/baselines.json` → `wifi-blobs: 20` |
+| 主机测试 | **31/31**（26 个原有用例 + 共存钩子 4 个 + 替身 1 个） | `tests/baselines.json` → `wifi-blobs: 31`。此前这个组件没有测试目标，26 个用例从没被跑过，测试文件也编不过；2026-11-24 补了目标并修好 |
 | 板侧 init | `esp_wifi_init_internal rc=0` | `logs/wifi-init-ok-boot.log` |
 | 板侧任务 | 任务体执行自己的循环并合作式让出 | `logs/wifi-task-boot.log` |
+| 共存核（`-Dcoex`） | 共存库自己打出两行版本；`wifiInit rc=0`；`esp_wifi_init_internal rc=0`；`g_coex_param_ptr=0x2f01173c`（不开时为 0） | `logs/coex-wifi-probe-boot.log`；对照 `logs/coex-wifi-probe-control.log` |
 | 扫描/连接 | **未做** | 需要 `on_idle` 接 EMAC 收发 |
 
 ## 用法
@@ -93,9 +94,11 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 | `src/osi_stubs.zig` | 未实现钩子的**具名桩**（只填空字段，绝不覆盖已实现项） |
 | `src/init_config.zig` | `wifi_init_config_t` 默认值（含 `wpa_crypto_funcs.size = 52`） |
 | `src/init_probe.zig` | 板侧探针：装表 → 构造 config → init → 跑一次任务体（`-Dwifi-init-probe=true`） |
+| `src/coex_hooks.zig` | 共存核回调 OS 层的 18 个适配钩子（`-Dcoex`），全部转给 `osi_impl.zig` 已有的壳 |
+| `src/host_stubs.zig` | 主机测试用的 5 个板级符号替身（ROM / PHY / 共存库入口），不进任何镜像 |
 | `src/sched.zig` | 两根栈的合作式上下文切换（naked `s31_swap_context`） |
 | `src/sched.zig` | 32 位帧的 `initContext`（主机用例覆盖）+ 目标门控的 naked 切换 |
-| `src/host_tests.zig` | 主机测试入口（20 个用例） |
+| `src/host_tests.zig` | 主机测试入口（本文件 26 个用例；组件合计 31 个） |
 
 ## 待验证项
 

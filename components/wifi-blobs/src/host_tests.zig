@@ -16,12 +16,18 @@ const sched = @import("sched.zig");
 const phy_init_data = @import("phy_init_data.zig");
 const event_bus = @import("event_bus.zig");
 const initcfg = @import("init_config.zig");
+// 共存核的 OS 层适配钩子（`-Dcoex` 的 Wi-Fi 侧）。覆盖门禁靠下面 `test` 块里的 `@import` 看到它。
 
 test {
     _ = adapter;
     _ = osi;
     _ = impl;
     _ = initcfg;
+    // 用例发现只认 `test` 块里的直接 `@import`：经文件顶层的常量间接引用，那个文件里的用例不会被跑
+    // （2026-11-24 实测：写成 `_ = coex_hooks` 时 Wi-Fi 目标一个 coex 用例都没跑）。
+    _ = @import("coex_hooks.zig");
+    // 目标符号替身（ROM / PHY / 共存库的 5 个入口）：主机目标不链归档，没有它链接期就缺符号。
+    _ = @import("host_stubs.zig");
 }
 
 test "wifi-blobs: probe 解析到替身符号的地址" {
@@ -414,7 +420,9 @@ test "event_bus: 注册后 post 同步调用；注销后不再调用" {
 // 板级动机见 ADR-001：这五个钩子曾是空桩，blob 注册的回调永远不会到期。
 // ---------------------------------------------------------------------------
 var test_clock_us: u64 = 0;
-fn testNowUs() u64 {
+// （不叫 `testNowUs`：上面"时间/随机/MAC 走注入钩子"那组用例已经占了这个名字，
+// 两次定义让整个文件编译不过——而这个文件此前没有任何门禁构建过。）
+fn testClockUs() u64 {
     return test_clock_us;
 }
 
@@ -424,8 +432,8 @@ fn testTimerFn(_: ?*anyopaque) callconv(.c) void {
 }
 
 test "osi_impl: 软件定时器 setfn/arm_us/到期/一次性/disarm" {
-    impl.hooks.now_us = &testNowUs;
-    defer impl.hooks.now_us = null;
+    impl.setHooks(.{ .now_us = &testClockUs });
+    defer impl.setHooks(.{});
 
     var obj: u32 = 0;
     const pt: ?*anyopaque = @ptrCast(&obj);
@@ -469,7 +477,6 @@ test "osi_impl: 软件定时器 setfn/arm_us/到期/一次性/disarm" {
 }
 
 test "osi: 字段名到表下标的 comptime 映射与 IDF 头一致" {
-    const osi = @import("osi.zig");
     // 抽查几个关键项：这些下标必须与 `wifi_osi_funcs_t` 的字段序一致。
     try std.testing.expectEqual(@as(usize, 0), osi.indexOf("_version"));
     try std.testing.expect(@import("std").mem.eql(u8, osi.nameOf(osi.indexOf("_version")), "_version"));

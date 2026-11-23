@@ -143,6 +143,14 @@ SECTIONS
          * 段首在运行时被改为非法指令、且值每次 boot 不同 —— 见 README「根因 5」。 */
         . = ALIGN(4);
         *(.iram_btslp*)
+        /* **`.coexiram*` 族（`-Dcoex` 才链入的 `libcoexist.a`）**：共存核的 IRAM 函数。
+         * IDF 用 `esp_coex/linker.lf` 把 `.coexiram+` 收进 `iram0_text`。漏掉后它们
+         * 各自成孤儿段，被 lld 放进 LP RAM（实测落在 `0x2e00fdb0` 一带，
+         * 那是 `lpdata` 里 ULP keeper 的地盘），既不在可执行的 IRAM 里，也会撞 keeper 程序。
+         * 不链共存库的镜像里没有这类输入段，这两行不改变它们的布局。 */
+        . = ALIGN(4);
+        *(.coexiram*)
+        *(.coexsleepiram*)
         . = ALIGN(16);
     } > sram
 
@@ -1288,6 +1296,10 @@ PROVIDE(esp_coex_rom_version_get = 0x2f800bf0);
 PROVIDE(coex_bt_release = 0x2f800bf4);
 PROVIDE(coex_bt_request = 0x2f800bf8);
 PROVIDE(coex_core_ble_conn_dyn_prio_get = 0x2f800bfc);
+/* 同地址的别名（只是符号，不占空间）：BT 探针里 `components/bt-blobs/src/wifi_glue.zig` 的两个桩
+ * 强定义遮住了上面两个名字，开 `-Dcoex` 时桩经别名转调 ROM 的真身。 */
+PROVIDE(rom_esp_coex_rom_version_get = 0x2f800bf0);
+PROVIDE(rom_coex_core_ble_conn_dyn_prio_get = 0x2f800bfc);
 PROVIDE(coex_core_event_duration_get = 0x2f800c00);
 PROVIDE(coex_core_pti_get = 0x2f800c04);
 PROVIDE(coex_core_release = 0x2f800c08);

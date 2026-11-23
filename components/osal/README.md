@@ -10,6 +10,7 @@
 | --- | --- |
 | `src/sched.zig` | 协作式调度器：`taskCreate(stack, entry, arg)`、`currentContext`、上下文切换（唯一一处 `asm`） |
 | `src/osal.zig` | `semInit/Pend(timeout)/Release/GetCount/Deinit`、`mutexInit/Pend(timeout)/Release/Deinit`、`eventqPut/Get(timeout)`、`calloutInit/Reset`、临界区嵌套、时间与随机数 |
+| `src/coex_hooks.zig` | 共存核回调 OS 层的 18 个适配钩子（`-Dcoex` 时由 BLE 侧接线层取用）：信号量走本组件的池，内存走 `btdmMalloc`，`ets_timer` 是软件定时器侧表 |
 | `src/probe_ptr.zig` | 调试用的指针探针 |
 | `src/api.zig` | 模块根（转出口 + `forceExports()`，见下） |
 
@@ -21,7 +22,7 @@
 | --- | --- | --- |
 | `bt-blobs/link/bt_stubs.c` 的 `BT_STUB_LIST` 宏 | **36** | controller 会调、由我们提供 |
 | `bt-blobs` 各文件里的 `export fn` | **11** | 我们自己发的（`s31_*` 等） |
-| 其余 | 12 | coex / 日志 / 时间等基础钩子 |
+| 其余 | 12 | coex / 日志 / 时间等基础钩子（其中 11 个 `wr_btdm_coex_*`；开 `-Dcoex` 时另发 5 个，共 16 个） |
 
 迁移只改了文件的**位置**，导出符号与签名未动 —— 闭包链接的镜像大小搬前搬后逐字节相同
 （913728 B）就是这一点的执行证据。
@@ -34,7 +35,7 @@
 hooks.now_ms / hooks.irq_save / hooks.irq_restore / rand_hook
 ```
 
-所以整套语义能在主机上跑（**20 项**用例），板级只需在启动时把钩子接到真实实现。
+所以整套语义能在主机上跑（**29 项**用例：原有 21 项，加共存钩子 8 项），板级只需在启动时把钩子接到真实实现。
 
 ## ⚠️ `forceExports()` 必须由消费者调一次
 
@@ -59,7 +60,7 @@ comptime { @import("osal_kit").forceExports(); }
 ## 验收
 
 ```bash
-cd firmware && zig build test --summary all   # 本组件 20 项（含 osal 17 + sched 2 + 聚合 1）
+cd firmware && zig build test --summary all   # 本组件 29 项（osal 21 + 共存钩子 8）
 scripts/check-bt-link.sh                      # 链接验收（需 IDF 树；不在 check-all 里）
 ```
 

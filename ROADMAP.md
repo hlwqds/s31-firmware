@@ -16,8 +16,8 @@
 | IPv4/ARP/ICMP、UDP/DHCP/DNS、TCP、Socket 层 | 真链路已上板（DHCP + TCP + socket） | `logs/e2e-net-wire-boot.log` |
 | TLS/HTTP、MQTT/OTA | 离线判定通过；真实链路证据在 ch23 lab（TLS 握手 + HTTPS GET、MQTT、OTA 回滚） | `logs/e2e-tls-boot.log`；`hl-ljj-quartz` 的 `practice/zig-esp32-s31/logs/ch23-*.log` |
 | Wi-Fi / BLE / 802.15.4 边界 | 符号取证 + ABI/字节路径自检 | `logs/ch25-boot.log` … `logs/ch27-boot.log` |
-| BLE + Wi-Fi 共存（glue，设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`） | glue 组件离线验证通过：对照 IDF 逐钩子一致（L1，45/45），板侧自检 10/10（对假核心）。尚未接入两套适配层；真核心与空口未测 | `docs/verification/coex-verification.md` |
-| Wi-Fi 与 BLE 的离线可验证特性（按规范条款） | 本轮落地 5 个组件：主机测试 282 项，与独立参照实现差分一致；板侧自检除 1 条自检自身的错误外全部通过（已修，复验待做）；默认镜像逐字节不变 | `docs/verification/` |
+| BLE + Wi-Fi 共存（glue，设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`） | glue 已接进两套适配层（`-Dcoex`，默认关）：BLE 探针与 Wi-Fi 探针各自带着真核心上板，参数指针非零、版本行打出、适配表被核心收下；关着时四种镜像与改动前逐字节相同。两个 blob 同镜（C3、C4）与空口未做 | `docs/verification/coex-verification.md` |
+| Wi-Fi 与 BLE 的离线可验证特性（按规范条款） | 本轮落地 5 个组件：主机测试 282 项，与独立参照实现差分一致；板级自检 14/14 个 section 通过（`logs/e2e-wifi-boot.log`，整体判决 pass）；默认镜像逐字节不变 | `docs/verification/` |
 | 真实 Wi-Fi blob（`components/wifi-blobs`） | **init 返回 0**；任务体可跑并合作式让出；扫描/连接未做 | `logs/wifi-init-ok-boot.log`、`logs/wifi-task-boot.log` |
 | 选槽/回滚/功耗/性能模型（28A） | 板侧自检通过；计量与 28B 未做 | `logs/ch28-boot.log`、`logs/ch28a-boot.log` |
 | 生产化原型的宿主测试（netmgr/ota/provisioning/recovery） | 通过 | 15/15、8/8、18/18、9/9 |
@@ -40,7 +40,7 @@
 - [x] 生产结构：`firmware/` + `boards/` + `components/`（章节目录移除，历史见 `docs/HISTORY.md`）
 - [x] 编译期特性开关：`-Dboot/-Dnet/-Dtls/-Dapps/-Dwifi`，未启用组件不参与编译
 - [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: sections: passed=8 failed=0 total=8`（`net` profile，含 `posix`）、`main: verdict=pass`（`logs/firmware-boot.log`）
-- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（816 项）**（含 `posix`）
+- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（830 项）**（含 `posix`）
 - [x] 脚本：`scripts/check-host.sh`、`scripts/check-fmt.sh`、`scripts/build-image.sh`、`tools/capture.py`
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发
 - [x] 覆盖率门禁：`scripts/check-coverage.py`（逻辑模块 100% 可达 + 用例数基线）
@@ -127,8 +127,8 @@
 | 项 | 内容 | 不抓空口能验到 | 状态 |
 | --- | --- | --- | --- |
 | C0 | 调研与设计：共存接口面、容量实测、合并链接实验、非探针闭包链接修复 | L2 | 已完成 2026-11-24 |
-| C1 | 共存 glue（`components/radio-coex`）：适配表、24 个 Wi-Fi 钩子、16 个 BLE 钩子、核接口、生命周期 | L1 | 离线验证通过（45/45）；板侧自检 10/10（对假核心）；真核心未测 |
-| C2 | 接进 `wifi-blobs`、`osal`、`bt-blobs`，放在 `-Dcoex` 开关后；默认镜像逐段不变 | L2 | 计划 |
+| C1 | 共存 glue（`components/radio-coex`）：适配表、24 个 Wi-Fi 钩子、16 个 BLE 钩子、核接口、生命周期 | L1 | 离线验证通过（45/45）；板侧自检 10/10（对假核心）；真核心经 C2 上板 |
+| C2 | 接进 `wifi-blobs`、`osal`、`bt-blobs`，放在 `-Dcoex` 开关后；默认镜像逐段不变 | L2 | 已完成 2026-11-24：三种 coex 镜像链接通过，四种非 coex 镜像逐字节不变，两块板级实验各带对照（L3） |
 | C3 | 运行时统一：一个调度器、一份 osi，导出、堆、tick、trap 钩子各一份 | L2 | 计划 |
 | C4 | 窗口与分区扩大；合并镜像启动、两个控制器的 init 都返回 | L3 | 计划 |
 | C5 | PHY 与时钟域归属（启动序列） | L3 | 计划 |
@@ -161,7 +161,7 @@
 
 | 特性 | 条款 | 验证方式 | 不抓空口的上限 | 状态 |
 | --- | --- | --- | --- | --- |
-| HCI 控制命令与事件（Command Complete、Command Status、LE Meta、流控计数） | Vol 4 Part E §5.4、§7.7、§7.8 | 字节级已知答案；假控制器 | L1，L3 见下一行 | 离线验证通过（L1）；板侧自检 18/19，失败的一条是自检自身的错，已修，复验待做 |
+| HCI 控制命令与事件（Command Complete、Command Status、LE Meta、流控计数） | Vol 4 Part E §5.4、§7.7、§7.8 | 字节级已知答案；假控制器 | L1，L3 见下一行 | 离线验证通过（L1）；板侧自检 19/19（第一次 18/19，失败的一条是自检自身的错，修复后复验通过） |
 | 对真实 controller 的 HCI 一致性自检 | Vol 4 Part E | 板上发只读命令并按规范校验返回值 | L3 | 计划；已证明能回复的命令：0x0C03、0x1001、0x1009、0x2006、0x2008、0x1405 |
 | ACL 分段与重组 | Vol 4 Part E §5.4 | 大 SDU 分段后重组 | L1 | 离线验证通过（L1） |
 | L2CAP（基本信道、LE 信令、基于信用的流控） | Vol 3 Part A §3、§4、§10 | 双端对打 | L1 | 离线验证通过（L1） |

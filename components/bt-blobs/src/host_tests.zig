@@ -16,6 +16,8 @@ test {
     _ = @import("bringup.zig");
     _ = @import("extfuncs.zig");
     _ = @import("transport.zig");
+    // 共存接线（`-Dcoex`）：主机上是空操作；覆盖门禁靠这一行看到它。
+    _ = @import("coex_wiring.zig");
     _ = @import("gate.zig");
     // 模块根：它本身没有逻辑，但导入它才能让覆盖门禁看到 `root.zig`
     // 与它下面那些只经根暴露的文件（如 `xpuq_shim.zig`）。

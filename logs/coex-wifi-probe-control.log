@@ -1,0 +1,558 @@
+ revi�ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=5a2e0h (369376) map
+I (173) esp_image: segment 1: paddr=0006a308 vaddr=2f000800 size=00214h (   532) load
+I (175) esp_image: segment 2: paddr=0006a524 vaddr=2f000a20 size=05af4h ( 23284) load
+I (182) esp_image: segment 3: paddr=00070020 vaddr=40100020 size=18a50h (100944) map
+I (202) esp_image: segment 4: paddr=00088a78 vaddr=2f006514 size=0f2dch ( 62172) load
+I (219) boot: Loaded app from partition at offset 0x10000
+I (220) boot: Disabling RNG early entropy source...
+wifi-init-probe: begin
+wifi-init-probe: MAC_ST at begin = 0x0000e000
+wifi-init-probe: arena=301680 B
+wifi-init-probe: table=0x2f02a350 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: calling coex_init() (IDF wrapper 顺序)
+wifi-init-probe: coex_init returned
+wifi-init-probe: pre-init ctx b14=0 b15=0 b288=0 cb_slot=0x0
+wifi-init-probe: CLKDMP[before-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x00000000
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000004
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: 0x201044EC fixed 0x10880 -> 0x10880 (IDF=0x102C0)
+wifi-init-probe: LPCON+18 fixed pre-init 0x4 -> 0x1 (IDF=0x1)
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f02d574
+wifi-blob: pp rom version: %s
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f02d5c8
+wifi-blob: net80211 rom version: %s
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f02dbf0
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f02dd74
+wifi-init-probe: trace semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace semphr_give a0=0x2f02e438 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#1 hooks=20 give=1 null_give=0 semmax=0x10000
+wifi-init-probe: pump#2 hooks=20 give=1 null_give=0 semmax=0x10000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02fe60
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02ddc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017d78 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f02fe88
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f0310ac
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f0310ac
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f031154
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f0311fc
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0312a4
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0312dc
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f031314
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f03134c
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031384
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f03161c
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f0318b4
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031b4c
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031de4
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f03207c
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f0323a0
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000078 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f0326c4
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f03274c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f032e04
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0334bc
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f033b74
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f03422c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0348e4
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f034f9c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f035654
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f035d0c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0363c4
+wifi-init-probe: trace timer_setfn a0=0x2f017d04 a1=0x400346b0
+wifi-init-probe: trace timer_setfn a0=0x2f017d18 a1=0x400346a8
+wifi-init-probe: trace timer_setfn a0=0x2f017d54 a1=0x400346a0
+wifi-init-probe: trace timer_setfn a0=0x2f017d40 a1=0x40034698
+wifi-init-probe: trace timer_setfn a0=0x2f017d78 a1=0x40034690
+wifi-init-probe: trace timer_setfn a0=0x2f017d8c a1=0x40034688
+wifi-init-probe: trace timer_setfn a0=0x2f017da0 a1=0x40034680
+wifi-init-probe: trace timer_setfn a0=0x2f017dbc a1=0x40034678
+wifi-init-probe: trace timer_setfn a0=0x2f0180c4 a1=0x40034670
+wifi-init-probe: trace timer_setfn a0=0x2f018064 a1=0x40034668
+wifi-init-probe: trace timer_setfn a0=0x2f0180a0 a1=0x40034660
+wifi-init-probe: trace timer_setfn a0=0x2f017f14 a1=0x4003862a
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x00000000 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace wifi_clk_dis a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000004
+wifi-init-probe: trace zalloc a0=0x00000004 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f036a7c
+wifi-init-probe: trace coex_interval a0=0x40007de0 a1=0x00000000
+wifi-init-probe: trace timer_setfn a0=0x2f017700 a1=0x40028eec
+wifi-init-probe: trace timer_setfn a0=0x2f017714 a1=0x40028ee2
+wifi-init-probe: trace timer_disarm a0=0x2f015c2c a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e438 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#3 hooks=151 give=2 null_give=0 semmax=0x10000
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: CLKDMP[after-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x64646400
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000003
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: MACWIN xor=0x499348be sum=0xbd8c0b5c
+wifi-init-probe: MACWINQ 0 xor=0x4db92b43 sum=0xfae46995
+wifi-init-probe: MACWINQ 1 xor=0x7449ce91 sum=0x1498f05e
+wifi-init-probe: Q1B 0 addr=0x20104400 xor=0x69c1777f sum=0x6f1ea099
+wifi-init-probe: Q1B 1 addr=0x20104440 xor=0xfad71dd1 sum=0x22be7856
+wifi-init-probe: Q1B 2 addr=0x20104480 xor=0x007e0000 sum=0x002a0000
+wifi-init-probe: Q1B 3 addr=0x201044c0 xor=0x0129b600 sum=0x00219080
+wifi-init-probe: W4C0 0 addr=0x201044c0 v=0x00000000
+wifi-init-probe: W4C0 1 addr=0x201044c4 v=0x00000000
+wifi-init-probe: W4C0 2 addr=0x201044c8 v=0x00000000
+wifi-init-probe: W4C0 3 addr=0x201044cc v=0x00000000
+wifi-init-probe: W4C0 4 addr=0x201044d0 v=0x00000000
+wifi-init-probe: W4C0 5 addr=0x201044d4 v=0x00000000
+wifi-init-probe: W4C0 6 addr=0x201044d8 v=0x00000000
+wifi-init-probe: W4C0 7 addr=0x201044dc v=0x00000000
+wifi-init-probe: W4C0 8 addr=0x201044e0 v=0x00200000
+wifi-init-probe: W4C0 9 addr=0x201044e4 v=0x00000800
+wifi-init-probe: W4C0 10 addr=0x201044e8 v=0x00008000
+wifi-init-probe: W4C0 11 addr=0x201044ec v=0x00010880
+wifi-init-probe: W4C0 12 addr=0x201044f0 v=0x00000000
+wifi-init-probe: W4C0 13 addr=0x201044f4 v=0x00000000
+wifi-init-probe: W4C0 14 addr=0x201044f8 v=0x00000000
+wifi-init-probe: W4C0 15 addr=0x201044fc v=0x00000000
+wifi-init-probe: Q1B 4 addr=0x20104500 xor=0x00d9c002 sum=0x0010c002
+wifi-init-probe: Q1B 5 addr=0x20104540 xor=0x800f201d sum=0x800f047d
+wifi-init-probe: Q1B 6 addr=0x20104580 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 7 addr=0x201045c0 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 8 addr=0x20104600 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 9 addr=0x20104640 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 10 addr=0x20104680 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 11 addr=0x201046c0 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 12 addr=0x20104700 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 13 addr=0x20104740 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 14 addr=0x20104780 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 15 addr=0x201047c0 xor=0x22b7a490 sum=0x02508270
+wifi-init-probe: MACWINQ 2 xor=0x3f7e1350 sum=0xda988230
+wifi-init-probe: MACWINQ 3 xor=0xa29f713c sum=0xd3762f39
+wifi-init-probe: OSISEQ n=153 ring=256 base=0
+wifi-init-probe: OSI 0 mutex_create a0=0x0 a1=0x0
+wifi-init-probe: OSI 1 mutex_lock a0=0x2f02d560 a1=0x0
+wifi-init-probe: OSI 2 calloc a0=0x1 a1=0x44
+wifi-init-probe: OSI 3 zalloc a0=0x44 a1=0x0
+wifi-init-probe: OSI 4 alloc a0=0x44 a1=0x2f02d574
+wifi-init-probe: OSI 5 calloc a0=0x1 a1=0x618
+wifi-init-probe: OSI 6 zalloc a0=0x618 a1=0x0
+wifi-init-probe: OSI 7 alloc a0=0x618 a1=0x2f02d5c8
+wifi-init-probe: OSI 8 calloc a0=0x1 a1=0x14c
+wifi-init-probe: OSI 9 zalloc a0=0x14c a1=0x0
+wifi-init-probe: OSI 10 alloc a0=0x14c a1=0x2f02dbf0
+wifi-init-probe: OSI 11 mutex_unlock a0=0x2f02d560 a1=0x0
+wifi-init-probe: OSI 12 mutex_create a0=0x0 a1=0x0
+wifi-init-probe: OSI 13 mutex_create a0=0x0 a1=0x0
+wifi-init-probe: OSI 14 malloc a0=0x3c a1=0x0
+wifi-init-probe: OSI 15 alloc a0=0x3c a1=0x2f02dd74
+wifi-init-probe: OSI 16 semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: OSI 17 semphr_give a0=0x2f02e438 a1=0x0
+wifi-init-probe: OSI 18 queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: OSI 19 recv_probe a0=0x0 a1=0x8
+wifi-init-probe: OSI 20 zalloc a0=0x18 a1=0x0
+wifi-init-probe: OSI 21 alloc a0=0x18 a1=0x2f02fe60
+wifi-init-probe: OSI 22 mutex_lock a0=0x2f02d560 a1=0x0
+wifi-init-probe: OSI 23 queue_send a0=0x2f02ddc0 a1=0x6
+wifi-init-probe: OSI 24 mutex_unlock a0=0x2f02d560 a1=0x0
+wifi-init-probe: OSI 25 semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: OSI 26 timer_disarm a0=0x2f017d78 a1=0x0
+wifi-init-probe: OSI 27 zalloc a0=0x1214 a1=0x0
+wifi-init-probe: OSI 28 alloc a0=0x1214 a1=0x2f02fe88
+wifi-init-probe: OSI 29 malloc a0=0x400 a1=0x0
+wifi-init-probe: OSI 30 alloc a0=0x400 a1=0x2f0310ac
+wifi-init-probe: OSI 31 zalloc a0=0x98 a1=0x0
+wifi-init-probe: OSI 32 alloc a0=0x98 a1=0x2f0310ac
+wifi-init-probe: OSI 33 zalloc a0=0x98 a1=0x0
+wifi-init-probe: OSI 34 alloc a0=0x98 a1=0x2f031154
+wifi-init-probe: OSI 35 zalloc a0=0x98 a1=0x0
+wifi-init-probe: OSI 36 alloc a0=0x98 a1=0x2f0311fc
+wifi-init-probe: OSI 37 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 38 alloc a0=0x28 a1=0x2f0312a4
+wifi-init-probe: OSI 39 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 40 alloc a0=0x28 a1=0x2f0312dc
+wifi-init-probe: OSI 41 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 42 alloc a0=0x28 a1=0x2f031314
+wifi-init-probe: OSI 43 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 44 alloc a0=0x28 a1=0x2f03134c
+wifi-init-probe: OSI 45 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 46 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 47 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 48 alloc a0=0x288 a1=0x2f031384
+wifi-init-probe: OSI 49 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 50 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 51 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 52 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 53 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 54 alloc a0=0x288 a1=0x2f03161c
+wifi-init-probe: OSI 55 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 56 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 57 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 58 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 59 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 60 alloc a0=0x288 a1=0x2f0318b4
+wifi-init-probe: OSI 61 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 62 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 63 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 64 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 65 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 66 alloc a0=0x288 a1=0x2f031b4c
+wifi-init-probe: OSI 67 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 68 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 69 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 70 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 71 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 72 alloc a0=0x288 a1=0x2f031de4
+wifi-init-probe: OSI 73 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 74 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 75 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 76 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 77 malloc a0=0x314 a1=0x0
+wifi-init-probe: OSI 78 alloc a0=0x314 a1=0x2f03207c
+wifi-init-probe: OSI 79 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 80 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 81 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 82 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 83 malloc a0=0x314 a1=0x0
+wifi-init-probe: OSI 84 alloc a0=0x314 a1=0x2f0323a0
+wifi-init-probe: OSI 85 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 86 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 87 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 88 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 89 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 90 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 91 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 92 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 93 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 94 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 95 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 96 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 97 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 98 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 99 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 100 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 101 mutex_lock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 102 mutex_unlock a0=0x2f02dd4c a1=0x0
+wifi-init-probe: OSI 103 zalloc a0=0x78 a1=0x0
+wifi-init-probe: OSI 104 alloc a0=0x78 a1=0x2f0326c4
+wifi-init-probe: OSI 105 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 106 alloc a0=0x6a8 a1=0x2f03274c
+wifi-init-probe: OSI 107 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 108 alloc a0=0x6a8 a1=0x2f032e04
+wifi-init-probe: OSI 109 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 110 alloc a0=0x6a8 a1=0x2f0334bc
+wifi-init-probe: OSI 111 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 112 alloc a0=0x6a8 a1=0x2f033b74
+wifi-init-probe: OSI 113 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 114 alloc a0=0x6a8 a1=0x2f03422c
+wifi-init-probe: OSI 115 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 116 alloc a0=0x6a8 a1=0x2f0348e4
+wifi-init-probe: OSI 117 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 118 alloc a0=0x6a8 a1=0x2f034f9c
+wifi-init-probe: OSI 119 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 120 alloc a0=0x6a8 a1=0x2f035654
+wifi-init-probe: OSI 121 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 122 alloc a0=0x6a8 a1=0x2f035d0c
+wifi-init-probe: OSI 123 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 124 alloc a0=0x6a8 a1=0x2f0363c4
+wifi-init-probe: OSI 125 timer_setfn a0=0x2f017d04 a1=0x400346b0
+wifi-init-probe: OSI 126 timer_setfn a0=0x2f017d18 a1=0x400346a8
+wifi-init-probe: OSI 127 timer_setfn a0=0x2f017d54 a1=0x400346a0
+wifi-init-probe: OSI 128 timer_setfn a0=0x2f017d40 a1=0x40034698
+wifi-init-probe: OSI 129 timer_setfn a0=0x2f017d78 a1=0x40034690
+wifi-init-probe: OSI 130 timer_setfn a0=0x2f017d8c a1=0x40034688
+wifi-init-probe: OSI 131 timer_setfn a0=0x2f017da0 a1=0x40034680
+wifi-init-probe: OSI 132 timer_setfn a0=0x2f017dbc a1=0x40034678
+wifi-init-probe: OSI 133 timer_setfn a0=0x2f0180c4 a1=0x40034670
+wifi-init-probe: OSI 134 timer_setfn a0=0x2f018064 a1=0x40034668
+wifi-init-probe: OSI 135 timer_setfn a0=0x2f0180a0 a1=0x40034660
+wifi-init-probe: OSI 136 timer_setfn a0=0x2f017f14 a1=0x4003862a
+wifi-init-probe: OSI 137 wifi_clk_en a0=0x0 a1=0x0
+wifi-init-probe: OSI 138 icg_write a0=0x0 a1=0x64646400
+wifi-init-probe: OSI 139 coex_rel a0=0x0 a1=0x604
+wifi-init-probe: OSI 140 wifi_clk_dis a0=0x0 a1=0x0
+wifi-init-probe: OSI 141 calloc a0=0x1 a1=0x4
+wifi-init-probe: OSI 142 zalloc a0=0x4 a1=0x0
+wifi-init-probe: OSI 143 alloc a0=0x4 a1=0x2f036a7c
+wifi-init-probe: OSI 144 coex_interval a0=0x40007de0 a1=0x0
+wifi-init-probe: OSI 145 timer_setfn a0=0x2f017700 a1=0x40028eec
+wifi-init-probe: OSI 146 timer_setfn a0=0x2f017714 a1=0x40028ee2
+wifi-init-probe: OSI 147 timer_disarm a0=0x2f015c2c a1=0x0
+wifi-init-probe: OSI 148 semphr_give a0=0x2f02e438 a1=0x0
+wifi-init-probe: OSI 149 queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: OSI 150 recv_probe a0=0x0 a1=0x8
+wifi-init-probe: OSI 151 mutex_lock a0=0x2f02d560 a1=0x0
+wifi-init-probe: OSI 152 mutex_unlock a0=0x2f02d560 a1=0x0
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: ROMGLOB swq=0x2f02ddc0 ppq=0x2f029d50 ppsem=0x0
+wifi-init-probe: post-init ctx b14=0 b15=1 b16=0 b27=0 b288=0 b289=0 mac=0x0000e000
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: MAC_ST after init = 0x0000e000
+wifi-init-probe: INIT OK, arena free=263480/301664 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: tasks recorded=1
+sched-test: begin, task sp=0x2f020db0 stack=0x2f01cdf0
+sched-test: task iteration 0 (yielding)
+sched-test: main resumed after round 0 (main_sp=0x2f07ac60 task_sp=0x2f020c70)
+sched-test: task iteration 0 resumed
+sched-test: task iteration 1 (yielding)
+sched-test: main resumed after round 1 (main_sp=0x2f07ac60 task_sp=0x2f020c70)
+sched-test: task iteration 1 resumed
+sched-test: task iteration 2 (yielding)
+sched-test: main resumed after round 2 (main_sp=0x2f07ac60 task_sp=0x2f020c70)
+sched-test: task iteration 2 resumed
+sched-test: task done, returning to main
+sched-test: main resumed after round 3 (main_sp=0x2f07ac60 task_sp=0x2f020c70)
+sched-test: PASS
+wifi-init-probe: pre-PHY regs: 0x20109c18=0x00000000 0x20100800=0x00000001
+wifi-init-probe: MODEM_LPCON_CLK_EN 0x0 -> 0x1
+wifi-init-probe: MODEM_LPCON_CLK_CONF 0x3 -> 0x7
+wifi-init-probe: HP_SYS_CLKRST_MODEM_CONF 0x25 -> 0x3d
+wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x0 -> 0x38e7ff
+wifi-init-probe: SYSCON_FORCE_ON 0x0 -> 0x1c
+wifi-init-probe: LPCON_FORCE_ON 0x4 -> 0x5
+wifi-init-probe: IDF-align before: +00=0x100 +04=0x201002 +08=0x1c
+wifi-init-probe: IDF-align after:  +00=0x100 +04=0x201002 +08=0x1c
+wifi-init-probe: ICG_POWER_ST 0x64646400 -> 0x64646400 (IDF=0x64646400)
+wifi-init-probe: CLK_CONF_POWER_ST=0x64646400 apb=6 peri=4 wifi=6
+wifi-init-probe: write 0x20100400
+wifi-init-probe: rmw 0x20100800
+wifi-init-probe: write 0x20107C80
+wifi-init-probe: rmw 0x2070401C
+wifi-init-probe: fe_bb writes done
+wifi-init-probe: 0x2f01c9e4 不在 arena 里
+wifi-init-probe: magic_pre=0x2f029958 magic_post=0x2f029950 cal_data=0x2f020df0 cal_data-12=0x2f020de4
+wifi-init-probe: cal_data=0x2f020df0 init_params=0x4010586c wrapper=0x2f02e424 inner=0x2f02ddc0
+wifi-init-probe: register_chipv7_phy SKIPPED at init (交给 _phy_enable)
+wifi-init-probe: starting task[0] entry=0x2f00e076 arg=0x00000000 on its own stack
+wifi-init-probe: task context ready, running it until it blocks
+wifi-init-probe: chain-to-ROM mode, rom_mtvec=0x2f801703
+irq#0 in=25 mepc=0x4004bb46 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x02000000 a1=0x000000c8 s0=0x20580000 ra=0x4004bb0a
+wifi-init-probe: task blocked, main resumed (idle_calls=6)
+wifi-init-probe: reg_rxcb SKIPPED (probe_register_rxcb=false)
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02fe60
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02ddc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017d78 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e438 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#4 hooks=165 give=3 null_give=0 semmax=0x10000
+wifi-init-probe: get_config_channel rc=0 primary=0 second=0
+wifi-init-probe: internal_tx SKIPPED (probe_send_init_frame=false)
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: wifi_init_completed=1 (非 0 才继续)
+wifi-init-probe: is_lmac_idle=1 ic_interface_enabled=0 mac=0x0000e000
+wifi-init-probe: after ic_mac_init(0): is_lmac_idle=1 iface=0 mac=0x0000e000
+wifi-init-probe: dma_enable=0
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02fe60
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02ddc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017d78 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e438 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#5 hooks=14 give=4 null_give=0 semmax=0x10000
+wifi-init-probe: set_mode(STA) rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02fe60
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02ddc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e438 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f017d78 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e438 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02ddc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#6 hooks=26 give=5 null_give=0 semmax=0x10000
+wifi-init-probe: set_country(CN,1..13) rc=258
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02dd4c a1=0x00000000
+wifi-init-probe: set_storage(RAM) rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d560 a1=0x00000000
+wifi-init-probe: set_channel(6,0) rc=12290
+wifi-init-probe: wDevCtrl=0x2f0111cc pp_wdev_funcs=0x2f02d5c8 g_chm=0x2f018a24
+wifi-init-probe: ptr g_hmac_cnt_ptr=0x2f01619c
+wifi-init-probe: ptr g_ic_ptr=0x2f015954
+wifi-init-probe: ptr g_eb_list_desc_ptr=0x2f00ffd0
+wifi-init-probe: ptr g_lmac_cnt_ptr=0x2f018178
+wifi-init-probe: ptr pp_sig_cnt_ptr=0x2f015720
+wifi-init-probe: ptr s_wifi_queue=0x2f02e424
+wifi-init-probe: ptr trc_ctl_ptr=0x2f0111a4
+wifi-init-probe: ptr xphyQueue=0x2f02ddc0
+wifi-init-probe: ptr g_coex_param_ptr=0x00000000
+wifi-init-probe: LPCON_CLK_CONF 0x7 -> 0x7
+wifi-init-probe: rst_wifibb pulse 0x0 -> 0x0
+wifi-init-probe: gated reset (clk off -> rst -> on): mac=0x0000e000
+wifi-init-probe: pre-start mac=0x0000e000, clearing 0xE000
+FR [sp..+64) = 6e3310bb,202a5392,bf090088,0,0,0,0,0 | 0,0,20104400,3,20105000,201044c0,201044ec,201047c0
+!! c_mepc=0x4004c70a c_mtval=0x0000e030 c_ms=0x80007881 c_ra=0x4004c702 f_mepc=0x4004c70a f_sp=0x2f07aca0 c_ra_saved=0x00000000 cause=0x7 step=0 none da=0x0 db=0x47589736 dc=0 dd=0 dh=0 df=0x80000937 dg=0x0 di=0x0 dj=0x0 gm=0x0 gn=0x0
+SL sj=0x00000000 sv=0x00000000 want=0x4004c70a sn=0 sl=0x400a0300 mw=0x0513cac5
+NB 420=4b0e62a8 424=64f4085b 428=18a6c133 42c=a0ce5ce1 430=f1989cb7 434=210e18ac 438=690c1279 43c=c1d4b31f | 440=2693fd4a 444=75addcaa 448=a25a23e6 44c=c858e36f 450=d07413e3 454=af826ec1 458=cdac53e1 45c=7a2c6f6d
+WT btslp16=0x8b9101b5 btslp0=0x00175793 mepc8=513cac5,5931fd1
+RA off=744 ret=0x40000020
+RA off=760 ret=0x4005880e
+RA off=768 ret=0x4005a2ff
+RA off=780 ret=0x400485a0
+RA off=796 ret=0x400588cc
+OP 700=0 704=0 708=0 70c=0 710=0 714=0 718=0 71c=0 720=0 724=0 728=0 72c=0 730=0 734=0 738=0 73c=0
+RG ra=4004c702 t0=2038a000 t1=a t2=2038a000 a0=20105000 a1=2f005b0c a2=271 a3=6f8d a4=7d0001 a5=2f0297d0 a6=2f0297d0 a7=3b s0=e000 s1=0
+panic: exception code=7 (store access fault) cause=0x38000007
+panic: ra=0x4004c702 a0=0x20105000 a1=0x2f005b0c a2=0x271
+panic: live mepc=0x4004c70a mtval=0xe030
+panic: sp=0x2f07aca0 s0=0xe000 s1=0x0
+panic: regs a3=0x6f8d a4=0x7d0001 a5=0x2f0297d0 a6=0x2f0297d0 a7=0x3b
+panic: callframe +8=0xbf090088 +12=0x0
+panic: tregs t0=0x2038a000 t1=0xa t2=0x2038a000 t3=0xfe0000 t4=0x16 t5=0x4004f1a0 t6=0x400505f0
+panic: halted (wfi)

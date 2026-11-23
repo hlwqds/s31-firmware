@@ -15,6 +15,14 @@ const ota_ab = @import("ota_ab");
 const ab_flags = @import("ab_fail_flag");
 const bpp = @import("boot_power_perf");
 const perf_flag = @import("perf_flag");
+const coex_gate = @import("coex_gate");
+
+comptime {
+    // `-Dcoex`：让 radio-coex 的目标绑定进镜像——引用 `bind.boot` 会分析 bind.zig，
+    // 它的 comptime 块把 37 个 extern（libcoexist.a 与 ROM）与 43 个钩子函数体全部钉住。
+    // 关着时这一支不被分析，默认镜像里没有任何共存符号。
+    if (coex_gate.enabled) _ = &@import("radio_coex").bind.boot;
+}
 
 pub export fn main() noreturn {
     // `-Dwifi-init-probe` 打开时，入口换成 R3 探针（正常自检不跑）。

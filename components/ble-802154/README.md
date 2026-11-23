@@ -32,7 +32,7 @@ IPv6 over BLE，加上原有的 ATT/GATT、802.15.4 FCF、6LoWPAN 无状态解�
 
 - L3 板侧：2026-11-24 随 `wifi` profile 第一次上板，19 条里 18 条通过。为假的一条是 `gap adv … hci=0`：
   自检把 32 字节的 HCI 参数与向量的 31 字节切片比较（差一），与目标无关，已改为整段比较；
-  修复后的板级复验待做。日志 `logs/wifi-selftest-prefix-boot.log`。
+  修复后已板级复验 19/19（`logs/e2e-wifi-boot.log`，整份判决 pass）。第一次的日志 `logs/wifi-selftest-prefix-boot.log`。
 - L1 主机：2026-11-24，68 项（原有 20 项全部保留 + 新增 48 项），`zig fmt --check src/` 干净。
 - 差分：`/tmp/s31-oracle/ble_oracle.py`（seed 7）各 20 条随机向量，`ah` 20/20、`e` 20/20 相等
   （一次性测试，跑完已删除）。
@@ -136,7 +136,7 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 
 ## 待验证项
 
-- 上板复验 19 条自检（第一次上板 18/19，见「验证状态」）；与真实 controller 走一遍 Reset → Read_Buffer_Size → 广播 → 连接。
+- 与真实 controller 走一遍 Reset → Read_Buffer_Size → 广播 → 连接。
 - Number Of Completed Packets 的实际布局、PB=0b11 是否出现、失败命令是否只回 Status。
 - AD 结构 128 位 UUID 与 BLE 地址 → IID 的字节序，与参考实现（RIOT / Zephyr）对拍。
 - L2CAP credit based 通道与真实对端（IPSP）互通；`LE_Data_Length_Change` 后的 MPS/MTU 变化。

@@ -342,13 +342,14 @@ fn shellMalloc(size: usize) callconv(.c) ?*anyopaque {
     return @ptrCast(p);
 }
 
-fn shellFree(p: ?*anyopaque) callconv(.c) void {
+pub fn shellFree(p: ?*anyopaque) callconv(.c) void {
     const q: ?[*]u8 = if (p) |v| @ptrCast(v) else null;
     arena_state.free(q);
 }
 
 /// `*_internal` / `wifi_*` 这一族只是不同 heap 域的分配器；我们没有多堆，全部走同一个 arena。
-fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
+/// `pub`：共存核的适配钩子（`coex_hooks.zig`，`-Dcoex`）复用同一套原语；下面的几个壳同此。
+pub fn shellMallocInternal(size: usize) callconv(.c) ?*anyopaque {
     note(8, size, 0);
     const r = mallocRaw(size);
     note(13, size, @intFromPtr(r));
@@ -382,7 +383,7 @@ fn shellFreeHeapSize() callconv(.c) usize {
     return arena_state.bytes_free;
 }
 
-fn shellSemphrCreate(max: u32, init_count: u32) callconv(.c) ?*anyopaque {
+pub fn shellSemphrCreate(max: u32, init_count: u32) callconv(.c) ?*anyopaque {
     cnt_sem_create +%= 1;
     if (cnt_sem_create <= 4) {
         sem_create_args[cnt_sem_create - 1] = (max << 16) | (init_count & 0xFFFF);
@@ -401,18 +402,18 @@ pub fn shellSemphrCreatePublic(max: u32, init_count: u32) ?*anyopaque {
     return shellSemphrCreate(max, init_count);
 }
 
-fn shellSemphrDelete(p: ?*anyopaque) callconv(.c) void {
+pub fn shellSemphrDelete(p: ?*anyopaque) callconv(.c) void {
     const q: ?[*]u8 = if (p) |v| @ptrCast(v) else null;
     arena_state.free(q);
 }
 
-fn shellSemphrTake(p: ?*anyopaque, blocking: u32) callconv(.c) i32 {
+pub fn shellSemphrTake(p: ?*anyopaque, blocking: u32) callconv(.c) i32 {
     note(0, @intFromPtr(p), blocking);
     const s: *Semphr = @ptrCast(@alignCast(p orelse return 0));
     return s.take(blocking);
 }
 
-fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
+pub fn shellSemphrGive(p: ?*anyopaque) callconv(.c) i32 {
     give_total +%= 1;
     if (p == null) {
         // 实测 ack 的 give 传的是空句柄（take 侧却是有效句柄）→ 这是两个不同变量。
@@ -596,7 +597,7 @@ fn shellGetRandom(buf: ?[*]u8, len: usize) callconv(.c) c_int {
     return 0;
 }
 
-fn shellEspTimerGetTime() callconv(.c) i64 {
+pub fn shellEspTimerGetTime() callconv(.c) i64 {
     return if (hooks.now_us) |f| @intCast(f()) else 0;
 }
 
@@ -653,6 +654,7 @@ pub var current_is_task: bool = false;
 fn shellSetIntr(cpu: i32, src: u32, num: u32, prio: i32) callconv(.c) void {
     calls.set_intr += 1;
     note(31, (@as(usize, @intCast(src)) << 8) | (num & 0xFF), @intCast(@as(u32, @bitCast(prio))));
+    if (!on_target) return;
     const intr_matrix_set = @extern(*const fn (u32, u32, u32) callconv(.c) void, .{ .name = "intr_matrix_set" });
     intr_matrix_set(@intCast(cpu), src, num);
     // IDF 的 `set_intr_wrapper` 还会设优先级：CLIC 每输入 ctrl 字的 [31:24]。
@@ -670,11 +672,18 @@ fn shellClearIntr(src: u32, num: u32) callconv(.c) void {
     _ = .{ src, num };
     calls.clear_intr += 1;
 }
+/// 目标板专属代码的编译期开关。四处板级动作只在 freestanding 目标上有意义：CLIC 的 MMIO 与 ROM 的
+/// `intr_matrix_set`（`shellSetIntr`）、trap 表与 ROM 的 `intr_handler_set`（`shellSetIsr`）、
+/// `csrs`/`csrc`（`shellIntsOn/Off`）。主机测试里提前返回，计数器照常累加（仍是"可观测的空操作"）；
+/// 板上条件恒为假，生成的代码不变。
+const on_target = @import("builtin").os.tag == .freestanding;
+
 /// `_set_isr(n, f, arg)`：把 handler 装到 CPU 输入 `n` 上（IDF 是 `esp_rom_intr_handler_set`；
 /// ROM 符号 `intr_handler_set = 0x2f800764`，内部写 `s_intr_handlers[core][n] = {f, arg}`）。
 fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
     calls.set_isr += 1;
     note(32, @intCast(n), @intFromPtr(f));
+    if (!on_target) return;
     // 写**应用侧**的表（我们的 trap 才会分发它）——IDF 的 `s_intr_handlers` 就是应用侧。
     // **约定**：`n` 是 CLIC 输入号（blob 自己的编号，如 `mie |= 1<<25`），`trap.setHandler` 内部
     // 归一化到外部号（`n >= 16` 时存 `n-16`），与 `trapDispatch` 的查找口径一致。
@@ -694,6 +703,7 @@ fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
 fn shellIntsOn(mask: u32) callconv(.c) void {
     calls.ints_on += 1;
     note(33, mask, 0);
+    if (!on_target) return;
     var m = mask;
     var i: usize = 0;
     while (m != 0 and i < 32) : (i += 1) {
@@ -710,6 +720,7 @@ fn shellIntsOn(mask: u32) callconv(.c) void {
 }
 fn shellIntsOff(mask: u32) callconv(.c) void {
     calls.ints_off += 1;
+    if (!on_target) return;
     var m = mask;
     var i: usize = 0;
     while (m != 0 and i < 32) : (i += 1) {
@@ -738,7 +749,7 @@ fn shellWifiIntRestore(mux: ?*anyopaque, saved: u32) callconv(.c) void {
     _ = .{ mux, saved };
     calls.wifi_int_restore += 1;
 }
-fn shellTaskYieldFromIsr() callconv(.c) void {
+pub fn shellTaskYieldFromIsr() callconv(.c) void {
     calls.task_yield_from_isr += 1;
 }
 /// `_task_delay(ms)`：单线程壳里没有别的执行体，所以"延时"= **让出**并按注入时钟计时。
@@ -1018,7 +1029,7 @@ fn allocTimer(ptimer: ?*anyopaque) ?*TimerEntry {
     return null;
 }
 
-fn shellTimerSetfn(ptimer: ?*anyopaque, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) callconv(.c) usize {
+pub fn shellTimerSetfn(ptimer: ?*anyopaque, fn_: ?*const fn (?*anyopaque) callconv(.c) void, arg: ?*anyopaque) callconv(.c) usize {
     note(17, @intFromPtr(ptimer), @intFromPtr(fn_));
     const t = allocTimer(ptimer) orelse return 1;
     t.fn_ = fn_;
@@ -1040,17 +1051,17 @@ fn shellTimerArm(ptimer: ?*anyopaque, ms: u32, repeat: bool) callconv(.c) usize 
     return armTimerCommon(ptimer, @as(u64, ms) * 1000, repeat);
 }
 
-fn shellTimerArmUs(ptimer: ?*anyopaque, us: u32, repeat: bool) callconv(.c) usize {
+pub fn shellTimerArmUs(ptimer: ?*anyopaque, us: u32, repeat: bool) callconv(.c) usize {
     return armTimerCommon(ptimer, us, repeat);
 }
 
-fn shellTimerDisarm(ptimer: ?*anyopaque) callconv(.c) usize {
+pub fn shellTimerDisarm(ptimer: ?*anyopaque) callconv(.c) usize {
     note(19, @intFromPtr(ptimer), 0);
     if (findTimer(ptimer)) |t| t.armed = false;
     return 0;
 }
 
-fn shellTimerDone(ptimer: ?*anyopaque) callconv(.c) usize {
+pub fn shellTimerDone(ptimer: ?*anyopaque) callconv(.c) usize {
     if (findTimer(ptimer)) |t| t.* = .{};
     return 0;
 }

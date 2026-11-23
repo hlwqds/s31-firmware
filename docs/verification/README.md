@@ -39,7 +39,15 @@ harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓
 
 失败那一条的原因：`ble-802154` 的自检把 32 字节的 HCI 参数与向量的 31 字节切片比较，差一，恒为假；与目标无关，是自检代码的错。已改为整段比较（`components/ble-802154/src/selftest.zig`）。修复后用桩 `board` 模块在主机上执行五个组件的 `selftest.run()`，结果 28/16/19/25/10 全过。
 
-**修复后的板级复验还没有做**，所以目前没有一份整体判决为 `pass` 的板级日志。上面的表是唯一一次板级运行的原始结果。
+## 板级运行：2026-11-24 复验
+
+同一条命令再跑一次（`PASS board:wifi`）。14 个 section 全部通过，`ble_802154` 19/19，聚合行
+`firmware: sections: passed=14 failed=0 total=14`、`main: verdict=pass`。原始日志 `logs/e2e-wifi-boot.log`
+（已覆盖上一次的文件；上一次的原始日志只留在 `logs/wifi-selftest-prefix-boot.log`）。
+
+| section | `net_ipv4` | `net_udp_dhcp_dns` | `net_tcp` | `net_congestion` | `net_sockets` | `net_ethernet` | `wifi_boundary` | `wifi_connect` | `ble_802154` | `wifi_mlme` | `ble_security` | `radio_coex` | `boot_power_perf` | `posix` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 判据 | 13/13 | 14/14 | 11/11 | 10/10 | 12/12 | 11/11 | 13/13 | 28/28 | 19/19 | 16/16 | 25/25 | 10/10 | 12/12 | 36/36 |
 
 ## 默认镜像不变（L2）
 

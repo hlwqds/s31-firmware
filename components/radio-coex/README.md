@@ -36,9 +36,13 @@
 
 ## 验证状态
 
-只列实际跑过的；板上只跑过对假核心的自检（见下）。
+只列实际跑过的。板上跑过两次：对假核心的自检，以及经 C2 接线带着真核心的启动（见下）。
 
-- L3 板侧：2026-11-24 随 `wifi` profile 第一次上板，自检 10/10（对着假核心）。日志 `logs/wifi-selftest-prefix-boot.log`。真核心仍未测。
+- L3 板侧（假核心）：2026-11-24 随 `wifi` profile 第一次上板，自检 10/10。日志 `logs/wifi-selftest-prefix-boot.log`。
+- L3 板侧（真核心，经 `-Dcoex` 接线）：同日 BLE 探针读到 `param=0x2f00ffe4`、`fw=2.0.0 rom=cdcf52b`、
+  `coa` 等于适配表地址、两个 BLE 回调都已登记（`logs/coex-ble-probe-boot.log`）；Wi-Fi 探针读到
+  共存库自己打的两行版本与 `wifiInit rc=0`（`logs/coex-wifi-probe-boot.log`）。细目见
+  `docs/verification/coex-verification.md` §4。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |
@@ -51,7 +55,7 @@
 | L1 布局实测 | esp-gcc 15.2 用本仓 `sdkconfig.h` 编译 IDF 头：`sizeof(coex_adapter_funcs_t)`=80、偏移 0,4,…,76；`sizeof(wifi_osi_funcs_t)`=512、共存字段在 384–484（即下标 96–121）；枚举 0/1/2、0..4、位图 1 | 与 `adapter.zig` / `core.zig` 一致 |
 | L1 布局实测 | 同一 C 结构在 x86_64（`zig cc -target x86_64-linux-gnu`）：160 字节、`_magic`@152 | 与主机上的 `AdapterTable` 一致 |
 | L2 布局实测 | RV32 上导出 `AdapterTable` 变量，`nm -S` 读到 80 字节；导出常量读到 `_magic`@76、`_env_is_chip`@48、`_esp_timer_get_time`@44 | 一致 |
-| L3 板侧自检 | 2026-11-24 随 `wifi` profile 上板一次，对着假核心：`checks: passed=10 failed=0 total=10`（上板前也在主机上用桩 `board.log` 跑过 10/10） | 假核心通过；真核心待验证 |
+| L3 板侧自检 | 2026-11-24 随 `wifi` profile 上板，对着假核心：`checks: passed=10 failed=0 total=10`（上板前也在主机上用桩 `board.log` 跑过 10/10） | 假核心通过；真核心见上面的 L3 板侧 |
 | 差分 | 未做：`/tmp/s31-oracle/wifi_oracle.py` 只覆盖 RSNA 密码学构造，没有 coex；本组件也没有密码学构造 | — |
 
 关于命令：`zig test … --summary all` 在本机 Zig 0.17.1 上不被识别（`error: unrecognized parameter: --summary`，
@@ -264,33 +268,27 @@ ISO = `CONFIG_BT_LE_ISO_SUPPORT`（`glue.Config.ble_iso`）。
 
 ## 待验证项
 
-都要上板，且要真核心（`bind.zig`）而不是假核心：
+2026-11-24 的 C2 接线（`docs/verification/coex-verification.md` §4）做掉了原先前几项里能验的部分：
 
-1. **适配表被核心接受**：`bind.boot()` 回 `ESP_OK`；`g_coa_funcs_p`（ROM 槽位 `0x2f07ff98`）等于
-   `glue.adapterTable()` 的地址；`g_coex_param_ptr`（`0x2f07ff94`）非零——仓内现在是 0
-   （`logs/ch25-clock-readback-boot.log:386`）。
-2. **两行版本日志**：官方固件启动时有 `coexist: coex firmware version: …` 与 `coexist: coexist rom version …`
-   （`components/bt-blobs/logs/bt-ana-i2c-official-trace.log:59-60`）；两个格式串都在 `libcoexist.a` 里，
-   经 `coexist_printf` 打印，所以这一条同时验证那一个 C 变参胶水。`coex_version_get()` 具体回哪个串未核对。
-3. **18 个适配钩子的真实现**：信号量/定时器/`_is_in_isr`/`_malloc_internal`/`_xtal_freq_get` 得从 `osal` 与
-   Wi-Fi osi 外壳转接；IDF 的实现在 `esp_coex/esp32s31/esp_coex_adapter.c:31-158`。本组件只校验"给齐了"。
-4. **BLE 两个回调在真核心上被调**：登记 type 0/1 都回 ESP_OK；按反汇编，type 0 在第二个射频 `coex_enable`
-   时被调、type 1 在使能计数降回 1 时被调。ADR-003 的 L3 判据"`coex_wifi_request` 之后 BLE 回调被触发"
-   指的是方案回调（`coex_schm_register_callback(BT, …)` 登记的那个），由调度器在相位切换时调——
-   那条路径的反汇编没读，本组件只验证了登记。
-5. **三个两处同名的符号由链接器取谁**（`coex_event_duration_get`、`coex_wifi_release`、`coex_schm_interval_set`）：
-   IDF 的参照构建里 `coex_event_duration_get` 落在 ROM 的 `0x2f800c18`；本仓 `s31.ld:1304` 还多了一条
+| 原待验证项 | 结果 |
+| --- | --- |
+| 适配表被核心接受 | BLE 探针与 Wi-Fi 探针上板：`coa` 等于适配表地址；`g_coex_param_ptr` 非零（`0x2f00ffe4`、`0x2f01173c`，此前板上恒为 0） |
+| 两行版本日志 | 共存库自己打出 `coex firmware version: a830d28`、`coexist rom version cdcf52b`（Wi-Fi 探针，经 `link/coex_printf_shim.c`）；诊断行另报 `fw=2.0.0 rom=cdcf52b` |
+| 18 个适配钩子的真实现 | BLE 侧在 `components/osal/src/coex_hooks.zig`，Wi-Fi 侧在 `components/wifi-blobs/src/coex_hooks.zig`；板上核只走了"立即拿到锁"的路径 |
+| BLE 两个回调 | 登记 type 0/1 都回 `ESP_OK`（`cb0`、`cb1` 是两个不同地址，不再是后者覆盖前者）；被核心调用的时刻要两个射频都开，**未验证** |
+| 与现有胶水的符号冲突 | `bt-blobs/src/wifi_glue.zig` 的三个桩留在文件顶层原位：两个 ROM 桩经链接脚本的别名 `rom_*` 转给真函数；`coexist_printf` 在 BLE 探针镜像里仍是那里的 Zig 导出（只转格式串），其余 coex 镜像由 C shim 提供真格式化 |
+| 现有接线的缺口 | `osal.zig` 补齐 5 个强定义；Wi-Fi osi 表的 24 个共存表项在开 `-Dcoex` 时整体换成胶水的包装函数（在 `makeTable()` 之后） |
+
+仍然没验证：
+
+1. **三个两处同名的符号由链接器取谁**（`coex_event_duration_get`、`coex_wifi_release`、`coex_schm_interval_set`）：
+   IDF 的参照构建里 `coex_event_duration_get` 落在 ROM 的 `0x2f800c18`；本仓 `s31.ld` 还多了一条
    `PROVIDE(coex_status_get = 0x2f800c34)`（IDF 的 ROM 脚本里这行是注释掉的），要确认 `libcoexist.a` 的
    `coex_status_get`（`.coexiram.12`）没被段级 gc 掉。
-6. **与现有胶水的符号冲突**：`components/bt-blobs/src/wifi_glue.zig:33-42` 导出了 `coex_core_ble_conn_dyn_prio_get`、
-   `esp_coex_rom_version_get` 的桩，`coexist_printf` 也在那里；接进真核心时这三者与 ROM 脚本 / `libcoexist.a`
-   的同名符号要各留一份。
-7. **现有接线的缺口**（接线时要补）：`osal.zig:2025-2082` 只导出了 16 个 `wr_btdm_coex_*` 里的 11 个，
-   缺 `schm_interval_get`、`schm_curr_period_get`、`schm_curr_phase_get`、`version_get`、`iso_start_int_handle`；
-   `wifi-blobs/src/osi_impl.zig:1132-1170` 的 8 个 coex 外壳参数名与顺序同 IDF 不一致
-   （例如 `shellCoexWifiRequest(kind, event, latency)` 对应 IDF 的 `(event, latency, duration)`）；其余 16 个
-   共存字段与 IDF 留空的 `_coex_condition_set` 由 `osi_stubs.zig:316-341` 的具名桩 `stub24`–`stub29`、`stub31`–`stub49` 填上（桩体没读）。
-8. **L4 真链路**：共存下的吞吐、PTI 行为——两个射频各自打通之后。
+2. **Wi-Fi 侧的 `_coex_enable`**：探针在 start 之前 panic（它自己写死的一个 RAM 地址），blob 没有执行到。
+3. **回调被核心调用**：ADR-003 的 L3 判据"`coex_wifi_request` 之后 BLE 回调被触发"指的是方案回调
+   （`coex_schm_register_callback(BT, …)` 登记的那个），由调度器在相位切换时调——那条路径的反汇编没读。
+4. **L4 真链路**：共存下的吞吐、PTI 行为——两个射频各自打通之后。
 
 ## 假核心依据
 
