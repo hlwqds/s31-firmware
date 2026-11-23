@@ -879,21 +879,20 @@ fn writeLightMarker(phase: u32) void {
 
 /// **轮 119d**：ULP keeper 武装（幂等，可在 bringup.init 前后各调一次）。
 /// init 内部的 LP 域动作会把 boot addr 清 0（BOOTADDR 回读实证）⇒ init 后必须重装。
-var ulp_prog_snapshot: [60]u8 = @splat(0);
+var ulp_prog_snapshot: [58]u8 = @splat(0);
 
 fn ulpKeeperArm(comptime tag: u8) void {
     const ulp_prog = [_]u8{
-        // **轮 120v（v14 60B waiti 模式）**：每轮计数/相位更新后 wfi 等
-        // TRIGGER 唤醒——oracle 同款停等模式（waiti 态才能被 HP_TRIGGER_LP
-        // 唤醒；spinning 核不吃触发）。每次 POLL 应见 hb +1。
-        0x37, 0x1e, 0x00, 0x2e, 0x13, 0x0e, 0x0e, 0xf0,
-        0x93, 0x0e, 0x0e, 0x02, 0x37, 0x08, 0xde, 0xc0,
-        0xb7, 0x08, 0xde, 0xfa, 0x83, 0x25, 0x0e, 0x00,
-        0x85, 0x05, 0xc2, 0x05, 0xc1, 0x81, 0xb3, 0xe5,
-        0x05, 0x01, 0x23, 0x20, 0xbe, 0x00, 0x83, 0xa7,
-        0x0e, 0x00, 0x85, 0x07, 0xbd, 0x8b, 0xb3, 0xe7,
-        0x17, 0x01, 0x23, 0xa0, 0xfe, 0x00, 0x73, 0x00,
-        0x50, 0x10, 0xe9, 0xbf,
+        // **轮 120w（v16 60B waiti，格子 0x2E000FF0/FF8）**：-0xE74 视图下
+        // HP 落点 0x17C/0x184 = 程序/向量区外；+0x27F8 视图 → 0x37E8/0x37F0。
+        0x37, 0x1e, 0x00, 0x2e, 0x41, 0x1e, 0x93, 0x0e,
+        0x8e, 0x00, 0x37, 0x08, 0xde, 0xc0, 0xb7, 0x08,
+        0xde, 0xfa, 0x83, 0x25, 0x0e, 0x00, 0x85, 0x05,
+        0xc2, 0x05, 0xc1, 0x81, 0xb3, 0xe5, 0x05, 0x01,
+        0x23, 0x20, 0xbe, 0x00, 0x83, 0xa7, 0x0e, 0x00,
+        0x85, 0x07, 0xbd, 0x8b, 0xb3, 0xe7, 0x17, 0x01,
+        0x23, 0xa0, 0xfe, 0x00, 0x73, 0x00, 0x50, 0x10,
+        0xe9, 0xbf,
     };
     // **轮 120b**：向量表！oracle 加载完整 ULP 镜像（0x2E000000-0x7F 向量表
     // +0x80 程序）。裸核 mtvec=0，LP 域任何中断（我们自己 arm 的 RTC timer
@@ -2542,8 +2541,12 @@ pub fn run() noreturn {
             // ~0.25s 翻转。主上下文在 RF-ON 门控下活（mcycle 忙等）⇒ 10 次 POLL
             // 读 bit10 序列：交替 0/1 = ULP 活；恒定 = ULP 死/时钟被门控。
             const f018p: *volatile u32 = @ptrFromInt(0x2010_F018);
+            // **轮 120w**：HP/LP 视图偏移每 boot 变（+0x27F8 或 -0xE74 已实证）
+            // ⇒ 读双候选；魔数扫描定位真实落点。
             const hbp: *volatile u32 = @ptrFromInt(0x2E00_36F8);
             const hpp: *volatile u32 = @ptrFromInt(0x2E00_3718);
+            const hbp2: *volatile u32 = @ptrFromInt(0x2E00_0F8C); // -0xE74: 0xE80→0x8C
+            const hpp2: *volatile u32 = @ptrFromInt(0x2E00_0FAC); // 0xEA0→0xAC
             var poll: u32 = 0;
             while (poll < 10) : (poll += 1) {
                 const s: u32 = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
@@ -2581,7 +2584,22 @@ pub fn run() noreturn {
                 const p0v: u32 = pwr0p.*;
                 if ((p0v & (1 << 18)) != 0) pwr0p.* = p0v & ~@as(u32, 1 << 18);
                 const lprcp: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
-                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} pwr0={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, p0v, lprcp });
+                const cc_rb: u32 = @as(*volatile u32, @ptrFromInt(0x2071_0004)).*; // 重断言后回读
+                // **轮 120w**：POLL00 全 4KB 魔数扫描——blob init 后 HP/LP 视图偏移
+                // 可能变化（魔数落点漂移）⇒ 本次 boot 内实时扫描。
+                if (poll == 0) {
+                    var m2: usize = 0;
+                    var ma: usize = 0x2E00_0000;
+                    while (ma < 0x2E00_1000 and m2 < 4) : (ma += 4) {
+                        const mv = @as(*volatile u32, @ptrFromInt(ma)).*;
+                        if ((mv & 0xFFFF_0000) == 0xC0DE_0000) {
+                            board.log.line("POLLSCAN magic=0x{x:0>8} @0x{x:0>8}", .{ mv, ma });
+                            m2 += 1;
+                        }
+                    }
+                    if (m2 == 0) board.log.line("POLLSCAN none (核死或视图超 4KB 窗)", .{});
+                }
+                board.log.line("POLL{d:0>2} 98BC={x:0>8} f800={x:0>8} f018={x:0>8} hb={x:0>4} ph={x:0>4} hb2={x:0>8} ph2={x:0>8} pwr0={x:0>8} ccrb={x:0>8} corst={x:0>8}", .{ poll, s, f800p.*, f018p.*, hbp.* & 0xFFFF, hpp.* & 0xFFFF, hbp2.*, hpp2.*, p0v, cc_rb, lprcp });
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。

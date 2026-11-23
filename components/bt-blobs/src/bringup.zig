@@ -240,10 +240,20 @@ pub fn setHooks(h: Hooks) void {
 /// **纯 RAM 进度记录**（不受串口丢行影响）：崩溃后由 panic 路径 dump。
 pub var last_step: u32 = 0;
 pub var last_step_name: []const u8 = "none";
+var lp_kill_seen: bool = false; // 轮 120t：杀核步骤一次性捕捉（cause=0xA 首现步）
 
 fn enter(n: u32, comptime what: []const u8) void {
     last_step = n;
     last_step_name = what;
+    // **轮 120t**：LP 核复位原因追踪——找 blob init 的杀核步骤（cause 翻 0xA 的步）。
+    // 写 0x2E0003B0 = {step, cause}（跨复位可读，POLL/boot 读出对比）。
+    const lprc: u32 = @as(*volatile u32, @ptrFromInt(0x2070_1038)).*;
+    @as(*volatile u32, @ptrFromInt(0x2E00_03B0)).* = n;
+    @as(*volatile u32, @ptrFromInt(0x2E00_03B4)).* = lprc;
+    if ((lprc & 0x3F) == (0xA << 1) and !lp_kill_seen) {
+        lp_kill_seen = true;
+        osal.logPublic("bt bringup: LPKILL at step {d} {s} corst=0x{x:0>8}", .{ n, what, lprc });
+    }
     // **LP 深度槽**（0x2E000420）：跨复位可读，FEFE lrec[11] 带出。
     // enable() 内部挂死时 host 靠它定位卡在哪一步（UART 不可用时的唯一深度证据）。
     mmioWr(0x2E00_002C, n);
