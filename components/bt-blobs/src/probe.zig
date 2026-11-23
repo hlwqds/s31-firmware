@@ -2685,6 +2685,9 @@ pub fn run() noreturn {
             }
             if (found == 0) board.log.line("QFOUND none in pool (waiter 指针不匹配)", .{});
         }
+        // **轮 121z6**：post-POLL evt/btdm_tx 判读——0x200A 处理器若完成则
+        // CC 事件入队（evt≥9）且命令已发（btdm_tx≥4）。
+        board.log.line("POSTPOLL evt={d} btdm_tx={d}", .{ transport.stats().evt_count, transport.stats().btdm_tx });
         if (rf_ok) {
             // **轮 94b**：0x200A 后 blob 门控 UART0 ⇒ 任何打印都会卡死主上下文
             // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。
