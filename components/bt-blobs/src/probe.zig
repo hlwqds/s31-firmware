@@ -1238,6 +1238,7 @@ pub fn run() noreturn {
         pb[3] = rd_.r(0x2070_4014);
         pb[4] = rd_.r(0x2070_4054);
         _ = esp_rom_spiflash_erase_sector(0x18B000 / 0x1000);
+        _ = esp_rom_spiflash_erase_sector(0x188000 / 0x1000); // 轮 148：trap 环扇区预擦（主上下文安全）
         _ = esp_rom_spiflash_write(0x18B000, &pb, @intCast(@sizeOf(@TypeOf(pb))));
         flashStage(72);
         // **逐位探测 CSR 0x7a0**（解码 Espressif tdata1 的真实布局）：

@@ -113,7 +113,8 @@ bool phy_module_has_clock_bits(int module) { (void)module; return false; }
  * 随后在 0x200A 发送路径内挂死（GATE 后 60s+ 全静默）——与 README 25238
  * item#2「pmu 后 flash 写静默失败 + FE 轮询挂」同族 = 独立课题。重新链入方法 =
  * 删本空桩 + -Dphy-src-objs 追加 esp_hw_support 的 pmu_init.c.obj,pmu_param.c.obj。 */
-void pmu_init(void) {} // 轮 146b：恢复默认态（真 pmu + 可写区后 = 无断言紧等待环楔死 CPU 全静默，待 NMI PC 采样定位新等待面）
+// 轮 148b：真 pmu 实验态（捕获窗 flash 环首次实跑：楔死 PC 经 0x1870_0100
+// 通道落盘，esptool read_flash 读出 = 新等待面地址。空桩恢复 = 改回上一行）。
 /* **轮 141 终判**：三因子（真 pmu_init 域上电 + mc0|=0x15 MODEM CLK/PLL +
  * UART 恢复）同测 = CTRL0 bit2/4 **写后仍读 0**（电源钳制假说也否，硬件级顽固）
  * + 流程照旧死于 0x200A。恢复空桩默认态。
