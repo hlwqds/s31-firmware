@@ -1360,6 +1360,11 @@ pub fn run() noreturn {
         // （0xffff0000 dump 已删：load access fault = 未映射 ⇒ 不可执行，问题已答）
         const pmu_init_f = @extern(*const fn () callconv(.c) void, .{ .name = "pmu_init" });
         pmu_init_f();
+        // **轮 138（r134b 挂死根修）**：pmu_init 杀 UART0 时钟 ⇒ 后续阻塞写
+        // （log/sendCmdViaHs 路径）永挂 = r134b「GATE 后静默」真因。立即从
+        // uartSnapshot 恢复 CTRL0（bit7 UART0_CLK_EN/bit1 APB_CLK_EN）。
+        @as(*volatile u32, @ptrFromInt(CLKRST_UART0_CTRL0)).* = uart_ctrl0_snap;
+        @as(*volatile u32, @ptrFromInt(CLKRST_SOC_CLK_SEL)).* = uart_soc_snap;
         // **轮 93**：lp_pc_en 武装前读 LP 槽——里面是**上一轮 boot 挂死时**的冻结
         // mepc（NMI 每 2ms 写，挂死后不再更新，LP 跨复位保留）。确定性 hang ⇒
         // 每轮打印的都是同一挂死 PC。上轮 boot 在 0x200A 后全静默 ⇒ 此值即死点。
