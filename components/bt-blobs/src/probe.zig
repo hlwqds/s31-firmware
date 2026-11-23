@@ -2558,6 +2558,21 @@ pub fn run() noreturn {
             // （ROM FIFO 等待环 0x2f8036cc，NMI 实测 ra=probe.run 打印路径）。
             // 静默一切 UART 输出，ADV-enable 结果直写 0x18F000 marker 离线判读。
             board.log.muted = true;
+            // **轮 120k**：STORE 观察点盯 SYSTIMER_CTRL0（0x20587120）——坍缩期间
+            // 谁写它（blob 门控 SYS_TIMER 的写点）→ trap cause=3 → wp 槽给出 mepc。
+            // tdata1=0x4A（STORE|M|U）；tselect=1（0 号留给历史武装）。
+            // **轮 120k→l**：目标改 TIMERGRP 时钟门 0x2058_711C（SYSTIMER_CTRL0
+            // = 我们 POLL 环每 0.75s 自写 = 观察点风暴，轮 63 已知模式）。
+            // 0x711C 只有 hw init 写一次 ⇒ 命中必是 blob 的 TIMERGRP 门控写。
+            asm volatile ("csrw 0x7a0, zero");
+            asm volatile ("csrw 0x7a1, zero"); // 先解除 trig0 历史
+            asm volatile ("li t0, 1");
+            asm volatile ("csrw 0x7a0, t0");
+            asm volatile ("li t0, 0x2058711C");
+            asm volatile ("csrw 0x7a5, t0"); // tdata2 = 目标地址
+            asm volatile ("li t0, 0x4A");
+            asm volatile ("csrw 0x7a1, t0"); // tdata1 = STORE|M|U
+            asm volatile ("csrw 0x7a0, zero"); // 回 tselect=0
             // **轮 95d**：0x200A 改走 A 路径（异步队列）——B 路径同步分发下
             // ADV-enable handler 内部等待的事件需要泵投递而泵正阻塞在本调用里
             // = 同步死锁。A 路径入队 ⇒ controller task 在自己上下文处理 ⇒
