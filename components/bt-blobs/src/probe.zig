@@ -1413,6 +1413,22 @@ pub fn run() noreturn {
                 }
                 if (hits == 0) board.log.line("MAGIC none in 0x0000-0x3FFF (LP 核未写或视图在别处)", .{});
             }
+            {
+                // **轮 120m**：垃圾指针宿主扫描——logHook 链崩在调 0x10801000/
+                // 0x2f000000（r119m/120l 两族）⇒ 扫 blob 数据区找这两个值的宿主槽。
+                var ghits: usize = 0;
+                var ga: usize = 0x2F00_0000;
+                while (ga < 0x2F08_0000 and ghits < 8) : (ga += 4) {
+                    const v = @as(*volatile u32, @ptrFromInt(ga)).*;
+                    if (v == 0x1080_1000 or v == 0x2F00_0000) {
+                        const wprev = @as(*volatile u32, @ptrFromInt(ga - 8)).*;
+                        const wprev2 = @as(*volatile u32, @ptrFromInt(ga - 4)).*;
+                        board.log.line("GPTR 0x{x:0>8} @0x{x:0>8} (prev=0x{x:0>8},0x{x:0>8})", .{ v, ga, wprev2, wprev });
+                        ghits += 1;
+                    }
+                }
+                if (ghits == 0) board.log.line("GPTR none in 0x2f000000-0x2f080000", .{});
+            }
             const h610: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0610)).*;
             const h614: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0614)).*;
             const h618: u32 = @as(*volatile u32, @ptrFromInt(0x2E00_0618)).*;
