@@ -422,6 +422,16 @@ pub fn init(cfg: *config.Config) c_int {
         porting.phyDomainEnable();
         enter(52, "init_phy");
         @import("probe_ptr.zig").initPhy();
+        // **轮 126c（XTAL cap trim 前移）**：ana bursts（rf_on/bbpll）在 initPhy 内
+        // 已按未 trim 参考跑过 ⇒ trim 必须紧随其后、先于 enable 期 synth 首编。
+        // b5 reg97 = 可写 trim（0x00→0x07，回读 ✓）；b4 reg97 = 只读状态（写不动
+        // 且 oracle 的 5a = 锁定后状态 = 果非因，不写）。
+        {
+            const wr = @extern(*const fn (reg: u8, hostid: u8, blk: u8, data: u8) callconv(.c) void, .{ .name = "phy_i2c_writeReg" });
+            const rd = @extern(*const fn (reg: u8, hostid: u8, blk: u8) callconv(.c) u8, .{ .name = "phy_i2c_readReg" });
+            wr(97, 1, 5, 0x07);
+            osal.logPublic("xtal trim b5 reg97 = {x:0>2} (expect 07)", .{rd(97, 1, 5)});
+        }
         osal.logPublic("bt bringup: PHY enabled AFTER step 5 (idf order)", .{});
     }
 

@@ -92,14 +92,14 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
      * osi_impl_serviceTimers 停摆 ⇒ synth 预热定时器永不触发 ⇒ RF-ready
      * 永不置位。hits>4 后每 64 次让出一次 = 主循环得以泵定时器（oracle 无此
      * 问题 = FreeRTOS tick 天然喂泵）。 */
-    if (bt_assert_hits > 4 && (bt_assert_hits & 63) == 0) {
+    if ((bt_assert_hits & 63) == 0) {
         extern void s31AssertYield(void);
         s31AssertYield();
     }
     /* **轮 124e**：限流——synth 等锁路径每轮断言打印一次，16 次轮询 × 反复重进
      * = UART 饱和（1.1MB 刷屏），把探针的 R99/ana 对拍行全挤掉。前 4 次打印保
      * 现场，之后静默（hits/LP 槽照记）。 */
-    if (bt_assert_hits > 4) return;
+    if (bt_assert_hits > 8) return;
     /* **轮 120e**：buf 128→256（ble_hw.c 全路径 86 字符把 p0/type 挤掉——占位符
      * 之谜），并打全 p0/p1/type/RA（一次 boot 拿到断言点全现场）。 */
     char buf[256];
@@ -134,23 +134,21 @@ void wr_btdm_assert(const char *file, int line, int p0, int p1, unsigned char ty
     /* **轮 124f-2**：首次断言即 post-ADV 现场——任务上下文活着、UART 未淹，
      * 顺势拼 ana 芯片内部读值（reg99 横扫 blocks 1-7，RF PLL cap = (99,1,6)），
      * 与 oracle post-cmds 基线（R99 b1=ab b3=32 b4=11 b5=11）直接对拍。 */
-    if (bt_assert_hits == 1) {
+    /* **轮 126**：hits N → block N 全表 chunk（regs60-110，51 值/行），8 hits
+     * 覆盖 blocks1-8，与 oracle 一次性全表（/tmp/oracle_atable.txt 基线）逐行对拍
+     * 找 XTAL cap trim / PLL 参考差异。 */
+    {
         extern unsigned char phy_i2c_readReg(unsigned char reg, unsigned char hostid, unsigned char block);
-        char ab[128];
+        char ab[192];
         int m = 0;
-        const char *hdr = "R99 b1=";
-        while (*hdr && m < (int)sizeof ab - 1) ab[m++] = *hdr++;
-        for (unsigned char b = 1; b <= 7 && m < (int)sizeof ab - 6; b++) {
-            unsigned char v = phy_i2c_readReg(99, 1, b);
+        ab[m++] = 'A'; ab[m++] = 'B'; ab[m++] = (char)('0' + bt_assert_hits); ab[m++] = ':';
+        for (unsigned char r = 60; r <= 110 && m < (int)sizeof ab - 3; r++) {
+            unsigned char v = phy_i2c_readReg(r, 1, bt_assert_hits);
+            ab[m++] = ' ';
             for (int sh = 4; sh >= 0; sh -= 4) {
                 unsigned d = (v >> sh) & 0xF;
                 ab[m++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
             }
-            if (b < 7) { ab[m++] = ' '; ab[m++] = 'b'; }
-            else break;
-            /* 下一个 block 号（1 位数） */
-            ab[m++] = (char)('0' + b + 1);
-            ab[m++] = '=';
         }
         ab[m] = 0;
         s31_bt_raw_line(ab);
