@@ -2671,6 +2671,9 @@ pub fn run() noreturn {
                     const bbr: [*]volatile u32 = @ptrFromInt(0x2010_0450);
                     const bb2: [*]volatile u32 = @ptrFromInt(0x2010_11AC);
                     board.log.line("BB 450={x:0>8} 47C={x:0>8} 408={x:0>8} 40C={x:0>8} 41C={x:0>8} 420={x:0>8} 444={x:0>8}", .{ bbr[0], @as(*volatile u32, @ptrFromInt(0x2010_047C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0408)).*, @as(*volatile u32, @ptrFromInt(0x2010_040C)).*, @as(*volatile u32, @ptrFromInt(0x2010_041C)).*, @as(*volatile u32, @ptrFromInt(0x2010_0420)).*, @as(*volatile u32, @ptrFromInt(0x2010_0444)).* });
+                    // **轮 134**：9884 计数器速率样本（POLL 间隔 0.75s，差值 = BB 核
+                    // 时钟速率；oracle 同款对拍判「满速/跛脚」）
+                    board.log.line("W9884={x:0>8}", .{@as(*volatile u32, @ptrFromInt(0x2010_9884)).*});
                     board.log.line("BB 100C={x:0>8} 11AC={x:0>8} 08D0={x:0>8} 9C10={x:0>8} 9C14={x:0>8} 9888={x:0>8} 988C={x:0>8} 98B8={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_100C)).*, bb2[0], @as(*volatile u32, @ptrFromInt(0x2010_08D0)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C10)).*, @as(*volatile u32, @ptrFromInt(0x2010_9C14)).*, @as(*volatile u32, @ptrFromInt(0x2010_9888)).*, @as(*volatile u32, @ptrFromInt(0x2010_988C)).*, @as(*volatile u32, @ptrFromInt(0x2010_98B8)).* });
                     board.log.line("SC 1254={x:0>8} 1258={x:0>8} 107C={x:0>8} 1000={x:0>8}", .{ @as(*volatile u32, @ptrFromInt(0x2010_1254)).*, @as(*volatile u32, @ptrFromInt(0x2010_1258)).*, @as(*volatile u32, @ptrFromInt(0x2010_107C)).*, @as(*volatile u32, @ptrFromInt(0x2010_1000)).* });
                     // **轮 129**：等锁环现场寄存器（trap 一次捕获）。
@@ -2738,6 +2741,8 @@ pub fn run() noreturn {
                 // blob 任务 ⇒ ADV-enable 内部超时过期 ⇒ 永不完成（evt 恒 8 的
                 // 最简解释）。每次迭代让出一次 ⇒ blob 任务获得 90%+ CPU 时间。
                 if (ctrl_task) |t| sched.resumeTask(&t.ctx);
+                // **轮 134b**：9884 每轮采样（速率差分）
+                board.log.line("W9884b={x:0>8}", .{@as(*volatile u32, @ptrFromInt(0x2010_9884)).*});
                 // **轮 105**：延迟改 mcycle 忙等——bit24(RF-ON arm) 写入后硬件立即
                 // 门控 SYS_TIMER（RF 上电序列的电源收缩）⇒ esp_rom_delay_us 永转。
                 // mcycle 忙等不受门控影响 ⇒ 主上下文活 ⇒ 98BC 演化实时可见。
