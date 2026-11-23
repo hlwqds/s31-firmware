@@ -114,3 +114,6 @@ bool phy_module_has_clock_bits(int module) { (void)module; return false; }
  * item#2「pmu 后 flash 写静默失败 + FE 轮询挂」同族 = 独立课题。重新链入方法 =
  * 删本空桩 + -Dphy-src-objs 追加 esp_hw_support 的 pmu_init.c.obj,pmu_param.c.obj。 */
 void pmu_init(void) {}
+/* 轮 137 终验记录：真 pmu_init + 5min 自跑 = OTA 扫描仍无发射（扫描器阳性
+ * 对照 6 设备 ✓）。pmu 单独修复不足——0x200A 路径挂死在 pmu 之后仍存在，
+ * 需先解 pmu 后异常族（UART 钟/flash 写/挂死点钉）。 */
