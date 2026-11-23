@@ -1255,35 +1255,9 @@ fn shellWifiClockEnable() callconv(.c) usize {
 
 fn shellWifiClockDisable() callconv(.c) usize {
     note(22, 0, 0);
-    // **这不是空桩**（原来只 note 不做事）。IDF 的 `wifi_module_disable()` 会真做
-    // `modem_clock_module_disable(PERIPH_WIFI_MODULE)`：按 deps **反向**逐设备 `configure(false)`
-    // （`SOC_PLL_SOURCE_CG` 写 `0x25`、其余清各时钟位），也就是 **init 期间的一次真·断电**。
-    // 我们的空桩让 blob 的 enable→disable 周期变成"只有 on、没有 off" ⇒ MAC 域没有真正复位过。
-    // 按 IDF 的反向顺序实现：
-    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    // 9) WIFI_BB_80X1 off
-    conf1.* = conf1.* & ~@as(u32, 1 << 7);
-    // 8) WIFI_BB off（清 BB 组 + 脉冲 rst_wifibb）
-    conf1.* = conf1.* & ~@as(u32, 0x7FF);
-    {
-        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
-        rst.* = rst.* | (1 << 8);
-        romDelayUs(20);
-        rst.* = rst.* & ~@as(u32, 1 << 8);
-    }
-    // 7) WIFI_MAC off —— `clk_wifimac_en` = bit 9
-    conf1.* = conf1.* & ~@as(u32, 1 << 9);
-    // 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
-    conf1.* = conf1.* & ~@as(u32, (1 << 2) | (1 << 10));
-    // 3) COEXIST off —— LPCON ICG 位图清零
-    // **轮 120h 拔除**：ICG20=0 清 LP 域 ICG 位图——时序吻合核死点（ARM0 起
-    // 核 → blob init 跑到本函数 → ICG20=0 → LP 时钟门控 → 核死在 ~1ms）。
-    // icg20(0x2010_F020) 写 0 已移除，单变量验证。
-    // 2) SOC_PLL_SOURCE_CG off —— **轮 120g 拔除**：0x205871E0 在 HP_SYS_CLKRST 页
-    //（SYSTIMER_CTRL0=0x20587120 同页）——若该位实际门 SYS_TIMER 源（头文件/
-    // 硅片错位史重演），ADV-enable 里第一个需要 SYS_TIMER 的 ROM delay 就永转
-    // = 坍缩。先拔此行单变量验证。
-    // modconf(0x2058_71E0) 写 0x25 已移除。
+    // **轮 120i 无害化**：函数体全拔（conf1 清位组 + rst_wifibb 脉冲 + ICG20=0
+    // + 0x25 均已单变量排除或存疑）⇒ disable = 纯 no-op。若行为仍不变，
+    // 坍缩源在 blob 自身或 bt 侧 osal 槽位。
     return 0;
 }
 
