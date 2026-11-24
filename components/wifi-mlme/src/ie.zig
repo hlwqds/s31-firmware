@@ -47,11 +47,15 @@ pub const ElementId = enum(u8) {
     cf_param_set = 4,
     tim = 5,
     ibss_param_set = 6,
+    /// EDCA Parameter Set（9.4.2.29，p.897）。
+    edca_parameter_set = 12,
     country = 7,
     challenge_text = 16,
     power_constraint = 32,
     erp = 42,
     rsn = 48,
+    /// QoS Capability（9.4.2.35，p.916）。
+    qos_capability = 46,
     ext_supported_rates = 50,
     neighbor_report = 52,
     mgmt_mic = 76,

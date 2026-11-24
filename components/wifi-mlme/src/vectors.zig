@@ -8,7 +8,8 @@
 //!     文件内顺序从 1 数起，帧尾保留了 FCS；该文件 1093 帧中有 724 帧的末 4 字节
 //!     等于前文的 CRC-32，这里的帧都取自其中）与 `mesh.pcap`（不含 FCS，只取
 //!     Country / TIM 元素）。十六进制由脚本按字段切好逐段抄录，再由
-//!     `host_tests.zig` 的解析用例逐字段核对。
+//!     `host_tests.zig` 的解析用例逐字段核对。QoS 与省电另取了三个文件里的帧，
+//!     出处见「QoS 与省电用的抓包帧」一节。
 //!   * **本工程手工构造**：按所引条款的字段布局逐字节搭出来，用来覆盖抓包里
 //!     没有的形态（四地址帧、QoS Control、非零 TIM 位图、Operating Triplet、
 //!     Extended Capabilities）。
@@ -210,9 +211,10 @@ pub const mesh_tim_element: [6]u8 = hex("050400010000");
 // ---------------------------------------------------------------------------
 
 /// TIM（9.4.2.6，p.793）：DTIM Count 3，DTIM Period 4，Bitmap Control 0x0a
-/// （组播位 0，Bitmap Offset 5 → 虚拟位图从第 10 字节起），Partial Virtual
-/// Bitmap = `20 04`：第 10 字节 bit 5 → AID 85，第 11 字节 bit 2 → AID 90。
-pub const tim_aid85_90: [7]u8 = hex("050603" ++ "04" ++ "0a" ++ "2004");
+/// （组播位 0，Bitmap Offset 5 → N1 = 10），Partial Virtual Bitmap = `20 04`（N1 = 10 到
+/// N2 = 11 两个字节）：第 10 字节 bit 5 → AID 85，第 11 字节 bit 2 → AID 90。
+/// Length = (N2 − N1) + 4 = 5。
+pub const tim_aid85_90: [7]u8 = hex("0505" ++ "0304" ++ "0a" ++ "2004");
 /// TIM：DTIM（Count 0），Period 1，组播位 1，Partial Virtual Bitmap 单字节 0。
 pub const tim_multicast: [6]u8 = hex("050400010100");
 
@@ -259,6 +261,148 @@ pub const sta_mac: [6]u8 = hex("021122334455");
 pub const peer_mac: [6]u8 = hex("02aabbccddee");
 
 // ---------------------------------------------------------------------------
+// QoS 与省电用的抓包帧（Wireshark wiki SampleCaptures 的另外三个文件，加上
+// `wpa-Induction.pcap` 里的 DTIM 与组播帧）
+// ---------------------------------------------------------------------------
+//
+// 十六进制由一次性脚本按帧号从文件里取出（帧号从 1 数起），出处逐个写在向量上：
+//   * `http_PPI.cap`（PPI 封装，帧尾带 FCS）：TID 0 的 QoS Data，两个方向；
+//   * `wpa-eap-tls.pcap`（radiotap，帧尾不带 FCS）：TID 7 的 QoS Data，两个方向；
+//   * `Network_Join_Nokia_Mobile.pcap`（纯 802.11 封装，帧尾不带 FCS）：STA 用 Null 帧
+//     进出 PS 模式、TIM 里自己的 AID 位、回到 active 模式后补发的 BU；
+//   * `wpa-Induction.pcap`（radiotap，帧尾带 FCS）：DTIM 与 DTIM 之后的组播帧。
+// 前三个文件 2026-11-24 从 `gitlab.com/wireshark/wireshark/-/wikis/uploads/` 下载，
+// SHA-256 前 16 位：`http_PPI.cap` 4fc3ed1a0afefe50、`wpa-eap-tls.pcap` 520f7fb1cdab6da4、
+// `Network_Join_Nokia_Mobile.pcap` 8c65e7a88d1daff9。带 FCS 的帧，文件里的 FCS 等于
+// CPython `zlib.crc32` 对前文的值。`mesh.pcap` 的 171 个 QoS Data 帧的帧尾 FCS 都对不上，
+// 帧体也不以 LLC/SNAP 起头，没有取用。
+
+/// STA→AP 的 QoS Data（To DS=1，3 地址，帧尾带 FCS），QoS Control = 0x0000：TID 0 → AC_BE；
+/// 载荷是 DNS 查询（IP 头 ToS = 0x00）。`http_PPI.cap` 第 1 帧，97 字节。
+pub const ppi_qos_data_to_ap: [97]u8 =
+    hex("88012c000014a5cd747b0014a5cb6e1a00010227f9b2a0ed") ++
+    hex("0000") ++
+    hex("aaaa0300000008004500003b8d060000") ++
+    hex("801129d6c0a80184c0a8010104070035") ++
+    hex("0027ab1596c101000001000000000000") ++
+    hex("0377777706706f6c69746f0269740000") ++
+    hex("01000178805937");
+/// AP→STA 的 QoS Data（From DS=1，3 地址，帧尾带 FCS），QoS Control = 0x0000。
+/// `http_PPI.cap` 第 3 帧，142 字节。
+pub const ppi_qos_data_from_ap: [142]u8 =
+    hex("8802a2000014a5cb6e1a0014a5cd747b00010227f9b260ce") ++
+    hex("0000") ++
+    hex("aaaa03000000080045000068082a0000") ++
+    hex("4011ee85c0a80101c0a8018400350407") ++
+    hex("0054f88296c181800001000200000000") ++
+    hex("0377777706706f6c69746f0269740000") ++
+    hex("010001c00c000500010001515d001105") ++
+    hex("776562303106706f6c69746f02697400") ++
+    hex("c02b000100010001515d000482c04901") ++
+    hex("561ce258");
+/// AP→STA 的 QoS Data（From DS=1，无 FCS），QoS Control = 0x0007：TID 7 → AC_VO，Normal Ack；
+/// 载荷是 EAPOL-Key。`wpa-eap-tls.pcap` 第 1 帧，43 字节。
+pub const eaptls_qos_from_ap: [43]u8 =
+    hex("88023a01247703d25ea8106f3f0e333c106f3f0e333c0000") ++
+    hex("0700") ++
+    hex("aaaa03000000888e0200000501c60005") ++
+    hex("01");
+/// 上一帧的重传：Retry=1，序号与 QoS Control 不变（9.2.4.4.2 / 9.2.4.5）。第 2 帧。
+pub const eaptls_qos_from_ap_retry: [43]u8 =
+    hex("880a3a01247703d25ea8106f3f0e333c106f3f0e333c0000") ++
+    hex("0700") ++
+    hex("aaaa03000000888e0200000501c60005") ++
+    hex("01");
+/// STA→AP 的 QoS Data（To DS=1，无 FCS），QoS Control = 0x0007。第 4 帧，55 字节。
+pub const eaptls_qos_to_ap: [55]u8 =
+    hex("88013a01106f3f0e333c247703d25ea8106f3f0e333c0000") ++
+    hex("0700") ++
+    hex("aaaa03000000888e0100001102c60011") ++
+    hex("0170657272792e6d6f72646f72");
+/// DTIM Beacon（帧尾带 FCS）：TIM = `05 04 00 01 01 00`，Bitmap Control B0 = 1（组播 BU 已缓存）。
+/// `wpa-Induction.pcap` 第 2 帧，144 字节；与第 1 帧（`cap_beacon`）只差 Timestamp、
+/// Sequence Control、TIM 的 B0 与 FCS。
+pub const cap_dtim_multicast: [144]u8 =
+    hex("80000000ffffffffffff000c4182b255000c4182b25560f8") ++
+    hex("8a81d61b01000000640011040007436f") ++
+    hex("6865726572010882848b962430486c03") ++
+    hex("01010504000101002a01022f01023018") ++
+    hex("0100000fac020200000fac04000fac02") ++
+    hex("0100000fac02000032040c121860dd06") ++
+    hex("001018020004dd1c0050f20101000050") ++
+    hex("f20202000050f2040050f20201000050") ++
+    hex("f202000084043ecc");
+/// 紧跟上一个 DTIM 的组播 Data（From DS=1，More Data=0，帧尾带 FCS）：DTIM 的 AID 0 位为 1 之后
+/// AP 发出的那一个组播 BU（11.2.3.6 f）。`wpa-Induction.pcap` 第 3 帧，94 字节。
+pub const cap_multicast_after_dtim: [94]u8 =
+    hex("084200000180c2000000000c4182b255000c4182b25570f8") ++
+    hex("0222cda000000000941c1ebee04cb171") ++
+    hex("609840d166cf5684a1209af1d5e1e94c") ++
+    hex("ccd56aa068331ecd8dd12ef9eb8d9321") ++
+    hex("36281b8cc233ff69424e9013c79f0284") ++
+    hex("7759713ee0e5");
+/// DTIM 之后组播序列里倒数第二帧（DTIM 在第 113 帧）：FC = 08 62，More Data=1；
+/// 下一帧 #117 是最后一帧，More Data=0。`wpa-Induction.pcap` 第 116 帧，84 字节。
+pub const cap_multicast_more_data: [84]u8 =
+    hex("08620000090007ffffff000c4182b255000d9382363a30fd") ++
+    hex("0222d2a0000000000c738de36e029eb8") ++
+    hex("d376d5d1ee0186484e5b696f07a20c9e") ++
+    hex("6be5b735c5122a7d3b83fb31a1fd6a80") ++
+    hex("9ee1588ff1d9a58504c62c1a");
+/// Association Request（无 FCS）：Listen Interval = 10，Capability = 0x0411。
+/// `Network_Join_Nokia_Mobile.pcap` 第 719 帧，79 字节。
+pub const nokia_assoc_req: [79]u8 =
+    hex("000002010001e341bd6e0016bc3daa570001e341bd6ee000") ++
+    hex("11040a0000096d617274696e65743301") ++
+    hex("0882848b962430486c32040c121860dd") ++
+    hex("160050f20101000050f20201000050f2") ++
+    hex("0201000050f202");
+/// Association Response：Status = 0，AID 字段 = 0xc004（AID 4）。第 721 帧，54 字节。
+pub const nokia_assoc_resp: [54]u8 =
+    hex("10003a010016bc3daa570001e341bd6e0001e341bd6e701b") ++
+    hex("1104000004c0010882848b962430486c") ++
+    hex("32040c121860dd06001018010100");
+/// STA 发给 AP 的 Null 帧（To DS=1），Power Management = 1：进入 PS 模式的告知。第 1040 帧，24 字节。
+pub const nokia_null_pm1: [24]u8 =
+    hex("481102010001e341bd6e0016bc3daa570001e341bd6ef003");
+/// Beacon：TIM = `05 04 00 01 00 10`，Partial Virtual Bitmap 第 0 字节 bit 4 → AID 4 有缓冲。
+/// 第 1062 帧，110 字节。
+pub const nokia_beacon_aid4: [110]u8 =
+    hex("80000000ffffffffffff0001e341bd6e0001e341bd6e9025") ++
+    hex("87a1786c020000006400110400096d61") ++
+    hex("7274696e657433010882848b96243048") ++
+    hex("6c03010b0504000100102a01042f0104") ++
+    hex("32040c121860dd06001018010200dd16") ++
+    hex("0050f20101000050f20201000050f202") ++
+    hex("01000050f202");
+/// 它前面那个 Beacon：TIM = `05 04 00 01 00 00`。第 1061 帧，110 字节。
+pub const nokia_beacon_empty: [110]u8 =
+    hex("80000000ffffffffffff0001e341bd6e0001e341bd6e8025") ++
+    hex("8b11776c020000006400110400096d61") ++
+    hex("7274696e657433010882848b96243048") ++
+    hex("6c03010b0504000100002a01042f0104") ++
+    hex("32040c121860dd06001018010200dd16") ++
+    hex("0050f20101000050f20201000050f202") ++
+    hex("01000050f202");
+/// STA 发给 AP 的 Null 帧，Power Management = 0：回到 active 模式的告知。第 1063 帧，24 字节；
+/// AP 随后不等 PS-Poll 就把缓冲的 BU 发了下来（#1065，`nokia_data_from_ap`）。
+pub const nokia_null_pm0: [24]u8 =
+    hex("480102010001e341bd6e0016bc3daa570001e341bd6e0004");
+/// AP→STA 的 Data（From DS=1，More Data=0）：STA 回到 active 模式后补发的缓冲 BU。第 1065 帧，
+/// 104 字节。
+pub const nokia_data_from_ap: [104]u8 =
+    hex("08422c000016bc3daa570001e341bd6e0001e3429e2ba025") ++
+    hex("00201d200000000056872598a197ae8e") ++
+    hex("6647ec2d51e9ee2c2267eb77e0285847") ++
+    hex("c3a3b5c6b164bdec5220b843bb03ef10") ++
+    hex("33fa6fcbf28cb52e8e9372eea6e503ed") ++
+    hex("e8fd2449f4c31acbc89f00618320a3f8");
+/// 又一次回到 active 模式：第一次没被 Ack，带 Retry=1 重传，Power Management 仍是 0。第 1083 帧，
+/// 24 字节。
+pub const nokia_null_pm0_retry: [24]u8 =
+    hex("480902010001e341bd6e0016bc3daa570001e341bd6e4004");
+
+// ---------------------------------------------------------------------------
 // 跨实现值：CPython `zlib.crc32`（与 `frame.zig` 无关的另一份 CRC-32 实现）
 // ---------------------------------------------------------------------------
 
@@ -266,6 +410,10 @@ pub const peer_mac: [6]u8 = hex("02aabbccddee");
 pub const j91_deauth_plain_fcs: [4]u8 = hex("b067882b");
 /// Annex J.9.2 明文帧补上 FCS 后的 4 个字节。
 pub const j92_deauth_plain_fcs: [4]u8 = hex("a80eb472");
+/// `eaptls_qos_from_ap` 补上 FCS 后的 4 个字节（线上顺序）。
+pub const eaptls_qos_from_ap_fcs: [4]u8 = hex("42d7d0e8");
+/// `nokia_null_pm1` 补上 FCS 后的 4 个字节（线上顺序）。
+pub const nokia_null_pm1_fcs: [4]u8 = hex("fc4e3c84");
 
 /// STA 发出的 Association Request 整帧（79 字节）：帧头取自 `wpa-Induction.pcap`
 /// 第 82 帧，帧体按 Table 9-29 的元素顺序重排（Supported Rates、Extended Supported

@@ -40,7 +40,7 @@ pub export fn esp_wifi_disconnect() callconv(.c) usize {
     hits[5] += 1;
     return 0;
 }
-pub export fn free() callconv(.c) usize {
+fn free() callconv(.c) usize {
     hits[6] += 1;
     return 0;
 }
@@ -48,19 +48,19 @@ pub export fn hexstr2bin() callconv(.c) usize {
     hits[7] += 1;
     return 0;
 }
-pub export fn phy_printf() callconv(.c) usize {
+fn phy_printf() callconv(.c) usize {
     hits[8] += 1;
     return 0;
 }
-pub export fn putchar() callconv(.c) usize {
+fn putchar() callconv(.c) usize {
     hits[9] += 1;
     return 0;
 }
-pub export fn puts() callconv(.c) usize {
+fn puts() callconv(.c) usize {
     hits[10] += 1;
     return 0;
 }
-pub export fn rtc_clk_xtal_freq_get() callconv(.c) usize {
+fn rtc_clk_xtal_freq_get() callconv(.c) usize {
     hits[11] += 1;
     return 0;
 }
@@ -68,13 +68,26 @@ pub export fn snprintf() callconv(.c) usize {
     hits[12] += 1;
     return 0;
 }
-pub export fn sprintf() callconv(.c) usize {
+fn sprintf() callconv(.c) usize {
     hits[13] += 1;
     return 0;
 }
-pub export fn strtok() callconv(.c) usize {
+fn strtok() callconv(.c) usize {
     hits[14] += 1;
     return 0;
+}
+// 这 7 个名字在两个射频的适配层同链时（`-Dcoex-merged`，ADR-003 第 2 节）各有更好的提供者：
+// BLE 侧有能用的实现（`bt-blobs/src/libc_glue.zig`、`bt-blobs/link/*.c`），这里只是计数桩。
+// 所以以**弱符号**导出：有强定义时让位；单独的 Wi-Fi 构建里没有别的定义，行为不变。
+// 函数仍留在文件顶层原位：挪进嵌套结构体会让它们与邻居在段内换位（2026-11-24 逐段对比实测）。
+comptime {
+    @export(&free, .{ .name = "free", .linkage = .weak });
+    @export(&phy_printf, .{ .name = "phy_printf", .linkage = .weak });
+    @export(&putchar, .{ .name = "putchar", .linkage = .weak });
+    @export(&puts, .{ .name = "puts", .linkage = .weak });
+    @export(&rtc_clk_xtal_freq_get, .{ .name = "rtc_clk_xtal_freq_get", .linkage = .weak });
+    @export(&sprintf, .{ .name = "sprintf", .linkage = .weak });
+    @export(&strtok, .{ .name = "strtok", .linkage = .weak });
 }
 
 // 数据符号：按已知声明给**真实形态**，而不是一律 4 字节零。

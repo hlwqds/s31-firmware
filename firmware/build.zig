@@ -60,6 +60,10 @@ pub fn build(b: *std.Build) void {
     // `modem_clock_module_enable` —— 这些是 IRAM 代码，我们板上没有。
     const phy_src_objs = b.option([]const u8, "phy-src-objs", "comma-separated absolute paths of IDF PHY objects") orelse "";
     const bt_probe = b.option(bool, "bt-probe", "run the BLE controller probe instead of the normal self-test") orelse false;
+    // R5/C3：两个射频的适配层同链（ADR-003 第 2、3 节）。要求 `-Dcoex` 与两个 blob 目录。
+    // 入口不变（照常跑各段自检），只在 `enabled` 末尾多一个 `coex_merged` section：
+    // 两个控制器的 init 都做到返回为止（`firmware/src/coex_merged.zig`）。
+    const coex_merged = b.option(bool, "coex-merged", "link both radio adapter trees in one image and run both controllers' init as a self-test section") orelse false;
     // R5/C2：共存。把 `components/radio-coex` 的胶水链进镜像并绑到真实核心（`libcoexist.a` 与 ROM）。
     // 默认关；关闭时默认镜像与 BT/Wi-Fi 探针镜像逐字节不变（`docs/verification/coex-verification.md`）。
     const coex = b.option(bool, "coex", "link the BLE/Wi-Fi coexistence glue and bind it to the real coex core") orelse false;
@@ -67,7 +71,12 @@ pub fn build(b: *std.Build) void {
     const coex_objs = b.option([]const u8, "coex-objs", "comma-separated absolute paths of the unpacked libcoexist.a members (required by -Dcoex)") orelse "";
     if (coex and coex_objs.len == 0) @panic("-Dcoex 需要 -Dcoex-objs：给出 libcoexist.a 解包出的 11 个 .o");
     if (coex and g_wifi) @panic("-Dcoex 不能与 -Dwifi（自检 section）同开：radio_coex 的 section 模块与胶水模块不能同时含 glue.zig");
-    if (coex and wifi_blob_dir.len > 0 and bt_blob_dir.len > 0) @panic("-Dcoex 目前一次只接一个射频的适配层：两个 blob 同链要等 ADR-003 的运行时统一（C3）");
+    if (coex and wifi_blob_dir.len > 0 and bt_blob_dir.len > 0 and !coex_merged) @panic("-Dcoex 一次只接一个射频的适配层；两个 blob 同链请加 -Dcoex-merged");
+    if (coex_merged) {
+        if (!coex) @panic("-Dcoex-merged 需要 -Dcoex：共存核是合并镜像的一部分");
+        if (wifi_blob_dir.len == 0 or bt_blob_dir.len == 0) @panic("-Dcoex-merged 需要同时给出 -Dwifi-blob-dir 与 -Dbt-blob-dir");
+        if (wifi_init_probe or bt_probe) @panic("-Dcoex-merged 不能与 -Dwifi-init-probe / -Dbt-probe 同开：探针镜像的入口不跑各段自检");
+    }
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex) "pub const enabled = true;\n" else "pub const enabled = false;\n";
     const coex_gate = b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_gate.zig", coex_gate_src) });
@@ -111,6 +120,7 @@ pub fn build(b: *std.Build) void {
         if ((bt_probe or bt_blob_dir.len > 0) and std.mem.eql(u8, m.name, "posix")) continue;
         src = b.fmt("{s}    .{{ .name = \"{s}\", .run = @import(\"{s}\").run }},\n", .{ src, m.name, m.name });
     }
+    if (coex_merged) src = b.fmt("{s}    .{{ .name = \"coex_merged\", .run = @import(\"coex_merged\").run }},\n", .{src});
     if (ab_fail) {
         src = b.fmt("{s}    .{{ .name = \"ab-fail\", .run = @import(\"ab_fail\").run }},\n", .{src});
     }
@@ -205,6 +215,9 @@ pub fn build(b: *std.Build) void {
     , .{fat_rodata});
     const fat_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("fat_rodata.zig", fat_src) });
     app.root_module.addImport("fat_rodata", fat_mod);
+    var wifi_probe_mod: ?*std.Build.Module = null;
+    var bt_core_mod: ?*std.Build.Module = null;
+
     if (wifi_blob_dir.len > 0) {
         // 目录里是 .a 就按归档加（成员按需取用）；是解包后的 .o 就全部加（等价 --whole-archive）。
         // 后者才是"这个 blob 到底能不能塞进两段窗口"的真实测量。
@@ -219,7 +232,7 @@ pub fn build(b: *std.Build) void {
         // 关掉 --gc-sections **只在"量体积"模式**：那时没有真实引用，不关就什么都不会进来。
         // 探针模式有真实入口（esp_wifi_init_internal），必须保持 gc 打开，否则整个 blob 闭包
         // 全被链进来、irom 直接溢出（实测溢出 67 KB）。
-        if (!wifi_init_probe) app.link_gc_sections = false;
+        if (!(wifi_init_probe or coex_merged)) app.link_gc_sections = false;
         const blobs_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/adapter.zig") });
         blobs_mod.addImport("board", board);
 
@@ -251,14 +264,18 @@ pub fn build(b: *std.Build) void {
     app.root_module.addImport("enabled", enabled_mod);
     // 探针模块总是存在（start.zig 无条件 import），用 comptime 常量决定是否真的跑：
     // 关闭时是空实现，避免把 blob 的 @extern 引用带进常规构建。
-    if (wifi_init_probe and wifi_blob_dir.len > 0) {
+    if ((wifi_init_probe or coex_merged) and wifi_blob_dir.len > 0) {
         const probe_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/init_probe.zig") });
         probe_mod.addImport("board", board);
         probe_mod.addImport("coex_gate", coex_gate);
         if (coex) probe_mod.addImport("radio_coex", coex_mod);
         // C 变参 shim：Zig 定义不了变参函数，驱动的报错偏偏走它们。
+        // 给了 Wi-Fi 对象目录就在这里加一次（下面 BT 那段不再重复加：同一文件加两次会重复定义）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
-        app.root_module.addImport("wifi_init_probe", probe_mod);
+        wifi_probe_mod = probe_mod;
+    }
+    if (wifi_init_probe and wifi_blob_dir.len > 0) {
+        app.root_module.addImport("wifi_init_probe", wifi_probe_mod.?);
     } else {
         const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
         const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("wifi_init_probe_off.zig", off_src) });
@@ -288,8 +305,9 @@ pub fn build(b: *std.Build) void {
             if (path.len == 0) continue;
             app.root_module.addObjectFile(.{ .cwd_relative = path });
         }
-        // `coexist_printf`（C 变参）与 `puts`（弱定义；Wi-Fi 侧的 link_stubs.zig 有强定义）。
-        app.root_module.addCSourceFile(.{ .file = b.path("../components/radio-coex/link/coex_printf_shim.c"), .flags = &.{} });
+        // `coexist_printf` 与 `puts`（C 变参 / 弱桩）。两者的提供者取舍见 shim 文件头：
+        // `coexist_printf` 以 shim 为准（真格式化）；`puts` 在有 BLE 对象时由 BLE 侧提供。
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/radio-coex/link/coex_printf_shim.c"), .flags = if (bt_blob_dir.len > 0) &.{"-DS31_COEX_NO_PUTS"} else &.{} });
         app.root_module.addImport("radio_coex", coex_mod);
     }
 
@@ -312,9 +330,10 @@ pub fn build(b: *std.Build) void {
             bt_added += 1;
         }
         if (bt_added == 0) @panic("-Dbt-blob-objs 为空：给它逗号分隔的对象名");
-        app.link_gc_sections = false;
+        // 合并镜像必须开着 gc：两边的入口都只引到各自 init 路径，关掉会把整个 blob 闭包链进来。
+        if (!coex_merged) app.link_gc_sections = false;
         // 适配面：10 个符号里的 5 个非链接脚本符号（另 5 个在 s31.ld 里 PROVIDE）。
-        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe) &.{"-DBT_ASSERT_RETURNS=1"} else &.{} });
+        app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_stubs.c"), .flags = if (bt_probe or coex_merged) &.{"-DBT_ASSERT_RETURNS=1"} else &.{} });
         // 接管 `ets_printf`：ROM 的 UART 轮询在本板会卡死（PC 采样实测），
         // 归档的日志必须走我们的丢弃实现，否则"打印"就是"挂死"。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/bt_printf_shim.c"), .flags = &.{"-DS31_BT_FMT_LINES=40000"} });
@@ -323,7 +342,8 @@ pub fn build(b: *std.Build) void {
         // 8 个 modem/phy/pmu 轻量符号，替代会崩 ROM 的真 obj 闭包。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/modem_clock_light.c"), .flags = &.{} });
         // WiFi osi 栈的 `_log_write`（C 变参）——同签名导出（wifi-blobs 的 shim）。
-        app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
+        // 给了 Wi-Fi 对象目录时它已经在上面加过，不重复加。
+        if (wifi_blob_dir.len == 0) app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
         // IDF `esp_phy`/`modem_clock` 源码对象的桩（NVS 故意返回 NOT_FOUND ⇒ 全量校准）
         app.root_module.addCSourceFile(.{ .file = b.path("../components/bt-blobs/link/phy_stubs.c"), .flags = &.{} });
         // OSAL 的 36 个 `wr_btdm_osal_*` 导出（强定义覆盖归档里的弱断言桩）。
@@ -342,7 +362,8 @@ pub fn build(b: *std.Build) void {
         // 构建只需要 osal 的 5 个 `s31_*` 导出给归档解析 —— 用下面那个 comptime 根引用触发。
         // 把 bt_core 整个编进来会多 ~2 KB：blob 构建关了 gc-sections，`.flash.text` 会溢出
         // 窗口（`scripts/check-bt-link.sh` 实测 2032 B）。
-        if (bt_probe) app.root_module.addImport("bt_core", bt_core);
+        if (bt_probe or coex_merged) app.root_module.addImport("bt_core", bt_core);
+        bt_core_mod = bt_core;
         // probe 用同一个模块（它 import 的是 `bt_core`，不是相对路径）
         // 直接 import 模块：bt_core 现在是 app 的模块（只编一次），因此既能强制分析
         // （`export fn` 才会发射），也不会像 addObject 那样把 board/osal 再编一遍。
@@ -353,6 +374,14 @@ pub fn build(b: *std.Build) void {
             const shim_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add("bt_probe_on.zig", probe_shim) });
             shim_mod.addImport("bt_core", bt_core);
             app.root_module.addImport("bt_probe", shim_mod);
+        } else if (coex_merged) {
+            // 合并镜像里 bt_core 已由 `coex_merged` section 引用（探针的诊断导出都在它里面），
+            // 不能再挂 closure_stubs（会与 bt_core 的导出撞名）；这里只要一个"不跑"的垫片。
+            const off_mod = b.createModule(.{ .root_source_file = b.addWriteFiles().add(
+                "bt_probe_off.zig",
+                "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n",
+            ) });
+            app.root_module.addImport("bt_probe", off_mod);
         } else {
             // 归档要的 5 个 `s31_*` 在 osal.zig 里；没人引用就不会发射（惰性分析）。
             // 根引用必须挂在**会被引用的模块**上：main 引用 `bt_probe.enabled` ⇒ 本模块被分析
@@ -374,6 +403,13 @@ pub fn build(b: *std.Build) void {
             off_mod.addImport("bt_closure_stubs", closure_stubs);
             app.root_module.addImport("bt_probe", off_mod);
         }
+    }
+    if (coex_merged) {
+        const merged_mod = b.createModule(.{ .root_source_file = b.path("src/coex_merged.zig") });
+        merged_mod.addImport("board", board);
+        merged_mod.addImport("wifi_blobs_probe", wifi_probe_mod.?);
+        merged_mod.addImport("bt_core", bt_core_mod.?);
+        enabled_mod.addImport("coex_merged", merged_mod);
     }
 
     if (bt_blob_dir.len == 0) {

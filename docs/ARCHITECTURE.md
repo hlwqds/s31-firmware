@@ -16,11 +16,12 @@ components/
   ├── app-mqtt-ota           MQTT 3.1.1、OTA 清单校验/回滚
   ├── wifi-boundary          OSI 函数表 ABI、blob 边界
   ├── wifi-blobs             真实 blob 链接 + osi 适配层（init/任务/合作式让出）
-  ├── wifi-connect           扫描/连接状态机、WPA2/WPA3 派生
-  ├── ble-802154             HCI/ATT/GATT、802.15.4 FCF/6LoWPAN
-  ├── wifi-mlme              IEEE 802.11 帧格式、管理帧、信息元素、MLME、扫描（纯逻辑）
+  ├── wifi-connect           扫描/连接状态机；RSNA（WPA2/WPA3 密钥派生、4 次握手、CCMP/GCMP/BIP 含 256 位套件）；SAE 完整协议（P-256）；FT 密钥层次
+  ├── ble-802154             HCI、ATT 服务端、GATT 服务端与客户端、AES-CMAC 签名、802.15.4 FCF/6LoWPAN
+  ├── wifi-mlme              IEEE 802.11 帧格式、管理帧、信息元素、MLME、扫描、QoS Control、省电（纯逻辑）
   ├── ble-security           SMP 配对、密钥分发、链路层 AES-CCM（纯逻辑）
-  ├── radio-coex             BLE + Wi-Fi 共存 glue（对照 IDF 的 coex 钩子，纯逻辑；设计见 ADR-003）
+  ├── radio-coex             BLE + Wi-Fi 共存 glue 与 PHY/时钟归属模型（对照 IDF 的 coex 钩子，纯逻辑；设计见 ADR-003）
+  ├── bt-blobs               真实 BLE controller 归档的链接、OSAL 与 HCI 传输；板级探针，含对 controller 的 HCI 一致性自检
   └── boot-power-perf        otadata 选槽、A/B、功耗/性能模型
 tools/s31-production/        生产化组件（netmgr/ota/provisioning/recovery/基线/HIL）
 ```
@@ -36,14 +37,23 @@ tools/s31-production/        生产化组件（netmgr/ota/provisioning/recovery/
 未启用的组件**不参与编译**。默认 `boot + net`；TLS/应用/Wi-Fi 按需开启。
 
 两段窗口（唯一真相是 `boards/esp32s31-coreboard/linker/s31.ld`）：`irom` 从 `0x40000020`、
-`drom` 从 `0x40100020`，各 `0xB0000`（720 896 B，P0.3 扩容；合计 1 441 792 B 仍在 factory 1 500 K 内）。
-芯片侧上限远大于此（`SOC_IROM_HIGH=0x44000000`、MMU 1024×64 KiB），但 DROM 段必须结束在
-`0x43FF0000` 以下——loader 把 DROM 区间最后一页当分区发现的临时页。P0.3 扩容后 TLS/Wi-Fi 都能装下：
-`full`（TLS + Wi-Fi + apps）实测镜像 398 576 B、IROM 段 305 696 B、DROM 段 70 796 B，
-窗口余量分别为 415 200 B / 650 100 B，factory 分区余量 1 137 424 B。余量由
-`scripts/check-capacity.py` 持续把关（窗口从链接脚本解析，增长超过 8 KiB 即失败）。
-窗口上限本身有板级证据：`-Dfat-rodata=600000` 造出 **636 372 B** 的 DROM 段（超过旧 0x7F000），
-烧录后 `sections: passed=7 failed=0 total=7`、`verdict=pass`。
+`drom` 从 `0x401D0020`，各 `0x1C0000`（1 835 008 B）。2026-11-24 的 R5 扩容（原为 irom `0xC0000`、
+drom `0xB0000`、drom 基址 `0x40100020`）是为了把两个射频 blob 链进同一镜像，见
+`docs/adr/ADR-003-ble-wifi-coexistence.md` 第 3 节。窗口只是链接上限，**实际占用仍受 factory 分区
+（1 536 000 B）约束**，由 `scripts/check-capacity.py` 把关（窗口从链接脚本解析，相对基线增长超过
+8 KiB 即失败）。芯片侧上限远大于此（`SOC_IROM_HIGH=0x44000000`、MMU 1024×64 KiB），但 DROM 段
+必须结束在 `0x43FF0000` 以下——loader 把 DROM 区间最后一页当分区发现的临时页。
+
+窗口上限的板级证据（`docs/verification/coex-verification.md` §7）：
+
+- irom：合并镜像的 IROM 段 **825 744 B**，超过旧上限 786 432 B，烧录后 8/8 通过（`logs/coex-merged-boot.log`）；
+- drom：`-Dfat-rodata=1000000` 造出 **1 046 816 B** 的 DROM 段，超过旧上限 720 896 B，烧录后 8/8 通过
+  （`logs/fat-rodata-1000000-boot.log`）；
+- 新基址 `0x401D0020`：以上两个镜像与默认镜像（`logs/e2e-net-boot.log`）的 DROM 段都落在那里。
+
+默认镜像在扩容前后的差异只有重定位：`.flash.text` 的 48 062 条指令形状不变，1 905 处指向 rodata 的
+常量各加 `0xD0000`；`.flash.rodata` 里 971 个不同的字节全是「指向 rodata 的指针」或「text 与 rodata 的
+相对偏移」；SRAM 各段逐字节相同。
 
 ## 证据链
 

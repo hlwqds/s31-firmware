@@ -114,6 +114,52 @@
 - 路线图：`practice/zig-esp32-s31/ROADMAP-real-link.md` 的 **R3.3**
 - 先例：`components/wifi-blobs/`（Wi-Fi blob，同一套"只从 `.a` 拉需要的对象"手法）
 
+## HCI 一致性自检（对真实 controller，2026-11-24）
+
+完整报告见 `docs/verification/ble-core-verification.md` §8；这里只记判据与日志。
+
+**做了什么。** `src/hci_conformance.zig` 对真实 BLE controller 发 26 条只读的本地信息命令
+（不改状态、不需要对端），按 Vol 4 Part E 逐条校验回包。每条命令在 `commands` 表里带
+表 3.1「LE Controller」列的标注（M / O / C.n / E，脚注原文抄在 `Support` 的注释里）。
+判决入口 `verifyDeclared(cmd, evt, mask)`：先读 HCI_Read_Local_Supported_Commands 的
+64 八位组位图，再按「声明支持 / 声明不支持」判。`verify()` 保持原语义。
+
+| 项 | 判据 / 读数 |
+| --- | --- |
+| 15 条规则 | `Rule` 的 15 个标签：回包长度、Status、保留位、取值范围、LE ACL 长度的保留缺口、页号回显、LE_States 组合、LMP / LE 特征依赖与必选位、LE 特征 33/34 相等，加本轮 4 条按声明支持的判决（`mandatory_unsupported`、`excluded_but_supported`、`support_bit_mismatch`、`status_event`） |
+| 判成违规的四种回答 | 位图为 0 却回成功；位图为 1 却回 Unknown；LE Controller 标 E 的命令回成功；表 3.1 标 M 的命令回 `0x01` |
+| 合规的不支持 | 按 §4.5 回 `0x01 Unknown HCI Command`，回包是 Command Complete 或 Command Status 都算 |
+| 主机用例 | `env -u LD_LIBRARY_PATH zig build test --summary all`，bt-blobs 目标 21 → 67（增量 46 = `hci_conformance.zig` 内 23 条 + `hci_conformance_tests.zig` 的 23 条，其中 1 个是 import 块） |
+| 探针位置 | A 阶段三条基础命令拿到回包之后、任何射频实验（0x2006 / 0x2008 / 0x200A）之前；**同步**跑完，每条等回包上限 2 s（§4.4 建议 1 s），等待期间喂狗 |
+| 传输层改动 | `transport.zig` 保留最后一条事件的完整帧（至多 80 八位组）、事件序号与来处通道；事件帧长由 `1 + plen` 改为 `2 + plen`（不含 H4 类型字节），原来每条少记最后一个八位组 |
+
+**三次上板**（BLE 探针 + 共存核，`sh /tmp/probe-board.sh ble <日志名> 45`）：
+
+| 日志 | 结果 |
+| --- | --- |
+| `logs/hci-conformance-run1-hang.log` | 前 4 条通过后主上下文无限空转（PC 采样钉在 `memcpy`，调用点是 `verify()` 里 `Readout` 初值的拷贝）。成因是 tick 的缺陷：回包被判为 `other_event` 时先 `return`，超时判断排在后面走不到；第 5 条（Read Buffer Size）的回包不是 Command Complete。已修为超时先判。它最初挂在主泵循环上，而脚本进主循环之前就停在 0x200A 的 synth 墙上，永远轮不到，所以改到 A 阶段之后 |
+| `logs/hci-conformance-run2.log` | 完整跑完，20 过 6 不过 |
+| `logs/hci-conformance-boot.log`（最终，另加整张位图读回） | 与第 2 次相同；`hci-conformance: checks passed=20 failed=6 total=26 supported=16 not_supported=4`。之后探针照旧走到 synth 墙（`ble_hw.c:506` 断言，R3.3），无 panic / trap |
+
+**最终一次的读数。**
+
+- 合规且受支持 16 条：read_local_version（`hci_version=0x0E lmp_version=0x0E company=0x02E5 hci_subversion=0 lmp_subversion=0`；Assigned Numbers §2.1 的 `0x0E` 是 Core 6.0，`0x02E5` 是 Espressif；模块的名字表按注释停在 5.4，所以板上打 `unknown`）、read_supported_cmds（126 位，无保留位）、read_local_features（2 位：BR/EDR Not Supported、LE Supported，即 LE-only）、read_bd_addr（`01:BB:00:00:00:02`）、read_codecs_v2（两个计数都是 0）、le_read_buffer_size（acl=517 n=10）、le_read_features（35 位）、le_read_adv_tx_power（0 dBm）、le_read_fal_size（12）、le_read_states（42 位全支持）、le_read_default_dl（27 八位组 / 328 µs）、le_read_rsl_size（4）、le_read_max_dl（251 / 17040，收发相同）、le_read_tx_power（−15 … 20 dBm）、le_read_rf_comp（0.0 / 0.0 dB）、le_read_buffer_size_v2（acl=517 n=10 iso=0 niso=0）。
+- 合规且声明不支持 4 条（都回 0x01）：read_buffer_size、read_data_block_size、read_sp_options、read_loopback_mode。
+- 偏差 6 条（八位组.位指位图里的位置，置位数 126，原文在日志的 4 行 `read: hci supported_commands[...]`）：
+
+| 类 | 命令（opcode，八位组.位） | 回答 | 违反 |
+| --- | --- | --- | --- |
+| ① 位图为 0 却回成功 | read_ext_features_p0（0x1004，14.6） | `0e 0e 08 04 10 00 00 02 00 00 00 00 60` | 表 3.1 对 LE Controller 标 E；§3.1「otherwise it shall not support the command or event」 |
+| ① | read_codecs_v1（0x100B，29.5） | `0e 06 08 0b 10 00 00 00` | 同上 |
+| ② 位图为 1 却回 `0x0C Command Disallowed` | le_read_max_adv_len（0x203A，36.6） | `0e 04 08 3a 20 0c` | 位图声明支持 |
+| ② | le_read_adv_sets（0x203B，36.7） | `0e 04 08 3b 20 0c` | 同上 |
+| ② | le_read_pal_size（0x204A，38.6） | `0e 04 08 4a 20 0c` | 同上 |
+| ③ 位图为 0 却回 `0x0C` 而不是 `0x01` | le_read_antenna（0x2058，40.4） | `0e 04 08 58 20 0c` | §4.5 要求回 `0x01 Unknown HCI Command` |
+
+**判读限定。** ②③ 四条在表 3.1 里分别依赖脚注 C.17（Extended Advertising）、C.21（Periodic Advertising）、C.31（CTE）的特性条件；回 `0x0C` 是否与本移植传给 controller 的配置（本组件的 config）有关，**未验证**。本自检验的是「按当前配置下发时，controller 对只读命令的回答」。位图八位组内低位在前（§6.27）。
+
+**未验证。** 需要射频、对端或改状态的命令；回包在真实链路上的行为；②③ 与 controller 配置的关系。本自检只覆盖 26 条只读命令，不是 HCI 一致性测试集。
+
 ## 验证状态
 
 **当前级别（2026-11-17 收官）：init 链跑到 step 6 并停在内部**。硬件已证明无问题

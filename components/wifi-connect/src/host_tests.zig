@@ -2099,15 +2099,15 @@ test "sa query: responder echoes the transaction identifier; initiator accepts o
 // ---------------------------------------------------------------------------
 
 test "sae pwd-seed and pwd-value vectors" {
-    const seed1 = sae.pwdSeed(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 1);
+    const seed1 = sae.pwdSeedOctet(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 1);
     try expectEqualSlices(u8, &vectors.sae_pwd_seed_1, &seed1);
 
     // 参数与 MAC 顺序无关（内部按 MAX/MIN 重排）
-    const reordered = sae.pwdSeed(vectors.ap_mac, vectors.sta_mac, vectors.sae_password, 1);
+    const reordered = sae.pwdSeedOctet(vectors.ap_mac, vectors.sta_mac, vectors.sae_password, 1);
     try expectEqualSlices(u8, &seed1, &reordered);
 
     // counter 进哈希：1 与 2 必须不同，且 2 命中向量
-    const seed2 = sae.pwdSeed(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 2);
+    const seed2 = sae.pwdSeedOctet(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 2);
     try expectEqualSlices(u8, &vectors.sae_pwd_seed_2, &seed2);
     try expect(!std.mem.eql(u8, &seed1, &seed2));
 
@@ -2356,4 +2356,67 @@ test "queue drops the oldest when full and keeps order" {
     _ = q.push(.{ .kind = .assoc_ok, .arg = 101 });
     try expectEqual(@as(u32, 100), q.pop().?.arg);
     try expectEqual(@as(u32, 101), q.pop().?.arg);
+}
+
+// ---------------------------------------------------------------------------
+// 扩展特性的用例各在自己的文件里（一个文件一个特性），这里只负责发现。
+// 必须写成直接的 `@import`：经顶层常量转引的文件，其中的用例不会被发现。
+// ---------------------------------------------------------------------------
+test {
+    _ = @import("sae_full_tests.zig");
+}
+test {
+    _ = @import("suite256_tests.zig");
+}
+test {
+    _ = @import("ft_tests.zig");
+}
+
+// ---------------------------------------------------------------------------
+// 板侧自检在主机上执行
+//
+// 三份子自检（`sae_full_selftest.zig`、`suite256_selftest.zig`、`ft_selftest.zig`）是 `selftest.zig`
+// 经 `extCheck` 调用的板侧判据，入口固定为 `run(check)`、不 import board，所以可以在主机上跑。
+// 放在这里有两个用处：烧录之前就拦住自检自身的回归（2026-11-24 第一次上板 `ble-802154` 18/19，
+// 失败的那条就是自检自己的差一错误）；主机测试的 import 闭包也因此覆盖到这三个文件。
+// ---------------------------------------------------------------------------
+// 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，这三个文件要出现在闭包里。
+const sae_full_selftest = @import("sae_full_selftest.zig");
+const suite256_selftest = @import("suite256_selftest.zig");
+const ft_selftest = @import("ft_selftest.zig");
+
+var g_self_passed: usize = 0;
+var g_self_failed: usize = 0;
+var g_self_longest: usize = 0;
+
+fn selfCheck(ok: bool, text: []const u8) void {
+    if (ok) g_self_passed += 1 else {
+        g_self_failed += 1;
+        std.debug.print("board selftest FAIL: {s}\n", .{text});
+    }
+    if (text.len > g_self_longest) g_self_longest = text.len;
+}
+
+fn runSelftest(comptime run: anytype) !void {
+    g_self_passed = 0;
+    g_self_failed = 0;
+    g_self_longest = 0;
+    run(selfCheck);
+    try std.testing.expect(g_self_passed > 0);
+    try std.testing.expectEqual(@as(usize, 0), g_self_failed);
+    // `board.log` 一行超过 200 字节会被截断，行尾的 `ok=` 就没了（`ft_selftest.zig` 文件头）。
+    try std.testing.expect(g_self_longest <= 200);
+    std.debug.print("board selftest on host: passed={d} failed=0 longest-line={d}\n", .{ g_self_passed, g_self_longest });
+}
+
+test "board selftest on host: SAE full (sae_full_selftest.run) passes every check" {
+    try runSelftest(sae_full_selftest.run);
+}
+
+test "board selftest on host: 256-bit suites (suite256_selftest.run) passes every check" {
+    try runSelftest(suite256_selftest.run);
+}
+
+test "board selftest on host: FT key hierarchy (ft_selftest.run) passes every check" {
+    try runSelftest(ft_selftest.run);
 }

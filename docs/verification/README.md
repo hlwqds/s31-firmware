@@ -5,8 +5,10 @@
 | 报告 | 规范依据 | 覆盖的组件 |
 | --- | --- | --- |
 | [`coex-verification.md`](coex-verification.md) | ESP-IDF 源码、ROM 与 `libcoexist.a`（共存不是 IEEE 或 Bluetooth 标准） | `radio-coex` |
-| [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；RFC 3394、RFC 4493、RFC 6070 | `wifi-mlme`、`wifi-connect` |
-| [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；RFC 7668 | `ble-802154`、`ble-security` |
+| [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；其上的 RFC 3394、RFC 4493、RFC 6070、RFC 4231 | `wifi-mlme`、`wifi-connect` |
+| [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；其上的 RFC 7668、RFC 4493、RFC 3610 | `ble-802154`、`ble-security`；`bt-blobs` 的 HCI 一致性自检（§8） |
+
+Wi-Fi 与 BLE 都不是 RFC 所定义的：前者的规范是 IEEE Std 802.11，后者是 Bluetooth SIG 的 Core Specification；RFC 只覆盖其上的少数协议。
 
 ## 板级运行：2026-11-24 第一次
 
@@ -49,6 +51,32 @@ harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 判据 | 13/13 | 14/14 | 11/11 | 10/10 | 12/12 | 11/11 | 13/13 | 28/28 | 19/19 | 16/16 | 25/25 | 10/10 | 12/12 | 36/36 |
 
+## 板级运行：2026-11-24 第二批之后
+
+同一条命令（第二批——SAE 完整协议、FT、256 位套件、QoS 与省电、ATT / GATT 扩展——并入之后）。`PASS board:wifi`，14 个 section
+全部通过，聚合行 `firmware: sections: passed=14 failed=0 total=14`、`main: verdict=pass`。原始日志 `logs/e2e-wifi-boot.log`
+（又覆盖了复验那一次的同名文件；上一节的数字取自那一次运行）。
+
+| section | `net_ipv4` | `net_udp_dhcp_dns` | `net_tcp` | `net_congestion` | `net_sockets` | `net_ethernet` | `wifi_boundary` | `wifi_connect` | `ble_802154` | `wifi_mlme` | `ble_security` | `radio_coex` | `boot_power_perf` | `posix` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 判据 | 13/13 | 14/14 | 11/11 | 10/10 | 12/12 | 11/11 | 13/13 | **87/87** | **50/50** | **24/24** | 25/25 | 10/10 | 12/12 | 36/36 |
+
+三个变了的 section：`wifi_connect` 28 → 87（SAE 24 条、suite-256 22 条、FT 13 条）；`ble_802154` 19 → 50（AES-CMAC 与签名 4 条、
+ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_mlme` 16 → 24（QoS 与省电）。
+
+## 不抓空口的另外三次板级运行（2026-11-24）
+
+| 运行 | 命令 | 结果 | 日志 |
+| --- | --- | --- | --- |
+| 对真实 controller 的 HCI 一致性自检（BLE 探针 + 共存核） | `sh /tmp/probe-board.sh ble hci-conformance-boot.log 45` | 26 条只读命令：`checks passed=20 failed=6 total=26 supported=16 not_supported=4`。**结果不通过**：6 条不一致，分三类，命令名、opcode 与它在位图里的八位组.位见 `ble-core-verification.md` §8 | `logs/hci-conformance-boot.log`（此前两次：`hci-conformance-run1-hang.log`、`hci-conformance-run2.log`） |
+| 共存合并镜像（两个 blob 同镜） | `sh /tmp/merged-board.sh` | `coex_merged` 6/6；8/8 段、`main: verdict=pass`；两个控制器的 init 都返回 0 | `logs/coex-merged-boot.log`（第一次：`coex-merged-run1-boot.log`） |
+| 默认 profile | `python3 tests/e2e/run_e2e.py --board --profile net` | `PASS board:net`，8/8 段 | `logs/e2e-net-boot.log` |
+
+## 默认镜像（L2）
+
+下面「默认镜像不变」一节是第一批集成时的逐字节对比。之后为共存扩大了链接窗口（drom 基址后移），默认镜像不再可能逐字节相同；
+能证明、也证明过的是「除了重定位什么都没变」，见 `coex-verification.md` §7.3。第二批的代码只挂在 `wifi` 组，不进默认镜像。
+
 ## 默认镜像不变（L2）
 
 新 section 只挂在 `wifi` 组，`firmware/build.zig` 的默认选项不含 `wifi`。在集成前的提交 `3194bf6` 上建 worktree，与集成后的工作树用同一组构建参数（`tests/e2e/run_e2e.py` 里各 profile 的 `-D` 开关）各构建一次，整文件比 SHA-256，两边在不同目录：
@@ -73,6 +101,19 @@ harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓
 | `min`、`net`、`tls`、`net-wire` | 0 | 0 | 0 | 不含 `wifi` 组，见上一节 |
 
 本轮之后：`wifi` 的 irom 余量 411 056 B，`full` 的 irom 余量 276 528 B，factory 分区余量分别为 1 024 128 B 与 869 904 B。
+
+**第二批之后（2026-11-24）**：`check-capacity.py` 再跑一次，`wifi` 与 `full` 超过基线 8 KiB 的阈值，这是第二批特性本身的体量
+（SAE 的 P-256 运算、suite-256、ATT / GATT 服务端与客户端）；同样用 `--update` 重写基线后复核通过。其余四个 profile 没有变化。
+
+| profile | `app.bin` 增长 | irom 增长 | drom 增长 | 之后 irom 余量（窗口 1 835 008 B） | factory 分区余量 |
+| --- | --- | --- | --- | --- | --- |
+| `wifi` | +226 976 B | +164 560 B | +41 712 B | 1 295 072 B | 797 152 B |
+| `full` | +187 472 B | +136 512 B | +41 360 B | 1 188 592 B | 682 368 B |
+| `min`、`net`、`tls`、`net-wire` | 0 | 0 | 0 | — | — |
+
+同日 `tests/e2e/run_e2e.py --host`：六个 profile（`min`、`net`、`wifi`、`tls`、`net-wire`、`full`）构建全部通过，镜像都恰好两段。
+
+共用同一个射频的合并镜像（Wi-Fi + BLE 两个 blob 同镜，`-Dcoex-merged`）不在这六个 profile 里，它的占用见 `coex-verification.md` §7.2。
 
 基线文件 `tools/s31-production/baseline/capacity.json` 上次刷新是 2026-11-18（`a59e5d7`）。到 `3194bf6` 为止已有一批与本轮无关的漂移，所以 **`3194bf6` 上 `check-capacity.py` 本来就是失败的**（退出码 1）：六个 profile 的 irom 增长 21 504 到 31 504 B（`min` 21 504、`net-wire` 22 848，其余四个 31 072 到 31 504）。本轮用 `check-capacity.py --update` 把这些一并写进基线，复核通过。
 

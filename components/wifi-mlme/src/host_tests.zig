@@ -2232,3 +2232,14 @@ test "scan: BSS table rejects frames that are not usable BSS advertisements" {
     // 出错的帧不进表。
     try expectEqual(@as(usize, 0), table.count());
 }
+
+// ---------------------------------------------------------------------------
+// QoS 与省电的用例各在自己的文件里，这里只负责发现。必须写成直接的 `@import`：
+// 经顶层常量转引的文件，其中的用例不会被发现。
+// ---------------------------------------------------------------------------
+test {
+    _ = @import("qos_tests.zig");
+}
+test {
+    _ = @import("powersave_tests.zig");
+}

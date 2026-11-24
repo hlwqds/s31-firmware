@@ -85,6 +85,17 @@ pub const Stats = struct {
     tx_len: u8 = 0,
     tx_head: [16]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     tx_first: [16]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    /// 最后一条事件的**完整**帧（不含 H4 类型字节）。上面的 `last_evt[8]` 只是给周期判决行用的
+    /// 前 8 字节；HCI 一致性自检要读完整载荷（Read Local Supported Commands 的 Command Complete
+    /// 有 69 字节）。超过 80 字节的事件只留前 80 字节。
+    last_evt_full: [80]u8 = @splat(0),
+    last_evt_full_len: u8 = 0,
+    /// 事件序号：每收到一条事件 +1。调用方用「发命令前后序号有没有变」判断回包到了没有。
+    evt_seq: u32 = 0,
+    /// 最后一条事件是从哪条通道收到的：false = `leEvtTx`（host 侧回调），true = `btdmTx`（BTDM 上行包）。
+    last_evt_from_btdm: bool = false,
+    /// `btdmTx` 给的包类型（HCI 包类型：1 命令、2 ACL、4 事件）。
+    last_evt_pkt_type: u8 = 0,
 };
 var stats_state = Stats{};
 pub fn stats() Stats {
@@ -92,6 +103,27 @@ pub fn stats() Stats {
 }
 pub fn resetStats() void {
     stats_state = .{};
+}
+
+/// 最后一条事件的完整帧。切片指向本文件的静态缓冲，下一条事件会覆盖它。
+pub fn lastEvent() []const u8 {
+    return stats_state.last_evt_full[0..stats_state.last_evt_full_len];
+}
+
+/// 事件序号（见 `Stats.evt_seq`）。
+pub fn evtSeq() u32 {
+    return stats_state.evt_seq;
+}
+
+/// 两条上行通道共用的记账：留一份完整帧、推进事件序号。
+/// `frame` 是不含 H4 类型字节的事件帧（`[event code][plen][params]`）。
+fn recordEvent(frame: []const u8, from_btdm: bool, pkt_type: u8) void {
+    stats_state.evt_seq +%= 1;
+    stats_state.last_evt_from_btdm = from_btdm;
+    stats_state.last_evt_pkt_type = pkt_type;
+    const n = @min(frame.len, stats_state.last_evt_full.len);
+    @memcpy(stats_state.last_evt_full[0..n], frame[0..n]);
+    stats_state.last_evt_full_len = @intCast(n);
 }
 
 var fwd: ?ForwardFn = null;
@@ -102,22 +134,26 @@ fn dumpEvt(bytes: []const u8) void {
     if (bytes.len < 3) return;
     stats_state.last_evt_code = bytes[0];
     stats_state.last_evt_len = bytes[1];
-    osal.logPublic("bt hci << EVT code=0x{x:0>2} len={d}", .{ bytes[2], bytes[1] });
+    osal.logPublic("bt hci << EVT code=0x{x:0>2} len={d}", .{ bytes[0], bytes[1] });
     var i: usize = 0;
     while (i < bytes.len and i < 16) : (i += 1) {
         osal.logPublic("bt hci    [{d}]=0x{x:0>2}", .{ i, bytes[i] });
     }
 }
 
-/// 事件回调（controller → host）。
-/// **实测布局**（VHCI 约定，**不含 `0x04` 类型字节**）：
-/// `[0]=event code, [1]=parameter length, [2..]=parameters`，帧长 = `1 + bytes[1]`。
+/// 事件回调（controller → host，`sendCmdViaHs` 那条路的回包走这里）。
+/// `cmd` 指向事件帧的开头。**布局**（VHCI 约定，**不含 `0x04` 类型字节**）：
+/// `[0]=event code, [1]=parameter length, [2..]=parameters`，帧长 `= 2 + plen`
+/// （与 NimBLE `ble_hs_hci_rx_evt` 的 `BLE_HCI_TRANSPORT_HDR_LEN + ha_evbuf[1]` 相同）。
 /// 实测样本：`0e 03 01 00 00` = Command Complete / plen 3 / ncmd 1。
-/// ⚠ 旧注释写的是 `[0]=0x04, [1]=len, [2]=code`（H4 形态）—— **这条路径不是那个形态**。
+/// ⚠ 此前这里按 `1 + plen` 截帧长（旧注释也这么写），每条事件都少记最后一个字节；
+///   只影响计数与日志，2026-11-24 因 HCI 一致性自检要读完整回包而改正。
+/// ⚠ 更早的注释写的是 `[0]=0x04, [1]=len, [2]=code`（H4 形态）—— **这条路径不是那个形态**。
 fn leEvtTx(cmd: [*]u8, _: ?*anyopaque) callconv(.c) c_int {
-    const len: usize = @as(usize, cmd[1]) + 1; // 无 0x04 类型字节 ⇒ 1+plen
+    const len: usize = @as(usize, cmd[1]) + 2; // 不含 0x04 类型字节 ⇒ 2 + plen
     stats_state.evt_count += 1;
     stats_state.evt_bytes += @intCast(len);
+    recordEvent(cmd[0..len], false, 0);
     // **保存最后一条事件的原始字节**：日志行会被 FIFO 丢弃，
     // 但静态数组不会 ⇒ 停机后的周期判决可以把它打出来。
     {
@@ -161,6 +197,10 @@ fn btdmTx(pkt: *Packet) callconv(.c) c_int {
             stats_state.tx_head[i] = if (i < cap) pkt.data[i] else 0;
         }
     }
+    // A 路径（`sendCmd`）的回包走这条通道。包的 HCI 类型在 `pkt.type`，`pkt.data` 是载荷；
+    // 事件包的载荷按不含类型字节的事件帧记账，与 `leEvtTx` 落进同一块「最后一条事件」，
+    // HCI 一致性自检靠它读回包。
+    recordEvent(pkt.data[0..@min(@as(usize, pkt.length), 255)], true, pkt.type);
     if (fwd) |f| _ = f(@as(u32, pkt.type), pkt.data, pkt.length, @as(u32, 0x02), 0);
     if (freestanding) r_btdm_hci_trans_buf_free(pkt);
     return 0;
@@ -321,7 +361,7 @@ test "transport: 包布局与枚举值" {
     try std.testing.expectEqual(@as(u32, 0x03), DIR_H2C);
 }
 
-test "transport: 事件回调按 cmd[1]+1 切长度（无 H4 类型字节）、记下 event code" {
+test "transport: 事件回调按 2 + plen 切帧长（无 H4 类型字节，末字节不再丢）、记下 event code" {
     resetStats();
     // 实测样本：Command Complete / plen 3 / ncmd 1 / opcode 0x0000
     var buf = [_]u8{ 0x0E, 0x03, 0x01, 0x00, 0x00 };
@@ -329,7 +369,48 @@ test "transport: 事件回调按 cmd[1]+1 切长度（无 H4 类型字节）、�
     try std.testing.expectEqual(@as(u32, 1), stats().evt_count);
     try std.testing.expectEqual(@as(u8, 0x0E), stats().last_evt_code);
     try std.testing.expectEqual(@as(u8, 3), stats().last_evt_len);
-    try std.testing.expectEqual(@as(u32, 4), stats().evt_bytes); // 帧长 = 1 + plen
+    try std.testing.expectEqual(@as(u32, 5), stats().evt_bytes); // 帧长 = 2 + plen
+    // 末字节不能丢：换成末字节非 0 的样本（Reset 的 Command Complete，opcode 0x0C03），整帧都在。
+    var buf2 = [_]u8{ 0x0E, 0x03, 0x01, 0x03, 0x0C };
+    injectEvent(&buf2);
+    try std.testing.expectEqualSlices(u8, &buf2, lastEvent());
+    try std.testing.expectEqual(@as(u32, 10), stats().evt_bytes);
+    try std.testing.expectEqual(@as(u8, 0x0E), stats().last_evt_code);
+    try std.testing.expectEqual(false, stats().last_evt_from_btdm);
+}
+
+test "transport: 完整帧保留到 lastEvent()（超过 8 字节不截），事件序号逐条递增，80 字节封顶" {
+    resetStats();
+    // Read Local Supported Commands 的 Command Complete：plen 67，帧长 69。
+    var long: [69]u8 = @splat(0xAB);
+    long[0] = 0x0E;
+    long[1] = 67;
+    injectEvent(&long);
+    try std.testing.expectEqualSlices(u8, &long, lastEvent());
+    try std.testing.expectEqual(@as(u32, 1), evtSeq());
+    // 比缓冲还长的事件：只留前 80 字节，序号照样递增。
+    var huge: [90]u8 = @splat(0x5A);
+    huge[0] = 0x0E;
+    huge[1] = 89;
+    injectEvent(&huge);
+    try std.testing.expectEqual(@as(usize, 80), lastEvent().len);
+    try std.testing.expectEqualSlices(u8, huge[0..80], lastEvent());
+    try std.testing.expectEqual(@as(u32, 2), evtSeq());
+}
+
+test "transport: BTDM 上行包（A 路径回包）的载荷整包留到 lastEvent()，并记下来源与包类型" {
+    resetStats();
+    // Read BD_ADDR 的 Command Complete：status 0 + 6 字节地址，plen 7，载荷 9 字节。
+    const payload = [_]u8{ 0x0E, 0x07, 0x01, 0x09, 0x10, 0x00, 0x02, 0x00, 0x00, 0xBB, 0x01 };
+    var pkt = Packet{ .data = @constCast(&payload), .length = payload.len, .type = 0x04 };
+    _ = btdmTx(&pkt);
+    try std.testing.expectEqualSlices(u8, &payload, lastEvent());
+    try std.testing.expectEqual(@as(u32, 1), evtSeq());
+    try std.testing.expectEqual(@as(u32, 1), stats().btdm_tx);
+    try std.testing.expect(stats().last_evt_from_btdm);
+    try std.testing.expectEqual(@as(u8, 0x04), stats().last_evt_pkt_type);
+    // 事件计数只属于 host 侧回调，这条通道不计入。
+    try std.testing.expectEqual(@as(u32, 0), stats().evt_count);
 }
 
 test "transport: B 路径同样受 init 门禁，type 常量与 A 路径不同" {

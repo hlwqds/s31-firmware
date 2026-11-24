@@ -1,12 +1,12 @@
-//! wifi-mlme：板侧自检（16 条判据）。
+//! wifi-mlme：板侧自检（24 条判据）。
 //!
 //! 每条判据打印一行 `check: ... ok=1/0`，最后一行 `checks: passed=N failed=M
 //! total=N+M`。判据与主机侧 `src/host_tests.zig` 是同一批向量、同一批断言，
 //! 只是板侧没有堆、日志走 `board.log.line`。本组件板侧**不碰射频**：被测对象是
-//! 六段纯逻辑（`frame.zig` / `ie.zig` / `mgmt.zig` / `robust.zig` / `mlme.zig` /
-//! `scan.zig`）。
+//! 八段纯逻辑（`frame.zig` / `ie.zig` / `mgmt.zig` / `robust.zig` / `mlme.zig` /
+//! `scan.zig` / `qos.zig` / `powersave.zig`）。
 //!
-//! 16 条判据：
+//! 24 条判据：
 //!
 //!   ① FCS：wpa-Induction.pcap 八帧的帧尾 FCS 逐字节命中，改一字节即失败；Annex J.9.1
 //!   ② FCS 逐位参考实现与查表实现互为反射，接收余数 = 0xC704DD7B（9.2.4.8，p.665）
@@ -24,6 +24,14 @@
 //!   ⑭ Disassociation / Deauthentication / 认证超时 / 类违规响应
 //!   ⑮ 扫描计划（主动 12 步、被动 3 步）
 //!   ⑯ Probe Request = 抓包第 58 帧；BSS 表把 Beacon 与 Probe Response 合并为一条
+//!   ⑰ QoS Control（Table 9-6）：七行布局拆开再拼回去；保留位与管理帧的负例
+//!   ⑱ QoS 数据帧：抓包的 TID 0 / TID 7 帧与重传；3 地址、4 地址帧构造后解析；负例
+//!   ⑲ UP ↔ TID ↔ AC、Table 9-137 默认 EDCA 参数、QoS Info 与 QoS Capability 元素
+//!   ⑳ TIM / DTIM：AID → 位、Bitmap Offset、组播位、DTIM Count、偏移越界
+//!   ㉑ PS-Poll 帧：格式、长度与 AID 的负例；抓包里 STA 用 Null 帧进出 PS 模式
+//!   ㉒ U-APSD 两侧：trigger 帧与服务期（STA）、Max SP Length（AP）
+//!   ㉓ STA 模型与 AP 模型对接：进 PS → PS-Poll 取 BU → DTIM 组播 → 回到 active 补发
+//!   ㉔ More Data 的含义与提示、监听间隔
 
 const std = @import("std");
 
@@ -37,6 +45,30 @@ const robust = @import("robust.zig");
 const mlme = @import("mlme.zig");
 const scan = @import("scan.zig");
 const vectors = @import("vectors.zig");
+
+const qos = @import("qos.zig");
+const powersave = @import("powersave.zig");
+
+/// 新判据共用的一块缓冲，放在文件作用域，不占栈。
+var g_scratch: [320]u8 = undefined;
+
+/// 结果是不是错误（任何 error union）。
+fn isErr(res: anytype) bool {
+    _ = res catch return true;
+    return false;
+}
+
+/// Beacon 里的 TIM 元素体；帧坏或没带 TIM 返回 null。
+fn beaconTim(beacon: []const u8) ?[]const u8 {
+    const f = frame.parse(beacon, .none) catch return null;
+    const el = findEl(f.body[12..], .tim) orelse return null;
+    return el.body;
+}
+
+fn decodeFails(layout: qos.Layout, w: u16) bool {
+    _ = qos.decode(layout, w) catch return true;
+    return false;
+}
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;
@@ -256,12 +288,12 @@ fn checkHeader() void {
             mpdu[p..][0..6].* = x4;
             p += 6;
         }
-        const qos = (c.fc[0] & 0x80) != 0;
-        if (qos) {
+        const has_qos = (c.fc[0] & 0x80) != 0;
+        if (has_qos) {
             std.mem.writeInt(u16, mpdu[p..][0..2], 0x07a2, .little);
             p += 2;
         }
-        if (qos and (c.fc[1] & 0x80) != 0) {
+        if (has_qos and (c.fc[1] & 0x80) != 0) {
             mpdu[p..][0..4].* = .{ 0x11, 0x22, 0x33, 0x44 };
             p += 4;
         }
@@ -285,7 +317,7 @@ fn checkHeader() void {
         ok = ok and std.mem.eql(u8, &h.addr1, &x1) and std.mem.eql(u8, &h.addr2.?, &x2);
         ok = ok and std.mem.eql(u8, &h.addr3.?, &x3) and ((h.addr4 == null) == (c.n == 3));
         ok = ok and eql(f.body, &[_]u8{ 6, 5, 4 });
-        if (qos) {
+        if (has_qos) {
             const q = h.qos.?;
             ok = ok and q.tid == 2 and q.a_msdU_present and q.ack_policy == .no_ack and q.high == 7;
         } else {
@@ -720,6 +752,341 @@ fn checkScan() void {
 }
 
 // ---------------------------------------------------------------------------
+// ⑰ QoS Control（9.2.4.5，p.647–653；Table 9-6，p.648）
+// ---------------------------------------------------------------------------
+
+fn checkQosControl() void {
+    // 七行布局各取一个字：拆开再拼回去。
+    const Case = struct { layout: qos.Layout, word: u16 };
+    const cases = [_]Case{
+        .{ .layout = .hc_cf_poll, .word = 0x0a47 },
+        .{ .layout = .hc_data_cf_poll, .word = 0xffd3 },
+        .{ .layout = .hc_data, .word = 0xeef5 },
+        .{ .layout = .hc_null, .word = 0x0216 },
+        .{ .layout = .sta_data, .word = 0x0011 },
+        .{ .layout = .sta_null, .word = 0x0000 },
+        .{ .layout = .mesh, .word = 0x067f },
+    };
+    var ok = true;
+    for (cases) |c| {
+        const f = qos.decode(c.layout, c.word) catch {
+            ok = false;
+            continue;
+        };
+        ok = ok and (qos.encode(c.layout, f) catch 0) == c.word;
+    }
+    if (qos.decode(.hc_data, 0xeef5)) |hc| {
+        ok = ok and hc.tid == 5 and (hc.eosp orelse false) and hc.ack_policy == .block_ack and (hc.a_msdU_present orelse false);
+        ok = ok and hc.tail.ap_ps_buffer_state.highest_priority_ac == 3 and hc.tail.ap_ps_buffer_state.buffered_load == 14;
+    } else |_| {
+        ok = false;
+    }
+    // Table 9-6 标 Reserved 的位不为 0。
+    const neg_ok = decodeFails(.hc_cf_poll, 0x0080) and decodeFails(.sta_null, 0x0080) and
+        decodeFails(.hc_data, 0x0100) and decodeFails(.hc_null, 0x0400) and decodeFails(.mesh, 0x0800);
+    // 发送方由 To DS / From DS 推断，布局由发送方与子类型决定；管理帧不是 QoS 帧。
+    const fc: frame.FrameControl = .{ .type = .data, .subtype = 8, .from_ds = true };
+    const layout_ok = (qos.layoutFor(fc, .hc) catch .mesh) == .hc_data and
+        (qos.layoutFor(.{ .type = .data, .subtype = 12 }, .non_ap_sta) catch .mesh) == .sta_null and
+        (qos.senderOf(fc) catch .mesh) == .hc and
+        (qos.senderOf(.{ .type = .data, .to_ds = true }) catch .mesh) == .non_ap_sta and
+        isErr(qos.layoutFor(.{ .type = .mgmt, .subtype = 8 }, .hc)) and
+        isErr(qos.layoutFor(.{ .type = .data, .subtype = 13 }, .hc));
+    check(ok and neg_ok and layout_ok, "qos_ctrl 7rows={d} reserved_rej={d} layout={d}", .{ b(ok), b(neg_ok), b(layout_ok) });
+}
+
+// ---------------------------------------------------------------------------
+// ⑱ QoS 数据帧
+// ---------------------------------------------------------------------------
+
+fn checkQosFrames() void {
+    // 抓包：http_PPI.cap 第 1、3 帧（TID 0，帧尾带 FCS）；wpa-eap-tls.pcap 第 1、2 帧（TID 7，重传）。
+    var cap_ok = false;
+    var retry_ok = false;
+    if (qos.parse(&vectors.ppi_qos_data_to_ap, .checked)) |up| {
+        if (qos.parse(&vectors.ppi_qos_data_from_ap, .checked)) |down| {
+            cap_ok = up.layout == .sta_data and down.layout == .hc_data and up.qos.tid == 0 and down.qos.tid == 0;
+            cap_ok = cap_ok and (up.ac orelse .vo) == .be and up.frame.header.len == 26;
+            cap_ok = cap_ok and std.mem.eql(u8, up.frame.body[0..8], &[_]u8{ 0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00 });
+        } else |_| {}
+    } else |_| {}
+    if (qos.parse(&vectors.eaptls_qos_from_ap, .none)) |eap| {
+        if (qos.parse(&vectors.eaptls_qos_from_ap_retry, .none)) |r| {
+            retry_ok = eap.qos.tid == 7 and (eap.ac orelse .be) == .vo and r.frame.hdr.fc.retry and
+                eql(eap.frame.body, r.frame.body);
+        } else |_| {}
+    } else |_| {}
+    // 构造：3 地址（STA→AP，TID 5、Queue Size=1）与 4 地址 mesh 帧，解析回来一致。
+    const body = [_]u8{ 6, 5, 4, 3 };
+    var three = false;
+    if (qos.seal(.{ .sender = .non_ap_sta, .subtype = 8, .addr1 = vectors.cap_ap, .addr2 = vectors.cap_sta, .addr3 = vectors.cap_ap, .qos = (qos.staFields(5, .normal_ack, false, .{ .queue_size = 1 }) catch qos.Fields{}), .body = &body }, true, &g_scratch)) |n| {
+        if (qos.parse(g_scratch[0..n], .checked)) |back| {
+            three = n == 34 and back.qos.tid == 5 and back.qos.tail.queue_size == 1 and eql(back.frame.body, &body);
+        } else |_| {}
+    } else |_| {}
+    var four = false;
+    if (qos.seal(.{ .sender = .mesh, .subtype = 8, .addr1 = vectors.cap_sta, .addr2 = vectors.cap_ap, .addr3 = vectors.cap_sta, .addr4 = vectors.cap_ap, .qos = .{ .tid = 0, .eosp = false, .ack_policy = .normal_ack, .a_msdU_present = false, .tail = .{ .mesh = .{ .control_present = true } } }, .body = &body }, true, &g_scratch)) |n| {
+        if (qos.parse(g_scratch[0..n], .checked)) |back| {
+            four = n == 40 and back.frame.header.len == 32 and back.qos.tail.mesh.control_present;
+        } else |_| {}
+    } else |_| {}
+    // 负例：管理帧带 QoS Control、管理帧交给 qos.parse、QoS Control 被截断、非法 TID。
+    const bad = frame.Header{ .fc = .{ .type = .mgmt, .subtype = 8 }, .addr1 = vectors.cap_ap, .addr2 = vectors.cap_sta, .addr3 = vectors.cap_ap, .seq_ctrl = 0, .qos = .{} };
+    const neg_ok = isErr(bad.validate()) and isErr(qos.parse(&vectors.cap_beacon, .checked)) and
+        isErr(qos.parse(vectors.eaptls_qos_from_ap[0..25], .none)) and
+        isErr(qos.staFields(16, .normal_ack, false, .{ .txop_duration_requested = 0 }));
+    check(cap_ok and retry_ok and three and four and neg_ok, "qos_frame capture={d} retry={d} 3addr={d} 4addr={d} neg={d}", .{ b(cap_ok), b(retry_ok), b(three), b(four), b(neg_ok) });
+}
+
+// ---------------------------------------------------------------------------
+// ⑲ UP / TID / AC、默认 EDCA 参数、QoS Info
+// ---------------------------------------------------------------------------
+
+fn checkQosEdca() void {
+    // Table 10-1（p.1298）；TID 8–15 是 TSID，不属于任何 AC。
+    const want = [8]qos.Ac{ .be, .bk, .bk, .be, .vi, .vi, .vo, .vo };
+    var map_ok = true;
+    for (want, 0..) |ac, up| {
+        map_ok = map_ok and qos.acForUp(@intCast(up)) == ac and (qos.acForTid(@intCast(up)) orelse .vo) == ac;
+    }
+    map_ok = map_ok and (qos.acForTid(8) == null) and (qos.acForTid(15) == null) and
+        isErr(qos.edcaTid(8)) and isErr(qos.edcaTid(16));
+    // Table 9-137（p.899）：aCWmin = 15 的那一族（OFDM / HT）与 aCWmin = 31 的那一族（DSSS）。
+    const p = qos.defaultAcParams(.clause_17_18_19_21, qos.ofdm_cw);
+    const d = qos.defaultAcParams(.clause_15_16, qos.dsss_cw);
+    const edca_ok = p[0].aifsn == 3 and p[1].aifsn == 7 and p[2].aifsn == 2 and p[3].aifsn == 2 and
+        p[0].cwmin == 15 and p[2].cwmin == 7 and p[3].cwmin == 3 and p[2].cwmax == 15 and p[3].cwmax == 7 and
+        p[0].txop_limit == 79 and p[2].txop_limit == 128 and p[3].txop_limit == 65 and
+        d[0].cwmin == 31 and d[2].cwmin == 15 and d[2].txop_limit == 188 and
+        p[0].aifsUs(9, 16) == 43 and p[1].aifsUs(9, 16) == 79;
+    // Figure 9-83、Table 9-48（p.740）：U-APSD Flag、Q-Ack、Max SP Length；元素 `2e 01 <QoS Info>`。
+    var info = qos.QosInfoSta{ .uapsd_be = true, .max_sp_length = .four };
+    info.q_ack = true;
+    var info_ok = info.octet() == 0x58 and info.uapsdEnabled(.be) and !info.uapsdEnabled(.vo);
+    info.uapsd_bk = true;
+    info.uapsd_vi = true;
+    info.uapsd_vo = true;
+    info_ok = info_ok and info.allDeliveryEnabled() and info.acMask() == 0xf and
+        (qos.MaxSpLength.two.limit() orelse 0) == 2;
+    if (qos.buildQosCapability(.{ .uapsd_be = true, .max_sp_length = .four }, true, g_scratch[0..8])) |n| {
+        info_ok = info_ok and n == 3 and g_scratch[0] == 46 and g_scratch[1] == 1 and g_scratch[2] == 0x48;
+    } else |_| {
+        info_ok = false;
+    }
+    info_ok = info_ok and isErr(qos.buildQosCapability(.{ .uapsd_be = true }, false, g_scratch[0..8]));
+    check(map_ok and edca_ok and info_ok, "qos_edca up_ac={d} table9-137={d} qos_info={d}", .{ b(map_ok), b(edca_ok), b(info_ok) });
+}
+
+// ---------------------------------------------------------------------------
+// ⑳ TIM / DTIM
+// ---------------------------------------------------------------------------
+
+fn checkTim() void {
+    var bm = powersave.VirtualBitmap{};
+    // AID 4 的 TIM 与抓包（Network_Join_Nokia_Mobile.pcap 第 1062 帧）逐字节相同；
+    // AID 85、90 与原有手工向量相同。
+    bm.set(4) catch {};
+    var n = powersave.encodeTim(&bm, 0, 1, false, &g_scratch) catch 0;
+    var ok = false;
+    if (std.mem.indexOf(u8, &vectors.nokia_beacon_aid4, g_scratch[0..n]) != null) ok = true;
+    bm.clearAll();
+    bm.set(85) catch {};
+    bm.set(90) catch {};
+    n = powersave.encodeTim(&bm, 3, 4, false, &g_scratch) catch 0;
+    ok = ok and n == 7 and eql(g_scratch[0..n], &vectors.tim_aid85_90);
+    // Bitmap Offset：AID 20 → N1 = 2、Offset 1、位图 10。
+    bm.clearAll();
+    bm.set(20) catch {};
+    n = powersave.encodeTim(&bm, 0, 1, false, &g_scratch) catch 0;
+    ok = ok and n == 6 and g_scratch[4] == 0x02 and g_scratch[5] == 0x10;
+    // 位序：AID 8、15 在第 1 字节，AID 2007 在第 250 字节 bit 7。
+    bm.clearAll();
+    bm.set(8) catch {};
+    bm.set(15) catch {};
+    bm.set(2007) catch {};
+    const bits_ok = bm.octets[1] == 0x81 and bm.octets[250] == 0x80 and bm.isSet(2007) and !bm.isSet(2008);
+    n = powersave.encodeTim(&bm, 0, 1, false, &g_scratch) catch 0;
+    ok = ok and n == 256 and g_scratch[4] == 0x00 and g_scratch[255] == 0x80;
+    // 组播位：只有组播缓存时是 `05 04 00 01 01 00`，与抓包的 DTIM 相同；Bitmap Offset 越界被拒。
+    bm.clearAll();
+    n = powersave.encodeTim(&bm, 0, 1, true, &g_scratch) catch 0;
+    var mc_ok = n == 6 and eql(g_scratch[0..n], &vectors.tim_multicast);
+    if (std.mem.indexOf(u8, &vectors.cap_dtim_multicast, g_scratch[0..n]) == null) mc_ok = false;
+    const over = [_]u8{ 0, 1, 0xfc, 0 };
+    mc_ok = mc_ok and isErr(ie.parseTim(&over)) and powersave.dtimCount(1, 3) == 2 and
+        powersave.dtimCount(2, 3) == 1 and powersave.dtimCount(3, 3) == 0;
+    // 解码：抓包 Beacon 的 TIM 里 AID 4 有缓冲、AID 5 没有。
+    var dec_ok = false;
+    if (beaconTim(&vectors.nokia_beacon_aid4)) |t| {
+        if (ie.parseTim(t)) |tim| dec_ok = tim.isDtim() and tim.bitSet(4) and !tim.bitSet(5) else |_| {}
+    }
+    check(ok and bits_ok and mc_ok and dec_ok, "tim aid4_85_90={d} bits={d} mcast_offset={d} decode={d}", .{ b(ok), b(bits_ok), b(mc_ok), b(dec_ok) });
+}
+
+// ---------------------------------------------------------------------------
+// ㉑ PS-Poll
+// ---------------------------------------------------------------------------
+
+fn checkPsPoll() void {
+    // 9.3.1.5（p.671）：FC = a4 00，ID = c0 04（AID 4 加上高 2 位），BSSID(RA)，TA，FCS。
+    const n = powersave.buildPsPollFrame(4, vectors.cap_ap, vectors.cap_sta, g_scratch[0..20]) catch 0;
+    var ok = n == 20 and g_scratch[0] == 0xa4 and g_scratch[1] == 0x00 and g_scratch[2] == 0x04 and g_scratch[3] == 0xc0;
+    ok = ok and eql(g_scratch[4..10], &vectors.cap_ap) and eql(g_scratch[10..16], &vectors.cap_sta);
+    if (powersave.parsePsPoll(g_scratch[0..20], .checked)) |p| ok = ok and p.aid == 4 else |_| ok = false;
+    // 负例：长度不对、AID 非法、不是 PS-Poll。
+    const neg_ok = isErr(powersave.parsePsPoll(g_scratch[0..15], .none)) and
+        isErr(powersave.parsePsPoll(g_scratch[0..17], .none)) and isErr(powersave.parsePsPoll(g_scratch[0..19], .present)) and
+        isErr(powersave.buildPsPollFrame(0, vectors.cap_ap, vectors.cap_sta, g_scratch[0..20])) and
+        isErr(powersave.buildPsPollFrame(2008, vectors.cap_ap, vectors.cap_sta, g_scratch[0..20])) and
+        isErr(powersave.parsePsPoll(&vectors.rts_header, .none));
+    // 抓包：STA 发给 AP 的 Null 帧 PM=1（#1040）、PM=0（#1063）。
+    var pm_ok = false;
+    if (frame.parse(&vectors.nokia_null_pm1, .none)) |f| {
+        if (frame.parse(&vectors.nokia_null_pm0, .none)) |g| {
+            pm_ok = f.hdr.fc.power_management and !g.hdr.fc.power_management;
+        } else |_| {}
+    } else |_| {}
+    check(ok and neg_ok and pm_ok, "ps_poll frame={d} neg={d} null_pm_capture={d}", .{ b(ok), b(neg_ok), b(pm_ok) });
+}
+
+// ---------------------------------------------------------------------------
+// ㉒ U-APSD
+// ---------------------------------------------------------------------------
+
+fn checkUapsd() void {
+    // STA 侧：四个 AC 都 delivery-enabled，TIM 位置 1 → trigger 帧；服务期到 EOSP=1。
+    var s = powersave.Sta.init(vectors.cap_sta, vectors.cap_ap, .{ .qos_info = .{ .uapsd_be = true, .uapsd_bk = true, .uapsd_vi = true, .uapsd_vo = true } });
+    var ok = false;
+    if (s.associated(4, 1)) |_| {
+        if (s.request(.power_save, true)) |_| {
+            _ = s.exchangeResult(.frame_to_ap, true, true);
+            const ev = s.onBeacon(beaconTim(&vectors.nokia_beacon_aid4), 0);
+            s.triggerSent() catch {};
+            _ = s.onUnicastFromAp(.{ .more_data = true, .ac = .be, .eosp = false });
+            const mid = s.in_service_period;
+            const a = s.onUnicastFromAp(.{ .more_data = false, .ac = .vo, .eosp = true });
+            ok = ev.trigger and !ev.poll and mid and a.sp_ended and !s.in_service_period;
+        } else |_| {}
+    } else |_| {}
+    // AP 侧：Max SP Length = 2、缓存 3 个：两帧后 EOSP=1，第三个留给下一个服务期。
+    var m = powersave.Ap.init();
+    var ap_ok = false;
+    if (m.associate(4, .{ .uapsd_be = true, .uapsd_vo = true, .max_sp_length = .two })) |_| {
+        m.setPowerManagement(4, true) catch {};
+        for ([_]qos.Ac{ .be, .be, .vo }) |ac| _ = m.enqueueUnicast(4, ac) catch false;
+        if (m.onTrigger(4, .vo) == .started) {
+            var d = m.nextDelivery();
+            const first = d == .unicast and d.unicast.ac == .vo and !d.unicast.eosp;
+            m.txResult(.sent);
+            d = m.nextDelivery();
+            const second = d == .unicast and d.unicast.eosp;
+            m.txResult(.sent);
+            ap_ok = first and second and m.nextDelivery() == .none and m.onTrigger(4, .be) == .started;
+        }
+    } else |_| {}
+    check(ok and ap_ok, "uapsd sta_trigger_sp={d} ap_sp_len2={d}", .{ b(ok), b(ap_ok) });
+}
+
+// ---------------------------------------------------------------------------
+// ㉓ STA 模型与 AP 模型对接
+// ---------------------------------------------------------------------------
+
+fn checkPsInterop() void {
+    var a = powersave.Ap.init();
+    var s = powersave.Sta.init(vectors.cap_sta, vectors.cap_ap, .{});
+    var ok = false;
+    if (a.associate(4, null)) |_| {
+        if (s.associated(4, 1)) |_| {
+            _ = s.request(.power_save, true) catch {};
+            ok = s.exchangeResult(.frame_to_ap, true, true) == .confirmed;
+            a.setPowerManagement(4, true) catch {};
+            ok = ok and (a.enqueueUnicast(4, .be) catch false) and (a.enqueueUnicast(4, .vo) catch false);
+            const n = a.buildTim(0, 1, &g_scratch) catch 0;
+            ok = ok and s.onBeacon(g_scratch[2..n], 0).poll;
+            const m = s.buildPsPoll(g_scratch[200..220]) catch 0;
+            if (powersave.parsePsPoll(g_scratch[200..220], .checked)) |p| {
+                ok = ok and m == 20 and p.aid == 4 and a.onPsPoll(p.aid) == .deliver;
+            } else |_| {
+                ok = false;
+            }
+            var d = a.nextDelivery();
+            ok = ok and d == .unicast and d.unicast.more_data;
+            ok = ok and s.onUnicastFromAp(.{ .more_data = true }).poll;
+            a.txResult(.sent);
+            ok = ok and a.onPsPoll(4) == .deliver;
+            d = a.nextDelivery();
+            ok = ok and d == .unicast and !d.unicast.more_data;
+            a.txResult(.sent);
+            _ = s.onUnicastFromAp(.{ .more_data = false });
+            ok = ok and s.powerStateAt(1) == .doze;
+            // DTIM 的组播位让 STA 保持清醒；组播 More Data=1、0 发完才释放。
+            ok = ok and a.enqueueMulticast() and a.enqueueMulticast();
+            const t = a.buildTim(0, 1, &g_scratch) catch 0;
+            ok = ok and s.onBeacon(g_scratch[2..t], 100).multicast and s.powerStateAt(101) == .awake;
+            d = a.nextDelivery();
+            const m1 = d == .multicast and d.multicast.more_data;
+            a.txResult(.sent);
+            d = a.nextDelivery();
+            const m2 = d == .multicast and !d.multicast.more_data;
+            a.txResult(.sent);
+            ok = ok and m1 and m2;
+            // 回到 active 模式（抓包 #1063 的 PM=0）：AP 不等 PS-Poll 直接补发缓冲的 BU。
+            ok = ok and (a.enqueueUnicast(4, .be) catch false);
+            _ = s.request(.active, true) catch {};
+            ok = ok and s.exchangeResult(.frame_to_ap, false, true) == .confirmed;
+            a.setPowerManagement(4, false) catch {};
+            d = a.nextDelivery();
+            ok = ok and d == .unicast and d.unicast.aid == 4;
+        } else |_| {}
+    } else |_| {}
+    check(ok, "ps_interop poll_bu={d}", .{b(ok)});
+}
+
+// ---------------------------------------------------------------------------
+// ㉔ More Data 与监听间隔
+// ---------------------------------------------------------------------------
+
+fn checkMoreData() void {
+    // 9.2.4.1.8（p.643）：More Data 的含义随发送方与寻址变化；抓包里 DTIM 之后的组播帧 More Data=1 / 0。
+    const more = parseOk(&vectors.cap_multicast_more_data);
+    const last = parseOk(&vectors.cap_multicast_after_dtim);
+    var ok = powersave.moreDataMeaning(.ap, true) == .ap_group and
+        powersave.moreDataMeaning(.ap, false) == .ap_unicast and
+        powersave.moreDataMeaning(.non_ap_sta, true) == .must_be_zero and
+        !powersave.moreDataValid(.non_ap_sta, false, true);
+    if (more) |m| {
+        if (last) |l| ok = ok and m.hdr.fc.more_data and !l.hdr.fc.more_data;
+    }
+    // 11.2.3.8（p.1612）：More Data 提示等同 TIM 位置 1；没声明 More Data Ack 时 Ack 的 More Data 不算。
+    var s = powersave.Sta.init(vectors.cap_sta, vectors.cap_ap, .{});
+    var hint_ok = false;
+    if (s.associated(4, 10)) |_| {
+        if (s.request(.power_save, true)) |_| {
+            _ = s.exchangeResult(.frame_to_ap, true, true);
+            s.onAckFromAp(true);
+            const ignored = !s.holds.unicast;
+            s.onMoreDataHint();
+            hint_ok = ignored and s.holds.unicast and s.retrieval() == .ps_poll;
+        } else |_| {}
+    } else |_| {}
+    // 11.2.3.8 a)（p.1611）：Listen Interval 10、不收 DTIM → 下一个必须收的 Beacon 在 10 个间隔之后。
+    var t = powersave.Sta.init(vectors.cap_sta, vectors.cap_ap, .{});
+    var wake_ok = false;
+    if (t.associated(1, 10)) |_| {
+        if (t.request(.power_save, false)) |_| {
+            _ = t.exchangeResult(.frame_to_ap, true, true);
+            if (beaconTim(&vectors.cap_beacon)) |tim| {
+                _ = t.onBeacon(tim, 0);
+                const w = t.nextWake(0);
+                if (w == .future) wake_ok = w.future.index == 10 and w.future.at_tu == 1000 else wake_ok = false;
+                wake_ok = wake_ok and t.powerStateAt(999) == .doze and t.powerStateAt(1000) == .awake;
+            }
+        } else |_| {}
+    } else |_| {}
+    check(ok and hint_ok and wake_ok, "ps_moredatu meaning={d} hint={d} listen_int={d}", .{ b(ok), b(hint_ok), b(wake_ok) });
+}
+
+// ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
 
@@ -734,6 +1101,14 @@ fn runChecks() bool {
     checkMlmeAuthAssoc();
     checkMlmeRelease();
     checkScan();
+    checkQosControl();
+    checkQosFrames();
+    checkQosEdca();
+    checkTim();
+    checkPsPoll();
+    checkUapsd();
+    checkPsInterop();
+    checkMoreData();
     return g_failed == 0;
 }
 

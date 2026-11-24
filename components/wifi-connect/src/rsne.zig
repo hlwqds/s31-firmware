@@ -34,17 +34,28 @@ pub const pmkid_len = 16;
 pub const max_len = 2 + 2 + 4 + (2 + 4 * max_pairwise) + (2 + 4 * max_akm) + 2 + (2 + pmkid_len * max_pmkid) + 4;
 
 /// 表 9-131（印刷页 884–885）的 cipher suite type。
+///
+/// 用途见表 9-132（印刷页 886）：CCMP 与 GCMP 的四个选择器既作 GTK 也作 PTK；BIP 的
+/// 四个只能作 IGTK，即 RSNE 的 Group Management Cipher Suite。Key length 见表 12-4
+/// （印刷页 2021）：CCMP-128、GCMP-128、BIP-CMAC-128、BIP-GMAC-128 是 16 字节，
+/// GCMP-256、CCMP-256、BIP-GMAC-256、BIP-CMAC-256 是 32 字节。
+/// AKM 00-0F-AC:11 只与 GCMP-128、BIP-GMAC-128 搭配；00-0F-AC:12、13 只与 GCMP-256、
+/// CCMP-256、BIP-CMAC-256、BIP-GMAC-256 搭配（9.4.2.25.3，印刷页 888）。
 pub const Cipher = struct {
     pub const use_group: u8 = 0;
     pub const wep40: u8 = 1;
     pub const tkip: u8 = 2;
     pub const ccmp128: u8 = 4;
     pub const wep104: u8 = 5;
+    /// Group Management Cipher Suite 字段缺席时的默认值（印刷页 885）。
     pub const bip_cmac128: u8 = 6;
     pub const no_group: u8 = 7;
     pub const gcmp128: u8 = 8;
     pub const gcmp256: u8 = 9;
     pub const ccmp256: u8 = 10;
+    pub const bip_gmac128: u8 = 11;
+    pub const bip_gmac256: u8 = 12;
+    pub const bip_cmac256: u8 = 13;
 };
 
 /// 表 9-133（印刷页 886–888）里与本组件相关的 AKM suite type。

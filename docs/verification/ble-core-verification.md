@@ -1,7 +1,7 @@
 # BLE 验证报告（Bluetooth Core Specification 5.4 与 RFC 7668）
 
 - 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。
-- 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）。
+- 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）、`components/bt-blobs`（§8 的 HCI 一致性自检）。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
 - **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。下表的"通过"指离线验证通过。
 
@@ -9,14 +9,15 @@
 
 | 项 | 级别 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| `ble-802154` 主机测试 | L1 | 68/68 | §3.1 |
+| `ble-802154` 主机测试 | L1 | 122/122（第一批 68 + 第二批 54） | §3.1 |
 | `ble-security` 主机测试 | L1 | 51/51 | §3.2 |
 | 与独立参照实现的差分 | L1 | 全部一致 | §4 |
 | HCI 命令布局对 NimBLE 头文件 | L1 | 三条逐字段一致 | §5 |
 | RV32 目标编译 | L2 | 两个自检都能以固件参数编译 | §5 |
-| 板侧自检（第一次上板） | L3 | `ble_security` 25/25；`ble_802154` 18/19，失败的那条是自检自身的差一错误，已修 | `logs/wifi-selftest-prefix-boot.log` |
-| 修复后的板级复验 | L3 | `ble_802154` 19/19；整份判决 `main: verdict=pass` | `logs/e2e-wifi-boot.log` |
-| 与真实 controller 的 HCI 一致性 | L3 | 未做 | — |
+| 板侧自检（第一批，第一次上板） | L3 | `ble_security` 25/25；`ble_802154` 18/19，失败的那条是自检自身的差一错误，已修 | `logs/wifi-selftest-prefix-boot.log` |
+| 修复后的板级复验（第一批） | L3 | `ble_802154` 19/19；整份判决 `main: verdict=pass` | 当时的 `logs/e2e-wifi-boot.log`，已被下一行的运行覆盖 |
+| 第二批后的板级复验 | L3 | `ble_802154` 50/50；`wifi` profile 14/14 个 section；`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§3.1 |
+| 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
 
 ## 2. 逐特性对照
 
@@ -24,7 +25,7 @@
 
 | 特性 | 条款 | 实现位置 | 主机 | 向量来源 | 板侧 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| HCI 控制命令编码（Reset、Read_Local_Version、Read_BD_ADDR、LE 的 Set_Advertising_Parameters / Data / Enable、Create_Connection、Connection_Update、Read_Local_Supported_States、Start_Encryption 等） | Vol 4 Part E §7.8 | `ble-802154/src/hci_cmd.zig` | 含在 68 内 | 按参数布局逐字节搭的向量；NimBLE 头文件交叉核对（§5） | 含在 19 内 | 离线验证通过 |
+| HCI 控制命令编码（Reset、Read_Local_Version、Read_BD_ADDR、LE 的 Set_Advertising_Parameters / Data / Enable、Create_Connection、Connection_Update、Read_Local_Supported_States、Start_Encryption 等） | Vol 4 Part E §7.8 | `ble-802154/src/hci_cmd.zig` | 含在 122 内 | 按参数布局逐字节搭的向量；NimBLE 头文件交叉核对（§5） | 含在 50 内 | 离线验证通过 |
 | 事件分发（Command Complete、Command Status、LE Meta、Disconnection Complete、Number_Of_Completed_Packets） | Vol 4 Part E §5.4、§7.7 | `hci_evt.zig` | 同上 | 同上 | 同上 | 离线验证通过 |
 | ACL 分段与重组 | Vol 4 Part E §5.4 | `acl.zig` | 同上 | 61 字节 SDU 分 3 片 | 同上 | 离线验证通过 |
 | L2CAP（B 帧、LE 信令、基于信用的流控） | Vol 3 Part A §3、§4、§10 | `l2cap.zig` | 同上 | 双端对打 | 同上 | 离线验证通过 |
@@ -38,8 +39,24 @@
 | CRC-24 | Vol 6 Part B §3.1.1 | `linklayer.zig` | 同上 | Vol 6 Part C §2.1、§4.2.1、§4.3 | 同上 | 离线验证通过 |
 | 数据白化 | Vol 6 Part B §3.2 | `linklayer.zig` | 同上 | Vol 6 Part C §4.1（信道 0 到 39）、§4.2、§4.3 | 同上 | 离线验证通过 |
 | ATT 签名写 | Vol 3 Part H §2.4.5；Vol 3 Part F §3.4.5.4 | `sign.zig` | 同上 | Part F 的样例 | 同上 | 离线验证通过；互通未验（§6） |
-| ATT 与 GATT 扩展（指示、发现、prepared write） | Vol 3 Part F、Part G | — | — | — | — | 未做（现有：8 个 ATT 操作码、服务端定长表） |
-| 对真实 controller 的 HCI 一致性自检 | Vol 4 Part E | — | — | — | — | 未做；已证明能回复的命令：0x0C03、0x1001、0x1009、0x2006、0x2008、0x1405 |
+| ATT 编解码全表（31 个操作码、PDU 类型、最小长度、定长 PDU 的长度校验、19 个错误码、UUID） | Vol 3 Part F 表 3.43、表 3.1、表 3.4、§3.3 | `ble-802154/src/att.zig` | `att:` 前缀 19 条（本批 +15）。`att: opcode table is Vol 3 Part F table 3.43…`、`att: minimum PDU lengths follow the size columns…`、`att: every PDU parses and fixed-length ones reject wrong lengths…`、`att: error codes are the 19 values of Vol 3 Part F table 3.4`、`att: UUIDs compare as 128 bits…` | 按表 3.43、表 3.1、表 3.4 排出的字节；PDU 尺寸对 NimBLE `ble_att_cmd_priv.h`（§5.1） | ③ ④（Read 与 MTU 交换的字节级 KAT） | 离线验证通过；板侧 50/50 |
+| ATT Find Information | Vol 3 Part F §3.4.3.1–3.4.3.2、§3.4.3 | `att.zig`、`att_server.zig` | `att: find information request and response…`、`att_svr: find information lists every attribute and pages by ATT_MTU…` | 按条款排出的字节；行为断言 | ㉕ | 同上 |
+| ATT Find By Type Value | Vol 3 Part F §3.4.3.3–3.4.3.4 | `att.zig`、`att_server.zig` | `att: find by type value request and response…`、`att_svr: find by type value returns handle ranges and skips unreadable attributes…` | 同上 | 无 | 同上 |
+| ATT Read By Type | Vol 3 Part F §3.4.4.1–3.4.4.2 | `att.zig`、`att_server.zig` | `att: read by type request and response…`、`att_svr: read by type packs equal lengths and stops at an unreadable attribute…` | 同上 | ㉖ | 同上 |
+| ATT Read Blob | Vol 3 Part F §3.4.4.5–3.4.4.6 | `att.zig`、`att_server.zig` | `att: read blob request and response cut the value at ATT_MTU-1…`、`att_svr: read and read blob follow ATT_MTU and reject offsets past the value…` | 同上 | ㉘ | 同上 |
+| ATT Read Multiple（定长）与 Read Multiple Variable（变长，含两条截断规则） | Vol 3 Part F §3.4.4.7–3.4.4.8、§3.4.4.11–3.4.4.12 | `att.zig`、`att_server.zig` | `att: read multiple and read multiple variable length…`、`att_svr: read multiple and read multiple variable length…` | 同上；§3.4.4.12 原文的独立复核见 §5.1 | ㉙ ㉚ ㉛ | 同上 |
+| ATT Read By Group Type | Vol 3 Part F §3.4.4.9–3.4.4.10 | `att.zig`、`att_server.zig` | `att: read by group type request and response…`、`att_svr: read by group type returns groups and rejects non-group types…` | 按条款排出的字节；行为断言 | ㉗ | 同上 |
+| ATT 排队写（编解码与服务端两条路径：执行、取消） | Vol 3 Part F §3.4.6.1–3.4.6.4 | `att.zig`、`att_server.zig` | `att: prepare write and execute write…`、`att_svr: prepare and execute write, both paths…` | 行为断言 | ㉜ ㉝ | 同上 |
+| ATT 指示与确认、多重变长通知 | Vol 3 Part F §3.4.7.1–3.4.7.4 | `att.zig` | `att: indication, confirmation and multiple variable length notification…` | 按条款排出的字节 | 只有指示（㊵）；多重变长通知无 | 同上 |
+| ATT 服务端：MTU 交换、权限与错误码（表 3.4、§4 的检查顺序、§3.3 的未知与非法请求）、定长与变长写、签名写、指示 30 秒超时 | Vol 3 Part F §3.4.2.2、§3.2.5、§4、表 3.4、§3.3、§3.4.5.1–3.4.5.3、§3.4.7.2、§3.3.3 | `att_server.zig` | `att_svr:` 前缀 13 条（全部是本批）。`att_svr: MTU exchange takes the minimum and keeps the default below it…`、`att_svr: permission checks yield the codes of table 3.4 in the order of Vol 3 Part F section 4`、`att_svr: unsupported and malformed requests get the codes of Vol 3 Part F section 3.3`、`att_svr: indication waits for its confirmation and times out after 30 s…` | 行为断言；超时用例把时间直接拨到 30 秒后 | ㉔ ㉓ ㉞ ㊵ | 同上 |
+| GATT 服务端声明（服务、包含、特征、描述符） | Vol 3 Part G 表 3.1–3.15 | `gatt_server.zig` | `gatts:` 前缀 5 条（全部是本批）。`gatts: service, characteristic and descriptor declarations match Vol 3 Part G 3.1-3.3 byte for byte` | 表里的字节 | ㉟ ㊱ ㊲ | 同上 |
+| CCCD（按 client 保存、门控通知、写入校验） | Vol 3 Part G §3.3.3.3、§4.12.3 | `gatt_server.zig` | `gatts: the Client Characteristic Configuration is kept per client and gates notifications…`、`gatts: invalid CCCD writes are rejected and leave the configuration unchanged…` | 行为断言 | ㊳ ㊴ | 同上 |
+| GATT 指示 | Vol 3 Part G §4.11.1 | `gatt_server.zig` | `gatts: indications need the indicate bit, go one at a time, and are confirmed…` | 行为断言 | ㊵ | 同上 |
+| Service Changed | Vol 3 Part G §7.1 | `gatt_server.zig` | `gatts: the Service Changed characteristic and its enablement…` | 表 7.2、表 7.3 | ㊶ | 同上 |
+| GATT 客户端各过程：Exchange MTU、发现（§4.4–§4.7）、读（§4.8）、写（§4.9）、通知与指示（§4.10–§4.11）、描述符读写（§4.12）、过程失败与 30 秒超时 | Vol 3 Part G §4.3–§4.12、§4.14；附录 A | `gatt_client.zig` | `gattc:` 前缀 18 条（全部是本批）。`gattc: discover all primary services of the appendix A server, byte for byte…`、`gattc: exchange MTU takes the minimum and the result paves every later procedure…`、`gattc: write long values in ATT_MTU-5 pieces then execute…`、`gattc: reliable writes verify every round trip and cancel on a mismatch…`、`gattc: a request that is not answered within 30 s fails and closes the bearer…` | 附录 A 的服务器：对打时记下每一个 PDU，与脚本逐字节比对；其余过程用另搭的属性表 | ㊷–㊿ 共 9 条；按 UUID 发现、包含服务、描述符发现等没有板侧判据 | 同上 |
+| AES-CMAC | RFC 4493 §4；Vol 3 Part H 附录 D.1；Vol 3 Part G 附录 B | `cmac.zig` | `cmac:` 前缀的 2 条。`cmac: AES-CMAC matches the RFC 4493 vectors quoted in Vol 3 Part H appendix D.1`、`cmac: AES-CMAC with an all-zero key over the database hash input of Vol 3 Part G appendix B` | RFC 4493 的四个向量（消息长度 0 / 16 / 40 / 64）；附录 B 的 111 字节输入 | ⑳ ㉑ | 同上；没有差分（§4） |
+| ATT 签名与签名写（`ble-802154` 的实现） | Vol 3 Part H §2.4.5；Vol 3 Part F §3.4.5.4 | `cmac.zig`、`att.zig`、`att_server.zig` | `cmac: signing reproduces the example of Vol 3 Part F 3.4.5.4…`、`att: signed write command carries the example signature of Vol 3 Part F 3.4.5.4`、`att: write command and signed write command…`、`att_svr: signed write is applied only with a valid, fresh signature…` | Part F §3.4.5.4 的样例 | ㉒ ㉓ | 离线验证通过；板侧 50/50；互通未验（§6、§7） |
+| 对真实 controller 的 HCI 一致性自检 | Vol 4 Part E §3.1、§4.4、§4.5、§6.27、§7.4、§7.6、§7.8 | `bt-blobs/src/hci_conformance.zig`、`hci_conformance_tests.zig`、`probe.zig` | bt-blobs 21 → 67（本项 46） | 规范原文表 3.1、§6.27；板上回包 | 26 条：20 过 6 不过 | 已上板：16 条合规且受支持、4 条合规且声明不支持、6 条偏差（§8） |
 | 广播、连接、真实收发 | 不适用 | — | — | — | — | 阻塞：射频 synth PLL 不锁 |
 
 ## 3. 主机测试
@@ -47,10 +64,46 @@
 ### 3.1 `ble-802154`
 
 ```sh
-cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 68 tests passed.
+cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 122 tests passed.
 ```
 
-原有 20 项全部保留，新增 48 项。`zig fmt --check src/` 干净。
+第一批：原有 20 项全部保留，新增 48 项，共 68 项。第二批（ATT / GATT 扩展，2026-11-24）：第一批的 68 项全部保留，新增 54 项，共 122 项。`zig fmt --check src/` 干净（2026-11-24 复跑）。
+
+按用例名前缀的分布。“本批新增”是把 `git show HEAD:components/ble-802154/src/host_tests.zig` 与现文件的 `test "…"` 名字逐条比较数出来的，没有被删掉或改名的用例：
+
+| 前缀 | 第一批（HEAD） | 现在 | 本批新增 |
+| --- | --- | --- | --- |
+| `att` | 4 | 19 | +15 |
+| `gattc` | 0 | 18 | +18 |
+| `att_svr` | 0 | 13 | +13 |
+| `gatts` | 0 | 5 | +5 |
+| `cmac` | 0 | 3 | +3 |
+| `gatt` | 5 | 5 | 0 |
+| `hci_cmd` | 11 | 11 | 0 |
+| `gap_adv` | 9 | 9 | 0 |
+| `hci_evt` | 8 | 8 | 0 |
+| `ipsp` | 7 | 7 | 0 |
+| `hci` | 7 | 7 | 0 |
+| `l2cap` | 6 | 6 | 0 |
+| `acl` | 5 | 5 | 0 |
+| `lowpan` | 4 | 4 | 0 |
+| `ieee802154` | 2 | 2 | 0 |
+| 合计 | 68 | 122 | +54 |
+
+这 54 条在交付时一次都没有被执行过，第一次执行的结果与用例更正见 §5.1。
+
+板侧自检 `components/ble-802154/src/selftest.zig`（50 条判据，①–⑲ 是第一批，⑳–㊿ 是本批）：
+
+```sh
+cd /home/huanglin/code/s31-firmware && R=/tmp/selftest-host && env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig --dep board -Mselftest=components/ble-802154/src/selftest.zig -Mboard=$R/board_stub.zig
+# 50 行 check: … ok=1；checks: passed=50 failed=0 total=50；selftest returned true
+```
+
+- 上面这条在主机上用桩 `board` 模块执行 `selftest.run()`，不碰板子；文档代理 2026-11-24 复跑，结果与板级日志一致。
+- 以固件参数交叉编译通过（主代理实测，2026-11-24）：`ble-802154`、`ble-security` 两个自检都按 `riscv32-freestanding-eabihf`、
+  `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall` 编译，根文件在编译期断言目标架构。最初那条命令把 `-target` 放在最后一个
+  `-M` 之后，产物其实是 x86_64（假绿，已更正）；命令与对照见 `wifi-ieee80211-verification.md` §5.1。
+- 板级：`BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi` → `PASS board:wifi`（主代理实测）。`logs/e2e-wifi-boot.log` 里 `section: ble_802154` 之后有 50 行 `check:`，全部 `ok=1`，接着是 `checks: passed=50 failed=0 total=50`；整份日志 14 个 `section:`、`main: verdict=pass`。
 
 ### 3.2 `ble-security`
 
@@ -88,17 +141,171 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - 板侧第一次上板时 `ble-802154` 为 18/19：`check: gap adv kat=1 nospace=1 name=1 hci=0 malformed=1 ok=0`。原因是自检把 32 字节的 HCI 参数与向量的 31 字节切片比较，恒为假；与目标无关，已改为整段比较。这次失败也说明该 agent 只对自检做了交叉编译、从未执行过它。
 - 复验：同一条命令（`run_e2e.py --board --profile wifi`）再跑一次，`ble_802154` 19/19，14 个 section 全过。
 
+### 5.1 第二批（ATT / GATT 扩展）的独立复核（2026-11-24）
+
+本小节的执行结果、更正记录和三条独立复核来自主代理实测；文档代理只核对了其中标出的几处。
+
+**用例的第一次执行与更正。** 第二批的 54 条新用例在交付时一次都没有被执行过。主代理第一次执行是 119 过 3 败，败的和随后改掉的全是用例里手敲的期望值有误，实现是对的。按规范改正下面 6 处后 122/122：
+
+| # | 用例里的错误 | 应为 | 依据 |
+| --- | --- | --- | --- |
+| ① | GATT 服务的 UUID 写成 0x1800（`gatts: service, characteristic and descriptor declarations…`，现 `host_tests.zig` 第 3523 行） | 0x1801 | Vol 3 Part G §7 |
+| ② | Read Response 的值少 1 个字符；同一条用例里的字符串断言也少 1 | ATT_MTU−1 = 22 字节 | Vol 3 Part F §3.4.4.4 |
+| ③ | Read By Type 的值少 1 个字符，字符串断言也少 1 | ATT_MTU−4 = 19 字节 | Vol 3 Part F §3.4.4.2 |
+| ④ | Read Multiple Variable 的第三个元组 `present` 期望 0 | 1（脚本里那个元组带 1 个值字节） | Vol 3 Part F §3.4.4.12 |
+| ⑤ | Read By Group Type 带围 128 位 UUID 时 Length 写成 0x08 | 4 + 16 = 0x14 | Vol 3 Part F §3.4.4.10 |
+| ⑥ | Read By Type 带 2 字节值时 Length 写成 0x05 | 0x04 | Vol 3 Part F §3.4.4.2 |
+
+④ 所在的用例另补了两条真正覆盖截断规则的断言（见下一条）。
+
+**§3.4.4.12（ATT_READ_MULTIPLE_VARIABLE_RSP）的原文复核。** 原文在本地规范文本的第 2936–2970 行。`Value Length` 是 2 个八位组；`Length Value Tuple List` 超过 ATT_MTU−1 就在那里截断，若截点落在某个 `Value Length` 字段之内，则在该元组的起点截断；被截断的元组的 `Value Length` 仍是完整长度（规范注：客户端不得用 `Value Length` 推断实际带来的字节数）。`att.zig` 的 `VarBuilder` 三条规则逐条吻合。独立实现 NimBLE 的 `ble_att_svr_build_read_mult_rsp_var`（本机 IDF 的 `ble_att_svr.c` 第 1930–2022 行）同样用 16 位长度（`htole16`）；不同的是它遇到放不下的元组整条不放、不截值。两种做法都符合原文。
+
+**ATT 线上结构对 NimBLE `ble_att_cmd_priv.h` 的 PDU 尺寸定义。** Error Response 5、Exchange MTU 3、Find Information Request 5、Find By Type Value Request 7 + 值、Read By Type Request 7 / 21 与应答条目 6 / 20、Read Request 3、Read Blob Request 5、Read Multiple Request（句柄表）、Read By Group Type Request 7 / 21 与条目 6 / 20，与 `host_tests.zig` 里的字节脚本一致。文档代理重读了该头文件的 `_SZ` 定义（`BLE_ATT_ERROR_RSP_SZ 5`、`BLE_ATT_MTU_CMD_SZ 3`、`BLE_ATT_FIND_INFO_REQ_SZ 5`、`BLE_ATT_FIND_TYPE_VALUE_REQ_BASE_SZ 7`、`BLE_ATT_READ_REQ_SZ 3`、`BLE_ATT_READ_BLOB_REQ_SZ 5`、`BLE_ATT_READ_TYPE_ADATA_BASE_SZ 2`、`BLE_ATT_READ_GROUP_TYPE_ADATA_BASE_SZ 4`），与上面的数相符。
+
 ## 6. 实现偏离
 
-- ATT MTU 上限取 527，规范是 517；小于 23 的 MTU 请求直接拒绝。两条都是原有行为。
+- ATT MTU 上限取 527（`ble-802154/src/att.zig` 的 `max_mtu`）。5.4 的 Part F、Part G 文本里没有给 ATT_MTU 的上限，只有属性值最长 512 字节（Vol 3 Part F §3.2.9）；本地规范文本里检索不到 517。527 沿用 NimBLE，正好让最大的命令 Signed Write（1 + 2 + 512 + 12）装下 512 字节的值。小于 23 的 MTU 请求直接拒绝是章节时代客户端入口 `encodeMtuReq` 的原有行为；服务端对小于默认值的 Client Rx MTU 不改 ATT_MTU（Vol 3 Part F §3.4.2.2）。
 - LE Advertising Report 只做 legacy 事件；扩展广播数据在 §7.7.65.13，未实现。
 - AD 结构里 Length = 0 按规范当作填充的起点。
 - **签名的字节序**：Vol 3 Part H §2.4.5 的文字与 Vol 3 Part F §3.4.5.4 的样例互相矛盾，本实现按样例；与按字面顺序实现的协议栈能否互通未知。
 - 规范没规定或自相矛盾、由实现选定的：两端公钥 X 坐标相同时回 Invalid Parameters；乱序命令回 Unspecified Reason；Repeated Attempts 取 1 秒起、上限 64 秒、30 秒回落；随机数用 HKDF-Expand 展开调用方的 256 位种子；AuthReq 保留位忽略；Bonding_Flags 非 01 按 No Bonding；MIC 校验失败时明文缓冲清零。
 - Peripheral 的 `LL_START_ENC_REQ` 明文发，Central 与 Peripheral 的 `LL_START_ENC_RSP` 加密发；意外控制 PDU 按 0x3D 丢失。
+- **第二批 · 规范允许与不允许截断的 PDU**（`att.zig` 文件头）：规范允许截断的响应（Read、Read Blob、Read Multiple 的值，通知与指示的值）按 ATT_MTU 截断并计入 `stats.truncated`；规范不允许截断的（Prepare Write 的部分值、Write Command、Signed Write Command、Multiple Variable Length Notification）超出 ATT_MTU 返回 `TooLong`，不写半截。
+- **第二批 · ATT 服务端**（`att_server.zig` 文件头与常量），规范留了余地、由实现选定的：
+  - Read Blob 读定长短属性时不回 Attribute Not Long（Vol 3 Part F §3.4.4.5 写的是 may）。
+  - ATT_EXECUTE_WRITE_REQ 的 Flags 不是 0x00 / 0x01 → Invalid PDU（Vol 3 Part F §3.4.6.3）。
+  - 排队写的部分值长过属性表的值上限 → Prepare Queue Full（Vol 3 Part F §3.4.6.1：没有空间排队就回 0x09）；尺寸与偏移的校验照规范留到 Execute。
+  - Execute 时遇到 Invalid Offset / Invalid Attribute Value Length，出错句柄取队列里出问题的那一条（规范只对应用错误写明了这一点，Vol 3 Part F §3.4.6.3）。
+  - 不记时间：指示的 30 秒超时（Vol 3 Part F §3.3.3，`transaction_timeout_ms = 30_000`）由调用方把毫秒数传给 `tick()`；超时后这条 bearer 的收发一律 `error.BearerClosed`，直到 `reset()`。
+  - 不持久化：断链后排队写的队列清空、不执行（Vol 3 Part F §3.4.6）；槽位在 `reset()` 里回到默认值（Vol 3 Part G §3.3.3.3）；CSRK 与 SignCounter 属于安全数据库，`reset()` 不动。
+  - 容量是编译期常量：`Db(N, V)` 最多 N 个属性、每个值最多 V 字节；`Peer(Q)` 的排队写队列 Q 条（1 到 255）；每个 client `slot_count = 8` 个槽位、每槽 `slot_max = 16` 字节。
+- **第二批 · GATT 客户端**（`gatt_client.zig` 文件头与 `Config`），规范没写死、由实现选定的：
+  - 排队写中途收到 ATT_ERROR_RSP：只要已经有数据排进 server 的队列，就补发一条取消（Execute Write，Flags = 0x00），等它的响应回来这条 bearer 才空闲。
+  - server 的响应结构不对（条目装不下整数条、句柄乱序、UUID 不是 2 或 16 字节、与当前过程无关的响应）→ 过程按协议错误失败。
+  - Read Using Characteristic UUID 收到 Attribute Not Found 按失败处理（Vol 3 Part G §4.8.2），由调用方看错误码；各发现过程收到 Attribute Not Found 是正常结束。
+  - 等响应超过 30 秒（Vol 3 Part F §3.3.3、Part G §4.14，`timeout_ms = 30_000`）→ 过程失败，这条 bearer 作废。
+  - `Config` 的默认容量：服务 8、包含服务 4、特征 16、描述符 16、读值缓冲 128 字节、写值缓冲 128 字节、句柄与结果 8 条；放不下时过程按本地错误失败。
+- **第二批 · GATT 服务端**（`gatt_server.zig`）：写 CCCD 时置了特征不支持的位（或保留位）回 0x80（Application Error 区间的第一个值，`ccc_not_allowed`）。Vol 3 Part G §4.12.3 规定了尺寸不对或值不合法时不写、回 Application Error，没有规定具体取值。
+- **第二批 · 签名的两处字节序**（`cmac.zig` 文件头）：待签消息进 CMAC 前整段字节反转；取 CMAC 结果里最高有效的 64 位，写进 PDU 时最低有效字节在前。本机 IDF 的 NimBLE（`ble_att_svr.c`、`ble_att_clt.c` 的 `swap_in_place`）做法相同，文档代理核对过这两个调用点。
+- **第二批 · GATT 没做的**（`gatt_server.zig` 文件头）：Database Hash、Client Supported Features、Server Supported Features 三个特征（Vol 3 Part G §7.2–§7.4），Robust Caching（§2.5.2.1），绑定设备的 CCCD / Service Changed 持久化。
 
 ## 7. 未验证
 
 - 空口互通：配对、加密、重连、签名写；CRC 八位组的线上打包要先对一次真实字节。
 - P-256 点乘在 rv32 上的耗时和栈占用。
 - Number Of Completed Packets 的实际布局、PB = 0b11 是否出现、失败命令是否只回 Status。
+- 第二批：与真实设备的 ATT / GATT 互通（发现、读、写、订阅、指示）。到 2026-11-24 为止只有进程内对打，没有任何 ATT PDU 上过链路。
+- 第二批：30 秒事务超时与指示超时在真实链路上的行为。主机用例（`att_svr: indication waits for its confirmation…`、`gattc: a request that is not answered within 30 s…`）与板侧 ㊵ 都是把时间直接拨到 30 秒后，没有真实等待过。
+- 第二批：签名写的 CSRK 由上层从绑定信息提供（`att_server.zig` 的 `Peer.csrk`），`ble-802154` 不导入 `ble-security`，这条接线没有验证过。
+- 第二批：板侧自检不覆盖、只有主机用例的分支：ATT 的 Find By Type Value 与多重变长通知；ATT 服务端错误码全表（㉞ 只查 Read Not Permitted、Write Not Permitted 与 Invalid Handle）；GATT 客户端的按 UUID 发现、包含服务、描述符发现、Read Using UUID、定长 Read Multiple、Write / Signed Write / Reliable Write、指示确认与多重通知、过程超时与协议错误。
+
+## 8. 对真实 controller 的 HCI 一致性自检（2026-11-24）
+
+BLE 没有 RFC，本节的依据是 Bluetooth Core Specification 5.4 Vol 4 Part E（HCI）。级别 L3：在真实 BLE controller 上执行。
+
+### 8.1 结论
+
+| 项 | 数 |
+| --- | --- |
+| 命令条数（都是只读的本地信息命令） | 26 |
+| 板侧 checks | 26：20 过，6 不过 |
+| 合规且回成功（受支持） | 16 |
+| 合规且回 `0x01`（声明不支持） | 4 |
+| 偏差 | 6，分三类 |
+| bt-blobs 主机用例 | 21 → 67 |
+
+聚合行（`logs/hci-conformance-boot.log`）：`hci-conformance: checks passed=20 failed=6 total=26 supported=16 not_supported=4`。
+
+### 8.2 实现
+
+- `components/bt-blobs/src/hci_conformance.zig` 发 26 条只读命令（不改状态、不需要对端），按 Vol 4 Part E 逐条校验回包。每条命令在 `commands` 表里带表 3.1「LE Controller」列的标注（M / O / C.n / E，脚注原文抄在 `Support` 的注释里）。
+- 15 条规则（`Rule` 的 15 个标签）：回包长度、Status、保留位、取值范围、LE ACL 长度的保留缺口、页号回显、LE_States 组合、LMP / LE 特征依赖与必选位、LE 特征 33/34 相等，以及 4 条按声明支持的判决：`mandatory_unsupported`、`excluded_but_supported`、`support_bit_mismatch`、`status_event`。
+- 判决入口 `verifyDeclared(cmd, evt, mask)`：先读 HCI_Read_Local_Supported_Commands 的 64 八位组位图，再按「声明支持 / 声明不支持」判。回成功但位图为 0、位图为 1 却回 Unknown、LE Controller 标 E 的命令却回成功，都算违规。按 §4.5，不支持的命令回 `0x01 Unknown HCI Command` 是合规的，回包形态可以是 Command Complete 也可以是 Command Status。`verify()` 保持原语义。
+
+### 8.3 主机验证
+
+```sh
+cd firmware && env -u LD_LIBRARY_PATH zig build test --summary all   # 1044/1044
+```
+
+bt-blobs 目标 21 → 67。增量 46 = `hci_conformance.zig` 文件内的 23 条（此前 `host_tests.zig` 不 import 这个文件，一条没跑过；第一次执行时 3 条用例自身有错，已修：codec 计数、LE 取值范围的前置字段、LE_States 的位号；另 1 条只改名加注释）+ `hci_conformance_tests.zig` 的 23 条（22 个具名用例 + 1 个 import 块）。
+
+新用例的覆盖：
+
+- 15 个规则标签各有负例与正例；
+- 表不变量：按 opcode 升序、26 条、`support` 与表 3.1 逐条相等；
+- `verifyDeclared` 的全矩阵：位图未知 / 全 0 / 位置 1 × M / O / C / E × 成功 / `0x01` 的两种回包形态 / 其它错误码 / Command Status 带 Status 0；
+- `reportsSupport` 的位序、`describe` 的截断。
+
+表 3.1 的 26 条由两个人独立对着原文复核一致；`supp_bit` 抽了 11 条对 §6.27（115、117、119、121、128、186、201、202、312、333、362），全部吻合。
+
+### 8.4 探针接线（`probe.zig`）
+
+- 自检在探针脚本里**同步**跑完，位置在 A 阶段（HCI Reset、Read Local Version、Read BD_ADDR 三条基础命令都拿到回包）之后、任何射频实验（0x2006 / 0x2008 / 0x200A）之前。
+- A 路径的回包在 `sendCmd` 返回之前就经 `btdmTx` 到达（日志里 `btdm_tx` 逐条 +1），所以 `hciConformanceRun()` 把 `hciConformanceTick()` 的状态机连着推进到收尾。
+- 每条命令等回包上限 2 s（§4.4 建议主机用 1 s），等待期间喂狗。
+- `transport.zig` 为此保留最后一条事件的完整帧（至多 80 八位组）、事件序号与来处通道，并改正了事件帧长：原按 `1 + plen` 切，每条少记最后一个八位组；规范是 `2 + plen`，不含 H4 类型字节。
+
+### 8.5 三次上板
+
+配方：`sh /tmp/probe-board.sh ble <日志名> 45`（BLE 探针 + 共存核）。日志在 `logs/`。
+
+| 次数 | 日志 | 结果 |
+| --- | --- | --- |
+| 1（10:35） | `hci-conformance-run1-hang.log` | 前 4 条通过后主上下文无限空转。PC 采样钉在 `memcpy`，调用点是 `verify()` 里 `Readout` 初值的拷贝。成因是 tick 自己的缺陷：回包被判为 `other_event` 时先 `return`，超时判断排在它后面永远走不到；第 5 条（Read Buffer Size）的回包不是 Command Complete。已修：超时先判。另：它最初挂在主泵循环上，而脚本在进主循环之前就停在 0x200A 的 synth 墙上，永远轮不到，所以改到 A 阶段之后 |
+| 2 | `hci-conformance-run2.log` | 完整跑完，20 过 6 不过 |
+| 3（最终） | `hci-conformance-boot.log`（另加整张位图读回） | 与第 2 次相同。自检跑完后探针照旧走到 synth 墙（`ble_hw.c:506` 断言，R3.3），没有 panic / trap |
+
+### 8.6 板上的读数（最终一次）
+
+复核命令：`grep -n "check: hci\|read: hci\|hci-conformance" logs/hci-conformance-boot.log`。
+
+**合规且受支持（16）。**
+
+| 命令 | 读数 |
+| --- | --- |
+| read_local_version | `hci_version=0x0E lmp_version=0x0E company=0x02E5 hci_subversion=0 lmp_subversion=0`。按 Assigned Numbers §2.1，`0x0E` 是 Core 6.0，`0x02E5` 是 Espressif；模块的名字表按注释停在 5.4，所以板上打 `unknown` |
+| read_supported_cmds | 126 位，无保留位 |
+| read_local_features | 2 位：BR/EDR Not Supported 与 LE Supported，即 LE-only；无保留位 |
+| read_bd_addr | `01:BB:00:00:00:02` |
+| read_codecs_v2 | 两个计数都是 0 |
+| le_read_buffer_size | acl=517 n=10 |
+| le_read_features | 35 位，无保留位 |
+| le_read_adv_tx_power | 0 dBm |
+| le_read_fal_size | 12 |
+| le_read_states | 42 位全支持 |
+| le_read_default_dl | 27 八位组 / 328 µs |
+| le_read_rsl_size | 4 |
+| le_read_max_dl | 251 / 17040，收发相同 |
+| le_read_tx_power | −15 … 20 dBm |
+| le_read_rf_comp | 0.0 / 0.0 dB |
+| le_read_buffer_size_v2 | acl=517 n=10 iso=0 niso=0 |
+
+**合规且声明不支持（4，都回 0x01）。** read_buffer_size、read_data_block_size、read_sp_options、read_loopback_mode。
+
+**偏差（6）。** 括号里是 opcode 与它在位图里的八位组.位；位图原文在日志的 4 行 `read: hci supported_commands[...]`，置位数 126。位图八位组内低位在前（`reportsSupport`，§6.27）。
+
+| 类 | 命令（opcode，八位组.位） | 回包原文 | 违反 |
+| --- | --- | --- | --- |
+| ① 位图为 0（声明不支持）却回成功 | read_ext_features_p0（0x1004，14.6） | `0e 0e 08 04 10 00 00 02 00 00 00 00 60` | 表 3.1 对 LE Controller 标 E；§3.1 |
+| ① | read_codecs_v1（0x100B，29.5） | `0e 06 08 0b 10 00 00 00` | 同上 |
+| ② 位图为 1（声明支持）却回 `0x0C Command Disallowed` | le_read_max_adv_len（0x203A，36.6） | `0e 04 08 3a 20 0c` | 位图声明支持 |
+| ② | le_read_adv_sets（0x203B，36.7） | `0e 04 08 3b 20 0c` | 同上 |
+| ② | le_read_pal_size（0x204A，38.6） | `0e 04 08 4a 20 0c` | 同上 |
+| ③ 位图为 0 却回 `0x0C` 而不是 `0x01` | le_read_antenna（0x2058，40.4） | `0e 04 08 58 20 0c` | §4.5 |
+
+回包原文照抄日志的 `raw=` 字段。read_ext_features_p0 这一条日志里是 13 个八位组、`plen=0x0e`；任务书给的转写少了 Status 后面的一个 `00`，以日志为准。同一行的 `n=16` 与 13 对不上，原因未查。
+
+引用的原文：
+
+- §3.1：`Subject to Section 3.2, a Controller shall support the command or event if it is shown as mandatory for at least one of the transports (i.e., BR/EDR or LE) that the Controller supports, otherwise the Controller may support the command or event if it is shown as optional for at least one of the transports that the Controller supports, otherwise it shall not support the command or event.`
+- §4.5：`If the Controller does not support an issued command, it shall return the error code Unknown HCI command (0x01) in the Status parameter of either an HCI_Command_Complete event or an HCI_Command_Status event; which event is used is vendor-specific.`
+
+**判读限定。** ②③ 四条分别依赖表 3.1 脚注 C.17（Extended Advertising）、C.21（Periodic Advertising）、C.31（CTE）的特性条件；它们回 `0x0C` 是否与本移植传给 controller 的配置（`components/bt-blobs` 的 config）有关，**未验证**。本自检验的是「按当前配置下发时，controller 对只读命令的回答」。
+
+### 8.7 未验证
+
+- 需要射频、对端或改状态的命令。
+- 回包在真实链路上的行为。
+- 偏差 ②③ 与 controller 配置的关系。
+- 自检只覆盖 26 条只读命令，不是 HCI 一致性测试集。

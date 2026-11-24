@@ -216,10 +216,21 @@ pub const Glue = struct {
     last_error: ?Error = null,
     /// 最近一次核心调用的返回值（esp_err_t / int 类）。
     last_core_rc: c_int = ESP_OK,
+    /// 每个钩子进入时的可选回调（接线层的诊断用）：计数之后、处理之前调用。默认没有。
+    on_enter: ?*const fn (Hook) void = null,
+    /// enable / disable 返回时的可选回调（钩子名、返回值）。在状态迁移**之后**调用，
+    /// 所以此刻读到的就是迁移结果。默认没有。
+    on_leave: ?*const fn (Hook, c_int) void = null,
 
     /// 钩子第一行：给自己计一次。
     pub fn enter(self: *Glue, h: Hook) void {
         self.calls[@backingInt(h)] +%= 1;
+        if (self.on_enter) |f| f(h);
+    }
+
+    /// enable / disable 的收尾：状态已更新，把返回值交给回调。
+    pub fn leave(self: *Glue, h: Hook, rc: c_int) void {
+        if (self.on_leave) |f| f(h, rc);
     }
 
     fn deny(self: *Glue, h: Hook, e: Error) void {
@@ -324,11 +335,14 @@ pub const Glue = struct {
         const st = self.state.side(s);
         if (st != .inited) {
             self.deny(h, if (st == .idle) error.NotInited else error.AlreadyEnabled);
-            return ESP_ERR_INVALID_STATE;
+            const refused = ESP_ERR_INVALID_STATE;
+            self.leave(h, refused);
+            return refused;
         }
         const rc = self.core.enable.?();
         self.last_core_rc = rc;
         if (rc == ESP_OK) self.state.setSide(s, .enabled);
+        self.leave(h, rc);
         return rc;
     }
 
@@ -337,10 +351,12 @@ pub const Glue = struct {
         if (self.off(h)) return;
         if (self.state.side(s) != .enabled) {
             self.deny(h, error.NotEnabled);
+            self.leave(h, ESP_ERR_INVALID_STATE);
             return;
         }
         self.core.disable.?();
         self.state.setSide(s, .inited);
+        self.leave(h, ESP_OK);
     }
 
     /// `coex_deinit_wrapper`（esp_adapter.c:444-449）。
@@ -453,3 +469,5 @@ pub const wifi = @import("wifi.zig");
 pub const ble = @import("ble.zig");
 pub const fake = @import("fake.zig");
 pub const bind = @import("bind.zig");
+/// PHY 与时钟域的归属模型（ADR-003 §4）。纯逻辑，不在钩子路径上。
+pub const owner = @import("owner.zig");

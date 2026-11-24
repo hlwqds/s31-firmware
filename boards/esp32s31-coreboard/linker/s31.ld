@@ -8,8 +8,8 @@
  *
  * 段布局（三段，两段在 flash）：
  *
- *     irom 0x40000020  .flash.text     esp_app_desc_t(256B) + .text.trap + .text（上限 0xB0000）
- *     drom 0x40100020  .flash.rodata   .rodata/.srodata（上限 0xB0000）
+ *     irom 0x40000020  .flash.text     esp_app_desc_t(256B) + .text.trap + .text（上限 0x1C0000）
+ *     drom 0x401D0020  .flash.rodata   .rodata/.srodata（上限 0x1C0000）
  *     sram 0x2F000000  .trap_ram       trap 入口（放 flash 会 CPU_LOCKUP_RESET）
  *                      .data           有初值可写数据（LMA == VMA）
  *                      .bss            NOBITS，_start 清零
@@ -18,16 +18,18 @@
  *
  * 三条不变的硬约束（真机实测，见 docs/history/BRINGUP-chapter-era.md）：
  *   1) 镜像里落在 flash 映射窗口的装载段仍只有两个（IROM + DROM），vaddr 按 64 KiB
- *      页对齐：irom 0x40000020 / drom 0x40100020（页偏移 0x00020 同余）。
- *      窗口演进：P0.2 各扩到 0x7F000；P0.3 把 drom 基址移到 0x40100020、两窗各 0xB0000
- *      （合计 1 441 792 B，仍在 factory 1 500 K 内）。芯片侧上限远大于此
+ *      页对齐：irom 0x40000020 / drom 0x401D0020（页偏移 0x00020 同余）。
+ *      窗口演进：P0.2 各扩到 0x7F000；P0.3 把 drom 基址移到 0x40100020、两窗各 0xB0000；
+ *      之后 irom 扩到 0xC0000；R5（2026-11-24，ADR-003 第 3 节）为了让两个射频 blob 链进
+ *      同一镜像，irom 扩到 0x1C0000、drom 基址后移到 0x401D0020（两窗各 0x1C0000）。
+ *      窗口只是链接上限，实际占用仍受 factory 分区（1 536 000 B）约束。芯片侧上限远大于此
  *      （SOC_IROM_HIGH = 0x44000000，MMU 1024 × 64 KiB），但 drom 段必须结束在
  *      0x43FF0000 以下——loader 把 DROM 区间最后一页当分区发现的临时页；
  *   2) trap 向量必须落在 SRAM（.trap_ram）；
  *   3) 第一个装载段最前面是 256 字节 esp_app_desc_t。
  *
  * 与 ch23 的差异：本章不用 AES（没有 align(64) 的软件查表），.flash.rodata
- * 的起点为 ORIGIN(drom) = 0x40100020（按 64 KiB 页对齐）。实际值仍由 LLVM 的输入节对齐决定，
+ * 的起点为 ORIGIN(drom) = 0x401D0020（按 64 KiB 页对齐）。实际值仍由 LLVM 的输入节对齐决定，
  * 交付时以 `image-info` 打印的两行 DROM/IROM 为准（见本章 README 与
  * 章节 24.10 的镜像事实）。
  *
@@ -43,11 +45,12 @@ ENTRY(_start)
 
 MEMORY
 {
-    /* P0.3：两段各 0xB0000（合计 1 441 792 B，仍在 factory 1 500 K 之内）。
-     * drom 基址移到 0x40100020（保持 64 KiB 对齐 + 0x20），irom 因此可用满 0x100000 空间；
+    /* R5（ADR-003 第 3 节）：两窗各 0x1C0000，irom 装得下两个射频 blob 加应用。
+     * drom 基址移到 irom 窗口之后的下一页 0x401D0020（保持 64 KiB 对齐 + 0x20）。
+     * 两窗之和远大于 factory 分区（1 536 000 B）：实际占用由 scripts/check-capacity.py 按分区把关。
      * drom 段必须结束在 0x43FF0000 以下——loader 把 DROM 区间最后一页当分区发现的临时页。 */
-    irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0xC0000
-    drom (r)   : ORIGIN = 0x40100020, LENGTH = 0xB0000
+    irom (rx)  : ORIGIN = 0x40000020, LENGTH = 0x1C0000
+    drom (r)   : ORIGIN = 0x401D0020, LENGTH = 0x1C0000
     sram (rwx) : ORIGIN = 0x2F000000, LENGTH = 0x7AFC0
     /* BT 探针的判据环（blob 不可达的 LP RAM；避开既有 LP 槽 0x2E0002E0-570） */
     lpdata (rw) : ORIGIN = 0x2E000600, LENGTH = 0xA00
@@ -85,7 +88,7 @@ SECTIONS
 
     /* 第二个 flash 装载段 = DROM：少了它 bootloader 的 rom_index == 2 断言会挂。
      *
-     * 段起点由 lld 按输入节对齐决定，实测落在 ORIGIN(drom) = 0x40100020；
+     * 段起点由 lld 按输入节对齐决定，实测落在 ORIGIN(drom) = 0x401D0020；
      * bootloader 只要求页内偏移同余（esp_image_format.c:904），elf2image
      * 会插填充段对齐 paddr。drom 与 irom 的页偏移同为 0x20。 */
     .flash.rodata : ALIGN(16)

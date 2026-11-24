@@ -18,13 +18,16 @@
  *   "Invalid coexist adapter function md5, internal: %s, idf: %s"、
  *   "coexist adapter function version error! Version %x is expected, but it is %x"。
  *
- * **两个符号都是弱定义**，因为各有另一个提供者：
+ * **取舍（2026-11-24 修订）**：两个符号各只能有一个提供者胜出，规则是「能用的实现 > 计数桩」。
  *
- *   - `coexist_printf`：BLE 探针镜像里 `components/bt-blobs/src/wifi_glue.zig` 有同名的强导出
- *     （Zig 读不到变参，只把格式串转给日志）。那里强定义胜出；其余 coex 镜像用本文件，真格式化。
+ *   - `coexist_printf`：本文件是唯一的真格式化实现，**强定义**。BLE 探针镜像里
+ *     `components/bt-blobs/src/wifi_glue.zig` 另有一个同名导出（Zig 读不到变参，只把格式串转给
+ *     日志），它以弱符号导出：与本文件同链时让位（以前是反过来，BLE 探针里版本行的 `%s` 展不开）。
  *     只有 `coexist_api.o`、`coexist_core.o` 等引用它。
- *   - `puts`：只有 `coexist_api.o` 引用；Wi-Fi 侧的 `wifi-blobs/src/link_stubs.zig` 已有强定义，
- *     两个 blob 同链时它胜出，只链 BLE 时用这份。
+ *   - `puts`：只有 `coexist_api.o` 引用，另有三个提供者：BLE 侧 `bt-blobs/src/libc_glue.zig`
+ *     （强，能用的实现）、Wi-Fi 侧 `wifi-blobs/src/link_stubs.zig`（弱，计数桩）、本文件。
+ *     本文件在有 BLE 对象的构建里不定义它（`S31_COEX_NO_PUTS`，`firmware/build.zig` 传入），
+ *     其余构建里强定义：只带 Wi-Fi blob 时胜过那个弱桩，共存库经 `puts` 的行不会丢。
  *
  * `s31_coex_log_hook` 由接线层提供，同一个镜像里只能有一份：只有 BLE 时在
  * `components/osal/src/osal.zig`，带 Wi-Fi blob 时在 `components/wifi-blobs`。
@@ -96,8 +99,8 @@ static int s31_coex_fmt(char *buf, int cap, const char *format, va_list ap)
     return (int)(o - buf);
 }
 
-/* 弱定义：见文件头。 */
-__attribute__((weak)) int coexist_printf(const char *format, ...)
+/* 强定义：见文件头。 */
+int coexist_printf(const char *format, ...)
 {
     if (!format) return 0;
     char buf[S31_COEX_FMT_MAX];
@@ -115,8 +118,10 @@ __attribute__((weak)) int coexist_printf(const char *format, ...)
     return len;
 }
 
-__attribute__((weak)) int puts(const char *s)
+#ifndef S31_COEX_NO_PUTS
+int puts(const char *s)
 {
     if (s) s31_coex_log_hook(s);
     return 0;
 }
+#endif /* S31_COEX_NO_PUTS */

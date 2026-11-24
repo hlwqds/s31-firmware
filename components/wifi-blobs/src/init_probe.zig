@@ -151,6 +151,13 @@ var pump_logs: u32 = 0;
 var ready_swaps: u32 = 0;
 /// 当前控制权是否在任务上下文里。
 var in_task: bool = false;
+/// 合并镜像（`-Dcoex-merged`）里，控制权此刻是否在**别人的任务栈**上（BLE controller 的任务）。
+/// 那种时候绝不能泵 Wi-Fi 任务：`pumpRealTask` 会把 Wi-Fi 这边存的主栈指针改写成 BLE 任务的栈指针，
+/// 两边的调度状态一起报废（ADR-003 第 2 节"一个调度器"要解决的正是这件事）。为真时让出点
+/// 只计数、立即返回，调用它的信号量 / 队列等待按"没拿到"处理。
+pub var foreign_context: bool = false;
+/// 因 `foreign_context` 而拒绝让出的次数。
+pub var foreign_refusals: u32 = 0;
 /// 任务上下文是否已经建立（建立前 idle 只计数）。
 var task_ctx_ready: bool = false;
 
@@ -258,6 +265,10 @@ fn dumpClockRegs(tag: []const u8) void {
 
 fn idleHook() void {
     idle_calls += 1;
+    if (foreign_context) {
+        foreign_refusals += 1;
+        return;
+    }
     // **"真阻塞 + 泵 PP worker"实验已做**：init 直接挂住（PP 任务始终没 give）。
     // ⇒ PP worker 在我们的环境里跑不到它的 `give`。已回滚。
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
@@ -456,10 +467,35 @@ fn coexBoot() void {
         return;
     };
     coexReport("boot");
+    radio_coex.instance().on_enter = &coexTrace;
+    radio_coex.instance().on_leave = &coexTraceLeave;
+}
+
+/// `-Dcoex`：共存核的钩子被 blob 调到时的**即时**痕迹。`esp_wifi_start` 卡在 MAC 忙位时不返回，
+/// 事后的诊断行打不出来；`_coex_enable` 这条路径到底有没有被 blob 执行，只能靠入口处的这一行作证。
+fn coexTrace(h: radio_coex.Hook) void {
+    switch (h) {
+        .coex_enable_wrapper => log.raw("coex> _coex_enable called by blob\n"),
+        .coex_disable_wrapper => log.raw("coex> _coex_disable called by blob\n"),
+        .coex_wifi_request_wrapper => log.raw("coex> _coex_wifi_request called by blob\n"),
+        .coex_wifi_release_wrapper => log.raw("coex> _coex_wifi_release called by blob\n"),
+        else => {},
+    }
+}
+
+/// `_coex_enable` / `_coex_disable` 返回时的那一行：返回码，加上返回**之后**两侧的状态。
+/// 入口行只证明"blob 调了"，这一行才证明"核心收下了"（rc=0 且 Wi-Fi 侧变成 enabled）。
+fn coexTraceLeave(h: radio_coex.Hook, rc: c_int) void {
+    switch (h) {
+        .coex_enable_wrapper, .coex_disable_wrapper => log.line("coex> {s} returned rc={d} wifi={s} ble={s} rej={d}", .{
+            radio_coex.hookName(h), rc, @tagName(coexSide(.wifi)), @tagName(coexSide(.ble)), coexRejected(),
+        }),
+        else => {},
+    }
 }
 
 /// 诊断行（两行）。`coa` 应等于 `table`：那就是"核心收下了我们的适配表"。
-fn coexReport(stage: []const u8) void {
+pub fn coexReport(stage: []const u8) void {
     if (!on_target) return;
     const g = radio_coex.instance();
     const fw: [*:0]const u8 = if (g.core.version_get) |f| (f() orelse "?") else "?";
@@ -469,17 +505,46 @@ fn coexReport(stage: []const u8) void {
     log.line("coex[{s}]: fw={s} en={d} req={d} rel={d} sta={d} startcb={d} intset={d}", .{ stage, std.mem.span(fw), radio_coex.calls(.coex_enable_wrapper), radio_coex.calls(.coex_wifi_request_wrapper), radio_coex.calls(.coex_wifi_release_wrapper), radio_coex.calls(.coex_status_get_wrapper), radio_coex.calls(.coex_register_start_cb_wrapper), radio_coex.calls(.coex_schm_interval_set_wrapper) });
 }
 
+/// `-Dcoex-merged` 的 section（`firmware/src/coex_merged.zig`）读共存核状态用的三个口子。
+pub fn coexSide(s: radio_coex.Side) radio_coex.SideState {
+    return radio_coex.instance().state.side(s);
+}
+pub fn coexSideInited(s: radio_coex.Side) bool {
+    return coexSide(s) == .inited;
+}
+pub fn coexRejected() u32 {
+    var rej: u32 = 0;
+    for (radio_coex.instance().rejected) |r| rej += r;
+    return rej;
+}
+
 /// `_log_write` 的 C 实现（变参），取地址填进表。
 const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
 
-pub fn run() noreturn {
-    log.raw("wifi-init-probe: begin\n");
-    // 复位态基线：在任何 blob 代码跑之前读一次 MAC 状态寄存器，
-    // 用来区分"busy{13..15} 是复位默认"还是"init 里被谁置起来的"。
-    {
-        const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
-        log.line("wifi-init-probe: MAC_ST at begin = 0x{x:0>8}", .{mac_st.*});
+/// 「只做到 init 返回」那一段的选项。探针的 `run()` 与合并镜像（`-Dcoex-merged`，ADR-003 第 2 节）
+/// 共用这一段。
+pub const InitOptions = struct {
+    /// 探针的实验性写操作与大段转储：对内存布局写死的 blob 上下文块（`0x2f013d30`）、对 MAC 窗的
+    /// 逐段哈希、init 期间的 osi 调用序列。合并镜像的内存布局不同，写死的地址必须关掉。
+    experiments: bool = true,
+    /// 交给 Wi-Fi arena 的堆长度；`null` = 整块堆（探针镜像）。合并镜像按子系统配额切分堆
+    /// （ADR-003 第 2 节：一个堆，按子系统设配额）。
+    heap_len: ?usize = null,
+};
+
+/// init 用的配置。`run()` 的失败诊断（`wifi_menuconfig_init`）还要用它，所以放在文件作用域。
+var probe_cfg: initcfg.InitConfig = undefined;
+
+/// 装表 → `coex_init` → `esp_wifi_init_internal`，到 `INIT OK` 为止，返回 `esp_wifi_init_internal`
+/// 的返回码。不建任务上下文、不开中断、不调 `esp_wifi_start`。
+pub fn initOnly(opts: InitOptions) c_int {
+    // 两个桩文件里的导出（`WIFI_EVENT`、`regdomain_table`、`est_PHY_*`、`hexstr2bin` 等）只在文件被分析时
+    // 才发射。探针的 `run()` 末尾会遍历它们的计数，所以一直被带着；合并镜像只走到这里，要显式引用。
+    comptime {
+        _ = link_stubs;
+        _ = osi_stubs;
     }
+
     // TIMG0 T0 是本仓的时间基（1 MHz）；探针构建不会自动初始化它，
     // 不初始化则 nowUs() 恒 0（实测），超时/采样中断都无从谈起。
     hw.initTimer();
@@ -487,7 +552,8 @@ pub fn run() noreturn {
     // 1) 分配器缓冲：链接脚本给的堆区间（_heap_start.._heap_end，绝对符号取地址）。
     const heap_start: [*]u8 = @ptrFromInt(@intFromPtr(heapStart()));
     const heap_end: [*]u8 = @ptrFromInt(@intFromPtr(heapEnd()));
-    const heap_len = @intFromPtr(heap_end) - @intFromPtr(heap_start);
+    const heap_full = @intFromPtr(heap_end) - @intFromPtr(heap_start);
+    const heap_len = if (opts.heap_len) |n| @min(n, heap_full) else heap_full;
     impl.initArena(heap_start[0..heap_len]);
     log.line("wifi-init-probe: arena={d} B", .{heap_len});
 
@@ -514,14 +580,15 @@ pub fn run() noreturn {
 
     // 3) 建表；**不预装**，让 wifi_osi_funcs_register 自己校验并注册（IDF 的流程）
     // 表必须是**静态**的：ROM 在 `g_osi_funcs_p` 槽位里长期持有这个指针，
-    // 栈上（`run()` 的局部变量）的表在返回后就失效——生产路径同理，所以放文件作用域。
+    // 栈上的表在返回后就失效——生产路径同理，所以放文件作用域。
     osi_table = impl.makeTable();
     osi_table._log_write = s31_log_write; // C 变参 shim
     // `-Dcoex`：把 24 个共存表项换成胶水的包装函数。必须在 `makeTable()`（它末尾是 `stubs.fill`）之后：
     // 否则 IDF 留空的 `_coex_condition_set` 会被通用桩填上。
     if (coex_gate.enabled) radio_coex.wifi.fill(&osi_table);
     const table = &osi_table;
-    const cfg = initcfg.defaults(table);
+    probe_cfg = initcfg.defaults(table);
+    const cfg: *const initcfg.InitConfig = &probe_cfg;
     log.line("wifi-init-probe: table=0x{x:0>8} cfg magic=0x{x:0>8} crypto size={d}", .{
         @intFromPtr(table),
         @as(u32, @bitCast(cfg.magic)),
@@ -531,7 +598,7 @@ pub fn run() noreturn {
     // 4) 完整 init（干净路径）。**只能调一次**：重复初始化会在第二次进入时解引用无效指针
     //    （实测 exception code=5）。
     // IDF 的 `esp_wifi_init` wrapper 在 `esp_wifi_init_internal` **之前**调 `coex_init()`
-    // （wifi_init.c），我们一直没做；`g_coex_param_ptr` 为 0 也与此吻合。
+    //    （wifi_init.c），我们一直没做；`g_coex_param_ptr` 为 0 也与此吻合。
     if (coex_gate.enabled) {
         // 同一个位置，经胶水：`glue.wifiInit` 把 Wi-Fi 侧记成 inited，之后 blob 的 `wifi_hw_start`
         // 调 `_coex_enable` 才不会被拒（0x103）。两个分支只编一个。
@@ -546,17 +613,19 @@ pub fn run() noreturn {
         coex_init();
         log.raw("wifi-init-probe: coex_init returned\n");
     }
-    // **b14 前置实验（B 判定）**：把强制置位提前到 init **之前**。若 init 里真的会调使能函数
-    // （0x40034d1a），它应当走到结尾并写下 b288/b16=1；否则说明那条调用路径压根没执行。
-    const bg_pre = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
-    log.line("wifi-init-probe: pre-init ctx b14={d} b15={d} b288={d} cb_slot=0x{x}", .{
-        bg_pre[14],                                    bg_pre[15], bg_pre[288],
-        @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*,
-    });
-    // **ctx[15] 前置实验**：wrapper 0x40035ea8 的第一道门就是 ctx[15]；实测它在 init 跑到 ~#512 才变 1，
-    // 也就是说 init 走到那次 enable 调用时它还是 0 -> 被跳过 -> 之后无人重试。这里提前置 1。
-    // 判据：post-init 的 b16/b27/b288 是否变 1（成功路径标志），而不是 mac（deinit 命令字会污染 en 位）。
-    bg_pre[15] = 1;
+    if (opts.experiments) {
+        // **b14 前置实验（B 判定）**：把强制置位提前到 init **之前**。若 init 里真的会调使能函数
+        // （0x40034d1a），它应当走到结尾并写下 b288/b16=1；否则说明那条调用路径压根没执行。
+        const bg_pre = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
+        log.line("wifi-init-probe: pre-init ctx b14={d} b15={d} b288={d} cb_slot=0x{x}", .{
+            bg_pre[14],                                    bg_pre[15], bg_pre[288],
+            @as(*volatile u32, @ptrFromInt(0x2f011aa8)).*,
+        });
+        // **ctx[15] 前置实验**：wrapper 0x40035ea8 的第一道门就是 ctx[15]；实测它在 init 跑到 ~#512 才变 1，
+        // 也就是说 init 走到那次 enable 调用时它还是 0 -> 被跳过 -> 之后无人重试。这里提前置 1。
+        // 判据：post-init 的 b16/b27/b288 是否变 1（成功路径标志），而不是 mac（deinit 命令字会污染 en 位）。
+        bg_pre[15] = 1;
+    }
     // **LPCON ICG 实验已做**：`MODEM_LPCON_CLK_CONF_POWER_ST_REG` 是 **LPCON_BASE + 0x20**
     // （`modem_lpcon_reg.h:198`），字段 wifipwr=[19:16] coex=[23:20] i2c_mst=[27:24] lp_apb=[31:28]。
     // 写 0x66660000（四域各 6）读回一致（wifipwr=6），但 init 后 `MAC_ST` 仍是 0xE000、自旋不变。
@@ -582,7 +651,7 @@ pub fn run() noreturn {
     // （实测 `ppq` 仍是 0x2f0203b0）⇒ 单纯清零不改变分支结果。已回滚。
     // **PP 上下文进入实验已做**：切进 `ppTask` 直接崩溃（182 次 panic，包装入口都没打印）
     // ⇒ PP worker 不能在我们的合成栈上运行。已回滚。
-    // **tp 实验已做**：给 ppTask 设一个清零 TLS 区后仍是 182 次 panic、入口未打印 ⇒ tp 不是原因。
+    // **tp 实验**：给 ppTask 设一个清零 TLS 区后仍是 182 次 panic、入口未打印 ⇒ tp 不是原因。
     // **故障根因已查明**：`g_osi_funcs_p`（0x2f07ff44）在 init 之前是 NULL ⇒ `lw a5,64(a5)` 从 0x40 读。
     // 装槽位后不崩，但 `queue_recv(0, forever)` 阻塞——队列还没被建。⇒ `ppTask` 不能在 init 之前泵。
     dumpClockRegs("before-init");
@@ -599,7 +668,7 @@ pub fn run() noreturn {
     // **全 4 KB MAC 块 diff 的唯一差异**：`0x201044EC`，IDF `0x000102C0` vs 我们 `0x00010080`
     // ⇒ 差 **bit 6 与 bit 9**（`0x240`）。**实测：写不粘**（读回仍 0x10080）⇒ 它也是只读状态位，
     // 反映 MAC 状态而非配置它 ⇒ 是症状不是病因。保留这一行作为"已试过"的证据。
-    {
+    if (opts.experiments) {
         const w44ec: *volatile u32 = @ptrFromInt(0x2010_44EC);
         const b = w44ec.*;
         w44ec.* = b | 0x240;
@@ -617,10 +686,10 @@ pub fn run() noreturn {
     }
     // **b14 / b21 门在新前提下的重测已做（均无效）**：b14=1 或 b14=1+b21=1 之后
     // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
-    const init_rc = esp_wifi_init_internal(&cfg);
+    const init_rc = esp_wifi_init_internal(cfg);
     dumpClockRegs("after-init");
     if (coex_gate.enabled) coexReport("init");
-    {
+    if (opts.experiments) {
         const h = macWindowHash();
         log.line("wifi-init-probe: MACWIN xor=0x{x:0>8} sum=0x{x:0>8}", .{ h.x, h.s });
         // 分段 hash：4 段 × 256 字，定位差异落在哪一段
@@ -665,7 +734,7 @@ pub fn run() noreturn {
         }
     }
     // **完整 osi 调用序列**（init 窗口内，最多 64 条）——与 IDF 侧逐条 diff，分叉点就是缺的那一步。
-    {
+    if (opts.experiments) {
         const n = @min(impl.event_count, impl.events.len);
         // **环里存的是"最后 n 条"**，所以起点是 `event_count - n`，不是 0。
         const base = impl.event_count - n;
@@ -695,10 +764,13 @@ pub fn run() noreturn {
         @as(*volatile usize, @ptrFromInt(0x2f07ff18)).*,
         @as(*volatile usize, @ptrFromInt(0x2f07ff14)).*,
     });
-    log.line("wifi-init-probe: post-init ctx b14={d} b15={d} b16={d} b27={d} b288={d} b289={d} mac=0x{x:0>8}", .{
-        bg_pre[14],                                    bg_pre[15], bg_pre[16], bg_pre[27], bg_pre[288], bg_pre[289],
-        @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
-    });
+    if (opts.experiments) {
+        const bg_pre = @as([*]volatile u8, @ptrFromInt(0x2f013d30));
+        log.line("wifi-init-probe: post-init ctx b14={d} b15={d} b16={d} b27={d} b288={d} b289={d} mac=0x{x:0>8}", .{
+            bg_pre[14],                                    bg_pre[15], bg_pre[16], bg_pre[27], bg_pre[288], bg_pre[289],
+            @as(*volatile u32, @ptrFromInt(0x20104CAC)).*,
+        });
+    }
     log.line("wifi-init-probe: esp_wifi_init_internal rc={d}", .{init_rc});
     {
         const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
@@ -711,6 +783,20 @@ pub fn run() noreturn {
             impl.bad_handle,
             impl.blocking_refused,
         });
+    }
+    return init_rc;
+}
+
+pub fn run() noreturn {
+    log.raw("wifi-init-probe: begin\n");
+    // 复位态基线：在任何 blob 代码跑之前读一次 MAC 状态寄存器，
+    // 用来区分"busy{13..15} 是复位默认"还是"init 里被谁置起来的"。
+    {
+        const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
+        log.line("wifi-init-probe: MAC_ST at begin = 0x{x:0>8}", .{mac_st.*});
+    }
+    const init_rc = initOnly(.{});
+    if (init_rc == 0) {
         log.line("wifi-init-probe: tasks recorded={d}", .{impl.task_count});
 
         // 先验证上下文切换本身（两根栈），再谈 API 与任务的交错。
@@ -1120,13 +1206,10 @@ pub fn run() noreturn {
                         conf1.* = c0;
                         log.line("wifi-init-probe: gated reset (clk off -> rst -> on): mac=0x{x:0>8}", .{mac_st.*});
                     }
-                    // blob 自己的"清状态位"函数（`0x2f005b0c`，取 a0 作掩码，清 `(a0 & 0xFF000) | bit12`）。
-                    // 实验：start 之前先把 stale 的 busy{13..15} 清掉，看 deinit 的轮询是否直接通过。
-                    const clearStatus = @as(*const fn (u32) callconv(.c) usize, @ptrFromInt(0x2f005b0c));
-                    const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
-                    log.line("wifi-init-probe: pre-start mac=0x{x:0>8}, clearing 0xE000", .{mac_st.*});
-                    _ = clearStatus(0xE000);
-                    log.line("wifi-init-probe: post-clear mac=0x{x:0>8}", .{mac_st.*});
+                    // 这里曾有一个实验：把 `0x2f005b0c` 当成 blob 的"清状态位"函数来调，想在 start 之前
+                    // 清掉 busy{13..15}。2026-11-24 用带符号的镜像核对：在关着共存的对照镜像里，那个地址
+                    // 落在 `ppEnqueueTxDone`（0x2f005ac4，长 0x62）的函数**中间**，不是函数入口——
+                    // 所以对照镜像在同一处也 panic（code 7，mepc=0x4004c70a）。它从来没成功过，已删除。
                     const fe_txrx_reset = @extern(*const fn () callconv(.c) void, .{ .name = "phy_fe_txrx_reset" });
                     if (probe_manual_phy_calls) {
                         log.raw("wifi-init-probe: calling phy_fe_txrx_reset()\n");
@@ -1248,7 +1331,7 @@ pub fn run() noreturn {
     }
     {
         const menu = @extern(*const fn (*const initcfg.InitConfig) callconv(.c) c_int, .{ .name = "wifi_menuconfig_init" });
-        log.line("wifi-init-probe: wifi_menuconfig_init rc={d}", .{menu(&cfg)});
+        log.line("wifi-init-probe: wifi_menuconfig_init rc={d}", .{menu(&probe_cfg)});
     }
     inline for (.{ "misc_nvs_init", "ic_create_wifi_task", "ieee80211_ioctl_init" }) |name| {
         const f = @extern(*const fn () callconv(.c) c_int, .{ .name = name });

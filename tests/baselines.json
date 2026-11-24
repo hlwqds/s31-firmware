@@ -1,9 +1,9 @@
 {
     "app-mqtt-ota": 27,
-    "ble-802154": 68,
+    "ble-802154": 122,
     "ble-security": 51,
     "boot-power-perf": 28,
-    "bt-blobs": 19,
+    "bt-blobs": 67,
     "net-congestion": 21,
     "net-ethernet": 20,
     "net-ipv4": 73,
@@ -13,9 +13,9 @@
     "net-udp-dhcp-dns": 50,
     "osal": 29,
     "posix-compat": 91,
-    "radio-coex": 45,
+    "radio-coex": 55,
     "wifi-blobs": 31,
     "wifi-boundary": 15,
-    "wifi-connect": 57,
-    "wifi-mlme": 61
+    "wifi-connect": 141,
+    "wifi-mlme": 82
 }

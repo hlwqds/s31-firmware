@@ -4,7 +4,7 @@
 
 | 层 | 内容 | 命令 | 门禁 |
 | --- | --- | --- | --- |
-| L1 单元 | 19 个测试项目的 `test` 块（830 项） | `scripts/check-host.sh` | 合并前必须绿 |
+| L1 单元 | 19 个测试项目的 `test` 块（1047 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
 | L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
@@ -107,10 +107,22 @@ ESPTOOL=<esptool> python3 scripts/check-capacity.py            # 镜像 ≤ fact
 ESPTOOL=<esptool> python3 scripts/check-capacity.py --update   # 确认增长合理后重写 tools/s31-production/baseline/capacity.json
 ```
 
-现状（2026-11-16 实测，段长取自 `image-info` 的 Length 列，P0.3 扩容后窗口各 `0xB0000`）：
-`full`（TLS+Wi-Fi+apps）镜像 398 576 B（factory 余量 1 137 424 B），IROM 段 305 696 B
-（窗口余量 415 200 B）、DROM 段 70 796 B（余量 650 100 B）——`full` 用掉 IROM 窗口的 42%。
+窗口（2026-11-24 R5 扩容后两段各 `0x1C0000`，drom 基址 `0x401D0020`；此前 irom `0xC0000`、drom `0xB0000`）：
+窗口只是链接上限，实际占用仍受 factory 分区约束。扩容前的历史数字（2026-11-16 实测，段长取自
+`image-info` 的 Length 列）：`full`（TLS+Wi-Fi+apps）镜像 398 576 B（factory 余量 1 137 424 B），
+IROM 段 305 696 B、DROM 段 70 796 B。扩容后的当前占用以 `check-capacity.py` 的输出为准。
 自检方式：`CAP_WINDOW=0x40000` 跑一次，门禁必须报 `IROM ends at … > window end …`（证明断言不是恒真）。
+
+两段窗口新上限的板级证明（`docs/verification/coex-verification.md` §7）：
+
+```bash
+# drom：DROM 段 1 046 816 B（旧上限 720 896 B），烧录后 8/8、verdict=pass
+cd firmware && env -u LD_LIBRARY_PATH zig build -Dtarget=riscv32-freestanding-eabihf \
+  -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall -Dfat-rodata=1000000
+```
+
+irom 一侧的证据是合并镜像本身（IROM 段 825 744 B，旧上限 786 432 B），构建配方见
+`docs/verification/coex-verification.md` §6.6。跑完 `-Dfat-rodata` 记得重建常规镜像。
 
 新增/移动 `all_modules` 里的组件时，必须同步 `PROFILES[*].sections`（board 断言是全等比较）。
 
@@ -146,6 +158,14 @@ E2E 断言：
 再抓一次确认 `ota: ab=…` 与 `main: verdict=pass`。`scripts/demo-board.sh` 的第 4 步会自己做这件事。
 生产默认构建的自检要跑 **30~45 s**（net 组做真实计时），窗口给 45 s 才稳定看得到 `verdict`；
 20 s 的窗口常常只抓到一半的 `check:` 行，别据此判断板子有问题。
+
+### `zig build-obj` 的 `-target` 只作用于紧挨着的模块（踩过的坑）
+
+用多模块命令单独编译一个自检时（`--dep … -Mroot=… -Mselftest=… -Mboard=…`），`-target`、`-mcpu`、`-O` 要在**每个 `-M` 之后**各写一遍。
+写在最后只作用于最后一个模块：2026-11-24 那条命令只有 `board` 模块按 riscv32 编，自检本身是本机 x86_64，退出 0 却什么都没证明
+（产物 `ELF64 … X86-64`）。判据是根文件里的编译期断言（`builtin.target.cpu.arch != .riscv32` 即 `@compileError`），
+并拿旧写法做一次负对照；只看退出码不够。命令与两次对照见 `docs/verification/wifi-ieee80211-verification.md` §5.1。
+`firmware/build.zig` 不经命令行传模块：目标由 `b.standardTargetOptions` 定、挂在根模块上（`.target = target`），导入的模块继承它，不受影响。
 
 ## 本地运行
 

@@ -1,4 +1,4 @@
-//! ble-802154：新增模块的判据用常数表（HCI 控制 / ACL / L2CAP / GAP / IPSP）。
+//! ble-802154：新增模块的判据用常数表（HCI 控制 / ACL / L2CAP / GAP / IPSP / ATT）。
 //!
 //! 每个常数都有出处，分三类：
 //!
@@ -354,3 +354,48 @@ pub const iphc_7668_3242_sam01: [21]u8 = hex("7e53" ++ "9999222233334444" ++ "f0
 pub const iphc_udp_checksum_elided: [11]u8 = hex("7f33" ++ "f4" ++ "16331633" ++ "636f6170");
 /// 6LoWPAN 分片头（FRAG1，11000xxx）：RFC 7668 §3 明确 BLE 不用 6LoWPAN 分片。
 pub const lowpan_frag1: [4]u8 = hex("c0010000");
+
+// ---------------------------------------------------------------------------
+// AES-CMAC 与 ATT 数据签名（[Vol 3] Part H §2.2.5、§2.4.5；Part F §3.4.5.4；Part G 附录 B）
+// ---------------------------------------------------------------------------
+
+/// [Vol 3] Part H 附录 D.1 引自 RFC 4493 的四个例子：密钥、对全零块的加密结果与两个子密钥。
+/// 附录 D 开头写明「字节按最高有效在左排列」，与 RFC 4493 的写法一致。
+pub const cmac_key: [16]u8 = hex("2b7e151628aed2a6abf7158809cf4f3c");
+pub const cmac_l: [16]u8 = hex("7df76b0c1ab899b33e42f047b91b546f");
+pub const cmac_k1: [16]u8 = hex("fbeed618357133667c85e08f7236a8de");
+pub const cmac_k2: [16]u8 = hex("f7ddac306ae266ccf90bc11ee46d513b");
+
+/// 例 1（空消息）与例 2（16 字节）。
+pub const cmac_t0: [16]u8 = hex("bb1d6929e95937287fa37d129b756746");
+pub const cmac_m16: [16]u8 = hex("6bc1bee22e409f96e93d7e117393172a");
+pub const cmac_t16: [16]u8 = hex("070a16b46b4d4144f79bdd9dd04a287c");
+/// 例 3（40 字节：16 + 16 + 8）与例 4（64 字节）。
+pub const cmac_m40: [40]u8 = hex(cmac_m16_hex ++ "ae2d8a571e03ac9c9eb76fac45af8e51" ++ "30c81c46a35ce411");
+pub const cmac_t40: [16]u8 = hex("dfa66747de9ae63030ca32611497c827");
+pub const cmac_m64: [64]u8 = hex(cmac_m40_hex ++ "e5fbc1191a0a52ef" ++ "f69f2445df4f9b17ad2b417be66c3710");
+pub const cmac_t64: [16]u8 = hex("51f0bebf7e3b9d92fc49741779363cfe");
+
+const cmac_m16_hex = "6bc1bee22e409f96e93d7e117393172a";
+const cmac_m40_hex = cmac_m16_hex ++ "ae2d8a571e03ac9c9eb76fac45af8e51" ++ "30c81c46a35ce411";
+
+/// [Vol 3] Part G 附录 B：数据库哈希的输入 m（M0–M6，共 111 字节，按原文的写法）与
+/// 结果 AES-CMAC（密钥全零）。本组件不实现数据库哈希，只把它当作 CMAC 的多块向量。
+pub const gatt_db_hash_m: [111]u8 = hex(
+    "010000280018020003280a0300002a04" ++
+        "000328020500012a0600002801180700" ++
+        "0328200800052a090002290a0003280a" ++
+        "0b00292b0c000328020d002a2b0e0000" ++
+        "2808180f000228140016000f18100003" ++
+        "28a21100182a12000229130000290000" ++
+        "140001280f1815000328021600192a",
+);
+pub const gatt_db_hash: [16]u8 = hex("f1ca2d48ecf58bac8a8830bbb9fba990");
+
+/// [Vol 3] Part F §3.4.5.4 的例子：句柄 0x0012、值 13 37 的 ATT_SIGNED_WRITE_CMD，
+/// SignCounter = 1，CSRK 与 CMAC 见下。最后的签名写消息原文写作
+/// ‘D21200133701000000F1871E933C900FF2’。
+pub const signed_write_pdu: [17]u8 = hex("d212001337" ++ "01000000" ++ "f1871e933c900ff2");
+pub const signed_write_csrk: [16]u8 = hex("611b64ebfbcd1fd372ec9196df425e50");
+pub const signed_write_cmac: [16]u8 = hex("f20f903c931e87f159b64f012574b4d0");
+pub const signed_write_sig: [12]u8 = hex("01000000" ++ "f1871e933c900ff2");

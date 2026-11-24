@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Fixed
+- **板侧自检「以固件参数交叉编译」的假绿（2026-11-24）**：本轮复核时用来单独编译自检的 `zig build-obj` 命令把
+  `-target … -mcpu … -OReleaseSmall` 放在最后一个 `-M` 之后，Zig 0.17.1 只把它作用于紧挨着的 `board` 模块，
+  自检本身按本机 x86_64 编译，命令退出 0 却什么都没证明（产物 `ELF64 … X86-64`）。改法：标志跟在每个 `-M` 之后，
+  根文件加编译期断言（`builtin.target.cpu.arch != .riscv32` 即 `@compileError`），并用旧写法做负对照（守卫报 x86_64）。
+  重跑：`wifi-mlme`、`wifi-connect`、`ble-802154`、`ble-security`、`radio-coex` 五个自检以固件参数编译通过；
+  `wifi` profile 的镜像构建与板上运行是另一份独立证据，结论不变。更正记录在
+  `docs/verification/wifi-ieee80211-verification.md` §5.1 与 `docs/TESTING.md`。
+
 - **bt-blobs 主机门禁（2026-11-23）**：`scripts/check-host.sh` 自 BLE 实验轮次起在 `firmware` 上
   失败（`zig build test`：`1df82d5` 通过，`c50a763` 及其后每个被测提交失败；`ci.yml` 的 `host`
   job 跑的正是这一步，`image`/`e2e` 依赖它）。两处补齐，依据是 bt-blobs README 的判读纪律
@@ -48,6 +56,58 @@
   两个 group 同开），四个组件的源码都不引用它。`build.zig` 由此回到 2f156fa 的状态。
 
 ### Added
+- **无线离线特性第二批与 HCI 一致性自检（2026-11-24）**：不依赖射频、不抓空口，按规范条款实现——Wi-Fi 取 IEEE Std 802.11-2016，
+  BLE 取 Bluetooth Core Specification 5.4（两者都不是 RFC；其上的 RFC 单列）。证据分主机用例与板侧自检两级；空口没有任何证据。
+  `tests/baselines.json` 合计 830 → 1047（`wifi-connect` 57 → 141、`wifi-mlme` 61 → 82、`ble-802154` 68 → 122、
+  `bt-blobs` 19 → 67、`radio-coex` 45 → 55）。
+  - `components/wifi-connect`（板侧自检 28 → 87 条）：
+    - SAE 完整协议（12.4）：P-256 点运算（`ecc.zig`，与 `std.crypto.ecc.P256` 在随机点上一致）、hunting-and-pecking、
+      Commit / Confirm、12.4.8 状态机、Anti-Clogging Token（`sae_full.zig`）。只支持 group 19。
+    - **更正 pwd-seed**：counter 是单个八位组（12.4.4.2.2，与 hostapd 的 `u8 counter` 一致）；原实现编成 LE16。
+      `vectors.zig` 的三个值换成 Python `hmac` 独立算出的值。Annex J.10 的 pwd-value 与 KCK/PMK 三行与 12.7.1.7.2 正文不符
+      （只有单八位组 KDF counter 才复现）；实现与 hostapd 的 `sha256_prf_bits()` 逐字节同构，按正文走。
+    - FT 密钥层次（12.7.1.7、13.4）：KDF、XXKey、PMK-R0 / R1、PTK 与名字（`ft.zig`）。IEEE 没有 FT 派生的测试向量，
+      期望值取自独立实现 `/tmp/s31-oracle/ft_oracle.py`。
+    - 256 位套件（12.5、12.7.2、12.7.3，表 12-8）：CCMP-256、GCMP-256、BIP 的四个变体、256 位 KEK 的 Key Data 封装、
+      Key MIC、Key Descriptor Version（`suite256.zig`）。与独立参照的全量差分：14 组、3568 条向量、3928 项比较，0 不一致。
+    - 三份板侧子自检（SAE 24 条、suite-256 22 条、FT 13 条）接入 `selftest.zig`，并作为 3 条主机用例执行。
+  - `components/wifi-mlme`（板侧自检 16 → 24 条）：QoS Control 的布局与子字段、UP / AC 映射、EDCA 参数集、QoS Capability
+    （`qos.zig`）；省电：PM / More Data、PS-Poll、TIM 与部分虚拟位图、DTIM、监听间隔、U-APSD（`powersave.zig`）。
+  - `components/ble-802154`（板侧自检 19 → 50 条）：ATT 服务端（Vol 3 Part F 表 3.43 的全部操作码、排队写、通知与指示，
+    `att_server.zig`）、GATT 服务端（`gatt_server.zig`）、GATT 客户端（`gatt_client.zig`：对附录 A 的示例属性表做完全部
+    发现、读、写、订阅过程）、AES-CMAC 与签名（`cmac.zig`）。ATT 线上结构与 NimBLE 的 PDU 尺寸定义逐条一致。
+    这批用例此前一次都没被执行过；第一次执行 119 过 / 3 败，全是用例里手敲的期望值有误（6 处），按规范改正后 122/122。
+  - `components/bt-blobs`（主机 19 → 67 项）：对真实 controller 的 HCI 一致性自检（`hci_conformance.zig`）。26 条只读的本地信息
+    命令，按 Vol 4 Part E 校验回包，并按表 3.1「LE Controller」列与 controller 自己声明的 Supported_Commands 位图判决
+    （`verifyDeclared`；不支持的命令回 `0x01` 算合规，Command Status 形态的回包也接受）。文件内原有的 23 条用例第一次被执行
+    （3 条用例自身有错，已修），新文件 23 条。
+  - 板级（2026-11-24）：`run_e2e.py --board --profile wifi` → `PASS board:wifi`，14/14 段、`main: verdict=pass`
+    （`wifi_connect` 87/87、`wifi_mlme` 24/24、`ble_802154` 50/50；`logs/e2e-wifi-boot.log`）。HCI 一致性自检随 BLE 探针上板：
+    **26 条里 20 条合规、6 条与 5.4 不一致**（`logs/hci-conformance-boot.log`）——2 条声明不支持却回成功
+    （Read Local Extended Features、Read Local Supported Codecs [v1]，表 3.1 对 LE 标 E）、3 条声明支持却回 `0x0C`、
+    1 条声明不支持却回 `0x0C` 而不是 `0x01`。与 controller 配置的关系未验证。
+  - 自检在探针里的位置：A 阶段之后、射频实验之前同步跑完。它原先挂在主泵循环上永远轮不到（脚本在进主循环之前就停在
+    0x200A 的 synth 墙上）；第一次上板又因 tick 在回包不是本命令的 Command Complete 时先返回、超时判断走不到而无限空转
+    （`logs/hci-conformance-run1-hang.log`），已改为超时先判。
+  - 报告：`docs/verification/wifi-ieee80211-verification.md`、`ble-core-verification.md` §2–§8。
+
+- **共存：运行时统一、合并镜像与窗口扩大（路线图 C3、C4，2026-11-24）**：构建开关 `-Dcoex-merged` 把 Wi-Fi 与 BLE 两套适配层和
+  两个 blob 链进同一个镜像，各段自检之后多跑一个 `coex_merged` section。
+  - 冲突面实测 12 个符号（Zig 层 6 个导出撞名、链接器 6 个重复符号），未定义 0。按「真归档 > 能用的实现 > 计数桩」各留一个
+    提供者，落选的一方改成弱符号导出（Zig `@export(…, .{ .linkage = .weak })`，C `__attribute__((weak))`）。没有合并两个上下文
+    切换器、没有删除 `bt-blobs` 的 osi 副本、没有把 trap 钩子改成多槽——逐项量过之后不需要，依据见 ADR-003 第 2 节的实现记录。
+  - 入口：Wi-Fi 侧的 init 从探针的 `run()` 抽成 `init_probe.initOnly()`；BLE 侧新增 `probe.initOnly(region)`。两边对内存布局写死的
+    探针地址由开关关掉；`osal.logLine` 的可执行区判定从写死的地址范围换成链接脚本的 `_text_start` / `_text_end`。
+  - 链接脚本：irom `0x40000020` 长度 `0xC0000` → `0x1C0000`，drom 基址 `0x40100020` → `0x401D0020`、长度 `0xB0000` → `0x1C0000`。
+    默认镜像因此只有重定位差异（反汇编逐条比较零差异，1 905 处常量各差 `0xD0000`）。分区表没有改。
+  - 验证：合并镜像上板 8/8 段通过、`main: verdict=pass`，`esp_wifi_init_internal rc=0`、`bringup.init rc=0`
+    （`logs/coex-merged-boot.log`）；irom 新上限由合并镜像自己证明（`.flash.text` 825 744 B），drom 新上限由
+    `-Dfat-rodata=1000000` 的镜像证明（DROM 段 1 046 816 B，`logs/fat-rodata-1000000-boot.log`）。细目见
+    `docs/verification/coex-verification.md` §6、§7。
+- **共存：PHY 与时钟域的归属模型（路线图 C5，2026-11-24）**：`components/radio-coex/src/owner.zig`。`Owner.acquire / release(side)`
+  返回一串要串行执行的动作，公共部分（PHY、共存时钟）只随首个与末个使用者各动一次，对应 IDF `esp_phy_enable` / `esp_phy_disable`
+  的引用计数；`ClockBits` 让两个子系统共享一组时钟使能位。只有主机验证（`radio-coex` 主机用例 45 → 55）；寄存器序列没有接。
+
 - **Wi-Fi 与 BLE 的离线可验证特性（2026-11-24）**：按规范条款实现的纯逻辑组件，不依赖射频；空口没有任何证据。
   - 新增 `components/wifi-mlme`（61 项）：IEEE Std 802.11-2016 非 AP STA 侧的帧格式（9.2）、管理帧（9.3.3）、
     信息元素（9.4.2 的子集）、robust 判定（12.2.8、12.6.20）、MLME（11.3）、扫描（11.1.4）。FCS 按 9.2.4.8

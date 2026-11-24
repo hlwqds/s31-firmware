@@ -54,7 +54,8 @@ int esp_gpio_is_reserved(int gpio) { (void)gpio; return 0; }
 void esp_log(const char *tag, const char *fmt, ...) { (void)tag;(void)fmt; }
 unsigned int esp_log_timestamp(void) { return 0; }
 int esp_sleep_pd_config(int pd, int opt) { (void)pd;(void)opt; return 0; }
-const char *get_phy_version_str(void) { return "s31-probe"; }
+/* 两个射频的适配层同链时（`-Dcoex-merged`）`libphy.a` 的 `phy_debug.o` 有真定义：这里弱定义，让它。 */
+__attribute__((weak)) const char *get_phy_version_str(void) { return "s31-probe"; }
 int gpio_config(const void *cfg) { (void)cfg; return 0; }
 const unsigned char phy_init_data[144] = {
     0x01, 0x00, 0x50, 0x50, 0x50, 0x50, 0x4C, 0x48, 0x50, 0x50, 0x4C, 0x48, 0x40, 0x3C, 0x3C, 0x3C,
@@ -87,4 +88,6 @@ void phy_printf(unsigned int level, const char *tag, const char *format, ...) {
     s31_bt_raw_line(format);
 }
 int rtc_clk_xtal_freq_get(void) { return 40; }
-void s31_printf_hook(unsigned int level, const char *tag, const char *format, ...) { (void)level;(void)tag;(void)format; }
+/* 同上：带 Wi-Fi blob 的镜像里 `wifi-blobs/src/init_probe.zig` 导出能用的钩子（把驱动的报错
+ * 打到串口）。这里弱定义，让它；只链 BLE 时没有别的定义，行为不变。 */
+__attribute__((weak)) void s31_printf_hook(unsigned int level, const char *tag, const char *format, ...) { (void)level;(void)tag;(void)format; }

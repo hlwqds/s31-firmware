@@ -27,31 +27,48 @@ const std = @import("std");
 const board = if (@import("builtin").os.tag == .freestanding) @import("board") else struct {};
 /// 主机安全的 32 位 MMIO 写/置位/清位：init/enable 在主机测试里用 Hooks 跑，
 /// 路径上的裸寄存器访问必须变成空操作（此前直接段错误 ⇒ 3 个 bringup 用例 ABRT）。
+/// 早先某个布局下记下的一批"槽"地址，全部落在 `0x2f01_0f14 .. 0x2f01_1138`。2026-11-24 用带符号的
+/// 镜像核对：在现在的 BLE 探针镜像里，这一段其实是**我们自己的**静态数组 `g_phy_cal_buf`
+/// （0x2f010c00 起，没人用），所以本文件对它们的读写今天都是空操作，探针照样走到 INITED。
+/// 合并镜像（`-Dcoex-merged`，两个射频的适配层同链）的布局又不同：同样的数值会落进
+/// `.iram_blobs` 的代码中间，写一下就是破坏 blob 代码。`layout_probes` 为假时，本文件里对这一段的
+/// 访问一律拦截——写丢弃、读回 0、取指针给草稿区。只有合并镜像的 init-only 路径会把它置假。
+pub var layout_probes: bool = true;
+
+inline fn staleSlot(addr: usize) bool {
+    return !layout_probes and addr >= 0x2f01_0f00 and addr < 0x2f01_1200;
+}
 inline fn mmioWr(addr: usize, v: u32) void {
+    if (staleSlot(addr)) return;
     if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* = v;
 }
 inline fn mmioSet(addr: usize, bits: u32) void {
+    if (staleSlot(addr)) return;
     if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* |= bits;
 }
 inline fn mmioClr(addr: usize, bits: u32) void {
+    if (staleSlot(addr)) return;
     if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* &= ~bits;
 }
 /// 定宽 MMIO 读（主机 0）。
 inline fn mmioRdN(comptime T: type, addr: usize) T {
+    if (staleSlot(addr)) return 0;
     return if (freestanding) @as(*volatile T, @ptrFromInt(addr)).* else 0;
 }
 /// 非 4 字节对齐地址的 u32 读（align(1)）。
 inline fn mmioRdA1(addr: usize) u32 {
+    if (staleSlot(addr)) return 0;
     return if (freestanding) @as(*align(1) const u32, @ptrFromInt(addr)).* else 0;
 }
 var mmio_scratch: [16]u8 align(4) = @splat(0);
 /// 目标板：该地址的易失指针；主机测试：指向 dummy（读写落到 RAM）。
 /// 供"先取指针再多次读写"的寄存器块使用。
 inline fn mmioPtr(comptime T: type, addr: usize) *volatile T {
-    if (freestanding) return @ptrFromInt(addr);
+    if (freestanding and !staleSlot(addr)) return @ptrFromInt(addr);
     return @ptrCast(&mmio_scratch);
 }
 inline fn mmioRd(addr: usize) u32 {
+    if (staleSlot(addr)) return 0;
     return if (freestanding) @as(*volatile u32, @ptrFromInt(addr)).* else 0;
 }
 
@@ -472,7 +489,7 @@ pub fn init(cfg: *config.Config) c_int {
         ygu();
         osal.logPublic("bt bringup: task list head init *(0x2f011130)=0x{x:0>8}", .{mmioRd(0x2f01_1130)});
         // **轮 67**：env_obj[16]/[20] 注册节点预读（task_init 遍历表 = 崩点源）
-        const envp: usize = @as(*volatile usize, @ptrFromInt(0x2f01_101c)).*;
+        const envp: usize = mmioRd(0x2f01_101c);
         if (envp >= 0x2f00_0000 and envp < 0x2f90_0000 and envp % 4 == 0) {
             const n16: usize = @as(*volatile usize, @ptrFromInt(envp + 16)).*;
             const n20: usize = @as(*volatile usize, @ptrFromInt(envp + 20)).*;
@@ -662,7 +679,7 @@ pub fn init(cfg: *config.Config) c_int {
             // **轮 25/41**：s_is_phy_calibrated 清零 + 合并判决读出。
             // s_is_phy_calibrated = local b 符号（@extern 不可用）⇒ nm 硬编码
             // **每次构建后必须 nm 比对**（布局每构建漂移——轮 35 铁律显式化）。
-            const cal_flag: *volatile u8 = @ptrFromInt(0x2F01_0F80); // nm 0x2f010f80
+            const cal_flag: *volatile u8 = mmioPtr(u8, 0x2F01_0F80); // nm 0x2f010f80
             phy_cal_flag_before = cal_flag.*;
             cal_flag.* = 0;
             const esp_phy_enable = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "esp_phy_enable" });

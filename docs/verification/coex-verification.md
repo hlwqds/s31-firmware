@@ -16,8 +16,15 @@
 | C2 接线：开 `-Dcoex` 的镜像 | L2 | BLE 闭包、BLE 探针、Wi-Fi 探针三种镜像链接通过，恰好两段，无孤儿段 | §4.3 |
 | C2 接线：关 `-Dcoex` 的镜像 | L2 | 默认、BLE 闭包、BLE 探针、Wi-Fi 探针四种镜像与改动前逐字节相同 | §4.2 |
 | C2 真核心上板（BLE 探针） | L3 | 参数指针非零、两行版本、适配表被收下、两个 BLE 回调都登记；与非 coex 对照走到同一处 | §4.4 |
-| C2 真核心上板（Wi-Fi 探针） | L3 | 共存库自己打出两行版本、`wifiInit rc=0`、`INIT OK`；随后的 panic 来自探针写死的地址，对照在同一处也 panic | §4.5 |
-| C3 及以后（运行时统一、窗口与分区、合并镜像） | — | 未开始 | §5 |
+| C2 真核心上板（Wi-Fi 探针） | L3 | 共存库自己打出两行版本、`wifiInit rc=0`、`INIT OK`；随后的 panic 来自探针写死的地址，对照在同一处也 panic | §4.5；更正见 §9.2 |
+| C3 冲突面 | L2 | 两棵树同链一共 12 个符号撞名（Zig 层 6、链接器层 6），未定义 0 | §6.1 |
+| C3 提供者统一 | L2 | 按规则定出每个符号留谁（落选方改弱符号）之后，合并镜像链接通过：恰好两段，重复 0，未定义 0 | §6.2 |
+| C4 合并镜像上板 | L3 | 8/8 段通过、`main: verdict=pass`；`esp_wifi_init_internal rc=0`、`bringup.init rc=0`；`wifi=inited ble=inited rej=0` | §7.1 |
+| C4 窗口扩大 | L2 / L3 | 默认镜像只有重定位差异；新 drom 基址下 8/8；irom、drom 的新上限各有一次实板证明 | §7.2–§7.4 |
+| C4 分区表 | — | 没有改：init 级的合并镜像 1 117 376 B，装得下现有 factory 分区 | §7.5 |
+| Wi-Fi 侧 `_coex_enable` | L3 | blob 调了它，核心回 `rc=0`，Wi-Fi 侧变成 `enabled` | §9.1 |
+| C5 PHY 与时钟域的归属模型 | L1 | `radio-coex/src/owner.zig` 10 项主机用例全过；**寄存器序列没有接** | §8 |
+| 探针镜像回归 | L3 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start` | §6.5 |
 | 共存的真实效果（L4） | L4 | 没有任何证据：两个射频都没有端到端跑通 | — |
 
 ## 2. C0 调研与设计（2026-11-24）
@@ -274,9 +281,13 @@ const clearStatus = @as(*const fn (u32) callconv(.c) usize, @ptrFromInt(0x2f005b
 | `esp_wifi_init_internal rc` | 0 | 0 |
 | `g_coex_param_ptr` | `0x2f01173c` | `0x00000000` |
 
-对照在同一处也进 trap。这一段是探针的实验代码，对内存布局有硬编码依赖；没有改它。
+对照在同一处也进 trap。**【2026-11-24 更正】**上面"开了共存后 arena 前面多了共存核的分配，那个地址不再是函数"
+这句推断是错的：用带符号表的镜像核对，`0x2f005b0c` 在**关着共存的对照镜像里**同样落在 `ppEnqueueTxDone`
+（`0x2f005ac4`，长 `0x62`）的函数中间，不是任何函数的入口。那是一个从来没成功过的实验调用，与共存无关；
+已删除，探针现在能走到 `esp_wifi_start`（§9）。
 
-因为探针在 start 之前就 panic，blob 的 `wifi_hw_start` 没有跑到，`_coex_enable` 这条路径在板上**没有被执行**（诊断行 `en=0`），Wi-Fi 侧停在 `inited`。
+因为那次 panic，探针在 start 之前就停住，`_coex_enable` 这条路径在**当时**的板上没有被 blob 执行
+（诊断行 `en=0`），Wi-Fi 侧停在 `inited`。现在的结果见 §9.1：已执行、已收下。
 
 ### 4.6 复现命令
 
@@ -328,22 +339,313 @@ Wi-Fi 探针的完整配方此前没有记录在仓库里（只留下了量体�
 - Wi-Fi 侧 OS 钩子（`wifi-blobs/src/coex_hooks.zig`）：`*_from_isr` 即不等待的 take/give，出参 `hptw` 写 false；`_xtal_freq_get` 回常量 40，`_debug_matrix_init` 回 0。
 - `_coex_condition_set` 留空（IDF 也留空）。
 - BLE 侧没有 disable/deinit 的调用点（`bringup` 没有 disable 路径），enable 之后停在 `enabled`；同一次启动里再 init 会被胶水拒绝。
-- `-Dcoex` 目前一次只接一个射频的适配层：两个 blob 同链要等运行时统一（C3），`build.zig` 对此直接报错。
+- `-Dcoex` 一次只接一个射频的适配层，两个 blob 目录同给时 `build.zig` 直接报错。（C3 起另开了
+  `-Dcoex-merged`，见 §6.4；不带它的那条报错还在。）
 - `-Dcoex` 不能与 `-Dwifi`（自检 section）同开：`radio_coex` 的 section 模块与胶水模块不能同时含 `glue.zig`。
 
 ### 4.9 未验证
 
-- 两个射频同时在一个镜像里（C3、C4），以及共存的任何实际效果（L4）。
-- Wi-Fi 侧的 `_coex_enable`：探针在 start 之前 panic，这条路径没有被 blob 执行。
+- 【2026-11-24 更新】两个射频同时在一个镜像里：已在 C3、C4 做到 init 都返回（§6、§7）；共存的任何实际效果
+  （L4）仍然没有证据。
+- 【2026-11-24 更新】Wi-Fi 侧的 `_coex_enable`：已执行、已收下（§9.1）。
 - 18 个 OS 钩子在有争用时的行为：只做了主机测试，板上核只走了"立即拿到锁"的路径。
 - 共存核的硬件定时器（`coex_hw_timer_*`，读 `0x2010F008`）是否在走，没有读回。
 - 回调被核心调用的时刻（使能计数升到 2 / 降回 1）：需要两个射频都开，目前只验证了登记。
 
-## 5. C3 及以后：还没做，以及为什么
+## 5. 总览：C3–C5 做到了哪（2026-11-24）
 
-| 项 | 要动什么 | 现状 |
+| 项 | 结果 | 还差什么 |
 | --- | --- | --- |
-| C3 运行时统一 | 一个调度器、一份 osi、同名的导出各留一份、堆配额、tick 只路由一次、trap 钩子改多槽 | 未开始。两边各有一套探针（`bt-blobs/src/probe.zig` 3945 行、`wifi-blobs/src/init_probe.zig` 1286 行），都带着进行中的实验和对内存布局的硬编码；C0 的合并链接实验没有编译这两层 Zig 代码，冲突面还没有量过 |
-| C4 窗口与分区 | irom 窗口 786 432 B 装不下两个 blob（BLE 探针 + 共存核已用到 777 712 B，Wi-Fi 探针 + 共存核 379 824 B）；factory 与两个 ota 槽要跟着扩 | 未开始。扩窗口本身可以离线验证（链接 + 填料镜像上板），但改分区表会挪动 ota 槽的偏移，A/B 切槽与回滚的九项断言要重跑 |
-| C5 PHY 与时钟域归属 | 启动序列 | 未开始，要等两个射频各自打通 |
+| C3 运行时统一 | 两棵树能链进同一个镜像并上板；冲突面 12 个符号，按规则各留一个提供者 | 设计里的"一个调度器 / 一份 osi / trap 钩子多槽"没有做——量过之后不需要（§6.3） |
+| C4 合并镜像 | 上板 8/8 段通过，两个控制器的 init 都返回 0 | 只做到 init；`esp_wifi_start` 与 BLE enable 仍被 R3.1 / R3.3 的墙挡住 |
+| C4 窗口 | irom、drom 各扩到 `0x1C0000`，drom 基址后移；两侧新上限各有一次实板证明 | 分区表没有改（§7.5） |
+| C5 归属模型 | 纯逻辑模型 + 10 项主机用例 | 寄存器序列没有接（§8） |
 | C6 共存性能 | — | 阻塞：等 R3.1（`MAC_ST`）与 R3.3（synth） |
+
+## 6. C3 运行时统一：两棵树同链
+
+### 6.1 冲突面实测
+
+把 Wi-Fi 侧（`components/wifi-blobs`）与 BLE 侧（`components/bt-blobs`、`components/osal`）的适配层、
+两个 blob 的整闭包、`libcoexist.a` 的 11 个成员放进同一次链接（开 gc，两边各有真实入口）：
+
+| 层 | 结果 |
+| --- | --- |
+| Zig 编译期 | 6 个导出撞名：`s31_coex_log_hook`、`esp_event_handler_register`、`esp_event_handler_unregister`、`putchar`、`puts`、`strtok` |
+| 链接器 | 压掉上面 6 个之后另有 6 个重复符号：`sprintf`、`rtc_clk_xtal_freq_get`、`phy_printf`、`free`、`s31_printf_hook`、`get_phy_version_str`；未定义 0 |
+
+一次走弯的记录：第一次实验报了 334 个重复符号，数字是假的——输入不干净。`/tmp/blobobjs` 里混着量体积桩
+`zz_stubs.o`，而且 `libphy.a` 被链了两遍（Wi-Fi 那边一份归档，BLE 扁平闭包里又有一份 `libphy_*.o`）。
+把输入理成三份互不重叠的集合之后才是上表（§6.6）。
+
+### 6.2 每个符号留谁
+
+规则是「真归档 > 能用的实现 > 计数桩」，落选的一方改成弱符号导出：Zig 用
+`@export(…, .{ .linkage = .weak })`，C 用 `__attribute__((weak))`。两条依据都实测过：两个 `export fn` 同名
+Zig 在编译期就报撞名；一侧弱符号加一侧强符号可以编译，链接时强符号胜出。单独构建任一射频时没有别的
+定义，行为不变。
+
+| 符号 | Wi-Fi 侧原来是什么 | BLE 侧原来是什么 | 留谁（落选方改弱符号） |
+| --- | --- | --- | --- |
+| `esp_event_handler_register` / `_unregister` | `wifi-blobs/src/event_bus.zig`：能用的注册表，Wi-Fi blob 靠它同步派发事件 | `bt-blobs/src/event_bus.zig`：同构的一份，仓库里没有调用者 | Wi-Fi 侧（BLE 侧改弱） |
+| `s31_printf_hook` | `wifi-blobs/src/init_probe.zig`：把驱动的报错打到串口 | `bt-blobs/link/wifi_probe_stubs.c`：丢弃 | Wi-Fi 侧（BLE 桩改弱） |
+| `s31_coex_log_hook` | `init_probe.zig`：`coex> …` | `osal/src/osal.zig`：`bt coex> …` | 只能留一份：Wi-Fi 侧（osal 改弱） |
+| `putchar` / `puts` / `strtok` | `wifi-blobs/src/link_stubs.zig`：只计数 | `bt-blobs/src/libc_glue.zig`：能用的实现 | BLE 侧（Wi-Fi 桩改弱） |
+| `free` | `link_stubs.zig`：只计数，不释放 | `bt-blobs/link/phy_stubs.c`：归还到 BLE arena；不是本 arena 的指针按块头魔数忽略 | BLE 侧（Wi-Fi 桩改弱） |
+| `sprintf` | `link_stubs.zig`：回 0，**不写缓冲区** | `bt-blobs/link/bt_stubs.c`：最小实现 | BLE 侧（Wi-Fi 桩改弱） |
+| `phy_printf` | `link_stubs.zig`：回 0 | `wifi_probe_stubs.c`：格式串转 raw-line | BLE 侧（Wi-Fi 桩改弱） |
+| `rtc_clk_xtal_freq_get` | `link_stubs.zig`：回 0 | `wifi_probe_stubs.c`：回 40 | BLE 侧（Wi-Fi 桩改弱） |
+| `get_phy_version_str` | — | `wifi_probe_stubs.c`：`"s31-probe"` | `libphy.a` 的 `phy_debug.o`（真归档；BLE 桩改弱） |
+| `coexist_printf` | — | `bt-blobs/src/wifi_glue.zig`：只转格式串，变参丢失 | `radio-coex/link/coex_printf_shim.c`：真格式化（改成强定义，BLE 侧改弱） |
+| `puts`（`coex_printf_shim.c` 那份） | 弱定义 | 强定义（`libc_glue.zig`） | 有 BLE 对象时 shim 不再定义它（`-DS31_COEX_NO_PUTS`），避免两个强定义撞名 |
+
+最后一行的效果在 BLE 探针上看得到：共存库自己打的那行版本以前是 `coexist rom version %s`（`%s` 没展开），
+现在是 `coexist rom version cdcf52b`（§6.5）。
+
+改完之后同一个实验：重复 0、未定义 0。
+
+### 6.3 运行时约定
+
+ADR-003 第 2 节列了六项（调度器、osi、导出、堆、tick、trap 钩子）。逐项量过之后：
+
+- **调度器**：两个切换原语（`wifi-blobs/src/sched.zig` 的 `s31_swap_context` 与 `osal/src/sched.zig` 的
+  `bt_swap_context`）机器码完全相同，链接器把它们折到同一个地址；冲突只可能来自**嵌套**——在一方的任务栈上
+  去泵另一方的任务，才会改写对方存的主栈指针。合并镜像把 init 排成「主 → Wi-Fi 任务 → 主 → BLE 任务 → 主」，
+  不嵌套。另加一道保险：BLE 的 init 期间置 `wifi-blobs` 的 `foreign_context`，Wi-Fi 侧的让出点只计数、
+  不切换。板上读数 `wifi idle hook refused on ble stack n=0`：没有触发。**没有合并两个切换器。**
+- **osi**：合并镜像里只有 Wi-Fi 侧的表被注册；`bt-blobs/src` 里那份分叉副本的 `makeTable()` 仍然没有调用点。
+  **没有删它**——探针还在用它的 `setHooks` / `serviceTimers`。
+- **堆**：一个堆按配额切两段（Wi-Fi 前 3/5，其余给 BLE），两边各拿一段去初始化自己的 arena。
+- **tick 与中断**：两边都不开（与各自探针镜像同条件），ISR 入口共用板级的 `trapEntry`。
+- **trap 钩子**：两边占的槽不重叠（Wi-Fi 6 个统计钩子，BLE 5 个诊断钩子）。**没有改成多槽。**
+- **共存核的 OS 钩子**只有一套（Wi-Fi 侧 boot 时登记的）。板上能看到 BLE 的 init 期间核经这套钩子取放信号量
+  （`trace semphr_take a0=0x2f04e170 a1=0xffffffff` 与随后的 `semphr_give`），无争用、立即成功。
+
+两处顺带修掉的东西：
+
+1. **对内存布局写死的地址**。两边的探针实验都带着这种地址，而合并镜像的布局和任何一边的探针镜像都不同。
+   Wi-Fi 侧：`initOnly(.{ .experiments = false })` 关掉探针的实验写（`0x2f013d30` 的 blob 上下文块等）。
+   BLE 侧：`bringup.zig` 加 `layout_probes` 开关，为假时本文件的 MMIO 助手拦截对 `0x2f01_0f00..0x2f01_1200`
+   的访问（写丢弃、读回 0）。核对时发现一件事：`bringup.init` 里注释成「blob 的 lazy-init 槽」的
+   `0x2f011130/1134/1138` 和「`s_is_phy_calibrated`」的 `0x2F01_0F80`，在**现在的 BLE 探针镜像里**就已经落在
+   我们自己的静态数组 `g_phy_cal_buf` 里（`nm`：`g_phy_cal_buf` 在 `0x2f010c00`，真正的 `s_is_phy_calibrated`
+   在 `_bss_start = 0x2f010a00`）。也就是说这些读写今天都是空操作，探针照样走到 INITED；而合并镜像里同样的
+   数值会落进 `.iram_blobs` 的代码中间。
+2. **日志钩子的代码地址门**。`osal.logLine` 只放行落在可执行区的钩子，而"可执行区"写死成
+   `0x4000_0020 .. 0x400A_0300`（某一次构建的实测值）。合并镜像的 text 到 `0x400c99b0`，排到上界之外的
+   日志钩子会被整段丢弃且不报错。改成用链接脚本的 `_text_start` / `_text_end`。
+
+### 6.4 构建开关与入口
+
+- `firmware/build.zig` 新增 `-Dcoex-merged`：要求 `-Dcoex` 与两个 blob 目录，不能与 `-Dwifi-init-probe` /
+  `-Dbt-probe` 同开。入口不变（照常跑各段自检），只在末尾多一个 `coex_merged` section
+  （`firmware/src/coex_merged.zig`）。
+- Wi-Fi 侧：init 那一段从探针的 `run()` 里抽出成 `init_probe.initOnly(opts)`，到 `INIT OK` 返回；探针的 `run()`
+  调完它再接自己的实验。BLE 侧：新增 `probe.initOnly(region)`，只做 `bringup.init` 需要的前置（钩子、时基、堆），
+  不带探针的实验装置；共存核不在这里 boot。
+- 修了一个重复：`wifi-blobs/src/printf_shim.c` 在"两个目录都给"时会被加进链接两次（两个分支各加一次）。
+
+### 6.5 探针镜像回归
+
+两个探针是"已知正常态"的参照，改完必须还走得通：
+
+| 探针 | 改动前 | 改动后 | 日志 |
+| --- | --- | --- | --- |
+| BLE + 共存核 | `INITED` → `ble=enabled` → `sendReadVersion rc=0`、`sendReset rc=0`、`readBdAddr rc=0` → 停在 `ble_hw.c:506` | 同一条路径，同样的里程碑 | `logs/coex-ble-probe-c3-boot.log` |
+| Wi-Fi + 共存核 | `INIT OK` 之后 panic | `INIT OK` 之后继续走到 `esp_wifi_start`（§9） | `logs/coex-wifi-probe-start-boot.log` |
+
+BLE 探针的 SRAM 布局读数与改动前相同（`param=0x2f00ffe4`、`arena free=274464 B`），说明 SRAM 侧没有挪动。
+
+### 6.6 复现命令
+
+三份互不重叠的对象集合（2026-11-24 配好）：
+
+| 目录 | 个数 | 内容 |
+| --- | --- | --- |
+| `/tmp/merged-wifi-objs` | 143 | `libcore` / `libpp` / `libnet80211` 的 105 个 + `libphy` 21 个 + `libmesh` 15 个 + `libespnow` 2 个；**不含** `zz_stubs.o` |
+| `/tmp/merged-bt-objs` | 102 | BLE 闭包扁平对象去掉 14 个 `libphy_*`（`libphy` 只从 Wi-Fi 那份链一遍；两边成员逐字节相同） |
+| `/tmp/coex-objs` | 11 | `libcoexist.a` |
+
+```bash
+cd firmware
+IDF=~/esp/bt-ctl-oracle/build/esp-idf
+PHY3="$IDF/esp_phy/CMakeFiles/__idf_esp_phy.dir/src/phy_init.c.obj,$IDF/esp_phy/CMakeFiles/__idf_esp_phy.dir/src/phy_common.c.obj,$IDF/esp_phy/CMakeFiles/__idf_esp_phy.dir/src/btbb_init.c.obj"
+env -u LD_LIBRARY_PATH /tmp/bin/zig build -Dtarget=riscv32-freestanding-eabihf \
+  -Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei -Doptimize=ReleaseSmall \
+  -Dcoex-merged=true -Dcoex=true -Dcoex-objs="$(ls /tmp/coex-objs/*.o | paste -sd,)" -Dkeep-symbols=true \
+  -Dwifi-blob-dir=/tmp/merged-wifi-objs -Dwifi-blob-objs="$(ls /tmp/merged-wifi-objs | paste -sd,)" \
+  -Dbt-blob-dir=/tmp/merged-bt-objs -Dbt-blob-objs="$(cat /tmp/merged-bt-objs/objs.csv | paste -sd,)" \
+  -Dphy-src-objs="$PHY3"
+```
+
+PHY 源对象取 BLE 探针配方的 3 个；`modem_clock` 一类由 `bt-blobs/link/modem_clock_light.c` 的轻量替身提供。
+烧录用 `firmware/tools/flash.sh`（带读回校验），抓 45 秒。
+
+## 7. C4 合并镜像与窗口
+
+### 7.1 合并镜像上板
+
+在最终代码树上重跑（2026-11-24 第二次，`logs/coex-merged-boot.log`，483 行）。第一次（07:33）的日志抓在「读两行 `LPCON+0x18`」的代码加进源码之前，留作 `logs/coex-merged-run1-boot.log`；两次的里程碑相同。
+
+```text
+coex-merged: heap total=167456 B wifi=100473 B ble=66983 B
+coex[boot]: booted=true wifi=idle ble=idle param=0x2f01a5d4 coa=0x2f0218f4 table=0x2f0218f4 rej=0
+coex> coex firmware version: a830d28
+coex> coexist rom version cdcf52b
+coex[init]: booted=true wifi=inited ble=idle param=0x2f01a5d4 coa=0x2f0218f4 table=0x2f0218f4 rej=0
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: INIT OK, arena free=62152/100456 B, bad_handle=0, blocking_refused=4
+read: LPCON+18 after wifi init=0x00000003
+check: wifi esp_wifi_init_internal rc=0 ok=1
+bt bringup: INITED
+bt init-only: bringup.init rc=0 arena free=28552 B
+read: LPCON+18 after ble init=0x0000000f (bit0 wifipwr / bit1 coex / bit2 i2c_mst)
+check: ble bringup.init rc=0 ok=1
+coex[merged]: booted=true wifi=inited ble=inited param=0x2f01a5d4 coa=0x2f0218f4 table=0x2f0218f4 rej=0
+check: coex sides wifi=inited ble=inited (both inited) ok=1
+check: coex rejected calls=0 ok=1
+check: wifi idle hook refused on ble stack n=0 ok=1
+checks: passed=6 failed=0 total=6
+firmware: sections: passed=8 failed=0 total=8
+main: verdict=pass
+```
+
+| 判据 | 读数 |
+| --- | --- |
+| 两个控制器的 init 都返回 | `esp_wifi_init_internal rc=0`、`bringup.init rc=0` |
+| 共存核两侧 | `wifi=inited ble=inited`，`rej=0` |
+| 合并 section | 6/6；整镜像 8/8 段、`main: verdict=pass`（聚合行不计 `coex_merged`） |
+| 异常 | 整份日志里没有 panic、trap 行 |
+
+**`LPCON+0x18`（`MODEM_LPCON_CLK_CONF_REG`）的两行读数**，给 ADR-003 第 4 节的归属模型留的对照。位定义取自 IDF 的 `soc/esp32s31/include/modem/modem_lpcon_reg.h`：bit0 `WIFIPWR_EN`、bit1 `COEX_EN`、bit2 `I2C_MST_EN`、bit3 `LP_TIMER_EN`。
+
+| 时点 | 读数 | 置位的位 |
+| --- | --- | --- |
+| Wi-Fi init 之前（探针按 IDF 对正） | `0x4 → 0x1` | 只留 wifipwr |
+| Wi-Fi init 之后 | `0x3` | wifipwr、coex（共存核在 Wi-Fi init 期间置上） |
+| BLE init 之后 | `0xF` | 再加 i2c_mst（BLE 的 PHY）与 lp_timer（BLE 的 LP 定时器时钟） |
+
+这与第 8 节里按 IDF 实测写进用例的 `0x1 → 0x7 → 0x1` 不是同一条序列：本镜像里共存时钟在 Wi-Fi init 时置上之后一直留着，BLE 侧多置了 lp_timer。它只是读数——归属模型没有接到任何启动路径上（第 8 节）。
+
+### 7.2 占用
+
+取自同一次构建（`readelf -S -W app.elf`、`esptool image-info`）：
+
+| 量 | 值 |
+| --- | --- |
+| `.flash.text` | 826 960 B（旧 irom 窗口 786 432 B 装不下） |
+| `.flash.rodata` | 156 656 B（旧 drom 窗口 720 896 B 装得下） |
+| `.iram_blobs` | 100 208 B |
+| `.data` / `.bss` | 35 984 B / 168 832 B |
+| 堆（`_heap_start.._heap_end`） | 167 456 B：Wi-Fi 100 473 B，BLE 66 983 B |
+| init 之后各侧余量 | Wi-Fi 62 152 B（arena 100 456 B），BLE 28 552 B |
+| `app.bin` | 1 120 464 B（factory 分区 1 536 000 B，余 415 536 B） |
+| `image-info` | 恰好两行 `DROM, IROM`：IROM `0xc9e50` @ `0x40000020`，DROM `0x263f0` @ `0x401d0020` |
+
+第一次上板时的占用（07:33 的构建，`bt-blobs` 的 HCI 一致性自检并入之前）：`.flash.text` 825 744 B、`.flash.rodata` 154 800 B、`app.bin` 1 117 376 B。第 7.4 节 irom 新上限的证明引用的是这一次的 825 744 B，现在的 826 960 B 同样超过旧上限。
+
+### 7.3 默认镜像：只有重定位
+
+drom 基址后移之后 `app.bin` 不可能逐字节相同。能证明、也该证明的是「除了重定位什么都没变」。
+基线是改动前的提交 `4f47fdf`（`git worktree` 检出），两边用同样的参数构建默认镜像（boot + net）：
+
+| 段 | 结果 |
+| --- | --- |
+| `.flash.text` | 地址与大小相同（145 968 B）。反汇编逐条比较（`objdump -d`）：两边都是 48 062 条指令，地址、长度、助记符零差异；1 903 处 `lui` + `addi` 合成的 32 位常量全部等于「旧 rodata 地址 + `0xD0000`」，另 2 处单独的 `lui` 立即数也恰好差 `0xD0000` |
+| `.flash.rodata` | 基址 `0x40100020` → `0x401d0020`，大小相同（46 800 B）。971 个不同的字节分两类：111 个字是指向旧 rodata 的指针（各 +`0xD0000`），860 个字是 text 与 rodata 之间的相对偏移（各 −`0xD0000`）；没有未解释的差异 |
+| `.trap_ram`、`.data` | 逐字节相同，地址不变 |
+| `.bss`、`.btdm_bss`、`.phy_cal_buf`、`.btdm_data` | 大小与地址不变 |
+| 板级 | `run_e2e.py --board --profile net` → `PASS board:net`，8/8 段、`main: verdict=pass`；DROM 段落在 `0x401d0020`（`logs/e2e-net-boot.log`） |
+
+### 7.4 新上限的板级证明
+
+| 段 | 镜像 | 段长 | 旧上限 | 结果 |
+| --- | --- | --- | --- | --- |
+| irom | 合并镜像（§7.1） | 825 744 B | 786 432 B | 8/8 段通过 |
+| drom | 默认镜像 + `-Dfat-rodata=1000000` | 1 046 816 B | 720 896 B | 8/8 段通过、`main: verdict=pass`（`logs/fat-rodata-1000000-boot.log`；`app.bin` 1 243 504 B） |
+
+### 7.5 分区表没有改
+
+ADR-003 第 3 节原计划把 factory 与两个 ota 槽扩到 4 MB 级，理由是"合并镜像也超过 factory 分区（1.5 MB）"。
+实测不成立：init 级的合并镜像 1 117 376 B，离 factory 上限还差约 41 万字节。而挪动 `ota_0` / `ota_1` /
+`otadata` 的偏移会让已提交的 A/B 证据失效，并牵动 `scripts/demo-board.sh` 等脚本。所以这次只扩了链接窗口，
+分区表原样不动。等真有一个装不下的镜像（两个 blob + TLS + 应用同链）时再扩，届时连同 A/B 切槽与回滚的断言一起重跑。
+
+## 8. C5 归属模型（只有主机验证）
+
+`components/radio-coex/src/owner.zig`，依据是 IDF 的 `esp_phy_enable` / `esp_phy_disable`
+（`esp_phy/src/phy_init.c:324`、`:408`）：第一个使用者才开 PHY 的公共部分，最后一个离开才关；共存时钟
+`PERIPH_COEX_MODULE` 是 BT / Wi-Fi 模块时钟的依赖项，随模块一起计数。
+
+- `Owner.acquire / release(side)` 返回一串要串行执行的动作；公共部分只随首个与末个使用者各动一次。
+- `ClockBits`：多个使用者共享一组时钟使能位，一侧放弃只撤自己的位。
+
+```sh
+cd components/radio-coex && env -u LD_LIBRARY_PATH /tmp/bin/zig test src/host_tests.zig   # All 55 tests passed.
+```
+
+55 = 胶水原有 45 项 + 归属模型 10 项。10 项覆盖：两个使用者的进出顺序（两种次序）、中间使用者离开不动公共部分、
+全部离开后再请求公共部分重走一遍、重复请求与无请求的放弃被拒且不改状态、200 步随机序列里公共部分的开 / 关次数
+等于使用者数跨越 0 的次数、位图的并与撤、`LPCON+0x18` 按 IDF 实测的 `0x1 → 0x7 → 0x1` 走。
+
+**没有做的**：寄存器序列。模型不碰硬件，也没有接到任何镜像的启动路径上。按 ADR-003 §4 原定的口径，
+具体序列要等两个射频各自打通后才能上板验证。
+
+## 9. Wi-Fi 侧的 `_coex_enable`
+
+### 9.1 证据
+
+Wi-Fi 探针开 `-Dcoex`（`logs/coex-wifi-probe-start-boot.log`）：
+
+```text
+wifi-init-probe: INIT OK, arena free=261360/299664 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0
+coex> _coex_enable called by blob
+coex> coex_enable_wrapper returned rc=0 wifi=enabled ble=idle rej=0
+wifi-init-probe: trace wifi_reset_mac a0=0x00000000 a1=0x00000000
+…
+NMI n=5000 mepc=0x2f009cbe … a4=0000e000 a5=0000e000
+```
+
+| 判据 | 读数 |
+| --- | --- |
+| blob 调了 `_coex_enable` | `coex> _coex_enable called by blob` |
+| 核心收下 | `returned rc=0 wifi=enabled ble=idle rej=0` |
+| 之后 | 探针停在已知的 R3.1 墙：PC 采样钉在 `0x2f009cb6 / 0x2f009cbe`，掩码 `0xE000` 的 MAC 忙位 |
+
+那两行 `coex>` 是胶水的 `on_enter` / `on_leave` 回调打的（`init_probe.zig` 的 `coexBoot()` 登记）。
+`esp_wifi_start` 不返回，事后的诊断行打不出来，所以只能靠入口与返回处的即时痕迹。
+
+### 9.2 对 §4.5 的更正
+
+§4.5 把 `INIT OK` 之后的 panic 归因于「开共存后 arena 前面多了共存核的分配，`0x2f005b0c` 不再是函数」。
+这个归因是错的。用带符号表的关共存探针镜像核对（`nm -S -n`）：
+
+```text
+2f005ac4 00000062 T ppEnqueueTxDone
+```
+
+`0x2f005b0c` 落在 `ppEnqueueTxDone` 的函数中间（起址 + `0x48`），不是任何函数的入口——所以对照镜像在同一处
+同样 panic（§4.5 表里的 code 7）。那是一个从来没成功过的实验调用，与共存无关。已删除。
+
+## 10. 实现偏离与未验证
+
+偏离（相对 ADR-003 的设计）：
+
+- 没有合并两个上下文切换器，没有删除 `bt-blobs/src` 的 osi 副本，没有把 trap 钩子改成多槽；同名导出用弱符号
+  定提供者而不是合并实现。依据见 §6.3。
+- 分区表没有改（§7.5）。
+- 归属模型只有主机验证，寄存器序列未接（§8）。
+- `coexist_printf` 的提供者从「BLE 侧的 Zig 导出」换成了 C shim（真格式化）；BLE 探针里共存库的日志因此变了样。
+- `osal.logLine` 的可执行区判定从写死的地址范围换成链接符号。
+
+未验证：
+
+- 合并镜像里 `esp_wifi_start` 与 BLE enable 都没有跑（各自被 R3.1 / R3.3 的墙挡着）；两个控制器**同时工作**没有任何证据。
+- 18 个 OS 钩子在有争用时的行为：主机测试之外，板上核只走了"立即拿到锁"的路径；外来上下文保护在板上没有触发过
+  （`n=0`），所以它管不管用只有主机侧的推理。
+- 共存核的硬件定时器（`coex_hw_timer_*`）是否在走，没有读回。
+- BLE 的两个回调被核心调用的时刻：需要两个射频都开，目前只验证了登记。
+- Wi-Fi enable 之后的核心行为：`_coex_enable` 之后 blob 有没有再调 `coex_wifi_request` 一类的钩子，没有观测到。
+- 共存的真实效果（L4）：没有任何证据。

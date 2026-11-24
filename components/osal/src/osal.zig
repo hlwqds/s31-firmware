@@ -112,22 +112,29 @@ pub const pool_caps = struct {
 /// 灌满后写入器按设计丢弃 ⇒ 既有日志被冲掉，也拖慢归档本身。
 pub var trace_hooks: bool = false;
 
+/// 镜像里 `.flash.text` 的范围，由链接脚本（`boards/esp32s31-coreboard/linker/s31.ld`）的
+/// `_text_start` / `_text_end` 给出。以前这里写死成 `0x4000_0020 .. 0x400A_0300`（某一次构建的
+/// 实测值）：镜像一大，排到上界之外的日志钩子就被整段丢弃，而且不报错。主机测试里没有这两个
+/// 符号，那种目标上不做范围检查（只排除空指针）。
+extern const _text_start: u8;
+extern const _text_end: u8;
+
 pub fn logLine(comptime fmt: []const u8, args: anytype) void {
     if (comptime std.mem.startsWith(u8, fmt, "bt hook: ")) {
         if (!trace_hooks) return;
     }
     const f = hooks.log orelse return;
-    // **钩子指针合法性检查**：不在可执行区（IRAM 0x400xxxxx / flash 0x42xxxxxx–0x48xxxxxx）
-    // 就直接丢弃 —— 防止归档把 hooks 结构体写坏后调用到垃圾地址
-    // （本会话的崩溃正是 `ra = mepc+1` 的间接调用形态）。
+    // **钩子指针合法性检查**：不在可执行区（`.flash.text` / ROM）就直接丢弃 —— 防止归档把
+    // hooks 结构体写坏后调用到垃圾地址（本会话的崩溃正是 `ra = mepc+1` 的间接调用形态）。
     {
-        // **真实代码范围**（由 app.elf 实测）：
-        //   .flash.text = 0x4000_0020 .. 0x400A_0300
-        //   ROM          = 0x2f80_0000 .. 0x2f85_0000
+        // ROM = 0x2f80_0000 .. 0x2f85_0000。
         // 之前用 [0x40000000,0x50000000) 是**空操作** —— 观测到的垃圾
         // 0x4859e894 / 0x4c5de8d4 正好落在里面，所以那次测试不具决定性。
         const p = @intFromPtr(f);
-        const in_text = (p >= 0x4000_0020 and p < 0x400A_0300);
+        const in_text = if (comptime @import("builtin").target.os.tag == .freestanding)
+            (p >= @intFromPtr(&_text_start) and p < @intFromPtr(&_text_end))
+        else
+            p != 0;
         const in_rom = (p >= 0x2f80_0000 and p < 0x2f85_0000);
         if (!in_text and !in_rom) return;
     }
@@ -2117,13 +2124,19 @@ const CoexOnly = struct {
     export fn wr_btdm_coex_iso_start_int_handle(handle: u16, duration: u32) callconv(.c) void {
         return radio_coex.ble.wr_btdm_coex_iso_start_int_handle(handle, duration);
     }
-    export fn s31_coex_log_hook(msg: [*:0]const u8) callconv(.c) void {
+    pub fn s31_coex_log_hook(msg: [*:0]const u8) callconv(.c) void {
         logLine("bt coex> {s}", .{std.mem.span(msg)});
     }
 };
 
 comptime {
     if (coex_gate.enabled) _ = CoexOnly;
+}
+// 合并镜像里（两个射频的适配层同链，`-Dcoex-merged`）共存库的日志行以 Wi-Fi 侧的钩子为准
+// （`wifi-blobs/src/init_probe.zig`）。这里以弱符号导出：有强定义时让位，单独的 BLE 构建里
+// 没有别的定义，行为不变。
+comptime {
+    if (coex_gate.enabled) @export(&CoexOnly.s31_coex_log_hook, .{ .name = "s31_coex_log_hook", .linkage = .weak });
 }
 
 test "coex: 状态位图可置可清，未开共存时按 IDF 的返回值作答" {

@@ -1,0 +1,453 @@
+€0±½­reþESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=c2610h (796176) map
+I (242) esp_image: segment 1: paddr=000d2638 vaddr=2e000600 size=003c8h (   968) load
+I (244) esp_image: segment 2: paddr=000d2a08 vaddr=2f000800 size=00214h (   532) load
+I (247) esp_image: segment 3: paddr=000d2c24 vaddr=2f000a20 size=0d3f4h ( 54260) load
+I (265) esp_image: segment 4: paddr=000e0020 vaddr=401d0020 size=1a9f0h (109040) map
+I (284) esp_image: segment 5: paddr=000faa18 vaddr=2f00de14 size=02bbch ( 11196) load
+I (292) boot: Loaded app from partition at offset 0x10000
+I (292) boot: Disabling RNG early entropy source...
+bt probe: hooks installed (now_ms=us/1000)
+bt probe: timer 4 -> 10 (must increase)
+bt probe: irqs OFF (control run)
+A305K
+bt probe: init start
+bt probe: rtc chk c1=0x00003e54 c2=0x0000a936 d=27362 t_lo=0x0004d9a4 t_en=00000000 ena=90000000 date=02508050
+F00=00000000 F04=00000000 F08=00000000 F12=00000000 F16=00000000 F20=00000000 F24=00000004 F28=00000004 
+clkrst+0x000 = 0x00000001
+clkrst+0x004 = 0x00000003
+clkrst+0x010 = 0x00000001
+clkrst+0x01c = 0x00000003
+clkrst+0x020 = 0x00000004
+clkrst+0x024 = 0x00000003
+clkrst+0x028 = 0x00000003
+clkrst+0x034 = 0x00000001
+clkrst+0x038 = 0x000156db
+clkrst+0x03c = 0x0000000f
+clkrst+0x040 = 0x00000001
+clkrst+0x044 = 0x0000000f
+clkrst+0x048 = 0x00000011
+clkrst+0x058 = 0x00415555
+clkrst+0x05c = 0x00000005
+clkrst+0x064 = 0x00000ba1
+clkrst+0x068 = 0x00000181
+clkrst+0x06c = 0x00800043
+clkrst+0x070 = 0x00800043
+clkrst+0x078 = 0x00000001
+clkrst+0x07c = 0x00000001
+clkrst+0x080 = 0x00000001
+clkrst+0x088 = 0x00000083
+clkrst+0x08c = 0x00000083
+clkrst+0x090 = 0x00000083
+clkrst+0x094 = 0x00000083
+clkrst+0x0a8 = 0x00000040
+clkrst+0x0d8 = 0x00000001
+clkrst+0x114 = 0x00000921
+clkrst+0x118 = 0x00000011
+clkrst+0x11c = 0x00000921
+clkrst+0x134 = 0x00000001
+clkrst+0x144 = 0x00000001
+clkrst+0x15c = 0x00000011
+clkrst+0x160 = 0x00001011
+clkrst+0x164 = 0x00001011
+clkrst+0x168 = 0x0000012c
+clkrst+0x16c = 0x0000001a
+clkrst+0x170 = 0x00000002
+clkrst+0x174 = 0x0000004d
+clkrst+0x17c = 0x00000101
+clkrst+0x180 = 0x00000102
+clkrst+0x184 = 0x00000103
+clkrst+0x188 = 0x00000505
+clkrst+0x18c = 0x00000107
+clkrst+0x190 = 0x00000117
+clkrst+0x194 = 0x00000105
+clkrst+0x198 = 0x0000010b
+clkrst+0x1a0 = 0x000003ff
+clkrst+0x1a4 = 0x000003ff
+clkrst+0x1a8 = 0x000003ff
+clkrst+0x1b0 = 0x00000001
+clkrst+0x1cc = 0x00000001
+clkrst+0x1d0 = 0x00000001
+clkrst+0x1d8 = 0x00000001
+clkrst+0x1dc = 0x00000001
+clkrst+0x1e0 = 0x00000025
+clkrst+0x1e8 = 0x00000107
+clkrst+0x1ec = 0x0000000c
+clkrst+0x1f0 = 0x00000004
+clkrst+0x1f4 = 0x00000004
+clkrst+0x1f8 = 0x00000001
+clkrst+0x1fc = 0x02509110
+FE800=1
+bt coex> coexist rom version cdcf52b
+coex[boot]: booted=true wifi=idle ble=idle param=0x2f00ffe4 rej=0
+coex[boot]: fw=2.0.0 rom=cdcf52b coa=0x2f010480 table=0x2f010480
+coex[boot]: cb0=0x0 cb1=0x0 st+=0 st-=0 regb=0 rgbl=0 chg=0 ini=0 en=0
+ARM0 cpu=40000000 ram=40000000 intr=40000000 ba=2e000080
+bbbt bbbbbt bribt bribt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 lpcon=0x00000006
+bt lp: gates conf_bbbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbbt bringup: enter step 52 init_phy
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0 cal[10..14]=0x23feff fe_readable=1 fe=0x5ac968f1
+bt bringup: PHY enabled AFTER step 5 (idf order)
+bt bringup: task list head init *(0x2f011130)=0x00000000
+bt bringup: env btbt briarch: sched 107C writeback=0x00000000
+Q1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 70 63
+Q5 200 4947 0 126
+ZU 122->4,4 spins=36713 cc=3000000
+A0/309152
+
+M0 56 0x2f02aa10
+
+M1 2244 0x2f02aa58
+
+M2 132 0x2f02b330
+
+M3 820 0x2f02b3c8
+
+M4 80 0x2f02b710
+
+M5 64 0x2f02b770
+
+M6 76 0x2f02b7c0
+
+MC 7 sz=76 ret=0x2f02b7c0
+
+CN 0x2f02aa48 0x8d8 28
+
+D70.3
+
+Mosal> eventqInit
+
+Msched 107C writeback=0x0
+
+Msched 1254 writeback=0x8
+
+bbbbbbt btbbbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 87 78
+Q5 206 5033 0 126
+ZU 122->4,4 spins=36785 cc=3000000
+A0/306336
+
+M0 56 0x2f02aa10
+
+M1 2244 0x2f02aa58
+
+M2 132 0x2f02b330
+
+M3 820 0x2f02b3c8
+
+M4 80 0x2f02b710
+
+M5 64 0x2f02b770
+
+M6 76 0x2f02b7c0
+
+M7 8 0x2f02b820
+
+MC 21 sz=8 ret=0x2f02c300
+
+CN 0x2f02aa48 0x8d8 84
+
+D87.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+bt bbt osbtbbbt bringup: bbt ret: bbt bringbt brinbt probe: cb10 head oob=0x00000000
+bt probe: sched slot after step10 = 0x00000000
+bt probe: rtc_freq oob @1044 ptr=0x000000bt bringup: public addbbt probbbt bringup: load_cal done (pre-mce13-uart-window)
+bt hci: transport ready (own ops, no VHCI ring)
+bt bringup: INITED
+ARM1 cpu=40000000 ram=40000000 intr=40000000 ba=2e000080
+REARM BOOTADDR=0x2e000080 (æœŸæœ› 0x2E000080)
+coex[init]: booted=true wifi=idle ble=inited param=0x2f00ffe4 rej=0
+coex[init]: fw=2.0.0 rom=cdcf52b coa=0x2f010480 table=0x2f010480
+coex[init]: cb0=0x4004dac0 cb1=0x4004daee st+=0 st-=0 regb=0 rgbl=2 chg=0 ini=1 en=0
+SLPFIX-early w5=0 w6=0 w8=0 sleep_en=0 (all disabled)
+bt probe: arena free=274272 B
+bt bringup: enable-phase esp_phy_enable(2)
+bt bringup: calling esp_btbb_enable
+Jul 14 2026
+bt bringup: esp_btbb_enable done
+bt pbbt probebbt bringup:bt brinbt probbbt callbbt bbbbt schbtbtbbbbbt bcoex[enable]: booted=true wifi=idle ble=enabled param=0x2f00ffe4 rej=0
+coex[enable]: fw=2.0.0 rom=cdcf52b coa=0x2f010480 table=0x2f010480
+coex[enable]: cb0=0x4004dac0 cb1=0x4004dHIST[0] ticks=2000 fe=175 blob=242(last 0x2f80e8d6) main=1582(last 0x4008656e) other=1 tim=0/0 fn=0x00000000
+aee st+=0 st-=0 regb=1 rgbl=2 chg=0 ini=1 en=1
+bbbbt hci << EVT cobbbbbbtbbbbbbbbbbt call: eventq_get
+bt probe: A(rx) sendReadVersion rc=0 stats cmds=3 evt=4
+bt hci >> CMD opcode=0x0c03 plen=0
+bt call: eventq_get
+bt probe: A2(rx) sendReset rc=0 btdm_tx=2
+bt hci >> CMD opcode=0x1009 plen=0
+bt call: eventq_get
+bt probe: A4(rx) readBdAddr rc=0 btdm_tx=3
+bt hci >> CMD opcode=0x1001 plen=0
+bt call: eventq_get
+check: hci read_local_version read_local_version ncmd=8 hci=unknown lmp=unknown co=Espressif hsub=0x0000 lsub=0x0000 ok=1
+bbt call: eventq_get
+check: hci read_supported_cmds read_supported_cmds ncmd=8 bits=126 rfu=0 ok=1
+read: hci supported_commands[0..15]=20000000004000000000e00000002822
+read: hci supported_commands[16..31]=000000000000000000f7ffff7f000000
+read: hci supported_commands[32..47]=00f0f9ffffffff07e0e3fffffb1fe403
+read: hci supported_commands[48..63]=00000000000000000000000000000000
+bt call: eventq_get
+check: hci read_local_features read_local_features ncmd=8 bits=2 rfu=0 ok=1
+bt hci >> CMD opcode=0x1004 plbt call: eventq_get
+read: hci read_ext_features_p0 reply via btdm pkt_type=4 n=16 raw=0e0e0804100000020000000060
+check: hci read_ext_features_p0 excluded_but_supported detail=0 ok=0
+bt call: eventq_get
+check: hci read_buffer_size not supported (status=0x01) class=excluded ok=1
+bt hci >> CMD opcode=0x1009 pbt call: eventq_get
+check: hci read_bd_addr read_bd_addr ncmd=8 addr=01:BB:00:00:00:02 ok=1
+bt hci >> CMD opcode=0x100a plen=bt call: eventq_get
+check: hci read_data_block_size not supported (status=0x01) class=excluded ok=1
+bt hci >> CMD opcode=0x1bt call: eventq_get
+read: hci read_codecs_v1 reply via btdm pkt_type=4 n=8 raw=0e06080b10000000
+HIST[0] ticks=4000 fe=175 blob=243(last 0x2f007b42) main=3581(last 0x40086542) other=1 tim=0/0 fn=0x00000000
+check: hci read_codecs_v1 excluded_but_supported detail=0 ok=0
+bt call: eventq_get
+check: hci read_sp_options not supported (status=0x01) class=excluded ok=1
+bt hci >> CMD opcode=0x100d pbt call: eventq_get
+check: hci read_codecs_v2 read_codecs_v2 ncmd=8 std=0 vend=0 ok=1
+bt hci >> CMD opcode=0x1801 plen=0
+bt call: eventq_get
+check: hci read_loopback_mode not supported (status=0x01) class=excluded ok=1
+bt hci >> CMD opcode=0x200bt call: eventq_get
+check: hci le_read_buffer_size le_read_buffer_size ncmd=8 acl=517 n=10 ok=1
+bt hci >> CMD opcode=0x2003 pbt call: eventq_get
+check: hci le_read_features le_read_features ncmd=8 bits=35 rfu=0 ok=1
+bt hci >> CMD opcode=0x2007 plen=0
+bt call: eventq_get
+check: hci le_read_adv_tx_power le_read_adv_tx_power ncmd=8 dBm=0 ok=1
+bt hci >> CMD opcode=0x200f plen=0bt call: eventq_get
+check: hci le_read_fal_size le_read_fal_size ncmd=8 n=12 ok=1
+bt hci >> CMD opcode=0x201c plen=0
+bt call: eventq_get
+check: hci le_read_states le_read_states ncmd=8 bits=42 rfu=0 ok=1
+bt hci >> CMD opcode=0x2023 plen=0
+bt call: eventq_get
+check: hci le_read_default_dl le_read_default_dl ncmd=8 oct=27 us=328 ok=1
+bt hci >> CMD opcode=0x202a plebt call: eventq_get
+check: hci le_read_rsl_size le_read_rsl_size ncmd=8 n=4 ok=1
+bt hci >> CMD opcode=0x202f plen=0
+bt call: eventq_get
+check: hci le_read_max_dl le_read_max_dl ncmd=8 txo=251 txus=17040 rxo=251 rxus=17040 ok=1
+bt hci >> CMD obt call: eventq_get
+read: hci le_read_max_adv_len reply via btdm pkt_type=4 n=6 raw=0e04083a200c
+check: hci le_read_max_adv_len status_nonzero detail=12 ok=0
+bt call: eventq_get
+read: hci le_read_adv_sets reply via btdm pkt_type=4 n=6 raw=0e04083b200c
+check: hci le_read_adv_sets status_nonzero detail=12 ok=0
+bt call: eventq_get
+read: hci le_read_pal_size reply via btdm pkt_type=4 n=6 raw=0e04084a200c
+check: hci le_read_pal_size status_nonzero detail=12 ok=0
+bt call: eventq_get
+check: hci le_read_tx_power le_read_tx_power ncmd=8 min=-15 max=20 ok=1
+bt hci >> CMD opcode=0x204c plen=bt call: eventq_get
+check: hci le_read_rf_comp le_read_rf_comp ncmd=8 txdB=0.0 rxdB=0.0 ok=1
+bt hci >> CMD opcode=0x2058 plenbt call: eventq_get
+read: hci le_read_antenna reply via btdm pkt_type=4 n=6 raw=0e040858200c
+check: hci le_read_antenna status_nonzero detail=12 ok=0
+bt call: eventq_get
+check: hci le_read_buffer_size_v2 le_read_buffer_size_v2 ncmd=8 acl=517 n=10 iso=0 niso=0 ok=1
+hci-conformance: checks passed=20 failed=6 total=26 supported=16 not_supported=4
+arch: osal> eventRun
+bt osal: arm src=124 -> CLIC input 24 (routed, bridged=true) mie|=0x1000000
+bt probe: rx ctx oob=0x00000000
+bt hci(hs) >> CMDbt bbbbbt pFWD06 rc=0 evt=5
+bbtbbbFWD8 rc=0 evt=6
+LEENV slot invalid 00000000
+bt probe: sched patchset written (22 regs) pre-200A
+arch: osal> eventRun
+F0 12411290
+CTXMIRROR g=2f07ea18 w9888=00000000
+GATE mc0=00000001 ce0=00000001 w9880=00000000 still-gated
+ALIAS slot=c0de4242 win9888=00000000 none
+DIAG sweep done hit=0
+AON orig=80000000 w9888=00000000
+AON flip sel=1 w84=7fff8404â†’7fff8404 w88=00000000
+WMAP 20109800 DDDD
+WMAP 20109810 DDDD
+WMAP 20109820 DDDD
+WMAP 20109830 DDDD
+WMAP 20109840 DDDD
+WMAP 20109850 DDDD
+WMAP 20109860 DDDD
+WMAP 20109870 DDDD
+WMAP 20109880 DDDD
+WMAP 20109890 DDDD
+WMAP 201098a0 DDDD
+WMAP 201098b0 DDDD
+WMAP 201098c0 DDDD
+WMAP 201098d0 DDDD
+NMI n=5000 mepc=0x40086542 ra=0x400756be a0=0x2f07aea8 a1=00000013 a4=6f800000 a5=00000018 a6=2f024dd0 a7=00000019 s1=201098e0 ir=0x20000000
+WMAP 201098e0 DDDD
+WMAP 201098f0 DDDD
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+TRIM97=07
+SYNTH 9880= 00000000 00000000 00000000 00000000 00000000
+WRB 9884=7fff8404
+VIS 9888=00000000
+CTX00= 80000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+CTX08= 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+AB1: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 02 18 ab ff ff 25 00 ff 60 7f 01 ff 04 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB2: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 08 ff 00 ff ff 70 27 ff 11 1a c2 ff 80 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB3: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 49 61 32 ff ff 08 f4 ff 78 07 ba ff 04 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB4: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 58 a8 11 ff ff 63 1c ff 65 00 88 ff 98 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/espHIST[0] ticks=6000 fe=175 blob=257(last 0x2f82a024) main=5565(last 0x40086726) other=3 tim=0/0 fn=0x00000000
+/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB5: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 07 18 11 ff ff 80 1c ff 11 00 01 ff 98 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB6: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 80 3f 00 ff ff 63 0a ff 2f 00 11 ff 98 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB7: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 0f 07 00 ff ff 00 0a ff 00 00 fd ff 98 ff
+bt-blob-strong-assert /builds/ble/ble_develop/ble52_controller_sdk/drivers/esp/src/linkedListMode/ble_hw.c:506 p0=0x2f02d8e0 p1=0x00000000 type=0x00000003 ra=0x400038a6
+AB8: ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 33 00 00 ff ff c1 10 ff 00 00 bb ff 1f ff
+F1 rc=0 evt=6
+CC2006 0e 04 op=2008 status=12
+F2 rc=-3 evt=6
+F2S btdm_tx=29 evt=6
+HCIEVN env invalid 00000000
+PRE200A 98BC=00000000 f800=00ff086e m1e0=0000003d
+ROMC0 a2c7a783 02f50533 c00027f3 ede38f99
+ROMD0 8082fea7 2f0807b7 a2a7a623 07b78082
+UARTST 088=00000083 058=00415555
+HIST[0] ticks=8000 fe=175 blob=269(last 0x2f82a024) main=7553(last 0x400765e8) other=3 tim=0/0 fn=0x00000000
+NMI n=10000 mepc=0x400765ea ra=0x400765ca a0=0x00000008 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0x20000000
+HIST[0] ticks=10000 fe=175 blob=269(last 0x2f82a024) main=9553(last 0x400765ea) other=3 tim=0/0 fn=0x00000000
+HIST[0] ticks=12000 fe=175 blob=269(last 0x2f82a024) main=11553(last 0x400765e6) other=3 tim=0/0 fn=0x00000000
+HIST[0] ticks=14000 fe=175 blob=269(last 0x2f82a024) main=13553(last 0x400765ea) other=3 tim=0/0 fn=0x00000000
+NMI n=15000 mepc=0x400765ea ra=0x400765ca a0=0x00000015 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+HIST[0] ticks=16000 fe=175 blob=269(last 0x2f82a024) main=15553(last 0x400765e8) other=3 tim=0/0 fn=0x00000000
+HIST[0] ticks=18000 fe=175 blob=269(last 0x2f82a024) main=17553(last 0x400765ea) other=3 tim=0/0 fn=0x00000000
+NMI n=20000 mepc=0x400765e6 ra=0x400765ca a0=0x00000021 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+HIST[0] ticks=20000 fe=175 blob=269(last 0x2f82a024) main=19553(last 0x400765e6) other=3 tim=0/0 fn=0x00000000
+NMI n=25000 mepc=0x400765ea ra=0x400765ca a0=0x0000002e a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=30000 mepc=0x400765e6 ra=0x400765ca a0=0x0000003b a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=35000 mepc=0x400765e6 ra=0x400765ca a0=0x00000048 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=40000 mepc=0x400765e8 ra=0x400765ca a0=0x00000055 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=45000 mepc=0x400765e6 ra=0x400765ca a0=0x00000062 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=50000 mepc=0x400765ea ra=0x400765ca a0=0x0000006f a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=55000 mepc=0x400765e8 ra=0x400765ca a0=0x0000007c a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+NMI n=60000 mepc=0x400765ea ra=0x400765ca a0=0x00000089 a1=000f4240 a4=007d0001 a5=007c0000 a6=2f024dd0 a7=00000021 s1=0006516d ir=0xa0000000
+CLKCHK c0=0006516d c1=00158abe delta=997713 (â‰ˆ21700/0.15s ä¸ºæ´»)
+PRESCHK v0=74000000 v1=74000000 (v1 æ—  03800000=åŽ‹å›žå†™ç”Ÿæ•ˆ)
+QMAP[00] addr=0x2f02b7c8 q=0x2f0167a0
+BB 450=00102000 47C=00000000 408=a0000000NMI n=65000 mepc=0x40086572 ra=0x40076db8 a0=0x2f07aea8 a1=0000005e a4=007d0001 a5=007e0000 a6=2f024dd0 a7=00000029 s1=00102000 ir=0xa0000000
+ 40C=00000007 41C=00034020 420=00000000 444=00000000
+W9884=7fff8404
+BB 100C=00000000 11AC=00000000 08D0=00000000 9C10=00000000 9C14=003fe080 9888=00000000 988C=00000000 98B8=00000000
+SC 1254=84de1234 1258=00240000 107C=00000000 1000=00000000
+POLLCAP n=0 mepc=0x00000000 a3=00000000 a4=00000000 s1=00000000
+CTXSLOT none in [sp-4000,sp+4000)
+R99 b1=ab b2=00 b3=32 b4=11 b5=11 b6=00 b7=00
+B6 ff ff ff ff ff 80 3f 00 ff ff 63 0a ff 2f 00
+POLLSCAN magic=0xc0de0837 @0x2e00008c
+POLL00 98BC=00000000 f800=002f0669 f018=0000000f hb=40ed ph=f3dc hb2=2c0a6c11 ph2=a333c66b pwr0=1ff00000 ccrb=40000000 i11ac=00000000 f818=2900e444 bst=40000001 corst=00000029
+CLKG 9C04=7e601002 9C08=00000000 9C14=003fe080 LP018=0000000f bw=0/0/0 rtcwk=0
+W9884b=7fff8404
+NMI n=70000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000000b a1=00069c42 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=75000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000018 a1=00082322 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=80000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000025 a1=0009a9f6 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=85000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000032 a1=000b30c4 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=90000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000003f a1=000cb7a8 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=95000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000004c a1=000e3e7a a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=100000 mepc=0x400787ea ra=0x400787d6 a0=0x00000058 a1=00008305 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=105000 mepc=0x400787ea ra=0x400787d6 a0=0x00000065 a1=000209f7 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=110000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000072 a1=000390c7 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=115000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000007f a1=000517a7 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=120000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000008c a1=00069e89 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+POLL01 98BC=00000000 f800=002f0669 f018=0000000f hb=40ed ph=f3dc hb2=2c0a6c11 ph2=a333c66b pwr0=1ff00000 ccrb=40000000 i11ac=00000000 f818=2900e444 bst=40000001 corst=00000029
+CLKG 9C04=7e601002 9C08=00000000 9C14=003fe080 LP018=0000000f bw=0/0/0 rtcwk=0
+W9884b=7fff8404
+NMI n=125000 mepc=0x400787ea ra=0x400787d6 a0=0x00000003 a1=000cc27f a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=130000 mepc=0x400787ea ra=0x400787d6 a0=0x00000010 a1=000e494f a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=135000 mepc=0x400787ea ra=0x400787d6 a0=0x0000001c a1=00008dee a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=140000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000029 a1=000214d0 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=145000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000036 a1=00039bac a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=150000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000043 a1=0005228c a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=155000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000050 a1=0006a96c a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=160000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000005d a1=0008304e a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=165000 mepc=0x400787ea ra=0x400787d6 a0=0x0000006a a1=0009b72a a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=170000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000077 a1=000b3e0e a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=175000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000084 a1=000cc4ea a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=180000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000091 a1=000e4bcc a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+POLL02 98BC=00000000 f800=002f0669 f018=0000000f hb=40ed ph=f3dc hb2=2c0a6c11 ph2=a333c66b pwr0=1ff00000 ccrb=40000000 i11ac=00000000 f818=2900e444 bst=40000001 corst=00000029
+CLKG 9C04=7e601002 9C08=00000000 9C14=003fe080 LP018=0000000f bw=0/0/0 rtcwk=0
+W9884b=7fff8404
+NMI n=185000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000007 a1=00052bf6 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=190000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000014 a1=0006b2c2 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=195000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000021 a1=000839aa a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=200000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000002e a1=0009c078 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=205000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000003b a1=000b475e a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=210000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000048 a1=000cce2a a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=215000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000055 a1=000e54f8 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=220000 mepc=0x400787ea ra=0x400787d6 a0=0x00000061 a1=00009997 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=225000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000006e a1=00022071 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=230000 mepc=0x400787e8 ra=0x400787d6 a0=0x0000007b a1=0003a751 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=235000 mepc=0x400787ea ra=0x400787d6 a0=0x00000088 a1=00052e31 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=240000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000095 a1=0006b513 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+POLL03 98BC=00000000 f800=002f0669 f018=0000000f hb=40ed ph=f3dc hb2=2c0a6c11 ph2=a333c66b pwr0=1ff00000 ccrb=40000000 i11ac=00000000 f818=2900e444 bst=40000001 corst=00000029
+CLKG 9C04=7e601002 9C08=00000000 9C14=003fe080 LP018=0000000f bw=0/0/0 rtcwk=0
+W9884b=7fff8404
+NMI n=245000 mepc=0x400787ea ra=0x400787d6 a0=0x0000000c a1=000cd759 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=250000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000019 a1=000e5e32 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=255000 mepc=0x400787ea ra=0x400787d6 a0=0x00000025 a1=0000a2ca a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=260000 mepc=0x400787e8 ra=0x400787d6 a0=0x00000032 a1=000229a9 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=265000 mepc=0x400787ea ra=0x400787d6 a0=0x0000003f a1=0003bba4 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=270000 mepc=0x400787ea ra=0x400787d6 a0=0x0000004c a1=000555ff a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=275000 mepc=0x400787ea ra=0x400787d6 a0=0x00000059 a1=0006f058 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=280000 mepc=0x400787ea ra=0x400787d6 a0=0x00000066 a1=00088ab1 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=285000 mepc=0x400787ea ra=0x400787d6 a0=0x00000073 a1=000a250a a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=290000 mepc=0x400787ea ra=0x400787d6 a0=0x00000080 a1=000bbf63 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=295000 mepc=0x400787ea ra=0x400787d6 a0=0x0000008d a1=000d59c0 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+POLL04 98BC=00000000 f800=002f0669 f018=0000000f hb=40ed ph=f3dc hb2=2c0a6c11 ph2=a333c66b pwr0=1ff00000 ccrb=40000000 i11ac=00000000 f818=2900e444 bst=40000001 corst=00000029
+CLKG 9C04=7e601002 9C08=00000000 9C14=003fe080 LP018=0000000f bw=0/0/0 rtcwk=0
+W9884b=7fff8404
+NMI n=300000 mepc=0x400787ea ra=0x400787d6 a0=0x00000003 a1=00044cd3 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=305000 mepc=0x400787ea ra=0x400787d6 a0=0x00000010 a1=0005e728 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=310000 mepc=0x400787ea ra=0x400787d6 a0=0x0000001d a1=00078191 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=315000 mepc=0x400787ea ra=0x400787d6 a0=0x0000002a a1=00091bee a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=320000 mepc=0x400787ea ra=0x400787d6 a0=0x00000037 a1=000ab647 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=325000 mepc=0x400787ea ra=0x400787d6 a0=0x00000044 a1=000c5098 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=330000 mepc=0x400787ea ra=0x400787d6 a0=0x00000051 a1=000deaf1 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=335000 mepc=0x400787ea ra=0x400787d6 a0=0x0000005d a1=00004307 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000
+NMI n=340000 mepc=0x400787ea ra=0x400787d6 a0=0x0000006a a1=0001dd58 a4=007d0001 a5=000f4240 a6=2f024dd0 a7=00000010 s1=d2000004 ir=0xa0000000

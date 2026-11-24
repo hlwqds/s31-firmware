@@ -1,10 +1,11 @@
 # ble-802154 — BLE / 802.15.4 边界
 
 HCI 控制、ACL 分片重组、L2CAP（LE 信令与 credit based 通道）、GAP 广播数据与地址、
-IPv6 over BLE，加上原有的 ATT/GATT、802.15.4 FCF、6LoWPAN 无状态解压。
+IPv6 over BLE，ATT 全部 31 个操作码的编解码、ATT 服务端、GATT 服务端与客户端、
+AES-CMAC 与签名写，加上原有的 802.15.4 FCF、6LoWPAN 无状态解压。
 
-- 主机测试：**68 项**（`firmware` 的 `test` step 聚合；也可单独 `zig test src/host_tests.zig` 于本目录）
-- 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 与 `checks: passed=N`
+- 主机测试：**122 项**（`firmware` 的 `test` step 聚合；也可单独 `zig test src/host_tests.zig` 于本目录）
+- 板侧：`src/selftest.zig` 由固件顺序调用，**50 条**判据，打印 `check: … ok=1/0` 与 `checks: passed=N failed=M total=N+M`
 - 依赖方向：本组件 → `boards`；不依赖其它组件（**不**导入 `ble-security`）
 
 ## 范围与来源
@@ -24,32 +25,67 @@ IPv6 over BLE，加上原有的 ATT/GATT、802.15.4 FCF、6LoWPAN 无状态解�
 - RFC 7668 §3、§3.2.2、§3.2.4（含 3.2.4.1、3.2.4.2）、§3.2.5；RFC 6282 §3.1、§3.1.2、§3.2、
   §3.2.1、§4.3。
 - AES：FIPS-197 附录 B。
+- ATT：[Vol 3] Part F §3.2–§3.4。各 PDU 的参数布局在 §3.4.2–§3.4.7，汇总在表 3.43；
+  PDU 类型在表 3.1；错误码在 §3.4.1.1 表 3.3、表 3.4；每个方法允许的错误码在 §3.4.9 表 3.44；
+  事务与 30 秒超时在 §3.3.3。
+- GATT：[Vol 3] Part G §2.5.3（分组）、§3（声明，表 3.1–3.17）、§4.3–§4.14（各过程与超时）、
+  §7.1（Service Changed）、附录 A（示例服务器）、附录 B（Database Hash 的输入）。
+- AES-CMAC：RFC 4493（[Vol 3] Part H §2.2.5 指向它，附录 D.1 的四个向量与之相同）。
+  ATT 数据签名：算法在 [Vol 3] Part H §2.4.5，样例在 [Vol 3] Part F §3.4.5.4。
 
-**不做**：SMP 配对与链路层加密（`ble-security` 组件负责）、ATT/GATT 的新功能、802.15.4 的新功能、
-扩展广播、LE Extended Advertising Report。
+**不做**：SMP 配对与链路层加密（`ble-security` 组件负责）、802.15.4 的新功能、扩展广播、
+LE Extended Advertising Report。GATT 里没做的：Database Hash、Client Supported Features、
+Server Supported Features 三个特征（Part G §7.2–§7.4）、Robust Caching（§2.5.2.1）、
+绑定设备的 CCCD / Service Changed 持久化（见 `gatt_server.zig` 文件头）。
 
 ## 验证状态
 
+第一批（HCI / L2CAP / GAP / IPSP）：
+
 - L3 板侧：2026-11-24 随 `wifi` profile 第一次上板，19 条里 18 条通过。为假的一条是 `gap adv … hci=0`：
   自检把 32 字节的 HCI 参数与向量的 31 字节切片比较（差一），与目标无关，已改为整段比较；
-  修复后已板级复验 19/19（`logs/e2e-wifi-boot.log`，整份判决 pass）。第一次的日志 `logs/wifi-selftest-prefix-boot.log`。
+  修复后已板级复验 19/19（当时的 `logs/e2e-wifi-boot.log`，整份判决 pass；这份日志已被第二批 50/50 的那次覆盖）。
+  第一次的日志 `logs/wifi-selftest-prefix-boot.log`。
 - L1 主机：2026-11-24，68 项（原有 20 项全部保留 + 新增 48 项），`zig fmt --check src/` 干净。
 - 差分：`/tmp/s31-oracle/ble_oracle.py`（seed 7）各 20 条随机向量，`ah` 20/20、`e` 20/20 相等
   （一次性测试，跑完已删除）。
-- 自检条数 12 → 19，新增 7 条（⑬–⑲）；`tests/baselines.json` 里 `ble-802154` 已随本轮抬到 68。
+- 自检条数 12 → 19，新增 7 条（⑬–⑲）；`tests/baselines.json` 里 `ble-802154` 随本轮抬到 68。
+
+第二批（ATT / GATT 扩展，2026-11-24）：
+
+- L1 主机：`zig test src/host_tests.zig` → `All 122 tests passed`。第一批的 68 条全部保留，新增 54 条：
+  `att:` +15、`att_svr:` +13、`gatts:` +5、`gattc:` +18、`cmac:` +3。
+- 这 54 条在交付时一次都没有被执行过。第一次执行是 119 过 3 败，原因全是用例里手敲的期望值有误
+  （实现是对的）；按规范改正后 122/122。明细见 `docs/verification/ble-core-verification.md` §5。
+- L2：`selftest.zig` 以固件参数交叉编译通过；用桩 `board` 模块在主机上执行 `selftest.run()` →
+  `checks: passed=50 failed=0 total=50`。
+- L3 板侧：自检条数 19 → 50（新增 ⑳–㊿ 共 31 条，清单在 `selftest.zig` 文件头）。`wifi` profile
+  板级 `PASS board:wifi`：14/14 个 section、`ble_802154` 50/50、`main: verdict=pass`
+  （`logs/e2e-wifi-boot.log`；这一份覆盖了第一批复验的日志）。
+- `tests/baselines.json` 里的 `ble-802154` 现为 122。
+- 板侧自检与主机用例里的 ATT / GATT 都是进程内对打（请求直接交给服务端、应答直接交回客户端），
+  **没有任何 ATT PDU 上过链路**。
 
 ## 快速开始
 
 ```sh
 cd components/ble-802154
 ZIG=/nix/store/m096jak4mrmdhah085l79rzfypviyhfw-zig-0.17.1/bin/zig
-env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 68 tests passed
+env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 122 tests passed
 env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 ```
 
 0.17.1 的 `zig test` 不认 `--summary all`（报 `unrecognized parameter`），所以上面没带；
-`zig build test --summary all` 仍然可用。板侧入口是 `selftest.run()`，打印 19 行
-`check: … ok=1/0` 和 `checks: passed=N failed=M total=N+M`。
+`zig build test --summary all` 仍然可用。板侧入口是 `selftest.run()`，打印 50 行
+`check: … ok=1/0` 和 `checks: passed=N failed=M total=N+M`（板级日志里是 50/50）。
+同一份自检也能在主机上跑（不碰板子；在仓库根目录执行，`main.zig` 调 `selftest.run()`，
+`board_stub.zig` 提供桩）：
+
+```sh
+R=/tmp/selftest-host
+env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
+  --dep board -Mselftest=components/ble-802154/src/selftest.zig -Mboard=$R/board_stub.zig
+```
 
 ## 文件职责
 
@@ -62,8 +98,13 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 | `src/l2cap.zig` | B-frame、LE 信令、连接参数更新两个角色、credit based 通道 `Channel(上限)` |
 | `src/gap_adv.zig` | AD 构造/解析、AdvData/ScanRsp 分配、地址子类型、`ah`、RPA、广播参数打包 |
 | `src/ipsp.zig` | BLE 地址 ↔ IID、IPHC 压缩/解压（上下文、最近登记 IID）、组播监听表 |
-| `src/vectors.zig` | 新增模块的全部 KAT 常数（编译期十六进制解码） |
-| `src/att.zig`、`src/gatt.zig`、`src/fifteen4.zig` | 原有；`fifteen4` 新增共享的 `decodeUdpNhc` |
+| `src/att.zig` | ATT 全部 31 个操作码（表 3.43）的编解码、最小长度、按 ATT_MTU 截断、服务端组响应的打包器、UUID；末尾保留章节时代的最小 API |
+| `src/att_server.zig` | ATT 服务端：属性表 `Db(N, V)`、每个 client 一个 `Peer(Q)`、请求分发、权限检查、排队写、通知与指示、签名写验签 |
+| `src/gatt_server.zig` | GATT 服务端：服务 / 包含 / 特征 / 描述符声明、按 client 保存的 CCCD、指示、Service Changed |
+| `src/gatt_client.zig` | GATT 客户端：§4.3–§4.12 各过程的状态机（发现、读、写、订阅、指示确认） |
+| `src/cmac.zig` | AES-CMAC（标准库 `std.crypto.auth.cmac.CmacAes128`）与 ATT 数据签名 / 验签 |
+| `src/gatt.zig`、`src/fifteen4.zig` | 原有定长特征表；`fifteen4` 新增共享的 `decodeUdpNhc` |
+| `src/vectors.zig` | 新增模块与 CMAC / 签名的 KAT 常数（编译期十六进制解码） |
 | `src/host_tests.zig` / `src/selftest.zig` | 主机测试 / 板侧自检入口 |
 
 ## 特性对照表
@@ -104,6 +145,32 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 | TF / 内联 Hop Limit / UDP 端口压缩、UDP NHC | RFC 6282 3.2.1、4.3 | `ipsp: TF, inline hop limit and UDP port compression round trips`、`lowpan: shared UDP NHC decoder…` | 按条款排出的字节 | 主机通过 |
 | 压缩帧负例（C=1、分片头、无上下文、保留组合） | RFC 6282、RFC 7668 3 | `ipsp: unsupported and malformed compressed frames are rejected` | `vectors.iphc_udp_checksum_elided`、`lowpan_frag1` | 主机通过 |
 | 组播监听表 | RFC 7668 3.2.5 | `ipsp: multicast listener table at link granularity` | 行为断言 | 主机通过 |
+| ATT 编解码全表：31 个操作码、PDU 类型、最小长度、定长 PDU 的长度校验、19 个错误码 | Vol 3 F 表 3.43、表 3.1、表 3.4、§3.3 | `att: opcode table is Vol 3 Part F table 3.43…`、`att: minimum PDU lengths follow the size columns of Vol 3 Part F table 3.43`、`att: every PDU parses and fixed-length ones reject wrong lengths…`、`att: error codes are the 19 values of Vol 3 Part F table 3.4`、`att: UUIDs compare as 128 bits and the SIG base folds to 16 bits…` | 表 3.43、表 3.1、表 3.4；PDU 尺寸对 NimBLE `ble_att_cmd_priv.h` | 主机通过 |
+| ATT Find Information | Vol 3 F 3.4.3.1–3.4.3.2、3.4.3 | `att: find information request and response…`、`att_svr: find information lists every attribute and pages by ATT_MTU…` | 按条款排出的字节、行为断言 | 主机通过；板侧 ㉕ |
+| ATT Find By Type Value | Vol 3 F 3.4.3.3–3.4.3.4 | `att: find by type value request and response…`、`att_svr: find by type value returns handle ranges and skips unreadable attributes…` | 按条款排出的字节、行为断言 | 主机通过；板侧无 |
+| ATT Read By Type | Vol 3 F 3.4.4.1–3.4.4.2 | `att: read by type request and response…`、`att_svr: read by type packs equal lengths and stops at an unreadable attribute…` | 同上 | 主机通过；板侧 ㉖ |
+| ATT Read Blob | Vol 3 F 3.4.4.5–3.4.4.6 | `att: read blob request and response cut the value at ATT_MTU-1…`、`att_svr: read and read blob follow ATT_MTU and reject offsets past the value…` | 同上 | 主机通过；板侧 ㉘ |
+| ATT Read Multiple（定长） | Vol 3 F 3.4.4.7–3.4.4.8 | `att: read multiple and read multiple variable length…`、`att_svr: read multiple and read multiple variable length…` | 同上 | 主机通过；板侧 ㉙ |
+| ATT Read Multiple Variable（变长，含两条截断规则：超过 ATT_MTU−1 处截断、截点落在 Value Length 字段内则整条元组不放） | Vol 3 F 3.4.4.11–3.4.4.12 | 同上两条 | 同上；原文 2936–2970 行独立复核 | 主机通过；板侧 ㉚ ㉛ |
+| ATT Read By Group Type | Vol 3 F 3.4.4.9–3.4.4.10 | `att: read by group type request and response…`、`att_svr: read by group type returns groups and rejects non-group types…` | 按条款排出的字节、行为断言 | 主机通过；板侧 ㉗ |
+| ATT 排队写（Prepare / Execute / 取消） | Vol 3 F 3.4.6.1–3.4.6.4 | `att: prepare write and execute write…`、`att_svr: prepare and execute write, both paths…` | 同上 | 主机通过；板侧 ㉜ ㉝ |
+| ATT 指示、确认、多重变长通知 | Vol 3 F 3.4.7.2–3.4.7.4 | `att: indication, confirmation and multiple variable length notification…` | 同上 | 主机通过；板侧只有指示（㊵），多重变长通知无 |
+| ATT 服务端：MTU 交换 | Vol 3 F 3.4.2.2 | `att_svr: MTU exchange takes the minimum and keeps the default below it…` | 行为断言 | 主机通过；板侧 ㉔ |
+| ATT 服务端：权限与错误码（检查顺序、未知 / 非法请求、变长 / 定长写） | Vol 3 F 3.2.5、§4、表 3.4、§3.3、3.4.5.1–3.4.5.3 | `att_svr: permission checks yield the codes of table 3.4 in the order of Vol 3 Part F section 4`、`att_svr: unsupported and malformed requests get the codes of Vol 3 Part F section 3.3`、`att_svr: write request follows variable and fixed length semantics…` | 行为断言 | 主机通过；板侧 ㉞ |
+| ATT 服务端：排队写两条路径（执行 / 取消） | Vol 3 F 3.4.6 | `att_svr: prepare and execute write, both paths…` | 行为断言 | 主机通过；板侧 ㉜ ㉝ |
+| ATT 服务端：通知、指示与 30 秒超时 | Vol 3 F 3.4.7.1–3.4.7.2、3.3.3 | `att_svr: indication waits for its confirmation and times out after 30 s…` | 行为断言（时间直接拨到超时） | 主机通过；板侧 ㊵ |
+| GATT 服务端声明：服务、包含、特征、描述符 | Vol 3 G 表 3.1–3.15、3.17 | `gatts: service, characteristic and descriptor declarations match Vol 3 Part G 3.1-3.3 byte for byte` | 表里的字节 | 主机通过；板侧 ㉟ ㊱ ㊲ |
+| CCCD：按 client 保存并门控通知、写入校验 | Vol 3 G 3.3.3.3、4.12.3 | `gatts: the Client Characteristic Configuration is kept per client and gates notifications…`、`gatts: invalid CCCD writes are rejected and leave the configuration unchanged…` | 表 3.10、3.11 的字节；行为断言 | 主机通过；板侧 ㊳ ㊴ |
+| GATT 服务端指示 | Vol 3 G 4.11.1 | `gatts: indications need the indicate bit, go one at a time, and are confirmed…` | 行为断言 | 主机通过；板侧 ㊵ |
+| Service Changed | Vol 3 G 7.1 | `gatts: the Service Changed characteristic and its enablement…` | 表 7.2、表 7.3 | 主机通过；板侧 ㊶ |
+| GATT 客户端：Exchange MTU | Vol 3 G 4.3.1、5.2.1 | `gattc: exchange MTU takes the minimum and the result paves every later procedure…` | 行为断言 | 主机通过；板侧 ㊸ |
+| GATT 客户端发现：全部 / 按 UUID 的 primary 服务、包含服务、全部 / 按 UUID 的特征、描述符 | Vol 3 G 4.4.1–4.4.2、4.5.1、4.6.1–4.6.2、4.7.1 | `gattc: discover all primary services of the appendix A server, byte for byte…`、`gattc: discover primary services by UUID uses Find By Type Value…`、`gattc: find included services, including the 128-bit UUID follow-up read…`、`gattc: discover all characteristics of a service…`、`gattc: discover characteristics by UUID keeps only the matching ones…`、`gattc: discover all characteristic descriptors pages by handle…`、`gattc: a read by type response with 128-bit UUIDs looks like the note of Vol 3 Part G 4.6.1` | 附录 A 的服务器，线上字节逐条比对 | 主机通过；板侧 ㊷ ㊹ ㊼ |
+| GATT 客户端读：Read、Read Using UUID、Read Long、Read Multiple、Read Multiple Variable | Vol 3 G 4.8.1–4.8.5 | `gattc: read value, read by UUID, read long…`、`gattc: read multiple and read multiple variable length…` | 附录 A 的服务器 + 另搭的属性表 | 主机通过；板侧 ㊺ ㊻ ㊾ |
+| GATT 客户端写：Write Without Response、Write、Signed Write、Write Long、Reliable Write | Vol 3 G 4.9.1–4.9.5 | `gattc: write without response, write, signed write…`、`gattc: write long values in ATT_MTU-5 pieces then execute…`、`gattc: reliable writes verify every round trip and cancel on a mismatch…` | 行为断言 | 主机通过；板侧只有 Write Long（㊽） |
+| GATT 客户端收通知 / 指示、订阅描述符 | Vol 3 G 4.10、4.11、4.12.1–4.12.4 | `gattc: the client delivers notifications, confirms indications and unpacks multiple notifications…`、`gattc: read and write characteristic descriptors, long and short…` | 行为断言 | 主机通过；板侧只有订阅通知（㊿） |
+| GATT 客户端过程失败：ATT 错误、协议错误、30 秒超时 | Vol 3 F 3.4.1.1、3.3.3；Vol 3 G 4.14 | `gattc: ATT errors end the procedure with the server's code…`、`gattc: structurally wrong server responses fail the procedure as protocol errors`、`gattc: a request that is not answered within 30 s fails and closes the bearer…` | 行为断言（时间直接拨到超时） | 主机通过；板侧无 |
+| AES-CMAC | RFC 4493 §4；Vol 3 H 附录 D.1；Vol 3 G 附录 B | `cmac: AES-CMAC matches the RFC 4493 vectors quoted in Vol 3 Part H appendix D.1`、`cmac: AES-CMAC with an all-zero key over the database hash input of Vol 3 Part G appendix B` | RFC 4493 四个向量（长度 0 / 16 / 40 / 64）；附录 B 的 111 字节输入 | 主机通过；板侧 ⑳ ㉑ |
+| ATT 签名与签名写 | Vol 3 H 2.4.5；Vol 3 F 3.4.5.4 | `cmac: signing reproduces the example of Vol 3 Part F 3.4.5.4…`、`att: signed write command carries the example signature of Vol 3 Part F 3.4.5.4`、`att: write command and signed write command…`、`att_svr: signed write is applied only with a valid, fresh signature…` | Part F §3.4.5.4 的样例 | 主机通过；板侧 ㉒ ㉓；互通未验 |
 
 ## 实现偏离
 
@@ -133,6 +200,42 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
     `Trailing`；新增不带计数的 `packCommand` 和 `decodeEventFrame`。
 14. **`fifteen4.decompress` 行为不变**（仍只收 P=00），只把 UDP NHC 解码抽成共享函数。
 15. **IDF / 参考实现的逐字节对拍没做**（IID 映射、PB 取值、NOCP 布局）。
+16. **ATT MTU 上限取 527**（`att.zig` 的 `max_mtu`）。5.4 的 Part F / Part G 原文没有给 ATT_MTU
+    的上限，只规定属性值最长 512 字节（Part F §3.2.9）；527 沿用 NimBLE，正好让最大的命令
+    Signed Write（1 + 2 + 512 + 12）装下 512 字节的值。server 端收到小于默认值 23 的
+    Client Rx MTU 时不改 ATT_MTU（§3.4.2.2）；章节时代的客户端入口 `encodeMtuReq` 仍对
+    小于默认值或超过 527 的请求直接拒绝、不发 PDU。
+17. **ATT 服务端**（`att_server.zig` 文件头与常量），规范留了余地、这里定下来的：
+    - Read Blob 读定长短属性时不回 Attribute Not Long（§3.4.4.5 写的是 may）；
+    - ATT_EXECUTE_WRITE_REQ 的 Flags 不是 0x00 / 0x01 → Invalid PDU；
+    - 排队写的部分值长过属性表的值上限 → Prepare Queue Full（§3.4.6.1：没有空间排队就回 0x09）；
+      尺寸与偏移的校验照规范留到 Execute；
+    - Execute 时遇到 Invalid Offset / Invalid Attribute Value Length，出错句柄取队列里出问题的
+      那一条（规范只对应用错误写明了这一点）；
+    - 不记时间：指示的 30 秒超时（§3.3.3，`transaction_timeout_ms = 30_000`）由调用方把毫秒数
+      传给 `tick()`；超时后这条 bearer 的收发一律 `error.BearerClosed`，直到 `reset()`；
+    - 不持久化：断链后排队写的队列清空、不执行（§3.4.6）；槽位在 `reset()` 里回到默认值
+      （Part G §3.3.3.3）；CSRK 与 SignCounter 属于安全数据库，`reset()` 不动；
+    - 容量都是编译期常量：`Db(N, V)` 最多 N 个属性、每个值最多 V 字节；`Peer(Q)` 的排队写队列
+      Q 条（1..255）；每个 client `slot_count = 8` 个槽位、每槽 `slot_max = 16` 字节。
+18. **GATT 客户端**（`gatt_client.zig` 文件头与 `Config`），规范没写死、这里定下来的：
+    - 排队写中途收到 ATT_ERROR_RSP：只要已经有数据排进 server 的队列，就补发一条取消
+      （Execute Write，Flags = 0x00），等它的响应回来这条 bearer 才空闲；
+    - server 的响应结构不对（条目装不下整数条、句柄乱序、UUID 不是 2 或 16 字节、与当前过程
+      无关的响应）→ 过程按协议错误失败；
+    - Read Using Characteristic UUID 收到 Attribute Not Found 按失败处理（§4.8.2），由调用方看
+      错误码；各发现过程收到 Attribute Not Found 是正常结束；
+    - 等响应超过 30 秒（§3.3.3、Part G §4.14，`timeout_ms = 30_000`）→ 过程失败，这条 bearer 作废；
+    - `Config` 的默认容量：服务 8、包含服务 4、特征 16、描述符 16、读值缓冲 128 字节、写值缓冲
+      128 字节、句柄 / 结果 8 条；放不下时过程按本地错误失败。
+19. **GATT 服务端**（`gatt_server.zig`）：写 CCCD 时置了特征不支持的位（或保留位）回 0x80
+    （Application Error 区间的第一个值，`ccc_not_allowed`）；§4.12.3 规定了尺寸不对或值不合法
+    时「不写、回 Application Error」，没有规定具体取值。没做的特征见「范围与来源」。
+20. **签名的字节序**（`cmac.zig`）：Part H §2.4.5 的文字没有写 Bluetooth 特有的两处字节序，
+    本实现按 Part F §3.4.5.4 的样例反推：待签消息进 CMAC 前整段字节反转；取 CMAC 结果里最高
+    有效的 64 位，写进 PDU 时最低有效字节在前。验签只接受大于上一次通过值的 SignCounter
+    （Part H §2.4.5）。本机 IDF 的 NimBLE（`ble_att_svr.c`、`ble_att_clt.c` 的
+    `swap_in_place`）做法相同；与按字面顺序实现的协议栈能否互通未验。
 
 ## 待验证项
 
@@ -141,5 +244,13 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 - AD 结构 128 位 UUID 与 BLE 地址 → IID 的字节序，与参考实现（RIOT / Zephyr）对拍。
 - L2CAP credit based 通道与真实对端（IPSP）互通；`LE_Data_Length_Change` 后的 MPS/MTU 变化。
 - `LE_Enable_Encryption` / LTK Reply 的参数来源要接 `ble-security`（本组件只做编码）。
+- 与真实设备的 ATT / GATT 互通：发现、读、写、订阅、指示。到现在为止只有进程内对打。
+- 30 秒事务超时与指示超时在真实链路上的行为。主机用例与板侧自检都是把时间直接拨到超时，
+  没有真实等待过。
+- 签名写的字节序与其它协议栈互通（见「实现偏离」20）。
+- 板侧自检没覆盖、只有主机用例的分支：ATT 的 Find By Type Value 与多重变长通知；ATT 服务端
+  错误码全表（板侧 ㉞ 只查 Read Not Permitted、Write Not Permitted 与 Invalid Handle）；GATT 客户端的按 UUID 发现、包含服务、
+  描述符发现、Read Using UUID、定长 Read Multiple、Write / Signed Write / Reliable Write、
+  指示确认与多重通知、过程超时与协议错误。
 
 历史来源见 `docs/HISTORY.md`。

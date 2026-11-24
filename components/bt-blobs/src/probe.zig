@@ -956,6 +956,53 @@ fn ulpKeeperArm(comptime tag: u8) void {
     board.log.line("ARM{d} cpu={x:0>8} ram={x:0>8} intr={x:0>8} ba={x:0>8}", .{ tag, c, r, i, ba });
 }
 
+/// 合并镜像（`-Dcoex-merged`，ADR-003 第 2 节）：BLE controller **只做到 `bringup.init` 返回**。
+///
+/// 与 `run()` 的区别：
+///   - 堆只拿 `region` 这一段（合并镜像按子系统配额切分堆）；
+///   - 不做探针的实验与诊断装置：trap 钩子、ROM 取样、调试触发器、flash 标记、LP 核 keeper、
+///     RTC 看门狗探针，以及一切对内存布局写死的 RAM 槽（`bringup.layout_probes = false`）；
+///   - 共存核不在这里 boot：合并镜像里它由 Wi-Fi 侧启动一次（`init_probe.coexBoot`）。
+///
+/// 返回 `bringup.init` 的返回码（0 = INITED）。之后 controller 任务阻塞在自己的等待原语上，
+/// 要让它继续跑得由调用方去泵（探针的泵在 `run()` 的主循环里）。
+pub fn initOnly(region: []u8) c_int {
+    bringup.layout_probes = false;
+    porting.clock_writes_enabled = clock_writes;
+    bringup.skip_task_init = skip_task_init;
+    osal.setHooks(.{
+        .now_ms = nowMs,
+        .log = logHook,
+        .irq_save = irqSave,
+        .irq_restore = irqRestore,
+        // 门控测量（`gate.probeAnchors`）是探针的诊断：每次拿到互斥锁都打几行，这里不装。
+    });
+    osal.setMacHook(macHook);
+    // 时基：不调 `hw.initTimer()` 则 `nowUs()` 恒 0，OSAL 的 `now_ms` 也就恒 0（见 `run()` 里的说明）。
+    board.hw.initTimer();
+    if (region.len == 0) {
+        osal.logPublic("bt init-only: FATAL no heap region", .{});
+        return -1;
+    }
+    osal.initArena(region);
+    board.log.line("A{d}K", .{region.len / 1024});
+    // osi_impl 的钩子（与 `run()` 相同）：时基与任务让出原语。
+    @import("osi_impl.zig").setHooks(.{
+        .now_us = @import("board").hw.nowUs,
+        .fill_random = null,
+        .mac = null,
+        .on_idle = osiOnIdle,
+        .on_phy_enable = null,
+        .on_note = null,
+        .on_budget_exhausted = null,
+    });
+    cfg = config.defaults();
+    osal.logPublic("bt init-only: init start", .{});
+    const rc = bringup.init(&cfg);
+    board.log.line("bt init-only: bringup.init rc={d} arena free={d} B", .{ rc, osal.arenaFree() });
+    return rc;
+}
+
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.on_pc_ready = dumpPcRing;
@@ -2185,6 +2232,10 @@ pub fn run() noreturn {
     const a4_rc = transport.sendCmd(0x1009, &.{});
     mark.put(0x70, 0xADC0B10b, transport.stats().btdm_tx);
     osal.logPublic("bt probe: A4(rx) readBdAddr rc={d} btdm_tx={d}", .{ a4_rc, transport.stats().btdm_tx });
+    // **HCI 一致性自检**（Bluetooth Core 5.4，Vol 4 Part E）：A 阶段已证明 A 路径的回包可达，在这里、
+    // 任何射频实验（0x2006 / 0x2008 / 0x200A）之前同步跑完。不能挂在主泵循环上——脚本在进主循环
+    // 之前就停在 0x200A 的 synth 墙上，永远轮不到（2026-11-24 定位，见 `hciConformanceRun`）。
+    _ = hciConformanceRun();
 
     // **LE 广播 + flash 阶段标记**：每条命令前把阶段写进 `0x186000`，
     // 卡住后从 **host** 读回 —— 不依赖任何日志。
@@ -3957,4 +4008,162 @@ pub fn flashStageExtra(n: u32, a: u32, b: u32) void {
     var w2: [1]u32 = .{b};
     _ = esp_rom_spiflash_write(flash_mark_off + 8, &w1, 4);
     _ = esp_rom_spiflash_write(flash_mark_off + 12, &w2, 4);
+}
+
+// ---------------------------------------------------------------------------
+// HCI 一致性自检（Bluetooth Core 5.4，Vol 4 Part E）：对真实 controller 发只读的本地信息命令，
+// 逐条按规范校验回包。在脚本里**同步**跑完：位置在 A 阶段（三条基础命令都拿到回包）之后、任何射频
+// 实验之前——脚本在进主循环之前就停在 0x200A 的 synth 墙上，挂在主泵循环上永远轮不到。
+// A 路径的回包在 `sendCmd` 返回之前就经 `btdmTx` 到达（日志里 `btdm_tx` 逐条 +1），所以
+// `hciConformanceRun()` 把 `hciConformanceTick()` 的状态机连着推进到收尾即可；推进一步的逻辑仍在
+// `hciConformanceTick()` 里，需要非阻塞的调用方可以直接用它。
+// 规则与解码在 `hci_conformance.zig`（纯逻辑，主机可测）；这里只管时序与打印。
+// ---------------------------------------------------------------------------
+
+const hci_conformance = @import("hci_conformance.zig");
+
+/// 开跑前先等这么久：让 A 阶段最后一条命令之后还可能到达的事件先到，
+/// 免得被当成本自检第一条命令的回包。
+const hci_conf_start_delay_us: u64 = 200_000;
+/// 一条命令等回包的上限。规范 §4.4 建议主机用 1 s 的回包超时；这里留到 2 s。
+const hci_conf_timeout_us: u64 = 2_000_000;
+var hci_conf_entered_us: ?u64 = null;
+/// 发到第几条；等于 `commands.len` 时下一步是收尾，超过则已收尾。
+var hci_conf_idx: usize = 0;
+var hci_conf_sent: bool = false;
+var hci_conf_sent_us: u64 = 0;
+var hci_conf_seq_at_send: u32 = 0;
+var hci_conf_passed: u32 = 0;
+var hci_conf_failed: u32 = 0;
+var hci_conf_supported: u32 = 0;
+var hci_conf_not_supported: u32 = 0;
+/// HCI_Read_Local_Supported_Commands 的回包。读到之前 `hci_conf_have_mask` 为假，判决时跳过位检查。
+var hci_conf_mask: [64]u8 = @splat(0);
+var hci_conf_have_mask: bool = false;
+/// 当前这条命令已经为它打过几行原始字节（只有没通过的回包才打，每条至多两行）。
+var hci_conf_raw_lines: u32 = 0;
+
+fn hciConfHex(out: []u8, bytes: []const u8) []const u8 {
+    const digits = "0123456789abcdef";
+    var n: usize = 0;
+    for (bytes) |b| {
+        if (n + 2 > out.len) break;
+        out[n] = digits[b >> 4];
+        out[n + 1] = digits[b & 0x0f];
+        n += 2;
+    }
+    return out[0..n];
+}
+
+/// 打一行回包的原始字节（至多 13 个八位组）与来处：回包到底长什么样，由板上数据说话。
+fn hciConfDumpRaw(cmd: hci_conformance.Command, evt: []const u8) void {
+    if (hci_conf_raw_lines >= 2) return;
+    hci_conf_raw_lines += 1;
+    const st = transport.stats();
+    var hx: [26]u8 = undefined;
+    board.log.line("read: hci {s} reply via {s} pkt_type={d} n={d} raw={s}", .{
+        cmd.name,
+        if (st.last_evt_from_btdm) "btdm" else "hs",
+        st.last_evt_pkt_type,
+        evt.len,
+        hciConfHex(&hx, evt[0..@min(evt.len, 13)]),
+    });
+}
+
+/// 推进一步（见本节文件头注释）。
+pub fn hciConformanceTick() void {
+    if (hci_conf_idx > hci_conformance.commands.len) return;
+    const now = board.hw.nowUs();
+    if (hci_conf_entered_us == null) hci_conf_entered_us = now;
+    const t0 = hci_conf_entered_us.?;
+    if (hci_conf_idx == hci_conformance.commands.len) {
+        board.log.line("hci-conformance: checks passed={d} failed={d} total={d} supported={d} not_supported={d}", .{
+            hci_conf_passed,    hci_conf_failed,        hci_conf_passed + hci_conf_failed,
+            hci_conf_supported, hci_conf_not_supported,
+        });
+        hci_conf_idx += 1;
+        return;
+    }
+    const cmd = hci_conformance.commands[hci_conf_idx];
+    if (!hci_conf_sent) {
+        if (now - t0 < hci_conf_start_delay_us) return;
+        hci_conf_seq_at_send = transport.evtSeq();
+        hci_conf_sent_us = now;
+        hci_conf_raw_lines = 0;
+        const rc = transport.sendCmd(cmd.opcode, cmd.params);
+        hci_conf_sent = true;
+        if (rc != 0) {
+            hci_conf_failed += 1;
+            board.log.line("check: hci {s} (0x{x:0>4}) send rc={d} ok=0", .{ cmd.name, cmd.opcode, rc });
+            hci_conf_idx += 1;
+            hci_conf_sent = false;
+        }
+        return;
+    }
+    // 已发，等回包。**超时先判**：回包不是本命令的 Command Complete 时下面会一直落到 `other_event`，
+    // 超时判断若排在它后面就永远走不到（2026-11-24 板上实测：Read Buffer Size 的回包不是
+    // Command Complete，主上下文在这一步无限空转）。
+    if (now - hci_conf_sent_us > hci_conf_timeout_us) {
+        hci_conf_failed += 1;
+        board.log.line("check: hci {s} no matching reply within {d} ms ok=0", .{ cmd.name, hci_conf_timeout_us / 1000 });
+        hci_conf_idx += 1;
+        hci_conf_sent = false;
+        return;
+    }
+    // 以事件序号有没有变为准。
+    if (transport.evtSeq() == hci_conf_seq_at_send) return;
+    const evt = transport.lastEvent();
+    const verdict = hci_conformance.verifyDeclared(cmd, evt, if (hci_conf_have_mask) &hci_conf_mask else null);
+    switch (verdict) {
+        // 别的事件，或不是这条命令的回包：继续等（超时已在上面保证）。
+        .other_event => hciConfDumpRaw(cmd, evt),
+        .ok => |r| {
+            var text: [96]u8 = undefined;
+            hci_conf_passed += 1;
+            hci_conf_supported += 1;
+            board.log.line("check: hci {s} {s} ok=1", .{ cmd.name, hci_conformance.describe(cmd, r, &text) });
+            if (cmd.kind == .supported_commands) {
+                @memcpy(&hci_conf_mask, &r.supported_commands);
+                hci_conf_have_mask = true;
+                // 整张位图打出来（4 行 × 16 八位组）：之后每条命令的位检查、以及读日志的人，都靠它。
+                var line: [96]u8 = undefined;
+                var off: usize = 0;
+                while (off < 64) : (off += 16) {
+                    board.log.line("read: hci supported_commands[{d}..{d}]={s}", .{
+                        off, off + 15, hciConfHex(&line, r.supported_commands[off..][0..16]),
+                    });
+                }
+            }
+            hci_conf_idx += 1;
+            hci_conf_sent = false;
+        },
+        .not_supported => {
+            hci_conf_passed += 1;
+            hci_conf_not_supported += 1;
+            board.log.line("check: hci {s} not supported (status=0x01) class={s} ok=1", .{ cmd.name, @tagName(cmd.support) });
+            hci_conf_idx += 1;
+            hci_conf_sent = false;
+        },
+        .fail => |v| {
+            hci_conf_failed += 1;
+            hciConfDumpRaw(cmd, evt);
+            board.log.line("check: hci {s} {s} detail={d} ok=0", .{ cmd.name, @tagName(v.rule), v.detail });
+            hci_conf_idx += 1;
+            hci_conf_sent = false;
+        },
+    }
+}
+
+/// 同步跑完整个自检（见本节文件头注释），返回「全过」。等待期间照常喂狗：正常情况下每条命令的
+/// 回包都在 `sendCmd` 返回前到达，整个自检只占几十毫秒；没有匹配回包的命令各空转至多
+/// `hci_conf_timeout_us`。
+pub fn hciConformanceRun() bool {
+    while (hci_conf_idx <= hci_conformance.commands.len) {
+        hciConformanceTick();
+        if (!wdt_suicide) {
+            board.hw.mwdt1Feed();
+            board.hw.feedRtcWdt();
+        }
+    }
+    return hci_conf_failed == 0;
 }

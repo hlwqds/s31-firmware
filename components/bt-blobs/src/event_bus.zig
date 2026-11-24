@@ -27,7 +27,7 @@ pub var count: usize = 0;
 pub var posts: u32 = 0;
 pub var dispatched: u32 = 0;
 
-pub export fn esp_event_handler_register(
+fn esp_event_handler_register(
     base: ?*const anyopaque,
     id: i32,
     handler: ?Handler,
@@ -40,7 +40,7 @@ pub export fn esp_event_handler_register(
     return 0;
 }
 
-pub export fn esp_event_handler_unregister(
+fn esp_event_handler_unregister(
     base: ?*const anyopaque,
     id: i32,
     handler: ?Handler,
@@ -56,6 +56,13 @@ pub export fn esp_event_handler_unregister(
         }
     }
     return 0; // 未注册也算成功（esp_event 的语义）
+}
+// 两个射频的适配层同链时（`-Dcoex-merged`，ADR-003 第 2 节），事件总线以 Wi-Fi 侧那份为准
+// （`wifi-blobs/src/event_bus.zig`：往事件循环投递的是 Wi-Fi blob）。这里以**弱符号**导出：
+// 有强定义时让位；只链 BLE 时没有别的定义，行为不变。本文件内的调用走的是直接调用，不经导出名。
+comptime {
+    @export(&esp_event_handler_register, .{ .name = "esp_event_handler_register", .linkage = .weak });
+    @export(&esp_event_handler_unregister, .{ .name = "esp_event_handler_unregister", .linkage = .weak });
 }
 
 /// 同步派发：调用所有匹配 `(base, id)` 的处理函数。

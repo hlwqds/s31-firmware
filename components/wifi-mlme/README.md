@@ -1,8 +1,10 @@
 # wifi-mlme — 非 AP STA 侧的 MAC 帧格式、管理帧、信息元素、MLME 与扫描
 
-IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6.20 的纯逻辑实现。
-不做密钥与加解密（归 `wifi-connect`）、不做 SAE 报文内容、不做 AP 行为、PHY、QoS 流量行为与省电。
-主机测试 **61 项**，板侧自检 **16 条判据**（2026-11-24 随 `wifi` profile 上板一次，16/16；见「验证状态」）。
+IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.2 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6.20 的纯逻辑实现，
+另含 QoS 字段与参数（9.2.4.5、9.4.1.17、9.4.2.29、Table 10-1）和省电的两个确定性模型（11.2）。
+不做密钥与加解密（归 `wifi-connect`）、不做 SAE 报文内容、不做 AP 行为、PHY、EDCA 竞争与队列调度。
+主机测试 **82 项**、板侧自检 **24 条判据**（2026-11-24；第二批之后的 24 条已随 `wifi` profile 上板，`wifi_mlme` 24/24）。
+第一批上板时是 61 项 / 16 条（见「验证状态」）。
 
 ## 范围与来源
 
@@ -28,15 +30,33 @@ IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6
   Wireshark wiki SampleCaptures 的 `wpa-Induction.pcap`（带帧尾 FCS；1093 帧中 724 帧的末 4 字节等于前文的
   CRC-32，用 CPython `zlib.crc32` 核对）与 `mesh.pcap`（Country / TIM 元素），以及按条款手工构造的向量。
   每个向量的出处写在 `src/vectors.zig` 里。
+- QoS 与省电（第二批新增，页码为印刷页码，逐条见 `src/qos.zig`、`src/powersave.zig` 文件头）：
+  - `qos.zig`：9.2.4.1.3（p.639）、9.2.4.5.1–.16（p.647–653，Table 9-6 p.648、Table 9-8 p.649、
+    Table 9-9 p.650–651、Figure 9-6 p.652）、Table 10-1（p.1298）、10.2.4.2（p.1299）、
+    9.4.2.29（p.897–898，Figure 9-261–9-264）、Table 9-137（p.899）、Table 9-136（p.898）、
+    9.4.2.35（p.916）、9.4.1.17（p.739–740）、Table 9-48（p.740）、10.22.2.2 / 10.22.2.4（p.1379–1380）、
+    10.22.2.8（p.1387）、10.12（p.1365）。
+  - `powersave.zig`：9.2.4.1.7 / 9.2.4.1.8（p.642–643）、9.3.1.5（p.671）、9.2.4.2 a)（p.644）、
+    11.2.1–11.2.2（p.1599–1600，Table 11-1）、11.2.3.1–11.2.3.2（p.1600–1602）、11.2.3.4（p.1602）、
+    9.4.2.6（p.792–794）、11.2.3.5.1（p.1603–1604）、11.2.3.6（p.1607–1610）、
+    11.2.3.8 / 11.2.3.10 / 11.2.3.11（p.1611–1613）、6.3.2.2–6.3.2.3（p.264–265）、9.4.1.6（p.727）、9.4.1.8（p.727）。
+  - 抓包：Wireshark wiki SampleCaptures 的 `http_PPI.cap`（TID 0，带 FCS）与 `wpa-eap-tls.pcap`（TID 7）；
+    EDCA Parameter Set 的解码用例用的是 hostapd 的默认 WMM 参数（出处以 `qos_tests.zig` 的用例为准）。
 
 ## 验证状态
 
-- L3 板侧：2026-11-24 随 `wifi` profile 第一次上板，自检 16/16。日志 `logs/wifi-selftest-prefix-boot.log`。
-- L1 主机：2026-11-24，61 项（`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6），全部通过；
-  `zig fmt --check src/` 干净。
+- L3 板侧：第一批 16 条判据于 2026-11-24 随 `wifi` profile 上板一次，16/16。日志 `logs/wifi-selftest-prefix-boot.log`。
+  第二批加到 24 条之后于同日重新上板：`wifi_mlme` `checks: passed=24 failed=0 total=24`，整份判决 14/14 段、
+  `main: verdict=pass`（`logs/e2e-wifi-boot.log`，命令 `BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi`）。
+- L1 主机：2026-11-24，82 项，全部通过（`cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig`
+  → `All 82 tests passed.`）。分布：`host_tests.zig` 61（`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6）
+  + `qos_tests.zig` 10 + `powersave_tests.zig` 9 + 2 个引在这两个文件上的 wrapper `test` 块；`zig fmt --check src/` 干净。
 - 接入：`firmware/build.zig` 的 `wifi` 组已挂上本组件的 `selftest.zig`，`wifi` 与 `full` 两个 profile 带它。
-  上板之前，自检先在主机上以 `board` 桩模块（`log.line` → `std.debug.print`）编译并运行过，
-  16 条判据 `passed=16 failed=0`。
+  24 条判据的板侧自检在主机上以桩 `board` 模块运行（2026-11-24，`/tmp/selftest-host/`）：
+  `checks: passed=24 failed=0 total=24`；同一份 `selftest.zig` 以固件参数（`riscv32-freestanding-eabihf`、
+  `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）交叉编译通过——标志要跟在每个 `-M` 之后，并带一个在编译期断言
+  目标架构的守卫根文件（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1）。
+  原 16 条在主机上桩跑的结果是 `passed=16 failed=0`。
 - 差分对拍（`/tmp/s31-oracle/wifi_oracle.py`，一次性测试，跑完已删）：
   `bip_protect` 40 条（4 种 BIP × Key ID 4/5 × 随机 IPN）的 MME 经 `ie.parseMmie` 解出的 Key ID / IPN / MIC 全部相等；
   `ccmp_encapsulate` 40 条随机管理帧 / 数据帧（含 3 条四地址、12 条 QoS、15 条 HT Control）的 AAD 长度与 QoS TID
@@ -48,7 +68,7 @@ IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6
 ```sh
 cd components/wifi-mlme
 ZIG=/nix/store/m096jak4mrmdhah085l79rzfypviyhfw-zig-0.17.1/bin/zig
-env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # 61 项
+env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # 82 项
 env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 ```
 
@@ -59,14 +79,18 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 | 文件 | 行数 | 职责 |
 | --- | --- | --- |
 | `src/frame.zig` | 759 | Frame Control 编解码、Duration/ID、Sequence Control、QoS Control、帧头布局与 `parse` / `seal`、FCS（查表 + 逐位参考实现）、Action 帧头 |
-| `src/ie.zig` | 781 | 元素遍历器；SSID / Rates / DSSS / TIM / Country / RSNE / Extended Capabilities / MME 解码；SSID / Rates / Ext Rates / RSNE 构造 |
+| `src/ie.zig` | 785 | 元素遍历器；SSID / Rates / DSSS / TIM / Country / RSNE / Extended Capabilities / MME 解码；SSID / Rates / Ext Rates / RSNE 构造 |
 | `src/mgmt.zig` | 615 | Capability、Status / Reason Code 名字表、各管理帧固定字段解码、STA 侧帧体构造（含进程内对端用的 Beacon / Association Response） |
 | `src/robust.zig` | 179 | robust 管理帧判定（Table 9-47 逐行）、Protected Frame 位置位条件、12.6.20 的两条选择规则 |
 | `src/mlme.zig` | 1069 | State 1–4、Class 1/2/3 过滤、认证 / 关联 / 重关联 / 解除认证 / 去关联流程、重传与 SRC/LRC、指示队列 |
 | `src/scan.zig` | 442 | 主动 / 被动扫描调度表、Probe Request 整帧、有界 BSS 表 |
-| `src/vectors.zig` | 300 | 固定向量与出处 |
-| `src/host_tests.zig` | 2234 | 全部测试 |
-| `src/selftest.zig` | 755 | 板侧自检（16 条判据） |
+| `src/vectors.zig` | 448 | 固定向量与出处 |
+| `src/host_tests.zig` | 2245 | 第一批 61 项测试；末尾两个 wrapper `test` 块引入 `qos_tests.zig`、`powersave_tests.zig` |
+| `src/selftest.zig` | 1130 | 板侧自检（24 条判据；第一批 16 条 + QoS / 省电 8 条） |
+| `src/qos.zig` | 850 | QoS Control 字段按发送方 / 子类型的布局与编解码、UP / TID / AC、Ack Policy 约束、QoS Capability 与 EDCA Parameter Set 元素、QoS 数据帧的 `parse` / `seal` |
+| `src/powersave.zig` | 1119 | 省电的两个确定性模型：`Sta`（非 AP STA 侧，模式切换、TIM / DTIM 唤醒、PS-Poll、U-APSD 服务期）与 `Ap`（进程内 AP 模型，缓冲、TIM、PS-Poll 响应、DTIM 之后的组播） |
+| `src/qos_tests.zig` | 618 | QoS 的 10 项主机测试与用例向量 |
+| `src/powersave_tests.zig` | 619 | 省电的 9 项主机测试与用例向量 |
 
 公开接口（要点）：`frame.parse(buf, .none|.present|.checked)`、`frame.seal(hdr, body, with_fcs, out)`、
 `frame.crc32` / `fcsOk`；`ie.Walker`、`ie.parseXxx`、`ie.buildXxx`；`mgmt.parseXxx` / `buildXxx`、
@@ -74,6 +98,12 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 `negotiateMfp` / `useProtectedDual`；`mlme.Machine`（`authenticate` / `associate` / `reassociate` /
 `deauthenticate` / `disassociate` / `setProtection` / `receive` / `tick` / `takeTx` / `txResult` / `poll`）、
 `mlme.classifyFrame` / `filterByState`；`scan.plan` / `scan.buildProbeRequestMpdu` / `scan.BssTable.update`。
+QoS 与省电（第二批）：`qos.acForUp` / `acForTid` / `acForMgmtFrame`、`qos.defaultAcParams`、`qos.decode` / `encode` /
+`decodeFor`、`qos.parse` / `seal`、`qos.checkAckPolicy`、
+`qos.buildQosCapability` / `parseQosCapability` / `parseEdcaParameterSet`；`powersave.pmValidity` / `moreDataValid` /
+`isBufferableMmpdu`、`powersave.VirtualBitmap` / `timRange` / `encodeTim`、`powersave.Sta`（`request` /
+`exchangeResult` / `onBeacon` / `onUnicastFromAp` / `nextWake` / `powerStateAt` / `buildPsPoll`）、
+`powersave.Ap`（`associate` / `enqueueUnicast` / `buildTim` / `nextDelivery` / `onPsPoll` / `onTrigger`）。
 
 ## 特性对照表
 
@@ -116,6 +146,23 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 | 扫描调度表（主动 / 被动 / 拒绝） | 11.1.4.2 / 11.1.4.3；6.3.3.2 | `scan 11.1.4.3.2 ...`；`scan 11.1.4.2.1 ...`；`scan 6.3.3.2.2 ...` | 手工构造 | 已测（主机） |
 | Probe Request 整帧 | 11.1.4.3.2 c | `scan 11.1.4.3.2 c p.1591: ...` | 抓包第 58 帧（含 FCS） | 已测（主机） |
 | BSS 表（按 BSSID 去重、保留 TSF / 信道 / RSSI / RSNE 摘要） | 11.1.4.1 | `scan 11.1.4.1 p.1589: ...`；`scan: BSS table rejects ...` | 抓包 Beacon / Probe Response | 已测（主机） |
+| QoS：UP → AC、TID 范围、ACI 编码 | Table 10-1 p.1298；Table 9-8 p.649 | `qos Table 10-1 p.1298 / Table 9-8 p.649: UP to AC mapping, TID ranges and ACI coding` | 两张表的值 | 已测（主机） |
+| QoS：各 PHY 族群的默认 EDCA 参数 | Table 9-137 p.899 | `qos Table 9-137 p.899: default EDCA parameters for each PHY family` | 原文表格 | 已测（主机） |
+| QoS：EDCA Parameter Set 元素 | 9.4.2.29 p.897–898；Table 9-136 p.898 | `qos 9.4.2.29 p.897-898: EDCA Parameter Set element decodes the hostapd default WMM parameters` | hostapd 默认 WMM 参数 | 已测（主机） |
+| QoS：QoS Info 与 QoS Capability 元素、Max SP Length | 9.4.1.17 p.739–740；9.4.2.35 p.916；Table 9-48 p.740 | `qos 9.4.1.17 Figure 9-82/9-83 + Table 9-48 p.739-740: QoS Info bits and the QoS Capability element` | 原文图表 | 已测（主机） |
+| QoS：Ack Policy 取值与约束 | 9.2.4.5.4；Table 9-9 p.650–651 | `qos 9.2.4.5.4 Table 9-9 p.650-651: Ack Policy values and their constraints` | 原文表格与规则 | 已测（主机） |
+| QoS：QoS Control 按发送方 / 子类型的布局、子字段往返、保留位 | 9.2.4.5.1–.5；Table 9-6 p.648；Figure 9-1 p.638 | `qos Table 9-6 p.648: layout per sender and subtype, sender from To DS / From DS`；`qos Table 9-6 p.648: every subfield round-trips per layout; reserved bits are rejected`；`qos 9.2.4.5.1 p.648 / Figure 9-1 p.638: sealed QoS frames (3- and 4-address) parse back; rejections` | 原文表格 + 手工构造 | 已测（主机） |
+| QoS：Queue Size、TXOP 时长、AP PS Buffer State 的换算 | 9.2.4.5.6–.8 p.651–652 | `qos 9.2.4.5.6-9.2.4.5.8 p.651-652: Queue Size, TXOP duration and AP PS Buffer State scales` | 原文换算规则 | 已测（主机） |
+| QoS：真实 QoS 数据帧 | 9.2.4.5.1 | `qos: QoS Data frames from http_PPI.cap (TID 0, FCS checked) and wpa-eap-tls.pcap (TID 7)` | 抓包 `http_PPI.cap`、`wpa-eap-tls.pcap` | 已测（主机） |
+| 省电：PM / More Data 位的含义、PS-Poll 帧 | 9.2.4.1.7–.8 p.642–643；9.3.1.5 p.671 | `powersave 9.2.4.1.7-9.2.4.1.8 p.642-643 / 9.3.1.5 p.671: PM and More Data meaning, PS-Poll frame` | 原文规则 + 手工构造 | 已测（主机） |
+| 省电：partial virtual bitmap、Bitmap Offset、TIM 元素字节 | 9.4.2.6 p.793–794 | `powersave 9.4.2.6 p.793-794: partial virtual bitmap, Bitmap Offset and TIM element bytes` | 原文编码规则 | 已测（主机） |
+| 省电：DTIM Count 序列、可缓存的 MMPDU | 11.2.3.4 p.1602；Table 11-1 p.1600 | `powersave 11.2.3.4 p.1602 / Table 11-1 p.1600: DTIM Count sequence and bufferable MMPDUs` | 原文表格 | 已测（主机） |
+| 省电：模式切换要等 Ack、TIM 位置位后发 PS-Poll | 11.2.3.2 p.1601；11.2.3.8 b–d p.1611 | `powersave 11.2.3.2 p.1601 / 11.2.3.8 b-d p.1611: mode change needs an Ack; TIM bit asks for a PS-Poll` | 原文规则 + 进程内 AP 模型 | 已测（主机） |
+| 省电：AP 侧缓冲、TIM、PS-Poll 响应、DTIM 之后的组播 | 11.2.3.6 p.1607–1610 | `powersave 11.2.3.6 p.1607-1610: AP model buffers, sets TIM bits, answers PS-Poll, sends multicast after DTIM` | 原文规则 | 已测（主机） |
+| 省电：ListenInterval / ReceiveDTIMs 决定下一次醒来 | 11.2.3.8 a, e p.1611 | `powersave 11.2.3.8 a,e p.1611: ListenInterval and ReceiveDTIMs decide the next beacon to wake for` | 原文规则 | 已测（主机） |
+| 省电：DTIM 组播位让 STA 醒到 More Data = 0 | 11.2.3.8 e p.1611–1612 | `powersave 11.2.3.8 e p.1611-1612: the DTIM multicast bit keeps the STA awake until More Data is 0` | 原文规则 | 已测（主机） |
+| 省电：U-APSD trigger 帧与服务期 | 11.2.3.5.1 p.1603–1604；11.2.3.6 d, g, h p.1607–1609；11.2.3.10 p.1612–1613 | `powersave 11.2.3.5.1 p.1603-1604 / 11.2.3.6 d,g,h p.1607-1609 / 11.2.3.10 p.1612-1613: U-APSD trigger frame and service period` | 原文规则 | 已测（主机） |
+| 省电：STA 与 AP 两个模型对拍 | 11.2.3.6–11.2.3.8 p.1607–1612 | `powersave 11.2.3.6-11.2.3.8 p.1607-1612: STA and AP models interoperate; More Data hints act as a TIM bit` | 进程内对拍，无外部向量 | 已测（主机） |
 
 ## 实现偏离
 
@@ -151,7 +198,11 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 
 ## 待验证项
 
-- 板侧：已接入 `firmware/build.zig` 并于 2026-11-24 上板一次，`checks: passed=16 failed=0 total=16`。
+- 板侧：已接入 `firmware/build.zig`，于 2026-11-24 上板两次。第一批 16 条：`checks: passed=16 failed=0 total=16`
+  （`logs/wifi-selftest-prefix-boot.log`）。QoS 与省电加入后的 24 条：先在主机上用桩 `board` 跑过、以固件参数
+  交叉编译通过，随后上板 `checks: passed=24 failed=0 total=24`（`logs/e2e-wifi-boot.log`）。
+- QoS / 省电的行为（TIM 位置位后的取回、模式切换、U-APSD 服务期）只在两个进程内模型之间对拍，
+  没有真实 AP 的 Beacon TIM 与 PS-Poll 响应可对；省电要驱动配合唤醒与 PS-Poll 前的随机退避，这里没有随机数。
 - 空口：真实 AP 的 Beacon / Probe Response / Authentication / Association（厂商特定元素、顺序不按 ID 升列、
   AID 高 5 位置 1 等已经只在一份 2004 年的抓包里见过）；SA Query / 各类 Action 帧；组地址 Deauthentication。
 - FCS 的比特顺序依据只核对了 Clause 17（OFDM）的 17.3.5.5；DSSS / HR-DSSS / HT 的 PSDU 比特顺序条款没有抽取。

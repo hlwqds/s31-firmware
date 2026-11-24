@@ -40,9 +40,9 @@ export fn GetUartDevice() ?*anyopaque {
 //     这两个桩原本强定义、遮住了 `s31.ld` 的 PROVIDE，官方固件启动时那行 "coex: ROM version"
 //     在我们这里恒为 "0"。真身经同地址的别名（`rom_*`）引用，桩的名字不用变。
 //   - `coexist_printf` 是 `libcoexist.a` 的日志入口（C 变参）。Zig 读不到变参，只能把
-//     **格式串本身**转给日志（与 `wifi-blobs/src/printf_shim.c` 同一做法）。参数展开的版本
-//     见探针的 `coex_wiring.report()`；不带探针的镜像里没有本文件，由
-//     `components/radio-coex/link/coex_printf_shim.c` 真格式化。
+//     **格式串本身**转给日志。真格式化在 `components/radio-coex/link/coex_printf_shim.c`
+//     （`-Dcoex` 时编入），所以这里以**弱符号**导出：两者同链时让位；不带 `-Dcoex` 的镜像里
+//     没有 shim，这里仍是唯一实现（静默）。函数留在文件顶层原位，理由同上。
 extern fn rom_coex_core_ble_conn_dyn_prio_get() c_int;
 extern fn rom_esp_coex_rom_version_get() ?[*:0]const u8;
 
@@ -50,7 +50,7 @@ export fn coex_core_ble_conn_dyn_prio_get() c_int {
     if (coex_gate.enabled) return rom_coex_core_ble_conn_dyn_prio_get();
     return 0;
 }
-export fn coexist_printf(fmt: ?[*:0]const u8, ...) c_int {
+fn coexist_printf(fmt: ?[*:0]const u8, ...) callconv(.c) c_int {
     if (coex_gate.enabled) {
         if (fmt) |f| @import("board").log.line("bt coex> {s}", .{std.mem.span(f)});
     }
@@ -59,6 +59,9 @@ export fn coexist_printf(fmt: ?[*:0]const u8, ...) c_int {
 export fn esp_coex_rom_version_get() ?[*:0]const u8 {
     if (coex_gate.enabled) return rom_esp_coex_rom_version_get();
     return "0";
+}
+comptime {
+    @export(&coexist_printf, .{ .name = "coexist_printf", .linkage = .weak });
 }
 export fn esp_rom_get_cpu_ticks_per_us() c_int {
     return 160; // HP CPU 标称（探针 hw.nowUs 以 1MHz 计数，独立于此）

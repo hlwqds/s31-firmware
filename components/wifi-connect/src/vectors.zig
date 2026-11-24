@@ -457,9 +457,13 @@ pub const e2e_bdeauth: [44]u8 = hex(
 
 pub const sae_password = "correct horse battery staple";
 
-pub const sae_pwd_seed_1: [32]u8 = hex("63ab6f8392ff2824d8a75c9c403bfab5236ee87311808791fd1de89a151fc2e7");
-pub const sae_pwd_seed_2: [32]u8 = hex("28b74f836a38f8873180135ad68e8e6ffaf76f7df679d100b989b6769a0de406");
-pub const sae_pwd_value_1: [32]u8 = hex("559ea05d3c0ff84d26d110202680503ee2d736cdf11ea82e92ddb961b4328ef9");
+// pwd-seed / pwd-value：counter 取 1、2，按 12.4.4.2.2（印刷页 1937）的**单八位组** counter 算
+// （HMAC-SHA256(MAX(STA,AP)‖MIN(STA,AP), password‖counter)，再用 12.7.1.7.2 的 KDF 得 pwd-value）。
+// 值由仓库外的 Python（hashlib 的 HMAC）独立算出，不取自本组件。2026-11-24 之前的三个值是按
+// 两字节 counter 算的，与规范不符，已换。
+pub const sae_pwd_seed_1: [32]u8 = hex("32785eff68640a011197e2e8dd7b9234c2cc6653d38d381f7937c431bf6b07e2");
+pub const sae_pwd_seed_2: [32]u8 = hex("f39659bb4430d511c58468142a8088c332cdff6917cb18c9600b097b661f9fff");
+pub const sae_pwd_value_1: [32]u8 = hex("aabeded86edb33fa52c34ac17537d92993764a498b556c27aa20bf9b1861466a");
 
 /// 「EC 替身」：真实实现里这是 K 的 x 坐标（scalar-op(rand, ...) 的结果）。
 pub const sae_k: [32]u8 = hex("8f2c1d4b7a9e63550c4b3a291807f6e5d4c3b2a1908f7e6d5c4b3a29180f7e6d");

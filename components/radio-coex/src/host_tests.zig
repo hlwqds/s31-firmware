@@ -1260,3 +1260,12 @@ test "fake model: version_get_value writes 2.0.0 and rejects a null output" {
     try expectEqual(@as(c_int, 0), c.version_get_value.?(&v));
     try expectEqual(core.Version{ .major = 2, .minor = 0, .patch = 0 }, v);
 }
+
+// ---------------------------------------------------------------------------
+// PHY 与时钟域的归属模型（ADR-003 §4）
+// ---------------------------------------------------------------------------
+
+// 用例写在 `owner.zig` 里；发现它们必须是对那个文件的直接 import。
+test {
+    _ = @import("owner.zig");
+}

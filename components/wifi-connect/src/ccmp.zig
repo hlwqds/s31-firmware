@@ -1,10 +1,31 @@
-//! wifi-connect：CCMP-128 与 GCMP-128 的封装/解封装（802.11-2016 12.5.3、12.5.5）。
+//! wifi-connect：CCMP-128 / CCMP-256 与 GCMP-128 / GCMP-256 的封装/解封装
+//! （802.11-2016 12.5.3、12.5.5）。
 //!
-//! 两种协议对同一帧的输入输出完全同构，差别只在 nonce、MIC 长度与所用的
+//! 四种协议对同一帧的输入输出同构，差别只在密钥长度、nonce、MIC 长度与所用的
 //! 分组密码工作方式：
 //!
-//!   CCMP-128：M = 8、L = 2 的 CCM（12.5.3.1，印刷页 1967–1968），MIC 8 字节。
-//!   GCMP-128：GCM，96 位 nonce，MIC 16 字节（12.5.5.1，印刷页 1977）。
+//!   CCMP-128：M = 8、L = 2 的 AES-128 CCM（12.5.3.1，印刷页 1967–1968），MIC 8 字节。
+//!   CCMP-256：M = 16、L = 2 的 AES-256 CCM（12.5.3.1，印刷页 1968），MIC 16 字节。
+//!   GCMP-128：AES-128 GCM，96 位 nonce，MIC 16 字节（12.5.5.1，印刷页 1977）。
+//!   GCMP-256：AES-256 GCM，同上，MIC 16 字节。
+//!
+//! 256 位版与 128 位版的异同，逐条对照原文（这几条都是整个协议的条款，不按密钥
+//! 长度分开；CCMP 没有单独的「CCMP-256」小节）：
+//!
+//!   密钥     12.5.3.1、12.5.5.1（印刷页 1967、1977）：AES 用 128 位或 256 位密钥；
+//!            表 12-4（印刷页 2021）给 CCMP-256、GCMP-256 的 Key length 为 32 字节。
+//!            12.5.3.3.6 a)、12.5.3.4.2、12.5.5.3.6 a)、12.5.5.4.2 仍把 Key 写成
+//!            「16 octets」，与上面两处矛盾；这里按 32 字节实现。
+//!   AAD      相同。GCMP 的 12.5.5.3.3 直接引用 12.5.3.3.3，AAD 长度仍按表 12-1。
+//!   nonce    相同。CCMP 13 字节：Nonce Flags ‖ A2 ‖ PN（12.5.3.3.4，印刷页 1971），
+//!            PN5 在八位组 7、PN0 在八位组 12；GCMP 12 字节：A2 ‖ PN（12.5.5.3.4，
+//!            印刷页 1979），PN5 在八位组 6、PN0 在八位组 11。
+//!   8 字节头 相同。12.5.3.2、12.5.5.2 是整个协议的条款；J.6.4 的 CCMP-256 向量
+//!            （印刷页 3423）与 J.11 #3 的 GCMP-256 向量（印刷页 3432）的头与 128 位版
+//!            布局一致。
+//!   MIC      CCMP-256 是 16 字节（M = 16），比 CCMP-128 多 8 字节；GCMP-256 仍是 16
+//!            字节。所以 CCMP-256、GCMP 都让 MPDU 比原来长 24 字节（12.5.3.2、12.5.5.2）。
+//!   PN 规则  相同（12.5.3.3.2、12.5.3.4.4；12.5.5.3.2、12.5.5.4.4）。
 //!
 //! 封装（12.5.3.3 / 12.5.5.3）的步骤：
 //!   1. 用 MAC 头构造 AAD（12.5.3.3.3；GCMP 按 12.5.5.3.3 沿用同一规则）。
@@ -19,6 +40,10 @@
 //! 输入输出都不含 FCS。单独寻址的数据帧、组寻址的数据帧、单独寻址的稳健
 //! 管理帧走同一套函数：管理帧只影响 AAD 里子类型是否清零与 nonce 的 Management 位。
 //!
+//! 临时密钥的长度随套件（`Cipher.keyLen`）：128 位套件走 `encapsulate` /
+//! `decapsulate`，256 位套件走 `encapsulate256` / `decapsulate256`，两组入口共用
+//! 同一份 AAD、nonce、头部与缓冲处理。
+//!
 //! 缓冲约定：`out` 要么与输入完全不相交，要么就是输入本身（`out.ptr ==
 //! mpdu.ptr`，原地封装/解封装，帧缓冲可以复用）。其余重叠方式报 `BufferOverlap`。
 //!
@@ -28,14 +53,20 @@ const std = @import("std");
 const hdr = @import("hdr.zig");
 
 const Aes128Ccm8 = std.crypto.aead.aes_ccm.Aes128Ccm8;
+const Aes256Ccm16 = std.crypto.aead.aes_ccm.Aes256Ccm16;
 const Aes128Gcm = std.crypto.aead.aes_gcm.Aes128Gcm;
+const Aes256Gcm = std.crypto.aead.aes_gcm.Aes256Gcm;
 
 pub const tk_len = 16;
+/// CCMP-256、GCMP-256 的临时密钥长度（表 12-4，印刷页 2021）。
+pub const tk_len_256 = 32;
 pub const pn_len = 6;
 /// PN0 PN1 Rsvd ExtIV|KeyID PN2 PN3 PN4 PN5（布局见 `putExtHdr`）。
 pub const ext_hdr_len = 8;
 pub const ccmp_mic_len = 8;
 pub const gcmp_mic_len = 16;
+/// CCMP-256 的 M = 16（12.5.3.1，印刷页 1968），与 GCMP 的 MIC 同长。
+pub const ccmp256_mic_len = 16;
 pub const ccmp_nonce_len = 13;
 pub const gcmp_nonce_len = 12;
 pub const aad_min = 22;
@@ -49,11 +80,21 @@ const body_max = 0xffff;
 pub const Cipher = enum {
     ccmp128,
     gcmp128,
+    ccmp256,
+    gcmp256,
 
     pub fn micLen(self: Cipher) usize {
         return switch (self) {
             .ccmp128 => ccmp_mic_len,
-            .gcmp128 => gcmp_mic_len,
+            .gcmp128, .ccmp256, .gcmp256 => gcmp_mic_len,
+        };
+    }
+
+    /// 临时密钥长度（表 12-4，印刷页 2021）。
+    pub fn keyLen(self: Cipher) usize {
+        return switch (self) {
+            .ccmp128, .gcmp128 => tk_len,
+            .ccmp256, .gcmp256 => tk_len_256,
         };
     }
 };
@@ -75,6 +116,8 @@ pub const Error = error{
     /// Key ID 八位组的 ExtIV 位为 0：12.5.3.2 规定 CCMP/GCMP 恒为 1。
     ExtIvNotSet,
     MicFailed,
+    /// 临时密钥的长度与套件不符（表 12-4：128 位套件 16 字节，256 位套件 32 字节）。
+    WrongKeyLength,
 };
 
 /// 封装参数。`spp_amsdu`：本端与对端都是 SPP A-MSDU Capable 时为真，
@@ -200,12 +243,31 @@ fn checkProtectable(h: hdr.Header, body_len: usize) Error!void {
     if (body_len > body_max) return error.MessageTooLong;
 }
 
+/// 128 位或 256 位的临时密钥：两组公开入口各自装一种，公共的实现按联合的标签取用。
+const AnyTk = union(enum) { k128: [tk_len]u8, k256: [tk_len_256]u8 };
+
+fn checkKeyLength(cipher: Cipher, tk: AnyTk) Error!void {
+    const want_256 = cipher.keyLen() == tk_len_256;
+    if (want_256 != (tk == .k256)) return error.WrongKeyLength;
+}
+
 /// 封装一帧。`mpdu` 是 MAC 头 ‖ 明文帧体；`out` 得到 MAC 头（Protected Frame
 /// 位置 1）‖ 8 字节头 ‖ 密文 ‖ MIC。返回 `out` 里的有效长度。
 ///
 /// 原地（`out.ptr == mpdu.ptr`）时先把帧体整体后移 8 字节给出 8 字节头让位，
 /// 然后帧体原地加密——密文与明文是同一块缓冲，对 CTR 类工作方式是合法用法。
 pub fn encapsulate(p: Params, tk: [tk_len]u8, mpdu: []const u8, out: []u8) Error!usize {
+    return encapsulateAny(p, .{ .k128 = tk }, mpdu, out);
+}
+
+/// 同 `encapsulate`，临时密钥是 32 字节（CCMP-256、GCMP-256，表 12-4）。
+/// 套件是 128 位的时候报 `WrongKeyLength`。
+pub fn encapsulate256(p: Params, tk: [tk_len_256]u8, mpdu: []const u8, out: []u8) Error!usize {
+    return encapsulateAny(p, .{ .k256 = tk }, mpdu, out);
+}
+
+fn encapsulateAny(p: Params, tk: AnyTk, mpdu: []const u8, out: []u8) Error!usize {
+    try checkKeyLength(p.cipher, tk);
     const h = try hdr.parse(mpdu);
     const body_len = mpdu.len - h.hdr_len;
     try checkProtectable(h, body_len);
@@ -219,8 +281,8 @@ pub fn encapsulate(p: Params, tk: [tk_len]u8, mpdu: []const u8, out: []u8) Error
     const aad_len = try buildAad(mpdu, h, p.spp_amsdu, &aad);
     var nonce: [ccmp_nonce_len]u8 = undefined;
     switch (p.cipher) {
-        .ccmp128 => ccmpNonce(h, priorityOf(h), p.pn, &nonce),
-        .gcmp128 => gcmpNonce(h, p.pn, nonce[0..gcmp_nonce_len]),
+        .ccmp128, .ccmp256 => ccmpNonce(h, priorityOf(h), p.pn, &nonce),
+        .gcmp128, .gcmp256 => gcmpNonce(h, p.pn, nonce[0..gcmp_nonce_len]),
     }
     var ext: [ext_hdr_len]u8 = undefined;
     putExtHdr(pnToBytes(p.pn), p.key_id, &ext);
@@ -239,9 +301,18 @@ pub fn encapsulate(p: Params, tk: [tk_len]u8, mpdu: []const u8, out: []u8) Error
     @memcpy(out[h.hdr_len..][0..ext_hdr_len], &ext);
 
     var mic: [gcmp_mic_len]u8 = undefined;
-    switch (p.cipher) {
-        .ccmp128 => Aes128Ccm8.encrypt(body_out, mic[0..ccmp_mic_len], body_out, aad[0..aad_len], nonce, tk),
-        .gcmp128 => gcm128Seal(tk, nonce[0..gcmp_nonce_len].*, aad[0..aad_len], body_out, &mic),
+    switch (tk) {
+        // 128 位：密钥长度已由 checkKeyLength 核对，套件只会是这两个。
+        .k128 => |k| switch (p.cipher) {
+            .ccmp128 => Aes128Ccm8.encrypt(body_out, mic[0..ccmp_mic_len], body_out, aad[0..aad_len], nonce, k),
+            .gcmp128 => gcm128Seal(k, nonce[0..gcmp_nonce_len].*, aad[0..aad_len], body_out, &mic),
+            else => unreachable,
+        },
+        .k256 => |k| switch (p.cipher) {
+            .ccmp256 => Aes256Ccm16.encrypt(body_out, &mic, body_out, aad[0..aad_len], nonce, k),
+            .gcmp256 => Aes256Gcm.encrypt(body_out, &mic, body_out, aad[0..aad_len], nonce[0..gcmp_nonce_len].*, k),
+            else => unreachable,
+        },
     }
     @memcpy(out[h.hdr_len + ext_hdr_len + body_len ..][0..mic_len], mic[0..mic_len]);
     return total;
@@ -272,6 +343,17 @@ pub const Decapped = struct {
 /// 本函数不推进重放计数：调用方先按返回的 PN / TID 查 `Replay`，接受后再更新
 /// （12.5.3.4.4 a)：计数器取「被接受的」MPDU 的 PN）。
 pub fn decapsulate(cipher: Cipher, tk: [tk_len]u8, mpdu: []const u8, out: []u8, spp_amsdu: bool) Error!Decapped {
+    return decapsulateAny(cipher, .{ .k128 = tk }, mpdu, out, spp_amsdu);
+}
+
+/// 同 `decapsulate`，临时密钥是 32 字节（CCMP-256、GCMP-256）。
+/// 套件是 128 位的时候报 `WrongKeyLength`。
+pub fn decapsulate256(cipher: Cipher, tk: [tk_len_256]u8, mpdu: []const u8, out: []u8, spp_amsdu: bool) Error!Decapped {
+    return decapsulateAny(cipher, .{ .k256 = tk }, mpdu, out, spp_amsdu);
+}
+
+fn decapsulateAny(cipher: Cipher, tk: AnyTk, mpdu: []const u8, out: []u8, spp_amsdu: bool) Error!Decapped {
+    try checkKeyLength(cipher, tk);
     const h = try hdr.parse(mpdu);
     if (h.kind == .other) return error.UnsupportedFrame;
     if (!h.protected) return error.NotProtected;
@@ -288,8 +370,8 @@ pub fn decapsulate(cipher: Cipher, tk: [tk_len]u8, mpdu: []const u8, out: []u8, 
     const aad_len = try buildAad(mpdu, h, spp_amsdu, &aad);
     var nonce: [ccmp_nonce_len]u8 = undefined;
     switch (cipher) {
-        .ccmp128 => ccmpNonce(h, priorityOf(h), ext.pn, &nonce),
-        .gcmp128 => gcmpNonce(h, ext.pn, nonce[0..gcmp_nonce_len]),
+        .ccmp128, .ccmp256 => ccmpNonce(h, priorityOf(h), ext.pn, &nonce),
+        .gcmp128, .gcmp256 => gcmpNonce(h, ext.pn, nonce[0..gcmp_nonce_len]),
     }
 
     // 明文紧跟 MAC 头，比密文提前 8 字节：原地时两者重叠，明文在密文之后。
@@ -302,9 +384,17 @@ pub fn decapsulate(cipher: Cipher, tk: [tk_len]u8, mpdu: []const u8, out: []u8, 
     const c = mpdu[h.hdr_len + ext_hdr_len ..][0..body_len];
     var tag: [gcmp_mic_len]u8 = @splat(0);
     @memcpy(tag[0..mic_len], mpdu[mpdu.len - mic_len ..]);
-    const ok = switch (cipher) {
-        .ccmp128 => if (Aes128Ccm8.decrypt(m, c, tag[0..ccmp_mic_len].*, aad[0..aad_len], nonce, tk)) true else |_| false,
-        .gcmp128 => if (Aes128Gcm.decrypt(m, c, tag, aad[0..aad_len], nonce[0..gcmp_nonce_len].*, tk)) true else |_| false,
+    const ok = switch (tk) {
+        .k128 => |k| switch (cipher) {
+            .ccmp128 => if (Aes128Ccm8.decrypt(m, c, tag[0..ccmp_mic_len].*, aad[0..aad_len], nonce, k)) true else |_| false,
+            .gcmp128 => if (Aes128Gcm.decrypt(m, c, tag, aad[0..aad_len], nonce[0..gcmp_nonce_len].*, k)) true else |_| false,
+            else => unreachable,
+        },
+        .k256 => |k| switch (cipher) {
+            .ccmp256 => if (Aes256Ccm16.decrypt(m, c, tag, aad[0..aad_len], nonce, k)) true else |_| false,
+            .gcmp256 => if (Aes256Gcm.decrypt(m, c, tag, aad[0..aad_len], nonce[0..gcmp_nonce_len].*, k)) true else |_| false,
+            else => unreachable,
+        },
     };
     if (!ok) {
         // std 在失败时已经清零它写过的明文区；这里再保证一次。

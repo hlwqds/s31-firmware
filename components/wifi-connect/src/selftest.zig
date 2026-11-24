@@ -36,6 +36,9 @@
 //!   ㉖ 请求方拒绝路径：MIC 错、重放、顺序错
 //!   ㉗ 受保护的帧：数据帧与 Deauthentication 双向，BIP 广播帧，重放被拒
 //!   ㉘ 管理帧保护规则与 SA Query
+//!   ㉙ SAE 完整实现：PWE、commit / confirm、双端对打（`sae_full_selftest.zig`）
+//!   ㉚ CCMP-256 / GCMP-256 / BIP 的 256 位与 GMAC 变体（`suite256_selftest.zig`）
+//!   ㉛ FT 密钥层次（`ft_selftest.zig`）
 //!
 //! 板侧只跑 PSK 的用例 1（4096 轮 PBKDF2 较慢），用例 2、3 与需要假认证方的用例
 //! 在主机测试里。另有几行 `read:` 读数（结构长度、状态机计数），不是判据。
@@ -58,6 +61,9 @@ const sae = @import("sae.zig");
 const supp = @import("supplicant.zig");
 const vectors = @import("vectors.zig");
 const wpa2 = @import("wpa2.zig");
+const sae_full_selftest = @import("sae_full_selftest.zig");
+const suite256_selftest = @import("suite256_selftest.zig");
+const ft_selftest = @import("ft_selftest.zig");
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;
@@ -305,9 +311,9 @@ fn checkFourWayOrder() void {
 // ---------------------------------------------------------------------------
 
 fn checkSaeDeterminism() void {
-    const seed_a = sae.pwdSeed(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 1);
-    const seed_b = sae.pwdSeed(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 1);
-    const seed_2 = sae.pwdSeed(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 2);
+    const seed_a = sae.pwdSeedOctet(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 1);
+    const seed_b = sae.pwdSeedOctet(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 1);
+    const seed_2 = sae.pwdSeedOctet(vectors.sta_mac, vectors.ap_mac, vectors.sae_password, 2);
     const value = sae.pwdValue(seed_a);
 
     const seed_ok = eq(&seed_a, &vectors.sae_pwd_seed_1);
@@ -1113,6 +1119,11 @@ fn checkMfpSaQuery() void {
 // 入口
 // ---------------------------------------------------------------------------
 
+/// ㉙–㉛ 的判据各在自己的文件里，经这个回调记到同一本账上。
+fn extCheck(ok: bool, text: []const u8) void {
+    check(ok, "{s}", .{text});
+}
+
 fn runChecks() bool {
     checkPbkdf2();
     checkPtk();
@@ -1142,6 +1153,9 @@ fn runChecks() bool {
     checkSupplicantNegative();
     checkProtectedFrames();
     checkMfpSaQuery();
+    sae_full_selftest.run(extCheck);
+    suite256_selftest.run(extCheck);
+    ft_selftest.run(extCheck);
     return g_failed == 0;
 }
 

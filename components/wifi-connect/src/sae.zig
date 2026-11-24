@@ -1,14 +1,17 @@
-//! wifi-connect：WPA3-SAE（dragonfly）的**可测子集**。
+//! wifi-connect：WPA3-SAE（dragonfly）的**字节层**。
 //!
-//! 这一句话先说清楚本组件做到哪：SAE 是「口令认证的椭圆曲线密钥交换」。
+//! 这一句话先说清楚本文件做到哪：SAE 是「口令认证的椭圆曲线密钥交换」。
 //! 它把口令变成曲线上的一个点（PWE），两端各自发一个 commit（标量+元素），
 //! 用 EC 点运算得到一个共享的 x 坐标 k，再用 k 派生出 KCK/PMK 并用 confirm
 //! 互相证明「我们算出的 k 是同一个」。
 //!
-//! 本组件实现的是**除 EC 点运算以外的全部字节层**：
+//! 本文件是**除 EC 点运算以外的字节层**：EC 点运算在 `ecc.zig`，把两者串成
+//! 完整协议（commit / confirm 交换、帧体编解码、12.4.8 状态机）的是
+//! `sae_full.zig`。本文件有的：
 //!
-//!   ✓ pwd-seed   = HMAC-SHA256(MAX(addr)||MIN(addr), password || LE16(counter))
-//!   ✓ pwd-value  = sha256_prf_bits(pwd-seed, "SAE Hunting and Pecking", p, 256)
+//!   ✓ pwd-seed   = HMAC-SHA256(MAX(addr)||MIN(addr), password || counter)
+//!                  counter 是单个八位组（`pwdSeedOctet`；12.4.4.2.2，印刷页 1937）
+//!   ✓ pwd-value  = KDF-Hash-Length(pwd-seed, "SAE Hunting and Pecking", p, 256)
 //!   ✓ F_p 归约   = 256 位大数对 P-256 素数取模（逐位长除法，无魔法常数）
 //!   ✓ F_q 加法   = commit-scalar 相加后对 P-256 阶取模
 //!   ✓ keyseed    = HKDF-Extract(salt = 0^32, ikm = k) = HMAC-SHA256(0^32, k)
@@ -16,18 +19,15 @@
 //!   ✓ PMKID      = L((sc+pc) mod q, 0, 128)
 //!   ✓ confirm    = HMAC-SHA256(KCK, LE16(send-confirm) || sc || elem || ...)
 //!
-//! 不实现、也不假装实现的部分（`unimplemented` 表里逐条列出，自检会打印条数）：
+//! 没实现的部分在 `unimplemented` 表里逐条列出（自检会打印条数）：恒定时间、
+//! H2E、group 19 以外的群。
 //!
-//!   ✗ EC 点运算：scalar-op / elem-op / PWE 的 y 坐标（y² = x³ + ax + b 的
-//!     平方根与 Lagrange 选点）
-//!   ✗ 标量乘法（commit-element = inverse(m · PWE)）
-//!   ✗ 恒定时间实现（hostap 用 const_time_select_* 把循环次数与分支抹平）
-//!   ✗ H2E（WPA3 R3 的 hash-to-element 替代方案）
-//!   ✗ 组协商 / rejected-groups / group 20/21/30 与 FFC 群
+//! 与向量的一处关系，读代码前先知道（条款号与页码都是 IEEE Std 802.11-2016）：
+//!   * Annex J.10（印刷页 3429–3430）的 pwd-value 与 KCK/PMK 只有把 KDF 的 i 编成
+//!     单个八位组才复现，而 12.7.1.7.2（印刷页 2016）规定 i 是 16 位无符号整数。
+//!     `kdfHash()` 按 12.7.1.7.2 与 hostap 走（LE16），不跟 J.10 走。
 //!
-//! 字段布局照抄本机 IDF 的 hostap 实现（`components/wpa_supplicant/src/common/sae.c`），
-//! 所以将来接真实实现时，替换的是「k 与 commit 元素从哪来」，字节层不用动。
-//!
+//! 字段布局对照本机 IDF 的 hostap 实现（`components/wpa_supplicant/src/common/sae.c`）。
 //! 本文件不 import hw/log，主机测试与板侧自检共用。
 
 const std = @import("std");
@@ -69,22 +69,25 @@ pub const pwd_seed_label = "SAE Hunting and Pecking";
 pub const kck_pmk_label = "SAE KCK and PMK";
 
 /// 自检里打印、章节里逐条引用的两张表：做了什么、没做什么。
+/// 做了的部分跨三个文件：字节层在本文件，EC 点运算在 `ecc.zig`，
+/// 协议交换与状态机在 `sae_full.zig`。
 pub const implemented = [_][]const u8{
-    "pwd-seed (HMAC-SHA256 over MAX||MIN addr)",
-    "pwd-value (sha256_prf_bits hunting-and-pecking)",
+    "pwd-seed (HMAC-SHA256 over MAX||MIN addr, 1-octet counter)",
+    "pwd-value (KDF-Hash-Length hunting-and-pecking)",
     "F_p reduction (bitwise long division)",
     "scalar add mod n",
     "keyseed/KCK/PMK/PMKID",
     "confirm CN (HMAC-SHA256)",
+    "P-256 point ops, PWE y, scalar-op/elem-op (ecc.zig)",
+    "commit/confirm exchange, framing, FSM 12.4.8 (sae_full.zig)",
 };
 
 pub const unimplemented = [_][]const u8{
-    "EC point ops (PWE y, scalar-op, elem-op)",
-    "Lagrange/sqrt selection on the curve",
-    "constant-time loops and selects",
+    "constant-time loops and selects (hunt stops at first hit, no blinding)",
     "H2E (WPA3 R3 hash-to-element)",
-    "group negotiation / rejected-groups",
-    "FFC groups (5, 14, 15, 16)",
+    "groups other than 19 (20/21/30) and FFC groups (5, 14, 15, 16)",
+    "rejected-groups and password-identifier elements",
+    "DiffGrp sync between two configured groups (needs >1 group)",
 };
 
 // ---------------------------------------------------------------------------
@@ -266,34 +269,36 @@ pub fn hkdfExtract(salt: []const u8, ikm: []const u8) [hash_len]u8 {
 // 3) PWE 派生的字节层：pwd-seed → pwd-value → x 候选
 // ---------------------------------------------------------------------------
 
-/// pwd-seed = HMAC-SHA256(MAX(STA,AP) || MIN(STA,AP), password || LE16(counter))。
+/// pwd-seed = HMAC-SHA256(MAX(STA,AP) || MIN(STA,AP), password || counter)，
+/// counter 是**单个八位组**（802.11-2016 12.4.4.2.2，印刷页 1937；hostap
+/// `sae_derive_pwe_ecc()` 里的 `u8 counter`）。Annex J.10 的两条 pwd-seed
+/// 也是按它命中的。
 ///
-/// 地址进的是 **HMAC 的密钥**、口令进的是消息——这一点很容易搞反。
-/// hostap 的 `sae_pwd_seed_key()`（sae.c:122）就是把两个 MAC 按大小排好后
-/// 当 key 用，`hmac_sha256_vector(addrs, ..., 2, addr, len, pwd_seed)` 在
-/// sae.c:353。
-pub fn pwdSeed(sta: [6]u8, ap: [6]u8, password: []const u8, counter: u16) [hash_len]u8 {
+/// 地址进的是 HMAC 的**密钥**、口令进的是消息——这一点很容易搞反。hostap 的
+/// `sae_pwd_seed_key()`（sae.c:122）就是把两个 MAC 按大小排好后当 key 用，
+/// `hmac_sha256_vector(addrs, ..., 2, addr, len, pwd_seed)` 在 sae.c:353。
+pub fn pwdSeedOctet(sta: [6]u8, ap: [6]u8, password: []const u8, counter: u8) [hash_len]u8 {
     var key: [12]u8 = undefined;
     const lo, const hi = if (std.mem.order(u8, &sta, &ap) == .gt) .{ ap, sta } else .{ sta, ap };
     @memcpy(key[0..6], &hi); // MAX 在前
     @memcpy(key[6..12], &lo);
 
-    var counter_le: [2]u8 = undefined;
-    writeU16Le(&counter_le, counter);
-
     var ctx = HmacSha256.init(&key);
     ctx.update(password);
-    ctx.update(&counter_le);
+    ctx.update(&.{counter});
     var out: [hash_len]u8 = undefined;
     ctx.final(&out);
     return out;
 }
 
-/// pwd-value = sha256_prf_bits(pwd-seed, "SAE Hunting and Pecking", p, 256)。
+/// pwd-value = KDF-Hash-Length(pwd-seed, "SAE Hunting and Pecking", p, 256)
+/// （12.7.1.7.2 的 KDF：i 与 Length 都是 LE16）。
 ///
-/// 得到的是「x 候选」的原始字节；它可能 >= p（此时这一轮作废，counter+1
-/// 重来）。P-256 的 p 与 2^256 只差 2^224 量级，随机值落到 p 之上的概率
-/// 约 2^-32，所以实测 counter 恒为 1——循环存在是为了 FFC 群，本组件不实现。
+/// 得到的是「x 候选」的原始字节；它若 >= p，这一轮作废，counter 加 1 重来
+/// （P-256 的 p 与 2^256 只差 2^224 量级，撞上的概率约 2^-32）。x 候选还要在
+/// 曲线上有解才有 y，没有解同样作废，所以 hunting-and-pecking 停在第几个
+/// counter 是不定的（Annex J.10 的例子停在 2）。循环在 `sae_full.zig` 的
+/// `derivePwe()` 里。
 pub fn pwdValue(seed: [hash_len]u8) [hash_len]u8 {
     var out: [hash_len]u8 = undefined;
     kdfHash(&seed, pwd_seed_label, &prime, &out);
