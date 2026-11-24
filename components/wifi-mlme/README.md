@@ -54,7 +54,7 @@ IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.2 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19
 - 接入：`firmware/build.zig` 的 `wifi` 组已挂上本组件的 `selftest.zig`，`wifi` 与 `full` 两个 profile 带它。
   24 条判据的板侧自检在主机上以桩 `board` 模块运行（2026-11-24，`/tmp/selftest-host/`）：
   `checks: passed=24 failed=0 total=24`；同一份 `selftest.zig` 以固件参数（`riscv32-freestanding-eabihf`、
-  `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）交叉编译通过——标志要跟在每个 `-M` 之后，并带一个在编译期断言
+  `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）交叉编译通过——目标参数写在第一个 `-M` 之前，并带一个在编译期断言
   目标架构的守卫根文件（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1）。
   原 16 条在主机上桩跑的结果是 `passed=16 failed=0`。
 - 差分对拍（`/tmp/s31-oracle/wifi_oracle.py`，一次性测试，跑完已删）：

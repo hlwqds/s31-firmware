@@ -169,7 +169,7 @@ for c in wifi-mlme wifi-connect; do
 done
 ```
 
-以固件参数编译。根文件 `board_root_guard.zig` 引用 `run()`，并在编译期断言自己确实按 riscv32 / ReleaseSmall 在编；
+以固件参数编译。目标参数写在第一个 `-M` 之前，后面的模块沿用。根文件 `board_root_guard.zig` 引用 `run()`，并在编译期断言自己确实按 riscv32 / ReleaseSmall 在编；
 `selftest_guard.zig` 把组件的自检再包一层，断言落在叶子模块上：
 
 ```sh
@@ -185,9 +185,11 @@ done
 五个组件全部退出 0。`/tmp/selftest-host/` 是一次性的脚手架，不入库。
 
 **一次假绿的更正。** 这一步最初写成把 `-target … -mcpu … -OReleaseSmall` 放在最后一个 `-M` 之后。Zig 0.17.1 的命令行里
-这些标志只作用于紧挨着的那个模块，于是只有 `board` 模块按 riscv32 编，自检本身仍是本机 x86_64：命令退出 0，却什么都没证明
+这类参数作用于其后声明的模块，写在最后没有任何模块用到：根、自检、`board` 三个模块都是本机 x86_64，命令退出 0，却什么都没证明
 （带 `-femit-bin` 看产物，是 `ELF64 … Machine: Advanced Micro Devices X86-64`）。发现它的是上面这个守卫根文件——
-按旧写法编译，它报 `guard: root module is not riscv32 (got x86_64)` 与 `guard: selftest module is not riscv32 (got x86_64)`。
+按旧写法编译，它报 `guard: root module is not riscv32 (got x86_64)` 与 `guard: selftest module is not riscv32 (got x86_64)`；
+`board` 模块同样如此（用一份在末尾追加守卫的 `board.zig` 临时副本测得，副本未入库）。
+另一种写法也测过：把参数写成「每个 `-M` 之后」，根模块的守卫同样报 x86_64，因为参数从下一个模块才生效。
 结论没有变：五个自检确实能以固件参数编译，`wifi` profile 的镜像构建（§5.2）与板上运行是另一份独立证据。
 
 | 组件 | 桩 `board` 上运行 | 以固件参数交叉编译（带守卫） | 板子 |

@@ -67,7 +67,7 @@ SAE 的 H2E 与 group 19 以外的群、PeerKey/SMK、扩展 Key ID、QMF、DMG�
 | `zig fmt --check src/` | 干净 |
 | `zig test -target riscv32-linux-musl -fno-emit-bin src/host_tests.zig` | 只编译、不链接：通过（证明能过 32 位 RISC-V 的语义分析） |
 | 板侧自检在主机上执行（桩 `board` 模块 `/tmp/selftest-host/board_stub.zig`） | 2026-11-24：`checks: passed=87 failed=0 total=87`（原 28 条时是 28/28、最长一行 125 字节；新增三份子自检的最长一行分别是 75、55、60 字节，都低于 `board.log` 的 200 字节上限，这一条同时是 3 条主机用例的断言） |
-| 以固件参数交叉编译自检（`zig build-obj`，标志跟在每个 `-M` 之后，`-Mboard` 指向真板的 `board.zig`，根文件带目标架构守卫） | 2026-11-24：通过（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1） |
+| 以固件参数交叉编译自检（`zig build-obj`，目标参数写在第一个 `-M` 之前，`-Mboard` 指向真板的 `board.zig`，根文件带目标架构守卫） | 2026-11-24：通过（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1） |
 | 对 `/tmp/s31-oracle/suite256_oracle.py` 的全量差分（一次性驱动 `/tmp/s31-oracle/s256diff/diff.zig`，2026-11-24 复跑） | 14 组 3568 条向量、3928 项比较，0 不一致 |
 | 参照实现自检（2026-11-24） | `wifi_oracle.py selftest` 223 PASS、1 KNOWN；`suite256_oracle.py selftest` 253/253；`ft_oracle.py selftest` 51 pass、2 known；`sae_oracle.py selftest` 的 P-256 与 `cryptography` 在 10 个点上一致 |
 

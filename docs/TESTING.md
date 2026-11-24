@@ -159,12 +159,14 @@ E2E 断言：
 生产默认构建的自检要跑 **30~45 s**（net 组做真实计时），窗口给 45 s 才稳定看得到 `verdict`；
 20 s 的窗口常常只抓到一半的 `check:` 行，别据此判断板子有问题。
 
-### `zig build-obj` 的 `-target` 只作用于紧挨着的模块（踩过的坑）
+### `zig build-obj` 的 `-target` 作用于其后声明的模块（踩过的坑）
 
-用多模块命令单独编译一个自检时（`--dep … -Mroot=… -Mselftest=… -Mboard=…`），`-target`、`-mcpu`、`-O` 要在**每个 `-M` 之后**各写一遍。
-写在最后只作用于最后一个模块：2026-11-24 那条命令只有 `board` 模块按 riscv32 编，自检本身是本机 x86_64，退出 0 却什么都没证明
-（产物 `ELF64 … X86-64`）。判据是根文件里的编译期断言（`builtin.target.cpu.arch != .riscv32` 即 `@compileError`），
-并拿旧写法做一次负对照；只看退出码不够。命令与两次对照见 `docs/verification/wifi-ieee80211-verification.md` §5.1。
+用多模块命令单独编译一个自检时（`--dep … -Mroot=… -Mselftest=… -Mboard=…`），`-target`、`-mcpu`、`-O` 要写在**第一个 `-M` 之前**
+（写一次，后面的模块沿用），或者逐模块写在各自 `-M` 的前面。方向记反会得到假绿：参数写在某个 `-M` **之后**，从下一个模块才生效，
+根模块落回本机架构；写在最后一个 `-M` 之后，没有任何模块用到——2026-11-24 那条命令就是这样，根、自检、`board` 三个模块全是
+本机 x86_64，退出 0 却什么都没证明（产物 `ELF64 … X86-64`）。判据是模块自己的文件里的编译期断言
+（`builtin.target.cpu.arch != .riscv32` 即 `@compileError`），并拿错误写法做负对照；只看退出码不够。
+命令与对照见 `docs/verification/wifi-ieee80211-verification.md` §5.1。
 `firmware/build.zig` 不经命令行传模块：目标由 `b.standardTargetOptions` 定、挂在根模块上（`.target = target`），导入的模块继承它，不受影响。
 
 ## 本地运行

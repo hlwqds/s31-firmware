@@ -6,9 +6,11 @@
 
 ### Fixed
 - **板侧自检「以固件参数交叉编译」的假绿（2026-11-24）**：本轮复核时用来单独编译自检的 `zig build-obj` 命令把
-  `-target … -mcpu … -OReleaseSmall` 放在最后一个 `-M` 之后，Zig 0.17.1 只把它作用于紧挨着的 `board` 模块，
-  自检本身按本机 x86_64 编译，命令退出 0 却什么都没证明（产物 `ELF64 … X86-64`）。改法：标志跟在每个 `-M` 之后，
-  根文件加编译期断言（`builtin.target.cpu.arch != .riscv32` 即 `@compileError`），并用旧写法做负对照（守卫报 x86_64）。
+  `-target … -mcpu … -OReleaseSmall` 放在最后一个 `-M` 之后。Zig 0.17.1 的命令行里这类参数作用于其后声明的模块，
+  写在最后没有任何模块用到：根、自检、`board` 三个模块全是本机 x86_64，命令退出 0 却什么都没证明（产物 `ELF64 … X86-64`）。
+  改法：参数写在第一个 `-M` 之前（后续模块沿用），根文件加编译期断言（`builtin.target.cpu.arch != .riscv32` 即
+  `@compileError`），并用错误写法做负对照（三个模块的守卫都报 x86_64）。方向别记反：参数写在 `-M` **之后**是从下一个模块
+  才生效，根模块会落回本机架构。
   重跑：`wifi-mlme`、`wifi-connect`、`ble-802154`、`ble-security`、`radio-coex` 五个自检以固件参数编译通过；
   `wifi` profile 的镜像构建与板上运行是另一份独立证据，结论不变。更正记录在
   `docs/verification/wifi-ieee80211-verification.md` §5.1 与 `docs/TESTING.md`。
