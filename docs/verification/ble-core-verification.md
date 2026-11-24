@@ -161,14 +161,15 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 
 | 类别 | 方向 | 依据 |
 | --- | --- | --- |
-| 短地址（16 位）源帧，lwIP 丢帧 | Zig 分片 → lwIP 重组 | `lowpan6.c:241` 拿**目的**短地址的掩码常量去比**源**地址模式，两个常量数值不同，短地址源帧落进「不支持的地址模式」回 `ERR_VAL` |
+| 短地址（16 位）源帧，lwIP 丢帧 | Zig 分片 → lwIP 重组 | `lowpan6.c:242` 拿**目的**短地址的掩码常量去比**源**地址模式（`0x02 << 10` 与 `0x02 << 14`，数值不同），短地址源帧落进「不支持的地址模式」回 `ERR_VAL`。脚本标签里写的行号是 241，差一行 |
 | 上下文超过 64 位时，IID 里被上下文覆盖的位 lwIP 按 /64 换成常量 | Zig 压缩 → lwIP 解压 | `lowpan6_context_lookup` 用 `ip6_addr_net_eq` 只比前 64 位，上下文就是 `ip6_addr_t` 数组，没有前缀长度；RFC 6282 行 414–435 规定「Bits covered by context information are always used」 |
 | 上下文不足 64 位时，「缝」里的位 lwIP 用上下文的前 64 位填充，Zig 置零 | lwIP 压缩 → Zig 解压 | 同上（lwIP 只会 /64）；RFC 6282 行 414–435 规定「Any remaining bits are zero」 |
-| `::` 作源地址时，lwIP 配上空槽的上下文号，Zig 拒解（`NoContext`） | lwIP 压缩 → Zig 解压 | lwIP 的查找拿 `::` 的前 64 位（全零）去比，没用到的槽也是全零，于是「命中」空槽并标成有状态压缩（SAC=1、SAM=00、CID 指向该槽）。RFC 6282 行 412 写明 SAC=1、SAM=00 就是 `::`，不依赖上下文；§3.1.2（行 553–554）对「上下文未知时怎么办」没有规定。两边都不违反 RFC，但这是一个互通缺口（§6） |
+| `::` 作源地址时，lwIP 用有状态压缩编码并指向一个没人配置过的上下文，Zig 拒解（`NoContext`） | lwIP 压缩 → Zig 解压 | lwIP 的 `lowpan6_context_lookup` 用 `ip6_addr_net_eq` 只比前 64 位，没用到的槽地址全零，于是 `::` 的查找「命中」第一个空槽，上下文号写进 SCI、有状态位置位；随后 `lowpan6_compress_headers` 走的是有状态分支，按地址模式编码。种子 99 的 32 条记录逐条核过：全是 SAC=1、SAM=01、64 个零位内联，引用的源上下文号在表里都不存在（13 条的表是空的，引用的是隐含的上下文 0），Zig 一律回 `NoContext`。lwIP 自己的 `::` 特例（SAC=1、SAM=00，即 RFC 6282 行 412 规定的编码）排在有状态分支之后，只有上下文表里一个空槽都没有时才轮得到。Zig 这边 `SAC=1` 且 `SAM≠00` 时要求被引用的上下文存在（`fifteen4.zig` 的解压器），源地址的前缀只能从它还原，所以拒解。结果是一个互通缺口（§6） |
 
-脚本另把 14 个 lwIP 的 NHC 不处理的头部组合（扩展头链、IPv6-in-IPv6、`::` 源地址、/128 上下文等）单独列一组：Zig 压缩再解压
-14/14 等于原包；lwIP 拒收 8 个、收下 6 个，收下的脚本没有再比较。脚本给「lwIP 收下了」打的标签是 `FAIL unsupported-combo lwip accepted`，
-那是脚本原本预期 lwIP 会拒收，不是 Zig 侧的不一致。
+脚本另把 14 个边界组合单独列一组（/128 与 /48 上下文、带 HBH 的几种扩展头链、IPv6-in-IPv6、`::` 源地址等）：Zig 压缩再解压
+14/14 等于原包；lwIP 的解压器拒收 8 个、收下 6 个（`::` 源地址、/128 上下文 SAM=11、/48 上下文回退内联、三种带 HBH 的组合），
+收下的脚本没有再比较。脚本给「lwIP 收下了」打的标签是 `FAIL unsupported-combo lwip accepted`，那是脚本原本预期 lwIP 会拒收，
+不是 Zig 侧的不一致。
 
 
 ## 5. 主代理独立复核
@@ -272,10 +273,11 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - **6LoWPAN 的范围**（`fifteen4.zig` 文件头同文）：
   - 没做的：6LoWPAN-ND（RFC 6775）的协议本体，只实现它的上下文表，不解析 RA / 6CO；Mesh 路由（只有 Mesh 头与 §11 的 hop 规则）；
     RFC 8930、RFC 8931；RFC 4944 §10 的 HC1 / HC2；Thread MLE；分页 dispatch 的 Page 2–15。
-  - `NoContext`：IPHC 指向一个不存在、已删除或已过保持期的上下文就拒解，这是设计（错误表里写明）。它也包括 SAC=1、SAM=00 的
-    `::` 源地址：RFC 6282 行 412 规定这个地址不依赖上下文，而 lwIP 的压缩器只要上下文表里有没用到的槽，就会给 `::` 配上那个槽的
-    上下文号（§4.1）。结果是 lwIP 发的、以 `::` 为源地址的报文（例如重复地址检测、MLD 上报）在 Zig 这边解不出来。
-    要不要对 SAM=00 放宽成不看上下文，RFC 没有规定，留给接到真实链路时决定。
+  - `NoContext`：IPHC 指向一个不存在、已删除或已过保持期的上下文就拒解，这是设计（错误表里写明）。对 RFC 6282 行 412 规定的
+    `::` 编码（SAC=1、SAM=00）解压器不查上下文。缺口在 lwIP 的压缩器那头：它把没用到的上下文槽（地址全零）当成与 `::` 的
+    前 64 位匹配，于是用有状态压缩（SAC=1、SAM=01）编码 `::`，并指向那个没人配置过的槽（§4.1）。结果是只要 lwIP 的上下文表里
+    有空槽，它发的以 `::` 为源地址的报文（例如重复地址检测、MLD 上报）在 Zig 这边就解不出来。要不要让解压器把这种帧
+    （引用的上下文不存在、内联的 64 位全零）也还原成 `::`，是接到真实链路时再定的取舍。
 - **新命令与新子事件没有登记进统一分发器**：扩展广播、LL Privacy、LE Power Control 的新 OpCode 与子事件码各自在模块里编解码。
   `hci_cmd.expects()` / `parseReturn` 对这些 OpCode 回 `UnknownOpcode`，`hci_evt.decodeParams` 对子事件 0x20 / 0x21 等
   回 `UnknownSubevent`。它们还没有接到发送路径上，并进统一分发留给接线那一步。

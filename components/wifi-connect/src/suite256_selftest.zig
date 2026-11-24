@@ -231,7 +231,7 @@ fn checkTables(check: fn (bool, []const u8) void) void {
 }
 
 /// 跑完全部判据。
-pub fn run(comptime check: fn (bool, []const u8) void) void {
+pub noinline fn run(comptime check: fn (bool, []const u8) void) void {
     checkCcmp(check);
     checkBip(check);
     checkWrap(check);

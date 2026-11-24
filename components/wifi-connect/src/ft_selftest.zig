@@ -233,7 +233,7 @@ fn checkSizes(comptime check: fn (bool, []const u8) void) void {
     check(a13 and others, say("ft sizes akm13 xx/r0/r1=48 kck=24 kek=32 others 32/16/16: {d}", .{@intFromBool(a13 and others)}));
 }
 
-pub fn run(comptime check: fn (bool, []const u8) void) void {
+pub noinline fn run(comptime check: fn (bool, []const u8) void) void {
     checkHmac(check);
     checkJ10(check);
     checkKdf(check);

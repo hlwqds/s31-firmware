@@ -188,18 +188,24 @@ E2E 断言：
 上板之后如果 `wifi` profile 在 30 秒内出不来 `verdict`，先看是哪个 section 拖的，不要直接改抓取时长。
 
 栈：`boards/esp32s31-coreboard/linker/s31.ld` 给主栈 16 KiB，注释写明 8 KiB 会溢出。拿保留符号的镜像
-（`zig build … -Dkeep-symbols=true`），把各函数序言里对 `sp` 的调整量沿调用链相加（调用边取 `jal` / `jalr` 的直接目标，
-间接转移不计入，所以这是下界）。从 `main.main` 起最深的一条链：
+（`zig build … -Dkeep-symbols=true`），把各函数序言里对 `sp` 的调整量沿调用链相加（调用边取 `jal` / `jalr` 的直接目标；
+间接转移、中断与 trap 的帧都不计，所以这是下界）。从 `main.main` 起最深的一条链：
 
 | 镜像 | 调用链（括号里是各自的栈帧，字节） | 合计 |
 | --- | --- | --- |
-| 第三批之前（`8c2cef8`） | `main.main`（6608）→ `selftest.runChecks.4`（4992）→ CCMP 解封装 → AES | 24224 |
-| 第三批，集成前 | `main.main`（6608）→ `selftest.runChecks.4`（8144）→ `sae_groups_selftest.run`（8400）→ `montMul`（5168）→ `cmp`（2064） | 30384 |
-| 第三批，集成后 | `main.main`（6608）→ `selftest.runChecks.4`（256）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 22384 |
+| 第三批之前（`8c2cef8`） | `main.main`（6608）→ `selftest.runChecks.4`（4992）→ BIP 校验 → `bip.micOver`（8960）→ AES-CMAC | 26544 |
+| 第三批，对打收窄之后、加 `noinline` 之前 | `main.main`（6608）→ `selftest.runChecks.4`（8144）→ `sae_groups_selftest.run`（8400）→ `montMul`（5168）→ `cmp`（2064） | 30384 |
+| 第三批，只给九份新入口加 `noinline` | `main.main`（6608）→ `selftest.runChecks.4`（6144）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 28272 |
+| 第三批，第一、二批的三份入口也加上之后 | `main.main`（6608）→ `selftest.runChecks.4`（1120）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 23248 |
 
-三条都越过了标称的栈底。第三批之前的镜像在板上跑得过，而栈底下面是堆区（`_heap_start` 到 `_stack_bottom`，那个镜像里
-271 KiB）——推断是自检期间栈写进了堆区的空闲部分、没有撞到东西；没有在板上量过。集成时把最深的一条链压到低于之前的水平，
+四条都越过了标称的栈底。第三批之前的镜像在板上跑得过，而栈底下面是堆区（`_heap_start` 到 `_stack_bottom`，那个镜像里
+271 KiB），固件里也没有栈水位或栈底守卫（源码里除链接脚本外没有引用 `_stack_bottom`）——推断是自检期间栈写进了堆区的
+空闲部分、没有撞到东西；没有在板上量过。`runChecks.4` 是 `wifi-connect` 的自检驱动函数：第一、二批的三份子自检入口原先
+也被内联在它里面，所以只给第三批的入口加 `noinline` 时最深链反而比之前深（28272 对 26544），三份入口一起加上才降下来。
+`ble-802154` 与 `wifi-mlme` 的驱动函数（`runChecks.3`、`runChecks.2`）栈帧没变，其下最深分别是 11984 与 11248 字节。
 做法只有一条：给自检入口和每条判据的函数加 `noinline`，让各自的大数组落在各自的帧里，而不是叠在调用方上。
+做这种估算有两个坑：栈帧大小经由 `li` 加 `slli` 装进寄存器的函数（`bip.micOver` 的 8960 字节就是这样）要跟到常量，
+否则会漏掉整帧——第一次估算因此把第三批之前的最深链少报了 2320 字节；链要从 `main.main` 起算，别把尾调用的求和混进来。
 往自检里加定长大数组之前先看这张表；`main.main` 那 6608 字节和 `bignum.zig` 的 `cmp`（把两个参数各拷一份进自己的帧）
 是以后可以压的两处。
 

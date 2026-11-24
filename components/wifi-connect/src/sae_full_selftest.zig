@@ -532,7 +532,7 @@ fn checkFsm(comptime check: Check) void {
 }
 
 /// 板侧自检入口。每条判据一行，`check(ok, text)`。
-pub fn run(comptime check: fn (bool, []const u8) void) void {
+pub noinline fn run(comptime check: fn (bool, []const u8) void) void {
     checkEcc(check);
     checkJ10(check);
     checkKat(check, &v.kat_a, "sae kat_a (counter 1): pwe, commit, K, keys, confirm");
