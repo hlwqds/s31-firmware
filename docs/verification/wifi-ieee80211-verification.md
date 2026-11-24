@@ -303,6 +303,12 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
      `ecc.zig` 多 12510、`bignum.zig` 11372；`sae_full.zig` 多 14308；`ft_proto.zig` 11498）、标准库 +28930
      （几乎全是 `std/crypto/pcurves/common.zig` 的 27946：素域曲线的域运算，P-384 即 ECC 群 20 的实例化带进来的）、
      `ble-802154` +53332、`wifi-mlme` +17238。
+  4. 抓取窗口：`wifi` profile 的抓取窗口从 30 秒放宽到 60 秒（`full` 90 秒，其余不变）。依据是指令数而不是主机耗时：
+     `tools/qemu-instr` 把同一份 riscv32 ReleaseSmall 代码放到 QEMU 上精确数指令，`wifi_connect` 整份是 15.48 亿条
+     （第三批新增的部分 6.03 亿条，约 7.5 秒），板上每条约 1 周期（`logs/c7-perf-tiers.log` 校准），光计算就是 19.3 秒。
+     `sae_groups_selftest` 3.74 亿条、4.7 秒（FFC 的 PWE 1.7 秒、群协商 1.0 秒、群 25 的对打 0.4 秒）；
+     `owe_selftest` 2.20 亿条、2.8 秒，每条判据差不多是一次 P-256 点乘，一次约 2070 万条指令、0.26 秒；
+     第二批的 `sae_full_selftest.checkFsm` 5.10 亿条、6.4 秒。数字与读法见 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ## 6. 实现偏离
 
@@ -436,6 +442,7 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
 - 真实 AP 上的 OWE、802.1X / EAP-TLS、SAE 的其它群、FT 的初始关联与快速切换、无线测量与 WNM（BTM、WNM Sleep Mode）：都没有证据；
   第三批只有主机测试、与独立实现的对拍和板侧自检。
 - EAP-TLS 的 MSK 与 OpenSSL `SSL_export_keying_material()` 的逐字节一致（见 §6）。
-- SAE 其它群里 FFC 大群的整链只在 ReleaseFast 的差分里对过。该片的板侧自检在主机 ReleaseFast 上量过：九个群全做
-  双端对打时 19–36 ms，是已在板上跑过的 `sae_full_selftest.zig`（12 ms）的两到三倍，而 `wifi` 镜像的全部 section
-  要在 e2e 的 30 秒抓取窗口里出判决；所以板侧的对打收成只做 ECC 25，收完 2.4 ms。板侧耗时没有量过；实际内联后的栈只按序言静态估算过（§5.4），板上没有量过。
+- SAE 其它群里 FFC 大群的整链只在 ReleaseFast 的差分里对过。该片的板侧自检原先九个群全做双端对打，已收成只做 ECC 25
+  （其余八个群只验群的参数）：当时依据的是主机 ReleaseFast 耗时（19–36 ms，对 `sae_full_selftest.zig` 的 12 ms；
+  收窄后 2.4 ms），之后按 QEMU 的精确指令数量，收窄后是 3.74 亿条、板上约 4.7 秒（§5.4）；收窄之前的指令数没有量。
+  实际内联后的栈只按序言静态估算过（§5.4）。板上的耗时与栈都没有量过。

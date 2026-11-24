@@ -18,7 +18,7 @@ Wi-Fi 与 BLE 都不是 RFC 所定义的：前者的规范是 IEEE Std 802.11，
 BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi
 ```
 
-harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓 30 秒串口并断言。原始日志：`logs/wifi-selftest-prefix-boot.log`（"prefix" 指自检修复之前的那一次）。
+harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓一段串口并断言（2026-11-25 起抓取时长按 profile 配置：默认 30 秒，`wifi` 60 秒、`full` 90 秒，见 `docs/TESTING.md`）。原始日志：`logs/wifi-selftest-prefix-boot.log`（"prefix" 指自检修复之前的那一次）。
 
 | section（按固件输出顺序） | 判据 | 结果 |
 | --- | --- | --- |

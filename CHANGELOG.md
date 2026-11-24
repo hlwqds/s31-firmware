@@ -57,6 +57,17 @@
   多加的 `net_ethernet` 导入。那是一次没生效的模块冲突修复尝试（真正的冲突是 `wire` 与 `net`
   两个 group 同开），四个组件的源码都不引用它。`build.zig` 由此回到 2f156fa 的状态。
 
+### Changed
+- **e2e 板级抓取窗口按 profile 配置：`wifi` 60 秒、`full` 90 秒，其余仍是 30 秒**（`tests/e2e/run_e2e.py` 的 `capture_s`）。
+  依据是量过的自检耗时。新工具 `tools/qemu-instr` 把同一份 riscv32 ReleaseSmall 代码放到 QEMU 的 `virt` 机器上，开
+  `-icount shift=0` 读 `minstret`，得到精确的指令数；板上每条指令的周期数用 `logs/c7-perf-tiers.log` 的实测校准
+  （`workload.mix`：59433 条指令对 59455 个周期，约 1.0）。`wifi` profile 除 `net_ethernet` 外合计 17.84 亿条指令，
+  光计算 22.3 秒（第三批往 `wifi_connect` 里加了 6.03 亿条，约 7.5 秒；第二批的镜像按同一口径是 14.7 秒），
+  30 秒窗口对它是压线的。耗时集中在 `sae_full_selftest.checkFsm`（5.10 亿条，6.4 秒）、OWE 的 8 条判据
+  （2.20 亿条）与 FFC 的 PWE（1.35 亿条）；标准库的 P-256 标量乘一次约 2070 万条指令、0.26 秒。放宽窗口而不是
+  继续砍判据：剩下的每一条都对应一个不同的行为。板上的实际耗时没有量过（板子不在手边）。读法见
+  `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
+
 ### Added
 - **无线离线特性第三批（2026-11-25）**：与前两批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
   与独立参照实现的差分、板侧自检在主机上的运行。**这一批没有上板**（见下面「板级」）。
@@ -105,7 +116,7 @@
     （几乎全是 P-384 的域运算），`ble-802154` 53332，`wifi-mlme` 17238。逐文件的归因在
     `docs/verification/wifi-ieee80211-verification.md` §5.4。factory 分区（1500K）的余量是 472800 与 353520 字节。
   - **板级：这一批没有做。** `wifi` profile 上板之前，`wifi_connect`、`wifi_mlme`、`ble_802154` 三个 section 在板上的读数仍然是
-    第二批的 87、24、50；第三批之后应当是 177、37、106。板侧耗时与栈的实际占用都没有量过。
+    第二批的 87、24、50；第三批之后应当是 177、37、106。板上的耗时与栈的实际占用都没有量过（耗时按指令数的估算见上面「Changed」）。
   - 报告：`docs/verification/wifi-ieee80211-verification.md`、`ble-core-verification.md`。
 
 - **无线离线特性第二批与 HCI 一致性自检（2026-11-24）**：不依赖射频、不抓空口，按规范条款实现——Wi-Fi 取 IEEE Std 802.11-2016，

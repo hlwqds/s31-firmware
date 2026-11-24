@@ -3,7 +3,8 @@
 
 模式：
   --host        构建每个 profile、elf2image、断言恰好两段 DROM/IROM 且镜像适配分区
-  --board       额外烧录默认 profile、抓 30 s 串口、断言段集合/逐段 checks/verdict
+  --board       额外烧录默认 profile、抓一段串口（默认 30 s；wifi / full 更长，见 PROFILES 的 capture_s）、
+                断言段集合/逐段 checks/verdict
   --junit PATH  输出 JUnit XML（CI 用）
 
 profile 定义在 PROFILES；两段窗口/分区容量由 scripts/check-capacity.py 单独门禁，
@@ -49,6 +50,13 @@ ZIG = os.environ.get("ZIG", "zig")
 # 板子重新枚举后可能变成 ttyUSB0；默认仍是 ttyUSB1，门禁/CI 可用 BOARD 覆盖。
 BOARD = os.environ.get("BOARD", "/dev/ttyUSB1")
 
+
+# 板级抓取窗口（秒）：复位之后抓这么久，全部 section 的判决必须在这之内出来。默认 30 s。
+# wifi / full 的自检里密码学判据多：同一份 riscv32 ReleaseSmall 代码在 QEMU 里精确数出的指令数
+# ÷ 80 MHz（板上实测每条约 1 周期），wifi profile 的纯计算就超过 22 s，还没算网络组的真实等待，
+# 所以给 60 s；full 是它的超集再加上 TLS 与应用，给 90 s。依据见 docs/TESTING.md「板侧自检的两条隐性预算」。
+# 这个数是「固件正确时判决一定能出来」的上界，不是要压着它把自检做慢的理由。
+DEFAULT_CAPTURE_S = 30
 PROFILES = {
     "min": {"flags": {"boot": True, "net": False, "tls": False, "apps": False, "wifi": False},
             "sections": ["boot_power_perf"], "expect": "ok"},
@@ -59,7 +67,7 @@ PROFILES = {
              "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
                           "net_sockets", "net_ethernet", "wifi_boundary", "wifi_connect", "ble_802154",
                           "wifi_mlme", "ble_security", "radio_coex",
-                          "boot_power_perf", "posix"], "expect": "ok"},
+                          "boot_power_perf", "posix"], "expect": "ok", "capture_s": 60},
     "tls": {"flags": {"boot": True, "net": True, "tls": True, "apps": False, "wifi": False},
             "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
                           "net_sockets", "net_ethernet", "net_tls_http", "boot_power_perf", "posix"], "expect": "ok"},
@@ -67,9 +75,9 @@ PROFILES = {
                  "sections": ["net_wire", "boot_power_perf"], "expect": "ok"},
     "full": {"flags": {"boot": True, "net": True, "tls": True, "apps": True, "wifi": True},
              "sections": ["net_ipv4", "net_udp_dhcp_dns", "net_tcp", "net_congestion",
-                           "net_sockets", "net_ethernet", "net_tls_http", "app_mqtt_ota", "wifi_boundary",
+                          "net_sockets", "net_ethernet", "net_tls_http", "app_mqtt_ota", "wifi_boundary",
                           "wifi_connect", "ble_802154", "wifi_mlme", "ble_security",
-                          "radio_coex", "boot_power_perf", "posix"], "expect": "ok"},
+                          "radio_coex", "boot_power_perf", "posix"], "expect": "ok", "capture_s": 90},
 }
 
 
@@ -160,7 +168,8 @@ def board_case(profile_name: str) -> Case:
     # 证据只能来自本轮：不删旧日志的话，flash/capture 失败后断言会拿上一轮的文本当本轮结果
     # （这正是 gate-board.sh 里那条防线；下沉到这里，任何直接调 `--board` 的路径都受保护）。
     log.unlink(missing_ok=True)
-    cap = run([sys.executable, str(ROOT / "tools" / "capture.py"), BOARD, str(log), "30"])
+    cap = run([sys.executable, str(ROOT / "tools" / "capture.py"), BOARD, str(log),
+               str(PROFILES[profile_name].get("capture_s", DEFAULT_CAPTURE_S))])
     c.check(cap.returncode == 0, "capture failed")
     c.check(log.exists(), f"capture produced no log at {log.relative_to(ROOT)}")
     text = log.read_text(errors="replace") if log.exists() else ""
