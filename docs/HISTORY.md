@@ -26,6 +26,8 @@
 | `components/bt-blobs` | ch27 §27.11（BLE/802.15.4 边界）+ R3.3；R5/C2 加共存接线 | 19 |
 | `tools/s31-production/{netmgr,ota,provisioning,recovery}` | 生产化原型 | 15 / 8 / 18 / 9 |
 
+表里的主机测试数是迁入当时的数，不随后来的批次改动。2026-11-24 的第一批、第二批与 2026-11-25 的第三批往 `wifi-mlme`、`wifi-connect`、`ble-802154`、`ble-security` 里加了不抓空口能验证的特性（清单与证据在 `docs/verification/`），当前的用例数以各组件的 README 与 `tests/baselines.json` 为准。
+
 ## 日志
 
 `logs/` 中是章节时代的板侧原始输出（文件名不改，便于与 `docs/history/BRINGUP-chapter-era.md`

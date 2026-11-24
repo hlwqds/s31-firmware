@@ -1,11 +1,14 @@
 # ble-802154 — BLE / 802.15.4 边界
 
-HCI 控制、ACL 分片重组、L2CAP（LE 信令与 credit based 通道）、GAP 广播数据与地址、
-IPv6 over BLE，ATT 全部 31 个操作码的编解码、ATT 服务端、GATT 服务端与客户端、
-AES-CMAC 与签名写，加上原有的 802.15.4 FCF、6LoWPAN 无状态解压。
+HCI 控制、ACL 分片重组、L2CAP（LE 信令、credit based 通道与基于额度的连接）、GAP 广播数据与地址、
+扩展广播与周期广播的 host 侧、EATT 与 Robust Caching、LL Privacy 与 LE Power Control 的 host 侧、
+IPv6 over BLE 与 6LoWPAN 适配层（IPHC 两个方向、分片与重组、Mesh 头），ATT 全部 31 个操作码的编解码、
+ATT 服务端、GATT 服务端与客户端、AES-CMAC 与签名写，加上原有的 802.15.4 帧头。
 
-- 主机测试：**122 项**（`firmware` 的 `test` step 聚合；也可单独 `zig test src/host_tests.zig` 于本目录）
-- 板侧：`src/selftest.zig` 由固件顺序调用，**50 条**判据，打印 `check: … ok=1/0` 与 `checks: passed=N failed=M total=N+M`
+- 主机测试：**414 项**（`firmware` 的 `test` step 聚合；单独 `zig test src/host_tests.zig` 于本目录也是 414：本文件自己 126 项，
+  另用 4 个 `test { … }` 块带进 `ext_adv_tests.zig` 115、`eatt_tests.zig` 57、`privacy_tests.zig` 66、`sixlowpan_tests.zig` 50）
+- 板侧：`src/selftest.zig` 由固件顺序调用，**106 条**判据（第三批之后；上过板的是前两批的 50 条），打印 `check: … ok=1/0` 与
+  `checks: passed=N failed=M total=N+M`
 - 依赖方向：本组件 → `boards`；不依赖其它组件（**不**导入 `ble-security`）
 
 ## 范围与来源
@@ -32,11 +35,19 @@ AES-CMAC 与签名写，加上原有的 802.15.4 FCF、6LoWPAN 无状态解压�
   §7.1（Service Changed）、附录 A（示例服务器）、附录 B（Database Hash 的输入）。
 - AES-CMAC：RFC 4493（[Vol 3] Part H §2.2.5 指向它，附录 D.1 的四个向量与之相同）。
   ATT 数据签名：算法在 [Vol 3] Part H §2.4.5，样例在 [Vol 3] Part F §3.4.5.4。
+- 第三批（逐处条款与规范文本的行号见各文件头）：扩展广播——[Vol 4] Part E §5.2、§7.7.65.13、§7.7.65.18、§7.8.52–§7.8.69，
+  [Vol 6] Part B §1.2、§2.3、§2.3.4、§2.5.2；EATT 与 Robust Caching——[Vol 3] Part G §2.5.2、§2.5.2.1、§5.3、§7.2–§7.4、
+  附录 B，[Vol 3] Part A §2.1、§3.4、§4.22–§4.28、§7.11、§10.1–§10.2，[Vol 3] Part F §3.2.8、§3.2.11、§3.3.2–§3.3.3、表 3.44；
+  LL Privacy 与 LE Power Control——[Vol 4] Part E §7.8.38–§7.8.45、§7.8.74–§7.8.77、§7.8.117–§7.8.121、§7.7.65.32–.33，
+  [Vol 6] Part B §1.3.2.2–.3、§4.5.16、§4.7、§5.1.17、§6.1–§6.5，[Vol 3] Part H §2.2.2，[Vol 3] Part C §10.7；
+  6LoWPAN——RFC 4944 §5.1–§5.3、§11，RFC 6282 §3、§4，RFC 6775 §4.2、§5.4.2–§5.4.3，RFC 8025 §3。
 
-**不做**：SMP 配对与链路层加密（`ble-security` 组件负责）、802.15.4 的新功能、扩展广播、
-LE Extended Advertising Report。GATT 里没做的：Database Hash、Client Supported Features、
-Server Supported Features 三个特征（Part G §7.2–§7.4）、Robust Caching（§2.5.2.1）、
-绑定设备的 CCCD / Service Changed 持久化（见 `gatt_server.zig` 文件头）。
+**不做**：SMP 配对与链路层加密（`ble-security` 组件负责）、802.15.4 的新功能。第三批加的都是 host 侧的编解码与
+状态模型，取决于 controller 自身能力或时序调度的部分没有建模（扫描与同步的调度、Memory Capacity Exceeded 之类的判据）。
+GATT 里的 Database Hash、Client Supported Features、Server Supported Features 三个特征与 Robust Caching 在
+`robust_cache.zig` 里（第三批）；仍没做的是绑定设备的 CCCD / Service Changed 持久化（见 `gatt_server.zig` 文件头）。
+6LoWPAN 没做的：6LoWPAN-ND（RFC 6775）的协议本体（只实现它的上下文表）、Mesh 路由、RFC 8930 / 8931、HC1 / HC2、
+Thread MLE、分页 dispatch 的 Page 2–15。
 
 ## 验证状态
 
@@ -66,18 +77,32 @@ Server Supported Features 三个特征（Part G §7.2–§7.4）、Robust Cachin
 - 板侧自检与主机用例里的 ATT / GATT 都是进程内对打（请求直接交给服务端、应答直接交回客户端），
   **没有任何 ATT PDU 上过链路**。
 
+第三批（扩展广播、EATT、LL Privacy / LE Power Control、6LoWPAN，2026-11-25）：
+
+- L1 主机：`zig test src/host_tests.zig` → `All 414 tests passed`（122 → 414）。新增四个测试文件：`ext_adv_tests.zig` 115、
+  `eatt_tests.zig` 57、`privacy_tests.zig` 66、`sixlowpan_tests.zig` 50；`host_tests.zig` 多 4 个把它们带进来的 `test { … }` 块。
+- L2：板侧自检 50 → 106 条（四份子自检 27 + 10 + 9 + 10 接入 `selftest.zig`）。用桩 `board` 模块在主机上执行
+  `selftest.run()` → `checks: passed=106 failed=0 total=106`；四份子自检都以固件参数交叉编译通过。
+- **这一批没有上板**。上过板的仍然只有前两批的 50 条；`wifi` profile 上板之后应当看到 `ble_802154` 106/106。
+- 差分（主代理在集成后的代码上重跑，明细与归因依据见 `docs/verification/ble-core-verification.md` §4.1）：
+  Database Hash 对 `eatt_oracle.py`（24 张随机属性表，0 不一致）；RPA 对 `privacy_oracle.py`（仓外 2000 组，0 不一致）；
+  6LoWPAN 对 lwIP（三个种子各 1000 个报文；Zig 自往返与 UDP 校验和 3000/3000，与 lwIP 不一致的报文全部归到四类、
+  逐类对到了 lwIP 源码或 RFC 6282 原文）。扩展广播与 EATT 的 L2CAP 部分没有独立 oracle，只有按参数表排出的字节
+  与对 NimBLE 源码的交叉核对。
+- `tests/baselines.json` 里的 `ble-802154` 现为 414。
+
 ## 快速开始
 
 ```sh
 cd components/ble-802154
 ZIG=/nix/store/m096jak4mrmdhah085l79rzfypviyhfw-zig-0.17.1/bin/zig
-env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 122 tests passed
+env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 414 tests passed
 env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 ```
 
 0.17.1 的 `zig test` 不认 `--summary all`（报 `unrecognized parameter`），所以上面没带；
-`zig build test --summary all` 仍然可用。板侧入口是 `selftest.run()`，打印 50 行
-`check: … ok=1/0` 和 `checks: passed=N failed=M total=N+M`（板级日志里是 50/50）。
+`zig build test --summary all` 仍然可用。板侧入口是 `selftest.run()`，打印 106 行
+`check: … ok=1/0` 和 `checks: passed=N failed=M total=N+M`（最近一次板级日志是第二批的 50/50；在主机上跑是 106/106）。
 同一份自检也能在主机上跑（不碰板子；在仓库根目录执行，`main.zig` 调 `selftest.run()`，
 `board_stub.zig` 提供桩）：
 
@@ -103,9 +128,15 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
 | `src/gatt_server.zig` | GATT 服务端：服务 / 包含 / 特征 / 描述符声明、按 client 保存的 CCCD、指示、Service Changed |
 | `src/gatt_client.zig` | GATT 客户端：§4.3–§4.12 各过程的状态机（发现、读、写、订阅、指示确认） |
 | `src/cmac.zig` | AES-CMAC（标准库 `std.crypto.auth.cmac.CmacAes128`）与 ATT 数据签名 / 验签 |
-| `src/gatt.zig`、`src/fifteen4.zig` | 原有定长特征表；`fifteen4` 新增共享的 `decodeUdpNhc` |
+| `src/gatt.zig`、`src/fifteen4.zig` | 原有定长特征表；`fifteen4` 是 802.15.4 帧头与 6LoWPAN 适配层（`iphc`、`frag`、`mesh`，第三批补全），文件开头的旧入口 `decompress` 原样保留 |
 | `src/vectors.zig` | 新增模块与 CMAC / 签名的 KAT 常数（编译期十六进制解码） |
-| `src/host_tests.zig` / `src/selftest.zig` | 主机测试 / 板侧自检入口 |
+| `src/host_tests.zig` / `src/selftest.zig` | 主机测试（414 项）/ 板侧自检入口（106 条）；第三批的 `<特性>_tests.zig` / `<特性>_selftest.zig` 与同名模块一一对应 |
+| `src/ext_adv.zig` | 扩展广播与周期广播的 host 侧：17 条 HCI 命令的编码、LE Extended Advertising Report 与 LE Advertising Set Terminated 两个事件、广播集台账、链路层扩展头解析、广播数据分片器 |
+| `src/l2cap_coc.zig` | LE 上基于额度的 L2CAP 连接（LE Credit Based Flow Control 与 Enhanced Credit Based Flow Control），两个角色 |
+| `src/eatt.zig` | Enhanced ATT bearer 池：ATT 经 L2CAP 信道收发 |
+| `src/robust_cache.zig` | Robust Caching：Client Supported Features、Database Hash、change-aware / change-unaware 的跟踪、客户端缓存的判定 |
+| `src/privacy.zig` | LL Privacy 的 host 侧：解析列表、RPA 的生成与解析、解析预算、RPA 超时定时器、隐私模式下的地址过滤 |
+| `src/power_ctrl.zig` | LE Power Control 的 host 侧：命令与事件编解码、路径损耗上报的跟踪、功率钳定与档位选择 |
 
 ## 特性对照表
 
@@ -171,6 +202,10 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
 | GATT 客户端过程失败：ATT 错误、协议错误、30 秒超时 | Vol 3 F 3.4.1.1、3.3.3；Vol 3 G 4.14 | `gattc: ATT errors end the procedure with the server's code…`、`gattc: structurally wrong server responses fail the procedure as protocol errors`、`gattc: a request that is not answered within 30 s fails and closes the bearer…` | 行为断言（时间直接拨到超时） | 主机通过；板侧无 |
 | AES-CMAC | RFC 4493 §4；Vol 3 H 附录 D.1；Vol 3 G 附录 B | `cmac: AES-CMAC matches the RFC 4493 vectors quoted in Vol 3 Part H appendix D.1`、`cmac: AES-CMAC with an all-zero key over the database hash input of Vol 3 Part G appendix B` | RFC 4493 四个向量（长度 0 / 16 / 40 / 64）；附录 B 的 111 字节输入 | 主机通过；板侧 ⑳ ㉑ |
 | ATT 签名与签名写 | Vol 3 H 2.4.5；Vol 3 F 3.4.5.4 | `cmac: signing reproduces the example of Vol 3 Part F 3.4.5.4…`、`att: signed write command carries the example signature of Vol 3 Part F 3.4.5.4`、`att: write command and signed write command…`、`att_svr: signed write is applied only with a valid, fresh signature…` | Part F §3.4.5.4 的样例 | 主机通过；板侧 ㉒ ㉓；互通未验 |
+| 扩展广播与周期广播的 host 侧 | Vol 4 E 7.7.65.13、7.7.65.18、7.8.52–7.8.69；Vol 6 B 1.2、2.3、2.3.4、2.5.2 | `ext_adv_tests.zig`（115） | 按参数表逐字节排的已知答案；与 NimBLE 的命令结构体、报告遍历代码交叉核对 | 主机通过；板侧 27 条（未上板） |
+| EATT bearer 池、LE 上基于额度的 L2CAP 连接、Robust Caching | Vol 3 G 2.5.2、2.5.2.1、5.3、7.2–7.4、附录 B；Vol 3 A 4.22–4.28、10.1–10.2 | `eatt_tests.zig`（57） | 附录 B 的 Database Hash 样例；`eatt_oracle.py`；与 NimBLE 交叉核对 | 主机通过；板侧 10 条（未上板） |
+| LL Privacy 与 LE Power Control 的 host 侧 | Vol 4 E 7.8.38–7.8.45、7.8.74–7.8.77、7.8.117–7.8.121、7.7.65.32–.33；Vol 6 B 1.3.2.2–.3、4.5.16、4.7、5.1.17、6.1–6.5 | `privacy_tests.zig`（66） | 参数表逐字节；`privacy_oracle.py`；与 NimBLE 交叉核对 | 主机通过；板侧 9 条（未上板） |
+| 6LoWPAN 适配层补全（IPHC 双向、NHC、分片与重组、Mesh 头） | RFC 4944 5.1–5.3、11；RFC 6282 3、4；RFC 6775 4.2、5.4.2–5.4.3；RFC 8025 3 | `sixlowpan_tests.zig`（50） | RFC 手排的已知答案；lwIP 的输出（差分） | 主机通过；板侧 10 条（未上板） |
 
 ## 实现偏离
 
@@ -237,6 +272,9 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
     （Part H §2.4.5）。本机 IDF 的 NimBLE（`ble_att_svr.c`、`ble_att_clt.c` 的
     `swap_in_place`）做法相同；与按字面顺序实现的协议栈能否互通未验。
 
+第三批的偏离（扩展广播、EATT、LL Privacy、6LoWPAN 各自的范围与取舍）逐条记在
+`docs/verification/ble-core-verification.md` §6「第三批（BLE 侧）」。与上面前两批的条目不同，它们还没有经过板级复验。
+
 ## 待验证项
 
 - 与真实 controller 走一遍 Reset → Read_Buffer_Size → 广播 → 连接。
@@ -252,5 +290,9 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
   错误码全表（板侧 ㉞ 只查 Read Not Permitted、Write Not Permitted 与 Invalid Handle）；GATT 客户端的按 UUID 发现、包含服务、
   描述符发现、Read Using UUID、定长 Read Multiple、Write / Signed Write / Reliable Write、
   指示确认与多重通知、过程超时与协议错误。
+- 第三批没有上板：`ext_adv`、`eatt`、`privacy`、`sixlowpan` 四份子自检（共 56 条）在板子上一次都没跑过。
+- 第三批在真实设备上的行为：扩展广播与周期广播、EATT、LL Privacy、LE Power Control；与 lwIP 节点的 6LoWPAN 互通。
+  后者有一个已知的缺口：lwIP 的压缩器给 `::` 源地址配上空槽的上下文号，本实现的解压器对此拒解。RFC 6282 没有规定
+  哪一种对（§3.1.2 行 553–554），依据见验证报告 §4.1、§6。
 
 历史来源见 `docs/HISTORY.md`。

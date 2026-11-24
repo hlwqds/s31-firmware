@@ -2,9 +2,11 @@
 
 IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.2 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6.20 的纯逻辑实现，
 另含 QoS 字段与参数（9.2.4.5、9.4.1.17、9.4.2.29、Table 10-1）和省电的两个确定性模型（11.2）。
+第三批（2026-11-25）加入无线测量（11.11 与相关的元素、帧格式，`rrm.zig`）和 WNM（BSS Transition Management 11.24.7、
+WNM Sleep Mode 11.2.3.18，`wnm.zig`）。
 不做密钥与加解密（归 `wifi-connect`）、不做 SAE 报文内容、不做 AP 行为、PHY、EDCA 竞争与队列调度。
-主机测试 **82 项**、板侧自检 **24 条判据**（2026-11-24；第二批之后的 24 条已随 `wifi` profile 上板，`wifi_mlme` 24/24）。
-第一批上板时是 61 项 / 16 条（见「验证状态」）。
+主机测试 **146 项**、板侧自检 **37 条判据**（2026-11-25）。第二批之后是 82 项 / 24 条（24 条已随 `wifi` profile 上板，
+`wifi_mlme` 24/24）；第一批上板时是 61 项 / 16 条（见「验证状态」）。
 
 ## 范围与来源
 
@@ -42,21 +44,33 @@ IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.2 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19
     11.2.3.8 / 11.2.3.10 / 11.2.3.11（p.1611–1613）、6.3.2.2–6.3.2.3（p.264–265）、9.4.1.6（p.727）、9.4.1.8（p.727）。
   - 抓包：Wireshark wiki SampleCaptures 的 `http_PPI.cap`（TID 0，带 FCS）与 `wpa-eap-tls.pcap`（TID 7）；
     EDCA Parameter Set 的解码用例用的是 hostapd 的默认 WMM 参数（出处以 `qos_tests.zig` 的用例为准）。
+- 无线测量与 WNM（第三批新增，页码为印刷页码，逐条见 `src/rrm.zig`、`src/wnm.zig` 文件头）：
+  - `rrm.zig`：11.11.4（p.1710–1711）、11.11.6（p.1711–1714）、11.11.7（p.1714）、11.11.9.1（p.1716–1719）、
+    11.11.10.3（p.1731–1734）、11.11.13（p.1734）；9.4.2.17 / .21 / .22 / .36 / .37 / .38 / .41；
+    9.6.7.1–9.6.7.7（p.1173–1176）；9.4.3（p.1121）。
+  - `wnm.zig`：11.24.7.1–11.24.7.4（p.1799–1802）；9.6.14.8–9.6.14.10（p.1230–1232）、表 9-357（p.1233）；
+    11.2.3.18（p.1623–1624）；9.4.2.82（p.1005）、表 9-203 / 9-204（p.1006）；9.6.14.19–9.6.14.20（p.1237–1238）；
+    9.4.2.79（p.1001）。
+  - 参照：hostap `ieee802_11_defs.h` 的结构体布局与常量；逐字节排帧按原图。
 
 ## 验证状态
 
 - L3 板侧：第一批 16 条判据于 2026-11-24 随 `wifi` profile 上板一次，16/16。日志 `logs/wifi-selftest-prefix-boot.log`。
   第二批加到 24 条之后于同日重新上板：`wifi_mlme` `checks: passed=24 failed=0 total=24`，整份判决 14/14 段、
   `main: verdict=pass`（`logs/e2e-wifi-boot.log`，命令 `BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi`）。
-- L1 主机：2026-11-24，82 项，全部通过（`cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig`
-  → `All 82 tests passed.`）。分布：`host_tests.zig` 61（`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6）
-  + `qos_tests.zig` 10 + `powersave_tests.zig` 9 + 2 个引在这两个文件上的 wrapper `test` 块；`zig fmt --check src/` 干净。
+- L1 主机：2026-11-25，146 项，全部通过（`cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig`
+  → `All 146 tests passed.`）。分布：`host_tests.zig` 64（自身 61：`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6；
+  另有 3 个 wrapper `test` 块）+ `qos_tests.zig` 10 + `powersave_tests.zig` 9 + `rrm_wnm_tests.zig` 63（其中 1 项在主机上执行
+  `rrm_wnm_selftest.run`）；`zig fmt --check src/` 干净。
 - 接入：`firmware/build.zig` 的 `wifi` 组已挂上本组件的 `selftest.zig`，`wifi` 与 `full` 两个 profile 带它。
-  24 条判据的板侧自检在主机上以桩 `board` 模块运行（2026-11-24，`/tmp/selftest-host/`）：
-  `checks: passed=24 failed=0 total=24`；同一份 `selftest.zig` 以固件参数（`riscv32-freestanding-eabihf`、
+  37 条判据的板侧自检在主机上以桩 `board` 模块运行（2026-11-25，`/tmp/selftest-host/`）：
+  `checks: passed=37 failed=0 total=37`，最长一行 154 字节；同一份 `selftest.zig` 以固件参数（`riscv32-freestanding-eabihf`、
   `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）交叉编译通过——目标参数写在第一个 `-M` 之前，并带一个在编译期断言
-  目标架构的守卫根文件（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1）。
-  原 16 条在主机上桩跑的结果是 `passed=16 failed=0`。
+  目标架构的守卫根文件（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1、§5.4）。
+  第一批的 16 条、第二批的 24 条在主机上桩跑时分别是 `passed=16`、`passed=24`。
+- 差分对拍（第三批，2026-11-25；数字见 `docs/verification/wifi-ieee80211-verification.md` §4.4）：无线测量按 hostap
+  `ieee802_11_defs.h` 的结构体布局排帧，四个种子各 12000 帧；WNM 按规范原图排帧，四个种子各 9000 帧；全部 0 不一致。
+  补 WNM 的对拍时找到 `wnm.parseSleepResponse` 的一个缺陷（该报告 §5.4）。
 - 差分对拍（`/tmp/s31-oracle/wifi_oracle.py`，一次性测试，跑完已删）：
   `bip_protect` 40 条（4 种 BIP × Key ID 4/5 × 随机 IPN）的 MME 经 `ie.parseMmie` 解出的 Key ID / IPN / MIC 全部相等；
   `ccmp_encapsulate` 40 条随机管理帧 / 数据帧（含 3 条四地址、12 条 QoS、15 条 HT Control）的 AAD 长度与 QoS TID

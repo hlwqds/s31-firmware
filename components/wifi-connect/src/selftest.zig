@@ -64,6 +64,11 @@ const wpa2 = @import("wpa2.zig");
 const sae_full_selftest = @import("sae_full_selftest.zig");
 const suite256_selftest = @import("suite256_selftest.zig");
 const ft_selftest = @import("ft_selftest.zig");
+const owe_selftest = @import("owe_selftest.zig");
+const eap_selftest = @import("eap_selftest.zig");
+const ft_proto_selftest = @import("ft_proto_selftest.zig");
+const sae_groups_selftest = @import("sae_groups_selftest.zig");
+const supp_akm_selftest = @import("supp_akm_selftest.zig");
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;
@@ -1156,6 +1161,11 @@ fn runChecks() bool {
     sae_full_selftest.run(extCheck);
     suite256_selftest.run(extCheck);
     ft_selftest.run(extCheck);
+    owe_selftest.run(extCheck);
+    eap_selftest.run(extCheck);
+    ft_proto_selftest.run(extCheck);
+    sae_groups_selftest.run(extCheck);
+    supp_akm_selftest.run(extCheck);
     return g_failed == 0;
 }
 

@@ -1,9 +1,9 @@
 {
   "full": {
-    "drom_len": 168320,
+    "drom_len": 264624,
     "drom_load": 1075642432,
-    "image": 853632,
-    "irom_len": 646416,
+    "image": 1182240,
+    "irom_len": 857664,
     "irom_load": 1073741856
   },
   "min": {
@@ -35,10 +35,10 @@
     "irom_load": 1073741856
   },
   "wifi": {
-    "drom_len": 148912,
+    "drom_len": 245392,
     "drom_load": 1075642432,
-    "image": 738848,
-    "irom_len": 539936,
+    "image": 1068672,
+    "irom_len": 780032,
     "irom_load": 1073741856
   }
 }

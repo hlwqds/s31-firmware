@@ -57,6 +57,10 @@
 | AES-CMAC | RFC 4493 §4；Vol 3 Part H 附录 D.1；Vol 3 Part G 附录 B | `cmac.zig` | `cmac:` 前缀的 2 条。`cmac: AES-CMAC matches the RFC 4493 vectors quoted in Vol 3 Part H appendix D.1`、`cmac: AES-CMAC with an all-zero key over the database hash input of Vol 3 Part G appendix B` | RFC 4493 的四个向量（消息长度 0 / 16 / 40 / 64）；附录 B 的 111 字节输入 | ⑳ ㉑ | 同上；没有差分（§4） |
 | ATT 签名与签名写（`ble-802154` 的实现） | Vol 3 Part H §2.4.5；Vol 3 Part F §3.4.5.4 | `cmac.zig`、`att.zig`、`att_server.zig` | `cmac: signing reproduces the example of Vol 3 Part F 3.4.5.4…`、`att: signed write command carries the example signature of Vol 3 Part F 3.4.5.4`、`att: write command and signed write command…`、`att_svr: signed write is applied only with a valid, fresh signature…` | Part F §3.4.5.4 的样例 | ㉒ ㉓ | 离线验证通过；板侧 50/50；互通未验（§6、§7） |
 | 对真实 controller 的 HCI 一致性自检 | Vol 4 Part E §3.1、§4.4、§4.5、§6.27、§7.4、§7.6、§7.8 | `bt-blobs/src/hci_conformance.zig`、`hci_conformance_tests.zig`、`probe.zig` | bt-blobs 21 → 67（本项 46） | 规范原文表 3.1、§6.27；板上回包 | 26 条：20 过 6 不过 | 已上板：16 条合规且受支持、4 条合规且声明不支持、6 条偏差（§8） |
+| 扩展广播与周期广播的 host 侧：17 条 HCI 命令的编码（其中两条分 v1 / v2）、两个事件（LE Extended Advertising Report、LE Advertising Set Terminated）、广播集台账、链路层扩展头解析、广播数据分片器 | [Vol 4] Part E §5.2、§7.7.65.13、§7.7.65.18、§7.8.52–§7.8.69；[Vol 6] Part B §1.2、§2.3、§2.3.4、§2.5.2 | `ble-802154/src/ext_adv.zig` | 115（`ext_adv_tests.zig`） | 按参数表逐字节排的已知答案；NimBLE 的命令结构体、报告遍历代码与 controller 的扩展头位序（行号见 `ext_adv.zig` 文件头） | 27（`ext_adv_selftest.zig`） | 离线验证通过 |
+| Enhanced ATT bearer 池；LE 上基于额度的 L2CAP 连接（LE Credit Based Flow Control 与 Enhanced Credit Based Flow Control）；Robust Caching（Client Supported Features、Database Hash、change-aware / change-unaware 的跟踪、客户端缓存的判定） | [Vol 3] Part G §2.5.2、§2.5.2.1、§5.3、§7.2–§7.4、附录 B；[Vol 3] Part F §3.2.8、§3.2.11、§3.3.2、§3.3.3、表 3.44；[Vol 3] Part A §2.1、§3.4、§4、§4.22–§4.28、§7.11、§10.1–§10.2 | `ble-802154/src/eatt.zig`、`l2cap_coc.zig`、`robust_cache.zig` | 57（`eatt_tests.zig`） | 附录 B 的 Database Hash 样例；`eatt_oracle.py`；NimBLE 的信令结构体、EATT 与 GATT 的对应代码（行号见三个文件头） | 10（`eatt_selftest.zig`） | 离线验证通过 |
+| LL Privacy 的 host 侧：解析列表（9 条命令）、RPA 的生成与解析、扫描时的解析预算、RPA 超时定时器、隐私模式下的地址过滤；LE Power Control 的 host 侧：命令与事件编解码、路径损耗上报的跟踪、功率钳制与档位选择的模型 | [Vol 4] Part E §7.8.38–§7.8.45、§7.8.74–§7.8.77、§7.8.117–§7.8.121、§7.7.65.32–.33；[Vol 6] Part B §1.3.2.2–.3、§4.5.16、§4.7、§5.1.17、§6.1–§6.5；[Vol 3] Part H §2.2.2；[Vol 3] Part C §10.7 | `ble-802154/src/privacy.zig`、`power_ctrl.zig` | 66（`privacy_tests.zig`：privacy 40、power 25、子自检 1） | 参数表逐字节；`privacy_oracle.py`（FIPS-197 附录 B 与 RFC 4493 的已知答案先自检）；NimBLE 的 `ble_hs_resolv.c`、`ble_gap.c`、`ble_hs_pvcy.c` | 9（`privacy_selftest.zig`） | 离线验证通过 |
+| 6LoWPAN 适配层补全：IPHC 压缩与无状态 / 有状态解压（两个方向、全部取值）、上下文表的有效期状态机、NHC（扩展头 EID 0–4 与 7、UDP 的 C 与 P 全部取值、校验和省略）、dispatch 分类、Mesh 头与转发规则、分片头与重组（重叠、乱序、60 秒超时） | RFC 4944 §5.1–§5.3、§11；RFC 6282 §3、§4；RFC 6775 §4.2、§5.4.2–§5.4.3；RFC 8025 §3 | `ble-802154/src/fifteen4.zig` | 50（`sixlowpan_tests.zig`） | RFC 手排的已知答案；lwIP（IDF v6.1 自带）的输出 | 10（`sixlowpan_selftest.zig`） | 离线验证通过 |
 | 广播、连接、真实收发 | 不适用 | — | — | — | — | 阻塞：射频 synth PLL 不锁 |
 
 ## 3. 主机测试
@@ -133,6 +137,40 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 
 参照实现自检里的 2 条 KNOWN 是规范样例自身的不一致：Vol 6 Part C §4.2.1 印出的 PDU 少一个 AdvA 八位组；§4.2.2 印出的 CRC 与印出的 PDU 对不上。
 
+### 4.1 第三批的差分
+
+下表的数字是 2026-11-25 主代理在集成后的代码上重跑得到的（§5.2）。参照实现都在 `/tmp/s31-oracle/`，一次性驱动不入库。
+
+| 特性 | 参照实现 | 规模 | 结果 |
+| --- | --- | --- | --- |
+| Robust Caching 的 Database Hash | `eatt_oracle.py`（Python `cryptography` 的 AES-CMAC） | 24 张随机属性表（种子 20261124，期望值入库在 `eatt_tests.zig`）；空表与只含不进哈希的属性的表按「空消息的 AES-CMAC，即 RFC 4493 例 1」核对 | 仓内两条计算路径都是 0 不一致；Vol 3 Part G 附录 B 的例子与表 B.1 的结果逐行相等。oracle 自检：RFC 4493 例 4、附录 B、表 B.1 共 22 行，通过。交付时另做过一次 3000 张表的差分（临时用例，已删）：两条路径 0 / 0 不一致 |
+| RPA 的生成与解析 | `privacy_oracle.py`（先用 FIPS-197 附录 B 的已知答案自检，`cryptography` 与一份纯 Python AES 对拍 16 个随机单块） | 仓内 24 组向量（种子 20261124）；仓外 2000 组（种子 20261125），每行换 IRK 与 prand | 仓外差分：`differential: rows=2000 gen-mismatch=0 resolve-miss=0 wrong-irk-hit=0`、`differential(list): rows=2000 wrong=0`。仓内 24 组与 oracle 的输出逐行相同。单次交叉核对：`privacy_oracle.py rpa --irk 2b7e…f3c --prand 213c5a` 的输出等于 `vectors.zig` 里的 `rpa_addr` |
+| 扩展广播与 EATT 的 L2CAP 部分 | 没有独立 oracle。期望值是按参数表排出的字节，布局与 NimBLE 的结构体、遍历代码和 controller 的位序交叉核对 | — | 交叉核对，不是差分 |
+| 6LoWPAN 的 IPHC 压缩 / 解压、分片与重组、UDP 校验和 | `lwip_lowpan/campaign.py`（盘上 IDF v6.1 自带的 lwIP 源码 `lowpan6.c`、`lowpan6_common.c`，不改一行，编成宿主程序；Zig 侧是仓库现有的 `fifteen4.zig` 编成的动态库） | 种子 7、42、99，每个种子 1000 个随机报文 | Zig 自往返与 UDP 校验和 3000/3000；与 lwIP 不一致的报文全部落在四类里，每一类都对到了 lwIP 的源码或 RFC 6282 的原文（见下表） |
+
+上表 6LoWPAN 那一行是主代理在集成之后重跑的（§5.2），逐个种子的数字：
+
+| 种子 | Zig 压缩 → lwIP 解压与原包一致 | lwIP 压缩 → Zig 解压与原包一致 | Zig 自往返 | UDP 校验和（Python = lwIP = Zig） |
+| --- | --- | --- | --- | --- |
+| 7 | 992 / 1000 | 838 / 1000 | 1000 / 1000 | 1000 / 1000 |
+| 42 | 985 / 1000 | 833 / 1000 | 1000 / 1000 | 1000 / 1000 |
+| 99 | 990 / 1000 | 848 / 1000 | 1000 / 1000 | 1000 / 1000 |
+
+每个种子里不平的报文数等于下面相应几类的计数之和（种子 7：Zig → lwIP 的 8 是第二类；lwIP → Zig 的 162 是第三类加第四类，
+47 + 115）。四类的归因依据：
+
+| 类别 | 方向 | 依据 |
+| --- | --- | --- |
+| 短地址（16 位）源帧，lwIP 丢帧 | Zig 分片 → lwIP 重组 | `lowpan6.c:241` 拿**目的**短地址的掩码常量去比**源**地址模式，两个常量数值不同，短地址源帧落进「不支持的地址模式」回 `ERR_VAL` |
+| 上下文超过 64 位时，IID 里被上下文覆盖的位 lwIP 按 /64 换成常量 | Zig 压缩 → lwIP 解压 | `lowpan6_context_lookup` 用 `ip6_addr_net_eq` 只比前 64 位，上下文就是 `ip6_addr_t` 数组，没有前缀长度；RFC 6282 行 414–435 规定「Bits covered by context information are always used」 |
+| 上下文不足 64 位时，「缝」里的位 lwIP 用上下文的前 64 位填充，Zig 置零 | lwIP 压缩 → Zig 解压 | 同上（lwIP 只会 /64）；RFC 6282 行 414–435 规定「Any remaining bits are zero」 |
+| `::` 作源地址时，lwIP 配上空槽的上下文号，Zig 拒解（`NoContext`） | lwIP 压缩 → Zig 解压 | lwIP 的查找拿 `::` 的前 64 位（全零）去比，没用到的槽也是全零，于是「命中」空槽并标成有状态压缩（SAC=1、SAM=00、CID 指向该槽）。RFC 6282 行 412 写明 SAC=1、SAM=00 就是 `::`，不依赖上下文；§3.1.2（行 553–554）对「上下文未知时怎么办」没有规定。两边都不违反 RFC，但这是一个互通缺口（§6） |
+
+脚本另把 14 个 lwIP 的 NHC 不处理的头部组合（扩展头链、IPv6-in-IPv6、`::` 源地址、/128 上下文等）单独列一组：Zig 压缩再解压
+14/14 等于原包；lwIP 拒收 8 个、收下 6 个，收下的脚本没有再比较。脚本给「lwIP 收下了」打的标签是 `FAIL unsupported-combo lwip accepted`，
+那是脚本原本预期 lwIP 会拒收，不是 Zig 侧的不一致。
+
+
 ## 5. 主代理独立复核
 
 - HCI 参数布局对 NimBLE 的 C 结构体（`~/esp/esp-idf/components/bt/host/nimble/nimble/nimble/include/nimble/hci_common.h`，另一份独立实现）：LE Set Advertising Parameters 15 字节、LE Create Connection 25 字节 12 个字段、LE Connection Update Complete 事件 10 字节，逐字段顺序一致。
@@ -162,10 +200,23 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 
 **ATT 线上结构对 NimBLE `ble_att_cmd_priv.h` 的 PDU 尺寸定义。** Error Response 5、Exchange MTU 3、Find Information Request 5、Find By Type Value Request 7 + 值、Read By Type Request 7 / 21 与应答条目 6 / 20、Read Request 3、Read Blob Request 5、Read Multiple Request（句柄表）、Read By Group Type Request 7 / 21 与条目 6 / 20，与 `host_tests.zig` 里的字节脚本一致。文档代理重读了该头文件的 `_SZ` 定义（`BLE_ATT_ERROR_RSP_SZ 5`、`BLE_ATT_MTU_CMD_SZ 3`、`BLE_ATT_FIND_INFO_REQ_SZ 5`、`BLE_ATT_FIND_TYPE_VALUE_REQ_BASE_SZ 7`、`BLE_ATT_READ_REQ_SZ 3`、`BLE_ATT_READ_BLOB_REQ_SZ 5`、`BLE_ATT_READ_TYPE_ADATA_BASE_SZ 2`、`BLE_ATT_READ_GROUP_TYPE_ADATA_BASE_SZ 4`），与上面的数相符。
 
+### 5.2 主代理对第三批的独立复核（2026-11-25）
+
+- **逐片验收**：扩展广播、EATT、LL Privacy 三片各跑 `sh /tmp/r5c/accept.sh ble-802154 <特性>`，内容是 `zig test <特性>_tests.zig`、
+  从输出里取板侧子自检在主机上的读数、以固件参数单独编译该子自检、`zig fmt --check`。读数：扩展广播 115/115、
+  自检 `passed=27 failed=0`（最长一行 79 字节）；EATT 57/57、`passed=10 failed=0`（97 字节）；LL Privacy 66/66、`passed=9 failed=0`（72 字节）。
+- **差分重跑**：`eatt_oracle.py selfcheck`、`privacy_oracle.py selftest`（6 项通过）、仓外 2000 组与仓内 24 组，数字见 §4.1。
+- 这三片的实现没有在复核中发现缺陷。集成时只确认了一处边界：新命令与新子事件各自在模块里编解码，没有登记进
+  `hci_cmd.zig` / `hci_evt.zig` 的统一分发（§6）。
+- **逐片验收（6LoWPAN）**：`zig test sixlowpan_tests.zig` → `All 50 tests passed`，其中的子自检用例读到 `passed=10 failed=0`
+  （最长一行 71 字节）；`sixlowpan_selftest.zig` 以固件参数单独编译通过；`zig fmt --check` 干净；10 处 `check(` 调用。
+  这一片的差分在逐片验收时没有重跑；§4.1 的数字是集成之后把仓库现有的 `fifteen4.zig` 重新编成动态库再跑出来的
+  （`build_zig.sh`，`campaign.py <种子> 1000`，三个种子共 16 秒）。
+
 ## 6. 实现偏离
 
 - ATT MTU 上限取 527（`ble-802154/src/att.zig` 的 `max_mtu`）。5.4 的 Part F、Part G 文本里没有给 ATT_MTU 的上限，只有属性值最长 512 字节（Vol 3 Part F §3.2.9）；本地规范文本里检索不到 517。527 沿用 NimBLE，正好让最大的命令 Signed Write（1 + 2 + 512 + 12）装下 512 字节的值。小于 23 的 MTU 请求直接拒绝是章节时代客户端入口 `encodeMtuReq` 的原有行为；服务端对小于默认值的 Client Rx MTU 不改 ATT_MTU（Vol 3 Part F §3.4.2.2）。
-- LE Advertising Report 只做 legacy 事件；扩展广播数据在 §7.7.65.13，未实现。
+- LE Advertising Report（`hci_evt.zig`）只做 legacy 事件；扩展广播数据由第三批的 `ext_adv.zig` 解析（§7.7.65.13），没有并进 `hci_evt.zig` 的统一分发。
 - AD 结构里 Length = 0 按规范当作填充的起点。
 - **签名的字节序**：Vol 3 Part H §2.4.5 的文字与 Vol 3 Part F §3.4.5.4 的样例互相矛盾，本实现按样例；与按字面顺序实现的协议栈能否互通未知。
 - 规范没规定或自相矛盾、由实现选定的：两端公钥 X 坐标相同时回 Invalid Parameters；乱序命令回 Unspecified Reason；Repeated Attempts 取 1 秒起、上限 64 秒、30 秒回落；随机数用 HKDF-Expand 展开调用方的 256 位种子；AuthReq 保留位忽略；Bonding_Flags 非 01 按 No Bonding；MIC 校验失败时明文缓冲清零。
@@ -187,7 +238,47 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
   - `Config` 的默认容量：服务 8、包含服务 4、特征 16、描述符 16、读值缓冲 128 字节、写值缓冲 128 字节、句柄与结果 8 条；放不下时过程按本地错误失败。
 - **第二批 · GATT 服务端**（`gatt_server.zig`）：写 CCCD 时置了特征不支持的位（或保留位）回 0x80（Application Error 区间的第一个值，`ccc_not_allowed`）。Vol 3 Part G §4.12.3 规定了尺寸不对或值不合法时不写、回 Application Error，没有规定具体取值。
 - **第二批 · 签名的两处字节序**（`cmac.zig` 文件头）：待签消息进 CMAC 前整段字节反转；取 CMAC 结果里最高有效的 64 位，写进 PDU 时最低有效字节在前。本机 IDF 的 NimBLE（`ble_att_svr.c`、`ble_att_clt.c` 的 `swap_in_place`）做法相同，文档代理核对过这两个调用点。
-- **第二批 · GATT 没做的**（`gatt_server.zig` 文件头）：Database Hash、Client Supported Features、Server Supported Features 三个特征（Vol 3 Part G §7.2–§7.4），Robust Caching（§2.5.2.1），绑定设备的 CCCD / Service Changed 持久化。
+- **第二批 · GATT 没做的**（`gatt_server.zig` 文件头）：Database Hash、Client Supported Features、Server Supported Features 三个特征（Vol 3 Part G §7.2–§7.4），Robust Caching（§2.5.2.1），绑定设备的 CCCD / Service Changed 持久化。前两项第三批已在 `robust_cache.zig` 里做了（见下面第三批）；持久化仍未做。
+
+第三批（BLE 侧）：
+
+- **扩展广播与周期广播的范围**（`ext_adv.zig` 文件头同文）：
+  - 取决于 Controller 自身能力或状态、host 侧算不出来的判据没有建模，测试里也不假装算：Memory Capacity Exceeded / Packet Too Long；
+    §7.8.56 的「will not fit in the AUX_ADV_IND PDU」只判了能从 8 位的 Length 推出来的那一段；Controller 支持哪些间隔、事件类型、
+    PHY、CTE 类型；Own_Address_Type 0x02 / 0x03 时解析列表里有没有对应项、设备有没有公有地址；扫描与同步的时序调度。
+    扫描与同步那几条命令只编码，不做调度。
+  - 原文没写、由实现定下的三处：多条判据同时违反时的先后（先看句柄是否存在，再看参数是否合法，再看当前状态，最后才算容量）；
+    把已经带着超过 31 字节数据的集合改成 legacy 类型回 0x12；句柄不存在时 Set Advertising Set Random Address 回 0x42。
+  - 链路层扩展头只做位图解码与字段切分，不涉及时序。
+- **EATT 与基于额度的 L2CAP 连接**（`eatt.zig`、`l2cap_coc.zig` 文件头同文）：
+  - EATT 的实现限制：每条 bearer 只有一个待发的 ATT PDU 位置，挤不进去的应答返回 `Busy`；CID 固定是 `0x0040 + 槽位`；
+    不发 L2CAP 的 DISCONNECTION 请求，本端关闭 bearer 后对端要到用满额度、或发来的 K-frame 被拒之后才知道。
+  - 与 NimBLE 不同的两处，都按原文：重配置请求里的 Destination CID 是发请求一方的端点，收它的这一端按对端 CID 找信道；
+    ATT_EXECUTE_WRITE_REQ 不回 Database Out Of Sync（0x12）——表 3.44 没有把它列为允许 0x12 的方法，NimBLE 回。
+  - 原文没有规定、由实现定下的几处写在各自的函数上：多个拒绝理由同时成立时回哪一个；成功响应里 MTU / MPS 低于最小值怎么处理；
+    重配置时哪个方向出错。
+- **LL Privacy 与 LE Power Control**（`privacy.zig`、`power_ctrl.zig`）：
+  - 四个参数全同的重复 Add：§7.8.38 允许拒绝（0x12），也允许不重复添加并回成功；取拒绝。
+  - 检查顺序照原文段落的顺序，先判容量再判内容，所以列表满时重复条目也报 `ListFull`。原文对「又满又重复」没有规定先后；
+    盘上 NimBLE 的 host 实现也是先查容量。
+  - 「解析超时」按两种含义都做了：RPA_Timeout 定时器（§7.8.45、§6.1）；主机侧解析的时间预算，单位是「这次最多试几个 IRK」，
+    不是微秒。
+  - `decodeTxPowerReporting` 拒绝 Reason 0x00 时 TX_Power_Level = 0x7E：原文只把 0x7E 定义为「对端没在管功率」，这是较严的读法。
+  - `PathLossTracker` 里「报的区与损耗数值对不上」是从 §4.5.16 的边界与回差推导出的 host 侧校验，原文没有定义这样的校验。
+  - `Responder` 是 §5.1.17 controller 行为的纯逻辑模型，host 自己在空口上看不到 LL_POWER_CONTROL_REQ。
+  - `LocalRpa.regenerate` 的 prand 由调用方给，模块不含随机源。
+  - 与 NimBLE 两处不同、跟原文：`BLE_MAX_RPA_TIMEOUT_VAL`（约 11.5 小时）是旧上限，5.4 是 0x0E10；加完条目后把所有对端
+    设成 device mode，与默认的 network mode 不符。
+- **6LoWPAN 的范围**（`fifteen4.zig` 文件头同文）：
+  - 没做的：6LoWPAN-ND（RFC 6775）的协议本体，只实现它的上下文表，不解析 RA / 6CO；Mesh 路由（只有 Mesh 头与 §11 的 hop 规则）；
+    RFC 8930、RFC 8931；RFC 4944 §10 的 HC1 / HC2；Thread MLE；分页 dispatch 的 Page 2–15。
+  - `NoContext`：IPHC 指向一个不存在、已删除或已过保持期的上下文就拒解，这是设计（错误表里写明）。它也包括 SAC=1、SAM=00 的
+    `::` 源地址：RFC 6282 行 412 规定这个地址不依赖上下文，而 lwIP 的压缩器只要上下文表里有没用到的槽，就会给 `::` 配上那个槽的
+    上下文号（§4.1）。结果是 lwIP 发的、以 `::` 为源地址的报文（例如重复地址检测、MLD 上报）在 Zig 这边解不出来。
+    要不要对 SAM=00 放宽成不看上下文，RFC 没有规定，留给接到真实链路时决定。
+- **新命令与新子事件没有登记进统一分发器**：扩展广播、LL Privacy、LE Power Control 的新 OpCode 与子事件码各自在模块里编解码。
+  `hci_cmd.expects()` / `parseReturn` 对这些 OpCode 回 `UnknownOpcode`，`hci_evt.decodeParams` 对子事件 0x20 / 0x21 等
+  回 `UnknownSubevent`。它们还没有接到发送路径上，并进统一分发留给接线那一步。
 
 ## 7. 未验证
 
@@ -198,6 +289,10 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - 第二批：30 秒事务超时与指示超时在真实链路上的行为。主机用例（`att_svr: indication waits for its confirmation…`、`gattc: a request that is not answered within 30 s…`）与板侧 ㊵ 都是把时间直接拨到 30 秒后，没有真实等待过。
 - 第二批：签名写的 CSRK 由上层从绑定信息提供（`att_server.zig` 的 `Peer.csrk`），`ble-802154` 不导入 `ble-security`，这条接线没有验证过。
 - 第二批：板侧自检不覆盖、只有主机用例的分支：ATT 的 Find By Type Value 与多重变长通知；ATT 服务端错误码全表（㉞ 只查 Read Not Permitted、Write Not Permitted 与 Invalid Handle）；GATT 客户端的按 UUID 发现、包含服务、描述符发现、Read Using UUID、定长 Read Multiple、Write / Signed Write / Reliable Write、指示确认与多重通知、过程超时与协议错误。
+- 第三批：真实设备上的扩展广播与周期广播、EATT、LL Privacy、LE Power Control，都没有任何证据；只有主机测试与板侧自检。
+- 第三批：扩展广播与 EATT 的 L2CAP 部分没有独立 oracle 的差分，只有按参数表排出的字节与对 NimBLE 源码的交叉核对。
+- 第三批：新命令与新子事件没有经过 `hci_cmd.zig` / `hci_evt.zig` 的统一分发（§6）。
+- 第三批：6LoWPAN 与 lwIP 的互通只在宿主机上对过（§4.1），没有上过链路。§6 里 `::` 源地址的那一类差异，遇到 lwIP 发的帧 Zig 的解压器会拒解。
 
 ## 8. 对真实 controller 的 HCI 一致性自检（2026-11-24）
 

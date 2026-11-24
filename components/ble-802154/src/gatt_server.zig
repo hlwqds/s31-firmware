@@ -26,8 +26,9 @@
 //! `att_server` 的 `Validate` 钩子挂上。规范没有给「置了特征不支持的位」规定错误码，
 //! 这里取 Application Error 区间的第一个值 0x80（`ccc_not_allowed`）。
 //!
-//! 没做的：Database Hash、Client Supported Features、Server Supported Features 三个特征
-//! （§7.2–§7.4），Robust Caching（§2.5.2.1），以及绑定设备的 CCCD / Service Changed 持久化。
+//! 本文件没做的：绑定设备的 CCCD / Service Changed 持久化。Database Hash、Client Supported Features、
+//! Server Supported Features 三个特征（§7.2–§7.4）与 Robust Caching（§2.5.2.1）在 `robust_cache.zig` 里，
+//! EATT bearer 经 `eatt.zig` 的 `ServerAtt()` 接上来。
 
 const std = @import("std");
 const att = @import("att.zig");

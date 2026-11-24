@@ -20,7 +20,10 @@
 //!   ✓ confirm    = HMAC-SHA256(KCK, LE16(send-confirm) || sc || elem || ...)
 //!
 //! 没实现的部分在 `unimplemented` 表里逐条列出（自检会打印条数）：恒定时间、
-//! H2E、group 19 以外的群。
+//! H2E、本端发送 Rejected Groups 元素，以及 IANA 注册表里剩下的群（FFC 1、22–24，ECC 27 起）。
+//!
+//! group 19 以外的群在 `sae_groups.zig`（域参数、hunting-and-pecking、群运算）；多群的
+//! 状态机、群协商、Password Identifier 与收到的 Rejected Groups 元素在 `sae_full.zig` 的 `Groups()`。
 //!
 //! 与向量的一处关系，读代码前先知道（条款号与页码都是 IEEE Std 802.11-2016）：
 //!   * Annex J.10（印刷页 3429–3430）的 pwd-value 与 KCK/PMK 只有把 KDF 的 i 编成
@@ -37,7 +40,8 @@ const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
 const timing_safe = std.crypto.timing_safe;
 
 // ---------------------------------------------------------------------------
-// 长度与群参数（group 19 = P-256，802.11-2020 Table 12-1）
+// 长度与群参数（group 19 = P-256；IEEE Std 802.11-2016 12.4.4.1，正文 100620–100621，
+// 要求必须支持它。2016 版没有群表。）
 // ---------------------------------------------------------------------------
 
 pub const hash_len = 32;
@@ -80,14 +84,16 @@ pub const implemented = [_][]const u8{
     "confirm CN (HMAC-SHA256)",
     "P-256 point ops, PWE y, scalar-op/elem-op (ecc.zig)",
     "commit/confirm exchange, framing, FSM 12.4.8 (sae_full.zig)",
+    "ECC 20/21/25/26/28/29/30 and FFC 2/5/14-18: bignum.zig + sae_groups.zig",
+    "group negotiation: status 77, moregroups, DiffGrp (sae_full.Groups)",
+    "password identifier element (hostap source only; not in 802.11-2016)",
 };
 
 pub const unimplemented = [_][]const u8{
     "constant-time loops and selects (hunt stops at first hit, no blinding)",
-    "H2E (WPA3 R3 hash-to-element)",
-    "groups other than 19 (20/21/30) and FFC groups (5, 14, 15, 16)",
-    "rejected-groups and password-identifier elements",
-    "DiffGrp sync between two configured groups (needs >1 group)",
+    "H2E (not in IEEE Std 802.11-2016)",
+    "sending the Rejected Groups element (hostap sends it with H2E only)",
+    "FFC 1/22/23/24, ECC 27 and later IANA groups",
 };
 
 // ---------------------------------------------------------------------------
@@ -213,7 +219,7 @@ pub fn modQ(x: U256) U256 {
     return mod(x, order);
 }
 
-/// (a + b) mod n——commit-scalar 的相加，802.11-2020 12.4.5.3 的
+/// (a + b) mod n——commit-scalar 的相加，IEEE Std 802.11-2016 12.4.5.3（正文 100880–100886）的
 /// `(commit-scalar + peer-commit-scalar) modulo r`。
 pub fn scalarAddModQ(a: U256, b: U256) U256 {
     const s = add(a, b);
@@ -224,10 +230,11 @@ pub fn scalarAddModQ(a: U256, b: U256) U256 {
 }
 
 // ---------------------------------------------------------------------------
-// 2) sha256_prf_bits：IEEE 802.11-2012 11.6.1.7.2 的 KDF
+// 2) sha256_prf_bits：IEEE 802.11-2016 12.7.1.7.2 的 KDF
 //
 //    HMAC-SHA256(K, LE16(i) || label || data || LE16(bits))，i 从 1 递增。
-//    本组件只需要字节对齐的输出，所以 `out.len * 8` 就是 bits。
+//    `kdfBits` 的 Length 可以不是 8 的倍数（P-521 的素数是 521 位）；`kdfHash` 是
+//    字节对齐的常用形式，`out.len * 8` 就是 bits。
 // ---------------------------------------------------------------------------
 
 fn writeU16Le(out: *[2]u8, v: u16) void {
@@ -235,8 +242,9 @@ fn writeU16Le(out: *[2]u8, v: u16) void {
     out[1] = @truncate(v >> 8);
 }
 
-pub fn kdfHash(key: []const u8, label: []const u8, data: []const u8, out: []u8) void {
-    const bits: u16 = @intCast(out.len * 8);
+/// 输出 ⌈bits/8⌉ 个八位组，`out.len` 必须正好这么长。最后一个小骤里不属于输出的低位清 0
+/// （hostap crypto/sha256-prf.c:98–102 的掩码 `0xff << (8 − bits % 8)`）。
+pub fn kdfBits(key: []const u8, label: []const u8, data: []const u8, bits: u16, out: []u8) void {
     var bits_le: [2]u8 = undefined;
     writeU16Le(&bits_le, bits);
 
@@ -256,6 +264,15 @@ pub fn kdfHash(key: []const u8, label: []const u8, data: []const u8, out: []u8) 
         @memcpy(out[filled..][0..take], mac[0..take]);
         filled += take;
     }
+    if (bits % 8 != 0) {
+        const keep: u4 = @intCast(8 - bits % 8);
+        out[out.len - 1] &= @truncate(@as(u16, 0xff) << keep);
+    }
+}
+
+/// 字节对齐的 KDF：Length = `out.len * 8`。
+pub fn kdfHash(key: []const u8, label: []const u8, data: []const u8, out: []u8) void {
+    kdfBits(key, label, data, @intCast(out.len * 8), out);
 }
 
 /// HKDF-Extract(salt, ikm) = HMAC-SHA256(salt, ikm)（RFC 5869 §2.2）。
@@ -327,31 +344,68 @@ pub const Keys = struct {
     pmkid: [pmkid_len]u8,
 };
 
-/// 由共享秘密的 x 坐标 `k` 与两个 commit 标量派生 KCK/PMK/PMKID。
-///
-/// 802.11-2020 12.4.5.3 的三步，与 hostap `sae_derive_keys()`（sae.c:1462）一致：
+/// 与群无关的密钥派生（IEEE Std 802.11-2016 12.4.5.4，正文 100915–100930）：
 ///   1. keyseed = HKDF-Extract(salt = 0^32, ikm = k)
 ///   2. KCK||PMK = KDF-Hash-Length(keyseed, "SAE KCK and PMK", (sc+pc) mod r)
-///   3. PMKID    = L((sc+pc) mod r, 0, 128)
-pub fn deriveKeys(k: [scalar_len]u8, own_scalar: U256, peer_scalar: U256) Keys {
-    const scalar_sum = scalarAddModQ(own_scalar, peer_scalar);
+/// `k` 是 F(K) 的八位组串，`scalar_sum` 是 (commit-scalar + peer-commit-scalar) mod r 的
+/// 八位组串，长度都由群决定（P-256 以外的群见 `sae_groups.zig`）。与 hostap
+/// `sae_derive_keys()`（sae.c:1462）一致。
+pub const KckPmk = struct { keyseed: [hash_len]u8, kck: [kck_len]u8, pmk: [pmk_len]u8 };
+
+pub fn kckPmk(k: []const u8, scalar_sum: []const u8) KckPmk {
     const zero_salt: [hash_len]u8 = @splat(0);
-    const keyseed = hkdfExtract(&zero_salt, &k);
+    const keyseed = hkdfExtract(&zero_salt, k);
 
     var both: [kck_len + pmk_len]u8 = undefined;
-    kdfHash(&keyseed, kck_pmk_label, &scalar_sum, &both);
+    kdfHash(&keyseed, kck_pmk_label, scalar_sum, &both);
 
     return .{
-        .scalar_sum = scalar_sum,
         .keyseed = keyseed,
         .kck = both[0..kck_len].*,
         .pmk = both[kck_len..][0..pmk_len].*,
+    };
+}
+
+/// 由共享秘密的 x 坐标 `k` 与两个 commit 标量派生 KCK/PMK/PMKID（group 19）。
+///
+/// 第 3 步 PMKID = L((sc+pc) mod r, 0, 128)：取和的前 16 个八位组。
+pub fn deriveKeys(k: [scalar_len]u8, own_scalar: U256, peer_scalar: U256) Keys {
+    const scalar_sum = scalarAddModQ(own_scalar, peer_scalar);
+    const d = kckPmk(&k, &scalar_sum);
+    return .{
+        .scalar_sum = scalar_sum,
+        .keyseed = d.keyseed,
+        .kck = d.kck,
+        .pmk = d.pmk,
         .pmkid = scalar_sum[0..pmkid_len].*,
     };
 }
 
 /// confirm = CN(KCK, send-confirm, own-scalar, own-element, peer-scalar, peer-element)
 ///           = HMAC-SHA256(KCK, LE16(send-confirm) || sc || elem || psc || pelem)
+/// （IEEE Std 802.11-2016 12.4.5.5，正文 100931–100938）。标量与元素的八位组数由群决定。
+pub fn confirmMac(
+    kck: [kck_len]u8,
+    send_confirm: u16,
+    own_scalar: []const u8,
+    own_element: []const u8,
+    peer_scalar: []const u8,
+    peer_element: []const u8,
+) [hash_len]u8 {
+    var sc: [2]u8 = undefined;
+    writeU16Le(&sc, send_confirm);
+    var ctx = HmacSha256.init(&kck);
+    ctx.update(&sc);
+    ctx.update(own_scalar);
+    ctx.update(own_element);
+    ctx.update(peer_scalar);
+    ctx.update(peer_element);
+    var out: [hash_len]u8 = undefined;
+    ctx.final(&out);
+    return out;
+}
+
+/// group 19 的 confirm（定长版）。
 pub fn deriveConfirm(
     kck: [kck_len]u8,
     send_confirm: u16,
@@ -360,17 +414,7 @@ pub fn deriveConfirm(
     peer_scalar: U256,
     peer_element: [element_len]u8,
 ) [hash_len]u8 {
-    var sc: [2]u8 = undefined;
-    writeU16Le(&sc, send_confirm);
-    var ctx = HmacSha256.init(&kck);
-    ctx.update(&sc);
-    ctx.update(&own_scalar);
-    ctx.update(&own_element);
-    ctx.update(&peer_scalar);
-    ctx.update(&peer_element);
-    var out: [hash_len]u8 = undefined;
-    ctx.final(&out);
-    return out;
+    return confirmMac(kck, send_confirm, &own_scalar, &own_element, &peer_scalar, &peer_element);
 }
 
 /// 校验对方的 confirm：常量时间比较，长度不同直接 false。

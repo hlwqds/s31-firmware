@@ -5,8 +5,8 @@
 | 报告 | 规范依据 | 覆盖的组件 |
 | --- | --- | --- |
 | [`coex-verification.md`](coex-verification.md) | ESP-IDF 源码、ROM 与 `libcoexist.a`（共存不是 IEEE 或 Bluetooth 标准） | `radio-coex` |
-| [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；其上的 RFC 3394、RFC 4493、RFC 6070、RFC 4231 | `wifi-mlme`、`wifi-connect` |
-| [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；其上的 RFC 7668、RFC 4493、RFC 3610 | `ble-802154`、`ble-security`；`bt-blobs` 的 HCI 一致性自检（§8） |
+| [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；其上的 RFC 3394、RFC 4493、RFC 6070、RFC 4231、RFC 2104，第三批另涉 RFC 8110、RFC 5869、RFC 5903、RFC 6090、RFC 5216、RFC 3748、RFC 2409、RFC 3526 | `wifi-mlme`、`wifi-connect` |
+| [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；其上的 RFC 7668、RFC 4493、RFC 3610，第三批另涉 RFC 4944、RFC 6282、RFC 6775、RFC 8025 | `ble-802154`、`ble-security`；`bt-blobs` 的 HCI 一致性自检（§8） |
 
 Wi-Fi 与 BLE 都不是 RFC 所定义的：前者的规范是 IEEE Std 802.11，后者是 Bluetooth SIG 的 Core Specification；RFC 只覆盖其上的少数协议。
 
@@ -63,6 +63,9 @@ harness 按 profile 构建、经 `tools/flash.sh` 烧录（读回校验）、抓
 
 三个变了的 section：`wifi_connect` 28 → 87（SAE 24 条、suite-256 22 条、FT 13 条）；`ble_802154` 19 → 50（AES-CMAC 与签名 4 条、
 ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_mlme` 16 → 24（QoS 与省电）。
+
+第三批（2026-11-25）之后，三个 section 的判据是 `wifi_connect` 177（+90）、`wifi_mlme` 37（+13）、`ble_802154` 106（+56），
+在主机上用桩 `board` 执行都是零失败。**这一批没有上板**，所以最近一次板级运行仍然是第二批的镜像，上表的数字没有变。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 

@@ -52,12 +52,30 @@ pub const ElementId = enum(u8) {
     country = 7,
     challenge_text = 16,
     power_constraint = 32,
+    /// TPC Report（9.4.2.17）。
+    tpc_report = 35,
+    /// Measurement Request（9.4.2.21）。
+    measurement_request = 38,
+    /// Measurement Report（9.4.2.22）。
+    measurement_report = 39,
     erp = 42,
     rsn = 48,
     /// QoS Capability（9.4.2.35，p.916）。
     qos_capability = 46,
     ext_supported_rates = 50,
+    /// AP Channel Report（9.4.2.36）。
+    ap_channel_report = 51,
     neighbor_report = 52,
+    /// RCPI（9.4.2.38）。
+    rcpi = 53,
+    /// Supported Operating Classes（9.4.2.54）。
+    supported_operating_classes = 59,
+    /// RSNI（9.4.2.41）。
+    rsni = 65,
+    /// BSS Max Idle Period（9.4.2.79）。
+    bss_max_idle_period = 90,
+    /// WNM Sleep Mode（9.4.2.82）。
+    wnm_sleep_mode = 93,
     mgmt_mic = 76,
     ext_capabilities = 127,
     vendor_specific = 221,

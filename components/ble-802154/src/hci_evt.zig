@@ -24,7 +24,7 @@
 //!
 //! 5.4 的 LE Advertising Report（§7.7.65.2）只承载 legacy 广播：Data_Length
 //! 是 0x00–0x1F，一条事件最多 0x19 条报告。扩展广播数据在另一个子事件
-//! （LE Extended Advertising Report，§7.7.65.13），本组件不分发它。
+//! （LE Extended Advertising Report，§7.7.65.13），本文件不分发它；它由 `ext_adv.zig` 解析。
 
 const std = @import("std");
 

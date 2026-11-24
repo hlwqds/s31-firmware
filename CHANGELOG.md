@@ -58,6 +58,53 @@
   两个 group 同开），四个组件的源码都不引用它。`build.zig` 由此回到 2f156fa 的状态。
 
 ### Added
+- **无线离线特性第三批（2026-11-25）**：与前两批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
+  与独立参照实现的差分、板侧自检在主机上的运行。**这一批没有上板**（见下面「板级」）。
+  `tests/baselines.json` 合计 1047 → 1648（`wifi-connect` 141 → 386、`wifi-mlme` 82 → 146、`ble-802154` 122 → 414）。
+  - `components/wifi-connect`（板侧自检 87 → 177 条）：
+    - OWE（RFC 8110）：group 19 的 ECDH、DH Parameter element、PMK / PMKID 派生、与 4 次握手的衔接（`owe.zig`）。
+    - EAP-TLS（RFC 5216 / RFC 3748）：EAP 头、Identity / Notification / Nak、分片与重组、MSK → PMK（`eap.zig`、`eap_tls.zig`）。
+      TLS 引擎由调用方注入，仓库不含 TLS 本身。
+    - 请求方的 4 次握手按 AKM 选 PMK 长度、PTK 的 KDF、MIC、Key Data 封装与 Key Descriptor Version（`akm.zig`）：AKM 5、6、9–12、18
+      与 FT 的 3、4。此前只覆盖 AKM 1、2、8，路线图与验证报告里原先没写明，已补。
+    - SAE 的其余 14 个群（`sae_groups.zig`、`bignum.zig`、`ecc.zig` 的通用曲线运算）、群协商、Password Identifier 与 Rejected Groups
+      元素。后两者不在 2016 正文里，依据 hostap 源码；2016 的 12.4.4 没有群表，群号取自 IANA 注册表。
+    - FT 协议（`ft_proto.zig`）：MDE / FTE 编解码、over-the-air 与 over-the-DS 的认证序列、reassociation。
+    - 五份板侧子自检接入 `selftest.zig`（18 + 8 + 19 + 33 + 12 条），并各作为 1 条主机用例执行。
+  - `components/wifi-mlme`（板侧自检 24 → 37 条）：无线测量与 WNM（BSS Transition Management、WNM Sleep Mode）（`rrm.zig`、`wnm.zig`）。
+  - `components/ble-802154`（板侧自检 50 → 106 条）：扩展广播与周期广播的 host 侧（`ext_adv.zig`）；EATT、LE 上基于额度的 L2CAP
+    连接与 Robust Caching（`eatt.zig`、`l2cap_coc.zig`、`robust_cache.zig`）；LL Privacy 与 LE Power Control 的 host 侧
+    （`privacy.zig`、`power_ctrl.zig`）；6LoWPAN 适配层补全（`fifteen4.zig`）。
+  - 差分（主代理在集成后的代码上重跑，逐项数字见两份验证报告的 §4）：
+
+    | 对象 | 参照实现 | 规模 | 结果 |
+    | --- | --- | --- | --- |
+    | OWE | Python oracle 与盘上 hostap 的代码 | 800 组向量 | 15200 项比较，0 不一致 |
+    | EAP-TLS 分片与 MSK | 独立分片器与 oracle | 1200 条记录流、4096 组 | 0 不一致 |
+    | 按 AKM 的 4 次握手 | 三方对拍 | 四个种子各 2800 条命令 | 0 不一致 |
+    | SAE 15 个群 | `sae_groups_oracle.py` | 1500 组整链 | 0 不一致 |
+    | FT 协议 | `ft_proto_oracle.py` | 四个种子各 12000 帧 | 0 不一致 |
+    | 无线测量、WNM | hostap 头文件的布局；按原图排帧的 oracle | 每个种子 12000 / 9000 帧 | 0 不一致 |
+    | Database Hash、RPA | `eatt_oracle.py`、`privacy_oracle.py` | 24 张属性表；仓外 2000 组 | 0 不一致 |
+    | 6LoWPAN 的 IPHC、分片、UDP 校验和 | 盘上 IDF v6.1 自带的 lwIP 源码 | 种子 7、42、99，各 1000 个报文 | Zig 自往返与 UDP 校验和 3000/3000；与 lwIP 的不一致分四类，逐类对到了 lwIP 源码或 RFC 6282 原文 |
+
+  - 复核中发现并修掉的实现缺陷三处（`ft_proto.parseAuth` 先读后查长度、`ricProtected` 的错误码、`wnm.parseSleepResponse` 对带 TFS 的
+    响应），以及 6LoWPAN 与 lwIP 之间的一个已知互通缺口（lwIP 给 `::` 源地址配空槽的上下文号，本实现拒解；RFC 6282 没有规定
+    哪一种对），记在两份验证报告的 §5、§6。
+  - 集成时对板侧做的三处调整（主机用例与差分不变）：
+    ① SAE 其它群的自检收窄：双端对打只做 ECC 25，其余八个群只验群的参数（判据仍是 33 条）。九个群全做对打时这份自检在主机
+    ReleaseFast 上是 19–36 ms，是已在板上跑过的 `sae_full_selftest.zig`（12 ms）的两到三倍，而 `wifi` 镜像的全部 section 要在
+    e2e 的 30 秒抓取窗口里出判决；收窄之后是 2.4 ms。
+    ② 第三批的九份子自检入口与 SAE 其它群自检的判据函数加 `noinline`。原先它们的定长大数组被内联、叠在调用方的栈帧里，
+    按保留符号的镜像静态估算最深的一条调用链是 30384 字节，加完之后是 22384（第三批之前的镜像是 24224）。主栈在链接脚本里
+    标称 16 KiB，按这个估算自检早就越过了标称的栈底；在板上没有量过。记在 `docs/TESTING.md`「板侧自检的两条隐性预算」。
+    ③ 镜像体积：`wifi` 738848 → 1068672 字节、`full` 853632 → 1182240 字节（其余四个 profile 不变），`capacity.json` 基线已重写。
+    增长来自第三批新增的模块与子自检；`wifi` 镜像函数代码增量的归因在 `docs/verification/wifi-ieee80211-verification.md` §5.4。
+    factory 分区（1500K）的余量是 467328 与 353760 字节。
+  - **板级：这一批没有做。** `wifi` profile 上板之前，`wifi_connect`、`wifi_mlme`、`ble_802154` 三个 section 在板上的读数仍然是
+    第二批的 87、24、50；第三批之后应当是 177、37、106。板侧耗时与栈的实际占用都没有量过。
+  - 报告：`docs/verification/wifi-ieee80211-verification.md`、`ble-core-verification.md`。
+
 - **无线离线特性第二批与 HCI 一致性自检（2026-11-24）**：不依赖射频、不抓空口，按规范条款实现——Wi-Fi 取 IEEE Std 802.11-2016，
   BLE 取 Bluetooth Core Specification 5.4（两者都不是 RFC；其上的 RFC 单列）。证据分主机用例与板侧自检两级；空口没有任何证据。
   `tests/baselines.json` 合计 830 → 1047（`wifi-connect` 57 → 141、`wifi-mlme` 61 → 82、`ble-802154` 68 → 122、

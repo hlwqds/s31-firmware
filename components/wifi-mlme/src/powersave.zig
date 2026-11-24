@@ -23,8 +23,8 @@
 //!   * `Ap`：进程内的 AP 模型，给 STA 侧对拍和自检用。按每个 STA 的缓冲状态生成 TIM，
 //!     按 11.2.3.6 决定 PS-Poll 的响应、U-APSD 服务期、DTIM 之后的组播次序。
 //!
-//! 不做：CFP / PCF、IBSS / MBSS / DMG、S-APSD、FMS、TIM Broadcast、WNM sleep mode、VHT
-//! TXOP power save、PSMP、TDLS peer PSM，以及 11.2.3.6 的 i)–k)（重传上限、aging）。
+//! 不做：CFP / PCF、IBSS / MBSS / DMG、S-APSD、FMS、TIM Broadcast、VHT TXOP power save、PSMP、
+//! TDLS peer PSM，以及 11.2.3.6 的 i)–k)（重传上限、aging）。WNM sleep mode 不在本文件，在 `wnm.zig`。
 //! PS-Poll 之前的随机退避（11.2.3.8 b：0 到 aCWmin 个时隙）由驱动做，这里没有随机数。
 
 const std = @import("std");

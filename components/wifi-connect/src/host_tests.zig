@@ -15,11 +15,13 @@
 
 const std = @import("std");
 const HmacSha1 = std.crypto.auth.hmac.HmacSha1;
+const Sha256 = std.crypto.hash.sha2.Sha256;
 
 const bip = @import("bip.zig");
 const ccmp = @import("ccmp.zig");
 const conn = @import("conn.zig");
 const hdr = @import("hdr.zig");
+const ft = @import("ft.zig");
 const kde = @import("kde.zig");
 const keywrap = @import("keywrap.zig");
 const mfp = @import("mfp.zig");
@@ -1112,6 +1114,12 @@ test "bip: wrong IGTK, tampered frame and missing or foreign MME are rejected (1
 const FakeAuth = struct {
     alg: wpa2.MicAlg = .hmac_sha1_128,
     pmk: [32]u8 = vectors.pmk_ieee,
+    /// AKM 8：PTK 用 12.7.1.7.2 的 KDF（SHA-256），标签与上下文照 12.7.1.3（表 9-133）；
+    /// 其余 AKM 仍是 12.7.1.2 的 PRF。
+    ptk_kdf_sha256: bool = false,
+    /// 消息 1 的 PMKID KDE 里放的标识符。SAE 的是认证阶段算好的那一个（12.4.5.4）；
+    /// null 时用 HMAC-SHA-1(PMK, "PMK Name" ‖ AA ‖ SPA)。
+    pmkid: ?[16]u8 = null,
     anonce: [32]u8 = vectors.anonce,
     ptk: [48]u8 = @splat(0),
     gtk: [16]u8 = vectors.e2e_gtk,
@@ -1151,7 +1159,7 @@ const FakeAuth = struct {
         self.outstanding = self.replay;
         var kd: [40]u8 = undefined;
         var b = kde.Builder.init(&kd);
-        b.appendPmkid(wpa2.pmkid(self.pmk, vectors.ap_mac, vectors.sta_mac)) catch unreachable;
+        b.appendPmkid(self.pmkid orelse wpa2.pmkid(self.pmk, vectors.ap_mac, vectors.sta_mac)) catch unreachable;
         return wpa2.encode(.{
             .key_info = wpa2.KeyInfo.pairwise | wpa2.KeyInfo.ack | self.ver(),
             .key_len = 16,
@@ -1164,7 +1172,12 @@ const FakeAuth = struct {
     fn onMsg2(self: *FakeAuth, frame: []const u8) !void {
         const d = try wpa2.decode(frame);
         if (d.frame.replay != self.outstanding) return error.BadReplay;
-        self.ptk = wpa2.derivePtk(48, self.pmk, vectors.ap_mac, vectors.sta_mac, self.anonce, d.frame.nonce);
+        if (self.ptk_kdf_sha256) {
+            var context = wpa2.pairwiseContext(vectors.ap_mac, vectors.sta_mac, self.anonce, d.frame.nonce);
+            ft.kdf(Sha256, &self.pmk, wpa2.ptk_label, &context, &self.ptk);
+        } else {
+            self.ptk = wpa2.derivePtk(48, self.pmk, vectors.ap_mac, vectors.sta_mac, self.anonce, d.frame.nonce);
+        }
         if (!try wpa2.verifyMicAlg(self.alg, self.kck(), frame)) return error.BadMic;
     }
 
@@ -1669,11 +1682,16 @@ test "supplicant: message 1 field checks, PMKID mismatch, retransmission and sta
     try expect(s.ptksa.valid);
 }
 
-test "supplicant: SAE AKM uses AES-128-CMAC MIC and Key Descriptor Version 3 (Table 12-8, printed page 2027)" {
+test "supplicant: SAE AKM uses AES-128-CMAC MIC, a SHA-256 KDF for the PTK and Key Descriptor Version 3 (Table 9-133, Table 12-8)" {
     var f: [512]u8 = undefined;
     var r: [512]u8 = undefined;
-    var auth = FakeAuth{ .alg = .aes128_cmac, .pmk = vectors.sae_pmk };
+    var auth = FakeAuth{ .alg = .aes128_cmac, .pmk = vectors.sae_pmk, .ptk_kdf_sha256 = true, .pmkid = vectors.sae_pmkid };
+    // AKM 8 的 PMKID 是 SAE 在认证阶段算的（12.4.5.4），握手不自己算：交给 startPmk。
     var s = newSup(rsne.Akm.sae, vectors.sae_pmk);
+    try s.startPmk(&vectors.sae_pmk, vectors.sae_pmkid);
+    s.step();
+    try expect(s.associate());
+    try expectEqualSlices(u8, &vectors.sae_pmkid, &s.pmkid);
 
     const m1 = auth.msg1(&f);
     try expectEqual(@as(u8, 3), f[6] & wpa2.KeyInfo.version_mask);
@@ -2371,52 +2389,50 @@ test {
 test {
     _ = @import("ft_tests.zig");
 }
+test {
+    _ = @import("owe_tests.zig");
+}
+test {
+    _ = @import("eap_tests.zig");
+}
+test {
+    _ = @import("ft_proto_tests.zig");
+}
+test {
+    _ = @import("sae_groups_tests.zig");
+}
+test {
+    _ = @import("supp_akm_tests.zig");
+}
 
 // ---------------------------------------------------------------------------
-// 板侧自检在主机上执行
+// 板侧子自检在主机上执行
 //
-// 三份子自检（`sae_full_selftest.zig`、`suite256_selftest.zig`、`ft_selftest.zig`）是 `selftest.zig`
-// 经 `extCheck` 调用的板侧判据，入口固定为 `run(check)`、不 import board，所以可以在主机上跑。
-// 放在这里有两个用处：烧录之前就拦住自检自身的回归（2026-11-24 第一次上板 `ble-802154` 18/19，
-// 失败的那条就是自检自己的差一错误）；主机测试的 import 闭包也因此覆盖到这三个文件。
+// 各特性的子自检（`sae_full_selftest.zig` 等）是 `selftest.zig` 经 `extCheck` 调用的板侧判据，
+// 入口固定为 `run(check)`、不 import board，所以可以在主机上跑；公共助手是 `selftest_host.zig`。
+// 这有两个用处：烧录之前就拦住自检自身的回归（2026-11-24 第一次上板 `ble-802154` 18/19，
+// 失败的那条就是自检自己的差一错误）；主机测试的 import 闭包也因此覆盖到自检文件。
+// 第三批起，「在主机上跑子自检」的用例写在各自的 `<特性>_tests.zig` 里，并发开发时不用改这个文件。
 // ---------------------------------------------------------------------------
-// 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，这三个文件要出现在闭包里。
+// 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，自检文件要出现在闭包里。
+const selftest_host = @import("selftest_host.zig");
 const sae_full_selftest = @import("sae_full_selftest.zig");
 const suite256_selftest = @import("suite256_selftest.zig");
 const ft_selftest = @import("ft_selftest.zig");
-
-var g_self_passed: usize = 0;
-var g_self_failed: usize = 0;
-var g_self_longest: usize = 0;
-
-fn selfCheck(ok: bool, text: []const u8) void {
-    if (ok) g_self_passed += 1 else {
-        g_self_failed += 1;
-        std.debug.print("board selftest FAIL: {s}\n", .{text});
-    }
-    if (text.len > g_self_longest) g_self_longest = text.len;
-}
-
-fn runSelftest(comptime run: anytype) !void {
-    g_self_passed = 0;
-    g_self_failed = 0;
-    g_self_longest = 0;
-    run(selfCheck);
-    try std.testing.expect(g_self_passed > 0);
-    try std.testing.expectEqual(@as(usize, 0), g_self_failed);
-    // `board.log` 一行超过 200 字节会被截断，行尾的 `ok=` 就没了（`ft_selftest.zig` 文件头）。
-    try std.testing.expect(g_self_longest <= 200);
-    std.debug.print("board selftest on host: passed={d} failed=0 longest-line={d}\n", .{ g_self_passed, g_self_longest });
-}
+const owe_selftest = @import("owe_selftest.zig");
+const eap_selftest = @import("eap_selftest.zig");
+const ft_proto_selftest = @import("ft_proto_selftest.zig");
+const sae_groups_selftest = @import("sae_groups_selftest.zig");
+const supp_akm_selftest = @import("supp_akm_selftest.zig");
 
 test "board selftest on host: SAE full (sae_full_selftest.run) passes every check" {
-    try runSelftest(sae_full_selftest.run);
+    try selftest_host.expectAllPass(sae_full_selftest.run);
 }
 
 test "board selftest on host: 256-bit suites (suite256_selftest.run) passes every check" {
-    try runSelftest(suite256_selftest.run);
+    try selftest_host.expectAllPass(suite256_selftest.run);
 }
 
 test "board selftest on host: FT key hierarchy (ft_selftest.run) passes every check" {
-    try runSelftest(ft_selftest.run);
+    try selftest_host.expectAllPass(ft_selftest.run);
 }

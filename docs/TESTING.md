@@ -4,7 +4,7 @@
 
 | 层 | 内容 | 命令 | 门禁 |
 | --- | --- | --- | --- |
-| L1 单元 | 19 个测试项目的 `test` 块（1047 项） | `scripts/check-host.sh` | 合并前必须绿 |
+| L1 单元 | 19 个测试项目的 `test` 块（1648 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
 | L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
@@ -168,6 +168,40 @@ E2E 断言：
 （`builtin.target.cpu.arch != .riscv32` 即 `@compileError`），并拿错误写法做负对照；只看退出码不够。
 命令与对照见 `docs/verification/wifi-ieee80211-verification.md` §5.1。
 `firmware/build.zig` 不经命令行传模块：目标由 `b.standardTargetOptions` 定、挂在根模块上（`.target = target`），导入的模块继承它，不受影响。
+
+### 板侧自检的两条隐性预算：30 秒抓取窗口与标称的 16 KiB 栈（2026-11-25，静态估算，未上板）
+
+`run_e2e.py --board` 调 `tools/capture.py … 30`：复位之后抓满 30 秒，全部 section 的判决必须在这之内出来。
+第三批往 `wifi` profile 加了 159 条判据（`wifi_connect` +90、`wifi_mlme` +13、`ble_802154` +56）。大多数是微秒级的，
+重的是算椭圆曲线的那几份。主机 ReleaseFast 上的耗时（x86，只用来相互比较）：
+
+| 子自检 | 判据 | 耗时 |
+| --- | --- | --- |
+| `sae_full_selftest.zig`（第二批，已在板上跑过） | 24 | 12 ms |
+| `owe_selftest.zig`（第三批） | 18 | 7.6 ms |
+| `sae_groups_selftest.zig`（第三批），九个群全做双端对打 | 33 | 19–36 ms |
+| 同上，板侧只做 ECC 25 的对打之后 | 33 | 2.4 ms |
+| 第三批其余八份 | — | 各不超过 0.1 ms |
+
+主机耗时不能换算成板侧耗时，只拿同一个量的 `sae_full_selftest.zig` 当参照：它上过板。据此把 SAE 其它群那一份的板侧内容收窄
+（对打只做 25，其余八个群只验群的参数；FFC 2 去掉要模指数的那条拒绝）。**第三批的板侧耗时没有量过**（当时板子不可用）。
+上板之后如果 `wifi` profile 在 30 秒内出不来 `verdict`，先看是哪个 section 拖的，不要直接改抓取时长。
+
+栈：`boards/esp32s31-coreboard/linker/s31.ld` 给主栈 16 KiB，注释写明 8 KiB 会溢出。拿保留符号的镜像
+（`zig build … -Dkeep-symbols=true`），把各函数序言里对 `sp` 的调整量沿调用链相加（调用边取 `jal` / `jalr` 的直接目标，
+间接转移不计入，所以这是下界）。从 `main.main` 起最深的一条链：
+
+| 镜像 | 调用链（括号里是各自的栈帧，字节） | 合计 |
+| --- | --- | --- |
+| 第三批之前（`8c2cef8`） | `main.main`（6608）→ `selftest.runChecks.4`（4992）→ CCMP 解封装 → AES | 24224 |
+| 第三批，集成前 | `main.main`（6608）→ `selftest.runChecks.4`（8144）→ `sae_groups_selftest.run`（8400）→ `montMul`（5168）→ `cmp`（2064） | 30384 |
+| 第三批，集成后 | `main.main`（6608）→ `selftest.runChecks.4`（256）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 22384 |
+
+三条都越过了标称的栈底。第三批之前的镜像在板上跑得过，而栈底下面是堆区（`_heap_start` 到 `_stack_bottom`，那个镜像里
+271 KiB）——推断是自检期间栈写进了堆区的空闲部分、没有撞到东西；没有在板上量过。集成时把最深的一条链压到低于之前的水平，
+做法只有一条：给自检入口和每条判据的函数加 `noinline`，让各自的大数组落在各自的帧里，而不是叠在调用方上。
+往自检里加定长大数组之前先看这张表；`main.main` 那 6608 字节和 `bignum.zig` 的 `cmp`（把两个参数各拷一份进自己的帧）
+是以后可以压的两处。
 
 ## 本地运行
 

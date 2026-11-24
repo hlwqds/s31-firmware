@@ -25,6 +25,30 @@ const l2cap = @import("l2cap.zig");
 const vectors = @import("vectors.zig");
 
 // ---------------------------------------------------------------------------
+// 扩展特性的用例各在自己的文件里，这里只负责发现。必须写成直接的 `@import`：
+// 经顶层常量转引的文件，其中的用例不会被发现。
+// ---------------------------------------------------------------------------
+test {
+    _ = @import("ext_adv_tests.zig");
+}
+test {
+    _ = @import("eatt_tests.zig");
+}
+test {
+    _ = @import("privacy_tests.zig");
+}
+test {
+    _ = @import("sixlowpan_tests.zig");
+}
+// 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，板侧子自检文件要出现在闭包里。
+// 「在主机上跑子自检」的用例写在各自的 `<特性>_tests.zig` 里，公共助手是 `selftest_host.zig`；
+// 并发开发时不用改这个文件。
+const ext_adv_selftest = @import("ext_adv_selftest.zig");
+const eatt_selftest = @import("eatt_selftest.zig");
+const privacy_selftest = @import("privacy_selftest.zig");
+const sixlowpan_selftest = @import("sixlowpan_selftest.zig");
+
+// ---------------------------------------------------------------------------
 // HCI
 // ---------------------------------------------------------------------------
 
@@ -397,11 +421,12 @@ test "lowpan: stateless IPHC decompression (RFC 6282 3.1.1)" {
 
     const src = v.src();
     try testing.expectEqualSlices(u8, &[_]u8{
-        0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x9a, 0x3c,
+        // RFC 6282 §3.2 行 590-591：内联字段与 IPv6 头同序，`3c 9a` 高字节在前 → 短地址 0x3c9a。
+        0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x3c, 0x9a,
     }, &src);
     const dst = v.dst();
     try testing.expectEqualSlices(u8, &[_]u8{
-        0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x00, 0x02,
+        0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x02, 0x00,
     }, &dst);
     try testing.expectEqual(@as(u16, 0x1234), v.udp.src_port);
     try testing.expectEqual(@as(u16, 0x5678), v.udp.dst_port);
@@ -443,13 +468,17 @@ test "lowpan: unsupported compression is rejected" {
     try testing.expectEqual(@as(u32, 1), stats.rejected);
 
     const p_compressed = [_]u8{ 0x7f, 0x22, 0x3c, 0x9a, 0x02, 0x00, 0xf1, 0x35 };
-    try testing.expectError(error.UnsupportedCompression, fifteen4.decompress(&p_compressed, &mac, &stats));
+    // P=01 是合法编码（RFC 6282 §4.3.3 图 14，行 1089-1092）：16 位源端口 + 8 位目的端口。
+    // 这帧在 NHC 字节后只有 1 字节（需要 5 字节），是截断 → Short。
+    try testing.expectError(error.Short, fifteen4.decompress(&p_compressed, &mac, &stats));
 
     const frag = [_]u8{ 0xc0, 0x2a, 0x00 };
     try testing.expectError(error.BadDispatch, fifteen4.decompress(&frag, &mac, &stats));
 
     const not_udp = [_]u8{ 0x7f, 0x22, 0x3c, 0x9a, 0x02, 0x00, 0xe0, 0x00 };
-    try testing.expectError(error.UnsupportedCompression, fifteen4.decompress(&not_udp, &mac, &stats));
+    // 0xE0 是扩展头 NHC（RFC 6282 §4.2 图 13，行 849-859；EID=0 = HBH，NH=0）。
+    // 线上 [NH=0 的 inline 后继头类型][Length][body]：inline 字节 00 在，Length 缺 → Short。
+    try testing.expectError(error.Short, fifteen4.decompress(&not_udp, &mac, &stats));
     try testing.expectEqual(@as(u32, 4), stats.rejected);
     try testing.expectEqual(@as(u32, 0), stats.decompressed);
 }

@@ -268,8 +268,13 @@ pub const Builder = struct {
     /// 填充并包裹（12.7.2 j)、h)）。填充就地写在 `self.buf` 里，密文写入
     /// `wrapped`（不得与 `self.buf` 重叠），返回密文长度。
     pub fn wrap(self: *Builder, kek: [keywrap.kek_len]u8, wrapped: []u8) WrapError!usize {
+        return self.wrapWith(&kek, wrapped);
+    }
+
+    /// 同 `wrap`，KEK 是 16 或 32 八位组（表 12-8：AKM 00-0F-AC:12、13 是 256 位）。
+    pub fn wrapWith(self: *Builder, kek: []const u8, wrapped: []u8) WrapError!usize {
         const padded = try appendPadding(self.buf, self.len);
-        return keywrap.wrap(kek, self.buf[0..padded], wrapped);
+        return kekWrap(kek, self.buf[0..padded], wrapped);
     }
 };
 
@@ -278,8 +283,32 @@ pub const Unwrapped = struct {
     plain: []const u8,
 };
 
-/// 解包并去掉尾部填充。明文写进 `out`（至少 `keywrap.max_plain` 字节）。
+/// NIST AES Key Wrap（RFC 3394）：KEK 是 16 或 32 八位组（表 12-8 的 KEK_bits 128、256），
+/// 别的长度报 `BadKeyLength`。
+fn kekWrap(kek: []const u8, plain: []const u8, out: []u8) WrapError!usize {
+    return switch (kek.len) {
+        keywrap.kek_len => keywrap.wrap(kek[0..keywrap.kek_len].*, plain, out),
+        keywrap.kek_len_256 => keywrap.wrap256(kek[0..keywrap.kek_len_256].*, plain, out),
+        else => error.BadKeyLength,
+    };
+}
+
+fn kekUnwrap(kek: []const u8, wrapped: []const u8, out: []u8) WrapError!usize {
+    return switch (kek.len) {
+        keywrap.kek_len => keywrap.unwrap(kek[0..keywrap.kek_len].*, wrapped, out),
+        keywrap.kek_len_256 => keywrap.unwrap256(kek[0..keywrap.kek_len_256].*, wrapped, out),
+        else => error.BadKeyLength,
+    };
+}
+
+/// 解包并去掉尾部填充，KEK 是 128 位（表 12-8 里 KEK_bits 为 128 的 AKM）。明文写进 `out`
+/// （至少 `keywrap.max_plain` 字节）。
 pub fn unwrapKeyData(kek: [keywrap.kek_len]u8, wrapped: []const u8, out: []u8) WrapError!Unwrapped {
-    const n = try keywrap.unwrap(kek, wrapped, out);
+    return unwrapKeyDataKek(&kek, wrapped, out);
+}
+
+/// 同 `unwrapKeyData`，KEK 是 16 或 32 八位组（表 12-8：AKM 00-0F-AC:12、13 是 256 位）。
+pub fn unwrapKeyDataKek(kek: []const u8, wrapped: []const u8, out: []u8) WrapError!Unwrapped {
+    const n = try kekUnwrap(kek, wrapped, out);
     return .{ .plain = try stripPadding(out[0..n]) };
 }

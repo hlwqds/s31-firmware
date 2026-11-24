@@ -20,6 +20,8 @@
 
 const std = @import("std");
 
+const akm = @import("akm.zig");
+
 pub const element_id: u8 = 48;
 pub const oui = [3]u8{ 0x00, 0x0f, 0xac };
 pub const version: u16 = 1;
@@ -58,11 +60,12 @@ pub const Cipher = struct {
     pub const bip_cmac256: u8 = 13;
 };
 
-/// 表 9-133（印刷页 886–888）里与本组件相关的 AKM suite type。
+/// 表 9-133（印刷页 886–888）的 AKM suite type 里，既有调用方按名字引用的三个。数值只在
+/// `akm.zig` 的 `Type` 里定义一次：每个 AKM 的握手算法、能不能与某个密码套件合用，都在那张表里。
 pub const Akm = struct {
-    pub const ieee8021x: u8 = 1;
-    pub const psk: u8 = 2;
-    pub const sae: u8 = 8;
+    pub const ieee8021x: u8 = @backingInt(akm.Type.ieee8021x);
+    pub const psk: u8 = @backingInt(akm.Type.psk);
+    pub const sae: u8 = @backingInt(akm.Type.sae);
 };
 
 /// 图 9-257（印刷页 888）：RSN Capabilities 的两个管理帧保护位。
@@ -270,6 +273,9 @@ pub const SelError = error{
     GroupNotSupported,
     NoPairwiseOverlap,
     NoAkmOverlap,
+    /// 成对、组密码套件或 group management cipher suite 不能与任何一个双方都支持的 AKM 合用
+    /// （9.4.2.25.3，印刷页 888：AKM 11 只配 GCMP-128、BIP-GMAC-128，AKM 12、13 只配 256 位的那四个）。
+    AkmCipherMismatch,
     /// 表 12-2 的 STA action 是「shall not (try to) associate」。
     MfpPolicyViolation,
     /// 管理帧保护已协商，但 AP 的 group management cipher suite 本 STA 不支持。
@@ -308,37 +314,41 @@ fn contains(list: []const u8, want: u8) bool {
 
 /// 拿 AP 的 RSNE 对本 STA 的策略做匹配（12.6.3，印刷页 1991）：
 ///   组密码套件必须是 AP 通告的那一个，且本 STA 支持；
-///   成对密码套件按 AP 列表的顺序取第一个双方都支持的（AP 的列表缺席则按默认 CCMP-128）；
+///   成对密码套件按 AP 列表的顺序取双方都支持的（AP 的列表缺席则按默认 CCMP-128），
 ///   AKM 同理（AP 的列表缺席则按默认 00-0F-AC:1，即 IEEE 802.1X）；
-///   再过表 12-2；管理帧保护协商成立时，AP 的 group management cipher suite 必须支持。
+///   选中的 AKM 必须能与成对、组密码套件合用，AP 通告的 group management cipher suite 也
+///   必须能与它合用（9.4.2.25.3，`akm.cipherAllowed`）。成对套件按 AP 的顺序、AKM 也按 AP 的顺序，
+///   取第一对能合用的组合：AKM 11 会越过排在前面的 CCMP-128，选 GCMP-128；
+///   再过表 12-2；管理帧保护协商成立时，AP 的 group management cipher suite 本 STA 还得支持。
 pub fn select(ap: Rsne, own: OwnPolicy) SelError!Selection {
     if (!contains(own.group[0..own.group_len], ap.group)) return error.GroupNotSupported;
 
+    // AP 的列表缺席时：成对默认 CCMP-128，AKM 默认 00-0F-AC:1（9.4.2.25.2、9.4.2.25.3）。
+    const default_pairwise = [_]u8{Cipher.ccmp128};
+    const default_akm = [_]u8{Akm.ieee8021x};
+    const pws: []const u8 = if (ap.pairwise_len == 0) &default_pairwise else ap.pairwise[0..ap.pairwise_len];
+    const akms: []const u8 = if (ap.akm_len == 0) &default_akm else ap.akm[0..ap.akm_len];
+    var saw_pairwise = false;
+    var saw_akm = false;
     var pairwise: ?u8 = null;
-    if (ap.pairwise_len == 0) {
-        if (contains(own.pairwise[0..own.pairwise_len], Cipher.ccmp128)) pairwise = Cipher.ccmp128;
-    } else {
-        for (ap.pairwise[0..ap.pairwise_len]) |c| {
-            if (contains(own.pairwise[0..own.pairwise_len], c)) {
-                pairwise = c;
-                break;
-            }
+    var chosen_akm: ?u8 = null;
+    for (pws) |c| {
+        if (!contains(own.pairwise[0..own.pairwise_len], c)) continue;
+        saw_pairwise = true;
+        for (akms) |a| {
+            if (!contains(own.akm[0..own.akm_len], a)) continue;
+            saw_akm = true;
+            if (!akm.cipherAllowed(a, c) or !akm.cipherAllowed(a, ap.group)) continue;
+            pairwise = c;
+            chosen_akm = a;
+            break;
         }
+        if (chosen_akm != null) break;
     }
-    const pw = pairwise orelse return error.NoPairwiseOverlap;
-
-    var akm: ?u8 = null;
-    if (ap.akm_len == 0) {
-        if (contains(own.akm[0..own.akm_len], Akm.ieee8021x)) akm = Akm.ieee8021x;
-    } else {
-        for (ap.akm[0..ap.akm_len]) |a| {
-            if (contains(own.akm[0..own.akm_len], a)) {
-                akm = a;
-                break;
-            }
-        }
-    }
-    const ak = akm orelse return error.NoAkmOverlap;
+    if (!saw_pairwise) return error.NoPairwiseOverlap;
+    const ak = chosen_akm orelse return if (saw_akm) error.AkmCipherMismatch else error.NoAkmOverlap;
+    const pw = pairwise.?;
+    if (!akm.cipherAllowed(ak, ap.gmcs)) return error.AkmCipherMismatch;
 
     if (staMfpAction(ap.mfpc(), ap.mfpr(), own.mfpc, own.mfpr) == .do_not_associate) {
         return error.MfpPolicyViolation;

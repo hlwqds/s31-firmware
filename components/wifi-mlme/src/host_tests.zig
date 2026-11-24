@@ -2243,3 +2243,16 @@ test {
 test {
     _ = @import("powersave_tests.zig");
 }
+test {
+    _ = @import("rrm_wnm_tests.zig");
+}
+
+// ---------------------------------------------------------------------------
+// 板侧子自检在主机上执行
+//
+// `rrm_wnm_selftest.zig` 是 `selftest.zig` 经 `extCheck` 调用的板侧判据，入口固定为 `run(check)`、
+// 不 import board，所以可以在主机上跑；公共助手是 `selftest_host.zig`，「在主机上跑」的用例
+// 写在 `rrm_wnm_tests.zig` 里（并发开发时不用改这个文件）。
+// 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，自检文件要出现在闭包里。
+// ---------------------------------------------------------------------------
+const rrm_wnm_selftest = @import("rrm_wnm_selftest.zig");

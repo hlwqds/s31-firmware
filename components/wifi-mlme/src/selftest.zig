@@ -48,6 +48,7 @@ const vectors = @import("vectors.zig");
 
 const qos = @import("qos.zig");
 const powersave = @import("powersave.zig");
+const rrm_wnm_selftest = @import("rrm_wnm_selftest.zig");
 
 /// 新判据共用的一块缓冲，放在文件作用域，不占栈。
 var g_scratch: [320]u8 = undefined;
@@ -1090,6 +1091,11 @@ fn checkMoreData() void {
 // 入口
 // ---------------------------------------------------------------------------
 
+/// 无线测量与 WNM 的判据在自己的文件里，经这个回调记到同一本账上。
+fn extCheck(ok: bool, text: []const u8) void {
+    check(ok, "{s}", .{text});
+}
+
 fn runChecks() bool {
     checkFcs();
     checkFcsReference();
@@ -1109,6 +1115,7 @@ fn runChecks() bool {
     checkUapsd();
     checkPsInterop();
     checkMoreData();
+    rrm_wnm_selftest.run(extCheck);
     return g_failed == 0;
 }
 

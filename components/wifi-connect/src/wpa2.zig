@@ -7,12 +7,16 @@
 //!   1. PSK：passphrase + SSID → PSK（PBKDF2-HMAC-SHA1，4096 轮，J.4.1，印刷页
 //!      3416–3417）。RSNA-PSK 里 PSK 直接当 PMK 用（12.7.1.3 注 3，印刷页 2010）。
 //!   2. PMKID（12.7.1.3，印刷页 2011）：基于 SHA-1 的 AKM 用
-//!      Truncate-128(HMAC-SHA-1(PMK, "PMK Name" || AA || SPA))。
+//!      Truncate-128(HMAC-SHA-1(PMK, "PMK Name" || AA || SPA))。别的 AKM 的 PMKID 在 `akm.zig`。
 //!   3. PTK（12.7.1.3，印刷页 2009–2010）：PTK = PRF(PMK, "Pairwise key expansion",
 //!      Min(AA,SPA) || Max(AA,SPA) || Min(ANonce,SNonce) || Max(ANonce,SNonce))，
-//!      再切成 KCK、KEK、TK。GTK 的示例派生在 12.7.1.4（印刷页 2011）。
-//!   4. EAPOL-Key 帧的编/解码（12.7.2，印刷页 2019–2023）与 MIC（表 12-8，
-//!      印刷页 2027：AKM 00-0F-AC:1/2 用 HMAC-SHA-1-128，00-0F-AC:8 用 AES-128-CMAC）。
+//!      再切成 KCK、KEK、TK。GTK 的示例派生在 12.7.1.4（印刷页 2011）。这里只有 12.7.1.2 的
+//!      PRF（HMAC-SHA-1）；按 AKM 选 PRF / KDF 的派生在 `akm.zig`，它调这里的 `prfTo`。
+//!   4. EAPOL-Key 帧的编/解码（12.7.2，印刷页 2019–2023）与两种 MIC（表 12-8，
+//!      印刷页 2027：AKM 00-0F-AC:1/2 用 HMAC-SHA-1-128，AES-128-CMAC 给 12.7.2 b) 1) iii)
+//!      点名的 AKM 3/4/5/6）。HMAC-SHA-256、HMAC-SHA-384 的 MIC 在 `suite256.zig`。
+//!      Key MIC 字段的长度随 AKM（12.7.2 h)）：16 或 24 八位组，`KeyFrame.mic_len` 给出，
+//!      其后的 Key Data Length 与 Key Data 顺延。
 //!
 //! 握手本身在 `supplicant.zig`；Key Data 字段在 `kde.zig`。
 //! 本文件不 import hw/log，主机侧测试与板侧自检共用同一份代码。
@@ -39,6 +43,8 @@ pub const ptk_ccmp_len = kck_len + kek_len + tk_len;
 /// 更长的 PTK（TKIP 等 TK 为 256 位的密码套件用）：同一份 PRF 多取一块。
 pub const ptk_512_len = 64;
 pub const mic_len = 16;
+/// 最长的 Key MIC：24 八位组（表 12-8，AKM 00-0F-AC:12、13）。
+pub const max_mic_len = 24;
 pub const pbkdf2_rounds = 4096;
 pub const passphrase_min = 8;
 pub const passphrase_max = 63;
@@ -93,11 +99,12 @@ pub fn derivePmk(passphrase: []const u8, ssid: []const u8) Wpa2Error![pmk_len]u8
 //    X 是单个八位组的循环参数 i；PRF 把 i = 0, 1, … 的结果拼起来截到 Len。
 // ---------------------------------------------------------------------------
 
-pub fn prf(comptime out_len: usize, key: []const u8, label: []const u8, data: []const u8) [out_len]u8 {
-    var out: [out_len]u8 = undefined;
+/// 12.7.1.2 的 PRF，输出长度在运行期给定，写进 `out`。前缀稳定：取更长的输出时，前面
+/// 的八位组不变（每块只由 i 决定）。
+pub fn prfTo(key: []const u8, label: []const u8, data: []const u8, out: []u8) void {
     var filled: usize = 0;
     var counter: u8 = 0;
-    while (filled < out_len) : (counter +%= 1) {
+    while (filled < out.len) : (counter +%= 1) {
         var ctx = HmacSha1.init(key);
         ctx.update(label);
         ctx.update(&[_]u8{0});
@@ -105,10 +112,15 @@ pub fn prf(comptime out_len: usize, key: []const u8, label: []const u8, data: []
         ctx.update(&[_]u8{counter});
         var mac: [HmacSha1.mac_length]u8 = undefined;
         ctx.final(&mac);
-        const take = @min(mac.len, out_len - filled);
+        const take = @min(mac.len, out.len - filled);
         @memcpy(out[filled..][0..take], mac[0..take]);
         filled += take;
     }
+}
+
+pub fn prf(comptime out_len: usize, key: []const u8, label: []const u8, data: []const u8) [out_len]u8 {
+    var out: [out_len]u8 = undefined;
+    prfTo(key, label, data, &out);
     return out;
 }
 
@@ -132,15 +144,24 @@ pub fn derivePtk(
     anonce: [nonce_len]u8,
     snonce: [nonce_len]u8,
 ) [out_len]u8 {
-    var data: [2 * 6 + 2 * nonce_len]u8 = undefined; // 76 字节
-    appendPair(6, data[0..12], ap, sta);
-    appendPair(nonce_len, data[12..], anonce, snonce);
+    var data = pairwiseContext(ap, sta, anonce, snonce);
     return prf(out_len, &pmk, ptk_label, &data);
 }
 
-/// PMKID（12.7.1.3，印刷页 2011）：
-/// Truncate-128(HMAC-SHA-1(PMK, "PMK Name" || AA || SPA))。PSK 与 SAE 的 AKM
-/// （00-0F-AC:2、00-0F-AC:8）都走这一条；注意这里是 AA 在前、SPA 在后，不做排序。
+/// 成对密钥层次（12.7.1.3）的 PRF 输入：Min(AA,SPA) || Max(AA,SPA) ||
+/// Min(ANonce,SNonce) || Max(ANonce,SNonce)，共 76 八位组。PRF 与 KDF-SHA-256/384 的 AKM
+/// 用的是同一个拼接（12.7.1.2：B 作 KDF 的 Context），所以放在这里给两边用。
+pub fn pairwiseContext(ap: [6]u8, sta: [6]u8, anonce: [nonce_len]u8, snonce: [nonce_len]u8) [2 * 6 + 2 * nonce_len]u8 {
+    var data: [2 * 6 + 2 * nonce_len]u8 = undefined;
+    appendPair(6, data[0..12], ap, sta);
+    appendPair(nonce_len, data[12..], anonce, snonce);
+    return data;
+}
+
+/// PMKID（12.7.1.3，印刷页 2011）里 HMAC-SHA-1 的那一种：
+/// Truncate-128(HMAC-SHA-1(PMK, "PMK Name" || AA || SPA))，AKM 00-0F-AC:1、00-0F-AC:2 用。
+/// 注意这里是 AA 在前、SPA 在后，不做排序。其余 AKM 的 PMKID 见 `akm.pmkid`——
+/// SAE（00-0F-AC:8）的 PMKID 是认证阶段算的（12.4.5.4），不走这一条。
 pub fn pmkid(pmk: [pmk_len]u8, aa: [6]u8, spa: [6]u8) [16]u8 {
     var data: [pmk_name.len + 2 * 6]u8 = undefined;
     @memcpy(data[0..pmk_name.len], pmk_name);
@@ -233,7 +254,11 @@ pub const KeyFrame = struct {
     nonce: [nonce_len]u8 = @splat(0),
     /// Key RSC：GTK 的接收序列计数，PN0 在第一个八位组（表 12-5，印刷页 2022）。
     rsc: u64 = 0,
-    mic: [mic_len]u8 = @splat(0),
+    /// Key MIC 字段的前 `mic_len` 个八位组；其余为 0。
+    mic: [max_mic_len]u8 = @splat(0),
+    /// Key MIC 字段的长度（12.7.2 h)：随协商的 AKM，16 或 24）。帧里不带这个长度，
+    /// 解码时得由调用方按 AKM 给出（`decodeMic`）。
+    mic_len: u8 = mic_len,
 };
 
 fn writeU16Be(out: []u8, v: u16) void {
@@ -254,10 +279,11 @@ fn readU64Be(in: []const u8) u64 {
 }
 
 /// 写出一整帧（含 EAPOL 头与 key data）。`out` 至少
-/// `eapol_header_len + key_body_fixed_len + key_data.len` 字节。
-/// MIC 字段按 `frame.mic` 原样写；要算 MIC 就传全 0 再回填。
+/// `keyBodyFixedLen(frame.mic_len) + key_data.len` 字节。
+/// MIC 字段按 `frame.mic` 的前 `mic_len` 个八位组原样写；要算 MIC 就传全 0 再回填。
 pub fn encode(frame: KeyFrame, key_data: []const u8, out: []u8) Wpa2Error!usize {
-    const total = eapol_header_len + key_body_fixed_len + key_data.len;
+    const fixed = keyBodyFixedLen(frame.mic_len);
+    const total = eapol_header_len + fixed + key_data.len;
     if (out.len < total) return error.BadFrame;
     if (key_data.len > std.math.maxInt(u16)) return error.BadFrame;
 
@@ -274,13 +300,11 @@ pub fn encode(frame: KeyFrame, key_data: []const u8, out: []u8) Wpa2Error!usize 
     @memset(body[45..61], 0); // IV
     std.mem.writeInt(u64, body[61..69], frame.rsc, .little); // RSC：PN0 在前
     @memset(body[69..77], 0); // key ID
-    @memcpy(body[77..][0..mic_len], &frame.mic);
-    writeU16Be(body[93..95], @intCast(key_data.len));
-    @memcpy(body[95..], key_data);
+    @memcpy(body[77..][0..frame.mic_len], frame.mic[0..frame.mic_len]);
+    writeU16Be(body[fixed - 2 ..][0..2], @intCast(key_data.len));
+    @memcpy(body[fixed..], key_data);
 
-    std.debug.assert(total == eapol_header_len + key_body_fixed_len + key_data.len);
     std.debug.assert(mic_offset == eapol_header_len + 77);
-    std.debug.assert(key_data_len_offset == eapol_header_len + 93);
     return total;
 }
 
@@ -291,18 +315,26 @@ pub const Decoded = struct {
     key_data: []const u8,
 };
 
-/// 解整帧；Key Data 以切片返回，由调用方（`kde.zig`、`supplicant.zig`）处理。
+/// 解整帧，Key MIC 字段按 16 八位组（表 12-8 里 MIC 为 16 的那些 AKM）。
 pub fn decode(buf: []const u8) Wpa2Error!Decoded {
-    if (buf.len < eapol_header_len + key_body_fixed_len) return error.BadFrame;
+    return decodeMic(buf, mic_len);
+}
+
+/// 同 `decode`，Key MIC 字段的长度由调用方按 AKM 给出（12.7.2 h)：AKM 12、13 是 24）。
+/// 帧里不带这个长度：Key Data Length 字段紧跟在 Key MIC 之后，长度不对就解不出 Key Data。
+pub fn decodeMic(buf: []const u8, mic_len_in: usize) Wpa2Error!Decoded {
+    if (mic_len_in != mic_len and mic_len_in != max_mic_len) return error.BadFrame;
+    const fixed = keyBodyFixedLen(mic_len_in);
+    if (buf.len < eapol_header_len + fixed) return error.BadFrame;
     if (buf[1] != 3) return error.BadFrame;
     const body_len = readU16Be(buf[2..4]);
-    if (body_len < key_body_fixed_len) return error.BadFrame;
+    if (body_len < fixed) return error.BadFrame;
     if (buf.len < eapol_header_len + @as(usize, body_len)) return error.BadFrame;
 
     const body = buf[eapol_header_len..];
     if (body[0] != 2) return error.BadDescriptor;
-    const kd_len = readU16Be(body[93..95]);
-    if (key_body_fixed_len + @as(usize, kd_len) != body_len) return error.BadFrame;
+    const kd_len = readU16Be(body[fixed - 2 ..][0..2]);
+    if (fixed + @as(usize, kd_len) != body_len) return error.BadFrame;
 
     var frame = KeyFrame{
         .version = buf[0],
@@ -310,15 +342,22 @@ pub fn decode(buf: []const u8) Wpa2Error!Decoded {
         .key_len = readU16Be(body[3..5]),
         .replay = readU64Be(body[5..13]),
         .rsc = std.mem.readInt(u64, body[61..69], .little),
+        .mic_len = @intCast(mic_len_in),
     };
     @memcpy(&frame.nonce, body[13..][0..nonce_len]);
-    @memcpy(&frame.mic, body[77..][0..mic_len]);
-    const kd_start = eapol_header_len + key_body_fixed_len;
+    @memcpy(frame.mic[0..mic_len_in], body[77..][0..mic_len_in]);
+    const kd_start = eapol_header_len + fixed;
     return .{
         .frame = frame,
         .key_data_len = kd_len,
         .key_data = buf[kd_start..][0..kd_len],
     };
+}
+
+/// EAPOL-Key 包体里 Key Data 之前的固定部分的长度：Descriptor Type 到 Key MIC
+/// （`key_body_fixed_len - 2`），加 Key MIC 的长度，再加 Key Data Length 的 2 个八位组。
+pub fn keyBodyFixedLen(mic_len_in: usize) usize {
+    return key_body_fixed_len - mic_len + mic_len_in;
 }
 
 // ---------------------------------------------------------------------------

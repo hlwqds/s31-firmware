@@ -16,9 +16,9 @@ components/
   ├── app-mqtt-ota           MQTT 3.1.1、OTA 清单校验/回滚
   ├── wifi-boundary          OSI 函数表 ABI、blob 边界
   ├── wifi-blobs             真实 blob 链接 + osi 适配层（init/任务/合作式让出）
-  ├── wifi-connect           扫描/连接状态机；RSNA（WPA2/WPA3 密钥派生、4 次握手、CCMP/GCMP/BIP 含 256 位套件）；SAE 完整协议（P-256）；FT 密钥层次
-  ├── ble-802154             HCI、ATT 服务端、GATT 服务端与客户端、AES-CMAC 签名、802.15.4 FCF/6LoWPAN
-  ├── wifi-mlme              IEEE 802.11 帧格式、管理帧、信息元素、MLME、扫描、QoS Control、省电（纯逻辑）
+  ├── wifi-connect               扫描/连接状态机；RSNA（WPA2/WPA3 密钥派生、按 AKM 的 4 次握手、CCMP/GCMP/BIP 含 256 位套件）；SAE（P-256 与其余 14 个群）；FT 密钥层次与 FT 协议；OWE；EAP-TLS
+  ├── ble-802154             HCI、ATT 服务端、GATT 服务端与客户端、AES-CMAC 签名、扩展广播与周期广播的 host 侧、EATT 与 Robust Caching、LL Privacy 与 LE Power Control 的 host 侧、802.15.4 帧头与 6LoWPAN 适配层
+  ├── wifi-mlme              IEEE 802.11 帧格式、管理帧、信息元素、MLME、扫描、QoS Control、省电、无线测量、WNM（BSS Transition Management、WNM Sleep Mode）（纯逻辑）
   ├── ble-security           SMP 配对、密钥分发、链路层 AES-CCM（纯逻辑）
   ├── radio-coex             BLE + Wi-Fi 共存 glue 与 PHY/时钟归属模型（对照 IDF 的 coex 钩子，纯逻辑；设计见 ADR-003）
   ├── bt-blobs               真实 BLE controller 归档的链接、OSAL 与 HCI 传输；板级探针，含对 controller 的 HCI 一致性自检

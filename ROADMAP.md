@@ -7,7 +7,7 @@
 - 状态明细：`SUITE-README.md`、`BRINGUP-2026-11-12.md`
 - 工程约定：`AGENTS.md`、`docs/REPO-STANDARDS.md`
 
-## 现状（2026-11-24）
+## 现状（2026-11-25）
 
 | 能力 | 状态 | 证据 |
 | --- | --- | --- |
@@ -17,7 +17,7 @@
 | TLS/HTTP、MQTT/OTA | 离线判定通过；真实链路证据在 ch23 lab（TLS 握手 + HTTPS GET、MQTT、OTA 回滚） | `logs/e2e-tls-boot.log`；`hl-ljj-quartz` 的 `practice/zig-esp32-s31/logs/ch23-*.log` |
 | Wi-Fi / BLE / 802.15.4 边界 | 符号取证 + ABI/字节路径自检 | `logs/ch25-boot.log` … `logs/ch27-boot.log` |
 | BLE + Wi-Fi 共存（设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`） | 共存 glue 接进两套适配层（`-Dcoex`，默认关），BLE 探针与 Wi-Fi 探针各自带着真核心上板，各带一次不开共存的对照；两棵树同链成合并镜像（`-Dcoex-merged`）并上板：8/8 段通过、两个控制器的 init 都返回 0；irom、drom 窗口各扩到 `0x1C0000`，新上限各有一次实板证明。未做：两个控制器同时工作（L4）、PHY 与时钟归属的寄存器序列、分区表扩大、compiler_rt 死重 | `docs/verification/coex-verification.md` |
-| Wi-Fi 与 BLE 的离线可验证特性（按规范条款） | 两批做完不抓空口能验到的全部项。四个纯逻辑组件主机用例 396 项（`wifi-mlme` 82、`wifi-connect` 141、`ble-802154` 122、`ble-security` 51），与独立参照实现差分一致；`wifi` profile 板级自检 14/14 个 section（`wifi_mlme` 24、`wifi_connect` 87、`ble_802154` 50、`ble_security` 25），整体判决 pass | `docs/verification/wifi-ieee80211-verification.md`、`ble-core-verification.md`；`logs/e2e-wifi-boot.log` |
+| Wi-Fi 与 BLE 的离线可验证特性（按规范条款） | 三批做完不抓空口能验到的全部项。四个纯逻辑组件主机用例 997 项（`wifi-mlme` 146、`wifi-connect` 386、`ble-802154` 414、`ble-security` 51），与独立参照实现差分一致。`wifi` profile 板级自检 14/14 个 section、整体判决 pass，但那是**第二批的镜像**（`wifi_mlme` 24、`wifi_connect` 87、`ble_802154` 50、`ble_security` 25）；第三批之后分别是 37、177、106 条，**没有上板** | `docs/verification/wifi-ieee80211-verification.md`、`ble-core-verification.md`；`logs/e2e-wifi-boot.log` |
 | 对真实 BLE controller 的 HCI 一致性自检（不抓空口） | 板上发 26 条只读命令：20 条合规，6 条与 Bluetooth Core 5.4 不一致（2 条声明不支持却回成功、3 条声明支持却回 `0x0C`、1 条声明不支持却回 `0x0C` 而不是 `0x01`）；与 controller 配置的关系未验证 | `logs/hci-conformance-boot.log`；`docs/verification/ble-core-verification.md` §8 |
 | 真实 Wi-Fi blob（`components/wifi-blobs`） | **init 返回 0**；任务体可跑并合作式让出；扫描/连接未做 | `logs/wifi-init-ok-boot.log`、`logs/wifi-task-boot.log` |
 | 选槽/回滚/功耗/性能模型（28A） | 板侧自检通过；计量与 28B 未做 | `logs/ch28-boot.log`、`logs/ch28a-boot.log` |
@@ -41,7 +41,7 @@
 - [x] 生产结构：`firmware/` + `boards/` + `components/`（章节目录移除，历史见 `docs/HISTORY.md`）
 - [x] 编译期特性开关：`-Dboot/-Dnet/-Dtls/-Dapps/-Dwifi`，未启用组件不参与编译
 - [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: sections: passed=8 failed=0 total=8`（`net` profile，含 `posix`）、`main: verdict=pass`（`logs/firmware-boot.log`）
-- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（1047 项）**（含 `posix`）
+- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（1648 项）**（含 `posix`）
 - [x] 脚本：`scripts/check-host.sh`、`scripts/check-fmt.sh`、`scripts/build-image.sh`、`tools/capture.py`
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发
 - [x] 覆盖率门禁：`scripts/check-coverage.py`（逻辑模块 100% 可达 + 用例数基线）
@@ -115,11 +115,11 @@
 
 ## 无线特性路线图（按规范组织）
 
-规范口径：Wi-Fi 与 BLE 都**不是 RFC 所定义的**——Wi-Fi 取 **IEEE Std 802.11-2016**（条款号取自该版目录），BLE 取 **Bluetooth Core Specification 5.4**（按卷、部分、节引用）。RFC 只在其上单列：RFC 7668（IPv6 over BLE）、RFC 3394（AES Key Wrap，WPA2 的密钥封装）、RFC 4493（AES-CMAC）、RFC 3610（AES-CCM）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）。
+规范口径：Wi-Fi 与 BLE 都**不是 RFC 所定义的**——Wi-Fi 取 **IEEE Std 802.11-2016**（条款号取自该版目录），BLE 取 **Bluetooth Core Specification 5.4**（按卷、部分、节引用）。RFC 只在其上单列：RFC 7668（IPv6 over BLE）、RFC 3394（AES Key Wrap，WPA2 的密钥封装）、RFC 4493（AES-CMAC）、RFC 3610（AES-CCM）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）；第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）。
 
-验证分级沿用 `docs/REPO-STANDARDS.md` §4：L1 主机、L2 镜像、L3 板侧自检、L4 真链路（抓空口）。**两个射频目前都没有端到端跑通**（Wi-Fi 卡在 `esp_wifi_start` 的 MAC 忙位，BLE 的射频 synth 不锁），所以这张路线图按"不抓空口能验到哪一级"排序：L1 到 L3 的项已于 2026-11-24 做完（下面两张表里状态为「离线验证通过」或「已完成」的行；对真实 controller 的 HCI 一致性自检结果是不通过），L4 的项等射频打通。
+验证分级沿用 `docs/REPO-STANDARDS.md` §4：L1 主机、L2 镜像、L3 板侧自检、L4 真链路（抓空口）。**两个射频目前都没有端到端跑通**（Wi-Fi 卡在 `esp_wifi_start` 的 MAC 忙位，BLE 的射频 synth 不锁），所以这张路线图按"不抓空口能验到哪一级"排序：第一、二批 L1 到 L3 的项已于 2026-11-24 做完，第三批于 2026-11-25 做完（下面两张表里状态为「离线验证通过」或「已完成」的行；对真实 controller 的 HCI 一致性自检结果是不通过），L4 的项等射频打通。
 
-证据落在 `docs/verification/`：`coex-verification.md`、`wifi-ieee80211-verification.md`、`ble-core-verification.md`。表里的"状态"只认这些报告里有的证据。
+证据落在 `docs/verification/`：`coex-verification.md`、`wifi-ieee80211-verification.md`、`ble-core-verification.md`。表里的"状态"只认这些报告里有的证据；第三批各片的用例数、差分与偏离在 `wifi-ieee80211-verification.md` 的 §2、§4.4、§5.4、§6 与 `ble-core-verification.md` 的对应小节。
 
 ### 共存
 
@@ -144,19 +144,20 @@
 | MLME：认证、关联、去认证、状态机与定时器 | 11.3 | 进程内假 AP 对打，时间注入 | L3 | 离线验证通过（L1） |
 | 扫描（被动、主动、信道驻留） | 11.1.4 | 扫描计划的确定性测试 | L3 | 离线验证通过（L1） |
 | PSK、PMKID、PTK、GTK 派生 | 12.7.1.2–12.7.1.4；Annex J.3、J.4、J.7 | Annex J 官方向量 | L3 | 离线验证通过（L1；板侧自检 28/28） |
-| 4 次握手与组密钥握手（请求方） | 12.7.6、12.7.7、12.7.10 | 进程内认证方对打 | L3 | 离线验证通过（L1） |
+| 4 次握手与组密钥握手（请求方） | 12.7.6、12.7.7、12.7.10；12.7.1.2、12.7.1.3、12.7.2、表 12-8 | 进程内认证方对打；第三批起与 Python oracle 及盘上 hostapd 的代码三方对拍 | L3 | 离线验证通过（L1）。第三批起按 AKM 1–6、8、9、11–13、18 选 PMK 长度、PTK 的 KDF、MIC、Key Data 封装与 Key Descriptor Version（45 项）；AKM 7、10 不支持 |
 | 密钥数据封装与 AES Key Wrap | 12.7.2；RFC 3394 | RFC 3394 §4.1 | L3 | 离线验证通过（L1） |
 | 安全关联与策略选择 | 12.6.1、12.6.2、12.6.3 | 状态机测试 | L3 | 离线验证通过（L1） |
 | CCMP-128、GCMP-128 | 12.5.3、12.5.5 | Annex J.6.4、J.7、J.9.2 | L3 | 离线验证通过（L1） |
 | BIP-CMAC-128 与 MMIE | 12.5.4、9.4.2.55 | Annex J.8、J.9.1 | L3 | 离线验证通过（L1） |
 | 管理帧保护与 SA Query | 12.2.8、12.6.19、12.6.20、11.14、9.6.10 | 分类表与 SA Query 过程 | L3 | 离线验证通过（L1） |
-| SAE 完整实现（P-256、PWE、Commit 与 Confirm、状态机） | 12.4；Annex J.10 | J.10 向量与双端对打 | L3 | 离线验证通过（L1 31 项；板侧判据含在 87 条里）。只支持 group 19；恒定时间、H2E、其它群未做。J.10 的 pwd-value 与 KCK/PMK 三行与 12.7.1.7.2 正文不符，实现按正文走 |
-| FT 密钥层次 | 12.7.1.7、13.4 | 推导向量（IEEE 没有 FT 派生向量，期望值取自独立实现） | L3 | 离线验证通过（L1 24 项）。只做派生层；FT 认证算法的帧交换与 reassociation 未做 |
+| SAE：P-256 点运算、PWE 派生、Commit / Confirm、帧体、状态机、群协商 | 12.4；Annex J.10 | J.10 向量与双端对打；15 个群的整链差分 | L3 | 离线验证通过（L1：group 19 的完整实现 31 项，第三批加 15 个群共 67 项，整链差分 1500 组 0 不一致）。2016 的 12.4.4 没有群表，只要求 group 19，群号取自 IANA 注册表。恒定时间与 H2E 未做；FFC 1、22–24、ECC 27、31–34 未做。Password Identifier 与 Rejected Groups 元素不在 2016 正文里，按 hostap 源码实现（后者只做接收的一半）。J.10 的 pwd-value 与 KCK/PMK 三行与 12.7.1.7.2 正文不符，实现按正文走 |
+| FT：密钥层次与 FT 协议 | 12.7.1.7、13.4；13.5、13.7、13.8 | 推导向量（IEEE 没有 FT 派生向量，期望值取自独立实现）；三方进程内对拍与整帧差分 | L3 | 离线验证通过（L1：密钥层次 24 项；第三批加 MDE / FTE 编解码、over-the-air 与 over-the-DS 的认证序列、reassociation，64 项，整帧差分四个种子各 12000 帧 0 不一致）。RIC、R0KH 与 R1KH 之间的协议未做 |
 | CCMP-256、GCMP-256、BIP-256 | 12.5、12.7.2、12.7.3；表 12-4、12-8 | Annex J.6.4、J.11 #3、J.9.1；与独立参照实现全量差分 | L3 | 离线验证通过（L1 23 项；全量差分 3568 条向量 0 不一致）。BIP-CMAC-256 没有官方向量 |
-| QoS 与省电 | 9.2.4.5、9.4.2.29、9.4.1.17、10.2.4.2、11.2 | 编解码；STA 与 AP 两个进程内模型对拍 | L3 | 离线验证通过（L1 19 项：QoS 10、省电 9；板侧判据含在 24 条里）。不做 EDCA 竞争与队列调度 |
-| 下一批候选（未排期）：FT 协议（over-the-air / over-the-DS 认证、reassociation、认证序列的消息内容） | 13.5、13.7、13.8 | 进程内对打 | L3 | 未做 |
-| 下一批候选（未排期）：无线测量（Beacon 报告等）与 WNM / BSS Transition Management | 11.11、11.24 | 帧编解码 + 假 AP 对打 | L3 | 未做 |
-| 下一批候选（未排期）：SAE 的 FFC 群与其它 ECC 群、rejected-groups / password-identifier | 12.4.4.3、12.4.7 | 规范向量 | L3 | 未做（H2E 不在 802.11-2016 正文里） |
+| QoS 与省电 | 9.2.4.5、9.4.2.29、9.4.1.17、10.2.4.2、11.2 | 编解码；STA 与 AP 两个进程内模型对拍 | L3 | 离线验证通过（L1 19 项：QoS 10、省电 9；板侧判据含在 24 条里，第三批之后 `wifi_mlme` 共 37 条，未上板）。不做 EDCA 竞争与队列调度 |
+| OWE（RFC 8110）：群 19 的 ECDH、DH Parameter element、PMK / PMKID 派生、与 4 次握手的衔接 | RFC 8110 §4.1–§4.4；RFC 5869、RFC 5903、RFC 6090；802.11-2016 12.6.3 | RFC 5869 与 RFC 5903 的测试向量；与 Python oracle 及盘上 hostap 的代码差分（800 组） | L3 | 离线验证通过（L1 30 项）。只做 group 19；PMK caching、OWE Transition Mode 未做 |
+| EAP-TLS（RFC 5216 / RFC 3748）：EAP 头、Identity / Notification / Nak、分片与重组、MSK → PMK | RFC 3748 §4、§5；RFC 5216 §2.1、§2.3、§3；802.11-2016 12.7.1.3 | 按条款手排的已知答案；独立分片器差分（1200 条记录流、4096 组 MSK） | L3 | 离线验证通过（L1 34 项）。TLS 引擎由调用方注入，仓库不含 TLS 本身 |
+| 无线测量：Measurement Request / Report、Beacon report、Link Measurement、Neighbor Report 响应 | 11.11.4、11.11.6、11.11.9.1、11.11.10.3、11.11.13；9.4.2.17 / .21 / .22 / .36–.38 / .41；9.6.7 | 图逐字节手排；与 hostap 头文件的布局差分（每个种子 12000 帧） | L3 | 离线验证通过（L1 32 项）。量测本身、RM Enabled Capabilities、Annex E 映射未做 |
+| WNM：BSS Transition Management、WNM Sleep Mode | 11.24.7、11.2.3.18；9.6.14.8–.10、9.6.14.19–.20；9.4.2.82 | 图逐字节手排；按原图排帧的 oracle 差分（每个种子 9000 帧） | L3 | 离线验证通过（L1 30 项）。TFS、Key Data 的封装未做 |
 | TKIP、WEP | 12.5.2、12.3.2 | 不做 | — | 不做：pre-RSNA，已弃用 |
 | 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | 抓空口 | L4 | 阻塞：`MAC_ST[15:13]` |
 
@@ -170,12 +171,13 @@
 | L2CAP（基本信道、LE 信令、基于信用的流控） | Vol 3 Part A §3、§4、§10 | 双端对打 | L1 | 离线验证通过（L1） |
 | 广播与扫描响应数据、地址类型、可解析私有地址 | Vol 3 Part C §11、§10.8；Vol 3 Part H §2.2 | 往返、解析、私有地址生成与解析 | L1 | 离线验证通过（L1） |
 | IPv6 over BLE | RFC 7668 §3.2.4、§3.2.5 | RFC 7668 §3.2.4.1 的示例 | L1 | 离线验证通过（L1） |
+| 6LoWPAN 适配层补全：IPHC 压缩与无状态 / 有状态解压、上下文表的有效期、NHC（扩展头与 UDP）、dispatch、Mesh 头、分片与重组 | RFC 4944 §5.1–§5.3、§11；RFC 6282 §3、§4；RFC 6775 §4.2、§5.4.2–§5.4.3；RFC 8025 §3 | RFC 手排的已知答案；与盘上 lwIP 源码的差分（三个种子各 1000 个报文） | L1 | 离线验证通过（L1 50 项；板侧自检 10 条，未上板）。没做 6LoWPAN-ND 协议本体、Mesh 路由、RFC 8930 / 8931、HC1 / HC2。lwIP 的压缩器给 `::` 源地址配空槽的上下文号，本实现拒解（RFC 6282 未规定，见验证报告 §4.1、§6） |
 | SMP 密码学工具箱 | Vol 3 Part H §2.2 | Appendix D 样例；与独立参照实现做差分 | L1 | 离线验证通过（L1；板侧自检 25/25） |
 | 配对：legacy 与 LE Secure Connections，全部方法，双角色 | Vol 3 Part H §2.3、§3 | 双端进程内配对 | L1 | 离线验证通过（L1） |
 | 密钥分发与绑定存储 | Vol 3 Part H §3 | 双端密钥一致 | L1 | 离线验证通过（L1） |
 | 链路层加密（AES-CCM）与 CRC-24 | Vol 6 Part B §4.6.1、§5.1.3、§3.1 | 保护与解保护往返，篡改被拒 | L1 | 离线验证通过（L1） |
 | ATT 服务端、GATT 服务端与客户端、AES-CMAC 签名（指示、发现、排队写、CCCD、Service Changed、全部 GATT 过程） | Vol 3 Part F §3.4、§5.3；Vol 3 Part G §3、§4、§7.1、附录 A、B；RFC 4493 | 双端进程内对打，线上字节逐条比对；NimBLE 的 PDU 尺寸交叉核对 | L1 | 离线验证通过（L1：att 19、att_svr 13、gatts 5、gattc 18、cmac 3；板侧新增 31 条，含在 50/50 里） |
-| 下一批候选（未排期）：扩展广播与周期广播的 host 侧（HCI 命令、数据分片、广播集） | Vol 4 Part E §7.8.52–§7.8.60；Vol 6 Part B §4.6.12、§4.6.13、§4.4.5 | 编解码 + 假控制器 | L1 | 未做（现有：LE Advertising Report 只做 legacy 事件） |
-| 下一批候选（未排期）：Enhanced ATT、robust caching（Client Supported Features、Database Hash） | Vol 3 Part F §5.3；Vol 3 Part G §7.2、§7.3 | 双端对拍 | L1 | 未做（Database Hash 的 CMAC 输入样例已命中） |
-| 下一批候选（未排期）：LL Privacy 的解析列表与地址解析、LE Power Control 的 host 侧 | Vol 6 Part B §4.6.7、§4.6.31、§4.6.32；Vol 4 Part E 对应命令 | 规则测试 | L1 | 未做（RPA 的生成与解析已做） |
+| 扩展广播与周期广播的 host 侧：17 条 HCI 命令、两个事件、广播集台账、链路层扩展头解析、广播数据分片器 | Vol 4 Part E §7.7.65.13、§7.7.65.18、§7.8.52–§7.8.69；Vol 6 Part B §1.2、§2.3、§2.3.4、§2.5.2 | 按参数表逐字节排的已知答案；与 NimBLE 的命令结构体、报告遍历代码交叉核对（没有独立 oracle） | L1 | 离线验证通过（L1 115 项；板侧自检 27 条，未上板）。取决于 controller 能力或时序调度的判据没有建模 |
+| Enhanced ATT bearer 池、LE 上基于额度的 L2CAP 连接、Robust Caching（Client Supported Features、Database Hash） | Vol 3 Part G §2.5.2、§2.5.2.1、§5.3、§7.2–§7.4、附录 B；Vol 3 Part A §4.22–§4.28、§10.1–§10.2 | 附录 B 的样例；Database Hash 对独立 oracle（24 张随机属性表）；与 NimBLE 交叉核对 | L1 | 离线验证通过（L1 57 项；板侧自检 10 条，未上板） |
+| LL Privacy 的解析列表与地址解析、LE Power Control 的 host 侧 | Vol 4 Part E §7.8.38–§7.8.45、§7.8.74–§7.8.77、§7.8.117–§7.8.121；Vol 6 Part B §1.3.2.2–.3、§4.5.16、§4.7、§5.1.17、§6.1–§6.5 | 参数表逐字节；RPA 对独立 oracle（仓外 2000 组）；与 NimBLE 交叉核对 | L1 | 离线验证通过（L1 66 项；板侧自检 9 条，未上板）。`Responder` 是 controller 行为的纯逻辑模型 |
 | 广播、连接、真实收发 | 不适用 | 抓空口 | L4 | 阻塞：射频 synth PLL 不锁 |

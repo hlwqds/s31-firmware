@@ -94,6 +94,10 @@ const gap = @import("gap_adv.zig");
 const ipsp = @import("ipsp.zig");
 const l2cap = @import("l2cap.zig");
 const vectors = @import("vectors.zig");
+const ext_adv_selftest = @import("ext_adv_selftest.zig");
+const eatt_selftest = @import("eatt_selftest.zig");
+const privacy_selftest = @import("privacy_selftest.zig");
+const sixlowpan_selftest = @import("sixlowpan_selftest.zig");
 const board = @import("board");
 const log = board.log;
 
@@ -556,11 +560,12 @@ fn checkLowpan() void {
     var a_ok = false;
     var a_len: u16 = 0;
     if (fifteen4.decompress(&fifteen4.kat_lowpan_short, &hdr_a, &g4_stats)) |v| {
+        // RFC 6282 §3.2 行 590-591：内联字段与 IPv6 头同序 → `3c 9a` / `02 00` 高字节在前。
         const want_src = [16]u8{
-            0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x9a, 0x3c,
+            0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x3c, 0x9a,
         };
         const want_dst = [16]u8{
-            0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x00, 0x02,
+            0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xfe, 0x00, 0x02, 0x00,
         };
         const src = v.src();
         const dst = v.dst();
@@ -633,7 +638,7 @@ fn checkRejections() void {
     // (a) SAC=1 / SAM=01：需要上下文表。
     var e1: ?fifteen4.Error = null;
     if (fifteen4.decompress(&fifteen4.kat_lowpan_stateful, &hdr, &g4_stats)) |_| {} else |e| e1 = e;
-    // (b) NHC 端口压缩 P=01：本组件不解。
+    // (b) NHC 端口压缩 P=01：合法编码（RFC 6282 §4.3.3 图 14），这帧截断 → Short。
     const p_compressed = [8]u8{ 0x7f, 0x22, 0x3c, 0x9a, 0x02, 0x00, 0xf1, 0x35 };
     var e2: ?fifteen4.Error = null;
     if (fifteen4.decompress(&p_compressed, &hdr, &g4_stats)) |_| {} else |e| e2 = e;
@@ -643,7 +648,7 @@ fn checkRejections() void {
     if (fifteen4.decompress(&frag, &hdr, &g4_stats)) |_| {} else |e| e3 = e;
 
     const ok = isErr(e1, error.UnsupportedCompression) and
-        isErr(e2, error.UnsupportedCompression) and
+        isErr(e2, error.Short) and
         isErr(e3, error.BadDispatch) and
         g4_stats.rejected == 3 and
         g4_stats.decompressed == ok_before and
@@ -2468,6 +2473,11 @@ fn checkGattcSubscribe() void {
 // 入口
 // ---------------------------------------------------------------------------
 
+/// 第三批特性的判据各在自己的文件里，经这个回调记到同一本账上。
+fn extCheck(ok: bool, text: []const u8) void {
+    check(ok, "{s}", .{text});
+}
+
 fn runChecks() bool {
     checkAclHeader();
     checkAclMax();
@@ -2519,6 +2529,10 @@ fn runChecks() bool {
     checkGattcWriteLong();
     checkGattcReadAfterWrite();
     checkGattcSubscribe();
+    ext_adv_selftest.run(extCheck);
+    eatt_selftest.run(extCheck);
+    privacy_selftest.run(extCheck);
+    sixlowpan_selftest.run(extCheck);
     return g_failed == 0;
 }
 
