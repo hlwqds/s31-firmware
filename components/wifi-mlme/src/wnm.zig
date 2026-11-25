@@ -21,6 +21,19 @@
 //!      解析，以及「Key Data 非空走 Key Data、为空走组密钥握手」的判定。加解密经 KeyDataCodec
 //!      注入——真实密钥封装（12.7.2 的 AES Key Wrap / PMF 帧保护）没有在本组件验证，要由
 //!      拥有 KEK / PMF 上下文的调用方提供。
+//!   7. BSS Max Idle Period（第 15 节）：元素编解码与 STA 侧保活判决（判决函数、时间注入）；
+//!   8. TIM Broadcast（第 16 节）：请求 / 响应帧与元素编解码、STA 侧接受 / 拒绝的判决；
+//!   9. FMS（第 17 节）：请求 / 响应帧、FMS 子元素 / Status 子元素 / TCLAS Status 子元素、
+//!      STA 侧流账本（Accept / Terminate / 不得再请求改速率）；
+//!   10. DMS（第 18 节）：请求 / 响应帧、Descriptor / Status 字段编解码与 GCR Request
+//!       子元素（只认到 nibble），STA 侧流账本；
+//!   11. Collocated Interference（第 19 节）：请求 / 报告帧编解码、按 STA 自身共址射频
+//!       状态生成报告的模型（端点封顶）、上报时机判决、占空比公式；
+//!   12. Channel Usage（第 20 节）：元素与请求 / 响应帧编解码；
+//!   13. WNM Notification（第 21 节）：请求 / 响应帧编解码与 STA 侧应答规则；
+//!   14. Event / Diagnostic 容器（第 22 节）：元素编解码（子元素内容不解释）与帧容器；
+//!   15. QoS Traffic Capability（第 23 节）：元素 / Update 帧编解码与变化判决；
+//!   16. Extended Capabilities 里的 WNM 位（第 24 节）：Table 9-135 位号与判定。
 //!
 //! 对应原文（页码为印刷页码）：
 //!
@@ -47,8 +60,43 @@
 //!   * Table 9-135（p.891–…）：Extended Capabilities 的 TFS 位 = 16；
 //!   * 9.6.14.20 / Figure 9-716 / 9-717 / 9-718 / Table 9-358（p.1238–1240）：Key Data 与 GTK /
 //!     IGTK 子元素；Figure 9-319（p.935）：GTK 子元素的 Key Info；
-//!   * MIB 属性 dot11BssMaxIdlePeriod：Max Idle Period 以 1000 TU 为单位（「number of 1000
-//!     TUs that pass before an AP disassociates an inactive non-AP STA」）。
+//! * MIB 属性 dot11BssMaxIdlePeriod：Max Idle Period 以 1000 TU 为单位（「number of 1000
+//!   TUs that pass before an AP disassociates an inactive non-AP STA」）。
+//!
+//! 第五批（第 15–24 节）的原文锚点（行号是 `/tmp/spec/802.11-2016.txt` 的原文行）：
+//!
+//!   * 11.24.13 BSS max idle period management（p.1809，行 94196）；9.4.2.79 / Figure 9-416 /
+//!     9-417（p.1001–1002，行 54378–54408）；
+//!   * 11.2.3.17 TIM broadcast（p.1621–1622，行 84774 起）；9.6.14.21 / 9.6.14.22（p.1240，
+//!     Figure 9-719 / 9-720，行 65626 / 65634）；9.4.2.83 / 9.4.2.84 / Table 9-205
+//!     （p.1006–1007，行 54573–54660）；
+//!   * 11.24.8 FMS multicast rate processing（p.1803，行 93912）；9.6.14.11 / 9.6.14.12
+//!     （p.1234，Figure 9-706 / 9-707）；9.4.2.76 / 9.4.2.77 / Figure 9-410–9-414 /
+//!     Table 9-196 / 9-197 / 9-198（p.996–1000，行 54179–54330）；
+//!   * 11.24.16.2 DMS procedures（p.1811 起，行 94300）；9.6.14.26 / 9.6.14.27（p.1243）；
+//!     9.4.2.88 / 9.4.2.89 / Figure 9-431–9-435 / Table 9-207–9-212（p.1011–1016，行
+//!     54800–55030）；
+//!   * 11.24.9 Collocated interference reporting（p.1804，行 93949）；9.6.14.13 / 9.6.14.14
+//!     （p.1234–1236，Figure 9-708 / 9-709 / 9-710）；9.4.2.85 / Figure 9-427 / 9-428
+//!     （p.1008–1009，行 54662–54739）；
+//!   * 11.24.15 Channel usage procedures（p.1810，行 94243）；9.6.14.24 / 9.6.14.25
+//!     （p.1242–1243）；9.4.2.86 / Figure 9-429 / Table 9-206（p.1009–1010，行 54740–54799）；
+//!   * 11.24.17 WNM notification（p.1824，行 94974）；9.6.14.29 / 9.6.14.30（p.1244–1245）；
+//!     Table 9-360 / 9-361 / 9-362（行 65795–65852）；
+//!   * 11.24.2 Event request and report（p.1776 起，行 92544）；11.24.3 Diagnostic request
+//!     and report（p.1779，行 92723）；9.6.14.2–9.6.14.5（p.1226–1228，行 65018–65098）；
+//!     9.4.2.67–9.4.2.70 / Figure 9-351 / 9-365 / 9-370 / 9-393 / Table 9-171 / 9-175 /
+//!     9-178（p.961–984，行 52795–53746）；
+//!   * 11.24.10 QoS Traffic capability procedure（p.1805，行 94014）；9.6.14.23（p.1241）；
+//!     9.4.2.78 / Table 9-199（p.1000–1001）；Table 9-359（p.1241）；
+//!   * Table 9-354（WNM Action，p.1225–1226，行 64990–65036）；Table 9-77（Element IDs，
+//!     p.784–787：Event 78 / Diagnostic 80 / FMS Descriptor 86 / FMS Request 87 / FMS
+//!     Response 88 / QoS Traffic Capability 89 / BSS Max Idle Period 90 / TIM Broadcast
+//!     Request 94 / TIM Broadcast Response 95 / Collocated Interference Report 96 /
+//!     Channel Usage 97 / DMS Request 99 / DMS Response 100 / Destination URI 141 / TSPEC 13）；
+//!   * Table 9-135（Extended Capabilities，p.891–894）：Event 7、Diagnostics 8、FMS 11、
+//!     Collocated Interference Reporting 13、WNM Sleep Mode 17、TIM Broadcast 18、QoS
+//!     Traffic Capability 20、Channel Usage 24、DMS 26、WNM Notification 46。
 //!
 //! 「2016 无明文、依据盘上 hostap」的规则（与上面分开列）：
 //!
@@ -81,11 +129,81 @@
 //!   * Key Data：子元素顺序按 9.4.3「非降序」校验（Key Data 不是元素，但 NOTE 1 的多 GTK /
 //!     IGTK 与 9.4.3 的排序规则一致）；Key ID（IGTK 的 2 八位组）按 9.2.2 的数值字段
 //!     LSB 在前读取。
-//!   * Key Data：加密经 KeyDataCodec 注入。PMF 场景整帧在帧级受保护、Key Data 本身是明文
-//!     KDE（9.6.14.20 的 NOTE 2）；AKM 决定的密钥封装（12.7.2，如组密钥握手的 AES Key
-//!     Wrap）没有在本组件验证，要由调用方提供 protect / unprotect；组件测试只用测试替身。
+//! * Key Data：加密经 KeyDataCodec 注入。PMF 场景整帧在帧级受保护、Key Data 本身是明文
+//!   KDE（9.6.14.20 的 NOTE 2）；AKM 决定的密钥封装（12.7.2，如组密钥握手的 AES Key
+//!   Wrap）没有在本组件验证，要由调用方提供 protect / unprotect；组件测试只用测试替身。
 //!
-//! 比特编号沿用 9.2.2（p.636）：字段第 N 位落在第 N/8 字节的第 N mod 8 位。
+//! 第五批（第 15–24 节）的取舍与偏离：
+//!
+//!   * BSS Max Idle：Idle Options 的 B1–B7 保留位按忽略处理（9.4.2.79 没有「应拒收」句）；
+//!     保活判决的「余量」是调用方注入的参数，原文没有规定 STA 侧提前量。
+//!   * TIM Broadcast：Table 9-205 的 5–255 保留 Status 按拒收（同批内 TFS/FMS 状态表的
+//!     先例）；status = 2（Denied）时 Length 必须 = 1、0/1/3/4 时必须 = 10（9.4.2.84 的
+//!     「When the Status field is 0, 1, 3 or 4, the … fields are included」）。
+//!   * FMS：FMS 子元素里「≥2 个 TCLAS 必须带 TCLAS Processing」不成立——9.4.2.76 原文对
+//!     Processing 只说「optionally present」（与 TFS/DMS 不同），所以不强制；FMS Status
+//!     子元素里 Current Count 保留位不检查（原文只说 reserved，没有拒收句）。
+//!   * DMS：GCR Request / GCR Response 子元素只认到子元素头与前 2 个 nibble（Table 9-208 /
+//!     9-212 的 ID 校验 + Table 9-209 / 9-210 的保留值校验）；Concealment Address 与
+//!     Schedule Element 是 GCR（11.24.16.3）内容、属本组件非目标，留给调用方。
+//!   * DMS Response 的 Accept/Denied 语义校验（Accept → 非 0 DMSID、Deny → 0；带 GCR
+//!     Response 时首个 TCLAS 必须是类型 0 且必须带 TSPEC）是 11.24.16.2 对 DMS provider
+//!     的 shall，本组件把它做成 STA 侧严格解析；Terminate 的 DMS Length 必须 = 3、
+//!     Last Sequence Control 必须是 65535 / 65534 / 低 4 位为 0。
+//!   * Collocated Interference：平均占空比公式 = ⌊(2^32−2)×T_B/T_I + 0.5⌋（9.4.2.85，
+//!     印刷页 1009，PDF 原件核对）；上报时机判决里的「显著变化」标准原文说属于实现内部，
+//!     这里由调用方以 `changed` 布尔注入。
+//!   * Channel Usage：请求帧里元素顺序按图 9-722 的排列校验（Usage 元素全部在前、
+//!     Supported Operating Classes 在后）；响应帧的可选元素（Power Constraint / EDCA /
+//!     Transmit Power Envelope）只按 9.4.2.1 的结构走一遍、内容不解释。
+//!   * Event Report 帧允许 0 条元素：11.24.2「If there are no available logged events …
+//!     the STA shall send the Event Report frame without any Event Report element」与
+//!     9.6.14.3 的「one or more」冲突，按规程条款放宽（Diagnostic Report 仍要求 ≥1 条）。
+//!   * Event / Diagnostic 元素里的事件类型、诊断类型、Report Status 的保留值按拒收
+//!     （Table 9-171 / 9-175 / 9-178 的保留段 + 批内状态表先例）；Event Request 元素里
+//!     各事件类型的子元素、Diagnostic 子元素内容不解释。
+//!   * WNM Notification：Table 9-360 的保留类型与 Table 9-361 的保留子元素 ID 按拒收；
+//!     Type = 221（Vendor Specific）的子元素内容不解释、应答规则由厂商决定。
+//!   * QoS Traffic Capability：元素按 9.4.2.78 的「Length = 1 + n（n = Flags 的 B0–B1
+//!     非零位数）」接受，AC STA Count List（QoS AP 发送时携带）原样返回；Update 帧
+//!     （Table 9-359）恒 1 字节 Flags。Flags 的保留位（B2–B3、B7）不检查、变化比较只看
+//!     定义位。
+//!   * 评审返修（2026-11-25 独立评审 /tmp/r5c/review-wifi.md）：
+//!     CI Report 元素体按 Figure 9-427（行 54696 Octets「4 4 4 4 2」）改为 21 八位组、
+//!     Interference Center Frequency 4 八位组（u32，2.4 GHz 本信道 482 400 个 5 kHz）；
+//!     电平 +127（unknown）放行、不再被 +126 封顶吞掉（行 54672–54675 的两个可区分编码）；
+//!     CI Request 的 auto=0 + timeout≠0 接收按 9.2.4.1 忽略保留子字段（行 36052）、构造仍拒；
+//!     DMS Add 的「Otherwise → zero TCLAS Processing」双向执行（行 54844–54846）；
+//!     FMS 元素总长 ≤ 255 / DMS Length ≤ 253 的上限在构造与解析两侧执行（行 54217/54324/
+//!     54810/54926）；Diagnostic 类型 0/1/2 不带子元素（9.4.2.69 行 53279–53280）；
+//!     WNM Notification Type 0 必带子元素 0/1/2（9.6.14.29 行 65817–65819；Type 221 的
+//!     子元素 ID 由厂商定义、不套 Table 9-361）；Destination URI 元素体（ESS Detection
+//!     Interval + URI）解析进 `destination_uri` 交给调用方、必须排最后、Report 帧无此
+//!     槽位（9.4.2.90 行 55030、Figure 9-695/9-697）；TIM Broadcast Request 按
+//!     Figure 9-719 定长 6 八位组拒尾随字节；Update 帧 Flags 按 Table 9-359（B0–B3 保留）
+//!     用独立视图 `QosTrafficUpdateFlags`、变化比较掩码 0x70（仅 B4–B6）。
+//!   * 评审第二轮返修（review-wifi-r2.md 残留 N2–N5）：CI 向量注释与手排字节的单位/字节
+//!     更正（center = 2412 MHz × 200 = 482 400 = 0x00075C60，LE 60 5c 07 00）；
+//!     CiReportElement 结构注释 19→21、Center Frequency(2)→(4)；DMS Add「Otherwise →
+//!     zero TCLAS Processing」双向负例补回（构造 + 解析）；URI ≤ 253 八位组解析/构造
+//!     双向强制（9.4.2.90 行 55028–55029）；Destination URI 解析/构造形式差异写入字段
+//!     注释。N1（DMS Length 上限比原文严一行）经主代理裁定保持不改行为、注释如实写明。
+//!   * 返修记录（2026-11-25 验收回：验收人在差分/主机套件之外抽查出的模块与用例问题）：
+//!     `buildEventRequestElement` 的 Length/索引算错（体 3 + n、总长 2 + 体）；
+//!     `buildDiagnosticRequestElement`/`buildDiagnosticReportElement` 的 total 差 2
+//!     （6 + n / 5 + n）；`parseQosTrafficCapabilityElement` 原来硬性要求体 1 字节、与
+//!     9.4.2.78 的「1 + n」冲突（见上）；`parseTimBroadcastResponse` 的元素体应从
+//!     [ID][Length] 之后取；DMS 帧层按 9.6.14.26/27 改为「one or more elements」的元素
+//!     计数；DiagType 按 Table 9-178 单独定义（类型 4 有定义）。
+//!   * FMS 的 FMS Descriptor 元素（ID 86，Beacon 里的计数器通告）没有做——它属于 AP 侧
+//!     Beacon 调度，本组件不碰真实 Beacon；WNM Notification 的 AP Descriptor / Firmware
+//!     Version 子元素内容（Figure 9-374 / 9-380）没有做——只校验子元素 ID。
+//!   * 非目标（任务书）：FTM / Timing Measurement 的时序、Location track、Proxy ARP、
+//!     GCR（除 GCR Request 子元素的 nibble）、AC Station Count、需要真实 Beacon 调度的部分。
+//!   * hostap 交叉核对：IDF 裁剪版 `ieee802_11_defs.h` 只有 WNM Action 值（`WNM_*` 枚举，
+//!     765–792 行，与 Table 9-354 一致）；本批各元素的 Element ID 常量盘上 hostap 没有
+//!     （`WLAN_EID_*` 无 BSS Max Idle / TIM Broadcast / FMS / DMS 等），全部出自 Table 9-77。
+//!   * 比特编号沿用 9.2.2（p.636）：字段第 N 位落在第 N/8 字节的第 N mod 8 位。
 
 const std = @import("std");
 
@@ -129,6 +247,14 @@ fn w16(out: []u8, v: u16) void {
     std.mem.writeInt(u16, out[0..2], v, .little);
 }
 
+fn le32(b: *const [4]u8) u32 {
+    return std.mem.readInt(u32, b, .little);
+}
+
+fn w32(out: []u8, v: u32) void {
+    std.mem.writeInt(u32, out[0..4], v, .little);
+}
+
 // ---------------------------------------------------------------------------
 // 0) 常量
 // ---------------------------------------------------------------------------
@@ -147,6 +273,24 @@ pub const Action = enum(u8) {
     tfs_notify = 15,
     sleep_request = 16,
     sleep_response = 17,
+    // —— 以下为第五批（wnm.zig 第 15–23 节）——
+    event_request = 0,
+    event_report = 1,
+    diagnostic_request = 2,
+    diagnostic_report = 3,
+    fms_request = 9,
+    fms_response = 10,
+    collocated_interference_request = 11,
+    collocated_interference_report = 12,
+    tim_broadcast_request = 18,
+    tim_broadcast_response = 19,
+    qos_traffic_capability_update = 20,
+    channel_usage_request = 21,
+    channel_usage_response = 22,
+    dms_request = 23,
+    dms_response = 24,
+    notification_request = 26,
+    notification_response = 27,
     _,
 };
 
@@ -2624,4 +2768,2116 @@ pub const KeyDelivery = enum { none, key_data, group_key_handshake };
 pub fn staKeyDelivery(response_status: u8, key_data_len: usize) KeyDelivery {
     if (response_status > SleepStatus.accept_exit_update_keys) return .none;
     return if (key_data_len != 0) .key_data else .group_key_handshake;
+}
+
+// ---------------------------------------------------------------------------
+// 15) BSS Max Idle Period（9.4.2.79 / 11.24.13；Figure 9-416 / 9-417）
+// ---------------------------------------------------------------------------
+
+/// Figure 9-416（p.1001）：Max Idle Period(2) + Idle Options(1)，元素体定长 3 八位组。
+pub const bss_max_idle_element_len = 3;
+
+/// BSS Max Idle Period 元素体（不含 Element ID / Length）。Idle Options 的 B1–B7 保留位：
+/// 9.4.2.79 对它们没有「应拒收」的句子，只定义了 B0 的含义，所以接收端忽略保留位。
+pub const BssMaxIdleElement = struct {
+    /// 11.24.13 / MIB dot11BssMaxIdlePeriod：以 1000 TU 为单位的空闲超时；0 = 不做空闲解除。
+    max_idle_period: u16,
+    idle_options: u8,
+
+    /// Figure 9-417（p.1002）：B0 Protected Keep-Alive Required = 1 → 只有受保护帧算活动。
+    pub fn protectedKeepAliveRequired(self: BssMaxIdleElement) bool {
+        return self.idle_options & 0x01 != 0;
+    }
+};
+
+pub fn parseBssMaxIdleElement(body: []const u8) Error!BssMaxIdleElement {
+    if (body.len < bss_max_idle_element_len) return error.Truncated;
+    if (body.len != bss_max_idle_element_len) return error.BadLength;
+    return .{ .max_idle_period = le16(body[0..2]), .idle_options = body[2] };
+}
+
+pub fn buildBssMaxIdleElement(out: []u8, e: BssMaxIdleElement) BuildError!usize {
+    const total = 2 + bss_max_idle_element_len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = @backingInt(ie.ElementId.bss_max_idle_period);
+    out[1] = bss_max_idle_element_len;
+    w16(out[2..4], e.max_idle_period);
+    out[4] = e.idle_options;
+    return total;
+}
+
+/// 11.24.13（p.1809）：保活帧的受保护要求由 Idle Options 决定——要求受保护时只有受保护
+/// 帧能证明活动；否则受保护或不受保护帧都行。
+pub const KeepaliveClass = enum {
+    /// 仅受保护帧算活动（Protected Keep-Alive Required = 1）。
+    protected_only,
+    /// 受保护或不受保护帧都算活动。
+    either,
+};
+
+pub fn keepaliveClass(e: BssMaxIdleElement) KeepaliveClass {
+    return if (e.protectedKeepAliveRequired()) .protected_only else .either;
+}
+
+/// STA 侧保活判决（11.24.13）：AP 在「≥ Max Idle Period 没收到该 STA 发起的 Data /
+/// PS-Poll / Management 帧」时可解除关联，所以 STA 必须在那之前发出保活帧。
+/// `elapsed_tu` = 距上次「本 STA 发起、AP 已收到」一帧的时长，`margin_tu` 是调用方给定的
+/// 发送 + 对端处理余量（原文没有规定余量大小）；时间全部注入。周期以 TU 计——元素里的
+/// 1000 TU 单位由调用方换算。字段最大 65535，换算后是 65 535 000 TU，所以周期参数是 u32
+///（主代理验收时由 u16 改正：u16 只装得下字段值 65 以内，而真实取值是几百）。
+pub const KeepaliveVerdict = enum {
+    /// 还不用发。
+    none_needed,
+    /// 再不发就来不及：elapsed + margin 已达到 Max Idle Period。
+    send_keepalive,
+    /// elapsed 已 ≥ Max Idle Period：AP 侧已可解除关联。
+    already_overdue,
+};
+
+pub fn keepaliveVerdict(max_idle_period_tu: u32, elapsed_tu: u32, margin_tu: u32) KeepaliveVerdict {
+    if (max_idle_period_tu == 0) return .none_needed; // dot11BssMaxIdlePeriod = 0：无空闲解除
+    if (elapsed_tu >= max_idle_period_tu) return .already_overdue;
+    // elapsed < period，减法安全；elapsed + margin ≥ period ⟺ margin ≥ period − elapsed。
+    if (margin_tu >= max_idle_period_tu - elapsed_tu) return .send_keepalive;
+    return .none_needed;
+}
+
+// ---------------------------------------------------------------------------
+// 16) TIM Broadcast（9.4.2.83 / 9.4.2.84；9.6.14.21 / 9.6.14.22；11.2.3.17）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77（p.787）：TIM Broadcast Request 元素 ID 94、Response 元素 ID 95。
+pub const tim_broadcast_request_element_id: u8 = 94;
+pub const tim_broadcast_response_element_id: u8 = 95;
+
+/// Table 9-205（p.1007）：Status 字段；5–255 保留。
+pub const TimStatus = struct {
+    pub const accept: u8 = 0;
+    pub const accept_valid_timestamp: u8 = 1;
+    pub const denied: u8 = 2;
+    pub const overridden: u8 = 3;
+    pub const overridden_valid_timestamp: u8 = 4;
+};
+
+/// Figure 9-719（p.1240）：Category、WNM Action(18)、Dialog Token（非 0）、TIM Broadcast
+/// Request 元素（Figure 9-425：ID 94、Length 1、TIM Broadcast Interval(1)；0 = 终止本 STA
+/// 的 TIM broadcast，9.4.2.83）。
+pub const TimBroadcastRequest = struct {
+    dialog_token: u8,
+    interval: u8,
+};
+
+pub fn parseTimBroadcastRequest(body: []const u8) Error!TimBroadcastRequest {
+    if (body.len < 6) return error.Truncated;
+    if (body.len != 6) return error.BadLength; // Figure 9-719（行 65638）：定长 6 八位组
+    try checkHeader(body, .tim_broadcast_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    if (body[3] != tim_broadcast_request_element_id or body[4] != 1) return error.MissingElement;
+    return .{ .dialog_token = body[2], .interval = body[5] };
+}
+
+pub fn buildTimBroadcastRequest(out: []u8, dialog_token: u8, interval: u8) BuildError!usize {
+    if (dialog_token == 0) return error.ZeroDialogToken;
+    if (out.len < 6) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.tim_broadcast_request);
+    out[2] = dialog_token;
+    out[3] = tim_broadcast_request_element_id;
+    out[4] = 1;
+    out[5] = interval;
+    return 6;
+}
+
+/// Figure 9-426（p.1007）：Status(1)；status 0/1/3/4 时带 TIM Broadcast Interval(1)、
+/// Offset(4，有符号微秒，±4 µs 容差、相对 TBTT)、High Rate(2)、Low Rate(2)（0.5 Mb/s
+/// 单位，0 = 不发该 TIM 帧）；Length = 1 或 10。
+pub const TimBroadcastResponseElement = struct {
+    status: u8,
+    interval: u8 = 0,
+    offset_us: i32 = 0,
+    high_rate: u16 = 0,
+    low_rate: u16 = 0,
+};
+
+pub fn parseTimBroadcastResponseElement(body: []const u8) Error!TimBroadcastResponseElement {
+    if (body.len < 1) return error.Truncated;
+    const status = body[0];
+    if (status > TimStatus.overridden_valid_timestamp) return error.ReservedValue; // Table 9-205
+    const scheduled = status != TimStatus.denied;
+    if (body.len != (if (scheduled) @as(usize, 10) else 1)) return error.BadLength;
+    if (!scheduled) return .{ .status = status };
+    return .{
+        .status = status,
+        .interval = body[1],
+        .offset_us = @bitCast(le32(body[2..6])),
+        .high_rate = le16(body[6..8]),
+        .low_rate = le16(body[8..10]),
+    };
+}
+
+pub fn buildTimBroadcastResponseElement(out: []u8, e: TimBroadcastResponseElement) BuildError!usize {
+    if (e.status > TimStatus.overridden_valid_timestamp) return error.ReservedValue;
+    const scheduled = e.status != TimStatus.denied;
+    const total = if (scheduled) @as(usize, 12) else 3; // 头 2 + 体 1
+    if (out.len < total) return error.NoRoom;
+    out[0] = tim_broadcast_response_element_id;
+    out[1] = @intCast(total - 2);
+    out[2] = e.status;
+    if (scheduled) {
+        out[3] = e.interval;
+        w32(out[4..8], @bitCast(e.offset_us));
+        w16(out[8..10], e.high_rate);
+        w16(out[10..12], e.low_rate);
+    }
+    return total;
+}
+
+/// Figure 9-720（p.1240）：Category、WNM Action(19)、Dialog Token（非应答发送时为 0）、
+/// TIM Broadcast Response 元素（3 或 12 八位组）。
+pub const TimBroadcastResponse = struct {
+    dialog_token: u8,
+    element: TimBroadcastResponseElement,
+};
+
+pub fn parseTimBroadcastResponse(body: []const u8) Error!TimBroadcastResponse {
+    if (body.len < 6) return error.Truncated; // 头 3 + 元素头 2 + 至少 Status 1
+    try checkHeader(body, .tim_broadcast_response);
+    if (body[3] != tim_broadcast_response_element_id) return error.MissingElement;
+    const elen: usize = body[4];
+    if (body.len - 5 < elen) return error.Truncated;
+    if (body.len != 5 + elen) return error.BadLength; // 恰好一个元素
+    const e = try parseTimBroadcastResponseElement(body[5..][0..elen]);
+    return .{ .dialog_token = body[2], .element = e };
+}
+
+pub fn buildTimBroadcastResponse(out: []u8, r: TimBroadcastResponse) BuildError!usize {
+    if (r.element.status > TimStatus.overridden_valid_timestamp) return error.ReservedValue;
+    const total = 3 + (if (r.element.status != TimStatus.denied) @as(usize, 12) else 3);
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.tim_broadcast_response);
+    out[2] = r.dialog_token;
+    _ = try buildTimBroadcastResponseElement(out[3..], r.element);
+    return total;
+}
+
+/// STA 侧的接受 / 拒绝判决（11.2.3.17，p.1621–1622）：Accept（0/1）= AP 接受了请求的
+/// interval（原文 NOTE：STA 可以忽略响应里的 interval 字段、用自己请求的值）；Overridden
+/// （3/4）= AP 用自己的 interval（当前活跃的最小值）；Denied（2）= 不提供 TIM broadcast。
+pub const TimBroadcastDecision = struct {
+    /// TIM broadcast 服务是否在用。
+    active: bool,
+    /// 使用的 TIM Broadcast Interval（Beacon 周期数）。
+    interval: u8,
+    /// TIM 帧里带合法 TSF 时间戳（status 1 / 4）。
+    valid_timestamp: bool,
+};
+
+pub fn decideTimBroadcast(requested_interval: u8, resp: TimBroadcastResponseElement) TimBroadcastDecision {
+    return switch (resp.status) {
+        TimStatus.accept, TimStatus.accept_valid_timestamp => .{
+            .active = true,
+            .interval = requested_interval,
+            .valid_timestamp = resp.status == TimStatus.accept_valid_timestamp,
+        },
+        TimStatus.overridden, TimStatus.overridden_valid_timestamp => .{
+            .active = true,
+            .interval = resp.interval,
+            .valid_timestamp = resp.status == TimStatus.overridden_valid_timestamp,
+        },
+        else => .{ .active = false, .interval = 0, .valid_timestamp = false },
+    };
+}
+
+/// 11.2.3.17（p.1622）：N_TBI × dot11BeaconPeriod TU 一个 TTTT（target TIM transmission
+/// time）、time 0 是 TTTT、TIM 帧排在 TTTT + offset（µs，可为负）。返回 `now_us` 之后（含）
+/// 的下一个 TIM 发送时刻（µs，TSF 时基）。`tim_interval` = 0 或 `decideTimBroadcast` 判为
+/// 不活跃时返回 0（没有服务）。TU = 1024 µs（9.1.3.3）。
+pub fn nextTimTransmission(beacon_interval_tu: u16, tim_interval: u8, offset_us: i32, now_us: u64) u64 {
+    if (tim_interval == 0) return 0;
+    const period_us: i64 = @as(i64, tim_interval) * beacon_interval_tu * 1024;
+    if (period_us <= 0) return 0;
+    const off: i64 = offset_us;
+    const now: i64 = @intCast(now_us);
+    // TTTT_k + off >= now → k = ceil((now − off) / period)（整除时含当前时刻）。
+    var k: i64 = @divTrunc(now - off, period_us);
+    if (@rem(now - off, period_us) > 0) k += 1;
+    if (k < 0) k = 0;
+    return @intCast(period_us * k + off);
+}
+
+// ---------------------------------------------------------------------------
+// 17) FMS（9.4.2.76 / 9.4.2.77；9.6.14.11 / 9.6.14.12；11.2.3.16 / 11.24.8）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77：FMS Request 元素 ID 87、FMS Response 元素 ID 88。
+pub const fms_request_element_id: u8 = 87;
+pub const fms_response_element_id: u8 = 88;
+/// Table 9-196：FMS Request 子元素 ID；Table 9-197：FMS Status 子元素 ID 1、TCLAS Status
+/// 子元素 ID 2；221 = Vendor Specific。
+pub const fms_subelement_id: u8 = 1;
+pub const fms_status_subelement_id: u8 = 1;
+pub const tclas_status_subelement_id: u8 = 2;
+/// 9.4.2.75（p.996）：「A maximum of eight FMS counters are permitted」。
+pub const max_fms_counters = 8;
+
+/// Figure 9-409（p.996）：B0–B2 FMS Counter ID、B3–B7 Current Count（Current Count 在
+/// FMS Status 子元素里保留；原文没有「应拒收」，接收端不检查它）。
+pub const FmsCounter = packed struct(u8) {
+    counter_id: u3,
+    current_count: u5 = 0,
+
+    pub fn word(self: FmsCounter) u8 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u8) FmsCounter {
+        return .{ .counter_id = @as(u3, @truncate(w)), .current_count = @as(u5, @truncate(w >> 3)) };
+    }
+};
+
+/// Figure 9-411（p.997）：Subelement ID(1)=1、Length、Delivery Interval(1，DTIM 数；0 =
+/// 不再使用该流)、Max Delivery Interval(1，0 = 接受 AP 的任意上限)、Rate Identification(4)、
+/// FMSID(1，新请求保留)、TCLAS 元素（≥1）、TCLAS Processing 元素（0 或 3 八位组）。
+/// FMS 的 TCLAS Processing 只是「可选」（9.4.2.76 原文没有 TFS/DMS 的「≥2 个必须带」），
+/// 所以这里不强制。
+pub const FmsSubelementParams = struct {
+    delivery_interval: u8,
+    max_delivery_interval: u8,
+    rate_identification: u32,
+    fmsid: u8,
+    /// 已编码的 TCLAS 元素串（含 Element ID / Length 头）。
+    tclas_elements: []const []const u8,
+    tclas_processing: ?TclasProcessing = null,
+};
+
+pub fn buildFmsSubelement(out: []u8, p: FmsSubelementParams) BuildError!usize {
+    if (p.tclas_elements.len == 0) return error.Empty;
+    var payload: usize = 7; // interval + max + rate(4) + fmsid
+    for (p.tclas_elements) |e| payload += e.len;
+    if (p.tclas_processing != null) payload += 3;
+    if (payload > 255 or out.len < 2 + payload) return error.NoRoom;
+    out[0] = fms_subelement_id;
+    out[1] = @intCast(payload);
+    out[2] = p.delivery_interval;
+    out[3] = p.max_delivery_interval;
+    w32(out[4..8], p.rate_identification);
+    out[8] = p.fmsid;
+    var pos: usize = 9;
+    for (p.tclas_elements) |e| {
+        @memcpy(out[pos..][0..e.len], e);
+        pos += e.len;
+    }
+    if (p.tclas_processing) |proc| {
+        out[pos] = tclas_processing_element_id;
+        out[pos + 1] = 1;
+        out[pos + 2] = @backingInt(proc);
+        pos += 3;
+    }
+    return 2 + payload;
+}
+
+/// Figure 9-411 的子元素体（Subelement ID / Length 之后）。
+pub const FmsSubelement = struct {
+    delivery_interval: u8,
+    max_delivery_interval: u8,
+    rate_identification: u32,
+    fmsid: u8,
+    tclas_count: usize,
+    tclas_processing: ?TclasProcessing,
+};
+
+pub fn parseFmsSubelement(body: []const u8) Error!FmsSubelement {
+    if (body.len < 7) return error.Truncated;
+    var v = FmsSubelement{
+        .delivery_interval = body[0],
+        .max_delivery_interval = body[1],
+        .rate_identification = le32(body[2..6]),
+        .fmsid = body[6],
+        .tclas_count = 0,
+        .tclas_processing = null,
+    };
+    var w = ie.Walker.init(body[7..]);
+    while (w.next() catch return error.Truncated) |el| {
+        switch (el.id) {
+            tclas_element_id => {
+                if (v.tclas_processing != null) return error.BadValue; // TCLAS 不能排在 Processing 之后
+                _ = try parseTclasElement(el.body);
+                v.tclas_count += 1;
+            },
+            tclas_processing_element_id => {
+                if (v.tclas_processing != null) return error.BadValue; // 至多一个
+                v.tclas_processing = try parseTclasProcessing(el.body);
+            },
+            else => return error.UnexpectedElement,
+        }
+    }
+    if (v.tclas_count == 0) return error.Empty; // 「one or more TCLAS Elements」
+    return v;
+}
+
+/// Table 9-196 / 9-197 的子元素串计数与校验。请求只认 FMS 子元素（ID 1）与 Vendor（221，
+/// Table 9-196 的 ID 2 保留）；响应另认 FMS Status（1）与 TCLAS Status（2）。保留 ID 拒收。
+fn countFmsSubelementsGeneric(bytes: []const u8, comptime response: bool) Error!usize {
+    var n: usize = 0;
+    var w = rrm.SubWalker.init(bytes);
+    while (try w.next()) |s| {
+        switch (s.id) {
+            fms_subelement_id => {
+                if (response) {
+                    _ = try parseFmsStatusSubelement(s.body);
+                } else {
+                    _ = try parseFmsSubelement(s.body);
+                }
+            },
+            tclas_status_subelement_id => {
+                if (!response) return error.ReservedValue; // Table 9-196：2 保留
+                _ = try parseFmsTclasStatusSubelement(s.body);
+            },
+            221 => {},
+            else => return error.ReservedValue,
+        }
+        n += 1;
+    }
+    return n;
+}
+
+/// Figure 9-410（p.996）：FMS Token(1) + ≥1 个 FMS Request 子元素。
+pub const FmsRequestElement = struct {
+    fms_token: u8,
+    subelements: []const u8,
+};
+
+pub fn parseFmsRequestElement(body: []const u8) Error!FmsRequestElement {
+    if (body.len < 1) return error.Truncated;
+    if (body.len > 253) return error.TooLong; // 元素总长 ≤ 255（9.4.2.76，行 54217）
+    if (try countFmsSubelementsGeneric(body[1..], false) == 0) return error.Empty;
+    return .{ .fms_token = body[0], .subelements = body[1..] };
+}
+
+pub fn buildFmsRequestElement(out: []u8, fms_token: u8, subelements: []const []const u8) BuildError!usize {
+    if (subelements.len == 0) return error.Empty;
+    var payload: usize = 1;
+    for (subelements) |s| payload += s.len;
+    if (payload > 253) return error.TooLong; // 元素总长 = 2 + payload ≤ 255（行 54217）
+    if (out.len < 2 + payload) return error.NoRoom;
+    out[0] = fms_request_element_id;
+    out[1] = @intCast(payload);
+    out[2] = fms_token;
+    var pos: usize = 3;
+    for (subelements) |s| {
+        @memcpy(out[pos..][0..s.len], s);
+        pos += s.len;
+    }
+    return 2 + payload;
+}
+
+/// Figure 9-414（p.1000）：TCLAS Status 子元素 = Subelement ID(1)=2、Length、FMSID(1)、
+/// TCLAS 元素（≥1）、TCLAS Processing 元素（0 或 3 八位组）。
+pub const FmsTclasStatusSubelement = struct {
+    fmsid: u8,
+    tclas_count: usize,
+    tclas_processing: ?TclasProcessing,
+};
+
+pub fn parseFmsTclasStatusSubelement(body: []const u8) Error!FmsTclasStatusSubelement {
+    if (body.len < 1) return error.Truncated;
+    var v = FmsTclasStatusSubelement{ .fmsid = body[0], .tclas_count = 0, .tclas_processing = null };
+    var w = ie.Walker.init(body[1..]);
+    while (w.next() catch return error.Truncated) |el| {
+        switch (el.id) {
+            tclas_element_id => {
+                if (v.tclas_processing != null) return error.BadValue; // TCLAS 不能排在 Processing 之后
+                _ = try parseTclasElement(el.body);
+                v.tclas_count += 1;
+            },
+            tclas_processing_element_id => {
+                if (v.tclas_processing != null) return error.BadValue;
+                v.tclas_processing = try parseTclasProcessing(el.body);
+            },
+            else => return error.UnexpectedElement,
+        }
+    }
+    if (v.tclas_count == 0) return error.Empty;
+    return v;
+}
+
+/// Figure 9-413（p.998）：Subelement ID(1)=1、Length、Element Status(1)（Table 9-198，与
+/// TFS Response Status 共用第 11 节的 `TfsResponseStatus`）、Delivery Interval(1)、
+/// Max Delivery Interval(1)、FMSID(1)、FMS Counter(1)、Rate Identification(4)、
+/// Multicast MAC(6) → 体 15 八位组。
+pub const FmsStatusSubelement = struct {
+    status: u8,
+    delivery_interval: u8,
+    max_delivery_interval: u8,
+    fmsid: u8,
+    counter: FmsCounter,
+    rate_identification: u32,
+    multicast: [6]u8,
+};
+
+pub fn parseFmsStatusSubelement(body: []const u8) Error!FmsStatusSubelement {
+    if (body.len < 15) return error.Truncated;
+    if (body.len != 15) return error.BadLength;
+    if (body[0] > TfsResponseStatus.alternate_classifier_unavailable) return error.ReservedValue;
+    return .{
+        .status = body[0],
+        .delivery_interval = body[1],
+        .max_delivery_interval = body[2],
+        .fmsid = body[3],
+        .counter = FmsCounter.fromWord(body[4]),
+        .rate_identification = le32(body[5..9]),
+        .multicast = body[9..15].*,
+    };
+}
+
+/// Figure 9-412（p.998）：FMS Token(1) + ≥1 个 FMS Response 子元素。
+pub const FmsResponseElement = struct {
+    fms_token: u8,
+    subelements: []const u8,
+};
+
+pub fn parseFmsResponseElement(body: []const u8) Error!FmsResponseElement {
+    if (body.len < 1) return error.Truncated;
+    if (body.len > 253) return error.TooLong; // 元素总长 ≤ 255（9.4.2.77，行 54324）
+    if (try countFmsSubelementsGeneric(body[1..], true) == 0) return error.Empty;
+    return .{ .fms_token = body[0], .subelements = body[1..] };
+}
+
+pub fn buildFmsResponseElement(out: []u8, fms_token: u8, subelements: []const []const u8) BuildError!usize {
+    if (subelements.len == 0) return error.Empty;
+    var payload: usize = 1;
+    for (subelements) |s| payload += s.len;
+    if (payload > 253) return error.TooLong; // 元素总长 = 2 + payload ≤ 255（行 54324）
+    if (out.len < 2 + payload) return error.NoRoom;
+    out[0] = fms_response_element_id;
+    out[1] = @intCast(payload);
+    out[2] = fms_token;
+    var pos: usize = 3;
+    for (subelements) |s| {
+        @memcpy(out[pos..][0..s.len], s);
+        pos += s.len;
+    }
+    return 2 + payload;
+}
+
+/// Figure 9-706 / 9-707（p.1234）：Cat、WNM Action(9/10)、Dialog Token、恰好一个 FMS
+/// Request / Response 元素。请求的 Dialog Token 非 0 且唯一；应答自主发送时为 0。
+pub const FmsRequestFrame = struct {
+    dialog_token: u8,
+    element: FmsRequestElement,
+};
+
+pub fn parseFmsRequestFrame(body: []const u8) Error!FmsRequestFrame {
+    if (body.len < 6) return error.Truncated; // 头 3 + 元素头 2 + FMS Token 1
+    try checkHeader(body, .fms_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    if (body[3] != fms_request_element_id) return error.MissingElement;
+    const elen: usize = body[4];
+    if (body.len - 5 < elen or elen < 1) return error.BadLength;
+    if (body.len != 5 + elen) return error.BadLength; // 恰好一个元素
+    const el = try parseFmsRequestElement(body[5..][0..elen]);
+    return .{ .dialog_token = body[2], .element = el };
+}
+
+pub fn buildFmsRequestFrame(out: []u8, dialog_token: u8, element: []const u8) BuildError!usize {
+    if (dialog_token == 0) return error.ZeroDialogToken;
+    if (element.len < 3 or element[0] != fms_request_element_id) return error.BadValue;
+    const total = 3 + element.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.fms_request);
+    out[2] = dialog_token;
+    @memcpy(out[3..total], element);
+    return total;
+}
+
+pub const FmsResponseFrame = struct {
+    dialog_token: u8,
+    element: FmsResponseElement,
+};
+
+pub fn parseFmsResponseFrame(body: []const u8) Error!FmsResponseFrame {
+    if (body.len < 6) return error.Truncated;
+    try checkHeader(body, .fms_response);
+    if (body[3] != fms_response_element_id) return error.MissingElement;
+    const elen: usize = body[4];
+    if (body.len - 5 < elen or elen < 1) return error.BadLength;
+    if (body.len != 5 + elen) return error.BadLength;
+    const el = try parseFmsResponseElement(body[5..][0..elen]);
+    return .{ .dialog_token = body[2], .element = el };
+}
+
+pub fn buildFmsResponseFrame(out: []u8, dialog_token: u8, element: []const u8) BuildError!usize {
+    if (element.len < 3 or element[0] != fms_response_element_id) return error.BadValue;
+    const total = 3 + element.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.fms_response);
+    out[2] = dialog_token;
+    @memcpy(out[3..total], element);
+    return total;
+}
+
+/// STA 侧的 FMS 流账本（11.2.3.16 / 11.24.8；有界表、无堆）。每条流一个 FMSID。
+pub const max_fms_streams = 4;
+
+pub const FmsStream = struct {
+    fmsid: u8 = 0,
+    counter: FmsCounter = .{ .counter_id = 0 },
+    delivery_interval: u8 = 1,
+    multicast: [6]u8 = @splat(0),
+    /// Accept 后为真。
+    active: bool = false,
+    /// 收到 Terminate（10/11/12）后为真：流退出 FMS、按 DTIM 间隔交付，STA 每个 DTIM
+    /// 都要醒来（11.2.3.16 末尾 / 11.24.8）。
+    terminated_to_dtim: bool = false,
+};
+
+pub const FmsSta = struct {
+    streams: [max_fms_streams]FmsStream = @splat(.{}),
+    /// Element Status = 9（Multicast rate changes not allowed）后置位：关联期间不得再发
+    /// 改 multicast rate 的 FMS Request（11.24.8）。
+    rate_change_blocked: bool = false,
+
+    pub fn stream(self: *const FmsSta, fmsid: u8) ?*const FmsStream {
+        for (&self.streams) |*s| {
+            if (s.active and s.fmsid == fmsid) return s;
+        }
+        return null;
+    }
+
+    /// 11.24.8：还能不能发「改 multicast rate」的 FMS Request。
+    pub fn mayRequestRateChange(self: *const FmsSta) bool {
+        return !self.rate_change_blocked;
+    }
+
+    /// 把一条 FMS Status 子元素记进账本：Accept → 建流；Terminate（10/11/12）→ 流退出并
+    /// 置 terminated_to_dtim；9 → rate_change_blocked；Deny / Alternate → 流不变（备选
+    /// 间隔在子元素里，是否按它重新请求由调用方决定）。
+    pub fn applyStatus(self: *FmsSta, st: *const FmsStatusSubelement) Error!void {
+        switch (st.status) {
+            TfsResponseStatus.accept => {
+                for (&self.streams) |*s| {
+                    if (s.active and s.fmsid == st.fmsid) {
+                        s.counter = st.counter;
+                        s.delivery_interval = st.delivery_interval;
+                        s.multicast = st.multicast;
+                        return;
+                    }
+                }
+                for (&self.streams) |*s| {
+                    if (!s.active and !s.terminated_to_dtim) {
+                        s.* = .{
+                            .fmsid = st.fmsid,
+                            .counter = st.counter,
+                            .delivery_interval = st.delivery_interval,
+                            .multicast = st.multicast,
+                            .active = true,
+                        };
+                        return;
+                    }
+                }
+                return error.TooMany;
+            },
+            TfsResponseStatus.terminate_policy,
+            TfsResponseStatus.terminate_resources,
+            TfsResponseStatus.terminate_higher_priority,
+            => {
+                for (&self.streams) |*s| {
+                    if (s.active and s.fmsid == st.fmsid) {
+                        s.active = false;
+                        s.terminated_to_dtim = true;
+                        return;
+                    }
+                }
+                return error.BadValue; // 终止一条不存在的流
+            },
+            TfsResponseStatus.multicast_rate_not_allowed => self.rate_change_blocked = true,
+            else => {},
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
+// 18) DMS（9.4.2.88 / 9.4.2.89；9.6.14.26 / 9.6.14.27；11.24.16.2）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77：DMS Request 元素 ID 99、DMS Response 元素 ID 100；TSPEC 元素 ID 13；
+/// Destination URI 元素 ID 141。
+pub const dms_request_element_id: u8 = 99;
+pub const dms_response_element_id: u8 = 100;
+pub const tspec_element_id: u8 = 13;
+pub const destination_uri_element_id: u8 = 141;
+/// Table 9-208 / 9-212：GCR Request / GCR Response 子元素 ID 都是 1；221 = Vendor Specific。
+pub const gcr_request_subelement_id: u8 = 1;
+pub const gcr_response_subelement_id: u8 = 1;
+
+/// Table 9-207（p.1012）：0 Add、1 Remove、2 Change；3–255 保留。
+pub const DmsRequestType = enum(u8) { add = 0, remove = 1, change = 2 };
+
+/// Table 9-211（p.1014）：0 Accept、1 Denied、2 Terminate、3 GCR Advertise；4–255 保留。
+pub const DmsResponseType = enum(u8) { accept = 0, denied = 1, terminate = 2, gcr_advertise = 3 };
+
+/// Figure 9-433（p.1013）：Subelement ID(8)、Length(8)、GATS Retransmission Policy
+/// (B16–B19)、GCR Delivery Method(B20–B23) → 体 1 八位组：低 4 位 retrans、高 4 位
+/// delivery。Table 9-209：retrans 0–3、4–15 保留；Table 9-210：delivery 0–2、3–15 保留。
+pub const GcrRequest = struct {
+    gats_retransmission_policy: u4,
+    gcr_delivery_method: u4,
+
+    pub fn word(self: GcrRequest) u8 {
+        return @as(u8, self.gats_retransmission_policy) | (@as(u8, self.gcr_delivery_method) << 4);
+    }
+};
+
+pub fn parseGcrRequest(body: []const u8) Error!GcrRequest {
+    if (body.len != 1) return error.BadLength;
+    const retrans: u4 = @truncate(body[0]);
+    const delivery: u4 = @truncate(body[0] >> 4);
+    if (retrans > 3) return error.ReservedValue; // Table 9-209
+    if (delivery > 2) return error.ReservedValue; // Table 9-210
+    return .{ .gats_retransmission_policy = retrans, .gcr_delivery_method = delivery };
+}
+
+/// Figure 9-432（p.1011）：DMSID(1)、DMS Length(1)、Request Type(1)、TCLAS 元素（仅 Add，
+/// ≥1）、TCLAS Processing（0 或 3）、TSPEC 元素（0 或 57）、Optional Subelements（GCR
+/// Request，0 或 1 个）。DMS Length = 1 + 其后全部字节数（9.4.2.88）；Remove 时 = 1 且
+/// 其后没有字段（11.24.16.2）。
+pub const DmsDescriptor = struct {
+    dmsid: u8,
+    request_type: DmsRequestType,
+    /// 已编码的 TCLAS 元素串（含 Element ID / Length 头）。
+    tclas_elements: []const []const u8 = &.{},
+    tclas_processing: ?TclasProcessing = null,
+    /// 已编码的 TSPEC 元素（含头）。
+    tspec: []const u8 = &.{},
+    gcr_request: ?GcrRequest = null,
+};
+
+pub fn buildDmsDescriptor(out: []u8, d: DmsDescriptor) BuildError!usize {
+    switch (d.request_type) {
+        .add => {
+            if (d.dmsid != 0) return error.BadValue; // 「DMSID field is set to 0 when Add」
+            if (d.tclas_elements.len == 0) return error.Empty;
+            // 「…two or more TCLAS elements present, the TCLAS Processing Element field
+            // contains one … Otherwise, … zero TCLAS Processing elements」（行 54844–54846）：
+            // 双向都查——1 个 TCLAS 带了 Processing 也拒。
+            if (d.tclas_elements.len >= 2 and d.tclas_processing == null) return error.MissingElement;
+            if (d.tclas_processing != null and d.tclas_elements.len < 2) return error.BadValue;
+        },
+        .change => {
+            if (d.dmsid == 0) return error.BadValue;
+            // 「When the Request Type field contains any value other than 'Add', the TCLAS
+            // Elements field contains zero TCLAS elements」。
+            if (d.tclas_elements.len != 0 or d.tclas_processing != null) return error.BadValue;
+        },
+        .remove => {
+            if (d.dmsid == 0) return error.BadValue;
+            // 「The TLCAS Elements, TCLAS Processing Element TSPEC Element and Optional
+            // Subelements fields shall not be included if the Request Type is 'Remove'」。
+            if (d.tclas_elements.len != 0 or d.tclas_processing != null or d.tspec.len != 0 or d.gcr_request != null)
+                return error.BadValue;
+        },
+    }
+    var payload: usize = 1; // Request Type
+    for (d.tclas_elements) |e| payload += e.len;
+    if (d.tclas_processing != null) payload += 3;
+    payload += d.tspec.len;
+    if (d.gcr_request != null) payload += 3; // 子元素头 2 + 体 1
+    // DMS Length = 1 + n，payload 就是 DMS Length（上面的初值 1 是 Request Type）；原文上限 253
+    //（9.4.2.88，行 54809–54810）。评审第二轮的 N1 成立：原先写成 252，比原文严一个八位组，与解析侧（dmslen ≤ 253）不一致，主代理更正。
+    if (payload > 253) return error.TooLong;
+    if (out.len < 2 + payload) return error.NoRoom;
+    out[0] = d.dmsid;
+    out[1] = @intCast(payload);
+    out[2] = @backingInt(d.request_type);
+    var pos: usize = 3;
+    for (d.tclas_elements) |e| {
+        @memcpy(out[pos..][0..e.len], e);
+        pos += e.len;
+    }
+    if (d.tclas_processing) |proc| {
+        out[pos] = tclas_processing_element_id;
+        out[pos + 1] = 1;
+        out[pos + 2] = @backingInt(proc);
+        pos += 3;
+    }
+    @memcpy(out[pos..][0..d.tspec.len], d.tspec);
+    pos += d.tspec.len;
+    if (d.gcr_request) |g| {
+        out[pos] = gcr_request_subelement_id;
+        out[pos + 1] = 1;
+        out[pos + 2] = g.word();
+        pos += 3;
+    }
+    return 2 + payload;
+}
+
+/// parseDmsDescriptor 的返回视图（切片指向输入）。
+pub const DmsDescriptorView = struct {
+    dmsid: u8,
+    request_type: DmsRequestType,
+    tclas_count: usize,
+    tclas_processing: ?TclasProcessing,
+    tspec: []const u8,
+    gcr_request: ?GcrRequest,
+};
+
+/// 解析一个 DMS Descriptor：`raw` = [DMSID][DMS Length][Request Type]…（含其后全部字节）。
+pub fn parseDmsDescriptor(raw: []const u8) Error!DmsDescriptorView {
+    if (raw.len < 3) return error.Truncated;
+    const dmslen: usize = raw[1];
+    if (dmslen < 1) return error.BadValue;
+    if (dmslen > 253) return error.TooLong; // 「maximum value of the DMS Length field is 253」（行 54810）
+    if (raw.len - 2 < dmslen) return error.Truncated;
+    if (raw[2] > 2) return error.ReservedValue; // Table 9-207：3–255 保留
+    const rt: DmsRequestType = @fromBackingInt(raw[2]);
+    const body = raw[3 .. 2 + dmslen];
+    var v = DmsDescriptorView{
+        .dmsid = raw[0],
+        .request_type = rt,
+        .tclas_count = 0,
+        .tclas_processing = null,
+        .tspec = &.{},
+        .gcr_request = null,
+    };
+    // Remove 的结构校验先走（11.24.16.2：DMS Length = 1 且其后没有字段）；否则 payload 里
+    // 的保留子元素 ID 会先触发 ReservedValue。
+    if (rt == .remove and (dmslen != 1 or v.dmsid == 0)) return error.BadValue;
+    var pos: usize = 0;
+    while (pos + 2 <= body.len and body[pos] == tclas_element_id) {
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        _ = try parseTclasElement(body[pos + 2 ..][0..len]);
+        v.tclas_count += 1;
+        pos += 2 + len;
+    }
+    if (pos + 3 <= body.len and body[pos] == tclas_processing_element_id) {
+        if (body[pos + 1] != 1) return error.BadLength;
+        v.tclas_processing = try parseTclasProcessing(body[pos + 2 ..][0..1]);
+        pos += 3;
+    }
+    if (pos + 2 <= body.len and body[pos] == tspec_element_id) {
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        v.tspec = body[pos .. pos + 2 + len];
+        pos += 2 + len;
+    }
+    var w = rrm.SubWalker.init(body[pos..]);
+    while (try w.next()) |s| {
+        switch (s.id) {
+            gcr_request_subelement_id => {
+                if (v.gcr_request != null) return error.BadValue; // zero or one
+                v.gcr_request = try parseGcrRequest(s.body);
+            },
+            221 => {},
+            else => return error.ReservedValue, // Table 9-208
+        }
+    }
+    switch (rt) {
+        .add => {
+            if (v.dmsid != 0) return error.BadValue;
+            if (v.tclas_count == 0) return error.Empty;
+            if (v.tclas_count >= 2 and v.tclas_processing == null) return error.MissingElement;
+            if (v.tclas_processing != null and v.tclas_count < 2) return error.BadValue;
+        },
+        .change => {
+            if (v.dmsid == 0) return error.BadValue;
+            if (v.tclas_count != 0 or v.tclas_processing != null) return error.BadValue;
+        },
+        .remove => {
+            if (dmslen != 1) return error.BadValue; // 「DMS Length field is set to 1」
+            if (v.dmsid == 0) return error.BadValue;
+        },
+    }
+    return v;
+}
+
+/// Figure 9-431（p.1011）：Element ID 99、Length、DMS Descriptor List（≥1 个 Descriptor）。
+pub const DmsRequestElement = struct {
+    descriptors: []const u8,
+    count: usize,
+};
+
+pub fn countDmsDescriptors(bytes: []const u8) Error!usize {
+    var n: usize = 0;
+    var rest = bytes;
+    while (rest.len != 0) {
+        if (rest.len < 3) return error.Truncated;
+        const dmslen: usize = rest[1];
+        if (dmslen < 1) return error.BadValue;
+        if (rest.len - 2 < dmslen) return error.Truncated;
+        _ = try parseDmsDescriptor(rest[0 .. 2 + dmslen]);
+        n += 1;
+        rest = rest[2 + dmslen ..];
+    }
+    return n;
+}
+
+pub fn parseDmsRequestElement(body: []const u8) Error!DmsRequestElement {
+    const n = try countDmsDescriptors(body);
+    if (n == 0) return error.Empty; // 「one or more DMS Descriptors」
+    return .{ .descriptors = body, .count = n };
+}
+
+pub fn buildDmsRequestElement(out: []u8, descriptors: []const []const u8) BuildError!usize {
+    if (descriptors.len == 0) return error.Empty;
+    var payload: usize = 0;
+    for (descriptors) |d| payload += d.len;
+    if (payload > 255 or out.len < 2 + payload) return error.NoRoom;
+    out[0] = dms_request_element_id;
+    out[1] = @intCast(payload);
+    var pos: usize = 2;
+    for (descriptors) |d| {
+        @memcpy(out[pos..][0..d.len], d);
+        pos += d.len;
+    }
+    return 2 + payload;
+}
+
+/// Figure 9-435（p.1014）：DMSID(1)、DMS Length(1)、Response Type(1)、Last Sequence
+/// Control(2)、TCLAS 元素、TCLAS Processing（0 或 3）、TSPEC（0 或 57）、Optional
+/// Subelements。DMS Length = 3 + n；Terminate 时 = 3。
+pub const DmsStatusView = struct {
+    dmsid: u8,
+    response_type: DmsResponseType,
+    /// 65535 = 不支持；Terminate 且支持时 B0–B3 = 0、B4–B15 = 序号；65534 = 终止前最后
+    /// 一帧不是组地址帧。
+    last_sequence_control: u16,
+    tclas_count: usize,
+    first_tclas_type: u8,
+    tclas_processing: ?TclasProcessing,
+    tspec: []const u8,
+    gcr_response: bool,
+};
+
+/// 解析一个 DMS Status 字段：`raw` = [DMSID][DMS Length][Response Type][LSC 2]…。
+pub fn parseDmsStatusField(raw: []const u8) Error!DmsStatusView {
+    if (raw.len < 5) return error.Truncated;
+    const dmslen: usize = raw[1];
+    if (dmslen < 3) return error.BadLength; // 「3 + n」
+    if (dmslen > 253) return error.TooLong; // 「maximum value … is 253」（行 54926）
+    if (raw.len - 2 < dmslen) return error.Truncated;
+    if (raw[2] > 3) return error.ReservedValue; // Table 9-211：4–255 保留
+    const rt: DmsResponseType = @fromBackingInt(raw[2]);
+    const body = raw[5 .. 2 + dmslen];
+    var v = DmsStatusView{
+        .dmsid = raw[0],
+        .response_type = rt,
+        .last_sequence_control = le16(raw[3..5]),
+        .tclas_count = 0,
+        .first_tclas_type = 0,
+        .tclas_processing = null,
+        .tspec = &.{},
+        .gcr_response = false,
+    };
+    var pos: usize = 0;
+    while (pos + 2 <= body.len and body[pos] == tclas_element_id) {
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        const t = try parseTclasElement(body[pos + 2 ..][0..len]);
+        if (v.tclas_count == 0) v.first_tclas_type = @backingInt(t.classifier.kind);
+        v.tclas_count += 1;
+        pos += 2 + len;
+    }
+    if (pos + 3 <= body.len and body[pos] == tclas_processing_element_id) {
+        if (body[pos + 1] != 1) return error.BadLength;
+        v.tclas_processing = try parseTclasProcessing(body[pos + 2 ..][0..1]);
+        pos += 3;
+    }
+    if (pos + 2 <= body.len and body[pos] == tspec_element_id) {
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        v.tspec = body[pos .. pos + 2 + len];
+        pos += 2 + len;
+    }
+    var w = rrm.SubWalker.init(body[pos..]);
+    while (try w.next()) |s| {
+        switch (s.id) {
+            gcr_response_subelement_id => {
+                if (v.gcr_response) return error.BadValue; // zero or one
+                // GCR 是本组件的非目标（11.24.16.3）：只认到这个子元素并校验前面 2 个
+                // 半八位组，Concealment Address / Schedule Element 留给调用方。
+                if (s.body.len < 1) return error.Truncated;
+                const retrans: u4 = @truncate(s.body[0]);
+                const delivery: u4 = @truncate(s.body[0] >> 4);
+                if (retrans > 3 or delivery > 2) return error.ReservedValue;
+                v.gcr_response = true;
+            },
+            221 => {},
+            else => return error.ReservedValue, // Table 9-212
+        }
+    }
+    switch (rt) {
+        .accept, .denied => {
+            // Accept/Denied 必须带 ≥1 个 TCLAS（带 GCR Response 时第一个还要是类型 0）。
+            if (v.tclas_count == 0) return error.Empty;
+            if (v.gcr_response) {
+                if (v.first_tclas_type != 0) return error.BadValue;
+                if (v.tspec.len == 0) return error.MissingElement;
+            }
+            // 「Terminate or when there is only one TCLAS element → 0 个 TCLAS Processing」。
+            if (v.tclas_count == 1 and v.tclas_processing != null) return error.BadValue;
+            // 11.24.16.2：Accept → 非 0 DMSID；Deny → DMSID = 0。
+            if (rt == .accept and v.dmsid == 0) return error.BadValue;
+            if (rt == .denied and v.dmsid != 0) return error.BadValue;
+        },
+        .terminate => {
+            if (dmslen != 3) return error.BadLength; // 「Terminate 时 = 3」→ 后面没有字段
+            // supported 时 B0–B3 = 0；65535 = 不支持；65534 = 上一帧不是组地址帧。
+            if (v.last_sequence_control != 65535 and v.last_sequence_control != 65534 and
+                (v.last_sequence_control & 0x000F) != 0) return error.BadValue;
+        },
+        .gcr_advertise => {
+            if (v.gcr_response) {
+                if (v.tclas_count == 0) return error.Empty;
+                if (v.first_tclas_type != 0) return error.BadValue;
+                if (v.tspec.len == 0) return error.MissingElement;
+            }
+        },
+    }
+    return v;
+}
+
+/// Figure 9-434（p.1014）：Element ID 100、Length、DMS Status List（≥1 个 Status 字段）。
+pub const DmsResponseElement = struct {
+    statuses: []const u8,
+    count: usize,
+};
+
+pub fn countDmsStatusFields(bytes: []const u8) Error!usize {
+    var n: usize = 0;
+    var rest = bytes;
+    while (rest.len != 0) {
+        if (rest.len < 5) return error.Truncated;
+        const dmslen: usize = rest[1];
+        if (dmslen < 3) return error.BadLength;
+        if (rest.len - 2 < dmslen) return error.Truncated;
+        _ = try parseDmsStatusField(rest[0 .. 2 + dmslen]);
+        n += 1;
+        rest = rest[2 + dmslen ..];
+    }
+    return n;
+}
+
+pub fn parseDmsResponseElement(body: []const u8) Error!DmsResponseElement {
+    const n = try countDmsStatusFields(body);
+    if (n == 0) return error.Empty;
+    return .{ .statuses = body, .count = n };
+}
+
+pub fn buildDmsResponseElement(out: []u8, statuses: []const []const u8) BuildError!usize {
+    if (statuses.len == 0) return error.Empty;
+    var payload: usize = 0;
+    for (statuses) |s| payload += s.len;
+    if (payload > 255 or out.len < 2 + payload) return error.NoRoom;
+    out[0] = dms_response_element_id;
+    out[1] = @intCast(payload);
+    var pos: usize = 2;
+    for (statuses) |s| {
+        @memcpy(out[pos..][0..s.len], s);
+        pos += s.len;
+    }
+    return 2 + payload;
+}
+
+/// Figure 9-724 / 9-725（p.1243）：Cat、WNM Action(23/24)、Dialog Token、一个或多个 DMS
+/// Request / Response 元素（9.6.14.26「contains one or more DMS Request elements」、
+/// 9.6.14.27「contains one or more DMS Response elements」——与 FMS 的「one element」不同）。
+/// 请求的 Dialog Token 非 0；应答自主发送（终止 / GCR 广告）时为 0。
+pub const DmsRequestFrame = struct {
+    dialog_token: u8,
+    /// 元素串（指向输入缓冲）。
+    elements: []const u8,
+    count: usize,
+};
+
+fn walkDmsElements(body: []const u8, comptime request: bool) Error!usize {
+    var pos: usize = 0;
+    var n: usize = 0;
+    while (pos < body.len) {
+        if (body.len - pos < 2) return error.Truncated;
+        const want_id = if (request) dms_request_element_id else dms_response_element_id;
+        if (body[pos] != want_id) return error.MissingElement;
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        const el = body[pos + 2 ..][0..len];
+        if (request) {
+            _ = try parseDmsRequestElement(el);
+        } else {
+            _ = try parseDmsResponseElement(el);
+        }
+        n += 1;
+        pos += 2 + len;
+    }
+    if (n == 0) return error.Empty;
+    return n;
+}
+
+pub fn parseDmsRequestFrame(body: []const u8) Error!DmsRequestFrame {
+    if (body.len == 3) return error.Empty; // 一个元素都没有
+    if (body.len < 5) return error.Truncated; // 头 3 + 元素头 2
+    try checkHeader(body, .dms_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    const n = try walkDmsElements(body[3..], true);
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = n };
+}
+
+pub fn buildDmsRequestFrame(out: []u8, dialog_token: u8, elements: []const u8) BuildError!usize {
+    if (dialog_token == 0) return error.ZeroDialogToken;
+    if (elements.len == 0) return error.Empty;
+    const total = 3 + elements.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.dms_request);
+    out[2] = dialog_token;
+    @memcpy(out[3..total], elements);
+    return total;
+}
+
+pub const DmsResponseFrame = struct {
+    dialog_token: u8,
+    elements: []const u8,
+    count: usize,
+};
+
+pub fn parseDmsResponseFrame(body: []const u8) Error!DmsResponseFrame {
+    if (body.len == 3) return error.Empty; // 一个元素都没有
+    if (body.len < 5) return error.Truncated;
+    try checkHeader(body, .dms_response);
+    const n = try walkDmsElements(body[3..], false);
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = n };
+}
+
+pub fn buildDmsResponseFrame(out: []u8, dialog_token: u8, elements: []const u8) BuildError!usize {
+    if (elements.len == 0) return error.Empty;
+    const total = 3 + elements.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.dms_response);
+    out[2] = dialog_token;
+    @memcpy(out[3..total], elements);
+    return total;
+}
+
+/// STA 侧的 DMS 流账本（11.24.16.2；有界表、无堆）。Accept → 记 DMSID（非 0）；Terminate
+/// → 清除；Denied → 不记。
+pub const max_dms_streams = 4;
+
+pub const DmsSta = struct {
+    /// 0 = 空槽；AP 保证 DMSID 非 0（Accept 时）。
+    dmsids: [max_dms_streams]u8 = @splat(0),
+
+    pub fn active(self: *const DmsSta, dmsid: u8) bool {
+        if (dmsid == 0) return false;
+        for (self.dmsids) |d| {
+            if (d == dmsid) return true;
+        }
+        return false;
+    }
+
+    pub fn applyResponse(self: *DmsSta, st: *const DmsStatusView) Error!void {
+        switch (st.response_type) {
+            .accept => {
+                if (st.dmsid == 0) return error.BadValue;
+                if (self.active(st.dmsid)) return;
+                for (&self.dmsids) |*d| {
+                    if (d.* == 0) {
+                        d.* = st.dmsid;
+                        return;
+                    }
+                }
+                return error.TooMany;
+            },
+            .terminate => {
+                for (&self.dmsids) |*d| {
+                    if (d.* == st.dmsid) d.* = 0;
+                }
+            },
+            .denied, .gcr_advertise => {},
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
+// 19) Collocated Interference（9.4.2.85；9.6.14.13 / 9.6.14.14；11.24.9）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77：Collocated Interference Report 元素 ID 96。
+pub const collocated_interference_report_element_id: u8 = 96;
+
+/// Figure 9-709（p.1235）：Request Info(1) = B0–B1 Automatic Report Enabled +
+/// B2–B7 Report Timeout（200 TU 单位）。auto：0 = 取消之前的请求（此时 Report Timeout
+/// 保留）；1 = 变化时报；2 = 周期报；3 = 周期报或变化时报。
+pub const RequestInfo = packed struct(u8) {
+    automatic_report: u2 = 0,
+    report_timeout: u6 = 0,
+
+    pub fn word(self: RequestInfo) u8 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u8) RequestInfo {
+        return .{ .automatic_report = @as(u2, @truncate(w)), .report_timeout = @as(u6, @truncate(w >> 2)) };
+    }
+};
+
+/// Figure 9-708（p.1235）：Cat、WNM Action(11)、Dialog Token（非 0）、Request Info(1)。
+pub const CiRequestFrame = struct {
+    dialog_token: u8,
+    info: RequestInfo,
+};
+
+pub fn parseCollocatedInterferenceRequestFrame(body: []const u8) Error!CiRequestFrame {
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .collocated_interference_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    const info = RequestInfo.fromWord(body[3]);
+    // auto = 0 时 Report Timeout 是保留子字段（9.6.14.13，行 65427）；9.2.4.1（行 36052）：
+    // 保留子字段接收时忽略——不拒帧（构造侧仍拒，发送方置 0）。
+    return .{ .dialog_token = body[2], .info = info };
+}
+
+pub fn buildCollocatedInterferenceRequestFrame(out: []u8, dialog_token: u8, info: RequestInfo) BuildError!usize {
+    if (dialog_token == 0) return error.ZeroDialogToken;
+    if (info.automatic_report == 0 and info.report_timeout != 0) return error.ReservedField;
+    if (out.len < 4) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.collocated_interference_request);
+    out[2] = dialog_token;
+    out[3] = info.word();
+    return 4;
+}
+
+/// Figure 9-427（p.1008）的元素体（Element ID / Length 之后，定长 21 八位组）：Report
+/// Period(1，200 TU 单位)、Interference Level(1，补码 i8，dBm)、Interference Level
+/// Accuracy / Interference Index(1)、Interference Interval(4，µs)、Interference Burst
+/// Length(4，µs)、Interference Start Time / Duty Cycle(4)、Interference Center
+/// Frequency(4，5 kHz 单位)、Interference Bandwidth(2，5 kHz 单位)。
+/// Figure 9-428：B0–B3 Expected Accuracy（0–14 dB，15 = 未知）、B4–B7 Interference Index
+/// （0 = 无共址干扰）。
+pub const CiReportElement = struct {
+    report_period: u8,
+    level_dbm: i8,
+    expected_accuracy: u4,
+    index: u4,
+    interval_us: u32,
+    burst_us: u32,
+    /// 周期干扰：TSF B0–B31；可变 / 无干扰：平均占空比或 0。
+    start_or_duty: u32,
+    /// 5 kHz 单位；2.4 GHz 本信道 = 482 400，u16 装不下（Figure 9-427 的 Octets 4）。
+    center_freq_khz5: u32,
+    bandwidth_khz5: u16,
+};
+
+/// Figure 9-427（p.1008，行 54696）：元素体 21 八位组 = Period(1) + Level(1) + Acc/Idx(1) +
+/// Interval(4) + Burst(4) + Start/Duty(4) + Center Frequency(4) + Bandwidth(2)。
+pub fn parseCiReportElement(body: []const u8) Error!CiReportElement {
+    if (body.len < 21) return error.Truncated;
+    if (body.len != 21) return error.BadLength;
+    return .{
+        .report_period = body[0],
+        .level_dbm = @bitCast(body[1]),
+        .expected_accuracy = @as(u4, @truncate(body[2])),
+        .index = @as(u4, @truncate(body[2] >> 4)),
+        .interval_us = le32(body[3..7]),
+        .burst_us = le32(body[7..11]),
+        .start_or_duty = le32(body[11..15]),
+        .center_freq_khz5 = le32(body[15..19]),
+        .bandwidth_khz5 = le16(body[19..21]),
+    };
+}
+
+/// 9.4.2.85 的取值端点。
+pub const CiLimits = struct {
+    pub const level_unknown: i8 = 127;
+    pub const level_cap_high: i8 = 126;
+    pub const level_none: i8 = -128;
+    pub const level_cap_low: i8 = -127;
+    pub const interval_variable: u32 = 0xFFFF_FFFF;
+    pub const interval_cap: u32 = 0xFFFF_FFFE;
+    pub const bandwidth_unknown: u16 = 65535;
+    pub const bandwidth_cap: u16 = 65534;
+};
+
+/// STA 自身的共址射频状态（与仓里共存 glue 同一个场景的输入模型）：是否监测到共址干扰
+/// 及其测量值。周期 / 带宽 / 频率的「未知」用单独的布尔位表达。
+pub const CoexInterferenceState = struct {
+    present: bool,
+    /// 测得的最大共址干扰功率（dBm；模块负责按端点封顶）。
+    level_dbm: i8 = 0,
+    /// 0–14 dB；15 = 未知。
+    expected_accuracy: u4 = 15,
+    /// 每类干扰源唯一；0 = 无。
+    index: u4 = 0,
+    interval_us: u32 = 0,
+    interval_variable: bool = false,
+    burst_us: u32 = 0,
+    burst_variable: bool = false,
+    /// 周期干扰的起始 TSF（B0–B31）；可变间隔 / 突发时当占空比用。
+    start_or_duty: u32 = 0,
+    /// 5 kHz 单位；0 = 未知（此时报本信道）。
+    center_freq_khz5: u32 = 0,
+    /// 本信道中心频率（5 kHz 单位；center_freq 未知时用它）。
+    operating_channel_khz5: u32 = 0,
+    /// –3 dB 带宽（5 kHz 单位）；unknown = true 时报 65535。
+    bandwidth_khz5: u16 = 0,
+    bandwidth_unknown: bool = false,
+};
+
+/// 把 STA 自身的共址射频状态编码成一条 Collocated Interference Report 元素；9.4.2.85 的
+/// 全部端点封顶规则都在这里。`report_period`：周期上报的周期（200 TU 单位；0 = 非周期、
+/// 只在变化时报，11.24.9）。
+pub fn buildCiReportElement(out: []u8, state: *const CoexInterferenceState, report_period: u8) BuildError!usize {
+    const total = 2 + 21; // Figure 9-427：元素体 21 八位组
+    if (out.len < total) return error.NoRoom;
+    out[0] = collocated_interference_report_element_id;
+    out[1] = 21;
+    out[2] = report_period;
+    if (!state.present) {
+        // 无共址干扰：电平 −128、index 0、其余字段全 0（9.4.2.85 各字段的「If no
+        // collocated interference is present」句）。
+        out[3] = @bitCast(CiLimits.level_none);
+        out[4] = 0x0F; // accuracy = 15（未知）、index = 0
+        w32(out[5..9], 0);
+        w32(out[9..13], 0);
+        w32(out[13..17], 0);
+        w32(out[17..21], 0);
+        w16(out[21..23], 0);
+        return total;
+    }
+    // 电平（行 54672–54675）：「unknown → +127」与「≥126 dBm → +126」是两个可区分的编码，
+    // 所以 +127（未知哨兵）放行、不被 +126 封顶吞掉；< −127 封到 −127。
+    const level: i8 = if (state.level_dbm == CiLimits.level_unknown) CiLimits.level_unknown else if (state.level_dbm > CiLimits.level_cap_high) CiLimits.level_cap_high else if (state.level_dbm < CiLimits.level_cap_low) CiLimits.level_cap_low else state.level_dbm;
+    out[3] = @bitCast(level);
+    out[4] = @as(u8, state.expected_accuracy) | (@as(u8, state.index) << 4);
+    const interval: u32 = if (state.interval_variable) CiLimits.interval_variable else if (state.interval_us >= CiLimits.interval_cap) CiLimits.interval_cap else state.interval_us;
+    w32(out[5..9], interval);
+    const burst: u32 = if (state.burst_variable) CiLimits.interval_variable else if (state.burst_us >= CiLimits.interval_cap) CiLimits.interval_cap else state.burst_us;
+    w32(out[9..13], burst);
+    w32(out[13..17], state.start_or_duty);
+    const center: u32 = if (state.center_freq_khz5 != 0) state.center_freq_khz5 else state.operating_channel_khz5;
+    w32(out[17..21], center);
+    const bw: u16 = if (state.bandwidth_unknown) CiLimits.bandwidth_unknown else if (state.bandwidth_khz5 >= CiLimits.bandwidth_cap) CiLimits.bandwidth_cap else state.bandwidth_khz5;
+    w16(out[21..23], bw);
+    return total;
+}
+
+/// 9.4.2.85 的平均占空比（印刷页 1009 原式，PDF 原件核对）：Average duty cycle =
+/// ⌊(2^32 − 2) × T_B / T_I + 0.5⌋（T_B = 平均干扰突发长度、T_I = 平均干扰间隔）。
+/// TI = 0 不可用，返回 0。
+pub fn ciDutyCycle(burst_us: u32, interval_us: u32) u64 {
+    if (interval_us == 0) return 0;
+    const scale: u64 = 0xFFFF_FFFE;
+    return (scale * burst_us + interval_us / 2) / interval_us;
+}
+
+/// Figure 9-710（p.1236）：Cat、WNM Action(12)、Dialog Token（回显非 0）、≥1 条 Report
+/// 元素（ID 96）。
+pub const CiReportFrame = struct {
+    dialog_token: u8,
+    elements: []const u8,
+    count: usize,
+};
+
+pub fn parseCollocatedInterferenceReportFrame(body: []const u8) Error!CiReportFrame {
+    if (body.len < 6) return error.Truncated;
+    try checkHeader(body, .collocated_interference_report);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    var pos: usize = 3;
+    var n: usize = 0;
+    while (pos < body.len) {
+        if (body.len - pos < 2) return error.Truncated;
+        if (body[pos] != collocated_interference_report_element_id) return error.MissingElement;
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        _ = try parseCiReportElement(body[pos + 2 ..][0..len]);
+        n += 1;
+        pos += 2 + len;
+    }
+    if (n == 0) return error.Empty; // 「one or more Collocated Interference Report elements」
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = n };
+}
+
+pub fn buildCollocatedInterferenceReportFrame(out: []u8, dialog_token: u8, elements: []const []const u8) BuildError!usize {
+    if (dialog_token == 0) return error.ZeroDialogToken;
+    if (elements.len == 0) return error.Empty;
+    var total: usize = 3;
+    for (elements) |e| total += e.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.collocated_interference_report);
+    out[2] = dialog_token;
+    var pos: usize = 3;
+    for (elements) |e| {
+        @memcpy(out[pos..][0..e.len], e);
+        pos += e.len;
+    }
+    return total;
+}
+
+/// 11.24.9（p.1804）：上报时机判决。auto = 1 → 变化时（且距上次 ≥ timeout×200 TU）；
+/// 2 → 周期（report_period×200 TU，同样要满足 timeout）；3 → 两者；0 → 取消（不再报）。
+/// `report_period` 是上报方在自己元素里声明的周期（0 = 非周期）；`elapsed_tu` 距上次上报。
+pub const CiReportTrigger = enum { none, change, periodic };
+
+pub fn ciReportTrigger(automatic_report: u2, changed: bool, elapsed_tu: u32, report_period: u8, report_timeout: u6) CiReportTrigger {
+    if (elapsed_tu < @as(u32, report_timeout) * 200) return .none;
+    const periodic_due = report_period != 0 and elapsed_tu >= @as(u32, report_period) * 200;
+    return switch (automatic_report) {
+        0 => .none,
+        1 => if (changed) .change else .none,
+        2 => if (periodic_due) .periodic else .none,
+        3 => if (changed) .change else if (periodic_due) .periodic else .none,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// 20) Channel Usage（9.4.2.86；9.6.14.24 / 9.6.14.25；11.24.15）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77：Channel Usage 元素 ID 97。
+pub const channel_usage_element_id: u8 = 97;
+
+/// Table 9-206（p.1010）：0 = 非基础设施 802.11 网络；1 = 离信道 TDLS 直连链路；2–255 保留。
+pub const UsageMode = enum(u8) { noninfrastructure = 0, off_channel_tdls = 1 };
+
+/// Figure 9-429（p.1010）：Usage Mode(1) + Channel Entry（Operating Class / Channel 号对，
+/// 9.4.1.22；零或多对）。
+pub const ChannelUsageElement = struct {
+    usage_mode: UsageMode,
+    channel_entry: []const u8,
+};
+
+pub fn parseChannelUsageElement(body: []const u8) Error!ChannelUsageElement {
+    if (body.len < 1) return error.Truncated;
+    if (body[0] > 1) return error.ReservedValue; // Table 9-206：2–255 保留
+    const mode: UsageMode = @fromBackingInt(body[0]);
+    const entry = body[1..];
+    if (entry.len % 2 != 0) return error.BadLength; // 必须成对
+    return .{ .usage_mode = mode, .channel_entry = entry };
+}
+
+pub fn buildChannelUsageElement(out: []u8, e: ChannelUsageElement) BuildError!usize {
+    if (e.channel_entry.len % 2 != 0) return error.BadLength;
+    if (e.channel_entry.len > 255) return error.TooLong;
+    const total = 2 + 1 + e.channel_entry.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = channel_usage_element_id;
+    out[1] = @intCast(1 + e.channel_entry.len);
+    out[2] = @backingInt(e.usage_mode);
+    @memcpy(out[3..total], e.channel_entry);
+    return total;
+}
+
+/// Figure 9-722（p.1242）：Cat、WNM Action(21)、Dialog Token（非 0）、≥1 条 Channel Usage
+/// 元素（在前）、Supported Operating Classes 元素（9.4.2.54，在后）。
+pub const ChannelUsageRequestFrame = struct {
+    dialog_token: u8,
+    usage_elements: []const u8,
+    operating_classes: []const u8,
+};
+
+pub fn parseChannelUsageRequestFrame(body: []const u8) Error!ChannelUsageRequestFrame {
+    if (body.len == 3) return error.Empty; // 没有 CU 元素也没有 SOC
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .channel_usage_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    var pos: usize = 3;
+    var n_usage: usize = 0;
+    var soc_start: ?usize = null;
+    while (pos < body.len) {
+        if (body.len - pos < 2) return error.Truncated;
+        const id = body[pos];
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        switch (id) {
+            channel_usage_element_id => {
+                if (soc_start != null) return error.BadValue; // 元素顺序：Usage 全部在前
+                _ = try parseChannelUsageElement(body[pos + 2 ..][0..len]);
+                n_usage += 1;
+            },
+            @backingInt(ie.ElementId.supported_operating_classes) => {
+                if (soc_start == null) soc_start = pos;
+            },
+            else => return error.BadValue,
+        }
+        pos += 2 + len;
+    }
+    if (n_usage == 0) return error.Empty;
+    const soc = soc_start orelse return error.MissingElement;
+    return .{ .dialog_token = body[2], .usage_elements = body[3..soc], .operating_classes = body[soc..] };
+}
+
+pub const ChannelUsageRequestParams = struct {
+    dialog_token: u8,
+    /// 完整元素（含 Element ID / Length 头）。
+    usage_elements: []const []const u8,
+    /// 完整的 Supported Operating Classes 元素。
+    operating_classes: []const u8,
+};
+
+pub fn buildChannelUsageRequestFrame(out: []u8, p: ChannelUsageRequestParams) BuildError!usize {
+    if (p.dialog_token == 0) return error.ZeroDialogToken;
+    if (p.usage_elements.len == 0) return error.Empty;
+    if (p.operating_classes.len < 2 or p.operating_classes[0] != @backingInt(ie.ElementId.supported_operating_classes))
+        return error.BadValue;
+    var total: usize = 3;
+    for (p.usage_elements) |e| total += e.len;
+    total += p.operating_classes.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.channel_usage_request);
+    out[2] = p.dialog_token;
+    var pos: usize = 3;
+    for (p.usage_elements) |e| {
+        @memcpy(out[pos..][0..e.len], e);
+        pos += e.len;
+    }
+    @memcpy(out[pos..][0..p.operating_classes.len], p.operating_classes);
+    pos += p.operating_classes.len;
+    return pos;
+}
+
+/// Figure 9-723（p.1242）：Cat、WNM Action(22)、Dialog Token（自主 / 组播发送时 0）、
+/// Channel Usage 元素（0 或多个）、Country String(3)、可选 Power Constraint /
+/// EDCA Parameter Set / Transmit Power Envelope 元素。
+pub const ChannelUsageResponseFrame = struct {
+    dialog_token: u8,
+    usage_elements: []const u8,
+    country_string: [3]u8,
+    optional_elements: []const u8,
+};
+
+pub fn parseChannelUsageResponseFrame(body: []const u8) Error!ChannelUsageResponseFrame {
+    if (body.len < 6) return error.Truncated; // 头 3 + country 3（0 条 Usage 元素）
+    try checkHeader(body, .channel_usage_response);
+    var pos: usize = 3;
+    const usage_start = pos;
+    while (pos + 2 <= body.len and body[pos] == channel_usage_element_id) {
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        _ = try parseChannelUsageElement(body[pos + 2 ..][0..len]);
+        pos += 2 + len;
+    }
+    if (body.len - pos < 3) return error.Truncated;
+    const country: [3]u8 = body[pos..][0..3].*;
+    pos += 3;
+    // 可选元素：结构按 9.4.2.1 走一遍（内容不解释；Power Constraint / EDCA / TPE 的
+    // 具体处理不在本组件）。
+    var rest = body[pos..];
+    while (rest.len != 0) {
+        if (rest.len < 2) return error.Truncated;
+        const len: usize = rest[1];
+        if (rest.len - 2 < len) return error.Truncated;
+        rest = rest[2 + len ..];
+    }
+    return .{
+        .dialog_token = body[2],
+        .usage_elements = body[usage_start..(usage_start + (pos - 3 - usage_start))],
+        .country_string = country,
+        .optional_elements = body[pos..],
+    };
+}
+
+pub const ChannelUsageResponseParams = struct {
+    dialog_token: u8,
+    usage_elements: []const []const u8,
+    country_string: [3]u8,
+    /// 可选元素串（Power Constraint / EDCA Parameter Set / Transmit Power Envelope，
+    /// 已编码；可为空）。
+    optional_elements: []const u8 = &.{},
+};
+
+pub fn buildChannelUsageResponseFrame(out: []u8, p: ChannelUsageResponseParams) BuildError!usize {
+    var total: usize = 3 + 3;
+    for (p.usage_elements) |e| total += e.len;
+    total += p.optional_elements.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.channel_usage_response);
+    out[2] = p.dialog_token;
+    var pos: usize = 3;
+    for (p.usage_elements) |e| {
+        @memcpy(out[pos..][0..e.len], e);
+        pos += e.len;
+    }
+    @memcpy(out[pos..][0..3], &p.country_string);
+    pos += 3;
+    @memcpy(out[pos..][0..p.optional_elements.len], p.optional_elements);
+    pos += p.optional_elements.len;
+    return pos;
+}
+
+// ---------------------------------------------------------------------------
+// 21) WNM Notification（9.6.14.29 / 9.6.14.30；Table 9-360 / 9-361 / 9-362；11.24.17）
+// ---------------------------------------------------------------------------
+
+/// Table 9-360（p.1244）：0 = Firmware Update Notification；221 = Vendor Specific；
+/// 1–220、222–255 保留。
+pub const notification_type_firmware_update: u8 = 0;
+pub const notification_type_vendor_specific: u8 = 221;
+
+/// Figure 9-727（p.1244）：Cat、WNM Action(26)、Dialog Token（非 0）、Type(1)、Optional
+/// Subelements（9.4.3 格式；Table 9-361：0 AP Descriptor、1 Firmware Version—Current、
+/// 2 Firmware Version—New、3–255 保留）。Type = 0 时应带 AP Descriptor 与两个 Firmware
+/// Version 子元素（内容不在本组件解释）。
+pub const NotificationRequest = struct {
+    dialog_token: u8,
+    notification_type: u8,
+    subelements: []const u8,
+};
+
+pub fn parseWnmNotificationRequest(body: []const u8) Error!NotificationRequest {
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .notification_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    const t = body[3];
+    if (t != notification_type_firmware_update and t != notification_type_vendor_specific)
+        return error.ReservedValue; // Table 9-360
+    var w = rrm.SubWalker.init(body[4..]);
+    var seen: u8 = 0;
+    while (try w.next()) |s| {
+        // Table 9-361（行 65848–65852）只为 Type 0 定义 0/1/2（3–255 保留）；Type 221
+        // 的子元素由厂商定义，不在此约束。
+        if (t == notification_type_firmware_update and s.id > 2) return error.ReservedValue;
+        if (t == notification_type_firmware_update) seen |= @as(u8, 1) << @intCast(s.id);
+    }
+    // 「When the Type field is 0, the AP Descriptor, Firmware Version—Current, and Firmware
+    // Version—New optional subelements are included」（9.6.14.29，行 65817–65819）。
+    if (t == notification_type_firmware_update and seen != 0b0111) return error.MissingElement;
+    return .{ .dialog_token = body[2], .notification_type = t, .subelements = body[4..] };
+}
+
+pub fn buildWnmNotificationRequest(out: []u8, dialog_token: u8, notification_type: u8, subelements: []const u8) BuildError!usize {
+    if (dialog_token == 0) return error.ZeroDialogToken;
+    if (notification_type != notification_type_firmware_update and notification_type != notification_type_vendor_specific)
+        return error.ReservedValue;
+    // Type 0 必带 AP Descriptor(0)/FW Current(1)/FW New(2)（9.6.14.29，行 65817–65819）。
+    if (notification_type == notification_type_firmware_update) {
+        var seen: u8 = 0;
+        var w = rrm.SubWalker.init(subelements);
+        while (w.next() catch return error.Truncated) |s| {
+            if (s.id > 2) return error.ReservedValue;
+            seen |= @as(u8, 1) << @intCast(s.id);
+        }
+        if (seen != 0b0111) return error.MissingElement;
+    }
+    const total = 4 + subelements.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.notification_request);
+    out[2] = dialog_token;
+    out[3] = notification_type;
+    @memcpy(out[4..total], subelements);
+    return total;
+}
+
+/// Figure 9-728（p.1245）：Cat、WNM Action(27)、Dialog Token（回显非 0）、Response
+/// Status(1)。Table 9-362：0 = Notification Acknowledged；1–255 保留。
+pub const WnmNotificationResponse = struct {
+    dialog_token: u8,
+    /// 恒为 0（其余值保留）。
+    status: u8,
+};
+
+pub fn parseWnmNotificationResponse(body: []const u8) Error!WnmNotificationResponse {
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .notification_response);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    if (body[3] != 0) return error.ReservedValue; // Table 9-362
+    return .{ .dialog_token = body[2], .status = body[3] };
+}
+
+pub fn buildWnmNotificationResponse(out: []u8, r: WnmNotificationResponse) BuildError!usize {
+    if (r.dialog_token == 0) return error.ZeroDialogToken;
+    if (r.status != 0) return error.ReservedValue;
+    if (out.len < 4) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.notification_response);
+    out[2] = r.dialog_token;
+    out[3] = r.status;
+    return 4;
+}
+
+/// 11.24.17（p.1824）：收到 Type = 0 的 Request → 必须回 Response Status = 0；Type = 221
+/// 是厂商自定义（响应规则在厂商手里）；保留类型在解析处已拒。
+pub const NotificationAction = enum {
+    /// 回 Response Status = 0。
+    acknowledge,
+    /// 厂商自定义。
+    vendor_defined,
+};
+
+pub fn notificationResponseRule(notification_type: u8) ?NotificationAction {
+    return switch (notification_type) {
+        notification_type_firmware_update => .acknowledge,
+        notification_type_vendor_specific => .vendor_defined,
+        else => null,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// 22) Event / Diagnostic 容器（9.4.2.67–9.4.2.70；9.6.14.2–9.6.14.5；11.24.2 / 11.24.3）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77：Event Request 78、Event Report 79、Diagnostic Request 80、Diagnostic
+/// Report 81。
+pub const event_request_element_id: u8 = 78;
+pub const event_report_element_id: u8 = 79;
+pub const diagnostic_request_element_id: u8 = 80;
+pub const diagnostic_report_element_id: u8 = 81;
+
+/// Table 9-171（p.961）：Event / Diagnostic 类型。保留值拒收（解析处）。
+pub const EventType = struct {
+    pub const transition: u8 = 0;
+    pub const rsna: u8 = 1;
+    pub const peer_to_peer: u8 = 2;
+    pub const wnm_log: u8 = 3;
+    pub const vendor_specific: u8 = 221;
+
+    pub fn defined(t: u8) bool {
+        return t == transition or t == rsna or t == peer_to_peer or t == wnm_log or t == vendor_specific;
+    }
+};
+
+/// Table 9-178（p.973）：Diagnostic 类型 0–4 与 221 有定义（与 Table 9-171 不同：类型 4 在
+/// 这里是 IEEE 802.1X Authentication Diagnostic）；5–220、222–255 保留。
+pub const DiagType = struct {
+    pub const vendor_specific: u8 = 221;
+
+    pub fn defined(t: u8) bool {
+        return t <= 4 or t == vendor_specific;
+    }
+};
+
+/// Table 9-175（p.968）：Event Report Status；5–255 保留。
+pub const EventReportStatus = struct {
+    pub const successful: u8 = 0;
+    pub const request_failed: u8 = 1;
+    pub const request_refused: u8 = 2;
+    pub const request_incapable: u8 = 3;
+    pub const detected_frequent_transition: u8 = 4;
+};
+
+/// Figure 9-351（p.961）：Event Token(1，非 0)、Event Type(1)、Event Response Limit(1，
+/// 0 = 不限)、Event Request 字段（子元素串；请求 WNM log（type 3）时不存在）。
+pub const EventRequestElement = struct {
+    event_token: u8,
+    event_type: u8,
+    response_limit: u8,
+    /// 子元素串（各事件类型的子元素内容不在本组件解释）。
+    request: []const u8,
+};
+
+pub fn parseEventRequestElement(body: []const u8) Error!EventRequestElement {
+    if (body.len < 3) return error.Truncated;
+    if (body[0] == 0) return error.BadValue; // 「nonzero number that is unique」
+    if (!EventType.defined(body[1])) return error.ReservedValue; // Table 9-171
+    if (body[1] == EventType.wnm_log and body.len != 3) return error.BadValue;
+    return .{ .event_token = body[0], .event_type = body[1], .response_limit = body[2], .request = body[3..] };
+}
+
+pub fn buildEventRequestElement(out: []u8, e: EventRequestElement) BuildError!usize {
+    if (e.event_token == 0) return error.BadValue;
+    if (!EventType.defined(e.event_type)) return error.ReservedValue;
+    if (e.event_type == EventType.wnm_log and e.request.len != 0) return error.BadValue;
+    const body = 3 + e.request.len;
+    const total = 2 + body;
+    if (body > 255 or out.len < total) return error.NoRoom;
+    out[0] = event_request_element_id;
+    out[1] = @intCast(body);
+    out[2] = e.event_token;
+    out[3] = e.event_type;
+    out[4] = e.response_limit;
+    @memcpy(out[5..total], e.request);
+    return total;
+}
+
+/// Figure 9-365（p.968）：Event Token(1，自主上报时 0)、Event Type(1)、Event Report
+/// Status(1)；status = 0 时带 Event TSF(8)、UTC Offset(10)、Event Time Error(5)、
+/// Event Report 字段；status ≠ 0 时只带前三个字段（「present only when … is 0」）。
+pub const EventReportElement = struct {
+    event_token: u8,
+    event_type: u8,
+    status: u8,
+    tsf: u64 = 0,
+    utc_offset: [10]u8 = @splat(0),
+    time_error: [5]u8 = @splat(0),
+    report: []const u8 = &.{},
+};
+
+pub fn parseEventReportElement(body: []const u8) Error!EventReportElement {
+    if (body.len < 3) return error.Truncated;
+    if (!EventType.defined(body[1])) return error.ReservedValue;
+    if (body[2] > EventReportStatus.detected_frequent_transition) return error.ReservedValue;
+    if (body[2] != EventReportStatus.successful) {
+        if (body.len != 3) return error.BadLength;
+        return .{ .event_token = body[0], .event_type = body[1], .status = body[2] };
+    }
+    if (body.len < 26) return error.BadLength; // 3 + 8 + 10 + 5
+    return .{
+        .event_token = body[0],
+        .event_type = body[1],
+        .status = body[2],
+        .tsf = std.mem.readInt(u64, body[3..11], .little),
+        .utc_offset = body[11..21].*,
+        .time_error = body[21..26].*,
+        .report = body[26..],
+    };
+}
+
+pub fn buildEventReportElement(out: []u8, e: EventReportElement) BuildError!usize {
+    if (!EventType.defined(e.event_type)) return error.ReservedValue;
+    if (e.status > EventReportStatus.detected_frequent_transition) return error.ReservedValue;
+    if (e.status != EventReportStatus.successful) {
+        if (out.len < 5) return error.NoRoom;
+        out[0] = event_report_element_id;
+        out[1] = 3;
+        out[2] = e.event_token;
+        out[3] = e.event_type;
+        out[4] = e.status;
+        return 5;
+    }
+    const total = 5 + 23 + e.report.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = event_report_element_id;
+    out[1] = @intCast(23 + e.report.len);
+    out[2] = e.event_token;
+    out[3] = e.event_type;
+    out[4] = e.status;
+    std.mem.writeInt(u64, out[5..13], e.tsf, .little);
+    @memcpy(out[13..23], &e.utc_offset);
+    @memcpy(out[23..28], &e.time_error);
+    @memcpy(out[28..total], e.report);
+    return total;
+}
+
+/// Figure 9-370（p.973）：Diagnostic Token(1)、Diagnostic Request Type(1)、Diagnostic
+/// Timeout(2，秒)、Diagnostic Subelements（≥0；Length 最小 4）。Table 9-178：0–4、221。
+pub const DiagnosticRequestElement = struct {
+    token: u8,
+    request_type: u8,
+    timeout_s: u16,
+    subelements: []const u8,
+};
+
+pub fn parseDiagnosticRequestElement(body: []const u8) Error!DiagnosticRequestElement {
+    if (body.len < 4) return error.Truncated;
+    if (!DiagType.defined(body[1])) return error.ReservedValue; // Table 9-178：5–220、222–255 保留
+    // 「The Cancel Diagnostic Request, Manufacturer Information STA Report, and
+    // Configuration Profile Diagnostic Request elements carry no Diagnostic subelements」
+    // （9.4.2.69，行 53279–53280）：类型 0/1/2 的体必须恰 4 八位组。
+    if (body[1] <= 2 and body.len != 4) return error.BadValue;
+    return .{ .token = body[0], .request_type = body[1], .timeout_s = le16(body[2..4]), .subelements = body[4..] };
+}
+
+pub fn buildDiagnosticRequestElement(out: []u8, e: DiagnosticRequestElement) BuildError!usize {
+    if (!DiagType.defined(e.request_type)) return error.ReservedValue;
+    // 类型 0/1/2 不带子元素（9.4.2.69，行 53279–53280）。
+    if (e.request_type <= 2 and e.subelements.len != 0) return error.BadValue;
+    const total = 6 + e.subelements.len; // 头 2 + Token + Type + Timeout(2)
+    if (e.subelements.len > 249 or out.len < total) return error.NoRoom;
+    out[0] = diagnostic_request_element_id;
+    out[1] = @intCast(total - 2);
+    out[2] = e.token;
+    out[3] = e.request_type;
+    w16(out[4..6], e.timeout_s);
+    @memcpy(out[6..total], e.subelements);
+    return total;
+}
+
+/// Figure 9-393（p.984）：Diagnostic Token(1)、Diagnostic Report Type(1)、Diagnostic
+/// Status(1)（复用 Table 9-175）、Diagnostic Subelements。Length 最小 3。
+pub const DiagnosticReportElement = struct {
+    token: u8,
+    report_type: u8,
+    status: u8,
+    subelements: []const u8,
+};
+
+pub fn parseDiagnosticReportElement(body: []const u8) Error!DiagnosticReportElement {
+    if (body.len < 3) return error.Truncated;
+    if (!DiagType.defined(body[1])) return error.ReservedValue;
+    if (body[2] > EventReportStatus.detected_frequent_transition) return error.ReservedValue;
+    return .{ .token = body[0], .report_type = body[1], .status = body[2], .subelements = body[3..] };
+}
+
+pub fn buildDiagnosticReportElement(out: []u8, e: DiagnosticReportElement) BuildError!usize {
+    if (!DiagType.defined(e.report_type)) return error.ReservedValue;
+    if (e.status > EventReportStatus.detected_frequent_transition) return error.ReservedValue;
+    const total = 5 + e.subelements.len; // 头 2 + Token + Type + Status
+    if (e.subelements.len > 250 or out.len < total) return error.NoRoom;
+    out[0] = diagnostic_report_element_id;
+    out[1] = @intCast(total - 2);
+    out[2] = e.token;
+    out[3] = e.report_type;
+    out[4] = e.status;
+    @memcpy(out[5..total], e.subelements);
+    return total;
+}
+
+/// 帧容器（9.6.14.2–9.6.14.5）：Event Request（action 0）/ Diagnostic Request（action 2）
+/// 的 Dialog Token 非 0；Event Report（action 1）/ Diagnostic Report（action 3）回显；
+/// 自主发送的 Event Report 允许 0（11.24.2）。两种请求帧都可选带一个 Destination URI
+/// 元素（ID 141，9.4.2.90）。Event Report 允许 0 条元素：11.24.2「If there are no
+/// available logged events … the STA shall send the Event Report frame without any Event
+/// Report element」——9.6.14.3 的「one or more」按规程条款放宽（见文件头偏离清单）。
+pub const EventDiagnosticFrame = struct {
+    dialog_token: u8,
+    elements: []const u8,
+    count: usize,
+    destination_uri: []const u8,
+};
+
+const ElementsWalk = struct {
+    count: usize,
+    /// Request 帧里解析出的 Destination URI **元素体**（ESS Detection Interval(1) +
+    /// URI(1–253)，Figure 9-437；不含 ID/Length 头）；没有时为空。
+    /// 注意：`buildEventDiagnosticFrame` 的同名参数收的是完整元素（[141][len][体]），
+    /// 两者形式不同——解析出的体不能直接回填给构造。
+    destination_uri: []const u8,
+};
+
+/// 走「want_id 元素（+ 可选 Destination URI）」的元素串。URI 规则（9.4.2.90 行 55030、
+/// 9.6.14.2 行 65026）：仅 Request 帧带、zero or one、必须是最后一个元素；元素体 =
+/// ESS Detection Interval(1) + URI(1–253)（Figure 9-437，行 55049）。Report 帧没有 URI
+/// 槽位（Figure 9-695/9-697）→ 出现即拒。
+fn parseElementsOfId(body: []const u8, comptime want_id: u8, comptime allow_empty: bool, comptime allow_uri: bool) Error!ElementsWalk {
+    var pos: usize = 0;
+    var n: usize = 0;
+    var uri: []const u8 = &.{};
+    while (pos < body.len) {
+        if (body.len - pos < 2) return error.Truncated;
+        const id = body[pos];
+        const len: usize = body[pos + 1];
+        if (body.len - pos - 2 < len) return error.Truncated;
+        const el = body[pos + 2 ..][0..len];
+        if (id == want_id) {
+            if (uri.len != 0) return error.BadValue; // URI 必须排最后（9.4.2.90）
+            switch (want_id) {
+                event_request_element_id => _ = try parseEventRequestElement(el),
+                event_report_element_id => _ = try parseEventReportElement(el),
+                diagnostic_request_element_id => _ = try parseDiagnosticRequestElement(el),
+                else => _ = try parseDiagnosticReportElement(el),
+            }
+            n += 1;
+        } else if (id == destination_uri_element_id) {
+            if (!allow_uri) return error.BadValue; // Figure 9-695 / 9-697：Report 帧无此槽位
+            if (uri.len != 0) return error.BadValue; // zero or one（9.6.14.2）
+            // Figure 9-437：元素体 = ESS Detection Interval(1) + URI(1–253) → 体 2–254；
+            // 9.4.2.90（行 55028–55029）：「The URI field value is limited to 253 octets」。
+            if (el.len < 2 or el.len > 254) return error.BadLength;
+            uri = el; // 元素体：ESS Detection Interval(1) + URI（Figure 9-437，去掉 ID/Length 头）
+        } else {
+            return error.BadValue;
+        }
+        pos += 2 + len;
+    }
+    if (n == 0 and !allow_empty) return error.Empty;
+    return .{ .count = n, .destination_uri = uri };
+}
+
+pub fn parseEventRequestFrame(body: []const u8) Error!EventDiagnosticFrame {
+    if (body.len == 3) return error.Empty; // 一个元素都没有
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .event_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    const w = try parseElementsOfId(body[3..], event_request_element_id, false, true);
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = w.count, .destination_uri = w.destination_uri };
+}
+
+pub fn parseEventReportFrame(body: []const u8) Error!EventDiagnosticFrame {
+    if (body.len < 3) return error.Truncated;
+    try checkHeader(body, .event_report);
+    const w = try parseElementsOfId(body[3..], event_report_element_id, true, false);
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = w.count, .destination_uri = w.destination_uri };
+}
+
+pub fn parseDiagnosticRequestFrame(body: []const u8) Error!EventDiagnosticFrame {
+    if (body.len == 3) return error.Empty; // 一个元素都没有
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .diagnostic_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    const w = try parseElementsOfId(body[3..], diagnostic_request_element_id, false, true);
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = w.count, .destination_uri = w.destination_uri };
+}
+
+pub fn parseDiagnosticReportFrame(body: []const u8) Error!EventDiagnosticFrame {
+    if (body.len == 3) return error.Empty; // 一个元素都没有
+    if (body.len < 4) return error.Truncated;
+    try checkHeader(body, .diagnostic_report);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    const w = try parseElementsOfId(body[3..], diagnostic_report_element_id, false, false);
+    return .{ .dialog_token = body[2], .elements = body[3..], .count = w.count, .destination_uri = w.destination_uri };
+}
+
+pub fn buildEventDiagnosticFrame(out: []u8, action: Action, dialog_token: u8, elements: []const u8, destination_uri: []const u8) BuildError!usize {
+    switch (action) {
+        .event_request, .diagnostic_request, .diagnostic_report => {
+            if (dialog_token == 0) return error.ZeroDialogToken;
+        },
+        .event_report => {},
+        else => return error.BadValue,
+    }
+    if (destination_uri.len != 0) {
+        if (action == .event_report or action == .diagnostic_report)
+            return error.BadValue; // Figure 9-695 / 9-697：Report 帧没有 URI 槽位
+        // 完整元素 ≥ 4：ID + Length + ESS Detection Interval(1) + URI(≥1)（Figure 9-437），
+        // 与解析侧 el.len ≥ 2 对齐。
+        if (destination_uri.len < 4 or destination_uri[0] != destination_uri_element_id)
+            return error.BadValue;
+        // 9.4.2.90（行 55028–55030）：URI ≤ 253 八位组 → 元素 ≤ 256；且必须是最后一个
+        // 元素——调用方以追加顺序保证。
+        if (destination_uri.len - 3 > 253) return error.BadLength;
+    }
+    const total = 3 + elements.len + destination_uri.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(action);
+    out[2] = dialog_token;
+    @memcpy(out[3..][0..elements.len], elements);
+    @memcpy(out[3 + elements.len .. total], destination_uri);
+    return total;
+}
+
+// ---------------------------------------------------------------------------
+// 23) QoS Traffic Capability（9.4.2.78；9.6.14.23；Table 9-199 / 9-359；11.24.10）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77：QoS Traffic Capability 元素 ID 89。
+pub const qos_traffic_capability_element_id: u8 = 89;
+
+/// Table 9-199（p.1001）：B0 AC_VO、B1 AC_VI、B2–B3 保留、B4 UP 4、B5 UP 5、B6 UP 6、
+/// B7 保留。保留位没有「应拒收」的原文，接收端不检查。
+pub const QosTrafficFlags = packed struct(u8) {
+    ac_vo: bool = false,
+    ac_vi: bool = false,
+    reserved0: u2 = 0,
+    up4: bool = false,
+    up5: bool = false,
+    up6: bool = false,
+    reserved1: u1 = 0,
+
+    pub fn word(self: QosTrafficFlags) u8 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u8) QosTrafficFlags {
+        return .{
+            .ac_vo = w & 0x01 != 0,
+            .ac_vi = w & 0x02 != 0,
+            .reserved0 = @as(u2, @truncate(w >> 2)),
+            .up4 = w & 0x10 != 0,
+            .up5 = w & 0x20 != 0,
+            .up6 = w & 0x40 != 0,
+            .reserved1 = @as(u1, @truncate(w >> 7)),
+        };
+    }
+};
+
+/// Table 9-199 里实际定义的位掩码（B0–B1、B4–B6）。
+pub const qos_traffic_flags_mask: u8 = 0x73;
+
+/// 9.4.2.78（p.1000–1001，行 54335–54362）的元素体：Length = 1 + n，n = Flags 的 B0–B1
+/// 里非零位的个数；AC STA Count List（每项 1 字节，QoS AP 发送时才携带）原样返回。
+pub const QosTrafficCapabilityElement = struct {
+    flags: QosTrafficFlags,
+    /// AC STA Count List；非 AP STA 发送（B0–B1 保留 → n = 0）时为空。
+    ac_sta_counts: []const u8,
+};
+
+pub fn parseQosTrafficCapabilityElement(body: []const u8) Error!QosTrafficCapabilityElement {
+    if (body.len < 1) return error.Truncated;
+    // 「The value of the Length field is 1 + n, where n equals the total number of
+    // nonzero bits in Bits 0–1」（9.4.2.78）；与 B0–B1 的非零位数不符 → BadLength。
+    const n: usize = @popCount(body[0] & 0x03);
+    if (body.len != 1 + n) return error.BadLength;
+    return .{ .flags = QosTrafficFlags.fromWord(body[0]), .ac_sta_counts = body[1 .. 1 + n] };
+}
+
+pub fn buildQosTrafficCapabilityElement(out: []u8, flags: QosTrafficFlags, ac_sta_counts: []const u8) BuildError!usize {
+    const n: usize = @popCount(flags.word() & 0x03);
+    if (ac_sta_counts.len != n) return error.BadLength; // Length = 1 + n（9.4.2.78）
+    const total = 3 + n;
+    if (out.len < total) return error.NoRoom;
+    out[0] = qos_traffic_capability_element_id;
+    out[1] = @intCast(1 + n);
+    out[2] = flags.word();
+    @memcpy(out[3..total], ac_sta_counts);
+    return total;
+}
+
+/// Table 9-359（p.1241，行 65672–65678）的 Update 帧 Flags：**0–3 Reserved**、4–6 UP 4–6、
+/// 7 Reserved——与元素的 Table 9-199 不同（B0–B1 在元素里是 AC 位）。
+pub const QosTrafficUpdateFlags = packed struct(u8) {
+    reserved0: u4 = 0,
+    up4: bool = false,
+    up5: bool = false,
+    up6: bool = false,
+    reserved1: u1 = 0,
+
+    pub fn word(self: QosTrafficUpdateFlags) u8 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u8) QosTrafficUpdateFlags {
+        return .{
+            .reserved0 = @as(u4, @truncate(w)),
+            .up4 = w & 0x10 != 0,
+            .up5 = w & 0x20 != 0,
+            .up6 = w & 0x40 != 0,
+            .reserved1 = @as(u1, @truncate(w >> 7)),
+        };
+    }
+};
+
+/// Figure 9-721（p.1241）：Cat、WNM Action(20)、QoS Traffic Capability Flags(1)——位定义按
+/// Table 9-359（0–3 保留）。
+pub fn parseQosTrafficCapabilityUpdateFrame(body: []const u8) Error!QosTrafficUpdateFlags {
+    if (body.len < 3) return error.Truncated;
+    try checkHeader(body, .qos_traffic_capability_update);
+    return QosTrafficUpdateFlags.fromWord(body[2]);
+}
+
+pub fn buildQosTrafficCapabilityUpdateFrame(out: []u8, flags: QosTrafficUpdateFlags) BuildError!usize {
+    if (out.len < 3) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.qos_traffic_capability_update);
+    out[2] = flags.word();
+    return 3;
+}
+
+/// 11.24.10（p.1805）：关联期间 Flags 有任何变化 → 发 QoS Traffic Capability Update 帧。
+/// 发往 AP 的位 0–3 是保留位（Table 9-359 的 0–3 Reserved；9.4.2.78 的「Bits 0–1 are
+/// reserved in a transmission to an AP」），比较只看定义位 B4–B6（掩码 0x70）。
+pub fn qosTrafficFlagsChanged(old: u8, new: u8) bool {
+    return (old ^ new) & 0x70 != 0;
+}
+
+// ---------------------------------------------------------------------------
+// 24) Extended Capabilities 里的 WNM 位（Table 9-135，p.891–893）
+// ---------------------------------------------------------------------------
+
+/// Table 9-135 的相关位号。「可能发某种 WNM 帧」的门槛都是同一句式：对端最后一个 Extended
+/// Capabilities 元素里该位为 1。
+pub const ExtCapBit = struct {
+    pub const event: u8 = 7;
+    pub const diagnostics: u8 = 8;
+    pub const fms: u8 = 11;
+    pub const collocated_interference_reporting: u8 = 13;
+    pub const wnm_sleep_mode: u8 = 17;
+    pub const tim_broadcast: u8 = 18;
+    pub const qos_traffic_capability: u8 = 20;
+    pub const channel_usage: u8 = 24;
+    pub const dms: u8 = 26;
+    pub const wnm_notification: u8 = 46;
+};
+
+/// Extended Capabilities 元素体里的第 `bit` 位（位 N → 第 N/8 字节的第 N%8 位，9.2.2）。
+pub fn extCapBit(ext_capabilities_body: []const u8, bit: u8) bool {
+    const byte = bit / 8;
+    if (ext_capabilities_body.len <= byte) return false;
+    return ext_capabilities_body[byte] & (@as(u8, 1) << @intCast(bit % 8)) != 0;
 }

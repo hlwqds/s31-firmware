@@ -1,0 +1,12 @@
+# s31-wifi-oracle 的 sdkconfig 默认值。芯片、闪存、控制台与 s31-firmware 的板子一致。
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# 单个 factory 应用（无 OTA）：station 固件约 1 MB，用大 factory 的默认表。
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+# 板上没有 32.768 kHz 晶振时，X32H 只影响低功耗，保持默认（不强制外部晶振）。
+# 省电全部关闭：对照实验只看连通性。
+CONFIG_PM_ENABLE=n
+CONFIG_ESP_WIFI_SLP_IRAM_OPT=n
+CONFIG_ESP_PHY_MAC_BB_PD=n

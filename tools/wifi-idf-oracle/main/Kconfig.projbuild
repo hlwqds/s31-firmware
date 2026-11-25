@@ -1,0 +1,11 @@
+menu "Oracle Wi-Fi credentials"
+
+    config ORACLE_WIFI_SSID
+        string "SSID to join"
+        default ""
+
+    config ORACLE_WIFI_PASSWORD
+        string "Passphrase"
+        default ""
+
+endmenu

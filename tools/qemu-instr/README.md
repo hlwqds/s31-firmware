@@ -71,6 +71,16 @@ QEMU=/nix/store/…/bin/qemu-system-riscv32 sh tools/qemu-instr/run.sh cal secti
 - `sub` 组会把三个组件下所有 `*_selftest.zig` 都量一遍。只量其中几份时，照 `run.sh` 的编译与测量逻辑写一个按文件名过滤的包装，
   并先跑一次 `cal` 确认读数稳定。
 
+## 第五批之后的读数（2026-11-25，独立评审返修之后的终态）
+
+- 第五批新增六份子自检，逐片（riscv32 ReleaseSmall，`build-obj` text / QEMU 指令数）：`wnm_rest` 21867 B、50356 条；
+  `blockack` 3461 B、155665 条；`gas` 7810 B、9300 条；`pawr` 5709 B、10630 条；`subrate` 1348 B、3954 条；`iso` 6514 B、9011 条。
+  六片 text 合计 46709 B（数字取自逐片验收记录）。
+- 整份 section 在第五批终态的读数（标定 59433，稳定）：`section:wifi-connect`（199 条）1547931525 条、19.349 秒（不变）；
+  `section:wifi-mlme`（121 条）1136527 条、0.014 秒；`section:ble-802154`（207 条）6307161 条、0.079 秒；
+  `section:ble-security` 218744606 条、`section:radio-coex` 195876 条、`section:wifi-boundary` 34675 条（与之前相同）。
+  整份 profile 的合计没有重算。
+
 ## 文件
 
 | 文件 | 作用 |

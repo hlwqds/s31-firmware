@@ -1,0 +1,380 @@
+�bloc�ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=51510h (333072) map
+I (167) esp_image: segment 1: paddr=00061538 vaddr=2f000800 size=00214h (   532) load
+I (169) esp_image: segment 2: paddr=00061754 vaddr=2f000a20 size=03e80h ( 16000) load
+I (175) esp_image: segment 3: paddr=000655dc vaddr=00000000 size=0aa5ch ( 43612) 
+I (186) esp_image: segment 4: paddr=00070040 vaddr=401d0040 size=1d250h (119376) map
+I (208) boot: Loaded app from partition at offset 0x10000
+I (209) boot: Disabling RNG early entropy source...
+s31-firmware boot
+ota: crc32 mine=0x4743989a rom=0x4743989a -> match
+ota: table n=6 factory=0x10000 ota0=0x190000 ota1=0x310000 otadata=0x490000
+ota: ab=yes slot=factory state=UNDEFINED(4294967295) seq=0 sector=0 attempts=0 failures=0 od=0x490000 count=2
+section: ble_802154
+check: hci acl header 42300500 handle=0x042 pb=3 ok=1
+check: hci acl max=251 oversize_rejected=1 encoded=1 truncated=1 ok=1
+check: att mtu req=247 negotiated=247 rsp=03f700 rejected=1 exchanges=1 ok=1
+check: att read req=0a2500 rsp=0b-ch27 cut=23 truncated=1 ok=1
+check: gatt write ro_handle=0x0002 code=0x03 err_pdu=0112020003 ok_writes=1 ok=1
+check: notify unsub_untouched=1 cccd=0x0003 pdu=1b0200-t21 subs=1/1 ok=1
+check: gatt handle range 0x0099=01-0a990001 reserved_rejected=1 errors=1 ok=1
+check: gatt capacity chars=8/8 ninth=table_full rejected=1 next=0x0011 ok=1
+check: ieee802154 fcf short=0x8861 long_src=0xc861 acks=1 pancomp=1 ok=1
+check: ieee802154 hdr short=9B long=15B decoded=1 src=short ok=1
+check: lowpan stateless=2 ports=0x1234/0x5678 plen=10 ul_flip_ok=1 ok=1
+check: lowpan reject stateful+ports+frag rejected=3 decompressed=1 (UnsupportedCompression+Short+BadDispatch) ok=1
+check: hci cmd adv=1 create=1 enc=1 ret=27/8 unknown=1 short=1 ok=1
+check: hci host sent=4 busy=1 cc=1 total=8 handle=0x0042 nocredit=1 free=4 unknown=1 ok=1
+check: acl frags=3 first=1 reassembled=61 equal=1 nostart=1 ok=1
+check: l2cap kat=1 accepted=0x0000 rejected=1 partial=1 sdu=30 nocredit=1 ok=1
+check: gap adv kat=1 nospace=1 name=1 hci=1 malformed=1 ok=1
+check: addr aes=1 rpa=1 resolved=1 wrong=0 bad_prand=1 static=1 ok=1
+check: ipsp iid=1 rfc7668=1 listeners=2 badgroup=1 ok=1
+check: cmac rfc4493 len=0/16/40/64 matched=4/4 ok=1
+check: cmac gatt-appendix-b key=zero len=111 hash=f1ca2d48ecf58bac8a8830bbb9fba990 ok=1
+check: cmac sign counter=1 kat=1 verify=1 rejected=3/3 ok=1
+check: att_svr signed_write applied=1 rejected=4 counter=1 ok=1
+check: att_svr mtu rsp=030f02 min=247 below_default=23 cap=527 cut22=1 overlong_kept=1 applied=1 ok=1
+check: att_svr find_info page1=5pairs:1 page2=1 page128=1 not_found=1 bad_range=1 ok=1
+check: att_svr read_by_type len5_packed4=1 len21_cut=1 len21_exact=1 len4/6_split=1 truncated=1 ok=1
+check: att_svr read_by_group page1=3:1 len20=1 last=1 secondary=1 not_group=1 alias=1 ok=1
+check: att_svr read_blob 22+8=1 at_end=1 past_end=1 bad_handle=1 ok=1
+check: att_svr read_multiple order=1 unreadable=1 bad_handle=1 single=1 cut22=1 ok=1
+check: att_svr read_var plain=1 bad_handle=1 single=1 cut_at_22=1 ok=1
+check: att_svr read_var in_length_field=1 exactly_full=1 two_left=1 ok=1
+check: att_svr queued_write echo=1 before=1 exec=1 fixed=1 twice=1 too_long=1 ok=1
+check: att_svr queued_discard cancel=1 bad_offset=1 queue_full=1 prepare_rejected=1 link_lost=1 ok=1
+check: att_svr permissions before_unreadable=1 first_unreadable=1 write_ro=1 bad_handle=1 write_cmd=1 ok=1
+check: gatts decl svc=1 chr=1 value=1 discovery=1 decl_ro=1 value=1 ok=1
+check: gatts desc user=1 format=1 types=1 read_only=1 ok=1
+check: gatts include decl=1 by_type=1 ends=1 secondary=1 not_service=1 ok=1
+check: gatts cccd default=1 per_client=1 gated=1 unsub=1 fresh=1 ok=1
+check: gatts cccd_write no_indicate_bit=1 reserved=1 bad_size=1 unchanged=1 auth=1 ok=1
+check: gatts indicate sent=1 pending=1 cfm=1 again=1 timeout=1 closed=1 ok=1
+check: gatts service_changed decl=1 value_ro=1 found=1 lost=1 sent=1 single=1 ok=1
+check: gattc primary script=1/8 at=8 services=7/7 ok=1
+check: gattc mtu script=1/2 at=2 mtu=1 once=1 fast=1/4 at=4 low=1 small=1 ok=1
+check: gattc chars svc=1/4 results=1 all=1/14 at=14 results=1 ok=1
+check: gattc read 1/2 long22+1=1 value=1 read_only22=1 long22+3=1 ok=1
+check: gattc read_var 1/2 cut=1/2 len/present=23/20 tuple_cut=1/2 hits=1 ok=1
+check: gattc probe discovery svc=1/4 at=4 results=1 chr=1/4 at=4 results=1 ok=1
+check: gattc write_long script=1/8 at=8 stored=1 ok=1
+check: gattc read_after_write long22+18=1 value=1 var_len40/present20=1 ok=1
+check: gattc subscribe sub=1/2 sent=1 received=1 unsub=1 quiet=1 ok=1
+check: extadv 7.8.53 set ext adv params v1: 25 octets known answer ok=1
+check: extadv 7.8.54 set ext adv data: known answer ok=1
+check: extadv 7.8.56 set ext adv enable: two sets interleaved ok=1
+check: extadv 7.8.61 periodic adv params v2: 12 octets, OCF 0x0086 ok=1
+check: extadv 7.8.64 set ext scan params: two PHYs, known answer ok=1
+check: extadv 7.8.67 periodic adv create sync: 14 octets known answer ok=1
+check: extadv 7.8.54 chain first/intermediate/last: 251+251+251+49=802, partial flag ok=1
+check: extadv 2.3.4.9 1650 octets -> 7 fragments (6 x 251 + 144) ok=1
+check: extadv 2.3.4.9 1651 octets rejected (Oversize) ok=1
+check: extadv 7.8.54 over capacity: 0x07 and all data discarded ok=1
+check: extadv 7.7.65.13 legacy report: event type 0x13, address type and bytes ok=1
+check: extadv 7.7.65.13 legacy report: PHY, SID 0xFF, TX power 0x7F, RSSI -60 ok=1
+check: extadv 7.7.65.13 legacy report: 3 data octets, connectable+scannable, Table 7.1 ok=1
+check: extadv 7.7.65.13 data status: complete / incomplete / truncated / reserved ok=1
+check: extadv 7.7.65.13 truncated event rejected (Short) ok=1
+check: extadv 7.7.65.18 set terminated: status, handle, connection handle, events ok=1
+check: extadv 7.7.65.18 status -> termination reason ok=1
+check: extadv 2.3.4 AdvA, TargetA, TxPower split; TxAdd/RxAdd bits ok=1
+check: extadv 2.3.4.4 AdvDataInfo: DID low 12 bits, SID high 4 bits ok=1
+check: extadv 2.3.4.5 AuxPtr: channel 17, units 300us, offset 1000, PHY 2M ok=1
+check: extadv 2.3.4.6 SyncInfo: base, units, adjust, interval, ChM 37 bits, SCA ok=1
+check: extadv 2.3.4.6 SyncInfo: AA, CRCInit, event counter, window offset 3855600us ok=1
+check: extadv 2.3.4 seven fields all present: flags 0x7F, header length 0x28 ok=1
+check: extadv 2.3.4.8 ACAD is the remainder; AdvData follows the extended header ok=1
+check: extadv 2.3.4 AdvMode 0b11, reserved flag bit, short header rejected ok=1
+check: extadv 7.8.56/7.8.59 enable before set params 0x42; remove enabled set 0x0C ok=1
+check: extadv 7.8.59 remove a disabled set: set discarded ok=1
+check: eatt 1/10 coc connect fig 4.21/4.22: req/rsp bytes exact, 2 channels both sides ok=1
+check: eatt 2/10 credits 10.1/4.24: one per k-frame, zero -> NoCredits, credit ind restores ok=1
+check: eatt 3/10 segmentation 3.4.1-3.4.3: 200 bytes over MPS 64 = 4 k-frames, reassembled equal ok=1
+check: eatt 4/10 reconfig table 4.18: mtu down 0x0001, bad dcid 0x0003, zero dcid 0x0004, limits applied ok=1
+check: eatt 5/10 csf write GATT 7.2: set ok, clear -> 0x13, value kept ok=1
+check: eatt 6/10 db hash GATT 7.3.1: appendix B f1ca2d48.., change detected ok=1
+check: eatt 7/10 db hash oracle vectors (python cryptography aes-cmac): 4/4 ok=1
+check: eatt 8/10 pool GATT 5.3.1 att_mtu=min, 5.3.2 non-att sdu closes bearer, unencrypted refused ok=1
+check: eatt 9/10 robust GATT 2.5.2.1: 0x12 once per bearer, hash read then request -> aware ok=1
+check: eatt 10/10 att round trip: read req -> 101-byte rsp over 2 k-frames, delivered once ok=1
+check: privacy list find=1 type=1 dup=1 conflict=1 full=1 rmv=1 mode=1 clear=1 ok=1
+check: privacy hci frames=1 bad-type=1 no-space=1 size=5 ok=1
+check: privacy rpa roundtrip gen=1 hit1=1 hit2=1 wrong-irk=1 skip=1 ok=1
+check: privacy resolve budget timed-out=1 resumed=1 not-found=1 ok=1
+check: privacy rpa timeout default=1 range=1 edge=1 identity=1 regen=1 ok=1
+check: privacy modes network=1 rpa=1 device=1 zero-irk=1 off=1 unknown=1 left=1 ok=1
+check: power clamp exact=1 max=1 min=1 next-rung=1 not-managing=1 ok=1
+check: power codec frames=1 loss-event=1 tx-event=1 bad-zone=1 bad-flag=1 ok=1
+check: pathloss frame=1 checks=1111 same-zone=1 mismatch=1 ok=1
+check: sixlowpan: dispatch nalp/ipv6/bc0/iphc/mesh/frag1/fragn/paging/reserved ok=1
+check: sixlowpan: iphc frame A KAT sam/dam=10 udp P=00 ok=1
+check: sixlowpan: iphc frame B KAT sam/dam=11 ul-flip ok=1
+check: sixlowpan: stateful /48 ctx sam=11 gap bits zero ok=1
+check: sixlowpan: udp nhc P=00/01/10/11 ports ok=1
+check: sixlowpan: udp csum ffe6/0->ffff ok=1
+check: sixlowpan: frag hdr kat c1/5c/00/01 e1 +17 ok=1
+check: sixlowpan: reass in-order 340B lens backfilled ok=1
+check: sixlowpan: reass fragn-first timeout 60s ok=1
+check: sixlowpan: mesh hdr kat + forward/deliver ok=1
+check: ① ARO 编码=RFC6775 §4.1 图（Type33 Len2 Status lifetime60s EUI64）KAT 16B ok=1
+check: ① ARO 解码往返：Status/Lifetime/EUI-64 原样 ok=1
+check: ② ARO Length=3 → BadOptionLength（6775 §4.1 行 860-862 “Always 2”） ok=1
+check: ② ARO 截断（仅 8B）→ Short ok=1
+check: ③ 6CO 编码=RFC6775 §4.2 图1（Res|C|CID、VL60s 大端）KAT 16B ok=1
+check: ③ 6CO 解码往返 CID/C/前缀长 ok=1
+check: ③ 6CO 负例：Context Length>64 且 Length=2 → 拒（行 968-969） ok=1
+check: ④ ABRO 编码=RFC6775 §4.3（VersionLow 先发、VL=0）KAT 24B ok=1
+check: ④ ABRO 解码：Version Low/High 拼回 32 位 ok=1
+check: ⑤ RS 编码 KAT：SLLAO 必带（§5.3 行 1242）+ ICMPv6 校验和 24B ok=1
+check: ⑥ 注册 NS KAT：Src=GP16 Dst=6LR ARO+SLLAO（图 5 行 2495-2499）48B ok=1
+check: ⑥ parseNs 回读：Target=路由器、SLLAO=0xAAAA、ARO 计 ignored ok=1
+check: ⑦ RA 落表：路由器 lifetime 1800s（§5.4 行 1266） ok=1
+check: ⑦ RA 落表：6CO CID1 valid、ABRO 版本 0x00010005 ok=1
+check: ⑦ 坏校验和 → BadChecksum（RFC 4443 §2.3 伪头） ok=1
+check: ⑧ 上下文 60s 内 valid（§5.4.2 行 1310-1315） ok=1
+check: ⑧ 过期 → receive-only（§5.4.3 行 1329-1332） ok=1
+check: ⑧ 2×默认 Router Lifetime 后删除（行 1330-1332） ok=1
+check: ⑧ Valid Lifetime=0 → 立即删除（§5.4.2 行 1317-1319） ok=1
+check: ⑨ syncContexts → fifteen4 表：state=valid、前缀匹配 CID1 ok=1
+check: ⑨ 过期后同步成 C=0 条目（receive-only） ok=1
+check: ⑨ 保持期满同步删除（remove） ok=1
+check: ⑩ register → tick 产出注册 NS 动作（§5.5.1） ok=1
+check: ⑩ NA Status=0 → registered、寿命 100 单位（行 1407-1408） ok=1
+check: ⑩ Status=2 → 摘默认路由器（行 1431-1434）→ 重新 RS ok=1
+check: ⑪ 下一跳：link-local/组播/global→路由器（§5.6 行 1440-1459） ok=1
+check: ⑪ IID 反推：0000:00ff:fe00:XXXX → 短地址（RFC 6282 行 640-648） ok=1
+check: ⑪ resolveLinkAddr：IID 反推 U/L 翻转兜底 ok=1
+check: ⑫ 30min 睡眠 → 31 单位（> 睡眠时长，§5.8.1 行 1496-1500） ok=1
+check: ⑫ 醒来：将在下次睡前过期的注册被刷新（行 1528-1530） ok=1
+check: sfr: rfrag hdr kat E8AB8D230665 x1 seq3 size291 off1637 ok=1
+check: sfr: rfrag-ack kat EB5A + fig3 bitmap 9FFF7800 bit31-x ok=1
+check: sfr: neg short(<6) ack-trailing(no payload) enc-nospace ok=1
+check: sfr: neg dispatch 4944-fragn/11101cc/EA-on-E8 ok=1
+check: sfr: neg size0-off!=0 / off+size>2048 / size>2048 / reset-ok ok=1
+check: sfr: sender 3frags x-on-last off0=100 full-ack complete ok=1
+check: sfr: sender loss retry oldest-first 1,2 x-on-burst-end ok=1
+check: sfr: sender rto retransmit then restart new-tag 0x11 x-first ok=1
+check: sfr: sender rto-exhaust reset seq/size/offset=0 then aborted ok=1
+check: sfr: sender null-ack abort no-reset + gap gates 10/49 pass 50 ok=1
+check: sfr: rx in-order full-ack absorb-late-full expired-null ok=1
+check: sfr: rx ooo bitmaps 80000000/A0000000 then complete FULL ok=1
+check: sfr: rx orphan-silent table-full-null reset-null cleanup ok=1
+check: sfr: rx timeout 60s + ecn echo once then clear ok=1
+check: sfr: fwd vrb swap-tag delta-20 abort-null reverse-lsp late-full ok=1
+check: sfr: fwd vrb-full drop + inactivity destroy 120s ok=1
+check: pawr 7.8.125 subevent data: 16 octets known answer, entries interleaved ok=1
+check: pawr 7.8.125: empty payload ok (len 0), Num_Subevents 16 rejected (reserved) ok=1
+check: pawr 7.8.126 response data: 15 octets known answer ok=1
+check: pawr 7.8.126: Sync_Handle 0x0F00 rejected (12 bits meaningful) ok=1
+check: pawr 7.8.127 periodic sync subevent: 11 octets known answer ok=1
+check: pawr 7.8.127: reserved property bit 7 rejected (bit 6 only) ok=1
+check: pawr 7.7.65.36 data request: handle 5, start 0x7F, count 0x80 ok=1
+check: pawr 7.7.65.36 wrap: start 6 count 3 of 8 -> [6,7,0] ok=1
+check: pawr 7.7.65.36: count 3 over 2-subevent train rejected ok=1
+check: pawr 7.7.65.37 report: txp 12, rssi -40, no CTE, slot 3, complete, 2 data octets ok=1
+check: pawr 7.7.65.37: CTE_Type 3 rejected; 0x7F unavailable, 0xFF no RSP accepted ok=1
+check: pawr LE meta dispatch: 0x27 routes, other subevent code rejected ok=1
+check: pawr table 2.8 IND: CTE+ADI+TxPower parse, no AdvA, SID 0xA, 2 data octets ok=1
+check: pawr table 2.9 RSP: AdvA+CTE+TxPower parse; IND with AdvA rejected (table 2.8 X) ok=1
+check: pawr 2.3.1.9/10: AdvMode 0b01 rejected (must be 0b00) ok=1
+check: pawr advertiser: request [6,7,0], entry 5 rejected, finish 6+0 then 7, then closed ok=1
+check: pawr returns: Status+Handle on success; status-only 0x0C on failure ok=1
+check: pawr advertiser: 16-subevent request needs two commands (15 + 1), closed after last ok=1
+check: subrate 7.8.123 set default subrate: defaults known answer ok=1
+check: subrate 7.8.124 subrate request: known answer ok=1
+check: subrate 7.8.124 0x12: Subrate_Max*63=504 > 500 rejected ok=1
+check: subrate 7.7.65.35 subrate change event: field split ok=1
+check: subrate 2.4.2.36 LL_SUBRATE_REQ: known answer ok=1
+check: subrate 2.4.2.37 LL_SUBRATE_IND: round-trip ok=1
+check: subrate 4.5.1 IND: continuation >= factor rejected ok=1
+check: subrate 5.1.20 accept: four result values per 6218-6221 ok=1
+check: subrate 5.1.20 R1: latency over acceptable rejected ok=1
+check: subrate 5.1.20 R5: 2*ci*fmin >= timeout rejected at equality ok=1
+check: subrate 5.1.20: no host support bit rejected ok=1
+check: subrate 7.8.124 central ind: S15-14 = E15-14 ok=1
+check: subrate 5.1.19 apply: base unwrapped across counter wrap ok=1
+check: subrate 4.5.1: effective interval 24*4*5=480 ok=1
+check: subrate model: request -> event -> params updated ok=1
+check: subrate 5.2: procedure timeout at 40s ok=1
+check: subrate 7.8.124: unknown connection handle rejected ok=1
+check: iso 1: set CIG params frame matches hand-packed bytes (§7.8.97) ok=1
+check: iso 2: set CIG return parses status+cig_id+handle (§7.8.97) ok=1
+check: iso 3: create CIS packs pairs, duplicate CIS handle rejected (§7.8.99) ok=1
+check: iso 4: accept/reject CIS request frames and return (§7.8.101/102) ok=1
+check: iso 5: create BIG frame matches; unencrypted non-zero code rejected (§7.8.103) ok=1
+check: iso 6: BIG create sync packs; non-ascending BIS list rejected (§7.8.106) ok=1
+check: iso 7: setup ISO path packs codec id+config; transparent air with config rejected (§7.8.109) ok=1
+check: iso 8: remove ISO path dir 0 and 1/2/3 encode, reserved bits rejected (§7.8.110) ok=1
+check: iso 9: read ISO TX sync frame and return parse (§7.8.96) ok=1
+check: iso 10: read ISO link quality frame and 7 counters in table order (§7.8.116 table 7.3) ok=1
+check: iso 11: CIS established parses 28 octets incl 10ms iso interval (§7.7.65.25) ok=1
+check: iso 12: CIS request parses ACL/CIS handles and CIG/CIS ids (§7.7.65.26) ok=1
+check: iso 13: create BIG complete parses params and 2 BIS handles (§7.7.65.27) ok=1
+check: iso 14: BIG sync lost parses handle and timeout reason (§7.7.65.30) ok=1
+check: iso 15: BIGInfo 33-octet hand-pack parses every field incl phy and offset (§4.4.6.11) ok=1
+check: iso 16: 57-octet BIGInfo is encrypted with GIV/GSKD; wrong length rejected (§4.4.6.10/11) ok=1
+check: iso 17: ISO data packet complete SDU+TS encodes/decodes (§5.4.5) ok=1
+check: iso 18: lost data packet has no payload; lost with fragment rejected (§5.4.5) ok=1
+check: iso 19: BIG formulas big_sync_delay/gc/group/ctrl_offset/payload/interval (§4.4.6.3-4.4.6.7) ok=1
+check: iso 20: command status vs complete mapping per spec Event(s) text (§7.8.97-116) ok=1
+read: hci acl_buf=255 max_payload=251 encoded=1 decoded=1 rejected=2
+read: att mtu=23/527 exchanges=0 reads=0 writes=0 notifies=0 errors=1 trunc=0
+read: gatt chars=8 subs=0 mask=0x00 lowpan_len=15
+read: 154 frames=0/0 decompressed=1 rejected=3
+read: att_gatt server_pdus=196 client_pdus=44 local_errors=0
+checks: passed=207 failed=0 total=207
+section: wifi_mlme
+check: fcs capture=8/8 tamper_rej=1 j91=1 ok=1
+check: fcs serial_reflect=1 residue_c704dd7b=1 ok=1
+check: header 4 ds combos fields+roundtrip=1 ok=1
+check: duration_id table9-5=1 ps_poll_aid=1 ok=1
+check: annex_j91_j92 plain=1 mmie_key4_ipn4=1 unicast=1 ok=1
+check: ie country=1 beacon_fixed=1 rates8=1 tim_aid85_90=1 rsn_tkip_ccmp_psk=1 dsss_ch1=1 ok=1
+check: rsne 5 samples rebuilt=1 mfpc_bip=1 pmkid=1 negative=1 ok=1
+check: ext_cap bits=1 negative=1 ok=1
+check: bodies auth12=1 assoc_aid1=1 disassoc_r8=1 negative=1 ok=1
+check: robust deauth_saquery=1 table9-47=1 ok=1
+check: mlme auth frame78=1 state2_after_frame80=1 ok=1
+check: mlme assoc frame_table_9_29=1 state4_aid1=1 confirm=1 ok=1
+check: mlme rsna state3_aid7=1 set_protection_state4=1 ok=1
+check: mlme assoc4=1 disassoc_r8=1 deauth_r2=1 timeout=1 violation_deauth_r6=1 ok=1
+check: scan active_steps=1 passive=1 rejected=1 ok=1
+check: scan probe_frame58=1 bss_added=1 merged=1 fields=1 ok=1
+check: qos_ctrl 7rows=1 reserved_rej=1 layout=1 ok=1
+check: qos_frame capture=1 retry=1 3addr=1 4addr=1 neg=1 ok=1
+check: qos_edca up_ac=1 table9-137=1 qos_info=1 ok=1
+check: tim aid4_85_90=1 bits=1 mcast_offset=1 decode=1 ok=1
+check: ps_poll frame=1 neg=1 null_pm_capture=1 ok=1
+check: uapsd sta_trigger_sp=1 ap_sp_len2=1 ok=1
+check: ps_interop poll_bu=1 ok=1
+check: ps_moredatu meaning=1 hint=1 listen_int=1 ok=1
+check: rrm beacon request field=1 element=1 mode3-refused=1 detail3-refused=1 (Fig 9-156/9-147, Table 9-87/9-90) ok=1
+check: rrm beacon report element=1 rcpi=1 rsni=1 truncated-refused=1 (Fig 9-191/9-199, Table 9-154, 9.4.2.41) ok=1
+check: rrm responder incapable=1 group-no-reply=1 zero-duration-refused=1 accepted=1 mode-bits=1 (11.11.4/.6/.9.1, Fig 9-192) ok=1
+check: rrm neighbor report=1 preference-only-len16=1 parsed=1 duration0-refused=1 bad-subelem=1 (Fig 9-295..9-300) ok=1
+check: rrm link measurement request=1 report=1 tpc=1 max-tx-power=1 missing-tpc=1 parsed=1 (Fig 9-651/9-652/9-143, 11.11.13) ok=1
+check: rrm neighbor report response own-ess=1 wildcard=1 other-ess-empty=1 not-activated-ignored=1 (11.11.10.3, Fig 9-654) ok=1
+check: wnm btm request=1 response=1 accept-no-target=1 status9=1 delay-on-7=1 query=1 query-pref0=1 (Fig 9-701/9-705/9-700, Table 9-357) ok=1
+check: wnm decideBtm accept=1 excluded-7=1 abridged-keep=1 unseen-2=1 leaving-8=1 expired=1 (11.24.7.3/.4, Table 9-357) ok=1
+check: wnm disassoc timer no-imminent=1 t3=1 t1=1 t0-may=1 floor=1 group-blocked=1 (11.24.7.3) ok=1
+check: wnm sleep element=1 request=1 response=1 status-reserved=1 exit-interval=1 action2=1 status-names=1 (Fig 9-424/9-715/9-716, Table 9-203/9-204) ok=1
+check: wnm sleep sta wrong-token=1 enter=1 exit-denied=1 exit=1 enter-denied=1 unsolicited-other=1 unsolicited-1=1 idle-period=1 (11.2.3.18.2) ok=1
+check: wnm sleep dtim wake-every-4=1 doze-between=1 tim-bit+group=1 other-aid=1 interval0-never=1 (11.2.3.18.2) ok=1
+check: wnm sleep ap enter=1 exit=1 tim-bit=1 denied-4=1 denied-5=1 key-handling=1 filters-deleted=1 (11.2.3.18.3) ok=1
+check: tfs req element build=1 parse=1 reserved-sub=1 empty=1 (Fig 9-418/9-419, Table 9-201) ok=1
+check: tfs resp element=1 status15-reserved=1 sub-id2-reserved=1 empty=1 (Fig 9-421/9-422, Table 9-198/9-202) ok=1
+check: tclas eth=1 ip4=1 up12-reserved=1 type7-reserved=1 (Fig 9-269/9-271/9-272, Table 9-144/9-145) ok=1
+check: tclas offset=1 dot1=1 offset-len-bad=1 pcp-reserved=1 (Fig 9-275/9-278) ok=1
+check: tclas proc any=1 3-reserved=1 multi-needs-proc=1 (Fig 9-290, Table 9-149) ok=1
+check: tfs frames req=1 resp=1 notify=1 build=1 count-bad=1 token0=1 (Fig 9-711-9-714) ok=1
+check: tfs pair=1 token-mismatch=1 accept=1 mixed-keeps=1 notify-filter=1 (9.6.14.16, 11.24.12.2) ok=1
+check: tfs match eth-da=1 miss=1 ip4=1 miss=1 offset=1 miss=1 (9.4.2.31) ok=1
+check: tfs ap echo=1 commit=1 action-bits=1 (11.24.12.3, Table 9-200) ok=1
+check: tfs ap setup=1 eapol=1 hit=1 drop=1 group=1 (11.24.12.1/11.24.12.3) ok=1
+check: tfs ap notify-once=1 delete-all=1 rearm=1 (Table 9-200, 11.24.12.3) ok=1
+check: keydata gtk=1 build=1 keyinfo-reserved=1 (Fig 9-717/9-319) ok=1
+check: keydata igtk=1 build=1 order=1 id2-reserved=1 (Fig 9-718, Table 9-358) ok=1
+check: keydata sleep-resp=1 keydata/handshake/none=1 (Fig 9-716, 11.2.3.18.3) ok=1
+check: rrm caps element build=1 fields=1 roundtrip=1 b-field=1 (Fig 9-311, Table 9-157) ok=1
+check: rrm caps short=1 long=1 reserved-kept=1 build-refused=1 sub-refused=1 no-room=1 (9.4.2.45) ok=1
+check: rrm caps decide dur=1 accept=1 incapable=1 refused=1 nonop0=1 covers=1 (11.11.6, Table 11-8) ok=1
+check: annex e global ch6=1 ch14=1 vht=1 out-of-set=1 reserved=1 vendor=1 geodb=1 (Table E-4, Eq 17-27) ok=1
+check: annex e regional us=1 eu=1 cn=1 cn128-vs-global=1/1 global-class=1 (Table E-1/E-2/E-4/E-5) ok=1
+check: annex e decide bad-class=1 bad-ch=1 ok=1 table-skip=1 no-domain=1 direct=1 (9.4.2.21.7) ok=1
+check: annex e channels 81=13=1 128=1 cn128=3=1 too-long=1 (Table E-4/E-5) ok=1
+check: bss-maxidle: Fig9-416 period=3000 protected=1 parsed; reserved bits ignored ok=1
+check: bss-maxidle: build round trips Fig9-416; len<3 Truncated, len>3 BadLength ok=1
+check: bss-maxidle: keepalive advances with time (11.24.13): elapsed+margin>=period -> send; >=period -> overdue ok=1
+check: bss-maxidle: Fig9-417 B0=1 -> protected-only; B0=0 -> either ok=1
+check: tim-broadcast: Fig9-719 req round trips; dialog token 0 rejected ok=1
+check: tim-broadcast: Fig9-720/9-426 overridden schedule parses; negative offset -4000us ok=1
+check: tim-broadcast: Table9-205 reserved status rejected; denied body must be 1 octet ok=1
+check: tim-broadcast: accept uses requested, override uses AP interval, deny off; TTTT grid advances (11.2.3.17) ok=1
+check: fms: Fig9-410/9-411 subelement+element parse; processing optional in FMS (9.4.2.76) ok=1
+check: fms: Fig9-413 status sub parses (counter 3:5); Table9-198 status 15-255 rejected ok=1
+check: fms: STA ledger accept->active, terminate(10)->DTIM, status 9 blocks rate-change requests (11.24.8) ok=1
+check: fms: Fig9-706 frame round trips (one FMS Request element); dialog token 0 rejected ok=1
+check: dms: Fig9-432 add descriptor parses; remove needs dmsid!=0, DMS Length=1, no payload (11.24.16.2) ok=1
+check: dms: Fig9-435 accept parses; terminate LSC low nibble must be 0; Table9-211 type 4-255 rejected ok=1
+check: dms: STA ledger accept(dmsid 9)->active then terminate->cleared; denied not recorded ok=1
+check: dms: 9.6.14.26 frame with one element (two descriptors) round trips; empty frame -> Empty ok=1
+check: ci: Fig9-708/9-709 request parses; auto=0 timeout ignored on RX (9.2.4.1), build rejects ok=1
+check: ci: 9.4.2.85: +127 unknown passes, >126 caps 126, <-127 caps -127, none=-128 all-zero body 21 ok=1
+check: ci: variable interval/burst -> 2^32-1, unknown bw -> 65535, center falls back; duty(TB=TI/2)=0x7FFFFFFF ok=1
+check: ci: 11.24.9 trigger: change at timeout, periodic at period*200 TU, auto=0 cancels, timeout gate first ok=1
+check: cu: Fig9-429 element round trips (TDLS, 2 pairs); mode 2-255 rejected; request without op-classes rejected ok=1
+check: cu: Fig9-723 unsolicited response (token 0) parses country string + optional power constraint ok=1
+check: wnm-notif: Fig9-727/9-728 round trip; type 0 needs subelems 0/1/2 (9.6.14.29); reserved rejected ok=1
+check: wnm-notif: 11.24.17 rule: type 0 must ack with status 0; 221 vendor-defined; others null ok=1
+check: event: Fig9-351 request parses; token must be nonzero; WNM log (type 3) carries no request field ok=1
+check: event: Fig9-365 report: status!=0 body is exactly 3 octets; Table9-175 status 5-255 rejected ok=1
+check: diag: Fig9-370 parses; Table9-178 type 4 (802.1X auth) is defined while 5-220 reserved ok=1
+check: event frames: empty event report allowed (11.24.2); request with no elements -> Empty; unknown element -> BadValue ok=1
+check: qos: Table9-199 flags (0x53, 2 counts); update frame carries B4-B6 only; change mask 0x70 ok=1
+check: extcap: Table9-135 bit 46 WNM-Notification and bit 26 DMS seen; missing byte reads 0 ok=1
+check: qos: 9.4.2.78 Length=1+popcount(B0-B1)=2 with 1 AC STA Count; mismatch -> BadLength ok=1
+check: adv-proto elem 6c02xxxx build+parse pame=1 limit=0x10 ok=1
+check: gas-ireq Table 9-313 round trip token=2a qlen=8 le ok=1
+check: gas-ires Table 9-314 round trip status=0 delay=0 resp=8B ok=1
+check: gas-creq 3B + cres Fig 9-104 frag id/more bits ok=1
+check: anqp walk query-list + unknown id 300 RAW passthrough ok=1
+check: cap-list vendor skip + venue-name/domain-name tuples ok=1
+check: nai-realm Fig 9-606 parse + data-len mismatch rejected ok=1
+check: emergency-call-number duples round trip + truncation ok=1
+check: net-auth(ind0 url, ind1 url rejected) + ip-addr 0x0a + roaming OI ok=1
+check: machine one-shot initial response -> success resp=8B ok=1
+check: machine comeback 2 fragments -> success; timer reset kept it alive ok=1
+check: machine wrong token ignored; response timer -> query_timeout ok=1
+check: machine status 95 waits delay; status 61 ends query ok=1
+check: ba: 9.4.1.14 Fig9-79 params enc 0x1017 + decode roundtrip ok=1
+check: ba: build rejects tid 16 / buf 1024 / timeout 65536 ok=1
+check: ba: 9.4.1.16 Fig9-81 delba 0x5800, reserved bits ignored ok=1
+check: ba: 9.6.5.2 Tab9-303 addba-req parse 9B, dialog 0 rejected ok=1
+check: ba: negotiate SUCCESS -> win 64 HT-immediate (10.24.2 Tab11-4) ok=1
+check: ba: negotiate rejects refused/buf0/policy flip ok=1
+check: ba: 9.3.1.8 compressed BAR parse, basic variant rejected ok=1
+check: ba: 9.3.1.9.3 compressed BlockAck bitmap 0x05 ssn 100 ok=1
+check: ba: 9.3.1.9.2 basic bitmap (sn,frag)->bit, d>=64 null ok=1
+check: ba: 10.24.7.3 b1 window bits, respond 0b1101 ok=1
+check: ba: 10.24.1 scoreboard wrap 4090 -> advance 0xD0 ok=1
+check: ba: 10.24.7.6.2a reorder gap fill 505,506 ok=1
+check: ba: reorder expiry drops 6,7; BAR flushes none ok=1
+check: ba: 9.3.2.2 Fig9-55 amsdu 2 subframes pad 3/0 ok=1
+check: ba: amsdu length 2305 rejected ok=1
+check: ba: 11.5.4 inactivity expires at deadline, 0 disables ok=1
+check: ba: 10.24.7.3 p1424 data d=2^11 old, d=2^11-1 advances ok=1
+check: ba: 10.24.7.3 p1424 BAR d=0/d=2^11 unchanged, d=1 c1 ok=1
+check: ba: 10.24.7.6.2 p1427 reorder d=2^11 discard, -1 slides ok=1
+read: sizes header=58 frame=80 bss=152 tx_buf=640 peers=4
+read: timers auth_timeout_tu=1024 assoc_timeout_tu=1024 short_retry=7 long_retry=4
+checks: passed=121 failed=0 total=121
+firmware: sections: passed=2 failed=0 total=2
+main: verdict=pass
+ota: running factory, no slot bookkeeping

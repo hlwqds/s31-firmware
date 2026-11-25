@@ -72,8 +72,66 @@
   `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ### Added
+- **无线离线特性第五批（2026-11-25）**：与前几批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
+  与按原文写的 Python 模型的对拍、板侧自检（主机桩与真板）。验收之后经独立评审两轮（Wi-Fi 15 条 + 残留 6 条、BLE 7 条）返修并复验，
+  终态随 `wifi` profile 上板：**`PASS board:wifi`，14/14 个 section 全过、`main: verdict=pass`**——三个无线 section 的判据全部
+  在真板上通过（`wifi_mlme` 121/121、`wifi_connect` 199/199、`ble_802154` 207/207，第三、四、五批之后第一次上板），
+  `net_ethernet` 11/11；最小验证镜像（新增的 `--only`，只编两个无线 section，512704 B = 整份 `wifi` 镜像的 42%）
+  同样 `PASS board:wifi[ble_802154,wifi_mlme]`。串口权限是同日由用户授权 `setfacl` 恢复的（此前第三、四批因此没有上板）。
+  期间一次 `net_ethernet` 不过，查明是主机网口在 NetworkManager 里反复尝试激活已消失的配置把链路拉低（板侧只等 5 秒），
+  与板子和第五批无关；链路稳定后同一条判据通过（板级前置已写进 `docs/TESTING.md`）。
+  `tests/baselines.json` 合计 1818 → 2032（`wifi-mlme` 200 → 316、`ble-802154` 485 → 583；
+  `wifi-connect` 431、`ble-security` 51 不变）。本批 Wi-Fi 与 BLE 都不涉新 RFC（BLE 的 IsoHci 引 Bluetooth SIG 的 Assigned Numbers §2.11）。
+  - `components/wifi-mlme`（板侧自检 58 → 121 条）：
+    - WNM 的其余子域（11.24.2–.17、9.6.14.2–.30 的子集：BSS Max Idle、TIM Broadcast、FMS、DMS、Collocated Interference、
+      Channel Usage、WNM Notification、Event / Diagnostic 容器、QoS Traffic Capability；`wnm.zig` 第 15–24 节，取舍与偏离见文件头清单）。
+    - GAS / ANQP 的请求方：Public Action 10–13、Initial / Comeback 的分帧与状态机、ANQP 元素子集（含 Emergency Call Number，
+      9.4.5.5；`gas.zig`）。Status Code 字段 2 八位组按 9.4.1.9。
+    - Block Ack：ADDBA / DELBA 帧编解码、记分板位图语义、接收重排缓冲、A-MSDU 子帧头（`blockack.zig`）。
+      只做 Basic 与 Compressed 变体；`SN = WinStart + 2^11` 的归属经渲染 PDF 原文更正（三处 `<=` → `<`）。
+  - `components/ble-802154`（板侧自检 152 → 207 条）：
+    - PAwR：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令、两个事件、
+      AUX_SYNC_SUBEVENT_IND / RSP 的字段许可（表 2.8 / 2.9）、数据只发一次的语义（`pawr.zig`）。
+    - Connection Subrating：LE Set Default Subrate / LE Subrate Request 与 LE Subrate Change 事件、LL 侧接受 / 拒绝规则、
+      40 s 过程超时（`subrate.zig`）。
+    - LE Isochronous 的 HCI 接口面：ISO 数据包格式、CIS / BIS / BIG 命令与事件、BIGInfo 布局（`iso.zig`）。
+  - 对拍（主代理用交付源码重编驱动、一律 `-O ReleaseSafe` 后重跑，六片合计 10513 例，全部 0 不一致；逐项数字见两份验证报告的
+    §4.6 与 §4.3）：模型都照同一份规范写，不是独立实现对拍——模型与实现同错时差分抓不出来，本批实际发生两次
+    （Block Ack 的窗口边界、GAS 的 NAI Realm 字段顺序），靠渲染 PDF 原文与手排向量抓到。
+  - 返修与更正（验收阶段）：BlockAck 首交的窗口边界错误（主机 33 → 38、板侧 16 → 19）；WnmRest 带红测试交付（首交 34/39、
+    板侧 5 条不过，另有 QoS Traffic Capability 元素长度严格判等比 9.4.2.78 严）返修后 39/39、31/0；`keepaliveVerdict` 的周期参数
+    u16 → u32；GasAnqp 的「Status Code 宽度规范沉默」措辞更正为 9.4.1.9；IsoHci 的 `transparent air mode = 0x03` 补出处
+    （Assigned Numbers §2.11）；WnmRest 的占空比公式推断经渲染 PDF 证实。BLE 差分驱动 `driver_pawr.zig` 的暂存区越界是
+    切片驱动的缺陷，改驱动（不入库）后重跑；`pawr.zig` 本身没有问题。
+  - 独立评审（2026-11-25，只读评审员）与返修：BlockAck 一片逐条核对无发现；其余五片都有实质发现，全部返修并复验——
+    **P1**（Wi-Fi，主代理验收时的漏项）：CI Report 元素的 Interference Center Frequency 做成 2 八位组、元素体 19 字节，
+    原图 Figure 9-427 的八位组行是 4 4 4 4 2、元素体 21 字节（5 kHz 单位下 2.4 GHz 本信道是 482 400，u16 装不下），
+    合规对端的每条 CI Report 都会被拒收；已按原图重做。**P2**（Wi-Fi）：DMS Add 描述符补「恰好 1 个 TCLAS +
+    TCLAS Processing」的反方向检查。**P2**（BLE）：PAwR 的 `Advertiser.respond` 改成「已答位图」。P3 七条与比原文严两处、
+    文档十处、`iso.zig` 文件头的 Zephyr 引用更正（BIGInfo 只有 NimBLE 一份可对）照验证报告与 BLE 报告处理；
+    未覆盖的 9.4.5.5 Emergency Call Number 照原文补齐；存疑三条照实保留。
+  - **评审第二轮与一次误判（如实记录）**：Wi-Fi 残留 6 条处理完——Destination URI ≤ 253 八位组（9.4.2.90）两侧强制并补
+    253 通过 / 254 拒收的用例；构造侧 URI 元素最小长度与解析侧对齐；注释与页码改正。其中 DMS 描述符构造侧的上限
+    `payload > 252` 比原文严一个八位组（9.4.2.88：DMS Length 最大 253，`payload` 就是 DMS Length），主代理核对时只读了 6 行、
+    误判为「不成立」并让切片别改；读完整函数后确认评审是对的，自己改成 253，补了 n = 252 可构造、n = 253 被拒的边界用例。
+    BLE 第二轮七条全部解决、无新发现。
+  - 集成：主机用例 2032；整份板侧自检在主机上 `wifi_mlme` 121/121（最长一行 154 字节）、`wifi_connect` 199/199、
+    `ble_802154` 207/207（114 字节）；带守卫的交叉编译 rc=0（负对照触发守卫）；六份子自检 text 合计 46709 B，
+    指令数最多 155665 条（预算 2400 万）。门禁：`check-invariants.py` OK、`check-coverage.py` OK；
+    终态 `check-all.sh` rc=0 全绿（此前返修前第一遍停在容量门禁，`--update` 后第二遍全绿，终态基线再 `--update` 一次）。
+  - 容量：`wifi` 1157568 → 1218736 字节、`full` 1255168 → 1316272 字节；factory 分区余量 317264 与 219728 字节。
+    按每批约 60 KB 的增量，`full` 的余量还够 3 批左右，下一批之前要定「扩分区还是把自检移出 full」。
+  - 新增验证机制：`firmware/build.zig` 的 `-Donly=<section,…>` 与 `tests/e2e/run_e2e.py --only`（用户要求验证时只编涉及的
+    模块、减小镜像；两条构建期负对照验过；用法与板级前置——主机网口要有稳定链路——写进 `docs/TESTING.md`，
+    验证分级补进 `docs/REPO-STANDARDS.md` §4 与 `ROADMAP.md`）。
+  - 真实 AP 的对照（属路线图 R3，不属于第五批）：官方 IDF 的最小 station（`tools/wifi-idf-oracle/`）在同一块板上连用户提供的 AP
+    （SSID `hl-wifi`，密码不进仓库）：关联、WPA2-PSK、DHCP、ping 网关 5/5；`s31-firmware` 自己的 Wi-Fi 仍停在
+    `esp_wifi_start` 等 MAC 忙位。日志 `logs/wifi-idf-oracle-sta.log`，详见验证报告 §8。
+  - 报告：`docs/verification/wifi-ieee80211-verification.md` §4.6、§5.6、§6、§8，`ble-core-verification.md` §4.3、§5.4、§6、§7；
+    板级日志 `logs/e2e-wifi-boot.log` 与 `logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`。
 - **无线离线特性第四批（2026-11-25）**：与前几批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
-  与参照实现或按原文手排的 oracle 的对拍、板侧自检在主机上的运行。**这一批没有上板**（串口 `/dev/ttyUSB0` 当前账号没有权限，见下面「板级」）。
+  与参照实现或按原文手排的 oracle 的对拍、板侧自检在主机上的运行。**这一批当时没有上板**（串口 `/dev/ttyUSB0` 当前账号没有权限，
+  见下面「板级」；2026-11-25 随第五批的镜像上板、全部通过）。
   `tests/baselines.json` 合计 1648 → 1818（`wifi-connect` 386 → 431、`wifi-mlme` 146 → 200、`ble-802154` 414 → 485）。
   - `components/wifi-connect`（板侧自检 177 → 199 条）：
     - RFC 8110 §4.5 的 OWE PMK caching：请求里同时带 PMKID 与 DH Parameter element、AP 命中与未命中、client 命中 / 回退 / 忽略、
@@ -98,8 +156,7 @@
     镜像：`wifi` 1063200 → 1157568 字节、`full` 1182480 → 1255168 字节，`capacity.json` 基线已重写；factory 分区余量 378432 与 280832 字节。
   - 路线图：新增按规范条文的盘点——IEEE Std 802.11-2016 与 Bluetooth Core Specification 5.4 里还没实现的 host 侧领域，带原文锚点与离线可验证范围
     （`ROADMAP.md`「尚未实现的领域」）。OWE Transition Mode 的出处更正为 Wi-Fi 联盟的 OWE 规范，不在 RFC 8110 里。
-  - **板级：这一批没有做。** `wifi` profile 上板之前，`wifi_connect`、`wifi_mlme`、`ble_802154` 三个 section 在板上的读数仍然是
-    第二批的 87、24、50；第三、四批之后应当是 199、58、152。
+  - **板级：这一批没有做**（当时的记录；2026-11-25 随第五批的镜像上板，三个 section 199 / 121 / 207 全过）。
   - 报告：`docs/verification/wifi-ieee80211-verification.md` §4.5、§5.5、§6，`ble-core-verification.md` §4.2、§5.3、§6。
 - **无线离线特性第三批（2026-11-25）**：与前两批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
   与独立参照实现的差分、板侧自检在主机上的运行。**这一批没有上板**（见下面「板级」）。

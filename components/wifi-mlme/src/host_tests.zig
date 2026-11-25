@@ -2252,6 +2252,15 @@ test {
 test {
     _ = @import("rrm_caps_tests.zig");
 }
+test {
+    _ = @import("wnm_rest_tests.zig");
+}
+test {
+    _ = @import("gas_tests.zig");
+}
+test {
+    _ = @import("blockack_tests.zig");
+}
 
 // ---------------------------------------------------------------------------
 // 板侧子自检在主机上执行
@@ -2264,3 +2273,6 @@ test {
 const rrm_wnm_selftest = @import("rrm_wnm_selftest.zig");
 const wnm_tfs_selftest = @import("wnm_tfs_selftest.zig");
 const rrm_caps_selftest = @import("rrm_caps_selftest.zig");
+const wnm_rest_selftest = @import("wnm_rest_selftest.zig");
+const gas_selftest = @import("gas_selftest.zig");
+const blockack_selftest = @import("blockack_selftest.zig");

@@ -1,24 +1,27 @@
 # BLE 验证报告（Bluetooth Core Specification 5.4 与 RFC 7668）
 
-- 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。第四批另涉 RFC 6775（6LoWPAN-ND 的主机侧行为）与它所依托的 RFC 4861、RFC 4862，以及 RFC 8930 与 RFC 8931（分片转发与选择性分片恢复）。
+- 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。第四批另涉 RFC 6775（6LoWPAN-ND 的主机侧行为）与它所依托的 RFC 4861、RFC 4862，以及 RFC 8930 与 RFC 8931（分片转发与选择性分片恢复）。第五批只涉 Core 5.4，另引 Bluetooth SIG 的 Assigned Numbers（Coding_Format 表）。
 - 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）、`components/bt-blobs`（§8 的 HCI 一致性自检）。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
 - **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。下表的"通过"指离线验证通过。
-- 本文把 2026-11-25 加入的 6LoWPAN-ND 主机侧行为（`nd6.zig`）、分片转发与选择性分片恢复（`sfr.zig`）称为"第四批"。第四批新增两份板侧子自检，只到 L1 与 L2，**没有上板**；主机上的读数与复核见 §5.3，对拍见 §4.2，偏离见 §6 末尾。
+- 本文把 2026-11-25 加入的 6LoWPAN-ND 主机侧行为（`nd6.zig`）、分片转发与选择性分片恢复（`sfr.zig`）称为"第四批"。第四批新增两份板侧子自检，交付时只到 L1 与 L2，**没有上板**（当天晚些时候随第五批的镜像上板，判据全部通过，见 §5.4）；主机上的读数与复核见 §5.3，对拍见 §4.2，偏离见 §6 末尾。
+- 本文把 2026-11-25 加入的 PAwR 的 host 侧（`pawr.zig`）、Connection Subrating 的 host 侧（`subrate.zig`）、LE Isochronous 的 HCI 接口面（`iso.zig`）称为"第五批"。第五批新增三份板侧子自检；主机上的读数与复核见 §5.4，对拍见 §4.3，偏离见 §6 末尾。
 
 ## 1. 结论
 
 | 项 | 级别 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| `ble-802154` 主机测试 | L1 | 485/485（第一批 68，第二批 54，第三批 292，第四批 71） | §3.1 |
+| `ble-802154` 主机测试 | L1 | 583/583（第一批 68，第二批 54，第三批 292，第四批 71，第五批 98） | §3.1 |
 | `ble-security` 主机测试 | L1 | 51/51 | §3.2 |
-| 与独立参照实现的差分 | L1 | 第一批到第四批各自对拍，全部 0 不一致（第四批的 `nd6` 一组先发现证据强度不足，补强后重跑） | §4、§4.1、§4.2 |
+| 与独立参照实现的差分 | L1 | 第一批到第五批各自对拍，全部 0 不一致（第四批的 `nd6` 一组先发现证据强度不足，补强后重跑；第五批的 PAwR 驱动按带越界检查的模式重编后才跑得通） | §4、§4.1、§4.2、§4.3 |
 | HCI 命令布局对 NimBLE 头文件 | L1 | 三条逐字段一致 | §5 |
-| RV32 目标编译 | L2 | 两个自检都能以固件参数编译；第四批之后 `ble-802154` 的整份自检（152 条）与两份新增子自检同样通过 | §5、§5.3 |
+| RV32 目标编译 | L2 | 两个自检都能以固件参数编译；第五批之后 `ble-802154` 的整份自检（207 条）与三份新增子自检同样通过 | §5、§5.4 |
 | 板侧自检（第一批，第一次上板） | L3 | `ble_security` 25/25；`ble_802154` 18/19，失败的那条是自检自身的差一错误，已修 | `logs/wifi-selftest-prefix-boot.log` |
 | 修复后的板级复验（第一批） | L3 | `ble_802154` 19/19；整份判决 `main: verdict=pass` | 当时的 `logs/e2e-wifi-boot.log`，已被下一行的运行覆盖 |
 | 第二批后的板级复验 | L3 | `ble_802154` 50/50；`wifi` profile 14/14 个 section；`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§3.1 |
-| 板侧自检在主机上的运行（桩 `board`，第四批之后） | L1 | `ble_802154` 152/152（第三批之后是 106/106）；**没有上板** | §5.3 |
+| 板侧自检在主机上的运行（桩 `board`，第五批之后） | L1 | `ble_802154` 207/207（第四批之后是 152/152） | §5.4 |
+| 板侧自检（第五批上板） | L3 | `ble_802154` 207/207（连同 `wifi_mlme` 121/121、`wifi_connect` 199/199，第三、四、五批的判据第一次上板）；整份 `wifi` profile 14/14 个 section，`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§5.4 |
+| 最小验证镜像上板（`--only ble_802154,wifi_mlme`） | L3 | 只编这两个 section：`ble_802154` 207/207、`wifi_mlme` 121/121，`passed=2 failed=0`，`main: verdict=pass`；镜像 512704 字节，是整份 `wifi` 镜像（1218736 字节）的 42% | `logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.4 |
 | 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
 
 ## 2. 逐特性对照
@@ -65,6 +68,9 @@
 | 6LoWPAN 适配层补全：IPHC 压缩与无状态 / 有状态解压（两个方向、全部取值）、上下文表的有效期状态机、NHC（扩展头 EID 0–4 与 7、UDP 的 C 与 P 全部取值、校验和省略）、dispatch 分类、Mesh 头与转发规则、分片头与重组（重叠、乱序、60 秒超时） | RFC 4944 §5.1–§5.3、§11；RFC 6282 §3、§4；RFC 6775 §4.2、§5.4.2–§5.4.3；RFC 8025 §3 | `ble-802154/src/fifteen4.zig` | 50（`sixlowpan_tests.zig`） | RFC 手排的已知答案；lwIP（IDF v6.1 自带）的输出 | 10（`sixlowpan_selftest.zig`） | 离线验证通过 |
 | 6LoWPAN-ND 的主机侧行为：ARO / 6CO / ABRO / SLLAO 编解码，RS / RA / NS / NA 的校验（源、hop limit、Code、校验和、长度为 0 的选项），上下文表与有效期（同 CID 更新、生命周期 0 删除、过期进只收模式），地址注册（带 ARO 的 NS、NA 里的 Status）、续期与睡眠，下一跳判定 | RFC 6775 §3.1、§4.1–§4.3、§5.3–§5.8；RFC 4861 §4.1–§4.6、§6.1.2、§7.1；RFC 4944 §8 | `ble-802154/src/nd6.zig` | 42（`nd6_tests.zig`） | 按原文手排的已知答案（`gen_kats.py`）；独立手写的 Python 解析器 `nd6_oracle.py`（差分） | 30（`nd6_selftest.zig`） | 离线验证通过；只做 host 侧行为，见 §6 |
 | 分片转发（RFC 8930 的 6LFF / VRB）与选择性分片恢复（RFC 8931）：RFRAG / RFRAG-ACK 头，发送方、接收方、转发方三个状态机 | RFC 8930 §5、§6；RFC 8931 §4.4、§5、§6、§7.1、附录 C | `ble-802154/src/sfr.zig` | 27（`sfr_tests.zig`） | 按原文手排的已知答案（图 1、图 3、图 4、表 1）；Python oracle `sfr_oracle.py`（差分，头部编解码） | 16（`sfr_selftest.zig`） | 离线验证通过；状态机只有手排的场景用例，见 §6 |
+| PAwR（Periodic Advertising with Responses）的 host 侧：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令的编码与返回参数、LE Periodic Advertising Subevent Data Request / Response Report 两个事件的解码、事件掩码的位 38 / 39、链路层 AUX_SYNC_SUBEVENT_IND / RSP 的扩展头解析（表 2.8、表 2.9 的字段许可）、广播方一侧的请求登记（一次请求可以分多条命令应答，全部答完才关闭；同一子事件的数据只发一次）与响应数据模型 | [Vol 4] Part E §7.8.1、§7.8.125–§7.8.127、§7.7.65.36–.37；[Vol 6] Part B §2.3.1.9–.10、§2.3.4、§4.4.2.2.4、§4.4.2.12.2 | `ble-802154/src/pawr.zig` | 31（`pawr_tests.zig`） | 按参数表逐字节排的已知答案；表 2.8 / 2.9 逐格（主代理用程序从规范 HTML 里数出复核）；`pawr_oracle.py`（差分） | 18（`pawr_selftest.zig`） | 离线验证通过 |
+| Connection Subrating 的 host 侧：LE Set Default Subrate / LE Subrate Request 两条命令的编码与校验（范围、三条 0x12、0x02、0x1A）、LE Subrate Change 事件的解码、事件掩码的位 34、LL_SUBRATE_REQ / IND 的编解码、5.1.20 的五条接受条件与取值规则、5.1.19 的子事件基准与回绕、40 秒过程超时的会话模型 | [Vol 4] Part E §7.8.1、§7.8.123–.124、§7.7.65.35；[Vol 6] Part B §2.4.2.36–.37、§4.5.1–.2、§5.1.19–.20、§5.2 | `ble-802154/src/subrate.zig` | 27（`subrate_tests.zig`） | 参数表与规则行手排的已知答案（5.1.20 的五条各有接受与拒绝用例）；`subrate_oracle.py`（差分）；NimBLE 的 `hci_common.h`、`ble_ll_ctrl.c`、`ble_ll_conn.c` | 17（`subrate_selftest.zig`） | 离线验证通过 |
+| LE Isochronous 的 HCI 接口面：LE Set CIG Parameters、LE Create CIS、LE Accept / Reject CIS Request、LE Create BIG、LE BIG Create Sync、LE Setup / Remove ISO Data Path、LE Read ISO TX Sync、LE Read ISO Link Quality 十条命令的编码与返回参数；LE CIS Established / CIS Request / Create BIG Complete / BIG Sync Established / BIG Sync Lost / BIGInfo Advertising Report 六个事件的解码；HCI ISO Data 包的编解码；BIGInfo 位图；BIG 的参数公式 | [Vol 4] Part E §5.4.5、§7.8.96–.97、§7.8.99、§7.8.101–.103、§7.8.106、§7.8.109–.110、§7.8.116、§7.7.65.25–.27、.29–.30、.34；[Vol 6] Part B §4.4.6.3–.4、§4.4.6.11；Assigned Numbers 的 Coding_Format 表 | `ble-802154/src/iso.zig` | 37（`iso_tests.zig`） | 参数表逐字节；手排的 ISO 包与 BIGInfo；`iso_oracle.py`（差分）；NimBLE 的 `hci_common.h`（17 个结构体逐字段）、`ble_hs_iso.c`、`ble_ll_sync.c`；Zephyr 的一份拷贝 `hci_types.h`（ISO 数据包头的结构体） | 20（`iso_selftest.zig`） | 离线验证通过 |
 | 广播、连接、真实收发 | 不适用 | — | — | — | — | 阻塞：射频 synth PLL 不锁 |
 
 ## 3. 主机测试
@@ -72,7 +78,7 @@
 ### 3.1 `ble-802154`
 
 ```sh
-cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 485 tests passed.
+cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 583 tests passed.
 ```
 
 第一批：原有 20 项全部保留，新增 48 项，共 68 项。第二批（ATT / GATT 扩展，2026-11-24）：第一批的 68 项全部保留，新增 54 项，共 122 项。`zig fmt --check src/` 干净（2026-11-24 复跑）。
@@ -114,11 +120,16 @@ cd /home/huanglin/code/s31-firmware && R=/tmp/selftest-host && env -u LD_LIBRARY
 - 板级：`BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi` → `PASS board:wifi`（主代理实测）。`logs/e2e-wifi-boot.log` 里 `section: ble_802154` 之后有 50 行 `check:`，全部 `ok=1`，接着是 `checks: passed=50 failed=0 total=50`；整份日志 14 个 `section:`、`main: verdict=pass`。
 
 第三批（2026-11-25）：122 → 414，新增四个测试文件（`ext_adv_tests.zig` 115、`eatt_tests.zig` 57、`privacy_tests.zig` 66、`sixlowpan_tests.zig` 50）；
-板侧自检 50 → 106 条。这一批没有上板。
+板侧自检 50 → 106 条。这一批交付时没有上板（2026-11-25 随第五批的镜像上板，全部通过）。
 
 第四批（2026-11-25）：414 → 485。新增 `nd6_tests.zig` 42、`sfr_tests.zig` 27；`host_tests.zig` 多 2 个把它们带进来的 `test { … }` 块
 （现在是 6 个，本文件自己 122 项）。用桩 `board` 在主机上执行 `selftest.run()` → `checks: passed=152 failed=0 total=152`，最长一行 114 字节；
-整份自检以固件参数交叉编译通过（§5.3）。这一批没有上板。
+整份自检以固件参数交叉编译通过（§5.3）。这一批交付时没有上板（2026-11-25 随第五批的镜像上板，全部通过）。
+
+第五批（2026-11-25）：485 → 583。新增 `pawr_tests.zig` 31、`subrate_tests.zig` 27、`iso_tests.zig` 37；`host_tests.zig` 多 3 个把它们带进来的 `test { … }` 块（现在是 9 个，本文件自己 122 项）。用桩 `board` 在主机上执行 `selftest.run()` → `checks: passed=207 failed=0 total=207`，最长一行 114 字节；整份自检以固件参数交叉编译通过（§5.4）。
+
+板级（终态代码，2026-11-25）：`ble_802154` 207/207 在真板上全部通过——随整份 `wifi` profile（`PASS board:wifi`，14/14 个 section），
+也随只编 `ble_802154` 与 `wifi_mlme` 的最小验证镜像（`PASS board:wifi[ble_802154,wifi_mlme]`）。第三、四、五批的判据是第一次上板。
 
 ### 3.2 `ble-security`
 
@@ -194,6 +205,16 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 这一批的两个驱动二进制在交付时都比被测源码旧（`sfr` 的驱动 10:53 早于 `sfr.zig` 的最后一次修改 10:56，`nd6` 的驱动 11:04 早于 11:07），
 切片自报的"0 不一致"对最终代码不成立；上表是主代理重编驱动之后跑的。
 
+### 4.3 第五批的差分
+
+下表的数字是 2026-11-25 主代理用交付的源码重编驱动之后重跑得到的（§5.4）；驱动一律按 `ReleaseSafe` 编译（带越界检查），切片留下的驱动二进制没有沿用。参照实现都在 `/tmp/s31-oracle/`，一次性驱动不入库。
+
+| 特性 | 参照实现 | 规模 | 结果 | 性质 |
+| --- | --- | --- | --- | --- |
+| `pawr` 的命令编码、返回参数、事件解码、链路层子事件头、广播方应答场景 | `/tmp/s31-oracle/pawr/pawr_oracle.py` | 5 种子 × 200 例 = 1000 例 | `compare: cases=1000 mismatches=0`。接受 301、拒绝 699。按类（例数 / 通过）：7.8.125 编码 94 / 16、返回参数 90 / 38、7.8.126 编码 109 / 14、同步句柄返回 107 / 48、7.8.127 编码 101 / 6、数据请求事件 113 / 18、响应报告事件 197 / 30、链路层头 78 / 59（FieldNotPermitted 19）、子事件数回绕 11 / 6、广播方应答场景 100 / 66（NotPawr 9、CountExceedsTrain 25）。拒绝按错误名都有命中（Oversize、BadHandle、BadNumSubevents、BadSubevent、BadProperties、BadDataLength、BadLevel、BadDataStatus、BadCteType、BadTxStatus、BadNumResponses、FieldNotPermitted、CountExceedsTrain、Short、Trailing） | 照同一份规范独立写的模型对拍。盘上 NimBLE 没有 PAwR，没有独立实现对拍 |
+| `subrate` 的命令、事件、LL PDU 编解码与规则判决 | `/tmp/s31-oracle/subrate/subrate_oracle.py`、`gen_cases.py` | 定向用例加 3 个种子的随机用例，共 714 例 | oracle 自检（规范参数表的已知答案）通过；`compare: cases=714 mismatches=0`。通过 407、拒绝 307：5.1.20 的判决 39 例通过（另有 2 例参数不合法）；LL_SUBRATE_REQ 解码 50 / 52、LL_SUBRATE_IND 解码 18 / 82、LE Subrate Change 事件解码 21 / 79、LE Subrate Request 编码 71 / 72、LE Set Default Subrate 编码 121 / 17（通过 / 拒绝） | 规范向量对拍，加照同一份策略写的模型对拍（策略点：Central 取 factor = min(acc_max, req_max)、三条 0x12 的先后、回绕取最小的 K） |
+| `iso` 的命令打包、返回与事件解析、ISO 包、BIGInfo、BIG 公式 | `/tmp/s31-oracle/iso/iso_oracle.py`（含 5 组手排自检）、`gen_cases.py` | 5 种子 × 375 例 = 1875 例 | 每个种子 `cases=375 mismatches=0`，合计 `compare: cases=1875 mismatches=0`；拒绝 348 例，按错误名：BadHandle 95、BadId 75、Trailing 40、BadLength 38、Short 27、BadPhy 25、BadParam 25、BadSduInterval 15、BadCount 5、BadGroupCount 3。分支特征：Set CIG 多条 CIS 89、加密的 BIG 51、Create BIG Complete 多 BIS 49、BIGInfo 加密 30、ISO 包带时间戳 33、带 SDU 头的 ISO 包 95、BIGInfo 的 BIG_Offset 有效 81 / 无效 4 | 照同一份策略写的模型对拍（校验规则同源），不是独立第三实现；静态的位布局另与盘上的独立实现交叉核对（§5.4） |
+
 ## 5. 主代理独立复核
 
 - HCI 参数布局对 NimBLE 的 C 结构体（`~/esp/esp-idf/components/bt/host/nimble/nimble/nimble/include/nimble/hci_common.h`，另一份独立实现）：LE Set Advertising Parameters 15 字节、LE Create Connection 25 字节 12 个字段、LE Connection Update Complete 事件 10 字节，逐字段顺序一致。
@@ -262,7 +283,35 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
   实现按 §5.1 的布局、§4.4 取差值语义。
 - **尺寸与指令数**（riscv32 ReleaseSmall）：`nd6_selftest` text 15710 B、152883 条 rv32 指令；`sfr_selftest` text 17533 B（另 data 1040、bss 880）、
   75540 条。text 用 `zig build-obj` 量，指令数在 QEMU 上数。
-- **没有上板**：串口 `/dev/ttyUSB0` 属 `root:dialout`，当前账号没有权限。
+- **交付时没有上板**：串口 `/dev/ttyUSB0` 属 `root:dialout`，当时账号没有权限。同日用户授权恢复了权限，第四批的判据随第五批的镜像上板，`ble_802154` 207/207 全部通过（见 §5.4）。
+
+### 5.4 主代理对第五批的独立复核（2026-11-25）
+
+- **逐片验收**：三片各跑 `sh /tmp/r5c/accept.sh ble-802154 <特性>`。读数：
+
+| 片 | 主机测试 | 子自检在主机上（最长一行） | 目标编译 | text（riscv32 ReleaseSmall） | rv32 指令数 |
+| --- | --- | --- | --- | --- | --- |
+| `pawr` | 31/31 | 18/0（83 字节） | rc=0 | 5709 B | 10630 |
+| `subrate` | 27/27 | 17/0（60 字节） | rc=0 | 1348 B | 3954 |
+| `iso` | 37/37 | 20/0（93 字节） | rc=0 | 6514 B | 9011 |
+
+- **整份自检在桩 `board` 模块上运行**（命令同 §3.1）：`checks: passed=207 failed=0 total=207`，最长一行 114 字节。
+- **整份自检以固件参数交叉编译**（带守卫的根文件，`board` 模块用 `boards/esp32s31-coreboard/src/board.zig`）：退出 0。负对照（把目标参数放在最后一个 `-M` 之后）触发守卫：`guard: root module is not riscv32 (got x86_64)`。
+- **对拍在终态代码上重跑**，数字见 §4.3。
+- **PAwR 的驱动有一处未定义行为**：`driver_pawr.zig` 的暂存区每行按 251 字节开，而用例的数据长度字段可以到 255，`data_store[i][0..dl]` 在长度 252 时越界。切片留下的驱动是在不检查越界的优化级别下编的，所以没有暴露；主代理按 `ReleaseSafe` 重编时 panic。把暂存区加到 256 字节后重编重跑，1000 例 0 不一致。被测的 `pawr.zig` 本来就拒掉超限输入，没有改。
+- **条款锚点逐条打开原文核对**：7.8.125 / .126 / .127 的 OCF（0x82 / 0x83 / 0x84）与 `Num_Subevents` 的 0x01–0x0F、7.8.127 的 Subevent_Data 0x01–0x80、事件掩码的位 34 / 38 / 39、子事件码 0x23 / 0x27 / 0x28；7.8.123 五个参数的范围与默认值、7.8.124 的错误条件、LL 5.1.19 与 5.1.20 的接受条件和取值规则、5.2 的 40 秒；5.4.5 的字段表、7.8.97 / .99 / .106 / .109 的参数顺序。表 2.8 / 2.9 的格子是用程序从规范的 HTML 里数出来的，没有人工数。
+- **一处出处的更正**：`transparent air mode = 0x03` 原来标成 [INFERENCE]（切片认为 Assigned Numbers 不在盘上）。它在盘上：`/tmp/spec/Assigned_Numbers.pdf` 的 §2.11（Coding_Format and Codec_ID，印刷页 59）写明 `0x03 Transparent`，并注明被 [Vol 4] Part E §7.8.109 引用。`iso.zig` 与 `iso_tests.zig` 里的注释已改。
+- **NimBLE 的三处掩码少位**：`hci_common.h:2896 / 2899 / 2919` 的 `BLE_HCI_ISO_CONN_HANDLE_MASK (0x07ff)`、`BLE_HCI_ISO_LENGTH_MASK (0x7fff)`、`BLE_HCI_ISO_HDR_SDU_LENGTH_MASK (0x07ff)`，而它自己的打包路径（`ble_hs_iso.c:150`）用的是 12 位。实现按 5.4.5 的 12 / 14 / 12 位。
+- **图的原件取不到**：图 2.54 / 2.55（LL_SUBRATE_REQ / IND 的 CtrData）、图 4.38（BIGInfo）、图 5.5（HCI ISO Data 包）在盘上的 HTML 里是外链图片，图片目录没有随 HTML 下载；规范站点的图片被 Cloudflare 的质询拦住（`curl` 与无头的 Chromium 都取不到）。盘上能对上的独立实现只有两处：NimBLE（`ble_hs_iso.c:150–176` 的 ISO 包头打包、`ble_ll_sync.c:670–702` 的 BIGInfo 逐字段提取、`ble_ll_ctrl.h:290` 的 SUBRATE PDU 长度）与 Zephyr 的一份拷贝 `~/esp/esp-idf/components/bt/esp_ble_iso/include/zephyr/bluetooth/hci_types.h`（只有 ISO 数据包头的结构体）。所以 HCI ISO Data 包头的位布局是两份对过的；BIGInfo 的位布局只有 NimBLE 一份可对，外加 4.4.6.11 的 33 / 57 八位组总长。切片文件头原先引用的 Zephyr `pdu.h` 与 `ull_sync_iso.c` 是它当时从 GitHub 取的，本机没有，评审指出后已改正。
+- **独立评审之后的一次返修**（评审报告 `/tmp/r5c/review-ble.md`，BlockAck 之外的五片都有发现）：
+  - `pawr` 的 `Advertiser.respond` 原来无条件关闭请求台账，一条请求只能用一条命令应答；§7.8.125 每条命令最多 15 个条目，而一次 Subevent Data Request 可以覆盖到 128 个子事件，第二条补答命令会被拒。改成「已答位图」：全部答完才关闭，同一子事件第二次应答回 `AlreadyAnswered`。主机用例 28 → 31、板侧判据 17 → 18、差分加了 100 例广播方应答场景。
+  - `iso` 的 `leRemoveIsoDataPath` 不再拒收 direction = 0x00（§7.8.110 的位表只列 bit 0 / bit 1 与「其余位保留」，没有「at least one bit」的 shall），只拒保留位；RTN 越界的错误名由 `BadId` 改为 `BadRtn`。
+  - `subrate` 只改了注释里的行号锚点（31 处）。上表的数字是返修之后主代理重跑的。
+- **评审第二轮**（`/tmp/r5c/review-ble-r2.md`）：七条全部解决，评审员把第一轮的 16 子事件复现实验在返修后的模块上重跑（第二条命令被接受），
+  并单独查了 rv32 上的 u128 位图移位与整批拒绝的原子性；结论「无更多建议」。
+- **上板**（终态代码）：两次运行都是 `main: verdict=pass`——整份 `wifi` profile 14/14 个 section；最小验证镜像
+  （`python3 tests/e2e/run_e2e.py --board --profile wifi --only ble_802154,wifi_mlme`）只编本批涉及的两个 section，镜像 512704 字节。
+  日志：`logs/e2e-wifi-boot.log`、`logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`。这是 `ble_802154` 第三批以来的判据第一次上板。
 
 ## 6. 实现偏离
 
@@ -349,6 +398,12 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
   NULL 位图到来时放弃且不再补发 reset；完成时与吸收窗口内的 ACK 强制带 FULL 位图；延迟确认缺省关闭；
   孤儿的后续片静默丢弃，过期槽位上的迟到片带 X 时回 NULL。
 
+第五批（`pawr.zig`、`subrate.zig`、`iso.zig` 的文件头同文）：
+
+- **PAwR 只做 host 侧与链路层头部**：Packet Too Long / Too Early / Too Late、子事件的时序调度、§3.12 的连接建立、ADI 上位关系的整条链路没有做；§4.4.2.2.4 的时间公式只读不实现。IND / RSP 的扩展头复用 `ext_adv.zig` 的解析，在它之上叠加 Adv Mode = 0b00 与表 2.8 / 2.9 的许可矩阵；空口里没有子事件号与响应槽字段，由调用方给。子事件数据请求的个数超过子事件总数时模型回 CountExceedsTrain，是模型的护栏。广播方的请求台账在全部子事件都答完之后才关闭；同一条命令里重复出现同一个子事件也按 `AlreadyAnswered` 拒——原文只写「a subevent 的数据只发一次」，没有规定重复条目回什么，这是从严的取舍。
+- **Connection Subrating**：三条 0x12 之间的先后原文没有规定，实现按 NimBLE 的顺序（范围 → 乘积 > 500 → 监督超时 ≥ 一半 → max < min → continuation ≥ max），只影响同时违规时报哪一条；Central 取新的 factor 用 min(acc_max, req_max)，原文允许在交集里取任意值；新的监督超时取 min(req, acc)（原文），NimBLE 取的是 min(current, req)；NimBLE 把「≥ 一半」写成 `>`，实现按原文。**9.3.16（Connection Subrate procedure）的正文不在盘上**，只有目录条目，实现不引用它的任何具体要求。LL_SUBRATE_REQ / IND 的解码在校验范围的同时校验「factor × (latency + 1) ≤ 500」与「continuation ≤ factor − 1」，越界回 BadParam；5.1.19 的「Peripheral shall accept」是过程层的规则，模型里另有入口。
+- **LE Isochronous 只做 HCI 接口面**：ISOAL 的分段、实际的调度、音频都不做。**7.8.97 的 RTN 推荐不等式没有实现**：txt 转储里是「NSE×FT-NSE ÷ BN×BN-1≥RTN+1」，括号与取整符号丢失，无法唯一还原。H4 的 ISO 指示字节不编（[Vol 4] Part D 不在盘上；与 `hci.zig` 的 ACL 约定一致，ACL 也是裸的 4 字节头）。保留位的取舍逐条按原文：句柄字的 bit 15、长度字的高 2 位、BIGInfo 的字节 12、Channel Map 的高 27 位、payload_count 的第 40 位，接收方忽略；枚举型的保留值（PHY 的其余取值、Encryption = 2、Packet_Status_Flag = 0b11、事件时间参数出窗）拒收。`leRemoveIsoDataPath` 接受 direction = 0x00（§7.8.110 没有「at least one bit」的 shall），只拒保留位。BIGInfo 里 BaseCRCInit 的 16 位宽度是 [INFERENCE]：4.4.6.11 的正文只说它「contains the value described in Section 3.1.1」（那里 CRCInit 是 24 位），没有宽度句子，宽度取自 NimBLE 与 264 位的总长。`encodeIsoData` 不带方向参数：Packet_Status_Flag 在 Host → Controller 方向按原文是保留的，接真实 controller 时 Host 方向必须只发 valid。BIG_Offset 的「> 600 µs / units 位」规则做成 `BigInfo.offsetValid()` 校验助手，解析时不拒收（原文没有规定收方拒收）。Set CIG Parameters 的 CIS 个数就是数组长度，由 H4 的参数总长 ≤ 255 兜住；Create CIS 里同一句柄出现两次时拒掉（正文要求回 0x12）。
+
 ## 7. 未验证
 
 - 空口互通：配对、加密、重连、签名写；CRC 八位组的线上打包要先对一次真实字节。
@@ -363,8 +418,11 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - 第三批：新命令与新子事件没有经过 `hci_cmd.zig` / `hci_evt.zig` 的统一分发（§6）。
 - 第三批：6LoWPAN 与 lwIP 的互通只在宿主机上对过（§4.1），没有上过链路。§6 里 `::` 源地址的那一类差异，遇到 lwIP 发的帧 Zig 的解压器会拒解。
 - 第四批：`nd6` 与 `sfr` 在真实多跳网络上的行为（与 6LR / 6LBR 的注册、上下文过期、RFRAG 恢复与 VRB 的真实转发）没有任何证据；
-  两份子自检（共 46 条）在板子上一次都没跑过。
+  两份子自检（共 46 条）交付时没有上板，2026-11-25 随第五批的镜像上板后全部通过（见 §5.4）；真实多跳网络上的行为仍无证据。
 - 第四批：`sfr` 的三个状态机只有按原文手排的场景用例，没有独立实现对拍；`nd6` 的随机差分是两个独立解析器的一致性对拍，不涉及路由器侧的行为。
+- 第五批：PAwR、Connection Subrating、LE Isochronous 在真实 controller 上都没有任何证据；只有主机测试、模型对拍与板侧自检。
+- 第五批：图 2.54 / 2.55、图 4.38、图 5.5 的位图没有看到原件（§5.4）。HCI ISO Data 包头的位布局与盘上的 NimBLE、Zephyr `hci_types.h` 两份对过；LL_SUBRATE_REQ / IND 的字段宽度只有参数表与 NimBLE 的 PDU 长度；**BIGInfo 的位布局只有 NimBLE 一份可对**，外加 4.4.6.11 的 33 / 57 八位组总长。三片的差分都是照同一份规范写的 Python 模型对拍，不是与独立实现对拍（`subrate` 的命令结构体与 LL PDU 长度、`iso` 的 17 个命令 / 事件结构体另有与 NimBLE 的逐字段核对）。
+- 第五批：9.3.16 的正文、[Vol 4] Part D（H4 传输层）不在盘上；7.8.97 的 RTN 推荐不等式没有实现（§6）。
 
 ## 8. 对真实 controller 的 HCI 一致性自检（2026-11-24）
 

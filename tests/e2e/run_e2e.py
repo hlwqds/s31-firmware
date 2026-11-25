@@ -5,6 +5,9 @@
   --host        构建每个 profile、elf2image、断言恰好两段 DROM/IROM 且镜像适配分区
   --board       额外烧录默认 profile、抓一段串口（默认 30 s；wifi / full 更长，见 PROFILES 的 capture_s）、
                 断言段集合/逐段 checks/verdict
+  --only A,B    只编列出的 section（验证镜像不带无关模块，2026-11-25 起）：构建时传 `-Donly=A,B`，
+                断言的 section 集合同步收窄，日志写到 logs/e2e-<profile>-only-A+B-boot.log
+                （不覆盖整份 profile 的日志）。名字必须在所选 profile 的 sections 里。
   --junit PATH  输出 JUnit XML（CI 用）
 
 profile 定义在 PROFILES；两段窗口/分区容量由 scripts/check-capacity.py 单独门禁，
@@ -98,11 +101,27 @@ def run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, timeout=900)
 
 
-def zig_flags(flags: dict[str, bool]) -> list[str]:
+def zig_flags(flags: dict[str, bool], only: str | None = None) -> list[str]:
     out = []
     for k, v in flags.items():
         out.append(f"-D{k}={'true' if v else 'false'}")
+    if only:
+        out.append(f"-Donly={only}")
     return out
+
+
+def parse_only(only: str | None, profile: dict) -> list[str] | None:
+    """把 --only 的逗号串解析成按 profile 的 section 顺序排列的列表；不在该 profile 里的名字直接报错。
+    顺序跟着 profile 走，日志里的 section 顺序（固件的 all_modules 顺序）才能对上。"""
+    if not only:
+        return None
+    want = [s for s in (x.strip() for x in only.split(",")) if s]
+    if not want:
+        raise SystemExit("--only 是空的")
+    bad = [s for s in want if s not in profile["sections"]]
+    if bad:
+        raise SystemExit(f"--only 里有 {profile['sections']} 之外的 section：{bad}（名字写错，或所在组没打开）")
+    return [s for s in profile["sections"] if s in want]
 
 
 def esptool() -> list[str]:
@@ -110,13 +129,13 @@ def esptool() -> list[str]:
     return exe.split() if exe else [sys.executable, "-m", "esptool"]
 
 
-def build_profile(name: str, profile: dict) -> Case:
-    c = Case(f"profile:{name}:build")
+def build_profile(name: str, profile: dict, only: str | None = None) -> Case:
+    c = Case(f"profile:{name}{'[' + only + ']' if only else ''}:build")
     start = time.time()
     cache = tempfile.mkdtemp(prefix=f"e2e-{name}-")
     r = run([ZIG, "build", "-Dtarget=riscv32-freestanding-eabihf",
              "-Dcpu=generic_rv32+m+a+c+f+zicsr+zifencei", "-Doptimize=ReleaseSmall",
-             *zig_flags(profile["flags"]), "--cache-dir", cache], cwd=FW)
+             *zig_flags(profile["flags"], only), "--cache-dir", cache], cwd=FW)
     c.duration = time.time() - start
     c.output = (r.stdout + r.stderr)[-4000:]
     c.check(r.returncode == 0, f"zig build failed rc={r.returncode}")
@@ -141,8 +160,11 @@ def build_profile(name: str, profile: dict) -> Case:
     return c
 
 
-def board_case(profile_name: str) -> Case:
-    c = Case(f"board:{profile_name}")
+def board_case(profile_name: str, only: str | None = None) -> Case:
+    sections = parse_only(only, PROFILES[profile_name])
+    only_arg = ",".join(sections) if sections else None
+    tag = f"[{only_arg}]" if only_arg else ""
+    c = Case(f"board:{profile_name}{tag}")
     if not Path(BOARD).exists():
         c.skipped = f"no {BOARD}"
         return c
@@ -154,7 +176,7 @@ def board_case(profile_name: str) -> Case:
         return c
     # 先按所选 profile 构建并同步镜像到 zig-out/bin/app.bin；
     # fresh checkout（CI）没有该产物，必须先构建。
-    build = build_profile(profile_name, PROFILES[profile_name])
+    build = build_profile(profile_name, PROFILES[profile_name], only_arg)
     if build.failures:
         c.failures.extend(build.failures)
         c.output = build.output
@@ -164,7 +186,8 @@ def board_case(profile_name: str) -> Case:
     c.check(flash.returncode == 0, f"flash failed: {(flash.stdout + flash.stderr)[-800:]}")
     if flash.returncode != 0:
         return c
-    log = ROOT / "logs" / f"e2e-{profile_name}-boot.log"
+    log = ROOT / "logs" / (f"e2e-{profile_name}-only-{only_arg.replace(',', '+')}-boot.log" if only_arg
+                           else f"e2e-{profile_name}-boot.log")
     # 证据只能来自本轮：不删旧日志的话，flash/capture 失败后断言会拿上一轮的文本当本轮结果
     # （这正是 gate-board.sh 里那条防线；下沉到这里，任何直接调 `--board` 的路径都受保护）。
     log.unlink(missing_ok=True)
@@ -177,7 +200,7 @@ def board_case(profile_name: str) -> Case:
     c.duration = time.time() - start
     c.check("s31-firmware boot" in text, "merged firmware banner missing")
     actual = re.findall(r"^section: (\w+)$", text, re.MULTILINE)
-    expected = PROFILES[profile_name]["sections"]
+    expected = sections if sections else PROFILES[profile_name]["sections"]
     c.check(actual == expected, f"section set mismatch: expected {expected}, got {actual}")
     c.check("firmware: sections: passed=" in text, "aggregate sections line missing")
     c.check("main: verdict=pass" in text, "verdict=pass missing")
@@ -212,6 +235,8 @@ def main() -> int:
     ap.add_argument("--board", action="store_true")
     ap.add_argument("--profile", default="net")
     ap.add_argument("--junit", default=None)
+    ap.add_argument("--only", default=None,
+                    help="逗号分隔的 section 名：只编这些 section（验证镜像不带无关模块）")
     args = ap.parse_args()
     if not args.host and not args.board:
         args.host = True
@@ -221,7 +246,7 @@ def main() -> int:
         for name, prof in PROFILES.items():
             cases.append(build_profile(name, prof))
     if args.board:
-        cases.append(board_case(args.profile))
+        cases.append(board_case(args.profile, args.only))
 
     for c in cases:
         status = "SKIP" if c.skipped else "FAIL" if c.failures else "PASS"

@@ -4,7 +4,7 @@
 
 | 层 | 内容 | 命令 | 门禁 |
 | --- | --- | --- | --- |
-| L1 单元 | 19 个测试项目的 `test` 块（1818 项） | `scripts/check-host.sh` | 合并前必须绿 |
+| L1 单元 | 19 个测试项目的 `test` 块（2032 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
 | L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
@@ -35,7 +35,21 @@ Zig 0.17 没有暴露 LLVM 覆盖率映射（`-fcoverage-mapping` 不可用）�
 | `full` | boot + net + tls + apps + wifi | 构建 + 两段镜像（11 段自检） |
 | `net-wire` | boot + wire | **发布前板级门禁**：真实链路 DHCP+TCP，TCP 走 socket 层（`Table.connect` + `tcp.Conn` 并行驱动，应用 64 B 经 `Socket.send` 发出并被 ACK 确认，checks=7）。前置 `scripts/host-prep-wire.sh up`（接口地址/dnsmasq/防火墙/监听器），门禁 `scripts/gate-board.sh`（skip 视为失败）；无 DHCP 时打印 `wire: skipped/no-dhcp-server` 并跳过 |
 
-板级门禁（发布前必跑）：
+板级门禁（发布前必跑）。**验证某一批改动**（不编不涉及的模块、减小镜像）用 `--only`：
+
+```bash
+python3 tests/e2e/run_e2e.py --board --profile wifi --only ble_802154,wifi_mlme
+# 用例名 board:wifi[ble_802154,wifi_mlme]，日志写 logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log（不覆盖整份 profile 的日志）；
+# 2026-11-25 实测：最小验证镜像 512704 B，是整份 wifi 镜像（1218736 B）的 42%，PASS。
+```
+
+`-Donly=<section 名,…>`（`firmware/build.zig`）在各组开关允许的范围内再只留列出的 section；默认（空串）不收窄，
+六个 profile 逐字节不变。名字写错或所在组没打开，**构建期**就报错（两条负对照都验过）。今后每批的板级验证先用 `--only`
+只编本批涉及的 section；整份 profile 的运行留给发布前门禁。板级前置：主机网口 `enp0s31f6` 要有**稳定**的链路
+（`nmcli connection up 有线连接 2 ifname enp0s31f6`，主机 `10.42.0.1/24`、共享模式）；网口没有激活配置时 NetworkManager
+会反复尝试、把链路来回拉低，板侧 `net_ethernet` 的「等 5 秒链路」会判失败（2026-11-25 实际踩过一次，链路稳定后同一条判据通过）。
+
+发布前门禁（整份 profile）：
 
 ```bash
 # 本机（NixOS）三处环境都要显式给：zig 与 esptool 在 LD_LIBRARY_PATH 下会撞 glibc，
@@ -169,7 +183,7 @@ E2E 断言：
 命令与对照见 `docs/verification/wifi-ieee80211-verification.md` §5.1。
 `firmware/build.zig` 不经命令行传模块：目标由 `b.standardTargetOptions` 定、挂在根模块上（`.target = target`），导入的模块继承它，不受影响。
 
-### 板侧自检的两条隐性预算：抓取窗口与标称的 16 KiB 栈（2026-11-25，估算，未上板）
+### 板侧自检的两条隐性预算：抓取窗口与标称的 16 KiB 栈（2026-11-25，估算；各 section 的板上实测耗时至今没有单独量过——2026-11-25 的板级运行在抓取窗口内出了判决）
 
 **抓取窗口。** `run_e2e.py --board` 调 `tools/capture.py … <秒数>`：复位之后抓这么久，全部 section 的判决必须在这之内
 出来。默认 30 秒；`wifi` 60 秒、`full` 90 秒（`PROFILES` 里的 `capture_s`）。这两个 profile 的窗口放宽，是因为量过它们的
@@ -188,11 +202,13 @@ E2E 断言：
 | `wifi_connect`（199 条） | 15.48 亿 | 19.3 秒 |
 | `ble_security`（25 条） | 2.19 亿 | 2.7 秒 |
 | `net_congestion` | 914 万 | 0.11 秒 |
-| `ble_802154`（152 条） | 625 万 | 0.08 秒 |
-| `net_sockets`、`wifi_mlme`、`radio_coex`、`net_ipv4`、`net_tcp`、`net_udp_dhcp_dns`、`boot_power_perf`、`wifi_boundary`、`posix` | 合计 237 万 | 合计 0.03 秒 |
+| `ble_802154`（207 条） | 6307161 条 | 0.079 秒 |
+| `wifi_mlme`（121 条） | 1136527 条 | 0.014 秒 |
+| `net_sockets`、`radio_coex`、`net_ipv4`、`net_tcp`、`net_udp_dhcp_dns`、`boot_power_perf`、`wifi_boundary`、`posix` | 第五批终态抽查 `radio_coex` 195876、`wifi_boundary` 34675；第四批时含当时的 `wifi_mlme` 合计 237 万 | 合计 0.03 秒（第四批读数） |
 | `net_ethernet` | 量不了（真网卡） | — |
 
 合计 17.84 亿条，光计算就 22.3 秒（按 1.3 周期一条是 29 秒），还没算启动、串口输出和 `net_ethernet` 在真链路上的等待。
+这是第四批之后的读数；第五批终态逐 section 重测了 `wifi_mlme`、`ble_802154`（见上表），整份合计没有重算。
 第三批往 `wifi_connect` 里加了约 6.03 亿条（OWE 2.20 亿、SAE 其它群 3.74 亿、其余 0.09 亿），约 7.5 秒；第二批的
 `wifi` 镜像按同一口径是 14.7 秒的计算，它在 30 秒窗口里跑得过。30 秒对第三批的镜像是压线的，所以放宽窗口，而不是
 继续砍判据——剩下的每一条判据都对应一个不同的行为，砍掉就是实质减少板级证据。
@@ -245,7 +261,11 @@ profile 仍出不来 `verdict`，用 `tools/qemu-instr` 定位是哪个 section�
 也被内联在它里面，所以只给第三批的入口加 `noinline` 时最深链反而比之前深（28272 对 26544），三份入口一起加上才降下来。
 `ble-802154` 与 `wifi-mlme` 的驱动函数（`runChecks.3`、`runChecks.2`）栈帧没变（1136、9232），其下最深分别是 11984 与 12176 字节。
 `wifi-mlme` 原为 11248：第四批的 `wnm_tfs_selftest.checkMatch`（栈帧 1504）经 `wnm.parseTclasElement`、`wnm.parseTfsSubelement`
-这条链把它抬高了 928。第四批没有改变全局最深链。这一轮的估算脚本是一次性的（`/tmp/r5c/stack_depth.py`，没有入库），
+这条链把它抬高了 928。第四批没有改变全局最深链。第五批终态复测（`/tmp/r5c/stack_depth.py` 在保留符号的 `wifi` 镜像上，
+脚本先复现了 23248 / 12176 / 11984 / 16640 校准通过）：**全部不变**——全局最深仍是 23248 字节，各驱动函数之下
+`wifi-connect` 16640、`wifi-mlme` 12176（`wnm_tfs_selftest.checkMatch` 的栈帧 1504）、`ble-802154` 11984；
+第五批的子自检调用链都更浅。
+这一轮的估算脚本是一次性的（`/tmp/r5c/stack_depth.py`，没有入库），
 它在改动前的镜像上复现了上表最后两行的数；两个解析上的坑：`nm` 输出里符号名可以带空格（`bignum.ModArith(…).montMul`
 的编译期参数里有「, 」），要按「最多切 4 段」解析；`jalr` 省略 rd 时默认是 `ra`，是调用而不是尾调用。
 做法只有一条：给自检入口和每条判据的函数加 `noinline`，让各自的大数组落在各自的帧里，而不是叠在调用方上。

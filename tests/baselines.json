@@ -1,6 +1,6 @@
 {
     "app-mqtt-ota": 27,
-    "ble-802154": 485,
+    "ble-802154": 583,
     "ble-security": 51,
     "boot-power-perf": 28,
     "bt-blobs": 67,
@@ -17,5 +17,5 @@
     "wifi-blobs": 31,
     "wifi-boundary": 15,
     "wifi-connect": 431,
-    "wifi-mlme": 200
+    "wifi-mlme": 316
 }

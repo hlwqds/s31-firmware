@@ -91,6 +91,28 @@ pub fn build(b: *std.Build) void {
     const perf_tiers = b.option(bool, "perf-tiers", "also sweep CPU clock tiers 80/160/320 (C7, changes clocks)") orelse false;
     // C8：按需切回旧版本 —— 把当前槽标 INVALID 后复位，bootloader 改走另一槽/ factory。
     const ab_revert = b.option(bool, "ab-revert", "mark the running slot INVALID and reset (C8 revert-to-old)") orelse false;
+    // 细粒度收窄（2026-11-25 起，验证镜像只编涉及的模块）：`-Donly=<section 名,section 名>`。
+    // 在各组开关允许的范围内再只留列出的 section；默认（空串）不收窄，六个 profile 逐字节不变。
+    // 例：验证 R5 无线离线特性只动了 wifi_mlme 与 ble_802154 两个组件时，
+    //   `-Dboot=false -Dnet=false -Dwifi=true -Donly=ble_802154,wifi_mlme`
+    // 镜像里就只有这两个自检 section，不带网络组与 wifi_connect 的密码学。
+    // 名字必须是 all_modules 里的、且所在组已打开：写错在构建期就报错，免得「以为编进去了、其实没有」。
+    const only_list = b.option([]const u8, "only", "comma-separated section names to keep (narrows the group switches; empty = all enabled)") orelse "";
+    if (only_list.len > 0) {
+        var it = std.mem.splitScalar(u8, only_list, ',');
+        while (it.next()) |want| {
+            if (want.len == 0) @panic("-Donly 里有空的 section 名（多了一个逗号）");
+            var found = false;
+            for (all_modules) |m| {
+                if (std.mem.eql(u8, m.name, want)) {
+                    found = true;
+                    if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire))
+                        @panic(b.fmt("-Donly 里的 {s} 所在的组没有打开：先给对应的组开关（-Dboot / -Dnet / -Dtls / -Dapps / -Dwifi / -Dwire）", .{want}));
+                }
+            }
+            if (!found) @panic(b.fmt("-Donly 里有不存在的 section：{s}", .{want}));
+        }
+    }
 
     const board = b.createModule(.{ .root_source_file = b.path("../boards/esp32s31-coreboard/src/board.zig") });
     // **trap↔BT 耦合门控**：trap.zig 引用 bt_print_osal_stats/dbg_tim_*（BT 轮次加的
@@ -111,6 +133,7 @@ pub fn build(b: *std.Build) void {
     var src: []const u8 = "pub const entries = .{\n";
     for (all_modules) |m| {
         if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
+        if (!onlyWants(m.name, only_list)) continue;
         // probe 镜像里不能带 posix section：它会把 `osal_kit`（sched/osal）编进 app，
         // 而 `bt_core` 对象里已有一份 ⇒ `bt_swap_context`、`s31_now_us` 等 export 重复。
         // probe 是诊断镜像，本来也不需要那一段。
@@ -162,6 +185,7 @@ pub fn build(b: *std.Build) void {
 
     for (all_modules) |m| {
         if (!enabled(m, g_boot, g_net, g_tls, g_apps, g_wifi, g_wire)) continue;
+        if (!onlyWants(m.name, only_list)) continue;
         if (std.mem.eql(u8, m.name, "boot_power_perf")) {
             // 复用 bpp_mod：同一份 selftest.zig 不能同时属于两个模块。
             enabled_mod.addImport(m.name, bpp_mod);
@@ -506,4 +530,14 @@ fn enabled(m: Mod, boot: bool, net: bool, tls: bool, apps: bool, wifi: bool, wir
         .wifi => wifi,
         .wire => wire,
     };
+}
+
+/// `-Donly` 的过滤：空串不过滤；否则只留名单里的 section。
+fn onlyWants(name: []const u8, only_list: []const u8) bool {
+    if (only_list.len == 0) return true;
+    var it = std.mem.splitScalar(u8, only_list, ',');
+    while (it.next()) |want| {
+        if (std.mem.eql(u8, want, name)) return true;
+    }
+    return false;
 }

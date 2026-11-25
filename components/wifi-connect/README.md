@@ -16,7 +16,8 @@ RDE 与 Block Ack 的 RIC Descriptor、一条 RIC 的结构规则）。
   `owe_cache_selftest` 12 条、`ft_ric_selftest` 10 条）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 行与 `checks: passed=N failed=M total=N+M`；
   199 条判据（第一批 28 条，第二批 87 条，第三批 177 条，第四批 199 条）。上过板的是前两批的 87 条：2026-11-24 随 `wifi` profile
-  上板，`wifi_connect` 87/87（`logs/e2e-wifi-boot.log`）；第三批、第四批之后是 177、199 条，**没有上板**
+  上板，`wifi_connect` 87/87（该日志文件已被 2026-11-25 那次 pass 运行覆盖）；第三批、第四批之后是 177、199 条，**当时没有上板**
+  （2026-11-25 随第五批的镜像上板：`wifi_connect` 199/199 全过，见「待验证项」）
 - 依赖方向：逻辑模块只 import `std` 与同组件文件；仅 `selftest.zig` import `boards` 的 `board`（只用 `board.log`）
 - 不依赖其它组件，不做 802.11 帧编解码（归 `wifi-mlme`）；P-256 点运算在本组件的 `ecc.zig` 里
   （群运算用 `std.crypto.ecc.P256`）
@@ -278,7 +279,9 @@ const n = try s.recvEapol(frame, snonce, out);
 - 第二批之后的仓库门禁：`check-host.sh`、`check-coverage.py`、`check-invariants.py` 已重跑并通过
   （`tests/baselines.json` 的基线抬到 141 / 82，前门总数 1047）；`run_e2e.py --host` 与 `check-capacity.py`
   的结果记在 `docs/verification/README.md`。
-- 第三批、第四批之后的板侧判据（177、199 条）没有上板：串口 `/dev/ttyUSB0` 当前账号没有权限。
+- 第三批、第四批之后的板侧判据当时没有上板（串口 `/dev/ttyUSB0` 无权限）。2026-11-25 随第五批的镜像上板：
+  `wifi_connect` 199/199 全过（本组件的判据数在第五批不变）；整份 `wifi` profile 14/14 个 section 全过、
+  `main: verdict=pass`（`logs/e2e-wifi-boot.log`）。串口权限是同日由用户授权 `setfacl` 恢复的。
 - 真实 AP 上的 SAE（WPA3 个人）、FT 初始关联与快速切换、256 位套件协商都没有任何互通证据。
 - 与真实 AP 的互通：消息 3 / 组密钥消息 1 的字段宽松度（上面第 7 条）只能靠实网确认。
 - CCMP/GCMP 的 QoS + 四地址 AAD（30 字节）只有构造测试，没有官方向量。

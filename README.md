@@ -60,4 +60,4 @@ sh tools/flash.sh /dev/ttyUSB1                                      # 需 idf-bo
 - 贡献流程：`CONTRIBUTING.md`
 - 工程硬约束速查：`AGENTS.md`
 - 变更记录：`CHANGELOG.md`
-- 测试框架与门禁：`docs/TESTING.md`（单元 1818 项 + 覆盖率门禁 + profile/板级 E2E）
+- 测试框架与门禁：`docs/TESTING.md`（单元 2032 项 + 覆盖率门禁 + profile/板级 E2E）

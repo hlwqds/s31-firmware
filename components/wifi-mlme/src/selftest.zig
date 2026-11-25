@@ -51,6 +51,9 @@ const powersave = @import("powersave.zig");
 const rrm_wnm_selftest = @import("rrm_wnm_selftest.zig");
 const wnm_tfs_selftest = @import("wnm_tfs_selftest.zig");
 const rrm_caps_selftest = @import("rrm_caps_selftest.zig");
+const wnm_rest_selftest = @import("wnm_rest_selftest.zig");
+const gas_selftest = @import("gas_selftest.zig");
+const blockack_selftest = @import("blockack_selftest.zig");
 
 /// 新判据共用的一块缓冲，放在文件作用域，不占栈。
 var g_scratch: [320]u8 = undefined;
@@ -1120,6 +1123,9 @@ fn runChecks() bool {
     rrm_wnm_selftest.run(extCheck);
     wnm_tfs_selftest.run(extCheck);
     rrm_caps_selftest.run(extCheck);
+    wnm_rest_selftest.run(extCheck);
+    gas_selftest.run(extCheck);
+    blockack_selftest.run(extCheck);
     return g_failed == 0;
 }
 
