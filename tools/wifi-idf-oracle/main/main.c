@@ -21,6 +21,22 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "apps/ping/ping_sock.h"
+#ifdef CONFIG_ORACLE_REGDUMP
+#include "regdump_addrs.h"
+
+/* 与 s31-firmware 的 Wi-Fi 探针对照用：按 SoC 头文件里定义过的寄存器地址全量读一遍（只读、不写）。
+ * 两边在同一个时点各 dump 一次，再程序化做差。MAC_ST（0x20104CAC）是 blob 私有的状态寄存器，
+ * 不在头文件里，单独读。 */
+static void regdump(const char *tag) {
+    volatile uint32_t *mac_st = (volatile uint32_t *)0x20104CAC;
+    printf("REGDUMP %s begin n=%u mac_st=%08X\n", tag, (unsigned)DUMP_N, (unsigned)*mac_st);
+    for (unsigned i = 0; i < DUMP_N; i++) {
+        volatile uint32_t *p = (volatile uint32_t *)g_dump_addrs[i];
+        printf("REG %u %08X %08X\n", i, (unsigned)g_dump_addrs[i], (unsigned)*p);
+    }
+    printf("REGDUMP %s end\n", tag);
+}
+#endif
 
 #define WIFI_SSID CONFIG_ORACLE_WIFI_SSID
 #define WIFI_PASS CONFIG_ORACLE_WIFI_PASSWORD
@@ -172,6 +188,9 @@ void app_main(void) {
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_LOGI(TAG, "esp_wifi_init -> %s", esp_err_to_name(esp_wifi_init(&cfg)));
+#ifdef CONFIG_ORACLE_REGDUMP
+    regdump("after-init");
+#endif
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
     s_evt = xEventGroupCreate();
@@ -185,6 +204,9 @@ void app_main(void) {
 
     esp_err_t e = esp_wifi_start();
     ESP_LOGI(TAG, "esp_wifi_start -> %s", esp_err_to_name(e));
+#ifdef CONFIG_ORACLE_REGDUMP
+    regdump("after-start");
+#endif
 
     /* 等最多 30 秒拿 IP；拿到就跑一轮主动发包。 */
     EventBits_t bits = xEventGroupWaitBits(s_evt, GOT_IP_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));

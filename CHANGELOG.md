@@ -5,6 +5,17 @@
 ## [Unreleased]
 
 ### Fixed
+- **Wi-Fi blob 的 `esp_wifi_start` 不返回（2026-11-25，R3.1 的卡点）**：blob 在 `esp_wifi_start` 里等 `MAC_ST`
+  （0x20104CAC）的忙位 bit 13–15 自清，我们的运行时里它们停在复位值。根因是裸机镜像没做 IDF 启动期 `pmu_init()`
+  （`esp_rtc_init()` 里调）的一步：给 ACTIVE / MODEM / SLEEP 三个 HP 电源模式写 modem 的 ICG 码（2 / 1 / 0）并触发两次
+  立即更新。码是复位值 0 时，时钟适配层写的门控位图（各域 `0x6`）对不上，`CLK_CONF1.clk_wifimac_en` 是 1 而 Wi-Fi MAC
+  的核没在跑。定位方法是与官方 IDF 在 `esp_wifi_init` 之后对照 523 个有定义的寄存器（差集 95 个）再做单变量实验，
+  记录在 ADR-001 文末。修法：板级包新增 `boards/esp32s31-coreboard/src/pmu.zig`，`wifi-blobs` 的 `initOnly()` 开头调用；
+  `_wifi_clock_disable` 按 IDF 补齐（清 `clk_coex_en`、不在 disable 时复位 BB），init 之后 `LPCON+0x18` 由 3 变成与 IDF
+  相同的 1。验证：板侧 Wi-Fi 探针 `esp_wifi_start rc=0`、init 之后 `MAC_ST=0x00000000`
+  （`logs/wifi-probe-start-rc0-boot.log`）；合并镜像重跑 `main: verdict=pass`；`scripts/check-all.sh` 与
+  `run_e2e.py --board --profile net` 通过。主机用例数不变。没有做：`esp_wifi_start` 之后的扫描与连接；
+  BLE 侧不接这一步（接了 BLE 探针锁死，属 R3.3）。
 - **`rrm.maxMeasurementDurationTu` 对 MIB 1–3 下溢（2026-11-25，第四批复核时发现）**：11.11.4 的最大量测时长是
   2^(dot11RMMaxMeasurementDuration − 4) × BeaconInterval，MIB 取 0–7。旧代码做 `u32` 减法，MIB 为 1–3 时下溢，函数返回 `maxInt(u32)`
   （等于不限）。现对这三个值取向下取整的 TU 数；MIB 为 0 与 ≥4 的结果不变。有用例。

@@ -1180,9 +1180,10 @@ fn shellCoexRegisterStartCb(cb: ?*anyopaque) callconv(.c) usize {
     return 0;
 }
 
-/// `_wifi_clock_enable/disable` 与 `_wifi_reset_mac`：这三个同样是空桩。
-/// 目前先做到"**可观测**"——在自旋前被调用就能从 trace 里看到；时钟位是幂等重申。
-/// IDF `wifi_module_enable()` 的 `WIFI_CLOCK_DEPS`（`modem_clock_impl.c:14`）对应的 CLK_CONF1 位。
+/// `_wifi_clock_enable/disable` 与 `_wifi_reset_mac`：IDF `esp_adapter.c` 三个包装的移植——
+/// `wifi_clock_enable_wrapper` → `wifi_module_enable()`、`wifi_clock_disable_wrapper` →
+/// `wifi_module_disable()`、`modem_clock_module_mac_reset()`。下面的位名与顺序对着 s31 的
+/// `WIFI_CLOCK_DEPS`（`modem_clock_impl.c:14`）与各设备的 `configure` 函数。
 /// 位名来自 `modem_syscon_struct.h` 的 `clk_conf1` 位域（bit0..21）：
 ///   0 wifibb_22m / 1 wifibb_40m / 2 wifibb_44m / 3 wifibb_80m / 4 wifibb_40x / 5 wifibb_80x
 ///   6 wifibb_40x1 / 7 wifibb_80x1 / 8 wifibb_160x1 / **9 wifimac** / **10 wifi_apb**
@@ -1198,9 +1199,12 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // **调用者身份**：IDF 侧同一个钩子的调用者是 `0x4005700c` = blob 的 `pm_attach`。
     // 记下我们的返回地址，与它对照（`@returnAddress()` 在 c callconv 下即 ra）。
     clk_caller_ra = @returnAddress();
-    // ★ IDF 的 `wifi_module_enable()` → `modem_clock_module_enable()` 会先
-    // `modem_clock_module_icg_map_init_all()`，把各域的 **ICG 位图**写进 `CLK_CONF_POWER_ST`(0x20109C0C)
-    // —— 实测 IDF 工作值是 `0x64646400`。我们此前只写 CLK_CONF1，没写这张位图。
+    // ★ IDF 的 `wifi_module_enable()` → `modem_clock_module_enable()` 先做
+    // `modem_clock_module_icg_map_init_all()`，把各域的 **ICG 位图**按位或进 `CLK_CONF_POWER_ST`
+    // (0x20109C0C)——IDF 实测工作值是 `0x64646400`。此前只写 CLK_CONF1，没写这张位图。
+    // 位图的每一位对应 PMU 的一个 modem ICG 码（`ICG_NOGATING_ACTIVE = bit 2`、`ICG_NOGATING_MODEM = bit 1`）。
+    // 码由 IDF 启动期的 `pmu_init()` 建立；我们的镜像由 `initOnly` 里的 `board.pmu.initModemIcg()` 补上。
+    // 码是复位值 0 时，这张位图写得再对时钟域也照样被门控：`MAC_ST` 忙位不清、`esp_wifi_start` 不返回。
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     const icg_before = icg.*;
     // **严格按 IDF `modem_clock_device_control` 的 device 顺序写**——
@@ -1216,7 +1220,7 @@ fn shellWifiClockEnable() callconv(.c) usize {
         const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
         modconf.* = 0x3D;
     }
-    // 2) COEXIST (dev=3) —— LPCON 侧 ICG 位图
+    // （LPCON 侧的 ICG 位图也属于上一步：`modem_clock_module_icg_map_init_all()` 同时覆盖两张表。）
     {
         const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
         icg20.* = 0x6666_0000;
@@ -1242,7 +1246,8 @@ fn shellWifiClockEnable() callconv(.c) usize {
     conf1.* = conf1.* | 0x7FF;
     // 7) WIFI_BB_80X1 (dev=9)
     conf1.* = conf1.* | (1 << 7);
-    // 8) LPCON clk_conf（IDF 侧 AFTER 是 0x3）
+    // 8) LPCON clk_conf：bit0 `clk_wifipwr_en`（init 之前就是 1）、bit1 `clk_coex_en`
+    //    （IDF 在 dev=3 这一步置的就是它）。两个域在 IDF 的 init 期间同时开着。
     {
         const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
         lpcon.* = 0x3;
@@ -1252,32 +1257,26 @@ fn shellWifiClockEnable() callconv(.c) usize {
 
 fn shellWifiClockDisable() callconv(.c) usize {
     note(22, 0, 0);
-    // **这不是空桩**（原来只 note 不做事）。IDF 的 `wifi_module_disable()` 会真做
-    // `modem_clock_module_disable(PERIPH_WIFI_MODULE)`：按 deps **反向**逐设备 `configure(false)`
-    // （`SOC_PLL_SOURCE_CG` 写 `0x25`、其余清各时钟位），也就是 **init 期间的一次真·断电**。
-    // 我们的空桩让 blob 的 enable→disable 周期变成"只有 on、没有 off" ⇒ MAC 域没有真正复位过。
-    // 按 IDF 的反向顺序实现：
+    // IDF `wifi_module_disable()` → `modem_clock_module_disable(PERIPH_WIFI_MODULE)`：对同一张
+    // `WIFI_CLOCK_DEPS` 按同一顺序（`modem_clock_device_control` 从低位往高位扫）逐设备 `configure(false)`。
+    // `esp_wifi_init_internal` 里 blob 在 `wifi_clock_enable_wrapper` 之后紧接着调一次，此时
+    // `MODEM_STATUS_WIFI_INITED` 还是 false，所以这是一次**真的关**——IDF 在 init 之后 `CLK_CONF1 = 0`。
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    // 9) WIFI_BB_80X1 off
+    // 9) WIFI_BB_80X1 off（bit 7）
     conf1.* = conf1.* & ~@as(u32, 1 << 7);
-    // 8) WIFI_BB off（清 BB 组 + 脉冲 rst_wifibb）
-    conf1.* = conf1.* & ~@as(u32, 0x7FF);
+    // 8) WIFI_BB off：`clk_conf1_configure(0x17b)`。**不复位**——IDF 的 `modem_clock_wifi_bb_configure`
+    //    只在 `enable` 时打 `rst_wifibb` 脉冲。
+    conf1.* = conf1.* & ~@as(u32, 0x17b);
+    // 7) WIFI_MAC off（bit 9）/ 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
+    conf1.* = conf1.* & ~@as(u32, (1 << 9) | (1 << 2) | (1 << 10));
+    // 3) COEXIST off：`modem_lpcon_ll_enable_coex_clock(false)`，清 `clk_conf.clk_coex_en`（LPCON+0x18 bit 1）。
+    //    **不碰 ICG 位图**（LPCON+0x20）：`modem_clock_module_icg_map_init_all()` 只在 enable 里做，
+    //    而且是按位或上去、从不清零。此前这里把位图清成 0：init 之后读回 0，而 IDF 是 0x66660000。
     {
-        const rst: *volatile u32 = @ptrFromInt(0x2010_9C10);
-        rst.* = rst.* | (1 << 8);
-        romDelayUs(20);
-        rst.* = rst.* & ~@as(u32, 1 << 8);
+        const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
+        lpcon.* = lpcon.* & ~@as(u32, 1 << 1);
     }
-    // 7) WIFI_MAC off —— `clk_wifimac_en` = bit 9
-    conf1.* = conf1.* & ~@as(u32, 1 << 9);
-    // 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
-    conf1.* = conf1.* & ~@as(u32, (1 << 2) | (1 << 10));
-    // 3) COEXIST off —— LPCON ICG 位图清零
-    {
-        const icg20: *volatile u32 = @ptrFromInt(0x2010_F020);
-        icg20.* = 0;
-    }
-    // 2) SOC_PLL_SOURCE_CG off —— IDF disable 值是 0x25
+    // 2) SOC_PLL_SOURCE_CG off：`HP_SYS_CLKRST.modem_conf = 0x25`
     {
         const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
         modconf.* = 0x25;

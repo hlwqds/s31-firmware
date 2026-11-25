@@ -1,0 +1,1269 @@
+��٥ͥ�ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=5a460h (369760) map
+I (173) esp_image: segment 1: paddr=0006a488 vaddr=2f000800 size=00214h (   532) load
+I (175) esp_image: segment 2: paddr=0006a6a4 vaddr=2f000a20 size=05974h ( 22900) load
+I (182) esp_image: segment 3: paddr=00070020 vaddr=401d0020 size=19260h (103008) map
+I (202) esp_image: segment 4: paddr=00089288 vaddr=2f006394 size=0f46ch ( 62572) load
+I (220) boot: Loaded app from partition at offset 0x10000
+I (220) boot: Disabling RNG early entropy source...
+wifi-init-probe: begin
+wifi-init-probe: MAC_ST at begin = 0x0000e000
+wifi-init-probe: arena=301520 B
+wifi-init-probe: table=0x2f02a3f0 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: calling coex_init() (IDF wrapper 顺序)
+wifi-init-probe: coex_init returned
+wifi-init-probe: pre-init ctx b14=0 b15=0 b288=0 cb_slot=0x0
+wifi-init-probe: CLKDMP[before-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x00000000
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000004
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: 0x201044EC fixed 0x10880 -> 0x10880 (IDF=0x102C0)
+wifi-init-probe: LPCON+18 fixed pre-init 0x4 -> 0x1 (IDF=0x1)
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f02d614
+wifi-blob: pp rom version: %s
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f02d668
+wifi-blob: net80211 rom version: %s
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f02dc90
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f02de14
+wifi-init-probe: trace semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace semphr_give a0=0x2f02e4d8 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#1 hooks=20 give=1 null_give=0 semmax=0x10000
+wifi-init-probe: pump#2 hooks=20 give=1 null_give=0 semmax=0x10000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02ff00
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02de60 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f015958 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f02ff28
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f03114c
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f03114c
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f0311f4
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f03129c
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f031344
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f03137c
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0313b4
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0313ec
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031424
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f0316bc
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031954
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031bec
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f031e84
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f03211c
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f032440
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000078 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f032764
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0327ec
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f032ea4
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f03355c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f033c14
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0342cc
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f034984
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f03503c
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f0356f4
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f035dac
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f036464
+wifi-init-probe: trace timer_setfn a0=0x2f0158e4 a1=0x400005fc
+wifi-init-probe: trace timer_setfn a0=0x2f0158f8 a1=0x400005f6
+wifi-init-probe: trace timer_setfn a0=0x2f015934 a1=0x400005f0
+wifi-init-probe: trace timer_setfn a0=0x2f015920 a1=0x400005ea
+wifi-init-probe: trace timer_setfn a0=0x2f015958 a1=0x400005e4
+wifi-init-probe: trace timer_setfn a0=0x2f01596c a1=0x400005de
+wifi-init-probe: trace timer_setfn a0=0x2f015980 a1=0x400005d8
+wifi-init-probe: trace timer_setfn a0=0x2f01599c a1=0x400005d2
+wifi-init-probe: trace timer_setfn a0=0x2f015ca4 a1=0x400005cc
+wifi-init-probe: trace timer_setfn a0=0x2f015c44 a1=0x400005c6
+wifi-init-probe: trace timer_setfn a0=0x2f015c80 a1=0x400005c0
+wifi-init-probe: trace timer_setfn a0=0x2f015af4 a1=0x40007812
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x00000000 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace wifi_clk_dis a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000004
+wifi-init-probe: trace zalloc a0=0x00000004 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f036b1c
+wifi-init-probe: trace coex_interval a0=0x4003d4d0 a1=0x00000000
+wifi-init-probe: trace timer_setfn a0=0x2f017d80 a1=0x4002b672
+wifi-init-probe: trace timer_setfn a0=0x2f017d94 a1=0x4002b668
+wifi-init-probe: trace timer_disarm a0=0x2f017118 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e4d8 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#3 hooks=151 give=2 null_give=0 semmax=0x10000
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: CLKDMP[after-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x64646400
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000003
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+REGDUMP after-init begin n=523 mac_st=0000e000
+REG 0 20109400 00000000
+REG 1 20109404 00000000
+REG 2 20109408 00000000
+REG 3 2010940c 02202221
+REG 4 20109c00 00000100
+REG 5 20109c04 00201002
+REG 6 20109c08 00000000
+REG 7 20109c0c 64646400
+REG 8 20109c10 00000000
+REG 9 20109c14 00000000
+REG 10 20109c18 00000000
+REG 11 20109c1c 00000000
+REG 12 20109c20 00002070
+REG 13 20109c24 00000000
+REG 14 20109c28 00000000
+REG 15 20109c2c 00000044
+REG 16 20109c30 02508080
+REG 17 2010f000 00000000
+REG 18 2010f004 00000000
+REG 19 2010f008 00000000
+REG 20 2010f00c 00000000
+REG 21 2010f010 00000000
+REG 22 2010f014 00000000
+REG 23 2010f018 00000003
+REG 24 2010f01c 00000004
+REG 25 2010f020 00000000
+REG 26 2010f024 00000000
+REG 27 2010f028 00000027
+REG 28 2010f02c 08888888
+REG 29 2010f030 00002070
+REG 30 2010f034 00000000
+REG 31 2010f038 00000000
+REG 32 2010f03c 00000000
+REG 33 2010f040 00000000
+REG 34 2010f044 00000000
+REG 35 2010f048 00000000
+REG 36 2010f04c 00003fff
+REG 37 2010f050 00000000
+REG 38 2010f054 00000004
+REG 39 2010f058 02508150
+REG 40 2010f800 00000000
+REG 41 2010f804 01420d6d
+REG 42 2010f808 07000000
+REG 43 2010f80c 07000000
+REG 44 2010f810 00000000
+REG 45 2010f814 40000001
+REG 46 2010f818 2100e408
+REG 47 2010f81c 00ff7fff
+REG 48 2010f820 00000004
+REG 49 2010f824 00000042
+REG 50 2010f828 00000042
+REG 51 2010f82c 00000042
+REG 52 2010f830 00000000
+REG 53 2010f834 00000000
+REG 54 2010f838 00000000
+REG 55 2010f83c 02411290
+REG 56 20587000 00000001
+REG 57 20587004 00000003
+REG 58 20587008 00000000
+REG 59 2058700c 00000000
+REG 60 20587010 00000001
+REG 61 20587014 00000000
+REG 62 20587018 00000000
+REG 63 2058701c 00000003
+REG 64 20587020 00000004
+REG 65 20587024 00000003
+REG 66 20587028 00000003
+REG 67 2058702c 00000000
+REG 68 20587030 00000000
+REG 69 20587034 00000001
+REG 70 20587038 000156db
+REG 71 2058703c 0000000f
+REG 72 20587040 00000001
+REG 73 20587044 0000000f
+REG 74 20587048 00000011
+REG 75 2058704c 00000000
+REG 76 20587050 00000000
+REG 77 20587054 00000000
+REG 78 20587058 00415555
+REG 79 2058705c 00000005
+REG 80 20587060 00000000
+REG 81 20587064 00000ba1
+REG 82 20587068 00000181
+REG 83 2058706c 00800043
+REG 84 20587070 00800043
+REG 85 20587074 00000000
+REG 86 20587078 00000001
+REG 87 2058707c 00000001
+REG 88 20587080 00000001
+REG 89 20587084 00000000
+REG 90 20587088 00000083
+REG 91 2058708c 00000083
+REG 92 20587090 00000083
+REG 93 20587094 00000083
+REG 94 20587098 00000000
+REG 95 2058709c 00000000
+REG 96 205870a0 00000000
+REG 97 205870a4 00000000
+REG 98 205870a8 00000040
+REG 99 205870ac 00000000
+REG 100 205870b0 00000000
+REG 101 205870b4 00000000
+REG 102 205870b8 00000000
+REG 103 205870bc 00000000
+REG 104 205870c0 00000000
+REG 105 205870c4 00000000
+REG 106 205870c8 00000000
+REG 107 205870cc 00000000
+REG 108 205870d0 00000000
+REG 109 205870d4 00000000
+REG 110 205870d8 00000001
+REG 111 205870dc 00000000
+REG 112 205870e0 00000000
+REG 113 205870e4 00000000
+REG 114 205870e8 00000000
+REG 115 205870ec 00000000
+REG 116 205870f0 00000000
+REG 117 205870f4 00000000
+REG 118 205870f8 00000000
+REG 119 205870fc 00000000
+REG 120 20587100 00000000
+REG 121 20587104 00000000
+REG 122 20587108 00000000
+REG 123 2058710c 00000000
+REG 124 20587110 00000000
+REG 125 20587114 00000921
+REG 126 20587118 00000011
+REG 127 2058711c 00000921
+REG 128 20587120 00000000
+REG 129 20587124 00000000
+REG 130 20587128 00000000
+REG 131 2058712c 00000000
+REG 132 20587130 00000000
+REG 133 20587134 00000001
+REG 134 20587138 00000000
+REG 135 20587144 00000001
+REG 136 20587148 00000000
+REG 137 2058714c 00000000
+REG 138 20587150 00000000
+REG 139 20587154 00000000
+REG 140 20587158 00000000
+REG 141 2058715c 00000011
+REG 142 20587160 00001011
+REG 143 20587164 00001011
+REG 144 20587168 0000012c
+REG 145 2058716c 0000001a
+REG 146 20587170 00000002
+REG 147 20587174 0000004d
+REG 148 20587178 00000000
+REG 149 2058717c 00000101
+REG 150 20587180 00000102
+REG 151 20587184 00000103
+REG 152 20587188 00000505
+REG 153 2058718c 00000107
+REG 154 20587190 00000117
+REG 155 20587194 00000105
+REG 156 20587198 0000010b
+REG 157 2058719c 00000000
+REG 158 205871a0 000003ff
+REG 159 205871a4 000003ff
+REG 160 205871a8 000003ff
+REG 161 205871ac 00000000
+REG 162 205871b0 00000001
+REG 163 205871b4 00000000
+REG 164 205871b8 00000000
+REG 165 205871bc 00000000
+REG 166 205871c8 00000000
+REG 167 205871cc 00000001
+REG 168 205871d0 00000001
+REG 169 205871d4 00000000
+REG 170 205871d8 00000001
+REG 171 205871dc 00000001
+REG 172 205871e0 00000025
+REG 173 205871f8 00000001
+REG 174 205871fc 02509110
+REG 175 20589000 7ffe0000
+REG 176 20589004 c0000000
+REG 177 20589008 80000000
+REG 178 2058900c 80000000
+REG 179 20589010 80000000
+REG 180 20589014 80000000
+REG 181 20589018 80000000
+REG 182 2058901c 80000000
+REG 183 20589020 80000000
+REG 184 20589024 00000000
+REG 185 20589028 00000000
+REG 186 2058902c 00000000
+REG 187 20589030 00000000
+REG 188 20589034 00002070
+REG 189 20589038 00002070
+REG 190 20589040 00000000
+REG 191 20589044 00000070
+REG 192 20589048 00002070
+REG 193 2058907c ffffffff
+REG 194 20589080 ffffffff
+REG 195 20589084 ffffffff
+REG 196 20589088 ffffffff
+REG 197 2058908c 000000ff
+REG 198 20589090 00000000
+REG 199 20589094 00000000
+REG 200 20589098 00000000
+REG 201 2058909c 00000000
+REG 202 205890a0 00000000
+REG 203 205890a4 00002070
+REG 204 205890a8 0000001f
+REG 205 205890ac 00000008
+REG 206 205890b0 00000104
+REG 207 205893fc 02509110
+REG 208 20700000 20250923
+REG 209 20700004 00000000
+REG 210 20700008 1fffc7f8
+REG 211 2070000c 00004001
+REG 212 20700018 2e000000
+REG 213 2070001c 00000000
+REG 214 20700020 00000000
+REG 215 20700024 00000000
+REG 216 20700028 00000000
+REG 217 2070002c 00000000
+REG 218 20700030 00000000
+REG 219 20700034 00000000
+REG 220 20700038 00000000
+REG 221 2070003c 00000000
+REG 222 20700040 00000000
+REG 223 20700044 00000000
+REG 224 20700048 00000000
+REG 225 2070004c 00000000
+REG 226 20700050 00000000
+REG 227 20700054 00000000
+REG 228 20700058 00000000
+REG 229 2070005c 00000000
+REG 230 20700060 00000000
+REG 231 20700064 00000000
+REG 232 20700068 00000000
+REG 233 2070006c 00000000
+REG 234 20700070 00000000
+REG 235 20700074 00000000
+REG 236 2070009c 00000000
+REG 237 20700100 00000000
+REG 238 2070010c 000000ff
+REG 239 20700110 00000000
+REG 240 20700114 00000000
+REG 241 20700118 ffffffff
+REG 242 2070011c 00000000
+REG 243 20700120 00000000
+REG 244 20700124 ffffffff
+REG 245 20700130 00000003
+REG 246 20700138 00000000
+REG 247 2070013c ffffffff
+REG 248 20700154 0006414a
+REG 249 20700158 00019064
+REG 250 2070015c 00000000
+REG 251 20700164 00000000
+REG 252 20700170 00000000
+REG 253 20700174 00000000
+REG 254 20700178 00000000
+REG 255 2070017c 00000000
+REG 256 20700180 00002070
+REG 257 20700190 b55d89f6
+REG 258 20700194 00000000
+REG 259 207001a0 ffffffff
+REG 260 207001a4 4555666d
+REG 261 207001b4 0001ffff
+REG 262 207001b8 0001ffff
+REG 263 207001bc 00000000
+REG 264 207001c0 00000003
+REG 265 207001c4 00000000
+REG 266 207001e8 00000000
+REG 267 207001ec 00000800
+REG 268 207001f0 00000006
+REG 269 207001f8 00002070
+REG 270 207001fc 00000002
+REG 271 20700200 00000000
+REG 272 20700204 00000000
+REG 273 20700208 00000000
+REG 274 20700218 00000000
+REG 275 2070021c 0002ffff
+REG 276 20700220 00000000
+REG 277 20700224 00000000
+REG 278 20700228 00000000
+REG 279 2070022c 00000000
+REG 280 20700230 00000000
+REG 281 20700234 00000000
+REG 282 20700238 00000000
+REG 283 2070023c 00000000
+REG 284 20700270 00000000
+REG 285 20700274 00000000
+REG 286 20701000 04000000
+REG 287 20701004 00000000
+REG 288 20701008 00000000
+REG 289 2070100c 00000000
+REG 290 20701010 00000000
+REG 291 20701014 00000000
+REG 292 20701018 00000000
+REG 293 2070101c 00000000
+REG 294 20701020 41400000
+REG 295 20701024 0000028a
+REG 296 20701028 2b000000
+REG 297 2070102c 66c00000
+REG 298 20701030 00000003
+REG 299 20701034 00000003
+REG 300 20701038 20000003
+REG 301 2070103c c0010000
+REG 302 20701040 c0010000
+REG 303 20701044 00000000
+REG 304 20701048 00000028
+REG 305 2070104c 00000081
+REG 306 20701050 00000000
+REG 307 20701054 000002c1
+REG 308 20701058 00000000
+REG 309 2070105c 00000000
+REG 310 20701060 00000240
+REG 311 20701064 00080000
+REG 312 20701068 00000000
+REG 313 207013fc 02507300
+REG 314 20702000 0ffc0100
+REG 315 20702004 80000000
+REG 316 20702008 0000003f
+REG 317 20702018 3c000000
+REG 318 2070201c ffffffc1
+REG 319 20702020 00000000
+REG 320 20702024 00000000
+REG 321 20702028 00000000
+REG 322 2070202c 00000000
+REG 323 20702030 00000000
+REG 324 20702034 00000000
+REG 325 20702038 00000000
+REG 326 2070203c 00000000
+REG 327 207023fc 02505140
+REG 328 20704000 00000000
+REG 329 20704004 ffffffff
+REG 330 20704008 ffffffff
+REG 331 2070400c ffffffff
+REG 332 20704010 ffffffff
+REG 333 20704014 00000000
+REG 334 20704018 00000000
+REG 335 2070401c 00000000
+REG 336 20704020 00000000
+REG 337 20704024 00000000
+REG 338 20704028 00000000
+REG 339 2070402c 00000000
+REG 340 20704030 00000000
+REG 341 20704034 c667f180
+REG 342 20704038 00000000
+REG 343 2070403c 80000000
+REG 344 20704040 00000000
+REG 345 20704044 ffffffff
+REG 346 20704048 ffffffff
+REG 347 2070404c ffffffff
+REG 348 20704050 ffffffff
+REG 349 20704054 00000000
+REG 350 20704058 00000000
+REG 351 2070405c 00000000
+REG 352 20704060 00000000
+REG 353 20704064 00000000
+REG 354 20704068 00000000
+REG 355 2070406c 00000000
+REG 356 20704070 00000000
+REG 357 20704074 c6678000
+REG 358 20704078 00000000
+REG 359 2070407c 80000000
+REG 360 20704080 00000000
+REG 361 20704084 ffffffff
+REG 362 20704088 ffffffff
+REG 363 2070408c ffffffff
+REG 364 20704090 ffffffff
+REG 365 20704094 00000000
+REG 366 20704098 00000000
+REG 367 2070409c 00000000
+REG 368 207040a0 00000000
+REG 369 207040a4 00000000
+REG 370 207040a8 00000000
+REG 371 207040ac 00000000
+REG 372 207040b0 00000000
+REG 373 207040b4 c6678000
+REG 374 207040b8 00000000
+REG 375 207040bc 80000000
+REG 376 207040c0 c6600000
+REG 377 207040c4 00000000
+REG 378 207040cc 00000000
+REG 379 207040d0 40000000
+REG 380 207040d8 c6600000
+REG 381 207040dc 00000000
+REG 382 207040e0 80000000
+REG 383 207040e4 00000000
+REG 384 207040e8 40000000
+REG 385 207040ec 00000000
+REG 386 207040f0 00000000
+REG 387 207040f4 00000000
+REG 388 207040f8 00000000
+REG 389 207040fc 00000000
+REG 390 20704100 00000000
+REG 391 20704104 00000000
+REG 392 20704108 00000000
+REG 393 2070410c 00000000
+REG 394 20704110 00000000
+REG 395 20704114 7fbfdfe0
+REG 396 20704118 7fbf7e00
+REG 397 2070411c ffffffff
+REG 398 20704120 0000001c
+REG 399 20704124 0000001c
+REG 400 20704128 0000001c
+REG 401 2070412c 0000001c
+REG 402 20704130 0000001c
+REG 403 20704134 0000001c
+REG 404 20704138 0000001c
+REG 405 2070413c ff000000
+REG 406 20704140 00000000
+REG 407 20704144 00000000
+REG 408 20704148 63fc0000
+REG 409 2070414c 01000100
+REG 410 20704150 00000000
+REG 411 20704154 00000000
+REG 412 20704158 00000000
+REG 413 2070415c 00000000
+REG 414 20704160 00000000
+REG 415 20704164 01000080
+REG 416 20704168 00000080
+REG 417 2070416c 00010000
+REG 418 20704170 00000000
+REG 419 20704174 00000000
+REG 420 20704178 00000032
+REG 421 2070417c 00000a0a
+REG 422 20704180 80000000
+REG 423 20704184 00000000
+REG 424 20704188 80000000
+REG 425 2070418c 00000000
+REG 426 20704190 00000000
+REG 427 20704194 00000000
+REG 428 20704198 00000000
+REG 429 2070419c 00000000
+REG 430 207041a0 00000000
+REG 431 207041a4 00000000
+REG 432 207041a8 00000000
+REG 433 207041ac 1ff00001
+REG 434 207041b0 00000000
+REG 435 207041b4 00000000
+REG 436 207041b8 00000000
+REG 437 207041bc 00000000
+REG 438 207041c0 08100800
+REG 439 207041c4 00802000
+REG 440 207041c8 91080002
+REG 441 207041cc ffffffff
+REG 442 207041d0 ffffffff
+REG 443 207041d4 77770000
+REG 444 207041d8 e0000000
+REG 445 207041dc 028804b0
+REG 446 207041e0 00000008
+REG 447 207041e4 00000028
+REG 448 207041e8 00000000
+REG 449 207041ec 00000000
+REG 450 207041f0 00000000
+REG 451 207041f4 00000000
+REG 452 207041f8 00000000
+REG 453 207041fc 00000000
+REG 454 20704200 000003ff
+REG 455 20704204 00000000
+REG 456 20704208 c0000000
+REG 457 2070420c 00000000
+REG 458 20704210 00000001
+REG 459 20704214 00000000
+REG 460 20704218 00000000
+REG 461 2070421c 00000001
+REG 462 20704220 00000000
+REG 463 20704224 0000000f
+REG 464 207043fc 00250902
+REG 465 20706000 000000ff
+REG 466 20706004 000000ff
+REG 467 20706008 000000ff
+REG 468 2070600c 000000ff
+REG 469 20706010 000000ff
+REG 470 20706014 000000ff
+REG 471 20706018 00000011
+REG 472 2070601c 00000011
+REG 473 20706020 00000011
+REG 474 20706024 000000ff
+REG 475 20706028 000000ff
+REG 476 2070602c 000000ff
+REG 477 20706030 000000ff
+REG 478 20706034 000000ff
+REG 479 20706038 000000ff
+REG 480 2070603c 000000ff
+REG 481 20706040 000000ff
+REG 482 20706044 000000ff
+REG 483 20706048 000000ff
+REG 484 2070604c 000000ff
+REG 485 20706050 000000ff
+REG 486 20706054 000000ff
+REG 487 20706058 000000ff
+REG 488 2070605c 000000ff
+REG 489 20706060 000000ff
+REG 490 20706064 000000ff
+REG 491 20706068 000000ff
+REG 492 2070606c 000000ff
+REG 493 20706070 000000ff
+REG 494 20706200 00000000
+REG 495 20706204 20000000
+REG 496 20706208 00000000
+REG 497 2070620c 20000000
+REG 498 20706300 00000000
+REG 499 207067f0 00000000
+REG 500 207067f8 00000001
+REG 501 207067fc 02509240
+REG 502 20710004 00000000
+REG 503 20710008 00000000
+REG 504 2071000c 40000000
+REG 505 20710010 00000000
+REG 506 20710014 00000000
+REG 507 20710018 40000000
+REG 508 2071001c 00000000
+REG 509 20710020 40000004
+REG 510 20710024 40000000
+REG 511 20710028 00000000
+REG 512 2071002c 40000000
+REG 513 20710030 00000000
+REG 514 20710034 40000000
+REG 515 20710038 00000000
+REG 516 2071003c 00000000
+REG 517 20710040 40000000
+REG 518 20710044 80000000
+REG 519 20710048 00000000
+REG 520 2071004c 00000004
+REG 521 20710050 80000000
+REG 522 207103fc 02509110
+REGDUMP after-init end
+wifi-init-probe: MACWIN xor=0x499348be sum=0xbd8c0b5c
+wifi-init-probe: MACWINQ 0 xor=0x4db92b43 sum=0xfae46995
+wifi-init-probe: MACWINQ 1 xor=0x7449ce91 sum=0x1498f05e
+wifi-init-probe: Q1B 0 addr=0x20104400 xor=0x69c1777f sum=0x6f1ea099
+wifi-init-probe: Q1B 1 addr=0x20104440 xor=0xfad71dd1 sum=0x22be7856
+wifi-init-probe: Q1B 2 addr=0x20104480 xor=0x007e0000 sum=0x002a0000
+wifi-init-probe: Q1B 3 addr=0x201044c0 xor=0x0129b600 sum=0x00219080
+wifi-init-probe: W4C0 0 addr=0x201044c0 v=0x00000000
+wifi-init-probe: W4C0 1 addr=0x201044c4 v=0x00000000
+wifi-init-probe: W4C0 2 addr=0x201044c8 v=0x00000000
+wifi-init-probe: W4C0 3 addr=0x201044cc v=0x00000000
+wifi-init-probe: W4C0 4 addr=0x201044d0 v=0x00000000
+wifi-init-probe: W4C0 5 addr=0x201044d4 v=0x00000000
+wifi-init-probe: W4C0 6 addr=0x201044d8 v=0x00000000
+wifi-init-probe: W4C0 7 addr=0x201044dc v=0x00000000
+wifi-init-probe: W4C0 8 addr=0x201044e0 v=0x00200000
+wifi-init-probe: W4C0 9 addr=0x201044e4 v=0x00000800
+wifi-init-probe: W4C0 10 addr=0x201044e8 v=0x00008000
+wifi-init-probe: W4C0 11 addr=0x201044ec v=0x00010880
+wifi-init-probe: W4C0 12 addr=0x201044f0 v=0x00000000
+wifi-init-probe: W4C0 13 addr=0x201044f4 v=0x00000000
+wifi-init-probe: W4C0 14 addr=0x201044f8 v=0x00000000
+wifi-init-probe: W4C0 15 addr=0x201044fc v=0x00000000
+wifi-init-probe: Q1B 4 addr=0x20104500 xor=0x00d9c002 sum=0x0010c002
+wifi-init-probe: Q1B 5 addr=0x20104540 xor=0x800f201d sum=0x800f047d
+wifi-init-probe: Q1B 6 addr=0x20104580 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 7 addr=0x201045c0 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 8 addr=0x20104600 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 9 addr=0x20104640 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 10 addr=0x20104680 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 11 addr=0x201046c0 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 12 addr=0x20104700 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 13 addr=0x20104740 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 14 addr=0x20104780 xor=0x00000000 sum=0x00000000
+wifi-init-probe: Q1B 15 addr=0x201047c0 xor=0x22b7a490 sum=0x02508270
+wifi-init-probe: MACWINQ 2 xor=0x3f7e1350 sum=0xda988230
+wifi-init-probe: MACWINQ 3 xor=0xa29f713c sum=0xd3762f39
+wifi-init-probe: OSISEQ n=153 ring=256 base=0
+wifi-init-probe: OSI 0 mutex_create a0=0x0 a1=0x0
+wifi-init-probe: OSI 1 mutex_lock a0=0x2f02d600 a1=0x0
+wifi-init-probe: OSI 2 calloc a0=0x1 a1=0x44
+wifi-init-probe: OSI 3 zalloc a0=0x44 a1=0x0
+wifi-init-probe: OSI 4 alloc a0=0x44 a1=0x2f02d614
+wifi-init-probe: OSI 5 calloc a0=0x1 a1=0x618
+wifi-init-probe: OSI 6 zalloc a0=0x618 a1=0x0
+wifi-init-probe: OSI 7 alloc a0=0x618 a1=0x2f02d668
+wifi-init-probe: OSI 8 calloc a0=0x1 a1=0x14c
+wifi-init-probe: OSI 9 zalloc a0=0x14c a1=0x0
+wifi-init-probe: OSI 10 alloc a0=0x14c a1=0x2f02dc90
+wifi-init-probe: OSI 11 mutex_unlock a0=0x2f02d600 a1=0x0
+wifi-init-probe: OSI 12 mutex_create a0=0x0 a1=0x0
+wifi-init-probe: OSI 13 mutex_create a0=0x0 a1=0x0
+wifi-init-probe: OSI 14 malloc a0=0x3c a1=0x0
+wifi-init-probe: OSI 15 alloc a0=0x3c a1=0x2f02de14
+wifi-init-probe: OSI 16 semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: OSI 17 semphr_give a0=0x2f02e4d8 a1=0x0
+wifi-init-probe: OSI 18 queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: OSI 19 recv_probe a0=0x0 a1=0x8
+wifi-init-probe: OSI 20 zalloc a0=0x18 a1=0x0
+wifi-init-probe: OSI 21 alloc a0=0x18 a1=0x2f02ff00
+wifi-init-probe: OSI 22 mutex_lock a0=0x2f02d600 a1=0x0
+wifi-init-probe: OSI 23 queue_send a0=0x2f02de60 a1=0x6
+wifi-init-probe: OSI 24 mutex_unlock a0=0x2f02d600 a1=0x0
+wifi-init-probe: OSI 25 semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: OSI 26 timer_disarm a0=0x2f015958 a1=0x0
+wifi-init-probe: OSI 27 zalloc a0=0x1214 a1=0x0
+wifi-init-probe: OSI 28 alloc a0=0x1214 a1=0x2f02ff28
+wifi-init-probe: OSI 29 malloc a0=0x400 a1=0x0
+wifi-init-probe: OSI 30 alloc a0=0x400 a1=0x2f03114c
+wifi-init-probe: OSI 31 zalloc a0=0x98 a1=0x0
+wifi-init-probe: OSI 32 alloc a0=0x98 a1=0x2f03114c
+wifi-init-probe: OSI 33 zalloc a0=0x98 a1=0x0
+wifi-init-probe: OSI 34 alloc a0=0x98 a1=0x2f0311f4
+wifi-init-probe: OSI 35 zalloc a0=0x98 a1=0x0
+wifi-init-probe: OSI 36 alloc a0=0x98 a1=0x2f03129c
+wifi-init-probe: OSI 37 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 38 alloc a0=0x28 a1=0x2f031344
+wifi-init-probe: OSI 39 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 40 alloc a0=0x28 a1=0x2f03137c
+wifi-init-probe: OSI 41 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 42 alloc a0=0x28 a1=0x2f0313b4
+wifi-init-probe: OSI 43 malloc a0=0x28 a1=0x0
+wifi-init-probe: OSI 44 alloc a0=0x28 a1=0x2f0313ec
+wifi-init-probe: OSI 45 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 46 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 47 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 48 alloc a0=0x288 a1=0x2f031424
+wifi-init-probe: OSI 49 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 50 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 51 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 52 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 53 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 54 alloc a0=0x288 a1=0x2f0316bc
+wifi-init-probe: OSI 55 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 56 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 57 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 58 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 59 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 60 alloc a0=0x288 a1=0x2f031954
+wifi-init-probe: OSI 61 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 62 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 63 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 64 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 65 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 66 alloc a0=0x288 a1=0x2f031bec
+wifi-init-probe: OSI 67 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 68 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 69 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 70 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 71 malloc a0=0x288 a1=0x0
+wifi-init-probe: OSI 72 alloc a0=0x288 a1=0x2f031e84
+wifi-init-probe: OSI 73 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 74 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 75 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 76 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 77 malloc a0=0x314 a1=0x0
+wifi-init-probe: OSI 78 alloc a0=0x314 a1=0x2f03211c
+wifi-init-probe: OSI 79 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 80 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 81 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 82 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 83 malloc a0=0x314 a1=0x0
+wifi-init-probe: OSI 84 alloc a0=0x314 a1=0x2f032440
+wifi-init-probe: OSI 85 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 86 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 87 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 88 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 89 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 90 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 91 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 92 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 93 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 94 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 95 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 96 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 97 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 98 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 99 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 100 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 101 mutex_lock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 102 mutex_unlock a0=0x2f02ddec a1=0x0
+wifi-init-probe: OSI 103 zalloc a0=0x78 a1=0x0
+wifi-init-probe: OSI 104 alloc a0=0x78 a1=0x2f032764
+wifi-init-probe: OSI 105 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 106 alloc a0=0x6a8 a1=0x2f0327ec
+wifi-init-probe: OSI 107 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 108 alloc a0=0x6a8 a1=0x2f032ea4
+wifi-init-probe: OSI 109 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 110 alloc a0=0x6a8 a1=0x2f03355c
+wifi-init-probe: OSI 111 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 112 alloc a0=0x6a8 a1=0x2f033c14
+wifi-init-probe: OSI 113 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 114 alloc a0=0x6a8 a1=0x2f0342cc
+wifi-init-probe: OSI 115 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 116 alloc a0=0x6a8 a1=0x2f034984
+wifi-init-probe: OSI 117 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 118 alloc a0=0x6a8 a1=0x2f03503c
+wifi-init-probe: OSI 119 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 120 alloc a0=0x6a8 a1=0x2f0356f4
+wifi-init-probe: OSI 121 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 122 alloc a0=0x6a8 a1=0x2f035dac
+wifi-init-probe: OSI 123 malloc a0=0x6a8 a1=0x0
+wifi-init-probe: OSI 124 alloc a0=0x6a8 a1=0x2f036464
+wifi-init-probe: OSI 125 timer_setfn a0=0x2f0158e4 a1=0x400005fc
+wifi-init-probe: OSI 126 timer_setfn a0=0x2f0158f8 a1=0x400005f6
+wifi-init-probe: OSI 127 timer_setfn a0=0x2f015934 a1=0x400005f0
+wifi-init-probe: OSI 128 timer_setfn a0=0x2f015920 a1=0x400005ea
+wifi-init-probe: OSI 129 timer_setfn a0=0x2f015958 a1=0x400005e4
+wifi-init-probe: OSI 130 timer_setfn a0=0x2f01596c a1=0x400005de
+wifi-init-probe: OSI 131 timer_setfn a0=0x2f015980 a1=0x400005d8
+wifi-init-probe: OSI 132 timer_setfn a0=0x2f01599c a1=0x400005d2
+wifi-init-probe: OSI 133 timer_setfn a0=0x2f015ca4 a1=0x400005cc
+wifi-init-probe: OSI 134 timer_setfn a0=0x2f015c44 a1=0x400005c6
+wifi-init-probe: OSI 135 timer_setfn a0=0x2f015c80 a1=0x400005c0
+wifi-init-probe: OSI 136 timer_setfn a0=0x2f015af4 a1=0x40007812
+wifi-init-probe: OSI 137 wifi_clk_en a0=0x0 a1=0x0
+wifi-init-probe: OSI 138 icg_write a0=0x0 a1=0x64646400
+wifi-init-probe: OSI 139 coex_rel a0=0x0 a1=0x604
+wifi-init-probe: OSI 140 wifi_clk_dis a0=0x0 a1=0x0
+wifi-init-probe: OSI 141 calloc a0=0x1 a1=0x4
+wifi-init-probe: OSI 142 zalloc a0=0x4 a1=0x0
+wifi-init-probe: OSI 143 alloc a0=0x4 a1=0x2f036b1c
+wifi-init-probe: OSI 144 coex_interval a0=0x4003d4d0 a1=0x0
+wifi-init-probe: OSI 145 timer_setfn a0=0x2f017d80 a1=0x4002b672
+wifi-init-probe: OSI 146 timer_setfn a0=0x2f017d94 a1=0x4002b668
+wifi-init-probe: OSI 147 timer_disarm a0=0x2f017118 a1=0x0
+wifi-init-probe: OSI 148 semphr_give a0=0x2f02e4d8 a1=0x0
+wifi-init-probe: OSI 149 queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: OSI 150 recv_probe a0=0x0 a1=0x8
+wifi-init-probe: OSI 151 mutex_lock a0=0x2f02d600 a1=0x0
+wifi-init-probe: OSI 152 mutex_unlock a0=0x2f02d600 a1=0x0
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: ROMGLOB swq=0x2f02de60 ppq=0x2f029df0 ppsem=0x0
+wifi-init-probe: post-init ctx b14=0 b15=1 b16=0 b27=0 b288=0 b289=0 mac=0x0000e000
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: MAC_ST after init = 0x0000e000
+wifi-init-probe: INIT OK, arena free=263320/301504 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: tasks recorded=1
+sched-test: begin, task sp=0x2f020ff0 stack=0x2f01d030
+sched-test: task iteration 0 (yielding)
+sched-test: main resumed after round 0 (main_sp=0x2f07ad00 task_sp=0x2f020eb0)
+sched-test: task iteration 0 resumed
+sched-test: task iteration 1 (yielding)
+sched-test: main resumed after round 1 (main_sp=0x2f07ad00 task_sp=0x2f020eb0)
+sched-test: task iteration 1 resumed
+sched-test: task iteration 2 (yielding)
+sched-test: main resumed after round 2 (main_sp=0x2f07ad00 task_sp=0x2f020eb0)
+sched-test: task iteration 2 resumed
+sched-test: task done, returning to main
+sched-test: main resumed after round 3 (main_sp=0x2f07ad00 task_sp=0x2f020eb0)
+sched-test: PASS
+wifi-init-probe: pre-PHY regs: 0x20109c18=0x00000000 0x20100800=0x00000001
+wifi-init-probe: MODEM_LPCON_CLK_EN 0x0 -> 0x1
+wifi-init-probe: MODEM_LPCON_CLK_CONF 0x3 -> 0x7
+wifi-init-probe: HP_SYS_CLKRST_MODEM_CONF 0x25 -> 0x3d
+wifi-init-probe: MODEM_SYSCON_CLK_CONF1 0x0 -> 0x38e7ff
+wifi-init-probe: SYSCON_FORCE_ON 0x0 -> 0x1c
+wifi-init-probe: LPCON_FORCE_ON 0x4 -> 0x5
+wifi-init-probe: IDF-align before: +00=0x100 +04=0x201002 +08=0x1c
+wifi-init-probe: IDF-align after:  +00=0x100 +04=0x201002 +08=0x1c
+wifi-init-probe: ICG_POWER_ST 0x64646400 -> 0x64646400 (IDF=0x64646400)
+wifi-init-probe: CLK_CONF_POWER_ST=0x64646400 apb=6 peri=4 wifi=6
+wifi-init-probe: write 0x20100400
+wifi-init-probe: rmw 0x20100800
+wifi-init-probe: write 0x20107C80
+wifi-init-probe: rmw 0x2070401C
+wifi-init-probe: fe_bb writes done
+wifi-init-probe: 0x2f01c9e4 不在 arena 里
+wifi-init-probe: magic_pre=0x2f029958 magic_post=0x2f029950 cal_data=0x2f021030 cal_data-12=0x2f021024
+wifi-init-probe: cal_data=0x2f021030 init_params=0x401d6074 wrapper=0x2f02e4c4 inner=0x2f02de60
+wifi-init-probe: register_chipv7_phy SKIPPED at init (交给 _phy_enable)
+wifi-init-probe: starting task[0] entry=0x2f00a6f4 arg=0x00000000 on its own stack
+wifi-init-probe: task context ready, running it until it blocks
+wifi-init-probe: chain-to-ROM mode, rom_mtvec=0x2f801703
+irq#0 in=25 mepc=0x4004bde6 mac=0x0000e000 b13=0 b14=0 ctx15=1 en=0 a0=0x02000000 a1=0x000000c8 s0=0x20580000 ra=0x4004bdaa
+wifi-init-probe: task blocked, main resumed (idle_calls=6)
+wifi-init-probe: reg_rxcb SKIPPED (probe_register_rxcb=false)
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02ff00
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02de60 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f015958 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e4d8 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#4 hooks=165 give=3 null_give=0 semmax=0x10000
+wifi-init-probe: get_config_channel rc=0 primary=0 second=0
+wifi-init-probe: internal_tx SKIPPED (probe_send_init_frame=false)
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: wifi_init_completed=1 (非 0 才继续)
+wifi-init-probe: is_lmac_idle=1 ic_interface_enabled=0 mac=0x0000e000
+wifi-init-probe: after ic_mac_init(0): is_lmac_idle=1 iface=0 mac=0x0000e000
+wifi-init-probe: dma_enable=0
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02ff00
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02de60 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f015958 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e4d8 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#5 hooks=14 give=4 null_give=0 semmax=0x10000
+wifi-init-probe: set_mode(STA) rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02ff00
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02de60 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f015958 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f02e4d8 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#6 hooks=26 give=5 null_give=0 semmax=0x10000
+wifi-init-probe: set_country(CN,1..13) rc=258
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: set_storage(RAM) rc=0
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: set_channel(6,0) rc=12290
+wifi-init-probe: wDevCtrl=0x2f010998 pp_wdev_funcs=0x2f02d668 g_chm=0x2f0178e0
+wifi-init-probe: ptr g_hmac_cnt_ptr=0x2f017d28
+wifi-init-probe: ptr g_ic_ptr=0x2f016e40
+wifi-init-probe: ptr g_eb_list_desc_ptr=0x2f0104d4
+wifi-init-probe: ptr g_lmac_cnt_ptr=0x2f016080
+wifi-init-probe: ptr pp_sig_cnt_ptr=0x2f0155f0
+wifi-init-probe: ptr s_wifi_queue=0x2f02e4c4
+wifi-init-probe: ptr trc_ctl_ptr=0x2f010970
+wifi-init-probe: ptr xphyQueue=0x2f02de60
+wifi-init-probe: ptr g_coex_param_ptr=0x00000000
+wifi-init-probe: LPCON_CLK_CONF 0x7 -> 0x7
+wifi-init-probe: rst_wifibb pulse 0x0 -> 0x0
+wifi-init-probe: gated reset (clk off -> rst -> on): mac=0x0000e000
+wifi-init-probe: event_bus handlers=0 posts=0 undispatched=0
+wifi-init-probe: pre-pulse MAC_ST=0x0000e000 rst=0x00000000
+wifi-init-probe: post-pulse MAC_ST=0x0000e000 rst=0x00000000 en_bits=0
+wifi-init-probe: pump round 0 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=5 send=4 delay=1
+wifi-init-probe: trace semphr_give a0=0x00000000 a1=0x2f00a726
+wifi-init-probe: trace queue_recv a0=0x2f02de60 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump round 0 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 1 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 1 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 2 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 2 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 3 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 3 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 4 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 4 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 5 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 5 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 6 before: b14=ps n=256 pc=0x4004e63a s0=0x4 a0=0x2f07ae9d a1=0x6a
+0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 6 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 7 before: b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: pump round 7 after:  b14=0 b15=1 b16=0 b27=0 b288=0 mac=0x0000e000 recv=6 send=4 delay=1
+wifi-init-probe: CLKDMP[before-start]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x0000001c
+wifi-init-probe:   icg(+0C)=0x64646400
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x0038e7ff
+wifi-init-probe:   lpcon+18=0x00000007
+wifi-init-probe:   lpcon+1C_fo=0x00000005
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x0000003d
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: MAC_ST before start = 0x0000e000 (spin mask 0xE000)
+wifi-init-probe: CLKEN total=1 caller=0x40002e5c (IDF caller pm_attach=0x4005700c)
+wifi-init-probe: after W1C write 0xE000 -> 0x0000e000
+wifi-init-probe: after write 0x00FF1000 -> 0x00fff000
+wifi-init-probe: trace wifi_reset_mac a0=0x00000000 a1=0x00000000
+wifi-init-probe: after rst_wifimac pulse MAC_ST=0x0000e000 (was 0x00fff000)
+wifi-init-probe: gate b[2F0174A2]=0 b[2F0175C4]=0
+wifi-init-probe: MAC_ST cleared -> 0x0000e000
+wifi-init-probe: calling esp_wifi_start (idle_calls=20, tracing hooks)
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f02ff00
+wifi-init-probe: trace mutex_lock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f02de60 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f02d600 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f02e4d8 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f015958 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x0038e7ff
+wifi-init-probe: trace phy_enable a0=0x00000000 a1=0x00000001
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0
+wifi-init-probe: trace coex_init a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace wifi_reset_mac a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f02ddec a1=0x00000000
+wifi-init-probe: trace event_post id=43 bits=0x10 handlers=0 undispatched=0
+wifi-init-probe: trace timer_disarm a0=0x2f015958 a1=0x00000000
+ps n=512 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=768 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=1024 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=1280 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=1536 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=1792 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+HIST[0] ticks=2000 fe=9 blob=1606(last 0x2f00d062) main=385(last 0x4004e630) other=0 tim=0/0 fn=0x00000000
+ps n=2048 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+ps n=2304 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+F3.38e7ff.1c
+G2f0018ae
+Sn=0
+2f00b580:bfd1bf9f,400737,cfb98ff9,4c900693
+2f00b590:a8898613,a5090593,20974501,80e71103
+2f00b5a0:478902e0,f409a3,57c8401c,442010ef
+2f00b5b0:c10d401c,54625bdc,4b8c50f2,54d243c8
+2f00b5c0:59b25942,89bd81d1,6121893d,10ff9317
+2f00b5d0:4a230067,50f25462,594254d2,458559b2
+2f00b5e0:6121853e,9b1f906f,9a3478d,852200f4
+2f00b5f0:50f25462,594254d2,460559b2,b3516121
+ps n=2560 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=2816 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=3072 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=3328 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=3584 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=3840 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+HIST[0] ticks=4000 fe=9 blob=3606(last 0x2f00d062) main=385(last 0x4004e630) other=0 tim=0/0 fn=0x00000000
+ps n=4096 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.T n=4096
+ps n=4352 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=4608 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=4864 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+NMI n=5000 mepc=0x2f00d05e ra=0x2f00d054 a0=0x00000640 a1=2f02a270 a4=0000e000 a5=20104cac a6=2f0297d0 a7=00000040 s1=0000096c ir=0x20000000
+ps n=5120 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=5376 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=5632 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=5888 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+HIST[0] ticks=6000 fe=9 blob=5606(last 0x2f00d062) main=385(last 0x4004e630) other=0 tim=0/0 fn=0x00000000
+ps n=6144 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=6400 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=6656 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=6912 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=7168 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=7424 pc=0x2f00d05e s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=7680 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=7936 pc=0x2f00d05e s0=0x1 a0=0x640 a1=0x2f02a270
+HIST[0] ticks=8000 fe=9 blob=7606(last 0x2f00d05e) main=385(last 0x4004e630) other=0 tim=0/0 fn=0x00000000
+ps n=8192 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.T n=8192
+ps n=8448 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=8704 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=8960 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=9216 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=9472 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+ps n=9728 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=9984 pc=0x2f00d05e s0=0x1 a0=0x640 a1=0x2f02a270
+NMI n=10000 mepc=0x2f00d062 ra=0x2f00d054 a0=0x00000640 a1=2f02a270 a4=0000e000 a5=0000e000 a6=2f0297d0 a7=00000040 s1=0000096c ir=0x20000000
+HIST[0] ticks=10000 fe=9 blob=9606(last 0x2f00d062) main=385(last 0x4004e630) other=0 tim=0/0 fn=0x00000000
+ps n=10240 pc=0x2f00d062 s0=0x1 a0=0x640 a1=0x2f02a270
+.ps n=10496 pc=0x2f00d05e s0=0x1 a0=0x640 a1=0x2f02a270

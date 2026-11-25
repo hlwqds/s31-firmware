@@ -3,6 +3,8 @@
 - 状态：accepted
 - 日期：2026-11-16
 - 决策者：hl
+- **2026-11-25 更新**：本 ADR 追查的卡点（`esp_wifi_start` 等 `MAC_ST[15:13]` 自清）已定位并修复，结论在文末
+  「根因与修复（2026-11-25）」。此前各节按实验顺序记录，当时的中间结论保留不动。
 
 ## 背景
 
@@ -6270,3 +6272,129 @@ Segments: 5
 
 ⇒ 定时器一条的判据取 **force-arm 强判决**，不是"从未 arm"这个较弱观测——后者在 §软件定时器 里已排除过，
 单列会变成重复计数。
+
+## ★★★★ 根因与修复（2026-11-25）：缺的是 IDF `pmu_init()` 里的 modem ICG 码
+
+上面所有判负有一个共同前提：时钟位都开了、门控位图也写了，`MAC_ST[15:13]` 就是不清。这一节换方法——
+不再猜"缺哪一步"，而是与官方 IDF 在**同一个时点**做**全量**寄存器对照。此前只对照过 11 个时钟寄存器、
+MAC 块校验和与 hp1e0，全部相同，说明差异不在那 11 个里。
+
+### 方法
+
+- oracle（`tools/wifi-idf-oracle/`）加 `CONFIG_ORACLE_REGDUMP`：`esp_wifi_init` 之后把 SoC 头文件里定义过的
+  523 个寄存器（12 个外设块，只读）各读一遍，连同 `MAC_ST`（0x20104CAC，blob 私有，不在头文件里）。
+  日志 `logs/wifi-idf-oracle-regdump-boot.log`：`REGDUMP after-init begin n=523 mac_st=00000000`。
+- 探针侧加同一个 dump（`init_probe.zig` 的 `regDumpAll`，地址表 `regdump_addrs` 与 oracle 的
+  `main/regdump_addrs.h` 逐项相同；`probe_regdump = true` 时打印，约 1.4 秒串口时间）。
+  日志 `logs/wifi-probe-regdump-before-boot.log`（修复前）：`REGDUMP after-init begin n=523 mac_st=0000e000`。
+- 两份日志按地址配对做差，523 对 523，无缺失。
+
+### 差集
+
+**95 个不同**。按外设块：PMU 50、HP_SYS_CLKRST 23、HP_ALIVE_SYS 7、MODEM_LPCON 4、LP_ANA 3、
+LP_PERICLKRST 3、LP_SYS 2、I2C_ANA_MST 2、LP_AONCLKRST 1。时钟相关寄存器一个都不在差集里：
+`MODEM_SYSCON` 的 `CLK_CONF` / `CLK_CONF1` / `RST_CONF`、`HP_SYS_CLKRST` 的 `REF_*M_CTRL` 与 `modem_conf` 全部相同。
+
+### 移植实验：有 77 个可以安全地照抄，全抄了也没用
+
+排除稳压器电压档、PHY 模拟状态（`I2C_ANA_MST`，init 路径自己会写）、本固件在用的定时器组、CPU 与核 1 的
+频率/复位控制、状态寄存器之后，剩下 77 个在 init 之前按 IDF 值写入（读回全部一致、不崩）：
+
+| 实验 | 动作 | init 之后 `MAC_ST` | `esp_wifi_start` | 日志 |
+| --- | --- | --- | --- | --- |
+| 1 | 只在 init 之前写 `MODEM_LPCON_CLK_CONF_POWER_ST = 0x66660000` | `0x0000e000` | 不返回 | `logs/wifi-probe-exp1-lpcon-power-st-boot.log` |
+| 2 | 去掉 `_wifi_clock_disable` 里的 `LPCON+0x20 = 0` | `0x0000e000` | 不返回 | `logs/wifi-probe-exp2-no-icg-clear-boot.log` |
+| 3 | 2 + 只写 PMU 的 modem ICG 码（active=2、modem=1），不触发更新 | `0x0000e000` | 不返回 | `logs/wifi-probe-exp3-pmu-icg-code-boot.log` |
+| 4 | 77 个全部按 IDF 值写入（含 PMU 各模式的配置） | `0x0000e000` | 不返回 | `logs/wifi-probe-exp4-transplant-all-boot.log` |
+| 5 | 4 + 触发两次"立即更新" | **`0x00000000`** | **返回 0** | `logs/wifi-probe-exp5-pmu-imm-update-boot.log` |
+
+实验 1 的读数本身有信息量：写进去的 `0x66660000` 在 init 之前的 dump 里读得回来，init 之后又变回 0——
+是 `_wifi_clock_disable` 自己清的（实验 2 去掉那一行之后读回就是 `0x66660000`）。实验 4 之后再做一次全量
+dump，与 oracle 的差集从 95 降到 18，剩下的是被排除的那些（`logs/wifi-probe-exp4b-transplant-all-dump-boot.log`）。
+
+### 收窄：必要且充分的是「写码 + 触发更新」
+
+| 实验 | 动作 | `MAC_ST` | `esp_wifi_start` | 日志 |
+| --- | --- | --- | --- | --- |
+| A | 只移植 PMU 的 `HP_ACTIVE` + `HP_MODEM` 两组（19 个寄存器）+ 触发 | `0x00000000` | 返回 0 | `logs/wifi-probe-expA-pmu-groups-imm-boot.log` |
+| B | 只写两个 ICG 码 + 触发 | `0x00000000` | 返回 0 | `logs/wifi-probe-expB-icg-codes-imm-boot.log` |
+| C | 只触发（码仍是 0/0/0） | `0x0000e000` | 不返回 | `logs/wifi-probe-expC-imm-only-boot.log` |
+| — | 写码 + 触发两次（模拟热复位后 `initModemIcg()` 再跑一次） | `0x00000000` | 返回 0 | `logs/wifi-probe-exp-warm-twice-boot.log` |
+
+### 机理
+
+`modem_clock_module_enable()` 先做 `modem_clock_module_icg_map_init_all()`，给每个 modem 时钟域写一张 4 位的
+门控位图（`MODEM_SYSCON` / `MODEM_LPCON` 的 `CLK_CONF_POWER_ST`，各域 `0x6`）。位图的**每一位对应一个码**：
+`ICG_NOGATING_ACTIVE = BIT(PMU_HP_ICG_MODEM_CODE_ACTIVE)`、`ICG_NOGATING_MODEM = BIT(PMU_HP_ICG_MODEM_CODE_MODEM)`
+（`modem_clock_impl.h:149-151`），码值是 `SLEEP=0` / `MODEM=1` / `ACTIVE=2`（`pmu_types.h:34-36`）。
+PMU 当前处于哪个电源模式，就拿那个模式的 `DIG_ICG_MODEM_CODE` 去查位图；位图里没有这个码，该域就被门控。
+
+这三个码是 IDF 启动期写的：`esp_rtc_init()` 调 `pmu_init()`（`esp_system/port/soc/esp32s31/clk.c:47-52`），
+`pmu_hp_system_init()` 对 ACTIVE / MODEM / SLEEP 各写一次，每写完一个模式就触发
+`pmu_ll_imm_update_dig_icg_modem_code(true)` 与 `pmu_ll_imm_update_dig_icg_switch(true)`（`pmu_init.c`）。
+我们的镜像由 IDF 二级 bootloader 加载后直接进应用，这一步没人做：三个码停在复位值 0，位图 `0x6` 里没有码 0。
+于是 `CLK_CONF1.clk_wifimac_en` 是 1，Wi-Fi MAC 的核却没在跑，`MAC_ST[15:13]` 停在复位值。
+
+这解释了本 ADR 里的两类判负：写位图本身试过两次（「逐域 ICG map 实验」「LPCON 的逐域 ICG」），写对了但码对不上，
+等于没写。写码而不触发更新也不生效：实验 4 的全量 dump 里 `PMU_CLK_STATE0` 读回 `0x91080002`
+（`ICG_MODEM_CODE_STATE` 仍是 0，oracle 是 `0x91580002`）；触发之后才读到 `0x91580002`（实验 5）。
+
+### 修复
+
+- `boards/esp32s31-coreboard/src/pmu.zig`：`initModemIcg()` 给三个 HP 电源模式写码（2 / 1 / 0）并按 IDF 的顺序
+  触发两次立即更新，写完读回校验；`modemIcgCode()` 读回生效的码。序列照抄 IDF，出处与实测表在文件头。
+- `init_probe.zig` 的 `initOnly()` 开头调用，与 `hw.initTimer()` 同类（镜像不做 IDF 的启动初始化，板级前置条件
+  由这里补）。探针与合并镜像都走这里。
+- `_wifi_clock_disable` 按 IDF 源码补齐两处：清 `clk_coex_en`（此前漏了，init 之后 `LPCON+0x18` 读回 3 而 IDF 是 1）、
+  不在 disable 时打 `rst_wifibb` 脉冲（IDF 只在 enable 时复位）。旧注释说"按 IDF 的反向顺序"不对，
+  IDF 两次是同一顺序，注释已改。
+- 实验用的一次性开关与移植表已删；全量 dump（`probe_regdump`）留作对照工具。
+
+### 板上证据（2026-11-25）
+
+Wi-Fi 探针（`logs/wifi-probe-start-rc0-boot.log`）：
+
+```text
+wifi-init-probe: pmu modem ICG code 0->2 (2 = active)
+wifi-init-probe: after-init MAC_ST=0x00000000 (init_rc=0)
+wifi-init-probe: INIT OK, arena free=263320/301504 B, bad_handle=0, blocking_refused=4
+wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
+```
+
+init 之后与 oracle 的 dump 逐位相同的时钟寄存器：`MODEM_SYSCON.CLK_CONF_POWER_ST = 0x64646400`、
+`MODEM_SYSCON.FORCE_ON = 0x00000000`、`MODEM_LPCON.CLK_CONF = 0x00000001`（修复前是 3）、
+`MODEM_LPCON.CLK_CONF_POWER_ST = 0x66660000`（修复前是 0）。修复后的全量 dump
+（`logs/wifi-probe-fix-regdump-boot.log`）与 oracle 的差集从 95 降到 90，时钟相关寄存器全部相同；
+剩下 90 个是 IDF 启动初始化的其余部分（外设时钟使能、稳压器电压档、睡眠配置等），实测不影响 init 与 start。
+
+合并镜像（`logs/coex-merged-pmu-icg-boot.log`）：`read: LPCON+18 after wifi init=0x00000001`、
+`bt bringup: INITED`、`check: coex sides wifi=inited ble=inited (both inited) ok=1`、`main: verdict=pass`。
+主机门禁 `scripts/check-all.sh` 各步通过；量产镜像 `run_e2e.py --board --profile net` 输出 `PASS board:net`、
+`firmware: sections: passed=8 failed=0 total=8`。
+
+### 一条负结果：BLE 侧不能照搬
+
+把同一个调用加进 BLE 探针（`bt.probe.initOnly` 与 `run()`）后，镜像 45 秒内两次
+`rst:0x1a (CPU_LOCKUP_RESET)`，第一次启动没走到 `INITED`（`logs/bt-probe-pmu-icg-lockup-boot.log`）；
+关掉这一调用、其余完全相同的对照镜像与入库基线一致（`INITED`、8 条 `bt-blob-strong-assert`，
+`logs/bt-probe-pmu-icg-control-boot.log`）。**BLE 侧的调用已撤回，`bt-blobs` 没有改动。**
+
+| 启动 | 调用前（switched, code） | 调用后 | 结果 |
+| --- | --- | --- | --- |
+| 1（冷启动） | `false, 0` | `true, 2` | 共存核 boot 处锁死 |
+| 2（热启动） | `true, 2` | `false, 2` | `INITED`，之后锁死 |
+| 3（热启动） | `false, 2` | `true, 2` | `INITED` |
+
+表里的 `switched` 是 `PMU_CLK_STATE0.ICG_MODEM_SWITCH_STATE`，每应用一次更新序列翻转一次，与功能无关
+（Wi-Fi 侧两种取值下 init 与 start 都通过，见上表最后一行实验），所以现在不读它。第 1 次与第 3 次启动结束状态相同、
+结局不同，差别在冷启动时各域的 ICG 位图还是复位值 0，热启动保留了前几次写入的位图。
+`bt-blobs/src/porting.zig` 的 2.9 节早先在码还是 0 的时候试过 ICG 应用触发、判成"核坍缩触发件"后拔掉，与此一致。
+合并镜像里 BLE 的 `bringup.init` 是在 ICG 已生效（Wi-Fi 侧先做了）的状态下跑的，照样 `INITED`——
+出问题的是 BLE 探针 `INITED` 之后的实验流程。**未验证**：BLE 在 init 之外（enable、广播、连接）于 ICG 生效下的行为，
+属于 R3.3，单独分析。
+
+### 仍未验证
+
+- 扫描、连接、收发：`esp_wifi_start` 返回之后还没有往下走（需要 `on_idle` 接 EMAC 收发与事件循环）。
+- `pmu_init()` 的其余部分没做，包括稳压器电压档（IDF 的 `REGULATOR_DBIAS` 是 26，我们是 24；这个 24 是谁写的没有查）。
+  需要调压或睡眠时按 `pmu_param.c` 补。

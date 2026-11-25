@@ -13,8 +13,9 @@
 | 板侧 init | `esp_wifi_init_internal rc=0` | `logs/wifi-init-ok-boot.log` |
 | 板侧任务 | 任务体执行自己的循环并合作式让出 | `logs/wifi-task-boot.log` |
 | 共存核（`-Dcoex`） | 共存库自己打出两行版本；`wifiInit rc=0`；`esp_wifi_init_internal rc=0`；`g_coex_param_ptr=0x2f01173c`（不开时为 0） | `logs/coex-wifi-probe-boot.log`；对照 `logs/coex-wifi-probe-control.log` |
-| 共存 + start 路径（`-Dcoex`） | `esp_wifi_start` 期间 blob 调了 `_coex_enable`，核心收下（`returned rc=0 wifi=enabled`）；之后停在已知的 MAC 忙位自旋（`mepc=0x2f009cb6`，掩码 `0xE000`） | `logs/coex-wifi-probe-start-boot.log` |
-| 合并镜像（`-Dcoex-merged`，与 BLE 同链） | `esp_wifi_init_internal rc=0`、`INIT OK`，Wi-Fi arena 配额 100 512 B | `logs/coex-merged-boot.log`；`docs/verification/coex-verification.md` §6 |
+| 共存 + start 路径（`-Dcoex`，修复前） | `esp_wifi_start` 期间 blob 调了 `_coex_enable`，核心收下（`returned rc=0 wifi=enabled`）；之后停在 MAC 忙位自旋（`mepc=0x2f009cb6`，掩码 `0xE000`）——2026-11-25 修复前的证据 | `logs/coex-wifi-probe-start-boot.log` |
+| 板侧 start（2026-11-25） | `esp_wifi_start rc=0`；init 之后 `MAC_ST=0x00000000`；`MODEM_SYSCON` / `MODEM_LPCON` 的时钟寄存器与同板 IDF 逐位相同 | `logs/wifi-probe-start-rc0-boot.log`；根因见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末 |
+| 合并镜像（`-Dcoex-merged`，与 BLE 同链） | `esp_wifi_init_internal rc=0`、`INIT OK`，Wi-Fi arena 配额 100 512 B；2026-11-25 重跑 `read: LPCON+18 after wifi init=0x00000001`、`main: verdict=pass` | `logs/coex-merged-boot.log`、`logs/coex-merged-pmu-icg-boot.log`；`docs/verification/coex-verification.md` §6、§11 |
 | 扫描/连接 | **未做** | 需要 `on_idle` 接 EMAC 收发 |
 
 ## 用法
@@ -69,7 +70,8 @@ while (spins < idle_spin_limit) : (spins += 1) {  // 上限 64
 
 `src/init_probe.zig` 的 `initOnly(opts)` 是「装表 → 启动共存核（开了 `-Dcoex` 时）→ `coex_init` →
 `esp_wifi_init_internal`」那一段，到 `INIT OK` 返回；探针的 `run()` 调完它再接着做自己的实验，
-合并镜像（`firmware/src/coex_merged.zig`，`-Dcoex-merged`）只调它。两个选项：
+合并镜像（`firmware/src/coex_merged.zig`，`-Dcoex-merged`）只调它。开头先做两个板级前置：`hw.initTimer()`（时间基）与
+`board.pmu.initModemIcg()`（modem 的 ICG 码——缺了它 Wi-Fi MAC 的核不跑，`esp_wifi_start` 不返回）。两个选项：
 
 - `experiments`：探针里对内存布局写死的实验（`0x2f013d30` 的 blob 上下文块等）与大段转储。
   **别的镜像里必须关掉**——那些地址只在探针镜像的布局下有意义；
@@ -85,7 +87,7 @@ while (spins < idle_spin_limit) : (spins += 1) {  // 上限 64
    在 BLE 任务栈上碰到 Wi-Fi 的信号量时不会去泵 Wi-Fi 任务，也就不会改写 Wi-Fi 这边存的主栈指针。
 3. **共存核的即时痕迹**。`coexBoot()` 给胶水登记 `on_enter` / `on_leave` 回调：blob 调到
    `_coex_enable` / `_coex_disable` / `_coex_wifi_request` / `_coex_wifi_release` 时各打一行，
-   enable / disable 返回时再打一行带返回码与两侧状态——`esp_wifi_start` 不返回时，事后的诊断行打不出来。
+   enable / disable 返回时再打一行带返回码与两侧状态——`esp_wifi_start` 不返回时（2026-11-25 之前的状况），事后的诊断行打不出来。
 
 ## 两根栈：`src/sched.zig`
 
@@ -130,16 +132,14 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 - **PHY（已解锁）**：`register_chipv7_phy` 现在**返回**（`rc=1`）。关键是把 `SYSCON_FORCE_ON`
   (0x20109C08) 的 `0x1c`（WIFI_APB/FE/FE_APB）与 `LPCON_FORCE_ON` (0x2010F01C) 的 `WIFIPWR_FO`
   设上——使能位不等于上电；`CLK_CONF_POWER_ST` 读 0 不是判据。
+  2026-11-25 更正：真正缺的那一步是 PMU 的 modem ICG 码，见下一条。
   诊断纪律：**不要手工乱序调用 ROM 的 PHY 函数**（会得到假的空指针故障），跑真实路径。
-- `esp_wifi_start`：取锁 + `zalloc(24 B)` + `event_post(id=43)` 之后自旋，不投队列；需要定时器中断
-  抢占（`MIE=0` 现状）或 post 型入口。
-  2026-11-24 更正：start 之前那次 panic 不是共存改变了内存布局——探针里写死的 `0x2f005b0c` 在关着共存的
-  对照镜像里同样落在 `ppEnqueueTxDone` 的函数中间，从来没成功过。该实验已删除；现在探针能走到
-  `esp_wifi_start`，在 `_phy_enable`（`register_chipv7_phy rc=0`）与 `_coex_enable` 之后停在上面的自旋里。
-- 当前故障：PHY 之后出现 `illegal instruction`（`mepc=0x2f01c9d4`，SRAM；`ra=0x40017876`）——
-  `0x40017874: jalr a5` 通过上下文里的函数指针调用，而该指针落在 arena 范围。
+- `esp_wifi_start`：**已返回**（2026-11-25，`esp_wifi_start rc=0`）。此前它停在等 `MAC_ST`（0x20104CAC）忙位自清的自旋里；
+  根因是镜像没做 IDF 启动期 `pmu_init()` 里写 modem ICG 码并触发更新的一步，由 `initOnly()` 开头的
+  `board.pmu.initModemIcg()` 补上（`docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末）。返回之后的扫描、连接未做。
 - `on_idle` 接 EMAC：收包 → `esp_wifi_internal_reg_rxcb` 注册的回调；发送走 `esp_wifi_internal_tx`。
 - 扫描/连接：需要 `esp_wifi_connect` / `esp_wifi_disconnect` 等 IDF 侧符号的桩。
 
 已完成（此前列在这里）：任务体跑在**自己的静态栈**上（`sched.zig`，`sched-test: PASS`）；
-`_task_delay` 已按"让出 + 计时"实现。
+`_task_delay` 已按"让出 + 计时"实现；`illegal instruction`（`mepc=0x2f01c9d4`）在
+`logs/wifi-probe-regdump-before-boot.log` 与 `logs/wifi-probe-start-rc0-boot.log` 里都没有出现。

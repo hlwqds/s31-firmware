@@ -1,8 +1,8 @@
 # wifi-idf-oracle：官方 IDF 的最小 station（对照用）
 
 目的：在**同一块板子**上用官方 SDK 真实连一次 AP，证明「板子射频 ↔ AP」这条路是通的，并给自写运行时
-（`s31-firmware` 跑同一个 Wi-Fi blob）留一个可以逐步复刻的 oracle。`s31-firmware` 自己的 Wi-Fi 目前停在
-`esp_wifi_start` 等 MAC 忙位清零（见 `docs/verification/wifi-ieee80211-verification.md` 的「真实链路」一节）。
+（`s31-firmware` 跑同一个 Wi-Fi blob）留一个可以逐步复刻的 oracle。2026-11-25 靠它做的一次全量寄存器对照找到了
+`s31-firmware` 侧 `esp_wifi_start` 不返回的根因（见下面的「全量寄存器 dump」）。
 
 ## 凭据
 
@@ -48,6 +48,30 @@ cd firmware && sh tools/flash.sh /dev/ttyUSB0 /tmp/default-image/app.bin
 | ping 公网地址、经网关的 DNS | 没通（这台 AP 没有上联，或不对 ICMP / DNS 转发；与本板无关） |
 
 从启动到拿到 IP 约 2.4 秒。主机自己的 Wi-Fi 看到的是同一个 BSSID、同一个信道（旁证）。
+
+## 全量寄存器 dump（对照用）
+
+`idf.py menuconfig` → `Oracle Wi-Fi credentials` → `Dump documented registers after esp_wifi_init / esp_wifi_start`
+（`CONFIG_ORACLE_REGDUMP`，默认关）。打开后镜像在 `esp_wifi_init` 之后与 `esp_wifi_start` 之后各打印一遍 SoC 头文件里
+定义过的 523 个寄存器（12 个外设块，只读），外加 `MAC_ST`（0x20104CAC，blob 私有的状态寄存器，不在头文件里）：
+
+```text
+REGDUMP after-init begin n=523 mac_st=00000000
+REG 0 20109400 00000000
+...
+REGDUMP after-init end
+```
+
+地址表 `main/regdump_addrs.h` 由 `gen_regdump_addrs.py` 从 IDF 的 SoC 头文件生成，与 `s31-firmware` 探针侧的
+`regdump_addrs`（`components/wifi-blobs/src/init_probe.zig`，`probe_regdump = true` 时同样打印）必须是同一张表：
+
+```bash
+python3 tools/wifi-idf-oracle/gen_regdump_addrs.py --check   # 核对头文件与 IDF 头文件一致，退出 0
+python3 tools/wifi-idf-oracle/gen_regdump_addrs.py          # 重新生成
+```
+
+2026-11-25 的对照：`logs/wifi-idf-oracle-regdump-boot.log`（oracle）对 `logs/wifi-probe-regdump-before-boot.log`
+（探针，修复前），差集 95 个；根因与实验见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末。
 
 ## 判读纪律
 

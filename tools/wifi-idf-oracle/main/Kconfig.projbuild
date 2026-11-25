@@ -8,4 +8,8 @@ menu "Oracle Wi-Fi credentials"
         string "Passphrase"
         default ""
 
+    config ORACLE_REGDUMP
+        bool "Dump documented registers after esp_wifi_init / esp_wifi_start (for comparing with the s31-firmware probe)"
+        default n
+
 endmenu

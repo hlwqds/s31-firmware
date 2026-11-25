@@ -7,7 +7,7 @@
 ```
 .
 ├── firmware/                  # 单一固件（start/main、idf-bootstrap、flash.sh）
-├── boards/esp32s31-coreboard/ # 板级层（linker、hw/log/trap、板卡说明）
+├── boards/esp32s31-coreboard/ # 板级层（linker、hw/clock/pmu/rng/log/trap、板卡说明）
 ├── components/<subsystem>/     # 子系统（net / apps / wifi / boot-power-perf；各自带 host_tests）
 ├── tools/s31-production/      # 生产化组件（netmgr/ota/provisioning/recovery/基线/HIL）
 ├── logs/                      # 板侧原始日志，只增不改

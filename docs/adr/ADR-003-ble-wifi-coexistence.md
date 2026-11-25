@@ -10,7 +10,7 @@
 
 | 事实 | 出处 |
 | --- | --- |
-| 单独的 Wi-Fi 与 BLE 都还没有端到端跑通：Wi-Fi blob 卡在 `esp_wifi_start` 的 MAC 忙位，BLE controller 的射频 synth 不锁 | `R/logs/ch25-start-boot.log:401`（start 无返回行）；`R/logs/r162b-unlock-sweep-negative.log`（`98BC.bit2=0`）；路线图 R3.1/R3.3 |
+| 单独的 Wi-Fi 与 BLE 都还没有端到端跑通：Wi-Fi blob 卡在 `esp_wifi_start` 的 MAC 忙位，BLE controller 的射频 synth 不锁（2026-11-25 更正：Wi-Fi 侧已能从 `esp_wifi_start` 返回，见 ADR-001 文末；本行其余内容是决策当时的事实） | `R/logs/ch25-start-boot.log:401`（start 无返回行）；`R/logs/r162b-unlock-sweep-negative.log`（`98BC.bit2=0`）；路线图 R3.1/R3.3 |
 | 两套 blob 适配层按构造互斥。没有任何构建把两棵树链进同一镜像 | `R/firmware/src/main.zig:22-26`；`R/firmware/build.zig:90-96,236,308` |
 | 同名导出：`esp_event_handler_register`/`unregister`、`s31_printf_hook`（两边签名不同）、`free`/`sprintf`/`putchar`/`puts`/`strtok`/`rtc_clk_xtal_freq_get` | `R/components/wifi-blobs/src/event_bus.zig:30,43` 与 `R/components/bt-blobs/src/event_bus.zig:30,43`；`R/components/wifi-blobs/src/init_probe.zig:404` 与 `R/components/bt-blobs/link/wifi_probe_stubs.c:90`；`R/components/wifi-blobs/src/link_stubs.zig:42-79`；`R/components/bt-blobs/link/bt_stubs.c:15` 自述两套不要同时链进同一个镜像 |
 | 两套协作式切换器各持一份主上下文栈指针，互不 import | `R/components/wifi-blobs/src/sched.zig:64-153`（`s31_swap_context`）；`R/components/osal/src/sched.zig:80-185`（`bt_swap_context`） |

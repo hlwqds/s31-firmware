@@ -61,8 +61,24 @@
   `ble_802154` 207/207，第三、四、五批之后第一次），`net_ethernet` 11/11；`--only` 最小验证镜像（只编两个无线 section，
   512704 B = 整份的 42%）同样通过。期间一次 `net_ethernet` 不过查明是主机网口配置把链路拉低（板侧只等 5 秒），与板子无关。
   真实 AP 的厂商栈对照（属 R3）：官方 IDF 最小 station 已在同板连上用户提供的 AP（关联、WPA2-PSK、DHCP、ping 网关 5/5）；
-  本仓库自己的 Wi-Fi 仍停在 `esp_wifi_start` 等 MAC 忙位。
+  本仓库自己的 Wi-Fi 当时仍停在 `esp_wifi_start` 等 MAC 忙位（同日稍后解决，见下一节）。
   范围边界见 `docs/verification/` 两份报告的 §6。提交号见 `git log` 里标题含「R5 第五批」的那一条（站点仓的路线图引用了它）。
+
+## Wi-Fi blob 的 `esp_wifi_start` 首次返回（2026-11-25）
+
+- **做了什么**：找出并修掉了 Wi-Fi blob 移植自 R3.1 起的卡点。板级包新增 `boards/esp32s31-coreboard/src/pmu.zig`
+  （`board.pmu.initModemIcg()`）：给三个 HP 电源模式写 modem 的 ICG 码（active=2 / modem=1 / sleep=0）并触发两次
+  立即更新——IDF 启动期 `pmu_init()` 里的一步，裸机镜像此前没有做。`components/wifi-blobs` 的 `initOnly()` 开头调用它；
+  `_wifi_clock_disable` 按 IDF 补齐（清 `clk_coex_en`、不在 disable 时复位 BB）；探针加了与 oracle 同一张地址表的全量寄存器
+  dump（`probe_regdump`，默认关）。`tools/wifi-idf-oracle` 加 `CONFIG_ORACLE_REGDUMP` 与地址表生成器 `gen_regdump_addrs.py`。
+- **怎么找到的**：与官方 IDF 在 `esp_wifi_init` 之后对照 SoC 头文件里定义过的 523 个寄存器，差集 95 个；其中 77 个可以
+  安全照抄的全部按 IDF 值写入也不解决；单变量实验收窄到「写码 + 触发更新」必要且充分。完整记录在
+  `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末。
+- **验证**：主机门禁 `scripts/check-all.sh` 各步通过；板侧——Wi-Fi 探针 `esp_wifi_start rc=0`（此前不返回）、init 之后
+  `MAC_ST=0x00000000`（`logs/wifi-probe-start-rc0-boot.log`）；合并镜像重跑 `main: verdict=pass`
+  （`logs/coex-merged-pmu-icg-boot.log`）；量产镜像 `PASS board:net`（8/8 段）。主机用例数不变。
+- **没有做的**：扫描、连接、收发（`esp_wifi_start` 返回之后的路径）；BLE 侧不接这一步（接了 BLE 探针锁死，
+  `logs/bt-probe-pmu-icg-lockup-boot.log`，属 R3.3）；`pmu_init()` 的其余部分（稳压器电压档、睡眠配置等）。
 
 ## 日志
 

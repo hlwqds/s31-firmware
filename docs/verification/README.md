@@ -91,6 +91,9 @@ ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_ml
 （SSID `hl-wifi`；密码不进任何仓库或文档）：关联、WPA2-PSK、DHCP、ping 网关 5/5，日志 `logs/wifi-idf-oracle-sta.log`，
 见 `wifi-ieee80211-verification.md` §8。
 
+2026-11-25 的后续：与 oracle 的全量寄存器对照找到了本仓库 `esp_wifi_start` 不返回的根因并修复，
+`esp_wifi_start rc=0`（`logs/wifi-probe-start-rc0-boot.log`；`wifi-ieee80211-verification.md` §9、`coex-verification.md` §11）。
+
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
 | 运行 | 命令 | 结果 | 日志 |

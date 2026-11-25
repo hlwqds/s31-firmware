@@ -3,7 +3,7 @@
 - 规范依据：IEEE Std 802.11-2016（条款号取自该版目录与各模块文件头，页码为印刷页码）；其上的 RFC：RFC 3394（AES Key Wrap）、RFC 4493（AES-CMAC）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）、RFC 2104（HMAC）。第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）。第四批的 Wi-Fi 侧只涉 RFC 8110 §4.5（OWE 的 PMK caching）。第五批（2026-11-25）的 Wi-Fi 侧不涉新 RFC。
 - 组件：`components/wifi-mlme`、`components/wifi-connect`。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
-- **真实 AP 与空口没有任何证据**：`esp_wifi_start` 仍卡在 `MAC_ST[15:13]`。下表的"通过"指离线验证通过。
+- **真实 AP 与空口没有任何证据**：本仓库的 blob 移植 2026-11-25 起能从 `esp_wifi_start` 返回（§9），扫描、连接没有做。下表的"通过"指离线验证通过。
 - 本文把 2026-11-24 加入的 SAE 完整实现、FT 密钥派生层、256 位套件、QoS 与省电称为"第二批"；之前的部分称为"第一批"。
   第二批的板侧自检先在主机上用桩 `board` 模块跑过，随后于同日随 `wifi` profile 上板（§5.2）。
 - 本文把 2026-11-25 加入的 OWE、EAP-TLS、按 AKM 的 4 次握手、SAE 其它群、FT 协议、无线测量（radio measurement）与 WNM 称为"第三批"。第三批新增六个板侧子自检，在主机上的读数与复核见 §5.4；**第三批当时没有上板**（2026-11-25 随第五批的镜像上板，全部通过）。
@@ -70,7 +70,7 @@
 | WNM 其余子域：BSS Max Idle（含保活判决）、TIM Broadcast、FMS、DMS、Collocated Interference（含占空比）、Channel Usage、WNM Notification、Event / Diagnostic 容器、QoS Traffic Capability 元素 | 11.24.2、11.24.3、11.24.8、11.24.9、11.24.10、11.24.13、11.24.15、11.24.16.2、11.24.17；9.6.14.2–.5、.11–.15、.21–.27、.29–.30；9.4.2.67–.70、.76–.89（表 9-77 的元素 ID、表 9-354 的动作值、表 9-199、表 9-178、9.4.2.85） | `wifi-mlme/src/wnm.zig`（第 15–24 节）、`wnm_rest_tests.zig`、`wnm_rest_selftest.zig` | 39（`wnm_rest_tests.zig`） | 按原图与原表手排；照同一份规范写的 Python 模型对拍（5012 例：14 种子 × 358，主代理重跑其中 4 个种子共 1432 例，0 不一致）；hostap 只有 `WNM_*` 动作枚举可对拍（`ieee802_11_defs.h:765–792`）；占空比公式 ⌊(2³²−2)×T_B/T_I + 0.5⌋ 对渲染 PDF 的原文（9.4.2.85，印刷页 1009）核实 | 31（`wnm_rest_selftest.zig`） | 离线验证通过；独立评审的 12 条发现（含 P1：CI Report 元素宽度按图 9-427 应为 21 八位组）已返修；没做的边界见 §6（FMS Descriptor 元素 ID 86、WNM Notification 的 AP Descriptor / Firmware Version 子元素内容、FTM / Timing Measurement、Location track、Proxy ARP、AC Station Count 等非目标）；取舍与偏离清单见 `wnm.zig` 文件头 |
 | GAS / ANQP 与 Interworking：Public Action 10–13、GAS Initial / Comeback 的分帧与状态机、`dot11GASResponseTimer`、ANQP 元素子集（含 NAI Realm） | 9.6.8.12–.15、9.6.8.1（表 9-307）、表 9-313–9-316、图 9-666–9-670、9.4.2.93、9.4.5（ANQP 元素，图 9-606）、9.4.5.5（Emergency Call Number）、11.25.3.2.2–.4、11.25.3.3、9.4.1.9、9.4.1.12、9.4.1.34、表 9-46 | `wifi-mlme/src/gas.zig`、`gas_tests.zig`、`gas_selftest.zig` | 36（`gas_tests.zig`） | 按条款与原图手排；照同一份规范写的 Python 模型对拍（696 例：接受 563 / 拒绝 133，0 不一致）；盘上 hostap 裁掉了 `gas.c` / `anqp.c`，没有独立实现 | 13（`gas_selftest.zig`） | 离线验证通过；Status Code 字段 2 八位组按 9.4.1.9；Emergency Call Number（9.4.5.5）按评审意见补齐；其余边界见 §6 |
 | Block Ack 与 A-MSDU 子帧头：ADDBA Request / Response、DELBA、记分板位图语义、接收重排缓冲（时间注入）、A-MSDU 子帧头 | 9.3.1.8–.9、9.3.2.2、9.4.1.14–.16、9.4.2.139（图 9-79）、9.6.5.2–.4、10.12、10.24.1–.2 / .4 / .7.3 / .7.5–.6、11.5.2–.4（表 9-302、9-303、9-304） | `wifi-mlme/src/blockack.zig`、`blockack_tests.zig`、`blockack_selftest.zig` | 38（`blockack_tests.zig`） | 按条款手排；照同一份规范写的 Python 模型对拍（4 × 240 随机 + 256 条确定性边界 = 1216 例，0 不一致）；窗口边界对渲染 PDF 的原文（印刷页 1424 / 1427 / 1428）逐格核对；A-MSDU Length 的大端序只有规范依据（内核只有头文件） | 19（`blockack_selftest.zig`） | 离线验证通过；独立评审（2026-11-25）对本片逐条核对、无发现；只做 Basic 与 Compressed 变体，边界见 §6 |
-| 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | — | — | — | — | 阻塞：`MAC_ST[15:13]` |
+| 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | — | — | — | — | `esp_wifi_start` 已返回 0（2026-11-25，§9）；扫描、连接未做 |
 
 负面用例（主机）：截断、越界、不一致的输入逐个被拒；MIC 错、重放或重复计数、顺序错、解包失败、RSNE 被改、PN 重放、错 IGTK、SA Query 事务标识不符。第二批追加：口令不同时 Confirm 校验失败并删除 PMK、非法的对端 Commit、回声 Commit、不支持的群、Anti-Clogging token 错、篡改 / 截断 / 标错套件的 256 位帧、KEK 长度不对。
 第三批追加：OWE 的公钥不在曲线上、私钥越界、响应里有 OWE AKM 却没有 DH Parameter element；EAP-TLS 的 Flags 与长度字段不合法、重复的 Request、握手完成前收到的 EAP-Success；按 AKM 的握手里 PMK 长度不符、AKM 与密码套件不能合用、消息 1 的 PMKID 不符；SAE 其它群里的非法对端 Commit 与状态码 77 的群协商；FT 协议里 MIC 不对、重放、移动域 / R0KH-ID / ANonce / SNonce 不符、截止时间已过；无线测量与 WNM 里的保留值、Request mode 与可选字段对不上、Query / Response 里 Preference 为 0。每条都断言拒绝的理由是正确的那一个（状态码、丢弃原因或错误名）。
@@ -686,5 +686,28 @@ Emergency Call Number 的静默缺口——它们已是改正后的行为，经�
   日志 `logs/wifi-idf-oracle-sta.log`。主机自己的 Wi-Fi 在同一信道听到同一个 BSSID（旁证）。AP 的密码不进任何仓库或文档。
 - ping 公网地址与经网关的 DNS 没通（这台 AP 没有上联，或不对 ICMP / DNS 转发）。
 - **这是厂商栈的结果（L4），不是 `s31-firmware` 的结果**。它证明板子的射频、AP、认证与 DHCP 这条路是通的。
-  本仓库自己的 Wi-Fi 仍停在 `esp_wifi_start` 等 MAC 忙位（`MAC_ST[15:13]`）清零——同一段 blob、同一个调用点，IDF 里清零、
-  我们的运行时里不清。有了能连通的 oracle 之后，下一步是逐时点对照两边 MAC 时钟 / 复位 / PMU / PLL 的状态。
+  本仓库自己的 Wi-Fi 当时停在 `esp_wifi_start` 等 MAC 忙位（`MAC_ST[15:13]`）清零——同一段 blob、同一个调用点，IDF 里清零、
+  我们的运行时里不清。2026-11-25 靠逐时点的全量寄存器对照找到了根因并修复，见 §9。
+
+## 9. 本仓库的 blob 移植：`esp_wifi_start` 首次返回（2026-11-25，L3）
+
+§8 末尾留的问题已解决。做法是 §8 提的"逐时点对照"的全量版：与 oracle 在 `esp_wifi_init` 之后对照 SoC 头文件里
+定义过的 523 个寄存器（`logs/wifi-idf-oracle-regdump-boot.log` 对 `logs/wifi-probe-regdump-before-boot.log`），
+差集 95 个，再逐个做单变量实验。根因是裸机镜像没做 IDF 启动期 `pmu_init()` 里的一步：给三个 HP 电源模式写 modem 的
+ICG 码并触发立即更新。码是复位值 0 时，时钟适配层写的门控位图 `0x6` 对不上，Wi-Fi MAC 的核没在跑。
+完整的差集、实验表、机理与 IDF 源码出处见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末；
+修复在 `boards/esp32s31-coreboard/src/pmu.zig`。
+
+板侧读数（Wi-Fi 探针，`logs/wifi-probe-start-rc0-boot.log`）：
+
+```text
+wifi-init-probe: pmu modem ICG code 0->2 (2 = active)
+wifi-init-probe: after-init MAC_ST=0x00000000 (init_rc=0)
+wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
+```
+
+边界：
+
+- 只到 `esp_wifi_start` 返回。这是 blob 边界（`wifi-blobs`）的板侧证据，不是 `wifi-mlme` / `wifi-connect` 的：
+  扫描、连接、与本仓库自己的 RSNA 实现对接都没有做；与真实 AP 的互通（L4）仍然只有厂商栈的证据。
+- BLE 侧不能接同一步骤（探针锁死），读数在 `docs/verification/coex-verification.md` §11。

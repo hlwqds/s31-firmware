@@ -24,7 +24,8 @@
 | C4 分区表 | — | 没有改：init 级的合并镜像 1 117 376 B，装得下现有 factory 分区 | §7.5 |
 | Wi-Fi 侧 `_coex_enable` | L3 | blob 调了它，核心回 `rc=0`，Wi-Fi 侧变成 `enabled` | §9.1 |
 | C5 PHY 与时钟域的归属模型 | L1 | `radio-coex/src/owner.zig` 10 项主机用例全过；**寄存器序列没有接** | §8 |
-| 探针镜像回归 | L3 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start` | §6.5 |
+| 探针镜像回归 | L3 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行） | §6.5 |
+| modem 的 ICG 码（Wi-Fi 侧 R3.1 的墙） | L3 | Wi-Fi 探针 `esp_wifi_start rc=0`、init 之后 `MAC_ST=0x00000000`；合并镜像重跑 0 个失败。BLE 侧不能接（探针锁死） | §11 |
 | 共存的真实效果（L4） | L4 | 没有任何证据：两个射频都没有端到端跑通 | — |
 
 ## 2. C0 调研与设计（2026-11-24）
@@ -357,10 +358,10 @@ Wi-Fi 探针的完整配方此前没有记录在仓库里（只留下了量体�
 | 项 | 结果 | 还差什么 |
 | --- | --- | --- |
 | C3 运行时统一 | 两棵树能链进同一个镜像并上板；冲突面 12 个符号，按规则各留一个提供者 | 设计里的"一个调度器 / 一份 osi / trap 钩子多槽"没有做——量过之后不需要（§6.3） |
-| C4 合并镜像 | 上板 8/8 段通过，两个控制器的 init 都返回 0 | 只做到 init；`esp_wifi_start` 与 BLE enable 仍被 R3.1 / R3.3 的墙挡住 |
+| C4 合并镜像 | 上板 8/8 段通过，两个控制器的 init 都返回 0 | 只做到 init（合并镜像不调 `esp_wifi_start`）；Wi-Fi 侧 R3.1 的墙已拆（§11），BLE enable 仍待 R3.3 |
 | C4 窗口 | irom、drom 各扩到 `0x1C0000`，drom 基址后移；两侧新上限各有一次实板证明 | 分区表没有改（§7.5） |
 | C5 归属模型 | 纯逻辑模型 + 10 项主机用例 | 寄存器序列没有接（§8） |
-| C6 共存性能 | — | 阻塞：等 R3.1（`MAC_ST`）与 R3.3（synth） |
+| C6 共存性能 | — | 阻塞：等 R3.3（synth）；R3.1 已拆（§11） |
 
 ## 6. C3 运行时统一：两棵树同链
 
@@ -615,7 +616,7 @@ NMI n=5000 mepc=0x2f009cbe … a4=0000e000 a5=0000e000
 | 之后 | 探针停在已知的 R3.1 墙：PC 采样钉在 `0x2f009cb6 / 0x2f009cbe`，掩码 `0xE000` 的 MAC 忙位 |
 
 那两行 `coex>` 是胶水的 `on_enter` / `on_leave` 回调打的（`init_probe.zig` 的 `coexBoot()` 登记）。
-`esp_wifi_start` 不返回，事后的诊断行打不出来，所以只能靠入口与返回处的即时痕迹。
+`esp_wifi_start` 不返回，事后的诊断行打不出来，所以只能靠入口与返回处的即时痕迹。（2026-11-25 起返回 0，见 §11。）
 
 ### 9.2 对 §4.5 的更正
 
@@ -642,10 +643,47 @@ NMI n=5000 mepc=0x2f009cbe … a4=0000e000 a5=0000e000
 
 未验证：
 
-- 合并镜像里 `esp_wifi_start` 与 BLE enable 都没有跑（各自被 R3.1 / R3.3 的墙挡着）；两个控制器**同时工作**没有任何证据。
+- 合并镜像里 `esp_wifi_start` 与 BLE enable 都没有跑（合并镜像只做到 init）；两个控制器**同时工作**没有任何证据。
+  Wi-Fi 侧单独的探针已能从 `esp_wifi_start` 返回（§11），BLE enable 仍待 R3.3。
 - 18 个 OS 钩子在有争用时的行为：主机测试之外，板上核只走了"立即拿到锁"的路径；外来上下文保护在板上没有触发过
   （`n=0`），所以它管不管用只有主机侧的推理。
 - 共存核的硬件定时器（`coex_hw_timer_*`）是否在走，没有读回。
 - BLE 的两个回调被核心调用的时刻：需要两个射频都开，目前只验证了登记。
 - Wi-Fi enable 之后的核心行为：`_coex_enable` 之后 blob 有没有再调 `coex_wifi_request` 一类的钩子，没有观测到。
 - 共存的真实效果（L4）：没有任何证据。
+
+## 11. modem 的 ICG 码：`esp_wifi_start` 首次返回（2026-11-25）
+
+根因、逐个单变量实验与 IDF 源码出处记在 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末。
+这里只列与本报告有关的板侧读数和复现方法。
+
+### 11.1 做了什么
+
+- 板级包新增 `boards/esp32s31-coreboard/src/pmu.zig`（`board.pmu.initModemIcg()`）：给三个 HP 电源模式写 modem 的
+  ICG 码（active=2 / modem=1 / sleep=0）并触发两次立即更新——IDF 启动期 `pmu_init()` 里的一步，裸机镜像此前没有做。
+- `init_probe.zig` 的 `initOnly()` 开头调用它；`_wifi_clock_disable` 按 IDF 补齐（清 `clk_coex_en`、不在 disable 时复位 BB）。
+
+### 11.2 板侧读数
+
+| 镜像 | 读数 | 日志 |
+| --- | --- | --- |
+| Wi-Fi 探针 | `wifi-init-probe: pmu modem ICG code 0->2 (2 = active)`；`after-init MAC_ST=0x00000000 (init_rc=0)`；`esp_wifi_start rc=0x0 (idle_calls=22)` | `logs/wifi-probe-start-rc0-boot.log` |
+| 修复前的同一个探针（全量 dump） | `REGDUMP after-init begin n=523 mac_st=0000e000` | `logs/wifi-probe-regdump-before-boot.log` |
+| IDF oracle（全量 dump） | `REGDUMP after-init begin n=523 mac_st=00000000` | `logs/wifi-idf-oracle-regdump-boot.log` |
+| 合并镜像（§7.1 的重跑） | `read: LPCON+18 after wifi init=0x00000001`（此前是 `0x00000003`）；`check: wifi esp_wifi_init_internal rc=0 ok=1`；`bt bringup: INITED`；`main: verdict=pass` | `logs/coex-merged-pmu-icg-boot.log` |
+| BLE 探针，BLE 侧也加这一调用 | 两次 `rst:0x1a (CPU_LOCKUP_RESET)`，第一次启动没到 `INITED` | `logs/bt-probe-pmu-icg-lockup-boot.log` |
+| BLE 探针，对照（不加） | `bt bringup: INITED`、8 条 `bt-blob-strong-assert`，与 §6.5 相同 | `logs/bt-probe-pmu-icg-control-boot.log` |
+
+### 11.3 边界
+
+- 只到 `esp_wifi_start` 返回。扫描、连接、收发没有做；共存的真实效果（L4）仍然没有任何证据。
+- BLE 侧**没有**接这一步：接了会让 BLE 探针锁死（上表）。合并镜像里 BLE 的 `bringup.init` 是在 ICG 已生效的状态下跑的，
+  照样 `INITED`；问题出在探针 `INITED` 之后的实验流程，没有分析，属于 R3.3。
+- `pmu_init()` 的其余部分（稳压器电压档、睡眠配置等）没有做。修复后的全量对照（`logs/wifi-probe-fix-regdump-boot.log`）
+  与 oracle 还差 90 个寄存器，时钟相关寄存器全部相同。
+
+### 11.4 全量寄存器对照的复现
+
+oracle 打开 `CONFIG_ORACLE_REGDUMP`（`idf.py menuconfig` → `Oracle Wi-Fi credentials`）；探针把 `init_probe.zig` 的
+`probe_regdump` 置 `true`。两边各抓 22 秒，按地址配对 `REG <序号> <地址> <值>` 行做差。地址表用
+`python3 tools/wifi-idf-oracle/gen_regdump_addrs.py --check` 核对（与 IDF 头文件、与探针侧的表逐项相同）。
