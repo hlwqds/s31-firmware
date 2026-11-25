@@ -15,6 +15,7 @@
 #include "freertos/event_groups.h"
 
 #include "esp_event.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -36,13 +37,114 @@ static void regdump(const char *tag) {
     }
     printf("REGDUMP %s end\n", tag);
 }
+
+/* MAC 块整段（0x20104000 起 4 KB，blob 私有，不在头文件里）：扫描是驱动直接往这里写出来的。有定义的
+ * 寄存器都都对上了而扫描结果不同时，差别只能在里面。只读；个别读清位会被读掉，只用于诊断。 */
+#define MAC_BLOCK_BASE 0x20104000u
+#define MAC_BLOCK_N 1024u
+static void macdump(const char *tag) {
+    printf("MACDUMP %s begin n=%u base=%08X\n", tag, (unsigned)MAC_BLOCK_N, (unsigned)MAC_BLOCK_BASE);
+    for (unsigned i = 0; i < MAC_BLOCK_N; i++) {
+        volatile uint32_t *p = (volatile uint32_t *)(MAC_BLOCK_BASE + 4u * i);
+        printf("MACW %u %08X %08X\n", i, (unsigned)(MAC_BLOCK_BASE + 4u * i), (unsigned)*p);
+    }
+    printf("MACDUMP %s end\n", tag);
+}
+
+/* CLIC 每个输入的控制字（0x10801000 + 4*i）。s31-firmware 的真实链路探针只放行"装了处理函数"的输入；
+ * 这里把 IDF 在扫描中实际放行的输入打出来对照。只打非零的。 */
+static void clicdump(void) {
+    printf("CLICDUMP begin n=64 base=%08X\n", (unsigned)0x10801000u);
+    for (unsigned i = 0; i < 64; i++) {
+        uint32_t ctl = *(volatile uint32_t *)(0x10801000u + 4u * i);
+        if (ctl) printf("CLIC %u %08X\n", i, (unsigned)ctl);
+    }
+    printf("CLICDUMP end\n");
+}
+
+/* 不在头文件里的几块：FE（0x20100000 起 16 KB）、BB/BRX/MODEM_TIMER/ETM/DATADUMP/WIDGETS（0x20107000 起
+ * 11 KB）、0x2010D000 起 8 KB。每行 8 个字（`RG <地址> <8 个值>`），全打不做过滤。只读，只用于诊断。 */
+static void rangdump(const char *tag, uint32_t base, uint32_t n) {
+    printf("RANGEDUMP %s begin base=%08X n=%u\n", tag, (unsigned)base, (unsigned)n);
+    for (uint32_t i = 0; i < n; i += 8) {
+        printf("RG %08X", (unsigned)(base + 4u * i));
+        for (uint32_t j = 0; j < 8 && i + j < n; j++) {
+            printf(" %08X", (unsigned)*(volatile uint32_t *)(base + 4u * (i + j)));
+        }
+        printf("\n");
+    }
+    printf("RANGEDUMP %s end\n", tag);
+}
+static void rangdump_all(void) {
+    /* 只读头文件里给了基址的那几块，各按 1 KB（WIDGETS 2 KB）算。FE 只到 0x20101FFF：0x20102000 起读不到
+     * （s31-firmware 的探针在那里读一次就挂死；0x20103000 是 IEEE 802.15.4 的块，中间是空的）。 */
+    rangdump("fe", 0x20100000u, 2048u);
+    rangdump("bb", 0x20107000u, 1024u);
+    rangdump("brx", 0x20108000u, 256u);
+    rangdump("timer", 0x20108400u, 256u);
+    rangdump("etm", 0x20108800u, 256u);
+    rangdump("dump", 0x20109000u, 256u);
+    rangdump("wgt", 0x20109400u, 512u);
+    rangdump("pwr0", 0x2010D000u, 512u);
+    rangdump("pwr8", 0x2010D800u, 64u);
+}
+
+/* 定点采样：两块全量对照里出现过差异的那几十个地址，一个一行（`FOCUS <地址> <值>`）。放在扫描开始后
+ * 100 ms、所有慢 dump **之前**打——全量 dump 要十几秒，等到它的时候扫描早就结束、驱动已经把 FE/BB
+ * 时钟收起来，那是空闲态而不是收发态（2026-11-26 的 scan8 就是这么比错的）。 */
+static const uint32_t focus_addrs[] = {
+    0x20107000u, 0x20107030u, 0x2010704Cu, 0x20107050u, 0x2010706Cu, 0x20107078u, 0x2010708Cu, 0x20107128u,
+    0x20107138u, 0x201071D4u, 0x2010740Cu, 0x20107438u, 0x20107848u, 0x2010785Cu, 0x20107888u, 0x201078A8u,
+    0x201078ACu, 0x201078B8u, 0x201078BCu, 0x201078C0u, 0x201078C4u, 0x201078D0u, 0x20107C08u, 0x20107C60u,
+    0x20107C64u, 0x20107C80u, 0x20107C90u, 0x20107CB0u, 0x20107FFCu,
+    0x20108038u, 0x2010803Cu, 0x20108044u, 0x20108048u, 0x20108094u,
+    0x2010D800u, 0x2010D878u,
+    0x2010001Cu, 0x20100050u, 0x20100400u, 0x20100438u, 0x20100450u, 0x20100800u, 0x2010081Cu, 0x20100820u,
+    0x20100830u, 0x20100848u, 0x2010084Cu, 0x20100850u, 0x20100890u, 0x20100894u, 0x20100898u, 0x2010089Cu,
+    0x201008A0u, 0x201008A4u, 0x20101FFCu,
+};
+static void focusdump(const char *tag) {
+    printf("FOCUSDUMP %s begin n=%u\n", tag, (unsigned)(sizeof focus_addrs / sizeof focus_addrs[0]));
+    for (unsigned k = 0; k < sizeof focus_addrs / sizeof focus_addrs[0]; k++) {
+        printf("FOCUS %08X %08X\n", (unsigned)focus_addrs[k], (unsigned)*(volatile uint32_t *)focus_addrs[k]);
+    }
+    printf("FOCUSDUMP %s end\n", tag);
+}
+
+/* 各块单次读的耗时（与 s31-firmware 探针的 `busReadTiming` 同点对照）：每个地址读 16 次取平均。
+ * 探针那边读 FE 块每个字约 10 ms，看这里是不是也这样。 */
+static void readtiming(void) {
+    const uint32_t addrs[] = { 0x20100000u, 0x20100800u, 0x20101800u, 0x20104000u, 0x20107000u, 0x20108000u, 0x20108400u,
+                               0x20109000u, 0x20109C00u, 0x2010D000u, 0x2010D800u, 0x2010F000u, 0x2010F800u };
+    for (unsigned k = 0; k < sizeof addrs / sizeof addrs[0]; k++) {
+        int64_t t0 = esp_timer_get_time();
+        uint32_t v = 0;
+        for (int i = 0; i < 16; i++) v = *(volatile uint32_t *)addrs[k];
+        printf("READTIMING %08X %lld us avg (last %08X)\n", (unsigned)addrs[k],
+               (long long)((esp_timer_get_time() - t0) / 16), (unsigned)v);
+    }
+}
 #endif
+
+/* 驱动的信道管理器（blob 的 `g_chm`，一个指针变量）：`[4]` 是目标信道、`[82]` 是驱动记的当前信道。
+ * s31-firmware 的真实链路探针读同一组字段对照：blob 在"这是芯片"时靠两者是否相等决定扫描前要不要切信道。 */
+extern uint8_t *g_chm;
+static void chmdump(const char *tag) {
+    uint8_t *chm = g_chm;
+    if (!chm) {
+        printf("CHMDUMP %s obj=00000000\n", tag);
+        return;
+    }
+    printf("CHMDUMP %s obj=%08X ch=%02X cur=%02X f80=%02X f83=%02X\n", tag, (unsigned)(uintptr_t)chm, chm[4], chm[82],
+           chm[80], chm[83]);
+}
 
 #define WIFI_SSID CONFIG_ORACLE_WIFI_SSID
 #define WIFI_PASS CONFIG_ORACLE_WIFI_PASSWORD
 
 #define GOT_IP_BIT BIT0
 #define PING_END_BIT BIT1
+#define SCAN_DONE_BIT BIT2
 
 static const char *TAG = "oracle";
 static EventGroupHandle_t s_evt;
@@ -78,7 +180,10 @@ static void dump_ap(const char *when) {
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "event: STA_START -> esp_wifi_connect()");
+        ESP_LOGI(TAG, "event: STA_START");
+        /* 只扫描模式（SSID 为空）不连接。 */
+        if (WIFI_SSID[0] == '\0') return;
+        ESP_LOGI(TAG, "STA_START -> esp_wifi_connect()");
         esp_err_t e = esp_wifi_connect();
         ESP_LOGI(TAG, "esp_wifi_connect -> %s", esp_err_to_name(e));
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -100,6 +205,10 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
                  IP2STR(&e->ip_info.netmask), IP2STR(&e->ip_info.gw));
         dump_ap("after got ip");
         xEventGroupSetBits(s_evt, GOT_IP_BIT);
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        wifi_event_sta_scan_done_t *d = data;
+        ESP_LOGI(TAG, "SCAN_DONE status=%d number=%d scan_id=%d", d->status, d->number, d->scan_id);
+        xEventGroupSetBits(s_evt, SCAN_DONE_BIT);
     }
 }
 
@@ -151,6 +260,46 @@ static void ping_run(const char *name, const ip_addr_t *target, uint32_t count) 
     esp_ping_delete_session(h);
 }
 
+/* 只扫描、不连接（`CONFIG_ORACLE_WIFI_SSID` 为空时走这里）：与 s31-firmware 的真实链路探针在同一点
+ * 对照。全信道扫描非阻塞启动，等 100 ms 让它真正开始（射频已开、驱动在跳信道）就 dump 一次，
+ * 再等它结束 dump 一次，并打印扫到的前几个 AP。 */
+static void scan_only_run(void) {
+    esp_err_t e = esp_wifi_scan_start(NULL, false);
+    ESP_LOGI(TAG, "esp_wifi_scan_start(NULL, nonblock) -> %s", esp_err_to_name(e));
+    vTaskDelay(pdMS_TO_TICKS(100));
+#ifdef CONFIG_ORACLE_REGDUMP
+    focusdump("in-scan");
+    rangdump_all();
+    regdump("in-scan");
+    macdump("in-scan");
+    clicdump();
+    chmdump("in-scan");
+#endif
+    EventBits_t bits = xEventGroupWaitBits(s_evt, SCAN_DONE_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10000));
+    ESP_LOGI(TAG, "wait scan-done 10s -> %s", (bits & SCAN_DONE_BIT) ? "GOT" : "timeout");
+    uint16_t n = 0;
+    esp_err_t ne = esp_wifi_scan_get_ap_num(&n);
+    ESP_LOGI(TAG, "esp_wifi_scan_get_ap_num -> %s n=%u", esp_err_to_name(ne), (unsigned)n);
+    wifi_ap_record_t recs[8];
+    uint16_t got = (n < 8) ? n : 8;
+    if (ne == ESP_OK && got > 0) {
+        esp_err_t ge = esp_wifi_scan_get_ap_records(&got, recs);
+        ESP_LOGI(TAG, "esp_wifi_scan_get_ap_records -> %s got=%u", esp_err_to_name(ge), (unsigned)got);
+        for (uint16_t i = 0; i < got; i++) {
+            ESP_LOGI(TAG, "ap[%u] ssid=%s bssid=%02x:%02x:%02x:%02x:%02x:%02x ch=%u rssi=%d auth=%s", (unsigned)i,
+                     recs[i].ssid, recs[i].bssid[0], recs[i].bssid[1], recs[i].bssid[2], recs[i].bssid[3],
+                     recs[i].bssid[4], recs[i].bssid[5], recs[i].primary, recs[i].rssi,
+                     auth_mode_name(recs[i].authmode));
+        }
+    }
+#ifdef CONFIG_ORACLE_REGDUMP
+    regdump("after-scan");
+    macdump("after-scan");
+    focusdump("after-scan");
+    rangdump_all();
+#endif
+}
+
 static void traffic_test(esp_netif_ip_info_t *ip) {
     ip_addr_t target;
     ip_addr_copy_from_ip4(target, ip->gw);
@@ -190,6 +339,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "esp_wifi_init -> %s", esp_err_to_name(esp_wifi_init(&cfg)));
 #ifdef CONFIG_ORACLE_REGDUMP
     regdump("after-init");
+    chmdump("after-init");
 #endif
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
@@ -200,13 +350,22 @@ void app_main(void) {
     strlcpy((char *)wc.sta.ssid, WIFI_SSID, sizeof(wc.sta.ssid));
     strlcpy((char *)wc.sta.password, WIFI_PASS, sizeof(wc.sta.password));
     wc.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    ESP_LOGI(TAG, "esp_wifi_set_config -> %s", esp_err_to_name(esp_wifi_set_config(WIFI_IF_STA, &wc)));
+    if (WIFI_SSID[0] != '\0') {
+        ESP_LOGI(TAG, "esp_wifi_set_config -> %s", esp_err_to_name(esp_wifi_set_config(WIFI_IF_STA, &wc)));
+    }
 
     esp_err_t e = esp_wifi_start();
     ESP_LOGI(TAG, "esp_wifi_start -> %s", esp_err_to_name(e));
 #ifdef CONFIG_ORACLE_REGDUMP
     regdump("after-start");
+    chmdump("after-start");
+    readtiming();
 #endif
+
+    if (WIFI_SSID[0] == '\0') {
+        scan_only_run();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(10000));
+    }
 
     /* 等最多 30 秒拿 IP；拿到就跑一轮主动发包。 */
     EventBits_t bits = xEventGroupWaitBits(s_evt, GOT_IP_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));

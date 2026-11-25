@@ -6395,6 +6395,52 @@ init 之后与 oracle 的 dump 逐位相同的时钟寄存器：`MODEM_SYSCON.CL
 
 ### 仍未验证
 
-- 扫描、连接、收发：`esp_wifi_start` 返回之后还没有往下走（需要 `on_idle` 接 EMAC 收发与事件循环）。
+- 扫描：**已上板**（2026-11-26，见下一节）。连接、收发还没有往下走。
 - `pmu_init()` 的其余部分没做，包括稳压器电压档（IDF 的 `REGULATOR_DBIAS` 是 26，我们是 24；这个 24 是谁写的没有查）。
   需要调压或睡眠时按 `pmu_param.c` 补。
+
+## ★★★★ 第二个板级前置（2026-11-26）：IDF 应用启动期关掉的 APM 控制过滤器
+
+`esp_wifi_start` 返回之后扫描能逐信道走完，但一条帧都收不到。根因与 ch17 以太网 DMA 不取描述符是同一条：
+IDF 的应用在启动期调 `bootloader_init_mem()`，其中把三条访问路径的控制过滤器关掉——
+
+```text
+40016c26: sw zero,-836(a5)   # 20706cbc <LP_APM+0xbc>       LP_APM_FUNC_CTRL
+40016c2e: sw zero,1220(a5)  # 205044c4 <HP_APM+0xc4>       HP_APM_FUNC_CTRL
+40016c36: sw zero,-1852(a5) # 205048c4 <HP_MEM_APM+0xc4>   HP_MEM_APM_FUNC_CTRL
+```
+
+（对照镜像 ELF 的反汇编，`bootloader_init_mem` 开头正好是这三条写 0；后面是 PMS 循环与 `esp_cpu_configure_region_protection`，
+二级 bootloader 自己会做。）这三行在 `bootloader_support/src/bootloader_mem.c` 里被 `#if !BOOTLOADER_BUILD` 包着，
+二级 bootloader 跳过，留给应用做——由同一个 bootloader 加载的裸机镜像就得自己做。复位值 `0x0F` / `0x7F` / `0x3F`
+只放行 TEE master；Wi-Fi MAC 的 DMA 属 REE，访问被静默拒绝，不报 bus error，所以此前所有寄存器读数看起来都正常。
+
+修复在 `boards/esp32s31-coreboard/src/apm.zig`（写 0 并读回），`initOnly()` 开头调用。
+
+### 板上证据（2026-11-26）
+
+```text
+wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 15/127/63 -> 0/0/0 (0 = off)
+wifi-blob: Send scan done event: status=0, apnum=38
+wifi-link-probe: wait scan-done 10s -> GOT in 9079 ms (hooks=2296, events=3)
+wifi-link-probe: esp_wifi_scan_get_ap_records rc=0x0 got=38
+```
+
+关掉过滤器之后第一帧就暴露了第二个缺口：镜像没有 IDF 的 `wpa_supplicant` 组件，blob 的 supplicant 回调表指针是空的，
+`scan_add_ssid_do` 不判空就解引用（`load access fault`，`mtval=0x54`）。补上 `components/wifi-blobs/src/wpa_cb.zig` 之后
+扫描完成。与同板 oracle 逐 AP 对照：8 个里 7 个一致，第 8 个那一轮没扫到
+（`logs/wifi-link-scan-boot.log`、`docs/verification/wifi-ieee80211-verification.md` §10）。
+
+### 这一轮同时定下来的
+
+- 探针的 PHY 标定：每次启动全量标定（`PHY_RF_CAL_FULL`，MAC 取自 eFuse）。此前实验用的是从对照镜像 NVS 读出来的
+  标定数据加 PARTIAL，两边的扫描结果一致（31 个共同 AP 的 authmode / 信道全部相同），全量只多约 30 ms。
+  标定数据的持久化没有做。
+- PMS 循环（`0x20706000..`、`0x20505000..`、`0x2058A000..` 写 `0xFF`）与 `esp_cpu_configure_region_protection()` 没有移植：
+  扫描不依赖它们；oracle 之后还会把同一批字改写成别的值，在不知道后续步骤的情况下照抄会得到另一种状态。
+  需要 PMS 的外设（非 TEE master 访问受保护的寄存器）出现问题时再按 IDF 的顺序补。
+
+### 仍未验证（2026-11-26 更新）
+
+- 连接、收发：`esp_wifi_connect` 还是计数桩；回调表里连接路径的入口还没填。
+- `pmu_init()` 的其余部分、PMS、PHY 标定数据的持久化，见上。

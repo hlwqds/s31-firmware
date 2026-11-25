@@ -306,6 +306,8 @@ pub export fn trapEntry() linksection(".trap_ram") callconv(.naked) noreturn {
 /// 目的：任务在 blob 代码里不让出时，用定时器中断抢回 CPU 定位自旋点。
 pub var irq_samples: [16]usize = @splat(0);
 pub var irq_count: u32 = 0;
+/// 每个 CLIC 输入号进 trap 的次数。真实链路探针用它判断"哪些中断在发"。
+pub var input_counts: [64]u32 = @splat(0);
 
 /// 非采样输入的中断是否**链式转发**给 ROM 的入口（由探针打开）。
 /// 我们的 `mtvec` 会遮蔽 bootloader/ROM 装的中断向量；blob 把 TIMG0_T0 当自己的 tick，
@@ -554,6 +556,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         }
         irq_count +%= 1;
         const input = cause & 0x3F;
+        if (input < input_counts.len) input_counts[input] +%= 1;
         // 输入 25 默认自己 ack。**转发给 ROM 入口已被实测证伪**：ack 后 jr rom_mtvec 会
         // `instruction access fault`（mepc==mtval）——`mtvec` 低 2 位是 CLIC 模式，掩位后的基址
         // 是**向量表基址**而不是代码入口；而且 ROM 的 `s_intr_handlers` 里没有输入 25 的 handler。

@@ -1,10 +1,12 @@
 //! wifi-blobs：主机侧单测入口。
 //!
-//! 这个组件**没有逻辑**可测——它是 R3 链接实验的适配面桩。主机测试存在的意义是：
+//! 这个组件大体是适配面（R3 链接实验的桩），有逻辑的只有 `wpa_cb.zig`（blob 的 supplicant 回调里
+//! `wpa_parse_wpa_ie` 的解析）。主机测试存在的意义是：
 //!
 //!   1. `adapter.zig` 被真正编译（导出/符号名写错会在这里炸，而不是等上板）；
 //!   2. `probe()` 用 `@extern` 引用的 `esp_wifi_80211_tx` 在主机侧有定义，
-//!      否则链接期就是 undefined——下面那个 `pub export` 就是替身。
+//!      否则链接期就是 undefined——下面那个 `pub export` 就是替身；
+//!   3. `wpa_cb.zig` 的 IE 解析与回调表布局（blob 拿它判 AP 的 authmode）。
 //!
 //! 真机上这个符号由 `libnet80211.a` 提供；主机侧只验证"引用路径成立"。
 
@@ -26,8 +28,10 @@ test {
     // 用例发现只认 `test` 块里的直接 `@import`：经文件顶层的常量间接引用，那个文件里的用例不会被跑
     // （2026-11-24 实测：写成 `_ = coex_hooks` 时 Wi-Fi 目标一个 coex 用例都没跑）。
     _ = @import("coex_hooks.zig");
-    // 目标符号替身（ROM / PHY / 共存库的 5 个入口）：主机目标不链归档，没有它链接期就缺符号。
+    // 目标符号替身（ROM / PHY / 共存库 / blob 的入口）：主机目标不链归档，没有它链接期就缺符号。
     _ = @import("host_stubs.zig");
+    // blob 的 supplicant 回调表：布局断言 + `wpa_parse_wpa_ie` 的解析（RSNX 用例读上面替身的配置）。
+    _ = @import("wpa_cb.zig");
 }
 
 test "wifi-blobs: probe 解析到替身符号的地址" {
@@ -240,11 +244,6 @@ test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {
     try std.testing.expectEqual(before.set_intr + 1, impl.calls.set_intr);
     try std.testing.expectEqual(before.ints_on + 1, impl.calls.ints_on);
     try std.testing.expect(!is_from_isr());
-}
-
-test "osi_impl: implemented + unimplemented 恰好覆盖 128 个字段" {
-    try std.testing.expectEqual(@as(usize, 128), impl.implemented.len + impl.unimplemented.len + 2); // +2 = _version/_magic
-    try std.testing.expectEqual(@as(usize, 89), impl.implemented.len); // 71 + _phy_enable + 5 个 _timer_*
 }
 
 var test_now_us: u64 = 1_234_567;

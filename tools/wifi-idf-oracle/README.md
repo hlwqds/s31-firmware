@@ -73,6 +73,33 @@ python3 tools/wifi-idf-oracle/gen_regdump_addrs.py          # 重新生成
 2026-11-25 的对照：`logs/wifi-idf-oracle-regdump-boot.log`（oracle）对 `logs/wifi-probe-regdump-before-boot.log`
 （探针，修复前），差集 95 个；根因与实验见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末。
 
+## 只扫描不连接（2026-11-26）
+
+`CONFIG_ORACLE_WIFI_SSID` 留空时不连接：`esp_wifi_start` 之后非阻塞地起一次全信道扫描，等扫描结束，再打印扫到的
+若干个 AP（`ssid`、`bssid`、`ch`、`rssi`、`auth`）：
+
+```text
+oracle: esp_wifi_scan_start(NULL, nonblock) -> ESP_OK
+oracle: SCAN_DONE status=0 number=36 scan_id=128
+oracle: esp_wifi_scan_get_ap_num -> ESP_OK n=36
+oracle: ap[0] ssid=... bssid=... ch=1 rssi=-29 auth=WPA2_PSK
+```
+
+`s31-firmware` 的真实链路探针（`-Dwifi-link-probe`）在同一点做同样的输出，两边逐 AP 对照；对照的结论与入库的那一侧
+（`logs/wifi-link-scan-boot.log`，已脱敏）见 `docs/verification/wifi-ieee80211-verification.md` §10。
+**oracle 这一侧的扫描日志没有入库**（里面是邻居的 SSID 与 BSSID）。
+
+打开 `CONFIG_ORACLE_REGDUMP` 时，扫描开始后 100 ms 另打四种 dump（都只读，只用于诊断）：
+
+| 前缀 | 内容 |
+| --- | --- |
+| `FOCUSDUMP in-scan` | 定点采样：全量对照里出现过差异的那几十个地址，一个一行（`FOCUS <地址> <值>`）。**在所有慢 dump 之前**打——全量 dump 一遍要十几秒，等轮到它时扫描早已结束、驱动把 FE / BB 的时钟收起来了，那是空闲态而不是收发态 |
+| `REGDUMP in-scan` / `MACDUMP in-scan` | 同上面的 523 个寄存器；外加 MAC 块整段（0x20104000 起 4 KB，blob 私有，不在头文件里；个别读清位会被读掉） |
+| `RG <地址> …` | 不在头文件里的几块：FE（0x20100000 起 16 KB）、BB / BRX / MODEM_TIMER / ETM / DATADUMP / WIDGETS（0x20107000 起 11 KB）、0x2010D000 起 8 KB；每行 8 个字，全打不过滤 |
+| `CHMDUMP` | 驱动的信道管理器（blob 的 `g_chm`）：目标信道、驱动记的当前信道等 |
+
+不要把这些 dump 放在时序敏感的点之后。另外 `readtiming` 打每个地址读 16 次的平均耗时，与探针侧的 `busReadTiming` 对照。
+
 ## 判读纪律
 
 - 这是**厂商栈**的结果（L4），不是 `s31-firmware` 的结果。`s31-firmware` 的 Zig 移植没有用到这里的任何一行代码。

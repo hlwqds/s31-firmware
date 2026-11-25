@@ -24,11 +24,11 @@ import re
 import sys
 from pathlib import Path
 
-# init_probe.zig：只在 -Dwifi-init-probe 的板级探针里编译（依赖 board 与 blob 入口）。
+# init_probe.zig、link_probe.zig：只在 -Dwifi-init-probe / -Dwifi-link-probe 的板级探针里编译（依赖 board 与 blob 入口）。
 # link_stubs.zig：链接期符号桩（`pub export`），没有可测逻辑。
 EXCLUDE = {
     "selftest.zig", "hw.zig", "log.zig", "gen_cert_fixture.zig", "host_tests.zig",
-    "init_probe.zig", "link_stubs.zig",
+    "init_probe.zig", "link_probe.zig", "link_stubs.zig",
 }
 IMPORT_RE = re.compile(r'@import\("([^"]+\.zig)"\)')
 TEST_RE = re.compile(r'^\s*test\b', re.MULTILINE)

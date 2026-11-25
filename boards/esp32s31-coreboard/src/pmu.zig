@@ -113,3 +113,31 @@ pub fn modemIcgCode() u2 {
     if (!on_target) return 0;
     return @truncate(readReg(r_clk_state0) >> state_code_shift);
 }
+
+// ---------------------------------------------------------------------------
+// 启动期给 Wi-Fi 模块选 LP 时钟源。出处：IDF `esp_perip_clk_init()`，
+// `esp_system/port/soc/esp32s31/clk.c:190-198`——它在 `app_main` 之前读 RTC 慢时钟的来源（内部 RC 还是
+// 32k 晶振），给 Wi-Fi 的 LP 域选同一个源，分频 0。我们的镜像跳过 IDF 的启动初始化，这一步得自己补。
+// ---------------------------------------------------------------------------
+
+/// `MODEM_LPCON_WIFI_LP_CLK_CONF_REG`：源选择 bit 0–3（osc_slow、osc_fast、xtal、xtal32k），分频 [15:4]。
+const modem_lpcon: usize = 0x2010_F000;
+const r_wifi_lp_clk_conf: usize = modem_lpcon + 0x0C;
+const r_lpcon_clk_conf: usize = modem_lpcon + 0x18;
+const lp_sel_all: u32 = 0xF;
+const lp_sel_osc_slow: u32 = 1 << 0;
+const lp_div_mask: u32 = 0xFFF << 4;
+const clk_wifipwr_en: u32 = 1 << 0;
+
+/// 给 Wi-Fi 模块选 LP 时钟源：内部 RC 慢时钟（`MODEM_CLOCK_LPCLK_SRC_RC_SLOW`），分频 0，并开 `clk_wifipwr_en`。
+/// 序列同 `modem_clock_select_lp_clock_source(PERIPH_WIFI_MODULE, RC_SLOW, 0)`
+/// （`esp_hw_support/modem/modem_clock.c:231-249`）：清四个源选择位、置 `clk_wifipwr_lp_sel_osc_slow`、分频 0。
+///
+/// 不做时 `WIFI_LP_CLK_CONF` 停在复位值 0，四个源一个都没选（2026-11-25 与同板 oracle 的同点全量对照：
+/// IDF 是 `0x00000001`，我们是 0）。同板的 oracle 没配外接 32k 晶振，RTC 慢时钟用的是内部 RC。
+pub fn initModemLpClock() Error!void {
+    if (!on_target) return Error.NotOnTarget;
+    writeReg(r_wifi_lp_clk_conf, readReg(r_wifi_lp_clk_conf) & ~(lp_sel_all | lp_div_mask));
+    writeReg(r_wifi_lp_clk_conf, readReg(r_wifi_lp_clk_conf) | lp_sel_osc_slow);
+    writeReg(r_lpcon_clk_conf, readReg(r_lpcon_clk_conf) | clk_wifipwr_en);
+}

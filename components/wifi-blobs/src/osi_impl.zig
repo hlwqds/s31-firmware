@@ -215,6 +215,24 @@ pub const Mutex = struct {
     }
 };
 
+/// 临界区：读出 `mstatus` 并关 MIE，返回旧值。中断上下文里 MIE 本来就是 0，
+/// 返回 0 时 `exitCritical` 不会去开它。主机上没有 `mstatus`（主机测试只编表，不跑中断），
+/// 按同一个约定返回 0。
+fn enterCritical() usize {
+    if (@import("builtin").cpu.arch != .riscv32) return 0;
+    var m: usize = undefined;
+    asm volatile ("csrrc %[m], mstatus, 8"
+        : [m] "=r" (m),
+        :
+        : .{ .memory = true });
+    return m;
+}
+
+fn exitCritical(mstatus: usize) void {
+    if (@import("builtin").cpu.arch != .riscv32) return;
+    if (mstatus & 8 != 0) asm volatile ("csrs mstatus, 8" ::: .{ .memory = true });
+}
+
 /// 定长元素队列（环形）。`item_size` 由调用方给，载荷紧跟在结构体后面。
 pub const Queue = struct {
     item_size: usize,
@@ -239,10 +257,12 @@ pub const Queue = struct {
     /// 返回值 **FreeRTOS 风格**：成功=1、满/尺寸不符=0。
     pub fn send(self: *Queue, item: []const u8, blocking: u32) i32 {
         if (item.len != self.item_size) return 0;
-        if (self.count == self.cap) {
-            if (blocking == time_blocking) blocking_refused += 1;
-            return 0;
-        }
+        if (blocking == time_blocking and self.count == self.cap) blocking_refused += 1;
+        // 入队要放在临界区里：`_queue_send_from_isr` 在中断上下文往同一个环里写
+        // `tail`/`count`，不关中断就会和这里的发送抢同一个槽。
+        const m = enterCritical();
+        defer exitCritical(m);
+        if (self.count == self.cap) return 0;
         const b = self.buf();
         @memcpy(b[self.tail * self.item_size ..][0..self.item_size], item);
         self.tail = (self.tail + 1) % self.cap;
@@ -254,7 +274,10 @@ pub const Queue = struct {
 
     /// `send_to_front`：插到队首（IDF 的 `queueSEND_TO_FRONT`）。
     pub fn sendFront(self: *Queue, item: []const u8) i32 {
-        if (item.len != self.item_size or self.count == self.cap) return 0;
+        if (item.len != self.item_size) return 0;
+        const m = enterCritical();
+        defer exitCritical(m);
+        if (self.count == self.cap) return 0;
         const b = self.buf();
         self.head = (self.head + self.cap - 1) % self.cap;
         @memcpy(b[self.head * self.item_size ..][0..self.item_size], item);
@@ -284,6 +307,8 @@ pub const Queue = struct {
                 }
             }
         }
+        const m = enterCritical();
+        defer exitCritical(m);
         const b = self.buf();
         last_recv_count = self.count;
         recv_ok +%= 1;
@@ -605,12 +630,37 @@ fn shellLogTimestamp() callconv(.c) u32 {
     return if (hooks.now_us) |f| @intCast(f() / 1000) else 0;
 }
 
+/// `_read_mac(mac, type)`：IDF `esp_read_mac_wrapper` → `esp_read_mac`（`esp_hw_support/mac_addr.c:324-361`）。
+/// 基址由注入的钩子给（eFuse 工厂 MAC）；各类型照 IDF 的 `generate_mac`（`:264-301`）派生，
+/// 取 `CONFIG_ESP_MAC_ADDR_UNIVERSE_BT` 方案（与对照镜像的配置一致）：
+/// station = 基址；SoftAP = 基址置本地位（`esp_derive_local_mac`）；BT = 基址末字节 +2；
+/// 以太网 = 基址末字节 +1 再置本地位；其余类型返回 `ESP_ERR_NOT_SUPPORTED`（0x106）。
+///
+/// 此前不管 `type` 一律回同一个地址，而探针给的又是占位 `02:00:00:00:00:01`——
+/// blob 的 `mode : sta` 行里打的就是它（2026-11-25）。`type` 的取值见 `esp_mac_type_t`
+/// （`esp_mac.h`）：0 station、1 SoftAP、2 BT、3 以太网、4 IEEE 802.15.4、5 基址。
 fn shellReadMac(mac: ?[*]u8, mac_type: c_uint) callconv(.c) c_int {
-    _ = mac_type;
-    const p = mac orelse return -1;
-    const m = if (hooks.mac) |f| f() else [6]u8{ 0x02, 0, 0, 0, 0, 0 };
+    const p = mac orelse return 0x105; // ESP_ERR_INVALID_ARG
+    var m = if (hooks.mac) |f| f() else [6]u8{ 0, 0, 0, 0, 0, 0 };
+    switch (mac_type) {
+        0, 5 => {}, // ESP_MAC_WIFI_STA、ESP_MAC_BASE
+        1 => deriveLocalMac(&m), // ESP_MAC_WIFI_SOFTAP
+        2 => m[5] +%= 2, // ESP_MAC_BT
+        3 => { // ESP_MAC_ETH
+            m[5] +%= 1;
+            deriveLocalMac(&m);
+        },
+        else => return 0x106, // ESP_ERR_NOT_SUPPORTED
+    }
     @memcpy(p[0..6], &m);
     return 0;
+}
+
+/// `esp_derive_local_mac`（`mac_addr.c:303-322`）：置本地位；基址本来就是本地地址时改翻 bit 2。
+fn deriveLocalMac(m: *[6]u8) void {
+    const was = m[0];
+    m[0] |= 0x02;
+    if (m[0] == was) m[0] ^= 0x04;
 }
 
 /// 中断/任务类钩子的调用计数。它们先做成**可观测的空操作**：
@@ -630,6 +680,7 @@ pub var calls: struct {
     /// "没人投递" 与 "投到了别的句柄"。
     queue_recv: u32 = 0,
     queue_send: u32 = 0,
+    queue_send_from_isr: u32 = 0,
 } = .{};
 
 /// 任务的假对象：**一个指针同时充当"创建时写出的 handle"与"当前任务"**。
@@ -752,19 +803,29 @@ fn shellWifiIntRestore(mux: ?*anyopaque, saved: u32) callconv(.c) void {
 pub fn shellTaskYieldFromIsr() callconv(.c) void {
     calls.task_yield_from_isr += 1;
 }
-/// `_task_delay(ms)`：单线程壳里没有别的执行体，所以"延时"= **让出**并按注入时钟计时。
-/// 每次让出跑一遍 `on_idle`（主循环），上限 `idle_spin_limit` 次——保证调用方一定能返回。
-/// 时钟不可用（`now_us` 为 null）时退化为"让出固定次数"，绝不忙等。
+/// `_task_delay(ms)`：延时 = **让出**并按注入的时钟计时，到点才返回——IDF 的 `vTaskDelay(ticks)` 就是这样。
+/// 每次让出都推进软件定时器并调一遍 `on_idle`（主循环 / 被泵的任务）。
+///
+/// 2026-11-25 之前这里上限 64 次让出就返回，`_task_delay(100)` 几毫秒就回来：blob 的
+/// `esp_wifi_scan_start(config, block)` 靠「每 100 ms 查一次扫描号」等扫描结束，于是它 84 ms 就
+/// 判超时（返回 `0x300C`，一个 AP 也没扫到）。
+///
+/// 时钟不可用（`now_us` 为 null，只有主机用例会这样）时退化为"让出固定次数"，不忙等；
+/// 时钟可用时再留一道保险：让出次数超过 `delay_spin_cap` 仍没到点（时钟停了）也返回。
+const delay_spin_cap: u32 = 200_000_000;
 fn shellTaskDelay(ms: u32) callconv(.c) void {
     calls.task_delay += 1;
     const start = if (hooks.now_us) |now| now() else 0;
     const want_us: u64 = @as(u64, ms) * 1000;
     var spins: u32 = 0;
-    while (spins < idle_spin_limit) : (spins += 1) {
+    while (true) : (spins +%= 1) {
         serviceTimers();
         if (hooks.on_idle) |idle| idle();
         if (hooks.now_us) |now| {
             if (now() -% start >= want_us) return;
+            if (spins >= delay_spin_cap) return;
+        } else if (spins >= idle_spin_limit) {
+            return;
         }
     }
 }
@@ -969,7 +1030,12 @@ const TimerEntry = struct {
     period_us: u64 = 0, // 0 = 一次性
     armed: bool = false,
 };
-var timers: [16]TimerEntry = @splat(TimerEntry{});
+/// 表的大小必须盖过 blob 同时在用的定时器数。此前是 16：不带共存时 init 之后注册 14 个够用；
+/// 带上共存胶水后，扫描起始时新建的那个"信道最长时间"定时器排不进表——`_timer_arm` 返回 1、
+/// 不上膛，扫描于是永远等不到到期（2026-11-26 实测：blob 日志停在 `start max timer`）。
+var timers: [32]TimerEntry = @splat(TimerEntry{});
+/// 诊断：定时器表满了、`_timer_setfn`/`_timer_arm` 因此失败的次数。必须是 0。
+pub var timer_table_full: u32 = 0;
 var timer_fires: u32 = 0;
 /// 诊断：`Queue.send` 成功次数（只走计数器；`note(17)` 已被 `timer_setfn` 占用，不要复用）。
 var send_probe: u32 = 0;
@@ -1026,6 +1092,7 @@ fn allocTimer(ptimer: ?*anyopaque) ?*TimerEntry {
             return t;
         }
     }
+    timer_table_full += 1;
     return null;
 }
 
@@ -1090,42 +1157,110 @@ pub fn serviceTimers() void {
 /// 那三位永不清 → 任务恒定自旋。
 var phy_enable_calls: u32 = 0;
 
+/// `esp_phy_common_clock_enable()` → `wifi_bt_common_module_enable()` →
+/// `modem_clock_module_enable(PERIPH_PHY_MODULE)`（`esp_phy/src/phy_init.c:285`、`modem_clock_impl.c:20`）。
+/// 依赖表按设备号顺序（`modem_clock_impl.h:51-57`）：
+///   0 MODEM_ADC_COMMON_FE：FE_APB（`CLK_CONF1` bit 15）、FE_80M（bit 13）
+///   1 MODEM_PRIVATE_FE：FE_160M（bit 14）、FE_DAC（bit 21）、FE_PWDET_ADC（bit 19）、FE_ADC（bit 20）
+///   2 SOC_PLL_SOURCE_CG：`HP_SYS_CLKRST.modem_conf = 0x3d`
+///   4 I2C_MASTER：`ANALOG_CLOCK_ENABLE()` → `MODEM_LPCON.clk_conf.clk_i2c_mst_en = 1`
+fn phyCommonClockEnable() void {
+    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+    conf1.* |= (1 << 15) | (1 << 13) | (1 << 14) | (1 << 21) | (1 << 19) | (1 << 20);
+    const modem_conf: *volatile u32 = @ptrFromInt(0x2058_71E0);
+    modem_conf.* = 0x3d;
+    const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
+    lpcon.* |= 1 << 2;
+}
+
 fn shellPhyEnable(modem: u32) callconv(.c) usize {
     phy_enable_calls +%= 1;
     note(15, modem, phy_enable_calls);
-    // 与 IDF 的 `esp_phy_enable` 一致：先保证 ICG 位图解除门控（见 `shellWifiClockEnable` 的注释）。
+    // IDF `esp_phy_enable` 只在 `phy_get_modem_flag() == 0` 时才做事（`phy_init.c:326`）。
+    if (phy_modem_on) return 0;
+    // IDF 的 `esp_phy_enable_wrapper`（`esp_wifi/esp32s31/esp_adapter.c:641-648`）依次是：
+    //   1. `esp_phy_enable(PHY_MODEM_WIFI)`（`esp_phy/src/phy_init.c:324-406`）
+    //      a. `esp_phy_common_clock_enable()`：先做 ICG 位图，再按上面的顺序开 PHY 的时钟；
+    //      b. `phy_module_enable()`：校准期间的 Wi-Fi 时钟，`_wifi_clock_enable` 已经先开好；
+    //      c. 首次调用：`esp_phy_load_cal_and_init()` → `register_chipv7_phy`；
+    //   2. `phy_wifi_enable_set(1)`（ROM `0x2f80145c`）；
+    //   3. `set_bb_wdg(true, false, 0x18, 0xaa, false, false, false)`：暂时关掉 BB 的空闲检查（最长 139 ms），
+    //      否则 BB 可能在超时后复位，MAC 的 TX/RX 状态机永远排不空。
+    // **时钟必须排在 `register_chipv7_phy` 之前**：它里面 ROM 的 `phy_open_fe_bb_clk` 要写 FE / BB 的寄存器，
+    // FE 没有时钟时那次写直接 stall。此前这里把 FE 时钟排在标定之后，全靠探针在 start 之前手工预置这些位
+    // 才不卡（2026-11-25 实测：干净的 init → set_mode → start 卡在 start 里，trace 停在 phy_enable）。
+    // 此前还在标定之后写过两个 FORCE_ON 寄存器（`CLK_CONF_FORCE_ON` 的 bit 2–4、`LPCON_FORCE_ON` 的 bit 0 与 2）；
+    // IDF 这两个寄存器是 0，不写。
     const icg: *volatile u32 = @ptrFromInt(0x2010_9C0C);
     const icg_before = icg.*;
     icg.* = 0x6464_6400;
     note(35, icg_before, icg.*); // 35 = icg_write
-    // IDF 的 `esp_phy_enable_wrapper` 还会调 `phy_wifi_enable_set(1)`（ROM `0x2f80145c`）——
-    // 我们此前漏了这一步；若 libphy/ROM 的代码按这个标志门控，缺它 PHY 侧就不会真正使能。
+    phyCommonClockEnable();
+    // IDF 的 `esp_phy_enable` 分两条路（`phy_init.c:329-371`）：首次是 `esp_phy_load_cal_and_init()`
+    // （这里由探针注入的实现调 `register_chipv7_phy`，它持有 phy_init_data 与 cal_data）；
+    // 标定过之后的再次使能是 `phy_wakeup_init()`。注入的钩子返回 1 表示"已经标定过，这次没做事"。
+    const calibrated_before = if (hooks.on_phy_enable) |f| f(modem) != 0 else false;
+    if (calibrated_before) {
+        // 上一次 `_phy_disable` 已经 `phy_close_rf()` 关过射频，重新打开靠的就是它。
+        // 漏掉这一步时射频停在标定刚结束的状态：扫描只出 TX 完成中断、一帧都收不到（2026-11-25 实测）。
+        const phy_wakeup_init = @extern(*const fn () callconv(.c) void, .{ .name = "phy_wakeup_init" });
+        phy_wakeup_init();
+    }
+    // IDF `esp_phy_enable` 的收尾（`phy_init.c:371-406`）：
+    //   - "第一个 modem 打开"的分支里、标定或唤醒之后：`phy_track_pll_init()`（建周期跟踪用的 esp_timer）；
+    //     `phy_ant_need_update()` 为真才做天线更新（应用没调 `esp_wifi_set_ant`，恒假）；`phy_module_disable()`
+    //     与分支开头的 `phy_module_enable()` 成对，Wi-Fi 模块已开时时钟上净效果为零（见上），不补；
+    //   - 分支外、每次使能都做：`phy_set_modem_flag(PHY_MODEM_WIFI)`、`phy_track_pll()`（"使能时立刻跟一次 PLL"）。
+    // 三个函数在 IDF 源码对象 `phy_common.c.obj` 里；它们要的 `esp_timer_*` / `_lock_*` 由 `link_stubs.zig` 提供。
+    const phy_track_pll_init = @extern(*const fn () callconv(.c) void, .{ .name = "phy_track_pll_init" });
+    phy_track_pll_init();
+    const phy_set_modem_flag = @extern(*const fn (u32) callconv(.c) void, .{ .name = "phy_set_modem_flag" });
+    phy_set_modem_flag(1); // PHY_MODEM_WIFI
+    const phy_track_pll = @extern(*const fn () callconv(.c) void, .{ .name = "phy_track_pll" });
+    phy_track_pll();
     const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
     phy_wifi_enable_set(1);
-    // **IDF 的第三步（我们此前完全没做）**：`esp_phy_enable_wrapper` 在 `phy_wifi_enable_set(1)` 之后
-    // 调 `set_bb_wdg(true, false, 0x18, 0xaa, false, false, false)`，注释写着
-    // "disable bb idle check(max: 139ms) for temporary to avoid unexpected RXTXPANIC"。
-    // BB 的 idle check/看门狗默认是开的 —— 不关它，BB 可能在 139 ms 超时后复位，
-    // MAC 的 TX/RX 状态机就永远不排空。`set_bb_wdg` 就在我们已链接的 libphy.a 里。
     const set_bb_wdg = @extern(*const fn (bool, bool, u16, u16, bool, bool, bool) callconv(.c) void, .{ .name = "set_bb_wdg" });
     set_bb_wdg(true, false, 0x18, 0xaa, false, false, false);
-    // IDF 的顺序：`esp_phy_enable(modem)` 内部才做"共用时钟 → phy_module_enable → 首次标定"。
-    // 探针注入的实现负责首次 `register_chipv7_phy`（它持有 phy_init_data/cal_data）。
-    if (hooks.on_phy_enable) |f| _ = f(modem);
-    // 重申 PHY 时钟位（MODEM_SYSCON.CLK_CONF1）与两个 FORCE_ON 寄存器，
-    // 序列与探针的 init 完全一致；幂等，重复调用无害。
-    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    conf1.* |= (1 << 2) | (1 << 3) | (1 << 7) | (1 << 9) |
-        (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21);
-    const fo_sys: *volatile u32 = @ptrFromInt(0x2010_9C08);
-    fo_sys.* |= (1 << 2) | (1 << 3) | (1 << 4);
-    const fo_lp: *volatile u32 = @ptrFromInt(0x2010_F01C);
-    fo_lp.* |= (1 << 0) | (1 << 2);
-    // **`SOC_PLL_SOURCE_CG`**：IDF 的 `modem_clock_hal_enable_soc_pll_source_cg()`（`modem_clock_hal.c:125`）
-    // 就是 `HP_SYS_CLKRST.modem_conf.val = 0x3d`。它是 `PHY_CLOCK_DEPS` 的四项之一，我们此前**从未写过**。
-    const modem_conf: *volatile u32 = @ptrFromInt(0x2058_71E0);
-    modem_conf.* = 0x3d;
+    phy_modem_on = true;
     return 0;
+}
+
+/// IDF `s_phy_modem_flag` 的 Wi-Fi 位：`esp_phy_enable` 置位（`phy_set_modem_flag`），`esp_phy_disable`
+/// 清位。只有它是最后一个开着的时候，`esp_phy_disable` 才真的关射频。
+pub var phy_modem_on: bool = false;
+
+/// `_env_is_chip()`：IDF `esp_coex_common_env_is_chip_wrapper`（`esp_coex/esp32s31/esp_coex_adapter.c:31-38`）
+/// 在芯片上恒为 true，只有 `CONFIG_IDF_ENV_FPGA` 才是 false。此前是计数桩、恒返回 0，对 blob 来说
+/// 等于"这是 FPGA 环境"，它据此跳过一段 MAC 寄存器初始化（2026-11-25 实测：扫描中 4 KB MAC 块有
+/// 70 多个字停在复位值，IDF 里都是配置过的值）。
+fn shellEnvIsChip() callconv(.c) bool {
+    return true;
+}
+
+/// `_phy_disable()`：IDF `esp_phy_disable_wrapper`（`esp_wifi/esp32s31/esp_adapter.c:650-654`）先
+/// `phy_wifi_enable_set(0)`，再 `esp_phy_disable(PHY_MODEM_WIFI)`（`esp_phy/src/phy_init.c:408-448`）：
+/// 最后一个 modem 关掉时 `phy_close_rf()` 关射频、`phy_wait_freq_hw_hop_done()` 等跳频做完，
+/// 最后关公共时钟。这里不动时钟——下一次 `_phy_enable` 会重新开，多开着只是费电。
+///
+/// 此前是计数桩：`esp_wifi_start` 里那一次 `_phy_disable` 被吞掉，随后的扫描在"从没关过"的射频上跑。
+fn shellPhyDisable(modem: u32) callconv(.c) void {
+    note(34, modem, @intFromBool(phy_modem_on));
+    const phy_wifi_enable_set = @extern(*const fn (u8) callconv(.c) void, .{ .name = "phy_wifi_enable_set" });
+    phy_wifi_enable_set(0);
+    if (!phy_modem_on) return;
+    phy_modem_on = false;
+    const phy_close_rf = @extern(*const fn () callconv(.c) void, .{ .name = "phy_close_rf" });
+    phy_close_rf();
+    const phy_wait_freq_hw_hop_done = @extern(*const fn () callconv(.c) void, .{ .name = "phy_wait_freq_hw_hop_done" });
+    phy_wait_freq_hw_hop_done();
+}
+
+/// `_slowclk_cal_get()`：IDF `esp_coex_common_clk_slowclk_cal_get_wrapper` → `esp_clk_slowclk_cal_get()`，
+/// 即 RTC 慢时钟的标定值（驱动按它把省电时长换算成慢时钟周期）。此前是计数桩、恒返回 0。
+/// 值由板级模块给（`board.clock.slowclkCal()`，出处与局限写在那里）。
+fn shellSlowclkCalGet() callconv(.c) u32 {
+    return @import("board").clock.slowclkCal();
 }
 
 // ---------------------------------------------------------------------------
@@ -1255,20 +1390,33 @@ fn shellWifiClockEnable() callconv(.c) usize {
     return 0;
 }
 
+/// IDF `modem_clock_configure_wifi_status(inited)`（`modem_clock.c:176-184`）维护的 `MODEM_STATUS_WIFI_INITED`：
+/// `esp_wifi_init()` 在 `esp_wifi_init_internal` 成功返回之后置 true（`wifi_init.c:539-543`），
+/// `esp_wifi_deinit` 时清回 false。我们直接调 `esp_wifi_init_internal`，这一步由调它的 `initOnly()` 代做。
+pub var wifi_clock_inited: bool = false;
+
 fn shellWifiClockDisable() callconv(.c) usize {
     note(22, 0, 0);
     // IDF `wifi_module_disable()` → `modem_clock_module_disable(PERIPH_WIFI_MODULE)`：对同一张
     // `WIFI_CLOCK_DEPS` 按同一顺序（`modem_clock_device_control` 从低位往高位扫）逐设备 `configure(false)`。
-    // `esp_wifi_init_internal` 里 blob 在 `wifi_clock_enable_wrapper` 之后紧接着调一次，此时
-    // `MODEM_STATUS_WIFI_INITED` 还是 false，所以这是一次**真的关**——IDF 在 init 之后 `CLK_CONF1 = 0`。
+    //
+    // WIFI_BB_80X1 / WIFI_BB / WIFI_MAC / WIFI_BB_44M / WIFI_APB 这五个设备带条件
+    // （`modem_clock_impl.c:57-79`）：`enable || !(modem_status & MODEM_STATUS_WIFI_INITED)` 时才动时钟。所以
+    //   - init 内部 blob 紧跟在 enable 之后的那次 disable 是真的关——IDF 在 init 之后 `CLK_CONF1 = 0`；
+    //   - 之后（start、扫描、连接里）的 disable 对这五个设备是空操作，时钟保持常开。
+    // 此前这里无条件关：start 里的那次 disable 把 MAC 的时钟关掉了（2026-11-25 与 oracle 的同点对照：
+    // start 之后 IDF 的 `CLK_CONF1 = 0x0038E7FF`，我们是 `0x0038E000`），MAC 不跑，扫描一个 AP 都扫不到。
+    // COEXIST 与 SOC_PLL_SOURCE_CG 不受这个状态约束，照 IDF 每次都动。
     const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
-    // 9) WIFI_BB_80X1 off（bit 7）
-    conf1.* = conf1.* & ~@as(u32, 1 << 7);
-    // 8) WIFI_BB off：`clk_conf1_configure(0x17b)`。**不复位**——IDF 的 `modem_clock_wifi_bb_configure`
-    //    只在 `enable` 时打 `rst_wifibb` 脉冲。
-    conf1.* = conf1.* & ~@as(u32, 0x17b);
-    // 7) WIFI_MAC off（bit 9）/ 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
-    conf1.* = conf1.* & ~@as(u32, (1 << 9) | (1 << 2) | (1 << 10));
+    if (!wifi_clock_inited) {
+        // 9) WIFI_BB_80X1 off（bit 7）
+        conf1.* = conf1.* & ~@as(u32, 1 << 7);
+        // 8) WIFI_BB off：`clk_conf1_configure(0x17b)`。**不复位**——IDF 的 `modem_clock_wifi_bb_configure`
+        //    只在 `enable` 时打 `rst_wifibb` 脉冲。
+        conf1.* = conf1.* & ~@as(u32, 0x17b);
+        // 7) WIFI_MAC off（bit 9）/ 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
+        conf1.* = conf1.* & ~@as(u32, (1 << 9) | (1 << 2) | (1 << 10));
+    }
     // 3) COEXIST off：`modem_lpcon_ll_enable_coex_clock(false)`，清 `clk_conf.clk_coex_en`（LPCON+0x18 bit 1）。
     //    **不碰 ICG 位图**（LPCON+0x20）：`modem_clock_module_icg_map_init_all()` 只在 enable 里做，
     //    而且是按位或上去、从不清零。此前这里把位图清成 0：init 之后读回 0，而 IDF 是 0x66660000。
@@ -1408,6 +1556,24 @@ fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) c
     return q.sendFront(bytes[0..q.item_size]);
 }
 
+/// `_queue_send_from_isr(queue, item, hpt)`:`xQueueSendFromISR` 的对应物——中断上下文往任务队列
+/// 投一条，不阻塞。`hpt` 是出参"是否需要让更高优先级任务先跑"(FreeRTOS 的
+/// `pxHigherPriorityTaskWoken`)；调度是协作式的，中断返回后主循环自己会排到那个任务，所以一律写 0。
+/// blob 也可能不传这个指针。
+///
+/// 这个钩子此前是计数桩。MAC 中断处理函数靠它把"有活干"告诉 Wi-Fi 任务，投递被丢掉后任务
+/// 不去处理，MAC 侧的中断屏蔽也不解开，结果整个扫描期间只进过一次中断(2026-11-25 链路探针实测)。
+fn shellQueueSendFromISR(p: ?*anyopaque, item: ?*const anyopaque, hpt: ?*anyopaque) callconv(.c) i32 {
+    calls.queue_send_from_isr += 1;
+    if (hpt) |h| @as(*i32, @ptrCast(@alignCast(h))).* = 0;
+    const q = unwrapQueue(p) orelse {
+        bad_handle += 1;
+        return 0;
+    };
+    const bytes: [*]const u8 = @ptrCast(item orelse return 0);
+    return q.send(bytes[0..q.item_size], 0);
+}
+
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
     calls.queue_recv += 1;
     note(4, @intFromPtr(p), blocking);
@@ -1518,11 +1684,15 @@ pub fn makeTable() osi.Osi {
     t._timer_done = @ptrCast(&shellTimerDone);
     // `_phy_enable`：真正的 PHY 上电（空桩时 blob 的 `esp_wifi_start` 会卡在 MAC+0xAC 轮询）。
     t._phy_enable = @ptrCast(&shellPhyEnable);
+    t._phy_disable = @ptrCast(&shellPhyDisable);
+    t._env_is_chip = @ptrCast(&shellEnvIsChip);
+    t._slowclk_cal_get = @ptrCast(&shellSlowclkCalGet);
     t._wifi_create_queue = @ptrCast(&shellWifiQueueCreate);
     t._wifi_delete_queue = @ptrCast(&shellWifiQueueDelete);
     t._wifi_thread_semphr_get = @ptrCast(&shellThreadSemphrGet);
     t._event_post = @ptrCast(&shellEventPost);
     t._queue_send = @ptrCast(&shellQueueSend);
+    t._queue_send_from_isr = @ptrCast(&shellQueueSendFromISR);
     t._queue_recv = @ptrCast(&shellQueueRecv);
     t._queue_send_to_front = @ptrCast(&shellQueueSendFront);
     t._queue_send_to_back = @ptrCast(&shellQueueSend);
@@ -1532,46 +1702,138 @@ pub fn makeTable() osi.Osi {
     return t;
 }
 
-/// 仍然为 null 的钩子（下一步照这张单子填）。由 `osi.zig` 的 128 个字段减去 `makeTable()` 实际赋值的
-/// 那些、再减去 `_version`/`_magic` 两个数据字段得出。
-/// 注意 `_log_write`/`_log_writev` 是 C 变参函数，**Zig 无法定义**，要么写一小段 C shim，要么保持 null。
-/// 已实现的钩子名（由 makeTable() 里实际赋值的字段生成）。
+/// 钩子状态的两张单子，合起来正好是 `osi.zig` 的 128 个字段（`_version`/`_magic` 两个数据字段除外）。
+/// `_log_write`/`_log_writev` 是 C 变参函数，Zig 定义不了：由 `printf_shim.c` 提供，
+/// `initOnly()` 在 `makeTable()` 之后把它们的地址填进表。
 pub const implemented = [_][]const u8{
-    "_set_intr",               "_clear_intr",                 "_set_isr",               "_ints_on",
-    "_ints_off",               "_is_from_isr",                "_spin_lock_create",      "_spin_lock_delete",
-    "_wifi_int_disable",       "_wifi_int_restore",           "_task_yield_from_isr",   "_semphr_create",
-    "_semphr_delete",          "_semphr_take",                "_semphr_give",           "_wifi_thread_semphr_get",
-    "_mutex_create",           "_recursive_mutex_create",     "_mutex_delete",          "_mutex_lock",
-    "_mutex_unlock",           "_queue_create",               "_queue_delete",          "_queue_send",
-    "_queue_send_to_back",     "_queue_send_to_front",        "_queue_recv",            "_queue_msg_waiting",
-    "_event_group_create",     "_event_group_delete",         "_event_group_set_bits",  "_event_group_clear_bits",
-    "_event_group_wait_bits",  "_task_create_pinned_to_core", "_task_create",           "_task_delete",
-    "_task_delay",             "_task_ms_to_tick",            "_task_get_current_task", "_task_get_max_priority",
-    "_malloc",                 "_free",                       "_event_post",            "_get_free_heap_size",
-    "_rand",                   "_phy_enable",                 "_read_mac",              "_timer_arm",
-    "_timer_disarm",           "_timer_done",                 "_timer_setfn",           "_timer_arm_us",
-    "_wifi_reset_mac",         "_wifi_clock_enable",          "_wifi_clock_disable",    "_esp_timer_get_time",
-    "_nvs_set_i8",             "_nvs_get_i8",                 "_nvs_set_u8",            "_nvs_get_u8",
-    "_nvs_set_u16",            "_nvs_get_u16",                "_nvs_open",              "_nvs_close",
-    "_nvs_commit",             "_nvs_set_blob",               "_nvs_get_blob",          "_nvs_erase_key",
-    "_get_random",             "_random",                     "_log_timestamp",         "_malloc_internal",
-    "_realloc_internal",       "_calloc_internal",            "_zalloc_internal",       "_wifi_malloc",
-    "_wifi_realloc",           "_wifi_calloc",                "_wifi_zalloc",           "_wifi_create_queue",
-    "_wifi_delete_queue",      "_coex_init",                  "_coex_enable",           "_coex_status_get",
-    "_coex_wifi_request",      "_coex_wifi_release",          "_coex_pti_get",          "_coex_schm_interval_set",
+    "_env_is_chip",
+    "_set_intr",
+    "_clear_intr",
+    "_set_isr",
+    "_ints_on",
+    "_ints_off",
+    "_is_from_isr",
+    "_spin_lock_create",
+    "_spin_lock_delete",
+    "_wifi_int_disable",
+    "_wifi_int_restore",
+    "_task_yield_from_isr",
+    "_semphr_create",
+    "_semphr_delete",
+    "_semphr_take",
+    "_semphr_give",
+    "_wifi_thread_semphr_get",
+    "_mutex_create",
+    "_recursive_mutex_create",
+    "_mutex_delete",
+    "_mutex_lock",
+    "_mutex_unlock",
+    "_queue_create",
+    "_queue_delete",
+    "_queue_send",
+    "_queue_send_to_back",
+    "_queue_send_to_front",
+    "_queue_recv",
+    "_queue_send_from_isr",
+    "_queue_msg_waiting",
+    "_event_group_create",
+    "_event_group_delete",
+    "_event_group_set_bits",
+    "_event_group_clear_bits",
+    "_event_group_wait_bits",
+    "_task_create_pinned_to_core",
+    "_task_create",
+    "_task_delete",
+    "_task_delay",
+    "_task_ms_to_tick",
+    "_task_get_current_task",
+    "_task_get_max_priority",
+    "_malloc",
+    "_free",
+    "_event_post",
+    "_get_free_heap_size",
+    "_rand",
+    "_phy_enable",
+    "_phy_disable",
+    "_read_mac",
+    "_timer_arm",
+    "_timer_disarm",
+    "_timer_done",
+    "_timer_setfn",
+    "_timer_arm_us",
+    "_wifi_reset_mac",
+    "_wifi_clock_enable",
+    "_wifi_clock_disable",
+    "_esp_timer_get_time",
+    "_nvs_set_i8",
+    "_nvs_get_i8",
+    "_nvs_set_u8",
+    "_nvs_get_u8",
+    "_nvs_set_u16",
+    "_nvs_get_u16",
+    "_nvs_open",
+    "_nvs_close",
+    "_nvs_commit",
+    "_nvs_set_blob",
+    "_nvs_get_blob",
+    "_nvs_erase_key",
+    "_get_random",
+    "_random",
+    "_log_timestamp",
+    "_malloc_internal",
+    "_realloc_internal",
+    "_calloc_internal",
+    "_zalloc_internal",
+    "_wifi_malloc",
+    "_wifi_realloc",
+    "_wifi_calloc",
+    "_wifi_zalloc",
+    "_wifi_create_queue",
+    "_wifi_delete_queue",
+    "_coex_init",
+    "_coex_enable",
+    "_coex_status_get",
+    "_coex_wifi_request",
+    "_coex_wifi_release",
+    "_coex_pti_get",
+    "_coex_schm_interval_set",
     "_coex_register_start_cb",
+    "_slowclk_cal_get",
+    "_log_write",
+    "_log_writev",
 };
 
 /// 仍然为桩的钩子（`_version`/`_magic` 是数据字段，不计入）。
 pub const unimplemented = [_][]const u8{
-    "_env_is_chip",                     "_queue_send_from_isr",            "_dport_access_stall_other_cpu_start_wrap", "_dport_access_stall_other_cpu_end_wrap",
-    "_wifi_pm_sleep_lock_acquire",      "_wifi_pm_sleep_lock_release",     "_phy_disable",                             "_phy_update_country_info",
-    "_wifi_rtc_enable_iso",             "_wifi_rtc_disable_iso",           "_get_time",                                "_slowclk_cal_get",
-    "_log_write",                       "_log_writev",                     "_coex_deinit",                             "_coex_disable",
-    "_coex_condition_set",              "_coex_wifi_channel_set",          "_coex_event_duration_get",                 "_coex_schm_status_bit_clear",
-    "_coex_schm_status_bit_set",        "_coex_schm_interval_get",         "_coex_schm_curr_period_get",               "_coex_schm_curr_phase_get",
-    "_coex_schm_process_restart",       "_coex_schm_register_cb",          "_regdma_link_set_write_wait_content",      "_sleep_retention_find_link_by_id",
-    "_coex_schm_flexible_period_set",   "_coex_schm_flexible_period_get",  "_coex_schm_get_phase_by_idx",              "_coex_configure_preemption_end_cb",
-    "_wifi_disable_ac_ax",              "_wifi_bb_sleep_retention_attach", "_wifi_bb_sleep_retention_detach",          "_wifi_mac_sleep_retention_attach",
+    "_dport_access_stall_other_cpu_start_wrap",
+    "_dport_access_stall_other_cpu_end_wrap",
+    "_wifi_pm_sleep_lock_acquire",
+    "_wifi_pm_sleep_lock_release",
+    "_phy_update_country_info",
+    "_wifi_rtc_enable_iso",
+    "_wifi_rtc_disable_iso",
+    "_get_time",
+    "_coex_deinit",
+    "_coex_disable",
+    "_coex_condition_set",
+    "_coex_wifi_channel_set",
+    "_coex_event_duration_get",
+    "_coex_schm_status_bit_clear",
+    "_coex_schm_status_bit_set",
+    "_coex_schm_interval_get",
+    "_coex_schm_curr_period_get",
+    "_coex_schm_curr_phase_get",
+    "_coex_schm_process_restart",
+    "_coex_schm_register_cb",
+    "_regdma_link_set_write_wait_content",
+    "_sleep_retention_find_link_by_id",
+    "_coex_schm_flexible_period_set",
+    "_coex_schm_flexible_period_get",
+    "_coex_schm_get_phase_by_idx",
+    "_coex_configure_preemption_end_cb",
+    "_wifi_disable_ac_ax",
+    "_wifi_bb_sleep_retention_attach",
+    "_wifi_bb_sleep_retention_detach",
+    "_wifi_mac_sleep_retention_attach",
     "_wifi_mac_sleep_retention_detach",
 };

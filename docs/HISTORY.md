@@ -80,6 +80,27 @@
 - **没有做的**：扫描、连接、收发（`esp_wifi_start` 返回之后的路径）；BLE 侧不接这一步（接了 BLE 探针锁死，
   `logs/bt-probe-pmu-icg-lockup-boot.log`，属 R3.3）；`pmu_init()` 的其余部分（稳压器电压档、睡眠配置等）。
 
+## 真实链路首次扫描（2026-11-26）
+
+- **做了什么**：Wi-Fi 探针（`-Dwifi-link-probe`）在 `esp_wifi_start` 之后发起主动扫描，约 9.1 s 走完全部信道，
+  `esp_wifi_scan_get_ap_records` 取到 38 条真实记录。为此修了两处。① 板级包新增 `boards/esp32s31-coreboard/src/apm.zig`
+  （`board.apm.disableCtrlFilters()`）：裸机镜像没做 IDF 应用启动期 `bootloader_init_mem()` 关 APM 访问控制过滤器的三行，
+  `FUNC_CTRL` 停在复位值（`0x7F` / `0x3F` / `0x0F`），只放行 TEE master——Wi-Fi MAC 的 DMA 属 REE，射频收到的帧写不进内存。
+  ② `components/wifi-blobs/src/wpa_cb.zig`：登记 blob 的 supplicant 回调表（`struct wpa_funcs`）。镜像里没有 IDF 的
+  `wpa_supplicant` 组件，这张表的指针一直是空的；现在 attach / detach / 断开通知驱动 `wifi-connect` 的 `Supplicant`
+  （为此 `wifi-connect` 加了公共入口 `api.zig`），`wpa_parse_wpa_ie` 是 IDF 同名函数的移植。探针的 PHY 标定改回每次
+  全量标定，不再用从对照镜像 NVS 里读出来的标定数据（那份文件本来就不该入库）。
+- **怎么找到的**：① 线索是 ch17 以太网的同一条根因——APM 控制过滤器挡住 REE master 的 DMA；用对照镜像 ELF 的反汇编
+  确认 IDF 应用的 `bootloader_init_mem` 正好是三条写 0。关掉之后中断状态字立刻出现收帧位，驱动开始构造 AP 记录。
+  ② 第一帧之后驱动崩在 `scan_add_ssid_do`（`load access fault`，`mtval=0x54`）：`objdump -dr` 看 blob 各目标文件里
+  `lw x,444(y)` 之后读的是哪个字段，对上 IDF 头文件 `struct wpa_funcs` 的偏移（84 = `wpa_sta_rx_mgmt`），再从 oracle 的
+  链接 map 确认这些入口在 IDF 里来自 `wpa_supplicant` 组件。完整记录在 `docs/verification/wifi-ieee80211-verification.md` §10。
+- **验证**：主机门禁（fmt、单元测试 2045 项、覆盖率、不变量）通过；板侧连续 5 次扫描全部完成（32–41 个 AP）；
+  与同板 oracle 同一时段的结果逐 AP 对照，8 个里 7 个一致、第 8 个那一轮没扫到
+  （`logs/wifi-link-scan-boot.log`，邻居的 SSID 与 BSSID 已脱敏）。
+- **没有做的**：连接、收发；PHY 标定数据的持久化；回调表里连接路径的入口（`wpa_sta_rx_eapol`、`wpa_config_parse_string`、
+  SAE / OWE 的消息构造与解析等）；与 AP 的互通仍只有厂商栈的证据；没有抓包。
+
 ## 日志
 
 `logs/` 中是章节时代的板侧原始输出（文件名不改，便于与 `docs/history/BRINGUP-chapter-era.md`

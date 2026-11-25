@@ -28,6 +28,7 @@ const sched = @import("sched.zig");
 const phy_init_data = @import("phy_init_data.zig");
 const event_bus = @import("event_bus.zig");
 const link_stubs = @import("link_stubs.zig");
+const wpa_cb = @import("wpa_cb.zig");
 
 /// blob 里的入口（`esp_wifi.h:437` / `esp_private/wifi.h`）。
 const esp_wifi_init_internal = @extern(*const fn (*const initcfg.InitConfig) callconv(.c) c_int, .{
@@ -85,21 +86,40 @@ const probe_manual_ic_mac_init = false;
 // ---------------------------------------------------------------------------
 /// 打印 523 个寄存器（与 oracle 对照用）。约 1.4 秒串口时间，默认关。
 const probe_regdump = false;
+/// blob 的日志级别，取值是 `wifi_log_level_t`（`esp_private/wifi.h:390-397`）：0 none、1 error、2 warning、
+/// 3 info、4 debug、5 verbose。默认 3，与 IDF 默认配置（`CONFIG_LOG_DEFAULT_LEVEL=INFO`）一致。
+pub var blob_log_level: c_int = 3;
 
-/// `_phy_enable(modem)` 的真实实现：首次调用做 `register_chipv7_phy`（IDF 的
-/// `esp_phy_enable` → `esp_phy_load_cal_and_init` 就是这个时机）。
+/// `_phy_enable(modem)` 的首次部分：首次调用做 `register_chipv7_phy`（IDF 的
+/// `esp_phy_enable` → `esp_phy_load_cal_and_init` 就是这个时机）。返回 1 表示"已经标定过，这次没做事"，
+/// 调用方据此走 IDF 的另一条路（`phy_wakeup_init`）。
 var phy_registered = false;
 fn phyEnableHook(modem: u32) usize {
-    if (phy_registered) return 0;
+    if (phy_registered) return 1;
     const register_phy = @extern(*const fn (*const [128]u8, *[1894]u8, u32) callconv(.c) c_int, .{
         .name = "register_chipv7_phy",
     });
-    // 把 station MAC 写进 `cal_data->mac`（偏移 4，6 字节）——IDF 在标定前就是这么做的；
+    // IDF 存过标定数据之后的启动读 NVS 里的数据、配 `PHY_RF_CAL_PARTIAL`（`esp_phy_load_cal_and_init`）。
+    // 本镜像不持久化标定数据，所以每次启动都做全量标定（IDF 首次启动的做法 `PHY_RF_CAL_FULL`）。
+    // 2026-11-26 板侧对照过：与用对照镜像存在本板的标定数据相比，只多约 30 ms（首条 blob 日志 1621 →
+    // 1650 ms），扫描结果一致（31 个共同 AP 的 authmode / 信道全部相同，RSSI 平均差 0.3 dB）。
+    // 持久化标定数据（之后走 PARTIAL）是后续项。
+    // 标定前把 station MAC 写进 `cal_data->mac`（偏移 4，6 字节）——IDF 在标定前就是这么做的；
     // 标定数据是 MAC 绑定的（`phy_rfcal_data_check_new`/`_sub_new` 会校验）。
-    @memcpy(cal_data[4..10], &[_]u8{ 0x1c, 0x29, 0x04, 0xd1, 0x99, 0x28 });
-    const rc = register_phy(&phy_init_data.params, @ptrCast(&cal_data), 2); // PHY_RF_CAL_FULL
+    const mode: u32 = 2; // PHY_RF_CAL_FULL
+    @memcpy(cal_data[4..10], &macHook());
+    const rc = register_phy(&phy_init_data.params, @ptrCast(&cal_data), mode);
     phy_registered = true;
-    log.line("wifi-init-probe: _phy_enable(modem={d}) -> register_chipv7_phy rc={d}", .{ modem, rc });
+    // 标定到底做没做：`cal_data` 在调用前是全 0，FULL 标定会往里写结果。数一下非零字节数。
+    var nz: usize = 0;
+    for (cal_data) |b| {
+        if (b != 0) nz += 1;
+    }
+    log.line("wifi-init-probe: _phy_enable(modem={d}) -> register_chipv7_phy rc={d}; cal_data: version={d} mac={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2} nonzero={d}/1904 head={x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2}", .{
+        modem,        rc,           cal_data[0],  cal_data[4],  cal_data[5],  cal_data[6],
+        cal_data[7],  cal_data[8],  cal_data[9],  nz,           cal_data[10], cal_data[11],
+        cal_data[12], cal_data[13], cal_data[14], cal_data[15], cal_data[16], cal_data[17],
+    });
     return 0;
 }
 /// `phy_init_magic_pre`：必须紧贴在 `phy_init_data.params` 之前（IDF 的布局约定）。
@@ -353,7 +373,8 @@ const regdump_addrs = [_]u32{
     0x2071004C, 0x20710050, 0x207103FC,
 };
 
-fn regDumpAll(tag: []const u8) void {
+/// 全量寄存器 dump（523 个有定义的寄存器）。真实链路探针用它做与 oracle 的同点对照。
+pub fn regDumpAll(tag: []const u8) void {
     const mac_st: *volatile u32 = @ptrFromInt(0x2010_4CAC);
     log.line("REGDUMP {s} begin n={d} mac_st={x:0>8}", .{ tag, regdump_addrs.len, mac_st.* });
     for (regdump_addrs, 0..) |a, i| {
@@ -363,7 +384,79 @@ fn regDumpAll(tag: []const u8) void {
     log.line("REGDUMP {s} end", .{tag});
 }
 
-fn idleHook() void {
+/// MAC 块整段（0x20104000 起 4 KB，blob 私有，不在头文件里），与 oracle 的 `macdump` 同点对照。
+/// 扫描是驱动直接往这里写出来的；只读，个别读清位会被读掉，只用于诊断。
+pub fn macDumpAll(tag: []const u8) void {
+    log.line("MACDUMP {s} begin n={d} base={x:0>8}", .{ tag, 1024, @as(u32, 0x2010_4000) });
+    for (0..1024) |i| {
+        const a: usize = 0x2010_4000 + 4 * i;
+        const p: *volatile u32 = @ptrFromInt(a);
+        log.line("MACW {d} {x:0>8} {x:0>8}", .{ i, a, p.* });
+    }
+    log.line("MACDUMP {s} end", .{tag});
+}
+
+/// 不在头文件里的几块，与 oracle 的 `rangdump_all` 同点对照。只读头文件里给了基址的那几块，各按 1 KB
+/// （WIDGETS 2 KB）算。**FE 只到 0x20101FFF**：0x20102000 起读不到——本镜像在那里读一次就挂死
+/// （2026-11-26 两次 dump 都停在第 2048 个字）；0x20103000 是 IEEE 802.15.4 的块，中间是空的。
+/// 每行 8 个字（`RG <地址> <8 个值>`），全打不做过滤。只读，只用于诊断。
+pub fn rangeDumpAll() void {
+    rangeDump("fe", 0x2010_0000, 2048, false);
+    rangeDump("bb", 0x2010_7000, 1024, false);
+    rangeDump("brx", 0x2010_8000, 256, false);
+    rangeDump("timer", 0x2010_8400, 256, false);
+    rangeDump("etm", 0x2010_8800, 256, false);
+    rangeDump("dump", 0x2010_9000, 256, false);
+    rangeDump("wgt", 0x2010_9400, 512, false);
+    // 0x2010D000 起这一块头文件里没有名字，范围是猜的：读每一行之前先把地址打出去，挂死也能知道挂在哪。
+    rangeDump("pwr0", 0x2010_D000, 512, true);
+    rangeDump("pwr8", 0x2010_D800, 64, true);
+}
+
+fn rangeDump(name: []const u8, base: usize, n: usize, guarded: bool) void {
+    log.line("RANGEDUMP {s} begin base={x:0>8} n={d}", .{ name, @as(u32, @intCast(base)), n });
+    var i: usize = 0;
+    while (i < n) : (i += 8) {
+        const first: u32 = @intCast(base + 4 * i);
+        if (guarded) log.line("RANGEAT {x:0>8}", .{first});
+        var buf: [88]u8 = undefined;
+        var w = (std.fmt.bufPrint(&buf, "RG {x:0>8}", .{first}) catch unreachable).len;
+        var j: usize = 0;
+        while (j < 8 and i + j < n) : (j += 1) {
+            w += (std.fmt.bufPrint(buf[w..], " {x:0>8}", .{hw.readReg(base + 4 * (i + j))}) catch unreachable).len;
+        }
+        log.line("{s}", .{buf[0..w]});
+    }
+    log.line("RANGEDUMP {s} end", .{name});
+}
+
+/// 定点采样：全量对照里出现过差异的那几十个地址，一个一行（`FOCUS <地址> <值>`），与 oracle 的
+/// `focusdump` 同一张地址表。放在扫描开始后 100 ms、所有慢 dump **之前**打：全量 dump 要十几秒，
+/// 对照镜像那边不打断扫描，等 dump 走到 BB 块时扫描已经结束、驱动已把 FE/BB 时钟收起来——
+/// 那是空闲态，不是收发态（2026-11-26 的 scan8 就是这么比错的）。
+const focus_addrs = [_]usize{
+    0x2010_7000, 0x2010_7030, 0x2010_704C, 0x2010_7050, 0x2010_706C, 0x2010_7078, 0x2010_708C, 0x2010_7128,
+    0x2010_7138, 0x2010_71D4, 0x2010_740C, 0x2010_7438, 0x2010_7848, 0x2010_785C, 0x2010_7888, 0x2010_78A8,
+    0x2010_78AC, 0x2010_78B8, 0x2010_78BC, 0x2010_78C0, 0x2010_78C4, 0x2010_78D0, 0x2010_7C08, 0x2010_7C60,
+    0x2010_7C64, 0x2010_7C80, 0x2010_7C90, 0x2010_7CB0, 0x2010_7FFC, 0x2010_8038, 0x2010_803C, 0x2010_8044,
+    0x2010_8048, 0x2010_8094, 0x2010_D800, 0x2010_D878, 0x2010_001C, 0x2010_0050, 0x2010_0400, 0x2010_0438,
+    0x2010_0450, 0x2010_0800, 0x2010_081C, 0x2010_0820, 0x2010_0830, 0x2010_0848, 0x2010_084C, 0x2010_0850,
+    0x2010_0890, 0x2010_0894, 0x2010_0898, 0x2010_089C, 0x2010_08A0, 0x2010_08A4, 0x2010_1FFC,
+};
+
+pub fn focusDump(tag: []const u8) void {
+    log.line("FOCUSDUMP {s} begin n={d}", .{ tag, focus_addrs.len });
+    for (focus_addrs) |a| {
+        log.line("FOCUS {x:0>8} {x:0>8}", .{ @as(u32, @intCast(a)), hw.readReg(a) });
+    }
+    log.line("FOCUSDUMP {s} end", .{tag});
+}
+
+/// 真实链路探针（`link_probe.zig`）把它接成长期运行的泵：不打每 1000 次那行日志，
+/// 也不在 400 万次让出后停机。
+pub var idle_quiet: bool = false;
+/// 阻塞等待的让出点。从主上下文调用 = 把 Wi-Fi 任务推进一步，任务让出后返回。
+pub fn idleHook() void {
     idle_calls += 1;
     if (foreign_context) {
         foreign_refusals += 1;
@@ -373,7 +466,7 @@ fn idleHook() void {
     // ⇒ PP worker 在我们的环境里跑不到它的 `give`。已回滚。
     if (idle_calls == 1) log.raw("wifi-init-probe: task blocked -> yielded to idle hook\n");
     // 每 1000 次让出打一行：区分"在乒乓（任务没答话）"与"blob 忙等（根本不进钩子）"。
-    if (idle_calls % 1000 == 0) {
+    if (!idle_quiet and idle_calls % 1000 == 0) {
         var e0: usize = 0;
         var e1: usize = 0;
         if (impl.task_count > 0) if (impl.tasks[0].entry) |e| {
@@ -391,7 +484,7 @@ fn idleHook() void {
             e1,
         });
     }
-    if (idle_calls > 4_000_000) {
+    if (!idle_quiet and idle_calls > 4_000_000) {
         log.line("wifi-init-probe: idle budget exhausted ({d}), halting", .{idle_calls});
         hw.halt();
     }
@@ -480,7 +573,8 @@ fn budgetExhaustedHook(total: u32) void {
 }
 
 /// 逐行追踪钩子调用（上限 40 行，避免刷屏）。
-var trace_lines: u32 = 0;
+/// 已打印的 trace 行数（上限 200）。真实链路探针在扫描之前把它清零，让那一段也能被追踪。
+pub var trace_lines: u32 = 0;
 
 fn traceNote(id: u8, a0: usize, a1: usize) void {
     // 追踪 take(0)/give(1)/queue_recv(4)/queue_send(5)/alloc(13)：
@@ -507,11 +601,21 @@ fn nowUsHook() u64 {
 fn fillRandomHook(dst: []u8) void {
     rng.fill(dst);
 }
+/// 基址：eFuse 的工厂 MAC（IDF `esp_efuse_mac_get_default`）。48 位字段 = `EFUSE_RD_MAC_SYS1`（`0x20715054`）
+/// 的低 16 位拼上 `EFUSE_RD_MAC_SYS0`（`0x20715050`），按大端逐字节（`esp_efuse_read_field_blob` 的口径：
+/// `mac[0]` 是最高字节；实测按小端读出来是 `28:99:d1:04:29:1c`，反着才对）。
+/// 此前这里写死占位地址 `02:00:00:00:00:01`，探针日志里 station 用的一直是它。
 fn macHook() [6]u8 {
-    return .{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    const lo = hw.readReg(0x2071_5050);
+    const hi = hw.readReg(0x2071_5054);
+    return .{
+        @truncate(hi >> 8),  @truncate(hi),
+        @truncate(lo >> 24), @truncate(lo >> 16),
+        @truncate(lo >> 8),  @truncate(lo),
+    };
 }
 
-/// C shim 的回调：把驱动自己的报错原样打到串口（只有格式串，变参不展开）。
+/// C shim 的回调：把 blob 自己的日志整行打到串口（变参已在 `printf_shim.c` 里展开）。
 pub export fn s31_printf_hook(msg: ?[*:0]const u8) void {
     const m = msg orelse return;
     log.line("wifi-blob: {s}", .{std.mem.span(m)});
@@ -573,7 +677,14 @@ fn coexBoot() void {
 
 /// `-Dcoex`：共存核的钩子被 blob 调到时的**即时**痕迹。`esp_wifi_start` 卡在 MAC 忙位时不返回，
 /// 事后的诊断行打不出来；`_coex_enable` 这条路径到底有没有被 blob 执行，只能靠入口处的这一行作证。
+pub var coex_trace_all: bool = false;
+
 fn coexTrace(h: radio_coex.Hook) void {
+    if (coex_trace_all) {
+        log.raw("coex> ");
+        log.line("{s} called by blob", .{radio_coex.hookName(h)});
+        return;
+    }
     switch (h) {
         .coex_enable_wrapper => log.raw("coex> _coex_enable called by blob\n"),
         .coex_disable_wrapper => log.raw("coex> _coex_disable called by blob\n"),
@@ -618,8 +729,10 @@ pub fn coexRejected() u32 {
     return rej;
 }
 
-/// `_log_write` 的 C 实现（变参），取地址填进表。
+/// `_log_write` / `_log_writev` 的 C 实现，取地址填进表：前者是变参函数（Zig 定义不了），
+/// 后者带现成的 `va_list`——blob 先用前者打 "W (ms) tag: " 这一截表头，正文走后者。
 const s31_log_write = @extern(*const anyopaque, .{ .name = "s31_log_write" });
+const s31_log_writev = @extern(*const anyopaque, .{ .name = "s31_log_writev" });
 
 /// 「只做到 init 返回」那一段的选项。探针的 `run()` 与合并镜像（`-Dcoex-merged`，ADR-003 第 2 节）
 /// 共用这一段。
@@ -634,6 +747,9 @@ pub const InitOptions = struct {
 
 /// init 用的配置。`run()` 的失败诊断（`wifi_menuconfig_init`）还要用它，所以放在文件作用域。
 var probe_cfg: initcfg.InitConfig = undefined;
+/// `wifi_init_config_t.feature_caps` 的覆盖值（`WIFI_FEATURE_CAPS`）。IDF 的值随 sdkconfig 变：对照镜像
+/// （`tools/wifi-idf-oracle`）是 0x5A1，`init_config.zig` 里的 0x1a1 出自另一套参照构建、只少 OWE soft-AP 那一位。
+pub var feature_caps: ?u64 = null;
 
 /// 装表 → `coex_init` → `esp_wifi_init_internal`，到 `INIT OK` 为止，返回 `esp_wifi_init_internal`
 /// 的返回码。不建任务上下文、不开中断、不调 `esp_wifi_start`。
@@ -648,6 +764,18 @@ pub fn initOnly(opts: InitOptions) c_int {
     // TIMG0 T0 是本仓的时间基（1 MHz）；探针构建不会自动初始化它，
     // 不初始化则 nowUs() 恒 0（实测），超时/采样中断都无从谈起。
     hw.initTimer();
+    // 板级前置：关掉 APM 的三条访问路径控制过滤器（IDF 应用启动期 `bootloader_init_mem()` 做的，
+    // 二级 bootloader 跳过；出处与实测见 `board.apm`）。默认只放行 TEE master，Wi-Fi MAC 的 DMA
+    // 属 REE——不关，射频收到的帧进不了内存。
+    {
+        const before = board.apm.ctrlFilterValues();
+        board.apm.disableCtrlFilters() catch |e|
+            log.line("wifi-init-probe: apm disableCtrlFilters failed: {s}", .{@errorName(e)});
+        const after = board.apm.ctrlFilterValues();
+        log.line("wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: {d}/{d}/{d} -> {d}/{d}/{d} (0 = off)", .{
+            before[0], before[1], before[2], after[0], after[1], after[2],
+        });
+    }
     // 板级前置（与上面 `hw.initTimer()` 同类）：IDF 启动期 `pmu_init()` 给三个 HP 电源模式写 modem
     // 的 ICG 码并锁存；我们的镜像不做 IDF 的启动初始化，必须在这里补。不做则 modem 时钟域在
     // active 电源态下被门控：`MAC_ST` 的忙位永不自清、`esp_wifi_start` 不返回。
@@ -657,6 +785,11 @@ pub fn initOnly(opts: InitOptions) c_int {
             log.line("wifi-init-probe: pmu initModemIcg failed: {s}", .{@errorName(e)});
         log.line("wifi-init-probe: pmu modem ICG code {d}->{d} (2 = active)", .{ before, board.pmu.modemIcgCode() });
     }
+
+    // 启动期的另一条板级前置：给 Wi-Fi 模块选 LP 时钟源（IDF `esp_perip_clk_init()` 在 `app_main` 之前做，
+    // 出处与对照读数见 `board.pmu.initModemLpClock`）。
+    board.pmu.initModemLpClock() catch |e|
+        log.line("wifi-init-probe: pmu initModemLpClock failed: {s}", .{@errorName(e)});
 
     // 1) 分配器缓冲：链接脚本给的堆区间（_heap_start.._heap_end，绝对符号取地址）。
     const heap_start: [*]u8 = @ptrFromInt(@intFromPtr(heapStart()));
@@ -692,11 +825,13 @@ pub fn initOnly(opts: InitOptions) c_int {
     // 栈上的表在返回后就失效——生产路径同理，所以放文件作用域。
     osi_table = impl.makeTable();
     osi_table._log_write = s31_log_write; // C 变参 shim
+    osi_table._log_writev = s31_log_writev;
     // `-Dcoex`：把 24 个共存表项换成胶水的包装函数。必须在 `makeTable()`（它末尾是 `stubs.fill`）之后：
     // 否则 IDF 留空的 `_coex_condition_set` 会被通用桩填上。
     if (coex_gate.enabled) radio_coex.wifi.fill(&osi_table);
     const table = &osi_table;
     probe_cfg = initcfg.defaults(table);
+    if (feature_caps) |f| probe_cfg.feature_caps = f;
     const cfg: *const initcfg.InitConfig = &probe_cfg;
     log.line("wifi-init-probe: table=0x{x:0>8} cfg magic=0x{x:0>8} crypto size={d}", .{
         @intFromPtr(table),
@@ -793,9 +928,45 @@ pub fn initOnly(opts: InitOptions) c_int {
         lp.* = (b & ~@as(u32, 1 << 2)) | (1 << 0);
         log.line("wifi-init-probe: LPCON+18 fixed pre-init 0x{x} -> 0x{x} (IDF=0x1)", .{ b, lp.* });
     }
+    // IDF `esp_wifi_init()` 在 `esp_wifi_init_internal` **之前**先设三个省电参数（`wifi_init.c`，无条件调用）：
+    // 最短活跃时间、keep-alive 间隔、等广播数据的时间。值取自对照镜像的 sdkconfig
+    // （`CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME=50` ms、`..._MAX_ACTIVE_TIME=10` s、
+    // `..._WAIT_BROADCAST_DATA_TIME=15` ms），IDF 传的是微秒。
+    {
+        const set_min_active = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_wifi_set_sleep_min_active_time" });
+        const set_keep_alive = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_wifi_set_keep_alive_time" });
+        const set_wait_broadcast = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_wifi_set_sleep_wait_broadcast_data_time" });
+        log.line("wifi-init-probe: pm params rc: min_active={d} keep_alive={d} wait_broadcast={d}", .{
+            set_min_active(50 * 1000), set_keep_alive(10 * 1000 * 1000), set_wait_broadcast(15 * 1000),
+        });
+    }
     // **b14 / b21 门在新前提下的重测已做（均无效）**：b14=1 或 b14=1+b21=1 之后
     // `b288` 仍是 0、`MAC_ST` 仍是 `0x0000e000`、INITWIN 不变。已回滚。
     const init_rc = esp_wifi_init_internal(cfg);
+    // IDF `esp_wifi_init()` 的收尾（`wifi_init.c:539-543`）：`esp_wifi_init_internal` 成功之后置
+    // `MODEM_STATUS_WIFI_INITED`——此后 `_wifi_clock_disable` 不再关 Wi-Fi 自己的时钟。
+    if (init_rc == 0) impl.wifi_clock_inited = true;
+    // 同一段收尾里还有设 blob 的日志级别（`wifi_init.c:125-144`，在 `esp_wifi_init()` 的 `:460` 调用）：
+    // 不设的话 blob 的日志是关的，只剩设级别之前打的那两行版本信息。
+    if (init_rc == 0) {
+        const set_level = @extern(*const fn (c_int) callconv(.c) c_int, .{ .name = "esp_wifi_internal_set_log_level" });
+        const rc = set_level(blob_log_level);
+        log.line("wifi-init-probe: esp_wifi_internal_set_log_level({d}) rc=0x{x:0>8}", .{ blob_log_level, @as(u32, @bitCast(rc)) });
+    }
+    // IDF `esp_wifi_init()` 的最后一项（`wifi_init.c:512`）：`esp_supplicant_init()`——把 supplicant 的
+    // 回调表登记给 blob（`g_ic->[444]`）。我们没有 IDF 的 `wpa_supplicant` 组件，登记自己的
+    // （`wpa_cb.zig`）。不登记则那张表是空指针，而扫描路径 `scan_add_ssid_do` 对它有一处不判空就解引用，
+    // 第一帧 beacon / probe response 就 `load access fault @0x54`（2026-11-26 板侧实测）。
+    if (init_rc == 0) {
+        const rc = wpa_cb.register();
+        // 读回校验：blob 的 `esp_wifi_register_wpa_cb_internal` 就是 `g_ic->[444] = cb`。`g_ic` 是结构体
+        // 本身（blob 的代码是 `lw a4,444(a5)`、a5 = `g_ic` 的地址），不是指针变量。
+        const g_ic = @extern(*const anyopaque, .{ .name = "g_ic" });
+        const stored: usize = @as([*]align(1) const usize, @ptrCast(g_ic))[444 / @sizeOf(usize)];
+        log.line("wifi-init-probe: wpa cb register rc={d} g_ic[444]=0x{x:0>8} table=0x{x:0>8}", .{
+            rc, stored, @intFromPtr(&wpa_cb.funcs),
+        });
+    }
     dumpClockRegs("after-init");
     if (probe_regdump) regDumpAll("after-init");
     {

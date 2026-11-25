@@ -9,14 +9,15 @@
 
 | 级别 | 结果 | 证据 |
 | --- | --- | --- |
-| 主机测试 | **31/31**（26 个原有用例 + 共存钩子 4 个 + 替身 1 个） | `tests/baselines.json` → `wifi-blobs: 31`。此前这个组件没有测试目标，26 个用例从没被跑过，测试文件也编不过；2026-11-24 补了目标并修好 |
+| 主机测试 | **43/43**（`host_tests.zig` 25 个 + 共存钩子 4 个 + `wpa_cb.zig` 13 个 + 替身 1 个） | `tests/baselines.json` → `wifi-blobs: 43`。此前这个组件没有测试目标，26 个用例从没被跑过，测试文件也编不过；2026-11-24 补了目标并修好 |
 | 板侧 init | `esp_wifi_init_internal rc=0` | `logs/wifi-init-ok-boot.log` |
 | 板侧任务 | 任务体执行自己的循环并合作式让出 | `logs/wifi-task-boot.log` |
 | 共存核（`-Dcoex`） | 共存库自己打出两行版本；`wifiInit rc=0`；`esp_wifi_init_internal rc=0`；`g_coex_param_ptr=0x2f01173c`（不开时为 0） | `logs/coex-wifi-probe-boot.log`；对照 `logs/coex-wifi-probe-control.log` |
 | 共存 + start 路径（`-Dcoex`，修复前） | `esp_wifi_start` 期间 blob 调了 `_coex_enable`，核心收下（`returned rc=0 wifi=enabled`）；之后停在 MAC 忙位自旋（`mepc=0x2f009cb6`，掩码 `0xE000`）——2026-11-25 修复前的证据 | `logs/coex-wifi-probe-start-boot.log` |
 | 板侧 start（2026-11-25） | `esp_wifi_start rc=0`；init 之后 `MAC_ST=0x00000000`；`MODEM_SYSCON` / `MODEM_LPCON` 的时钟寄存器与同板 IDF 逐位相同 | `logs/wifi-probe-start-rc0-boot.log`；根因见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末 |
 | 合并镜像（`-Dcoex-merged`，与 BLE 同链） | `esp_wifi_init_internal rc=0`、`INIT OK`，Wi-Fi arena 配额 100 512 B；2026-11-25 重跑 `read: LPCON+18 after wifi init=0x00000001`、`main: verdict=pass` | `logs/coex-merged-boot.log`、`logs/coex-merged-pmu-icg-boot.log`；`docs/verification/coex-verification.md` §6、§11 |
-| 扫描/连接 | **未做** | 需要 `on_idle` 接 EMAC 收发 |
+| 板侧扫描（2026-11-26，`-Dwifi-link-probe`） | `esp_wifi_start rc=0`；主动扫描约 9.1 s 走完全部信道：`Send scan done event: status=0, apnum=38`；`esp_wifi_scan_get_ap_records rc=0x0 got=38`（BSSID、SSID、信道、RSSI、authmode 都是真实值）。与同板官方 IDF（oracle）同一时段的结果逐 AP 对照：oracle 看到的 8 个 AP 里 7 个一致（信道、authmode、SSID 相同，RSSI 差不超过 3 dB），第 8 个那一轮没扫到 | `logs/wifi-link-scan-boot.log`（邻居的 SSID 与 BSSID 已脱敏）；`docs/verification/wifi-ieee80211-verification.md` §10 |
+| 连接、收发 | **未做** | 回调表里连接路径的入口还没填，其中多处调用点不判空（见 `src/wpa_cb.zig` 文件头） |
 
 ## 用法
 
@@ -119,13 +120,15 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 | `src/osi_impl.zig` | 适配层实现：arena 分配器、信号量/互斥/队列、任务表、事件组、NVS RAM 版、`Hooks` |
 | `src/osi_stubs.zig` | 未实现钩子的**具名桩**（只填空字段，绝不覆盖已实现项） |
 | `src/init_config.zig` | `wifi_init_config_t` 默认值（含 `wpa_crypto_funcs.size = 52`） |
-| `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（装表 → 共存核 → init，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly` |
+| `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（板级前置 → 装表 → 共存核 → init → 登记 supplicant 回调表，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly` |
+| `src/link_probe.zig` | 真实链路探针（`-Dwifi-link-probe=true`）：init → start → 主动扫描 → 取回并打印扫描结果（缓冲 64 条） |
+| `src/wpa_cb.zig` | blob 的 supplicant 回调表（`struct wpa_funcs`）：登记给 blob；attach / detach / 断开通知驱动 `wifi_connect.supplicant`，`wpa_parse_wpa_ie` 是 IDF 同名函数的移植 |
 | `src/link_stubs.zig` | 链接期桩：计数桩与数据桩（`WIFI_EVENT`、`regdomain_table`、`est_PHY_*`）；7 个与 BLE 侧同名的计数桩是弱符号 |
 | `src/coex_hooks.zig` | 共存核回调 OS 层的 18 个适配钩子（`-Dcoex`），全部转给 `osi_impl.zig` 已有的壳 |
-| `src/host_stubs.zig` | 主机测试用的 5 个板级符号替身（ROM / PHY / 共存库入口），不进任何镜像 |
+| `src/host_stubs.zig` | 主机测试用的 12 个板级符号替身（ROM / 共存库 / PHY 入口、PHY 使能关闭序列、blob 的 SAE 配置），不进任何镜像 |
 | `src/sched.zig` | 两根栈的合作式上下文切换（naked `s31_swap_context`） |
 | `src/sched.zig` | 32 位帧的 `initContext`（主机用例覆盖）+ 目标门控的 naked 切换 |
-| `src/host_tests.zig` | 主机测试入口（本文件 26 个用例；组件合计 31 个） |
+| `src/host_tests.zig` | 主机测试入口（本文件 25 个用例；组件合计 43 个） |
 
 ## 待验证项
 
@@ -136,9 +139,16 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
   诊断纪律：**不要手工乱序调用 ROM 的 PHY 函数**（会得到假的空指针故障），跑真实路径。
 - `esp_wifi_start`：**已返回**（2026-11-25，`esp_wifi_start rc=0`）。此前它停在等 `MAC_ST`（0x20104CAC）忙位自清的自旋里；
   根因是镜像没做 IDF 启动期 `pmu_init()` 里写 modem ICG 码并触发更新的一步，由 `initOnly()` 开头的
-  `board.pmu.initModemIcg()` 补上（`docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末）。返回之后的扫描、连接未做。
-- `on_idle` 接 EMAC：收包 → `esp_wifi_internal_reg_rxcb` 注册的回调；发送走 `esp_wifi_internal_tx`。
-- 扫描/连接：需要 `esp_wifi_connect` / `esp_wifi_disconnect` 等 IDF 侧符号的桩。
+  `board.pmu.initModemIcg()` 补上（`docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末）。返回之后的扫描已上板（2026-11-26，见上表）。
+- 扫描收不到帧（**已解决**，2026-11-26）：根因是镜像没做 IDF 应用启动期 `bootloader_init_mem()` 关 APM 访问控制过滤器的三行，
+  Wi-Fi MAC 的 DMA（REE master）被静默拒绝；由 `initOnly()` 开头的 `board.apm.disableCtrlFilters()` 补上。关掉之后还要
+  登记 supplicant 回调表（`wpa_cb.zig`），否则第一帧 beacon 就解引用空指针。
+- PHY 标定数据不持久化：每次启动做全量标定（IDF 首次启动的做法），比用存下来的标定数据只多约 30 ms。IDF 之后把数据
+  存进 NVS、改走 `PHY_RF_CAL_PARTIAL`，这一步没有做。
+- 连接：`esp_wifi_connect` / `esp_wifi_disconnect` 现在还是 `link_stubs.zig` 里的计数桩。连之前要先填齐回调表里连接路径的
+  入口（`wpa_sta_rx_eapol`、`wpa_config_parse_string`、`wpa_sta_connect`、`wpa_sta_rx_mgmt` 等），并接
+  `esp_wifi_internal_reg_rxcb` 收 EAPOL。
+- 收发：收包走 `esp_wifi_internal_reg_rxcb` 注册的回调，发送走 `esp_wifi_internal_tx`；两个都还没接（数据通路那一步）。
 
 已完成（此前列在这里）：任务体跑在**自己的静态栈**上（`sched.zig`，`sched-test: PASS`）；
 `_task_delay` 已按"让出 + 计时"实现；`illegal instruction`（`mepc=0x2f01c9d4`）在

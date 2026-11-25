@@ -44,6 +44,8 @@ pub fn build(b: *std.Build) void {
     const wifi_blob_objs = b.option([]const u8, "wifi-blob-objs", "comma-separated object names inside wifi-blob-dir") orelse "";
     // R3 探针：编进"装表 → 调 esp_wifi_init_internal → 打日志停机"的入口。
     const wifi_init_probe = b.option(bool, "wifi-init-probe", "run the wifi init probe instead of the normal self-test") orelse false;
+    // 真实链路探针：init → set_mode → start → 开中断泵任务 → 扫描 → …（干净入口，不带旧探针的实验写）。
+    const wifi_link_probe = b.option(bool, "wifi-link-probe", "run the real-link probe (init, start, scan) instead of the normal self-test") orelse false;
     // R3.3 链接实验：把 BLE controller 归档（libble_app/libbtdm_common/libbtbb/libphy）
     // 加进链接。与 wifi-blob-* 同构：给目录 + 对象清单，产物用于量容量与解符号，
     // 适配面由 components/bt-blobs/link/bt_stubs.c + s31.ld 的 btdm 边界补上。
@@ -75,7 +77,7 @@ pub fn build(b: *std.Build) void {
     if (coex_merged) {
         if (!coex) @panic("-Dcoex-merged 需要 -Dcoex：共存核是合并镜像的一部分");
         if (wifi_blob_dir.len == 0 or bt_blob_dir.len == 0) @panic("-Dcoex-merged 需要同时给出 -Dwifi-blob-dir 与 -Dbt-blob-dir");
-        if (wifi_init_probe or bt_probe) @panic("-Dcoex-merged 不能与 -Dwifi-init-probe / -Dbt-probe 同开：探针镜像的入口不跑各段自检");
+        if (wifi_init_probe or wifi_link_probe or bt_probe) @panic("-Dcoex-merged 不能与 -Dwifi-init-probe / -Dwifi-link-probe / -Dbt-probe 同开：探针镜像的入口不跑各段自检");
     }
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex) "pub const enabled = true;\n" else "pub const enabled = false;\n";
@@ -157,6 +159,8 @@ pub fn build(b: *std.Build) void {
     // socket 层（R2.2d）：net-wire 也要能驱动它，不只是 net 组的自检。
     const socks_mod = b.createModule(.{ .root_source_file = b.path("../components/net-sockets/src/api.zig") });
     socks_mod.addImport("net_tcp", tcp_mod);
+    // wifi-connect 的纯逻辑面按模块名给别的组件用（第一个使用者：wifi-blobs 的 supplicant 回调）。
+    const wifi_connect_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-connect/src/api.zig") });
 
     // OSAL（任务/调度器 + 同步原语）：从 bt-blobs 抽出来的独立组件。
     // 依赖面只有 std + builtin（时间/临界区/随机数是注入钩子），所以没有 board 依赖。
@@ -256,7 +260,7 @@ pub fn build(b: *std.Build) void {
         // 关掉 --gc-sections **只在"量体积"模式**：那时没有真实引用，不关就什么都不会进来。
         // 探针模式有真实入口（esp_wifi_init_internal），必须保持 gc 打开，否则整个 blob 闭包
         // 全被链进来、irom 直接溢出（实测溢出 67 KB）。
-        if (!(wifi_init_probe or coex_merged)) app.link_gc_sections = false;
+        if (!(wifi_init_probe or coex_merged or wifi_link_probe)) app.link_gc_sections = false;
         const blobs_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/adapter.zig") });
         blobs_mod.addImport("board", board);
 
@@ -288,17 +292,23 @@ pub fn build(b: *std.Build) void {
     app.root_module.addImport("enabled", enabled_mod);
     // 探针模块总是存在（start.zig 无条件 import），用 comptime 常量决定是否真的跑：
     // 关闭时是空实现，避免把 blob 的 @extern 引用带进常规构建。
-    if ((wifi_init_probe or coex_merged) and wifi_blob_dir.len > 0) {
-        const probe_mod = b.createModule(.{ .root_source_file = b.path("../components/wifi-blobs/src/init_probe.zig") });
+    if ((wifi_init_probe or coex_merged or wifi_link_probe) and wifi_blob_dir.len > 0) {
+        const probe_mod = b.createModule(.{
+            .root_source_file = b.path(if (wifi_link_probe)
+                "../components/wifi-blobs/src/link_probe.zig"
+            else
+                "../components/wifi-blobs/src/init_probe.zig"),
+        });
         probe_mod.addImport("board", board);
         probe_mod.addImport("coex_gate", coex_gate);
         if (coex) probe_mod.addImport("radio_coex", coex_mod);
+        probe_mod.addImport("wifi_connect", wifi_connect_mod);
         // C 变参 shim：Zig 定义不了变参函数，驱动的报错偏偏走它们。
         // 给了 Wi-Fi 对象目录就在这里加一次（下面 BT 那段不再重复加：同一文件加两次会重复定义）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
         wifi_probe_mod = probe_mod;
     }
-    if (wifi_init_probe and wifi_blob_dir.len > 0) {
+    if ((wifi_init_probe or wifi_link_probe) and wifi_blob_dir.len > 0) {
         app.root_module.addImport("wifi_init_probe", wifi_probe_mod.?);
     } else {
         const off_src = "pub const enabled = false;\npub fn run() noreturn {\n    unreachable;\n}\n";
@@ -489,6 +499,9 @@ pub fn build(b: *std.Build) void {
             }),
         });
         t.root_module.addImport("radio_coex", coex_mod);
+        // `osi_impl` 的 `_slowclk_cal_get` 壳按模块名取板级时钟标定值（常量），主机测试编表时也要它。
+        t.root_module.addImport("board", board);
+        t.root_module.addImport("wifi_connect", wifi_connect_mod);
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 

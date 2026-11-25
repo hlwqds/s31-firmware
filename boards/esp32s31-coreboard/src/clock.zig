@@ -36,6 +36,24 @@ extern fn esp_rom_set_cpu_ticks_per_us(mhz: u32) void;
 
 pub const Error = error{ NotOnTarget, UnsupportedTier, ReadbackMismatch, BusUpdateTimeout };
 
+/// 主晶振频率（MHz）。本板是 40 MHz：对照镜像的 sdkconfig 里 `CONFIG_XTAL_FREQ_40=y`、
+/// `CONFIG_XTAL_FREQ=40`。射频 PHY 按它算频率——`phy_get_xtal_freq` 把 `xtal - 1` 写进
+/// `MODEM_LPCON_TICK_CONF` 的低 6 位，并填进 `phy_param`。IDF 由 `rtc_clk_xtal_freq_get()` 提供，
+/// 本镜像由 `wifi-blobs/src/link_stubs.zig` 的同名函数回这里取。
+pub const xtal_mhz: u32 = 40;
+
+/// RTC 慢时钟标定值，口径同 IDF `esp_clk_slowclk_cal_get()`（`2^19 * 1e6 / 慢时钟频率`）。
+///
+/// 本板的慢时钟源是内部 RC_SLOW（约 137 kHz）。这个数取自**同一块板**上对照镜像启动时的实测
+/// （它由 `rtc_clk_cal(CLK_CAL_RTC_SLOW, 1024)` 量出来，存在 `LP_SYSTEM_REG_LP_STORE1`）：
+/// 三次启动分别读到 `0x003A48A6`、`0x003A6326`、`0x003A34F3`，启动日志是 3818931。
+/// RC 振荡器随温度漂移（上面三个数相差约 1%），**这里没有做实测**：影响的是按慢时钟计时的
+/// 省电时长（毫秒量级），百分之几的误差可以接受；要更准就把 IDF 的 `rtc_clk_cal` 那套
+/// （TIMG0 的时钟标定电路）移植过来。
+pub fn slowclkCal() u32 {
+    return 3_818_931;
+}
+
 /// `HP_SYS_CLKRST` 基址。
 ///
 /// 不是从 IDF 的 `DR_REG_*` 宏抄来的（那些在头文件里层层 include），而是用本仓**已实测过**的

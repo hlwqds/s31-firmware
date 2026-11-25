@@ -94,6 +94,10 @@ ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_ml
 2026-11-25 的后续：与 oracle 的全量寄存器对照找到了本仓库 `esp_wifi_start` 不返回的根因并修复，
 `esp_wifi_start rc=0`（`logs/wifi-probe-start-rc0-boot.log`；`wifi-ieee80211-verification.md` §9、`coex-verification.md` §11）。
 
+2026-11-26 的后续：本仓库自己的移植第一次扫描到真实 AP——`esp_wifi_start` 之后主动扫描约 9.1 s 走完全部信道，
+取到 38 条真实记录；根因两处（APM 访问控制过滤器、supplicant 回调表是空指针），证据与逐 AP 对照见
+`wifi-ieee80211-verification.md` §10、`logs/wifi-link-scan-boot.log`（邻居的 SSID 与 BSSID 已脱敏）。连接与收发未做。
+
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
 | 运行 | 命令 | 结果 | 日志 |

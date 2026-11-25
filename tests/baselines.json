@@ -14,8 +14,8 @@
     "osal": 29,
     "posix-compat": 91,
     "radio-coex": 55,
-    "wifi-blobs": 31,
+    "wifi-blobs": 43,
     "wifi-boundary": 15,
-    "wifi-connect": 431,
+    "wifi-connect": 432,
     "wifi-mlme": 316
 }

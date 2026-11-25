@@ -5,7 +5,7 @@ firmware/                    单一固件（start.zig → main.zig → component
   ├── src/{start,main}.zig
   ├── idf-bootstrap/         IDF 二级 bootloader + 分区表（生成物不入库）
   └── tools/flash.sh
-boards/esp32s31-coreboard/   板级层：linker/s31.ld、hw/clock/pmu/rng/log/trap、板卡说明
+boards/esp32s31-coreboard/   板级层：linker/s31.ld、hw/clock/pmu/apm/rng/log/trap、板卡说明
 components/
   ├── net-ipv4               首部/校验和/分片/重组/路由/ARP/ICMP
   ├── net-udp-dhcp-dns       UDP、DHCP 状态机、DNS 解析与缓存

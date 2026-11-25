@@ -5,6 +5,26 @@
 ## [Unreleased]
 
 ### Fixed
+- **Wi-Fi blob 扫描不到任何 AP（2026-11-26，路线图 R3.2 的扫描）**：`esp_wifi_start` 之后扫描能逐信道走完，但一条帧都收不到，
+  结果恒为 0 个 AP。根因有两个，各修一处。① 裸机镜像没做 IDF 应用启动期 `bootloader_init_mem()` 里关 APM 访问控制过滤器的三行
+  （二级 bootloader 里这段被 `#if !BOOTLOADER_BUILD` 跳过），`HP_APM` / `HP_MEM_APM` / `LP_APM` 的 `FUNC_CTRL` 停在复位值
+  `0x7F` / `0x3F` / `0x0F`，只放行 TEE master——Wi-Fi MAC 的 DMA 属 REE，射频收到的帧写不进内存（与 ch17 以太网 DMA
+  不取描述符是同一个根因）。出处用对照镜像 ELF 的反汇编核对（`bootloader_init_mem` 正好是三条写 0）。修法：板级包新增
+  `boards/esp32s31-coreboard/src/apm.zig`（`board.apm.disableCtrlFilters()`，写 0 并读回），`initOnly()` 开头调用。
+  ② 镜像里没有 IDF 的 `wpa_supplicant` 组件，`esp_wifi_init()` 收尾的 `esp_supplicant_init()` 没人做，blob 的 supplicant
+  回调表指针（`g_ic->[444]`）是空的，而扫描路径对它有一处不判空就解引用，关掉 ① 之后第一帧 beacon 就
+  `load access fault @0x54`。修法：`components/wifi-blobs/src/wpa_cb.zig` 登记自己的回调表（`struct wpa_funcs` 的 Zig 镜像，
+  偏移用 comptime 断言钉死），先填四个——`wpa_sta_init` / `wpa_sta_deinit` / `wpa_sta_disconnected_cb` 驱动 `wifi-connect`
+  自己的请求方（`wifi-connect` 为此新增公共入口 `api.zig`，`firmware/build.zig` 以模块名 `wifi_connect` 给出），
+  `wpa_parse_wpa_ie` 是 IDF 同名函数的移植（blob 拿它判每个 AP 的 authmode；位值抄 IDF 的 `defs.h`，编译开关取对照镜像的）。
+  连带：探针不再用从对照镜像 NVS 里读出来的 PHY 标定数据（`cal_staged.zig` 删除），每次启动全量标定，只多约 30 ms；
+  `wifi-blobs` 的主机测试目标此前编不过（临界区的 RISC-V 汇编与 PHY 壳缺 `board` 模块、缺符号替身），已修。
+  验证：板侧扫描 `Send scan done event: status=0, apnum=38`、`esp_wifi_scan_get_ap_records rc=0x0 got=38`
+  （`logs/wifi-link-scan-boot.log`，邻居的 SSID 与 BSSID 已脱敏）；连续 5 次上板扫描全部完成（32–41 个 AP）；与同板 oracle
+  同一时段的结果逐 AP 对照，oracle 看到的 8 个 AP 里 7 个一致（信道、authmode、SSID 相同，RSSI 差不超过 3 dB），第 8 个那一轮
+  没扫到。主机用例 2032 → 2045（`wifi-blobs` 31 → 43、`wifi-connect` 431 → 432）；`scripts/check-fmt.sh`、
+  `scripts/check-host.sh`、`scripts/check-coverage.py`、`scripts/check-invariants.py` 通过。没有做：连接（WPA2-PSK 关联 +
+  4 次握手）、收发、PHY 标定数据的持久化；回调表里连接路径的入口还没填，其中多处调用点不判空，连接之前必须先填齐。
 - **Wi-Fi blob 的 `esp_wifi_start` 不返回（2026-11-25，R3.1 的卡点）**：blob 在 `esp_wifi_start` 里等 `MAC_ST`
   （0x20104CAC）的忙位 bit 13–15 自清，我们的运行时里它们停在复位值。根因是裸机镜像没做 IDF 启动期 `pmu_init()`
   （`esp_rtc_init()` 里调）的一步：给 ACTIVE / MODEM / SLEEP 三个 HP 电源模式写 modem 的 ICG 码（2 / 1 / 0）并触发两次

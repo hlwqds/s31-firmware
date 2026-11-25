@@ -710,4 +710,80 @@ wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
 
 - 只到 `esp_wifi_start` 返回。这是 blob 边界（`wifi-blobs`）的板侧证据，不是 `wifi-mlme` / `wifi-connect` 的：
   扫描、连接、与本仓库自己的 RSNA 实现对接都没有做；与真实 AP 的互通（L4）仍然只有厂商栈的证据。
+  （扫描已于 2026-11-26 上板，见 §10。）
 - BLE 侧不能接同一步骤（探针锁死），读数在 `docs/verification/coex-verification.md` §11。
+
+## 10. 本仓库的 blob 移植：首次扫描到真实 AP（2026-11-26；真射频，与 oracle 对照，没有抓包）
+
+§9 之后的下一步：`esp_wifi_start` 之后发起主动扫描。探针是 `-Dwifi-link-probe`（`components/wifi-blobs/src/link_probe.zig`）。
+上一轮扫描能逐信道走完但恒为 0 个 AP，原因有两处。
+
+**其一：APM 访问控制过滤器。** IDF 的应用在启动期调 `bootloader_init_mem()`，其中把三条访问路径的控制过滤器关掉：
+`LP_APM_FUNC_CTRL`（0x20706CBC）、`HP_APM_FUNC_CTRL`（0x205044C4）、`HP_MEM_APM_FUNC_CTRL`（0x205048C4）写 0
+——对照镜像 ELF 里这个函数的反汇编开头正好是这三条写 0。这三行在二级 bootloader 里被 `#if !BOOTLOADER_BUILD` 跳过，
+所以由同一个 bootloader 加载的裸机镜像必须自己做。复位值 `0x0F` / `0x7F` / `0x3F` 只放行 TEE master；Wi-Fi MAC 的 DMA
+属 REE，射频收到的帧写不进内存，且不报 bus error——与 ch17 以太网 DMA 不取描述符是同一个根因。
+修复：`boards/esp32s31-coreboard/src/apm.zig`（写 0 并读回），`initOnly()` 开头调用。
+
+**其二：supplicant 回调表是空指针。** IDF 的 `esp_wifi_init()` 收尾调 `esp_supplicant_init()`（`wifi_init.c:512`），
+把一张 `struct wpa_funcs` 登记给 blob（`esp_wifi_register_wpa_cb_internal` 就是 `g_ic->[444] = cb`）。镜像里没有 IDF 的
+`wpa_supplicant` 组件，这一步没人做。关掉过滤器之后第一帧 beacon 就让驱动崩在 `scan_add_ssid_do`：
+`load access fault`、`mtval=0x54`——那里读 `g_ic->[444]->wpa_sta_rx_mgmt`（偏移 84），连表指针都不判空。
+定位：`objdump -dr` 扫 blob 各目标文件里 `lw x,444(y)` 之后读的字段，偏移逐一与 IDF 头文件 `struct wpa_funcs`
+（`wpa_supplicant/esp_supplicant/src/esp_wifi_driver.h:138`）对上；oracle 的链接 map 显示这些入口在 IDF 里来自
+`esp-idf/wpa_supplicant/libwpa_supplicant.a`。
+修复：`components/wifi-blobs/src/wpa_cb.zig` 登记自己的表。blob 里读这张表的地方有几十处，其中
+`wifi_station_start`（字段 0 `wpa_sta_init`）、`wifi_station_stop`（字段 4 `wpa_sta_deinit`）只判表指针、不判字段，
+`ieee80211_sta_new_state` 进 INIT 态时（字段 16 `wpa_sta_disconnected_cb`）连表指针都不判——扫描结束的 SCAN → INIT
+也会走到。现在填了四个：
+
+- `wpa_sta_init` / `wpa_sta_deinit` / `wpa_sta_disconnected_cb`：IDF 的 `wpa_attach()` / `wpa_deattach()` /
+  `wpa_sta_disconnected_cb` 的对应物，驱动 `wifi-connect` 的 `Supplicant`（初始态、没有密钥；握手超时等 11 个原因码下
+  丢掉安全关联并清认证方地址）。本项目不做 PMKSA 缓存，所以其余原因码下不动。
+- `wpa_parse_wpa_ie`：`wpa_parse_wpa_ie_wrapper` 的移植（RSN / WPA / RSNX / WAPI / 厂商形式 RSNE 的分派与解析，
+  套件选择器 → supplicant 内部位 → 公共 `wifi_cipher_type_t`）。blob 的扫描代码拿它判每个 AP 的 authmode，所以位值全部
+  抄 IDF 的 `defs.h`；编译开关取对照镜像的 `compile_commands.json`（`IEEE80211W`、`WPA3_SAE`、`GMAC`、`OWE_STA`、
+  `WPA3_COMPAT` 开，`IEEE80211R`、`SUITEB`、`SUITEB192`、`GCMP`、`DPP` 关）。
+
+主机用例 13 项（`wpa_cb.zig`）。
+
+板侧读数（`logs/wifi-link-scan-boot.log`，`-Dcoex` 与真实链路探针同开；入库的日志是脱敏副本，除用户自己的 AP
+`hl-wifi` 外，邻居的 SSID 与 BSSID 换成了标签，信道、RSSI、authmode 是原值）：
+
+```text
+wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 15/127/63 -> 0/0/0 (0 = off)
+wifi-init-probe: wpa cb register rc=0 g_ic[444]=0x2f0158bc table=0x2f0158bc
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0; cal_data: version=100 mac=1c:29:04:d1:99:28 nonzero=263/1904 ...
+wifi-link-probe: esp_wifi_start rc=0x0 (hooks=227, events=2)
+wifi-link-probe: esp_wifi_scan_start(NULL, nonblock) rc=0x0
+wifi-blob: Send scan done event: status=0, apnum=38
+wifi-link-probe: wait scan-done 10s -> GOT in 9079 ms (hooks=2296, events=3)
+wifi-link-probe: esp_wifi_scan_get_ap_num rc=0x0 n=38
+wifi-link-probe: esp_wifi_scan_get_ap_records rc=0x0 got=38
+```
+
+与 oracle 的对照。oracle 是同一块板上跑的官方 IDF 最小 station（`tools/wifi-idf-oracle/`），它的扫描日志没有入库。
+本镜像一侧取自入库的日志，oracle 一侧是同一时段（相差约四个小时）的读数：
+
+| SSID | BSSID | 信道（oracle / 本镜像） | RSSI（oracle / 本镜像） | authmode（oracle / 本镜像） |
+| --- | --- | --- | --- | --- |
+| `hl-wifi` | `44:f7:70:16:fa:ba` | 1 / 1 | -29 / -29 | WPA2_PSK / 3 |
+| ssid-01 | ap-01 | 2 / 2 | -37 / -38 | WPA/WPA2_PSK / 4 |
+| ssid-02 | ap-02 | 4 / 4 | -43 / -42 | WPA/WPA2_PSK / 4 |
+| ssid-03 | ap-03 | 8 / 8 | -52 / -53 | WPA/WPA2_PSK / 4 |
+| ssid-04 | ap-04 | 2 / 2 | -55 / -54 | WPA/WPA2_PSK / 4 |
+| ssid-05 | ap-05 | 5 / 5 | -63 / -61 | WPA/WPA2_PSK / 4 |
+| ssid-06 | ap-06 | 11 / 11 | -59 / -62 | WPA/WPA2_PSK / 4 |
+| （oracle 列表里第 7 个） | — | 10 / — | -62 / — | WPA2_PSK / 本镜像这一轮没扫到（此前两轮扫到：-62、-63 dBm，authmode 3） |
+
+`wifi_auth_mode_t`：3 = `WPA2_PSK`，4 = `WPA_WPA2_PSK`。oracle 看到的 8 个 AP 里 7 个一致（信道、authmode、SSID 相同，
+RSSI 差 1–3 dB）；第 8 个（-62 dBm）这一轮没扫到，此前两轮扫到过。连续 5 次上板扫描全部完成，每次 32–41 个 AP；
+oracle 自己那一次是 36 个。
+
+边界：
+
+- 这是 blob 边界的板侧证据，不是 `wifi-mlme` / `wifi-connect` 的协议证据：扫描完全由 blob 做，`wifi-connect` 只提供了
+  回调里的 IE 解析与请求方的生命周期。没有抓包，真射频收发已通的证据是与 oracle 的结果一致。
+- 连接、收发未做：`esp_wifi_connect` 还是计数桩；回调表里连接路径的入口还没填。
+- PHY 标定数据不持久化：探针每次启动全量标定。与用对照镜像存在本板的标定数据（PARTIAL）对照过，31 个共同 AP 的
+  authmode / 信道全部相同、RSSI 平均差 0.3 dB，全量只多约 30 ms。

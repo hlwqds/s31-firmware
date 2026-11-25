@@ -7,7 +7,7 @@
 - 状态明细：`SUITE-README.md`、`BRINGUP-2026-11-12.md`
 - 工程约定：`AGENTS.md`、`docs/REPO-STANDARDS.md`
 
-## 现状（2026-11-25）
+## 现状（2026-11-26）
 
 | 能力 | 状态 | 证据 |
 | --- | --- | --- |
@@ -19,7 +19,7 @@
 | BLE + Wi-Fi 共存（设计见 `docs/adr/ADR-003-ble-wifi-coexistence.md`） | 共存 glue 接进两套适配层（`-Dcoex`，默认关），BLE 探针与 Wi-Fi 探针各自带着真核心上板，各带一次不开共存的对照；两棵树同链成合并镜像（`-Dcoex-merged`）并上板：8/8 段通过、两个控制器的 init 都返回 0；irom、drom 窗口各扩到 `0x1C0000`，新上限各有一次实板证明。未做：两个控制器同时工作（L4）、PHY 与时钟归属的寄存器序列、分区表扩大、compiler_rt 死重 | `docs/verification/coex-verification.md` |
 | Wi-Fi 与 BLE 的离线可验证特性（按规范条款） | 五批做完不抓空口能验到的全部项。四个纯逻辑组件主机用例 1381 项（`wifi-mlme` 316、`wifi-connect` 431、`ble-802154` 583、`ble-security` 51），与独立参照实现或按原文手排的 oracle 差分一致。`wifi` profile 板级自检 14/14 个 section、整体判决 pass，但那是**第二批的镜像**（`wifi_mlme` 24、`wifi_connect` 87、`ble_802154` 50、`ble_security` 25）；第三、四批的判据当时没有上板。第五批（经独立评审两轮返修后）于 2026-11-25 随 `wifi` profile 上板（第三、四、五批之后第一次）：**整份 14/14 个 section 全过、`main: verdict=pass`**——`wifi_mlme` 121/121、`wifi_connect` 199/199、`ble_802154` 207/207、`net_ethernet` 11/11；用 `--only` 只编两个无线 section 的最小验证镜像（512704 B，整份的 42%）同样通过。还没做的领域按规范列在下面两张盘点表里 | `docs/verification/wifi-ieee80211-verification.md`、`ble-core-verification.md`；`logs/e2e-wifi-boot.log` |
 | 对真实 BLE controller 的 HCI 一致性自检（不抓空口） | 板上发 26 条只读命令：20 条合规，6 条与 Bluetooth Core 5.4 不一致（2 条声明不支持却回成功、3 条声明支持却回 `0x0C`、1 条声明不支持却回 `0x0C` 而不是 `0x01`）；与 controller 配置的关系未验证 | `logs/hci-conformance-boot.log`；`docs/verification/ble-core-verification.md` §8 |
-| 真实 Wi-Fi blob（`components/wifi-blobs`） | **init 返回 0**；任务体可跑并合作式让出；扫描/连接未做 | `logs/wifi-init-ok-boot.log`、`logs/wifi-task-boot.log` |
+| 真实 Wi-Fi blob（`components/wifi-blobs`） | **init 返回 0**；任务体可跑并合作式让出；**主动扫描上板**（2026-11-26）：约 9.1 s 走完全部信道，取到 38 条真实记录（BSSID、SSID、信道、RSSI、authmode），与同板官方 IDF 同一时段的结果逐 AP 对照一致；连接、收发未做 | `logs/wifi-init-ok-boot.log`、`logs/wifi-task-boot.log`、`logs/wifi-link-scan-boot.log`（邻居的 SSID 与 BSSID 已脱敏） |
 | 选槽/回滚/功耗/性能模型（28A） | 板侧自检通过；计量与 28B 未做 | `logs/ch28-boot.log`、`logs/ch28a-boot.log` |
 | 生产化原型的宿主测试（netmgr/ota/provisioning/recovery） | 通过 | 15/15、8/8、18/18、9/9 |
 | CI / 发布 / 版本标签 | CI 已建立（host、image、e2e 三个 job），主干全绿；发布与标签未做 | GitHub Actions：`0c94442` 三个 job 均 success |
@@ -41,7 +41,7 @@
 - [x] 生产结构：`firmware/` + `boards/` + `components/`（章节目录移除，历史见 `docs/HISTORY.md`）
 - [x] 编译期特性开关：`-Dboot/-Dnet/-Dtls/-Dapps/-Dwifi`，未启用组件不参与编译
 - [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: sections: passed=8 failed=0 total=8`（`net` profile，含 `posix`）、`main: verdict=pass`（`logs/firmware-boot.log`）
-- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（2032 项）**（含 `posix`）
+- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（2045 项）**（含 `posix`）
 - [x] 脚本：`scripts/check-host.sh`、`scripts/check-fmt.sh`、`scripts/build-image.sh`、`tools/capture.py`
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发
 - [x] 覆盖率门禁：`scripts/check-coverage.py`（逻辑模块 100% 可达 + 用例数基线）
@@ -117,7 +117,7 @@
 
 规范口径：Wi-Fi 与 BLE 都**不是 RFC 所定义的**——Wi-Fi 取 **IEEE Std 802.11-2016**（条款号取自该版目录），BLE 取 **Bluetooth Core Specification 5.4**（按卷、部分、节引用）。RFC 只在其上单列：RFC 7668（IPv6 over BLE）、RFC 3394（AES Key Wrap，WPA2 的密钥封装）、RFC 4493（AES-CMAC）、RFC 3610（AES-CCM）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）；第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）；第四批另涉 RFC 8930 与 RFC 8931（6LoWPAN 的分片转发与选择性分片恢复）、RFC 4861 与 RFC 4862（RFC 6775 所依托的邻居发现与地址自动配置）。第五批的 Wi-Fi 与 BLE 三片都不涉新 RFC；BLE 的 IsoHci 一片引了 Bluetooth SIG 的 Assigned Numbers §2.11。
 
-验证分级沿用 `docs/REPO-STANDARDS.md` §4：L1 主机、L2 镜像、L3 板侧自检、L4 真链路（抓空口）。验证某一批改动时用 `tests/e2e/run_e2e.py --board --profile wifi --only <section,…>`（构建期经 `firmware/build.zig` 的 `-Donly` 只编涉及的 section，最小验证镜像约是整份的 42%）；整份 profile 的运行留给发布前门禁。**两个射频目前都没有端到端跑通**（Wi-Fi 的 blob 移植 2026-11-25 起能从 `esp_wifi_start` 返回，见验证报告 §9；BLE 的射频 synth 不锁），所以这张路线图按"不抓空口能验到哪一级"排序：第一、二批 L1 到 L3 的项已于 2026-11-24 做完；第三批与第四批于 2026-11-25 做完，当时只到 L2（对真实 controller 的 HCI 一致性自检结果是不通过；这两批的判据已于同日随第五批的镜像上板、全部通过）；第五批也于 2026-11-25 做完：先验收，再经独立评审两轮（第一轮 Wi-Fi 15 + BLE 7 条、第二轮残留各 6 / 0 条）返修并复验，最后随 `wifi` profile 上板——14/14 个 section 全过、`main: verdict=pass`；L4 抓空口的项等射频打通（厂商栈的最小 station 已在同板连上 AP，见「真实 MAC」行与验证报告 §8）。第四批六项：OWE 的 PMK caching、FT 的 RIC、RM Enabled Capabilities 与 Annex E、WNM 的 TFS 与 Key Data、6LoWPAN-ND 的主机侧行为、分片转发与选择性分片恢复。第五批六项：WNM 的其余子域（BSS Max Idle、TIM Broadcast、FMS、DMS、Collocated Interference、Channel Usage、WNM Notification、Event / Diagnostic 容器、QoS Traffic Capability）、GAS / ANQP、Block Ack 与 A-MSDU 子帧头、PAwR 的三条数据命令与两个事件、Connection Subrating、LE Isochronous 的 HCI 接口面。
+验证分级沿用 `docs/REPO-STANDARDS.md` §4：L1 主机、L2 镜像、L3 板侧自检、L4 真链路（抓空口）。验证某一批改动时用 `tests/e2e/run_e2e.py --board --profile wifi --only <section,…>`（构建期经 `firmware/build.zig` 的 `-Donly` 只编涉及的 section，最小验证镜像约是整份的 42%）；整份 profile 的运行留给发布前门禁。**两个射频目前都没有端到端跑通**（Wi-Fi 的 blob 移植 2026-11-25 起能从 `esp_wifi_start` 返回、2026-11-26 起能扫描到真实 AP，连接与收发未做，见验证报告 §9、§10；BLE 的射频 synth 不锁），所以这张路线图按"不抓空口能验到哪一级"排序：第一、二批 L1 到 L3 的项已于 2026-11-24 做完；第三批与第四批于 2026-11-25 做完，当时只到 L2（对真实 controller 的 HCI 一致性自检结果是不通过；这两批的判据已于同日随第五批的镜像上板、全部通过）；第五批也于 2026-11-25 做完：先验收，再经独立评审两轮（第一轮 Wi-Fi 15 + BLE 7 条、第二轮残留各 6 / 0 条）返修并复验，最后随 `wifi` profile 上板——14/14 个 section 全过、`main: verdict=pass`；L4 抓空口的项等射频打通（厂商栈的最小 station 已在同板连上 AP，见「真实 MAC」行与验证报告 §8）。第四批六项：OWE 的 PMK caching、FT 的 RIC、RM Enabled Capabilities 与 Annex E、WNM 的 TFS 与 Key Data、6LoWPAN-ND 的主机侧行为、分片转发与选择性分片恢复。第五批六项：WNM 的其余子域（BSS Max Idle、TIM Broadcast、FMS、DMS、Collocated Interference、Channel Usage、WNM Notification、Event / Diagnostic 容器、QoS Traffic Capability）、GAS / ANQP、Block Ack 与 A-MSDU 子帧头、PAwR 的三条数据命令与两个事件、Connection Subrating、LE Isochronous 的 HCI 接口面。
 
 证据落在 `docs/verification/`：`coex-verification.md`、`wifi-ieee80211-verification.md`、`ble-core-verification.md`。表里的"状态"只认这些报告里有的证据；第三批各片的用例数、差分与偏离在 `wifi-ieee80211-verification.md` 的 §2、§4.4、§5.4、§6 与 `ble-core-verification.md` 的对应小节，第四批在 §2、§4.5、§5.5、§6 与 `ble-core-verification.md` 的 §4.2、§5.3、§6，第五批在 §2、§4.6、§5.6、§6 与 `ble-core-verification.md` 的 §4.3、§5.4、§6、§7。
 
@@ -162,7 +162,7 @@
 | Block Ack：ADDBA / DELBA 帧编解码、记分板位图语义、接收重排缓冲（第五批） | 9.3.1.8–.9、9.4.1.14–.16、9.4.2.139、9.6.5.2–.4、10.24.1–.2 / .4 / .7.3 / .7.5–.6、11.5.2–.4 | 按条款手排的已知答案；照同一份规范写的 Python 模型对拍（4 × 240 随机 + 256 条确定性边界 = 1216 例，0 不一致）；窗口边界对渲染 PDF 的原文逐格核对 | L3 | 离线验证通过（L1 38 项；板侧 19 条，2026-11-25 上板，`wifi_mlme` 121/121 全过）。只做 Basic 与 Compressed 变体（Extended Compressed / Multi-TID / VHT 1024 位 / Multi-STA / GCR 不做）；`SN = WinStart + 2^11` 的归属经渲染 PDF 更正（10.24.7.3 / .6 的严格小于）。A-MPDU、每帧的确认时序与聚合传输未做。独立评审（2026-11-25）对本片逐条核对、无发现 |
 | A-MSDU 子帧头（第五批，随 Block Ack 一片） | 9.3.2.2 | 逐字段已知答案 | L3 | 部分做了：子帧头编解码已实现（Length 的大端序只有规范依据，内核只有头文件，没有第二实现对拍）；A-MPDU 分隔符、链路上的聚合传输与填充（10.5–10.6、10.13）未做 |
 | GAS / ANQP 与 Interworking（第五批） | 9.6.8.12–.15、9.6.8.1（Table 9-307）、9.4.2.93、9.4.5（ANQP 元素）、11.25.3.2.2–.4、11.25.3.3、9.4.1.9、9.4.1.12、9.4.1.34 | 按条款手排的已知答案；照同一份规范写的 Python 模型对拍（696 例：接受 563 / 拒绝 133，0 不一致） | L3 | 离线验证通过（L1 36 项；板侧 13 条，2026-11-25 上板 121/121 全过）。请求方（STA 侧）Initial 与 Comeback 的分帧、Comeback 状态机与 `dot11GASResponseTimer`；ANQP 元素子集（NAI Realm 等按图 9-606 顺序）与 Emergency Call Number（9.4.5.5，独立评审指出静默缺口后补）。不做：Annex R、RLQP、多 BSSID、响应方 / 服务器侧、Protected Dual of Public Action、ANQP 厂商元素内容、3GPP Cellular Network（原样透传）。Status Code 字段 2 八位组按 9.4.1.9；独立评审的失败路径 / 空列表 / 分方向三处已返修 |
-| 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | 抓空口 | L4 | 官方 IDF 的最小 station 已在同一块板上连上用户提供的 AP（L4，厂商栈）：关联、WPA2-PSK、DHCP、ping 网关 5/5（`logs/wifi-idf-oracle-sta.log`、`tools/wifi-idf-oracle/`、验证报告 §8）；`s31-firmware` 自己的 Zig 移植 2026-11-25 起能从 `esp_wifi_start` 返回（L3，`logs/wifi-probe-start-rc0-boot.log`、验证报告 §9），扫描与连接未做 |
+| 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | 抓空口 | L4 | 官方 IDF 的最小 station 已在同一块板上连上用户提供的 AP（L4，厂商栈）：关联、WPA2-PSK、DHCP、ping 网关 5/5（`logs/wifi-idf-oracle-sta.log`、`tools/wifi-idf-oracle/`、验证报告 §8）；`s31-firmware` 自己的 Zig 移植 2026-11-25 起能从 `esp_wifi_start` 返回（L3，`logs/wifi-probe-start-rc0-boot.log`、验证报告 §9），2026-11-26 起能扫描到真实 AP（真射频收发已通；证据是与同板 oracle 逐 AP 对照，没有抓包：oracle 同一时段看到的 8 个 AP 里 7 个出现在本镜像的结果里、信道 / authmode / SSID 一致，第 8 个那一轮没扫到；`logs/wifi-link-scan-boot.log`、验证报告 §10），连接未做 |
 
 #### 尚未实现的领域（按 IEEE Std 802.11-2016 的目录盘点，2026-11-25）
 
@@ -253,3 +253,46 @@ Vol 3 Part C 的正文、Vol 3 Part E 与 Vol 5）盘上**没有原文**，这�
 Encrypted Advertising Data（5.4 新特性，编解码与参数校验）、Periodic Advertising Sync Transfer（命令 / 事件编解码加
 5.1.13 的时钟漂移公式）、LE 信道分类（37 位信道图的打包与校验）。PAwR 的三条命令与两个事件、Connection Subrating、
 LE Isochronous 的 HCI 接口面已在第五批做完（见上面特性表）。
+
+### RFC 索引（按编号，2026-11-25）
+
+上面两张特性表以 IEEE Std 802.11-2016 与 Bluetooth Core Specification 5.4 为主索引——Wi-Fi 与 BLE 本身不是 RFC 定义的。
+这里把无线组件源码里实际引用的 35 份 RFC 按编号再列一遍，便于按 RFC 查。状态只写上表与验证报告里有证据的；
+「引用」表示只在注释里引用该 RFC 的一条规则，没有独立的实现或用例。
+
+| RFC | 内容 | 在本仓用在哪 | 状态 |
+| --- | --- | --- | --- |
+| RFC 791 | IPv4 | WNM 帧里 IP 版本字段的取值（`wifi-mlme/src/wnm.zig`） | 引用 |
+| RFC 1071 | IP 校验和算法 | ICMPv6 校验和（`ble-802154/src/nd6.zig`） | 随 `nd6` 离线验证通过 |
+| RFC 2104 | HMAC | FT 密钥派生的向量出处（`wifi-connect/src/ft_vectors.zig`） | 随 FT 离线验证通过 |
+| RFC 2409、RFC 3526 | IKE 的 MODP 群参数 | SAE 的 FFC 群（`wifi-connect/src/sae_groups.zig`） | 离线验证通过 |
+| RFC 2460 | IPv6 | WNM 帧里 IP 版本字段的取值（`wifi-mlme/src/wnm.zig`） | 引用 |
+| RFC 2464、RFC 4291 | IPv6 over Ethernet、IPv6 编址架构 | BLE 侧的 IID 与地址（`ble-802154/src/ipsp.zig`、`nd6.zig`、`fifteen4.zig`） | 随 6LoWPAN 离线验证通过 |
+| RFC 2548 | MS 的 RADIUS 属性（MPPE 密钥的封装） | EAP-TLS 的 MSK → PMK（`wifi-connect/src/eap_tls.zig`） | 随 EAP-TLS 离线验证通过 |
+| RFC 3394 | AES Key Wrap | 4 次握手 Key Data 的封装与解封（`wifi-connect/src/keywrap.zig`、`kde.zig`、`suite256.zig`） | 离线验证通过（RFC 3394 §4.1） |
+| RFC 3580 | 802.1X 与 RADIUS 的使用指南（§4 的 Version 字段） | EAP 头校验（`wifi-connect/src/eap.zig`） | 随 EAP 离线验证通过 |
+| RFC 3610 | AES-CCM | 链路层加密（`ble-security/src/linklayer.zig`） | 离线验证通过 |
+| RFC 3748 | EAP | EAP 头、Identity、Nak、分片（`wifi-connect/src/eap.zig`、`eap_tls.zig`） | 离线验证通过 |
+| RFC 4231 | HMAC 的测试向量 | 256 位套件 KDF 的向量出处（`wifi-connect/src/suite256_vectors.zig`） | 随 256 位套件离线验证通过 |
+| RFC 4282 | 网络接入标识（NAI） | ANQP 的 NAI Realm 编码类型（`wifi-mlme/src/gas.zig`） | 随 GAS 离线验证通过 |
+| RFC 4443 | ICMPv6 | 校验和与 RS / RA / NS / NA（`ble-802154/src/nd6.zig`） | 离线验证通过 |
+| RFC 4493 | AES-CMAC | BIP 的向量（`wifi-connect/src/vectors.zig`）；GATT 签名与 Robust Caching（`ble-802154/src/cmac.zig`、`robust_cache.zig`）；SMP 工具箱（`ble-security/src/toolbox.zig`） | 离线验证通过 |
+| RFC 4861、RFC 4862 | 邻居发现、SLAAC | 6LoWPAN-ND 的主机侧行为（`ble-802154/src/nd6.zig`） | 离线验证通过 |
+| RFC 4944 | 6LoWPAN 适配层（dispatch、Mesh 头、分片） | `ble-802154/src/ipsp.zig`、`fifteen4.zig`、`sfr.zig` | 离线验证通过 |
+| RFC 5216 | EAP-TLS | `wifi-connect/src/eap_tls.zig` | 离线验证通过（L1 34 项） |
+| RFC 5869 | HKDF | OWE 与 SAE 的密钥派生（`wifi-connect/src/owe.zig`、`sae.zig`）；BLE 随机源的展开（`ble-security/src/rand.zig`） | 随所在模块 |
+| RFC 5903、RFC 6090 | 椭圆曲线 Diffie-Hellman | OWE 的群 19（`wifi-connect/src/owe.zig`） | 离线验证通过（RFC 的测试向量） |
+| RFC 6070 | PBKDF2 | PSK → PMK 的向量出处（`wifi-connect/src/vectors.zig`） | 离线验证通过（Annex J.3） |
+| RFC 6282 | 6LoWPAN IPHC | `ble-802154/src/ipsp.zig`、`fifteen4.zig`、`nd6.zig` | 离线验证通过 |
+| RFC 6775 | 6LoWPAN-ND | `ble-802154/src/nd6.zig` | 离线验证通过 |
+| RFC 7668 | IPv6 over BLE | `ble-802154/src/ipsp.zig` | 离线验证通过（§3.2.4.1 的示例） |
+| RFC 8025 | IPv6 over IEEE 802.15.4 的更正 | `ble-802154/src/fifteen4.zig` | 随所在模块 |
+| RFC 8110 | OWE | `wifi-connect/src/owe.zig`、`akm.zig` | 离线验证通过；Transition Mode 不在 RFC 8110 里，未做 |
+| RFC 8138 | 6LoWPAN 扩展头的 dispatch（分页） | `ble-802154/src/sfr.zig` | 部分做了：只留 size_delta 注入口 |
+| RFC 8247 | 802.1X / EAP 的 IANA 注册表更新 | SAE 群的 DEPRECATED 标记（`wifi-connect/src/sae_groups.zig`） | 引用 |
+| RFC 8930 | 6LoWPAN 转发分片恢复（VRB） | `ble-802154/src/sfr.zig` | 离线验证通过 |
+| RFC 8931 | 6LoWPAN 选择性分片恢复（RFRAG） | `ble-802154/src/sfr.zig` | 离线验证通过 |
+| RFC 9190 | EAP-TLS 1.3 | 只在注释里提到（`wifi-connect/src/eap_tls.zig`） | 未做 |
+
+不在无线组件里、但上表的实现依赖的 RFC：RFC 8446（TLS 1.3，`net-tls-http`；EAP-TLS 的 TLS 引擎由调用方注入）、
+RFC 2131（DHCP，`net-udp-dhcp-dns`；拿 IP 那一步）。

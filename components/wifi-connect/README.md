@@ -137,6 +137,7 @@ const n = try s.recvEapol(frame, snonce, out);
 | `bip.zig` | 371 | BIP-CMAC-128、BIP-CMAC-256、BIP-GMAC-128、BIP-GMAC-256：AAD、MME 构造/解析、保护、校验、IPN 重放 |
 | `rsne.zig` | 383 | RSNE 解析/编码、12.6.3 的交集选择、表 12-2、本 STA 的 RSNE、9.4.2.25.3 的 AKM 与密码套件配对、表 9-131 的组管理密码选择器 |
 | `supplicant.zig` | 660 | 请求方：4 次握手、组密钥握手、PTKSA/GTKSA/IGTKSA、12.7.10 状态机 |
+| `api.zig` | 6 | 公共入口：别的组件按模块名 `wifi_connect` import（第一个使用者是 `wifi-blobs` 的 supplicant 回调） |
 | `mfp.zig` | 366 | 稳健帧分类（12.2.8、表 9-47）、12.6.19 收发规则、SA Query |
 | `conn.zig` | 322 | 连接状态机、事件队列、重连退避（未改） |
 | `sae.zig` | 379 | SAE 字节级函数（KDF、keyseed / KCK / PMK / PMKID、Confirm 的 CN、帧体常量）、`unimplemented` 表 |
