@@ -1,12 +1,13 @@
 # Wi-Fi 验证报告（IEEE Std 802.11-2016）
 
-- 规范依据：IEEE Std 802.11-2016（条款号取自该版目录与各模块文件头，页码为印刷页码）；其上的 RFC：RFC 3394（AES Key Wrap）、RFC 4493（AES-CMAC）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）、RFC 2104（HMAC）。第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）。
+- 规范依据：IEEE Std 802.11-2016（条款号取自该版目录与各模块文件头，页码为印刷页码）；其上的 RFC：RFC 3394（AES Key Wrap）、RFC 4493（AES-CMAC）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）、RFC 2104（HMAC）。第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）。第四批的 Wi-Fi 侧只涉 RFC 8110 §4.5（OWE 的 PMK caching）。
 - 组件：`components/wifi-mlme`、`components/wifi-connect`。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
 - **真实 AP 与空口没有任何证据**：`esp_wifi_start` 仍卡在 `MAC_ST[15:13]`。下表的"通过"指离线验证通过。
 - 本文把 2026-11-24 加入的 SAE 完整实现、FT 密钥派生层、256 位套件、QoS 与省电称为"第二批"；之前的部分称为"第一批"。
   第二批的板侧自检先在主机上用桩 `board` 模块跑过，随后于同日随 `wifi` profile 上板（§5.2）。
-- 本文把 2026-11-25 加入的 OWE、EAP-TLS、按 AKM 的 4 次握手、SAE 其它群、FT 协议、无线测量（radio measurement）与 WNM 称为"第三批"。第三批新增六个板侧子自检，在主机上的读数与复核见 §5.4，上板结果见 §5.5。
+- 本文把 2026-11-25 加入的 OWE、EAP-TLS、按 AKM 的 4 次握手、SAE 其它群、FT 协议、无线测量（radio measurement）与 WNM 称为"第三批"。第三批新增六个板侧子自检，在主机上的读数与复核见 §5.4；**第三批没有上板**。
+- 本文把 2026-11-25 加入的 OWE PMK caching、FT 的 RIC、RM Enabled Capabilities 与 Annex E、WNM 的 TFS 与 Key Data 称为"第四批"。第四批新增四份板侧子自检，只到 L1 与 L2，**没有上板**；主机上的读数与复核见 §5.5，对拍见 §4.5，偏离见 §6 末尾。
 
 ## 1. 结论
 
@@ -14,20 +15,21 @@
 
 | 项 | 级别 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| `wifi-mlme` 主机测试 | L1 | 146/146（第一批 61，第二批 82） | §3.1 |
-| `wifi-connect` 主机测试 | L1 | 386/386（第一批 57，第二批 141；含 8 条在主机上执行板侧子自检的用例） | §3.2 |
+| `wifi-mlme` 主机测试 | L1 | 200/200（第一批 61，第二批 82，第三批 146） | §3.1 |
+| `wifi-connect` 主机测试 | L1 | 431/431（第一批 57，第二批 141，第三批 386；含 10 条在主机上执行板侧子自检的用例） | §3.2 |
 | 与独立参照实现的差分（第一批） | L1 | 13 组 950 条全部一致 | §4.1 |
 | suite-256 全量差分（第二批） | L1 | 14 组 3568 条向量、3928 项比较，0 不一致 | §4.2 |
 | 与独立参照实现的差分（第三批） | L1 | 七个特性各自对拍，全部 0 不一致 | §4.4 |
-| RV32 目标编译 | L2 | 两个自检都能以固件参数编译（第二批的 24 / 87 条）；第三批之后两个组件的整份自检（37 / 177 条）同样通过 | §5.1、§5.4 |
-| 板侧自检在主机上的运行（桩 `board`） | L1 | `wifi_mlme` 24/24、`wifi_connect` 87/87；第三批之后 37/37、177/177 | §5.1、§5.4 |
+| 与参照实现对拍（第四批） | L1 | 四个特性各自对拍，全部 0 不一致；性质各不相同（独立 oracle 的整帧、策略模型、手排向量、原图手排），分开写在表里 | §4.5 |
+| RV32 目标编译 | L2 | 两个自检都能以固件参数编译（第二批的 24 / 87 条）；第三批之后两个组件的整份自检（37 / 177 条）、第四批之后（58 / 199 条）同样通过 | §5.1、§5.4、§5.5 |
+| 板侧自检在主机上的运行（桩 `board`） | L1 | `wifi_mlme` 24/24、`wifi_connect` 87/87；第三批之后 37/37、177/177；第四批之后 58/58、199/199 | §5.1、§5.4、§5.5 |
 | 板侧自检（第一批上板） | L3 | `wifi_mlme` 16/16、`wifi_connect` 28/28 | `logs/wifi-selftest-prefix-boot.log` |
 | 板侧自检（第二批） | L3 | `wifi_mlme` 24/24、`wifi_connect` 87/87 | `logs/e2e-wifi-boot.log`；§5.2 |
 | 整体判决为 pass 的板级运行 | L3 | 有：14/14 段、`main: verdict=pass`（第一批复验一次、第二批之后一次；后一次覆盖了前一次的同名日志） | `logs/e2e-wifi-boot.log`、`docs/verification/README.md` |
 
 ## 2. 逐特性对照
 
-"主机"一栏是 `zig test src/host_tests.zig` 的用例数（按模块），"板侧"是 `selftest.zig` 的判据数。第一批各行的板侧数字含在当时的 16 / 28 条里；第二批各行的判据含在 24 / 87 条里（主机桩跑与上板都是这两个数），逐特性的板侧划分没有单独统计。第三批各行的板侧一栏是该特性子自检自己的判据数，含在两个组件的 37 / 177 条里。
+"主机"一栏是 `zig test src/host_tests.zig` 的用例数（按模块），"板侧"是 `selftest.zig` 的判据数。第一批各行的板侧数字含在当时的 16 / 28 条里；第二批各行的判据含在 24 / 87 条里（主机桩跑与上板都是这两个数），逐特性的板侧划分没有单独统计。第三批各行的板侧一栏是该特性子自检自己的判据数，含在两个组件的 37 / 177 条里；第四批同理，含在 58 / 199 条里。
 
 | 特性 | 条款 | 实现位置 | 主机 | 向量来源 | 板侧 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -58,37 +60,44 @@
 | FT 协议：MDE / FTE / MIC element 的编解码、over-the-air 与 over-the-DS 的认证序列、reassociation、FTO / 目标 AP / R0KH 三方进程内对拍 | 13.5、13.7、13.8；9.4.2.47–9.4.2.50；9.6.9；9.3.3.8–.12；表 9-46、9-159；12.7.1.7 | `wifi-connect/src/ft_proto.zig` | 64（`ft_proto_tests.zig`） | `ft_proto_oracle.py`（IEEE 没有 FT 协议的样例帧）；`ft_vectors.zig` 的同名条目；RFC 4493 §4 | 12（`ft_proto_selftest.zig`） | 离线验证通过 |
 | 无线测量：Measurement Request / Report 元素、Beacon request / report、Link Measurement、Neighbor Report 的请求与响应、RCPI / RSNI、TPC Report；量测 STA 的接受 / 回绝与由 BSS 表排出 Beacon report；AP 侧的 Neighbor Report 响应 | 11.11.4、11.11.6、11.11.7、11.11.9.1、11.11.10.3、11.11.13；9.4.2.17、.21、.22、.36、.37、.38、.41；9.6.7；9.4.3 | `wifi-mlme/src/rrm.zig` | 32（在 `rrm_wnm_tests.zig` 里） | 按图逐字节手排；hostap `ieee802_11_defs.h` 的结构体布局（`offsetof` / `sizeof`） | 6（`rrm_wnm_selftest.zig`） | 离线验证通过 |
 | WNM：BSS Transition Management 的 Query / Request / Response、STA 侧的决定、AP 侧的请求与 Disassociation Timer；WNM Sleep Mode 的元素与两种帧、STA / AP 两侧的规程 | 11.24.7.1–.4；9.6.14.8–.10；表 9-176、9-357；11.2.3.18；9.4.2.79、9.4.2.82；9.6.14.19–.20；表 9-203、9-204 | `wifi-mlme/src/wnm.zig` | 30（在 `rrm_wnm_tests.zig` 里） | 按图逐字节手排；hostap `ieee802_11_defs.h` 的常量；hostap `wnm_sta.c` | 7（`rrm_wnm_selftest.zig`） | 离线验证通过 |
+| OWE 的 PMK caching：请求里同时带 PMKID 与 DH Parameter element、AP 命中与未命中、client 命中 / 回退 / 忽略、缓存条目与过期 | RFC 8110 §4.5、§4.3；802.11-2016 9.4.2.25（PMKID List）、`dot11RSNAConfigPMKLifetime` 的 DEFVAL | `wifi-connect/src/owe.zig`（`Cache`、`clientCacheDecision`、`apCacheDecision`、`buildAssocRequestWith`） | 25（`owe_cache_tests.zig`） | RFC 原文逐条；缓存管理策略对拍盘上 hostap 的 `rsn_supp/pmksa_cache.c` 与按它写的 Python 模型 | 12（`owe_cache_selftest.zig`） | 离线验证通过；§4.5 没有规定缓存策略，见 §6 |
+| FT 的 RIC：RDE 与 Block Ack 的 RIC Descriptor 编解码、一条 RIC 的结构规则、进重关联帧的条件 | 9.4.2.50、9.4.2.51（图 9-322、图 9-323、表 9-161）；13.11.2、13.11.3.1、13.11.3.2；13.7.1、13.8.5；表 9-30 注 14；图 9-314 | `wifi-connect/src/ft_proto.zig`（第 5b 节） | 18（`ft_ric_tests.zig`） | 按图手排的字节；带 RIC 的完整交换对 `ric_oracle.py`（复用 `ft_proto_oracle.py`）；hostap 的 Element Count（`rsn_supp/wpa_ft.c:340`） | 10（`ft_ric_selftest.zig`） | 离线验证通过；只解析 Block Ack 描述符，见 §6 |
+| RM Enabled Capabilities 元素；Annex E 的 Operating Class 表与查询（类与信道到中心频率） | 9.4.2.45（图 9-311、表 9-157）；11.11.6；11.11.4（表 11-8）；17.3.8.4.2 的式 (17-27)；20.3.1；Annex E 的表 E-1 到 E-5 | `wifi-mlme/src/rrm.zig`（第 13、14 节） | 16（`rrm_caps_tests.zig`） | 按原图与原表手排；`rrm_caps_oracle.py` 的 516 行向量（309 个正例、194 个信道集合外负例、3 个频率负例），内嵌在测试里 | 7（`rrm_caps_selftest.zig`） | 离线验证通过；收录范围见 §6 |
+| TFS：TCLAS 八种分类器、TCLAS Processing、TFS Request / Response / Notify 帧、AP 侧与 STA 侧模型、过滤匹配；WNM Sleep Mode Response 的 Key Data（GTK / IGTK 子元素） | 11.24.12.1–.3；9.4.2.31、9.4.2.33、9.4.2.80、9.4.2.81；9.6.14.15–9.6.14.18、9.6.14.20（图 9-716 到 9-718）；表 9-354、9-358 | `wifi-mlme/src/wnm.zig`（第 10–14 节） | 36（`wnm_tfs_tests.zig`） | 按原图手排；`wnm_tfs_oracle.py`（帧体布局与匹配语义）；hostap 头文件的动作值常量 | 14（`wnm_tfs_selftest.zig`） | 离线验证通过；Key Data 的加密是注入点，见 §6 |
 | 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | — | — | — | — | 阻塞：`MAC_ST[15:13]` |
 
 负面用例（主机）：截断、越界、不一致的输入逐个被拒；MIC 错、重放或重复计数、顺序错、解包失败、RSNE 被改、PN 重放、错 IGTK、SA Query 事务标识不符。第二批追加：口令不同时 Confirm 校验失败并删除 PMK、非法的对端 Commit、回声 Commit、不支持的群、Anti-Clogging token 错、篡改 / 截断 / 标错套件的 256 位帧、KEK 长度不对。
 第三批追加：OWE 的公钥不在曲线上、私钥越界、响应里有 OWE AKM 却没有 DH Parameter element；EAP-TLS 的 Flags 与长度字段不合法、重复的 Request、握手完成前收到的 EAP-Success；按 AKM 的握手里 PMK 长度不符、AKM 与密码套件不能合用、消息 1 的 PMKID 不符；SAE 其它群里的非法对端 Commit 与状态码 77 的群协商；FT 协议里 MIC 不对、重放、移动域 / R0KH-ID / ANonce / SNonce 不符、截止时间已过；无线测量与 WNM 里的保留值、Request mode 与可选字段对不上、Query / Response 里 Preference 为 0。每条都断言拒绝的理由是正确的那一个（状态码、丢弃原因或错误名）。
+第四批追加：OWE PMK caching 里响应没有 PMKID 或不一致、请求没带 PMKID 时响应里的 PMKID、缓存里已没有条目却收到匹配的 PMKID、响应里有两个 PMKID、PMKID 非空而策略的 MFPC 为假；RIC 里 RDE 的 Length 不是 4、保留的 Resource Type、RIC 以非 RDE 开头、Block Ack 描述符个数与计数不符、响应与请求不一一对应、AP 在请求带了 RIC-Request 时没给 RIC-Response、没请求却给了；RM Enabled Capabilities 的保留位在构造时被拒、不支持的类与信道集合外的信道；TFS 里保留的子元素 ID 与分类器类型、长度不符、多个 TCLAS 缺 TCLAS Processing、AP 的部分拒绝、Key Data 的顺序。
 
 ## 3. 主机测试
 
 ### 3.1 `wifi-mlme`
 
 ```sh
-cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 146 tests passed.
+cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 200 tests passed.
 ```
 
-模块分布（2026-11-25）：`host_tests.zig` 64（自身 61：`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6；
-另有引 `qos_tests.zig`、`powersave_tests.zig`、`rrm_wnm_tests.zig` 的 3 个 wrapper `test` 块）
-+ `qos_tests.zig` 10 + `powersave_tests.zig` 9 + `rrm_wnm_tests.zig` 63 = 146。`rrm_wnm_tests.zig` 的 63 条里有一条在主机上执行
-`rrm_wnm_selftest.run`（13 条判据），断言零失败且最长一行不超过 200 字节。`zig fmt --check src/` 干净。
+模块分布（2026-11-25，第四批之后）：`host_tests.zig` 66（自身 61：`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6；
+另有引 `qos_tests.zig`、`powersave_tests.zig`、`rrm_wnm_tests.zig`、`rrm_caps_tests.zig`、`wnm_tfs_tests.zig` 的 5 个 wrapper `test` 块）
++ `qos_tests.zig` 10 + `powersave_tests.zig` 9 + `rrm_wnm_tests.zig` 63 + `rrm_caps_tests.zig` 16 + `wnm_tfs_tests.zig` 36 = 200。
+后三个测试文件各有一条在主机上执行对应的子自检（`rrm_wnm_selftest.run` 13 条判据、`rrm_caps_selftest.run` 7 条、
+`wnm_tfs_selftest.run` 14 条），断言零失败且最长一行不超过 200 字节。`zig fmt --check src/` 干净。
 
 ### 3.2 `wifi-connect`
 
 ```sh
-cd components/wifi-connect && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 386 tests passed.
+cd components/wifi-connect && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 431 tests passed.
 ```
 
-模块分布（2026-11-25）：`host_tests.zig` 68（自身 57；引第二批三个测试文件的 3 个 wrapper `test` 块；引第三批五个测试文件的
-5 个 wrapper `test` 块；另有 3 条在主机上执行板侧子自检的用例）+ `sae_full_tests.zig` 31 + `ft_tests.zig` 24 + `suite256_tests.zig` 23
-+ `owe_tests.zig` 30 + `eap_tests.zig` 34 + `supp_akm_tests.zig` 45 + `sae_groups_tests.zig` 67 + `ft_proto_tests.zig` 64 = 386。
+模块分布（2026-11-25，第四批之后）：`host_tests.zig` 70（自身 57；引第二批三个测试文件的 3 个、第三批五个测试文件的 5 个、
+第四批两个测试文件的 2 个 wrapper `test` 块；另有 3 条在主机上执行板侧子自检的用例）+ `sae_full_tests.zig` 31 + `ft_tests.zig` 24
++ `suite256_tests.zig` 23 + `owe_tests.zig` 30 + `eap_tests.zig` 34 + `supp_akm_tests.zig` 45 + `sae_groups_tests.zig` 67
++ `ft_proto_tests.zig` 64 + `owe_cache_tests.zig` 25 + `ft_ric_tests.zig` 18 = 431。
 第二批的三条子自检用例分别跑 `sae_full_selftest.run`（24 条判据）、`suite256_selftest.run`（22 条）、`ft_selftest.run`（13 条）；
 第三批的五个测试文件各带一条，跑 `owe_selftest.run`（18 条）、`eap_selftest.run`（8 条）、`supp_akm_selftest.run`（19 条）、
-`sae_groups_selftest.run`（33 条）、`ft_proto_selftest.run`（12 条）。八条都断言零失败且最长一行不超过 `board.log` 的 200 字节上限。
-`zig fmt --check src/` 干净。
+`sae_groups_selftest.run`（33 条）、`ft_proto_selftest.run`（12 条）；第四批的两个测试文件各带一条，跑 `owe_cache_selftest.run`
+（12 条）、`ft_ric_selftest.run`（10 条）。十条都断言零失败且最长一行不超过 `board.log` 的 200 字节上限。`zig fmt --check src/` 干净。
 
 原有 20 项里 18 项原样保留。另 2 项（`four-way happy path reaches done`、`four-way rejects wrong order, stale replay and bad key info`）测的是一个只管顺序的替身 `wpa2.FourWay`，已删除，由用真实帧的四篇请求方测试取代。随之变化的行为：替身要求消息 3 的计数恰好等于上一条加一，而 12.7.6.4 只要求"没用过"，所以"计数跳号即拒绝"不再成立。
 
@@ -181,6 +190,19 @@ cd /tmp/s31-oracle/s256diff && env -u LD_LIBRARY_PATH zig test diff.zig
 
 WNM 这一组是集成时补的。交付时的脚本（`rrm_wnm_oracle.py`）只对拍了不带候选表的 BTM Response 一种帧，归在上面那组的 14000 帧里；
 其余八种帧体没有对拍。补的过程中找到 `wnm.parseSleepResponse` 的一个缺陷（§5.4）。
+
+### 4.5 第四批的对拍
+
+四个特性各有对拍，性质不相同，下表分开写。数字是 2026-11-25 主代理在终态代码上重跑得到的（§5.5）。参照实现都在 `/tmp/s31-oracle/`，一次性驱动不入库。
+
+| 特性 | 参照实现 | 规模 | 结果 | 性质 |
+| --- | --- | --- | --- | --- |
+| FT 的 RIC | `/tmp/s31-oracle/ft_ric/ric_oracle.py`（复用 `ft_proto_oracle.py`；RIC 按图 9-322、图 9-323、表 9-161 手排） | AKM 4、CCMP-128、一条 Resource Request（RDE + 一个 Block Ack 描述符）；over-the-air 与 over-the-DS 各一条完整交换的六个帧（前两个消息两种走法、消息 3、消息 4） | 重跑 rc=0；`kck`、`mic3`、`mic4`、六个帧、两段 RIC 共 12 个字段与 `expected.json` 一致，全部内嵌在 `ft_ric_tests.zig` 里 | 独立 oracle 的整帧字节 |
+| OWE 的 PMK caching | `/tmp/s31-oracle/owe_cache/cache_oracle.py` | seed 20261125 与 77 各 400 次操作 | 每个 seed `compare: cases=400 mismatches=0`；驱动二进制（10:35）晚于 `owe.zig` 的最后一次修改（10:34） | **策略模型对拍**：Python 模型照 `owe.zig` 文件头的策略写、与 hostap `rsn_supp/pmksa_cache.c` 交叉阅读，不是规范向量。PMK / PMKID 的派生沿用第三批 `owe_oracle.py` 的差分（§4.4） |
+| RM Enabled Capabilities 与 Annex E | `/tmp/s31-oracle/rrm_caps/rrm_caps_oracle.py`（按原图与原表手排） | 自检 8 个手排中心频率 + 8 个信道集合；向量 309 个正例（每类的首、中、尾信道）+ 194 个信道集合外负例 + 3 个频率负例，共 516 行；3 个能力字节向量 | 重跑 rc=0、自检通过；重新生成的 516 行向量与交付时逐字节相同，全部内嵌在 `rrm_caps_tests.zig` 的 `oracle` 命名空间里 | 规范图表的手排向量 |
+| TFS 与 Key Data | `/tmp/s31-oracle/wnm_tfs/wnm_tfs_oracle.py`（帧体按规范原图排，匹配语义按表 9-144 到 9-149） | seed 20261125 / 20261126 / 777 各 310 例；放大一组 930 例（420 例是规则对帧的匹配，其余是 TCLAS 135、Key Data 90、TFS 子元素 60、TFS Request / Response 元素各 45、帧体三种各 30、构造 Sleep Mode Response 45） | 每个 seed `compare: cases=310 mismatches=0`；930 例的一组 `compare: cases=930 mismatches=0`；oracle 自检 12 项 0 失败；harness（11:17）晚于 `wnm.zig`（10:58） | 规范原图的手排对拍。IDF 里的 hostap 把 TFS 与 WNM Sleep 的 GTK / IGTK 处理裁掉了（`common/wnm_sta.c` 无命中），没有独立实现 |
+
+这一批四组都不是规范给出的向量：IEEE 没有 RIC 与 Annex E 的样例数值，RFC 8110 §4.5 没有规定缓存管理，TFS 没有独立实现可对拍。
 
 ## 5. 主代理独立复核
 
@@ -310,6 +332,37 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
      `owe_selftest` 2.20 亿条、2.8 秒，每条判据差不多是一次 P-256 点乘，一次约 2070 万条指令、0.26 秒；
      第二批的 `sae_full_selftest.checkFsm` 5.10 亿条、6.4 秒。数字与读法见 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
+### 5.5 主代理对第四批的独立复核（2026-11-25）
+
+- **逐片验收**：四片各跑 `sh /tmp/r5c/accept.sh wifi-<组件> <特性>`，再自己重跑它引用的现有测试根。读数：
+
+| 片 | 主机测试 | 子自检在主机上（最长一行） | 目标编译 | 现有测试根的回归 |
+| --- | --- | --- | --- | --- |
+| `owe_cache` | 25/25 | 12/0（128 字节） | rc=0 | `owe_tests.zig` 30/30，`owe_selftest` 18/0 |
+| `ft_ric` | 18/18 | 10/0（62 字节） | rc=0 | `ft_proto_tests.zig` 64/64，`ft_proto_selftest` 12/0 |
+| `rrm_caps` | 16/16 | 7/0（96 字节） | rc=0 | `rrm_wnm_tests.zig` 63/63，`rrm_wnm_selftest` 13/0（两片都交回后在终态代码上跑） |
+| `wnm_tfs` | 36/36 | 14/0（102 字节） | rc=0 | 同上 |
+
+- **整份自检在桩 `board` 模块上运行**（命令同 §5.1）：`wifi_mlme` `checks: passed=58 failed=0 total=58`（最长一行 154 字节）、
+  `wifi_connect` `checks: passed=199 failed=0 total=199`（140 字节）。总数不等于各子自检之和：`wifi-connect` 的驱动 `selftest.zig` 自己有 28 条判据。
+- **整份自检以固件参数交叉编译**（带守卫的根文件）：两个组件都退出 0。这一批补了负对照：把目标参数放到最后一个 `-M` 之后，
+  守卫报 `guard: root module is not riscv32 (got x86_64)` 并非零退出。`-fno-emit-bin` 只做语义分析，一两秒返回属正常。
+- **对拍在终态代码上重跑**，数字见 §4.5。
+- **条款锚点逐条打开原文核对**（`/tmp/spec/802.11-2016.txt` 的正文行号）：9.4.2.50 在 51186、图 9-322 在 51205–51207、9.4.2.51 在 51222、
+  表 9-161 在 51236–51243、13.11.2 在 110140、13.11.3.1 在 110255、13.11.3.2 在 110302、13.7.1 在 109071、13.8.5 在 109309；
+  9.4.2.45 在 50785、11.11.6 在 89387、11.11.4 在 89300、`dot11RSNAConfigPMKLifetime` 在 150617–150634；9.4.2.80 在 54412、
+  图 9-418 在 54427–54432、9.4.2.81 在 54497、9.6.14.15–.18 在 65456 起、9.6.14.20 在 65538、表 9-354 在 64990、11.24.12 在 94067。
+  切片笔记里的行号有偏 15–20 行的，报告用核过的数。
+- **顺手改的已有函数**：`rrm.maxMeasurementDurationTu` 对 MIB 1–3 原先做 `u32` 减法下溢、返回 `maxInt(u32)`。11.11.4 的公式是
+  2^(MIB−4) × BeaconInterval，MIB 取 0–7，这几个值是亚 Beacon Interval 的分数时长。现改为向下取整的 TU 数，MIB 为 0 与 ≥4 的结果不变，
+  有用例。另：Beacon request 的 Operating Class / Channel 校验接进了 `rrm.decide()`（9.4.2.21.7）。
+- **尺寸与指令数**（riscv32 ReleaseSmall）：`ft_ric_selftest` text 2802 B、26181 条 rv32 指令；`owe_cache_selftest` text 12331 B、104108 条；
+  `rrm_caps_selftest` text 12983 B、25348 条；`wnm_tfs_selftest` text 24123 B、182300 条。text 用 `zig build-obj` 量（链接级
+  `build-exe -fno-entry` 在没人调用 `run()` 时会把内容全部回收，只剩几十字节，不能用）；指令数在 QEMU 上数。
+- **镜像与门禁**：`scripts/check-all.sh` 全绿；主机测试 1818；`wifi` 镜像 1063200 → 1157568 字节，函数代码多 63960 字节，
+  其中第四批 Wi-Fi 四片 32128 字节、BLE 两片 31274 字节、其余零星几百字节。容量基线已更新。
+- **没有上板**：串口 `/dev/ttyUSB0` 属 `root:dialout`，当前账号没有权限。板上跑的仍是第二批的镜像。
+
 ## 6. 实现偏离
 
 第一批：
@@ -358,8 +411,9 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
 
 第三批：
 
-- **OWE（RFC 8110）的范围**：只做 group 19（§4.3 规定必须支持的那一个）和 SHA-256 档；§4.5 的 PMK caching、OWE Transition Mode、
-  认证 / 关联状态机的接线都没做。DH Parameter element 按 RFC 8110 §4.3 的图 1 实现（Element ID 255、Element ID Extension 32；
+- **OWE（RFC 8110）的范围**：只做 group 19（§4.3 规定必须支持的那一个）和 SHA-256 档。第三批交付时 §4.5 的 PMK caching、
+  OWE Transition Mode、认证 / 关联状态机的接线都没做；PMK caching 已在第四批实现（取舍见本节末尾），后两样仍未做。
+  DH Parameter element 按 RFC 8110 §4.3 的图 1 实现（Element ID 255、Element ID Extension 32；
   802.11-2016 的表 9-77 把扩展号 12–255 列为保留），公钥在线上只传 x 坐标（32 个八位组），传 64 个八位组的被拒。
   除 77（群不支持）以外的关联失败回状态码 1：RFC 8110 只规定了 77，1 与盘上 hostap 的 AP 侧代码一致（`ap/ieee802_11.c:856–859`）。
   x = 0 当作合法公钥（P-256 上 (0, ±√b) 满足曲线方程，RFC 6090 §3.3 的判据只有这一条）。
@@ -407,7 +461,7 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
   - 13.5.2 的 over-the-air 段只列 AKM 3、4，13.5.3、表 9-31 的注 13、13.8.4 / .5 列的是 3、4、9。本实现两种走法都接受 9
     （与 13.5.2 的字面不同）。
   - FTE 子元素的顺序原文没有给，按图里出现的顺序写（R1KH-ID、R0KH-ID、GTK、IGTK）；同类元素或子元素出现两次即解析失败。
-  - RIC（13.11）不做：RIC-Request / RIC-Response 只按字节进 MIC、按元素个数进 Element Count。
+  - RIC（13.11）：第三批只把 RIC-Request / RIC-Response 当作不透明的字节进 MIC、按元素个数进 Element Count；第四批起解析 RDE 与 Block Ack 的 RIC Descriptor（取舍见本节末尾）。
   - R0KH 与 R1KH 之间的协议（13.10）、资源请求协议（事务序号 3、4）没做；对拍里的 R0KH 是进程内替身（`R0kh.pull`）。
   - 目标 AP 对重关联请求先验 MIC 再查内容（13.7.1）：MDE 不对回 54、FTE 的字段不对回 55、RSNE 的 PMKID 不对回 53；
     帧体不是该步该有的样子时丢弃。截止时间：目标 AP 从收到第一个消息起算，FTO 从第二个消息核对通过起算。
@@ -418,18 +472,60 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
   - Beacon request 是 Passive / Active 而 Measurement Duration = 0：11.11.4 只规定发送方不得置 0，没规定接收端怎么办；
     本实现按 Refused 回绝。
   - 没有可报的 BSS 时发空的 Beacon report（11.11.9.1 允许 refuse 或 empty，取 empty）。
-  - Extended Request 子元素（ID 11）、Reporting Condition 5–10 的参考电平、RM Enabled Capabilities 元素、
-    Operating Class ↔ 信道的 Annex E 映射都不做。量测本身（离信道、定时、随机退避）由调用方做。
+  - Extended Request 子元素（ID 11）与 Reporting Condition 5–10 的参考电平不做；RM Enabled Capabilities 元素与 Annex E 的映射
+    第四批已做（收录范围见本节末尾）。量测本身（离信道、定时、随机退避）由调用方做。
 - **WNM 的取舍**（`wnm.zig` 文件头同文）：
   - 候选表里有候选、但本端 BSS 表里一个都没见过时回 2（Table 9-357 的字面含义；11.24.7.4 规定 AP 收到 2 后应留出扫描时间）；
     hostap 同一情形回 7（`common/wnm_sta.c:710–713`）。
   - BTM Status 3 需要 BSS Available Admission Capacity / BSS Load，本端 BSS 表不存，判决模型不会产出 3。
-  - TFS（11.24.12）不实现：WNM Sleep Mode 帧里的 TFS 元素原样透传。9.6.14.19 正文写 TFS Request Elements
+  - TFS（11.24.12）在第三批不实现、原样透传，第四批起实现（取舍见本节末尾）。9.6.14.19 正文写 TFS Request Elements
     "contains one or more"，图 9-715 标的是 variable，本实现接受为空。
-  - Key Data（GTK / IGTK 的封装）不实现：只保留长度字段与「该走 Key Data 还是组密钥握手」的判定。
+  - Key Data：第三批只保留长度字段与「该走 Key Data 还是组密钥握手」的判定；第四批起实现 GTK / IGTK 子元素的布局，加密是注入点（见本节末尾）。
   - 「2016 无明文、依据盘上 hostap」的两条：候选表条目没有 Preference 子元素时不算 excluded（2016 只说 Preference 为 0 即
     excluded；hostap `common/wnm_sta.c:337` 是 `preference_present && preference == 0` 才排除）；Accept 时 Target BSSID 总是
     6 个八位组，不知道目标时写 6 个 0（`common/wnm_sta.c:610–617` 引 P802.11-REVmc 的澄清）。
+
+第四批（`owe.zig`、`ft_proto.zig`、`rrm.zig`、`wnm.zig` 的文件头同文）：
+
+- **OWE 的 PMK caching（RFC 8110 §4.5）**：§4.5 只规定了线上的行为（client 的请求里必须同时带 PMKID 与 DH Parameter element；
+  AP 命中时回同一个 PMKID、不带 DH Parameter element，未命中时忽略 PMKID、照常走 OWE；client 在命中、不匹配、请求没带 PMKID
+  三种情形下的处理），**没有规定缓存的有效期、替换与挤兑**。实现的做法：
+  - 缓存管理取自盘上 hostap 的 `rsn_supp/pmksa_cache.c`：同 PMKID 同 PMK 再次加入时复用旧条目、不刷新时间（186–194）；
+    满了移除最早过期的条目（223–245、247–263，链表按过期时间升序）；过期判据是 `expiration < now`。期限常量取 802.11-2016 的
+    `dot11RSNAConfigPMKLifetime`（DEFVAL 43200 秒），实际有效期由调用方注入。
+  - 与 hostap 的两处不同：按 PMKID 索引（hostap 按认证者地址）；没有「使用中的 `cur_pmksa` 不挤掉」的概念。
+  - RFC 没写、实现自己定的：`PmkNotCached`（client 发出了自己缓存里的 PMKID、AP 回了匹配的 PMKID，而 client 的缓存里已经没有这条）当作失败；
+    `offerPmkid` 取最新的有效条目；`buildAssocRequestWith` 在 PMKID 非空而策略的 MFPC 为假时拒绝（`PmkidNeedsMfpc`），
+    因为本组件的 RSNE 写法只在 MFPC 时写 Capabilities 与 PMKID 字段。
+  - 照 hostap 而不是 RFC 的字面：AP 在命中时不要求请求里带 DH Parameter element（RFC 只用 MUST 约束 client 要同时带），
+    并扫完请求里的整个 PMKID 列表；响应里有两个 PMKID 不算命中（`rsn_supp/wpa.c:3386–3389`）。
+  - 缓存的入队（client 在 4 次握手完成后、AP 在派生新 PMK 成功后）由调用方做，`owe.zig` 只提供 `Cache.add`。
+  - OWE Transition Mode 不在 RFC 8110 里（全文没有 "transition" 一词），它出自 Wi-Fi 联盟的 OWE 规范，盘上没有原文，未实现。
+- **FT 的 RIC（13.11、9.4.2.50、9.4.2.51）**：
+  - 只解析 Block Ack 一种描述符（表 13-3 的 Block Ack Parameters 行）；QoS（TSPEC / TCLAS）与 Vendor Specific 的描述符当不透明字节透传。
+  - AP 的准入决策（13.11.3.2、图 13-29 的偏好顺序遍历）没有建模：`Ap.onThird` 只核对 MIC，并要求「请求带了 RIC-Request 就必须给
+    RIC-Response、没带就不能给」（13.8.5），RIC-Response 的内容由调用方给。
+  - `checkRicRequest`、`checkRicRequestBlockAck`、`checkRicResponse` 是给调用方选用的校验函数，两个角色的状态机对 RIC 的内容不做自动校验。
+  - 9.4.2.50 说请求里 RDE 的 Status Code 字段是保留的（接收方忽略），13.11.3.1 说发送方置 SUCCESS（原文行 51220–51221 与 110265–110266）。
+    `checkRicRequest` 按 13.11.3.1 把非零拒掉，但它只用在 FTO 一侧；AP 不用它去拒收请求。
+  - 一条 RIC 里最多 16 个 RDE（`max_ric_entries`，实现常量）。
+- **RM Enabled Capabilities 与 Annex E（9.4.2.45、11.11.6、Annex E）**：
+  - 表 9-157 的保留位（36–39）解析时原样保留（往返不变），构造时非 0 拒绝。
+  - Annex E 收录 106 行：全球 41（81–87、94–96、101–130、180）、美国 21、欧洲 15、日本 17、中国 12。有意不收录、一律
+    `UnsupportedOperatingClass`：ITS 5.9 GHz（表 E-1 的 16–18、表 E-2 的 13a–16）、美国 4.9 GHz 公共安全（表 E-1 的 6–11）、
+    日本已废弃的行与 4.9 GHz、DMG 地区类。
+  - 与 hostap 的版本差：`common/ieee802_11_common.c` 的 124–127 类含 165–177（后续修订的信道），802.11-2016 原文只到 161 / 169 / 157 / 161
+    （原文行 179019–179044），实现按原文。
+  - 中心频率有两个公式：6 GHz 以下按 17.3.8.4.2 的式 (17-27)（起始频率 + 5 MHz × 信道号；信道间隔 25 MHz 与 40 MHz 的类也按 5 MHz 光栅算主信道）；
+    DMG 的 180 类按 20.3.1（起始频率 + 信道间隔 × 信道号，56.16 GHz + 2160 MHz × n）。85–87 类没有起始频率（`StartFrequencyUndefined`）。
+- **TFS 与 Key Data（11.24.12、9.6.14.15–.20）**：
+  - AP 侧 `TfsApSta.onRequest` 有意宽松：元素头截断时给该元素回 Status 1 后停止，因为 AP 必须逐元素回应；STA 侧的解析严格。
+  - AP「全部接受才提交」，部分拒绝时保留旧规则（11.24.12.2）。
+  - 分类器参数一律按大端：类型 1 / 4 / 5 的原文有明说，类型 3（Filter Offset）的 Offset 原文没有明说，按同一约定处理。
+  - Key Data 的加密是注入点 `KeyDataCodec`：本组件实现 GTK / IGTK 子元素的布局（图 9-717、图 9-718）、9.4.3 的顺序校验与
+    「带不带 Key Data」的分支，测试只用逐字节异或的测试替身。9.6.14.20 的注 2（原文行 65621–65622）说 GTK / IGTK 更新靠管理帧保护
+    来保密；真实的密钥封装与帧保护接线由调用方提供，本组件没有验证。
+  - IDF 里的 hostap 把 TFS 与 WNM Sleep 的 GTK / IGTK 处理裁掉了，这一片没有独立实现可对拍。
 
 ## 7. 未验证
 
@@ -446,3 +542,7 @@ harness 构建 `wifi` profile、经 `tools/flash.sh` 烧录（读回校验）、
   （其余八个群只验群的参数）：当时依据的是主机 ReleaseFast 耗时（19–36 ms，对 `sae_full_selftest.zig` 的 12 ms；
   收窄后 2.4 ms），之后按 QEMU 的精确指令数量，收窄后是 3.74 亿条、板上约 4.7 秒（§5.4）；收窄之前的指令数没有量。
   实际内联后的栈只按序言静态估算过（§5.4）。板上的耗时与栈都没有量过。
+- 第四批只有主机测试、与参照实现的对拍和板侧自检在主机上的运行，没有上板；真实 AP 上的 OWE PMK caching、带 RIC 的重关联、TFS、
+  RM Enabled Capabilities 的协商都没有证据。
+- OWE PMK caching 的缓存管理策略没有规范依据，取自 hostap 的源码；`KeyDataCodec` 的真实实现（密钥封装与管理帧保护）不在本仓库，没有验证。
+- TFS 与 Key Data 没有独立实现对拍；RIC 的 AP 准入决策、QoS 描述符与 13.6 的资源请求协议没有做。

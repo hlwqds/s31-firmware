@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Fixed
+- **`rrm.maxMeasurementDurationTu` 对 MIB 1–3 下溢（2026-11-25，第四批复核时发现）**：11.11.4 的最大量测时长是
+  2^(dot11RMMaxMeasurementDuration − 4) × BeaconInterval，MIB 取 0–7。旧代码做 `u32` 减法，MIB 为 1–3 时下溢，函数返回 `maxInt(u32)`
+  （等于不限）。现对这三个值取向下取整的 TU 数；MIB 为 0 与 ≥4 的结果不变。有用例。
 - **板侧自检「以固件参数交叉编译」的假绿（2026-11-24）**：本轮复核时用来单独编译自检的 `zig build-obj` 命令把
   `-target … -mcpu … -OReleaseSmall` 放在最后一个 `-M` 之后。Zig 0.17.1 的命令行里这类参数作用于其后声明的模块，
   写在最后没有任何模块用到：根、自检、`board` 三个模块全是本机 x86_64，命令退出 0 却什么都没证明（产物 `ELF64 … X86-64`）。
@@ -69,6 +72,35 @@
   `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ### Added
+- **无线离线特性第四批（2026-11-25）**：与前几批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
+  与参照实现或按原文手排的 oracle 的对拍、板侧自检在主机上的运行。**这一批没有上板**（串口 `/dev/ttyUSB0` 当前账号没有权限，见下面「板级」）。
+  `tests/baselines.json` 合计 1648 → 1818（`wifi-connect` 386 → 431、`wifi-mlme` 146 → 200、`ble-802154` 414 → 485）。
+  - `components/wifi-connect`（板侧自检 177 → 199 条）：
+    - RFC 8110 §4.5 的 OWE PMK caching：请求里同时带 PMKID 与 DH Parameter element、AP 命中与未命中、client 命中 / 回退 / 忽略、
+      缓存条目与过期（`owe.zig` 的 `Cache`、`clientCacheDecision` / `apCacheDecision`、`buildAssocRequestWith`）。§4.5 没有规定缓存的有效期
+      与替换策略，取自盘上 hostap 的 `rsn_supp/pmksa_cache.c`。OWE Transition Mode 不在 RFC 8110 里，未实现。
+    - FT 快速切换里的 RIC：RDE 与 Block Ack 的 RIC Descriptor 编解码、一条 RIC 的结构规则、进重关联帧的条件（`ft_proto.zig` 第 5b 节）。
+      只解析 Block Ack 描述符；AP 的准入决策没有建模。
+  - `components/wifi-mlme`（板侧自检 37 → 58 条）：
+    - RM Enabled Capabilities 元素（9.4.2.45）与 Annex E 的 Operating Class 表和查询（`rrm.zig` 第 13、14 节）；Beacon request 的
+      Operating Class / Channel 校验接进判决。
+    - WNM 的 TFS（11.24.12：TCLAS、TFS 的四种帧、AP 侧与 STA 侧模型、过滤匹配）与 WNM Sleep Mode Response 的 Key Data 布局
+      （`wnm.zig` 第 10–14 节）。Key Data 的加密是注入点，测试只用测试替身。
+  - `components/ble-802154`（板侧自检 106 → 152 条）：
+    - 6LoWPAN-ND 的主机侧行为（RFC 6775：ARO / 6CO / ABRO 编解码、RA / NS / NA 的校验、上下文表、地址注册与续期、睡眠、下一跳判定，`nd6.zig`）。
+    - 分片转发（RFC 8930 的 6LFF / VRB）与选择性分片恢复（RFC 8931 的 RFRAG / RFRAG-ACK 与三个状态机，`sfr.zig`）。
+  - 对拍（主代理在终态代码上重跑，逐项数字见两份验证报告的 §4.5 与 §4.2）：FT RIC 的完整交换六帧对独立 oracle；OWE PMK caching 的缓存策略
+    对 Python 模型 800 组；RM Enabled Capabilities 与 Annex E 的 516 行手排向量逐字节相同；TFS 与 Key Data 三个种子各 310 例、一组 930 例；
+    `nd6` 的报文解析对独立手写的 Python 解析器 11500 例；`sfr` 的头部编解码 1216 组。全部 0 不一致。
+    两片 BLE 的驱动二进制在交付时比被测源码旧，是主代理重编后重跑的；`nd6` 第一版差分的被接受例几乎不带选项，重写生成器后才有上表的结果。
+  - 集成：主机用例 1818；整份板侧自检在主机上 `wifi_mlme` 58/58、`wifi_connect` 199/199、`ble_802154` 152/152；`scripts/check-all.sh` 全绿。
+    板侧指令数在 QEMU 上量：六份新子自检合计 566360 条（`wifi` profile 的 0.03%），最深调用链仍是 23248 字节（`wifi-mlme` 驱动下 11248 → 12176）。
+    镜像：`wifi` 1063200 → 1157568 字节、`full` 1182480 → 1255168 字节，`capacity.json` 基线已重写；factory 分区余量 378432 与 280832 字节。
+  - 路线图：新增按规范条文的盘点——IEEE Std 802.11-2016 与 Bluetooth Core Specification 5.4 里还没实现的 host 侧领域，带原文锚点与离线可验证范围
+    （`ROADMAP.md`「尚未实现的领域」）。OWE Transition Mode 的出处更正为 Wi-Fi 联盟的 OWE 规范，不在 RFC 8110 里。
+  - **板级：这一批没有做。** `wifi` profile 上板之前，`wifi_connect`、`wifi_mlme`、`ble_802154` 三个 section 在板上的读数仍然是
+    第二批的 87、24、50；第三、四批之后应当是 199、58、152。
+  - 报告：`docs/verification/wifi-ieee80211-verification.md` §4.5、§5.5、§6，`ble-core-verification.md` §4.2、§5.3、§6。
 - **无线离线特性第三批（2026-11-25）**：与前两批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
   与独立参照实现的差分、板侧自检在主机上的运行。**这一批没有上板**（见下面「板级」）。
   `tests/baselines.json` 合计 1047 → 1648（`wifi-connect` 141 → 386、`wifi-mlme` 82 → 146、`ble-802154` 122 → 414）。

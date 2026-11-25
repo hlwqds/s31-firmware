@@ -15,8 +15,12 @@
 //!         公钥。公钥的编码：group 19 的曲线由 [RFC 6090] 定义，所以用紧凑表示（RFC 6090
 //!         §4.2）——只传 x 坐标，32 个八位组，大端（RFC 6090 §6.2）。
 //!         「a compliant implementation MUST support group nineteen」；AP 不支持请求里的群时
-//!         回 status code 77。收到的公钥要校验，无效则关联失败。没做 PMK caching 时，client
-//!         收到「指示了 OWE AKM 却没有 DH Parameter element」的 Association Response 必须丢弃。
+//!         回 status code 77（印刷页 8，394–400 行：client 收到 77 后 SHOULD 换一个支持的群
+//!         重试，MAY 再用导致失败的群试一次，放弃时 SHOULD 记日志并提示用户——本组件只有
+//!         group 19，所以「换一个群」无群可换，`nextGroupToTry` 返回 null）。收到的公钥要校验，
+//!         无效则关联失败。「PMK caching is not being performed」时 client 收到「指示了 OWE AKM
+//!         却没有 DH Parameter element」的 Association Response 必须丢弃（389–393 行）；缓存
+//!         命中就是「PMK caching is being performed」，那时响应本来就不带 DH Parameter element。
 //!   4.4   z = F(DH(x, Y))
 //!         prk = HKDF-extract(C | A | group, z)
 //!         PMK = HKDF-expand(prk, "OWE Key Generation", n)
@@ -24,6 +28,22 @@
 //!         C 是 client 的公钥、A 是 AP 的公钥，取 DH Parameter element 里原样收发的 public key；
 //!         group 是元素里那两个小端八位组。HKDF 见 RFC 5869 §2.2、§2.3。z 与 prk 在 PMK
 //!         生成后抹掉（SHOULD be irretrievably deleted）。
+//!   4.5   PMK caching（印刷页 10，511–542 行）：client 与 AP 可以把 PMK 缓存一段时间，重关联
+//!         时用 4 次握手复用它，跳过昂贵的认证。client 把 PMKID 放进 (Re)Association Request
+//!         的 RSNE（802.11-2016 9.4.2.25 的 PMKID Count / List，本组件经
+//!         `buildAssocRequestWith`，且 525 行规定此时 MUST 同时带 DH Parameter element）；
+//!         AP 的缓存里有这个 PMKID 就在 Response 的 RSNE 里回同一个 PMKID、不带 DH Parameter
+//!         element（527–529 行），没有就忽略 PMKID、照常走 OWE 关联并带 DH Parameter element
+//!         （529–531 行）。client 一侧：响应里的 PMKID 与自己发出的一致时 SHALL 忽略响应里的
+//!         DH Parameter element、用缓存的 PMK（533–535 行）；响应没有 PMKID 或不一致时 SHALL
+//!         照常走 OWE 关联（536–539 行）；请求里没带 PMKID 时 SHALL 忽略响应里的 PMKID
+//!         （540–542 行）。缓存条目与过期 / 替换策略见 `Cache`：「cache a PMK for a certain
+//!         period of time」的期限原文没定数，802.11-2016 的 dot11RSNAConfigPMKLifetime
+//!         DEFVAL 43200 秒（150617–150634 行）；过期判据与 hostap 一致（expiration < now，
+//!         pmksa_cache.c 的 pmksa_cache_expire）；满时移除最早过期的条目（hostap 的链表按
+//!         过期时间升序插入，pmksa_cache.c:217-238 挤掉表头「Remove the oldest entry to
+//!         make room」）。命中/未命中两侧的
+//!         判决在 `clientCacheDecision` / `apCacheDecision`。
 //!
 //! 椭圆曲线的运算都在 `ecc.zig`；这里只补 OWE 特有的三件事：
 //!   * 私钥范围 [1, n−1]（RFC 6090 §4）与拒绝采样生成（RFC 6090 附录 B）；
@@ -46,9 +66,11 @@
 //!   * RFC 8110 4.4 表 2 规定的 4 次握手算法（HMAC-SHA-256 的 MIC、KCK / KEK 128 位）。
 //!     现有 `supplicant.zig` / `wpa2.zig` 只按 AKM 1、2、8 选算法，本文件不改它们；
 //!     PMK 的类型与它们一致（32 个八位组），可以直接交给 `Supplicant.start`。
-//!   * PMK caching（4.5）：本组件没有 PMK 缓存，所以 4.3 里 MUST discard 的前提
-//!     「PMK caching is not being performed」恒成立；响应里的 PMKID 按 4.5 的规定忽略。
-//!   * group 19 以外的群、FFC 群、OWE Transition Mode、收发帧与认证 / 关联的状态机。
+//!   * group 19 以外的群、FFC 群、收发帧与认证 / 关联的状态机。
+//!   * OWE Transition Mode：不在 RFC 8110 里（全文没有 "transition" 一词，grep 0 命中）；
+//!     它出自 Wi-Fi 联盟的 OWE 规范，盘上没有原文，无从对照，未实现。
+//!   * 收发帧：缓存的入队（client 在 4 次握手完成后、AP 在派生新 PMK 成功后，hostap 分别在
+//!     `wpa_supplicant_key_neg_complete` 与 `wpa_auth_pmksa_add2` 时做）由调用方完成。
 //!
 //! 板侧没有随机源：私钥由调用方注入的随机函数生成。不用分配器，不 import hw/log。
 
@@ -119,6 +141,13 @@ pub const Error = error{
     NotDhElement,
     /// 对端用的群本端不支持（只有 19）→ status code 77。
     UnsupportedDhGroup,
+    /// client 在请求里带了自己缓存里已经没有（或已过期）的 PMKID，AP 却回了一个匹配的
+    /// PMKID：没有可用的 PMK，4.5 的命中路径走不下去。
+    PmkNotCached,
+    /// 想在 Association Request 的 RSNE 里带 PMKID，但策略的 MFPC 是假的：RSNE 里
+    /// PMKID Count 排在 RSN Capabilities 之后（802.11-2016 9.4.2.25），本组件的 RSNE
+    /// 写法只在 MFPC 时写 Capabilities 与 PMKID 字段，这样请求会静默丢掉 PMKID。
+    PmkidNeedsMfpc,
 };
 
 /// 处理对端 (Re)Association 帧时可能出的全部错误：本文件的，加上 RSNE 解析与策略选择的。
@@ -359,6 +388,214 @@ pub fn processAssoc(role: Role, ies: []const u8, own: KeyPair) ProcessError!Asso
         return error.NoDhParameter);
     const keys = try agree(role, own, dh.public_key);
     return .{ .keys = keys, .sel = sel };
+}
+
+// ---------------------------------------------------------------------------
+// 4.5：PMK caching
+// ---------------------------------------------------------------------------
+
+/// 802.11-2016 的 dot11RSNAConfigPMKLifetime 的 DEFVAL（150617–150634 行）：PMK 在缓存里的
+/// 最长寿命，秒。RFC 8110 只说「for a certain period of time」，没定数；调用方按自己的
+/// 时钟单位决定传什么。
+pub const pmk_lifetime_80211: u64 = 43200;
+
+/// 缓存的一条：4.4 的 PMK 与 PMKID，加上注入时钟下的有效期。
+pub const CacheEntry = struct {
+    pmk: [pmk_len]u8,
+    pmkid: [pmkid_len]u8,
+    /// 入缓存时的时钟读数；有效期是 [added_at, expires_at]（两端都算有效）。
+    added_at: u64,
+    /// added_at +| lifetime（饱和加，防溢出）。
+    expires_at: u64,
+};
+
+/// PMK 缓存（4.5）：固定条数、不用分配器、时钟由调用方注入。
+///
+/// 与 802.11-2016 的 PMKSA 的差别：PMKSA 按（AA, SPA, PMKID）索引，hostap 的
+/// `pmksa_cache_get`（src/rsn_supp/pmksa_cache.c:344-364）三个都过滤；这里没有多 AP 的
+/// 概念，PMKID 本身就是一次交换的标识（4.4 的 Hash(C|A)），所以按 PMKID 唯一索引。
+pub const Cache = struct {
+    /// 条数上限。满了挤掉 expires_at 最早的条目（hostap pmksa_cache.c:217-238：链表按过期
+    /// 时间升序插入，挤掉表头；「Remove the oldest entry to make room」）。
+    pub const max_entries = 4;
+
+    entries: [max_entries]CacheEntry = undefined,
+    used: usize = 0,
+
+    pub fn len(self: Cache) usize {
+        return self.used;
+    }
+
+    /// 加入或刷新一条，与 hostap `pmksa_cache_add_entry`（src/rsn_supp/pmksa_cache.c:168-256）
+    /// 同构：
+    ///   * 同一 PMKID 且同一 PMK 已在缓存 → 原条目原样保留，有效期不刷新（hostap
+    ///     「reusing previous PMKSA entry」，186-194 行）；
+    ///   * 同一 PMKID 但 PMK 不同 → 原位替换（hostap 对同一 AA 的旧条目替换，181-215 行）；
+    ///   * 有空位就放；满了替换 expires_at 最早的条目（并列取下标小的）——hostap 的链表按
+    ///     过期时间升序插入（254-262 行「order by expiration time」），挤掉的是表头即最早
+    ///     过期的那条（217-238 行）。hostap 还会跳过使用中的 cur_pmksa；本组件没有「使用中」
+    ///     的概念，不跳。当各条目 lifetime 相同时「最早过期」就是「最早加入」。
+    /// PMK 与 PMKID 的来历由调用方负责：client 在 4 次握手完成后入缓存，AP 在派生成功后
+    /// 入缓存。
+    pub fn add(self: *Cache, pmk: [pmk_len]u8, pmkid: [pmkid_len]u8, now: u64, lifetime: u64) void {
+        for (self.entries[0..self.used]) |*e| {
+            if (std.mem.eql(u8, &e.pmkid, &pmkid)) {
+                if (std.mem.eql(u8, &e.pmk, &pmk)) return; // 同一交换：沿用旧条目
+                e.pmk = pmk;
+                e.added_at = now;
+                e.expires_at = now +| lifetime;
+                return;
+            }
+        }
+        const entry = CacheEntry{
+            .pmk = pmk,
+            .pmkid = pmkid,
+            .added_at = now,
+            .expires_at = now +| lifetime,
+        };
+        if (self.used < max_entries) {
+            self.entries[self.used] = entry;
+            self.used += 1;
+            return;
+        }
+        var victim: usize = 0;
+        for (1..max_entries) |i| {
+            if (self.entries[i].expires_at < self.entries[victim].expires_at) victim = i;
+        }
+        self.entries[victim] = entry;
+    }
+
+    /// 按 PMKID 找一条未过期的。过期判据与 hostap 相同（pmksa_cache_expire 用
+    /// expiration < now 判过期）：`now <= expires_at` 有效，`now > expires_at` 视同没有。
+    /// 查找不删除：过期条目由 `purge` 清。
+    pub fn lookup(self: *const Cache, pmkid: [pmkid_len]u8, now: u64) ?CacheEntry {
+        for (self.entries[0..self.used]) |e| {
+            if (std.mem.eql(u8, &e.pmkid, &pmkid)) {
+                if (now > e.expires_at) return null;
+                return e;
+            }
+        }
+        return null;
+    }
+
+    /// 删掉所有过期条目（把后面的条目前移，保持相对次序），返回删掉的条数。
+    pub fn purge(self: *Cache, now: u64) usize {
+        var kept: usize = 0;
+        var removed: usize = 0;
+        for (self.entries[0..self.used]) |e| {
+            if (now > e.expires_at) {
+                removed += 1;
+            } else {
+                self.entries[kept] = e;
+                kept += 1;
+            }
+        }
+        self.used = kept;
+        return removed;
+    }
+
+    /// client 想做 PMK caching 时放进 (Re)Association Request 的「the identifying PMKID」
+    /// （4.5，517–518 行）：有效条目里 added_at 最大的那个（并列取下标大的）。没有有效
+    /// 条目返回 null——client 不带 PMKID，照常走 OWE 关联（4.5 的规定只约束「带了 PMKID」
+    /// 时的两侧行为）。
+    pub fn offerPmkid(self: *const Cache, now: u64) ?[pmkid_len]u8 {
+        var best: ?usize = null;
+        for (0..self.used) |i| {
+            if (now > self.entries[i].expires_at) continue;
+            if (best == null or self.entries[i].added_at >= self.entries[best.?].added_at) best = i;
+        }
+        return if (best) |i| self.entries[i].pmkid else null;
+    }
+};
+
+/// 4.5 缓存判决的结果，client 与 AP 共用一个形状。
+pub const CacheDecision = union(enum) {
+    /// 命中：PMK 从缓存条目来，DH 交换整个跳过（client SHALL 忽略响应里的 DH Parameter
+    /// element，533–535 行；AP 在派生之前就返回，hostap ieee802_11.c:846-850）。
+    /// `pmkid` 就是双方认同的那个；AP 把它放进 Response 的 RSNE 且不带 DH Parameter
+    /// element，status code 用 0。
+    hit: struct {
+        pmk: [pmk_len]u8,
+        pmkid: [pmkid_len]u8,
+        sel: rsne.Selection,
+    },
+    /// 未命中或帧里没有 PMKID：照常走 OWE 关联（4.5，529–531、536–539 行）。调用方接着调
+    /// `processAssoc`——它自带 4.3 的 MUST discard（OWE AKM 而无 DH Parameter element），
+    /// 派生成功后由调用方把 PMK 入缓存。
+    fresh: struct {
+        sel: rsne.Selection,
+    },
+};
+
+/// client 处理 (Re)Association Response 的缓存判决（4.5，533–542 行）。
+///
+/// `offered` 是本端放进 Association Request 的 PMKID（`Cache.offerPmkid` 给的那个；没带就是
+/// null）。检查次序：RSNE 的策略选择在前（与 `processAssoc` 一致，对端根本不是 OWE 时不该
+/// 报缓存的事），PMKID 比对在后。响应要算命中，得恰好带一个 PMKID 且与本端发出的相同：
+/// 802.11 的 RSNE 允许最多 4 个 PMKID，hostap 的请求方只认 `num_pmkid == 1`
+/// （src/rsn_supp/wpa.c:3386-3389），多带当未命中。命中时 SHALL 忽略响应里的 DH Parameter
+/// element（哪怕有），PMK 用 `Cache` 里那条；响应里 PMKID 与发出的一致、可缓存里已经没有
+/// 这条（没入过缓存或已过期）→ `PmkNotCached`：4.5 的命中路径没有 PMK 可用。
+pub fn clientCacheDecision(ies: []const u8, offered: ?[pmkid_len]u8, cache: *const Cache, now: u64) ProcessError!CacheDecision {
+    const rsne_bytes = findElement(ies, rsne.element_id, null) orelse return error.NoRsne;
+    const peer_rsne = try rsne.parse(rsne_bytes);
+    const sel = try rsne.select(peer_rsne, policy);
+    const want = offered orelse return .{ .fresh = .{ .sel = sel } };
+    if (peer_rsne.pmkid_present and peer_rsne.pmkid_len == 1 and
+        std.mem.eql(u8, &peer_rsne.pmkid[0], &want))
+    {
+        const entry = cache.lookup(want, now) orelse return error.PmkNotCached;
+        return .{ .hit = .{ .pmk = entry.pmk, .pmkid = entry.pmkid, .sel = sel } };
+    }
+    return .{ .fresh = .{ .sel = sel } };
+}
+
+/// AP 处理 (Re)Association Request 的缓存判决（4.5，516–531 行）。
+///
+/// 请求的 PMKID List 逐个对缓存查，第一个命中算数（hostap 的 AP 侧正是这样遍历，
+/// src/ap/wpa_auth_ie.c:813-821；client 侧只认一个，见 `clientCacheDecision`）。命中时
+/// 不再看请求里的 DH Parameter element（hostap ieee802_11.c:846-850 在 DH 检查之前就
+/// 返回了），Response 的 RSNE 回同一个 PMKID、不带 DH Parameter element、status 0。
+/// 未命中（或请求没带 PMKID）时忽略 PMKID，照常走 OWE 关联：调用方接着调
+/// `processAssoc(.ap, …)` 派生，成功后 `Cache.add` 入缓存（hostap 在
+/// `wpa_auth_pmksa_add2`，src/ap/ieee802_11.c:966-973）。
+pub fn apCacheDecision(ies: []const u8, cache: *const Cache, now: u64) ProcessError!CacheDecision {
+    const rsne_bytes = findElement(ies, rsne.element_id, null) orelse return error.NoRsne;
+    const peer_rsne = try rsne.parse(rsne_bytes);
+    const sel = try rsne.select(peer_rsne, policy);
+    if (peer_rsne.pmkid_present) {
+        for (peer_rsne.pmkid[0..peer_rsne.pmkid_len]) |p| {
+            if (cache.lookup(p, now)) |entry| {
+                return .{ .hit = .{ .pmk = entry.pmk, .pmkid = entry.pmkid, .sel = sel } };
+            }
+        }
+    }
+    return .{ .fresh = .{ .sel = sel } };
+}
+
+/// client 想做 PMK caching 时的 Association Request（4.5，523–526 行：PMKID 与 DH
+/// Parameter element MUST 都带）。RSNE 用 `own_policy` 写（要带 PMKID 必须开 MFPC，
+/// 否则 `PmkidNeedsMfpc`），PMKID 用 `Cache.offerPmkid` 的结果，DH Parameter element 装
+/// `own.public`（新一轮的公钥；命中时 AP 不会用它，527–529 行）。`pmkid` 为 null 时与
+/// `buildAssocRequest` 等价。
+pub fn buildAssocRequestWith(sel: rsne.Selection, own: KeyPair, own_policy: rsne.OwnPolicy, pmkid: ?[pmkid_len]u8, out: []u8) ProcessError!usize {
+    if (pmkid != null and !own_policy.mfpc) return error.PmkidNeedsMfpc;
+    const n = try rsne.buildStaRsne(sel, own_policy, pmkid, out);
+    if (out.len - n < dh_element_len) return error.BufferTooSmall;
+    encodeDhElement(own.public, out[n..][0..dh_element_len]);
+    return n + dh_element_len;
+}
+
+/// 4.3（394–400 行）：client 收到 status code 77 后的动作——SHOULD 换一个支持的群重试；
+/// MAY 再用导致失败的群试一次（原文说明了这有风险：802.11 的关联是不加密的）；放弃时
+/// SHOULD 记日志并提示用户，这两件由调用方做。本组件按 4.3 的 MUST 只支持 group 19，
+/// 所以 `supported` 只有 19 时没有「不同的群」可换，返回 null；「再用同一个群」是 MAY，
+/// 由调用方的策略决定，这里不替它选。
+pub fn nextGroupToTry(current: u16, supported: []const u16) ?u16 {
+    for (supported) |g| {
+        if (g != current) return g;
+    }
+    return null;
 }
 
 /// AP 回 Association Response 时用的 status code（表 9-46）。

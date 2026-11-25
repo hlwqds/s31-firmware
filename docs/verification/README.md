@@ -5,8 +5,8 @@
 | 报告 | 规范依据 | 覆盖的组件 |
 | --- | --- | --- |
 | [`coex-verification.md`](coex-verification.md) | ESP-IDF 源码、ROM 与 `libcoexist.a`（共存不是 IEEE 或 Bluetooth 标准） | `radio-coex` |
-| [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；其上的 RFC 3394、RFC 4493、RFC 6070、RFC 4231、RFC 2104，第三批另涉 RFC 8110、RFC 5869、RFC 5903、RFC 6090、RFC 5216、RFC 3748、RFC 2409、RFC 3526 | `wifi-mlme`、`wifi-connect` |
-| [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；其上的 RFC 7668、RFC 4493、RFC 3610，第三批另涉 RFC 4944、RFC 6282、RFC 6775、RFC 8025 | `ble-802154`、`ble-security`；`bt-blobs` 的 HCI 一致性自检（§8） |
+| [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；其上的 RFC 3394、RFC 4493、RFC 6070、RFC 4231、RFC 2104，第三批另涉 RFC 8110、RFC 5869、RFC 5903、RFC 6090、RFC 5216、RFC 3748、RFC 2409、RFC 3526；第四批只涉 RFC 8110 §4.5 | `wifi-mlme`、`wifi-connect` |
+| [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；其上的 RFC 7668、RFC 4493、RFC 3610，第三批另涉 RFC 4944、RFC 6282、RFC 6775、RFC 8025，第四批另涉 RFC 4861、RFC 4862、RFC 8930、RFC 8931 | `ble-802154`、`ble-security`；`bt-blobs` 的 HCI 一致性自检（§8） |
 
 Wi-Fi 与 BLE 都不是 RFC 所定义的：前者的规范是 IEEE Std 802.11，后者是 Bluetooth SIG 的 Core Specification；RFC 只覆盖其上的少数协议。
 
@@ -67,6 +67,10 @@ ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_ml
 第三批（2026-11-25）之后，三个 section 的判据是 `wifi_connect` 177（+90）、`wifi_mlme` 37（+13）、`ble_802154` 106（+56），
 在主机上用桩 `board` 执行都是零失败。**这一批没有上板**，所以最近一次板级运行仍然是第二批的镜像，上表的数字没有变。
 
+第四批（2026-11-25）之后，三个 section 的判据是 `wifi_connect` 199（+22）、`wifi_mlme` 58（+21）、`ble_802154` 152（+46），
+在主机上用桩 `board` 执行都是零失败（最长一行分别是 140、154、114 字节）。**这一批也没有上板**（串口 `/dev/ttyUSB0` 当前账号没有权限），
+最近一次板级运行仍然是第二批的镜像。
+
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
 | 运行 | 命令 | 结果 | 日志 |
@@ -117,6 +121,21 @@ ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_ml
 同日 `tests/e2e/run_e2e.py --host`：六个 profile（`min`、`net`、`wifi`、`tls`、`net-wire`、`full`）构建全部通过，镜像都恰好两段。
 
 共用同一个射频的合并镜像（Wi-Fi + BLE 两个 blob 同镜，`-Dcoex-merged`）不在这六个 profile 里，它的占用见 `coex-verification.md` §7.2。
+
+**第三批之后（2026-11-25）**：`wifi` 1063200 B、`full` 1182480 B，factory 分区余量分别是 472800 与 353520 B。
+**第四批之后（2026-11-25）**：`check-capacity.py` 对 `wifi` 与 `full` 报增长超过 8 KiB 的阈值，是六个新模块与它们的子自检的体量；
+同样用 `--update` 重写基线后门禁通过。其余四个 profile 没有变化。
+
+| profile | `app.bin` 增长 | irom 增长 | drom 增长 | 之后 factory 分区余量 |
+| --- | --- | --- | --- | --- |
+| `wifi` | +94 368 B | +63 888 B | +29 440 B | 378 432 B |
+| `full` | +72 688 B | +64 544 B | +29 472 B | 280 832 B |
+| `min`、`net`、`tls`、`net-wire` | 0 | 0 | 0 | — |
+
+`wifi` 镜像里函数代码的增量是 63960 字节：第四批 Wi-Fi 四片 32128（`wnm` +7772、`wnm_tfs_selftest` +8952、`rrm_caps_selftest` +5284、
+`owe_cache_selftest` +4156、`owe` +2332、`ft_ric_selftest` +1320、`rrm` +1304、`ft_proto` +1008），BLE 两片 31274（`nd6` +9812、`sfr` +8980、
+`sfr_selftest` +6370、`nd6_selftest` +4360、它们引用到的 `fifteen4` +1750），其余零星几百字节；没有标准库的异常膨胀。
+`full` 的 factory 分区余量只剩 280 KB，再有两批这样的增量就会顶满。
 
 基线文件 `tools/s31-production/baseline/capacity.json` 上次刷新是 2026-11-18（`a59e5d7`）。到 `3194bf6` 为止已有一批与本轮无关的漂移，所以 **`3194bf6` 上 `check-capacity.py` 本来就是失败的**（退出码 1）：六个 profile 的 irom 增长 21 504 到 31 504 B（`min` 21 504、`net-wire` 22 848，其余四个 31 072 到 31 504）。本轮用 `check-capacity.py --update` 把这些一并写进基线，复核通过。
 

@@ -22,7 +22,14 @@
 //!   * 9.4.2.17 Figure 9-143；9.4.2.36 Figure 9-294；9.4.2.37 Figure 9-295–9-300、Table 9-150 / 9-151 / 9-152；
 //!   * 9.4.2.38 Table 9-154（p.923）；9.4.2.41（p.925）；
 //!   * 9.6.7.1–9.6.7.7、Figure 9-649–9-654、Table 9-306（p.1173–1176）；
-//!   * 9.4.3（p.1121）：子元素 = Subelement ID(1) + Length(1) + Information，不认识的跳过。
+//!   * 9.4.3（p.1121）：子元素 = Subelement ID(1) + Length(1) + Information，不认识的跳过；
+//!   * 9.4.2.45 / Figure 9-311 / Table 9-157（p.929–931）：RM Enabled Capabilities 元素（第 13 节），
+//!     出现条件是 Table 9-27 / 9-29 / 9-30 / 9-31 / 9-32 / 9-33 / 9-41 的「dot11RadioMeasurementActivated
+//!     is true」（p.694–703、p.711）；11.11.6（p.1712）：广告了的能力不得回 Incapable、没广告的请求必须回 Incapable；
+//!   * Annex E（p.3275–3287）：Operating Class ↔ 起始频率 / 信道间隔 / Channel set / Behavior limits
+//!     （Table E-1–E-5，第 14 节）；中心频率 = 起始频率 + 5 MHz × nch（式 17-27，p.2305）；
+//!   * 9.4.2.21.7（p.811）：Beacon request 的 Operating Class / Channel Number 合法性（A8.4 接到
+//!     `decide()` 上）；Table 9-151（p.920）：Neighbor Report 的子元素 ID 70 与元素同格式。
 //!
 //! 取舍与偏离（都有条款依据或写明原因）：
 //!
@@ -34,8 +41,15 @@
 //!   * Beacon request 是 Passive / Active 而 Measurement Duration = 0：11.11.4 只规定发送方
 //!     「shall not be set to 0」，没规定接收端怎么办；本实现按 Refused 回绝。
 //!   * 没有可报的 BSS 时发空 Beacon report（11.11.9.1 允许 refuse 或 empty，取 empty）。
-//!   * Extended Request 子元素（ID 11）、Reporting Condition 5–10 的参考电平、RM Enabled
-//!     Capabilities 元素、Operating Class ↔ 信道的 Annex E 映射都不做。
+//!   * Extended Request 子元素（ID 11）、Reporting Condition 5–10 的参考电平不做。
+//!   * RM Enabled Capabilities 元素（第 13 节）与 Operating Class ↔ 信道的 Annex E 映射
+//!     （第 14 节）已做。Annex E 覆盖范围：Table E-4 全球类全部（81–87、94–96、101–130、180；
+//!     85–87 是 GeoDB、起始频率「—」，只做信道集合校验）；地区类收录 E-1/E-2/E-3/E-5 里
+//!     2.4/5 GHz 的常见行（不含 ITS 5.9 GHz、美国 4.9 GHz 公共安全、日本已废弃 * 行与 DMG），
+//!     其余 operating class 一律 `UnsupportedOperatingClass` / `VendorSpecificClass`（192–254）。
+//!   * Table 9-157 的保留位 36–39：解析时原样保留（往返不变），构造时非 0 拒绝。
+//!   * `maxMeasurementDurationTu` 对 MIB 1–3（亚 Beacon Interval 的时长）取向下取整的 TU 数；
+//!     旧代码对这几个值会整数下溢，0 与 ≥4 的结果不变。
 //!
 //! 比特编号沿用 9.2.2（p.636）：字段第 N 位落在第 N/8 字节的第 N mod 8 位。
 
@@ -70,6 +84,13 @@ pub const Error = error{
     /// 该字段里出现了不允许的元素。
     UnexpectedElement,
     TooMany,
+    /// Operating Class 不在 Annex E（保留段 1–80 / 88–93 / 97–100 / 131–179 / 181–191 / 255，
+    /// 或本实现没收录的地区类行——范围见文件头）。
+    UnsupportedOperatingClass,
+    /// Operating Class 的起始频率是「—」（GeoDB 类，频率由监管定义，Table E-4）。
+    StartFrequencyUndefined,
+    /// Operating Class 192–254 是 Vendor specific（Table E-4）。
+    VendorSpecificClass,
 };
 
 pub const BuildError = error{
@@ -699,6 +720,8 @@ pub const NeighborReportSubelement = struct {
     pub const condensed_country_string: u8 = 2;
     pub const bss_transition_candidate_preference: u8 = 3;
     pub const bss_termination_duration: u8 = 4;
+    /// RM Enabled Capabilities 子元素（与 9.4.2.45 元素同格式，见第 13 节）。
+    pub const rm_enabled_capabilities: u8 = 70;
 };
 
 /// Table 9-150（p.917）：AP Reachability。
@@ -1179,9 +1202,11 @@ pub const Capability = struct {
 };
 
 /// Maximum Measurement Duration in TUs = 2^(dot11RMMaxMeasurementDuration – 4) × BeaconInterval
-/// （11.11.4，p.1710）；MIB 值为 0 表示不限。
+/// （11.11.4，p.1710）；MIB 值为 0 表示不限。MIB 1–3 的结果是亚 Beacon Interval 的分数时长，
+/// 这里向下取整成 TU（元素里 3 位只能放 0–7，Table 9-157 位 18–20）。
 pub fn maxMeasurementDurationTu(mib: u8, beacon_interval_tu: u16) u32 {
     if (mib == 0) return 0;
+    if (mib < 4) return @as(u32, beacon_interval_tu) >> @as(u5, @intCast(4 - mib));
     const shift: u32 = @as(u32, mib) - 4;
     if (shift >= 32) return std.math.maxInt(u32);
     return (@as(u32, 1) << @as(u5, @intCast(shift))) *| beacon_interval_tu;
@@ -1194,6 +1219,10 @@ pub const RequestContext = struct {
     /// 本 STA 的工作 Operating Class 与主信道。
     operating_class: u8 = 0,
     channel: u8 = 0,
+    /// 给出时按 Annex E 校验 Beacon request 的 Operating Class / Channel Number
+    /// （9.4.2.21.7：「Valid operating classes are listed in Annex E」）；null = 不校验
+    /// （旧调用方不提供地区信息时的行为不变）。校验失败按 Refused 回绝（11.11.6 允许拒任何请求）。
+    domain: ?Domain = null,
 };
 
 pub const RejectReason = enum {
@@ -1265,6 +1294,12 @@ pub fn decide(cap: Capability, m: MeasurementRequest, req: BeaconRequest, ctx: R
     }
     if (req.mode == .table) return .{ .accepted = .table };
 
+    // 9.4.2.21.7：Operating Class 必须在 Annex E 里；Channel Number 是 0 / 255（逐信道量测）
+    // 或该 operating class 的 Channel set / Channel center frequency index 定义的信道。
+    // Beacon Table 模式不按信道量测，上面的 return 已经出去了。
+    if (ctx.domain) |domain| {
+        if (!beaconChannelValid(domain, req)) return reject(.refused, ctx);
+    }
     if (req.duration_tu == 0) return reject(.refused, ctx);
     const on_operating = !isIterativeChannel(req.channel) and req.operating_class == ctx.operating_class and req.channel == ctx.channel;
     var limit = cap.max_measurement_duration_tu;
@@ -1424,3 +1459,401 @@ pub const NeighborReportAp = struct {
         return try buildNeighborReportResponse(out, .{ .dialog_token = req.dialog_token, .neighbor_report_elements = self.scratch[0..pos] });
     }
 };
+
+// ---------------------------------------------------------------------------
+// 13) RM Enabled Capabilities 元素（9.4.2.45；Figure 9-311；Table 9-157）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77（p.786–787）：RM Enabled Capabilities 的 Element ID 是 70。hostap 同值
+/// （`common/ieee802_11_defs.h:235` `WLAN_EID_RRM_ENABLED_CAPABILITIES 70`）。ie.zig 的
+/// ElementId 没有这个 ID（该文件不在本切片的修改范围），所以这里给本地常量。
+pub const rm_enabled_capabilities_element_id: u8 = 70;
+
+/// Figure 9-311（p.929）：Element ID(1) + Length(1) + RM Enabled Capabilities(5)。
+/// hostap 的长度同值（`common/ieee802_11_defs.h:836` `RRM_CAPABILITIES_IE_LEN 5`）。
+pub const rm_enabled_capabilities_len = 5;
+
+/// Table 9-157（p.929–931）：40 位能力字，位 N 落在第 N/8 字节的第 N mod 8 位（9.2.2）。
+/// 每一位 = 对应的 dot11RM…Activated MIB；位 18–20 / 21–23 / 24–26 是 3 位数值字段
+/// （分别等于 dot11RMMaxMeasurementDuration / dot11RMNonOperatingChannelMaxMeasurementDuration /
+/// dot11RMMeasurementPilotActivated，都是 Unsigned32(0..7)）；位 36–39 保留。
+/// hostap 的同名位：`WLAN_RRM_CAPS_LINK_MEASUREMENT BIT(0)`、`NEIGHBOR_REPORT BIT(1)`、
+/// `BEACON_REPORT_PASSIVE BIT(4)`、`BEACON_REPORT_ACTIVE BIT(5)`（ieee802_11_defs.h:363–366）。
+pub const RmEnabledCapabilities = packed struct(u40) {
+    link_measurement: bool = false, // 位 0 dot11RMLinkMeasurementActivated
+    neighbor_report: bool = false, // 位 1 dot11RMNeighborReportActivated
+    parallel: bool = false, // 位 2 dot11RMParallelMeasurementsActivated
+    repeated: bool = false, // 位 3 dot11RMRepeatedMeasurementsActivated
+    beacon_passive: bool = false, // 位 4 dot11RMBeaconPassiveMeasurementActivated
+    beacon_active: bool = false, // 位 5 dot11RMBeaconActiveMeasurementActivated
+    beacon_table: bool = false, // 位 6 dot11RMBeaconTableMeasurementActivated
+    beacon_reporting_conditions: bool = false, // 位 7 dot11RMBeaconMeasurementReportingConditionsActivated
+    frame: bool = false, // 位 8 dot11RMFrameMeasurementActivated
+    channel_load: bool = false, // 位 9 dot11RMChannelLoadMeasurementActivated
+    noise_histogram: bool = false, // 位 10 dot11RMNoiseHistogramMeasurementActivated
+    statistics: bool = false, // 位 11 dot11RMStatisticsMeasurementActivated
+    lci: bool = false, // 位 12 dot11RMLCIMeasurementActivated
+    lci_azimuth: bool = false, // 位 13 dot11RMLCIAzimuthActivated
+    transmit_stream_category: bool = false, // 位 14 dot11RMTransmitStreamCategoryMeasurementActivated
+    triggered_transmit_stream_category: bool = false, // 位 15 dot11RMTriggeredTransmitStreamCategoryMeasurementActivated
+    ap_channel_report: bool = false, // 位 16 dot11RMAPChannelReportActivated
+    rm_mib: bool = false, // 位 17 dot11RMMIBActivated
+    /// 位 18–20：dot11RMMaxMeasurementDuration（11.11.4 的时长公式）。
+    operating_max_duration: u3 = 0,
+    /// 位 21–23：dot11RMNonOperatingChannelMaxMeasurementDuration（0 = 不支持离信道量测）。
+    nonoperating_max_duration: u3 = 0,
+    /// 位 24–26：dot11RMMeasurementPilotActivated（Table 11-10）。
+    measurement_pilot: u3 = 0,
+    measurement_pilot_transmission_info: bool = false, // 位 27
+    neighbor_report_tsf_offset: bool = false, // 位 28 dot11RMNeighborReportTSFOffsetActivated
+    rcpi: bool = false, // 位 29 dot11RMRCPIMeasurementActivated
+    rsni: bool = false, // 位 30 dot11RMRSNIMeasurementActivated
+    bss_average_access_delay: bool = false, // 位 31
+    bss_available_admission_capacity: bool = false, // 位 32
+    antenna: bool = false, // 位 33 dot11RMAntennaInformationActivated
+    ftm_range_report: bool = false, // 位 34 dot11RMFineTimingMsmtRangeRepActivated
+    civic_location: bool = false, // 位 35 dot11RMCivicMeasurementActivated
+    reserved: u4 = 0, // 位 36–39：解析原样保留，构造时非 0 拒绝
+
+    pub fn word(self: RmEnabledCapabilities) u40 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u40) RmEnabledCapabilities {
+        return @bitCast(w);
+    }
+};
+
+/// 元素体（5 字节）→ 能力位。长度不足 5 是 Truncated，超过 5 是 BadLength（Figure 9-311）。
+pub fn parseRmEnabledCapabilities(body: []const u8) Error!RmEnabledCapabilities {
+    if (body.len < rm_enabled_capabilities_len) return error.Truncated;
+    if (body.len != rm_enabled_capabilities_len) return error.BadLength;
+    return .fromWord(std.mem.readInt(u40, body[0..5], .little));
+}
+
+/// ID + Length + 5 字节。保留位 36–39 非 0 拒绝（Table 9-157 的「Reserved」）。
+pub fn buildRmEnabledCapabilities(out: []u8, c: RmEnabledCapabilities) BuildError!usize {
+    if (c.reserved != 0) return error.BadValue;
+    const total = 2 + rm_enabled_capabilities_len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = rm_enabled_capabilities_element_id;
+    out[1] = rm_enabled_capabilities_len;
+    std.mem.writeInt(u40, out[2..7], c.word(), .little);
+    return total;
+}
+
+/// Neighbor Report 的子元素 70（Table 9-151）：「The RM Enabled Capabilities subelement has the
+/// same format as the RM Enabled Capabilities element」——子元素 = Subelement ID(1) + Length(1)
+/// + 5 字节，不重复元素头的 Element ID。
+pub fn buildRmEnabledCapabilitiesSubelement(out: []u8, c: RmEnabledCapabilities) BuildError!usize {
+    if (c.reserved != 0) return error.BadValue;
+    const total = 2 + rm_enabled_capabilities_len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = NeighborReportSubelement.rm_enabled_capabilities;
+    out[1] = rm_enabled_capabilities_len;
+    std.mem.writeInt(u40, out[2..7], c.word(), .little);
+    return total;
+}
+
+/// 广告的能力位 → 11.11.6 判决用的 Capability。11.11.6（p.1712）：广告了的能力不得回
+/// Incapable；没广告的请求「shall be rejected, and the corresponding report shall have the
+/// Incapable bit … set to 1」。时长字段按 11.11.4 的公式换算，Beacon interval 由调用方给。
+pub fn capabilityFromElement(c: RmEnabledCapabilities, beacon_interval_tu: u16) Capability {
+    return .{
+        .beacon_passive = c.beacon_passive,
+        .beacon_active = c.beacon_active,
+        .beacon_table = c.beacon_table,
+        .parallel = c.parallel,
+        .repeated = c.repeated,
+        .reporting_conditions = c.beacon_reporting_conditions,
+        .max_measurement_duration_tu = maxMeasurementDurationTu(c.operating_max_duration, beacon_interval_tu),
+        .nonoperating_max_duration_tu = maxMeasurementDurationTu(c.nonoperating_max_duration, beacon_interval_tu),
+    };
+}
+
+/// 11.11.6 的另一个方向：一个 Measurement Type 是否被这份能力字覆盖。Beacon（5）只要有
+/// 三种 Beacon 模式之一；Channel Load（9 位）、Noise Histogram（10 位）、Frame（8 位）、
+/// STA Statistics（11 位）各有自己的位；Basic / CCA / RPI Histogram（0–2）是频谱管理量测
+/// （11.9），不由本元素广告，返回 true（元素对它们没有约束）；其余类型同样不受约束。
+pub fn elementCoversMeasurementType(c: RmEnabledCapabilities, mtype: u8) bool {
+    return switch (mtype) {
+        MeasurementType.channel_load => c.channel_load,
+        MeasurementType.noise_histogram => c.noise_histogram,
+        MeasurementType.frame => c.frame,
+        MeasurementType.sta_statistics => c.statistics,
+        MeasurementType.beacon => c.beacon_passive or c.beacon_active or c.beacon_table,
+        else => true,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// 14) Operating Class ↔ 信道（Annex E，normative，p.3275–3287）
+// ---------------------------------------------------------------------------
+
+/// Operating Class 的监管域（Annex E 的表按域组织）。数值不进线上的字节流，只做查表键。
+pub const Domain = enum(u8) {
+    /// Table E-4：全球类。
+    global,
+    /// Table E-1：美国。
+    us,
+    /// Table E-2：欧洲。
+    europe,
+    /// Table E-3：日本。
+    japan,
+    /// Table E-5：中国。
+    china,
+    _,
+};
+
+/// Behavior limits set 列的具名行为（Table E-1–E-5 最后一列，指向 Annex D Table D-2 的行）。
+pub const Behavior = packed struct(u16) {
+    dfs_50_100: bool = false, // DFS_50_100_Behavior
+    license_exempt: bool = false, // LicenseExemptBehavior
+    nomadic: bool = false, // NomadicBehavior
+    primary_channel_lower: bool = false, // PrimaryChannelLowerBehavior
+    primary_channel_upper: bool = false, // PrimaryChannelUpperBehavior
+    use_eirp_for_vht_tx_pow_env: bool = false, // UseEirpForVHTTxPowEnv
+    cca_ed: bool = false, // CCA-EDBehavior（3.5/3.6 GHz）
+    geo_db: bool = false, // GeoDB（起始频率由监管数据库定义）
+    its_nonmobile: bool = false, // ITS_nonmobile_operations（5.9 GHz）
+    its_mobile: bool = false, // ITS_mobile_operations（5.9 GHz）
+    /// 「80+」：80+80 MHz 类（Table E-4 的 130 行行为列）。
+    eighty_plus: bool = false,
+    _reserved: u5 = 0,
+
+    pub fn word(self: Behavior) u16 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u16) Behavior {
+        return @bitCast(w);
+    }
+};
+
+// 表内构造用（保持行短；位值与 Behavior 的字段一一对应）。
+const bh_dfs: u16 = 1 << 0;
+const bh_le: u16 = 1 << 1;
+const bh_nom: u16 = 1 << 2;
+const bh_pcl: u16 = 1 << 3;
+const bh_pcu: u16 = 1 << 4;
+const bh_eirp: u16 = 1 << 5;
+const bh_ccaed: u16 = 1 << 6;
+const bh_geodb: u16 = 1 << 7;
+const bh_p80: u16 = 1 << 10;
+
+fn beh(bits: u16) Behavior {
+    return .fromWord(bits);
+}
+
+/// Channel set / Channel center frequency index 列的一个等差段。step = 0 表示没有这一段。
+const ChRange = struct { first: u8 = 0, last: u8 = 0, step: u8 = 0 };
+
+fn rng(first: u8, last: u8, step: u8) ChRange {
+    return .{ .first = first, .last = last, .step = step };
+}
+
+/// Annex E 的一行：起始频率、信道间隔、信道集合、行为集合。
+/// `start_factor` 是 dot11ChannelStartingFactor（起始频率 = factor × 500 kHz，p.3275；
+/// 「—」= 0，频率不由 operating class 定义）。`spacing_mhz` 是 Channel spacing 列。
+/// `center_index = true` 表示 Channel set 列是「—」、信道号取 Channel center frequency index
+/// 列（128/129/130 这类宽带段）；成员判断两种列完全一样。
+const OpClass = struct {
+    class: u8,
+    domain: Domain,
+    /// Table E-1/E-2/E-3/E-5 第二列对应的全球类；全球类行 = 自身编号。
+    global_class: u8,
+    /// dot11ChannelStartingFactor（u32 因为 DMG 类 180 是 56.16 GHz → 112320）。
+    start_factor: u32,
+    spacing_mhz: u16,
+    /// 信道号 → 中心频率的光栅步进（kHz）。所有 sub-6 GHz 类都是式（17-27）的 5 MHz 光栅；
+    /// DMG 类 180 按 20.3.1（行 126559）是「起始频率 + Channel spacing × Channel number」，
+    /// 步进 = Channel spacing = 2160 MHz（信道 1 = 58.32 GHz…信道 6 = 69.12 GHz）。
+    center_step_khz: u32 = 5000,
+    behaviors: Behavior,
+    /// 最多 3 个等差段覆盖整列（表里最碎的是 128/130 的 42,58,106,122,138,155）。
+    ranges: [3]ChRange,
+    center_index: bool = false,
+};
+
+/// 覆盖范围（文件头「取舍与偏离」有摘要）：
+///   * Table E-4 全球类全部有定义的行（spec 行 178590–178790，印刷页 3283–3285）：
+///     81–84、85–87（GeoDB，起始频率「—」）、94–96、101–130、180。
+///   * Table E-1（spec 行 178286–178430）常见行：1–5、12、22–33、128–130
+///     （不含 ITS 5.9 GHz 的 16–18 与 4.9 GHz 公共安全的 6–11）。
+///   * Table E-2（spec 行 178423–178500）：1–13、128–130（不含 ITS 的 13a–16 行）。
+///   * Table E-3（spec 行 178482–178690）非废弃（无 *）常见行：30–34、36、37、39、41、42、44、
+///     56–58、128–130（不含 DMG 59 与 4.9 GHz 的 7–11、16–20、25–29、46–55）。
+///   * Table E-5（spec 行 179100–179140）：1–9、128–130。
+///   * 保留段 1–80、88–93、97–100、131–179、181–191、255 → UnsupportedOperatingClass；
+///     192–254 → VendorSpecificClass（Table E-4：192–254 Vendor specific）。
+const op_classes = [_]OpClass{
+    // ---- Table E-4：全球类 ----
+    .{ .class = 81, .domain = .global, .global_class = 81, .start_factor = 4814, .spacing_mhz = 25, .behaviors = beh(0), .ranges = .{ rng(1, 13, 1), .{}, .{} } },
+    .{ .class = 82, .domain = .global, .global_class = 82, .start_factor = 4828, .spacing_mhz = 25, .behaviors = beh(0), .ranges = .{ rng(14, 14, 1), .{}, .{} } },
+    .{ .class = 83, .domain = .global, .global_class = 83, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(1, 9, 1), .{}, .{} } },
+    .{ .class = 84, .domain = .global, .global_class = 84, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(5, 13, 1), .{}, .{} } },
+    .{ .class = 85, .domain = .global, .global_class = 85, .start_factor = 0, .spacing_mhz = 0, .behaviors = beh(bh_geodb), .ranges = .{ rng(6, 8, 1), .{}, .{} } },
+    .{ .class = 86, .domain = .global, .global_class = 86, .start_factor = 0, .spacing_mhz = 0, .behaviors = beh(bh_geodb), .ranges = .{ rng(12, 16, 2), .{}, .{} } },
+    .{ .class = 87, .domain = .global, .global_class = 87, .start_factor = 0, .spacing_mhz = 0, .behaviors = beh(bh_geodb), .ranges = .{ rng(24, 32, 4), .{}, .{} } },
+    .{ .class = 94, .domain = .global, .global_class = 94, .start_factor = 6000, .spacing_mhz = 20, .behaviors = beh(bh_ccaed), .ranges = .{ rng(133, 137, 4), .{}, .{} } },
+    .{ .class = 95, .domain = .global, .global_class = 95, .start_factor = 6000, .spacing_mhz = 10, .behaviors = beh(bh_ccaed), .ranges = .{ rng(132, 138, 2), .{}, .{} } },
+    .{ .class = 96, .domain = .global, .global_class = 96, .start_factor = 6005, .spacing_mhz = 5, .behaviors = beh(bh_ccaed), .ranges = .{ rng(131, 138, 1), .{}, .{} } },
+    .{ .class = 101, .domain = .global, .global_class = 101, .start_factor = 9700, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(21, 25, 4), .{}, .{} } },
+    .{ .class = 102, .domain = .global, .global_class = 102, .start_factor = 9780, .spacing_mhz = 10, .behaviors = beh(0), .ranges = .{ rng(11, 19, 2), .{}, .{} } },
+    .{ .class = 103, .domain = .global, .global_class = 103, .start_factor = 9875, .spacing_mhz = 5, .behaviors = beh(0), .ranges = .{ rng(1, 10, 1), .{}, .{} } },
+    .{ .class = 104, .domain = .global, .global_class = 104, .start_factor = 8000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(184, 192, 8), .{}, .{} } },
+    .{ .class = 105, .domain = .global, .global_class = 105, .start_factor = 8000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(188, 196, 8), .{}, .{} } },
+    .{ .class = 106, .domain = .global, .global_class = 106, .start_factor = 8000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(191, 195, 4), .{}, .{} } },
+    .{ .class = 107, .domain = .global, .global_class = 107, .start_factor = 8000, .spacing_mhz = 10, .behaviors = beh(0), .ranges = .{ rng(189, 197, 2), .{}, .{} } },
+    .{ .class = 108, .domain = .global, .global_class = 108, .start_factor = 8005, .spacing_mhz = 5, .behaviors = beh(0), .ranges = .{ rng(188, 197, 1), .{}, .{} } },
+    .{ .class = 109, .domain = .global, .global_class = 109, .start_factor = 8000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(184, 196, 4), .{}, .{} } },
+    .{ .class = 110, .domain = .global, .global_class = 110, .start_factor = 8000, .spacing_mhz = 10, .behaviors = beh(0), .ranges = .{ rng(183, 189, 1), .{}, .{} } },
+    .{ .class = 111, .domain = .global, .global_class = 111, .start_factor = 8005, .spacing_mhz = 5, .behaviors = beh(0), .ranges = .{ rng(182, 189, 1), .{}, .{} } },
+    .{ .class = 112, .domain = .global, .global_class = 112, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(8, 16, 4), .{}, .{} } },
+    .{ .class = 113, .domain = .global, .global_class = 113, .start_factor = 10000, .spacing_mhz = 10, .behaviors = beh(0), .ranges = .{ rng(7, 11, 1), .{}, .{} } },
+    .{ .class = 114, .domain = .global, .global_class = 114, .start_factor = 10005, .spacing_mhz = 5, .behaviors = beh(0), .ranges = .{ rng(6, 11, 1), .{}, .{} } },
+    .{ .class = 115, .domain = .global, .global_class = 115, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp), .ranges = .{ rng(36, 48, 4), .{}, .{} } },
+    .{ .class = 116, .domain = .global, .global_class = 116, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcl), .ranges = .{ rng(36, 44, 8), .{}, .{} } },
+    .{ .class = 117, .domain = .global, .global_class = 117, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcu), .ranges = .{ rng(40, 48, 8), .{}, .{} } },
+    .{ .class = 118, .domain = .global, .global_class = 118, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp | bh_dfs), .ranges = .{ rng(52, 64, 4), .{}, .{} } },
+    .{ .class = 119, .domain = .global, .global_class = 119, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_dfs | bh_pcl), .ranges = .{ rng(52, 60, 8), .{}, .{} } },
+    .{ .class = 120, .domain = .global, .global_class = 120, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_dfs | bh_pcu), .ranges = .{ rng(56, 64, 8), .{}, .{} } },
+    .{ .class = 121, .domain = .global, .global_class = 121, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp | bh_dfs), .ranges = .{ rng(100, 144, 4), .{}, .{} } },
+    .{ .class = 122, .domain = .global, .global_class = 122, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_dfs | bh_pcl), .ranges = .{ rng(100, 140, 8), .{}, .{} } },
+    .{ .class = 123, .domain = .global, .global_class = 123, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_dfs | bh_pcu), .ranges = .{ rng(104, 144, 8), .{}, .{} } },
+    .{ .class = 124, .domain = .global, .global_class = 124, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp | bh_nom), .ranges = .{ rng(149, 161, 4), .{}, .{} } },
+    .{ .class = 125, .domain = .global, .global_class = 125, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp | bh_le), .ranges = .{ rng(149, 169, 4), .{}, .{} } },
+    .{ .class = 126, .domain = .global, .global_class = 126, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcl), .ranges = .{ rng(149, 157, 8), .{}, .{} } },
+    .{ .class = 127, .domain = .global, .global_class = 127, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcu), .ranges = .{ rng(153, 161, 8), .{}, .{} } },
+    .{ .class = 128, .domain = .global, .global_class = 128, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp), .ranges = .{ rng(42, 58, 16), rng(106, 138, 16), rng(155, 155, 1) }, .center_index = true },
+    .{ .class = 129, .domain = .global, .global_class = 129, .start_factor = 10000, .spacing_mhz = 160, .behaviors = beh(bh_eirp), .ranges = .{ rng(50, 114, 64), .{}, .{} }, .center_index = true },
+    .{ .class = 130, .domain = .global, .global_class = 130, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp | bh_p80), .ranges = .{ rng(42, 58, 16), rng(106, 138, 16), rng(155, 155, 1) }, .center_index = true },
+    .{ .class = 180, .domain = .global, .global_class = 180, .start_factor = 112320, .spacing_mhz = 2160, .center_step_khz = 2160000, .behaviors = beh(0), .ranges = .{ rng(1, 6, 1), .{}, .{} } },
+    // ---- Table E-1：美国 ----
+    .{ .class = 1, .domain = .us, .global_class = 115, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(36, 48, 4), .{}, .{} } },
+    .{ .class = 2, .domain = .us, .global_class = 118, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_dfs), .ranges = .{ rng(52, 64, 4), .{}, .{} } },
+    .{ .class = 3, .domain = .us, .global_class = 124, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_nom), .ranges = .{ rng(149, 161, 4), .{}, .{} } },
+    .{ .class = 4, .domain = .us, .global_class = 121, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_dfs | bh_eirp), .ranges = .{ rng(100, 144, 4), .{}, .{} } },
+    .{ .class = 5, .domain = .us, .global_class = 125, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_le), .ranges = .{ rng(149, 165, 4), .{}, .{} } },
+    .{ .class = 12, .domain = .us, .global_class = 81, .start_factor = 4814, .spacing_mhz = 25, .behaviors = beh(bh_le), .ranges = .{ rng(1, 11, 1), .{}, .{} } },
+    .{ .class = 22, .domain = .us, .global_class = 116, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(36, 44, 8), .{}, .{} } },
+    .{ .class = 23, .domain = .us, .global_class = 119, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(52, 60, 8), .{}, .{} } },
+    .{ .class = 24, .domain = .us, .global_class = 122, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl | bh_dfs | bh_eirp), .ranges = .{ rng(100, 140, 8), .{}, .{} } },
+    .{ .class = 25, .domain = .us, .global_class = 126, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(149, 157, 8), .{}, .{} } },
+    .{ .class = 26, .domain = .us, .global_class = 126, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl | bh_le), .ranges = .{ rng(149, 157, 8), .{}, .{} } },
+    .{ .class = 27, .domain = .us, .global_class = 117, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(40, 48, 8), .{}, .{} } },
+    .{ .class = 28, .domain = .us, .global_class = 120, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(56, 64, 8), .{}, .{} } },
+    .{ .class = 29, .domain = .us, .global_class = 123, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_dfs | bh_nom | bh_eirp), .ranges = .{ rng(104, 144, 8), .{}, .{} } },
+    .{ .class = 30, .domain = .us, .global_class = 127, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_nom), .ranges = .{ rng(153, 161, 8), .{}, .{} } },
+    .{ .class = 31, .domain = .us, .global_class = 127, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_le), .ranges = .{ rng(153, 161, 8), .{}, .{} } },
+    .{ .class = 32, .domain = .us, .global_class = 83, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcl | bh_le), .ranges = .{ rng(1, 7, 1), .{}, .{} } },
+    .{ .class = 33, .domain = .us, .global_class = 84, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_le), .ranges = .{ rng(5, 11, 1), .{}, .{} } },
+    .{ .class = 128, .domain = .us, .global_class = 128, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp), .ranges = .{ rng(42, 58, 16), rng(106, 138, 16), rng(155, 155, 1) }, .center_index = true },
+    .{ .class = 129, .domain = .us, .global_class = 129, .start_factor = 10000, .spacing_mhz = 160, .behaviors = beh(bh_eirp), .ranges = .{ rng(50, 114, 64), .{}, .{} }, .center_index = true },
+    .{ .class = 130, .domain = .us, .global_class = 130, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp | bh_p80), .ranges = .{ rng(42, 58, 16), rng(106, 138, 16), rng(155, 155, 1) }, .center_index = true },
+    // ---- Table E-2：欧洲 ----
+    .{ .class = 1, .domain = .europe, .global_class = 115, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(36, 48, 4), .{}, .{} } },
+    .{ .class = 2, .domain = .europe, .global_class = 118, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_nom), .ranges = .{ rng(52, 64, 4), .{}, .{} } },
+    .{ .class = 3, .domain = .europe, .global_class = 121, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(100, 140, 4), .{}, .{} } },
+    .{ .class = 4, .domain = .europe, .global_class = 81, .start_factor = 4814, .spacing_mhz = 25, .behaviors = beh(bh_le), .ranges = .{ rng(1, 13, 1), .{}, .{} } },
+    .{ .class = 5, .domain = .europe, .global_class = 116, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(36, 44, 8), .{}, .{} } },
+    .{ .class = 6, .domain = .europe, .global_class = 119, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(52, 60, 8), .{}, .{} } },
+    .{ .class = 7, .domain = .europe, .global_class = 122, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(100, 132, 8), .{}, .{} } },
+    .{ .class = 8, .domain = .europe, .global_class = 117, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(40, 48, 8), .{}, .{} } },
+    .{ .class = 9, .domain = .europe, .global_class = 120, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(56, 64, 8), .{}, .{} } },
+    .{ .class = 10, .domain = .europe, .global_class = 123, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(104, 136, 8), .{}, .{} } },
+    .{ .class = 11, .domain = .europe, .global_class = 83, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcl | bh_le), .ranges = .{ rng(1, 9, 1), .{}, .{} } },
+    .{ .class = 12, .domain = .europe, .global_class = 84, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_le), .ranges = .{ rng(5, 13, 1), .{}, .{} } },
+    .{ .class = 128, .domain = .europe, .global_class = 128, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp), .ranges = .{ rng(42, 58, 16), rng(106, 122, 16), .{} }, .center_index = true },
+    .{ .class = 129, .domain = .europe, .global_class = 129, .start_factor = 10000, .spacing_mhz = 160, .behaviors = beh(bh_eirp), .ranges = .{ rng(50, 114, 64), .{}, .{} }, .center_index = true },
+    .{ .class = 130, .domain = .europe, .global_class = 130, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp | bh_p80), .ranges = .{ rng(42, 58, 16), rng(106, 122, 16), .{} }, .center_index = true },
+    // ---- Table E-3：日本（非废弃行）----
+    .{ .class = 30, .domain = .japan, .global_class = 81, .start_factor = 4814, .spacing_mhz = 25, .behaviors = beh(bh_le), .ranges = .{ rng(1, 13, 1), .{}, .{} } },
+    .{ .class = 31, .domain = .japan, .global_class = 82, .start_factor = 4828, .spacing_mhz = 25, .behaviors = beh(bh_le), .ranges = .{ rng(14, 14, 1), .{}, .{} } },
+    .{ .class = 32, .domain = .japan, .global_class = 118, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(52, 64, 4), .{}, .{} } },
+    .{ .class = 33, .domain = .japan, .global_class = 118, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(0), .ranges = .{ rng(52, 64, 4), .{}, .{} } },
+    .{ .class = 34, .domain = .japan, .global_class = 121, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_dfs), .ranges = .{ rng(100, 140, 4), .{}, .{} } },
+    .{ .class = 36, .domain = .japan, .global_class = 116, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(36, 44, 8), .{}, .{} } },
+    .{ .class = 37, .domain = .japan, .global_class = 119, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl), .ranges = .{ rng(52, 60, 8), .{}, .{} } },
+    .{ .class = 39, .domain = .japan, .global_class = 122, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcl | bh_dfs), .ranges = .{ rng(100, 132, 8), .{}, .{} } },
+    .{ .class = 41, .domain = .japan, .global_class = 117, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(40, 48, 8), .{}, .{} } },
+    .{ .class = 42, .domain = .japan, .global_class = 120, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu), .ranges = .{ rng(56, 64, 8), .{}, .{} } },
+    .{ .class = 44, .domain = .japan, .global_class = 123, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_dfs), .ranges = .{ rng(104, 136, 8), .{}, .{} } },
+    .{ .class = 56, .domain = .japan, .global_class = 83, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcl | bh_le), .ranges = .{ rng(1, 9, 1), .{}, .{} } },
+    .{ .class = 57, .domain = .japan, .global_class = 84, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_pcu | bh_le), .ranges = .{ rng(5, 13, 1), .{}, .{} } },
+    .{ .class = 58, .domain = .japan, .global_class = 121, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_le | bh_nom), .ranges = .{ rng(100, 140, 4), .{}, .{} } },
+    .{ .class = 128, .domain = .japan, .global_class = 128, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp), .ranges = .{ rng(42, 58, 16), rng(106, 122, 16), .{} }, .center_index = true },
+    .{ .class = 129, .domain = .japan, .global_class = 129, .start_factor = 10000, .spacing_mhz = 160, .behaviors = beh(bh_eirp), .ranges = .{ rng(50, 114, 64), .{}, .{} }, .center_index = true },
+    .{ .class = 130, .domain = .japan, .global_class = 130, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp | bh_p80), .ranges = .{ rng(42, 58, 16), rng(106, 122, 16), .{} }, .center_index = true },
+    // ---- Table E-5：中国 ----
+    .{ .class = 1, .domain = .china, .global_class = 115, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp), .ranges = .{ rng(36, 48, 4), .{}, .{} } },
+    .{ .class = 2, .domain = .china, .global_class = 118, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp | bh_dfs), .ranges = .{ rng(52, 64, 4), .{}, .{} } },
+    .{ .class = 3, .domain = .china, .global_class = 125, .start_factor = 10000, .spacing_mhz = 20, .behaviors = beh(bh_eirp), .ranges = .{ rng(149, 169, 4), .{}, .{} } },
+    .{ .class = 4, .domain = .china, .global_class = 116, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcl), .ranges = .{ rng(36, 44, 8), .{}, .{} } },
+    .{ .class = 5, .domain = .china, .global_class = 119, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcl | bh_dfs), .ranges = .{ rng(52, 60, 8), .{}, .{} } },
+    .{ .class = 6, .domain = .china, .global_class = 126, .start_factor = 10000, .spacing_mhz = 40, .behaviors = beh(bh_eirp | bh_pcl), .ranges = .{ rng(149, 157, 8), .{}, .{} } },
+    .{ .class = 7, .domain = .china, .global_class = 81, .start_factor = 4814, .spacing_mhz = 25, .behaviors = beh(bh_le), .ranges = .{ rng(1, 13, 1), .{}, .{} } },
+    .{ .class = 8, .domain = .china, .global_class = 83, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_le | bh_pcl), .ranges = .{ rng(1, 9, 1), .{}, .{} } },
+    .{ .class = 9, .domain = .china, .global_class = 84, .start_factor = 4814, .spacing_mhz = 40, .behaviors = beh(bh_le | bh_pcu), .ranges = .{ rng(5, 13, 1), .{}, .{} } },
+    .{ .class = 128, .domain = .china, .global_class = 128, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp), .ranges = .{ rng(42, 58, 16), rng(155, 155, 1), .{} }, .center_index = true },
+    .{ .class = 129, .domain = .china, .global_class = 129, .start_factor = 10000, .spacing_mhz = 160, .behaviors = beh(bh_eirp), .ranges = .{ rng(50, 50, 1), .{}, .{} }, .center_index = true },
+    .{ .class = 130, .domain = .china, .global_class = 130, .start_factor = 10000, .spacing_mhz = 80, .behaviors = beh(bh_eirp | bh_p80), .ranges = .{ rng(42, 58, 16), rng(155, 155, 1), .{} }, .center_index = true },
+};
+
+/// 查 Annex E 的一行。192–254 是 Vendor specific；不在表里的（保留段，或本实现没收录的
+/// 地区类行）是 UnsupportedOperatingClass。
+pub fn lookupOperatingClass(domain: Domain, class: u8) Error!*const OpClass {
+    if (class >= 192 and class < 255) return error.VendorSpecificClass;
+    for (&op_classes) |*row| {
+        if (row.domain == domain and row.class == class) return row;
+    }
+    return error.UnsupportedOperatingClass;
+}
+
+/// 信道号是否在该 operating class 的 Channel set / Channel center frequency index 列里
+/// （成员判断对两种列一样）。类不存在时是 false。
+pub fn channelInOperatingClass(domain: Domain, class: u8, channel: u8) bool {
+    const row = lookupOperatingClass(domain, class) catch return false;
+    for (row.ranges) |r| {
+        if (r.step == 0) continue;
+        if (channel >= r.first and channel <= r.last and (channel - r.first) % r.step == 0) return true;
+    }
+    return false;
+}
+
+/// 信道号 → 中心频率（kHz）。sub-6 GHz 类按式（17-27）（p.2305）：中心频率（MHz）= 起始频率
+/// + 5 × nch，起始频率 = dot11ChannelStartingFactor × 500 kHz（p.3275）；DMG 类 180 按
+/// 20.3.1（行 126559）中心频率 = 起始频率 + Channel spacing × Channel number（2160 MHz 光栅）。
+/// 起始频率是「—」（GeoDB 类）时返回 StartFrequencyUndefined；信道不在集合里时返回 BadValue。
+pub fn channelCenterFrequencyKhz(domain: Domain, class: u8, channel: u8) Error!u32 {
+    const row = try lookupOperatingClass(domain, class);
+    if (row.start_factor == 0) return error.StartFrequencyUndefined;
+    if (!channelInOperatingClass(domain, class, channel)) return error.BadValue;
+    return @as(u32, row.start_factor) * 500 + row.center_step_khz * @as(u32, channel);
+}
+
+/// 该 operating class 的全部合法信道号（Channel set 列或 Channel center frequency index 列，
+/// 升序）。`out` 装不下是 TooLong。
+pub fn operatingClassChannels(domain: Domain, class: u8, out: []u8) Error!usize {
+    const row = try lookupOperatingClass(domain, class);
+    var n: usize = 0;
+    for (row.ranges) |r| {
+        var ch: u16 = r.first;
+        while (r.step != 0 and ch <= r.last) : (ch += r.step) {
+            if (n == out.len) return error.TooLong;
+            out[n] = @intCast(ch);
+            n += 1;
+        }
+    }
+    return n;
+}
+
+/// Beacon request 的 Operating Class / Channel Number 是否合法（9.4.2.21.7，p.811）：
+/// Operating Class 必须在 Annex E 里有定义；Channel Number 是 0 / 255（逐信道量测，
+/// 信道号在此语义下不指向单个信道）或该类的 Channel set / Channel center frequency index
+/// 定义的信道。Beacon Table 模式不按信道量测，调用方不必对它问这个函数。
+pub fn beaconChannelValid(domain: Domain, req: BeaconRequest) bool {
+    _ = lookupOperatingClass(domain, req.operating_class) catch return false;
+    if (isIterativeChannel(req.channel)) return true;
+    return channelInOperatingClass(domain, req.operating_class, req.channel);
+}

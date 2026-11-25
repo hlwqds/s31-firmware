@@ -69,6 +69,8 @@ const eap_selftest = @import("eap_selftest.zig");
 const ft_proto_selftest = @import("ft_proto_selftest.zig");
 const sae_groups_selftest = @import("sae_groups_selftest.zig");
 const supp_akm_selftest = @import("supp_akm_selftest.zig");
+const owe_cache_selftest = @import("owe_cache_selftest.zig");
+const ft_ric_selftest = @import("ft_ric_selftest.zig");
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;
@@ -1166,6 +1168,8 @@ fn runChecks() bool {
     ft_proto_selftest.run(extCheck);
     sae_groups_selftest.run(extCheck);
     supp_akm_selftest.run(extCheck);
+    owe_cache_selftest.run(extCheck);
+    ft_ric_selftest.run(extCheck);
     return g_failed == 0;
 }
 

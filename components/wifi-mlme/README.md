@@ -3,10 +3,11 @@
 IEEE Std 802.11-2016 Clause 9 / 11.1.4 / 11.2 / 11.3 / 12.2.7 / 12.2.8 / 12.6.19 / 12.6.20 的纯逻辑实现，
 另含 QoS 字段与参数（9.2.4.5、9.4.1.17、9.4.2.29、Table 10-1）和省电的两个确定性模型（11.2）。
 第三批（2026-11-25）加入无线测量（11.11 与相关的元素、帧格式，`rrm.zig`）和 WNM（BSS Transition Management 11.24.7、
-WNM Sleep Mode 11.2.3.18，`wnm.zig`）。
+WNM Sleep Mode 11.2.3.18，`wnm.zig`）；第四批（2026-11-25）加入 RM Enabled Capabilities 元素与 Annex E 的 Operating Class 映射
+（`rrm.zig` 第 13、14 节）、WNM 的 TFS 与 WNM Sleep Mode Response 的 Key Data（`wnm.zig` 第 10–14 节）。
 不做密钥与加解密（归 `wifi-connect`）、不做 SAE 报文内容、不做 AP 行为、PHY、EDCA 竞争与队列调度。
-主机测试 **146 项**、板侧自检 **37 条判据**（2026-11-25）。第二批之后是 82 项 / 24 条（24 条已随 `wifi` profile 上板，
-`wifi_mlme` 24/24）；第一批上板时是 61 项 / 16 条（见「验证状态」）。
+主机测试 **200 项**、板侧自检 **58 条判据**（2026-11-25）。第二批之后是 82 项 / 24 条（24 条已随 `wifi` profile 上板，
+`wifi_mlme` 24/24）；第三批之后是 146 项 / 37 条，第四批之后是 200 项 / 58 条，后两批都没有上板；第一批上板时是 61 项 / 16 条（见「验证状态」）。
 
 ## 范围与来源
 
@@ -52,25 +53,37 @@ WNM Sleep Mode 11.2.3.18，`wnm.zig`）。
     11.2.3.18（p.1623–1624）；9.4.2.82（p.1005）、表 9-203 / 9-204（p.1006）；9.6.14.19–9.6.14.20（p.1237–1238）；
     9.4.2.79（p.1001）。
   - 参照：hostap `ieee802_11_defs.h` 的结构体布局与常量；逐字节排帧按原图。
+- 第四批新增（页码为印刷页码，逐条见 `src/rrm.zig` 第 13、14 节与 `src/wnm.zig` 第 10–14 节的注释）：
+  - `rrm.zig`：9.4.2.45（RM Enabled Capabilities 元素，图 9-311、表 9-157；元素 ID 70）、11.11.6（能力的通告、没通告的请求要拒）、
+    11.11.4（量测时长，表 11-8）、17.3.8.4.2 的式 (17-27)（5 MHz 光栅）、20.3.1（DMG 的信道中心频率）、Annex E 的表 E-1 到 E-5。
+  - `wnm.zig`：11.24.12.1–11.24.12.3（TFS 的能力、STA 侧与 AP 侧操作）、9.4.2.80 / 9.4.2.81（TFS Request / Response 元素）、
+    9.4.2.31 / 9.4.2.33（TCLAS、TCLAS Processing）、9.6.14.15–9.6.14.18（TFS 的四种帧）、表 9-354（动作值）、
+    9.6.14.20（WNM Sleep Mode Response 的 Key Data，图 9-716 到 9-718、表 9-358）。
 
 ## 验证状态
 
 - L3 板侧：第一批 16 条判据于 2026-11-24 随 `wifi` profile 上板一次，16/16。日志 `logs/wifi-selftest-prefix-boot.log`。
   第二批加到 24 条之后于同日重新上板：`wifi_mlme` `checks: passed=24 failed=0 total=24`，整份判决 14/14 段、
   `main: verdict=pass`（`logs/e2e-wifi-boot.log`，命令 `BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi`）。
-- L1 主机：2026-11-25，146 项，全部通过（`cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig`
-  → `All 146 tests passed.`）。分布：`host_tests.zig` 64（自身 61：`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6；
-  另有 3 个 wrapper `test` 块）+ `qos_tests.zig` 10 + `powersave_tests.zig` 9 + `rrm_wnm_tests.zig` 63（其中 1 项在主机上执行
-  `rrm_wnm_selftest.run`）；`zig fmt --check src/` 干净。
+- L1 主机：2026-11-25，200 项，全部通过（`cd components/wifi-mlme && env -u LD_LIBRARY_PATH zig test src/host_tests.zig`
+  → `All 200 tests passed.`）。分布：`host_tests.zig` 66（自身 61：`frame` 13、`ie` 11、`mgmt` 8、`robust` 4、`mlme` 19、`scan` 6；
+  另有 5 个 wrapper `test` 块）+ `qos_tests.zig` 10 + `powersave_tests.zig` 9 + `rrm_wnm_tests.zig` 63 + `rrm_caps_tests.zig` 16 +
+  `wnm_tfs_tests.zig` 36（后三个测试文件各有 1 项在主机上执行对应的板侧子自检）；`zig fmt --check src/` 干净。
 - 接入：`firmware/build.zig` 的 `wifi` 组已挂上本组件的 `selftest.zig`，`wifi` 与 `full` 两个 profile 带它。
-  37 条判据的板侧自检在主机上以桩 `board` 模块运行（2026-11-25，`/tmp/selftest-host/`）：
-  `checks: passed=37 failed=0 total=37`，最长一行 154 字节；同一份 `selftest.zig` 以固件参数（`riscv32-freestanding-eabihf`、
+  58 条判据的板侧自检在主机上以桩 `board` 模块运行（2026-11-25，`/tmp/selftest-host/`）：
+  `checks: passed=58 failed=0 total=58`，最长一行 154 字节；同一份 `selftest.zig` 以固件参数（`riscv32-freestanding-eabihf`、
   `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall`）交叉编译通过——目标参数写在第一个 `-M` 之前，并带一个在编译期断言
-  目标架构的守卫根文件（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1、§5.4）。
-  第一批的 16 条、第二批的 24 条在主机上桩跑时分别是 `passed=16`、`passed=24`。
+  目标架构的守卫根文件（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1、§5.4、§5.5）。
+  第一批的 16 条、第二批的 24 条、第三批的 37 条在主机上桩跑时分别是 `passed=16`、`passed=24`、`passed=37`。
 - 差分对拍（第三批，2026-11-25；数字见 `docs/verification/wifi-ieee80211-verification.md` §4.4）：无线测量按 hostap
   `ieee802_11_defs.h` 的结构体布局排帧，四个种子各 12000 帧；WNM 按规范原图排帧，四个种子各 9000 帧；全部 0 不一致。
   补 WNM 的对拍时找到 `wnm.parseSleepResponse` 的一个缺陷（该报告 §5.4）。
+- 差分对拍（第四批，2026-11-25 主代理重跑；细目见 `docs/verification/wifi-ieee80211-verification.md` §4.5）：
+  RM Enabled Capabilities 与 Annex E 用按原图与原表手排的 oracle，309 个正例、194 个信道集合外负例、3 个频率负例的向量重新生成后逐字节相同；
+  TFS 与 Key Data 用按原图手排的 oracle，三个种子各 310 例、放大的一组 930 例（其中 420 例是规则对帧的匹配），全部 0 不一致。
+  IDF 里的 hostap 把 TFS 与 WNM Sleep 的 GTK / IGTK 处理裁掉了，这一片没有独立实现可对拍。
+  第四批新增两份子自检的尺寸（riscv32 ReleaseSmall；指令数在 QEMU 上数）：`rrm_caps_selftest` text 12983 B、25348 条 rv32 指令；
+  `wnm_tfs_selftest` text 24123 B、182300 条 rv32 指令。
 - 差分对拍（`/tmp/s31-oracle/wifi_oracle.py`，一次性测试，跑完已删）：
   `bip_protect` 40 条（4 种 BIP × Key ID 4/5 × 随机 IPN）的 MME 经 `ie.parseMmie` 解出的 Key ID / IPN / MIC 全部相等；
   `ccmp_encapsulate` 40 条随机管理帧 / 数据帧（含 3 条四地址、12 条 QoS、15 条 HT Control）的 AAD 长度与 QoS TID
@@ -82,7 +95,7 @@ WNM Sleep Mode 11.2.3.18，`wnm.zig`）。
 ```sh
 cd components/wifi-mlme
 ZIG=/nix/store/m096jak4mrmdhah085l79rzfypviyhfw-zig-0.17.1/bin/zig
-env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # 82 项
+env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 200 tests passed.
 env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 ```
 
@@ -99,12 +112,18 @@ env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 | `src/mlme.zig` | 1069 | State 1–4、Class 1/2/3 过滤、认证 / 关联 / 重关联 / 解除认证 / 去关联流程、重传与 SRC/LRC、指示队列 |
 | `src/scan.zig` | 442 | 主动 / 被动扫描调度表、Probe Request 整帧、有界 BSS 表 |
 | `src/vectors.zig` | 448 | 固定向量与出处 |
-| `src/host_tests.zig` | 2245 | 第一批 61 项测试；末尾两个 wrapper `test` 块引入 `qos_tests.zig`、`powersave_tests.zig` |
-| `src/selftest.zig` | 1130 | 板侧自检（24 条判据；第一批 16 条 + QoS / 省电 8 条） |
+| `src/host_tests.zig` | 2266 | 第一批 61 项测试；末尾五个 wrapper `test` 块引入 `qos_tests.zig`、`powersave_tests.zig`、`rrm_wnm_tests.zig`、`rrm_caps_tests.zig`、`wnm_tfs_tests.zig` |
+| `src/selftest.zig` | 1141 | 板侧自检（58 条判据；第一批 16 条 + QoS / 省电 8 条 + 第三、四批各份子自检） |
 | `src/qos.zig` | 850 | QoS Control 字段按发送方 / 子类型的布局与编解码、UP / TID / AC、Ack Policy 约束、QoS Capability 与 EDCA Parameter Set 元素、QoS 数据帧的 `parse` / `seal` |
 | `src/powersave.zig` | 1119 | 省电的两个确定性模型：`Sta`（非 AP STA 侧，模式切换、TIM / DTIM 唤醒、PS-Poll、U-APSD 服务期）与 `Ap`（进程内 AP 模型，缓冲、TIM、PS-Poll 响应、DTIM 之后的组播） |
 | `src/qos_tests.zig` | 618 | QoS 的 10 项主机测试与用例向量 |
 | `src/powersave_tests.zig` | 619 | 省电的 9 项主机测试与用例向量 |
+| `src/rrm.zig` | 1859 | 无线测量（第三批）；第四批加 RM Enabled Capabilities 元素（第 13 节）与 Annex E 的 Operating Class 表和查询（第 14 节），Beacon request 的 Operating Class / Channel 校验接进 `decide()` |
+| `src/wnm.zig` | 2627 | BTM 与 WNM Sleep Mode（第三批）；第四批加 TFS（TCLAS、TFS 元素与帧、AP 侧与 STA 侧模型、过滤匹配）与 Key Data（KDE 布局与加密注入点） |
+| `src/rrm_caps_tests.zig` | 895 | RM Enabled Capabilities 与 Annex E 的 15 项主机测试与在主机上执行板侧子自检的 1 项 |
+| `src/rrm_caps_selftest.zig` | 242 | 7 条板侧判据 |
+| `src/wnm_tfs_tests.zig` | 774 | TFS 与 Key Data 的 35 项主机测试与在主机上执行板侧子自检的 1 项 |
+| `src/wnm_tfs_selftest.zig` | 365 | 14 条板侧判据 |
 
 公开接口（要点）：`frame.parse(buf, .none|.present|.checked)`、`frame.seal(hdr, body, with_fcs, out)`、
 `frame.crc32` / `fcsOk`；`ie.Walker`、`ie.parseXxx`、`ie.buildXxx`；`mgmt.parseXxx` / `buildXxx`、
@@ -210,6 +229,11 @@ QoS 与省电（第二批）：`qos.acForUp` / `acForTid` / `acForMgmtFrame`、`
 - **名字表**：Status / Reason 名字从 PDF 抽取文本转录，被断行的名字已拼接；37 / 38 各有多个名字取第一个，
   Status 1 的两个别名取 `REFUSED_REASON_UNSPECIFIED`。
 
+第三、四批的偏离（无线测量、WNM、RM Enabled Capabilities 与 Annex E、TFS 与 Key Data 各自的范围与取舍）记在
+`docs/verification/wifi-ieee80211-verification.md` §6 的第三批与第四批小节。第四批的三条要点：`maxMeasurementDurationTu` 对 MIB 1–3
+取向下取整的 TU 数（11.11.4 的公式对这几个值是亚 Beacon Interval 的分数时长，旧代码做 `u32` 减法下溢）；分类器参数一律按大端
+（类型 3 的 Offset 原文没有明说）；Key Data 的加密是注入点，本组件只用测试替身验证了 KDE 的布局与「带不带 Key Data」的分支。
+
 ## 待验证项
 
 - 板侧：已接入 `firmware/build.zig`，于 2026-11-24 上板两次。第一批 16 条：`checks: passed=16 failed=0 total=16`
@@ -224,3 +248,5 @@ QoS 与省电（第二批）：`qos.acForUp` / `acForTid` / `acForMgmtFrame`、`
   的位号（B19 / B22 等）、四地址 / QoS / HT Control 帧头、重关联整帧、STA 发出的解除认证 / 去关联帧。
 - 扫描参数的默认值（ProbeDelay 100 µs、Min 20 TU、Max 38 TU）与 `stayPastMinChannelTime` 需要真实驱动配合；
   PHY-RXSTART / PHY-CCA 原语被简化成调度表里的两步。
+- 第三批、第四批的板侧判据（第三批 37 条里不含第一批 16 条的部分，以及第四批新增的 21 条）没有上板：串口 `/dev/ttyUSB0` 当前账号没有权限。
+- TFS 与 Key Data 没有独立实现对拍；Key Data 的真实密钥封装与管理帧保护没有在本组件验证，接线由调用方提供。

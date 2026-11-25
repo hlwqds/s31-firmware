@@ -2404,6 +2404,12 @@ test {
 test {
     _ = @import("supp_akm_tests.zig");
 }
+test {
+    _ = @import("owe_cache_tests.zig");
+}
+test {
+    _ = @import("ft_ric_tests.zig");
+}
 
 // ---------------------------------------------------------------------------
 // 板侧子自检在主机上执行
@@ -2424,6 +2430,8 @@ const eap_selftest = @import("eap_selftest.zig");
 const ft_proto_selftest = @import("ft_proto_selftest.zig");
 const sae_groups_selftest = @import("sae_groups_selftest.zig");
 const supp_akm_selftest = @import("supp_akm_selftest.zig");
+const owe_cache_selftest = @import("owe_cache_selftest.zig");
+const ft_ric_selftest = @import("ft_ric_selftest.zig");
 
 test "board selftest on host: SAE full (sae_full_selftest.run) passes every check" {
     try selftest_host.expectAllPass(sae_full_selftest.run);

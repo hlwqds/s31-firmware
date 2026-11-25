@@ -61,6 +61,16 @@ QEMU=/nix/store/…/bin/qemu-system-riscv32 sh tools/qemu-instr/run.sh cal secti
 约 7.5 秒；第二批的 `wifi` 镜像按同一口径是 14.7 秒的计算，在 30 秒窗口里跑得过。30 秒对第三批的镜像压线，
 所以 `tests/e2e/run_e2e.py` 给 `wifi` 的抓取窗口放宽到 60 秒（`full` 是它的超集，90 秒）；其余 profile 不变。
 
+## 第四批之后的读数（2026-11-25）
+
+- `section:wifi-connect`（199 条）1547931525 条、19.35 秒；`section:ble-802154`（152 条）6254862 条、0.08 秒；
+  `section:wifi-mlme` 889505 条；其余 section 与上表相同（`cal` 读数仍是 59433）。
+- `wifi` profile 除 `net_ethernet` 外合计 1784445194 条（17.84 亿）、22.31 秒。第四批新加的六份子自检合计 566360 条，
+  占 0.03%：`sub:wnm_tfs` 182300、`sub:nd6` 152883、`sub:owe_cache` 104108、`sub:sfr` 75540、`sub:ft_ric` 26181、
+  `sub:rrm_caps` 25348。
+- `sub` 组会把三个组件下所有 `*_selftest.zig` 都量一遍。只量其中几份时，照 `run.sh` 的编译与测量逻辑写一个按文件名过滤的包装，
+  并先跑一次 `cal` 确认读数稳定。
+
 ## 文件
 
 | 文件 | 作用 |

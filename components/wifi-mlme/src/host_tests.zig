@@ -2246,6 +2246,12 @@ test {
 test {
     _ = @import("rrm_wnm_tests.zig");
 }
+test {
+    _ = @import("wnm_tfs_tests.zig");
+}
+test {
+    _ = @import("rrm_caps_tests.zig");
+}
 
 // ---------------------------------------------------------------------------
 // 板侧子自检在主机上执行
@@ -2256,3 +2262,5 @@ test {
 // 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，自检文件要出现在闭包里。
 // ---------------------------------------------------------------------------
 const rrm_wnm_selftest = @import("rrm_wnm_selftest.zig");
+const wnm_tfs_selftest = @import("wnm_tfs_selftest.zig");
+const rrm_caps_selftest = @import("rrm_caps_selftest.zig");

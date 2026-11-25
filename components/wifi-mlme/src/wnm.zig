@@ -11,7 +11,16 @@
 //!   3. AP 侧：由扫描表生成带 Preference 的候选表、Disassociation Timer 的逐 Beacon 递减、
 //!      组地址 Request 的条件；
 //!   4. WNM Sleep Mode：元素与两种帧的解析 / 构造，STA 侧的进出与 DTIM 期醒来规则，AP 侧的
-//!      接受 / 拒绝、停发单播、TIM 位与密钥处理。
+//!      接受 / 拒绝、停发单播、TIM 位与密钥处理；
+//!   5. TFS（Traffic Filtering Service，11.24.12）：TFS Request / Response / Notify / Notify
+//!      Response 四种帧与元素（含 TCLAS / TCLAS Processing 子元素）的解析与构造，Table 9-145
+//!      全部七种分类器的解析与匹配，STA 侧的请求 / 响应配对，AP 侧的保存、替换、按帧匹配与
+//!      Delete After Match / Notify 记账（WNM Sleep 帧里的 TFS 元素仍以切片返回，可另交给本
+//!      文的 TFS 函数解析）；
+//!   6. WNM Sleep Mode Response 的 Key Data（9.6.14.20）：GTK / IGTK 子元素（KDE）的构造与
+//!      解析，以及「Key Data 非空走 Key Data、为空走组密钥握手」的判定。加解密经 KeyDataCodec
+//!      注入——真实密钥封装（12.7.2 的 AES Key Wrap / PMF 帧保护）没有在本组件验证，要由
+//!      拥有 KEK / PMF 上下文的调用方提供。
 //!
 //! 对应原文（页码为印刷页码）：
 //!
@@ -25,6 +34,19 @@
 //!   * 9.6.14.19–9.6.14.20 / Figure 9-715–9-716（p.1237–1238）：WNM Sleep Mode Request / Response；
 //!   * 11.2.3.1（p.1600）：PS 模式且不在 WNM sleep mode 的 STA 按 ListenInterval / ReceiveDTIMs
 //!     听 Beacon；
+//!   * 11.24.12.1–.3（p.1806–1809）：TFS 能力、non-AP STA 侧与 AP 侧规程（协议的 AND / OR
+//!     结构、EAPOL-Key 隐式规则集、Delete After Match 与 Notify）；
+//!   * 9.4.2.80 / Figure 9-418 / Table 9-200 / Table 9-201（p.1002–1004）：TFS Request 元素；
+//!   * 9.4.2.81 / Figure 9-421 / 9-422 / Table 9-202（p.1004–1005）：TFS Response 元素；
+//!   * Table 9-198（p.999）：TFS Response Status（0–14，15–255 保留）；
+//!   * 9.4.2.31 / Figure 9-269–9-279 / Table 9-144 / 9-145 / 9-147 / 9-148（p.906–912）：TCLAS
+//!     元素与七种 Frame Classifier；
+//!   * 9.4.2.33 / Figure 9-290 / Table 9-149（p.914–915）：TCLAS Processing 元素；
+//!   * 9.6.14.15–9.6.14.18 / Figure 9-711–9-714（p.1236–1237）：TFS Request / Response / Notify /
+//!     Notify Response 帧格式；
+//!   * Table 9-135（p.891–…）：Extended Capabilities 的 TFS 位 = 16；
+//!   * 9.6.14.20 / Figure 9-716 / 9-717 / 9-718 / Table 9-358（p.1238–1240）：Key Data 与 GTK /
+//!     IGTK 子元素；Figure 9-319（p.935）：GTK 子元素的 Key Info；
 //!   * MIB 属性 dot11BssMaxIdlePeriod：Max Idle Period 以 1000 TU 为单位（「number of 1000
 //!     TUs that pass before an AP disassociates an inactive non-AP STA」）。
 //!
@@ -43,10 +65,25 @@
 //!     规定 AP 收到 2 后应留出扫描时间再发。hostap 同一情形回 7（`wnm_sta.c:710–713`）。
 //!   * BTM Status 3（Insufficient available capacity）需要 BSS Available Admission Capacity /
 //!     BSS Load，本端 BSS 表不存，所以判决模型不会产出 3，只把它当作合法码。
-//!   * TFS（Traffic Filtering Service，11.24.12）不实现：WNM Sleep Mode 帧里的 TFS 元素原样
-//!     透传，AP 侧模型只保留「有排队帧就置 TIM 位」这一条。
-//!   * Key Data（GTK / IGTK 的封装）不实现：只保留长度字段与「该走 Key Data 还是组密钥握手」
-//!     的判定。
+//!   * TFS：WNM Sleep Mode 帧里的 TFS 元素仍以切片返回（可交给第 10–13 节解析）；AP 侧模型
+//!     保留「有排队帧就置 TIM 位」这一条，TFS 匹配与 TIM 位的接线由调用方完成（`TfsAp`
+//!     的匹配结果 + `SleepAp.queueTfsMatch`）。
+//!   * TFS：分类器类型 1（TCP/UDP IP）不要求 Classifier Mask 的 Version 位为 1——原文该句
+//!     （「A TCLAS element is valid when …」）只出现在 Type 4 的布局之后；Type 2 的
+//!     Classifier Mask「reserved」按「必须为 0、TCI 无条件比较」处理。类型 3 的 Filter
+//!     Offset 按分类器参数的 big-endian 约定读（原文只对类型 1 / 4 / 5 明说 big-endian）。
+//!   * TFS：AP 侧采用「全部 Accept 才提交」——部分拒绝时保留旧规则（11.24.12.2「previously
+//!     established filter parameters … remain in effect」的字面含义），Response 仍逐元素回状态。
+//!     每个请求元素里的全部子元素共用同一个状态（原文没有给出把状态拆到单个子元素的规则）。
+//!   * TFS：TFS Response / TFS Status 子元素里的 Vendor Specific 只校验 ID（Table 9-202），
+//!     不保留内容；TFS Notify Response 与 TFS Notify 共用 WNM Action 15、按方向区分
+//!     （Table 9-354 只有「15 TFS Notify」，9.6.14.18 的图与 9.6.14.17 相同）。
+//!   * Key Data：子元素顺序按 9.4.3「非降序」校验（Key Data 不是元素，但 NOTE 1 的多 GTK /
+//!     IGTK 与 9.4.3 的排序规则一致）；Key ID（IGTK 的 2 八位组）按 9.2.2 的数值字段
+//!     LSB 在前读取。
+//!   * Key Data：加密经 KeyDataCodec 注入。PMF 场景整帧在帧级受保护、Key Data 本身是明文
+//!     KDE（9.6.14.20 的 NOTE 2）；AKM 决定的密钥封装（12.7.2，如组密钥握手的 AES Key
+//!     Wrap）没有在本组件验证，要由调用方提供 protect / unprotect；组件测试只用测试替身。
 //!
 //! 比特编号沿用 9.2.2（p.636）：字段第 N 位落在第 N/8 字节的第 N mod 8 位。
 
@@ -63,6 +100,10 @@ pub const Error = rrm.Error || error{
     ReservedField,
     /// Request Mode 的 BSS Termination Included = 1 却没有 BSS Termination Duration 字段。
     MissingTermination,
+    /// 该有的子元素 / TCLAS 一个都没有（TFS 元素的「one or more」）。
+    Empty,
+    /// Key Info 的保留位不是 0（Figure 9-319 的 B2–B15）。
+    ReservedBitsSet,
 };
 
 pub const BuildError = rrm.BuildError || error{
@@ -74,6 +115,10 @@ pub const BuildError = rrm.BuildError || error{
     Truncated,
     /// 构造 Query / Response 时给出的候选表里有非 Neighbor Report 元素。
     UnexpectedElement,
+    /// 该有的子元素 / TCLAS 一个都没有。
+    Empty,
+    /// 多于一个 TCLAS 却没有 TCLAS Processing（11.24.12.1）。
+    MissingElement,
 };
 
 fn le16(b: *const [2]u8) u16 {
@@ -96,6 +141,10 @@ pub const Action = enum(u8) {
     btm_query = 6,
     btm_request = 7,
     btm_response = 8,
+    tfs_request = 13,
+    tfs_response = 14,
+    /// TFS Notify 与 TFS Notify Response 共用 15、按方向区分（Table 9-354；9.6.14.17 / 9.6.14.18）。
+    tfs_notify = 15,
     sleep_request = 16,
     sleep_response = 17,
     _,
@@ -1155,3 +1204,1424 @@ pub const SleepAp = struct {
         });
     }
 };
+
+// ---------------------------------------------------------------------------
+// 10) TFS：TCLAS 元素与分类器（9.4.2.31 / 9.4.2.33；Figure 9-269–9-290；
+//     Table 9-144 / 9-145 / 9-146 / 9-147 / 9-148 / 9-149）
+// ---------------------------------------------------------------------------
+
+/// Table 9-77（p.784–786）：TCLAS = 14、TCLAS Processing = 44、TFS Request = 91、TFS
+/// Response = 92。ie.ElementId 没有这四个 ID（ie.zig 不归本切片改），用本地常量。
+pub const tclas_element_id: u8 = 14;
+pub const tclas_processing_element_id: u8 = 44;
+pub const tfs_request_element_id: u8 = 91;
+pub const tfs_response_element_id: u8 = 92;
+
+/// Table 9-145（p.908）：Frame classifier type；7–255 保留。
+pub const ClassifierType = enum(u8) {
+    ethernet = 0,
+    tcp_udp_ip = 1,
+    vlan = 2,
+    filter_offset = 3,
+    ip_and_higher = 4,
+    dot1d_q = 5,
+    mac_header = 6,
+    _,
+};
+
+/// Table 9-149（p.915）：Processing subfield；3–255 保留。
+pub const TclasProcessing = enum(u8) {
+    /// PDU / MSDU 要匹配全部关联的 TCLAS。
+    match_all = 0,
+    /// 至少匹配一个关联的 TCLAS。
+    match_any = 1,
+    /// 不属于任何其他 TS 的帧（没有关联的 TCLAS）——TFS 子元素要求 1..n 个 TCLAS，用不到。
+    match_rest = 2,
+    _,
+};
+
+/// Figure 9-269（p.906）：Element ID(1) Length(1) User Priority(1) Frame Classifier(3–255)。
+pub const Tclas = struct {
+    /// Table 9-144（p.907）：0–7 是 MSDU 的 UP、8–11 是 MPDU 的 AC、255 不参与比较；12–254 保留。
+    user_priority: u8,
+    classifier: Classifier,
+};
+
+/// Figure 9-270–9-279（p.908–912）：七种分类器。字段全集都存（各布局固定）；Classifier Mask
+/// 只决定匹配时比较哪些字段。类型 3 的 Value / Mask 与类型 6 的规格串是变长字节串，指向
+/// 输入缓冲。分类器参数按原文 big-endian 传输（类型 1 / 4 / 5 明说；类型 0 的 Type 按
+/// Ethernet 字节序；类型 2 的 TCI 按 802.1Q）。
+pub const Classifier = struct {
+    kind: ClassifierType,
+    /// 类型 ≤ 5：1 个八位组位图，位 i → 图里第 i 个参数；类型 2 必须为 0；类型 6 改存
+    /// `mac_mask` 的 3 个八位组（9 个 2 位控制子字段）。
+    mask: u8 = 0,
+    // 类型 0（Figure 9-271：SA(6) DA(6) Type(2)）。
+    eth_sa: [6]u8 = @splat(0),
+    eth_da: [6]u8 = @splat(0),
+    eth_type: u16 = 0,
+    // 类型 1 / 4（Figure 9-272 / 9-273 / 9-276 / 9-277；地址按版本是 4 或 16 字节）。
+    ip_version: u8 = 4,
+    ip_src: [16]u8 = @splat(0),
+    ip_dst: [16]u8 = @splat(0),
+    ip_addr_len: u8 = 4,
+    sport: u16 = 0,
+    dport: u16 = 0,
+    /// DSCP 只比较 6 个 LSB（2 个 MSB 忽略）；IPv6 的 Flow Label 只比较 20 个 LSB。
+    dscp: u8 = 0,
+    /// IPv4：Protocol；IPv6 且类型 4：Next Header。
+    protocol: u8 = 0,
+    flow: [3]u8 = @splat(0),
+    // 类型 2（Figure 9-274：802.1Q VLAN TCI）。
+    vlan_tci: u16 = 0,
+    // 类型 3（Figure 9-275：Filter Offset(2) Filter Value(n) Filter Mask(n)）。
+    filter_offset: u16 = 0,
+    filter_value: []const u8 = &.{},
+    filter_mask: []const u8 = &.{},
+    // 类型 5（Figure 9-278：PCP/UP(1，4 个 LSB) DEI(1，LSB) VID(2，12 个 LSB)）。
+    dot1_pcp: u8 = 0,
+    dot1_dei: u8 = 0,
+    dot1_vid: u16 = 0,
+    // 类型 6（Figure 9-279：3 个八位组掩码 + 各 Match Specification / Filter Mask）。
+    mac_mask: [3]u8 = @splat(0),
+    mac_specs: []const u8 = &.{},
+};
+
+fn be16(b: *const [2]u8) u16 {
+    return std.mem.readInt(u16, b, .big);
+}
+
+fn wbe16(out: []u8, v: u16) void {
+    std.mem.writeInt(u16, out[0..2], v, .big);
+}
+
+/// IPv4 地址放进 16 字节槽的前 4 字节；比较时只看前 `ip_addr_len` 字节。
+fn pad16(src: []const u8) [16]u8 {
+    var out: [16]u8 = @splat(0);
+    @memcpy(out[0..src.len], src);
+    return out;
+}
+
+/// 解析 TCLAS 元素体（Element ID / Length 之后）：User Priority(1) + Frame Classifier。
+pub fn parseTclasElement(body: []const u8) Error!Tclas {
+    if (body.len < 2) return error.Truncated;
+    // Table 9-144：12–254 保留；255 = UP 与 AC 都不比较。
+    if (body[0] >= 12 and body[0] != 255) return error.ReservedValue;
+    return .{ .user_priority = body[0], .classifier = try parseClassifier(body[1..]) };
+}
+
+fn parseClassifier(f: []const u8) Error!Classifier {
+    if (f.len < 2) return error.Truncated;
+    const t = f[0];
+    if (t > 6) return error.ReservedValue; // Table 9-145：7–255 保留
+    return switch (t) {
+        0 => parseEthernet(f),
+        1 => parseIp(f, .tcp_udp_ip),
+        2 => parseVlan(f),
+        3 => parseFilterOffset(f),
+        4 => parseIp(f, .ip_and_higher),
+        5 => parseDot1(f),
+        else => parseMacHeader(f),
+    };
+}
+
+/// Figure 9-271（p.909）：Type(1) Mask(1) SA(6) DA(6) Type(2) = 16 个八位组；位图 3–7 不指向
+/// 任何参数（保留，须为 0）。
+fn parseEthernet(f: []const u8) Error!Classifier {
+    if (f.len != 16) return error.BadLength;
+    if (f[1] & 0xF8 != 0) return error.ReservedField;
+    return .{ .kind = .ethernet, .mask = f[1], .eth_sa = f[2..8].*, .eth_da = f[8..14].*, .eth_type = be16(f[14..16]) };
+}
+
+/// Figure 9-272 / 9-273（p.910）与 Figure 9-276 / 9-277（p.912）。IPv4：Ver(1) Src(4) Dst(4)
+/// SPort(2) DPort(2) DSCP(1) Protocol(1) Reserved(1)，分类器 18 字节；IPv6 类型 1 没有
+/// DSCP / Next Header（分类器 42 字节），类型 4 两者都有（44 字节）；末尾都是 Flow Label(3)。
+fn parseIp(f: []const u8, kind: ClassifierType) Error!Classifier {
+    const mask = f[1];
+    if (f.len < 3) return error.Truncated;
+    switch (f[2]) {
+        4 => {
+            if (f.len != 18) return error.BadLength;
+            if (mask & 0x80 != 0) return error.ReservedField; // 位 7 → 保留八位组
+            if (kind == .ip_and_higher and mask & 0x01 == 0) return error.ReservedField;
+            return .{
+                .kind = kind,
+                .mask = mask,
+                .ip_version = 4,
+                .ip_addr_len = 4,
+                .ip_src = pad16(f[3..7]),
+                .ip_dst = pad16(f[7..11]),
+                .sport = be16(f[11..13]),
+                .dport = be16(f[13..15]),
+                .dscp = f[15],
+                .protocol = f[16],
+            };
+        },
+        6 => {
+            if (kind == .tcp_udp_ip) {
+                if (f.len != 42) return error.BadLength;
+                if (mask & 0xC0 != 0) return error.ReservedField; // 位 6–7 → 无对应参数
+                return .{
+                    .kind = kind,
+                    .mask = mask,
+                    .ip_version = 6,
+                    .ip_addr_len = 16,
+                    .ip_src = f[3..19].*,
+                    .ip_dst = f[19..35].*,
+                    .sport = be16(f[35..37]),
+                    .dport = be16(f[37..39]),
+                    .flow = f[39..42].*,
+                };
+            }
+            if (f.len != 44) return error.BadLength;
+            // 「A TCLAS element is valid when the Classifier Mask Version bit is 1.」
+            if (mask & 0x01 == 0) return error.ReservedField;
+            return .{
+                .kind = kind,
+                .mask = mask,
+                .ip_version = 6,
+                .ip_addr_len = 16,
+                .ip_src = f[3..19].*,
+                .ip_dst = f[19..35].*,
+                .sport = be16(f[35..37]),
+                .dport = be16(f[37..39]),
+                .dscp = f[39],
+                .protocol = f[40],
+                .flow = f[41..44].*,
+            };
+        },
+        else => return error.BadValue, // Version 取 RFC 791 / RFC 2460 的值
+    }
+}
+
+/// Figure 9-274（p.910）：Type(1) Mask(1) TCI(2) = 4；「The Classifier Mask subfield is
+/// reserved.」→ 必须为 0，TCI 无条件比较。
+fn parseVlan(f: []const u8) Error!Classifier {
+    if (f.len != 4) return error.BadLength;
+    if (f[1] != 0) return error.ReservedField;
+    return .{ .kind = .vlan, .vlan_tci = be16(f[2..4]) };
+}
+
+/// Figure 9-275（p.910）：Type(1) Mask(1，保留) Offset(2) Value(n) Mask(n)；n =（元素 Length
+/// − 5）/ 2 ≥ 1，Value 与 Mask 等长；Mask 里的位是 1 才比较对应位。
+fn parseFilterOffset(f: []const u8) Error!Classifier {
+    if (f.len < 6 or (f.len - 4) % 2 != 0) return error.BadLength;
+    if (f[1] != 0) return error.ReservedField;
+    const n = (f.len - 4) / 2;
+    return .{
+        .kind = .filter_offset,
+        .filter_offset = be16(f[2..4]),
+        .filter_value = f[4..][0..n],
+        .filter_mask = f[4 + n ..][0..n],
+    };
+}
+
+/// Figure 9-278（p.912）：Type(1) Mask(1) PCP/UP(1) DEI(1) VID(2) = 6；位图 3–7 不指向任何
+/// 参数；各参数的保留位（PCP 高 4 位、DEI 高 7 位、VID 高 4 位）必须为 0。
+fn parseDot1(f: []const u8) Error!Classifier {
+    if (f.len != 6) return error.BadLength;
+    if (f[1] & 0xF8 != 0) return error.ReservedField;
+    if (f[2] & 0xF0 != 0 or f[3] & 0xFE != 0 or be16(f[4..6]) & 0xF000 != 0) return error.ReservedValue;
+    return .{
+        .kind = .dot1d_q,
+        .mask = f[1],
+        .dot1_pcp = f[2] & 0x0F,
+        .dot1_dei = f[3] & 0x01,
+        .dot1_vid = be16(f[4..6]) & 0x0FFF,
+    };
+}
+
+/// Table 9-147（p.909）：控制子字段 0–8 依次是 FC、Duration/ID、A1、A2、A3、SC、A4、QoS
+/// Control、HT Control；Table 9-146（p.908）：0 不比较、1 比较（规格 = 字段长度）、2 保留、
+/// 3 比较并带 Filter Mask（规格 = 2 × 字段长度）。
+pub const mac_field_count = 9;
+pub const mac_field_len = [mac_field_count]usize{ 2, 2, 6, 6, 6, 2, 6, 2, 4 };
+
+/// 每个控制子字段的规格长度（0 = 不比较）；控制值 2 是保留值。
+fn macSpecLens(mask: []const u8, lens: *[mac_field_count]usize) error{ReservedValue}!usize {
+    var total: usize = 0;
+    for (0..mac_field_count) |i| {
+        const byte = mask[i / 4];
+        const shift: u3 = @intCast(2 * (i % 4));
+        const ctrl: u2 = @truncate((byte >> shift) & 0x03);
+        if (ctrl == 2) return error.ReservedValue;
+        lens[i] = if (ctrl == 0) 0 else if (ctrl == 1) mac_field_len[i] else 2 * mac_field_len[i];
+        total += lens[i];
+    }
+    return total;
+}
+
+fn parseMacHeader(f: []const u8) Error!Classifier {
+    if (f.len < 5) return error.Truncated; // Type(1) Mask(3) + 至少一段规格
+    var lens: [mac_field_count]usize = undefined;
+    const total = try macSpecLens(f[1..4], &lens);
+    if (f.len != 4 + total) return error.BadLength;
+    return .{ .kind = .mac_header, .mac_mask = f[1..4].*, .mac_specs = f[4..] };
+}
+
+pub fn buildTclasElement(out: []u8, t: Tclas) BuildError!usize {
+    if (t.user_priority >= 12 and t.user_priority != 255) return error.ReservedValue;
+    var body: [255]u8 = undefined;
+    const n = try buildClassifier(&body, &t.classifier);
+    const total = 2 + 1 + n;
+    if (out.len < total) return error.NoRoom;
+    out[0] = tclas_element_id;
+    out[1] = @intCast(1 + n);
+    out[2] = t.user_priority;
+    @memcpy(out[3..][0..n], body[0..n]);
+    return total;
+}
+
+fn buildClassifier(out: []u8, c: *const Classifier) BuildError!usize {
+    switch (c.kind) {
+        .ethernet => {
+            if (out.len < 16) return error.NoRoom;
+            out[0] = 0;
+            out[1] = c.mask & 0x07;
+            @memcpy(out[2..8], &c.eth_sa);
+            @memcpy(out[8..14], &c.eth_da);
+            wbe16(out[14..16], c.eth_type);
+            return 16;
+        },
+        .tcp_udp_ip, .ip_and_higher => {
+            if (c.ip_version == 4) {
+                if (out.len < 18) return error.NoRoom;
+                out[0] = @backingInt(c.kind);
+                out[1] = c.mask & 0x7F;
+                if (c.kind == .ip_and_higher) out[1] |= 0x01; // Version 位必须为 1
+                out[2] = 4;
+                @memcpy(out[3..7], c.ip_src[0..4]);
+                @memcpy(out[7..11], c.ip_dst[0..4]);
+                wbe16(out[11..13], c.sport);
+                wbe16(out[13..15], c.dport);
+                out[15] = c.dscp;
+                out[16] = c.protocol;
+                out[17] = 0; // 保留八位组
+                return 18;
+            }
+            const n: usize = if (c.kind == .tcp_udp_ip) 42 else 44;
+            if (out.len < n) return error.NoRoom;
+            out[0] = @backingInt(c.kind);
+            out[1] = if (c.kind == .tcp_udp_ip) c.mask & 0x3F else c.mask | 0x01;
+            out[2] = 6;
+            @memcpy(out[3..19], &c.ip_src);
+            @memcpy(out[19..35], &c.ip_dst);
+            wbe16(out[35..37], c.sport);
+            wbe16(out[37..39], c.dport);
+            var pos: usize = 39;
+            if (c.kind == .ip_and_higher) {
+                out[pos] = c.dscp;
+                out[pos + 1] = c.protocol;
+                pos += 2;
+            }
+            @memcpy(out[pos..][0..3], &c.flow);
+            return n;
+        },
+        .vlan => {
+            if (out.len < 4) return error.NoRoom;
+            out[0] = 2;
+            out[1] = 0;
+            wbe16(out[2..4], c.vlan_tci);
+            return 4;
+        },
+        .filter_offset => {
+            const n = c.filter_value.len;
+            if (n == 0 or c.filter_mask.len != n) return error.BadLength;
+            const total = 4 + 2 * n;
+            if (out.len < total) return error.NoRoom;
+            out[0] = 3;
+            out[1] = 0;
+            wbe16(out[2..4], c.filter_offset);
+            @memcpy(out[4..][0..n], c.filter_value);
+            @memcpy(out[4 + n ..][0..n], c.filter_mask);
+            return total;
+        },
+        .dot1d_q => {
+            if (out.len < 6) return error.NoRoom;
+            out[0] = 5;
+            out[1] = c.mask & 0x07;
+            out[2] = c.dot1_pcp & 0x0F;
+            out[3] = c.dot1_dei & 0x01;
+            wbe16(out[4..6], c.dot1_vid & 0x0FFF);
+            return 6;
+        },
+        .mac_header => {
+            var lens: [mac_field_count]usize = undefined;
+            const total = try macSpecLens(&c.mac_mask, &lens);
+            if (c.mac_specs.len != total) return error.BadLength;
+            if (out.len < 4 + total) return error.NoRoom;
+            out[0] = 6;
+            @memcpy(out[1..4], &c.mac_mask);
+            @memcpy(out[4..][0..total], c.mac_specs);
+            return 4 + total;
+        },
+        _ => return error.ReservedValue,
+    }
+}
+
+/// Figure 9-290（p.915）：Element ID(1) Length(1)=1 Processing(1)。
+pub fn parseTclasProcessing(body: []const u8) Error!TclasProcessing {
+    if (body.len != 1) return error.BadLength;
+    if (body[0] > 2) return error.ReservedValue; // Table 9-149：3–255 保留
+    return @fromBackingInt(body[0]);
+}
+
+pub fn buildTclasProcessingElement(out: []u8, p: TclasProcessing) BuildError!usize {
+    if (@backingInt(p) > 2) return error.ReservedValue;
+    if (out.len < 3) return error.NoRoom;
+    out[0] = tclas_processing_element_id;
+    out[1] = 1;
+    out[2] = @backingInt(p);
+    return 3;
+}
+
+// ---------------------------------------------------------------------------
+// 11) TFS：TFS Request / Response 元素（9.4.2.80 / 9.4.2.81；Figure 9-418–9-423；
+//     Table 9-198 / 9-200 / 9-201 / 9-202）
+// ---------------------------------------------------------------------------
+
+/// Figure 9-419（p.1003）：一条 TFS 子元素 = 一个 TFS Request 子元素（ID 1），装 1..n 个
+/// TCLAS 元素 + 可选 TCLAS Processing（多于一个 TCLAS 时必须存在）。
+pub const max_tclas_per_sub = 4;
+
+pub const TfsSubelement = struct {
+    tclas: [max_tclas_per_sub]Tclas,
+    tclas_count: u8,
+    processing: ?TclasProcessing = null,
+
+    pub fn tclasSlice(self: *const TfsSubelement) []const Tclas {
+        return self.tclas[0..self.tclas_count];
+    }
+};
+
+/// 解析 TFS 子元素体（Subelement ID / Length 之后）：TCLAS 元素 + 可选 TCLAS Processing。
+pub fn parseTfsSubelement(body: []const u8) Error!TfsSubelement {
+    var r = TfsSubelement{ .tclas = undefined, .tclas_count = 0 };
+    var w = ie.Walker.init(body);
+    while (w.next() catch return error.Truncated) |el| {
+        switch (el.id) {
+            tclas_element_id => {
+                if (r.tclas_count == max_tclas_per_sub) return error.TooMany;
+                r.tclas[r.tclas_count] = try parseTclasElement(el.body);
+                r.tclas_count += 1;
+            },
+            tclas_processing_element_id => {
+                if (r.processing != null) return error.BadValue; // 至多一个
+                r.processing = try parseTclasProcessing(el.body);
+            },
+            else => return error.UnexpectedElement,
+        }
+    }
+    // 「The TCLAS Elements field contains one or more TCLAS elements」（Figure 9-419）。
+    if (r.tclas_count == 0) return error.Empty;
+    // 「The TCLAS Processing element shall be present if more than one TCLAS element is
+    // included in the TFS subelement」（11.24.12.1）。
+    if (r.tclas_count > 1 and r.processing == null) return error.MissingElement;
+    // match_rest 要求「no associated TCLAS elements」，与 TFS 子元素的 1..n 矛盾。
+    if (r.processing != null and r.processing.? == .match_rest) return error.BadValue;
+    return r;
+}
+
+/// 构造 TFS 子元素：`tclas_elements` 是已编码的 TCLAS 元素串（含 Element ID / Length）。
+pub fn buildTfsSubelement(out: []u8, tclas_elements: []const []const u8, processing: ?TclasProcessing) BuildError!usize {
+    if (tclas_elements.len == 0) return error.Empty;
+    if (tclas_elements.len > 1 and processing == null) return error.MissingElement;
+    if (processing) |p| {
+        if (@backingInt(p) > 2) return error.ReservedValue;
+        if (p == .match_rest) return error.BadValue;
+    }
+    var body_len: usize = 2;
+    for (tclas_elements) |e| {
+        if (e.len < 2 or e[0] != tclas_element_id) return error.UnexpectedElement;
+        body_len += e.len;
+    }
+    if (processing != null) body_len += 3;
+    if (body_len - 2 > 255 or out.len < body_len) return error.NoRoom;
+    out[0] = 1; // Table 9-201：TFS 子元素
+    out[1] = @intCast(body_len - 2);
+    var pos: usize = 2;
+    for (tclas_elements) |e| {
+        @memcpy(out[pos..][0..e.len], e);
+        pos += e.len;
+    }
+    if (processing) |p| _ = try buildTclasProcessingElement(out[pos..], p);
+    return body_len;
+}
+
+/// Figure 9-418（p.1002）：Element ID(1) Length(1) TFS ID(1) TFS Action Code(1) 子元素串。
+/// Table 9-200（p.1002）：位 0 Delete After Match（任一规则集置 1 → 匹配后删全部规则集）、
+/// 位 1 Notify（首个匹配帧或收到 Notify Response 后的首个匹配帧发一帧 TFS Notify）、位 2–7 保留。
+pub const TfsActionCode = packed struct(u8) {
+    delete_after_match: bool = false,
+    notify: bool = false,
+    reserved: u6 = 0,
+
+    pub fn word(self: TfsActionCode) u8 {
+        return @bitCast(self);
+    }
+
+    pub fn fromWord(w: u8) TfsActionCode {
+        return .{ .delete_after_match = w & 0x01 != 0, .notify = w & 0x02 != 0 };
+    }
+};
+
+pub const TfsRequestElement = struct {
+    tfs_id: u8,
+    action: TfsActionCode,
+    /// Figure 9-418 的 TFS Request Subelements 原串（含子元素头）；指向输入缓冲。
+    subelements: []const u8,
+};
+
+/// 数子元素个数（Table 9-201：ID 1 与 221 之外保留）。
+pub fn countTfsSubelements(bytes: []const u8) Error!usize {
+    var n: usize = 0;
+    var w = rrm.SubWalker.init(bytes);
+    while (try w.next()) |s| {
+        if (s.id != 1 and s.id != 221) return error.ReservedValue;
+        n += 1;
+    }
+    return n;
+}
+
+/// 解析 TFS Request 元素体（Element ID / Length 之后）；至少一个子元素。
+pub fn parseTfsRequestElement(body: []const u8) Error!TfsRequestElement {
+    if (body.len < 2) return error.Truncated;
+    // 「The TFS Request Subelements field contains one or more TFS Request subelements」。
+    if (try countTfsSubelements(body[2..]) == 0) return error.Empty;
+    var w = rrm.SubWalker.init(body[2..]);
+    while (try w.next()) |s| {
+        switch (s.id) {
+            1 => _ = try parseTfsSubelement(s.body),
+            221 => {}, // Figure 9-420：内容不解释
+            else => return error.ReservedValue,
+        }
+    }
+    return .{ .tfs_id = body[0], .action = TfsActionCode.fromWord(body[1]), .subelements = body[2..] };
+}
+
+pub const TfsRequestElementParams = struct {
+    tfs_id: u8,
+    action: TfsActionCode = .{},
+    /// 已编码的子元素串（Figure 9-419 / 9-420 布局，含子元素头）。
+    subelements: []const []const u8,
+};
+
+pub fn buildTfsRequestElement(out: []u8, p: TfsRequestElementParams) BuildError!usize {
+    if (p.subelements.len == 0) return error.Empty;
+    var body_len: usize = 2;
+    for (p.subelements) |s| {
+        if (s.len < 2) return error.BadLength;
+        if (s[0] != 1 and s[0] != 221) return error.ReservedValue; // Table 9-201
+        body_len += s.len;
+    }
+    if (body_len > 255 or out.len < body_len + 2) return error.NoRoom;
+    out[0] = tfs_request_element_id;
+    out[1] = @intCast(body_len);
+    out[2] = p.tfs_id;
+    out[3] = p.action.word();
+    var pos: usize = 4;
+    for (p.subelements) |s| {
+        @memcpy(out[pos..][0..s.len], s);
+        pos += s.len;
+    }
+    return body_len + 2;
+}
+
+/// Table 9-198（p.999）：TFS Response Status；15–255 保留。
+pub const TfsResponseStatus = struct {
+    pub const accept: u8 = 0;
+    pub const deny_format: u8 = 1;
+    pub const deny_resources: u8 = 2;
+    pub const deny_ambiguous_streams: u8 = 3;
+    pub const deny_policy: u8 = 4;
+    pub const deny_unspecified: u8 = 5;
+    pub const alternate_existing_interval: u8 = 6;
+    pub const alternate_policy_limits: u8 = 7;
+    pub const alternate_changed_interval: u8 = 8;
+    pub const multicast_rate_not_allowed: u8 = 9;
+    pub const terminate_policy: u8 = 10;
+    pub const terminate_resources: u8 = 11;
+    pub const terminate_higher_priority: u8 = 12;
+    pub const alternate_changed_max_interval: u8 = 13;
+    pub const alternate_classifier_unavailable: u8 = 14;
+
+    pub fn name(code: u8) ?[]const u8 {
+        return switch (code) {
+            0 => "Accept",
+            1 => "Deny, due to request format error or ambiguous classifier",
+            2 => "Deny, due to lack of resources on the AP",
+            3 => "Deny, due to requested classifier(s) matching 2 or more existing streams on different intervals",
+            4 => "Deny, by policy",
+            5 => "Deny, reason unspecified",
+            6 => "Alternate proposed, due to existing stream with different delivery interval",
+            7 => "Alternate proposed, due to policy limits on the AP",
+            8 => "Alternate proposed, because the AP changed the delivery interval",
+            9 => "Multicast rate changes not allowed",
+            10 => "Terminate, due to an AP policy change",
+            11 => "Terminate, due to lack of resources of the AP",
+            12 => "Terminate, due to other FMS stream with higher priority",
+            13 => "Alternate proposed, because the AP changed the maximum delivery interval",
+            14 => "Alternate proposed, because the AP is unable to provide requested TCLAS-based classifiers",
+            else => null,
+        };
+    }
+};
+
+/// Figure 9-422（p.1005）：TFS Status 子元素 = [1, Length, Status, 备选 TFS Request 子元素串]。
+pub const TfsStatusSubelementParams = struct {
+    status: u8,
+    /// 备选参数（「one or more TFS Request subelements」），已编码；没有备选时为空。
+    alternative: []const u8 = &.{},
+};
+
+pub fn buildTfsStatusSubelement(out: []u8, p: TfsStatusSubelementParams) BuildError!usize {
+    if (p.status > TfsResponseStatus.alternate_classifier_unavailable) return error.ReservedValue;
+    const total = 3 + p.alternative.len;
+    if (total - 2 > 255 or out.len < total) return error.NoRoom;
+    out[0] = 1; // Table 9-202：TFS Status 子元素
+    out[1] = @intCast(total - 2);
+    out[2] = p.status;
+    @memcpy(out[3..][0..p.alternative.len], p.alternative);
+    return total;
+}
+
+/// Figure 9-421（p.1004）：Element ID(1) Length(1) TFS ID(1) 子元素串。
+pub const TfsResponseElement = struct {
+    tfs_id: u8,
+    /// Figure 9-421 的 TFS Response Subelements 原串；指向输入缓冲。
+    subelements: []const u8,
+};
+
+/// 解析 TFS Status 子元素体：Status(1) + 可选备选参数（按 Table 9-201 校验）。
+pub fn parseTfsStatusSubelement(body: []const u8) Error!u8 {
+    if (body.len < 1) return error.Truncated;
+    if (body[0] > TfsResponseStatus.alternate_classifier_unavailable) return error.ReservedValue;
+    if (body.len > 1) {
+        var w = rrm.SubWalker.init(body[1..]);
+        while (try w.next()) |t| {
+            if (t.id != 1 and t.id != 221) return error.ReservedValue;
+            if (t.id == 1) _ = try parseTfsSubelement(t.body);
+        }
+    }
+    return body[0];
+}
+
+/// 解析 TFS Response 元素体（Element ID / Length 之后）；至少一个子元素。
+pub fn parseTfsResponseElement(body: []const u8) Error!TfsResponseElement {
+    if (body.len < 1) return error.Truncated;
+    // 「The TFS Response Subelements field contains one or more TFS Response subelements」。
+    if (try countTfsSubelements(body[1..]) == 0) return error.Empty;
+    var w = rrm.SubWalker.init(body[1..]);
+    while (try w.next()) |s| {
+        switch (s.id) {
+            1 => _ = try parseTfsStatusSubelement(s.body),
+            221 => {},
+            else => return error.ReservedValue, // Table 9-202：其余 ID 保留
+        }
+    }
+    return .{ .tfs_id = body[0], .subelements = body[1..] };
+}
+
+pub const TfsResponseElementParams = struct {
+    tfs_id: u8,
+    /// 已编码的子元素串（Figure 9-422 / 9-423 布局，含子元素头）。
+    subelements: []const []const u8,
+};
+
+pub fn buildTfsResponseElement(out: []u8, p: TfsResponseElementParams) BuildError!usize {
+    if (p.subelements.len == 0) return error.Empty;
+    var body_len: usize = 1;
+    for (p.subelements) |s| {
+        if (s.len < 2) return error.BadLength;
+        if (s[0] != 1 and s[0] != 221) return error.ReservedValue;
+        body_len += s.len;
+    }
+    if (body_len > 255 or out.len < body_len + 2) return error.NoRoom;
+    out[0] = tfs_response_element_id;
+    out[1] = @intCast(body_len);
+    out[2] = p.tfs_id;
+    var pos: usize = 3;
+    for (p.subelements) |s| {
+        @memcpy(out[pos..][0..s.len], s);
+        pos += s.len;
+    }
+    return body_len + 2;
+}
+
+// ---------------------------------------------------------------------------
+// 12) TFS：动作帧（9.6.14.15–9.6.14.18；Figure 9-711–9-714）与匹配模型
+// ---------------------------------------------------------------------------
+
+/// Extended Capabilities 元素体里的 TFS 位 = 16（Table 9-135，p.893：dot11TFSActivated）；
+/// 位 16 → 第 16/8 = 2 字节的位 0。
+pub fn tfsSupported(ext_capabilities_body: []const u8) bool {
+    return ext_capabilities_body.len > 2 and (ext_capabilities_body[2] & 0x01) != 0;
+}
+
+pub const TfsRequestFrame = struct {
+    /// 「nonzero」（9.4.1.12）；请求 / 响应事务的标识。
+    dialog_token: u8,
+    /// TFS Request 元素串（指向输入缓冲）；0 个元素 = 撤销全部过滤（11.24.12.2）。
+    elements: []const u8,
+};
+
+/// Figure 9-711（p.1236）：Category、WNM Action(=13)、Dialog Token、元素串。
+pub fn parseTfsRequestFrame(body: []const u8) Error!TfsRequestFrame {
+    if (body.len < 3) return error.Truncated;
+    try checkHeader(body, .tfs_request);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    var w = ie.Walker.init(body[3..]);
+    while (w.next() catch return error.Truncated) |el| {
+        if (el.id != tfs_request_element_id) return error.UnexpectedElement;
+        _ = try parseTfsRequestElement(el.body);
+    }
+    return .{ .dialog_token = body[2], .elements = body[3..] };
+}
+
+pub const TfsFrameParams = struct {
+    dialog_token: u8,
+    /// 已编码的元素串。
+    elements: []const u8 = &.{},
+};
+
+pub fn buildTfsRequestFrame(out: []u8, p: TfsFrameParams) BuildError!usize {
+    if (p.dialog_token == 0) return error.ZeroDialogToken;
+    var w = ie.Walker.init(p.elements);
+    while (w.next() catch return error.Truncated) |el| {
+        if (el.id != tfs_request_element_id) return error.UnexpectedElement;
+        // 元素体坏 → BadValue（Error 集里解析专用理由不外泄）。
+        if (parseTfsRequestElement(el.body)) |_| {} else |_| return error.BadValue;
+    }
+    const total = 3 + p.elements.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.tfs_request);
+    out[2] = p.dialog_token;
+    @memcpy(out[3..][0..p.elements.len], p.elements);
+    return total;
+}
+
+pub const TfsResponseFrame = struct {
+    /// 回显对应 Request 的 Dialog Token。
+    dialog_token: u8,
+    elements: []const u8,
+};
+
+/// Figure 9-712（p.1236）：Category、WNM Action(=14)、Dialog Token、元素串。元素数为 0 只在
+/// 对应 Request 也为 0 个元素（撤销全部）时成立（9.6.14.16 的数量对应规则）。
+pub fn parseTfsResponseFrame(body: []const u8) Error!TfsResponseFrame {
+    if (body.len < 3) return error.Truncated;
+    try checkHeader(body, .tfs_response);
+    if (body[2] == 0) return error.ZeroDialogToken;
+    var w = ie.Walker.init(body[3..]);
+    while (w.next() catch return error.Truncated) |el| {
+        if (el.id != tfs_response_element_id) return error.UnexpectedElement;
+        _ = try parseTfsResponseElement(el.body);
+    }
+    return .{ .dialog_token = body[2], .elements = body[3..] };
+}
+
+pub fn buildTfsResponseFrame(out: []u8, p: TfsFrameParams) BuildError!usize {
+    if (p.dialog_token == 0) return error.ZeroDialogToken;
+    var w = ie.Walker.init(p.elements);
+    while (w.next() catch return error.Truncated) |el| {
+        if (el.id != tfs_response_element_id) return error.UnexpectedElement;
+        if (parseTfsResponseElement(el.body)) |_| {} else |_| return error.BadValue;
+    }
+    const total = 3 + p.elements.len;
+    if (out.len < total) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.tfs_response);
+    out[2] = p.dialog_token;
+    @memcpy(out[3..][0..p.elements.len], p.elements);
+    return total;
+}
+
+/// Figure 9-713 / 9-714（p.1237）：Category、WNM Action(=15)、Number of TFS IDs(1)、TFS ID
+/// List；两个方向的帧格式相同（TFS Notify 由 AP 发，TFS Notify Response 由 STA 发）。
+pub const TfsNotify = struct {
+    /// 1 字节的 TFS ID 列表；长度必须与 Number of TFS IDs 一致。
+    ids: []const u8,
+};
+
+pub fn parseTfsNotify(body: []const u8) Error!TfsNotify {
+    try checkHeader(body, .tfs_notify);
+    if (body.len < 3) return error.Truncated;
+    if (body[2] != body.len - 3) return error.BadLength;
+    return .{ .ids = body[3..] };
+}
+
+pub fn buildTfsNotify(out: []u8, ids: []const u8) BuildError!usize {
+    if (ids.len > 255 or out.len < ids.len + 3) return error.NoRoom;
+    out[0] = category;
+    out[1] = @backingInt(Action.tfs_notify);
+    out[2] = @intCast(ids.len);
+    @memcpy(out[3..][0..ids.len], ids);
+    return ids.len + 3;
+}
+
+/// 9.4.2.80 / 9.4.2.81：Response 的元素数、每个元素里的子元素数都要与 Request 一致、顺序一致。
+/// 配对成功把每元素的首个 Status 写进 `out_statuses`（元素里的全部子元素共用同一状态），返回
+/// 元素个数；对不上返回 error.BadValue。
+pub fn pairTfsResponse(req_elements: []const u8, resp_elements: []const u8, out_statuses: []u8) Error!usize {
+    var n: usize = 0;
+    var rw = ie.Walker.init(req_elements);
+    var pw = ie.Walker.init(resp_elements);
+    while (true) {
+        const r = rw.next() catch return error.Truncated;
+        const p = pw.next() catch return error.Truncated;
+        if (r == null and p == null) break;
+        if (r == null or p == null) return error.BadValue;
+        if (r.?.id != tfs_request_element_id or p.?.id != tfs_response_element_id) return error.UnexpectedElement;
+        const req = try parseTfsRequestElement(r.?.body);
+        const resp = try parseTfsResponseElement(p.?.body);
+        if (req.tfs_id != resp.tfs_id) return error.BadValue;
+        const req_subs = try countTfsSubelements(req.subelements);
+        const resp_subs = try countTfsSubelements(resp.subelements);
+        if (req_subs != resp_subs) return error.BadValue;
+        if (n == out_statuses.len) return error.TooMany;
+        var first: ?u8 = null;
+        var sw = rrm.SubWalker.init(resp.subelements);
+        while (try sw.next()) |s| {
+            if (s.id != 1) continue;
+            const status = try parseTfsStatusSubelement(s.body);
+            if (first == null or status != first.?) first = status;
+        }
+        out_statuses[n] = first orelse return error.Empty;
+        n += 1;
+    }
+    return n;
+}
+
+/// 被分类的帧（调用方从收到的 MSDU / MMPDU 填）。某个域没填时，需要它的分类器一律不匹配。
+pub const MatchInput = struct {
+    /// MSDU 的 User Priority；无 QoS 时 null。
+    up: ?u8 = null,
+    /// MPDU 的 AC（Table 9-144：0 = AC_VO、1 = AC_VI、2 = AC_BE、3 = AC_BK）。
+    ac: ?u8 = null,
+    /// 11.24.12.3 的隐式规则集：单独寻址的 EAPOL-Key 帧总是交付。
+    eapol_key: bool = false,
+    eth: ?EthHeader = null,
+    ipv4: ?Ip4Header = null,
+    ipv6: ?Ip6Header = null,
+    vlan_tci: ?u16 = null,
+    dot1: ?Dot1Header = null,
+    /// 类型 3 比较的 MSDU / MMPDU 内容。
+    content: []const u8 = &.{},
+    /// 类型 6 比较的 MAC 头原始字节（FC 起）。
+    mac_header: []const u8 = &.{},
+    /// 头里有第 4 个地址（A4 在 SC 之后）。
+    mac_four_addr: bool = false,
+    /// 头里有 QoS Control。
+    mac_qos: bool = false,
+    /// 头里有 HT Control。
+    mac_ht: bool = false,
+};
+
+pub const EthHeader = struct {
+    sa: [6]u8,
+    da: [6]u8,
+    ethertype: u16,
+};
+
+pub const Ip4Header = struct {
+    src: [4]u8,
+    dst: [4]u8,
+    sport: u16,
+    dport: u16,
+    dscp: u8,
+    protocol: u8,
+};
+
+pub const Ip6Header = struct {
+    src: [16]u8,
+    dst: [16]u8,
+    sport: u16,
+    dport: u16,
+    dscp: u8,
+    next_header: u8,
+    flow: [3]u8,
+};
+
+pub const Dot1Header = struct {
+    pcp: u8,
+    dei: bool,
+    vid: u16,
+    /// false = 802.1D 帧（DEI / VID 被忽略）；true = 802.1Q 帧。
+    is_1q: bool,
+};
+
+/// Table 9-144：UP 0–7 比 MSDU UP、8–11 比 AC、255 不比较。
+fn upMatches(field: u8, in: *const MatchInput) bool {
+    if (field == 255) return true;
+    if (field <= 7) return in.up != null and in.up.? == field;
+    return in.ac != null and in.ac.? == field - 8;
+}
+
+fn maskBit(mask: u8, i: u3) bool {
+    return (mask >> i) & 0x01 != 0;
+}
+
+/// 一个分类器对一帧的判定：位图置 1 的参数都要相等；DSCP 比较低 6 位、Flow Label 比较低
+/// 20 位（其余位「ignored for frame classification」）。
+pub fn classifierMatches(c: *const Classifier, in: *const MatchInput) bool {
+    switch (c.kind) {
+        .ethernet => {
+            const e = in.eth orelse return false;
+            if (maskBit(c.mask, 0) and !std.mem.eql(u8, &c.eth_sa, &e.sa)) return false;
+            if (maskBit(c.mask, 1) and !std.mem.eql(u8, &c.eth_da, &e.da)) return false;
+            if (maskBit(c.mask, 2) and c.eth_type != e.ethertype) return false;
+            return true;
+        },
+        .tcp_udp_ip, .ip_and_higher => {
+            const n: usize = c.ip_addr_len;
+            if (c.ip_version == 4) {
+                const f = in.ipv4 orelse return false;
+                // 位 0 是 Version：走到这里帧已是 IPv4，恒等。
+                if (maskBit(c.mask, 1) and !std.mem.eql(u8, c.ip_src[0..n], &f.src)) return false;
+                if (maskBit(c.mask, 2) and !std.mem.eql(u8, c.ip_dst[0..n], &f.dst)) return false;
+                if (maskBit(c.mask, 3) and c.sport != f.sport) return false;
+                if (maskBit(c.mask, 4) and c.dport != f.dport) return false;
+                if (maskBit(c.mask, 5) and c.dscp & 0x3F != f.dscp & 0x3F) return false;
+                if (maskBit(c.mask, 6) and c.protocol != f.protocol) return false;
+                return true;
+            }
+            const f = in.ipv6 orelse return false;
+            // 位 0 是 Version：走到这里帧已是 IPv6，恒等。
+            if (maskBit(c.mask, 1) and !std.mem.eql(u8, &c.ip_src, &f.src)) return false;
+            if (maskBit(c.mask, 2) and !std.mem.eql(u8, &c.ip_dst, &f.dst)) return false;
+            if (maskBit(c.mask, 3) and c.sport != f.sport) return false;
+            if (maskBit(c.mask, 4) and c.dport != f.dport) return false;
+            if (c.kind == .ip_and_higher) {
+                if (maskBit(c.mask, 5) and c.dscp & 0x3F != f.dscp & 0x3F) return false;
+                if (maskBit(c.mask, 6) and c.protocol != f.next_header) return false;
+            }
+            if (maskBit(c.mask, 7) or (c.kind == .tcp_udp_ip and maskBit(c.mask, 5))) {
+                const want = c.flow;
+                if (want[0] & 0x0F != f.flow[0] & 0x0F) return false;
+                if (!std.mem.eql(u8, want[1..3], f.flow[1..3])) return false;
+            }
+            return true;
+        },
+        .vlan => {
+            const t = in.vlan_tci orelse return false;
+            return c.vlan_tci == t;
+        },
+        .filter_offset => {
+            const off: usize = c.filter_offset;
+            const n = c.filter_value.len;
+            if (in.content.len < off + n) return false;
+            for (0..n) |i| {
+                const m = c.filter_mask[i];
+                if (in.content[off + i] & m != c.filter_value[i] & m) return false;
+            }
+            return true;
+        },
+        .dot1d_q => {
+            const h = in.dot1 orelse return false;
+            if (maskBit(c.mask, 0) and c.dot1_pcp != h.pcp) return false;
+            if (h.is_1q) {
+                if (maskBit(c.mask, 1) and @intFromBool(h.dei) != c.dot1_dei) return false;
+                if (maskBit(c.mask, 2) and c.dot1_vid != h.vid) return false;
+            }
+            // 802.1D 帧：DEI / VID 被忽略（9.4.2.31）。
+            return true;
+        },
+        .mac_header => return macHeaderMatches(c, in),
+        _ => return false,
+    }
+}
+
+/// 类型 6：逐控制子字段比较 MAC 头字段。Table 9-147 的字段位置：FC@0、Duration@2、A1@4、
+/// A2@10、A3@16、SC@22、A4@24（仅 4 地址）、QoS 在其后、HT 再其后。
+fn macHeaderMatches(c: *const Classifier, in: *const MatchInput) bool {
+    const hdr = in.mac_header;
+    const a4_off: usize = 24;
+    const qos_off: usize = if (in.mac_four_addr) 30 else 24;
+    const ht_off: usize = qos_off + 2;
+    var spec: usize = 0;
+    var i: usize = 0;
+    while (i < mac_field_count) : (i += 1) {
+        const shift: u3 = @intCast(2 * (i % 4));
+        const ctrl: u2 = @truncate((c.mac_mask[i / 4] >> shift) & 0x03);
+        const flen = mac_field_len[i];
+        if (ctrl == 0) continue;
+        const available = switch (i) {
+            6 => in.mac_four_addr,
+            7 => in.mac_qos,
+            8 => in.mac_ht,
+            else => hdr.len >= fieldOffset(i, a4_off, qos_off, ht_off) + flen,
+        };
+        if (!available) return false;
+        const off = fieldOffset(i, a4_off, qos_off, ht_off);
+        const field = hdr[off..][0..flen];
+        const w = c.mac_specs[spec..][0..flen];
+        if (ctrl == 1) {
+            if (!std.mem.eql(u8, w, field)) return false;
+        } else {
+            const fm = c.mac_specs[spec + flen ..][0..flen];
+            for (0..flen) |k| {
+                if (w[k] & fm[k] != field[k] & fm[k]) return false;
+            }
+        }
+        spec += if (ctrl == 1) flen else 2 * flen;
+    }
+    return true;
+}
+
+fn fieldOffset(i: usize, a4: usize, qos: usize, ht: usize) usize {
+    return switch (i) {
+        0 => 0,
+        1 => 2,
+        2 => 4,
+        3 => 10,
+        4 => 16,
+        5 => 22,
+        6 => a4,
+        7 => qos,
+        else => ht,
+    };
+}
+
+/// 一个 TCLAS 元素的判定：UP（Table 9-144）与分类器都要满足。
+pub fn tclasMatches(t: *const Tclas, in: *const MatchInput) bool {
+    return upMatches(t.user_priority, in) and classifierMatches(&t.classifier, in);
+}
+
+/// 一个 TFS 子元素（一条过滤规则）的判定：多个 TCLAS 按 TCLAS Processing 的 ALL / ANY。
+pub fn tfsSubelementMatches(s: *const TfsSubelement, in: *const MatchInput) bool {
+    if (s.tclas_count == 1) return tclasMatches(&s.tclas[0], in);
+    const any = s.processing orelse .match_any;
+    if (any == .match_all) {
+        for (s.tclasSlice()) |*t| {
+            if (!tclasMatches(t, in)) return false;
+        }
+        return true;
+    }
+    for (s.tclasSlice()) |*t| {
+        if (tclasMatches(t, in)) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// 13) TFS：STA 侧（11.24.12.2）与 AP 侧（11.24.12.3）模型
+// ---------------------------------------------------------------------------
+
+pub const max_tfs_ap_stas = 8;
+/// 每 STA 存下的规则集（TFS Request 元素）上限。
+pub const max_filter_sets = 4;
+/// 一帧请求里评估的元素数上限。
+pub const max_tfs_elements_per_frame = 16;
+
+/// AP 存下的一条过滤规则集 = 一个 TFS Request 元素（Table 9-200 的动作位 + 元素体串，指向
+/// 调用方的请求帧缓冲）。
+pub const FilterSet = struct {
+    tfs_id: u8 = 0,
+    delete_after_match: bool = false,
+    notify: bool = false,
+    /// Notify 位置 1 时武装；发出一帧 TFS Notify 后解除；收到带该 ID 的 Notify Response 再武装
+    /// （Table 9-200 位 1、11.24.12.3）。
+    notify_armed: bool = false,
+    /// TFS Request 元素体（Element ID / Length 之后）。
+    element: []const u8 = &.{},
+};
+
+pub const TfsApSta = struct {
+    address: frame.Mac = @splat(0),
+    /// 最近收到的 Extended Capabilities 里 TFS 位（Table 9-135 位 16）。
+    supports_tfs: bool = false,
+    agreement: bool = false,
+    sets: [max_filter_sets]FilterSet = @splat(.{}),
+    set_count: u8 = 0,
+
+    pub const RequestOutcome = struct {
+        /// 每个请求元素的 Status（顺序同请求；一个元素的全部子元素共用）。
+        statuses: [max_tfs_elements_per_frame]u8 = @splat(0),
+        count: u8 = 0,
+        /// 全部 Accept：协议已建立 / 更新。
+        established: bool = false,
+        /// 写进 out 的 TFS Response 帧体长度。
+        response_len: usize = 0,
+    };
+
+    /// 处理一帧 TFS Request（11.24.12.3）：`elements` 是帧体里 Dialog Token 之后的元素串
+    /// （AP 路径有意宽松——帧必须逐元素回应而不是整体丢弃）。先评估全部元素（不改状态），
+    /// 全部 Accept 才替换旧协议（「disregard any previous MLME-TFS.indication primitive」）；
+    /// 空请求撤销全部。同时在 out 排出 TFS Response 帧体：每个请求元素一个元素、每个请求
+    /// 子元素一个 Status 子元素（数量与顺序按 9.6.14.16 / 9.4.2.80）。元素体格式错 / 分类器
+    /// 含糊 → Status 1；规则集槽满 → Status 2；元素头被截断 → 这一条按格式错回 1 后停止。
+    /// STA 侧的严格解析在 `parseTfsRequestFrame`。
+    pub fn onRequest(sta: *TfsApSta, dialog_token: u8, elements: []const u8, out: []u8) BuildError!RequestOutcome {
+        var res = RequestOutcome{};
+        const Eval = struct { tfs_id: u8, subs: usize, body: []const u8, action: TfsActionCode };
+        var evals: [max_tfs_elements_per_frame]Eval = undefined;
+        var installs: usize = 0;
+        var rest = elements;
+        while (rest.len != 0) {
+            if (res.count == max_tfs_elements_per_frame) return error.TooMany;
+            if (rest.len < 2 or rest.len - 2 < rest[1]) {
+                // 元素头不完整 / 长度越界：这一条（TFS ID 取得到的就回显）按格式错回 1。
+                evals[res.count] = .{ .tfs_id = rest[0], .subs = 0, .body = &.{}, .action = .{} };
+                res.statuses[res.count] = TfsResponseStatus.deny_format;
+                res.count += 1;
+                break;
+            }
+            const el_id = rest[0];
+            const el_len: usize = rest[1];
+            const el_body = rest[2..][0..el_len];
+            rest = rest[2 + el_len ..];
+            if (parseTfsRequestElement(el_body)) |parsed| {
+                if (el_id != tfs_request_element_id) {
+                    // 9.6.14.15：TFS Request Elements 只有 TFS Request 元素；别的元素按格式错。
+                    evals[res.count] = .{ .tfs_id = parsed.tfs_id, .subs = 0, .body = el_body, .action = .{} };
+                    res.statuses[res.count] = TfsResponseStatus.deny_format;
+                } else {
+                    evals[res.count] = .{
+                        .tfs_id = parsed.tfs_id,
+                        .subs = countTfsSubelements(parsed.subelements) catch 0,
+                        .body = el_body,
+                        .action = parsed.action,
+                    };
+                    // 一个元素占一个规则集槽（旧集合在提交时被替换）；现有 + 新请求超槽 →
+                    // 2（Table 9-198：lack of resources）。
+                    res.statuses[res.count] = if (sta.set_count + installs >= max_filter_sets)
+                        TfsResponseStatus.deny_resources
+                    else
+                        TfsResponseStatus.accept;
+                    if (res.statuses[res.count] == TfsResponseStatus.accept) installs += 1;
+                }
+            } else |_| {
+                // 解析不了的元素按一个子元素回状态；TFS ID 取不出来的写 0。
+                evals[res.count] = .{
+                    .tfs_id = if (el_body.len >= 1) el_body[0] else 0,
+                    .subs = 0,
+                    .body = el_body,
+                    .action = .{},
+                };
+                res.statuses[res.count] = TfsResponseStatus.deny_format;
+            }
+            res.count += 1;
+        }
+        res.response_len = try buildTfsResponseFor(out, dialog_token, res.statuses[0..res.count], evals[0..res.count]);
+        // 全部 Accept 才提交（11.24.12.2 / 11.24.12.3）。
+        var all_accept = true;
+        for (res.statuses[0..res.count]) |s| {
+            if (s != TfsResponseStatus.accept) all_accept = false;
+        }
+        res.established = all_accept;
+        if (all_accept) {
+            sta.set_count = 0;
+            for (evals[0..res.count]) |e| {
+                sta.sets[sta.set_count] = .{
+                    .tfs_id = e.tfs_id,
+                    .delete_after_match = e.action.delete_after_match,
+                    .notify = e.action.notify,
+                    .notify_armed = e.action.notify,
+                    .element = e.body,
+                };
+                sta.set_count += 1;
+            }
+            sta.agreement = res.count != 0;
+        }
+        return res;
+    }
+
+    /// 一帧是否交付给这个 STA（11.24.12.3）；组地址帧照常交付（11.24.12.1），但匹配仍用于
+    /// Notify。隐式 EAPOL-Key 规则集：单独寻址的 EAPOL-Key 帧总是交付（动作位 0、无状态）。
+    pub fn matchFrame(sta: *TfsApSta, in: *const MatchInput, group_addressed: bool) TfsMatchOutcome {
+        var res = TfsMatchOutcome{};
+        if (!sta.agreement) return res;
+        if (in.eapol_key) {
+            res.delivered = true;
+            return res;
+        }
+        var matched_any = false;
+        var delete_all = false;
+        for (sta.sets[0..sta.set_count]) |*set| {
+            if (!filterSetMatches(set, in)) continue;
+            matched_any = true;
+            if (set.notify and set.notify_armed and res.notify_count < max_filter_sets) {
+                set.notify_armed = false;
+                res.notify_ids[res.notify_count] = set.tfs_id;
+                res.notify_count += 1;
+                res.notify_generated = true;
+            }
+            if (set.delete_after_match) delete_all = true;
+        }
+        res.delivered = matched_any or group_addressed;
+        if (delete_all) {
+            // 「all traffic filter sets established at the AP for the non-AP STA are deleted when
+            // a frame matches any of the traffic filter sets established for the non-AP STA」
+            // （Table 9-200 位 0）。
+            sta.set_count = 0;
+            sta.agreement = false;
+            res.filters_deleted = true;
+        }
+        return res;
+    }
+
+    /// 收到 TFS Notify Response（WNM Action 15，STA → AP）：给列出的 TFS ID 恢复 Notify 生成
+    /// （11.24.12.3）。返回恢复的个数。
+    pub fn onNotifyResponse(sta: *TfsApSta, ids: []const u8) usize {
+        var n: usize = 0;
+        for (ids) |id| {
+            for (sta.sets[0..sta.set_count]) |*set| {
+                if (set.tfs_id == id and set.notify and !set.notify_armed) {
+                    set.notify_armed = true;
+                    n += 1;
+                }
+            }
+        }
+        return n;
+    }
+};
+
+pub const TfsMatchOutcome = struct {
+    /// 是否交付：没有协议、匹配（含隐式 EAPOL-Key 规则）或组地址帧 → true；被过滤 → false。
+    delivered: bool = true,
+    /// 本次匹配生成了一帧 TFS Notify（每个武装的规则集只发一次）。
+    notify_generated: bool = false,
+    notify_ids: [max_filter_sets]u8 = @splat(0),
+    notify_count: u8 = 0,
+    /// Delete After Match 命中：全部规则集已删，协议结束（11.2.3.18.3 的主动退出由调用方接）。
+    filters_deleted: bool = false,
+};
+
+fn filterSetMatches(set: *const FilterSet, in: *const MatchInput) bool {
+    // 一个过滤规则集内的多条规则是 AND（11.24.12.1）；set.element 是元素体（TFS ID、
+    // Action Code 之后是子元素串）。
+    var w = rrm.SubWalker.init(set.element[2..]);
+    while (w.next() catch return false) |s| {
+        if (s.id != 1) continue; // Vendor Specific 不参与匹配
+        const sub = parseTfsSubelement(s.body) catch return false;
+        if (!tfsSubelementMatches(&sub, in)) return false;
+    }
+    return true;
+}
+
+/// 排出 TFS Response 帧体：每个请求元素一个 Response 元素，其下每个请求子元素一个 Status
+/// 子元素（[1, 1, status]；元素里的全部子元素共用同一状态）。
+fn buildTfsResponseFor(out: []u8, token: u8, statuses: []const u8, evals: anytype) BuildError!usize {
+    if (out.len < 3) return error.NoRoom;
+    var pos: usize = 3;
+    for (evals, 0..) |e, i| {
+        var n_subs = e.subs;
+        if (n_subs == 0) n_subs = 1; // 解析失败的元素按一个子元素回状态
+        const body_len = 1 + 3 * n_subs; // TFS ID(1) + 每子元素 3 字节
+        if (body_len > 255) return error.TooLong;
+        if (out.len - pos < body_len + 2) return error.NoRoom;
+        out[pos] = tfs_response_element_id;
+        out[pos + 1] = @intCast(body_len);
+        out[pos + 2] = e.tfs_id;
+        var j: usize = 0;
+        while (j < n_subs) : (j += 1) {
+            out[pos + 3 + 3 * j] = 1; // Table 9-202：TFS Status 子元素
+            out[pos + 4 + 3 * j] = 1;
+            out[pos + 5 + 3 * j] = statuses[i];
+        }
+        pos += body_len + 2;
+    }
+    out[0] = category;
+    out[1] = @backingInt(Action.tfs_response);
+    out[2] = token;
+    return pos;
+}
+
+/// non-AP STA 侧的请求 / 响应记账（11.24.12.2）。
+pub const TfsSta = struct {
+    /// 最近一次全 Accept 的请求元素串（指向调用方缓冲）；协议生效的标志。
+    agreement: bool = false,
+    established_elements: []const u8 = &.{},
+    pending_token: u8 = 0,
+    pending_elements: []const u8 = &.{},
+
+    /// 发出 TFS Request（9.6.14.15）：记下待配对的 token 与元素串。
+    pub fn sendRequest(self: *TfsSta, token: u8, elements: []const u8) Error!void {
+        if (token == 0) return error.ZeroDialogToken;
+        self.pending_token = token;
+        self.pending_elements = elements;
+    }
+
+    /// 处理 TFS Response：配对成功（token、元素数、顺序、TFS ID、子元素数）且全部 Accept →
+    /// 协议生效；否则保持原协议（11.24.12.2）。返回是否（重新）建立。
+    pub fn onResponse(self: *TfsSta, token: u8, elements: []const u8) Error!bool {
+        if (token != self.pending_token) return false;
+        var statuses: [max_tfs_elements_per_frame]u8 = undefined;
+        const n = try pairTfsResponse(self.pending_elements, elements, &statuses);
+        var all = true;
+        for (statuses[0..n]) |s| {
+            if (s != TfsResponseStatus.accept) all = false;
+        }
+        if (all) {
+            self.agreement = true;
+            self.established_elements = self.pending_elements;
+        }
+        return all;
+    }
+
+    /// TFS Notify 到了：把仍在本端协议里的 TFS ID 写进 out_ids（用于 Notify Response），返回个数。
+    pub fn onNotify(self: *TfsSta, ids: []const u8, out_ids: []u8) usize {
+        var n: usize = 0;
+        for (ids) |id| {
+            var keep = false;
+            var w = ie.Walker.init(self.established_elements);
+            while (w.next() catch break) |el| {
+                if (el.id != tfs_request_element_id or el.body.len < 1) continue;
+                if (el.body[0] == id) keep = true;
+            }
+            if (keep and n < out_ids.len) {
+                out_ids[n] = id;
+                n += 1;
+            }
+        }
+        return n;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// 14) WNM Sleep Mode Response 的 Key Data（9.6.14.20；Figure 9-717 / 9-718；
+//     Table 9-358；Figure 9-319）
+// ---------------------------------------------------------------------------
+
+/// Table 9-358（p.1239）：0 = GTK、1 = IGTK、2–255 保留。
+pub const gtk_subelement_id: u8 = 0;
+pub const igtk_subelement_id: u8 = 1;
+
+/// Figure 9-717（p.1239）：Subelement ID(1)=0 Length(1) Key Info(2) Key Length(1) RSC(8)
+/// Key(5–32)；Length = 11 + Key Length。
+pub const GtkKeyData = struct {
+    /// Figure 9-319（p.935）：Key Info 的 B0–B1；B2–B15 保留（必须为 0）。
+    key_id: u8,
+    /// RSC 原样 8 字节（TSC / PN 的最低位八位组在最前；不足 8 字节由发送方补 0）。
+    rsc: [8]u8,
+    key: []const u8,
+};
+
+/// Figure 9-718（p.1239）：Subelement ID(1)=1 Length(1)=24 Key ID(2) PN(6) Key(16)。
+pub const IgTkKeyData = struct {
+    /// BIP key identifier；9.2.2 数值字段按 LSB 在前读。
+    key_id: u16,
+    pn: [6]u8,
+    key: [16]u8,
+};
+
+pub const max_keydata_entries = 4;
+
+pub const KeyDataEntry = union(enum) {
+    gtk: GtkKeyData,
+    igtk: IgTkKeyData,
+};
+
+/// 解析 Key Data 字段：零或多个 GTK / IGTK 子元素（NOTE 1：组重键进行中可有多条）；
+/// 顺序按 9.4.3 非降序；保留 ID 拒绝。返回写入 `out` 的条数。
+pub fn parseKeyData(data: []const u8, out: []KeyDataEntry) Error!usize {
+    var n: usize = 0;
+    var prev_id: u8 = 0;
+    var first = true;
+    var w = rrm.SubWalker.init(data);
+    while (try w.next()) |s| {
+        if (!first and s.id < prev_id) return error.BadValue;
+        prev_id = s.id;
+        first = false;
+        const entry: KeyDataEntry = switch (s.id) {
+            gtk_subelement_id => blk: {
+                // body = Key Info(2) + Key Length(1) + RSC(8) + Key(key_len)，固定部分 11。
+                if (s.body.len < 11) return error.BadLength;
+                const key_len: usize = s.body[2];
+                if (s.body.len != 11 + key_len) return error.BadLength;
+                if (key_len < 5 or key_len > 32) return error.BadValue; // Figure 9-717：5–32
+                const info = le16(s.body[0..2]);
+                if (info & 0xFFFC != 0) return error.ReservedBitsSet; // Figure 9-319：B2–B15 保留
+                break :blk .{ .gtk = .{ .key_id = @intCast(info & 0x03), .rsc = s.body[3..11].*, .key = s.body[11..] } };
+            },
+            igtk_subelement_id => blk: {
+                if (s.body.len != 24) return error.BadLength;
+                break :blk .{ .igtk = .{ .key_id = le16(s.body[0..2]), .pn = s.body[2..8].*, .key = s.body[8..24].* } };
+            },
+            else => return error.ReservedValue, // Table 9-358：2–255 保留
+        };
+        if (n == out.len) return error.TooMany;
+        out[n] = entry;
+        n += 1;
+    }
+    return n;
+}
+
+/// 构造 Key Data 字段（明文 KDE 串）。
+pub fn buildKeyData(out: []u8, entries: []const KeyDataEntry) BuildError!usize {
+    var pos: usize = 0;
+    var prev_id: u8 = 0;
+    for (entries, 0..) |e, i| {
+        const id: u8 = if (e == .gtk) gtk_subelement_id else igtk_subelement_id;
+        if (i != 0 and id < prev_id) return error.BadValue;
+        prev_id = id;
+        switch (e) {
+            .gtk => |g| {
+                if (g.key.len < 5 or g.key.len > 32) return error.BadLength;
+                if (g.key_id > 3) return error.ReservedValue; // Figure 9-319：2 位
+                const total: usize = 13 + g.key.len; // ID(1) + Length(1) + 11 + Key
+                if (out.len - pos < total) return error.NoRoom;
+                out[pos] = gtk_subelement_id;
+                out[pos + 1] = @intCast(total - 2);
+                w16(out[pos + 2 ..], g.key_id);
+                out[pos + 4] = @intCast(g.key.len);
+                @memcpy(out[pos + 5 ..][0..8], &g.rsc);
+                @memcpy(out[pos + 13 ..][0..g.key.len], g.key);
+                pos += total;
+            },
+            .igtk => |g| {
+                if (out.len - pos < 26) return error.NoRoom;
+                out[pos] = igtk_subelement_id;
+                out[pos + 1] = 24;
+                w16(out[pos + 2 ..], g.key_id);
+                @memcpy(out[pos + 4 ..][0..6], &g.pn);
+                @memcpy(out[pos + 10 ..][0..16], &g.key);
+                pos += 26;
+            },
+        }
+    }
+    return pos;
+}
+
+/// 12.7.2 / 9.6.14.20 的 NOTE 2：Key Data 的机密性 / 完整性由管理帧保护（PMF）在帧级提供；
+/// AKM 决定的密钥封装（例如组密钥握手的 AES Key Wrap）不在本组件里实现——经本接口由调用方
+/// 注入。真实密钥封装的接线没有在本组件验证：protect / unprotect 必须由拥有 KEK / PMF 上下文
+/// 的一方提供；组件测试只用测试替身。
+pub const KeyDataCodec = struct {
+    ctx: ?*anyopaque = null,
+    /// 明文 Key Data → 受保护串；允许就地（out == plaintext），返回写入 out 的长度。
+    protect: ?*const fn (ctx: ?*anyopaque, plaintext: []const u8, out: []u8) BuildError!usize = null,
+    /// 受保护串 → 明文 Key Data；允许就地，返回明文长度。
+    unprotect: ?*const fn (ctx: ?*anyopaque, protected: []const u8, out: []u8) Error!usize = null,
+};
+
+/// 排出带 GTK / IGTK 的 WNM Sleep Mode Response（Figure 9-716）：先在 `scratch` 里排明文
+/// KDE，再经 codec（可选）保护后放进 Key Data；没有 protect 时 Key Data 保持明文（PMF 在
+/// 帧级保护整帧）。Response 的其余字段沿用 `p`。
+pub fn buildSleepResponseWithKeys(out: []u8, scratch: []u8, p: SleepResponseParams, entries: []const KeyDataEntry, codec: KeyDataCodec) BuildError!usize {
+    const n = try buildKeyData(scratch, entries);
+    const m = if (codec.protect) |f| try f(codec.ctx, scratch[0..n], scratch) else n;
+    var params = p;
+    params.key_data = scratch[0..m];
+    return buildSleepResponse(out, params);
+}
+
+/// 解开 Response 的 Key Data：没有 unprotect 时按明文子元素解释。
+pub fn openKeyData(resp: *const SleepResponse, scratch: []u8, codec: KeyDataCodec) Error![]const u8 {
+    if (resp.key_data.len == 0) return &.{};
+    if (codec.unprotect) |f| {
+        const n = try f(codec.ctx, resp.key_data, scratch);
+        return scratch[0..n];
+    }
+    return resp.key_data;
+}
+
+/// 9.6.14.20 / 11.2.3.18.3：Exit 接受（status 0 / 1）后，Key Data 非空（用了管理帧保护）→
+/// 从 Key Data 装当前 GTK / IGTK；为空 → 紧接着做组密钥握手（12.7.7）。拒绝（2–5）→ 两者都不做。
+pub const KeyDelivery = enum { none, key_data, group_key_handshake };
+
+pub fn staKeyDelivery(response_status: u8, key_data_len: usize) KeyDelivery {
+    if (response_status > SleepStatus.accept_exit_update_keys) return .none;
+    return if (key_data_len != 0) .key_data else .group_key_handshake;
+}

@@ -98,6 +98,8 @@ const ext_adv_selftest = @import("ext_adv_selftest.zig");
 const eatt_selftest = @import("eatt_selftest.zig");
 const privacy_selftest = @import("privacy_selftest.zig");
 const sixlowpan_selftest = @import("sixlowpan_selftest.zig");
+const nd6_selftest = @import("nd6_selftest.zig");
+const sfr_selftest = @import("sfr_selftest.zig");
 const board = @import("board");
 const log = board.log;
 
@@ -2533,6 +2535,8 @@ fn runChecks() bool {
     eatt_selftest.run(extCheck);
     privacy_selftest.run(extCheck);
     sixlowpan_selftest.run(extCheck);
+    nd6_selftest.run(extCheck);
+    sfr_selftest.run(extCheck);
     return g_failed == 0;
 }
 

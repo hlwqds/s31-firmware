@@ -4,7 +4,7 @@
 
 | 层 | 内容 | 命令 | 门禁 |
 | --- | --- | --- | --- |
-| L1 单元 | 19 个测试项目的 `test` 块（1648 项） | `scripts/check-host.sh` | 合并前必须绿 |
+| L1 单元 | 19 个测试项目的 `test` 块（1818 项） | `scripts/check-host.sh` | 合并前必须绿 |
 | L1 覆盖率 | 逻辑模块可达性 100% + 用例数基线 | `python3 scripts/check-coverage.py` | 合并前必须绿 |
 | L2 镜像 | 每个 profile（min/net/tls/full）交叉编译 + 两段镜像 + 分区适配 | `tests/e2e/run_e2e.py --host` | 合并前必须绿 |
 | L3 板级 E2E | 烧录默认 profile，断言段集合/逐段 checks/verdict | `tests/e2e/run_e2e.py --board` | 发布前必须绿（自托管 runner） |
@@ -185,17 +185,29 @@ E2E 断言：
 
 | section | 指令数 | 板上约 |
 | --- | --- | --- |
-| `wifi_connect`（177 条） | 15.48 亿 | 19.3 秒 |
+| `wifi_connect`（199 条） | 15.48 亿 | 19.3 秒 |
 | `ble_security`（25 条） | 2.19 亿 | 2.7 秒 |
 | `net_congestion` | 914 万 | 0.11 秒 |
-| `ble_802154`（106 条） | 600 万 | 0.08 秒 |
-| `net_sockets`、`wifi_mlme`、`radio_coex`、`net_ipv4`、`net_tcp`、`net_udp_dhcp_dns`、`boot_power_perf`、`wifi_boundary`、`posix` | 合计 215 万 | 合计 0.03 秒 |
+| `ble_802154`（152 条） | 625 万 | 0.08 秒 |
+| `net_sockets`、`wifi_mlme`、`radio_coex`、`net_ipv4`、`net_tcp`、`net_udp_dhcp_dns`、`boot_power_perf`、`wifi_boundary`、`posix` | 合计 237 万 | 合计 0.03 秒 |
 | `net_ethernet` | 量不了（真网卡） | — |
 
 合计 17.84 亿条，光计算就 22.3 秒（按 1.3 周期一条是 29 秒），还没算启动、串口输出和 `net_ethernet` 在真链路上的等待。
 第三批往 `wifi_connect` 里加了约 6.03 亿条（OWE 2.20 亿、SAE 其它群 3.74 亿、其余 0.09 亿），约 7.5 秒；第二批的
 `wifi` 镜像按同一口径是 14.7 秒的计算，它在 30 秒窗口里跑得过。30 秒对第三批的镜像是压线的，所以放宽窗口，而不是
 继续砍判据——剩下的每一条判据都对应一个不同的行为，砍掉就是实质减少板级证据。
+
+第四批（2026-11-25）新加的六份子自检合计约 57 万条指令，占 `wifi` profile 的 0.03%；合计仍是 17.84 亿条
+（精确值 1,784,445,194）、22.3 秒。这一批没有需要点乘的判据，离分配给每片的预算（2400 万条、0.3 秒）低两个数量级以上：
+
+| 子自检（第四批） | 指令数 | 板上约 |
+| --- | --- | --- |
+| `wnm_tfs_selftest`（14 条） | 182300 | 0.002 秒 |
+| `nd6_selftest`（30 条） | 152883 | 0.002 秒 |
+| `owe_cache_selftest`（12 条） | 104108 | 0.001 秒 |
+| `sfr_selftest`（16 条） | 75540 | 0.001 秒 |
+| `ft_ric_selftest`（10 条） | 26181 | 0.000 秒 |
+| `rrm_caps_selftest`（7 条） | 25348 | 0.000 秒 |
 
 耗时集中在少数几处（指令数 / 板上约）：
 
@@ -225,12 +237,17 @@ profile 仍出不来 `verdict`，用 `tools/qemu-instr` 定位是哪个 section�
 | 第三批，对打收窄之后、加 `noinline` 之前 | `main.main`（6608）→ `selftest.runChecks.4`（8144）→ `sae_groups_selftest.run`（8400）→ `montMul`（5168）→ `cmp`（2064） | 30384 |
 | 第三批，只给九份新入口加 `noinline` | `main.main`（6608）→ `selftest.runChecks.4`（6144）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 28272 |
 | 第三批，第一、二批的三份入口也加上之后 | `main.main`（6608）→ `selftest.runChecks.4`（1120）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 23248 |
+| 第四批之后（2026-11-25） | 同上：`main.main`（6608）→ `selftest.runChecks.4`（1120）→ `pweOk`（群 18，8288）→ `montMul`（5168）→ `cmp`（2064） | 23248 |
 
-四条都越过了标称的栈底。第三批之前的镜像在板上跑得过，而栈底下面是堆区（`_heap_start` 到 `_stack_bottom`，那个镜像里
+五条都越过了标称的栈底。第三批之前的镜像在板上跑得过，而栈底下面是堆区（`_heap_start` 到 `_stack_bottom`，那个镜像里
 271 KiB），固件里也没有栈水位或栈底守卫（源码里除链接脚本外没有引用 `_stack_bottom`）——推断是自检期间栈写进了堆区的
 空闲部分、没有撞到东西；没有在板上量过。`runChecks.4` 是 `wifi-connect` 的自检驱动函数：第一、二批的三份子自检入口原先
 也被内联在它里面，所以只给第三批的入口加 `noinline` 时最深链反而比之前深（28272 对 26544），三份入口一起加上才降下来。
-`ble-802154` 与 `wifi-mlme` 的驱动函数（`runChecks.3`、`runChecks.2`）栈帧没变，其下最深分别是 11984 与 11248 字节。
+`ble-802154` 与 `wifi-mlme` 的驱动函数（`runChecks.3`、`runChecks.2`）栈帧没变（1136、9232），其下最深分别是 11984 与 12176 字节。
+`wifi-mlme` 原为 11248：第四批的 `wnm_tfs_selftest.checkMatch`（栈帧 1504）经 `wnm.parseTclasElement`、`wnm.parseTfsSubelement`
+这条链把它抬高了 928。第四批没有改变全局最深链。这一轮的估算脚本是一次性的（`/tmp/r5c/stack_depth.py`，没有入库），
+它在改动前的镜像上复现了上表最后两行的数；两个解析上的坑：`nm` 输出里符号名可以带空格（`bignum.ModArith(…).montMul`
+的编译期参数里有「, 」），要按「最多切 4 段」解析；`jalr` 省略 rd 时默认是 `ra`，是调用而不是尾调用。
 做法只有一条：给自检入口和每条判据的函数加 `noinline`，让各自的大数组落在各自的帧里，而不是叠在调用方上。
 做这种估算有两个坑：栈帧大小经由 `li` 加 `slli` 装进寄存器的函数（`bip.micOver` 的 8960 字节就是这样）要跟到常量，
 否则会漏掉整帧——第一次估算因此把第三批之前的最深链少报了 2320 字节；链要从 `main.main` 起算，别把尾调用的求和混进来。

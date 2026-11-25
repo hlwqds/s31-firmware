@@ -48,7 +48,13 @@
 //!   — 同一种元素或同类子元素在一帧里出现两次是歧义，按解析错误处理。
 //!   — 第一个消息里缺了哪个元素，就按那个元素的状态码拒绝（MDE → 54、RSNE → 43、FTE → 55）；
 //!     元素区本身走不通（截断）→ STATUS_INVALID_ELEMENT（表 9-46 的 40）。
-//!   — RIC 的内容（13.11）本文件不解析：它是一段不透明的元素串，FT 只需要它的字节和元素个数。
+//!   — RIC 的 QoS / Vendor Specific 描述符（表 13-3 的另外两行）本文件不解析：它们是一串
+//!     不透明的元素，FT 只需要它的字节和元素个数；RDE 与 Block Ack 的 RIC Descriptor 在
+//!     第 5b 节解析。
+//!
+//!   — RIC 的元素格式（RDE 9.4.2.50、RIC Descriptor 9.4.2.51）与 RIC 的结构规则（13.11.2、
+//!     13.11.3.1、13.11.3.2）在第 5b 节；Block Ack 一种描述符（表 13-3），QoS / Vendor Specific
+//!     的描述符仍是不透明字节透传。
 //!
 //! 不在这里：资源请求协议（13.6）、非 RSN 的变体（13.5.4、13.5.5、13.7.2）、FT 4 次握手的
 //! EAPOL-Key 帧（13.4.2、12.7.6）、TIE 帧的编解码（截止时间作为配置给出）、MAC 帧头与 FCS。
@@ -77,6 +83,8 @@ pub const Eid = struct {
     pub const fte: u8 = 55;
     /// RIC Data element：一个 RIC 从它开始（9.4.2.50）。
     pub const rde: u8 = 57;
+    /// RIC Descriptor element（9.4.2.51）：Table 9-77 印刷页 786（原文行 43767）。
+    pub const ric_descriptor: u8 = 75;
 };
 
 /// 9.4.1.1（印刷页 739）：认证算法号 2 是 Fast BSS Transition。
@@ -111,6 +119,9 @@ pub const Status = struct {
     pub const status_invalid_pmkid: u16 = 53;
     pub const status_invalid_mde: u16 = 54;
     pub const status_invalid_fte: u16 = 55;
+    /// 表 9-46（印刷页 733）的 33：13.7.1 允许目标 AP 在「13.6 已接受的资源兑现不了」时用它拒
+    /// 绝 Reassociation Request（原文行 109102–109105）。
+    pub const denied_insufficient_bandwidth: u16 = 33;
 };
 
 /// 13.7.1：目标 AP 回这三个状态码之一时，FTO 应放弃这次转换。
@@ -256,10 +267,29 @@ pub const Error = error{
     BadElementCount,
     /// 帧里缺了 RSNE、MDE 或 FTE。
     MissingElement,
-    /// 输出缓冲不够。
+    /// 输出的缓冲不够。
     BufferTooSmall,
     /// 元素的 Length 字段装不下（超过 255）。
     TooLong,
+    /// RDE 的 Length 不是 4（9.4.2.50 的固定格式，图 9-322）。
+    BadRde,
+    /// RIC Descriptor 的 Length 与它的 Resource Type 对不上，或 Resource Type 保留（表 9-161）。
+    BadRicDescriptor,
+    /// 一段 RIC 里一个 RDE 都没有，或以非 RDE 元素开头（13.11.2：RIC 以 Resource Request / Response
+    /// 序列组成，每条由一个 RDE 划界）。
+    RicNoRde,
+    /// 请求里的 RDE 把 Resource Descriptor Count 设成了 0（13.11.3.1：每个 RDE 后至少一个描述符）。
+    RicBadDescriptorCount,
+    /// 请求里的 RDE 把 Status Code 设成了非 0（13.11.3.1：请求里应为 SUCCESS）。
+    RicBadStatus,
+    /// 两个 RDE 用了同一个 RDE Identifier（13.11.3.1：RDE Identifier 在 RIC 里唯一）。
+    RicDuplicateId,
+    /// RIC 的 RDE 条数超过 `max_ric_entries`。
+    RicTooManyEntries,
+    /// Block Ack 描述符的个数与 RDE 的 Resource Descriptor Count 不符（表 13-3 Block Ack 行）。
+    RicDescriptorCountMismatch,
+    /// RIC-Response 的 RDE 与请求的不一一对应（13.11.3.2：同一条数、同序、同 RDE Identifier）。
+    RicResponseMismatch,
 };
 
 /// 构造帧时的错误：只会是缓冲或长度问题。
@@ -692,6 +722,275 @@ pub fn mic(kck: [kck_len]u8, fto: [ft.addr_len]u8, target_ap: [ft.addr_len]u8, s
 /// 常量时间的 MIC 比较。
 pub fn micEqual(a: [mic_len]u8, b: [mic_len]u8) bool {
     return timing.eql([mic_len]u8, a, b);
+}
+
+// ---------------------------------------------------------------------------
+// 5b) RIC 的内容：RDE（9.4.2.50，图 9-322）与 RIC Descriptor（9.4.2.51，图 9-323、表 9-161）
+// ---------------------------------------------------------------------------
+//
+// 第 5 节已经管了「RIC 作为一串元素进 MIC」（`protectedCount`、`ricProtected`）；这一节管
+// RIC 里那些元素本身长什么样、一条 RIC 的结构规则是什么：
+//
+//   一条 Resource Request（图 13-21，印刷页 2127）：一个 RDE 后跟一个或多个 Resource
+//   Descriptor；RIC-Request（图 13-20）是一条或多条 Resource Request，RIC-Response（图 13-27）
+//   是一条或多条 Resource Response，每条与请求里的 RDE 对应（13.11.2）。
+//
+// 本文件只定义 Block Ack 这一种描述符（表 13-3 的 Block Ack Parameters 行）；QoS 那一路
+// （TSPEC / TCLAS，表 13-3 的 802.11 QoS 行）与 Vendor Specific 不建模——它们的描述符由多个
+// 元素组成，本模块把它们当不透明字节透传。
+
+/// 图 9-322：Element ID(1) + Length(1) + RDE Identifier(1) + Resource Descriptor Count(1) +
+/// Status Code(2)。表 9-77（印刷页 786）没有把 RDE 标成可扩展，长度是定死的。
+pub const rde_body_len: u8 = 4;
+pub const rde_len: usize = 2 + @as(usize, rde_body_len);
+
+/// 表 9-161（印刷页 937，原文行 51236）：Resource Type 1 是 Block Ack；0 与 2–255 保留。
+pub const resource_type_block_ack: u8 = 1;
+/// 图 9-323：Block Ack 描述符的 Variable parameters（表 9-161）：Block Ack Parameter Set
+/// (2, 9.4.1.14) + Block Ack Timeout(2, 9.4.1.15) + Block Ack Starting Sequence Control
+/// (2, 9.3.1.8)，三个都按 9.2.2 的小端。
+pub const block_ack_params_len: u8 = 6;
+/// Block Ack RIC Descriptor 的整段长度。
+pub const ric_descriptor_block_ack_len: usize = 2 + 1 + @as(usize, block_ack_params_len);
+
+/// 一条 RIC 里最多认这么多个 RDE。RIC 走的是重关联帧，一个 FTO 同时要的 TS 不会多。
+pub const max_ric_entries = 16;
+
+/// RIC Data element（图 9-322）。
+pub const Rde = struct {
+    /// 请求方任选、在整条 RIC 里唯一（9.4.2.50、13.11.3.1）。
+    rde_id: u8,
+    /// 这个 RDE 后面跟着几个备选 Resource Descriptor（9.4.2.50）。
+    descriptor_count: u8,
+    /// 只在 Resource Response 里有意义（9.4.2.50）；请求里按 13.11.3.1 设为 SUCCESS。
+    status: u16,
+
+    pub fn encode(self: Rde, out: *[rde_len]u8) void {
+        out[0] = Eid.rde;
+        out[1] = rde_body_len;
+        out[2] = self.rde_id;
+        out[3] = self.descriptor_count;
+        std.mem.writeInt(u16, out[4..6], self.status, .little);
+    }
+
+    /// `ie` 是含 Element ID 与 Length 的整段元素，可以比元素长。
+    pub fn parse(ie: []const u8) Error!Rde {
+        if (ie.len < 2 or ie[0] != Eid.rde) return error.WrongElement;
+        if (ie[1] != rde_body_len) return error.BadRde;
+        if (ie.len < rde_len) return error.Truncated;
+        return .{
+            .rde_id = ie[2],
+            .descriptor_count = ie[3],
+            .status = std.mem.readInt(u16, ie[4..6], .little),
+        };
+    }
+
+    /// 13.11.3.1：「A resource request is considered successful if the status code SUCCESS is
+    /// returned in each RDE。」
+    pub fn accepted(self: Rde) bool {
+        return self.status == Status.success;
+    }
+};
+
+/// 13.11.3.1：FTO 构造请求里的 RDE：Status Code 设为 SUCCESS（9.4.2.50 说请求里这一栏保留，
+/// 13.11.3.1 把它钉在 SUCCESS 上）。
+pub fn requestRde(rde_id: u8, descriptor_count: u8) Rde {
+    return .{ .rde_id = rde_id, .descriptor_count = descriptor_count, .status = Status.success };
+}
+
+/// RIC Descriptor element（图 9-323）：Element ID(1) + Length(1) + Resource Type(1) + 变长参数。
+pub const RicDescriptor = struct {
+    resource_type: u8,
+    /// 指向原元素里 Resource Type 之后的那一段。
+    params: []const u8,
+};
+
+/// Block Ack 描述符的三个参数（表 9-161 的 Variable parameters 一栏）。
+pub const BlockAck = struct {
+    /// Block Ack Parameter Set（9.4.1.14，图 9-268）。
+    parameter_set: u16,
+    /// Block Ack Timeout（9.4.1.15），单位 TU。
+    timeout_tu: u16,
+    /// Block Ack Starting Sequence Control（9.3.1.8，图 9-31）。
+    ssc: u16,
+};
+
+/// Block Ack 描述符按图 9-323 写进 `out`，返回写好的整段元素。
+pub fn encodeBlockAckDescriptor(ba: BlockAck, out: *[ric_descriptor_block_ack_len]u8) []const u8 {
+    out[0] = Eid.ric_descriptor;
+    out[1] = 1 + block_ack_params_len;
+    out[2] = resource_type_block_ack;
+    std.mem.writeInt(u16, out[3..5], ba.parameter_set, .little);
+    std.mem.writeInt(u16, out[5..7], ba.timeout_tu, .little);
+    std.mem.writeInt(u16, out[7..9], ba.ssc, .little);
+    return out[0..];
+}
+
+/// 把任意的 Resource Type 与参数写成一个 RIC Descriptor；参数太长装不下时是 `TooLong`。
+/// 保留的 Resource Type（表 9-161：0、2–255）在这里放行：发送端不编保留值是 13.11.3.1 的
+/// 程序性要求，`parseRicDescriptor` 在接收端拦。
+pub fn encodeRicDescriptor(resource_type: u8, params: []const u8, out: []u8) BuildError![]const u8 {
+    if (1 + params.len > 255) return error.TooLong;
+    if (out.len < 2 + 1 + params.len) return error.BufferTooSmall;
+    out[0] = Eid.ric_descriptor;
+    out[1] = @intCast(1 + params.len);
+    out[2] = resource_type;
+    @memcpy(out[3 .. 3 + params.len], params);
+    return out[0 .. 2 + 1 + params.len];
+}
+
+/// 解析一个 RIC Descriptor；保留的 Resource Type 拒掉（表 9-161：0 与 2–255 保留）。
+pub fn parseRicDescriptor(ie: []const u8) Error!RicDescriptor {
+    if (ie.len < 2 or ie[0] != Eid.ric_descriptor) return error.WrongElement;
+    const len: usize = ie[1];
+    if (len < 1) return error.BadRicDescriptor;
+    if (ie.len < 2 + len) return error.Truncated;
+    if (ie[2] == 0 or ie[2] > resource_type_block_ack) return error.BadRicDescriptor;
+    return .{ .resource_type = ie[2], .params = ie[3 .. 2 + len] };
+}
+
+/// 把一个 RIC Descriptor 当 Block Ack 描述符解析（表 13-3 Block Ack Parameters 行：请求与
+/// 响应都是「RIC Descriptor，Resource Type = Block Ack」一个元素）。
+pub fn parseBlockAckDescriptor(ie: []const u8) Error!BlockAck {
+    const d = try parseRicDescriptor(ie);
+    if (d.resource_type != resource_type_block_ack) return error.BadRicDescriptor;
+    if (d.params.len != block_ack_params_len) return error.BadRicDescriptor;
+    return .{
+        .parameter_set = std.mem.readInt(u16, d.params[0..2], .little),
+        .timeout_tu = std.mem.readInt(u16, d.params[2..4], .little),
+        .ssc = std.mem.readInt(u16, d.params[4..6], .little),
+    };
+}
+
+/// 一条 Resource Request / Response：RDE 加上它后面的那一段元素（到下一个 RDE 或 RIC 结束）。
+pub const RicEntry = struct {
+    rde: Rde,
+    /// RDE 之后、下一个 RDE 之前的整段元素。响应里描述符至多一个（13.11.2），
+    /// 请求里的备选描述符个数在 RDE 的 `descriptor_count` 里。
+    rest: []const u8,
+};
+
+/// `parseRic` 的结果：固定容量的条目数组。
+pub const Ric = struct {
+    entries: [max_ric_entries]RicEntry = undefined,
+    len: usize = 0,
+
+    pub fn slice(self: *const Ric) []const RicEntry {
+        return self.entries[0..self.len];
+    }
+};
+
+/// 把一段 RIC 按 RDE 划界拆开（13.11.2：每条 Resource Request / Response 由一个 RDE 开头）。
+/// 结构不对就拒：空 RIC、以非 RDE 开头、RDE 长度不对、截断、条目太多。
+pub fn parseRic(ric: []const u8) Error!Ric {
+    var out = Ric{};
+    var starts: [max_ric_entries]usize = undefined;
+    var pos: usize = 0;
+    var n: usize = 0; // 到目前为止见到的 RDE 条数
+    var seen_any = false;
+    while (pos < ric.len) {
+        const total = try ieLen(ric, pos);
+        if (ric[pos] == Eid.rde) {
+            const r = try Rde.parse(ric[pos .. pos + total]);
+            if (n == max_ric_entries) return error.RicTooManyEntries;
+            starts[n] = pos;
+            out.entries[n] = .{ .rde = r, .rest = &.{} };
+            n += 1;
+        } else if (n == 0) {
+            // 第一个元素就不是 RDE：RIC 以 Resource Request / Response 序列组成（13.11.2）。
+            return error.RicNoRde;
+        }
+        seen_any = true;
+        pos += total;
+    }
+    if (!seen_any or n == 0) return error.RicNoRde;
+    // 每个条目的 rest 是它自己的 RDE 之后到下一个 RDE（或 RIC 结束）的那一段。
+    for (0..n) |i| {
+        const start = starts[i] + rde_len;
+        const end = if (i + 1 < n) starts[i + 1] else ric.len;
+        out.entries[i].rest = ric[start..end];
+    }
+    out.len = n;
+    return out;
+}
+
+/// 13.11.3.1（FTO 侧的程序性规则）：至少一条 Resource Request；每个 RDE 的 Status Code 是
+/// SUCCESS、Resource Descriptor Count 至少 1、RDE Identifier 在整条 RIC 里唯一。
+pub fn checkRicRequest(ric: []const u8) Error!void {
+    const r = try parseRic(ric);
+    for (r.slice()) |e| {
+        if (!e.rde.accepted()) return error.RicBadStatus;
+        if (e.rde.descriptor_count == 0) return error.RicBadDescriptorCount;
+    }
+    for (r.slice(), 0..) |a, i| {
+        for (r.slice()[i + 1 ..]) |b| {
+            if (a.rde.rde_id == b.rde.rde_id) return error.RicDuplicateId;
+        }
+    }
+}
+
+/// 表 13-3 的 Block Ack Parameters 行（请求）：每个 RDE 后跟恰好 `descriptor_count` 个元素，
+/// 每个都是 Resource Type = Block Ack 的 RIC Descriptor，没有尾随的其它元素。
+pub fn checkRicRequestBlockAck(ric: []const u8) Error!void {
+    try checkRicRequest(ric);
+    const r = try parseRic(ric);
+    for (r.slice()) |e| {
+        var pos: usize = 0;
+        var n: usize = 0;
+        while (pos < e.rest.len) {
+            const total = try ieLen(e.rest, pos);
+            _ = try parseBlockAckDescriptor(e.rest[pos .. pos + total]);
+            n += 1;
+            pos += total;
+        }
+        if (n != e.rde.descriptor_count) return error.RicDescriptorCountMismatch;
+    }
+}
+
+/// 13.11.3.2：RIC-Response 里每个请求 RDE 对应一条，条数相同、顺序相同、RDE Identifier 相同。
+/// 响应里 RDE 之间的描述符元素（零或一个，13.11.2）跳过。
+pub fn checkRicResponse(request: []const u8, response: []const u8) Error!void {
+    const req = try parseRic(request);
+    const rsp = try parseRic(response);
+    if (req.len != rsp.len) return error.RicResponseMismatch;
+    for (req.slice(), rsp.slice()) |a, b| {
+        if (a.rde.rde_id != b.rde.rde_id) return error.RicResponseMismatch;
+    }
+}
+
+/// 表 9-30 注 14（印刷页 703，原文行 39414–39427）：RIC-Request 出现在 Reassociation Request
+/// 里的条件是——目标 AP 通告了 FT capability（Beacon / Probe Response 的 MDE）、且这次转换
+/// 不用 13.6 的 FT 资源请求协议。本模块只做 RSN 的 FT（AKM 3/4/9 或非 RSN 里的条件之一已由
+/// 类型保证），这两个前提不进参数。
+/// 9.4.2.47（图 9-314，原文行 51077）：MDE 的 B1 只通告「STA 可以跑 13.6 的资源请求协议」，
+/// 与 RIC 能不能进重关联帧无关——两个说法是并列的，不是一个的门控。
+pub fn ricAllowedInReassoc(ap_advertised_ft: bool, resource_request_protocol_used: bool) bool {
+    return ap_advertised_ft and !resource_request_protocol_used;
+}
+
+/// 图 13-21 的 Block Ack 版：往游标里写一条 Resource Request（RDE + count 个 Block Ack 描述符）。
+pub fn putBlockAckResourceRequest(c: *Cursor, rde_id: u8, descriptors: []const BlockAck) BuildError!void {
+    if (descriptors.len == 0 or descriptors.len > 255) return error.TooLong;
+    var buf: [rde_len]u8 = undefined;
+    requestRde(rde_id, @intCast(descriptors.len)).encode(&buf);
+    try c.put(&buf);
+    for (descriptors) |ba| {
+        var d: [ric_descriptor_block_ack_len]u8 = undefined;
+        try c.put(encodeBlockAckDescriptor(ba, &d));
+    }
+}
+
+/// 图 13-27 的一条 Resource Response：RDE（带结果状态码）+ 零或一个 Block Ack 描述符
+/// （13.11.2：请求成功时回 AP 改过的那一个，失败时可以回一条建议）。
+pub fn putBlockAckResourceResponse(c: *Cursor, rde_id: u8, status: u16, descriptor: ?BlockAck) BuildError!void {
+    var buf: [rde_len]u8 = undefined;
+    const r = Rde{ .rde_id = rde_id, .descriptor_count = if (descriptor != null) 1 else 0, .status = status };
+    r.encode(&buf);
+    try c.put(&buf);
+    if (descriptor) |ba| {
+        var d: [ric_descriptor_block_ack_len]u8 = undefined;
+        try c.put(encodeBlockAckDescriptor(ba, &d));
+    }
 }
 
 // ---------------------------------------------------------------------------

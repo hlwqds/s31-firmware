@@ -6,13 +6,17 @@
 第二批加入 SAE 完整协议（group 19）、FT 密钥派生层、256 位套件（CCMP-256 / GCMP-256 / BIP-CMAC-128 /
 BIP-GMAC-128 / BIP-GMAC-256、256 位 KEK、表 12-8 的 Key MIC 与 Key Descriptor Version）；
 第三批（2026-11-25）加入按 AKM 的 4 次握手（`akm.zig`：AKM 1–6、8、9、11–13、18）、OWE（RFC 8110）、EAP-TLS 的 EAP 层
-（RFC 5216 / RFC 3748）、SAE 的其余 14 个群、FT 协议（`ft_proto.zig`）。
+（RFC 5216 / RFC 3748）、SAE 的其余 14 个群、FT 协议（`ft_proto.zig`）；第四批（2026-11-25）加入 RFC 8110 §4.5 的
+OWE PMK caching（`owe.zig` 的 `Cache`、`clientCacheDecision` / `apCacheDecision`）与 FT 快速切换里的 RIC（`ft_proto.zig` 第 5b 节：
+RDE 与 Block Ack 的 RIC Descriptor、一条 RIC 的结构规则）。
 
-- 主机测试：**386 项**（2026-11-25，`zig test src/host_tests.zig`；第一批 57 项，第二批加到 141 项，第三批加到 386 项。
-  其中有 8 项是在主机上执行八份板侧子自检：`sae_full_selftest` 24 条、`suite256_selftest` 22 条、`ft_selftest` 13 条、
-  `owe_selftest` 18 条、`eap_selftest` 8 条、`supp_akm_selftest` 19 条、`sae_groups_selftest` 33 条、`ft_proto_selftest` 12 条）
+- 主机测试：**431 项**（2026-11-25，`zig test src/host_tests.zig`；第一批 57 项，第二批加到 141 项，第三批加到 386 项，第四批加到 431 项。
+  其中有 10 项是在主机上执行十份板侧子自检：`sae_full_selftest` 24 条、`suite256_selftest` 22 条、`ft_selftest` 13 条、
+  `owe_selftest` 18 条、`eap_selftest` 8 条、`supp_akm_selftest` 19 条、`sae_groups_selftest` 33 条、`ft_proto_selftest` 12 条、
+  `owe_cache_selftest` 12 条、`ft_ric_selftest` 10 条）
 - 板侧：`src/selftest.zig` 由固件顺序调用，打印 `check:` 行与 `checks: passed=N failed=M total=N+M`；
-  177 条判据（第一批 28 条，第二批 87 条）。第二批的 87 条于 2026-11-24 随 `wifi` profile 上板：`wifi_connect` 87/87（`logs/e2e-wifi-boot.log`）
+  199 条判据（第一批 28 条，第二批 87 条，第三批 177 条，第四批 199 条）。上过板的是前两批的 87 条：2026-11-24 随 `wifi` profile
+  上板，`wifi_connect` 87/87（`logs/e2e-wifi-boot.log`）；第三批、第四批之后是 177、199 条，**没有上板**
 - 依赖方向：逻辑模块只 import `std` 与同组件文件；仅 `selftest.zig` import `boards` 的 `board`（只用 `board.log`）
 - 不依赖其它组件，不做 802.11 帧编解码（归 `wifi-mlme`）；P-256 点运算在本组件的 `ecc.zig` 里
   （群运算用 `std.crypto.ecc.P256`）
@@ -53,14 +57,17 @@ BIP-GMAC-128 / BIP-GMAC-256、256 位 KEK、表 12-8 的 Key MIC 与 Key Descrip
 | 256 位套件：CCMP-256 / GCMP-256 / BIP-GMAC-128 / BIP-GMAC-256 / BIP-CMAC-256 | 12.5；表 12-4；9.4.2.55（941）；9.4.2.25.3（888）；表 9-131（884–885） |
 | 按 AKM 的 4 次握手：PMK 长度、PTK 的 PRF / KDF、KCK / KEK、MIC、Key Data 封装、Key Descriptor Version、PMKID 的来源、能否与密码套件合用 | 12.7.1.2（2008）、12.7.1.3（2009–2011）、12.7.1.7（2014–2018）、12.7.2（2018–2026）；表 9-133（886–888）、表 12-4（2021）、表 12-8（2027）、9.4.2.25.3（888） |
 | SAE 的其余 14 个群（FFC 2、5、14–18；ECC 20、21、25、26、28–30）、群协商、Password Identifier 与 Rejected Groups 元素 | 12.4.4.1、12.4.4.3、12.4.5.2–12.4.5.5、12.4.7.2、12.4.8.6.3–.4；RFC 2409、RFC 3526。两个元素不在 2016 正文里，依据 hostap 的源码（逐处行号见 `sae_groups.zig` 文件头） |
-| FT 协议：MDE / FTE 编解码、认证序列（over-the-air、over-the-DS）、reassociation | 13.5、13.7、13.8；9.4.2.47–9.4.2.50；9.6.9；9.3.3.8–.12；表 9-159 |
+| FT 协议：MDE / FTE 编解码、认证序列（over-the-air、over-the-DS）、reassociation | 13.5、13.7、13.8；9.4.2.47–9.4.2.48；9.6.9；9.3.3.8–.12；表 9-159 |
 | OWE：群 19 的 ECDH、DH Parameter element、PMK / PMKID | RFC 8110 §4.1–§4.4；RFC 5869 §2.2–2.3；RFC 5903、RFC 6090；12.6.3 |
 | EAP-TLS 的 EAP 层：EAP 头、Identity / Notification / Nak、Flags、分片与重组、MSK → PMK | RFC 3748 §4、§5；RFC 5216 §2.1、§2.3、§3 |
+| OWE 的 PMK caching：请求里同时带 PMKID 与 DH Parameter element、AP 命中与未命中、client 命中 / 回退 / 忽略三种处理、缓存条目与过期 | RFC 8110 §4.5、§4.3；9.4.2.25（PMKID List）。缓存管理（替换、挤兑、过期判据）RFC 没有规定，取自盘上 hostap 的 `rsn_supp/pmksa_cache.c`；期限常量取 `dot11RSNAConfigPMKLifetime` 的 DEFVAL |
+| FT 的 RIC：RDE 与 RIC Descriptor（Block Ack）编解码、一条 RIC 的结构规则、进重关联帧的条件 | 9.4.2.50、9.4.2.51（图 9-322、图 9-323、表 9-161）；13.11.2、13.11.3.1、13.11.3.2；13.7.1、13.8.5；表 9-30 注 14；图 9-314 |
 
 **非目标**：802.11 帧的完整编解码（`wifi-mlme`）、TKIP、WEP、Key Descriptor Version 1（HMAC-MD5 与 ARC4）、
-TLS 本身（EAP-TLS 的 TLS 引擎由调用方注入）、R0KH→R1KH 的 PMK-R1 分发与 R0KH / R1KH 之间的协议、RIC（13.11）、
-SAE 的 H2E 与恒定时间实现、FFC 1、22–24 与 ECC 27、31–34、OWE 的 group 19 以外的群与 PMK caching、
-AKM 7（TDLS）与 10（PeerKey/SMK）、扩展 Key ID、QMF、DMG、GCR、A-MPDU/A-MSDU 重排。
+TLS 本身（EAP-TLS 的 TLS 引擎由调用方注入）、R0KH→R1KH 的 PMK-R1 分发与 R0KH / R1KH 之间的协议、13.6 的 FT 资源请求协议、
+RIC 的 QoS（TSPEC）描述符与 AP 的准入决策、SAE 的 H2E 与恒定时间实现、FFC 1、22–24 与 ECC 27、31–34、
+OWE 的 group 19 以外的群与 OWE Transition Mode（不在 RFC 8110 里）、AKM 7（TDLS）与 10（PeerKey/SMK）、扩展 Key ID、QMF、DMG、
+GCR、A-MPDU/A-MSDU 重排。
 
 ## 验证状态
 
@@ -73,15 +80,17 @@ AKM 7（TDLS）与 10（PeerKey/SMK）、扩展 Key ID、QMF、DMG、GCR、A-MPD
 
 | 命令 | 结果 |
 | --- | --- |
-| `zig test src/host_tests.zig` | 386/386 通过（2026-11-25） |
+| `zig test src/host_tests.zig` | 431/431 通过（2026-11-25，第四批之后） |
 | `zig fmt --check src/` | 干净 |
 | `zig test -target riscv32-linux-musl -fno-emit-bin src/host_tests.zig` | 只编译、不链接：通过（证明能过 32 位 RISC-V 的语义分析） |
-| 板侧自检在主机上执行（桩 `board` 模块 `/tmp/selftest-host/board_stub.zig`） | 2026-11-25：`checks: passed=177 failed=0 total=177`，最长一行 125 字节（原 28 条时是 28/28、125 字节；第二批新增三份子自检的最长一行分别是 75、55、60 字节，第三批新增五份是 87、57、55、91、77 字节，都低于 `board.log` 的 200 字节上限，这一条同时是 8 条主机用例的断言） |
-| 以固件参数交叉编译自检（`zig build-obj`，目标参数写在第一个 `-M` 之前，`-Mboard` 指向真板的 `board.zig`，根文件带目标架构守卫） | 2026-11-25：通过，整份自检 177 条（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1、§5.4） |
+| 板侧自检在主机上执行（桩 `board` 模块 `/tmp/selftest-host/board_stub.zig`） | 2026-11-25（第四批）：`checks: passed=199 failed=0 total=199`，最长一行 140 字节（原 28 条时是 28/28、125 字节；第二批新增三份子自检的最长一行分别是 75、55、60 字节，第三批新增五份是 87、57、55、91、77 字节，第四批新增两份是 128、62 字节，都低于 `board.log` 的 200 字节上限，这一条同时是 10 条主机用例的断言） |
+| 以固件参数交叉编译自检（`zig build-obj`，目标参数写在第一个 `-M` 之前，`-Mboard` 指向真板的 `board.zig`，根文件带目标架构守卫） | 2026-11-25：通过，整份自检 199 条（命令全文与一次假绿的更正见 `docs/verification/wifi-ieee80211-verification.md` §5.1、§5.4、§5.5） |
 | 对 `/tmp/s31-oracle/suite256_oracle.py` 的全量差分（一次性驱动 `/tmp/s31-oracle/s256diff/diff.zig`，2026-11-24 复跑） | 14 组 3568 条向量、3928 项比较，0 不一致 |
 | 参照实现自检（2026-11-24） | `wifi_oracle.py selftest` 223 PASS、1 KNOWN；`suite256_oracle.py selftest` 253/253；`ft_oracle.py selftest` 51 pass、2 known；`sae_oracle.py selftest` 的 P-256 与 `cryptography` 在 10 个点上一致 |
 | 第三批的差分（2026-11-25 复跑；逐项数字见 `docs/verification/wifi-ieee80211-verification.md` §4.4） | OWE 800 组向量 15200 项比较、EAP-TLS 分片 1200 条记录流与 PMK 4096 组、按 AKM 握手四个种子各 2800 条命令的三方对拍、SAE 15 个群 1500 组整链、FT 协议四个种子各 12000 帧，全部 0 不一致 |
 | 第三批的参照实现自检（2026-11-25） | `owe_oracle.py selftest` 44 项 0 失败；`akm_oracle.py selftest` 1065/1065；`sae_groups_oracle.py selftest` 160 PASS；`ft_proto_oracle.py selftest` 45 项 0 失败 |
+| 第四批的差分（2026-11-25 主代理重跑；细目见 `docs/verification/wifi-ieee80211-verification.md` §4.5） | OWE PMK caching 的缓存策略对 Python 模型两个种子各 400 组，0 不一致（策略模型对拍，不是规范向量）；FT RIC 的完整交换（over-the-air 与 over-the-DS 各一条）六帧、两个 MIC 与 KCK 对独立 Python oracle，逐字节一致 |
+| 第四批新增子自检的尺寸与指令数（riscv32 ReleaseSmall；指令数在 QEMU 上数） | `ft_ric_selftest`：text 2802 B、26181 条 rv32 指令；`owe_cache_selftest`：text 12331 B、104108 条 rv32 指令 |
 
 差分用的向量由 `wifi_oracle.py vectors --seed {1,7,42,3,9} --count 24` 生成，落在可比范围内的条数：
 psk 120、prf 120、ptk 37、pmkid 120、gtk 51、key_wrap 48、key_unwrap 96、ccmp_encapsulate 43、
@@ -97,7 +106,7 @@ ccmp_decapsulate 98、gcmp_encapsulate 41、gcmp_decapsulate 96、bip_protect 20
 ```sh
 cd components/wifi-connect
 ZIG=/nix/store/m096jak4mrmdhah085l79rzfypviyhfw-zig-0.17.1/bin/zig
-env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig        # All 141 tests passed.
+env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig        # All 431 tests passed.
 env -u LD_LIBRARY_PATH $ZIG fmt --check src/               # 无输出
 ```
 
@@ -131,8 +140,8 @@ const n = try s.recvEapol(frame, snonce, out);
 | `conn.zig` | 322 | 连接状态机、事件队列、重连退避（未改） |
 | `sae.zig` | 379 | SAE 字节级函数（KDF、keyseed / KCK / PMK / PMKID、Confirm 的 CN、帧体常量）、`unimplemented` 表 |
 | `vectors.zig` | 513 | 第一批的判据常数 |
-| `host_tests.zig` | 2373 | 第一批 57 项测试与测试用的假认证方 `FakeAuth`；末尾三个 wrapper `test` 块引入下面的三份测试 |
-| `selftest.zig` | 1184 | 板侧自检入口（87 条判据，含下面三个 `*_selftest.zig`） |
+| `host_tests.zig` | 2446 | 第一批 57 项测试与测试用的假认证方 `FakeAuth`；末尾十个 wrapper `test` 块引入第二、三、四批的测试文件，另有 3 条在主机上执行板侧子自检的用例 |
+| `selftest.zig` | 1198 | 板侧自检入口（199 条判据，含各 `*_selftest.zig`） |
 | `ecc.zig` | 157 | 群 19 的点运算：仿射点加、由 x 恢复 y、元素编解码；标量乘用 `std.crypto.ecc.P256` |
 | `sae_full.zig` | 993 | SAE 完整协议：PWE 派生、Commit / Confirm、帧体编解码、实例状态机、父进程与 Anti-Clogging |
 | `sae_full_vectors.zig` | 213 | SAE 的判据常数（J.10 官方值、J.10 输入走协议路径、两组 KAT、基点倍点） |
@@ -146,6 +155,10 @@ const n = try s.recvEapol(frame, snonce, out);
 | `suite256_vectors.zig` | 478 | 256 位套件的判据常数（公开标准向量 + 差分样本） |
 | `suite256_tests.zig` | 1006 | 256 位套件的 23 项主机测试 |
 | `suite256_selftest.zig` | 259 | 256 位套件的板侧判据 |
+| `owe_cache_tests.zig` | 475 | RFC 8110 §4.5 的 24 项主机测试与在主机上执行板侧子自检的 1 项 |
+| `owe_cache_selftest.zig` | 283 | OWE PMK caching 的 12 条板侧判据（没有点乘） |
+| `ft_ric_tests.zig` | 511 | FT RIC 的 17 项主机测试与在主机上执行板侧子自检的 1 项 |
+| `ft_ric_selftest.zig` | 125 | FT RIC 的 10 条板侧判据 |
 
 ## 特性对照表
 
@@ -265,6 +278,7 @@ const n = try s.recvEapol(frame, snonce, out);
 - 第二批之后的仓库门禁：`check-host.sh`、`check-coverage.py`、`check-invariants.py` 已重跑并通过
   （`tests/baselines.json` 的基线抬到 141 / 82，前门总数 1047）；`run_e2e.py --host` 与 `check-capacity.py`
   的结果记在 `docs/verification/README.md`。
+- 第三批、第四批之后的板侧判据（177、199 条）没有上板：串口 `/dev/ttyUSB0` 当前账号没有权限。
 - 真实 AP 上的 SAE（WPA3 个人）、FT 初始关联与快速切换、256 位套件协商都没有任何互通证据。
 - 与真实 AP 的互通：消息 3 / 组密钥消息 1 的字段宽松度（上面第 7 条）只能靠实网确认。
 - CCMP/GCMP 的 QoS + 四地址 AAD（30 字节）只有构造测试，没有官方向量。

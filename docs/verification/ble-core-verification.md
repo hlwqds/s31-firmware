@@ -1,22 +1,24 @@
 # BLE 验证报告（Bluetooth Core Specification 5.4 与 RFC 7668）
 
-- 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。
+- 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。第四批另涉 RFC 6775（6LoWPAN-ND 的主机侧行为）与它所依托的 RFC 4861、RFC 4862，以及 RFC 8930 与 RFC 8931（分片转发与选择性分片恢复）。
 - 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）、`components/bt-blobs`（§8 的 HCI 一致性自检）。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
 - **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。下表的"通过"指离线验证通过。
+- 本文把 2026-11-25 加入的 6LoWPAN-ND 主机侧行为（`nd6.zig`）、分片转发与选择性分片恢复（`sfr.zig`）称为"第四批"。第四批新增两份板侧子自检，只到 L1 与 L2，**没有上板**；主机上的读数与复核见 §5.3，对拍见 §4.2，偏离见 §6 末尾。
 
 ## 1. 结论
 
 | 项 | 级别 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| `ble-802154` 主机测试 | L1 | 122/122（第一批 68 + 第二批 54） | §3.1 |
+| `ble-802154` 主机测试 | L1 | 485/485（第一批 68，第二批 54，第三批 292，第四批 71） | §3.1 |
 | `ble-security` 主机测试 | L1 | 51/51 | §3.2 |
-| 与独立参照实现的差分 | L1 | 全部一致 | §4 |
+| 与独立参照实现的差分 | L1 | 第一批到第四批各自对拍，全部 0 不一致（第四批的 `nd6` 一组先发现证据强度不足，补强后重跑） | §4、§4.1、§4.2 |
 | HCI 命令布局对 NimBLE 头文件 | L1 | 三条逐字段一致 | §5 |
-| RV32 目标编译 | L2 | 两个自检都能以固件参数编译 | §5 |
+| RV32 目标编译 | L2 | 两个自检都能以固件参数编译；第四批之后 `ble-802154` 的整份自检（152 条）与两份新增子自检同样通过 | §5、§5.3 |
 | 板侧自检（第一批，第一次上板） | L3 | `ble_security` 25/25；`ble_802154` 18/19，失败的那条是自检自身的差一错误，已修 | `logs/wifi-selftest-prefix-boot.log` |
 | 修复后的板级复验（第一批） | L3 | `ble_802154` 19/19；整份判决 `main: verdict=pass` | 当时的 `logs/e2e-wifi-boot.log`，已被下一行的运行覆盖 |
 | 第二批后的板级复验 | L3 | `ble_802154` 50/50；`wifi` profile 14/14 个 section；`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§3.1 |
+| 板侧自检在主机上的运行（桩 `board`，第四批之后） | L1 | `ble_802154` 152/152（第三批之后是 106/106）；**没有上板** | §5.3 |
 | 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
 
 ## 2. 逐特性对照
@@ -61,6 +63,8 @@
 | Enhanced ATT bearer 池；LE 上基于额度的 L2CAP 连接（LE Credit Based Flow Control 与 Enhanced Credit Based Flow Control）；Robust Caching（Client Supported Features、Database Hash、change-aware / change-unaware 的跟踪、客户端缓存的判定） | [Vol 3] Part G §2.5.2、§2.5.2.1、§5.3、§7.2–§7.4、附录 B；[Vol 3] Part F §3.2.8、§3.2.11、§3.3.2、§3.3.3、表 3.44；[Vol 3] Part A §2.1、§3.4、§4、§4.22–§4.28、§7.11、§10.1–§10.2 | `ble-802154/src/eatt.zig`、`l2cap_coc.zig`、`robust_cache.zig` | 57（`eatt_tests.zig`） | 附录 B 的 Database Hash 样例；`eatt_oracle.py`；NimBLE 的信令结构体、EATT 与 GATT 的对应代码（行号见三个文件头） | 10（`eatt_selftest.zig`） | 离线验证通过 |
 | LL Privacy 的 host 侧：解析列表（9 条命令）、RPA 的生成与解析、扫描时的解析预算、RPA 超时定时器、隐私模式下的地址过滤；LE Power Control 的 host 侧：命令与事件编解码、路径损耗上报的跟踪、功率钳制与档位选择的模型 | [Vol 4] Part E §7.8.38–§7.8.45、§7.8.74–§7.8.77、§7.8.117–§7.8.121、§7.7.65.32–.33；[Vol 6] Part B §1.3.2.2–.3、§4.5.16、§4.7、§5.1.17、§6.1–§6.5；[Vol 3] Part H §2.2.2；[Vol 3] Part C §10.7 | `ble-802154/src/privacy.zig`、`power_ctrl.zig` | 66（`privacy_tests.zig`：privacy 40、power 25、子自检 1） | 参数表逐字节；`privacy_oracle.py`（FIPS-197 附录 B 与 RFC 4493 的已知答案先自检）；NimBLE 的 `ble_hs_resolv.c`、`ble_gap.c`、`ble_hs_pvcy.c` | 9（`privacy_selftest.zig`） | 离线验证通过 |
 | 6LoWPAN 适配层补全：IPHC 压缩与无状态 / 有状态解压（两个方向、全部取值）、上下文表的有效期状态机、NHC（扩展头 EID 0–4 与 7、UDP 的 C 与 P 全部取值、校验和省略）、dispatch 分类、Mesh 头与转发规则、分片头与重组（重叠、乱序、60 秒超时） | RFC 4944 §5.1–§5.3、§11；RFC 6282 §3、§4；RFC 6775 §4.2、§5.4.2–§5.4.3；RFC 8025 §3 | `ble-802154/src/fifteen4.zig` | 50（`sixlowpan_tests.zig`） | RFC 手排的已知答案；lwIP（IDF v6.1 自带）的输出 | 10（`sixlowpan_selftest.zig`） | 离线验证通过 |
+| 6LoWPAN-ND 的主机侧行为：ARO / 6CO / ABRO / SLLAO 编解码，RS / RA / NS / NA 的校验（源、hop limit、Code、校验和、长度为 0 的选项），上下文表与有效期（同 CID 更新、生命周期 0 删除、过期进只收模式），地址注册（带 ARO 的 NS、NA 里的 Status）、续期与睡眠，下一跳判定 | RFC 6775 §3.1、§4.1–§4.3、§5.3–§5.8；RFC 4861 §4.1–§4.6、§6.1.2、§7.1；RFC 4944 §8 | `ble-802154/src/nd6.zig` | 42（`nd6_tests.zig`） | 按原文手排的已知答案（`gen_kats.py`）；独立手写的 Python 解析器 `nd6_oracle.py`（差分） | 30（`nd6_selftest.zig`） | 离线验证通过；只做 host 侧行为，见 §6 |
+| 分片转发（RFC 8930 的 6LFF / VRB）与选择性分片恢复（RFC 8931）：RFRAG / RFRAG-ACK 头，发送方、接收方、转发方三个状态机 | RFC 8930 §5、§6；RFC 8931 §4.4、§5、§6、§7.1、附录 C | `ble-802154/src/sfr.zig` | 27（`sfr_tests.zig`） | 按原文手排的已知答案（图 1、图 3、图 4、表 1）；Python oracle `sfr_oracle.py`（差分，头部编解码） | 16（`sfr_selftest.zig`） | 离线验证通过；状态机只有手排的场景用例，见 §6 |
 | 广播、连接、真实收发 | 不适用 | — | — | — | — | 阻塞：射频 synth PLL 不锁 |
 
 ## 3. 主机测试
@@ -68,7 +72,7 @@
 ### 3.1 `ble-802154`
 
 ```sh
-cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 122 tests passed.
+cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 485 tests passed.
 ```
 
 第一批：原有 20 项全部保留，新增 48 项，共 68 项。第二批（ATT / GATT 扩展，2026-11-24）：第一批的 68 项全部保留，新增 54 项，共 122 项。`zig fmt --check src/` 干净（2026-11-24 复跑）。
@@ -108,6 +112,13 @@ cd /home/huanglin/code/s31-firmware && R=/tmp/selftest-host && env -u LD_LIBRARY
   `generic_rv32+m+a+c+f+zicsr+zifencei`、`ReleaseSmall` 编译，根文件在编译期断言目标架构。最初那条命令把 `-target` 放在最后一个
   `-M` 之后，产物其实是 x86_64（假绿，已更正）；命令与对照见 `wifi-ieee80211-verification.md` §5.1。
 - 板级：`BOARD=/dev/ttyUSB0 python3 tests/e2e/run_e2e.py --board --profile wifi` → `PASS board:wifi`（主代理实测）。`logs/e2e-wifi-boot.log` 里 `section: ble_802154` 之后有 50 行 `check:`，全部 `ok=1`，接着是 `checks: passed=50 failed=0 total=50`；整份日志 14 个 `section:`、`main: verdict=pass`。
+
+第三批（2026-11-25）：122 → 414，新增四个测试文件（`ext_adv_tests.zig` 115、`eatt_tests.zig` 57、`privacy_tests.zig` 66、`sixlowpan_tests.zig` 50）；
+板侧自检 50 → 106 条。这一批没有上板。
+
+第四批（2026-11-25）：414 → 485。新增 `nd6_tests.zig` 42、`sfr_tests.zig` 27；`host_tests.zig` 多 2 个把它们带进来的 `test { … }` 块
+（现在是 6 个，本文件自己 122 项）。用桩 `board` 在主机上执行 `selftest.run()` → `checks: passed=152 failed=0 total=152`，最长一行 114 字节；
+整份自检以固件参数交叉编译通过（§5.3）。这一批没有上板。
 
 ### 3.2 `ble-security`
 
@@ -171,6 +182,17 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 收下的脚本没有再比较。脚本给「lwIP 收下了」打的标签是 `FAIL unsupported-combo lwip accepted`，那是脚本原本预期 lwIP 会拒收，
 不是 Zig 侧的不一致。
 
+### 4.2 第四批的差分
+
+下表的数字是 2026-11-25 主代理在终态代码上重跑得到的（§5.3）。参照实现都在 `/tmp/s31-oracle/`，一次性驱动不入库。
+
+| 特性 | 参照实现 | 规模 | 结果 | 性质 |
+| --- | --- | --- | --- | --- |
+| `nd6` 的报文解析 | `/tmp/s31-oracle/nd6/nd6_oracle.py`（独立手写的 Python 解析器，按 RFC 6775 与 RFC 4861 的图与规则） | seed 42 / 7 / 2026 各 2000 例、777 / 55555 各 500 例（主代理重跑 9000 例；切片另报 seed 99 / 12345 各 2000、31337 500，合计 11500 例）。整包前提恒合法（源 link-local、hop limit 255、Code 0、校验和按最终字节算对），畸形只落在选项级 | 每次运行 `compare: cases=N mismatches=0`。seed 42 × 2000 的分布：接受 1692（RA 441、NS 798、NA 453）、Short 201、ZeroLengthOption 107；被接受例里带选项 1602（94.7%）；选项实例 SLLAO 1029、ARO 833、TLLAO 425、MTU 318、ABRO 310、PIO 299、6CO 285；畸形分支 reorder 115、lenoverrun 101、unknown 97、zero_len 63、truncated 52、lenfield 逐类型 3–44、reserved 逐类型 3–38、aro_len 26、co_ctx_gt128 7、co_mismatch 5、pio 类 1–5 | 两个独立解析器的一致性对拍。**第一版生成器的证据强度不足**：3700 例里被接受的只有 184 例（5.0%），且几乎都不带选项（被接受的 RA 一例都不带 PIO / 6CO / ABRO），实际只压了整包级拒绝与裸 NS 解析；主代理复算后要求重写生成器，上表是补强后的结果 |
+| `sfr` 的头部编解码 | `/tmp/s31-oracle/sfr/sfr_oracle.py`（按 RFC 8931 的图 1、图 2、图 4 手排） | 方向 A（Python 造字节、Zig 解）`cases_a.txt` 400 例与追加的 `c.txt` 216 例；方向 B（Zig 编、Python 解）seed 20261125 × 400、seed 7 × 200 | 方向 A 的输出与 Python 的期望逐行相同（拒绝路径 172/400：BadDispatch 100、Short 30、BadFragmentSize 22、BadOffset 15、TooLong 5）；方向 B `compare: cases=400 mismatches=0`、`cases=200 mismatches=0`。合计 1216 组 | 规范图的手排对拍，只覆盖头部编解码。发送方、接收方、转发方三个状态机是按原文手排的场景用例；盘上没有这两份 RFC 的独立实现（lwIP 的 `lowpan6.c` 只有 RFC 4944 的分片） |
+
+这一批的两个驱动二进制在交付时都比被测源码旧（`sfr` 的驱动 10:53 早于 `sfr.zig` 的最后一次修改 10:56，`nd6` 的驱动 11:04 早于 11:07），
+切片自报的"0 不一致"对最终代码不成立；上表是主代理重编驱动之后跑的。
 
 ## 5. 主代理独立复核
 
@@ -213,6 +235,34 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
   （最长一行 71 字节）；`sixlowpan_selftest.zig` 以固件参数单独编译通过；`zig fmt --check` 干净；10 处 `check(` 调用。
   这一片的差分在逐片验收时没有重跑；§4.1 的数字是集成之后把仓库现有的 `fifteen4.zig` 重新编成动态库再跑出来的
   （`build_zig.sh`，`campaign.py <种子> 1000`，三个种子共 16 秒）。
+
+### 5.3 主代理对第四批的独立复核（2026-11-25）
+
+- **逐片验收**：两片各跑 `sh /tmp/r5c/accept.sh ble-802154 <特性>`，再自己重跑 `sixlowpan_tests.zig`。读数：
+
+| 片 | 主机测试 | 子自检在主机上（最长一行） | 目标编译 | 回归 |
+| --- | --- | --- | --- | --- |
+| `nd6` | 42/42 | 30/0（81 字节） | rc=0 | `sixlowpan_tests.zig` 50/50，子自检 10/0 |
+| `sfr` | 27/27 | 16/0（63 字节） | rc=0 | 同上 |
+
+- **整份自检在桩 `board` 模块上运行**（命令同 §3.1）：`checks: passed=152 failed=0 total=152`，最长一行 114 字节。
+- **整份自检以固件参数交叉编译**（带守卫的根文件）：退出 0。守卫的负对照见 `wifi-ieee80211-verification.md` §5.5，守卫根文件是同一个。
+- **对拍在终态代码上重跑**，数字与补强的经过见 §4.2。
+- **条款锚点逐条打开原文核对**：RFC 6775 的 ARO 图在 869–879（Type 33、Length 恒为 2、Status、3 字节 Reserved、Registration Lifetime、EUI-64）、
+  6CO 图在 937–947（Context Length 0–128，超过 64 时 Length 必须为 3；Valid Lifetime 为 0 立即删除）、ABRO 的图在 1034–1048；
+  5.4 的「带 L 的 PIO 必须忽略」在 1274–1275、5.4.2 的上下文表规则在 1308–1316、5.4.3 的只收模式在 1327–1332。
+  RFC 8931 的图 1 在 430–440、图 2 在 527–537、图 3 在 543–549、图 4 在 554–562、表 1 在 1080–1097、§7.1 在 892–1015；RFC 8930 的 §5 在 321–393。
+  切片笔记里两处出处行号写偏（RFC 6775 的保留字段规则写成 977–978，实为 6CO 的 C 旗标说明；RFC 4861 的写成 3303–3308，实为分页处的空白），已按原文改正。
+- **任务书与原文不一致，按原文**：任务书要求负例覆盖「保留字段」，但 RFC 6775 与 RFC 4861 对保留字段写的都是「接收方必须忽略」
+  （RFC 6775 的 892–894、987–989、1087–1089；RFC 4861 的 2158–2161、2201–2204、3295–3298、3339–3342）。保留字段非零不是拒绝路径，
+  换成一条正例 `nd6: reserved fields are ignored, not rejected`。任务书里凭印象举的 RFC 8931 参数名（`RFRAG_ACK_TIMEOUT` 之类）原文里没有，
+  实现按原文的参数名（MinARQTimeOut、MaxFragRetries 等）。
+- **原文自身不一致的两处**：RFC 6775 §4.3 的 ABRO 字段说明里列了 `Reserved`（1087–1089），图（1034–1048）的 24 字节布局里没有它的位置，实现以图为准；
+  RFC 8931 §4.4（356–358）说首片的 Datagram_Size「encoded in the Fragment_Size field」，§5.1（468–474）与图 1 把它放在 Fragment_Offset 字段，
+  实现按 §5.1 的布局、§4.4 取差值语义。
+- **尺寸与指令数**（riscv32 ReleaseSmall）：`nd6_selftest` text 15710 B、152883 条 rv32 指令；`sfr_selftest` text 17533 B（另 data 1040、bss 880）、
+  75540 条。text 用 `zig build-obj` 量，指令数在 QEMU 上数。
+- **没有上板**：串口 `/dev/ttyUSB0` 属 `root:dialout`，当前账号没有权限。
 
 ## 6. 实现偏离
 
@@ -271,8 +321,9 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
   - 与 NimBLE 两处不同、跟原文：`BLE_MAX_RPA_TIMEOUT_VAL`（约 11.5 小时）是旧上限，5.4 是 0x0E10；加完条目后把所有对端
     设成 device mode，与默认的 network mode 不符。
 - **6LoWPAN 的范围**（`fifteen4.zig` 文件头同文）：
-  - 没做的：6LoWPAN-ND（RFC 6775）的协议本体，只实现它的上下文表，不解析 RA / 6CO；Mesh 路由（只有 Mesh 头与 §11 的 hop 规则）；
-    RFC 8930、RFC 8931；RFC 4944 §10 的 HC1 / HC2；Thread MLE；分页 dispatch 的 Page 2–15。
+  - 第三批交付时没做的：6LoWPAN-ND（RFC 6775）的协议本体（只实现它的上下文表，不解析 RA / 6CO）、RFC 8930 与 RFC 8931；
+    前两者已在第四批实现（见本节末尾）。仍未做的：Mesh 路由（只有 Mesh 头与 §11 的 hop 规则）；RFC 4944 §10 的 HC1 / HC2；
+    Thread MLE；分页 dispatch 的 Page 2–15。
   - `NoContext`：IPHC 指向一个不存在、已删除或已过保持期的上下文就拒解，这是设计（错误表里写明）。对 RFC 6282 行 412 规定的
     `::` 编码（SAC=1、SAM=00）解压器不查上下文。缺口在 lwIP 的压缩器那头：它把没用到的上下文槽（地址全零）当成与 `::` 的
     前 64 位匹配，于是用有状态压缩（SAC=1、SAM=01）编码 `::`，并指向那个没人配置过的槽（§4.1）。结果是只要 lwIP 的上下文表里
@@ -281,6 +332,22 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - **新命令与新子事件没有登记进统一分发器**：扩展广播、LL Privacy、LE Power Control 的新 OpCode 与子事件码各自在模块里编解码。
   `hci_cmd.expects()` / `parseReturn` 对这些 OpCode 回 `UnknownOpcode`，`hci_evt.decodeParams` 对子事件 0x20 / 0x21 等
   回 `UnknownSubevent`。它们还没有接到发送路径上，并进统一分发留给接线那一步。
+
+第四批（`nd6.zig`、`sfr.zig` 的文件头同文）：
+
+- **6LoWPAN-ND 只做 host 的行为**（RFC 6775 第 5 章）：没做 6LR / 6LBR、DAR / DAC、mesh、DHCPv6（RA 的 M / O 旗标只记录）、发送 NA、重定向、
+  RFC 4861 完整的邻居缓存状态机（NUD 即带 ARO 的注册 NS）。
+- **`nd6` 里原文留了余地、由实现定下的**：`syncContexts` 向 `fifteen4` 的上下文表同步只收模式的条目时，有 ±60 秒的舍入，且 `fifteen4` 的表
+  会多挂一轮保持窗口（权威状态在 `nd6` 自己的表里）；BLE 链路的 SLLAO 形状 RFC 7668 没有定义，按 RFC 4861 §4.6.1 的一般规则取
+  Length = 1 + 6 字节；「well before」量化为注册续期提前 3 × RETRANS_TIMER、RA 信息的刷新提前一个 RS 间隔（10 秒）；注册失败时 NA 的处理
+  按「源地址 = 路由器」去匹配探测中的注册（RFC 6775 的错误 NA 只按 EUI-64 投递，不说明是哪个地址，是原文的已知歧义）。
+- **`sfr` 的范围**：转发方的真实路由查找是注入点（`Forwarder.Args.next_hop`），不做 mesh-under、Thread MLE、RFC 8138 的在途改写
+  （只留 `size_delta` 的注入口）；拥塞控制只做附录 C 的降窗（收到 E 回显时窗口减半、下限 1），不减帧长、不调帧间空隙；
+  转发方只产出帧，发送间隔归调用方的发送队列；RTO 重启时没注入 `tag_fn` 就沿用旧的 Datagram_Tag；
+  接收方的重组超时缺省 60 秒取自 RFC 4944 §5.3（RFC 8931 §7 只说「分钟量级」）。
+- **`sfr` 里原文留了余地、由实现定下的**：发送方采用附录 C 的乐观方案（发满窗口，X 只落在突发的最后一帧）；RTO 每次超时翻倍、上限 MaxARQTimeOut；
+  NULL 位图到来时放弃且不再补发 reset；完成时与吸收窗口内的 ACK 强制带 FULL 位图；延迟确认缺省关闭；
+  孤儿的后续片静默丢弃，过期槽位上的迟到片带 X 时回 NULL。
 
 ## 7. 未验证
 
@@ -295,6 +362,9 @@ cd components/ble-security && env -u LD_LIBRARY_PATH zig test src/host_tests.zig
 - 第三批：扩展广播与 EATT 的 L2CAP 部分没有独立 oracle 的差分，只有按参数表排出的字节与对 NimBLE 源码的交叉核对。
 - 第三批：新命令与新子事件没有经过 `hci_cmd.zig` / `hci_evt.zig` 的统一分发（§6）。
 - 第三批：6LoWPAN 与 lwIP 的互通只在宿主机上对过（§4.1），没有上过链路。§6 里 `::` 源地址的那一类差异，遇到 lwIP 发的帧 Zig 的解压器会拒解。
+- 第四批：`nd6` 与 `sfr` 在真实多跳网络上的行为（与 6LR / 6LBR 的注册、上下文过期、RFRAG 恢复与 VRB 的真实转发）没有任何证据；
+  两份子自检（共 46 条）在板子上一次都没跑过。
+- 第四批：`sfr` 的三个状态机只有按原文手排的场景用例，没有独立实现对拍；`nd6` 的随机差分是两个独立解析器的一致性对拍，不涉及路由器侧的行为。
 
 ## 8. 对真实 controller 的 HCI 一致性自检（2026-11-24）
 
