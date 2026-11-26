@@ -20,7 +20,7 @@
 | 板侧连接（2026-11-26，`-Dwifi-link-probe` + `-Dwifi-ap-ssid`） | 连上用户提供的 AP（WPA2-PSK + CCMP-128）：`STA_CONNECTED bssid=… ch=1 authmode=3 aid=1`，从发起到连上约 3.0 s；MAC 密钥表里的成对钥匙与组钥匙和请求方手里的逐字节相同；连上后稳定 5 s，`esp_wifi_disconnect_internal -> DISCONNECTED reason=8` | `logs/wifi-link-connect-boot.log`（邻居的 SSID 与 BSSID 已脱敏）；`docs/verification/wifi-ieee80211-verification.md` §11 |
 | 板侧数据通路（2026-11-26） | DHCP 四步拿到地址（约 0.1 s），ping 网关 10/10（rtt 最小 / 平均 / 最大 13.1 / 23.1 / 30.2 ms），回答网关的 ARP 请求 | 同上 |
 | 共存读数（2026-11-26，`-Dcoex` + 真实链路） | 只开 Wi-Fi 时共存核开着链路照常；胶水零拒绝；blob 的 13 次申请核都回 `0x102`（这些事件在核的事件表里没有硬件定时器） | 同上；`docs/verification/coex-verification.md` §12 |
-| 合并镜像里的真实链路（2026-11-26，`-Dcoex-wifi-link`） | 两个控制器同镜、BLE 的 init 与 enable 之后，Wi-Fi 扫描 37 个 AP、连上 2055 ms、DHCP 55 ms、ping 网关 10/10，15/15 项通过。真实链路主干抽成 `link_probe.zig` 的 `linkStart()` / `linkRest()`，探针照旧用它们。前提是 Wi-Fi 先 start：PHY 的一次性标定只认第一次使能，BLE 的 init 不能再做（修法在 `bt-blobs`）；BLE init 之后 `init_probe.zig` 的 `radioRestore` 把时钟 / 电源寄存器按快照写回 | `logs/coex-merged-wifi-link-boot.log`；`docs/verification/coex-verification.md` §15 |
+| 合并镜像里的真实链路（2026-11-26，`-Dcoex-wifi-link`） | 两个控制器同镜、BLE 的 init 与 enable 之后，Wi-Fi 扫描 35 个 AP、连上 2059 ms、DHCP 51 ms、ping 网关 10/10，16/16 项通过。真实链路主干抽成 `link_probe.zig` 的 `linkStart()` / `linkRest()`，探针照旧用它们。前提是 Wi-Fi 先 start，且 BLE 的 init 不再做两段会重做 PHY 的打开与标定的事（修法在 `bt-blobs`）；BLE init 之后 `init_probe.zig` 的 `radioRestore` 把时钟 / 电源寄存器按快照写回（不写回则认证、关联成功后被 `reason=7` 断开） | `logs/coex-merged-wifi-link-*.log`；`docs/verification/coex-verification.md` §15 |
 
 ## 用法
 

@@ -25,13 +25,15 @@
 //!
 //!   - BLE 先 init：这一次性的初始化被 BLE 用掉，Wi-Fi start 时 `register_chipv7_phy` 什么都不做（标定数据
 //!     是空的），Wi-Fi 收不到帧；
-//!   - Wi-Fi 先 start：Wi-Fi 标定成功（标定数据约 260 个非零字节），但 BLE init 里的重新标定把 Wi-Fi 建立好
-//!     的 PHY 配置冲掉——同一个 2.4 秒的全信道扫描，BLE init 之前 34–37 个 AP，之后 1–4 个。
+//!   - Wi-Fi 先 start：Wi-Fi 标定成功（标定数据约 260 个非零字节），BLE init 的两段——`probe_ptr.initPhy()` 与
+//!     第 15 步的 `esp_phy_load_cal_and_init`——各自都把 Wi-Fi 建立好的 PHY 配置冲掉：单变量对照里只跳过一段，
+//!     全信道扫描就从三十多个 AP 掉到 1–2 个（`docs/verification/coex-verification.md` §15.2）。
 //!
 //! 所以 `-Dcoex-wifi-link` 的顺序是 Wi-Fi 先 start；`bt.probe.setPhyOwnedByWifi()` 让 BLE 的 init 跳过那两段。
 //! BLE 的 init 还会整字改写 `MODEM_SYSCON_CLK_CONF1` 这类时钟寄存器，做完之后把"Wi-Fi start 之后、BLE init
-//! 之前"存下的快照里变化过的时钟 / 电源寄存器写回去（`init_probe.radioSnapshot` / `radioRestore`）。后一条是
-//! 补救：正解是时钟配置按两个射频的需求取并集（ADR-003 第 4 节的归属模型），还没有做。
+//! 之前"存下的快照里变化过的时钟 / 电源寄存器写回去（`init_probe.radioSnapshot` / `radioRestore`）；不写回的话
+//! 扫描照常、认证与关联成功后被 AP 以 `reason=7` 断开。写回是整字写、在 BLE 的 enable 之后执行，BLE 那一侧的
+//! 时钟位也被拿掉。它是补救：正解是时钟配置按两个射频的需求取并集（ADR-003 第 4 节的归属模型），还没有做。
 //!
 //! 只编这一段时把别的 section 都关掉（`-Dboot=false -Dnet=false -Dwire=false -Dwifi=false`），镜像约 1.2 MB。
 //!
@@ -139,6 +141,7 @@ pub fn run() bool {
     // 3) `-Dcoex-wifi-link`：Wi-Fi 先 start（PHY 的一次性初始化与标定从此归 Wi-Fi），存一份寄存器快照，
     //    再扫一次全信道——证明合并镜像里 Wi-Fi 自己是好的，后面的变化才都算在 BLE 的 init 头上。
     var wifi_started = false;
+    var base_ap: u16 = 0;
     if (opts.wifi_link) {
         const src = wifi.link.linkStart();
         log.line("coex-merged: wifi first: esp_wifi_start rc={d}", .{src});
@@ -147,7 +150,7 @@ pub fn run() bool {
         if (wifi_started) {
             bt.probe.setPhyOwnedByWifi();
             wifi.radioSnapshot();
-            const base_ap = wifi.link.linkScan("before ble init");
+            base_ap = wifi.link.linkScan("before ble init");
             check(base_ap > 0, "wifi baseline scan before ble init ap={d}", .{base_ap});
         }
     }
@@ -201,6 +204,9 @@ pub fn run() bool {
             wifi.coexReadings("wifi-link");
             readRadios("after wifi link");
             check(r.scan_done and r.ap_num > 0, "wifi scan done={} ap={d}", .{ @intFromBool(r.scan_done), r.ap_num });
+            // BLE 的 init / enable 之后接收灵敏度不该掉：全信道扫描的 AP 数掉到基线的一半以下就不算过。连接、DHCP、ping
+            // 那几项抓不住这种退化——2026-11-26 板上实测，基线三十多个 AP、这里只剩 1–4 个时它们照样全过。
+            check(r.scan_done and r.ap_num * 2 >= base_ap, "wifi scan after ble keeps >= half the baseline ap ({d} vs {d})", .{ r.ap_num, base_ap });
             if (r.connect_attempted) {
                 check(r.connected, "wifi STA_CONNECTED ({d})", .{@intFromBool(r.connected)});
                 check(r.dhcp, "wifi dhcp bound ({d})", .{@intFromBool(r.dhcp)});

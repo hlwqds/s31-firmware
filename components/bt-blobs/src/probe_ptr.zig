@@ -76,8 +76,9 @@ pub fn populate() c_int {
 /// PHY 已经由 Wi-Fi 打开并标定过了（合并镜像的 Wi-Fi 真实链路步骤里 Wi-Fi 先 `esp_wifi_start`，
 /// `-Dcoex-wifi-link`）时整段跳过：IDF 的 `esp_phy_enable` 只在 modem 标志为 0 时才做初始化，BT 在 Wi-Fi
 /// 之后使能时只把自己或进标志（`phy_init.c:324-406`）；下面这套"从零打开"的序列（末尾是一次
-/// `register_chipv7_phy`）是 BLE 单独跑时缺的，PHY 已经开着时不该再做。单独跳过这一段并不能让 Wi-Fi 恢复
-/// （2026-11-26 板上实测）；真正冲掉 Wi-Fi 的 PHY 配置的是 `bringup.init` 第 15 步的重新标定，见那里的注释。
+/// `register_chipv7_phy`）是 BLE 单独跑时缺的，PHY 已经开着时不该再做。这一段与 `bringup.init` 第 15 步的重新标定
+/// 各自都足以让 Wi-Fi 的接收退化：2026-11-26 板上单变量对照，只跳过第 15 步而这一段照常跑，Wi-Fi 的扫描从 31 个 AP
+/// 掉到 1 个；两段都跳过才恢复（`docs/verification/coex-verification.md` §15.2）。
 pub var phy_owned_by_wifi: bool = false;
 pub fn initPhy() void {
     if (!on_target) return;

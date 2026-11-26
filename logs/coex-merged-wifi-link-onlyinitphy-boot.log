@@ -1,0 +1,2391 @@
+[REDACTED 2026-11-26] 本文件是板侧原始串口日志的脱敏副本：除用户自己的 AP（hl-wifi）外，邻居网络的 SSID 与 BSSID 都换了标签——BSSID 换成 ap-NN（与 wifi-link-scan-boot.log 同一套编号，日志里新出现的 BSSID 接着往后编），SSID 换成 ssid-NN（每个 SSID 名一个，同名 mesh 的几个 BSSID 共用）；信道、RSSI、authmode、握手内容、栈的高水位、时序与计数都是原值。
+��ѹesp32�ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=e75b0h (947632) map
+I (266) esp_image: segment 1: paddr=000f75d8 vaddr=2e000600 size=00008h (     8) load
+I (268) esp_image: segment 2: paddr=000f75e8 vaddr=2f000800 size=00214h (   532) load
+I (272) esp_image: segment 3: paddr=000f7804 vaddr=2f000a20 size=08834h ( 34868) load
+I (285) esp_image: segment 4: paddr=00100040 vaddr=401d0040 size=28a50h (166480) map
+I (314) esp_image: segment 5: paddr=00128a98 vaddr=2f009254 size=1348ch ( 78988) load
+I (336) boot: Loaded app from partition at offset 0x10000
+I (336) boot: Disabling RNG early entropy source...
+s31-firmware boot
+ota: crc32 mine=0x4743989a rom=0x4743989a -> match
+ota: table n=6 factory=0x10000 ota0=0x190000 ota1=0x310000 otadata=0x490000
+ota: ab=yes slot=factory state=UNDEFINED(4294967295) seq=0 sector=0 attempts=0 failures=0 od=0x490000 count=2
+section: coex_merged
+coex-merged: heap total=210240 B wifi=114688 B ble=95552 B
+check: heap split wifi=112K ble=93K (both >= 64K) ok=1
+wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 15/127/63 -> 0/0/0 (0 = off)
+wifi-init-probe: pmu modem ICG code 0->2 (2 = active)
+wifi-init-probe: arena=114688 B
+coex> coex firmware version: a830d28
+wifi-init-probe: trace timer_setfn a0=0x2f01b3c4 a1=0x4004e082
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+coex> coexist rom version cdcf52b
+wifi-init-probe: trace malloc a0=0x00000038 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000038 a1=0x2f043ac0
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+coex[boot]: booted=true wifi=idle ble=idle param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[boot]: fw=2.0.0 en=0 req=0 rel=0 sta=0 startcb=0 intset=0
+wifi-init-probe: table=0x2f03f430 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: coex wifiInit rc=0
+wifi-init-probe: CLKDMP[before-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x00000000
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000005
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: LPCON+18 fixed pre-init 0x5 -> 0x1 (IDF=0x1)
+wifi-init-probe: pm params rc: min_active=50000 keep_alive=10000000 wait_broadcast=15000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f043b1c
+wifi-blob: pp rom version: 395df10
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f043b70
+wifi-blob: net80211 rom version: 395df10
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f044198
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f04431c
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace semphr_give a0=0x2f0449e4 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f044368 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#1 hooks=20 give=2 null_give=0 semmax=0x10001
+wifi-init-probe: pump#2 hooks=20 give=2 null_give=0 semmax=0x10001
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048b0c
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f044368 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ecc8 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f048b34
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f049d58
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049d58
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049e00
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049ea8
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049f50
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049f88
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049fc0
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049ff8
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a030
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a2c8
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a560
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a7f8
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04aa90
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f04ad28
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f04b04c
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000078 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f04b370
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04b3f8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04bab0
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04c168
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04c820
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04ced8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04d590
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04dc48
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04e300
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04e9b8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04f070
+wifi-init-probe: trace timer_setfn a0=0x2f01ec54 a1=0x4003b752
+wifi-init-probe: trace timer_setfn a0=0x2f01ec68 a1=0x4003b74a
+wifi-init-probe: trace timer_setfn a0=0x2f01eca4 a1=0x4003b742
+wifi-init-probe: trace timer_setfn a0=0x2f01ec90 a1=0x4003b73a
+wifi-init-probe: trace timer_setfn a0=0x2f01ecc8 a1=0x4003b732
+wifi-init-probe: trace timer_setfn a0=0x2f01ecdc a1=0x4003b72a
+wifi-init-probe: trace timer_setfn a0=0x2f01ecf0 a1=0x4003b722
+wifi-init-probe: trace timer_setfn a0=0x2f01ed0c a1=0x4003b71a
+wifi-init-probe: trace timer_setfn a0=0x2f01f014 a1=0x4003b712
+wifi-init-probe: trace timer_setfn a0=0x2f01efb4 a1=0x4003b70a
+wifi-init-probe: trace timer_setfn a0=0x2f01eff0 a1=0x4003b702
+wifi-init-probe: trace timer_setfn a0=0x2f01ee64 a1=0x4003f6fe
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x00000000 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace wifi_clk_dis a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000004
+wifi-init-probe: trace zalloc a0=0x00000004 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f04f728
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f043aa8 a1=0xffffffff
+wifi-init-probe: trace semphr_give a0=0x2f043aa8 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace timer_setfn a0=0x2f01e618 a1=0x4002afc2
+wifi-init-probe: trace timer_setfn a0=0x2f01e62c a1=0x4002afb8
+wifi-init-probe: trace timer_disarm a0=0x2f01cb44 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f0449e4 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f044368 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#3 hooks=156 give=6 null_give=0 semmax=0x10001
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: esp_wifi_internal_set_log_level(3) rc=0x00000000
+wifi-init-probe: wpa cb register rc=0 g_ic[444]=0x2f01bfb4 table=0x2f01bfb4
+wifi-init-probe: CLKDMP[after-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x64646400
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000001
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x66660000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: after-init MAC_ST=0x00000000 (init_rc=0)
+coex[init]: booted=true wifi=inited ble=idle param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[init]: fw=2.0.0 en=0 req=0 rel=0 sta=0 startcb=1 intset=0
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: ROMGLOB swq=0x2f044368 ppq=0x2f03ea20 ppsem=0x0
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: MAC_ST after init = 0x00000000
+wifi-init-probe: INIT OK, arena free=66380/114672 B, bad_handle=0, blocking_refused=4
+read: LPCON+18 after wifi init=0x00000001
+check: wifi esp_wifi_init_internal rc=0 ok=1
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048b0c
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f044368 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ecc8 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f0449e4 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f044368 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#4 hooks=170 give=7 null_give=0 semmax=0x10001
+wifi-link: esp_wifi_set_mode(STA) rc=0x0
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048b0c
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f044368 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ecc8 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace phy_enable a0=0x00000000 a1=0x00000001
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0; cal_data: version=100 mac=1c:29:04:d1:99:28 nonzero=263/1904 head=ff fe 22 00 bf 20 22 00
+coex> _coex_enable called by blob
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+coex> coex_enable_wrapper returned rc=0 wifi=enabled ble=idle rej=0
+wifi-init-probe: trace wifi_reset_mac a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace event_post id=43 bits=0x10 handlers=1 undispatched=0
+wifi-link-probe: event id=43 data=0x2f0489e0 (n=1)
+wifi-blob: wifi: W (1398) wifi:
+wifi-blob: (phy)rate:0x0(  LP-1Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1406) wifi:
+wifi-blob: (phy)rate:0x1(  LP-2Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1415) wifi:
+wifi-blob: (phy)rate:0x2(LP-5.5Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1424) wifi:
+wifi-blob: (phy)rate:0x3( LP-11Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1433) wifi:
+wifi-blob: (phy)rate:0x5(  SP-2Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1442) wifi:
+wifi-blob: (phy)rate:0x6(SP-5.5Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1452) wifi:
+wifi-blob: (phy)rate:0x7( SP-11Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1461) wifi:
+wifi-blob: (phy)rate:0x8(    48Mbps), pwr:18, txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1470) wifi:
+wifi-blob: (phy)rate:0x9(    24Mbps), pwr:19, txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1479) wifi:
+wifi-blob: (phy)rate:0xa(    12Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1488) wifi:
+wifi-blob: (phy)rate:0xb(     6Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1498) wifi:
+wifi-blob: (phy)rate:0xc(    54Mbps), pwr:18, txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1507) wifi:
+wifi-blob: (phy)rate:0xd(    36Mbps), pwr:19, txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1516) wifi:
+wifi-blob: (phy)rate:0xe(    18Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1525) wifi:
+wifi-blob: (phy)rate:0xf(     9Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1534) wifi:
+wifi-blob: (phy)rate:0x10, mcs:0x0, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1545) wifi:
+wifi-blob: (phy)rate:0x11, mcs:0x1, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1555) wifi:
+wifi-blob: (phy)rate:0x12, mcs:0x2, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1565) wifi:
+wifi-blob: (phy)rate:0x13, mcs:0x3, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1576) wifi:
+wifi-blob: (phy)rate:0x14, mcs:0x4, pwr(bw20:19, bw40:18), txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1586) wifi:
+wifi-blob: (phy)rate:0x15, mcs:0x5, pwr(bw20:19, bw40:18), txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1596) wifi:
+wifi-blob: (phy)rate:0x16, mcs:0x6, pwr(bw20:18, bw40:17), txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1607) wifi:
+wifi-blob: (phy)rate:0x17, mcs:0x7, pwr(bw20:18, bw40:17), txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1617) wifi:
+wifi-blob: (phy)rate:0x18, mcs:0x8, pwr(bw20:16, bw40:16), txing:16
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1627) wifi:
+wifi-blob: (phy)rate:0x19, mcs:0x9, pwr(bw20:15, bw40:15), txing:15
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1638) wifi:
+wifi-blob: 11ax coex: WDEVAX_PTI0(0x55777555), WDEVAX_PTI1(0x00003377).
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1649) wifi:
+wifi-blob: mode : sta (1c:29:04:d1:99:28)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1657) wifi:
+wifi-blob: enable tsf
+wifi-blob: wifi: 
+
+wifi-link-probe: event id=2 data=0x00000000 (n=2)
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-init-probe: pump#5 hooks=227 give=12 null_give=0 semmax=0x10001
+wifi-link: esp_wifi_start rc=0x0 (hooks=227, events=2)
+coex[after-start]: booted=true wifi=enabled ble=idle param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-start]: fw=2.0.0 en=1 req=0 rel=2 sta=2 startcb=1 intset=1
+coex[after-start]: hooks: boot=1 wifi_init=1 enable=1 status_get=2 wifi_release=2 pti_get=14 schm_status_bit_clear=1 schm_status_bit_set=1 schm_interval_set=1
+coex[after-start]: hooks: schm_register_cb=1 register_start_cb=1 configure_preemption_end_cb=1
+coex[after-start]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-start]: blob->core: status_bit_set n=1 type=0 mask=0x00000000 last=0x00000000 | status_bit_clear n=1 mask=0x0000ffff | events>=64 n=0
+coex[after-start]: by event: e1: rel=1 bad=0 pti n=5 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e10: pti n=2 mask=0x03 bad=0 e15: pti n=1 mask=0x01 bad=0
+coex[after-start]: by event: e38: rel=1 bad=0
+coex[after-start]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-start]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+wifi-init-probe: pump#6 hooks=233 give=15 null_give=0 semmax=0x10001
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_disable_ac_ax +1
+wifi-link-probe: stub _wifi_bb_sleep_retention_attach +1
+wifi-link-probe: stub _wifi_mac_sleep_retention_attach +1
+wifi-link-probe: task[0] wifi entry=0x2f013a6a arg=0x00000000 requested stack=6656 -> 16384 B at 0x2f044afc..0x2f048afc
+wifi-init-probe: pump#7 hooks=233 give=15 null_give=0 semmax=0x10001
+wifi-init-probe: pump#8 hooks=233 give=15 null_give=0 semmax=0x10001
+wifi-link-probe: pump, interrupts off: 500001 us, hooks +0, event posts +0
+wifi-link: enable interrupts: 2 inputs, mie=0x0000000000020000
+wifi-link-probe: pump, interrupts on: 2000024 us, hooks +0, event posts +0
+wifi-link: arena[after start]: free=64424/114672 B
+coex-merged: wifi first: esp_wifi_start rc=0
+check: wifi first: esp_wifi_start rc=0 ok=1
+wifi-init-probe: radio snapshot: 523 documented + 55 focus registers
+wifi-link: scan[before ble init]: esp_wifi_scan_start rc=0x0
+wifi-link-probe:irq#0 in=17 mepc=0x400a832e mac=0x00000000 b13=0 b14=0 ctx15=129 en=0 a0=0x2f07a4a0 a1=0x00000035 s0=0x2f03e850 ra=0x400af64c
+ stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048a18 (n=3)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: scan[before ble init]: GOT in 2421 ms, esp_wifi_scan_get_ap_num rc=0x0 n=36
+check: wifi baseline scan before ble init ap=36 ok=1
+A93K
+bt init-only: init stbbt membbbbbbt brbt brbt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 lpcon=0x00000007
+bt lp: gates conbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbt bringup: enter step 52 init_phy
+bt phy: initPhy skipped (PHY already on, Wi-Fi owns it)
+bt bringup: PHY enabled AFTER step 5bbbbt brbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 62 57
+Q5 407 22852 0 126
+ZU 126->4,4 spins=53369 cc=3000000
+A0/92008
+
+M0 2244 0x2f05fa90
+
+M1 132 0x2f060368
+
+M2 820 0x2f060400
+
+M3 80 0x2f060748
+
+M4 64 0x2f0607a8
+
+M5 76 0x2f0607f8
+
+MC 6 sz=76 ret=0x2f0607f8
+
+CN 0x2f060358 0x98 24
+
+D62.3
+
+Mosal> eventqInit
+
+Msched 107C writeback=0x0
+
+Msched 1254 writeback=0x8
+
+bbbbbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 79 72
+Q5 413 22939 0 126
+ZU 126->4,4 spins=53375 cc=3000000
+A0/89192
+
+M0 2244 0x2f05fa90
+
+M1 132 0x2f060368
+
+M2 820 0x2f060400
+
+M3 80 0x2f060748
+
+M4 64 0x2f0607a8
+
+M5 76 0x2f0607f8
+
+M6 8 0x2f060858
+
+M7 36 0x2f060878
+
+MC 20 sz=8 ret=0x2f061338
+
+CN 0x2f060358 0x98 80
+
+D79.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+btbbt bbbt bribbt rebbt brbt brbt probe: cb10 head oob=0x00000000
+bt probe: sched slot after step10 = 0x00000000
+bt probe: rtc_freq oob @1044 ptr=0x00000bt bringup: pubt prbbt bringup: load_cal done (pre-mce13-uart-window)
+bt hci: transport ready (own ops, no VHCI ring)
+bt bringup: INITED
+bt init-only: bringup.init rc=0 arena free=57128 B
+read: LPCON+18 after ble init=0x0000000f (bit0 wifipwr / bit1 coex / bit2 i2c_mst)
+check: ble bringup.init rc=0 ok=1
+coex[merged]: booted=true wifi=enabled ble=inited param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[merged]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+check: coex sides wifi=enabled ble=inited (wifi started=true; both at least inited) ok=1
+check: coex rejected calls=0 ok=1
+check: wifi idle hook refused on ble stack n=0 ok=1
+read[ble before enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble before enable]: syscon 9c00..9c0c=00000101 7e601002 000000ff 64646400 9c10=00000000 9c14..9c20=003ff884 10003802 00000000 00002070
+read[ble before enable]: fe 0438=ff800000 0450=00110000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble before enable]: ana f800=002f0669 f818=2900e444 f81c=00ffffef
+Jul 14 2026
+bbt probe:bt bringbt brbt prbbt cabbtbbt btbbbbbtbbt enable-only: status=2 rounds=40160 evq=1/1/0 pend_ok=2 busy=0
+read[ble after enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble after enable]: syscon 9c00..9c0c=00000101 7e601002 000000ff 64646400 9c10=00000000 9c14..9c20=003ff884 10003802 00000000 00002070
+read[ble after enable]: fe 0438=ff800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble after enable]: ana f800=002f0669 f818=2900e444 f81c=00ffffef
+coex[ble-enable]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[ble-enable]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+coex[ble-enable]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[ble-enable]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+coex[ble-enable]: hooks: boot=1 wifi_init=1 enable=1 status_get=66 wifi_release=4 pti_get=36 schm_status_bit_clear=29 schm_status_bit_set=29 schm_interval_set=29
+coex[ble-enable]: hooks: schm_register_cb=1 register_start_cb=1 configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1
+coex[ble-enable]: hooks: wr_btdm_coex_schm_register_btdm_callback=1 wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[ble-enable]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[ble-enable]: blob->core: status_bit_set n=29 type=0 mask=0x00000001 last=0x00000000 | status_bit_clear n=29 mask=0x0000ffff | events>=64 n=0
+coex[ble-enable]: by event: e1: rel=2 bad=0 pti n=16 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e5: pti n=11 mask=0x01 bad=0 e10: pti n=2 mask=0x03 bad=0
+coex[ble-enable]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=2 bad=0
+coex[ble-enable]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[ble-enable]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 4: 0x00000001 0x000018f4 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 4 +1ms: 0x00000001 0x000018f4 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+check: ble bringup.enable rc=0 ok=1
+REGDUMP after-ble-init begin n=523 mac_st=00ff1000
+REG 0 20109400 00000001
+REG 1 20109404 00000000
+REG 2 20109408 00000000
+REG 3 2010940c 02202221
+REG 4 20109c00 00000101
+REG 5 20109c04 7e601002
+REG 6 20109c08 000000ff
+REG 7 20109c0c 64646400
+REG 8 20109c10 00000000
+REG 9 20109c14 003ff884
+REG 10 20109c18 10003802
+REG 11 20109c1c 00000000
+REG 12 20109c20 00002070
+REG 13 20109c24 00000000
+REG 14 20109c28 00000000
+REG 15 20109c2c 00000044
+REG 16 20109c30 02508080
+REG 17 2010f000 00000001
+REG 18 2010f004 000018f4
+REG 19 2010f008 00000314
+REG 20 2010f00c 00000001
+REG 21 2010f010 00000000
+REG 22 2010f014 00000001
+REG 23 2010f018 0000000f
+REG 24 2010f01c 00000005
+REG 25 2010f020 66660000
+REG 26 2010f024 00000000
+REG 27 2010f028 00000027
+REG 28 2010f02c 08888888
+REG 29 2010f030 00002070
+REG 30 2010f034 00000000
+REG 31 2010f038 00000000
+REG 32 2010f03c 00000000
+REG 33 2010f040 00000000
+REG 34 2010f044 00000000
+REG 35 2010f048 00000000
+REG 36 2010f04c 00003fff
+REG 37 2010f050 00000002
+REG 38 2010f054 00000004
+REG 39 2010f058 02508150
+REG 40 2010f800 002f0669
+REG 41 2010f804 005b0063
+REG 42 2010f808 07000000
+REG 43 2010f80c 07000000
+REG 44 2010f810 00000000
+REG 45 2010f814 40000001
+REG 46 2010f818 2900e444
+REG 47 2010f81c 00ffffef
+REG 48 2010f820 0003fa04
+REG 49 2010f824 00000084
+REG 50 2010f828 00000084
+REG 51 2010f82c 00000084
+REG 52 2010f830 00000000
+REG 53 2010f834 00000000
+REG 54 2010f838 00000000
+REG 55 2010f83c 12411290
+REG 56 20587000 00000001
+REG 57 20587004 00000003
+REG 58 20587008 00000000
+REG 59 2058700c 00000000
+REG 60 20587010 00000001
+REG 61 20587014 00000000
+REG 62 20587018 00000000
+REG 63 2058701c 00000003
+REG 64 20587020 00000004
+REG 65 20587024 00000003
+REG 66 20587028 00000003
+REG 67 2058702c 00000000
+REG 68 20587030 00000000
+REG 69 20587034 00000001
+REG 70 20587038 000156db
+REG 71 2058703c 0000000f
+REG 72 20587040 00000001
+REG 73 20587044 0000000f
+REG 74 20587048 00000011
+REG 75 2058704c 00000000
+REG 76 20587050 00000000
+REG 77 20587054 00000000
+REG 78 20587058 00415555
+REG 79 2058705c 00000005
+REG 80 20587060 00000000
+REG 81 20587064 00000ba1
+REG 82 20587068 00000181
+REG 83 2058706c 00800043
+REG 84 20587070 00800043
+REG 85 20587074 00000000
+REG 86 20587078 00000001
+REG 87 2058707c 00000001
+REG 88 20587080 00000001
+REG 89 20587084 00000000
+REG 90 20587088 00000083
+REG 91 2058708c 00000083
+REG 92 20587090 00000083
+REG 93 20587094 00000083
+REG 94 20587098 00000000
+REG 95 2058709c 00000000
+REG 96 205870a0 00000000
+REG 97 205870a4 00000000
+REG 98 205870a8 00000040
+REG 99 205870ac 00000000
+REG 100 205870b0 00000000
+REG 101 205870b4 00000000
+REG 102 205870b8 00000000
+REG 103 205870bc 00000000
+REG 104 205870c0 00000000
+REG 105 205870c4 00000000
+REG 106 205870c8 00000000
+REG 107 205870cc 00000000
+REG 108 205870d0 00000000
+REG 109 205870d4 00000000
+REG 110 205870d8 00000001
+REG 111 205870dc 00000000
+REG 112 205870e0 00000000
+REG 113 205870e4 00000000
+REG 114 205870e8 00000000
+REG 115 205870ec 00000000
+REG 116 205870f0 00000000
+REG 117 205870f4 00000000
+REG 118 205870f8 00000000
+REG 119 205870fc 00000000
+REG 120 20587100 00000000
+REG 121 20587104 00000000
+REG 122 20587108 00000000
+REG 123 2058710c 00000000
+REG 124 20587110 00000000
+REG 125 20587114 00000921
+REG 126 20587118 00000011
+REG 127 2058711c 00000921
+REG 128 20587120 00000000
+REG 129 20587124 00000000
+REG 130 20587128 00000000
+REG 131 2058712c 00000000
+REG 132 20587130 00000000
+REG 133 20587134 00000001
+REG 134 20587138 00000000
+REG 135 20587144 00000001
+REG 136 20587148 00000000
+REG 137 2058714c 00000000
+REG 138 20587150 00000000
+REG 139 20587154 00000000
+REG 140 20587158 00000000
+REG 141 2058715c 00000011
+REG 142 20587160 00001011
+REG 143 20587164 00001011
+REG 144 20587168 0000012c
+REG 145 2058716c 0000001a
+REG 146 20587170 00000002
+REG 147 20587174 0000044d
+REG 148 20587178 00000000
+REG 149 2058717c 00000101
+REG 150 20587180 00000102
+REG 151 20587184 00000103
+REG 152 20587188 00000505
+REG 153 2058718c 00000107
+REG 154 20587190 00000117
+REG 155 20587194 00000105
+REG 156 20587198 0000010b
+REG 157 2058719c 00000000
+REG 158 205871a0 000003ff
+REG 159 205871a4 000003ff
+REG 160 205871a8 000003ff
+REG 161 205871ac 00000000
+REG 162 205871b0 00000001
+REG 163 205871b4 00000000
+REG 164 205871b8 00000000
+REG 165 205871bc 00000000
+REG 166 205871c8 00000000
+REG 167 205871cc 00000001
+REG 168 205871d0 00000001
+REG 169 205871d4 00000000
+REG 170 205871d8 00000001
+REG 171 205871dc 00000001
+REG 172 205871e0 0000003d
+REG 173 205871f8 00000001
+REG 174 205871fc 02509110
+REG 175 20589000 7ffe0000
+REG 176 20589004 c0000000
+REG 177 20589008 80000000
+REG 178 2058900c 80000000
+REG 179 20589010 80000000
+REG 180 20589014 80000000
+REG 181 20589018 80000000
+REG 182 2058901c 80000000
+REG 183 20589020 80000000
+REG 184 20589024 00000000
+REG 185 20589028 00000000
+REG 186 2058902c 00000000
+REG 187 20589030 00000000
+REG 188 20589034 00002070
+REG 189 20589038 00002070
+REG 190 20589040 00000000
+REG 191 20589044 00000070
+REG 192 20589048 00002070
+REG 193 2058907c ffffffff
+REG 194 20589080 ffffffff
+REG 195 20589084 ffffffff
+REG 196 20589088 ffffffff
+REG 197 2058908c 000000ff
+REG 198 20589090 02000000
+REG 199 20589094 00000000
+REG 200 20589098 00000000
+REG 201 2058909c 02000000
+REG 202 205890a0 00000000
+REG 203 205890a4 00002070
+REG 204 205890a8 0000001f
+REG 205 205890ac 00000008
+REG 206 205890b0 00000104
+REG 207 205893fc 02509110
+REG 208 20700000 20250923
+REG 209 20700004 00000000
+REG 210 20700008 1fffc7f8
+REG 211 2070000c 00004001
+REG 212 20700018 2e000000
+REG 213 2070001c 00000000
+REG 214 20700020 00000000
+REG 215 20700024 00000000
+REG 216 20700028 00000000
+REG 217 2070002c 00000000
+REG 218 20700030 00000000
+REG 219 20700034 00000000
+REG 220 20700038 00000000
+REG 221 2070003c 00000000
+REG 222 20700040 00000000
+REG 223 20700044 00000000
+REG 224 20700048 00000000
+REG 225 2070004c 00000000
+REG 226 20700050 00000000
+REG 227 20700054 00000000
+REG 228 20700058 00000000
+REG 229 2070005c 00000000
+REG 230 20700060 00000000
+REG 231 20700064 00000000
+REG 232 20700068 00000000
+REG 233 2070006c 00000000
+REG 234 20700070 00000000
+REG 235 20700074 00000000
+REG 236 2070009c 00000000
+REG 237 20700100 00000000
+REG 238 2070010c 000000ff
+REG 239 20700110 00000000
+REG 240 20700114 00000000
+REG 241 20700118 ffffffff
+REG 242 2070011c 00000000
+REG 243 20700120 00000000
+REG 244 20700124 ffffffff
+REG 245 20700130 00000003
+REG 246 20700138 00000000
+REG 247 2070013c ffffffff
+REG 248 20700154 0006414a
+REG 249 20700158 00019064
+REG 250 2070015c 00000000
+REG 251 20700164 00000000
+REG 252 20700170 00000000
+REG 253 20700174 00000000
+REG 254 20700178 00000000
+REG 255 2070017c 00000000
+REG 256 20700180 00002070
+REG 257 20700190 b55d89d6
+REG 258 20700194 00000000
+REG 259 207001a0 ffffffff
+REG 260 207001a4 775461ed
+REG 261 207001b4 0001ffff
+REG 262 207001b8 0001ffff
+REG 263 207001bc 00000000
+REG 264 207001c0 00000003
+REG 265 207001c4 00000000
+REG 266 207001e8 00000000
+REG 267 207001ec 00000800
+REG 268 207001f0 00000006
+REG 269 207001f8 00002070
+REG 270 207001fc 00000002
+REG 271 20700200 00000000
+REG 272 20700204 00000000
+REG 273 20700208 00000000
+REG 274 20700218 00000000
+REG 275 2070021c 0002ffff
+REG 276 20700220 00000000
+REG 277 20700224 00000000
+REG 278 20700228 00000000
+REG 279 2070022c 00000000
+REG 280 20700230 00000000
+REG 281 20700234 00000000
+REG 282 20700238 00000000
+REG 283 2070023c 00000000
+REG 284 20700270 00000000
+REG 285 20700274 00000000
+REG 286 20701000 04000000
+REG 287 20701004 00000000
+REG 288 20701008 00000000
+REG 289 2070100c 00000000
+REG 290 20701010 00000000
+REG 291 20701014 00000000
+REG 292 20701018 00000000
+REG 293 2070101c 00000000
+REG 294 20701020 41400000
+REG 295 20701024 0000028a
+REG 296 20701028 2b000000
+REG 297 2070102c 66c00000
+REG 298 20701030 00000003
+REG 299 20701034 00000003
+REG 300 20701038 20000003
+REG 301 2070103c c0010000
+REG 302 20701040 c0010000
+REG 303 20701044 00000000
+REG 304 20701048 00000028
+REG 305 2070104c 00000081
+REG 306 20701050 00000000
+REG 307 20701054 000002c1
+REG 308 20701058 00000000
+REG 309 2070105c 00000000
+REG 310 20701060 00000240
+REG 311 20701064 00080000
+REG 312 20701068 00000004
+REG 313 207013fc 02507300
+REG 314 20702000 0ffc0100
+REG 315 20702004 80000000
+REG 316 20702008 0000003f
+REG 317 20702018 3c000000
+REG 318 2070201c ffffffc1
+REG 319 20702020 00000000
+REG 320 20702024 00000000
+REG 321 20702028 00000000
+REG 322 2070202c 00000000
+REG 323 20702030 00000000
+REG 324 20702034 00000000
+REG 325 20702038 00000000
+REG 326 2070203c 00000000
+REG 327 207023fc 02505140
+REG 328 20704000 00000000
+REG 329 20704004 ffffffff
+REG 330 20704008 ffffffff
+REG 331 2070400c ffffffff
+REG 332 20704010 ffffffff
+REG 333 20704014 80000000
+REG 334 20704018 00000000
+REG 335 2070401c 00400000
+REG 336 20704020 00000000
+REG 337 20704024 00000000
+REG 338 20704028 00000000
+REG 339 2070402c 00000000
+REG 340 20704030 00000000
+REG 341 20704034 c667f180
+REG 342 20704038 00000000
+REG 343 2070403c 80000000
+REG 344 20704040 00000000
+REG 345 20704044 ffffffff
+REG 346 20704048 ffffffff
+REG 347 2070404c ffffffff
+REG 348 20704050 ffffffff
+REG 349 20704054 40000000
+REG 350 20704058 00000000
+REG 351 2070405c 00000000
+REG 352 20704060 00000000
+REG 353 20704064 00000000
+REG 354 20704068 00000000
+REG 355 2070406c 00000000
+REG 356 20704070 00000000
+REG 357 20704074 c6678000
+REG 358 20704078 00000000
+REG 359 2070407c 80000000
+REG 360 20704080 00000000
+REG 361 20704084 ffffffff
+REG 362 20704088 ffffffff
+REG 363 2070408c ffffffff
+REG 364 20704090 ffffffff
+REG 365 20704094 00000000
+REG 366 20704098 00000000
+REG 367 2070409c 00000000
+REG 368 207040a0 00000000
+REG 369 207040a4 00000000
+REG 370 207040a8 00000000
+REG 371 207040ac 00000000
+REG 372 207040b0 00000000
+REG 373 207040b4 c6678000
+REG 374 207040b8 00000000
+REG 375 207040bc 80000000
+REG 376 207040c0 c6600000
+REG 377 207040c4 00000000
+REG 378 207040cc 00000000
+REG 379 207040d0 40000000
+REG 380 207040d8 c6600000
+REG 381 207040dc 00000000
+REG 382 207040e0 80000000
+REG 383 207040e4 00000000
+REG 384 207040e8 40000000
+REG 385 207040ec 00000000
+REG 386 207040f0 00000000
+REG 387 207040f4 00000000
+REG 388 207040f8 00000000
+REG 389 207040fc 00000000
+REG 390 20704100 00000000
+REG 391 20704104 00000000
+REG 392 20704108 00000000
+REG 393 2070410c 00000000
+REG 394 20704110 00000000
+REG 395 20704114 7fbfdfe0
+REG 396 20704118 7fbf7e00
+REG 397 2070411c ffffffff
+REG 398 20704120 0000001c
+REG 399 20704124 0000001c
+REG 400 20704128 0000001c
+REG 401 2070412c 0000001c
+REG 402 20704130 0000001c
+REG 403 20704134 0000001c
+REG 404 20704138 0000001c
+REG 405 2070413c ff000000
+REG 406 20704140 00000000
+REG 407 20704144 00000000
+REG 408 20704148 63fc0000
+REG 409 2070414c 01000100
+REG 410 20704150 00000000
+REG 411 20704154 00000000
+REG 412 20704158 00000000
+REG 413 2070415c 00000000
+REG 414 20704160 00000000
+REG 415 20704164 01000080
+REG 416 20704168 00000080
+REG 417 2070416c 00010000
+REG 418 20704170 00000000
+REG 419 20704174 00000000
+REG 420 20704178 00000032
+REG 421 2070417c 00000a0a
+REG 422 20704180 80000000
+REG 423 20704184 ffff0000
+REG 424 20704188 80000000
+REG 425 2070418c 00000000
+REG 426 20704190 00000000
+REG 427 20704194 00000000
+REG 428 20704198 00000000
+REG 429 2070419c 00000000
+REG 430 207041a0 00000000
+REG 431 207041a4 00000000
+REG 432 207041a8 00000000
+REG 433 207041ac 1ff00001
+REG 434 207041b0 00000000
+REG 435 207041b4 00000000
+REG 436 207041b8 00000000
+REG 437 207041bc 00000000
+REG 438 207041c0 08100800
+REG 439 207041c4 00802000
+REG 440 207041c8 91580002
+REG 441 207041cc ffffffff
+REG 442 207041d0 ffffffff
+REG 443 207041d4 77770000
+REG 444 207041d8 e0000000
+REG 445 207041dc 028804b0
+REG 446 207041e0 00000008
+REG 447 207041e4 00000028
+REG 448 207041e8 00000000
+REG 449 207041ec 00000000
+REG 450 207041f0 00000000
+REG 451 207041f4 00000000
+REG 452 207041f8 00000000
+REG 453 207041fc 00000000
+REG 454 20704200 000003ff
+REG 455 20704204 00000000
+REG 456 20704208 c0000000
+REG 457 2070420c 00000000
+REG 458 20704210 00000001
+REG 459 20704214 00000000
+REG 460 20704218 00000000
+REG 461 2070421c 00000001
+REG 462 20704220 00000000
+REG 463 20704224 0000000f
+REG 464 207043fc 00250902
+REG 465 20706000 000000ff
+REG 466 20706004 000000ff
+REG 467 20706008 000000ff
+REG 468 2070600c 000000ff
+REG 469 20706010 000000ff
+REG 470 20706014 000000ff
+REG 471 20706018 00000011
+REG 472 2070601c 00000011
+REG 473 20706020 00000011
+REG 474 20706024 000000ff
+REG 475 20706028 000000ff
+REG 476 2070602c 000000ff
+REG 477 20706030 000000ff
+REG 478 20706034 000000ff
+REG 479 20706038 000000ff
+REG 480 2070603c 000000ff
+REG 481 20706040 000000ff
+REG 482 20706044 000000ff
+REG 483 20706048 000000ff
+REG 484 2070604c 000000ff
+REG 485 20706050 000000ff
+REG 486 20706054 000000ff
+REG 487 20706058 000000ff
+REG 488 2070605c 000000ff
+REG 489 20706060 000000ff
+REG 490 20706064 000000ff
+REG 491 20706068 000000ff
+REG 492 2070606c 000000ff
+REG 493 20706070 000000ff
+REG 494 20706200 00000000
+REG 495 20706204 20000000
+REG 496 20706208 00000000
+REG 497 2070620c 20000000
+REG 498 20706300 00000000
+REG 499 207067f0 00000000
+REG 500 207067f8 00000001
+REG 501 207067fc 02509240
+REG 502 20710004 00000000
+REG 503 20710008 00000000
+REG 504 2071000c 40000000
+REG 505 20710010 00000000
+REG 506 20710014 00000000
+REG 507 20710018 40000000
+REG 508 2071001c 00000000
+REG 509 20710020 40000004
+REG 510 20710024 40000000
+REG 511 20710028 00000000
+REG 512 2071002c 40000000
+REG 513 20710030 40000000
+REG 514 20710034 40000000
+REG 515 20710038 00000000
+REG 516 2071003c 00000000
+REG 517 20710040 40000000
+REG 518 20710044 80000000
+REG 519 20710048 00000000
+REG 520 2071004c 00000004
+REG 521 20710050 80000000
+REG 522 207103fc 02509110
+REGDUMP after-ble-init end
+FOCUSDUMP after-ble-init begin n=55
+FOCUS 20107000 0b478802
+FOCUS 20107030 c3c5a6f5
+FOCUS 2010704c 01808080
+FOCUS 20107050 064d0208
+FOCUS 2010706c fe47054f
+FOCUS 20107078 0808024f
+FOCUS 2010708c 0007f9ef
+FOCUS 20107128 d209d822
+FOCUS 20107138 dc9ef4ca
+FOCUS 201071d4 33b20008
+FOCUS 2010740c e0000810
+FOCUS 20107438 00001867
+FOCUS 20107848 170428c2
+FOCUS 2010785c 00001000
+FOCUS 20107888 0000504b
+FOCUS 201078a8 810082d4
+FOCUS 201078ac 00000820
+FOCUS 201078b8 47e59ff2
+FOCUS 201078bc 0007662b
+FOCUS 201078c0 4020504b
+FOCUS 201078c4 000820b3
+FOCUS 201078d0 84e34d08
+FOCUS 20107c08 24f087dd
+FOCUS 20107c60 0000777e
+FOCUS 20107c64 0000000c
+FOCUS 20107c80 3fffffff
+FOCUS 20107c90 1b3fc800
+FOCUS 20107cb0 00096f00
+FOCUS 20107ffc 12507010
+FOCUS 20108038 0a68359c
+FOCUS 2010803c f95ff893
+FOCUS 20108044 f765ffc7
+FOCUS 20108048 f844000c
+FOCUS 20108094 00000080
+FOCUS 2010d800 00854f63
+FOCUS 2010d878 001e45b3
+FOCUS 2010001c 5080063e
+FOCUS 20100050 00003e3e
+FOCUS 20100400 000001e7
+FOCUS 20100438 ff800000
+FOCUS 20100450 00102000
+FOCUS 20100800 00000003
+FOCUS 2010081c 0de40df8
+FOCUS 20100820 0de20de2
+FOCUS 20100830 21bc4000
+FOCUS 20100848 40600004
+FOCUS 2010084c 9001087d
+FOCUS 20100850 007dff80
+FOCUS 20100890 00800050
+FOCUS 20100894 00131210
+FOCUS 20100898 000000e6
+FOCUS 2010089c 05d5934d
+FOCUS 201008a0 01407600
+FOCUS 201008a4 00440000
+FOCUS 20101ffc 02508110
+FOCUSDUMP after-ble-init end
+MACDUMP after-ble-init begin n=1024 base=20104000
+MACW 0 20104000 d104291c
+MACW 1 20104004 80002899
+MACW 2 20104008 00000000
+MACW 3 2010400c 40000000
+MACW 4 20104010 00000000
+MACW 5 20104014 00000000
+MACW 6 20104018 00000000
+MACW 7 2010401c 00000000
+MACW 8 20104020 1801fe00
+MACW 9 20104024 00000000
+MACW 10 20104028 00000000
+MACW 11 2010402c 18000000
+MACW 12 20104030 00000000
+MACW 13 20104034 00000000
+MACW 14 20104038 007fe800
+MACW 15 2010403c 00800800
+MACW 16 20104040 00000000
+MACW 17 20104044 00000000
+MACW 18 20104048 000023e0
+MACW 19 2010404c 00000000
+MACW 20 20104050 00000000
+MACW 21 20104054 00000000
+MACW 22 20104058 00000000
+MACW 23 2010405c d104291c
+MACW 24 20104060 00012899
+MACW 25 20104064 d104291e
+MACW 26 20104068 00002899
+MACW 27 2010406c 00000000
+MACW 28 20104070 00000000
+MACW 29 20104074 00000000
+MACW 30 20104078 00000000
+MACW 31 2010407c 10000000
+MACW 32 20104080 8805b000
+MACW 33 20104084 0004b370
+MACW 34 20104088 0004b3ac
+MACW 35 2010408c 0104b3a0
+MACW 36 20104090 0004b3a0
+MACW 37 20104094 0004b3a0
+MACW 38 20104098 08280101
+MACW 39 2010409c 00000008
+MACW 40 201040a0 3a064000
+MACW 41 201040a4 00000188
+MACW 42 201040a8 0240ffff
+MACW 43 201040ac cc000000
+MACW 44 201040b0 00000000
+MACW 45 201040b4 00000000
+MACW 46 201040b8 00000000
+MACW 47 201040bc 00000000
+MACW 48 201040c0 00000000
+MACW 49 201040c4 00000000
+MACW 50 201040c8 00000000
+MACW 51 201040cc 00000000
+MACW 52 201040d0 00000000
+MACW 53 201040d4 00000000
+MACW 54 201040d8 0001c285
+MACW 55 201040dc 0001c385
+MACW 56 201040e0 0001c385
+MACW 57 201040e4 0001c385
+MACW 58 201040e8 07860000
+MACW 59 201040ec 07860000
+MACW 60 201040f0 07860000
+MACW 61 201040f4 07860000
+MACW 62 201040f8 0000ffff
+MACW 63 201040fc 05000000
+MACW 64 20104100 05000000
+MACW 65 20104104 00000000
+MACW 66 20104108 00000000
+MACW 67 2010410c 00000000
+MACW 68 20104110 a0180820
+MACW 69 20104114 000000ff
+MACW 70 20104118 81b00000
+MACW 71 2010411c 0000387f
+MACW 72 20104120 00003f7e
+MACW 73 20104124 00023006
+MACW 74 20104128 00023006
+MACW 75 2010412c 00023006
+MACW 76 20104130 0002301c
+MACW 77 20104134 0002301c
+MACW 78 20104138 00023011
+MACW 79 2010413c 00000000
+MACW 80 20104140 00000608
+MACW 81 20104144 00000808
+MACW 82 20104148 00008e88
+MACW 83 2010414c 44004300
+MACW 84 20104150 43004400
+MACW 85 20104154 00000001
+MACW 86 20104158 00000000
+MACW 87 2010415c 0000ffff
+MACW 88 20104160 0000ffff
+MACW 89 20104164 0000ffff
+MACW 90 20104168 ffffffff
+MACW 91 2010416c ffffffff
+MACW 92 20104170 000000ff
+MACW 93 20104174 00000000
+MACW 94 20104178 00000000
+MACW 95 2010417c 00000000
+MACW 96 20104180 00000000
+MACW 97 20104184 00000000
+MACW 98 20104188 00000000
+MACW 99 2010418c 00000000
+MACW 100 20104190 00000000
+MACW 101 20104194 00000000
+MACW 102 20104198 00000000
+MACW 103 2010419c 00000000
+MACW 104 201041a0 00000000
+MACW 105 201041a4 00000000
+MACW 106 201041a8 00000000
+MACW 107 201041ac 00000000
+MACW 108 201041b0 00000000
+MACW 109 201041b4 00000000
+MACW 110 201041b8 00000000
+MACW 111 201041bc 00000000
+MACW 112 201041c0 00000000
+MACW 113 201041c4 00000000
+MACW 114 201041c8 00000000
+MACW 115 201041cc 00000000
+MACW 116 201041d0 00000000
+MACW 117 201041d4 00000000
+MACW 118 201041d8 00000000
+MACW 119 201041dc 00000000
+MACW 120 201041e0 00000000
+MACW 121 201041e4 00000000
+MACW 122 201041e8 00000000
+MACW 123 201041ec 00000000
+MACW 124 201041f0 00000000
+MACW 125 201041f4 00000000
+MACW 126 201041f8 00000000
+MACW 127 201041fc 00000000
+MACW 128 20104200 00000000
+MACW 129 20104204 00000000
+MACW 130 20104208 00000000
+MACW 131 2010420c 00000000
+MACW 132 20104210 00000000
+MACW 133 20104214 00000000
+MACW 134 20104218 00000000
+MACW 135 2010421c 00000000
+MACW 136 20104220 00000000
+MACW 137 20104224 00000000
+MACW 138 20104228 00000000
+MACW 139 2010422c 00000000
+MACW 140 20104230 00000000
+MACW 141 20104234 00000000
+MACW 142 20104238 00000000
+MACW 143 2010423c 00000000
+MACW 144 20104240 00000000
+MACW 145 20104244 00000000
+MACW 146 20104248 00000000
+MACW 147 2010424c 00000000
+MACW 148 20104250 00000000
+MACW 149 20104254 00000000
+MACW 150 20104258 00000000
+MACW 151 2010425c 00000000
+MACW 152 20104260 00000000
+MACW 153 20104264 00000000
+MACW 154 20104268 00000000
+MACW 155 2010426c 00000000
+MACW 156 20104270 00000000
+MACW 157 20104274 00000000
+MACW 158 20104278 00000000
+MACW 159 2010427c 00000000
+MACW 160 20104280 00000000
+MACW 161 20104284 00000000
+MACW 162 20104288 00000000
+MACW 163 2010428c 00000000
+MACW 164 20104290 00000000
+MACW 165 20104294 00000000
+MACW 166 20104298 00000000
+MACW 167 2010429c 00000000
+MACW 168 201042a0 00000000
+MACW 169 201042a4 00000000
+MACW 170 201042a8 00000000
+MACW 171 201042ac 00000000
+MACW 172 201042b0 00000060
+MACW 173 201042b4 fefe0646
+MACW 174 201042b8 4fe3f8fe
+MACW 175 201042bc 0fe3f8fe
+MACW 176 201042c0 00000000
+MACW 177 201042c4 00000000
+MACW 178 201042c8 00000000
+MACW 179 201042cc 00000000
+MACW 180 201042d0 00000000
+MACW 181 201042d4 00000000
+MACW 182 201042d8 00000000
+MACW 183 201042dc 00000000
+MACW 184 201042e0 00000000
+MACW 185 201042e4 00000000
+MACW 186 201042e8 00000000
+MACW 187 201042ec 00000000
+MACW 188 201042f0 00000000
+MACW 189 201042f4 00000180
+MACW 190 201042f8 00000000
+MACW 191 201042fc 00000070
+MACW 192 20104300 ffffffff
+MACW 193 20104304 00000000
+MACW 194 20104308 00000002
+MACW 195 2010430c fe5a0ca0
+MACW 196 20104310 0000010b
+MACW 197 20104314 000003ff
+MACW 198 20104318 000003ff
+MACW 199 2010431c 00000000
+MACW 200 20104320 00000000
+MACW 201 20104324 00000000
+MACW 202 20104328 00000000
+MACW 203 2010432c 000000df
+MACW 204 20104330 0000002e
+MACW 205 20104334 00000003
+MACW 206 20104338 00000000
+MACW 207 2010433c 0000001b
+MACW 208 20104340 00000000
+MACW 209 20104344 00000000
+MACW 210 20104348 00000000
+MACW 211 2010434c 00000008
+MACW 212 20104350 00000002
+MACW 213 20104354 00000000
+MACW 214 20104358 00000000
+MACW 215 2010435c 00000b9d
+MACW 216 20104360 00ec0130
+MACW 217 20104364 00000052
+MACW 218 20104368 00000000
+MACW 219 2010436c 00000000
+MACW 220 20104370 000000d1
+MACW 221 20104374 00000000
+MACW 222 20104378 00000000
+MACW 223 2010437c 00000001
+MACW 224 20104380 00000000
+MACW 225 20104384 00000000
+MACW 226 20104388 0000004b
+MACW 227 2010438c 00000cb6
+MACW 228 20104390 00000000
+MACW 229 20104394 00000000
+MACW 230 20104398 00000000
+MACW 231 2010439c 00000000
+MACW 232 201043a0 00000000
+MACW 233 201043a4 00000000
+MACW 234 201043a8 00000000
+MACW 235 201043ac 00000000
+MACW 236 201043b0 00000008
+MACW 237 201043b4 00000000
+MACW 238 201043b8 00c00128
+MACW 239 201043bc 00000400
+MACW 240 201043c0 00000000
+MACW 241 201043c4 00000000
+MACW 242 201043c8 80000000
+MACW 243 201043cc 00000000
+MACW 244 201043d0 00000000
+MACW 245 201043d4 00000000
+MACW 246 201043d8 00000000
+MACW 247 201043dc 00000000
+MACW 248 201043e0 00000000
+MACW 249 201043e4 00000000
+MACW 250 201043e8 00000000
+MACW 251 201043ec 00000000
+MACW 252 201043f0 00000000
+MACW 253 201043f4 00000000
+MACW 254 201043f8 02509240
+MACW 255 201043fc 00000000
+MACW 256 20104400 c1cb3750
+MACW 257 20104404 80808080
+MACW 258 20104408 00001414
+MACW 259 2010440c 00011414
+MACW 260 20104410 00051414
+MACW 261 20104414 000b1411
+MACW 262 20104418 000a1412
+MACW 263 2010441c 00091312
+MACW 264 20104420 00901412
+MACW 265 20104424 00911412
+MACW 266 20104428 00921412
+MACW 267 2010442c 00921412
+MACW 268 20104430 14141414
+MACW 269 20104434 12121313
+MACW 270 20104438 0d0d0f10
+MACW 271 2010443c 14000000
+MACW 272 20104440 0a28a28a
+MACW 273 20104444 0d28a28a
+MACW 274 20104448 1040d34d
+MACW 275 2010444c 00090a0b
+MACW 276 20104450 00050100
+MACW 277 20104454 11111110
+MACW 278 20104458 00090a0b
+MACW 279 2010445c 00050100
+MACW 280 20104460 11111110
+MACW 281 20104464 00804020
+MACW 282 20104468 00000000
+MACW 283 2010446c 00000000
+MACW 284 20104470 00000000
+MACW 285 20104474 00000000
+MACW 286 20104478 00000000
+MACW 287 2010447c 00801000
+MACW 288 20104480 80000000
+MACW 289 20104484 00000000
+MACW 290 20104488 002a0000
+MACW 291 2010448c 01540002
+MACW 292 20104490 00000000
+MACW 293 20104494 00000000
+MACW 294 20104498 00000000
+MACW 295 2010449c 00000000
+MACW 296 201044a0 00000000
+MACW 297 201044a4 00000000
+MACW 298 201044a8 00000000
+MACW 299 201044ac 00000000
+MACW 300 201044b0 00000000
+MACW 301 201044b4 00000000
+MACW 302 201044b8 00000000
+MACW 303 201044bc 00000000
+MACW 304 201044c0 00000000
+MACW 305 201044c4 00000000
+MACW 306 201044c8 00000000
+MACW 307 201044cc 00000000
+MACW 308 201044d0 00000000
+MACW 309 201044d4 00000000
+MACW 310 201044d8 00000000
+MACW 311 201044dc 00000000
+MACW 312 201044e0 00200000
+MACW 313 201044e4 00000810
+MACW 314 201044e8 00008400
+MACW 315 201044ec 0393488e
+MACW 316 201044f0 43330000
+MACW 317 201044f4 00000000
+MACW 318 201044f8 00000000
+MACW 319 201044fc 00000000
+MACW 320 20104500 00000000
+MACW 321 20104504 00000000
+MACW 322 20104508 00000000
+MACW 323 2010450c 00000000
+MACW 324 20104510 00000000
+MACW 325 20104514 00000000
+MACW 326 20104518 00000000
+MACW 327 2010451c 00000000
+MACW 328 20104520 00000000
+MACW 329 20104524 00000000
+MACW 330 20104528 00000000
+MACW 331 2010452c 00001041
+MACW 332 20104530 0010c001
+MACW 333 20104534 00000000
+MACW 334 20104538 00000001
+MACW 335 2010453c 00000000
+MACW 336 20104540 000f0075
+MACW 337 20104544 00000000
+MACW 338 20104548 00c00000
+MACW 339 2010454c 00000000
+MACW 340 20104550 00000000
+MACW 341 20104554 00000000
+MACW 342 20104558 00000000
+MACW 343 2010455c 00000400
+MACW 344 20104560 00000000
+MACW 345 20104564 00000000
+MACW 346 20104568 00000000
+MACW 347 2010456c 00000000
+MACW 348 20104570 00000008
+MACW 349 20104574 00000000
+MACW 350 20104578 80000000
+MACW 351 2010457c 00000000
+MACW 352 20104580 00000000
+MACW 353 20104584 00000000
+MACW 354 20104588 00000000
+MACW 355 2010458c 00000000
+MACW 356 20104590 00000000
+MACW 357 20104594 00000000
+MACW 358 20104598 00000000
+MACW 359 2010459c 00000000
+MACW 360 201045a0 00000000
+MACW 361 201045a4 00000000
+MACW 362 201045a8 00000000
+MACW 363 201045ac 00000000
+MACW 364 201045b0 00000000
+MACW 365 201045b4 00000000
+MACW 366 201045b8 00000000
+MACW 367 201045bc 00000000
+MACW 368 201045c0 00000000
+MACW 369 201045c4 00000000
+MACW 370 201045c8 00000000
+MACW 371 201045cc 00000000
+MACW 372 201045d0 00000000
+MACW 373 201045d4 00000000
+MACW 374 201045d8 00000000
+MACW 375 201045dc 00000000
+MACW 376 201045e0 00000000
+MACW 377 201045e4 00000000
+MACW 378 201045e8 00000000
+MACW 379 201045ec 00000000
+MACW 380 201045f0 00000000
+MACW 381 201045f4 00000000
+MACW 382 201045f8 00000000
+MACW 383 201045fc 00000000
+MACW 384 20104600 00000000
+MACW 385 20104604 00000000
+MACW 386 20104608 00000000
+MACW 387 2010460c 00000000
+MACW 388 20104610 00000000
+MACW 389 20104614 00000000
+MACW 390 20104618 00000000
+MACW 391 2010461c 00000000
+MACW 392 20104620 00000000
+MACW 393 20104624 00000000
+MACW 394 20104628 00000000
+MACW 395 2010462c 00000000
+MACW 396 20104630 00000000
+MACW 397 20104634 00000000
+MACW 398 20104638 00000000
+MACW 399 2010463c 00000000
+MACW 400 20104640 00000000
+MACW 401 20104644 00000000
+MACW 402 20104648 00000000
+MACW 403 2010464c 00000000
+MACW 404 20104650 00000000
+MACW 405 20104654 00000000
+MACW 406 20104658 00000000
+MACW 407 2010465c 00000000
+MACW 408 20104660 00000000
+MACW 409 20104664 00000000
+MACW 410 20104668 00000000
+MACW 411 2010466c 00000000
+MACW 412 20104670 00000000
+MACW 413 20104674 00000000
+MACW 414 20104678 00000000
+MACW 415 2010467c 00000000
+MACW 416 20104680 00000000
+MACW 417 20104684 00000000
+MACW 418 20104688 00000000
+MACW 419 2010468c 00000000
+MACW 420 20104690 00000000
+MACW 421 20104694 00000000
+MACW 422 20104698 00000000
+MACW 423 2010469c 00000000
+MACW 424 201046a0 00000000
+MACW 425 201046a4 00000000
+MACW 426 201046a8 00000000
+MACW 427 201046ac 00000000
+MACW 428 201046b0 00000000
+MACW 429 201046b4 00000000
+MACW 430 201046b8 00000000
+MACW 431 201046bc 00000000
+MACW 432 201046c0 00000000
+MACW 433 201046c4 00000000
+MACW 434 201046c8 00000000
+MACW 435 201046cc 00000000
+MACW 436 201046d0 00000000
+MACW 437 201046d4 00000000
+MACW 438 201046d8 00000000
+MACW 439 201046dc 00000000
+MACW 440 201046e0 00000000
+MACW 441 201046e4 00000000
+MACW 442 201046e8 00000000
+MACW 443 201046ec 00000000
+MACW 444 201046f0 00000000
+MACW 445 201046f4 00000000
+MACW 446 201046f8 00000000
+MACW 447 201046fc 00000000
+MACW 448 20104700 00000000
+MACW 449 20104704 00000000
+MACW 450 20104708 00000000
+MACW 451 2010470c 00000000
+MACW 452 20104710 00000000
+MACW 453 20104714 00000000
+MACW 454 20104718 00000000
+MACW 455 2010471c 00000000
+MACW 456 20104720 00000000
+MACW 457 20104724 00000000
+MACW 458 20104728 00000000
+MACW 459 2010472c 00000000
+MACW 460 20104730 00000000
+MACW 461 20104734 00000000
+MACW 462 20104738 00000000
+MACW 463 2010473c 00000000
+MACW 464 20104740 00000000
+MACW 465 20104744 00000000
+MACW 466 20104748 00000000
+MACW 467 2010474c 00000000
+MACW 468 20104750 00000000
+MACW 469 20104754 00000000
+MACW 470 20104758 00000000
+MACW 471 2010475c 00000000
+MACW 472 20104760 00000000
+MACW 473 20104764 00000000
+MACW 474 20104768 00000000
+MACW 475 2010476c 00000000
+MACW 476 20104770 00000000
+MACW 477 20104774 00000000
+MACW 478 20104778 00000000
+MACW 479 2010477c 00000000
+MACW 480 20104780 00000000
+MACW 481 20104784 00000000
+MACW 482 20104788 00000000
+MACW 483 2010478c 00000000
+MACW 484 20104790 00000000
+MACW 485 20104794 00000000
+MACW 486 20104798 00000000
+MACW 487 2010479c 00000000
+MACW 488 201047a0 00000000
+MACW 489 201047a4 00000000
+MACW 490 201047a8 00000000
+MACW 491 201047ac 00000000
+MACW 492 201047b0 00000000
+MACW 493 201047b4 00000000
+MACW 494 201047b8 00000000
+MACW 495 201047bc 00000000
+MACW 496 201047c0 00000000
+MACW 497 201047c4 00000000
+MACW 498 201047c8 00000000
+MACW 499 201047cc 00000000
+MACW 500 201047d0 00000000
+MACW 501 201047d4 00000000
+MACW 502 201047d8 00000000
+MACW 503 201047dc 00000000
+MACW 504 201047e0 00000000
+MACW 505 201047e4 00000000
+MACW 506 201047e8 00000000
+MACW 507 201047ec 00000000
+MACW 508 201047f0 00000000
+MACW 509 201047f4 00000000
+MACW 510 201047f8 02508270
+MACW 511 201047fc 00000000
+MACW 512 20104800 00030000
+MACW 513 20104804 00030000
+MACW 514 20104808 00000000
+MACW 515 2010480c 00000000
+MACW 516 20104810 00000000
+MACW 517 20104814 00000000
+MACW 518 20104818 00000000
+MACW 519 2010481c 00000000
+MACW 520 20104820 00000000
+MACW 521 20104824 d8000000
+MACW 522 20104828 00000000
+MACW 523 2010482c 00000000
+MACW 524 20104830 7f3f3f7f
+MACW 525 20104834 00080000
+MACW 526 20104838 00000000
+MACW 527 2010483c 00000000
+MACW 528 20104840 00000000
+MACW 529 20104844 00000000
+MACW 530 20104848 00000000
+MACW 531 2010484c 00000000
+MACW 532 20104850 00000000
+MACW 533 20104854 00000000
+MACW 534 20104858 00000000
+MACW 535 2010485c 00000000
+MACW 536 20104860 00000000
+MACW 537 20104864 00000000
+MACW 538 20104868 00000000
+MACW 539 2010486c 00000000
+MACW 540 20104870 00000000
+MACW 541 20104874 00000000
+MACW 542 20104878 00000000
+MACW 543 2010487c 00000000
+MACW 544 20104880 00000000
+MACW 545 20104884 00000000
+MACW 546 20104888 00000000
+MACW 547 2010488c 00000000
+MACW 548 20104890 00000000
+MACW 549 20104894 00000000
+MACW 550 20104898 00000000
+MACW 551 2010489c 00000000
+MACW 552 201048a0 00000000
+MACW 553 201048a4 00000000
+MACW 554 201048a8 00000000
+MACW 555 201048ac 00000000
+MACW 556 201048b0 00000000
+MACW 557 201048b4 00000000
+MACW 558 201048b8 00000000
+MACW 559 201048bc 00000000
+MACW 560 201048c0 00000000
+MACW 561 201048c4 00000000
+MACW 562 201048c8 00000000
+MACW 563 201048cc 00000000
+MACW 564 201048d0 00000000
+MACW 565 201048d4 00000000
+MACW 566 201048d8 00000000
+MACW 567 201048dc 00000000
+MACW 568 201048e0 00000000
+MACW 569 201048e4 00000000
+MACW 570 201048e8 00000000
+MACW 571 201048ec 00000000
+MACW 572 201048f0 00000000
+MACW 573 201048f4 00000000
+MACW 574 201048f8 00000000
+MACW 575 201048fc 00000000
+MACW 576 20104900 00000000
+MACW 577 20104904 00000000
+MACW 578 20104908 00000000
+MACW 579 2010490c 00000000
+MACW 580 20104910 00000000
+MACW 581 20104914 00000000
+MACW 582 20104918 00000000
+MACW 583 2010491c 00000000
+MACW 584 20104920 00000000
+MACW 585 20104924 00000000
+MACW 586 20104928 00000000
+MACW 587 2010492c 00000000
+MACW 588 20104930 00000000
+MACW 589 20104934 00000000
+MACW 590 20104938 00000000
+MACW 591 2010493c 00000000
+MACW 592 20104940 00000000
+MACW 593 20104944 00000000
+MACW 594 20104948 00000000
+MACW 595 2010494c 00000000
+MACW 596 20104950 00000000
+MACW 597 20104954 00000000
+MACW 598 20104958 00000000
+MACW 599 2010495c 00000000
+MACW 600 20104960 00000000
+MACW 601 20104964 00000000
+MACW 602 20104968 00000000
+MACW 603 2010496c 00000000
+MACW 604 20104970 00000000
+MACW 605 20104974 00000000
+MACW 606 20104978 00000000
+MACW 607 2010497c 00000000
+MACW 608 20104980 00000000
+MACW 609 20104984 00000000
+MACW 610 20104988 00000000
+MACW 611 2010498c 00000000
+MACW 612 20104990 00000000
+MACW 613 20104994 00000000
+MACW 614 20104998 00000000
+MACW 615 2010499c 00000000
+MACW 616 201049a0 00000000
+MACW 617 201049a4 00000000
+MACW 618 201049a8 00000000
+MACW 619 201049ac 00000000
+MACW 620 201049b0 00000000
+MACW 621 201049b4 00000000
+MACW 622 201049b8 00000000
+MACW 623 201049bc 00000000
+MACW 624 201049c0 00000000
+MACW 625 201049c4 00000000
+MACW 626 201049c8 00000000
+MACW 627 201049cc 00000000
+MACW 628 201049d0 00000000
+MACW 629 201049d4 00000000
+MACW 630 201049d8 00000000
+MACW 631 201049dc 00000000
+MACW 632 201049e0 00000000
+MACW 633 201049e4 00000000
+MACW 634 201049e8 00000000
+MACW 635 201049ec 00000000
+MACW 636 201049f0 00000000
+MACW 637 201049f4 00000000
+MACW 638 201049f8 00000000
+MACW 639 201049fc 00000000
+MACW 640 20104a00 00000000
+MACW 641 20104a04 00000000
+MACW 642 20104a08 00000000
+MACW 643 20104a0c 00000000
+MACW 644 20104a10 00000000
+MACW 645 20104a14 00000000
+MACW 646 20104a18 00000000
+MACW 647 20104a1c 00000000
+MACW 648 20104a20 00000000
+MACW 649 20104a24 00000000
+MACW 650 20104a28 00000000
+MACW 651 20104a2c 00000000
+MACW 652 20104a30 00000000
+MACW 653 20104a34 00000000
+MACW 654 20104a38 00000000
+MACW 655 20104a3c 00000000
+MACW 656 20104a40 00000000
+MACW 657 20104a44 00000000
+MACW 658 20104a48 00000000
+MACW 659 20104a4c 00000000
+MACW 660 20104a50 00000000
+MACW 661 20104a54 00000000
+MACW 662 20104a58 00000000
+MACW 663 20104a5c 00000000
+MACW 664 20104a60 00000000
+MACW 665 20104a64 00000000
+MACW 666 20104a68 00000000
+MACW 667 20104a6c 00000000
+MACW 668 20104a70 00000000
+MACW 669 20104a74 00000000
+MACW 670 20104a78 00000000
+MACW 671 20104a7c 00000000
+MACW 672 20104a80 00000000
+MACW 673 20104a84 00000000
+MACW 674 20104a88 00000000
+MACW 675 20104a8c 00000000
+MACW 676 20104a90 00000000
+MACW 677 20104a94 00000000
+MACW 678 20104a98 00000000
+MACW 679 20104a9c 00000000
+MACW 680 20104aa0 00000000
+MACW 681 20104aa4 00000000
+MACW 682 20104aa8 00000000
+MACW 683 20104aac 00000000
+MACW 684 20104ab0 00000000
+MACW 685 20104ab4 00000000
+MACW 686 20104ab8 00000000
+MACW 687 20104abc 00000000
+MACW 688 20104ac0 00000000
+MACW 689 20104ac4 00000000
+MACW 690 20104ac8 00000000
+MACW 691 20104acc 00000000
+MACW 692 20104ad0 00000000
+MACW 693 20104ad4 00000000
+MACW 694 20104ad8 00000000
+MACW 695 20104adc 00000000
+MACW 696 20104ae0 00000000
+MACW 697 20104ae4 00000000
+MACW 698 20104ae8 00000000
+MACW 699 20104aec 00000000
+MACW 700 20104af0 00000000
+MACW 701 20104af4 00000000
+MACW 702 20104af8 00000000
+MACW 703 20104afc 00000000
+MACW 704 20104b00 00000000
+MACW 705 20104b04 00000000
+MACW 706 20104b08 00000000
+MACW 707 20104b0c 00000000
+MACW 708 20104b10 00000000
+MACW 709 20104b14 00000000
+MACW 710 20104b18 00000000
+MACW 711 20104b1c 00000000
+MACW 712 20104b20 00000000
+MACW 713 20104b24 00000000
+MACW 714 20104b28 00000000
+MACW 715 20104b2c 00000000
+MACW 716 20104b30 00000000
+MACW 717 20104b34 00000000
+MACW 718 20104b38 00000000
+MACW 719 20104b3c 00000000
+MACW 720 20104b40 00000000
+MACW 721 20104b44 00000000
+MACW 722 20104b48 00000000
+MACW 723 20104b4c 00000000
+MACW 724 20104b50 00000000
+MACW 725 20104b54 00000000
+MACW 726 20104b58 00000000
+MACW 727 20104b5c 00000000
+MACW 728 20104b60 00000000
+MACW 729 20104b64 00000000
+MACW 730 20104b68 00000000
+MACW 731 20104b6c 00000000
+MACW 732 20104b70 00000000
+MACW 733 20104b74 00000000
+MACW 734 20104b78 00000000
+MACW 735 20104b7c 00000000
+MACW 736 20104b80 00000000
+MACW 737 20104b84 00000000
+MACW 738 20104b88 00000000
+MACW 739 20104b8c 00000000
+MACW 740 20104b90 00000000
+MACW 741 20104b94 00000000
+MACW 742 20104b98 00000000
+MACW 743 20104b9c 00000000
+MACW 744 20104ba0 00000000
+MACW 745 20104ba4 00000000
+MACW 746 20104ba8 00000000
+MACW 747 20104bac 00000000
+MACW 748 20104bb0 00000000
+MACW 749 20104bb4 00000000
+MACW 750 20104bb8 00000000
+MACW 751 20104bbc 00000000
+MACW 752 20104bc0 00000000
+MACW 753 20104bc4 00000000
+MACW 754 20104bc8 00000000
+MACW 755 20104bcc 00000000
+MACW 756 20104bd0 00000000
+MACW 757 20104bd4 00000000
+MACW 758 20104bd8 00000000
+MACW 759 20104bdc 00000000
+MACW 760 20104be0 00000000
+MACW 761 20104be4 00000000
+MACW 762 20104be8 00000000
+MACW 763 20104bec 00000000
+MACW 764 20104bf0 00000000
+MACW 765 20104bf4 00000000
+MACW 766 20104bf8 02508270
+MACW 767 20104bfc 00000000
+MACW 768 20104c00 00000000
+MACW 769 20104c04 003c0139
+MACW 770 20104c08 00000000
+MACW 771 20104c0c 00000000
+MACW 772 20104c10 f7c40000
+MACW 773 20104c14 10000000
+MACW 774 20104c18 00000000
+MACW 775 20104c1c c000000f
+MACW 776 20104c20 800000f0
+MACW 777 20104c24 000000f0
+MACW 778 20104c28 00000000
+MACW 779 20104c2c 00001000
+MACW 780 20104c30 0000013c
+MACW 781 20104c34 00000000
+MACW 782 20104c38 00000000
+MACW 783 20104c3c 00000000
+MACW 784 20104c40 19a879e0
+MACW 785 20104c44 0400041f
+MACW 786 20104c48 00000000
+MACW 787 20104c4c 00000000
+MACW 788 20104c50 09102020
+MACW 789 20104c54 2069d800
+MACW 790 20104c58 0bcee4fe
+MACW 791 20104c5c 00000000
+MACW 792 20104c60 ffff2710
+MACW 793 20104c64 00000000
+MACW 794 20104c68 000fffff
+MACW 795 20104c6c 00000004
+MACW 796 20104c70 2f000000
+MACW 797 20104c74 00000000
+MACW 798 20104c78 061d7120
+MACW 799 20104c7c 10823c00
+MACW 800 20104c80 38010be0
+MACW 801 20104c84 0e7c0000
+MACW 802 20104c88 0002001f
+MACW 803 20104c8c b3c8bf2c
+MACW 804 20104c90 00000000
+MACW 805 20104c94 00002020
+MACW 806 20104c98 00000014
+MACW 807 20104c9c 00012104
+MACW 808 20104ca0 00000003
+MACW 809 20104ca4 00000000
+MACW 810 20104ca8 00000040
+MACW 811 20104cac 00ff1000
+MACW 812 20104cb0 00000000
+MACW 813 20104cb4 00000000
+MACW 814 20104cb8 00000000
+MACW 815 20104cbc 00000000
+MACW 816 20104cc0 a0000000
+MACW 817 20104cc4 00000000
+MACW 818 20104cc8 00000000
+MACW 819 20104ccc 00000000
+MACW 820 20104cd0 00000000
+MACW 821 20104cd4 00000000
+MACW 822 20104cd8 00000000
+MACW 823 20104cdc 00000000
+MACW 824 20104ce0 00000000
+MACW 825 20104ce4 00000000
+MACW 826 20104ce8 00000000
+MACW 827 20104cec 00000000
+MACW 828 20104cf0 00000000
+MACW 829 20104cf4 00000000
+MACW 830 20104cf8 00000000
+MACW 831 20104cfc 00000000
+MACW 832 20104d00 00000000
+MACW 833 20104d04 00000000
+MACW 834 20104d08 00000000
+MACW 835 20104d0c 00000000
+MACW 836 20104d10 00000000
+MACW 837 20104d14 00000000
+MACW 838 20104d18 00000000
+MACW 839 20104d1c 00000000
+MACW 840 20104d20 00000000
+MACW 841 20104d24 00000000
+MACW 842 20104d28 00000000
+MACW 843 20104d2c 00000000
+MACW 844 20104d30 00000000
+MACW 845 20104d34 00000000
+MACW 846 20104d38 00000000
+MACW 847 20104d3c 00000000
+MACW 848 20104d40 00000000
+MACW 849 20104d44 00000000
+MACW 850 20104d48 00000000
+MACW 851 20104d4c 00000000
+MACW 852 20104d50 00000000
+MACW 853 20104d54 00000000
+MACW 854 20104d58 00000000
+MACW 855 20104d5c 00000000
+MACW 856 20104d60 00000000
+MACW 857 20104d64 00000000
+MACW 858 20104d68 00000000
+MACW 859 20104d6c 12000077
+MACW 860 20104d70 00650c78
+MACW 861 20104d74 00000000
+MACW 862 20104d78 00000000
+MACW 863 20104d7c 00000000
+MACW 864 20104d80 00000000
+MACW 865 20104d84 00000000
+MACW 866 20104d88 00000000
+MACW 867 20104d8c 00000000
+MACW 868 20104d90 00000000
+MACW 869 20104d94 00000000
+MACW 870 20104d98 00000000
+MACW 871 20104d9c 00000000
+MACW 872 20104da0 00000000
+MACW 873 20104da4 00000000
+MACW 874 20104da8 00000000
+MACW 875 20104dac 00000000
+MACW 876 20104db0 00000000
+MACW 877 20104db4 00000000
+MACW 878 20104db8 00000000
+MACW 879 20104dbc 00040000
+MACW 880 20104dc0 00040000
+MACW 881 20104dc4 00040000
+MACW 882 20104dc8 00040000
+MACW 883 20104dcc 00000000
+MACW 884 20104dd0 01234567
+MACW 885 20104dd4 55777555
+MACW 886 20104dd8 00003377
+MACW 887 20104ddc 00000071
+MACW 888 20104de0 00000001
+MACW 889 20104de4 6903e950
+MACW 890 20104de8 06032001
+MACW 891 20104dec 200447d0
+MACW 892 20104df0 00000000
+MACW 893 20104df4 00000000
+MACW 894 20104df8 00000000
+MACW 895 20104dfc 00000000
+MACW 896 20104e00 00004000
+MACW 897 20104e04 00000000
+MACW 898 20104e08 00000000
+MACW 899 20104e0c 00000000
+MACW 900 20104e10 0000000e
+MACW 901 20104e14 00000000
+MACW 902 20104e18 00000000
+MACW 903 20104e1c 00000000
+MACW 904 20104e20 14c00000
+MACW 905 20104e24 0262613a
+MACW 906 20104e28 40000000
+MACW 907 20104e2c 0012c0da
+MACW 908 20104e30 00000cb6
+MACW 909 20104e34 00000cb6
+MACW 910 20104e38 000049e7
+MACW 911 20104e3c 00000000
+MACW 912 20104e40 00000000
+MACW 913 20104e44 0000009c
+MACW 914 20104e48 00000021
+MACW 915 20104e4c 00000000
+MACW 916 20104e50 00000000
+MACW 917 20104e54 00000000
+MACW 918 20104e58 0fe00a60
+MACW 919 20104e5c 0f005555
+MACW 920 20104e60 80110000
+MACW 921 20104e64 00000000
+MACW 922 20104e68 00000000
+MACW 923 20104e6c 00000000
+MACW 924 20104e70 005a1322
+MACW 925 20104e74 005a1646
+MACW 926 20104e78 0047fc13
+MACW 927 20104e7c 00000000
+MACW 928 20104e80 00000000
+MACW 929 20104e84 00000000
+MACW 930 20104e88 00000000
+MACW 931 20104e8c 00000000
+MACW 932 20104e90 80000000
+MACW 933 20104e94 0047fd45
+MACW 934 20104e98 0000000f
+MACW 935 20104e9c 00000000
+MACW 936 20104ea0 00000000
+MACW 937 20104ea4 00000000
+MACW 938 20104ea8 00000000
+MACW 939 20104eac 00000000
+MACW 940 20104eb0 00000000
+MACW 941 20104eb4 00000000
+MACW 942 20104eb8 00000000
+MACW 943 20104ebc 01000373
+MACW 944 20104ec0 00000000
+MACW 945 20104ec4 00000000
+MACW 946 20104ec8 00000000
+MACW 947 20104ecc 00000000
+MACW 948 20104ed0 00000000
+MACW 949 20104ed4 00000000
+MACW 950 20104ed8 00000000
+MACW 951 20104edc 00000000
+MACW 952 20104ee0 00000000
+MACW 953 20104ee4 00000000
+MACW 954 20104ee8 00000000
+MACW 955 20104eec 00000000
+MACW 956 20104ef0 00000000
+MACW 957 20104ef4 00000000
+MACW 958 20104ef8 00000000
+MACW 959 20104efc 00000000
+MACW 960 20104f00 00000000
+MACW 961 20104f04 00000000
+MACW 962 20104f08 00000000
+MACW 963 20104f0c 00000000
+MACW 964 20104f10 00000000
+MACW 965 20104f14 00000000
+MACW 966 20104f18 00000000
+MACW 967 20104f1c 00000000
+MACW 968 20104f20 00000000
+MACW 969 20104f24 00000000
+MACW 970 20104f28 00000000
+MACW 971 20104f2c 00000000
+MACW 972 20104f30 00000000
+MACW 973 20104f34 00000000
+MACW 974 20104f38 00000000
+MACW 975 20104f3c 00000000
+MACW 976 20104f40 00000000
+MACW 977 20104f44 00000000
+MACW 978 20104f48 00000000
+MACW 979 20104f4c 00000000
+MACW 980 20104f50 00000000
+MACW 981 20104f54 00000000
+MACW 982 20104f58 00000000
+MACW 983 20104f5c 00000000
+MACW 984 20104f60 00000000
+MACW 985 20104f64 00000000
+MACW 986 20104f68 00000000
+MACW 987 20104f6c 00000000
+MACW 988 20104f70 00000000
+MACW 989 20104f74 00000000
+MACW 990 20104f78 00000000
+MACW 991 20104f7c 00000000
+MACW 992 20104f80 00000000
+MACW 993 20104f84 00000000
+MACW 994 20104f88 00000000
+MACW 995 20104f8c 00000000
+MACW 996 20104f90 00000000
+MACW 997 20104f94 00000000
+MACW 998 20104f98 00000000
+MACW 999 20104f9c 00000000
+MACW 1000 20104fa0 00000000
+MACW 1001 20104fa4 00000000
+MACW 1002 20104fa8 00000000
+MACW 1003 20104fac 00000000
+MACW 1004 20104fb0 00000000
+MACW 1005 20104fb4 00000000
+MACW 1006 20104fb8 00000000
+MACW 1007 20104fbc 00000000
+MACW 1008 20104fc0 00000000
+MACW 1009 20104fc4 00000000
+MACW 1010 20104fc8 00000000
+MACW 1011 20104fcc 00000000
+MACW 1012 20104fd0 00000000
+MACW 1013 20104fd4 00000000
+MACW 1014 20104fd8 00000000
+MACW 1015 20104fdc 00000000
+MACW 1016 20104fe0 00000000
+MACW 1017 20104fe4 00000000
+MACW 1018 20104fe8 00000000
+MACW 1019 20104fec 00000000
+MACW 1020 20104ff0 00000000
+MACW 1021 20104ff4 00000000
+MACW 1022 20104ff8 02508270
+MACW 1023 20104ffc 00000000
+MACDUMP after-ble-init end
+wifi-init-probe: radio restore: 0x2010f03c wanted 0x40800001, reads 0x00000000
+wifi-init-probe: radio restore: 0x20589090 wanted 0x00000000, reads 0x02000000
+wifi-init-probe: radio restore (mask 0x1): clock/power=14 ana_i2c=0 bb_fe=0 lp_pmu=0
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=1 latency=0 duration=32929 -> rc=0
+wifi-link: esp_wifi_scan_start(NULL, nonblock) rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048a18 (n=4)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: wait scan-done 10s -> GOT in 2435 ms
+wifi-link: esp_wifi_scan_get_ap_num rc=0x0 n=2
+wifi-link: arena[after scan]: free=63032/114672 B
+coex[after-scan]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-scan]: fw=2.0.0 en=1 req=1 rel=8 sta=132 startcb=1 intset=58
+coex[after-scan]: hooks: boot=1 wifi_init=1 enable=1 status_get=132 wifi_request=1 wifi_release=8 pti_get=58 schm_status_bit_clear=58 schm_status_bit_set=58
+coex[after-scan]: hooks: schm_interval_set=58 schm_interval_get=2 schm_curr_period_get=2 schm_curr_phase_get=1 schm_process_restart=1 schm_register_cb=1
+coex[after-scan]: hooks: register_start_cb=1 schm_flexible_period_get=1 configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1
+coex[after-scan]: hooks: wr_btdm_coex_schm_register_btdm_callback=1 wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[after-scan]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-scan]: blob->core: status_bit_set n=58 type=0 mask=0x00000001 last=0x00000000 | status_bit_clear n=58 mask=0x0000ffff | events>=64 n=0
+coex[after-scan]: by event: e1: req=1 bad=0 rel=4 bad=0 pti n=27 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e5: pti n=22 mask=0x01 bad=0 e10: pti n=2 mask=0x03 bad=0
+coex[after-scan]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=4 bad=0
+coex[after-scan]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-scan]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+wifi-blob: wifi: W (14742) wifi:
+wifi-blob: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+wifi-blob: wifi: 
+
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wifi-link-probe: supplicant[after set_config]: state=INITIALIZE phase=idle msg4_in_flight=false negotiation_done=false pmk=false ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[after set_config]: 0:wifi=3644/16384
+wifi-link-probe: esp_wifi_connect_internal rc=0x0
+wifi-blob: wifi: I (14794) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14806) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14814) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14825) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14836) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14850) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14861) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14874) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14885) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14902) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14914) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14925) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, PSR Disallowed:1, Non-SRG OBSS PD SR Disallowed:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (14937) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, Non-SRG Offset Present:0, SRG Info Present:0
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+bt call: eventq_get
+wifi-blob: wifi: I (16260) wifi:
+wifi-blob: (connect)dot11_authmode:0x3, pairwise_cipher:0x3, group_cipher:0x3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (16268) wifi:
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=7 latency=0 duration=20000 -> rc=258
+coex> _coex_wifi_release called by blob
+wifi-link-probe: connect: waiting 2000 ms (hooks=2499, events=4)
+wifi-link-probe: supplicant[waiting]: state=AUTHENTICATION phase=idle msg4_in_flight=false negotiation_done=false pmk=true ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[waiting]: 0:wifi=3644/16384
+wifi-blob: wifi: I (17277) wifi:
+wifi-blob: state: auth -> init (0x200)
+wifi-blob: wifi: 
+
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+bt cwifi-link-probe: STA_DISCONNECTED bssid=44:f7:70:16:fa:ba reason=2 rssi=7
+wifi-link-probe: event id=5 data=0x2f048a34 (n=5)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: DISCONNECTED in 2515 ms: reason=2
+wifi-link-probe: supplicant[disconnected]: state=INITIALIZE phase=idle msg4_in_flight=false negotiation_done=false pmk=true ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[disconnected]: 0:wifi=3644/16384
+coex[after-connect-phase]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-connect-phase]: fw=2.0.0 en=1 req=2 rel=14 sta=143 startcb=1 intset=62
+coex[after-connect-phase]: hooks: boot=1 wifi_init=1 enable=1 status_get=143 wifi_request=2 wifi_release=14 wifi_channel_set=2 event_duration_get=1 pti_get=64
+coex[after-connect-phase]: hooks: schm_status_bit_clear=62 schm_status_bit_set=62 schm_interval_set=62 schm_interval_get=2 schm_curr_period_get=2 schm_curr_phase_get=1
+coex[after-connect-phase]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_get=1 configure_preemption_end_cb=1 btdm_coex_init=1
+coex[after-connect-phase]: hooks: btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1 wr_btdm_coex_register_wifi_channel_change_callback=1
+coex[after-connect-phase]: hooks: wr_btdm_coex_register_ble_cb=2
+coex[after-connect-phase]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-connect-phase]: blob->core: status_bit_set n=62 type=0 mask=0x00000003 last=0x00000000 | status_bit_clear n=62 mask=0x0000ffff | events>=64 n=0
+coex[after-connect-phase]: by event: e1: req=1 bad=0 rel=7 bad=0 pti n=30 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e5: pti n=23 mask=0x01 bad=0 e6: pti n=1 mask=0x01 bad=0
+coex[after-connect-phase]: by event: e7: req=1 bad=1 rel=1 bad=1 pti n=1 mask=0x01 bad=0 e10: pti n=2 mask=0x03 bad=0 e15: pti n=1 mask=0x01 bad=0 e38: rel=6 bad=0
+coex[after-connect-phase]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-connect-phase]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-connect-phase]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+wifi-link: arena[after connect]: free=63116/114672 B
+wifi-link: result scan=true ap=2 connected=false dhcp=false ping=false stayed=false reason=2
+coex[wifi-link]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[wifi-link]: fw=2.0.0 en=1 req=2 rel=14 sta=143 startcb=1 intset=62
+coex[wifi-link]: hooks: boot=1 wifi_init=1 enable=1 status_get=143 wifi_request=2 wifi_release=14 wifi_channel_set=2 event_duration_get=1 pti_get=64
+coex[wifi-link]: hooks: schm_status_bit_clear=62 schm_status_bit_set=62 schm_interval_set=62 schm_interval_get=2 schm_curr_period_get=2 schm_curr_phase_get=1
+coex[wifi-link]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_get=1 configure_preemption_end_cb=1 btdm_coex_init=1
+coex[wifi-link]: hooks: btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1 wr_btdm_coex_register_wifi_channel_change_callback=1
+coex[wifi-link]: hooks: wr_btdm_coex_register_ble_cb=2
+coex[wifi-link]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[wifi-link]: blob->core: status_bit_set n=62 type=0 mask=0x00000003 last=0x00000000 | status_bit_clear n=62 mask=0x0000ffff | events>=64 n=0
+coex[wifi-link]: by event: e1: req=1 bad=0 rel=7 bad=0 pti n=30 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e5: pti n=23 mask=0x01 bad=0 e6: pti n=1 mask=0x01 bad=0
+coex[wifi-link]: by event: e7: req=1 bad=1 rel=1 bad=1 pti n=1 mask=0x01 bad=0 e10: pti n=2 mask=0x03 bad=0 e15: pti n=1 mask=0x01 bad=0 e38: rel=6 bad=0
+coex[wifi-link]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[wifi-link]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[wifi-link]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+read[ble after wifi link]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble after wifi link]: syscon 9c00..9c0c=00000100 00201002 00000000 64646400 9c10=00000000 9c14..9c20=0038e7ff 10003800 00000000 00002070
+read[ble after wifi link]: fe 0438=ff800000 0450=00102000 047c=00000000 lpcon+18=00000005 clkrst 7040=00000001 71f8=00000001
+read[ble after wifi link]: ana f800=002f0669 f818=2100e448 f81c=00fff7ff
+check: wifi scan done=1 ap=2 ok=1
+check: wifi scan after ble keeps >= half the baseline ap (2 vs 36) ok=0
+check: wifi STA_CONNECTED (0) ok=0
+check: wifi dhcp bound (0) ok=0
+check: wifi ping done (0) ok=0
+check: wifi stayed connected 5 s (0) ok=0
+check: wifi idle hook refused on ble stack during link n=0 ok=1
+checks: passed=11 failed=5 total=16
+firmware: sections: passed=0 failed=1 total=1
+main: verdict=fail
+ota: running factory, no slot bookkeeping

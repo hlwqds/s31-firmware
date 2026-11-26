@@ -463,6 +463,9 @@ pub fn focusDump(tag: []const u8) void {
 // `MODEM_SYSCON_CLK_CONF1`，Wi-Fi 基带的时钟位跟着掉了）。`radioSnapshot()` 把有文档的 523 个与定点的 55 个
 // 寄存器的当前值存下来——Wi-Fi start 之后、BLE 的 init 之前调；`radioRestore(mask)` 把变化过的写回去。
 // 合并镜像只写回时钟 / 电源那一组（mask 1）；`mask` 的其它位留着按区域二分用。
+// 写回是整字写，合并镜像里它在 BLE 的 enable 之后执行：`CLK_CONF1` 回到 Wi-Fi 的值，BLE 那一侧的时钟位跟着被拿掉
+// （不写回的话扫描正常、连接失败：2026-11-26 板上 `reason=7`）。正解是时钟位按两个射频的需求取或
+// （ADR-003 第 4 节的归属模型），没有做；细目见 `docs/verification/coex-verification.md` §15。
 // ---------------------------------------------------------------------------
 
 var radio_snap: [regdump_addrs.len + focus_addrs.len]u32 = @splat(0);

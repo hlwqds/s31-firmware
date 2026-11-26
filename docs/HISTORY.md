@@ -126,19 +126,22 @@
 
 - **做了什么**：新增 `-Dcoex-wifi-link`（要求 `-Dcoex-merged`）——合并自检 section 让 Wi-Fi 先 `esp_wifi_start`，扫一次全信道作
   基线，再做 BLE 的 init（可选 `-Dcoex-ble-enable`），把时钟 / 电源寄存器按快照写回，然后 Wi-Fi 走真实链路（扫描、连接、
-  DHCP、ping、断开）。真实链路的主干从探针的 `run()` 抽成 `link_probe.zig` 的 `linkStart()` / `linkRest()`，探针照旧用它们。
-  结果是两个控制器同镜、BLE `INITED` 且 `ENABLED` 的状态下，Wi-Fi 扫描 37 个 AP、连上、DHCP、ping 网关 10/10。
+  DHCP、ping、断开）；判据多一条「BLE init 之后的扫描 AP 数不低于基线的一半」。真实链路的主干从探针的 `run()` 抽成
+  `link_probe.zig` 的 `linkStart()` / `linkRest()`，探针照旧用它们。结果是两个控制器同镜、BLE `INITED` 且 `ENABLED` 的状态下，
+  Wi-Fi 扫描 35 个 AP、连上、DHCP、ping 网关 10/10。
 - **怎么找到的**：第一次上板不通（3 个 AP、`reason=201`），而每一块零件单独都验证过。在 BLE init 之前插一次同样的扫描
-  （34 个 AP）之后，「谁干的」就没有悬念——是 BLE 的 init 这一段。与单独探针对拍，有文档的寄存器里变化过的全写回去也不够；
-  改读代码：`bringup.init` 第 15 步的 `esp_phy_load_cal_and_init()` 在这个镜像里恒为「没标定过」，等于每次都做一次全量
-  重新标定，把先 start 的 Wi-Fi 的 PHY 配置冲掉。修法是把「PHY 归先使能它的那一方」落到代码里（`probe_ptr.phy_owned_by_wifi`）。
-  细目在 `docs/verification/coex-verification.md` §15。
+  （三十多个 AP）之后，「谁干的」就没有悬念——是 BLE 的 init 这一段。读代码：`bringup.init` 有两段会重做 PHY 的打开与标定
+  （`probe_ptr.initPhy()`，与第 15 步的 `esp_phy_load_cal_and_init()`——它在这个镜像里恒为「没标定过」，等于每次都做一次
+  全量重新标定）。初稿只把责任归给后者；修完之后在最终形态上做五个单变量对照（每次只关一样）才定案：只跳过其中一段，
+  扫描就掉到 1–2 个 AP，两段都跳过才恢复；不写回时钟 / 电源寄存器，扫描照常、连接失败（`reason=7`）。对照还暴露出原来
+  的判据抓不住接收退化（退化的镜像 `verdict` 照样是 pass），于是加了那条扫描 AP 数的判据。修法是把「PHY 归先使能它的
+  那一方」落到代码里（`probe_ptr.phy_owned_by_wifi`）。细目在 `docs/verification/coex-verification.md` §15。
 - **验证**：主机门禁（`scripts/check-all.sh`：fmt、单元测试 2064 项、覆盖率、不变量、容量、六个 profile 构建）退出 0；板侧
-  最终形态两次：BLE init 之前 36 / 33 个 AP，之后 37 / 35 个 AP，连上 2055 / 2052 ms、DHCP 55 / 51 ms、ping 网关 10/10，
-  `verdict=pass`（`logs/coex-merged-wifi-link-boot.log`、`logs/coex-merged-wifi-link-dump-boot.log`）。BLE 先 init 的顺序不通，
-  留作对照（`logs/coex-merged-wifi-link-deaf-boot.log`）。
-- **没有做的**：两个射频都在收发的共存效果（L4b，BLE 的射频没有起）；时钟域的正解（现在是事后按快照写回，BLE 的 init 仍
-  整字改写 `MODEM_SYSCON_CLK_CONF1`）；两处跳过与写回的逐项必要性；其余实验轮的原始日志没有入库。
+  最终形态：BLE init 之前 34 个 AP，之后 35 个 AP，连上 2059 ms、DHCP 51 ms、ping 网关 10/10，16/16，`verdict=pass`
+  （`logs/coex-merged-wifi-link-boot.log`）。五份对照日志同一个前缀（`-dump-`、`-noguard-`、`-norestore-`、`-onlyloadcal-`、
+  `-onlyinitphy-boot.log`）；BLE 先 init 的顺序不通，留作对照（`logs/coex-merged-wifi-link-deaf-boot.log`）。
+- **没有做的**：两个射频都在收发的共存效果（L4b，BLE 的射频没有起）；时钟域的正解（现在是事后整字写回，在 BLE 的 enable
+  之后执行，BLE 那一侧的时钟位也被拿掉）；两段各自伤在哪一步；写回的寄存器里哪几个必要；排查阶段各轮的原始日志没有入库。
 
 ## 日志
 

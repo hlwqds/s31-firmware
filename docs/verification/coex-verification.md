@@ -30,7 +30,7 @@
 | 只开 Wi-Fi 的共存读数（L4a） | L4 | 共存核开着时真实链路能通（连上、DHCP、ping 网关 10/10）；胶水没有拒绝过一次调用；blob 的 13 次申请核都回 `0x102`，原因在核的静态表里（这些事件没有配硬件定时器）；BLE 没开，核的状态位是 0。不开共存的对照已补，判据成立（§13）。**更正**：初稿写的"硬件定时器都是 0"不成立——当时读的 `0x2010F008` 是共存低功耗时钟的配置，不是计数器（§12） | `logs/wifi-link-connect-boot.log`；§12、§13 |
 | 不开共存的对照（ADR-003 L4a 的判据「ping 与不开共存时一样」） | L4 | **成立**：胶水按 IDF 关闭分支作答、核不启动（`-Dcoex` + `-Dcoex-sw-off`）时扫描 38 个 AP、连上 2566 ms、DHCP 46 ms、ping 10/10。只去掉 `-Dcoex` 的两轮收不到帧（扫描 0 个 AP、连接 `reason=201`），根因是 `_coex_pti_get` 的计数桩把出参写成 0——只把这一处改成不写，计数桩的镜像也照常（扫描 37 个 AP、ping 10/10）。**共存核不是 Wi-Fi 收发的前置**：本表初稿写反了，已更正 | `logs/wifi-link-nocoex-boot.log`、`logs/wifi-link-coex-off-boot.log`、`logs/wifi-link-stubs-pti-boot.log`；§13 |
 | 合并镜像里的 BLE enable（`-Dcoex-ble-enable`） | L3 | `bringup.enable rc=0`、`ENABLED`，共存核 BLE 侧 `enabled`；没有锁死、没有复位。synth 锁定位（`0x201098BC` 的 bit2）在 enable 前后都是 0——这是预期值：合成器是广播使能命令处理之后才上电的，这一轮没有发 HCI 命令，**对 R3.3 不构成结论** | `logs/coex-merged-ble-enable-boot.log`；§14 |
-| 合并镜像里的 Wi-Fi 真实链路（`-Dcoex-wifi-link`） | L3 | 两个控制器同镜：BLE `INITED`、`ENABLED`，Wi-Fi 扫描 37 个 AP、连上 2055 ms、DHCP 55 ms、ping 网关 10/10，`verdict=pass`（2026-11-26）。前提是 Wi-Fi 先 `esp_wifi_start`：PHY 的一次性初始化与标定只认第一次使能，BLE 的 init 不能再做（再做的后果：Wi-Fi 的扫描从 34–38 个 AP 掉到 1–4 个）。BLE init 之后时钟 / 电源寄存器按快照写回 | `logs/coex-merged-wifi-link-boot.log`（通）、`logs/coex-merged-wifi-link-deaf-boot.log`（BLE 先 init，不通）；§15 |
+| 合并镜像里的 Wi-Fi 真实链路（`-Dcoex-wifi-link`） | L3 | 两个控制器同镜：BLE `INITED`、`ENABLED`，Wi-Fi 扫描 35 个 AP、连上 2059 ms、DHCP 51 ms、ping 网关 10/10，16/16 项通过，`verdict=pass`（2026-11-26）。前提是 Wi-Fi 先 `esp_wifi_start`，并且 BLE 的 init 不再做两段会重做 PHY 的打开与标定的事（`probe_ptr.initPhy`、第 15 步的 `esp_phy_load_cal_and_init`）：五个单变量对照里，只跳过其中一段，扫描就从三十多个 AP 掉到 1–2 个，而连接、DHCP、ping 的判据照样全过（所以加了一条「扫描 AP 数不低于基线一半」）；不写回时钟 / 电源寄存器，则认证、关联成功后被 `reason=7` 断开 | `logs/coex-merged-wifi-link-*.log`（通的一份与五份对照）、`logs/coex-merged-wifi-link-deaf-boot.log`（BLE 先 init，不通）；§15 |
 
 ## 2. C0 调研与设计（2026-11-24）
 
@@ -936,7 +936,7 @@ enable 前后只有一处不同：`0x2010_0450` 从 `0x00110000` 变成 `0x00102
 
 §14 末尾留下的那一项——"两个控制器同时工作没有任何证据"——这一节补上第一块：同一个镜像里 BLE `inited`、`enabled`，
 Wi-Fi 连上真实 AP、DHCP、ping 网关 10/10。BLE 的射频没有起（R3.3），所以这是"一个射频在收发、另一个 enabled"，
-不是 L4b。通到这一步之前先撞上了一道新的墙：BLE 的 init 会让 Wi-Fi 收不到帧。
+不是 L4b。通到这一步之前先撞上了一道新的墙：Wi-Fi 先 start 之后，BLE 的 init 会让 Wi-Fi 的接收退化到收不到帧。
 
 ### 15.1 做法
 
@@ -947,7 +947,7 @@ Wi-Fi 连上真实 AP、DHCP、ping 网关 10/10。BLE 的射频没有起（R3.3
   探针的 `run()` 没动。顺序为什么不能反，见 15.3。
 - 泵的每一步 Wi-Fi 之后调一次 `bt.probe.pumpStep()`：BLE 的 controller 任务走一轮，期间关掉 Wi-Fi 侧的让出点。
 - 只编这一段：`-Dboot=false -Dnet=false -Dwire=false -Dwifi=false -Dtls=false -Dapps=false`，不带符号表。
-  镜像 1 226 096 B（带全部自检段和符号表的合并镜像是 1 262 208 B）。堆 210 240 B：Wi-Fi 114 688 B、BLE 95 552 B；
+  镜像 1 226 480 B（带全部自检段和符号表的合并镜像是 1 262 208 B）。堆 210 240 B：Wi-Fi 114 688 B、BLE 95 552 B；
   Wi-Fi start 之后它的 arena 还剩 64 424 B。
 - `-Dcoex-dump`：链路之前打一份转储（`REGDUMP` / `FOCUSDUMP` / `MACDUMP`，标签 `after-ble-init`），只读。
 - AP 的凭据经 `-Dwifi-ap-ssid` / `-Dwifi-ap-password` 给，不入库。
@@ -967,64 +967,88 @@ env -u LD_LIBRARY_PATH /tmp/bin/zig build -Dtarget=riscv32-freestanding-eabihf \
 
 ### 15.2 实验阶梯
 
-每一轮只跑一次。最终形态上了两次板（第二次带 `-Dcoex-dump`），加上根因修复的两种配置，读数一致。入库的日志只有三份：
-轮 1（`logs/coex-merged-wifi-link-deaf-boot.log`）与最终形态的两次（`logs/coex-merged-wifi-link-boot.log`、
-`logs/coex-merged-wifi-link-dump-boot.log`）。其余各轮的原始日志没有入库，表里的数字是当时的读数。
+排查阶段的十四轮。每一轮只跑一次；原始日志只留了轮 1（`logs/coex-merged-wifi-link-deaf-boot.log`），其余各轮的数字是当时的
+读数。这一节不靠它下结论，结论性的证据是下面的五个单变量对照。
 
 | 轮 | 条件 | BLE init 之前 | 之后 | 结论 |
 | --- | --- | --- | --- | --- |
 | 1 | BLE 先 init 并 enable，Wi-Fi 后 start | — | Wi-Fi 钩子打出的标定数据非零 6/1904 字节；扫描 3 个 AP，连接 `reason=201` | 两个控制器在一个镜像里没有崩、没有锁死，链路不通（`logs/coex-merged-wifi-link-deaf-boot.log`） |
-| 2 | 同上，BLE 只 init、泵里不轮转 | — | 3 个 AP，`reason=204` | 排除"泵里的 BLE 轮转"；arena 还剩 64 KB，排除堆不够 |
-| 3 | 轮 2 + IDF 真的 modem clock 对象 | — | 3 个 AP | `MODEM_SYSCON` 的寄存器一字未变，排除轻量替身 |
+| 2 | 同上，BLE 只 init、泵里不轮转 | — | 3 个 AP，`reason=204` | 排除"泵里的 BLE 轮转"。堆配额不是原因的依据是另一条：同一个配额下 BLE init 之前扫描正常（轮 11） |
+| 3 | 轮 2 + IDF 真的 modem clock 对象 | — | 3 个 AP | 仍然聋；这一轮是 BLE 先 init 的顺序，标定已经被 BLE 用掉，两个因素混在一起，不能单独归因 |
 | 4 | Wi-Fi 先 start，再 BLE init | — | 1 个 AP | PHY 的一次性初始化归了 Wi-Fi（标定数据 262 个非零字节），之后仍然聋 |
 | 5 | 轮 4 + 时基校准 | — | 1 个 AP | Wi-Fi init 后、start 后、BLE init 后都是 80 MHz CPU 对 1 MHz 定时器，排除时基 |
 | 6 | 轮 4 + 寄存器对拍 | — | 1 个 AP | 当时在聋的镜像上的读数没有入库；修好之后同一时点的对拍见 15.3 |
 | 7 | 轮 4 + `CLK_CONF1` 或回 Wi-Fi 的时钟位 | — | 2 个 AP | 时钟位单独不是原因 |
-| 8 | 轮 4 + 跳过 BLE 自己的 PHY 打开序列 | — | 2 个 AP | 排除 `initPhy` |
+| 8 | 轮 4 + 跳过 BLE 自己的 PHY 打开序列 | — | 2 个 AP | 只跳过 `initPhy` 不够（对照 E 复现了这一点） |
 | 9 | 轮 4 + 把快照里变化过的寄存器全部写回 | — | 1 个 AP | 42 个写回去，不够；`DCMEM_VALID_*`、`ANA_CONF0` 等几位写不上 |
 | 10 | 轮 4 + Wi-Fi 停掉再 start | — | 0 个 AP | 驱动重写 MAC 不够 |
 | 11 | 轮 4 + BLE init 之前先扫一次 | **34 个 AP** | — | 合并镜像里 Wi-Fi 自己是好的：是 BLE 的 init |
 | 12 | 轮 4 + 快照全写回 + Wi-Fi 停掉再 start | 37 个 AP | 连上、DHCP、ping 8/10（平均 79 ms） | 事后补救能通，质量差 |
-| 13 | **根因修复**：BLE 的 init 不再重新标定 + 时钟位写回；BLE 只 init | — | 37 个 AP，连上，ping 10/10（平均 3.2 ms） | 治本 |
+| 13 | 两段都跳过（`initPhy`、第 15 步的重新标定）+ 时钟位写回；BLE 只 init | — | 37 个 AP，连上，ping 10/10（平均 3.2 ms） | 恢复 |
 | 14 | 同 13 + BLE enable，泵里轮转 | 38 个 AP | 40 个 AP，连上，DHCP 51 ms，ping 10/10，`verdict=pass` | 目标配置 |
+
+**最终形态上的五个单变量对照。** 修完之后在最终形态的代码上，把三样东西逐个关掉再上板——跳过 `initPhy`、跳过第 15 步的
+重新标定、时钟 / 电源寄存器写回——每次只改一处，跑完即恢复。都是 `-Dcoex-wifi-link -Dcoex-ble-enable`；除 A 的两次之外都带
+`-Dcoex-dump`，转储在 BLE enable 之后、写回之前。日志都入库了（前缀 `logs/coex-merged-wifi-link-`）。B、C、D 跑在加新判据
+之前（15 项），E 跑在之后（16 项，见 15.4）。
+
+| 对照 | 跳过 `initPhy` | 跳过第 15 步 | 写回 | BLE init 之前 | 之后 | 判据 | 日志后缀 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A 最终形态 | 是 | 是 | 是 | 34 / 33 个 AP | 35 / 35 个 AP；连上 2059 / 2052 ms，DHCP 51 / 51 ms，ping 10/10 | 16/16、15/15 | `boot.log`、`dump-boot.log` |
+| B | 否 | 否 | 是 | 39 个 AP | 4 个 AP；连上 1951 ms，DHCP 3887 ms，ping 9/10 | 15/15，`verdict=pass` | `noguard-boot.log` |
+| C | 是 | 是 | 否 | 36 个 AP | 35 个 AP；认证、关联成功，随即 `reason=7` 断开 | 11/15，`verdict=fail` | `norestore-boot.log` |
+| D | 否 | 是 | 是 | 31 个 AP | 1 个 AP；连上 1956 ms，DHCP 24 ms，ping 9/10（平均 70 ms，最大 304 ms） | 15/15，`verdict=pass` | `onlyloadcal-boot.log` |
+| E | 是 | 否 | 是 | 36 个 AP | 2 个 AP；连接 `reason=2` | 11/16，`verdict=fail` | `onlyinitphy-boot.log` |
+
+读法：
+
+- **两段各自都足以让 Wi-Fi 的接收退化。** 只跳过第 15 步（D，`initPhy` 照常跑）：31 → 1 个 AP。只跳过 `initPhy`（E，第 15 步
+  照常跑）：36 → 2 个 AP。两段都跳过（A）：33–34 → 35 个 AP。
+- **写回是连接阶段必要的。** 两段都跳过但不写回（C）：扫描照常（35 个 AP），认证、关联都成功，随即被 AP 以 `reason=7`
+  断开，没有走到四次握手。写回的 13 个里哪几个是必要的，没有再分。
+- **原来的判据抓不住这种退化。** B 和 D 里接收已经退到 1–4 个 AP，连接、DHCP、ping、稳定 5 秒照样全过，`verdict=pass`。
+  所以加了一条：BLE init 之后的扫描 AP 数不得低于基线的一半（15.4）。它在 E 上失败（`2 vs 36`），在最终形态上通过（15.5）。
+- **"接收通路的字读回 0"复现不出来。** 排查阶段记过"聋的那几轮里 MAC 块接收通路的那组字读回 0"。B、D、E 三份转储里
+  这组字都不是 0（PTI 表字与单独探针相同，`0x20104300 = ffffffff`）；排查阶段那几轮的原始日志没有入库，那个说法作废。
 
 ### 15.3 根因
 
-IDF 的 `esp_phy_enable` 只在 modem 标志为 0 时才初始化 PHY（`phy_init.c:324-342`）：第一个使能的模块开时钟、做一次
-`esp_phy_load_cal_and_init`（没标定过就全量标定）；第二个模块使能时只把自己或进标志。本仓的 BLE 适配层是按"单独跑"
-写的，`bringup.init` 里有两段不遵守这个语义：
+IDF 的 `esp_phy_enable` 只在 modem 标志为 0 时才初始化 PHY（`phy_init.c:324-342`）：第一个使能的模块开时钟、做一次性的
+标定；第二个模块使能时只把自己或进标志，不重做。本仓的 BLE 适配层是按"单独跑"写的，`bringup.init` 里有两段会重做 PHY 的
+打开与标定，哪一段在 Wi-Fi 之后做，都会把 Wi-Fi 建立好的 PHY 配置冲掉（对照 D、E）：
 
-1. 第 15 步调了 IDF 的 `esp_phy_load_cal_and_init()`（`bringup.zig` 里"load_cal 前移"那一段）。它看 IDF 自己的静态变量
-   `s_is_phy_calibrated`；Wi-Fi 这边走的是探针的钩子（`init_probe.zig` 的 `phyEnableHook`），不去置这个变量，所以它
-   恒为 0。BLE 的 init 一调，就是一次**全量重新标定**，PHY 回到"刚标定完"的状态——`osi_impl.zig` 里记过这个状态的
-   症状：射频停在标定刚结束的状态，扫描只出 TX 完成中断，一帧都收不到。
-2. `probe_ptr.initPhy()` 自己那套"从零打开"的序列（末尾是一次 `register_chipv7_phy`）。单独跳过它不够（轮 8），但 IDF
-   的语义里第二个射频不做这件事，所以一并跳过。
+1. `probe_ptr.initPhy()`——自己那套"从零打开"的序列：ICG、`phy_wifi_enable_set`、`set_bb_wdg`、`CLK_CONF1` 与 FE 位，再走
+   一次自己的标定（日志 `bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done`、`bt phy: calib rc=0`）。
+2. 第 15 步的 `mce(13)` + IDF 的 `esp_phy_load_cal_and_init()`。它看 IDF 自己的静态变量 `s_is_phy_calibrated`；Wi-Fi 这边走的
+   是探针的钩子（`init_probe.zig` 的 `phyEnableHook`），不去置这个变量，所以它在镜像里恒为 0，一调就是一次**全量重新
+   标定**。`osi_impl.zig` 里记过 PHY 停在"刚标定完"的状态时的症状：扫描只出 TX 完成中断，一帧都收不到。
 
-两种顺序对应两种坏法：
+两段各自伤在哪一步（`initPhy` 之后的哪一步、标定之后的哪一处状态）没有再往下拆。能定的只有：两段各做一次就各退化一次，
+两段都跳过就恢复。
 
-- **BLE 先 init**：PHY 的一次性初始化被 BLE 用掉（库实现只认第一次），Wi-Fi start 时它什么都不做——Wi-Fi 钩子打出
-  的标定数据 `version=0`、非零 6/1904 字节，只有探针预写的 MAC；单独探针里是 `version=100`、262 个非零字节
-  （`logs/coex-merged-wifi-link-deaf-boot.log`、`logs/wifi-link-connect-boot.log`）。
-- **Wi-Fi 先 start**：Wi-Fi 标定成功，BLE init 之前扫描 34–38 个 AP，之后 1–4 个。当时的转储里 MAC 块接收通路的那组字
-  （`0x2010408C`–`0x20104094`、`0x201042F4`、`0x20104300`、`0x20104548`）读回 0，与 §13 里 PTI 被写成 0 的那一轮是同一个
-  签名（这几轮的原始日志没有入库）。修好之后的镜像里（`logs/coex-merged-wifi-link-dump-boot.log`，BLE enable 之后、写回之前）
-  这组字与单独探针的同一时点一致：PTI 表字 `55777555` / `00003377`、`0x20104300 = ffffffff`、`0x20104548 = 00c00000`。
-  整块 1024 个字里 59 个不同，没有逐个归类。
-
-和根因无关、但确实存在的另一处：BLE 的 `btdm_lp_enable_clock` 把 `MODEM_SYSCON_CLK_CONF1` 整字写成自己的值
-（`0x0038E7FF` → `0x003FF880`）。Wi-Fi 基带的时钟位被关掉了 10 个——`wifibb_22m` / `40m` / `44m` / `80m` / `40x` / `80x` /
-`40x1` / `160x1`、`wifimac`、`wifi_apb`——只剩 `wifibb_80x1`。
-
-与单独的真实链路探针对拍——修好之后的镜像，`logs/wifi-link-connect-boot.log` 的 `REGDUMP after-scan` 对
-`logs/coex-merged-wifi-link-dump-boot.log` 的 `REGDUMP after-ble-init`，都是扫描结束时、连接之前：523 个有文档的寄存器里
-18 个真的变了，另 1 个（`0x207001A4`）是活的计数。按块：`MODEM_LPCON` 8 个（含 `DCMEM_VALID_*` 那几个字）、`MODEM_SYSCON` 4 个、
-`I2C_ANA_MST` 3 个、`MODEM_WIDGETS` 1 个（`0x20109400`）、SoC PLL 的配置字 `0x205871E0` 与 `0x20589090` 各 1 个。只把时钟位
-或回去不够（轮 7），把快照里变化过的全写回去也不够（轮 9），所以这些是伴随现象，不是收不到帧的原因。写回有没有必要没有
-单独量过——根因修复的那一轮带着它（见 15.7）。
+另一种顺序（BLE 先 init）是另一种坏法，有入库日志（轮 1）：PHY 的一次性初始化被 BLE 用掉，库的实现只认第一次，Wi-Fi
+start 时它什么都不做——Wi-Fi 钩子打出的标定数据 `version=0`、非零 6/1904 字节，只有探针预写的 MAC（单独探针里是
+`version=100`、259–262 个非零字节）；扫描 3 个 AP。返回码是 0。
 
 顺带澄清一个数字：全信道扫描 2.4 秒是正常的——blob 扫信道 1–11（主动，各 120 ms）和 12–14（被动，各 360 ms）。
 单独探针日志里的"约 9 秒"含停下来打转储的时间。
+
+**BLE 的 init 还改了哪些寄存器。** `btdm_lp_enable_clock` 把 `MODEM_SYSCON_CLK_CONF1` 整字写成自己的值：两段都跳过时是
+`0x003FF880`（单独探针同一时点是 `0x0038E7FF`），Wi-Fi 基带的时钟位被关掉 10 个——`wifibb_22m` / `40m` / `44m` / `80m` /
+`40x` / `80x` / `40x1` / `160x1`、`wifimac`、`wifi_apb`——只剩 `wifibb_80x1`；`initPhy` 照常跑的 B、D 里这个字是
+`0x003FFA8C`，第 15 步照常跑的 E 里是 `0x003FF884`。
+
+与单独的真实链路探针对拍（修好之后的镜像 A，带转储的那一次；`logs/wifi-link-connect-boot.log` 的 `REGDUMP after-scan` 对
+`logs/coex-merged-wifi-link-dump-boot.log` 的 `REGDUMP after-ble-init`，都是扫描结束时、连接之前）：523 个有文档的寄存器里
+19 个不同，其中 2 个是活值（`0x207001A4` 是 PMU 的计数，`0x2010F804` 是模拟 I2C 主控的状态字，都在 `radioSkip` 的清单里），
+真正的变化是 17 个。按块：`MODEM_LPCON` 8 个（含 `DCMEM_VALID_*` 那几个字）、`MODEM_SYSCON` 4 个、`I2C_ANA_MST` 2 个、
+`MODEM_WIDGETS` 1 个（`0x20109400`）、SoC PLL 的配置字 `0x205871E0`（`0x25 → 0x3D`）与 `0x20589090` 各 1 个。B、D、E 的
+同一对拍是 23–24 个不同（`initPhy` 或第 15 步多改了几个字）。
+
+这些是伴随现象：不写回时（C）扫描照常、连接失败，写回之后连接正常。写回里有 1–3 个字写不上（`0x2010F03C` / `0x2010F044`
+的 `DCMEM_VALID_*`、`0x20589090`，日志行 `radio restore: … wanted …, reads …`），链路照常。MAC 块在修好之后、写回之前，
+接收通路的那组字与单独探针的同一时点一致：PTI 表字 `55777555` / `00003377`、`0x20104300 = ffffffff`、
+`0x20104548 = 00c00000`；整块 1024 个字里 59 个不同，没有逐个归类。
 
 ### 15.4 修复
 
@@ -1032,45 +1056,48 @@ IDF 的 `esp_phy_enable` 只在 modem 标志为 0 时才初始化 PHY（`phy_ini
 - `components/bt-blobs/src/bringup.zig`：同一个变量为真时，第 15 步的 `mce(13)` + `esp_phy_load_cal_and_init()` 跳过。
 - `components/bt-blobs/src/probe.zig`：`setPhyOwnedByWifi()`；合并镜像里 Wi-Fi start 返回 0 之后、BLE 的 init 之前调。
 - `components/wifi-blobs/src/init_probe.zig`：`radioSnapshot()` / `radioRestore(mask)`——存有文档的 523 个与定点的 55 个
-  寄存器，把变化过的按区域写回。合并镜像只写回时钟 / 电源那一组（实测 13–14 个）。
+  寄存器，把变化过的按区域写回。合并镜像只写回时钟 / 电源那一组（实测 13–15 个，其中 1–3 个写不上，见 15.3）。
+- `firmware/src/coex_merged.zig`：新判据——BLE init 之后的扫描 AP 数不得低于基线的一半。
 - 单独的 BLE 探针不受影响：变量默认是假，两条分支照旧。
 
 ### 15.5 板侧读数（`logs/coex-merged-wifi-link-boot.log`）
 
-最终形态的镜像（`-Dcoex-wifi-link -Dcoex-ble-enable`，只编 `coex_merged` 一段）：
+最终形态的镜像（`-Dcoex-wifi-link -Dcoex-ble-enable`，只编 `coex_merged` 一段，带新判据）：
 
 ```text
-wifi-link: scan[before ble init]: GOT in 2421 ms, esp_wifi_scan_get_ap_num rc=0x0 n=36
+wifi-link: scan[before ble init]: GOT in 2421 ms, esp_wifi_scan_get_ap_num rc=0x0 n=34
 bt phy: initPhy skipped (PHY already on, Wi-Fi owns it)
 check: ble bringup.init rc=0 ok=1
-bt enable-only: status=2 rounds=40092 evq=1/1/0 pend_ok=2 busy=0
+check: ble bringup.enable rc=0 ok=1
 wifi-init-probe: radio restore (mask 0x1): clock/power=13 ana_i2c=0 bb_fe=0 lp_pmu=0
 wifi-link: wait scan-done 10s -> GOT in 2437 ms
-wifi-link: esp_wifi_scan_get_ap_num rc=0x0 n=37
+wifi-link: esp_wifi_scan_get_ap_num rc=0x0 n=35
 wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
 wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=0
 wifi-link-probe: STA_CONNECTED bssid=… ch=1 authmode=3 aid=1
-wifi-link-probe: CONNECTED in 2055 ms (1 progress reports)
-wifi-link-probe: data path: DHCP bound in 55 ms ip=… router=…
-wifi-link-probe: net: ping done: sent=10 received=10 timed_out=0 rtt min/avg/max=1806/4407/11062 us
+wifi-link-probe: CONNECTED in 2059 ms (1 progress reports)
+wifi-link-probe: data path: DHCP bound in 51 ms ip=… router=…
+wifi-link-probe: net: ping done: sent=10 received=10 timed_out=0 rtt min/avg/max=1772/3830/8882 us
 wifi-link-probe: stayed connected for 5 s
 wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
-checks: passed=15 failed=0 total=15
+check: wifi scan after ble keeps >= half the baseline ap (35 vs 34) ok=1
+checks: passed=16 failed=0 total=16
 main: verdict=pass
 ```
 
 | 项 | 读数 |
 | --- | --- |
-| 镜像 | 1 226 096 B；`rst:0x1` 上电复位一次，没有别的复位、没有 panic |
+| 镜像 | 1 226 480 B；`rst:0x1` 上电复位一次，没有别的复位、没有 panic |
 | BLE | `bringup.init rc=0`（`INITED`），`bringup.enable rc=0`（`ENABLED`），共存核 BLE 侧 `enabled` |
-| Wi-Fi 基线（BLE init 之前） | 36 个 AP |
-| Wi-Fi 链路（BLE enabled 之后） | 37 个 AP；连上 2055 ms；钥匙落进 MAC 密钥表（位图 `ffff`）；DHCP 55 ms；答了网关的 ARP；ping 10/10，rtt 最小 / 平均 / 最大 1.8 / 4.4 / 11.1 ms；连着 5 秒没有掉；本地断开 `reason=8` |
+| Wi-Fi 基线（BLE init 之前） | 34 个 AP |
+| Wi-Fi 链路（BLE enabled 之后） | 35 个 AP；连上 2059 ms；钥匙落进 MAC 密钥表（位图 `ffff`）；DHCP 51 ms；答了网关的 ARP；ping 10/10，rtt 最小 / 平均 / 最大 1.8 / 3.8 / 8.9 ms；连着 5 秒没有掉；本地断开 `reason=8` |
+| 新判据 | BLE init 之后 35 个 AP，不低于基线（34 个）的一半 |
 | 调度 | Wi-Fi 的让出点被 BLE 任务栈上的调用碰到 0 次（整轮） |
-| Wi-Fi arena（三个采样点） | start 之后剩 64 424 / 114 672 B；扫描后 58 544 B；连接阶段结束 60 928 B |
+| Wi-Fi arena（三个采样点） | start 之后剩 64 424 / 114 672 B；扫描后 58 932 B；连接阶段结束 61 136 B |
 
-同一形态带 `-Dcoex-dump` 又上了一次板（`logs/coex-merged-wifi-link-dump-boot.log`，镜像 1 228 464 B，转储在 BLE enable 之后、
-写回之前）：BLE init 之前 33 个 AP，之后 35 个 AP，连上 2052 ms，DHCP 51 ms，ping 10/10（rtt 1.9 / 3.8 / 8.9 ms），15/15，
-`verdict=pass`。
+同一形态带 `-Dcoex-dump` 的那一次（`logs/coex-merged-wifi-link-dump-boot.log`，镜像 1 228 464 B，跑在新判据之前，15/15）：
+BLE init 之前 33 个 AP，之后 35 个 AP，连上 2052 ms，DHCP 51 ms，ping 10/10（rtt 1.9 / 3.8 / 8.9 ms）。它的用途是 15.3 的
+寄存器对拍（转储在 BLE enable 之后、写回之前）。
 
 ### 15.6 共存核读数（BLE enabled）
 
@@ -1084,21 +1111,25 @@ main: verdict=pass
 | `coex_schm_curr_period_get` | 2 | 5 |
 | `coex_schm_flexible_period_set` / `_get` | 2 / 2 | 3 / 4 |
 
-其余与 §12 一致：胶水零拒绝；blob 的申请（事件 7、9 共 16 次）核都回 `0x102`；核手里 `wifi_status=0`、`interval=1000`、
-`period=1`；置 / 清 Wi-Fi 状态位各 67 次，三个状态位都置过（掩码 `0x7`，与 §12 的 after-ping 相同），最后一次置的是 `0`
-（§12 的 after-ping 是 `0x4`）。
+其余与 §12 一致：胶水零拒绝；blob 的申请里事件 7、9 共 15 次，核都回 `0x102`（全部申请是 16 次，另 1 次是事件 1，回的不是
+`0x102`）；核手里 `wifi_status=0`、`interval=1000`、`period=1`；置 / 清 Wi-Fi 状态位各 67 次，三个状态位都置过（掩码 `0x7`，
+与 §12 的 after-ping 相同），最后一次置的是 `0`（§12 的 after-ping 是 `0x4`）。多调到的那三个钩子在五份对照日志里次数都
+一样；申请与释放的次数跟着链路的流量走（连不上的 C、E 少得多）。
 
-核的硬件定时器：这一轮读数时 5 个的使能字和状态字都是 0，定时器 0 的配置字是 `0xC0028164` / `0x000000DF`。BLE 先 init
-的那一轮（15.2 的轮 1，`logs/coex-merged-wifi-link-deaf-boot.log`）同一时点 5 个的使能字和状态字读回 1。这些字是哪一步
-写的、差别来自顺序还是来自 PHY 的修复，没有分开验证。
+核的硬件定时器：读数时 5 个的使能字和状态字都是 0；定时器 0 的头两个字非零（这次是 `0x600383DE` / `0x000000C3`，之前一次
+是 `0xC0028164` / `0x000000DF`，像是计数值）。BLE 先 init 的那一轮（15.2 的轮 1，`logs/coex-merged-wifi-link-deaf-boot.log`）
+同一时点 5 个的使能字和状态字读回 1。这些字是哪一步写的、差别来自顺序还是来自 PHY 的修复，没有分开验证。
 
 ### 15.7 边界
 
 - BLE 的射频没有起（R3.3），所以这是"一个射频在收发、另一个 enabled"。两个射频真的抢天线会怎样（L4b），仍然没有
   证据。
-- 时钟寄存器的写回是补救。BLE 的 init 仍然整字改写 `CLK_CONF1`，正解是时钟配置按两个射频的需求取并集（ADR-003 第 4 节）。
-- 时钟 / 电源寄存器的写回（13 个）与两处跳过是一起加的：不写回会怎样、只跳过重新标定够不够，都没有单独量。能定的只有
-  「三样一起做之后链路正常」和「只做写回里的一部分（时钟位）或只跳过 `initPhy` 都不够」（轮 7、轮 8）。
+- 写回是整字写，而且在 BLE 的 enable 之后执行：`CLK_CONF1` 回到 Wi-Fi 的快照值，BLE 那一侧的时钟位也一并被拿掉。这一轮
+  BLE 的 controller 是在这种状态下被泵的，没有任何一项检查在看它。正解是时钟配置按两个射频的需求取并集（ADR-003 第 4 节），
+  没有做。
+- 两段各自伤在哪一步没有再拆（`initPhy` 之后的哪一步、标定之后的哪一处状态）；写回的 13–15 个寄存器里哪几个是必要的，
+  也没有再分。
+- 排查阶段（15.2 的十四轮）的原始日志只留了轮 1，那些数字是当时的读数。带结论的五份对照都有入库日志，每个对照只跑了一次。
 - 合并镜像里真实链路的顺序只有 Wi-Fi 先 start 这一种；BLE 先 init 那种顺序（轮 1）不走。
 - `bringup.enable()` 开头无条件写 `0x2010_0450 = 0x00102000`（§14.3）。这一轮它是在 Wi-Fi 已经 start 之后执行的，
   链路照常通过；它对 Wi-Fi 有没有影响没有单独量。

@@ -64,12 +64,14 @@
 （关闭分支在 L1 逐钩子对照过 IDF），要么把计数桩逐项对齐**——两边的桩值不是一回事。
 
 **【2026-11-26 补记 2】「PHY 归先使能它的那一方」拿到了板级证据。** 合并镜像里两个控制器带着 BLE enable 走通了 Wi-Fi
-的真实链路（扫描 37 个 AP、连上、DHCP、ping 10/10，`-Dcoex-wifi-link`）。过程里撞上的墙正是这条归属规则的另一面：
-BLE 的 init 是按"单独跑"写的，`bringup.init` 第 15 步再调一次 `esp_phy_load_cal_and_init`，就是一次全量重新标定，
-把先 start 的 Wi-Fi 建立好的 PHY 配置冲掉（扫描从 34–38 个 AP 掉到 1–4 个）；反过来让 BLE 先 init，PHY 的一次性初始化
-被它用掉，Wi-Fi 那边的标定数据是空的。修法是把规则落到代码里：Wi-Fi start 成功后置 `phy_owned_by_wifi`，BLE 的 init
-不再做这两段。时钟域那一条还没有正解——BLE 的 init 仍整字改写 `MODEM_SYSCON_CLK_CONF1`，合并镜像是事后按快照把
-时钟 / 电源寄存器写回；按两个射频的需求取并集留给下面第 5 项。细目见 `docs/verification/coex-verification.md` §15。
+的真实链路（扫描 35–37 个 AP、连上、DHCP、ping 10/10，`-Dcoex-wifi-link`）。过程里撞上的墙正是这条归属规则的另一面：
+BLE 的 init 是按"单独跑"写的，`bringup.init` 里有两段会重做 PHY 的打开与标定——`probe_ptr.initPhy()`，与第 15 步的
+`esp_phy_load_cal_and_init`（在本镜像里恒为"没标定过"，等于一次全量重新标定）。单变量对照：只跳过第 15 步，扫描从
+31 个 AP 掉到 1 个；只跳过 `initPhy`，36 个掉到 2 个；两段都跳过才恢复。反过来让 BLE 先 init，PHY 的一次性初始化被它
+用掉，Wi-Fi 那边的标定数据是空的。修法是把规则落到代码里：Wi-Fi start 成功后置 `phy_owned_by_wifi`，BLE 的 init 不再做
+这两段。时钟域那一条还没有正解——BLE 的 init 仍整字改写 `MODEM_SYSCON_CLK_CONF1`，合并镜像不写回的话扫描照常、连接
+失败（`reason=7`），所以现在是事后按快照把时钟 / 电源寄存器整字写回（BLE 那一侧的时钟位也被拿掉）；按两个射频的需求
+取并集留给下面第 5 项。细目见 `docs/verification/coex-verification.md` §15。
 
 ### 2. 运行时统一（让两棵树能链进同一镜像）
 

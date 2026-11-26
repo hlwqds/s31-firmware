@@ -964,7 +964,8 @@ pub fn init(cfg: *config.Config) c_int {
         // 合并镜像里 PHY 已经由 Wi-Fi 打开并标定过（`-Dcoex-wifi-link`）：这一段不能做。IDF 只在 PHY 第一次
         // 打开时调 `esp_phy_load_cal_and_init`（`phy_init.c:337-342`，看它自己的 `s_is_phy_calibrated`）；Wi-Fi
         // 这边走的是探针的钩子，那个变量还是 0，这里再调就是一次全量重新标定，把 Wi-Fi 建立好的 PHY 配置冲掉——
-        // 2026-11-26 板上实测：Wi-Fi 的扫描从 34 个 AP 掉到 1–4 个；`mce(13)` 还会改 Wi-Fi 正在用的 `CLK_CONF1`。
+        // 2026-11-26 板上单变量对照：只做这一段，Wi-Fi 的扫描从 36 个 AP 掉到 2 个；`mce(13)` 还会改 Wi-Fi 正在用的
+        // `CLK_CONF1`。`probe_ptr.initPhy` 那一段单独做也同样伤 Wi-Fi，所以两段一起跳过。
         osal.logPublic("bt bringup: load_cal skipped (PHY already calibrated by Wi-Fi)", .{});
     } else {
         const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
