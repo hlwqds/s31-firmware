@@ -1003,6 +1003,55 @@ pub fn initOnly(region: []u8) c_int {
     return rc;
 }
 
+var pump_rounds: u32 = 0;
+
+/// 合并镜像的实验步骤（`-Dcoex-ble-enable`）：`initOnly` 之后跑 `bringup.enable`，再把 controller 任务泵
+/// `max_pump_us` 微秒——它是协作式任务，不泵就不跑。
+///
+/// 只走生产路径：不发 HCI 命令，也不做 `run()` 里探针的实验（那些要么依赖探针镜像的内存布局，要么就是
+/// 通向 synth 那道墙的实验本身）。返回 `bringup.enable` 的返回码（0 = ENABLED）。
+pub fn enableOnly(max_pump_us: u64) c_int {
+    // 泵之前拍基线：blob 可能把 UART0 / 定时器组的时钟门控改掉，泵每轮照 `run()` 的做法回写。
+    const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+    clk_snap[0] = c2[0x88 / 4];
+    clk_snap[1] = c2[0x114 / 4];
+    clk_snap[2] = c2[0x11C / 4];
+    const rc = bringup.enable();
+    if (rc != 0) {
+        board.log.line("bt enable-only: bringup.enable rc={d} at step {d}", .{ rc, bringup.stats().failed_step });
+        return rc;
+    }
+    pumpFor(max_pump_us);
+    const st = osal.stats();
+    board.log.line("bt enable-only: status={d} rounds={d} evq={d}/{d}/{d} pend_ok={d} busy={d}", .{
+        bringup.getStatus(), pump_rounds, st.eventq_put, st.eventq_get_ok, st.eventq_get_empty, st.mutex_pend_ok, st.mutex_pend_busy,
+    });
+    return rc;
+}
+
+/// 协作式泵：让 controller 任务跑 `max_us` 微秒。每轮是 `run()` 主循环里让任务推进的必要项——让出点、
+/// ISR 桥的两个半泵、ets_timer、OSAL 的周期回调、两级看门狗、时钟门控回写。
+pub fn pumpFor(max_us: u64) void {
+    const t0 = board.hw.nowUs();
+    pump_rounds = 0;
+    while (board.hw.elapsedUs(t0) < max_us) : (pump_rounds += 1) {
+        const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+        c2[0x88 / 4] = clk_snap[0];
+        c2[0x114 / 4] = clk_snap[1];
+        c2[0x11C / 4] = clk_snap[2];
+        board.hw.mwdt1Feed();
+        board.hw.feedRtcWdt();
+        sched.drainPending();
+        if (sched.firstTask()) |t| sched.resumeTask(&t.ctx);
+        bringup.bridgeDrain();
+        bringup.bridgeReenable();
+        osi_impl_serviceTimers();
+        // RTC 计数器的读数要靠 update 位触发才刷新；不触发，controller 读到的睡眠时间恒为旧值。
+        @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+        _ = osal.serviceCallouts(osal.timeGet());
+    }
+}
+
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.on_pc_ready = dumpPcRing;

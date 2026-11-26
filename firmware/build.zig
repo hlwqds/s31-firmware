@@ -70,6 +70,10 @@ pub fn build(b: *std.Build) void {
     // 入口不变（照常跑各段自检），只在 `enabled` 末尾多一个 `coex_merged` section：
     // 两个控制器的 init 都做到返回为止（`firmware/src/coex_merged.zig`）。
     const coex_merged = b.option(bool, "coex-merged", "link both radio adapter trees in one image and run both controllers' init as a self-test section") orelse false;
+    // 合并镜像的实验步骤（要求 `-Dcoex-merged`）：两个控制器 init 之后接着 enable BLE（`bringup.enable`），
+    // 把 controller 任务泵一小段，读回 synth 区与时钟寄存器。不发 HCI 命令，只回答"BLE enable 在 APM
+    // 过滤器已关、ICG 码已设、共存核已启动的镜像里走到哪"。
+    const coex_ble_enable = b.option(bool, "coex-ble-enable", "merged image only: after both inits, enable the BLE controller and pump its task") orelse false;
     // R5/C2：共存。把 `components/radio-coex` 的胶水链进镜像并绑到真实核心（`libcoexist.a` 与 ROM）。
     // 默认关；关闭时默认镜像与 BT/Wi-Fi 探针镜像逐字节不变（`docs/verification/coex-verification.md`）。
     const coex = b.option(bool, "coex", "link the BLE/Wi-Fi coexistence glue and bind it to the real coex core") orelse false;
@@ -82,6 +86,7 @@ pub fn build(b: *std.Build) void {
         if (!coex) @panic("-Dcoex-merged 需要 -Dcoex：共存核是合并镜像的一部分");
         if (wifi_blob_dir.len == 0 or bt_blob_dir.len == 0) @panic("-Dcoex-merged 需要同时给出 -Dwifi-blob-dir 与 -Dbt-blob-dir");
         if (wifi_init_probe or wifi_link_probe or bt_probe) @panic("-Dcoex-merged 不能与 -Dwifi-init-probe / -Dwifi-link-probe / -Dbt-probe 同开：探针镜像的入口不跑各段自检");
+        if (coex_ble_enable and !coex_merged) @panic("-Dcoex-ble-enable 需要 -Dcoex-merged");
     }
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex) "pub const enabled = true;\n" else "pub const enabled = false;\n";
@@ -456,6 +461,8 @@ pub fn build(b: *std.Build) void {
         merged_mod.addImport("board", board);
         merged_mod.addImport("wifi_blobs_probe", wifi_probe_mod.?);
         merged_mod.addImport("bt_core", bt_core_mod.?);
+        const ble_gate_src = if (coex_ble_enable) "pub const enabled = true;\n" else "pub const enabled = false;\n";
+        merged_mod.addImport("coex_ble_gate", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_ble_gate.zig", ble_gate_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }
 

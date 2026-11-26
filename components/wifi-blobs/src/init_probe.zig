@@ -834,9 +834,11 @@ fn appendItem(stage: []const u8, tag: []const u8, line: []u8, used: *usize, text
 ///   * blob 交给核的东西与核的答复（`CoexTraceStats`）：申请的时延 / 时长与返回码、按事件的 PTI、
 ///     置 / 清的状态位；
 ///   * 核手里的当前值：Wi-Fi 状态位、调度间隔 / 周期 / 相位；
-///   * 核的硬件定时器寄存器 `0x2010F008`（`coex_hw_timer_tick_get` 读的就是它：低 4 位是分频码——
-///     `coex_hw_timer_freq_set` 设的那一个，位 [15:4] 是它取走的那一段计数值，位 [31:16] 的含义没有核过）
-///     隔 1 ms 读两次，原值都打出来，看它走不走。
+///   * 共存的低功耗时钟配置 `MODEM_LPCON_COEX_LP_CLK_CONF`（`0x2010F008`：位 [15:4] 是分频数，低 4 位是
+///     时钟源选择）。`coex_hw_timer_tick_get` 读它做 tick 与时间的换算——它是配置，不是计数，读两次不会变；
+///   * 核的硬件定时器（`coex_hw_timer_set` / `coex_hw_timer_enable` 的反汇编）：第 idx 个的配置与比较值在
+///     `0x2010F040 + 16*idx`，使能位在 `0x2010F408 + 16*idx` 的 bit1，状态在 `0x2010F40C + 16*idx`。
+///     核的事件表里定时器号最多用到 4，所以读 0..4；每个隔 1 ms 读两次，数值变没变就是它走没走的全部证据。
 ///
 /// 读核用的是 `g.core` 上的函数本身，不经包装函数，所以不给胶水的调用计数添数。
 pub fn coexReadings(stage: []const u8) void {
@@ -881,13 +883,23 @@ pub fn coexReadings(stage: []const u8) void {
     }
     flushLine(stage, "by event", line[0..used]);
 
+    const clk = hw.readReg(0x2010_F008);
+    log.line("coex[{s}]: coex lp clk conf 0x2010F008: 0x{x:0>8} (div_num {d}, src_sel 0x{x})", .{ stage, clk, (clk >> 4) & 0xFFF, clk & 15 });
     const t0 = hw.nowUs();
-    const h0 = hw.readReg(0x2010_F008);
+    readHwTimers(stage, "");
     while (hw.elapsedUs(t0) < 1000) {}
-    const h1 = hw.readReg(0x2010_F008);
-    log.line("coex[{s}]: hw timer 0x2010F008: 0x{x:0>8} -> 0x{x:0>8} (cnt {d} -> {d}, div {d} -> {d}, hi 0x{x:0>4} -> 0x{x:0>4}, {d} us apart)", .{
-        stage, h0, h1, (h0 >> 4) & 0xFFF, (h1 >> 4) & 0xFFF, h0 & 15, h1 & 15, h0 >> 16, h1 >> 16, hw.elapsedUs(t0),
-    });
+    readHwTimers(stage, " +1ms");
+}
+
+/// 核的 5 个硬件定时器的寄存器原值：配置 / 比较值 4 个字、使能字（bit1 = 使能）、状态字。
+fn readHwTimers(stage: []const u8, tag: []const u8) void {
+    for (0..5) |idx| {
+        const cfg = 0x2010_F040 + 16 * idx;
+        const ctl = 0x2010_F408 + 16 * idx;
+        log.line("coex[{s}]: hw timer {d}{s}: 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} en 0x{x:0>8} st 0x{x:0>8}", .{
+            stage, idx, tag, hw.readReg(cfg), hw.readReg(cfg + 4), hw.readReg(cfg + 8), hw.readReg(cfg + 12), hw.readReg(ctl), hw.readReg(ctl + 4),
+        });
+    }
 }
 
 /// `-Dcoex-merged` 的 section（`firmware/src/coex_merged.zig`）读共存核状态用的三个口子。

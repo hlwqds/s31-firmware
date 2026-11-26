@@ -1140,13 +1140,15 @@ pub fn enable() c_int {
             osal.logPublic("bt probe: sleep_cb skip (slot null)", .{});
         }
     }
+    // 锚点按符号取（`probe_ptr.bohffAnchor`）：合并镜像的布局与探针镜像不同，写死的地址在那里读到的
+    // 是不相干的内存，照着它去写会破坏别人的数据。
     // **anchor[8]+12 = SRAM 窗口基址**（2026-11-21 oracle 对拍）：官方描述符
     // `[anchor8+12]=0x2f000000`；`r_btdm_task_enable → vJfrsAScC → 4S888Ay →
     // aGdrujd2` 据此写 `[0x20101074] = base & 0xFFC00000`（blob 的紧凑句柄
     // 解码基址：`ptr = base | (idx<<2)`）。我们这边 +12=0 ⇒ 基址 0 ⇒ 解码出
     // 裸偏移（实测 mepc=0x60 = 0x18<<2）⇒ 取指 fault。task_enable 前置为官方值。
     {
-        const a8: usize = rdUsz(0x2f01_8720);
+        const a8: usize = @import("probe_ptr.zig").bohffAnchor();
         if (a8 >= 0x2f00_0000 and a8 < 0x2f10_0000 and a8 % 4 == 0) {
             const mb: *volatile u32 = mmioPtr(u32, a8 + 12);
             if (mb.* == 0) mb.* = 0x2f00_0000;

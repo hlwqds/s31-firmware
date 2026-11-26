@@ -8,8 +8,11 @@
 //!   3. BLE 侧 `initOnly`：装 OSAL 钩子、`bringup.init`，到 `INITED` 为止；
 //!   4. 读回共存核两侧的状态，逐条打 `check:` 行。
 //!
-//! 两个控制器都只做到 init 返回：不 `esp_wifi_start`、不 enable BLE、不发包。这一步不需要射频，
+//! 默认两个控制器都只做到 init 返回：不 `esp_wifi_start`、不 enable BLE、不发包。这一步不需要射频，
 //! 也不抓空口。真正的共存效果（L4）要等两个射频各自打通。
+//!
+//! `-Dcoex-ble-enable` 在末尾多一步实验：enable BLE、把 controller 任务泵 1 秒，前后读 synth 区与
+//! 时钟 / 射频状态寄存器。不发 HCI 命令，所以它回答的是"enable 走到哪"，不是 synth 锁没锁。
 //!
 //! 两套适配层在同一个镜像里怎么不打架，见 ADR-003 第 2 节与本文件的调用约定：
 //!
@@ -28,6 +31,7 @@
 //! 本文件只在 `-Dcoex-merged` 时被 `enabled` 引用；主机测试不编译它。
 
 const std = @import("std");
+const coex_ble_gate = @import("coex_ble_gate");
 
 const board = @import("board");
 const wifi = @import("wifi_blobs_probe");
@@ -47,6 +51,28 @@ extern const _heap_end: u8;
 /// 两边的适配层各自写过它：Wi-Fi 侧 init 前按 IDF 对正成 `0x1`（清掉 bit2），BLE 的 PHY 再把 bit2 置回来。
 /// 这里只读不写，给 ADR-003 §4 的归属模型（`radio-coex/src/owner.zig`）留一份板上的对照读数。
 const lpcon_clk_conf: *volatile u32 = @ptrFromInt(0x2010_F018);
+
+/// `-Dcoex-ble-enable` 的实验步骤里泵 controller 任务多久。
+const ble_pump_us: u64 = 1_000_000;
+
+inline fn rd(addr: usize) u32 {
+    return @as(*volatile u32, @ptrFromInt(addr)).*;
+}
+
+/// synth 区（`0x20109880` 起，锁定位是 `0x201098BC` 的 bit2）与时钟 / 射频状态寄存器的原值。
+/// 只读不写，也不解读：`0x201098xx` 在独立 BLE 探针里读回 0、写入留不住。
+fn readRadios(stage: []const u8) void {
+    log.line("read[ble {s}]: synth 98bc={x:0>8} 98c0={x:0>8} 98b8={x:0>8} 9880..988c={x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{
+        stage, rd(0x2010_98BC), rd(0x2010_98C0), rd(0x2010_98B8), rd(0x2010_9880), rd(0x2010_9884), rd(0x2010_9888), rd(0x2010_988C),
+    });
+    log.line("read[ble {s}]: syscon 9c00..9c0c={x:0>8} {x:0>8} {x:0>8} {x:0>8} 9c10={x:0>8} 9c14..9c20={x:0>8} {x:0>8} {x:0>8} {x:0>8}", .{
+        stage, rd(0x2010_9C00), rd(0x2010_9C04), rd(0x2010_9C08), rd(0x2010_9C0C), rd(0x2010_9C10), rd(0x2010_9C14), rd(0x2010_9C18), rd(0x2010_9C1C), rd(0x2010_9C20),
+    });
+    log.line("read[ble {s}]: fe 0438={x:0>8} 0450={x:0>8} 047c={x:0>8} lpcon+18={x:0>8} clkrst 7040={x:0>8} 71f8={x:0>8}", .{
+        stage, rd(0x2010_0438), rd(0x2010_0450), rd(0x2010_047C), rd(0x2010_F018), rd(0x2058_7040), rd(0x2058_71F8),
+    });
+    log.line("read[ble {s}]: ana f800={x:0>8} f818={x:0>8} f81c={x:0>8}", .{ stage, rd(0x2010_F800), rd(0x2010_F818), rd(0x2010_F81C) });
+}
 
 var g_passed: u32 = 0;
 var g_failed: u32 = 0;
@@ -93,6 +119,19 @@ pub fn run() bool {
     check(wifi.coexRejected() == 0, "coex rejected calls={d}", .{wifi.coexRejected()});
     // 让出点被 BLE 任务栈上的调用碰到的次数：0 说明两边在 init 期间没有经过对方的等待原语。
     check(wifi.foreign_refusals == 0, "wifi idle hook refused on ble stack n={d}", .{wifi.foreign_refusals});
+
+    // 5) 实验步骤（`-Dcoex-ble-enable`）：接着 enable BLE，把 controller 任务泵 `ble_pump_us`。前后各读一次
+    //    synth 区与时钟 / 射频状态寄存器。不发 HCI 命令。期间照样关掉 Wi-Fi 侧的让出点（同第 3 步）。
+    if (coex_ble_gate.enabled) {
+        readRadios("before enable");
+        wifi.foreign_context = true;
+        const erc = bt.probe.enableOnly(ble_pump_us);
+        wifi.foreign_context = false;
+        readRadios("after enable");
+        wifi.coexReport("ble-enable");
+        wifi.coexReadings("ble-enable");
+        check(erc == 0, "ble bringup.enable rc={d}", .{erc});
+    }
 
     log.line("checks: passed={d} failed={d} total={d}", .{ g_passed, g_failed, g_passed + g_failed });
     return g_failed == 0;
