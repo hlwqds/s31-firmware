@@ -39,6 +39,10 @@
   `scripts/check-host.sh`、`scripts/check-coverage.py`、`scripts/check-invariants.py` 通过。没有做：连接（WPA2-PSK 关联 +
   4 次握手）、收发、PHY 标定数据的持久化；回调表里连接路径的入口还没填，其中多处调用点不判空，连接之前必须先填齐。
   （连接与收发已于同日晚打通，见上面两条。）
+  **【2026-11-26 更正】另有一个前提**：上面的读数和之后连上真实 AP 的每一轮都开着 `-Dcoex`（共存胶水加 `libcoexist.a` 的真核心）。
+  同一份探针只把 `-Dcoex` 关掉，扫描又是 0 个 AP、连接 `reason=201`，两轮相同——不开共存核时 MAC 不收帧
+  （`logs/wifi-link-nocoex-boot.log`）。所以扫描的条件是三样：共存核已启动、APM 过滤器已关、supplicant 回调表已登记。
+  细目见 `docs/verification/coex-verification.md` §13。
 - **Wi-Fi 探针在扫描走通之前修掉的几处运行时缺陷（2026-11-25 至 26；与上一条同在提交 `a28df73`，当时只写进了提交说明，这里补记）**：
   ① `link_stubs.zig` 的国家码 / 信道表原是 4 KiB 的零值桩——链接能过，但驱动拿到的是「没有国家配置」，扫不到任何 AP；换成 IDF 的真实数据。
   ② `osi_impl.zig` 的软件定时器表只有 16 项，扫描起始的信道定时器排不进表，扫描走不完；扩到 32 项。
@@ -140,11 +144,33 @@
     （`logs/wifi-link-connect-boot.log`，邻居的 SSID 与 BSSID 已脱敏）。AP 的凭据经 `-Dwifi-ap-ssid` / `-Dwifi-ap-password` 给，不入库。
     没有抓包；只有 WPA2-PSK + CCMP-128、一台 AP。细目见 `docs/verification/wifi-ieee80211-verification.md` §11。
   - 主机用例 2045 → 2064（`wifi-blobs` 43 → 62：`wpa_cb.zig` 13 → 20、`data_path.zig` 新增 6、`nvs_ram.zig` 新增 5、`host_tests.zig` 25 → 26）。
+- **共存核是 Wi-Fi 收发的前提；合并镜像里的 BLE enable；L4a 定时器读数的更正（2026-11-26）**：
+  - **不开共存核的对照**（ADR-003 L4a 那条「ping 与不开共存时一样」）：同一份真实链路探针去掉 `-Dcoex`，两轮都是扫描 0 个 AP、
+    连接 `reason=201`（`logs/wifi-link-nocoex-boot.log`）。有文档的 523 个寄存器在 start 之后差 7 个：共存低功耗时钟的配置
+    `MODEM_LPCON_COEX_LP_CLK_CONF`、`DCMEM_VALID_0..2`、`MODEM_INTR_STATUS` 在不开共存时是 0；扫描中 MAC 的
+    `0x2010408C`–`0x20104094`、`0x20104300` 与一批 BB 寄存器也是 0。所以"扫描不到任何 AP"的条件是三样（见下面那一条的更正），
+    `-Dcoex` 对要收发的 Wi-Fi 镜像不是可选项。细目见 `docs/verification/coex-verification.md` §13。
+  - **合并镜像里的 BLE enable**：`firmware/build.zig` 新增 `-Dcoex-ble-enable`（要求 `-Dcoex-merged`），`coex_merged` section
+    在两个 init 之后 enable BLE、把 controller 任务泵 1 秒、前后读 synth 区与时钟 / 射频状态寄存器（`bt-blobs/src/probe.zig`
+    新增 `enableOnly` / `pumpFor`）。`bringup.enable()` 里的 anchor[8] 从写死的 `0x2f01_8720` 改成按符号取——合并镜像里那个符号在
+    `0x2f024098`。板侧：`bringup.enable rc=0`、`ENABLED`，共存核 BLE 侧 `enabled`，7/7 检查、`verdict=pass`，没有锁死；
+    synth 锁定位 `0x201098BC` 的 bit2 在 enable 前后都是 0（官方序列 enable 之后是 4），所以 APM 过滤器已关、ICG 码已设、
+    共存核已启动都不是 R3.3（synth）的解（`logs/coex-merged-ble-enable-boot.log`，`coex-verification.md` §14）。
+    合并镜像的配方要加 `esp_wifi_regulatory.c.obj`，否则链接期 `regdomain_table` / `regulatory_data` 未定义。
+  - **L4a 读数的更正**：`coexReadings` 原先把 `0x2010F008` 当成"核的硬件定时器寄存器"读两次，读的其实是共存低功耗时钟的配置。
+    改成读定时器本身（`0x2010F040 + 16*idx` 与 `0x2010F408 + 16*idx`，出自 `coex_hw_timer_set` / `coex_hw_timer_enable`
+    的反汇编）。只开 Wi-Fi 的那一轮没有定时器被武装（blob 只申请了没有配定时器的事件）；合并镜像里 BLE enable 之后 5 个定时器的
+    使能位也都是 0。
 - **共存的 L4a 读数（2026-11-26）**：真实链路探针开着 `-Dcoex` 时，在 start 后、扫描后、连上、ping 结束、断开前后各取一次共存核的读数
   （`init_probe.zig` 的 `coexReadings`：胶水两侧的状态、各钩子被调的次数、每次申请的事件 / 时延 / 时长与返回码、按事件的释放与 PTI、
   置 / 清的状态位、核里的状态位与调度参数、硬件定时器寄存器）。读数：胶水零拒绝；blob 的 13 次申请核都回 `0x102`，因为这些事件在核的
   事件表里没有硬件定时器（只有事件 1、2、36、38、45、46 有）；BLE 没开，核的状态位与硬件定时器都是 0。ADR-003 第 5 节把 L4 拆成
   L4a（只开 Wi-Fi，已有读数）与 L4b（两个射频都开，等 R3.3），并写下 L4b 的做法与判据。细目见 `docs/verification/coex-verification.md` §12。
+  **【2026-11-26 更正】**这条里"核的状态位与硬件定时器都是 0"的后半句不成立：当时读的 `0x2010F008` 是 `MODEM_LPCON_COEX_LP_CLK_CONF`
+  （共存低功耗时钟的配置），不是计数器，读两次不变说明不了定时器走没走；这一轮 blob 只申请了没有配定时器的事件，没有定时器被武装。
+  `coexReadings` 已改成读定时器寄存器（`0x2010F040 + 16*idx`、`0x2010F408 + 16*idx`，出自 `coex_hw_timer_set` /
+  `coex_hw_timer_enable` 的反汇编），下次上板才有数。同日补的不开共存对照见上面"Wi-Fi blob 扫描不到任何 AP"一条的更正；
+  ADR-003 里「ping 与不开共存时一样」这条判据作废。
 - **无线离线特性第五批（2026-11-25）**：与前几批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
   与按原文写的 Python 模型的对拍、板侧自检（主机桩与真板）。验收之后经独立评审两轮（Wi-Fi 15 条 + 残留 6 条、BLE 7 条）返修并复验，
   终态随 `wifi` profile 上板：**`PASS board:wifi`，14/14 个 section 全过、`main: verdict=pass`**——三个无线 section 的判据全部
@@ -357,6 +383,8 @@
   SHA-256 全部相同（默认镜像即 `net`：`app.bin` 243 488 B、`app.elf` 223 280 B）；只有 `wifi`（irom +176 848 B）与 `full`（irom +142 832 B）变大。
 - **共存 glue 接进两套适配层（路线图 C2，2026-11-24）**：构建开关 `-Dcoex`，配 `-Dcoex-objs` 给 `libcoexist.a`
   的成员；默认关。
+  **【2026-11-26 更正】**"默认关"只对不做 Wi-Fi 收发的镜像成立：共存核不启动，Wi-Fi blob 收不到帧
+  （`docs/verification/coex-verification.md` §13）。
   - BLE 侧：`components/osal/src/osal.zig` 的 11 个 `wr_btdm_coex_*` 开关打开时转发给胶水，另补 5 个缺失的强定义；
     适配表的 18 个 OS 钩子在 `components/osal/src/coex_hooks.zig`（8 项用例）；`bt-blobs` 的 `btdmCoexInit/Enable`
     转发，`src/coex_wiring.zig` 在 `bringup.init` 之前启动核并打诊断。

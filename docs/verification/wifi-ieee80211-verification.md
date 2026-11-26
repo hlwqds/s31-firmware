@@ -720,6 +720,12 @@ wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
 上一轮扫描能逐信道走完但恒为 0 个 AP，原因有两处。走到这一步之前还拆过两道更早的闸——国家码 / 信道表是零值桩、
 软件定时器表只有 16 项——与下面两处修在同一个提交里，记在 `CHANGELOG.md`。
 
+**【2026-11-26 更正】这两处之前还有一个前提：共存核必须启动。** 这一节的板侧读数和之后的每一轮都开着 `-Dcoex`（共存胶水加
+`libcoexist.a` 的真核心）。同一份探针只把 `-Dcoex` 关掉，扫描又是 0 个 AP、连接 `reason=201`，两轮相同：不开共存核时 MAC 不收帧，
+有文档的寄存器里共存低功耗时钟的配置（`MODEM_LPCON_COEX_LP_CLK_CONF`）与 `DCMEM_VALID_*` 都是 0。所以扫描通到真实 AP 的条件是
+三样——共存核已启动、APM 过滤器已关、supplicant 回调表已登记；后两处各自的单变量实验都是在共存核开着时做的。证据见
+`coex-verification.md` §13。
+
 **其一：APM 访问控制过滤器。** IDF 的应用在启动期调 `bootloader_init_mem()`，其中把三条访问路径的控制过滤器关掉：
 `LP_APM_FUNC_CTRL`（0x20706CBC）、`HP_APM_FUNC_CTRL`（0x205044C4）、`HP_MEM_APM_FUNC_CTRL`（0x205048C4）写 0
 ——对照镜像 ELF 里这个函数的反汇编开头正好是这三条写 0。这三行在二级 bootloader 里被 `#if !BOOTLOADER_BUILD` 跳过，
@@ -749,7 +755,7 @@ wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
 
 主机用例 13 项（`wpa_cb.zig`）。
 
-板侧读数（`logs/wifi-link-scan-boot.log`，`-Dcoex` 与真实链路探针同开；入库的日志是脱敏副本，除用户自己的 AP
+板侧读数（`logs/wifi-link-scan-boot.log`，`-Dcoex` 开着，它是前提，见本节开头的更正；入库的日志是脱敏副本，除用户自己的 AP
 `hl-wifi` 外，邻居的 SSID 与 BSSID 换成了标签，信道、RSSI、authmode 是原值）：
 
 ```text
