@@ -1385,7 +1385,11 @@ pub fn intrArm(src: c_int) void {
                     // bridgeDrain 激活后才开（见 probe.zig "ISR 桥 IE 延迟使能"，
                     // 对 input 21 与 input 53 同时生效）。
                     hw.writeReg(0x1080_1000 + routed_input * 4, 1 << 24); // 仅 prio
-                    if (freestanding) board.trap.setHandler(routed_input, bridgeIsr, s);
+                    // 下标必须是**外部中断号**（CLIC 输入号减 16）：`trapDispatch` 按 `input - 16` 查表（`trap.zig` 的
+                    // `setHandler` 注释）。此前登记在 24、分发查的是 8 ⇒ 查不到 ⇒ 这个电平中断没人屏蔽，一触发就
+                    // 无限重入、主上下文饿死——合并镜像里广播使能的回包之后"整机失声"就是它（2026-11-27，
+                    // `coex-verification.md` §17.5）。独立探针的默认路径不开全局中断，这条路径在它那里没有跑过。
+                    if (freestanding) board.trap.setHandler(routed_input - 16, bridgeIsr, s);
                     break;
                 }
             }

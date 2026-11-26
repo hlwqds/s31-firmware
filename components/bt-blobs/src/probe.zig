@@ -1010,12 +1010,110 @@ pub fn setPhyOwnedByWifi() void {
 }
 
 /// 把 blob 改掉的三个时钟门控字写回 `enableOnly()` 拍的基线：blob 在 enable 之后会动 UART0 与定时器组的门控，
-/// 不写回去串口与定时器就停了，所以泵的每一轮都做。广播使能之后它不够用（见下面落盘记录一节的注释）。
+/// 不写回去串口与定时器就停了，所以泵的每一轮都做。
 fn restoreClockGates() void {
     const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
     c2[0x88 / 4] = clk_snap[0];
     c2[0x114 / 4] = clk_snap[1];
     c2[0x11C / 4] = clk_snap[2];
+}
+
+/// 合并镜像的广播实验（`-Dcoex-adv-irq`）：发广播使能之前给 trap 处理器挂一个**每个中断调一次**的钩子。钩子每 512 个
+/// 中断记一次被中断的 PC，每 4096 个中断打一行（按 CPU 周期数限速）：各 CLIC 输入的计数（从武装起算）与最近几个 PC。
+/// 板子失声之后这些行还在不在、说的是什么，就是判读依据——它们都是从中断里打出来的，不经过主上下文：
+///   - 某个输入的计数暴涨 = 它没被清掉、进来就重入，主上下文是被它饿死的；
+///   - 计数照常慢慢涨、PC 指着同一处 = 中断都正常，主上下文只是停在那里；
+///   - 一行都没有 = 中断不再进（全局中断被关，或时钟停了）。
+///
+/// 不武装 T0：合并镜像里 TIMG0 T0 的中断就是 BT 归档自己的 tick（`bringup` 武装的），trap 处理器重设闹钟会把它搅乱
+/// （2026-11-27 实测：一武装，中断计数每秒多出几十万）。
+pub var irq_probe = false;
+
+var irq_probe_n: u32 = 0;
+var irq_probe_pcs: [8]u32 = @splat(0);
+var irq_probe_pcs_n: u8 = 0;
+var irq_probe_last_c: u64 = 0;
+
+/// 把各输入的计数写成 `3:1234 7:5 …`，返回长度。
+fn fmtInputs(buf: []u8, counts: []const u32) usize {
+    var n: usize = 0;
+    for (counts, 0..) |c, i| {
+        if (c == 0) continue;
+        if (n + 24 > buf.len) break;
+        const s = std.fmt.bufPrint(buf[n..], "{d}:{d} ", .{ i, c }) catch break;
+        n += s.len;
+    }
+    return n;
+}
+
+fn irqProbeTick(pc: usize) void {
+    irq_probe_n +%= 1;
+    if (irq_probe_n % 512 == 0) {
+        irq_probe_pcs[irq_probe_pcs_n % irq_probe_pcs.len] = @truncate(pc);
+        irq_probe_pcs_n +%= 1;
+    }
+    if (irq_probe_n % 4096 != 0) return;
+    // 风暴时每 4096 个中断不到 10 ms：按 CPU 周期数限速，至少隔 200 M 个周期（0.75–2.5 秒）打一行。
+    const c = board.hw.cycleCount();
+    if (irq_probe_last_c != 0 and c -% irq_probe_last_c < 200_000_000) return;
+    irq_probe_last_c = c;
+    var buf: [96]u8 = undefined;
+    const n = fmtInputs(&buf, &board.trap.input_counts);
+    const k: usize = @min(irq_probe_pcs_n, 4);
+    board.log.line("bt adv: irq n={d} inputs {s}pc {x} {x} {x} {x}", .{
+        irq_probe_n,                                   buf[0..n],
+        irq_probe_pcs[(irq_probe_pcs_n -% k + 0) % 8], irq_probe_pcs[(irq_probe_pcs_n -% k + 1) % 8],
+        irq_probe_pcs[(irq_probe_pcs_n -% k + 2) % 8], irq_probe_pcs[(irq_probe_pcs_n -% k + 3) % 8],
+    });
+}
+
+fn armIrqProbe() void {
+    // 诊断：哪些中断源被映射到输入 24（BLE 中断的官方输入）与 25（BT 归档的 tick）；分发器为它们查得到 handler 吗；
+    // 这两个输入的 CLIC 控制字与 mie 位现在是什么。
+    {
+        var line: [160]u8 = undefined;
+        var n: usize = 0;
+        var src: usize = 0;
+        while (src < 128) : (src += 1) {
+            const m = board.hw.readReg(0x2058_5000 + src * 4) & 0x3F;
+            if (m != 24 and m != 25) continue;
+            const s = std.fmt.bufPrint(line[n..], "{d}->{d} ", .{ src, m }) catch break;
+            n += s.len;
+        }
+        board.log.line("bt adv: irq map to input 24/25: {s}", .{line[0..n]});
+        const h8 = board.trap.getHandler(8);
+        const h24 = board.trap.getHandler(24);
+        const mie: usize = asm volatile ("csrr %[v], mie"
+            : [v] "=r" (-> usize),
+        );
+        board.log.line("bt adv: handler(8)=0x{x} handler(24)=0x{x} clic24=0x{x:0>8} clic25=0x{x:0>8} mie24={d} mie25={d}", .{
+            @intFromPtr(h8.fn_), @intFromPtr(h24.fn_), board.hw.readReg(0x1080_1000 + 24 * 4), board.hw.readReg(0x1080_1000 + 25 * 4),
+            (mie >> 24) & 1,     (mie >> 25) & 1,
+        });
+    }
+    var buf: [120]u8 = undefined;
+    const n = fmtInputs(&buf, &board.trap.input_counts);
+    board.log.line("bt adv: irq probe: inputs since boot {s}", .{buf[0..n]});
+    board.trap.input_counts = @splat(0);
+    irq_probe_n = 0;
+    irq_probe_pcs_n = 0;
+    irq_probe_last_c = 0;
+    board.trap.irq_tick_hook = &irqProbeTick;
+    board.log.line("bt adv: irq probe armed: hook on every interrupt, prints every 4096 interrupts", .{});
+}
+
+/// trap 分发器为 CLIC 输入 `input` 查到的 handler（按外部中断号 `input - 16` 查，查不到是 0）。合并镜像在发广播使能
+/// 之前核对 BLE 中断桥确实登记在分发器查的那个下标上：登记错位时这个电平中断没人屏蔽，一触发就无限重入、主上下文
+/// 饿死——2026-11-27 之前合并镜像里"广播使能之后整机失声"就是它。
+pub fn handlerForInput(input: usize) usize {
+    if (input < 16) return 0;
+    return @intFromPtr(board.trap.getHandler(input - 16).fn_);
+}
+
+/// 中断桥的三个计数（`bringup.zig`）：ISR 入环次数、主上下文代跑次数、环满丢弃次数。合并镜像在广播那一步的收尾
+/// 读一次：blob 的 ISR 经桥跑了多少次。
+pub fn bridgeStats() struct { queued: u32, drained: u32, dropped: u32 } {
+    return .{ .queued = bringup.bridge_w, .drained = bringup.bridge_ran, .dropped = bringup.bridge_dropped };
 }
 
 var pump_rounds: u32 = 0;
@@ -1200,6 +1298,7 @@ fn hciCommand(opcode: u16, params: []const u8, timeout_us: u64) ?[]const u8 {
     board.log.line("bt adv: send 0x{x:0>4} plen={d} (from the sender task)", .{ opcode, params.len });
     _ = markerWrite(.command, opcode, 0x100, rd32(0x2010_98BC), rd32(0x2010_F800), transport.evtSeq());
     if (opcode == 0x200A) marker_frozen = true;
+    if (opcode == 0x200A and irq_probe) armIrqProbe();
     const rc = sendFromTask(opcode, params, timeout_us, hci_max_rounds);
     if (rc != 0) {
         board.log.line("bt adv: cmd 0x{x:0>4} not sent, rc={d}", .{ opcode, rc });

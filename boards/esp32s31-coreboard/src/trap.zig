@@ -313,6 +313,9 @@ pub var input_counts: [64]u32 = @splat(0);
 /// 我们的 `mtvec` 会遮蔽 bootloader/ROM 装的中断向量；blob 把 TIMG0_T0 当自己的 tick，
 /// 只采样不转发会让它永远等不到 tick。
 pub var chain_other_irqs: bool = false;
+/// 每次进中断调一次，参数是被中断的 PC（默认 null）。合并镜像的广播实验用它从 trap 里打各输入的计数与 PC：
+/// 主上下文被没清掉的中断饿死之后，只有 trap 里的代码还在跑。钩子必须很短（每个中断都会调）。
+pub var irq_tick_hook: ?*const fn (pc: usize) void = null;
 
 /// trap handler 的私有栈。inline asm 里的 `la sp, trap_stack_buf` **不算 Zig 引用**，
 /// 会被 gc-sections 丢掉（实测 `ld.lld: undefined symbol: trap_stack_buf`），
@@ -557,6 +560,7 @@ pub export fn trapDispatch(frame: *TrapFrame) bool {
         irq_count +%= 1;
         const input = cause & 0x3F;
         if (input < input_counts.len) input_counts[input] +%= 1;
+        if (irq_tick_hook) |hk| hk(frame.mepc);
         // 输入 25 默认自己 ack。**转发给 ROM 入口已被实测证伪**：ack 后 jr rom_mtvec 会
         // `instruction access fault`（mepc==mtval）——`mtvec` 低 2 位是 CLIC 模式，掩位后的基址
         // 是**向量表基址**而不是代码入口；而且 ROM 的 `s_intr_handlers` 里没有输入 25 的 handler。
@@ -1582,7 +1586,7 @@ pub var give_stats_hook: ?*const fn () u64 = null;
 /// 打包 4 个 16-bit 的 `_semphr_create` 参数（max<<16|init）。
 pub var sem_args_hook: ?*const fn () u64 = null;
 var rom_handler_calls: usize = 0;
-var last_input: u32 = 0;
+pub var last_input: u32 = 0;
 
 /// 哨兵 ISR（只用于自检表可读性，永不作为真实 handler 执行）。
 fn sentinelIsr(_: ?*anyopaque) callconv(.c) void {}

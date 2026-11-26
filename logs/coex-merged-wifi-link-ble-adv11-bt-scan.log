@@ -1,0 +1,8 @@
+工作站蓝牙扫描摘录，2026-11-27（ble adv11 轮，开跑前 05:39:31 起扫 230 秒）
+命令：bluetoothctl --timeout 230 scan on
+板子在最后 15 秒的窗口里单独广播（HCI LE Set Advertising Enable，广播名 s31）；下面两行是扫描输出里带板子的全部行，
+其余设备只给计数（邻居设备的名字与地址不入库）：
+distinct devices seen: 12
+2:Discovery started
+18:[[0;92mNEW[0m] Device 02:00:00:00:BB:01 s31
+26:[[0;91mDEL[0m] Device 02:00:00:00:BB:01 s31

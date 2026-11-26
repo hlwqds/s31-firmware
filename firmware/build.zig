@@ -83,9 +83,13 @@ pub fn build(b: *std.Build) void {
     // 合并镜像在真实链路之前打一份寄存器转储（标签 `after-ble-init`，标签之后接扫描），只读不写（要求 `-Dcoex-wifi-link`）。
     const coex_dump = b.option(bool, "coex-dump", "merged image only: dump registers just before the Wi-Fi link") orelse false;
     // 合并镜像的 BLE 广播实验（要求 `-Dcoex-ble-enable`）：所有判据跑完之后，经 HCI 让 BLE controller 发不可连接
-    // 广播（LE Set Advertising Parameters / Data / Enable），边泵 controller 任务边读 synth 锁定位。排在最后是因为
-    // controller 若把广播使能处理成不回包，`sendCmd` 就不返回（R3.3 的 synth 墙）。
+    // 广播（LE Set Advertising Parameters / Data / Enable），边泵 controller 任务边读 synth 锁定位，再让 Wi-Fi 在 BLE
+    // 广播着的时候走一遍真实链路（ADR-003 第 5 节的 L4b），最后让 BLE 单独再广播 15 秒。排在最后：这一步出问题时
+    // 前面的判据已经打完。
     const coex_ble_adv = b.option(bool, "coex-ble-adv", "merged image only: after every check, start BLE advertising over HCI and read the synthesizer lock bit") orelse false;
+    // 合并镜像广播实验的中断探针（要求 `-Dcoex-ble-adv`）：发广播使能之前给 trap 处理器挂一个每个中断调一次的钩子，
+    // 每 4096 个中断打一行各 CLIC 输入的计数与最近几个被中断的 PC——哪个输入在风暴、主上下文是被谁饿死的，看它。
+    const coex_adv_irq = b.option(bool, "coex-adv-irq", "merged image with -Dcoex-ble-adv: hook every interrupt in the trap handler and print the per-input counts plus recent interrupted PCs every 4096 interrupts") orelse false;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
@@ -107,6 +111,7 @@ pub fn build(b: *std.Build) void {
     if (coex_ble_enable and !coex_merged) @panic("-Dcoex-ble-enable 需要 -Dcoex-merged");
     if (coex_wifi_link and !coex_merged) @panic("-Dcoex-wifi-link 需要 -Dcoex-merged");
     if (coex_dump and !coex_wifi_link) @panic("-Dcoex-dump 需要 -Dcoex-wifi-link");
+    if (coex_adv_irq and !coex_ble_adv) @panic("-Dcoex-adv-irq 需要 -Dcoex-ble-adv");
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex)
         (if (coex_sw_off) "pub const enabled = true;\npub const sw_off = true;\n" else "pub const enabled = true;\npub const sw_off = false;\n")
@@ -487,7 +492,7 @@ pub fn build(b: *std.Build) void {
         // 时钟域按单元取并集的板上判据要用 IDF 的单元表（`radio_coex.owner.clocks`）；合并镜像要求 `-Dcoex`。
         merged_mod.addImport("radio_coex", coex_mod);
         if (coex_ble_adv and !coex_ble_enable) @panic("-Dcoex-ble-adv 需要 -Dcoex-ble-enable：广播之前 controller 要先 enable");
-        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv });
+        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq });
         merged_mod.addImport("coex_merged_opts", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_merged_opts.zig", merged_opts_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }
