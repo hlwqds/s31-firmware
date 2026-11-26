@@ -30338,6 +30338,7 @@ blob 的 OkE7 里有**多级间接**：
 | LE 命令 CC（0x2006/0x2008/RSSI）               | ✅ **全部投递**（轮 86 per-send evt 4→5→6→7→8，RSSI status=0） | FWD06/FWD8/F1/F2 行 + LASTCC |
 | rfready 守卫                                   | 生效（RF 未就绪时跳过 0x200A，不再挂死）                       | `F3 SKIP rfready=0`          |
 | 零清修复（`*(0x2f011138)=0` before task_init） | 生效                                                           | 轮 73 起 evt=4 稳定复现      |
+| **两个射频同镜**（`-Dcoex-merged` + `-Dcoex-wifi-link`） | 合并镜像里 BLE 的 init 与 enable 都返回 0，没有锁死；同一镜像里 Wi-Fi 连上真实 AP、DHCP、ping 10/10（2026-11-26）。**前提是 Wi-Fi 先 start**：`bringup.init` 第 15 步的 `esp_phy_load_cal_and_init` 和 `probe_ptr.initPhy` 只在 PHY 没被 Wi-Fi 打开时才做（`phy_owned_by_wifi`） | `docs/verification/coex-verification.md` §14、§15；文末「轮 163」 |
 
 ## 解读更正账本（勿再引用旧结论）
 
@@ -31535,3 +31536,36 @@ NOT_FOUND ⇒ 每回 FULL 校准 + 重入循环。改为真实存取（RAM NVS �
 esp_phy_calibration_data_t + 正确 checksum）⇒ 后续 boot 加载持久 cal = 跳过
 FULL = 重入循环消失。轮 95b「故意 NOT_FOUND」决策 = 在无重入循环认知下做出，
 现需重新评估（loop 的存在 = 本次环取证新证）。
+
+## 轮 163（2026-11-26）：两个射频同镜时 PHY 归先使能它的那一方
+
+合并镜像（`-Dcoex-merged`，Wi-Fi blob 与 BLE controller blob 同镜）第一次带着 BLE 走通 Wi-Fi 的真实链路：BLE 的
+`init` 与 `enable` 都返回 0，Wi-Fi 扫描 40 个 AP、连上、DHCP、ping 10/10，`verdict=pass`。过程中定案一条规则：
+**PHY 的一次性初始化与标定只认第一次使能，第二个射频的 init 不能再做一遍。**
+
+| 顺序 | 读数 | 根因 |
+| --- | --- | --- |
+| BLE 先 init，Wi-Fi 后 start | Wi-Fi 的 `register_chipv7_phy` 返回 0，标定数据是空的（非零 6/1904 字节）；扫描 3 个 AP | 一次性初始化被 BLE 的 init 用掉，库不再做 |
+| Wi-Fi 先 start，BLE 后 init | Wi-Fi 标定成功（262 个非零字节）；BLE init 之前扫描 34–37 个 AP，之后 1–4 个（当时的读数，原始日志没有入库） | `bringup.init` 第 15 步调了 IDF 的 `esp_phy_load_cal_and_init`：IDF 自己的 `s_is_phy_calibrated` 还是 0（Wi-Fi 走的是探针的钩子），于是做了一次全量重新标定，把 Wi-Fi 建立好的 PHY 配置冲掉 |
+
+修法（`probe_ptr.zig` 的 `phy_owned_by_wifi`，合并镜像里 Wi-Fi start 成功后由 `firmware/src/coex_merged.zig` 置位）：
+
+- `probe_ptr.initPhy()` 整段跳过。IDF 的 `esp_phy_enable` 只在 modem 标志为 0 时才初始化，BT 在 Wi-Fi 之后使能时
+  只把自己或进标志（`phy_init.c:324-406`）。
+- `bringup.init` 第 15 步的 `mce(13)` + `esp_phy_load_cal_and_init()` 跳过。
+
+排除过的（单独做都不够）：只跳过 `initPhy`；只把 `CLK_CONF1` 的 Wi-Fi 时钟位或回去；换 IDF 真的 modem clock 对象
+（`MODEM_SYSCON` 的寄存器一字未变）；把快照里有文档的 523 个与定点的 55 个寄存器里变化过的全部写回（42 个）；
+Wi-Fi 停掉再 start。时基用 CPU 的周期计数器校准过（三个阶段都是 80 MHz 对 1 MHz 的定时器），不是时钟变快。
+扫描用时 2.42 秒是正常的：信道 1–11 主动扫描各 120 ms、12–14 被动扫描各 360 ms；单独的 Wi-Fi 探针日志里
+的 9 秒含停下来打转储的时间。
+
+还没做的：
+
+- BLE 的 init 仍会整字改写 `MODEM_SYSCON_CLK_CONF1`（`btdm_lp_enable_clock`），Wi-Fi 基带的时钟位跟着被关掉。
+  合并镜像现在是事后把时钟 / 电源寄存器按快照写回（`init_probe.radioRestore(1)`）；正解是时钟配置按两个射频的
+  需求取并集（ADR-003 第 4 节的归属模型）。
+- BLE 的射频没有起（synth 墙，见上文「ADV-enable 时钟收缩」的定案机制）：合成器是 `0x200A` 之后才上电的，
+  enable 之后读到 `98BC=0` 是预期值。
+- 合成器上电之后两个射频真的抢天线会怎样，没有任何证据（L4b）。
+

@@ -39,6 +39,10 @@ const coex_gate = @import("coex_gate");
 /// 供 start.zig 做 comptime 选择：探针构建为 true。
 pub const enabled = true;
 
+/// 泵每走一步之后的一个钩子。合并镜像（`-Dcoex-merged` + `-Dcoex-wifi-link`）用它让 BLE 的 controller
+/// 任务也走一步，两个控制器在同一个主循环里轮转；探针镜像里是 null，行为不变。
+pub var co_pump: ?*const fn () void = null;
+
 // ---------------------------------------------------------------------------
 // 结构体布局：用 IDF 参照构建的编译命令（`~/esp/bt-ctl-oracle/build/compile_commands.json`
 // 里 `esp_adapter.c` 那一条）编了一个 `sizeof` / `offsetof` 探针，数值取自目标文件：
@@ -89,6 +93,8 @@ var scan_done: bool = false;
 var sta_connected: bool = false;
 var sta_disconnected: bool = false;
 var disconnect_reason: u8 = 0;
+/// 连上之后那 5 秒里有没有掉线（`linkRest()` 报结果用；`connectPhase()` 置位）。
+var stayed_connected: bool = false;
 
 /// 记 blob 发出的每一个 `WIFI_EVENT`（`_event_post` → `event_bus.post` 的同步派发）。
 fn onWifiEvent(arg: ?*anyopaque, base: ?*const anyopaque, id: i32, data: ?*const anyopaque) callconv(.c) void {
@@ -182,6 +188,7 @@ fn pumpFor(us: u64, tag: []const u8) void {
     while (hw.elapsedUs(t0) < us) {
         initp.idleHook();
         stubWatch();
+        if (co_pump) |f| f();
     }
     log.line("wifi-link-probe: {s}: {d} us, hooks +{d}, event posts +{d}", .{
         tag, hw.elapsedUs(t0), impl.event_count - hooks0, event_bus.posts - posts0,
@@ -195,6 +202,7 @@ fn pumpUntil(cond: *const bool, timeout_us: u64) bool {
         if (hw.elapsedUs(t0) >= timeout_us) return false;
         initp.idleHook();
         stubWatch();
+        if (co_pump) |f| f();
     }
     return true;
 }
@@ -262,6 +270,7 @@ fn connectPhase() void {
         // 连上之后再泵 5 秒：看稳不稳。
         sta_disconnected = false;
         pumpFor(5_000_000, "connected: pump 5 s");
+        stayed_connected = !sta_disconnected;
         ipath.stop(); // 断开之前注销收帧回调
         coexStage("before-disconnect");
         if (sta_disconnected) {
@@ -760,4 +769,129 @@ pub fn run() noreturn {
     }
     log.raw("wifi-link-probe: done\n");
     hw.halt();
+}
+
+// ---------------------------------------------------------------------------
+// 合并镜像用的真实链路步骤（`firmware/src/coex_merged.zig`，`-Dcoex-wifi-link`）
+// ---------------------------------------------------------------------------
+
+/// `linkRest()` 的结果。每一步的细节都在日志里（前缀 `wifi-link:` 与 `wifi-link-probe:`），这里只留判据要用的几项。
+pub const LinkResult = struct {
+    scan_done: bool = false,
+    /// 全信道扫描结束时的 AP 数；扫描超时就是超时那一刻的数。
+    ap_num: u16 = 0,
+    /// 构建时没给 AP 的 SSID 时连接阶段整段不做，下面几项保持初值。
+    connect_attempted: bool = false,
+    connected: bool = false,
+    dhcp: bool = false,
+    ping_done: bool = false,
+    /// 连上之后那 5 秒里没有断开。
+    stayed: bool = false,
+    /// 连接阶段结束时的断开原因码；本地主动断开是 8。
+    disconnect_reason: u8 = 0,
+};
+
+fn logArena(tag: []const u8) void {
+    log.line("wifi-link: arena[{s}]: free={d}/{d} B", .{ tag, impl.arena_state.bytes_free, impl.arena_state.bytes_total });
+}
+
+/// 只做一次全信道扫描，返回扫到的 AP 数。合并镜像用它在 BLE 的 init 之前先量一次，作为"Wi-Fi 单独在合并镜像里
+/// 正不正常"的基线。
+pub fn linkScan(tag: []const u8) u16 {
+    scan_done = false;
+    const t0 = hw.nowUs();
+    const rc = esp_wifi_scan_start(null, false);
+    log.line("wifi-link: scan[{s}]: esp_wifi_scan_start rc=0x{x}", .{ tag, @as(u32, @bitCast(rc)) });
+    const got = pumpUntil(&scan_done, 10_000_000);
+    var n: u16 = 0;
+    const num_rc = esp_wifi_scan_get_ap_num(&n);
+    log.line("wifi-link: scan[{s}]: {s} in {d} ms, esp_wifi_scan_get_ap_num rc=0x{x} n={d}", .{
+        tag, if (got) "GOT" else "timeout", hw.elapsedUs(t0) / 1000, @as(u32, @bitCast(num_rc)), n,
+    });
+    return n;
+}
+
+/// 合并镜像用的真实链路主干，分两段：`linkStart()`（`esp_wifi_set_mode` → `esp_wifi_start` → 开 blob 的中断）与
+/// `linkRest()`（全信道扫描 → 构建时给了 AP 的 SSID 才做：连接、DHCP、ping 网关、断开）。`initOnly` 已经由调用方
+/// 做过。不带 `run()` 里的诊断（寄存器转储、ISR 包装、镜像实验、计数桩快照）。泵每走一步之后调 `co_pump`。
+///
+/// 分两段是为了让调用方能安排顺序：PHY 库的一次性初始化与标定只认第一次使能，谁先使能谁做。合并镜像里
+/// （`-Dcoex-wifi-link`）要 Wi-Fi 来做这一次，就在 `linkStart()` 之后才做 BLE 的 init 与 enable，再调 `linkRest()`。
+/// `linkStart()` 返回 `esp_wifi_start` 的返回码（0 = 已经 start 并开了中断）。
+pub fn linkStart() c_int {
+    initp.idle_quiet = true;
+
+    _ = event_bus.esp_event_handler_register(WIFI_EVENT.*, -1, onWifiEvent, null);
+    const mode_rc = esp_wifi_set_mode(wifi_mode_sta);
+    log.line("wifi-link: esp_wifi_set_mode(STA) rc=0x{x}", .{@as(u32, @bitCast(mode_rc))});
+
+    const start_rc = esp_wifi_start();
+    log.line("wifi-link: esp_wifi_start rc=0x{x} (hooks={d}, events={d})", .{
+        @as(u32, @bitCast(start_rc)), impl.event_count, event_count,
+    });
+    if (start_rc != 0) return start_rc;
+    coexStage("after-start");
+
+    // 先不开中断泵半秒，再按映射表的实况开中断——与 `run()` 里同一段，原因见那里的注释：blob 在 start 里
+    // 装好了 ISR 和映射，但没人给电平输入设优先级，优先级 0 的输入不会触发。
+    pumpFor(500_000, "pump, interrupts off");
+    var mie_bits: usize = 0;
+    var inputs: u32 = 0;
+    var src: usize = 0;
+    while (src < 160) : (src += 1) {
+        const input: u5 = @intCast(hw.readReg(intr_map_base + src * 4) & 0x3F);
+        if (input < 16) continue;
+        if (trap.romHandler(input - 16).fn_ == null) continue;
+        const ctl: *volatile u32 = @ptrFromInt(0x1080_1000 + @as(usize, input) * 4);
+        ctl.* |= (1 << 24) | (1 << 8);
+        mie_bits |= @as(usize, 1) << input;
+        inputs += 1;
+    }
+    log.line("wifi-link: enable interrupts: {d} inputs, mie=0x{x:0>16}", .{ inputs, mie_bits });
+    asm volatile ("csrs mie, %[m]"
+        :
+        : [m] "r" (mie_bits),
+    );
+    hw.enableInterrupts();
+    pumpFor(2_000_000, "pump, interrupts on");
+    logArena("after start");
+    return 0;
+}
+
+/// 后半段：全信道扫描 →（构建时给了 AP 的 SSID 才做）连接、DHCP、ping 网关、断开。要求 `linkStart()` 已经返回 0。
+pub fn linkRest() LinkResult {
+    var r: LinkResult = .{};
+
+    // 全信道主动扫描（`config = NULL` 是 blob 的默认配置），最长等 10 秒。
+    // 前面可能已经扫过一次（合并镜像里 BLE 的 init 之前的基线扫描），先把上一次的完成标志清掉。
+    scan_done = false;
+    const t_scan = hw.nowUs();
+    const scan_rc = esp_wifi_scan_start(null, false);
+    log.line("wifi-link: esp_wifi_scan_start(NULL, nonblock) rc=0x{x}", .{@as(u32, @bitCast(scan_rc))});
+    const scan_got = pumpUntil(&scan_done, 10_000_000);
+    r.scan_done = scan_got;
+    log.line("wifi-link: wait scan-done 10s -> {s} in {d} ms", .{ if (scan_got) "GOT" else "timeout", hw.elapsedUs(t_scan) / 1000 });
+    var n: u16 = 0;
+    const num_rc = esp_wifi_scan_get_ap_num(&n);
+    r.ap_num = n;
+    log.line("wifi-link: esp_wifi_scan_get_ap_num rc=0x{x} n={d}", .{ @as(u32, @bitCast(num_rc)), n });
+    logArena("after scan");
+    coexStage("after-scan");
+
+    if (probe_opts.ap_ssid.len > 0) {
+        r.connect_attempted = true;
+        connectPhase();
+        r.connected = sta_connected;
+        r.dhcp = dhcp_bound;
+        r.ping_done = ping_done;
+        r.stayed = stayed_connected;
+        r.disconnect_reason = disconnect_reason;
+    } else {
+        log.raw("wifi-link: connect phase skipped (no -Dwifi-ap-ssid)\n");
+    }
+    logArena("after connect");
+    log.line("wifi-link: result scan={} ap={d} connected={} dhcp={} ping={} stayed={} reason={d}", .{
+        r.scan_done, r.ap_num, r.connected, r.dhcp, r.ping_done, r.stayed, r.disconnect_reason,
+    });
+    return r;
 }

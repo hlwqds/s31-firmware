@@ -1003,6 +1003,12 @@ pub fn initOnly(region: []u8) c_int {
     return rc;
 }
 
+/// 合并镜像里 Wi-Fi 先 `esp_wifi_start`（`-Dcoex-wifi-link`）时调用：PHY 已经由 Wi-Fi 打开并标定，BLE 的 init
+/// 不再做自己那套"从零打开"的 PHY 序列（`probe_ptr.initPhy`）。必须在 `initOnly` 之前调。
+pub fn setPhyOwnedByWifi() void {
+    @import("probe_ptr.zig").phy_owned_by_wifi = true;
+}
+
 var pump_rounds: u32 = 0;
 
 /// 合并镜像的实验步骤（`-Dcoex-ble-enable`）：`initOnly` 之后跑 `bringup.enable`，再把 controller 任务泵
@@ -1030,26 +1036,31 @@ pub fn enableOnly(max_pump_us: u64) c_int {
 }
 
 /// 协作式泵：让 controller 任务跑 `max_us` 微秒。每轮是 `run()` 主循环里让任务推进的必要项——让出点、
-/// ISR 桥的两个半泵、ets_timer、OSAL 的周期回调、两级看门狗、时钟门控回写。
+/// ISR 桥的两个半泵、ets_timer、OSAL 的周期回调、两级看门狗、时钟门控回写，每轮一步（`pumpStep`）。
 pub fn pumpFor(max_us: u64) void {
     const t0 = board.hw.nowUs();
     pump_rounds = 0;
-    while (board.hw.elapsedUs(t0) < max_us) : (pump_rounds += 1) {
-        const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
-        c2[0x88 / 4] = clk_snap[0];
-        c2[0x114 / 4] = clk_snap[1];
-        c2[0x11C / 4] = clk_snap[2];
-        board.hw.mwdt1Feed();
-        board.hw.feedRtcWdt();
-        sched.drainPending();
-        if (sched.firstTask()) |t| sched.resumeTask(&t.ctx);
-        bringup.bridgeDrain();
-        bringup.bridgeReenable();
-        osi_impl_serviceTimers();
-        // RTC 计数器的读数要靠 update 位触发才刷新；不触发，controller 读到的睡眠时间恒为旧值。
-        @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
-        _ = osal.serviceCallouts(osal.timeGet());
-    }
+    while (board.hw.elapsedUs(t0) < max_us) : (pump_rounds += 1) pumpStep();
+}
+
+/// 泵的一步。合并镜像（`-Dcoex-wifi-link`）在 Wi-Fi 真实链路的泵里每一步也调它一次，两个控制器在同一个
+/// 主循环里轮转。这一步跑在 BLE 任务的栈上，调用方负责在调用期间关掉 Wi-Fi 侧的让出点
+/// （`init_probe.foreign_context`）。`clk_snap` 由 `enableOnly()` 在 enable 之前拍好。
+pub fn pumpStep() void {
+    const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+    c2[0x88 / 4] = clk_snap[0];
+    c2[0x114 / 4] = clk_snap[1];
+    c2[0x11C / 4] = clk_snap[2];
+    board.hw.mwdt1Feed();
+    board.hw.feedRtcWdt();
+    sched.drainPending();
+    if (sched.firstTask()) |t| sched.resumeTask(&t.ctx);
+    bringup.bridgeDrain();
+    bringup.bridgeReenable();
+    osi_impl_serviceTimers();
+    // RTC 计数器的读数要靠 update 位触发才刷新；不触发，controller 读到的睡眠时间恒为旧值。
+    @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
+    _ = osal.serviceCallouts(osal.timeGet());
 }
 
 pub fn run() noreturn {

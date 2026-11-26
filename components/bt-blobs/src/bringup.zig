@@ -960,7 +960,13 @@ pub fn init(cfg: *config.Config) c_int {
     // **load_cal 前移**（UART 存活期完成 FULL 校准——mce(13) 会关 UART0 时钟）：
     // mce(13)=PERIPH_PHY_CALIBRATION（deps 0x6364：FE 测量时钟）→ load_cal
     // （register_chipv7_phy FULL——此刻 tick 在、UART 在、模拟 prep 在）。
-    {
+    if (@import("probe_ptr.zig").phy_owned_by_wifi) {
+        // 合并镜像里 PHY 已经由 Wi-Fi 打开并标定过（`-Dcoex-wifi-link`）：这一段不能做。IDF 只在 PHY 第一次
+        // 打开时调 `esp_phy_load_cal_and_init`（`phy_init.c:337-342`，看它自己的 `s_is_phy_calibrated`）；Wi-Fi
+        // 这边走的是探针的钩子，那个变量还是 0，这里再调就是一次全量重新标定，把 Wi-Fi 建立好的 PHY 配置冲掉——
+        // 2026-11-26 板上实测：Wi-Fi 的扫描从 34 个 AP 掉到 1–4 个；`mce(13)` 还会改 Wi-Fi 正在用的 `CLK_CONF1`。
+        osal.logPublic("bt bringup: load_cal skipped (PHY already calibrated by Wi-Fi)", .{});
+    } else {
         const mce = @extern(*const fn (modem: c_int) callconv(.c) void, .{ .name = "modem_clock_module_enable" });
         mce(13);
         // ⚠ **清 bit10（wifi_apb）**：mce(13) 的 deps 置此位 ⇒ UART0 APB 时钟被门控
@@ -1013,9 +1019,10 @@ pub fn enable() c_int {
     // 官方 0x00102000（bit13=1，疑似 BB/RF ready）vs 我们 0x00110000（bit16=1）。
     // enable 前对齐官方值；若 LL 调度器在等 bit13，泵应越过 fwd06 后的下一条锚点。
     // **轮 56 默认 false**：抢先 btbb init 毒化假说（见下方 if 块注释）。
-    // **轮 87c 重启**：毒化证据出自 osal 修复前；oracle8.log 实证官方序列
-    // （init rc=0 → phy full cal → libbtbb version → enable rc=0 → 98BC=4）
-    // 里 esp_btbb_enable 就在 enable 相触发。A/B 重测。
+    // **轮 87c 重启**：毒化证据出自 osal 修复前；oracle8.log 实证官方序列里 esp_btbb_enable 就在
+    // enable 相触发。A/B 重试。
+    // 注：那里记的"enable rc=0 → 98BC=4"是粗读。README 的"oracle90b 参照时序"逐时点看过：enable 完成时
+    // 98BC 还是 0，发完 0x2006/0x2008/0x200A 才变 4——合成器上电是广播使能命令处理的结果，不是前置条件。
     const btbb_early_enable = true;
     mmioPtr(u32, 0x2010_0450).* = 0x0010_2000;
     // **轮 56：抢先 btbb init 毒化假说**——oracle 侧 esp_btbb_enable 首次真跑

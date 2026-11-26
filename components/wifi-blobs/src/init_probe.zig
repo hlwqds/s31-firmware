@@ -14,6 +14,10 @@ const std = @import("std");
 
 /// 供 start.zig 做 comptime 选择：探针构建为 true。
 pub const enabled = true;
+/// 合并镜像的真实链路步骤（`firmware/src/coex_merged.zig`，`-Dcoex-wifi-link`）用的入口：`link_probe.zig` 的
+/// `linkStart()` / `linkRest()` / `linkScan()`。只有那一种镜像引用它；别的镜像里这一项不被分析，`link_probe.zig`
+/// 要的 `probe_opts` / `net_ipv4` / `net_udp` 模块也就不必挂进来。
+pub const link = @import("link_probe.zig");
 const board = @import("board");
 const trap = board.trap;
 const log = board.log;
@@ -450,6 +454,67 @@ pub fn focusDump(tag: []const u8) void {
         log.line("FOCUS {x:0>8} {x:0>8}", .{ @as(u32, @intCast(a)), hw.readReg(a) });
     }
     log.line("FOCUSDUMP {s} end", .{tag});
+}
+
+// ---------------------------------------------------------------------------
+// 合并镜像用：寄存器快照与写回（`firmware/src/coex_merged.zig` 第 3、7 步）
+//
+// 两个射频同镜时，BLE 的 init 会改掉一批 Wi-Fi 正在用的寄存器（`btdm_lp_enable_clock` 整字改写
+// `MODEM_SYSCON_CLK_CONF1`，Wi-Fi 基带的时钟位跟着掉了）。`radioSnapshot()` 把有文档的 523 个与定点的 55 个
+// 寄存器的当前值存下来——Wi-Fi start 之后、BLE 的 init 之前调；`radioRestore(mask)` 把变化过的写回去。
+// 合并镜像只写回时钟 / 电源那一组（mask 1）；`mask` 的其它位留着按区域二分用。
+// ---------------------------------------------------------------------------
+
+var radio_snap: [regdump_addrs.len + focus_addrs.len]u32 = @splat(0);
+
+/// 区域组：bit0 modem 的时钟与电源（MODEM_WIDGETS、MODEM_SYSCON、MODEM_LPCON、HP_SYS_CLKRST、HP_ALIVE_SYS），
+/// bit1 模拟 I2C 主控（I2C_ANA_MST），bit2 BB / FE 的定点寄存器，bit3 LP 系统与 PMU。
+fn radioGroup(addr: usize) u32 {
+    const clock = (addr >= 0x2010_9400 and addr < 0x2010_A000) or (addr >= 0x2010_F000 and addr < 0x2010_F800) or
+        (addr >= 0x2058_7000 and addr < 0x2058_A000);
+    if (clock) return 1;
+    if (addr >= 0x2010_F800 and addr < 0x2010_F900) return 2;
+    if (addr >= 0x2070_0000) return 8;
+    return 4;
+}
+
+/// 活值和只读的状态位：写回没有意义（PMU 的两个计数、I2C 主控的状态、PLL 校准状态）。
+fn radioSkip(addr: usize) bool {
+    return switch (addr) {
+        0x2070_0190, 0x2070_01A4, 0x2010_F804, 0x2058_7174 => true,
+        else => false,
+    };
+}
+
+/// 把这批寄存器的当前值存下来。
+pub fn radioSnapshot() void {
+    for (regdump_addrs, 0..) |a, i| radio_snap[i] = hw.readReg(a);
+    for (focus_addrs, 0..) |a, j| radio_snap[regdump_addrs.len + j] = hw.readReg(a);
+    log.line("wifi-init-probe: radio snapshot: {d} documented + {d} focus registers", .{ regdump_addrs.len, focus_addrs.len });
+}
+
+fn radioRestoreOne(addr: usize, want: u32, mask: u32, groups: *[4]usize) void {
+    const g = radioGroup(addr);
+    if (mask & g == 0) return;
+    if (radioSkip(addr)) return;
+    const gi: usize = @ctz(g);
+    const cur = hw.readReg(addr);
+    if (cur == want) return;
+    hw.writeReg(addr, want);
+    groups[gi] += 1;
+    if (hw.readReg(addr) != want)
+        log.line("wifi-init-probe: radio restore: 0x{x:0>8} wanted 0x{x:0>8}, reads 0x{x:0>8}", .{ addr, want, hw.readReg(addr) });
+}
+
+/// 把快照里与当前值不同的寄存器写回去（`mask` 选区域，见 `radioGroup`）。打一行按区域的计数，返回写回的个数。
+pub fn radioRestore(mask: u32) usize {
+    var groups: [4]usize = .{ 0, 0, 0, 0 };
+    for (regdump_addrs, 0..) |a, i| radioRestoreOne(a, radio_snap[i], mask, &groups);
+    for (focus_addrs, 0..) |a, j| radioRestoreOne(a, radio_snap[regdump_addrs.len + j], mask, &groups);
+    log.line("wifi-init-probe: radio restore (mask 0x{x}): clock/power={d} ana_i2c={d} bb_fe={d} lp_pmu={d}", .{
+        mask, groups[0], groups[1], groups[2], groups[3],
+    });
+    return groups[0] + groups[1] + groups[2] + groups[3];
 }
 
 /// 真实链路探针（`link_probe.zig`）把它接成长期运行的泵：不打每 1000 次那行日志，

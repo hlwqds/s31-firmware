@@ -74,6 +74,14 @@ pub fn build(b: *std.Build) void {
     // 把 controller 任务泵一小段，读回 synth 区与时钟寄存器。不发 HCI 命令，只回答"BLE enable 在 APM
     // 过滤器已关、ICG 码已设、共存核已启动的镜像里走到哪"。
     const coex_ble_enable = b.option(bool, "coex-ble-enable", "merged image only: after both inits, enable the BLE controller and pump its task") orelse false;
+    // 合并镜像的 Wi-Fi 真实链路步骤（要求 `-Dcoex-merged`）：**Wi-Fi 先 `esp_wifi_start`**，再做 BLE 的 init（和可选的
+    // enable），最后走全信道扫描、连接构建时给的 AP、DHCP、ping 网关、断开；泵里让 BLE 的 controller 任务也走。
+    // 顺序不能反：PHY 库的一次性初始化与标定只认第一次使能，BLE 先 init 会把它用掉、还会在 init 里重新标定，
+    // 两种情况下 Wi-Fi 都收不到帧（`docs/verification/coex-verification.md` §15）。连接阶段要构建时给 AP：
+    // `-Dwifi-ap-ssid` / `-Dwifi-ap-password`。只编这一段时把别的 section 都关掉，镜像最小。
+    const coex_wifi_link = b.option(bool, "coex-wifi-link", "merged image only: Wi-Fi starts first, then the BLE init (and optional enable), then the Wi-Fi real link (scan, connect, DHCP, ping) with the BLE controller task pumped alongside") orelse false;
+    // 合并镜像在真实链路之前打一份寄存器转储（标签 `after-ble-init`，标签之后接扫描），只读不写（要求 `-Dcoex-wifi-link`）。
+    const coex_dump = b.option(bool, "coex-dump", "merged image only: dump registers just before the Wi-Fi link") orelse false;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
@@ -93,6 +101,8 @@ pub fn build(b: *std.Build) void {
         if (wifi_init_probe or wifi_link_probe or bt_probe) @panic("-Dcoex-merged 不能与 -Dwifi-init-probe / -Dwifi-link-probe / -Dbt-probe 同开：探针镜像的入口不跑各段自检");
     }
     if (coex_ble_enable and !coex_merged) @panic("-Dcoex-ble-enable 需要 -Dcoex-merged");
+    if (coex_wifi_link and !coex_merged) @panic("-Dcoex-wifi-link 需要 -Dcoex-merged");
+    if (coex_dump and !coex_wifi_link) @panic("-Dcoex-dump 需要 -Dcoex-wifi-link");
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex)
         (if (coex_sw_off) "pub const enabled = true;\npub const sw_off = true;\n" else "pub const enabled = true;\npub const sw_off = false;\n")
@@ -320,8 +330,9 @@ pub fn build(b: *std.Build) void {
         probe_mod.addImport("coex_gate", coex_gate);
         if (coex) probe_mod.addImport("radio_coex", coex_mod);
         probe_mod.addImport("wifi_connect", wifi_connect_mod);
-        // 真实链路探针在连上之后把驱动的以太网帧接到 IP 栈（`wifi-blobs/src/data_path.zig`：ARP / ICMP / DHCP）。
-        if (wifi_link_probe) {
+        // 真实链路探针与合并镜像的真实链路步骤在连上之后把驱动的以太网帧接到 IP 栈
+        // （`wifi-blobs/src/data_path.zig`：ARP / ICMP / DHCP）。
+        if (wifi_link_probe or coex_wifi_link) {
             probe_mod.addImport("net_ipv4", ipv4_mod);
             probe_mod.addImport("net_udp", udp_mod);
         }
@@ -469,8 +480,8 @@ pub fn build(b: *std.Build) void {
         merged_mod.addImport("board", board);
         merged_mod.addImport("wifi_blobs_probe", wifi_probe_mod.?);
         merged_mod.addImport("bt_core", bt_core_mod.?);
-        const ble_gate_src = if (coex_ble_enable) "pub const enabled = true;\n" else "pub const enabled = false;\n";
-        merged_mod.addImport("coex_ble_gate", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_ble_gate.zig", ble_gate_src) }));
+        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump });
+        merged_mod.addImport("coex_merged_opts", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_merged_opts.zig", merged_opts_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }
 

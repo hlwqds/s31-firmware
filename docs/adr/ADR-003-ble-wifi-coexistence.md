@@ -63,6 +63,14 @@
 不是缺了共存核（`docs/verification/coex-verification.md` §13）。落在设计上的一条：**blob 的共存钩子要么走本组件的胶水
 （关闭分支在 L1 逐钩子对照过 IDF），要么把计数桩逐项对齐**——两边的桩值不是一回事。
 
+**【2026-11-26 补记 2】「PHY 归先使能它的那一方」拿到了板级证据。** 合并镜像里两个控制器带着 BLE enable 走通了 Wi-Fi
+的真实链路（扫描 37 个 AP、连上、DHCP、ping 10/10，`-Dcoex-wifi-link`）。过程里撞上的墙正是这条归属规则的另一面：
+BLE 的 init 是按"单独跑"写的，`bringup.init` 第 15 步再调一次 `esp_phy_load_cal_and_init`，就是一次全量重新标定，
+把先 start 的 Wi-Fi 建立好的 PHY 配置冲掉（扫描从 34–38 个 AP 掉到 1–4 个）；反过来让 BLE 先 init，PHY 的一次性初始化
+被它用掉，Wi-Fi 那边的标定数据是空的。修法是把规则落到代码里：Wi-Fi start 成功后置 `phy_owned_by_wifi`，BLE 的 init
+不再做这两段。时钟域那一条还没有正解——BLE 的 init 仍整字改写 `MODEM_SYSCON_CLK_CONF1`，合并镜像是事后按快照把
+时钟 / 电源寄存器写回；按两个射频的需求取并集留给下面第 5 项。细目见 `docs/verification/coex-verification.md` §15。
+
 ### 2. 运行时统一（让两棵树能链进同一镜像）
 
 ```text
@@ -192,7 +200,8 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
      实现记录）；compiler_rt 死重仍未动。
   4. 合并镜像启动（L3）。**已完成 2026-11-24**：合并镜像 8/8 段通过、`verdict=pass`，
      `esp_wifi_init_internal rc=0`、`bringup.init rc=0`（`logs/coex-merged-boot.log`）。
-  5. PHY 与时钟域的归属：模型已写（第 4 节），寄存器序列未接。
+  5. PHY 与时钟域的归属：PHY 这一条已有板级证据并落进代码（2026-11-26，第 4 节补记 2）；时钟域仍是事后按快照写回，
+     按两个射频的需求取并集的寄存器序列没有写。
   6. R3.1（`MAC_ST`）已拆（2026-11-25），Wi-Fi 真实链路已通（2026-11-26：连接、DHCP、ping 网关），L4a 已有读数（第 5 节）；L4b 等 R3.3（synth）。
-     合并镜像里的 BLE enable 已跑通（2026-11-26，`-Dcoex-ble-enable`），synth 锁定位仍是 0——APM 过滤器、ICG 码、共存核启动
-     都不是 R3.3 的解（`coex-verification.md` §14）。
+     合并镜像里的 BLE enable 已跑通（2026-11-26，`-Dcoex-ble-enable`），没有锁死；那一轮不发 HCI 命令，对 R3.3 没有结论
+     （`coex-verification.md` §14）。

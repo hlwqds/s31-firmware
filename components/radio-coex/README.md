@@ -61,7 +61,9 @@
   （钩子是计数桩）收不到帧，根因是 `_coex_pti_get` 的计数桩把出参写成 0——关闭分支不写出参（`host_tests.zig` 的
   `expectWifiStubValues` 逐项核过），计数桩没有这层保证。细目见 `docs/verification/coex-verification.md` §13。
 - L4b（两个射频都开）等 R3.3，做法与判据写在 ADR-003 第 5 节；合并镜像里的 BLE enable 已返回 0，synth 锁定位仍是 0
-  （`docs/verification/coex-verification.md` §14）。
+  （`docs/verification/coex-verification.md` §14）。合并镜像里带着 BLE 的 init 与 enable，Wi-Fi 走通了真实链路（2026-11-26，
+  `-Dcoex-wifi-link`，`coex-verification.md` §15）：这是"一个射频在收发、另一个 enabled"，不是 L4b；blob 比只开 Wi-Fi 时
+  多调了 `coex_schm_interval_get`、`coex_schm_curr_phase_get`、`coex_schm_process_restart` 三个钩子，胶水零拒绝。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |
@@ -75,7 +77,7 @@
 | L1 布局实测 | 同一 C 结构在 x86_64（`zig cc -target x86_64-linux-gnu`）：160 字节、`_magic`@152 | 与主机上的 `AdapterTable` 一致 |
 | L2 布局实测 | RV32 上导出 `AdapterTable` 变量，`nm -S` 读到 80 字节；导出常量读到 `_magic`@76、`_env_is_chip`@48、`_esp_timer_get_time`@44 | 一致 |
 | L3 板侧自检 | 2026-11-24 随 `wifi` profile 上板，对着假核心：`checks: passed=10 failed=0 total=10`（上板前也在主机上用桩 `board.log` 跑过 10/10） | 假核心通过；真核心见上面的 L3 板侧 |
-| L1 归属模型 | `src/owner.zig`：首个使用者开 PHY 公共部分与共存时钟、末个使用者关；重复请求与无请求的放弃被拒且不改状态；200 步随机序列里公共部分的开、关次数等于使用者数跨越 0 的次数；`LPCON+0x18` 按 IDF 实测的 `0x1 → 0x7 → 0x1` 走 | 10 项全过。**未接寄存器序列**（ADR-003 §4） |
+| L1 归属模型 | `src/owner.zig`：首个使用者开 PHY 公共部分与共存时钟、末个使用者关；重复请求与无请求的放弃被拒且不改状态；200 步随机序列里公共部分的开、关次数等于使用者数跨越 0 的次数；`LPCON+0x18` 按 IDF 实测的 `0x1 → 0x7 → 0x1` 走 | 10 项全过。**寄存器序列未接**（ADR-003 §4）；"PHY 归先使能它的那一方"已有板级证据（2026-11-26，`coex-verification.md` §15），落在 `bt-blobs` 里 |
 | 差分 | 未做：`/tmp/s31-oracle/wifi_oracle.py` 只覆盖 RSNA 密码学构造，没有 coex；本组件也没有密码学构造 | — |
 
 关于命令：`zig test … --summary all` 在本机 Zig 0.17.1 上不被识别（`error: unrecognized parameter: --summary`，
@@ -316,10 +318,14 @@ ISO = `CONFIG_BT_LE_ISO_SUPPORT`（`glue.Config.ble_iso`）。
    （`logs/coex-wifi-probe-start-boot.log`）。
 3. **回调被核心调用**：ADR-003 的 L3 判据"`coex_wifi_request` 之后 BLE 回调被触发"指的是方案回调
    （`coex_schm_register_callback(BT, …)` 登记的那个），由调度器在相位切换时调——那条路径的反汇编没读。
-4. **L4 真链路**：共存下的吞吐、PTI 行为——两个射频各自打通之后。
-5. **Wi-Fi 侧 enable 之后的核心行为**：`esp_wifi_start` 不返回（R3.1 的 MAC 忙位），`_coex_enable` 之后
-   blob 还会不会调 `coex_wifi_request` 等钩子，没有观测到。
-6. **归属模型的寄存器序列**（`owner.zig`）：要等两个射频各自打通后才能上板验证。
+4. **L4 真链路**：两个射频都开时的吞吐、PTI 行为——BLE 的射频打通之后。只开 Wi-Fi 的读数见
+   `docs/verification/coex-verification.md` §12，BLE enabled 但射频没起的读数见 §15.6。
+5. ~~**Wi-Fi 侧 enable 之后的核心行为**：`esp_wifi_start` 不返回（R3.1 的 MAC 忙位），`_coex_enable` 之后
+   blob 还会不会调 `coex_wifi_request` 等钩子，没有观测到。~~ —— **2026-11-26 已观测**：start 之后 blob 调了 16 个 Wi-Fi 侧
+   包装函数（`coex-verification.md` §12），胶水零拒绝。
+6. **归属模型的寄存器序列**（`owner.zig`）：时钟域那一条还没有写——合并镜像现在是事后按快照把 BLE 的 init 改过的
+   时钟 / 电源寄存器写回（`coex-verification.md` §15）。PHY 那一条 2026-11-26 有了板级证据，落在 `bt-blobs` 里
+   （`phy_owned_by_wifi`），没有走 `owner.zig`。
 
 ## 假核心依据
 
