@@ -1,0 +1,463 @@
+[REDACTED 2026-11-26] 本文件是板侧原始串口日志的脱敏副本：除用户自己的 AP（hl-wifi）外，邻居网络的 SSID 与 BSSID 都换了标签——BSSID 换成 ap-NN（与 wifi-link-scan-boot.log 同一套编号，日志里新出现的 BSSID 接着往后编），SSID 换成 ssid-NN（每个 SSID 名一个，同名 mesh 的几个 BSSID 共用）；信道、RSSI、authmode、握手内容、栈的高水位、时序与计数都是原值。
+[TAIL 修复前] 这一份只保留从 `esp_wifi_set_config` 那一行到停机的一段：四次握手走完之后 `store access fault`（`panic: exception code=7`）。Wi-Fi 任务栈当时按 blob 请求的 6656 字节给，四次握手用 9252 字节，长了过界压坏栈下面的对象；栈的下限改成 16 KiB、加了护栏之后不再出现（`components/wifi-blobs/src/osi_impl.zig` 的 `min_stack`）。停机现场里栈与通用寄存器的原始转储已删（`[REDACTED]` 行），只留 `mepc` / `mtval` / `cause` / `ra` / `sp`。修复后的完整日志见 `wifi-link-connect-boot.log`。
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wifi-link-probe: supplicant[after set_config]: state=INITIALIZE phase=idle msg4_in_flight=false negotiation_done=false pmk=false ptk=false gtk=false rejects=0 last_error=-
+wifi-blob: wifi: D (24819) wifi:
+wifi-blob: Start wifi connect
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24826) wifi:
+wifi-blob: connect status 0 -> 0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24833) wifi:
+wifi-blob: connect chan=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24840) wifi:
+wifi-blob: nvs=0, ssid=hl-wifi, channel=255
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24848) wifi:
+wifi-blob: ssid=hl-wifi match nvs 0, channel=255
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24857) wifi:
+wifi-blob: first chan=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24864) wifi:
+wifi-blob: connect status 0 -> 1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24871) wifi:
+wifi-blob: filter: set rx policy=3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24879) wifi:
+wifi-blob: clear scan ap list
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24886) wifi:
+wifi-blob: start scan: type=0x50f, priority=2, cb=0x400419b4, arg=0x0, ss_state=0x1, time=24011588, index=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24900) wifi:
+wifi-blob: inter_channel_timeout: arg=0x0, ss_state=0x1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24909) wifi:
+wifi-blob: perform scan: ss_state=0x9, chan<1,0>, dur<0,120>
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: V (24937) wifi:
+wifi-blob: change: chan<1,0>, dur<0,120>
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24945) wifi:
+wifi-blob: enter start op, arg=0x2f014f10
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24953) wifi:
+wifi-blob: scan operation: state=0x3, chan<1,0>, arg=0x2f014f10, status=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24964) wifi:
+wifi-blob: scan specific ssid=hl-wifi
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: V (24983) wifi:
+wifi-blob: start max timer
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+wifi-blob: wifi: D (24995) wifi:
+wifi-blob: rsn valid: gcipher=3 ucipher=3 akm=5 mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25005) wifi:
+wifi-blob: updated connection retries to 0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25013) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25026) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25034) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25044) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25056) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25069) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25080) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25094) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25104) wifi:
+wifi-blob: (hal)co_hosted_bss:0, max_indicator:0, bitmask:0xff, mBSSIDsEnable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25116) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25133) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25146) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25156) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, PSR Disallowed:1, Non-SRG OBSS PD SR Disallowed:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25168) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, Non-SRG Offset Present:0, SRG Info Present:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25180) wifi:
+wifi-blob: profile match: ss_state=0x7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25187) wifi:
+wifi-blob: scan histroy table is not full yet, add
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25196) wifi:
+wifi-blob: add ssid=hl-wifi, chan=1 to scan history
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25206) wifi:
+wifi-blob: rsn valid: gcipher=3 ucipher=3 akm=5 mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25216) wifi:
+wifi-blob: profile match: ss_state=0x7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25224) wifi:
+wifi-blob: update scan history ssid=hl-wifi, channel=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25234) wifi:
+wifi-blob: rsn valid: gcipher=3 ucipher=3 akm=5 mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25244) wifi:
+wifi-blob: profile match: ss_state=0x7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25251) wifi:
+wifi-blob: update scan history ssid=hl-wifi, channel=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25261) wifi:
+wifi-blob: scan end: arg=0x2f014f10, status=0, ss_state=0x7
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (25288) wifi:
+wifi-blob: find first mathched ssid, scan done
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25297) wifi:
+wifi-blob: back home chan=<1,0>, current chan=<1,0>
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25306) wifi:
+wifi-blob: filter: set rx policy=4
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25314) wifi:
+wifi-blob: first chan=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25320) wifi:
+wifi-blob: scan_done: arg=0x0, status=0, cur_time=24445829, scan_id=128, scan state=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25332) wifi:
+wifi-blob: call scan_done cb, arg=0x0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25340) wifi:
+wifi-blob: handoff_cb: status=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25347) wifi:
+wifi-blob: best bss has set.
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25354) wifi:
+wifi-blob: ap found, mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25362) wifi:
+wifi-blob: bssid=44:f7:70:16:fa:ba, LR=0
+wifi-blob: wifi: 
+
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+wifi-blob: wifi: D (26844) wifi:
+wifi-blob: going for connection with bssid=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26849) wifi:
+wifi-blob: new_bss=0x2f0157c0, cur_bss=0x0, new_chan=<1,0>, cur_chan=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26860) wifi:
+wifi-blob: filter: set rx policy=5
+wifi-blob: wifi: 
+
+coex> coex_wifi_channel_set_wrapper called by blob
+wifi-blob: wifi: D (26872) wifi:
+wifi-blob: connect_op: status=0, auth=5, cipher=3 
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26881) wifi:
+wifi-blob: (connect)dot11_authmode:0x3, pairwise_cipher:0x3, group_cipher:0x3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26892) wifi:
+wifi-blob: auth mode is not none
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26899) wifi:
+wifi-blob: connect_bss: auth=1, reconnect=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26907) wifi:
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (26956) wifi:
+wifi-blob: start 1000ms AUTH timer
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26964) wifi:
+wifi-blob: clear scan ap list
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: esp_wifi_connect_internal rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: D (27003) wifi:
+wifi-blob: recv auth: seq=2, status=0, algo=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27012) wifi:
+wifi-blob: state: auth -> assoc (0x0)
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (27049) wifi:
+wifi-blob: restart connect 1000ms timer for assoc
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +3
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +2
+wifi-link-probe: connect: waiting 2251 ms (hooks=2874, events=3)
+wifi-link-probe: supplicant[waiting]: state=AUTHENTICATION phase=idle msg4_in_flight=false negotiation_done=false pmk=true ptk=false gtk=false rejects=0 last_error=-
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: D (27099) wifi:
+wifi-blob: recv assoc: type=0x10
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27106) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities length:10, operating_mode_notification:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27118) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities, MBSSID:0, TWT Responder:0, OBSS Narrow Bandwidth RU In OFDMA Tolerance:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27133) wifi:
+wifi-blob: Extended Capabilities length:10, operating_mode_notification:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27144) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27157) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27165) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27176) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27187) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27201) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27212) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27225) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27236) wifi:
+wifi-blob: (hal)co_hosted_bss:0, max_indicator:0, bitmask:0xff, mBSSIDsEnable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27247) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27264) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27277) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27288) wifi:
+wifi-blob: filter: set rx policy=6
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27295) wifi:
+wifi-blob: state: assoc -> run (0x10)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27303) wifi:
+wifi-blob: (he)ppe_thresholds_present:1, nominal_packet_padding(rx:0, cfg:2)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27314) wifi:
+wifi-blob: (trc)phytype:CBW20-SGI, snr:64, maxRate:172, highestRateIdx:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (27325) wifi:
+wifi-blob: (trc)band:2G, phymode:3, highestRateIdx:0, lowestRateIdx:11, dataSchedTableSize:14
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27338) wifi:
+wifi-blob: (trc)band:2G, rate(S-MCS7, rateIdx:0), ampdu(rate:S-MCS7, schedIdx(0, stop:8)), snr:64, ampduState:wait operational
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27353) wifi:
+wifi-blob: ifidx:0, rssi:-29, nf:-93, phytype(0x3, CBW20-SGI), phymode(0x7, 11ax), max_rate:172, he:1, vht:0, ht:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27368) wifi:
+wifi-blob: (ht)max.RxAMPDULenExponent:3(65535 bytes), MMSS:4(2 us)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27378) wifi:
+wifi-blob: start 10s connect timer for 4 way handshake
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: V (27405) wifi:
+wifi-blob: wpa_psk start
+wifi-blob: wifi: 
+
+coex> coex_wifi_release_wrapper called by blob
+wpa: eapol rx before the assoc notify; associating
+wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
+wifi-blob: wifi: V (27425) wifi:
+wifi-blob: wpa_psk handle fail
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-blob: wifi: V (27453) wifi:
+wifi-blob: wpa_psk start
+wifi-blob: wifi: 
+
+coex> coex_wifi_release_wrapper called by blob
+wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=257
+wifi-blob: wifi: V (27482) wifi:
+wifi-blob: wpa_psk handle succeed
+wifi-blob: wifi: 
+
+FR [sp..+64) = [REDACTED: 栈上 16 个字的原始转储已删]
+!! c_mepc=0x4007669c c_mtval=0x2f080000 c_ms=0x80007801 c_ra=0x400554ce f_mepc=0x4007669c f_sp=0x2f02b170 c_ra_saved=0x2f080000 cause=0x7 step=0 none da=0x0 db=0x8d1d0527 dc=0 dd=0 dh=0 df=0xf71863 dg=0x0 di=0x0 dj=0x0 gm=0x6e0080e7 gn=0x0
+SL sj=0x00000000 sv=0x00000000 want=0x4007669c sn=0 sl=0x400a0300 mw=0x80230585
+NB 420=3d44f380 424=5d9ffe49 428=39d443d8 42c=49a9db23 430=63408b9b 434=277eec27 438=b7e806c5 43c=7613808d | 440=5d49f6e3 444=183e9b06 448=8dd15aac 44c=dc6ae52b 450=47b1347a 454=e2531069 458=3ec2e6bb 45c=c7abd287
+WT btslp16=0x0044a903 btslp0=0x77b30100 mepc8=80230585,68500e6
+RA off=1400 ret=0x4006d2aa
+RA off=3000 ret=0x40065ff4
+RA off=3048 ret=0x4006438e
+RA off=3192 ret=0x4005b712
+OP 700=0 704=0 708=0 70c=0 710=0 714=0 718=0 71c=0 720=0 724=0 728=0 72c=0 730=0 734=0 738=0 73c=0
+RG ra=400554ce t0=2038a000 t1=40056f3e t2=2038a000 a0=2f02b198 a1=2f07dfc5 a2=fefab197 a3=2f080001 a4=2e a5=400581ba a6=c a7=2f023d48 s0=80006089 s1=2f029148
+panic: exception code=7 (store access fault) cause=0x30000007
+panic: ra=0x400554ce a0=0x2f02b198 a1=0x2f07dfc5 a2=0xfefab197
+panic: live mepc=0x4007669c mtval=0x2f080000
+panic: sp=0x2f02b170 s0=0x80006089 s1=0x2f029148
+panic: regs [REDACTED: a3–a7 的原始值已删]
+panic: callframe [REDACTED]
+panic: tregs [REDACTED: t0–t6 的原始值已删]
+panic: halted (wfi)

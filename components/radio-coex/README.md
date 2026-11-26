@@ -36,8 +36,8 @@
 
 ## 验证状态
 
-只列实际跑过的。板上跑过四次：对假核心的自检；经 C2 接线带着真核心的启动；Wi-Fi 探针走到
-`esp_wifi_start`（`_coex_enable` 被 blob 执行并被核心收下）；两个射频同链的合并镜像（见下）。
+只列实际跑过的。板上跑过五次：对假核心的自检；经 C2 接线带着真核心的启动；Wi-Fi 探针走到
+`esp_wifi_start`（`_coex_enable` 被 blob 执行并被核心收下）；两个射频同链的合并镜像（见下）；只开 Wi-Fi 的真实链路上取核读数（见下）。
 
 - L3 板侧（假核心）：2026-11-24 随 `wifi` profile 第一次上板，自检 10/10。日志 `logs/wifi-selftest-prefix-boot.log`。
 - L3 板侧（真核心，经 `-Dcoex` 接线）：同日 BLE 探针读到 `param=0x2f00ffe4`、`fw=2.0.0 rom=cdcf52b`、
@@ -49,6 +49,10 @@
   此前探针在 start 之前就 panic，这条路径从没被执行过；那次的 panic 与共存无关（§9）。
 - L3 板侧（合并镜像，2026-11-24）：两个射频的适配层同链，`coex[merged]: … wifi=inited ble=inited … rej=0`
   （`logs/coex-merged-boot.log`）。细目见 `docs/verification/coex-verification.md` §6。
+- L4a 板侧（只开 Wi-Fi 的真实链路，2026-11-26）：真实链路探针开 `-Dcoex` 连上真实 AP、DHCP、ping 网关 10/10（没有不开共存的对照轮）；
+  胶水 `rej=0`、`last_error=-`；blob 的 13 次 `_coex_wifi_request` 核都回 `0x102`（事件 7、9 在核的事件表里没有硬件定时器）；
+  BLE 没开，核的状态位与硬件定时器都是 0。日志 `logs/wifi-link-connect-boot.log`。细目见 `docs/verification/coex-verification.md` §12；
+  L4b（两个射频都开）等 R3.3，做法与判据写在 ADR-003 第 5 节。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |

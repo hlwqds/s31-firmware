@@ -6442,5 +6442,7 @@ wifi-link-probe: esp_wifi_scan_get_ap_records rc=0x0 got=38
 
 ### 仍未验证（2026-11-26 更新）
 
-- 连接、收发：`esp_wifi_connect` 还是计数桩；回调表里连接路径的入口还没填。
+- 连接、收发（2026-11-26 更新）：已上板。回调表里连接路径的入口已填，`wifi-connect` 的请求方经它走完 WPA2-PSK 的四次握手；
+  公开入口 `esp_wifi_connect` 仍是计数桩，探针调的是驱动的内部入口。读数与这一步修掉的四处运行时问题见
+  `docs/verification/wifi-ieee80211-verification.md` §11。
 - `pmu_init()` 的其余部分、PMS、PHY 标定数据的持久化，见上。

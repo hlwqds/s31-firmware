@@ -1,0 +1,2106 @@
+[REDACTED 2026-11-26] 本文件是板侧原始串口日志的脱敏副本：除用户自己的 AP（hl-wifi）外，邻居网络的 SSID 与 BSSID 都换了标签——BSSID 换成 ap-NN（与 wifi-link-scan-boot.log 同一套编号，日志里新出现的 BSSID 接着往后编），SSID 换成 ssid-NN（每个 SSID 名一个，同名 mesh 的几个 BSSID 共用）；信道、RSSI、authmode、握手内容、栈的高水位、时序与计数都是原值。
+[TAIL 修复前] 这一份只保留从 `esp_wifi_set_config` 那一行到结束的一段：DHCP 正常，ping 网关 10 发 0 收；收帧记录（`rx mark`，kind=2 是 ARP）显示网关每次都先用 ARP 请求来问本机，本机没有答。修复后的完整日志见 `wifi-link-connect-boot.log`。
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wifi-link-probe: supplicant[after set_config]: state=INITIALIZE phase=idle msg4_in_flight=false negotiation_done=false pmk=false ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[after set_config]: 0:wifi=3644/16384
+wifi-blob: wifi: D (24652) wifi:
+wifi-blob: Start wifi connect
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24658) wifi:
+wifi-blob: connect status 0 -> 0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24666) wifi:
+wifi-blob: connect chan=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24672) wifi:
+wifi-blob: nvs=0, ssid=hl-wifi, channel=255
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24681) wifi:
+wifi-blob: ssid=hl-wifi match nvs 0, channel=255
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24689) wifi:
+wifi-blob: first chan=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24696) wifi:
+wifi-blob: connect status 0 -> 1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24703) wifi:
+wifi-blob: filter: set rx policy=3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24711) wifi:
+wifi-blob: clear scan ap list
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24718) wifi:
+wifi-blob: start scan: type=0x50f, priority=2, cb=0x40042d52, arg=0x0, ss_state=0x1, time=23843749, index=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24732) wifi:
+wifi-blob: inter_channel_timeout: arg=0x0, ss_state=0x1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24741) wifi:
+wifi-blob: perform scan: ss_state=0x9, chan<1,0>, dur<0,120>
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: V (24769) wifi:
+wifi-blob: change: chan<1,0>, dur<0,120>
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24777) wifi:
+wifi-blob: enter start op, arg=0x2f014f80
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24785) wifi:
+wifi-blob: scan operation: state=0x3, chan<1,0>, arg=0x2f014f80, status=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24796) wifi:
+wifi-blob: scan specific ssid=hl-wifi
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: V (24816) wifi:
+wifi-blob: start max timer
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+wifi-blob: wifi: D (24827) wifi:
+wifi-blob: rsn valid: gcipher=3 ucipher=3 akm=5 mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (24837) wifi:
+wifi-blob: updated connection retries to 0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24845) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24858) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24866) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24877) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24888) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24902) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24913) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24926) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (24937) wifi:
+wifi-blob: (hal)co_hosted_bss:0, max_indicator:0, bitmask:0xff, mBSSIDsEnable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24948) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24965) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24978) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (24988) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, PSR Disallowed:1, Non-SRG OBSS PD SR Disallowed:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (25000) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, Non-SRG Offset Present:0, SRG Info Present:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25012) wifi:
+wifi-blob: profile match: ss_state=0x7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25019) wifi:
+wifi-blob: scan histroy table is not full yet, add
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25028) wifi:
+wifi-blob: add ssid=hl-wifi, chan=1 to scan history
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25038) wifi:
+wifi-blob: rsn valid: gcipher=3 ucipher=3 akm=5 mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25048) wifi:
+wifi-blob: profile match: ss_state=0x7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25056) wifi:
+wifi-blob: update scan history ssid=hl-wifi, channel=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25065) wifi:
+wifi-blob: rsn valid: gcipher=3 ucipher=3 akm=5 mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25076) wifi:
+wifi-blob: profile match: ss_state=0x7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25084) wifi:
+wifi-blob: update scan history ssid=hl-wifi, channel=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25093) wifi:
+wifi-blob: scan end: arg=0x2f014f80, status=0, ss_state=0x7
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (25120) wifi:
+wifi-blob: find first mathched ssid, scan done
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25129) wifi:
+wifi-blob: back home chan=<1,0>, current chan=<1,0>
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25138) wifi:
+wifi-blob: filter: set rx policy=4
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25146) wifi:
+wifi-blob: first chan=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25152) wifi:
+wifi-blob: scan_done: arg=0x0, status=0, cur_time=24277982, scan_id=128, scan state=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25164) wifi:
+wifi-blob: call scan_done cb, arg=0x0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25172) wifi:
+wifi-blob: handoff_cb: status=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25179) wifi:
+wifi-blob: best bss has set.
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (25186) wifi:
+wifi-blob: ap found, mac=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (25195) wifi:
+wifi-blob: bssid=44:f7:70:16:fa:ba, LR=0
+wifi-blob: wifi: 
+
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+wifi-blob: wifi: D (26503) wifi:
+wifi-blob: going for connection with bssid=44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26508) wifi:
+wifi-blob: new_bss=0x2f015830, cur_bss=0x0, new_chan=<1,0>, cur_chan=1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26519) wifi:
+wifi-blob: filter: set rx policy=5
+wifi-blob: wifi: 
+
+coex> coex_wifi_channel_set_wrapper called by blob
+wifi-blob: wifi: D (26531) wifi:
+wifi-blob: connect_op: status=0, auth=5, cipher=3 
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26540) wifi:
+wifi-blob: (connect)dot11_authmode:0x3, pairwise_cipher:0x3, group_cipher:0x3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26551) wifi:
+wifi-blob: auth mode is not none
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26559) wifi:
+wifi-blob: connect_bss: auth=1, reconnect=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26567) wifi:
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (26616) wifi:
+wifi-blob: start 1000ms AUTH timer
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26623) wifi:
+wifi-blob: clear scan ap list
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: esp_wifi_connect_internal rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +3
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +2
+wifi-link-probe: connect: waiting 2016 ms (hooks=2625, events=3)
+wifi-link-probe: supplicant[waiting]: state=AUTHENTICATION phase=idle msg4_in_flight=false negotiation_done=false pmk=true ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[waiting]: 0:wifi=3644/16384
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: D (26697) wifi:
+wifi-blob: recv auth: seq=2, status=0, algo=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26705) wifi:
+wifi-blob: state: auth -> assoc (0x0)
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (26742) wifi:
+wifi-blob: restart connect 1000ms timer for assoc
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: D (26760) wifi:
+wifi-blob: recv assoc: type=0x10
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26766) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities length:10, operating_mode_notification:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26778) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities, MBSSID:0, TWT Responder:0, OBSS Narrow Bandwidth RU In OFDMA Tolerance:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26793) wifi:
+wifi-blob: Extended Capabilities length:10, operating_mode_notification:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26805) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26817) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26826) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26836) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26847) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26861) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26872) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26885) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26896) wifi:
+wifi-blob: (hal)co_hosted_bss:0, max_indicator:0, bitmask:0xff, mBSSIDsEnable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26907) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26925) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26937) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (26948) wifi:
+wifi-blob: filter: set rx policy=6
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26955) wifi:
+wifi-blob: state: assoc -> run (0x10)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26963) wifi:
+wifi-blob: (he)ppe_thresholds_present:1, nominal_packet_padding(rx:0, cfg:2)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26974) wifi:
+wifi-blob: (trc)phytype:CBW20-SGI, snr:63, maxRate:172, highestRateIdx:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (26985) wifi:
+wifi-blob: (trc)band:2G, phymode:3, highestRateIdx:0, lowestRateIdx:11, dataSchedTableSize:14
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (26998) wifi:
+wifi-blob: (trc)band:2G, rate(S-MCS7, rateIdx:0), ampdu(rate:S-MCS7, schedIdx(0, stop:8)), snr:63, ampduState:wait operational
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27013) wifi:
+wifi-blob: ifidx:0, rssi:-30, nf:-93, phytype(0x3, CBW20-SGI), phymode(0x7, 11ax), max_rate:172, he:1, vht:0, ht:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27028) wifi:
+wifi-blob: (ht)max.RxAMPDULenExponent:3(65535 bytes), MMSS:4(2 us)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27038) wifi:
+wifi-blob: start 10s connect timer for 4 way handshake
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: V (27066) wifi:
+wifi-blob: wpa_psk start
+wifi-blob: wifi: 
+
+coex> coex_wifi_release_wrapper called by blob
+wpa: eapol rx before the assoc notify; associating
+wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
+wifi-blob: wifi: V (27085) wifi:
+wifi-blob: wpa_psk handle fail
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-blob: wifi: V (27109) wifi:
+wifi-blob: wpa_psk start
+wifi-blob: wifi: 
+
+coex> coex_wifi_release_wrapper called by blob
+wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=0
+wifi-blob: wifi: V (27134) wifi:
+wifi-blob: wpa_psk handle fail
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wpa: keys installed after msg 4: ptk rc=0, group keys rc=0, port truevalid
+wifi-blob: wifi: I (27160) wifi:
+wifi-blob: (extcap)mbssid:0, enhanced_mbssid_advertise:0, complete_nontxbssid_profiles:0, twt_responder: 1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27174) wifi:
+wifi-blob: connected with hl-wifi, aid = 1, channel 1, BW20, bssid = 44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27186) wifi:
+wifi-blob: security: WPA2-PSK, phy: ax, rssi: -30, cipher(pairwise:0x3, group:0x3), pmf:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27198) wifi:
+wifi-blob: remove all except 44:f7:70:16:fa:ba from rc list
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27208) wifi:
+wifi-blob: clear blacklist
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: I (27233) wifi:
+wifi-blob: pm start, type: 1, twt_start:0
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27241) wifi:
+wifi-blob: pm start, type:1, aid:0x1, trans-BSSID:44:f7:70:16:fa:ba, BSSID[5]:0xba, mbssid(max-indicator:0, index:0), he:1
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: I (27260) wifi:
+wifi-blob: dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+wifi-blob: wifi: 
+
+coex> coex_schm_flexible_period_set_wrapper called by blob
+coex> coex_schm_curr_period_get_wrapper called by blob
+coex> coex_schm_flexible_period_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-blob: wifi: I (27302) wifi:
+wifi-blob: set rx beacon pti, rx_bcn_pti: 10, bcn_timeout: 25000, mt_pti: 10, mt_time: 10000
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wpa: assoc notified but the supplicant is in STAKEYSTART
+wifi-blob: wifi: D (27338) wifi:
+wifi-blob: Send sta connected event
+wifi-blob: wifi: 
+
+wifi-link-probe: STA_CONNECTED bssid=44:f7:70:16:fa:ba ch=1 authmode=3 aid=1
+wifi-link-probe: event id=4 data=0x2f02ffd0 (n=4)
+wifi-blob: wifi: D (27357) wifi:
+wifi-blob: connect status 1 -> 5
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27364) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:0, dialogtoken:1, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27379) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:7, dialogtoken:2, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x20)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (27394) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:5, dialogtoken:3, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27409) wifi:
+wifi-blob: obss scan is disabled
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (27416) wifi:
+wifi-blob: start obss scan: obss scan is stopped
+wifi-blob: wifi: 
+
+wpa: key negotiation complete: esp_wifi_auth_done_internal -> true
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (27458) wifi:
+wifi-blob: bcnd: 0 -> 350
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: I (27469) wifi:
+wifi-blob: dp: 2, bi: 102400, li: 4, scale listen interval from 307200 us to 409600 us
+wifi-blob: wifi: 
+
+coex> coex_schm_flexible_period_set_wrapper called by blob
+coex> coex_schm_curr_period_get_wrapper called by blob
+coex> coex_schm_flexible_period_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: I (27504) wifi:
+wifi-blob: AP's beacon interval = 102400 us, DTIM period = 2
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: I (27569) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:0/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-blob: wifi: I (27598) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:7/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: I (27646) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:5/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _phy_update_country_info +4
+wifi-link-probe: CONNECTED in 3012 ms (1 progress reports)
+wifi-link-probe: supplicant[connected]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[connected]: 0:wifi=9252/16384
+wifi-link-probe: key table entry 4 (pairwise TK): equal bits vs tk=ffff vs gtk=0000 (nonzero=ffff)
+wifi-link-probe: key table entry 0 (group GTK): equal bits vs tk=0000 vs gtk=ffff (nonzero=ffff)
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x00000000
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: dhcp DISCOVER attempt=0 tx rc=0x0
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: D (27768) wifi:
+wifi-blob: eb is dhcp or dns sport = 68, dport = 67
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: dhcp OFFER ip=192.168.31.151 -> REQUEST tx rc=0x0
+wifi-blob: wifi: D (27808) wifi:
+wifi-blob: eb is dhcp or dns sport = 68, dport = 67
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: net: dhcp ACK: bound ip=192.168.31.151 mask=255.255.255.0 router=192.168.31.1 dns=192.168.31.1, esp_wifi_internal_set_sta_ip rc=0x0
+wifi-link-probe: data path: DHCP bound in 129 ms ip=192.168.31.151 router=192.168.31.1
+wifi-link-probe: net: ping seq=0 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=0
+wifi-link-probe: net: ping seq=1 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=1
+wifi-link-probe: net: ping seq=2 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=2
+wifi-link-probe: net: ping seq=3 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=3
+wifi-link-probe: net: ping seq=4 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=4
+wifi-link-probe: net: ping seq=5 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=5
+wifi-link-probe: net: ping seq=6 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=6
+wifi-link-probe: net: ping seq=7 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=7
+wifi-link-probe: net: ping seq=8 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=8
+wifi-link-probe: net: ping seq=9 tx rc=0x0
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=9
+wifi-link-probe: net: ping done: sent=10 received=0 timed_out=10 rtt min/avg/max=0/0/0 us
+wifi-link-probe: data path: ping phase 10229 ms
+wifi-link-probe: rx mark #0: 55095 us after last tx, kind=3, seq=0
+wifi-link-probe: rx mark #1: 62835 us after last tx, kind=3, seq=0
+wifi-link-probe: rx mark #2: 19104 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #3: 23904 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #4: 34072 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #5: 23958 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #6: 23965 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #7: 23927 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #8: 23951 us after last tx, kind=2, seq=0
+wifi-link-probe: rx mark #9: 63838 us after last tx, kind=2, seq=0
+wifi-link-probe: data path: frames rx=10 (ignored 0, dropped 0) tx=12 (failed 0)
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: connected: pump 5 s: 5043666 us, hooks +420, event posts +0
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: stayed connected for 5 s
+wifi-link-probe: supplicant[after 5 s]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[after 5 s]: 0:wifi=9252/16384
+wifi-blob: wifi: D (43269) wifi:
+wifi-blob: Start wifi disconnect
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (43276) wifi:
+wifi-blob: state: run -> init (0x0)
+wifi-blob: wifi: 
+
+coex> coex_wifi_release_wrapper called by blob
+wifi-blob: wifi: D (43287) wifi:
+wifi-blob: stop beacon and connect timers
+wifi-blob: wifi: 
+
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (43313) wifi:
+wifi-blob: connect status 5 -> 6
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43321) wifi:
+wifi-blob: stop beacon/connect timer, send disassoc(8)
+wifi-blob: wifi: 
+
+coex> coex_pti_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (43342) wifi:
+wifi-blob: sta leave
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (43348) wifi:
+wifi-blob: teardown, set twt_inactive_time_secs:6, sp_count:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (43358) wifi:
+wifi-blob: pm stop, total sleep time: %lu us / %lu us
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43367) wifi:
+wifi-blob: mms: 0->2
+wifi-blob: wifi: 
+
+coex> coex_schm_flexible_period_set_wrapper called by blob
+coex> coex_schm_curr_period_get_wrapper called by blob
+coex> coex_schm_flexible_period_get_wrapper called by blob
+coex> coex_schm_status_bit_clear_wrapper called by blob
+coex> coex_schm_status_bit_set_wrapper called by blob
+coex> coex_schm_interval_set_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+wifi-blob: wifi: D (43410) wifi:
+wifi-blob: stop CSA timer
+wifi-blob: wifi: 
+
+wifi-blob: wifi: V (43417) wifi:
+wifi-blob: bss connection retry cnt=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43425) wifi:
+wifi-blob: remove 44:f7:70:16:fa:ba from rc list
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43434) wifi:
+wifi-blob: connect status 6 -> 0
+wifi-blob: wifi: 
+
+coex> coex_wifi_channel_set_wrapper called by blob
+wifi-blob: wifi: D (43445) wifi:
+wifi-blob: filter: set rx policy=7
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43453) wifi:
+wifi-blob: clear rc list
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43460) wifi:
+wifi-blob: Send disconnect event, reason=8, AP number=0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: D (43469) wifi:
+wifi-blob: filter: set rx policy=7
+wifi-blob: wifi: 
+
+coex> coex_status_get_wrapper called by blob
+coex> coex_status_get_wrapper called by blob
+coex> coex_event_duration_get_wrapper called by blob
+coex> coex_wifi_request_wrapper called by blob
+coex> coex_pti_get_wrapper called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: STA_DISCONNECTED bssid=44:f7:70:16:fa:ba reason=8 rssi=-29
+wifi-link-probe: event id=5 data=0x2f016cf4 (n=5)
+coex> coex_wifi_release_wrapper called by blob
+wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
+wifi-link-probe: done

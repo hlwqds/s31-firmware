@@ -233,8 +233,16 @@ fn exitCritical(mstatus: usize) void {
     if (mstatus & 8 != 0) asm volatile ("csrs mstatus, 8" ::: .{ .memory = true });
 }
 
+/// 队列的自证字（ASCII "QUEU"）。句柄对 blob 是不透明的，所以结构体怎么排是我们自己的事：
+/// 有了它，`unwrapQueue` 才分得清"队列"与"落在 arena 里的别的对象"（分配器的块头
+/// `{size, free, next, prev}` 单看几个标量是能冒充队列的）。取值大于 arena 的地址上限，
+/// 不会被误当成包装体里的内部指针。
+pub const queue_magic: u32 = 0x5155_4551;
+
 /// 定长元素队列（环形）。`item_size` 由调用方给，载荷紧跟在结构体后面。
+/// 布局是我们私有的：blob 只拿它当不透明句柄（包装体 `WifiQueue` 的首字例外，见那里）。
 pub const Queue = struct {
+    magic: u32 = queue_magic,
     item_size: usize,
     cap: usize,
     count: usize = 0,
@@ -887,36 +895,73 @@ fn shellEventGroupWaitBits(
     return got;
 }
 
-/// 极简"任务"：没有调度器，但 `xTaskCreate` 的返回值是 **pdPASS=1 / pdFAIL=0**（FreeRTOS 约定），
-/// 通用桩返回 0 会被当成"创建失败"，`ic_create_wifi_task` 于是报 INVALID_ARG。
-/// 这里记下入口与参数、返回 1；主循环需要时自己调用一次（协作式，不是抢占式）。
+/// 极简"任务"：`xTaskCreate` 的返回值是 **pdPASS=1 / pdFAIL=0**（FreeRTOS 约定），通用桩返回 0 会被当成
+/// "创建失败"，`ic_create_wifi_task` 于是报 INVALID_ARG。这里记下入口与参数、建好上下文、返回 1；
+/// 任务由泵协作式地跑在自己的栈上（`init_probe.pumpRealTask`）。
 pub const Task = struct {
     entry: ?*const fn (?*anyopaque) callconv(.c) void = null,
     arg: ?*anyopaque = null,
-    /// 该任务的栈（按 `stack_depth` 从 arena 分配；`&.{}` = 还没建上下文）。
+    /// 该任务的栈（按 `stack_depth` 从 arena 分；`&.{}` = 还没建上下文）。
     stack: []u8 = &.{},
     /// 任务上下文（`sched.initContext` 建；`sp == 0` = 未初始化）。
     ctx: @import("sched.zig").Context = .{},
     /// 已经跑过（第一次进入后再让出即视为可再次调度）。
     started: bool = false,
+    /// 栈底下那一段护栏（不进栈区间），见 `ensureTaskContext`。
+    guard: []u8 = &.{},
+    /// 诊断：blob 在 `_task_create` 里给的任务名（截到 11 字节）与栈深。
+    name: [12]u8 = @splat(0),
+    requested_depth: u32 = 0,
+
+    /// 栈用了多少（高水位）：从栈底往上数到第一个不是 `stack_fill` 的字节。
+    pub fn stackUsed(t: *const Task) usize {
+        if (t.stack.len == 0) return 0;
+        var i: usize = 0;
+        while (i < t.stack.len and t.stack[i] == stack_fill) : (i += 1) {}
+        return t.stack.len - i;
+    }
+
+    /// 护栏被动过 = 栈长过了界。
+    pub fn stackOverflowed(t: *const Task) bool {
+        for (t.guard) |b| {
+            if (b != stack_fill) return true;
+        }
+        return false;
+    }
 };
 
-/// 给一个任务建上下文（幂等）。栈按 `stack_depth` 从 arena 分；单位按 **字节**（IDF `xTaskCreate` 约定），
-/// 夹在 4 KiB..64 KiB 之间——ROM 这条 osi 变体的实参单位未证实，夹紧比信一个未证实的单位安全。
+/// 栈的下界。blob 给的 `stack_depth` 单位未证实（字节还是字），所以不直接信它；而四次握手跑在
+/// 这些栈上——请求方（`wpa_cb` → `wifi-connect`）是我们自己的代码，它用多少栈 blob 不知道。
+/// 2026-11-26 连接实测：blob 只建一个任务（`wifi`，请求 6656 B），四次握手用掉 9252 B；按请求量给，
+/// 栈长过界 2.6 KiB，压坏栈下面的对象（`swq` 队列的 `item_size` 被改成 0xFF000000）。下界取 16 KiB：
+/// 实测用量的 1.7 倍。高水位由探针的 `stacks[...]` 行报出来（`Task.stackUsed`）。
+pub const min_stack: usize = 16 * 1024;
+pub const max_stack: usize = 64 * 1024;
+/// 栈底下留的护栏：栈向下长过界先踩到这里，泵每一步都查（`stackOverflowed`）。
+/// 它在同一个 arena 块里，所以过界的那一下不会先踩坏分配器的块头。
+pub const stack_guard: usize = 256;
+/// 建上下文时整段栈（连护栏）填的字。
+pub const stack_fill: u8 = 0xA5;
+
+/// 给一个任务建上下文（幂等）。栈按 `stack_depth` 从 arena 分，夹在 `min_stack`..`max_stack` 之间。
 pub fn ensureTaskContext(t: *Task, stack_depth: u32) bool {
     if (t.ctx.sp != 0) return true;
     const entry = t.entry orelse return false;
-    var bytes: usize = if (stack_depth == 0) 16 * 1024 else @as(usize, stack_depth);
-    if (bytes < 4 * 1024) bytes = 4 * 1024;
-    if (bytes > 64 * 1024) bytes = 64 * 1024;
+    var bytes: usize = if (stack_depth == 0) min_stack else @as(usize, stack_depth);
+    if (bytes < min_stack) bytes = min_stack;
+    if (bytes > max_stack) bytes = max_stack;
     // **按自然对齐申请**：arena 只接受自然对齐的请求（`pad != 0` 直接跳过），
     // 用 16 会让第一个块之后全部失败。栈顶 16 对齐由 `sched.initContext` 的 alignBackward 负责。
-    const mem = arena_state.alloc(bytes, @alignOf(usize)) orelse return false;
-    t.stack = mem[0..bytes];
+    const mem = arena_state.alloc(bytes + stack_guard, @alignOf(usize)) orelse return false;
+    @memset(mem[0 .. bytes + stack_guard], stack_fill);
+    t.guard = mem[0..stack_guard];
+    t.stack = mem[stack_guard..][0..bytes];
     @import("sched.zig").initContext(&t.ctx, t.stack, entry, t.arg);
     return true;
 }
 pub var tasks: [4]Task = @splat(.{});
+/// 诊断：`_task_create` 因任务表满而被拒的次数。必须是 0。
+pub var task_create_refused: u32 = 0;
 pub var task_count: usize = 0;
 /// `_task_delete`：从任务表里移除该 handle 对应的槽位（桩不释放会让重复 init 泄漏槽位）。
 fn shellTaskDelete(p: ?*anyopaque) callconv(.c) void {
@@ -943,9 +988,16 @@ fn shellTaskCreatePinned(
     handle_out: ?*?*anyopaque,
     core_id: u32,
 ) callconv(.c) c_int {
-    _ = .{ name, prio, core_id };
-    if (task_count >= tasks.len) return 0;
-    tasks[task_count] = .{ .entry = entry, .arg = param };
+    _ = .{ prio, core_id };
+    if (task_count >= tasks.len) {
+        task_create_refused += 1;
+        return 0;
+    }
+    tasks[task_count] = .{ .entry = entry, .arg = param, .requested_depth = stack_depth };
+    if (name) |n| {
+        const s = std.mem.span(n);
+        @memcpy(tasks[task_count].name[0..@min(s.len, tasks[task_count].name.len - 1)], s[0..@min(s.len, tasks[task_count].name.len - 1)]);
+    }
     // **建上下文**：泵真任务需要栈与上下文；`stack_depth` 不再丢弃。
     _ = ensureTaskContext(&tasks[task_count], stack_depth);
     task_count += 1;
@@ -1510,23 +1562,61 @@ fn inArena(p: ?*anyopaque) bool {
     return addr >= arena_state.base and addr < arena_state.base + arena_state.bytes_total;
 }
 
+const max_item_size: usize = 1 << 16;
+const max_cap: usize = 1 << 20;
+
+/// 一个像样的队列：自证字对得上，`item_size`、`cap` 非 0 且有上界，`count`/`head`/`tail` 都落在环内。
+fn validQueue(q: *const Queue) bool {
+    return q.magic == queue_magic and
+        q.item_size > 0 and q.item_size <= max_item_size and
+        q.cap > 0 and q.cap <= max_cap and
+        q.count <= q.cap and q.head < q.cap and q.tail < q.cap;
+}
+
+/// `unwrapQueue` 拒掉的句柄（诊断）：第一个被拒的句柄、当时 blob 侧的返回地址、累计次数。
+pub var bad_queue_handle: usize = 0;
+pub var bad_queue_ra: usize = 0;
+pub var bad_queue_n: u32 = 0;
+
 /// 句柄有两种形态，ROM 两个都存过（`-228(s3)` 存包装体、`0x2f07ff0c` 存首字），
 /// 所以收发钩子必须都能接受：
 ///
-/// - **裸 `*Queue`**（`_queue_create` 的返回）：首字是 `item_size`（小标量）；
+/// - **裸 `*Queue`**（`_queue_create` 的返回）：首字是自证字 `queue_magic`（大于 arena 的地址上限）；
 /// - **包装体 `WifiQueue`**（`_wifi_create_queue` 的返回）：首字是指向 arena 内的 `*Queue`。
 ///
-/// 判别是无歧义的：标量不可能落进 arena 地址区间。包装体再做一次自洽检查
-/// （内部队列的 `item_size`/`cap` 必须非 0），避免把野指针当队列。
-fn unwrapQueue(p: ?*anyopaque) ?*Queue {
+/// 判别是无歧义的：自证字不可能落进 arena 地址区间。
+///
+/// **两种形态都要过 `validQueue`**。此前只有包装体的内部队列做自洽检查，裸句柄只要落在 arena 里
+/// 就直接当队列用。2026-11-26 连接实测踩到了这一点：blob 的 `wifi` 任务栈长过界，压坏了栈下面的
+/// `swq` 队列（init 期间建的），`Queue.recv` 拿被改过的首字当 `item_size`，往任务栈上拷了 0x54e68
+/// 字节直到 SRAM 末尾（store fault @0x2f080000，`mepc` 在 `memmove` 里）。栈过界本身已在
+/// `ensureTaskContext` 修掉；这里保证的是坏句柄变成一次有记录的拒绝，而不是一次 4 GB 的拷贝。
+/// `ra` 是 blob 侧调用点的返回地址，只为诊断。
+pub fn unwrapQueue(p: ?*anyopaque, ra: usize) ?*Queue {
     const raw = p orelse return null;
-    if (!inArena(raw)) return null;
-    const word0 = @as(*const usize, @ptrCast(@alignCast(raw))).*;
-    if (word0 >= arena_state.base and word0 < arena_state.base + arena_state.bytes_total) {
-        const inner: *Queue = @ptrFromInt(word0);
-        if (inner.item_size > 0 and inner.cap > 0) return inner;
+    const q: ?*Queue = blk: {
+        const addr = @intFromPtr(raw);
+        if (!inArena(raw) or addr % @alignOf(Queue) != 0) break :blk null;
+        const word0 = @as(*align(1) const usize, @ptrCast(raw)).*;
+        // 包装体：首字是 arena 里的内部队列指针。内部队列不合法就不拿包装体自己充数。
+        if (word0 >= arena_state.base and word0 < arena_state.base + arena_state.bytes_total) {
+            const inner: *Queue = @ptrFromInt(word0);
+            if (@intFromPtr(inner) % @alignOf(Queue) == 0 and validQueue(inner)) break :blk inner;
+            break :blk null;
+        }
+        // 裸句柄。
+        const bare: *const Queue = @ptrCast(@alignCast(raw));
+        if (validQueue(bare)) break :blk @ptrCast(@alignCast(raw));
+        break :blk null;
+    };
+    if (q == null) {
+        if (bad_queue_n == 0) {
+            bad_queue_handle = @intFromPtr(raw);
+            bad_queue_ra = ra;
+        }
+        bad_queue_n += 1;
     }
-    return @ptrCast(@alignCast(raw));
+    return q;
 }
 
 fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
@@ -1541,7 +1631,7 @@ fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callco
         break :blk w;
     } else 0;
     note(5, @intFromPtr(p), first_word);
-    const q = unwrapQueue(p) orelse {
+    const q = unwrapQueue(p, @returnAddress()) orelse {
         bad_handle += 1;
         return 0;
     };
@@ -1551,7 +1641,7 @@ fn shellQueueSend(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callco
 
 fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) callconv(.c) i32 {
     _ = blocking; // 队首插入不阻塞（满了直接失败）
-    const q = unwrapQueue(p) orelse return 0;
+    const q = unwrapQueue(p, @returnAddress()) orelse return 0;
     const bytes: [*]const u8 = @ptrCast(item orelse return 0);
     return q.sendFront(bytes[0..q.item_size]);
 }
@@ -1566,7 +1656,7 @@ fn shellQueueSendFront(p: ?*anyopaque, item: ?*const anyopaque, blocking: u32) c
 fn shellQueueSendFromISR(p: ?*anyopaque, item: ?*const anyopaque, hpt: ?*anyopaque) callconv(.c) i32 {
     calls.queue_send_from_isr += 1;
     if (hpt) |h| @as(*i32, @ptrCast(@alignCast(h))).* = 0;
-    const q = unwrapQueue(p) orelse {
+    const q = unwrapQueue(p, @returnAddress()) orelse {
         bad_handle += 1;
         return 0;
     };
@@ -1577,12 +1667,12 @@ fn shellQueueSendFromISR(p: ?*anyopaque, item: ?*const anyopaque, hpt: ?*anyopaq
 fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c) i32 {
     calls.queue_recv += 1;
     note(4, @intFromPtr(p), blocking);
-    const q_probe = unwrapQueue(p);
-    if (q_probe) |q0| {
+    const found = unwrapQueue(p, @returnAddress());
+    if (found) |q0| {
         recv_probe += 1;
         if (recv_probe <= 6) note(14, q0.count, q0.item_size);
     }
-    const q = unwrapQueue(p) orelse {
+    const q = found orelse {
         bad_handle += 1;
         return 0;
     };
@@ -1591,7 +1681,7 @@ fn shellQueueRecv(p: ?*anyopaque, item: ?*anyopaque, blocking: u32) callconv(.c)
 }
 
 fn shellQueueMsgWaiting(p: ?*anyopaque) callconv(.c) u32 {
-    const q = unwrapQueue(p) orelse return 0;
+    const q = unwrapQueue(p, @returnAddress()) orelse return 0;
     return q.msgWaiting();
 }
 

@@ -304,6 +304,9 @@ static void traffic_test(esp_netif_ip_info_t *ip) {
     ip_addr_t target;
     ip_addr_copy_from_ip4(target, ip->gw);
     ping_run("gateway", &target, 5);
+    /* ping 网关之后打驱动的省电 / LMAC 收发统计（与 s31-firmware 探针的数据通路阶段对照）。 */
+    printf("ORACLESTATS after gateway ping\n");
+    esp_wifi_statis_dump(WIFI_STATIS_PS | WIFI_STATIS_RXTX);
     IP_ADDR4(&target, 223, 5, 5, 5);
     ping_run("223.5.5.5", &target, 5);
     /* 经网关做一次 DNS 解析：用 lwIP 的 getaddrinfo（走 esp_netif 默认的 DNS）。 */
@@ -371,6 +374,15 @@ void app_main(void) {
     EventBits_t bits = xEventGroupWaitBits(s_evt, GOT_IP_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
     ESP_LOGI(TAG, "wait got-ip 30s -> %s", (bits & GOT_IP_BIT) ? "GOT" : "timeout");
     if (bits & GOT_IP_BIT) {
+        /* 连上并拿到地址之后的全量快照：与 s31-firmware 的真实链路探针在同一时点对照（四次握手之后数据帧靠
+         * MAC 里的密钥表加解密，这一层的差别只在连接态看得到）。时间戳之类的动态值两边必然不同，
+         * 看的是静态配置位。 */
+#ifdef CONFIG_ORACLE_REGDUMP
+        regdump("connected");
+        macdump("connected");
+        focusdump("connected");
+        rangdump_all();
+#endif
         esp_netif_ip_info_t ip;
         if (esp_netif_get_ip_info(sta_netif, &ip) == ESP_OK) traffic_test(&ip);
         ESP_LOGI(TAG, "traffic test done");

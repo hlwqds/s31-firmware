@@ -3,7 +3,7 @@
 - 规范依据：IEEE Std 802.11-2016（条款号取自该版目录与各模块文件头，页码为印刷页码）；其上的 RFC：RFC 3394（AES Key Wrap）、RFC 4493（AES-CMAC）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）、RFC 2104（HMAC）。第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）。第四批的 Wi-Fi 侧只涉 RFC 8110 §4.5（OWE 的 PMK caching）。第五批（2026-11-25）的 Wi-Fi 侧不涉新 RFC。
 - 组件：`components/wifi-mlme`、`components/wifi-connect`。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
-- **真实 AP 与空口没有任何证据**：本仓库的 blob 移植 2026-11-25 起能从 `esp_wifi_start` 返回（§9），扫描、连接没有做。下表的"通过"指离线验证通过。
+- **真实 AP 的证据分三种，别混着看**：厂商栈的对照（§8）；本仓库 blob 移植的板侧证据——2026-11-25 起能从 `esp_wifi_start` 返回（§9），2026-11-26 起能扫描到真实 AP（§10）、连上真实 AP 并在 IP 层收发（§11）；`wifi-connect` 的协议实现与真实 AP 的互通，只在 §11 那一种配置下有证据（WPA2-PSK + CCMP-128，一台 AP）。下表的"通过"指离线验证通过。
 - 本文把 2026-11-24 加入的 SAE 完整实现、FT 密钥派生层、256 位套件、QoS 与省电称为"第二批"；之前的部分称为"第一批"。
   第二批的板侧自检先在主机上用桩 `board` 模块跑过，随后于同日随 `wifi` profile 上板（§5.2）。
 - 本文把 2026-11-25 加入的 OWE、EAP-TLS、按 AKM 的 4 次握手、SAE 其它群、FT 协议、无线测量（radio measurement）与 WNM 称为"第三批"。第三批新增六个板侧子自检，在主机上的读数与复核见 §5.4；**第三批当时没有上板**（2026-11-25 随第五批的镜像上板，全部通过）。
@@ -29,6 +29,7 @@
 | 板侧自检（第二批） | L3 | `wifi_mlme` 24/24、`wifi_connect` 87/87 | `logs/e2e-wifi-boot.log`；§5.2。该文件名已被 2026-11-25 第五批那次运行覆盖，这次的日志只剩 git 历史 |
 | 板侧自检（第五批上板） | L3 | **14/14 个 section 全过、`main: verdict=pass`**：`wifi_mlme` 121/121、`wifi_connect` 199/199、`ble_802154` 207/207（第三、四、五批的判据第一次上板）、`net_ethernet` 11/11。最小验证镜像（`--only ble_802154,wifi_mlme`，512704 B，整份 `wifi` 镜像的 42%）同样 `PASS board:wifi[ble_802154,wifi_mlme]` | `logs/e2e-wifi-boot.log`、`logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.6 |
 | 整体判决为 pass 的板级运行 | L3 | 有：14/14 段、`main: verdict=pass`——第一批复验一次、第二批之后一次、第五批终态（2026-11-25）再一次；每次都覆盖了 `logs/e2e-wifi-boot.log` 的同名文件，现在盘上这份文件的内容就是第五批终态的 pass 运行 | `docs/verification/README.md`、git 历史 |
+| `wifi-connect` 接进真实链路（WPA2-PSK + CCMP-128） | L4 | 本仓库自己的移植连上用户提供的 AP：`STA_CONNECTED`（authmode 3、aid 1、信道 1），从发起到连上约 3.0 s；MAC 密钥表里的成对钥匙与组钥匙和请求方手里的逐字节相同；DHCP 拿到地址，ping 网关 10/10 | `logs/wifi-link-connect-boot.log`；§11 |
 
 ## 2. 逐特性对照
 
@@ -70,7 +71,7 @@
 | WNM 其余子域：BSS Max Idle（含保活判决）、TIM Broadcast、FMS、DMS、Collocated Interference（含占空比）、Channel Usage、WNM Notification、Event / Diagnostic 容器、QoS Traffic Capability 元素 | 11.24.2、11.24.3、11.24.8、11.24.9、11.24.10、11.24.13、11.24.15、11.24.16.2、11.24.17；9.6.14.2–.5、.11–.15、.21–.27、.29–.30；9.4.2.67–.70、.76–.89（表 9-77 的元素 ID、表 9-354 的动作值、表 9-199、表 9-178、9.4.2.85） | `wifi-mlme/src/wnm.zig`（第 15–24 节）、`wnm_rest_tests.zig`、`wnm_rest_selftest.zig` | 39（`wnm_rest_tests.zig`） | 按原图与原表手排；照同一份规范写的 Python 模型对拍（5012 例：14 种子 × 358，主代理重跑其中 4 个种子共 1432 例，0 不一致）；hostap 只有 `WNM_*` 动作枚举可对拍（`ieee802_11_defs.h:765–792`）；占空比公式 ⌊(2³²−2)×T_B/T_I + 0.5⌋ 对渲染 PDF 的原文（9.4.2.85，印刷页 1009）核实 | 31（`wnm_rest_selftest.zig`） | 离线验证通过；独立评审的 12 条发现（含 P1：CI Report 元素宽度按图 9-427 应为 21 八位组）已返修；没做的边界见 §6（FMS Descriptor 元素 ID 86、WNM Notification 的 AP Descriptor / Firmware Version 子元素内容、FTM / Timing Measurement、Location track、Proxy ARP、AC Station Count 等非目标）；取舍与偏离清单见 `wnm.zig` 文件头 |
 | GAS / ANQP 与 Interworking：Public Action 10–13、GAS Initial / Comeback 的分帧与状态机、`dot11GASResponseTimer`、ANQP 元素子集（含 NAI Realm） | 9.6.8.12–.15、9.6.8.1（表 9-307）、表 9-313–9-316、图 9-666–9-670、9.4.2.93、9.4.5（ANQP 元素，图 9-606）、9.4.5.5（Emergency Call Number）、11.25.3.2.2–.4、11.25.3.3、9.4.1.9、9.4.1.12、9.4.1.34、表 9-46 | `wifi-mlme/src/gas.zig`、`gas_tests.zig`、`gas_selftest.zig` | 36（`gas_tests.zig`） | 按条款与原图手排；照同一份规范写的 Python 模型对拍（696 例：接受 563 / 拒绝 133，0 不一致）；盘上 hostap 裁掉了 `gas.c` / `anqp.c`，没有独立实现 | 13（`gas_selftest.zig`） | 离线验证通过；Status Code 字段 2 八位组按 9.4.1.9；Emergency Call Number（9.4.5.5）按评审意见补齐；其余边界见 §6 |
 | Block Ack 与 A-MSDU 子帧头：ADDBA Request / Response、DELBA、记分板位图语义、接收重排缓冲（时间注入）、A-MSDU 子帧头 | 9.3.1.8–.9、9.3.2.2、9.4.1.14–.16、9.4.2.139（图 9-79）、9.6.5.2–.4、10.12、10.24.1–.2 / .4 / .7.3 / .7.5–.6、11.5.2–.4（表 9-302、9-303、9-304） | `wifi-mlme/src/blockack.zig`、`blockack_tests.zig`、`blockack_selftest.zig` | 38（`blockack_tests.zig`） | 按条款手排；照同一份规范写的 Python 模型对拍（4 × 240 随机 + 256 条确定性边界 = 1216 例，0 不一致）；窗口边界对渲染 PDF 的原文（印刷页 1424 / 1427 / 1428）逐格核对；A-MSDU Length 的大端序只有规范依据（内核只有头文件） | 19（`blockack_selftest.zig`） | 离线验证通过；独立评审（2026-11-25）对本片逐条核对、无发现；只做 Basic 与 Compressed 变体，边界见 §6 |
-| 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | — | — | — | — | `esp_wifi_start` 已返回 0（2026-11-25，§9）；扫描、连接未做 |
+| 真实 MAC：`esp_wifi_start`、扫描、连接 | 不适用 | — | — | — | — | `esp_wifi_start` 已返回 0（2026-11-25，§9）；扫描已上板（2026-11-26，§10）；连接与 IP 层收发已上板（2026-11-26，§11，WPA2-PSK + CCMP-128） |
 
 负面用例（主机）：截断、越界、不一致的输入逐个被拒；MIC 错、重放或重复计数、顺序错、解包失败、RSNE 被改、PN 重放、错 IGTK、SA Query 事务标识不符。第二批追加：口令不同时 Confirm 校验失败并删除 PMK、非法的对端 Commit、回声 Commit、不支持的群、Anti-Clogging token 错、篡改 / 截断 / 标错套件的 256 位帧、KEK 长度不对。
 第三批追加：OWE 的公钥不在曲线上、私钥越界、响应里有 OWE AKM 却没有 DH Parameter element；EAP-TLS 的 Flags 与长度字段不合法、重复的 Request、握手完成前收到的 EAP-Success；按 AKM 的握手里 PMK 长度不符、AKM 与密码套件不能合用、消息 1 的 PMKID 不符；SAE 其它群里的非法对端 Commit 与状态码 77 的群协商；FT 协议里 MIC 不对、重放、移动域 / R0KH-ID / ANonce / SNonce 不符、截止时间已过；无线测量与 WNM 里的保留值、Request mode 与可选字段对不上、Query / Response 里 Preference 为 0。每条都断言拒绝的理由是正确的那一个（状态码、丢弃原因或错误名）。
@@ -650,7 +651,7 @@ Emergency Call Number 的静默缺口——它们已是改正后的行为，经�
 
 ## 7. 未验证
 
-- 真实 AP 互通；消息 3 与组密钥消息 1 的字段宽松度只能靠实网确认。
+- 真实 AP 互通：WPA2-PSK + CCMP-128 已在用户提供的 AP 上连上并收发（§11）；SAE、OWE、FT、EAP-TLS、其余套件、多台 AP 与重连都没有证据。消息 3 与组密钥消息 1 的字段宽松度只在这一台 AP 上确认过。
 - CCMP 与 GCMP 在 QoS 加四地址帧上的 30 字节 AAD 只有构造测试，没有官方向量。
 - 现代真实 AP 的 Beacon（厂商特定元素、AID 高位）只在 2004 年的抓包里见过。
 - 真实 AP 上的 SAE（WPA3 个人）互通；FT 的初始关联与快速切换；256 位套件（CCMP-256 / GCMP-256 / BIP 的 256 位与 GMAC 变体）的协商与互通。
@@ -716,7 +717,8 @@ wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
 ## 10. 本仓库的 blob 移植：首次扫描到真实 AP（2026-11-26；真射频，与 oracle 对照，没有抓包）
 
 §9 之后的下一步：`esp_wifi_start` 之后发起主动扫描。探针是 `-Dwifi-link-probe`（`components/wifi-blobs/src/link_probe.zig`）。
-上一轮扫描能逐信道走完但恒为 0 个 AP，原因有两处。
+上一轮扫描能逐信道走完但恒为 0 个 AP，原因有两处。走到这一步之前还拆过两道更早的闸——国家码 / 信道表是零值桩、
+软件定时器表只有 16 项——与下面两处修在同一个提交里，记在 `CHANGELOG.md`。
 
 **其一：APM 访问控制过滤器。** IDF 的应用在启动期调 `bootloader_init_mem()`，其中把三条访问路径的控制过滤器关掉：
 `LP_APM_FUNC_CTRL`（0x20706CBC）、`HP_APM_FUNC_CTRL`（0x205044C4）、`HP_MEM_APM_FUNC_CTRL`（0x205048C4）写 0
@@ -784,6 +786,118 @@ oracle 自己那一次是 36 个。
 
 - 这是 blob 边界的板侧证据，不是 `wifi-mlme` / `wifi-connect` 的协议证据：扫描完全由 blob 做，`wifi-connect` 只提供了
   回调里的 IE 解析与请求方的生命周期。没有抓包，真射频收发已通的证据是与 oracle 的结果一致。
-- 连接、收发未做：`esp_wifi_connect` 还是计数桩；回调表里连接路径的入口还没填。
+- 连接与收发已于同日上板（§11）。公开入口 `esp_wifi_connect` / `esp_wifi_disconnect` 仍是 `link_stubs.zig` 里的计数桩，探针调的是驱动的内部入口。
 - PHY 标定数据不持久化：探针每次启动全量标定。与用对照镜像存在本板的标定数据（PARTIAL）对照过，31 个共同 AP 的
   authmode / 信道全部相同、RSSI 平均差 0.3 dB，全量只多约 30 ms。
+
+## 11. 本仓库的 blob 移植：连上真实 AP 与数据通路（2026-11-26；WPA2-PSK + CCMP-128）
+
+§10 之后探针（`-Dwifi-link-probe`，构建时另给 `-Dwifi-ap-ssid` / `-Dwifi-ap-password`，凭据不入库）继续往下走：
+连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）→ 再泵 5 秒 → 断开。
+
+**连接（路线图 R3.2.2）。** 认证、关联与帧的收发都由 blob 做，这里只补请求方的逻辑，分工照 IDF
+（`components/wifi-blobs/src/wpa_cb.zig` 中段）。回调表从 4 项填到 12 项：
+
+- `wpa_sta_connect`：驱动选好 BSS 后调它。请求方（`wifi-connect` 的 `Supplicant`）按 AP 的 RSNE 选 AKM 与套件、
+  由口令算 PMK、把本 STA 的 RSNE 交给驱动放进关联请求。范围只有 RSN + PSK：选出来的 AKM 不是 PSK 就拒绝，
+  WPA v1、企业、SAE、OWE、FT、DPP 都没接。
+- `wpa_sta_connected_cb`：关联成功，AUTHENTICATION → STAKEYSTART。
+- `wpa_sta_rx_eapol`：AP 的每一帧 EAPOL-Key。回应（消息 2、消息 4、组密钥消息 2）经 `esp_wifi_internal_tx()` 发出；
+  钥匙等消息 4 的「发送完成」回调才装进驱动（`esp_wifi_set_sta_key_internal`、`esp_wifi_set_igtk_internal`）。
+- 协商完成要单独告诉驱动一次（`esp_wifi_auth_done_internal()`）。少了它，请求方手里钥匙都齐了，驱动照样在
+  10 秒后以 204（`4WAY_HANDSHAKE_TIMEOUT`）去关联。
+- `wpa_sta_in_4way_handshake`、`wpa_config_parse_string`、`wpa_config_done`、`wpa_sta_clear_curr_pmksa`、
+  `wpa_config_reload`：blob 在这条路径上要读的其余几项。
+
+主机用例（`wifi-blobs` 的 `wpa_cb.zig`）拿已知答案走完整条握手：三帧回应逐字节相同、钥匙在消息 4 发送完成之后才装、
+组密钥换钥匙、装不进驱动时不回确认。`wpa_sta_rx_eapol` 的返回值按 IDF 的约定（处理了 1、解不开的帧 0、校验不过 -1）：
+驱动在这个调用点只拿返回值选一条日志，此前返回的是发送结果（成功为 0），板上每一帧处理成功的握手日志都是
+`wpa_psk handle fail`。
+
+这一步修掉的四处都在运行时，不在协议侧：
+
+1. **Wi-Fi 任务栈按 blob 报的尺寸给，长了过界。** blob 只建一个任务（`wifi`，请求 6656 字节），四次握手实际用 9252 字节——
+   请求方是本仓库自己的代码，它用多少栈 blob 不知道。修复前的现场是握手完成后 `store access fault`，以及停在断点上、
+   返回地址与栈帧里是 `0xff00ffff`、`0xff000000` 这类值（`logs/wifi-link-connect-crash-boot.log`、`logs/wifi-link-connect-watchpoint-boot.log`，
+   都只留了从 `esp_wifi_set_config` 起的一段；停机现场里栈与通用寄存器的原始转储入库前已删，只留 `mepc` / `mtval` / `cause` / `ra` / `sp`）。修法在 `osi_impl.zig`：栈的下限 16 KiB（实测用量的 1.7 倍），栈底下留
+   256 字节护栏、泵每一步查一次；探针每次报进度都打各任务栈的高水位。
+2. **`esp_wifi_set_config` 把 STA 配置逐字段写成四十多个 NVS 键**，原先每个槽自带 2048 字节的 RAM 版 NVS 装不下，
+   驱动回 `0x1105`。`nvs_ram.zig` 改成键表加分档的 blob 池。
+3. **`memcpy` 用的是 compiler_rt 的逐字节循环**，而 blob 装钥匙的 MAC 密钥表是整字寄存器堆：每 4 个字节只剩最后 1 个。
+   握手照常完成、驱动也报成功，数据帧却双向都解不开——连上之后 DHCP 12 秒没有应答，一帧都没收到。探针为此加了一项
+   核对（MAC 密钥表里成对钥匙与组钥匙那两格，对请求方手里的钥匙逐字节比，只打位图）。`rom_syms.ld` 把
+   `memcpy` / `memmove` / `memset` 用赋值（不是 `PROVIDE`）指到 ROM 的实现之后才对得上；修复前的一段在
+   `logs/wifi-link-connect-badkeys-boot.log`，密钥表那几格的位图是 `ffff, 8fff, 88ff, 888f, 8888, 0888, 0088`
+   （那一段日志当时还带着一份密钥表的原始转储，入库副本里已删）。
+4. **数据通路不答 ARP 请求**，见下。
+
+板侧读数（`logs/wifi-link-connect-boot.log`，`-Dcoex` 开着；入库的是脱敏副本，除用户自己的 AP `hl-wifi` 外，
+邻居的 SSID 与 BSSID 换成了标签）：
+
+```text
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: state: auth -> assoc (0x0)
+wifi-blob: state: assoc -> run (0x10)
+wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
+wifi-blob: wpa_psk handle succeed
+wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=0
+wifi-blob: wpa_psk handle succeed
+wpa: keys installed after msg 4: ptk rc=0, group keys rc=0, port truevalid
+wifi-link-probe: STA_CONNECTED bssid=44:f7:70:16:fa:ba ch=1 authmode=3 aid=1
+wpa: key negotiation complete: esp_wifi_auth_done_internal -> true
+wifi-link-probe: CONNECTED in 3031 ms (1 progress reports)
+wifi-link-probe: supplicant[connected]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[connected]: 0:wifi=9252/16384
+wifi-link-probe: key table entry 4 (pairwise TK): equal bits vs tk=ffff vs gtk=0000 (nonzero=ffff)
+wifi-link-probe: key table entry 0 (group GTK): equal bits vs tk=0000 vs gtk=ffff (nonzero=ffff)
+```
+
+`pairwise=4 group=4 akm=2` 是驱动的 `wifi_cipher_type_t` / `wifi_auth_mode_t` 位值：CCMP 与 PSK。`sta_rsne=28 B` 是本 STA 的
+RSNE 元素的真实长度（探针把管理帧保护配成不通告，没有 PMKID 列表）。
+
+**数据通路（路线图 R3.2.3）。** 新增 `components/wifi-blobs/src/data_path.zig`：连上之后用 `esp_wifi_internal_reg_rxcb`
+登记收帧回调——回调跑在驱动的 Wi-Fi 任务里，只做过滤、拷进环形缓冲、交还驱动缓冲；帧由主上下文的 `poll()` 处理。
+IP 一侧是 `net-ipv4`（ARP / ICMP / IPv4）与 `net-udp-dhcp-dns`（DHCP）。没有路由表、没有 socket：地址靠 DHCP 拿
+（含续租、重绑、到期），ping 的对象是租约里的网关。
+
+**第四处：ping 网关时通时不通**（0/10 与 9/10 都出现过），DHCP 一直正常。收帧记录显示网关在每一帧回显请求之后都先用
+ARP 请求来问本机的 MAC，本机没有答——`handleArp` 当时只处理 ARP 应答。对端的邻居缓存里碰巧还有本机时才通。
+IP 主机必须答问自己地址的 ARP 请求（RFC 826），厂商栈也这么做。修法：`handleArp` 加上应答（单播给问的人），
+并加了主机用例。修复前的一段在 `logs/wifi-link-connect-noarp-boot.log`。
+
+```text
+wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x00000000
+wifi-link-probe: net: dhcp DISCOVER attempt=0 tx rc=0x0
+wifi-link-probe: net: dhcp OFFER ip=192.168.31.151 -> REQUEST tx rc=0x0
+wifi-link-probe: net: dhcp ACK: bound ip=192.168.31.151 mask=255.255.255.0 router=192.168.31.1 dns=192.168.31.1, esp_wifi_internal_set_sta_ip rc=0x0
+wifi-link-probe: data path: DHCP bound in 105 ms ip=192.168.31.151 router=192.168.31.1
+wifi-link-probe: net: ping seq=0 tx rc=0x0
+wifi-link-probe: net: arp answered 192.168.31.1 (44:f7:70:16:fa:b8) tx rc=0x0
+wifi-link-probe: net: ping done: sent=10 received=10 timed_out=0 rtt min/avg/max=13103/23077/30179 us
+wifi-link-probe: data path: frames rx=13 (ignored 0, dropped 0) tx=13 (failed 0)
+wifi-link-probe: stayed connected for 5 s
+wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
+```
+
+修复之后的四轮（前两轮还没有 `wpa_sta_rx_eapol` 返回值的更正与共存读数，那两处不碰数据通路）：
+
+| 轮 | 连上 | DHCP 拿到地址 | ping 网关 | 网关来问 ARP |
+| --- | --- | --- | --- | --- |
+| 1 | 3037 ms | 82 ms | 10/10，rtt 最小 / 平均 / 最大 13.0 / 22.6 / 46.4 ms | 1 次 |
+| 2 | 2994 ms | 141 ms | 10/10，12.6 / 19.0 / 23.9 ms | 1 次 |
+| 3 | 3017 ms | 129 ms | 10/10，13.1 / 22.5 / 30.2 ms | 1 次 |
+| 4（入库的那一份） | 3031 ms | 105 ms | 10/10，13.1 / 23.1 / 30.2 ms | 1 次 |
+
+网关什么时候来问不固定（第 1 帧回显之后或第 6 帧之前），取决于它那边的邻居缓存。
+
+边界：
+
+- 一台 AP、一种配置（WPA2-PSK + CCMP-128、信道 1；管理帧保护双方都通告，这次没用上）。SAE、OWE、FT、企业、其余套件、
+  多台 AP、漫游、断线重连、长时间稳定性都没有做，连上之后只观察了 5 秒。
+- 没有抓包：握手与数据帧在线上的内容没有看过。证据是 AP 的回应（关联成功、四次握手走完、DHCP 应答、回显应答）与
+  MAC 密钥表的核对。
+- 数据通路只有 DHCP 与 ICMP。TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。
+- PHY 标定数据仍不持久化。
+- 同一次运行里共存核开着的读数见 `docs/verification/coex-verification.md` §12。

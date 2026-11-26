@@ -32,6 +32,8 @@ test {
     _ = @import("host_stubs.zig");
     // blob 的 supplicant 回调表：布局断言 + `wpa_parse_wpa_ie` 的解析（RSNX 用例读上面替身的配置）。
     _ = @import("wpa_cb.zig");
+    // 数据通路：驱动的以太网帧 ⇄ ARP / ICMP / DHCP（用例里手搭帧，假驱动记发出去的帧）。
+    _ = @import("data_path.zig");
 }
 
 test "wifi-blobs: probe 解析到替身符号的地址" {
@@ -207,7 +209,7 @@ test "osi_impl: 收发钩子同时接受裸队列与包装体（ROM 两种句柄
     const q_recv: *const fn (?*anyopaque, ?*anyopaque, u32) callconv(.c) i32 = @ptrCast(tbl._queue_recv.?);
     const q_waiting: *const fn (?*anyopaque) callconv(.c) u32 = @ptrCast(tbl._queue_msg_waiting.?);
 
-    // 裸 *Queue：首字是 item_size（标量），不是 arena 指针。
+    // 裸 *Queue：首字是自证字（标量），不是 arena 指针。
     const raw = q_create(2, 4) orelse return error.OutOfMemory;
     var item = [4]u8{ 9, 8, 7, 6 };
     try std.testing.expectEqual(@as(i32, 1), q_send(raw, &item, 0));
@@ -225,6 +227,80 @@ test "osi_impl: 收发钩子同时接受裸队列与包装体（ROM 两种句柄
     const before = impl.bad_handle;
     try std.testing.expectEqual(@as(i32, 0), q_send(@ptrFromInt(8), &item, 0));
     try std.testing.expect(impl.bad_handle > before);
+
+    // 板上 2026-11-26 的那一种：队列还在，`item_size` 被踩成 0xFF000000。此前它照样被当成队列，
+    // `recv` 按这个长度往调用方的缓冲里拷（那次拷了 0x54e68 字节直到 SRAM 末尾）。现在拒掉，
+    // 缓冲一个字节都不动。
+    const q: *impl.Queue = @ptrCast(@alignCast(raw));
+    const untouched = [4]u8{ 0xAA, 0xAA, 0xAA, 0xAA };
+    out = untouched;
+    q.item_size = 0xFF00_0000;
+    const before_bad = impl.bad_queue_n;
+    try std.testing.expectEqual(@as(i32, 0), q_recv(raw, &out, 0));
+    try std.testing.expectEqualSlices(u8, &untouched, &out);
+    try std.testing.expectEqual(@as(i32, 0), q_send(raw, &item, 0));
+    try std.testing.expectEqual(@as(u32, 0), q_waiting(raw));
+    try std.testing.expectEqual(before_bad + 3, impl.bad_queue_n);
+
+    // 诊断记的是第一个被拒的句柄和 blob 侧调用点（`ra` 由壳传进来，这里直接给）。
+    impl.bad_queue_n = 0;
+    impl.bad_queue_handle = 0;
+    impl.bad_queue_ra = 0;
+    try std.testing.expectEqual(@as(?*impl.Queue, null), impl.unwrapQueue(raw, 0x4000_5540));
+    try std.testing.expectEqual(@as(u32, 1), impl.bad_queue_n);
+    try std.testing.expectEqual(@intFromPtr(raw), impl.bad_queue_handle);
+    try std.testing.expectEqual(@as(usize, 0x4000_5540), impl.bad_queue_ra);
+    const base = impl.bad_queue_n;
+
+    // 包装体的内部队列坏了：同样拒，不拿包装体自己充数。
+    const wrapped_q: *impl.WifiQueue = @ptrCast(@alignCast(wrapped));
+    wrapped_q.inner.item_size = 0xFF00_0000;
+    try std.testing.expectEqual(@as(i32, 0), q_send(wrapped, &item, 0));
+    try std.testing.expectEqual(base + 1, impl.bad_queue_n);
+    wrapped_q.inner.item_size = 4;
+    try std.testing.expectEqual(@as(i32, 1), q_send(wrapped, &item, 0));
+
+    // arena 里不是队列的东西（这里照分配器块头的样子摆几个标量：光看数值像一个小队列）：
+    // 没有自证字就不认。
+    const other = impl.arena_state.alloc(64, 4) orelse return error.OutOfMemory;
+    for ([_]u32{ 64, 1, 0, 0, 0, 0 }, 0..) |w, i| std.mem.writeInt(u32, other[i * 4 ..][0..4], w, .little);
+    try std.testing.expectEqual(@as(i32, 0), q_send(other, &item, 0));
+    try std.testing.expectEqual(base + 2, impl.bad_queue_n);
+}
+
+fn dummyTaskEntry(_: ?*anyopaque) callconv(.c) void {}
+
+test "osi_impl: 任务栈有下界和上界，护栏紧贴栈底，踩到才报过界" {
+    var buf: [96 * 1024]u8 align(16) = undefined;
+    impl.initArena(&buf);
+
+    // blob 给的栈深小于下界：按下界给。护栏在同一条栈底下方，紧挨着。
+    var t: impl.Task = .{ .entry = &dummyTaskEntry };
+    try std.testing.expect(impl.ensureTaskContext(&t, 2048));
+    try std.testing.expectEqual(impl.min_stack, t.stack.len);
+    try std.testing.expectEqual(@intFromPtr(t.stack.ptr) - impl.stack_guard, @intFromPtr(t.guard.ptr));
+    try std.testing.expectEqual(impl.stack_guard, t.guard.len);
+    try std.testing.expect(!t.stackOverflowed());
+    // 高水位：只有建上下文时写的初始帧那一截，其余还是填充字。
+    const used = t.stackUsed();
+    try std.testing.expect(used > 0 and used < 1024);
+    const low = t.stack.len - used;
+    for (t.stack[0..low]) |b| try std.testing.expectEqual(impl.stack_fill, b);
+    try std.testing.expect(t.stack[low] != impl.stack_fill);
+
+    // blob 给的栈深超过上界：取上界。
+    var big: impl.Task = .{ .entry = &dummyTaskEntry };
+    try std.testing.expect(impl.ensureTaskContext(&big, 1 << 20));
+    try std.testing.expectEqual(impl.max_stack, big.stack.len);
+    // 已经建过上下文的任务再调一次是空操作，不会多分一份。
+    const free_before = impl.arena_state.bytes_free;
+    try std.testing.expect(impl.ensureTaskContext(&big, 1 << 20));
+    try std.testing.expectEqual(free_before, impl.arena_state.bytes_free);
+
+    // 栈向下长过界：踩到护栏就报，别的任务不受影响。
+    big.guard[impl.stack_guard - 1] = 0;
+    try std.testing.expect(big.stackOverflowed());
+    try std.testing.expect(!t.stackOverflowed());
 }
 
 test "osi_impl: 中断/任务类是可观测的空操作，计数从 0 起" {

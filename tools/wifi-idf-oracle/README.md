@@ -73,6 +73,11 @@ python3 tools/wifi-idf-oracle/gen_regdump_addrs.py          # 重新生成
 2026-11-25 的对照：`logs/wifi-idf-oracle-regdump-boot.log`（oracle）对 `logs/wifi-probe-regdump-before-boot.log`
 （探针，修复前），差集 95 个；根因与实验见 `docs/adr/ADR-001-wifi-blobs-cooperative-yield.md` 文末。
 
+连上并拿到地址之后（`CONFIG_ORACLE_WIFI_SSID` 非空时）还做两件事（2026-11-26 加，与 `s31-firmware` 真实链路探针的连接与
+数据通路阶段对照）：ping 网关之后打一行 `ORACLESTATS after gateway ping` 与驱动的省电 / 收发统计
+（`esp_wifi_statis_dump(WIFI_STATIS_PS | WIFI_STATIS_RXTX)`）；打开 `CONFIG_ORACLE_REGDUMP` 时在连上之后、ping 之前再取一份
+全量快照（`REGDUMP connected begin`）——四次握手之后数据帧靠 MAC 里的密钥表加解密，这一层的差别只在连接态看得到。
+
 ## 只扫描不连接（2026-11-26）
 
 `CONFIG_ORACLE_WIFI_SSID` 留空时不连接：`esp_wifi_start` 之后非阻塞地起一次全信道扫描，等扫描结束，再打印扫到的

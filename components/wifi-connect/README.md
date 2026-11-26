@@ -137,7 +137,7 @@ const n = try s.recvEapol(frame, snonce, out);
 | `bip.zig` | 371 | BIP-CMAC-128、BIP-CMAC-256、BIP-GMAC-128、BIP-GMAC-256：AAD、MME 构造/解析、保护、校验、IPN 重放 |
 | `rsne.zig` | 383 | RSNE 解析/编码、12.6.3 的交集选择、表 12-2、本 STA 的 RSNE、9.4.2.25.3 的 AKM 与密码套件配对、表 9-131 的组管理密码选择器 |
 | `supplicant.zig` | 660 | 请求方：4 次握手、组密钥握手、PTKSA/GTKSA/IGTKSA、12.7.10 状态机 |
-| `api.zig` | 6 | 公共入口：别的组件按模块名 `wifi_connect` import（第一个使用者是 `wifi-blobs` 的 supplicant 回调） |
+| `api.zig` | 15 | 公共入口：`supplicant`、`rsne`、`wpa2`、`akm`、`ccmp`、`bip`、`vectors`，别的组件按模块名 `wifi_connect` import（使用者是 `wifi-blobs` 的 supplicant 回调：连接前选 AKM 与套件、由口令算 PMK、收 EAPOL；`vectors` 是它在主机用例里对拍整条握手用的向量） |
 | `mfp.zig` | 366 | 稳健帧分类（12.2.8、表 9-47）、12.6.19 收发规则、SA Query |
 | `conn.zig` | 322 | 连接状态机、事件队列、重连退避（未改） |
 | `sae.zig` | 379 | SAE 字节级函数（KDF、keyseed / KCK / PMK / PMKID、Confirm 的 CN、帧体常量）、`unimplemented` 表 |
@@ -283,8 +283,11 @@ const n = try s.recvEapol(frame, snonce, out);
 - 第三批、第四批之后的板侧判据当时没有上板（串口 `/dev/ttyUSB0` 无权限）。2026-11-25 随第五批的镜像上板：
   `wifi_connect` 199/199 全过（本组件的判据数在第五批不变）；整份 `wifi` profile 14/14 个 section 全过、
   `main: verdict=pass`（`logs/e2e-wifi-boot.log`）。串口权限是同日由用户授权 `setfacl` 恢复的。
-- 真实 AP 上的 SAE（WPA3 个人）、FT 初始关联与快速切换、256 位套件协商都没有任何互通证据。
-- 与真实 AP 的互通：消息 3 / 组密钥消息 1 的字段宽松度（上面第 7 条）只能靠实网确认。
+- 真实 AP 上的 SAE（WPA3 个人）、FT 初始关联与快速切换、256 位套件协商都没有任何互通证据。WPA2-PSK + CCMP-128 已于
+  2026-11-26 在一台真实 AP 上走通——请求方经 `wifi-blobs` 的回调表接进真实链路探针，证据见
+  `docs/verification/wifi-ieee80211-verification.md` §11。
+- 与真实 AP 的互通：消息 3 在那一台 AP 上被本实现接受；组密钥消息 1 在实网上没有出现过（那次运行里 AP 没有换钥匙）。
+  宽松度的各条（上面第 7 条）在那台 AP 上是否出现，没有核对。
 - CCMP/GCMP 的 QoS + 四地址 AAD（30 字节）只有构造测试，没有官方向量。
 - BIP 的 AAD 只有 J.9.1 一帧（Retry / Power Management / More Data 本来就是 0）。
 - 差分时发现的参考实现问题（未修改它）：`vectors --seed 20261124` 与 `--seed 5` 在 `_v_frame` 里

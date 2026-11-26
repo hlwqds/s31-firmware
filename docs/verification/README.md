@@ -96,7 +96,12 @@ ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_ml
 
 2026-11-26 的后续：本仓库自己的移植第一次扫描到真实 AP——`esp_wifi_start` 之后主动扫描约 9.1 s 走完全部信道，
 取到 38 条真实记录；根因两处（APM 访问控制过滤器、supplicant 回调表是空指针），证据与逐 AP 对照见
-`wifi-ieee80211-verification.md` §10、`logs/wifi-link-scan-boot.log`（邻居的 SSID 与 BSSID 已脱敏）。连接与收发未做。
+`wifi-ieee80211-verification.md` §10、`logs/wifi-link-scan-boot.log`（邻居的 SSID 与 BSSID 已脱敏）。
+
+2026-11-26 的后续：本仓库自己的移植第一次连上真实 AP 并在 IP 层收发（WPA2-PSK + CCMP-128）——`STA_CONNECTED` 约 3.0 s，
+MAC 密钥表里的钥匙核对一致，DHCP 拿到地址，ping 网关 10/10；修了四处运行时问题（任务栈过界、NVS 键表、`memcpy` 写密钥表、
+数据通路不答 ARP 请求），证据见 `wifi-ieee80211-verification.md` §11、`logs/wifi-link-connect-boot.log`（脱敏）。
+同一次运行开着共存核，各阶段的共存读数见 `coex-verification.md` §12。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 

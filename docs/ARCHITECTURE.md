@@ -15,7 +15,7 @@ components/
   ├── net-tls-http           TLS 记录层/密钥日程/AEAD/DER、HTTP/1.1
   ├── app-mqtt-ota           MQTT 3.1.1、OTA 清单校验/回滚
   ├── wifi-boundary          OSI 函数表 ABI、blob 边界
-  ├── wifi-blobs             真实 blob 链接 + osi 适配层（init/任务/合作式让出）
+  ├── wifi-blobs             真实 blob 链接 + osi 适配层（init/任务/合作式让出）、supplicant 回调表、真实链路探针与数据通路（DHCP + ping 网关）
   ├── wifi-connect               扫描/连接状态机；RSNA（WPA2/WPA3 密钥派生、按 AKM 的 4 次握手、CCMP/GCMP/BIP 含 256 位套件）；SAE（P-256 与其余 14 个群）；FT 密钥层次与 FT 协议；OWE；EAP-TLS
   ├── ble-802154             HCI、ATT 服务端、GATT 服务端与客户端、AES-CMAC 签名、扩展广播与周期广播的 host 侧、EATT 与 Robust Caching、LL Privacy 与 LE Power Control 的 host 侧、802.15.4 帧头与 6LoWPAN 适配层
   ├── wifi-mlme              IEEE 802.11 帧格式、管理帧、信息元素、MLME、扫描、QoS Control、省电、无线测量、WNM（BSS Transition Management、WNM Sleep Mode）（纯逻辑）

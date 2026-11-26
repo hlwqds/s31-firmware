@@ -46,6 +46,10 @@ pub fn build(b: *std.Build) void {
     const wifi_init_probe = b.option(bool, "wifi-init-probe", "run the wifi init probe instead of the normal self-test") orelse false;
     // 真实链路探针：init → set_mode → start → 开中断泵任务 → 扫描 → …（干净入口，不带旧探针的实验写）。
     const wifi_link_probe = b.option(bool, "wifi-link-probe", "run the real-link probe (init, start, scan) instead of the normal self-test") orelse false;
+    // 真实链路探针的连接阶段：AP 的 SSID 与密码从命令行来。**不入库**——密码会进镜像的 .rodata，
+    // 而镜像本身不提交；脚本从对照镜像的本地 sdkconfig（`tools/wifi-idf-oracle/sdkconfig`，已 gitignore）里取。
+    const wifi_ap_ssid = b.option([]const u8, "wifi-ap-ssid", "Wi-Fi AP SSID for the link probe's connect phase (do not commit)") orelse "";
+    const wifi_ap_password = b.option([]const u8, "wifi-ap-password", "Wi-Fi AP password for the link probe's connect phase (do not commit)") orelse "";
     // R3.3 链接实验：把 BLE controller 归档（libble_app/libbtdm_common/libbtbb/libphy）
     // 加进链接。与 wifi-blob-* 同构：给目录 + 对象清单，产物用于量容量与解符号，
     // 适配面由 components/bt-blobs/link/bt_stubs.c + s31.ld 的 btdm 边界补上。
@@ -303,6 +307,15 @@ pub fn build(b: *std.Build) void {
         probe_mod.addImport("coex_gate", coex_gate);
         if (coex) probe_mod.addImport("radio_coex", coex_mod);
         probe_mod.addImport("wifi_connect", wifi_connect_mod);
+        // 真实链路探针在连上之后把驱动的以太网帧接到 IP 栈（`wifi-blobs/src/data_path.zig`：ARP / ICMP / DHCP）。
+        if (wifi_link_probe) {
+            probe_mod.addImport("net_ipv4", ipv4_mod);
+            probe_mod.addImport("net_udp", udp_mod);
+        }
+        const probe_opts = b.addOptions();
+        probe_opts.addOption([]const u8, "ap_ssid", wifi_ap_ssid);
+        probe_opts.addOption([]const u8, "ap_password", wifi_ap_password);
+        probe_mod.addOptions("probe_opts", probe_opts);
         // C 变参 shim：Zig 定义不了变参函数，驱动的报错偏偏走它们。
         // 给了 Wi-Fi 对象目录就在这里加一次（下面 BT 那段不再重复加：同一文件加两次会重复定义）。
         app.root_module.addCSourceFile(.{ .file = b.path("../components/wifi-blobs/src/printf_shim.c"), .flags = &.{} });
@@ -502,6 +515,8 @@ pub fn build(b: *std.Build) void {
         // `osi_impl` 的 `_slowclk_cal_get` 壳按模块名取板级时钟标定值（常量），主机测试编表时也要它。
         t.root_module.addImport("board", board);
         t.root_module.addImport("wifi_connect", wifi_connect_mod);
+        t.root_module.addImport("net_ipv4", ipv4_mod);
+        t.root_module.addImport("net_udp", udp_mod);
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 

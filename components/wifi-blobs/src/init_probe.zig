@@ -716,6 +716,180 @@ pub fn coexReport(stage: []const u8) void {
     log.line("coex[{s}]: fw={s} en={d} req={d} rel={d} sta={d} startcb={d} intset={d}", .{ stage, std.mem.span(fw), radio_coex.calls(.coex_enable_wrapper), radio_coex.calls(.coex_wifi_request_wrapper), radio_coex.calls(.coex_wifi_release_wrapper), radio_coex.calls(.coex_status_get_wrapper), radio_coex.calls(.coex_register_start_cb_wrapper), radio_coex.calls(.coex_schm_interval_set_wrapper) });
 }
 
+/// `-Dcoex`：探针表里的五个表项再包一层，只为把 blob 交给共存核的东西记下来——照旧转给胶水的
+/// 包装函数，行为不变。胶水自己只计"blob 调了几次"；这里记的是**核怎么答的**：申请的返回码、
+/// 给每个事件的优先级（PTI）、置 / 清的是哪些 Wi-Fi 状态位。真实链路各阶段的读数见 `coexReadings`。
+const CoexTraceStats = struct {
+    /// 一个事件号（`coex_event_t`）上 blob 交给核的三样：申请、释放、查 PTI，各带"核回错"的次数。
+    /// 核只给少数事件配了硬件定时器（`coex_core_request` / `coex_core_release` 里 `coex_core_timer_idx_get`
+    /// 回 255 的），其余事件的申请与释放核一律回 0x102（`ESP_ERR_INVALID_ARG`）——那是核里的静态表，
+    /// 不是胶水出错，所以"回错"要按事件分开看。
+    const Ev = struct {
+        req: u32 = 0,
+        req_bad: u32 = 0,
+        rel: u32 = 0,
+        rel_bad: u32 = 0,
+        /// 查 PTI：次数、核回错的次数、见过的 PTI 值按位或。
+        pti_n: u32 = 0,
+        pti_bad: u32 = 0,
+        pti_mask: u8 = 0,
+    };
+    ev: [64]Ev = @splat(.{}),
+    /// 64 及以上的事件号出现的总次数。
+    ev_big: u32 = 0,
+    /// `_coex_schm_status_bit_set` / `_clear`：blob 经这两项告诉核"Wi-Fi 现在在干什么"。
+    set_n: u32 = 0,
+    set_type: u32 = 0,
+    set_mask: u32 = 0,
+    set_last: u32 = 0,
+    clr_n: u32 = 0,
+    clr_mask: u32 = 0,
+
+    fn of(self: *CoexTraceStats, event: u32) ?*Ev {
+        if (event >= self.ev.len) {
+            self.ev_big += 1;
+            return null;
+        }
+        return &self.ev[@intCast(event)];
+    }
+};
+var coex_trace_stats: CoexTraceStats = .{};
+
+fn coexWifiRequestTraced(event: u32, latency: u32, duration: u32) callconv(.c) c_int {
+    const rc = radio_coex.wifi.coex_wifi_request_wrapper(event, latency, duration);
+    if (coex_trace_stats.of(event)) |e| {
+        e.req += 1;
+        if (rc != 0) e.req_bad += 1;
+    }
+    // 一轮十来次，逐次打：时延、时长是 blob 向核申请的量，后面是核的答复。
+    log.line("coex> _coex_wifi_request event={d} latency={d} duration={d} -> rc={d}", .{ event, latency, duration, rc });
+    return rc;
+}
+
+fn coexWifiReleaseTraced(event: u32) callconv(.c) c_int {
+    const rc = radio_coex.wifi.coex_wifi_release_wrapper(event);
+    if (coex_trace_stats.of(event)) |e| {
+        e.rel += 1;
+        if (rc != 0) e.rel_bad += 1;
+    }
+    return rc;
+}
+
+fn coexPtiGetTraced(event: u32, pti: ?*u8) callconv(.c) c_int {
+    const rc = radio_coex.wifi.coex_pti_get_wrapper(event, pti);
+    if (coex_trace_stats.of(event)) |e| {
+        e.pti_n += 1;
+        if (rc != 0) e.pti_bad += 1;
+        if (pti) |p| e.pti_mask |= p.*;
+    }
+    return rc;
+}
+
+fn coexStatusBitSetTraced(st_type: u32, status: u32) callconv(.c) void {
+    radio_coex.wifi.coex_schm_status_bit_set_wrapper(st_type, status);
+    coex_trace_stats.set_n += 1;
+    coex_trace_stats.set_type = st_type;
+    coex_trace_stats.set_mask |= status;
+    coex_trace_stats.set_last = status;
+}
+
+fn coexStatusBitClearTraced(st_type: u32, status: u32) callconv(.c) void {
+    radio_coex.wifi.coex_schm_status_bit_clear_wrapper(st_type, status);
+    coex_trace_stats.clr_n += 1;
+    coex_trace_stats.clr_mask |= status;
+}
+
+/// 把上面五项装进探针的 osi 表（在 `radio_coex.wifi.fill` 之后）。
+fn coexTraceTable(table: anytype) void {
+    table._coex_wifi_request = @ptrCast(&coexWifiRequestTraced);
+    table._coex_wifi_release = @ptrCast(&coexWifiReleaseTraced);
+    table._coex_pti_get = @ptrCast(&coexPtiGetTraced);
+    table._coex_schm_status_bit_set = @ptrCast(&coexStatusBitSetTraced);
+    table._coex_schm_status_bit_clear = @ptrCast(&coexStatusBitClearTraced);
+}
+
+/// 一行装不下的列表分几行打。日志一行上限 200 字节，前面还有 `coex[阶段]: 标签:`，所以正文留 140 字节
+/// （2026-11-26 第一次上板时按 200 算，阶段名一长，后几个阶段的三行都被整行截断）。
+const text_budget: usize = 140;
+
+fn flushLine(stage: []const u8, tag: []const u8, text: []const u8) void {
+    if (text.len == 0) return;
+    log.line("coex[{s}]: {s}:{s}", .{ stage, tag, text });
+}
+
+/// 往分页的一行里追加一项：正文超过 `text_budget` 就先把已有的打出去。
+fn appendItem(stage: []const u8, tag: []const u8, line: []u8, used: *usize, text: []const u8) void {
+    if (used.* + text.len > text_budget) {
+        flushLine(stage, tag, line[0..used.*]);
+        used.* = 0;
+    }
+    @memcpy(line[used.*..][0..text.len], text);
+    used.* += text.len;
+}
+
+/// 真实链路各阶段的共存读数（L4，`-Dcoex`）。`coexReport` 的两行之外再看四样：
+///
+///   * blob 经胶水调核的次数，按钩子全列（`coexReport` 只挑了 6 个）——连接、收发这一路 blob 到底
+///     用了共存核的哪些入口，各阶段的差值就是这一阶段用了多少；
+///   * blob 交给核的东西与核的答复（`CoexTraceStats`）：申请的时延 / 时长与返回码、按事件的 PTI、
+///     置 / 清的状态位；
+///   * 核手里的当前值：Wi-Fi 状态位、调度间隔 / 周期 / 相位；
+///   * 核的硬件定时器寄存器 `0x2010F008`（`coex_hw_timer_tick_get` 读的就是它：低 4 位是分频码——
+///     `coex_hw_timer_freq_set` 设的那一个，位 [15:4] 是它取走的那一段计数值，位 [31:16] 的含义没有核过）
+///     隔 1 ms 读两次，原值都打出来，看它走不走。
+///
+/// 读核用的是 `g.core` 上的函数本身，不经包装函数，所以不给胶水的调用计数添数。
+pub fn coexReadings(stage: []const u8) void {
+    if (!on_target) return;
+    coexReport(stage);
+    const g = radio_coex.instance();
+    if (!g.state.booted) return;
+    var line: [200]u8 = undefined;
+    var item: [160]u8 = undefined;
+    var used: usize = 0;
+    for (std.enums.values(radio_coex.Hook)) |h| {
+        const n = radio_coex.calls(h);
+        if (n == 0) continue;
+        const name = radio_coex.hookName(h);
+        const short = if (std.mem.startsWith(u8, name, "coex_") and std.mem.endsWith(u8, name, "_wrapper"))
+            name[5 .. name.len - 8]
+        else
+            name;
+        const text = std.fmt.bufPrint(&item, " {s}={d}", .{ short, n }) catch break;
+        appendItem(stage, "hooks", &line, &used, text);
+    }
+    flushLine(stage, "hooks", line[0..used]);
+
+    const c = g.core;
+    log.line("coex[{s}]: core: wifi_status=0x{x:0>8} interval={d} period={d} phase={s} flexible={d} last_rc={d} last_error={s}", .{
+        stage,                      c.status_get.?(radio_coex.core.status_get_wifi_bitmap),   c.schm_interval_get.?(),
+        c.schm_curr_period_get.?(), if (c.schm_curr_phase_get.?() == null) "none" else "set", c.schm_flexible_period_get.?(),
+        g.last_core_rc,             if (radio_coex.lastError()) |e| @errorName(e) else "-",
+    });
+    const t = coex_trace_stats;
+    log.line("coex[{s}]: blob->core: status_bit_set n={d} type={d} mask=0x{x:0>8} last=0x{x:0>8} | status_bit_clear n={d} mask=0x{x:0>8} | events>=64 n={d}", .{
+        stage, t.set_n, t.set_type, t.set_mask, t.set_last, t.clr_n, t.clr_mask, t.ev_big,
+    });
+    used = 0;
+    for (t.ev, 0..) |e, i| {
+        if (e.req + e.rel + e.pti_n == 0) continue;
+        var n = (std.fmt.bufPrint(&item, " e{d}:", .{i}) catch unreachable).len;
+        if (e.req != 0) n += (std.fmt.bufPrint(item[n..], " req={d} bad={d}", .{ e.req, e.req_bad }) catch unreachable).len;
+        if (e.rel != 0) n += (std.fmt.bufPrint(item[n..], " rel={d} bad={d}", .{ e.rel, e.rel_bad }) catch unreachable).len;
+        if (e.pti_n != 0) n += (std.fmt.bufPrint(item[n..], " pti n={d} mask=0x{x:0>2} bad={d}", .{ e.pti_n, e.pti_mask, e.pti_bad }) catch unreachable).len;
+        appendItem(stage, "by event", &line, &used, item[0..n]);
+    }
+    flushLine(stage, "by event", line[0..used]);
+
+    const t0 = hw.nowUs();
+    const h0 = hw.readReg(0x2010_F008);
+    while (hw.elapsedUs(t0) < 1000) {}
+    const h1 = hw.readReg(0x2010_F008);
+    log.line("coex[{s}]: hw timer 0x2010F008: 0x{x:0>8} -> 0x{x:0>8} (cnt {d} -> {d}, div {d} -> {d}, hi 0x{x:0>4} -> 0x{x:0>4}, {d} us apart)", .{
+        stage, h0, h1, (h0 >> 4) & 0xFFF, (h1 >> 4) & 0xFFF, h0 & 15, h1 & 15, h0 >> 16, h1 >> 16, hw.elapsedUs(t0),
+    });
+}
+
 /// `-Dcoex-merged` 的 section（`firmware/src/coex_merged.zig`）读共存核状态用的三个口子。
 pub fn coexSide(s: radio_coex.Side) radio_coex.SideState {
     return radio_coex.instance().state.side(s);
@@ -829,6 +1003,7 @@ pub fn initOnly(opts: InitOptions) c_int {
     // `-Dcoex`：把 24 个共存表项换成胶水的包装函数。必须在 `makeTable()`（它末尾是 `stubs.fill`）之后：
     // 否则 IDF 留空的 `_coex_condition_set` 会被通用桩填上。
     if (coex_gate.enabled) radio_coex.wifi.fill(&osi_table);
+    if (coex_gate.enabled) coexTraceTable(&osi_table);
     const table = &osi_table;
     probe_cfg = initcfg.defaults(table);
     if (feature_caps) |f| probe_cfg.feature_caps = f;

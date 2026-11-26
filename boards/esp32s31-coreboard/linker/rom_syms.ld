@@ -21,7 +21,15 @@
  * 交集：本仓链接 IDF Wi-Fi blob（含 libphy/libcoexist/libmesh/libespnow）时真正
  * 未解析、且 ROM 提供的符号。
  *
+ * 两种写法：`PROVIDE(sym = addr)` 只在符号没人定义时生效（本仓有同名实现就让给实现）；
+ * `sym = addr;` 是赋值，**盖过**目标文件里的定义——`memcpy` / `memmove` / `memset`
+ * 用的是这一种（见下文）。
+ *
  * 重新生成：迭代到不动点（见 ROADMAP R3.1 的测量命令）。
+ *
+ * ⚠ 本文件是被 `s31.ld` `INCLUDE` 进来的，Zig 的构建缓存**不跟踪**它：只改本文件
+ * 不会触发重新链接，`zig-out` 里还是旧镜像（2026-11-26 实测）。改完必须 `touch s31.ld`
+ * 或清掉缓存再构建。
  */
 
 /* ---- esp32s31.rom.ld ---- */
@@ -37,6 +45,20 @@ PROVIDE(software_reset = 0x2f800094);
 PROVIDE(esp_rom_set_cpu_ticks_per_us = 0x2f800044);
 
 /* ---- esp32s31.rom.libc.ld ---- */
+/* 内存原语 `memcpy` / `memmove` / `memset` 指到 ROM 的 C 库实现（IDF 同一个文件里也是这三句）。
+ *
+ * **必须是赋值，不能用 `PROVIDE`**：Zig 自带的 compiler_rt 也定义了这三个名字（逐字节的循环——
+ * `compiler_rt.memcpy.memcpySmall` 等），`PROVIDE` 对已定义的符号不起作用，链接出来还是它。
+ * 赋值由链接脚本强制生效，全镜像的调用都走 ROM 的实现，与官方 IDF 逐条一致。
+ *
+ * 为什么要跟 IDF 一致（2026-11-26 实测）：Wi-Fi blob 把钥匙装进 MAC 的密钥表用的是 `memcpy`
+ * （`hal_crypto_set_key_entry` → `memcpy(0x201057f8 + 40 × idx, key, 16)`），而密钥表是**整字**
+ * 寄存器堆：单字节的写会把整个 32 位字冲掉。ROM 的 `memcpy` 按对齐的字拷，钥匙落得全；
+ * compiler_rt 的逐字节循环每 4 个字节只剩最后 1 个——四次握手照常完成、驱动也报成功，
+ * 发出去的数据帧对端却解不开，收到的帧自己也解不开：连上之后 DHCP / ping 全无回应。 */
+memcpy = 0x2f8004c4;
+memmove = 0x2f8004c8;
+memset = 0x2f8004c0;
 PROVIDE(strcpy = 0x2f8004d0);
 PROVIDE(strncmp = 0x2f8004dc);
 PROVIDE(strncpy = 0x2f8004d4);

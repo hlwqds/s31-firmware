@@ -101,6 +101,27 @@
 - **没有做的**：连接、收发；PHY 标定数据的持久化；回调表里连接路径的入口（`wpa_sta_rx_eapol`、`wpa_config_parse_string`、
   SAE / OWE 的消息构造与解析等）；与 AP 的互通仍只有厂商栈的证据；没有抓包。
 
+## 真实链路连上 AP 与数据通路（2026-11-26）
+
+- **做了什么**：真实链路探针在扫描之后继续走连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）→ 再泵 5 秒 → 断开，
+  全程开着共存核并取读数。连接一侧把 supplicant 回调表从 4 项填到 12 项，`wifi-connect` 的 `Supplicant` 第一次在真实 AP 上走完
+  WPA2-PSK 的四次握手（RSN + PSK，CCMP-128）；数据通路一侧新增 `data_path.zig`，把驱动的以太网帧接到 `net-ipv4` 与
+  `net-udp-dhcp-dns`。共存一侧给探针加了各阶段的核读数（`coexReadings`），ADR-003 第 5 节把 L4 拆成 L4a / L4b 并写下 L4b 的做法。
+- **怎么找到的**：这一步修的四处都在运行时，每处都先有一个板上的现场。① 握手完成后 `store access fault`、停在断点上时返回地址与栈帧里
+  是 `0xff00ffff`、`0xff000000` 这类值：Wi-Fi 任务栈按 blob 请求的 6656 字节给，四次握手用 9252 字节；探针加打各任务栈的高水位之后数字才看得见。
+  ② `esp_wifi_set_config` 回 `0x1105`：NVS 的键在第 9 个、第 19 个就用完（日志里 `wifi_nvs_set fail`）。③ 连上之后 DHCP 12 秒没有
+  应答、一帧都没收到，而握手照常完成：探针加了一项核对——MAC 密钥表里成对钥匙与组钥匙那两格对请求方手里的钥匙逐字节比——
+  位图是 `ffff, 8fff, 88ff, …` 的阶梯，才想到是逐字节的 `memcpy` 写整字寄存器堆；对照镜像里这三个名字取的是 ROM 的实现。
+  ④ ping 网关 0/10 而 DHCP 正常：给数据通路加"最近收到的帧"的记录，看到网关在每帧回显之后都来问本机的 MAC，本机没有答。
+  细目在 `docs/verification/wifi-ieee80211-verification.md` §11 与 `docs/verification/coex-verification.md` §12。
+- **验证**：主机门禁（fmt、单元测试 2064 项、覆盖率、不变量、容量、e2e host）通过；板侧连上约 3.0 s、DHCP 约 0.1 s、ping 网关
+  连续 4 轮 10/10、连上后稳定 5 秒、断开 reason=8（`logs/wifi-link-connect-boot.log`，邻居的 SSID 与 BSSID 已脱敏）；修复前的现场
+  各留了一段（`wifi-link-connect-crash-boot.log`、`wifi-link-connect-watchpoint-boot.log`、`wifi-link-connect-badkeys-boot.log`、
+  `wifi-link-connect-noarp-boot.log`）。默认镜像（`net` profile）上板 `firmware: sections: passed=8 failed=0 total=8`、`main: verdict=pass`
+  （`logs/e2e-net-boot.log`）。
+- **没有做的**：其余 AKM 与套件（SAE、OWE、FT、企业）、多台 AP、重连与长时间稳定性；把 TCP / TLS 接到这条链路上；抓包；
+  两个射频同时开着的共存效果（L4b，等 R3.3）。
+
 ## 日志
 
 `logs/` 中是章节时代的板侧原始输出（文件名不改，便于与 `docs/history/BRINGUP-chapter-era.md`

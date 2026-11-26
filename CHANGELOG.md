@@ -5,6 +5,19 @@
 ## [Unreleased]
 
 ### Fixed
+- **Wi-Fi 连上真实 AP 之后数据帧解不开、ping 网关时通时不通（2026-11-26，路线图 R3.2.3 的数据通路）**：两处根因，各修一处。
+  ① 镜像的 `memcpy` / `memmove` / `memset` 是 compiler_rt 的逐字节循环，而 blob 装钥匙的 MAC 密钥表是整字寄存器堆：每 4 个字节
+  只剩最后 1 个。四次握手照常完成、驱动也报成功，数据帧却双向都解不开——连上之后 DHCP 12 秒没有应答。修法：
+  `boards/esp32s31-coreboard/linker/rom_syms.ld` 用赋值（不是 `PROVIDE`，它对已定义的符号不起作用）把这三个名字指到 ROM 的实现，
+  与 IDF 的同一个文件逐条一致。**全镜像的内存原语因此都换成 ROM 的实现，默认镜像也受影响**：`net` profile 上板复验
+  `PASS board:net`（8/8 段、`main: verdict=pass`，`logs/e2e-net-boot.log`）；容量门禁与 e2e（host）六个 profile 通过。
+  ② `components/wifi-blobs/src/data_path.zig` 只处理 ARP 应答，不答问本机地址的 ARP 请求：网关的邻居缓存里没有本机时，回显应答
+  发不出去（网关每一帧回显请求之后都先来问本机的 MAC）。修法：`handleArp` 加上应答（单播给问的人），并加了主机用例。
+- **Wi-Fi 连接路径上的三处运行时问题（2026-11-26，路线图 R3.2.2 的连接）**：① Wi-Fi 任务栈按 blob 请求的 6656 字节给，四次握手实际用
+  9252 字节，长了过界 2.6 KiB，压坏栈下面的对象；`osi_impl.zig` 把栈的下限提到 16 KiB，栈底下留 256 字节护栏、泵每一步查一次。
+  ② `esp_wifi_set_config` 把 STA 配置逐字段写成四十多个 NVS 键，原先每个槽自带 2048 字节的 RAM 版 NVS 装不下（驱动回 `0x1105`）；
+  `nvs_ram.zig` 改成键表加分档的 blob 池。③ `wpa_sta_rx_eapol` 回调返回的是发送结果（成功为 0），而 IDF 的 `wpa_sm_rx_eapol`
+  是"处理了 1、解不开的帧 0、校验不过 -1"，驱动按它选日志——板上每一帧处理成功的握手都打 `wpa_psk handle fail`。已按 IDF 的约定改。
 - **Wi-Fi blob 扫描不到任何 AP（2026-11-26，路线图 R3.2 的扫描）**：`esp_wifi_start` 之后扫描能逐信道走完，但一条帧都收不到，
   结果恒为 0 个 AP。根因有两个，各修一处。① 裸机镜像没做 IDF 应用启动期 `bootloader_init_mem()` 里关 APM 访问控制过滤器的三行
   （二级 bootloader 里这段被 `#if !BOOTLOADER_BUILD` 跳过），`HP_APM` / `HP_MEM_APM` / `LP_APM` 的 `FUNC_CTRL` 停在复位值
@@ -25,6 +38,15 @@
   没扫到。主机用例 2032 → 2045（`wifi-blobs` 31 → 43、`wifi-connect` 431 → 432）；`scripts/check-fmt.sh`、
   `scripts/check-host.sh`、`scripts/check-coverage.py`、`scripts/check-invariants.py` 通过。没有做：连接（WPA2-PSK 关联 +
   4 次握手）、收发、PHY 标定数据的持久化；回调表里连接路径的入口还没填，其中多处调用点不判空，连接之前必须先填齐。
+  （连接与收发已于同日晚打通，见上面两条。）
+- **Wi-Fi 探针在扫描走通之前修掉的几处运行时缺陷（2026-11-25 至 26；与上一条同在提交 `a28df73`，当时只写进了提交说明，这里补记）**：
+  ① `link_stubs.zig` 的国家码 / 信道表原是 4 KiB 的零值桩——链接能过，但驱动拿到的是「没有国家配置」，扫不到任何 AP；换成 IDF 的真实数据。
+  ② `osi_impl.zig` 的软件定时器表只有 16 项，扫描起始的信道定时器排不进表，扫描走不完；扩到 32 项。
+  ③ `rtc_clk_xtal_freq_get` 原是返回 0 的计数桩，libphy 的 `phy_get_xtal_freq` 按它把 `xtal - 1` 写进 `MODEM_LPCON_TICK_CONF` 的低 6 位
+  （读回 `0x3F`；40 MHz 晶振应是 `0x27`）；改为返回板级晶振频率。
+  同批还有：PHY 使能 / 关闭的壳按 IDF `esp_phy_enable` / `esp_phy_disable` 对齐；`_read_mac` 取 eFuse 里的出厂 MAC；`_slowclk_cal_get`
+  取同板对照镜像的实测值（本镜像没有做实测）；临界区不再是空实现；`_task_delay` 不再让出 64 次就返回；blob 日志真格式化，
+  `initOnly()` 在 init 收尾设日志级别。没有做：慢时钟标定的实测、PHY 标定数据的持久化。
 - **Wi-Fi blob 的 `esp_wifi_start` 不返回（2026-11-25，R3.1 的卡点）**：blob 在 `esp_wifi_start` 里等 `MAC_ST`
   （0x20104CAC）的忙位 bit 13–15 自清，我们的运行时里它们停在复位值。根因是裸机镜像没做 IDF 启动期 `pmu_init()`
   （`esp_rtc_init()` 里调）的一步：给 ACTIVE / MODEM / SLEEP 三个 HP 电源模式写 modem 的 ICG 码（2 / 1 / 0）并触发两次
@@ -103,6 +125,26 @@
   `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ### Added
+- **真实链路：连上真实 AP 与数据通路（2026-11-26，路线图 R3.2.2、R3.2.3）**：真实链路探针（`-Dwifi-link-probe`）在扫描之后继续走
+  连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）→ 再泵 5 秒 → 断开。
+  - `components/wifi-blobs/src/wpa_cb.zig`：supplicant 回调表从 4 项填到 12 项。连接路径只做 RSN + PSK，由 `wifi-connect` 的 `Supplicant`
+    驱动：`wpa_sta_connect` 选 AKM 与套件、算 PMK、把本 STA 的 RSNE 交给驱动；`wpa_sta_rx_eapol` 收 EAPOL-Key，回应经
+    `esp_wifi_internal_tx()` 发出；消息 4「发送完成」后把 PTK、GTK、IGTK 装进驱动；`esp_wifi_auth_done_internal()` 通知驱动协商完成
+    （少了它，驱动 10 秒后以 204 去关联）。
+  - `components/wifi-blobs/src/data_path.zig`（新）：驱动的以太网帧 ⇄ 本仓库的 IP 栈（`net-ipv4`、`net-udp-dhcp-dns`）。收帧回调跑在
+    驱动的 Wi-Fi 任务里（过滤、拷进环形缓冲、交还驱动缓冲），帧由主上下文的 `poll()` 处理。没有路由表、没有 socket。
+  - 连带：blob 日志的 C shim 补齐格式化（左对齐、补零在负号之后、`%s` 的宽度）；`tools/wifi-idf-oracle` 在 ping 网关之后打驱动的
+    省电 / 收发统计，打开 `CONFIG_ORACLE_REGDUMP` 时连上之后再取一份全量快照。
+  - 板侧：`STA_CONNECTED bssid=… ch=1 authmode=3 aid=1`，从发起到连上约 3.0 s；MAC 密钥表里的成对钥匙与组钥匙和请求方手里的
+    逐字节相同；DHCP 约 0.1 s 拿到地址；ping 网关连续 4 轮 10/10（rtt 平均 19–23 ms）；连上后稳定 5 秒，`DISCONNECTED reason=8`
+    （`logs/wifi-link-connect-boot.log`，邻居的 SSID 与 BSSID 已脱敏）。AP 的凭据经 `-Dwifi-ap-ssid` / `-Dwifi-ap-password` 给，不入库。
+    没有抓包；只有 WPA2-PSK + CCMP-128、一台 AP。细目见 `docs/verification/wifi-ieee80211-verification.md` §11。
+  - 主机用例 2045 → 2064（`wifi-blobs` 43 → 62：`wpa_cb.zig` 13 → 20、`data_path.zig` 新增 6、`nvs_ram.zig` 新增 5、`host_tests.zig` 25 → 26）。
+- **共存的 L4a 读数（2026-11-26）**：真实链路探针开着 `-Dcoex` 时，在 start 后、扫描后、连上、ping 结束、断开前后各取一次共存核的读数
+  （`init_probe.zig` 的 `coexReadings`：胶水两侧的状态、各钩子被调的次数、每次申请的事件 / 时延 / 时长与返回码、按事件的释放与 PTI、
+  置 / 清的状态位、核里的状态位与调度参数、硬件定时器寄存器）。读数：胶水零拒绝；blob 的 13 次申请核都回 `0x102`，因为这些事件在核的
+  事件表里没有硬件定时器（只有事件 1、2、36、38、45、46 有）；BLE 没开，核的状态位与硬件定时器都是 0。ADR-003 第 5 节把 L4 拆成
+  L4a（只开 Wi-Fi，已有读数）与 L4b（两个射频都开，等 R3.3），并写下 L4b 的做法与判据。细目见 `docs/verification/coex-verification.md` §12。
 - **无线离线特性第五批（2026-11-25）**：与前几批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
   与按原文写的 Python 模型的对拍、板侧自检（主机桩与真板）。验收之后经独立评审两轮（Wi-Fi 15 条 + 残留 6 条、BLE 7 条）返修并复验，
   终态随 `wifi` profile 上板：**`PASS board:wifi`，14/14 个 section 全过、`main: verdict=pass`**——三个无线 section 的判据全部

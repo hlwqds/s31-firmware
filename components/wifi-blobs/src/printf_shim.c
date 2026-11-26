@@ -23,15 +23,34 @@ static char *put_str(char *o, char *end, const char *s)
     return o;
 }
 
-static char *put_uint(char *o, char *end, unsigned long v, unsigned base, int upper, int width, char pad)
+static int str_len(const char *s)
+{
+    int n = 0;
+    while (s[n] && n < 4096) n++;
+    return n;
+}
+
+/* 无符号数转成字符串写进 `t`（不补宽度）。返回长度。 */
+static int to_str(char *t, int cap, unsigned long v, unsigned base, int upper)
 {
     char tmp[24];
-    int n = 0;
+    int n = 0, k = 0;
     const char *dig = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     if (v == 0) tmp[n++] = '0';
     while (v && n < (int)sizeof tmp) { tmp[n++] = dig[v % base]; v /= base; }
-    for (int i = n; i < width && o < end; i++) *o++ = pad;
-    while (n > 0 && o < end) *o++ = tmp[--n];
+    while (n > 0 && k < cap - 1) t[k++] = tmp[--n];
+    if (k < cap) t[k] = 0;
+    return k;
+}
+
+/* 把长度 `len` 的一项按宽度写出去：默认右对齐、左边补 `pad`；`left` 时左对齐、右边补空格
+ * （blob 的统计表用 `%-2s %-3u`，没有这一条整张表只剩格式串）。 */
+static char *emit(char *o, char *end, const char *s, int len, int width, char pad, int left)
+{
+    int padn = width > len ? width - len : 0;
+    if (!left) while (padn-- > 0 && o < end) *o++ = pad;
+    for (int i = 0; i < len && o < end; i++) *o++ = s[i];
+    if (left) while (padn-- > 0 && o < end) *o++ = ' ';
     return o;
 }
 
@@ -45,31 +64,55 @@ static int s31_wifi_fmt(char *buf, int cap, const char *format, va_list ap)
         if (*p != '%') { *o++ = *p; continue; }
         p++;
         char pad = ' ';
-        if (*p == '0') { pad = '0'; p++; }
+        int left = 0;
+        for (;;) { /* 标志：`-` 左对齐、`0` 补零 */
+            if (*p == '-') { left = 1; p++; }
+            else if (*p == '0') { pad = '0'; p++; }
+            else break;
+        }
         int width = 0, nd = 0;
         while (*p >= '0' && *p <= '9' && nd++ < 9) { width = width * 10 + (*p - '0'); p++; }
         if (*p == 'l') p++; /* %ld/%lu/%lx：ilp32 上与 int 同宽 */
+        char tok[32];
+        int n;
         switch (*p) {
-        case 's': o = put_str(o, end, va_arg(ap, const char *)); break;
-        case 'c': { char c = (char)va_arg(ap, int); if (o < end) *o++ = c; break; }
-        case 'd': case 'i': {
-            int v = va_arg(ap, int);
-            if (v < 0) {
-                if (o < end) *o++ = '-';
-                o = put_uint(o, end, (unsigned long)(-(long)v), 10, 0, width - 1, pad);
-            } else {
-                o = put_uint(o, end, (unsigned long)v, 10, 0, width, pad);
-            }
+        case 's': {
+            const char *s = va_arg(ap, const char *);
+            if (!s) s = "(null)";
+            o = emit(o, end, s, str_len(s), width, pad, left);
             break;
         }
-        case 'u': o = put_uint(o, end, va_arg(ap, unsigned), 10, 0, width, pad); break;
-        case 'x': o = put_uint(o, end, va_arg(ap, unsigned), 16, 0, width, pad); break;
-        case 'X': o = put_uint(o, end, va_arg(ap, unsigned), 16, 1, width, pad); break;
+        case 'c': {
+            tok[0] = (char)va_arg(ap, int);
+            o = emit(o, end, tok, 1, width, pad, left);
+            break;
+        }
+        case 'd': case 'i': {
+            long v = (long)va_arg(ap, int);
+            if (v < 0) {
+                tok[0] = '-';
+                n = 1 + to_str(tok + 1, (int)sizeof tok - 1, (unsigned long)(-v), 10, 0);
+                /* 补零要补在负号之后（"%05d" 的 -42 是 -0042）。 */
+                if (!left && pad == '0' && o < end) {
+                    *o++ = '-';
+                    o = emit(o, end, tok + 1, n - 1, width - 1, pad, 0);
+                    break;
+                }
+            } else {
+                n = to_str(tok, (int)sizeof tok, (unsigned long)v, 10, 0);
+            }
+            o = emit(o, end, tok, n, width, pad, left);
+            break;
+        }
+        case 'u': n = to_str(tok, (int)sizeof tok, va_arg(ap, unsigned), 10, 0); o = emit(o, end, tok, n, width, pad, left); break;
+        case 'x': n = to_str(tok, (int)sizeof tok, va_arg(ap, unsigned), 16, 0); o = emit(o, end, tok, n, width, pad, left); break;
+        case 'X': n = to_str(tok, (int)sizeof tok, va_arg(ap, unsigned), 16, 1); o = emit(o, end, tok, n, width, pad, left); break;
         case 'p': {
             /* 指针按 0x 打出来：日志里大量用它辨认 blob 的对象地址。 */
             if (o < end) *o++ = '0';
             if (o < end) *o++ = 'x';
-            o = put_uint(o, end, (unsigned long)va_arg(ap, void *), 16, 0, 0, ' ');
+            n = to_str(tok, (int)sizeof tok, (unsigned long)va_arg(ap, void *), 16, 0);
+            o = emit(o, end, tok, n, 0, ' ', 0);
             break;
         }
         case '%': if (o < end) *o++ = '%'; break;

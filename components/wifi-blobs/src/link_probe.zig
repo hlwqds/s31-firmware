@@ -1,10 +1,14 @@
-//! 真实链路探针（`-Dwifi-link-probe=true`）：在 `esp_wifi_start` 返回之后继续往下走。
+//! 真实链路探针（`-Dwifi-link-probe=true`）：在 `esp_wifi_start` 返回之后继续往下走，
+//! 一直走到 IP 层有收发：init → start → 扫描 → 连接 → DHCP → ping 网关。
 //!
 //! 旧的 `init_probe.run()` 停在 `esp_wifi_start` 返回处，而且 start 之前带着一批针对
 //! 「`MAC_ST` 忙位不清」的实验写（往 `MAC_ST` 写值、手动开时钟）。2026-11-25 补上 PMU 的
 //! modem ICG 码之后 MAC 真的在跑，那些写不再是无害的，所以真实链路走这个干净入口：
 //!
-//!   `initOnly()` → `esp_wifi_set_mode(STA)` → `esp_wifi_start()` → 开中断、常驻泵任务 → 扫描 → …
+//!   `initOnly()` → `esp_wifi_set_mode(STA)` → `esp_wifi_start()` → 开中断、常驻泵任务 → 扫描 →
+//!   （构建时给了 AP 的 SSID 才做）连接 → 核对 MAC 密钥表 → 数据通路（`data_path.zig`：DHCP + ping 网关）
+//!   `-Dcoex` 时每走到一个阶段（start 后、扫描后、连上、ping 结束、断开前后）取一次共存核的读数
+//!   （`init_probe.coexReadings`）。
 //!
 //! blob 的 `esp_wifi_scan_start(config, block)`（`libnet80211/ieee80211_api.o`，反汇编核对过）
 //! 不用事件，也不用信号量：把命令 5 经 `ieee80211_ioctl` 投给 Wi-Fi 任务，之后每 100 ms
@@ -25,6 +29,12 @@ const initp = @import("init_probe.zig");
 const impl = @import("osi_impl.zig");
 const event_bus = @import("event_bus.zig");
 const osi_stubs = @import("osi_stubs.zig");
+const wpa_cb = @import("wpa_cb.zig");
+const ipath = @import("data_path.zig");
+/// 构建时给的 AP 凭据：`-Dwifi-ap-ssid` / `-Dwifi-ap-password`（`firmware/build.zig`）。不入库——脚本从对照镜像的
+/// 本地 sdkconfig 里取了传进来。给了 SSID 才跑连接阶段。
+const probe_opts = @import("probe_opts");
+const coex_gate = @import("coex_gate");
 
 /// 供 start.zig 做 comptime 选择：探针构建为 true。
 pub const enabled = true;
@@ -75,6 +85,10 @@ const WIFI_EVENT: *const *const u8 = @extern(*const *const u8, .{ .name = "WIFI_
 var last_event_id: i32 = -1;
 var event_count: u32 = 0;
 var scan_done: bool = false;
+/// 连接阶段的结果（`onWifiEvent` 置位）。
+var sta_connected: bool = false;
+var sta_disconnected: bool = false;
+var disconnect_reason: u8 = 0;
 
 /// 记 blob 发出的每一个 `WIFI_EVENT`（`_event_post` → `event_bus.post` 的同步派发）。
 fn onWifiEvent(arg: ?*anyopaque, base: ?*const anyopaque, id: i32, data: ?*const anyopaque) callconv(.c) void {
@@ -89,6 +103,24 @@ fn onWifiEvent(arg: ?*anyopaque, base: ?*const anyopaque, id: i32, data: ?*const
         if (data) |dp| {
             const p: *const [3]u8 = @ptrCast(dp);
             log.line("wifi-link-probe: SCAN_DONE status={d} number={d} scan_id={d}", .{ p[0], p[1], p[2] });
+        }
+    } else if (data) |dp| {
+        // `wifi_event_sta_connected_t`：ssid[32]、ssid_len@32、bssid@33、channel@39、authmode@40（枚举，4 字节）、aid@44。
+        // `wifi_event_sta_disconnected_t`：ssid[32]、ssid_len@32、bssid@33、reason@39、rssi@40。
+        const p: [*]const u8 = @ptrCast(dp);
+        if (id == 4) {
+            sta_connected = true;
+            const authmode = std.mem.readInt(u32, p[40..44], .little);
+            log.line("wifi-link-probe: STA_CONNECTED bssid={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2} ch={d} authmode={d} aid={d}", .{
+                p[33],                                    p[34], p[35], p[36], p[37], p[38], p[39], authmode,
+                std.mem.readInt(u16, p[44..46], .little),
+            });
+        } else if (id == 5) {
+            sta_disconnected = true;
+            disconnect_reason = p[39];
+            log.line("wifi-link-probe: STA_DISCONNECTED bssid={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2} reason={d} rssi={d}", .{
+                p[33], p[34], p[35], p[36], p[37], p[38], p[39], @as(i8, @bitCast(p[40])),
+            });
         }
     }
     log.line("wifi-link-probe: event id={d} data=0x{x:0>8} (n={d})", .{ id, d, event_count });
@@ -165,6 +197,175 @@ fn pumpUntil(cond: *const bool, timeout_us: u64) bool {
         stubWatch();
     }
     return true;
+}
+
+/// 请求方的进度（`wpa_cb.status()`）。
+fn logSupplicant(tag: []const u8) void {
+    const s = wpa_cb.status();
+    log.line("wifi-link-probe: supplicant[{s}]: state={s} phase={s} msg4_in_flight={} negotiation_done={} pmk={} ptk={} gtk={} rejects={d} last_error={s}", .{
+        tag,                s.state.name(),                               s.phase.name(), s.msg4_in_flight,
+        s.negotiation_done, s.pmk_set,                                    s.ptk_valid,    s.gtk_valid,
+        s.rejects,          if (s.last_error) |e| @errorName(e) else "-",
+    });
+    // 每次报进度时带上各任务栈的高水位：请求方跑在 blob 的任务栈上，四次握手是它最深的一段。
+    logStacks(tag);
+}
+
+/// 连接阶段（R3.2.2）：配 STA（管理帧保护先关着，IDF 的默认是通告）→ `esp_wifi_connect_internal()` →
+/// 等结果。连上的判据是 `WIFI_EVENT_STA_CONNECTED`：驱动在四次握手完成、钥匙装好之后才发它。
+/// 断开时 `WIFI_EVENT_STA_DISCONNECTED` 带原因码。最长等 20 秒，每 2 秒打一次请求方的进度。
+fn connectPhase() void {
+    const ssid = probe_opts.ap_ssid;
+    const password = probe_opts.ap_password;
+    if (ssid.len == 0 or ssid.len > 32 or password.len > 64) {
+        log.line("wifi-link-probe: connect skipped: ssid {d} B, password {d} B", .{ ssid.len, password.len });
+        return;
+    }
+    var cfg: wpa_cb.StaConfig = .{ .pmf_cfg = .{ .capable = false, .required = false } };
+    @memcpy(cfg.ssid[0..ssid.len], ssid);
+    @memcpy(cfg.password[0..password.len], password);
+    sta_connected = false;
+    sta_disconnected = false;
+    const cfg_rc = wpa_cb.setStaConfig(&cfg);
+    log.line("wifi-link-probe: esp_wifi_set_config(sta) rc=0x{x} (ssid {d} B, password {d} B, pmf off)", .{
+        @as(u32, @bitCast(cfg_rc)), ssid.len, password.len,
+    });
+    if (cfg_rc != 0) return;
+    logSupplicant("after set_config");
+
+    const t0 = hw.nowUs();
+    const rc = wpa_cb.connect();
+    log.line("wifi-link-probe: esp_wifi_connect_internal rc=0x{x}", .{@as(u32, @bitCast(rc))});
+    var t_report = t0;
+    var reports: u32 = 0;
+    while (!sta_connected and !sta_disconnected) {
+        if (hw.elapsedUs(t0) > 20_000_000) break;
+        initp.idleHook();
+        stubWatch();
+        if (hw.elapsedUs(t_report) > 2_000_000) {
+            t_report = hw.nowUs();
+            reports += 1;
+            log.line("wifi-link-probe: connect: waiting {d} ms (hooks={d}, events={d})", .{ hw.elapsedUs(t0) / 1000, impl.event_count, event_count });
+            logSupplicant("waiting");
+        }
+    }
+    const elapsed_ms = hw.elapsedUs(t0) / 1000;
+    if (sta_connected) {
+        log.line("wifi-link-probe: CONNECTED in {d} ms ({d} progress reports)", .{ elapsed_ms, reports });
+        logSupplicant("connected");
+        // 钥匙落进 MAC 密钥表全不全（只打位图，不打钥匙）。
+        keyTableCheck();
+        coexStage("connected");
+        // 数据通路（R3.2.3）：连上之后把驱动的以太网帧接到 IP 栈——DHCP 拿地址，再 ping 网关。
+        dataPhase();
+        coexStage("after-ping");
+        // 连上之后再泵 5 秒：看稳不稳。
+        sta_disconnected = false;
+        pumpFor(5_000_000, "connected: pump 5 s");
+        ipath.stop(); // 断开之前注销收帧回调
+        coexStage("before-disconnect");
+        if (sta_disconnected) {
+            log.line("wifi-link-probe: DROPPED within 5 s: reason={d}", .{disconnect_reason});
+        } else {
+            log.line("wifi-link-probe: stayed connected for 5 s", .{});
+            logSupplicant("after 5 s");
+            _ = wpa_cb.disconnect();
+            const left = pumpUntil(&sta_disconnected, 5_000_000);
+            log.line("wifi-link-probe: esp_wifi_disconnect_internal -> {s} reason={d}", .{ if (left) "DISCONNECTED" else "timeout", disconnect_reason });
+        }
+    } else if (sta_disconnected) {
+        log.line("wifi-link-probe: DISCONNECTED in {d} ms: reason={d}", .{ elapsed_ms, disconnect_reason });
+        logSupplicant("disconnected");
+    } else {
+        log.line("wifi-link-probe: connect: no result in 20 s", .{});
+        logSupplicant("timeout");
+    }
+    coexStage("after-connect-phase");
+}
+
+/// `-Dcoex`：真实链路每走到一个阶段就取一次共存核的读数——L4 的证据点：blob 在连接、收发时怎么用共存核，
+/// 核怎么答。读数本身在 `init_probe.coexReadings`。关着共存时这个调用点不生成代码。
+fn coexStage(stage: []const u8) void {
+    if (comptime coex_gate.enabled) initp.coexReadings(stage);
+}
+
+/// MAC 密钥表（`hal_crypto_set_key_entry` 写的那张，条目在 `0x201057F8 + 40 × idx`）与请求方手里的钥匙
+/// 逐字节对一遍：条目 4 是成对钥匙的 TK，条目 0 是组钥匙 GTK，都在条目的第 16 字节起。**只打位图，不打钥匙**：
+/// `equal` 的 bit i = 第 i 字节相等，`ffff` 才是全落进去了。
+/// 2026-11-26 靠它定位过：镜像的 `memcpy` 是 compiler_rt 的逐字节循环，而密钥表是整字寄存器堆，每 4 个字节
+/// 只剩最后 1 个——握手照常完成，数据帧却双向都解不开。`memcpy` 指到 ROM 的实现（见 `rom_syms.ld`）之后才是 `ffff`。
+fn keyTableCheck() void {
+    const Entry = struct { name: []const u8, off: usize };
+    for ([_]Entry{ .{ .name = "entry 4 (pairwise TK)", .off = 160 }, .{ .name = "entry 0 (group GTK)", .off = 0 } }) |e| {
+        var key: [16]u8 = undefined;
+        for (0..4) |w| std.mem.writeInt(u32, key[4 * w ..][0..4], hw.readReg(0x2010_57F8 + e.off + 16 + 4 * w), .little);
+        const tk = wpa_cb.tkCompare(&key);
+        const gtk = wpa_cb.gtkCompare(&key);
+        log.line("wifi-link-probe: key table {s}: equal bits vs tk={x:0>4} vs gtk={x:0>4} (nonzero={x:0>4})", .{
+            e.name, tk.equal, gtk.equal, tk.other_nonzero,
+        });
+    }
+}
+
+/// 数据通路的进度（`pollDataPath` 置位）。
+var dhcp_bound: bool = false;
+var ping_done: bool = false;
+/// 收帧回调已经交给驱动：之后泵的每一步都要给 IP 栈一个机会处理收到的帧。
+var data_path_on: bool = false;
+
+/// 泵的每一步：把 IP 栈这边的事件打出来。跑在主上下文（收帧回调本身在驱动的任务里，只负责拷帧）。
+fn pollDataPath() void {
+    if (!data_path_on) return;
+    var line: [160]u8 = undefined;
+    while (ipath.poll(hw.nowUs())) |ev| {
+        log.line("wifi-link-probe: net: {s}", .{ipath.report(ev, &line)});
+        switch (ev) {
+            .bound => dhcp_bound = true,
+            .ping_done => ping_done = true,
+            else => {},
+        }
+    }
+}
+
+/// 数据通路（R3.2.3）：注册收帧回调 → DHCP 拿地址（最长 12 秒）→ ping 租约里的网关 10 帧（最长 20 秒）。
+/// 判据在日志里：`dhcp ACK: bound`、`ping reply`、`ping done`（收到数 > 0）。
+fn dataPhase() void {
+    dhcp_bound = false;
+    ping_done = false;
+    const rc = ipath.start();
+    log.line("wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x{x:0>8}", .{@as(u32, @bitCast(rc))});
+    if (rc != 0) return;
+    data_path_on = true;
+
+    const t0 = hw.nowUs();
+    const got = pumpUntil(&dhcp_bound, 12_000_000);
+    if (!got) {
+        log.line("wifi-link-probe: data path: no DHCP lease in 12 s", .{});
+    } else {
+        const l = ipath.lease();
+        log.line("wifi-link-probe: data path: DHCP bound in {d} ms ip={d}.{d}.{d}.{d} router={d}.{d}.{d}.{d}", .{
+            hw.elapsedUs(t0) / 1000, l.ip[0],     l.ip[1],     l.ip[2],     l.ip[3],
+            l.router[0],             l.router[1], l.router[2], l.router[3],
+        });
+        ipath.startPing(10, hw.nowUs());
+        const t1 = hw.nowUs();
+        _ = pumpUntil(&ping_done, 20_000_000);
+        if (!ping_done) log.line("wifi-link-probe: data path: ping did not finish in 20 s", .{});
+        log.line("wifi-link-probe: data path: ping phase {d} ms", .{hw.elapsedUs(t1) / 1000});
+    }
+    const s = ipath.stats();
+    log.line("wifi-link-probe: data path: frames rx={d} (ignored {d}, dropped {d}) tx={d} (failed {d})", .{
+        s.rx_frames, s.rx_ignored, s.rx_dropped, s.tx_frames, s.tx_failed,
+    });
+    // 没拿到地址才打驱动的收发统计（IDF `esp_wifi_statis_dump` 的全部模块）：帧到了驱动的哪一层，看这里。
+    if (!dhcp_bound) driverStatsDump("dhcp failed");
+}
+
+/// 驱动自己的统计，输出走 blob 的日志。
+fn driverStatsDump(tag: []const u8) void {
+    const dump = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_wifi_statis_dump" });
+    const drc = dump(0xFFFF_FFFF);
+    log.line("wifi-link-probe: data path: esp_wifi_statis_dump [{s}] rc=0x{x:0>8}", .{ tag, @as(u32, @bitCast(drc)) });
 }
 
 var irq_orig: ?*const fn (?*anyopaque) callconv(.c) void = null;
@@ -258,6 +459,62 @@ fn stubWatch() void {
             last_hits[i] = n;
         }
     }
+    pollTaskStacks();
+    pollDataPath();
+    // 被拒的队列句柄：第一个被拒的句柄、blob 侧调用点、拒了多少次（`unwrapQueue` 的诊断）。
+    if (impl.bad_queue_n != bad_seen) {
+        log.line("wifi-link-probe: bad queue handle: n={d} handle=0x{x:0>8} blob ra=0x{x:0>8}", .{
+            impl.bad_queue_n, impl.bad_queue_handle, impl.bad_queue_ra,
+        });
+        bad_seen = impl.bad_queue_n;
+    }
+}
+var bad_seen: u32 = 0;
+var tasks_seen: usize = 0;
+var refused_seen: u32 = 0;
+var overflow_reported: [4]bool = @splat(false);
+
+// ---------------------------------------------------------------------------
+// 任务栈：谁建的、多大、用了多少、有没有过界
+// ---------------------------------------------------------------------------
+/// 泵的每一步：新建的任务各打一行（名字、入口、blob 给的栈深、实际栈区间）；护栏被动过的任务只报一次。
+fn pollTaskStacks() void {
+    if (impl.task_create_refused != refused_seen) {
+        refused_seen = impl.task_create_refused;
+        log.line("wifi-link-probe: task table full: _task_create refused {d} time(s)", .{refused_seen});
+    }
+    while (tasks_seen < impl.task_count) : (tasks_seen += 1) {
+        const t = &impl.tasks[tasks_seen];
+        log.line("wifi-link-probe: task[{d}] {s} entry=0x{x:0>8} arg=0x{x:0>8} requested stack={d} -> {d} B at 0x{x:0>8}..0x{x:0>8}", .{
+            tasks_seen,        taskName(t), @intFromPtr(t.entry),     @intFromPtr(t.arg),
+            t.requested_depth, t.stack.len, @intFromPtr(t.stack.ptr), @intFromPtr(t.stack.ptr) + t.stack.len,
+        });
+    }
+    for (impl.tasks[0..impl.task_count], 0..) |*t, i| {
+        if (t.stack.len == 0 or overflow_reported[i]) continue;
+        if (!t.stackOverflowed()) continue;
+        overflow_reported[i] = true;
+        log.line("wifi-link-probe: task[{d}] {s} STACK OVERFLOW: {d} B at 0x{x:0>8}, the guard below it has been written (used>={d})", .{
+            i, taskName(t), t.stack.len, @intFromPtr(t.stack.ptr), t.stackUsed(),
+        });
+    }
+}
+
+fn taskName(t: *const impl.Task) []const u8 {
+    const n = std.mem.sliceTo(&t.name, 0);
+    return if (n.len > 0) n else "(unnamed)";
+}
+
+/// 各任务栈的高水位（已用/总量的字节数），一行打完。进度报告用。
+fn logStacks(tag: []const u8) void {
+    var line: [192]u8 = undefined;
+    var used: usize = 0;
+    for (impl.tasks[0..impl.task_count], 0..) |*t, i| {
+        if (t.stack.len == 0) continue;
+        const s = std.fmt.bufPrint(line[used..], " {d}:{s}={d}/{d}", .{ i, taskName(t), t.stackUsed(), t.stack.len }) catch break;
+        used += s.len;
+    }
+    log.line("wifi-link-probe: stacks[{s}]:{s}", .{ tag, line[0..used] });
 }
 
 /// 实验：MAC 中断相关的三个字两边不同，按对照镜像的值写一遍，再扫描。
@@ -398,6 +655,7 @@ pub fn run() noreturn {
     stubSnapshot("after-start");
     chmDump("after-start");
     if (dump_after_start) initp.regDumpAll("after-start");
+    coexStage("after-start");
     // 晶振频率这条线：PHY 的 `phy_get_xtal_freq` 把 `xtal - 1` 写进 `MODEM_LPCON_TICK_CONF` 的低 6 位
     // （对照镜像 40 MHz 晶振读回 0x27；修复前这里是 0x3F）。
     {
@@ -468,6 +726,7 @@ pub fn run() noreturn {
         initp.focusDump("after-scan");
         initp.rangeDumpAll();
     }
+    coexStage("after-scan");
 
     dumpIrq("after-scan");
     for (osi_stubs.hits, 0..) |n, i| {
@@ -492,6 +751,12 @@ pub fn run() noreturn {
                 });
             }
         }
+    }
+    // 连接阶段（R3.2.2）：构建时给了 AP 的 SSID 才做。
+    if (probe_opts.ap_ssid.len > 0) {
+        connectPhase();
+    } else {
+        log.raw("wifi-link-probe: connect phase skipped (no -Dwifi-ap-ssid)\n");
     }
     log.raw("wifi-link-probe: done\n");
     hw.halt();
