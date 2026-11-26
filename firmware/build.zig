@@ -84,7 +84,7 @@ pub fn build(b: *std.Build) void {
     const coex_dump = b.option(bool, "coex-dump", "merged image only: dump registers just before the Wi-Fi link") orelse false;
     // 合并镜像的 BLE 广播实验（要求 `-Dcoex-ble-enable`）：所有判据跑完之后，经 HCI 让 BLE controller 发不可连接
     // 广播（LE Set Advertising Parameters / Data / Enable），边泵 controller 任务边读 synth 锁定位，再让 Wi-Fi 在 BLE
-    // 广播着的时候走一遍真实链路（ADR-003 第 5 节的 L4b），最后让 BLE 单独再广播 15 秒。排在最后：这一步出问题时
+    // 广播着的时候走一遍真实链路（ADR-003 第 5 节的 L4b），最后 15 秒只泵 BLE（Wi-Fi 已断开）。排在最后：这一步出问题时
     // 前面的判据已经打完。
     const coex_ble_adv = b.option(bool, "coex-ble-adv", "merged image only: after every check, start BLE advertising over HCI and read the synthesizer lock bit") orelse false;
     // 合并镜像广播实验的中断探针（要求 `-Dcoex-ble-adv`）：发广播使能之前给 trap 处理器挂一个每个中断调一次的钩子，

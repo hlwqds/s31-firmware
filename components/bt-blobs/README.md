@@ -27292,6 +27292,10 @@ mac_isr, arg)`（ROM 符号）→ shellSetIsr → `trap.setHandler(50, mac_isr)`
 mac_isr ✓ 已在表内**！前轮 input50 桥版 boot 循环 = **mac_isr 真的执行了**
 （39×probe.run 重入 = 其内 resumeTask-from-trap 的副作用）⇒ 中断链已通，
 fe=0 仅说明 FE 前端未轮询（MAC 层在跑、RF 前端未动）。
+【2026-11-27 更正】"存 handlers[50-16=34]"是当时的实现（`trap.setHandler` 那时把 ≥ 16 的下标减 16）。自 `d2aa571` 起
+`setHandler` 原样存，这一次的登记就落在下标 50 上，而分发器查的是 34——查不到。blob 经 `intr_handler_set` 这条路传的
+`n` 是哪一种编号，没有核对过（`osi_impl.zig` 的 `shellSetIsr` 原来注释写"`setHandler` 内部归一化"，并不属实，已改）。
+合并镜像里 BT MAC 走的是 `bringup.intrArm` 的桥，不依赖这条路；见轮 167 与 `coex-verification.md` §17.5。
 **修正方向**：桥的 f 不取 ROM fn——改取 \*\*trap.getHandler(34).fn*\*\*（即
 mac_isr 本体），drain 代跑 ✓；或直接在 mac_isr 外再包一层"只计数+标记，
 真跑放主泵"的双层桥。
@@ -30329,8 +30333,8 @@ blob 的 OkE7 里有**多级间接**：
 > 【2026-11-26 补】本表的验证范围是 `-Dbt-probe` 单 BLE 镜像（2026-11-23 收口时）。表后追加的轮次里，两个射频同镜
 > （`-Dcoex-merged`）的结论以文末「轮 163」与 `docs/verification/coex-verification.md` §15 为准，本表里那一行只是索引。
 > 【2026-11-27 补】合并镜像里 BLE 的广播已上空口（文末「轮 167」）：广播使能之后"整机失声"的根因是中断桥登记错了一个下标，
-> 细目以 `docs/verification/coex-verification.md` §17.5 为准。本表「板上已验证」的范围仍是 `-Dbt-probe` 单 BLE 镜像：它的默认
-> 路径不开全局中断，那里的 synth 墙没有因为轮 167 而改变，是不是同一个原因没有验证。
+> 细目以 `docs/verification/coex-verification.md` §17.5 为准。本表「板上已验证」的范围仍是 `-Dbt-probe` 单 BLE 镜像：那里的
+> synth 墙不是轮 167 的那个风暴（那边没有风暴，主上下文一直在跑），修前修后探针的日志逐段相同，墙本身没有变。
 
 ## 板上已验证（可复现，`-Dbt-probe` 镜像）
 
@@ -31732,8 +31736,8 @@ blob 进入无断言紧等待环、CPU 饿死全静默"是同一处。**分不�
 trap 分发表时用的下标是 24；`trapDispatch` 查表用的是**外部中断号**（输入号减 16，这里是 8；`trap.zig` 的 `setHandler`
 注释写明了这个约定）。分发器永远查不到中断桥。泵的每一轮经 `bridgeReenable()` 开着输入 24 的 IE，广播使能一处理，
 BT MAC 拉起这个电平中断：trap 进来查不到 handler 就返回，`mret` 之后立刻再进。串口那一行停在半行、落盘记录停在
-"正要发"，都是主上下文再也没回来。单独探针的默认路径不开全局中断（`probe_irqs = false`），这条路径在它那里没有跑过；
-它的 synth 墙是不是同一个原因，没有验证。
+"正要发"，都是主上下文再也没回来。单独探针里没有这个风暴：那边全局中断开着、桥也登记了，但 controller 没有走到拉起这个
+中断的一步（见下面「还不知道的」）。
 
 修法一行：`setHandler(routed_input - 16, …)`。合并镜像在发广播使能之前多一条判据（`check: ble interrupt bridge wired:
 MODEM_BT_MAC -> input 24 (want 24), handler 0x…`），收尾多打一行中断桥的计数；`-Dcoex-adv-irq` 的中断探针留着（trap
@@ -31753,7 +31757,8 @@ MODEM_BT_MAC -> input 24 (want 24), handler 0x…`），收尾多打一行中断
 | 6 | 登记下标改成 `routed_input - 16`（与第 5 步同一份源码，只差这一行） | `handler 0x400bf7b2 ok=1`；没有风暴；合成器锁定；AP 记到第二次关联；工作站扫描看到 `s31` |
 
 第 1–4 步的日志没有入库。第 5 步是 `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`，第 6 步是
-`logs/coex-merged-wifi-link-ble-adv12-boot.log`。风暴的样子（第 5 步）：
+`logs/coex-merged-wifi-link-ble-adv12-boot.log`；之后给中断桥多加一个计数、给核的读数多加两组状态位，又上板一次
+`…-ble-adv13-boot.log`（27/27，最终代码）。风暴的样子（第 5 步）：
 
 ```text
 check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x00000000 ok=0
@@ -31765,30 +31770,45 @@ bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
 
 探针按 CPU 周期限速（两行之间至少 0.75 秒），每行多约 71 万次 ⇒ 每秒约 95 万次（上限），全部是输入 24。
 
-**修之后（`ble-adv12`，27/27，`verdict=pass`）。**
+**修之后（`ble-adv12`，27/27，`verdict=pass`；标了 `ble-adv13` 的取自最终代码那一轮，也是 27/27）。**
 
 - 中断桥：分发器在下标 8 上查到 `0x400bf7b2`；全程没有一行风暴；15 秒收尾时 `queued=957 drained=956 dropped=0`——blob 的
-  ISR 经桥入环 957 次、被主上下文代跑 956 次。
+  ISR 经桥入环 957 次、被主上下文代跑 956 次。`ble-adv13` 多一个计数 `count_only=0`：代跑的是 blob 经 `intr_alloc(124, …)`
+  登记的 ISR，不是纯计数桩。
 - 合成器锁定位（`0x201098BC` bit2）：106361 / 106361 次读数里置位，第一次在广播使能后 34863 µs；读数 `0x00000004`，
   15 秒之后仍是它。**合成器是广播使能命令处理之后 35 ms 内上电锁定的**（轮 90 记的 oracle 时序 `ANA-post-cmds 98BC=0x00000004`
-  在本仓这边第一次复现）。
+  在本仓这边第一次复现）。广播间隔 0x00A0 是 100 ms（这些字段 0.625 ms 一档；此前注释里的 200 ms 是错的，已改）。
 - Wi-Fi 在 BLE 广播着的时候再走一遍真实链路：扫描 18 个 AP（基线 24 个）、连接、四次握手、DHCP、ping 10/10；往返
   min/avg/max = 30.4 / 45.1 / 92.4 ms，BLE 只 enable 不广播时是 1.9 / 3.5 / 10.8 ms。AP 侧（`ble-adv11`）：
   `logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log` 记到第二次关联，`…-adv11-ap-frames.log` 有认证、关联响应与四次握手。
 - 空口：工作站 `bluetoothctl scan on` 看到 `[NEW] Device 02:00:00:00:BB:01 s31`
   （`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`）。
-- 修之后一共上板五次（`ble-advw6`、`ble-adv9`、`ble-adv10`、`ble-adv11`、`ble-adv12`；前两次的日志没有入库），结局相同；
-  `ble-adv10` 是 25/26，挂的是「BLE init 之后的扫描不低于基线的一半」那条（12 对 32），是环境（健康的读数当天在 13–37 个
-  AP 之间跳，退化时是 1–4 个）。入库的板侧日志：`…-ble-adv11-boot.log`、`…-ble-adv12-boot.log`。
+- 修之后一共上板六次（`ble-advw6`、`ble-adv9`、`ble-adv10`、`ble-adv11`、`ble-adv12`、`ble-adv13`；前两次的日志没有入库）：
+  合成器都是 35 ms 内锁定，Wi-Fi 都是连上、DHCP、ping 10/10。工作站扫描看到 `s31` 的记录有五次（`ble-adv9` 的扫描在板子
+  起广播之前就结束了，没有读数）。`ble-adv10` 是 25/26，挂的是「BLE init 之后的扫描不低于基线的一半」那条（12 对 32），
+  是环境（健康的读数当天在 13–37 个 AP 之间跳，退化时是 1–4 个）。入库的板侧日志：`…-ble-adv11-boot.log`、
+  `…-ble-adv12-boot.log`、`…-ble-adv13-boot.log`。
+- 核的读数（`ble-adv13`，ADR-003 第 5 节 L4b 的两条判据）：五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数
+  相同——「两次读数之间变了」在这些读数上不成立（读数取在各阶段的边界上）。三组状态位（`coex_status_get` 的 wifi / ble / bt
+  位图）现在读得到，但对不上名字：BLE 一开始广播，`wifi_status` 与 `bt_status` 就恒为 1；`ble_status` 只在 Wi-Fi 连着的
+  那三个时点为 1。含义没有弄清，判据先不能判。
 
 **还不知道的。**
 
-- 单独探针（`-Dbt-probe`）的 synth 墙（轮 96–162）是不是同一个风暴：它的默认路径不开全局中断，桥不跑；要在它那里回答，
-  得在开全局中断的条件下让桥真正跑起来再发 `0x200A`。没有做。
+- 单独探针（`-Dbt-probe`）的 synth 墙（轮 96–162）不是这个风暴：那边全局中断开着（`run()` 在 init 窗口就调
+  `enableInterrupts()`，T0 作 NMI 采样器），桥也登记了（`bt osal: arm src=124 -> CLIC input 24 (routed, bridged=true)`），
+  但主上下文一直在跑（广播使能之后 `POLL0n` 行
+  每几秒照常打印），`0x201098BC` 恒为 0——BT MAC 的中断没有拉起来，同一个错下标在那边不表现为风暴。修前修后各跑一轮
+  （`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），日志逐段相同。那边的墙是另一处，根因未知。
+- ADR-003 第 5 节 L4b「核真的在仲裁」的两条判据都还没有过（上面最后一条），现在只算「两个射频同时开着」；按广播间隔
+  （20 / 100 / 1000 ms）各一轮的时延与丢包、PTI 行为、两侧的 start 回调都没有做。
 - 只有"工作站扫描看到 `s31`"这一条空口证据：广播的间隔、信号强度没有量（`btmon` 要 root）；广播是不可连接的
-  （ADV_NONCONN_IND），连接与 GATT 没有做；持续的时间只测到 15 秒。
+  （ADV_NONCONN_IND），连接与 GATT 没有做；BLE 从广播使能起广播到 section 结束（约 45 秒），没有发广播关闭命令，
+  更长时间的稳定性没有测。
 - 广播时用的地址是 `02:00:00:00:BB:01`——`osal.readEfuseMac` 的回退值，合并镜像没有接读 eFuse MAC 的钩子。
 - BLE 广播着的时候 Wi-Fi 的 ping 往返平均从 3.5 ms 涨到 45 ms（10 帧不丢），涨在哪里没有查。
+- 同类的一处还开着：`osi_impl.zig` 的 `shellSetIsr` 把 blob 给的 `n` 原样交给 `trap.setHandler`，blob 传的是哪一种编号
+  没有核对过（见上文 `intr_handler_set(50, mac_isr)` 那一段 2026-11-27 的更正）。
 - `intrArm` 里"IE 与 handler 必须同开同关""挂 blob handler 原样已实证 boot 循环"那几条注释写的是 2026-11-21 的实验，
   那些实验里桥登记在哪个下标，没有回头核对。
 

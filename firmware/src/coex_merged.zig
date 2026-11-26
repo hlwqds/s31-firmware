@@ -18,10 +18,11 @@
 //!     （开了 `-Dcoex-ble-enable` 时）。这一步里 BLE 还没有广播，是"一个射频在收发、另一个 enabled"；两个射频同时
 //!     在空口上的是第 8 步（`-Dcoex-ble-adv`）。顺序为什么不能反，见下面「PHY 的归属」。
 //!   - `-Dcoex-ble-adv`（要求 `-Dcoex-ble-enable`）：所有判据之后，经 HCI 让 BLE 发不可连接广播（三条命令，从一个
-//!     独立栈上的发送任务里发），泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE 广播着的时候再走一遍真实链路，
-//!     最后让 BLE 单独再广播 15 秒（给空口那边的蓝牙扫描留窗口）。实测（2026-11-27）：三条命令都回了 Command Complete，
-//!     合成器约 35 ms 内锁定，Wi-Fi 在 BLE 广播着的时候照常连接、DHCP、ping（10 帧不丢，rtt 平均从约 4 ms 涨到约
-//!     47 ms），工作站的蓝牙扫描看到名字 `s31` 的设备（`coex-verification.md` §17）。
+//!     独立栈上的发送任务里发；间隔 0x00A0 = 100 ms），泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE 广播着的时候
+//!     再走一遍真实链路，最后 15 秒只泵 BLE（Wi-Fi 已断开、没有流量），给空口那边的蓝牙扫描留一段干净的窗口。BLE 从
+//!     广播使能起一直广播到 section 结束，没有发广播关闭命令。实测（2026-11-27）：三条命令都回了 Command Complete，
+//!     合成器约 35 ms 内锁定，Wi-Fi 在 BLE 广播着的时候照常连接、DHCP、ping（10 帧不丢，rtt 平均从约 3.5 ms 涨到约
+//!     45 ms），工作站的蓝牙扫描看到名字 `s31` 的设备（`coex-verification.md` §17.5）。
 //!   - `-Dcoex-adv-irq`（要求 `-Dcoex-ble-adv`）：发广播使能之前给 trap 处理器挂一个每个中断调一次的钩子，每 4096 个中断
 //!     打一行各 CLIC 输入的计数与最近几个被中断的 PC——哪个输入在风暴、主上下文是被谁饿死的，看它
 //!     （2026-11-27 靠它找到"广播使能之后整机失声"的根因，`coex-verification.md` §17.5）。
@@ -91,10 +92,10 @@ extern const _heap_end: u8;
 
 /// `-Dcoex-ble-enable` 的步骤里泵 controller 任务多久。
 const ble_pump_us: u64 = 1_000_000;
-/// `-Dcoex-ble-adv` 的广播间隔（0.625 ms × 2 = 1.25 ms 一档，0x00A0 = 200 ms）与广播着的时候泵多久。
+/// `-Dcoex-ble-adv` 的广播间隔（0.625 ms 一档：NimBLE 的 `BLE_HCI_ADV_ITVL` 是 625 µs；0x00A0 = 100 ms）与广播着的时候泵多久。
 const ble_adv_interval_units: u16 = 0x00A0;
 const ble_adv_pump_us: u64 = 3_000_000;
-/// 第二遍 Wi-Fi 链路之后，让 BLE 继续广播这么久（只泵、Wi-Fi 没有流量）：给空口那边的蓝牙扫描留一段稳定的窗口。
+/// 第二遍 Wi-Fi 链路之后，让 BLE 继续广播这么久（只泵；此时 Wi-Fi 已断开、没有流量）：给空口那边的蓝牙扫描留一段稳定的窗口。
 const ble_adv_hold_us: u64 = 15_000_000;
 
 inline fn rd(addr: usize) u32 {
@@ -270,7 +271,7 @@ pub fn run() bool {
     }
 
     // 8) `-Dcoex-ble-adv`：所有判据之后，经 HCI 让 BLE 发不可连接广播，泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi
-    //    在 BLE 广播着的时候再走一遍真实链路（ADR-003 第 5 节的 L4b），最后让 BLE 单独再广播 15 秒。排在最后：
+    //    在 BLE 广播着的时候再走一遍真实链路（ADR-003 第 5 节的 L4b），最后 15 秒只泵 BLE（Wi-Fi 已断开）。排在最后：
     //    这一步出问题时前面的判据已经打完。
     if (opts.ble_adv) {
         readRadios("before ble adv");
@@ -315,9 +316,10 @@ pub fn run() bool {
             check(hold_lock0 and hold_lock1, "ble synth lock held through the {d} s hold (before={} after={} 98bc=0x{x:0>8})", .{
                 ble_adv_hold_us / 1_000_000, @intFromBool(hold_lock0), @intFromBool(hold_lock1), rd(0x2010_98BC),
             });
-            // 中断桥的计数：广播使能之后 blob 的 ISR 经桥入环、被主上下文代跑各了多少次。
+            // 中断桥的计数：广播使能之后 blob 的 ISR 经桥入环、被主上下文代跑各了多少次；`count_only` 是代跑的里面
+            // 跑的是纯计数桩的次数（blob 没有经 `intr_alloc` 登记自己的 ISR 时才非零）。
             const bs = bt.probe.bridgeStats();
-            log.line("bt adv: interrupt bridge counters after the hold: queued={d} drained={d} dropped={d}", .{ bs.queued, bs.drained, bs.dropped });
+            log.line("bt adv: interrupt bridge counters after the hold: queued={d} drained={d} dropped={d} count_only={d}", .{ bs.queued, bs.drained, bs.dropped, bs.count_only });
         }
     }
 

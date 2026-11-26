@@ -58,6 +58,11 @@ pub const StatusType = enum(u32) {
 
 /// `COEX_STATUS_GET_WIFI_BITMAP` = `1 << COEX_SCHM_ST_TYPE_WIFI`（`esp_coexist_internal.h:39`）。
 pub const status_get_wifi_bitmap: u8 = 1 << @backingInt(StatusType.wifi);
+/// `COEX_STATUS_GET_BLE_BITMAP` = `1 << COEX_SCHM_ST_TYPE_BLE`。ADR-003 第 5 节 L4b 的判据之一是「BLE 的状态位非 0」，
+/// 读的就是这一组。
+pub const status_get_ble_bitmap: u8 = 1 << @backingInt(StatusType.ble);
+/// `COEX_STATUS_GET_BT_BITMAP` = `1 << COEX_SCHM_ST_TYPE_BT`。
+pub const status_get_bt_bitmap: u8 = 1 << @backingInt(StatusType.bt);
 
 // ---------------------------------------------------------------------------
 // 函数指针表

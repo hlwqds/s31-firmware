@@ -199,15 +199,21 @@
   零命中，「时钟门控」在合并镜像里排除；给 trap 处理器挂每个中断调一次的钩子，看到只有输入 24 在涨、累计上千万次。最后在
   最终代码上补单变量对照：只把登记下标改回 24，`handler 0x00000000 ok=0`、风暴照旧；改回去，27/27。两次镜像的源码只差这一行。
 - **验证**：主机门禁（`scripts/check-all.sh`：fmt、yaml、不变量、单元测试、覆盖率、容量、e2e host）退出 0。板上
-  （`-Dcoex-ble-adv`）：合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 957 次、代跑 956 次；Wi-Fi 在
-  BLE 广播着的时候连上真实 AP、DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二次关联与四次握手；工作站
-  `bluetoothctl scan on` 看到 `s31`。日志 `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`（对照）、
-  `…-ble-adv11-boot.log`、`…-ble-adv12-boot.log`、`…-ble-adv11-ap-syslog.log`、`…-ble-adv11-ap-frames.log`、
-  `…-ble-adv11-bt-scan.log`。细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
-- **没有做的**：单独的 BLE 探针（`-Dbt-probe`）的 synth 墙是不是同一个原因（它的默认路径不开全局中断，桥不跑）；不同广播
-  间隔下的时延与丢包、PTI 行为、`coex_status_get` 里的 BLE 状态位、核的硬件定时器（路线图 C7 的其余判据）；可连接广播与
-  GATT；超过 15 秒的稳定性；量广播的间隔与信号强度；广播地址还是回退的 `02:00:00:00:BB:01`；BLE 的 disable 路径；
-  「BLE 先起」的顺序；板子回别人的 ping。
+  （`-Dcoex-ble-adv`）：合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 951 次、代跑 950 次，代跑的
+  都是 blob 经 `intr_alloc(124, …)` 登记的 ISR（纯计数桩 0 次）；Wi-Fi 在 BLE 广播着的时候连上真实 AP、DHCP、ping 10/10
+  （往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二次关联与四次握手；工作站 `bluetoothctl scan on` 看到 `s31`。日志
+  `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`（对照）、`…-ble-adv11-boot.log`、`…-ble-adv12-boot.log`、
+  `…-ble-adv13-boot.log`（最终代码）、`…-ble-adv11-ap-syslog.log`、`…-ble-adv11-ap-frames.log`、`…-ble-adv11-bt-scan.log`。
+  单独的 BLE 探针修前修后各跑一轮（`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），逐段相同。
+  细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
+- **没有过的**：ADR-003「核真的在仲裁」的两条判据——五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数相同；
+  三组状态位（`coex_status_get` 的 wifi / ble / bt 位图，读数行里现在一并打印）对不上名字，含义没有弄清。这一轮只算
+  「两个射频同时开着」。
+- **没有做的**：按广播间隔（20 / 100 / 1000 ms）各一轮的时延与丢包、PTI 行为、两侧的 start 回调（路线图 C7 的其余
+  判据）；单独的 BLE 探针那边的 synth 墙（不是这个风暴，根因未知）；`osi_impl.zig` 的 `shellSetIsr` 里 blob 传的编号是
+  哪一种（同类的一处，还开着）；可连接广播与 GATT；更长时间的稳定性（广播从使能起到 section 结束约 45 秒，没有发广播
+  关闭命令）；量广播的间隔与信号强度；广播地址还是回退的 `02:00:00:00:BB:01`；BLE 的 disable 路径；「BLE 先起」的
+  顺序；板子回别人的 ping。
 
 ## 日志
 

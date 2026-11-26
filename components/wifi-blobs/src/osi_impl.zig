@@ -744,8 +744,10 @@ fn shellSetIsr(n: i32, f: ?*anyopaque, arg: ?*anyopaque) callconv(.c) void {
     note(32, @intCast(n), @intFromPtr(f));
     if (!on_target) return;
     // 写**应用侧**的表（我们的 trap 才会分发它）——IDF 的 `s_intr_handlers` 就是应用侧。
-    // **约定**：`n` 是 CLIC 输入号（blob 自己的编号，如 `mie |= 1<<25`），`trap.setHandler` 内部
-    // 归一化到外部号（`n >= 16` 时存 `n-16`），与 `trapDispatch` 的查找口径一致。
+    // **约定**：这张表按**外部中断号**索引，`trap.setHandler` 原样存（不做换算），`trapDispatch` 按 `CLIC 输入号 - 16`
+    // 查表（`trap.zig` 的 `setHandler` 注释）；照 IDF 的 `_set_isr` 合同，`n` 应当就是外部号（0..31）。
+    // ⚠ blob 实际传的 `n` 是哪一种编号没有核对过：若它传的是 CLIC 输入号（≥ 16），这里就登记到了另一格、分发时查不到
+    // （2026-11-27 `bt-blobs` 的 `intrArm` 犯的就是这一类错，见 `coex-verification.md` §17.5）。
     if (n >= 0) {
         const hf: ?*const fn (?*anyopaque) callconv(.c) void = if (f) |p| @ptrCast(@alignCast(p)) else null;
         @import("board").trap.setHandler(@intCast(n), hf, arg);

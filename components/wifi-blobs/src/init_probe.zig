@@ -870,10 +870,11 @@ pub fn coexReadings(stage: []const u8) void {
     flushLine(stage, "hooks", line[0..used]);
 
     const c = g.core;
-    log.line("coex[{s}]: core: wifi_status=0x{x:0>8} interval={d} period={d} phase={s} flexible={d} last_rc={d} last_error={s}", .{
-        stage,                      c.status_get.?(radio_coex.core.status_get_wifi_bitmap),   c.schm_interval_get.?(),
-        c.schm_curr_period_get.?(), if (c.schm_curr_phase_get.?() == null) "none" else "set", c.schm_flexible_period_get.?(),
-        g.last_core_rc,             if (radio_coex.lastError()) |e| @errorName(e) else "-",
+    log.line("coex[{s}]: core: wifi_status=0x{x:0>8} ble_status=0x{x:0>8} bt_status=0x{x:0>8} interval={d} period={d} phase={s} flexible={d} last_rc={d} last_error={s}", .{
+        stage,                                                    c.status_get.?(radio_coex.core.status_get_wifi_bitmap), c.status_get.?(radio_coex.core.status_get_ble_bitmap),
+        c.status_get.?(radio_coex.core.status_get_bt_bitmap),     c.schm_interval_get.?(),                                c.schm_curr_period_get.?(),
+        if (c.schm_curr_phase_get.?() == null) "none" else "set", c.schm_flexible_period_get.?(),                         g.last_core_rc,
+        if (radio_coex.lastError()) |e| @errorName(e) else "-",
     });
     const t = coex_trace_stats;
     log.line("coex[{s}]: blob->core: status_bit_set n={d} type={d} mask=0x{x:0>8} last=0x{x:0>8} | status_bit_clear n={d} mask=0x{x:0>8} | events>=64 n={d}", .{

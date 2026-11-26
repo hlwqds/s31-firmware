@@ -10,7 +10,7 @@
 | `collect.sh` | 路由器 | 跟随系统日志、每秒读站点统计、tcpdump 抓帧的文字摘要；`MON` 模式临时建 monitor 接口抓 802.11 帧 |
 | `frames.py` | 工作站 | 把 monitor 抓到的帧整理成一行一帧，时间换算成本机时间 |
 | `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
-| `decode-adv-marker.py` | 工作站 | 解码合并镜像广播实验的落盘记录（flash `0x18E000` 起一个扇区，`bt-blobs/src/probe.zig` 的 `markerWrite` 写的）：每条 32 字节，按槽位顺序打印；全 FF 的扇区报「空的」。记录只写到广播使能的"正要发"为止——之后板子不再出声（生产仓 `coex-verification.md` §17） |
+| `decode-adv-marker.py` | 工作站 | 解码合并镜像广播实验的落盘记录（flash `0x18E000` 起一个扇区，`bt-blobs/src/probe.zig` 的 `markerWrite` 写的）：每条 32 字节，按槽位顺序打印；全 FF 的扇区报「空的」。记录只写到广播使能的"正要发"为止——当时的理由是"之后板子不再出声"，那其实是 `bt-blobs` 的中断风暴，2026-11-27 晚已修（生产仓 `coex-verification.md` §17.5）；记录本身仍然冻结在那里，没有改回 |
 
 ## 用法
 

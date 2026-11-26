@@ -23,7 +23,7 @@
 | 板侧自检（第五批上板） | L3 | `ble_802154` 207/207（连同 `wifi_mlme` 121/121、`wifi_connect` 199/199，第三、四、五批的判据第一次上板）；整份 `wifi` profile 14/14 个 section，`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§5.4 |
 | 最小验证镜像上板（`--only ble_802154,wifi_mlme`） | L3 | 只编这两个 section：`ble_802154` 207/207、`wifi_mlme` 121/121，`passed=2 failed=0`，`main: verdict=pass`；镜像 512704 字节，是整份 `wifi` 镜像（1218736 字节）的 42% | `logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.4 |
 | 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
-| 合并镜像里的 BLE（2026-11-27） | L4 | 时钟按单元取并集之后，BLE init / enable 之后 BLE 自己的时钟位都在（此前被事后写回拿掉）；经 HCI 起广播的三条命令从发送任务里发都回了 Command Complete、Status 0x00，广播使能被接受之后 controller 任务不再让出，synth 锁定位没有读到过；单独的 BLE 探针与基线逐行等价 | `logs/coex-merged-wifi-link-union-boot.log`、`logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`、`logs/bt-probe-clock-union-boot.log`；§9 |
+| 合并镜像里的 BLE（2026-11-27） | L4 | 时钟按单元取并集之后，BLE init / enable 之后 BLE 自己的时钟位都在（此前被事后写回拿掉）。经 HCI 起广播：白天三版都停在广播使能之后（当时读成 controller 任务不再让出，synth 锁定位没有读到过）；当晚查明是中断风暴（`bt-blobs` 的中断桥登记错了一个下标），修掉之后合成器 35 ms 内锁定，工作站的蓝牙扫描看到 `s31`（§9）；单独的 BLE 探针修前修后都与基线逐段相同 | `logs/coex-merged-wifi-link-union-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`、`logs/coex-merged-wifi-link-ble-adv-storm-boot.log`、`logs/coex-merged-wifi-link-ble-adv12-boot.log`、`logs/coex-merged-wifi-link-ble-adv13-boot.log`、`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`、`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`；§9 |
 
 ## 2. 逐特性对照
 
@@ -569,7 +569,8 @@ R3.3 打通之后，板子的广播可以用这台工作站抓到（`bluetoothct
 
 **2026-11-27 晚：看到了。** 合并镜像里广播起来了——广播使能之后板子失声的根因是中断风暴（`bt-blobs` 的中断桥登记错了
 一个下标），修掉之后合成器 35 ms 内锁定，工作站的 `bluetoothctl scan on` 在同一窗口里看到 `[NEW] Device 02:00:00:00:BB:01 s31`
-（`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`；同晚修掉之后的扫描都看到）。上面「没有看到」的八次是修掉之前的样子。
-仍然没有做的：量广播的间隔与信号强度（`btmon` 要 root）、可连接广播与 GATT、超过 15 秒的稳定性；地址是回退的
-`02:00:00:00:BB:01`（合并镜像没有接读 eFuse MAC 的钩子）；单独的 BLE 探针（`-Dbt-probe`）没有变化，它那里的 synth 墙是不是
-同一个原因没有验证；§8 的 HCI 一致性自检没有重跑。细目在 `coex-verification.md` §17.5。
+（`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`；同晚修掉之后上了六次板，五次的扫描记录里有它，一次的扫描在板子起
+广播之前就结束了）。上面「没有看到」的八次是修掉之前的样子。仍然没有做的：量广播的间隔与信号强度（`btmon` 要 root）、
+可连接广播与 GATT、更长时间的稳定性（广播从使能起到 section 结束约 45 秒）；地址是回退的
+`02:00:00:00:BB:01`（合并镜像没有接读 eFuse MAC 的钩子）；单独的 BLE 探针（`-Dbt-probe`）修前修后都与基线逐段相同——
+那边的 synth 墙不是这个风暴，根因未知；§8 的 HCI 一致性自检没有重跑。细目在 `coex-verification.md` §17.5。

@@ -24,9 +24,9 @@
 | C4 分区表 | — | 没有改：init 级的合并镜像 1 117 376 B，装得下现有 factory 分区 | §7.5 |
 | Wi-Fi 侧 `_coex_enable` | L3 | blob 调了它，核心回 `rc=0`，Wi-Fi 侧变成 `enabled` | §9.1 |
 | C5 PHY 与时钟域的归属模型 | L1 / L4 | 归属模型 11 项主机用例（`owner.zig`：Owner、ClockBits、时钟单元表 `clocks`）。**时钟域已接并上板（2026-11-27，§16）**：两边只置自己的单元位，共享字在四个时点与并集逐位一致，20/20。PHY 的归属规则见下面「合并镜像里的 Wi-Fi 真实链路」一行 | §8、§16 |
-| 探针镜像回归 | L3 / L4 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行）。2026-11-27 时钟写改成只置位之后两个单射频镜像各回归一轮：BLE 探针与基线逐行等价（`logs/bt-probe-clock-union-boot.log`）；单独的 Wi-Fi 真实链路镜像扫描 37 个 AP、连上、DHCP、ping 10/10（`logs/wifi-link-clock-union-boot.log`） | §6.5、§16 |
+| 探针镜像回归 | L3 / L4 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行）。2026-11-27 时钟写改成只置位之后两个单射频镜像各回归一轮：BLE 探针与基线逐行等价（`logs/bt-probe-clock-union-boot.log`）；单独的 Wi-Fi 真实链路镜像扫描 37 个 AP、连上、DHCP、ping 10/10（`logs/wifi-link-clock-union-boot.log`）。同晚中断桥的登记下标修掉之后（§17.5），BLE 探针又回归一轮：`logs/bt-probe-bridge-index-boot.log` 与基线逐段相同（只有计数值与串口交错不同），照旧走到 synth 墙 | §6.5、§16、§17.5 |
 | modem 的 ICG 码（Wi-Fi 侧 R3.1 的墙） | L3 | Wi-Fi 探针 `esp_wifi_start rc=0`、init 之后 `MAC_ST=0x00000000`；合并镜像重跑 0 个失败。BLE 侧不能接（探针锁死）——**2026-11-26 更正**：锁死的两份日志来自已经不在树里的旧探针；合并镜像里 BLE enable 在 ICG 已生效时返回 0、没有锁死 | §11、§14 |
-| 共存的真实效果（L4b，两个射频都开） | L4 | 两个射频都在收发：**没有证据**。合并镜像里 BLE enable 返回 0 之后锁定位仍是 0（2026-11-26，§14）。2026-11-27 经 HCI 起广播（`-Dcoex-ble-adv`）：第一版在主上下文里发，三次上板都停在第一条命令之后；改成从发送任务里发之后，三条命令都回了 Command Complete、Status 0x00，但广播使能被接受之后 controller 任务不再让出，主上下文回不来（串口、落盘、AP 一侧的第二次关联都没有），锁定位没有读到过，工作站的蓝牙扫描八次都没有看到板子（§17）。**一个射频在收发、另一个 enabled** 已经跑通：两个控制器同镜，Wi-Fi 连上真实 AP（见下面「合并镜像里的 Wi-Fi 真实链路」一行） | `logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-ap-frames.log`；§17 |
+| 共存的真实效果（L4b，两个射频都开） | L4 | 有了第一条证据（2026-11-27 晚，§17.5）：合并镜像里 BLE 经 HCI 起广播——合成器锁定位在广播使能后 35 ms 置位，BLE 广播着的时候 Wi-Fi 连上真实 AP、DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms），工作站的蓝牙扫描看到板子的广播 `s31`。此前卡住的根因是中断风暴（中断桥登记错了一个下标），单变量对照在最终代码上做过。**没有做的**：按广播间隔的时延与丢包、PTI 行为；「核真的在仲裁」的两条判据都还没有过——五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数相同，三组状态位有了读数但对不上名字（§17.5）。**一个射频在收发、另一个 enabled**：两个控制器同镜，Wi-Fi 连上真实 AP（见下面「合并镜像里的 Wi-Fi 真实链路」一行）。修之前的样子见 §17.2–§17.4 | `logs/coex-merged-wifi-link-ble-adv12-boot.log`、`logs/coex-merged-wifi-link-ble-adv13-boot.log`、`logs/coex-merged-wifi-link-ble-adv-storm-boot.log`、`logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`、`logs/coex-merged-wifi-link-ble-adv11-ap-frames.log`、`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`；§17.5 |
 | 只开 Wi-Fi 的共存读数（L4a） | L4 | 共存核开着时真实链路能通（连上、DHCP、ping 网关 10/10）；胶水没有拒绝过一次调用；blob 的 13 次申请核都回 `0x102`，原因在核的静态表里（这些事件没有配硬件定时器）；BLE 没开，核的状态位是 0。不开共存的对照已补，判据成立（§13）。**更正**：初稿写的"硬件定时器都是 0"不成立——当时读的 `0x2010F008` 是共存低功耗时钟的配置，不是计数器（§12） | `logs/wifi-link-connect-boot.log`；§12、§13 |
 | 不开共存的对照（ADR-003 L4a 的判据「ping 与不开共存时一样」） | L4 | **成立**：胶水按 IDF 关闭分支作答、核不启动（`-Dcoex` + `-Dcoex-sw-off`）时扫描 38 个 AP、连上 2566 ms、DHCP 46 ms、ping 10/10。只去掉 `-Dcoex` 的两轮收不到帧（扫描 0 个 AP、连接 `reason=201`），根因是 `_coex_pti_get` 的计数桩把出参写成 0——只把这一处改成不写，计数桩的镜像也照常（扫描 37 个 AP、ping 10/10）。**共存核不是 Wi-Fi 收发的前置**：本表初稿写反了，已更正 | `logs/wifi-link-nocoex-boot.log`、`logs/wifi-link-coex-off-boot.log`、`logs/wifi-link-stubs-pti-boot.log`；§13 |
 | 合并镜像里的 BLE enable（`-Dcoex-ble-enable`） | L3 | `bringup.enable rc=0`、`ENABLED`，共存核 BLE 侧 `enabled`；没有锁死、没有复位。synth 锁定位（`0x201098BC` 的 bit2）在 enable 前后都是 0——这是预期值：合成器是广播使能命令处理之后才上电的，这一轮没有发 HCI 命令，**对 R3.3 不构成结论** | `logs/coex-merged-ble-enable-boot.log`；§14 |
@@ -1360,7 +1360,7 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
 ### 17.1 做法
 
 - `-Dcoex-ble-adv`（要求 `-Dcoex-ble-enable`）：所有判据之后，`bt-blobs/src/probe.zig` 的 `advertiseOnly` 经 HCI 发三条
-  命令——LE Set Advertising Parameters（[Vol 4] Part E §7.8.5：间隔 0x00A0 = 200 ms、ADV_NONCONN_IND、信道图 0x07）、
+  命令——LE Set Advertising Parameters（[Vol 4] Part E §7.8.5：间隔 0x00A0 = 100 ms——这些字段是 0.625 ms 一档、ADV_NONCONN_IND、信道图 0x07）、
   LE Set Advertising Data（§7.8.7：Flags + 名字 `s31`）、LE Set Advertising Enable（§7.8.9）——然后泵 3 秒、每轮读
   synth 锁定位（`0x201098BC` 的 bit2）。判据：三条命令的回包 Status 为 0、锁定位至少置位过一次；之后让 Wi-Fi 在
   BLE 广播着的时候再走一遍链路（ADR-003 第 5 节的 L4b）。
@@ -1376,6 +1376,9 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
   按时间判等不到头。
 - 排在所有判据之后：广播使能之后板子不再出声，后面的 Wi-Fi 链路也走不到，前面的判据已经打完。默认关：不开
   `-Dcoex-ble-adv` 时调用点在编译期被去掉，这段代码不进镜像。
+  【2026-11-27 晚更正】上面「回包之后那次写不会返回」「广播使能之后定时器会被门控」「广播使能之后板子不再出声」三处
+  说的是修掉中断风暴之前的样子（§17.5）：回包之后主上下文是被中断风暴挡住的，定时器没有被门控；现在这一步跑完之后
+  照常打 `checks:` 汇总。第二遍 Wi-Fi 链路之后 BLE 再广播 15 秒（只泵 BLE），收尾时打一行中断桥的计数与核的读数。
 
 ### 17.2 板侧读数
 
@@ -1455,8 +1458,8 @@ G 组的三份证据对得上：串口最后一行是 `bt adv: cmd 0x200a got Co
 **外部中断号**（CLIC 输入号减 16，这里是 8；`boards/esp32s31-coreboard/src/trap.zig` 的 `setHandler` 注释写明了这个约定）。
 于是分发器永远查不到中断桥。泵的每一轮经 `bridgeReenable()` 开着输入 24 的 IE；广播使能一处理，BT MAC 拉起这个电平
 中断，trap 进来查不到 handler 就返回，`mret` 之后立刻再进——**中断风暴**，主上下文一个指令也执行不到。串口那一行停在
-半行，是主上下文再也没回来写剩下的字符；落盘记录停在「正要发」同理。单独探针（`-Dbt-probe`）的默认路径不开全局中断，
-这条路径在它那里没有跑过。
+半行，是主上下文再也没回来写剩下的字符；落盘记录停在「正要发」同理。单独探针（`-Dbt-probe`）里没有这个风暴：它开着
+全局中断、也登记了这座桥，但那边的 controller 没有走到拉起这个中断的一步，主上下文一直在跑（见下面「边界」）。
 
 修法一行：`setHandler(routed_input - 16, …)`。合并镜像在发广播使能之前多一条判据，核对源 124 的路由与分发器查到的
 handler（`check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x…`）；`-Dcoex-adv-irq` 的
@@ -1476,7 +1479,8 @@ handler（`check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24)
 
 第 1–4 步的日志没有入库（第 4 步之后先加了诊断行与这一行修法，两者一起上板，所以第 5 步是事后在最终代码上补的
 对照）。第 5 步是 `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`，第 6 步是 `logs/coex-merged-wifi-link-ble-adv12-boot.log`
-（27/27，最终代码；之后重新构建的镜像与它逐字节相同）。
+（27/27）。之后给中断桥多加一个计数（代跑的里面跑的是纯计数桩的次数）、给核的读数多加两组状态位，又上板一次：
+`logs/coex-merged-wifi-link-ble-adv13-boot.log`（27/27，最终代码）。
 
 **风暴的样子**（第 5 步，只差那一行）：
 
@@ -1492,30 +1496,42 @@ bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
 探针按 CPU 周期限速（两行之间至少 0.75 秒），每行的计数多约 71 万 ⇒ 每秒约 95 万次（上限），全部是输入 24。
 `clic24=0x7fc00100`：输入 24 的 IE 开着（泵的 `bridgeReenable()` 每一轮都写），而分发器在下标 8 上什么也没查到。
 
-**修之后的读数**（`ble-adv12`，27/27，`main: verdict=pass`）：
+**修之后的读数**（`ble-adv12`，27/27，`main: verdict=pass`；标了 `ble-adv13` 的取自最终代码那一轮，也是 27/27）：
 
 | 判据 | 读数 |
 | --- | --- |
-| 中断桥 | 分发器在下标 8 上查到 `0x400bf7b2`、下标 24 上是 0；全程没有一行风暴（探针每 4096 个中断才打一行，一行都没有）；15 秒收尾时的计数 `queued=957 drained=956 dropped=0`——blob 的 ISR 经桥入环 957 次、被主上下文代跑 956 次 |
-| 三条广播命令 | Command Complete，Status 都是 0x00（间隔 0x00A0 = 200 ms） |
+| 中断桥 | 分发器在下标 8 上查到 `0x400bf7b2`、下标 24 上是 0；全程没有一行风暴（探针每 4096 个中断才打一行，一行都没有）；15 秒收尾时的计数 `queued=957 drained=956 dropped=0`。`ble-adv13` 多一个计数：`queued=951 drained=950 dropped=0 count_only=0`——代跑的 950 次跑的都是 blob 经 `intr_alloc(124, …)` 登记的 ISR，不是纯计数桩 |
+| 三条广播命令 | Command Complete，Status 都是 0x00（间隔 0x00A0 = 100 ms：这些字段是 0.625 ms 一档，NimBLE 的 `BLE_HCI_ADV_ITVL` 是 625 µs） |
 | 合成器锁定位（`0x201098BC` bit2） | 106361 次读数里 106361 次置位，第一次在广播使能后 34863 µs；读数 `0x00000004`；15 秒之后仍是它 |
 | BLE 广播着的时候 Wi-Fi 再走一遍链路 | 扫描 18 个 AP（基线 24 个）、连接、四次握手、DHCP、ping 10/10；往返 min/avg/max = 30.4 / 45.1 / 92.4 ms（BLE 只 enable 不广播时 1.9 / 3.5 / 10.8 ms） |
-| AP 侧（取自 `ble-adv11`，同一份代码只少上面那行计数） | `logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`：路由器时钟 07:36:06 认证、关联，07:36:07 四次握手完成，07:36:08 `DHCPACK`，07:36:23 断开（第一次是 07:35:40–07:35:55，BLE 只 enable）；`…-adv11-ap-frames.log`：05:40:28.9 认证与关联响应，四次握手 05:40:29 |
-| 空口（取自 `ble-adv11`） | 工作站 `bluetoothctl --timeout 230 scan on`（开在板子这一轮之前）：`[NEW] Device 02:00:00:00:BB:01 s31`，广播停了之后 `[DEL]`（`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`） |
+| AP 侧（取自 `ble-adv11`，同一份代码只少计数与状态位） | `logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`：路由器时钟 07:36:06 认证、关联，07:36:07 四次握手完成，07:36:08 `DHCPACK`，07:36:23 断开（第一次是 07:35:40–07:35:55，BLE 只 enable）；`…-adv11-ap-frames.log`：05:40:28.9 认证与关联响应，四次握手 05:40:29 |
+| 空口（取自 `ble-adv11`） | 工作站 `bluetoothctl --timeout 230 scan on`（开在板子这一轮之前）：`[NEW] Device 02:00:00:00:BB:01 s31`，之后 `[DEL]`（扫描不再收到它）（`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`） |
+| 核的硬件定时器（`ble-adv13`；ADR-003 第 5 节 L4b 的判据之一） | 五个定时器在每个时点都是 `en=0`，相隔 1 ms 的两次读数相同——含 BLE 广播着、Wi-Fi 已连上的 `connected` / `after-ping` / `before-disconnect` 三个时点。「数值在两次读数之间变了」在这些读数上不成立；读数取在各阶段的边界上，之间有没有定时器在跑，这些读数看不见 |
+| 核的状态位（`ble-adv13`；`coex_status_get` 的三组位图，判据之二） | 有了读数，但对不上名字。按 wifi / ble / bt 的顺序：`after-start` 起各时点 `0/0/0`，第一遍连上 `0/1/1`，广播一起 `1/0/1`，第二遍连上 `1/1/1`，收尾 `1/0/1`。也就是 BLE 一开始广播，`wifi_status` 与 `bt_status` 就恒为 1；`ble_status` 只在 Wi-Fi 连着的那三个时点为 1（第一遍链路里 BLE 还没广播时也是）。这几位的含义没有弄清，「BLE 的状态位非 0」这条判据先不能判 |
 
 `ble-adv11` 是 27/27：合成器 106218 / 106218、34835 µs，ping 往返 26.9 / 38.9 / 97.4 ms（基线 1.9 / 4.2 / 10.5 ms），
-扫描 13 个 AP（基线 24 个）。修之后一共上板五次（`ble-advw6`、`ble-adv9`、`ble-adv10`、`ble-adv11`、`ble-adv12`；前两次的
-日志没有入库）：合成器都是 35 ms 内锁定，Wi-Fi 都是连上、DHCP、ping 10/10，工作站的扫描都看到 `s31`。`ble-adv10` 是
-25/26：挂掉的是「BLE init 之后的扫描不低于基线的一半」那条（12 对 32）——同一天里健康的读数在 13–37 个 AP 之间跳，
-退化时是 1–4 个（§15.2），那一次是环境。
+扫描 13 个 AP（基线 24 个）。修之后一共上板六次（`ble-advw6`、`ble-adv9`、`ble-adv10`、`ble-adv11`、`ble-adv12`、
+`ble-adv13`；`ble-advw6`、`ble-adv9` 的日志没有入库）：合成器都是 35 ms 内锁定，Wi-Fi 都是连上、DHCP、ping 10/10。
+工作站扫描看到 `s31` 的记录有五次（`ble-advw6`、`ble-adv10`、`ble-adv11`、`ble-adv12`、`ble-adv13`；入库的只有
+`ble-adv11` 那一份）；`ble-adv9` 的扫描在板子起广播之前就结束了，没有读数。`ble-adv10` 是 25/26：挂掉的是「BLE init
+之后的扫描不低于基线的一半」那条（12 对 32）——同一天里健康的读数在 13–37 个 AP 之间跳，退化时是 1–4 个（§15.2），
+那一次是环境。
 
 **边界。**
 
 - 只有「工作站的扫描看到 `s31`」这一条空口证据：广播的间隔、信号强度没有量；广播是不可连接的（ADV_NONCONN_IND），
-  连接与 GATT 没有做；广播持续的时间只测到 15 秒。
+  连接与 GATT 没有做。BLE 从广播使能起一直广播到 section 结束（约 45 秒：3 秒泵 + 一遍 Wi-Fi 链路 + 最后 15 秒只泵
+  BLE），没有发广播关闭命令；更长时间的稳定性没有测。
 - 广播时用的地址是 `02:00:00:00:BB:01`——`osal.readEfuseMac` 的回退值，合并镜像没有接读 eFuse MAC 的钩子。
-- BLE 广播着的时候 Wi-Fi 的 ping 往返平均从 4 ms 涨到 39 ms（10 帧不丢）；涨在哪里没有查（共存核分时、还是泵的
-  轮转，没有分开）。
-- 单独探针（`-Dbt-probe`）的 synth 墙（`components/bt-blobs/README.md` 轮 96–162）是不是同一个风暴，没有验证：它的
-  默认路径不开全局中断，桥不跑；本节的结论只对合并镜像成立。
+- 「核真的在仲裁」的两条判据（ADR-003 第 5 节 L4b）都还没有过：硬件定时器在每个时点都是 `en=0`，状态位的读数对不上
+  名字（上面表格）。所以现在只算「两个射频同时开着」。BLE 广播着的时候 Wi-Fi 的 ping 往返平均从 3.5 ms 涨到 45 ms
+  （10 帧不丢；`ble-adv12`，`ble-adv11` 是 4.2 → 38.9 ms），涨在哪里没有查（共存核分时、还是泵的轮转，没有分开）。
+- 单独探针（`-Dbt-probe`）的 synth 墙（`components/bt-blobs/README.md` 轮 96–162）不是这个风暴。那边全局中断开着，桥也
+  登记了（`bt osal: arm src=124 -> CLIC input 24 (routed, bridged=true)`），但主上下文一直在跑（广播使能之后 `POLL0n` 行
+  每几秒照常打印），`0x201098BC` 恒为 0——BT MAC 的中断没有拉起来，同一个错下标在那边不表现为风暴。修前修后在单独
+  探针上各跑一轮（`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），日志逐段相同（只有计数值
+  与串口交错不同）。那边的墙是另一处，根因未知。
+- 同类的一处还开着：`bt-blobs` 与 `wifi-blobs` 的 `osi_impl.zig` 里 `_set_isr(n, f, arg)` 的实现把 blob 给的 `n` 原样交给
+  `trap.setHandler`。那两处的注释原来写「`setHandler` 内部归一化」，并不属实，已改。blob 经这条路传的 `n` 是外部中断号
+  还是 CLIC 输入号，没有核对过；合并镜像不依赖它（BT MAC 走 `intrArm` 的桥）。
 - 工作站 ping 板子仍然没有应答（板子只发 ping 不回 ping，§15.8 的已知缺口），与共存无关。

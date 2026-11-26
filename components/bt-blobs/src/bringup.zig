@@ -1388,7 +1388,8 @@ pub fn intrArm(src: c_int) void {
                     // 下标必须是**外部中断号**（CLIC 输入号减 16）：`trapDispatch` 按 `input - 16` 查表（`trap.zig` 的
                     // `setHandler` 注释）。此前登记在 24、分发查的是 8 ⇒ 查不到 ⇒ 这个电平中断没人屏蔽，一触发就
                     // 无限重入、主上下文饿死——合并镜像里广播使能的回包之后"整机失声"就是它（2026-11-27，
-                    // `coex-verification.md` §17.5）。独立探针的默认路径不开全局中断，这条路径在它那里没有跑过。
+                    // `coex-verification.md` §17.5）。单独探针开着全局中断、也走这里，但那边的 controller 卡在更前面，
+                    // 这个中断没有拉起来，所以同一个错下标在那边不表现为风暴（修前修后的日志逐段相同）。
                     if (freestanding) board.trap.setHandler(routed_input - 16, bridgeIsr, s);
                     break;
                 }

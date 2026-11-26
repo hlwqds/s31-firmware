@@ -141,9 +141,10 @@ BT MAC 的电平中断无限重入（每秒约 95 万次）。修掉（登记下
 锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 957 次、代跑 956 次；BLE 广播着的时候 Wi-Fi 照常连接、
 DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二次关联与四次握手；工作站 `bluetoothctl scan on` 看到 `s31`。
 单变量对照：只把下标改回去，`handler 0x00000000 ok=0`、风暴照旧（`logs/coex-merged-wifi-link-ble-adv-storm-boot.log`）；
-修掉之后 27/27（`logs/coex-merged-wifi-link-ble-adv{11,12}-boot.log`、`…-adv11-ap-syslog.log`、`…-adv11-ap-frames.log`、
-`…-adv11-bt-scan.log`）。L4b 有了第一条证据；按广播间隔的时延与丢包等其余判据还没有做，单独的 BLE 探针没有变化
-（`coex-verification.md` §17.5、`ble-core-verification.md` §9）。
+修掉之后 27/27（`logs/coex-merged-wifi-link-ble-adv{11,12,13}-boot.log`、`…-adv11-ap-syslog.log`、`…-adv11-ap-frames.log`、
+`…-adv11-bt-scan.log`）。L4b 有了第一条证据；按广播间隔的时延与丢包等其余判据还没有做，「核真的在仲裁」的两条判据读了、
+都不过（硬件定时器在每个时点都是 `en=0`，三组状态位的读数对不上名字）；单独的 BLE 探针回归一轮，与基线逐段相同——那边的
+synth 墙不是这个风暴（`coex-verification.md` §17.5、`ble-core-verification.md` §9）。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
@@ -153,9 +154,12 @@ DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二�
 | 共存合并镜像（两个 blob 同镜） | `sh /tmp/merged-board.sh` | `coex_merged` 6/6；8/8 段、`main: verdict=pass`；两个控制器的 init 都返回 0 | `logs/coex-merged-boot.log`（第一次：`coex-merged-run1-boot.log`） |
 | 默认 profile | `python3 tests/e2e/run_e2e.py --board --profile net` | `PASS board:net`，8/8 段 | `logs/e2e-net-boot.log` |
 | 时钟域按单元取并集（最小合并镜像） | `BLE=1 AP_CRED=<凭据文件> sh scripts/build-coex-link-image.sh`，烧录后抓 100 秒 | `coex_merged` 20/20；`main: verdict=pass`；共享时钟字在四个时点都是两边的并集 | `logs/coex-merged-wifi-link-union-boot.log` |
-| BLE 起广播实验（广播没有起来） | 同上，加 `ADV=1`，抓 150 秒，同时在 AP 上起 `MON` 采集（`tools/ap-side/collect.sh`）；之后 `esptool read_flash 0x18E000 0x1000` 读落盘记录，`tools/ap-side/decode-adv-marker.py` 解码 | 前面的判据全过；三条命令都回了 Command Complete（Status 0x00）；广播使能被接受之后 controller 任务不再让出：串口停在回包行的一半，落盘记录停在 Enable 的"正要发"，AP 只记到一次关联、monitor 上板子的帧到第一次断开为止，没有汇总行 | `logs/coex-merged-wifi-link-ble-adv8-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-ap-syslog.log`、`logs/coex-merged-wifi-link-ble-adv8-ap-frames.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-marker.txt`、`logs/coex-merged-wifi-link-ble-adv5-marker.txt`（第一版，主上下文里发：`logs/coex-merged-wifi-link-ble-adv-boot.log`） |
+| BLE 起广播实验（2026-11-27 白天，广播没有起来——当晚查明是中断风暴，见下面「单变量对照」一行） | 同上，加 `ADV=1`，抓 150 秒，同时在 AP 上起 `MON` 采集（`tools/ap-side/collect.sh`）；之后 `esptool read_flash 0x18E000 0x1000` 读落盘记录，`tools/ap-side/decode-adv-marker.py` 解码 | 前面的判据全过；三条命令都回了 Command Complete（Status 0x00）；广播使能被接受之后板子失声（当时读成 controller 任务不再让出）：串口停在回包行的一半，落盘记录停在 Enable 的"正要发"，AP 只记到一次关联、monitor 上板子的帧到第一次断开为止，没有汇总行 | `logs/coex-merged-wifi-link-ble-adv8-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-ap-syslog.log`、`logs/coex-merged-wifi-link-ble-adv8-ap-frames.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-marker.txt`、`logs/coex-merged-wifi-link-ble-adv5-marker.txt`（第一版，主上下文里发：`logs/coex-merged-wifi-link-ble-adv-boot.log`） |
 | 单独 BLE 探针回归（时钟函数改成只置位之后） | `sh /tmp/probe-board.sh ble bt-probe-clock-union-boot.log 50` | 与基线逐行等价：`INITED`，随后是 `ble_hw.c:506` 断言墙 | `logs/bt-probe-clock-union-boot.log` |
 | 单独 Wi-Fi 真实链路回归（时钟钩子改成只置位之后） | `/tmp/r5c/connect-run.sh 75 <名字>`（`-Dwifi-link-probe` + 共存核，带 AP 凭据；结果经 `tools/ap-side/redact.py` 脱敏） | 扫描 37 个 AP、`STA_CONNECTED`、DHCP 102 ms、ping 网关 10/10（平均 18.8 ms），本地断开；基线 `logs/wifi-link-connect-boot.log`（40 个 AP、105 ms、平均 23.1 ms） | `logs/wifi-link-clock-union-boot.log` |
+| 合并镜像里 BLE 起广播（2026-11-27 晚，中断桥的登记下标修掉之后） | 同上，加 `ADV=1`，烧录后抓 150 秒；工作站的 `bluetoothctl --timeout 230 scan on` 开在板子这一轮之前；AP 上起 `MON` 采集 | `coex_merged` 27/27；`main: verdict=pass`；合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 951 次、代跑 950 次（纯计数桩 0 次）；BLE 广播着的时候 Wi-Fi 连上、DHCP、ping 10/10（往返平均 3.7 → 39.4 ms）；工作站扫描看到 `[NEW] Device 02:00:00:00:BB:01 s31` | `logs/coex-merged-wifi-link-ble-adv13-boot.log`（最终代码）、`logs/coex-merged-wifi-link-ble-adv12-boot.log`；AP 侧与扫描的记录取自同代码的前一轮：`logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`、`logs/coex-merged-wifi-link-ble-adv11-ap-frames.log`、`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log` |
+| 单变量对照（最终代码只差登记下标那一行） | 同上，构建前把 `components/bt-blobs/src/bringup.zig` 的 `setHandler(routed_input - 16, …)` 改回 `setHandler(routed_input, …)`，抓 100 秒 | `check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x00000000 ok=0`；紧跟在 `0x200A` 的回包行后面累计 2001 万次中断（全部是输入 24），没有汇总行 | `logs/coex-merged-wifi-link-ble-adv-storm-boot.log` |
+| 单独 BLE 探针回归（中断桥的登记下标修掉之后） | `sh /tmp/probe-board.sh ble bt-probe-bridge-index-boot.log 50` | 与基线逐段相同（只有计数值与串口交错不同）：`INITED`，HCI 一致性自检 20/26，照旧走到 synth 墙（`PRE200A 98BC=00000000`、`POLL0n 98BC=00000000`），主上下文一直在跑 | `logs/bt-probe-bridge-index-boot.log` |
 
 ## 默认镜像（L2）
 

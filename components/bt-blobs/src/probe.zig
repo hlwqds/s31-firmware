@@ -1110,10 +1110,10 @@ pub fn handlerForInput(input: usize) usize {
     return @intFromPtr(board.trap.getHandler(input - 16).fn_);
 }
 
-/// 中断桥的三个计数（`bringup.zig`）：ISR 入环次数、主上下文代跑次数、环满丢弃次数。合并镜像在广播那一步的收尾
-/// 读一次：blob 的 ISR 经桥跑了多少次。
-pub fn bridgeStats() struct { queued: u32, drained: u32, dropped: u32 } {
-    return .{ .queued = bringup.bridge_w, .drained = bringup.bridge_ran, .dropped = bringup.bridge_dropped };
+/// 中断桥的四个计数（`bringup.zig`）：ISR 入环次数、主上下文代跑次数、环满丢弃次数，以及代跑的里面是纯计数桩
+/// （blob 没有经 `intr_alloc` 登记自己的 ISR）的次数。合并镜像在广播那一步的收尾读一次。
+pub fn bridgeStats() struct { queued: u32, drained: u32, dropped: u32, count_only: u32 } {
+    return .{ .queued = bringup.bridge_w, .drained = bringup.bridge_ran, .dropped = bringup.bridge_dropped, .count_only = bringup.count_only };
 }
 
 var pump_rounds: u32 = 0;
@@ -1449,7 +1449,8 @@ pub const AdvResult = struct {
 };
 
 /// 合并镜像的实验步骤（`-Dcoex-ble-adv`）：`enableOnly` 之后发三条 HCI 命令——LE Set Advertising
-/// Parameters（间隔 `interval_units`，0x20-0x4000，1.25 ms 一档，Vol 4 Part E §7.8.5）、LE Set Advertising
+/// Parameters（间隔 `interval_units`，0x0020–0x4000，0.625 ms 一档——NimBLE 的 `BLE_HCI_ADV_ITVL` 是 625 µs；Vol 4 Part E
+/// §7.8.5）、LE Set Advertising
 /// Data（§7.8.7，Flags + 名字 `s31`）、LE Set Advertising Enable（§7.8.9）——然后把 controller 任务泵 `wait_us`
 /// 微秒，每轮读一次 synth 锁定位。调用方负责在调用期间关掉 Wi-Fi 侧的让出点。
 pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
