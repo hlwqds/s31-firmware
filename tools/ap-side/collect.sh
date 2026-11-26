@@ -58,7 +58,7 @@ if [ -x "$TD" ]; then
         TC=$!
     fi
 else
-    echo "(tcpdump not found: set TCPDUMP=<path>, or put the static binary at /usr/bin/tcpdump; no frame capture)"
+    echo "(tcpdump not found: looked for \$TCPDUMP (now ${TCPDUMP:-unset}), tcpdump in PATH ($PATH), /tmp/ap-tcpdump, /tmp/r5c-tcpdump; no frame capture. Fix: install the static binary at /usr/bin/tcpdump)"
 fi
 end=$(( $(date +%s) + N ))
 while [ "$(date +%s)" -lt "$end" ]; do

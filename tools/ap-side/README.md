@@ -24,21 +24,24 @@ ssh root@192.168.31.1 'cat > /tmp/tcpdump.new && chmod 755 /tmp/tcpdump.new && m
     < /tmp/ap-side/out/tcpdump
 ssh root@192.168.31.1 tcpdump --version                 # 4.99.6, libpcap 1.10.5
 
-#    collect.sh 找 tcpdump 的顺序：$TCPDUMP > PATH 里的 tcpdump > /tmp/ap-tcpdump > /tmp/r5c-tcpdump（后两个在内存盘上）
-#    2026-11-27 的实际状态：测试用的那台路由器上已经装在 /usr/bin/tcpdump，
-#    sha256 4412618629482af45397b3886c931f402266bcf2aad29e33dab925db5a9e566a，与工作站的构建产物一致；内存盘上另有一份 /tmp/r5c-tcpdump
-
 # 3) 上板那一轮开始时，在路由器上起采集（第二个参数：接口名 / any / MON）；约 150 秒后输出到标准输出
 ssh root@192.168.31.1 sh -s 150 MON < tools/ap-side/collect.sh > ap-<轮次>.txt
 
 # 4) 整理帧。--epoch-offset 是「本机时钟减路由器时钟」的秒数：两边各取 date +%s 相减
 python3 tools/ap-side/frames.py ap-<轮次>.txt --epoch-offset 3333862
 python3 tools/ap-side/redact.py --map <label-map.json> --cred <凭据文件> --kind frames --date <日期> <帧清单> <脱敏后的帧清单>
+
 # 5) 广播实验（ADV=1）之后读板子上的落盘记录（会让板子复位）：命令发到哪、回没回看它。
 #    主循环在这之后活没活，看 AP 这一侧——同一轮起 MON 采集：板子还有没有帧、有没有第二次关联
 python3 -m esptool --chip esp32s31 -p /dev/ttyUSB0 read_flash 0x18E000 0x1000 adv-marker.bin
 python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 ```
+
+`collect.sh` 找 tcpdump 的顺序：`$TCPDUMP` → PATH 里的 `tcpdump` → `/tmp/ap-tcpdump` → `/tmp/r5c-tcpdump`（后两个在内存盘上）；
+哪一份被用了，采集输出里有一行 `tcpdump: <路径> (<版本>)`。
+
+2026-11-27 的实际状态：测试用的那台路由器上已经装在 `/usr/bin/tcpdump`，sha256 `4412618629482af45397b3886c931f402266bcf2aad29e33dab925db5a9e566a`，
+与工作站的构建产物一致；内存盘上另有一份 `/tmp/r5c-tcpdump`。
 
 登录需要路由器的 root 密码（问用户）。工作站要在这台 AP 的 LAN 里（网线接 LAN 口；板子的以太网线这时是拔的），
 默认路由留在原来的网卡上，别让登 AP 这条线抢默认路由。
