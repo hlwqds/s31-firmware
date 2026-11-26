@@ -1436,10 +1436,11 @@ fn shellWifiClockEnable() callconv(.c) usize {
     // 7) WIFI_BB_80X1 (dev=9)
     conf1.* = conf1.* | (1 << 7);
     // 8) LPCON clk_conf：bit0 `clk_wifipwr_en`（init 之前就是 1）、bit1 `clk_coex_en`
-    //    （IDF 在 dev=3 这一步置的就是它）。两个域在 IDF 的 init 期间同时开着。
+    //    （IDF 在 dev=3 这一步置的就是它）。**只置位**：这个字里还有 PHY 的 I2C 主控（bit2）与 BLE 的
+    //    LP 定时器时钟（bit3），整字写会把它们清掉（2026-11-27，时钟域按单元取并集）。
     {
         const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
-        lpcon.* = 0x3;
+        lpcon.* = lpcon.* | 0x3;
     }
     return 0;
 }
@@ -1448,6 +1449,13 @@ fn shellWifiClockEnable() callconv(.c) usize {
 /// `esp_wifi_init()` 在 `esp_wifi_init_internal` 成功返回之后置 true（`wifi_init.c:539-543`），
 /// `esp_wifi_deinit` 时清回 false。我们直接调 `esp_wifi_init_internal`，这一步由调它的 `initOnly()` 代做。
 pub var wifi_clock_inited: bool = false;
+
+/// 另一个射频的时钟还开着吗：BT 自己的三个单元（bt_apb / btbb / btmac，`CLK_CONF1` bit16-18）还置着。
+/// 单元表见 `radio-coex/src/owner.zig` 的 `clocks`。
+fn bleClockOn() bool {
+    const conf1: *volatile u32 = @ptrFromInt(0x2010_9C14);
+    return (conf1.* & 0x0007_0000) != 0;
+}
 
 fn shellWifiClockDisable() callconv(.c) usize {
     note(22, 0, 0);
@@ -1471,15 +1479,13 @@ fn shellWifiClockDisable() callconv(.c) usize {
         // 7) WIFI_MAC off（bit 9）/ 6) WIFI_BB_44M off（bit 2）/ 5) WIFI_APB off（bit 10）
         conf1.* = conf1.* & ~@as(u32, (1 << 9) | (1 << 2) | (1 << 10));
     }
-    // 3) COEXIST off：`modem_lpcon_ll_enable_coex_clock(false)`，清 `clk_conf.clk_coex_en`（LPCON+0x18 bit 1）。
-    //    **不碰 ICG 位图**（LPCON+0x20）：`modem_clock_module_icg_map_init_all()` 只在 enable 里做，
-    //    而且是按位或上去、从不清零。此前这里把位图清成 0：init 之后读回 0，而 IDF 是 0x66660000。
-    {
+    // 3) COEXIST 与 2) SOC_PLL_SOURCE_CG 是**共享单元**：IDF 的依赖表里 Wi-Fi 与 BLE 都依赖它们
+    //    （`modem_clock_impl.c:14-15`），按引用计数走，一边放弃时计数不归零就不关。两个射频同镜时，
+    //    BLE 还占着它们就留着——判据是 BT 自己的三个单元（`CLK_CONF1` bit16-18）还置着（`bleClockOn`）。
+    //    单独的 Wi-Fi 镜像里它恒为假，行为与此前相同。
+    if (!bleClockOn()) {
         const lpcon: *volatile u32 = @ptrFromInt(0x2010_F018);
         lpcon.* = lpcon.* & ~@as(u32, 1 << 1);
-    }
-    // 2) SOC_PLL_SOURCE_CG off：`HP_SYS_CLKRST.modem_conf = 0x25`
-    {
         const modconf: *volatile u32 = @ptrFromInt(0x2058_71E0);
         modconf.* = 0x25;
     }

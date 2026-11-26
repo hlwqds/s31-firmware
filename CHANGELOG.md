@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Fixed
+- **合并镜像在 BLE init 之后整字写回时钟 / 电源寄存器（2026-11-27）**：两边的适配层都整字写过共享的时钟字——BLE 侧
+  `btdmLpEnableClock` 把 `CLK_CONF1` 写成 `0x003FF880`（清掉 Wi-Fi 的基带、MAC、APB 时钟位，这就是对照 C 里 `reason=7`
+  的原因）、强开位写 `0xFF`、LPCON 写 `0x0B`；Wi-Fi 侧 `_wifi_clock_enable` 把 LPCON 写成 `0x3`，`_wifi_clock_disable`
+  无条件清共存时钟、把时钟源写回 `0x25`。事后的快照写回又把 BLE 自己的时钟位（BT 三位、BLE 定时器、modem 安全模块、
+  共存与 LP 定时器时钟、PLL 时钟源）全拿掉。修法：照 IDF 的时钟单元表（`modem_clock_impl.c`）两边只置自己的位，共享
+  单元另一边还占着就不关，写回删除；合并镜像在四个时点按并集逐位核对。板上：四个时点都是 `CLK_CONF1=0x003FFFFF`、
+  `CLK_CONF=0x7E601002`、LPCON=0x0F、时钟源 0x3D，基线 38 个 AP、之后 34 个，20/20；单独的 BLE 探针与基线逐行等价。
+  细目见 `docs/verification/coex-verification.md` §16，设计见 ADR-003 第 4 节的实现记录。
 - **合并镜像里 BLE 的 init 让 Wi-Fi 收不到帧（2026-11-26）**：Wi-Fi 先 `esp_wifi_start`、BLE 后 `bringup.init` 的顺序下，BLE init
   之前扫描三十多个 AP，之后 1–4 个。根因是 PHY 的一次性初始化只认第一次使能（IDF 的 `esp_phy_enable` 只在 modem 标志为 0 时
   初始化，`phy_init.c:324-342`），而 BLE 的 init 是按"单独跑"写的，有两段会重做 PHY 的打开与标定，哪一段在 Wi-Fi 之后做都伤
@@ -155,6 +163,17 @@
   `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ### Added
+- **AP 侧的空口证据与工具 `tools/ap-side/`（2026-11-27）**：在工作站上交叉编译静态的 tcpdump（`build-tcpdump.sh`，产物与
+  路由器上用的 SHA-256 相同），AP 上每轮临时建 monitor 接口抓 802.11 帧的文字摘要（`collect.sh`、`frames.py`）。五个轮次
+  373 帧（`logs/coex-merged-wifi-link-ap-frames.log`，邻居的 SSID / BSSID 换成标签）：板子发来的帧 -21 到 -28 dBm，关联
+  过程同序同间隔；按条款的对照见 `docs/verification/wifi-ieee80211-verification.md` §12。三份 AP 侧证据的头部原先写
+  「时钟慢 38 天 22 小时」，更正为 38 天 14 小时 4 分 22 秒（换算本身一直是对的）。
+- **最小合并镜像的构建入口 `scripts/build-coex-link-image.sh`（2026-11-27）**：从 IDF 的归档重新生成三份对象集合（此前只在
+  /tmp 里），只编 `coex_merged` 这一段，断言两段镜像，打印体积与归属（`BREAKDOWN=1`）。`BLE=1` 时 1 224 304 B（factory
+  分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。
+- **`-Dcoex-ble-adv`（2026-11-27，实验，没有结论）**：合并镜像在所有判据之后经 HCI 发三条广播命令并读 synth 锁定位。三次
+  上板都停在发完第一条命令之后，整机失声；这类命令要 controller 任务在自己的上下文里处理，主上下文里同步发不了。见
+  `docs/verification/coex-verification.md` §17。
 - **合并镜像里的 Wi-Fi 真实链路：`-Dcoex-wifi-link`（2026-11-26，ADR-003 第 4 节的板级证据）**：`-Dcoex-merged` 的镜像里两个
   控制器同镜，Wi-Fi 走通真实链路——BLE init 之前 34 个 AP、之后 35 个 AP，连上 2059 ms，DHCP 51 ms，ping 网关 10/10
   （rtt 平均 3.8 ms），连着 5 秒，本地断开，16/16 项通过，`verdict=pass`；BLE `INITED`、`ENABLED`（`-Dcoex-ble-enable`）。
@@ -183,7 +202,8 @@
     同网段的工作站 ping 板子 10 次，ARP 解析正常，一个应答都没有。
   - 边界：BLE 的射频没有起（R3.3），这是"一个射频在收发、另一个 enabled"，不是 L4b；没有空口上的帧（路由器没有外网，
     装不了 tcpdump）；时钟寄存器的写回是补救——整字写、在 BLE 的 enable 之后执行，BLE 那一侧的时钟位也被拿掉，正解是
-    按两个射频的需求取并集。细目见 `docs/verification/coex-verification.md` §15。
+    按两个射频的需求取并集。细目见 `docs/verification/coex-verification.md` §15。（2026-11-27：空口上的帧已补，写回已删除，
+    见本节顶部的两条 Fixed 与 Added。）
 - **真实链路：连上真实 AP 与数据通路（2026-11-26，路线图 R3.2.2、R3.2.3）**：真实链路探针（`-Dwifi-link-probe`）在扫描之后继续走
   连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）→ 再泵 5 秒 → 断开。
   - `components/wifi-blobs/src/wpa_cb.zig`：supplicant 回调表从 4 项填到 12 项。连接路径只做 RSN + PSK，由 `wifi-connect` 的 `Supplicant`

@@ -380,15 +380,18 @@ pub fn init(cfg: *config.Config) c_int {
     // **顺序关键**：参考构建先写 modem PLL（`0x2058_71E0 = 0x3d`），
     // 之后 `0x20109C04/0x20109C14` 的写才生效（参考日志次序：
     // `MODEM_CONF=0x3d` → `clk_conf=0x7e601002`）。我们此前顺序反了 ⇒ 写被丢弃。
-    mmioWr(0x2058_71E0, 0x3d);
+    // 这两个字是两个射频共享的（`clk_conf` 里还有 BLE 的 etm / modem_sec / ble_timer 等单元，`test_conf` 里还有
+    // 另一边置的位），所以**只置位**：另一个射频先起的话，它的位不会被这一边的 init 清掉
+    // （2026-11-27，时钟域按单元取并集）。
+    mmioWr(0x2058_71E0, 0x3d); // modem 时钟源：IDF 自己也是整字写这一个值（`modem_clock_hal.c:124`）
     // **栈用量探针**：入口与 INITED 处各取一次近似 sp（局部变量地址）
     {
         var probe_local: u8 = 0;
         if (freestanding) board.trap.diag_a = @intCast(@intFromPtr(&probe_local) & 0xFFFF);
     }
-    mmioWr(0x2010_9C04, 0x0020_1002);
-    mmioWr(0x2010_9C00, 0x0000_0100);
-    mmioWr(0x2010_9C0C, 0x6464_6400);
+    mmioSet(0x2010_9C04, 0x0020_1002);
+    mmioSet(0x2010_9C00, 0x0000_0100);
+    mmioWr(0x2010_9C0C, 0x6464_6400); // ICG 位图：IDF `modem_clock_module_icg_map_init_all()` 也是整字初始化
     dumpBootState();
     stats_state = .{};
     stats_state.init_calls += 1;

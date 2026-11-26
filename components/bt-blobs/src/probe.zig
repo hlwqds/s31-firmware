@@ -1063,6 +1063,123 @@ pub fn pumpStep() void {
     _ = osal.serviceCallouts(osal.timeGet());
 }
 
+// ---------------------------------------------------------------------------
+// 合并镜像的 BLE 广播实验（`-Dcoex-ble-adv`）：经 HCI 让 controller 发不可连接广播
+// ---------------------------------------------------------------------------
+
+/// synth 区的锁定位：`0x201098BC` 的 bit2。合成器是广播使能命令处理之后才上电的（`coex-verification.md` §14）。
+fn synthLock() bool {
+    return (@as(*volatile u32, @ptrFromInt(0x2010_98BC)).* & (1 << 2)) != 0;
+}
+
+/// 发一条 HCI 命令并等它的回包（Command Complete 或 Command Status，Vol 4 Part E §7.7.14、§7.7.15）。
+/// 等待期间照常泵 controller 任务、喂狗。回包是 `transport.lastEvent()` 的原始帧（下一条事件会覆盖它）；
+/// 发送失败或超时返回 null。Controller 把这条命令处理成不回包（例如卡在等合成器）时，`sendCmd` 不返回，
+/// 调用方只能靠看门狗复位——所以这一步排在合并镜像所有判据之后。
+fn hciCommand(opcode: u16, params: []const u8, timeout_us: u64) ?[]const u8 {
+    const seq = transport.evtSeq();
+    const rc = transport.sendCmd(opcode, params);
+    if (rc != 0) {
+        board.log.line("bt adv: cmd 0x{x:0>4} send rc={d}", .{ opcode, rc });
+        return null;
+    }
+    const t0 = board.hw.nowUs();
+    while (board.hw.elapsedUs(t0) < timeout_us) {
+        board.hw.mwdt1Feed();
+        board.hw.feedRtcWdt();
+        pumpStep();
+        if (transport.evtSeq() == seq) continue; // 还没有新事件
+        const evt = transport.lastEvent();
+        // Command Complete（§7.7.14）：code 0x0E，[2] 是包数，opcode 在 [3..4]，Status 在 [5]；
+        // Command Status（§7.7.15）：code 0x0F，Status 在 [2]，opcode 在 [4..5]。
+        const lo: u8 = @truncate(opcode);
+        const hi: u8 = @truncate(opcode >> 8);
+        const complete = evt.len >= 6 and evt[0] == 0x0E and evt[3] == lo and evt[4] == hi;
+        const status = evt.len >= 7 and evt[0] == 0x0F and evt[4] == lo and evt[5] == hi;
+        if (complete or status) return evt;
+        // 别的事件：打一行原始字节（至多 8 个八位组），继续等；超时在上面保证。
+        var hx: [16]u8 = undefined;
+        board.log.line("bt adv: other event while waiting 0x{x:0>4}: n={d} raw={s}", .{
+            opcode, evt.len, hciConfHex(&hx, evt[0..@min(evt.len, 8)]),
+        });
+    }
+    board.log.line("bt adv: cmd 0x{x:0>4} no reply within {d} ms", .{ opcode, timeout_us / 1000 });
+    return null;
+}
+
+/// 回包里的 Status：Command Complete 在八位组 5，Command Status 在八位组 2。
+fn hciStatus(evt: []const u8, opcode: u16) ?u8 {
+    const i: usize = if (evt[0] == 0x0E) 5 else 2;
+    _ = opcode;
+    return if (evt.len > i) evt[i] else null;
+}
+
+pub const AdvResult = struct {
+    params_status: ?u8 = null,
+    data_status: ?u8 = null,
+    enable_status: ?u8 = null,
+    /// 广播使能之后泵了多少轮、其中 synth 锁定位为 1 的轮数、第一次为 1 距离使能命令多久。
+    polls: u32 = 0,
+    locked_polls: u32 = 0,
+    first_lock_us: ?u64 = null,
+    synth_98bc_last: u32 = 0,
+};
+
+/// 合并镜像的实验步骤（`-Dcoex-ble-adv`）：`enableOnly` 之后发三条 HCI 命令——LE Set Advertising
+/// Parameters（间隔 `interval_units`，0x20-0x4000，1.25 ms 一档，Vol 4 Part E §7.8.5）、LE Set Advertising
+/// Data（§7.8.7，Flags + 名字 `s31`）、LE Set Advertising Enable（§7.8.9）——然后把 controller 任务泵 `wait_us`
+/// 微秒，每轮读一次 synth 锁定位。调用方负责在调用期间关掉 Wi-Fi 侧的让出点。
+pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
+    var r: AdvResult = .{};
+    var p: [15]u8 = @splat(0);
+    p[0] = @truncate(interval_units);
+    p[1] = @truncate(interval_units >> 8);
+    p[2] = p[0];
+    p[3] = p[1];
+    p[4] = 0x03; // ADV_NONCONN_IND（§7.8.5：Advertising_Type）
+    // 其余：自身地址类型 public（5）、对端地址类型 public（6）、对端地址全 0（7-12）、
+    // 信道图 0x07（13：37 / 38 / 39 三个广播信道都开）、过滤策略 0（14）。
+    p[13] = 0x07;
+    if (hciCommand(0x2006, &p, 2_000_000)) |e| r.params_status = hciStatus(e, 0x2006);
+
+    var d: [32]u8 = @splat(0);
+    d[0] = 8; // Advertising_Data_Length
+    d[1] = 0x02; // Flags 的长度
+    d[2] = 0x01; // AD type: Flags
+    d[3] = 0x06; // LE General Discoverable + BR/EDR Not Supported
+    d[4] = 0x04; // Complete Local Name 的长度：类型 1 + 名字 3（长度只数它后面跟着的字节）
+    d[5] = 0x09; // AD type: Complete Local Name
+    @memcpy(d[6..9], "s31");
+    if (hciCommand(0x2008, &d, 2_000_000)) |e| r.data_status = hciStatus(e, 0x2008);
+
+    const t_en = board.hw.nowUs();
+    if (hciCommand(0x200A, &.{0x01}, 2_000_000)) |e| r.enable_status = hciStatus(e, 0x200A);
+
+    const t0 = board.hw.nowUs();
+    while (board.hw.elapsedUs(t0) < wait_us) {
+        board.hw.mwdt1Feed();
+        board.hw.feedRtcWdt();
+        pumpStep();
+        r.polls += 1;
+        r.synth_98bc_last = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+        if (synthLock()) {
+            r.locked_polls += 1;
+            if (r.first_lock_us == null) r.first_lock_us = board.hw.elapsedUs(t_en);
+        }
+    }
+    board.log.line("bt adv-only: interval={d} params={} data={} enable={} polls={d} locked={d} first_lock_us={} 98bc=0x{x:0>8}", .{
+        interval_units,
+        if (r.params_status) |s| s else 0xFF,
+        if (r.data_status) |s| s else 0xFF,
+        if (r.enable_status) |s| s else 0xFF,
+        r.polls,
+        r.locked_polls,
+        if (r.first_lock_us) |t| t else 0xFFFFFFFFFFFFFFFF,
+        r.synth_98bc_last,
+    });
+    return r;
+}
+
 pub fn run() noreturn {
     board.trap.extra_dump = dumpOsalCallers;
     board.trap.on_pc_ready = dumpPcRing;

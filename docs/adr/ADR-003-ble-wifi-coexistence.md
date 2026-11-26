@@ -168,6 +168,38 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
 寄存器序列仍未接：按本节原定，要等两个射频各自打通后才能上板验证。合并镜像的 section 只打印
 `LPCON+0x18` 的读数作对照（§8）。
 
+**实现记录（2026-11-27，C5 的时钟域一条）：按单元取并集，两边各管各的位。**
+
+- **根因**（板上读数加 IDF 源码）：两边的适配层都整字写过共享的时钟字。BLE 侧 `bt-blobs/src/porting.zig` 的
+  `btdmLpEnableClock` 把 `MODEM_SYSCON_CLK_CONF1` 整字写成 `0x003FF880`（清掉 Wi-Fi 的基带、MAC、APB 共 10 个
+  时钟位）、强开位整字写 `0xFF`、`MODEM_LPCON_CLK_CONF` 整字写 `0x0B`（清掉 PHY 的 I2C 主控位）；
+  `bringup.init` 开头整字写 `CLK_CONF` 与 `TEST_CONF`。Wi-Fi 侧 `wifi-blobs/src/osi_impl.zig` 的 `_wifi_clock_enable`
+  整字写 `LPCON+0x18 = 0x3`，`_wifi_clock_disable` 无条件清共存时钟、把时钟源整字写回 `0x25`。此前的补救是事后
+  按快照整字写回：Wi-Fi 的位回来了，BLE 的位（BT_APB / BTBB / BTMAC、BLE 定时器、modem 安全模块、共存与 LP 定时器
+  时钟、PLL 时钟源）全被拿掉——合并镜像里的 BLE 一直是被这样掐着的。
+- **IDF 的做法**（`esp_hw_support/modem/port/esp32s31/modem_clock_impl.c:14-21` 与同目录的 LL / HAL）：时钟按
+  **单元**管理（WIFI_BB、WIFI_MAC、COEXIST、SOC_PLL_SOURCE_CG、BLE_MAC……），带引用计数，每个单元只写自己那一位，
+  从不整字覆盖；一个模块依赖哪些单元是一张表。
+- **规则**（落在代码里）：
+  1. 共享的时钟 / 电源字上，任一射频**只置位、不清位**，置的位是它依赖的单元（单元表在
+     `components/radio-coex/src/owner.zig` 的 `clocks`）。整字写只留 IDF 自己也整字写的两处：时钟源 `MODEM_CONF`
+     （`0x3D` / `0x25`，`modem_clock_hal.c:124`）与初始化时的 ICG 位图。
+  2. 共享单元（COEXIST、SOC_PLL_SOURCE_CG、WIFI_BB_80X1、PHY 前端、I2C 主控）一边释放时，另一边还占着就不关。
+     本仓没有跨两个适配层的引用计数，用寄存器当计数器：BT 自己的三个单元（`CLK_CONF1` bit16-18）还置着，就是
+     BLE 还占着（`osi_impl.zig` 的 `bleClockOn`）。
+  3. 单一归属的配置（BLE 的 LP 定时器、32 kHz 时钟源）由归属者整字写。
+  4. 事后写回（`radioSnapshot` / `radioRestore`）删除。
+  5. 板上判据：合并镜像在 Wi-Fi start 之后、BLE init / enable 之后、整轮 Wi-Fi 链路之后各读一次共享字，
+     与单元表的并集逐位比（`firmware/src/coex_merged.zig` 的 `checkClocks`）。
+- **证据**：L1——`owner.zig` 两条（三组的位互不覆盖、并集能判出整字覆盖与整字写回各缺了什么位），
+  `porting.zig` 两条（预置 Wi-Fi 的位再让 BLE 开时钟，两边的位都在；寄存器从复位值起步时读数与原来的整字写
+  相同，单独的 BLE 探针不受影响）。L4——`logs/coex-merged-wifi-link-union-boot.log`：三个时点都是
+  `CLK_CONF1=0x003FFFFF`、`CLK_CONF=0x7E601002`、`LPCON=0x0F`、`MODEM_CONF=0x3D`；Wi-Fi 基线 38 个 AP、BLE init
+  之后 34 个，连上、DHCP、ping 10/10，20/20 项通过，`verdict=pass`。
+- **没有做的**：BLE 的 disable 路径（释放自己的单元，让引用计数真的归零）；Wi-Fi init 之前把 `LPCON+0x18` 对正成
+  `0x1` 的那一句会清 I2C 主控位，只在 Wi-Fi 先起的顺序下安全；BLE 的 PHY 域序列（`phyDomainEnable`，含写 flash
+  的探针标记）与 XTAL trim 在 PHY 归 Wi-Fi 时仍然会跑一遍（以幂等置位为主）。
+
 ### 5. 验证（按仓库的 L1–L4 分级；不抓空口能到 L3）
 
 | 级 | 内容 | 判据 |
@@ -176,7 +208,22 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
 | L2 镜像 | `-Dcoex` 打开后链接通过且恰好两段；关闭时默认镜像逐段不变 | `image-info` 两行；逐段 SHA-256 相同 |
 | L3 板侧（不抓空口） | 单射频探针镜像开 coex：`g_coex_param_ptr` 非零、打印 coex 固件与 ROM 版本（官方固件启动时就有这两行，见 `R/components/bt-blobs/logs/bt-ana-i2c-official-trace.log:59-60`）、BLE 两个回调都注册成功、`coex_wifi_request` 之后 BLE 回调被触发；随后合并镜像启动 | 串口日志 |
 | L4a 真链路（只开 Wi-Fi） | 共存核开着时真实 AP 链路照常；读出 blob 在各阶段怎么用共存核、核怎么答 | `-Dcoex` 的真实链路探针（`-Dwifi-link-probe`）在 start 后、扫描后、连上、ping 结束、断开前后各打一组读数（`wifi-blobs/src/init_probe.zig` 的 `coexReadings`）：胶水两侧的状态与各钩子被调的次数、每次申请的（事件、时延、时长）与返回码、按事件的释放与 PTI、置 / 清的 Wi-Fi 状态位、核手里的状态位与调度参数。判据：`rej=0`、`last_error=-`；不开共存时链路照常（2026-11-26 的对照：胶水按 IDF 关闭分支作答、核不启动，扫描 38 个 AP、连上、ping 10/10；计数桩的镜像修掉 PTI 桩之后同样照常，`coex-verification.md` §13）；申请 / 释放的返回码按事件对得上核的静态表（只有配了硬件定时器的事件回 0）。**已有读数（2026-11-26）**，见 `docs/verification/coex-verification.md` §12 |
-| L4b 真实共存（两个射频都开） | 共存的效果：BLE 不同广播间隔下 Wi-Fi 的时延与丢包、PTI 行为、`coex_status_get` 里出现 BLE 的状态位、核的硬件定时器在走、两侧的 start 回调被触发 | 仍被 R3.3（BLE 的 synth）挡着，做法先定下来：合并镜像里先连 Wi-Fi，再起 BLE 广播，间隔 20 / 100 / 1000 ms 各一轮；每轮打 ping 10 帧的 rtt min/avg/max 与 L4a 那一组读数，和不起 BLE 的对照比。判据：每轮都没有 `STA_DISCONNECTED`、ping 不丢；BLE 的状态位非 0、硬件定时器的数值在两次读数之间变了（读 `coex_hw_timer_set` 写的那组寄存器：`0x2010F040 + 16*idx` 与 `0x2010F408 + 16*idx`，`coexReadings` 现在读的就是它们）——这两条是"核真的在仲裁"的证据，缺一条只算"两个射频同时开着"；广播间隔越短，ping rtt 的最大值越大。抓空口不在本仓的范围里（没有设备），空口上让没让不下结论 |
+| L4b 真实共存（两个射频都开） | 共存的效果：BLE 不同广播间隔下 Wi-Fi 的时延与丢包、PTI 行为、`coex_status_get` 里出现 BLE 的状态位、核的硬件定时器在走、两侧的 start 回调被触发；空口上 AP 的 monitor 接口看 Wi-Fi 这边（`tools/ap-side/`），工作站的蓝牙控制器看 BLE 的广播 | 仍被 R3.3（BLE 的 synth）挡着，做法先定下来：合并镜像里先连 Wi-Fi，再起 BLE 广播，间隔 20 / 100 / 1000 ms 各一轮；每轮打 ping 10 帧的 rtt min/avg/max 与 L4a 那一组读数，和不起 BLE 的对照比。判据：每轮都没有 `STA_DISCONNECTED`、ping 不丢；BLE 的状态位非 0、硬件定时器的数值在两次读数之间变了（读 `coex_hw_timer_set` 写的那组寄存器：`0x2010F040 + 16*idx` 与 `0x2010F408 + 16*idx`，`coexReadings` 现在读的就是它们）——这两条是"核真的在仲裁"的证据，缺一条只算"两个射频同时开着"；广播间隔越短，ping rtt 的最大值越大。空口上有没有让，2026-11-27 起有设备可看（此前"没有设备"一句作废）。**2026-11-27 试了第一步（`-Dcoex-ble-adv`）**：步骤已接好，三次上板都停在发完第一条 HCI 命令之后——这类命令要 controller 任务在自己的上下文里处理，主上下文里同步发不了（`coex-verification.md` §17）。下一步是让命令从一个独立栈上的发送任务里发 |
+
+## 验证镜像的最小组成（2026-11-27 增补）
+
+验证某一项功能时，镜像里只编与它有关的 section。这不是省空间的小事：合并镜像自己就占 factory 分区的八成，
+多带一段无关的自检就少一分余量；而且出问题时，镜像里每多一段代码就多一个嫌疑。
+
+- **共存真链路**（两个射频 + 共存核）：只编 `coex_merged`，`-Dboot=false -Dnet=false -Dwire=false -Dwifi=false
+  -Dtls=false -Dapps=false`。入口是 `scripts/build-coex-link-image.sh`：从 IDF 的归档重新生成三份对象集合、构建、
+  断言恰好两段、打印体积与归属。实测 1 224 304 B（factory 分区的 79.7%）：flash 文本 945 680 B、只读数据
+  164 112 B、IRAM 103 712 B。按归属（带符号表的那一份，只用来核对符号）：Wi-Fi blob 文本约 296 KB、IRAM 62 KB，
+  BLE blob 文本约 358 KB、IRAM 40 KB，共存核约 6 KB，本仓的 Zig 代码文本约 210 KB、只读数据 30 KB，其余约
+  125 KB 是没有符号的 blob 日志串与表。`-Dcoex-dump` 的寄存器转储另占 26 KB 文本与 9 KB 只读数据，取证时才开。
+- **无线纯逻辑自检**：`tests/e2e/run_e2e.py --board --profile wifi --only <section,…>`（经 `-Donly` 只编涉及的
+  section），整份 profile 留给发布前门禁。
+- 默认镜像（boot + net）与各探针镜像的开关不变。
 
 ## 后果
 
@@ -202,8 +249,8 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
      实现记录）；compiler_rt 死重仍未动。
   4. 合并镜像启动（L3）。**已完成 2026-11-24**：合并镜像 8/8 段通过、`verdict=pass`，
      `esp_wifi_init_internal rc=0`、`bringup.init rc=0`（`logs/coex-merged-boot.log`）。
-  5. PHY 与时钟域的归属：PHY 这一条已有板级证据并落进代码（2026-11-26，第 4 节补记 2）；时钟域仍是事后按快照写回，
-     按两个射频的需求取并集的寄存器序列没有写。
-  6. R3.1（`MAC_ST`）已拆（2026-11-25），Wi-Fi 真实链路已通（2026-11-26：连接、DHCP、ping 网关），L4a 已有读数（第 5 节）；L4b 等 R3.3（synth）。
-     合并镜像里的 BLE enable 已跑通（2026-11-26，`-Dcoex-ble-enable`），没有锁死；那一轮不发 HCI 命令，对 R3.3 没有结论
-     （`coex-verification.md` §14）。
+  5. PHY 与时钟域的归属：PHY 这一条已有板级证据并落进代码（2026-11-26，第 4 节补记 2）。时钟域于 2026-11-27 改成
+     按单元取并集并上板（第 4 节的实现记录），事后写回已删除；BLE 的 disable 路径还没有。
+  6. R3.1（`MAC_ST`）已拆（2026-11-25），Wi-Fi 真实链路已通（2026-11-26：连接、DHCP、ping 网关；2026-11-27 起有空口上的帧），
+     L4a 已有读数（第 5 节）；L4b 等 R3.3（synth）。合并镜像里的 BLE enable 已跑通（2026-11-26，`-Dcoex-ble-enable`）；
+     2026-11-27 试了起广播（`-Dcoex-ble-adv`），卡在 HCI 命令的发送上下文上，对 R3.3 没有结论（`coex-verification.md` §17）。

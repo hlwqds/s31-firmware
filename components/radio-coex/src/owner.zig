@@ -190,6 +190,114 @@ pub fn ClockBits(comptime users_count: usize) type {
     };
 }
 
+/// 板上两个射频共享的时钟字，以及「哪个模块依赖哪些位」（S31）。
+///
+/// 依据：模块到单元的依赖表在 IDF `components/esp_hw_support/modem/port/esp32s31/modem_clock_impl.c:14-21`；
+/// 每个单元写哪一位在同目录的 `modem_clock_hal.c:122-163` 与
+/// `components/hal/esp32s31/include/hal/modem_syscon_ll.h`（`clk_wifibb_configure` 写 `0x17b`、
+/// `enable_wifibb_44m_clock`、`enable_wifibb_80x1_clock`、`enable_wifi_mac_clock`、`enable_wifi_apb_clock`、
+/// `enable_bt_mac_clock`、`enable_bt_bb_clock`、`enable_bt_apb_clock`、`enable_modem_sec_clock`、
+/// `enable_modem_sec_apb_clock`、`enable_ble_timer_clock`、`enable_etm_clock`）；位的名字在
+/// `components/soc/esp32s31/include/modem/modem_syscon_reg.h` 与 `modem_lpcon_reg.h`。
+///
+/// IDF 按单元带引用计数地置位，从不整字覆盖这些字。两边的适配层照这张表各管各的位（只置位、不清位）；
+/// 合并镜像用 `units` / `unionOf` 算出期望值，去和板上的读数比（`firmware/src/coex_merged.zig`）。
+pub const clocks = struct {
+    pub const Module = enum(u2) { wifi, ble, phy };
+
+    /// 寄存器地址。
+    pub const clk_conf: usize = 0x2010_9C04; // MODEM_SYSCON_CLK_CONF
+    pub const clk_conf_force_on: usize = 0x2010_9C08; // MODEM_SYSCON_CLK_CONF_FORCE_ON
+    pub const clk_conf1: usize = 0x2010_9C14; // MODEM_SYSCON_CLK_CONF1
+    pub const lpcon_clk_conf: usize = 0x2010_F018; // MODEM_LPCON_CLK_CONF
+    pub const modem_conf: usize = 0x2058_71E0; // HP_SYS_CLKRST_MODEM_CONF
+
+    /// modem 时钟源的整字取值（`modem_clock_hal.c:124`）：有依赖它的单元在用时是 `0x3D`，都没有时是 `0x25`。
+    pub const modem_conf_pll: u32 = 0x3D;
+    pub const modem_conf_xtal: u32 = 0x25;
+
+    /// 共享字的一组取值：既是「需要的位」（位集），也是「板上的读数」（整字）。`modem_conf` 是整字取值，
+    /// 0 表示不要求，非 0 表示应当等于它。
+    pub const State = struct {
+        clk_conf: u32 = 0,
+        clk_conf_force_on: u32 = 0,
+        clk_conf1: u32 = 0,
+        lpcon_clk_conf: u32 = 0,
+        modem_conf: u32 = 0,
+
+        fn pllOn(self: State) bool {
+            return (self.modem_conf & 0x3F) == modem_conf_pll;
+        }
+
+        /// 取并集：位集相或，时钟源的要求有则保留。
+        pub fn orWith(self: State, o: State) State {
+            return .{
+                .clk_conf = self.clk_conf | o.clk_conf,
+                .clk_conf_force_on = self.clk_conf_force_on | o.clk_conf_force_on,
+                .clk_conf1 = self.clk_conf1 | o.clk_conf1,
+                .lpcon_clk_conf = self.lpcon_clk_conf | o.lpcon_clk_conf,
+                .modem_conf = @max(self.modem_conf, o.modem_conf),
+            };
+        }
+
+        /// `got` 是否包含这组位：逐字「有位」比较，多出来的位不算错。
+        pub fn coveredBy(self: State, got: State) bool {
+            return (got.clk_conf & self.clk_conf) == self.clk_conf and
+                (got.clk_conf_force_on & self.clk_conf_force_on) == self.clk_conf_force_on and
+                (got.clk_conf1 & self.clk_conf1) == self.clk_conf1 and
+                (got.lpcon_clk_conf & self.lpcon_clk_conf) == self.lpcon_clk_conf and
+                (self.modem_conf == 0 or got.pllOn());
+        }
+
+        /// 缺的位（给日志看）。
+        pub fn missing(self: State, got: State) State {
+            return .{
+                .clk_conf = self.clk_conf & ~got.clk_conf,
+                .clk_conf_force_on = self.clk_conf_force_on & ~got.clk_conf_force_on,
+                .clk_conf1 = self.clk_conf1 & ~got.clk_conf1,
+                .lpcon_clk_conf = self.lpcon_clk_conf & ~got.lpcon_clk_conf,
+                .modem_conf = if (self.modem_conf != 0 and !got.pllOn()) self.modem_conf else 0,
+            };
+        }
+    };
+
+    /// 一个模块依赖的位（IDF 的依赖表，逐单元换成位）。
+    pub fn units(m: Module) State {
+        return switch (m) {
+            // WIFI_CLOCK_DEPS：WIFI_BB(0x17b) | WIFI_BB_44M(2) | WIFI_BB_80X1(7) | WIFI_MAC(9) | WIFI_APB(10)。
+            // COEXIST 单元（LPCON bit1）不列：Wi-Fi start 之后它会回到关，不当判据。
+            // 时钟源（`modem_conf`）不要求：PLL 源只在 PHY 初始化与标定期间开着，之后被释放——IDF 自己的 station
+            // 镜像扫描结束后的读数就是 `0x25`（`logs/wifi-idf-oracle-regdump-boot.log`），本仓的 Wi-Fi 路径相同。
+            .wifi => .{ .clk_conf1 = 0x7FF, .lpcon_clk_conf = 1 << 0 },
+            // BLE_CLOCK_DEPS + BT_APB_CLOCK_DEPS：BT_APB（CLK_CONF1 bit16 与 CLK_CONF bit28）、BT_I154_COMMON_BB(17)、
+            // BLE_MAC(18)、WIFI_BB_80X1(7)、ETM(22)、BT_PERIPHERAL（modem_sec_en / ecb / ccm / bah = 25-29、
+            // ble_timer = 30）、COEXIST（LPCON bit1）；LP timer 时钟（LPCON bit3）是 BLE 调度器的时基。
+            .ble => .{
+                .clk_conf = 0x7E40_0000,
+                .clk_conf1 = 0x0007_0080,
+                .lpcon_clk_conf = (1 << 1) | (1 << 3),
+                .modem_conf = modem_conf_pll,
+            },
+            // PHY_CLOCK_DEPS：MODEM_ADC_COMMON_FE（fe_80m 13、fe_apb 15）、MODEM_PRIVATE_FE（fe_160m 14、
+            // fe_pwdet 19、fe_adc 20、fe_dac 21）、I2C_MASTER（LPCON bit2）。`clk_conf` 的三位是 PHY 打开时写的
+            // 模拟前端配置（pwdet 分频、I2C 主控 160M 选择、data dump 选择）。
+            .phy => .{
+                .clk_conf = 0x0020_1002,
+                .clk_conf1 = 0x0038_E000,
+                .lpcon_clk_conf = 1 << 2,
+                .modem_conf = 0,
+            },
+        };
+    }
+
+    /// 几个模块都开着时，共享字里应当有的位。
+    pub fn unionOf(mods: []const Module) State {
+        var w: State = .{};
+        for (mods) |m| w = w.orWith(units(m));
+        return w;
+    }
+};
+
 // ---------------------------------------------------------------------------
 // 主机测试
 // ---------------------------------------------------------------------------
@@ -337,4 +445,54 @@ test "clock bits: LPCON+0x18 按 IDF 实测的三个取值走（0x1 → 0x7 → 
         }
     }
     try testing.expectEqual(@as(u32, 0x1), cb.value());
+}
+
+test "clocks: Wi-Fi、PHY、BLE 三组的位互不覆盖，共用的只有 wifibb_80x1" {
+    const w = clocks.units(.wifi);
+    const p = clocks.units(.phy);
+    const b = clocks.units(.ble);
+    // 每组自己的位
+    try testing.expectEqual(@as(u32, 0x17B | (1 << 2) | (1 << 7) | (1 << 9) | (1 << 10)), w.clk_conf1);
+    try testing.expectEqual(@as(u32, (1 << 13) | (1 << 14) | (1 << 15) | (1 << 19) | (1 << 20) | (1 << 21)), p.clk_conf1);
+    try testing.expectEqual(@as(u32, (1 << 7) | (1 << 16) | (1 << 17) | (1 << 18)), b.clk_conf1);
+    try testing.expectEqual(@as(u32, (1 << 22) | (1 << 25) | (1 << 26) | (1 << 27) | (1 << 28) | (1 << 29) | (1 << 30)), b.clk_conf);
+    // 互不覆盖：任何一组的位不落在另一组里；Wi-Fi 与 BLE 只共用 bit7
+    try testing.expectEqual(@as(u32, 0), w.clk_conf1 & p.clk_conf1);
+    try testing.expectEqual(@as(u32, 0), w.clk_conf1 & b.clk_conf1 & ~@as(u32, 1 << 7));
+    try testing.expectEqual(@as(u32, 0x80), w.clk_conf1 & b.clk_conf1);
+    try testing.expectEqual(@as(u32, 0), (w.clk_conf1 | p.clk_conf1) & b.clk_conf1 & ~@as(u32, 1 << 7));
+    try testing.expectEqual(@as(u32, 0), p.clk_conf1 & b.clk_conf1);
+    try testing.expectEqual(@as(u32, 0), p.clk_conf1 & 0x0007_0000); // PHY 前端不碰 BT 的三位
+    try testing.expectEqual(@as(u32, 0), (w.clk_conf | p.clk_conf) & b.clk_conf);
+    try testing.expectEqual(@as(u32, 0), w.lpcon_clk_conf & p.lpcon_clk_conf);
+    try testing.expectEqual(@as(u32, 0), (w.lpcon_clk_conf | p.lpcon_clk_conf) & b.lpcon_clk_conf);
+}
+
+test "clocks: 并集包含每个成员；整字覆盖掉的位会被判成缺位" {
+    const all = clocks.unionOf(&.{ .wifi, .phy, .ble });
+    // 只置位之后，板上应当读到的值（多出来的 fe_20m / fe_40m 是 BLE 移植层额外开的，不算错）
+    const good = clocks.State{ .clk_conf = 0x7E60_1002, .clk_conf1 = 0x003F_FFFF, .lpcon_clk_conf = 0x0F, .modem_conf = 0x3D };
+    try testing.expect(all.coveredBy(good));
+    try testing.expectEqual(clocks.State{}, all.missing(good));
+
+    // 旧写法一：BLE 的 init 整字覆盖 CLK_CONF1——Wi-Fi 的基带、MAC、APB 位没了（对照 C 的读数）。
+    const clobbered = clocks.State{ .clk_conf = 0x7E60_1002, .clk_conf1 = 0x003F_F880, .lpcon_clk_conf = 0x0F, .modem_conf = 0x3D };
+    try testing.expect(!all.coveredBy(clobbered));
+    const miss = all.missing(clobbered);
+    try testing.expectEqual(@as(u32, 0x77F), miss.clk_conf1);
+    try testing.expectEqual(@as(u32, 0), miss.clk_conf);
+
+    // 旧写法二：事后按快照整字写回——Wi-Fi 的位回来了，BLE 的全没了（时钟源也跟着回到 XTAL）。
+    const restored = clocks.State{ .clk_conf = 0x0020_1002, .clk_conf1 = 0x0038_E7FF, .lpcon_clk_conf = 0x05, .modem_conf = 0x25 };
+    try testing.expect(!all.coveredBy(restored));
+    const miss2 = all.missing(restored);
+    try testing.expectEqual(@as(u32, 0x70000), miss2.clk_conf1);
+    try testing.expectEqual(@as(u32, 0x7E40_0000), miss2.clk_conf);
+    try testing.expectEqual(@as(u32, 0x0A), miss2.lpcon_clk_conf);
+    try testing.expectEqual(@as(u32, 0x3D), miss2.modem_conf);
+
+    // 并集对每个成员都是超集：只开其中一部分的读数，不会被要求包含没开的模块的位。
+    const wifi_only = clocks.State{ .clk_conf = 0x0020_1002, .clk_conf1 = 0x0038_E7FF, .lpcon_clk_conf = 0x05, .modem_conf = 0x25 };
+    try testing.expect(clocks.unionOf(&.{ .wifi, .phy }).coveredBy(wifi_only));
+    try testing.expect(!all.coveredBy(wifi_only));
 }

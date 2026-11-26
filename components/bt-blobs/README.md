@@ -31580,10 +31580,8 @@ BLE 先 init 的顺序，与标定被 BLE 用掉混在一起，不能单独归�
 
 还没做的：
 
-- BLE 的 init 仍会整字改写 `MODEM_SYSCON_CLK_CONF1`（`btdm_lp_enable_clock`），Wi-Fi 基带的时钟位跟着被关掉。
-  合并镜像现在是事后把时钟 / 电源寄存器按快照写回（`init_probe.radioRestore(1)`）。写回是整字写、在 BLE 的 enable
-  之后执行，BLE 那一侧的时钟位也一并被拿掉——controller 是在这种状态下被泵的，没有一项检查在看它。正解是时钟配置
-  按两个射频的需求取并集（ADR-003 第 4 节的归属模型）。
+- ~~BLE 的 init 仍会整字改写 `MODEM_SYSCON_CLK_CONF1`，合并镜像靠事后写回补救。~~ —— **2026-11-27 已做**（轮 164）：
+  两边改成只置自己的时钟单元位，事后写回删除。
 - 两段各自伤在哪一步没有再拆；写回的 13–15 个寄存器里哪几个是必要的没有再分。
 - BLE 的射频没有起（synth 墙，见上文「ADV-enable 时钟收缩」的定案机制）：合成器是 `0x200A` 之后才上电的，
   enable 之后读到 `98BC=0` 是预期值。
@@ -31595,5 +31593,42 @@ BLE 先 init 的顺序，与标定被 BLE 用掉混在一起，不能单独归�
 `initPhy` 照常跑的那轮：AP 看板子的信号 -23 dBm（与健康时一样强），但 AP 发给板子的帧放弃 51 / 51、速率压到
 6–8.6 Mbit/s——退化在板子的接收侧。两段都不跳过的第二次关联都没完成（第一次能连上），退化状态下失败在哪一步是随机的。
 细目在 `docs/verification/coex-verification.md` §15.8，日志 `logs/coex-merged-wifi-link-ap-syslog.log`、
-`logs/coex-merged-wifi-link-ap-side.log`。仍然没有空口上的帧（路由器没有外网，装不了 tcpdump）。
+`logs/coex-merged-wifi-link-ap-side.log`。空口上的帧 2026-11-27 抓到了，见轮 164。
+
+## 轮 164（2026-11-27）：时钟域按单元取并集；空口上的帧；合并镜像里起广播（没有结论）
+
+**时钟（有结论）。** 轮 163 留下的「正解是按两个射频的需求取并集」做掉了。根因：本组件 `porting.zig` 的
+`btdmLpEnableClock` 整字写 `CLK_CONF1 = 0x003FF880`（清掉 Wi-Fi 的基带、MAC、APB 共 10 个时钟位——这就是对照 C 里
+`reason=7` 的原因）、强开位整字写 `0xFF`、`LPCON CLK_CONF` 整字写 `0x0B`；`bringup.init` 开头整字写 `CLK_CONF` 与
+`TEST_CONF`。Wi-Fi 那一侧也有：`_wifi_clock_enable` 整字写 `LPCON = 0x3`，`_wifi_clock_disable` 无条件清共存时钟、把
+时钟源整字写回 `0x25`。此前的快照写回把 BLE 自己的时钟全拿掉了（BT 三位、BLE 定时器、modem 安全模块、共存与 LP
+定时器时钟、PLL 时钟源）——合并镜像里的 controller 一直是在那种状态下被泵的。
+
+做法照 IDF 的时钟单元表（`modem_clock_impl.c:14-21`）：两边只置自己的位，共享单元另一边还占着就不关，整字写只留
+时钟源 `MODEM_CONF`（IDF 自己也整字写）。板上一轮（`logs/coex-merged-wifi-link-union-boot.log`）：Wi-Fi start 之后、
+BLE init 之后、BLE enable 之后、整轮 Wi-Fi 链路之后四个时点都是并集——`CLK_CONF1=0x003FFFFF`、`CLK_CONF=0x7E601002`、
+`FORCE_ON=0xFC`、`LPCON=0x0F`、`MODEM_CONF=0x3D`，20/20。强开位现在是 `0xFC`（PHY 前端与 BT 的五个 + `phyDomainEnable`
+置的 `WIFI_APB_FO`），不再是 `0xFF`。
+
+**单独的探针不受影响。** 时钟函数改成只置位之后重跑：`logs/bt-probe-clock-union-boot.log` 与基线
+`bt-probe-pmu-icg-control-boot.log` 逐行等价——`INITED`，随后是同一个 `ble_hw.c:506` 断言墙；差别只有逐调用日志
+交错处的噪声。主机用例 67 → 69（`porting.zig` 多两条：预置 Wi-Fi 的位再让 BLE 开时钟，两边的位都在；寄存器从复位值
+起步时读数与原来的整字写相同）。
+
+**空口上的帧。** AP 上临时 monitor 接口抓到板子的探测、认证、关联、EAPOL 四条与加密数据帧，细目在
+`docs/verification/coex-verification.md` §15.9，按条款的对照在 `wifi-ieee80211-verification.md` §12。
+
+**起广播（没有结论）。** `-Dcoex-ble-adv`：所有判据之后经 HCI 发三条命令（`probe.zig` 的 `advertiseOnly`：LE Set
+Advertising Parameters / Data / Enable），泵 3 秒读 synth 锁定位。三次上板同一个结局：发完第一条命令（0x2006）日志停在
+一行没打完的 `bt call: eventq…` 上，之后 80 多秒没有任何输出；synth 锁定位没有置位过；工作站用 `bluetoothctl scan on`
+扫了 110 秒没有看到名字 `s31` 的设备。来龙去脉是上文记过的那条：这类命令的接收路径带着 FOREVER 去等 controller
+任务，而任务要等泵（「rx 阻塞等任务 = 任务等泵」）；`sched.block()` 从主上下文自己调用等于切回旧现场。试过把主上下文
+里的等待改成嵌套切任务、改成有界忙等，结局相同，两处改动都已撤回（`osal.zig` 没有改动）。日志
+`logs/coex-merged-wifi-link-ble-adv-boot.log`，细目在 `coex-verification.md` §17。
+
+**下一步（没有做）**：让 HCI 命令从一个独立栈上的发送任务里发（`sched.taskCreate`），阻塞走「任务 → 主上下文」的正常
+切换，主上下文照常泵两个任务，泵里带上时钟回写与喂狗。合并镜像现在是继续 R3.3 的合适位置：时钟位都在、ICG 码已生效。
+
+还没做的：BLE 的 disable 路径（释放自己的时钟单元）；「BLE 先起」的顺序下 Wi-Fi init 之前把 `LPCON+0x18` 对正成 `0x1`
+的那一句会清 I2C 主控位；`phyDomainEnable`（含写 flash 的探针标记）与 XTAL trim 在 PHY 归 Wi-Fi 时仍然会跑。
 

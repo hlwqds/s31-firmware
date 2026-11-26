@@ -456,70 +456,6 @@ pub fn focusDump(tag: []const u8) void {
     log.line("FOCUSDUMP {s} end", .{tag});
 }
 
-// ---------------------------------------------------------------------------
-// 合并镜像用：寄存器快照与写回（`firmware/src/coex_merged.zig` 第 3、7 步）
-//
-// 两个射频同镜时，BLE 的 init 会改掉一批 Wi-Fi 正在用的寄存器（`btdm_lp_enable_clock` 整字改写
-// `MODEM_SYSCON_CLK_CONF1`，Wi-Fi 基带的时钟位跟着掉了）。`radioSnapshot()` 把有文档的 523 个与定点的 55 个
-// 寄存器的当前值存下来——Wi-Fi start 之后、BLE 的 init 之前调；`radioRestore(mask)` 把变化过的写回去。
-// 合并镜像只写回时钟 / 电源那一组（mask 1）；`mask` 的其它位留着按区域二分用。
-// 写回是整字写，合并镜像里它在 BLE 的 enable 之后执行：`CLK_CONF1` 回到 Wi-Fi 的值，BLE 那一侧的时钟位跟着被拿掉
-// （不写回的话扫描正常、连接失败：2026-11-26 板上 `reason=7`）。正解是时钟位按两个射频的需求取或
-// （ADR-003 第 4 节的归属模型），没有做；细目见 `docs/verification/coex-verification.md` §15。
-// ---------------------------------------------------------------------------
-
-var radio_snap: [regdump_addrs.len + focus_addrs.len]u32 = @splat(0);
-
-/// 区域组：bit0 modem 的时钟与电源（MODEM_WIDGETS、MODEM_SYSCON、MODEM_LPCON、HP_SYS_CLKRST、HP_ALIVE_SYS），
-/// bit1 模拟 I2C 主控（I2C_ANA_MST），bit2 BB / FE 的定点寄存器，bit3 LP 系统与 PMU。
-fn radioGroup(addr: usize) u32 {
-    const clock = (addr >= 0x2010_9400 and addr < 0x2010_A000) or (addr >= 0x2010_F000 and addr < 0x2010_F800) or
-        (addr >= 0x2058_7000 and addr < 0x2058_A000);
-    if (clock) return 1;
-    if (addr >= 0x2010_F800 and addr < 0x2010_F900) return 2;
-    if (addr >= 0x2070_0000) return 8;
-    return 4;
-}
-
-/// 活值和只读的状态位：写回没有意义（PMU 的两个计数、I2C 主控的状态、PLL 校准状态）。
-fn radioSkip(addr: usize) bool {
-    return switch (addr) {
-        0x2070_0190, 0x2070_01A4, 0x2010_F804, 0x2058_7174 => true,
-        else => false,
-    };
-}
-
-/// 把这批寄存器的当前值存下来。
-pub fn radioSnapshot() void {
-    for (regdump_addrs, 0..) |a, i| radio_snap[i] = hw.readReg(a);
-    for (focus_addrs, 0..) |a, j| radio_snap[regdump_addrs.len + j] = hw.readReg(a);
-    log.line("wifi-init-probe: radio snapshot: {d} documented + {d} focus registers", .{ regdump_addrs.len, focus_addrs.len });
-}
-
-fn radioRestoreOne(addr: usize, want: u32, mask: u32, groups: *[4]usize) void {
-    const g = radioGroup(addr);
-    if (mask & g == 0) return;
-    if (radioSkip(addr)) return;
-    const gi: usize = @ctz(g);
-    const cur = hw.readReg(addr);
-    if (cur == want) return;
-    hw.writeReg(addr, want);
-    groups[gi] += 1;
-    if (hw.readReg(addr) != want)
-        log.line("wifi-init-probe: radio restore: 0x{x:0>8} wanted 0x{x:0>8}, reads 0x{x:0>8}", .{ addr, want, hw.readReg(addr) });
-}
-
-/// 把快照里与当前值不同的寄存器写回去（`mask` 选区域，见 `radioGroup`）。打一行按区域的计数，返回写回的个数。
-pub fn radioRestore(mask: u32) usize {
-    var groups: [4]usize = .{ 0, 0, 0, 0 };
-    for (regdump_addrs, 0..) |a, i| radioRestoreOne(a, radio_snap[i], mask, &groups);
-    for (focus_addrs, 0..) |a, j| radioRestoreOne(a, radio_snap[regdump_addrs.len + j], mask, &groups);
-    log.line("wifi-init-probe: radio restore (mask 0x{x}): clock/power={d} ana_i2c={d} bb_fe={d} lp_pmu={d}", .{
-        mask, groups[0], groups[1], groups[2], groups[3],
-    });
-    return groups[0] + groups[1] + groups[2] + groups[3];
-}
-
 /// 真实链路探针（`link_probe.zig`）把它接成长期运行的泵：不打每 1000 次那行日志，
 /// 也不在 400 万次让出后停机。
 pub var idle_quiet: bool = false;
@@ -1451,8 +1387,10 @@ pub fn run() noreturn {
                         log.line("wifi-init-probe: IDF-align before: +00=0x{x} +04=0x{x} +08=0x{x}", .{ t0.*, t4.*, t8.* });
                         // 注意：**不能**把 force_on(+08) 清 0——IDF 的 +08 是 0，但它有别的上电路径；
                         // 我们靠 FORCE_ON 让 `phy_open_fe_bb_clk` 的写序列不 stall（实测清 0 会卡死）。
-                        t0.* = 0x0000_0100;
-                        t4.* = 0x0020_1002;
+                        // 这两个共享字只**置位**、不整字覆盖（2026-11-27，时钟域按单元取并集）：单独跑时读数与
+                        // 整字写相同；BLE 先起的镜像里，它的位不会被 Wi-Fi 的 init 清掉。
+                        t0.* |= 0x0000_0100;
+                        t4.* |= 0x0020_1002;
                         log.line("wifi-init-probe: IDF-align after:  +00=0x{x} +04=0x{x} +08=0x{x}", .{ t0.*, t4.*, t8.* });
                     }
                     // ★ `CLK_CONF_POWER_ST`(0x20109C0C) **不是只读状态寄存器，而是各域的 ICG（时钟门控）

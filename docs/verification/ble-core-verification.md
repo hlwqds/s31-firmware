@@ -3,7 +3,7 @@
 - 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。第四批另涉 RFC 6775（6LoWPAN-ND 的主机侧行为）与它所依托的 RFC 4861、RFC 4862，以及 RFC 8930 与 RFC 8931（分片转发与选择性分片恢复）。第五批只涉 Core 5.4，另引 Bluetooth SIG 的 Assigned Numbers（Coding_Format 表）。
 - 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）、`components/bt-blobs`（§8 的 HCI 一致性自检）。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
-- **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。下表的"通过"指离线验证通过。
+- **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。2026-11-27 在合并镜像里试过起广播（§9），没有起来；同一时间窗口里用工作站的蓝牙控制器扫了 110 秒，没有看到板子。下表的"通过"指离线验证通过。
 - 本文把 2026-11-25 加入的 6LoWPAN-ND 主机侧行为（`nd6.zig`）、分片转发与选择性分片恢复（`sfr.zig`）称为"第四批"。第四批新增两份板侧子自检，交付时只到 L1 与 L2，**没有上板**（当天晚些时候随第五批的镜像上板，判据全部通过，见 §5.4）；主机上的读数与复核见 §5.3，对拍见 §4.2，偏离见 §6 末尾。
 - 本文把 2026-11-25 加入的 PAwR 的 host 侧（`pawr.zig`）、Connection Subrating 的 host 侧（`subrate.zig`）、LE Isochronous 的 HCI 接口面（`iso.zig`）称为"第五批"。第五批新增三份板侧子自检；主机上的读数与复核见 §5.4，对拍见 §4.3，偏离见 §6 末尾。
 
@@ -23,6 +23,7 @@
 | 板侧自检（第五批上板） | L3 | `ble_802154` 207/207（连同 `wifi_mlme` 121/121、`wifi_connect` 199/199，第三、四、五批的判据第一次上板）；整份 `wifi` profile 14/14 个 section，`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§5.4 |
 | 最小验证镜像上板（`--only ble_802154,wifi_mlme`） | L3 | 只编这两个 section：`ble_802154` 207/207、`wifi_mlme` 121/121，`passed=2 failed=0`，`main: verdict=pass`；镜像 512704 字节，是整份 `wifi` 镜像（1218736 字节）的 42% | `logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.4 |
 | 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
+| 合并镜像里的 BLE（2026-11-27） | L4 | 时钟按单元取并集之后，BLE init / enable 之后 BLE 自己的时钟位都在（此前被事后写回拿掉）；经 HCI 起广播的三条命令在主上下文里发不出去——发完第一条整机失声，synth 锁定位没有置位过；单独的 BLE 探针与基线逐行等价 | `logs/coex-merged-wifi-link-union-boot.log`、`logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/bt-probe-clock-union-boot.log`；§9 |
 
 ## 2. 逐特性对照
 
@@ -534,3 +535,28 @@ bt-blobs 目标 21 → 67。增量 46 = `hci_conformance.zig` 文件内的 23 �
 - 回包在真实链路上的行为。
 - 偏差 ②③ 与 controller 配置的关系。
 - 自检只覆盖 26 条只读命令，不是 HCI 一致性测试集。
+
+## 9. 合并镜像里的 BLE 与空口扫描（2026-11-27）
+
+**时钟（有结论）。** 此前合并镜像在 BLE init 之后按快照整字写回时钟 / 电源寄存器，把 BLE 自己的时钟位也拿掉了
+（`CLK_CONF1` 的 BT 三位、`CLK_CONF` 的 BLE 定时器与 modem 安全模块、LPCON 的共存与 LP 定时器时钟、PLL 时钟源）。
+现在两边只置自己的单元位：BLE init / enable 之后与整轮 Wi-Fi 链路之后，`CLK_CONF1=0x003FFFFF`、
+`CLK_CONF=0x7E601002`、LPCON=0x0F、`MODEM_CONF=0x3D`（`coex-verification.md` §16，
+`logs/coex-merged-wifi-link-union-boot.log`）。这是第一次在「BLE 的时钟位都在」的状态下跑合并镜像。
+
+**单独的 BLE 探针不受影响。** 时钟函数改成只置位之后重跑：`logs/bt-probe-clock-union-boot.log` 与基线
+`bt-probe-pmu-icg-control-boot.log` 逐行等价（`INITED`，随后是同一个 `ble_hw.c:506` 断言墙），差别只有逐调用
+日志交错处的噪声。
+
+**起广播（没有结论）。** `-Dcoex-ble-adv`：所有判据之后经 HCI 发三条命令（LE Set Advertising Parameters / Data /
+Enable，[Vol 4] Part E §7.8.5、§7.8.7、§7.8.9），泵 3 秒读 synth 锁定位。三次上板同一个结局：发完第一条命令
+整机失声，锁定位没有置位过（`logs/coex-merged-wifi-link-ble-adv-boot.log`；细目与来龙去脉见
+`coex-verification.md` §17）。原因在调用上下文：这类命令的接收路径要等 controller 任务，而任务要等主上下文去泵。
+
+**空口扫描（没有看到）。** 工作站自带蓝牙控制器（hci0），`bluetoothctl scan on` 不需要 root。在板子跑广播实验的
+同一时间窗口里扫了 110 秒，没有看到名字 `s31` 的设备——与「广播没有起来」一致，不构成对射频的进一步结论。
+R3.3 打通之后，板子的广播可以用这台工作站抓到（`bluetoothctl scan on`；`btmon` 能看到带信号强度的原始报告，
+要 root），这就是 BLE 一行 L4 证据的来源。
+
+边界：广播没有起来，所以合成器锁没锁、两个射频抢天线会怎样（L4b）都还没有证据；§8 的 HCI 一致性自检没有重跑
+（controller 的配置没有改）。

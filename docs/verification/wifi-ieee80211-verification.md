@@ -3,7 +3,7 @@
 - 规范依据：IEEE Std 802.11-2016（条款号取自该版目录与各模块文件头，页码为印刷页码）；其上的 RFC：RFC 3394（AES Key Wrap）、RFC 4493（AES-CMAC）、RFC 6070（PBKDF2）、RFC 4231（HMAC 的测试向量）、RFC 2104（HMAC）。第三批另涉 RFC 8110（OWE）、RFC 5869（HKDF）、RFC 5903 与 RFC 6090（ECC 的 Diffie-Hellman）、RFC 5216 与 RFC 3748（EAP-TLS 与 EAP）、RFC 2409 与 RFC 3526（MODP 群参数）。第四批的 Wi-Fi 侧只涉 RFC 8110 §4.5（OWE 的 PMK caching）。第五批（2026-11-25）的 Wi-Fi 侧不涉新 RFC。
 - 组件：`components/wifi-mlme`、`components/wifi-connect`。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
-- **真实 AP 的证据分三种，别混着看**：厂商栈的对照（§8）；本仓库 blob 移植的板侧证据——2026-11-25 起能从 `esp_wifi_start` 返回（§9），2026-11-26 起能扫描到真实 AP（§10）、连上真实 AP 并在 IP 层收发（§11）；`wifi-connect` 的协议实现与真实 AP 的互通，只在 §11 那一种配置下有证据（WPA2-PSK + CCMP-128，一台 AP）。下表的"通过"指离线验证通过。
+- **真实 AP 的证据分三种，别混着看**：厂商栈的对照（§8）；本仓库 blob 移植的板侧证据——2026-11-25 起能从 `esp_wifi_start` 返回（§9），2026-11-26 起能扫描到真实 AP（§10）、连上真实 AP 并在 IP 层收发（§11），2026-11-27 起有空口上的帧（§12）；`wifi-connect` 的协议实现与真实 AP 的互通，只在 §11 那一种配置下有证据（WPA2-PSK + CCMP-128，一台 AP）。下表的"通过"指离线验证通过。
 - 本文把 2026-11-24 加入的 SAE 完整实现、FT 密钥派生层、256 位套件、QoS 与省电称为"第二批"；之前的部分称为"第一批"。
   第二批的板侧自检先在主机上用桩 `board` 模块跑过，随后于同日随 `wifi` profile 上板（§5.2）。
 - 本文把 2026-11-25 加入的 OWE、EAP-TLS、按 AKM 的 4 次握手、SAE 其它群、FT 协议、无线测量（radio measurement）与 WNM 称为"第三批"。第三批新增六个板侧子自检，在主机上的读数与复核见 §5.4；**第三批当时没有上板**（2026-11-25 随第五批的镜像上板，全部通过）。
@@ -30,6 +30,7 @@
 | 板侧自检（第五批上板） | L3 | **14/14 个 section 全过、`main: verdict=pass`**：`wifi_mlme` 121/121、`wifi_connect` 199/199、`ble_802154` 207/207（第三、四、五批的判据第一次上板）、`net_ethernet` 11/11。最小验证镜像（`--only ble_802154,wifi_mlme`，512704 B，整份 `wifi` 镜像的 42%）同样 `PASS board:wifi[ble_802154,wifi_mlme]` | `logs/e2e-wifi-boot.log`、`logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.6 |
 | 整体判决为 pass 的板级运行 | L3 | 有：14/14 段、`main: verdict=pass`——第一批复验一次、第二批之后一次、第五批终态（2026-11-25）再一次；每次都覆盖了 `logs/e2e-wifi-boot.log` 的同名文件，现在盘上这份文件的内容就是第五批终态的 pass 运行 | `docs/verification/README.md`、git 历史 |
 | `wifi-connect` 接进真实链路（WPA2-PSK + CCMP-128） | L4 | 本仓库自己的移植连上用户提供的 AP：`STA_CONNECTED`（authmode 3、aid 1、信道 1），从发起到连上约 3.0 s；MAC 密钥表里的成对钥匙与组钥匙和请求方手里的逐字节相同；DHCP 拿到地址，ping 网关 10/10 | `logs/wifi-link-connect-boot.log`；§11 |
+| 空口上的帧（2026-11-27） | L4 | AP 上临时 monitor 接口抓到板子发出的探测请求、认证、关联请求、EAPOL 四条、块确认请求、加密数据帧与解关联，顺序与间隔和规范一致；AP 的应答 2–3 ms 内到，四次握手在线上走完 | `logs/coex-merged-wifi-link-ap-frames.log`；§12 |
 
 ## 2. 逐特性对照
 
@@ -901,8 +902,37 @@ wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
 
 - 一台 AP、一种配置（WPA2-PSK + CCMP-128、信道 1；管理帧保护双方都通告，这次没用上）。SAE、OWE、FT、企业、其余套件、
   多台 AP、漫游、断线重连、长时间稳定性都没有做，连上之后只观察了 5 秒。
-- 没有抓包：握手与数据帧在线上的内容没有看过。证据是 AP 的回应（关联成功、四次握手走完、DHCP 应答、回显应答）与
-  MAC 密钥表的核对。
+- 2026-11-26 没有抓包。2026-11-27 起在 AP 上抓到了空口帧（§12）：帧的类型、顺序、长度与时间对上了规范；信息元素的内容与
+  数据帧的载荷没有解出来看（载荷是密文）。
 - 数据通路只有 DHCP 与 ICMP。TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。
 - PHY 标定数据仍不持久化。
 - 同一次运行里共存核开着的读数见 `docs/verification/coex-verification.md` §12。
+
+## 12. 空口上的帧（2026-11-27；L4）
+
+抓法与读数细目在 `docs/verification/coex-verification.md` §15.9：AP（OpenWrt）上临时建一个 monitor 接口，五个轮次
+共 373 帧，入库 `logs/coex-merged-wifi-link-ap-frames.log`；工具在 `tools/ap-side/`。这一节只按条款对一遍：本仓库
+的移植在线上发的，是不是规范里的那些帧。帧的类型是 tcpdump 按 802.11 的格式解出来的；没有用 `-v`，信息元素的
+内容没有看。
+
+| 条款（IEEE Std 802.11-2016） | 空口上看到的（最终形态那一轮，82 帧） | 结论 |
+| --- | --- | --- |
+| 11.1.4.3 主动扫描；9.3.3.10 探测请求、9.3.3.11 探测响应 | 板子发通配的探测请求（SSID 为空，1 Mb/s，-23 dBm），信道 1、2 上的 AP 都有应答；定向探测（SSID 非空）之后 1–3 ms 目标 AP 应答 | 主动扫描真实发出，收得到应答 |
+| 9.3.3.13 去认证 | 关联之前 1–10 ms 板子先发一个去认证帧（表 9-45 的 reason 3） | 关联前清状态；帧被 AP 接受 |
+| 9.3.3.12 认证；开放系统认证 | 认证请求（算法 0、事务序号 1、状态 0）→ 2 ms 后 AP 的应答（序号 2） | 认证一次成功 |
+| 9.3.3.6 关联请求、9.3.3.7 关联应答 | 关联请求带 SSID 与速率表 → 3 ms 后应答「成功、AID 1」；从认证请求到关联应答 19 ms | 关联成功 |
+| 12.7.6 四次握手（消息 2–4 在 12.7.6.3–12.7.6.5） | EAPOL-Key 四条：M1（99 字节，AP）→ 262 ms → M2（127，板子）→ 1 ms → M3（155，AP）→ 23 ms → M4（99，板子）。hostapd 同时记了 `pairwise key handshake completed` 与 `4WAY-HS-COMPLETED` | 四次握手在线上走完；长度与 WPA2-PSK + CCMP-128 相容（Key Data 的内容没有解出来） |
+| 9.6.5.2–9.6.5.3 ADDBA（Block Ack 的 Action 帧） | 握手后板子连发三次 ADDBA 请求；AP 的 ADDBA 应答只在另一轮（B 的第三次）的清单里出现 | 块确认协商真实发出；为什么有的轮次没抓到 AP 的应答没有查 |
+| 12.5.3 CCMP | 之后的数据帧是受保护的（摘要里只有首部）：每秒一个回显请求发往网关，1–3 ms 后 AP 的应答出现，十个都有 | 数据帧按受保护帧发，AP 解密并应答 |
+| 9.3.3.5 解关联；表 9-45 原因码 | 连上 15 秒后板子发解关联（reason 8），AP 1.2 秒后发去认证（reason 2） | 板子主动断开 |
+
+对照轮里的一处（`coex-verification.md` §15.9 的 C）：认证请求与关联请求都到了 AP，AP 也都答了，hostapd 没留下这个
+站点，板子随后的数据帧被以 reason 7（来自未关联站点的 3 类帧）解关联。那是接收侧的退化，不是帧格式的问题。
+
+边界：
+
+- 看的是帧的类型、顺序、长度与时间；信息元素、Key Data 的内容、数据帧的载荷都没有解出来看。
+- 一个 AP、一种配置；帧是在合并镜像（两个控制器同镜）里抓的，单独的 Wi-Fi 探针没有抓过空口。
+- 清单里没有 ACK、块确认这些控制帧；「AP 的帧板子没确认」是从 hostapd 的日志读出来的。
+- 板子发来的帧在五个轮次里都是 -21 到 -28 dBm（含扫描退化的三轮）；AP 侧的站点统计与系统日志在
+  `coex-verification.md` §15.8。

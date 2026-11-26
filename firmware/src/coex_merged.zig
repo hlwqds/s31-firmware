@@ -17,6 +17,8 @@
 //!     最后全信道扫描、连接构建时给的 AP、DHCP、ping 网关、断开；泵的每一步都让 BLE 的 controller 任务也走一步
 //!     （开了 `-Dcoex-ble-enable` 时）。BLE 的射频没有起（R3.3），所以这一步是"一个射频在收发、另一个 enabled"。
 //!     顺序为什么不能反，见下面「PHY 的归属」。
+//!   - `-Dcoex-ble-adv`（要求 `-Dcoex-ble-enable`）：所有判据之后，经 HCI 让 BLE 发不可连接广播（三条命令），
+//!     泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE 广播着的时候再走一遍真实链路。
 //!
 //! **PHY 的归属（ADR-003 第 4 节的第一条板级证据，2026-11-26）。** IDF 的 `esp_phy_enable` 只在 modem 标志为 0
 //! 时才初始化 PHY（`phy_init.c:324-342`）；BT 在 Wi-Fi 之后使能时只把自己或进标志。本仓的 BLE 适配层是按
@@ -30,12 +32,17 @@
 //!     全信道扫描就从三十多个 AP 掉到 1–2 个（`docs/verification/coex-verification.md` §15.2）。
 //!
 //! 所以 `-Dcoex-wifi-link` 的顺序是 Wi-Fi 先 start；`bt.probe.setPhyOwnedByWifi()` 让 BLE 的 init 跳过那两段。
-//! BLE 的 init 还会整字改写 `MODEM_SYSCON_CLK_CONF1` 这类时钟寄存器，做完之后把"Wi-Fi start 之后、BLE init
-//! 之前"存下的快照里变化过的时钟 / 电源寄存器写回去（`init_probe.radioSnapshot` / `radioRestore`）；不写回的话
-//! 扫描照常、认证与关联成功后被 AP 以 `reason=7` 断开。写回是整字写、在 BLE 的 enable 之后执行，BLE 那一侧的
-//! 时钟位也被拿掉。它是补救：正解是时钟配置按两个射频的需求取并集（ADR-003 第 4 节的归属模型），还没有做。
 //!
-//! 只编这一段时把别的 section 都关掉（`-Dboot=false -Dnet=false -Dwire=false -Dwifi=false`），镜像约 1.2 MB。
+//! **时钟域按单元取并集（ADR-003 第 4 节，2026-11-27）。** 两边共享的时钟字（`MODEM_SYSCON_CLK_CONF`、
+//! `CLK_CONF1`、`CLK_CONF_FORCE_ON`、`MODEM_LPCON_CLK_CONF`、`HP_SYS_CLKRST_MODEM_CONF`）每一位归一个时钟单元，
+//! 归谁见 `radio-coex/src/owner.zig` 的 `clocks`（照 IDF 的依赖表）。两边的适配层在这些字上**只置位、不清位**。
+//! 在此之前 BLE 的 init 整字覆盖 `CLK_CONF1`，事后又把"BLE init 之前"的快照整字写回去（`radioSnapshot` /
+//! `radioRestore`）：前者清掉 Wi-Fi 的基带与 MAC 时钟（认证关联之后被 AP 以 `reason=7` 断开），后者把 BLE 的
+//! 时钟（BT_APB / BTBB / BTMAC、BLE 定时器、modem 安全模块、共存与 LP 定时器时钟、PLL 时钟源）全拿掉——
+//! 合并镜像里的 BLE 一直是被这样掐着的。两种写法都已删除；本文件在每一步之后读回这些字，按并集逐位核对。
+//!
+//! 只编这一段时把别的 section 都关掉（`-Dboot=false -Dnet=false -Dwire=false -Dwifi=false`），镜像约 1.2 MB，
+//! 其中约 950 KB 是两个 blob 本身（`scripts/build-coex-link-image.sh` 会打印体积明细）。
 //!
 //! 两套适配层在同一个镜像里怎么不打架，见 ADR-003 第 2 节与本文件的调用约定：
 //!
@@ -59,6 +66,10 @@ const board = @import("board");
 const wifi = @import("wifi_blobs_probe");
 const bt = @import("bt_core");
 
+const radio_coex = @import("radio_coex");
+/// IDF 的时钟单元表与并集运算（`radio-coex/src/owner.zig`）。
+const clocks = radio_coex.owner.clocks;
+
 const log = board.log;
 
 /// Wi-Fi 拿堆的前多少字节，其余给 BLE。init 实测用量：Wi-Fi 约 38 KB、BLE 约 38 KB
@@ -70,13 +81,11 @@ pub const wifi_heap_bytes: usize = 112 * 1024;
 extern const _heap_start: u8;
 extern const _heap_end: u8;
 
-/// `MODEM_LPCON_CLK_CONF_REG`（bit0 Wi-Fi 电源域 / bit1 共存 / bit2 PHY 的 I2C 主控）。
-/// 两边的适配层各自写过它：Wi-Fi 侧 init 前按 IDF 对正成 `0x1`（清掉 bit2），BLE 的 PHY 再把 bit2 置回来。
-/// 这里只读不写，给 ADR-003 §4 的归属模型（`radio-coex/src/owner.zig`）留一份板上的对照读数。
-const lpcon_clk_conf: *volatile u32 = @ptrFromInt(0x2010_F018);
-
 /// `-Dcoex-ble-enable` 的步骤里泵 controller 任务多久。
 const ble_pump_us: u64 = 1_000_000;
+/// `-Dcoex-ble-adv` 的广播间隔（0.625 ms × 2 = 1.25 ms 一档，0x00A0 = 200 ms）与广播着的时候泵多久。
+const ble_adv_interval_units: u16 = 0x00A0;
+const ble_adv_pump_us: u64 = 3_000_000;
 
 inline fn rd(addr: usize) u32 {
     return @as(*volatile u32, @ptrFromInt(addr)).*;
@@ -107,6 +116,30 @@ fn check(ok: bool, comptime fmt: []const u8, args: anytype) void {
     log.line("check: {s} ok={d}", .{ text, @intFromBool(ok) });
 }
 
+/// 读回两边共享的时钟字。
+fn readClocks() clocks.State {
+    return .{
+        .clk_conf = rd(clocks.clk_conf),
+        .clk_conf_force_on = rd(clocks.clk_conf_force_on),
+        .clk_conf1 = rd(clocks.clk_conf1),
+        .lpcon_clk_conf = rd(clocks.lpcon_clk_conf),
+        .modem_conf = rd(clocks.modem_conf),
+    };
+}
+
+/// 按并集核对：`mods` 都开着的时候，共享字里应当有的位一个都不能少。少一个就是有一边整字覆盖了另一边的位。
+fn checkClocks(stage: []const u8, mods: []const clocks.Module) void {
+    const need = clocks.unionOf(mods);
+    const got = readClocks();
+    const miss = need.missing(got);
+    log.line("clocks[{s}]: conf=0x{x:0>8} force_on=0x{x:0>8} conf1=0x{x:0>8} lpcon=0x{x:0>8} modem_conf=0x{x:0>8}", .{
+        stage, got.clk_conf, got.clk_conf_force_on, got.clk_conf1, got.lpcon_clk_conf, got.modem_conf,
+    });
+    check(need.coveredBy(got), "clocks {s}: cover {d} modules (missing conf1=0x{x:0>8} conf=0x{x:0>8} lpcon=0x{x:0>8} modem_conf=0x{x:0>8})", .{
+        stage, mods.len, miss.clk_conf1, miss.clk_conf, miss.lpcon_clk_conf, miss.modem_conf,
+    });
+}
+
 /// 泵里的一步：让 BLE 的 controller 任务走一轮。这一轮跑在 BLE 任务的栈上，所以期间关掉 Wi-Fi 侧的让出点——
 /// 万一有谁在那里碰到 Wi-Fi 的等待原语，只会按没拿到处理（同 BLE 的 init）。只在开了 `-Dcoex-ble-enable`
 /// 之后才装这个钩子：controller 没有被 enable 时泵它没有意义。
@@ -135,11 +168,11 @@ pub fn run() bool {
     //    探针、对照镜像取同一个值（见 `init_probe.feature_caps` 的注释）。
     if (opts.wifi_link) wifi.feature_caps = 0x5A1;
     const wrc = wifi.initOnly(.{ .experiments = false, .heap_len = wifi_bytes });
-    log.line("read: LPCON+18 after wifi init=0x{x:0>8}", .{lpcon_clk_conf.*});
+    log.line("read: LPCON+18 after wifi init=0x{x:0>8} (bit0 wifipwr / bit1 coex / bit2 i2c_mst / bit3 lp_timer)", .{rd(clocks.lpcon_clk_conf)});
     check(wrc == 0, "wifi esp_wifi_init_internal rc={d}", .{wrc});
 
-    // 3) `-Dcoex-wifi-link`：Wi-Fi 先 start（PHY 的一次性初始化与标定从此归 Wi-Fi），存一份寄存器快照，
-    //    再扫一次全信道——证明合并镜像里 Wi-Fi 自己是好的，后面的变化才都算在 BLE 的 init 头上。
+    // 3) `-Dcoex-wifi-link`：Wi-Fi 先 start（PHY 的一次性初始化与标定从此归 Wi-Fi），核对共享时钟字里
+    //    Wi-Fi 与 PHY 的位都在，再扫一次全信道——证明合并镜像里 Wi-Fi 自己是好的，后面的变化才都算在 BLE 的 init 头上。
     var wifi_started = false;
     var base_ap: u16 = 0;
     if (opts.wifi_link) {
@@ -149,7 +182,7 @@ pub fn run() bool {
         wifi_started = src == 0;
         if (wifi_started) {
             bt.probe.setPhyOwnedByWifi();
-            wifi.radioSnapshot();
+            checkClocks("after wifi start", &.{ .wifi, .phy });
             base_ap = wifi.link.linkScan("before ble init");
             check(base_ap > 0, "wifi baseline scan before ble init ap={d}", .{base_ap});
         }
@@ -160,8 +193,9 @@ pub fn run() bool {
     wifi.foreign_context = true;
     const brc = bt.probe.initOnly(@as([*]u8, @ptrFromInt(heap_start + wifi_bytes))[0..bt_bytes]);
     wifi.foreign_context = false;
-    log.line("read: LPCON+18 after ble init=0x{x:0>8} (bit0 wifipwr / bit1 coex / bit2 i2c_mst)", .{lpcon_clk_conf.*});
+    log.line("read: LPCON+18 after ble init=0x{x:0>8} (bit0 wifipwr / bit1 coex / bit2 i2c_mst / bit3 lp_timer)", .{rd(clocks.lpcon_clk_conf)});
     check(brc == 0, "ble bringup.init rc={d}", .{brc});
+    checkClocks("after ble init", &.{ .wifi, .phy, .ble });
 
     // 5) 共存核：BLE 侧停在 `inited`；Wi-Fi 侧是 `inited`，开了 `-Dcoex-wifi-link` 时是 `enabled`（已经 start）。
     wifi.coexReport("merged");
@@ -185,10 +219,12 @@ pub fn run() bool {
         wifi.coexReport("ble-enable");
         wifi.coexReadings("ble-enable");
         check(erc == 0, "ble bringup.enable rc={d}", .{erc});
+        checkClocks("after ble enable", &.{ .wifi, .phy, .ble });
     }
 
     // 7) `-Dcoex-wifi-link`：Wi-Fi 走真实链路的后半段（`link_probe.zig` 的 `linkRest`）：全信道扫描、连接构建时
-    //    给的 AP、DHCP、ping 网关、断开。BLE 的 init 改过的时钟 / 电源寄存器先按快照写回。
+    //    给的 AP、DHCP、ping 网关、断开。时钟字不动：两边的位在 BLE 的 init 之后已经都在（上面的核对），链路
+    //    就是在"两边都开着"的时钟配置下跑的。
     if (opts.wifi_link) {
         if (opts.dump) {
             wifi.regDumpAll("after-ble-init");
@@ -196,13 +232,13 @@ pub fn run() bool {
             wifi.macDumpAll("after-ble-init");
         }
         if (wifi_started) {
-            _ = wifi.radioRestore(1);
             const refusals0 = wifi.foreign_refusals;
             wifi.link.co_pump = if (opts.ble_enable) &bleStep else null;
             const r = wifi.link.linkRest();
             wifi.link.co_pump = null;
             wifi.coexReadings("wifi-link");
             readRadios("after wifi link");
+            checkClocks("after wifi link", &.{ .wifi, .phy, .ble });
             check(r.scan_done and r.ap_num > 0, "wifi scan done={} ap={d}", .{ @intFromBool(r.scan_done), r.ap_num });
             // BLE 的 init / enable 之后接收灵敏度不该掉：全信道扫描的 AP 数掉到基线的一半以下就不算过。连接、DHCP、ping
             // 那几项抓不住这种退化——2026-11-26 板上实测，基线三十多个 AP、这里只剩 1–4 个时它们照样全过。
@@ -220,6 +256,35 @@ pub fn run() bool {
                 bt.probe.pumpFor(200_000);
                 wifi.foreign_context = false;
             }
+        }
+    }
+
+    // 8) `-Dcoex-ble-adv`：所有判据之后，经 HCI 让 BLE 发不可连接广播，泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi
+    //    在 BLE 广播着的时候再走一遍真实链路（ADR-003 第 5 节的 L4b）。排在最后：controller 若把广播使能
+    //    处理成不回包，`sendCmd` 就不返回（R3.3 的 synth 墙），前面的结果已经落盘。
+    if (opts.ble_adv) {
+        readRadios("before ble adv");
+        wifi.foreign_context = true;
+        const a = bt.probe.advertiseOnly(ble_adv_interval_units, ble_adv_pump_us);
+        wifi.foreign_context = false;
+        readRadios("after ble adv");
+        wifi.coexReport("ble-adv");
+        wifi.coexReadings("ble-adv");
+        const fmt_status = struct {
+            fn s(v: ?u8) u8 {
+                return v orelse 0xFF;
+            }
+        }.s;
+        const adv_ok = a.params_status == 0 and a.data_status == 0 and a.enable_status == 0;
+        check(adv_ok, "ble adv commands status params={d} data={d} enable={d}", .{ fmt_status(a.params_status), fmt_status(a.data_status), fmt_status(a.enable_status) });
+        check(a.locked_polls > 0, "ble synth lock seen ({d}/{d} polls, first after {d} us)", .{ a.locked_polls, a.polls, a.first_lock_us orelse 0 });
+        if (adv_ok and opts.wifi_link and wifi_started) {
+            wifi.link.co_pump = &bleStep;
+            const r2 = wifi.link.linkRest();
+            wifi.link.co_pump = null;
+            checkClocks("after wifi link with ble adv", &.{ .wifi, .phy, .ble });
+            check(r2.connected and r2.dhcp, "wifi link while ble advertising: connected={} dhcp={}", .{ @intFromBool(r2.connected), @intFromBool(r2.dhcp) });
+            check(r2.ping_done, "wifi ping while ble advertising done ({d})", .{@intFromBool(r2.ping_done)});
         }
     }
 

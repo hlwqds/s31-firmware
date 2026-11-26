@@ -121,7 +121,16 @@ start，BLE 的 init 两段都跳过（`phy_owned_by_wifi`），再把时钟 / �
 「板子没有确认认证响应」；最终形态是完整序列，AP 看板子 -24 dBm、双向 86 Mbit/s、15 秒里重传 0–1 次；只跳过第 15 步时
 AP 发给板子的帧放弃 51 / 51、速率压到 6–8.6 Mbit/s，而信号一样强——退化在板子的接收侧。板子的 ARP 应答能跨过 AP 的桥
 到达同网段的另一台主机；板子不回应别人的回显请求（数据通路的缺口）。日志 `logs/coex-merged-wifi-link-ap-syslog.log`、
-`logs/coex-merged-wifi-link-ap-side.log`。仍然没有空口上的帧（路由器没有外网，装不了 tcpdump）。
+`logs/coex-merged-wifi-link-ap-side.log`。空口上的帧见下一段。
+
+2026-11-27 的后续：AP 侧抓到了空口上的帧（`coex-verification.md` §15.9、`logs/coex-merged-wifi-link-ap-frames.log`；
+工具在 `tools/ap-side/`）：五个轮次 373 帧，板子发来的帧 -21 到 -28 dBm，连上的几轮关联过程同序同间隔；按条款的
+对照见 `wifi-ieee80211-verification.md` §12。时钟域改成按单元取并集（`coex-verification.md` §16、
+`logs/coex-merged-wifi-link-union-boot.log`）：不再有事后写回，两边的位在四个时点都在，20/20；单独的 BLE 探针回归
+与基线逐行等价（`logs/bt-probe-clock-union-boot.log`）。合并镜像里试了经 HCI 起广播，三次都停在发完第一条命令之后，
+synth 锁定位没有置位过（`coex-verification.md` §17、`logs/coex-merged-wifi-link-ble-adv-boot.log`、
+`ble-core-verification.md` §9）。合并镜像的构建入口固化为 `scripts/build-coex-link-image.sh`：只编 `coex_merged`
+这一段，从 IDF 的归档重新生成对象集合，打印体积与归属。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
@@ -130,6 +139,9 @@ AP 发给板子的帧放弃 51 / 51、速率压到 6–8.6 Mbit/s，而信号一
 | 对真实 controller 的 HCI 一致性自检（BLE 探针 + 共存核） | `sh /tmp/probe-board.sh ble hci-conformance-boot.log 45` | 26 条只读命令：`checks passed=20 failed=6 total=26 supported=16 not_supported=4`。**结果不通过**：6 条不一致，分三类，命令名、opcode 与它在位图里的八位组.位见 `ble-core-verification.md` §8 | `logs/hci-conformance-boot.log`（此前两次：`hci-conformance-run1-hang.log`、`hci-conformance-run2.log`） |
 | 共存合并镜像（两个 blob 同镜） | `sh /tmp/merged-board.sh` | `coex_merged` 6/6；8/8 段、`main: verdict=pass`；两个控制器的 init 都返回 0 | `logs/coex-merged-boot.log`（第一次：`coex-merged-run1-boot.log`） |
 | 默认 profile | `python3 tests/e2e/run_e2e.py --board --profile net` | `PASS board:net`，8/8 段 | `logs/e2e-net-boot.log` |
+| 时钟域按单元取并集（最小合并镜像） | `BLE=1 AP_CRED=<凭据文件> sh scripts/build-coex-link-image.sh`，烧录后抓 100 秒 | `coex_merged` 20/20；`main: verdict=pass`；共享时钟字在四个时点都是两边的并集 | `logs/coex-merged-wifi-link-union-boot.log` |
+| BLE 起广播实验（没有结论） | 同上，加 `ADV=1`，抓 150 秒 | 前面的判据全过；发完第一条 HCI 命令后整机失声，没有汇总行 | `logs/coex-merged-wifi-link-ble-adv-boot.log` |
+| 单独 BLE 探针回归（时钟函数改成只置位之后） | `sh /tmp/probe-board.sh ble bt-probe-clock-union-boot.log 50` | 与基线逐行等价：`INITED`，随后是 `ble_hw.c:506` 断言墙 | `logs/bt-probe-clock-union-boot.log` |
 
 ## 默认镜像（L2）
 

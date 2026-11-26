@@ -145,9 +145,24 @@
   响应」；最终形态双向 86 Mbit/s、15 秒里重传 0–1 次；只跳过第 15 步时 AP 发给板子的帧放弃 51 / 51、速率压到
   6–8.6 Mbit/s，而信号一样强——退化在板子的接收侧。板子的 ARP 应答能跨过 AP 的桥到达同网段的另一台主机；板子不回应
   别人的回显请求（数据通路只处理回显应答，是缺口）。细目在 `docs/verification/coex-verification.md` §15.8。
+- **2026-11-27 更新**：下面「没有做的」里的时钟域与空口上的帧已经做了，见下一节。
 - **没有做的**：两个射频都在收发的共存效果（L4b，BLE 的射频没有起）；时钟域的正解（现在是事后整字写回，在 BLE 的 enable
   之后执行，BLE 那一侧的时钟位也被拿掉）；两段各自伤在哪一步；写回的寄存器里哪几个必要；排查阶段各轮的原始日志没有入库；
   空口上的帧（路由器没有外网，装不了 tcpdump）；板子回别人的 ping。
+
+## 空口上的帧、时钟域按单元取并集（2026-11-27）
+
+- **做了什么**：(1) AP 侧抓到了空口上的帧——在工作站上交叉编译静态的 tcpdump 放进路由器的内存盘，每轮临时建 monitor
+  接口；工具入库 `tools/ap-side/`。(2) 时钟域改成按单元取并集：两边只置自己的时钟单元位，共享单元另一边还占着就不关，
+  事后写回删除；IDF 的单元表写在 `components/radio-coex/src/owner.zig` 的 `clocks`，合并镜像在四个时点按并集核对。
+  (3) 合并镜像的构建入口固化为 `scripts/build-coex-link-image.sh`，只编合并这一段。(4) 试了在合并镜像里经 HCI 起广播
+  （`-Dcoex-ble-adv`），没有结论。
+- **验证**：主机测试全过；板上 20/20（`logs/coex-merged-wifi-link-union-boot.log`）；单独的 BLE 探针与基线逐行等价
+  （`logs/bt-probe-clock-union-boot.log`）；空口帧 `logs/coex-merged-wifi-link-ap-frames.log`；广播实验
+  `logs/coex-merged-wifi-link-ble-adv-boot.log`（停在发完第一条命令之后）。细目在 `docs/verification/coex-verification.md`
+  §15.9–§17、`wifi-ieee80211-verification.md` §12、`ble-core-verification.md` §9。
+- **没有做的**：两个射频都在收发（广播没有起来；HCI 命令要从独立栈上的发送任务里发，没有做）；BLE 的 disable 路径；
+  「BLE 先起」的顺序；板子回别人的 ping。
 
 ## 日志
 

@@ -163,6 +163,9 @@ const b_conf1_wifibb_80x1: u32 = @as(u32, 1) << 7;
 const b_conf1_bt_apb: u32 = @as(u32, 1) << 16;
 const b_conf1_btbb: u32 = @as(u32, 1) << 17;
 const b_conf1_btmac: u32 = @as(u32, 1) << 18;
+/// `MODEM_SYSCON_CLK_CONF_FORCE_ON`（`+0x08`）里归 PHY 前端与 BT 的强开位：fe、fe_apb、btbb、btmac、bt_apb。
+/// bit0-2（wifibb、wifimac、wifi_apb）是 Wi-Fi 的单元，BLE 不碰。
+const b_fo_bt_fe: u32 = 0x0000_00F8;
 const b_lpcon_coex: u32 = @as(u32, 1) << 1;
 const b_rst_btmac: u32 = @as(u32, 1) << 16;
 
@@ -213,12 +216,27 @@ const mmio = @import("builtin");
 extern fn bt_mmio_read(addr: usize) u32;
 extern fn bt_mmio_write(addr: usize, val: u32) void;
 
+/// 主机测试用的假寄存器文件：非 freestanding 目标上 `rd` / `wr` 走这里。板上不存在（`builtin` 是编译期判断）。
+const HostReg = struct { addr: usize = std.math.maxInt(usize), val: u32 = 0 };
+var host_regs: [48]HostReg = @splat(.{});
+
 pub fn rd(addr: usize) u32 {
-    if (mmio.os.tag != .freestanding) return 0;
+    if (mmio.os.tag != .freestanding) {
+        for (&host_regs) |*s| if (s.addr == addr) return s.val;
+        return 0;
+    }
     return bt_mmio_read(addr);
 }
 pub fn wr(addr: usize, val: u32) void {
-    if (mmio.os.tag != .freestanding) return;
+    if (mmio.os.tag != .freestanding) {
+        for (&host_regs) |*s| {
+            if (s.addr == addr or s.addr == std.math.maxInt(usize)) {
+                s.* = .{ .addr = addr, .val = val };
+                return;
+            }
+        }
+        return;
+    }
     bt_mmio_write(addr, val);
 }
 
@@ -404,34 +422,21 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
         return;
     }
 
-    // 1) 开时钟（读-改-写，别把别人的位清掉）
-    // **整字写 `0x003fffff` = bits{0-21}**（wifibb 组 0-10 + FE 13-21 + BT 16-18）。
-    // 来源：`wifi-blobs/src/init_probe.zig:707` 的位集（IDF 的 WiFi+FE 正确值
-    // `0x0038E7FF`）并上 BT 侧原有的 `0x003FF880`：
-    //   0-6   wifibb_22m/40m/44m/80m/40x/80x/40x1
-    //   7     wifibb_80x1        8  wifibb_160x1      9  wifimac     10 wifi_apb
-    //   13-15 fe_80m/160m/apb    16 bt_apb   17 btbb   18 btmac
-    //   19    fe_pwdet_adc       20 fe_adc   21 fe_dac
-    // **必须整字一次写齐**：整字写会清掉此前任何位，所以这里不能只写 BT+FE 的子集，
-    // 否则 PHY 侧的 wifibb/wifimac/wifi_apb 会被抹掉（2.6 的 FE RMW 只是幂等补位）。
-    // （曾用 RMW `rd(...) | 0x00070080`，因写不落地改为整字写。）
-    _ = b_conf1_btmac;
-    _ = b_conf1_btbb;
-    // ⚠ **`0x003f_ffff` 曾试过，板子完全静音（60 s 零字节）** ⇒ 已回退。
-    // 新增的 bits{0-6,8,9,10} 里有 `wifi_apb`(bit10)，它动 APB 门控，
-    // 与 UART0 共用 ⇒ 观测通道先断，实验无法判读。
-    // **要试这组位必须先保住 UART**（例如只加 bit0-6 不加 bit10，或先把日志搬到别的通道）。
-    // ✅ **已实验判定：`0x003f_ffff` 无效**（2026-11-19，flash 标记法）
-    //    加 bits{0-10} 后标记仍为 `stage=22 / btdm_tx=5`，与 `0x003ff880` **完全相同**。
-    //    ⇒ `wifibb` 组 / `wifimac` / `wifi_apb` **都不是** `0x200A` 挂住的原因。
-    //    因此保持 `0x003ff880`（BT + FE 已足够）。
-    wr(reg_clk_conf1, 0x003f_f880);
-    // **轮 121v 根修**：FORCE_ON 写（+0x08）——clk_conf1 = 使能位可被 ICG 门控；
-    // FORCE_ON 位（bits 0-7 WIFIBB/WIFIMAC/WIFI_APB/FE/FE_APB/BTBB/BTMAC/BT_APB）
-    // = 不可门控的强开位。SCHED 页（0x20101000）写入不落地 = BT_APB 时钟被
-    // ICG 门控（force_on 未写）。写全 0xFF = 全部 modem 子块时钟 force-on。
-    wr(syscon_base + 0x08, 0x0000_00FF);
-    // （曾用 RMW `rd(...) | 0x00070080`，因不落地改为整字写，见上）
+    // 1) 开时钟。**只置位、不清位**（2026-11-27，ADR-003 第 4 节的时钟域规则）：这些字是两个射频共享的，
+    // 每一位归一个时钟单元（IDF `modem_clock_impl.c` 的单元表，`radio-coex/src/clocks.zig`）。
+    // 两个射频同镜、Wi-Fi 先 start 时，整字写会把 Wi-Fi 的位清掉——板上实测扫描照常、认证关联之后被 AP 以
+    // `reason=7` 断开（`docs/verification/coex-verification.md` §15 的对照 C）。
+    // `MODEM_SYSCON_CLK_CONF1`（`+0x14`）按单元分成三组，这里置的是后两组：
+    //   bit0-10    wifibb_22m/40m/44m/80m/40x/80x/40x1、**wifibb_80x1(7，Wi-Fi 与 BLE 共用)**、160x1、wifimac、wifi_apb
+    //   bit11-15、19-21  PHY 前端：fe_20m/40m/80m/160m/apb、fe_pwdet_adc/adc/dac（公共）
+    //   bit16-18   bt_apb、btbb（BT_I154_COMMON_BB）、btmac（BLE_MAC）
+    // 合并镜像里 Wi-Fi 已置好前两组，这里是给它们补上 fe_20m/40m，再置 BT 的三位。
+    wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_bt_apb | b_conf1_btbb | b_conf1_btmac |
+        b_conf1_wifibb_80x1 | b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_fe_80m | b_conf1_fe_160m |
+        b_conf1_fe_apb | b_conf1_fe_pwdet_adc | b_conf1_fe_adc | b_conf1_fe_dac);
+    // 强开位（`+0x08`）：使能位会被 ICG 门控，强开位不会。单独的 BLE 探针没有 ICG 码，BT_APB 的写不落地
+    // 就是它没开（轮 121v）。只强开 PHY 前端与 BT 自己的单元，不替 Wi-Fi 决定它的基带、MAC、APB 要不要常开。
+    wr(syscon_base + 0x08, rd(syscon_base + 0x08) | b_fo_bt_fe);
     wr(reg_clk_conf, rd(reg_clk_conf) | b_conf_etm | b_conf_sec_ecb |
         b_conf_sec_apb | b_conf_sec | b_conf_ble_timer |
         b_conf_sec_ccm | b_conf_sec_bah);
@@ -458,9 +463,7 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     const mc = rd(reg_hp_clkrst_modem_conf);
     osal.logPublic("bt lp: modem_conf=0x{x:0>8} (want 0x3d) pll_ok={}", .{ mc, (mc & 0x3F) == modem_conf_on });
 
-    // 2.6) **PHY 前端时钟**：不开这路，PHY 起不来 ⇒ MAC 等不到 PHY 就绪。
-    wr(reg_clk_conf1, rd(reg_clk_conf1) | b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_fe_80m |
-        b_conf1_fe_160m | b_conf1_fe_apb | b_conf1_fe_pwdet_adc | b_conf1_fe_adc | b_conf1_fe_dac);
+    // 2.6) **PHY 前端时钟**：不开这路，PHY 起不来 ⇒ MAC 等不到 PHY 就绪。位已在上面第 1 步一起置了，这里只读回自证。
     const c1b = rd(reg_clk_conf1);
     const fe_need = b_conf1_fe_20m | b_conf1_fe_40m | b_conf1_fe_80m | b_conf1_fe_160m |
         b_conf1_fe_apb | b_conf1_fe_pwdet_adc | b_conf1_fe_adc | b_conf1_fe_dac;
@@ -474,11 +477,11 @@ pub fn btdmLpEnableClock(cfg: *const config.BtdmCfg) void {
     //（100kHz tick），rtc_freq=100000。
     wr(reg_lpcon_lp_timer_conf, 0x18F4); // sel_xtal(bit2) + div_num=399 ⇒ 40M/400=100kHz
     wr(reg_lpcon_32k_conf, (rd(reg_lpcon_32k_conf) & ~@as(u32, 0x3)) | @as(u32, 1)); // 32k 选内部 RC32K
-    // bit0(wifipwr) + bit1(coex) + bit3(lp_timer)：与 IDF step 5 之后的 `0x0b` 一致
-    // 对拍：IDF step 5 后 `lpcon+0x18 = 0x0b`（bit0 wifipwr + bit1 coex + bit3 lp_timer）。
-    // **不置 bit2**（i2c_mst）—— 我们的 `0x0f` 比 IDF 多一位。
-    // **直接写定值** 0x0b（用 RMW 清位在本板上没生效过，实测仍是 0x0f）
-    wr(reg_lpcon_clk_conf, b_lpcon_clk_wifipwr_en | b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
+    // `MODEM_LPCON_CLK_CONF`（`+0x18`）：bit0 wifipwr + bit1 coex + bit3 lp_timer，与 IDF step 5 之后的读数一致。
+    // bit2（i2c_mst）是 PHY 的模拟 I2C 主控，不在这里管：单独跑时它由强开位顶着（读回是 1），
+    // 合并镜像里是 Wi-Fi 的 PHY 开的，**不能清**——所以这一句同样是只置位。
+    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) |
+        b_lpcon_clk_wifipwr_en | b_lpcon_clk_coex_en | b_lpcon_clk_lp_timer_en);
     // **lpcon+0x04 = 0x41 / +0x08 = 0x314 / +0x0c = 0x01**（IDF step 5 后的实测值，我们此前未写）
     wr(lpcon_base + 0x04, rd(lpcon_base + 0x04) | @as(u32, 0x40));
     wr(lpcon_base + 0x08, @as(u32, 0x314)); // 定值写（IDF step5 后实测）
@@ -769,4 +772,49 @@ test "porting: 时钟门控是空实现（可重复调用不崩），共存使�
     btdmLpReset(true);
     btdmLpReset(false);
     try std.testing.expectEqual(@as(c_int, 0), btdmCoexEnable());
+}
+
+test "porting: BLE 开时钟只置自己的位，Wi-Fi 已有的时钟位一个不掉" {
+    // 起点是合并镜像里 Wi-Fi start 之后的读数（`logs/wifi-link-connect-boot.log` 的 `REGDUMP after-scan`，
+    // 2026-11-26）：Wi-Fi 的基带 / MAC / APB、PHY 前端、模拟 I2C 主控都已置位，BT 的位还没有。
+    host_regs = @splat(.{});
+    lp_clock_enabled = false;
+    wr(reg_clk_conf1, 0x0038_E7FF);
+    wr(reg_clk_conf, 0x0020_1002);
+    wr(syscon_base + 0x08, 0x0000_0000);
+    wr(reg_lpcon_clk_conf, 0x0000_0005);
+    wr(reg_hp_clkrst_modem_conf, 0x0000_0025);
+    const c = config.defaults();
+
+    btdmLpEnableClock(&c.btdm);
+
+    // CLK_CONF1：Wi-Fi 的 0-10 位原样在，PHY 前端补齐，BT 的三位出现（两边都开 = 0x003F_FFFF）。
+    try std.testing.expectEqual(@as(u32, 0x003F_FFFF), rd(reg_clk_conf1));
+    // CLK_CONF：Wi-Fi / PHY 的位不动，BLE 的 etm、modem_sec、ble_timer 出现。
+    try std.testing.expectEqual(@as(u32, 0x7E60_1002), rd(reg_clk_conf));
+    // 强开位：只强开 PHY 前端与 BT 的（bit3-7），Wi-Fi 的 wifibb / wifimac / wifi_apb 不被替它决定。
+    try std.testing.expectEqual(@as(u32, 0x0000_00F8), rd(syscon_base + 0x08));
+    // LPCON：i2c_mst（bit2，PHY 的模拟 I2C 主控）还在，共存与 BLE 的 LP 定时器时钟出现。
+    try std.testing.expectEqual(@as(u32, 0x0000_000F), rd(reg_lpcon_clk_conf));
+    // modem 时钟源：IDF 的做法是整字写 0x3D（Wi-Fi 与 BLE 的依赖里都有它）。
+    try std.testing.expectEqual(@as(u32, 0x0000_003D), rd(reg_hp_clkrst_modem_conf));
+    // 再开一次不累加、不清位。
+    lp_clock_enabled = false;
+    btdmLpEnableClock(&c.btdm);
+    try std.testing.expectEqual(@as(u32, 0x003F_FFFF), rd(reg_clk_conf1));
+    try std.testing.expectEqual(@as(u32, 0x0000_000F), rd(reg_lpcon_clk_conf));
+}
+
+test "porting: 单独跑（寄存器是复位值）时开时钟后的读数与原来的整字写相同" {
+    // BLE 单独的镜像里这些字从 0 起步（PHY 的模拟前端配置 `0x00201002` 是 `bringup.init` 开头先置的）：只置位
+    // 写出来的值必须与 2026-11-26 之前整字写的值一样，否则单独的 BLE 探针会被这次改动带着变。
+    host_regs = @splat(.{});
+    lp_clock_enabled = false;
+    wr(reg_hp_clkrst_modem_conf, 0x0000_0025);
+    wr(reg_clk_conf, 0x0020_1002);
+    const c = config.defaults();
+    btdmLpEnableClock(&c.btdm);
+    try std.testing.expectEqual(@as(u32, 0x003F_F880 | b_conf1_fe_20m | b_conf1_fe_40m), rd(reg_clk_conf1));
+    try std.testing.expectEqual(@as(u32, 0x7E60_1002), rd(reg_clk_conf));
+    try std.testing.expectEqual(@as(u32, 0x0000_00F8), rd(syscon_base + 0x08));
 }

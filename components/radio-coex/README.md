@@ -69,7 +69,7 @@
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |
-| L1 主机 | `zig test src/host_tests.zig` | 2026-11-24，**55 项全过**（胶水 45 项 + 归属模型 10 项） |
+| L1 主机 | `zig test src/host_tests.zig` | 2026-11-24，**55 项全过**（胶水 45 项 + 归属模型 10 项）。2026-11-27 归属模型多了时钟单元表 `clocks` 的 2 条 |
 | L1 格式 | `zig fmt --check src/` | 通过 |
 | L2 目标编译 | `zig build-obj -target riscv32-freestanding-eabihf -mcpu=generic_rv32+m+a+c+f+zicsr+zifencei -OReleaseSmall -fno-emit-bin src/bind.zig` | 通过。另在一次性副本里给 `coex_wifi_request_wrapper`、`wr_btdm_coex_iso_stop` 各注入一处类型错误，同一条命令都报错——说明 43 个钩子加 `esp_coex_version_get` 的函数体在目标构建里确实被分析 |
 | L2 链接面 | RV32 上以 `src/glue.zig` 为模块根编译一个消费方对象（`bind.boot` + `wifi.fill` + `wifiInit`），`nm -u` 读它的未定义符号 | 39 个 = 37 个核心符号 + `memcpy`/`memset`；37 个全部由 `libcoexist.a` 导出，其中 3 个 ROM 里也有同名定义 |
@@ -79,7 +79,7 @@
 | L1 布局实测 | 同一 C 结构在 x86_64（`zig cc -target x86_64-linux-gnu`）：160 字节、`_magic`@152 | 与主机上的 `AdapterTable` 一致 |
 | L2 布局实测 | RV32 上导出 `AdapterTable` 变量，`nm -S` 读到 80 字节；导出常量读到 `_magic`@76、`_env_is_chip`@48、`_esp_timer_get_time`@44 | 一致 |
 | L3 板侧自检 | 2026-11-24 随 `wifi` profile 上板，对着假核心：`checks: passed=10 failed=0 total=10`（上板前也在主机上用桩 `board.log` 跑过 10/10） | 假核心通过；真核心见上面的 L3 板侧 |
-| L1 归属模型 | `src/owner.zig`：首个使用者开 PHY 公共部分与共存时钟、末个使用者关；重复请求与无请求的放弃被拒且不改状态；200 步随机序列里公共部分的开、关次数等于使用者数跨越 0 的次数；`LPCON+0x18` 按 IDF 实测的 `0x1 → 0x7 → 0x1` 走 | 10 项全过。**寄存器序列未接**（ADR-003 §4）；"PHY 归先使能它的那一方"已有板级证据（2026-11-26，`coex-verification.md` §15），落在 `bt-blobs` 里 |
+| L1 归属模型 | `src/owner.zig`：首个使用者开 PHY 公共部分与共存时钟、末个使用者关；重复请求与无请求的放弃被拒且不改状态；200 步随机序列里公共部分的开、关次数等于使用者数跨越 0 的次数；`LPCON+0x18` 按 IDF 实测的 `0x1 → 0x7 → 0x1` 走；时钟单元表 `clocks`：Wi-Fi、PHY、BLE 三组的位互不覆盖，并集能判出整字覆盖与整字写回各缺了什么位 | 全过。**时钟域已接**（2026-11-27）：合并镜像用 `clocks.unionOf` 算期望值，与板上四个时点的读数逐位比（`coex-verification.md` §16）；两边的适配层只置自己的单元位，写不在本组件里。"PHY 归先使能它的那一方"已有板级证据（2026-11-26，§15），落在 `bt-blobs` 里 |
 | 差分 | 未做：`/tmp/s31-oracle/wifi_oracle.py` 只覆盖 RSNA 密码学构造，没有 coex；本组件也没有密码学构造 | — |
 
 关于命令：`zig test … --summary all` 在本机 Zig 0.17.1 上不被识别（`error: unrecognized parameter: --summary`，
@@ -143,12 +143,12 @@ export fn wr_btdm_coex_schm_status_bit_set(t: u32, s: u32) callconv(.c) void {
 | `src/core.zig` | `Core`：37 个核心入口的函数指针表（可注入）、`esp_err_t` 常量子集、回调/状态类型枚举 |
 | `src/adapter.zig` | `coex_adapter_funcs_t` 的镜像、`Hooks`（18 个可选钩子）、`build()`（缺一不可）、ilp32/LP64 布局断言 |
 | `src/glue.zig` | 配置开关、46 个入口的计数、生命周期状态机、单例、`boot()` / `wifiInit()` / `esp_coex_version_get()`；兼模块根（转出口） |
-| `src/owner.zig` | PHY 与时钟域的归属模型（ADR-003 §4）：`Owner`（请求计数 → 串行动作表）、`ClockBits`（多使用者共享一组时钟使能位）；纯逻辑，不在钩子路径上 |
+| `src/owner.zig` | PHY 与时钟域的归属模型（ADR-003 §4）：`Owner`（请求计数 → 串行动作表）、`ClockBits`（多使用者共享一组时钟使能位）、`clocks`（IDF 的时钟单元表：共享字的地址、每个模块依赖哪些位、并集与缺位）；纯逻辑，不在钩子路径上 |
 | `src/wifi.zig` | Wi-Fi osi 表 23 个 `coex_*_wrapper`（IDF 同名）、`entries`（含留空的 `_coex_condition_set`）、`fill()` |
 | `src/ble.zig` | BLE 侧 16 个 `wr_btdm_coex_*` + `btdm_coex_init/deinit/enable/disable`（IDF 同名） |
 | `src/fake.zig` | 记录型假核心：每次调用的参数/返回值日志 + 按反汇编建模的生命周期行为；只给测试与自检用 |
 | `src/bind.zig` | 目标专用：`realCore()`（37 个 `@extern`）、`boot(hooks, cfg)`；主机不编译其目标部分 |
-| `src/host_tests.zig` | 全部 55 项主机测试（其中 `owner.zig` 的 10 项写在它自己文件里） |
+| `src/host_tests.zig` | 全部 55 项主机测试（其中 `owner.zig` 的用例写在它自己文件里） |
 | `src/selftest.zig` | 板侧自检（10 条判据，胶水 + 假核心；跑前存、跑完还原胶水单例） |
 
 逻辑模块只 import `std` 与同组件的兄弟文件；没有 allocator、没有 `board`（`selftest.zig` 只为打日志 import 它）。
@@ -293,7 +293,8 @@ ISO = `CONFIG_BT_LE_ISO_SUPPORT`（`glue.Config.ble_iso`）。
 12. **进出的两个可选回调**（2026-11-24）：`Glue.on_enter` 在每个钩子计数之后调用，`Glue.on_leave` 在
     enable / disable 的状态迁移**之后**调用（带返回值）。IDF 没有这两样；它们是给接线层留即时痕迹用的——
     `esp_wifi_start` 卡在 MAC 忙位时不返回，事后的诊断行打不出来。默认都是空的。
-13. **归属模型只是模型**：`owner.zig` 不在钩子路径上，也没有接到任何寄存器序列；它只在主机上验证。
+13. **归属模型不在钩子路径上**：`owner.zig` 只被合并镜像的板上判据用来算并集（2026-11-27 起）；两边的适配层各自只置
+    自己的时钟单元位，那些写不在本组件里。
 
 ## 待验证项
 
@@ -325,9 +326,10 @@ ISO = `CONFIG_BT_LE_ISO_SUPPORT`（`glue.Config.ble_iso`）。
 5. ~~**Wi-Fi 侧 enable 之后的核心行为**：`esp_wifi_start` 不返回（R3.1 的 MAC 忙位），`_coex_enable` 之后
    blob 还会不会调 `coex_wifi_request` 等钩子，没有观测到。~~ —— **2026-11-26 已观测**：start 之后 blob 调了 16 个 Wi-Fi 侧
    包装函数（`coex-verification.md` §12），胶水零拒绝。
-6. **归属模型的寄存器序列**（`owner.zig`）：时钟域那一条还没有写——合并镜像现在是事后按快照把 BLE 的 init 改过的
-   时钟 / 电源寄存器写回（`coex-verification.md` §15）。PHY 那一条 2026-11-26 有了板级证据，落在 `bt-blobs` 里
-   （`phy_owned_by_wifi`），没有走 `owner.zig`。
+6. ~~**归属模型的寄存器序列**（`owner.zig`）：时钟域那一条还没有写——合并镜像现在是事后按快照把 BLE 的 init 改过的
+   时钟 / 电源寄存器写回。~~ —— **2026-11-27 已做**：两边只置自己的时钟单元位，共享单元另一边还占着就不关，事后写回
+   删除；合并镜像在四个时点与 `clocks` 的并集逐位一致（`coex-verification.md` §16）。PHY 那一条 2026-11-26 有了板级
+   证据，落在 `bt-blobs` 里（`phy_owned_by_wifi`），没有走 `owner.zig`。
 
 ## 假核心依据
 

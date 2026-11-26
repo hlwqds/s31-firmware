@@ -1,0 +1,492 @@
+[AP-SIDE 2026-11-27] monitor 接口抓到的 802.11 帧（空口证据），五个轮次。
+抓包：AP（OpenWrt 25.12.6，小米 AX3000T，2.4 GHz 信道 1）上每轮临时建一个 monitor 接口，静态的 aarch64 tcpdump
+（tools/ap-side/build-tcpdump.sh 交叉编译，放在路由器内存盘里，不是装的包）只抓地址里有板子 MAC 的帧，每帧 256 字节、
+只输出 tcpdump 的文字摘要（不带 -v / -x）：EAPOL 帧只有首部摘要，密钥数据不落盘；加密的数据帧只显示首部。每轮结束
+把 monitor 接口删掉，路由器上没有留下任何改动。邻居的 SSID / BSSID 换成标签（与板侧日志同一套编号）；用户自己的 AP、
+板子、工作站的地址原样保留。
+时间由路由器时钟（GMT、没有 NTP、慢 38 天 14 小时 4 分 22 秒）换算成本机 CST。「AP发」是 AP 自己发出的帧（没有信号强度）；
+其余是空中收到的帧，信号强度取自 AP 所在的射频。「(截断)」是 tcpdump 只抓到 256 字节的帧。板侧日志是同一轮的串口日志，
+名字见各轮标题。
+
+读法：
+  认证与关联是管理帧；EAPOL 消息 1、3 由 AP 发，消息 2、4 由板子发（长度 99 / 127 / 155 / 99 字节）。
+  「加密数据」是四次握手之后的数据帧（DHCP、ARP、ICMP、块确认协商都在里面），载荷本来就是密文，摘要里也只有首部。
+
+####################################################################################################
+# 最终形态（提交的源码，没有临时改动）
+# 板侧：final-mon      | 29 → 18 | 连上 2056 ms | DHCP 27 ms | ping 10/10, avg 3.092 ms | 新判据 (18 vs 29) ok=1 | passed=16 failed=0 total=16 | pass
+####################################################################################################
+
+-- AP 系统日志里这一轮的行（CST）--
+11-27 00:09:17  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-27 00:09:17  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-27 00:09:18  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-27 00:09:18  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-27 00:09:18  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-27 00:09:18  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-27 00:09:18  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:09:18  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:09:18  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:09:33  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-27 00:09:33  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-27 00:09:34  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+-- monitor 接口抓到的帧（CST）：时间  方向  速率 信号  描述 --
+00:09:09.644  板→广播      1.0M -23dBm  Probe Request () [速率表]
+00:09:09.657  邻居→板      1.0M -67dBm  Probe Response (ssid-10) [速率表] CH: 1, PRIVACY (截断)
+00:09:09.661  邻居→板      1.0M -66dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:09:09.670  邻居→板      1.0M -66dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:09:09.773  邻居→板      1.0M -25dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+00:09:13.637  板→广播      1.0M -23dBm  Probe Request () [速率表]
+00:09:16.328  板→广播      1.0M -23dBm  Probe Request (hl-wifi) [速率表]
+00:09:16.329  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+00:09:17.818  板→AP      1.0M -23dBm  DeAuthentication: Deauthenticated because sending STA is leaving (or has left) IBSS or ESS
+00:09:17.828  板→AP      1.0M -23dBm  Authentication (Open System)-1: Successful
+00:09:17.830  AP发→板        -   -    Authentication (Open System)-2:
+00:09:17.844  板→AP      1.0M -22dBm  Assoc Request (hl-wifi) [速率表]
+00:09:17.847  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+00:09:17.849  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:09:18.111  板→AP      6.0M -22dBm  QoS ethertype EAPOL (0x888e), length 127: EAPOL key (3) v2, len 123
+00:09:18.112  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 155: EAPOL key (3) v2, len 151
+00:09:18.135  板→AP      6.0M -22dBm  QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:09:18.285  板→AP      6.0M -22dBm  Action: BA ADDBA Request
+00:09:18.313  板→AP      6.0M -22dBm  Action: BA ADDBA Request
+00:09:18.328  板→AP      6.0M -21dBm  Action: BA ADDBA Request
+00:09:18.666  板→AP         - -21dBm  QoS
+00:09:18.681  板→广播      6.0M -21dBm  QoS 加密数据
+00:09:18.688  板→广播      6.0M -22dBm  QoS 加密数据
+00:09:18.711  板→网关         - -24dBm  QoS 加密数据
+00:09:18.712  AP发→板        -   -    QoS 加密数据
+00:09:18.759  板→AP      6.0M -22dBm  Action: BA ADDBA Response
+00:09:18.808  板→AP         - -22dBm  QoS
+00:09:19.708  板→网关         - -25dBm  QoS 加密数据
+00:09:19.711  AP发→板        -   -    QoS 加密数据
+00:09:19.761  板→AP         - -24dBm  QoS
+00:09:19.854  板→工作站     6.0M -24dBm  QoS 加密数据
+00:09:19.905  板→AP         - -24dBm  QoS
+00:09:20.465  板→AP         - -23dBm  QoS
+00:09:20.465  AP发→板        -   -    QoS 加密数据
+00:09:20.523  板→AP         - -23dBm  QoS
+00:09:20.708  板→网关         - -25dBm  QoS 加密数据
+00:09:20.708  AP发→板        -   -    QoS 加密数据
+00:09:20.759  板→AP         - -23dBm  QoS
+00:09:20.873  板→AP         - -22dBm  QoS
+00:09:20.933  板→AP         - -24dBm  QoS
+00:09:21.285  板→AP         - -25dBm  QoS
+00:09:21.285  AP发→板        -   -    QoS 加密数据
+00:09:21.343  板→AP         - -24dBm  QoS
+00:09:21.707  板→网关         - -28dBm  QoS 加密数据
+00:09:21.708  AP发→板        -   -    QoS 加密数据
+00:09:21.760  板→AP         - -24dBm  QoS
+00:09:21.899  板→AP         - -24dBm  QoS
+00:09:21.957  板→AP         - -24dBm  QoS
+00:09:22.306  板→AP         - -25dBm  QoS
+00:09:22.307  AP发→板        -   -    QoS 加密数据
+00:09:22.366  板→AP         - -24dBm  QoS
+00:09:22.707  板→网关         - -25dBm  QoS 加密数据
+00:09:22.708  AP发→板        -   -    QoS 加密数据
+00:09:22.758  板→AP         - -23dBm  QoS
+00:09:22.921  板→AP         - -24dBm  QoS
+00:09:22.980  板→AP         - -24dBm  QoS
+00:09:23.332  板→AP         - -25dBm  QoS
+00:09:23.333  AP发→板        -   -    QoS 加密数据
+00:09:23.390  板→AP         - -25dBm  QoS
+00:09:23.707  板→网关         - -27dBm  QoS 加密数据
+00:09:23.708  AP发→板        -   -    QoS 加密数据
+00:09:23.722  板→网关      6.0M -24dBm  QoS 加密数据
+00:09:23.773  板→AP         - -24dBm  QoS
+00:09:23.947  板→AP         - -24dBm  QoS
+00:09:24.004  板→AP         - -24dBm  QoS
+00:09:24.354  板→AP         - -26dBm  QoS
+00:09:24.355  AP发→板        -   -    QoS 加密数据
+00:09:24.414  板→AP         - -24dBm  QoS
+00:09:24.707  板→网关         - -26dBm  QoS 加密数据
+00:09:24.708  AP发→板        -   -    QoS 加密数据
+00:09:24.763  板→AP         - -24dBm  QoS
+00:09:25.706  板→网关         - -28dBm  QoS 加密数据
+00:09:25.707  AP发→板        -   -    QoS 加密数据
+00:09:25.758  板→AP         - -24dBm  QoS
+00:09:26.708  板→网关         - -26dBm  QoS 加密数据
+00:09:26.709  AP发→板        -   -    QoS 加密数据
+00:09:26.761  板→AP         - -24dBm  QoS
+00:09:27.706  板→网关         - -26dBm  QoS 加密数据
+00:09:27.707  AP发→板        -   -    QoS 加密数据
+00:09:27.988  板→AP         - -24dBm  QoS
+00:09:33.332  板→AP      6.0M -24dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+00:09:34.537  AP发→板        -   -    DeAuthentication: Previous authentication no longer valid
+
+共 82 帧。
+
+####################################################################################################
+# 对照 E，第三次：只跳过 initPhy，第 15 步的重新标定照常跑
+# 板侧：onlyinitphy3   | 32 → 3 | 连上 2055 ms | DHCP 55 ms | ping 10/10, avg 6.999 ms | 新判据 (3 vs 32) ok=0 | passed=15 failed=1 total=16 | fail
+####################################################################################################
+
+-- AP 系统日志里这一轮的行（CST）--
+11-27 00:14:00  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-27 00:14:00  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-27 00:14:00  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-27 00:14:00  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-27 00:14:00  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-27 00:14:01  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-27 00:14:01  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:14:01  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:14:01  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:14:16  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-27 00:14:16  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-27 00:14:17  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+-- monitor 接口抓到的帧（CST）：时间  方向  速率 信号  描述 --
+00:13:52.302  板→广播      1.0M -25dBm  Probe Request () [速率表]
+00:13:52.317  邻居→板      1.0M -68dBm  Probe Response (ssid-10) [速率表] CH: 1, PRIVACY (截断)
+00:13:52.329  邻居→板      1.0M -68dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:13:52.424  板→广播      1.0M -28dBm  Probe Request () [速率表]
+00:13:52.549  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+00:13:52.553  邻居→板      1.0M -35dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:13:56.457  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+00:13:56.476  邻居→板      1.0M -33dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:13:56.578  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+00:13:56.583  邻居→板      1.0M -35dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:13:59.023  板→广播      1.0M -25dBm  Probe Request (hl-wifi) [速率表]
+00:13:59.026  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+00:14:00.521  板→AP      1.0M -23dBm  DeAuthentication: Deauthenticated because sending STA is leaving (or has left) IBSS or ESS
+00:14:00.522  板→AP      1.0M -25dBm  Authentication (Open System)-1: Successful
+00:14:00.528  AP发→板        -   -    Authentication (Open System)-2:
+00:14:00.538  板→AP      1.0M -25dBm  Assoc Request (hl-wifi) [速率表]
+00:14:00.544  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+00:14:00.545  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:14:00.805  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 127: EAPOL key (3) v2, len 123
+00:14:00.807  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 155: EAPOL key (3) v2, len 151
+00:14:00.824  板→AP      6.0M -25dBm  QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:14:00.976  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:14:01.006  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:14:01.018  板→AP      6.0M -25dBm  Action: BA ADDBA Request
+00:14:01.357  板→AP         - -26dBm  QoS
+00:14:01.397  板→广播      6.0M -23dBm  QoS 加密数据
+00:14:01.413  板→广播      6.0M -24dBm  QoS 加密数据
+00:14:01.437  板→网关         - -26dBm  QoS 加密数据
+00:14:01.444  AP发→板        -   -    QoS 加密数据
+00:14:01.489  板→AP      6.0M -24dBm  Action: BA ADDBA Response
+00:14:01.536  板→AP         - -25dBm  QoS
+00:14:02.202  板→工作站     6.0M -24dBm  QoS 加密数据
+00:14:02.207  AP发→板        -   -    QoS 加密数据
+00:14:02.257  板→AP         - -25dBm  QoS
+00:14:02.433  板→网关         - -26dBm  QoS 加密数据
+00:14:02.488  板→AP         - -25dBm  QoS
+00:14:02.814  板→AP         - -25dBm  QoS
+00:14:02.817  AP发→板        -   -    QoS 加密数据
+00:14:02.872  板→AP         - -25dBm  QoS
+00:14:03.224  板→AP         - -24dBm  QoS
+00:14:03.224  AP发→板        -   -    QoS 加密数据
+00:14:03.282  板→AP         - -25dBm  QoS
+00:14:03.442  板→网关         - -26dBm  QoS 加密数据
+00:14:03.443  AP发→板        -   -    QoS 加密数据
+00:14:03.501  板→AP         - -25dBm  QoS
+00:14:03.633  板→AP         - -24dBm  QoS
+00:14:03.691  板→AP         - -24dBm  QoS
+00:14:04.247  板→AP         - -24dBm  QoS
+00:14:04.248  AP发→板        -   -    QoS 加密数据
+00:14:04.306  板→AP         - -25dBm  QoS
+00:14:04.438  板→网关         - -26dBm  QoS 加密数据
+00:14:04.441  AP发→板        -   -    QoS 加密数据
+00:14:04.491  板→AP         - -24dBm  QoS
+00:14:04.657  板→AP         - -24dBm  QoS
+00:14:04.715  板→AP         - -24dBm  QoS
+00:14:05.271  板→AP         - -24dBm  QoS
+00:14:05.272  AP发→板        -   -    QoS 加密数据
+00:14:05.329  板→AP         - -25dBm  QoS
+00:14:05.438  板→网关         - -25dBm  QoS 加密数据
+00:14:05.444  AP发→板        -   -    QoS 加密数据
+00:14:05.494  板→AP         - -24dBm  QoS
+00:14:05.681  板→AP         - -24dBm  QoS
+00:14:05.739  板→AP         - -25dBm  QoS
+00:14:05.739  板→AP         - -25dBm  QoS
+00:14:06.295  板→AP         - -25dBm  QoS
+00:14:06.296  AP发→板        -   -    QoS 加密数据
+00:14:06.353  板→AP         - -25dBm  QoS
+00:14:06.354  板→AP         - -24dBm  QoS
+00:14:06.438  板→网关         - -26dBm  QoS 加密数据
+00:14:06.439  AP发→板        -   -    QoS 加密数据
+00:14:06.491  板→AP         - -24dBm  QoS
+00:14:06.704  板→AP         - -24dBm  QoS
+00:14:06.719  板→网关      6.0M -24dBm  QoS 加密数据
+00:14:06.770  板→AP         - -23dBm  QoS
+00:14:07.453  板→网关         - -26dBm  QoS 加密数据
+00:14:07.455  AP发→板        -   -    QoS 加密数据
+00:14:07.506  板→AP         - -25dBm  QoS
+00:14:08.441  板→网关         - -26dBm  QoS 加密数据
+00:14:08.445  AP发→板        -   -    QoS 加密数据
+00:14:08.496  板→AP         - -23dBm  QoS
+00:14:09.437  板→网关         - -26dBm  QoS 加密数据
+00:14:09.439  AP发→板        -   -    QoS 加密数据
+00:14:09.490  板→AP         - -25dBm  QoS
+00:14:10.437  板→网关         - -26dBm  QoS 加密数据
+00:14:10.438  AP发→板        -   -    QoS 加密数据
+00:14:10.715  板→AP         - -25dBm  QoS
+00:14:16.070  板→AP      6.0M -24dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+00:14:17.279  AP发→板        -   -    DeAuthentication: Previous authentication no longer valid
+
+共 88 帧。
+
+####################################################################################################
+# 对照 C，第二次：两段都跳过，但不写回时钟 / 电源寄存器
+# 板侧：norestore3     | 32 → 26 | 断开 DISCONNECTED in 2120 ms: reason=7 | DHCP - ms | ping - | 新判据 (26 vs 32) ok=1 | passed=12 failed=4 total=16 | fail
+####################################################################################################
+
+-- AP 系统日志里这一轮的行（CST）--
+11-27 00:19:00  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: did not acknowledge authentication response
+11-27 00:20:05  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to local deauth request
+
+-- monitor 接口抓到的帧（CST）：时间  方向  速率 信号  描述 --
+00:18:52.199  板→广播      1.0M -24dBm  Probe Request () [速率表]
+00:18:52.221  邻居→板      1.0M -68dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:18:52.320  板→广播      1.0M -26dBm  Probe Request () [速率表]
+00:18:52.346  邻居→板      1.0M -67dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:18:52.446  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+00:18:56.164  板→广播      1.0M -25dBm  Probe Request () [速率表]
+00:18:56.168  邻居→板      1.0M -66dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:18:56.172  邻居→板      1.0M -68dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:18:56.286  板→广播      1.0M -26dBm  Probe Request () [速率表]
+00:18:58.854  板→广播      1.0M -25dBm  Probe Request (hl-wifi) [速率表]
+00:18:58.869  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+00:19:00.351  板→AP      1.0M -25dBm  DeAuthentication: Deauthenticated because sending STA is leaving (or has left) IBSS or ESS
+00:19:00.352  板→AP      1.0M -25dBm  Authentication (Open System)-1: Successful
+00:19:00.357  AP发→板        -   -    Authentication (Open System)-2:
+00:19:00.368  板→AP      1.0M -25dBm  Assoc Request (hl-wifi) [速率表]
+00:19:00.377  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+00:19:00.931  板→AP      1.0M -25dBm  
+00:19:00.934  AP发→板        -   -    Disassociation: Class 3 frame received from nonassociated STA
+
+共 18 帧。
+
+####################################################################################################
+# 对照 B，第三次：两段都不跳过，写回在
+# 板侧：noguard3       | 32 → 2 | 连上 1954 ms | DHCP 24 ms | ping 9/10, avg 4.087 ms | 新判据 (2 vs 32) ok=0 | passed=15 failed=1 total=16 | fail
+####################################################################################################
+
+-- AP 系统日志里这一轮的行（CST）--
+11-27 00:23:38  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-27 00:23:38  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-27 00:23:39  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-27 00:23:39  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-27 00:23:39  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-27 00:23:39  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-27 00:23:39  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:23:39  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:23:39  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:23:54  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-27 00:23:54  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-27 00:23:55  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+-- monitor 接口抓到的帧（CST）：时间  方向  速率 信号  描述 --
+00:23:30.510  板→广播      1.0M -25dBm  Probe Request () [速率表]
+00:23:30.515  邻居→板      1.0M -68dBm  Probe Response (ssid-10) [速率表] CH: 1, PRIVACY (截断)
+00:23:30.520  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+00:23:30.524  邻居→板      1.0M -35dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:23:30.634  邻居→板      1.0M -70dBm  Probe Response (ssid-41) [速率表] CH: 1, PRIVACY (截断)
+00:23:34.721  板→广播      1.0M -27dBm  Probe Request () [速率表]
+00:23:34.726  邻居→板      1.0M -36dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:23:34.733  邻居→板      1.0M -66dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:23:34.847  邻居→板      1.0M -37dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:23:37.289  板→广播      1.0M -23dBm  Probe Request (hl-wifi) [速率表]
+00:23:37.291  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+00:23:38.776  板→AP      1.0M -25dBm  DeAuthentication: Deauthenticated because sending STA is leaving (or has left) IBSS or ESS
+00:23:38.786  板→AP      1.0M -25dBm  Authentication (Open System)-1: Successful
+00:23:38.790  AP发→板        -   -    Authentication (Open System)-2:
+00:23:38.802  板→AP      1.0M -25dBm  Assoc Request (hl-wifi) [速率表]
+00:23:38.807  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+00:23:38.809  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:23:39.069  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 127: EAPOL key (3) v2, len 123
+00:23:39.070  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 155: EAPOL key (3) v2, len 151
+00:23:39.089  板→AP      6.0M -25dBm  QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:23:39.241  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:23:39.241  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:23:39.511  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:23:39.512  AP发→板     6.0M   -    Action: BA ADDBA Response
+00:23:39.562  板→广播      6.0M -23dBm  QoS 加密数据
+00:23:39.568  板→广播      6.0M -25dBm  QoS 加密数据
+00:23:39.592  板→网关         - -27dBm  QoS 加密数据
+00:23:39.639  板→AP      6.0M -24dBm  Action: BA ADDBA Response
+00:23:39.686  板→AP         - -25dBm  QoS
+00:23:40.212  板→工作站     6.0M -24dBm  QoS 加密数据
+00:23:40.216  AP发→板        -   -    QoS 加密数据
+00:23:40.267  板→AP         - -25dBm  QoS
+00:23:40.589  板→网关         - -26dBm  QoS 加密数据
+00:23:40.589  AP发→板        -   -    QoS 加密数据
+00:23:40.641  板→AP         - -25dBm  QoS
+00:23:41.029  板→AP         - -24dBm  QoS
+00:23:41.084  板→AP         - -24dBm  QoS
+00:23:41.233  板→AP         - -25dBm  QoS
+00:23:41.235  AP发→板        -   -    QoS 加密数据
+00:23:41.292  板→AP         - -25dBm  QoS
+00:23:41.588  板→网关         - -26dBm  QoS 加密数据
+00:23:41.592  AP发→板        -   -    QoS 加密数据
+00:23:41.643  板→AP         - -25dBm  QoS
+00:23:42.257  板→AP         - -25dBm  QoS
+00:23:42.260  AP发→板        -   -    QoS 加密数据
+00:23:42.315  板→AP         - -25dBm  QoS
+00:23:42.588  板→网关         - -26dBm  QoS 加密数据
+00:23:42.591  AP发→板        -   -    QoS 加密数据
+00:23:42.641  板→AP         - -23dBm  QoS
+00:23:42.680  板→AP         - -23dBm  QoS
+00:23:42.737  板→AP         - -25dBm  QoS
+00:23:42.741  板→AP         - -25dBm  QoS
+00:23:42.742  板→AP         - -24dBm  QoS
+00:23:42.743  板→AP         - -25dBm  QoS
+00:23:43.281  板→AP         - -25dBm  QoS
+00:23:43.282  AP发→板        -   -    QoS 加密数据
+00:23:43.339  板→AP         - -25dBm  QoS
+00:23:43.588  板→网关         - -26dBm  QoS 加密数据
+00:23:43.589  AP发→板        -   -    QoS 加密数据
+00:23:43.641  板→AP         - -25dBm  QoS
+00:23:43.690  板→AP         - -25dBm  QoS
+00:23:43.749  板→AP         - -25dBm  QoS
+00:23:44.305  板→AP         - -25dBm  QoS
+00:23:44.306  AP发→板        -   -    QoS 加密数据
+00:23:44.363  板→AP         - -25dBm  QoS
+00:23:44.588  板→网关         - -26dBm  QoS 加密数据
+00:23:44.618  AP发→板     6.0M   -    QoS 加密数据
+00:23:44.640  板→AP         - -25dBm  QoS
+00:23:44.714  板→AP         - -24dBm  QoS
+00:23:44.773  板→AP         - -25dBm  QoS
+00:23:45.587  板→网关         - -26dBm  QoS 加密数据
+00:23:45.588  AP发→板        -   -    QoS 加密数据
+00:23:45.642  板→AP         - -25dBm  QoS
+00:23:45.738  板→AP         - -25dBm  QoS
+00:23:45.753  板→网关      6.0M -24dBm  QoS 加密数据
+00:23:45.804  板→AP         - -23dBm  QoS
+00:23:45.804  板→AP         - -24dBm  QoS
+00:23:46.587  板→网关         - -26dBm  QoS 加密数据
+00:23:46.589  AP发→板        -   -    QoS 加密数据
+00:23:46.640  板→AP         - -25dBm  QoS
+00:23:46.640  板→AP         - -25dBm  QoS
+00:23:46.641  板→AP         - -25dBm  QoS
+00:23:46.641  板→AP         - -25dBm  QoS
+00:23:46.641  板→AP         - -25dBm  QoS
+00:23:46.642  板→AP         - -24dBm  QoS
+00:23:46.643  板→AP         - -25dBm  QoS
+00:23:46.643  板→AP         - -24dBm  QoS
+00:23:46.644  板→AP         - -25dBm  QoS
+00:23:47.594  板→网关         - -26dBm  QoS 加密数据
+00:23:47.595  AP发→板        -   -    QoS 加密数据
+00:23:47.653  板→AP         - -25dBm  QoS
+00:23:48.591  板→网关         - -26dBm  QoS 加密数据
+00:23:48.593  AP发→板        -   -    QoS 加密数据
+00:23:48.868  板→AP         - -24dBm  QoS
+00:23:54.206  板→AP      6.0M -25dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+00:23:54.220  板→AP      6.0M -24dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+00:23:55.418  AP发→板        -   -    DeAuthentication: Previous authentication no longer valid
+
+共 97 帧。
+
+####################################################################################################
+# 对照 D，第三次：只跳过第 15 步，initPhy 照常跑
+# 板侧：onlyloadcal3   | 30 → 3 | 连上 1958 ms | DHCP 49 ms | ping 9/10, avg 5.435 ms | 新判据 (3 vs 30) ok=0 | passed=15 failed=1 total=16 | fail
+####################################################################################################
+
+-- AP 系统日志里这一轮的行（CST）--
+11-27 00:26:51  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-27 00:26:51  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-27 00:26:52  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-27 00:26:52  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-27 00:26:52  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-27 00:26:52  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-27 00:26:52  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:26:52  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:26:52  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-27 00:27:07  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-27 00:27:07  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-27 00:27:08  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+-- monitor 接口抓到的帧（CST）：时间  方向  速率 信号  描述 --
+00:26:43.501  板→广播      1.0M -24dBm  Probe Request () [速率表]
+00:26:43.506  邻居→板      1.0M -67dBm  Probe Response (ssid-10) [速率表] CH: 1, PRIVACY (截断)
+00:26:43.515  邻居→板      1.0M -36dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:26:43.521  邻居→板      1.0M -66dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:26:43.526  邻居→板      1.0M -68dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+00:26:43.651  邻居→板      1.0M -35dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:26:43.753  邻居→板      1.0M -36dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+00:26:47.688  板→广播      1.0M -25dBm  Probe Request () [速率表]
+00:26:50.255  板→广播      1.0M -25dBm  Probe Request (hl-wifi) [速率表]
+00:26:50.256  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+00:26:51.755  板→AP      1.0M -25dBm  DeAuthentication: Deauthenticated because sending STA is leaving (or has left) IBSS or ESS
+00:26:51.756  板→AP      1.0M -25dBm  Authentication (Open System)-1: Successful
+00:26:51.758  AP发→板        -   -    Authentication (Open System)-2:
+00:26:51.771  板→AP      1.0M -25dBm  Assoc Request (hl-wifi) [速率表]
+00:26:51.778  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+00:26:51.779  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:26:52.041  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 127: EAPOL key (3) v2, len 123
+00:26:52.042  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 155: EAPOL key (3) v2, len 151
+00:26:52.058  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+00:26:52.211  板→AP      6.0M -23dBm  Action: BA ADDBA Request
+00:26:52.211  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:26:52.480  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+00:26:52.484  AP发→板     6.0M   -    Action: BA ADDBA Response
+00:26:52.561  板→AP         - -25dBm  QoS
+00:26:52.574  板→广播      6.0M -24dBm  QoS 加密数据
+00:26:52.588  板→广播      6.0M -24dBm  QoS 加密数据
+00:26:52.612  板→网关         - -26dBm  QoS 加密数据
+00:26:52.667  板→AP         - -24dBm  QoS
+00:26:52.880  板→AP         - -24dBm  QoS
+00:26:52.902  板→AP      6.0M -23dBm  Action: BA ADDBA Response
+00:26:52.938  板→AP         - -25dBm  QoS
+00:26:53.608  板→网关         - -26dBm  QoS 加密数据
+00:26:53.613  AP发→板        -   -    QoS 加密数据
+00:26:53.664  板→AP         - -23dBm  QoS
+00:26:53.906  板→工作站     6.0M -24dBm  QoS 加密数据
+00:26:53.907  AP发→板        -   -    QoS 加密数据
+00:26:53.958  板→AP         - -23dBm  QoS
+00:26:54.313  板→AP         - -24dBm  QoS
+00:26:54.314  AP发→板        -   -    QoS 加密数据
+00:26:54.371  板→AP         - -24dBm  QoS
+00:26:54.608  板→网关         - -26dBm  QoS 加密数据
+00:26:54.618  AP发→板        -   -    QoS 加密数据
+00:26:54.669  板→AP         - -23dBm  QoS
+00:26:54.927  板→AP         - -24dBm  QoS
+00:26:54.985  板→AP         - -25dBm  QoS
+00:26:55.347  板→AP         - -24dBm  QoS
+00:26:55.354  AP发→板        -   -    QoS 加密数据
+00:26:55.404  板→AP         - -23dBm  QoS
+00:26:55.612  板→网关         - -26dBm  QoS 加密数据
+00:26:55.648  AP发→板     6.0M   -    QoS 加密数据
+00:26:55.664  板→AP         - -25dBm  QoS
+00:26:55.951  板→AP         - -24dBm  QoS
+00:26:56.009  板→AP         - -24dBm  QoS
+00:26:56.360  板→AP         - -24dBm  QoS
+00:26:56.361  AP发→板        -   -    QoS 加密数据
+00:26:56.419  板→AP         - -25dBm  QoS
+00:26:56.608  板→网关         - -26dBm  QoS 加密数据
+00:26:56.612  AP发→板        -   -    QoS 加密数据
+00:26:56.663  板→AP         - -25dBm  QoS
+00:26:56.975  板→AP         - -23dBm  QoS
+00:26:57.033  板→AP         - -24dBm  QoS
+00:26:57.384  板→AP         - -24dBm  QoS
+00:26:57.385  AP发→板        -   -    QoS 加密数据
+00:26:57.442  板→AP         - -24dBm  QoS
+00:26:57.608  板→网关         - -26dBm  QoS 加密数据
+00:26:57.610  AP发→板        -   -    QoS 加密数据
+00:26:57.638  板→网关      6.0M -24dBm  QoS 加密数据
+00:26:57.689  板→AP         - -25dBm  QoS
+00:26:57.998  板→AP         - -24dBm  QoS
+00:26:58.057  板→AP         - -23dBm  QoS
+00:26:58.408  板→AP         - -24dBm  QoS
+00:26:58.409  AP发→板        -   -    QoS 加密数据
+00:26:58.466  板→AP         - -25dBm  QoS
+00:26:58.608  板→网关         - -26dBm  QoS 加密数据
+00:26:58.610  AP发→板        -   -    QoS 加密数据
+00:26:58.662  板→AP         - -24dBm  QoS
+00:26:59.607  板→网关         - -26dBm  QoS 加密数据
+00:26:59.609  AP发→板        -   -    QoS 加密数据
+00:26:59.660  板→AP         - -24dBm  QoS
+00:27:00.607  板→网关         - -26dBm  QoS 加密数据
+00:27:00.608  AP发→板        -   -    QoS 加密数据
+00:27:00.660  板→AP         - -24dBm  QoS
+00:27:01.607  板→网关         - -26dBm  QoS 加密数据
+00:27:01.612  AP发→板        -   -    QoS 加密数据
+00:27:01.884  板→AP         - -24dBm  QoS
+00:27:07.223  板→AP      6.0M -25dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+00:27:07.237  板→AP      6.0M -24dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+00:27:08.439  AP发→板        -   -    DeAuthentication: Previous authentication no longer valid
+
+共 88 帧。
+

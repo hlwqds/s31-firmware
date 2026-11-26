@@ -82,6 +82,10 @@ pub fn build(b: *std.Build) void {
     const coex_wifi_link = b.option(bool, "coex-wifi-link", "merged image only: Wi-Fi starts first, then the BLE init (and optional enable), then the Wi-Fi real link (scan, connect, DHCP, ping) with the BLE controller task pumped alongside") orelse false;
     // 合并镜像在真实链路之前打一份寄存器转储（标签 `after-ble-init`，标签之后接扫描），只读不写（要求 `-Dcoex-wifi-link`）。
     const coex_dump = b.option(bool, "coex-dump", "merged image only: dump registers just before the Wi-Fi link") orelse false;
+    // 合并镜像的 BLE 广播实验（要求 `-Dcoex-ble-enable`）：所有判据跑完之后，经 HCI 让 BLE controller 发不可连接
+    // 广播（LE Set Advertising Parameters / Data / Enable），边泵 controller 任务边读 synth 锁定位。排在最后是因为
+    // controller 若把广播使能处理成不回包，`sendCmd` 就不返回（R3.3 的 synth 墙）。
+    const coex_ble_adv = b.option(bool, "coex-ble-adv", "merged image only: after every check, start BLE advertising over HCI and read the synthesizer lock bit") orelse false;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
@@ -480,7 +484,10 @@ pub fn build(b: *std.Build) void {
         merged_mod.addImport("board", board);
         merged_mod.addImport("wifi_blobs_probe", wifi_probe_mod.?);
         merged_mod.addImport("bt_core", bt_core_mod.?);
-        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump });
+        // 时钟域按单元取并集的板上判据要用 IDF 的单元表（`radio_coex.owner.clocks`）；合并镜像要求 `-Dcoex`。
+        merged_mod.addImport("radio_coex", coex_mod);
+        if (coex_ble_adv and !coex_ble_enable) @panic("-Dcoex-ble-adv 需要 -Dcoex-ble-enable：广播之前 controller 要先 enable");
+        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv });
         merged_mod.addImport("coex_merged_opts", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_merged_opts.zig", merged_opts_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }
