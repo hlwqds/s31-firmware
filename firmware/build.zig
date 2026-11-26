@@ -74,6 +74,10 @@ pub fn build(b: *std.Build) void {
     // 把 controller 任务泵一小段，读回 synth 区与时钟寄存器。不发 HCI 命令，只回答"BLE enable 在 APM
     // 过滤器已关、ICG 码已设、共存核已启动的镜像里走到哪"。
     const coex_ble_enable = b.option(bool, "coex-ble-enable", "merged image only: after both inits, enable the BLE controller and pump its task") orelse false;
+    // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
+    // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
+    // （`docs/verification/coex-verification.md` §13.3）。
+    const coex_sw_off = b.option(bool, "coex-sw-off", "with -Dcoex: keep the glue linked but answer with IDF's coex-disabled stub values; the core is not booted") orelse false;
     // R5/C2：共存。把 `components/radio-coex` 的胶水链进镜像并绑到真实核心（`libcoexist.a` 与 ROM）。
     // 默认关；关闭时默认镜像与 BT/Wi-Fi 探针镜像逐字节不变（`docs/verification/coex-verification.md`）。
     const coex = b.option(bool, "coex", "link the BLE/Wi-Fi coexistence glue and bind it to the real coex core") orelse false;
@@ -82,14 +86,18 @@ pub fn build(b: *std.Build) void {
     if (coex and coex_objs.len == 0) @panic("-Dcoex 需要 -Dcoex-objs：给出 libcoexist.a 解包出的 11 个 .o");
     if (coex and g_wifi) @panic("-Dcoex 不能与 -Dwifi（自检 section）同开：radio_coex 的 section 模块与胶水模块不能同时含 glue.zig");
     if (coex and wifi_blob_dir.len > 0 and bt_blob_dir.len > 0 and !coex_merged) @panic("-Dcoex 一次只接一个射频的适配层；两个 blob 同链请加 -Dcoex-merged");
+    if (coex_sw_off and !coex) @panic("-Dcoex-sw-off 需要 -Dcoex");
     if (coex_merged) {
         if (!coex) @panic("-Dcoex-merged 需要 -Dcoex：共存核是合并镜像的一部分");
         if (wifi_blob_dir.len == 0 or bt_blob_dir.len == 0) @panic("-Dcoex-merged 需要同时给出 -Dwifi-blob-dir 与 -Dbt-blob-dir");
         if (wifi_init_probe or wifi_link_probe or bt_probe) @panic("-Dcoex-merged 不能与 -Dwifi-init-probe / -Dwifi-link-probe / -Dbt-probe 同开：探针镜像的入口不跑各段自检");
-        if (coex_ble_enable and !coex_merged) @panic("-Dcoex-ble-enable 需要 -Dcoex-merged");
     }
+    if (coex_ble_enable and !coex_merged) @panic("-Dcoex-ble-enable 需要 -Dcoex-merged");
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
-    const coex_gate_src = if (coex) "pub const enabled = true;\n" else "pub const enabled = false;\n";
+    const coex_gate_src = if (coex)
+        (if (coex_sw_off) "pub const enabled = true;\npub const sw_off = true;\n" else "pub const enabled = true;\npub const sw_off = false;\n")
+    else
+        "pub const enabled = false;\n";
     const coex_gate = b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_gate.zig", coex_gate_src) });
     const coex_mod = b.createModule(.{ .root_source_file = b.path("../components/radio-coex/src/glue.zig") });
     // C5 回滚链路：注入一条必然失败的自检，用来制造"连续 3 次失败"。

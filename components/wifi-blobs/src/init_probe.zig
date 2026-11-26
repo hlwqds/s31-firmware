@@ -663,7 +663,10 @@ fn coexInIsr() bool {
 fn coexBoot() void {
     if (!on_target) return;
     coex_hooks.in_isr_hook = coexInIsr;
-    radio_coex.bind.boot(coex_hooks.hooks(), .{}) catch |e| {
+    // `-Dcoex-sw-off`：胶水照常链着，但按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。关掉 `-Dcoex` 会同时把钩子
+    // 换成计数桩（它们回的值与 IDF 关闭分支不一样），这个开关把"核不启动"单独拿出来做对照。
+    const cfg: radio_coex.Config = if (coex_gate.sw_off) .{ .sw_coexist = false } else .{};
+    radio_coex.bind.boot(coex_hooks.hooks(), cfg) catch |e| {
         const g = radio_coex.instance();
         const rc: u32 = @bitCast(g.last_core_rc);
         const rej = g.rejected[@backingInt(radio_coex.Hook.boot)];

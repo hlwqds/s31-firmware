@@ -1345,9 +1345,11 @@ fn shellCoexStatusGet() callconv(.c) usize {
     note(25, 0, 0);
     return 0;
 }
+/// IDF 的关闭分支（`esp_adapter.c` 里 `coex_pti_get_wrapper` 的 `#else`）是返回 0、**不写出参**：blob 用它自己手里的 PTI 默认值。
+/// 这里原先把出参写成 0——blob 把 PTI 0 编进 MAC 的 PTI 表，表全 0，收不到任何帧（扫描恒为 0 个 AP）。单变量验证见
+/// `docs/verification/coex-verification.md` §13：只去掉这一行写，不开 `-Dcoex` 的镜像扫描 37 个 AP、连上、ping 10/10。
 fn shellCoexPtiGet(kind: u32, pti: ?*u8) callconv(.c) usize {
     note(26, kind, @intFromPtr(pti));
-    if (pti) |q| q.* = 0;
     return 0;
 }
 fn shellCoexWifiRequest(kind: u32, event: u32, latency: u32) callconv(.c) usize {
