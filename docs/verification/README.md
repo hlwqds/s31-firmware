@@ -110,6 +110,12 @@ MAC 密钥表里的钥匙核对一致，DHCP 拿到地址，ping 网关 10/10；
 `logs/coex-merged-ble-enable-boot.log`）。L4a 里"硬件定时器没在走"的读数已更正：当时读的是共存低功耗时钟的配置寄存器
 （`coex-verification.md` §12）。
 
+2026-11-26 的后续：合并镜像里两个控制器同镜——带着 BLE 的 init 与 enable，Wi-Fi 走通真实链路（扫描 37 个 AP、连上 2055 ms、
+DHCP 55 ms、ping 网关 10/10，`coex-verification.md` §15、`logs/coex-merged-wifi-link-boot.log`）。查出的规则是 PHY 的一次性
+初始化与标定只认第一次使能：BLE 的 init 若在 Wi-Fi start 之后重新标定，Wi-Fi 的扫描从三十多个 AP 掉到个位数；合并镜像里
+让 Wi-Fi 先 start，BLE 的 init 跳过那两段（`phy_owned_by_wifi`）。这是"一个射频在收发、另一个 enabled"——BLE 的射频没有起，
+L4b 仍然没有证据。
+
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
 | 运行 | 命令 | 结果 | 日志 |
