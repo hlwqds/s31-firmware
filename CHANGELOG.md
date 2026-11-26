@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Fixed
+- **`tools/ap-side/collect.sh` 默认找的 tcpdump 与实际上传的不是同一个路径（2026-11-27）**：脚本默认找 `/tmp/ap-tcpdump`，实际上传的
+  二进制在路由器上叫 `/tmp/r5c-tcpdump`（内存盘，不在 PATH 里）——照文档用会静默不抓帧，在路由器上敲 `tcpdump` 也是 not found。
+  改成 `$TCPDUMP` > PATH 里的 tcpdump > `/tmp/ap-tcpdump` > `/tmp/r5c-tcpdump`，输出里写明用的是哪一份，找不到时写明原因。
+  静态 tcpdump 装到了测试路由器的 `/usr/bin/tcpdump`（overlay 可写，占 1.4 MB，`rm` 即卸载），README 写清上传与安装步骤。
+  验证：在路由器上跑仓库里的 `collect.sh` 6 秒，输出 `tcpdump: /usr/bin/tcpdump (tcpdump version 4.99.6)`；把 `TCPDUMP`
+  指到不存在的路径并清空 PATH，输出 `(tcpdump not found: …)`。
 - **合并镜像在 BLE init 之后整字写回时钟 / 电源寄存器（2026-11-27）**：两边的适配层都整字写过共享的时钟字——BLE 侧
   `btdmLpEnableClock` 把 `CLK_CONF1` 写成 `0x003FF880`（清掉 Wi-Fi 的基带、MAC、APB 时钟位，这就是对照 C 里 `reason=7`
   的原因）、强开位写 `0xFF`、LPCON 写 `0x0B`；Wi-Fi 侧 `_wifi_clock_enable` 把 LPCON 写成 `0x3`，`_wifi_clock_disable`

@@ -3,7 +3,7 @@
 # 采什么（都只读）：
 #   - 板子连上期间每秒一份 `iw dev <AP 接口> station dump` 与 hostapd 的 get_clients；
 #   - 全程跟随系统日志（只留 hostapd 与 dnsmasq-dhcp 的行）；
-#   - tcpdump 的文字摘要（静态二进制，放在内存盘 /tmp 上，不是装的包；路径 $TCPDUMP，默认 /tmp/ap-tcpdump）。
+#   - tcpdump 的文字摘要（静态二进制；用哪一个见下面 TD 的取法，环境变量 $TCPDUMP 可以指定）。
 #     不带 -v / -x，EAPOL 帧只有 "EAPOL key (N), len M" 这样的首部摘要，密钥数据不落盘；不写 pcap 文件。
 # 抓包对象（第 2 个参数，默认 phy0-ap0）：
 #   <接口名>   在那个接口上抓。AP 接口 phy0-ap0 上只有数据面的帧（DHCP / ARP / ICMP）——管理帧走 nl80211、
@@ -19,7 +19,10 @@ CAPDEV=${2:-${IFACE:-phy0-ap0}}
 IFACE=${IFACE:-phy0-ap0}
 BOARD_MAC=${BOARD_MAC:-1c:29:04:d1:99:28}
 MON=${MON:-ap-side-mon}
-TD=${TCPDUMP:-/tmp/ap-tcpdump}
+# 用哪个 tcpdump：环境变量 $TCPDUMP 指定的路径 > PATH 里的 tcpdump（装在 /usr/bin/tcpdump 的那一份，路由器重启后还在）>
+# 内存盘上的两份临时名字（/tmp/ap-tcpdump、/tmp/r5c-tcpdump，重启就没了）。都找不到就不抓帧，输出里会写明。
+TD=${TCPDUMP:-$(command -v tcpdump 2>/dev/null || true)}
+[ -n "$TD" ] || TD=$(for c in /tmp/ap-tcpdump /tmp/r5c-tcpdump; do [ -x "$c" ] && { echo "$c"; break; }; done)
 CAP=/tmp/ap-side-cap.$$
 LOG=/tmp/ap-side-log.$$
 LP=""
@@ -39,6 +42,7 @@ echo "start $(date '+%F %T') epoch=$(date +%s)"
 logread -f > "$LOG" 2>&1 &
 LP=$!
 if [ -x "$TD" ]; then
+    echo "tcpdump: $TD ($("$TD" --version 2>&1 | head -1))"
     if [ "$CAPDEV" = MON ]; then
         if iw phy phy"${IFACE#phy}" interface add "$MON" type monitor 2>/tmp/ap-side-mon.err; then
             MONUP=1
@@ -54,7 +58,7 @@ if [ -x "$TD" ]; then
         TC=$!
     fi
 else
-    echo "(tcpdump not found at $TD; no frame capture)"
+    echo "(tcpdump not found: set TCPDUMP=<path>, or put the static binary at /usr/bin/tcpdump; no frame capture)"
 fi
 end=$(( $(date +%s) + N ))
 while [ "$(date +%s)" -lt "$end" ]; do

@@ -2,7 +2,7 @@
 
 真实链路的证据原先都来自板子自己的日志。这里是从 AP 那一头取的旁证：AP 记的事件、AP 对这条链路的统计、AP 接口上的帧、
 空口上的 802.11 帧。测试用的 AP 是刷了 OpenWrt 25.12.6 的小米 AX3000T（2.4 GHz 信道 1，接口 `phy0-ap0`，网关
-192.168.31.1）。它没有外网，`apk` 装不了 tcpdump，所以自己交叉编译一个静态的。
+192.168.31.1）。它没有外网，`apk` 装不了 tcpdump，所以自己交叉编译一个静态的，再放到路由器的 `/usr/bin/tcpdump`。
 
 | 文件 | 在哪跑 | 做什么 |
 | --- | --- | --- |
@@ -18,9 +18,15 @@
 # 1) 编（约 20 秒；需要 zig、flex 与 bison——PATH 里没有就用 nix 取）
 sh tools/ap-side/build-tcpdump.sh                      # -> /tmp/ap-side/out/tcpdump
 
-# 2) 传到路由器的内存盘上，不是装包；重启即消失
-ssh root@192.168.31.1 'cat > /tmp/ap-tcpdump && chmod 700 /tmp/ap-tcpdump' < /tmp/ap-side/out/tcpdump
-ssh root@192.168.31.1 /tmp/ap-tcpdump --version        # 4.99.6, libpcap 1.10.5
+# 2) 传到路由器上，装成标准名字 tcpdump（持久的：约占 1.4 MB 的 overlay 空间；卸载就是 rm 这一个文件）。
+#    只放到内存盘 /tmp 的话路由器一重启就没了，而且在路由器上敲 tcpdump 会是 not found。
+ssh root@192.168.31.1 'cat > /tmp/tcpdump.new && chmod 755 /tmp/tcpdump.new && mv /tmp/tcpdump.new /usr/bin/tcpdump' \
+    < /tmp/ap-side/out/tcpdump
+ssh root@192.168.31.1 tcpdump --version                 # 4.99.6, libpcap 1.10.5
+
+#    collect.sh 找 tcpdump 的顺序：$TCPDUMP > PATH 里的 tcpdump > /tmp/ap-tcpdump > /tmp/r5c-tcpdump（后两个在内存盘上）
+#    2026-11-27 的实际状态：测试用的那台路由器上已经装在 /usr/bin/tcpdump，
+#    sha256 4412618629482af45397b3886c931f402266bcf2aad29e33dab925db5a9e566a，与工作站的构建产物一致；内存盘上另有一份 /tmp/r5c-tcpdump
 
 # 3) 上板那一轮开始时，在路由器上起采集（第二个参数：接口名 / any / MON）；约 150 秒后输出到标准输出
 ssh root@192.168.31.1 sh -s 150 MON < tools/ap-side/collect.sh > ap-<轮次>.txt
