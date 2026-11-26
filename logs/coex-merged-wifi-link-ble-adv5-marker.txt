@@ -1,0 +1,11 @@
+# 合并镜像广播实验的落盘记录（flash 0x18E000 起 4096 字节，2026-11-27，镜像在每次落盘之前回写发命令前读到的 MODEM_CONF / CLK_CONF / CLK_CONF1 / LP_CLK_CONF 与泵的三个门控字、SYS_TIMER 时钟使能）
+# 读法：esptool --chip esp32s31 read_flash 0x18E000 0x1000 <文件>，再 python3 tools/ap-side/decode-adv-marker.py <文件>
+records: 8  boot=1  command=5  sample=1  clocks=1
+[  0] boot      98bc=00000000 f800=01700266 eventq_put=3 evt_seq=1
+[  1] clocks     modem_conf=0000003d clk_conf=7e601002 clk_conf1=003fffff lp_clk_conf=0000000f systimer_ctrl0=00000011
+[  2] command   opcode=0x2006 about to send: 98bc=00000000 f800=01700266 evt_seq=1
+[  3] sample     98bc=00000000 unlocked f800=01700266 systimer_ctrl0=00000011 evt_seq=2 gate7114=00000921
+[  4] command   opcode=0x2006 status=0x00: 98bc=00000000 f800=01700266 evt_seq=2
+[  5] command   opcode=0x2008 about to send: 98bc=00000000 f800=01700266 evt_seq=2
+[  6] command   opcode=0x2008 status=0x00: 98bc=00000000 f800=01700266 evt_seq=3
+[  7] command   opcode=0x200a about to send: 98bc=00000000 f800=01700266 evt_seq=3

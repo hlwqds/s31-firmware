@@ -1,0 +1,16 @@
+[REDACTED 2026-11-27] 本文件是 AP（OpenWrt）系统日志里 hostapd 与 dnsmasq-dhcp 行的副本，取自 collect.sh 的输出。时间是路由器的时钟（没有 NTP，比标准时间慢 38 天 14 小时 4 分 22 秒；加 38 天 22 小时 4 分 22 秒是本机时间）。里面只有板子的地址与 AP 自己分配的地址，没有需要换成标签的邻居信息；redact.py 的残留自检为 0。
+start 2026-10-19 06:03:40
+=== log: hostapd and dnsmasq-dhcp lines seen during the window
+Mon Oct 19 06:04:10 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+Mon Oct 19 06:04:10 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+Mon Oct 19 06:04:11 2026 daemon.notice hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+Mon Oct 19 06:04:11 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+Mon Oct 19 06:04:11 2026 daemon.notice hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+Mon Oct 19 06:04:11 2026 daemon.info dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+Mon Oct 19 06:04:11 2026 daemon.info dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 06:04:11 2026 daemon.info dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 06:04:11 2026 daemon.info dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 06:04:26 2026 daemon.notice hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+Mon Oct 19 06:04:26 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+Mon Oct 19 06:04:27 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+end 2026-10-19 06:06:10

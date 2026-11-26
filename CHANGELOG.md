@@ -179,13 +179,14 @@
   分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。
 - **合并镜像里 HCI 命令从发送任务里发（2026-11-27）**：`components/bt-blobs/src/probe.zig` 的 `sendFromTask` 把命令交给一个
   独立栈上的任务（8 KB，从 BLE 的 arena 里分），阻塞走「任务 → 主上下文」的正常切换，主上下文每轮泵 controller 任务、
-  再恢复发送任务；等发送与等回包按时间与轮数双重封顶。此前在主上下文里发，三条广播命令连第一条都发不出去（整机失声）。
-  板上三次：LE Set Advertising Parameters / Data / Enable 三条都回了 Command Complete、Status 0x00；但广播使能的回包之后
-  板子不再出声（blob 处理广播使能时的「时钟收缩」），合成器锁没锁没有读到，广播没有起来。广播实验另写一份落盘记录
-  （flash `0x18E000`，`tools/ap-side/decode-adv-marker.py` 解码），它也停在回包之前。`osal.zig` 多两个记录变量
+  再恢复发送任务；等发送与等回包按时间、轮数、CPU 周期三重封顶。此前在主上下文里发，三条广播命令连第一条都发不出去
+  （整机失声）。板上七次：LE Set Advertising Parameters / Data / Enable 三条都回了 Command Complete、Status 0x00；但广播
+  使能被接受之后 controller 任务不再让出，主上下文回不来——回包之后那次 flash 写不返回（落盘前回写时钟也不行），把它
+  去掉之后 AP 一侧也没有第二次关联，合成器锁没锁没有读到，广播没有起来。广播实验的落盘记录（flash `0x18E000`，
+  `tools/ap-side/decode-adv-marker.py` 解码）只写到 Enable 的"正要发"为止。`osal.zig` 多两个记录变量
   （`last_park_kind` / `last_park_ctx`），等待的语义不变。日志 `logs/coex-merged-wifi-link-ble-adv2-boot.log`、
-  `logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-marker.txt`；细目见
-  `docs/verification/coex-verification.md` §17。
+  `logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`、
+  `logs/coex-merged-wifi-link-ble-adv8-ap-frames.log`；细目见 `docs/verification/coex-verification.md` §17。
 - **`-Dcoex-ble-adv`（2026-11-27，实验）**：合并镜像在所有判据之后经 HCI 发三条广播命令并读 synth 锁定位。第一版在
   主上下文里同步发，三次上板都停在发完第一条命令之后，整机失声（`logs/coex-merged-wifi-link-ble-adv-boot.log`）；
   当晚改成从发送任务里发，见上一条。

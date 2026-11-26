@@ -1009,22 +1009,13 @@ pub fn setPhyOwnedByWifi() void {
     @import("probe_ptr.zig").phy_owned_by_wifi = true;
 }
 
-/// 把 blob 改掉的三个时钟门控字写回 `enableOnly()` 拍的基线：blob 在 enable 之后、以及处理广播使能命令的时候
-/// （README 轮 96–117："时钟收缩"）会动 UART0 与定时器组的门控，不写回去串口与定时器就停了。泵的每一轮、
-/// 以及每一条落盘记录之前都要做——ROM 的 flash 例程靠定时器计时，门控没写回它就不返回。
+/// 把 blob 改掉的三个时钟门控字写回 `enableOnly()` 拍的基线：blob 在 enable 之后会动 UART0 与定时器组的门控，
+/// 不写回去串口与定时器就停了，所以泵的每一轮都做。广播使能之后它不够用（见下面落盘记录一节的注释）。
 fn restoreClockGates() void {
     const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
     c2[0x88 / 4] = clk_snap[0];
     c2[0x114 / 4] = clk_snap[1];
     c2[0x11C / 4] = clk_snap[2];
-}
-
-/// 广播使能之后 blob 还会门控 SYS_TIMER 的时钟（README 轮 96–112）：ROM 的 delay 与 flash 例程用它计时。
-/// `0x20587120` 的 bit0 / bit4 是 APB 时钟与计数时钟的使能，只置位、不清位；只在广播实验的等待与落盘里做，
-/// 链路的泵不动它。
-fn restoreSystimerClock() void {
-    const stc: *volatile u32 = @ptrFromInt(0x2058_7120);
-    stc.* |= 0x11;
 }
 
 var pump_rounds: u32 = 0;
@@ -1137,7 +1128,8 @@ fn uartDrain() void {
     while (((status.* >> 16) & 0xFF) != 0 and spins < 60_000_000) : (spins += 1) {}
 }
 
-/// 发送任务：第一次用到时建，之后复用。
+/// 发送任务：第一次用到时建，之后复用。只在广播实验里建（BLE 的 init 之后），所以任务表里排在 controller 任务后面——
+/// `pumpStep` 取的是表里第一个任务（`sched.firstTask`），建早了泵到的就是发送任务。
 fn senderStart() ?*sched.Task {
     if (sender) |t| return t;
     const mem = osal.btdmMalloc(sender_stack_bytes, 0) orelse {
@@ -1166,7 +1158,6 @@ fn sendFromTask(opcode: u16, params: []const u8, timeout_us: u64, max_rounds: u3
     sched.enterAs(&t.ctx);
     sched.resumeTask(&t.ctx);
     const t0 = board.hw.nowUs();
-    const c0 = board.hw.cycleCount();
     var rounds: u32 = 0;
     while (sender_phase != .done) : (rounds += 1) {
         if (board.hw.elapsedUs(t0) >= timeout_us or rounds >= max_rounds) {
@@ -1185,12 +1176,12 @@ fn sendFromTask(opcode: u16, params: []const u8, timeout_us: u64, max_rounds: u3
             });
             return -9;
         }
+        const st_now = rd32(0x2058_7120);
         const gate = rd32(0x2058_7114);
         pumpStep();
         if (sender_phase != .done) sched.resumeTask(&t.ctx);
         if (rounds % 20_000 == 0) {
-            const dc = board.hw.cycleCount() -% c0;
-            _ = markerWrite(.sample, rd32(0x2010_98BC), rd32(0x2010_F800), gate, transport.evtSeq(), @truncate(dc));
+            _ = markerWrite(.sample, rd32(0x2010_98BC), rd32(0x2010_F800), st_now, transport.evtSeq(), gate);
         }
     }
     return sender_rc;
@@ -1208,6 +1199,7 @@ fn hciCommand(opcode: u16, params: []const u8, timeout_us: u64) ?[]const u8 {
     uartDrain();
     board.log.line("bt adv: send 0x{x:0>4} plen={d} (from the sender task)", .{ opcode, params.len });
     _ = markerWrite(.command, opcode, 0x100, rd32(0x2010_98BC), rd32(0x2010_F800), transport.evtSeq());
+    if (opcode == 0x200A) marker_frozen = true;
     const rc = sendFromTask(opcode, params, timeout_us, hci_max_rounds);
     if (rc != 0) {
         board.log.line("bt adv: cmd 0x{x:0>4} not sent, rc={d}", .{ opcode, rc });
@@ -1273,8 +1265,12 @@ fn hciStatus(evt: []const u8, opcode: u16) ?u8 {
 //   （`firmware/idf-bootstrap/partitions.csv`）。独立探针的标记用的是 `0x187000`–`0x18F000` 里别的扇区。
 // - 发命令之前先擦：NOR 写只把 1 变 0，擦过的扇区每一格只能写一次，所以记录按槽位顺排，不回头改。
 // - 主机侧用 `esptool read_flash 0x18E000 0x1000` 读（会让板子复位），`tools/ap-side/decode-adv-marker.py` 解码。
-// - ROM 的 flash 例程靠定时器计时：时钟被门控之后不先把门控写回，它就不返回（第三次上板：回包之后的那条记录
-//   就是这样丢的）。所以每次写之前先 `restoreClockGates()`。
+// - **广播使能的"正要发"之后再不写**（`ble-adv3` 到 `ble-adv7` 几轮定下来的）：回包之后主上下文就停在 ROM 的
+//   `esp_rom_spiflash_write` 里面。写之前先把泵的三个门控字和 SYS_TIMER 的时钟使能写回（`ble-adv4` 那一轮的镜像），
+//   再把单独探针第 112 轮的整套回写补上——MODEM_CONF、CLK_CONF、CLK_CONF1、LP_CLK_CONF 写回发命令之前读到的值
+//   （`ble-adv5` 那一轮，记录 `logs/coex-merged-wifi-link-ble-adv5-marker.txt`）——记录都停在"正要发"。所以 `0x200A`
+//   的"正要发"之后落盘记录冻结（`marker_frozen`），之后的采样只留在 RAM 里、经串口打出来。这份记录的边界因此是：
+//   它回答"命令发到哪、回没回"，回答不了广播使能之后的状态。
 // - 写的时候关全局中断：镜像里武装着 Wi-Fi blob 的输入，trap 入口在 flash 窗口里只记录不分发
 //   （`hw.flashOpBegin`），电平挂起的输入会原地打转。
 
@@ -1282,6 +1278,15 @@ const marker_base: u32 = 0x18E_000;
 const marker_words: usize = 8;
 const marker_slots: usize = 0x1000 / (marker_words * 4);
 var marker_next: usize = 0;
+/// 广播使能的"正要发"之后再不碰 ROM 的 flash 例程（见上面的文件头注释）：置位后 `markerWrite` 只计数。
+var marker_frozen = false;
+var marker_skipped: u32 = 0;
+
+/// 冻结之后的采样留在 RAM 里（广播使能之后每 250 ms 或每 20000 轮一条，留最早的 24 条），收尾时经串口打出来。
+const Sample = struct { polls: u32, synth: u32, f800: u32, systimer: u32, gate: u32, evt_seq: u32 };
+const sample_ring = 24;
+var samples: [sample_ring]Sample = @splat(.{ .polls = 0, .synth = 0, .f800 = 0, .systimer = 0, .gate = 0, .evt_seq = 0 });
+var sample_n: usize = 0;
 
 const MarkerKind = enum(u32) {
     /// `a` = 启动时读到 `0x201098BC`、`b` = `0x2010F800`、`c` = OSAL 的 `eventq_put`、`d` = 事件序号、`e` = 0。
@@ -1290,7 +1295,7 @@ const MarkerKind = enum(u32) {
     /// `c` = `0x201098BC`、`d` = `0x2010F800`、`e` = 事件序号。
     command = 2,
     /// 等一条命令（发送或回包）每 20000 轮一条：`a` = `0x201098BC`、`b` = `0x2010F800`、
-    /// `c` = `0x20587114`（这一轮回写之前）、`d` = 事件序号、`e` = 距开始等的周期数（低 32 位）。
+    /// `c` = `0x20587120`（SYSTIMER_CTRL0）、`d` = 事件序号、`e` = `0x20587114`。广播使能之后不再落盘，采样只在 RAM 里。
     sample = 3,
     /// `a` = `0x201098BC`、`b` = `0x2010F800`、`c` = 轮数、`d` = 锁定位为 1 的轮数、`e` = 事件序号。
     final = 4,
@@ -1306,8 +1311,6 @@ const MarkerKind = enum(u32) {
 fn markerErase() void {
     const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
     board.hw.disableInterrupts();
-    restoreClockGates();
-    restoreSystimerClock();
     board.hw.flashOpBegin();
     const rc = ese(marker_base / 0x1000);
     board.hw.flashOpEnd();
@@ -1318,13 +1321,15 @@ fn markerErase() void {
 
 /// 写一条记录（只写没写过的槽）。扇区写满就不写，返回 null。
 fn markerWrite(kind: MarkerKind, a: u32, b: u32, c: u32, d: u32, e: u32) ?usize {
+    if (marker_frozen) {
+        marker_skipped += 1;
+        return null;
+    }
     if (marker_next >= marker_slots) return null;
     const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
     const idx: u32 = @intCast(marker_next);
     const rec = [marker_words]u32{ 0x4144_5621 ^ idx, @backingInt(kind), idx, a, b, c, d, e };
     board.hw.disableInterrupts();
-    restoreClockGates();
-    restoreSystimerClock();
     board.hw.flashOpBegin();
     _ = esw(marker_base + idx * (marker_words * 4), &rec, marker_words * 4);
     board.hw.flashOpEnd();
@@ -1377,11 +1382,19 @@ pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
     const t_en = board.hw.nowUs();
     if (hciCommand(0x200A, &.{0x01}, 2_000_000)) |e| r.enable_status = hciStatus(e, 0x200A);
 
-    const c_en = board.hw.cycleCount();
     const t0 = board.hw.nowUs();
-    while (board.hw.elapsedUs(t0) < wait_us and r.polls < hci_max_rounds) {
+    var t_s = t0;
+    // 时长上限另按 CPU 的周期数计一次：广播使能之后定时器可能被门控，按时间判就等不到头；轮数上限是 100 万轮，
+    // 在那之后要跑多久没有数。400 M 个周期在 160–262 MHz 上是 1.5–2.5 秒。实测这个上限并没有派上用场
+    // （`ble-adv7`、`ble-adv8` 两轮）：回包之后主上下文没有走出这个循环的第一轮——AP 的 monitor 接口上板子的帧到
+    // 第一次断开为止，没有第二次关联，串口停在那条回包行的一半。
+    const adv_cycle_budget: u64 = 400_000_000;
+    const sample_cycles: u64 = 25_000_000;
+    const c_start = board.hw.cycleCount();
+    var c_s = c_start;
+    while (board.hw.elapsedUs(t0) < wait_us and r.polls < hci_max_rounds and board.hw.cycleCount() -% c_start < adv_cycle_budget) {
+        const st_now = rd32(0x2058_7120);
         const gate = rd32(0x2058_7114);
-        restoreSystimerClock();
         board.hw.mwdt1Feed();
         board.hw.feedRtcWdt();
         pumpStep();
@@ -1391,9 +1404,14 @@ pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
             r.locked_polls += 1;
             if (r.first_lock_us == null) r.first_lock_us = board.hw.elapsedUs(t_en);
         }
-        if (r.polls % 20_000 == 0) {
-            const dc = board.hw.cycleCount() -% c_en;
-            _ = markerWrite(.sample, r.synth_98bc_last, rd32(0x2010_F800), gate, transport.evtSeq(), @truncate(dc));
+        if (board.hw.cycleCount() -% c_s >= sample_cycles or board.hw.elapsedUs(t_s) >= 250_000 or r.polls % 20_000 == 0) {
+            c_s = board.hw.cycleCount();
+            t_s = board.hw.nowUs();
+            _ = markerWrite(.sample, r.synth_98bc_last, rd32(0x2010_F800), st_now, transport.evtSeq(), gate);
+            if (sample_n < sample_ring) {
+                samples[sample_n] = .{ .polls = r.polls, .synth = r.synth_98bc_last, .f800 = rd32(0x2010_F800), .systimer = st_now, .gate = gate, .evt_seq = transport.evtSeq() };
+                sample_n += 1;
+            }
         }
     }
     _ = markerWrite(.final, r.synth_98bc_last, rd32(0x2010_F800), r.polls, r.locked_polls, transport.evtSeq());
@@ -1411,6 +1429,10 @@ pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
         r.synth_98bc_last,
         marker_next,
     });
+    for (samples[0..sample_n]) |s| {
+        board.log.line("bt adv: sample polls={d} 98bc=0x{x:0>8} f800=0x{x:0>8} systimer_ctrl0=0x{x:0>8} gate7114=0x{x:0>8} evt_seq={d}", .{ s.polls, s.synth, s.f800, s.systimer, s.gate, s.evt_seq });
+    }
+    board.log.line("bt adv: record writes skipped after the advertise-enable was sent: {d}", .{marker_skipped});
     return r;
 }
 

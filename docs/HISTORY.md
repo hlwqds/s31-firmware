@@ -173,13 +173,18 @@
   任务、再恢复发送任务；等发送与等回包按时间与轮数双重封顶。广播实验另写一份落盘记录（flash `0x18E000`，`markerWrite`；
   主机侧 `tools/ap-side/decode-adv-marker.py` 解码）。`components/osal/src/osal.zig` 多两个记录变量（任务最近一次停在哪个
   等待原语上），等待的语义没有动。
-- **验证**：主机测试 41/41 步通过。板上三次（`-Dcoex-ble-adv`）：`0x2006` / `0x2008` / `0x200A` 三条命令都回了 Command
-  Complete、Status 0x00（上一版停在第一条命令上）；广播使能的回包之后板子不再出声——串口停在回包行的一半，落盘记录停在
-  回包之前；工作站蓝牙扫描三次（150–170 秒，各看到 14–16 台别的设备）没有看到板子。日志
-  `logs/coex-merged-wifi-link-ble-adv2-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、
-  `logs/coex-merged-wifi-link-ble-adv4-marker.txt`。细目在 `docs/verification/coex-verification.md` §17。
-- **没有做的**：两个射频都在收发（广播没有起来；卡点是广播使能之后 blob 的「时钟收缩」，合成器锁没锁没有读到）；BLE 的
-  disable 路径；「BLE 先起」的顺序；板子回别人的 ping。
+- **验证**：主机测试 41/41 步通过；`check-host` 5/5（firmware 2068）。板上七次（`-Dcoex-ble-adv`，发送任务）：`0x2006` /
+  `0x2008` 都回了 Command Complete、Status 0x00，`0x200A` 的回包在带落盘记录的几次里也回了（上一版停在第一条命令上）。
+  广播使能被接受之后主上下文回不来：串口停在回包行的一半，回包之后那次 flash 写不返回（落盘前回写泵的门控字与
+  SYS_TIMER 时钟使能、再补上单独探针第 112 轮的整套时钟字，记录都停在"正要发"）；把这次 flash 写去掉、等待再按 CPU
+  周期封顶之后，AP 一侧仍然没有第二次关联，monitor 上板子的帧到第一次断开为止。工作站蓝牙扫描七次（150–220 秒，各看到
+  12–16 台别的设备）没有看到板子。日志 `logs/coex-merged-wifi-link-ble-adv2-boot.log`、
+  `logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-marker.txt`、
+  `logs/coex-merged-wifi-link-ble-adv5-marker.txt`、`logs/coex-merged-wifi-link-ble-adv{6,7,8}-ap-syslog.log`、
+  `logs/coex-merged-wifi-link-ble-adv{7,8}-ap-frames.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`。细目在
+  `docs/verification/coex-verification.md` §17。
+- **没有做的**：两个射频都在收发（广播没有起来；广播使能被接受之后 controller 任务不再让出，合成器锁没锁没有读到）；
+  BLE 的 disable 路径；「BLE 先起」的顺序；板子回别人的 ping。
 
 ## 日志
 

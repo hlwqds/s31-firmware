@@ -9,6 +9,10 @@
     python3 tools/ap-side/decode-adv-marker.py <esptool read_flash 0x18E000 0x1000 读出的文件>
 
 只读一个文件、只往标准输出打印，不碰串口。
+
+`sample` 的 c / e 两个字在 2026-11-27 的两版镜像里含义不同：早一版（`ble-adv4` 的记录）是 0x20587114 与周期数差，
+`ble-adv5` 起是 SYSTIMER_CTRL0 与 0x20587114；`clocks`（种类 8）只有 `ble-adv5` 那一版的镜像写。解码器按后一版标注，
+读早一版的原始扇区时以入库的解码结果为准。
 """
 import struct
 import sys
@@ -23,6 +27,7 @@ KINDS = {
     5: "radios",
     6: "synth",
     7: "stall",
+    8: "clocks",
 }
 
 
@@ -66,7 +71,9 @@ def main(argv: list[str]) -> int:
             print(f"[{i:3}] command   opcode=0x{a:04x} {what}: 98bc={c:08x} f800={d:08x} evt_seq={e}")
         elif kind == "sample":
             lock = "LOCKED" if a & 4 else "unlocked"
-            print(f"[{i:3}] sample     98bc={a:08x} {lock} f800={b:08x} gate7114={c:08x} evt_seq={d} cycles={e}")
+            print(
+                f"[{i:3}] sample     98bc={a:08x} {lock} f800={b:08x} systimer_ctrl0={c:08x} evt_seq={d} gate7114={e:08x}"
+            )
         elif kind == "final":
             print(
                 f"[{i:3}] final     98bc={a:08x} f800={b:08x} polls={c} locked_polls={d} evt_seq={e}"
@@ -75,6 +82,10 @@ def main(argv: list[str]) -> int:
             park = {1: "sem", 2: "mutex", 3: "eventq"}.get(c, "?")
             print(
                 f"[{i:3}] stall      opcode=0x{a:04x} rounds={b} parked on {park} ctx=0x{d:08x} evt_seq={e}"
+            )
+        elif kind == "clocks":
+            print(
+                f"[{i:3}] clocks     modem_conf={a:08x} clk_conf={b:08x} clk_conf1={c:08x} lp_clk_conf={d:08x} systimer_ctrl0={e:08x}"
             )
         elif kind == "radios":
             print(f"[{i:3}] radios     98c0={a:08x} 98b8={b:08x} f818={c:08x} f81c={d:08x} clk_conf={e:08x}")
