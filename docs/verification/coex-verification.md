@@ -1362,6 +1362,7 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
 - 命令走 `transport.sendCmd`，在主上下文里同步发。回包匹配按 §7.7.14：Command Complete 的 opcode 在八位组 3..4、
   Status 在 5（第一版把位置写错了，已改）。
 - 排在所有判据之后：controller 若把命令处理成不回包，`sendCmd` 就不返回，前面的结果已经落盘。
+- 默认关：不开 `-Dcoex-ble-adv` 时调用点在编译期被去掉，这段代码不进镜像；开着的镜像才知道这个结果。
 
 ### 17.2 板侧读数（`logs/coex-merged-wifi-link-ble-adv-boot.log`）
 

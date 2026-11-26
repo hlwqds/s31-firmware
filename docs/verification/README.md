@@ -4,7 +4,7 @@
 
 | 报告 | 规范依据 | 覆盖的组件 |
 | --- | --- | --- |
-| [`coex-verification.md`](coex-verification.md) | ESP-IDF 源码、ROM 与 `libcoexist.a`（共存不是 IEEE 或 Bluetooth 标准） | `radio-coex` |
+| [`coex-verification.md`](coex-verification.md) | ESP-IDF 源码、ROM 与 `libcoexist.a`（共存不是 IEEE 或 Bluetooth 标准）；2026-11-27 起另含 IDF 的时钟单元表（`modem_clock_impl.c`）、IEEE Std 802.11-2016 §9.3 的管理帧格式（AP 侧空口证据）与 Bluetooth Core 5.4 [Vol 4] Part E §7.8.5 / §7.8.7 / §7.8.9（合并镜像里起广播的实验） | `radio-coex`；两个适配层的时钟写（`bt-blobs`、`wifi-blobs`）；合并镜像 `firmware/src/coex_merged.zig` |
 | [`wifi-ieee80211-verification.md`](wifi-ieee80211-verification.md) | IEEE Std 802.11-2016；其上的 RFC 3394、RFC 4493、RFC 6070、RFC 4231、RFC 2104，第三批另涉 RFC 8110、RFC 5869、RFC 5903、RFC 6090、RFC 5216、RFC 3748、RFC 2409、RFC 3526，第四批只涉 RFC 8110 §4.5；第五批不涉新 RFC | `wifi-mlme`、`wifi-connect` |
 | [`ble-core-verification.md`](ble-core-verification.md) | Bluetooth Core Specification 5.4；其上的 RFC 7668、RFC 4493、RFC 3610，第三批另涉 RFC 4944、RFC 6282、RFC 6775、RFC 8025，第四批另涉 RFC 4861、RFC 4862、RFC 8930、RFC 8931；第五批不涉新 RFC（只引 Bluetooth SIG 的 Assigned Numbers §2.11） | `ble-802154`、`ble-security`；`bt-blobs` 的 HCI 一致性自检（§8） |
 
