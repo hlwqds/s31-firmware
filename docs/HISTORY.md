@@ -213,7 +213,7 @@
 - **没有做的**：按广播间隔（20 / 100 / 1000 ms）各一轮的时延与丢包、PTI 行为、两侧的 start 回调（路线图 C7 的其余
   判据）；单独的 BLE 探针那边的 synth 墙（不是这个风暴，根因未知）；`osi_impl.zig` 的 `shellSetIsr` 里 blob 传的编号是
   哪一种（同类的一处，还开着）；可连接广播与 GATT；更长时间的稳定性（广播从使能起到 section 结束约 45 秒，没有发广播
-  关闭命令）；量广播的间隔与信号强度；广播地址还是回退的 `02:00:00:00:BB:01`；BLE 的 disable 路径；「BLE 先起」的
+  关闭命令）；量广播的间隔（信号强度有两条样本：`btmon` 记到的两条 HCI 广播上报，RSSI -51 / -25 dBm，`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）；广播地址还是回退的 `02:00:00:00:BB:01`；BLE 的 disable 路径；「BLE 先起」的
   顺序；板子回别人的 ping。
 
 ## 日志

@@ -570,7 +570,9 @@ R3.3 打通之后，板子的广播可以用这台工作站抓到（`bluetoothct
 **2026-11-27 晚：看到了。** 合并镜像里广播起来了——广播使能之后板子失声的根因是中断风暴（`bt-blobs` 的中断桥登记错了
 一个下标），修掉之后合成器 35 ms 内锁定，工作站的 `bluetoothctl scan on` 在同一窗口里看到 `[NEW] Device 02:00:00:00:BB:01 s31`
 （`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`；同晚修掉之后上了六次板，五次的扫描记录里有它，一次的扫描在板子起
-广播之前就结束了）。上面「没有看到」的八次是修掉之前的样子。仍然没有做的：量广播的间隔与信号强度（`btmon` 要 root）、
+广播之前就结束了）。上面「没有看到」的八次是修掉之前的样子。空口上的广播 PDU 也记到了两条（`btmon` 记 HCI 事件，
+`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）：`ADV_NONCONN_IND`、Public 地址、Flags + 完整名字 `s31`，RSSI -51 / -25 dBm。
+仍然没有做的：量广播的间隔（bluetoothd 的扫描开着重复过滤，原始 HCI 扫描没有做通）、
 可连接广播与 GATT、更长时间的稳定性（广播从使能起到 section 结束约 45 秒）；地址是回退的
 `02:00:00:00:BB:01`（合并镜像没有接读 eFuse MAC 的钩子）；单独的 BLE 探针（`-Dbt-probe`）修前修后都与基线逐段相同——
 那边的 synth 墙不是这个风暴，根因未知；§8 的 HCI 一致性自检没有重跑。细目在 `coex-verification.md` §17.5。

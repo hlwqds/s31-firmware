@@ -1,0 +1,84 @@
+工作站蓝牙控制器（hci0，bluez 5.86 的 btmon，要 root）在合并镜像 ble-adv14 轮期间记到的 HCI LE Extended Advertising Report，只留板子地址的那两条，2026-11-27。
+采集窗口 56 秒（时间戳是 btmon 起算后的秒数，在每块首行末尾），同时用 bluetoothctl scan on 开着扫描；bluetoothd 的扫描在控制器里
+开着重复过滤，所以同一个广播者 56 秒里只上报了 2 次。两条的 RSSI 是 -51 dBm（1.53 s）与 -25 dBm（16.03 s）——只能证明空口上的
+PDU 类型（ADV_NONCONN_IND，legacy）、地址类型（Public）、广播数据（Flags 0x06 + 完整名字 s31）和两个信号强度样本，量不出广播间隔。
+这一轮的板侧日志没有入库：镜像是最终代码（sha256 0e9d7a8d8658084f8e86a5ab767c82d58f009f50ac77797dc4ca6acda0824bd9，与 logs/coex-merged-wifi-link-ble-adv13-boot.log 同一个），27/27。
+邻居设备的任何字段都不在内。
+
+> HCI Event: LE Meta Event (0x3e) plen 34                    #4 [hci0] 1.528689
+      LE Extended Advertising Report (0x0d)
+        Num reports: 1
+        Entry 0
+          Event type: 0x0010
+            Props: 0x0010
+              Use legacy advertising PDUs
+            Data status: [0;32mComplete[0m
+          Legacy PDU Type: ADV_NONCONN_IND (0x0010)
+          Address type: Public (0x00)
+          Address: 02:00:00:00:BB:01 (OUI 02-00-00)
+          Primary PHY: LE 1M
+          Secondary PHY: No packets
+          SID: no ADI field (0xff)
+          TX power: 127 dBm
+          RSSI: -51 dBm (0xcd)
+          Periodic advertising interval: 0.00 msec (0x0000)
+          Direct address type: Public (0x00)
+          Direct address: 00:00:00:00:00:00 (OUI 00-00-00)
+          Data length: 8
+        Advertising Data[8]:
+        02 01 06 04 09 73 33 31                          .....s31        
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): s31
+@ MGMT Event: Device Found (0x0012) plen 22            {0x0001} [hci0] 1.528802
+        LE Address: 02:00:00:00:BB:01 (OUI 02-00-00)
+        RSSI: -51 dBm (0xcd)
+        Flags: 0x00000004
+          Not Connectable
+        Data length: 8
+        Data[8]:
+        02 01 06 04 09 73 33 31                          .....s31        
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): s31
+
+> HCI Event: LE Meta Event (0x3e) plen 34                  #22 [hci0] 16.034949
+      LE Extended Advertising Report (0x0d)
+        Num reports: 1
+        Entry 0
+          Event type: 0x0010
+            Props: 0x0010
+              Use legacy advertising PDUs
+            Data status: [0;32mComplete[0m
+          Legacy PDU Type: ADV_NONCONN_IND (0x0010)
+          Address type: Public (0x00)
+          Address: 02:00:00:00:BB:01 (OUI 02-00-00)
+          Primary PHY: LE 1M
+          Secondary PHY: No packets
+          SID: no ADI field (0xff)
+          TX power: 127 dBm
+          RSSI: -25 dBm (0xe7)
+          Periodic advertising interval: 0.00 msec (0x0000)
+          Direct address type: Public (0x00)
+          Direct address: 00:00:00:00:00:00 (OUI 00-00-00)
+          Data length: 8
+        Advertising Data[8]:
+        02 01 06 04 09 73 33 31                          .....s31        
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): s31
+@ MGMT Event: Device Found (0x0012) plen 22           {0x0001} [hci0] 16.035059
+        LE Address: 02:00:00:00:BB:01 (OUI 02-00-00)
+        RSSI: -25 dBm (0xe7)
+        Flags: 0x00000004
+          Not Connectable
+        Data length: 8
+        Data[8]:
+        02 01 06 04 09 73 33 31                          .....s31        
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): s31

@@ -1509,6 +1509,7 @@ bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
 | BLE 广播着的时候 Wi-Fi 再走一遍链路 | 扫描 18 个 AP（基线 24 个）、连接、四次握手、DHCP、ping 10/10；往返 min/avg/max = 30.4 / 45.1 / 92.4 ms（BLE 只 enable 不广播时 1.9 / 3.5 / 10.8 ms） |
 | AP 侧（取自 `ble-adv11`，同一份代码只少计数与状态位） | `logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`：路由器时钟 07:36:06 认证、关联，07:36:07 四次握手完成，07:36:08 `DHCPACK`，07:36:23 断开（第一次是 07:35:40–07:35:55，BLE 只 enable）；`…-adv11-ap-frames.log`：05:40:28.9 认证与关联响应，四次握手 05:40:29 |
 | 空口（取自 `ble-adv11`） | 工作站 `bluetoothctl --timeout 230 scan on`（开在板子这一轮之前）：`[NEW] Device 02:00:00:00:BB:01 s31`，之后 `[DEL]`（扫描不再收到它）（`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`） |
+| 空口上的广播 PDU（取自 `ble-adv14`，镜像是最终代码；工作站 `btmon` 记 HCI 事件） | 两条 LE Extended Advertising Report：PDU 类型 `ADV_NONCONN_IND`（legacy），地址类型 Public `02:00:00:00:BB:01`，主 PHY LE 1M，广播数据 8 字节——Flags 0x06（LE General Discoverable、BR/EDR Not Supported）加完整名字 `s31`；RSSI 一条 -51 dBm、一条 -25 dBm（`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）。只有两条：bluetoothd 的扫描在控制器里开着重复过滤，56 秒里同一个广播者只上报两次，量不出广播间隔 |
 | 核的硬件定时器（`ble-adv13`；ADR-003 第 5 节 L4b 的判据之一） | 五个定时器在每个时点都是 `en=0`，相隔 1 ms 的两次读数相同——含 BLE 广播着、Wi-Fi 已连上的 `connected` / `after-ping` / `before-disconnect` 三个时点。「数值在两次读数之间变了」在这些读数上不成立；读数取在各阶段的边界上，之间有没有定时器在跑，这些读数看不见 |
 | 核的状态位（`ble-adv13`；`coex_status_get` 的三组位图，判据之二） | 有了读数，但对不上名字。按 wifi / ble / bt 的顺序：`after-start` 起各时点 `0/0/0`，第一遍连上 `0/1/1`，广播一起 `1/0/1`，第二遍连上 `1/1/1`，收尾 `1/0/1`。也就是 BLE 一开始广播，`wifi_status` 与 `bt_status` 就恒为 1；`ble_status` 只在 Wi-Fi 连着的那三个时点为 1（第一遍链路里 BLE 还没广播时也是）。这几位的含义没有弄清，「BLE 的状态位非 0」这条判据先不能判 |
 
@@ -1522,9 +1523,10 @@ bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
 
 **边界。**
 
-- 只有「工作站的扫描看到 `s31`」这一条空口证据：广播的间隔、信号强度没有量；广播是不可连接的（ADV_NONCONN_IND），
-  连接与 GATT 没有做。BLE 从广播使能起一直广播到 section 结束（约 45 秒：3 秒泵 + 一遍 Wi-Fi 链路 + 最后 15 秒只泵
-  BLE），没有发广播关闭命令；更长时间的稳定性没有测。
+- 空口上的证据是「工作站的扫描看到 `s31`」和两条 HCI 广播上报（上面表格）：广播的间隔没有量——bluetoothd 的扫描开着重复
+  过滤，不带过滤的原始 HCI 扫描没有做通（工作站控制器经 HCI 用户通道下发 LE Set Scan Param / Enable 回 0x12，没有继续追）；
+  广播是不可连接的（ADV_NONCONN_IND），连接与 GATT 没有做。BLE 从广播使能起一直广播到 section 结束（约 45 秒：3 秒泵 +
+  一遍 Wi-Fi 链路 + 最后 15 秒只泵 BLE），没有发广播关闭命令；更长时间的稳定性没有测。
 - 广播时用的地址是 `02:00:00:00:BB:01`——`osal.readEfuseMac` 的回退值，合并镜像没有接读 eFuse MAC 的钩子。
 - 「核真的在仲裁」的两条判据（ADR-003 第 5 节 L4b）都还没有过：硬件定时器在每个时点都是 `en=0`，状态位的读数对不上
   名字（上面表格）。所以现在只算「两个射频同时开着」。BLE 广播着的时候 Wi-Fi 的 ping 往返平均从 3.5 ms 涨到 45 ms

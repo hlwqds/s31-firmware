@@ -31802,9 +31802,11 @@ bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
   （`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），日志逐段相同。那边的墙是另一处，根因未知。
 - ADR-003 第 5 节 L4b「核真的在仲裁」的两条判据都还没有过（上面最后一条），现在只算「两个射频同时开着」；按广播间隔
   （20 / 100 / 1000 ms）各一轮的时延与丢包、PTI 行为、两侧的 start 回调都没有做。
-- 只有"工作站扫描看到 `s31`"这一条空口证据：广播的间隔、信号强度没有量（`btmon` 要 root）；广播是不可连接的
-  （ADV_NONCONN_IND），连接与 GATT 没有做；BLE 从广播使能起广播到 section 结束（约 45 秒），没有发广播关闭命令，
-  更长时间的稳定性没有测。
+- 空口上的证据是"工作站扫描看到 `s31`"和工作站 `btmon` 记到的两条 HCI 广播上报（`ble-adv14`，
+  `logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）：`ADV_NONCONN_IND`（legacy）、Public `02:00:00:00:BB:01`、
+  Flags 0x06 + 名字 `s31`，RSSI -51 / -25 dBm。广播的间隔没有量——bluetoothd 的扫描开着重复过滤，56 秒只上报两次；
+  不带过滤的原始 HCI 扫描没有做通（工作站控制器经用户通道下发 LE Set Scan Param / Enable 回 0x12，没有继续追）。
+  连接与 GATT 没有做；BLE 从广播使能起广播到 section 结束（约 45 秒），没有发广播关闭命令，更长时间的稳定性没有测。
 - 广播时用的地址是 `02:00:00:00:BB:01`——`osal.readEfuseMac` 的回退值，合并镜像没有接读 eFuse MAC 的钩子。
 - BLE 广播着的时候 Wi-Fi 的 ping 往返平均从 3.5 ms 涨到 45 ms（10 帧不丢），涨在哪里没有查。
 - 同类的一处还开着：`osi_impl.zig` 的 `shellSetIsr` 把 blob 给的 `n` 原样交给 `trap.setHandler`，blob 传的是哪一种编号
