@@ -715,7 +715,7 @@ wifi-init-probe: esp_wifi_start rc=0x0 (idle_calls=22)
   （扫描已于 2026-11-26 上板，见 §10。）
 - BLE 侧不能接同一步骤（探针锁死），读数在 `docs/verification/coex-verification.md` §11。
 
-## 10. 本仓库的 blob 移植：首次扫描到真实 AP（2026-11-26；真射频，与 oracle 对照，没有抓包）
+## 10. 本仓库的 blob 移植：首次扫描到真实 AP（2026-11-26；真射频，与 oracle 对照，当时没有抓包；空口上的帧 2026-11-27 补在 §12）
 
 §9 之后的下一步：`esp_wifi_start` 之后发起主动扫描。探针是 `-Dwifi-link-probe`（`components/wifi-blobs/src/link_probe.zig`）。
 上一轮扫描能逐信道走完但恒为 0 个 AP，原因有两处。走到这一步之前还拆过两道更早的闸——国家码 / 信道表是零值桩、
@@ -791,7 +791,8 @@ oracle 自己那一次是 36 个。
 边界：
 
 - 这是 blob 边界的板侧证据，不是 `wifi-mlme` / `wifi-connect` 的协议证据：扫描完全由 blob 做，`wifi-connect` 只提供了
-  回调里的 IE 解析与请求方的生命周期。没有抓包，真射频收发已通的证据是与 oracle 的结果一致。
+  回调里的 IE 解析与请求方的生命周期。2026-11-26 没有抓包，真射频收发已通的证据是与 oracle 的结果一致；空口上的帧
+  2026-11-27 起有了，见 §12。
 - 连接与收发已于同日上板（§11）。公开入口 `esp_wifi_connect` / `esp_wifi_disconnect` 仍是 `link_stubs.zig` 里的计数桩，探针调的是驱动的内部入口。
 - PHY 标定数据不持久化：探针每次启动全量标定。与用对照镜像存在本板的标定数据（PARTIAL）对照过，31 个共同 AP 的
   authmode / 信道全部相同、RSSI 平均差 0.3 dB，全量只多约 30 ms。
