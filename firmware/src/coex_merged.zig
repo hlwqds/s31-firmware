@@ -17,8 +17,10 @@
 //!     最后全信道扫描、连接构建时给的 AP、DHCP、ping 网关、断开；泵的每一步都让 BLE 的 controller 任务也走一步
 //!     （开了 `-Dcoex-ble-enable` 时）。BLE 的射频没有起（R3.3），所以这一步是"一个射频在收发、另一个 enabled"。
 //!     顺序为什么不能反，见下面「PHY 的归属」。
-//!   - `-Dcoex-ble-adv`（要求 `-Dcoex-ble-enable`）：所有判据之后，经 HCI 让 BLE 发不可连接广播（三条命令），
-//!     泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE 广播着的时候再走一遍真实链路。
+//!   - `-Dcoex-ble-adv`（要求 `-Dcoex-ble-enable`）：所有判据之后，经 HCI 让 BLE 发不可连接广播（三条命令，从一个
+//!     独立栈上的发送任务里发），泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE 广播着的时候再走一遍真实链路。
+//!     实测（2026-11-27）三条命令都回了 Command Complete，但广播使能之后板子不再出声，后面的判据一次也没跑到；
+//!     这一步走到哪，看 flash 里的落盘记录（`probe.zig` 的 `markerWrite`，`tools/ap-side/decode-adv-marker.py` 解码）。
 //!
 //! **PHY 的归属（ADR-003 第 4 节的第一条板级证据，2026-11-26）。** IDF 的 `esp_phy_enable` 只在 modem 标志为 0
 //! 时才初始化 PHY（`phy_init.c:324-342`）；BT 在 Wi-Fi 之后使能时只把自己或进标志。本仓的 BLE 适配层是按
@@ -260,8 +262,9 @@ pub fn run() bool {
     }
 
     // 8) `-Dcoex-ble-adv`：所有判据之后，经 HCI 让 BLE 发不可连接广播，泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi
-    //    在 BLE 广播着的时候再走一遍真实链路（ADR-003 第 5 节的 L4b）。排在最后：controller 若把广播使能
-    //    处理成不回包，`sendCmd` 就不返回（R3.3 的 synth 墙），前面的结果已经落盘。
+    //    在 BLE 广播着的时候再走一遍真实链路（ADR-003 第 5 节的 L4b）。排在最后：广播使能之后 blob 会把串口与定时器
+    //    的时钟门控掉，板子从此不再出声，这个分支里的判据一次也没跑到过（`coex-verification.md` §17）；前面的判据
+    //    这时已经打完，这一步走到哪由 flash 里的落盘记录回答。
     if (opts.ble_adv) {
         readRadios("before ble adv");
         wifi.foreign_context = true;

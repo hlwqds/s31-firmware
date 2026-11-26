@@ -1009,6 +1009,24 @@ pub fn setPhyOwnedByWifi() void {
     @import("probe_ptr.zig").phy_owned_by_wifi = true;
 }
 
+/// 把 blob 改掉的三个时钟门控字写回 `enableOnly()` 拍的基线：blob 在 enable 之后、以及处理广播使能命令的时候
+/// （README 轮 96–117："时钟收缩"）会动 UART0 与定时器组的门控，不写回去串口与定时器就停了。泵的每一轮、
+/// 以及每一条落盘记录之前都要做——ROM 的 flash 例程靠定时器计时，门控没写回它就不返回。
+fn restoreClockGates() void {
+    const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
+    c2[0x88 / 4] = clk_snap[0];
+    c2[0x114 / 4] = clk_snap[1];
+    c2[0x11C / 4] = clk_snap[2];
+}
+
+/// 广播使能之后 blob 还会门控 SYS_TIMER 的时钟（README 轮 96–112）：ROM 的 delay 与 flash 例程用它计时。
+/// `0x20587120` 的 bit0 / bit4 是 APB 时钟与计数时钟的使能，只置位、不清位；只在广播实验的等待与落盘里做，
+/// 链路的泵不动它。
+fn restoreSystimerClock() void {
+    const stc: *volatile u32 = @ptrFromInt(0x2058_7120);
+    stc.* |= 0x11;
+}
+
 var pump_rounds: u32 = 0;
 
 /// 合并镜像的实验步骤（`-Dcoex-ble-enable`）：`initOnly` 之后跑 `bringup.enable`，再把 controller 任务泵
@@ -1047,10 +1065,7 @@ pub fn pumpFor(max_us: u64) void {
 /// 主循环里轮转。这一步跑在 BLE 任务的栈上，调用方负责在调用期间关掉 Wi-Fi 侧的让出点
 /// （`init_probe.foreign_context`）。`clk_snap` 由 `enableOnly()` 在 enable 之前拍好。
 pub fn pumpStep() void {
-    const c2: [*]volatile u32 = @ptrFromInt(0x2058_7000);
-    c2[0x88 / 4] = clk_snap[0];
-    c2[0x114 / 4] = clk_snap[1];
-    c2[0x11C / 4] = clk_snap[2];
+    restoreClockGates();
     board.hw.mwdt1Feed();
     board.hw.feedRtcWdt();
     sched.drainPending();
@@ -1072,38 +1087,170 @@ fn synthLock() bool {
     return (@as(*volatile u32, @ptrFromInt(0x2010_98BC)).* & (1 << 2)) != 0;
 }
 
-/// 发一条 HCI 命令并等它的回包（Command Complete 或 Command Status，Vol 4 Part E §7.7.14、§7.7.15）。
-/// 等待期间照常泵 controller 任务、喂狗。回包是 `transport.lastEvent()` 的原始帧（下一条事件会覆盖它）；
-/// 发送失败或超时返回 null。Controller 把这条命令处理成不回包（例如卡在等合成器）时，`sendCmd` 不返回，
-/// 调用方只能靠看门狗复位——所以这一步排在合并镜像所有判据之后。
+// ---------------------------------------------------------------------------
+// HCI 命令的发送任务
+// ---------------------------------------------------------------------------
+//
+// 命令不能从主上下文直接发（2026-11-27）。`r_btdm_hci_trans_rx` 的接收路径带着 FOREVER 去等 controller 任务
+// （「rx 阻塞等任务 = 任务等泵」，README 轮 14），而 OSAL 的等待原语只在任务上下文里阻塞：主上下文里的
+// `sched.block()` 是把主上下文切回它自己的旧现场，从此没人泵任务、没人喂狗
+// （`logs/coex-merged-wifi-link-ble-adv-boot.log`，三次上板都停在这里）。
+//
+// 所以命令从一个独立栈上的发送任务里发。它阻塞时切回主上下文；主上下文照常泵 controller 任务（`pumpStep`），
+// 再把发送任务恢复回来接着跑。两个任务在主循环里轮转，直到 `sendCmd` 返回。等待都是 FOREVER，主循环每一轮把
+// 两个任务各恢复一次、让它们重新检查条件——所以不依赖单个等待者槽位的记账（两个任务同时等同一把锁时，
+// `mutexPend` 只记得后一个）。
+//
+// 栈从 BLE 的 arena 里分（`osal.btdmMalloc`）：合并镜像的 SRAM 没有余量再放静态数组。
+
+/// 发送任务的栈：blob 的接收路径自己会用栈，日志格式化另带 128 字节与 202 字节两级缓冲。
+const sender_stack_bytes: u32 = 8192;
+var sender: ?*sched.Task = null;
+/// 命令序号：主循环每交来一条命令加一；发送任务只在序号变了之后才发，被别的事件顺带唤醒时不重发上一条。
+var sender_seq: u32 = 0;
+var sender_done_seq: u32 = 0;
+var sender_opcode: u16 = 0;
+var sender_params: []const u8 = &.{};
+var sender_rc: c_int = 0;
+const SenderPhase = enum { sending, done };
+var sender_phase: SenderPhase = .done;
+/// 上一条命令卡住了：发送任务还停在 blob 的接收路径里，之后的命令都不再发。
+var sender_stalled = false;
+
+fn senderEntry(_: ?*anyopaque) callconv(.c) void {
+    sched.block(); // 第一次进来只是登记：等主循环交来第一条命令
+    while (true) {
+        if (sender_done_seq != sender_seq) {
+            sender_done_seq = sender_seq;
+            sender_rc = transport.sendCmd(sender_opcode, sender_params);
+            sender_phase = .done;
+        }
+        sched.block();
+    }
+}
+
+/// 等串口发送 FIFO 排空：只按 FIFO 水位自旋，有界，不依赖定时器。`hw.rawWrite` 等 FIFO 腾位置只等有限几拍，
+/// 连着打一串行时后面的半行会被丢；判据行之前先排空，它就不会被前一条回包的 18 行挤掉。
+fn uartDrain() void {
+    const status: *volatile u32 = @ptrFromInt(0x2038_A01C);
+    var spins: u32 = 0;
+    while (((status.* >> 16) & 0xFF) != 0 and spins < 60_000_000) : (spins += 1) {}
+}
+
+/// 发送任务：第一次用到时建，之后复用。
+fn senderStart() ?*sched.Task {
+    if (sender) |t| return t;
+    const mem = osal.btdmMalloc(sender_stack_bytes, 0) orelse {
+        board.log.line("bt adv: sender stack alloc({d}) failed", .{sender_stack_bytes});
+        return null;
+    };
+    const task = sched.taskCreate(@as([*]u8, @ptrCast(mem))[0..sender_stack_bytes], senderEntry, null) orelse {
+        const ss = sched.stats();
+        board.log.line("bt adv: sender task_create failed (table full: created={d} failed={d})", .{ ss.created, ss.created_failed });
+        return null;
+    };
+    sender = task;
+    return task;
+}
+
+/// 在发送任务里发一条命令，等 `sendCmd` 返回（至多 `timeout_us`，并且至多 `max_rounds` 轮）。
+/// 返回 `sendCmd` 的返回码；-8 = 建不了发送任务，-9 = 卡住（判读行紧跟在调用处）。
+fn sendFromTask(opcode: u16, params: []const u8, timeout_us: u64, max_rounds: u32) c_int {
+    const t = senderStart() orelse return -8;
+    if (sender_stalled) return -9;
+    sender_opcode = opcode;
+    sender_params = params;
+    sender_seq +%= 1;
+    sender_phase = .sending;
+    // 第一次进任务体要经 trampoline 认出入口（`sched.startScheduler` 的约定），之后的恢复只走 `resumeTask`。
+    sched.enterAs(&t.ctx);
+    sched.resumeTask(&t.ctx);
+    const t0 = board.hw.nowUs();
+    const c0 = board.hw.cycleCount();
+    var rounds: u32 = 0;
+    while (sender_phase != .done) : (rounds += 1) {
+        if (board.hw.elapsedUs(t0) >= timeout_us or rounds >= max_rounds) {
+            sender_stalled = true;
+            _ = markerWrite(.stall, opcode, rounds, osal.last_park_kind, @truncate(osal.last_park_ctx), transport.evtSeq());
+            uartDrain();
+            const ss = sched.stats();
+            const os = osal.stats();
+            board.log.line("bt adv: cmd 0x{x:0>4} sender stalled after {d} ms, {d} rounds: last park kind={d} ctx=0x{x}", .{
+                opcode, board.hw.elapsedUs(t0) / 1000, rounds, osal.last_park_kind, osal.last_park_ctx,
+            });
+            board.log.line("bt adv: sched created={d} blocks={d} resumes={d} deferred={d} self-drop={d}; osal blocked={d} sem-to={d} evq put/get/empty={d}/{d}/{d} mutex ok/busy={d}/{d}", .{
+                ss.created,       ss.blocks,           ss.resumes,    sched.deferred_resumes, sched.self_resume_dropped,
+                os.blocked_calls, os.sem_pend_timeout, os.eventq_put, os.eventq_get_ok,       os.eventq_get_empty,
+                os.mutex_pend_ok, os.mutex_pend_busy,
+            });
+            return -9;
+        }
+        const gate = rd32(0x2058_7114);
+        pumpStep();
+        if (sender_phase != .done) sched.resumeTask(&t.ctx);
+        if (rounds % 20_000 == 0) {
+            const dc = board.hw.cycleCount() -% c0;
+            _ = markerWrite(.sample, rd32(0x2010_98BC), rd32(0x2010_F800), gate, transport.evtSeq(), @truncate(dc));
+        }
+    }
+    return sender_rc;
+}
+
+/// 等回包至多泵这么多轮。blob 处理广播命令时会把定时器门控掉，按时间判超时会永远等下去，所以轮数也要封顶
+/// （一次 `pumpStep` 是一轮；泵 1 秒实测约 4 万轮）。
+const hci_max_rounds: u32 = 1_000_000;
+
+/// 发一条 HCI 命令（在发送任务里，见 `sendFromTask`）并等它的回包（Command Complete 或 Command Status，
+/// Vol 4 Part E §7.7.14、§7.7.15）。等待期间照常泵 controller 任务、喂狗。回包是 `transport.lastEvent()` 的
+/// 原始帧（下一条事件会覆盖它）；没发出去、或没等到回包，返回 null。
 fn hciCommand(opcode: u16, params: []const u8, timeout_us: u64) ?[]const u8 {
     const seq = transport.evtSeq();
-    const rc = transport.sendCmd(opcode, params);
+    uartDrain();
+    board.log.line("bt adv: send 0x{x:0>4} plen={d} (from the sender task)", .{ opcode, params.len });
+    _ = markerWrite(.command, opcode, 0x100, rd32(0x2010_98BC), rd32(0x2010_F800), transport.evtSeq());
+    const rc = sendFromTask(opcode, params, timeout_us, hci_max_rounds);
     if (rc != 0) {
-        board.log.line("bt adv: cmd 0x{x:0>4} send rc={d}", .{ opcode, rc });
+        board.log.line("bt adv: cmd 0x{x:0>4} not sent, rc={d}", .{ opcode, rc });
+        _ = markerWrite(.command, opcode, 0x1000 | @as(u32, @intCast(-rc)), rd32(0x2010_98BC), rd32(0x2010_F800), transport.evtSeq());
         return null;
     }
     const t0 = board.hw.nowUs();
-    while (board.hw.elapsedUs(t0) < timeout_us) {
+    var rounds: u32 = 0;
+    while (rounds < hci_max_rounds) : (rounds += 1) {
         board.hw.mwdt1Feed();
         board.hw.feedRtcWdt();
         pumpStep();
-        if (transport.evtSeq() == seq) continue; // 还没有新事件
-        const evt = transport.lastEvent();
-        // Command Complete（§7.7.14）：code 0x0E，[2] 是包数，opcode 在 [3..4]，Status 在 [5]；
-        // Command Status（§7.7.15）：code 0x0F，Status 在 [2]，opcode 在 [4..5]。
-        const lo: u8 = @truncate(opcode);
-        const hi: u8 = @truncate(opcode >> 8);
-        const complete = evt.len >= 6 and evt[0] == 0x0E and evt[3] == lo and evt[4] == hi;
-        const status = evt.len >= 7 and evt[0] == 0x0F and evt[4] == lo and evt[5] == hi;
-        if (complete or status) return evt;
-        // 别的事件：打一行原始字节（至多 8 个八位组），继续等；超时在上面保证。
-        var hx: [16]u8 = undefined;
-        board.log.line("bt adv: other event while waiting 0x{x:0>4}: n={d} raw={s}", .{
-            opcode, evt.len, hciConfHex(&hx, evt[0..@min(evt.len, 8)]),
-        });
+        if (transport.evtSeq() != seq) {
+            const evt = transport.lastEvent();
+            // Command Complete（§7.7.14）：code 0x0E，[2] 是包数，opcode 在 [3..4]，Status 在 [5]；
+            // Command Status（§7.7.15）：code 0x0F，Status 在 [2]，opcode 在 [4..5]。
+            const lo: u8 = @truncate(opcode);
+            const hi: u8 = @truncate(opcode >> 8);
+            const complete = evt.len >= 6 and evt[0] == 0x0E and evt[3] == lo and evt[4] == hi;
+            const status_evt = evt.len >= 7 and evt[0] == 0x0F and evt[4] == lo and evt[5] == hi;
+            if (complete or status_evt) {
+                const st = hciStatus(evt, opcode) orelse 0xFF;
+                board.log.line("bt adv: cmd 0x{x:0>4} got {s} status=0x{x:0>2} after {d} ms ({d} rounds)", .{
+                    opcode,
+                    if (complete) "Command Complete" else "Command Status",
+                    st,
+                    board.hw.elapsedUs(t0) / 1000,
+                    rounds,
+                });
+                _ = markerWrite(.command, opcode, st, rd32(0x2010_98BC), rd32(0x2010_F800), transport.evtSeq());
+                return evt;
+            }
+            // 别的事件：打一行原始字节（至多 8 个八位组），继续等。
+            uartDrain();
+            var hx: [16]u8 = undefined;
+            board.log.line("bt adv: other event while waiting 0x{x:0>4}: n={d} raw={s}", .{
+                opcode, evt.len, hciConfHex(&hx, evt[0..@min(evt.len, 8)]),
+            });
+        }
+        if (board.hw.elapsedUs(t0) >= timeout_us) break;
     }
-    board.log.line("bt adv: cmd 0x{x:0>4} no reply within {d} ms", .{ opcode, timeout_us / 1000 });
+    board.log.line("bt adv: cmd 0x{x:0>4} no reply within {d} ms ({d} rounds)", .{ opcode, timeout_us / 1000, rounds });
+    _ = markerWrite(.command, opcode, 0x200, rd32(0x2010_98BC), rd32(0x2010_F800), transport.evtSeq());
     return null;
 }
 
@@ -1112,6 +1259,78 @@ fn hciStatus(evt: []const u8, opcode: u16) ?u8 {
     const i: usize = if (evt[0] == 0x0E) 5 else 2;
     _ = opcode;
     return if (evt.len > i) evt[i] else null;
+}
+
+// ---------------------------------------------------------------------------
+// 广播实验的落盘记录（flash `0x18E000`，一个扇区）
+// ---------------------------------------------------------------------------
+//
+// 广播使能命令的处理会把 UART0 与定时器组的时钟门控掉（README 轮 96–117："时钟收缩"），之后串口上一个字也
+// 出不来：主循环还在不在跑、合成器有没有起，从串口都看不出（`logs/coex-merged-wifi-link-ble-adv2-boot.log`
+// 停在 `0x200A` 之后）。所以每一步往这个扇区写一条 32 字节的记录。
+//
+// - 扇区位置：factory 分区结束于 `0x187000`、`ota_0` 从 `0x190000` 起，`0x187000–0x18FFFF` 不属于任何分区
+//   （`firmware/idf-bootstrap/partitions.csv`）。独立探针的标记用的是 `0x187000`–`0x18F000` 里别的扇区。
+// - 发命令之前先擦：NOR 写只把 1 变 0，擦过的扇区每一格只能写一次，所以记录按槽位顺排，不回头改。
+// - 主机侧用 `esptool read_flash 0x18E000 0x1000` 读（会让板子复位），`tools/ap-side/decode-adv-marker.py` 解码。
+// - ROM 的 flash 例程靠定时器计时：时钟被门控之后不先把门控写回，它就不返回（第三次上板：回包之后的那条记录
+//   就是这样丢的）。所以每次写之前先 `restoreClockGates()`。
+// - 写的时候关全局中断：镜像里武装着 Wi-Fi blob 的输入，trap 入口在 flash 窗口里只记录不分发
+//   （`hw.flashOpBegin`），电平挂起的输入会原地打转。
+
+const marker_base: u32 = 0x18E_000;
+const marker_words: usize = 8;
+const marker_slots: usize = 0x1000 / (marker_words * 4);
+var marker_next: usize = 0;
+
+const MarkerKind = enum(u32) {
+    /// `a` = 启动时读到 `0x201098BC`、`b` = `0x2010F800`、`c` = OSAL 的 `eventq_put`、`d` = 事件序号、`e` = 0。
+    boot = 1,
+    /// `a` = opcode、`b` = 0x100（正要发）/ 0x1000 + 错误码（没发出去）/ 0x200（没等到回包）/ 回包里的 Status，
+    /// `c` = `0x201098BC`、`d` = `0x2010F800`、`e` = 事件序号。
+    command = 2,
+    /// 等一条命令（发送或回包）每 20000 轮一条：`a` = `0x201098BC`、`b` = `0x2010F800`、
+    /// `c` = `0x20587114`（这一轮回写之前）、`d` = 事件序号、`e` = 距开始等的周期数（低 32 位）。
+    sample = 3,
+    /// `a` = `0x201098BC`、`b` = `0x2010F800`、`c` = 轮数、`d` = 锁定位为 1 的轮数、`e` = 事件序号。
+    final = 4,
+    /// synth 区与 ANA：`a` = `0x201098C0`、`b` = `0x201098B8`、`c` = `0x2010F818`、`d` = `0x2010F81C`、`e` = `0x20109C04`。
+    radios = 5,
+    /// synth 区前半：`a`–`d` = `0x20109880`、`0x20109884`、`0x20109888`、`0x2010988C`、`e` = `0x201098A8`。
+    synth = 6,
+    /// 发送任务卡住：`a` = opcode、`b` = 轮数、`c` = 最近一次停下的等待原语（1 sem / 2 mutex / 3 eventq）、
+    /// `d` = 那个上下文的地址、`e` = 事件序号。
+    stall = 7,
+};
+
+fn markerErase() void {
+    const ese = @extern(*const fn (u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_erase_sector" });
+    board.hw.disableInterrupts();
+    restoreClockGates();
+    restoreSystimerClock();
+    board.hw.flashOpBegin();
+    const rc = ese(marker_base / 0x1000);
+    board.hw.flashOpEnd();
+    board.hw.enableInterrupts();
+    marker_next = 0;
+    board.log.line("bt adv: marker sector 0x{x:0>6} erased, rc={d}", .{ marker_base, rc });
+}
+
+/// 写一条记录（只写没写过的槽）。扇区写满就不写，返回 null。
+fn markerWrite(kind: MarkerKind, a: u32, b: u32, c: u32, d: u32, e: u32) ?usize {
+    if (marker_next >= marker_slots) return null;
+    const esw = @extern(*const fn (u32, [*]const u32, u32) callconv(.c) c_int, .{ .name = "esp_rom_spiflash_write" });
+    const idx: u32 = @intCast(marker_next);
+    const rec = [marker_words]u32{ 0x4144_5621 ^ idx, @backingInt(kind), idx, a, b, c, d, e };
+    board.hw.disableInterrupts();
+    restoreClockGates();
+    restoreSystimerClock();
+    board.hw.flashOpBegin();
+    _ = esw(marker_base + idx * (marker_words * 4), &rec, marker_words * 4);
+    board.hw.flashOpEnd();
+    board.hw.enableInterrupts();
+    marker_next += 1;
+    return marker_next - 1;
 }
 
 pub const AdvResult = struct {
@@ -1131,6 +1350,9 @@ pub const AdvResult = struct {
 /// 微秒，每轮读一次 synth 锁定位。调用方负责在调用期间关掉 Wi-Fi 侧的让出点。
 pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
     var r: AdvResult = .{};
+    markerErase();
+    _ = markerWrite(.boot, rd32(0x2010_98BC), rd32(0x2010_F800), osal.stats().eventq_put, transport.evtSeq(), 0);
+
     var p: [15]u8 = @splat(0);
     p[0] = @truncate(interval_units);
     p[1] = @truncate(interval_units >> 8);
@@ -1155,19 +1377,30 @@ pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
     const t_en = board.hw.nowUs();
     if (hciCommand(0x200A, &.{0x01}, 2_000_000)) |e| r.enable_status = hciStatus(e, 0x200A);
 
+    const c_en = board.hw.cycleCount();
     const t0 = board.hw.nowUs();
-    while (board.hw.elapsedUs(t0) < wait_us) {
+    while (board.hw.elapsedUs(t0) < wait_us and r.polls < hci_max_rounds) {
+        const gate = rd32(0x2058_7114);
+        restoreSystimerClock();
         board.hw.mwdt1Feed();
         board.hw.feedRtcWdt();
         pumpStep();
         r.polls += 1;
-        r.synth_98bc_last = @as(*volatile u32, @ptrFromInt(0x2010_98BC)).*;
+        r.synth_98bc_last = rd32(0x2010_98BC);
         if (synthLock()) {
             r.locked_polls += 1;
             if (r.first_lock_us == null) r.first_lock_us = board.hw.elapsedUs(t_en);
         }
+        if (r.polls % 20_000 == 0) {
+            const dc = board.hw.cycleCount() -% c_en;
+            _ = markerWrite(.sample, r.synth_98bc_last, rd32(0x2010_F800), gate, transport.evtSeq(), @truncate(dc));
+        }
     }
-    board.log.line("bt adv-only: interval={d} params={} data={} enable={} polls={d} locked={d} first_lock_us={} 98bc=0x{x:0>8}", .{
+    _ = markerWrite(.final, r.synth_98bc_last, rd32(0x2010_F800), r.polls, r.locked_polls, transport.evtSeq());
+    _ = markerWrite(.radios, rd32(0x2010_98C0), rd32(0x2010_98B8), rd32(0x2010_F818), rd32(0x2010_F81C), rd32(0x2010_9C04));
+    _ = markerWrite(.synth, rd32(0x2010_9880), rd32(0x2010_9884), rd32(0x2010_9888), rd32(0x2010_988C), rd32(0x2010_98A8));
+    uartDrain();
+    board.log.line("bt adv-only: interval={d} params={} data={} enable={} polls={d} locked={d} first_lock_us={} 98bc=0x{x:0>8} records={d}", .{
         interval_units,
         if (r.params_status) |s| s else 0xFF,
         if (r.data_status) |s| s else 0xFF,
@@ -1176,6 +1409,7 @@ pub fn advertiseOnly(interval_units: u16, wait_us: u64) AdvResult {
         r.locked_polls,
         if (r.first_lock_us) |t| t else 0xFFFFFFFFFFFFFFFF,
         r.synth_98bc_last,
+        marker_next,
     });
     return r;
 }

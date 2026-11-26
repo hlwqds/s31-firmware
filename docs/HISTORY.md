@@ -164,6 +164,22 @@
   §15.9–§17、`wifi-ieee80211-verification.md` §12、`ble-core-verification.md` §9。
 - **没有做的**：两个射频都在收发（广播没有起来；HCI 命令要从独立栈上的发送任务里发，没有做）；BLE 的 disable 路径；
   「BLE 先起」的顺序；板子回别人的 ping。
+- **2026-11-27 更新**：发送任务当晚做了，见下一节。
+
+## 合并镜像里 HCI 命令从发送任务里发（2026-11-27）
+
+- **做了什么**：上一节「没有做的」里的发送任务做了——`components/bt-blobs/src/probe.zig` 的 `sendFromTask` 把 HCI 命令
+  交给一个独立栈上的任务（8 KB，从 BLE 的 arena 里分），阻塞走「任务 → 主上下文」的正常切换，主上下文每轮泵 controller
+  任务、再恢复发送任务；等发送与等回包按时间与轮数双重封顶。广播实验另写一份落盘记录（flash `0x18E000`，`markerWrite`；
+  主机侧 `tools/ap-side/decode-adv-marker.py` 解码）。`components/osal/src/osal.zig` 多两个记录变量（任务最近一次停在哪个
+  等待原语上），等待的语义没有动。
+- **验证**：主机测试 41/41 步通过。板上三次（`-Dcoex-ble-adv`）：`0x2006` / `0x2008` / `0x200A` 三条命令都回了 Command
+  Complete、Status 0x00（上一版停在第一条命令上）；广播使能的回包之后板子不再出声——串口停在回包行的一半，落盘记录停在
+  回包之前；工作站蓝牙扫描三次（150–170 秒，各看到 14–16 台别的设备）没有看到板子。日志
+  `logs/coex-merged-wifi-link-ble-adv2-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、
+  `logs/coex-merged-wifi-link-ble-adv4-marker.txt`。细目在 `docs/verification/coex-verification.md` §17。
+- **没有做的**：两个射频都在收发（广播没有起来；卡点是广播使能之后 blob 的「时钟收缩」，合成器锁没锁没有读到）；BLE 的
+  disable 路径；「BLE 先起」的顺序；板子回别人的 ping。
 
 ## 日志
 

@@ -1,0 +1,10 @@
+# 合并镜像广播实验的落盘记录（flash 0x18E000 起 4096 字节，2026-11-27 第四轮，与 coex-merged-wifi-link-ble-adv4-boot.log 同一轮）
+# 读法：esptool --chip esp32s31 read_flash 0x18E000 0x1000 <文件>，再 python3 tools/ap-side/decode-adv-marker.py <文件>
+records: 7  boot=1  command=5  sample=1
+[  0] boot      98bc=00000000 f800=01700266 eventq_put=3 evt_seq=1
+[  1] command   opcode=0x2006 about to send: 98bc=00000000 f800=01700266 evt_seq=1
+[  2] sample     98bc=00000000 unlocked f800=01700266 gate7114=00000921 evt_seq=2 cycles=35590
+[  3] command   opcode=0x2006 status=0x00: 98bc=00000000 f800=01700266 evt_seq=2
+[  4] command   opcode=0x2008 about to send: 98bc=00000000 f800=01700266 evt_seq=2
+[  5] command   opcode=0x2008 status=0x00: 98bc=00000000 f800=01700266 evt_seq=3
+[  6] command   opcode=0x200a about to send: 98bc=00000000 f800=01700266 evt_seq=3

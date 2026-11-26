@@ -10,6 +10,7 @@
 | `collect.sh` | 路由器 | 跟随系统日志、每秒读站点统计、tcpdump 抓帧的文字摘要；`MON` 模式临时建 monitor 接口抓 802.11 帧 |
 | `frames.py` | 工作站 | 把 monitor 抓到的帧整理成一行一帧，时间换算成本机时间 |
 | `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
+| `decode-adv-marker.py` | 工作站 | 解码合并镜像广播实验的落盘记录（flash `0x18E000` 起一个扇区，`bt-blobs/src/probe.zig` 的 `markerWrite` 写的）：每条 32 字节，按槽位顺序打印；全 FF 的扇区报「空的」 |
 
 ## 用法
 
@@ -27,6 +28,9 @@ ssh root@192.168.31.1 sh -s 150 MON < tools/ap-side/collect.sh > ap-<轮次>.txt
 # 4) 整理帧。--epoch-offset 是「本机时钟减路由器时钟」的秒数：两边各取 date +%s 相减
 python3 tools/ap-side/frames.py ap-<轮次>.txt --epoch-offset 3333862
 python3 tools/ap-side/redact.py --map <label-map.json> --cred <凭据文件> --kind frames --date <日期> <帧清单> <脱敏后的帧清单>
+# 5) 广播实验（ADV=1）之后读板子上的落盘记录（会让板子复位）。广播使能之后串口会停，这一轮走到哪要看它
+python3 -m esptool --chip esp32s31 -p /dev/ttyUSB0 read_flash 0x18E000 0x1000 adv-marker.bin
+python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 ```
 
 登录需要路由器的 root 密码（问用户）。工作站要在这台 AP 的 LAN 里（网线接 LAN 口；板子的以太网线这时是拔的），

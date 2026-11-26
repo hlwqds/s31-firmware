@@ -220,6 +220,10 @@ var stats_state = Stats{};
 /// 任务真阻塞所在的信号量槽（一次登记；判读"谁该 post 它"用）。
 pub var last_park_sem: usize = 0;
 var sem_park_logged: bool = false;
+/// 最近一次任务在 FOREVER 等待里停下的原语（1 = `semPend`、2 = `mutexPend`、3 = `eventqGet`）与那个上下文的地址。
+/// 合并镜像的广播实验卡住时，判读"发送任务停在哪个等待上"用（`bt-blobs/src/probe.zig` 的 `sendFromTask`）。
+pub var last_park_kind: u8 = 0;
+pub var last_park_ctx: usize = 0;
 
 pub const Stats = struct {
     sem_pend_ok: u32 = 0,
@@ -397,6 +401,8 @@ pub fn semPend(slot: *Slot, timeout: u32) c_int {
                 last_park_sem = @intFromPtr(slot);
                 logPublic("bt osal: task parked sem=0x{x} ctx=0x{x}", .{ last_park_sem, @intFromPtr(s.waiter.?) });
             }
+            last_park_kind = 1;
+            last_park_ctx = @intFromPtr(s.waiter.?);
             sched.block();
             s.waiter = null;
             continue; // 被唤醒后重新检查计数
@@ -478,6 +484,8 @@ pub fn mutexPend(slot: *Slot, timeout: u32) c_int {
         if (sched.isStarted() and !sched.inMain()) {
             stats_state.blocked_calls += 1;
             mutex_waiter = sched.currentContext();
+            last_park_kind = 2;
+            last_park_ctx = @intFromPtr(mutex_waiter.?);
             while (m.locked) sched.block();
             mutex_waiter = null;
             m.locked = true;
@@ -812,6 +820,8 @@ pub fn eventqGet(qslot: *Slot, timeout: u32) ?*Slot {
             stats_state.blocked_calls += 1;
             q.waiter = sched.currentContext();
             raw_waiter = sched.currentContext(); // 供未注册队列 put 唤醒
+            last_park_kind = 3;
+            last_park_ctx = @intFromPtr(q.waiter.?);
             sched.block();
             q.waiter = null;
             raw_waiter = null;

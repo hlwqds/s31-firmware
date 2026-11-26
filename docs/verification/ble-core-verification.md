@@ -3,7 +3,7 @@
 - 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。第四批另涉 RFC 6775（6LoWPAN-ND 的主机侧行为）与它所依托的 RFC 4861、RFC 4862，以及 RFC 8930 与 RFC 8931（分片转发与选择性分片恢复）。第五批只涉 Core 5.4，另引 Bluetooth SIG 的 Assigned Numbers（Coding_Format 表）。
 - 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）、`components/bt-blobs`（§8 的 HCI 一致性自检）。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
-- **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。2026-11-27 在合并镜像里试过起广播（§9），没有起来；同一时间窗口里用工作站的蓝牙控制器扫了 110 秒，没有看到板子。下表的"通过"指离线验证通过。
+- **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。2026-11-27 在合并镜像里试过起广播（§9）：三条命令都回了 Command Complete，但广播使能之后板子不再出声，没有起来；同一时间窗口里用工作站的蓝牙控制器扫了四次（110–170 秒），没有看到板子。下表的"通过"指离线验证通过。
 - 本文把 2026-11-25 加入的 6LoWPAN-ND 主机侧行为（`nd6.zig`）、分片转发与选择性分片恢复（`sfr.zig`）称为"第四批"。第四批新增两份板侧子自检，交付时只到 L1 与 L2，**没有上板**（当天晚些时候随第五批的镜像上板，判据全部通过，见 §5.4）；主机上的读数与复核见 §5.3，对拍见 §4.2，偏离见 §6 末尾。
 - 本文把 2026-11-25 加入的 PAwR 的 host 侧（`pawr.zig`）、Connection Subrating 的 host 侧（`subrate.zig`）、LE Isochronous 的 HCI 接口面（`iso.zig`）称为"第五批"。第五批新增三份板侧子自检；主机上的读数与复核见 §5.4，对拍见 §4.3，偏离见 §6 末尾。
 
@@ -23,7 +23,7 @@
 | 板侧自检（第五批上板） | L3 | `ble_802154` 207/207（连同 `wifi_mlme` 121/121、`wifi_connect` 199/199，第三、四、五批的判据第一次上板）；整份 `wifi` profile 14/14 个 section，`main: verdict=pass` | `logs/e2e-wifi-boot.log`；§5.4 |
 | 最小验证镜像上板（`--only ble_802154,wifi_mlme`） | L3 | 只编这两个 section：`ble_802154` 207/207、`wifi_mlme` 121/121，`passed=2 failed=0`，`main: verdict=pass`；镜像 512704 字节，是整份 `wifi` 镜像（1218736 字节）的 42% | `logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.4 |
 | 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
-| 合并镜像里的 BLE（2026-11-27） | L4 | 时钟按单元取并集之后，BLE init / enable 之后 BLE 自己的时钟位都在（此前被事后写回拿掉）；经 HCI 起广播的三条命令在主上下文里发不出去——发完第一条整机失声，synth 锁定位没有置位过；单独的 BLE 探针与基线逐行等价 | `logs/coex-merged-wifi-link-union-boot.log`、`logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/bt-probe-clock-union-boot.log`；§9 |
+| 合并镜像里的 BLE（2026-11-27） | L4 | 时钟按单元取并集之后，BLE init / enable 之后 BLE 自己的时钟位都在（此前被事后写回拿掉）；经 HCI 起广播的三条命令从发送任务里发都回了 Command Complete、Status 0x00，广播使能的回包之后板子不再出声，synth 锁定位没有读到过；单独的 BLE 探针与基线逐行等价 | `logs/coex-merged-wifi-link-union-boot.log`、`logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/bt-probe-clock-union-boot.log`；§9 |
 
 ## 2. 逐特性对照
 
@@ -72,7 +72,7 @@
 | PAwR（Periodic Advertising with Responses）的 host 侧：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令的编码与返回参数、LE Periodic Advertising Subevent Data Request / Response Report 两个事件的解码、事件掩码的位 38 / 39、链路层 AUX_SYNC_SUBEVENT_IND / RSP 的扩展头解析（表 2.8、表 2.9 的字段许可）、广播方一侧的请求登记（一次请求可以分多条命令应答，全部答完才关闭；同一子事件的数据只发一次）与响应数据模型 | [Vol 4] Part E §7.8.1、§7.8.125–§7.8.127、§7.7.65.36–.37；[Vol 6] Part B §2.3.1.9–.10、§2.3.4、§4.4.2.2.4、§4.4.2.12.2 | `ble-802154/src/pawr.zig` | 31（`pawr_tests.zig`） | 按参数表逐字节排的已知答案；表 2.8 / 2.9 逐格（主代理用程序从规范 HTML 里数出复核）；`pawr_oracle.py`（差分） | 18（`pawr_selftest.zig`） | 离线验证通过 |
 | Connection Subrating 的 host 侧：LE Set Default Subrate / LE Subrate Request 两条命令的编码与校验（范围、三条 0x12、0x02、0x1A）、LE Subrate Change 事件的解码、事件掩码的位 34、LL_SUBRATE_REQ / IND 的编解码、5.1.20 的五条接受条件与取值规则、5.1.19 的子事件基准与回绕、40 秒过程超时的会话模型 | [Vol 4] Part E §7.8.1、§7.8.123–.124、§7.7.65.35；[Vol 6] Part B §2.4.2.36–.37、§4.5.1–.2、§5.1.19–.20、§5.2 | `ble-802154/src/subrate.zig` | 27（`subrate_tests.zig`） | 参数表与规则行手排的已知答案（5.1.20 的五条各有接受与拒绝用例）；`subrate_oracle.py`（差分）；NimBLE 的 `hci_common.h`、`ble_ll_ctrl.c`、`ble_ll_conn.c` | 17（`subrate_selftest.zig`） | 离线验证通过 |
 | LE Isochronous 的 HCI 接口面：LE Set CIG Parameters、LE Create CIS、LE Accept / Reject CIS Request、LE Create BIG、LE BIG Create Sync、LE Setup / Remove ISO Data Path、LE Read ISO TX Sync、LE Read ISO Link Quality 十条命令的编码与返回参数；LE CIS Established / CIS Request / Create BIG Complete / BIG Sync Established / BIG Sync Lost / BIGInfo Advertising Report 六个事件的解码；HCI ISO Data 包的编解码；BIGInfo 位图；BIG 的参数公式 | [Vol 4] Part E §5.4.5、§7.8.96–.97、§7.8.99、§7.8.101–.103、§7.8.106、§7.8.109–.110、§7.8.116、§7.7.65.25–.27、.29–.30、.34；[Vol 6] Part B §4.4.6.3–.4、§4.4.6.11；Assigned Numbers 的 Coding_Format 表 | `ble-802154/src/iso.zig` | 37（`iso_tests.zig`） | 参数表逐字节；手排的 ISO 包与 BIGInfo；`iso_oracle.py`（差分）；NimBLE 的 `hci_common.h`（17 个结构体逐字段）、`ble_hs_iso.c`、`ble_ll_sync.c`；Zephyr 的一份拷贝 `hci_types.h`（ISO 数据包头的结构体） | 20（`iso_selftest.zig`） | 离线验证通过 |
-| 广播、连接、真实收发 | — | 合并镜像经 HCI 起广播；工作站的蓝牙控制器扫描 | — | — | — | 阻塞。单独探针走到 `ble_hw.c:506` 的断言墙（合成器是广播使能命令处理之后才上电的）；合并镜像里 2026-11-27 试了起广播，命令在主上下文里发不出去，没有结论（§9，细目在 `coex-verification.md` §17） |
+| 广播、连接、真实收发 | — | 合并镜像经 HCI 起广播；工作站的蓝牙控制器扫描 | — | — | — | 阻塞。单独探针走到 `ble_hw.c:506` 的断言墙（合成器是广播使能命令处理之后才上电的）；合并镜像里 2026-11-27 试了起广播：三条命令都回了 Command Complete，广播使能之后板子不再出声，广播没有起来，对合成器没有结论（§9，细目在 `coex-verification.md` §17） |
 
 ## 3. 主机测试
 
@@ -532,7 +532,7 @@ bt-blobs 目标 21 → 67。增量 46 = `hci_conformance.zig` 文件内的 23 �
 ### 8.7 未验证
 
 - 需要射频、对端或改状态的命令。
-- 广播这一类改状态的命令在真实 controller 上的下发通路——谁发、从哪个上下文发、怎么等回包——没有结论（§9）。
+- 广播这一类改状态的命令在真实 controller 上的下发通路——谁发、从哪个上下文发、怎么等回包——本节的自检没有覆盖；合并镜像里 2026-11-27 从发送任务里发，三条都回了 Command Complete（§9）。
 - 回包在真实链路上的行为。
 - 偏差 ②③ 与 controller 配置的关系。
 - 自检只覆盖 26 条只读命令，不是 HCI 一致性测试集。
@@ -549,13 +549,17 @@ bt-blobs 目标 21 → 67。增量 46 = `hci_conformance.zig` 文件内的 23 �
 `bt-probe-pmu-icg-control-boot.log` 逐行等价（`INITED`，随后是同一个 `ble_hw.c:506` 断言墙），差别只有逐调用
 日志交错处的噪声。
 
-**起广播（没有结论）。** `-Dcoex-ble-adv`：所有判据之后经 HCI 发三条命令（LE Set Advertising Parameters / Data /
-Enable，[Vol 4] Part E §7.8.5、§7.8.7、§7.8.9），泵 3 秒读 synth 锁定位。三次上板同一个结局：发完第一条命令
-整机失声，锁定位没有置位过（`logs/coex-merged-wifi-link-ble-adv-boot.log`；细目与来龙去脉见
-`coex-verification.md` §17）。原因在调用上下文：这类命令的接收路径要等 controller 任务，而任务要等主上下文去泵。
+**起广播（广播没有起来，对合成器没有结论）。** `-Dcoex-ble-adv`：所有判据之后经 HCI 发三条命令（LE Set Advertising
+Parameters / Data / Enable，[Vol 4] Part E §7.8.5、§7.8.7、§7.8.9），泵 3 秒读 synth 锁定位。第一版在主上下文里发：
+三次上板同一个结局，发完第一条命令整机失声。改成从独立栈上的发送任务里发之后，三条命令都回了 Command Complete、
+Status 0x00，但广播使能的回包之后板子不再出声——串口停在那一行的一半，另写的落盘记录停在回包之前
+（`logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、
+`logs/coex-merged-wifi-link-ble-adv4-marker.txt`；细目与来龙去脉见 `coex-verification.md` §17）。卡点是广播使能之后
+blob 的「时钟收缩」，合成器锁没锁没有读到。
 
 **空口扫描（没有看到）。** 工作站自带蓝牙控制器（hci0），`bluetoothctl scan on` 不需要 root。在板子跑广播实验的
-同一时间窗口里扫了 110 秒，没有看到名字 `s31` 的设备——与「广播没有起来」一致，不构成对射频的进一步结论。
+同一时间窗口里扫了四次（110–170 秒，后三次分别看到 14 / 15 / 16 台别的设备），没有看到名字 `s31` 的设备——与
+「广播没有起来」一致，不构成对射频的进一步结论。
 R3.3 打通之后，板子的广播可以用这台工作站抓到（`bluetoothctl scan on`；`btmon` 能看到带信号强度的原始报告，
 要 root），这就是 BLE 一行 L4 证据的来源。
 

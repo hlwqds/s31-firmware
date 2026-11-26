@@ -26,7 +26,7 @@
 | C5 PHY 与时钟域的归属模型 | L1 / L4 | 归属模型 11 项主机用例（`owner.zig`：Owner、ClockBits、时钟单元表 `clocks`）。**时钟域已接并上板（2026-11-27，§16）**：两边只置自己的单元位，共享字在四个时点与并集逐位一致，20/20。PHY 的归属规则见下面「合并镜像里的 Wi-Fi 真实链路」一行 | §8、§16 |
 | 探针镜像回归 | L3 / L4 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行）。2026-11-27 时钟写改成只置位之后两个单射频镜像各回归一轮：BLE 探针与基线逐行等价（`logs/bt-probe-clock-union-boot.log`）；单独的 Wi-Fi 真实链路镜像扫描 37 个 AP、连上、DHCP、ping 10/10（`logs/wifi-link-clock-union-boot.log`） | §6.5、§16 |
 | modem 的 ICG 码（Wi-Fi 侧 R3.1 的墙） | L3 | Wi-Fi 探针 `esp_wifi_start rc=0`、init 之后 `MAC_ST=0x00000000`；合并镜像重跑 0 个失败。BLE 侧不能接（探针锁死）——**2026-11-26 更正**：锁死的两份日志来自已经不在树里的旧探针；合并镜像里 BLE enable 在 ICG 已生效时返回 0、没有锁死 | §11、§14 |
-| 共存的真实效果（L4b，两个射频都开） | L4 | 两个射频都在收发：**没有证据**。合并镜像里 BLE enable 返回 0 之后锁定位仍是 0（2026-11-26，§14）。2026-11-27 试了经 HCI 起广播（`-Dcoex-ble-adv`）：三次上板都停在发完第一条命令之后，锁定位没有置位过，工作站的蓝牙扫描也没有看到板子（§17）。**一个射频在收发、另一个 enabled** 已经跑通：两个控制器同镜，Wi-Fi 连上真实 AP（见下面「合并镜像里的 Wi-Fi 真实链路」一行） | `logs/coex-merged-wifi-link-ble-adv-boot.log`；§17 |
+| 共存的真实效果（L4b，两个射频都开） | L4 | 两个射频都在收发：**没有证据**。合并镜像里 BLE enable 返回 0 之后锁定位仍是 0（2026-11-26，§14）。2026-11-27 经 HCI 起广播（`-Dcoex-ble-adv`）：第一版在主上下文里发，三次上板都停在第一条命令之后；改成从发送任务里发之后，三条命令都回了 Command Complete、Status 0x00，但广播使能的回包之后板子不再出声（串口与落盘记录都停在那里），锁定位没有读到过，工作站的蓝牙扫描也没有看到板子（§17）。**一个射频在收发、另一个 enabled** 已经跑通：两个控制器同镜，Wi-Fi 连上真实 AP（见下面「合并镜像里的 Wi-Fi 真实链路」一行） | `logs/coex-merged-wifi-link-ble-adv-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-marker.txt`；§17 |
 | 只开 Wi-Fi 的共存读数（L4a） | L4 | 共存核开着时真实链路能通（连上、DHCP、ping 网关 10/10）；胶水没有拒绝过一次调用；blob 的 13 次申请核都回 `0x102`，原因在核的静态表里（这些事件没有配硬件定时器）；BLE 没开，核的状态位是 0。不开共存的对照已补，判据成立（§13）。**更正**：初稿写的"硬件定时器都是 0"不成立——当时读的 `0x2010F008` 是共存低功耗时钟的配置，不是计数器（§12） | `logs/wifi-link-connect-boot.log`；§12、§13 |
 | 不开共存的对照（ADR-003 L4a 的判据「ping 与不开共存时一样」） | L4 | **成立**：胶水按 IDF 关闭分支作答、核不启动（`-Dcoex` + `-Dcoex-sw-off`）时扫描 38 个 AP、连上 2566 ms、DHCP 46 ms、ping 10/10。只去掉 `-Dcoex` 的两轮收不到帧（扫描 0 个 AP、连接 `reason=201`），根因是 `_coex_pti_get` 的计数桩把出参写成 0——只把这一处改成不写，计数桩的镜像也照常（扫描 37 个 AP、ping 10/10）。**共存核不是 Wi-Fi 收发的前置**：本表初稿写反了，已更正 | `logs/wifi-link-nocoex-boot.log`、`logs/wifi-link-coex-off-boot.log`、`logs/wifi-link-stubs-pti-boot.log`；§13 |
 | 合并镜像里的 BLE enable（`-Dcoex-ble-enable`） | L3 | `bringup.enable rc=0`、`ENABLED`，共存核 BLE 侧 `enabled`；没有锁死、没有复位。synth 锁定位（`0x201098BC` 的 bit2）在 enable 前后都是 0——这是预期值：合成器是广播使能命令处理之后才上电的，这一轮没有发 HCI 命令，**对 R3.3 不构成结论** | `logs/coex-merged-ble-enable-boot.log`；§14 |
@@ -1350,7 +1350,7 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
 - 时钟源：IDF 的 station 镜像在扫描之后读回 `0x25`（`logs/wifi-idf-oracle-regdump-boot.log`），本仓的 Wi-Fi 路径相同；
   BLE init 之后是 `0x3D`，Wi-Fi 的链路就是在这个时钟源下跑的，与 IDF 里「Wi-Fi 先、BLE 后」的组合一致。
 
-## 17. 合并镜像里让 BLE 起广播（2026-11-27；没有结论）
+## 17. 合并镜像里让 BLE 起广播（2026-11-27）
 
 ### 17.1 做法
 
@@ -1359,31 +1359,56 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
   LE Set Advertising Data（§7.8.7：Flags + 名字 `s31`）、LE Set Advertising Enable（§7.8.9）——然后泵 3 秒、每轮读
   synth 锁定位（`0x201098BC` 的 bit2）。判据：三条命令的回包 Status 为 0、锁定位至少置位过一次；之后让 Wi-Fi 在
   BLE 广播着的时候再走一遍链路（ADR-003 第 5 节的 L4b）。
-- 命令走 `transport.sendCmd`，在主上下文里同步发。回包匹配按 §7.7.14：Command Complete 的 opcode 在八位组 3..4、
-  Status 在 5（第一版把位置写错了，已改）。
-- 排在所有判据之后：controller 若把命令处理成不回包，`sendCmd` 就不返回，前面的结果已经落盘。
-- 默认关：不开 `-Dcoex-ble-adv` 时调用点在编译期被去掉，这段代码不进镜像；开着的镜像才知道这个结果。
+- 命令从一个独立栈上的发送任务里发（`sendFromTask`，栈 8 KB，从 BLE 的 arena 里分）。【2026-11-27 第一版是在
+  主上下文里同步发，三次上板都停在第一条命令上，见 §17.3】任务阻塞时切回主上下文，主上下文每轮泵 controller
+  任务、再把发送任务恢复回来；等发送、等回包都按时间与轮数双重封顶（blob 会把定时器门控掉，只按时间判会永远等）。
+- 回包匹配按 §7.7.14：Command Complete 的 opcode 在八位组 3..4、Status 在 5（第一版把位置写错了，已改）。
+- 过程另写一份到 flash：`0x18E000` 一个扇区（factory 与 `ota_0` 之间，不属于任何分区），发命令之前擦，每一步一条
+  32 字节记录；主机侧 `esptool read_flash 0x18E000 0x1000` 读回，`tools/ap-side/decode-adv-marker.py` 解码。
+  加它是因为广播使能之后串口会停（§17.2），「主循环还在不在跑」不能只靠串口判断。
+- 排在所有判据之后：广播使能之后板子不再出声，前面的判据已经打完。默认关：不开 `-Dcoex-ble-adv` 时调用点在
+  编译期被去掉，这段代码不进镜像。
 
-### 17.2 板侧读数（`logs/coex-merged-wifi-link-ble-adv-boot.log`）
+### 17.2 板侧读数
 
-三次上板同一个结局（最后一次的日志入库）：前面的判据全部通过（时钟并集、扫描 32 个 AP、连接、DHCP、ping 10/10）；
-`read[ble before ble adv]` 之后发出第一条命令（0x2006），日志停在一行没打完的 `bt call: eventq…` 上，之后 80 多秒
-没有任何输出，没有 `checks:` 汇总行，也没有复位记录。同一时间窗口里工作站的蓝牙扫描（`bluetoothctl scan on`，
-110 秒，hci0）没有看到名字 `s31` 的设备。
+上板五次，分三组。
+
+| 组 | 镜像 | 日志 | 三条命令的回包 | 之后 |
+| --- | --- | --- | --- | --- |
+| A（第一版，主上下文里发） | 三次同一个结局，最后一次的日志入库 | `logs/coex-merged-wifi-link-ble-adv-boot.log` | 第一条命令（0x2006）发出后没有任何回包行 | 日志停在半行 `bt call: eventq…`，之后 80 多秒没有输出 |
+| B（发送任务） | — | `logs/coex-merged-wifi-link-ble-adv2-boot.log` | 0x2006：Command Complete，Status 0x00，10 ms；0x2008：同，8 ms | 0x200A 之后只剩一行 `bt call: eventq_get`，之后到抓取结束（100 秒）没有输出 |
+| C（发送任务 + 落盘记录） | 两次结果相同，后一次入库 | `logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv4-marker.txt` | 0x2006、0x2008、0x200A：都是 Command Complete，Status 0x00 | 0x200A 的回包行打到 `…status=0x00 after 0` 停住，是日志的最后一行；落盘记录的最后一条是 `0x200a about to send` |
+
+每一组前面的判据都全部通过（时钟并集、基线扫描与链路扫描、连接、DHCP、ping），所以三组的差别只在广播这一步。
+没有 `checks:` 汇总行，也没有复位记录。
+
+C 组的落盘记录一共 7 条，照顺序是：启动、`0x2006` 正要发、一条采样（`0x201098BC` = 0、`0x2010F800` = `0x01700266`）、
+`0x2006` Status 0x00、`0x2008` 正要发、`0x2008` Status 0x00、`0x200A` 正要发。按代码的顺序，下一条应当是 `0x200A`
+的回包（那条回包行串口上已经打出来了），之后每 20000 轮一条采样、收尾三条——都没有。
+
+工作站蓝牙扫描（`bluetoothctl scan on`，hci0）三次：150 秒看到 14 台别的设备、170 秒 15 台、170 秒 16 台，都没有
+名字 `s31` 的设备，也没有板子的 MAC 地址开头的设备。
 
 ### 17.3 来龙去脉
 
-- 探针的历史里记着同一件事：这类命令的接收路径带着 FOREVER 去等 controller 任务，而任务要等泵——「rx 阻塞等任务 =
-  任务等泵」（`probe.zig` 里轮 14、轮 95d 的注释）；B 路径（`sendCmdViaHs`）同步分发同样死锁。
-- `components/osal/src/sched.zig` 的 `block()` 是「把当前上下文切回主上下文」。从主上下文自己调用它，等于切回
-  上一次 `resumeTask` 保存的旧现场，主上下文栈上的调用链被丢掉。本轮试过两种改法，结局都一样：(a) 主上下文里的
-  FOREVER 等待改成让任务跑一轮（嵌套切换）；(b) 改成有界忙等后超时。两处改动都已撤回，`osal.zig` 没有改动。
-- 探针的历史还记着：广播使能之后 blob 会收缩时钟（轮 112），单独探针靠每轮回写时钟门控维持串口输出。
+- **A 组卡在哪**：这类命令的接收路径带着 FOREVER 去等 controller 任务，而任务要等泵——「rx 阻塞等任务 = 任务等
+  泵」（`probe.zig` 里轮 14、轮 95d 的注释）；`components/osal/src/sched.zig` 的 `block()` 是「把当前上下文切回主
+  上下文」，从主上下文自己调用它，等于切回上一次 `resumeTask` 保存的旧现场。当时试过两种改法（主上下文里的
+  FOREVER 等待改成让任务跑一轮；改成有界忙等后超时），结局都一样，两处改动都已撤回。B 组把发送挪到任务里，
+  OSAL 的等待原语一个字没改，命令就通了。
+- **B、C 组卡在哪**：广播使能之后。这与单独探针记的「时钟收缩」是同一处（`components/bt-blobs/README.md` 轮 96–117：
+  blob 处理广播使能时把 SYS_TIMER、定时器组、UART0 的时钟门控掉）。两个观测对得上：串口是在回包行打到第 58 个
+  字节时停的，门控不是瞬间发生的；回包之后紧跟的那次 flash 写没有落盘，而 ROM 的 flash 例程靠定时器计时（写之前
+  已经把三个时钟门控字和 SYS_TIMER 的时钟使能写回，仍然没有落盘）。
+- **分不清的**：主上下文是停在那次 flash 写里面，还是停在它之后第一次恢复 controller 任务的时候。两种都在回包之后。
 
 ### 17.4 结论与下一步
 
-- **对 R3.3 没有结论**：广播没有起来，锁定位没有读到过 1。空口上也没有看到板子的广播。
-- 合并镜像是继续 R3.3 的合适位置：时钟并集之后 BLE 的时钟位都在（§16），ICG 码已生效。
-- 下一步（没有做）：让 HCI 命令从一个独立栈上的发送任务里发（`sched.taskCreate`），阻塞走「任务 → 主上下文」的正常
-  切换，主上下文照常泵两个任务，泵里带上时钟回写与喂狗。在那之前，不要在主上下文里经 HCI 发需要 controller 任务
-  处理的命令。
+- **命令层不再是卡点**：合并镜像里经 HCI 发 LE Set Advertising Parameters / Data / Enable，三条都回了 Command
+  Complete、Status 0x00（[Vol 4] Part E §7.7.14 的回包格式、§7.8.5 / §7.8.7 / §7.8.9 的命令）。在合并镜像里发需要
+  controller 任务处理的 HCI 命令，要走 `probe.zig` 的 `sendFromTask`，不要在主上下文里发。
+- **对 R3.3 仍然没有结论**：合成器锁定位在广播使能之后一次也没有读到（落盘记录停在回包之前，串口停在回包行）。
+  空口上没有看到板子的广播，所以 L4b（两个射频同时收发）仍然没有证据。
+- 下一步（没有做），二选一或都做：(a) 换一条既不靠 ROM 也不靠定时器的记录通道——LP RAM 远槽 + 软件复位后下一次
+  开机打印——去读广播使能之后的 `0x201098BC`；(b) 在收缩生效之前用数据观察点抓到 blob 写时钟门控的那条指令。
+  单独探针那一侧的「时钟收缩」与合成器不锁，见 `components/bt-blobs/README.md` 轮 96–162。
