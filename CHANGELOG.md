@@ -196,10 +196,13 @@
   - 单独的 Wi-Fi 真实链路镜像回归（时钟钩子改成只置位之后）：扫描 37 个 AP、连上、DHCP、ping 10/10
     （`logs/wifi-link-clock-union-boot.log`，脱敏）。
   - 主机用例 2064 → 2068（`bt-blobs` 67 → 69、`radio-coex` 55 → 57）：`tests/baselines.json` 与三处前门数字一起抬。
-- **工作站自己的静态 tcpdump（2026-11-27）**：工作站上没有 tcpdump（`command -v tcpdump` 为空）。`tools/ap-side/build-tcpdump.sh`
-  加了 `TARGET=`——默认仍是路由器的 `aarch64-linux-musl`，产物与原来逐字节相同（sha256 `44126186…`）；`TARGET=x86_64-linux-musl`
-  编出的静态二进制（1 436 896 字节）装到 `~/.local/bin/tcpdump`（sha256 `d2cd67c6…`，`rm` 即卸载），源码目录两个目标共用。
-  验证：`tcpdump --version` 打印 4.99.6，`-D` 列出接口；root 下在 `enp0s31f6` 上抓到一帧（ICMP echo request，本机 → 路由器）。
+- **工作站自己的静态 tcpdump（2026-11-27）**：装之前工作站上没有 tcpdump（当时 `command -v tcpdump` 为空）。
+  `tools/ap-side/build-tcpdump.sh` 加了 `TARGET=`——默认仍是路由器的 `aarch64-linux-musl`，产物与原来逐字节相同
+  （sha256 `44126186…`）；`TARGET=x86_64-linux-musl` 编出的静态二进制（1 436 896 字节）装到 `~/.local/bin/tcpdump`
+  （sha256 `d2cd67c6…`，`rm` 即卸载），源码目录两个目标共用。验证：`tcpdump --version` 打印 4.99.6，`-D` 列出接口；
+  root 下在 `enp0s31f6` 上抓到一帧（ICMP echo request，本机 → 路由器）。
+  2026-11-27 复查：登录 shell（bash）与 `sudo` 下 `command -v tcpdump` 都解析到 `~/.local/bin/tcpdump`；路由器上
+  `/usr/bin/tcpdump` 在登录 shell 里也找得到，两台机器各抓到一帧。
 - **最小合并镜像的构建入口 `scripts/build-coex-link-image.sh`（2026-11-27）**：从 IDF 的归档重新生成三份对象集合（此前只在
   /tmp 里），只编 `coex_merged` 这一段，断言两段镜像，打印体积与归属（`BREAKDOWN=1`）。`BLE=1` 时 1 224 304 B（factory
   分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。
