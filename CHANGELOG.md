@@ -166,8 +166,14 @@
 - **AP 侧的空口证据与工具 `tools/ap-side/`（2026-11-27）**：在工作站上交叉编译静态的 tcpdump（`build-tcpdump.sh`，产物与
   路由器上用的 SHA-256 相同），AP 上每轮临时建 monitor 接口抓 802.11 帧的文字摘要（`collect.sh`、`frames.py`）。五个轮次
   373 帧（`logs/coex-merged-wifi-link-ap-frames.log`，邻居的 SSID / BSSID 换成标签）：板子发来的帧 -21 到 -28 dBm，关联
-  过程同序同间隔；按条款的对照见 `docs/verification/wifi-ieee80211-verification.md` §12。三份 AP 侧证据的头部原先写
-  「时钟慢 38 天 22 小时」，更正为 38 天 14 小时 4 分 22 秒（换算本身一直是对的）。
+  过程同序同间隔；按条款的对照见 `docs/verification/wifi-ieee80211-verification.md` §12。三份 AP 侧证据的头部原先只写
+  「时钟慢 38 天 22 小时」（墙钟差），改成两个数都写：比标准时间慢 38 天 14 小时 4 分 22 秒，路由器显示的时间加 38 天
+  22 小时 4 分 22 秒是本机时间（换算本身一直是对的）。帧清单注明有 5 行是 monitor 接口重复交付的。
+  - `tools/ap-side/redact.py`：入库前的脱敏工具进仓库（此前只在 /tmp）：邻居的 SSID / BSSID 换成标签、自检残留，板侧日志与
+    帧清单都能用；按字节透明地解码，中文一类非 ASCII 的 SSID 也能匹配上。`--save-map` 把新出现的 BSSID 写回标签表。
+  - 单独的 Wi-Fi 真实链路镜像回归（时钟钩子改成只置位之后）：扫描 37 个 AP、连上、DHCP、ping 10/10
+    （`logs/wifi-link-clock-union-boot.log`，脱敏）。
+  - 主机用例 2064 → 2068（`bt-blobs` 67 → 69、`radio-coex` 55 → 57）：`tests/baselines.json` 与三处前门数字一起抬。
 - **最小合并镜像的构建入口 `scripts/build-coex-link-image.sh`（2026-11-27）**：从 IDF 的归档重新生成三份对象集合（此前只在
   /tmp 里），只编 `coex_merged` 这一段，断言两段镜像，打印体积与归属（`BREAKDOWN=1`）。`BLE=1` 时 1 224 304 B（factory
   分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。

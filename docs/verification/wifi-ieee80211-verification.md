@@ -906,7 +906,8 @@ wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
   数据帧的载荷没有解出来看（载荷是密文）。
 - 数据通路只有 DHCP 与 ICMP。TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。
 - PHY 标定数据仍不持久化。
-- 同一次运行里共存核开着的读数见 `docs/verification/coex-verification.md` §12。
+- 同一次运行里共存核开着的读数见 `docs/verification/coex-verification.md` §12。2026-11-27 的后续：空口上的帧见 §12；合并镜像里
+  时钟按单元取并集之后同一条链路的读数（基线 38 个 AP、之后 34 个，ping 10/10，20/20）见 `coex-verification.md` §16。
 
 ## 12. 空口上的帧（2026-11-27；L4）
 

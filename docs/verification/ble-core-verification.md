@@ -72,7 +72,7 @@
 | PAwR（Periodic Advertising with Responses）的 host 侧：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令的编码与返回参数、LE Periodic Advertising Subevent Data Request / Response Report 两个事件的解码、事件掩码的位 38 / 39、链路层 AUX_SYNC_SUBEVENT_IND / RSP 的扩展头解析（表 2.8、表 2.9 的字段许可）、广播方一侧的请求登记（一次请求可以分多条命令应答，全部答完才关闭；同一子事件的数据只发一次）与响应数据模型 | [Vol 4] Part E §7.8.1、§7.8.125–§7.8.127、§7.7.65.36–.37；[Vol 6] Part B §2.3.1.9–.10、§2.3.4、§4.4.2.2.4、§4.4.2.12.2 | `ble-802154/src/pawr.zig` | 31（`pawr_tests.zig`） | 按参数表逐字节排的已知答案；表 2.8 / 2.9 逐格（主代理用程序从规范 HTML 里数出复核）；`pawr_oracle.py`（差分） | 18（`pawr_selftest.zig`） | 离线验证通过 |
 | Connection Subrating 的 host 侧：LE Set Default Subrate / LE Subrate Request 两条命令的编码与校验（范围、三条 0x12、0x02、0x1A）、LE Subrate Change 事件的解码、事件掩码的位 34、LL_SUBRATE_REQ / IND 的编解码、5.1.20 的五条接受条件与取值规则、5.1.19 的子事件基准与回绕、40 秒过程超时的会话模型 | [Vol 4] Part E §7.8.1、§7.8.123–.124、§7.7.65.35；[Vol 6] Part B §2.4.2.36–.37、§4.5.1–.2、§5.1.19–.20、§5.2 | `ble-802154/src/subrate.zig` | 27（`subrate_tests.zig`） | 参数表与规则行手排的已知答案（5.1.20 的五条各有接受与拒绝用例）；`subrate_oracle.py`（差分）；NimBLE 的 `hci_common.h`、`ble_ll_ctrl.c`、`ble_ll_conn.c` | 17（`subrate_selftest.zig`） | 离线验证通过 |
 | LE Isochronous 的 HCI 接口面：LE Set CIG Parameters、LE Create CIS、LE Accept / Reject CIS Request、LE Create BIG、LE BIG Create Sync、LE Setup / Remove ISO Data Path、LE Read ISO TX Sync、LE Read ISO Link Quality 十条命令的编码与返回参数；LE CIS Established / CIS Request / Create BIG Complete / BIG Sync Established / BIG Sync Lost / BIGInfo Advertising Report 六个事件的解码；HCI ISO Data 包的编解码；BIGInfo 位图；BIG 的参数公式 | [Vol 4] Part E §5.4.5、§7.8.96–.97、§7.8.99、§7.8.101–.103、§7.8.106、§7.8.109–.110、§7.8.116、§7.7.65.25–.27、.29–.30、.34；[Vol 6] Part B §4.4.6.3–.4、§4.4.6.11；Assigned Numbers 的 Coding_Format 表 | `ble-802154/src/iso.zig` | 37（`iso_tests.zig`） | 参数表逐字节；手排的 ISO 包与 BIGInfo；`iso_oracle.py`（差分）；NimBLE 的 `hci_common.h`（17 个结构体逐字段）、`ble_hs_iso.c`、`ble_ll_sync.c`；Zephyr 的一份拷贝 `hci_types.h`（ISO 数据包头的结构体） | 20（`iso_selftest.zig`） | 离线验证通过 |
-| 广播、连接、真实收发 | 不适用 | — | — | — | — | 阻塞：射频 synth PLL 不锁。2026-11-26：合并镜像里 BLE enable 已能返回 0（`coex-verification.md` §14）；合成器是广播使能命令处理之后才上电的，那一轮没有发 HCI 命令，对这道墙没有新结论 |
+| 广播、连接、真实收发 | — | 合并镜像经 HCI 起广播；工作站的蓝牙控制器扫描 | — | — | — | 阻塞。单独探针走到 `ble_hw.c:506` 的断言墙（合成器是广播使能命令处理之后才上电的）；合并镜像里 2026-11-27 试了起广播，命令在主上下文里发不出去，没有结论（§9，细目在 `coex-verification.md` §17） |
 
 ## 3. 主机测试
 
@@ -532,6 +532,7 @@ bt-blobs 目标 21 → 67。增量 46 = `hci_conformance.zig` 文件内的 23 �
 ### 8.7 未验证
 
 - 需要射频、对端或改状态的命令。
+- 广播这一类改状态的命令在真实 controller 上的下发通路——谁发、从哪个上下文发、怎么等回包——没有结论（§9）。
 - 回包在真实链路上的行为。
 - 偏差 ②③ 与 controller 配置的关系。
 - 自检只覆盖 26 条只读命令，不是 HCI 一致性测试集。

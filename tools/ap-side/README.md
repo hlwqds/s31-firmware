@@ -9,6 +9,7 @@
 | `build-tcpdump.sh` | 工作站 | 用 `zig cc -target aarch64-linux-musl` 编 libpcap 1.10.5 与 tcpdump 4.99.6，静态链接，约 1.4 MB |
 | `collect.sh` | 路由器 | 跟随系统日志、每秒读站点统计、tcpdump 抓帧的文字摘要；`MON` 模式临时建 monitor 接口抓 802.11 帧 |
 | `frames.py` | 工作站 | 把 monitor 抓到的帧整理成一行一帧，时间换算成本机时间 |
+| `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
 
 ## 用法
 
@@ -25,6 +26,7 @@ ssh root@192.168.31.1 sh -s 150 MON < tools/ap-side/collect.sh > ap-<轮次>.txt
 
 # 4) 整理帧。--epoch-offset 是「本机时钟减路由器时钟」的秒数：两边各取 date +%s 相减
 python3 tools/ap-side/frames.py ap-<轮次>.txt --epoch-offset 3333862
+python3 tools/ap-side/redact.py --map <label-map.json> --cred <凭据文件> --kind frames --date <日期> <帧清单> <脱敏后的帧清单>
 ```
 
 登录需要路由器的 root 密码（问用户）。工作站要在这台 AP 的 LAN 里（网线接 LAN 口；板子的以太网线这时是拔的），
@@ -44,8 +46,9 @@ python3 tools/ap-side/frames.py ap-<轮次>.txt --epoch-offset 3333862
 ## 入库前的规矩
 
 - 只入库文字摘要，不入库 pcap；tcpdump 不带 `-v` / `-x`，EAPOL 帧只有 `EAPOL key (3) v2, len 95` 这样的首部摘要。
-- monitor 抓到的帧里有邻居 AP 对板子探测请求的应答（邻居的 SSID 与 BSSID）：入库前换成标签，与板侧日志同一套编号；
-  用户自己的 AP、板子、工作站的地址原样保留。
+- monitor 抓到的帧里有邻居 AP 对板子探测请求的应答（邻居的 SSID 与 BSSID）：入库前用 `redact.py` 换成标签，与板侧日志
+  同一套编号（标签表不入库，编号规则在 `redact.py` 的文件头）；用户自己的 AP、板子、工作站的地址原样保留。
+  板侧日志同理（`--kind board`，扫描结果里有邻居的 SSID 与 BSSID）。
 - 路由器的登录记录（dropbear 的行）不入库。
 - 路由器的系统日志是个约 1300 行的环形缓冲，新的挤掉旧的，要引用就当场取回。
 
@@ -57,3 +60,5 @@ python3 tools/ap-side/frames.py ap-<轮次>.txt --epoch-offset 3333862
 - `MON` 模式下 AP 自己发出的帧，时间戳不保证是第一次发出的时刻：对照 E 的第三次里一个回显应答，板子量到的往返最大
   18.7 ms，清单里的帧却比请求晚 384 ms。AP → 板子这一侧的重传节奏以站点统计（`tx retries` / `tx failed`）为准。
 - `MON` 模式的清单里没有控制帧（ACK、块确认、RTS / CTS）；原因没有查。
+- `MON` 模式会把同一帧交付两次甚至三次（时间戳与内容完全相同）：2026-11-27 的五轮 373 行里有 5 行，数帧数时要扣掉。
+- `MON` 模式的清单里单独成行的 `QoS` 是没有载荷的 QoS 帧（QoS Null）；作用没有查。

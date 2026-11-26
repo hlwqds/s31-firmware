@@ -158,7 +158,8 @@
   (3) 合并镜像的构建入口固化为 `scripts/build-coex-link-image.sh`，只编合并这一段。(4) 试了在合并镜像里经 HCI 起广播
   （`-Dcoex-ble-adv`），没有结论。
 - **验证**：主机测试全过；板上 20/20（`logs/coex-merged-wifi-link-union-boot.log`）；单独的 BLE 探针与基线逐行等价
-  （`logs/bt-probe-clock-union-boot.log`）；空口帧 `logs/coex-merged-wifi-link-ap-frames.log`；广播实验
+  （`logs/bt-probe-clock-union-boot.log`）；单独的 Wi-Fi 真实链路镜像回归通过（`logs/wifi-link-clock-union-boot.log`：
+  扫描 37 个 AP、连上、DHCP、ping 10/10）；空口帧 `logs/coex-merged-wifi-link-ap-frames.log`；广播实验
   `logs/coex-merged-wifi-link-ble-adv-boot.log`（停在发完第一条命令之后）。细目在 `docs/verification/coex-verification.md`
   §15.9–§17、`wifi-ieee80211-verification.md` §12、`ble-core-verification.md` §9。
 - **没有做的**：两个射频都在收发（广播没有起来；HCI 命令要从独立栈上的发送任务里发，没有做）；BLE 的 disable 路径；

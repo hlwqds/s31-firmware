@@ -196,6 +196,10 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   相同，单独的 BLE 探针不受影响）。L4——`logs/coex-merged-wifi-link-union-boot.log`：三个时点都是
   `CLK_CONF1=0x003FFFFF`、`CLK_CONF=0x7E601002`、`LPCON=0x0F`、`MODEM_CONF=0x3D`；Wi-Fi 基线 38 个 AP、BLE init
   之后 34 个，连上、DHCP、ping 10/10，20/20 项通过，`verdict=pass`。
+- **影响面**：默认镜像（boot + net）与各 profile 不含这两个适配层，不受影响。单射频的镜像只在共享时钟字的写法上变了
+  （置位代替整字写），各回归一轮：单独的 Wi-Fi 真实链路镜像扫描 37 个 AP、连上、DHCP、ping 10/10
+  （`logs/wifi-link-clock-union-boot.log`，基线 `logs/wifi-link-connect-boot.log`）；单独的 BLE 探针与基线逐行等价。
+  入库前一律经 `tools/ap-side/redact.py` 脱敏（扫描结果里有邻居的 SSID 与 BSSID）。
 - **没有做的**：BLE 的 disable 路径（释放自己的单元，让引用计数真的归零）；Wi-Fi init 之前把 `LPCON+0x18` 对正成
   `0x1` 的那一句会清 I2C 主控位，只在 Wi-Fi 先起的顺序下安全；BLE 的 PHY 域序列（`phyDomainEnable`，含写 flash
   的探针标记）与 XTAL trim 在 PHY 归 Wi-Fi 时仍然会跑一遍（以幂等置位为主）。

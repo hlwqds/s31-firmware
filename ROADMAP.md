@@ -41,7 +41,7 @@
 - [x] 生产结构：`firmware/` + `boards/` + `components/`（章节目录移除，历史见 `docs/HISTORY.md`）
 - [x] 编译期特性开关：`-Dboot/-Dnet/-Dtls/-Dapps/-Dwifi`，未启用组件不参与编译
 - [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: sections: passed=8 failed=0 total=8`（`net` profile，含 `posix`）、`main: verdict=pass`（`logs/firmware-boot.log`）
-- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（2064 项）**（含 `posix`）
+- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（2068 项）**（含 `posix`）
 - [x] 脚本：`scripts/check-host.sh`、`scripts/check-fmt.sh`、`scripts/build-image.sh`、`tools/capture.py`
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发
 - [x] 覆盖率门禁：`scripts/check-coverage.py`（逻辑模块 100% 可达 + 用例数基线）
@@ -229,7 +229,7 @@
 | PAwR（Periodic Advertising with Responses）的 host 侧：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令（7.8.125–.127）、Subevent Data Request 与 Response Report 两个事件（7.7.65.36–.37）、AUX_SYNC_SUBEVENT_IND / RSP 的字段许可（表 2.8 / 2.9）与数据「只发一次然后立即丢弃」 | Core 5.4 [Vol 4] Part E §7.8.1、§7.8.125–.127、§7.7.65.36–.37；[Vol 6] Part B §2.3.1.9–.10（表 2.8、2.9）、§2.3.4、§4.4.2.2.4、§4.4.2.12.2 | 按参数表逐字节排的已知答案；照同一份规范独立写的 Python 模型对拍（1000 例，接受 301 / 拒绝 699，其中广播方应答场景 100 例通过 66，0 不一致）；表 2.8 / 2.9 的格子从 SIG HTML 逐格数出（NimBLE 没有 PAwR，没有独立实现对拍） | L1 | 离线验证通过（L1 31 项；板侧 18 条，2026-11-25 上板 207/207 全过）。`Advertiser.respond` 按独立评审改成「已答位图」（一条请求的多个子事件可分多条命令答完，同一子事件第二次应答回 `AlreadyAnswered`）。Packet Too Long / Too Early / Too Late、时序调度、§3.12 的连接建立、ADI 上位关系整链不做 |
 | Connection Subrating 的 host 侧：LE Set Default Subrate / LE Subrate Request 两条命令与参数校验、LE Subrate Change 事件、LL 侧的接受 / 拒绝规则与 40 s 过程超时 | Core 5.4 [Vol 4] Part E §7.8.1、§7.8.123–.124、§7.7.65.35；[Vol 6] Part B §2.4.2.36–.37、§4.5.1–.2、§5.1.19–.20、§5.2 | 按参数表逐字节；规范向量 + 照同一份策略写的模型对拍（714 例：通过 407 / 拒绝 307，0 不一致）；命令结构体与 LL PDU 长度对 NimBLE | L1 | 离线验证通过（L1 27 项；板侧 17 条，2026-11-25 上板 207/207 全过）。独立评审只发现注释引用错位，已改。三条 0x12 错误码之间的先后按 NimBLE 的顺序；Central 取 factor 用 `min(acc_max, req_max)` |
 | LE Isochronous 的 HCI 接口面：ISO 数据包格式（PB / TS / Packet_Status_Flag）、CIS / BIS / BIG 相关命令与事件的编解码、BIGInfo 布局 | Core 5.4 [Vol 4] Part E §5.4.5、§7.8.96–.97 / .99 / .101–.103 / .106 / .109–.110 / .116、§7.7.65.25–.27 / .29–.30 / .34；[Vol 6] Part B §4.4.6.3–.4、§4.4.6.11；Assigned Numbers §2.11 | 按原文位宽逐字段排的已知答案；策略模型对拍（5 × 375 = 1875 例，拒绝 348，0 不一致）；HCI ISO 数据包头的位布局对 NimBLE 与盘上 Zephyr 的一份拷贝（`esp_ble_iso/include/zephyr/bluetooth/hci_types.h`，只有 ISO 包头的结构体）；BIGInfo 的位布局只有 NimBLE 一份可对（`ble_ll_sync.c:670–702`），外加 4.4.6.11 的 33 / 57 八位组总长；BIGInfo 里 BaseCRCInit 的 16 位宽度标 [INFERENCE] | L1 | 离线验证通过（L1 37 项；板侧 20 条，2026-11-25 上板 207/207 全过）。`transparent air mode = 0x03` 有出处（Assigned Numbers §2.11）。独立评审后 `leRemoveIsoDataPath` 接受 direction = 0x00（原文没有 shall）、RTN 越界的错误名改 `BadRtn`。CIG / BIG 的时序调度与音频流、ISOAL、H4 的 ISO 指示字节不编；7.8.97 的 RTN 推荐不等式没有实现（txt 转储失真，无法唯一还原） |
-| 广播、连接、真实收发 | 不适用 | 抓空口 | L4 | 阻塞：射频 synth PLL 不锁 |
+| 广播、连接、真实收发 | — | 抓空口 | L4 | 阻塞：单独探针停在射频 synth 不锁的断言墙；合并镜像里 2026-11-27 试了起广播，命令发不出去，没有结论（下一行） |
 | BLE 的空口证据（2026-11-27） | [Vol 4] Part E §7.8.5、§7.8.7、§7.8.9 | 合并镜像经 HCI 起广播；工作站的蓝牙控制器（hci0）扫描 | — | L4 | 没有结论：三次上板都停在发完第一条命令之后（整机失声），扫描 110 秒没有看到板子。在此之前合并镜像把 BLE 自己的时钟位拿掉了，现已按单元取并集（`ble-core-verification.md` §9） |
 
 #### 尚未实现的领域（按 Bluetooth Core Specification 5.4 盘点，2026-11-25）

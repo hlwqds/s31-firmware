@@ -24,7 +24,7 @@
 | C4 分区表 | — | 没有改：init 级的合并镜像 1 117 376 B，装得下现有 factory 分区 | §7.5 |
 | Wi-Fi 侧 `_coex_enable` | L3 | blob 调了它，核心回 `rc=0`，Wi-Fi 侧变成 `enabled` | §9.1 |
 | C5 PHY 与时钟域的归属模型 | L1 / L4 | 归属模型 11 项主机用例（`owner.zig`：Owner、ClockBits、时钟单元表 `clocks`）。**时钟域已接并上板（2026-11-27，§16）**：两边只置自己的单元位，共享字在四个时点与并集逐位一致，20/20。PHY 的归属规则见下面「合并镜像里的 Wi-Fi 真实链路」一行 | §8、§16 |
-| 探针镜像回归 | L3 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行）。2026-11-27 时钟函数改成只置位之后重跑 BLE 探针：与基线逐行等价 | §6.5；`logs/bt-probe-clock-union-boot.log`；§16 |
+| 探针镜像回归 | L3 / L4 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行）。2026-11-27 时钟写改成只置位之后两个单射频镜像各回归一轮：BLE 探针与基线逐行等价（`logs/bt-probe-clock-union-boot.log`）；单独的 Wi-Fi 真实链路镜像扫描 37 个 AP、连上、DHCP、ping 10/10（`logs/wifi-link-clock-union-boot.log`） | §6.5、§16 |
 | modem 的 ICG 码（Wi-Fi 侧 R3.1 的墙） | L3 | Wi-Fi 探针 `esp_wifi_start rc=0`、init 之后 `MAC_ST=0x00000000`；合并镜像重跑 0 个失败。BLE 侧不能接（探针锁死）——**2026-11-26 更正**：锁死的两份日志来自已经不在树里的旧探针；合并镜像里 BLE enable 在 ICG 已生效时返回 0、没有锁死 | §11、§14 |
 | 共存的真实效果（L4b，两个射频都开） | L4 | 两个射频都在收发：**没有证据**。合并镜像里 BLE enable 返回 0 之后锁定位仍是 0（2026-11-26，§14）。2026-11-27 试了经 HCI 起广播（`-Dcoex-ble-adv`）：三次上板都停在发完第一条命令之后，锁定位没有置位过，工作站的蓝牙扫描也没有看到板子（§17）。**一个射频在收发、另一个 enabled** 已经跑通：两个控制器同镜，Wi-Fi 连上真实 AP（见下面「合并镜像里的 Wi-Fi 真实链路」一行） | `logs/coex-merged-wifi-link-ble-adv-boot.log`；§17 |
 | 只开 Wi-Fi 的共存读数（L4a） | L4 | 共存核开着时真实链路能通（连上、DHCP、ping 网关 10/10）；胶水没有拒绝过一次调用；blob 的 13 次申请核都回 `0x102`，原因在核的静态表里（这些事件没有配硬件定时器）；BLE 没开，核的状态位是 0。不开共存的对照已补，判据成立（§13）。**更正**：初稿写的"硬件定时器都是 0"不成立——当时读的 `0x2010F008` 是共存低功耗时钟的配置，不是计数器（§12） | `logs/wifi-link-connect-boot.log`；§12、§13 |
@@ -1233,8 +1233,9 @@ monitor 接口与 AP 在同一个射频、同一个信道上：`iw dev phy0-ap0 
 五个轮次：最终形态（提交的源码，没有临时改动）、E 的第三次（只跳过 `initPhy`）、C 的第二次（不写回）、B 的第三次
 （两段都不跳过）、D 的第三次（只跳过第 15 步）。入库 `logs/coex-merged-wifi-link-ap-frames.log`（492 行：每轮板侧读数
 一行、AP 日志里这一轮的行、一行一帧的清单；邻居的 SSID / BSSID 换成标签，与板侧日志同一套编号），站点统计补在
-`logs/coex-merged-wifi-link-ap-side.log` 末尾。路由器的时钟是 GMT、没有 NTP、慢 38 天 14 小时 4 分 22 秒，帧的时间按这个差
-换算成本机时间（三份证据的头部原先写成「慢 38 天 22 小时」，是写错了，已改；换算本身一直是对的）。
+`logs/coex-merged-wifi-link-ap-side.log` 末尾。时间：路由器的时钟是 GMT、没有 NTP，比标准时间慢 38 天 14 小时 4 分 22 秒；
+帧的时间戳是路由器的 epoch 秒，加这个差再按本机时区显示就是本机时间（路由器显示的墙钟加 38 天 22 小时 4 分 22 秒，其中
+8 小时是时区）。三份证据的头部原先写成「慢 38 天 22 小时」，只写了墙钟那一个数，已改成两个数都写；换算本身一直是对的。
 
 **读数。**
 
@@ -1248,6 +1249,9 @@ monitor 接口与 AP 在同一个射频、同一个信道上：`iw dev phy0-ap0 
 
 E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 49 ms，ping 网关 10/10、9/10、9/10；新判据「扫描 AP 数
 不低于基线一半」都失败（32 → 3、32 → 2、30 → 3），整体 15/16。最终形态这一轮是 29 → 18 个 AP、16/16。
+
+清单共 373 行，其中 5 行是 monitor 接口把同一帧重复交付的（时间戳与内容完全相同：B 的第三次里 4 行，一行 ADDBA 请求、
+三行 QoS 帧；E 的第三次里 1 行 QoS 帧），不是板子重发；各轮的「帧数」含这些重复。
 
 读法：
 
@@ -1313,6 +1317,15 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
 `CLK_CONF1 = 0x003FFFFF` 是三组的并集：Wi-Fi 的 bit0-10、PHY 前端的 bit11-15 与 19-21、BT 的 bit16-18。
 链路：基线扫描 38 个 AP，BLE init 之后 34 个；连上、DHCP、ping 网关 10/10（最小 1.9 / 平均 4.9 / 最大 12.6 ms）、
 稳定 5 秒。`checks: passed=20 failed=0`，`verdict=pass`。不再需要任何事后的写回。
+
+`FORCE_ON = 0xFC`：bit3-7 是 BLE 的 init 置的（PHY 前端与 BT 的五个强开位），bit2（`wifi_apb_fo`）来自 BLE 的 PHY 域序列
+（`phyDomainEnable`，它在 PHY 归 Wi-Fi 时仍然会跑）——也就是 BLE 仍在替 Wi-Fi 决定一个强开位，对应下面边界里的那一条。
+
+**单独的射频各回归一轮**（两个适配层的时钟写都改过）。单独的 Wi-Fi 真实链路镜像（`-Dwifi-link-probe` + 共存核，
+`logs/wifi-link-clock-union-boot.log`，基线 `logs/wifi-link-connect-boot.log`）：扫描 37 个 AP（基线 40）、连上、DHCP 102 ms
+（基线 105 ms）、ping 网关 10/10（最小 / 平均 / 最大 11.9 / 18.8 / 23.9 ms，基线 13.1 / 23.1 / 30.2 ms）、本地断开。
+单独的 BLE 探针（`logs/bt-probe-clock-union-boot.log`）与基线 `bt-probe-pmu-icg-control-boot.log` 逐行等价：`INITED`，
+随后是同一个 `ble_hw.c:506` 断言墙；差别只有逐调用日志交错处的噪声。
 
 ### 16.3 判据在第一次上板时抓到了一处遗漏
 

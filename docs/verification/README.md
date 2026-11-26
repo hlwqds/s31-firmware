@@ -142,6 +142,7 @@ synth 锁定位没有置位过（`coex-verification.md` §17、`logs/coex-merged
 | 时钟域按单元取并集（最小合并镜像） | `BLE=1 AP_CRED=<凭据文件> sh scripts/build-coex-link-image.sh`，烧录后抓 100 秒 | `coex_merged` 20/20；`main: verdict=pass`；共享时钟字在四个时点都是两边的并集 | `logs/coex-merged-wifi-link-union-boot.log` |
 | BLE 起广播实验（没有结论） | 同上，加 `ADV=1`，抓 150 秒 | 前面的判据全过；发完第一条 HCI 命令后整机失声，没有汇总行 | `logs/coex-merged-wifi-link-ble-adv-boot.log` |
 | 单独 BLE 探针回归（时钟函数改成只置位之后） | `sh /tmp/probe-board.sh ble bt-probe-clock-union-boot.log 50` | 与基线逐行等价：`INITED`，随后是 `ble_hw.c:506` 断言墙 | `logs/bt-probe-clock-union-boot.log` |
+| 单独 Wi-Fi 真实链路回归（时钟钩子改成只置位之后） | `/tmp/r5c/connect-run.sh 75 <名字>`（`-Dwifi-link-probe` + 共存核，带 AP 凭据；结果经 `tools/ap-side/redact.py` 脱敏） | 扫描 37 个 AP、`STA_CONNECTED`、DHCP 102 ms、ping 网关 10/10（平均 18.8 ms），本地断开；基线 `logs/wifi-link-connect-boot.log`（40 个 AP、105 ms、平均 23.1 ms） | `logs/wifi-link-clock-union-boot.log` |
 
 ## 默认镜像（L2）
 
