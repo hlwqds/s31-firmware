@@ -95,8 +95,7 @@ ATT 服务端 11 条、GATT 服务端 8 条、GATT 客户端 8 条）；`wifi_ml
 `esp_wifi_start rc=0`（`logs/wifi-probe-start-rc0-boot.log`；`wifi-ieee80211-verification.md` §9、`coex-verification.md` §11）。
 
 2026-11-26 的后续：本仓库自己的移植第一次扫描到真实 AP——`esp_wifi_start` 之后主动扫描约 9.1 s 走完全部信道，
-取到 38 条真实记录；根因两处（APM 访问控制过滤器、supplicant 回调表是空指针），另有一个前提是共存核必须启动
-（`-Dcoex`，2026-11-26 的对照轮证实），证据与逐 AP 对照见
+取到 38 条真实记录；根因两处（APM 访问控制过滤器、supplicant 回调表是空指针），证据与逐 AP 对照见
 `wifi-ieee80211-verification.md` §10、`logs/wifi-link-scan-boot.log`（邻居的 SSID 与 BSSID 已脱敏）。
 
 2026-11-26 的后续：本仓库自己的移植第一次连上真实 AP 并在 IP 层收发（WPA2-PSK + CCMP-128）——`STA_CONNECTED` 约 3.0 s，
@@ -104,10 +103,12 @@ MAC 密钥表里的钥匙核对一致，DHCP 拿到地址，ping 网关 10/10；
 数据通路不答 ARP 请求），证据见 `wifi-ieee80211-verification.md` §11、`logs/wifi-link-connect-boot.log`（脱敏）。
 同一次运行开着共存核，各阶段的共存读数见 `coex-verification.md` §12。
 
-2026-11-26 的后续：补了不开共存核的对照——`-Dcoex` 关着时扫描 0 个 AP、连接 `reason=201`，两轮相同
-（`coex-verification.md` §13、`logs/wifi-link-nocoex-boot.log`）；合并镜像里的 BLE enable 返回 0、没有锁死，但 synth 锁定位仍是 0
-（`coex-verification.md` §14、`logs/coex-merged-ble-enable-boot.log`）。L4a 里"硬件定时器没在走"的读数已更正：当时读的是共存
-低功耗时钟的配置寄存器（`coex-verification.md` §12）。
+2026-11-26 的后续：补了不开共存的对照——胶水按 IDF 关闭分支作答、核不启动时扫描 38 个 AP、ping 10/10，L4a 的判据成立
+（`coex-verification.md` §13、`logs/wifi-link-coex-off-boot.log`）。只去掉 `-Dcoex` 的镜像收不到帧，查清是 `_coex_pti_get`
+的计数桩把出参写成 0，已修（`logs/wifi-link-nocoex-boot.log` 是修之前，`logs/wifi-link-stubs-pti-boot.log` 是修之后）。
+合并镜像里的 BLE enable 返回 0、没有锁死，但 synth 锁定位仍是 0（`coex-verification.md` §14、
+`logs/coex-merged-ble-enable-boot.log`）。L4a 里"硬件定时器没在走"的读数已更正：当时读的是共存低功耗时钟的配置寄存器
+（`coex-verification.md` §12）。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 

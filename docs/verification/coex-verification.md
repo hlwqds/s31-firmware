@@ -27,8 +27,8 @@
 | 探针镜像回归 | L3 | BLE 探针开共存仍走到原来的墙，SRAM 布局读数不变；Wi-Fi 探针开共存仍 `INIT OK`，并走到 `esp_wifi_start`（2026-11-25 起返回 0，见下一行） | §6.5 |
 | modem 的 ICG 码（Wi-Fi 侧 R3.1 的墙） | L3 | Wi-Fi 探针 `esp_wifi_start rc=0`、init 之后 `MAC_ST=0x00000000`；合并镜像重跑 0 个失败。BLE 侧不能接（探针锁死）——**2026-11-26 更正**：锁死的两份日志来自已经不在树里的旧探针；合并镜像里 BLE enable 在 ICG 已生效时返回 0、没有锁死 | §11、§14 |
 | 共存的真实效果（L4b，两个射频都开） | L4 | 没有任何证据：BLE 的射频 synth 不锁。合并镜像里 BLE enable 返回 0 之后锁定位仍是 0（2026-11-26，§14）；两个控制器同时工作没有跑过 | — |
-| 只开 Wi-Fi 的共存读数（L4a） | L4 | 共存核开着时真实链路能通（连上、DHCP、ping 网关 10/10）；胶水没有拒绝过一次调用；blob 的 13 次申请核都回 `0x102`，原因在核的静态表里（这些事件没有配硬件定时器）；BLE 没开，核的状态位是 0。**更正**：初稿写的"硬件定时器都是 0"不成立——当时读的 `0x2010F008` 是共存低功耗时钟的配置，不是计数器（§12） | `logs/wifi-link-connect-boot.log`；§12 |
-| **共存核是 Wi-Fi 收发的前置** | L4 | 同一份真实链路探针只把 `-Dcoex` 关掉：两轮都是扫描 0 个 AP、连接 `reason=201`。有文档的 523 个寄存器在 start 之后只差 7 个，其中 5 个是共存低功耗时钟的配置与 `DCMEM_VALID_*`；扫描中 MAC 的 `0x2010408C`–`0x20104094`、`0x20104300` 等与一批 BB 寄存器在不开共存时是 0。起决定作用的是哪一步没有分开验证 | `logs/wifi-link-nocoex-boot.log`；§13 |
+| 只开 Wi-Fi 的共存读数（L4a） | L4 | 共存核开着时真实链路能通（连上、DHCP、ping 网关 10/10）；胶水没有拒绝过一次调用；blob 的 13 次申请核都回 `0x102`，原因在核的静态表里（这些事件没有配硬件定时器）；BLE 没开，核的状态位是 0。不开共存的对照已补，判据成立（§13）。**更正**：初稿写的"硬件定时器都是 0"不成立——当时读的 `0x2010F008` 是共存低功耗时钟的配置，不是计数器（§12） | `logs/wifi-link-connect-boot.log`；§12、§13 |
+| 不开共存的对照（ADR-003 L4a 的判据「ping 与不开共存时一样」） | L4 | **成立**：胶水按 IDF 关闭分支作答、核不启动（`-Dcoex` + `-Dcoex-sw-off`）时扫描 38 个 AP、连上 2566 ms、DHCP 46 ms、ping 10/10。只去掉 `-Dcoex` 的两轮收不到帧（扫描 0 个 AP、连接 `reason=201`），根因是 `_coex_pti_get` 的计数桩把出参写成 0——只把这一处改成不写，计数桩的镜像也照常（扫描 37 个 AP、ping 10/10）。**共存核不是 Wi-Fi 收发的前置**：本表初稿写反了，已更正 | `logs/wifi-link-nocoex-boot.log`、`logs/wifi-link-coex-off-boot.log`、`logs/wifi-link-stubs-pti-boot.log`；§13 |
 | 合并镜像里的 BLE enable（`-Dcoex-ble-enable`） | L3 | `bringup.enable rc=0`、`ENABLED`，共存核 BLE 侧 `enabled`；没有锁死、没有复位。synth 锁定位（`0x201098BC` 的 bit2）在 enable 前后都是 0，泵 1 秒里 synth 区与 ANA 寄存器没有变化——APM 过滤器已关、ICG 码已设、共存核已启动，都不是 R3.3 的解 | `logs/coex-merged-ble-enable-boot.log`；§14 |
 
 ## 2. C0 调研与设计（2026-11-24）
@@ -660,7 +660,7 @@ NMI n=5000 mepc=0x2f009cbe … a4=0000e000 a5=0000e000
 - BLE 的两个回调被核心调用的时刻：需要两个射频都开，目前只验证了登记。
 - 【2026-11-26 更新】Wi-Fi enable 之后 blob 调了哪些共存钩子、核怎么答：已有读数（§12）。
 - 共存的真实效果（L4b，两个射频都开）：没有任何证据；只开 Wi-Fi 的读数（L4a）见 §12。
-- 不开共存核时 Wi-Fi 没有链路（§13）：`-Dcoex` 对要收发的 Wi-Fi 镜像不是可选项；`init_coexist` 这一步在默认镜像里仍然没有人做。
+- 不开 `-Dcoex` 的镜像里 blob 调到的是计数桩，不是本组件的胶水。它们的返回值与 IDF 关闭分支的逐项对照只核了 `_coex_pti_get` 一项（§13：它的桩把出参写成 0，收不到帧，已修）；其余钩子的计数桩没有逐项核过。
 
 ## 11. modem 的 ICG 码：`esp_wifi_start` 首次返回（2026-11-25）
 
@@ -764,8 +764,9 @@ blob 置过的 Wi-Fi 状态位（类型 0）是 `0x1`、`0x2`、`0x4`：连上�
 同一轮里链路是通的（连上 3031 ms、DHCP 105 ms 拿到地址、ping 网关 10/10）。入库的是带读数的第三轮：前两轮分页的行被日志的
 200 字节上限截断，已修；三轮的链路读数与"每轮 13 次申请全部 `0x102`"一致。
 
-**不开共存的对照。** ADR-003 第 5 节 L4a 一行原来留了一条判据「ping 与不开共存时一样」。对照已补，结论是这条判据不成立：
-不开共存核时没有链路（扫描 0 个 AP、连接 `reason=201`，两轮相同）。细目见 §13。
+**不开共存的对照。** ADR-003 第 5 节 L4a 一行留的判据「ping 与不开共存时一样」**成立**：胶水按 IDF 关闭分支作答、核不启动的
+镜像扫描 38 个 AP、连上、DHCP、ping 10/10。中间走了一段弯路——只去掉 `-Dcoex` 的两轮收不到帧，查下去是计数桩的缺陷，
+不是缺了共存核。细目见 §13。
 
 结论与边界：
 
@@ -777,81 +778,83 @@ blob 置过的 Wi-Fi 状态位（类型 0）是 `0x1`、`0x2`、`0x4`：连上�
 - 这只是"只开 Wi-Fi"的读数：BLE 没开，核没有可仲裁的另一方，状态位是 0。真实共存的效果（L4b）仍然没有任何证据，
   做法与判据写在 ADR-003 第 5 节。
 
-## 13. 不开共存核的对照：扫描 0 个 AP、连接 `reason=201`（2026-11-26）
+## 13. 不开共存的对照：收不到帧的是计数桩，不是共存核（2026-11-26）
 
-§12 的读数都取自开着 `-Dcoex` 的镜像，ADR-003 第 5 节 L4a 一行留了一条判据「ping 与不开共存时一样」。补的对照轮把它的前提
-推翻了：**同一个源码树、同一份真实链路探针，只把 `-Dcoex` 关掉，Wi-Fi 就收不到任何帧。**
+§12 的读数都取自开着 `-Dcoex` 的镜像，ADR-003 第 5 节 L4a 一行留了一条判据「ping 与不开共存时一样」。这一节是补的对照。
+结论是判据成立，但中间走了一段弯路：头两轮对照收不到帧，一度被记成"共存核是 Wi-Fi 收发的前提"；查下去，那是计数桩的缺陷。
 
-### 13.1 做法
+### 13.1 四种构建
 
-与 `wifi-ieee80211-verification.md` §11 的连接轮是同一个流程（全信道扫描，然后连接同一个 AP、DHCP、ping 网关），构建时去掉
-`-Dcoex` 与 `-Dcoex-objs`，`libcoexist.a` 的 11 个成员改混在 `-Dwifi-blob-objs` 里（§6.5 的"不开共存时"写法），其余开关相同。
+流程与 `wifi-ieee80211-verification.md` §11 的连接轮相同（全信道扫描，然后连接同一个 AP、DHCP、ping 网关），同一份真实链路
+探针、同一个源码树，只变共存钩子由谁来答：
 
-| 轮次 | 构建 | 扫描 | 连接 | 日志 |
-| --- | --- | --- | --- | --- |
-| `connect-cc` | `-Dcoex` | 40 个 AP | `STA_CONNECTED`，3031 ms；DHCP 105 ms；ping 10/10 | 未入库 |
-| `connect-ad` | 不开 | `apnum=0` | `reason=201`，3446 ms | `logs/wifi-link-nocoex-boot.log`（脱敏副本） |
-| `connect-ae` | 不开 | `apnum=0` | `reason=201`，3447 ms | 未入库 |
+| 轮次 | 构建 | blob 的共存钩子 | 共存核 | 扫描 | 连接 | 日志 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `connect-cc` | `-Dcoex` | 胶水 → 核 | 启动 | 40 个 AP | 3031 ms；DHCP 105 ms；ping 10/10 | 未入库 |
+| `connect-ad`、`connect-ae` | 不开 `-Dcoex` | 计数桩（`osi_impl.zig` 的 `shellCoex*`） | 不启动 | `apnum=0` | `reason=201`，3446 / 3447 ms | `logs/wifi-link-nocoex-boot.log`（`ad` 的脱敏副本） |
+| `connect-af` | `-Dcoex` + `-Dcoex-sw-off` | 胶水，按 IDF 关闭分支作答 | 不启动 | 38 个 AP | 2566 ms；DHCP 46 ms；ping 10/10 | `logs/wifi-link-coex-off-boot.log` |
+| `connect-ag` | 不开 `-Dcoex`，只改 `_coex_pti_get` 的桩 | 计数桩 | 不启动 | 37 个 AP | 2625 ms；DHCP 50 ms；ping 10/10 | `logs/wifi-link-stubs-pti-boot.log` |
+
+"不开 `-Dcoex`"的写法见 §4.6：去掉 `-Dcoex` 与 `-Dcoex-objs`，`libcoexist.a` 的 11 个成员混在 `-Dwifi-blob-objs` 里，
+所以 `libcoexist.a` 照样链着，只是没人调 `coex_pre_init`、blob 的钩子指向计数桩。`-Dcoex-sw-off` 是为这一轮加的开关：
+胶水照常链着，`coexBoot` 把配置里的 `sw_coexist` 置假，`bind.boot()` 回 `CoexDisabled`（日志
+`coex[boot]: FAILED CoexDisabled rc=0x0 rejected=1`，之后各阶段 `booted=false`），每个钩子按 `Glue.off()` 走关闭分支——
+那一套桩值在 L1 逐钩子对照过 `esp_adapter.c` 的 `#else`（`host_tests.zig` 的 `expectWifiStubValues`）。
+
+头两轮的日志：
 
 ```text
 wifi-blob: Send scan done event: status=0, apnum=0
 wifi-link-probe: esp_wifi_scan_get_ap_num rc=0x0 n=0
-wifi-blob: clear blacklist
 wifi-blob: connect status 1 -> 3
 wifi-blob: Send disconnect event, reason=201
 wifi-link-probe: DISCONNECTED in 3446 ms: reason=201
 ```
 
-扫描照样逐信道走完，只是没有记录——beacon 和 probe response 都收不到。连接阶段的定向扫描同样没有找到，随后是
-`reason=201`（`NO_AP_FOUND`）。这就是 `wifi-ieee80211-verification.md` §10 之前那道"扫描走完、0 个 AP"的墙。
+扫描照样逐信道走完，只是一条帧都收不到。这就是 `wifi-ieee80211-verification.md` §10 之前那道"扫描走完、0 个 AP"的墙，
+所以当时很容易把它读成"又缺了一个 IDF 替我们做的前置"。
 
-### 13.2 寄存器差
+### 13.2 寄存器跟着谁走
 
-两份日志在同样的时点各有一份转储（`REGDUMP`：523 个有文档的寄存器；`MACDUMP`：MAC 块 1024 个字；`FOCUSDUMP`、`RANGEDUMP`）。
-按地址配对做差，A 是不开共存（`connect-ad`），B 是开共存（`connect-cc`）：
+每轮在同样的时点都留了寄存器转储（`REGDUMP` 523 个有文档的寄存器、`MACDUMP` MAC 块 1024 个字）。把"核启动"与"钩子是谁"
+分开之后，原先以为跟着共存核走的那一组地址分成了两簇：
 
-| 时点 | 共同地址 | 不同 | 分类 |
-| --- | --- | --- | --- |
-| start 之后 | 523 | 7 | `REG` 7 |
-| 扫描中 | 1602 | 110 | `REG` 9、`FOCUS` 40、`MACW` 61 |
-| 扫描后 | 6727 | 146 | `REG` 8、`MACW` 68、`RG` 70 |
+| 地址（时点） | 身份 | 核启动（`cc`） | 计数桩，PTI 写 0（`ad`） | 胶水关闭分支（`af`） | 计数桩，PTI 不写（`ag`） |
+| --- | --- | --- | --- | --- | --- |
+| `0x2010F008`（start 之后） | `MODEM_LPCON_COEX_LP_CLK_CONF` | `0x314` | `0` | `0` | `0` |
+| `0x2010F03C`（start 之后） | `MODEM_LPCON_DCMEM_VALID_0` | `0x00800001` | `0x1` | `0x00800001` | `0x00800001` |
+| `0x2010F044`（start 之后） | `MODEM_LPCON_DCMEM_VALID_2` | `0x80` | `0` | `0x80` | `0x80` |
+| `0x2010F050`（start 之后） | `MODEM_LPCON_MODEM_INTR_STATUS` | `0x2` | `0` | `0x2` | `0x2` |
+| `0x2058909C`（start 之后） | `HP_SYS_CLKRST + 0x9C` | `0x02000000` | `0` | `0x02000000` | `0x02000000` |
+| `0x20104DD4` / `0x20104DD8`（扫描后） | MAC 的 PTI 表字 | `0x55777555` / `0x00003377` | `0` / `0` | `0xff00083f` / `0x0000500d` | `0xf4000080` / `0x00005007` |
+| `0x2010408C`–`0x20104094`、`0x20104300`（扫描后） | MAC 的 RX 缓冲字与掩码 | 非零 | 全 0 | 非零 | 非零 |
 
-有文档的寄存器里，三个时点都稳定不同的 6 个（寄存器名取自 `modem_lpcon_reg.h`；基址 `MODEM_LPCON` = `0x2010F000`）：
+- 只有 `COEX_LP_CLK_CONF` 跟着核走：核启动之后是 `0x314`（分频数 49，时钟源 XTAL），不启动就是 0。`af`、`ag` 两轮它都是 0
+  而链路正常，所以它不是收发的前提。
+- 其余几个跟着钩子的答复走：PTI 写 0 的两轮是 0，另外三种构建非零。MAC 的 PTI 表字最直接：blob 拿到 PTI 0 就把它编进表里，
+  表全 0 的两轮 RX 缓冲字也全 0。关掉共存时 blob 用的是它自己的默认 PTI（`af`、`ag` 的表字与官方开着共存时的不同，但非零）。
+- `ad` 对 `cc` 的逐地址差分：start 之后有文档的 523 个里差 7 个，扫描中共同 1602 个地址差 110 个，扫描后 6727 个里差 146 个
+  （`REG` 8、`MACW` 68、`RG` 70）。全量差分文件落在 `/tmp`，没有入库；上面的表是入库日志里逐个地址读出来的。
 
-| 地址 | 身份 | A：不开共存 | B：开共存 |
-| --- | --- | --- | --- |
-| `0x2010F008` | `COEX_LP_CLK_CONF` | `0x00000000` | `0x00000314`（分频数 49，时钟源 XTAL） |
-| `0x2010F03C` | `DCMEM_VALID_0` | start 之后 `0x1`，之后 `0` | start 之后 `0x00800001`，之后 `0x00800000` |
-| `0x2010F040` | `DCMEM_VALID_1` | `0` | 扫描中 `0x440`，扫描后 `0x20000` |
-| `0x2010F044` | `DCMEM_VALID_2` | `0` | `0x80` |
-| `0x2010F050` | `MODEM_INTR_STATUS` | `0` | `0x2` |
-| `0x2058909C` | `HP_SYS_CLKRST + 0x9C` | `0` | `0x02000000`（bit25） |
+### 13.3 根因、修复与边界
 
-MAC 块里（扫描中的转储）：
-
-| 地址 | A：不开共存 | B：开共存 |
-| --- | --- | --- |
-| `0x2010408C` / `0x20104090` / `0x20104094` | `0` / `0` / `0` | `0x01033234` / `0x00033234` / `0x00033234` |
-| `0x201042F4` | `0` | `0x180` |
-| `0x20104300` | `0` | `0xFFFFFFFF` |
-| `0x201044E4` | `0x00000800` | `0x00000810` |
-| `0x20104548` | `0` | `0x02480000` |
-
-BB 一侧：`0x20107438` 的 bit12、`0x20107FFC` 的 bit28 只在 B 里置位；`0x2010785C`、`0x20107C08`、`0x20108038`–`0x20108048` 在 A 里
-是 0。这些地址的含义没有逐个核对，这里只记原值。
-
-### 13.3 结论与边界
-
-- **共存核启动是 Wi-Fi 收发的前置。** IDF 在系统初始化的 SECONDARY 级调 `init_coexist`（§4.8"启动位置"），官方镜像带着
-  `libcoexist`（纯 BLE 的 oracle 映射文件里已链它，ADR-003 第 1 节）。裸机镜像里这一步只有 `-Dcoex` 开着时才做。
-- **扫描不通的记录要改。** `wifi-ieee80211-verification.md` §10 写的是"原因有两处"（APM 访问控制过滤器、supplicant 回调表）。
-  那两处的单变量实验都是在开着 `-Dcoex` 的镜像上做的，它们各自是必要的，这一点不受影响；但它们之前还有一个前提——共存核
-  没有启动时，MAC 根本不收帧。连上之后的每一轮也都开着 `-Dcoex`，没有例外。
-- **`-Dcoex` 对要收发的 Wi-Fi 镜像不是可选项。** "默认关"只对不做 Wi-Fi 收发的镜像成立；关着时默认、BLE 闭包、BLE 探针、
-  Wi-Fi init 探针四种镜像逐字节不变（§4.2）仍然成立。
-- **ADR-003 第 5 节 L4a 一行的判据**「ping 与不开共存时一样」作废，改为「不开共存核时没有链路」。
-- 没有分开验证的是：起决定作用的是启动期的 `coex_pre_init`、`esp_wifi_start` 时的 `_coex_enable`，还是胶水包装的返回值。
-  不开共存的镜像里 blob 调到的是计数桩，它们与 IDF 关闭分支的桩值是否等价也没有核过。
+- **根因：`_coex_pti_get` 的计数桩把出参写成 0。** `osi_impl.zig` 的 `shellCoexPtiGet` 原先是 `if (pti) |q| q.* = 0; return 0;`。
+  IDF 的关闭分支（`esp_adapter.c` 里 `#if CONFIG_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE` 的 `#else`）是返回 0、
+  **不写出参**。单变量验证就是 `connect-ag`：计数桩的镜像只把那一行写去掉，链路恢复。
+- **修复**：`shellCoexPtiGet` 不再写出参，与 IDF 的关闭分支一致。
+- **共存核不是 Wi-Fi 收发的前提。** `af`、`ag` 两轮核都没有启动（参数指针是 0、`COEX_LP_CLK_CONF` 是 0），链路照常。
+  当初排查扫描时加上 `-Dcoex` 之后 RX 那组寄存器"对上了"，应是因为真核心回了真的 PTI，不是因为它启动了什么硬件前提
+  [INFERENCE：当时没有把 PTI 单独拿出来测，这一条是由 `ag` 反推的]。
+- **`wifi-ieee80211-verification.md` §10 的"原因有两处"不用改**：APM 访问控制过滤器、supplicant 回调表。那一节的读数都开着
+  `-Dcoex`，事后看那只是当时探针的样子。
+- **ADR-003 第 5 节 L4a 一行的判据成立**：不开共存时真实链路照常。`-Dcoex` 对 Wi-Fi 仍然是可选项，"默认关"不变。
+- 没有做的：其余钩子的计数桩与 IDF 关闭分支的逐项对照。已知的两处出入没有核到底——`coex_schm_flexible_period_get`
+  关闭分支回 1，计数桩回多少没有看；`shellCoexEnable` 会去调 `libcoexist.a` 的 `coex_enable()`，IDF 的关闭分支不调。
+  链路在 `ag` 里正常，说明它们不影响这条路径，但"等价"没有证。
+- 官方 Wi-Fi 镜像是开着共存的：仓里的 oracle 转储（纯 Wi-Fi 镜像）在 init 之后 `2010F008` 就是 `0x00000314`
+  （`logs/wifi-idf-oracle-regdump-boot.log` 第 105 行）；仓库外的参照构建 `s31-wifi-oracle` 的 sdkconfig 里
+  `CONFIG_SW_COEXIST_ENABLE=y`，映射文件里链了 `libcoexist.a` 和 `__esp_sys_init_fn_init_coexist`。要和官方栈逐项对齐
+  （比如 PTI 表字）就开 `-Dcoex`；不开时链路正常，PTI 表是 blob 自己的默认值。
 
 ## 14. 合并镜像里的 BLE enable（2026-11-26）
 
@@ -868,11 +871,16 @@ APM 过滤器已关、ICG 码已写、共存核已启动的镜像里，生产路
   写死的地址读到的是不相干的内存。改成按符号取（`probe_ptr.bohffAnchor()`）。其余写死的地址都落在 `layout_probes = false`
   时被拦截的那一段，合并镜像里是空操作。
 - 这一份镜像里 Wi-Fi 侧的 `initOnly` 先做了关 APM 过滤器与设 modem 的 ICG 码，所以 BLE 的 init 与 enable 都是在这两样
-  已生效的状态下跑的。§11.2 记的"BLE 探针加了这一调用之后两次 `rst:0x1a`"来自已经不在树里的旧探针，这一轮没有复现。
+  已生效的状态下跑的。日志里自己的读数：`wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 0/0/0 -> 0/0/0 (0 = off)`（进
+  `initOnly` 之前就已经是 0——合并镜像照常先跑各段自检，是哪一段先关的这份日志里没有行可引）、
+  `wifi-init-probe: pmu modem ICG code 0->2 (2 = active)`、`coex[boot]: booted=true … rej=0`。§11.2 记的"BLE 探针加了这一
+  调用之后两次 `rst:0x1a`"来自已经不在树里的旧探针，这一轮没有复现。
 
 ### 14.2 板侧读数（`logs/coex-merged-ble-enable-boot.log`）
 
 ```text
+wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 0/0/0 -> 0/0/0 (0 = off)
+wifi-init-probe: pmu modem ICG code 0->2 (2 = active)
 bt init-only: bringup.init rc=0 arena free=30728 B
 read[ble before enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
 read[ble before enable]: fe 0438=ff410000 0450=00110000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
@@ -906,11 +914,16 @@ enable 前后只有一处不同：`0x2010_0450` 从 `0x00110000` 变成 `0x00102
 - **生产路径的 BLE enable 在合并镜像里走通了**：五步归档调用都返回 0，共存核的 BLE 侧进了 `enabled`，没有锁死。
   §11.3 里"接了会让 BLE 探针锁死"只对那份旧探针成立。
 - **synth 那道墙（R3.3）不在这三样上。** 官方序列是 `init rc=0 → phy full cal → libbtbb version → enable rc=0 → 98BC=4`
-  （`bringup.zig` 里引的 oracle 读数）；这里 enable 返回 0 之后 `98BC` 仍是 0。APM 过滤器已关、ICG 码已设、共存核已启动，
-  这三样是把 Wi-Fi 从同类墙后面拉出来的条件，对 BLE 的合成器不够。
+  （`bringup.zig` 注释里引的 oracle 读数，那份日志没有入库）；这里 enable 返回 0 之后 `98BC` 仍是 0。APM 过滤器已关、
+  ICG 码已设、共存核已启动，这三样是把 Wi-Fi 从同类墙后面拉出来的条件，对 BLE 的合成器不够。
 - 这一轮不发 HCI 命令，所以它只回答"enable 走到哪"。`98BC` 在 enable 之后就是 0，与 oracle 序列里 enable 之后的 `98BC=4`
   直接可比。泵的 1 秒里 controller 没有可做的事（事件队列为空），synth 区与 ANA 寄存器不动只说明它没动，
   不说明合成器为什么没就绪。
+- `bringup.enable()` 不是纯生产路径：它开头无条件写 `0x2010_0450 = 0x00102000`（探针期为对齐官方值加的，改的是 FE 寄存器），
+  日志里 `0450` 的变化就是它。这一轮 Wi-Fi 没有 start，没有后果；把这条路径并进合并镜像做 L4b 之前，要把它拿掉或挂到开关后面。
+- 一条没有验证的线索：这一轮 ANA 的 `0x2010F818` 是 `0x2900e444`，而 `probe_ptr.zig` 的注释写着 ana I2C burst
+  （`phy_ana_i2c_master_burst_rf_onoff(1)` 加 `phy_ana_i2c_master_burst_bbpll_config()`）做完之后 CONF0 应是 `0x2900e448`。
+  差在哪一位、是不是合成器没就绪的原因，没有查。
 - 合并镜像里 `esp_wifi_start` 仍然没有跑，两个控制器同时工作仍然没有任何证据（L4b）。要做到那一步，先得把 Wi-Fi 的
   真实链路路径（`-Dwifi-link-probe`，现在与 `-Dcoex-merged` 互斥）并进合并镜像。
 

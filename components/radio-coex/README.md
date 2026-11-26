@@ -36,8 +36,9 @@
 
 ## 验证状态
 
-只列实际跑过的。板上跑过五次：对假核心的自检；经 C2 接线带着真核心的启动；Wi-Fi 探针走到
-`esp_wifi_start`（`_coex_enable` 被 blob 执行并被核心收下）；两个射频同链的合并镜像（见下）；只开 Wi-Fi 的真实链路上取核读数（见下）。
+只列实际跑过的。板上跑过六次：对假核心的自检；经 C2 接线带着真核心的启动；Wi-Fi 探针走到
+`esp_wifi_start`（`_coex_enable` 被 blob 执行并被核心收下）；两个射频同链的合并镜像（见下）；只开 Wi-Fi 的真实链路上取核读数；
+不开共存的对照（见下）。
 
 - L3 板侧（假核心）：2026-11-24 随 `wifi` profile 第一次上板，自检 10/10。日志 `logs/wifi-selftest-prefix-boot.log`。
 - L3 板侧（真核心，经 `-Dcoex` 接线）：同日 BLE 探针读到 `param=0x2f00ffe4`、`fw=2.0.0 rom=cdcf52b`、
@@ -49,10 +50,18 @@
   此前探针在 start 之前就 panic，这条路径从没被执行过；那次的 panic 与共存无关（§9）。
 - L3 板侧（合并镜像，2026-11-24）：两个射频的适配层同链，`coex[merged]: … wifi=inited ble=inited … rej=0`
   （`logs/coex-merged-boot.log`）。细目见 `docs/verification/coex-verification.md` §6。
-- L4a 板侧（只开 Wi-Fi 的真实链路，2026-11-26）：真实链路探针开 `-Dcoex` 连上真实 AP、DHCP、ping 网关 10/10（没有不开共存的对照轮）；
+- L4a 板侧（只开 Wi-Fi 的真实链路，2026-11-26）：真实链路探针开 `-Dcoex` 连上真实 AP、DHCP、ping 网关 10/10；
   胶水 `rej=0`、`last_error=-`；blob 的 13 次 `_coex_wifi_request` 核都回 `0x102`（事件 7、9 在核的事件表里没有硬件定时器）；
-  BLE 没开，核的状态位与硬件定时器都是 0。日志 `logs/wifi-link-connect-boot.log`。细目见 `docs/verification/coex-verification.md` §12；
-  L4b（两个射频都开）等 R3.3，做法与判据写在 ADR-003 第 5 节。
+  BLE 没开，核的状态位是 0（初稿写的"硬件定时器都是 0"读错了对象：`0x2010F008` 是共存低功耗时钟的配置，
+  `docs/verification/coex-verification.md` §12 已更正）。日志 `logs/wifi-link-connect-boot.log`。细目见
+  `docs/verification/coex-verification.md` §12。
+- L4 板侧（不开共存的对照，2026-11-26）：同一份真实链路探针，胶水链着但配置里 `sw_coexist = false`（`-Dcoex` + `-Dcoex-sw-off`：
+  `boot()` 被拒、核不启动、每个钩子走 `Glue.off()` 的关闭分支）：扫描 38 个 AP、连上、DHCP、ping 10/10
+  （`logs/wifi-link-coex-off-boot.log`）。ADR-003 第 5 节 L4a 的判据「ping 与不开共存时一样」成立。只去掉 `-Dcoex` 的镜像
+  （钩子是计数桩）收不到帧，根因是 `_coex_pti_get` 的计数桩把出参写成 0——关闭分支不写出参（`host_tests.zig` 的
+  `expectWifiStubValues` 逐项核过），计数桩没有这层保证。细目见 `docs/verification/coex-verification.md` §13。
+- L4b（两个射频都开）等 R3.3，做法与判据写在 ADR-003 第 5 节；合并镜像里的 BLE enable 已返回 0，synth 锁定位仍是 0
+  （`docs/verification/coex-verification.md` §14）。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |

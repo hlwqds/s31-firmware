@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Fixed
+- **不开 `-Dcoex` 的 Wi-Fi 探针镜像收不到任何帧（2026-11-26）**：扫描逐信道走完但恒为 0 个 AP，连接 `reason=201`。根因在
+  `osi_impl.zig` 的 `shellCoexPtiGet`：它把 PTI 出参写成 0 再返回 0，而 IDF 的关闭分支（`esp_adapter.c` 的 `#else`）返回 0、
+  **不写出参**。blob 把 PTI 0 编进 MAC 的 PTI 表（`0x20104DD4` / `0x20104DD8` 全 0），RX 缓冲字跟着全 0，收不到帧。
+  修法：桩不再写出参。验证是单变量的——计数桩的镜像只改这一行，扫描 37 个 AP、连上 2625 ms、DHCP 50 ms、ping 10/10
+  （修之前 `logs/wifi-link-nocoex-boot.log`，修之后 `logs/wifi-link-stubs-pti-boot.log`）；胶水按 IDF 关闭分支作答、
+  核不启动的镜像同样正常（`logs/wifi-link-coex-off-boot.log`）。连带澄清：共存核不是 Wi-Fi 收发的前提，先前所有成功的
+  轮次都开着 `-Dcoex`，只是因为真核心回了真的 PTI。没有做：其余钩子的计数桩与 IDF 关闭分支的逐项对照。
+  细目见 `docs/verification/coex-verification.md` §13。
 - **Wi-Fi 连上真实 AP 之后数据帧解不开、ping 网关时通时不通（2026-11-26，路线图 R3.2.3 的数据通路）**：两处根因，各修一处。
   ① 镜像的 `memcpy` / `memmove` / `memset` 是 compiler_rt 的逐字节循环，而 blob 装钥匙的 MAC 密钥表是整字寄存器堆：每 4 个字节
   只剩最后 1 个。四次握手照常完成、驱动也报成功，数据帧却双向都解不开——连上之后 DHCP 12 秒没有应答。修法：
@@ -39,10 +47,9 @@
   `scripts/check-host.sh`、`scripts/check-coverage.py`、`scripts/check-invariants.py` 通过。没有做：连接（WPA2-PSK 关联 +
   4 次握手）、收发、PHY 标定数据的持久化；回调表里连接路径的入口还没填，其中多处调用点不判空，连接之前必须先填齐。
   （连接与收发已于同日晚打通，见上面两条。）
-  **【2026-11-26 更正】另有一个前提**：上面的读数和之后连上真实 AP 的每一轮都开着 `-Dcoex`（共存胶水加 `libcoexist.a` 的真核心）。
-  同一份探针只把 `-Dcoex` 关掉，扫描又是 0 个 AP、连接 `reason=201`，两轮相同——不开共存核时 MAC 不收帧
-  （`logs/wifi-link-nocoex-boot.log`）。所以扫描的条件是三样：共存核已启动、APM 过滤器已关、supplicant 回调表已登记。
-  细目见 `docs/verification/coex-verification.md` §13。
+  **【2026-11-26 补记】**同日曾把"去掉 `-Dcoex` 的同一份探针收不到帧"记成本条的第三个前提，查清后撤回：那是那种构建里
+  `_coex_pti_get` 的计数桩把出参写成 0（IDF 的关闭分支不写），不是缺了共存核，见「Fixed」里"不开 `-Dcoex` 的 Wi-Fi 探针镜像
+  收不到任何帧"一条。
 - **Wi-Fi 探针在扫描走通之前修掉的几处运行时缺陷（2026-11-25 至 26；与上一条同在提交 `a28df73`，当时只写进了提交说明，这里补记）**：
   ① `link_stubs.zig` 的国家码 / 信道表原是 4 KiB 的零值桩——链接能过，但驱动拿到的是「没有国家配置」，扫不到任何 AP；换成 IDF 的真实数据。
   ② `osi_impl.zig` 的软件定时器表只有 16 项，扫描起始的信道定时器排不进表，扫描走不完；扩到 32 项。
@@ -144,12 +151,12 @@
     （`logs/wifi-link-connect-boot.log`，邻居的 SSID 与 BSSID 已脱敏）。AP 的凭据经 `-Dwifi-ap-ssid` / `-Dwifi-ap-password` 给，不入库。
     没有抓包；只有 WPA2-PSK + CCMP-128、一台 AP。细目见 `docs/verification/wifi-ieee80211-verification.md` §11。
   - 主机用例 2045 → 2064（`wifi-blobs` 43 → 62：`wpa_cb.zig` 13 → 20、`data_path.zig` 新增 6、`nvs_ram.zig` 新增 5、`host_tests.zig` 25 → 26）。
-- **共存核是 Wi-Fi 收发的前提；合并镜像里的 BLE enable；L4a 定时器读数的更正（2026-11-26）**：
-  - **不开共存核的对照**（ADR-003 L4a 那条「ping 与不开共存时一样」）：同一份真实链路探针去掉 `-Dcoex`，两轮都是扫描 0 个 AP、
-    连接 `reason=201`（`logs/wifi-link-nocoex-boot.log`）。有文档的 523 个寄存器在 start 之后差 7 个：共存低功耗时钟的配置
-    `MODEM_LPCON_COEX_LP_CLK_CONF`、`DCMEM_VALID_0..2`、`MODEM_INTR_STATUS` 在不开共存时是 0；扫描中 MAC 的
-    `0x2010408C`–`0x20104094`、`0x20104300` 与一批 BB 寄存器也是 0。所以"扫描不到任何 AP"的条件是三样（见下面那一条的更正），
-    `-Dcoex` 对要收发的 Wi-Fi 镜像不是可选项。细目见 `docs/verification/coex-verification.md` §13。
+- **不开共存的对照；合并镜像里的 BLE enable；L4a 定时器读数的更正（2026-11-26）**：
+  - **不开共存的对照**（ADR-003 L4a 那条「ping 与不开共存时一样」，判据成立）：`firmware/build.zig` 新增 `-Dcoex-sw-off`
+    （要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）——胶水照常链着，配置里 `sw_coexist = false`，钩子按 IDF 关闭分支作答，
+    `boot()` 被拒、核不启动。板侧：扫描 38 个 AP、连上 2566 ms、DHCP 46 ms、ping 10/10（`logs/wifi-link-coex-off-boot.log`）。
+    同日初稿把"只去掉 `-Dcoex` 收不到帧"写成了"共存核是前提"，是错的，根因与更正见「Fixed」里"不开 `-Dcoex` 的 Wi-Fi 探针镜像
+    收不到任何帧"一条；`-Dcoex` 仍是可选项。细目见 `docs/verification/coex-verification.md` §13。
   - **合并镜像里的 BLE enable**：`firmware/build.zig` 新增 `-Dcoex-ble-enable`（要求 `-Dcoex-merged`），`coex_merged` section
     在两个 init 之后 enable BLE、把 controller 任务泵 1 秒、前后读 synth 区与时钟 / 射频状态寄存器（`bt-blobs/src/probe.zig`
     新增 `enableOnly` / `pumpFor`）。`bringup.enable()` 里的 anchor[8] 从写死的 `0x2f01_8720` 改成按符号取——合并镜像里那个符号在
@@ -169,8 +176,7 @@
   **【2026-11-26 更正】**这条里"核的状态位与硬件定时器都是 0"的后半句不成立：当时读的 `0x2010F008` 是 `MODEM_LPCON_COEX_LP_CLK_CONF`
   （共存低功耗时钟的配置），不是计数器，读两次不变说明不了定时器走没走；这一轮 blob 只申请了没有配定时器的事件，没有定时器被武装。
   `coexReadings` 已改成读定时器寄存器（`0x2010F040 + 16*idx`、`0x2010F408 + 16*idx`，出自 `coex_hw_timer_set` /
-  `coex_hw_timer_enable` 的反汇编），下次上板才有数。同日补的不开共存对照见上面"Wi-Fi blob 扫描不到任何 AP"一条的更正；
-  ADR-003 里「ping 与不开共存时一样」这条判据作废。
+  同日补的不开共存对照见上面「不开共存的对照」一条；ADR-003 里「ping 与不开共存时一样」这条判据成立。
 - **无线离线特性第五批（2026-11-25）**：与前几批同一个口径——按规范条款实现，不依赖射频、不抓空口。证据是主机用例、
   与按原文写的 Python 模型的对拍、板侧自检（主机桩与真板）。验收之后经独立评审两轮（Wi-Fi 15 条 + 残留 6 条、BLE 7 条）返修并复验，
   终态随 `wifi` profile 上板：**`PASS board:wifi`，14/14 个 section 全过、`main: verdict=pass`**——三个无线 section 的判据全部
@@ -383,7 +389,8 @@
   SHA-256 全部相同（默认镜像即 `net`：`app.bin` 243 488 B、`app.elf` 223 280 B）；只有 `wifi`（irom +176 848 B）与 `full`（irom +142 832 B）变大。
 - **共存 glue 接进两套适配层（路线图 C2，2026-11-24）**：构建开关 `-Dcoex`，配 `-Dcoex-objs` 给 `libcoexist.a`
   的成员；默认关。
-  **【2026-11-26 更正】**"默认关"只对不做 Wi-Fi 收发的镜像成立：共存核不启动，Wi-Fi blob 收不到帧
+  **【2026-11-26】**不开 `-Dcoex` 的 Wi-Fi 探针镜像里，`_coex_pti_get` 的计数桩把出参写成 0，会让 blob 收不到帧；已改成不写
+  （与 IDF 关闭分支一致，`osi_impl.zig`）。"默认关"不变：胶水按关闭分支作答、核不启动时真实链路照常
   （`docs/verification/coex-verification.md` §13）。
   - BLE 侧：`components/osal/src/osal.zig` 的 11 个 `wr_btdm_coex_*` 开关打开时转发给胶水，另补 5 个缺失的强定义；
     适配表的 18 个 OS 钩子在 `components/osal/src/coex_hooks.zig`（8 项用例）；`bt-blobs` 的 `btdmCoexInit/Enable`
