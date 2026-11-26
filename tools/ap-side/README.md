@@ -11,6 +11,7 @@
 | `frames.py` | 工作站 | 把 monitor 抓到的帧整理成一行一帧，时间换算成本机时间 |
 | `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
 | `decode-adv-marker.py` | 工作站 | 解码合并镜像广播实验的落盘记录（flash `0x18E000` 起一个扇区，`bt-blobs/src/probe.zig` 的 `markerWrite` 写的）：每条 32 字节，按槽位顺序打印；全 FF 的扇区报「空的」。记录只写到广播使能的"正要发"为止——当时的理由是"之后板子不再出声"，那其实是 `bt-blobs` 的中断风暴，2026-11-27 晚已修（生产仓 `coex-verification.md` §17.5）；记录本身仍然冻结在那里，没有改回 |
+| `btmon-summary.py` | 工作站 | 蓝牙一侧：从 `btmon` 的输出里汇总板子地址的 LE 广播上报，按广播事件分组，给出事件间隔与 RSSI 的统计；`--raw` 逐条列出（见下文「蓝牙一侧」） |
 
 ## 用法
 
@@ -62,6 +63,30 @@ python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 
 `MON` 模式只抓地址里有板子 MAC 的帧，邻居的流量不抓；monitor 接口与 AP 在同一个射频、同一个信道上，建得起来也删得干净
 （mt76 实测）。它是在路由器上的一处**运行时**改动：`collect.sh` 在退出、出错、被中断时都删掉它，不写任何持久配置。
+
+## 蓝牙一侧：板子的 BLE 广播（工作站上抓）
+
+板子的 BLE 广播不从 AP 那一头看，用工作站自带的蓝牙控制器：hci0，bluez 5.86 的 `btmon` 记 HCI 事件，要 root。
+
+```bash
+sudo -k -S -p '' sh -c 'timeout 60 btmon > /tmp/btmon.txt 2>&1 & (printf "menu scan\nduplicate-data on\nback\nscan on\n"; sleep 55) | bluetoothctl > /dev/null; wait' < <(放 sudo 密码的文件)
+python3 tools/ap-side/btmon-summary.py /tmp/btmon.txt 02:00:00:00:BB:01 --raw
+```
+
+- `duplicate-data on` 是关键。默认的 `bluetoothctl scan on` 让内核下发 LE Set Extended Scan Enable 时开着控制器的重复
+  过滤，同一个广播者 56 秒只上报一两次；进了 `scan` 子菜单把它打开之后，内核下发的是 Filter duplicates = Disabled
+  （2026-11-27 在 btmon 里对过），每一次被扫描窗口碰到的广播事件都上报。命令行上没有这个开关（`bluetoothctl --help`
+  里没有 `--duplicate-data`），只有子菜单里的这条命令。
+- 板子那一轮的广播窗口：开跑后约 72–120 秒（构建 25 秒、烧录 15 秒、第一遍 Wi-Fi 链路约 40 秒之后起广播约 45 秒）。
+  板子的广播地址是 `02:00:00:00:BB:01`——合并镜像没有接读 eFuse MAC 的钩子，这是回退值。
+- 上报很稀（2026-11-27 一轮 56 秒里板子只有 20 次，原因没有查），所以间隔要用「每一段都是广播间隔加 advDelay 的整数倍」
+  来判，不能只看相邻两条的平均。`--raw` 的逐条输出只有板子的时间、RSSI、PDU 类型，可以直接入库。
+- 原始的 btmon 输出里有每一个邻居的广告（地址与广播数据原文），不入库；要 PDU 原文就只摘板子地址的那几块。
+- 走不通的三条，别再试：自编的静态 tcpdump 认不得 bluetooth-monitor 接口（libpcap 编译时没有 bluez 头文件）；bluetoothd
+  在管着控制器时用 `hcitool` 直接发 LE 扫描命令回 0x12；HCI 用户通道（要先 `bluetoothctl power off`）打开之后，这台
+  Intel 控制器对 LE Set Scan Param / Enable 回 0x12、对 Intel Read Version 回 0x01——没有经过 btusb / btintel 的厂商初始化。
+- 证据：`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`（两条广播上报的原文：PDU 类型、地址类型、广播数据、RSSI）、
+  `logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`（间隔：19 段都是 100 ms 加 advDelay 的整数倍）。
 
 ## 入库前的规矩
 

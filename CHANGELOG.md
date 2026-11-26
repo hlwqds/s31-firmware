@@ -22,8 +22,10 @@
   `osi_impl.zig` 里 `_set_isr` 的注释原来写「`trap.setHandler` 内部归一化」，并不属实，已改成实际的约定（原样存、按外部中断号
   索引）；blob 经这条路传的编号是哪一种没有核对过。细目见 `docs/verification/coex-verification.md` §17.5。
   空口上的广播 PDU 也记到了两条（工作站 `btmon` 记 HCI 事件，`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）：`ADV_NONCONN_IND`、
-  Public 地址、Flags 0x06 加名字 `s31`，RSSI -51 / -25 dBm。广播间隔没有量：bluetoothd 的扫描开着重复过滤，不带过滤的原始
-  HCI 扫描没有做通。
+  Public 地址、Flags 0x06 加名字 `s31`，RSSI -51 / -25 dBm。广播间隔也量到了（`logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`）：
+  在 `bluetoothctl` 的 `scan` 子菜单里 `duplicate-data on` 之后每一次广播事件都上报，19 段相邻上报每一段都是「100 ms 加
+  0–10 ms 的 advDelay」的整数倍——空口上是 100 ms，与上面按 0.625 ms 一档算出的一致。新增 `tools/ap-side/btmon-summary.py`
+  与 README 的「蓝牙一侧」（配方；默认扫描开着控制器的重复过滤，量不出间隔）。
 - **`tools/ap-side/collect.sh` 默认找的 tcpdump 与实际上传的不是同一个路径（2026-11-27）**：脚本默认找 `/tmp/ap-tcpdump`，实际上传的
   二进制在路由器上叫 `/tmp/r5c-tcpdump`（内存盘，不在 PATH 里）——照文档用会静默不抓帧，在路由器上敲 `tcpdump` 也是 not found。
   改成 `$TCPDUMP` > PATH 里的 tcpdump > `/tmp/ap-tcpdump` > `/tmp/r5c-tcpdump`，输出里写明用的是哪一份，找不到时写明原因。

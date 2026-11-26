@@ -205,6 +205,10 @@
   （往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二次关联与四次握手；工作站 `bluetoothctl scan on` 看到 `s31`。日志
   `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`（对照）、`…-ble-adv11-boot.log`、`…-ble-adv12-boot.log`、
   `…-ble-adv13-boot.log`（最终代码）、`…-ble-adv11-ap-syslog.log`、`…-ble-adv11-ap-frames.log`、`…-ble-adv11-bt-scan.log`。
+  空口上的广播本身（工作站 `btmon` 记 HCI 事件）：两条广播上报——`ADV_NONCONN_IND`、Public `02:00:00:00:BB:01`、Flags 0x06 加名字
+  `s31`，RSSI -51 / -25 dBm（`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）；间隔——19 段相邻上报每一段都是 100 ms 加
+  advDelay 的整数倍，空口上是 100 ms（`logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`）；配方在
+  `tools/ap-side/README.md` 的「蓝牙一侧」。
   单独的 BLE 探针修前修后各跑一轮（`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），逐段相同。
   细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
 - **没有过的**：ADR-003「核真的在仲裁」的两条判据——五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数相同；
@@ -213,7 +217,7 @@
 - **没有做的**：按广播间隔（20 / 100 / 1000 ms）各一轮的时延与丢包、PTI 行为、两侧的 start 回调（路线图 C7 的其余
   判据）；单独的 BLE 探针那边的 synth 墙（不是这个风暴，根因未知）；`osi_impl.zig` 的 `shellSetIsr` 里 blob 传的编号是
   哪一种（同类的一处，还开着）；可连接广播与 GATT；更长时间的稳定性（广播从使能起到 section 结束约 45 秒，没有发广播
-  关闭命令）；量广播的间隔（信号强度有两条样本：`btmon` 记到的两条 HCI 广播上报，RSSI -51 / -25 dBm，`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）；广播地址还是回退的 `02:00:00:00:BB:01`；BLE 的 disable 路径；「BLE 先起」的
+  关闭命令）；广播地址还是回退的 `02:00:00:00:BB:01`（空口上量到的间隔只是 0x00A0 这一个配置）；BLE 的 disable 路径；「BLE 先起」的
   顺序；板子回别人的 ping。
 
 ## 日志
