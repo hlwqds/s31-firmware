@@ -116,6 +116,7 @@ DHCP 51 ms、ping 网关 10/10，`coex-verification.md` §15、`logs/coex-merged
 `esp_phy_load_cal_and_init`），单变量对照里只跳过一段，Wi-Fi 的扫描就从三十多个 AP 掉到 1–2 个；合并镜像里让 Wi-Fi 先
 start，BLE 的 init 两段都跳过（`phy_owned_by_wifi`），再把时钟 / 电源寄存器写回（不写回则连接失败）。这是"一个射频在收发、
 另一个 enabled"——BLE 的射频没有起，L4b 仍然没有证据。
+  【2026-11-27 晚：L4b 有了第一条证据，见下一段。】
 
 2026-11-26 晚的后续：从 AP（OpenWrt）那一侧取了证据（`coex-verification.md` §15.8）。AP 的系统日志里，修之前每一轮都是
 「板子没有确认认证响应」；最终形态是完整序列，AP 看板子 -24 dBm、双向 86 Mbit/s、15 秒里重传 0–1 次；只跳过第 15 步时
@@ -133,6 +134,16 @@ synth 锁定位没有读到过（`coex-verification.md` §17、`logs/coex-merged
 `logs/coex-merged-wifi-link-ble-adv4-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`、
 `logs/coex-merged-wifi-link-ble-adv8-ap-frames.log`、`ble-core-verification.md` §9）。合并镜像的构建入口固化为
 `scripts/build-coex-link-image.sh`：只编 `coex_merged` 这一段，从 IDF 的归档重新生成对象集合，打印体积与归属。
+
+2026-11-27 晚的后续：上一段里「广播使能被接受之后 controller 任务不再让出」的读法是错的——根因是**中断风暴**：`bt-blobs` 的
+`intrArm` 把中断桥登记在 CLIC 输入号 24 上，而 trap 分发器按外部中断号（输入号减 16）查表，永远查不到；广播使能一处理，
+BT MAC 的电平中断无限重入（每秒约 95 万次）。修掉（登记下标改成输入号减 16）之后合并镜像里 BLE 的广播上了空口：合成器
+锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 957 次、代跑 956 次；BLE 广播着的时候 Wi-Fi 照常连接、
+DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二次关联与四次握手；工作站 `bluetoothctl scan on` 看到 `s31`。
+单变量对照：只把下标改回去，`handler 0x00000000 ok=0`、风暴照旧（`logs/coex-merged-wifi-link-ble-adv-storm-boot.log`）；
+修掉之后 27/27（`logs/coex-merged-wifi-link-ble-adv{11,12}-boot.log`、`…-adv11-ap-syslog.log`、`…-adv11-ap-frames.log`、
+`…-adv11-bt-scan.log`）。L4b 有了第一条证据；按广播间隔的时延与丢包等其余判据还没有做，单独的 BLE 探针没有变化
+（`coex-verification.md` §17.5、`ble-core-verification.md` §9）。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 

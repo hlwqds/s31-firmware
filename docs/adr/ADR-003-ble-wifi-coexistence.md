@@ -10,7 +10,7 @@
 
 | 事实 | 出处 |
 | --- | --- |
-| 单独的 Wi-Fi 与 BLE 都还没有端到端跑通：Wi-Fi blob 卡在 `esp_wifi_start` 的 MAC 忙位，BLE controller 的射频 synth 不锁（2026-11-25 更正：Wi-Fi 侧已能从 `esp_wifi_start` 返回，见 ADR-001 文末；本行其余内容是决策当时的事实） | `R/logs/ch25-start-boot.log:401`（start 无返回行）；`R/logs/r162b-unlock-sweep-negative.log`（`98BC.bit2=0`）；路线图 R3.1/R3.3 |
+| 单独的 Wi-Fi 与 BLE 都还没有端到端跑通：Wi-Fi blob 卡在 `esp_wifi_start` 的 MAC 忙位，BLE controller 的射频 synth 不锁（2026-11-25 更正：Wi-Fi 侧已能从 `esp_wifi_start` 返回，见 ADR-001 文末；本行其余内容是决策当时的事实。2026-11-27 更正：合并镜像里 BLE 的广播已上空口、合成器 35 ms 内锁定，见 `docs/verification/coex-verification.md` §17.5；单独的 BLE 探针里 synth 不锁这一条没有变化） | `R/logs/ch25-start-boot.log:401`（start 无返回行）；`R/logs/r162b-unlock-sweep-negative.log`（`98BC.bit2=0`）；路线图 R3.1/R3.3 |
 | 两套 blob 适配层按构造互斥。没有任何构建把两棵树链进同一镜像 | `R/firmware/src/main.zig:22-26`；`R/firmware/build.zig:90-96,236,308` |
 | 同名导出：`esp_event_handler_register`/`unregister`、`s31_printf_hook`（两边签名不同）、`free`/`sprintf`/`putchar`/`puts`/`strtok`/`rtc_clk_xtal_freq_get` | `R/components/wifi-blobs/src/event_bus.zig:30,43` 与 `R/components/bt-blobs/src/event_bus.zig:30,43`；`R/components/wifi-blobs/src/init_probe.zig:404` 与 `R/components/bt-blobs/link/wifi_probe_stubs.c:90`；`R/components/wifi-blobs/src/link_stubs.zig:42-79`；`R/components/bt-blobs/link/bt_stubs.c:15` 自述两套不要同时链进同一个镜像 |
 | 两套协作式切换器各持一份主上下文栈指针，互不 import | `R/components/wifi-blobs/src/sched.zig:64-153`（`s31_swap_context`）；`R/components/osal/src/sched.zig:80-185`（`bt_swap_context`） |
@@ -212,7 +212,7 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
 | L2 镜像 | `-Dcoex` 打开后链接通过且恰好两段；关闭时默认镜像逐段不变 | `image-info` 两行；逐段 SHA-256 相同 |
 | L3 板侧（不抓空口） | 单射频探针镜像开 coex：`g_coex_param_ptr` 非零、打印 coex 固件与 ROM 版本（官方固件启动时就有这两行，见 `R/components/bt-blobs/logs/bt-ana-i2c-official-trace.log:59-60`）、BLE 两个回调都注册成功、`coex_wifi_request` 之后 BLE 回调被触发；随后合并镜像启动 | 串口日志 |
 | L4a 真链路（只开 Wi-Fi） | 共存核开着时真实 AP 链路照常；读出 blob 在各阶段怎么用共存核、核怎么答 | `-Dcoex` 的真实链路探针（`-Dwifi-link-probe`）在 start 后、扫描后、连上、ping 结束、断开前后各打一组读数（`wifi-blobs/src/init_probe.zig` 的 `coexReadings`）：胶水两侧的状态与各钩子被调的次数、每次申请的（事件、时延、时长）与返回码、按事件的释放与 PTI、置 / 清的 Wi-Fi 状态位、核手里的状态位与调度参数。判据：`rej=0`、`last_error=-`；不开共存时链路照常（2026-11-26 的对照：胶水按 IDF 关闭分支作答、核不启动，扫描 38 个 AP、连上、ping 10/10；计数桩的镜像修掉 PTI 桩之后同样照常，`coex-verification.md` §13）；申请 / 释放的返回码按事件对得上核的静态表（只有配了硬件定时器的事件回 0）。**已有读数（2026-11-26）**，见 `docs/verification/coex-verification.md` §12 |
-| L4b 真实共存（两个射频都开） | 共存的效果：BLE 不同广播间隔下 Wi-Fi 的时延与丢包、PTI 行为、`coex_status_get` 里出现 BLE 的状态位、核的硬件定时器在走、两侧的 start 回调被触发；空口上 AP 的 monitor 接口看 Wi-Fi 这边（`tools/ap-side/`），工作站的蓝牙控制器看 BLE 的广播 | 仍被 R3.3（BLE 的 synth）挡着，做法先定下来：合并镜像里先连 Wi-Fi，再起 BLE 广播，间隔 20 / 100 / 1000 ms 各一轮；每轮打 ping 10 帧的 rtt min/avg/max 与 L4a 那一组读数，和不起 BLE 的对照比。判据：每轮都没有 `STA_DISCONNECTED`、ping 不丢；BLE 的状态位非 0、硬件定时器的数值在两次读数之间变了（读 `coex_hw_timer_set` 写的那组寄存器：`0x2010F040 + 16*idx` 与 `0x2010F408 + 16*idx`，`coexReadings` 现在读的就是它们）——这两条是"核真的在仲裁"的证据，缺一条只算"两个射频同时开着"；广播间隔越短，ping rtt 的最大值越大。空口上有没有让，2026-11-27 起有设备可看（此前"没有设备"一句作废）。**2026-11-27 试了第一步（`-Dcoex-ble-adv`）**：步骤已接好。第一版在主上下文里发命令，三次上板都停在第一条命令之后——这类命令要 controller 任务在自己的上下文里处理；改成从独立栈上的发送任务里发之后，三条命令都回了 Command Complete、Status 0x00，但广播使能被接受之后 controller 任务不再让出，主上下文回不来（串口、落盘、AP 一侧的第二次关联都停在回包之后），合成器锁没锁没有读到（`coex-verification.md` §17） |
+| L4b 真实共存（两个射频都开） | 共存的效果：BLE 不同广播间隔下 Wi-Fi 的时延与丢包、PTI 行为、`coex_status_get` 里出现 BLE 的状态位、核的硬件定时器在走、两侧的 start 回调被触发；空口上 AP 的 monitor 接口看 Wi-Fi 这边（`tools/ap-side/`），工作站的蓝牙控制器看 BLE 的广播 | 仍被 R3.3（BLE 的 synth）挡着，做法先定下来：合并镜像里先连 Wi-Fi，再起 BLE 广播，间隔 20 / 100 / 1000 ms 各一轮；每轮打 ping 10 帧的 rtt min/avg/max 与 L4a 那一组读数，和不起 BLE 的对照比。判据：每轮都没有 `STA_DISCONNECTED`、ping 不丢；BLE 的状态位非 0、硬件定时器的数值在两次读数之间变了（读 `coex_hw_timer_set` 写的那组寄存器：`0x2010F040 + 16*idx` 与 `0x2010F408 + 16*idx`，`coexReadings` 现在读的就是它们）——这两条是"核真的在仲裁"的证据，缺一条只算"两个射频同时开着"；广播间隔越短，ping rtt 的最大值越大。空口上有没有让，2026-11-27 起有设备可看（此前"没有设备"一句作废）。**2026-11-27 试了第一步（`-Dcoex-ble-adv`）**：步骤已接好。第一版在主上下文里发命令，三次上板都停在第一条命令之后——这类命令要 controller 任务在自己的上下文里处理；改成从独立栈上的发送任务里发之后，三条命令都回了 Command Complete、Status 0x00，但广播使能被接受之后板子失声（串口、落盘、AP 一侧的第二次关联都停在回包之后），当时读成"controller 任务不再让出"。**2026-11-27 晚查到了根因并修掉**：是中断风暴（`bt-blobs` 的 `intrArm` 把中断桥登记在 CLIC 输入号 24 上，trap 分发器按外部中断号 8 查），与共存核无关；修掉之后 27/27——合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它，BLE 广播着的时候 Wi-Fi 连上、DHCP、ping 10/10（200 ms 间隔，往返平均从 3.5 ms 涨到 45 ms），AP 侧记到第二次关联与四次握手，工作站的蓝牙控制器看到 `s31`。上面的做法里还没有做的：按广播间隔（20 / 100 / 1000 ms）各一轮、BLE 状态位与核的硬件定时器两条判据、两侧的 start 回调（`coex-verification.md` §17.5） |
 
 ## 验证镜像的最小组成（2026-11-27 增补）
 
@@ -256,5 +256,8 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   5. PHY 与时钟域的归属：PHY 这一条已有板级证据并落进代码（2026-11-26，第 4 节补记 2）。时钟域于 2026-11-27 改成
      按单元取并集并上板（第 4 节的实现记录），事后写回已删除；BLE 的 disable 路径还没有。
   6. R3.1（`MAC_ST`）已拆（2026-11-25），Wi-Fi 真实链路已通（2026-11-26：连接、DHCP、ping 网关；2026-11-27 起有空口上的帧），
-     L4a 已有读数（第 5 节）；L4b 等 R3.3（synth）。合并镜像里的 BLE enable 已跑通（2026-11-26，`-Dcoex-ble-enable`）；
-     2026-11-27 试了起广播（`-Dcoex-ble-adv`）：命令从发送任务里发之后三条都回了 Command Complete，但广播使能被接受之后 controller 任务不再让出，对 R3.3 仍然没有结论（`coex-verification.md` §17）。
+     L4a 已有读数（第 5 节）。L4b 有了第一条证据（2026-11-27 晚）：合并镜像里 BLE 的广播上了空口——起广播
+     （`-Dcoex-ble-adv`）时"广播使能之后整机失声"的根因是中断风暴（`bt-blobs` 的 `intrArm` 把中断桥登记在 CLIC 输入号 24
+     上，而分发器按外部中断号 8 查表），修掉之后合成器 35 ms 内锁定，BLE 广播着的时候 Wi-Fi 照常连接、DHCP、ping 10/10
+     （往返平均 4 → 45 ms），工作站的蓝牙扫描看到 `s31`（`coex-verification.md` §17.5）。第 5 节 L4b 的其余判据（按广播
+     间隔的时延与丢包、PTI 行为、状态位、核的硬件定时器、两侧的 start 回调）还没有做；单独的 BLE 探针没有变化。

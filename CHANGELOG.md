@@ -5,6 +5,18 @@
 ## [Unreleased]
 
 ### Fixed
+- **合并镜像在 BLE 发广播时整机失声：中断桥登记错了一个下标（2026-11-27）**：blob 在 enable 里调 `intr_alloc(124)`，
+  `components/bt-blobs/src/bringup.zig` 的 `intrArm` 把 MODEM_BT_MAC 路由到 CLIC 输入 24，把中断桥登记进 trap 分发表时用的下标
+  是 24，而 `trapDispatch` 按外部中断号（输入号减 16）查表——查的是 8，永远查不到。泵每一轮都开着输入 24 的 IE，广播使能
+  一处理，BT MAC 的电平中断进来，查不到 handler 就返回，`mret` 之后立刻再进：中断风暴，主上下文一个指令也执行不到（每秒约
+  95 万次中断）。单独的 BLE 探针不受影响：它的默认路径不开全局中断。修法一行（`setHandler(routed_input - 16, …)`）；合并镜像
+  在发广播使能之前多一条判据，核对源 124 的路由与分发器查到的 handler，收尾多打一行中断桥的计数；`-Dcoex-adv-irq`（trap
+  处理器里每个中断调一次的钩子，每 4096 个中断打一行各输入的计数）留作诊断。单变量对照（最终代码，只把下标改回 24）：
+  `check: ble interrupt bridge wired: … handler 0x00000000 ok=0`，紧跟在 `0x200A` 的回包行后面累计 2001 万次中断、没有
+  `checks:` 汇总行（`logs/coex-merged-wifi-link-ble-adv-storm-boot.log`）；改回去 27/27
+  （`logs/coex-merged-wifi-link-ble-adv12-boot.log`）：合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它，中断桥 15 秒里入环
+  957 次、代跑 956 次，Wi-Fi 在 BLE 广播着的时候连上真实 AP、DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms），工作站
+  `bluetoothctl scan on` 看到 `s31`。细目见 `docs/verification/coex-verification.md` §17.5。
 - **`tools/ap-side/collect.sh` 默认找的 tcpdump 与实际上传的不是同一个路径（2026-11-27）**：脚本默认找 `/tmp/ap-tcpdump`，实际上传的
   二进制在路由器上叫 `/tmp/r5c-tcpdump`（内存盘，不在 PATH 里）——照文档用会静默不抓帧，在路由器上敲 `tcpdump` 也是 not found。
   改成 `$TCPDUMP` > PATH 里的 tcpdump > `/tmp/ap-tcpdump` > `/tmp/r5c-tcpdump`，输出里写明用的是哪一份，找不到时写明原因。
@@ -199,7 +211,8 @@
   `logs/coex-merged-wifi-link-ble-adv8-ap-frames.log`；细目见 `docs/verification/coex-verification.md` §17。
 - **`-Dcoex-ble-adv`（2026-11-27，实验）**：合并镜像在所有判据之后经 HCI 发三条广播命令并读 synth 锁定位。第一版在
   主上下文里同步发，三次上板都停在发完第一条命令之后，整机失声（`logs/coex-merged-wifi-link-ble-adv-boot.log`）；
-  当晚改成从发送任务里发，见上一条。
+  当晚改成从发送任务里发，见上一条。【2026-11-27 晚更正】上一条里"广播使能被接受之后 controller 任务不再让出"的读法是错的，
+  是中断风暴；修掉之后广播上了空口，见本节顶部的 Fixed。
 - **合并镜像里的 Wi-Fi 真实链路：`-Dcoex-wifi-link`（2026-11-26，ADR-003 第 4 节的板级证据）**：`-Dcoex-merged` 的镜像里两个
   控制器同镜，Wi-Fi 走通真实链路——BLE init 之前 34 个 AP、之后 35 个 AP，连上 2059 ms，DHCP 51 ms，ping 网关 10/10
   （rtt 平均 3.8 ms），连着 5 秒，本地断开，16/16 项通过，`verdict=pass`；BLE `INITED`、`ENABLED`（`-Dcoex-ble-enable`）。

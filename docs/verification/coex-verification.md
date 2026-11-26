@@ -1344,6 +1344,7 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
 ### 16.5 边界
 
 - BLE 的射频仍然没有起（R3.3），所以「BLE 的位都在」只说明时钟配置对了，不说明 BLE 在这份配置下能工作。
+  【2026-11-27 晚：合并镜像里 BLE 的广播已上空口，时钟并集就是它跑着的那份配置，见 §17.5。】
 - 核对是「有位」比较：多出来的位不算错（BLE 移植层额外开的 `fe_20m` / `fe_40m` 就不在单元表里）；强开位没有判据。
 - 没有做：BLE 的 disable 路径（释放自己的单元）；「BLE 先起」的顺序下 Wi-Fi init 之前把 `LPCON+0x18` 对正成 `0x1`
   的那一句仍然会清 I2C 主控位；BLE 的 PHY 域序列（含写 flash 的探针标记）与 XTAL trim 在 PHY 归 Wi-Fi 时仍然会跑。
@@ -1351,6 +1352,10 @@ E、B、D 三次的板侧链路：连上 2055 / 1954 / 1958 ms，DHCP 55 / 24 / 
   BLE init 之后是 `0x3D`，Wi-Fi 的链路就是在这个时钟源下跑的，与 IDF 里「Wi-Fi 先、BLE 后」的组合一致。
 
 ## 17. 合并镜像里让 BLE 起广播（2026-11-27）
+
+> 【2026-11-27 更正】本章 §17.2–§17.4 记的是修掉之前的样子，结论已被 §17.5 推翻：广播使能之后板子失声，不是 controller
+> 任务不让出，也不是时钟被门控，是 BT MAC 的中断在无限重入（中断桥登记错了一个下标）。修掉之后合并镜像里 BLE 的广播
+> 上了空口，L4b 有了证据；读数在 §17.5。
 
 ### 17.1 做法
 
@@ -1406,6 +1411,9 @@ G 组的三份证据对得上：串口最后一行是 `bt adv: cmd 0x200a got Co
 
 ### 17.3 来龙去脉
 
+> 【2026-11-27 更正】下面「C 到 G 组卡在哪」的四条观测是原样，「读法」是错的：主上下文不是停在第一次恢复 controller 任务
+> 的时候，而是被中断风暴挡在 `mret` 之后——见 §17.5。
+
 - **A 组卡在哪**：这类命令的接收路径带着 FOREVER 去等 controller 任务，而任务要等泵——「rx 阻塞等任务 = 任务等
   泵」（`probe.zig` 里轮 14、轮 95d 的注释）；`components/osal/src/sched.zig` 的 `block()` 是「把当前上下文切回主
   上下文」，从主上下文自己调用它，等于切回上一次 `resumeTask` 保存的旧现场。当时试过两种改法（主上下文里的
@@ -1425,6 +1433,9 @@ G 组的三份证据对得上：串口最后一行是 `bt adv: cmd 0x200a got Co
 
 ### 17.4 结论与下一步
 
+> 【2026-11-27 更正】下面第 2、3 条结论是错的（广播使能之后不是 controller 任务不让出，是中断风暴；合成器 35 ms 内就锁了，
+> 广播上了空口）；「下一步」里的两条当晚都做了，结果在 §17.5。
+
 - **命令层不再是卡点**：合并镜像里经 HCI 发 LE Set Advertising Parameters / Data / Enable，三条都回了 Command
   Complete、Status 0x00（[Vol 4] Part E §7.7.14 的回包格式、§7.8.5 / §7.8.7 / §7.8.9 的命令）。在合并镜像里发需要
   controller 任务处理的 HCI 命令，要走 `probe.zig` 的 `sendFromTask`，不要在主上下文里发。
@@ -1436,3 +1447,75 @@ G 组的三份证据对得上：串口最后一行是 `bt adv: cmd 0x200a got Co
 - 下一步（没有做）：凡是靠主循环往外写的通道（落盘、LP RAM 槽）在回包之后都到不了，只剩两条——找一个收缩之后还在
   走的中断源、在 ISR 里采样 PC；或在收缩生效之前用数据观察点抓到 blob 写时钟门控的那条指令。单独探针那一侧的
   「时钟收缩」与合成器不锁，见 `components/bt-blobs/README.md` 轮 96–162。
+
+### 17.5 根因：中断风暴；修掉之后两个射频同时上了空口（2026-11-27）
+
+**根因。** blob 在 enable 里调 `intr_alloc(124)`，OSAL 的钩子 `bt-blobs/src/bringup.zig` 的 `intrArm` 把 MODEM_BT_MAC
+（源 124）路由到 CLIC 输入 24，并把中断桥登记进 trap 分发表；登记用的下标是 **24**，而 `trapDispatch` 查表用的是
+**外部中断号**（CLIC 输入号减 16，这里是 8；`boards/esp32s31-coreboard/src/trap.zig` 的 `setHandler` 注释写明了这个约定）。
+于是分发器永远查不到中断桥。泵的每一轮经 `bridgeReenable()` 开着输入 24 的 IE；广播使能一处理，BT MAC 拉起这个电平
+中断，trap 进来查不到 handler 就返回，`mret` 之后立刻再进——**中断风暴**，主上下文一个指令也执行不到。串口那一行停在
+半行，是主上下文再也没回来写剩下的字符；落盘记录停在「正要发」同理。单独探针（`-Dbt-probe`）的默认路径不开全局中断，
+这条路径在它那里没有跑过。
+
+修法一行：`setHandler(routed_input - 16, …)`。合并镜像在发广播使能之前多一条判据，核对源 124 的路由与分发器查到的
+handler（`check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x…`）；`-Dcoex-adv-irq` 的
+中断探针留着（看哪个输入在风暴），发广播使能之前打的两个诊断读数也留着。为找根因临时加的 STORE 观察点
+（`-Dcoex-adv-watch`，RISC-V debug trigger 0）与「时钟门控回写的开关」在根因定了之后已从代码里删掉。
+
+**怎么找到的**（都在合并镜像 `-Dcoex-wifi-link -Dcoex-ble-enable -Dcoex-ble-adv` 上）：
+
+| 步 | 做法 | 看到了什么 |
+| --- | --- | --- |
+| 1 | 泵里武装 T0 采样（中断里记被中断的 PC） | 一武装，中断计数每秒多出几十万——风暴第一次露头，当时记在采样器头上 |
+| 2 | 发广播使能之前在 `UART0_CTRL0`（`0x20587088`）上武装 STORE 观察点，带自检（先武装在自己的静态字上写一次：命中、打一行 `BP!`、恢复执行） | 广播使能之后这个地址上一次 store 也没有，板子照样失声 |
+| 3 | 观察点换到 `SYSTIMER_CTRL0`（`0x20587120`） | 同上，零命中 |
+| 4 | `-Dcoex-adv-irq`：trap 处理器里挂一个每个中断调一次的钩子，每 4096 个中断打一行各输入的计数与最近 4 个被中断的 PC | 风暴：只有输入 24 在涨，被中断的 PC 每次都是同一个地址 |
+| 5 | **单变量对照**：最终代码，只把登记下标改回 24 | `check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x00000000 ok=0`；`handler(8)=0x0 handler(24)=0x400bf7b2`；紧跟在 `0x200A` 的回包行后面风暴，累计 2001 万次中断，没有 `checks:` 汇总行 |
+| 6 | 登记下标改成 `routed_input - 16`（与第 5 步是同一份源码，只差这一行） | `check: ble interrupt bridge wired: … handler 0x400bf7b2 ok=1`；没有风暴；合成器锁定；AP 记到第二次关联；工作站扫描看到 `s31` |
+
+第 1–4 步的日志没有入库（第 4 步之后先加了诊断行与这一行修法，两者一起上板，所以第 5 步是事后在最终代码上补的
+对照）。第 5 步是 `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`，第 6 步是 `logs/coex-merged-wifi-link-ble-adv12-boot.log`
+（27/27，最终代码；之后重新构建的镜像与它逐字节相同）。
+
+**风暴的样子**（第 5 步，只差那一行）：
+
+```text
+check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x00000000 ok=0
+bt adv: handler(8)=0x0 handler(24)=0x400bf7b2 clic24=0x7fc00100 clic25=0x1fc00100 mie24=0 mie25=0
+bt call: bt adv: cmd 0x200a got Commabt adv: irq n=4096 inputs 24:4096 pc 400a8402 400a8402 400a8402 400a8402
+bt adv: irq n=724992 inputs 24:724992 pc 400a8402 400a8402 400a8402 400a8402
+bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
+```
+
+第三行是 `0x200A` 的 Command Complete 回包行：只写到一半，中断探针的第一行就插了进来，回包行的后半截再也没有出来。
+探针按 CPU 周期限速（两行之间至少 0.75 秒），每行的计数多约 71 万 ⇒ 每秒约 95 万次（上限），全部是输入 24。
+`clic24=0x7fc00100`：输入 24 的 IE 开着（泵的 `bridgeReenable()` 每一轮都写），而分发器在下标 8 上什么也没查到。
+
+**修之后的读数**（`ble-adv12`，27/27，`main: verdict=pass`）：
+
+| 判据 | 读数 |
+| --- | --- |
+| 中断桥 | 分发器在下标 8 上查到 `0x400bf7b2`、下标 24 上是 0；全程没有一行风暴（探针每 4096 个中断才打一行，一行都没有）；15 秒收尾时的计数 `queued=957 drained=956 dropped=0`——blob 的 ISR 经桥入环 957 次、被主上下文代跑 956 次 |
+| 三条广播命令 | Command Complete，Status 都是 0x00（间隔 0x00A0 = 200 ms） |
+| 合成器锁定位（`0x201098BC` bit2） | 106361 次读数里 106361 次置位，第一次在广播使能后 34863 µs；读数 `0x00000004`；15 秒之后仍是它 |
+| BLE 广播着的时候 Wi-Fi 再走一遍链路 | 扫描 18 个 AP（基线 24 个）、连接、四次握手、DHCP、ping 10/10；往返 min/avg/max = 30.4 / 45.1 / 92.4 ms（BLE 只 enable 不广播时 1.9 / 3.5 / 10.8 ms） |
+| AP 侧（取自 `ble-adv11`，同一份代码只少上面那行计数） | `logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`：路由器时钟 07:36:06 认证、关联，07:36:07 四次握手完成，07:36:08 `DHCPACK`，07:36:23 断开（第一次是 07:35:40–07:35:55，BLE 只 enable）；`…-adv11-ap-frames.log`：05:40:28.9 认证与关联响应，四次握手 05:40:29 |
+| 空口（取自 `ble-adv11`） | 工作站 `bluetoothctl --timeout 230 scan on`（开在板子这一轮之前）：`[NEW] Device 02:00:00:00:BB:01 s31`，广播停了之后 `[DEL]`（`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`） |
+
+`ble-adv11` 是 27/27：合成器 106218 / 106218、34835 µs，ping 往返 26.9 / 38.9 / 97.4 ms（基线 1.9 / 4.2 / 10.5 ms），
+扫描 13 个 AP（基线 24 个）。修之后一共上板五次（`ble-advw6`、`ble-adv9`、`ble-adv10`、`ble-adv11`、`ble-adv12`；前两次的
+日志没有入库）：合成器都是 35 ms 内锁定，Wi-Fi 都是连上、DHCP、ping 10/10，工作站的扫描都看到 `s31`。`ble-adv10` 是
+25/26：挂掉的是「BLE init 之后的扫描不低于基线的一半」那条（12 对 32）——同一天里健康的读数在 13–37 个 AP 之间跳，
+退化时是 1–4 个（§15.2），那一次是环境。
+
+**边界。**
+
+- 只有「工作站的扫描看到 `s31`」这一条空口证据：广播的间隔、信号强度没有量；广播是不可连接的（ADV_NONCONN_IND），
+  连接与 GATT 没有做；广播持续的时间只测到 15 秒。
+- 广播时用的地址是 `02:00:00:00:BB:01`——`osal.readEfuseMac` 的回退值，合并镜像没有接读 eFuse MAC 的钩子。
+- BLE 广播着的时候 Wi-Fi 的 ping 往返平均从 4 ms 涨到 39 ms（10 帧不丢）；涨在哪里没有查（共存核分时、还是泵的
+  轮转，没有分开）。
+- 单独探针（`-Dbt-probe`）的 synth 墙（`components/bt-blobs/README.md` 轮 96–162）是不是同一个风暴，没有验证：它的
+  默认路径不开全局中断，桥不跑；本节的结论只对合并镜像成立。
+- 工作站 ping 板子仍然没有应答（板子只发 ping 不回 ping，§15.8 的已知缺口），与共存无关。

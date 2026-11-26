@@ -185,6 +185,29 @@
   `docs/verification/coex-verification.md` §17。
 - **没有做的**：两个射频都在收发（广播没有起来；广播使能被接受之后 controller 任务不再让出，合成器锁没锁没有读到）；
   BLE 的 disable 路径；「BLE 先起」的顺序；板子回别人的 ping。
+- **2026-11-27 更新**：「没有做的」里的第一条当晚查到了根因，见下一节。
+
+## 合并镜像里 BLE 的广播上了空口：根因是中断风暴（2026-11-27）
+
+- **做了什么**：广播使能之后板子失声，不是 controller 任务不让出，也不是 blob 把时钟门控掉：blob 在 enable 里调 `intr_alloc(124)`
+  时，`bringup.zig` 的 `intrArm` 把中断桥登记进 trap 分发表用的下标是 CLIC 输入号 24，而分发器按外部中断号（输入号减 16）
+  查表，查的是 8——永远查不到。泵每一轮都开着输入 24 的 IE，广播使能一处理，BT MAC 的电平中断进来，查不到 handler 就返回，
+  `mret` 之后立刻再进：中断风暴，主上下文一个指令也执行不到。修法一行（`setHandler(routed_input - 16, …)`）；合并镜像多一条
+  判据核对中断桥登记在分发器查的那个下标上，收尾多打一行中断桥的计数。为找根因临时加的 STORE 观察点（`-Dcoex-adv-watch`）
+  及其配套已删；`-Dcoex-adv-irq` 的中断探针留着。
+- **怎么找到的**：先按上一节留的两条路各做一遍——在 UART0 与 SYSTIMER 的时钟控制字上武装数据观察点（带自检），广播使能之后
+  零命中，「时钟门控」在合并镜像里排除；给 trap 处理器挂每个中断调一次的钩子，看到只有输入 24 在涨、累计上千万次。最后在
+  最终代码上补单变量对照：只把登记下标改回 24，`handler 0x00000000 ok=0`、风暴照旧；改回去，27/27。两次镜像的源码只差这一行。
+- **验证**：主机门禁（`scripts/check-all.sh`：fmt、yaml、不变量、单元测试、覆盖率、容量、e2e host）退出 0。板上
+  （`-Dcoex-ble-adv`）：合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 957 次、代跑 956 次；Wi-Fi 在
+  BLE 广播着的时候连上真实 AP、DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二次关联与四次握手；工作站
+  `bluetoothctl scan on` 看到 `s31`。日志 `logs/coex-merged-wifi-link-ble-adv-storm-boot.log`（对照）、
+  `…-ble-adv11-boot.log`、`…-ble-adv12-boot.log`、`…-ble-adv11-ap-syslog.log`、`…-ble-adv11-ap-frames.log`、
+  `…-ble-adv11-bt-scan.log`。细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
+- **没有做的**：单独的 BLE 探针（`-Dbt-probe`）的 synth 墙是不是同一个原因（它的默认路径不开全局中断，桥不跑）；不同广播
+  间隔下的时延与丢包、PTI 行为、`coex_status_get` 里的 BLE 状态位、核的硬件定时器（路线图 C7 的其余判据）；可连接广播与
+  GATT；超过 15 秒的稳定性；量广播的间隔与信号强度；广播地址还是回退的 `02:00:00:00:BB:01`；BLE 的 disable 路径；
+  「BLE 先起」的顺序；板子回别人的 ping。
 
 ## 日志
 
