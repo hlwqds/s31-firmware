@@ -1136,4 +1136,5 @@ BLE init 之前 33 个 AP，之后 35 个 AP，连上 2052 ms，DHCP 51 ms，pin
 - 一台 AP（WPA2-PSK + CCMP-128，信道 1）；没有抓包。
 - 合并镜像里 `esp_wifi_start` 之后到 BLE init 之间、BLE 的 init 期间，Wi-Fi 的任务没有被泵（只开了中断），
   事件队列里积压的帧被丢掉；链路是从扫描重新开始的。
+- `esp_wifi_start` 没返回 0 的那条分支（不置旗子、不做基线与链路）没有上过板；它只会在 `wifi first` 那一项判据上报失败。
 
