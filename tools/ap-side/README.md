@@ -17,6 +17,11 @@
 ```sh
 # 1) 编（约 20 秒；需要 zig、flex 与 bison——PATH 里没有就用 nix 取）
 sh tools/ap-side/build-tcpdump.sh                      # -> /tmp/ap-side/out/tcpdump
+#
+#    工作站自己没有 tcpdump 时，同一个脚本换个 TARGET 再编一份给自己（只给当前用户装，rm 即卸载；~/.local/bin 要在 PATH 里）：
+env -u LD_LIBRARY_PATH TARGET=x86_64-linux-musl sh tools/ap-side/build-tcpdump.sh   # -> /tmp/ap-side/out/x86_64-linux-musl/tcpdump
+install -m 755 /tmp/ap-side/out/x86_64-linux-musl/tcpdump ~/.local/bin/tcpdump
+#    在本机网口上抓帧要 root（CAP_NET_RAW）；列接口（-D）与 --version 不需要
 
 # 2) 传到路由器上，装成标准名字 tcpdump（持久的：约占 1.4 MB 的 overlay 空间；卸载就是 rm 这一个文件）。
 #    只放到内存盘 /tmp 的话路由器一重启就没了，而且在路由器上敲 tcpdump 会是 not found。
@@ -41,7 +46,8 @@ python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 哪一份被用了，采集输出里有一行 `tcpdump: <路径> (<版本>)`。
 
 2026-11-27 的实际状态：测试用的那台路由器上已经装在 `/usr/bin/tcpdump`，sha256 `4412618629482af45397b3886c931f402266bcf2aad29e33dab925db5a9e566a`，
-与工作站的构建产物一致；内存盘上另有一份 `/tmp/r5c-tcpdump`。
+与工作站的构建产物一致；内存盘上另有一份 `/tmp/r5c-tcpdump`。工作站（x86_64）上装在 `~/.local/bin/tcpdump`
+（sha256 `d2cd67c68e806cc35ad69b1a3ffb0171a720e2da35ad75571f61c0a6d079f916`），用它在本机网口上抓到过一帧。
 
 登录需要路由器的 root 密码（问用户）。工作站要在这台 AP 的 LAN 里（网线接 LAN 口；板子的以太网线这时是拔的），
 默认路由留在原来的网卡上，别让登 AP 这条线抢默认路由。
