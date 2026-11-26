@@ -21,6 +21,7 @@
 | 板侧数据通路（2026-11-26） | DHCP 四步拿到地址（约 0.1 s），ping 网关 10/10（rtt 最小 / 平均 / 最大 13.1 / 23.1 / 30.2 ms），回答网关的 ARP 请求 | 同上 |
 | 共存读数（2026-11-26，`-Dcoex` + 真实链路） | 只开 Wi-Fi 时共存核开着链路照常；胶水零拒绝；blob 的 13 次申请核都回 `0x102`（这些事件在核的事件表里没有硬件定时器） | 同上；`docs/verification/coex-verification.md` §12 |
 | 合并镜像里的真实链路（2026-11-26，`-Dcoex-wifi-link`） | 两个控制器同镜、BLE 的 init 与 enable 之后，Wi-Fi 扫描 35 个 AP、连上 2059 ms、DHCP 51 ms、ping 网关 10/10，16/16 项通过。真实链路主干抽成 `link_probe.zig` 的 `linkStart()` / `linkRest()`，探针照旧用它们。前提是 Wi-Fi 先 start，且 BLE 的 init 不再做两段会重做 PHY 的打开与标定的事（修法在 `bt-blobs`）；BLE init 之后 `init_probe.zig` 的 `radioRestore` 把时钟 / 电源寄存器按快照写回（不写回则认证、关联成功后被 `reason=7` 断开） | `logs/coex-merged-wifi-link-*.log`；`docs/verification/coex-verification.md` §15 |
+| AP 侧的证据（2026-11-26 晚，OpenWrt AP） | 真实链路第一次有了板子之外的读数：AP 的 hostapd 日志记着关联的每一步；只跳过第 15 步、`initPhy` 照常跑的那轮里，AP 发给板子的帧放弃 51 / 51、速率压到 6–8.6 Mbit/s，而板子的信号一样强（-23 dBm）；最终形态双向 86 Mbit/s、15 秒里重传 0–1 次。板子的 ARP 应答能跨过 AP 的桥到达同网段的另一台主机 | `logs/coex-merged-wifi-link-ap-syslog.log`、`logs/coex-merged-wifi-link-ap-side.log`；`docs/verification/coex-verification.md` §15.8 |
 
 ## 用法
 
@@ -152,7 +153,9 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
   存进 NVS、改走 `PHY_RF_CAL_PARTIAL`，这一步没有做。
 - 连接只做了 WPA2-PSK + CCMP-128、一台 AP：SAE、OWE、FT、企业、其余套件、多台 AP、断线重连、长时间稳定性没有做。
   公开入口 `esp_wifi_connect` / `esp_wifi_disconnect` 还是 `link_stubs.zig` 里的计数桩，探针调的是驱动的内部入口。
-- 数据通路只有 DHCP 与 ICMP：TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。
+- 数据通路只有 DHCP 与 ICMP：TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。ICMP 这一半也只做了一边：板子会发
+  回显请求、收应答，不回应别人的回显请求（`handleFrame` 的 ICMP 分支只有 `handleEchoReply`）——2026-11-26 工作站从 AP 的
+  有线侧 ping 板子，ARP 解析正常，10 个回显请求没有应答。
 - 此前列在这里的两条（填回调表里连接路径的入口、接 `esp_wifi_internal_reg_rxcb`）已于 2026-11-26 做完，读数见上表。
 
 已完成（此前列在这里）：任务体跑在**自己的静态栈**上（`sched.zig`，`sched-test: PASS`）；

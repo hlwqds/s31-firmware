@@ -117,6 +117,12 @@ DHCP 51 ms、ping 网关 10/10，`coex-verification.md` §15、`logs/coex-merged
 start，BLE 的 init 两段都跳过（`phy_owned_by_wifi`），再把时钟 / 电源寄存器写回（不写回则连接失败）。这是"一个射频在收发、
 另一个 enabled"——BLE 的射频没有起，L4b 仍然没有证据。
 
+2026-11-26 晚的后续：从 AP（OpenWrt）那一侧取了证据（`coex-verification.md` §15.8）。AP 的系统日志里，修之前每一轮都是
+「板子没有确认认证响应」；最终形态是完整序列，AP 看板子 -24 dBm、双向 86 Mbit/s、15 秒里重传 0–1 次；只跳过第 15 步时
+AP 发给板子的帧放弃 51 / 51、速率压到 6–8.6 Mbit/s，而信号一样强——退化在板子的接收侧。板子的 ARP 应答能跨过 AP 的桥
+到达同网段的另一台主机；板子不回应别人的回显请求（数据通路的缺口）。日志 `logs/coex-merged-wifi-link-ap-syslog.log`、
+`logs/coex-merged-wifi-link-ap-side.log`。仍然没有空口上的帧（路由器没有外网，装不了 tcpdump）。
+
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
 | 运行 | 命令 | 结果 | 日志 |

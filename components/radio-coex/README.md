@@ -64,6 +64,8 @@
   （`docs/verification/coex-verification.md` §14）。合并镜像里带着 BLE 的 init 与 enable，Wi-Fi 走通了真实链路（2026-11-26，
   `-Dcoex-wifi-link`，`coex-verification.md` §15）：这是"一个射频在收发、另一个 enabled"，不是 L4b；blob 比只开 Wi-Fi 时
   多调了 `coex_schm_interval_get`、`coex_schm_curr_phase_get`、`coex_schm_process_restart` 三个钩子，胶水零拒绝。
+  当晚从 AP（OpenWrt）那一侧又取了证据（`coex-verification.md` §15.8）：只跳过一段时 AP 发给板子的帧放弃一半、速率压到
+  6–8.6 Mbit/s，而板子的信号一样强——退化在板子的接收侧；修之前每一轮 AP 都记「板子没有确认认证响应」。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |

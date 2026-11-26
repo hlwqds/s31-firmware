@@ -1,0 +1,568 @@
+[AP-SIDE 2026-11-26] AP 侧系统日志里与板子有关的行。
+AP：OpenWrt 25.12.6（小米 AX3000T），2.4 GHz 信道 1，接口 phy0-ap0，网关 192.168.31.1。
+只留带板子 MAC（1c:29:04:d1:99:28）的 hostapd 与 dnsmasq-dhcp 行；时间由路由器时钟（GMT、没有 NTP、
+慢 38 天 22 小时 4 分 22 秒）换算成本机 CST。路由器的登录记录、内核行、邻居网络都不在内；用户自己的 AP 与板子的
+地址原样保留。以「##」开头的行是整理时加的轮次注释，不是路由器写的。
+
+读法（hostapd 默认级别就记）：
+  authenticated -> associated (aid 1) -> AP-STA-CONNECTED -> WPA: pairwise key handshake completed
+  -> EAPOL-4WAY-HS-COMPLETED -> dnsmasq 的 DHCP 四步 -> AP-STA-DISCONNECTED（板子主动断开）
+  did not acknowledge authentication response：AP 发了认证响应，没等到板子的确认；65 秒后 AP 自己清掉这条站表
+  （deauthenticated due to local deauth request）。
+
+
+## 11-25 21:16:12  AP 刷成 OpenWrt、开好 Wi-Fi 之后的第一次关联（昨晚）
+11-25 21:16:12  hostapd: STA <board> IEEE 802.11: authenticated
+11-25 21:16:12  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-25 21:16:12  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-25 21:16:12  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-25 21:16:12  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-25 21:16:15  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-25 21:16:15  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-25 21:16:15  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-25 21:16:15  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-25 21:16:15  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-25 21:16:15  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-25 21:16:16  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-25 21:16:16  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board> espressif
+11-25 21:16:32  hostapd: AP-STA-DISCONNECTED <board>
+11-25 21:16:32  hostapd: STA <board> IEEE 802.11: authenticated
+11-25 21:16:32  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-25 21:16:32  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-25 21:16:32  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-25 21:16:32  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-25 21:16:32  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-25 21:16:32  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-25 21:16:32  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-25 21:16:32  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board> espressif
+11-25 21:24:55  hostapd: AP-STA-DISCONNECTED <board>
+11-25 21:24:55  hostapd: STA <board> IEEE 802.11: disassociated due to inactivity
+11-25 21:24:56  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-25 21:41:34  hostapd: STA <board> IEEE 802.11: authenticated
+11-25 21:41:34  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-25 21:41:35  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-25 21:41:35  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-25 21:41:35  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-25 21:41:35  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-25 21:41:35  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-25 21:41:35  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-25 21:41:35  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board> espressif
+11-25 21:53:33  hostapd: AP-STA-DISCONNECTED <board>
+11-25 21:53:33  hostapd: STA <board> IEEE 802.11: disassociated due to inactivity
+11-25 21:53:34  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 07  上午：单独的 Wi-Fi 真实链路探针各轮（扫描、连接、数据通路、只开 Wi-Fi 的共存读数、不开共存的对照）
+11-26 07:16:23  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 07:16:23  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 07:16:32  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 07:40:08  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 07:40:08  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 07:40:17  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 07:48:31  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 07:48:31  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 07:48:31  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 07:48:31  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 07:48:31  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 07:48:41  hostapd: AP-STA-DISCONNECTED <board>
+11-26 07:56:37  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 07:56:38  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 07:56:38  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 07:56:38  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 07:56:38  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 07:56:44  hostapd: AP-STA-DISCONNECTED <board>
+11-26 07:56:44  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 07:56:45  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:00:55  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:00:55  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:00:55  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:00:55  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:00:55  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:01:01  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:01:01  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:01:02  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:03:28  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:03:28  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:03:28  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:03:28  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:03:28  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:03:34  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:03:34  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:03:35  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:28:07  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:28:07  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:28:07  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:28:07  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:28:07  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:28:25  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:28:25  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:28:26  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:37:49  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:37:49  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:37:50  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:37:50  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:37:50  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:38:08  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:38:08  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:38:09  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:41:32  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:41:32  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:41:32  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:41:32  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:41:32  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:41:50  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:41:51  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:41:52  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:48:13  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:48:13  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:48:14  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:48:14  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:48:14  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:48:32  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:48:32  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:48:33  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:48:59  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:49:00  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:49:00  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:49:00  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:49:00  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:49:19  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:49:19  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:49:20  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:49:46  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:49:46  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:49:46  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:49:46  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:49:46  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:50:05  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:50:05  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:50:06  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:50:32  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:50:32  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:50:33  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:50:33  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:50:33  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:50:51  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:50:52  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:50:53  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 08:51:52  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 08:51:52  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 08:51:52  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 08:51:52  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 08:51:52  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 08:52:11  hostapd: AP-STA-DISCONNECTED <board>
+11-26 08:52:11  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 08:52:12  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:01:52  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:01:52  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:01:52  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:01:52  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:01:52  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:01:52  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 09:01:52  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 09:01:52  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 09:01:52  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board> espressif
+11-26 09:04:50  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:04:50  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:04:50  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:04:51  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:04:51  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:04:51  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:05:18  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:05:18  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:05:19  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:20:40  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:20:40  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:20:40  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:20:40  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:20:40  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:21:23  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:21:23  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:21:24  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:25:31  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:26:36  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 09:28:10  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:28:10  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:28:10  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:28:10  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:28:10  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:28:29  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:28:29  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:28:30  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:35:47  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:35:47  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:35:47  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:35:47  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:35:47  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:36:09  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:36:09  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:36:10  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:39:33  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:39:33  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:39:33  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:39:33  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:39:33  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:39:34  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 09:39:34  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 09:39:34  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 09:39:34  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board> espressif
+11-26 09:41:15  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:41:15  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:41:15  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:41:15  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:41:15  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:41:15  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:41:38  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:41:38  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:41:39  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:48:51  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:48:51  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:48:51  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:48:51  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:48:51  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:49:14  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:49:14  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:49:15  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 09:59:37  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 09:59:37  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 09:59:37  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 09:59:37  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 09:59:37  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 09:59:38  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 09:59:38  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 09:59:38  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 09:59:38  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 09:59:42  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 09:59:42  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 09:59:42  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 09:59:42  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 09:59:58  hostapd: AP-STA-DISCONNECTED <board>
+11-26 09:59:58  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 09:59:59  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:07:22  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:07:22  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:07:23  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:07:23  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:07:23  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:07:23  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:07:23  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:07:23  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:07:23  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:07:39  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:07:39  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:07:40  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:13:29  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:13:29  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:13:30  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:13:30  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:13:30  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:13:30  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:13:30  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:13:30  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:13:30  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:13:46  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:13:46  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:13:47  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:20:14  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:20:15  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:20:15  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:20:15  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:20:15  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:20:16  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:20:16  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:20:16  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:20:16  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:20:30  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:20:30  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:20:31  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:22:30  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:22:31  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:22:31  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:22:31  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:22:31  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:22:32  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:22:32  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:22:32  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:22:32  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:22:46  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:22:46  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:22:47  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:23:59  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:23:59  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:23:59  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:23:59  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:23:59  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:24:00  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:24:00  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:24:00  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:24:00  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:24:14  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:24:14  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:24:16  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:37:48  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:37:48  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:37:48  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:37:48  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:37:48  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:37:49  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:37:49  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:37:49  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:37:49  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:38:03  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:38:03  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:38:05  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:44:02  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:44:02  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:44:02  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:44:02  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:44:02  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:44:03  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:44:03  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:44:03  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:44:03  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:44:18  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:44:18  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:44:19  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:48:02  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:48:03  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:48:03  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:48:03  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:48:03  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:48:04  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:48:04  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:48:04  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:48:04  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:48:19  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:48:19  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:48:20  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 10:51:02  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 10:51:02  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 10:51:03  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 10:51:03  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 10:51:03  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 10:51:03  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 10:51:03  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 10:51:03  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 10:51:03  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 10:51:18  hostapd: AP-STA-DISCONNECTED <board>
+11-26 10:51:18  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 10:51:19  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 12:27:12  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 12:27:12  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 12:27:13  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 12:27:13  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 12:27:13  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 12:27:13  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 12:27:13  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 12:27:13  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 12:27:13  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 12:27:27  hostapd: AP-STA-DISCONNECTED <board>
+11-26 12:27:28  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 12:27:29  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 12:29:40  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 12:29:40  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 12:29:41  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 12:29:41  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 12:29:41  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 12:29:41  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 12:29:41  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 12:29:41  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 12:29:41  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 12:29:55  hostapd: AP-STA-DISCONNECTED <board>
+11-26 12:29:55  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 12:29:56  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 13:03:39  合并镜像排查阶段（修之前）：13:03–13:51 的 11 次「没有确认认证响应」
+11-26 13:03:39  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:04:44  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:05:40  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:10:20  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:11:25  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:17:16  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:18:21  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:20:31  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:21:36  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:23:59  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:25:04  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:27:48  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:28:53  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:36:40  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:37:45  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:40:30  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:41:35  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:44:44  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:45:49  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+11-26 13:50:57  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 13:53:43  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 13:53:43  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 13:53:43  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 13:53:43  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 13:53:43  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 13:53:43  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 13:53:43  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 13:53:43  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 13:53:43  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 13:53:58  hostapd: AP-STA-DISCONNECTED <board>
+11-26 13:53:58  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 13:53:59  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 13:56:19  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 13:56:19  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 13:56:19  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 13:56:19  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 13:56:19  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 13:56:20  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 13:56:20  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 13:56:20  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 13:56:20  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 13:56:35  hostapd: AP-STA-DISCONNECTED <board>
+11-26 13:56:35  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 13:56:36  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 13:59:05  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 13:59:05  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 13:59:06  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 13:59:06  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 13:59:06  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 13:59:06  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 13:59:06  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 13:59:06  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 13:59:06  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 13:59:21  hostapd: AP-STA-DISCONNECTED <board>
+11-26 13:59:21  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 13:59:22  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 14:04:31  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 14:04:31  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 14:04:31  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 14:04:31  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 14:04:31  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 14:04:32  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:04:32  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:04:32  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 14:04:32  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 14:04:46  hostapd: AP-STA-DISCONNECTED <board>
+11-26 14:04:47  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 14:04:48  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+11-26 14:09:38  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 14:09:38  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 14:09:39  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 14:09:39  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 14:09:39  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 14:09:39  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:09:39  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:09:39  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 14:09:39  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 14:09:54  hostapd: AP-STA-DISCONNECTED <board>
+11-26 14:09:54  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 14:09:55  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 14:22:32  合并镜像最终形态，带转储的那一次（coex-merged-wifi-link-dump-boot.log）
+11-26 14:22:32  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 14:22:32  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 14:22:32  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 14:22:32  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 14:22:32  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 14:22:32  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:22:32  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:22:33  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 14:22:33  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 14:22:47  hostapd: AP-STA-DISCONNECTED <board>
+11-26 14:22:47  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 14:22:48  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 14:44:08  对照 C：不写回时钟 / 电源寄存器（板子：认证、关联成功后被 reason=7 断开）
+11-26 14:44:08  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 14:45:13  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+
+## 11-26 14:47:40  对照 B：两段都不跳过、写回在（板子：DHCP 3887 ms，ping 9/10）
+11-26 14:47:40  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 14:47:40  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 14:47:40  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 14:47:40  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 14:47:40  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 14:47:41  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:47:41  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:47:45  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:47:45  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:47:45  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 14:47:45  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 14:47:59  hostapd: AP-STA-DISCONNECTED <board>
+11-26 14:47:59  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 14:48:00  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 14:51:15  对照 D：只跳过第 15 步、initPhy 照常跑（板子：ping 9/10，平均 70 ms）
+11-26 14:51:15  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 14:51:15  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 14:51:16  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 14:51:16  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 14:51:16  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 14:51:16  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:51:16  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:51:16  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 14:51:16  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 14:51:31  hostapd: AP-STA-DISCONNECTED <board>
+11-26 14:51:31  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 14:51:32  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 14:55:20  对照 E：只跳过 initPhy（板子：连接 reason=2）
+11-26 14:55:20  hostapd: STA <board> IEEE 802.11: did not acknowledge authentication response
+11-26 14:56:25  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+
+## 11-26 14:58:13  最终形态（coex-merged-wifi-link-boot.log，16/16）
+11-26 14:58:13  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 14:58:13  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 14:58:13  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 14:58:13  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 14:58:13  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 14:58:14  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 14:58:14  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 14:58:14  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 14:58:14  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 14:58:28  hostapd: AP-STA-DISCONNECTED <board>
+11-26 14:58:29  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 14:58:30  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 22:26:23  晚上，带 AP 侧采集：对照 B 的第二次（28 -> 2 个 AP，关联没完成，reason=4）
+11-26 22:26:23  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 22:27:28  hostapd: STA <board> IEEE 802.11: deauthenticated due to local deauth request
+
+## 11-26 22:34:23  对照 D 的第二次（30 -> 4 个 AP，连上，ping 9/10 平均 68 ms）
+11-26 22:34:23  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 22:34:23  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 22:34:24  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 22:34:24  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 22:34:24  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 22:34:40  hostapd: AP-STA-DISCONNECTED <board>
+11-26 22:34:40  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 22:34:41  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 22:41:19  最终形态，带站点统计（27 -> 34 个 AP，16/16）
+11-26 22:41:19  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 22:41:19  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 22:41:19  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 22:41:19  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 22:41:19  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 22:41:34  hostapd: AP-STA-DISCONNECTED <board>
+11-26 22:41:35  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 22:41:36  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 11-26 22:49:24  最终形态，带站点统计与第二台主机的探测（24 -> 32 个 AP，16/16）
+11-26 22:49:24  hostapd: STA <board> IEEE 802.11: authenticated
+11-26 22:49:24  hostapd: STA <board> IEEE 802.11: associated (aid 1)
+11-26 22:49:24  hostapd: AP-STA-CONNECTED <board> auth_alg=open
+11-26 22:49:24  hostapd: STA <board> WPA: pairwise key handshake completed (RSN)
+11-26 22:49:24  hostapd: EAPOL-4WAY-HS-COMPLETED <board>
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) <board>
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 <board>
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 <board>
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 <board>
+11-26 22:49:39  hostapd: AP-STA-DISCONNECTED <board>
+11-26 22:49:39  hostapd: STA <board> IEEE 802.11: disassociated
+11-26 22:49:41  hostapd: STA <board> IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+## 统计：did not acknowledge authentication response 共 13 次，AP-STA-CONNECTED 共 47 次。

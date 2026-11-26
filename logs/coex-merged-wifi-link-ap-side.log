@@ -1,0 +1,204 @@
+[AP-SIDE 2026-11-26 晚] AP 侧读数：四轮上板，每轮在板子连上期间每秒一份 `iw dev phy0-ap0 station dump` 与 hostapd 的
+`get_clients`，全程跟随 AP 的系统日志（只留 hostapd 与 dnsmasq-dhcp 的行），外加工作站这一侧的探测。
+
+AP：OpenWrt 25.12.6（小米 AX3000T），2.4 GHz 信道 1，接口 phy0-ap0，网关 192.168.31.1。AP 上只读采集，没有装任何东西
+（路由器没有外网，apk 装不了 tcpdump；工作站也够不到 downloads.openwrt.org）。所以这些不是空口上的帧：
+是 AP 自己记的事件、它对这一条链路的统计，以及 AP 有线侧（网线上）看到的帧。
+时间由路由器时钟（GMT、没有 NTP、慢 38 天 22 小时 4 分 22 秒）换算成本机 CST。用户自己的 AP、板子、工作站的地址原样保留。
+
+工作站这一侧的探测两种：
+  全程 ping（noguard2、onlyloadcal2、final-ap）：从一轮开跑就 ping 板子。板子要 40 秒后才连上，这期间邻居表项已被
+      判成 FAILED，之后内核不再重发 ARP，所以这三次的「0 个回应」说明不了板子，只留作记录。
+  触发式探测（final-ap2）：等 AP 的 get_clients 里出现板子再发起，先清掉邻居表项，然后在网线上抓 ARP / ICMP 的帧摘要
+      （不抓载荷），再 ping 板子 10 次触发 ARP。
+
+############################################################################
+# noguard2：对照 B 的第二次：两段都不跳过、写回在
+############################################################################
+
+== AP 系统日志里这一轮的行（CST）==
+11-26 22:26:23  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-26 22:27:28  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to local deauth request
+
+== 站点统计快照（每秒一份，0 份；`-` 表示这份快照里没有这一项）==
+时间(CST)      signal          signal avg      tx bitrate      rx bitrate      tx retries      tx failed       rx drop         beacon loss     connected time  tx packets      tx bytes        rx packets      rx bytes        inactive time 
+
+
+== survey（采集结束时，所在信道）==
+	frequency:			2412 MHz [in use]
+	noise:				-86 dBm
+	channel active time:		95360246 ms
+	channel busy time:		46223729 ms
+	channel receive time:		38503265 ms
+	channel BSS receive time:	1740 ms
+	channel transmit time:		346193 ms
+== 工作站这一侧 ==
+全程 ping（从一轮开跑就 ping；板子 40 秒后才连上，邻居表项先被判成 FAILED）：0 个回应，195 行 Destination Host Unreachable
+
+############################################################################
+# onlyloadcal2：对照 D 的第二次：只跳过第 15 步、initPhy 照常跑、写回在
+############################################################################
+
+== AP 系统日志里这一轮的行（CST）==
+11-26 22:34:23  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-26 22:34:23  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-26 22:34:24  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-26 22:34:24  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-26 22:34:24  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:34:25  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:34:40  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-26 22:34:40  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-26 22:34:41  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+== 站点统计快照（每秒一份，16 份；`-` 表示这份快照里没有这一项）==
+时间(CST)      signal          signal avg      tx bitrate      rx bitrate      tx retries      tx failed       rx drop         beacon loss     connected time  tx packets      tx bytes        rx packets      rx bytes        inactive time 
+22:34:24  -24 [-29, -25]  -24 [-29, -25]  6.0 MBit/s      1.0 MBit/s      28              30              -               -               0 seconds       4               483             2               173             260 ms        
+22:34:25  -23 [-28, -24]  -23 [-28, -24]  6.0 MBit/s      6.0 MBit/s      28              30              -               -               1 seconds       7               841             8               548             10 ms         
+22:34:26  -23 [-27, -24]  -23 [-28, -24]  8.6 MBit/s HE-  86.0 MBit/s HE  32              34              -               -               2 seconds       11              1023            19              1477            480 ms        
+22:34:27  -24 [-28, -25]  -23 [-28, -24]  8.6 MBit/s HE-  6.0 MBit/s      38              41              -               -               3 seconds       17              1587            23              1683            270 ms        
+22:34:28  -24 [-28, -25]  -23 [-28, -24]  8.6 MBit/s HE-  86.0 MBit/s HE  43              46              -               -               4 seconds       20              1857            29              1907            270 ms        
+22:34:29  -23 [-28, -24]  -23 [-28, -24]  8.6 MBit/s HE-  86.0 MBit/s HE  43              46              -               -               5 seconds       23              2127            35              2131            250 ms        
+22:34:30  -24 [-28, -25]  -24 [-28, -25]  8.6 MBit/s HE-  86.0 MBit/s HE  43              46              -               -               6 seconds       26              2397            41              2355            250 ms        
+22:34:31  -24 [-28, -25]  -24 [-28, -25]  8.6 MBit/s HE-  6.0 MBit/s      43              46              -               -               7 seconds       30              2709            48              2639            240 ms        
+22:34:32  -23 [-28, -24]  -23 [-28, -24]  8.6 MBit/s HE-  86.0 MBit/s HE  43              46              -               -               8 seconds       33              2979            54              2863            230 ms        
+22:34:33  -24 [-29, -25]  -23 [-28, -24]  8.6 MBit/s HE-  64.9 MBit/s HE  43              46              -               -               9 seconds       36              3249            63              3225            430 ms        
+22:34:34  -24 [-29, -25]  -23 [-28, -24]  8.6 MBit/s HE-  86.0 MBit/s HE  43              47              -               -               10 seconds      39              3519            70              3475            220 ms        
+22:34:35  -24 [-28, -25]  -23 [-27, -24]  8.6 MBit/s HE-  73.1 MBit/s HE  43              47              -               -               11 seconds      42              3789            76              3739            210 ms        
+22:34:36  -24 [-29, -25]  -23 [-27, -24]  8.6 MBit/s HE-  73.1 MBit/s HE  43              47              -               -               12 seconds      45              4083            80              3843            410 ms        
+22:34:37  -24 [-28, -25]  -23 [-27, -24]  8.6 MBit/s HE-  73.1 MBit/s HE  47              51              -               -               13 seconds      47              4279            85              3973            400 ms        
+22:34:38  -24 [-28, -25]  -23 [-27, -24]  8.6 MBit/s HE-  73.1 MBit/s HE  47              51              -               -               14 seconds      49              4475            89              4077            390 ms        
+22:34:39  -24 [-28, -25]  -23 [-27, -24]  8.6 MBit/s HE-  73.1 MBit/s HE  47              51              -               -               15 seconds      51              4671            93              4181            390 ms        
+
+== 最后一份 hostapd get_clients（原文，去换行）==
+{"freq": 2412,"clients": {"1c:29:04:d1:99:28": {"auth": true,"assoc": true,"authorized": true,"preauth": false,"wds": false,"wmm": true,"ht": true,"vht": false,"he": true,"wps": false,"mfp": false,"mbo": false,"rrm": [0,0,0,0,0],"extended_capabilities": [128,0,64,0,0,0,0,0,0,32,0,0],"aid": 1,"bytes": {"rx": 4181,"tx": 4671},"airtime": {"rx": 73491,"tx": 42707},"packets": {"rx": 93,"tx": 51},"rate": {"rx": 7310000,"tx": 860000},"signal": -24,"capabilities": {}}}}
+
+== survey（采集结束时，所在信道）==
+	frequency:			2412 MHz [in use]
+	noise:				-87 dBm
+	channel active time:		95840741 ms
+	channel busy time:		46477981 ms
+	channel receive time:		38704077 ms
+	channel BSS receive time:	1832 ms
+	channel transmit time:		347993 ms
+== 工作站这一侧 ==
+全程 ping（从一轮开跑就 ping；板子 40 秒后才连上，邻居表项先被判成 FAILED）：0 个回应，175 行 Destination Host Unreachable
+
+############################################################################
+# final2：最终形态，带站点统计
+############################################################################
+
+== AP 系统日志里这一轮的行（CST）==
+11-26 22:41:19  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-26 22:41:19  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-26 22:41:19  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-26 22:41:19  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-26 22:41:19  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:41:20  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:41:34  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-26 22:41:35  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-26 22:41:36  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+== 站点统计快照（每秒一份，15 份；`-` 表示这份快照里没有这一项）==
+时间(CST)      signal          signal avg      tx bitrate      rx bitrate      tx retries      tx failed       rx drop         beacon loss     connected time  tx packets      tx bytes        rx packets      rx bytes        inactive time 
+22:41:19  -24 [-28, -25]  -24 [-28, -25]  6.0 MBit/s      6.0 MBit/s      0               0               -               -               0 seconds       5               575             6               500             10 ms         
+22:41:20  -24 [-29, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               1 seconds       9               757             17              1409            470 ms        
+22:41:21  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               2 seconds       10              831             19              1509            530 ms        
+22:41:22  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               3 seconds       17              1493            25              1747            280 ms        
+22:41:23  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               4 seconds       20              1763            31              1951            280 ms        
+22:41:24  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               5 seconds       23              2033            37              2155            260 ms        
+22:41:26  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  6.0 MBit/s      0               0               -               -               6 seconds       27              2345            44              2419            260 ms        
+22:41:27  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               7 seconds       30              2615            50              2623            260 ms        
+22:41:28  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               8 seconds       33              2885            56              2827            240 ms        
+22:41:29  -23 [-28, -24]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               9 seconds       36              3155            62              3031            240 ms        
+22:41:30  -23 [-28, -24]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               10 seconds      39              3425            66              3183            440 ms        
+22:41:31  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               11 seconds      41              3621            70              3287            430 ms        
+22:41:32  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               12 seconds      44              3915            74              3391            420 ms        
+22:41:33  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               13 seconds      46              4111            78              3495            420 ms        
+22:41:34  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  0               0               -               -               14 seconds      48              4307            82              3599            410 ms        
+
+== 最后一份 hostapd get_clients（原文，去换行）==
+{"freq": 2412,"clients": {"1c:29:04:d1:99:28": {"auth": true,"assoc": true,"authorized": true,"preauth": false,"wds": false,"wmm": true,"ht": true,"vht": false,"he": true,"wps": false,"mfp": false,"mbo": false,"rrm": [0,0,0,0,0],"extended_capabilities": [128,0,64,0,0,0,0,0,0,32,0,0],"aid": 1,"bytes": {"rx": 3599,"tx": 4307},"airtime": {"rx": 86759,"tx": 11639},"packets": {"rx": 82,"tx": 48},"rate": {"rx": 8600000,"tx": 8600000},"signal": -24,"capabilities": {}}}}
+
+== survey（采集结束时，所在信道）==
+	frequency:			2412 MHz [in use]
+	noise:				-76 dBm
+	channel active time:		96006995 ms
+	channel busy time:		46563778 ms
+	channel receive time:		38776347 ms
+	channel BSS receive time:	1935 ms
+	channel transmit time:		348620 ms
+== 工作站这一侧 ==
+全程 ping（从一轮开跑就 ping；板子 40 秒后才连上，邻居表项先被判成 FAILED）：0 个回应，125 行 Destination Host Unreachable
+
+############################################################################
+# final3：最终形态，带站点统计与第二台主机的探测
+############################################################################
+
+== AP 系统日志里这一轮的行（CST）==
+11-26 22:49:24  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+11-26 22:49:24  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+11-26 22:49:24  hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+11-26 22:49:24  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+11-26 22:49:24  hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:49:25  dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+11-26 22:49:39  hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+11-26 22:49:39  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+11-26 22:49:41  hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+
+== 站点统计快照（每秒一份，15 份；`-` 表示这份快照里没有这一项）==
+时间(CST)      signal          signal avg      tx bitrate      rx bitrate      tx retries      tx failed       rx drop         beacon loss     connected time  tx packets      tx bytes        rx packets      rx bytes        inactive time 
+22:49:24  -24 [-28, -25]  -24 [-28, -25]  6.0 MBit/s      6.0 MBit/s      0               0               -               -               1 seconds       6               611             8               533             10 ms         
+22:49:25  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               2 seconds       9               757             17              1409            530 ms        
+22:49:26  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  6.0 MBit/s      1               1               -               -               3 seconds       12              1027            22              1621            10 ms         
+22:49:27  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               4 seconds       15              1297            26              1773            0 ms          
+22:49:28  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               5 seconds       18              1567            29              1899            60 ms         
+22:49:29  -25 [-30, -26]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               6 seconds       21              1837            35              2103            40 ms         
+22:49:30  -22 [-27, -23]  -24 [-28, -25]  86.0 MBit/s HE  6.0 MBit/s      1               1               -               -               7 seconds       25              2149            42              2367            40 ms         
+22:49:32  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               8 seconds       26              2223            45              2493            670 ms        
+22:49:33  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               9 seconds       27              2297            47              2593            690 ms        
+22:49:34  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               10 seconds      28              2371            49              2693            710 ms        
+22:49:35  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               11 seconds      29              2445            51              2793            500 ms        
+22:49:36  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               12 seconds      29              2445            51              2793            1510 ms       
+22:49:37  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               13 seconds      29              2445            51              2793            2530 ms       
+22:49:38  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               14 seconds      29              2445            51              2793            3550 ms       
+22:49:39  -24 [-28, -25]  -24 [-28, -25]  86.0 MBit/s HE  86.0 MBit/s HE  1               1               -               -               15 seconds      29              2445            51              2793            4570 ms       
+
+== 最后一份 hostapd get_clients（原文，去换行）==
+{"freq": 2412,"clients": {"1c:29:04:d1:99:28": {"auth": true,"assoc": true,"authorized": true,"preauth": false,"wds": false,"wmm": true,"ht": true,"vht": false,"he": true,"wps": false,"mfp": false,"mbo": false,"rrm": [0,0,0,0,0],"extended_capabilities": [128,0,64,0,0,0,0,0,0,32,0,0],"aid": 1,"bytes": {"rx": 2793,"tx": 2445},"airtime": {"rx": 55382,"tx": 9792},"packets": {"rx": 51,"tx": 29},"rate": {"rx": 8600000,"tx": 8600000},"signal": -24,"capabilities": {}}}}
+
+== survey（采集结束时，所在信道）==
+	frequency:			2412 MHz [in use]
+	noise:				-89 dBm
+	channel active time:		96500002 ms
+	channel busy time:		46814630 ms
+	channel receive time:		38976643 ms
+	channel BSS receive time:	1995 ms
+	channel transmit time:		350430 ms
+== 工作站这一侧 ==
+trigger 22:49:26: the AP lists the board as a client
+10 packets transmitted, 0 received, 100% packet loss, time 4540ms
+neighbor after ping 22:49:32: 192.168.31.151 dev enp0s31f6 lladdr 1c:29:04:d1:99:28 REACHABLE 
+sniff start 22:49:26 (22 s) on enp0s31f6
+22:49:27  eth dst ff:ff:ff:ff:ff:ff src c8:53:09:d0:6d:85  ARP request  who-has 192.168.31.151 tell 192.168.31.156 (sha c8:53:09:d0:6d:85 tha 00:00:00:00:00:00)
+22:49:27  eth dst c8:53:09:d0:6d:85 src 1c:29:04:d1:99:28  ARP reply    who-has 192.168.31.156 tell 192.168.31.151 (sha 1c:29:04:d1:99:28 tha c8:53:09:d0:6d:85)
+22:49:27  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=1  192.168.31.156 -> 192.168.31.151
+22:49:27  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=2  192.168.31.156 -> 192.168.31.151
+22:49:28  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=3  192.168.31.156 -> 192.168.31.151
+22:49:28  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=4  192.168.31.156 -> 192.168.31.151
+22:49:29  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=5  192.168.31.156 -> 192.168.31.151
+22:49:29  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=6  192.168.31.156 -> 192.168.31.151
+22:49:30  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=7  192.168.31.156 -> 192.168.31.151
+22:49:30  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=8  192.168.31.156 -> 192.168.31.151
+22:49:31  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=9  192.168.31.156 -> 192.168.31.151
+22:49:31  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=10  192.168.31.156 -> 192.168.31.151
+sniff end 22:49:49, 12 board-related ARP/ICMP frames
+

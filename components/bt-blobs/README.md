@@ -31589,3 +31589,11 @@ BLE 先 init 的顺序，与标定被 BLE 用掉混在一起，不能单独归�
   enable 之后读到 `98BC=0` 是预期值。
 - 合成器上电之后两个射频真的抢天线会怎样，没有任何证据（L4b）。
 
+**AP 侧的证据（当晚，只读采集）**：用户用网线把工作站接进 AP 的 LAN，AP 是刷了 OpenWrt 的小米 AX3000T。hostapd 的系统
+日志里，修之前的 11 轮（13:03–13:51）每一轮都是 `did not acknowledge authentication response`——AP 收到了板子的认证
+请求、发了响应，没等到板子的确认；板子发得出、收不到，在 AP 侧看得最直接。带站点统计的四轮里，只跳过第 15 步、
+`initPhy` 照常跑的那轮：AP 看板子的信号 -23 dBm（与健康时一样强），但 AP 发给板子的帧放弃 51 / 51、速率压到
+6–8.6 Mbit/s——退化在板子的接收侧。两段都不跳过的第二次关联都没完成（第一次能连上），退化状态下失败在哪一步是随机的。
+细目在 `docs/verification/coex-verification.md` §15.8，日志 `logs/coex-merged-wifi-link-ap-syslog.log`、
+`logs/coex-merged-wifi-link-ap-side.log`。仍然没有空口上的帧（路由器没有外网，装不了 tcpdump）。
+

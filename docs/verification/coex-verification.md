@@ -31,6 +31,7 @@
 | 不开共存的对照（ADR-003 L4a 的判据「ping 与不开共存时一样」） | L4 | **成立**：胶水按 IDF 关闭分支作答、核不启动（`-Dcoex` + `-Dcoex-sw-off`）时扫描 38 个 AP、连上 2566 ms、DHCP 46 ms、ping 10/10。只去掉 `-Dcoex` 的两轮收不到帧（扫描 0 个 AP、连接 `reason=201`），根因是 `_coex_pti_get` 的计数桩把出参写成 0——只把这一处改成不写，计数桩的镜像也照常（扫描 37 个 AP、ping 10/10）。**共存核不是 Wi-Fi 收发的前置**：本表初稿写反了，已更正 | `logs/wifi-link-nocoex-boot.log`、`logs/wifi-link-coex-off-boot.log`、`logs/wifi-link-stubs-pti-boot.log`；§13 |
 | 合并镜像里的 BLE enable（`-Dcoex-ble-enable`） | L3 | `bringup.enable rc=0`、`ENABLED`，共存核 BLE 侧 `enabled`；没有锁死、没有复位。synth 锁定位（`0x201098BC` 的 bit2）在 enable 前后都是 0——这是预期值：合成器是广播使能命令处理之后才上电的，这一轮没有发 HCI 命令，**对 R3.3 不构成结论** | `logs/coex-merged-ble-enable-boot.log`；§14 |
 | 合并镜像里的 Wi-Fi 真实链路（`-Dcoex-wifi-link`） | L3 | 两个控制器同镜：BLE `INITED`、`ENABLED`，Wi-Fi 扫描 35 个 AP、连上 2059 ms、DHCP 51 ms、ping 网关 10/10，16/16 项通过，`verdict=pass`（2026-11-26）。前提是 Wi-Fi 先 `esp_wifi_start`，并且 BLE 的 init 不再做两段会重做 PHY 的打开与标定的事（`probe_ptr.initPhy`、第 15 步的 `esp_phy_load_cal_and_init`）：五个单变量对照里，只跳过其中一段，扫描就从三十多个 AP 掉到 1–2 个，而连接、DHCP、ping 的判据照样全过（所以加了一条「扫描 AP 数不低于基线一半」）；不写回时钟 / 电源寄存器，则认证、关联成功后被 `reason=7` 断开 | `logs/coex-merged-wifi-link-*.log`（通的一份与五份对照）、`logs/coex-merged-wifi-link-deaf-boot.log`（BLE 先 init，不通）；§15 |
+| AP 侧的证据（OpenWrt AP，2026-11-26 晚） | L3 | AP 的系统日志里，修之前的每一轮都是「板子没有确认认证响应」——发得出、收不到；最终形态是完整序列，AP 看板子 -24 dBm、双向 86 Mbit/s、15 秒里重传 0–1 次。只跳过第 15 步时，AP 发给板子的帧放弃 51 次（共 51 帧）、速率压到 6–8.6 Mbit/s，而信号一样强：退化在板子的接收侧。板子的 ARP 应答能跨过 AP 的桥到达同网段的另一台主机；板子不回应别人的回显请求（数据通路的缺口，与共存无关）。仍然没有空口上的帧（路由器装不了 tcpdump） | `logs/coex-merged-wifi-link-ap-syslog.log`、`logs/coex-merged-wifi-link-ap-side.log`；§15.8 |
 
 ## 2. C0 调研与设计（2026-11-24）
 
@@ -1006,8 +1007,9 @@ env -u LD_LIBRARY_PATH /tmp/bin/zig build -Dtarget=riscv32-freestanding-eabihf \
   照常跑）：36 → 2 个 AP。两段都跳过（A）：33–34 → 35 个 AP。
 - **写回是连接阶段必要的。** 两段都跳过但不写回（C）：扫描照常（35 个 AP），认证、关联都成功，随即被 AP 以 `reason=7`
   断开，没有走到四次握手。写回的 13 个里哪几个是必要的，没有再分。
-- **原来的判据抓不住这种退化。** B 和 D 里接收已经退到 1–4 个 AP，连接、DHCP、ping、稳定 5 秒照样全过，`verdict=pass`。
-  所以加了一条：BLE init 之后的扫描 AP 数不得低于基线的一半（15.4）。它在 E 上失败（`2 vs 36`），在最终形态上通过（15.5）。
+- **原来的判据抓不住这种退化。** B 和 D 里接收已经退到 1–4 个 AP，连接、DHCP、ping、稳定 5 秒照样全过，`verdict=pass`
+  （B 的两次里一次连上、一次关联没完成，见 15.8）。所以加了一条：BLE init 之后的扫描 AP 数不得低于基线的一半（15.4）。
+  它在 E 上失败（`2 vs 36`），在最终形态上通过（15.5），在晚上两次退化镜像上也如实失败（15.8）。
 - **"接收通路的字读回 0"复现不出来。** 排查阶段记过"聋的那几轮里 MAC 块接收通路的那组字读回 0"。B、D、E 三份转储里
   这组字都不是 0（PTI 表字与单独探针相同，`0x20104300 = ffffffff`）；排查阶段那几轮的原始日志没有入库，那个说法作废。
 
@@ -1129,12 +1131,78 @@ BLE init 之前 33 个 AP，之后 35 个 AP，连上 2052 ms，DHCP 51 ms，pin
   没有做。
 - 两段各自伤在哪一步没有再拆（`initPhy` 之后的哪一步、标定之后的哪一处状态）；写回的 13–15 个寄存器里哪几个是必要的，
   也没有再分。
-- 排查阶段（15.2 的十四轮）的原始日志只留了轮 1，那些数字是当时的读数。带结论的五份对照都有入库日志，每个对照只跑了一次。
+- 排查阶段（15.2 的十四轮）的原始日志只留了轮 1，那些数字是当时的读数。带结论的五份对照都有入库日志，每个对照跑了一次；
+  B 和 D 在晚上又各跑了一次，带 AP 侧采集，见 15.8。
 - 合并镜像里真实链路的顺序只有 Wi-Fi 先 start 这一种；BLE 先 init 那种顺序（轮 1）不走。
 - `bringup.enable()` 开头无条件写 `0x2010_0450 = 0x00102000`（§14.3）。这一轮它是在 Wi-Fi 已经 start 之后执行的，
   链路照常通过；它对 Wi-Fi 有没有影响没有单独量。
-- 一台 AP（WPA2-PSK + CCMP-128，信道 1）；没有抓包。
+- 一台 AP（WPA2-PSK + CCMP-128，信道 1）。仍然没有空口上的帧（路由器没有外网，装不了 tcpdump）；现在有的是 AP 自己记的
+  事件、它对这条链路的站点统计、AP 有线侧看到的帧，见 15.8。
 - 合并镜像里 `esp_wifi_start` 之后到 BLE init 之间、BLE 的 init 期间，Wi-Fi 的任务没有被泵（只开了中断），
   事件队列里积压的帧被丢掉；链路是从扫描重新开始的。
 - `esp_wifi_start` 没返回 0 的那条分支（不置旗子、不做基线与链路）没有上过板；它只会在 `wifi first` 那一项判据上报失败。
+
+### 15.8 AP 侧的证据（2026-11-26 晚）
+
+用户用网线把工作站接进了 AP 的 LAN，并给了路由器的登录。AP 是一台刷了 OpenWrt 25.12.6 的小米 AX3000T（2.4 GHz 信道 1，
+接口 `phy0-ap0`，网关 192.168.31.1）。路由器没有外网，装不了 tcpdump（工作站也够不到 downloads.openwrt.org），所以拿到的
+不是空口上的帧，是三样别的东西；都只读，没有改路由器：
+
+- **AP 的系统日志。** hostapd 在默认级别就记关联过程的每一步，dnsmasq 记 DHCP 四步。路由器的日志是个约 1300 行的环形
+  缓冲，22:52 取了一份与板子有关的行入库：`logs/coex-merged-wifi-link-ap-syslog.log`（528 行，时间换算成本机时间，带轮次
+  注释）。
+- **站点统计。** 板子连上期间每秒一份 `iw dev phy0-ap0 station dump` 与 hostapd 的 `get_clients`。
+- **AP 有线侧的帧。** 工作站在网线上抓与板子有关的 ARP / ICMP 帧的摘要（不含载荷）。
+
+后两样覆盖晚上的四轮上板，入库为 `logs/coex-merged-wifi-link-ap-side.log`。
+
+**AP 日志里今天各轮的样子。** 成功的连接在 AP 侧都是同一个序列：`authenticated` → `associated (aid 1)` →
+`AP-STA-CONNECTED` → `WPA: pairwise key handshake completed (RSN)` → `EAPOL-4WAY-HS-COMPLETED` → DHCP 四步（连上后 1 秒内
+ACK）→ 约 15 秒后板子主动断开。失败与退化的几轮，AP 侧各有一句对得上的话：
+
+| 轮 | 板子那边 | AP 日志 |
+| --- | --- | --- |
+| 修之前的 11 轮（13:03–13:51） | 扫描只剩个位数、连不上 | 每轮都是 `did not acknowledge authentication response`，65 秒后 `deauthenticated due to local deauth request`：AP 收到了板子的认证请求，发了响应，没等到板子的确认。板子发得出、收不到，在 AP 侧看得最直接 |
+| C（不写回） | 认证、关联成功后被 `reason=7` 断开 | 同上：`did not acknowledge authentication response`，没有 `associated` 这一行 |
+| E（只跳过 `initPhy`） | 连接 `reason=2` | 同上 |
+| B（两段都不跳过，第一次） | 连上，DHCP 3887 ms | 四次握手完成；DHCP 第一次 DISCOVER / OFFER 之后板子没有接着发 REQUEST，4 秒后重新 DISCOVER 才 ACK |
+
+**晚上带站点统计的四轮。** 都是 `-Dcoex-wifi-link -Dcoex-ble-enable`，从提交的源码构建；对照轮只做临时改动，跑完即恢复。
+
+| 轮 | 板子：BLE init 之前 → 之后 | 板子的链路 | AP 日志 | AP 看这一条链路 |
+| --- | --- | --- | --- | --- |
+| 最终形态（两次） | 27 → 34、24 → 32 个 AP | 连上约 2.06 s，DHCP 27–51 ms，ping 网关 10/10，16/16 | 完整序列，连上后 1 秒内 DHCPACK | 信号 -24 dBm；AP → 板子 86 Mbit/s（HE），板子 → AP 86 Mbit/s（HE）；15 秒里重传 0–1 次、放弃 0–1 次 |
+| D 的第二次（只跳过第 15 步） | 30 → 4 个 AP | 连上 2866 ms，DHCP 55 ms，ping 9/10（平均 68 ms）；新判据失败，15/16 | 完整序列 | 信号 -23 dBm；AP → 板子先降到 6 Mbit/s、再 8.6 Mbit/s；15 秒里重传 47 次、放弃 51 次（共发 51 帧）；板子 → AP 的速率在 1 / 6 / 86 / 73 Mbit/s 之间跳 |
+| B 的第二次（两段都不跳过） | 28 → 2 个 AP | 关联没完成，`reason=4`；新判据失败，11/16 | 只有 `authenticated`，没有 `associated` | 板子没关联上，没有站点统计 |
+
+读法：
+
+- **退化在板子的接收侧。** 对照 D 里 AP 收到的信号与健康时一样强（-23 / -24 dBm），但 AP 发给板子的帧一半左右放弃、
+  速率被压到传统 OFDM 的 6–8.6 Mbit/s。板子自己扫描时只看到 4 个 AP、ping 网关丢 1 个，是同一件事。
+- **"两段都不跳过"的结果每轮不一样。** B 的第一次能连上（只是 DHCP 慢），第二次关联都没完成。退化状态下失败在哪一步
+  是随机的：AP 日志里 C、E 是认证响应没被确认，B 的第二次是关联没完成。
+- **判据。** 这两轮退化镜像上，新加的那条判据都如实失败（`4 vs 30`、`2 vs 28`）。
+
+**同网段的另一台主机。** 工作站在 AP 的有线侧（192.168.31.156）。等 AP 报告板子连上之后再发起，网线上抓到：
+
+```text
+22:49:27  eth dst ff:ff:ff:ff:ff:ff src c8:53:09:d0:6d:85  ARP request  who-has 192.168.31.151 tell 192.168.31.156
+22:49:27  eth dst c8:53:09:d0:6d:85 src 1c:29:04:d1:99:28  ARP reply    who-has 192.168.31.156 tell 192.168.31.151
+22:49:27  eth dst 1c:29:04:d1:99:28 src c8:53:09:d0:6d:85  ICMP type=8 code=0 seq=1  192.168.31.156 -> 192.168.31.151
+```
+
+工作站的邻居表项随即变成 `192.168.31.151 lladdr 1c:29:04:d1:99:28 REACHABLE`：板子的 ARP 应答跨过 AP 的桥到了另一台
+主机，这是板子发出的帧第一次在板子之外被抓到。10 个回显请求一个都没有应答：
+`components/wifi-blobs/src/data_path.zig` 的 ICMP 分支只处理回显应答（`handleEchoReply`），没有"收到回显请求、回一个应答"
+这一半。板子只发 ping，不回 ping。这是数据通路的一个缺口，不是链路问题，与共存无关；记入待办。
+
+探测方式踩到的一个坑：如果从一轮开跑就 ping 板子，板子 40 秒后才连上，这期间 Linux 已经把邻居表项判成 FAILED，之后不再
+重发 ARP（七分钟后仍是 FAILED）。所以"工作站 ping 板子 0 个回应"要先分清是这个，还是板子真没回。
+
+**边界。**
+
+- 没有空口上的帧（802.11 的认证、关联、EAPOL 帧本身）：路由器没有外网，装不了 tcpdump。
+- 路由器的日志是约 1300 行的环形缓冲，新的挤掉旧的；入库的是 22:52 那一份，更早的读数（昨晚的第一次关联）已经被挤掉。
+- 每个轮次只跑一次。对照 B 的两次结果不同（15.2 的第一次连上，这次关联没完成），样本是 2。
+- 站点统计里的速率是 AP 速率控制的瞬时值；`iw` 的字段随驱动而异，mt76 给的就是上面这些。
 

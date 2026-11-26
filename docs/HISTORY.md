@@ -140,8 +140,14 @@
   最终形态：BLE init 之前 34 个 AP，之后 35 个 AP，连上 2059 ms、DHCP 51 ms、ping 网关 10/10，16/16，`verdict=pass`
   （`logs/coex-merged-wifi-link-boot.log`）。五份对照日志同一个前缀（`-dump-`、`-noguard-`、`-norestore-`、`-onlyloadcal-`、
   `-onlyinitphy-boot.log`）；BLE 先 init 的顺序不通，留作对照（`logs/coex-merged-wifi-link-deaf-boot.log`）。
+- **AP 侧的证据（当晚）**：用户用网线把工作站接进 AP 的 LAN 并给了登录，AP 是刷了 OpenWrt 的小米 AX3000T。只读采集三样：
+  AP 的系统日志、板子连上期间每秒一份的站点统计、AP 有线侧网线上的帧。AP 日志里修之前每一轮都是「板子没有确认认证
+  响应」；最终形态双向 86 Mbit/s、15 秒里重传 0–1 次；只跳过第 15 步时 AP 发给板子的帧放弃 51 / 51、速率压到
+  6–8.6 Mbit/s，而信号一样强——退化在板子的接收侧。板子的 ARP 应答能跨过 AP 的桥到达同网段的另一台主机；板子不回应
+  别人的回显请求（数据通路只处理回显应答，是缺口）。细目在 `docs/verification/coex-verification.md` §15.8。
 - **没有做的**：两个射频都在收发的共存效果（L4b，BLE 的射频没有起）；时钟域的正解（现在是事后整字写回，在 BLE 的 enable
-  之后执行，BLE 那一侧的时钟位也被拿掉）；两段各自伤在哪一步；写回的寄存器里哪几个必要；排查阶段各轮的原始日志没有入库。
+  之后执行，BLE 那一侧的时钟位也被拿掉）；两段各自伤在哪一步；写回的寄存器里哪几个必要；排查阶段各轮的原始日志没有入库；
+  空口上的帧（路由器没有外网，装不了 tcpdump）；板子回别人的 ping。
 
 ## 日志
 

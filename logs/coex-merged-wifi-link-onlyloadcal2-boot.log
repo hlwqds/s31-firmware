@@ -1,0 +1,1836 @@
+[REDACTED 2026-11-26] 本文件是板侧原始串口日志的脱敏副本：除用户自己的 AP（hl-wifi）外，邻居网络的 SSID 与 BSSID 都换了标签——BSSID 换成 ap-NN（与 wifi-link-scan-boot.log 同一套编号，日志里新出现的 BSSID 接着往后编），SSID 换成 ssid-NN（每个 SSID 名一个，同名 mesh 的几个 BSSID 共用）；信道、RSSI、authmode、握手内容、栈的高水位、时序与计数都是原值。
+13 202�ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=e6d20h (945440) map
+I (266) esp_image: segment 1: paddr=000f6d48 vaddr=2e000600 size=00008h (     8) load
+I (268) esp_image: segment 2: paddr=000f6d58 vaddr=2f000800 size=00214h (   532) load
+I (271) esp_image: segment 3: paddr=000f6f74 vaddr=2f000a20 size=090c4h ( 37060) load
+I (286) esp_image: segment 4: paddr=00100040 vaddr=401d0040 size=289d0h (166352) map
+I (314) esp_image: segment 5: paddr=00128a18 vaddr=2f009ae4 size=12bfch ( 76796) load
+I (335) boot: Loaded app from partition at offset 0x10000
+I (336) boot: Disabling RNG early entropy source...
+s31-firmware boot
+ota: crc32 mine=0x4743989a rom=0x4743989a -> match
+ota: table n=6 factory=0x10000 ota0=0x190000 ota1=0x310000 otadata=0x490000
+ota: ab=yes slot=factory state=UNDEFINED(4294967295) seq=0 sector=0 attempts=0 failures=0 od=0x490000 count=2
+section: coex_merged
+coex-merged: heap total=210240 B wifi=114688 B ble=95552 B
+check: heap split wifi=112K ble=93K (both >= 64K) ok=1
+wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 15/127/63 -> 0/0/0 (0 = off)
+wifi-init-probe: pmu modem ICG code 0->2 (2 = active)
+wifi-init-probe: arena=114688 B
+coex> coex firmware version: a830d28
+wifi-init-probe: trace timer_setfn a0=0x2f01b3c4 a1=0x4004e082
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+coex> coexist rom version cdcf52b
+wifi-init-probe: trace malloc a0=0x00000038 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000038 a1=0x2f043ac0
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+coex[boot]: booted=true wifi=idle ble=idle param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[boot]: fw=2.0.0 en=0 req=0 rel=0 sta=0 startcb=0 intset=0
+wifi-init-probe: table=0x2f03f430 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: coex wifiInit rc=0
+wifi-init-probe: CLKDMP[before-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x00000000
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000005
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: LPCON+18 fixed pre-init 0x5 -> 0x1 (IDF=0x1)
+wifi-init-probe: pm params rc: min_active=50000 keep_alive=10000000 wait_broadcast=15000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f043b1c
+wifi-blob: pp rom version: 395df10
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f043b70
+wifi-blob: net80211 rom version: 395df10
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f044198
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f04431c
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace semphr_give a0=0x2f0449e4 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f044368 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#1 hooks=20 give=2 null_give=0 semmax=0x10001
+wifi-init-probe: pump#2 hooks=20 give=2 null_give=0 semmax=0x10001
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048b0c
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f044368 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ecc8 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f048b34
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f049d58
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049d58
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049e00
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049ea8
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049f50
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049f88
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049fc0
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049ff8
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a030
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a2c8
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a560
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a7f8
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04aa90
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f04ad28
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f04b04c
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000078 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f04b370
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04b3f8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04bab0
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04c168
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04c820
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04ced8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04d590
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04dc48
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04e300
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04e9b8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04f070
+wifi-init-probe: trace timer_setfn a0=0x2f01ec54 a1=0x4003b752
+wifi-init-probe: trace timer_setfn a0=0x2f01ec68 a1=0x4003b74a
+wifi-init-probe: trace timer_setfn a0=0x2f01eca4 a1=0x4003b742
+wifi-init-probe: trace timer_setfn a0=0x2f01ec90 a1=0x4003b73a
+wifi-init-probe: trace timer_setfn a0=0x2f01ecc8 a1=0x4003b732
+wifi-init-probe: trace timer_setfn a0=0x2f01ecdc a1=0x4003b72a
+wifi-init-probe: trace timer_setfn a0=0x2f01ecf0 a1=0x4003b722
+wifi-init-probe: trace timer_setfn a0=0x2f01ed0c a1=0x4003b71a
+wifi-init-probe: trace timer_setfn a0=0x2f01f014 a1=0x4003b712
+wifi-init-probe: trace timer_setfn a0=0x2f01efb4 a1=0x4003b70a
+wifi-init-probe: trace timer_setfn a0=0x2f01eff0 a1=0x4003b702
+wifi-init-probe: trace timer_setfn a0=0x2f01ee64 a1=0x4003f6fe
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x00000000 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace wifi_clk_dis a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000004
+wifi-init-probe: trace zalloc a0=0x00000004 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f04f728
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f043aa8 a1=0xffffffff
+wifi-init-probe: trace semphr_give a0=0x2f043aa8 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace timer_setfn a0=0x2f01e618 a1=0x4002afc2
+wifi-init-probe: trace timer_setfn a0=0x2f01e62c a1=0x4002afb8
+wifi-init-probe: trace timer_disarm a0=0x2f01cb44 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f0449e4 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f044368 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#3 hooks=156 give=6 null_give=0 semmax=0x10001
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: esp_wifi_internal_set_log_level(3) rc=0x00000000
+wifi-init-probe: wpa cb register rc=0 g_ic[444]=0x2f01bfb4 table=0x2f01bfb4
+wifi-init-probe: CLKDMP[after-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x64646400
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000001
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x66660000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: after-init MAC_ST=0x00000000 (init_rc=0)
+coex[init]: booted=true wifi=inited ble=idle param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[init]: fw=2.0.0 en=0 req=0 rel=0 sta=0 startcb=1 intset=0
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: ROMGLOB swq=0x2f044368 ppq=0x2f03ea20 ppsem=0x0
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: MAC_ST after init = 0x00000000
+wifi-init-probe: INIT OK, arena free=66380/114672 B, bad_handle=0, blocking_refused=4
+read: LPCON+18 after wifi init=0x00000001
+check: wifi esp_wifi_init_internal rc=0 ok=1
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048b0c
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f044368 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ecc8 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f0449e4 a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f044368 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#4 hooks=170 give=7 null_give=0 semmax=0x10001
+wifi-link: esp_wifi_set_mode(STA) rc=0x0
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048b0c
+wifi-init-probe: trace mutex_lock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f044368 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043b08 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f0449e4 a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ecc8 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace phy_enable a0=0x00000000 a1=0x00000001
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0; cal_data: version=100 mac=1c:29:04:d1:99:28 nonzero=264/1904 head=ff fe 19 00 bf 20 19 00
+coex> _coex_enable called by blob
+wifi-init-probe: trace semphr_take a0=0x2f043a90 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f043a90 a1=0x00000000
+coex> coex_enable_wrapper returned rc=0 wifi=enabled ble=idle rej=0
+wifi-init-probe: trace wifi_reset_mac a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f0442f4 a1=0x00000000
+wifi-init-probe: trace event_post id=43 bits=0x10 handlers=1 undispatched=0
+wifi-link-probe: event id=43 data=0x2f0489e0 (n=1)
+wifi-blob: wifi: W (1396) wifi:
+wifi-blob: (phy)rate:0x0(  LP-1Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1404) wifi:
+wifi-blob: (phy)rate:0x1(  LP-2Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1413) wifi:
+wifi-blob: (phy)rate:0x2(LP-5.5Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1423) wifi:
+wifi-blob: (phy)rate:0x3( LP-11Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1432) wifi:
+wifi-blob: (phy)rate:0x5(  SP-2Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1441) wifi:
+wifi-blob: (phy)rate:0x6(SP-5.5Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1450) wifi:
+wifi-blob: (phy)rate:0x7( SP-11Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1459) wifi:
+wifi-blob: (phy)rate:0x8(    48Mbps), pwr:18, txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1469) wifi:
+wifi-blob: (phy)rate:0x9(    24Mbps), pwr:19, txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1478) wifi:
+wifi-blob: (phy)rate:0xa(    12Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1487) wifi:
+wifi-blob: (phy)rate:0xb(     6Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1496) wifi:
+wifi-blob: (phy)rate:0xc(    54Mbps), pwr:18, txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1505) wifi:
+wifi-blob: (phy)rate:0xd(    36Mbps), pwr:19, txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1515) wifi:
+wifi-blob: (phy)rate:0xe(    18Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1524) wifi:
+wifi-blob: (phy)rate:0xf(     9Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1533) wifi:
+wifi-blob: (phy)rate:0x10, mcs:0x0, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1543) wifi:
+wifi-blob: (phy)rate:0x11, mcs:0x1, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1554) wifi:
+wifi-blob: (phy)rate:0x12, mcs:0x2, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1564) wifi:
+wifi-blob: (phy)rate:0x13, mcs:0x3, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1574) wifi:
+wifi-blob: (phy)rate:0x14, mcs:0x4, pwr(bw20:19, bw40:18), txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1585) wifi:
+wifi-blob: (phy)rate:0x15, mcs:0x5, pwr(bw20:19, bw40:18), txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1595) wifi:
+wifi-blob: (phy)rate:0x16, mcs:0x6, pwr(bw20:18, bw40:17), txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1605) wifi:
+wifi-blob: (phy)rate:0x17, mcs:0x7, pwr(bw20:18, bw40:17), txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1616) wifi:
+wifi-blob: (phy)rate:0x18, mcs:0x8, pwr(bw20:16, bw40:16), txing:16
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1626) wifi:
+wifi-blob: (phy)rate:0x19, mcs:0x9, pwr(bw20:15, bw40:15), txing:15
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1637) wifi:
+wifi-blob: 11ax coex: WDEVAX_PTI0(0x55777555), WDEVAX_PTI1(0x00003377).
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1648) wifi:
+wifi-blob: mode : sta (1c:29:04:d1:99:28)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1655) wifi:
+wifi-blob: enable tsf
+wifi-blob: wifi: 
+
+wifi-link-probe: event id=2 data=0x00000000 (n=2)
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-init-probe: pump#5 hooks=227 give=12 null_give=0 semmax=0x10001
+wifi-link: esp_wifi_start rc=0x0 (hooks=227, events=2)
+coex[after-start]: booted=true wifi=enabled ble=idle param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-start]: fw=2.0.0 en=1 req=0 rel=2 sta=2 startcb=1 intset=1
+coex[after-start]: hooks: boot=1 wifi_init=1 enable=1 status_get=2 wifi_release=2 pti_get=14 schm_status_bit_clear=1 schm_status_bit_set=1 schm_interval_set=1
+coex[after-start]: hooks: schm_register_cb=1 register_start_cb=1 configure_preemption_end_cb=1
+coex[after-start]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-start]: blob->core: status_bit_set n=1 type=0 mask=0x00000000 last=0x00000000 | status_bit_clear n=1 mask=0x0000ffff | events>=64 n=0
+coex[after-start]: by event: e1: rel=1 bad=0 pti n=5 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e10: pti n=2 mask=0x03 bad=0 e15: pti n=1 mask=0x01 bad=0
+coex[after-start]: by event: e38: rel=1 bad=0
+coex[after-start]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-start]: hw timer 0: 0x00000000 0x00000080 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 0 +1ms: 0x00000000 0x00000080 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-start]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+wifi-init-probe: pump#6 hooks=233 give=15 null_give=0 semmax=0x10001
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_disable_ac_ax +1
+wifi-link-probe: stub _wifi_bb_sleep_retention_attach +1
+wifi-link-probe: stub _wifi_mac_sleep_retention_attach +1
+wifi-link-probe: task[0] wifi entry=0x2f013a6a arg=0x00000000 requested stack=6656 -> 16384 B at 0x2f044afc..0x2f048afc
+wifi-init-probe: pump#7 hooks=233 give=15 null_give=0 semmax=0x10001
+wifi-init-probe: pump#8 hooks=233 give=15 null_give=0 semmax=0x10001
+wifi-link-probe: pump, interrupts off: 500042 us, hooks +0, event posts +0
+wifi-link: enable interrupts: 2 inputs, mie=0x0000000000020000
+wifi-link-probe: pump, interrupts on: 2000017 us, hooks +0, event posts +0
+wifi-link: arena[after start]: free=64424/114672 B
+coex-merged: wifi first: esp_wifi_start rc=0
+check: wifi first: esp_wifi_start rc=0 ok=1
+wifi-init-probe: radio snapshot: 523 documented + 55 focus registers
+irq#0 in=17 mepc=0x400a82f2 mac=0x00000000 b13=0 b14=0 ctx15=129 en=0 a0=0x2f07a6d0 a1=0x0000003d s0=0x00000000 ra=0x400a9baa
+wifi-link: scan[before ble init]: esp_wifi_scan_start rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048a18 (n=3)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: scan[before ble init]: GOT in 2421 ms, esp_wifi_scan_get_ap_num rc=0x0 n=30
+check: wifi baseline scan before ble init ap=30 ok=1
+A93K
+bt init-only: init stbbt membbbbbbt brbt brbt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003ff880 lpcon=0x00000007
+bt lp: gates conbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbt bringup: enter step 52 init_phy
+bt phy: enable modem=2 icg+phy_wifi_enable_set+bb_wdg+conf1 done
+bt phy: calib rc=0 cal[10..14]=0x0 fe_readable=1 fe=0x5ac968b1
+bt bringup: PHY enabled AFTER step 5 (idf order)
+bt bringup: task list head init *(0x2f011130)=0x00000000
+bt bringup: env bbbt brbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 63 58
+Q5 407 22852 0 126
+ZU 126->4,4 spins=53363 cc=3000000
+A0/92008
+
+M0 2244 0x2f05fa90
+
+M1 132 0x2f060368
+
+M2 820 0x2f060400
+
+M3 80 0x2f060748
+
+M4 64 0x2f0607a8
+
+M5 76 0x2f0607f8
+
+MC 6 sz=76 ret=0x2f0607f8
+
+CN 0x2f060358 0x98 24
+
+D63.3
+
+Mosal> eventqInit
+
+Msched 107C writeback=0x0
+
+Msched 1254 writeback=0x8
+
+bbbbbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 80 73
+Q5 413 22939 0 126
+ZU 126->4,4 spins=53376 cc=3000000
+A0/89192
+
+M0 2244 0x2f05fa90
+
+M1 132 0x2f060368
+
+M2 820 0x2f060400
+
+M3 80 0x2f060748
+
+M4 64 0x2f0607a8
+
+M5 76 0x2f0607f8
+
+M6 8 0x2f060858
+
+M7 36 0x2f060878
+
+MC 20 sz=8 ret=0x2f061338
+
+CN 0x2f060358 0x98 80
+
+D80.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+btbbt bbbt brinbt rebbt bribt brbt probe: cb10 head oob=0x00000000
+bt probe: sched slot after step10 = 0x00000000
+bt probe: rtc_freq oob @1044 ptr=0xbbt bringup: pbt probt brbbt init-only: bringup.init rc=0 arena free=57128 B
+read: LPCON+18 after ble init=0x0000000f (bit0 wifipwr / bit1 coex / bit2 i2c_mst)
+check: ble bringup.init rc=0 ok=1
+coex[merged]: booted=true wifi=enabled ble=inited param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[merged]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+check: coex sides wifi=enabled ble=inited (wifi started=true; both at least inited) ok=1
+check: coex rejected calls=0 ok=1
+check: wifi idle hook refused on ble stack n=0 ok=1
+read[ble before enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble before enable]: syscon 9c00..9c0c=00000101 7e601002 000000ff 64646400 9c10=00000000 9c14..9c20=003ffa8c 10003802 00000000 00002070
+read[ble before enable]: fe 0438=ff810000 0450=00110000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble before enable]: ana f800=002f0669 f818=2900e444 f81c=00fffeff
+Jul 14 2026
+bbt probe:bt bringbt brbt prbt calbt bbtbtbbbbbtbt enable-only: status=2 rounds=40069 evq=1/1/0 pend_ok=2 busy=0
+read[ble after enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble after enable]: syscon 9c00..9c0c=00000101 7e601002 000000ff 64646400 9c10=00000000 9c14..9c20=003ffa8c 10003802 00000000 00002070
+read[ble after enable]: fe 0438=ff810000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble after enable]: ana f800=002f0669 f818=2900e444 f81c=00fffeff
+coex[ble-enable]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[ble-enable]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+coex[ble-enable]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[ble-enable]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+coex[ble-enable]: hooks: boot=1 wifi_init=1 enable=1 status_get=66 wifi_release=4 pti_get=36 schm_status_bit_clear=29 schm_status_bit_set=29 schm_interval_set=29
+coex[ble-enable]: hooks: schm_register_cb=1 register_start_cb=1 configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1
+coex[ble-enable]: hooks: wr_btdm_coex_schm_register_btdm_callback=1 wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[ble-enable]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[ble-enable]: blob->core: status_bit_set n=29 type=0 mask=0x00000001 last=0x00000000 | status_bit_clear n=29 mask=0x0000ffff | events>=64 n=0
+coex[ble-enable]: by event: e1: rel=2 bad=0 pti n=16 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e5: pti n=11 mask=0x01 bad=0 e10: pti n=2 mask=0x03 bad=0
+coex[ble-enable]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=2 bad=0
+coex[ble-enable]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[ble-enable]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 4: 0x00000001 0x000018f4 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[ble-enable]: hw timer 4 +1ms: 0x00000001 0x000018f4 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+check: ble bringup.enable rc=0 ok=1
+wifi-init-probe: radio restore: 0x2010f044 wanted 0x00000080, reads 0x00000000
+wifi-init-probe: radio restore: 0x20589090 wanted 0x00000000, reads 0x02000000
+wifi-init-probe: radio restore (mask 0x1): clock/power=14 ana_i2c=0 bb_fe=0 lp_pmu=0
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=1 latency=0 duration=32843 -> rc=0
+wifi-link: esp_wifi_scan_start(NULL, nonblock) rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048a18 (n=4)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: wait scan-done 10s -> GOT in 2436 ms
+wifi-link: esp_wifi_scan_get_ap_num rc=0x0 n=4
+wifi-link: arena[after scan]: free=62860/114672 B
+coex[after-scan]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-scan]: fw=2.0.0 en=1 req=1 rel=8 sta=132 startcb=1 intset=58
+coex[after-scan]: hooks: boot=1 wifi_init=1 enable=1 status_get=132 wifi_request=1 wifi_release=8 pti_get=58 schm_status_bit_clear=58 schm_status_bit_set=58
+coex[after-scan]: hooks: schm_interval_set=58 schm_interval_get=2 schm_curr_period_get=2 schm_curr_phase_get=1 schm_process_restart=1 schm_register_cb=1
+coex[after-scan]: hooks: register_start_cb=1 schm_flexible_period_get=1 configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1
+coex[after-scan]: hooks: wr_btdm_coex_schm_register_btdm_callback=1 wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[after-scan]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-scan]: blob->core: status_bit_set n=58 type=0 mask=0x00000001 last=0x00000000 | status_bit_clear n=58 mask=0x0000ffff | events>=64 n=0
+coex[after-scan]: by event: e1: req=1 bad=0 rel=4 bad=0 pti n=27 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0 e5: pti n=22 mask=0x01 bad=0 e10: pti n=2 mask=0x03 bad=0
+coex[after-scan]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=4 bad=0
+coex[after-scan]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-scan]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[after-scan]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+wifi-blob: wifi: W (11070) wifi:
+wifi-blob: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+wifi-blob: wifi: 
+
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wifi-link-probe: supplicant[after set_config]: state=INITIALIZE phase=idle msg4_in_flight=false negotiation_done=false pmk=false ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[after set_config]: 0:wifi=3644/16384
+wifi-link-probe: esp_wifi_connect_internal rc=0x0
+wifi-blob: wifi: I (11123) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11134) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11143) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11153) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11165) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11178) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11189) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11202) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11213) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11230) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11243) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11254) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, PSR Disallowed:1, Non-SRG OBSS PD SR Disallowed:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11265) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, Non-SRG Offset Present:0, SRG Info Present:0
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+bt call: eventq_get
+wifi-blob: wifi: I (12594) wifi:
+wifi-blob: (connect)dot11_authmode:0x3, pairwise_cipher:0x3, group_cipher:0x3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12601) wifi:
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=7 latency=0 duration=20000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-blob: wifi: I (12626) wifi:
+wifi-blob: state: auth -> assoc (0x0)
+wifi-blob: wifi: 
+
+coex> _coex_wifi_release called by blob
+wifi-blob: wifi: I (12638) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities length:10, operating_mode_notification:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12649) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities, MBSSID:0, TWT Responder:0, OBSS Narrow Bandwidth RU In OFDMA Tolerance:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12664) wifi:
+wifi-blob: Extended Capabilities length:10, operating_mode_notification:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12675) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12688) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12696) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12706) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12718) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12731) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12742) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12756) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12766) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12784) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12796) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12807) wifi:
+wifi-blob: state: assoc -> run (0x10)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12815) wifi:
+wifi-blob: (he)ppe_thresholds_present:1, nominal_packet_padding(rx:0, cfg:2)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12826) wifi:
+wifi-blob: (trc)phytype:CBW20-SGI, snr:106, maxRate:172, highestRateIdx:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (12837) wifi:
+wifi-blob: (trc)band:2G, phymode:3, highestRateIdx:0, lowestRateIdx:11, dataSchedTableSize:14
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12849) wifi:
+wifi-blob: (trc)band:2G, rate(S-MCS7, rateIdx:0), ampdu(rate:S-MCS7, schedIdx(0, stop:8)), snr:106, ampduState:wait operational
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12865) wifi:
+wifi-blob: ifidx:0, rssi:7, nf:-99, phytype(0x3, CBW20-SGI), phymode(0x7, 11ax), max_rate:172, he:1, vht:0, ht:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12879) wifi:
+wifi-blob: (ht)max.RxAMPDULenExponent:3(65535 bytes), MMSS:4(2 us)
+wifi-blob: wifi: 
+
+wifi-link-probe: connect: waiting 2000 ms (hooks=2600, events=4)
+wifi-link-probe: supplicant[waiting]: state=AUTHENTICATION phase=idle msg4_in_flight=false negotiation_done=false pmk=true ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[waiting]: 0:wifi=3644/16384
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wpa: eapol rx before the assoc notify; associating
+wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
+coex> _coex_wifi_release called by blob
+wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=0
+wpa: keys installed after msg 4: ptk rc=0, group keys rc=0, port truevalid
+wifi-blob: wifi: I (13762) wifi:
+wifi-blob: (extcap)mbssid:0, enhanced_mbssid_advertise:0, complete_nontxbssid_profiles:0, twt_responder: 1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13775) wifi:
+wifi-blob: connected with hl-wifi, aid = 1, channel 1, BW20, bssid = 44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13787) wifi:
+wifi-blob: security: WPA2-PSK, phy: ax, rssi: 7, cipher(pairwise:0x3, group:0x3), pmf:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13799) wifi:
+wifi-blob: pm start, type: 1, twt_start:0
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13807) wifi:
+wifi-blob: pm start, type:1, aid:0x1, trans-BSSID:44:f7:70:16:fa:ba, BSSID[5]:0xba, mbssid(max-indicator:0, index:0), he:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13822) wifi:
+wifi-blob: dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13835) wifi:
+wifi-blob: set rx beacon pti, rx_bcn_pti: 10, bcn_timeout: 25000, mt_pti: 10, mt_time: 10000
+wifi-blob: wifi: 
+
+wpa: assoc notified but the supplicant is in STAKEYSTART
+wifi-link-probe: STA_CONNECTED bssid=44:f7:70:16:fa:ba ch=1 authmode=3 aid=1
+wifi-link-probe: event id=4 data=0x2f0487e0 (n=5)
+wifi-blob: wifi: I (13863) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:0, dialogtoken:1, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13878) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:7, dialogtoken:2, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x20)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13893) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:5, dialogtoken:3, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wpa: key negotiation complete: esp_wifi_auth_done_internal -> true
+wifi-blob: wifi: I (13915) wifi:
+wifi-blob: dp: 2, bi: 102400, li: 4, scale listen interval from 307200 us to 409600 us
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13926) wifi:
+wifi-blob: AP's beacon interval = 102400 us, DTIM period = 2
+wifi-blob: wifi: 
+
+coex> _coex_wifi_release called by blob
+wifi-blob: wifi: I (13941) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:0/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13953) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:7/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (13966) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:5/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: CONNECTED in 2866 ms (1 progress reports)
+wifi-link-probe: supplicant[connected]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[connected]: 0:wifi=9252/16384
+wifi-link-probe: key table entry 4 (pairwise TK): equal bits vs tk=ffff vs gtk=0000 (nonzero=ffff)
+wifi-link-probe: key table entry 0 (group GTK): equal bits vs tk=0000 vs gtk=0000 (nonzero=0000)
+coex[connected]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[connected]: fw=2.0.0 en=1 req=3 rel=17 sta=171 startcb=1 intset=65
+coex[connected]: hooks: boot=1 wifi_init=1 enable=1 status_get=171 wifi_request=3 wifi_release=17 wifi_channel_set=1 event_duration_get=2 pti_get=77
+coex[connected]: hooks: schm_status_bit_clear=65 schm_status_bit_set=65 schm_interval_set=65 schm_interval_get=2 schm_curr_period_get=4 schm_curr_phase_get=1
+coex[connected]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_set=2 schm_flexible_period_get=3
+coex[connected]: hooks: configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1
+coex[connected]: hooks: wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[connected]: core: wifi_status=0x00000000 interval=1024 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[connected]: blob->core: status_bit_set n=65 type=0 mask=0x00000007 last=0x00000004 | status_bit_clear n=65 mask=0x0000ffff | events>=64 n=0
+coex[connected]: by event: e0: rel=1 bad=1 pti n=1 mask=0x0a bad=0 e1: req=1 bad=0 rel=5 bad=0 pti n=38 mask=0x05 bad=0 e3: pti n=6 mask=0x07 bad=0
+coex[connected]: by event: e5: pti n=23 mask=0x01 bad=0 e6: pti n=2 mask=0x01 bad=0 e7: req=1 bad=1 rel=1 bad=1 pti n=1 mask=0x01 bad=0
+coex[connected]: by event: e9: req=1 bad=1 rel=1 bad=1 pti n=1 mask=0x07 bad=0 e10: pti n=4 mask=0x03 bad=0 e15: pti n=1 mask=0x01 bad=0 e38: rel=5 bad=0
+coex[connected]: by event: e46: rel=4 bad=0
+coex[connected]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[connected]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[connected]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[connected]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[connected]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x00000000
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: dhcp DISCOVER attempt=0 tx rc=0x0
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: dhcp OFFER ip=192.168.31.151 -> REQUEST tx rc=0x0
+wifi-link-probe: net: dhcp ACK: bound ip=192.168.31.151 mask=255.255.255.0 router=192.168.31.1 dns=192.168.31.1, esp_wifi_internal_set_sta_ip rc=0x0
+wifi-link-probe: data path: DHCP bound in 55 ms ip=192.168.31.151 router=192.168.31.1
+wifi-link-probe: net: ping seq=0 tx rc=0x0
+wifi-link-probe: net: ping reply seq=0 rtt=10505 us
+coex> _coex_wifi_release called by blob
+wifi-blob: wifi: W (14397) wifi:
+wifi-blob: <ba-add>idx:0, ifx:0, tid:0, TAHI:0x100bafa, TALO:0x1670f744, (ssn:1, win:64, cur_ssn:1), CONF:0xc0000001
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=1 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: arp answered 192.168.31.156 (c8:53:09:d0:6d:85) tx rc=0x0
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: rx dropped (ring full or oversized), total=1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping timeout seq=1
+wifi-link-probe: net: ping seq=2 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=2 rtt=2052 us
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=3 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=3 rtt=3736 us
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=4 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=4 rtt=2056 us
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=5 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=5 rtt=3460 us
+wifi-link-probe: net: arp answered 192.168.31.1 (44:f7:70:16:fa:b8) tx rc=0x0
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=6 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=6 rtt=2754 us
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping seq=7 tx rc=0x0
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+wifi-link-probe: net: ping reply seq=7 rtt=275647 us
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=8 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping reply seq=8 rtt=302348 us
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=9 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=9 rtt=8022 us
+wifi-link-probe: net: ping done: sent=10 received=9 timed_out=1 rtt min/avg/max=2052/67842/302348 us
+wifi-link-probe: data path: ping phase 9011 ms
+wifi-link-probe: data path: frames rx=31 (ignored 0, dropped 1) tx=14 (failed 0)
+coex[after-ping]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-ping]: fw=2.0.0 en=1 req=44 rel=314 sta=681 startcb=1 intset=65
+coex[after-ping]: hooks: boot=1 wifi_init=1 enable=1 status_get=681 wifi_request=44 wifi_release=314 wifi_channel_set=1 event_duration_get=43 pti_get=214
+coex[after-ping]: hooks: schm_status_bit_clear=65 schm_status_bit_set=65 schm_interval_set=65 schm_interval_get=2 schm_curr_period_get=4 schm_curr_phase_get=1
+coex[after-ping]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_set=2 schm_flexible_period_get=3
+coex[after-ping]: hooks: configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1
+coex[after-ping]: hooks: wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[after-ping]: core: wifi_status=0x00000000 interval=1024 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-ping]: blob->core: status_bit_set n=65 type=0 mask=0x00000007 last=0x00000004 | status_bit_clear n=65 mask=0x0000ffff | events>=64 n=0
+coex[after-ping]: by event: e0: rel=101 bad=101 pti n=1 mask=0x0a bad=0 e1: req=1 bad=0 rel=57 bad=0 pti n=120 mask=0x05 bad=0 e2: rel=52 bad=0
+coex[after-ping]: by event: e3: pti n=6 mask=0x07 bad=0 e5: pti n=23 mask=0x01 bad=0 e6: pti n=2 mask=0x01 bad=0 e7: req=1 bad=1 rel=1 bad=1 pti n=1 mask=0x01 bad=0
+coex[after-ping]: by event: e9: req=42 bad=42 rel=42 bad=42 pti n=42 mask=0x07 bad=0 e10: pti n=8 mask=0x03 bad=0 e12: pti n=10 mask=0x01 bad=0
+coex[after-ping]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=57 bad=0 e46: rel=4 bad=0
+coex[after-ping]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-ping]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-ping]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=9 latency=0 duration=5000 -> rc=258
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: connected: pump 5 s: 5000048 us, hooks +927, event posts +0
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex[before-disconnect]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[before-disconnect]: fw=2.0.0 en=1 req=65 rel=462 sta=942 startcb=1 intset=65
+coex[before-disconnect]: hooks: boot=1 wifi_init=1 enable=1 status_get=942 wifi_request=65 wifi_release=462 wifi_channel_set=1 event_duration_get=64 pti_get=257
+coex[before-disconnect]: hooks: schm_status_bit_clear=65 schm_status_bit_set=65 schm_interval_set=65 schm_interval_get=2 schm_curr_period_get=4 schm_curr_phase_get=1
+coex[before-disconnect]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_set=2 schm_flexible_period_get=3
+coex[before-disconnect]: hooks: configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1
+coex[before-disconnect]: hooks: wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[before-disconnect]: core: wifi_status=0x00000000 interval=1024 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[before-disconnect]: blob->core: status_bit_set n=65 type=0 mask=0x00000007 last=0x00000004 | status_bit_clear n=65 mask=0x0000ffff | events>=64 n=0
+coex[before-disconnect]: by event: e0: rel=150 bad=150 pti n=1 mask=0x0a bad=0 e1: req=1 bad=0 rel=83 bad=0 pti n=142 mask=0x05 bad=0 e2: rel=78 bad=0
+coex[before-disconnect]: by event: e3: pti n=6 mask=0x07 bad=0 e5: pti n=23 mask=0x01 bad=0 e6: pti n=2 mask=0x01 bad=0 e7: req=1 bad=1 rel=1 bad=1 pti n=1 mask=0x01 bad=0
+coex[before-disconnect]: by event: e9: req=63 bad=63 rel=63 bad=63 pti n=63 mask=0x07 bad=0 e10: pti n=8 mask=0x03 bad=0 e12: pti n=10 mask=0x01 bad=0
+coex[before-disconnect]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=83 bad=0 e46: rel=4 bad=0
+coex[before-disconnect]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[before-disconnect]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 1: 0x00000000 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 1 +1ms: 0x00000000 0x00000004 0x02508150 0x00000000 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000001 st 0x00000001
+coex[before-disconnect]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000001 st 0x00000001
+wifi-link-probe: stayed connected for 5 s
+wifi-link-probe: supplicant[after 5 s]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[after 5 s]: 0:wifi=9252/16384
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+coex> _coex_wifi_release called by blob
+wifi-blob: wifi: I (28922) wifi:
+wifi-blob: state: run -> init (0x0)
+wifi-blob: wifi: 
+
+coex> _coex_wifi_release called by blob
+wifi-blob: wifi: I (28933) wifi:
+wifi-blob: teardown, set twt_inactive_time_secs:6, sp_count:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (28943) wifi:
+wifi-blob: pm stop, total sleep time: %lu us / %lu us
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (28952) wifi:
+wifi-blob: <ba-del>idx:0, tid:0
+wifi-blob: wifi: 
+
+bt ccoex> _coex_wifi_request called by blob
+coex> _coex_wifi_request event=7 latency=0 duration=20000 -> rc=258
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +3
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +2
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: STA_DISCONNECTED bssid=44:f7:70:16:fa:ba reason=8 rssi=6
+wifi-link-probe: event id=5 data=0x2f01e754 (n=6)
+coex> _coex_wifi_release called by blob
+wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
+coex[after-connect-phase]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[after-connect-phase]: fw=2.0.0 en=1 req=66 rel=468 sta=954 startcb=1 intset=67
+coex[after-connect-phase]: hooks: boot=1 wifi_init=1 enable=1 status_get=954 wifi_request=66 wifi_release=468 wifi_channel_set=2 event_duration_get=65 pti_get=261
+coex[after-connect-phase]: hooks: schm_status_bit_clear=67 schm_status_bit_set=67 schm_interval_set=67 schm_interval_get=2 schm_curr_period_get=5 schm_curr_phase_get=1
+coex[after-connect-phase]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_set=3 schm_flexible_period_get=4
+coex[after-connect-phase]: hooks: configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1
+coex[after-connect-phase]: hooks: wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[after-connect-phase]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[after-connect-phase]: blob->core: status_bit_set n=67 type=0 mask=0x00000007 last=0x00000000 | status_bit_clear n=67 mask=0x0000ffff | events>=64 n=0
+coex[after-connect-phase]: by event: e0: rel=151 bad=151 pti n=1 mask=0x0a bad=0 e1: req=1 bad=0 rel=85 bad=0 pti n=145 mask=0x05 bad=0 e2: rel=79 bad=0
+coex[after-connect-phase]: by event: e3: pti n=6 mask=0x07 bad=0 e5: pti n=23 mask=0x01 bad=0 e6: pti n=2 mask=0x01 bad=0 e7: req=2 bad=2 rel=2 bad=2 pti n=2 mask=0x01 bad=0
+coex[after-connect-phase]: by event: e9: req=63 bad=63 rel=63 bad=63 pti n=63 mask=0x07 bad=0 e10: pti n=8 mask=0x03 bad=0 e12: pti n=10 mask=0x01 bad=0
+coex[after-connect-phase]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=84 bad=0 e46: rel=4 bad=0
+coex[after-connect-phase]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[after-connect-phase]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[after-connect-phase]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+wifi-link: arena[after connect]: free=60576/114672 B
+wifi-link: result scan=true ap=4 connected=true dhcp=true ping=true stayed=true reason=8
+coex[wifi-link]: booted=true wifi=enabled ble=enabled param=0x2f01b38c coa=0x2f01c1b4 table=0x2f01c1b4 rej=0
+coex[wifi-link]: fw=2.0.0 en=1 req=66 rel=468 sta=954 startcb=1 intset=67
+coex[wifi-link]: hooks: boot=1 wifi_init=1 enable=1 status_get=954 wifi_request=66 wifi_release=468 wifi_channel_set=2 event_duration_get=65 pti_get=261
+coex[wifi-link]: hooks: schm_status_bit_clear=67 schm_status_bit_set=67 schm_interval_set=67 schm_interval_get=2 schm_curr_period_get=5 schm_curr_phase_get=1
+coex[wifi-link]: hooks: schm_process_restart=1 schm_register_cb=1 register_start_cb=1 schm_flexible_period_set=3 schm_flexible_period_get=4
+coex[wifi-link]: hooks: configure_preemption_end_cb=1 btdm_coex_init=1 btdm_coex_enable=1 wr_btdm_coex_schm_register_btdm_callback=1
+coex[wifi-link]: hooks: wr_btdm_coex_register_wifi_channel_change_callback=1 wr_btdm_coex_register_ble_cb=2
+coex[wifi-link]: core: wifi_status=0x00000000 interval=1000 period=1 phase=set flexible=1 last_rc=0 last_error=-
+coex[wifi-link]: blob->core: status_bit_set n=67 type=0 mask=0x00000007 last=0x00000000 | status_bit_clear n=67 mask=0x0000ffff | events>=64 n=0
+coex[wifi-link]: by event: e0: rel=151 bad=151 pti n=1 mask=0x0a bad=0 e1: req=1 bad=0 rel=85 bad=0 pti n=145 mask=0x05 bad=0 e2: rel=79 bad=0
+coex[wifi-link]: by event: e3: pti n=6 mask=0x07 bad=0 e5: pti n=23 mask=0x01 bad=0 e6: pti n=2 mask=0x01 bad=0 e7: req=2 bad=2 rel=2 bad=2 pti n=2 mask=0x01 bad=0
+coex[wifi-link]: by event: e9: req=63 bad=63 rel=63 bad=63 pti n=63 mask=0x07 bad=0 e10: pti n=8 mask=0x03 bad=0 e12: pti n=10 mask=0x01 bad=0
+coex[wifi-link]: by event: e15: pti n=1 mask=0x01 bad=0 e38: rel=84 bad=0 e46: rel=4 bad=0
+coex[wifi-link]: coex lp clk conf 0x2010F008: 0x00000314 (div_num 49, src_sel 0x4)
+coex[wifi-link]: hw timer 0: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 1: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 2: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 3: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 4: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 0 +1ms: 0x00000000 0x00000000 0x00000000 0x00003fff en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 1 +1ms: 0x00000002 0x00000004 0x02508150 0x00000000 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 2 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 3 +1ms: 0x00000000 0x00000000 0x00000000 0x00000000 en 0x00000000 st 0x00000000
+coex[wifi-link]: hw timer 4 +1ms: 0x00000000 0x00000000 0x00000314 0x00000001 en 0x00000000 st 0x00000000
+read[ble after wifi link]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble after wifi link]: syscon 9c00..9c0c=00000100 00201002 00000000 64646400 9c10=00000000 9c14..9c20=0038e7ff 10003802 00000000 00002070
+read[ble after wifi link]: fe 0438=ff810000 0450=00102000 047c=00000000 lpcon+18=00000007 clkrst 7040=00000001 71f8=00000001
+read[ble after wifi link]: ana f800=01700266 f818=2900e444 f81c=00ffffdf
+check: wifi scan done=1 ap=4 ok=1
+check: wifi scan after ble keeps >= half the baseline ap (4 vs 30) ok=0
+check: wifi STA_CONNECTED (1) ok=1
+check: wifi dhcp bound (1) ok=1
+check: wifi ping done (1) ok=1
+check: wifi stayed connected 5 s (1) ok=1
+check: wifi idle hook refused on ble stack during link n=0 ok=1
+checks: passed=15 failed=1 total=16
+firmware: sections: passed=0 failed=1 total=1
+main: verdict=fail
+ota: running factory, no slot bookkeeping

@@ -172,9 +172,18 @@
     `logs/coex-merged-wifi-link-deaf-boot.log`。
   - 共存核（BLE enabled）：胶水零拒绝；blob 比只开 Wi-Fi 时多调了三个钩子（`coex_schm_interval_get`、
     `coex_schm_curr_phase_get`、`coex_schm_process_restart`），其余一致。
-  - 边界：BLE 的射频没有起（R3.3），这是"一个射频在收发、另一个 enabled"，不是 L4b；时钟寄存器的写回是补救——整字写、
-    在 BLE 的 enable 之后执行，BLE 那一侧的时钟位也被拿掉，正解是按两个射频的需求取并集。细目见
-    `docs/verification/coex-verification.md` §15。
+  - AP 侧证据（2026-11-26 晚，OpenWrt AP，只读采集）：hostapd 的日志里，修之前每一轮都是「板子没有确认认证响应」——
+    发得出、收不到。最终形态是完整序列，AP 看板子 -24 dBm、双向 86 Mbit/s、15 秒里重传 0–1 次。只跳过第 15 步时，AP 发给
+    板子的帧放弃 51 次（共 51 帧）、速率压到 6–8.6 Mbit/s，而信号一样强：退化在板子的接收侧。晚上又跑了 B、D 各一次，带
+    站点统计：B 的第二次关联没完成（28 → 2 个 AP，`reason=4`），D 的第二次同向（30 → 4 个 AP，ping 9/10）。
+    板子的 ARP 应答能跨过 AP 的桥到达同网段的另一台主机。日志 `logs/coex-merged-wifi-link-ap-syslog.log`、
+    `logs/coex-merged-wifi-link-ap-side.log`；四轮的板侧日志后缀 `-noguard2-`、`-onlyloadcal2-`、`-final-ap-`、
+    `-final-ap2-boot.log`（同一个前缀）。
+  - 已知缺口（与共存无关）：`wifi-blobs/src/data_path.zig` 的 ICMP 分支只处理回显应答，板子不回应别人的回显请求——
+    同网段的工作站 ping 板子 10 次，ARP 解析正常，一个应答都没有。
+  - 边界：BLE 的射频没有起（R3.3），这是"一个射频在收发、另一个 enabled"，不是 L4b；没有空口上的帧（路由器没有外网，
+    装不了 tcpdump）；时钟寄存器的写回是补救——整字写、在 BLE 的 enable 之后执行，BLE 那一侧的时钟位也被拿掉，正解是
+    按两个射频的需求取并集。细目见 `docs/verification/coex-verification.md` §15。
 - **真实链路：连上真实 AP 与数据通路（2026-11-26，路线图 R3.2.2、R3.2.3）**：真实链路探针（`-Dwifi-link-probe`）在扫描之后继续走
   连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）→ 再泵 5 秒 → 断开。
   - `components/wifi-blobs/src/wpa_cb.zig`：supplicant 回调表从 4 项填到 12 项。连接路径只做 RSN + PSK，由 `wifi-connect` 的 `Supplicant`
