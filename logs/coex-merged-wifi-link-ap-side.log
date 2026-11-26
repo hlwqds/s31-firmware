@@ -7,6 +7,8 @@ AP：OpenWrt 25.12.6（小米 AX3000T），2.4 GHz 信道 1，接口 phy0-ap0，
 抓的，在 coex-merged-wifi-link-ap-frames.log；末尾另附了那五个轮次的站点统计。
 时间由路由器时钟换算成本机 CST：路由器的时钟是 GMT、没有 NTP，比标准时间慢 38 天 14 小时 4 分 22 秒；路由器显示的时间加
 38 天 22 小时 4 分 22 秒（其中 8 小时是时区）就是本机时间。用户自己的 AP、板子、工作站的地址原样保留。
+【2026-11-27 更正】上面「AP 上只读采集，没有装任何东西」说的是这次采集（2026-11-26 晚）。之后静态 tcpdump 装在了路由器的
+/usr/bin/tcpdump（flash 上的 overlay，重启不丢），空口上的帧见 coex-merged-wifi-link-ap-frames.log；其余采集照旧只读。
 
 工作站这一侧的探测两种：
   全程 ping（noguard2、onlyloadcal2、final-ap）：从一轮开跑就 ping 板子。板子要 40 秒后才连上，这期间邻居表项已被

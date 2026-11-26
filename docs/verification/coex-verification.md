@@ -1217,6 +1217,9 @@ ACK）→ 约 15 秒后板子主动断开。失败与退化的几轮，AP 侧各
 tcpdump（libpcap 1.10.5 与 tcpdump 4.99.6，`zig cc -target aarch64-linux-musl`，1 371 592 B），放进路由器的内存盘
 `/tmp`：不是装的包，重启即消失。脚本在 `tools/ap-side/`（构建、采集、整理三件），用法见同目录的 README。从仓库里的脚本
 从头构建，产物的 SHA-256 与路由器上正在用的是同一个。
+【2026-11-27 凌晨更正】「放进内存盘、重启即消失」是最初的做法；只放内存盘的那份在路由器上敲 `tcpdump` 是 not found。
+后来同一个二进制装到了路由器的 `/usr/bin/tcpdump`（flash 上的 overlay，重启不丢，`rm` 即卸载），现在在路由器上直接
+`tcpdump` 就能用；工作站上的 `~/.local/bin/tcpdump` 也是同一个脚本编的。构建与上传的命令见 `tools/ap-side/README.md`。
 
 抓包点试了三处，前两处都不够：
 
