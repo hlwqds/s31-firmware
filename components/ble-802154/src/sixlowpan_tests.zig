@@ -349,14 +349,23 @@ test "iphc: EID=7 nested IPv6 (RFC 6282 line 919-923) rebuilds the inner packet"
 // IPHC 压缩（往返 = 最强判据：压缩器只发无损编码）
 // ---------------------------------------------------------------------------
 
-fn roundTrip(packet: []const u8, mac: f15.MacHeader, ctxs: *const f15.iphc.Contexts) ![]u8 {
+/// 压缩再解压，必须逐字节回到原包；返回压缩帧，写在**调用方给的** `cbuf` 里。
+/// 缓冲区不能是本函数的局部变量：返回它的切片之后，这块栈就被调用方复用，读到的字节随栈布局而变——
+/// 本机恰好没被覆盖，CI 的代码生成不同就读到了被改写的内容（2026-11-27 CI 上失败的那条用例）。
+fn roundTrip(packet: []const u8, mac: f15.MacHeader, ctxs: *const f15.iphc.Contexts, cbuf: *[400]u8) ![]u8 {
     const link = f15.iphc.Link.fromMac(&mac);
-    var cbuf: [400]u8 = buf(400);
-    const zc = try f15.iphc.compress(&cbuf, packet, link, ctxs, .{});
+    @memset(cbuf, 0);
+    const zc = try f15.iphc.compress(cbuf, packet, link, ctxs, .{});
     var out: [400]u8 = buf(400);
     const d = try f15.iphc.decompress(&out, cbuf[0..zc.frame_len], link, ctxs, .{});
     try testing.expectEqualSlices(u8, packet, d.packet);
     return cbuf[0..zc.frame_len];
+}
+
+/// 只看往返过不过、不看压缩帧的调用点用这个。
+fn roundTripOk(packet: []const u8, mac: f15.MacHeader, ctxs: *const f15.iphc.Contexts) !void {
+    var cbuf: [400]u8 = buf(400);
+    _ = try roundTrip(packet, mac, ctxs, &cbuf);
 }
 
 test "compress: frame A roundtrips byte-identically" {
@@ -368,7 +377,8 @@ test "compress: frame A roundtrips byte-identically" {
             "12345678000aabcd6f6b",
         &pkt2,
     );
-    const frame = try roundTrip(p2, mac_short, &.{});
+    var fb: [400]u8 = buf(400);
+    const frame = try roundTrip(p2, mac_short, &.{}, &fb);
     try testing.expectEqualSlices(u8, &f15.kat_lowpan_short, frame);
 }
 
@@ -393,7 +403,7 @@ test "compress: multicast encodes 8/32/48-bit and stateful forms (RFC 6282 3.2.3
         mc[15] = 0x51;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, src_ip, mc, u, &pb);
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     // ff11::0011:2233 → DAM=10（4 字节）。
     {
@@ -405,7 +415,7 @@ test "compress: multicast encodes 8/32/48-bit and stateful forms (RFC 6282 3.2.3
         mc[15] = 0x33;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, src_ip, mc, u, &pb);
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     // ff15::0011:2233:4455 → DAM=01（6 字节）。
     {
@@ -419,7 +429,7 @@ test "compress: multicast encodes 8/32/48-bit and stateful forms (RFC 6282 3.2.3
         mc[15] = 0x55;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, src_ip, mc, u, &pb);
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     // ff31:40 + 2001:db8::/64 + 组 ID → M=1 DAC=1 DAM=00（6 字节，RFC 6282 3.2.4）。
     {
@@ -438,7 +448,7 @@ test "compress: multicast encodes 8/32/48-bit and stateful forms (RFC 6282 3.2.3
         mc[15] = 1;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, src_ip, mc, u, &pb);
-        _ = try roundTrip(p, mac_short, &ctxs);
+        try roundTripOk(p, mac_short, &ctxs);
     }
 }
 
@@ -462,7 +472,7 @@ test "compress: stateful unicast with /48, /64, /112 contexts and CID (RFC 6282 
         a[15] = 0x3c;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, a, dst_ip, u, &pb);
-        _ = try roundTrip(p, mac_short, &ctxs);
+        try roundTripOk(p, mac_short, &ctxs);
     }
     // /64 上下文 + SAM=10（短地址映射）。
     {
@@ -481,7 +491,7 @@ test "compress: stateful unicast with /48, /64, /112 contexts and CID (RFC 6282 
         a[15] = 0xbb;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, a, dst_ip, u, &pb);
-        _ = try roundTrip(p, mac_short, &ctxs);
+        try roundTripOk(p, mac_short, &ctxs);
     }
     // /112 上下文 + SAM=01（inline 只剩 2 字节）。
     {
@@ -494,7 +504,7 @@ test "compress: stateful unicast with /48, /64, /112 contexts and CID (RFC 6282 
         a[15] = 0x3c;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, a, dst_ip, u, &pb);
-        _ = try roundTrip(p, mac_short, &ctxs);
+        try roundTripOk(p, mac_short, &ctxs);
     }
     // 源用上下文 2、目的用上下文 5 → CID 字节 = 0x25（RFC 6282 §3.1.2 图 3）。
     {
@@ -524,7 +534,8 @@ test "compress: stateful unicast with /48, /64, /112 contexts and CID (RFC 6282 
         d[15] = 2;
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 255, a, d, u, &pb);
-        const frame = try roundTrip(p, mac_short, &ctxs);
+        var fb: [400]u8 = buf(400);
+        const frame = try roundTrip(p, mac_short, &ctxs, &fb);
         try testing.expectEqual(@as(u8, 0x25), frame[2]);
     }
 }
@@ -540,7 +551,7 @@ test "compress: TF and hop-limit variants all roundtrip" {
         p[1] = 0x2b;
         p[2] = 0x12;
         p[3] = 0x34;
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     // tf=01（DSCP=0、ECN=2、FL=0x12345）。
     {
@@ -549,25 +560,25 @@ test "compress: TF and hop-limit variants all roundtrip" {
         p[1] = 0x21;
         p[2] = 0x23;
         p[3] = 0x45;
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     // tf=10（TC=0x2b、FL=0）。
     {
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 64, src_ip, dst_ip, u, &pb);
         p[1] = 0xb0;
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     // hop=1 与 hop=63（内联）。
     {
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 1, src_ip, dst_ip, u, &pb);
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
     {
         var pb: [128]u8 = buf(128);
         const p = pktBytes(17, 63, src_ip, dst_ip, u, &pb);
-        _ = try roundTrip(p, mac_short, &.{});
+        try roundTripOk(p, mac_short, &.{});
     }
 }
 
@@ -576,7 +587,7 @@ test "compress: non-compressible next header stays inline (NH=0)" {
     var pb: [128]u8 = buf(128);
     const body = [_]u8{ 0x80, 0, 0, 1, 0xde, 0xad };
     const p = pktBytes(59, 255, src_ip, dst_ip, &body, &pb);
-    _ = try roundTrip(p, mac_short, &.{});
+    try roundTripOk(p, mac_short, &.{});
 }
 
 // ---------------------------------------------------------------------------
@@ -664,7 +675,8 @@ test "ext nhc: HBH elidable trailing PadN is elided and restored (RFC 6282 line 
     const body = body_buf[0 .. hlen + u.len];
     var pkb: [128]u8 = buf(128);
     const p = pktBytes(0, 64, src_ip, dst_ip, body, &pkb);
-    const frame = try roundTrip(p, mac_short, &.{});
+    var fb: [400]u8 = buf(400);
+    const frame = try roundTrip(p, mac_short, &.{}, &fb);
     // 压缩帧核对 NHC 段：e1（EID=0，NH=1）+ Length=4 + Router Alert（PadN 已省略）。
     const npos = std.mem.indexOfScalar(u8, frame, 0xe1).?;
     try testing.expectEqualSlices(u8, &.{ 0xe1, 0x04, 0x05, 0x02, 0x00, 0x00 }, frame[npos .. npos + 6]);
@@ -681,7 +693,8 @@ test "ext nhc: routing type 2 carries the body in full (RFC 6282 line 886-895 sc
     const body = body_buf[0 .. hlen + u.len];
     var pkb: [256]u8 = buf(256);
     const p = pktBytes(43, 64, src_ip, dst_ip, body, &pkb);
-    const frame = try roundTrip(p, mac_short, &.{});
+    var fb: [400]u8 = buf(400);
+    const frame = try roundTrip(p, mac_short, &.{}, &fb);
     // NHC：0xe3（EID=1）；后继是 UDP（NHC 可编）→ NH=1、无 inline 字节；Length=22（body 全带）。
     const npos = std.mem.indexOfScalar(u8, frame, 0xe3).?;
     try testing.expectEqual(@as(u8, 22), frame[npos + 1]);
@@ -697,7 +710,7 @@ test "ext nhc: IPv6 Fragment header roundtrips byte-identically (RFC 6282 line 8
     const body = body_buf[0 .. hlen + u.len];
     var pkb: [128]u8 = buf(128);
     const p = pktBytes(44, 64, src_ip, dst_ip, body, &pkb);
-    _ = try roundTrip(p, mac_short, &.{});
+    try roundTripOk(p, mac_short, &.{});
 }
 
 test "ext nhc: NH=0 carries the next header inline before Length (RFC 6282 figure 13)" {
@@ -705,7 +718,8 @@ test "ext nhc: NH=0 carries the next header inline before Length (RFC 6282 figur
     const body = hx("3a00050200000100" ++ "80000001deadbeef", &body_buf);
     var pkb: [128]u8 = buf(128);
     const p = pktBytes(0, 64, src_ip, dst_ip, body, &pkb);
-    const frame = try roundTrip(p, mac_short, &.{});
+    var fb: [400]u8 = buf(400);
+    const frame = try roundTrip(p, mac_short, &.{}, &fb);
     // NH=0：inline 的后继头类型（0x3a = ICMPv6）在 NHC 字节之后、Length 之前。
     const npos = std.mem.indexOfScalar(u8, frame, 0xe0).?;
     try testing.expectEqual(@as(u8, 0x3a), frame[npos + 1]);
@@ -719,7 +733,7 @@ test "ext nhc: IPv6-in-IPv6 (EID=7) roundtrips, inner IID from the outer address
     const inner = pktBytes(17, 64, src_ip, dst_ip, u, &ib);
     var pb: [256]u8 = buf(256);
     const p = pktBytes(41, 64, src_ip, dst_ip, inner, &pb);
-    _ = try roundTrip(p, mac_short, &.{});
+    try roundTripOk(p, mac_short, &.{});
 }
 
 test "ext nhc: options longer than 255 octets after compression stay inline (RFC 6282 line 915-918)" {
