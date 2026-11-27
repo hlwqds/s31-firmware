@@ -211,11 +211,17 @@
   `tcpdump -i lo -nn tcp port 8031 -c 60 -w <文件>` 原样可跑（60 帧抓到、0 丢），`-r` 读回 60 行。
   当晚换成了带蓝牙监视接口的那一份：`build-tcpdump.sh` 加了 `BLUEZ_INCLUDE`（libpcap 编译时带上 bluez 的头文件
   `bluetooth/bluetooth.h` 与 `bluetooth/hci.h`，取法 `nix build nixpkgs#bluez.dev`），产物 1 441 504 字节、sha256 `218e5696…`，
-  root 下 `-D` 多出 `bluetooth0` 与 `bluetooth-monitor`；`-i bluetooth-monitor -w` 记了 9 秒 HCI 流（484 包，
-  BLUETOOTH_LINUX_MONITOR），但 `-r` 读回只有 `UNSUPPORTED` 加十六进制（tcpdump 不打印这种链路类型），命令行上看内容仍用 btmon。
-  pcap 交给 tshark 4.6.10（`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli`）读回能解出 LE Extended Advertising
-  Report 的地址类型、RSSI 与广播数据（另抓的 8 秒 74 包里有 17 条）。
-  不带 `BLUEZ_INCLUDE` 的路由器路径不变：重编一次仍是 sha256 `44126186…`。网口抓帧（`enp0s31f6`、`lo`）在新二进制上各复验一次。
+  root 下 `-D` 多出 `bluetooth0` 与 `bluetooth-monitor`。`-i bluetooth-monitor -w` 把 HCI 监视流记成 pcap（链路类型 254，
+  BLUETOOTH_LINUX_MONITOR），但 tcpdump 自己不打印这种链路类型（`-r` 读回只有 `UNSUPPORTED` 加十六进制）。读 pcap 有两条路：
+  tshark 4.6.10（`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli`，不去掉 `LD_LIBRARY_PATH` 它起不来）能解出
+  LE Extended Advertising Report 的地址类型、RSSI 与广播数据；新增 `tools/ap-side/pcap-bt-adv.py` 直接读 pcap（文件格式逐条
+  对过 tshark），按板子地址汇总，打印的行与 `btmon-summary.py` 相同，`--slot-ms` 逐段核对间隔。
+  用这条路量了板子的一轮（ble-adv16，合并镜像 `-Dcoex-ble-adv`，板侧 27/27）：145 秒 2841 包里板子地址 47 条上报、40.7 秒，
+  PDU 类型、地址类型、广播数据与 btmon 那一轮相同；46 段相邻间隔里 45 段是「100 ms + 0–10 ms advDelay」的整数倍
+  （剩下一段 110.0 ms 压在上界），按 200 ms 只有 12 段有解，空口间隔仍是 100 ms。汇总
+  `logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`；pcap 里有邻居的广告原文，不入库。
+  不带 `BLUEZ_INCLUDE` 的路由器路径不变：重编一次仍是 sha256 `44126186…`。网口抓帧在新二进制上复验：`enp0s31f6` 上 1 帧 ICMP，
+  `lo` 上 `-c 60 -w` 抓到 60 帧丢 0、`-r` 读回 60 行。
 - **最小合并镜像的构建入口 `scripts/build-coex-link-image.sh`（2026-11-27）**：从 IDF 的归档重新生成三份对象集合（此前只在
   /tmp 里），只编 `coex_merged` 这一段，断言两段镜像，打印体积与归属（`BREAKDOWN=1`）。`BLE=1` 时 1 224 304 B（factory
   分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。

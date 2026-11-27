@@ -209,6 +209,9 @@
   `s31`，RSSI -51 / -25 dBm（`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`）；间隔——19 段相邻上报每一段都是 100 ms 加
   advDelay 的整数倍，空口上是 100 ms（`logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`）；配方在
   `tools/ap-side/README.md` 的「蓝牙一侧」。
+  另一条记录路也走通了：工作站的静态 tcpdump 换成带 `BLUEZ_INCLUDE` 的构建后认得 `bluetooth-monitor` 接口，ble-adv16 轮
+  把 HCI 监视流记成 pcap（145 秒 2841 包），`tools/ap-side/pcap-bt-adv.py` 读出来：板子地址 47 条上报、40.7 秒，46 段相邻
+  间隔里 45 段是 100 ms 加 advDelay 的整数倍，与 btmon 的读数一致（`logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`）。
   单独的 BLE 探针修前修后各跑一轮（`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），逐段相同。
   细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
 - **没有过的**：ADR-003「核真的在仲裁」的两条判据——五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数相同；

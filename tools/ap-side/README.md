@@ -12,6 +12,7 @@
 | `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
 | `decode-adv-marker.py` | 工作站 | 解码合并镜像广播实验的落盘记录（flash `0x18E000` 起一个扇区，`bt-blobs/src/probe.zig` 的 `markerWrite` 写的）：每条 32 字节，按槽位顺序打印；全 FF 的扇区报「空的」。记录只写到广播使能的"正要发"为止——当时的理由是"之后板子不再出声"，那其实是 `bt-blobs` 的中断风暴，2026-11-27 晚已修（生产仓 `coex-verification.md` §17.5）；记录本身仍然冻结在那里，没有改回 |
 | `btmon-summary.py` | 工作站 | 蓝牙一侧：从 `btmon` 的输出里汇总板子地址的 LE 广播上报，按广播事件分组，给出事件间隔与 RSSI 的统计；`--raw` 逐条列出（见下文「蓝牙一侧」） |
+| `pcap-bt-adv.py` | 工作站 | 蓝牙一侧的另一条记录路：自编的 tcpdump（带 `BLUEZ_INCLUDE`）把 HCI 监视流记成 pcap，这个脚本不靠 tshark、直接读 pcap，按板子地址汇总 LE 广播上报，打印的行与 `btmon-summary.py` 相同；`--slot-ms T` 逐段核对事件间隔是不是 k×（T + 0–10 ms）（见下文「蓝牙一侧」） |
 
 ## 用法
 
@@ -71,7 +72,7 @@ python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 
 ## 蓝牙一侧：板子的 BLE 广播（工作站上抓）
 
-板子的 BLE 广播不从 AP 那一头看，用工作站自带的蓝牙控制器：hci0，bluez 5.86 的 `btmon` 记 HCI 事件，要 root。
+板子的 BLE 广播不从 AP 那一头看，用工作站自带的蓝牙控制器：hci0，bluez 5.86 的 `btmon` 记 HCI 事件，要 root。同一条 HCI 流也可以用自编的 tcpdump 记成 pcap（见下文）。
 
 ```bash
 sudo -k -S -p '' sh -c 'timeout 60 btmon > /tmp/btmon.txt 2>&1 & (printf "menu scan\nduplicate-data on\nback\nscan on\n"; sleep 55) | bluetoothctl > /dev/null; wait' < <(放 sudo 密码的文件)
@@ -90,14 +91,19 @@ python3 tools/ap-side/btmon-summary.py /tmp/btmon.txt 02:00:00:00:BB:01 --raw
 - 走不通的三条，别再试：bluetoothd 在管着控制器时用 `hcitool` 直接发 LE 扫描命令回 0x12；HCI 用户通道（要先
   `bluetoothctl power off`）打开之后，这台 Intel 控制器对 LE Set Scan Param / Enable 回 0x12、对 Intel Read Version
   回 0x01——没有经过 btusb / btintel 的厂商初始化；默认构建的 tcpdump 认不得 bluetooth-monitor 接口。
-- tcpdump 也能记 HCI 了（带 BLUEZ_INCLUDE 编的那一份）：`sudo tcpdump -i bluetooth-monitor -n -s 256 -w <文件>`
-  把同一条监视流写成 pcap（链路类型 BLUETOOTH_LINUX_MONITOR；2026-11-27 对着邻居试过，9 秒 484 包）。它自己不打印
-  这种链路类型——`-r` 读回只有 `UNSUPPORTED` 加十六进制，所以命令行上看内容还是用 btmon；pcap 交给 Wireshark / tshark
-  （`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli -c tshark …`，不先去掉 `LD_LIBRARY_PATH` 它起不来）：tshark 4.6.10
-  读回，按 `bthci_evt.le_meta_subevent == 0x0d` 过滤就是一条条 LE Extended Advertising Report（地址类型、RSSI、广播数据都在）。
-  pcap 里有每一个邻居的广告原文，不入库。
+- 另一条记录路：工作站那份 tcpdump（带 BLUEZ_INCLUDE 编的）认得 `bluetooth-monitor` 接口，
+  `sudo tcpdump -i bluetooth-monitor -n -s 256 -w <文件>` 把同一条监视流写成 pcap（链路类型 254，BLUETOOTH_LINUX_MONITOR），
+  bluetoothctl 那边照旧要 `duplicate-data on`。tcpdump 自己不打印这种链路类型（`-r` 读回只有 `UNSUPPORTED` 加十六进制），
+  读数用 `python3 tools/ap-side/pcap-bt-adv.py <文件> 02:00:00:00:BB:01 --slot-ms 100 --raw`，它打印的行与 btmon-summary.py 相同；
+  要逐层看包就交给 tshark 4.6.10（`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli -c tshark -r <文件> …`，
+  不先去掉 `LD_LIBRARY_PATH` 它起不来；`-Y "bthci_evt.le_meta_subevent == 0x0d"` 过滤出一条条 LE Extended Advertising Report）。
+  2026-11-27 用这条路量了板子的一轮（ble-adv16，板侧 27/27）：145 秒 2841 包里板子地址 47 条上报、40.7 秒，PDU 类型、地址类型、
+  广播数据（Flags 0x06 加名字 s31）与 btmon 那一轮相同；46 段相邻间隔里 45 段是「100 ms + 0–10 ms advDelay」的整数倍
+  （剩下一段 110.0 ms 压在上界），按 200 ms 只有 12 段有解，间隔仍是 100 ms。抓包要在烧录之前起：板子在抓包的第 48–89 秒之间被看到。
+  pcap 里有每一个邻居的广告原文，不入库，入库的是汇总。
 - 证据：`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`（两条广播上报的原文：PDU 类型、地址类型、广播数据、RSSI）、
-  `logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`（间隔：19 段都是 100 ms 加 advDelay 的整数倍）。
+  `logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`（间隔：19 段都是 100 ms 加 advDelay 的整数倍）、
+  `logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`（tcpdump 记的 HCI 流：板子地址的 47 条上报、间隔逐段核对、tshark 的计数）。
 
 ## 入库前的规矩
 

@@ -1,0 +1,90 @@
+板子 BLE 广播：工作站用自编 tcpdump 记下的 HCI 监视流（2026-11-27，合并镜像 ble-adv16 轮）
+
+怎么量的：板子跑合并镜像 -Dcoex-ble-adv（scripts/build-coex-link-image.sh，ADV=1 BLE=1；app.bin 1 236 416 字节；板侧检查 27/27，
+verdict=pass，「wifi link while ble advertising: connected=1 dhcp=1」）。工作站的 tcpdump 是 tools/ap-side/build-tcpdump.sh 带
+BLUEZ_INCLUDE 编的静态二进制（tcpdump 4.99.6 + libpcap 1.10.5，sha256 218e5696…），认得 bluetooth-monitor 接口。烧录之前先起
+`sudo tcpdump -i bluetooth-monitor -n -s 256 -w <文件>`（150 秒），同一轮里 bluetoothctl 进 scan 子菜单先 duplicate-data on
+再 scan on（144 秒）；烧录后板子在抓包的第 48-89 秒之间被工作站看到 47 次。
+pcap 不入库（里面有每一个邻居的广告原文），入库的是这份只含板子地址的汇总。间隔的判法与 btmon 那一轮
+（logs/coex-merged-wifi-link-ble-adv15-advinterval.txt）相同：每一段相邻间隔都应该是 k×（100 ms + 0-10 ms advDelay）。
+板侧串口日志不入库：这一轮的读数只有检查项 27/27，没有新东西。
+tcpdump 自己不打印这种链路类型（-r 读回只有 UNSUPPORTED 加十六进制），读数由 tools/ap-side/pcap-bt-adv.py 直接读 pcap 得到，
+并与 tshark 4.6.10 的计数对过。
+
+tcpdump 的收尾（原样）：
+tcpdump: listening on bluetooth-monitor, link-type BLUETOOTH_LINUX_MONITOR (Bluetooth Linux Monitor), snapshot length 256 bytes
+2841 packets captured
+0 packets received by filter
+0 packets dropped by kernel
+
+pcap 文件头（od -An -tu4 -j16 -N8：前一个数是 snaplen，后一个是链路类型，254 = BLUETOOTH_LINUX_MONITOR）：
+        256        254
+
+tshark 4.6.10 读同一个文件的计数：
+  packets: 2841
+  LE Extended Advertising Report events: 1035
+  of them naming the board address 02:00:00:00:bb:01: 47
+
+读数（python3 tools/ap-side/pcap-bt-adv.py <文件> 02:00:00:00:bb:01 --slot-ms 100 --slot-ms 200 --raw 的输出，原样）：
+pcap /tmp/bt-board.pcap: 2841 records, 145.0 s; address 02:00:00:00:bb:01: 47 reports in 47 advertising events, 40.7 s (48.484-89.171 s)
+pdu types: ['ADV_NONCONN_IND']
+address types: ['Public']
+reports per advertising event: median 1, min 1, max 1
+inter-event interval ms: n=46 min=101.1 median=322.7 mean=884.5 max=6369.2 p5=103.8 p95=5355.3
+RSSI dBm: n=47 min=-56 median=-51 mean=-50 max=-47 p5=-54 p95=-47
+against one advertising event of 100 ms + 0-10 ms advDelay: 45 of 46 gaps are a whole number of events
+  events per gap (k: gaps): 1: 12, 2: 6, 3: 5, 4: 1, 5: 2, 6: 3, 7: 4, 9: 1, 12: 1, 13: 1, 14: 3, 15: 1, 17: 1, 18: 1, 48: 1, 50: 1, 58: 1; per-event length from the fitted gaps ms: n=45 min=101.1 median=105.2 mean=105.3 max=109.8 p5=101.8 p95=108.6
+  gaps that do not fit ms: 110.0
+against one advertising event of 200 ms + 0-10 ms advDelay: 12 of 46 gaps are a whole number of events
+  events per gap (k: gaps): 1: 3, 3: 3, 6: 1, 7: 2, 25: 1, 26: 1, 31: 1; per-event length from the fitted gaps ms: n=12 min=205.4 median=208.2 mean=207.7 max=209.5 p5=205.3 p95=209.6
+  gaps that do not fit ms: 104.0 108.5 725.1 530.9 106.4 314.9 103.6 108.0 709.8 533.9 720.8 110.0 319.9 1471.8 325.4 105.6 425.1 107.1 1901.1 317.5 731.9 951.0 106.8 1792.7 210.0 211.1 105.2 1354.4 106.3 106.0 212.6 101.1 310.8 1574.5
+-- per report: seconds since the first record, rssi dBm, pdu type
+48.483942 -47 ADV_NONCONN_IND
+48.587958 -51 ADV_NONCONN_IND
+48.696498 -51 ADV_NONCONN_IND
+49.421577 -47 ADV_NONCONN_IND
+49.952512 -47 ADV_NONCONN_IND
+50.160392 -54 ADV_NONCONN_IND
+50.266810 -54 ADV_NONCONN_IND
+50.581689 -47 ADV_NONCONN_IND
+50.685318 -51 ADV_NONCONN_IND
+50.793308 -51 ADV_NONCONN_IND
+51.503107 -54 ADV_NONCONN_IND
+52.125192 -49 ADV_NONCONN_IND
+52.659055 -51 ADV_NONCONN_IND
+53.379876 -54 ADV_NONCONN_IND
+53.489925 -49 ADV_NONCONN_IND
+53.809808 -56 ADV_NONCONN_IND
+55.281643 -51 ADV_NONCONN_IND
+55.607078 -51 ADV_NONCONN_IND
+55.712636 -49 ADV_NONCONN_IND
+56.137701 -49 ADV_NONCONN_IND
+56.346556 -53 ADV_NONCONN_IND
+62.715719 -51 ADV_NONCONN_IND
+62.822841 -52 ADV_NONCONN_IND
+68.036964 -53 ADV_NONCONN_IND
+73.468328 -47 ADV_NONCONN_IND
+74.910184 -52 ADV_NONCONN_IND
+75.538167 -52 ADV_NONCONN_IND
+77.439284 -47 ADV_NONCONN_IND
+77.756792 -49 ADV_NONCONN_IND
+78.488738 -52 ADV_NONCONN_IND
+78.695689 -47 ADV_NONCONN_IND
+79.311792 -52 ADV_NONCONN_IND
+80.262821 -52 ADV_NONCONN_IND
+80.369600 -49 ADV_NONCONN_IND
+82.162262 -47 ADV_NONCONN_IND
+83.622073 -47 ADV_NONCONN_IND
+83.832098 -48 ADV_NONCONN_IND
+84.043158 -51 ADV_NONCONN_IND
+84.148407 -54 ADV_NONCONN_IND
+85.502838 -47 ADV_NONCONN_IND
+85.609156 -47 ADV_NONCONN_IND
+85.715198 -51 ADV_NONCONN_IND
+85.927787 -51 ADV_NONCONN_IND
+86.028936 -54 ADV_NONCONN_IND
+86.339738 -47 ADV_NONCONN_IND
+87.596929 -52 ADV_NONCONN_IND
+89.171404 -49 ADV_NONCONN_IND
+-- distinct payloads of 02:00:00:00:bb:01 (pdu type, address type, advertising data, reports)
+ADV_NONCONN_IND Public 0201060409733331 47
