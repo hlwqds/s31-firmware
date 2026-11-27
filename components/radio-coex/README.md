@@ -87,6 +87,16 @@
     Wi-Fi 照常（扫描 32 个 AP，两遍链路 36/36）。不能反的是「谁打开 PHY」，不是 controller 的先后。
   - **板子回别人的 ping**：工作站 ping 板子，两遍链路共 215 个应答（97 + 118），板侧逐帧对得上。
   - **BLE 的下电路径**（`-Dcoex-ble-disable`）：见 §20.4。
+- L1 + L4（路线图 C9 的续，2026-11-28，`coex-verification.md` §20.3、§20.4.1–20.4.3）——上一条里有两句话作废：
+  - **`phy_deferred` 不是「controller 的 init 要在 PHY 开着时做」**：停的是 init 第 7 步之后那一句 `esp_phy_enable(2)`（PHY 没开时不能调；
+    `btdm_lp_init` 是空实现）。加了保护（入口用 `setPhyDeferred()` 明说）之后 BLE 的 init 与 enable 都能先于 PHY 做，Wi-Fi start
+    把 PHY 打开之后 BLE 照常广播（35/35）。controller 的先后可以换；不能反的只是「PHY 的一次性初始化与标定由 Wi-Fi 的路径做」。
+  - **BLE 的下电路径**：原先写的「controller 的八步之间要留时间」作废。连着做让 Wi-Fi 聋，是因为 BLE 的下电抢在 Wi-Fi 任务收尾之前
+    （驱动断开之后还要在自己的任务里放掉共存申请、放省电锁）；同样 20 毫秒，让 Wi-Fi 的任务跑过就好，纯等待就聋或停住。
+    `link_probe.settleAfterDisconnect` 在断开之后先推 Wi-Fi 的任务，直到它安静；默认下电路径（八步连着做）28/28，连着链路时下电 32/32。
+  - **时钟源那一段是共用单元**：`modem_conf` 在 IDF 的依赖表里是 Wi-Fi、共存核、PHY 都依赖的单元，按引用计数
+    （`modem_clock.c` 的 `config_wrapper`）。本仓的下电写回 BLE 来之前的读数；连着链路时写回的 `0x25` 随后被 Wi-Fi 改回它正用的
+    `0x3d`（链路没掉），这一种情形的判据取下电之前的读数。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |

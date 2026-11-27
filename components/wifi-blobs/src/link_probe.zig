@@ -225,6 +225,41 @@ fn pumpUntil(cond: *const bool, timeout_us: u64) bool {
     return true;
 }
 
+/// 断开事件到了不等于驱动的活干完了：blob 还要在自己的任务里做断开的收尾（放掉共存申请、放省电锁），那是泵出来的。
+/// 真 OS 上驱动的任务优先级比应用高，应用拿到断开事件时收尾已经做完了；这里的主上下文自己就是泵，不推它的话，
+/// 紧接着做的事会抢在收尾前面——BLE 的下电抢在前面，之后 Wi-Fi 要么聋、要么卡在下一次扫描里
+/// （`coex-verification.md` §20.4.2）。所以断开之后接着推，直到连续 `settle_quiet_us` 里钩子和事件都没有动静，
+/// 最长 `settle_max_us`。对照用的开关把它关掉。
+pub var settle_after_disconnect: bool = true;
+pub var settle_quiet_us: u64 = 5_000;
+pub var settle_max_us: u64 = 200_000;
+
+fn settleAfterDisconnect() void {
+    if (!settle_after_disconnect) return;
+    const hooks0 = impl.event_count;
+    const posts0 = event_bus.posts;
+    var last_hooks = hooks0;
+    var last_posts = posts0;
+    const t0 = hw.nowUs();
+    var quiet_since = t0;
+    var steps: u32 = 0;
+    while (hw.elapsedUs(t0) < settle_max_us) {
+        initp.idleHook();
+        stubWatch();
+        if (co_pump) |f| f();
+        steps += 1;
+        if (impl.event_count != last_hooks or event_bus.posts != last_posts) {
+            last_hooks = impl.event_count;
+            last_posts = event_bus.posts;
+            quiet_since = hw.nowUs();
+        }
+        if (hw.elapsedUs(quiet_since) >= settle_quiet_us) break;
+    }
+    log.line("wifi-link-probe: settle after disconnect: {d} us in {d} pump steps, hooks +{d}, event posts +{d}", .{
+        hw.elapsedUs(t0), steps, last_hooks - hooks0, last_posts - posts0,
+    });
+}
+
 /// 请求方的进度（`wpa_cb.status()`）。
 fn logSupplicant(tag: []const u8) void {
     const s = wpa_cb.status();
@@ -296,16 +331,22 @@ fn connectPhase() void {
         sta_disconnected = false;
         pumpFor(5_000_000, "connected: pump 5 s");
         stayed_connected = !sta_disconnected;
-        ipath.stop(); // 断开之前注销收帧回调
-        coexStage("before-disconnect");
-        if (sta_disconnected) {
-            log.line("wifi-link-probe: DROPPED within 5 s: reason={d}", .{disconnect_reason});
+        if (keep_link) {
+            // 对照用（`-Dcoex-ble-down-linked`）：链路留给调用方，收帧回调也留着；调用方做完它的事再调 `linkDrop()`。
+            log.raw("wifi-link-probe: link kept open (keep_link)\n");
         } else {
-            log.line("wifi-link-probe: stayed connected for 5 s", .{});
-            logSupplicant("after 5 s");
-            _ = wpa_cb.disconnect();
-            const left = pumpUntil(&sta_disconnected, 5_000_000);
-            log.line("wifi-link-probe: esp_wifi_disconnect_internal -> {s} reason={d}", .{ if (left) "DISCONNECTED" else "timeout", disconnect_reason });
+            ipath.stop(); // 断开之前注销收帧回调
+            coexStage("before-disconnect");
+            if (sta_disconnected) {
+                log.line("wifi-link-probe: DROPPED within 5 s: reason={d}", .{disconnect_reason});
+            } else {
+                log.line("wifi-link-probe: stayed connected for 5 s", .{});
+                logSupplicant("after 5 s");
+                _ = wpa_cb.disconnect();
+                const left = pumpUntil(&sta_disconnected, 5_000_000);
+                log.line("wifi-link-probe: esp_wifi_disconnect_internal -> {s} reason={d}", .{ if (left) "DISCONNECTED" else "timeout", disconnect_reason });
+            }
+            settleAfterDisconnect();
         }
     } else if (sta_disconnected) {
         log.line("wifi-link-probe: DISCONNECTED in {d} ms: reason={d}", .{ elapsed_ms, disconnect_reason });
@@ -964,4 +1005,33 @@ pub fn linkRest() LinkResult {
         r.scan_done, r.ap_num, r.connected, r.dhcp, r.ping_done, r.stayed, r.disconnect_reason,
     });
     return r;
+}
+
+/// 对照（`-Dcoex-ble-down-linked`）：链路不断开，留给调用方。下面三个是调用方用的。
+pub var keep_link: bool = false;
+
+/// 断开事件来了没有（`keep_link` 期间调用方判断链路还在不在）。
+pub fn linkUp() bool {
+    return sta_connected;
+}
+
+/// 连着的时候再 ping 一遍网关（收帧回调还在），返回这一轮的统计。
+pub fn linkPing(n: u16) ipath.PingStats {
+    ping_done = false;
+    ipath.ping_interval_us = ping_interval_us;
+    ipath.ping_bytes = ping_bytes;
+    ipath.startPing(n, hw.nowUs());
+    _ = pumpUntil(&ping_done, @as(u64, n) * (ping_interval_us + 2_000_000));
+    return ping_stats;
+}
+
+/// 断开（`keep_link` 的收尾）：先注销收帧回调，等到断开事件为止。
+pub fn linkDrop() bool {
+    ipath.stop();
+    data_path_on = false;
+    _ = wpa_cb.disconnect();
+    const left = pumpUntil(&sta_disconnected, 5_000_000);
+    log.line("wifi-link-probe: esp_wifi_disconnect_internal -> {s} reason={d}", .{ if (left) "DISCONNECTED" else "timeout", disconnect_reason });
+    settleAfterDisconnect();
+    return left;
 }

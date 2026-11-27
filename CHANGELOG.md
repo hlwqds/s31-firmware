@@ -5,6 +5,20 @@
 ## [Unreleased]
 
 ### Fixed
+- **BLE 下电之后 Wi-Fi 聋，原因读错了；修法是断开之后先让 Wi-Fi 的任务把收尾做完（2026-11-28，路线图 C9 的续）**：2026-11-27 晚把
+  「每一步之后扫描 28/28、连着做 25/28」读成「controller 的八步之间要留时间」。单变量对照推翻了它：八步连着做没有问题；失聪要的是
+  BLE 的下电步骤（一步不做、紧跟着扫描，Wi-Fi 正常）；同样 20 毫秒，让 Wi-Fi 的任务跑过就好，纯等待就聋或停在下一次扫描里——
+  Wi-Fi 的 blob 断开之后还要在自己的任务里放掉共存申请、放省电锁，下电赶在它前面就撞上。`wifi-blobs/src/link_probe.zig` 加
+  `settleAfterDisconnect()`：断开事件之后推 Wi-Fi 的任务，直到连续 5 毫秒里钩子与事件都没有动静（最长 200 毫秒）。默认的
+  下电路径从此不放间隔，28/28。真 OS 上驱动的任务优先级比应用高，撞不上；本仓的主上下文自己就是推驱动任务的那一个。
+  细目在 `docs/verification/coex-verification.md` §20.4.1–20.4.3。
+  - 新开关都是对照，会关掉那一步收尾：`-Dcoex-ble-down-gap-mask`（间隔放在八步的哪几步之后）、`-Dcoex-ble-down-gap-busy`
+    （间隔里纯等待）、`-Dcoex-ble-down-skip`（一步都不做）、`-Dcoex-ble-down-linked`（Wi-Fi 还连着的时候下电：32/32，链路不掉）。
+  - 时钟源那一条判据在连着链路下电时取下电之前的读数（那时是 Wi-Fi 自己正用的 `0x3d`；下电写回 `0x25` 之后 Wi-Fi 会自己改回去）。
+- **「BLE 先起」的 `phy_deferred` 停机：init 第 7 步之后那一句 `esp_phy_enable(2)` 在 PHY 没开时不能调（2026-11-28）**：
+  `bt-blobs/src/bringup.zig` 给它加了保护，只认合并入口的明说（`bt.probe.setPhyDeferred()`，`-Dcoex-ble-first=phy_deferred`），
+  不拿 modem 标志判（默认顺序里它也是 0）。之后 BLE 的 init 与 enable 都能在 PHY 没开时做，Wi-Fi start 把 PHY 打开之后 BLE 照常
+  广播（35/35）。所以 controller 的先后可以换，不能反的只是「PHY 的一次性初始化与标定由 Wi-Fi 的路径做」（§20.3）。
 - **不开 `-Dcoex` 时的计数桩不等于 IDF 的关闭分支（2026-11-27 晚，路线图 C9）**：`wifi-blobs/src/osi_impl.zig` 里 `_coex_init` /
   `_coex_enable` 的桩会去调 `libcoexist.a` 的真函数，`_coex_schm_flexible_period_get` 落在具名桩上回 0（IDF 关着功耗管理时回 1）；
   `init_probe.zig` 在关着 `-Dcoex` 时还直接调过核的 `coex_init()`——IDF 里那一句编译在 `CONFIG_SW_COEXIST_ENABLE ||

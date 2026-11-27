@@ -251,6 +251,10 @@ const freestanding = builtin.os.tag == .freestanding;
 /// **轮 25**：esp_phy_enable 前后的 s_is_phy_calibrated 快照（probe 冻结点转存 rec）。
 pub var phy_cal_flag_before: u8 = 0;
 pub var phy_cal_flag_post: u8 = 0;
+/// init 第 7 步之后那一句 `esp_phy_enable(2)` 有没有因为 PHY 还没开而跳过，以及当时的 modem flag。合并入口打印它：这个镜像里
+/// BLE 一侧的日志行与主日志逐字交错，靠不住。
+pub var phy_enable_skipped: bool = false;
+pub var phy_modem_flag_at_init: u32 = 0;
 
 /// 主机测试注入点：把归档调用替换成可观察的假动作。
 pub const Hooks = struct {
@@ -690,9 +694,20 @@ pub fn init(cfg: *config.Config) c_int {
             // **轮 27：MIE off 包住整个校准**（防 assert 风暴——协作单核下语义
             // 等价于真临界区保护全部事务）。
             const mf_pre = get_modem_flag();
-            board.hw.disableInterrupts();
-            esp_phy_enable(2);
-            board.hw.enableInterrupts();
+            // 合并镜像的 `phy_deferred` 对照：BLE 的 init 被要求跳过 PHY，而此刻还没有任何射频打开过 PHY（时钟与对象都没就位）。
+            // 这时再调 `esp_phy_enable(2)` 是在 ROM 里取空指针停机（2026-11-27 晚；停的是这里，不是 `btdm_lp_init`，它是空实现）。
+            // PHY 没开就跳过这一下；入口用 `setPhyDeferred()` 明说，不看 modem 标志（默认顺序里它也是 0，那一句要照常调）。
+            const phy_off = @import("probe_ptr.zig").phy_deferred;
+            phy_modem_flag_at_init = mf_pre;
+            phy_enable_skipped = phy_off;
+            if (phy_off) {
+                osal.logPublic("bt bringup: esp_phy_enable(2) skipped: no radio has enabled the PHY yet (modem_flag=0)", .{});
+            } else {
+                // **轮 27：MIE off 包住整个校准**（防 assert 风暴——协作单核下语义等价于真临界区保护全部事务）。
+                board.hw.disableInterrupts();
+                esp_phy_enable(2);
+                board.hw.enableInterrupts();
+            }
             phy_cal_flag_post = cal_flag.*;
             const mf_post = get_modem_flag();
             const flag_addr: usize = @intFromPtr(cal_flag);

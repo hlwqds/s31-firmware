@@ -1425,7 +1425,7 @@ pub fn initOnly(opts: InitOptions) c_int {
 /// 让 Wi-Fi 这条路先把 PHY 打开并标定，顺序照 blob 在 `esp_wifi_start` 里的前两步：先 `_wifi_clock_enable`（校准期间要 Wi-Fi 的
 /// 基带时钟；少了它，`register_chipv7_phy` 直接停住——2026-11-27 板上实测，`docs/verification/coex-verification.md` §20），
 /// 再 `_phy_enable`。之后 start 再调这两个钩子：时钟位是幂等重申，`shellPhyEnable` 见 modem 已经开着直接回 0。
-/// 合并镜像「BLE 先起」的 `phy_wifi_first` 用它：controller 的 init 要在 PHY 开着的时候才走得通。要求 `initOnly` 已经返回。
+/// 合并镜像「BLE 先起」的 `phy_wifi_first` 用它：让 BLE 的 init 与 enable 一开始就有打开并标定好的 PHY。要求 `initOnly` 已经返回。
 /// 返回 0 = 两步都成功。
 pub fn phyEnableWifiOwned() usize {
     const clocks: *const fn () callconv(.c) usize = @ptrCast(@alignCast(osi_table._wifi_clock_enable orelse return 1));

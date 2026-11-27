@@ -40,8 +40,11 @@
 //!     等 Wi-Fi start 时做）、`phy_wifi_first`（BLE 的 init 之前先按 Wi-Fi 的路径把 PHY 打开，BLE 的 init 跳过 PHY）。
 //!     见下面「PHY 的归属」。
 //!   - `-Dcoex-ble-disable`（要求 `-Dcoex-ble-enable` 与 `-Dcoex-wifi-link`，路线图 C9）：第一遍 Wi-Fi 链路之后按 IDF
-//!     `bt_controller_disable` 的顺序关 BLE（八步），默认每一步之后扫一次全信道；`-Dcoex-ble-down-scan=false` 是连着做，
-//!     再加 `-Dcoex-ble-down-gap=<ms>` 是每一步之后让 Wi-Fi 空转。核对时钟字，再让 Wi-Fi 走第二遍链路。
+//!     `bt_controller_disable` 的顺序关 BLE（八步），默认每一步之后扫一次全信道；`-Dcoex-ble-down-scan=false` 是连着做完
+//!     再连着扫（`link_probe.settleAfterDisconnect` 先让 Wi-Fi 的任务把断开的收尾做完，`coex-verification.md` §20.4.3）。
+//!     其余都是对照，会关掉那一步收尾：`-Dcoex-ble-down-gap=<ms>`（配 `-Dcoex-ble-down-gap-mask`、`-Dcoex-ble-down-gap-busy`）
+//!     是在八步的前后放间隔，`-Dcoex-ble-down-skip` 是一步都不做，`-Dcoex-ble-down-linked` 是 Wi-Fi 还连着的时候下电
+//!     （下电之后 ping、扫描，最后才断开）。核对时钟字，再让 Wi-Fi 走第二遍链路。
 //!
 //! **PHY 的归属（ADR-003 第 4 节的第一条板级证据，2026-11-26）。** IDF 的 `esp_phy_enable` 只在 modem 标志为 0
 //! 时才初始化 PHY（`phy_init.c:324-342`）；BT 在 Wi-Fi 之后使能时只把自己或进标志。本仓的 BLE 适配层是按
@@ -56,10 +59,11 @@
 //!     全信道扫描就从三十多个 AP 掉到 1–2 个（`docs/verification/coex-verification.md` §15.2）。
 //!
 //! 所以 `-Dcoex-wifi-link` 的顺序是 Wi-Fi 先 start；`bt.probe.setPhyOwnedByWifi()` 让 BLE 的 init 跳过那两段。
-//! **不能反的是「谁打开 PHY」，不是 controller 的先后**（`coex-verification.md` §20.3）：controller 的 init 要在 PHY 开着的时候做
-//! （`phy_deferred`：PHY 没开，BLE 的 init 第 7 步停机）；先按 Wi-Fi 的路径把 PHY 打开（`init_probe.phyEnableWifiOwned`，照
-//! blob 在 `esp_wifi_start` 里的前两步：`_wifi_clock_enable`、`_phy_enable`）、再做 BLE 的 init、最后 Wi-Fi start，Wi-Fi 照常
-//! （`phy_wifi_first`，36/36）。默认不变；应用要先起 BLE 时按这一种顺序。
+//! **不能反的是「谁打开 PHY」，不是 controller 的先后**（`coex-verification.md` §20.3）：PHY 的一次性初始化与标定必须走 Wi-Fi 的
+//! 路径（由 BLE 的 init 做，Wi-Fi 就聋）；controller 的先后可以换。先按 Wi-Fi 的路径把 PHY 打开（`init_probe.phyEnableWifiOwned`，
+//! 照 blob 在 `esp_wifi_start` 里的前两步：`_wifi_clock_enable`、`_phy_enable`）、再做 BLE 的 init、最后 Wi-Fi start，36/36；
+//! BLE 的 init 与 enable 甚至可以在 PHY 还没开的时候做（`phy_deferred`：init 里那句 `esp_phy_enable(2)` 跳过），Wi-Fi start
+//! 把 PHY 打开之后 BLE 照常广播（35/35）。默认不变（Wi-Fi 先起）。
 //!
 //! **时钟域按单元取并集（ADR-003 第 4 节，2026-11-27）。** 两边共享的时钟字（`MODEM_SYSCON_CLK_CONF`、
 //! `CLK_CONF1`、`CLK_CONF_FORCE_ON`、`MODEM_LPCON_CLK_CONF`、`HP_SYS_CLKRST_MODEM_CONF`）每一位归一个时钟单元，
@@ -289,34 +293,58 @@ fn checkMainStack(tag: []const u8) void {
     check(left > 0, "main stack stayed above its bottom while {s} ({d} B left at the deepest point)", .{ tag, left });
 }
 
-/// BLE 下电路径的板上判据（路线图 C9，`-Dcoex-ble-disable`）：`bt.probe.downStep` 照 IDF `bt_controller_disable` 的顺序
-/// （`esp32s31/bt.c:124-145`）关 BLE，**每一步之后扫一次全信道**——Wi-Fi 是在哪一步之后收不到的，看这里
-/// （2026-11-27 晚的第一轮把八步连着做完，之后的扫描是 0 个 AP）。最后前后比时钟字，再让 Wi-Fi 走一遍真实链路。
-///
-/// 判据的依据是单元表（`radio-coex/src/owner.zig` 的 `clocks`）：BLE 下电只能动**只属于自己**的位——
-///   - Wi-Fi 与 PHY 依赖的位一个不少（并集 `unionOf(&.{ .wifi, .phy })`）；
-///   - 只属于 BLE 的位（`only(.ble, …)`）在下电之后是空的——下电前它们在，就是这次关掉的。例外是 `MODEM_LPCON_CLK_CONF`
-///     的 bit1（共存时钟）：单元表把它列在 BLE 的依赖里，但它归共存核，核还在替 Wi-Fi 做仲裁，这一位不该关；
-///   - 时钟源（`HP_SYS_CLKRST_MODEM_CONF`）回到 BLE 来之前的读数 `wifi_modem_conf`。
-/// 然后泵里去掉 BLE 的那一步，Wi-Fi 再走一遍链路：BLE 下电不能带着 Wi-Fi 一起倒。
-fn bleDownStep(base_ap: u16, wifi_modem_conf: u32) void {
-    const before = readClocks();
-    logClocks("before ble down");
-    var timed_out = false;
-    var tag_buf: [24]u8 = undefined;
+/// 下电路径对照用的一段间隔。默认让 Wi-Fi 空转（泵它的任务、不扫描）；开了 `-Dcoex-ble-down-gap-busy` 是纯等待、不泵——
+/// 分开「要时间」与「要 Wi-Fi 的任务跑一遍」。纯等待时照样喂两级看门狗。
+fn downGap(ms: u32, busy: bool, tag: []const u8) void {
+    if (!busy) {
+        wifi.link.pumpFor(@as(u64, ms) * 1000, tag);
+        return;
+    }
+    const t0 = board.hw.nowUs();
+    while (board.hw.elapsedUs(t0) < @as(u64, ms) * 1000) {
+        board.hw.mwdt1Feed();
+        board.hw.feedRtcWdt();
+    }
+    log.line("coex-ble-down: busy-waited {d} ms ({s})", .{ ms, tag });
+}
+
+/// 共存核五个硬件定时器的状态：使能位（`0x2010F408 + 16*idx` 的 bit0，读法同 `sampleHwTimers`）凑成一个字节，
+/// 外加定时器 0 的配置字与状态字。下电的每一步之前打一行——连着做让 Wi-Fi 失聪，看是哪一步之前核里还挂着东西。
+fn logCoexTimers(before: []const u8) void {
+    var en: u8 = 0;
+    for (0..5) |idx| {
+        if ((rd(0x2010_F408 + 16 * idx) & 1) != 0) en |= @as(u8, 1) << @intCast(idx);
+    }
+    log.line("coex-timers[ble down]: {s}: enabled 0x{x:0>2}; timer 0 cfg=0x{x:0>8} st=0x{x:0>8}", .{
+        before, en, rd(0x2010_F400), rd(0x2010_F40C),
+    });
+}
+
+const DownRun = struct { timed_out: bool = false, done_us: u64 = 0 };
+
+/// 下电路径的八步本身，带上对照用的间隔与逐步扫描。泵跑在 BLE 任务的栈上，所以做每一步期间关掉 Wi-Fi 侧的让出点
+/// （同 BLE 的 init / enable）；扫描与间隔的时候它不跑。`done_us` 是最后一步结束的时刻。
+fn runDownSteps(base_ap: u16, wifi_modem_conf: u32, tag_buf: []u8) DownRun {
+    var r: DownRun = .{};
     bt.probe.downBegin();
     const down_steps = @typeInfo(bt.probe.DownStep).@"enum";
-    var down_done_us: u64 = 0;
+    // 对照用的间隔（只在不逐步扫描、且给了 `-Dcoex-ble-down-gap` 时）：掩码的第 i−1 位 = 第 i 步之后隔一下（第 1 步是 0x001，
+    // 第 8 步是 0x080），bit 8（0x100）= 第一步之前（第一遍 Wi-Fi 链路刚断开）隔一下。
+    const gap_on = !opts.ble_down_scan and opts.ble_down_gap_ms > 0;
+    if (gap_on and (opts.ble_down_gap_mask & 0x100) != 0) downGap(opts.ble_down_gap_ms, opts.ble_down_gap_busy, "lead");
     inline for (down_steps.field_values) |value| {
-        // 泵跑在 BLE 任务的栈上：做这一步期间关掉 Wi-Fi 侧的让出点（同 BLE 的 init / enable）；扫描的时候它不跑。
         const step: bt.probe.DownStep = @fromBackingInt(value);
+        if (!opts.ble_down_scan) {
+            const tag = std.fmt.bufPrint(tag_buf, "before {d}/8 {s}", .{ value, step.name() }) catch "before";
+            logCoexTimers(tag);
+        }
         wifi.foreign_context = true;
         const d = bt.probe.downStep(step, wifi_modem_conf);
         wifi.foreign_context = false;
-        timed_out = timed_out or d.timed_out;
-        down_done_us = board.hw.nowUs();
+        r.timed_out = r.timed_out or d.timed_out;
+        r.done_us = board.hw.nowUs();
         if (opts.ble_down_scan) {
-            const tag = std.fmt.bufPrint(&tag_buf, "ble down {d}/8", .{value}) catch "ble down";
+            const tag = std.fmt.bufPrint(tag_buf, "ble down {d}/8", .{value}) catch "ble down";
             const n = wifi.link.linkScan(tag);
             log.line("coex-ble-down: {d}/8 {s} a0={d} took {d} us timed_out={d}; wifi scan after it: ap={d} (baseline {d})", .{
                 value, step.name(), d.a0, d.took_us, @intFromBool(d.timed_out), n, base_ap,
@@ -324,14 +352,54 @@ fn bleDownStep(base_ap: u16, wifi_modem_conf: u32) void {
         } else {
             log.line("coex-ble-down: {d}/8 {s} a0={d} took {d} us timed_out={d}", .{ value, step.name(), d.a0, d.took_us, @intFromBool(d.timed_out) });
         }
-        if (!opts.ble_down_scan and opts.ble_down_gap_ms > 0) {
-            // 步骤之间只让 Wi-Fi 空转这么久、不扫描：分开「步骤之间要时间」与「步骤之间要 Wi-Fi 在收发」。
-            const tag = std.fmt.bufPrint(&tag_buf, "gap {d}/8", .{value}) catch "gap";
-            wifi.link.pumpFor(@as(u64, opts.ble_down_gap_ms) * 1000, tag);
+        if (gap_on and (opts.ble_down_gap_mask & (@as(u32, 1) << (value - 1))) != 0) {
+            const tag = std.fmt.bufPrint(tag_buf, "gap {d}/8", .{value}) catch "gap";
+            downGap(opts.ble_down_gap_ms, opts.ble_down_gap_busy, tag);
         }
     }
     bt.probe.downEnd();
-    if (!opts.ble_down_scan) {
+    return r;
+}
+
+/// BLE 下电路径的板上判据（路线图 C9，`-Dcoex-ble-disable`）：`bt.probe.downStep` 照 IDF `bt_controller_disable` 的顺序
+/// （`esp32s31/bt.c:124-145`）关 BLE。默认每一步之后扫一次全信道；`-Dcoex-ble-down-scan=false` 是八步连着做完再连着扫
+/// （断开之后先由 `link_probe.settleAfterDisconnect` 让 Wi-Fi 的任务把收尾做完，`coex-verification.md` §20.4.3）；其余开关是对照。
+/// 最后前后比时钟字，再让 Wi-Fi 走一遍真实链路。
+///
+/// 判据的依据是单元表（`radio-coex/src/owner.zig` 的 `clocks`）：BLE 下电只能动**只属于自己**的位——
+///   - Wi-Fi 与 PHY 依赖的位一个不少（并集 `unionOf(&.{ .wifi, .phy })`）；
+///   - 只属于 BLE 的位（`only(.ble, …)`）在下电之后是空的——下电前它们在，就是这次关掉的。例外是 `MODEM_LPCON_CLK_CONF`
+///     的 bit1（共存时钟）：单元表把它列在 BLE 的依赖里，但它归共存核，核还在替 Wi-Fi 做仲裁，这一位不该关；
+///   - 时钟源（`HP_SYS_CLKRST_MODEM_CONF`）回到 BLE 来之前的读数 `wifi_modem_conf`；链路还连着的时候下电（`-Dcoex-ble-down-linked`）
+///     判的是「与下电之前相同」——那时这个字是 Wi-Fi 自己正用的读数。
+/// 然后泵里去掉 BLE 的那一步，Wi-Fi 再走一遍链路：BLE 下电不能带着 Wi-Fi 一起倒。
+fn bleDownStep(base_ap: u16, wifi_modem_conf: u32) void {
+    const before = readClocks();
+    logClocks("before ble down");
+    var timed_out = false;
+    var tag_buf: [48]u8 = undefined;
+    var down_done_us: u64 = 0;
+    if (opts.ble_down_skip) {
+        // 对照：一步都不做，扫描紧跟着第一遍链路开始。聋不聋跟 BLE 的下电路径有没有关系，看这一轮。
+        down_done_us = board.hw.nowUs();
+        log.line("coex-ble-down: skipped every step (control)", .{});
+    } else {
+        const steps_run = runDownSteps(base_ap, wifi_modem_conf, &tag_buf);
+        timed_out = steps_run.timed_out;
+        down_done_us = steps_run.done_us;
+    }
+    if (!opts.ble_down_skip) logClocks("right after the down path");
+    if (opts.ble_down_linked) {
+        // 对照：Wi-Fi 还连着的时候下电（应用里关 BLE 多半是这个样子，链路没有断）。下电之后链路还在不在、还通不通，
+        // 看 ping 与扫描，最后才断开。
+        check(wifi.link.linkUp(), "wifi still associated right after ble down ({d})", .{@intFromBool(wifi.link.linkUp())});
+        const p = wifi.link.linkPing(10);
+        check(p.received > 0, "wifi ping while associated after ble down: {d} of {d} replied", .{ p.received, p.sent });
+        const n = wifi.link.linkScan("after ble down, associated");
+        check(n * 2 >= base_ap, "wifi scan while associated after ble down keeps >= half the baseline ap ({d} vs {d})", .{ n, base_ap });
+        const dropped = wifi.link.linkDrop();
+        check(dropped, "wifi disconnects on request after ble down ({d})", .{@intFromBool(dropped)});
+    } else if (!opts.ble_down_scan) {
         // 八步连着做完（应用里的下电就是这个样子），之后连着扫 35 秒：Wi-Fi 是立刻就聋、还是要过一阵才恢复，看每一行的时间。
         var i: u32 = 0;
         const timeline_us: u64 = if (opts.ble_down_gap_ms > 0) 12_000_000 else 35_000_000;
@@ -357,12 +425,19 @@ fn bleDownStep(base_ap: u16, wifi_modem_conf: u32) void {
     check(still.isClear(), "ble's own clock units off after the down path (left conf1=0x{x:0>8} conf=0x{x:0>8} lpcon=0x{x:0>8}; were 0x{x:0>8} 0x{x:0>8} 0x{x:0>8})", .{
         still.clk_conf1, still.clk_conf, still.lpcon_clk_conf, were.clk_conf1, were.clk_conf, were.lpcon_clk_conf,
     });
-    check(after.modem_conf == wifi_modem_conf, "clock source back to its reading from before ble (0x{x:0>8}, want 0x{x:0>8})", .{ after.modem_conf, wifi_modem_conf });
+    if (opts.ble_down_linked) {
+        // 链路还连着：时钟源是 Wi-Fi 自己正用的读数（`0x3d`）。下电第 8 步照旧写回 BLE 来之前的 `0x25`，Wi-Fi 下一次醒来
+        // 把它改回去（`clocks[right after the down path]` 与 `clocks[after ble down]` 两行），判据取下电之前的读数。
+        check(after.modem_conf == before.modem_conf, "clock source while associated after ble down (0x{x:0>8}, was 0x{x:0>8} before the down path)", .{ after.modem_conf, before.modem_conf });
+    } else {
+        check(after.modem_conf == wifi_modem_conf, "clock source back to its reading from before ble (0x{x:0>8}, want 0x{x:0>8})", .{ after.modem_conf, wifi_modem_conf });
+    }
     // 共存核两侧的状态与计数（BLE 那一次使能应当已经减掉）。
     wifi.coexReport("ble-down");
 
     // BLE 不再被泵。Wi-Fi 再走一遍真实链路。
     wifi.link.co_pump = null;
+    wifi.link.keep_link = false;
     const r3 = wifi.link.linkRest();
     checkClocks("after wifi link with ble down", &.{ .wifi, .phy });
     check(r3.scan_done and r3.ap_num * 2 >= base_ap, "wifi scan after ble down keeps >= half the baseline ap ({d} vs {d})", .{ r3.ap_num, base_ap });
@@ -395,6 +470,10 @@ pub fn run() bool {
     const bt_bytes = heap_total - wifi_bytes;
     log.line("coex-merged: heap total={d} B wifi={d} B ble={d} B", .{ heap_total, wifi_bytes, bt_bytes });
     check(wifi_bytes >= 64 * 1024 and bt_bytes >= 64 * 1024, "heap split wifi={d}K ble={d}K (both >= 64K)", .{ wifi_bytes / 1024, bt_bytes / 1024 });
+    // 下电路径的对照（自己放间隔、一步不做、或 Wi-Fi 还连着就下电）不替 Wi-Fi 的任务做断开的收尾；其余照常
+    // （`link_probe.settleAfterDisconnect`）。
+    wifi.link.settle_after_disconnect = opts.ble_down_gap_ms == 0 and !opts.ble_down_skip and !opts.ble_down_linked;
+    wifi.link.keep_link = opts.ble_down_linked;
 
     // 2) Wi-Fi：装表、启动共存核、coex_init、esp_wifi_init_internal。要走真实链路时 `feature_caps` 与真实链路
     //    探针、对照镜像取同一个值（见 `init_probe.feature_caps` 的注释）。
@@ -418,8 +497,9 @@ pub fn run() bool {
     if (opts.ble_first) |mode| {
         // 除 `phy_ble` 之外，BLE 的 init 都跳过 PHY 那两段（PHY 仍然归 Wi-Fi）。`phy_wifi_first` 还先按 Wi-Fi 的路径把 PHY
         // 打开并标定——就是 blob 在 `esp_wifi_start` 里调的那条 `_phy_enable`，所以 BLE 的 init 看到的 PHY 状态与默认顺序里
-        // （Wi-Fi start 之后）相同，换的只有 controller 的先后；`phy_deferred` 那一轮实测 PHY 没开时 controller 的 init 走不通。
+        // （Wi-Fi start 之后）相同，换的只有 controller 的先后；`phy_deferred` 更进一步，BLE 的 init 与 enable 都在 PHY 没开时做。
         if (mode != .phy_ble) bt.probe.setPhyOwnedByWifi();
+        if (mode == .phy_deferred) bt.probe.setPhyDeferred();
         if (mode == .phy_wifi_first) {
             const prc = wifi.phyEnableWifiOwned();
             check(prc == 0, "phy opened by wifi's path before ble init rc={d}", .{prc});
@@ -431,6 +511,12 @@ pub fn run() bool {
         log.line("read: LPCON+18 after ble init=0x{x:0>8} (bit0 wifipwr / bit1 coex / bit2 i2c_mst / bit3 lp_timer)", .{rd(clocks.lpcon_clk_conf)});
         logClocks("after ble init, before wifi start");
         check(brc == 0, "ble bringup.init (ble first) rc={d}", .{brc});
+        log.line("coex-merged: ble init ran {s}: esp_phy_enable(2) {s}, modem_flag there 0x{x:0>8}", .{
+            if (mode == .phy_deferred) "before the PHY was on" else "with the PHY on",
+            if (bt.bringup.phy_enable_skipped) "skipped" else "called",
+            bt.bringup.phy_modem_flag_at_init,
+        });
+        if (mode == .phy_deferred) check(bt.bringup.phy_enable_skipped, "phy_deferred: ble init ran with the PHY off (esp_phy_enable(2) skipped={d})", .{@intFromBool(bt.bringup.phy_enable_skipped)});
         ble_inited = brc == 0;
     }
     if (opts.wifi_link) {

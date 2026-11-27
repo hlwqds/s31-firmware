@@ -1021,6 +1021,12 @@ pub fn setPhyOwnedByWifi() void {
     @import("probe_ptr.zig").phy_owned_by_wifi = true;
 }
 
+/// 合并镜像的 `-Dcoex-ble-first=phy_deferred`：BLE 的 init 与 enable 在 PHY 还没开的时候做，init 里那一句 `esp_phy_enable(2)`
+/// 跳过（`bringup.init` 第 7 步之后）。要与 `setPhyOwnedByWifi()` 一起调，且在 `initOnly` 之前。
+pub fn setPhyDeferred() void {
+    @import("probe_ptr.zig").phy_deferred = true;
+}
+
 /// 把 blob 改掉的三个时钟门控字写回 `enableOnly()` 拍的基线：blob 在 enable 之后会动 UART0 与定时器组的门控，
 /// 不写回去串口与定时器就停了，所以泵的每一轮都做。
 fn restoreClockGates() void {

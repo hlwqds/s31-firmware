@@ -121,13 +121,25 @@ pub fn build(b: *std.Build) void {
     // 的顺序关 BLE（controller 任务、流控、协议栈、共存计数、基带与 PHY 引用），核对时钟字里 Wi-Fi 与 PHY 的位还在、只属于 BLE
     // 的位关掉，再让 Wi-Fi 走第三遍链路。排在最后：这一步出问题时前面的判据已经打完。
     const coex_ble_disable = b.option(bool, "coex-ble-disable", "merged image with -Dcoex-wifi-link and -Dcoex-ble-enable: after every check, power the BLE side down the way IDF's esp_bt_controller_disable does and run a third Wi-Fi link pass") orelse false;
-    // 下电路径怎么跑（要求 `-Dcoex-ble-disable`）：默认每一步之后扫一次全信道（看 Wi-Fi 是在哪一步之后收不到的）；
-    // `-Dcoex-ble-down-scan=false` 把八步连着做完，之后连着扫 35 秒（看 Wi-Fi 要多久才恢复接收）。2026-11-27 晚第一种 28/28、
-    // 第二种第一轮之后的扫描是 0 个 AP，差在两件事同时变了：步骤之间有没有扫描、隔了多久。
+    // 下电路径怎么跑（要求 `-Dcoex-ble-disable`）：默认每一步之后扫一次全信道；`-Dcoex-ble-down-scan=false` 把八步连着做完，
+    // 之后连着扫 35 秒。连着做曾经让 Wi-Fi 聋（2026-11-27 晚），原因不是八步之间缺时间，是 BLE 的下电抢在了 Wi-Fi 的任务
+    // 前面——驱动断开之后还要在自己的任务里做收尾（`coex-verification.md` §20.4.2）。现在 `link_probe.settleAfterDisconnect`
+    // 在断开之后先推 Wi-Fi 的任务，直到它安静；下面几个对照开关都会关掉这一步。
     const coex_ble_down_scan = b.option(bool, "coex-ble-down-scan", "merged image with -Dcoex-ble-disable: true (default) scans after every down step; false runs the steps back to back and then scans for 35 s") orelse true;
-    // 对照（要求 `-Dcoex-ble-down-scan=false`）：八步连着做，但每一步之后让 Wi-Fi 空转这么多毫秒（不扫描）。分开
-    // 「步骤之间要时间」与「步骤之间要 Wi-Fi 在收发」——逐步扫描的那一轮过、连着做的那一轮 Wi-Fi 聋，两件事同时变了。
+    // 对照（要求 `-Dcoex-ble-down-scan=false`）：八步连着做，但在 `-Dcoex-ble-down-gap-mask` 选中的那几步之后让 Wi-Fi 的任务
+    // 空转这么多毫秒（不扫描）。2026-11-28 用它把「间隔放在哪」与「隔多久」分开。
     const coex_ble_down_gap = b.option(u32, "coex-ble-down-gap", "merged image with -Dcoex-ble-disable and -Dcoex-ble-down-scan=false: idle-pump Wi-Fi this many ms after every down step instead of scanning (0 = none)") orelse 0;
+    // 下电路径的对照再细两格（要求 `-Dcoex-ble-down-gap` 非 0）。`-Dcoex-ble-down-gap-mask` 的第 i−1 位 = 第 i 步之后隔一下（第 1 步是
+    // 0x001，第 8 步是 0x080），bit 8（0x100）= 第一步之前（第一遍 Wi-Fi 链路刚断开）隔一下；默认 255 = 八步之后都隔，
+    // 就是 2026-11-27 晚跑过的「每步之间空转 2.5 秒」。`-Dcoex-ble-down-gap-busy=true`：间隔里纯等待、不泵 Wi-Fi——
+    // 分开「要时间」与「要 Wi-Fi 的任务跑一遍」。
+    const coex_ble_down_gap_mask = b.option(u32, "coex-ble-down-gap-mask", "merged image with -Dcoex-ble-down-gap: bit i-1 = wait after down step i (step 1 = 0x001, step 8 = 0x080), bit 8 (0x100) = wait before step 1 (default 255 = every step)") orelse 255;
+    const coex_ble_down_gap_busy = b.option(bool, "coex-ble-down-gap-busy", "merged image with -Dcoex-ble-down-gap: spend the gaps busy-waiting instead of pumping the Wi-Fi task (default false)") orelse false;
+    // 对照（要求 `-Dcoex-ble-disable`）：一步下电都不做，扫描紧跟着第一遍 Wi-Fi 链路开始。聋不聋跟 BLE 的下电路径有没有关系，看它。
+    const coex_ble_down_skip = b.option(bool, "coex-ble-down-skip", "merged image with -Dcoex-ble-disable: control that runs no down step at all; the Wi-Fi scans start right after the first link pass") orelse false;
+    // 对照（要求 `-Dcoex-ble-disable`）：BLE 在 Wi-Fi 还连着的时候下电（链路不断开）；下电之后先 ping、再扫描，最后才断开。
+    // 应用里关 BLE 多半是这个样子，查的是「链路没断时下电，Wi-Fi 会不会倒」。
+    const coex_ble_down_linked = b.option(bool, "coex-ble-down-linked", "merged image with -Dcoex-ble-disable: tear BLE down while the Wi-Fi link is still up, then ping, scan and disconnect") orelse false;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
@@ -162,6 +174,10 @@ pub fn build(b: *std.Build) void {
     if (coex_ble_disable and !coex_ble_enable) @panic("-Dcoex-ble-disable 需要 -Dcoex-ble-enable：下电之前 BLE 要先 enable");
     if (!coex_ble_down_scan and !coex_ble_disable) @panic("-Dcoex-ble-down-scan=false 需要 -Dcoex-ble-disable");
     if (coex_ble_down_gap != 0 and coex_ble_down_scan) @panic("-Dcoex-ble-down-gap 要与 -Dcoex-ble-down-scan=false 同开：逐步扫描的那一轮每一步之后已经在扫了");
+    if (coex_ble_down_gap_mask > 511) @panic("-Dcoex-ble-down-gap-mask 至多 511：第 0 到 7 位是第 i+1 步之后，bit 8 是第一步之前");
+    if ((coex_ble_down_gap_mask != 255 or coex_ble_down_gap_busy) and coex_ble_down_gap == 0) @panic("-Dcoex-ble-down-gap-mask / -Dcoex-ble-down-gap-busy 要与 -Dcoex-ble-down-gap=<毫秒> 同开");
+    if (coex_ble_down_skip and !coex_ble_disable) @panic("-Dcoex-ble-down-skip 需要 -Dcoex-ble-disable");
+    if (coex_ble_down_linked and (!coex_ble_disable or coex_ble_down_skip or coex_ble_down_gap != 0)) @panic("-Dcoex-ble-down-linked 需要 -Dcoex-ble-disable，并且不能与 -Dcoex-ble-down-skip / -Dcoex-ble-down-gap 同开");
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex)
         (if (coex_sw_off) "pub const enabled = true;\npub const sw_off = true;\n" else "pub const enabled = true;\npub const sw_off = false;\n")
@@ -550,7 +566,7 @@ pub fn build(b: *std.Build) void {
             .phy_deferred => ".phy_deferred",
             .phy_wifi_first => ".phy_wifi_first",
         } else "null";
-        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\npub const adv_interval_ms: u32 = {};\npub const adv_pings: u16 = {};\npub const adv_ping_interval_ms: u32 = {};\npub const adv_ping_bytes: u16 = {};\npub const ble_chan_class: bool = {};\npub const ping_in_ms: u32 = {};\npub const BleFirst = enum {{ phy_ble, phy_deferred, phy_wifi_first }};\npub const ble_first: ?BleFirst = {s};\npub const ble_disable: bool = {};\npub const ble_down_scan: bool = {};\npub const ble_down_gap_ms: u32 = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq, coex_adv_interval_ms, coex_adv_pings, coex_adv_ping_interval_ms, coex_adv_ping_bytes, coex_ble_chan_class, coex_ping_in_ms, ble_first_src, coex_ble_disable, coex_ble_down_scan, coex_ble_down_gap });
+        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\npub const adv_interval_ms: u32 = {};\npub const adv_pings: u16 = {};\npub const adv_ping_interval_ms: u32 = {};\npub const adv_ping_bytes: u16 = {};\npub const ble_chan_class: bool = {};\npub const ping_in_ms: u32 = {};\npub const BleFirst = enum {{ phy_ble, phy_deferred, phy_wifi_first }};\npub const ble_first: ?BleFirst = {s};\npub const ble_disable: bool = {};\npub const ble_down_scan: bool = {};\npub const ble_down_gap_ms: u32 = {};\npub const ble_down_gap_mask: u32 = {};\npub const ble_down_gap_busy: bool = {};\npub const ble_down_skip: bool = {};\npub const ble_down_linked: bool = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq, coex_adv_interval_ms, coex_adv_pings, coex_adv_ping_interval_ms, coex_adv_ping_bytes, coex_ble_chan_class, coex_ping_in_ms, ble_first_src, coex_ble_disable, coex_ble_down_scan, coex_ble_down_gap, coex_ble_down_gap_mask, coex_ble_down_gap_busy, coex_ble_down_skip, coex_ble_down_linked });
         merged_mod.addImport("coex_merged_opts", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_merged_opts.zig", merged_opts_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }

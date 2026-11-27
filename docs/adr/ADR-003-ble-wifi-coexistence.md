@@ -223,6 +223,27 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
 - **不开 `-Dcoex` 时的计数桩**也按 IDF 的关闭分支逐项对齐了（§20.5）：桩与胶水的 `Glue.off()` 现在是同一套值，不开 `-Dcoex`
   的镜像不再需要 `libcoexist.a`。
 
+**补记 4（2026-11-28，路线图 C9 的续，`coex-verification.md` §20.3、§20.4.1–20.4.3）。**
+
+- **BLE 的下电路径：上面「controller 的八步之间要留时间」作废。** 那是把两件事（八步之间 Wi-Fi 的任务有没有跑过、隔了多久）同时
+  改了读出来的。单变量对照：八步连着做没有问题；失聪要的是 BLE 的下电步骤（一步不做、紧跟着扫描，Wi-Fi 正常）；同样 20 毫秒，
+  让 Wi-Fi 的任务跑过就好，纯等待就聋或停在下一次扫描里。规则精确成一句：**一个射频的下电不能抢在另一个射频驱动任务的收尾之前。**
+  Wi-Fi 的 blob 断开之后还要在自己的任务里放掉共存申请、放省电锁；本仓的主上下文自己就是推驱动任务的那一个，不推就撞上。真 OS 上
+  驱动的任务优先级比应用高，应用拿到断开事件时收尾已经做完了。落实：`link_probe.settleAfterDisconnect()`——断开事件之后推 Wi-Fi 的
+  任务，直到连续 5 毫秒里钩子与事件都没有动静（最长 200 毫秒）。默认的下电路径（八步连着做、不放间隔）28/28。链路还连着的时候
+  下电（`-Dcoex-ble-down-linked`）32/32：断开之后才有那件收尾，连着时下电不需要等。撞的到底是八步里的哪一步、核或 blob 里卡住的
+  是什么状态，没有查。
+- **时钟源那一段是共用单元，判据分两种情形。** `HP_SYS_CLKRST_MODEM_CONF`（`0x3d` 开 / `0x25` 关）在 IDF 的依赖表里是 Wi-Fi、
+  共存核、PHY、标定都依赖的单元，`modem_clock_module_disable` 按引用计数、最后一个用户放手才关（`modem_clock.c` 的
+  `config_wrapper`）。本仓的下电把它写回 BLE 来之前的读数：Wi-Fi 空闲时与它自己的读数相同（IDF 自己的 station 镜像空闲时也是
+  `0x25`）；Wi-Fi 还连着时下电，这个字是 Wi-Fi 正在用的 `0x3d`，写回的 `0x25` 随后被 Wi-Fi 自己改回去（一次实测链路没掉、
+  ping 10/10）。所以连着时下电的判据取下电之前的读数。这与 IDF「按引用计数、不替别人写」的做法有差别，留作对照项。
+- **「BLE 先起」的 `phy_deferred`：停的不是 controller 的 init，是 init 里那一句 `esp_phy_enable(2)`。** PHY 没开时 libphy 的
+  `esp_phy_enable` 走「首次使能」那条路，时钟与对象都没就位。给这一句加了保护（入口用 `bt.probe.setPhyDeferred()` 明说，不看
+  modem 标志——默认顺序里它也是 0）之后，BLE 的 init 与 enable 都能在 PHY 没开时做；Wi-Fi start 把 PHY 打开并标定之后，BLE 照常
+  广播（35/35）。所以第二种顺序有两种：先按 Wi-Fi 的路径打开 PHY 再做 BLE（`phy_wifi_first`，BLE 立刻可用），或 BLE 先起、
+  等 Wi-Fi start 之后才上空口（`phy_deferred`）。不能反的仍然只是「PHY 的一次性初始化与标定由 Wi-Fi 的路径做」。
+
 ### 5. 验证（按仓库的 L1–L4 分级；不抓空口能到 L3）
 
 | 级 | 内容 | 判据 |
@@ -276,7 +297,8 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
      `esp_wifi_init_internal rc=0`、`bringup.init rc=0`（`logs/coex-merged-boot.log`）。
   5. PHY 与时钟域的归属：PHY 这一条已有板级证据并落进代码（2026-11-26，第 4 节补记 2）。时钟域于 2026-11-27 改成
      按单元取并集并上板（第 4 节的实现记录），事后写回已删除；BLE 的 disable 路径于 2026-11-27 晚做了并上板（同上）：时钟这一半
-     成立，controller 的八步之间要留时间（连着做 Wi-Fi 会聋），隔法没有定。
+     成立；「controller 的八步之间要留时间」2026-11-28 更正：连着做 Wi-Fi 会聋是因为下电抢在 Wi-Fi 任务收尾之前，已修
+     （断开之后先让 Wi-Fi 的任务跑到安静），默认下电路径 28/28，连着链路时下电 32/32（补记 4）。
   6. R3.1（`MAC_ST`）已拆（2026-11-25），Wi-Fi 真实链路已通（2026-11-26：连接、DHCP、ping 网关；2026-11-27 起有空口上的帧），
      L4a 已有读数（第 5 节）。L4b 有了第一条证据（2026-11-27 晚）：合并镜像里 BLE 的广播上了空口——起广播
      （`-Dcoex-ble-adv`）时"广播使能之后整机失声"的根因是中断风暴（`bt-blobs` 的 `intrArm` 把中断桥登记在 CLIC 输入号 24

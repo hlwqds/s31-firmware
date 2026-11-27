@@ -80,6 +80,11 @@ pub fn populate() c_int {
 /// 各自都足以让 Wi-Fi 的接收退化：2026-11-26 板上单变量对照，只跳过第 15 步而这一段照常跑，Wi-Fi 的扫描从 31 个 AP
 /// 掉到 1 个；两段都跳过才恢复（`docs/verification/coex-verification.md` §15.2）。
 pub var phy_owned_by_wifi: bool = false;
+/// 合并镜像「BLE 先起」的 `phy_deferred` 对照：BLE 的 init 与 enable 都在 PHY 还没开的时候做（没有任何射频打开过它）。
+/// 这时 `bringup.init` 第 7 步之后那一句 `esp_phy_enable(2)` 不能调——PHY 的时钟与对象都没就位。只有合并入口在
+/// `-Dcoex-ble-first=phy_deferred` 时置位；其余顺序里那一句照常调（不能拿 modem 标志是不是 0 来判：Wi-Fi 打开 PHY 走的是
+/// 适配层自己的 `_phy_enable`，libphy 的标志在默认顺序里也是 0）。
+pub var phy_deferred: bool = false;
 pub fn initPhy() void {
     if (!on_target) return;
     if (phy_owned_by_wifi) {
