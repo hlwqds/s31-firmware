@@ -43,22 +43,30 @@ jobs:
       - name: zig fmt --check
         run: scripts/check-fmt.sh
       - name: host test matrix
-        # 失败时把输出里失败工程的那几行放进注解：job 日志要管理员权限才读得到，注解匿名就能读
-        # （check-runs API）。每一步最多 10 条注解，所以只取第一个失败工程的 9 行加末尾的汇总行。
+        # 失败时把原因放进注解：job 日志要管理员权限才读得到，注解匿名就能读（check-runs API）。
+        # check-host.sh 只留每个失败工程输出的最后 8 行，所以失败后把它列出的工程各自再跑一遍拿完整汇总
+        # （全局缓存已热）；注解每一步最多 10 条，只取失败的步骤与它的后几行。再跑一遍如果过了，本身就是信息。
         run: |
           rc=0
           scripts/check-host.sh > /tmp/check-host.log 2>&1 || rc=$?
           cat /tmp/check-host.log
           if [ "$rc" -ne 0 ]; then
+            : > /tmp/check-host-full.log
+            for d in $(sed -n '/^failed projects:/,$p' /tmp/check-host.log | sed '1d;s/^ *//'); do
+              echo "===== $d: zig build test again, for the full summary =====" >> /tmp/check-host-full.log
+              r2=0
+              ( cd "$d" && "${ZIG:-zig}" build test --summary all --cache-dir "${RUNNER_TEMP:-/tmp}/zig-cache-rerun" ) >> /tmp/check-host-full.log 2>&1 || r2=$?
+              echo "re-run exit=$r2" >> /tmp/check-host-full.log
+            done
+            cat /tmp/check-host-full.log
             {
-              awk '/^FAIL  /{ if (!p) { p = 1; c = 0 } } p && c < 9 { print; c++ }' /tmp/check-host.log
-              grep -A 8 '^failed projects:' /tmp/check-host.log || true
-            } > /tmp/check-host-annot.txt
-            [ -s /tmp/check-host-annot.txt ] || tail -n 10 /tmp/check-host.log > /tmp/check-host-annot.txt
-            sed -e 's/\r$//' -e 's/%/%25/g' -e 's/::/%3A%3A/g' /tmp/check-host-annot.txt | head -n 10 \
+              grep -E 're-run exit=' /tmp/check-host-full.log || true
+              grep -E '^FAIL  ' /tmp/check-host.log || true
+              grep -v '^test failure$' /tmp/check-host-full.log | grep -E -A 3 --no-group-separator 'Build Summary| failure|error:|panic|expected|unreachable|signal [0-9]|Segmentation' || true
+            } | sed -e 's/\r$//' -e 's/%/%25/g' -e 's/::/%3A%3A/g' | head -n 10 \
               | while IFS= read -r line; do
                   echo "::error title=host test matrix failed::${line:0:3800}"
-                done
+                done || true
           fi
           exit "$rc"
       - name: unit coverage gate (module reachability + baselines)

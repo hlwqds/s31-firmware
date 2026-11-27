@@ -230,10 +230,11 @@
   两个 group 同开），四个组件的源码都不引用它。`build.zig` 由此回到 2f156fa 的状态。
 
 ### Changed
-- **CI 的 `host` 一步失败时把失败工程的输出放进注解**（2026-11-27 晚，`.github/workflows/ci.yml`）：job 日志的接口要求管理员
-  权限，匿名只能读到 check-run 的注解。`host test matrix` 一步改成先落盘再回显，失败时把第一个失败工程的 9 行与末尾的汇总行
-  以 `::error::` 注解发出（每步最多 10 条）。起因：2026-11-27 推送后 CI 在这一步失败（132 秒），本地按 CI 的方式冷跑五遍
-  （含 4 核 / 15 GB、打开文件数 1024、按带 AVX-512 的型号只编译）全过，没有日志定位不了。
+- **CI 的 `host` 一步失败时把原因放进注解**（2026-11-27 晚，`.github/workflows/ci.yml`）：job 日志的接口要求管理员权限，
+  匿名只能读到 check-run 的注解。`host test matrix` 一步改成先落盘再回显；失败后把 `check-host.sh` 列出的失败工程各自再跑一遍
+  拿完整汇总（它自己只留最后 8 行），把失败的步骤与后几行以 `::error::` 注解发出（每步最多 10 条）。起因：2026-11-27 推送后
+  CI 在这一步失败（132 秒，`firmware` 工程），本地按 CI 的方式冷跑五遍（含 4 核 / 15 GB、打开文件数 1024、按带 AVX-512 的
+  型号只编译）全过，没有日志定位不了。
 - **e2e 板级抓取窗口按 profile 配置：`wifi` 60 秒、`full` 90 秒，其余仍是 30 秒**（`tests/e2e/run_e2e.py` 的 `capture_s`）。
   依据是量过的自检耗时。新工具 `tools/qemu-instr` 把同一份 riscv32 ReleaseSmall 代码放到 QEMU 的 `virt` 机器上，开
   `-icount shift=0` 读 `minstret`，得到精确的指令数；板上每条指令的周期数用 `logs/c7-perf-tiers.log` 的实测校准
