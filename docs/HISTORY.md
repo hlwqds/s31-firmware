@@ -336,9 +336,9 @@
   `_coex_schm_flexible_period_get` 回 1，探针的 init 不再直接调核——不开 `-Dcoex` 的镜像不再需要 `libcoexist.a`。
 - **板子回别人的 ping**：工作站 `ping` 板子，两遍 Wi-Fi 链路里板子答了 97 + 118 帧，工作站收到 215 个应答，逐遍对得上（37/37）。
 - **「BLE 先起」**：PHY 由 BLE 的 init 打开时 Wi-Fi 只扫到 4 个 AP（时钟位都在，是标定的问题）；PHY 没开就做 controller 的 init，
-  第 7 步停机；先按 Wi-Fi 的路径打开 PHY、再做 BLE 的 init、最后 Wi-Fi start，Wi-Fi 照常（36/36）。不能反的是「谁打开 PHY」，
+  第 7 步停机（2026-11-28 更正，见上一节）；先按 Wi-Fi 的路径打开 PHY、再做 BLE 的 init、最后 Wi-Fi start，Wi-Fi 照常（36/36）。不能反的是「谁打开 PHY」，
   不是 controller 的先后；默认顺序不变。
-- **下电路径**：只属于 BLE 的时钟位关了、时钟源写回、Wi-Fi 与 PHY 的位一个不少（三轮相同）。controller 的八步之间要留时间：
+- **下电路径**：只属于 BLE 的时钟位关了、时钟源写回、Wi-Fi 与 PHY 的位一个不少（三轮相同）。controller 的八步之间要留时间（2026-11-28 作废，见上一节）：
   连着做之后 Wi-Fi 36 秒里扫不到 AP（25/28），每步之间空转 2.5 秒或扫一次都正常（28/28）。
 - **分区表与 compiler_rt**：量过，不用动——最大的合并镜像 1 261 424 B（factory 的 82.1%）；compiler_rt 合并镜像 6 604 B、
   默认镜像 782 B（`firmware/build.zig` 里「193 KB 死重」那条注是旧工具链的读数，已更正）。

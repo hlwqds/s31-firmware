@@ -243,14 +243,14 @@
     215 个应答，逐遍对得上（37/37）。
   - **`-Dcoex-ble-first=phy_ble` / `phy_deferred` / `phy_wifi_first`**：起手顺序反过来（BLE 先 `bringup.init`，Wi-Fi 再
     `esp_wifi_start`）的三个单变量对照。PHY 由 BLE 的 init 打开时 Wi-Fi 只扫到 4 个 AP（时钟位都在——是标定的问题）；PHY 没开就做
-    controller 的 init，第 7 步停机；**先按 Wi-Fi 的路径打开 PHY（`init_probe.zig` 的 `phyEnableWifiOwned`，照 blob 在 start 里的
+    controller 的 init，第 7 步停机（2026-11-28 更正：停的是 init 里那句 `esp_phy_enable(2)`，见本文件上一条）；**先按 Wi-Fi 的路径打开 PHY（`init_probe.zig` 的 `phyEnableWifiOwned`，照 blob 在 start 里的
     前两步：`_wifi_clock_enable`、`_phy_enable`）、再做 BLE 的 init、最后 Wi-Fi start**，Wi-Fi 照常（36/36）。不能反的是「谁打开
     PHY」，不是 controller 的先后；默认顺序不变。
   - **`-Dcoex-ble-disable`**（要求 `-Dcoex-ble-enable`）：第一遍 Wi-Fi 链路之后照 IDF `bt_controller_disable`（`esp32s31/bt.c:124-145`）
     把 BLE 关掉，拆成八步（`bt-blobs/src/probe.zig` 的 `DownStep`：主上下文等 controller 任务的时候由 `osiOnIdle` 把它泵起来，
     每一步最多 3 秒）。时钟这一半：`porting.zig` 的 `btdmLpDisableClock` 只清只属于 BLE 的门控位、把时钟源写回 BLE 来之前的读数，
     `btdmCoexDisable` 让共存核的使能计数减一；`radio-coex/src/owner.zig` 的 `clocks` 多了 `only()`（只属于一个模块的位）。板上三轮
-    读数相同：只属于 BLE 的位关了，Wi-Fi 与 PHY 的位一个不少。controller 那一半有条前提——八步之间要留时间：连着做之后 Wi-Fi
+    读数相同：只属于 BLE 的位关了，Wi-Fi 与 PHY 的位一个不少。controller 那一半有条前提——八步之间要留时间（**2026-11-28 作废**，见本文件上一条）：连着做之后 Wi-Fi
     36 秒里扫不到 AP（25/28），每步之后空转 2.5 秒（`-Dcoex-ble-down-scan=false -Dcoex-ble-down-gap=<ms>`）或扫一次（默认）都正常
     （28/28）；隔多久、隔在哪几步之间没有定。
 - **L4b 第二组与路线图 C8：持续的 Wi-Fi 流量、启动回调、PTI、LE Set Host Channel Classification（2026-11-27）**：合并镜像加

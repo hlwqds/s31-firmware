@@ -210,7 +210,7 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
 **实现记录（2026-11-27 晚，路线图 C9，`coex-verification.md` §20）。**
 
 - **「BLE 先起」的顺序，三个单变量对照**（`-Dcoex-ble-first`）：PHY 由 BLE 的 init 打开时，时钟位都在、Wi-Fi 仍只扫到 4 个 AP——
-  是标定的问题，不是时钟的（上面补记 2 的结论在时钟并集之上成立）；PHY 没开就做 controller 的 init，`bringup.init` 第 7 步停机；
+  是标定的问题，不是时钟的（上面补记 2 的结论在时钟并集之上成立）；PHY 没开就做 controller 的 init，`bringup.init` 第 7 步停机（补记 4 更正）；
   **先按 Wi-Fi 的路径打开 PHY（`init_probe.phyEnableWifiOwned`，照 blob 在 `esp_wifi_start` 里的前两步 `_wifi_clock_enable`、
   `_phy_enable`）、再做 BLE 的 init、最后 Wi-Fi start**，Wi-Fi 照常（扫描 32 个 AP，两遍链路都通，36/36）。规则精确成一句：
   **PHY 的一次性初始化与标定必须由 Wi-Fi 的路径先做；做完之后两个 controller 的先后可以换。** 默认顺序不变（Wi-Fi 先起）。
@@ -218,7 +218,7 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   （`bt-blobs/src/probe.zig` 的 `DownStep`）；时钟这一半按上面的规则 2 落实——`porting.btdmLpDisableClock` 只清只属于 BLE 的位
   （`CLK_CONF1` bit16-18、`CLK_CONF` 的 ETM 与 modem 安全模块、BLE 定时器、`LPCON` 的 LP 定时器时钟），与 Wi-Fi、PHY 共用的位
   不动，时钟源写回 BLE 来之前的读数；板上三轮读数相同，Wi-Fi 与 PHY 的位一个不少。`LPCON` bit1（共存时钟）归共存核，不算
-  BLE 的。**controller 的八步之间要留时间**：连着做（1.4 ms）之后 Wi-Fi 36 秒里扫不到 AP；每一步之后空转 2.5 秒或扫一次都正常
+  BLE 的。**controller 的八步之间要留时间**（补记 4 作废）：连着做（1.4 ms）之后 Wi-Fi 36 秒里扫不到 AP；每一步之后空转 2.5 秒或扫一次都正常
   （28/28）。隔多久、隔在哪几步之间，没有定。
 - **不开 `-Dcoex` 时的计数桩**也按 IDF 的关闭分支逐项对齐了（§20.5）：桩与胶水的 `Glue.off()` 现在是同一套值，不开 `-Dcoex`
   的镜像不再需要 `libcoexist.a`。
