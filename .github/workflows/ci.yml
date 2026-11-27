@@ -43,7 +43,24 @@ jobs:
       - name: zig fmt --check
         run: scripts/check-fmt.sh
       - name: host test matrix
-        run: scripts/check-host.sh
+        # 失败时把输出里失败工程的那几行放进注解：job 日志要管理员权限才读得到，注解匿名就能读
+        # （check-runs API）。每一步最多 10 条注解，所以只取第一个失败工程的 9 行加末尾的汇总行。
+        run: |
+          rc=0
+          scripts/check-host.sh > /tmp/check-host.log 2>&1 || rc=$?
+          cat /tmp/check-host.log
+          if [ "$rc" -ne 0 ]; then
+            {
+              awk '/^FAIL  /{ if (!p) { p = 1; c = 0 } } p && c < 9 { print; c++ }' /tmp/check-host.log
+              grep -A 8 '^failed projects:' /tmp/check-host.log || true
+            } > /tmp/check-host-annot.txt
+            [ -s /tmp/check-host-annot.txt ] || tail -n 10 /tmp/check-host.log > /tmp/check-host-annot.txt
+            sed -e 's/\r$//' -e 's/%/%25/g' -e 's/::/%3A%3A/g' /tmp/check-host-annot.txt | head -n 10 \
+              | while IFS= read -r line; do
+                  echo "::error title=host test matrix failed::${line:0:3800}"
+                done
+          fi
+          exit "$rc"
       - name: unit coverage gate (module reachability + baselines)
         run: |
           mkdir -p reports
