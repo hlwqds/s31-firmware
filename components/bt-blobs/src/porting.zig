@@ -624,6 +624,41 @@ pub fn btdmCoexEnable() c_int {
     return 0;
 }
 
+/// `btdm_coex_disable()`：软件共存未开 ⇒ 什么都不做；开了 ⇒ `coex_disable()`（使能计数里属于 BLE 的那一次减一）。
+pub fn btdmCoexDisable() void {
+    if (coex_gate.enabled) radio_coex.ble.btdm_coex_disable();
+}
+
+/// `btdm_lp_disable_clock` 的对应物：IDF 在 `bt_controller_deinit` 里调它（`esp32s31/bt.c:112`），实现在闭源库里。
+/// 这里把 `btdmLpEnableClock` 置过的、**只属于 BLE** 的门控位清掉——按单元表（`radio-coex/src/owner.zig` 的 `clocks`，
+/// 照 IDF `modem_clock_impl.c` 的依赖表）逐位算过，Wi-Fi 与 PHY 都不依赖它们：
+///
+///   - `MODEM_SYSCON_CLK_CONF1` bit16-18：BT_APB、BT_I154_COMMON_BB、BLE_MAC；
+///   - `MODEM_SYSCON_CLK_CONF`：ETM（22）、modem 安全模块 sec_apb / sec_bah / sec_ccm / sec_ecb / sec（25-29）、BLE 定时器（30）；
+///   - `MODEM_LPCON_CLK_CONF` bit3：LP timer，BLE 调度器的时基。
+///
+/// 与 Wi-Fi、PHY 共用的位不动：`CLK_CONF1` bit7（WIFI_BB_80X1）与 PHY 前端那几位、LPCON 的 wifipwr（bit0）。时钟源
+/// （`HP_SYS_CLKRST_MODEM_CONF`）写回 `modem_conf_restore`——调用方在 BLE 来之前拍的读数，BLE 放手之后不该由它替 Wi-Fi
+/// 决定。强开位（`CLK_CONF_FORCE_ON`）不动：那几位同时顶着 PHY 前端，Wi-Fi 还在用（清不清留作单变量对照）。
+/// 与 enable 一样读回自证。
+pub fn btdmLpDisableClock(modem_conf_restore: u32) void {
+    if (!lp_clock_enabled) return;
+    lp_clock_enabled = false;
+    if (!clock_writes_enabled) {
+        osal.logPublic("bt lp: clock writes SKIPPED (control run)", .{});
+        return;
+    }
+    const own_conf = b_conf_etm | b_conf_sec_apb | b_conf_sec_bah | b_conf_sec_ccm | b_conf_sec_ecb | b_conf_sec | b_conf_ble_timer;
+    const own_conf1 = b_conf1_bt_apb | b_conf1_btbb | b_conf1_btmac;
+    wr(reg_clk_conf1, rd(reg_clk_conf1) & ~own_conf1);
+    wr(reg_clk_conf, rd(reg_clk_conf) & ~own_conf);
+    wr(reg_lpcon_clk_conf, rd(reg_lpcon_clk_conf) & ~b_lpcon_clk_lp_timer_en);
+    wr(reg_hp_clkrst_modem_conf, modem_conf_restore);
+    osal.logPublic("bt lp: clocks released: clk_conf=0x{x:0>8} clk_conf1=0x{x:0>8} lpcon=0x{x:0>8} modem_conf=0x{x:0>8}", .{
+        rd(reg_clk_conf), rd(reg_clk_conf1), rd(reg_lpcon_clk_conf), rd(reg_hp_clkrst_modem_conf),
+    });
+}
+
 /// 只在目标构建里引用归档符号；主机侧返回 0（主机没有 msys 子系统）。
 pub fn bleMsysInit() c_int {
     if (@import("builtin").os.tag != .freestanding) return 0;
@@ -803,6 +838,42 @@ test "porting: BLE 开时钟只置自己的位，Wi-Fi 已有的时钟位一个�
     btdmLpEnableClock(&c.btdm);
     try std.testing.expectEqual(@as(u32, 0x003F_FFFF), rd(reg_clk_conf1));
     try std.testing.expectEqual(@as(u32, 0x0000_000F), rd(reg_lpcon_clk_conf));
+}
+
+test "porting: BLE 关时钟只清自己的位，与 Wi-Fi、PHY 共用的位一个不掉；没开过关不了，时钟源写回调用方给的值" {
+    // 与上一条同一个起点：Wi-Fi start 之后的读数。
+    host_regs = @splat(.{});
+    lp_clock_enabled = false;
+    wr(reg_clk_conf1, 0x0038_E7FF);
+    wr(reg_clk_conf, 0x0020_1002);
+    wr(syscon_base + 0x08, 0x0000_0000);
+    wr(reg_lpcon_clk_conf, 0x0000_0005);
+    wr(reg_hp_clkrst_modem_conf, 0x0000_0025);
+    const c = config.defaults();
+
+    // 没开过时钟：关是空操作（这些字一个不动）。
+    btdmLpDisableClock(0x0000_0025);
+    try std.testing.expectEqual(@as(u32, 0x0038_E7FF), rd(reg_clk_conf1));
+    try std.testing.expectEqual(@as(u32, 0x0000_0025), rd(reg_hp_clkrst_modem_conf));
+
+    btdmLpEnableClock(&c.btdm);
+    btdmLpDisableClock(0x0000_0025);
+
+    // CLK_CONF1：BT 的三位（16-18）没了；Wi-Fi 的 0-10 位、PHY 前端、两边共用的 wifibb_80x1（bit7）原样在。
+    try std.testing.expectEqual(@as(u32, 0x0038_FFFF), rd(reg_clk_conf1));
+    // CLK_CONF：BLE 的七位没了，PHY 的模拟前端配置还在。
+    try std.testing.expectEqual(@as(u32, 0x0020_1002), rd(reg_clk_conf));
+    // LPCON：BLE 的 LP 定时器时钟（bit3）没了；Wi-Fi 的 wifipwr、共存的 coex、PHY 的 i2c_mst 不动。
+    try std.testing.expectEqual(@as(u32, 0x0000_0007), rd(reg_lpcon_clk_conf));
+    // 强开位不清（PHY 前端还靠着它）；时钟源写回调用方给的值。
+    try std.testing.expectEqual(@as(u32, 0x0000_00F8), rd(syscon_base + 0x08));
+    try std.testing.expectEqual(@as(u32, 0x0000_0025), rd(reg_hp_clkrst_modem_conf));
+
+    // 关过一次之后再关是空操作：不清掉别人后来置的位，也不再去写时钟源。
+    wr(reg_clk_conf1, rd(reg_clk_conf1) | (1 << 18));
+    btdmLpDisableClock(0x0000_003D);
+    try std.testing.expectEqual(@as(u32, 0x0038_FFFF | (1 << 18)), rd(reg_clk_conf1));
+    try std.testing.expectEqual(@as(u32, 0x0000_0025), rd(reg_hp_clkrst_modem_conf));
 }
 
 test "porting: 单独跑（寄存器是复位值）时开时钟后的读数与原来的整字写相同" {

@@ -1318,29 +1318,25 @@ fn shellSlowclkCalGet() callconv(.c) u32 {
 }
 
 // ---------------------------------------------------------------------------
-// coex 家族：**先只做可观测**。ROM 的 coex 调度器（`coexist_funcs`=0x2f07ff9c、
-// `g_coa_funcs_p`=0x2f07ff98）会回调这些 app 侧钩子；它们一直是空桩，调度器拿不到
-// interval/status，"可以开始发"的回调永远不会到 —— 与 MAC 的 TX/RX 一直 busy 吻合。
-// 这一轮先看**谁被调用**，再决定实现语义。
+// coex 家族的计数桩：不开 `-Dcoex` 的镜像里 blob 调到的就是它们。**每个都按 IDF 的关闭分支作答**
+// （`components/esp_wifi/esp32s31/esp_adapter.c` 里各包装的 `#else`，逐项对照的表在
+// `docs/verification/coex-verification.md` §20）：返回 0（只有 `coex_schm_flexible_period_get` 回 1）、不写
+// 出参、不碰共存核。要看真核怎么答，开 `-Dcoex`（钩子换成胶水，`radio-coex/README.md`）。
+//
+// 这条纪律是 2026-11-26 的板上对照换来的：`_coex_pti_get` 的桩原先把出参写成 0，blob 把 PTI 0 编进 MAC 的
+// PTI 表、收不到任何帧（§13）。之后留着没核的两处——`coex_init` / `coex_enable` 的桩去调 `libcoexist.a` 的
+// 真函数（IDF 的关闭分支不调）、`flexible_period_get` 落在具名桩上回 0（IDF 回 1）——路线图 C9 对齐。
+// `note()` 照旧：被调了几次、带什么参数，探针日志里看得到。
 // ---------------------------------------------------------------------------
-/// **实验开关**：`true` 时 `_coex_init` 返回非 0（模拟"coex 不可用"）。
-/// 动机：我们序列里有 coex 调度簇（11 连发 timer_setfn + schm_interval_set），IDF 侧没有 ——
-/// 若那是"polluted by our coex stubs returning success"，改成失败后应消失。
-/// 三态判据：呼叫消失+MAC_ST 清 ⇒ coex 是门闩；消失但不清 ⇒ 旁支；init 直接失败 ⇒ coex 必需。
-const coex_init_fail: bool = false;
 
 fn shellCoexInit() callconv(.c) usize {
     note(24, 0, 0); // 24 = coex_init（原来用 23，与 wifi_reset_mac 撞）
-    // `libcoexist.a` 里就有真正的 `coex_init()`（我们链接了它）。
-    const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
-    f();
-    return if (coex_init_fail) 1 else 0;
+    // `coex_init_wrapper` 的 `#else`（`esp_adapter.c:439-440`）：回 0，不调核。
+    return 0;
 }
 fn shellCoexEnable() callconv(.c) usize {
     note(24, 0, 0);
-    // 空桩时 blob 的 coex 从未真正使能；`coex_enable()` 在 libcoexist.a 里。
-    const f = @extern(*const fn () callconv(.c) void, .{ .name = "coex_enable" });
-    f();
+    // `coex_enable_wrapper` 的 `#else`（`esp_adapter.c:455-456`）：回 0，不调核的 `coex_enable()`。
     return 0;
 }
 fn shellCoexStatusGet() callconv(.c) usize {
@@ -1369,6 +1365,11 @@ fn shellCoexSchmIntervalSet(interval: u32) callconv(.c) usize {
 fn shellCoexRegisterStartCb(cb: ?*anyopaque) callconv(.c) usize {
     note(30, @intFromPtr(cb), 0);
     return 0;
+}
+/// `coex_schm_flexible_period_get_wrapper` 的 `#else`（`esp_adapter.c:611-612`）：不开功耗管理时 IDF 回 **1**。
+/// 具名桩一律回 0，所以这一个单独写。不打 `note()`：回的是常量。
+fn shellCoexSchmFlexiblePeriodGet() callconv(.c) usize {
+    return 1;
 }
 
 /// `_wifi_clock_enable/disable` 与 `_wifi_reset_mac`：IDF `esp_adapter.c` 三个包装的移植——
@@ -1772,6 +1773,7 @@ pub fn makeTable() osi.Osi {
     t._coex_wifi_release = @ptrCast(&shellCoexWifiRelease);
     t._coex_schm_interval_set = @ptrCast(&shellCoexSchmIntervalSet);
     t._coex_register_start_cb = @ptrCast(&shellCoexRegisterStartCb);
+    t._coex_schm_flexible_period_get = @ptrCast(&shellCoexSchmFlexiblePeriodGet);
     // 这三个曾长期是空桩：blob 的 MAC 时钟/复位路径全靠它们（静态引用 19/5 处）。
     t._wifi_clock_enable = @ptrCast(&shellWifiClockEnable);
     t._wifi_clock_disable = @ptrCast(&shellWifiClockDisable);
@@ -1898,6 +1900,7 @@ pub const implemented = [_][]const u8{
     "_coex_pti_get",
     "_coex_schm_interval_set",
     "_coex_register_start_cb",
+    "_coex_schm_flexible_period_get",
     "_slowclk_cal_get",
     "_log_write",
     "_log_writev",
@@ -1928,7 +1931,6 @@ pub const unimplemented = [_][]const u8{
     "_regdma_link_set_write_wait_content",
     "_sleep_retention_find_link_by_id",
     "_coex_schm_flexible_period_set",
-    "_coex_schm_flexible_period_get",
     "_coex_schm_get_phase_by_idx",
     "_coex_configure_preemption_end_cb",
     "_wifi_disable_ac_ax",

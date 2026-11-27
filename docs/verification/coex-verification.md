@@ -34,6 +34,11 @@
 | AP 侧的证据（OpenWrt AP，2026-11-26 晚） | L3 | AP 的系统日志里，修之前的每一轮都是「板子没有确认认证响应」——发得出、收不到；最终形态是完整序列，AP 看板子 -24 dBm、双向 86 Mbit/s、15 秒里重传 0–1 次。只跳过第 15 步时，AP 发给板子的帧放弃 51 次（共 51 帧）、速率压到 6–8.6 Mbit/s，而信号一样强：退化在板子的接收侧。板子的 ARP 应答能跨过 AP 的桥到达同网段的另一台主机；板子不回应别人的回显请求（数据通路的缺口，与共存无关）。空口上的帧见下一行 | `logs/coex-merged-wifi-link-ap-syslog.log`、`logs/coex-merged-wifi-link-ap-side.log`；§15.8 |
 | 空口上的帧（AP 上临时 monitor 接口，2026-11-27 凌晨） | L4 | 最终形态、E 的第三次、C 的第二次、B 的第三次、D 的第三次，共 373 帧。板子发来的帧在五个轮次里都是 -21 到 -28 dBm（扫描掉到 2–3 个 AP 的三轮也一样）：板子的发射没有坏。连上的四轮，空口上的关联过程同序同间隔（消息 1 之后 260–262 ms 才有消息 2，最终形态也是这样）。C 那一轮板子的认证请求、关联请求都到了 AP，AP 也都答了（关联应答是「成功、AID 1」），但 hostapd 没留下这个站点，消息 1 从来没有发出 | `logs/coex-merged-wifi-link-ap-frames.log`；§15.9 |
 | 时钟域按单元取并集（2026-11-27） | L4 | BLE init / enable / 整轮 Wi-Fi 链路之后共享字都是两边的并集（`CLK_CONF1=0x003FFFFF`、`CLK_CONF=0x7E601002`、LPCON=0x0F、时钟源 0x3D），不再有事后写回；基线 38 个 AP、之后 34 个，连上、DHCP、ping 10/10，20/20。判据在第一次上板时抓到了 Wi-Fi 自己的 enable / disable 钩子里的两处整字写 | `logs/coex-merged-wifi-link-union-boot.log`；§16 |
+| 路线图 C9：板子回别人的 ping（2026-11-27 晚） | L4 | 工作站 ping 板子，两遍 Wi-Fi 链路里板子答了 97 + 118 帧，工作站收到 215 个应答，逐遍对得上；37/37 | `logs/coex-merged-c9-pingin-boot.log`；§20.2 |
+| 路线图 C9：「BLE 先起」的顺序（2026-11-27 晚） | L4 | 三个单变量对照：PHY 由 BLE 的 init 打开时 Wi-Fi 只扫到 4 个 AP（时钟位都在，是标定的问题）；PHY 没开就做 controller 的 init，第 7 步停机；**先按 Wi-Fi 的路径打开 PHY、再做 BLE 的 init、最后 Wi-Fi start**，扫描 32 个 AP、两遍链路都通，36/36。不能反的是「谁打开 PHY」，不是 controller 的先后 | 三份 `logs/coex-merged-c9-blefirst-*-boot.log`；§20.3 |
+| 路线图 C9：BLE 的下电路径（2026-11-27 晚） | L4 | 照 IDF `bt_controller_disable` 的顺序关 BLE：只属于 BLE 的时钟位关了、时钟源回到 BLE 来之前、Wi-Fi 与 PHY 的位一个不少（三轮相同）。controller 的八步之间要留时间：连着做之后 Wi-Fi 36 秒里扫不到 AP（25/28）；每步之后空转 2.5 秒或扫一次都正常（28/28）。隔多久、隔在哪几步之间，没有定 | 三份 `logs/coex-merged-c9-bledown-*-boot.log`；§20.4 |
+| 路线图 C9：计数桩对齐 IDF 的关闭分支（2026-11-27 晚） | L1 / L4 | 23 个钩子逐项对过，三处改齐（`_coex_init` / `_coex_enable` 不再调核、`_coex_schm_flexible_period_get` 回 1、探针的 init 关着共存时不再调核）；不开 `-Dcoex` 的镜像不再链 `libcoexist.a`，单独的链路探针回归照常（32 个 AP、ping 10/10） | `logs/wifi-link-stubs-aligned-boot.log`；§20.5 |
+| 路线图 C9：分区表与 compiler_rt（2026-11-27 晚） | L2 | 都不用动：最大的合并镜像 1 261 424 B，是 factory 的 82.1%；compiler_rt 在合并镜像里 36 个符号 6 604 B、默认镜像里 782 B，没有 f128 的例程 | §20.6 |
 
 ## 2. C0 调研与设计（2026-11-24）
 
@@ -1767,3 +1772,193 @@ ADR-003 第 5 节写的判据是「硬件定时器的数值在两次读数之间
 - 读数函数曾把主栈溢出 26 KB：已修，加了高水位的判据。§17–§18 里定时器的读数作废（读错了地址与位），其余读数不受影响。
 - 没有做的：AP 侧与空口采集这一轮没做；时延涨在哪一段；可连接广播（定时器是否在数、信道分类有没有被用，都要连接才有数据
   信道）；每个配置只跑了一轮。
+
+## 20. 路线图 C9：收尾的六项（2026-11-27 晚）
+
+路线图 C9 列的六件事：其余钩子的计数桩与 IDF 关闭分支的逐项对照、BLE 的 disable 路径、「BLE 先起」的顺序、板子回别人的 ping、
+分区表扩大、compiler_rt 死重。镜像仍然只编 `coex_merged`（`scripts/build-coex-link-image.sh`），每一轮只改一个开关。日志经
+`tools/ap-side/redact.py` 脱敏；停机现场的原始转储（栈与通用寄存器）换成 `[REDACTED]`，`mepc` / `mtval` / `cause` 行保留。
+
+### 20.1 做法
+
+三个新开关（都要求 `-Dcoex-wifi-link`；不给就是原来的行为，默认镜像与其余日志不变）：
+
+| 开关 | 作用 | 落点 |
+| --- | --- | --- |
+| `-Dcoex-ping-in-ms=<n>` | 每一遍 Wi-Fi 链路 ping 网关之后留 n 毫秒，等外面的主机来 ping 板子 | `wifi-blobs/src/link_probe.zig`（`inboundPingWindow`）、`data_path.zig`（`handleEchoRequest`） |
+| `-Dcoex-ble-first=phy_ble` / `phy_deferred` / `phy_wifi_first` | 起手顺序反过来：BLE 先 `bringup.init`，Wi-Fi 再 `esp_wifi_start`；三种差在 PHY 的一次性初始化与标定由谁、在什么时候做 | `firmware/src/coex_merged.zig`、`wifi-blobs/src/init_probe.zig`（`phyEnableWifiOwned`） |
+| `-Dcoex-ble-disable` | 所有判据之后按 IDF `bt_controller_disable` 的顺序关 BLE，每一步之后扫一次全信道，最后让 Wi-Fi 再走一遍链路（要求 `-Dcoex-ble-enable`） | `bt-blobs/src/probe.zig`（`downBegin` / `downStep` / `downEnd`）、`porting.zig`（`btdmLpDisableClock`、`btdmCoexDisable`）、`coex_merged.zig`（`bleDownStep`） |
+
+另有两处不挂开关的改动：不开 `-Dcoex` 时计数桩按 IDF 的关闭分支作答（§20.5）；`radio-coex/src/owner.zig` 的 `clocks` 多了
+`only()`（只属于一个模块的位）与逐字的取与 / 取反 / 判空，供下电路径判「BLE 自己的单元关了、别人的还开着」。
+
+### 20.2 板子回别人的 ping
+
+**实现**（`wifi-blobs/src/data_path.zig`）。此前数据通路只认本机发出去的回显的应答，别人发来的回显请求一律丢掉——工作站
+ping 板子没有应答。现在 `handleFrame` 把 ICMP 按 type 分开：type 8 交给 `handleEchoRequest`。
+
+- 只答发给本机当前地址的请求（这一条原来就卡着），所以广播的请求不答——RFC 1122 §3.2.2.6 允许不答，本工程的取舍写在
+  `icmp.mayReply`；没拿到租约时不答。
+- `code` 不是 0、校验和不对的请求丢掉（RFC 1122 §3.2.2）。
+- 应答用 `icmp.echoReplyFrom`：id、序号、载荷一字不改，只把 type 改成 0、重算校验和（RFC 792 的 Echo Reply）。以太网目的地址取
+  请求帧的源地址——跨网段来的请求，回给它的下一跳。IP 包正好 1500 字节（载荷 1472）的请求答得出来。
+- 每答一帧一个事件（日志 `ping answered id=… seq=… from …`），统计里多两项：`echo_requests`、`echo_replies`。
+
+主机用例（`data_path.zig`）：应答帧逐层对得上（以太网、IP、ICMP 的 type / code / id / 序号 / 载荷 / 校验和），载荷取到上限；
+坏校验和、code 不是 0、发给别的地址、租约到期之后都不答，也不计进统计。
+
+**板上。** 在 §19 的最终配置上再加 `-Dcoex-ping-in-ms=8000`（1 261 024 B）。板侧判据两条，每遍链路一条：这一遍里至少答过一帧。
+工作站那边在烧录之后起 `ping -n -c 1000 -i 0.2 -W 1 192.168.31.151`（板子从 AP 的 DHCP 拿到的还是这个地址）。
+
+| 遍 | BLE 的状态 | 扫到的 AP | ping 网关 | 板子答了几帧 | 其中窗口开始前 | 工作站收到的应答 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 第一遍 | enable，不广播 | 30 | 300/300，rtt 最小 / 平均 / 最大 1.7 / 3.5 / 23.2 ms | 97 | 71 | 97（`icmp_seq` 31–127） |
+| 第二遍 | 广播中 | 35 | 300/300，1.9 / 40.9 / 93.6 ms | 118 | 91 | 118（`icmp_seq` 193–310） |
+
+板侧 37/37（§19 的 35 条加两条），`verdict=pass`，一次复位。工作站共 215 个应答，与板侧 97 + 118 逐遍对得上；应答时间最小
+1.29 ms、中位 38.1 ms、九成在 146 ms 以内、最大 450 ms。
+
+两点说明。其一，板子只要拿到了地址就答，不是只在窗口里答：窗口开在 ping 网关那一段之后，开的时候 71 帧已经答过了，
+所以「答够 4 帧」立刻成立、窗口 0 ms 就结束（`inbound ping window: answered 71 of 4 wanted in 0 ms`）。窗口开关留着，是为了给
+「外面来 ping」保一段确定的时间，不让链路在 ping 网关之后马上断。其二，工作站的 `ping` 没有打出汇总行：板子第二遍断开之后
+邻居表项失效，`sendmsg` 回 `No route to host`，进程就退了；数取自逐行的 `bytes from`。
+
+日志 `logs/coex-merged-c9-pingin-boot.log`。
+
+### 20.3 「BLE 先起」的顺序：三个单变量对照
+
+§15 的结论是「Wi-Fi 先 start，BLE 的 init 跳过 PHY 那两段」，并记着两种反例都让 Wi-Fi 收不到帧。那时时钟域还是整字覆盖
+（§16 之前），BLE 先 init 也会把 Wi-Fi 的时钟位清掉，「收不到帧」的两个可能原因没有分开。这一轮在最终的镜像上把顺序当成
+唯一的变量，三种各一轮（镜像只差 `-Dcoex-ble-first` 的取值）：
+
+| 取值 | PHY 的一次性初始化与标定 | 结果 | app.bin | 日志 |
+| --- | --- | --- | --- | --- |
+| `phy_ble` | BLE 的 init 做（不调 `setPhyOwnedByWifi`，与 §15 的反例相同） | 时钟位都在（Wi-Fi start 之后 `CLK_CONF1=0x003FFFFF`），但 Wi-Fi **收不到**：BLE init 之后的扫描只有 4 个 AP，两次连接都以 `reason=201` / `reason=4` 失败，6 条判据不过（26/32） | 1 260 848 B | `logs/coex-merged-c9-blefirst-phyble-boot.log` |
+| `phy_deferred` | BLE 的 init 跳过，等 Wi-Fi start 时做 | BLE 的 init **停机**：第 7 步 `btdm_lp_init` 里 load access fault（`exception code=5`，`mepc=0x2f824c72`、`mtval=0x193`），这一轮没有走到 Wi-Fi start | 1 261 152 B | `logs/coex-merged-c9-blefirst-phydeferred-boot.log` |
+| `phy_wifi_first` | BLE 的 init 之前先按 Wi-Fi 的路径打开（`phyEnableWifiOwned`），BLE 的 init 跳过 | **都正常**：标定数据 264 个非零字节；BLE init 返回 0；之后的扫描 32 个 AP；两遍链路都连上、DHCP、ping 300/300；36/36，`verdict=pass` | 1 261 424 B | `logs/coex-merged-c9-blefirst-phywififirst-boot.log` |
+
+结论分三层：
+
+- **不能反的是「谁打开 PHY」，不是 controller 的先后。** PHY 由 BLE 的 init 打开时，Wi-Fi 之后的扫描从三十多个 AP 掉到 4 个
+  ——时钟位全在（三个时点的并集核对都过），所以这不是时钟的问题，是标定：Wi-Fi start 时 `register_chipv7_phy` 什么都不做
+  （§15.2）。§15 把「收不到帧」归到时钟覆盖上的可能性排除。
+- **controller 的 init 要在 PHY 开着的时候做。** `phy_deferred` 里 BLE 的 init 在 PHY 没开时走到第 7 步就停机。IDF 自己是把
+  `esp_phy_enable(PHY_MODEM_BT)` 放在 enable 里的（`btdm_lp.c:255`、`:446`），init 不碰 PHY；我们这一版的 init 在 PHY 没开时
+  为什么在第 7 步取空指针，没有往下查 [INFERENCE：`porting.btdmLpInit` 里那几个 `r_btdm_hal_*` 用到了 PHY 初始化才置的指针]。
+- **所以支持的第二种顺序是**：先按 Wi-Fi 的路径把 PHY 打开并标定，再做 BLE 的 init（和 enable），最后 Wi-Fi `esp_wifi_start`。
+  `phyEnableWifiOwned` 照 blob 在 `esp_wifi_start` 里的前两步做——先 `_wifi_clock_enable`，再 `_phy_enable`。第一版只调了
+  `_phy_enable`，`register_chipv7_phy` 直接停住（抓了 200 秒，停在 `trace icg_write` 之后）：校准期间要 Wi-Fi 的基带时钟。
+  start 之后再调这两个钩子是幂等的（时钟位重申；`shellPhyEnable` 见 modem 已经开着回 0）。这一种顺序下的读数与默认顺序
+  同一个量级：两遍 ping 的 rtt 平均 3.5 ms / 29.1 ms（§19 与本轮默认顺序的两遍分别是 2.4–3.5 ms 与 26–41 ms），合成器约
+  16 ms 锁定，信道分类照常收下、照常拒掉带保留位的图。
+
+合并镜像的默认顺序不变（Wi-Fi 先起）。`phy_wifi_first` 留作开关：应用要先起 BLE 时，PHY 这一步必须由 Wi-Fi 的路径先做。
+
+### 20.4 BLE 的下电路径
+
+**做法。** 照 IDF `bt_controller_disable`（`components/bt/controller/esp32s31/bt.c:124-145`）把 enable 的每一步倒回去，拆成八步
+（`bt-blobs/src/probe.zig` 的 `DownStep`）：`r_btdm_task_disable`、`r_btdm_hci_fc_disable`、`r_conn_stack_disable`、
+`r_base_stack_disable`（本仓用这两个替 IDF 的 `ble_stack_disable`）、`btdm_coex_disable`（共存核的使能计数里属于 BLE 的那一次减一）、
+`esp_btbb_disable`、`esp_phy_disable`（modem 2；本仓的 `btdmLpReset` 是空的，enable 时显式做了反过来的两件）、`btdm_lp_disable_clock`
+（IDF 放在 deinit 里，bt.c:112；本仓是 `porting.btdmLpDisableClock`：只清**只属于 BLE** 的门控位——`CLK_CONF1` bit16-18、`CLK_CONF`
+的 ETM 与 modem 安全模块、BLE 定时器、`LPCON` 的 LP 定时器时钟——与 Wi-Fi、PHY 共用的位不动，时钟源写回 BLE 来之前的读数）。
+第 1 到 4 步是 controller 库里的函数：主上下文等的时候由 `osiOnIdle` 把 controller 任务泵起来（只在这条路径上开），每一步最多等
+3 秒。镜像 `BLE=1` 加 `-Dcoex-ble-disable`：第一遍 Wi-Fi 链路之后下电，核对时钟字，再让 Wi-Fi 走一遍链路（泵里不再有 BLE）。
+IDF 的 deinit 里剩下的几件（传输层、任务、内存池、日志）不做。
+
+判据七条：每一步都在 3 秒内返回；下电后 Wi-Fi 与 PHY 依赖的时钟位一个不少；只属于 BLE 的位都关了（例外：`LPCON` bit1 共存时钟
+归共存核，核还在替 Wi-Fi 做仲裁，`coex[ble-down]` 里 `en=1`）；时钟源回到 BLE 来之前的读数；下电后的扫描不低于基线的一半；
+连接与 DHCP；ping 跑完。
+
+**三轮，差别只在八步之间隔了什么**（开关：`-Dcoex-ble-down-scan` 默认每一步之后扫一次；`false` 是连着做，再加
+`-Dcoex-ble-down-gap=<ms>` 就是每一步之后让 Wi-Fi 空转）。
+
+| 轮 | 八步之间 | 每一步用时（µs） | 之后的扫描 | 板子检查 | 日志 |
+| --- | --- | --- | --- | --- | --- |
+| A | 每一步之后扫一次全信道（约 2.5 秒） | 1006 / 23 / 16 / 61 / 285 / 20 / 28 / 147 | 每一步之后 31–37 个 AP（基线 40）；最后一遍链路 32 个 AP、连上、DHCP 59 ms、ping 10/10 | **28/28**，`verdict=pass` | `logs/coex-merged-c9-bledown-stepwise-boot.log` |
+| B | 什么都不隔，约 1.4 ms 里连着做完 | 1049 / 13 / 7 / 43 / 187 / 11 / 17 / 87 | 之后 36 秒里连着扫 15 次，**每次 0 个 AP**（基线 31）；连接 `reason=201` | 25/28，`verdict=fail`（不过的三条：扫描、连接、ping） | `logs/coex-merged-c9-bledown-backtoback-boot.log` |
+| C | 每一步之后让 Wi-Fi 空转 2.5 秒（不扫描） | 988 / 21 / 7 / 50 / 249 / 11 / 17 / 108 | 之后 12 秒里 4 次：35、33、35、39 个 AP（基线 35）；最后一遍链路 34 个 AP、连上、DHCP 51 ms、ping 10/10 | **28/28**，`verdict=pass` | `logs/coex-merged-c9-bledown-paced-boot.log` |
+
+**时钟这一半（路线图 C9 写的就是这一半）成立**，三轮读数相同：下电后 `CLK_CONF=0x00201002`、`CLK_CONF1=0x0038FFFF`、时钟源
+`0x25`，与 BLE 来之前（Wi-Fi start 之后）的读数只差强开位与 `CLK_CONF1` 多出来的两位（bit8、bit15，多开无害）；只属于 BLE 的位
+下电前是 `CLK_CONF1=0x00070000`、`CLK_CONF=0x7E400000`、`LPCON=0x8`，下电后都是 0；Wi-Fi 与 PHY 依赖的位一个不少。
+第一次上板（步骤还没有拆开，每一步之后没有扫描）也是 25/28，时钟三条都过、扫描 0 个 AP，与 B 一致。
+
+**controller 那一半有条前提：八步之间要留时间。** 连着做之后 Wi-Fi 就收不到帧，36 秒里不恢复，两次上板一样；每一步之后空转
+2.5 秒（C）或扫一次（A）都正常——所以起作用的不是「Wi-Fi 在收发」，是时间。IDF 里这几个函数在任务上下文里调，前后自然有时间；
+本仓的调用几十微秒到 1 毫秒就返回了 [INFERENCE：controller 的关闭有异步的部分，后面的步骤或 Wi-Fi 抢在它前面]。最少要隔多久、
+隔在哪几步之间、等的是什么（controller 任务、定时器，还是射频的切换），这一轮没有定；两个开关留着，下一步按步二分。
+
+判据里「只属于 BLE 的位」一开始把 `LPCON` bit1 也算了进去，A 里它还开着（`0x7`）、判成不过：共存时钟归共存核，核还在替 Wi-Fi
+做仲裁，这一位不该关，判据已改；B、C 里它自己回到了关（`0x5`）。
+
+回归里顺手抓到一处：连接失败的那一遍把上一遍的 `dhcp=true ping=true stayed=true` 报了出去（`link_probe.zig` 的 `connectPhase()`
+没有清结果的标志），已修。A、B 的日志是修之前抓的：B 的 `result` 行与判据行里 `dhcp=1` 是上一遍的旧值（判据用的是 `connected`，
+结论不受影响）。
+
+### 20.5 计数桩与 IDF 关闭分支的逐项对照
+
+§13 挂账的「其余钩子没有逐项核」。不开 `-Dcoex` 的镜像里 blob 调到的是 `wifi-blobs/src/osi_impl.zig` 的计数桩；对照的依据是
+IDF `esp_wifi/esp32s31/esp_adapter.c` 里 23 个包装函数在 `#if` 不成立时的 `#else`（表在 796-822 行）。
+
+| osi 表项 | IDF 的包装（`esp_adapter.c`） | 关闭分支 | 此前 | 现在 |
+| --- | --- | --- | --- | --- |
+| `_coex_init` | `coex_init_wrapper`，435-442 | 回 0，不调核 | 调 `libcoexist.a` 的 `coex_init()`，回 0 | 回 0，不调核 |
+| `_coex_enable` | `coex_enable_wrapper`，451-458 | 回 0，不调核 | 调核的 `coex_enable()`，回 0 | 回 0，不调核 |
+| `_coex_schm_flexible_period_get` | `coex_schm_flexible_period_get_wrapper`，607-614（只看功耗管理） | 回 **1** | 落在具名桩上，回 0 | 单独的壳，回 1 |
+| `_coex_pti_get` | `coex_pti_get_wrapper`，512-519 | 回 0，不写出参 | 2026-11-26 已改成不写（§13） | 不变 |
+| `_coex_status_get`、`_coex_wifi_request`、`_coex_wifi_release`、`_coex_schm_interval_set` | 467-492、535-542 | 回 0 | 回 0 | 不变 |
+| `_coex_register_start_cb` | 571-578（只看软件共存） | 回 0 | 回 0 | 不变 |
+| `_coex_deinit`、`_coex_disable`、`_coex_schm_status_bit_clear`、`_coex_schm_status_bit_set` | 444-465、521-533 | 无返回值 | 具名桩（计数、回 0，没人看返回值） | 不变 |
+| `_coex_wifi_channel_set`、`_coex_event_duration_get`、`_coex_schm_interval_get`、`_coex_schm_curr_period_get`、`_coex_schm_curr_phase_get`、`_coex_schm_process_restart`、`_coex_schm_register_cb`、`_coex_schm_flexible_period_set`、`_coex_schm_get_phase_by_idx`、`_coex_configure_preemption_end_cb` | 494-510、544-569、580-605、616-632 | 回 0（`event_duration_get` 不写出参；两个取相位的回 `NULL`） | 具名桩（回 0，不写出参） | 不变 |
+
+23 个里对齐了三处：`_coex_init`、`_coex_enable` 不再调核，`_coex_schm_flexible_period_get` 回 1。还有一处在探针的 init 里：
+`wifi-blobs/src/init_probe.zig` 在关着 `-Dcoex` 时直接调过核的 `coex_init()`（注的是「IDF wrapper 顺序」）——那是 IDF **开着**
+共存时的顺序（`wifi_init.c:458` → 包装函数调核）；关着时包装函数回 0、不碰核（`esp_adapter.c:439-440`）。现在关着时什么都不调，
+不开 `-Dcoex` 的镜像也就不再需要 `libcoexist.a` 的 11 个成员。`bt-blobs/src/osi_impl.zig` 里那份 Wi-Fi osi 表是没有调用者的副本
+（从 `wifi-blobs` 分叉来的），三处照同样的口径改了，免得两份悄悄分叉。
+
+**主机**（`wifi-blobs/src/host_tests.zig`）：从表里取出每个钩子按 C 调用约定调一遍——返回值逐个等于上表的关闭分支，
+`pti_get` / `event_duration_get` 不写出参，两个取相位的回空指针；`_coex_init` / `_coex_enable` 调过之后，替身里核的计数没有动。
+
+**板上**（单独的 Wi-Fi 真实链路探针 `-Dwifi-link-probe`，不开 `-Dcoex`，对象集合不带 `libcoexist.a`）：`INIT OK`，扫描 32 个 AP
+（8.6 秒），2 564 ms 连上，DHCP 50 ms，ping 10/10（rtt 最小 / 平均 / 最大 1.8 / 4.4 / 10.5 ms），稳 5 秒，本地断开 `reason=8`；
+一次复位。与 §13 的 `connect-ag`（对齐之前，链着 `libcoexist.a`）同一个量级：37 个 AP、2 625 ms、DHCP 50 ms、10/10。blob 调这些桩的
+次数与那一轮相同（`_coex_schm_status_bit_set` / `_clear` 各 37 次、`_coex_event_duration_get` 13 次、`_coex_schm_flexible_period_set`
+3 次）。镜像 705 008 B；把那 11 个成员给回去也是 705 008 B——没人引用的归档成员本来就被链接器丢掉，所以这一项省的是依赖，不是体积。
+
+日志 `logs/wifi-link-stubs-aligned-boot.log`。
+
+### 20.6 分区表与 compiler_rt：量过了，不用动
+
+- **分区表**：这一轮最大的合并镜像是 `phy_wifi_first` 那一份，1 261 424 B，是 factory 分区（1 536 000 B）的 82.1%，还余约 275 KB
+  （迄今最大的是 §19 的 1 262 240 B）。ADR-003 第 3 节「等真有一个装不下的镜像时再扩」不变。
+- **compiler_rt**：带符号表构建（`BREAKDOWN=1`）后 `nm -S` 数 `compiler_rt.*` 的符号——合并镜像 36 个、6 604 B（最大的是
+  `add_f64` 884 B、`__divdf3` 838 B），占 `.flash.text`（965 664 B）的 0.7%；默认镜像 6 个、782 B（`__udivmoddi4` 等）。两份镜像里
+  都没有 f128 / long-double 的软浮点例程。背景里「约 193 KB / 492 符号的死重」是旧工具链的读数，没有可裁的东西；
+  `firmware/build.zig` 里那条注已更正。
+- **合并镜像的体积归属**（同一次带符号表的构建，1 260 224 B）：Wi-Fi blob text 304 350 B、BLE blob 358 272 B、共存核 5 166 B、
+  本仓的适配层与主机栈 249 434 B；`.flash.rodata` 169 648 B，其中没有符号的（字符串池、表）131 610 B。
+
+### 20.7 判据条数、日志与没有做的
+
+| 镜像 | 板侧判据 | 日志 |
+| --- | --- | --- |
+| §19 的最终配置 + `-Dcoex-ping-in-ms=8000` | 37/37（§19 的 35 条加两条「板子答过别人的 ping」） | `logs/coex-merged-c9-pingin-boot.log` |
+| 同上 + `-Dcoex-ble-first=phy_ble` | 26/32（不过的 6 条都是连接、DHCP、ping、稳 5 秒） | `logs/coex-merged-c9-blefirst-phyble-boot.log` |
+| 同上 + `-Dcoex-ble-first=phy_deferred` | 停在 BLE 的 init，没有判据 | `logs/coex-merged-c9-blefirst-phydeferred-boot.log` |
+| 同上 + `-Dcoex-ble-first=phy_wifi_first` | 36/36（多一条「PHY 由 Wi-Fi 的路径先打开」） | `logs/coex-merged-c9-blefirst-phywififirst-boot.log` |
+| `BLE=1` + `-Dcoex-ble-disable`（每一步之后扫描，默认） | 28/28 | `logs/coex-merged-c9-bledown-stepwise-boot.log` |
+| 同上 + `-Dcoex-ble-down-scan=false`（连着做） | 25/28 | `logs/coex-merged-c9-bledown-backtoback-boot.log` |
+| 同上 + `-Dcoex-ble-down-scan=false -Dcoex-ble-down-gap=2500` | 28/28 | `logs/coex-merged-c9-bledown-paced-boot.log` |
+| 单独的 Wi-Fi 链路探针，不开 `-Dcoex` | 不打判据，看读数（§20.5） | `logs/wifi-link-stubs-aligned-boot.log` |
+
+主机用例多了四条：wifi-blobs 两条（回显请求、计数桩）、bt-blobs 一条（BLE 关时钟只清自己的位）、`radio-coex` 一条（只属于一个模块的位）；
+各组件与三处文档里的总数跟着改（`tests/baselines.json`，`scripts/check-invariants.py` 核对）。
+
+没有做的：
+
+- 下电路径里八步之间最少要隔多久、隔在哪几步之间、等的是什么（§20.4）；`phy_deferred` 停在第 7 步的原因（§20.3）。
+- `phy_wifi_first` 只上板一次；下电路径的三种各一到两次（连着做那一种两次，结果相同）；都没有从 AP 一侧抓帧。
+- 「BLE 先起」的第二种顺序没有做成默认：应用层要先起 BLE 时得自己按这个顺序调（PHY 那一步由 Wi-Fi 的路径先做）。
+- §19.6 留下的三条（可连接广播、时延涨在哪一段、信道分类有没有被 controller 用上）这一轮没有碰。

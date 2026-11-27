@@ -105,6 +105,29 @@ pub fn build(b: *std.Build) void {
     // 2.4 GHz 信道盖住的 BLE 数据信道标成 bad（LE Set Host Channel Classification，Vol 4 Part E §7.8.19），第二遍链路之后
     // 再用一张带保留位的图确认 controller 会拒。路线图 C8。AP 的主信道取自第一遍链路的扫描记录，所以还要 `-Dwifi-ap-ssid`。
     const coex_ble_chan_class = b.option(bool, "coex-ble-chan-class", "merged image with -Dcoex-ble-adv and -Dcoex-wifi-link: after advertising starts, send LE Set Host Channel Classification for the AP's channel and check the controller's status") orelse false;
+    // 合并镜像的「板子回别人的 ping」（路线图 C9，要求 `-Dcoex-wifi-link`）：每一遍 Wi-Fi 链路 ping 网关之后留一段窗口（毫秒），
+    // 等外面的主机来 ping 板子，由板子答（`data_path.zig` 的 `handleEchoRequest`）。默认 0 = 不留窗口，别的镜像的日志不变。
+    const coex_ping_in_ms = b.option(u32, "coex-ping-in-ms", "merged image only: after the outbound ping phase keep each Wi-Fi link up this long for inbound pings to answer (0 = off)") orelse 0;
+    // 合并镜像的起手顺序（路线图 C9 的「BLE 先起」对照，要求 `-Dcoex-wifi-link`）：BLE 先 `bringup.init`，Wi-Fi 再 `esp_wifi_start`。
+    // 三种：
+    //   `phy_ble`——PHY 的一次性初始化与标定由 BLE 的 init 做（说明默认顺序为什么是 Wi-Fi 先起的那个对照）；
+    //   `phy_deferred`——BLE 的 init 跳过 PHY 那两段，等 Wi-Fi start 时再做（PHY 没开就做 controller 的 init）；
+    //   `phy_wifi_first`——BLE 的 init 之前先按 Wi-Fi 的路径把 PHY 打开并标定（就是 blob 在 start 里调的那条 `_phy_enable`），
+    //   BLE 的 init 跳过 PHY 那两段。PHY 仍然归 Wi-Fi，只有 controller 的先后换了。
+    // 不给就是默认：Wi-Fi 先起。
+    const CoexBleFirst = enum { phy_ble, phy_deferred, phy_wifi_first };
+    const coex_ble_first = b.option(CoexBleFirst, "coex-ble-first", "merged image with -Dcoex-wifi-link: bring the BLE controller up (init) before esp_wifi_start. phy_ble: BLE's init does the PHY's one-time init and calibration; phy_deferred: BLE's init skips the PHY and Wi-Fi's start does it; phy_wifi_first: Wi-Fi's path opens the PHY first, then BLE's init skips it") orelse null;
+    // 合并镜像的 BLE 下电路径（路线图 C9，要求 `-Dcoex-ble-enable` 与 `-Dcoex-wifi-link`）：所有判据之后按 IDF `bt_controller_disable`
+    // 的顺序关 BLE（controller 任务、流控、协议栈、共存计数、基带与 PHY 引用），核对时钟字里 Wi-Fi 与 PHY 的位还在、只属于 BLE
+    // 的位关掉，再让 Wi-Fi 走第三遍链路。排在最后：这一步出问题时前面的判据已经打完。
+    const coex_ble_disable = b.option(bool, "coex-ble-disable", "merged image with -Dcoex-wifi-link and -Dcoex-ble-enable: after every check, power the BLE side down the way IDF's esp_bt_controller_disable does and run a third Wi-Fi link pass") orelse false;
+    // 下电路径怎么跑（要求 `-Dcoex-ble-disable`）：默认每一步之后扫一次全信道（看 Wi-Fi 是在哪一步之后收不到的）；
+    // `-Dcoex-ble-down-scan=false` 把八步连着做完，之后连着扫 35 秒（看 Wi-Fi 要多久才恢复接收）。2026-11-27 晚第一种 28/28、
+    // 第二种第一轮之后的扫描是 0 个 AP，差在两件事同时变了：步骤之间有没有扫描、隔了多久。
+    const coex_ble_down_scan = b.option(bool, "coex-ble-down-scan", "merged image with -Dcoex-ble-disable: true (default) scans after every down step; false runs the steps back to back and then scans for 35 s") orelse true;
+    // 对照（要求 `-Dcoex-ble-down-scan=false`）：八步连着做，但每一步之后让 Wi-Fi 空转这么多毫秒（不扫描）。分开
+    // 「步骤之间要时间」与「步骤之间要 Wi-Fi 在收发」——逐步扫描的那一轮过、连着做的那一轮 Wi-Fi 聋，两件事同时变了。
+    const coex_ble_down_gap = b.option(u32, "coex-ble-down-gap", "merged image with -Dcoex-ble-disable and -Dcoex-ble-down-scan=false: idle-pump Wi-Fi this many ms after every down step instead of scanning (0 = none)") orelse 0;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
@@ -133,6 +156,12 @@ pub fn build(b: *std.Build) void {
     if (coex_adv_ping_bytes > 1472) @panic("-Dcoex-adv-ping-bytes 至多 1472（IP 包 1500 减去 IPv4 与 ICMP 的首部）");
     if (coex_ble_chan_class and !coex_ble_adv) @panic("-Dcoex-ble-chan-class 需要 -Dcoex-ble-adv：信道分类在广播之后发");
     if (coex_ble_chan_class and !coex_wifi_link) @panic("-Dcoex-ble-chan-class 需要 -Dcoex-wifi-link：AP 的主信道取自第一遍链路的扫描");
+    if (coex_ping_in_ms != 0 and !coex_wifi_link) @panic("-Dcoex-ping-in-ms 需要 -Dcoex-wifi-link：窗口开在 Wi-Fi 链路的 ping 之后");
+    if (coex_ble_first != null and !coex_wifi_link) @panic("-Dcoex-ble-first 需要 -Dcoex-wifi-link");
+    if (coex_ble_first != null and coex_ble_disable) @panic("-Dcoex-ble-first 不能与 -Dcoex-ble-disable 同开：下电路径要把时钟源写回 BLE 来之前的读数，BLE 先起的镜像里没有这个读数");
+    if (coex_ble_disable and !coex_ble_enable) @panic("-Dcoex-ble-disable 需要 -Dcoex-ble-enable：下电之前 BLE 要先 enable");
+    if (!coex_ble_down_scan and !coex_ble_disable) @panic("-Dcoex-ble-down-scan=false 需要 -Dcoex-ble-disable");
+    if (coex_ble_down_gap != 0 and coex_ble_down_scan) @panic("-Dcoex-ble-down-gap 要与 -Dcoex-ble-down-scan=false 同开：逐步扫描的那一轮每一步之后已经在扫了");
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex)
         (if (coex_sw_off) "pub const enabled = true;\npub const sw_off = true;\n" else "pub const enabled = true;\npub const sw_off = false;\n")
@@ -285,9 +314,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    // （注：compiler_rt 在本镜像占 193KB/492 符号的 f128/long-double 软浮点死重
-    // （nm 实测：tanq 6932B 等，gc-sections 剥不动、岛内自洽无活根）——0.17.1 的
-    // Build API 没有开关字段，正式裁剪留作后续（需扩 s31.ld 窗口以外的研究）。
+    // compiler_rt：2026-11-27 实测（带符号表构建后 nm），默认镜像里 6 个符号 782 B，合并镜像里 36 个符号 6 604 B，
+    // 没有 f128 / long-double 的软浮点例程。此前这里记的「193 KB / 492 符号的死重」是旧工具链的读数，不用裁
+    // （`docs/verification/coex-verification.md` §20.6）。
     // irom 窗口已按 s31-two-segment-window-expansion 技能扩到 0xC0000。
     // 用 `@splat` 而不是 `[_]u8{0x5a} ** N`：后者在 Zig 0.17 里会报 `**` 的空格错误。
     // 必须经由一个 export 函数引用：`@export(&const 数组)` 在 0.17 不会 emit 数据。
@@ -516,7 +545,12 @@ pub fn build(b: *std.Build) void {
         const chan_class = b.createModule(.{ .root_source_file = b.path("../components/ble-802154/src/channel_class.zig") });
         merged_mod.addImport("ble_channel_class", chan_class);
         if (coex_ble_adv and !coex_ble_enable) @panic("-Dcoex-ble-adv 需要 -Dcoex-ble-enable：广播之前 controller 要先 enable");
-        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\npub const adv_interval_ms: u32 = {};\npub const adv_pings: u16 = {};\npub const adv_ping_interval_ms: u32 = {};\npub const adv_ping_bytes: u16 = {};\npub const ble_chan_class: bool = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq, coex_adv_interval_ms, coex_adv_pings, coex_adv_ping_interval_ms, coex_adv_ping_bytes, coex_ble_chan_class });
+        const ble_first_src = if (coex_ble_first) |m| switch (m) {
+            .phy_ble => ".phy_ble",
+            .phy_deferred => ".phy_deferred",
+            .phy_wifi_first => ".phy_wifi_first",
+        } else "null";
+        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\npub const adv_interval_ms: u32 = {};\npub const adv_pings: u16 = {};\npub const adv_ping_interval_ms: u32 = {};\npub const adv_ping_bytes: u16 = {};\npub const ble_chan_class: bool = {};\npub const ping_in_ms: u32 = {};\npub const BleFirst = enum {{ phy_ble, phy_deferred, phy_wifi_first }};\npub const ble_first: ?BleFirst = {s};\npub const ble_disable: bool = {};\npub const ble_down_scan: bool = {};\npub const ble_down_gap_ms: u32 = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq, coex_adv_interval_ms, coex_adv_pings, coex_adv_ping_interval_ms, coex_adv_ping_bytes, coex_ble_chan_class, coex_ping_in_ms, ble_first_src, coex_ble_disable, coex_ble_down_scan, coex_ble_down_gap });
         merged_mod.addImport("coex_merged_opts", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_merged_opts.zig", merged_opts_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }

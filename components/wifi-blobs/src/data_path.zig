@@ -12,8 +12,9 @@
 //!   - 拿到地址之后 `esp_wifi_internal_set_sta_ip()`（IDF 在 got-ip 的默认处理里做）。
 //!
 //! IP 一侧是 `net-ipv4`（`arp` / `icmp` / `ipv4` / `inet`）与 `net-udp-dhcp-dns`（`udp` / `dhcp`）。
-//! 没有路由表、没有 socket：地址靠 DHCP 拿（含续租、重绑、到期）。收到的报文只处理三类：DHCP 应答、
-//! ARP（问本机地址的要答，本机问出去的应答要学）、本机发出的回显的应答。ping 的对象是租约里的网关。
+//! 没有路由表、没有 socket：地址靠 DHCP 拿（含续租、重绑、到期）。收到的报文只处理四类：DHCP 应答、
+//! ARP（问本机地址的要答，本机问出去的应答要学）、本机发出的回显的应答、别人发来的回显请求（要答）。
+//! ping 的对象是租约里的网关。
 //!
 //! 驱动在自己的 Wi-Fi 任务里调 `rxcb`，那个任务跑在我们给它的栈上（`osi_impl.ensureTaskContext`）。
 //! 所以 `rxcb` 只做三件事：过滤、拷进本模块的环形缓冲、交还驱动缓冲。帧由主上下文的 `poll()` 处理，
@@ -98,6 +99,8 @@ pub const Event = union(enum) {
     arp_request: struct { ip: [4]u8, tx_rc: c_int },
     arp_reply: struct { ip: [4]u8, mac: [6]u8 },
     echo_sent: struct { seq: u16, tx_rc: c_int },
+    /// 别人发来一帧回显请求，答了一帧回显应答。`src` / `id` / `seq` 取自请求。
+    echo_answered: struct { src: [4]u8, id: u16, seq: u16, tx_rc: c_int },
     echo_reply: struct { seq: u16, rtt_us: u32 },
     echo_timeout: u16,
     ping_done: PingStats,
@@ -122,6 +125,9 @@ pub const Stats = struct {
     rx_frames: u32 = 0,
     /// 交上来、但不是发给本机的帧。
     rx_ignored: u32 = 0,
+    /// 别人发来的、校验和正确的回显请求；答出去的回显应答。
+    echo_requests: u32 = 0,
+    echo_replies: u32 = 0,
     rx_dropped: u32 = 0,
     tx_frames: u32 = 0,
     tx_failed: u32 = 0,
@@ -271,6 +277,9 @@ pub fn report(ev: Event, buf: []u8) []const u8 {
         .echo_sent => |d| std.fmt.bufPrint(buf, "ping seq={d} tx rc=0x{x}", .{ d.seq, @as(u32, @bitCast(d.tx_rc)) }) catch buf[0..0],
         .echo_reply => |d| std.fmt.bufPrint(buf, "ping reply seq={d} rtt={d} us", .{ d.seq, d.rtt_us }) catch buf[0..0],
         .echo_timeout => |seq| std.fmt.bufPrint(buf, "ping timeout seq={d}", .{seq}) catch buf[0..0],
+        .echo_answered => |d| std.fmt.bufPrint(buf, "ping answered id={d} seq={d} from {s} tx rc=0x{x}", .{
+            d.id, d.seq, ip4Text(&a, d.src), @as(u32, @bitCast(d.tx_rc)),
+        }) catch buf[0..0],
         .ping_done => |p| std.fmt.bufPrint(buf, "ping done: sent={d} received={d} timed_out={d} rtt min/avg/max={d}/{d}/{d} us", .{
             p.sent, p.received, p.timed_out, p.rtt_min_us, p.rttAvgUs(), p.rtt_max_us,
         }) catch buf[0..0],
@@ -445,7 +454,11 @@ fn handleFrame(frame: []const u8, now_us: u64) ?Event {
         ipv4.proto.icmp => {
             // 只收发给本机地址的报文。`l4` 是按 IP 首部的 total_len 切出来的，不含以太网填充。
             if (!bound or !inet.eql(h.dst, client.lease.ip)) return null;
-            return handleEchoReply(h.src, l4, now_us);
+            const ih = icmp.Header.parse(l4) catch return null;
+            return if (ih.type == icmp.typ.echo_request)
+                handleEchoRequest(h.src, frame[6..12].*, l4)
+            else
+                handleEchoReply(h.src, l4, now_us);
         },
         else => return null,
     }
@@ -515,6 +528,22 @@ fn handleEchoReply(src: [4]u8, l4: []const u8, now_us: u64) ?Event {
     if (rtt > ping_stats.rtt_max_us) ping_stats.rtt_max_us = rtt;
     ping_stats.rtt_sum_us += rtt;
     return .{ .echo_reply = .{ .seq = f.seq, .rtt_us = rtt } };
+}
+
+/// 别人发来的回显请求：答一帧回显应答。目的地址在 `handleFrame` 里已经卡成「本机当前的地址」，所以
+/// 广播的请求不答（RFC 1122 §3.2.2.6 允许不答，本工程的取舍写在 `icmp.mayReply`）。应答原样带请求的
+/// id、序号与载荷（`icmp.echoReplyFrom`），以太网目的地址取请求帧的源地址——跨网段来的请求，回给它的下一跳。
+/// 校验和坏的、code 不是 0 的请求丢掉，不答（RFC 1122 §3.2.2）。缓冲与 `sendEcho` 共用：两者都只在主上下文的
+/// `poll()` 里跑，不重入。
+fn handleEchoRequest(src: [4]u8, src_mac: [6]u8, l4: []const u8) ?Event {
+    const h = icmp.Header.parse(l4) catch return null;
+    if (h.code != 0 or !icmp.checksumOk(l4)) return null;
+    counters.echo_requests += 1;
+    if (l4.len > ping_buf.len) return null;
+    const reply = icmp.echoReplyFrom(l4, &ping_buf) catch return null;
+    const rc = sendIpv4(src_mac, client.lease.ip, src, ipv4.proto.icmp, reply);
+    if (rc == ok) counters.echo_replies += 1;
+    return .{ .echo_answered = .{ .src = src, .id = h.id, .seq = h.seq_or_mtu, .tx_rc = rc } };
 }
 
 // ---------------------------------------------------------------------------
@@ -664,7 +693,7 @@ fn eth(buf: []u8, dst: [6]u8, src: [6]u8, etype: u16, payload: []const u8) []con
 
 var fb_eth: [1600]u8 = undefined;
 var fb_ip: [1500]u8 = undefined;
-var fb_l4: [700]u8 = undefined;
+var fb_l4: [1500]u8 = undefined;
 var fb_pay: [700]u8 = undefined;
 
 /// 服务器发给本机的一帧：以太网 + IPv4 + UDP + 载荷。
@@ -691,6 +720,25 @@ fn echoReplyFrame(seq: u16, corrupt_checksum: bool) []const u8 {
     }
     const pkt = ipPacket(&fb_ip, gateway_ip, our_ip, ipv4.proto.icmp, fb_l4[0..n]);
     return eth(&fb_eth, sta_mac, gateway_mac, ethertype_ipv4, pkt);
+}
+
+const EchoRequestMode = enum { ok, corrupt_checksum, bad_code };
+
+/// 别的主机发给 `dst_ip` 的一帧回显请求。`corrupt_checksum` 只弄坏校验和；`bad_code` 把 code 置 1 之后重算校验和
+/// （校验和是对的，code 不合规）。
+fn echoRequestFrame(dst_ip: [4]u8, src_ip: [4]u8, src_mac: [6]u8, id: u16, seq: u16, payload: []const u8, mode: EchoRequestMode) []const u8 {
+    const n = icmp.writeEchoRequest(fb_l4[0..], id, seq, payload) catch unreachable;
+    switch (mode) {
+        .ok => {},
+        .corrupt_checksum => fb_l4[2] ^= 0xFF,
+        .bad_code => {
+            fb_l4[1] = 1;
+            std.mem.writeInt(u16, fb_l4[2..4], 0, .big);
+            std.mem.writeInt(u16, fb_l4[2..4], inet.of(fb_l4[0..n]), .big);
+        },
+    }
+    const pkt = ipPacket(&fb_ip, src_ip, dst_ip, ipv4.proto.icmp, fb_l4[0..n]);
+    return eth(&fb_eth, sta_mac, src_mac, ethertype_ipv4, pkt);
 }
 
 /// 走完 DHCP 四步（第 0 秒起），租期 `lease_secs`。返回时已经 bound。
@@ -902,6 +950,66 @@ test "data_path: ARP 请求问的是本机地址就答（单播给问的人）�
     try testing.expectEqual(ok, deliver(ask));
     try testing.expect(poll(3600_200_000) == null);
     try testing.expectEqual(@as(usize, tx_before + 1), fake.n_tx);
+}
+
+test "data_path: 别人发来的回显请求要答——id、序号、载荷原样带回，校验和正确，回给请求的源地址；坏校验和、code 不是 0、发给别的地址、没地址时都不答" {
+    try runDhcp(3600);
+    const host_ip: [4]u8 = .{ 192, 168, 43, 9 };
+    const host_mac = [6]u8{ 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b };
+    var payload: [56]u8 = undefined;
+    for (&payload, 0..) |*b, i| b.* = @truncate(0xA0 + i);
+    const tx_before = fake.n_tx;
+
+    // 工作站发来一帧回显请求：载荷 56 字节，与本机发出去的（32 字节）不是一回事，不影响等应答的那套对号。
+    try testing.expectEqual(ok, deliver(echoRequestFrame(our_ip, host_ip, host_mac, 0x1234, 7, &payload, .ok)));
+    try testing.expectEqual(Event{ .echo_answered = .{ .src = host_ip, .id = 0x1234, .seq = 7, .tx_rc = 0 } }, poll(1_000_000).?);
+    const rp = lastTx();
+    try testing.expectEqual(@as(usize, tx_before + 1), fake.n_tx);
+    try testing.expectEqualSlices(u8, &host_mac, rp[0..6]); // 回给请求的源地址
+    try testing.expectEqualSlices(u8, &sta_mac, rp[6..12]);
+    try testing.expectEqual(@as(u16, ethertype_ipv4), std.mem.readInt(u16, rp[12..14], .big));
+    const rh = try ipv4.Header.parseChecked(rp[14..]);
+    try testing.expectEqual(our_ip, rh.src);
+    try testing.expectEqual(host_ip, rh.dst);
+    try testing.expectEqual(ipv4.proto.icmp, rh.protocol);
+    const rl4 = try rh.payload(rp[14..]);
+    const rih = try icmp.Header.parse(rl4);
+    try testing.expectEqual(icmp.typ.echo_reply, rih.type);
+    try testing.expectEqual(@as(u8, 0), rih.code);
+    try testing.expectEqual(@as(u16, 0x1234), rih.id);
+    try testing.expectEqual(@as(u16, 7), rih.seq_or_mtu);
+    try testing.expectEqualSlices(u8, &payload, rl4[icmp.header_len..]);
+    try testing.expect(icmp.checksumOk(rl4));
+
+    // 载荷取到上限（1472 字节）：IP 包正好 1500 字节、整帧 1514，答得出来。
+    try testing.expectEqual(ok, deliver(echoRequestFrame(our_ip, host_ip, host_mac, 9, 9, &ping_payload_bytes, .ok)));
+    try testing.expectEqual(Event{ .echo_answered = .{ .src = host_ip, .id = 9, .seq = 9, .tx_rc = 0 } }, poll(1_000_000).?);
+    const big = lastTx();
+    try testing.expectEqual(@as(usize, 1514), big.len);
+    const bh = try ipv4.Header.parseChecked(big[14..]);
+    try testing.expectEqual(@as(u16, 1500), bh.total_len);
+    const bl4 = try bh.payload(big[14..]);
+    try testing.expectEqualSlices(u8, &ping_payload_bytes, bl4[icmp.header_len..]);
+    try testing.expect(icmp.checksumOk(bl4));
+
+    // 校验和坏的、code 不是 0 的：不答，也不计进「收到的请求」。
+    try testing.expectEqual(ok, deliver(echoRequestFrame(our_ip, host_ip, host_mac, 1, 10, "x", .corrupt_checksum)));
+    try testing.expect(poll(1_000_000) == null);
+    try testing.expectEqual(ok, deliver(echoRequestFrame(our_ip, host_ip, host_mac, 1, 11, "x", .bad_code)));
+    try testing.expect(poll(1_000_000) == null);
+
+    // 发给别的地址的请求（以太网帧是单播给本机 MAC 的）：不答。
+    try testing.expectEqual(ok, deliver(echoRequestFrame(gateway_ip, host_ip, host_mac, 1, 12, "x", .ok)));
+    try testing.expect(poll(1_000_000) == null);
+    try testing.expectEqual(@as(usize, tx_before + 2), fake.n_tx);
+    try testing.expectEqual(@as(u32, 2), stats().echo_requests);
+    try testing.expectEqual(@as(u32, 2), stats().echo_replies);
+
+    // 租约到期之后本机没有地址了：不答。
+    try testing.expectEqual(Event.lease_expired, poll(3600_200_000).?);
+    try testing.expectEqual(ok, deliver(echoRequestFrame(our_ip, host_ip, host_mac, 1, 13, "x", .ok)));
+    try testing.expect(poll(3600_200_000) == null);
+    try testing.expectEqual(@as(usize, tx_before + 2), fake.n_tx);
 }
 
 test "data_path: rxcb 只留发给本机或广播的帧，每帧交还一次驱动缓冲；缓冲满了、帧太长都丢并计数" {

@@ -167,6 +167,47 @@ test "osi_impl: 表里没有任何 null 钩子（未实现的由具名桩顶上�
     try std.testing.expect(stubs.hits[0] >= before);
 }
 
+test "osi_impl: 不开共存时计数桩按 IDF 的关闭分支作答——init / enable 不碰核，出参不写，flexible_period_get 回 1" {
+    // 对照 `components/esp_wifi/esp32s31/esp_adapter.c` 里各包装的 `#else`（逐项的表在
+    // `docs/verification/coex-verification.md` §20）。原先 `_coex_init` / `_coex_enable` 的桩会去调核（主机上是替身，
+    // 这里数着次数），`flexible_period_get` 落在具名桩上回 0。
+    var buf: [8192]u8 align(16) = undefined;
+    impl.initArena(&buf);
+    const tbl = impl.makeTable();
+    const stubs = @import("host_stubs.zig");
+    const core_calls0 = stubs.coex_calls;
+    const init_fn: *const fn () callconv(.c) usize = @ptrCast(tbl._coex_init.?);
+    const enable_fn: *const fn () callconv(.c) usize = @ptrCast(tbl._coex_enable.?);
+    const status_fn: *const fn () callconv(.c) usize = @ptrCast(tbl._coex_status_get.?);
+    const request_fn: *const fn (u32, u32, u32) callconv(.c) usize = @ptrCast(tbl._coex_wifi_request.?);
+    const release_fn: *const fn (u32) callconv(.c) usize = @ptrCast(tbl._coex_wifi_release.?);
+    const interval_set_fn: *const fn (u32) callconv(.c) usize = @ptrCast(tbl._coex_schm_interval_set.?);
+    const start_cb_fn: *const fn (?*anyopaque) callconv(.c) usize = @ptrCast(tbl._coex_register_start_cb.?);
+    const flexible_get_fn: *const fn () callconv(.c) usize = @ptrCast(tbl._coex_schm_flexible_period_get.?);
+    try std.testing.expectEqual(@as(usize, 0), init_fn());
+    try std.testing.expectEqual(@as(usize, 0), enable_fn());
+    try std.testing.expectEqual(@as(usize, 0), status_fn());
+    try std.testing.expectEqual(@as(usize, 0), request_fn(1, 2, 3));
+    try std.testing.expectEqual(@as(usize, 0), release_fn(1));
+    try std.testing.expectEqual(@as(usize, 0), interval_set_fn(1000));
+    try std.testing.expectEqual(@as(usize, 0), start_cb_fn(null));
+    // 核一次都没被碰。
+    try std.testing.expectEqual(core_calls0, stubs.coex_calls);
+    // 出参不写（`coex_pti_get_wrapper`、`coex_event_duration_get_wrapper` 的 `#else`）；取不到相位时回空指针。
+    var pti: u8 = 0x5A;
+    const pti_fn: *const fn (u32, ?*u8) callconv(.c) usize = @ptrCast(tbl._coex_pti_get.?);
+    try std.testing.expectEqual(@as(usize, 0), pti_fn(3, &pti));
+    try std.testing.expectEqual(@as(u8, 0x5A), pti);
+    const duration_fn: *const fn (u32, ?*u32) callconv(.c) usize = @ptrCast(tbl._coex_event_duration_get.?);
+    var duration: u32 = 0x1234_5678;
+    try std.testing.expectEqual(@as(usize, 0), duration_fn(0, &duration));
+    try std.testing.expectEqual(@as(u32, 0x1234_5678), duration);
+    const phase_fn: *const fn () callconv(.c) usize = @ptrCast(tbl._coex_schm_curr_phase_get.?);
+    try std.testing.expectEqual(@as(usize, 0), phase_fn());
+    // 唯一不回 0 的一个：不开功耗管理时 IDF 回 1。
+    try std.testing.expectEqual(@as(usize, 1), flexible_get_fn());
+}
+
 test "osi_impl: 通过表指针调用分配/信号量/队列（C 调用约定）" {
     var buf: [8192]u8 align(16) = undefined;
     impl.initArena(&buf);

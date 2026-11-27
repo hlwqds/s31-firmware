@@ -259,6 +259,31 @@ pub const clocks = struct {
                 .modem_conf = if (self.modem_conf != 0 and !got.pllOn()) self.modem_conf else 0,
             };
         }
+
+        /// 逐字取与（位集）。时钟源不参与：两个要求取小没有意义。
+        pub fn andWith(self: State, o: State) State {
+            return .{
+                .clk_conf = self.clk_conf & o.clk_conf,
+                .clk_conf_force_on = self.clk_conf_force_on & o.clk_conf_force_on,
+                .clk_conf1 = self.clk_conf1 & o.clk_conf1,
+                .lpcon_clk_conf = self.lpcon_clk_conf & o.lpcon_clk_conf,
+            };
+        }
+
+        /// 逐字取反（位集），时钟源为 0（不要求）。
+        pub fn not(self: State) State {
+            return .{
+                .clk_conf = ~self.clk_conf,
+                .clk_conf_force_on = ~self.clk_conf_force_on,
+                .clk_conf1 = ~self.clk_conf1,
+                .lpcon_clk_conf = ~self.lpcon_clk_conf,
+            };
+        }
+
+        /// 位集是空的。
+        pub fn isClear(self: State) bool {
+            return self.clk_conf == 0 and self.clk_conf_force_on == 0 and self.clk_conf1 == 0 and self.lpcon_clk_conf == 0;
+        }
     };
 
     /// 一个模块依赖的位（IDF 的依赖表，逐单元换成位）。
@@ -295,6 +320,12 @@ pub const clocks = struct {
         var w: State = .{};
         for (mods) |m| w = w.orWith(units(m));
         return w;
+    }
+
+    /// 只依赖 `m` 的位：`units(m)` 去掉 `others` 也依赖的那些。时钟源不算（整字取值，没有「只属于谁」）。
+    /// 用来核对「一个模块下电之后，它自己的单元关了、别人的还开着」。
+    pub fn only(m: Module, others: []const Module) State {
+        return units(m).andWith(unionOf(others).not());
     }
 };
 
@@ -466,6 +497,42 @@ test "clocks: Wi-Fi、PHY、BLE 三组的位互不覆盖，共用的只有 wifib
     try testing.expectEqual(@as(u32, 0), (w.clk_conf | p.clk_conf) & b.clk_conf);
     try testing.expectEqual(@as(u32, 0), w.lpcon_clk_conf & p.lpcon_clk_conf);
     try testing.expectEqual(@as(u32, 0), (w.lpcon_clk_conf | p.lpcon_clk_conf) & b.lpcon_clk_conf);
+}
+
+test "clocks: 只属于一个模块的位——与别人共用的 wifibb_80x1 不算；与另一组取与能在读数里挑出「还在的」和「少掉的」" {
+    // BLE 自己的：CLK_CONF1 的 BT 三位、CLK_CONF 的七位、LPCON 的共存与 LP 定时器时钟；bit7 与 Wi-Fi 共用，不算；时钟源不算。
+    const ble_only = clocks.only(.ble, &.{ .wifi, .phy });
+    try testing.expectEqual(@as(u32, 0x0007_0000), ble_only.clk_conf1);
+    try testing.expectEqual(@as(u32, 0x7E40_0000), ble_only.clk_conf);
+    try testing.expectEqual(@as(u32, 0x0A), ble_only.lpcon_clk_conf);
+    try testing.expectEqual(@as(u32, 0), ble_only.modem_conf);
+    // Wi-Fi 自己的：bit0-10 去掉 bit7，LPCON 的 wifipwr。
+    const wifi_only = clocks.only(.wifi, &.{ .ble, .phy });
+    try testing.expectEqual(@as(u32, 0x077F), wifi_only.clk_conf1);
+    try testing.expectEqual(@as(u32, 0x01), wifi_only.lpcon_clk_conf);
+    // PHY 自己的：三位模拟前端配置、前端那几位、LPCON 的 i2c_mst。
+    const phy_only = clocks.only(.phy, &.{ .wifi, .ble });
+    try testing.expectEqual(@as(u32, 0x0020_1002), phy_only.clk_conf);
+    try testing.expectEqual(@as(u32, 0x0038_E000), phy_only.clk_conf1);
+    try testing.expectEqual(@as(u32, 0x04), phy_only.lpcon_clk_conf);
+    // 别的模块一个都没有：就是自己的全部位（时钟源除外）。
+    const alone = clocks.only(.ble, &.{});
+    try testing.expectEqual(clocks.units(.ble).clk_conf1, alone.clk_conf1);
+    try testing.expectEqual(@as(u32, 0), alone.modem_conf);
+
+    // 读数里的「还开着的 BLE 自己的位」：下电前（三个模块都开着）非空，下电后（回到 Wi-Fi start 之后的读数）是空的。
+    const all_on = clocks.State{ .clk_conf = 0x7E60_1002, .clk_conf1 = 0x003F_FFFF, .lpcon_clk_conf = 0x0F, .modem_conf = 0x3D };
+    try testing.expectEqual(ble_only, ble_only.andWith(all_on));
+    try testing.expect(!ble_only.andWith(all_on).isClear());
+    const wifi_state = clocks.State{ .clk_conf = 0x0020_1002, .clk_conf1 = 0x0038_E7FF, .lpcon_clk_conf = 0x05, .modem_conf = 0x25 };
+    try testing.expect(ble_only.andWith(wifi_state).isClear());
+    // 读数里留着共用的 bit7 时不算「BLE 的位还在」。
+    const after = clocks.State{ .clk_conf = 0x0020_1002, .clk_conf1 = 0x0038_E7FF | (1 << 7), .lpcon_clk_conf = 0x05 };
+    try testing.expect(ble_only.andWith(after).isClear());
+    // 漏清一位（btmac）就会被挑出来。
+    const leak = clocks.State{ .clk_conf1 = 1 << 18 };
+    try testing.expectEqual(@as(u32, 1 << 18), ble_only.andWith(leak).clk_conf1);
+    try testing.expect((clocks.State{}).isClear());
 }
 
 test "clocks: 并集包含每个成员；整字覆盖掉的位会被判成缺位" {

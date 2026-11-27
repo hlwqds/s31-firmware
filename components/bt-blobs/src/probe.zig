@@ -561,7 +561,19 @@ fn printRegDiff() void {
 
 /// ⚠ 单位是**毫秒**：注入 `nowUs()/1000`。直接注入 `nowUs()` 会让所有超时窗口大 1000 倍，
 /// 症状是"起来了但永远不超时/不动作"，极难归因。
+/// 主上下文里的阻塞等待要不要顺手把 controller 任务泵起来：只在下电路径（`disableOnly`）上开。
+var block_pumps_task = false;
+/// 防嵌套：泵的那一步里如果又有人（在主上下文）阻塞等待，不再泵第二层，照常让出。
+var block_pump_depth: u32 = 0;
+
 fn osiOnIdle() void {
+    if (block_pumps_task and block_pump_depth == 0 and sched.inMain()) {
+        // 主上下文在等 controller 任务把事情做完（下电路径）：任务是协作式的，不泵就谁也完不成。推进一步，再回来重查。
+        block_pump_depth += 1;
+        pumpStep();
+        block_pump_depth -= 1;
+        return;
+    }
     // 任务上下文调用：驻停任务、切回主上下文（主泵下一轮 resumeTask 再切入）。
     sched.block();
 }
@@ -1165,6 +1177,120 @@ pub fn pumpStep() void {
     // RTC 计数器的读数要靠 update 位触发才刷新；不触发，controller 读到的睡眠时间恒为旧值。
     @as(*volatile u32, @ptrFromInt(0x2080_0010)).* = 1 << 27;
     _ = osal.serviceCallouts(osal.timeGet());
+}
+
+// ---------------------------------------------------------------------------
+// 合并镜像的 BLE 下电路径（`-Dcoex-ble-disable`）：照 IDF `esp_bt_controller_disable` 的顺序关 BLE
+// ---------------------------------------------------------------------------
+
+extern fn r_btdm_task_disable() c_int;
+extern fn r_btdm_hci_fc_disable() c_int;
+extern fn r_conn_stack_disable() c_int;
+extern fn r_base_stack_disable() c_int;
+extern fn esp_btbb_disable() void;
+extern fn esp_phy_disable(modem: c_int) void;
+
+/// 下电路径的一步。顺序照 IDF `bt_controller_disable`（`components/bt/controller/esp32s31/bt.c:124-145`），把 enable 的每一步倒回去：
+///
+///   1. `r_btdm_task_disable()`——enable 的第 20 步；
+///   2. `r_btdm_hci_fc_disable()`——第 19 步；
+///   3. `r_conn_stack_disable()`、4. `r_base_stack_disable()`——第 18、17 步（本仓用这两个替 IDF 的 `ble_stack_disable`）；
+///   5. `btdm_coex_disable()`——第 16 步：共存核的使能计数里属于 BLE 的那一次减一；
+///   6. 放掉基带（`esp_btbb_disable`）、7. 放掉 BLE 对 PHY 的引用（`esp_phy_disable`，modem 2）——IDF 的 `btdm_lp_reset(false)`
+///      做的就是这两件。本仓的 `btdmLpReset` 是空的，enable 时显式做了 `esp_phy_enable(2)` + `esp_btbb_enable`，所以这里显式做
+///      反过来的两件；
+///   8. `btdm_lp_disable_clock()`（IDF 放在 deinit 里，bt.c:112）：`porting.btdmLpDisableClock` 清掉只属于 BLE 的门控位，
+///      把时钟源写回 `modem_conf_restore`。
+///
+/// 拆成八步是为了每一步之后都能量一次 Wi-Fi（合并镜像在每一步之后扫一次全信道）：2026-11-27 晚的第一轮把这几步连着做完，
+/// Wi-Fi 就收不到帧了，连着做看不出是哪一步。
+pub const DownStep = enum(u8) {
+    task = 1,
+    flow_ctrl = 2,
+    conn_stack = 3,
+    base_stack = 4,
+    coex = 5,
+    btbb = 6,
+    phy = 7,
+    clocks = 8,
+
+    pub fn name(self: DownStep) []const u8 {
+        return switch (self) {
+            .task => "r_btdm_task_disable",
+            .flow_ctrl => "r_btdm_hci_fc_disable",
+            .conn_stack => "r_conn_stack_disable",
+            .base_stack => "r_base_stack_disable",
+            .coex => "btdm_coex_disable",
+            .btbb => "esp_btbb_disable",
+            .phy => "esp_phy_disable(BT)",
+            .clocks => "btdm_lp_disable_clock",
+        };
+    }
+};
+
+/// 下电路径里等 controller 任务跑完一步的预算。超了那一步就按没等到返回（`osi_impl.block_expired`），往下走。
+pub const down_step_budget_us: u64 = 3_000_000;
+var down_deadline_us: u64 = 0;
+/// 等出了预算的第一步（0 = 没有）。
+var down_timed_out_step: u8 = 0;
+var down_step: u8 = 0;
+
+fn downBlockExpired() bool {
+    if (board.hw.elapsedUs(down_deadline_us) < down_step_budget_us) return false;
+    if (down_timed_out_step == 0) down_timed_out_step = down_step;
+    return true;
+}
+
+pub const DownStepResult = struct {
+    /// 第 1 到 4 步（controller 库函数）返回时 a0 寄存器的值。IDF 不看这几步的返回值（`bt.c:131-139`），这里只打出来；其余步骤恒 0。
+    a0: c_int = 0,
+    took_us: u32 = 0,
+    /// 这一步等出了预算：没等到 controller 把事情做完，返回值不可信。
+    timed_out: bool = false,
+};
+
+/// 下电路径的开始：装上「主上下文等的时候把 controller 任务泵起来」与每一步的预算。与 `downEnd` 成对。
+pub fn downBegin() void {
+    down_timed_out_step = 0;
+    block_pumps_task = true;
+    osi_impl.block_expired = &downBlockExpired;
+}
+
+pub fn downEnd() void {
+    block_pumps_task = false;
+    osi_impl.block_expired = null;
+}
+
+/// 做一步，一定返回。调用方负责在调用期间关掉 Wi-Fi 侧的让出点（泵跑在 BLE 任务的栈上）。第 1 到 4 步是 controller 库里的
+/// 函数，可能要把请求排进 controller 任务再等它跑完：主上下文等的时候由 `osiOnIdle` 把那个任务泵起来；每一步最多等
+/// `down_step_budget_us`，等不出就按没等到往下走。IDF 的 deinit 里剩下的几件（传输层、任务、内存池、日志）不做：
+/// 合并镜像走到这里就结束了。
+pub fn downStep(step: DownStep, modem_conf_restore: u32) DownStepResult {
+    var r: DownStepResult = .{};
+    down_step = @backingInt(step);
+    down_deadline_us = board.hw.nowUs();
+    if (builtin.os.tag == .freestanding) {
+        switch (step) {
+            .task => r.a0 = r_btdm_task_disable(),
+            .flow_ctrl => r.a0 = r_btdm_hci_fc_disable(),
+            .conn_stack => r.a0 = r_conn_stack_disable(),
+            .base_stack => r.a0 = r_base_stack_disable(),
+            .btbb => esp_btbb_disable(),
+            .phy => esp_phy_disable(2),
+            .coex, .clocks => {},
+        }
+    }
+    switch (step) {
+        .coex => porting.btdmCoexDisable(),
+        .clocks => porting.btdmLpDisableClock(modem_conf_restore),
+        else => {},
+    }
+    r.took_us = @intCast(@min(board.hw.elapsedUs(down_deadline_us), std.math.maxInt(u32)));
+    r.timed_out = down_timed_out_step == down_step;
+    board.log.line("bt down: {d}/8 {s} a0={d} took {d} us timed_out={d}", .{
+        down_step, step.name(), r.a0, r.took_us, @intFromBool(r.timed_out),
+    });
+    return r;
 }
 
 // ---------------------------------------------------------------------------

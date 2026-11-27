@@ -41,7 +41,7 @@
 - [x] 生产结构：`firmware/` + `boards/` + `components/`（章节目录移除，历史见 `docs/HISTORY.md`）
 - [x] 编译期特性开关：`-Dboot/-Dnet/-Dtls/-Dapps/-Dwifi`，未启用组件不参与编译
 - [x] 板侧联调：默认配置（boot+net）烧录通过，聚合 `firmware: sections: passed=8 failed=0 total=8`（`net` profile，含 `posix`）、`main: verdict=pass`（`logs/firmware-boot.log`）
-- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（2075 项）**（含 `posix`）
+- [x] 聚合测试：`firmware` 的 `test` step 覆盖 **19 个测试项目（2079 项）**（含 `posix`）
 - [x] 脚本：`scripts/check-host.sh`、`scripts/check-fmt.sh`、`scripts/build-image.sh`、`tools/capture.py`
 - [x] CI 定义：host / image 两个 job；板级 job 为自托管手动触发
 - [x] 覆盖率门禁：`scripts/check-coverage.py`（逻辑模块 100% 可达 + 用例数基线）
@@ -139,7 +139,7 @@
 | C6 | 空口证据：AP 侧临时 monitor 接口抓 802.11 帧、站点统计、系统日志；工作站蓝牙扫描（BLE 侧） | IEEE Std 802.11-2016 §9.3、§9.4 | 真实 AP（OpenWrt，`tools/ap-side/`）与工作站 | L4 | Wi-Fi 侧已有：五个轮次 373 帧（§15.9），板子发来的帧 -21 到 -28 dBm；BLE 侧有了（2026-11-27 晚）：工作站扫描看到板子的广播 `s31`（§17.5） |
 | C7 | L4b：两个射频都收发时共存的效果（不同广播间隔下 ping 的时延与丢包、核的硬件定时器在走、BLE 的状态位） | — | 合并镜像 `-Dcoex-ble-adv`（`-Dcoex-adv-interval-ms`、`-Dcoex-adv-pings`、`-Dcoex-adv-ping-interval-ms`、`-Dcoex-adv-ping-bytes`）+ AP 侧采集 + 工作站的 HCI 流 | L4 | 部分完成。第一组「按广播间隔量 ping」已有（2026-11-27 上午，`coex-verification.md` §18）：20 / 100 / 1000 ms 各一轮，每遍 30 帧都不丢；广播时 rtt 三个间隔几乎一样（最小 27.2 ms、中位 30.5 ms，对照遍平均 4 ms），「间隔越短 rtt 越大」不成立；核不启动的对照里广播时 rtt 不涨（3.5 ms），涨在共存路径上。第二组「持续的 Wi-Fi 流量与其余三条判据」（2026-11-27 下午，§19）：每遍 300 帧、间隔 50 ms，两遍都是 300/300；BLE 状态字广播时是 `0x0001`；两侧的 start 回调各触发一次；PTI 是每个事件的定值；核按申请装定时器 0 并置状态位（定时器的地址与使能位在 §19.4 改正，「数值在两次读数之间变了」按字面过了；有没有真的在数判不了）。没有做：时延的因果、可连接广播下定时器是否在数 |
 | C8 | BLE 侧按规范的共存手段：LE Set Host Channel Classification（把 Wi-Fi 所在的信道标成坏的）、按信道安排算与 Wi-Fi 信道的重叠 | Bluetooth Core 5.4 [Vol 4] Part E §7.8.19；[Vol 6] Part B Table 1.3、§5.1.2；IEEE 802.11-2016 §16.3.6.3、§17.3.8.4.2、§16.3.7.4 | 主机：37 位信道图的打包；板上：对真实 controller 发命令、看回包 | L1 / L3 | 主机与板上都完成（2026-11-27）。主机：`ble-802154/src/channel_class.zig` 与 5 条用例（583 → 589）——37 位图的打包与两条校验、数据信道 2402 + 2n MHz 与 2.4 GHz 信道 2407 + 5c MHz（信道 14 是 2484）的频率表、按发射频谱掩模（中心 ±11 MHz）手算 14 个 2.4 GHz 信道各自盖住的数据信道（奇数号 11 个、偶数号 12 个，带边截短）；没有差分。板上：合并镜像 `-Dcoex-ble-chan-class`，AP 在信道 1 时图 `00 f8 ff ff 1f` 回 Command Complete、Status 0x00，同一张图把保留位置上回 0x12（`coex-verification.md` §19）。图有没有被 controller 用上看不出来：只发了不可连接广播，没有连接与数据 |
-| C9 | 收尾：其余钩子的计数桩与 IDF 关闭分支的逐项对照、BLE 的 disable 路径（释放自己的时钟单元）、「BLE 先起」的顺序、板子回别人的 ping、分区表扩大、compiler_rt 死重 | — | — | — | 未做 |
+| C9 | 收尾：其余钩子的计数桩与 IDF 关闭分支的逐项对照、BLE 的 disable 路径（释放自己的时钟单元）、「BLE 先起」的顺序、板子回别人的 ping、分区表扩大、compiler_rt 死重 | IDF `esp_wifi/esp32s31/esp_adapter.c:435-632`（23 个包装的 `#else`）、`bt/controller/esp32s31/bt.c:124-145`、`wifi_init.c:458`；RFC 792、RFC 1122 §3.2.2（回显请求的应答） | 主机：桩值逐项（从 osi 表里按 C 调用约定调）、时钟单元的「只属于谁」、回显应答的帧；板上：合并镜像的 `-Dcoex-ping-in-ms`、`-Dcoex-ble-first`、`-Dcoex-ble-disable`，与不开 `-Dcoex` 的单独链路探针 | L1 / L4 | 已做 2026-11-27 晚，留一条尾巴（`coex-verification.md` §20）。板子答别人的 ping：两遍链路 97 + 118 帧，与工作站收到的 215 个应答逐遍对得上（37/37）。「BLE 先起」三个对照：PHY 由 BLE 的 init 打开时 Wi-Fi 只扫到 4 个 AP（时钟位都在，是标定的问题）；PHY 没开就做 controller 的 init，第 7 步停机；**先按 Wi-Fi 的路径打开 PHY、再 BLE 的 init、最后 Wi-Fi start**，Wi-Fi 照常（36/36）——不能反的是「谁打开 PHY」。下电路径：只属于 BLE 的时钟位关了、时钟源写回、Wi-Fi 与 PHY 的位一个不少（三轮相同）；controller 的八步之间要留时间——连着做之后 Wi-Fi 36 秒里扫不到 AP（25/28），每步之后空转 2.5 秒或扫一次都正常（28/28），隔多久、隔在哪几步之间没有定。计数桩 23 个逐项对齐，三处改齐，不开 `-Dcoex` 的镜像不再链 `libcoexist.a`（单独的链路探针回归：32 个 AP、ping 10/10）。分区表与 compiler_rt 量过不用动：最大的合并镜像 1 261 424 B（factory 的 82.1%）；compiler_rt 合并镜像 6 604 B、默认镜像 782 B，没有 f128 的例程 |
 
 ### Wi-Fi（IEEE Std 802.11-2016）
 

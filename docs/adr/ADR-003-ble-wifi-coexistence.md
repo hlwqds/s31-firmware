@@ -23,7 +23,7 @@
 | BT 闭包里没有 `libcoexist.a` | `R/components/bt-blobs/tools/gen-bt-closure.sh:18-23` |
 | 容量：irom 窗口 786 432 B、drom 窗口 720 896 B；factory 分区 1 536 000 B | `R/boards/esp32s31-coreboard/linker/s31.ld:49-50`；`R/firmware/idf-bootstrap/partitions.csv:23` |
 | IDF 自己的纯 BLE controller 镜像：`.flash.text` 528 424 B、`.flash.rodata` 64 168 B（已链 `libcoexist` 7 个成员） | `~/esp/bt-ctl-oracle/build/bt-ctl-oracle.map:22905,31933,382-577`（仓库外的参照构建） |
-| 我们的镜像另有约 193 KB 剥不掉的 compiler_rt 死重 | `R/firmware/build.zig:175-177` |
+| compiler_rt：默认镜像里 6 个符号 782 B，合并镜像里 36 个符号 6 604 B，没有 f128 / long-double 的软浮点例程（2026-11-27 带符号表构建后 `nm` 实测；此前记的「约 193 KB 死重」是旧工具链的读数） | `R/firmware/build.zig` `app` 后面的注；`docs/verification/coex-verification.md` §20.6 |
 | 不带探针的纯 BLE 闭包镜像（2026-11-24 实测，gc 关）：`.flash.text` 745 056 B、`.flash.rodata` 121 696 B、`.iram_blobs` 61 872 B，镜像 950 756 B | `scripts/check-bt-link.sh` 的输出；命令见 `docs/verification/coex-verification.md` |
 | 合并链接实验（2026-11-24，两个 blob 整闭包加 `libcoexist` 11 个成员，不带探针）：带着 Wi-Fi 量体积桩 `zz_stubs.o` 时只有 4 个同名符号（`sprintf`、`free`、`net80211_printf`、`pp_printf`，全是它与 BT 侧 C 桩撞名），未定义 0；去掉它后同名 0、未定义 61（Wi-Fi 侧专属：24 张 `est_PHY_*` 表、mesh 与 espnow 的厂商接口、`WIFI_EVENT` 等） | 同上 |
 | 非探针的 BLE 闭包链接原本是断的：`scripts/check-bt-link.sh` 报 11 个未定义符号，都是只在探针构建里编译的诊断导出 | 已修：`R/components/bt-blobs/link/closure_stubs.zig`，经 `R/firmware/build.zig` 的非探针分支挂进模块树 |
@@ -153,6 +153,10 @@ BLE 的 init 是按"单独跑"写的，`bringup.init` 里有两段会重做 PHY 
 - 板级证据见 `docs/verification/coex-verification.md` §7：新 drom 基址下默认镜像 8/8 通过；irom 新上限
   由合并镜像自己证明（825 744 B > 旧上限）；drom 新上限由 `-Dfat-rodata=1000000` 的镜像证明
   （DROM 段 1 046 816 B > 旧上限）。默认镜像在扩容前后的差异只有重定位（指令流形状不变）。
+- **2026-11-27 晚补记（路线图 C9，`coex-verification.md` §20.6）**：带 BLE 广播、信道分类与「板子回别人的 ping」的合并镜像最大
+  1 261 424 B，是 factory 分区（1 536 000 B）的 82.1%，还余约 275 KB——分区表仍然不用扩。compiler_rt 量过了：带符号表构建后
+  `nm` 数出来，默认镜像 6 个符号 782 B、合并镜像 36 个符号 6 604 B，没有 f128 / long-double 的软浮点例程；上文「死重单独立项，
+  先量后删」与背景表里那句「约 193 KB」是旧工具链的读数，这一项撤销。
 
 出口条件：合并镜像能启动、两个控制器的 init 都返回、各段自检通过。这一步不需要射频。
 
@@ -200,9 +204,24 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   （置位代替整字写），各回归一轮：单独的 Wi-Fi 真实链路镜像扫描 37 个 AP、连上、DHCP、ping 10/10
   （`logs/wifi-link-clock-union-boot.log`，基线 `logs/wifi-link-connect-boot.log`）；单独的 BLE 探针与基线逐行等价。
   入库前一律经 `tools/ap-side/redact.py` 脱敏（扫描结果里有邻居的 SSID 与 BSSID）。
-- **没有做的**：BLE 的 disable 路径（释放自己的单元，让引用计数真的归零）；Wi-Fi init 之前把 `LPCON+0x18` 对正成
-  `0x1` 的那一句会清 I2C 主控位，只在 Wi-Fi 先起的顺序下安全；BLE 的 PHY 域序列（`phyDomainEnable`，含写 flash
-  的探针标记）与 XTAL trim 在 PHY 归 Wi-Fi 时仍然会跑一遍（以幂等置位为主）。
+- **没有做的**：Wi-Fi init 之前把 `LPCON+0x18` 对正成 `0x1` 的那一句会清 I2C 主控位，只在 Wi-Fi 先起的顺序下安全；BLE 的 PHY 域序列
+  （`phyDomainEnable`，含写 flash 的探针标记）与 XTAL trim 在 PHY 归 Wi-Fi 时仍然会跑一遍（以幂等置位为主）。
+
+**实现记录（2026-11-27 晚，路线图 C9，`coex-verification.md` §20）。**
+
+- **「BLE 先起」的顺序，三个单变量对照**（`-Dcoex-ble-first`）：PHY 由 BLE 的 init 打开时，时钟位都在、Wi-Fi 仍只扫到 4 个 AP——
+  是标定的问题，不是时钟的（上面补记 2 的结论在时钟并集之上成立）；PHY 没开就做 controller 的 init，`bringup.init` 第 7 步停机；
+  **先按 Wi-Fi 的路径打开 PHY（`init_probe.phyEnableWifiOwned`，照 blob 在 `esp_wifi_start` 里的前两步 `_wifi_clock_enable`、
+  `_phy_enable`）、再做 BLE 的 init、最后 Wi-Fi start**，Wi-Fi 照常（扫描 32 个 AP，两遍链路都通，36/36）。规则精确成一句：
+  **PHY 的一次性初始化与标定必须由 Wi-Fi 的路径先做；做完之后两个 controller 的先后可以换。** 默认顺序不变（Wi-Fi 先起）。
+- **BLE 的下电路径**（`-Dcoex-ble-disable`）：照 IDF `bt_controller_disable`（`esp32s31/bt.c:124-145`）拆成八步
+  （`bt-blobs/src/probe.zig` 的 `DownStep`）；时钟这一半按上面的规则 2 落实——`porting.btdmLpDisableClock` 只清只属于 BLE 的位
+  （`CLK_CONF1` bit16-18、`CLK_CONF` 的 ETM 与 modem 安全模块、BLE 定时器、`LPCON` 的 LP 定时器时钟），与 Wi-Fi、PHY 共用的位
+  不动，时钟源写回 BLE 来之前的读数；板上三轮读数相同，Wi-Fi 与 PHY 的位一个不少。`LPCON` bit1（共存时钟）归共存核，不算
+  BLE 的。**controller 的八步之间要留时间**：连着做（1.4 ms）之后 Wi-Fi 36 秒里扫不到 AP；每一步之后空转 2.5 秒或扫一次都正常
+  （28/28）。隔多久、隔在哪几步之间，没有定。
+- **不开 `-Dcoex` 时的计数桩**也按 IDF 的关闭分支逐项对齐了（§20.5）：桩与胶水的 `Glue.off()` 现在是同一套值，不开 `-Dcoex`
+  的镜像不再需要 `libcoexist.a`。
 
 ### 5. 验证（按仓库的 L1–L4 分级；不抓空口能到 L3）
 
@@ -243,18 +262,21 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   - 共存的真实效果（L4b）在 BLE 打通前无法验证；只开 Wi-Fi 时能读到的是 blob 怎么用共存核、核怎么答（L4a，2026-11-26 已有读数）。本设计能保证的是胶水正确、两个控制器能同镜像启动。
   - 不开 `-Dcoex` 的镜像里 blob 调到的是计数桩，不是本组件的胶水；`_coex_pti_get` 的桩把出参写成 0 就足以让 Wi-Fi 收不到帧
     （2026-11-26，已修）。关闭分支的语义只在胶水里逐钩子对照过 IDF（L1），计数桩那边没有这层保证；同日的对照轮一度因此
-    把共存核误记成 Wi-Fi 的前提。
+    把共存核误记成 Wi-Fi 的前提。**2026-11-27 晚已对齐**（路线图 C9，`coex-verification.md` §20.5）：`_coex_init` / `_coex_enable`
+    的桩不再调核，`_coex_schm_flexible_period_get` 回 1，关着 `-Dcoex` 的探针 init 不再直接调核；不开 `-Dcoex` 的镜像也就不再
+    需要 `libcoexist.a`。
 - 需要跟进：
   1. `radio-coex` 接进 `wifi-blobs`、`osal`、`bt-blobs`（在 `-Dcoex` 开关后面）。**已完成 2026-11-24**（路线图 C2）：三种 coex 镜像链接通过，四种非 coex 镜像逐字节不变，BLE 探针与 Wi-Fi 探针各自带着真核心上板。证据与偏离见 `docs/verification/coex-verification.md` §4。第 5 节验证表里的 L3 判据已满足前四行；"随后合并镜像启动"属于第 4 项。
   2. 运行时统一：调度器、osi、导出、堆、tick、trap 钩子六项。**已做到两棵树可同链并上板（2026-11-24，
      路线图 C3）**，实际做法与第 2 节的设计有出入，见那里的实现记录：同名导出用弱符号定提供者、堆按配额
      切分、init 不嵌套；两个切换器没有合并，`bt-blobs` 的 osi 副本没有删，trap 钩子没有改多槽。
-  3. 窗口与分区扩大及板级证明；compiler_rt 死重。**窗口已扩并有板级证明；分区表未改**（理由见第 3 节的
-     实现记录）；compiler_rt 死重仍未动。
+  3. 窗口与分区扩大及板级证明；compiler_rt 死重。**窗口已扩并有板级证明；分区表未改**（理由见第 3 节的实现记录；2026-11-27 晚
+     量过，最大的合并镜像是 factory 的 82.1%，仍然不用扩）；**compiler_rt 已量，没有可裁的**（第 3 节的补记）。
   4. 合并镜像启动（L3）。**已完成 2026-11-24**：合并镜像 8/8 段通过、`verdict=pass`，
      `esp_wifi_init_internal rc=0`、`bringup.init rc=0`（`logs/coex-merged-boot.log`）。
   5. PHY 与时钟域的归属：PHY 这一条已有板级证据并落进代码（2026-11-26，第 4 节补记 2）。时钟域于 2026-11-27 改成
-     按单元取并集并上板（第 4 节的实现记录），事后写回已删除；BLE 的 disable 路径还没有。
+     按单元取并集并上板（第 4 节的实现记录），事后写回已删除；BLE 的 disable 路径于 2026-11-27 晚做了并上板（同上）：时钟这一半
+     成立，controller 的八步之间要留时间（连着做 Wi-Fi 会聋），隔法没有定。
   6. R3.1（`MAC_ST`）已拆（2026-11-25），Wi-Fi 真实链路已通（2026-11-26：连接、DHCP、ping 网关；2026-11-27 起有空口上的帧），
      L4a 已有读数（第 5 节）。L4b 有了第一条证据（2026-11-27 晚）：合并镜像里 BLE 的广播上了空口——起广播
      （`-Dcoex-ble-adv`）时"广播使能之后整机失声"的根因是中断风暴（`bt-blobs` 的 `intrArm` 把中断桥登记在 CLIC 输入号 24

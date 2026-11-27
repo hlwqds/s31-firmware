@@ -9,11 +9,18 @@
 
 const std = @import("std");
 
-/// ROM：`coex_init()`。核里是 `li a0,0; ret`（`coex_core_init` 的反汇编）。
-pub export fn coex_init() callconv(.c) void {}
+/// ROM：`coex_init()`。核里是 `li a0,0; ret`（`coex_core_init` 的反汇编）。主机上数着调用次数：
+/// 不开 `-Dcoex` 时 `_coex_init` 的计数桩不该来调它（`host_tests.zig`）。
+pub var coex_calls: u32 = 0;
 
-/// ROM / `libcoexist.a`：`coex_enable()`。
-pub export fn coex_enable() callconv(.c) void {}
+pub export fn coex_init() callconv(.c) void {
+    coex_calls += 1;
+}
+
+/// ROM / `libcoexist.a`：`coex_enable()`。同上。
+pub export fn coex_enable() callconv(.c) void {
+    coex_calls += 1;
+}
 
 /// ROM：外设中断到 CPU 输入的路由表。
 pub export fn intr_matrix_set(_: u32, _: u32, _: u32) callconv(.c) void {}

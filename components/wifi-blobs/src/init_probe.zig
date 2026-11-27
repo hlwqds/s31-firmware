@@ -1188,8 +1188,8 @@ pub fn initOnly(opts: InitOptions) c_int {
 
     // 4) 完整 init（干净路径）。**只能调一次**：重复初始化会在第二次进入时解引用无效指针
     //    （实测 exception code=5）。
-    // IDF 的 `esp_wifi_init` wrapper 在 `esp_wifi_init_internal` **之前**调 `coex_init()`
-    //    （wifi_init.c），我们一直没做；`g_coex_param_ptr` 为 0 也与此吻合。
+    // IDF 的 `esp_wifi_init` wrapper 在 `esp_wifi_init_internal` **之前**调 `coex_init_wrapper`（`wifi_init.c:458`）：开着共存时
+    // 它调核的 `coex_init()`，由胶水在同一位置做（`radio_coex.wifiInit`）；关着时它回 0、不碰核（`esp_adapter.c:439-440`）。
     if (coex_gate.enabled) {
         // 同一个位置，经胶水：`glue.wifiInit` 把 Wi-Fi 侧记成 inited，之后 blob 的 `wifi_hw_start`
         // 调 `_coex_enable` 才不会被拒（0x103）。两个分支只编一个。
@@ -1199,10 +1199,10 @@ pub fn initOnly(opts: InitOptions) c_int {
         };
         log.line("wifi-init-probe: coex wifiInit rc={d}", .{rc});
     } else {
-        const coex_init = @extern(*const fn () callconv(.c) void, .{ .name = "coex_init" });
-        log.raw("wifi-init-probe: calling coex_init() (IDF wrapper 顺序)\n");
-        coex_init();
-        log.raw("wifi-init-probe: coex_init returned\n");
+        // 不开共存：照 IDF 的关闭分支，什么都不调。此前这里直接调核的 `coex_init()`——那是 IDF **开着**共存时的顺序，
+        // 关着时并不发生；不开 `-Dcoex` 的镜像也因此还得链上 `libcoexist.a` 的 11 个成员。路线图 C9 对齐之后不用了
+        // （`docs/verification/coex-verification.md` §20）。
+        log.raw("wifi-init-probe: coex off: coex_init wrapper returns 0 without touching the core\n");
     }
     if (opts.experiments) {
         // **b14 前置实验（B 判定）**：把强制置位提前到 init **之前**。若 init 里真的会调使能函数
@@ -1419,6 +1419,19 @@ pub fn initOnly(opts: InitOptions) c_int {
         });
     }
     return init_rc;
+}
+
+/// 让 Wi-Fi 这条路先把 PHY 打开并标定，顺序照 blob 在 `esp_wifi_start` 里的前两步：先 `_wifi_clock_enable`（校准期间要 Wi-Fi 的
+/// 基带时钟；少了它，`register_chipv7_phy` 直接停住——2026-11-27 板上实测，`docs/verification/coex-verification.md` §20），
+/// 再 `_phy_enable`。之后 start 再调这两个钩子：时钟位是幂等重申，`shellPhyEnable` 见 modem 已经开着直接回 0。
+/// 合并镜像「BLE 先起」的 `phy_wifi_first` 用它：controller 的 init 要在 PHY 开着的时候才走得通。要求 `initOnly` 已经返回。
+/// 返回 0 = 两步都成功。
+pub fn phyEnableWifiOwned() usize {
+    const clocks: *const fn () callconv(.c) usize = @ptrCast(@alignCast(osi_table._wifi_clock_enable orelse return 1));
+    const crc = clocks();
+    if (crc != 0) return crc;
+    const f: *const fn (u32) callconv(.c) usize = @ptrCast(@alignCast(osi_table._phy_enable orelse return 1));
+    return f(0);
 }
 
 pub fn run() noreturn {

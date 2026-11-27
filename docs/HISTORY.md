@@ -282,6 +282,31 @@
 - **没有过的 / 没有做的**：定时器有没有真的在数（没有可读的计数器）；信道分类有没有被 controller 用上（只有不可连接广播）；
   时延涨在哪一段；这一轮没有 AP 侧与空口采集；每个配置只跑了一轮。
 
+## 路线图 C9：共存的收尾——板子回别人的 ping、「BLE 先起」的顺序、BLE 的下电路径、计数桩对齐（2026-11-27 晚）
+
+路线图 C9 的六件事在这一轮做完，留一条尾巴。细目在 `docs/verification/coex-verification.md` §20；设计记录的更新在 ADR-003 第 3、4 节。
+
+- **做了什么**：合并镜像（只编 `coex_merged`）加三个构建参数——`-Dcoex-ping-in-ms`（板子答外面来的回显请求，`data_path.zig` 的
+  `handleEchoRequest`：只答发给本机地址的，id、序号、载荷原样带回）、`-Dcoex-ble-first`（起手顺序反过来，`phy_ble` / `phy_deferred` /
+  `phy_wifi_first` 三种）、`-Dcoex-ble-disable`（照 IDF `bt_controller_disable` 的顺序关 BLE，八步；`-Dcoex-ble-down-scan` 与
+  `-Dcoex-ble-down-gap` 是它的两个对照）。不开 `-Dcoex` 时计数桩按 IDF 的关闭分支作答：`_coex_init` / `_coex_enable` 的桩不再调核，
+  `_coex_schm_flexible_period_get` 回 1，探针的 init 不再直接调核——不开 `-Dcoex` 的镜像不再需要 `libcoexist.a`。
+- **板子回别人的 ping**：工作站 `ping` 板子，两遍 Wi-Fi 链路里板子答了 97 + 118 帧，工作站收到 215 个应答，逐遍对得上（37/37）。
+- **「BLE 先起」**：PHY 由 BLE 的 init 打开时 Wi-Fi 只扫到 4 个 AP（时钟位都在，是标定的问题）；PHY 没开就做 controller 的 init，
+  第 7 步停机；先按 Wi-Fi 的路径打开 PHY、再做 BLE 的 init、最后 Wi-Fi start，Wi-Fi 照常（36/36）。不能反的是「谁打开 PHY」，
+  不是 controller 的先后；默认顺序不变。
+- **下电路径**：只属于 BLE 的时钟位关了、时钟源写回、Wi-Fi 与 PHY 的位一个不少（三轮相同）。controller 的八步之间要留时间：
+  连着做之后 Wi-Fi 36 秒里扫不到 AP（25/28），每步之间空转 2.5 秒或扫一次都正常（28/28）。
+- **分区表与 compiler_rt**：量过，不用动——最大的合并镜像 1 261 424 B（factory 的 82.1%）；compiler_rt 合并镜像 6 604 B、
+  默认镜像 782 B（`firmware/build.zig` 里「193 KB 死重」那条注是旧工具链的读数，已更正）。
+- **验收里抓到并修掉的两处**：① 链路探针在连接失败的那一遍里把上一遍的 `dhcp=true ping=true stayed=true` 报了出去
+  （`connectPhase()` 没有清结果的标志）；② 判据把 `LPCON` bit1（共存时钟）算成 BLE 自己的位——它归共存核，核还在替 Wi-Fi 做仲裁。
+- **验证**：主机门禁全过——`check-all.sh`：fmt、yaml、invariants、`check-host.sh` 5/5（`firmware` 2075 → 2079 项）、覆盖率
+  （逻辑模块 100% 可达）、容量、六个 profile 的构建。默认镜像与改动前逐字节相同（`app.bin` SHA-256 `4de8ad20…`）。上板十次，
+  入库的日志八份（`logs/coex-merged-c9-*-boot.log` 七份、`logs/wifi-link-stubs-aligned-boot.log`）。
+- **没有过的 / 没有做的**：下电路径里八步之间最少隔多久、隔在哪几步之间、等的是什么；`phy_deferred` 停在第 7 步的原因；
+  `phy_wifi_first` 与下电路径的每一轮只上板一到两次，没有 AP 侧与空口采集；§19.6 留下的三条没有碰。
+
 ## 日志
 
 `logs/` 中是章节时代的板侧原始输出（文件名不改，便于与 `docs/history/BRINGUP-chapter-era.md`

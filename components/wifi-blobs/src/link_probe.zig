@@ -51,6 +51,11 @@ pub var ping_count: u16 = 10;
 pub var ping_interval_us: u64 = 1_000_000;
 /// 回显请求的载荷字节数。探针镜像里一直是 32；合并镜像的广播实验按 `-Dcoex-adv-ping-bytes` 改它。
 pub var ping_bytes: usize = 32;
+/// 每一遍链路里，ping 网关的那一段跑完之后再留多长的窗口给外面来 ping 板子的主机（微秒）；0 = 不留，探针镜像的默认。
+/// 合并镜像的「板子回别人的 ping」实验按 `-Dcoex-ping-in-ms` 设它（路线图 C9）。
+pub var ping_in_us: u64 = 0;
+/// 窗口里答够这么多帧回显请求就提前结束。
+pub const ping_in_want: u16 = 4;
 
 // ---------------------------------------------------------------------------
 // 结构体布局：用 IDF 参照构建的编译命令（`~/esp/bt-ctl-oracle/build/compile_commands.json`
@@ -194,7 +199,7 @@ fn dumpIrq(tag: []const u8) void {
 }
 
 /// 常驻泵：每一步把 Wi-Fi 任务推进到它再次让出为止。结束时打这一窗的增量。
-fn pumpFor(us: u64, tag: []const u8) void {
+pub fn pumpFor(us: u64, tag: []const u8) void {
     const hooks0 = impl.event_count;
     const posts0 = event_bus.posts;
     const t0 = hw.nowUs();
@@ -248,6 +253,12 @@ fn connectPhase() void {
     sta_connected = false;
     sta_disconnected = false;
     sta_channel = 0;
+    // 结果的几项从这一遍自己的过程里来：连接没成时不能带着上一遍的读数（2026-11-27 晚实测：下电之后连接失败的那一遍
+    // 把上一遍的 `dhcp=true ping=true stayed=true` 原样报了出去）。
+    dhcp_bound = false;
+    ping_done = false;
+    ping_stats = .{};
+    stayed_connected = false;
     const cfg_rc = wpa_cb.setStaConfig(&cfg);
     log.line("wifi-link-probe: esp_wifi_set_config(sta) rc=0x{x} (ssid {d} B, password {d} B, pmf off)", .{
         @as(u32, @bitCast(cfg_rc)), ssid.len, password.len,
@@ -337,6 +348,10 @@ var ping_done: bool = false;
 var ping_stats: ipath.PingStats = .{};
 /// 收帧回调已经交给驱动：之后泵的每一步都要给 IP 栈一个机会处理收到的帧。
 var data_path_on: bool = false;
+/// 「板子回别人的 ping」的窗口里答了几帧、收到几帧校验和正确的请求；`ping_in_full` 是窗口的结束条件（`pumpUntil` 认一个布尔）。
+var ping_in_answered: u16 = 0;
+var ping_in_seen: u32 = 0;
+var ping_in_full: bool = false;
 
 /// 泵的每一步：把 IP 栈这边的事件打出来。跑在主上下文（收帧回调本身在驱动的任务里，只负责拷帧）。
 fn pollDataPath() void {
@@ -350,6 +365,10 @@ fn pollDataPath() void {
                 ping_done = true;
                 ping_stats = p;
             },
+            .echo_answered => {
+                ping_in_answered += 1;
+                if (ping_in_answered >= ping_in_want) ping_in_full = true;
+            },
             else => {},
         }
     }
@@ -361,6 +380,9 @@ fn dataPhase() void {
     dhcp_bound = false;
     ping_done = false;
     ping_stats = .{};
+    ping_in_answered = 0;
+    ping_in_seen = 0;
+    ping_in_full = false;
     const rc = ipath.start();
     log.line("wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x{x:0>8}", .{@as(u32, @bitCast(rc))});
     if (rc != 0) return;
@@ -384,6 +406,7 @@ fn dataPhase() void {
         _ = pumpUntil(&ping_done, ping_cap_us);
         if (!ping_done) log.line("wifi-link-probe: data path: ping did not finish in {d} s", .{ping_cap_us / 1_000_000});
         log.line("wifi-link-probe: data path: ping phase {d} ms", .{hw.elapsedUs(t1) / 1000});
+        if (ping_in_us > 0) inboundPingWindow();
     }
     const s = ipath.stats();
     log.line("wifi-link-probe: data path: frames rx={d} (ignored {d}, dropped {d}) tx={d} (failed {d})", .{
@@ -391,6 +414,17 @@ fn dataPhase() void {
     });
     // 没拿到地址才打驱动的收发统计（IDF `esp_wifi_statis_dump` 的全部模块）：帧到了驱动的哪一层，看这里。
     if (!dhcp_bound) driverStatsDump("dhcp failed");
+}
+
+/// 别人来 ping 板子的窗口（路线图 C9）：板子答够 `ping_in_want` 帧回显请求就提前结束，最长 `ping_in_us`。
+/// 判据在日志里：`ping answered` 每答一帧一行，收尾一行汇总。外面来 ping 的主机由测试脚本起，板子不知道它是谁。
+fn inboundPingWindow() void {
+    const t0 = hw.nowUs();
+    const full = pumpUntil(&ping_in_full, ping_in_us);
+    ping_in_seen = ipath.stats().echo_requests;
+    log.line("wifi-link-probe: data path: inbound ping window: answered {d} of {d} wanted in {d} ms ({s}), valid requests seen {d}", .{
+        ping_in_answered, ping_in_want, hw.elapsedUs(t0) / 1000, if (full) "enough answered" else "timeout", ping_in_seen,
+    });
 }
 
 /// 驱动自己的统计，输出走 blob 的日志。
@@ -816,6 +850,10 @@ pub const LinkResult = struct {
     stayed: bool = false,
     /// 连接阶段结束时的断开原因码；本地主动断开是 8。
     disconnect_reason: u8 = 0,
+    /// 「板子回别人的 ping」的窗口里答了几帧回显请求（窗口没开是 0）。
+    ping_in_answered: u16 = 0,
+    /// 窗口里收到的、校验和正确的回显请求数。
+    ping_in_seen: u32 = 0,
 };
 
 fn logArena(tag: []const u8) void {
@@ -914,6 +952,8 @@ pub fn linkRest() LinkResult {
         r.dhcp = dhcp_bound;
         r.ping_done = ping_done;
         r.ping = ping_stats;
+        r.ping_in_answered = ping_in_answered;
+        r.ping_in_seen = ping_in_seen;
         r.stayed = stayed_connected;
         r.disconnect_reason = disconnect_reason;
     } else {
