@@ -744,11 +744,17 @@ test "ble hooks forward the same arguments and return what the core returns" {
     try expectEqual(@as(c_int, 0), ble.btdm_coex_init());
     try expectEqual(@as(c_int, 0), ble.btdm_coex_enable());
 
+    // 镜像（`glue.bt_status_words`）：置过就是置上的位，清过就是 0；type > 4 核不受理，镜像也不动。
+    glue.bt_status_words = .{ 0, 0, 0, 0, 0 };
     ble.wr_btdm_coex_schm_status_bit_set(1, 0x40);
     try expectEqual(@as(u16, 0x40), fk.status_words[1]);
     try expectEqual(@as(u64, 1), rec(.schm_status_bit_set).a0);
+    try expectEqual(@as(u16, 0x40), glue.bt_status_words[1]);
     ble.wr_btdm_coex_schm_status_bit_clear(1, 0x40);
     try expectEqual(@as(u16, 0), fk.status_words[1]);
+    try expectEqual(@as(u16, 0), glue.bt_status_words[1]);
+    glue.mirrorBtStatus(5, 0x7fff, true);
+    try expectEqual(@as(u16, 0), glue.bt_status_words[1]);
 
     // btdm_coex.c:57-65：登记在 COEX_SCHM_CALLBACK_TYPE_BT 下，a0 是 1
     try expectEqual(@as(c_int, 0), ble.wr_btdm_coex_schm_register_btdm_callback(cbPtr(&someIntCb)));

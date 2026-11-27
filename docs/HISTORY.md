@@ -220,12 +220,36 @@
   细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
 - **没有过的**：ADR-003「核真的在仲裁」的两条判据——五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数相同；
   三组状态位（`coex_status_get` 的 wifi / ble / bt 位图，读数行里现在一并打印）对不上名字，含义没有弄清。这一轮只算
-  「两个射频同时开着」。
-- **没有做的**：按广播间隔（20 / 100 / 1000 ms）各一轮的时延与丢包、PTI 行为、两侧的 start 回调（路线图 C7 的其余
+  「两个射频同时开着」。【2026-11-27 上午更正】状态位那一条是读法错了（`coex_status_get` 不是读字），现在直接读出来是过的；
+  硬件定时器改成链路的每一泵步采一次，仍然没看到——见下一节。
+- **没有做的**：按广播间隔（20 / 100 / 1000 ms）各一轮的时延与丢包【2026-11-27 上午做了，见下一节】、PTI 行为、两侧的 start 回调（路线图 C7 的其余
   判据）；单独的 BLE 探针那边的 synth 墙（不是这个风暴，根因未知）；`osi_impl.zig` 的 `shellSetIsr` 里 blob 传的编号是
   哪一种（同类的一处，还开着）；可连接广播与 GATT；更长时间的稳定性（广播从使能起到 section 结束约 45 秒，没有发广播
   关闭命令）；广播地址还是回退的 `02:00:00:00:BB:01`（空口上量到的间隔只是 0x00A0 这一个配置）；BLE 的 disable 路径；「BLE 先起」的
   顺序；板子回别人的 ping。
+
+## L4b 第一组：按广播间隔量 ping，外加核不启动的对照（2026-11-27 上午）
+
+- **做了什么**：合并镜像加两个构建参数——`-Dcoex-adv-interval-ms`（BLE 广播间隔，默认 100）与 `-Dcoex-adv-pings`（每遍 Wi-Fi 链路
+  ping 网关的帧数，默认 10；链路探针的 ping 帧数由 `link_probe.ping_count` 给，探针镜像里仍是 10）；合并 section 多两组读数：
+  链路的每一泵步采共存核 5 个硬件定时器的使能位（`firmware/src/coex_merged.zig` 的 `sampleHwTimers`），以及 controller 经胶水
+  置 / 清的状态字的镜像（`radio-coex/src/glue.zig` 的 `bt_status_words`，`coexReadings` 里多一行 `status words:`）。
+  `tools/ap-side/collect.sh` 的 MON 模式修了 wiphy 名字的拼法（此前仓库这一版建不起 monitor 接口）。
+  `tools/ap-side/pcap-bt-adv.py` 加 `--report-slot-ms`（相邻上报的间隔逐段核对，比 30 ms 分组阈值短的间隔要用它）。
+  上板四轮：20 / 100 / 1000 ms 各一轮，外加 100 ms 的「核不启动」对照（`-Dcoex-sw-off`）。
+- **验证**：主机门禁 `scripts/check-all.sh` 退出 0（单元测试 2068 项，覆盖率 100%）。板上四轮都只编合并这一段
+  （app.bin 1 238 960 字节）：20 ms 与 100 ms 两轮 31/31、`verdict=pass`；1000 ms 那轮 30 过 1 没过（扫描灵敏度那条：8 对 19，
+  与 `ble-adv10` 同一种环境波动）；对照轮 28 过 3 没过（核不在的那三条，是对照本身）。三路取证：板侧串口、AP 一侧
+  （`collect.sh` 的 MON 模式加站点统计）、工作站上自编 tcpdump 打印的 HCI 流。读数与结论：三个间隔下每遍 30 帧都不丢；
+  广播时 rtt 三个间隔几乎一样（最小 27.2 ms、中位 30.5 ms、平均 45–55 ms，对照遍平均 4 ms），「间隔越短 rtt 越大」不成立；
+  空口上回显请求到应答中位 0.71 ms、没有重传；核不启动的对照里广播时 rtt 不涨（平均 3.5 ms）——涨在共存路径上，
+  核在、BLE 广播时板子的 Wi-Fi 每秒发十几个 QoS Null 帧（平时 1 个），机制没有核对。「核真的在仲裁」两条判据过了一条：
+  BLE 的状态字广播时是 `0x0001`；硬件定时器约 3 万次采样里没看到使能。日志
+  `logs/coex-merged-wifi-link-ble-intvl{20,100,1000}-{boot.log,ap-frames.log,ap-side.txt,hci.txt}`、
+  `…-intvl100-swoff-{boot.log,ap-side.txt}`；细目在 `docs/verification/coex-verification.md` §18。
+- **没有过的**：硬件定时器在走（ping 这种流量下核不用定时器；Wi-Fi 有吞吐时没量）。
+- **没有做的**：时延涨在哪一段（发之前等、收之后处理晚）与 QoS Null 帧变多的因果；PTI 行为、两侧的 start 回调；可连接广播；
+  每个间隔只跑了一轮。
 
 ## 日志
 

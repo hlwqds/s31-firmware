@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarise LE Advertising Reports of one address from a capture of the Bluetooth Linux Monitor stream.
 
-usage: pcap-bt-adv.py <file> <addr> [--tcpdump-text] [--raw] [--slot-ms T]
+usage: pcap-bt-adv.py <file> <addr> [--tcpdump-text] [--raw] [--slot-ms T] [--report-slot-ms T]
 
 The capture is taken on the workstation's own Bluetooth controller (needs root) with the statically
 cross-compiled tcpdump (build it with BLUEZ_INCLUDE, see tools/ap-side/README.md); bluetoothctl has to
@@ -31,6 +31,9 @@ in seconds since the first record (pcap) or the first timestamped line (text).
 --slot-ms T checks each inter-event gap against one advertising event of T ms plus 0-10 ms
 advDelay (Core Vol 6 Part B §4.4.2): a gap fits if some k >= 1 has k*T <= gap <= k*(T+10). Reports
 are sparse, so the mean says little; what holds is that every gap is a multiple of the event length.
+--report-slot-ms T does the same check on the gaps between consecutive reports, without the 30 ms
+grouping: for an interval shorter than 30 ms (the minimum, 20 ms) the grouping merges neighbouring
+advertising events, so the event gaps mean nothing there.
 
 pcap layout (checked record by record against tshark 4.6.10 on 2026-11-27): link type 254
 (BLUETOOTH_LINUX_MONITOR); every record is adapter id (2 bytes, big-endian), opcode (2 bytes,
@@ -263,6 +266,13 @@ def main(argv):
         slot = rest.index("--slot-ms")
         if slot + 1 < len(rest):
             slot_check(gaps, float(rest[slot + 1]))
+        rest = rest[slot + 2:]
+    report_gaps = [(b[0] - a[0]) * 1000 for a, b in zip(reports, reports[1:])]
+    while "--report-slot-ms" in rest:
+        slot = rest.index("--report-slot-ms")
+        if slot + 1 < len(rest):
+            print("consecutive reports, no grouping: %d gaps" % len(report_gaps))
+            slot_check(report_gaps, float(rest[slot + 1]))
         rest = rest[slot + 2:]
     if raw:
         print("-- per report: seconds since the first record, rssi dBm, pdu type")

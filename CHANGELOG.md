@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Fixed
+- **`tools/ap-side/collect.sh` 在 MON 模式下建不起 monitor 接口（2026-11-27）**：脚本把 wiphy 的名字拼成 `phy"${IFACE#phy}"`，接口名是
+  `phy0-ap0` 时拼出来就是 `phy0-ap0`，`iw` 回 No such file or directory，帧的那一段一直是「(no capture)」。此前入库的 MON 轮次
+  跑的是 `/tmp` 里另一份写死 `phy0` 的脚本，所以没暴露。现在从接口上查 wiphy（`iw dev <接口> info` 里的 `wiphy N`）；在路由器上
+  试了 6 秒，接口建起来又删干净，L4b 的四轮都靠它抓到了帧。
 - **合并镜像在 BLE 发广播时整机失声：中断桥登记错了一个下标（2026-11-27）**：blob 在 enable 里调 `intr_alloc(124)`，
   `components/bt-blobs/src/bringup.zig` 的 `intrArm` 把 MODEM_BT_MAC 路由到 CLIC 输入 24，把中断桥登记进 trap 分发表时用的下标
   是 24，而 `trapDispatch` 按外部中断号（输入号减 16）查表——查的是 8，永远查不到。泵每一轮都开着输入 24 的 IE，广播使能
@@ -190,6 +194,19 @@
   `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ### Added
+- **L4b 第一组：按 BLE 广播间隔量 ping 的时延与丢包，外加「核不启动」的对照（2026-11-27 上午）**：合并镜像加
+  `-Dcoex-adv-interval-ms`（广播间隔，默认 100）与 `-Dcoex-adv-pings`（每遍 Wi-Fi 链路 ping 的帧数，默认 10；
+  `wifi-blobs/src/link_probe.zig` 的 `ping_count`），以及两组读数——链路的每一泵步采共存核 5 个硬件定时器的使能位
+  （`firmware/src/coex_merged.zig` 的 `sampleHwTimers`），controller 经胶水置 / 清的状态字的镜像（`radio-coex/src/glue.zig` 的
+  `bt_status_words`，`coexReadings` 多一行 `status words:`）。`tools/ap-side/pcap-bt-adv.py` 加 `--report-slot-ms`（相邻上报的
+  间隔逐段核对）。板上四轮，都只编合并这一段（app.bin 1 238 960 字节）：20 / 100 / 1000 ms 各一轮，每轮两遍 Wi-Fi 链路各 ping
+  30 帧（BLE 只 enable 的那一遍是对照），外加 100 ms 的 `-Dcoex-sw-off` 对照。结果：三个间隔下都不丢（每遍 30/30）；广播时
+  rtt 三个间隔几乎一样（最小 27.2 ms、中位 30.5 ms、平均 45–55 ms，对照遍平均 4 ms），「间隔越短 rtt 越大」不成立；空口上
+  回显请求到应答中位 0.71 ms、没有重传；核不启动时广播时 rtt 不涨（平均 3.5 ms）——涨在共存路径上，核在、BLE 广播时板子的
+  Wi-Fi 每秒发十几个 QoS Null 帧（平时 1 个）。「核真的在仲裁」两条判据过了一条：BLE 的状态字广播时是 `0x0001`；硬件定时器
+  约 3 万次采样里没看到使能。20 ms 与 100 ms 两轮 31/31；1000 ms 那轮一条扫描灵敏度判据没过（8 对 19，环境波动）。日志
+  `logs/coex-merged-wifi-link-ble-intvl{20,100,1000}-{boot.log,ap-frames.log,ap-side.txt,hci.txt}`、
+  `…-intvl100-swoff-{boot.log,ap-side.txt}`；细目在 `docs/verification/coex-verification.md` §18，路线图 C7 与 ADR-003 第 5 节同步。
 - **AP 侧的空口证据与工具 `tools/ap-side/`（2026-11-27）**：在工作站上交叉编译静态的 tcpdump（`build-tcpdump.sh`，产物与
   路由器上用的 SHA-256 相同），AP 上每轮临时建 monitor 接口抓 802.11 帧的文字摘要（`collect.sh`、`frames.py`）。五个轮次
   373 帧（`logs/coex-merged-wifi-link-ap-frames.log`，邻居的 SSID / BSSID 换成标签）：板子发来的帧 -21 到 -28 dBm，关联

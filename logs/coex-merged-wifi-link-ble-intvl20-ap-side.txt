@@ -1,0 +1,145 @@
+AP 一侧看这一轮：板子两次关联期间的站点统计与空口上的帧（2026-11-27，合并镜像 L4b 轮 intvl20）
+
+采集：`ssh root@<AP> sh -s 210 MON < tools/ap-side/collect.sh`（只读）：板子连着时每秒一份 `iw dev phy0-ap0 station dump` 与
+hostapd 的 `get_clients`，全程跟随系统日志（只留 hostapd 与 dnsmasq-dhcp 的行），并临时建 monitor 接口 ap-side-mon
+抓地址里有板子 MAC 的帧（路由器上自编的静态 tcpdump，每帧 256 字节，只输出文字摘要）。时间由路由器时钟（GMT、没有 NTP）
+换算成本机 CST，偏移 3333873 秒（本机减路由器，上板之前刚量的）。入库的是从采集输出里摘出来的：两次关联各自的站点统计
+（第一遍 Wi-Fi 链路是 BLE 只 enable 的对照，第二遍是 BLE 广播着）、monitor 接口看到的帧按方向数出来的数，以及 hostapd
+与 dnsmasq 记的、只涉及板子这一个站点的行。逐帧的清单在 `logs/coex-merged-wifi-link-ble-intvl20-ap-frames.log`。
+
+## 第一遍（BLE 只 enable，对照）：09:59:06 关联，约 35 秒（到 09:59:40）
+信号强度 -26..-23 dBm（中位 -24）
+整段：AP → 板子发了 32 包（重传 1 次、失败 1 次）；板子 → AP 的帧 AP 收到 68 个（rx drop misc +0）
+
+每秒一份（路由器时钟换算成 CST；retries / failed 是累计值）：
+时间      信号 dBm  tx速率 Mbit/s  rx速率 Mbit/s  重传  失败  AP发包  板发包
+09:59:06      -24           6.0            6.0     0     0      7      10
+09:59:07      -25          86.0           86.0     0     0      9      17
+09:59:08      -24          86.0           86.0     0     0     10      19
+09:59:09      -24          86.0           86.0     0     0     11      21
+09:59:10      -24          86.0           86.0     0     0     12      23
+09:59:11      -25          86.0           86.0     0     0     13      25
+09:59:12      -25          86.0            6.0     0     0     15      30
+09:59:13      -24          86.0           86.0     0     0     16      32
+09:59:14      -24          86.0           86.0     0     0     17      34
+09:59:15      -24          86.0           86.0     0     0     18      36
+09:59:16      -24          86.0           86.0     1     1     19      38
+09:59:17      -24          86.0           86.0     1     1     20      40
+09:59:18      -24          86.0           86.0     1     1     21      42
+09:59:19      -24          86.0           86.0     1     1     22      44
+09:59:20      -24          86.0           86.0     1     1     23      46
+09:59:21      -26          86.0           86.0     1     1     25      49
+09:59:22      -26          86.0           86.0     1     1     26      51
+09:59:23      -26          86.0           86.0     1     1     27      53
+09:59:24      -26          86.0           86.0     1     1     28      55
+09:59:25      -24          86.0           86.0     1     1     29      58
+09:59:26      -24          86.0           86.0     1     1     30      60
+09:59:27      -24          86.0           86.0     1     1     31      62
+09:59:28      -24          86.0           86.0     1     1     32      64
+09:59:29      -24          86.0           86.0     1     1     33      66
+09:59:30      -24          86.0           86.0     1     1     34      68
+09:59:31      -23          86.0           86.0     1     1     35      70
+09:59:32      -25          86.0           86.0     1     1     36      72
+09:59:33      -24          86.0           86.0     1     1     37      74
+09:59:34      -24          86.0           86.0     1     1     38      76
+09:59:35      -26          86.0           86.0     1     1     39      77
+09:59:36      -24          86.0           86.0     1     1     39      78
+09:59:37      -24          86.0           86.0     1     1     39      78
+09:59:38      -24          86.0           86.0     1     1     39      78
+09:59:39      -24          86.0           86.0     1     1     39      78
+09:59:40      -24          86.0           86.0     1     1     39      78
+
+空口（monitor 接口只抓地址里有板子 MAC 的帧；同一个射频在收发时会漏看一些，这里的数是下限）：方向 类型 帧数 / 带重传标志的帧数
+  AP→板   EAPOL   2 /   0
+  AP→板   数据帧（加密）  30 /   0
+  AP→板   管理   3 /   0
+  板→AP   ADDBA   4 /   0
+  板→AP   EAPOL   2 /   0
+  板→AP   QoS Null 帧（没有载荷的数据帧）  33 /   0
+  板→AP   数据帧（加密）  31 /   0
+  板→AP   管理   4 /   0
+  板→广播   数据帧（加密）   2 /   0
+  板子发的 QoS Null 帧相邻间隔 ms：n=32 min=51.1 median=999.5 max=1244.1
+
+## 第二遍（BLE 广播着）：09:59:52 关联，约 36 秒（到 10:00:28）
+信号强度 -25..-23 dBm（中位 -24）
+整段：AP → 板子发了 35 包（重传 1 次、失败 1 次）；板子 → AP 的帧 AP 收到 156 个（rx drop misc +1）
+
+每秒一份（路由器时钟换算成 CST；retries / failed 是累计值）：
+时间      信号 dBm  tx速率 Mbit/s  rx速率 Mbit/s  重传  失败  AP发包  板发包
+09:59:52      -23           6.0            6.0     0     0      4       4
+09:59:53      -24          86.0           86.0     0     0      9      25
+09:59:54      -24          86.0           86.0     1     1     10      30
+09:59:55      -24          86.0           86.0     1     1     11      35
+09:59:56      -24          86.0           86.0     1     1     12      39
+09:59:57      -24          86.0           86.0     1     1     13      45
+09:59:58      -24          86.0            6.0     1     1     15      51
+09:59:59      -24          86.0           86.0     1     1     16      57
+10:00:00      -24          86.0           86.0     1     1     17      61
+10:00:01      -24          86.0           86.0     1     1     18      65
+10:00:02      -24          86.0           86.0     1     1     19      71
+10:00:03      -24          86.0           81.2     1     1     20      77
+10:00:04      -24          86.0           86.0     1     1     21      82
+10:00:06      -24          86.0           86.0     1     1     22      88
+10:00:07      -24          86.0           86.0     1     1     23      92
+10:00:08      -24          86.0           86.0     1     1     24      98
+10:00:09      -24          86.0           86.0     1     1     25     102
+10:00:10      -24          86.0           86.0     1     1     26     106
+10:00:11      -24          86.0           86.0     1     1     27     110
+10:00:12      -24          86.0           86.0     1     1     28     114
+10:00:13      -24          86.0           86.0     1     1     29     117
+10:00:14      -24          86.0           86.0     1     1     30     123
+10:00:15      -24          86.0           86.0     1     1     31     127
+10:00:16      -24          86.0           86.0     1     1     32     131
+10:00:17      -24          86.0           86.0     1     1     33     135
+10:00:18      -25          86.0           86.0     1     1     34     139
+10:00:19      -24          86.0           86.0     1     1     35     143
+10:00:20      -24          86.0           86.0     1     1     36     147
+10:00:21      -24          86.0           86.0     1     1     37     150
+10:00:22      -24          86.0           86.0     1     1     38     156
+10:00:23      -24          86.0           86.0     1     1     39     158
+10:00:24      -24          86.0           86.0     1     1     39     160
+10:00:25      -24          86.0           86.0     1     1     39     160
+10:00:26      -24          86.0           86.0     1     1     39     160
+10:00:27      -24          86.0           86.0     1     1     39     160
+10:00:28      -24          86.0           86.0     1     1     39     160
+
+空口（monitor 接口只抓地址里有板子 MAC 的帧；同一个射频在收发时会漏看一些，这里的数是下限）：方向 类型 帧数 / 带重传标志的帧数
+  AP→板   EAPOL   2 /   0
+  AP→板   探测   1 /   0
+  AP→板   数据帧（加密）  30 /   0
+  AP→板   管理   3 /   0
+  板→AP   ADDBA   4 /   0
+  板→AP   EAPOL   2 /   0
+  板→AP   QoS Null 帧（没有载荷的数据帧） 115 /   0
+  板→AP   数据帧（加密）  31 /   0
+  板→AP   管理   3 /   0
+  板→广播   探测   1 /   0
+  板→广播   数据帧（加密）   2 /   0
+  板子发的 QoS Null 帧相邻间隔 ms：n=114 min=10.8 median=63.0 max=995.2
+
+## hostapd 与 dnsmasq 记的行（路由器时钟 GMT，原样；只有板子这个站点）
+Mon Oct 19 11:54:32 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+Mon Oct 19 11:54:32 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+Mon Oct 19 11:54:32 2026 daemon.notice hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+Mon Oct 19 11:54:32 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+Mon Oct 19 11:54:32 2026 daemon.notice hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+Mon Oct 19 11:54:33 2026 daemon.info dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+Mon Oct 19 11:54:33 2026 daemon.info dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 11:54:33 2026 daemon.info dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 11:54:33 2026 daemon.info dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 11:55:08 2026 daemon.notice hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+Mon Oct 19 11:55:08 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+Mon Oct 19 11:55:09 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)
+Mon Oct 19 11:55:19 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: authenticated
+Mon Oct 19 11:55:19 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: associated (aid 1)
+Mon Oct 19 11:55:19 2026 daemon.notice hostapd: phy0-ap0: AP-STA-CONNECTED 1c:29:04:d1:99:28 auth_alg=open
+Mon Oct 19 11:55:19 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 WPA: pairwise key handshake completed (RSN)
+Mon Oct 19 11:55:19 2026 daemon.notice hostapd: phy0-ap0: EAPOL-4WAY-HS-COMPLETED 1c:29:04:d1:99:28
+Mon Oct 19 11:55:20 2026 daemon.info dnsmasq-dhcp[1]: DHCPDISCOVER(br-lan) 1c:29:04:d1:99:28
+Mon Oct 19 11:55:20 2026 daemon.info dnsmasq-dhcp[1]: DHCPOFFER(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 11:55:20 2026 daemon.info dnsmasq-dhcp[1]: DHCPREQUEST(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 11:55:20 2026 daemon.info dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.31.151 1c:29:04:d1:99:28
+Mon Oct 19 11:55:55 2026 daemon.notice hostapd: phy0-ap0: AP-STA-DISCONNECTED 1c:29:04:d1:99:28
+Mon Oct 19 11:55:56 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: disassociated
+Mon Oct 19 11:55:57 2026 daemon.info hostapd: phy0-ap0: STA 1c:29:04:d1:99:28 IEEE 802.11: deauthenticated due to inactivity (timer DEAUTH/REMOVE)

@@ -388,6 +388,19 @@ pub const Glue = struct {
 
 var singleton: Glue = .{};
 
+/// BT controller 经胶水的两个钩子置 / 清过状态位之后，核里那 5 个状态字各是什么——照反汇编的语义镜像
+/// （`fake.zig`：`coex_schm_status_bit_set` 对 type > 4 不理，低 16 位有效）。核里真实的字读不到：
+/// `coex_status_get(bitmap)` 只在 bitmap 之外还有别的状态字非零时才回核的状态，不是读字。ADR-003 第 5 节
+/// L4b 的「BLE 的状态位非 0」看下标 1。Wi-Fi blob 直接调核、不经胶水的钩子，它那一份在 `wifi-blobs` 的
+/// `CoexTraceStats.set_last`。
+pub var bt_status_words: [5]u16 = @splat(0);
+
+pub fn mirrorBtStatus(st_type: u32, status: u32, set: bool) void {
+    if (st_type > 4) return;
+    const bits: u16 = @truncate(status);
+    if (set) bt_status_words[st_type] |= bits else bt_status_words[st_type] &= ~bits;
+}
+
 pub fn instance() *Glue {
     return &singleton;
 }

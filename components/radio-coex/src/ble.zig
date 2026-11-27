@@ -23,6 +23,7 @@ pub fn wr_btdm_coex_schm_status_bit_set(st_type: u32, status: u32) callconv(.c) 
     g.enter(.wr_btdm_coex_schm_status_bit_set);
     if (g.swOff(.wr_btdm_coex_schm_status_bit_set)) return;
     g.core.schm_status_bit_set.?(st_type, status);
+    glue.mirrorBtStatus(st_type, status, true);
 }
 
 /// btdm_coex.c:48-55
@@ -31,6 +32,7 @@ pub fn wr_btdm_coex_schm_status_bit_clear(st_type: u32, status: u32) callconv(.c
     g.enter(.wr_btdm_coex_schm_status_bit_clear);
     if (g.swOff(.wr_btdm_coex_schm_status_bit_clear)) return;
     g.core.schm_status_bit_clear.?(st_type, status);
+    glue.mirrorBtStatus(st_type, status, false);
 }
 
 /// btdm_coex.c:57-65：BLE 的方案回调登记在 `COEX_SCHM_CALLBACK_TYPE_BT`（=1）下。

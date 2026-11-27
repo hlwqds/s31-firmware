@@ -43,6 +43,10 @@ pub const enabled = true;
 /// 任务也走一步，两个控制器在同一个主循环里轮转；探针镜像里是 null，行为不变。
 pub var co_pump: ?*const fn () void = null;
 
+/// 数据通路里 ping 租约里的网关几帧（每帧最长 2 秒：发不出去或等不到回显都算超时）。探针镜像里一直是 10；合并镜像
+/// 的广播实验按 `-Dcoex-adv-pings` 抬高（`coex_merged.zig` 设它），好让「广播着的时候 ping 的时延与丢包」有足够的样本。
+pub var ping_count: u16 = 10;
+
 // ---------------------------------------------------------------------------
 // 结构体布局：用 IDF 参照构建的编译命令（`~/esp/bt-ctl-oracle/build/compile_commands.json`
 // 里 `esp_adapter.c` 那一条）编了一个 `sizeof` / `offsetof` 探针，数值取自目标文件：
@@ -336,7 +340,7 @@ fn pollDataPath() void {
     }
 }
 
-/// 数据通路（R3.2.3）：注册收帧回调 → DHCP 拿地址（最长 12 秒）→ ping 租约里的网关 10 帧（最长 20 秒）。
+/// 数据通路（R3.2.3）：注册收帧回调 → DHCP 拿地址（最长 12 秒）→ ping 租约里的网关 `ping_count` 帧（默认 10，每帧最长 2 秒）。
 /// 判据在日志里：`dhcp ACK: bound`、`ping reply`、`ping done`（收到数 > 0）。
 fn dataPhase() void {
     dhcp_bound = false;
@@ -356,10 +360,11 @@ fn dataPhase() void {
             hw.elapsedUs(t0) / 1000, l.ip[0],     l.ip[1],     l.ip[2],     l.ip[3],
             l.router[0],             l.router[1], l.router[2], l.router[3],
         });
-        ipath.startPing(10, hw.nowUs());
+        ipath.startPing(ping_count, hw.nowUs());
         const t1 = hw.nowUs();
-        _ = pumpUntil(&ping_done, 20_000_000);
-        if (!ping_done) log.line("wifi-link-probe: data path: ping did not finish in 20 s", .{});
+        const ping_cap_us: u64 = @as(u64, ping_count) * 2_000_000;
+        _ = pumpUntil(&ping_done, ping_cap_us);
+        if (!ping_done) log.line("wifi-link-probe: data path: ping did not finish in {d} s", .{ping_cap_us / 1_000_000});
         log.line("wifi-link-probe: data path: ping phase {d} ms", .{hw.elapsedUs(t1) / 1000});
     }
     const s = ipath.stats();

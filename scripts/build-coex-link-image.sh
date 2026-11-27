@@ -14,6 +14,10 @@
 #   BLE=1 sh scripts/build-coex-link-image.sh           # 再开 -Dcoex-ble-enable（BLE enable，泵里每步轮转）
 #   LINK=0 sh scripts/build-coex-link-image.sh          # 两个控制器只做到 init（不需要 AP）
 #   DUMP=1 sh scripts/build-coex-link-image.sh          # 链路之前多打一份寄存器转储
+#   ADV=1 BLE=1 sh scripts/build-coex-link-image.sh           # 再开 -Dcoex-ble-adv：所有判据之后让 BLE 发不可连接广播，Wi-Fi 在它广播着时再走一遍链路
+#   ADV=1 BLE=1 sh scripts/build-coex-link-image.sh -Dcoex-adv-interval-ms=20 -Dcoex-adv-pings=30
+#                                          # 广播实验的两个参数：广播间隔（毫秒，20 到 10240 之间 5 的倍数，默认 100）与每遍
+#                                          # Wi-Fi 链路 ping 网关的帧数（默认 10）。按广播间隔各量一轮是路线图 C7 的第一组判据。
 #   sh scripts/build-coex-link-image.sh -D其它参数…     # 透传给 zig build
 # 环境变量：
 #   IDF        ESP-IDF 源码树（默认 ~/esp/esp-idf），归档在它的 components/*/lib/esp32s31 下

@@ -125,8 +125,8 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 | `src/osi_impl.zig` | 适配层实现：arena 分配器、信号量/互斥/队列、任务表、事件组、NVS RAM 版、`Hooks` |
 | `src/osi_stubs.zig` | 未实现钩子的**具名桩**（只填空字段，绝不覆盖已实现项） |
 | `src/init_config.zig` | `wifi_init_config_t` 默认值（含 `wpa_crypto_funcs.size = 52`） |
-| `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（板级前置 → 装表 → 共存核 → init → 登记 supplicant 回调表，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly` |
-| `src/link_probe.zig` | 真实链路探针（`-Dwifi-link-probe=true`）：init → start → 主动扫描 → 取回并打印扫描结果（缓冲 64 条）→（构建时给了 AP 的 SSID 才做）连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）；`-Dcoex` 时每走到一个阶段取一次共存核的读数 |
+| `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（板级前置 → 装表 → 共存核 → init → 登记 supplicant 回调表，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly`。`coexReadings` 里有一行 `status words:` 给三个状态字（2026-11-27）：Wi-Fi 的那份是 blob 最后一次置的值，BLE / BT 的那份是 controller 经胶水置 / 清的镜像（`radio-coex` 的 `bt_status_words`）；同一段里的 `wifi_status=… ble_status=… bt_status=…` 是 `coex_status_get` 的三个查询，不是读字 |
+| `src/link_probe.zig` | 真实链路探针（`-Dwifi-link-probe=true`）：init → start → 主动扫描 → 取回并打印扫描结果（缓冲 64 条）→（构建时给了 AP 的 SSID 才做）连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）；`-Dcoex` 时每走到一个阶段取一次共存核的读数。ping 网关几帧由 `ping_count` 给（默认 10，每帧最长 2 秒；合并镜像的广播实验按 `-Dcoex-adv-pings` 设） |
 | `src/wpa_cb.zig` | blob 的 supplicant 回调表（`struct wpa_funcs`）：登记给 blob；attach / detach / 断开通知驱动 `wifi_connect.supplicant`，`wpa_parse_wpa_ie` 是 IDF 同名函数的移植；连接路径（选 AKM 与套件、算 PMK、收 EAPOL、消息 4 发送完成后装钥匙、通知驱动协商完成）只做 RSN + PSK |
 | `src/data_path.zig` | 数据通路：驱动的以太网帧 ⇄ 本仓库的 IP 栈（`net-ipv4`、`net-udp-dhcp-dns`）；DHCP（含续租、重绑、到期）与 ping 网关，没有路由表、没有 socket |
 | `src/link_stubs.zig` | 链接期桩：计数桩与数据桩（`WIFI_EVENT`、`regdomain_table`、`est_PHY_*`）；7 个与 BLE 侧同名的计数桩是弱符号 |

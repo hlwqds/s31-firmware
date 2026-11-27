@@ -1,0 +1,30 @@
+板子 BLE 广播，间隔 1000 ms：工作站上自编 tcpdump 直接打印的 HCI 监视流（2026-11-27，合并镜像 L4b 轮 intvl1000）
+
+怎么量的：板子跑合并镜像（`scripts/build-coex-link-image.sh`，`ADV=1 BLE=1`，`-Dcoex-adv-interval-ms=1000
+-Dcoex-adv-pings=30`；app.bin 1 238 960 字节，只编合并这一段；板侧检查 30 条通过；没过的一条是「wifi scan after ble keeps >= half the baseline ap (8 vs 19)」，`verdict=fail`）。
+烧录之前先起 `tcpdump -i bluetooth-monitor -n -s 256`（195 秒，直接打印；工作站上自编的 tcpdump 4.99.6，sha256 be8a4fde…，
+带打印机补丁），同一轮里 bluetoothctl 进 scan 子菜单先 duplicate-data on 再 scan on。入库的只有写着板子地址的行
+（grep 出来，没有邻居的数据），时间戳是本机时间（CST）。tcpdump 的收尾（那一轮的标准输出）：2125 packets captured，0 dropped。
+同一轮的板侧日志是 `logs/coex-merged-wifi-link-ble-intvl1000-boot.log`，AP 一侧是 `…-intvl1000-ap-frames.log` 与 `…-intvl1000-ap-side.txt`；
+另外两个间隔的同一套文件只是把 intvl 后面的数字换掉。
+
+读数（python3 tools/ap-side/pcap-bt-adv.py <下面这些行存成的文件> 02:00:00:00:BB:01 --tcpdump-text --slot-ms 1000 --report-slot-ms 1000 的输出，原样）：
+tcpdump text /tmp/r5c/advI-1000-board-lines.txt: 6 records, 49.2 s; address 02:00:00:00:bb:01: 6 reports in 6 advertising events, 49.2 s (0.000-49.159 s)
+pdu types: ['ADV_NONCONN_IND']
+address types: ['Public']
+reports per advertising event: median 1, min 1, max 1
+inter-event interval ms: n=5 min=4010.7 median=4021.8 mean=9831.8 max=33079.6 p5=4004.2 p95=53416.5
+RSSI dBm: n=6 min=-51 median=-49 mean=-46 max=-26 p5=-51 p95=-11
+against one advertising event of 1000 ms + 0-10 ms advDelay: 5 of 5 gaps are a whole number of events
+  events per gap (k: gaps): 4: 4, 33: 1; per-event length from the fitted gaps ms: n=5 min=1002.4 median=1005.0 mean=1004.5 max=1006.8 p5=1002.2 p95=1007.7
+consecutive reports, no grouping: 5 gaps
+against one advertising event of 1000 ms + 0-10 ms advDelay: 5 of 5 gaps are a whole number of events
+  events per gap (k: gaps): 4: 4, 33: 1; per-event length from the fitted gaps ms: n=5 min=1002.4 median=1005.0 mean=1004.5 max=1006.8 p5=1002.2 p95=1007.7
+
+tcpdump 直接打印的板子地址的 6 行（原样，只有板子的数据）：
+10:07:08.026902 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+10:07:41.106547 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+10:07:45.133570 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+10:07:49.144246 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+10:07:53.164213 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -26 dBm
+10:07:57.186021 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm

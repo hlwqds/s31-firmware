@@ -18,7 +18,7 @@
 //!     （开了 `-Dcoex-ble-enable` 时）。这一步里 BLE 还没有广播，是"一个射频在收发、另一个 enabled"；两个射频同时
 //!     在空口上的是第 8 步（`-Dcoex-ble-adv`）。顺序为什么不能反，见下面「PHY 的归属」。
 //!   - `-Dcoex-ble-adv`（要求 `-Dcoex-ble-enable`）：所有判据之后，经 HCI 让 BLE 发不可连接广播（三条命令，从一个
-//!     独立栈上的发送任务里发；间隔 0x00A0 = 100 ms），泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE 广播着的时候
+//!     独立栈上的发送任务里发；间隔由 `-Dcoex-adv-interval-ms` 给，默认 100 ms = 0x00A0），泵 3 秒、每轮读 synth 锁定位；然后让 Wi-Fi 在 BLE
 //!     再走一遍真实链路，最后 15 秒只泵 BLE（Wi-Fi 已断开、没有流量），给空口那边的蓝牙扫描留一段干净的窗口。BLE 从
 //!     广播使能起一直广播到 section 结束，没有发广播关闭命令。实测（2026-11-27）：三条命令都回了 Command Complete，
 //!     合成器约 35 ms 内锁定，Wi-Fi 在 BLE 广播着的时候照常连接、DHCP、ping（10 帧不丢，rtt 平均从约 3.5 ms 涨到约
@@ -92,8 +92,9 @@ extern const _heap_end: u8;
 
 /// `-Dcoex-ble-enable` 的步骤里泵 controller 任务多久。
 const ble_pump_us: u64 = 1_000_000;
-/// `-Dcoex-ble-adv` 的广播间隔（0.625 ms 一档：NimBLE 的 `BLE_HCI_ADV_ITVL` 是 625 µs；0x00A0 = 100 ms）与广播着的时候泵多久。
-const ble_adv_interval_units: u16 = 0x00A0;
+/// `-Dcoex-ble-adv` 的广播间隔：构建时给毫秒（`-Dcoex-adv-interval-ms`，默认 100），换成 HCI 里的档数——0.625 ms 一档
+/// （NimBLE 的 `BLE_HCI_ADV_ITVL` 是 625 µs；100 ms = 0x00A0）。广播着的时候泵多久写死不变。
+const ble_adv_interval_units: u16 = @intCast(opts.adv_interval_ms * 8 / 5);
 const ble_adv_pump_us: u64 = 3_000_000;
 /// 第二遍 Wi-Fi 链路之后，让 BLE 继续广播这么久（只泵；此时 Wi-Fi 已断开、没有流量）：给空口那边的蓝牙扫描留一段稳定的窗口。
 const ble_adv_hold_us: u64 = 15_000_000;
@@ -159,14 +160,53 @@ fn bleStep() void {
     wifi.foreign_context = true;
     bt.probe.pumpStep();
     wifi.foreign_context = false;
+    sampleHwTimers();
+}
+
+/// 共存核的五个硬件定时器的使能字（`0x2010F408 + 16*idx` 的 bit1，`coexReadings` 里同一个读法）。ADR-003 第 5 节 L4b 的
+/// 判据之一是「核的硬件定时器在走」：阶段边界上的读数看不到——核只在处理申请 / 释放的那一会儿使能定时器。所以链路的
+/// 每一泵步采一次（隔 2 ms 最多一次），数的是采了多少次、其中多少次看到使能、见过哪几个定时器。
+var timer_samples: u32 = 0;
+var timer_enabled_samples: u32 = 0;
+var timer_enabled_mask: u8 = 0;
+var timer_last_us: u64 = 0;
+
+fn resetHwTimers() void {
+    timer_samples = 0;
+    timer_enabled_samples = 0;
+    timer_enabled_mask = 0;
+    timer_last_us = 0;
+}
+
+fn sampleHwTimers() void {
+    const now = board.hw.nowUs();
+    if (board.hw.elapsedUs(timer_last_us) < 2_000) return;
+    timer_last_us = now;
+    timer_samples += 1;
+    var any = false;
+    for (0..5) |idx| {
+        if ((rd(0x2010_F408 + 16 * idx) & 2) != 0) {
+            any = true;
+            timer_enabled_mask |= @as(u8, 1) << @intCast(idx);
+        }
+    }
+    if (any) timer_enabled_samples += 1;
+}
+
+fn reportHwTimers(tag: []const u8) void {
+    log.line("coex-timers[{s}]: {d} samples (at most one per 2 ms), {d} with a timer enabled, timers seen enabled 0x{x:0>2}", .{
+        tag, timer_samples, timer_enabled_samples, timer_enabled_mask,
+    });
+    check(timer_samples > 0, "coex hw timers sampled while {s} ({d} samples, {d} with one enabled)", .{ tag, timer_samples, timer_enabled_samples });
 }
 
 /// 作为 section 跑：全过返回 true。
 pub fn run() bool {
     g_passed = 0;
     g_failed = 0;
-
-    // 1) 堆配额：链接脚本的 `_heap_start .. _heap_end`（绝对符号，取地址得到边界值）。
+    // 广播实验里两遍 Wi-Fi 链路（BLE 只 enable 的那一遍是对照）各 ping 网关 `-Dcoex-adv-pings` 帧；别的镜像里 `link_probe`
+    // 的默认值是 10，不经过这里。
+    if (opts.ble_adv) wifi.link.ping_count = opts.adv_pings;
     const heap_start: usize = @intFromPtr(&_heap_start);
     const heap_end: usize = @intFromPtr(&_heap_end);
     const heap_total = heap_end - heap_start;
@@ -245,8 +285,11 @@ pub fn run() bool {
         if (wifi_started) {
             const refusals0 = wifi.foreign_refusals;
             wifi.link.co_pump = if (opts.ble_enable) &bleStep else null;
+            resetHwTimers();
             const r = wifi.link.linkRest();
             wifi.link.co_pump = null;
+            // 对照：BLE 只 enable、不广播时定时器的读数。广播实验之外不读出来，那些镜像的判据条数不变。
+            if (opts.ble_adv) reportHwTimers("wifi link, ble enabled");
             wifi.coexReadings("wifi-link");
             readRadios("after wifi link");
             checkClocks("after wifi link", &.{ .wifi, .phy, .ble });
@@ -283,6 +326,7 @@ pub fn run() bool {
         const ble_irq_map = rd(0x2058_5000 + 124 * 4) & 0x3F;
         const ble_irq_handler = bt.probe.handlerForInput(24);
         check(ble_irq_map == 24 and ble_irq_handler != 0, "ble interrupt bridge wired: MODEM_BT_MAC -> input {d} (want 24), handler 0x{x:0>8}", .{ ble_irq_map, ble_irq_handler });
+        log.line("coex-merged: ble adv interval {d} ms (0x{x:0>4} x 0.625 ms), pings per wifi pass {d}", .{ opts.adv_interval_ms, ble_adv_interval_units, opts.adv_pings });
         const a = bt.probe.advertiseOnly(ble_adv_interval_units, ble_adv_pump_us);
         wifi.foreign_context = false;
         readRadios("after ble adv");
@@ -296,10 +340,16 @@ pub fn run() bool {
         const adv_ok = a.params_status == 0 and a.data_status == 0 and a.enable_status == 0;
         check(adv_ok, "ble adv commands status params={d} data={d} enable={d}", .{ fmt_status(a.params_status), fmt_status(a.data_status), fmt_status(a.enable_status) });
         check(a.locked_polls > 0, "ble synth lock seen ({d}/{d} polls, first after {d} us)", .{ a.locked_polls, a.polls, a.first_lock_us orelse 0 });
+        // ADR-003 第 5 节 L4b 的另一条判据「BLE 的状态位非 0」：controller 经胶水告诉核的 BLE 状态字（镜像，见
+        // `radio-coex/src/glue.zig` 的 `bt_status_words`）在广播起来之后应当非 0。
+        const ble_word_adv = radio_coex.bt_status_words[1];
+        check(ble_word_adv != 0, "ble status word non-zero while advertising (0x{x:0>4}; the controller's set/clear to the core, mirrored)", .{ble_word_adv});
         if (adv_ok and opts.wifi_link and wifi_started) {
             wifi.link.co_pump = &bleStep;
+            resetHwTimers();
             const r2 = wifi.link.linkRest();
             wifi.link.co_pump = null;
+            reportHwTimers("wifi link, ble advertising");
             checkClocks("after wifi link with ble adv", &.{ .wifi, .phy, .ble });
             check(r2.connected and r2.dhcp, "wifi link while ble advertising: connected={} dhcp={}", .{ @intFromBool(r2.connected), @intFromBool(r2.dhcp) });
             check(r2.ping_done, "wifi ping while ble advertising done ({d})", .{@intFromBool(r2.ping_done)});
@@ -316,6 +366,7 @@ pub fn run() bool {
             check(hold_lock0 and hold_lock1, "ble synth lock held through the {d} s hold (before={} after={} 98bc=0x{x:0>8})", .{
                 ble_adv_hold_us / 1_000_000, @intFromBool(hold_lock0), @intFromBool(hold_lock1), rd(0x2010_98BC),
             });
+            check(radio_coex.bt_status_words[1] == ble_word_adv, "ble status word unchanged through the hold (0x{x:0>4})", .{radio_coex.bt_status_words[1]});
             // 中断桥的计数：广播使能之后 blob 的 ISR 经桥入环、被主上下文代跑各了多少次；`count_only` 是代跑的里面
             // 跑的是纯计数桩的次数（blob 没有经 `intr_alloc` 登记自己的 ISR 时才非零）。
             const bs = bt.probe.bridgeStats();

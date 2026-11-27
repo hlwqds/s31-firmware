@@ -1,0 +1,3754 @@
+[REDACTED 2026-11-27] 本文件是板侧原始串口日志的脱敏副本：除用户自己的 AP（hl-wifi）外，邻居网络的 SSID 与 BSSID 都换了标签——BSSID 换成 ap-NN（与 wifi-link-scan-boot.log 同一套编号，日志里新出现的 BSSID 接着往后编），SSID 换成 ssid-NN（每个 SSID 名一个，同名 mesh 的几个 BSSID 共用）；信道、RSSI、authmode、握手内容、栈的高水位、时序与计数都是原值。
+@�K��.�ESP-ROM:esp32s31-20251218
+Build:Dec 18 2025
+rst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x2f0740c0,len:0x168c
+load:0x2f06a2b0,len:0xc7c
+load:0x2f06cfb0,len:0x3368
+entry 0x2f06a2ba
+I (26) boot: ESP-IDF v6.1 2nd stage bootloader
+I (26) boot: compile time Nov 13 2026 21:42:42
+I (26) boot: Multicore bootloader
+I (28) boot: chip revision: v0.0
+I (29) boot: efuse block revision: v0.2
+I (32) boot.esp32s31: SPI Speed      : 80MHz
+I (36) boot.esp32s31: SPI Mode       : DIO
+I (40) boot.esp32s31: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (58) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (71) boot:  2 factory          factory app      00 00 00010000 00177000
+I (77) boot:  3 ota_0            OTA app          00 10 00190000 00180000
+I (84) boot:  4 ota_1            OTA app          00 11 00310000 00180000
+I (90) boot:  5 otadata          OTA data         01 00 00490000 00002000
+I (98) boot: End of partition table
+I (101) boot: Defaulting to factory image
+I (104) esp_image: segment 0: paddr=00010020 vaddr=40000020 size=e9990h (956816) map
+I (268) esp_image: segment 1: paddr=000f99b8 vaddr=2e000600 size=00008h (     8) load
+I (270) esp_image: segment 2: paddr=000f99c8 vaddr=2f000800 size=00214h (   532) load
+I (273) esp_image: segment 3: paddr=000f9be4 vaddr=2f000a20 size=06454h ( 25684) load
+I (285) esp_image: segment 4: paddr=00100040 vaddr=401d0040 size=287a0h (165792) map
+I (315) esp_image: segment 5: paddr=001287e8 vaddr=2f006e74 size=158dch ( 88284) load
+I (338) boot: Loaded app from partition at offset 0x10000
+I (338) boot: Disabling RNG early entropy source...
+s31-firmware boot
+ota: crc32 mine=0x4743989a rom=0x4743989a -> match
+ota: table n=6 factory=0x10000 ota0=0x190000 ota1=0x310000 otadata=0x490000
+ota: ab=yes slot=factory state=UNDEFINED(4294967295) seq=0 sector=0 attempts=0 failures=0 od=0x490000 count=2
+section: coex_merged
+coex-merged: heap total=211824 B wifi=114688 B ble=97136 B
+check: heap split wifi=112K ble=94K (both >= 64K) ok=1
+wifi-init-probe: apm ctrl filters LP/HP/HP_MEM: 15/127/63 -> 0/0/0 (0 = off)
+wifi-init-probe: pmu modem ICG code 0->2 (2 = active)
+wifi-init-probe: arena=114688 B
+coex[boot]: FAILED CoexDisabled rc=0x0 rejected=1
+wifi-init-probe: table=0x2f03efc0 cfg magic=0x1f2f3f4f crypto size=52
+wifi-init-probe: coex wifiInit FAILED CoexDisabled rejected=1
+wifi-init-probe: coex wifiInit rc=-1
+wifi-init-probe: CLKDMP[before-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x00000000
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000005
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x00000000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: LPCON+18 fixed pre-init 0x5 -> 0x1 (IDF=0x1)
+wifi-init-probe: pm params rc: min_active=50000 keep_alive=10000000 wait_broadcast=15000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000044
+wifi-init-probe: trace zalloc a0=0x00000044 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000044 a1=0x2f043474
+wifi-blob: pp rom version: 395df10
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000618
+wifi-init-probe: trace zalloc a0=0x00000618 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000618 a1=0x2f0434c8
+wifi-blob: net80211 rom version: 395df10
+
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x0000014c
+wifi-init-probe: trace zalloc a0=0x0000014c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000014c a1=0x2f043af0
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_create a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace malloc a0=0x0000003c a1=0x00000000
+wifi-init-probe: trace alloc a0=0x0000003c a1=0x2f043c74
+wifi-init-probe: trace semphr_take a0=0x2f04433c a1=0xffffffff
+wifi-init-probe: task blocked -> yielded to idle hook
+wifi-init-probe: trace semphr_give a0=0x2f04433c a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f043cc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#1 hooks=20 give=1 null_give=0 semmax=0x10000
+wifi-init-probe: pump#2 hooks=20 give=1 null_give=0 semmax=0x10000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048464
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f043cc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f04433c a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ed38 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00001214 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00001214 a1=0x2f04848c
+wifi-init-probe: trace malloc a0=0x00000400 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000400 a1=0x2f0496b0
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f0496b0
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049758
+wifi-init-probe: trace zalloc a0=0x00000098 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000098 a1=0x2f049800
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0498a8
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f0498e0
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049918
+wifi-init-probe: trace malloc a0=0x00000028 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000028 a1=0x2f049950
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f049988
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f049c20
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f049eb8
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a150
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000288 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000288 a1=0x2f04a3e8
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f04a680
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace malloc a0=0x00000314 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000314 a1=0x2f04a9a4
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000078 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000078 a1=0x2f04acc8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04ad50
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04b408
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04bac0
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04c178
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04c830
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04cee8
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04d5a0
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04dc58
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04e310
+wifi-init-probe: trace malloc a0=0x000006a8 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x000006a8 a1=0x2f04e9c8
+wifi-init-probe: trace timer_setfn a0=0x2f01ecc4 a1=0x4003b752
+wifi-init-probe: trace timer_setfn a0=0x2f01ecd8 a1=0x4003b74a
+wifi-init-probe: trace timer_setfn a0=0x2f01ed14 a1=0x4003b742
+wifi-init-probe: trace timer_setfn a0=0x2f01ed00 a1=0x4003b73a
+wifi-init-probe: trace timer_setfn a0=0x2f01ed38 a1=0x4003b732
+wifi-init-probe: trace timer_setfn a0=0x2f01ed4c a1=0x4003b72a
+wifi-init-probe: trace timer_setfn a0=0x2f01ed60 a1=0x4003b722
+wifi-init-probe: trace timer_setfn a0=0x2f01ed7c a1=0x4003b71a
+wifi-init-probe: trace timer_setfn a0=0x2f01f084 a1=0x4003b712
+wifi-init-probe: trace timer_setfn a0=0x2f01f024 a1=0x4003b70a
+wifi-init-probe: trace timer_setfn a0=0x2f01f060 a1=0x4003b702
+wifi-init-probe: trace timer_setfn a0=0x2f01eed4 a1=0x4003f6fe
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x00000000 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace wifi_clk_dis a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace calloc a0=0x00000001 a1=0x00000004
+wifi-init-probe: trace zalloc a0=0x00000004 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000004 a1=0x2f04f080
+wifi-init-probe: trace timer_setfn a0=0x2f01e688 a1=0x4002afc2
+wifi-init-probe: trace timer_setfn a0=0x2f01e69c a1=0x4002afb8
+wifi-init-probe: trace timer_disarm a0=0x2f01cbb4 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f04433c a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f043cc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#3 hooks=150 give=2 null_give=0 semmax=0x10000
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: esp_wifi_internal_set_log_level(3) rc=0x00000000
+wifi-init-probe: wpa cb register rc=0 g_ic[444]=0x2f01c024 table=0x2f01c024
+wifi-init-probe: CLKDMP[after-init]
+wifi-init-probe:   test_conf(+00)=0x00000100
+wifi-init-probe:   clk_conf(+04)=0x00201002
+wifi-init-probe:   force_on(+08)=0x00000000
+wifi-init-probe:   icg(+0C)=0x64646400
+wifi-init-probe:   rst_conf(+10)=0x00000000
+wifi-init-probe:   clk_conf1(+14)=0x00000000
+wifi-init-probe:   lpcon+18=0x00000001
+wifi-init-probe:   lpcon+1C_fo=0x00000004
+wifi-init-probe:   lpcon+20_icg=0x66660000
+wifi-init-probe:   hp1e0_socpll=0x00000025
+wifi-init-probe:   mac_c00=0x00000000
+wifi-init-probe:   mac_c10=0xf7c40000
+wifi-init-probe: after-init MAC_ST=0x00000000 (init_rc=0)
+coex[init]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[init]: fw=2.0.0 en=0 req=0 rel=0 sta=0 startcb=1 intset=0
+wifi-init-probe: INITWIN qsend=1 qrecv=2 rstmac=0 clken=1 semcreate=2 semnull=0
+wifi-init-probe: ROMGLOB swq=0x2f043cc0 ppq=0x2f03e5b0 ppsem=0x0
+wifi-init-probe: esp_wifi_init_internal rc=0
+wifi-init-probe: MAC_ST after init = 0x00000000
+wifi-init-probe: INIT OK, arena free=66500/114672 B, bad_handle=0, blocking_refused=4
+read: LPCON+18 after wifi init=0x00000001 (bit0 wifipwr / bit1 coex / bit2 i2c_mst / bit3 lp_timer)
+check: wifi esp_wifi_init_internal rc=0 ok=1
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048464
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f043cc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f04433c a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ed38 a1=0x00000000
+wifi-init-probe: trace semphr_give a0=0x2f04433c a1=0x00000000
+wifi-init-probe: trace queue_recv a0=0x2f043cc0 a1=0xffffffff
+wifi-init-probe: trace recv_probe a0=0x00000000 a1=0x00000008
+wifi-init-probe: pump#4 hooks=164 give=3 null_give=0 semmax=0x10000
+wifi-link: esp_wifi_set_mode(STA) rc=0x0
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000018 a1=0x00000000
+wifi-init-probe: trace alloc a0=0x00000018 a1=0x2f048464
+wifi-init-probe: trace mutex_lock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace queue_send a0=0x2f043cc0 a1=0x00000006
+wifi-init-probe: trace mutex_unlock a0=0x2f043460 a1=0x00000000
+wifi-init-probe: trace semphr_take a0=0x2f04433c a1=0xffffffff
+wifi-init-probe: trace timer_disarm a0=0x2f01ed38 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace wifi_clk_en a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: trace coex_rel a0=0x00000000 a1=0x00000604
+wifi-init-probe: trace phy_enable a0=0x00000000 a1=0x00000001
+wifi-init-probe: trace icg_write a0=0x64646400 a1=0x64646400
+wifi-init-probe: _phy_enable(modem=0) -> register_chipv7_phy rc=0; cal_data: version=100 mac=1c:29:04:d1:99:28 nonzero=262/1904 head=ff fe 1c 00 bf 20 1c 00
+wifi-init-probe: trace wifi_reset_mac a0=0x00000000 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace event_post id=43 bits=0x10 handlers=1 undispatched=0
+wifi-link-probe: event id=43 data=0x2f048340 (n=1)
+wifi-init-probe: trace timer_disarm a0=0x2f01ed38 a1=0x00000000
+wifi-init-probe: trace mutex_lock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace mutex_unlock a0=0x2f043c4c a1=0x00000000
+wifi-init-probe: trace timer_setfn a0=0x2f01fa08 a1=0x400476c8
+wifi-init-probe: trace timer_setfn a0=0x2f01fa1c a1=0x400476c8
+wifi-blob: wifi: W (1342) wifi:
+wifi-blob: (phy)rate:0x0(  LP-1Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1350) wifi:
+wifi-blob: (phy)rate:0x1(  LP-2Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1360) wifi:
+wifi-blob: (phy)rate:0x2(LP-5.5Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1369) wifi:
+wifi-blob: (phy)rate:0x3( LP-11Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1378) wifi:
+wifi-blob: (phy)rate:0x5(  SP-2Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1387) wifi:
+wifi-blob: (phy)rate:0x6(SP-5.5Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1396) wifi:
+wifi-blob: (phy)rate:0x7( SP-11Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1406) wifi:
+wifi-blob: (phy)rate:0x8(    48Mbps), pwr:18, txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1415) wifi:
+wifi-blob: (phy)rate:0x9(    24Mbps), pwr:19, txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1424) wifi:
+wifi-blob: (phy)rate:0xa(    12Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1433) wifi:
+wifi-blob: (phy)rate:0xb(     6Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1442) wifi:
+wifi-blob: (phy)rate:0xc(    54Mbps), pwr:18, txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1452) wifi:
+wifi-blob: (phy)rate:0xd(    36Mbps), pwr:19, txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1461) wifi:
+wifi-blob: (phy)rate:0xe(    18Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1470) wifi:
+wifi-blob: (phy)rate:0xf(     9Mbps), pwr:20, txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1479) wifi:
+wifi-blob: (phy)rate:0x10, mcs:0x0, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1489) wifi:
+wifi-blob: (phy)rate:0x11, mcs:0x1, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1500) wifi:
+wifi-blob: (phy)rate:0x12, mcs:0x2, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1510) wifi:
+wifi-blob: (phy)rate:0x13, mcs:0x3, pwr(bw20:20, bw40:19), txing:20
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1520) wifi:
+wifi-blob: (phy)rate:0x14, mcs:0x4, pwr(bw20:19, bw40:18), txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1531) wifi:
+wifi-blob: (phy)rate:0x15, mcs:0x5, pwr(bw20:19, bw40:18), txing:19
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1541) wifi:
+wifi-blob: (phy)rate:0x16, mcs:0x6, pwr(bw20:18, bw40:17), txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1551) wifi:
+wifi-blob: (phy)rate:0x17, mcs:0x7, pwr(bw20:18, bw40:17), txing:18
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1562) wifi:
+wifi-blob: (phy)rate:0x18, mcs:0x8, pwr(bw20:16, bw40:16), txing:16
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (1572) wifi:
+wifi-blob: (phy)rate:0x19, mcs:0x9, pwr(bw20:15, bw40:15), txing:15
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1583) wifi:
+wifi-blob: 11ax coex: WDEVAX_PTI0(0xff00034f), WDEVAX_PTI1(0x0000c027).
+
+wifi-blob: wifi: 
+
+wifi-init-probe: trace coex_start_cb a0=0x00007a01 a1=0x00000001
+wifi-init-probe: trace coex_start_cb a0=0x00007801 a1=0x00000001
+wifi-init-probe: trace set_intr a0=0x00000001 a1=0x2f001d46
+wifi-init-probe: trace set_isr a0=0x00000002 a1=0x00000000
+wifi-init-probe: trace timer_disarm a0=0x2f01ed38 a1=0x00000000
+wifi-init-probe: trace timer_disarm a0=0x2f01ed4c a1=0x00000000
+wifi-init-probe: trace timer_disarm a0=0x2f01ed60 a1=0x00000000
+wifi-init-probe: trace zalloc a0=0x00000264 a1=0x00000000
+wifi-blob: wifi: I (1637) wifi:
+wifi-blob: mode : sta (1c:29:04:d1:99:28)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (1645) wifi:
+wifi-blob: enable tsf
+wifi-blob: wifi: 
+
+wifi-link-probe: event id=2 data=0x00000000 (n=2)
+wifi-init-probe: pump#5 hooks=213 give=4 null_give=0 semmax=0x10000
+wifi-link: esp_wifi_start rc=0x0 (hooks=213, events=2)
+coex[after-start]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-start]: fw=2.0.0 en=1 req=0 rel=2 sta=2 startcb=1 intset=1
+wifi-init-probe: pump#6 hooks=213 give=4 null_give=0 semmax=0x10000
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_disable_ac_ax +1
+wifi-link-probe: stub _wifi_bb_sleep_retention_attach +1
+wifi-link-probe: stub _wifi_mac_sleep_retention_attach +1
+wifi-link-probe: task[0] wifi entry=0x2f013ae0 arg=0x00000000 requested stack=6656 -> 16384 B at 0x2f044454..0x2f048454
+wifi-init-probe: pump#7 hooks=213 give=4 null_give=0 semmax=0x10000
+wifi-init-probe: pump#8 hooks=213 give=4 null_give=0 semmax=0x10000
+wifi-link-probe: pump, interrupts off: 500024 us, hooks +0, event posts +0
+wifi-link: enable interrupts: 2 inputs, mie=0x0000000000020000
+wifi-link-probe: pump, interrupts on: 2000036 us, hooks +0, event posts +0
+wifi-link: arena[after start]: free=64544/114672 B
+coex-merged: wifi first: esp_wifi_start rc=0
+check: wifi first: esp_wifi_start rc=0 ok=1
+clocks[after wifi start]: conf=0x00201002 force_on=0x00000000 conf1=0x0038e7ff lpcon=0x00000005 modem_conf=0x00000025
+check: clocks after wifi start: cover 2 modules (missing conf1=0x00000000 conf=0x00000000 lpcon=0x00000000 modem_conf=0x00000000) ok=1
+wifi-link: scan[before ble init]: esp_wirq#0 in=17 mepc=0x400a8402 mac=0x00000000 b13=0 b14=0 ctx15=74 en=0 a0=0x2f07a6d1 a1=0x0000003d s0=0x00000000 ra=0x400a9c6e
+ifi_scan_start rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048378 (n=3)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: scan[before ble init]: GOT in 2412 ms, esp_wifi_scan_get_ap_num rc=0x0 n=11
+check: wifi baseline scan before ble init ap=11 ok=1
+A94K
+bt init-only: init stabbt membtbbbt brbt bribt bringup: enter step 5 btdm_lp_enable_clock
+bt lp: clk_conf=0x7e601002 clk_conf1=0x003fffff lpcon=0x00000007
+bt lp: gates confbbbbbbbbbbbt phy: ana peri pwr on, reg=0xc0000000
+bt phy: domain clocks on (pll=0x3d conf1|=FE lp18|=i2c_mst widgets syscon/lpcon-enbbt bringup: enter step 52 init_phy
+bt phy: initPhy skipped (PHY already on, Wi-Fi owns it)
+bt bringup: PHY enabled AFTER step 5bbbt brbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 62 57
+Q5 383 20857 0 126
+ZU 126->4,4 spins=53370 cc=3000000
+A0/93592
+
+M0 2244 0x2f05f460
+
+M1 132 0x2f05fd38
+
+M2 820 0x2f05fdd0
+
+M3 80 0x2f060118
+
+M4 64 0x2f060178
+
+M5 76 0x2f0601c8
+
+MC 6 sz=76 ret=0x2f0601c8
+
+CN 0x2f05fd28 0x98 24
+
+D62.3
+
+Mosal> eventqInit
+
+Msched 107C writeback=0x0
+
+Msched 1254 writeback=0x8
+
+bbbbbbbQ1 0 0 0
+Q2 0 0 0
+Q3 0 0
+Q4 79 72
+Q5 389 20944 0 126
+ZU 126->4,4 spins=53376 cc=3000000
+A0/90776
+
+M0 2244 0x2f05f460
+
+M1 132 0x2f05fd38
+
+M2 820 0x2f05fdd0
+
+M3 80 0x2f060118
+
+M4 64 0x2f060178
+
+M5 76 0x2f0601c8
+
+M6 8 0x2f060228
+
+M7 36 0x2f060248
+
+MC 20 sz=8 ret=0x2f060d08
+
+CN 0x2f05fd28 0x98 80
+
+D79.19
+
+Mosal> eventInit
+
+Mosal> eventInit
+
+Mosal> eventqInit
+
+btbt btbbt bribbt rebbt brbt brbt probe: cb10 head oob=0x00000000
+bt probe: sched slot after step10 = 0x00000000
+bt probe: rtc_freq oob @1044 ptr=0bbt bringup: bbt prbbt brbt init-only: bringup.init rc=0 arena free=58712 B
+read: LPCON+18 after ble init=0x0000000f (bit0 wifipwr / bit1 coex / bit2 i2c_mst / bit3 lp_timer)
+check: ble bringup.init rc=0 ok=1
+clocks[after ble init]: conf=0x7e601002 force_on=0x000000fc conf1=0x003fffff lpcon=0x0000000f modem_conf=0x0000003d
+check: clocks after ble init: cover 3 modules (missing conf1=0x00000000 conf=0x00000000 lpcon=0x00000000 modem_conf=0x00000000) ok=1
+coex[merged]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[merged]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+check: coex sides wifi=idle ble=idle (wifi started=true; both at least inited) ok=0
+check: coex rejected calls=2 ok=0
+check: wifi idle hook refused on ble stack n=0 ok=1
+read[ble before enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble before enable]: syscon 9c00..9c0c=00000101 7e601002 000000fc 64646400 9c10=00000000 9c14..9c20=003fffff 10003800 00000000 00002070
+read[ble before enable]: fe 0438=e0800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble before enable]: ana f800=002f0669 f818=2100e448 f81c=00fffeff
+Jul 14 2026
+bbt prbbt brinbt brbt prbt cabbtbbbbbbbbbbbt enable-only: status=2 rounds=40272 evq=0/0/0 pend_ok=2 busy=0
+read[ble after enable]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble after enable]: syscon 9c00..9c0c=00000101 7e601002 000000fc 64646400 9c10=00000000 9c14..9c20=003fffff 10003800 00000000 00002070
+read[ble after enable]: fe 0438=e0800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble after enable]: ana f800=002f0669 f818=2100e448 f81c=00fffeff
+coex[ble-enable]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[ble-enable]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+coex[ble-enable]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[ble-enable]: fw=2.0.0 en=1 req=0 rel=4 sta=66 startcb=1 intset=29
+check: ble bringup.enable rc=0 ok=1
+clocks[after ble enable]: conf=0x7e601002 force_on=0x000000fc conf1=0x003fffff lpcon=0x0000000f modem_conf=0x0000003d
+check: clocks after ble enable: cover 3 modules (missing conf1=0x00000000 conf=0x00000000 lpcon=0x00000000 modem_conf=0x00000000) ok=1
+wifi-link: esp_wifi_scan_start(NULL, nonblock) rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048378 (n=4)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: wait scan-done 10s -> GOT in 2414 ms
+wifi-link: esp_wifi_scan_get_ap_num rc=0x0 n=18
+wifi-link: arena[after scan]: free=61732/114672 B
+coex[after-scan]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-scan]: fw=2.0.0 en=1 req=0 rel=6 sta=130 startcb=1 intset=57
+wifi-blob: wifi: W (10463) wifi:
+wifi-blob: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+wifi-blob: wifi: 
+
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wifi-link-probe: supplicant[after set_config]: state=INITIALIZE phase=idle msg4_in_flight=false negotiation_done=false pmk=false ptk=false gtk=false rejects=0 last_error=-
+wifi-link-probe: stacks[after set_config]: 0:wifi=3636/16384
+wifi-link-probe: esp_wifi_connect_internal rc=0x0
+wifi-blob: wifi: I (10508) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10520) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10528) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10538) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10550) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10563) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10574) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10587) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10598) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10615) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10628) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10639) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, PSR Disallowed:1, Non-SRG OBSS PD SR Disallowed:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (10650) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, Non-SRG Offset Present:0, SRG Info Present:0
+wifi-blob: wifi: 
+
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+wifi-blob: wifi: I (11971) wifi:
+wifi-blob: (connect)dot11_authmode:0x3, pairwise_cipher:0x3, group_cipher:0x3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (11978) wifi:
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request event=7 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-blob: wifi: I (12003) wifi:
+wifi-blob: state: auth -> assoc (0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12013) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities length:10, operating_mode_notification:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12020) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities, MBSSID:0, TWT Responder:0, OBSS Narrow Bandwidth RU In OFDMA Tolerance:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12035) wifi:
+wifi-blob: Extended Capabilities length:10, operating_mode_notification:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12046) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12059) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12067) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12078) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12089) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12103) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12114) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12127) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12138) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12155) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12168) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12178) wifi:
+wifi-blob: state: assoc -> run (0x10)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12186) wifi:
+wifi-blob: (he)ppe_thresholds_present:1, nominal_packet_padding(rx:0, cfg:2)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12197) wifi:
+wifi-blob: (trc)phytype:CBW20-SGI, snr:68, maxRate:172, highestRateIdx:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (12208) wifi:
+wifi-blob: (trc)band:2G, phymode:3, highestRateIdx:0, lowestRateIdx:11, dataSchedTableSize:14
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12221) wifi:
+wifi-blob: (trc)band:2G, rate(S-MCS7, rateIdx:0), ampdu(rate:S-MCS7, schedIdx(0, stop:8)), snr:68, ampduState:wait operational
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12236) wifi:
+wifi-blob: ifidx:0, rssi:-27, nf:-95, phytype(0x3, CBW20-SGI), phymode(0x7, 11ax), max_rate:172, he:1, vht:0, ht:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12251) wifi:
+wifi-blob: (ht)max.RxAMPDULenExponent:3(65535 bytes), MMSS:4(2 us)
+wifi-blob: wifi: 
+
+wpa: eapol rx before the assoc notify; associating
+wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
+wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=0
+wpa: keys installed after msg 4: ptk rc=0, group keys rc=0, port truevalid
+wifi-blob: wifi: I (12294) wifi:
+wifi-blob: (extcap)mbssid:0, enhanced_mbssid_advertise:0, complete_nontxbssid_profiles:0, twt_responder: 1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12305) wifi:
+wifi-blob: connected with hl-wifi, aid = 1, channel 1, BW20, bssid = 44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12317) wifi:
+wifi-blob: security: WPA2-PSK, phy: ax, rssi: -27, cipher(pairwise:0x3, group:0x3), pmf:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12330) wifi:
+wifi-blob: pm start, type: 1, twt_start:0
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12338) wifi:
+wifi-blob: pm start, type:1, aid:0x1, trans-BSSID:44:f7:70:16:fa:ba, BSSID[5]:0xba, mbssid(max-indicator:0, index:0), he:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12353) wifi:
+wifi-blob: dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12365) wifi:
+wifi-blob: set rx beacon pti, rx_bcn_pti: 0, bcn_timeout: 25000, mt_pti: 0, mt_time: 10000
+wifi-blob: wifi: 
+
+wpa: assoc notified but the supplicant is in STAKEYSTART
+wifi-link-probe: STA_CONNECTED bssid=44:f7:70:16:fa:ba ch=1 authmode=3 aid=1
+wifi-link-probe: event id=4 data=0x2f048140 (n=5)
+wifi-blob: wifi: I (12394) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:0, dialogtoken:1, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12409) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:7, dialogtoken:2, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x20)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12424) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:5, dialogtoken:3, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wpa: key negotiation complete: esp_wifi_auth_done_internal -> true
+wifi-blob: wifi: I (12445) wifi:
+wifi-blob: dp: 2, bi: 102400, li: 4, scale listen interval from 307200 us to 409600 us
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12456) wifi:
+wifi-blob: AP's beacon interval = 102400 us, DTIM period = 2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12469) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:0/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12480) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:7/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (12493) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:5/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _phy_update_country_info +2
+wifi-link-probe: connect: waiting 2008 ms (hooks=2235, events=5)
+wifi-link-probe: supplicant[waiting]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[waiting]: 0:wifi=9244/16384
+wifi-link-probe: CONNECTED in 2032 ms (1 progress reports)
+wifi-link-probe: supplicant[connected]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[connected]: 0:wifi=9244/16384
+wifi-link-probe: key table entry 4 (pairwise TK): equal bits vs tk=ffff vs gtk=0000 (nonzero=ffff)
+wifi-link-probe: key table entry 0 (group GTK): equal bits vs tk=0000 vs gtk=0000 (nonzero=0000)
+coex[connected]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[connected]: fw=2.0.0 en=1 req=1 rel=15 sta=166 startcb=1 intset=64
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x00000000
+wifi-link-probe: net: dhcp DISCOVER attempt=0 tx rc=0x0
+wifi-link-probe: net: dhcp OFFER ip=192.168.31.151 -> REQUEST tx rc=0x0
+wifi-link-probe: net: dhcp ACK: bound ip=192.168.31.151 mask=255.255.255.0 router=192.168.31.1 dns=192.168.31.1, esp_wifi_internal_set_sta_ip rc=0x0
+wifi-link-probe: data path: DHCP bound in 37 ms ip=192.168.31.151 router=192.168.31.1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: ping seq=0 tx rc=0x0
+wifi-link-probe: net: ping reply seq=0 rtt=4988 us
+wifi-blob: wifi: W (12707) wifi:
+wifi-blob: <ba-add>idx:0, ifx:0, tid:0, TAHI:0x100bafa, TALO:0x1670f744, (ssn:1, win:64, cur_ssn:1), CONF:0xc0000001
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=1 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=1 rtt=8489 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=2 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=2 rtt=2060 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=3 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=3 rtt=5530 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=4 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=4 rtt=2044 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=5 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=5 rtt=1931 us
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: arp answered 192.168.31.1 (44:f7:70:16:fa:b8) tx rc=0x0
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=6 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=6 rtt=1958 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=7 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=7 rtt=2871 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=8 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=8 rtt=1937 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=9 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=9 rtt=2074 us
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=10 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=10 rtt=2033 us
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=11 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=11 rtt=2001 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=12 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=12 rtt=8782 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=13 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=13 rtt=3741 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=14 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=14 rtt=3295 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: ping seq=15 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=15 rtt=2099 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=16 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=16 rtt=13355 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=17 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=17 rtt=1947 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=18 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=18 rtt=5321 us
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=19 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=19 rtt=9842 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=20 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=20 rtt=7298 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=21 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=21 rtt=2061 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=22 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=22 rtt=2066 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: ping seq=23 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=23 rtt=2105 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=24 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=24 rtt=5030 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=25 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=25 rtt=1965 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=26 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: ping reply seq=26 rtt=3566 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=27 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=27 rtt=5839 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=28 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=28 rtt=1970 us
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=29 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=29 rtt=2104 us
+wifi-link-probe: net: ping done: sent=30 received=30 timed_out=0 rtt min/avg/max=1931/4010/13355 us
+wifi-link-probe: data path: ping phase 29016 ms
+wifi-link-probe: data path: frames rx=33 (ignored 0, dropped 0) tx=33 (failed 0)
+coex[after-ping]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-ping]: fw=2.0.0 en=1 req=31 rel=844 sta=1416 startcb=1 intset=64
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: connected: pump 5 s: 5000023 us, hooks +411, event posts +0
+coex[before-disconnect]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[before-disconnect]: fw=2.0.0 en=1 req=32 rel=973 sta=1609 startcb=1 intset=64
+wifi-link-probe: stayed connected for 5 s
+wifi-link-probe: supplicant[after 5 s]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[after 5 s]: 0:wifi=9244/16384
+wifi-blob: wifi: I (46727) wifi:
+wifi-blob: state: run -> init (0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (46735) wifi:
+wifi-blob: teardown, set twt_inactive_time_secs:6, sp_count:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (46745) wifi:
+wifi-blob: pm stop, total sleep time: %lu us / %lu us
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (46754) wifi:
+wifi-blob: <ba-del>idx:0, tid:0
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request event=7 latency=0 duration=0 -> rc=0
+wifi-link-probe: STA_DISCONNECTED bssid=44:f7:70:16:fa:ba reason=8 rssi=-27
+wifi-link-probe: event id=5 data=0x2f01e7c4 (n=6)
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
+coex[after-connect-phase]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-connect-phase]: fw=2.0.0 en=1 req=33 rel=975 sta=1615 startcb=1 intset=66
+wifi-link: arena[after connect]: free=60984/114672 B
+wifi-link: result scan=true ap=18 connected=true dhcp=true ping=true stayed=true reason=8
+coex-timers[wifi link, ble enabled]: 18005 samples (at most one per 2 ms), 0 with a timer enabled, timers seen enabled 0x00
+check: coex hw timers sampled while wifi link, ble enabled (18005 samples, 0 with one enabled) ok=1
+coex[wifi-link]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[wifi-link]: fw=2.0.0 en=1 req=33 rel=975 sta=1615 startcb=1 intset=66
+read[ble after wifi link]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble after wifi link]: syscon 9c00..9c0c=00000101 7e601002 000000fc 64646400 9c10=00000000 9c14..9c20=003fffff 10003802 00000000 00002070
+read[ble after wifi link]: fe 0438=e0800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble after wifi link]: ana f800=01700266 f818=2900e444 f81c=00ffffdf
+clocks[after wifi link]: conf=0x7e601002 force_on=0x000000fc conf1=0x003fffff lpcon=0x0000000f modem_conf=0x0000003d
+check: clocks after wifi link: cover 3 modules (missing conf1=0x00000000 conf=0x00000000 lpcon=0x00000000 modem_conf=0x00000000) ok=1
+check: wifi scan done=1 ap=18 ok=1
+check: wifi scan after ble keeps >= half the baseline ap (18 vs 11) ok=1
+check: wifi STA_CONNECTED (1) ok=1
+check: wifi dhcp bound (1) ok=1
+check: wifi ping done (1) ok=1
+check: wifi stayed connected 5 s (1) ok=1
+check: wifi idle hook refused on ble stack during link n=0 ok=1
+read[ble before ble adv]: synth 98bc=00000000 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 00000000 00000000
+read[ble before ble adv]: syscon 9c00..9c0c=00000101 7e601002 000000fc 64646400 9c10=00000000 9c14..9c20=003fffff 10003802 00000000 00002070
+read[ble before ble adv]: fe 0438=e0800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble before ble adv]: ana f800=01700266 f818=2900e444 f81c=00ffffdf
+check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x400bf84c ok=1
+coex-merged: ble adv interval 100 ms (0x00a0 x 0.625 ms), pings per wifi pass 30
+bt adv: marker sector 0x18e000 erased, rc=0
+bt adv: send 0x2006 plen=15 (from the sender task)
+bt sched: 任务体开始 sp=0x2f06b9c0 ctx.sp=0x2f06ba30 same=0
+bt schedbbt cbt adv: cmd 0x2006 got Command Complete status=0x00 after 0 ms (0 rounds)
+bt adv: send 0x2008 plen=32 (from the sender task)
+bt hci >> CMD opcode=0x2008 plen=32
+bt call: eventq_get
+bt adv: cmd 0x2008 got Command Complete status=0x00 after 0 ms (0 rounds)
+bt adv: send 0x200a plen=1 (from the sender task)
+bt hci >> CMD opcode=0x200a plen=1
+bt call: eventq_get
+bt adv: cmd 0x200a got Command Complete status=0x00 after 0 ms (0 rounds)
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt adv-only: interval=160 params=0 data=0 enable=0 polls=106731 locked=106731 first_lock_us=15988 98bc=0x00000004 records=7
+bt adv: sample polls=8922 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=17856 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=20000 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=28916 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=37815 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=40000 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=48870 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=57763 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=60000 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=68881 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=77752 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=80000 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=88904 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=97779 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: sample polls=100000 98bc=0x00000004 f800=0x01700266 systimer_ctrl0=0x00000000 gate7114=0x00000921 evt_seq=4
+bt adv: record writes skipped after the advertise-enable was sent: 19
+read[ble after ble adv]: synth 98bc=00000004 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 2f0622e8 0f0610c0
+read[ble after ble adv]: syscon 9c00..9c0c=00000101 7e601002 000000fc 64646400 9c10=00000000 9c14..9c20=003fffff 10003802 00000000 00002070
+read[ble after ble adv]: fe 0438=e0800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble after ble adv]: ana f800=01700266 f818=2900e444 f81c=00ffffdf
+coex[ble-adv]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[ble-adv]: fw=2.0.0 en=1 req=33 rel=975 sta=1615 startcb=1 intset=66
+coex[ble-adv]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[ble-adv]: fw=2.0.0 en=1 req=33 rel=975 sta=1615 startcb=1 intset=66
+check: ble adv commands status params=0 data=0 enable=0 ok=1
+check: ble synth lock seen (106731/106731 polls, first after 15988 us) ok=1
+check: ble status word non-zero while advertising (0x0000; the controller's set/clear to the core, mirrored) ok=0
+wifi-link: esp_wifi_scan_start(NULL, nonblock) rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: SCAN_DONE status=0 number=0 scan_id=0
+wifi-link-probe: event id=1 data=0x2f048378 (n=7)
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link: wait scan-done 10s -> GOT in 2416 ms
+wifi-link: esp_wifi_scan_get_ap_num rc=0x0 n=12
+wifi-link: arena[after scan]: free=59272/114672 B
+coex[after-scan]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-scan]: fw=2.0.0 en=1 req=33 rel=979 sta=1679 startcb=1 intset=94
+wifi-blob: wifi: W (52956) wifi:
+wifi-blob: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+wifi-blob: wifi: 
+
+wifi-link-probe: esp_wifi_set_config(sta) rc=0x0 (ssid 7 B, password 8 B, pmf off)
+wifi-link-probe: supplicant[after set_config]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=false pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[after set_config]: 0:wifi=9244/16384
+wifi-link-probe: esp_wifi_connect_internal rc=0x0
+wifi-blob: wifi: I (53001) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53013) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53021) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53032) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53043) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53057) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53067) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53081) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53092) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53109) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53121) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53132) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, PSR Disallowed:1, Non-SRG OBSS PD SR Disallowed:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (53144) wifi:
+wifi-blob: (spr)len:2, ctrl:0x3, Non-SRG Offset Present:0, SRG Info Present:0
+wifi-blob: wifi: 
+
+wpa: connect: pairwise=4 group=4 akm=2 mfp=false sta_rsne=28 B appie rc=0
+wifi-blob: wifi: I (54465) wifi:
+wifi-blob: (connect)dot11_authmode:0x3, pairwise_cipher:0x3, group_cipher:0x3
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54471) wifi:
+wifi-blob: state: init -> auth (0xb0)
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-blob: wifi: I (54488) wifi:
+wifi-blob: state: auth -> assoc (0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54501) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities length:10, operating_mode_notification:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54508) wifi:
+wifi-blob: (assoc)RESP, Extended Capabilities, MBSSID:0, TWT Responder:0, OBSS Narrow Bandwidth RU In OFDMA Tolerance:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54523) wifi:
+wifi-blob: Extended Capabilities length:10, operating_mode_notification:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54534) wifi:
+wifi-blob: (he)max.RxAMPDULenExponentExtension:3, max.RxAMPDUpre-EOFpaddingBytes:8388607(0x7fffff)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54547) wifi:
+wifi-blob: (mac)omc_ul_mu_data_disable_rx:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54555) wifi:
+wifi-blob: (phy)ppe_thresholds_present:1, nominal_packet_padding:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54565) wifi:
+wifi-blob: (phy)dcm tx(constellation:2, nss:0), dcm rx(constellation:2, nss:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54577) wifi:
+wifi-blob: (phy)rx_mcs_map:0xfffa, tx_mcs_map:0xfffa, stbc_tx:1, bfmer(su:1, mu:1), ldpc:1, max_rate:172
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54590) wifi:
+wifi-blob: (phy)nsts:2, ru_index_bitmap:0x3(242:1, 484:1, 996:0, 2*996:0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54601) wifi:
+wifi-blob: (phy)threshold_bits:24, nsts_num:2, ru_num:2, he_cap->len:26, ppe_threshold_len:4(6,11,4)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54615) wifi:
+wifi-blob: (ppe)RU242, NSTS0, PPE16:0, PPE8:7, nominal_packet_padding:2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54625) wifi:
+wifi-blob: (opr)len:7, TWT Required:0, VHT Opr Info Present:0, 6GHz Opr Info Present:0, Co-Hosted BSS:0(max_indicator:0), Basic MCS and NSS:0xfffc
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54643) wifi:
+wifi-blob: (opr)len:7, Default PE Duration:4, TXOP RTS Threshold:1023(0 us), ER-SU-Disable:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54655) wifi:
+wifi-blob: (opr)len:7, BSS Color:22, disabled:0, Partial BSS Color:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54666) wifi:
+wifi-blob: state: assoc -> run (0x10)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54674) wifi:
+wifi-blob: (he)ppe_thresholds_present:1, nominal_packet_padding(rx:0, cfg:2)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54685) wifi:
+wifi-blob: (trc)phytype:CBW20-SGI, snr:67, maxRate:172, highestRateIdx:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: W (54696) wifi:
+wifi-blob: (trc)band:2G, phymode:3, highestRateIdx:0, lowestRateIdx:11, dataSchedTableSize:14
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54708) wifi:
+wifi-blob: (trc)band:2G, rate(S-MCS7, rateIdx:0), ampdu(rate:S-MCS7, schedIdx(0, stop:8)), snr:67, ampduState:wait operational
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54724) wifi:
+wifi-blob: ifidx:0, rssi:-27, nf:-94, phytype(0x3, CBW20-SGI), phymode(0x7, 11ax), max_rate:172, he:1, vht:0, ht:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54738) wifi:
+wifi-blob: (ht)max.RxAMPDULenExponent:3(65535 bytes), MMSS:4(2 us)
+wifi-blob: wifi: 
+
+wpa: eapol rx before the assoc notify; associating
+wpa: eapol rx msg 1 (99 B) -> tx msg 2 (127 B) rc=0
+wpa: eapol rx msg 3 (155 B) -> tx msg 4 (99 B) rc=0
+wpa: keys installed after msg 4: ptk rc=0, group keys rc=0, port truevalid
+wifi-blob: wifi: I (54779) wifi:
+wifi-blob: (extcap)mbssid:0, enhanced_mbssid_advertise:0, complete_nontxbssid_profiles:0, twt_responder: 1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54789) wifi:
+wifi-blob: connected with hl-wifi, aid = 1, channel 1, BW20, bssid = 44:f7:70:16:fa:ba
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54801) wifi:
+wifi-blob: security: WPA2-PSK, phy: ax, rssi: -27, cipher(pairwise:0x3, group:0x3), pmf:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54813) wifi:
+wifi-blob: pm start, type: 1, twt_start:0
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54821) wifi:
+wifi-blob: pm start, type:1, aid:0x1, trans-BSSID:44:f7:70:16:fa:ba, BSSID[5]:0xba, mbssid(max-indicator:0, index:0), he:1
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54837) wifi:
+wifi-blob: dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54849) wifi:
+wifi-blob: set rx beacon pti, rx_bcn_pti: 0, bcn_timeout: 25000, mt_pti: 0, mt_time: 10000
+wifi-blob: wifi: 
+
+wpa: assoc notified but the supplicant is in STAKEYSTART
+wifi-link-probe: STA_CONNECTED bssid=44:f7:70:16:fa:ba ch=1 authmode=3 aid=1
+wifi-link-probe: event id=4 data=0x2f048140 (n=8)
+wifi-blob: wifi: I (54877) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:0, dialogtoken:4, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54892) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:7, dialogtoken:5, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x20)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54907) wifi:
+wifi-blob: [ADDBA]TX addba request, tid:5, dialogtoken:6, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)
+wifi-blob: wifi: 
+
+wpa: key negotiation complete: esp_wifi_auth_done_internal -> true
+wifi-blob: wifi: I (54928) wifi:
+wifi-blob: dp: 2, bi: 102400, li: 4, scale listen interval from 307200 us to 409600 us
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54940) wifi:
+wifi-blob: AP's beacon interval = 102400 us, DTIM period = 2
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54952) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:0/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54965) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:7/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (54977) wifi:
+wifi-blob: [ADDBA]RX addba response, status:0, tid:5/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32
+wifi-blob: wifi: 
+
+wifi-link-probe: stub _phy_update_country_info +2
+wifi-link-probe: CONNECTED in 1998 ms (0 progress reports)
+wifi-link-probe: supplicant[connected]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[connected]: 0:wifi=9244/16384
+wifi-link-probe: key table entry 4 (pairwise TK): equal bits vs tk=ffff vs gtk=0000 (nonzero=ffff)
+wifi-link-probe: key table entry 0 (group GTK): equal bits vs tk=0000 vs gtk=0000 (nonzero=0000)
+coex[connected]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[connected]: fw=2.0.0 en=1 req=33 rel=987 sta=1716 startcb=1 intset=101
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x00000000
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: dhcp DISCOVER attempt=0 tx rc=0x0
+btwifi-link-probe: net: dhcp OFFER ip=192.168.31.151 -> REQUEST tx rc=0x0
+wifi-link-probe: net: dhcp ACK: bound ip=192.168.31.151 mask=255.255.255.0 router=192.168.31.1 dns=192.168.31.1, esp_wifi_internal_set_sta_ip rc=0x0
+wifi-link-probe: data path: DHCP bound in 37 ms ip=192.168.31.151 router=192.168.31.1
+wifi-link-probe: net: ping seq=0 tx rc=0x0
+wifi-link-probe: net: ping reply seq=0 rtt=5468 us
+wifi-blob: wifi: W (55151) wifi:
+wifi-blob: <ba-add>idx:0, ifx:0, tid:0, TAHI:0x100bafa, TALO:0x1670f744, (ssn:1, win:64, cur_ssn:1), CONF:0xc0000001
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=1 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=1 rtt=2844 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=2 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=2 rtt=2063 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=3 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=3 rtt=2078 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=4 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=4 rtt=6465 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=5 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=5 rtt=2143 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=6 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=6 rtt=7198 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=7 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=7 rtt=5683 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=8 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_wifi-link-probe: net: ping reply seq=8 rtt=3641 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=9 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=9 rtt=3422 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=10 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=10 rtt=2428 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=11 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=11 rtt=2064 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=12 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=12 rtt=5148 us
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: net: arp answered 192.168.31.1 (44:f7:70:16:fa:b8) tx rc=0x0
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=13 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=13 rtt=2572 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=14 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=14 rtt=7226 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt callbt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=15 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=15 rtt=2056 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=16 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=16 rtt=2075 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=17 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=17 rtt=2080 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=18 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=18 rtt=2124 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=19 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=19 rtt=2045 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=20 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=20 rtt=2568 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=21 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=21 rtt=4352 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=22 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=22 rtt=2011 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _phy_update_country_info +1
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=23 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=23 rtt=2183 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: net: ping seq=24 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=24 rtt=2188 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=25 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=25 rtt=2209 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=26 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=26 rtt=2185 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=27 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=27 rtt=11464 us
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=28 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=28 rtt=2082 us
+coex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: net: ping seq=29 tx rc=0x0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: net: ping reply seq=29 rtt=2583 us
+wifi-link-probe: net: ping done: sent=30 received=30 timed_out=0 rtt min/avg/max=2011/3488/11464 us
+wifi-link-probe: data path: ping phase 29012 ms
+wifi-link-probe: data path: frames rx=33 (ignored 0, dropped 0) tx=33 (failed 0)
+coex[after-ping]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-ping]: fw=2.0.0 en=1 req=63 rel=1813 sta=2952 startcb=1 intset=101
+wifi-link-probe: stub _phy_update_country_info +1
+btcoex> _coex_wifi_request event=9 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +1
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+wifi-link-probe: connected: pump 5 s: 5000032 us, hooks +432, event posts +0
+coex[before-disconnect]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[before-disconnect]: fw=2.0.0 en=1 req=64 rel=1947 sta=3153 startcb=1 intset=101
+wifi-link-probe: stayed connected for 5 s
+wifi-link-probe: supplicant[after 5 s]: state=STAKEYSTART phase=ptk_done msg4_in_flight=false negotiation_done=true pmk=true ptk=true gtk=true rejects=0 last_error=-
+wifi-link-probe: stacks[after 5 s]: 0:wifi=9244/16384
+wifi-blob: wifi: I (89186) wifi:
+wifi-blob: state: run -> init (0x0)
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (89194) wifi:
+wifi-blob: teardown, set twt_inactive_time_secs:6, sp_count:0
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (89203) wifi:
+wifi-blob: pm stop, total sleep time: %lu us / %lu us
+
+wifi-blob: wifi: 
+
+wifi-blob: wifi: I (89213) wifi:
+wifi-blob: <ba-del>idx:0, tid:0
+wifi-blob: wifi: 
+
+coex> _coex_wifi_request event=7 latency=0 duration=0 -> rc=0
+wifi-link-probe: stub _wifi_pm_sleep_lock_acquire +2
+wifi-link-probe: stub _wifi_pm_sleep_lock_release +1
+wifi-link-probe: stub _phy_update_country_info +1
+btwifi-link-probe: STA_DISCONNECTED bssid=44:f7:70:16:fa:ba reason=8 rssi=-27
+wifi-link-probe: event id=5 data=0x2f01e7c4 (n=9)
+wifi-link-probe: esp_wifi_disconnect_internal -> DISCONNECTED reason=8
+coex[after-connect-phase]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[after-connect-phase]: fw=2.0.0 en=1 req=65 rel=1949 sta=3159 startcb=1 intset=103
+wifi-link: arena[after connect]: free=58152/114672 B
+wifi-link: result scan=true ap=12 connected=true dhcp=true ping=true stayed=true reason=8
+coex-timers[wifi link, ble advertising]: 17978 samples (at most one per 2 ms), 0 with a timer enabled, timers seen enabled 0x00
+check: coex hw timers sampled while wifi link, ble advertising (17978 samples, 0 with one enabled) ok=1
+clocks[after wifi link with ble adv]: conf=0x7e601002 force_on=0x000000fc conf1=0x003fffff lpcon=0x0000000f modem_conf=0x0000003d
+check: clocks after wifi link with ble adv: cover 3 modules (missing conf1=0x00000000 conf=0x00000000 lpcon=0x00000000 modem_conf=0x00000000) ok=1
+check: wifi link while ble advertising: connected=1 dhcp=1 ok=1
+check: wifi ping while ble advertising done (1) ok=1
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+bt call: eventq_get
+read[ble after ble adv hold]: synth 98bc=00000004 98c0=00000000 98b8=00000000 9880..988c=00000000 7fff8404 2f0622e8 0f0610c0
+read[ble after ble adv hold]: syscon 9c00..9c0c=00000101 7e601002 000000fc 64646400 9c10=00000000 9c14..9c20=003fffff 10003802 00000000 00002070
+read[ble after ble adv hold]: fe 0438=e0800000 0450=00102000 047c=00000000 lpcon+18=0000000f clkrst 7040=00000001 71f8=00000001
+read[ble after ble adv hold]: ana f800=01700266 f818=2900e444 f81c=00ffffdf
+coex[ble-adv-hold]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[ble-adv-hold]: fw=2.0.0 en=1 req=65 rel=1949 sta=3159 startcb=1 intset=103
+coex[ble-adv-hold]: booted=false wifi=idle ble=idle param=0x00000000 coa=0x00000000 table=0x2f01c224 rej=2
+coex[ble-adv-hold]: fw=2.0.0 en=1 req=65 rel=1949 sta=3159 startcb=1 intset=103
+check: ble synth lock held through the 15 s hold (before=1 after=1 98bc=0x00000004) ok=1
+check: ble status word unchanged through the hold (0x0000) ok=1
+bt adv: interrupt bridge counters after the hold: queued=1552 drained=1552 dropped=0 count_only=0
+checks: passed=28 failed=3 total=31
+firmware: sections: passed=0 failed=1 total=1
+main: verdict=fail
+ota: running factory, no slot bookkeeping

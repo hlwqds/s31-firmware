@@ -9,12 +9,12 @@
 | `build-tcpdump.sh` | 工作站 | 用 `zig cc -target aarch64-linux-musl` 编 libpcap 1.10.5 与 tcpdump 4.99.6，静态链接，约 1.4 MB；`TARGET=x86_64-linux-musl` 给工作站自己编一份，带 `BLUEZ_INCLUDE` 的那一份认得 `bluetooth-monitor` 接口，并给 tcpdump 打上下一个补丁 |
 | `tcpdump-4.99.6-bt-monitor.patch` | 工作站（构建时打） | 给 tcpdump 4.99.6 加一个 Bluetooth Linux Monitor 的打印机：tcpdump 4.99 起不再解任何蓝牙包，监视流读回来只有 `UNSUPPORTED` 加十六进制。补丁打成一行一条（适配器号与 opcode、HCI 命令、命令完成、LE 广播上报的 PDU 类型 / 地址类型 / 地址 / 广播数据 / RSSI），其余的包一行摘要，`-x` 看字节。只在带 `BLUEZ_INCLUDE` 的构建里打 |
 | `bt-monitor-sample.pcap`、`bt-monitor-sample.expected.txt` | 工作站 | 打印机的回归样例：20 条已知内容的监视流记录（系统提示、新适配器、三条广播命令与各自的完成、板子地址的一条扩展上报与一条旧式上报、一条扫描响应、其余各类各一条、一条被截断的；地址只有板子的和一个编造的），以及带打印机补丁的 tcpdump 用 `-tt -n -r` 打出来的 20 行。重编之后 `diff` 一遍，见下文「用法」 |
-| `collect.sh` | 路由器 | 跟随系统日志、每秒读站点统计、tcpdump 抓帧的文字摘要；`MON` 模式临时建 monitor 接口抓 802.11 帧 |
+| `collect.sh` | 路由器 | 跟随系统日志、每秒读站点统计、tcpdump 抓帧的文字摘要；`MON` 模式临时建 monitor 接口抓 802.11 帧（wiphy 的名字从接口上查；2026-11-27 之前这里把名字拼错了，接口一次也没建起来过） |
 | `frames.py` | 工作站 | 把 monitor 抓到的帧整理成一行一帧，时间换算成本机时间 |
 | `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
 | `decode-adv-marker.py` | 工作站 | 解码合并镜像广播实验的落盘记录（flash `0x18E000` 起一个扇区，`bt-blobs/src/probe.zig` 的 `markerWrite` 写的）：每条 32 字节，按槽位顺序打印；全 FF 的扇区报「空的」。记录只写到广播使能的"正要发"为止——当时的理由是"之后板子不再出声"，那其实是 `bt-blobs` 的中断风暴，2026-11-27 晚已修（生产仓 `coex-verification.md` §17.5）；记录本身仍然冻结在那里，没有改回 |
 | `btmon-summary.py` | 工作站 | 蓝牙一侧：从 `btmon` 的输出里汇总板子地址的 LE 广播上报，按广播事件分组，给出事件间隔与 RSSI 的统计；`--raw` 逐条列出（见下文「蓝牙一侧」） |
-| `pcap-bt-adv.py` | 工作站 | 蓝牙一侧：按板子地址汇总 LE 广播上报，打印的行与 `btmon-summary.py` 相同；`--slot-ms T` 逐段核对事件间隔是不是 k×（T + 0–10 ms）。输入可以是自编 tcpdump 记的 pcap（不靠 tshark），也可以是 tcpdump 打印的行（`--tcpdump-text`，把板子地址的行 grep 出来就能入库并重算）（见下文「蓝牙一侧」） |
+| `pcap-bt-adv.py` | 工作站 | 蓝牙一侧：按板子地址汇总 LE 广播上报，打印的行与 `btmon-summary.py` 相同；`--slot-ms T` 逐段核对事件间隔是不是 k×（T + 0–10 ms），`--report-slot-ms T` 对相邻上报的间隔做同样的核对（比 30 ms 的分组阈值短的间隔，比如 20 ms，要用这个）。输入可以是自编 tcpdump 记的 pcap（不靠 tshark），也可以是 tcpdump 打印的行（`--tcpdump-text`，把板子地址的行 grep 出来就能入库并重算）（见下文「蓝牙一侧」） |
 
 ## 用法
 

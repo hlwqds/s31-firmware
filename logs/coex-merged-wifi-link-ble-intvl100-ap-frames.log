@@ -1,0 +1,323 @@
+合并镜像 L4b：BLE 广播间隔 100 ms（每遍 Wi-Fi 链路 ping 30 帧），AP 上临时 monitor 接口抓到的板子帧
+== 帧：时间  方向  速率 信号  描述 ==
+10:02:37.225  板→广播      1.0M -25dBm  Probe Request () [速率表]
+10:02:37.237  邻居→板      1.0M -67dBm  Probe Response (ssid-26) [速率表] CH: 1, PRIVACY (截断)
+10:02:37.476  邻居→板      1.0M -25dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+10:02:41.250  板→广播      1.0M -23dBm  Probe Request () [速率表]
+10:02:41.264  邻居→板      1.0M -68dBm  Probe Response (ssid-10) [速率表] CH: 1, PRIVACY (截断)
+10:02:41.372  板→广播      1.0M -27dBm  Probe Request () [速率表]
+10:02:41.379  邻居→板      1.0M -37dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+10:02:41.497  邻居→板      1.0M -25dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+10:02:43.953  板→广播      1.0M -25dBm  Probe Request (hl-wifi) [速率表]
+10:02:43.954  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+10:02:45.449  板→AP      1.0M -24dBm  DeAuthentication: Deauthenticated because sending STA is leaving (or has left) IBSS or ESS
+10:02:45.458  板→AP      1.0M -25dBm  Authentication (Open System)-1: Successful
+10:02:45.460  AP发→板        -   -    Authentication (Open System)-2:
+10:02:45.475  板→AP      1.0M -25dBm  Assoc Request (hl-wifi) [速率表]
+10:02:45.488  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+10:02:45.490  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+10:02:45.746  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 127: EAPOL key (3) v2, len 123
+10:02:45.748  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 155: EAPOL key (3) v2, len 151
+10:02:45.765  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+10:02:45.919  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+10:02:45.945  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+10:02:45.959  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+10:02:46.314  板→AP         - -25dBm  QoS
+10:02:46.329  板→广播      6.0M -24dBm  QoS 加密数据
+10:02:46.335  板→广播      6.0M -24dBm  QoS 加密数据
+10:02:46.359  板→网关         - -26dBm  QoS 加密数据
+10:02:46.359  AP发→板        -   -    QoS 加密数据
+10:02:46.412  板→AP         - -24dBm  QoS
+10:02:46.471  板→AP         - -24dBm  QoS
+10:02:46.492  板→AP      6.0M -24dBm  Action: BA ADDBA Response
+10:02:46.526  板→AP         - -24dBm  QoS
+10:02:47.355  板→网关         - -26dBm  QoS 加密数据
+10:02:47.356  AP发→板        -   -    QoS 加密数据
+10:02:47.407  板→AP         - -24dBm  QoS
+10:02:48.355  板→网关         - -26dBm  QoS 加密数据
+10:02:48.356  AP发→板        -   -    QoS 加密数据
+10:02:48.407  板→AP         - -24dBm  QoS
+10:02:49.355  板→网关         - -26dBm  QoS 加密数据
+10:02:49.356  AP发→板        -   -    QoS 加密数据
+10:02:49.406  板→AP         - -23dBm  QoS
+10:02:50.355  板→网关         - -26dBm  QoS 加密数据
+10:02:50.355  AP发→板        -   -    QoS 加密数据
+10:02:50.406  板→AP         - -24dBm  QoS
+10:02:51.356  板→网关         - -26dBm  QoS 加密数据
+10:02:51.357  AP发→板        -   -    QoS 加密数据
+10:02:51.408  板→AP         - -24dBm  QoS
+10:02:51.589  板→AP         - -24dBm  QoS
+10:02:51.601  板→网关      6.0M -24dBm  QoS 加密数据
+10:02:51.653  板→AP         - -24dBm  QoS
+10:02:52.354  板→网关         - -26dBm  QoS 加密数据
+10:02:52.355  AP发→板        -   -    QoS 加密数据
+10:02:52.414  板→AP         - -24dBm  QoS
+10:02:53.354  板→网关         - -26dBm  QoS 加密数据
+10:02:53.358  AP发→板        -   -    QoS 加密数据
+10:02:53.408  板→AP         - -24dBm  QoS
+10:02:54.355  板→网关         - -26dBm  QoS 加密数据
+10:02:54.356  AP发→板        -   -    QoS 加密数据
+10:02:54.406  板→AP         - -24dBm  QoS
+10:02:55.354  板→网关         - -26dBm  QoS 加密数据
+10:02:55.358  AP发→板        -   -    QoS 加密数据
+10:02:55.410  板→AP         - -24dBm  QoS
+10:02:56.354  板→网关         - -26dBm  QoS 加密数据
+10:02:56.354  AP发→板        -   -    QoS 加密数据
+10:02:56.405  板→AP         - -24dBm  QoS
+10:02:57.354  板→网关         - -26dBm  QoS 加密数据
+10:02:57.355  AP发→板        -   -    QoS 加密数据
+10:02:57.405  板→AP         - -24dBm  QoS
+10:02:58.357  板→网关         - -26dBm  QoS 加密数据
+10:02:58.358  AP发→板        -   -    QoS 加密数据
+10:02:58.412  板→AP         - -24dBm  QoS
+10:02:59.356  板→网关         - -26dBm  QoS 加密数据
+10:02:59.356  AP发→板        -   -    QoS 加密数据
+10:02:59.411  板→AP         - -24dBm  QoS
+10:03:00.354  板→网关         - -26dBm  QoS 加密数据
+10:03:00.355  AP发→板        -   -    QoS 加密数据
+10:03:00.405  板→AP         - -24dBm  QoS
+10:03:01.355  板→网关         - -26dBm  QoS 加密数据
+10:03:01.356  AP发→板        -   -    QoS 加密数据
+10:03:01.407  板→AP         - -24dBm  QoS
+10:03:02.353  板→网关         - -26dBm  QoS 加密数据
+10:03:02.354  AP发→板        -   -    QoS 加密数据
+10:03:02.404  板→AP         - -24dBm  QoS
+10:03:03.352  板→网关         - -26dBm  QoS 加密数据
+10:03:03.353  AP发→板        -   -    QoS 加密数据
+10:03:03.404  板→AP         - -24dBm  QoS
+10:03:04.352  板→网关         - -26dBm  QoS 加密数据
+10:03:04.353  AP发→板        -   -    QoS 加密数据
+10:03:04.404  板→AP         - -24dBm  QoS
+10:03:05.352  板→网关         - -26dBm  QoS 加密数据
+10:03:05.353  AP发→板        -   -    QoS 加密数据
+10:03:05.403  板→AP         - -24dBm  QoS
+10:03:06.357  板→网关         - -26dBm  QoS 加密数据
+10:03:06.358  AP发→板        -   -    QoS 加密数据
+10:03:06.408  板→AP         - -24dBm  QoS
+10:03:07.366  板→网关         - -26dBm  QoS 加密数据
+10:03:07.367  AP发→板        -   -    QoS 加密数据
+10:03:07.421  板→AP         - -24dBm  QoS
+10:03:08.368  板→网关         - -26dBm  QoS 加密数据
+10:03:08.370  AP发→板        -   -    QoS 加密数据
+10:03:08.422  板→AP         - -23dBm  QoS
+10:03:09.363  板→网关         - -26dBm  QoS 加密数据
+10:03:09.364  AP发→板        -   -    QoS 加密数据
+10:03:09.414  板→AP         - -24dBm  QoS
+10:03:10.365  板→网关         - -26dBm  QoS 加密数据
+10:03:10.366  AP发→板        -   -    QoS 加密数据
+10:03:10.416  板→AP         - -24dBm  QoS
+10:03:11.361  板→网关         - -26dBm  QoS 加密数据
+10:03:11.362  AP发→板        -   -    QoS 加密数据
+10:03:11.413  板→AP         - -24dBm  QoS
+10:03:12.362  板→网关         - -26dBm  QoS 加密数据
+10:03:12.362  AP发→板        -   -    QoS 加密数据
+10:03:12.413  板→AP         - -24dBm  QoS
+10:03:13.362  板→网关         - -26dBm  QoS 加密数据
+10:03:13.363  AP发→板        -   -    QoS 加密数据
+10:03:13.413  板→AP         - -24dBm  QoS
+10:03:14.364  板→网关         - -26dBm  QoS 加密数据
+10:03:14.365  AP发→板        -   -    QoS 加密数据
+10:03:14.419  板→AP         - -24dBm  QoS
+10:03:15.364  板→网关         - -26dBm  QoS 加密数据
+10:03:15.370  AP发→板        -   -    QoS 加密数据
+10:03:15.656  板→AP         - -24dBm  QoS
+10:03:21.011  板→AP      6.0M -24dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+10:03:22.216  AP发→板        -   -    DeAuthentication: Previous authentication no longer valid
+10:03:25.518  板→广播      1.0M -25dBm  Probe Request () [速率表]
+10:03:25.522  邻居→板      1.0M -68dBm  Probe Response (ssid-10) [速率表] CH: 1, PRIVACY (截断)
+10:03:25.769  板→广播      1.0M -27dBm  Probe Request () [速率表]
+10:03:25.774  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+10:03:26.020  邻居→板      1.0M -24dBm  Probe Response (ssid-01) [速率表] CH: 2, PRIVACY (截断)
+10:03:26.035  邻居→板      1.0M -37dBm  Probe Response (ssid-04) [速率表] CH: 2, PRIVACY (截断)
+10:03:30.775  板→广播      1.0M -25dBm  Probe Request (hl-wifi) [速率表]
+10:03:30.779  AP发→板        -   -    Probe Response (hl-wifi) [速率表] CH: 1, PRIVACY (截断)
+10:03:32.284  板→AP      1.0M -24dBm  Authentication (Open System)-1: Successful
+10:03:32.286  AP发→板        -   -    Authentication (Open System)-2:
+10:03:32.316  板→AP      1.0M -25dBm  Assoc Request (hl-wifi) [速率表]
+10:03:32.321  AP发→板     6.0M   -    Assoc Response AID(1) : PRIVACY : Successful
+10:03:32.322  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+10:03:32.601  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 127: EAPOL key (3) v2, len 123
+10:03:32.602  AP发→板     6.0M   -    QoS ethertype EAPOL (0x888e), length 155: EAPOL key (3) v2, len 151
+10:03:32.622  板→AP      6.0M -24dBm  QoS ethertype EAPOL (0x888e), length 99: EAPOL key (3) v2, len 95
+10:03:32.775  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+10:03:32.820  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+10:03:32.833  板→AP      6.0M -24dBm  Action: BA ADDBA Request
+10:03:32.855  板→AP         - -24dBm  QoS
+10:03:32.900  板→AP         - -24dBm  QoS
+10:03:32.913  板→AP         - -24dBm  QoS
+10:03:32.925  板→AP         - -24dBm  QoS
+10:03:32.938  板→AP         - -24dBm  QoS
+10:03:33.470  板→AP         - -24dBm  QoS
+10:03:33.473  板→广播      6.0M -25dBm  QoS 加密数据
+10:03:33.502  板→广播      6.0M -23dBm  QoS 加密数据
+10:03:33.503  板→AP         - -24dBm  QoS
+10:03:33.571  板→AP         - -24dBm  QoS
+10:03:33.626  板→AP         - -24dBm  QoS
+10:03:33.673  板→网关         - -26dBm  QoS 加密数据
+10:03:33.674  AP发→板        -   -    QoS 加密数据
+10:03:33.682  板→AP         - -25dBm  QoS
+10:03:33.706  板→AP         - -24dBm  QoS
+10:03:33.775  板→AP         - -24dBm  QoS
+10:03:33.817  板→AP      6.0M -23dBm  Action: BA ADDBA Response
+10:03:33.827  板→AP         - -24dBm  QoS
+10:03:33.882  板→AP         - -24dBm  QoS
+10:03:33.911  板→AP         - -24dBm  QoS
+10:03:34.691  板→网关         - -26dBm  QoS 加密数据
+10:03:34.692  AP发→板        -   -    QoS 加密数据
+10:03:34.700  板→AP         - -24dBm  QoS
+10:03:34.730  板→AP         - -24dBm  QoS
+10:03:34.803  板→AP         - -24dBm  QoS
+10:03:34.832  板→AP         - -24dBm  QoS
+10:03:35.651  板→网关         - -26dBm  QoS 加密数据
+10:03:35.652  AP发→板        -   -    QoS 加密数据
+10:03:35.663  板→AP         - -25dBm  QoS
+10:03:35.724  板→AP         - -24dBm  QoS
+10:03:35.754  板→AP         - -24dBm  QoS
+10:03:36.675  板→网关         - -25dBm  QoS 加密数据
+10:03:36.676  AP发→板        -   -    QoS 加密数据
+10:03:36.686  板→AP         - -24dBm  QoS
+10:03:36.747  板→AP         - -24dBm  QoS
+10:03:36.778  板→AP         - -24dBm  QoS
+10:03:37.699  板→网关         - -26dBm  QoS 加密数据
+10:03:37.699  AP发→板        -   -    QoS 加密数据
+10:03:37.710  板→AP         - -24dBm  QoS
+10:03:37.771  板→AP         - -24dBm  QoS
+10:03:37.802  板→AP         - -24dBm  QoS
+10:03:38.733  板→AP         - -24dBm  QoS
+10:03:38.786  板→网关         - -27dBm  QoS 加密数据
+10:03:38.787  AP发→板        -   -    QoS 加密数据
+10:03:38.792  板→AP         - -24dBm  QoS
+10:03:38.825  板→网关      6.0M -24dBm  QoS 加密数据
+10:03:38.828  板→AP         - -24dBm  QoS
+10:03:38.898  板→AP         - -24dBm  QoS
+10:03:38.928  板→AP         - -24dBm  QoS
+10:03:39.747  板→网关         - -26dBm  QoS 加密数据
+10:03:39.747  AP发→板        -   -    QoS 加密数据
+10:03:39.757  板→AP         - -24dBm  QoS
+10:03:39.820  板→AP         - -24dBm  QoS
+10:03:39.850  板→AP         - -24dBm  QoS
+10:03:40.834  板→网关         - -26dBm  QoS 加密数据
+10:03:40.836  AP发→板        -   -    QoS 加密数据
+10:03:40.843  板→AP         - -24dBm  QoS
+10:03:40.873  板→AP         - -24dBm  QoS
+10:03:40.945  板→AP         - -24dBm  QoS
+10:03:40.975  板→AP         - -24dBm  QoS
+10:03:41.794  板→网关         - -26dBm  QoS 加密数据
+10:03:41.794  AP发→板        -   -    QoS 加密数据
+10:03:41.805  板→AP         - -23dBm  QoS
+10:03:41.863  板→AP         - -24dBm  QoS
+10:03:41.896  板→AP         - -24dBm  QoS
+10:03:42.828  板→AP         - -23dBm  QoS
+10:03:42.879  板→网关         - -26dBm  QoS 加密数据
+10:03:42.880  AP发→板        -   -    QoS 加密数据
+10:03:42.890  板→AP         - -24dBm  QoS
+10:03:42.920  板→AP         - -24dBm  QoS
+10:03:42.989  板→AP         - -24dBm  QoS
+10:03:43.022  板→AP         - -24dBm  QoS
+10:03:43.841  板→网关         - -26dBm  QoS 加密数据
+10:03:43.842  AP发→板        -   -    QoS 加密数据
+10:03:43.852  板→AP         - -23dBm  QoS
+10:03:43.915  板→AP         - -24dBm  QoS
+10:03:43.944  板→AP         - -24dBm  QoS
+10:03:44.865  板→网关         - -26dBm  QoS 加密数据
+10:03:44.866  AP发→板        -   -    QoS 加密数据
+10:03:44.876  板→AP         - -24dBm  QoS
+10:03:44.940  板→AP         - -23dBm  QoS
+10:03:44.967  板→AP         - -24dBm  QoS
+10:03:45.889  板→网关         - -26dBm  QoS 加密数据
+10:03:45.890  AP发→板        -   -    QoS 加密数据
+10:03:45.900  板→AP         - -24dBm  QoS
+10:03:45.961  板→AP         - -24dBm  QoS
+10:03:45.991  板→AP         - -24dBm  QoS
+10:03:46.913  板→网关         - -26dBm  QoS 加密数据
+10:03:46.913  AP发→板        -   -    QoS 加密数据
+10:03:46.924  板→AP         - -23dBm  QoS
+10:03:46.985  板→AP         - -24dBm  QoS
+10:03:47.015  板→AP         - -24dBm  QoS
+10:03:47.936  板→网关         - -26dBm  QoS 加密数据
+10:03:47.937  AP发→板        -   -    QoS 加密数据
+10:03:47.947  板→AP         - -24dBm  QoS
+10:03:48.009  板→AP         - -24dBm  QoS
+10:03:48.039  板→AP         - -24dBm  QoS
+10:03:49.024  板→网关         - -25dBm  QoS 加密数据
+10:03:49.025  AP发→板        -   -    QoS 加密数据
+10:03:49.033  板→AP         - -24dBm  QoS
+10:03:49.063  板→AP         - -24dBm  QoS
+10:03:49.135  板→AP         - -24dBm  QoS
+10:03:49.165  板→AP         - -24dBm  QoS
+10:03:49.984  板→网关         - -26dBm  QoS 加密数据
+10:03:49.985  AP发→板        -   -    QoS 加密数据
+10:03:49.996  板→AP         - -23dBm  QoS
+10:03:50.053  板→AP         - -24dBm  QoS
+10:03:50.087  板→AP         - -24dBm  QoS
+10:03:51.008  板→网关         - -26dBm  QoS 加密数据
+10:03:51.008  AP发→板        -   -    QoS 加密数据
+10:03:51.018  板→AP         - -23dBm  QoS
+10:03:51.081  板→AP         - -24dBm  QoS
+10:03:51.110  板→AP         - -24dBm  QoS
+10:03:52.032  板→网关         - -26dBm  QoS 加密数据
+10:03:52.032  AP发→板        -   -    QoS 加密数据
+10:03:52.043  板→AP         - -24dBm  QoS
+10:03:52.104  板→AP         - -24dBm  QoS
+10:03:52.134  板→AP         - -24dBm  QoS
+10:03:53.055  板→网关         - -26dBm  QoS 加密数据
+10:03:53.056  AP发→板        -   -    QoS 加密数据
+10:03:53.066  板→AP         - -23dBm  QoS
+10:03:53.128  板→AP         - -24dBm  QoS
+10:03:53.158  板→AP         - -24dBm  QoS
+10:03:54.079  板→网关         - -26dBm  QoS 加密数据
+10:03:54.080  AP发→板        -   -    QoS 加密数据
+10:03:54.090  板→AP         - -23dBm  QoS
+10:03:54.155  板→AP         - -24dBm  QoS
+10:03:54.181  板→AP         - -24dBm  QoS
+10:03:55.103  板→网关         - -26dBm  QoS 加密数据
+10:03:55.103  AP发→板        -   -    QoS 加密数据
+10:03:55.113  板→AP         - -24dBm  QoS
+10:03:55.175  板→AP         - -24dBm  QoS
+10:03:55.205  板→AP         - -24dBm  QoS
+10:03:56.126  板→网关         - -26dBm  QoS 加密数据
+10:03:56.127  AP发→板        -   -    QoS 加密数据
+10:03:56.137  板→AP         - -24dBm  QoS
+10:03:56.199  板→AP         - -24dBm  QoS
+10:03:56.229  板→AP         - -24dBm  QoS
+10:03:57.215  板→网关         - -26dBm  QoS 加密数据
+10:03:57.216  AP发→板        -   -    QoS 加密数据
+10:03:57.223  板→AP         - -24dBm  QoS
+10:03:57.253  板→AP         - -24dBm  QoS
+10:03:57.325  板→AP         - -24dBm  QoS
+10:03:57.356  板→AP         - -24dBm  QoS
+10:03:58.174  板→网关         - -26dBm  QoS 加密数据
+10:03:58.175  AP发→板        -   -    QoS 加密数据
+10:03:58.185  板→AP         - -24dBm  QoS
+10:03:58.246  板→AP         - -24dBm  QoS
+10:03:58.276  板→AP         - -24dBm  QoS
+10:03:59.198  板→网关         - -26dBm  QoS 加密数据
+10:03:59.199  AP发→板        -   -    QoS 加密数据
+10:03:59.208  板→AP         - -24dBm  QoS
+10:03:59.270  板→AP         - -24dBm  QoS
+10:03:59.301  板→AP         - -24dBm  QoS
+10:04:00.222  板→网关         - -25dBm  QoS 加密数据
+10:04:00.223  AP发→板        -   -    QoS 加密数据
+10:04:00.232  板→AP         - -24dBm  QoS
+10:04:00.294  板→AP         - -24dBm  QoS
+10:04:00.324  板→AP         - -24dBm  QoS
+10:04:01.245  板→网关         - -26dBm  QoS 加密数据
+10:04:01.246  AP发→板        -   -    QoS 加密数据
+10:04:01.256  板→AP         - -24dBm  QoS
+10:04:01.318  板→AP         - -24dBm  QoS
+10:04:01.348  板→AP         - -25dBm  QoS
+10:04:02.269  板→网关         - -26dBm  QoS 加密数据
+10:04:02.270  AP发→板        -   -    QoS 加密数据
+10:04:02.280  板→AP         - -24dBm  QoS
+10:04:02.342  板→AP         - -24dBm  QoS
+10:04:02.371  板→AP         - -24dBm  QoS
+10:04:03.357  板→网关         - -26dBm  QoS 加密数据
+10:04:03.357  AP发→板        -   -    QoS 加密数据
+10:04:03.366  板→AP         - -24dBm  QoS
+10:04:03.702  板→AP         - -24dBm  QoS
+10:04:03.707  板→AP         - -24dBm  QoS
+10:04:03.725  板→AP         - -24dBm  QoS
+10:04:09.117  板→AP      6.0M -24dBm  Disassociation: Disassociated because sending STA is leaving (or has left) BSS
+10:04:10.316  AP发→板        -   -    DeAuthentication: Previous authentication no longer valid
+
+共 319 帧。

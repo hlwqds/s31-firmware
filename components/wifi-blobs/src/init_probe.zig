@@ -890,6 +890,11 @@ pub fn coexReadings(stage: []const u8) void {
         appendItem(stage, "by event", &line, &used, item[0..n]);
     }
     flushLine(stage, "by event", line[0..used]);
+    // 核里的三个状态字读不到（`coex_status_get` 不是读字，见 `radio-coex/src/fake.zig`）：Wi-Fi 的那份是 blob 最后一次置的值
+    // （它每次先清 0xffff 再置），BLE / BT 的那份是 controller 经胶水置 / 清出来的镜像。
+    log.line("coex[{s}]: status words: wifi=0x{x:0>4} (wifi blob's last set) ble=0x{x:0>4} bt=0x{x:0>4} (bt controller's set/clear, mirrored)", .{
+        stage, @as(u16, @truncate(t.set_last)), radio_coex.bt_status_words[1], radio_coex.bt_status_words[2],
+    });
 
     const clk = hw.readReg(0x2010_F008);
     log.line("coex[{s}]: coex lp clk conf 0x2010F008: 0x{x:0>8} (div_num {d}, src_sel 0x{x})", .{ stage, clk, (clk >> 4) & 0xFFF, clk & 15 });

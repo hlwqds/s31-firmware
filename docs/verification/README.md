@@ -145,6 +145,11 @@ DHCP、ping 10/10（往返平均从 3.5 ms 涨到 45 ms）；AP 侧记到第二�
 `…-adv11-bt-scan.log`）。L4b 有了第一条证据；按广播间隔的时延与丢包等其余判据还没有做，「核真的在仲裁」的两条判据读了、
 都不过（硬件定时器在每个时点都是 `en=0`，三组状态位的读数对不上名字）；单独的 BLE 探针回归一轮，与基线逐段相同——那边的
 synth 墙不是这个风暴（`coex-verification.md` §17.5、`ble-core-verification.md` §9）。
+2026-11-27 上午的后续（`coex-verification.md` §18）：按广播间隔 20 / 100 / 1000 ms 各量了一轮，每遍 ping 30 帧（`-Dcoex-adv-pings`），
+三个间隔都不丢；广播时 rtt 三个间隔几乎一样（最小 27.2 ms、中位 30.5 ms、平均 45–55 ms），「间隔越短 rtt 越大」不成立。
+空口上回显请求到应答中位 0.71 ms、没有重传；核不启动的对照轮里广播时 rtt 不涨（平均 3.5 ms）——涨在共存路径上。
+「核真的在仲裁」两条判据过了一条：BLE 的状态字广播时是 `0x0001`（此前「对不上名字」是把 `coex_status_get` 当成了读字）；
+硬件定时器在链路的每一泵步采一次使能位，约 3 万次里 0 次，这条没有过。PTI 行为、两侧的 start 回调还没有做。
 
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
@@ -160,6 +165,7 @@ synth 墙不是这个风暴（`coex-verification.md` §17.5、`ble-core-verifica
 | 合并镜像里 BLE 起广播（2026-11-27 晚，中断桥的登记下标修掉之后） | 同上，加 `ADV=1`，烧录后抓 150 秒；工作站的 `bluetoothctl --timeout 230 scan on` 开在板子这一轮之前；AP 上起 `MON` 采集 | `coex_merged` 27/27；`main: verdict=pass`；合成器锁定位在广播使能后 35 ms 置位、15 秒后仍是它；中断桥 15 秒里入环 951 次、代跑 950 次（纯计数桩 0 次）；BLE 广播着的时候 Wi-Fi 连上、DHCP、ping 10/10（往返平均 3.7 → 39.4 ms）；工作站扫描看到 `[NEW] Device 02:00:00:00:BB:01 s31` | `logs/coex-merged-wifi-link-ble-adv13-boot.log`（最终代码）、`logs/coex-merged-wifi-link-ble-adv12-boot.log`；AP 侧与扫描的记录取自同代码的前一轮：`logs/coex-merged-wifi-link-ble-adv11-ap-syslog.log`、`logs/coex-merged-wifi-link-ble-adv11-ap-frames.log`、`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log` |
 | 单变量对照（最终代码只差登记下标那一行） | 同上，构建前把 `components/bt-blobs/src/bringup.zig` 的 `setHandler(routed_input - 16, …)` 改回 `setHandler(routed_input, …)`，抓 100 秒 | `check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x00000000 ok=0`；紧跟在 `0x200A` 的回包行后面累计 2001 万次中断（全部是输入 24），没有汇总行 | `logs/coex-merged-wifi-link-ble-adv-storm-boot.log` |
 | 单独 BLE 探针回归（中断桥的登记下标修掉之后） | `sh /tmp/probe-board.sh ble bt-probe-bridge-index-boot.log 50` | 与基线逐段相同（只有计数值与串口交错不同）：`INITED`，HCI 一致性自检 20/26，照旧走到 synth 墙（`PRE200A 98BC=00000000`、`POLL0n 98BC=00000000`），主上下文一直在跑 | `logs/bt-probe-bridge-index-boot.log` |
+| 按广播间隔量 ping（L4b 第一组，2026-11-27 上午） | `ADV=1 BLE=1 AP_CRED=<凭据文件> sh scripts/build-coex-link-image.sh -Dcoex-adv-interval-ms=<20、100、1000> -Dcoex-adv-pings=30`，烧录后抓 180 秒；同时在 AP 上起 MON 采集（`tools/ap-side/collect.sh`）、在工作站上 `tcpdump -i bluetooth-monitor`。对照轮多一个 `-Dcoex-sw-off=true` | 20 ms、100 ms 两轮 31/31；1000 ms 那轮 30/31（扫描灵敏度判据 8 对 19）；对照轮 28/31（核不在的那三条）。每遍 30 帧都不丢；广播时 rtt 三个间隔几乎一样（最小 27.2 ms、中位 30.5 ms，对照遍平均 4 ms）；对照轮广播时 rtt 平均 3.5 ms | `logs/coex-merged-wifi-link-ble-intvl{20,100,1000}-{boot.log,ap-frames.log,ap-side.txt,hci.txt}`、`…-intvl100-swoff-{boot.log,ap-side.txt}` |
 
 ## 默认镜像（L2）
 

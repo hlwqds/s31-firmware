@@ -44,7 +44,11 @@ LP=$!
 if [ -x "$TD" ]; then
     echo "tcpdump: $TD ($("$TD" --version 2>&1 | head -1))"
     if [ "$CAPDEV" = MON ]; then
-        if iw phy phy"${IFACE#phy}" interface add "$MON" type monitor 2>/tmp/ap-side-mon.err; then
+        # wiphy 的名字从接口上查（`iw dev phy0-ap0 info` 里的 "wiphy 0"）。此前写成 `phy"${IFACE#phy}"`，拼出来是
+        # "phy0-ap0"，iw 回 No such file or directory，这个仓库版本在 MON 模式下一次也没建起过 monitor 接口
+        # （2026-11-27 之前的 MON 轮次用的都是 /tmp 里另一份写死了 phy0 的脚本）。
+        WIPHY=$(iw dev "$IFACE" info 2>/dev/null | awk '$1 == "wiphy" { print "phy" $2 }')
+        if [ -n "$WIPHY" ] && iw phy "$WIPHY" interface add "$MON" type monitor 2>/tmp/ap-side-mon.err; then
             MONUP=1
             ip link set "$MON" up
             "$TD" -i "$MON" -n -e -tt -s 256 -l ether host "$BOARD_MAC" > "$CAP" 2>&1 &
