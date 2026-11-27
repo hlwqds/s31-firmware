@@ -1913,8 +1913,9 @@ IDF `esp_wifi/esp32s31/esp_adapter.c` 里 23 个包装函数在 `#if` 不成立�
 | `_coex_wifi_channel_set`、`_coex_event_duration_get`、`_coex_schm_interval_get`、`_coex_schm_curr_period_get`、`_coex_schm_curr_phase_get`、`_coex_schm_process_restart`、`_coex_schm_register_cb`、`_coex_schm_flexible_period_set`、`_coex_schm_get_phase_by_idx`、`_coex_configure_preemption_end_cb` | 494-510、544-569、580-605、616-632 | 回 0（`event_duration_get` 不写出参；两个取相位的回 `NULL`） | 具名桩（回 0，不写出参） | 不变 |
 
 23 个里对齐了三处：`_coex_init`、`_coex_enable` 不再调核，`_coex_schm_flexible_period_get` 回 1。还有一处在探针的 init 里：
-`wifi-blobs/src/init_probe.zig` 在关着 `-Dcoex` 时直接调过核的 `coex_init()`（注的是「IDF wrapper 顺序」）——那是 IDF **开着**
-共存时的顺序（`wifi_init.c:458` → 包装函数调核）；关着时包装函数回 0、不碰核（`esp_adapter.c:439-440`）。现在关着时什么都不调，
+`wifi-blobs/src/init_probe.zig` 在关着 `-Dcoex` 时直接调过核的 `coex_init()`（注的是「IDF wrapper 顺序」）——IDF 里那一句编译在
+`#if CONFIG_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEXIST_ENABLE` 里（`wifi_init.c:457-459`）：开着共存时才调核，关着时整句不存在。
+现在关着时什么都不调，
 不开 `-Dcoex` 的镜像也就不再需要 `libcoexist.a` 的 11 个成员。`bt-blobs/src/osi_impl.zig` 里那份 Wi-Fi osi 表是没有调用者的副本
 （从 `wifi-blobs` 分叉来的），三处照同样的口径改了，免得两份悄悄分叉。
 

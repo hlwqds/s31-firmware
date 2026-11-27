@@ -142,7 +142,7 @@ pub var queue_block_giveup: u32 = 0;
 /// `Semphr.take` 在 `portMAX_DELAY` 下长时间等不到而放弃的次数（正常应为 0）。
 pub var semphr_block_giveup: u32 = 0;
 /// 阻塞等待的外部刹车：装了它、它又说时间到了，`portMAX_DELAY` 的等待就按没拿到返回（记进 `*_block_giveup`）。
-/// 只有下电路径（`probe.disableOnly`）装它——那里主上下文在等 controller 任务把事情做完，等不来的时候要能回来，
+/// 只有下电路径（`probe.downBegin` 到 `probe.downEnd` 之间）装它——那里主上下文在等 controller 任务把事情做完，等不来的时候要能回来，
 /// 而不是把整机钉死在这里。别的路径不装，行为不变。
 pub var block_expired: ?*const fn () bool = null;
 

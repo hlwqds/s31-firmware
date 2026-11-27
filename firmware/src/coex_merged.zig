@@ -647,7 +647,7 @@ pub fn run() bool {
     }
 
     // 10) `-Dcoex-ble-disable`（路线图 C9 的 BLE 下电路径）：所有判据之后，照 IDF `esp_bt_controller_disable` 的顺序关 BLE
-    //     （`bt.probe.disableOnly`），核对时钟字里 Wi-Fi 与 PHY 的位一个不少、只属于 BLE 的位都关了、时钟源回到 BLE 来之前
+    //     （`bt.probe.downStep`），核对时钟字里 Wi-Fi 与 PHY 的位一个不少、只属于 BLE 的位都关了、时钟源回到 BLE 来之前
     //     的读数，再让 Wi-Fi 走一遍真实链路（泵里不再有 BLE 的那一步）。排在最后：这一步出问题时前面的判据已经打完。
     if (opts.ble_disable and opts.wifi_link and wifi_started) bleDownStep(base_ap, wifi_modem_conf);
 

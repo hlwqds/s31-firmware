@@ -83,14 +83,14 @@
     单独的 Wi-Fi 真实链路探针（不开 `-Dcoex`，不再链 `libcoexist.a`）扫描 32 个 AP、连上、DHCP、ping 10/10
     （`logs/wifi-link-stubs-aligned-boot.log`）。
   - **「BLE 先起」的顺序**：三个单变量对照（`-Dcoex-ble-first`）。PHY 由 BLE 的 init 打开时 Wi-Fi 收不到（扫描 4 个 AP，连不上）；
-    PHY 没开就做 controller 的 init，第 7 步取空指针停机；**先按 Wi-Fi 的路径把 PHY 打开、再做 BLE 的 init、最后 Wi-Fi start**，
+    PHY 没开就做 controller 的 init，第 7 步 `btdm_lp_init` 取空指针停机（load access fault，`mtval=0x193`）；**先按 Wi-Fi 的路径把 PHY 打开、再做 BLE 的 init、最后 Wi-Fi start**，
     Wi-Fi 照常（扫描 32 个 AP，两遍链路 36/36）。不能反的是「谁打开 PHY」，不是 controller 的先后。
   - **板子回别人的 ping**：工作站 ping 板子，两遍链路共 215 个应答（97 + 118），板侧逐帧对得上。
   - **BLE 的下电路径**（`-Dcoex-ble-disable`）：见 §20.4。
 
 | 级别 | 内容 | 结果 |
 | --- | --- | --- |
-| L1 主机 | `zig test src/host_tests.zig` | 2026-11-24，**55 项全过**（胶水 45 项 + 归属模型 10 项）。2026-11-27 归属模型多了时钟单元表 `clocks` 的 3 条（并集、只属于一个模块的位），**58 项全过** |
+| L1 主机 | `zig test src/host_tests.zig` | 2026-11-24，**55 项全过**（胶水 45 项 + 归属模型 10 项）。2026-11-27 归属模型多了时钟单元表 `clocks` 的 3 条（三组的位互不覆盖、并集、只属于一个模块的位），**58 项全过** |
 | L1 格式 | `zig fmt --check src/` | 通过 |
 | L2 目标编译 | `zig build-obj -target riscv32-freestanding-eabihf -mcpu=generic_rv32+m+a+c+f+zicsr+zifencei -OReleaseSmall -fno-emit-bin src/bind.zig` | 通过。另在一次性副本里给 `coex_wifi_request_wrapper`、`wr_btdm_coex_iso_stop` 各注入一处类型错误，同一条命令都报错——说明 43 个钩子加 `esp_coex_version_get` 的函数体在目标构建里确实被分析 |
 | L2 链接面 | RV32 上以 `src/glue.zig` 为模块根编译一个消费方对象（`bind.boot` + `wifi.fill` + `wifiInit`），`nm -u` 读它的未定义符号 | 39 个 = 37 个核心符号 + `memcpy`/`memset`；37 个全部由 `libcoexist.a` 导出，其中 3 个 ROM 里也有同名定义 |

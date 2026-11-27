@@ -7,8 +7,9 @@
 ### Fixed
 - **不开 `-Dcoex` 时的计数桩不等于 IDF 的关闭分支（2026-11-27 晚，路线图 C9）**：`wifi-blobs/src/osi_impl.zig` 里 `_coex_init` /
   `_coex_enable` 的桩会去调 `libcoexist.a` 的真函数，`_coex_schm_flexible_period_get` 落在具名桩上回 0（IDF 关着功耗管理时回 1）；
-  `init_probe.zig` 在关着 `-Dcoex` 时还直接调过核的 `coex_init()`——那是 IDF **开着**共存时 `wifi_init.c:458` 的顺序，关着时包装函数
-  回 0、不碰核（`esp32s31/esp_adapter.c:439-440`）。现在三处都按 IDF 的 `#else` 作答，不开 `-Dcoex` 的镜像不再需要 `libcoexist.a`
+  `init_probe.zig` 在关着 `-Dcoex` 时还直接调过核的 `coex_init()`——IDF 里那一句编译在 `CONFIG_SW_COEXIST_ENABLE ||
+  CONFIG_EXTERNAL_COEXIST_ENABLE` 的 `#if` 里（`wifi_init.c:457-459`），关着共存时根本不存在。现在三处都按 IDF 的 `#else` 作答，
+  不开 `-Dcoex` 的镜像不再需要 `libcoexist.a`
   的 11 个成员。§13 之后挂账的「其余钩子没有逐项核」清掉了：23 个钩子逐项列在 `docs/verification/coex-verification.md` §20.5，
   主机用例从表里逐个调（`host_tests.zig`）。单独的 Wi-Fi 真实链路探针（不开 `-Dcoex`）回归一轮：扫描 32 个 AP、连上、DHCP、
   ping 10/10（`logs/wifi-link-stubs-aligned-boot.log`）。`bt-blobs/src/osi_impl.zig` 里那份没有调用者的 Wi-Fi osi 表副本照同样的口径改了。

@@ -128,7 +128,7 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 | `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（板级前置 → 装表 → 共存核 → init → 登记 supplicant 回调表，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly`。`coexReadings` 里有 `status words:`（三个状态字：Wi-Fi 的那份是 blob 最后一次置的值，BLE / BT 的那份是 controller 经胶水置 / 清的镜像，`radio-coex` 的 `bt_status_words`；同一段里的 `wifi_status=… ble_status=… bt_status=…` 是 `coex_status_get` 的三个查询，不是读字）、`start callbacks:`（核触发两个射频「都开了共存」入口——`radio-coex` 的两个跳板——各多少次）、`pti by value:`（每个事件的 PTI 按值计数）、`timers in calls:`（核接受申请之后、释放之前直接读定时器寄存器：核每接受一次事件 1 的申请就把定时器 0 装成申请的时长并置状态字的 bit1）与一行栈指针。核的硬件定时器每个 16 个字节，在 `0x2010F400 + 16*idx`（`+8` 的 bit0 是 `coex_hw_timer_enable` 置的位，`+0xC` 是状态字）——2026-11-27 之前读的是 `0x2010F040 + 16*idx`（`MODEM_LPCON` 的寄存器）与 bit1，`docs/verification/coex-verification.md` §19.4。这个函数曾按值拷贝统计结构、栈帧 42 KB，把 16 KiB 主栈溢出 26 KB（§19.5），现在按指针读，栈帧 864 B |
 | `src/link_probe.zig` | 真实链路探针（`-Dwifi-link-probe=true`）：init → start → 主动扫描 → 取回并打印扫描结果（缓冲 64 条）→（构建时给了 AP 的 SSID 才做）连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）；`-Dcoex` 时每走到一个阶段取一次共存核的读数。ping 网关的帧数、间隔、载荷由 `ping_count` / `ping_interval_us` / `ping_bytes` 给（默认 10 帧、1 秒、32 字节，每帧最长「间隔 + 1 秒」；合并镜像的广播实验按 `-Dcoex-adv-pings` / `-Dcoex-adv-ping-interval-ms` / `-Dcoex-adv-ping-bytes` 设）。`linkRest()` 的结果 `LinkResult` 带 ping 的统计，与连上的那个 AP 的主信道（`WIFI_EVENT_STA_CONNECTED` 带的；合并镜像的信道分类用它） |
 | `src/wpa_cb.zig` | blob 的 supplicant 回调表（`struct wpa_funcs`）：登记给 blob；attach / detach / 断开通知驱动 `wifi_connect.supplicant`，`wpa_parse_wpa_ie` 是 IDF 同名函数的移植；连接路径（选 AKM 与套件、算 PMK、收 EAPOL、消息 4 发送完成后装钥匙、通知驱动协商完成）只做 RSN + PSK |
-| `src/data_path.zig` | 数据通路：驱动的以太网帧 ⇄ 本仓库的 IP 栈（`net-ipv4`、`net-udp-dhcp-dns`）；DHCP（含续租、重绑、到期）与 ping 网关，没有路由表、没有 socket。回显请求的载荷长度是参数（`ping_bytes`，默认 32，至多 1472；同一时间只有一帧在飞，间隔由 `ping_interval_us` 给） |
+| `src/data_path.zig` | 数据通路：驱动的以太网帧 ⇄ 本仓库的 IP 栈（`net-ipv4`、`net-udp-dhcp-dns`）；DHCP（含续租、重绑、到期）与 ping 网关，没有路由表、没有 socket。回显请求的载荷长度是参数（`ping_bytes`，默认 32，至多 1472；同一时间只有一帧在飞，间隔由 `ping_interval_us` 给）；也回应别人发来的回显请求（`handleEchoRequest`），统计里有 `echo_requests` / `echo_replies` |
 | `src/link_stubs.zig` | 链接期桩：计数桩与数据桩（`WIFI_EVENT`、`regdomain_table`、`est_PHY_*`）；7 个与 BLE 侧同名的计数桩是弱符号 |
 | `src/coex_hooks.zig` | 共存核回调 OS 层的 18 个适配钩子（`-Dcoex`），全部转给 `osi_impl.zig` 已有的壳 |
 | `src/host_stubs.zig` | 主机测试用的板级符号替身与假驱动（ROM / 共存库 / PHY 入口、PHY 使能关闭序列、blob 的 SAE 配置；连接路径上要问驱动要东西、往驱动里交东西的那些 blob 入口），不进任何镜像 |
@@ -153,9 +153,10 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
   存进 NVS、改走 `PHY_RF_CAL_PARTIAL`，这一步没有做。
 - 连接只做了 WPA2-PSK + CCMP-128、一台 AP：SAE、OWE、FT、企业、其余套件、多台 AP、断线重连、长时间稳定性没有做。
   公开入口 `esp_wifi_connect` / `esp_wifi_disconnect` 还是 `link_stubs.zig` 里的计数桩，探针调的是驱动的内部入口。
-- 数据通路只有 DHCP 与 ICMP：TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。ICMP 这一半也只做了一边：板子会发
-  回显请求、收应答，不回应别人的回显请求（`handleFrame` 的 ICMP 分支只有 `handleEchoReply`）——2026-11-26 工作站从 AP 的
-  有线侧 ping 板子，ARP 解析正常，10 个回显请求没有应答。
+- 数据通路只有 DHCP 与 ICMP：TCP、TLS 还没有接到这条链路上，吞吐与丢包没有量。ICMP 现在是双向的：板子发回显请求、收应答，
+  也回应别人发来的回显请求（`handleEchoRequest`：只答发给本机当前地址的请求，广播的不答；id、序号、载荷原样带回；2026-11-27 晚，
+  路线图 C9，`docs/verification/coex-verification.md` §20.2）——2026-11-26 工作站 ping 板子没有应答，缺的就是这一半；补上之后两遍
+  链路里板子答了 97 + 118 帧，与工作站收到的 215 个应答逐遍对得上。回显应答的时延（中位约 38 ms）为什么是几十毫秒，没有查。
 - 此前列在这里的两条（填回调表里连接路径的入口、接 `esp_wifi_internal_reg_rxcb`）已于 2026-11-26 做完，读数见上表。
 
 已完成（此前列在这里）：任务体跑在**自己的静态栈**上（`sched.zig`，`sched-test: PASS`）；
