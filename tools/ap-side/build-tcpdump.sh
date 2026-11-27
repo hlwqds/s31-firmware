@@ -92,7 +92,8 @@ cd "$SRC/libpcap-$LIBPCAP_VER"
 make -j$JOBS > "$X/libpcap-make.log" 2>&1 && make install >> "$X/libpcap-make.log" 2>&1 || { echo "libpcap make 失败"; tail -20 "$X/libpcap-make.log"; exit 1; }
 cd "$SRC/tcpdump-$TCPDUMP_VER"
 if [ -n "$BT_PATCH" ]; then
-    patch -p1 -N --fuzz=0 -s < "$BT_PATCH" > "$X/tcpdump-patch.log" 2>&1 || { echo "bt-monitor 补丁打不上"; cat "$X/tcpdump-patch.log"; exit 1; }
+    # -f：不提问（源码对不上就直接失败，不会停在 "File to patch:" 上）；补丁从文件读、标准输入接 /dev/null。
+    patch -p1 -N -f --fuzz=0 -s -i "$BT_PATCH" < /dev/null > "$X/tcpdump-patch.log" 2>&1 || { echo "bt-monitor 补丁打不上"; cat "$X/tcpdump-patch.log"; exit 1; }
     { grep -q bt_monitor_if_print print.c && grep -q bt_monitor_if_print netdissect.h && grep -q bt_monitor_if_print print-bt.c; } || { echo "bt-monitor 补丁没有生效"; exit 1; }
 fi
 ./configure --host="$TARGET" --prefix="$SYSROOT" --without-crypto --without-smi --without-cap \\
