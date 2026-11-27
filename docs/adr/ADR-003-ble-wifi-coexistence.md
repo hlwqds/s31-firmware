@@ -154,7 +154,8 @@ BLE 的 init 是按"单独跑"写的，`bringup.init` 里有两段会重做 PHY 
   由合并镜像自己证明（825 744 B > 旧上限）；drom 新上限由 `-Dfat-rodata=1000000` 的镜像证明
   （DROM 段 1 046 816 B > 旧上限）。默认镜像在扩容前后的差异只有重定位（指令流形状不变）。
 - **2026-11-27 晚补记（路线图 C9，`coex-verification.md` §20.6）**：带 BLE 广播、信道分类与「板子回别人的 ping」的合并镜像最大
-  1 261 424 B，是 factory 分区（1 536 000 B）的 82.1%，还余约 275 KB——分区表仍然不用扩。compiler_rt 量过了：带符号表构建后
+  1 261 424 B，是 factory 分区（1 536 000 B）的 82.1%，还余约 275 KB——分区表仍然不用扩（2026-11-28 在最终代码上把十四种开关组合各编了一遍，
+  最大 1 263 840 B，82.3%，还余 272 160 B，结论不变）。compiler_rt 量过了：带符号表构建后
   `nm` 数出来，默认镜像 6 个符号 782 B、合并镜像 36 个符号 6 604 B，没有 f128 / long-double 的软浮点例程；上文「死重单独立项，
   先量后删」与背景表里那句「约 193 KB」是旧工具链的读数，这一项撤销。
 
@@ -238,8 +239,8 @@ Wi-Fi 与 BLE 都依赖 PHY 使能和 modem 时钟，`COEXIST_CLOCK_DEPS` 本身
   `config_wrapper`）。本仓的下电把它写回 BLE 来之前的读数：Wi-Fi 空闲时与它自己的读数相同（IDF 自己的 station 镜像空闲时也是
   `0x25`）；Wi-Fi 还连着时下电，这个字是 Wi-Fi 正在用的 `0x3d`，写回的 `0x25` 随后被 Wi-Fi 自己改回去（一次实测链路没掉、
   ping 10/10）。所以连着时下电的判据取下电之前的读数。这与 IDF「按引用计数、不替别人写」的做法有差别，留作对照项。
-- **「BLE 先起」的 `phy_deferred`：停的不是 controller 的 init，是 init 里那一句 `esp_phy_enable(2)`。** PHY 没开时 libphy 的
-  `esp_phy_enable` 走「首次使能」那条路，时钟与对象都没就位。给这一句加了保护（入口用 `bt.probe.setPhyDeferred()` 明说，不看
+- **「BLE 先起」的 `phy_deferred`：停的不是 controller 的 init，是 init 里那一句 `esp_phy_enable(2)`。** PHY 没开时 IDF `esp_phy` 的
+  `esp_phy_enable`（`phy_init.c`，`libphy.a` 里没有这个符号）走「首次使能」那条路，时钟与对象都没就位。给这一句加了保护（入口用 `bt.probe.setPhyDeferred()` 明说，不看
   modem 标志——默认顺序里它也是 0）之后，BLE 的 init 与 enable 都能在 PHY 没开时做；Wi-Fi start 把 PHY 打开并标定之后，BLE 照常
   广播（35/35）。所以第二种顺序有两种：先按 Wi-Fi 的路径打开 PHY 再做 BLE（`phy_wifi_first`，BLE 立刻可用），或 BLE 先起、
   等 Wi-Fi start 之后才上空口（`phy_deferred`）。不能反的仍然只是「PHY 的一次性初始化与标定由 Wi-Fi 的路径做」。

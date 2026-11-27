@@ -315,11 +315,14 @@
   （读数是 Wi-Fi 自己的 `0x3d`），改成取下电之前的读数。
 - **验证**：主机门禁全过——`check-fmt.sh` 313 个文件干净；`check-host.sh` 5/5（`firmware` 2079 项）；`check-yaml.py`、
   `check-invariants.py`、`check-coverage.py`（逻辑模块 100% 可达）。默认镜像逐字节不变（`app.bin` SHA-256 `4de8ad20…`，
-  `docs/verification/README.md`）。上板三十二次，其中最终代码上十次；入库的日志二十一份：`logs/coex-merged-c9-gap-*-boot.log` 十五份、
+  `docs/verification/README.md`）。上板三十四次；入库的日志二十一份：`logs/coex-merged-c9-gap-*-boot.log` 十五份、
   `logs/coex-merged-c9-bledown-{settled,linked}-boot.log`、`logs/coex-merged-c9-blefirst-phydeferred-adv-boot.log`、
   `logs/coex-merged-{,adv-}settle-regression-boot.log`、`logs/wifi-link-settle-regression-boot.log`。改过链路探针之后的三个回归都过：
-  合并默认镜像 20/20、带广播 35/35、单独的 Wi-Fi 链路探针（扫描 43 个 AP、连上、DHCP、ping 10/10）。这一轮最大的合并镜像
-  1 262 608 B（factory 的 82.2%）。收尾时把板子刷回的就是上面那一份默认镜像（读回校验通过）；自检 7/8，没过的是 `net_ethernet`
+  合并默认镜像 20/20、带广播 35/35、单独的 Wi-Fi 链路探针（扫描 43 个 AP、连上、DHCP、ping 10/10）。收尾评审之后又加强了一处判据：
+  `link_probe.linkUp()` 要连上过、且没收到断开事件才算链路还在（原先只看连上），落地与连着链路两轮在最终代码上重跑，28/28、32/32；
+  其余轮次比最终代码只早这一处改动（只有连着链路那一轮调它）。又在最终代码上把两轮用过的十四种开关组合各编了一遍，最大的合并镜像
+  1 263 840 B（factory 的 82.3%，还余 272 160 B）。收尾时把板子刷回的就是上面那一份默认镜像（读回校验通过，`app.bin` 的 SHA-256
+  没变）；自检 8 段里 7 段过（`main: verdict=fail`），没过的是 `net_ethernet`
   的 `rx loopback frame`，原因是板子的网线没接（`link: no partner after 5s`、`phy-link: up=0`），与 2026-11-27 那一轮相同；
   入库的 `logs/e2e-net-boot.log` 没有换成这一次的。
 - **没有过的 / 没有做的**：下电抢在 Wi-Fi 任务收尾之前时，核或 blob 里卡住的是什么、八步里撞的是哪一步；纯等待 2.5 秒也过的那一条路；

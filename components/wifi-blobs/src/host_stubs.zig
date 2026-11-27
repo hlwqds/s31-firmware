@@ -34,13 +34,13 @@ pub export fn set_bb_wdg(_: bool, _: bool, _: u16, _: u16, _: bool, _: bool, _: 
 /// `libphy.a`：标定过之后的再次使能（`shellPhyEnable` 调）。
 pub export fn phy_wakeup_init() callconv(.c) void {}
 
-/// `libphy.a`：建 PLL 跟踪用的定时器（第一个 modem 打开时）。
+/// IDF `esp_phy` 的 `phy_common.c`（不在 `libphy.a` 里）：建 PLL 跟踪用的定时器（第一个 modem 打开时）。
 pub export fn phy_track_pll_init() callconv(.c) void {}
 
-/// `libphy.a`：置 `s_phy_modem_flag` 的 modem 位（参数是 `PHY_MODEM_*`）。
+/// IDF `esp_phy` 的 `phy_common.c`（不在 `libphy.a` 里）：置 `s_phy_modem_flag` 的 modem 位（参数是 `PHY_MODEM_*`）。
 pub export fn phy_set_modem_flag(_: u32) callconv(.c) void {}
 
-/// `libphy.a`：立刻跟一次 PLL。
+/// IDF `esp_phy` 的 `phy_common.c`（不在 `libphy.a` 里）：立刻跟一次 PLL。
 pub export fn phy_track_pll() callconv(.c) void {}
 
 /// `libphy.a`：最后一个 modem 关掉时关射频。

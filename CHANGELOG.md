@@ -15,6 +15,12 @@
   - 新开关都是对照，会关掉那一步收尾：`-Dcoex-ble-down-gap-mask`（间隔放在八步的哪几步之后）、`-Dcoex-ble-down-gap-busy`
     （间隔里纯等待）、`-Dcoex-ble-down-skip`（一步都不做）、`-Dcoex-ble-down-linked`（Wi-Fi 还连着的时候下电：32/32，链路不掉）。
   - 时钟源那一条判据在连着链路下电时取下电之前的读数（那时是 Wi-Fi 自己正用的 `0x3d`；下电写回 `0x25` 之后 Wi-Fi 会自己改回去）。
+- **收尾评审之后的三处更正（2026-11-28）**：① `wifi-blobs/src/link_probe.zig` 的 `linkUp()` 原先只看「连上过」，掉线之后照样回
+  true；改成连上过、且没收到断开事件才算。落地与连着链路两轮在最终代码上重跑：28/28、32/32。② `esp_phy_enable` 与 modem 标志的出处
+  原先写成「libphy 的」：它们是 IDF `esp_phy` 的源对象（`phy_init.c`、`phy_common.c`，经 `-Dphy-src-objs` 链入），`libphy.a` 里没有
+  这些符号（`nm` 查过）；报告、ADR-003 与 `probe_ptr.zig`、`wifi-blobs/src/host_stubs.zig` 的注释一并更正。③ 合并镜像的体积在最终
+  代码上重量：两轮用过的十四种开关组合里最大的是 1 263 840 B（factory 的 82.3%，还余 272 160 B），此前记的 1 262 608 B 不是最大的
+  那一份；分区表仍不用扩。`firmware/build.zig` 里下电路径几个开关的说明补上了 settle 这一步。
 - **「BLE 先起」的 `phy_deferred` 停机：init 第 7 步之后那一句 `esp_phy_enable(2)` 在 PHY 没开时不能调（2026-11-28）**：
   `bt-blobs/src/bringup.zig` 给它加了保护，只认合并入口的明说（`bt.probe.setPhyDeferred()`，`-Dcoex-ble-first=phy_deferred`），
   不拿 modem 标志判（默认顺序里它也是 0）。之后 BLE 的 init 与 enable 都能在 PHY 没开时做，Wi-Fi start 把 PHY 打开之后 BLE 照常

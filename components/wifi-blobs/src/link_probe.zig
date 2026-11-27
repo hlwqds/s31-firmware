@@ -1010,9 +1010,10 @@ pub fn linkRest() LinkResult {
 /// 对照（`-Dcoex-ble-down-linked`）：链路不断开，留给调用方。下面三个是调用方用的。
 pub var keep_link: bool = false;
 
-/// 断开事件来了没有（`keep_link` 期间调用方判断链路还在不在）。
+/// 链路还在不在（`keep_link` 期间调用方判断）：连上之后、还没收到断开事件。`sta_connected` 只在 `connectPhase()` 开头清，
+/// 掉线之后它照样是 true，所以要同时看 `sta_disconnected`。
 pub fn linkUp() bool {
-    return sta_connected;
+    return sta_connected and !sta_disconnected;
 }
 
 /// 连着的时候再 ping 一遍网关（收帧回调还在），返回这一轮的统计。

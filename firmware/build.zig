@@ -125,10 +125,10 @@ pub fn build(b: *std.Build) void {
     // 之后连着扫 35 秒。连着做曾经让 Wi-Fi 聋（2026-11-27 晚），原因不是八步之间缺时间，是 BLE 的下电抢在了 Wi-Fi 的任务
     // 前面——驱动断开之后还要在自己的任务里做收尾（`coex-verification.md` §20.4.2）。现在 `link_probe.settleAfterDisconnect`
     // 在断开之后先推 Wi-Fi 的任务，直到它安静；下面几个对照开关都会关掉这一步。
-    const coex_ble_down_scan = b.option(bool, "coex-ble-down-scan", "merged image with -Dcoex-ble-disable: true (default) scans after every down step; false runs the steps back to back and then scans for 35 s") orelse true;
+    const coex_ble_down_scan = b.option(bool, "coex-ble-down-scan", "merged image with -Dcoex-ble-disable: true (default) scans after every down step; false runs the steps back to back once the Wi-Fi task has finished its disconnect housekeeping (settle), then scans for 35 s") orelse true;
     // 对照（要求 `-Dcoex-ble-down-scan=false`）：八步连着做，但在 `-Dcoex-ble-down-gap-mask` 选中的那几步之后让 Wi-Fi 的任务
     // 空转这么多毫秒（不扫描）。2026-11-28 用它把「间隔放在哪」与「隔多久」分开。
-    const coex_ble_down_gap = b.option(u32, "coex-ble-down-gap", "merged image with -Dcoex-ble-disable and -Dcoex-ble-down-scan=false: idle-pump Wi-Fi this many ms after every down step instead of scanning (0 = none)") orelse 0;
+    const coex_ble_down_gap = b.option(u32, "coex-ble-down-gap", "merged image with -Dcoex-ble-disable and -Dcoex-ble-down-scan=false: control that turns the settle off and instead idle-pumps Wi-Fi this many ms after the down steps picked by -Dcoex-ble-down-gap-mask (0 = none)") orelse 0;
     // 下电路径的对照再细两格（要求 `-Dcoex-ble-down-gap` 非 0）。`-Dcoex-ble-down-gap-mask` 的第 i−1 位 = 第 i 步之后隔一下（第 1 步是
     // 0x001，第 8 步是 0x080），bit 8（0x100）= 第一步之前（第一遍 Wi-Fi 链路刚断开）隔一下；默认 255 = 八步之后都隔，
     // 就是 2026-11-27 晚跑过的「每步之间空转 2.5 秒」。`-Dcoex-ble-down-gap-busy=true`：间隔里纯等待、不泵 Wi-Fi——
@@ -136,10 +136,10 @@ pub fn build(b: *std.Build) void {
     const coex_ble_down_gap_mask = b.option(u32, "coex-ble-down-gap-mask", "merged image with -Dcoex-ble-down-gap: bit i-1 = wait after down step i (step 1 = 0x001, step 8 = 0x080), bit 8 (0x100) = wait before step 1 (default 255 = every step)") orelse 255;
     const coex_ble_down_gap_busy = b.option(bool, "coex-ble-down-gap-busy", "merged image with -Dcoex-ble-down-gap: spend the gaps busy-waiting instead of pumping the Wi-Fi task (default false)") orelse false;
     // 对照（要求 `-Dcoex-ble-disable`）：一步下电都不做，扫描紧跟着第一遍 Wi-Fi 链路开始。聋不聋跟 BLE 的下电路径有没有关系，看它。
-    const coex_ble_down_skip = b.option(bool, "coex-ble-down-skip", "merged image with -Dcoex-ble-disable: control that runs no down step at all; the Wi-Fi scans start right after the first link pass") orelse false;
+    const coex_ble_down_skip = b.option(bool, "coex-ble-down-skip", "merged image with -Dcoex-ble-disable: control that runs no down step at all (settle off); the Wi-Fi scans start right after the first link pass") orelse false;
     // 对照（要求 `-Dcoex-ble-disable`）：BLE 在 Wi-Fi 还连着的时候下电（链路不断开）；下电之后先 ping、再扫描，最后才断开。
     // 应用里关 BLE 多半是这个样子，查的是「链路没断时下电，Wi-Fi 会不会倒」。
-    const coex_ble_down_linked = b.option(bool, "coex-ble-down-linked", "merged image with -Dcoex-ble-disable: tear BLE down while the Wi-Fi link is still up, then ping, scan and disconnect") orelse false;
+    const coex_ble_down_linked = b.option(bool, "coex-ble-down-linked", "merged image with -Dcoex-ble-disable: control that tears BLE down while the Wi-Fi link is still up (settle off, link kept open), then pings, scans and disconnects") orelse false;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
