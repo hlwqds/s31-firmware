@@ -9,7 +9,7 @@
 
 | 级别 | 结果 | 证据 |
 | --- | --- | --- |
-| 主机测试 | **62/62**（`host_tests.zig` 26 个 + `wpa_cb.zig` 20 个 + `data_path.zig` 6 个 + `nvs_ram.zig` 5 个 + 共存钩子 4 个 + 替身 1 个） | `tests/baselines.json` → `wifi-blobs: 62`。此前这个组件没有测试目标，26 个用例从没被跑过，测试文件也编不过；2026-11-24 补了目标并修好 |
+| 主机测试 | **63/63**（`host_tests.zig` 26 个 + `wpa_cb.zig` 20 个 + `data_path.zig` 7 个 + `nvs_ram.zig` 5 个 + 共存钩子 4 个 + 替身 1 个） | `tests/baselines.json` → `wifi-blobs: 63`。此前这个组件没有测试目标，26 个用例从没被跑过，测试文件也编不过；2026-11-24 补了目标并修好 |
 | 板侧 init | `esp_wifi_init_internal rc=0` | `logs/wifi-init-ok-boot.log` |
 | 板侧任务 | 任务体执行自己的循环并合作式让出 | `logs/wifi-task-boot.log` |
 | 共存核（`-Dcoex`） | 共存库自己打出两行版本；`wifiInit rc=0`；`esp_wifi_init_internal rc=0`；`g_coex_param_ptr=0x2f01173c`（不开时为 0） | `logs/coex-wifi-probe-boot.log`；对照 `logs/coex-wifi-probe-control.log` |
@@ -125,16 +125,16 @@ sched.start(&task_ctx, &main_ctx);     // 进入任务；任务让出后从这�
 | `src/osi_impl.zig` | 适配层实现：arena 分配器、信号量/互斥/队列、任务表、事件组、NVS RAM 版、`Hooks` |
 | `src/osi_stubs.zig` | 未实现钩子的**具名桩**（只填空字段，绝不覆盖已实现项） |
 | `src/init_config.zig` | `wifi_init_config_t` 默认值（含 `wpa_crypto_funcs.size = 52`） |
-| `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（板级前置 → 装表 → 共存核 → init → 登记 supplicant 回调表，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly`。`coexReadings` 里有一行 `status words:` 给三个状态字（2026-11-27）：Wi-Fi 的那份是 blob 最后一次置的值，BLE / BT 的那份是 controller 经胶水置 / 清的镜像（`radio-coex` 的 `bt_status_words`）；同一段里的 `wifi_status=… ble_status=… bt_status=…` 是 `coex_status_get` 的三个查询，不是读字 |
-| `src/link_probe.zig` | 真实链路探针（`-Dwifi-link-probe=true`）：init → start → 主动扫描 → 取回并打印扫描结果（缓冲 64 条）→（构建时给了 AP 的 SSID 才做）连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）；`-Dcoex` 时每走到一个阶段取一次共存核的读数。ping 网关几帧由 `ping_count` 给（默认 10，每帧最长 2 秒；合并镜像的广播实验按 `-Dcoex-adv-pings` 设） |
+| `src/init_probe.zig` | 板侧探针（`-Dwifi-init-probe=true`）：`initOnly`（板级前置 → 装表 → 共存核 → init → 登记 supplicant 回调表，到 `INIT OK`）+ 探针自己的实验与 `esp_wifi_start`；合并镜像只调 `initOnly`。`coexReadings` 里有 `status words:`（三个状态字：Wi-Fi 的那份是 blob 最后一次置的值，BLE / BT 的那份是 controller 经胶水置 / 清的镜像，`radio-coex` 的 `bt_status_words`；同一段里的 `wifi_status=… ble_status=… bt_status=…` 是 `coex_status_get` 的三个查询，不是读字）、`start callbacks:`（核触发两个射频「都开了共存」入口——`radio-coex` 的两个跳板——各多少次）、`pti by value:`（每个事件的 PTI 按值计数）、`timers in calls:`（核接受申请之后、释放之前直接读定时器寄存器：核每接受一次事件 1 的申请就把定时器 0 装成申请的时长并置状态字的 bit1）与一行栈指针。核的硬件定时器每个 16 个字节，在 `0x2010F400 + 16*idx`（`+8` 的 bit0 是 `coex_hw_timer_enable` 置的位，`+0xC` 是状态字）——2026-11-27 之前读的是 `0x2010F040 + 16*idx`（`MODEM_LPCON` 的寄存器）与 bit1，`docs/verification/coex-verification.md` §19.4。这个函数曾按值拷贝统计结构、栈帧 42 KB，把 16 KiB 主栈溢出 26 KB（§19.5），现在按指针读，栈帧 864 B |
+| `src/link_probe.zig` | 真实链路探针（`-Dwifi-link-probe=true`）：init → start → 主动扫描 → 取回并打印扫描结果（缓冲 64 条）→（构建时给了 AP 的 SSID 才做）连接 → 核对 MAC 密钥表 → 数据通路（DHCP + ping 网关）；`-Dcoex` 时每走到一个阶段取一次共存核的读数。ping 网关的帧数、间隔、载荷由 `ping_count` / `ping_interval_us` / `ping_bytes` 给（默认 10 帧、1 秒、32 字节，每帧最长「间隔 + 1 秒」；合并镜像的广播实验按 `-Dcoex-adv-pings` / `-Dcoex-adv-ping-interval-ms` / `-Dcoex-adv-ping-bytes` 设）。`linkRest()` 的结果 `LinkResult` 带 ping 的统计，与连上的那个 AP 的主信道（`WIFI_EVENT_STA_CONNECTED` 带的；合并镜像的信道分类用它） |
 | `src/wpa_cb.zig` | blob 的 supplicant 回调表（`struct wpa_funcs`）：登记给 blob；attach / detach / 断开通知驱动 `wifi_connect.supplicant`，`wpa_parse_wpa_ie` 是 IDF 同名函数的移植；连接路径（选 AKM 与套件、算 PMK、收 EAPOL、消息 4 发送完成后装钥匙、通知驱动协商完成）只做 RSN + PSK |
-| `src/data_path.zig` | 数据通路：驱动的以太网帧 ⇄ 本仓库的 IP 栈（`net-ipv4`、`net-udp-dhcp-dns`）；DHCP（含续租、重绑、到期）与 ping 网关，没有路由表、没有 socket |
+| `src/data_path.zig` | 数据通路：驱动的以太网帧 ⇄ 本仓库的 IP 栈（`net-ipv4`、`net-udp-dhcp-dns`）；DHCP（含续租、重绑、到期）与 ping 网关，没有路由表、没有 socket。回显请求的载荷长度是参数（`ping_bytes`，默认 32，至多 1472；同一时间只有一帧在飞，间隔由 `ping_interval_us` 给） |
 | `src/link_stubs.zig` | 链接期桩：计数桩与数据桩（`WIFI_EVENT`、`regdomain_table`、`est_PHY_*`）；7 个与 BLE 侧同名的计数桩是弱符号 |
 | `src/coex_hooks.zig` | 共存核回调 OS 层的 18 个适配钩子（`-Dcoex`），全部转给 `osi_impl.zig` 已有的壳 |
 | `src/host_stubs.zig` | 主机测试用的板级符号替身与假驱动（ROM / 共存库 / PHY 入口、PHY 使能关闭序列、blob 的 SAE 配置；连接路径上要问驱动要东西、往驱动里交东西的那些 blob 入口），不进任何镜像 |
 | `src/sched.zig` | 两根栈的合作式上下文切换（naked `s31_swap_context`） |
 | `src/sched.zig` | 32 位帧的 `initContext`（主机用例覆盖）+ 目标门控的 naked 切换 |
-| `src/host_tests.zig` | 主机测试入口（本文件 26 个用例；组件合计 62 个） |
+| `src/host_tests.zig` | 主机测试入口（本文件 26 个用例；组件合计 63 个） |
 
 ## 待验证项
 

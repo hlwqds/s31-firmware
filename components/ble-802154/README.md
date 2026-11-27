@@ -4,11 +4,12 @@ HCI 控制、ACL 分片重组、L2CAP（LE 信令、credit based 通道与基于
 扩展广播与周期广播的 host 侧、EATT 与 Robust Caching、LL Privacy 与 LE Power Control 的 host 侧、
 IPv6 over BLE 与 6LoWPAN 适配层（IPHC 两个方向、分片与重组、Mesh 头）、6LoWPAN-ND 的主机侧行为（RFC 6775）、
 分片转发与选择性分片恢复（RFC 8930 / 8931），ATT 全部 31 个操作码的编解码、ATT 服务端、GATT 服务端与客户端、AES-CMAC 与签名写，
+共存用的 LE 信道分类（LE Set Host Channel Classification 的 37 位信道图，与按 Wi-Fi 的 2.4 GHz 信道算出这张图），
 加上原有的 802.15.4 帧头。
 
-- 主机测试：**583 项**（`firmware` 的 `test` step 聚合；单独 `zig test src/host_tests.zig` 于本目录也是 583：本文件自己 122 项，
-  另用 9 个 `test { … }` 块带进 `ext_adv_tests.zig` 115、`eatt_tests.zig` 57、`privacy_tests.zig` 66、`sixlowpan_tests.zig` 50、
-  `nd6_tests.zig` 42、`sfr_tests.zig` 27、`pawr_tests.zig` 31、`subrate_tests.zig` 27、`iso_tests.zig` 37）
+- 主机测试：**589 项**（`firmware` 的 `test` step 聚合；单独 `zig test src/host_tests.zig` 于本目录也是 589：本文件自己 122 项，
+  另用 10 个 `test { … }` 块带进 `ext_adv_tests.zig` 115、`eatt_tests.zig` 57、`privacy_tests.zig` 66、`sixlowpan_tests.zig` 50、
+  `nd6_tests.zig` 42、`sfr_tests.zig` 27、`pawr_tests.zig` 31、`subrate_tests.zig` 27、`iso_tests.zig` 37、`channel_class_tests.zig` 5）
 - 板侧：`src/selftest.zig` 由固件顺序调用，**207 条**判据（第五批之后；2026-11-25 已随 `wifi` profile 上板，`ble_802154` 207/207 全过），
   打印 `check: … ok=1/0` 与 `checks: passed=N failed=M total=N+M`
 - 依赖方向：本组件 → `boards`；不依赖其它组件（**不**导入 `ble-security`）
@@ -141,14 +142,28 @@ Thread MLE、RFC 8138 的在途改写、分页 dispatch 的 Page 2–15；分片
   （全部答完才关闭；同一子事件第二次应答回 `AlreadyAnswered`）；`iso` 比原文严的一处——`leRemoveIsoDataPath` 改为接受
   direction = 0x00（§7.8.110 没有 shall），RTN 越界的错误名 `BadId` → `BadRtn`；文档四处（`pawr*` 与 `subrate*` 的条款 / 行号
   引用错位、`iso.zig` 文件头的 Zephyr 引用更正为只有 `hci_types.h` 拷贝）已改。返修后逐片复验，读数见上面三条。
-- `tests/baselines.json` 里的 `ble-802154` 现为 583。
+- 第五批之后 `tests/baselines.json` 里的 `ble-802154` 是 583（加上下面的信道分类之后是 589）。
+
+信道分类（2026-11-27；不是完整的一批，是共存路线图 C8 的主机部分）：
+
+- L1 主机：`zig test src/host_tests.zig` → `All 589 tests passed`（583 → 589）。新增 `channel_class_tests.zig` 5 条：37 位图的
+  打包、取位、置位与两条校验（至少一位 unknown、保留位为 0）；数据信道 2402 + 2n 与 2.4 GHz 信道 2407 + 5c（信道 14 是 2484）
+  的频率表；14 个 2.4 GHz 信道各自盖住的数据信道窗口（手算：中心落在 (c − 12, c + 12) 里，奇数号信道 11 个、偶数号 12 个，
+  带边截短）；避开一个 2.4 GHz 信道的分类图逐位核对。`host_tests.zig` 多 1 个把它带进来的 `test { … }` 块（现在是 10 个，
+  本文件自己 122 项）。
+- 期望值来源写在 `channel_class_tests.zig` 的文件头：规范原文（HCI [Vol 4] Part E §7.8.19；LL [Vol 6] Part B Table 1.3 与 §5.1.2
+  例 3 的样例图 `0x1FFFFFF7FF`）、盘上 IDF v6.1 的 NimBLE（`hci_common.h:392-395` 的 OCF 与参数结构、
+  `ble_ll_hci.c:859-862` 对保留位的检查）、IEEE 802.11-2016（Table 16-6、§17.3.8.4.2 的式 17-27、§16.3.7.4 的发射频谱掩模、
+  Annex E 的 Table E-4）。**没有差分**：盘上没有独立的「按 Wi-Fi 信道算 BLE 信道图」的实现，重叠窗口是手算的。
+- 没有板侧子自检：对真实 controller 的检查在合并镜像里做（`-Dcoex-ble-chan-class`，`docs/verification/coex-verification.md` §19）。
+- `tests/baselines.json` 里的 `ble-802154` 现为 589。
 
 ## 快速开始
 
 ```sh
 cd components/ble-802154
 ZIG=/nix/store/m096jak4mrmdhah085l79rzfypviyhfw-zig-0.17.1/bin/zig
-env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 583 tests passed
+env -u LD_LIBRARY_PATH $ZIG test src/host_tests.zig      # All 589 tests passed
 env -u LD_LIBRARY_PATH $ZIG fmt --check src/
 ```
 
@@ -182,7 +197,7 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
 | `src/cmac.zig` | AES-CMAC（标准库 `std.crypto.auth.cmac.CmacAes128`）与 ATT 数据签名 / 验签 |
 | `src/gatt.zig`、`src/fifteen4.zig` | 原有定长特征表；`fifteen4` 是 802.15.4 帧头与 6LoWPAN 适配层（`iphc`、`frag`、`mesh`，第三批补全），文件开头的旧入口 `decompress` 原样保留 |
 | `src/vectors.zig` | 新增模块与 CMAC / 签名的 KAT 常数（编译期十六进制解码） |
-| `src/host_tests.zig` / `src/selftest.zig` | 主机测试（583 项）/ 板侧自检入口（207 条）；第三、四、五批的 `<特性>_tests.zig` / `<特性>_selftest.zig` 与同名模块一一对应 |
+| `src/host_tests.zig` / `src/selftest.zig` | 主机测试（589 项）/ 板侧自检入口（207 条）；第三、四、五批的 `<特性>_tests.zig` / `<特性>_selftest.zig` 与同名模块一一对应 |
 | `src/ext_adv.zig` | 扩展广播与周期广播的 host 侧：17 条 HCI 命令的编码、LE Extended Advertising Report 与 LE Advertising Set Terminated 两个事件、广播集台账、链路层扩展头解析、广播数据分片器 |
 | `src/l2cap_coc.zig` | LE 上基于额度的 L2CAP 连接（LE Credit Based Flow Control 与 Enhanced Credit Based Flow Control），两个角色 |
 | `src/eatt.zig` | Enhanced ATT bearer 池：ATT 经 L2CAP 信道收发 |
@@ -200,6 +215,8 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
 | `src/iso.zig` | LE Isochronous 的 HCI 接口面：ISO 数据包格式（PB / TS / Packet_Status_Flag）、CIS / BIS / BIG 命令与事件、BIGInfo 布局（位布局只对 NimBLE，加 4.4.6.11 的总长） |
 | `src/iso_tests.zig` | LE Isochronous 的 37 项主机测试（含 1 项执行板侧子自检） |
 | `src/iso_selftest.zig` | 20 条板侧判据（text 6514 B、9011 条 rv32 指令） |
+| `src/channel_class.zig` | LE Set Host Channel Classification 的信道图（Core 5.4 [Vol 4] Part E §7.8.19：37 位、bad = 0 / unknown = 1、至少一位 unknown、高 3 位保留）与从 Wi-Fi 的 2.4 GHz 信道算分类图：数据信道 2402 + 2n MHz 占 2 MHz，2.4 GHz 信道 2407 + 5c MHz（14 是 2484）占中心 ±11 MHz（802.11-2016 §16.3.7.4 的发射频谱掩模），有正长度交集的数据信道标成 bad。纯算术；命令由合并镜像经 `bt-blobs` 的 HCI 发送 |
+| `src/channel_class_tests.zig` | 信道分类的 5 项主机测试（没有板侧子自检：真实 controller 的回包在合并镜像里看） |
 
 ## 特性对照表
 
@@ -274,6 +291,7 @@ env -u LD_LIBRARY_PATH zig run --dep selftest -Mroot=$R/main.zig \
 | PAwR 的 host 侧：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令、两个事件、AUX_SYNC_SUBEVENT_IND / RSP 的字段许可（表 2.8 / 2.9）、数据只发一次 | Vol 4 E 7.8.1、7.8.125–.127、7.7.65.36–.37；Vol 6 B 2.3.1.9–.10、2.3.4、4.4.2.2.4、4.4.2.12.2 | `pawr_tests.zig`（31） | 按参数表逐字节；照同一份规范独立写的模型对拍（1000 例，接受 301 / 拒绝 699，0 不一致）；表 2.8 / 2.9 从 SIG HTML 逐格数出（NimBLE 无 PAwR） | 主机通过；板侧 18 条（2026-11-25 上板，207/207 全过） |
 | Connection Subrating 的 host 侧：LE Set Default Subrate / LE Subrate Request 两条命令、LE Subrate Change 事件、LL 接受 / 拒绝规则、40 s 过程超时 | Vol 4 E 7.8.1、7.8.123–.124、7.7.65.35；Vol 6 B 2.4.2.36–.37、4.5.1–.2、5.1.19–.20、5.2 | `subrate_tests.zig`（27） | 规范向量 + 策略模型对拍（714 例，0 不一致）；命令结构体与 LL PDU 长度对 NimBLE | 主机通过；板侧 17 条（2026-11-25 上板，207/207 全过） |
 | LE Isochronous 的 HCI 接口面：ISO 数据包格式、CIS / BIS / BIG 命令与事件、BIGInfo 布局 | Vol 4 E 5.4.5、7.8.96–.97/.99/.101–.103/.106/.109–.110/.116、7.7.65.25–.27/.29–.30/.34；Vol 6 B 4.4.6.3–.4、4.4.6.11；Assigned Numbers §2.11 | `iso_tests.zig`（37） | 按原文位宽逐字段；策略模型对拍（1875 例，0 不一致）；结构体对 NimBLE；ISO 包头对 NimBLE 与 Zephyr 的 `hci_types.h` 拷贝；BIGInfo 只对 NimBLE | 主机通过；板侧 20 条（2026-11-25 上板，207/207 全过） |
+| LE Set Host Channel Classification 的信道图：37 位图与两条校验、数据信道与 2.4 GHz 信道的频率表、按 Wi-Fi 信道算分类图 | Vol 4 E 7.8.19；Vol 6 B Table 1.3、5.1.2（例 3）；IEEE 802.11-2016 16.3.6.3（Table 16-6）、17.3.8.4.2、16.3.7.4、Annex E（Table E-4） | `channel_class_tests.zig`（5） | 规范原文的样例图 `0x1FFFFFF7FF`；NimBLE 的 OCF、参数结构与保留位检查；802.11 原文的频率与发射频谱掩模，重叠窗口手算（没有差分） | 主机通过；对真实 controller 的回包在合并镜像里看（`-Dcoex-ble-chan-class`，`docs/verification/coex-verification.md` §19） |
 
 ## 实现偏离
 

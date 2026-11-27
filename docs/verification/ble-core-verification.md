@@ -3,7 +3,7 @@
 - 规范依据：Bluetooth Core Specification 5.4（按卷、部分、节引用，官方 HTML）；其上的 RFC 7668（IPv6 over BLE）；算法核心另对 RFC 4493（AES-CMAC）与 RFC 3610（AES-CCM）。第四批另涉 RFC 6775（6LoWPAN-ND 的主机侧行为）与它所依托的 RFC 4861、RFC 4862，以及 RFC 8930 与 RFC 8931（分片转发与选择性分片恢复）。第五批只涉 Core 5.4，另引 Bluetooth SIG 的 Assigned Numbers（Coding_Format 表）。
 - 组件：`components/ble-802154`（扩展）、`components/ble-security`（新）、`components/bt-blobs`（§8 的 HCI 一致性自检）。
 - 验证分级见 `docs/REPO-STANDARDS.md` §4。本报告只写实际跑过的命令和输出里出现过的结果。
-- **空口没有任何证据**：射频 synth PLL 不锁，广播发不出去。2026-11-27 在合并镜像里试过起广播（§9）：三条命令都回了 Command Complete，但广播使能被接受之后 controller 任务不再让出，没有起来；同一时间窗口里用工作站的蓝牙控制器扫了八次（110–220 秒），没有看到板子。下表的"通过"指离线验证通过。
+- **空口证据以 §9 为准**：单独的 BLE 探针走到 `ble_hw.c:506` 的断言墙（合成器不锁），2026-11-27 白天在合并镜像里起广播也没有起来；当晚查明是中断风暴并修掉，合并镜像里 BLE 的广播上了空口（工作站扫描看到 `s31`、`btmon` 记到 `ADV_NONCONN_IND`、广播间隔量到 100 ms）。下表的"通过"仍指离线验证通过；真实链路上的证据单独标出。
 - 本文把 2026-11-25 加入的 6LoWPAN-ND 主机侧行为（`nd6.zig`）、分片转发与选择性分片恢复（`sfr.zig`）称为"第四批"。第四批新增两份板侧子自检，交付时只到 L1 与 L2，**没有上板**（当天晚些时候随第五批的镜像上板，判据全部通过，见 §5.4）；主机上的读数与复核见 §5.3，对拍见 §4.2，偏离见 §6 末尾。
 - 本文把 2026-11-25 加入的 PAwR 的 host 侧（`pawr.zig`）、Connection Subrating 的 host 侧（`subrate.zig`）、LE Isochronous 的 HCI 接口面（`iso.zig`）称为"第五批"。第五批新增三份板侧子自检；主机上的读数与复核见 §5.4，对拍见 §4.3，偏离见 §6 末尾。
 
@@ -11,7 +11,7 @@
 
 | 项 | 级别 | 结论 | 证据 |
 | --- | --- | --- | --- |
-| `ble-802154` 主机测试 | L1 | 583/583（第一批 68，第二批 54，第三批 292，第四批 71，第五批 98） | §3.1 |
+| `ble-802154` 主机测试 | L1 | 589/589（第一批 68，第二批 54，第三批 292，第四批 71，第五批 98，信道分类 6） | §3.1 |
 | `ble-security` 主机测试 | L1 | 51/51 | §3.2 |
 | 与独立参照实现的差分 | L1 | 第一批到第五批各自对拍，全部 0 不一致（第四批的 `nd6` 一组先发现证据强度不足，补强后重跑；第五批的 PAwR 驱动按带越界检查的模式重编后才跑得通） | §4、§4.1、§4.2、§4.3 |
 | HCI 命令布局对 NimBLE 头文件 | L1 | 三条逐字段一致 | §5 |
@@ -24,6 +24,7 @@
 | 最小验证镜像上板（`--only ble_802154,wifi_mlme`） | L3 | 只编这两个 section：`ble_802154` 207/207、`wifi_mlme` 121/121，`passed=2 failed=0`，`main: verdict=pass`；镜像 512704 字节，是整份 `wifi` 镜像（1218736 字节）的 42% | `logs/e2e-wifi-only-ble_802154+wifi_mlme-boot.log`；§5.4 |
 | 与真实 controller 的 HCI 一致性 | L3 | 板侧 26 条只读命令：20 过 6 不过（16 受支持、4 声明不支持）；bt-blobs 主机用例 21 → 67 | §8 |
 | 合并镜像里的 BLE（2026-11-27） | L4 | 时钟按单元取并集之后，BLE init / enable 之后 BLE 自己的时钟位都在（此前被事后写回拿掉）。经 HCI 起广播：白天三版都停在广播使能之后（当时读成 controller 任务不再让出，synth 锁定位没有读到过）；当晚查明是中断风暴（`bt-blobs` 的中断桥登记错了一个下标），修掉之后合成器 35 ms 内锁定，工作站的蓝牙扫描看到 `s31`（§9）；单独的 BLE 探针修前修后都与基线逐段相同 | `logs/coex-merged-wifi-link-union-boot.log`、`logs/coex-merged-wifi-link-ble-adv8-boot.log`、`logs/coex-merged-wifi-link-ble-adv-storm-boot.log`、`logs/coex-merged-wifi-link-ble-adv12-boot.log`、`logs/coex-merged-wifi-link-ble-adv13-boot.log`、`logs/coex-merged-wifi-link-ble-adv11-bt-scan.log`、`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`；§9 |
+| 对真实 controller 发 LE Set Host Channel Classification（合并镜像，2026-11-27） | L3 | 合规的图（AP 在信道 1：`00 f8 ff ff 1f`，数据信道 0–10 标成 bad）回 Command Complete、Status `0x00`；同一张图把保留位置上（`00 f8 ff ff 9f`）回 `0x12`。图有没有被用上看不出来（这一轮只有不可连接广播） | `logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-final-boot.log`；§10 |
 
 ## 2. 逐特性对照
 
@@ -72,14 +73,15 @@
 | PAwR（Periodic Advertising with Responses）的 host 侧：LE Set Periodic Advertising Subevent Data / Response Data / Sync Subevent 三条命令的编码与返回参数、LE Periodic Advertising Subevent Data Request / Response Report 两个事件的解码、事件掩码的位 38 / 39、链路层 AUX_SYNC_SUBEVENT_IND / RSP 的扩展头解析（表 2.8、表 2.9 的字段许可）、广播方一侧的请求登记（一次请求可以分多条命令应答，全部答完才关闭；同一子事件的数据只发一次）与响应数据模型 | [Vol 4] Part E §7.8.1、§7.8.125–§7.8.127、§7.7.65.36–.37；[Vol 6] Part B §2.3.1.9–.10、§2.3.4、§4.4.2.2.4、§4.4.2.12.2 | `ble-802154/src/pawr.zig` | 31（`pawr_tests.zig`） | 按参数表逐字节排的已知答案；表 2.8 / 2.9 逐格（主代理用程序从规范 HTML 里数出复核）；`pawr_oracle.py`（差分） | 18（`pawr_selftest.zig`） | 离线验证通过 |
 | Connection Subrating 的 host 侧：LE Set Default Subrate / LE Subrate Request 两条命令的编码与校验（范围、三条 0x12、0x02、0x1A）、LE Subrate Change 事件的解码、事件掩码的位 34、LL_SUBRATE_REQ / IND 的编解码、5.1.20 的五条接受条件与取值规则、5.1.19 的子事件基准与回绕、40 秒过程超时的会话模型 | [Vol 4] Part E §7.8.1、§7.8.123–.124、§7.7.65.35；[Vol 6] Part B §2.4.2.36–.37、§4.5.1–.2、§5.1.19–.20、§5.2 | `ble-802154/src/subrate.zig` | 27（`subrate_tests.zig`） | 参数表与规则行手排的已知答案（5.1.20 的五条各有接受与拒绝用例）；`subrate_oracle.py`（差分）；NimBLE 的 `hci_common.h`、`ble_ll_ctrl.c`、`ble_ll_conn.c` | 17（`subrate_selftest.zig`） | 离线验证通过 |
 | LE Isochronous 的 HCI 接口面：LE Set CIG Parameters、LE Create CIS、LE Accept / Reject CIS Request、LE Create BIG、LE BIG Create Sync、LE Setup / Remove ISO Data Path、LE Read ISO TX Sync、LE Read ISO Link Quality 十条命令的编码与返回参数；LE CIS Established / CIS Request / Create BIG Complete / BIG Sync Established / BIG Sync Lost / BIGInfo Advertising Report 六个事件的解码；HCI ISO Data 包的编解码；BIGInfo 位图；BIG 的参数公式 | [Vol 4] Part E §5.4.5、§7.8.96–.97、§7.8.99、§7.8.101–.103、§7.8.106、§7.8.109–.110、§7.8.116、§7.7.65.25–.27、.29–.30、.34；[Vol 6] Part B §4.4.6.3–.4、§4.4.6.11；Assigned Numbers 的 Coding_Format 表 | `ble-802154/src/iso.zig` | 37（`iso_tests.zig`） | 参数表逐字节；手排的 ISO 包与 BIGInfo；`iso_oracle.py`（差分）；NimBLE 的 `hci_common.h`（17 个结构体逐字段）、`ble_hs_iso.c`、`ble_ll_sync.c`；Zephyr 的一份拷贝 `hci_types.h`（ISO 数据包头的结构体） | 20（`iso_selftest.zig`） | 离线验证通过 |
-| 广播、连接、真实收发 | — | 合并镜像经 HCI 起广播；工作站的蓝牙控制器扫描 | — | — | — | 阻塞。单独探针走到 `ble_hw.c:506` 的断言墙（合成器是广播使能命令处理之后才上电的）；合并镜像里 2026-11-27 试了起广播：三条命令都回了 Command Complete，广播使能被接受之后 controller 任务不再让出，广播没有起来，对合成器没有结论（§9，细目在 `coex-verification.md` §17） |
+| LE Set Host Channel Classification 的信道图：37 位图（bad = 0 / unknown = 1、至少一位 unknown、高 3 位保留）、按 Wi-Fi 的 2.4 GHz 信道算分类图（数据信道 2402 + 2n MHz 占 2 MHz；2.4 GHz 信道 2407 + 5c MHz、信道 14 是 2484，占中心 ±11 MHz） | [Vol 4] Part E §7.8.19；[Vol 6] Part B Table 1.3、§5.1.2 例 3；IEEE Std 802.11-2016 §16.3.6.3（Table 16-6）、§17.3.8.4.2、§16.3.7.4、Annex E（Table E-4） | `ble-802154/src/channel_class.zig` | 5（`channel_class_tests.zig`） | 规范原文的样例图 `0x1FFFFFF7FF`；NimBLE 的 OCF、参数结构与保留位检查；802.11 原文的频率与发射频谱掩模，重叠窗口手算（没有差分） | 无板侧子自检 | 离线验证通过；对真实 controller 的回包见 §10 |
+| 广播、连接、真实收发 | — | 合并镜像经 HCI 起广播；工作站的蓝牙控制器扫描 | — | — | — | 广播已上空口（2026-11-27 晚，`coex-verification.md` §17.5、本文 §9）：合成器在广播使能后 35 ms 锁定，工作站扫描看到 `s31`，空口上的广播 PDU 与 100 ms 间隔都量到了。单独探针仍停在 `ble_hw.c:506` 的断言墙；连接与 GATT 没有做 |
 
 ## 3. 主机测试
 
 ### 3.1 `ble-802154`
 
 ```sh
-cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 583 tests passed.
+cd components/ble-802154 && env -u LD_LIBRARY_PATH zig test src/host_tests.zig   # All 589 tests passed.
 ```
 
 第一批：原有 20 项全部保留，新增 48 项，共 68 项。第二批（ATT / GATT 扩展，2026-11-24）：第一批的 68 项全部保留，新增 54 项，共 122 项。`zig fmt --check src/` 干净（2026-11-24 复跑）。
@@ -128,6 +130,10 @@ cd /home/huanglin/code/s31-firmware && R=/tmp/selftest-host && env -u LD_LIBRARY
 整份自检以固件参数交叉编译通过（§5.3）。这一批交付时没有上板（2026-11-25 随第五批的镜像上板，全部通过）。
 
 第五批（2026-11-25）：485 → 583。新增 `pawr_tests.zig` 31、`subrate_tests.zig` 27、`iso_tests.zig` 37；`host_tests.zig` 多 3 个把它们带进来的 `test { … }` 块（现在是 9 个，本文件自己 122 项）。用桩 `board` 在主机上执行 `selftest.run()` → `checks: passed=207 failed=0 total=207`，最长一行 114 字节；整份自检以固件参数交叉编译通过（§5.4）。
+
+信道分类（2026-11-27）：583 → 589。新增 `channel_class_tests.zig` 5 条；`host_tests.zig` 多 1 个把它带进来的 `test { … }` 块
+（现在是 10 个，本文件自己 122 项）。`zig build test --summary all` 报 `ble-802154` 589/589，缓存的测试二进制单独跑是
+`All 589 tests passed.`。没有新增板侧子自检：对真实 controller 的检查在合并镜像里做（§10）。
 
 板级（终态代码，2026-11-25）：`ble_802154` 207/207 在真板上全部通过——随整份 `wifi` profile（`PASS board:wifi`，14/14 个 section），
 也随只编 `ble_802154` 与 `wifi_mlme` 的最小验证镜像（`PASS board:wifi[ble_802154,wifi_mlme]`）。第三、四、五批的判据是第一次上板。
@@ -577,3 +583,24 @@ R3.3 打通之后，板子的广播可以用这台工作站抓到（`bluetoothct
 可连接广播与 GATT、更长时间的稳定性（广播从使能起到 section 结束约 45 秒）；地址是回退的
 `02:00:00:00:BB:01`（合并镜像没有接读 eFuse MAC 的钩子）；单独的 BLE 探针（`-Dbt-probe`）修前修后都与基线逐段相同——
 那边的 synth 墙不是这个风暴，根因未知；§8 的 HCI 一致性自检没有重跑。细目在 `coex-verification.md` §17.5。
+
+## 10. 对真实 controller 发 LE Set Host Channel Classification（2026-11-27）
+
+合并镜像 `-Dcoex-merged -Dcoex-wifi-link -Dcoex-ble-enable -Dcoex-ble-adv -Dcoex-ble-chan-class`，只编合并这一段
+（`ADV=1 BLE=1 sh scripts/build-coex-link-image.sh -Dcoex-adv-pings=300 -Dcoex-adv-ping-interval-ms=50 -Dcoex-ble-chan-class=true`，
+app.bin 1 259 232 字节）。AP 在 2.4 GHz 信道 1（主信道取自第一遍 Wi-Fi 链路的 `WIFI_EVENT_STA_CONNECTED`）；按 `channel_class.zig` 算出的图是
+`00 f8 ff ff 1f`（数据信道 0–10 标成 bad，37 个里 26 个 unknown）。两条命令都从发送任务发出，回包都是 Command Complete：
+
+| 参数 | Status | 与规范的关系 |
+| --- | --- | --- |
+| `00 f8 ff ff 1f` | `0x00` | §7.8.19 的两条要求（至少一位 unknown、保留位为 0）都满足，收下 |
+| `00 f8 ff ff 9f`（保留位 bit7 置上） | `0x12` | Invalid HCI Command Parameters：§7.8.19 写明最高几位保留；NimBLE 的 `ble_ll_hci.c:859-862` 同样拒 |
+
+合并 section 35/35（比不带这个开关的镜像多两条，就是上表两行）。两条命令之后 BLE 都还在广播：合成器锁定位与 controller
+置给核的 BLE 状态字 `0x0001` 一直保持到 15 秒收尾。
+
+**结论与边界。** controller 看了这条命令的参数：合规的收、保留位不是 0 的拒——路线图 C8 的板上部分到此。
+**图有没有被用上看不出来**：主机分类只管数据信道，这一轮 BLE 只发不可连接广播，没有连接与数据；HCI 里没有读主机分类的命令。
+核还会经 `coex_wifi_channel_set` → controller 登记的信道变化回调把 Wi-Fi 的信道直接告诉 controller；它自己据此做不做分类、
+与主机发的图怎么合，从主机这边看不到。日志 `logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-final-boot.log`，
+细目在 `coex-verification.md` §19。

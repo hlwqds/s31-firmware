@@ -152,6 +152,13 @@ synth 墙不是这个风暴（`coex-verification.md` §17.5、`ble-core-verifica
 「核真的在仲裁」两条判据过了一条：BLE 的状态字广播时是 `0x0001`（此前「对不上名字」是把 `coex_status_get` 当成了读字）；
 硬件定时器在链路的每一泵步采一次使能位，约 3 万次里 0 次，这条没有过。PTI 行为、两侧的 start 回调还没有做。
 
+2026-11-27 下午的后续（`coex-verification.md` §19）：持续的 Wi-Fi 流量（每遍 300 帧、间隔 50 ms，载荷 32 与 1400 字节各一轮）下
+两遍都是 300/300；ADR-003 第 5 节剩下的三条判据都有了读数——两侧的 start 回调在 BLE enable 时各触发一次；PTI 是每个事件的定值；
+核每接受一次事件 1 的申请就把定时器 0 装成申请的时长并置状态位（定时器的地址与使能位此前读错，§19.4 改正后「数值在两次读数
+之间变了」按字面过了）。路线图 C8：LE Set Host Channel Classification 对真实 controller 发了，合规的图回 `0x00`、带保留位的图
+回 `0x12`。顺带抓到并修掉：读数函数按值拷贝统计结构、栈帧 42 KB，把 16 KiB 主栈溢出 26 KB 进 BLE 堆，一版镜像因此崩在发送任务
+的保存上下文上（§19.5）；合并 section 现在带主栈高水位的判据。没有做：时延的因果、可连接广播、这一轮的 AP 侧与空口采集。
+
 ## 不抓空口的另外三次板级运行（2026-11-24）
 
 | 运行 | 命令 | 结果 | 日志 |
@@ -167,6 +174,7 @@ synth 墙不是这个风暴（`coex-verification.md` §17.5、`ble-core-verifica
 | 单变量对照（最终代码只差登记下标那一行） | 同上，构建前把 `components/bt-blobs/src/bringup.zig` 的 `setHandler(routed_input - 16, …)` 改回 `setHandler(routed_input, …)`，抓 100 秒 | `check: ble interrupt bridge wired: MODEM_BT_MAC -> input 24 (want 24), handler 0x00000000 ok=0`；紧跟在 `0x200A` 的回包行后面累计 2001 万次中断（全部是输入 24），没有汇总行 | `logs/coex-merged-wifi-link-ble-adv-storm-boot.log` |
 | 单独 BLE 探针回归（中断桥的登记下标修掉之后） | `sh /tmp/probe-board.sh ble bt-probe-bridge-index-boot.log 50` | 与基线逐段相同（只有计数值与串口交错不同）：`INITED`，HCI 一致性自检 20/26，照旧走到 synth 墙（`PRE200A 98BC=00000000`、`POLL0n 98BC=00000000`），主上下文一直在跑 | `logs/bt-probe-bridge-index-boot.log` |
 | 按广播间隔量 ping（L4b 第一组，2026-11-27 上午） | `ADV=1 BLE=1 AP_CRED=<凭据文件> sh scripts/build-coex-link-image.sh -Dcoex-adv-interval-ms=<20、100、1000> -Dcoex-adv-pings=30`，烧录后抓 180 秒；同时在 AP 上起 MON 采集（`tools/ap-side/collect.sh`）、在工作站上 `tcpdump -i bluetooth-monitor`。对照轮多一个 `-Dcoex-sw-off=true` | 20 ms、100 ms 两轮 31/31；1000 ms 那轮 30/31（扫描灵敏度判据 8 对 19）；对照轮 28/31（核不在的那三条）。每遍 30 帧都不丢；广播时 rtt 三个间隔几乎一样（最小 27.2 ms、中位 30.5 ms，对照遍平均 4 ms）；对照轮广播时 rtt 平均 3.5 ms | `logs/coex-merged-wifi-link-ble-intvl{20,100,1000}-{boot.log,ap-frames.log,ap-side.txt,hci.txt}`、`…-intvl100-swoff-{boot.log,ap-side.txt}` |
+| 持续的 Wi-Fi 流量、启动回调、PTI、信道分类（L4b 第二组与路线图 C8，2026-11-27 下午） | `ADV=1 BLE=1 AP_CRED=<凭据文件> sh scripts/build-coex-link-image.sh -Dcoex-adv-pings=300 -Dcoex-adv-ping-interval-ms=50 [-Dcoex-adv-ping-bytes=1400] -Dcoex-ble-chan-class=true`，烧录后抓 200 秒（只取板侧串口） | 最终镜像 35/35、`verdict=pass`：每遍 300 帧都是 300/300，广播那一遍 rtt 1.3 / 26.9 / 141.3 ms（对照遍 1.1 / 2.4 / 12.2 ms）；信道分类 `00 f8 ff ff 1f` 回 Status 0x00、保留位置上的图回 0x12；主栈高水位 13 520 字节里用到 1 688。读法迭代中的一版镜像一次抓取里连崩四次（`CPU_LOCKUP_RESET`；读数函数栈帧 42 KB，§19.5） | `logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-boot.log`（不带信道分类的对照）、`…-intvl100-ping50ms300-1400b-chanclass-boot.log`（载荷 1400 字节）、`…-intvl100-ping50ms300-final-boot.log`（最终代码）、`…-intvl100-ping50ms300-lockup-boot.log`（崩溃那轮） |
 
 ## 默认镜像（L2）
 

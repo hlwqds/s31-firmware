@@ -31819,3 +31819,29 @@ bt adv: irq n=20013056 inputs 24:20013056 pc 400a8402 400a8402 400a8402 400a8402
 
 细目在 `docs/verification/coex-verification.md` §17.5。
 
+## 轮 168（2026-11-27）：对真实 controller 发 LE Set Host Channel Classification——合规的图收下，带保留位的图拒
+
+**做法。** 合并镜像加 `-Dcoex-ble-chan-class`（要求 `-Dcoex-ble-adv` 与 `-Dcoex-wifi-link`）。BLE 广播起来之后、第二遍
+Wi-Fi 链路之前，`probe.zig` 的 `setChannelClass` 经发送任务发 `0x2014`（Vol 4 Part E §7.8.19，OCF 0x0014），参数是
+`ble-802154/src/channel_class.zig` 按 AP 的主信道算出来的 5 字节信道图（AP 的主信道取自第一遍链路的扫描记录，
+`wifi-blobs/src/link_probe.zig` 的 `LinkResult.ap_channel`）。第二遍链路之后再把同一张图的保留位（第 37 位）置上发一次，
+看 controller 拒不拒。
+
+**读数**（`logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-final-boot.log`，合并 section 35/35）：
+
+| 命令 | 参数 | controller 的回答 |
+| --- | --- | --- |
+| LE Set Host Channel Classification | AP 在 2.4 GHz 信道 1（2412 MHz）：盖住数据信道 0–10，图 `00 f8 ff ff 1f`，37 个里 26 个 unknown | Command Complete，Status `0x00` |
+| 同一条，保留位置上 | `00 f8 ff ff 9f`（第 5 个字节的 bit7） | Command Complete，Status `0x12`（Invalid HCI Command Parameters） |
+
+两条回包都是「0 ms、0 轮泵」到的（回包在同一个泵步里）。两条之间隔了第二遍 Wi-Fi 链路，远超 §7.8.19 的 1 秒。发完之后
+BLE 一直在广播：合成器锁定位 15 秒收尾前后都是 1，controller 置给核的 BLE 状态字前后都是 `0x0001`。
+
+**能说的与不能说的。** controller 看了参数：合规的图回 `0x00`，保留位不是 0 就回 `0x12`，与规范 §7.8.19（「至少一位
+unknown」「最高几位保留」）和 NimBLE 的检查（`ble_ll_hci.c:859-862`）方向一致。**图有没有被用上看不出来**：主机分类只管
+数据信道，这一轮 BLE 只发不可连接广播（广播信道 37 / 38 / 39），没有连接、没有数据；controller 里也没有读主机分类的
+HCI 命令（LE Read Channel Map 只按连接句柄读）。另外核自己有一条路把 Wi-Fi 的信道告诉 controller：Wi-Fi blob 调
+`coex_wifi_channel_set`（这一轮 4 次）之后，核调 controller 登记的信道变化回调
+（`wr_btdm_coex_register_wifi_channel_change_callback=1`）；controller 拿到信道之后做不做自己的分类、与主机发的图怎么合，
+从主机这边看不到。细目在 `docs/verification/coex-verification.md` §19。
+

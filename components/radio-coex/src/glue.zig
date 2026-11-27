@@ -401,6 +401,33 @@ pub fn mirrorBtStatus(st_type: u32, status: u32, set: bool) void {
     if (set) bt_status_words[st_type] |= bits else bt_status_words[st_type] &= ~bits;
 }
 
+/// 核回调两个射频的「都开了共存」入口各被触发了多少次（ADR-003 第 5 节 L4b 的「两侧的 start 回调被触发」）：Wi-Fi 经
+/// `_coex_register_start_cb` 登记的那个，与 BLE 经 `coex_register_ble_cb` 登记在 type 0 下的那个——按反汇编的
+/// `coex_core_enable`，两个射频都开了共存（计数升到 2）时核先调前者、再调后者。blob 登记的函数指针换成这里的跳板：
+/// 跳板记一次数，再调 blob 的函数。别的登记（schm 的按 type 回调、BLE type 1 的回调）原样转给核。
+pub var wifi_start_calls: u32 = 0;
+pub var ble_start_calls: u32 = 0;
+pub var blob_wifi_start: ?*const fn () callconv(.c) c_int = null;
+pub var blob_ble_start: ?*const fn () callconv(.c) void = null;
+
+pub fn wifiStartTrampoline() callconv(.c) c_int {
+    wifi_start_calls += 1;
+    return if (blob_wifi_start) |cb| cb() else 0;
+}
+
+pub fn bleStartTrampoline() callconv(.c) void {
+    ble_start_calls += 1;
+    if (blob_ble_start) |cb| cb();
+}
+
+/// 测试与板侧自检用：把跳板记的数与存下的两个 blob 回调清掉。
+pub fn resetStartCounters() void {
+    wifi_start_calls = 0;
+    ble_start_calls = 0;
+    blob_wifi_start = null;
+    blob_ble_start = null;
+}
+
 pub fn instance() *Glue {
     return &singleton;
 }

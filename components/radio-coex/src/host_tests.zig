@@ -172,6 +172,7 @@ fn setup(cfg: glue.Config) void {
     cb0_hits = 0;
     cb1_hits = 0;
     start_hits = 0;
+    glue.resetStartCounters();
     chan_hits = 0;
     sem_fail = false;
     in_isr = false;
@@ -527,7 +528,7 @@ test "wifi hooks forward the same arguments and return what the core returns" {
     try expect(@intFromPtr(wifi.coex_schm_curr_phase_get_wrapper().?) == @intFromPtr(&fk.phases[0]));
 
     try expectEqual(@as(c_int, 0), wifi.coex_register_start_cb_wrapper(cbPtr(&wifiStartCb)));
-    try expect(fk.start_cb == cbPtr(&wifiStartCb)); // 已 enable，登记不触发
+    try expect(fk.start_cb == @as(?*const anyopaque, @ptrCast(&glue.wifiStartTrampoline))); // 核登记的是跳板；已 enable，登记不触发
     try expectEqual(@as(u32, 0), start_hits);
     try expectEqual(@as(c_int, 0x107), wifi.coex_schm_process_restart_wrapper());
     try expectEqual(@as(c_int, 0), wifi.coex_schm_register_cb_wrapper(0, cbPtr(&someIntCb)));
@@ -913,7 +914,8 @@ test "both BLE callback types are stored and each is invoked at its defined poin
     // 按 type 分开保存：第二个没有覆盖第一个
     try expect(glue.bleCallback(0) == cbPtr(&bleCb0));
     try expect(glue.bleCallback(1) == cbPtr(&bleCb1));
-    try expect(fk.ble_cb[0] == cbPtr(&bleCb0));
+    try expect(fk.ble_cb[0] == @as(?*const anyopaque, @ptrCast(&glue.bleStartTrampoline))); // 核登记的是跳板
+    try expect(glue.blob_wifi_start == null and glue.blob_ble_start == @as(?*const fn () callconv(.c) void, &bleCb0));
     try expect(fk.ble_cb[1] == cbPtr(&bleCb1));
     try expectEqual(@as(u32, 0), cb0_hits + cb1_hits); // 登记本身不触发
 
@@ -927,6 +929,8 @@ test "both BLE callback types are stored and each is invoked at its defined poin
     try expectEqual(@as(u32, 1), cb0_hits);
     try expectEqual(@as(u32, 0), cb1_hits);
     try expectEqual(@as(u32, 1), fk.status);
+    try expectEqual(@as(u32, 1), glue.ble_start_calls); // 跳板跟着记了一次
+    try expectEqual(@as(u32, 0), glue.wifi_start_calls);
     // 定义点 2：Wi-Fi 撤出，计数降回 1 → type 1
     wifi.coex_disable_wrapper();
     try expectEqual(@as(u32, 1), cb0_hits);
@@ -955,6 +959,8 @@ test "with Wi-Fi enabled first, BLE's enable is the second one and fires the sta
     try expectEqual(@as(c_int, 0), ble.btdm_coex_enable());
     try expectEqual(@as(u32, 1), start_hits);
     try expectEqual(@as(u32, 1), cb0_hits);
+    try expectEqual(@as(u32, 1), glue.wifi_start_calls); // 两个跳板各记了一次
+    try expectEqual(@as(u32, 1), glue.ble_start_calls);
     try expectEqual(@as(u32, 1), fk.status);
     ble.btdm_coex_disable();
     try expectEqual(@as(u32, 1), cb1_hits);

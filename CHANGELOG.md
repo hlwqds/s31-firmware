@@ -5,6 +5,22 @@
 ## [Unreleased]
 
 ### Fixed
+- **`coexReadings` 的栈帧 42 KB，把 16 KiB 的主栈溢出 26 KB 进 BLE 堆（2026-11-27）**：`wifi-blobs/src/init_probe.zig` 的读数函数里
+  `const t = coex_trace_stats;` 与三个 `for (t.ev, 0..) |e, i|` 都按值拷贝整个统计结构；每个事件加上 `pti_hist`（16 个 `u32`）之后
+  这个结构是 10 KB，四份就是 42 KB（带符号表构建的反汇编：`addi sp,sp,-256` 之后 `sub sp,sp,0xa2b0`）。合并镜像的每次读数都把
+  主栈（`s31.ld` 的 `_stack_size`，16 KiB）向下溢出 26 KB，踩在 BLE 堆里的任务栈上；2026-11-27 下午的一版镜像因此一次抓取里连崩四次、
+  每次 `CPU_LOCKUP_RESET`——`0x2014` 恢复发送任务时 `ra` 读出来是读数行的尾巴「0000」
+  （`logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-lockup-boot.log`）；当天的其余几轮也在溢出，只是没踩到致命的字节。
+  改成按指针读（`const t = &coex_trace_stats;`、`for (t.ev[0..], 0..) |*e, i|`），栈帧 864 B。合并 section 开头把主栈的空闲部分
+  涂上图案，两处判「栈没碰到栈底」（`firmware/src/coex_merged.zig` 的 `checkMainStack`），每个阶段与关键步各打一行栈指针与高水位。
+  第一版的涂色用 `@memset`，被 ReleaseSmall 当成死存储整个消掉（反汇编里只剩长度的计算），读数恒为「0 B left」；改成 volatile
+  逐字节写。
+- **共存核硬件定时器的读法读错了地址与位（2026-11-27）**：此前 `readHwTimers` 读 `0x2010F040 + 16*idx` 的「配置与比较值」与
+  `0x2010F408 + 16*idx` 的 bit1「使能位」。重看 `coexist_hw.o`：每个定时器 16 个字节，在 `0x2010F400 + 16*idx`（`coex_hw_timer_set`
+  的基址是 `lui 0x2011; addi -192` 再左移 4 位；`+0`、`+4` 是它写的两个配置字），`coex_hw_timer_enable` 置的是 `+8` 的 **bit0**，
+  `coex_hw_timer_disable` 清它并往 `+0xC` 的 bit0 写 1；`0x2010F040 + 16*idx` 是 `MODEM_LPCON` 的寄存器。§17–§18 里「使能位
+  恒为 0」的读数作废；改正后核每接受一次事件 1 的申请就把定时器 0 装成申请的时长（低 24 位 = 时长 × 0.8）并置状态字的 bit1
+  （`docs/verification/coex-verification.md` §19.4）。
 - **`tools/ap-side/collect.sh` 在 MON 模式下建不起 monitor 接口（2026-11-27）**：脚本把 wiphy 的名字拼成 `phy"${IFACE#phy}"`，接口名是
   `phy0-ap0` 时拼出来就是 `phy0-ap0`，`iw` 回 No such file or directory，帧的那一段一直是「(no capture)」。此前入库的 MON 轮次
   跑的是 `/tmp` 里另一份写死 `phy0` 的脚本，所以没暴露。现在从接口上查 wiphy（`iw dev <接口> info` 里的 `wiphy N`）；在路由器上
@@ -194,6 +210,19 @@
   `tools/qemu-instr/README.md` 与 `docs/TESTING.md`「板侧自检的两条隐性预算」。
 
 ### Added
+- **L4b 第二组与路线图 C8：持续的 Wi-Fi 流量、启动回调、PTI、LE Set Host Channel Classification（2026-11-27）**：合并镜像加
+  `-Dcoex-adv-ping-interval-ms`（每遍 ping 的间隔，默认 1000；比 1 秒的应答超时短时上一帧一回来就发下一帧）、`-Dcoex-adv-ping-bytes`
+  （载荷字节数，默认 32，至多 1472；`wifi-blobs/src/data_path.zig` 的 `ping_bytes`）与 `-Dcoex-ble-chan-class`（BLE 广播起来之后
+  发信道分类，要求 `-Dcoex-ble-adv` 与 `-Dcoex-wifi-link`；第二遍链路之后再用带保留位的图确认 controller 会拒）。`coexReadings`
+  多三行（`start callbacks:`、`pti by value:`、`timers in calls:`）与一行栈指针；`linkRest()` 的结果带 ping 的统计与目标 AP 的主信道
+  （`LinkResult.ap_channel`，`WIFI_EVENT_STA_CONNECTED` 带的信道）。`radio-coex` 的两个「都开了共存」入口经胶水的跳板
+  （`wifiStartTrampoline` / `bleStartTrampoline`，记次数再转给 blob 登记的函数）。新模块 `ble-802154/src/channel_class.zig`
+  （37 位信道图、按 Wi-Fi 的 2.4 GHz 信道算分类图）与 5 条用例；`wifi-blobs/src/data_path.zig` 多 1 条（载荷长度是参数）。
+  主机用例 2068 → 2075（`ble-802154` 583 → 589、`wifi-blobs` 62 → 63）。板上（`docs/verification/coex-verification.md` §19，
+  最终镜像 35/35）：持续的流量下两遍都是 300/300；两侧的 start 回调在 BLE enable 时各触发一次；PTI 是每个事件的定值；核每接受一次
+  事件 1 的申请就把定时器 0 装成申请的时长并置状态位；信道分类——合规的图 `00 f8 ff ff 1f` 回 `0x00`，保留位置上的图回 `0x12`。
+  日志 `logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-boot.log`、`…-intvl100-ping50ms300-1400b-chanclass-boot.log`、
+  `…-intvl100-ping50ms300-final-boot.log`、`…-intvl100-ping50ms300-lockup-boot.log`。
 - **L4b 第一组：按 BLE 广播间隔量 ping 的时延与丢包，外加「核不启动」的对照（2026-11-27 上午）**：合并镜像加
   `-Dcoex-adv-interval-ms`（广播间隔，默认 100）与 `-Dcoex-adv-pings`（每遍 Wi-Fi 链路 ping 的帧数，默认 10；
   `wifi-blobs/src/link_probe.zig` 的 `ping_count`），以及两组读数——链路的每一泵步采共存核 5 个硬件定时器的使能位

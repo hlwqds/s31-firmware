@@ -308,6 +308,7 @@ fn checkBleForward() void {
 // ---------------------------------------------------------------------------
 
 fn checkBleCallbacks() void {
+    const calls0 = glue.ble_start_calls;
     _ = ble.wr_btdm_coex_register_ble_cb(0, cb(&bleCb0));
     _ = ble.wr_btdm_coex_register_ble_cb(1, cb(&bleCb1));
     const stored0 = glue.bleCallback(0) == cb(&bleCb0);
@@ -321,7 +322,8 @@ fn checkBleCallbacks() void {
     const after_drop = cb1_hits;
     check(
         stored0 and stored1 and after_alone == 0 and after_second == 1 and after_drop == 1 and
-            fk.ble_cb[0] == cb(&bleCb0) and fk.ble_cb[1] == cb(&bleCb1),
+            fk.ble_cb[0] == @as(?*const anyopaque, @ptrCast(&glue.bleStartTrampoline)) and fk.ble_cb[1] == cb(&bleCb1) and
+            glue.ble_start_calls - calls0 == after_second,
         "ble callbacks stored0={d} stored1={d} hits_after_ble_alone={d} cb0_after_2nd_enable={d} cb1_after_drop_to_1={d}",
         .{ @intFromBool(stored0), @intFromBool(stored1), after_alone, after_second, after_drop },
     );

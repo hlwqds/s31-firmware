@@ -95,6 +95,16 @@ pub fn build(b: *std.Build) void {
     // 判据（ADR-003 第 5 节的 L4b）。
     const coex_adv_interval_ms = b.option(u32, "coex-adv-interval-ms", "merged image with -Dcoex-ble-adv: BLE advertising interval in ms, a multiple of 5 in 20..10240 (default 100)") orelse 100;
     const coex_adv_pings = b.option(u16, "coex-adv-pings", "merged image with -Dcoex-ble-adv: echo requests to the gateway per Wi-Fi link pass, in both passes (default 10)") orelse 10;
+    // 广播实验里 ping 的间隔（毫秒）。默认 1000 就是探针镜像里的固定值；调小并把帧数给够，就是 BLE 广播着的时候一段持续的
+    // Wi-Fi 流量（同一时间只有一帧在飞）。路线图 C7 的第二组判据（有流量的时候核的硬件定时器在不在走、丢不丢）要它。
+    const coex_adv_ping_interval_ms = b.option(u32, "coex-adv-ping-interval-ms", "merged image with -Dcoex-ble-adv: milliseconds between echo requests (default 1000); shorter than the 1000 ms reply timeout, the next request goes out as soon as the previous one is answered") orelse 1000;
+    // 广播实验里回显请求的载荷字节数（0 到 1472：IP 包 1500 减去 IPv4 与 ICMP 的首部）。默认 32 就是探针镜像里的固定值；
+    // 调大，一帧占空口的时间更长。
+    const coex_adv_ping_bytes = b.option(u16, "coex-adv-ping-bytes", "merged image with -Dcoex-ble-adv: echo request payload bytes, 0..1472 (default 32)") orelse 32;
+    // 广播实验的信道分类（要求 `-Dcoex-ble-adv` 与 `-Dcoex-wifi-link`）：BLE 广播起来之后、第二遍 Wi-Fi 链路之前，把 AP 所在的
+    // 2.4 GHz 信道盖住的 BLE 数据信道标成 bad（LE Set Host Channel Classification，Vol 4 Part E §7.8.19），第二遍链路之后
+    // 再用一张带保留位的图确认 controller 会拒。路线图 C8。AP 的主信道取自第一遍链路的扫描记录，所以还要 `-Dwifi-ap-ssid`。
+    const coex_ble_chan_class = b.option(bool, "coex-ble-chan-class", "merged image with -Dcoex-ble-adv and -Dcoex-wifi-link: after advertising starts, send LE Set Host Channel Classification for the AP's channel and check the controller's status") orelse false;
     // 对照开关（要求 `-Dcoex`，只对 Wi-Fi 探针的 `coexBoot` 生效）：胶水照常链着，但把配置改成 `sw_coexist = false`——
     // 钩子按 IDF 关闭分支的桩值作答，`boot()` 被拒、核不启动。用来把"核不启动"与"钩子换成计数桩"分开
     // （`docs/verification/coex-verification.md` §13.3）。
@@ -119,6 +129,10 @@ pub fn build(b: *std.Build) void {
     if (coex_adv_irq and !coex_ble_adv) @panic("-Dcoex-adv-irq 需要 -Dcoex-ble-adv");
     if (coex_adv_interval_ms < 20 or coex_adv_interval_ms > 10_240 or coex_adv_interval_ms % 5 != 0) @panic("-Dcoex-adv-interval-ms 要是 20 到 10240 之间 5 的倍数");
     if (coex_adv_pings == 0) @panic("-Dcoex-adv-pings 至少 1");
+    if (coex_adv_ping_interval_ms == 0) @panic("-Dcoex-adv-ping-interval-ms 至少 1");
+    if (coex_adv_ping_bytes > 1472) @panic("-Dcoex-adv-ping-bytes 至多 1472（IP 包 1500 减去 IPv4 与 ICMP 的首部）");
+    if (coex_ble_chan_class and !coex_ble_adv) @panic("-Dcoex-ble-chan-class 需要 -Dcoex-ble-adv：信道分类在广播之后发");
+    if (coex_ble_chan_class and !coex_wifi_link) @panic("-Dcoex-ble-chan-class 需要 -Dcoex-wifi-link：AP 的主信道取自第一遍链路的扫描");
     // 共存开关的唯一样子：各适配层（osal、bt-blobs、wifi-blobs）与 app 入口 import 的都是这一个模块。
     const coex_gate_src = if (coex)
         (if (coex_sw_off) "pub const enabled = true;\npub const sw_off = true;\n" else "pub const enabled = true;\npub const sw_off = false;\n")
@@ -498,8 +512,11 @@ pub fn build(b: *std.Build) void {
         merged_mod.addImport("bt_core", bt_core_mod.?);
         // 时钟域按单元取并集的板上判据要用 IDF 的单元表（`radio_coex.owner.clocks`）；合并镜像要求 `-Dcoex`。
         merged_mod.addImport("radio_coex", coex_mod);
+        // 信道分类的信道图（路线图 C8）是 `ble-802154` 里的纯算术；只把那一个文件接进来。
+        const chan_class = b.createModule(.{ .root_source_file = b.path("../components/ble-802154/src/channel_class.zig") });
+        merged_mod.addImport("ble_channel_class", chan_class);
         if (coex_ble_adv and !coex_ble_enable) @panic("-Dcoex-ble-adv 需要 -Dcoex-ble-enable：广播之前 controller 要先 enable");
-        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\npub const adv_interval_ms: u32 = {};\npub const adv_pings: u16 = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq, coex_adv_interval_ms, coex_adv_pings });
+        const merged_opts_src = b.fmt("pub const ble_enable = {};\npub const wifi_link = {};\npub const dump = {};\npub const ble_adv = {};\npub const adv_irq: bool = {};\npub const adv_interval_ms: u32 = {};\npub const adv_pings: u16 = {};\npub const adv_ping_interval_ms: u32 = {};\npub const adv_ping_bytes: u16 = {};\npub const ble_chan_class: bool = {};\n", .{ coex_ble_enable, coex_wifi_link, coex_dump, coex_ble_adv, coex_adv_irq, coex_adv_interval_ms, coex_adv_pings, coex_adv_ping_interval_ms, coex_adv_ping_bytes, coex_ble_chan_class });
         merged_mod.addImport("coex_merged_opts", b.createModule(.{ .root_source_file = b.addWriteFiles().add("coex_merged_opts.zig", merged_opts_src) }));
         enabled_mod.addImport("coex_merged", merged_mod);
     }

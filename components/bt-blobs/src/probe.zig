@@ -1448,6 +1448,15 @@ pub const AdvResult = struct {
     synth_98bc_last: u32 = 0,
 };
 
+/// 合并镜像的实验步骤（路线图 C8）：发 LE Set Host Channel Classification（Vol 4 Part E §7.8.19，OCF 0x0014），
+/// `map` 是 5 个字节的信道图。返回 Command Complete 里的 Status（0x00 = 收下了，0x12 是 Invalid HCI Command
+/// Parameters），没等到回包是 null。信道图怎么算在 `ble-802154/src/channel_class.zig`。两条命令之间至少隔 1 秒
+/// （§7.8.19），由调用方保证。调用方负责在调用期间关掉 Wi-Fi 侧的让出点。
+pub fn setChannelClass(map: [5]u8) ?u8 {
+    const evt = hciCommand(0x2014, &map, 2_000_000) orelse return null;
+    return hciStatus(evt, 0x2014);
+}
+
 /// 合并镜像的实验步骤（`-Dcoex-ble-adv`）：`enableOnly` 之后发三条 HCI 命令——LE Set Advertising
 /// Parameters（间隔 `interval_units`，0x0020–0x4000，0.625 ms 一档——NimBLE 的 `BLE_HCI_ADV_ITVL` 是 625 µs；Vol 4 Part E
 /// §7.8.5）、LE Set Advertising

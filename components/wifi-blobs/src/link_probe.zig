@@ -43,9 +43,14 @@ pub const enabled = true;
 /// 任务也走一步，两个控制器在同一个主循环里轮转；探针镜像里是 null，行为不变。
 pub var co_pump: ?*const fn () void = null;
 
-/// 数据通路里 ping 租约里的网关几帧（每帧最长 2 秒：发不出去或等不到回显都算超时）。探针镜像里一直是 10；合并镜像
+/// 数据通路里 ping 租约里的网关几帧（每帧最长「间隔 + 1 秒」：发不出去或等不到回显都算超时）。探针镜像里一直是 10；合并镜像
 /// 的广播实验按 `-Dcoex-adv-pings` 抬高（`coex_merged.zig` 设它），好让「广播着的时候 ping 的时延与丢包」有足够的样本。
 pub var ping_count: u16 = 10;
+/// 两帧之间的间隔。探针镜像里一直是 1 秒；合并镜像的广播实验按 `-Dcoex-adv-ping-interval-ms` 改它，帧数给够就是一段
+/// 持续的流量（同一时间只有一帧在飞）。
+pub var ping_interval_us: u64 = 1_000_000;
+/// 回显请求的载荷字节数。探针镜像里一直是 32；合并镜像的广播实验按 `-Dcoex-adv-ping-bytes` 改它。
+pub var ping_bytes: usize = 32;
 
 // ---------------------------------------------------------------------------
 // 结构体布局：用 IDF 参照构建的编译命令（`~/esp/bt-ctl-oracle/build/compile_commands.json`
@@ -97,6 +102,9 @@ var scan_done: bool = false;
 var sta_connected: bool = false;
 var sta_disconnected: bool = false;
 var disconnect_reason: u8 = 0;
+/// 连上的那个 AP 的主信道（`WIFI_EVENT_STA_CONNECTED` 带的 channel@39；没连上是 0）。合并镜像的信道分类用它（路线图 C8）：
+/// 比「在扫描记录里按 SSID 找第一条」可靠——同名 mesh 的几个 BSSID 信道可以不同，连上的那一个才是对的。
+var sta_channel: u8 = 0;
 /// 连上之后那 5 秒里有没有掉线（`linkRest()` 报结果用；`connectPhase()` 置位）。
 var stayed_connected: bool = false;
 
@@ -120,6 +128,7 @@ fn onWifiEvent(arg: ?*anyopaque, base: ?*const anyopaque, id: i32, data: ?*const
         const p: [*]const u8 = @ptrCast(dp);
         if (id == 4) {
             sta_connected = true;
+            sta_channel = p[39];
             const authmode = std.mem.readInt(u32, p[40..44], .little);
             log.line("wifi-link-probe: STA_CONNECTED bssid={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2} ch={d} authmode={d} aid={d}", .{
                 p[33],                                    p[34], p[35], p[36], p[37], p[38], p[39], authmode,
@@ -238,6 +247,7 @@ fn connectPhase() void {
     @memcpy(cfg.password[0..password.len], password);
     sta_connected = false;
     sta_disconnected = false;
+    sta_channel = 0;
     const cfg_rc = wpa_cb.setStaConfig(&cfg);
     log.line("wifi-link-probe: esp_wifi_set_config(sta) rc=0x{x} (ssid {d} B, password {d} B, pmf off)", .{
         @as(u32, @bitCast(cfg_rc)), ssid.len, password.len,
@@ -323,6 +333,8 @@ fn keyTableCheck() void {
 /// 数据通路的进度（`pollDataPath` 置位）。
 var dhcp_bound: bool = false;
 var ping_done: bool = false;
+/// `ping_done` 那一次事件带回来的统计（发了几帧、收到几帧、超时几帧、往返时延）。
+var ping_stats: ipath.PingStats = .{};
 /// 收帧回调已经交给驱动：之后泵的每一步都要给 IP 栈一个机会处理收到的帧。
 var data_path_on: bool = false;
 
@@ -334,17 +346,21 @@ fn pollDataPath() void {
         log.line("wifi-link-probe: net: {s}", .{ipath.report(ev, &line)});
         switch (ev) {
             .bound => dhcp_bound = true,
-            .ping_done => ping_done = true,
+            .ping_done => |p| {
+                ping_done = true;
+                ping_stats = p;
+            },
             else => {},
         }
     }
 }
 
-/// 数据通路（R3.2.3）：注册收帧回调 → DHCP 拿地址（最长 12 秒）→ ping 租约里的网关 `ping_count` 帧（默认 10，每帧最长 2 秒）。
-/// 判据在日志里：`dhcp ACK: bound`、`ping reply`、`ping done`（收到数 > 0）。
+/// 数据通路（R3.2.3）：注册收帧回调 → DHCP 拿地址（最长 12 秒）→ ping 租约里的网关 `ping_count` 帧（默认 10 帧、间隔 1 秒，
+/// 每帧最长「间隔 + 1 秒」）。判据在日志里：`dhcp ACK: bound`、`ping reply`、`ping done`（收到数 > 0）。
 fn dataPhase() void {
     dhcp_bound = false;
     ping_done = false;
+    ping_stats = .{};
     const rc = ipath.start();
     log.line("wifi-link-probe: data path: esp_wifi_internal_reg_rxcb rc=0x{x:0>8}", .{@as(u32, @bitCast(rc))});
     if (rc != 0) return;
@@ -360,9 +376,11 @@ fn dataPhase() void {
             hw.elapsedUs(t0) / 1000, l.ip[0],     l.ip[1],     l.ip[2],     l.ip[3],
             l.router[0],             l.router[1], l.router[2], l.router[3],
         });
+        ipath.ping_interval_us = ping_interval_us;
+        ipath.ping_bytes = ping_bytes;
         ipath.startPing(ping_count, hw.nowUs());
         const t1 = hw.nowUs();
-        const ping_cap_us: u64 = @as(u64, ping_count) * 2_000_000;
+        const ping_cap_us: u64 = @as(u64, ping_count) * (ping_interval_us + 2_000_000);
         _ = pumpUntil(&ping_done, ping_cap_us);
         if (!ping_done) log.line("wifi-link-probe: data path: ping did not finish in {d} s", .{ping_cap_us / 1_000_000});
         log.line("wifi-link-probe: data path: ping phase {d} ms", .{hw.elapsedUs(t1) / 1000});
@@ -785,11 +803,15 @@ pub const LinkResult = struct {
     scan_done: bool = false,
     /// 全信道扫描结束时的 AP 数；扫描超时就是超时那一刻的数。
     ap_num: u16 = 0,
+    /// 连上的那个 AP 的主信道号（`WIFI_EVENT_STA_CONNECTED` 带的）；没连上是 0。
+    ap_channel: u8 = 0,
     /// 构建时没给 AP 的 SSID 时连接阶段整段不做，下面几项保持初值。
     connect_attempted: bool = false,
     connected: bool = false,
     dhcp: bool = false,
     ping_done: bool = false,
+    /// ping 跑完时的统计（没跑完是 null）。
+    ping: ?ipath.PingStats = null,
     /// 连上之后那 5 秒里没有断开。
     stayed: bool = false,
     /// 连接阶段结束时的断开原因码；本地主动断开是 8。
@@ -887,8 +909,11 @@ pub fn linkRest() LinkResult {
         r.connect_attempted = true;
         connectPhase();
         r.connected = sta_connected;
+        r.ap_channel = sta_channel;
+        log.line("wifi-link: connected AP primary channel={d}", .{r.ap_channel});
         r.dhcp = dhcp_bound;
         r.ping_done = ping_done;
+        r.ping = ping_stats;
         r.stayed = stayed_connected;
         r.disconnect_reason = disconnect_reason;
     } else {

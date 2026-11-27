@@ -140,7 +140,9 @@ pub fn coex_register_start_cb_wrapper(cb: ?*const anyopaque) callconv(.c) c_int 
     const g = glue.instance();
     g.enter(.coex_register_start_cb_wrapper);
     if (g.off(.coex_register_start_cb_wrapper) or !g.cfg.sw_coexist) return 0;
-    return g.core.register_start_cb.?(cb);
+    // 核拿到的是跳板（记一次数再调 blob 的函数）；blob 的函数存在胶水里。
+    glue.blob_wifi_start = @ptrCast(@alignCast(cb));
+    return g.core.register_start_cb.?(@ptrCast(&glue.wifiStartTrampoline));
 }
 
 /// esp_adapter.c:580-587：条件只有 `CONFIG_SW_COEXIST_ENABLE`。

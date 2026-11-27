@@ -49,13 +49,27 @@ const eth_min_frame: usize = 60;
 const rx_slots: usize = 4;
 
 const ping_id: u16 = 0x3150;
-const ping_payload = blk: {
-    var a: [32]u8 = undefined;
+/// 回显请求载荷的上限：IP 包 1500 字节减去 IPv4 首部 20 与 ICMP 首部 8。内容是字节的序号（第 i 个字节是 i）。
+const ping_payload_max = 1500 - 20 - 8;
+const ping_payload_bytes = blk: {
+    @setEvalBranchQuota(4 * ping_payload_max);
+    var a: [ping_payload_max]u8 = undefined;
     for (&a, 0..) |*b, i| b.* = @truncate(i);
     break :blk a;
 };
-const ping_interval_us: u64 = 1_000_000;
+/// 回显请求的载荷长度，默认 32。合并镜像的广播实验按 `-Dcoex-adv-ping-bytes` 改它（经 `link_probe.zig` 的 `ping_bytes`）：
+/// 一帧越长大占空口的时间越长，「有吞吐的时候」离得更近。
+pub var ping_bytes: usize = 32;
+var ping_buf: [icmp.header_len + ping_payload_max]u8 = undefined;
+/// 两帧之间的间隔，默认 1 秒。同一时间只有一帧在飞（等应答最多 `ping_timeout_us`），所以间隔比它短时，
+/// 就是上一帧回来（或超时）之后马上发下一帧。合并镜像的广播实验按 `-Dcoex-adv-ping-interval-ms` 改它
+/// （经 `link_probe.zig` 的 `ping_interval_us`），好让「BLE 广播着的时候有持续的 Wi-Fi 流量」有足够长的窗口。
+pub var ping_interval_us: u64 = 1_000_000;
 const ping_timeout_us: u64 = 1_000_000;
+
+fn pingPayload() []const u8 {
+    return ping_payload_bytes[0..@min(ping_bytes, ping_payload_max)];
+}
 
 const drv = struct {
     const reg_rxcb = @extern(*const fn (c_int, ?*const fn (?*anyopaque, u16, ?*anyopaque) callconv(.c) c_int) callconv(.c) c_int, .{ .name = "esp_wifi_internal_reg_rxcb" });
@@ -206,7 +220,7 @@ pub fn poll(now_us: u64) ?Event {
     return ev;
 }
 
-/// 开始 ping 租约里的网关：每秒一帧，共 `count` 帧；等应答最多 1 秒。要先拿到租约。
+/// 开始 ping 租约里的网关：每隔 `ping_interval_us`（默认 1 秒）一帧，共 `count` 帧；等应答最多 1 秒。要先拿到租约。
 pub fn startPing(count: u16, now_us: u64) void {
     if (!bound or count == 0) return;
     ping_active = true;
@@ -492,7 +506,7 @@ fn handleEchoReply(src: [4]u8, l4: []const u8, now_us: u64) ?Event {
     const h = icmp.Header.parse(l4) catch return null;
     if (h.type != icmp.typ.echo_reply or h.code != 0) return null;
     if (h.id != ping_id or h.seq_or_mtu != f.seq) return null;
-    if (l4.len != icmp.header_len + ping_payload.len) return null;
+    if (l4.len != icmp.header_len + pingPayload().len) return null;
     if (!icmp.checksumOk(l4)) return null;
     inflight = null;
     const rtt: u32 = @intCast(@min(now_us -% f.sent_at, std.math.maxInt(u32)));
@@ -579,9 +593,8 @@ fn sendArpRequest(target: [4]u8) c_int {
 }
 
 fn sendEcho(seq: u16, dst: [4]u8, dst_mac: [6]u8) c_int {
-    var buf: [icmp.header_len + ping_payload.len]u8 = undefined;
-    const n = icmp.writeEchoRequest(&buf, ping_id, seq, &ping_payload) catch return err_no_mem;
-    return sendIpv4(dst_mac, client.lease.ip, dst, ipv4.proto.icmp, buf[0..n]);
+    const n = icmp.writeEchoRequest(&ping_buf, ping_id, seq, pingPayload()) catch return err_no_mem;
+    return sendIpv4(dst_mac, client.lease.ip, dst, ipv4.proto.icmp, ping_buf[0..n]);
 }
 
 // ---------------------------------------------------------------------------
@@ -671,10 +684,10 @@ fn arpFrame(op: u16, spa: [4]u8, sha: [6]u8, tpa: [4]u8) []const u8 {
 }
 
 fn echoReplyFrame(seq: u16, corrupt_checksum: bool) []const u8 {
-    var n = icmp.writeEchoReply(fb_l4[0..], ping_id, seq, &ping_payload) catch unreachable;
+    var n = icmp.writeEchoReply(fb_l4[0..], ping_id, seq, pingPayload()) catch unreachable;
     if (corrupt_checksum) {
         fb_l4[2] ^= 0xFF;
-        n = icmp.header_len + ping_payload.len;
+        n = icmp.header_len + pingPayload().len;
     }
     const pkt = ipPacket(&fb_ip, gateway_ip, our_ip, ipv4.proto.icmp, fb_l4[0..n]);
     return eth(&fb_eth, sta_mac, gateway_mac, ethertype_ipv4, pkt);
@@ -808,6 +821,42 @@ test "data_path: ping 网关——先问网关的 MAC，回显一帧一答；超
     try testing.expect(poll(4_000_000) == null);
 }
 
+test "data_path: 回显请求的载荷长度是参数（默认 32）；长度对不上的应答不是对这一帧的应答" {
+    ping_bytes = 600;
+    defer ping_bytes = 32;
+    try runDhcp(3600);
+
+    startPing(2, 1_000_000);
+    try testing.expectEqual(Event{ .arp_request = .{ .ip = gateway_ip, .tx_rc = 0 } }, poll(1_000_000).?);
+    try testing.expectEqual(ok, deliver(arpFrame(arp.Op.reply, gateway_ip, gateway_mac, our_ip)));
+    try testing.expectEqual(Event{ .arp_reply = .{ .ip = gateway_ip, .mac = gateway_mac } }, poll(1_000_000).?);
+    try testing.expectEqual(Event{ .echo_sent = .{ .seq = 0, .tx_rc = 0 } }, poll(1_000_000).?);
+    // 发出去的请求：ICMP 首部 8 + 载荷 600，载荷第 i 个字节是 i。
+    const er = lastTx();
+    const el4 = try (try ipv4.Header.parseChecked(er[14..])).payload(er[14..]);
+    try testing.expectEqual(@as(usize, icmp.header_len + 600), el4.len);
+    try testing.expectEqualSlices(u8, ping_payload_bytes[0..600], el4[icmp.header_len..]);
+    try testing.expect(icmp.checksumOk(el4));
+
+    // 默认长度（32）的应答：序号对得上，长度对不上，不算收到；这一帧到 1 秒还是超时。
+    ping_bytes = 32;
+    const short = deliver(echoReplyFrame(0, false));
+    ping_bytes = 600;
+    try testing.expectEqual(ok, short);
+    try testing.expect(poll(1_300_000) == null);
+    try testing.expectEqual(Event{ .echo_timeout = 0 }, poll(2_000_000).?);
+    // 第 1 帧也是 600 字节；同长度的应答才算，rtt = 100 ms。
+    try testing.expectEqual(Event{ .echo_sent = .{ .seq = 1, .tx_rc = 0 } }, poll(2_000_000).?);
+    try testing.expectEqual(ok, deliver(echoReplyFrame(1, false)));
+    try testing.expectEqual(Event{ .echo_reply = .{ .seq = 1, .rtt_us = 100_000 } }, poll(2_100_000).?);
+    try testing.expectEqual(
+        Event{ .ping_done = .{ .sent = 2, .received = 1, .timed_out = 1, .rtt_min_us = 100_000, .rtt_max_us = 100_000, .rtt_sum_us = 100_000 } },
+        poll(2_100_000).?,
+    );
+    // 给得比上限大：按上限发，不会越界。
+    ping_bytes = ping_payload_max + 100;
+    try testing.expectEqual(@as(usize, ping_payload_max), pingPayload().len);
+}
 test "data_path: ARP 请求问的是本机地址就答（单播给问的人），问别的地址、还没拿到地址时都不答" {
     try runDhcp(3600);
     const tx_before = fake.n_tx;

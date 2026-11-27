@@ -55,6 +55,9 @@ test {
 test {
     _ = @import("iso_tests.zig");
 }
+test {
+    _ = @import("channel_class_tests.zig");
+}
 // 顶层 import：覆盖率门禁沿 `@import("*.zig")` 求闭包，板侧子自检文件要出现在闭包里。
 // 「在主机上跑子自检」的用例写在各自的 `<特性>_tests.zig` 里，公共助手是 `selftest_host.zig`；
 // 并发开发时不用改这个文件。

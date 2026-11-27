@@ -740,6 +740,30 @@ const CoexTraceStats = struct {
         pti_n: u32 = 0,
         pti_bad: u32 = 0,
         pti_mask: u8 = 0,
+        /// 每个 PTI 值（0..15，核回 0 的那些）各查到几次。只记按位或的话，BLE 广播前后分布变了也看不出来。
+        pti_hist: [16]u32 = @splat(0),
+        /// 核接受申请（回 0）之后读到的定时器使能位（`hwTimerEnableMask`）：接受了几次、其中几次有定时器使能着、见过哪几个。
+        armed_n: u32 = 0,
+        armed_on: u32 = 0,
+        armed_mask: u8 = 0,
+        armed_at_us: ?u64 = null,
+        /// 核接受申请之后定时器的状态位（`0x2010F40C + 16*idx` 的 bit0）按位或，与核装进这个事件的定时器的 tick 数
+        /// （配置字 w0 的低 24 位）的最近一次读数。
+        armed_status: u8 = 0,
+        armed_ticks: u32 = 0,
+        /// 已经为这个事件打过几行定时器的原始字（至多 3 行）。
+        logged: u32 = 0,
+        /// 核接受释放（回 0）的次数，与其中释放之前使能位还置着的次数。
+        rel_ok: u32 = 0,
+        rel_on: u32 = 0,
+        /// 核接受释放之前定时器的状态位按位或，与其中有状态位置着的次数。
+        rel_status: u8 = 0,
+        rel_status_n: u32 = 0,
+        /// 从接受申请到释放：几段、最短、最长、累计（微秒）。
+        held_n: u32 = 0,
+        held_min_us: u32 = std.math.maxInt(u32),
+        held_max_us: u32 = 0,
+        held_sum_us: u64 = 0,
     };
     ev: [64]Ev = @splat(.{}),
     /// 64 及以上的事件号出现的总次数。
@@ -761,23 +785,56 @@ const CoexTraceStats = struct {
     }
 };
 var coex_trace_stats: CoexTraceStats = .{};
-
 fn coexWifiRequestTraced(event: u32, latency: u32, duration: u32) callconv(.c) c_int {
     const rc = radio_coex.wifi.coex_wifi_request_wrapper(event, latency, duration);
     if (coex_trace_stats.of(event)) |e| {
         e.req += 1;
-        if (rc != 0) e.req_bad += 1;
+        if (rc != 0) e.req_bad += 1 else {
+            // 核接受了：按它的代码（`coex_core_request`），配了定时器的事件这时已经 `coex_hw_timer_set` 加 `coex_hw_timer_enable`。
+            const timers = hwTimerEnableMask();
+            e.armed_n += 1;
+            e.armed_status |= hwTimerStatusMask();
+            e.armed_at_us = hw.nowUs();
+            if (timers != 0) {
+                e.armed_on += 1;
+                e.armed_mask |= timers;
+            }
+            if (timerOf(event)) |idx| {
+                e.armed_ticks = hw.readReg(0x2010_F400 + 16 * idx) & 0xFFFFFF;
+                // 头三次各打一行定时器的 4 个字：核装进去的是什么，使能字与状态字读回来是什么。
+                if (e.logged < 3) {
+                    e.logged += 1;
+                    logTimerBlock(event, idx);
+                }
+            }
+        }
     }
     // 一轮十来次，逐次打：时延、时长是 blob 向核申请的量，后面是核的答复。
     log.line("coex> _coex_wifi_request event={d} latency={d} duration={d} -> rc={d}", .{ event, latency, duration, rc });
     return rc;
 }
-
 fn coexWifiReleaseTraced(event: u32) callconv(.c) c_int {
+    // 释放之前先读定时器的使能字与状态字：核在 `coex_core_release` → `coex_hw_timer_disable` 里才关定时器、清状态字的 bit0。
+    const before = hwTimerEnableMask();
+    const status_before = hwTimerStatusMask();
+    const t_rel = hw.nowUs();
     const rc = radio_coex.wifi.coex_wifi_release_wrapper(event);
     if (coex_trace_stats.of(event)) |e| {
         e.rel += 1;
-        if (rc != 0) e.rel_bad += 1;
+        if (rc != 0) e.rel_bad += 1 else {
+            e.rel_ok += 1;
+            if (before != 0) e.rel_on += 1;
+            e.rel_status |= status_before;
+            if (status_before != 0) e.rel_status_n += 1;
+            if (e.armed_at_us) |t0| {
+                const us: u32 = @intCast(@min(t_rel -% t0, std.math.maxInt(u32)));
+                e.held_n += 1;
+                if (us < e.held_min_us) e.held_min_us = us;
+                if (us > e.held_max_us) e.held_max_us = us;
+                e.held_sum_us += us;
+                e.armed_at_us = null;
+            }
+        }
     }
     return rc;
 }
@@ -788,8 +845,62 @@ fn coexPtiGetTraced(event: u32, pti: ?*u8) callconv(.c) c_int {
         e.pti_n += 1;
         if (rc != 0) e.pti_bad += 1;
         if (pti) |p| e.pti_mask |= p.*;
+        if (rc == 0) if (pti) |p| {
+            if (p.* < 16) e.pti_hist[p.*] += 1;
+        };
     }
     return rc;
+}
+
+/// 核的 5 个硬件定时器的使能位拼成一个位图：bit idx = 第 idx 个使能着。`coexist_hw.o` 的反汇编：每个定时器 16 个字节，
+/// 在 `0x2010F400 + 16*idx`——`+0`、`+4` 是 `coex_hw_timer_set` 写的两个配置字，`+8` 是使能字（`coex_hw_timer_enable`
+/// 置它的 **bit0**，`coex_hw_timer_disable` 清它），`+0xC` 是状态字（disable 往它的 bit0 写 1）。
+fn hwTimerEnableMask() u8 {
+    var m: u8 = 0;
+    for (0..5) |idx| {
+        const en: u32 = hw.readReg(0x2010_F408 + 16 * idx);
+        if (en & 1 != 0) m |= @as(u8, 1) << @intCast(idx);
+    }
+    return m;
+}
+
+/// 核的 5 个硬件定时器的状态位（`0x2010F40C + 16*idx` 的 bit0）拼成一个位图。板上读到的是：核接受申请之后这个位清着、
+/// bit1 置着（`coex_hw_timer_enable` 清 bit0 再置使能字的 bit0，而使能字的 bit0 读回来就是 0）——这些位各是什么含义没有弄清
+/// （`coex-verification.md` §19）。
+fn hwTimerStatusMask() u8 {
+    var m: u8 = 0;
+    for (0..5) |idx| {
+        const st: u32 = hw.readReg(0x2010F40C + 16 * idx);
+        if (st & 1 != 0) m |= @as(u8, 1) << @intCast(idx);
+    }
+    return m;
+}
+
+/// 核的事件表（`coexist_core.o` 的 `.rodata.CSWTCH.28`，下标是事件号减一）里配了硬件定时器的事件：事件号 → 定时器号；其余没有。
+fn timerOf(event: u32) ?u32 {
+    return switch (event) {
+        1 => 0,
+        2 => 1,
+        36 => 4,
+        38 => 2,
+        45, 46 => 3,
+        else => null,
+    };
+}
+
+/// 第 idx 个定时器的 4 个字。
+fn logTimerBlock(event: u32, idx: u32) void {
+    const base = 0x2010_F400 + 16 * idx;
+    log.line("coex> timer after the accepted request: e{d} -> timer {d}: w0=0x{x:0>8} w1=0x{x:0>8} en=0x{x:0>8} st=0x{x:0>8}", .{ event, idx, hw.readReg(base), hw.readReg(base + 4), hw.readReg(base + 8), hw.readReg(base + 12) });
+}
+
+/// 当前的栈指针（读数用：这一段代码跑在哪根栈上）。
+inline fn spNow() usize {
+    var sp: usize = undefined;
+    asm volatile ("mv %[out], sp"
+        : [out] "=r" (sp),
+    );
+    return sp;
 }
 
 fn coexStatusBitSetTraced(st_type: u32, status: u32) callconv(.c) void {
@@ -843,9 +954,10 @@ fn appendItem(stage: []const u8, tag: []const u8, line: []u8, used: *usize, text
 ///   * 核手里的当前值：Wi-Fi 状态位、调度间隔 / 周期 / 相位；
 ///   * 共存的低功耗时钟配置 `MODEM_LPCON_COEX_LP_CLK_CONF`（`0x2010F008`：位 [15:4] 是分频数，低 4 位是
 ///     时钟源选择）。`coex_hw_timer_tick_get` 读它做 tick 与时间的换算——它是配置，不是计数，读两次不会变；
-///   * 核的硬件定时器（`coex_hw_timer_set` / `coex_hw_timer_enable` 的反汇编）：第 idx 个的配置与比较值在
-///     `0x2010F040 + 16*idx`，使能位在 `0x2010F408 + 16*idx` 的 bit1，状态在 `0x2010F40C + 16*idx`。
-///     核的事件表里定时器号最多用到 4，所以读 0..4；每个隔 1 ms 读两次，数值变没变就是它走没走的全部证据。
+///   * 核的硬件定时器（`coexist_hw.o` 的反汇编）：每个 16 个字节，在 `0x2010F400 + 16*idx`——`+0`、`+4` 是
+///     `coex_hw_timer_set` 写的两个配置字，`+8` 是使能字（`coex_hw_timer_enable` 置它的 bit0），`+0xC` 是状态字。
+///     核的事件表里定时器号最多用到 4，所以读 0..4；每个隔 1 ms 读两次。2026-11-27 之前读的是 `0x2010F040 + 16*idx`
+///     （那是 `MODEM_LPCON` 的寄存器）与使能字的 bit1，都读错了地方，见 `coex-verification.md` §19.4。
 ///
 /// 读核用的是 `g.core` 上的函数本身，不经包装函数，所以不给胶水的调用计数添数。
 pub fn coexReadings(stage: []const u8) void {
@@ -853,6 +965,10 @@ pub fn coexReadings(stage: []const u8) void {
     coexReport(stage);
     const g = radio_coex.instance();
     if (!g.state.booted) return;
+    // 栈指针读数。这个函数曾经把统计结构按值拷贝四份（`const t = coex_trace_stats` 与三个 `for (t.ev)`，每份 10 KB），栈帧 42 KB，
+    // 把 16 KiB 的主栈溢出到 BLE 堆里——2026-11-27 有一版镜像因此崩在发送任务的保存上下文上（`coex-verification.md` §19.5）。
+    // 现在都按指针走；每个阶段留一个栈指针读数，它应当在主栈里（不低于 `_heap_end`）。
+    log.line("coex[{s}]: sp=0x{x:0>8}", .{ stage, spNow() });
     var line: [200]u8 = undefined;
     var item: [160]u8 = undefined;
     var used: usize = 0;
@@ -876,12 +992,12 @@ pub fn coexReadings(stage: []const u8) void {
         if (c.schm_curr_phase_get.?() == null) "none" else "set", c.schm_flexible_period_get.?(),                         g.last_core_rc,
         if (radio_coex.lastError()) |e| @errorName(e) else "-",
     });
-    const t = coex_trace_stats;
+    const t = &coex_trace_stats;
     log.line("coex[{s}]: blob->core: status_bit_set n={d} type={d} mask=0x{x:0>8} last=0x{x:0>8} | status_bit_clear n={d} mask=0x{x:0>8} | events>=64 n={d}", .{
         stage, t.set_n, t.set_type, t.set_mask, t.set_last, t.clr_n, t.clr_mask, t.ev_big,
     });
     used = 0;
-    for (t.ev, 0..) |e, i| {
+    for (t.ev[0..], 0..) |*e, i| {
         if (e.req + e.rel + e.pti_n == 0) continue;
         var n = (std.fmt.bufPrint(&item, " e{d}:", .{i}) catch unreachable).len;
         if (e.req != 0) n += (std.fmt.bufPrint(item[n..], " req={d} bad={d}", .{ e.req, e.req_bad }) catch unreachable).len;
@@ -890,11 +1006,43 @@ pub fn coexReadings(stage: []const u8) void {
         appendItem(stage, "by event", &line, &used, item[0..n]);
     }
     flushLine(stage, "by event", line[0..used]);
+    // PTI 按值计数（路线图 C7 的「PTI 行为」）：各阶段的差值就是那一段里核给每个事件的优先级各是几次。
+    used = 0;
+    var hist: [160]u8 = undefined;
+    for (t.ev[0..], 0..) |*e, i| {
+        var hn: usize = 0;
+        for (e.pti_hist[0..], 0..) |cnt, v| {
+            if (cnt == 0) continue;
+            hn += (std.fmt.bufPrint(hist[hn..], " {d}:{d}", .{ v, cnt }) catch break).len;
+        }
+        if (hn == 0) continue;
+        const n = (std.fmt.bufPrint(&item, " e{d}:", .{i}) catch unreachable).len;
+        hn = @min(hn, item.len - n);
+        @memcpy(item[n..][0..hn], hist[0..hn]);
+        appendItem(stage, "pti by value", &line, &used, item[0 .. n + hn]);
+    }
+    flushLine(stage, "pti by value", line[0..used]);
+    // 核的硬件定时器在核处理申请 / 释放的那一会儿是什么样（ADR-003 第 5 节 L4b 的「核的硬件定时器在走」）：泵步之间采
+    // （`coex_merged.zig` 的 `sampleHwTimers`）看不到申请与释放落在同一个泵步里的那种武装，所以直接在两个包装函数里读。
+    used = 0;
+    for (t.ev[0..], 0..) |*e, i| {
+        if (e.armed_n + e.rel_ok == 0) continue;
+        const text = std.fmt.bufPrint(&item, " e{d}: acc={d} on_after={d} (timers 0x{x:0>2}) last_ticks={d}; rel={d} on_before={d} st_before={d}x (0x{x:0>2}); held {d}x min/avg/max={d}/{d}/{d} us", .{
+            i,                                       e.armed_n,                         e.armed_on,     e.armed_mask, e.armed_ticks,
+            e.rel_ok,                                e.rel_on,                          e.rel_status_n, e.rel_status, e.held_n,
+            if (e.held_n == 0) 0 else e.held_min_us, e.held_sum_us / @max(e.held_n, 1), e.held_max_us,
+        }) catch break;
+        appendItem(stage, "timers in calls", &line, &used, text);
+    }
+    flushLine(stage, "timers in calls", line[0..used]);
     // 核里的三个状态字读不到（`coex_status_get` 不是读字，见 `radio-coex/src/fake.zig`）：Wi-Fi 的那份是 blob 最后一次置的值
     // （它每次先清 0xffff 再置），BLE / BT 的那份是 controller 经胶水置 / 清出来的镜像。
     log.line("coex[{s}]: status words: wifi=0x{x:0>4} (wifi blob's last set) ble=0x{x:0>4} bt=0x{x:0>4} (bt controller's set/clear, mirrored)", .{
         stage, @as(u16, @truncate(t.set_last)), radio_coex.bt_status_words[1], radio_coex.bt_status_words[2],
     });
+    // 两个启动回调（胶水的 `wifiStartTrampoline` / `bleStartTrampoline`）各被核触发了多少次：两边都开着共存时核调它们，
+    // 跳板再转给 blob 登记的回调。累计值，各阶段的差值就是这一阶段触发了几次。
+    log.line("coex[{s}]: start callbacks: wifi n={d} ble n={d} (the core triggers the trampolines, they forward to the blobs' handlers)", .{ stage, radio_coex.wifi_start_calls, radio_coex.ble_start_calls });
 
     const clk = hw.readReg(0x2010_F008);
     log.line("coex[{s}]: coex lp clk conf 0x2010F008: 0x{x:0>8} (div_num {d}, src_sel 0x{x})", .{ stage, clk, (clk >> 4) & 0xFFF, clk & 15 });
@@ -904,13 +1052,12 @@ pub fn coexReadings(stage: []const u8) void {
     readHwTimers(stage, " +1ms");
 }
 
-/// 核的 5 个硬件定时器的寄存器原值：配置 / 比较值 4 个字、使能字（bit1 = 使能）、状态字。
+/// 核的 5 个硬件定时器的寄存器原值：配置两个字、使能字（bit0 = 使能）、状态字。
 fn readHwTimers(stage: []const u8, tag: []const u8) void {
     for (0..5) |idx| {
-        const cfg = 0x2010_F040 + 16 * idx;
-        const ctl = 0x2010_F408 + 16 * idx;
-        log.line("coex[{s}]: hw timer {d}{s}: 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} 0x{x:0>8} en 0x{x:0>8} st 0x{x:0>8}", .{
-            stage, idx, tag, hw.readReg(cfg), hw.readReg(cfg + 4), hw.readReg(cfg + 8), hw.readReg(cfg + 12), hw.readReg(ctl), hw.readReg(ctl + 4),
+        const base = 0x2010_F400 + 16 * idx;
+        log.line("coex[{s}]: hw timer {d}{s}: w0 0x{x:0>8} w1 0x{x:0>8} en 0x{x:0>8} st 0x{x:0>8}", .{
+            stage, idx, tag, hw.readReg(base), hw.readReg(base + 4), hw.readReg(base + 8), hw.readReg(base + 12),
         });
     }
 }

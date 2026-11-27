@@ -26,6 +26,13 @@
 //!   - `-Dcoex-adv-irq`（要求 `-Dcoex-ble-adv`）：发广播使能之前给 trap 处理器挂一个每个中断调一次的钩子，每 4096 个中断
 //!     打一行各 CLIC 输入的计数与最近几个被中断的 PC——哪个输入在风暴、主上下文是被谁饿死的，看它
 //!     （2026-11-27 靠它找到"广播使能之后整机失声"的根因，`coex-verification.md` §17.5）。
+//!   - `-Dcoex-adv-ping-interval-ms`：两遍 Wi-Fi 链路里 ping 的间隔（默认 1000 ms）。调小并把 `-Dcoex-adv-pings` 给够，
+//!     第二遍链路就是 BLE 广播着的时候一段持续的 Wi-Fi 流量；每遍链路打一行 ping 的统计（`coex-ping[...]`）。
+//!   - `-Dcoex-adv-ping-bytes`：回显请求的载荷字节数（默认 32，至多 1472）。调大，一帧占空口的时间更长。
+//!   - `-Dcoex-ble-chan-class`（要求 `-Dcoex-ble-adv` 与 `-Dcoex-wifi-link`）：BLE 广播起来之后、第二遍 Wi-Fi 链路之前，
+//!     发 LE Set Host Channel Classification（Vol 4 Part E §7.8.19），把 AP 所在的 2.4 GHz 信道盖住的数据信道标成 bad
+//!     （路线图 C8；信道图在 `ble-802154/src/channel_class.zig`）。AP 的主信道取自第一遍链路的 `WIFI_EVENT_STA_CONNECTED`，所以要先给
+//!     `-Dwifi-ap-ssid`。判据两条：那张图 controller 回 Status 0x00；第二遍链路之后同一张图置上保留位，controller 拒掉它（实测 0x12）。
 //!
 //! **PHY 的归属（ADR-003 第 4 节的第一条板级证据，2026-11-26）。** IDF 的 `esp_phy_enable` 只在 modem 标志为 0
 //! 时才初始化 PHY（`phy_init.c:324-342`）；BT 在 Wi-Fi 之后使能时只把自己或进标志。本仓的 BLE 适配层是按
@@ -78,6 +85,8 @@ const bt = @import("bt_core");
 const radio_coex = @import("radio_coex");
 /// IDF 的时钟单元表与并集运算（`radio-coex/src/owner.zig`）。
 const clocks = radio_coex.owner.clocks;
+/// 信道分类的信道图（路线图 C8）：从 AP 的 2.4 GHz 信道算 BLE 的数据信道图。
+const chan_class = @import("ble_channel_class");
 
 const log = board.log;
 
@@ -128,6 +137,17 @@ fn check(ok: bool, comptime fmt: []const u8, args: anytype) void {
     log.line("check: {s} ok={d}", .{ text, @intFromBool(ok) });
 }
 
+/// 一遍链路里 ping 的统计（路线图 C7：有流量的时候丢不丢、时延多大）。ping 没跑完时没有统计，只打一行说明。
+fn logPing(tag: []const u8, r: wifi.link.LinkResult) void {
+    if (r.ping) |p| {
+        log.line("coex-ping[{s}]: {d} frames of {d} payload bytes, {d} ms apart: sent={d} received={d} timed_out={d} rtt min/avg/max={d}/{d}/{d} us", .{
+            tag, opts.adv_pings, opts.adv_ping_bytes, opts.adv_ping_interval_ms, p.sent, p.received, p.timed_out, p.rtt_min_us, p.rttAvgUs(), p.rtt_max_us,
+        });
+    } else {
+        log.line("coex-ping[{s}]: no stats, the ping phase did not finish", .{tag});
+    }
+}
+
 /// 读回两边共享的时钟字。
 fn readClocks() clocks.State {
     return .{
@@ -163,9 +183,10 @@ fn bleStep() void {
     sampleHwTimers();
 }
 
-/// 共存核的五个硬件定时器的使能字（`0x2010F408 + 16*idx` 的 bit1，`coexReadings` 里同一个读法）。ADR-003 第 5 节 L4b 的
-/// 判据之一是「核的硬件定时器在走」：阶段边界上的读数看不到——核只在处理申请 / 释放的那一会儿使能定时器。所以链路的
-/// 每一泵步采一次（隔 2 ms 最多一次），数的是采了多少次、其中多少次看到使能、见过哪几个定时器。
+/// 共存核的五个硬件定时器的使能字（`0x2010F408 + 16*idx` 的 bit0，`coexist_hw.o` 里 `coex_hw_timer_enable` 置的就是它；
+/// `coexReadings` 里同一个读法）。ADR-003 第 5 节 L4b 的判据之一是「核的硬件定时器在走」：所以链路的每一泵步采一次
+/// （隔 2 ms 最多一次），数的是采了多少次、其中多少次看到使能、见过哪几个定时器。申请与释放落在同一个泵步里的那种武装
+/// 这里也看不到，那一种在 `coexReadings` 的 `timers in calls:` 里读。
 var timer_samples: u32 = 0;
 var timer_enabled_samples: u32 = 0;
 var timer_enabled_mask: u8 = 0;
@@ -185,7 +206,7 @@ fn sampleHwTimers() void {
     timer_samples += 1;
     var any = false;
     for (0..5) |idx| {
-        if ((rd(0x2010_F408 + 16 * idx) & 2) != 0) {
+        if ((rd(0x2010_F408 + 16 * idx) & 1) != 0) {
             any = true;
             timer_enabled_mask |= @as(u8, 1) << @intCast(idx);
         }
@@ -200,13 +221,65 @@ fn reportHwTimers(tag: []const u8) void {
     check(timer_samples > 0, "coex hw timers sampled while {s} ({d} samples, {d} with one enabled)", .{ tag, timer_samples, timer_enabled_samples });
 }
 
+inline fn spNow() usize {
+    var sp: usize = undefined;
+    asm volatile ("mv %[out], sp"
+        : [out] "=r" (sp),
+    );
+    return sp;
+}
+
+/// 主栈的高水位。`paintMainStack` 在 section 开始时把栈底以上、当前栈指针以下的空闲部分涂上图案；`mainStackLeft` 从栈底往上数
+/// 还有几个字节是图案，就是栈到过的最深处离栈底还有多远。主栈是 SRAM 末尾的 16 KiB（`s31.ld` 的 `_stack_size`），底就是
+/// `_heap_end`，再往下是 BLE 堆的顶部。2026-11-27 有一版镜像把主栈溢出了 26 KB（读数函数按值拷贝统计结构，`coexReadings`
+/// 的注释），栈底下面没有任何东西会拦住它，所以要量。
+const stack_paint: u8 = 0xA5;
+var main_stack_free: usize = 0;
+
+/// 读写都走 volatile：第一版用 `@memset`，ReleaseSmall 把它整个消掉了（反汇编里只剩长度的计算），读数恒为「0 B left」。
+fn paintMainStack() void {
+    const bottom: usize = @intFromPtr(&_heap_end);
+    const len = spNow() - 256 - bottom;
+    if (len == 0 or len > 64 * 1024) return;
+    const free: [*]volatile u8 = @ptrFromInt(bottom);
+    for (0..len) |i| free[i] = stack_paint;
+    main_stack_free = len;
+}
+
+/// 栈到过的最深处离栈底还有多少字节；0 = 碰到了栈底（溢出进 BLE 堆）。
+fn mainStackLeft() usize {
+    const free: [*]volatile u8 = @ptrFromInt(@intFromPtr(&_heap_end));
+    var i: usize = 0;
+    while (i < main_stack_free and free[i] == stack_paint) i += 1;
+    return i;
+}
+
+fn logSp(tag: []const u8) void {
+    const left = mainStackLeft();
+    log.line("coex-merged: sp[{s}]=0x{x:0>8}; main stack: {d} of {d} free B used at the deepest point ({d} B left above the bottom 0x{x:0>8})", .{
+        tag, spNow(), main_stack_free - left, main_stack_free, left, @intFromPtr(&_heap_end),
+    });
+}
+
+/// 广播实验里两次判「栈没碰到栈底」；别的镜像不打判据，条数不变。
+fn checkMainStack(tag: []const u8) void {
+    const left = mainStackLeft();
+    check(left > 0, "main stack stayed above its bottom while {s} ({d} B left at the deepest point)", .{ tag, left });
+}
+
 /// 作为 section 跑：全过返回 true。
 pub fn run() bool {
     g_passed = 0;
     g_failed = 0;
+    paintMainStack();
+    logSp("start");
     // 广播实验里两遍 Wi-Fi 链路（BLE 只 enable 的那一遍是对照）各 ping 网关 `-Dcoex-adv-pings` 帧；别的镜像里 `link_probe`
     // 的默认值是 10，不经过这里。
-    if (opts.ble_adv) wifi.link.ping_count = opts.adv_pings;
+    if (opts.ble_adv) {
+        wifi.link.ping_count = opts.adv_pings;
+        wifi.link.ping_interval_us = @as(u64, opts.adv_ping_interval_ms) * 1000;
+        wifi.link.ping_bytes = opts.adv_ping_bytes;
+    }
     const heap_start: usize = @intFromPtr(&_heap_start);
     const heap_end: usize = @intFromPtr(&_heap_end);
     const heap_total = heap_end - heap_start;
@@ -226,6 +299,8 @@ pub fn run() bool {
     //    Wi-Fi 与 PHY 的位都在，再扫一次全信道——证明合并镜像里 Wi-Fi 自己是好的，后面的变化才都算在 BLE 的 init 头上。
     var wifi_started = false;
     var base_ap: u16 = 0;
+    // 第一遍链路里目标 AP 的主信道（0 = 没取到），信道分类（路线图 C8）用它。
+    var ap_channel: u8 = 0;
     if (opts.wifi_link) {
         const src = wifi.link.linkStart();
         log.line("coex-merged: wifi first: esp_wifi_start rc={d}", .{src});
@@ -288,8 +363,12 @@ pub fn run() bool {
             resetHwTimers();
             const r = wifi.link.linkRest();
             wifi.link.co_pump = null;
+            ap_channel = r.ap_channel;
+            // 对照：BLE 只 enable、不广播时的 ping 统计。广播实验之外不打，那些镜像的日志不变。
+            if (opts.ble_adv) logPing("ble enabled", r);
             // 对照：BLE 只 enable、不广播时定时器的读数。广播实验之外不读出来，那些镜像的判据条数不变。
             if (opts.ble_adv) reportHwTimers("wifi link, ble enabled");
+            if (opts.ble_adv) checkMainStack("wifi link, ble enabled");
             wifi.coexReadings("wifi-link");
             readRadios("after wifi link");
             checkClocks("after wifi link", &.{ .wifi, .phy, .ble });
@@ -327,11 +406,14 @@ pub fn run() bool {
         const ble_irq_handler = bt.probe.handlerForInput(24);
         check(ble_irq_map == 24 and ble_irq_handler != 0, "ble interrupt bridge wired: MODEM_BT_MAC -> input {d} (want 24), handler 0x{x:0>8}", .{ ble_irq_map, ble_irq_handler });
         log.line("coex-merged: ble adv interval {d} ms (0x{x:0>4} x 0.625 ms), pings per wifi pass {d}", .{ opts.adv_interval_ms, ble_adv_interval_units, opts.adv_pings });
+        logSp("before ble adv");
         const a = bt.probe.advertiseOnly(ble_adv_interval_units, ble_adv_pump_us);
         wifi.foreign_context = false;
+        logSp("after ble adv");
         readRadios("after ble adv");
         wifi.coexReport("ble-adv");
         wifi.coexReadings("ble-adv");
+        logSp("after the ble-adv readings");
         const fmt_status = struct {
             fn s(v: ?u8) u8 {
                 return v orelse 0xFF;
@@ -344,6 +426,41 @@ pub fn run() bool {
         // `radio-coex/src/glue.zig` 的 `bt_status_words`）在广播起来之后应当非 0。
         const ble_word_adv = radio_coex.bt_status_words[1];
         check(ble_word_adv != 0, "ble status word non-zero while advertising (0x{x:0>4}; the controller's set/clear to the core, mirrored)", .{ble_word_adv});
+        // 路线图 C8：把 AP 所在的 2.4 GHz 信道盖住的数据信道标成 bad（LE Set Host Channel Classification，Vol 4 Part E §7.8.19）。
+        // 发在广播起来之后、第二遍 Wi-Fi 链路之前，那一遍链路就是在分类已经生效的情况下跑的。AP 的主信道取自第一遍
+        // 链路的 `WIFI_EVENT_STA_CONNECTED`。算不出图（第一遍没连上，或者 AP 不在 2.4 GHz 的 1..14 信道上）就跳过，不打判据。
+        var chan_map: [5]u8 = @splat(0);
+        var chan_span: [2]u8 = .{ 0, 0 };
+        var chan_ok = false;
+        if (chan_class.avoidingWifiChannel(ap_channel)) |m| {
+            chan_map = m.bytes;
+            chan_span = chan_class.wifiOverlap(ap_channel) catch .{ 0, 0 };
+            chan_ok = true;
+        } else |_| {}
+        if (opts.ble_chan_class and adv_ok and chan_ok) {
+            wifi.foreign_context = true;
+            logSp("before the channel class command");
+            const st = bt.probe.setChannelClass(chan_map);
+            wifi.foreign_context = false;
+            logSp("after the channel class command");
+            log.line("coex-chan-class: wifi channel {d} ({d} MHz) covers ble data channels {d}..{d}; map {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2}, {d} of {d} channels unknown; controller status={d}", .{
+                ap_channel,
+                chan_class.wifiCenterFreqMhz(ap_channel) catch 0,
+                chan_span[0],
+                chan_span[1],
+                chan_map[0],
+                chan_map[1],
+                chan_map[2],
+                chan_map[3],
+                chan_map[4],
+                chan_class.channel_count - (chan_span[1] - chan_span[0] + 1),
+                chan_class.channel_count,
+                fmt_status(st),
+            });
+            check(st != null and st.? == 0, "ble channel class accepted for wifi channel {d} (status={d})", .{ ap_channel, fmt_status(st) });
+        } else {
+            log.line("coex-chan-class: skipped (enabled={} advertising ok={} ap channel={d} usable={})", .{ opts.ble_chan_class, adv_ok, ap_channel, chan_ok });
+        }
         if (adv_ok and opts.wifi_link and wifi_started) {
             wifi.link.co_pump = &bleStep;
             resetHwTimers();
@@ -353,6 +470,19 @@ pub fn run() bool {
             checkClocks("after wifi link with ble adv", &.{ .wifi, .phy, .ble });
             check(r2.connected and r2.dhcp, "wifi link while ble advertising: connected={} dhcp={}", .{ @intFromBool(r2.connected), @intFromBool(r2.dhcp) });
             check(r2.ping_done, "wifi ping while ble advertising done ({d})", .{@intFromBool(r2.ping_done)});
+            logPing("ble advertising", r2);
+            if (opts.ble_chan_class and chan_ok) {
+                // 反过来确认 controller 真的在看参数：同一张图把保留位（第 37 位）置上。规范只说保留位应当是 0，没有规定
+                // 拒绝时的错误码（NimBLE 回 0x12，Invalid HCI Command Parameters）——判据是「不回 0x00」，回的码打在日志里。
+                // 离上一条命令已经过了第二遍链路的工夫（扫描加连接，远超 1 秒的间隔要求）。
+                var bad_map = chan_map;
+                bad_map[4] |= 0x80;
+                wifi.foreign_context = true;
+                const st = bt.probe.setChannelClass(bad_map);
+                wifi.foreign_context = false;
+                log.line("coex-chan-class: map with a reserved bit set {x:0>2} {x:0>2} {x:0>2} {x:0>2} {x:0>2}, controller status={d}", .{ bad_map[0], bad_map[1], bad_map[2], bad_map[3], bad_map[4], fmt_status(st) });
+                check(st != null and st.? != 0, "ble channel class rejects a map with a reserved bit set (status={d})", .{fmt_status(st)});
+            }
             // 最后只泵、不再有 Wi-Fi 流量：BLE 在这段时间里一直广播着，工作站的蓝牙扫描靠这段窗口看到它。
             // 前后各读一次合成器锁定位与共存核的读数（核的状态位里应当有 BLE、硬件定时器在走）。
             wifi.foreign_context = true;
@@ -374,6 +504,7 @@ pub fn run() bool {
         }
     }
 
+    if (opts.ble_adv) checkMainStack("end");
     log.line("checks: passed={d} failed={d} total={d}", .{ g_passed, g_failed, g_passed + g_failed });
     return g_failed == 0;
 }

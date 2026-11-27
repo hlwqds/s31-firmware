@@ -285,9 +285,15 @@ ISO = `CONFIG_BT_LE_ISO_SUPPORT`（`glue.Config.ble_iso`）。
 4. **编译期宏换成运行期开关**。`glue.Config` 的默认值 = esp32s31 的 IDF 默认配置
    （SW 开、EXT 关、PM 关、ISO 关、tickless 关）。
 5. **"配置没开"与"未启动"的返回值相同，但只有后者计拒绝**。
-6. **核心按 type 保存并调用 BLE 回调，胶水不重复调**。`wr_btdm_coex_register_ble_cb` 只把 (type, func)
-   原样送到核心；回调的调用点在 `libcoexist.a` 里（见「假核心依据」）。胶水另存一份按 type 的影子记录
-   （`glue.bleCallback`），只在核心回 ESP_OK 时写。现有的 `osal.zig:2005-2007` 是单槽，第二个 type 覆盖第一个。
+6. **核心按 type 保存并调用 BLE 回调，胶水不重复调**。`wr_btdm_coex_register_ble_cb` 把 (type, func) 送到核心；
+   回调的调用点在 `libcoexist.a` 里（见「假核心依据」）。胶水另存一份按 type 的影子记录（`glue.ble_cb`），
+   只在核心回 ESP_OK 时写；现有的 `osal.zig:2005-2007` 是单槽，第二个 type 覆盖第一个。
+   **两个「都开了共存」的入口经胶水的跳板**（2026-11-27，ADR-003 第 5 节 L4b 的「两侧的 start 回调被触发」）：
+   按反汇编的 `coex_core_enable`，两个射频都开了共存（计数升到 2）时核先调 `_coex_register_start_cb` 登记的函数、
+   再调 `coex_register_ble_cb` 登记在 type 0 下的函数。核拿到的现在是 `glue.zig` 的 `wifiStartTrampoline` /
+   `bleStartTrampoline`，blob 登记的函数存在 `glue.blob_wifi_start` / `blob_ble_start`：跳板给 `wifi_start_calls` /
+   `ble_start_calls` 加一，再调 blob 的函数。影子记录里记的仍是 blob 的函数指针。别的登记（schm 的按 type 回调、
+   BLE type 1 的回调）原样转给核。读数在 `wifi-blobs/src/init_probe.zig` 的 `coexReadings`（`start callbacks:` 一行）。
 7. **参数名**：IDF 的 `type` 是 Zig 的保留字，改叫 `st_type` / `cb_type`；函数名保持不变。
 8. **`entries` 里的 `@ptrCast`**：把函数指针装进 `?*const anyopaque` 是 osi 表的字段类型所迫
    （`wifi-blobs/src/osi.zig` 也是这么存钩子的），不是类型双关；逻辑路径上没有任何 cast。

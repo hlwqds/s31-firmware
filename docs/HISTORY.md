@@ -251,6 +251,34 @@
 - **没有做的**：时延涨在哪一段（发之前等、收之后处理晚）与 QoS Null 帧变多的因果；PTI 行为、两侧的 start 回调；可连接广播；
   每个间隔只跑了一轮。
 
+## L4b 第二组与路线图 C8：持续的 Wi-Fi 流量、启动回调、PTI、硬件定时器读法的更正、信道分类（2026-11-27 下午）
+
+- **做了什么**：合并镜像再加三个构建参数——`-Dcoex-adv-ping-interval-ms`（每遍 ping 的间隔）、`-Dcoex-adv-ping-bytes`（载荷字节数）与
+  `-Dcoex-ble-chan-class`（广播起来之后发 LE Set Host Channel Classification，第二遍链路之后再用带保留位的图确认 controller 会拒）。
+  `coexReadings` 多三行：`start callbacks:`（胶水两个跳板的计数，`radio-coex/src/glue.zig`）、`pti by value:`（每个事件的 PTI 按值计数）、
+  `timers in calls:`（核接受申请之后、释放交给核之前直接读定时器寄存器），另有一行栈指针。新模块 `ble-802154/src/channel_class.zig`
+  （37 位信道图、按 Wi-Fi 的 2.4 GHz 信道算分类图；期望值来自规范原文、NimBLE 与 802.11-2016，重叠窗口手算，没有差分）与 5 条用例；
+  `wifi-blobs/src/data_path.zig` 的回显载荷长度改成参数，多 1 条用例。主机用例 2068 → 2075。
+- **验证**：主机门禁全过——`scripts/check-fmt.sh` 313 个文件干净；`check-host.sh` 5/5（`firmware` 2075 项）；`check-invariants.py`、
+  `check-coverage.py`（逻辑模块 100% 可达，用例数不低于基线）、`update_matrix.py --check`、分区表、`check-capacity.py`（六个 profile 都在
+  基线的容忍之内）、`run_e2e.py --host` 六个 profile 的构建全部 PASS。板上十次，都只编合并这一段：最终镜像（app.bin 1 259 232 字节）
+  35/35、`verdict=pass`——每遍 300 帧、间隔 50 ms，对照遍与广播遍都是 300/300，
+  广播那一遍 rtt 1.3 / 26.9 / 141.3 ms；载荷 1400 字节同样不丢；两侧的 start 回调在 BLE enable 时各触发一次；PTI 是每个事件的定值
+  （e0 = 10、e1 = 5、e3 与 e9 = 7、e10 = 3，其余 1），广播那一遍每一帧带出 e1 / e9 / e0 约 0.9 / 1.0 / 0.7 次向核的申请；核每接受一次
+  事件 1 的申请就把定时器 0 装成申请的时长（低 24 位 = 时长 × 0.8）并置状态字的 bit1；信道分类 `00 f8 ff ff 1f` 回 `0x00`、
+  保留位置上的图回 `0x12`；主栈高水位 13 520 字节里用到 1 688。日志 `logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-boot.log`、
+  `…-intvl100-ping50ms300-1400b-chanclass-boot.log`、`…-intvl100-ping50ms300-final-boot.log`；细目在 `docs/verification/coex-verification.md` §19。
+- **验收里抓到并修掉的两处**：① 硬件定时器的读法读错了地址与位——`coexist_hw.o` 的反汇编里每个定时器 16 个字节在
+  `0x2010F400 + 16*idx`，使能位是 `0x2010F408 + 16*idx` 的 bit0；此前读的 `0x2010F040 + 16*idx` 是 `MODEM_LPCON` 的寄存器，
+  §17–§18 里「使能位恒为 0」的读数作废。② `coexReadings` 按值拷贝统计结构四份、栈帧 42 KB，把 16 KiB 的主栈溢出 26 KB 进 BLE 堆；
+  一版镜像（`…-intvl100-ping50ms300-lockup-boot.log`）因此一次抓取里连崩四次、每次 `CPU_LOCKUP_RESET`（发 `0x2014` 恢复发送任务时 `ra` 是读数行
+  的尾巴「0000」），当天的其余几轮也在溢出、只是没踩到致命的字节。改成按指针读之后栈帧 864 B；合并 section 开头把主栈空闲部分涂上
+  图案、两处判「栈没碰到栈底」——涂色的第一版用 `@memset`，被 ReleaseSmall 当成死存储整个消掉（带符号表的反汇编里只剩长度的
+  计算），一轮读数恒为「0 B left」、两条判据误报，改成 volatile 逐字节写才是真读数。定位靠两样：带符号表构建的反汇编（`addi sp,sp,-256`
+  之后紧跟 `sub sp,sp,0xa2b0`）与每个阶段的栈指针读数。
+- **没有过的 / 没有做的**：定时器有没有真的在数（没有可读的计数器）；信道分类有没有被 controller 用上（只有不可连接广播）；
+  时延涨在哪一段；这一轮没有 AP 侧与空口采集；每个配置只跑了一轮。
+
 ## 日志
 
 `logs/` 中是章节时代的板侧原始输出（文件名不改，便于与 `docs/history/BRINGUP-chapter-era.md`

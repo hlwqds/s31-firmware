@@ -150,13 +150,18 @@ pub fn wr_btdm_coex_ble_idle_time_inform(start_offset: u32, duration: u32) callc
 /// `uint32_t type`：IDF 在这里把 type 截成 8 位，照抄。核心按 type 分两个槽保存
 /// （`coex_env+16/+20`），在使能计数**升到 2**（第二个射频也开了共存）时调 type 0 的、
 /// 在计数**降回 1** 时调 type 1 的——调用点在核心里（`coex_core_enable` / `coex_core_disable`），
-/// 胶水只负责把 (type, func) 原样送到。影子记录只在核心回 ESP_OK 时写：真核心也是拿到锁之后才存。
+/// 胶水只负责把 (type, func) 送到——type 0 的那个换成记次数的跳板（`glue.zig` 的 `bleStartTrampoline`），其余原样。
+/// 影子记录只在核心回 ESP_OK 时写：真核心也是拿到锁之后才存。
 pub fn wr_btdm_coex_register_ble_cb(cb_type: u32, func: ?*const anyopaque) callconv(.c) c_int {
     const g = glue.instance();
     g.enter(.wr_btdm_coex_register_ble_cb);
     if (g.swOff(.wr_btdm_coex_register_ble_cb)) return core.ESP_OK;
     const kind: u8 = @truncate(cb_type);
-    const rc = g.core.register_ble_cb.?(kind, func);
+    const target: ?*const anyopaque = if (kind == 0) blk: {
+        glue.blob_ble_start = @ptrCast(@alignCast(func));
+        break :blk @ptrCast(&glue.bleStartTrampoline);
+    } else func;
+    const rc = g.core.register_ble_cb.?(kind, target);
     g.last_core_rc = rc;
     if (rc == core.ESP_OK and kind < 2) g.ble_cb[@intCast(kind)] = .{ .func = func, .ret = rc };
     return rc;

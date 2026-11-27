@@ -18,6 +18,10 @@
 #   ADV=1 BLE=1 sh scripts/build-coex-link-image.sh -Dcoex-adv-interval-ms=20 -Dcoex-adv-pings=30
 #                                          # 广播实验的两个参数：广播间隔（毫秒，20 到 10240 之间 5 的倍数，默认 100）与每遍
 #                                          # Wi-Fi 链路 ping 网关的帧数（默认 10）。按广播间隔各量一轮是路线图 C7 的第一组判据。
+#   ADV=1 BLE=1 sh scripts/build-coex-link-image.sh -Dcoex-adv-pings=300 -Dcoex-adv-ping-interval-ms=50 -Dcoex-adv-ping-bytes=1400 -Dcoex-ble-chan-class=true
+#                                          # 持续的 Wi-Fi 流量与 BLE 的信道分类（路线图 C7 第二组、C8）：每遍 ping 的间隔（毫秒，默认 1000；
+#                                          # 比 1 秒的应答超时短时，上一帧一回来就发下一帧）、载荷字节数（默认 32，至多 1472），以及
+#                                          # 广播起来之后发 LE Set Host Channel Classification（第一遍链路要在扫描记录里找到 AP，要 AP_CRED）。
 #   sh scripts/build-coex-link-image.sh -D其它参数…     # 透传给 zig build
 # 环境变量：
 #   IDF        ESP-IDF 源码树（默认 ~/esp/esp-idf），归档在它的 components/*/lib/esp32s31 下
