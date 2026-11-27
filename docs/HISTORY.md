@@ -268,6 +268,9 @@
   事件 1 的申请就把定时器 0 装成申请的时长（低 24 位 = 时长 × 0.8）并置状态字的 bit1；信道分类 `00 f8 ff ff 1f` 回 `0x00`、
   保留位置上的图回 `0x12`；主栈高水位 13 520 字节里用到 1 688。日志 `logs/coex-merged-wifi-link-ble-intvl100-ping50ms300-boot.log`、
   `…-intvl100-ping50ms300-1400b-chanclass-boot.log`、`…-intvl100-ping50ms300-final-boot.log`；细目在 `docs/verification/coex-verification.md` §19。
+- **收尾**：板子刷回生产镜像。它与父提交 `ad76f7d` 的默认镜像逐字节相同（`app.bin` SHA-256 `4de8ad20…`，
+  `docs/verification/README.md`「默认镜像不变」），读回校验通过；自检 7/8，没过的 `net_ethernet` 的 `rx loopback frame` 是板子
+  没接网线（`phy-link: up=0`），网线接回后同一条是 `ok=1`。
 - **验收里抓到并修掉的两处**：① 硬件定时器的读法读错了地址与位——`coexist_hw.o` 的反汇编里每个定时器 16 个字节在
   `0x2010F400 + 16*idx`，使能位是 `0x2010F408 + 16*idx` 的 bit0；此前读的 `0x2010F040 + 16*idx` 是 `MODEM_LPCON` 的寄存器，
   §17–§18 里「使能位恒为 0」的读数作废。② `coexReadings` 按值拷贝统计结构四份、栈帧 42 KB，把 16 KiB 的主栈溢出 26 KB 进 BLE 堆；

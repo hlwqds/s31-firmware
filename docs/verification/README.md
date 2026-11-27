@@ -194,6 +194,14 @@ synth 墙不是这个风暴（`coex-verification.md` §17.5、`ble-core-verifica
 
 四个 profile 的 `app.bin` 与 `app.elf` 两边逐字节相同。默认镜像另用 `scripts/build-image.sh firmware`（不带任何 `-D` 开关）单独构建对比过一次，结果与表中 `net` 一行一致。
 
+2026-11-27（L4b 第二组与路线图 C8 那一轮，`516ee8b`）又对了一次：在它的父提交 `ad76f7d` 上建临时检出，与当前树各按默认构建
+（不带任何 `-D` 开关，即 `net`）编一次，`app.bin` 都是 243 408 B、SHA-256
+`4de8ad203cf95fdf02ef268029ae56ecbe1dd391c1cbdd1d484858abeb4c8dcb`，`app.elf` 都是
+`b7ef0050e34a74c4def6ada516339f801c9a81bba2dc1ef032db2eb5fd631913`，逐字节相同——那一轮只动了 `wifi-blobs`、`radio-coex`、
+`ble-802154` 与合并镜像，都不在默认镜像里。收尾时把板子刷回的就是这一份（读回校验通过）；自检 7/8，没过的是 `net_ethernet`
+的 `rx loopback frame`，原因是板子的网线没接（`link: no partner after 5s`、`phy-link: up=0`）——同一条在
+`logs/e2e-net-boot.log` 里（网线接着）是 `ok=1`。
+
 ## 容量（L2）
 
 `3194bf6` 与本轮改动后各跑一次 `scripts/check-capacity.py`，取其表格相减：
