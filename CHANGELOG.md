@@ -203,12 +203,19 @@
   - 主机用例 2064 → 2068（`bt-blobs` 67 → 69、`radio-coex` 55 → 57）：`tests/baselines.json` 与三处前门数字一起抬。
 - **工作站自己的静态 tcpdump（2026-11-27）**：装之前工作站上没有 tcpdump（当时 `command -v tcpdump` 为空）。
   `tools/ap-side/build-tcpdump.sh` 加了 `TARGET=`——默认仍是路由器的 `aarch64-linux-musl`，产物与原来逐字节相同
-  （sha256 `44126186…`）；`TARGET=x86_64-linux-musl` 编出的静态二进制（1 436 896 字节）装到 `~/.local/bin/tcpdump`
-  （sha256 `d2cd67c6…`，`rm` 即卸载），源码目录两个目标共用。验证：`tcpdump --version` 打印 4.99.6，`-D` 列出接口；
+  （sha256 `44126186…`）；`TARGET=x86_64-linux-musl` 编出的静态二进制（当时 1 436 896 字节，sha256 `d2cd67c6…`）装到 `~/.local/bin/tcpdump`
+  （`rm` 即卸载），源码目录两个目标共用。验证：`tcpdump --version` 打印 4.99.6，`-D` 列出接口；
   root 下在 `enp0s31f6` 上抓到一帧（ICMP echo request，本机 → 路由器）。
   2026-11-27 复查：登录 shell（bash）与 `sudo` 下 `command -v tcpdump` 都解析到 `~/.local/bin/tcpdump`；路由器上
   `/usr/bin/tcpdump` 在登录 shell 里也找得到，两台机器各抓到一帧。写文件也验了：对着本机 8031 端口的一个监听器，
   `tcpdump -i lo -nn tcp port 8031 -c 60 -w <文件>` 原样可跑（60 帧抓到、0 丢），`-r` 读回 60 行。
+  当晚换成了带蓝牙监视接口的那一份：`build-tcpdump.sh` 加了 `BLUEZ_INCLUDE`（libpcap 编译时带上 bluez 的头文件
+  `bluetooth/bluetooth.h` 与 `bluetooth/hci.h`，取法 `nix build nixpkgs#bluez.dev`），产物 1 441 504 字节、sha256 `218e5696…`，
+  root 下 `-D` 多出 `bluetooth0` 与 `bluetooth-monitor`；`-i bluetooth-monitor -w` 记了 9 秒 HCI 流（484 包，
+  BLUETOOTH_LINUX_MONITOR），但 `-r` 读回只有 `UNSUPPORTED` 加十六进制（tcpdump 不打印这种链路类型），命令行上看内容仍用 btmon。
+  pcap 交给 tshark 4.6.10（`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli`）读回能解出 LE Extended Advertising
+  Report 的地址类型、RSSI 与广播数据（另抓的 8 秒 74 包里有 17 条）。
+  不带 `BLUEZ_INCLUDE` 的路由器路径不变：重编一次仍是 sha256 `44126186…`。网口抓帧（`enp0s31f6`、`lo`）在新二进制上各复验一次。
 - **最小合并镜像的构建入口 `scripts/build-coex-link-image.sh`（2026-11-27）**：从 IDF 的归档重新生成三份对象集合（此前只在
   /tmp 里），只编 `coex_merged` 这一段，断言两段镜像，打印体积与归属（`BREAKDOWN=1`）。`BLE=1` 时 1 224 304 B（factory
   分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。

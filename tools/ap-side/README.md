@@ -19,10 +19,13 @@
 # 1) 编（约 20 秒；需要 zig、flex 与 bison——PATH 里没有就用 nix 取）
 sh tools/ap-side/build-tcpdump.sh                      # -> /tmp/ap-side/out/tcpdump
 #
-#    工作站自己没有 tcpdump 时，同一个脚本换个 TARGET 再编一份给自己（只给当前用户装，rm 即卸载；~/.local/bin 要在 PATH 里）：
-env -u LD_LIBRARY_PATH TARGET=x86_64-linux-musl sh tools/ap-side/build-tcpdump.sh   # -> /tmp/ap-side/out/x86_64-linux-musl/tcpdump
+#    工作站自己没有 tcpdump 时，同一个脚本换个 TARGET 再编一份给自己（只给当前用户装，rm 即卸载；~/.local/bin 要在 PATH 里）。
+#    要能抓蓝牙 HCI（`-i bluetooth-monitor`）就再带上 bluez 的头文件：libpcap 只有在编译时找得到 bluetooth/bluetooth.h
+#    才会编进监视接口；不带 BLUEZ_INCLUDE 的产物认不得这个接口。
+BI=$(nix build nixpkgs#bluez.dev --no-link --print-out-paths)/include
+env -u LD_LIBRARY_PATH TARGET=x86_64-linux-musl BLUEZ_INCLUDE=$BI sh tools/ap-side/build-tcpdump.sh   # -> /tmp/ap-side/out/x86_64-linux-musl/tcpdump
 install -m 755 /tmp/ap-side/out/x86_64-linux-musl/tcpdump ~/.local/bin/tcpdump
-#    在本机网口上抓帧要 root（CAP_NET_RAW）；列接口（-D）与 --version 不需要
+#    在本机网口上抓帧要 root（CAP_NET_RAW）；列接口（-D）与 --version 不需要。蓝牙 HCI 抓下来是 pcap，读法见「蓝牙一侧」。
 
 # 2) 传到路由器上，装成标准名字 tcpdump（持久的：约占 1.4 MB 的 overlay 空间；卸载就是 rm 这一个文件）。
 #    只放到内存盘 /tmp 的话路由器一重启就没了，而且在路由器上敲 tcpdump 会是 not found。
@@ -47,8 +50,10 @@ python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 哪一份被用了，采集输出里有一行 `tcpdump: <路径> (<版本>)`。
 
 2026-11-27 的实际状态：测试用的那台路由器上已经装在 `/usr/bin/tcpdump`，sha256 `4412618629482af45397b3886c931f402266bcf2aad29e33dab925db5a9e566a`，
-与工作站的构建产物一致；内存盘上另有一份 `/tmp/r5c-tcpdump`。工作站（x86_64）上装在 `~/.local/bin/tcpdump`
-（sha256 `d2cd67c68e806cc35ad69b1a3ffb0171a720e2da35ad75571f61c0a6d079f916`），用它在本机网口上抓到过一帧。
+与不带 BLUEZ_INCLUDE 的默认构建产物一致（脚本加了 BLUEZ_INCLUDE 之后重编过一次，逐字节相同）；内存盘上另有一份
+`/tmp/r5c-tcpdump`。工作站（x86_64）上装在 `~/.local/bin/tcpdump`（带蓝牙监视接口的那一份，sha256
+`218e5696dd8600016d40975b32cd4793000bb0c95b94dfdd6d0843d812f8e4e8`，1 441 504 字节），用它在本机网口上抓到过一帧。
+不带 BLUEZ_INCLUDE 的旧版本 sha256 `d2cd67c6…` 已被替换。
 
 登录需要路由器的 root 密码（问用户）。工作站要在这台 AP 的 LAN 里（网线接 LAN 口；板子的以太网线这时是拔的），
 默认路由留在原来的网卡上，别让登 AP 这条线抢默认路由。
@@ -82,9 +87,15 @@ python3 tools/ap-side/btmon-summary.py /tmp/btmon.txt 02:00:00:00:BB:01 --raw
 - 上报很稀（2026-11-27 一轮 56 秒里板子只有 20 次，原因没有查），所以间隔要用「每一段都是广播间隔加 advDelay 的整数倍」
   来判，不能只看相邻两条的平均。`--raw` 的逐条输出只有板子的时间、RSSI、PDU 类型，可以直接入库。
 - 原始的 btmon 输出里有每一个邻居的广告（地址与广播数据原文），不入库；要 PDU 原文就只摘板子地址的那几块。
-- 走不通的三条，别再试：自编的静态 tcpdump 认不得 bluetooth-monitor 接口（libpcap 编译时没有 bluez 头文件）；bluetoothd
-  在管着控制器时用 `hcitool` 直接发 LE 扫描命令回 0x12；HCI 用户通道（要先 `bluetoothctl power off`）打开之后，这台
-  Intel 控制器对 LE Set Scan Param / Enable 回 0x12、对 Intel Read Version 回 0x01——没有经过 btusb / btintel 的厂商初始化。
+- 走不通的三条，别再试：bluetoothd 在管着控制器时用 `hcitool` 直接发 LE 扫描命令回 0x12；HCI 用户通道（要先
+  `bluetoothctl power off`）打开之后，这台 Intel 控制器对 LE Set Scan Param / Enable 回 0x12、对 Intel Read Version
+  回 0x01——没有经过 btusb / btintel 的厂商初始化；默认构建的 tcpdump 认不得 bluetooth-monitor 接口。
+- tcpdump 也能记 HCI 了（带 BLUEZ_INCLUDE 编的那一份）：`sudo tcpdump -i bluetooth-monitor -n -s 256 -w <文件>`
+  把同一条监视流写成 pcap（链路类型 BLUETOOTH_LINUX_MONITOR；2026-11-27 对着邻居试过，9 秒 484 包）。它自己不打印
+  这种链路类型——`-r` 读回只有 `UNSUPPORTED` 加十六进制，所以命令行上看内容还是用 btmon；pcap 交给 Wireshark / tshark
+  （`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli -c tshark …`，不先去掉 `LD_LIBRARY_PATH` 它起不来）：tshark 4.6.10
+  读回，按 `bthci_evt.le_meta_subevent == 0x0d` 过滤就是一条条 LE Extended Advertising Report（地址类型、RSSI、广播数据都在）。
+  pcap 里有每一个邻居的广告原文，不入库。
 - 证据：`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`（两条广播上报的原文：PDU 类型、地址类型、广播数据、RSSI）、
   `logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`（间隔：19 段都是 100 ms 加 advDelay 的整数倍）。
 

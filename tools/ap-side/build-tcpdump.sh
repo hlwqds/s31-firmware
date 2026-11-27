@@ -7,6 +7,10 @@
 # 用法：sh tools/ap-side/build-tcpdump.sh [输出目录]
 #       默认输出目录：路由器那份是 /tmp/ap-side/out；别的目标是 /tmp/ap-side/out/<目标>。
 #       TARGET=x86_64-linux-musl sh tools/ap-side/build-tcpdump.sh          # 工作站用的那一份
+#       BLUEZ_INCLUDE=<含 bluetooth/ 的 include 目录> TARGET=x86_64-linux-musl sh tools/ap-side/build-tcpdump.sh
+#           带蓝牙 HCI 监视接口的那一份（`tcpdump -i bluetooth-monitor`）；取头文件：
+#           `BLUEZ_INCLUDE=$(nix build nixpkgs#bluez.dev --no-link --print-out-paths)/include`。不带它编出的 tcpdump 认不得
+#           bluetooth-monitor 接口。路由器那份不需要，默认路径不变（产物逐字节不变）。
 # 前置：zig >= 0.14（$ZIG，默认 /tmp/bin/zig 或 PATH 里的 zig）；flex 与 bison——PATH 里没有就用
 #       `nix shell nixpkgs#flex nixpkgs#bison` 取（NIX_SHELL=0 关掉）；能访问 www.tcpdump.org（直连不通就设
 #       AP_SRC_PROXY=http://127.0.0.1:7897 一类的代理）。整个构建在一台 8 线程的机器上约 20 秒。
@@ -20,6 +24,17 @@ OUTDIR=${1:-}
 SRC=${SRC_DIR:-/tmp/ap-side/build/src}
 X=${BUILD_DIR:-/tmp/ap-side/build}
 [ "$TARGET" = aarch64-linux-musl ] || X=${BUILD_DIR:-/tmp/ap-side/build-$TARGET}
+
+# 工作站那份的蓝牙一侧：libpcap 只有在编译时找得到 bluez 的头文件（bluetooth/bluetooth.h 与 bluetooth/hci.h）才会带
+# pcap-bt-monitor-linux.c——`tcpdump -i bluetooth-monitor` 抓的就是 HCI 事件（蓝牙广播上报在里面）。
+BLUEZ_INCLUDE=${BLUEZ_INCLUDE:-}
+LIBPCAP_CFLAGS="-O2 -fno-ident"
+LIBPCAP_BT_OPTS=""
+if [ -n "$BLUEZ_INCLUDE" ]; then
+    { [ -f "$BLUEZ_INCLUDE/bluetooth/bluetooth.h" ] && [ -f "$BLUEZ_INCLUDE/bluetooth/hci.h" ]; } || { echo "BLUEZ_INCLUDE 里没有 bluetooth/bluetooth.h 与 bluetooth/hci.h: $BLUEZ_INCLUDE"; exit 1; }
+    LIBPCAP_CFLAGS="-O2 -fno-ident -I$BLUEZ_INCLUDE"
+    LIBPCAP_BT_OPTS="--enable-bluetooth"
+fi
 ZIG=${ZIG:-}
 [ -n "$ZIG" ] || { [ -x /tmp/bin/zig ] && ZIG=/tmp/bin/zig || ZIG=$(command -v zig); }
 SYSROOT=$X/sysroot
@@ -60,12 +75,12 @@ cat > "$BUILD" <<INNER
 set -eu
 export PATH="$X/bin:\$PATH"
 export CC="$TARGET-gcc" AR="$TARGET-ar" RANLIB="$TARGET-ranlib" STRIP="$TARGET-strip"
-export CFLAGS="-O2 -fno-ident" PKG_CONFIG="\$(command -v false)"
+export CFLAGS="$LIBPCAP_CFLAGS" PKG_CONFIG="\$(command -v false)"
 cd "$SRC/libpcap-$LIBPCAP_VER"
 ./configure --host="$TARGET" --prefix="$SYSROOT" \\
     --disable-shared --enable-static --without-libnl --disable-dbus --without-dag \\
     --without-septel --without-snf --without-turbocap --without-libibverbs --without-rdma --disable-usb \\
-    ac_cv_linux_vers=2 "ac_cv_lib_lex=none needed" ac_cv_prog_lex_yytext_pointer=yes > "$X/libpcap-configure.log" 2>&1 || { echo "libpcap configure 失败"; tail -20 "$X/libpcap-configure.log"; exit 1; }
+    ac_cv_linux_vers=2 "ac_cv_lib_lex=none needed" ac_cv_prog_lex_yytext_pointer=yes $LIBPCAP_BT_OPTS > "$X/libpcap-configure.log" 2>&1 || { echo "libpcap configure 失败"; tail -20 "$X/libpcap-configure.log"; exit 1; }
 make -j$JOBS > "$X/libpcap-make.log" 2>&1 && make install >> "$X/libpcap-make.log" 2>&1 || { echo "libpcap make 失败"; tail -20 "$X/libpcap-make.log"; exit 1; }
 cd "$SRC/tcpdump-$TCPDUMP_VER"
 ./configure --host="$TARGET" --prefix="$SYSROOT" --without-crypto --without-smi --without-cap \\
@@ -90,6 +105,11 @@ esac
 [ -z "$MACH" ] || readelf -h "$OUTDIR/tcpdump" | grep -q "Machine:.*$MACH" || { echo "产物的机器类型不是 $TARGET"; exit 1; }
 [ "$(readelf -l "$OUTDIR/tcpdump" | grep -c INTERP)" = 0 ] || { echo "产物不是静态链接（有 INTERP）"; exit 1; }
 readelf -d "$OUTDIR/tcpdump" 2>&1 | grep -q 'no dynamic section' || { echo "产物有动态段"; exit 1; }
+if [ -n "$BLUEZ_INCLUDE" ]; then
+    grep -q 'Bluetooth sniffing is supported' "$X/libpcap-configure.log" || { echo "libpcap 没有编进蓝牙支持（configure 日志里没有 \"Bluetooth sniffing is supported\"）"; exit 1; }
+    grep -q -a 'bluetooth-monitor' "$OUTDIR/tcpdump" || { echo "产物里没有 bluetooth-monitor 接口"; exit 1; }
+    echo "bluetooth-monitor: 已编入（libpcap 带 pcap-bt-monitor-linux.c；抓的时候要 root）"
+fi
 echo "tcpdump: $OUTDIR/tcpdump  $(stat -c %s "$OUTDIR/tcpdump") 字节  sha256 $(sha256sum "$OUTDIR/tcpdump" | cut -c1-64)"
 case $TARGET in
     aarch64-*) echo "装到路由器（持久）：ssh root@<AP> 'cat > /tmp/tcpdump.new && chmod 755 /tmp/tcpdump.new && mv /tmp/tcpdump.new /usr/bin/tcpdump' < $OUTDIR/tcpdump" ;;
