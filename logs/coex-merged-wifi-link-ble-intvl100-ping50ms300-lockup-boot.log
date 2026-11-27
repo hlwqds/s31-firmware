@@ -2248,7 +2248,7 @@ check: ble adv commands status params=0 data=0 enable=0 ok=1
 check: ble synth lock seen (106735/106735 polls, first after 15968 us) ok=1
 check: ble status word non-zero while advertising (0x0001; the controller's set/clear to the core, mirrored) ok=1
 bt adv: send 0x2014 plen=5 (from the sender task)
-FR [sp..+64) = 30303030,7320000a,615f3074,72657466,3078303d,72203b30,343d6c65,5f6e6520 | 6f666562,303d6572,31747320,6665625f,3d65726f,74732030,65625f30,65726f66
+[REDACTED] FR [sp..+64) = (stack dump)
 !! c_mepc=0x30303030 c_mtval=0x30303030 c_ms=0x80007881 c_ra=0x30303030 f_mepc=0x30303030 f_sp=0x2f06f920 c_ra_saved=0x72657466 cause=0x1 step=20 ¾ôSP-ROM:esp32s31-20251218
 Build:Dec 18 2025
 rst:0x1a (CPU_LOCKUP_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)
@@ -4506,7 +4506,7 @@ check: ble adv commands status params=0 data=0 enable=0 ok=1
 check: ble synth lock seen (106534/106534 polls, first after 15990 us) ok=1
 check: ble status word non-zero while advertising (0x0001; the controller's set/clear to the core, mirrored) ok=1
 bt adv: send 0x2014 plen=5 (from the sender task)
-FR [sp..+64) = 30303030,7320000a,615f3074,72657466,3078303d,72203b30,343d6c65,5f6e6520 | 6f666562,303d6572,31747320,6665625f,3d65726f,74732030,65625f30,65726f66
+[REDACTED] FR [sp..+64) = (stack dump)
 !! c_mepc=0x30303030 c_mtval=0x30303030 c_ms=0x80007881 c_ra=0x30303030 f_mepc=0x30303030 f_sp=0x2f06f920 c_ra_saved=0x72657466 cause=0x1 step=20 ¾ôSP-ROM:esp32s31-20251218
 Build:Dec 18 2025
 rst:0x1a (CPU_LOCKUP_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)
@@ -6774,7 +6774,7 @@ check: ble adv commands status params=0 data=0 enable=0 ok=1
 check: ble synth lock seen (106533/106533 polls, first after 15998 us) ok=1
 check: ble status word non-zero while advertising (0x0001; the controller's set/clear to the core, mirrored) ok=1
 bt adv: send 0x2014 plen=5 (from the sender task)
-FR [sp..+64) = 30303030,7320000a,615f3074,72657466,3078303d,72203b30,343d6c65,5f6e6520 | 6f666562,303d6572,31747320,6665625f,3d65726f,74732030,65625f30,65726f66
+[REDACTED] FR [sp..+64) = (stack dump)
 !! c_mepc=0x30303030 c_mtval=0x30303030 c_ms=0x80007881 c_ra=0x30303030 f_mepc=0x30303030 f_sp=0x2f06f920 c_ra_saved=0x72657466 cause=0x1 step=20 ¾ôSP-ROM:esp32s31-20251218
 Build:Dec 18 2025
 rst:0x1a (CPU_LOCKUP_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)
@@ -9044,7 +9044,7 @@ check: ble adv commands status params=0 data=0 enable=0 ok=1
 check: ble synth lock seen (106755/106755 polls, first after 16001 us) ok=1
 check: ble status word non-zero while advertising (0x0001; the controller's set/clear to the core, mirrored) ok=1
 bt adv: send 0x2014 plen=5 (from the sender task)
-FR [sp..+64) = 30303030,7320000a,615f3074,72657466,3078303d,72203b30,343d6c65,5f6e6520 | 6f666562,303d6572,31747320,6665625f,3d65726f,74732030,65625f30,65726f66
+[REDACTED] FR [sp..+64) = (stack dump)
 !! c_mepc=0x30303030 c_mtval=0x30303030 c_ms=0x80007881 c_ra=0x30303030 f_mepc=0x30303030 f_sp=0x2f06f920 c_ra_saved=0x72657466 cause=0x1 step=20 ¾ôSP-ROM:esp32s31-20251218
 Build:Dec 18 2025
 rst:0x1a (CPU_LOCKUP_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)

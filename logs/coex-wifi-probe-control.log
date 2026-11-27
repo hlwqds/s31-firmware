@@ -536,7 +536,7 @@ wifi-init-probe: LPCON_CLK_CONF 0x7 -> 0x7
 wifi-init-probe: rst_wifibb pulse 0x0 -> 0x0
 wifi-init-probe: gated reset (clk off -> rst -> on): mac=0x0000e000
 wifi-init-probe: pre-start mac=0x0000e000, clearing 0xE000
-FR [sp..+64) = 6e3310bb,202a5392,bf090088,0,0,0,0,0 | 0,0,20104400,3,20105000,201044c0,201044ec,201047c0
+[REDACTED] FR [sp..+64) = (stack dump)
 !! c_mepc=0x4004c70a c_mtval=0x0000e030 c_ms=0x80007881 c_ra=0x4004c702 f_mepc=0x4004c70a f_sp=0x2f07aca0 c_ra_saved=0x00000000 cause=0x7 step=0 none da=0x0 db=0x47589736 dc=0 dd=0 dh=0 df=0x80000937 dg=0x0 di=0x0 dj=0x0 gm=0x0 gn=0x0
 SL sj=0x00000000 sv=0x00000000 want=0x4004c70a sn=0 sl=0x400a0300 mw=0x0513cac5
 NB 420=4b0e62a8 424=64f4085b 428=18a6c133 42c=a0ce5ce1 430=f1989cb7 434=210e18ac 438=690c1279 43c=c1d4b31f | 440=2693fd4a 444=75addcaa 448=a25a23e6 44c=c858e36f 450=d07413e3 454=af826ec1 458=cdac53e1 45c=7a2c6f6d
@@ -552,7 +552,7 @@ panic: exception code=7 (store access fault) cause=0x38000007
 panic: ra=0x4004c702 a0=0x20105000 a1=0x2f005b0c a2=0x271
 panic: live mepc=0x4004c70a mtval=0xe030
 panic: sp=0x2f07aca0 s0=0xe000 s1=0x0
-panic: regs a3=0x6f8d a4=0x7d0001 a5=0x2f0297d0 a6=0x2f0297d0 a7=0x3b
-panic: callframe +8=0xbf090088 +12=0x0
-panic: tregs t0=0x2038a000 t1=0xa t2=0x2038a000 t3=0xfe0000 t4=0x16 t5=0x4004f1a0 t6=0x400505f0
+[REDACTED] panic: regs (dump)
+[REDACTED] panic: callframe (dump)
+[REDACTED] panic: tregs (dump)
 panic: halted (wfi)
