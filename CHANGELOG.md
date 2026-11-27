@@ -214,18 +214,22 @@
   `bluetooth-monitor`。光认得接口还不够——tcpdump 4.99 起不再解任何蓝牙包，监视流读回来只有 `UNSUPPORTED` 加十六进制——所以
   同一份构建再打上 `tools/ap-side/tcpdump-4.99.6-bt-monitor.patch`（只在带 BLUEZ_INCLUDE 时打）：给 tcpdump 加一个 Bluetooth
   Linux Monitor 的打印机，把监视流打成一行一条（适配器号与 opcode、HCI 命令、命令完成、LE 广播上报的 PDU 类型 / 地址类型 /
-  地址 / 广播数据 / RSSI；其余的包一行摘要，`-x` 看字节）。补丁对纯净的 4.99.6 源码能干净地打上。最终产物 1 450 160 字节、
-  sha256 `37034110…`（中间一版 `218e5696…` 认得接口但不打印，已替换）。
+  地址 / 广播数据 / RSSI；其余的包一行摘要，`-x` 看字节）。补丁对纯净的 4.99.6 源码能干净地打上，只新增代码（459 行，版权头没动）。
+  打印机有一份回归样例 `tools/ap-side/bt-monitor-sample.pcap` 与它的 20 行期望输出（`bt-monitor-sample.expected.txt`），
+  重编之后 `diff` 一遍。最终产物 1 450 096 字节、sha256 `be8a4fde…`（中间两版已被替换：`218e5696…` 认得接口但不打印；
+  `37034110…` 打印，但系统提示那两行的行末多带一个 `\x00`——内核的提示文本以 NUL 结尾，后来改成遇到 NUL 就停）。
   `tools/ap-side/pcap-bt-adv.py` 按板子地址汇总 LE 广播上报（打印的行与 `btmon-summary.py` 相同，`--slot-ms` 逐段核对间隔）：
   输入可以是 pcap（文件格式逐条对过 tshark 4.6.10），也可以是 tcpdump 打印的行（`--tcpdump-text`），后者把板子地址的行
   grep 出来就能入库并重算。
-  量了两轮（合并镜像 `-Dcoex-ble-adv`，板侧都是 27/27）。ble-adv16 用不打印的那一版记 pcap：145 秒 2841 包里板子地址 47 条上报、
+  量了三轮（合并镜像 `-Dcoex-ble-adv`，板侧都是 27/27）。ble-adv16 用不打印的那一版记 pcap：145 秒 2841 包里板子地址 47 条上报、
   40.7 秒，46 段相邻间隔里 45 段是「100 ms + 0–10 ms advDelay」的整数倍（剩下一段 110.0 ms 压在上界），汇总
-  `logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`。ble-adv17 用带打印机的那一版：2722 包里直接打印出板子地址 42 行、
-  41.5 秒，41 段相邻间隔全部是 100–110 ms 的整数倍，按 200 ms 只有 10 段有解；同一轮记的 pcap 里也是 42 条，间隔逐段相同
-  （差不超过 1 微秒）。两轮的 RSSI 中位都是 -51 dBm，PDU 类型（`ADV_NONCONN_IND`）、地址类型、广播数据（Flags 0x06 加名字 s31）
-  与 btmon 那一轮相同，空口间隔仍是 100 ms；入库的是板子地址的那 42 行与由它们重算的读数
-  `logs/coex-merged-wifi-link-ble-adv17-tcpdump-print.txt`。完整的输出与 pcap 里有邻居的广告原文，不入库。
+  `logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`。ble-adv17 用带打印机的那一版（sha256 `37034110…`）：2722 包里直接
+  打印出板子地址 42 行、41.5 秒，41 段相邻间隔全部是 100–110 ms 的整数倍，按 200 ms 只有 10 段有解；同一轮记的 pcap 里也是
+  42 条，间隔逐段相同（差不超过 1 微秒）。ble-adv18 用装着的这一版（sha256 `be8a4fde…`）：1817 包里 45 行、41.1 秒，44 段
+  全部是 100–110 ms 的整数倍，按 200 ms 只有 11 段有解，同一轮的 pcap 读数统计逐行相同。三轮的 RSSI 中位依次是 -51、-51、
+  -49 dBm，PDU 类型（`ADV_NONCONN_IND`）、地址类型、广播数据（Flags 0x06 加名字 s31）与 btmon 那一轮相同，空口间隔仍是
+  100 ms；入库的是板子地址的那些行与由它们重算的读数 `logs/coex-merged-wifi-link-ble-adv17-tcpdump-print.txt`、
+  `logs/coex-merged-wifi-link-ble-adv18-tcpdump-print.txt`。完整的输出与 pcap 里有邻居的广告原文，不入库。
   不带 `BLUEZ_INCLUDE` 的路由器路径不变：补丁不打，重编仍是 sha256 `44126186…`，产物里没有打印机。网口抓帧在最终二进制上
   复验：`enp0s31f6` 上 1 帧 ICMP，`lo` 上 `-c 60 -w` 抓到 60 帧丢 0、`-r` 读回 60 行。逐层看包仍可用 tshark 4.6.10
   （`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli`，不去掉 `LD_LIBRARY_PATH` 它起不来）。

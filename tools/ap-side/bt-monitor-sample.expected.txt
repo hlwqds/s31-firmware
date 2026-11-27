@@ -1,0 +1,20 @@
+0.000000 adapter 65535, System Note: Linux version 6.18.51 (x86_64)
+0.100000 adapter 0, New Index: hci0 (type 0, bus UART, address 02:00:00:00:bb:01)
+0.200000 adapter 0, HCI Command: LE Set Advertising Parameters (0x2006) plen 15
+0.300000 adapter 0, HCI Event: Command Complete (0x0e): LE Set Advertising Parameters (0x2006), status 0x00
+0.400000 adapter 0, HCI Command: LE Set Advertising Data (0x2008) plen 32
+0.500000 adapter 0, HCI Event: Command Complete (0x0e): LE Set Advertising Data (0x2008), status 0x00
+0.600000 adapter 0, HCI Command: LE Set Advertising Enable (0x200a) plen 1
+0.700000 adapter 0, HCI Event: Command Complete (0x0e): LE Set Advertising Enable (0x200a), status 0x00
+0.800000 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+0.900000 adapter 0, HCI Event: LE Advertising Report (0x3e/0x02): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -57 dBm
+1.000000 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, SCAN_RSP Random c2:00:00:00:bb:02, adv data 10 B, Complete Local Name "s31-scan", rssi n/a
+1.100000 adapter 0, User Logging: 13 B
+1.200000 adapter 65535, Control Event: 13 B
+1.300000 adapter 0, HCI Event: Encryption Change (0x08) plen 3
+1.400000 adapter 0, HCI Event: LE Meta (0x3e): LE Scan Timeout (0x11) plen 1
+1.500000 adapter 0, ACL Tx Packet: handle 11, pb 2, 8 B
+1.600000 adapter 0, HCI Command: opcode (0x0c1a) plen 1
+1.700000 adapter 0, HCI Event: Command Status (0x0f): opcode (0x0c1a), status 0x00
+1.800000 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report [|bt_monitor]
+1.900000 adapter 0, Close Index: 9 B

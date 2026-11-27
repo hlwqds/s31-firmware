@@ -22,7 +22,7 @@
  #endif
 --- a/print-bt.c
 +++ b/print-bt.c
-@@ -67,3 +67,457 @@
+@@ -67,3 +67,458 @@
  		ND_DEFAULTPRINT(p, caplen);
  }
  #endif
@@ -384,7 +384,7 @@
 +	nd_print_trunc(ndo);
 +}
 +
-+/* Text of a system note or user logging record, with non-printables escaped. */
++/* Text of a system note: NUL-terminated, with non-printables escaped; nothing after the NUL is printed. */
 +static void
 +bt_text_print(netdissect_options *ndo, const u_char *p, u_int len)
 +{
@@ -392,6 +392,8 @@
 +
 +	for (i = 0; i < len; i++) {
 +		c = GET_U_1(p + i);
++		if (c == 0)
++			break;		/* the terminator; what follows is padding */
 +		if (c == '\n')
 +			ND_PRINT("\\n");
 +		else if (c >= 0x20 && c < 0x7f)
@@ -465,8 +467,7 @@
 +		ND_PRINT("%s: handle %u, pb %u, %u B", tok2str(bt_mon_opcode, "opcode %u", opcode),
 +			 o & 0x0fff, (o >> 12) & 0x3, GET_LE_U_2(p + 2));
 +		break;
-+	case 12:	/* System Note: text */
-+	case 13:	/* User Logging: text */
++	case 12:	/* System Note: NUL-terminated text */
 +		ND_PRINT("%s: ", tok2str(bt_mon_opcode, "opcode %u", opcode));
 +		bt_text_print(ndo, p, caplen);
 +		break;

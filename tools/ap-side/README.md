@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `build-tcpdump.sh` | 工作站 | 用 `zig cc -target aarch64-linux-musl` 编 libpcap 1.10.5 与 tcpdump 4.99.6，静态链接，约 1.4 MB；`TARGET=x86_64-linux-musl` 给工作站自己编一份，带 `BLUEZ_INCLUDE` 的那一份认得 `bluetooth-monitor` 接口，并给 tcpdump 打上下一个补丁 |
 | `tcpdump-4.99.6-bt-monitor.patch` | 工作站（构建时打） | 给 tcpdump 4.99.6 加一个 Bluetooth Linux Monitor 的打印机：tcpdump 4.99 起不再解任何蓝牙包，监视流读回来只有 `UNSUPPORTED` 加十六进制。补丁打成一行一条（适配器号与 opcode、HCI 命令、命令完成、LE 广播上报的 PDU 类型 / 地址类型 / 地址 / 广播数据 / RSSI），其余的包一行摘要，`-x` 看字节。只在带 `BLUEZ_INCLUDE` 的构建里打 |
+| `bt-monitor-sample.pcap`、`bt-monitor-sample.expected.txt` | 工作站 | 打印机的回归样例：20 条已知内容的监视流记录（系统提示、新适配器、三条广播命令与各自的完成、板子地址的一条扩展上报与一条旧式上报、一条扫描响应、其余各类各一条、一条被截断的；地址只有板子的和一个编造的），以及带打印机补丁的 tcpdump 用 `-tt -n -r` 打出来的 20 行。重编之后 `diff` 一遍，见下文「用法」 |
 | `collect.sh` | 路由器 | 跟随系统日志、每秒读站点统计、tcpdump 抓帧的文字摘要；`MON` 模式临时建 monitor 接口抓 802.11 帧 |
 | `frames.py` | 工作站 | 把 monitor 抓到的帧整理成一行一帧，时间换算成本机时间 |
 | `redact.py` | 工作站 | 入库前的脱敏：邻居的 SSID / BSSID 换成标签（板侧日志与帧清单都能用），自检残留 |
@@ -28,7 +29,9 @@ sh tools/ap-side/build-tcpdump.sh                      # -> /tmp/ap-side/out/tcp
 BI=$(nix build nixpkgs#bluez.dev --no-link --print-out-paths)/include
 env -u LD_LIBRARY_PATH TARGET=x86_64-linux-musl BLUEZ_INCLUDE=$BI sh tools/ap-side/build-tcpdump.sh   # -> /tmp/ap-side/out/x86_64-linux-musl/tcpdump
 install -m 755 /tmp/ap-side/out/x86_64-linux-musl/tcpdump ~/.local/bin/tcpdump
-#    在本机网口上抓帧要 root（CAP_NET_RAW）；列接口（-D）与 --version 不需要。蓝牙 HCI 抓下来是 pcap，读法见「蓝牙一侧」。
+#    重编之后对一遍打印机的回归样例（20 条已知内容的记录；没有输出就是一致）：
+diff <(tcpdump -tt -n -r tools/ap-side/bt-monitor-sample.pcap 2>/dev/null) tools/ap-side/bt-monitor-sample.expected.txt
+#    在本机网口上抓帧要 root（CAP_NET_RAW）；列接口（-D）与 --version 不需要。蓝牙 HCI 流这一份自己会打印，见「蓝牙一侧」。
 
 # 2) 传到路由器上，装成标准名字 tcpdump（持久的：约占 1.4 MB 的 overlay 空间；卸载就是 rm 这一个文件）。
 #    只放到内存盘 /tmp 的话路由器一重启就没了，而且在路由器上敲 tcpdump 会是 not found。
@@ -55,8 +58,8 @@ python3 tools/ap-side/decode-adv-marker.py adv-marker.bin
 2026-11-27 的实际状态：测试用的那台路由器上已经装在 `/usr/bin/tcpdump`，sha256 `4412618629482af45397b3886c931f402266bcf2aad29e33dab925db5a9e566a`，
 与不带 BLUEZ_INCLUDE 的默认构建产物一致（脚本加了 BLUEZ_INCLUDE 和打印机补丁之后各重编过一次，逐字节相同）；内存盘上另有一份
 `/tmp/r5c-tcpdump`。工作站（x86_64）上装在 `~/.local/bin/tcpdump`（带蓝牙监视接口与打印机的那一份，sha256
-`37034110faff31f58123c348e2c9e4aa00507823c901ffe0a4d061d073b4034b`，1 450 160 字节），用它在本机网口上抓到过一帧。
-更早的两版（sha256 `d2cd67c6…` 不带蓝牙；`218e5696…` 认得接口但不打印）已被替换。
+`be8a4fde6542b0db7b130b59faf3322833eb37bbfcc815a8742e654174831af3`，1 450 096 字节），用它在本机网口上抓到过一帧。
+更早的三版已被替换：`d2cd67c6…` 不带蓝牙；`218e5696…` 认得接口但不打印；`37034110…` 打印，但系统提示那两行的行末多带一个 `\x00`。
 
 登录需要路由器的 root 密码（问用户）。工作站要在这台 AP 的 LAN 里（网线接 LAN 口；板子的以太网线这时是拔的），
 默认路由留在原来的网卡上，别让登 AP 这条线抢默认路由。
@@ -102,16 +105,18 @@ python3 tools/ap-side/btmon-summary.py /tmp/btmon.txt 02:00:00:00:BB:01 --raw
   （加 `--tcpdump-text`）。把写着板子地址的行 grep 出来就能入库，读数可以从入库的行重算。不带补丁的 tcpdump 读这种链路类型
   只有 `UNSUPPORTED` 加十六进制；逐层看包仍可用 tshark 4.6.10（`env -u LD_LIBRARY_PATH nix shell nixpkgs#wireshark-cli -c tshark -r <文件> …`，
   不先去掉 `LD_LIBRARY_PATH` 它起不来）。
-  抓包要在烧录之前起：ble-adv16 那一轮板子在抓包的第 48–89 秒之间被看到。2026-11-27 量了两轮（板侧都是 27/27）：
+  抓包要在烧录之前起：板子在抓包的约第 46–90 秒之间被看到。2026-11-27 用自编 tcpdump 量了三轮（板侧都是 27/27）：
   ble-adv16 用不打印的那一版记 pcap——145 秒 2841 包里板子地址 47 条上报、40.7 秒，46 段相邻间隔里 45 段是
-  「100 ms + 0–10 ms advDelay」的整数倍（剩下一段 110.0 ms 压在上界）；ble-adv17 用带打印机的那一版——2722 包里直接打印出
-  板子地址 42 行、41.5 秒，41 段相邻间隔全部是 100–110 ms 的整数倍，按 200 ms 只有 10 段有解。空口间隔仍是 100 ms，与 btmon
-  那两轮一致；PDU 类型、地址类型、广播数据（Flags 0x06 加名字 s31）相同，RSSI 中位都是 -51 dBm。完整的输出里有每一个邻居的
-  广告原文，不入库，入库的是汇总与板子地址的那些行。
+  「100 ms + 0–10 ms advDelay」的整数倍（剩下一段 110.0 ms 压在上界）；ble-adv17（sha256 `37034110…`）与 ble-adv18（装着的这一版）
+  由 tcpdump 自己直接打印——分别是 2722 包里 42 行、41.5 秒（41 段相邻间隔全部是 100–110 ms 的整数倍）和 1817 包里 45 行、
+  41.1 秒（44 段全部是），按 200 ms 分别只有 10 段和 11 段有解。空口间隔仍是 100 ms，与 btmon 那两轮一致；PDU 类型、地址类型、
+  广播数据（Flags 0x06 加名字 s31）相同，RSSI 中位依次是 -51、-51、-49 dBm。完整的输出里有每一个邻居的广告原文，不入库，
+  入库的是汇总与板子地址的那些行。
 - 证据：`logs/coex-merged-wifi-link-ble-adv14-btmon.txt`（两条广播上报的原文：PDU 类型、地址类型、广播数据、RSSI）、
   `logs/coex-merged-wifi-link-ble-adv15-advinterval.txt`（间隔：19 段都是 100 ms 加 advDelay 的整数倍）、
   `logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`（tcpdump 记的 pcap 的汇总：板子地址的 47 条上报、间隔逐段核对、tshark 的计数）、
-  `logs/coex-merged-wifi-link-ble-adv17-tcpdump-print.txt`（tcpdump 自己打印的板子地址的 42 行，与由它们重算的读数）。
+  `logs/coex-merged-wifi-link-ble-adv17-tcpdump-print.txt`（tcpdump 自己打印的板子地址的 42 行，与由它们重算的读数）、
+  `logs/coex-merged-wifi-link-ble-adv18-tcpdump-print.txt`（装着的这一版打印的 45 行，与由它们重算的读数）。
 
 ## 入库前的规矩
 

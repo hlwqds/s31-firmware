@@ -213,8 +213,9 @@
   把 HCI 监视流记成 pcap（145 秒 2841 包），`tools/ap-side/pcap-bt-adv.py` 读出来：板子地址 47 条上报、40.7 秒，46 段相邻
   间隔里 45 段是 100 ms 加 advDelay 的整数倍，与 btmon 的读数一致（`logs/coex-merged-wifi-link-ble-adv16-tcpdump-pcap.txt`）。
   同一份构建还给 tcpdump 打了打印机补丁（`tools/ap-side/tcpdump-4.99.6-bt-monitor.patch`），ble-adv17 轮它自己把板子地址的
-  42 条上报打成一行一条（41.5 秒，41 段相邻间隔全部是 100 ms 加 advDelay 的整数倍），入库的就是这些行
-  （`logs/coex-merged-wifi-link-ble-adv17-tcpdump-print.txt`）。
+  42 条上报打成一行一条（41.5 秒，41 段相邻间隔全部是 100 ms 加 advDelay 的整数倍）；装着的最终版又量了一轮（ble-adv18：
+  1817 包里 45 行、41.1 秒，44 段全部是），入库的就是这些行（`logs/coex-merged-wifi-link-ble-adv17-tcpdump-print.txt`、
+  `logs/coex-merged-wifi-link-ble-adv18-tcpdump-print.txt`）。
   单独的 BLE 探针修前修后各跑一轮（`logs/bt-probe-clock-union-boot.log`、`logs/bt-probe-bridge-index-boot.log`），逐段相同。
   细目在 `docs/verification/coex-verification.md` §17.5 与 `components/bt-blobs/README.md` 轮 167。
 - **没有过的**：ADR-003「核真的在仲裁」的两条判据——五个硬件定时器在每个时点都是 `en=0`、相隔 1 ms 的两次读数相同；
