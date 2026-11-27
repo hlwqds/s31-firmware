@@ -207,7 +207,8 @@
   （sha256 `d2cd67c6…`，`rm` 即卸载），源码目录两个目标共用。验证：`tcpdump --version` 打印 4.99.6，`-D` 列出接口；
   root 下在 `enp0s31f6` 上抓到一帧（ICMP echo request，本机 → 路由器）。
   2026-11-27 复查：登录 shell（bash）与 `sudo` 下 `command -v tcpdump` 都解析到 `~/.local/bin/tcpdump`；路由器上
-  `/usr/bin/tcpdump` 在登录 shell 里也找得到，两台机器各抓到一帧。
+  `/usr/bin/tcpdump` 在登录 shell 里也找得到，两台机器各抓到一帧。写文件也验了：对着本机 8031 端口的一个监听器，
+  `tcpdump -i lo -nn tcp port 8031 -c 60 -w <文件>` 原样可跑（60 帧抓到、0 丢），`-r` 读回 60 行。
 - **最小合并镜像的构建入口 `scripts/build-coex-link-image.sh`（2026-11-27）**：从 IDF 的归档重新生成三份对象集合（此前只在
   /tmp 里），只编 `coex_merged` 这一段，断言两段镜像，打印体积与归属（`BREAKDOWN=1`）。`BLE=1` 时 1 224 304 B（factory
   分区的 79.7%）。验证镜像只编涉及的 section 的约定写进 ADR-003「验证镜像的最小组成」。
