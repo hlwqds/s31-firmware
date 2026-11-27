@@ -1,0 +1,482 @@
+--- a/netdissect.h
++++ b/netdissect.h
+@@ -532,6 +532,7 @@
+ extern void brcm_tag_if_print IF_PRINTER_ARGS;
+ extern void brcm_tag_prepend_if_print IF_PRINTER_ARGS;
+ extern void bt_if_print IF_PRINTER_ARGS;
++extern void bt_monitor_if_print IF_PRINTER_ARGS;
+ extern void chdlc_if_print IF_PRINTER_ARGS;
+ extern void cip_if_print IF_PRINTER_ARGS;
+ extern void dsa_if_print IF_PRINTER_ARGS;
+--- a/print.c
++++ b/print.c
+@@ -63,6 +63,9 @@
+ #ifdef DLT_BLUETOOTH_HCI_H4_WITH_PHDR
+ 	{ bt_if_print,		DLT_BLUETOOTH_HCI_H4_WITH_PHDR},
+ #endif
++#ifdef DLT_BLUETOOTH_LINUX_MONITOR
++	{ bt_monitor_if_print,	DLT_BLUETOOTH_LINUX_MONITOR },
++#endif
+ #ifdef DLT_C_HDLC
+ 	{ chdlc_if_print,	DLT_C_HDLC },
+ #endif
+--- a/print-bt.c
++++ b/print-bt.c
+@@ -67,3 +67,457 @@
+ 		ND_DEFAULTPRINT(p, caplen);
+ }
+ #endif
++
++#ifdef DLT_BLUETOOTH_LINUX_MONITOR
++
++/*
++ * Linux HCI monitor channel: what the kernel's HCI monitor socket delivers and
++ * what libpcap's pcap-bt-monitor-linux.c saves with this link type.  Each record
++ * is adapter index (2 bytes, network order), opcode (2 bytes, network order)
++ * and the payload.  For HCI packets the payload is the HCI packet without its
++ * type byte: a command is opcode + parameter length + parameters, an event is
++ * event code + parameter length + parameters.
++ *
++ * tcpdump 4.99 no longer dissects HCI, so this prints what BLE advertising
++ * evidence needs - commands, command completion and LE advertising reports - and
++ * one line for everything else; -x shows the bytes of the HCI packet itself.
++ */
++
++#define	BT_MON_HDRLEN		4
++
++/* Opcodes as they are in the capture file (libpcap renumbers a few of them). */
++static const struct tok bt_mon_opcode[] = {
++	{  0, "New Index" },
++	{  1, "Delete Index" },
++	{  2, "HCI Command Packet" },
++	{  3, "HCI Event Packet" },
++	{  4, "ACL Tx Packet" },
++	{  5, "ACL Rx Packet" },
++	{  6, "SCO Tx Packet" },
++	{  7, "SCO Rx Packet" },
++	{  8, "Open Index" },
++	{  9, "Close Index" },
++	{ 10, "Index Info" },
++	{ 11, "Vendor Diagnostic" },
++	{ 12, "System Note" },
++	{ 13, "User Logging" },
++	{ 14, "Control Open" },
++	{ 15, "Control Close" },
++	{ 16, "Control Command" },
++	{ 17, "Control Event" },
++	{ 18, "ISO Tx Packet" },
++	{ 19, "ISO Rx Packet" },
++	{  0, NULL }
++};
++
++static const struct tok bt_dev_bus[] = {
++	{ 0, "virtual" },
++	{ 1, "USB" },
++	{ 2, "PCI" },
++	{ 3, "UART" },
++	{ 4, "BCSP" },
++	{ 5, "SDIO" },
++	{ 6, "SPI" },
++	{ 7, "I2C" },
++	{ 0, NULL }
++};
++
++/* Only the commands an advertising or scanning session exchanges; Core Vol 4 Part E §5.4. */
++static const struct tok bt_hci_cmd[] = {
++	{ 0x0401, "Inquiry" },
++	{ 0x0402, "Inquiry Cancel" },
++	{ 0x0c03, "Reset" },
++	{ 0x0c05, "Set Event Mask" },
++	{ 0x1001, "Read Local Version Information" },
++	{ 0x1002, "Read Local Supported Commands" },
++	{ 0x1003, "Read Local Supported Features" },
++	{ 0x1009, "Read BD ADDR" },
++	{ 0x2001, "LE Set Event Mask" },
++	{ 0x2002, "LE Read Buffer Size [v1]" },
++	{ 0x2003, "LE Read Local Supported Features" },
++	{ 0x2004, "LE Set Random Address" },
++	{ 0x2005, "LE Set Advertising Set Random Address" },
++	{ 0x2006, "LE Set Advertising Parameters" },
++	{ 0x2008, "LE Set Advertising Data" },
++	{ 0x2009, "LE Set Advertising Scan Response Data" },
++	{ 0x200a, "LE Set Advertising Enable" },
++	{ 0x200b, "LE Set Scan Parameters" },
++	{ 0x200c, "LE Set Scan Enable" },
++	{ 0x2036, "LE Set Extended Advertising Parameters" },
++	{ 0x2037, "LE Set Extended Advertising Data" },
++	{ 0x2038, "LE Set Extended Advertising Scan Response" },
++	{ 0x2039, "LE Set Extended Advertising Enable" },
++	{ 0x203a, "LE Read Maximum Advertising Data Length" },
++	{ 0x203b, "LE Read Number of Supported Advertising Sets" },
++	{ 0x203c, "LE Remove Advertising Set" },
++	{ 0x203d, "LE Clear Advertising Sets" },
++	{ 0x2041, "LE Set Extended Scan Parameters" },
++	{ 0x2042, "LE Set Extended Scan Enable" },
++	{  0, NULL }
++};
++
++static const struct tok bt_hci_evt[] = {
++	{ 0x05, "Disconnection Complete" },
++	{ 0x08, "Encryption Change" },
++	{ 0x0e, "Command Complete" },
++	{ 0x0f, "Command Status" },
++	{ 0x13, "Number of Completed Packets" },
++	{ 0x1e, "Hardware Error" },
++	{ 0x3e, "LE Meta" },
++	{ 0xff, "Vendor Specific" },
++	{  0, NULL }
++};
++
++static const struct tok bt_le_meta[] = {
++	{ 0x01, "LE Connection Complete" },
++	{ 0x02, "LE Advertising Report" },
++	{ 0x03, "LE Long Term Key Request" },
++	{ 0x04, "LE Read Remote Used Features Complete" },
++	{ 0x05, "LE Remote Connection Parameter Request" },
++	{ 0x07, "LE Data Length Change" },
++	{ 0x08, "LE Read Local P-256 Public Key Complete" },
++	{ 0x09, "LE Generate DHKey Complete" },
++	{ 0x0a, "LE Enhanced Connection Complete" },
++	{ 0x0b, "LE Direct Advertising Report" },
++	{ 0x0c, "LE PHY Update Complete" },
++	{ 0x0d, "LE Extended Advertising Report" },
++	{ 0x0e, "LE Periodic Advertising Sync Established" },
++	{ 0x0f, "LE Periodic Advertising Report" },
++	{ 0x10, "LE Periodic Advertising Sync Lost" },
++	{ 0x11, "LE Scan Timeout" },
++	{ 0x12, "LE Advertising Set Terminated" },
++	{ 0x13, "LE Connection IQ Report" },
++	{ 0x14, "LE CTE Request Failed" },
++	{ 0x15, "LE PHY Test End" },
++	{  0, NULL }
++};
++
++static const struct tok bt_addr_type[] = {
++	{ 0x00, "Public" },
++	{ 0x01, "Random" },
++	{ 0x02, "Public identity" },
++	{ 0x03, "Random identity" },
++	{  0, NULL }
++};
++
++/* Bluetooth addresses travel least significant byte first. */
++static void
++bt_addr_print(netdissect_options *ndo, const u_char *p)
++{
++	ND_PRINT("%02x:%02x:%02x:%02x:%02x:%02x", GET_U_1(p + 5), GET_U_1(p + 4),
++		 GET_U_1(p + 3), GET_U_1(p + 2), GET_U_1(p + 1), GET_U_1(p));
++}
++
++/* 0x7f is "not available". */
++static void
++bt_rssi_print(netdissect_options *ndo, int rssi)
++{
++	if (rssi == 127)
++		ND_PRINT(", rssi n/a");
++	else
++		ND_PRINT(", rssi %d dBm", rssi);
++}
++
++/* One advertising data structure (Core Vol 3 Part C §11).  Only the common ones are named. */
++static void
++bt_ad_print(netdissect_options *ndo, u_int type, const u_char *p, u_int len)
++{
++	u_int i, c;
++
++	switch (type) {
++	case 0x01:
++		if (len != 1) {
++			ND_PRINT(", Flags (%u B)", len);
++			return;
++		}
++		ND_PRINT(", Flags 0x%02x", GET_U_1(p));
++		return;
++	case 0x08:
++		ND_PRINT(", Shortened Local Name");
++		break;
++	case 0x09:
++		ND_PRINT(", Complete Local Name");
++		break;
++	case 0xff:
++		if (len < 2) {
++			ND_PRINT(", Manufacturer Specific Data (%u B)", len);
++			return;
++		}
++		ND_PRINT(", Manufacturer 0x%04x (%u B)", GET_LE_U_2(p), len - 2);
++		return;
++	default:
++		ND_PRINT(", AD 0x%02x (%u B)", type, len);
++		return;
++	}
++	for (i = 0; i < len; i++)
++		if (GET_U_1(p + i) < 0x20 || GET_U_1(p + i) >= 0x7f)
++			break;
++	if (i < len) {
++		ND_PRINT(" (%u B)", len);
++		return;
++	}
++	ND_PRINT(" \"");
++	for (i = 0; i < len; i++) {
++		c = GET_U_1(p + i);
++		ND_PRINT("%c", (int)c);
++	}
++	ND_PRINT("\"");
++}
++
++static void
++bt_adv_data_print(netdissect_options *ndo, const u_char *p, u_int len)
++{
++	u_int i = 0, l;
++
++	ND_PRINT(", adv data %u B", len);
++	while (i < len) {
++		l = GET_U_1(p + i);
++		i++;
++		if (l == 0) {
++			/* Early Termination: the rest is padding. */
++			ND_PRINT(", [padding %u B]", len - i);
++			return;
++		}
++		if (l > len - i) {
++			ND_PRINT(", [malformed %u B]", len - i + 1);
++			return;
++		}
++		bt_ad_print(ndo, GET_U_1(p + i), p + i + 1, l - 1);
++		i += l;
++	}
++}
++
++/* LE Advertising Report: per report event type, address type, address, data length, data, RSSI. */
++static void
++bt_le_adv_report_print(netdissect_options *ndo, const u_char *p, u_int caplen, u_int plen)
++{
++	static const struct tok adv_type[] = {
++		{ 0x00, "ADV_IND" },
++		{ 0x01, "ADV_DIRECT_IND" },
++		{ 0x02, "ADV_SCAN_IND" },
++		{ 0x03, "ADV_NONCONN_IND" },
++		{ 0x04, "SCAN_RSP" },
++		{ 0x06, "SCAN_RSP" },
++		{  0, NULL }
++	};
++	u_int n, i, dlen;
++
++	if (plen < 1 || caplen < 1)
++		goto trunc;
++	n = GET_U_1(p);
++	i = 1;
++	ND_PRINT(": LE Advertising Report (0x3e/0x02): %u report%s", n, n == 1 ? "" : "s");
++	for (; n > 0; n--) {
++		if (plen - i < 9 || caplen - i < 9)
++			goto trunc;
++		ND_PRINT(", %s %s ", tok2str(adv_type, "type 0x%02x", GET_U_1(p + i)),
++			 tok2str(bt_addr_type, "addr type 0x%02x", GET_U_1(p + i + 1)));
++		bt_addr_print(ndo, p + i + 2);
++		dlen = GET_U_1(p + i + 8);
++		if (plen - i - 9 < dlen + 1 || caplen - i - 9 < dlen + 1)
++			goto trunc;
++		if (dlen)
++			bt_adv_data_print(ndo, p + i + 9, dlen);
++		bt_rssi_print(ndo, GET_S_1(p + i + 9 + dlen));
++		i += 10 + dlen;
++	}
++	return;
++
++trunc:
++	nd_print_trunc(ndo);
++}
++
++/*
++ * LE Extended Advertising Report: per report event type (2), address type,
++ * address, primary and secondary PHY, advertising SID, TX power, RSSI,
++ * periodic advertising interval, direct address type and address, data length,
++ * data.  Controllers leave the Legacy PDU Type bits (10-12) at 0, so a legacy
++ * PDU is named from the connectable, scannable, directed and scan response
++ * bits, the way btmon names it.
++ */
++static void
++bt_le_ext_adv_report_print(netdissect_options *ndo, const u_char *p, u_int caplen, u_int plen)
++{
++	u_int n, i, etype, dlen;
++	const char *pdu;
++
++	if (plen < 1 || caplen < 1)
++		goto trunc;
++	n = GET_U_1(p);
++	i = 1;
++	ND_PRINT(": LE Extended Advertising Report (0x3e/0x0d): %u report%s", n, n == 1 ? "" : "s");
++	for (; n > 0; n--) {
++		if (plen - i < 24 || caplen - i < 24)
++			goto trunc;
++		etype = GET_LE_U_2(p + i);
++		if (!(etype & 0x0010))
++			pdu = (etype & 0x0008) ? "AUX_SCAN_RSP" : "AUX_ADV";
++		else if (etype & 0x0004)
++			pdu = "ADV_DIRECT_IND";
++		else if (etype & 0x0008)
++			pdu = "SCAN_RSP";
++		else if (etype & 0x0001)
++			pdu = "ADV_IND";
++		else if (etype & 0x0002)
++			pdu = "ADV_SCAN_IND";
++		else
++			pdu = "ADV_NONCONN_IND";
++		ND_PRINT(", %s %s ", pdu, tok2str(bt_addr_type, "addr type 0x%02x", GET_U_1(p + i + 2)));
++		bt_addr_print(ndo, p + i + 3);
++		dlen = GET_U_1(p + i + 23);
++		if (plen - i - 24 < dlen || caplen - i - 24 < dlen)
++			goto trunc;
++		if (dlen)
++			bt_adv_data_print(ndo, p + i + 24, dlen);
++		bt_rssi_print(ndo, GET_S_1(p + i + 13));
++		i += 24 + dlen;
++	}
++	return;
++
++trunc:
++	nd_print_trunc(ndo);
++}
++
++/* p points at the first parameter; caplen and plen count the parameters. */
++static void
++bt_event_print(netdissect_options *ndo, const u_char *p, u_int caplen, u_int code, u_int plen)
++{
++	u_int o, sub;
++
++	switch (code) {
++	case 0x0e:	/* Command Complete */
++		if (plen < 3 || caplen < 3)
++			goto trunc;
++		o = GET_LE_U_2(p + 1);
++		ND_PRINT(": Command Complete (0x0e): %s (0x%04x)", tok2str(bt_hci_cmd, "opcode", o), o);
++		if (plen >= 4 && caplen >= 4)
++			ND_PRINT(", status 0x%02x", GET_U_1(p + 3));
++		return;
++	case 0x0f:	/* Command Status */
++		if (plen < 4 || caplen < 4)
++			goto trunc;
++		o = GET_LE_U_2(p + 2);
++		ND_PRINT(": Command Status (0x0f): %s (0x%04x), status 0x%02x",
++			 tok2str(bt_hci_cmd, "opcode", o), o, GET_U_1(p));
++		return;
++	case 0x3e:	/* LE Meta */
++		if (plen < 1 || caplen < 1)
++			goto trunc;
++		sub = GET_U_1(p);
++		switch (sub) {
++		case 0x02:
++			bt_le_adv_report_print(ndo, p + 1, caplen - 1, plen - 1);
++			return;
++		case 0x0d:
++			bt_le_ext_adv_report_print(ndo, p + 1, caplen - 1, plen - 1);
++			return;
++		default:
++			ND_PRINT(": LE Meta (0x3e): %s (0x%02x) plen %u",
++				 tok2str(bt_le_meta, "subevent", sub), sub, plen);
++			return;
++		}
++	default:
++		ND_PRINT(": %s (0x%02x) plen %u", tok2str(bt_hci_evt, "event", code), code, plen);
++		return;
++	}
++
++trunc:
++	nd_print_trunc(ndo);
++}
++
++/* Text of a system note or user logging record, with non-printables escaped. */
++static void
++bt_text_print(netdissect_options *ndo, const u_char *p, u_int len)
++{
++	u_int i, c;
++
++	for (i = 0; i < len; i++) {
++		c = GET_U_1(p + i);
++		if (c == '\n')
++			ND_PRINT("\\n");
++		else if (c >= 0x20 && c < 0x7f)
++			ND_PRINT("%c", (int)c);
++		else
++			ND_PRINT("\\x%02x", c);
++	}
++}
++
++/* A NUL-padded fixed-length name, such as the kernel's 8-byte adapter name. */
++static void
++bt_name_print(netdissect_options *ndo, const u_char *p, u_int len)
++{
++	u_int i, c;
++
++	for (i = 0; i < len; i++) {
++		c = GET_U_1(p + i);
++		if (c == 0)
++			break;
++		if (c >= 0x20 && c < 0x7f)
++			ND_PRINT("%c", (int)c);
++		else
++			ND_PRINT("\\x%02x", c);
++	}
++}
++
++void
++bt_monitor_if_print(netdissect_options *ndo, const struct pcap_pkthdr *h, const u_char *p)
++{
++	u_int caplen = h->caplen;
++	u_int opcode, o;
++
++	ndo->ndo_protocol = "bt_monitor";
++	if (caplen < BT_MON_HDRLEN)
++		goto trunc;
++	opcode = GET_BE_U_2(p + 2);
++	ndo->ndo_ll_hdr_len += BT_MON_HDRLEN;
++	caplen -= BT_MON_HDRLEN;
++	p += BT_MON_HDRLEN;
++
++	ND_PRINT("adapter %u, ", GET_BE_U_2(p - BT_MON_HDRLEN));
++	switch (opcode) {
++	case 0:		/* New Index: type, bus, address, name */
++		if (caplen < 16)
++			goto trunc;
++		ND_PRINT("New Index: ");
++		bt_name_print(ndo, p + 8, 8);
++		ND_PRINT(" (type %u, bus %s, address ", GET_U_1(p),
++			 tok2str(bt_dev_bus, "bus %u", GET_U_1(p + 1)));
++		bt_addr_print(ndo, p + 2);
++		ND_PRINT(")");
++		break;
++	case 2:		/* HCI command: opcode, parameter length, parameters */
++		if (caplen < 3)
++			goto trunc;
++		o = GET_LE_U_2(p);
++		ND_PRINT("HCI Command: %s (0x%04x) plen %u", tok2str(bt_hci_cmd, "opcode", o), o,
++			 GET_U_1(p + 2));
++		break;
++	case 3:		/* HCI event: event code, parameter length, parameters */
++		if (caplen < 2)
++			goto trunc;
++		ND_PRINT("HCI Event");
++		bt_event_print(ndo, p + 2, caplen - 2, GET_U_1(p), GET_U_1(p + 1));
++		break;
++	case 4: case 5: case 6: case 7: case 18: case 19:
++		/* Data: handle with PB and BC flags, data length. */
++		if (caplen < 4)
++			goto trunc;
++		o = GET_LE_U_2(p);
++		ND_PRINT("%s: handle %u, pb %u, %u B", tok2str(bt_mon_opcode, "opcode %u", opcode),
++			 o & 0x0fff, (o >> 12) & 0x3, GET_LE_U_2(p + 2));
++		break;
++	case 12:	/* System Note: text */
++	case 13:	/* User Logging: text */
++		ND_PRINT("%s: ", tok2str(bt_mon_opcode, "opcode %u", opcode));
++		bt_text_print(ndo, p, caplen);
++		break;
++	default:
++		ND_PRINT("%s: %u B", tok2str(bt_mon_opcode, "opcode %u", opcode), caplen);
++		break;
++	}
++	return;
++
++trunc:
++	nd_print_trunc(ndo);
++}
++#endif

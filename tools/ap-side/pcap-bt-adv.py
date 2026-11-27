@@ -1,39 +1,46 @@
 #!/usr/bin/env python3
-"""Summarise LE Advertising Reports of one address from a pcap of the Bluetooth Linux Monitor stream.
+"""Summarise LE Advertising Reports of one address from a capture of the Bluetooth Linux Monitor stream.
 
-usage: pcap-bt-adv.py <file.pcap> <addr> [--raw] [--slot-ms T]
+usage: pcap-bt-adv.py <file> <addr> [--tcpdump-text] [--raw] [--slot-ms T]
 
-The pcap is written by the statically cross-compiled tcpdump (build it with BLUEZ_INCLUDE, see
-tools/ap-side/README.md) on the workstation's own Bluetooth controller (needs root):
+The capture is taken on the workstation's own Bluetooth controller (needs root) with the statically
+cross-compiled tcpdump (build it with BLUEZ_INCLUDE, see tools/ap-side/README.md); bluetoothctl has to
+scan with `duplicate-data on` (its `scan` submenu), otherwise the controller's duplicate filter
+reports each advertiser once or twice a minute, which is useless for an advertising interval:
 
     sudo sh -c 'timeout 150 tcpdump -i bluetooth-monitor -n -s 256 -w /tmp/bt.pcap & \
         (printf "menu scan\nduplicate-data on\nback\nscan on\n"; sleep 144; printf "scan off\n"; sleep 1) | bluetoothctl > /dev/null; wait'
 
-`duplicate-data on` (bluetoothctl's `scan` submenu) is what makes the kernel send LE Set Extended Scan
-Enable with Filter duplicates = Disabled; the default scan enables the controller's duplicate filter
-and reports each advertiser once or twice in a minute, which is useless for an advertising interval.
-tcpdump itself does not print this link type (it reads back as UNSUPPORTED plus a hex dump), which
-is why this script reads the file itself.
+Two kinds of input:
 
-File layout (checked record by record against tshark 4.6.10 on 2026-11-27): pcap link type 254
-(BLUETOOTH_LINUX_MONITOR); every record is adapter id (2 bytes, big-endian), opcode (2 bytes,
-big-endian; 3 = HCI event packet) and then the HCI event packet without its 0x04 type byte. Other
-opcodes (commands, mgmt control events, system notes) are ignored here. Time is the capture
-timestamp of the record, in seconds since the first record of the file.
+- the pcap written with -w. This script reads the file itself; it does not need tshark.
+- with --tcpdump-text: the lines tcpdump prints (the build with BLUEZ_INCLUDE carries
+  tools/ap-side/tcpdump-4.99.6-bt-monitor.patch, which makes it print this link type), in the
+  default time format (HH:MM:SS.microseconds). Keeping only the lines of the one address
+  (`grep -i <addr>`) gives a file that holds no neighbour data and can be archived, and the
+  statistics can be recomputed from it later.
 
 We collect (time, rssi, pdu type) for every "LE Advertising Report" (0x0e) or "LE Extended
 Advertising Report" (0x0d) event whose address matches, group the reports into advertising events
 (reports less than 30 ms apart belong to the same event; one event sweeps channels 37/38/39) and
 print the inter-event interval and the RSSI statistics - the same lines as btmon-summary.py, so the
-two captures can be compared directly. --raw adds the per-report lines (time, rssi, pdu type) and
-the distinct payloads of that address; they contain no neighbour data and can be archived.
+captures can be compared directly. --raw adds the per-report lines (time, rssi, pdu type) and
+the distinct payloads of that address; they contain no neighbour data and can be archived. Time is
+in seconds since the first record (pcap) or the first timestamped line (text).
 
 --slot-ms T checks each inter-event gap against one advertising event of T ms plus 0-10 ms
 advDelay (Core Vol 6 Part B §4.4.2): a gap fits if some k >= 1 has k*T <= gap <= k*(T+10). Reports
 are sparse, so the mean says little; what holds is that every gap is a multiple of the event length.
 
-The raw pcap contains every neighbour's advertisement: never archive it; keep the summary.
+pcap layout (checked record by record against tshark 4.6.10 on 2026-11-27): link type 254
+(BLUETOOTH_LINUX_MONITOR); every record is adapter id (2 bytes, big-endian), opcode (2 bytes,
+big-endian; 3 = HCI event packet) and then the HCI event packet without its 0x04 type byte. Other
+opcodes (commands, mgmt control events, system notes) are ignored here.
+
+The raw capture, pcap or text, contains every neighbour's advertisement: never archive it; keep the
+summary or the lines of the one address.
 """
+import re
 import struct
 import statistics
 import sys
@@ -43,7 +50,7 @@ HCI_MON_EVENT_PKT = 3
 # LE Extended Advertising Report, Event Type (Core Vol 4 Part E §7.7.65.17): bit 0 connectable, 1 scannable,
 # 2 directed, 3 scan response, 4 legacy. Legacy PDUs are named from those flags the way btmon does: controllers
 # leave the Legacy PDU Type bits (10-12) at 0 (the 50 other advertisers of 2026-11-27 all did), so they are no use.
-ADDR_TYPE = {0: "Public", 1: "Random", 2: "Public Identity", 3: "Random Identity"}
+ADDR_TYPE = {0: "Public", 1: "Random", 2: "Public identity", 3: "Random identity"}
 
 
 def read_records(path):
@@ -124,6 +131,47 @@ def adv_reports(rec):
             i += 10 + dlen
 
 
+# The lines tcpdump prints for this link type: "HH:MM:SS.uuuuuu adapter 0, HCI Event: LE Extended Advertising
+# Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, rssi -51 dBm".
+TEXT_STAMP = re.compile(r"^(\d\d):(\d\d):(\d\d)\.(\d{6}) ")
+TEXT_HEAD = re.compile(r"LE ((?:Extended )?)Advertising Report \(0x3e/0x0[02d]\): (\d+) reports?, ")
+TEXT_REPORT = re.compile(r"([A-Z_]+) (\S+ \S*|Public|Random) ([0-9a-f]{2}(?::[0-9a-f]{2}){5}), ")
+
+
+def read_tcpdump_text(path):
+    """Return ([(seconds, address bytes, rssi, pdu type, address type, advertising data text)], span in seconds)."""
+    rows, t0, t_last = [], None, 0.0
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            stamp = TEXT_STAMP.match(line)
+            if not stamp:
+                continue
+            h, m, s, us = (int(x) for x in stamp.groups())
+            t = h * 3600 + m * 60 + s + us / 1e6
+            if t0 is None:
+                t0 = t
+            t_last = t
+            head = TEXT_HEAD.search(line)
+            if not head:
+                continue
+            pos, n = head.end(), int(head.group(2))
+            for _ in range(n):
+                start = TEXT_REPORT.match(line, pos)
+                if not start:
+                    break
+                end = line.find(", rssi ", start.end())
+                if end < 0:
+                    break
+                rssi = line[end + 7:].split(", ")[0]
+                rows.append((t - t0, bytes.fromhex(start.group(3).replace(":", ""))[::-1],
+                             None if rssi == "n/a" else int(rssi[:-4]), start.group(1), start.group(2),
+                             line[start.end():end].strip(", ")))
+                pos = end + 7 + len(rssi) + 2
+    if t0 is None:
+        raise ValueError("no tcpdump line with a timestamp (default time format HH:MM:SS.uuuuuu expected)")
+    return rows, t_last - t0
+
+
 def stats(v, digits=1):
     if not v:
         return "n/a"
@@ -160,19 +208,28 @@ def main(argv):
         return 2
     path, addr = argv[1], argv[2].lower()
     raw = "--raw" in argv[3:]
+    text = "--tcpdump-text" in argv[3:]
     want = bytes.fromhex(addr.replace(":", ""))[::-1]  # HCI reports store the address least-significant byte first
-    reports, payloads = [], {}
+    reports, count, span, kind = [], 0, 0.0, "pcap %s" % path
     try:
-        records = list(read_records(path))
+        if text:
+            rows, span = read_tcpdump_text(path)
+            reports = [(t, rssi, pdu, atype, data) for t, a, rssi, pdu, atype, data in rows if a == want]
+            count = sum(1 for _ in rows)
+            kind = "tcpdump text %s" % path
+        else:
+            records = list(read_records(path))
+            span = records[-1][0] if records else 0.0
+            count = len(records)
+            for t, rec in records:
+                for a, rssi, pdu, atype, payload in adv_reports(rec):
+                    if a == want:
+                        reports.append((t, rssi, pdu, atype, payload.hex()))
     except (ValueError, OSError) as e:
         print("%s: %s" % (path, e))
         return 2
-    for t, rec in records:
-        for a, rssi, pdu, atype, payload in adv_reports(rec):
-            if a == want:
-                reports.append((t, rssi, pdu, atype, bytes(payload)))
     if not reports:
-        print("no LE Advertising Report for %s in %s (%d records)" % (addr, path, len(records)))
+        print("no LE Advertising Report for %s in %s (%d records)" % (addr, kind, count))
         return 1
     reports.sort()
     events, cur = [], [reports[0]]
@@ -183,13 +240,14 @@ def main(argv):
             events.append(cur)
             cur = [r]
     events.append(cur)
+    payloads = {}
     for r in reports:
-        key = (r[2], r[3], r[4].hex())
+        key = (r[2], r[3], r[4])
         payloads[key] = payloads.get(key, 0) + 1
     gaps = [(events[i + 1][0][0] - events[i][0][0]) * 1000 for i in range(len(events) - 1)]
-    rssis = [r[1] for r in reports]
-    print("pcap %s: %d records, %.1f s; address %s: %d reports in %d advertising events, %.1f s (%.3f-%.3f s)"
-          % (path, len(records), records[-1][0], addr, len(reports), len(events),
+    rssis = [r[1] for r in reports if r[1] is not None]
+    print("%s: %d records, %.1f s; address %s: %d reports in %d advertising events, %.1f s (%.3f-%.3f s)"
+          % (kind, count, span, addr, len(reports), len(events),
              reports[-1][0] - reports[0][0], reports[0][0], reports[-1][0]))
     print("pdu types: %s" % sorted({r[2] for r in reports}))
     print("address types: %s" % sorted({r[3] for r in reports}))
@@ -209,7 +267,7 @@ def main(argv):
     if raw:
         print("-- per report: seconds since the first record, rssi dBm, pdu type")
         for r in reports:
-            print("%.6f %d %s" % r[:3])
+            print("%.6f %s %s" % (r[0], "n/a" if r[1] is None else r[1], r[2]))
         print("-- distinct payloads of %s (pdu type, address type, advertising data, reports)" % addr)
         for (pdu, atype, data), n in sorted(payloads.items()):
             print("%s %s %s %d" % (pdu, atype, data, n))

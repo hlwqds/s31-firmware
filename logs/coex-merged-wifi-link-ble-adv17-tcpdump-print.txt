@@ -1,0 +1,75 @@
+板子 BLE 广播：工作站上自编 tcpdump 自己打印的 HCI 监视流（2026-11-27，合并镜像 ble-adv17 轮）
+
+怎么量的：板子跑合并镜像 -Dcoex-ble-adv（scripts/build-coex-link-image.sh，ADV=1 BLE=1；app.bin 1 236 416 字节；板侧检查 27/27，
+verdict=pass，「wifi link while ble advertising: connected=1 dhcp=1」）。工作站的 tcpdump 是 tools/ap-side/build-tcpdump.sh 带
+BLUEZ_INCLUDE 编的静态二进制（tcpdump 4.99.6 + libpcap 1.10.5，sha256 37034110…），这一版带
+tools/ap-side/tcpdump-4.99.6-bt-monitor.patch：tcpdump 自己把监视流打成一行一条，不再需要别的工具来读。烧录之前先起两份
+抓包（各 150 秒）：一份 `tcpdump -i bluetooth-monitor -n -s 256 -w <pcap>`，一份不带 -w、直接打印；同一轮里 bluetoothctl 进
+scan 子菜单先 duplicate-data on 再 scan on（144 秒）。入库的只有直接打印的那一份里写着板子地址的行（grep 出来，没有邻居的
+数据），时间戳是本机时间（CST）。两份读数对过：直接打印的 42 行与 pcap 里的 42 条上报，间隔逐段相同（差不超过 1 微秒）。
+板侧串口日志不入库：这一轮的读数只有检查项 27/27，没有新东西。
+
+两份 tcpdump 的收尾（原样；前一份写 pcap，后一份直接打印）：
+2722 packets captured
+0 packets received by filter
+0 packets dropped by kernel
+2722 packets captured
+0 packets received by filter
+0 packets dropped by kernel
+
+读数（python3 tools/ap-side/pcap-bt-adv.py <下面这些行存成的文件> 02:00:00:00:BB:01 --tcpdump-text --slot-ms 100 --slot-ms 200 的输出，原样）：
+tcpdump text /tmp/r5c/adv17-board-lines.txt: 42 records, 41.5 s; address 02:00:00:00:bb:01: 42 reports in 42 advertising events, 41.5 s (0.000-41.543 s)
+pdu types: ['ADV_NONCONN_IND']
+address types: ['Public']
+reports per advertising event: median 1, min 1, max 1
+inter-event interval ms: n=41 min=101.3 median=518.8 mean=1013.2 max=8581.7 p5=103.2 p95=4138.6
+RSSI dBm: n=42 min=-56 median=-51 mean=-51 max=-46 p5=-54 p95=-47
+against one advertising event of 100 ms + 0-10 ms advDelay: 41 of 41 gaps are a whole number of events
+  events per gap (k: gaps): 1: 9, 2: 5, 3: 3, 4: 2, 5: 3, 7: 3, 8: 3, 9: 1, 12: 3, 14: 2, 15: 1, 16: 1, 18: 1, 26: 2, 39: 1, 79: 1; per-event length from the fitted gaps ms: n=41 min=101.0 median=105.6 mean=105.6 max=109.9 p5=101.4 p95=109.8
+against one advertising event of 200 ms + 0-10 ms advDelay: 10 of 41 gaps are a whole number of events
+  events per gap (k: gaps): 1: 2, 2: 1, 4: 1, 7: 2, 14: 2, 21: 1, 41: 1; per-event length from the fitted gaps ms: n=10 min=201.1 median=205.5 mean=205.7 max=209.6 p5=200.7 p95=209.7
+  gaps that do not fit ms: 731.6 512.8 847.4 1964.0 738.2 104.1 109.9 213.1 105.8 103.1 317.9 214.4 212.8 1269.1 1754.4 747.0 840.3 422.9 101.3 1567.0 1260.3 935.2 104.0 106.9 318.3 311.2 108.0 518.8 528.0 108.0 1264.2
+
+tcpdump 直接打印的板子地址的 42 行（原样，只有板子的数据）：
+09:05:47.518008 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+09:05:48.249576 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+09:05:48.762358 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:05:49.609751 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:05:51.573796 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:05:52.311955 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+09:05:52.416104 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:05:52.830289 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -56 dBm
+09:05:52.940208 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:05:53.153357 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:05:53.259170 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -53 dBm
+09:05:53.362288 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:05:53.680228 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:05:53.894586 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:05:54.107374 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -53 dBm
+09:05:55.376467 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+09:06:03.958165 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:06.773735 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:06:06.975740 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:06:08.440946 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -46 dBm
+09:06:12.723969 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:14.478342 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+09:06:15.225357 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:06:16.065674 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:16.488537 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:06:16.589839 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:06:18.156846 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:19.417154 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:22.255582 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:06:23.722872 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:06:24.658090 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:06:24.762120 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:06:24.869035 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -51 dBm
+09:06:25.187361 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:06:25.391234 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -47 dBm
+09:06:25.702473 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:25.810515 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:06:26.329360 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
+09:06:26.857401 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -52 dBm
+09:06:27.688678 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:06:27.796638 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -54 dBm
+09:06:29.060861 adapter 0, HCI Event: LE Extended Advertising Report (0x3e/0x0d): 1 report, ADV_NONCONN_IND Public 02:00:00:00:bb:01, adv data 8 B, Flags 0x06, Complete Local Name "s31", rssi -49 dBm
